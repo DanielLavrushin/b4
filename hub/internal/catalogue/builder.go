@@ -451,8 +451,8 @@ func (b *Builder) guard(ctx context.Context, now time.Time, sets int) error {
 			return err
 		}
 		if builtAt.IsZero() {
-			if latest != nil && len(latest.Catalogue.Sets) > sets {
-				return fmt.Errorf("%w, and its first build would replace the %d sets already published with %d; restore the hub's database, or confirm a new one with --new-database", ErrNewDatabase, len(latest.Catalogue.Sets), sets)
+			if latest != nil {
+				return fmt.Errorf("%w, and its first build would replace catalogue %s with %d sets already published; restore the hub's database, or confirm a new one with --new-database", ErrNewDatabase, latest.Manifest.Catalogue.File, len(latest.Catalogue.Sets))
 			}
 			if b.BuiltinKey && sets == 0 {
 				return fmt.Errorf("%w, and its first build would sign an empty catalogue with a key built into b4; restore the hub's database, or confirm a new one with --new-database", ErrNewDatabase)

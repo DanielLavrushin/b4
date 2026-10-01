@@ -256,3 +256,41 @@ func TestAnApprovedMirrorKeepsItsKey(t *testing.T) {
 		t.Fatalf("the owner's announcement refreshes last_seen, got %+v", m)
 	}
 }
+
+func TestTheApprovedMirrorListIsCachedForAMinute(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	author := testkit.Identity(t)
+	setID, fp := approvedSet(t, f, author)
+	mirror := approvedMirror(t, f)
+	relayedVote := func() bool {
+		voter := testkit.Identity(t)
+		body := hubwire.VoteBody{SetID: setID, Version: 1, FP: fp, Kind: hubwire.VoteWorks}
+		expect(t, f.relay(mirror, testkit.Sign(t, voter, hubwire.RecordVote, body, f.clock), peerC), http.StatusAccepted, "")
+		votes, _ := f.store.VotesForFP(ctx, fp)
+		for _, v := range votes {
+			if v.KeyHMAC == hubdata.KeyHMAC(f.svc.Secret, voter.KeyID()) {
+				return v.ASNObserved == ""
+			}
+		}
+		t.Fatal("vote not stored")
+		return false
+	}
+	if !relayedVote() {
+		t.Fatal("an approved mirror's signed record is relayed")
+	}
+	m, err := f.store.MirrorByURL(ctx, "https://relay.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.SetMirrorStatus(ctx, m.ID, store.MirrorRejected, "gone", f.clock); err != nil {
+		t.Fatal(err)
+	}
+	if !relayedVote() {
+		t.Fatal("within a minute the cached approval still holds")
+	}
+	f.clock = f.clock.Add(MirrorKeysTTL)
+	if relayedVote() {
+		t.Fatal("after a minute a rejected mirror's records keep their sender's network")
+	}
+}

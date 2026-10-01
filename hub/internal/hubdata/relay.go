@@ -32,6 +32,14 @@ func SignRelay(id *hubwire.Identity, now time.Time, body []byte) string {
 	return relayVersion + " " + keyID + " " + strconv.FormatInt(ts, 10) + " " + base64.RawURLEncoding.EncodeToString(sig)
 }
 
+func RelayKeyID(header string) string {
+	parts := strings.Fields(header)
+	if len(parts) != 4 || parts[0] != relayVersion {
+		return ""
+	}
+	return parts[1]
+}
+
 func VerifyRelay(header string, body []byte, now time.Time) (string, bool) {
 	parts := strings.Fields(header)
 	if len(parts) != 4 || parts[0] != relayVersion {

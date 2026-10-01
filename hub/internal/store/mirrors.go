@@ -80,13 +80,21 @@ func (s *Store) AnnounceMirror(ctx context.Context, url, keyHMAC, version string
 	return s.MirrorByURL(ctx, url)
 }
 
-func (s *Store) ApprovedMirrorKey(ctx context.Context, keyHMAC string) (bool, error) {
-	var one int
-	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM mirrors WHERE key_hmac = ? AND status = ? LIMIT 1`, keyHMAC, MirrorApproved).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+func (s *Store) ApprovedMirrorKeys(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key_hmac FROM mirrors WHERE status = ? AND key_hmac != ''`, MirrorApproved)
+	if err != nil {
+		return nil, err
 	}
-	return err == nil, err
+	defer rows.Close()
+	out := make(map[string]bool)
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		out[key] = true
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) MirrorByURL(ctx context.Context, url string) (*Mirror, error) {

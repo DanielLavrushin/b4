@@ -20,7 +20,7 @@ A report carries:
 - the ASN and country the router knows for itself;
 - the capture engine and the b4 version.
 
-It is signed with the router's author key. The hub places the report on the network it sees the request coming from, not on the network named inside the report.
+It is signed with the router's author key. The hub places the report on the network it sees the request coming from, not on the network named inside the report. A report that reaches the hub through an approved mirror, which signs what it passes on, is not placed on any network, because the address the hub sees is the mirror's.
 
 One router has one current report per strategy, network and week: the report is filed against the [fingerprint of the strategy](./applying.md#applied-and-edited), not against the set, so two sets carrying the same strategy share it and a version whose strategy changed takes a report of its own. Pressing the other button replaces it. The tooltip of the pressed button shows the date of the report. A report made while no hub answers is kept in the outbox and delivered with the next sync; the status line on the Community page and the settings block show how many are waiting. The outbox keeps a report for 30 days.
 
@@ -42,7 +42,7 @@ Weights before decay:
 | A report the hub could not place on a network | a quarter of the above |
 | A report from an author key the hub first saw less than a week ago | a quarter of the above |
 
-The two reductions apply one after the other: a report the hub could not place, sent from a key it first saw less than a week ago, keeps a sixteenth of its weight. A report cannot be placed when the hub finds no ASN for the address the request came from.
+The two reductions apply one after the other: a report the hub could not place, sent from a key it first saw less than a week ago, keeps a sixteenth of its weight. A report cannot be placed when the hub finds no ASN for the address the request came from, or when it came through an approved mirror.
 
 Every report loses half its weight every two weeks. The percentage is `(works + 1) / (all + 2)`: two works reports and nothing else give 75%, an equal number of each gives about 50%.
 
@@ -50,7 +50,7 @@ The hub also defines weights for reports a router could send automatically, from
 
 ## Complaints
 
-**Report** on a card or in the details dialog opens a complaint with a reason of up to 500 characters. A complaint does not change the score. A moderator reads it and decides whether to hide the set. Three complaints about one version from different routers on different networks hide it without a moderator. A complaint does not require the set to be applied, and it is queued in the outbox like a report when no hub answers.
+**Report** on a card or in the details dialog opens a complaint with a reason of up to 500 characters. A complaint does not change the score. A moderator reads it and decides whether to hide the set. Three complaints about one version from different routers on different networks hide it without a moderator; a complaint that came through an approved mirror has no network and does not count toward that. A complaint does not require the set to be applied, and it is queued in the outbox like a report when no hub answers.
 
 Complaints are for:
 

@@ -325,7 +325,7 @@ The kinds are the works and broken votes made by hand, the upload counted as a w
 Each report carries when it arrived, the set and version, the network, the contributor, the reason typed in, and whether it counts. **Dismiss** and **Mark handled** take an optional note and apply to one report or to a selection; **Reopen** returns a report to the inbox. Hiding, rejecting, restoring and withdrawing close the open reports of what they touch and record why.
 
 :::info
-A listed version is hidden automatically once three open reports against it come from independent keys and networks. A report counts only while it is open, when its network is known, and when its key is neither banned nor tagged **test**. A report an approved mirror passed on has no known network, so it never counts. Restoring a version dismisses its open reports, so the count starts again from zero.
+A listed version is hidden automatically once three open reports against it come from independent keys and networks. A report counts only while it is open, when its network is known, and when its key is neither banned nor tagged **test**. A report an approved mirror passed on with a valid relay signature has no known network, so it never counts. Restoring a version dismisses its open reports, so the count starts again from zero.
 :::
 
 ## Catalogue
@@ -342,7 +342,7 @@ Three operations, each of which republishes:
 | **Start a new epoch** | Resets the sequence number. Every router treats the new epoch as authoritative and downloads again |
 | **Revoke a hub signing key** | Adds a key id to the list every manifest carries. Routers stop trusting anything signed by it |
 
-A build is refused, and the build history gives the cause, in two cases: when its sequence number would not be above the catalogue already published or the one an approved mirror serves, which is what a database restored from an older backup looks like, and when a database that has never published would replace the published catalogue with fewer sets or sign an empty one with a key built into b4. `--new-database` on `serve` or `build` confirms the second case.
+A build is refused, and the build history gives the cause, in two cases: when its epoch and sequence number would not be above the catalogue already published or the one an approved mirror serves, which is what a database restored from an older backup looks like, and when a database that has never published would replace the published catalogue or sign an empty one with a key built into b4. `--new-database` on `serve` or `build` confirms the second case.
 
 :::warning
 A new epoch is what publishes a catalogue after the database was restored from an older backup: routers refuse anything older than what they already hold, and the hub refuses to build it until the epoch changes. Outside that case it makes every router download the catalogue again for no gain.
@@ -367,7 +367,7 @@ Counts over the last 7, 30, 90 or 365 days, by UTC day. Keys tagged **test** are
 | Moderation and publishing | Approvals, rejections, hides, automatic hides and withdrawals per day; builds, failed builds and mirror announcements per day |
 | Published scores | The global score of every set in the current catalogue in ten bands, separating sets with votes from at least two devices from those with fewer; the median, and how many sets carry a low-score or stale mark |
 | Most voted sets | The sets the most keys voted on in the range |
-| Where votes come from | Votes and keys by country and by network, from the address each vote arrived from, leaving out votes an approved mirror passed on, which carry no network; and keys by the b4 version and engine of their latest record |
+| Where votes come from | Votes and keys by country and by network, from the address each vote arrived from, leaving out votes an approved mirror passed on with a valid relay signature, which carry no network; and keys by the b4 version and engine of their latest record |
 
 ## Audit log
 

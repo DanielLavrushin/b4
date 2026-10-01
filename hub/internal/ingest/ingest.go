@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/daniellavrushin/b4/hubwire"
@@ -44,6 +45,10 @@ type Service struct {
 	ASN        *asn.Resolver
 	Now        func() time.Time
 	OnAccepted func(kind string)
+
+	mirrorKeysMu sync.Mutex
+	mirrorKeys   map[string]bool
+	mirrorKeysAt time.Time
 }
 
 type Response struct {
@@ -129,6 +134,7 @@ func (s *Service) observe(ctx context.Context, peer net.IP) origin {
 const (
 	RelayRequestFactor = 10
 	RelayNewKeyFactor  = 20
+	MirrorKeysTTL      = time.Minute
 )
 
 type Source struct {
@@ -140,16 +146,24 @@ func (s *Service) Handle(ctx context.Context, raw []byte, peer net.IP) Response 
 	return s.HandleFrom(ctx, raw, Source{IP: peer})
 }
 
+func (s *Service) approvedMirror(ctx context.Context, keyHMAC string, now time.Time) bool {
+	s.mirrorKeysMu.Lock()
+	defer s.mirrorKeysMu.Unlock()
+	if s.mirrorKeys == nil || now.Sub(s.mirrorKeysAt) >= MirrorKeysTTL || now.Before(s.mirrorKeysAt) {
+		if keys, err := s.Store.ApprovedMirrorKeys(ctx); err == nil {
+			s.mirrorKeys, s.mirrorKeysAt = keys, now
+		}
+	}
+	return s.mirrorKeys[keyHMAC]
+}
+
 func (s *Service) relayed(ctx context.Context, header string, raw []byte, now time.Time) bool {
-	if header == "" {
+	keyID := hubdata.RelayKeyID(header)
+	if keyID == "" || !s.approvedMirror(ctx, hubdata.KeyHMAC(s.Secret, keyID), now) {
 		return false
 	}
-	keyID, ok := hubdata.VerifyRelay(header, raw, now)
-	if !ok {
-		return false
-	}
-	approved, err := s.Store.ApprovedMirrorKey(ctx, hubdata.KeyHMAC(s.Secret, keyID))
-	return err == nil && approved
+	_, ok := hubdata.VerifyRelay(header, raw, now)
+	return ok
 }
 
 func (s *Service) HandleFrom(ctx context.Context, raw []byte, src Source) Response {

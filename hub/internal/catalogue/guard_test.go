@@ -259,3 +259,25 @@ func TestCheckIfStaleSkipsARecentRound(t *testing.T) {
 		t.Fatal("a stale round must run again")
 	}
 }
+
+func TestANewDatabaseDoesNotReplaceACatalogueOfTheSameSize(t *testing.T) {
+	b, st := testBuilder(t)
+	ctx := context.Background()
+	addActiveSet(t, st, "01ARZ3NDEKTSV4RRFFQ69G5FAV", "fp-a")
+	if _, err := b.Build(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := store.Open(hubdata.Layout{Root: t.TempDir()}.DBPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { fresh.Close() })
+	addActiveSet(t, fresh, "01ARZ3NDEKTSV4RRFFQ69G5FAX", "fp-x")
+	restarted := &Builder{Store: fresh, Identity: b.Identity, PublicDir: b.PublicDir, PublicURL: b.PublicURL, Now: b.Now}
+	if err := restarted.LoadPublished(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restarted.Build(ctx); !errors.Is(err, ErrNewDatabase) || !strings.Contains(err.Error(), "--new-database") {
+		t.Fatalf("a never-published database must not replace a published catalogue of the same size, got %v", err)
+	}
+}
