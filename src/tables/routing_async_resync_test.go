@@ -106,6 +106,87 @@ func TestResyncForcedResyncKeepsTheAddressOfABatchInFlight(t *testing.T) {
 	}
 }
 
+func TestResyncForcedResyncKeepsTheAddressOfABatchAnEarlierSyncMadeStale(t *testing.T) {
+	cfg, set, be := awaitSetup(t, false)
+	stubRetryState(t)
+	adds := recordResyncAdds(be)
+	resyncSeedState(cfg, set)
+	release := holdAsyncWorker(t)
+
+	wait := resyncOne(t, RoutingHandleDNSAwait(cfg, set, []net.IP{net.ParseIP("198.51.100.110")}))
+	RoutingSyncConfig(cfg)
+	routeMu.Lock()
+	forced := make(chan struct{})
+	go func() {
+		RoutingForceResync(cfg)
+		close(forced)
+	}()
+	time.Sleep(30 * time.Millisecond)
+	release()
+	waitUntil(t, "the batch to be sealed", resyncSealed(set.Id))
+	time.Sleep(30 * time.Millisecond)
+	routeMu.Unlock()
+
+	awaitClosed(t, wait, "the batch")
+	awaitClosed(t, forced, "the forced resync")
+	drainAsync(t)
+	if _, ok := resyncCachedState(set.Id); !ok {
+		t.Fatal("the forced resync did not reinstall the set")
+	}
+	if !adds.has("198.51.100.110") {
+		t.Fatal("a batch an earlier sync had made stale was released without its address while a forced resync rebuilt the set from the same config")
+	}
+}
+
+func TestResyncBatchRacingASyncAddsUnderTheNewState(t *testing.T) {
+	cfg, set, be := awaitSetup(t, false)
+	stubRetryState(t)
+	resyncSeedState(cfg, set)
+	moved := resyncSetCopy(set)
+	moved.Routing.EgressInterface = "b4new0"
+	next := familyTestConfig(true, false)
+	next.Sets = []*config.SetConfig{moved}
+	var mu sync.Mutex
+	var addedUnder []string
+	be.addElementsFn = func(_ string, ips []string, _ int) {
+		for _, ip := range ips {
+			if ip == "198.51.100.109" {
+				mu.Lock()
+				addedUnder = append(addedUnder, routeRuleCache[set.Id].iface)
+				mu.Unlock()
+			}
+		}
+	}
+	release := holdAsyncWorker(t)
+
+	wait := resyncOne(t, RoutingHandleDNSAwait(next, moved, []net.IP{net.ParseIP("198.51.100.109")}))
+	routeMu.Lock()
+	release()
+	waitUntil(t, "the batch to be sealed", resyncSealed(set.Id))
+	time.Sleep(30 * time.Millisecond)
+	synced := make(chan struct{})
+	go func() {
+		RoutingSyncConfig(next)
+		close(synced)
+	}()
+	time.Sleep(30 * time.Millisecond)
+	routeMu.Unlock()
+
+	awaitClosed(t, wait, "the batch")
+	awaitClosed(t, synced, "the resync")
+	drainAsync(t)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(addedUnder) == 0 {
+		t.Fatal("the batch's address was never added")
+	}
+	for _, iface := range addedUnder {
+		if iface != "b4new0" {
+			t.Fatalf("the batch added its address while the set still had the state the resync was about to replace (%q)", iface)
+		}
+	}
+}
+
 func TestResyncAddingADomainKeepsQueuedAnswersForTheOthers(t *testing.T) {
 	cfg, set, be := awaitSetup(t, false)
 	stubRetryState(t)

@@ -1077,7 +1077,6 @@ func routingForceResync(cfg *config.Config) {
 		return
 	}
 
-	routeAsyncForgetAll()
 	routeMu.Lock()
 	defer routeMu.Unlock()
 	routeRuleCache = make(map[string]routeState)
@@ -1162,14 +1161,13 @@ func routingSyncConfig(cfg *config.Config) {
 		return
 	}
 
-	routeAsyncForgetAll()
-
 	routeMu.Lock()
 	defer routeMu.Unlock()
 	routingSyncConfigLocked(cfg)
 }
 
 func routingSyncConfigLocked(cfg *config.Config) {
+	routeAsyncForgetAll()
 	IPTablesLockBudgetReset()
 	routeLoadCTMarkVerdict(cfg)
 
