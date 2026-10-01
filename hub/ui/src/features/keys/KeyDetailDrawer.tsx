@@ -233,6 +233,7 @@ function Detail({ data }: Readonly<{ data: KeyDetailView }>) {
       />
       <Section title={t("keys.detail.activity")}>
         <DailyBars
+          label={t("keys.detail.activity")}
           days={days}
           values={values}
           series={[

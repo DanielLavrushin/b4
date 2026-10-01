@@ -14,7 +14,8 @@ export function useTableState(defaults: TableDefaults = {}) {
   const [params, setParams] = useSearchParams();
   const sort = params.get("sort") ?? defaults.sort ?? "";
   const dir: SortDir = params.get("dir") === "asc" ? "asc" : params.get("dir") === "desc" ? "desc" : (defaults.dir ?? "desc");
-  const page = Math.max(0, Number(params.get("page") ?? "0") || 0);
+  const parsedPage = Number(params.get("page") ?? "0");
+  const page = Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 0;
   const rawSize = Number(params.get("size") ?? "");
   const pageSize = PAGE_SIZES.includes(rawSize) ? rawSize : (defaults.pageSize ?? 50);
   const urlQ = params.get("q") ?? "";

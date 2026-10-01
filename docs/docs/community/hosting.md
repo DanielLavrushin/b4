@@ -128,7 +128,7 @@ Nothing is published until a moderator approves it, so a new hub starts with an 
 | | |
 | --- | --- |
 | Build | Checked on start and every 5 minutes after that; one runs when nothing has been published yet, when something changed, or when the last one is a day old |
-| After a moderation action | A build starts in the background 1.5 seconds after the last change and no later than 10 seconds after the first; a request left by `b4hub moderate` is picked up within about 10 seconds |
+| After a moderation action or an automatic hide | A build starts in the background 1.5 seconds after the last change and no later than 10 seconds after the first; a request left by `b4hub moderate` is picked up within about 10 seconds |
 | File | `public/catalogue-<epoch>-<seq>.json.gz`, the newest three kept |
 | Manifest | Signed, valid for 14 days from the build |
 | Payloads | Swept hourly; a file that no stored version refers to, and that was last written more than an hour ago, is deleted |

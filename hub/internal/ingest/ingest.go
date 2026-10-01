@@ -45,6 +45,7 @@ type Service struct {
 	ASN        *asn.Resolver
 	Now        func() time.Time
 	OnAccepted func(kind string)
+	OnAutoHide func()
 
 	mirrorKeysMu sync.Mutex
 	mirrorKeys   map[string]bool

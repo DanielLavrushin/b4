@@ -677,7 +677,8 @@
       "mirrors": "mirror list changed",
       "moderation": "moderation",
       "revoke": "key revocation",
-      "epoch": "new epoch"
+      "epoch": "new epoch",
+      "autohide": "automatic hide"
     }
   },
   "notices": {

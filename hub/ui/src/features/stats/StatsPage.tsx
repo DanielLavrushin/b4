@@ -55,6 +55,7 @@ function Activity({
         {title}
       </Typography>
       <DailyBars
+        label={title}
         days={daily.map((d) => d.day)}
         values={dayValues(
           daily,

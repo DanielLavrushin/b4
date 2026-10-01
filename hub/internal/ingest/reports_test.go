@@ -167,3 +167,28 @@ func TestReportsOnAPendingVersionDoNotHideIt(t *testing.T) {
 		t.Fatalf("nothing was hidden, nothing is audited: %+v", entries)
 	}
 }
+
+func TestAnAutomaticHideAsksForABuild(t *testing.T) {
+	f := newFixture(t)
+	hides := 0
+	f.svc.OnAutoHide = func() { hides++ }
+	author := testkit.Identity(t)
+	setID, _ := approvedSet(t, f, author)
+	report := func(peer net.IP) {
+		body := hubwire.ReportBody{SetID: setID, Version: 1, Reason: "steals traffic"}
+		expect(t, f.post(t, testkit.Sign(t, testkit.Identity(t), hubwire.RecordReport, body, f.clock), peer), http.StatusAccepted, "")
+	}
+	report(peerA)
+	report(peerB)
+	if hides != 0 {
+		t.Fatalf("reports that do not hide anything must not ask for a build, got %d", hides)
+	}
+	report(peerC)
+	if hides != 1 {
+		t.Fatalf("the report that hides the version asks for one build, got %d", hides)
+	}
+	report(peerA)
+	if hides != 1 {
+		t.Fatalf("a report on an already hidden version asks for nothing, got %d", hides)
+	}
+}

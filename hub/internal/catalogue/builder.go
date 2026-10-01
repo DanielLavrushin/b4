@@ -46,6 +46,7 @@ const (
 	TriggerStartup  = "startup"
 	TriggerCLI      = "cli"
 	TriggerMirrors  = "mirrors"
+	TriggerAutoHide = "autohide"
 )
 
 var (

@@ -1,4 +1,4 @@
-import { useMemo, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import {
   Box,
   Checkbox,
@@ -120,6 +120,11 @@ export function DataTable<T>({
     return sorted.slice(start, start + paging.pageSize);
   }, [sorted, paging]);
   const total = paging?.mode === "server" ? (paging.total ?? 0) : sorted.length;
+  const lastPage = paging ? Math.max(0, Math.ceil(total / paging.pageSize) - 1) : 0;
+  const outOfRange = paging !== undefined && total > 0 && paging.page > lastPage;
+  useEffect(() => {
+    if (outOfRange) paging?.onPage(lastPage);
+  }, [outOfRange, lastPage, paging]);
 
   const selectableRows = selection ? visible.filter((r) => selection.selectable?.(r) ?? true) : [];
   const selectedOnPage = selection ? selectableRows.filter((r) => selection.selected.has(rowKey(r))).length : 0;
@@ -263,7 +268,7 @@ export function DataTable<T>({
         <TablePagination
           component="div"
           count={total}
-          page={Math.min(paging.page, Math.max(0, Math.ceil(total / paging.pageSize) - 1))}
+          page={Math.min(paging.page, lastPage)}
           rowsPerPage={paging.pageSize}
           rowsPerPageOptions={paging.onPageSize ? PAGE_SIZES : [paging.pageSize]}
           onPageChange={(_e, p) => paging.onPage(p)}

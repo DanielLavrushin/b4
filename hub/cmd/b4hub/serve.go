@@ -82,6 +82,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 					notifier.Nudge()
 				}
 			},
+			OnAutoHide: func() {
+				builder.Request(catalogue.TriggerAutoHide)
+			},
 		},
 		Catalogue: builder,
 	}

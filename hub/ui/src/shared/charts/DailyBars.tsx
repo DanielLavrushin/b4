@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Box, Stack, Typography } from "@mui/material";
 import { colors } from "@design";
 
@@ -8,6 +9,7 @@ export interface Series {
 }
 
 interface DailyBarsProps {
+  label: string;
   days: string[];
   values: Record<string, Record<string, number>>;
   series: Series[];
@@ -15,15 +17,26 @@ interface DailyBarsProps {
   dayLabel?: (day: string) => string;
 }
 
-export function DailyBars({ days, values, series, height = 90, dayLabel }: Readonly<DailyBarsProps>) {
+export function DailyBars({ label, days, values, series, height = 90, dayLabel }: Readonly<DailyBarsProps>) {
+  const id = useId();
   const totals = days.map((d) => series.reduce((sum, s) => sum + (values[d]?.[s.key] ?? 0), 0));
+  const summary = series.map((s) => `${s.label} ${String(days.reduce((sum, d) => sum + (values[d]?.[s.key] ?? 0), 0))}`).join(", ");
   const max = Math.max(1, ...totals);
   const bar = 6;
   const gap = 2;
   const width = days.length * (bar + gap);
   return (
     <Box>
-      <Box component="svg" viewBox={`0 0 ${String(width)} ${String(height)}`} preserveAspectRatio="none" sx={{ width: "100%", height, display: "block" }} role="img">
+      <Box
+        component="svg"
+        viewBox={`0 0 ${String(width)} ${String(height)}`}
+        preserveAspectRatio="none"
+        sx={{ width: "100%", height, display: "block" }}
+        role="img"
+        aria-labelledby={`${id}-title ${id}-desc`}
+      >
+        <title id={`${id}-title`}>{label}</title>
+        <desc id={`${id}-desc`}>{summary}</desc>
         <line x1={0} y1={height - 0.5} x2={width} y2={height - 0.5} stroke={colors.border.default} strokeWidth={1} />
         {days.map((d, i) => {
           let y = height;
