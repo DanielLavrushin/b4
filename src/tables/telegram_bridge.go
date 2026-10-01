@@ -164,7 +164,7 @@ func captureProxySetMarks(cfg *config.Config) []uint32 {
 		if set == nil || !set.Enabled || !set.Routing.Enabled || !config.RoutingUsesTProxy(set.Routing.Mode) {
 			continue
 		}
-		mark := tproxy.MarkForSet(set.Id, set.Routing.FWMark)
+		mark := tproxy.MarkForConfig(cfg, set)
 		if !seen[mark] {
 			seen[mark] = true
 			marks = append(marks, mark)

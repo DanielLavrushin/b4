@@ -120,12 +120,8 @@ func (im *IPTablesManager) teardownMasqueradeChain(ipt string) {
 }
 
 func (im *IPTablesManager) ClearMasquerade() {
-	specs := append(masqueradeSpecs(im.cfg), []string{"-j", "MASQUERADE"})
 	for _, iptBin := range im.teardownBinaries() {
 		im.teardownMasqueradeChain(iptBin)
-		for _, spec := range specs {
-			im.delAll(iptBin, "nat", "POSTROUTING", spec)
-		}
 		for _, mk := range []string{im.masqClientMark(), im.masqMarkAccept()} {
 			im.delAll(iptBin, "nat", "POSTROUTING", []string{"-m", "mark", "--mark", mk, "-j", "RETURN"})
 		}

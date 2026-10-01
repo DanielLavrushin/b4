@@ -105,7 +105,7 @@ The sample is trimmed to the sections worth recognising. Every section holds mor
 | --- | --- | --- |
 | `start_num` | Netfilter queue number the workers bind to | `537` |
 | `threads` | Number of worker threads | `4` |
-| `mark` | Packet mark b4 puts on traffic it has already handled | `32768` |
+| `mark` | Queue mark: the packet mark on the fakes, split segments and packets b4 sends back out, and on the DNS queries it sends for clients and for its sets, see [Packet marks](/docs/guides/marks#the-queue-mark) | `32768` |
 | `ipv4` | Process IPv4 traffic | `true` |
 | `ipv6` | Process IPv6 traffic | `false` |
 | `tcp_conn_bytes_limit` | Global ceiling on how many TCP packets per connection are analysed | `19` |

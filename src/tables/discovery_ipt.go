@@ -3,6 +3,8 @@ package tables
 import (
 	"fmt"
 	"strconv"
+
+	"github.com/daniellavrushin/b4/log"
 )
 
 const discoveryChainIPT = "B4_DISCOVERY"
@@ -90,9 +92,21 @@ func (b *discoveryIptBackend) apply(flowMark uint, injectedMark uint, queueStart
 		if _, err := run(bin, "-w", "-t", "mangle", "-I", "PREROUTING", "3", "-m", "mark", "--mark", injected, "-j", "ACCEPT"); err != nil {
 			return err
 		}
+
+		discoveryKeepOutOfQueueChain(bin, flow, injected)
 	}
 
 	return nil
+}
+
+func discoveryKeepOutOfQueueChain(bin, flow, injected string) {
+	discoveryDelRuleLoop(bin, iptChainName, "-m", "mark", "--mark", flow, "-j", "RETURN")
+	discoveryDelRuleLoop(bin, iptChainName, "-m", "mark", "--mark", injected, "-j", "RETURN")
+	for _, mark := range []string{injected, flow} {
+		if _, err := run(bin, "-w", "-t", "mangle", "-I", iptChainName, "1", "-m", "mark", "--mark", mark, "-j", "RETURN"); err != nil {
+			log.Tracef("Discovery: %s has no %s chain to keep mark %s out of the packet queue: %v", bin, iptChainName, mark, err)
+		}
+	}
 }
 
 func (b *discoveryIptBackend) clear(flowMark uint, injectedMark uint) {
@@ -109,6 +123,8 @@ func (b *discoveryIptBackend) clear(flowMark uint, injectedMark uint) {
 		discoveryDelRuleLoop(bin, "PREROUTING", "-m", "mark", "--mark", injected, "-j", "ACCEPT")
 		discoveryDelRuleLoop(bin, "OUTPUT", "-j", discoveryChainIPT)
 		discoveryDelRuleLoop(bin, "PREROUTING", "-j", discoveryChainIPT)
+		discoveryDelRuleLoop(bin, iptChainName, "-m", "mark", "--mark", flow, "-j", "RETURN")
+		discoveryDelRuleLoop(bin, iptChainName, "-m", "mark", "--mark", injected, "-j", "RETURN")
 		_, _ = run(bin, "-w", "-t", "mangle", "-F", discoveryChainIPT)
 		_, _ = run(bin, "-w", "-t", "mangle", "-X", discoveryChainIPT)
 	}

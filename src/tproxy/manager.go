@@ -170,7 +170,7 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 			delete(m.listeners, id)
 			continue
 		}
-		mark := effectiveMark(set)
+		mark := effectiveMark(cfg, set)
 		port := PortFor(mark)
 		desiredHost := set.Routing.Upstream.Host
 		if desiredHost == "" {
@@ -200,7 +200,7 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 		if _, ok := m.listeners[id]; ok {
 			continue
 		}
-		mark := effectiveMark(set)
+		mark := effectiveMark(cfg, set)
 		port := PortFor(mark)
 		host := set.Routing.Upstream.Host
 		if host == "" {
@@ -320,14 +320,17 @@ func (m *Manager) PortForSet(set *config.SetConfig) int {
 	if set == nil {
 		return 0
 	}
-	return PortFor(effectiveMark(set))
+	m.mu.Lock()
+	cfg := m.lastCfg
+	m.mu.Unlock()
+	return PortFor(effectiveMark(cfg, set))
 }
 
-func effectiveMark(set *config.SetConfig) uint32 {
+func effectiveMark(cfg *config.Config, set *config.SetConfig) uint32 {
 	if set == nil {
 		return 0
 	}
-	return MarkForSet(set.Id, set.Routing.FWMark)
+	return MarkForConfig(cfg, set)
 }
 
 // proxyBypassMark returns the SO_MARK value the listener uses on its outbound

@@ -26,6 +26,19 @@ func MarkForSet(setID string, pinned uint32) uint32 {
 	return mark
 }
 
+func MarkForConfig(cfg *config.Config, set *config.SetConfig) uint32 {
+	mark := MarkForSet(set.Id, cfg.RoutingMarkPin(set))
+	queueBits := cfg.QueueRouteBits()
+	if queueBits == 0 || mark != queueBits || mark == config.TelegramBridgeMark {
+		return mark
+	}
+	next := MarkBase + (mark-MarkBase+1)%MarkRange
+	if next == config.TelegramBridgeMark {
+		next = MarkBase + (next-MarkBase+1)%MarkRange
+	}
+	return next
+}
+
 func PortFor(mark uint32) int {
 	if mark == 0 {
 		return DefaultPortBase

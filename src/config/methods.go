@@ -136,6 +136,24 @@ func (c *Config) MainInjectedMark() uint {
 	return c.Queue.Mark
 }
 
+func (c *Config) QueueRouteBits() uint32 {
+	if c == nil {
+		return 0
+	}
+	return uint32(c.MainInjectedMark()) & PerSetRouteMarkBits
+}
+
+func (c *Config) RoutingMarkPin(set *SetConfig) uint32 {
+	pin := set.Routing.FWMark
+	if c == nil || pin == 0 || pin == TelegramBridgeMark {
+		return pin
+	}
+	if pin == c.QueueRouteBits() {
+		return 0
+	}
+	return pin
+}
+
 func (c *Config) DiscoveryFlowMark() uint {
 	if c.System.Checker.DiscoveryFlowMark != 0 {
 		return c.System.Checker.DiscoveryFlowMark

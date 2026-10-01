@@ -15,6 +15,8 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
+const iptChainName = "B4"
+
 type IPTablesManager struct {
 	cfg              *config.Config
 	useLegacy        bool
@@ -479,7 +481,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
 	cfg := manager.cfg
 	queueNum := cfg.Queue.StartNum
 	threads := cfg.Queue.Threads
-	chainName := "B4"
+	chainName := iptChainName
 	preChainName := "B4_PREROUTING"
 	markAccept := fmt.Sprintf("0x%x/0x%x", cfg.Queue.Mark, cfg.Queue.Mark)
 	if cfg.Queue.Mark == 0 {
@@ -1113,21 +1115,6 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 			}
 		}
 
-		// Clean nat POSTROUTING masquerade rules
-		for {
-			_, err := run(iptBin, "-w", "-t", "nat", "-D", "POSTROUTING", "-j", "MASQUERADE")
-			if err != nil {
-				break
-			}
-		}
-		for _, iface := range ipt.cfg.System.Tables.Masquerade.Interfaces {
-			for {
-				_, err := run(iptBin, "-w", "-t", "nat", "-D", "POSTROUTING", "-o", iface, "-j", "MASQUERADE")
-				if err != nil {
-					break
-				}
-			}
-		}
 		for _, mk := range []string{ipt.masqClientMark(), ipt.masqMarkAccept()} {
 			for {
 				_, err := run(iptBin, "-w", "-t", "nat", "-D", "POSTROUTING", "-m", "mark", "--mark", mk, "-j", "RETURN")

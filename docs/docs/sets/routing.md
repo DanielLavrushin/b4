@@ -297,19 +297,25 @@ The backend is chosen automatically. Systems with nftables use nftables, older s
 
 ### FWMark and routing table
 
-Each output interface gets assigned automatically:
+Each set routed through an output interface is assigned automatically:
 
-- **fwmark** - packet mark (range `0x100` to `0x7EFF`)
+- **fwmark** - packet mark, from a hash in the range `0x100` to `0x7EFF`, or counted up from `0x66` when every hashed value is taken
 - **routing table** - routing table number (range `100` to `249`)
 
 Values are computed from the interface name, the egress IP and the kill-switch setting, and stay stable across reboots. Sets that agree on all three share a `fwmark` and a table; a set that differs in any of them, including one with the kill switch on beside one without, gets its own.
 
 Before claiming a table b4 checks whether it already holds routes it did not put there - the tables Asuswrt-Merlin uses for
-its VPN clients live in the same range, and b4 flushes the table it owns on cleanup. If the table is taken, b4 moves to the
-next candidate and says so in the log.
+its VPN clients live in the same range - and skips tables named in an `rt_tables` file (`/etc/iproute2/rt_tables` with
+its `rt_tables.d/*.conf`, and the same files under `/opt/etc/iproute2`, `/usr/share/iproute2` and `/usr/lib/iproute2`) or
+looked up by another service's `ip rule`. If the table is taken, b4 moves to the next candidate and says so in the log. On
+cleanup b4 removes only the routes it added to the table.
 
 :::info
-Manual `fwmark` and `table` values can be set in the configuration file. In that case automatic assignment is not used.
+Manual `fwmark` and `table` values can be set in the configuration file. They are used when both are set, the mark lies within `0x27FFF`, is not `0x24BAB` (the Telegram over WebSocket mark, which b4 removes from a set), does not contain every bit of the [queue mark](/docs/guides/marks#the-queue-mark) and does not equal its bits under `0x27FFF`; otherwise b4 assigns its own.
+:::
+
+:::info
+Every mark, `ip rule` and table b4 installs, and the values some other services on a router use, are listed in [Packet marks](/docs/guides/marks).
 :::
 
 ### Cleanup
@@ -458,7 +464,7 @@ For an upstream on another device in the network, b4 cannot see its processes. A
 
 The first time it happens, the log names the set and the process, or for an upstream on another device, that device's address.
 
-The upstream's own traffic still passes through b4 on its way out. A mark on the upstream's outbound sockets keeps it out of the set's diversion altogether: the proxy chains skip any packet whose mark has a bit inside `0x27FFF`, such as Xray's `sockopt.mark` set to `255` on the outbound.
+The upstream's own traffic still passes through b4 on its way out. A mark on the upstream's outbound sockets keeps it out of the set's diversion altogether: the proxy chains skip any packet whose mark has a bit inside `0x27FFF`, such as Xray's `sockopt.mark` set to `255` on the outbound. See [Packet marks](/docs/guides/marks#next-to-other-services) for the bits b4 reads.
 
 ### Verifying that it works
 

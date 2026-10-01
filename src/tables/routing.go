@@ -46,6 +46,7 @@ type routeState struct {
 	domainOnly  bool
 	mode        string
 	mark        uint32
+	bypass      uint32
 	table       int
 	iface       string
 	egressIP    string
@@ -192,6 +193,13 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 
 	if stale != nil && stale() {
 		routeAddToInstalledSet(set, ips)
+		return
+	}
+	if st, ok := routeRuleCache[set.Id]; ok && st.bypass != 0 && routeSyncedCfg != nil && routeQueueBypassMark(cfg) != routeQueueBypassMark(routeSyncedCfg) {
+		if be := routeEngine; be != nil && !st.domainOnly {
+			failed := routeAddIPsToSets(be, st, routeSetTTL(set), ips, st.ipv4, st.ipv6)
+			routeAsyncStampExcept(set, ips, failed)
+		}
 		return
 	}
 
@@ -557,7 +565,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 	if config.RoutingIsBlock(mode) {
 		st.blockAction = config.NormalizeBlockAction(set.Routing.BlockAction)
 	} else if config.RoutingUsesTProxy(mode) {
-		mark, port := proxyMarkAndPort(set)
+		mark, port := proxyMarkAndPort(cfg, set)
 		st.mark = mark
 		st.table = proxyTable()
 		st.tproxyPort = port
@@ -572,6 +580,9 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.routerOut = set.RoutingIncludesRouterTraffic()
 		st.killSwitch = set.Routing.KillSwitch
 	}
+	if !config.RoutingIsBlock(mode) {
+		st.bypass = routeQueueBypassMark(cfg)
+	}
 	return st
 }
 
@@ -579,6 +590,7 @@ func routeStateEqual(a, b routeState) bool {
 	return a.mode == b.mode &&
 		a.domainOnly == b.domainOnly &&
 		a.mark == b.mark &&
+		a.bypass == b.bypass &&
 		a.table == b.table &&
 		a.iface == b.iface &&
 		a.egressIP == b.egressIP &&
@@ -1335,7 +1347,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 
 	routeIfaceAuto = make(map[string]routeState)
 	for _, st := range routeRuleCache {
-		if config.RoutingUsesTProxy(st.mode) || st.iface == "" {
+		if config.RoutingUsesTProxy(st.mode) || st.iface == "" || routeMarkMatchesOwn(cfg, st.mark) {
 			continue
 		}
 		key := routeIfaceAutoKey(st.iface, st.egressIP, st.killSwitch)
@@ -2553,6 +2565,13 @@ func routeGetIfaceAddr(iface string, wantV6 bool) string {
 	return best
 }
 
+func routeMarkMatchesOwn(cfg *config.Config, mark uint32) bool {
+	if bits := routeQueueBypassMark(cfg) & routeSetMarkMask; bits != 0 && mark == bits {
+		return true
+	}
+	return markOverlaps(mark, map[uint32]struct{}{SelfDialMark: {}})
+}
+
 func markOverlaps(mark uint32, used map[uint32]struct{}) bool {
 	for u := range used {
 		if mark&u == u || u&mark == mark {
@@ -2569,6 +2588,9 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 		case set.Routing.FWMark&q == q:
 			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which carries every bit of the queue mark 0x%x; b4 cannot tell such a packet from one it injected itself, so a mark is assigned instead",
 				set.Name, set.Routing.FWMark, q)
+		case set.Routing.FWMark == q&routeSetMarkMask:
+			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which equals the bits of the queue mark 0x%x under the routing mark mask 0x%x, so every packet b4 injects would follow the set's ip rule; a mark is assigned instead",
+				set.Name, set.Routing.FWMark, q, routeSetMarkMask)
 		case set.Routing.FWMark&^routeSetMarkMask != 0:
 			log.Warnf("Routing: set '%s' asks for fwmark 0x%x, which has bits outside the routing mark mask 0x%x that b4 cannot carry through its firewall rules, so a mark is assigned instead",
 				set.Name, set.Routing.FWMark, routeSetMarkMask)
@@ -2577,14 +2599,13 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 		}
 	}
 	autoKey := routeIfaceAutoKey(set.Routing.EgressInterface, set.Routing.EgressIP, set.Routing.KillSwitch)
-	if st, ok := routeIfaceAuto[autoKey]; ok && st.mark > 0 && st.table > 0 {
+	if st, ok := routeIfaceAuto[autoKey]; ok && st.mark > 0 && st.table > 0 && !routeMarkMatchesOwn(cfg, st.mark) {
 		return st.mark, st.table
 	}
 
 	usedMarks := map[uint32]struct{}{}
 	usedTables := map[int]struct{}{}
 	if cfg != nil {
-		usedMarks[routeQueueBypassMark(cfg)] = struct{}{}
 		usedMarks[SelfDialMark] = struct{}{}
 	}
 	for _, st := range routeRuleCache {
@@ -2614,7 +2635,7 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	for attempt := uint32(0); attempt < 4096; attempt++ {
 		table := 100 + int((base+attempt)%150)
 		mark := uint32(0x100 + (base+attempt)%0x7E00)
-		if markOverlaps(mark, usedMarks) {
+		if routeMarkMatchesOwn(cfg, mark) || markOverlaps(mark, usedMarks) {
 			continue
 		}
 		if _, ok := usedTables[table]; ok {
@@ -2638,7 +2659,7 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 	table := 100
 	for i := 0; i < 4096; i++ {
 		_, tableUsed := usedTables[table]
-		if !markOverlaps(mark, usedMarks) && !tableUsed && !routeTableTakenByOthers(table, set.Routing.EgressInterface, refs) {
+		if !routeMarkMatchesOwn(cfg, mark) && !markOverlaps(mark, usedMarks) && !tableUsed && !routeTableTakenByOthers(table, set.Routing.EgressInterface, refs) {
 			routeIfaceAuto[autoKey] = routeState{mark: mark, table: table}
 			return mark, table
 		}

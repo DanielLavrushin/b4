@@ -219,6 +219,7 @@ func TestTUNMonitorWithNothingInstalledChecksNothing(t *testing.T) {
 func TestClearMasqueradeUsesTheConfigThatWasApplied(t *testing.T) {
 	applied := newTUNTestConfig()
 	applied.System.Tables.Masquerade.Enabled = true
+	applied.System.Tables.Masquerade.Interfaces = []string{"eth0"}
 	fw := stubTUNFirewall(t, map[string]string{"-t nat -S B4_MASQ": "-N B4_MASQ\n"})
 	masqApplied.Store(applied)
 
@@ -228,6 +229,11 @@ func TestClearMasqueradeUsesTheConfigThatWasApplied(t *testing.T) {
 	}
 	if masqApplied.Load() != nil {
 		t.Fatalf("the cleared masquerade is still tracked")
+	}
+	for _, call := range fw.calls {
+		if strings.Contains(call, "-D POSTROUTING -j MASQUERADE") || strings.Contains(call, "-D POSTROUTING -o eth0 -j MASQUERADE") {
+			t.Errorf("clearing b4's masquerade deleted a MASQUERADE rule from nat POSTROUTING by its text, which also matches the router's own: %s", call)
+		}
 	}
 }
 

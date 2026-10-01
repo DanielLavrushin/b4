@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/daniellavrushin/b4/log"
 )
 
 const discoveryChainNFT = "b4_discovery"
@@ -82,10 +84,21 @@ func (b *discoveryNftBackend) apply(flowMark uint, injectedMark uint, queueStart
 	if _, err := run("nft", "insert", "rule", "inet", nftTableName, "prerouting", "jump", discoveryChainNFT); err != nil {
 		return err
 	}
+	b.keepOutOfQueueChain(flowHex, injectedHex, flowMark, injectedMark)
 	return nil
 }
 
+func (b *discoveryNftBackend) keepOutOfQueueChain(flowHex, injectedHex string, flowMark, injectedMark uint) {
+	b.deleteDiscoveryRulesFromChain(nftChainName, flowMark, injectedMark)
+	for _, mark := range []string{injectedHex, flowHex} {
+		if _, err := run("nft", "insert", "rule", "inet", nftTableName, nftChainName, "meta", "mark", mark, "return"); err != nil {
+			log.Tracef("Discovery: no %s chain to keep mark %s out of the packet queue: %v", nftChainName, mark, err)
+		}
+	}
+}
+
 func (b *discoveryNftBackend) clear(flowMark uint, injectedMark uint) {
+	b.deleteDiscoveryRulesFromChain(nftChainName, flowMark, injectedMark)
 	b.deleteDiscoveryRulesFromChain("output", flowMark, injectedMark)
 	b.deleteDiscoveryRulesFromChain("prerouting", flowMark, injectedMark)
 	_, _ = run("nft", "flush", "chain", "inet", nftTableName, discoveryChainNFT)
@@ -140,9 +153,10 @@ func (b *discoveryNftBackend) deleteDiscoveryRulesFromChain(chain string, flowMa
 	}
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
+		verdict := strings.Contains(line, "accept") || strings.Contains(line, "return")
 		isDiscovery := strings.Contains(line, "jump "+discoveryChainNFT) ||
-			(strings.Contains(line, "accept") && nftLineHasMark(line, flowMark)) ||
-			(strings.Contains(line, "accept") && nftLineHasMark(line, injectedMark))
+			(verdict && nftLineHasMark(line, flowMark)) ||
+			(verdict && nftLineHasMark(line, injectedMark))
 		if !isDiscovery {
 			continue
 		}

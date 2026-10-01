@@ -33,6 +33,10 @@ func familyResetGlobals(t *testing.T) {
 	engine, cache, auto, refreshed := routeEngine, routeRuleCache, routeIfaceAuto, routeRefreshedAt
 	logged, delRule := runLogged, routeDelRuleLoop
 	addCheck, delCheck := routeAddSourceCheckRule, routeDelSourceCheckRule
+	routeMu.Lock()
+	synced := routeSyncedCfg
+	routeSyncedCfg = nil
+	routeMu.Unlock()
 	t.Cleanup(func() {
 		routeEngine = engine
 		routeRuleCache = cache
@@ -42,6 +46,9 @@ func familyResetGlobals(t *testing.T) {
 		routeDelRuleLoop = delRule
 		routeAddSourceCheckRule = addCheck
 		routeDelSourceCheckRule = delCheck
+		routeMu.Lock()
+		routeSyncedCfg = synced
+		routeMu.Unlock()
 	})
 	routeEngine = nil
 	routeRuleCache = make(map[string]routeState)

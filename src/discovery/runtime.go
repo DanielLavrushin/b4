@@ -90,16 +90,7 @@ func (m *Runtime) Start(cfg *config.Config) (*StartResult, error) {
 		return nil, fmt.Errorf("failed to apply discovery steering rules: %w", err)
 	}
 
-	discoveryCfg := cfg.Clone()
-	discoveryCfg.Queue.StartNum = discoveryStart
-	discoveryCfg.Queue.Threads = discoveryThreads
-	discoveryCfg.Queue.Mark = injectedMark
-	discoveryCfg.Queue.IsDiscovery = true
-	discoveryCfg.System.Tables.SkipSetup = true
-
-	for _, set := range discoveryCfg.Sets {
-		set.DNS = config.DNSConfig{}
-	}
+	discoveryCfg := discoveryPoolConfig(cfg, discoveryStart, discoveryThreads, flowMark, injectedMark)
 
 	pool := nfq.NewPool(discoveryCfg)
 	if err := pool.Start(); err != nil {
@@ -120,6 +111,22 @@ func (m *Runtime) Start(cfg *config.Config) (*StartResult, error) {
 		Pool:     pool,
 		FlowMark: flowMark,
 	}, nil
+}
+
+func discoveryPoolConfig(cfg *config.Config, start, threads int, flowMark, injectedMark uint) *config.Config {
+	discoveryCfg := cfg.Clone()
+	discoveryCfg.Queue.StartNum = start
+	discoveryCfg.Queue.Threads = threads
+	discoveryCfg.Queue.Mark = injectedMark
+	discoveryCfg.Queue.IsDiscovery = true
+	discoveryCfg.System.Tables.SkipSetup = true
+	discoveryCfg.System.Checker.DiscoveryFlowMark = flowMark
+	discoveryCfg.System.Checker.DiscoveryInjectedMark = injectedMark
+
+	for _, set := range discoveryCfg.Sets {
+		set.DNS = config.DNSConfig{}
+	}
+	return discoveryCfg
 }
 
 func (m *Runtime) SetActiveSuiteID(suiteID string) {

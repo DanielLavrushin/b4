@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -242,19 +243,6 @@ func TestValidate(t *testing.T) {
 }
 
 func TestValidateMarks(t *testing.T) {
-	t.Run("auto-derived discovery marks", func(t *testing.T) {
-		cfg := NewConfig()
-		if err := cfg.Validate(); err != nil {
-			t.Fatalf("default config should be valid: %v", err)
-		}
-		if cfg.System.Checker.DiscoveryFlowMark != cfg.Queue.Mark+1 {
-			t.Errorf("expected DiscoveryFlowMark=%d, got %d", cfg.Queue.Mark+1, cfg.System.Checker.DiscoveryFlowMark)
-		}
-		if cfg.System.Checker.DiscoveryInjectedMark != cfg.Queue.Mark+2 {
-			t.Errorf("expected DiscoveryInjectedMark=%d, got %d", cfg.Queue.Mark+2, cfg.System.Checker.DiscoveryInjectedMark)
-		}
-	})
-
 	t.Run("explicit discovery marks preserved", func(t *testing.T) {
 		cfg := NewConfig()
 		cfg.System.Checker.DiscoveryFlowMark = 0xAAAA
@@ -350,6 +338,75 @@ func TestValidateMarks(t *testing.T) {
 			t.Errorf("a queue mark that only contains the bit, with clean discovery marks, is not a conflict: %v", err)
 		}
 	})
+}
+
+func discoveryConfigAfterQueueMarkMove(t *testing.T, cfg *Config, mark uint) *Config {
+	t.Helper()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("the starting configuration should be valid: %v", err)
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var next Config
+	if err := json.Unmarshal(data, &next); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	next.Queue.Mark = mark
+	if err := next.Validate(); err != nil {
+		t.Fatalf("a moved queue mark should be valid: %v", err)
+	}
+	return &next
+}
+
+func TestDiscoveryMarksAreDerivedNotStored(t *testing.T) {
+	cfg := NewConfig()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("default config should be valid: %v", err)
+	}
+	if cfg.DiscoveryFlowMark() != cfg.Queue.Mark+1 || cfg.DiscoveryInjectedMark() != cfg.Queue.Mark+2 {
+		t.Errorf("expected the queue mark plus 1 and plus 2, got 0x%x and 0x%x", cfg.DiscoveryFlowMark(), cfg.DiscoveryInjectedMark())
+	}
+	if cfg.System.Checker.DiscoveryFlowMark != 0 || cfg.System.Checker.DiscoveryInjectedMark != 0 {
+		t.Errorf("Validate wrote the derived discovery marks 0x%x and 0x%x into the configuration; saved back, they no longer follow the queue mark",
+			cfg.System.Checker.DiscoveryFlowMark, cfg.System.Checker.DiscoveryInjectedMark)
+	}
+}
+
+func TestDiscoveryMarksFollowAQueueMarkChangedThroughTheAPI(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		stored bool
+		why    string
+	}{
+		{"derived", false, "the web interface sends back the configuration it read, so after a queue mark change Discovery must use 0x4000001 and 0x4000002"},
+		{"stored equal to the derived ones", true, "a file holding the derived values 0x8001 and 0x8002, as 1.47.0 and 1.47.1 saved them, froze Discovery after the queue mark moved to 0x4000000"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := NewConfig()
+			if tc.stored {
+				cfg.System.Checker.DiscoveryFlowMark = cfg.Queue.Mark + 1
+				cfg.System.Checker.DiscoveryInjectedMark = cfg.Queue.Mark + 2
+			}
+			next := discoveryConfigAfterQueueMarkMove(t, &cfg, 0x4000000)
+			if next.DiscoveryFlowMark() != 0x4000001 || next.DiscoveryInjectedMark() != 0x4000002 {
+				t.Errorf("%s; got 0x%x and 0x%x", tc.why, next.DiscoveryFlowMark(), next.DiscoveryInjectedMark())
+			}
+		})
+	}
+}
+
+func TestValidateRefusesANearMaxQueueMarkForALeftOutDiscoveryMark(t *testing.T) {
+	for _, tc := range []struct{ flow, injected uint }{{0x10000, 0}, {0, 0x10000}} {
+		cfg := NewConfig()
+		cfg.Queue.Mark = 0xfffffffe
+		cfg.System.Checker.DiscoveryFlowMark = tc.flow
+		cfg.System.Checker.DiscoveryInjectedMark = tc.injected
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("flow 0x%x, injected 0x%x: a derived discovery mark past uint32 must be refused; on 32-bit builds it wraps to 0 and Discovery's return then matches every unmarked packet", tc.flow, tc.injected)
+		}
+	}
 }
 
 func TestAppendIP(t *testing.T) {
@@ -1200,5 +1257,43 @@ func TestEscalateTo_RoundtripAndDefault(t *testing.T) {
 	}
 	if got := loaded.GetSetById("b"); got == nil || got.Escalate.To != "" {
 		t.Fatalf("EscalateTo default should be empty, got %q", got.Escalate.To)
+	}
+}
+
+func TestRoutingMarkPinDropsAPinEqualToTheQueueMarksSetBits(t *testing.T) {
+	cfg := NewConfig()
+	cfg.Queue.Mark = 0x8100
+	for _, tc := range []struct {
+		pin, want uint32
+	}{
+		{0x100, 0},
+		{0x101, 0x101},
+		{TelegramBridgeMark, TelegramBridgeMark},
+		{0, 0},
+	} {
+		set := NewSetConfig()
+		set.Routing.FWMark = tc.pin
+		if got := cfg.RoutingMarkPin(&set); got != tc.want {
+			t.Errorf("queue mark 0x8100, pin 0x%x: got 0x%x, want 0x%x", tc.pin, got, tc.want)
+		}
+	}
+	cfg.Queue.Mark = 0
+	set := NewSetConfig()
+	set.Routing.FWMark = 0x100
+	if got := cfg.RoutingMarkPin(&set); got != 0x100 {
+		t.Errorf("with the default queue mark 0x8000 the pin 0x100 is clear of it and must be kept, got 0x%x", got)
+	}
+}
+
+func TestValidateRefusesAQueueMarkCarryingTheBridgeMark(t *testing.T) {
+	cfg := NewConfig()
+	cfg.Queue.Mark = uint(0x80000000 | TelegramBridgeMark)
+	if err := cfg.Validate(); err == nil {
+		t.Errorf("queue mark 0x%x has the Telegram bridge mark under 0x%x, so every packet b4 injects follows the bridge's rule; it must be refused", cfg.Queue.Mark, PerSetRouteMarkBits)
+	}
+	cfg = NewConfig()
+	cfg.Queue.Mark = uint(0x80000000 | (TelegramBridgeMark + 1))
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("a queue mark one off the bridge mark must stay valid: %v", err)
 	}
 }

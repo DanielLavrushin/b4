@@ -918,7 +918,7 @@ func TestDSCPRefreshKeepsAnUnchangedStamp(t *testing.T) {
 
 	clearDSCPUnlessKept(dscpTestConfig(true, 31), backendIPTables)
 	if _, ok := f.chains[backendIPTables][dscpChainName]; ok {
-		t.Errorf("a refresh that changes the value must rebuild the stamp")
+		t.Errorf("a clear for DSCP settings other than the stamp's must remove it, even during a refresh")
 	}
 
 	dscpKeepOnRefresh = false
