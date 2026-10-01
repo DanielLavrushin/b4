@@ -26,6 +26,8 @@ var (
 	routeAsyncSeen    = make(map[string]time.Time)
 	routeAsyncPending = make(map[string]chan struct{})
 	routeAsyncOpen    = make(map[string]*routeAsyncBatch)
+	routeAsyncGen     uint64
+	routeAsyncSetGen  = make(map[string]uint64)
 
 	routeInstallFailedAt    sync.Map
 	routeInstallFailureMemo = time.Minute
@@ -204,6 +206,8 @@ func routeAsyncForgetSet(setID string) {
 			delete(routeAsyncPending, k)
 		}
 	}
+	routeAsyncSetGen[setID]++
+	delete(routeAsyncOpen, setID)
 	routeAsyncSeenMu.Unlock()
 }
 
@@ -221,6 +225,9 @@ func routeAsyncForgetAll() {
 	defer routeAsyncSeenMu.Unlock()
 	routeAsyncSeen = make(map[string]time.Time)
 	routeAsyncPending = make(map[string]chan struct{})
+	routeAsyncOpen = make(map[string]*routeAsyncBatch)
+	routeAsyncGen++
+	routeAsyncSetGen = make(map[string]uint64)
 }
 
 func routeAsyncRelease(set *config.SetConfig, ips []net.IP) {
@@ -235,10 +242,18 @@ func routeAsyncRelease(set *config.SetConfig, ips []net.IP) {
 }
 
 type routeAsyncBatch struct {
-	cfg  *config.Config
-	set  *config.SetConfig
-	ips  []net.IP
-	done chan struct{}
+	cfg    *config.Config
+	set    *config.SetConfig
+	ips    []net.IP
+	done   chan struct{}
+	gen    uint64
+	setGen uint64
+}
+
+func routeAsyncBatchStale(setID string, batch *routeAsyncBatch) bool {
+	routeAsyncSeenMu.Lock()
+	defer routeAsyncSeenMu.Unlock()
+	return batch.gen != routeAsyncGen || batch.setGen != routeAsyncSetGen[setID]
 }
 
 func routeAsyncSeal(setID string, batch *routeAsyncBatch) (*config.Config, *config.SetConfig, []net.IP) {
@@ -253,7 +268,7 @@ func routeAsyncSeal(setID string, batch *routeAsyncBatch) (*config.Config, *conf
 func routeAsyncFlush(setID string, batch *routeAsyncBatch) {
 	cfg, set, ips := routeAsyncSeal(setID, batch)
 	defer routeAsyncSettle(setID, ips, batch.done)
-	RoutingHandleDNS(cfg, set, ips)
+	routeHandleDNS(cfg, set, ips, func() bool { return routeAsyncBatchStale(setID, batch) })
 }
 
 func routeAsyncDropBatch(setID string, batch *routeAsyncBatch) {
@@ -302,7 +317,7 @@ func RoutingHandleDNSAwait(cfg *config.Config, set *config.SetConfig, ips []net.
 	if len(fresh) > 0 {
 		batch := routeAsyncOpen[set.Id]
 		if batch == nil {
-			batch = &routeAsyncBatch{done: make(chan struct{})}
+			batch = &routeAsyncBatch{done: make(chan struct{}), gen: routeAsyncGen, setGen: routeAsyncSetGen[set.Id]}
 			routeAsyncOpen[set.Id] = batch
 			queued = batch
 		}

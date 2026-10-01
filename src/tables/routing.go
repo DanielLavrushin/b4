@@ -164,6 +164,10 @@ func getRouteBackend(cfg *config.Config) routeBackend {
 }
 
 func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
+	routeHandleDNS(cfg, set, ips, nil)
+}
+
+func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, stale func() bool) {
 	if cfg == nil || set == nil || !set.Routing.Enabled || len(ips) == 0 {
 		return
 	}
@@ -184,6 +188,11 @@ func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
 
 	routeMu.Lock()
 	defer routeMu.Unlock()
+
+	if stale != nil && stale() {
+		routeAddToInstalledSet(set, ips)
+		return
+	}
 
 	be := getRouteBackend(cfg)
 	if be == nil {
@@ -436,6 +445,53 @@ func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP
 		ttl = 3600
 	}
 	routeAddIPsToSets(be, st, ttl, ips, st.ipv4, st.ipv6)
+	return true
+}
+
+func routeAddToInstalledSet(set *config.SetConfig, ips []net.IP) {
+	st, ok := routeRuleCache[set.Id]
+	if !ok {
+		log.Tracef("Routing: dropping %d queued IPs for set %s, its rules were removed while they waited", len(ips), set.Name)
+		return
+	}
+	if st.set != nil && st.set != set {
+		if !routeQueuedTargetsKept(set, st.set) {
+			log.Tracef("Routing: dropping %d queued IPs for set %s, its targets changed while they waited", len(ips), set.Name)
+			return
+		}
+		set = st.set
+	}
+	be := routeEngine
+	if be == nil || set.Targets.DomainOnly {
+		return
+	}
+	failed := routeAddIPsToSets(be, st, routeSetTTL(set), ips, st.ipv4, st.ipv6)
+	routeAsyncStampExcept(set, ips, failed)
+}
+
+func routeQueuedTargetsKept(was, now *config.SetConfig) bool {
+	if was == nil || now == nil {
+		return was == now
+	}
+	if was.Targets.DomainOnly != now.Targets.DomainOnly {
+		return false
+	}
+	if was.DNS.Enabled != now.DNS.Enabled || was.DNS.TargetDNS != now.DNS.TargetDNS || was.DNS.DoHURL != now.DNS.DoHURL || was.DNS.Strict != now.DNS.Strict {
+		return false
+	}
+	return routeNamesCovered(was.Targets.SNIDomains, now.Targets.SNIDomains) && routeNamesCovered(was.Targets.GeoSiteCategories, now.Targets.GeoSiteCategories)
+}
+
+func routeNamesCovered(was, now []string) bool {
+	have := make(map[string]struct{}, len(now))
+	for _, name := range now {
+		have[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
+	}
+	for _, name := range was {
+		if _, ok := have[strings.ToLower(strings.TrimSpace(name))]; !ok {
+			return false
+		}
+	}
 	return true
 }
 
@@ -723,6 +779,7 @@ func RoutingClearAll() {
 	defer routePhaseMu.Unlock()
 	routeMu.Lock()
 	defer routeMu.Unlock()
+	routeAsyncForgetAll()
 
 	be := routeEngine
 	if be == nil {
@@ -1020,16 +1077,16 @@ func routingForceResync(cfg *config.Config) {
 		return
 	}
 
+	routeAsyncForgetAll()
 	routeMu.Lock()
+	defer routeMu.Unlock()
 	routeRuleCache = make(map[string]routeState)
 	routeIfaceAuto = make(map[string]routeState)
 	routeLastReResolve = make(map[string]time.Time)
 	routeLearnLast = make(map[string]time.Time)
 	routeRefreshedAt = make(map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
-	routeMu.Unlock()
-
-	routingSyncConfig(cfg)
+	routingSyncConfigLocked(cfg)
 }
 
 func routingSyncedConfig() *config.Config {
@@ -1109,7 +1166,10 @@ func routingSyncConfig(cfg *config.Config) {
 
 	routeMu.Lock()
 	defer routeMu.Unlock()
+	routingSyncConfigLocked(cfg)
+}
 
+func routingSyncConfigLocked(cfg *config.Config) {
 	IPTablesLockBudgetReset()
 	routeLoadCTMarkVerdict(cfg)
 
