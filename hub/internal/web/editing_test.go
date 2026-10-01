@@ -89,3 +89,55 @@ func TestSavedReasons(t *testing.T) {
 		t.Fatalf("after delete: %+v", presets)
 	}
 }
+
+func TestSavedReasonsMoveAtomicallyAndChangeScope(t *testing.T) {
+	f := newFixture(t, password)
+	for _, text := range []string{"First", "Second", "Third"} {
+		f.expectOK(f.admin(http.MethodPost, PathAPI+"/reasons", ReasonPresetRequest{Scope: "reject", Text: text}))
+	}
+	order := func(scope string) []string {
+		var presets []ReasonPresetView
+		f.admin(http.MethodGet, PathAPI+"/reasons", nil).decode(t, &presets)
+		out := []string{}
+		for _, p := range presets {
+			if p.Scope == scope {
+				out = append(out, p.Text)
+			}
+		}
+		return out
+	}
+	idOf := func(text string) string {
+		var presets []ReasonPresetView
+		f.admin(http.MethodGet, PathAPI+"/reasons", nil).decode(t, &presets)
+		for _, p := range presets {
+			if p.Text == text {
+				return itoa(int(p.ID))
+			}
+		}
+		t.Fatalf("no preset %q", text)
+		return ""
+	}
+	move := func(text string, delta int) response {
+		return f.admin(http.MethodPost, PathAPI+"/reasons/"+idOf(text)+"/move", ReasonMoveRequest{Delta: delta})
+	}
+
+	f.expectOK(move("Third", -1))
+	if got := strings.Join(order("reject"), ","); got != "First,Third,Second" {
+		t.Fatalf("one move swaps a preset with its neighbour: %s", got)
+	}
+	f.expectOK(move("First", -1))
+	if got := strings.Join(order("reject"), ","); got != "First,Third,Second" {
+		t.Fatalf("moving the first preset up changes nothing: %s", got)
+	}
+	f.expectError(move("First", 2), http.StatusBadRequest, "bad_delta")
+	f.expectError(f.admin(http.MethodPost, PathAPI+"/reasons/9999/move", ReasonMoveRequest{Delta: 1}), http.StatusNotFound, "not_found")
+
+	f.expectOK(f.admin(http.MethodPost, PathAPI+"/reasons", ReasonPresetRequest{Scope: "hide", Text: "Hidden one"}))
+	f.expectOK(f.admin(http.MethodPut, PathAPI+"/reasons/"+idOf("Second"), ReasonPresetRequest{Scope: "hide", Text: "Second"}))
+	if got := strings.Join(order("hide"), ","); got != "Hidden one,Second" {
+		t.Fatalf("a preset moved to another scope goes to the end of it: %s", got)
+	}
+	if got := strings.Join(order("reject"), ","); got != "First,Third" {
+		t.Fatalf("and leaves its old scope: %s", got)
+	}
+}

@@ -86,6 +86,7 @@ var tsRoots = []interface{}{
 	VotesPageView{},
 	ReasonPresetView{},
 	ReasonPresetRequest{},
+	ReasonMoveRequest{},
 	TextEditRequest{},
 	HealthView{},
 	StatsView{},

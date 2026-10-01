@@ -114,6 +114,7 @@ func (s *Server) mountAPI(mux *http.ServeMux) {
 	mux.Handle("GET "+PathAPI+"/reasons", s.guard(s.reasons))
 	mux.Handle("POST "+PathAPI+"/reasons", s.guard(s.createReason))
 	mux.Handle("PUT "+PathAPI+"/reasons/{id}", s.guard(s.updateReason))
+	mux.Handle("POST "+PathAPI+"/reasons/{id}/move", s.guard(s.moveReason))
 	mux.Handle("DELETE "+PathAPI+"/reasons/{id}", s.guard(s.deleteReason))
 	mux.Handle("GET "+PathAPI+"/settings", s.guard(s.settings))
 	mux.Handle("PUT "+PathAPI+"/settings", s.guard(s.saveSettings))

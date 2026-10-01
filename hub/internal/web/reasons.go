@@ -31,6 +31,10 @@ type ReasonPresetRequest struct {
 	Position int    `json:"position"`
 }
 
+type ReasonMoveRequest struct {
+	Delta int `json:"delta"`
+}
+
 type TextEditRequest struct {
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
@@ -110,6 +114,27 @@ func (s *Server) updateReason(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, ActionResult{Notice: "saved preset", Code: "reason.saved"})
+}
+
+func (s *Server) moveReason(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusNotFound, codeNotFound, "the address does not name a preset")
+		return
+	}
+	var req ReasonMoveRequest
+	if !s.readJSON(w, r, &req) {
+		return
+	}
+	if req.Delta != -1 && req.Delta != 1 {
+		writeError(w, http.StatusBadRequest, "bad_delta", "a preset moves one place up (-1) or down (1)")
+		return
+	}
+	if err := s.Store.MoveReasonPreset(r.Context(), id, req.Delta); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ActionResult{Notice: "moved preset", Code: "reason.moved"})
 }
 
 func (s *Server) deleteReason(w http.ResponseWriter, r *http.Request) {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Button, Chip, Collapse, Link, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, Collapse, Link, Stack, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { colors, radiusPx } from "@design";
@@ -7,6 +7,7 @@ import { get } from "@/api/client";
 import type { EntryView, SimilarView } from "@/models/api";
 import { SetRef } from "@/shared/components/SetRef";
 import { setRef } from "@/shared/utils/format";
+import { errorText } from "@/shared/utils/notices";
 
 const strong = new Set(["same_targets", "same_strategy", "same_title"]);
 
@@ -23,6 +24,28 @@ export function SimilarSets({ entry, onReject }: Readonly<{ entry: EntryView; on
   const items = similar.data?.items ?? [];
   const important = items.some((i) => i.relations.some((r) => strong.has(r.code)));
   const [open, setOpen] = useState<boolean | null>(null);
+  if (similar.isPending) {
+    return (
+      <Typography variant="caption" sx={{ color: colors.text.secondary }}>
+        {t("similar.checking")}
+      </Typography>
+    );
+  }
+  if (similar.isError && items.length === 0) {
+    return (
+      <Alert
+        severity="warning"
+        variant="outlined"
+        action={
+          <Button color="inherit" size="small" onClick={() => void similar.refetch()}>
+            {t("app.retry")}
+          </Button>
+        }
+      >
+        {t("similar.failed", { message: errorText(t, similar.error) })}
+      </Alert>
+    );
+  }
   if (items.length === 0) return null;
   const shown = open ?? important;
   return (

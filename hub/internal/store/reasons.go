@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 )
@@ -78,7 +80,10 @@ func (s *Store) CreateReasonPreset(ctx context.Context, p ReasonPreset, now time
 }
 
 func (s *Store) UpdateReasonPreset(ctx context.Context, p ReasonPreset) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE reason_presets SET label = ?, text = ?, position = ? WHERE id = ?`, p.Label, p.Text, p.Position, p.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE reason_presets SET label = ?, text = ?,
+		position = CASE WHEN scope = ? THEN ? ELSE COALESCE((SELECT MAX(position) + 1 FROM reason_presets WHERE scope = ?), 0) END,
+		scope = ?
+		WHERE id = ?`, p.Label, p.Text, p.Scope, p.Position, p.Scope, p.Scope, p.ID)
 	if uniqueViolation(err) {
 		return ErrPresetExists
 	}
@@ -89,6 +94,48 @@ func (s *Store) UpdateReasonPreset(ctx context.Context, p ReasonPreset) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (s *Store) MoveReasonPreset(ctx context.Context, id int64, delta int) error {
+	return s.Update(ctx, func(t *Tx) error {
+		var scope string
+		err := t.tx.QueryRowContext(ctx, `SELECT scope FROM reason_presets WHERE id = ?`, id).Scan(&scope)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		rows, err := t.tx.QueryContext(ctx, `SELECT id FROM reason_presets WHERE scope = ? ORDER BY position, id`, scope)
+		if err != nil {
+			return err
+		}
+		order := make([]int64, 0)
+		for rows.Next() {
+			var other int64
+			if err := rows.Scan(&other); err != nil {
+				rows.Close()
+				return err
+			}
+			order = append(order, other)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		from := slices.Index(order, id)
+		to := from + delta
+		if to < 0 || to >= len(order) {
+			return nil
+		}
+		order[from], order[to] = order[to], order[from]
+		for position, other := range order {
+			if _, err := t.tx.ExecContext(ctx, `UPDATE reason_presets SET position = ? WHERE id = ?`, position, other); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) DeleteReasonPreset(ctx context.Context, id int64) error {

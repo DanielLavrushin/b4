@@ -328,6 +328,10 @@ export interface ReasonPresetRequest {
   position: number;
 }
 
+export interface ReasonMoveRequest {
+  delta: number;
+}
+
 export interface TextEditRequest {
   title: string;
   description: string;

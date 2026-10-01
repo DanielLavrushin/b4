@@ -724,7 +724,8 @@
     },
     "reason": {
       "saved": "Preset saved",
-      "deleted": "Preset deleted"
+      "deleted": "Preset deleted",
+      "moved": "Preset moved"
     }
   },
   "errors": {
@@ -883,7 +884,9 @@
     "reason": "decision: {{reason}}",
     "rejectAsDuplicate": "Reject as duplicate",
     "duplicateReason": "Duplicates {{title}} ({{ref}})",
-    "truncated": "Only the closest matches are shown."
+    "truncated": "Only the closest matches are shown.",
+    "checking": "Checking for similar sets",
+    "failed": "Similar sets could not be checked: {{message}}"
   },
   "bulk": {
     "approve": {

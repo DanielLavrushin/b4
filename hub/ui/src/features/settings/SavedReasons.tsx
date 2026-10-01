@@ -11,7 +11,7 @@ import type { ReasonPresetView, ReasonScope } from "@/models/api";
 import { Section } from "@/shared/components/Section";
 import { QueryView } from "@/shared/components/QueryView";
 import { EmptyState } from "@/shared/components/States";
-import { useCreatePreset, useDeletePreset, useReasonPresets, useUpdatePreset } from "@/features/moderation/reasons";
+import { useCreatePreset, useDeletePreset, useMovePreset, useReasonPresets } from "@/features/moderation/reasons";
 
 const scopes: ReasonScope[] = ["reject", "hide", "withdraw", "ban", "mirror_reject", "report_dismiss"];
 
@@ -19,7 +19,7 @@ export function SavedReasons() {
   const { t } = useTranslation();
   const presets = useReasonPresets();
   const create = useCreatePreset();
-  const update = useUpdatePreset();
+  const movePreset = useMovePreset();
   const remove = useDeletePreset();
   const { notifyResult, notifyError } = useSnackbar();
   const [scope, setScope] = useState<ReasonScope>("reject");
@@ -36,14 +36,8 @@ export function SavedReasons() {
     }
   };
 
-  const move = (list: ReasonPresetView[], index: number, delta: number) => {
-    const other = list[index + delta];
-    const me = list[index];
-    if (!other) return;
-    void run(async () => {
-      await update.mutateAsync({ id: me.id, req: { scope: me.scope, label: me.label ?? "", text: me.text, position: other.position } });
-      return update.mutateAsync({ id: other.id, req: { scope: other.scope, label: other.label ?? "", text: other.text, position: me.position } });
-    });
+  const move = (preset: ReasonPresetView, delta: number) => {
+    void run(() => movePreset.mutateAsync({ id: preset.id, req: { delta } }));
   };
 
   return (
@@ -70,10 +64,10 @@ export function SavedReasons() {
                             {t("reasons.uses", { count: p.uses })}
                           </Typography>
                         </Typography>
-                        <IconButton size="small" disabled={i === 0} onClick={() => move(list, i, -1)}>
+                        <IconButton size="small" disabled={i === 0 || movePreset.isPending} onClick={() => move(p, -1)}>
                           <ArrowUpwardIcon fontSize="small" />
                         </IconButton>
-                        <IconButton size="small" disabled={i === list.length - 1} onClick={() => move(list, i, 1)}>
+                        <IconButton size="small" disabled={i === list.length - 1 || movePreset.isPending} onClick={() => move(p, 1)}>
                           <ArrowDownwardIcon fontSize="small" />
                         </IconButton>
                         <Tooltip title={t("reasons.delete")}>
