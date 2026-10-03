@@ -180,6 +180,48 @@ func TestHandleUpdate_MethodNotAllowed(t *testing.T) {
 	}
 }
 
+func TestHandleUpdate_RefusesAVersionThatIsNotAReleaseTag(t *testing.T) {
+	cfg := config.NewConfig()
+	cfg.System.Logging.Directory = ""
+	var launched []string
+	api := &API{
+		cfgPtr:                  testCfgPtr(&cfg),
+		overrideServiceManager:  func() string { return "systemd" },
+		overrideLaunchInstaller: func(run installerRun) { launched = append(launched, run.version) },
+	}
+	mux := http.NewServeMux()
+	api.mux = mux
+	api.RegisterSystemApi()
+
+	post := func(version string) int {
+		body, err := json.Marshal(UpdateRequest{Version: version})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/system/update", strings.NewReader(string(body))))
+		return rec.Code
+	}
+
+	for _, version := range []string{"--remove", "--arch=mips", "-q", "1.84.0", "v1.84.0 --remove", "v1.84.0;reboot"} {
+		if code := post(version); code != http.StatusBadRequest {
+			t.Errorf("version %q: status %d, want 400", version, code)
+		}
+	}
+	if len(launched) != 0 {
+		t.Fatalf("the installer was started for refused versions: %q", launched)
+	}
+
+	for _, version := range []string{"", "v1.84.0", "v1.80.0rc1"} {
+		if code := post(version); code != http.StatusOK {
+			t.Errorf("version %q: status %d, want 200", version, code)
+		}
+	}
+	if len(launched) != 3 {
+		t.Fatalf("installer launches = %q, want one per accepted request", launched)
+	}
+}
+
 func TestHandleDiagnostics(t *testing.T) {
 	cfg := config.NewConfig()
 	cfg.ConfigPath = "/etc/b4/b4.json"

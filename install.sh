@@ -217,19 +217,23 @@ setup_temp() {
             continue
         fi
         if [ "$_tmp_base" = /tmp ]; then
-            TEMP_DIR="/tmp/b4_install_$$"
+            _tmp_dir="/tmp/b4_install_$$"
         else
-            TEMP_DIR="${_tmp_base}/.b4_install_$$"
+            _tmp_dir="${_tmp_base}/.b4_install_$$"
         fi
-        rm -rf "$TEMP_DIR" 2>/dev/null || true
-        if mkdir -p "$TEMP_DIR" 2>/dev/null; then
+        if mkdir -m 700 "$_tmp_dir" 2>/dev/null; then
+            TEMP_DIR="$_tmp_dir"
             if [ "$_tmp_base" != /tmp ]; then
                 log_warn "Using ${_tmp_base} for temp files: /tmp ${_tmp_problem}"
             fi
             return 0
         fi
         if [ "$_tmp_base" = /tmp ]; then
-            _tmp_problem="is not writable"
+            if [ -e "$_tmp_dir" ] || [ -L "$_tmp_dir" ]; then
+                _tmp_problem="already has ${_tmp_dir}"
+            else
+                _tmp_problem="is not writable"
+            fi
         fi
     done
     log_err "No usable temp directory: /tmp ${_tmp_problem}"
