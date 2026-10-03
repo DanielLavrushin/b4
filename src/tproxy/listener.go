@@ -15,6 +15,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/socks5"
 	"golang.org/x/sys/unix"
 )
@@ -100,7 +101,7 @@ type Listener struct {
 
 	upstreamFails    atomic.Int64
 	upstreamLastWarn atomic.Int64
-	upstreamLastFail atomic.Int64
+	upstreamLastFail atomic.Pointer[time.Time]
 	upstreamLastOK   atomic.Int64
 	upstreamLastErr  atomic.Pointer[string]
 }
@@ -126,7 +127,7 @@ func (l *Listener) noteUpstreamFailure(target string, port int, err error) {
 	msg := err.Error()
 	l.upstreamLastErr.Store(&msg)
 	now := time.Now()
-	l.upstreamLastFail.Store(now.UnixNano())
+	l.upstreamLastFail.Store(&now)
 	fails := l.upstreamFails.Add(1)
 
 	last := l.upstreamLastWarn.Load()
@@ -157,8 +158,8 @@ func (l *Listener) Health() UpstreamHealth {
 	if msg := l.upstreamLastErr.Load(); msg != nil {
 		h.LastError = *msg
 	}
-	if ns := l.upstreamLastFail.Load(); ns > 0 {
-		h.LastFailure = time.Unix(0, ns)
+	if t := l.upstreamLastFail.Load(); t != nil {
+		h.LastFailure = *t
 	}
 	if ns := l.upstreamLastOK.Load(); ns > 0 {
 		h.LastSuccess = time.Unix(0, ns)
@@ -276,6 +277,13 @@ func (l *Listener) Active() int64 {
 	return l.activeConns.Load()
 }
 
+func (l *Listener) countConnection() {
+	if l.SetID == config.TelegramBridgeSetID {
+		return
+	}
+	metrics.GetMetricsCollector().CountConnection(l.SetID)
+}
+
 func (l *Listener) acceptLoop(ln net.Listener, family string) {
 	for {
 		conn, err := ln.Accept()
@@ -299,6 +307,7 @@ func (l *Listener) handle(client net.Conn) {
 	l.activeConns.Add(1)
 	defer l.activeConns.Add(-1)
 	defer client.Close()
+	l.countConnection()
 
 	tcpAddr, ok := client.LocalAddr().(*net.TCPAddr)
 	if !ok || tcpAddr == nil || tcpAddr.IP == nil {

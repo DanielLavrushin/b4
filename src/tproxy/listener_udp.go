@@ -141,6 +141,7 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 		} else {
 			l.udpSessions[key] = newSess
 			l.udpMu.Unlock()
+			l.countConnection()
 			go l.udpReplyLoop(key, newSess)
 			sess = newSess
 		}

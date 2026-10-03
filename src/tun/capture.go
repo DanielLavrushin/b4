@@ -652,6 +652,7 @@ func (r *routeManager) ensurePortCapture() {
 	if outside {
 		r.captureRestores++
 		r.lastCaptureRestore = time.Now()
+		tables.NoteCaptureRestore()
 	}
 	switch {
 	case lost:

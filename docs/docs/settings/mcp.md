@@ -104,7 +104,7 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 
 | Tool | Answers | Example prompt |
 | --- | --- | --- |
-| `b4_status` | Version, capture engine, firewall backend, how many sets exist and are enabled, the state of the Telegram over WebSocket bridge, uptime | "Is b4 running, and which capture engine is active?" |
+| `b4_status` | Version, capture engine, firewall backend, how many sets exist and are enabled, the state of the Telegram over WebSocket bridge, uptime, and the connections counted since the counters were last reset | "Is b4 running, and which capture engine is active?" |
 | `b4_get_topic` | What a setting does, its unit, its real default, and what a zero or empty value means | "What does the strict switch on a set's DNS actually do?" |
 | `b4_geo_lookup` | Which geosite or geoip categories exist, what one holds, and which of them cover a domain or an address | "Which geosite category covers rutracker.org?" |
 | `b4_edit_set_targets` | Adds or removes domains, addresses, geo categories, ASNs or source devices on one set | "Add rutracker.org to the video set." |
@@ -118,7 +118,7 @@ Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this t
 | `b4_get_config` | The configuration, or one section of it | "Show the DNS section of the configuration." |
 | `b4_recent_connections` | Connections b4 processed, with the set that matched each | "Has any traffic for youtube.com reached b4?" |
 | `b4_logs_tail` | The tail of `errors.log`, or of `update.log` with `file=update` | "Did b4 write anything to the error log?" / "The update broke it - what did the installer say?" |
-| `b4_metrics` | Packet-engine counters | "What is the current connection rate and memory use?" |
+| `b4_metrics` | Connections in the last complete minute, in sets and not in a set, connections since the counters were last reset, dropped resets, blocked DNS lookups and connections, b4's CPU and memory use. Connections are counted as on the [dashboard](../dashboard.md#what-a-connection-count-covers) | "How many connections did my sets match in the last minute, and how much memory does b4 use?" |
 | `b4_diagnostics` | OS, kernel, interfaces, firewall backend and the rule groups b4 installed | "Are b4's firewall rules actually installed?" |
 | `b4_list_writable_paths` | Which settings can be changed, with types and accepted values | "What can you change about the video set?" |
 | `b4_set_config_value` | Changes one setting and applies it live | "Switch the video set to the extsplit strategy." |
@@ -161,6 +161,8 @@ Every tool call writes one line to b4's log, visible under **Logs** in the web i
 A request turned away at the endpoint is also logged: the server being off, a wrong or missing token, or a browser page whose origin is not allowed. The token itself is never written, presented or configured. Repeated refusals are collapsed into one line every 30 seconds with a count, so a client guessing at the token cannot push everything else out of the log.
 
 These lines go to the log stream the interface shows and to the console. They are not written to `errors.log`, which holds errors only.
+
+A change made or reverted through MCP also appears under **Recent changes** on the [dashboard](../dashboard.md#recent-changes) as **AI agent changed a setting**, with the path of the setting and without its value.
 
 ## Grounding
 

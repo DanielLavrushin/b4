@@ -1,152 +1,146 @@
-import { useEffect, useMemo, useState } from "react";
-import { Box, Container, Typography, LinearProgress } from "@mui/material";
+import { memo, useCallback, useMemo, useState } from "react";
+import { Box, Container } from "@mui/material";
 import {
-  CollisionDetection,
   DndContext,
-  DragEndEvent,
-  DragOverEvent,
   DragOverlay,
-  DragStartEvent,
+  KeyboardSensor,
   MeasuringStrategy,
   PointerSensor,
   closestCenter,
   pointerWithin,
   useSensor,
   useSensors,
+  type Announcements,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+  type UniqueIdentifier,
 } from "@dnd-kit/core";
-import { SortableContext } from "@dnd-kit/sortable";
+import { SortableContext, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useTranslation } from "react-i18next";
-import { HealthBanner } from "./HealthBanner";
-import { EngineFailureCard } from "./EngineFailureCard";
-import { CustomizeBar, HiddenPanelEntry } from "./CustomizeBar";
-import { ColumnGuides, PanelFrame, PanelGhost, ROW_UNIT } from "./PanelFrame";
-import { PANELS_BY_ID, PanelContext } from "./registry";
-import { normalizeMetrics } from "./normalize";
-import { useDashboardSets } from "@hooks/useDashboardSets";
 import { useDashboardLayout } from "@hooks/useDashboardLayout";
 import { RestartDialog } from "@components/settings/RestartDialog";
-import { wsUrl } from "@utils";
-import type { Metrics } from "./types";
-
-export * from "./types";
+import { useMetrics, useMetricsFrame } from "@/stores/useMetrics";
+import { Attention } from "./Attention";
+import { CustomizeBar, type HiddenPanelEntry } from "./CustomizeBar";
+import { EngineFailureCard } from "./EngineFailureCard";
+import { LinkLine } from "./LinkLine";
+import {
+  ColumnGuides,
+  GRID_CONTAINER,
+  GRID_GAP,
+  PanelFrame,
+  PanelGhost,
+  ROW_UNIT,
+} from "./PanelFrame";
+import { usePanelAvailability } from "./panels";
+import { PANELS_BY_ID, isPanelAvailable } from "./registry";
+import { StatusStrip } from "./StatusStrip";
 
 const panelCollision: CollisionDetection = (args) => {
   const hits = pointerWithin(args);
   return hits.length > 0 ? hits : closestCenter(args);
 };
 
-export function DashboardPage() {
+const noSorting = () => null;
+
+interface DashboardGridProps {
+  editing: boolean;
+  onDone: () => void;
+}
+
+const DashboardGrid = memo(function DashboardGrid({
+  editing,
+  onDone,
+}: DashboardGridProps) {
   const { t } = useTranslation();
-  const [metrics, setMetrics] = useState<Metrics | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [resizingPanel, setResizingPanel] = useState(false);
-  const [restartOpen, setRestartOpen] = useState(false);
-  const { sets, targetedDomains, refresh: refreshSets } = useDashboardSets();
+  const availability = usePanelAvailability();
   const { order, hidden, spans, move, setSpan, setHidden, reset, customized } =
     useDashboardLayout();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  useEffect(() => {
-    let ws: WebSocket | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-    let isCleaningUp = false;
-
-    const connectWebSocket = () => {
-      if (isCleaningUp) return;
-      ws = new WebSocket(wsUrl("/api/ws/metrics"));
-
-      ws.onopen = () => {
-        setConnected(true);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data =
-            typeof event.data === "string"
-              ? (JSON.parse(event.data) as Metrics)
-              : normalizeMetrics(null);
-          setMetrics(normalizeMetrics(data));
-        } catch {
-          setMetrics(normalizeMetrics(null));
-        }
-      };
-
-      ws.onerror = () => {
-        setConnected(false);
-      };
-
-      ws.onclose = () => {
-        setConnected(false);
-        if (!isCleaningUp) {
-          reconnectTimeout = setTimeout(connectWebSocket, 3000);
-        }
-      };
-    };
-
-    connectWebSocket();
-
-    return () => {
-      isCleaningUp = true;
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      if (ws) {
-        ws.onopen = null;
-        ws.onmessage = null;
-        ws.onerror = null;
-        ws.onclose = null;
-        ws.close();
-      }
-    };
-  }, []);
-
-  const panelContext: PanelContext | null = useMemo(
-    () => (metrics ? { metrics, sets, targetedDomains, refreshSets } : null),
-    [metrics, sets, targetedDomains, refreshSets],
+  const visiblePanels = useMemo(
+    () =>
+      order
+        .map((id) => PANELS_BY_ID.get(id))
+        .filter((panel) => panel !== undefined)
+        .filter((panel) => !hidden.has(panel.id))
+        .filter((panel) => isPanelAvailable(panel, availability))
+        .map((panel) => ({
+          id: panel.id,
+          title: t(panel.titleKey),
+          span: spans[panel.id] ?? panel.defaultSpan,
+          Component: panel.Component,
+        })),
+    [order, hidden, spans, availability, t],
   );
 
-  const visiblePanels = useMemo(() => {
-    if (!panelContext) return [];
-    return order
-      .map((id) => PANELS_BY_ID.get(id))
-      .filter((panel) => panel !== undefined)
-      .filter((panel) => !hidden.has(panel.id))
-      .filter((panel) => panel.available(panelContext))
-      .map((panel) => ({
-        id: panel.id,
-        title: t(panel.titleKey),
-        span: spans[panel.id] ?? panel.defaultSpan(panelContext),
-        render: panel.render,
-      }));
-  }, [order, hidden, spans, panelContext, t]);
+  const hiddenPanels: HiddenPanelEntry[] = useMemo(
+    () =>
+      order
+        .filter((id) => hidden.has(id))
+        .map((id) => PANELS_BY_ID.get(id))
+        .filter((panel) => panel !== undefined)
+        .map((panel) => ({
+          id: panel.id,
+          title: t(panel.titleKey),
+          available: isPanelAvailable(panel, availability),
+        })),
+    [order, hidden, availability, t],
+  );
 
-  const hiddenPanels: HiddenPanelEntry[] = useMemo(() => {
-    if (!panelContext) return [];
-    return order
-      .filter((id) => hidden.has(id))
-      .map((id) => PANELS_BY_ID.get(id))
-      .filter((panel) => panel !== undefined)
-      .map((panel) => ({
-        id: panel.id,
-        title: t(panel.titleKey),
-        available: panel.available(panelContext),
-      }));
-  }, [order, hidden, panelContext, t]);
+  const titleOf = useCallback(
+    (id: UniqueIdentifier) => {
+      const panel = PANELS_BY_ID.get(String(id));
+      return panel ? t(panel.titleKey) : String(id);
+    },
+    [t],
+  );
 
-  if (!metrics || !panelContext) {
-    return (
-      <Container maxWidth={false} sx={{ py: 3 }}>
-        <Box sx={{ textAlign: "center", py: 8 }}>
-          <LinearProgress sx={{ mb: 2 }} />
-          <Typography>{t("dashboard.loading")}</Typography>
-        </Box>
-      </Container>
-    );
-  }
+  const announcements: Announcements = useMemo(
+    () => ({
+      onDragStart: ({ active }) =>
+        t("dashboard.customize.announce.start", { title: titleOf(active.id) }),
+      onDragOver: ({ active, over }) => {
+        if (!over) {
+          return t("dashboard.customize.announce.outside", { title: titleOf(active.id) });
+        }
+        if (over.id === active.id) return undefined;
+        return t("dashboard.customize.announce.over", {
+          title: titleOf(active.id),
+          target: titleOf(over.id),
+        });
+      },
+      onDragEnd: ({ active, over }) =>
+        over && over.id !== active.id
+          ? t("dashboard.customize.announce.end", {
+              title: titleOf(active.id),
+              target: titleOf(over.id),
+            })
+          : t("dashboard.customize.announce.cancel", { title: titleOf(active.id) }),
+      onDragCancel: ({ active }) =>
+        t("dashboard.customize.announce.cancel", { title: titleOf(active.id) }),
+    }),
+    [t, titleOf],
+  );
+
+  const accessibility = useMemo(
+    () => ({
+      announcements,
+      screenReaderInstructions: {
+        draggable: t("dashboard.customize.announce.instructions"),
+      },
+    }),
+    [announcements, t],
+  );
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -165,37 +159,22 @@ export function DashboardPage() {
   const activePanel = visiblePanels.find((panel) => panel.id === activeId);
 
   return (
-    <Container maxWidth={false} sx={{ p: 2 }}>
-      <HealthBanner
-        metrics={metrics}
-        connected={connected}
-        editing={editing}
-        onToggleEditing={() => setEditing((prev) => !prev)}
-      />
-
-      {metrics.engine_failure && (
-        <EngineFailureCard
-          failure={metrics.engine_failure}
-          onRestart={() => setRestartOpen(true)}
-        />
-      )}
-      <RestartDialog open={restartOpen} onClose={() => setRestartOpen(false)} />
-
+    <>
       <CustomizeBar
         editing={editing}
         customized={customized}
         hiddenPanels={hiddenPanels}
         onShow={(id) => setHidden(id, false)}
         onReset={reset}
+        onDone={onDone}
       />
 
       <DndContext
         sensors={sensors}
         collisionDetection={panelCollision}
         measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-        onDragStart={(event: DragStartEvent) =>
-          setActiveId(String(event.active.id))
-        }
+        accessibility={accessibility}
+        onDragStart={(event: DragStartEvent) => setActiveId(String(event.active.id))}
         onDragOver={(event: DragOverEvent) =>
           setOverId(event.over ? String(event.over.id) : null)
         }
@@ -204,36 +183,38 @@ export function DashboardPage() {
       >
         <SortableContext
           items={visiblePanels.map((panel) => panel.id)}
-          strategy={() => null}
+          strategy={noSorting}
         >
-          <Box
-            sx={{
-              position: "relative",
-              display: "grid",
-              gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
-              gridAutoRows: `${ROW_UNIT}px`,
-              gridAutoFlow: "row dense",
-              alignItems: "start",
-              columnGap: 1.5,
-              rowGap: 0,
-            }}
-          >
-            {resizingPanel && <ColumnGuides />}
-            {visiblePanels.map((panel) => (
-              <PanelFrame
-                key={panel.id}
-                id={panel.id}
-                title={panel.title}
-                span={panel.span}
-                editing={editing}
-                dropTarget={overId === panel.id && activeId !== panel.id}
-                onSpanChange={(value) => setSpan(panel.id, value)}
-                onResizeActive={setResizingPanel}
-                onHide={() => setHidden(panel.id, true)}
-              >
-                {panel.render(panelContext)}
-              </PanelFrame>
-            ))}
+          <Box sx={{ containerType: "inline-size", containerName: GRID_CONTAINER }}>
+            <Box
+              sx={{
+                position: "relative",
+                display: "grid",
+                gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
+                gridAutoRows: `${ROW_UNIT}px`,
+                gridAutoFlow: "row dense",
+                alignItems: "start",
+                columnGap: `${GRID_GAP}px`,
+                rowGap: 0,
+              }}
+            >
+              {resizingPanel && <ColumnGuides />}
+              {visiblePanels.map(({ id, title, span, Component }) => (
+                <PanelFrame
+                  key={id}
+                  id={id}
+                  title={title}
+                  span={span}
+                  editing={editing}
+                  dropTarget={overId === id && activeId !== id}
+                  onSpanChange={(value) => setSpan(id, value)}
+                  onResizeActive={setResizingPanel}
+                  onHide={() => setHidden(id, true)}
+                >
+                  <Component />
+                </PanelFrame>
+              ))}
+            </Box>
           </Box>
         </SortableContext>
 
@@ -241,6 +222,30 @@ export function DashboardPage() {
           {activePanel ? <PanelGhost title={activePanel.title} /> : null}
         </DragOverlay>
       </DndContext>
+    </>
+  );
+});
+
+export function DashboardPage() {
+  const hasFrame = useMetrics((s) => s.frame !== null);
+  const failure = useMetricsFrame((f) => f.engine_failure);
+  const [editing, setEditing] = useState(false);
+  const [restartOpen, setRestartOpen] = useState(false);
+
+  const toggleEditing = useCallback(() => setEditing((prev) => !prev), []);
+  const stopEditing = useCallback(() => setEditing(false), []);
+  const openRestart = useCallback(() => setRestartOpen(true), []);
+
+  return (
+    <Container maxWidth={false} sx={{ p: 2 }}>
+      {hasFrame && (
+        <StatusStrip editing={editing} onToggleEditing={toggleEditing} />
+      )}
+      <LinkLine />
+      {failure && <EngineFailureCard failure={failure} onRestart={openRestart} />}
+      {hasFrame && <Attention onRestart={openRestart} />}
+      <RestartDialog open={restartOpen} onClose={() => setRestartOpen(false)} />
+      {hasFrame && <DashboardGrid editing={editing} onDone={stopEditing} />}
     </Container>
   );
 }

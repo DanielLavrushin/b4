@@ -83,7 +83,7 @@ If the backup set is narrowed to particular devices, it is only used for those d
 
 ## Watching it work
 
-The **Active Escalations** panel on the Dashboard shows currently-switched sites with the backup set name and time until retry. Use **Reset Stats** to clear all switches manually.
+The **Active Escalations** panel on the [dashboard](../dashboard.md#active-escalations) lists the sites switched right now, with the backup set and the time left before b4 retries the original. **Clear** on that panel sends every site back to its original set at once and forgets the RST and DNS failures counted towards escalation. **Reset counters** on the dashboard leaves the switches as they are.
 
 The log records each switch with the reason, for example:
 

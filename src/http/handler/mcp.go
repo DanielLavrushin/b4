@@ -326,7 +326,9 @@ type mcpStatusOut struct {
 	MTProtoOn       bool                 `json:"mtproto_enabled"`
 	TelegramBridge  mcpTelegramBridgeOut `json:"telegram_bridge"`
 	Uptime          string               `json:"uptime"`
-	ConnectionsSeen int64                `json:"connections_seen"`
+	UptimeS         int64                `json:"uptime_s"`
+	Connections     int64                `json:"connections"`
+	CountersSince   string               `json:"counters_since"`
 	CanChangeConfig bool                 `json:"you_can_change_settings"`
 	CanProbe        bool                 `json:"you_can_test_and_discover"`
 	Note            string               `json:"note"`
@@ -403,13 +405,20 @@ type mcpDiagnosticsOut struct {
 }
 
 type mcpMetricsOut struct {
-	ConnectionsSeen uint64  `json:"connections_seen"`
-	CurrentCPS      float64 `json:"current_cps"`
-	CurrentPPS      float64 `json:"current_pps"`
-	RSTDropped      uint64  `json:"rst_dropped"`
-	BlockedTotal    uint64  `json:"blocked_total"`
-	Uptime          string  `json:"uptime"`
-	MemoryPercent   float64 `json:"memory_percent"`
+	LastMinuteInSets   uint64  `json:"last_minute_in_sets"`
+	LastMinuteNotInSet uint64  `json:"last_minute_not_in_set"`
+	LastMinuteMatched  float64 `json:"last_minute_matched_percent"`
+	Connections        uint64  `json:"connections"`
+	CountersSince      string  `json:"counters_since"`
+	RSTDropped         uint64  `json:"rst_dropped"`
+	BlockedDNS         uint64  `json:"blocked_dns"`
+	BlockedConnections uint64  `json:"blocked_connections"`
+	CPUPercent         float64 `json:"cpu_percent"`
+	RSSBytes           uint64  `json:"rss_bytes"`
+	RSSPercentOfRAM    float64 `json:"rss_percent_of_ram"`
+	MemTotalBytes      uint64  `json:"mem_total_bytes"`
+	Uptime             string  `json:"uptime"`
+	UptimeS            int64   `json:"uptime_s"`
 }
 
 type mcpCheckDomainIn struct {
@@ -492,11 +501,11 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_status",
 		Title:       "B4 status",
-		Description: "High-level health of the running b4 daemon: version, packet capture engine (nfqueue or tun), firewall backend, how many strategy sets exist and are enabled, which subsystems are on, uptime and how many connections b4 has processed. Call this first when diagnosing, and whenever you are unsure whether b4 can do something: it reports which capabilities are switched on for you, so an ability you have no tool for reads as gated rather than missing. 'connections_seen' is a running total since b4 started or since the counters were last reset, not a live concurrency figure: b4 does not record when a connection ends.",
+		Description: "High-level health of the running b4 daemon: version, packet capture engine (nfqueue or tun), firewall backend, how many strategy sets exist and are enabled, which subsystems are on, process uptime and connections counted. Call this first when diagnosing, and whenever you are unsure whether b4 can do something: it reports which capabilities are switched on for you, so an ability you have no tool for reads as gated rather than missing. 'connections' counts each flow once since 'counters_since' (b4_metrics says what counts), not open connections.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpStatusOut, error) {
 		cfg := api.getCfg()
-		snap := GetMetricsCollector().GetSnapshot()
+		mc := GetMetricsCollector()
 
 		backend := cfg.System.Tables.Engine
 		if backend == "" {
@@ -511,8 +520,10 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			Socks5Enabled:   cfg.System.Socks5.Enabled,
 			MTProtoOn:       cfg.System.MTProto.Enabled,
 			TelegramBridge:  mcpTelegramBridge(cfg),
-			Uptime:          snap.Uptime,
-			ConnectionsSeen: int64(snap.TotalConnections),
+			Uptime:          mc.UptimeString(),
+			UptimeS:         mc.UptimeSeconds(),
+			Connections:     int64(mc.Totals().Conns),
+			CountersSince:   mcpWallTime(mc.StatsSince()),
 		}
 		for _, s := range cfg.Sets {
 			if s.Enabled {
@@ -522,8 +533,8 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		out.CanChangeConfig = cfg.System.WebServer.MCP.AllowWrites
 		out.CanProbe = cfg.System.WebServer.MCP.AllowActiveProbes
 		out.Note = mcpCapabilityNote(out.CanChangeConfig, out.CanProbe)
-		if snap.EngineFailure != nil {
-			out.Note = fmt.Sprintf("The %s engine did not start, so b4 is running without it and processes no traffic: %s. %s", out.Engine, snap.EngineFailure.Error, out.Note)
+		if failure := mc.GetEngineFailure(); failure != nil {
+			out.Note = fmt.Sprintf("The %s engine did not start, so b4 is running without it and processes no traffic: %s. %s", out.Engine, failure.Error, out.Note)
 		}
 		return nil, out, nil
 	})
@@ -697,19 +708,10 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_metrics",
 		Title:       "Traffic metrics",
-		Description: "Live counters from the packet engine: connections/packets per second, dropped RSTs, blocked totals, uptime and memory use. 'connections_seen' is a running total since b4 started or since the counters were last reset; b4 does not record when a connection ends, so there is no count of connections open right now and none is reported.",
+		Description: "Packet engine and b4 process counters. A connection is one TCP connection or UDP flow to a port b4 watches, counted once from its first packets, the only ones b4 sees. Connections the router opens itself count too, b4's own included (update checks, watchdog checks, SOCKS5 direct dials); proxy-set connections and SOCKS5 sessions sent to a set's upstream count once each. Not counted: other ports, DNS, UDP to private addresses. last_minute_* cover the last complete minute. connections, rst_dropped, blocked_dns and blocked_connections run since counters_since; blocks are those b4 made itself, not later firewall drops. cpu_percent: all cores, last 10 s. rss_percent_of_ram: rss_bytes against mem_total_bytes.",
 		Annotations: mcpReadOnly,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpMetricsOut, error) {
-		m := GetMetricsCollector().GetSnapshot()
-		return nil, mcpMetricsOut{
-			ConnectionsSeen: m.TotalConnections,
-			CurrentCPS:      m.CurrentCPS,
-			CurrentPPS:      m.CurrentPPS,
-			RSTDropped:      m.RSTDropped,
-			BlockedTotal:    m.BlockedTotal,
-			Uptime:          m.Uptime,
-			MemoryPercent:   m.MemoryUsage.Percent,
-		}, nil
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, any, error) {
+		return nil, mcpMetricsSnapshot(GetMetricsCollector()), nil
 	})
 
 	addTool(srv, &mcp.Tool{

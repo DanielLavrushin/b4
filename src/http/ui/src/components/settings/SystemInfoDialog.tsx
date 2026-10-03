@@ -20,7 +20,11 @@ import { colors, spacing } from "@design";
 import { B4Dialog } from "@common/B4Dialog";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { copyText } from "@utils";
+import { formatByteSize, formatInteger } from "@common/charts";
 import { Diagnostics, SystemInfoDialogProps } from "@models/sysinfo";
+
+const known = (value: number | undefined): value is number =>
+  typeof value === "number" && Number.isFinite(value);
 
 export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
   const { t } = useTranslation();
@@ -103,6 +107,14 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
       ),
     ].join(" ");
   };
+
+  const bytesValue = (value: number | undefined) =>
+    known(value) ? formatByteSize(value, i18n.language) : "-";
+
+  const countValue = (value: number | undefined, positive = false) =>
+    known(value) && (!positive || value > 0)
+      ? formatInteger(value, i18n.language)
+      : "-";
 
   const formatRestoreTime = (iso?: string) =>
     iso ? new Date(iso).toLocaleString(i18n.language) : "";
@@ -295,6 +307,14 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
             row(t("settings.SystemInfo.memUsage"), `${data.b4.memory_mb} MB`)}
           {data.b4.uptime &&
             row(t("settings.SystemInfo.uptime"), data.b4.uptime)}
+
+          {sectionTitle(t("settings.SystemInfo.process"))}
+          {row(t("settings.SystemInfo.heapInuse"), bytesValue(data.b4.heap_inuse))}
+          {row(t("settings.SystemInfo.heapSys"), bytesValue(data.b4.heap_sys))}
+          {row(t("settings.SystemInfo.goroutines"), countValue(data.b4.goroutines, true))}
+          {row(t("settings.SystemInfo.osThreads"), countValue(data.b4.os_threads, true))}
+          {row(t("settings.SystemInfo.openFds"), countValue(data.b4.open_fds, true))}
+          {row(t("settings.SystemInfo.gcCycles"), countValue(data.b4.num_gc))}
 
           {sectionTitle(t("settings.SystemInfo.paths"))}
           {monoRow(t("settings.SystemInfo.binary"), data.paths.binary)}
@@ -735,7 +755,7 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                     {tool.detail}
                   </Typography>
                 )}
-                {boolChip(tool.found, "found", "—")}
+                {boolChip(tool.found, "found", "-")}
               </Stack>,
             ),
           )}
