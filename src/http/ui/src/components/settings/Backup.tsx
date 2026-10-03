@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import {
   BackupIcon,
+  DescriptionIcon,
   DownloadIcon,
   RestoreIcon,
   UploadIcon,
@@ -26,10 +27,42 @@ interface ApiError {
   error?: string;
 }
 
+type ConfigDownload = "as-is" | "safe";
+
+const saveAttachment = async (path: string, fallbackName: string) => {
+  const headers: Record<string, string> = {};
+  const token = getAuthToken();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(path, { headers });
+  if (!response.ok) {
+    const data = (await response.json().catch(() => ({}))) as ApiError;
+    throw new Error(data.error ?? `Download failed: ${response.statusText}`);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition");
+  const filenameMatch = disposition?.match(/filename="(.+)"/);
+  const filename = filenameMatch?.[1] ?? fallbackName;
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
 export const BackupSettings = () => {
   const { t } = useTranslation();
   const { showError, showSuccess } = useSnackbar();
   const [downloading, setDownloading] = useState(false);
+  const [downloadingConfig, setDownloadingConfig] =
+    useState<ConfigDownload | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
@@ -54,35 +87,7 @@ export const BackupSettings = () => {
   const handleDownload = async () => {
     try {
       setDownloading(true);
-
-      const headers: Record<string, string> = {};
-      const token = getAuthToken();
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-
-      const response = await fetch("/api/backup", { headers });
-      if (!response.ok) {
-        const data = (await response.json().catch(() => ({}))) as ApiError;
-        throw new Error(
-          data.error ?? `Download failed: ${response.statusText}`,
-        );
-      }
-
-      const blob = await response.blob();
-      const disposition = response.headers.get("Content-Disposition");
-      const filenameMatch = disposition?.match(/filename="(.+)"/);
-      const filename = filenameMatch?.[1] ?? "b4-backup.tar.gz";
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-
+      await saveAttachment("/api/backup", "b4-backup.tar.gz");
       showSuccess(t("settings.Backup.downloadSuccess"));
     } catch (error) {
       showError(
@@ -92,6 +97,26 @@ export const BackupSettings = () => {
       );
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleConfigDownload = async (kind: ConfigDownload) => {
+    const safe = kind === "safe";
+    try {
+      setDownloadingConfig(kind);
+      await saveAttachment(
+        safe ? "/api/config/download?safe=true" : "/api/config/download",
+        safe ? "b4-config-safe.json" : "b4-config.json",
+      );
+      showSuccess(t("settings.Backup.configDownloadSuccess"));
+    } catch (error) {
+      showError(
+        error instanceof Error
+          ? error.message
+          : t("settings.Backup.configDownloadFailed"),
+      );
+    } finally {
+      setDownloadingConfig(null);
     }
   };
 
@@ -147,7 +172,7 @@ export const BackupSettings = () => {
       <B4Alert icon={<BackupIcon />}>{t("settings.Backup.alert")}</B4Alert>
 
       <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 6, lg: 4 }}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <B4Section
             title={t("settings.Backup.downloadTitle")}
             description={t("settings.Backup.downloadDescription")}
@@ -175,7 +200,7 @@ export const BackupSettings = () => {
           </B4Section>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 6, lg: 4 }}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <B4Section
             title={t("settings.Backup.restoreTitle")}
             description={t("settings.Backup.restoreDescription")}
@@ -208,7 +233,47 @@ export const BackupSettings = () => {
           </B4Section>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 6, lg: 4 }}>
+        <Grid size={{ xs: 12, md: 6 }}>
+          <B4Section
+            title={t("settings.Backup.configTitle")}
+            description={t("settings.Backup.configDescription")}
+            icon={<DescriptionIcon />}
+          >
+            <Stack spacing={2}>
+              <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+                {t("settings.Backup.configInfo")}
+              </Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                <Button
+                  variant="contained"
+                  startIcon={<DownloadIcon />}
+                  onClick={() => {
+                    void handleConfigDownload("as-is");
+                  }}
+                  disabled={downloadingConfig !== null}
+                >
+                  {downloadingConfig === "as-is"
+                    ? t("settings.Backup.generating")
+                    : t("settings.Backup.configDownload")}
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<DownloadIcon />}
+                  onClick={() => {
+                    void handleConfigDownload("safe");
+                  }}
+                  disabled={downloadingConfig !== null}
+                >
+                  {downloadingConfig === "safe"
+                    ? t("settings.Backup.generating")
+                    : t("settings.Backup.configDownloadSafe")}
+                </Button>
+              </Box>
+            </Stack>
+          </B4Section>
+        </Grid>
+
+        <Grid size={{ xs: 12, md: 6 }}>
           <B4Section
             title={t("settings.Control.resetConfig")}
             icon={<RestoreIcon />}

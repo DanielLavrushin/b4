@@ -192,7 +192,7 @@ const BridgeWarnings = ({ data }: { data: TelegramBridgeStatus }) => {
             i18nKey={K("bridgeNetfilter")}
             values={{ bridges: data.bridge_netfilter.join(", ") }}
             components={{
-              a: <Link component={RouterLink} to="/settings/general/service" />,
+              a: <Link component={RouterLink} to="/settings/system/service" />,
             }}
           />
         </B4Alert>

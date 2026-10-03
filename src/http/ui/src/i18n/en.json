@@ -33,12 +33,12 @@
     "language": "Language",
     "configuration": "Configuration",
     "loadingConfiguration": "Loading configuration...",
-    "configSavedRestart": "Configuration saved! Please restart B4 for core settings to take effect.",
+    "configSavedRestart": "Configuration saved. Some changes take effect after a B4 restart.",
     "configSaved": "Configuration saved successfully!",
     "configLoadError": "Failed to load configuration",
     "configSaveError": "Failed to save",
     "changesDiscarded": "Changes discarded",
-    "coreRestartWarning": "Core settings require <strong>B4</strong> restart to take effect",
+    "coreRestartWarning": "Some changes require a <strong>B4</strong> restart to take effect",
     "discardChanges": "Discard changes",
     "discardConfirm": "Are you sure you want to discard all unsaved changes? This action cannot be undone.",
     "back": "Back",
@@ -121,28 +121,25 @@
   "settings": {
     "tabs": {
       "core": "Core",
-      "coreDesc": "Global network and queue configuration",
       "geodat": "Geodat Settings",
-      "geodatDesc": "Global geodata configuration",
       "discovery": "Discovery",
-      "discoveryDesc": "DPI bypass domains testing",
       "mtproto": "Telegram",
-      "mtprotoDesc": "Telegram proxy server, WEB proxy and WebSocket bridge",
       "api": "Integrations",
-      "apiDesc": "Third-party services b4 can use",
       "payloads": "Payloads",
-      "payloadsDesc": "Capture real payloads from live traffic",
-      "backup": "Backup",
-      "backupDesc": "Backup and restore configuration"
+      "system": "System"
     },
     "coreTabs": {
-      "service": "Service",
       "engine": "Packet Engine",
       "devices": "Devices",
       "firewall": "Firewall",
       "dns": "DNS",
-      "web": "Web Server & SOCKS5",
+      "socks5": "SOCKS5",
       "needsRestart": "Applies after a restart"
+    },
+    "systemTabs": {
+      "service": "Service",
+      "web": "Web Server",
+      "backup": "Backup"
     },
     "Control": {
       "title": "Core Controls",
@@ -301,7 +298,7 @@
       "sourcesNote": "A source list is a network gate, the same kind of control as a firewall rule, not an authentication factor: addresses can be spoofed, a DHCP lease can move to another device, and a host that is itself a router stands for everything behind it. b4 enforces the list itself, so every other address is still refused when the port is exposed to the internet. Binding the proxy to the LAN address keeps it off the WAN altogether.",
       "openRelayWarning": "The proxy has no credentials and no source list. Any client that can reach the listening address and port can relay traffic through it.",
       "exposeNeedsWebAuth": "Needs a username and password on the web interface first: a SOCKS5 client could otherwise reach the unprotected web interface through the proxy.",
-      "exposeWebAuthMissing": "Expose to internet is on, but the web interface has no username and password, so b4 keeps the SOCKS5 port closed: a SOCKS5 client could otherwise reach the web interface through the proxy. Set both under Settings, Web Server, or turn the switch off."
+      "exposeWebAuthMissing": "Expose to internet is on, but the web interface has no username and password, so b4 keeps the SOCKS5 port closed: a SOCKS5 client could otherwise reach the web interface through the proxy. Set both under <a>Settings -> System -> Web Server</a>, or turn the switch off."
     },
     "MTProto": {
       "title": "MTProto Proxy",
@@ -431,10 +428,10 @@
       "webProxyPortShared": "Empty: the relay is served on the web interface's port, on the relay hostname only. 443 is the usual value, since Telegram always connects to https://<hostname>/.",
       "webProxyPortOwn": "The relay gets a listener of its own. Every request on it that is not for the relay hostname receives the placeholder page, and the web interface stays on its own port.",
       "webProxyPortClash": "Same as the web interface port",
-      "webProxyExposeShared": "Without a port of its own the relay rides the web interface port, so it is reachable from the internet only when the web interface is exposed (Settings, Web Server).",
+      "webProxyExposeShared": "Without a port of its own the relay rides the web interface port, so it is reachable from the internet only when the web interface is exposed (Settings -> System -> Web Server).",
       "webProxyRequirementsOwnPort": "Telegram opens https://<hostname>/ on 443, so this port has to be what 443 reaches: a forward from the router's WAN 443 to it, or b4 itself on 443. TLS is the web server's certificate unless one for the relay hostname is set below. The connection link is in the share dialog of a secret.",
       "webProxyTlsTitle": "Certificate for the relay hostname",
-      "webProxyTlsDesc": "The relay port serves the certificate from Settings, Web Server by default, and that pair then has to be the trusted one for the relay hostname. Putting a public certificate there makes the web interface HTTPS-only and shows a browser warning on every visit by IP, because the name does not match. A pair set here goes to the relay port only, so the web interface can stay plain HTTP on the LAN.",
+      "webProxyTlsDesc": "The relay port serves the certificate from Settings -> System -> Web Server by default, and that pair then has to be the trusted one for the relay hostname. Putting a public certificate there makes the web interface HTTPS-only and shows a browser warning on every visit by IP, because the name does not match. A pair set here goes to the relay port only, so the web interface can stay plain HTTP on the LAN.",
       "webProxyTlsCert": "Certificate file",
       "webProxyTlsCertHelp": "PEM file, full chain. Empty: the web server's certificate.",
       "webProxyTlsKey": "Private key file",
@@ -499,7 +496,7 @@
       "listenerV6Error": "IPv4 goes through the bridge. The IPv6 listener could not start ({{error}}), so Telegram over IPv6 takes the normal path.",
       "downloadFailed": "Downloading the Telegram address list failed: {{error}}. The list in use comes from: {{source}}.",
       "tunUnverified": "The bridge has not been verified with the TUN capture engine.",
-      "bridgeNetfilter": "Bridge netfilter is on for {{bridges}}, so connections from the devices behind these network bridges hang instead of reaching the bridge, and only the router's own connections are relayed. System Info in <a>Settings -> Core -> Service</a> shows how to turn it off.",
+      "bridgeNetfilter": "Bridge netfilter is on for {{bridges}}, so connections from the devices behind these network bridges hang instead of reaching the bridge, and only the router's own connections are relayed. System Info in <a>Settings -> System -> Service</a> shows how to turn it off.",
       "legacySets": "These sets also route Telegram through the bridge with the 'Telegram over WebSocket' routing mode. With the switch on they are redundant:",
       "legacySetOff": "off",
       "udpNote": "Voice calls (UDP) and QUIC are not bridged."
@@ -630,7 +627,7 @@
       "allowProbes": "Allow active probes",
       "allowProbesHelp": "Lets the AI make b4 fetch a domain to see whether it actually loads, and run a discovery search that tries strategies until one works. Off by default: these send real traffic from the router. Separate from configuration changes, because emitting traffic is a different permission from editing settings.",
       "allowProbesWarning": "The AI can make the router fetch sites and run discovery. A discovery run takes minutes, sends heavy traffic, holds firewall rules for its duration and blocks the watchdog while it runs. Private and local addresses are refused.",
-      "noAuthWarning": "Web authentication is off, so anyone who can reach this port can read b4's status, configuration and diagnostics through MCP. Fine on a trusted home network; set a username and password under Web Server if the port is reachable from elsewhere.",
+      "noAuthWarning": "Web authentication is off, so anyone who can reach this port can read b4's status, configuration and diagnostics through MCP. Fine on a trusted home network; set a username and password under <a>Settings -> System -> Web Server</a> if the port is reachable from elsewhere.",
       "noTokenWarning": "No MCP token is set, so clients have to use a web login token instead. Those expire after a day and are discarded when b4 restarts, which leaves the AI app unable to connect until you paste a new one. Generate an MCP token to avoid that.",
       "token": "Access token",
       "tokenPlaceholder": "not set",
@@ -746,7 +743,14 @@
       "restoring": "Restoring...",
       "restoreButton": "Upload & Restore",
       "restoreSuccess": "Backup restored successfully. Restart B4 to apply changes.",
-      "restoreFailed": "Failed to restore backup"
+      "restoreFailed": "Failed to restore backup",
+      "configTitle": "Download Configuration",
+      "configDescription": "The configuration b4 is running with, as a b4.json file",
+      "configInfo": "The safe copy replaces passwords, tokens and other secrets with [redacted] and keeps everything else, such as addresses, devices and domains. It is meant for sharing when asking for help and cannot restore the secrets.",
+      "configDownload": "Download as is",
+      "configDownloadSafe": "Download safe copy",
+      "configDownloadSuccess": "Configuration downloaded",
+      "configDownloadFailed": "Failed to download configuration"
     },
     "Capture": {
       "alert": "Generate optimized TLS ClientHello with SNI-first extension order",
@@ -3205,7 +3209,7 @@
     "inProgress": "Update in progress. Waiting for service to restart...",
     "completed": "Update completed successfully! Refreshing...",
     "manualCheck": "Update may have completed but service did not restart. Please check manually.",
-    "backupWarning": "Back up your configuration before updating. Use Settings → Backup to download a backup.",
+    "backupWarning": "Back up your configuration before updating. Use Settings → System → Backup to download a backup.",
     "clickToView": "Click to view update",
     "available": "Update available",
     "install": "Install",

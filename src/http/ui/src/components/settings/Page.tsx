@@ -20,13 +20,13 @@ import i18n, { setLanguage } from "../../i18n";
 
 import {
   ApiIcon,
-  BackupIcon,
   CaptureIcon,
   CoreIcon,
   DiscoveryIcon,
   DomainIcon,
   RefreshIcon,
   SaveIcon,
+  SystemIcon,
   TelegramIcon,
   WarningIcon,
 } from "@b4.icons";
@@ -40,14 +40,17 @@ import { CaptureSettings } from "./Capture";
 import { CheckerSettings } from "./Discovery";
 import { GeoSettings } from "./Geo";
 import { MTProtoSettings } from "./telegram/MTProto";
-import { BackupSettings } from "./Backup";
 import { CoreSettings } from "./CoreSettings";
+import { SystemSettings } from "./SystemSettings";
 import { RestartDialog } from "./RestartDialog";
 import {
   CORE_SECTIONS,
   CoreSectionId,
-  coreSectionIndex,
-} from "./coreSections";
+  SYSTEM_SECTIONS,
+  SettingsSection,
+  SystemSectionId,
+  sectionIndex,
+} from "./sections";
 
 import { B4Alert, B4Dialog, B4Tab, B4Tabs } from "@b4.elements";
 import { configApi, SettingsPropHandlerType } from "@b4.settings";
@@ -93,7 +96,17 @@ enum TABS {
   MTPROTO,
   API,
   PAYLOADS,
-  BACKUP,
+  SYSTEM,
+}
+
+const TAB_SECTIONS = new Map<TABS, SettingsSection[]>([
+  [TABS.GENERAL, CORE_SECTIONS],
+  [TABS.SYSTEM, SYSTEM_SECTIONS],
+]);
+
+interface SectionState {
+  dirty: boolean;
+  restart: boolean;
 }
 
 export function SettingsPage() {
@@ -106,7 +119,7 @@ export function SettingsPage() {
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
-  const lastCoreSection = useRef<CoreSectionId>(CORE_SECTIONS[0].id);
+  const lastSection = useRef<Partial<Record<TABS, string>>>({});
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -119,56 +132,42 @@ export function SettingsPage() {
         path: "general",
         label: t("settings.tabs.core"),
         icon: <CoreIcon />,
-        description: t("settings.tabs.coreDesc"),
-        requiresRestart: true,
       },
       {
         id: TABS.DOMAINS,
         path: "domains",
         label: t("settings.tabs.geodat"),
         icon: <DomainIcon />,
-        description: t("settings.tabs.geodatDesc"),
-        requiresRestart: false,
       },
       {
         id: TABS.DISCOVERY,
         path: "discovery",
         label: t("settings.tabs.discovery"),
         icon: <DiscoveryIcon />,
-        description: t("settings.tabs.discoveryDesc"),
-        requiresRestart: false,
       },
       {
         id: TABS.MTPROTO,
         path: "mtproto",
         label: t("settings.tabs.mtproto"),
         icon: <TelegramIcon />,
-        description: t("settings.tabs.mtprotoDesc"),
-        requiresRestart: false,
       },
       {
         id: TABS.API,
         path: "api",
         label: t("settings.tabs.api"),
         icon: <ApiIcon />,
-        description: t("settings.tabs.apiDesc"),
-        requiresRestart: false,
       },
       {
         id: TABS.PAYLOADS,
         path: "payloads",
         label: t("settings.tabs.payloads"),
         icon: <CaptureIcon />,
-        description: t("settings.tabs.payloadsDesc"),
-        requiresRestart: false,
       },
       {
-        id: TABS.BACKUP,
-        path: "backup",
-        label: t("settings.tabs.backup"),
-        icon: <BackupIcon />,
-        description: t("settings.tabs.backupDesc"),
-        requiresRestart: false,
+        id: TABS.SYSTEM,
+        path: "system",
+        label: t("settings.tabs.system"),
+        icon: <SystemIcon />,
       },
     ],
     [t],
@@ -178,34 +177,41 @@ export function SettingsPage() {
   const [currentTabPath, currentSectionPath] = (
     location.pathname.split("/settings/")[1] ?? ""
   ).split("/");
-  const currentTab =
-    settingCategories.find((cat) => cat.path === (currentTabPath || "general"))
-      ?.id ?? TABS.GENERAL;
-  const currentSectionIndex = coreSectionIndex(currentSectionPath);
-  const currentSection = CORE_SECTIONS[currentSectionIndex].id;
+  const currentCategory =
+    settingCategories.find(
+      (cat) => cat.path === (currentTabPath || "general"),
+    ) ?? settingCategories[0];
+  const currentTab = currentCategory.id;
+  const currentSections = TAB_SECTIONS.get(currentTab);
+  const currentSectionIndex = currentSections
+    ? sectionIndex(currentSections, currentSectionPath)
+    : 0;
+  const currentSectionId = currentSections?.[currentSectionIndex].id;
 
   useEffect(() => {
-    if (currentTab === TABS.GENERAL) {
-      lastCoreSection.current = currentSection;
+    if (currentSectionId) {
+      lastSection.current[currentTab] = currentSectionId;
     }
-  }, [currentTab, currentSection]);
+  }, [currentTab, currentSectionId]);
 
   // Handle tab change
   const handleTabChange = (_: React.SyntheticEvent, newValue: TABS) => {
     const category = settingCategories.find((cat) => cat.id === newValue);
     if (category) {
-      const path =
-        category.id === TABS.GENERAL
-          ? `${category.path}/${lastCoreSection.current}`
-          : category.path;
+      const sections = TAB_SECTIONS.get(category.id);
+      const path = sections
+        ? `${category.path}/${lastSection.current[category.id] ?? sections[0].id}`
+        : category.path;
       navigate(`/settings/${path}`)?.catch(() => {});
     }
   };
 
   const handleSectionChange = (_: React.SyntheticEvent, index: number) => {
-    const section = CORE_SECTIONS[index];
+    const section = currentSections?.[index];
     if (section) {
-      navigate(`/settings/general/${section.id}`)?.catch(() => {});
+      navigate(`/settings/${currentCategory.path}/${section.id}`)?.catch(
+        () => {},
+      );
     }
   };
 
@@ -220,8 +226,10 @@ export function SettingsPage() {
       location.pathname === "/settings/"
     ) {
       navigate("/settings/general", { replace: true })?.catch(() => {});
+    } else if (currentTabPath === "backup") {
+      navigate("/settings/system/backup", { replace: true })?.catch(() => {});
     }
-  }, [location.pathname, navigate]);
+  }, [location.pathname, currentTabPath, navigate]);
 
   // Check if configuration has been modified
   const hasChanges = useMemo(() => {
@@ -229,9 +237,10 @@ export function SettingsPage() {
     return JSON.stringify(config) !== JSON.stringify(originalConfig);
   }, [config, originalConfig]);
 
-  const coreSectionState = useMemo(
-    () =>
-      CORE_SECTIONS.map((section) => {
+  const sectionState = useMemo(() => {
+    const state: Partial<Record<TABS, SectionState[]>> = {};
+    for (const [tab, sections] of TAB_SECTIONS) {
+      state[tab] = sections.map((section) => {
         if (!hasChanges || !config || !originalConfig) {
           return { dirty: false, restart: false };
         }
@@ -240,9 +249,10 @@ export function SettingsPage() {
           dirty,
           restart: dirty && changed(section.restartPick, config, originalConfig),
         };
-      }),
-    [config, originalConfig, hasChanges],
-  );
+      });
+    }
+    return state;
+  }, [config, originalConfig, hasChanges]);
 
   // Check which categories have changes
   const categoryHasChanges = useMemo(() => {
@@ -250,7 +260,7 @@ export function SettingsPage() {
 
     return {
       // Core
-      [TABS.GENERAL]: coreSectionState.some((s) => s.dirty),
+      [TABS.GENERAL]: !!sectionState[TABS.GENERAL]?.some((s) => s.dirty),
 
       // Geosite Settings
       [TABS.DOMAINS]:
@@ -281,12 +291,14 @@ export function SettingsPage() {
       // PAYLOADS
       [TABS.PAYLOADS]: false,
 
-      // Backup
-      [TABS.BACKUP]: false,
+      // System
+      [TABS.SYSTEM]: !!sectionState[TABS.SYSTEM]?.some((s) => s.dirty),
     };
-  }, [config, originalConfig, hasChanges, coreSectionState]);
+  }, [config, originalConfig, hasChanges, sectionState]);
 
-  const generalNeedsRestart = coreSectionState.some((s) => s.restart);
+  const needsRestart = Object.values(sectionState).some((list) =>
+    list.some((s) => s.restart),
+  );
 
   const showErrorRef = useRef(showError);
   showErrorRef.current = showError;
@@ -326,7 +338,7 @@ export function SettingsPage() {
       await configApi.save(config);
       setOriginalConfig(structuredClone(config));
 
-      if (generalNeedsRestart) {
+      if (needsRestart) {
         showSuccess(t("core.configSavedRestart"), {
           label: t("settings.RestartDialog.restartButton"),
           onClick: () => setShowRestartDialog(true),
@@ -464,7 +476,7 @@ export function SettingsPage() {
               useFlexGap
               sx={{ flex: { xs: "1 1 100%", sm: "0 1 auto" } }}
             >
-              {generalNeedsRestart && (
+              {needsRestart && (
                 <B4Alert severity="warning" sx={{ py: 0, px: spacing.sm }}>
                   <Trans
                     i18nKey="core.coreRestartWarning"
@@ -523,8 +535,9 @@ export function SettingsPage() {
                 />
               ))}
           </B4Tabs>
-          {currentTab === TABS.GENERAL && (
+          {currentSections && (
             <B4Tabs
+              key={currentCategory.path}
               value={currentSectionIndex}
               onChange={handleSectionChange}
               sx={{
@@ -534,16 +547,16 @@ export function SettingsPage() {
                 },
               }}
             >
-              {CORE_SECTIONS.map((section, index) => (
+              {currentSections.map((section, index) => (
                 <B4Tab
                   key={section.id}
                   icon={<section.Icon />}
                   label={t(section.labelKey)}
                   inline
                   index={index}
-                  idPrefix="core-section"
-                  hasChanges={coreSectionState[index].dirty}
-                  needsRestart={coreSectionState[index].restart}
+                  idPrefix={`${currentCategory.path}-section`}
+                  hasChanges={sectionState[currentTab]?.[index]?.dirty}
+                  needsRestart={sectionState[currentTab]?.[index]?.restart}
                   needsRestartLabel={t("settings.coreTabs.needsRestart")}
                 />
               ))}
@@ -555,7 +568,7 @@ export function SettingsPage() {
       <Box ref={contentRef} sx={{ flex: 1, overflow: "auto", pb: 2 }}>
         <TabPanel value={validTab} index={TABS.GENERAL}>
           <CoreSettings
-            section={currentSection}
+            section={currentSectionId as CoreSectionId}
             config={config}
             onChange={handleChange}
           />
@@ -600,8 +613,12 @@ export function SettingsPage() {
           <CaptureSettings />
         </TabPanel>
 
-        <TabPanel value={validTab} index={TABS.BACKUP}>
-          <BackupSettings />
+        <TabPanel value={validTab} index={TABS.SYSTEM}>
+          <SystemSettings
+            section={currentSectionId as SystemSectionId}
+            config={config}
+            onChange={handleChange}
+          />
         </TabPanel>
       </Box>
 

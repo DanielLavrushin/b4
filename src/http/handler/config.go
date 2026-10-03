@@ -11,7 +11,9 @@ import (
 	"reflect"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -26,6 +28,51 @@ func (api *API) RegisterConfigApi() {
 
 	api.mux.HandleFunc("/api/config", api.handleConfig)
 	api.mux.HandleFunc("/api/config/reset", api.handleConfigReset)
+	api.mux.HandleFunc("/api/config/download", api.handleConfigDownload)
+}
+
+// @Summary Download the configuration file
+// @Description Returns the configuration b4 is running with, in the format of its b4.json file. With safe=true, passwords, tokens, secrets, the user's own relay hosts and credentials in URLs are replaced with [redacted], and the web password and the MCP token are left empty.
+// @Tags Config
+// @Produce json
+// @Param safe query bool false "Mask secrets for sharing"
+// @Success 200 {file} binary
+// @Failure 405 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /config/download [get]
+func (a *API) handleConfigDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	cfg := a.getCfg()
+	safe, _ := strconv.ParseBool(r.URL.Query().Get("safe"))
+	name := "b4-config"
+	if safe {
+		redacted, err := cfg.RedactedCopy()
+		if err != nil {
+			log.Errorf("Failed to redact config for download: %v", err)
+			writeJsonError(w, http.StatusInternalServerError, "Failed to prepare the configuration")
+			return
+		}
+		cfg = redacted
+		name = "b4-config-safe"
+	}
+
+	data, err := cfg.FileBytes()
+	if err != nil {
+		log.Errorf("Failed to serialize config for download: %v", err)
+		writeJsonError(w, http.StatusInternalServerError, "Failed to prepare the configuration")
+		return
+	}
+
+	filename := fmt.Sprintf("%s-%s.json", name, time.Now().Format("20060102-150405"))
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
 }
 
 // @Summary Reset configuration to defaults

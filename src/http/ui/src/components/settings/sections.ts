@@ -1,5 +1,7 @@
 import type { SvgIconComponent } from "@mui/icons-material";
 import {
+  BackupIcon,
+  ConnectionIcon,
   ControlIcon,
   DeviceUnknowIcon,
   DnsIcon,
@@ -9,16 +11,12 @@ import {
 } from "@b4.icons";
 import { B4Config } from "@models/config";
 
-export type CoreSectionId =
-  | "service"
-  | "engine"
-  | "devices"
-  | "firewall"
-  | "dns"
-  | "web";
+export type CoreSectionId = "engine" | "devices" | "firewall" | "dns" | "socks5";
 
-export interface CoreSection {
-  id: CoreSectionId;
+export type SystemSectionId = "service" | "web" | "backup";
+
+export interface SettingsSection<Id extends string = string> {
+  id: Id;
   labelKey: string;
   Icon: SvgIconComponent;
   pick: (c: B4Config) => unknown[];
@@ -31,24 +29,9 @@ const engineQueue = (c: B4Config) => ({
   mss_clamp: undefined,
 });
 
-export const CORE_SECTIONS: CoreSection[] = [
-  {
-    id: "service",
-    labelKey: "settings.coreTabs.service",
-    Icon: ControlIcon,
-    pick: (c) => [
-      c.system.logging,
-      c.system.timezone,
-      c.system.memory_limit,
-      c.system.update,
-      c.system.web_server.language,
-    ],
-    restartPick: (c) => [
-      c.system.logging.instaflush,
-      c.system.logging.syslog,
-      c.system.memory_limit,
-    ],
-  },
+const nothing = () => [];
+
+export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
   {
     id: "engine",
     labelKey: "settings.coreTabs.engine",
@@ -85,12 +68,38 @@ export const CORE_SECTIONS: CoreSection[] = [
     restartPick: (c) => [{ ...c.system.dns, keep_ipv6_answers: undefined }],
   },
   {
+    id: "socks5",
+    labelKey: "settings.coreTabs.socks5",
+    Icon: ConnectionIcon,
+    pick: (c) => [c.system.socks5],
+    restartPick: nothing,
+  },
+];
+
+export const SYSTEM_SECTIONS: SettingsSection<SystemSectionId>[] = [
+  {
+    id: "service",
+    labelKey: "settings.systemTabs.service",
+    Icon: ControlIcon,
+    pick: (c) => [
+      c.system.logging,
+      c.system.timezone,
+      c.system.memory_limit,
+      c.system.update,
+      c.system.web_server.language,
+    ],
+    restartPick: (c) => [
+      c.system.logging.instaflush,
+      c.system.logging.syslog,
+      c.system.memory_limit,
+    ],
+  },
+  {
     id: "web",
-    labelKey: "settings.coreTabs.web",
+    labelKey: "settings.systemTabs.web",
     Icon: WebIcon,
     pick: (c) => [
       { ...c.system.web_server, mcp: undefined, language: undefined },
-      c.system.socks5,
     ],
     restartPick: (c) => [
       c.system.web_server.port,
@@ -99,9 +108,19 @@ export const CORE_SECTIONS: CoreSection[] = [
       c.system.web_server.tls_key,
     ],
   },
+  {
+    id: "backup",
+    labelKey: "settings.systemTabs.backup",
+    Icon: BackupIcon,
+    pick: nothing,
+    restartPick: nothing,
+  },
 ];
 
-export const coreSectionIndex = (id: string | undefined) => {
-  const index = CORE_SECTIONS.findIndex((s) => s.id === id);
+export const sectionIndex = (
+  sections: SettingsSection[],
+  id: string | undefined,
+) => {
+  const index = sections.findIndex((s) => s.id === id);
   return index < 0 ? 0 : index;
 };

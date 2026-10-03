@@ -27,7 +27,7 @@ func (c *Config) SaveToFile(path string) error {
 
 	c.Version = CurrentConfigVersion
 
-	data, err := MarshalSparse(stripCLIOverrides(c))
+	data, err := c.FileBytes()
 	if err != nil {
 		return log.Errorf("failed to marshal config: %v", err)
 	}

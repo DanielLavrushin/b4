@@ -28,6 +28,7 @@ export {
   Timer as TimerIcon,
   Cloud as ApiIcon,
   Web as WebIcon,
+  Memory as SystemIcon,
   Share as ShareIcon,
   Groups as CommunityIcon,
   CameraAlt as CaptureIcon,

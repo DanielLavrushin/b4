@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { Box, Button, Menu, MenuItem, Typography } from "@mui/material";
-import { useTranslation } from "react-i18next";
+import { Box, Button, Link, Menu, MenuItem, Typography } from "@mui/material";
+import { Link as RouterLink } from "react-router";
+import { Trans, useTranslation } from "react-i18next";
 import { ConnectionIcon, DeviceIcon } from "@b4.icons";
 import {
   B4Alert,
@@ -233,7 +234,12 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
 
         {enabled && exposed && guarded && !webProtected && (
           <B4Alert severity="error">
-            {t("settings.Socks5.exposeWebAuthMissing")}
+            <Trans
+              i18nKey="settings.Socks5.exposeWebAuthMissing"
+              components={{
+                a: <Link component={RouterLink} to="/settings/system/web" />,
+              }}
+            />
           </B4Alert>
         )}
 
