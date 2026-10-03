@@ -42,7 +42,12 @@ export const B4Switch = ({
       }
       label={
         <Box>
-          <Typography sx={{ color: colors.text.primary, fontWeight: 500 }}>
+          <Typography
+            sx={{
+              color: disabled ? colors.text.disabled : colors.text.primary,
+              fontWeight: 500,
+            }}
+          >
             {label}
           </Typography>
           {description && (

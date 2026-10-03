@@ -8,10 +8,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"reflect"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -26,6 +29,80 @@ func (api *API) RegisterConfigApi() {
 
 	api.mux.HandleFunc("/api/config", api.handleConfig)
 	api.mux.HandleFunc("/api/config/reset", api.handleConfigReset)
+	api.mux.HandleFunc("/api/config/download", api.handleConfigDownload)
+}
+
+// @Summary Download the configuration file
+// @Description Returns the configuration b4 is running with, in the format of its b4.json file. With safe=true, passwords, tokens, user names, secrets, the user's own relay hosts and credentials in URLs are replaced with [redacted] and the web password is left empty; b4 refuses to load or save a configuration that still holds the [redacted] placeholder.
+// @Tags Config
+// @Produce json
+// @Param safe query bool false "Mask secrets for sharing"
+// @Success 200 {file} binary
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /config/download [get]
+func (a *API) handleConfigDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	safe, ok := parseSafeQuery(r.URL.RawQuery)
+	if !ok {
+		writeJsonError(w, http.StatusBadRequest, "the only accepted parameter is safe, given once as true or false")
+		return
+	}
+
+	cfg := a.getCfg()
+	name := "b4-config"
+	if safe {
+		redacted, err := cfg.RedactedCopy()
+		if err != nil {
+			log.Errorf("Failed to redact config for download: %v", err)
+			writeJsonError(w, http.StatusInternalServerError, "Failed to prepare the configuration")
+			return
+		}
+		cfg = redacted
+		name = "b4-config-safe"
+	}
+
+	data, err := cfg.FileBytes()
+	if err != nil {
+		log.Errorf("Failed to serialize config for download: %v", err)
+		writeJsonError(w, http.StatusInternalServerError, "Failed to prepare the configuration")
+		return
+	}
+
+	filename := fmt.Sprintf("%s-%s.json", name, time.Now().Format("20060102-150405"))
+	setJsonHeader(w)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}
+
+func parseSafeQuery(raw string) (bool, bool) {
+	query, err := url.ParseQuery(raw)
+	if err != nil {
+		return false, false
+	}
+	for key := range query {
+		if key != "safe" {
+			return false, false
+		}
+	}
+	values, present := query["safe"]
+	if !present {
+		return false, true
+	}
+	if len(values) != 1 {
+		return false, false
+	}
+	safe, err := strconv.ParseBool(values[0])
+	if err != nil {
+		return false, false
+	}
+	return safe, true
 }
 
 // @Summary Reset configuration to defaults
@@ -471,6 +548,19 @@ func isRefusal(err error) bool {
 }
 
 func (a *API) pushConfigLocked(newCfg *config.Config) error {
+	if paths := newCfg.RedactedValuePaths(); len(paths) > 0 {
+		fields := make([]FieldError, 0, len(paths))
+		for _, path := range paths {
+			fields = append(fields, FieldError{
+				Path:    path,
+				Code:    "redacted_placeholder",
+				Message: path + " holds the " + config.RedactedMarker + " placeholder of a safe copy instead of a real value",
+				Params:  map[string]any{"path": path},
+			})
+		}
+		return ErrValidation("The configuration holds "+config.RedactedMarker+" placeholders from a safe copy", fields...)
+	}
+
 	for _, check := range []func() error{newCfg.Validate, newCfg.ValidateTLSFiles} {
 		if err := check(); err != nil {
 			var ve *config.ValidationError

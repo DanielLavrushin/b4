@@ -188,7 +188,7 @@ func (api *API) handleUpdateUpload(w http.ResponseWriter, r *http.Request) {
 	if !api.webAuthConfigured() {
 		log.Warnf("Refused an archive upload: the web server has no username and password set")
 		writeUploadRefusal(w, serviceManager,
-			"Installing from a file needs a web server username and password to be set. Without them b4 accepts every request on this port, and this route replaces the binary that runs as root. Set credentials under Settings, Web Server.")
+			"Installing from a file needs a web server username and password to be set. Without them b4 accepts every request on this port, and this route replaces the binary that runs as root. Set credentials under Settings, System, Web Server.")
 		return
 	}
 

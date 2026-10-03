@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { NetworkIcon } from "@b4.icons";
+import { SpeedIcon } from "@b4.icons";
 import {
   B4FormGroup,
   B4NumberField,
@@ -18,12 +18,8 @@ export const QueueSettings = ({ config, onChange }: QueueSettingsProps) => {
   const { t } = useTranslation();
 
   return (
-    <B4Section
-      title={t("settings.Queue.title")}
-      description={t("settings.Queue.description")}
-      icon={<NetworkIcon />}
-    >
-      <B4FormGroup label={t("settings.Queue.groupLabel")} columns={2}>
+    <B4Section title={t("settings.Queue.title")} icon={<SpeedIcon />}>
+      <B4FormGroup columns={2}>
         <B4NumberField
           label={t("settings.Queue.queueStart")}
           value={config.queue.start_num}
