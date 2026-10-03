@@ -1,121 +1,73 @@
-import type { ReactNode } from "react";
-import { B4SetConfig } from "@models/config";
-import { ActiveSets } from "./ActiveSets";
-import { Blackhole } from "./Blackhole";
-import { DeviceActivity } from "./DeviceActivity";
-import { Escalations } from "./Escalations";
-import { LiveSignal } from "./LiveSignal";
-import { MTProtoActivity } from "./MTProtoActivity";
-import { RuntimeHealth } from "./RuntimeHealth";
-import { UnmatchedDomains } from "./UnmatchedDomains";
-import type { Metrics } from "./types";
+import type { ComponentType } from "react";
+import {
+  ActivityPanel,
+  BlockedPanel,
+  EscalationsPanel,
+  EventsPanel,
+  SetsPanel,
+  TelegramPanel,
+  type PanelAvailability,
+} from "./panels";
 
 export const GRID_COLUMNS = 12;
 
 export const MIN_SPAN = 3;
 
-export interface PanelContext {
-  metrics: Metrics;
-  sets: B4SetConfig[];
-  targetedDomains: Set<string>;
-  refreshSets: () => void;
-}
+export type PanelCondition = keyof PanelAvailability;
 
 export interface PanelDescriptor {
   id: string;
   titleKey: string;
-  defaultSpan: (ctx: PanelContext) => number;
-  available: (ctx: PanelContext) => boolean;
-  render: (ctx: PanelContext) => ReactNode;
+  defaultSpan: number;
+  when?: PanelCondition;
+  Component: ComponentType;
 }
 
-export const DASHBOARD_PANELS: PanelDescriptor[] = [
+export const DASHBOARD_PANELS: readonly PanelDescriptor[] = [
   {
-    id: "runtime",
-    titleKey: "dashboard.runtime.title",
-    defaultSpan: () => 12,
-    available: () => true,
-    render: ({ metrics }) => <RuntimeHealth metrics={metrics} />,
+    id: "activity",
+    titleKey: "dashboard.activity.title",
+    defaultSpan: 12,
+    Component: ActivityPanel,
   },
   {
-    id: "signal",
-    titleKey: "dashboard.signal.title",
-    defaultSpan: () => 12,
-    available: () => true,
-    render: ({ metrics }) => <LiveSignal metrics={metrics} />,
+    id: "sets",
+    titleKey: "dashboard.sets.title",
+    defaultSpan: 8,
+    Component: SetsPanel,
   },
   {
-    id: "activeSets",
-    titleKey: "dashboard.activeSets.title",
-    defaultSpan: () => 12,
-    available: ({ sets }) => sets.length > 0,
-    render: ({ sets }) => <ActiveSets sets={sets} />,
-  },
-  {
-    id: "deviceActivity",
-    titleKey: "dashboard.deviceActivity.title",
-    defaultSpan: () => 6,
-    available: ({ metrics }) =>
-      Object.keys(metrics.device_domains).length > 0,
-    render: ({ metrics, sets, targetedDomains, refreshSets }) => (
-      <DeviceActivity
-        deviceDomains={metrics.device_domains}
-        domainTLS={metrics.domain_tls}
-        sets={sets}
-        targetedDomains={targetedDomains}
-        onRefreshSets={refreshSets}
-      />
-    ),
-  },
-  {
-    id: "unmatchedDomains",
-    titleKey: "dashboard.unmatchedDomains.title",
-    defaultSpan: ({ metrics }) =>
-      Object.keys(metrics.device_domains).length > 0 ? 6 : 12,
-    available: () => true,
-    render: ({ metrics, sets, targetedDomains, refreshSets }) => (
-      <UnmatchedDomains
-        topDomains={metrics.top_domains}
-        domainTLS={metrics.domain_tls}
-        sets={sets}
-        targetedDomains={targetedDomains}
-        onRefreshSets={refreshSets}
-      />
-    ),
-  },
-  {
-    id: "mtproto",
-    titleKey: "dashboard.mtproto.title",
-    defaultSpan: () => 12,
-    available: ({ metrics }) => Boolean(metrics.mtproto?.enabled),
-    render: ({ metrics }) =>
-      metrics.mtproto ? <MTProtoActivity stats={metrics.mtproto} /> : null,
+    id: "events",
+    titleKey: "dashboard.events.title",
+    defaultSpan: 4,
+    Component: EventsPanel,
   },
   {
     id: "escalations",
     titleKey: "dashboard.escalations.title",
-    defaultSpan: () => 12,
-    available: ({ metrics }) => metrics.escalations.length > 0,
-    render: ({ metrics }) => (
-      <Escalations
-        escalations={metrics.escalations}
-        total={metrics.total_escalations}
-      />
-    ),
+    defaultSpan: 6,
+    when: "escalations",
+    Component: EscalationsPanel,
   },
   {
-    id: "blackhole",
-    titleKey: "dashboard.blackhole.title",
-    defaultSpan: () => 12,
-    available: ({ metrics }) => metrics.blocked_total > 0,
-    render: ({ metrics }) => (
-      <Blackhole
-        total={metrics.blocked_total}
-        blockedDomains={metrics.blocked_domains}
-        blockedDevices={metrics.blocked_devices}
-      />
-    ),
+    id: "blocked",
+    titleKey: "dashboard.blocked.title",
+    defaultSpan: 6,
+    when: "blocked",
+    Component: BlockedPanel,
+  },
+  {
+    id: "telegram",
+    titleKey: "dashboard.telegram.title",
+    defaultSpan: 12,
+    when: "telegram",
+    Component: TelegramPanel,
   },
 ];
 
 export const PANELS_BY_ID = new Map(DASHBOARD_PANELS.map((p) => [p.id, p]));
+
+export const isPanelAvailable = (
+  panel: PanelDescriptor,
+  availability: PanelAvailability,
+): boolean => (panel.when ? availability[panel.when] : true);

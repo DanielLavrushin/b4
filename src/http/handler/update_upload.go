@@ -264,6 +264,7 @@ func (api *API) handleUpdateUpload(w http.ResponseWriter, r *http.Request) {
 		writeUploadRefusal(w, serviceManager, "Cannot install the archive: "+err.Error())
 		return
 	}
+	noteUpdateLaunched("")
 
 	sendResponse(w, UpdateResponse{
 		Success:        true,

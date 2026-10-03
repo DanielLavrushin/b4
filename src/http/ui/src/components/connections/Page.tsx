@@ -8,7 +8,7 @@ import {
 } from "@mui/material";
 import { DashboardIcon, LogsIcon } from "@b4.icons";
 import { AddSniModal } from "./AddSniModal";
-import { AggregatedView } from "./views/AggregatedView";
+import { AggregatedView, hasTrafficDeepLink } from "./views/AggregatedView";
 import { RawView } from "./views/RawView";
 import { useDomainActions } from "@hooks/useDomainActions";
 import { useIpActions } from "@hooks/useIpActions";
@@ -32,7 +32,10 @@ import { asnApi, asnInUseSets } from "@api/asn";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { devicesApi } from "@b4.devices";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router";
 import i18n from "@/i18n";
+
+const VIEW_STORAGE_KEY = "b4_connections_view";
 
 export function ConnectionsPage() {
   const { t } = useTranslation();
@@ -46,10 +49,24 @@ export function ConnectionsPage() {
     resetDomainsBadge,
   } = useStreamControls();
 
+  const [searchParams] = useSearchParams();
   const [view, setView] = useState<"aggregated" | "raw">(() => {
-    const saved = localStorage.getItem("b4_connections_view");
-    return saved === "raw" ? "raw" : "aggregated";
+    if (hasTrafficDeepLink(searchParams)) return "aggregated";
+    try {
+      return localStorage.getItem(VIEW_STORAGE_KEY) === "raw" ? "raw" : "aggregated";
+    } catch {
+      return "aggregated";
+    }
   });
+
+  const chooseView = (next: "aggregated" | "raw") => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      return;
+    }
+  };
 
   const [filter, setFilter] = useState(() => {
     return localStorage.getItem("b4_connections_filter") || "";
@@ -86,10 +103,6 @@ export function ConnectionsPage() {
   useEffect(() => {
     localStorage.setItem("b4_connections_filter", filter);
   }, [filter]);
-
-  useEffect(() => {
-    localStorage.setItem("b4_connections_view", view);
-  }, [view]);
 
   useEffect(() => {
     if (!devicesEnabled) {
@@ -327,7 +340,9 @@ export function ConnectionsPage() {
             size="small"
             exclusive
             value={view}
-            onChange={(_, v: "aggregated" | "raw" | null) => v && setView(v)}
+            onChange={(_, v: "aggregated" | "raw" | null) => {
+              if (v) chooseView(v);
+            }}
             sx={{
               "& .MuiToggleButton-root": {
                 px: 1.2,

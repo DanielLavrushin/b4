@@ -41,6 +41,9 @@ export const colors = {
     trackOff: "rgba(255, 255, 255, 0.18)",
     thumbOff: "#bdbdbd",
   },
+  chart: {
+    rest: "#8A7580",
+  },
 } as const;
 
 export const facets = {

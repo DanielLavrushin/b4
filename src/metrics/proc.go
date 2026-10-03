@@ -6,12 +6,6 @@ import (
 	"strings"
 )
 
-func procStats() (rss uint64, openFDs int) {
-	rss = readRSS()
-	openFDs = countOpenFDs()
-	return
-}
-
 func readRSS() uint64 {
 	data, err := os.ReadFile("/proc/self/statm")
 	if err != nil {
@@ -28,7 +22,7 @@ func readRSS() uint64 {
 	return pages * uint64(os.Getpagesize())
 }
 
-func countOpenFDs() int {
+func OpenFDs() int {
 	entries, err := os.ReadDir("/proc/self/fd")
 	if err != nil {
 		return 0

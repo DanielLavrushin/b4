@@ -11,6 +11,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 )
 
 const (
@@ -477,6 +478,9 @@ func (w *Watchdog) healSucceeded(id, preset string, results map[string]URLWatchS
 	st.Interval = intervalOr(wdCfg.IntervalSec, 300)
 	st.CooldownUntil = now.Add(time.Duration(wdCfg.Cooldown) * time.Second)
 	log.Infof("[WATCHDOG] set %q: healed with %q, verified on every URL", st.SetName, preset)
+	metrics.GetMetricsCollector().Event(metrics.LevelInfo, metrics.EventWatchdogHealed,
+		map[string]string{"set_id": id, "set": st.SetName, "preset": preset},
+		fmt.Sprintf("Watchdog healed set %q with %q", st.SetName, preset))
 }
 
 func (w *Watchdog) healFailed(id, reason, detail string) {
@@ -502,10 +506,16 @@ func (w *Watchdog) healFailedWithResults(id, reason, detail string, results map[
 	st.Interval = intervalOr(wdCfg.FailureInterval, 60)
 	st.CooldownUntil = now.Add(time.Duration(wdCfg.Cooldown) * time.Second)
 	if st.HealFailures >= maxHealFailures {
+		entered := !st.gaveUp
 		st.gaveUp = true
 		st.Status = SetStatusGaveUp
 		log.Warnf("[WATCHDOG] set %q: heal failed (%s: %s); %d heals failed in a row, no more automatic heals until it loads again or a check is forced",
 			st.SetName, reason, detail, st.HealFailures)
+		if entered {
+			metrics.GetMetricsCollector().Event(metrics.LevelWarning, metrics.EventWatchdogGaveUp,
+				map[string]string{"set_id": id, "set": st.SetName, "reason": reason},
+				fmt.Sprintf("Watchdog gave up on set %q after %d failed heals (%s)", st.SetName, st.HealFailures, reason))
+		}
 		return
 	}
 	st.Status = SetStatusCooldown

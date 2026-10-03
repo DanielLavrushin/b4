@@ -5,6 +5,7 @@ import (
 	"net"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -15,6 +16,7 @@ import (
 type Manager struct {
 	mu            sync.Mutex
 	listeners     map[string]*Listener
+	published     atomic.Pointer[[]*Listener]
 	resolver      NameSource
 	mtprotoBridge MTProtoBridge
 	ctx           context.Context
@@ -258,8 +260,33 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 			m.retryTimer = nil
 		}
 	}
+	m.publishLocked()
 	m.syncNamesWantedLocked()
 	m.reportBridgeLocked(retried)
+}
+
+func (m *Manager) publishLocked() {
+	ls := make([]*Listener, 0, len(m.listeners))
+	for _, l := range m.listeners {
+		ls = append(ls, l)
+	}
+	m.published.Store(&ls)
+}
+
+func (m *Manager) running() []*Listener {
+	if p := m.published.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+func (m *Manager) OpenConnections() map[string]int64 {
+	ls := m.running()
+	out := make(map[string]int64, len(ls))
+	for _, l := range ls {
+		out[l.SetID] = l.Active()
+	}
+	return out
 }
 
 func (m *Manager) reportBridgeLocked(retried bool) {
@@ -285,6 +312,7 @@ func (m *Manager) Stop() {
 		_ = l.Stop()
 		delete(m.listeners, id)
 	}
+	m.publishLocked()
 	m.syncNamesWantedLocked()
 	if m.cancel != nil {
 		m.cancel()
@@ -303,10 +331,9 @@ func (m *Manager) DialViaSet(setID, host string, port int) (net.Conn, bool, erro
 }
 
 func (m *Manager) UpstreamHealth() []UpstreamHealth {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]UpstreamHealth, 0, len(m.listeners))
-	for _, l := range m.listeners {
+	ls := m.running()
+	out := make([]UpstreamHealth, 0, len(ls))
+	for _, l := range ls {
 		if l.MTProtoWS {
 			continue
 		}

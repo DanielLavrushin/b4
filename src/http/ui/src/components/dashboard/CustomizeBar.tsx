@@ -1,7 +1,7 @@
 import { Box, Button, Chip, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { colors, radiusPx } from "@design";
-import { AddIcon, RestoreIcon } from "@b4.icons";
+import { AddIcon, CheckIcon, RestoreIcon } from "@b4.icons";
 
 export interface HiddenPanelEntry {
   id: string;
@@ -15,6 +15,7 @@ interface CustomizeBarProps {
   hiddenPanels: HiddenPanelEntry[];
   onShow: (id: string) => void;
   onReset: () => void;
+  onDone: () => void;
 }
 
 export const CustomizeBar = ({
@@ -23,6 +24,7 @@ export const CustomizeBar = ({
   hiddenPanels,
   onShow,
   onReset,
+  onDone,
 }: CustomizeBarProps) => {
   const { t } = useTranslation();
 
@@ -30,6 +32,8 @@ export const CustomizeBar = ({
 
   return (
     <Box
+      component="section"
+      aria-label={t("dashboard.customize.label")}
       sx={{
         mb: 1.5,
         p: "10px 12px",
@@ -45,11 +49,14 @@ export const CustomizeBar = ({
         sx={{
           display: "flex",
           alignItems: "center",
-          gap: "12px",
+          gap: "8px 12px",
           flexWrap: "wrap",
         }}
       >
-        <Typography variant="body2" sx={{ color: colors.text.secondary, flex: 1 }}>
+        <Typography
+          variant="body2"
+          sx={{ color: colors.text.secondary, flex: "1 1 280px" }}
+        >
           {t("dashboard.customize.hint")}
         </Typography>
         {customized && (
@@ -62,6 +69,15 @@ export const CustomizeBar = ({
             {t("dashboard.customize.reset")}
           </Button>
         )}
+        <Button
+          size="small"
+          variant="contained"
+          startIcon={<CheckIcon sx={{ fontSize: 16 }} />}
+          onClick={onDone}
+          sx={{ textTransform: "none" }}
+        >
+          {t("dashboard.customize.done")}
+        </Button>
       </Box>
 
       {hiddenPanels.length > 0 && (
@@ -73,12 +89,18 @@ export const CustomizeBar = ({
             flexWrap: "wrap",
           }}
         >
-          <Typography
-            variant="metricLabel"
-            sx={{ color: colors.text.secondary, opacity: 0.8 }}
+          <Box
+            component="span"
+            sx={{
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: colors.text.secondary,
+            }}
           >
             {t("dashboard.customize.hidden")}
-          </Typography>
+          </Box>
           {hiddenPanels.map((panel) => (
             <Chip
               key={panel.id}

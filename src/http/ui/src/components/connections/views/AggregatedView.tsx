@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Fab, Tooltip, useMediaQuery } from "@mui/material";
+import { useSearchParams } from "react-router";
 import { StartIcon, StopIcon } from "@b4.icons";
 import { colors, theme } from "@design";
 import { useConnectionGroups, type EnrichedGroup } from "@hooks/useConnectionGroups";
@@ -74,6 +75,38 @@ const getGroupSearchableValues = (g: EnrichedGroup): (string | null)[] => [
   g.flags,
 ];
 
+const TIME_WINDOWS: readonly TimeWindow[] = [30, 60, 300, 900, 0];
+const DEFAULT_WINDOW: TimeWindow = 60;
+const MAC_PATTERN = /^[0-9a-f]{2}([:-][0-9a-f]{2}){5}$/i;
+
+export const UNMATCHED_PARAM = "unmatched";
+export const DEVICE_PARAM = "device";
+export const WINDOW_PARAM = "window";
+
+export const normalizeDeviceParam = (value: string): string => {
+  const trimmed = value.trim();
+  return MAC_PATTERN.test(trimmed)
+    ? trimmed.toUpperCase().replaceAll("-", ":")
+    : trimmed;
+};
+
+const deviceFromParams = (params: URLSearchParams): string | null => {
+  const raw = params.get(DEVICE_PARAM);
+  return raw === null ? null : normalizeDeviceParam(raw);
+};
+
+export const hasTrafficDeepLink = (params: URLSearchParams): boolean =>
+  params.get(UNMATCHED_PARAM) === "1" || Boolean(deviceFromParams(params));
+
+const initialWindow = (params: URLSearchParams): TimeWindow => {
+  const raw = params.get(WINDOW_PARAM);
+  if (raw !== null) {
+    const match = TIME_WINDOWS.find((value) => String(value) === raw);
+    if (match !== undefined) return match;
+  }
+  return hasTrafficDeepLink(params) ? 0 : DEFAULT_WINDOW;
+};
+
 const loadAggSort = (): { column: AggSortColumn | null; direction: SortDirection } => {
   const { column, direction } = loadSortState(AGG_SORT_STORAGE_KEY);
   if (column && direction && (AGG_SORT_COLUMNS as readonly string[]).includes(column)) {
@@ -101,10 +134,36 @@ export const AggregatedView = ({
   onDeleteAsn,
 }: Props) => {
   const { t } = useTranslation();
-  const [window, setWindow] = useState<TimeWindow>(60);
-  const [unmatchedOnly, setUnmatchedOnly] = useState(false);
-  const [selectedMac, setSelectedMac] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [window, setWindow] = useState<TimeWindow>(() => initialWindow(searchParams));
+  const unmatchedOnly = searchParams.get(UNMATCHED_PARAM) === "1";
+  const selectedMac = deviceFromParams(searchParams);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+
+  const setParam = useCallback(
+    (name: string, value: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (value === null) next.delete(name);
+          else next.set(name, value);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const setUnmatchedOnly = useCallback(
+    (value: boolean) => setParam(UNMATCHED_PARAM, value ? "1" : null),
+    [setParam],
+  );
+
+  const setSelectedMac = useCallback(
+    (mac: string | null) => setParam(DEVICE_PARAM, mac),
+    [setParam],
+  );
   const isCompact = useMediaQuery(theme.breakpoints.down("md"));
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (globalThis.matchMedia("(max-width: 899.95px)").matches) {

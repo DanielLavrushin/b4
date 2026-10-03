@@ -44,7 +44,7 @@ After HTTPS is enabled, the web interface is available over `https://`.
 :::warning Key requirements
 The key must be an unencrypted PEM file. A passphrase-protected key (`ENCRYPTED PRIVATE KEY`, or `Proc-Type: 4,ENCRYPTED` in the header) is rejected when the settings are saved; the passphrase is removed with `openssl pkey -in key.pem -out key-plain.pem`. Saving also fails when a file is missing or the certificate does not match the key.
 
-If the files become unusable later (moved, deleted, replaced with a protected key), b4 still starts, records an error in the log and on the dashboard, and serves the web interface over plain HTTP until the pair is fixed.
+If the files become unusable later (moved, deleted, replaced with a protected key), b4 still starts, records an error in the log, lists it under **Needs attention** on the [dashboard](../dashboard.md#needs-attention), and serves the web interface over plain HTTP until the pair is fixed.
 :::
 
 :::info The Telegram WEB proxy needs more than this

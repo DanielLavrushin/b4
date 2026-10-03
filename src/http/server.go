@@ -16,6 +16,7 @@ import (
 	"github.com/daniellavrushin/b4/http/handler"
 	"github.com/daniellavrushin/b4/http/ws"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/nfq"
 )
 
@@ -83,13 +84,13 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 		addr = fmt.Sprintf("%s:%d", bindAddr, cfg.System.WebServer.Port)
 	}
 
-	metrics := handler.GetMetricsCollector()
+	mc := metrics.GetMetricsCollector()
 
 	tlsEnabled := cfg.System.WebServer.TLSCert != "" || cfg.System.WebServer.TLSKey != ""
 	if tlsEnabled {
 		if err := cfg.ValidateWebServerTLS(); err != nil {
 			log.Errorf("Web server TLS is not usable, serving plain HTTP instead: %v", err)
-			metrics.RecordEvent("error", fmt.Sprintf("Web server TLS is not usable, serving plain HTTP instead: %v", err))
+			mc.Event(metrics.LevelError, metrics.EventWebTLSUnusable, map[string]string{"error": err.Error()}, fmt.Sprintf("Web server TLS is not usable, serving plain HTTP instead: %v", err))
 			tlsEnabled = false
 		}
 	}
@@ -99,8 +100,6 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 		protocol = "https"
 	}
 	log.Infof("Starting web server on %s://%s", protocol, addr)
-
-	metrics.RecordEvent("info", fmt.Sprintf("Web server started on %s://%s", protocol, addr))
 
 	srv := &stdhttp.Server{
 		Addr:              addr,
@@ -113,7 +112,7 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Errorf("Web server error: %v", err)
-		metrics.RecordEvent("error", fmt.Sprintf("Web server error: %v", err))
+		mc.Event(metrics.LevelError, metrics.EventWebFailed, map[string]string{"error": err.Error()}, fmt.Sprintf("Web server error: %v", err))
 		return srv, api, nil
 	}
 	webListening.Store(true)
@@ -130,7 +129,7 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 
 		if err != nil && err != stdhttp.ErrServerClosed {
 			log.Errorf("Web server error: %v", err)
-			metrics.RecordEvent("error", fmt.Sprintf("Web server error: %v", err))
+			mc.Event(metrics.LevelError, metrics.EventWebFailed, map[string]string{"error": err.Error()}, fmt.Sprintf("Web server error: %v", err))
 		}
 	}()
 

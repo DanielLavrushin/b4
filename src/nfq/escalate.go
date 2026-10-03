@@ -6,7 +6,6 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
-	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/sni"
 )
 
@@ -54,7 +53,7 @@ func (w *Worker) tryEscalate(cfg *config.Config, set *config.SetConfig, host, sr
 		}
 		return nil
 	}
-	metrics.GetMetricsCollector().RecordEscalation()
+	recordEscalation(cfg)
 	w.registerEscalatedRoute(cfg, next, host, dst)
 	log.Warnf("escalation: %s is not getting through with %s (%s), switching it to %s", host, set.Name, reason, next.Name)
 	return next

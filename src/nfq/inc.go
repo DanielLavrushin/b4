@@ -9,7 +9,6 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
-	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/sock"
 )
 
@@ -63,7 +62,7 @@ func (w *Worker) HandleIncoming(vc *verdictCtx, v byte, raw []byte, ihl int, src
 				}
 				if rstProtOn {
 					log.Warnf("RST protection: dropped RST from %s:%d — %s", srcStr, sport, reason)
-					metrics.GetMetricsCollector().RecordRSTDrop()
+					recordRSTDrop(w.getConfig())
 					vc.drop()
 					return 0
 				}
