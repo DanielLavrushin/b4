@@ -138,8 +138,14 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	ds.CheckSuite.mu.Unlock()
 
 	ds.setPhase(PhaseStrategy)
-	ds.storeResultsMulti(phase1Presets[0], ds.testPresetAllDomains(phase1Presets[0]))
+	baseline := ds.testPresetAllDomains(phase1Presets[0])
+	ds.storeResultsMulti(phase1Presets[0], baseline)
 	ds.determineBest()
+	ds.markUnresolved(baseline)
+	if ds.nothingLeftToTest() {
+		ds.finishRun()
+		return
+	}
 
 	if hasCurrent && !ds.interrupted() {
 		ds.setPhase(PhaseCached)
@@ -223,7 +229,11 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	}
 
 	if !ds.anyDomainNeedsBypass() {
-		log.DiscoveryLogf("Verified: no packet strategy needed for any domain")
+		if ds.anyUnresolved() {
+			log.DiscoveryLogf("Verified: no packet strategy needed for any domain that resolves")
+		} else {
+			log.DiscoveryLogf("Verified: no packet strategy needed for any domain")
+		}
 		ds.finishRun()
 		return
 	}
@@ -335,6 +345,11 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 	for _, di := range ds.Domains {
 		domainResult := ds.domainResults[di.Domain]
 		dnsResult := ds.dnsResults[di.Domain]
+
+		if domainResult.Unresolved {
+			log.DiscoveryLogf("  ⊘ [%s] does not resolve: %s", di.Domain, unresolvedReason(dnsResult))
+			continue
+		}
 
 		// DNS status line
 		if dnsResult != nil {

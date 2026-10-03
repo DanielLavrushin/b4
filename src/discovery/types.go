@@ -68,6 +68,7 @@ const (
 	OutcomeWorksWithoutBypass Outcome = "works_without_bypass"
 	OutcomeAddressBlocked     Outcome = "address_blocked"
 	OutcomeGatewayIntercepted Outcome = "gateway_intercepted"
+	OutcomeUnresolved         Outcome = "unresolved"
 	OutcomeNotFound           Outcome = "not_found"
 )
 
@@ -112,7 +113,17 @@ type CheckResult struct {
 	FinalHost   string            `json:"final_host,omitempty"`
 	UsedIP      string            `json:"used_ip,omitempty"`
 	Set         *config.SetConfig `json:"set"`
+	lookup      nameLookup
+	untried     bool
 }
+
+type nameLookup int
+
+const (
+	lookupOK nameLookup = iota
+	lookupNotFound
+	lookupFailed
+)
 
 type DomainInput struct {
 	Domain   string `json:"domain"`
@@ -183,12 +194,15 @@ type DomainDiscoveryResult struct {
 	ConfirmTries  int                            `json:"confirm_tries,omitempty"`
 	FinalHost     string                         `json:"final_host,omitempty"`
 	DNSResult     *DNSDiscoveryResult            `json:"dns_result,omitempty"`
+	Unresolved    bool                           `json:"unresolved,omitempty"`
 	Outcome       Outcome                        `json:"outcome,omitempty"`
 	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
 }
 
 func (dr *DomainDiscoveryResult) refreshOutcome(finished bool) {
 	switch {
+	case dr.Unresolved:
+		dr.Outcome = OutcomeUnresolved
 	case dr.BaselineWorks:
 		dr.Outcome = OutcomeWorksWithoutBypass
 	case dr.BestSuccess && dr.BestPreset != "" && dr.BestPreset != presetNoBypass:
@@ -251,6 +265,11 @@ type DNSDiscoveryResult struct {
 	AlternativeIPs   []string         `json:"alternative_ips,omitempty"`
 	GatewayIPs       []string         `json:"gateway_ips,omitempty"`
 	AltScan          *AltScanSummary  `json:"alt_scan,omitempty"`
+	NXDomain         bool             `json:"nxdomain,omitempty"`
+}
+
+func (r *DNSDiscoveryResult) noAddress() bool {
+	return r != nil && len(r.ExpectedIPs) == 0 && len(r.AlternativeIPs) == 0 && len(r.GatewayIPs) == 0
 }
 
 func (r *DNSDiscoveryResult) addressBlocked() bool {

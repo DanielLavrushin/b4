@@ -336,9 +336,12 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, port, tlsPort 
 		known[ip] = true
 	}
 
-	if result.TransportBlocked {
+	switch {
+	case result.TransportBlocked:
 		log.DiscoveryLogf("  [%s] every known address is unreachable, asking DNS how other regions are answered", domain)
-	} else {
+	case len(known) == 0:
+		log.DiscoveryLogf("  [%s] no address is known for the name here, asking DNS how other regions are answered", domain)
+	default:
 		log.DiscoveryLogf("  [%s] the known addresses do not serve the site from here, asking DNS how other regions are answered", domain)
 	}
 
@@ -475,7 +478,7 @@ func (ds *DiscoverySuite) gatewayTerminated(ctx context.Context, ips []string, p
 }
 
 func shouldScanAlternatives(result *DNSDiscoveryResult) bool {
-	if result == nil {
+	if result == nil || result.NXDomain {
 		return false
 	}
 	return result.TransportBlocked || (!result.SystemServes && !result.ReferenceServes)
@@ -604,7 +607,7 @@ func (ds *DiscoverySuite) needsBypass(domain string) bool {
 	if dr == nil {
 		return true
 	}
-	if dr.BaselineWorks {
+	if dr.BaselineWorks || dr.Unresolved {
 		return false
 	}
 	if _, r := plainFixResult(dr); r != nil {

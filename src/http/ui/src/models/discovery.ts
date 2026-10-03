@@ -39,6 +39,7 @@ export type DiscoveryOutcome =
   | "works_without_bypass"
   | "address_blocked"
   | "gateway_intercepted"
+  | "unresolved"
   | "not_found";
 
 export type DiscoverySource = "web" | "watchdog" | "mcp";
@@ -92,6 +93,7 @@ export interface DNSDiscoveryResult {
   alternative_ips?: string[];
   gateway_ips?: string[];
   alt_scan?: AltScanSummary;
+  nxdomain?: boolean;
 }
 
 export interface DiscoveryResult {
@@ -107,6 +109,7 @@ export interface DiscoveryResult {
   confirm_tries?: number;
   final_host?: string;
   dns_result?: DNSDiscoveryResult;
+  unresolved?: boolean;
   outcome?: DiscoveryOutcome;
   unconfirmed?: boolean;
 }

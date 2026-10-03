@@ -119,6 +119,7 @@ type mcpDiscoveryDomain struct {
 	Provisional   bool    `json:"provisional,omitempty"`
 	Unconfirmed   bool    `json:"unconfirmed,omitempty"`
 	Verdict       string  `json:"verdict"`
+	unresolved    bool
 }
 
 type mcpDiscoveryOut struct {
@@ -155,6 +156,8 @@ func mcpDiscoveryVerdict(d mcpDiscoveryDomain, running bool) string {
 		return "works without b4 - do not create a set for it"
 	case d.Gateway:
 		return "TCP to every known address is answered by the first hop in front of this host (a transparent proxy on the gateway), so packets from this host never reach the ISP; run b4 on that gateway or exclude this host from its redirect; if this host is the router itself, the ISP does this at its edge and only a proxy route helps"
+	case d.unresolved:
+		return "the name does not resolve: no resolver returned an address for it, so no strategy was tested; check the spelling of the domain"
 	case d.Blocked:
 		return "the address itself is unreachable, so no packet strategy can help; only a proxy or VPN route would"
 	case d.Found && running:
@@ -215,6 +218,8 @@ func mcpApplyOutcome(row *mcpDiscoveryDomain, outcome discovery.Outcome) {
 		row.Found, row.BaselineWorks, row.Blocked = false, false, true
 	case discovery.OutcomeGatewayIntercepted:
 		row.Found, row.BaselineWorks, row.Blocked, row.Gateway = false, false, false, true
+	case discovery.OutcomeUnresolved:
+		row.Found, row.BaselineWorks, row.Blocked, row.unresolved = false, false, false, true
 	case discovery.OutcomeNotFound:
 		row.Found, row.BaselineWorks, row.Blocked = false, false, false
 	}
@@ -328,7 +333,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		Status: string(suite.Status),
 		Note: fmt.Sprintf(
 			"started for %s. This runs for minutes, not seconds: it opens with %d strategies per domain and then explores the family that looked best, "+
-				"which can be another hundred or more, each preceded by a config-propagation pause. It stops early for a domain that turns out to work without b4. "+
+				"which can be another hundred or more, each preceded by a config-propagation pause. It stops early for a domain that turns out to work without b4 and right after the first fetch for one whose name does not resolve. "+
 				"Do NOT poll in a loop - tell the user it is running and call action=status once when they ask. "+
 				"While it runs, the watchdog cannot heal and a firewall refresh will block.",
 			strings.Join(urls, ", "), len(discovery.GetPhase1Presets())),

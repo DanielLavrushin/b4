@@ -2,6 +2,7 @@ package netprobe
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -241,4 +242,115 @@ func dnsAResponse() []byte {
 	msg = append(msg, question...)
 	msg = append(msg, answer...)
 	return msg
+}
+
+func nxdomainWireResponse() []byte {
+	return []byte{0x00, 0x00, 0x81, 0x83, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+}
+
+func TestResolveDoHOnceReportsNXDomain(t *testing.T) {
+	jsonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"Status":3,"Question":[{"name":"typo.example.","type":1}]}`))
+	}))
+	defer jsonSrv.Close()
+	wireSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/dns-message")
+		w.Write(nxdomainWireResponse())
+	}))
+	defer wireSrv.Close()
+
+	r := &Resolver{Timeout: 2 * time.Second}
+	for _, srv := range []DoHServer{{URL: jsonSrv.URL, Format: DoHJSON}, {URL: wireSrv.URL, Format: DoHWire}} {
+		ips, err := r.ResolveDoHOnce(context.Background(), srv, "typo.example", "A")
+		var nx *NXDomainError
+		if !errors.As(err, &nx) {
+			t.Fatalf("%s: want an NXDomainError, got ips=%v err=%v", srv.Format, ips, err)
+		}
+		if nx.Server != srv.URL || nx.Domain != "typo.example" {
+			t.Fatalf("%s: the error must name the server and the domain, got %+v", srv.Format, nx)
+		}
+	}
+}
+
+func TestResolveDoHOnceAnswerWithoutTheFamilyIsNotNXDomain(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"Status":0,"Answer":[{"type":28,"data":"2606:2800::1"}]}`))
+	}))
+	defer srv.Close()
+
+	r := &Resolver{Timeout: 2 * time.Second}
+	ips, err := r.ResolveDoHOnce(context.Background(), DoHServer{URL: srv.URL, Format: DoHJSON}, "v6only.example", "A")
+	if err != nil || len(ips) != 0 {
+		t.Fatalf("the name exists without an IPv4 address, want no error and no address, got ips=%v err=%v", ips, err)
+	}
+}
+
+func TestResolveResilientReportsEncryptedNXDomain(t *testing.T) {
+	nx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"Status":3}`))
+	}))
+	defer nx.Close()
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer broken.Close()
+
+	resp := make([]byte, 12)
+	resp[3] = 0x03
+	udpAddr, stop := startUDPResponder(t, resp)
+	defer stop()
+
+	r := &Resolver{
+		Timeout: 2 * time.Second,
+		DoH:     []DoHServer{{URL: broken.URL, Format: DoHJSON}, {URL: nx.URL, Format: DoHJSON}},
+		UDP:     []string{udpAddr},
+	}
+	_, err := r.ResolveResilient(context.Background(), "typo.example", "A")
+	var nxErr *NXDomainError
+	if !errors.As(err, &nxErr) || nxErr.Server != nx.URL {
+		t.Fatalf("want the NXDOMAIN from %s, got %v", nx.URL, err)
+	}
+}
+
+func TestResolveResilientAddressBeatsNXDomain(t *testing.T) {
+	nx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"Status":3}`))
+	}))
+	defer nx.Close()
+
+	udpAddr, stop := startUDPResponder(t, dnsAResponse())
+	defer stop()
+
+	r := &Resolver{
+		Timeout: 2 * time.Second,
+		DoH:     []DoHServer{{URL: nx.URL, Format: DoHJSON}},
+		UDP:     []string{udpAddr},
+	}
+	out, err := r.ResolveResilient(context.Background(), "example.com", "A")
+	if err != nil || len(out.IPs) != 1 || out.IPs[0] != "5.6.7.8" {
+		t.Fatalf("any server with an address wins over an NXDOMAIN, got %+v, %v", out, err)
+	}
+}
+
+func TestResolveResilientPlainNXDomainIsNotTrusted(t *testing.T) {
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer broken.Close()
+
+	resp := make([]byte, 12)
+	resp[3] = 0x03
+	udpAddr, stop := startUDPResponder(t, resp)
+	defer stop()
+
+	r := &Resolver{
+		Timeout: 2 * time.Second,
+		DoH:     []DoHServer{{URL: broken.URL, Format: DoHJSON}},
+		UDP:     []string{udpAddr},
+	}
+	_, err := r.ResolveResilient(context.Background(), "typo.example", "A")
+	var nx *NXDomainError
+	if err == nil || errors.As(err, &nx) {
+		t.Fatalf("an NXDOMAIN over plain UDP can be forged on the path, it must not read as one: %v", err)
+	}
 }
