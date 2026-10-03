@@ -225,7 +225,6 @@ export function useModeration() {
     withdrawSet.isPending ||
     reinstateSet.isPending ||
     versionReports.isPending;
-  const open = prompt !== null || versionPrompt !== null || editing !== null || retitling !== null;
 
   return {
     approve,
@@ -247,7 +246,6 @@ export function useModeration() {
     removeMirror,
     dialog,
     busy,
-    open,
   };
 }
 

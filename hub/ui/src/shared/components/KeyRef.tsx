@@ -14,13 +14,14 @@ interface KeyRefProps {
   banned?: boolean;
   trusted?: boolean;
   copy?: boolean;
+  dot?: boolean;
 }
 
 export const keyHref = (hmac: string) => `/keys/${hmac}`;
 
 const hue = (hmac: string) => parseInt(hmac.slice(0, 4), 16) % 360;
 
-export function KeyRef({ hmac, label, name: givenName, tag: givenTag, banned: givenBanned, trusted: givenTrusted, copy = false }: Readonly<KeyRefProps>) {
+export function KeyRef({ hmac, label, name: givenName, tag: givenTag, banned: givenBanned, trusted: givenTrusted, copy = false, dot = true }: Readonly<KeyRefProps>) {
   const { t } = useTranslation();
   const known = useKnownKey(hmac);
   const name = givenName ?? known?.name;
@@ -54,7 +55,7 @@ export function KeyRef({ hmac, label, name: givenName, tag: givenTag, banned: gi
             color: banned ? colors.state.error : colors.text.primary,
           }}
         >
-          <Box component="span" sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: `hsl(${String(hue(hmac))}, 55%, 55%)`, flexShrink: 0 }} />
+          {dot && <Box component="span" sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: `hsl(${String(hue(hmac))}, 55%, 55%)`, flexShrink: 0 }} />}
           {name && (
             <Typography component="span" variant="body2" sx={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {name}

@@ -44,8 +44,8 @@ export function ProjectionDiff({ before, after, beforeVersion, title, emptyText,
             </TableRow>
           </TableHead>
           <TableBody>
-            {lines.map((line) => (
-              <TableRow key={line.path + line.kind}>
+            {lines.map((line, index) => (
+              <TableRow key={`${String(index)}:${line.kind}:${line.path}`}>
                 <TableCell sx={{ fontFamily: fonts.mono, fontSize: 12, whiteSpace: "nowrap" }}>
                   <Box component="span" sx={{ color: kindColor[line.kind], mr: 1 }}>
                     {t(`entry.diff.${line.kind}`)}

@@ -1,10 +1,6 @@
 package ingest
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -23,65 +19,6 @@ const (
 
 	FamilyPlain = "plain"
 )
-
-func canonicalTargets(items []string, normalise func(string) string) []string {
-	seen := make(map[string]struct{}, len(items))
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		value := normalise(item)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func lowerTrimmed(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
-}
-
-func canonicalASN(s string) string {
-	if id, ok := config.NormalizeASN(s); ok {
-		return id
-	}
-	return lowerTrimmed(s)
-}
-
-func TargetsKey(projection map[string]interface{}) string {
-	canon := map[string][]string{
-		"sni_domains": canonicalTargets(store.TargetList(projection, "sni_domains"), sni.CanonicalDomainEntry),
-		"ip":          canonicalTargets(store.TargetList(projection, "ip"), lowerTrimmed),
-		"geosite":     canonicalTargets(store.TargetList(projection, "geosite_categories"), lowerTrimmed),
-		"geoip":       canonicalTargets(store.TargetList(projection, "geoip_categories"), lowerTrimmed),
-	}
-	if asns := canonicalTargets(store.TargetList(projection, "asns"), canonicalASN); len(asns) > 0 {
-		canon["asns"] = asns
-	}
-	data, _ := json.Marshal(canon)
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
-func TargetSet(projection map[string]interface{}) map[string]struct{} {
-	out := make(map[string]struct{})
-	add := func(prefix string, items []string, normalise func(string) string) {
-		for _, item := range canonicalTargets(items, normalise) {
-			out[prefix+item] = struct{}{}
-		}
-	}
-	add("sni:", store.TargetList(projection, "sni_domains"), sni.CanonicalDomainEntry)
-	add("ip:", store.TargetList(projection, "ip"), lowerTrimmed)
-	add("geosite:", store.TargetList(projection, "geosite_categories"), lowerTrimmed)
-	add("geoip:", store.TargetList(projection, "geoip_categories"), lowerTrimmed)
-	add("asn:", store.TargetList(projection, "asns"), canonicalASN)
-	return out
-}
 
 func targetsOverlap(a, b map[string]struct{}) bool {
 	for k := range a {

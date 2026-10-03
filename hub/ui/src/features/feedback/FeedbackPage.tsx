@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Box, Button, Chip, Stack, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import { Box, Button, Chip, Stack, Tab, Tabs, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { colors } from "@design";
@@ -12,23 +12,36 @@ import { formatAgo, formatStamp } from "@/shared/utils/format";
 import { setPath } from "@/features/sets/SetDrawerHost";
 import { AppliedWeight } from "./AppliedWeight";
 import { ReportsInbox } from "./ReportsInbox";
+import { OriginFilters } from "./OriginFilters";
+import { normalizeAsn, normalizeCountry } from "./origins";
 import { useVotes, type VoteFilter } from "./api";
 
 function VotesTab() {
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
   const get = (name: string) => params.get(name) ?? "";
-  const set = (name: string, value: string | null) =>
+  const update = (changes: Record<string, string | null>) =>
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        if (value === null || value === "") next.delete(name);
-        else next.set(name, value);
+        for (const [name, value] of Object.entries(changes)) {
+          if (value === null || value === "") next.delete(name);
+          else next.set(name, value);
+        }
         return next;
       },
       { replace: true },
     );
-  const filter: VoteFilter = { set: get("set"), key: get("key"), sign: get("sign"), author: get("author"), verified: get("verified"), asn: get("asn"), cc: get("cc") };
+  const set = (name: string, value: string | null) => update({ [name]: value });
+  const filter: VoteFilter = {
+    set: get("set"),
+    key: get("key"),
+    sign: get("sign"),
+    author: get("author"),
+    verified: get("verified"),
+    asn: normalizeAsn(get("asn")),
+    cc: normalizeCountry(get("cc")),
+  };
   const votes = useVotes(filter);
   const rows = useMemo(() => votes.data?.pages.flatMap((p) => p.items) ?? [], [votes.data]);
   const total = votes.data?.pages[0]?.total ?? 0;
@@ -94,8 +107,7 @@ function VotesTab() {
             {toggle("sign", [["", t("feedback.filters.all")], ["works", t("feedback.filters.works")], ["broken", t("feedback.filters.broken")]])}
             {toggle("author", [["", t("feedback.filters.anyone")], ["exclude", t("feedback.filters.notAuthor")], ["only", t("feedback.filters.onlyAuthor")]])}
             {toggle("verified", [["", t("feedback.filters.anyOrigin")], ["1", t("feedback.filters.verified")], ["0", t("feedback.filters.unverified")]])}
-            <TextField size="small" label="ASN" value={get("asn")} onChange={(e) => set("asn", e.target.value)} sx={{ width: 110 }} />
-            <TextField size="small" label={t("feedback.filters.country")} value={get("cc")} onChange={(e) => set("cc", e.target.value.toUpperCase().slice(0, 2))} sx={{ width: 90 }} />
+            <OriginFilters asn={filter.asn} cc={filter.cc} onChange={update} />
             {filter.set && <Chip label={t("feedback.filters.setChip", { id: filter.set.slice(0, 8) })} onDelete={() => set("set", null)} />}
             {filter.key && <Chip label={t("feedback.filters.keyChip", { key: filter.key.slice(0, 8) })} onDelete={() => set("key", null)} />}
           </Stack>

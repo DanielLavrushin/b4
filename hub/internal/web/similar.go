@@ -10,7 +10,6 @@ import (
 
 	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4/sni"
-	"github.com/daniellavrushin/b4hub/internal/ingest"
 	"github.com/daniellavrushin/b4hub/internal/store"
 )
 
@@ -66,7 +65,7 @@ type targetProfile struct {
 }
 
 func profileOf(projection map[string]interface{}) targetProfile {
-	p := targetProfile{set: ingest.TargetSet(projection), domains: map[string]struct{}{}, suffixes: map[string]struct{}{}}
+	p := targetProfile{set: store.TargetEntries(projection), domains: map[string]struct{}{}, suffixes: map[string]struct{}{}}
 	for _, entry := range store.TargetList(projection, "sni_domains") {
 		value, isRegex := sni.ParseDomainEntry(entry)
 		value = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(value)), ".")

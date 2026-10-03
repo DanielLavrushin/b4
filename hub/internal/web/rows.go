@@ -38,36 +38,37 @@ type TargetsBriefView struct {
 }
 
 type SetRowView struct {
-	SetID              string           `json:"set_id"`
-	Version            int              `json:"version"`
-	Title              string           `json:"title"`
-	Status             string           `json:"status"`
-	StatusReason       string           `json:"status_reason,omitempty"`
-	Family             string           `json:"family,omitempty"`
-	Flags              []string         `json:"flags"`
-	Techniques         []Term           `json:"techniques"`
-	Targets            TargetsBriefView `json:"targets"`
-	AuthorHMAC         string           `json:"author_hmac"`
-	Author             string           `json:"author"`
-	AuthorBanned       bool             `json:"author_banned,omitempty"`
-	ASNObserved        string           `json:"asn_observed,omitempty"`
-	CountryObserved    string           `json:"country_observed,omitempty"`
-	Published          *ScoreView       `json:"published,omitempty"`
-	Live               ScoreView        `json:"live"`
-	Evidence           EvidenceView     `json:"evidence"`
-	Attention          []string         `json:"attention"`
-	Reports            int              `json:"reports"`
-	OpenReports        int              `json:"open_reports"`
-	IndependentReports int              `json:"independent_reports"`
-	Versions           []int            `json:"versions,omitempty"`
-	SupersededBy       int              `json:"superseded_by,omitempty"`
-	SupersededAt       *time.Time       `json:"superseded_at,omitempty"`
-	Withheld           string           `json:"withheld,omitempty"`
-	HiddenFrom         string           `json:"hidden_from,omitempty"`
-	DecodeError        bool             `json:"decode_error,omitempty"`
-	CreatedAt          time.Time        `json:"created_at"`
-	UpdatedAt          time.Time        `json:"updated_at"`
-	EditedAt           *time.Time       `json:"edited_at,omitempty"`
+	SetID              string                 `json:"set_id"`
+	Version            int                    `json:"version"`
+	Title              string                 `json:"title"`
+	Status             string                 `json:"status"`
+	StatusReason       string                 `json:"status_reason,omitempty"`
+	Family             string                 `json:"family,omitempty"`
+	Flags              []string               `json:"flags"`
+	Techniques         []Term                 `json:"techniques"`
+	Targets            TargetsBriefView       `json:"targets"`
+	AuthorHMAC         string                 `json:"author_hmac"`
+	Author             string                 `json:"author"`
+	AuthorBanned       bool                   `json:"author_banned,omitempty"`
+	ASNObserved        string                 `json:"asn_observed,omitempty"`
+	CountryObserved    string                 `json:"country_observed,omitempty"`
+	Published          *ScoreView             `json:"published,omitempty"`
+	Live               ScoreView              `json:"live"`
+	Evidence           EvidenceView           `json:"evidence"`
+	Attention          []string               `json:"attention"`
+	Reports            int                    `json:"reports"`
+	OpenReports        int                    `json:"open_reports"`
+	IndependentReports int                    `json:"independent_reports"`
+	Versions           []int                  `json:"versions,omitempty"`
+	SupersededBy       int                    `json:"superseded_by,omitempty"`
+	SupersededAt       *time.Time             `json:"superseded_at,omitempty"`
+	Withheld           string                 `json:"withheld,omitempty"`
+	HiddenFrom         string                 `json:"hidden_from,omitempty"`
+	Config             map[string]interface{} `json:"config,omitempty"`
+	DecodeError        bool                   `json:"decode_error,omitempty"`
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
+	EditedAt           *time.Time             `json:"edited_at,omitempty"`
 }
 
 type SetRowsView struct {
@@ -321,6 +322,7 @@ func (s *Server) setRow(v store.Version, ec *entryContext, pool map[string][]sto
 	}
 	if set, err := DecodeSet(v.Projection); err == nil {
 		row.Techniques = Techniques(&set, v.Payloads)
+		row.Config = ConfigOf(&set)
 	} else {
 		row.DecodeError = true
 	}

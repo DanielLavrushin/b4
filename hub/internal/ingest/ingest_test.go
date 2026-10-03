@@ -328,24 +328,6 @@ func TestThreeIndependentReportsHideAVersion(t *testing.T) {
 	expect(t, report(testkit.Identity(t), peerC), http.StatusAccepted, "")
 }
 
-func TestTargetsKeyIsCanonical(t *testing.T) {
-	a := map[string]interface{}{"targets": map[string]interface{}{
-		"sni_domains":        []interface{}{"B.example", "a.example."},
-		"geosite_categories": []interface{}{"YouTube"},
-	}}
-	b := map[string]interface{}{"targets": map[string]interface{}{
-		"sni_domains":        []interface{}{"a.example", "b.example", "b.example"},
-		"geosite_categories": []interface{}{"youtube"},
-	}}
-	if TargetsKey(a) != TargetsKey(b) {
-		t.Errorf("order, case, trailing dots and duplicates must not change the key")
-	}
-	c := map[string]interface{}{"targets": map[string]interface{}{"sni_domains": []interface{}{"a.example"}}}
-	if TargetsKey(a) == TargetsKey(c) {
-		t.Errorf("different targets must differ")
-	}
-}
-
 func TestFlags(t *testing.T) {
 	blanket := map[string]interface{}{
 		"targets": map[string]interface{}{"geosite_categories": []interface{}{"category-ads-all"}},

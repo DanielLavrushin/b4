@@ -11,6 +11,9 @@
     "cancel": "Cancel",
     "confirm": "Confirm",
     "close": "Close",
+    "clear": "Clear",
+    "open": "Open",
+    "noMatches": "No matches",
     "search": "Search",
     "copy": "Copy",
     "copied": "Copied",
@@ -113,16 +116,34 @@
     "hideCompareOriginal": "Hide comparison",
     "authorBanned": "author banned",
     "setWithdrawn": "set withdrawn",
-    "selectAll": "Select all"
+    "selectAll": "Select all",
+    "openDetails": "Open details"
   },
   "edit": {
     "title": "Edit {{ref}}",
     "intro": "Changes are saved on the hub only. The author's router keeps its own copy, and the catalogue is signed by this hub once the version is approved.",
     "setTitle": "Title",
     "description": "Description",
-    "domains": "Domains, one per line",
-    "domainsHint": "{{count}} entries. A plain entry matches the domain and every subdomain; b4 has no wildcard syntax.",
-    "domainsLocked": "Fix the JSON first",
+    "targets": "Targets",
+    "domains": "Domains",
+    "domainsHint": "Entries: {{count}}, one per line. A plain entry matches the domain and every subdomain; b4 has no wildcard syntax.",
+    "ips": "Addresses",
+    "ipsHint": "Entries: {{count}}, one per line. IP addresses and CIDR ranges; commas and spaces also separate entries.",
+    "asns": "ASNs",
+    "asnsHint": "Entries: {{count}}, one per line, as AS13335 or 13335.",
+    "geosite": "Geosite categories",
+    "geositeHint": "Entries: {{count}}. Each router looks them up in its own geosite file.",
+    "geoip": "GeoIP categories",
+    "geoipHint": "Entries: {{count}}. Each router looks them up in its own GeoIP file.",
+    "tls": "TLS version",
+    "ipVersion": "IP version",
+    "any": "Any",
+    "filterUnknown": "b4 does not know this value, so the set matches nothing",
+    "domainOnly": "Domain-only matching",
+    "domainOnlyHint": "Match the domains only by the name in the handshake, never by their IP address.",
+    "clear": "Clear",
+    "targetsLocked": "The full set JSON is not valid, so the target fields are locked: {{message}}",
+    "noTargets": "The set has no targets. Add a domain, an address, an ASN or a category: a set without targets cannot be saved.",
     "showJson": "Show the full set JSON",
     "hideJson": "Hide the full set JSON",
     "json": "Full set JSON",
@@ -132,13 +153,17 @@
     "note": "Moderator note",
     "noteHint": "Shown in this console only.",
     "check": "Check",
-    "stale": "The content changed since the last check.",
+    "stale": "The content changed since the last check. Check again before saving.",
     "save": "Save",
     "saveApprove": "Save and approve",
-    "unchanged": "Nothing differs from the received set.",
+    "unchanged": "Nothing differs from the current version.",
     "targetsOnly": "Only targets, title or description differ. The strategy fingerprint stays the same, so existing votes still count.",
     "fpChanged": "The strategy differs from what the author sent. The fingerprint changes, the votes recorded for this version are dropped, and the published set will no longer match the author's own copy.",
     "duplicate": "The result duplicates {{ref}} ({{title}}, {{status}}). Saving is refused.",
+    "b4MinChanged": "After this change the version needs b4 {{to}} or newer; until now it needed {{from}}.",
+    "flagAdded": "New flag \"{{flag}}\". {{hint}}",
+    "flagRemoved": "Flag removed: \"{{flag}}\".",
+    "refused": "The check refused the set:",
     "tidy": "Suggestions for the domain list ({{count}})",
     "applyTidy": "Apply suggestions",
     "suggestion": {
@@ -151,11 +176,11 @@
     },
     "warnings": "Warnings from the check",
     "stripped": "Stripped fields",
-    "family": "Family",
-    "diffTitle": "Changes against the received set",
+    "diffTitle": "What saving changes",
+    "diffSame": "The set JSON stays as it is.",
     "diffNone": "The set is identical to what was received.",
     "received": "Received",
-    "edited": "Edited",
+    "edited": "After saving",
     "now": "Now",
     "moderatorDiffTitle": "Changes made by the moderator",
     "warningCodes": {
@@ -165,19 +190,27 @@
       "doh_unknown": "The DoH host is not a known public resolver",
       "private_domains": "Some domains look private",
       "private_addresses": "Some addresses look private",
-      "too_many_domains": "Too many domains for a shared set",
-      "too_many_ips": "Too many addresses for a shared set",
-      "too_many_asns": "Too many ASNs for a shared set",
+      "invalid_addresses": "Neither an IP address nor a CIDR range, routers skip these entries",
+      "catch_all_addresses": "A /0 range covers every address",
+      "geosite_categories_missing": "Missing from this hub's geosite file; the author may use a different geosite source",
+      "geoip_categories_missing": "Missing from this hub's GeoIP file; the author may use a different GeoIP source",
+      "too_many_domains": "Too many domains for a shared set: {{count}}, at most {{max}}",
+      "too_many_ips": "Too many addresses for a shared set: {{count}}, at most {{max}}",
+      "too_many_asns": "Too many ASNs for a shared set: {{count}}, at most {{max}}",
       "pins": "The set pins domains to fixed addresses",
-      "pin_not_targeted": "A pin names a domain the set does not target",
-      "pin_private_address": "A pin points at a private address",
+      "pin_not_targeted": "Dropped a pin for a domain the set does not target",
+      "pin_private_address": "Dropped a pin that points at a private address",
       "payload_missing": "A payload reference has no attached data",
-      "custom_payload_large": "The custom payload is large",
+      "custom_payload_large": "The custom payload is large: {{size}} bytes, at most {{max}}",
       "block_regexp": "A block set matches by pattern",
       "fingerprint_mismatch": "The fingerprint does not match the set",
       "no_targets": "The set has no targets",
       "payload_invalid": "An attached payload file does not parse",
       "version_too_old": "The set needs a newer b4 than the one it is checked against"
+    },
+    "fieldErrors": {
+      "asn_invalid": "{{value}} is not a public AS number",
+      "mss_clamp_scope_required": "MSS clamping needs an address, GeoIP or ASN target"
     },
     "emptyValue": "(empty)",
     "strippedReasons": {
@@ -188,7 +221,87 @@
       "routing_not_shareable": "routing is not shared, except the block mode"
     }
   },
+  "core": {
+    "domains": "domains",
+    "ips": "IPs"
+  },
   "sets": {
+    "card": {
+      "noTargets": "No targets configured",
+      "manual": "manual",
+      "f": {
+        "railLabel": "Set facets",
+        "target": "Target",
+        "split": "Split",
+        "fake": "Fake",
+        "route": "Route",
+        "dns": "DNS",
+        "escalate": "Escalate",
+        "block": "Block",
+        "notConfigured": "Not configured",
+        "configure": "Configure",
+        "edit": "edit",
+        "compare": "Compare across sets",
+        "collapseAll": "Collapse all",
+        "expandAll": "Expand all",
+        "defaultRoute": "Default route",
+        "dnsPin": "dns pin",
+        "on": "on",
+        "off": "off",
+        "geosite": "Geosite",
+        "geoip": "GeoIP",
+        "asns": "ASN",
+        "asnPending": "not resolved",
+        "devices": "Devices",
+        "included": "included",
+        "excluded": "excluded",
+        "tls": "TLS",
+        "ipVersion": "IP ver",
+        "tcpPorts": "TCP ports",
+        "udpPorts": "UDP ports",
+        "strategy": "Strategy",
+        "order": "Order",
+        "inOrder": "in order",
+        "reversed": "reversed",
+        "shuffle": "Shuffle",
+        "delay": "Delay",
+        "jitter": "Jitter",
+        "sniPos": "SNI pos",
+        "oobPos": "OOB pos",
+        "oobChar": "OOB char",
+        "recPos": "Rec pos",
+        "overlapLen": "Overlap",
+        "mss": "MSS",
+        "payload": "Payload",
+        "ttl": "TTL",
+        "seqLen": "Seq len",
+        "md5": "TCP MD5",
+        "onFakeOnly": "fake only",
+        "mutation": "Mutation",
+        "tlsMod": "TLS mod",
+        "mode": "Mode",
+        "action": "Action",
+        "host": "Host",
+        "udpRelay": "UDP relay",
+        "failOpen": "Fail open",
+        "useDomain": "Use domain",
+        "transport": "Transport",
+        "telegramBridge": "Telegram bridge",
+        "egress": "Egress",
+        "egressIp": "Egress IP",
+        "table": "Table",
+        "redirect": "redirect",
+        "fragment": "Fragment",
+        "pins": "Pins",
+        "pinsOnly": "pins only",
+        "to": "To",
+        "onRst": "On RST",
+        "onStall": "On stall",
+        "onDns": "On DNS",
+        "ttlSec": "TTL",
+        "dnsTarget": "Server"
+      }
+    },
     "listed": "Listed",
     "superseded": "Superseded",
     "hidden": "Hidden",
@@ -196,24 +309,22 @@
     "searchPlaceholder": "Title, id, domain, author, technique",
     "empty": "No set in this group.",
     "noMatch": "No set matches the search.",
-    "columns": {
-      "title": "Set",
-      "targets": "Targets",
-      "strategy": "Strategy",
-      "votes": "Votes",
+    "sort": {
+      "label": "Sort by",
+      "updated": "Last update",
+      "created": "Received",
+      "title": "Title",
       "author": "Author",
-      "updated": "Updated",
-      "reason": "Reason",
-      "supersededBy": "Superseded by",
-      "techniques": "Techniques",
       "score": "Score",
-      "evidence": "Votes",
-      "reports": "Reports"
+      "n": "Vote weight",
+      "devices": "Devices",
+      "reports": "Reports",
+      "asc": "Ascending",
+      "desc": "Descending"
     },
-    "versions": "versions {{list}}",
+    "versions": "Active versions: {{list}}",
     "restore": "Restore",
     "approveAfterAll": "Approve after all",
-    "recentOnly": "Only the {{count}} most recent decisions are shown.",
     "withheld": "Withheld",
     "withheldReason": {
       "set_withdrawn": "withdrawn by a moderator",
@@ -231,10 +342,16 @@
     "listedBanner": "Listed in the catalogue as v{{version}}.",
     "notListedBanner": "Not listed: no version of this set is active.",
     "awaitingReview": "awaiting review",
-    "reportsTip": "Open: {{open}} of {{total}}, independent: {{independent}}",
     "needsAttention": "Needs attention ({{count}})",
     "withReports": "With open reports",
-    "edited": "Edited"
+    "edited": "Edited",
+    "tabCount": "{{label}} ({{count}})",
+    "perPage": "Sets per page",
+    "openAuthor": "Open the author's key",
+    "updatedAgo": "updated {{when}}",
+    "supersededBy": "Superseded by v{{version}}, {{when}}",
+    "reasonLine": "Reason: {{reason}}",
+    "reportsTotal": "reports: {{count}}"
   },
   "entry": {
     "targets": "Targets",
@@ -259,11 +376,6 @@
     "author": "Author",
     "seenFrom": "seen from AS{{asn}} {{country}}",
     "claims": "claims {{asn}} {{country}}",
-    "domains": "{{count}} domains",
-    "ips": "{{count}} addresses",
-    "geosite": "{{count}} geosite categories",
-    "geoip": "{{count}} geoip categories",
-    "asns": "{{count}} ASNs",
     "diff": {
       "title": "Changes against v{{version}}",
       "none": "The projection is identical to the listed version.",
@@ -278,11 +390,8 @@
     "decodeErrorValue": "the stored set does not decode with this hub's b4 version"
   },
   "detail": {
-    "title": "Set {{id}}",
-    "author": "Author {{author}}",
     "derived": "Derived from {{id}} v{{version}}",
     "versions": "Versions",
-    "current": "current",
     "votes": "Votes ({{count}})",
     "noVotes": "No vote has been recorded for this set.",
     "voteColumns": {
@@ -422,17 +531,16 @@
     "title": "Mirrors ({{count}})",
     "empty": "No mirror has announced itself.",
     "columns": {
-      "url": "URL",
+      "mirror": "Mirror",
       "status": "Status",
-      "health": "Health",
-      "announced": "Announced",
+      "check": "Check",
       "serving": "Serves",
       "lastAnnounced": "Last announced"
     },
     "health": {
       "unchecked": "not checked yet",
-      "ok": "ok at {{when}}",
-      "failed": "failed at {{when}}",
+      "ok": "ok",
+      "failed": "failed",
       "lastOk": "last ok {{when}}",
       "ms": "{{ms}} ms"
     },
@@ -443,20 +551,28 @@
     "rejectText": "A rejected mirror stays in the list with its reason and is never announced to routers.",
     "removeTitle": "Remove mirror",
     "removeText": "The mirror is forgotten. It can announce itself again.",
-    "versionUnknown": "not reported",
+    "versionUnknown": "version not reported",
     "approveTitle": "Approve mirror",
     "approveText": "A health check runs right away; the mirror is announced to routers once it passes.",
     "checkNow": "Check now",
     "checkAll": "Check all",
+    "state": {
+      "kept": "kept",
+      "leaving": "leaving",
+      "joining": "joining"
+    },
     "announced": {
       "listed": "announced",
       "kept": "kept while no mirror passes its check",
       "leaving": "leaves at the next build",
       "joining": "joins at the next build",
       "notListed": "not announced",
-      "no": "not announced"
+      "waiting": "joins after its next passing check"
     },
     "dropsAt": "drops out at {{when}} without a passing check",
+    "firstSeen": "first seen {{when}}",
+    "lastSeen": "last announced {{when}}",
+    "served": "manifest {{epoch}}/{{seq}}",
     "lag": {
       "unknown": "not known yet",
       "current": "current",
@@ -472,7 +588,8 @@
       "unknown": "failed before the upgrade"
     },
     "orphans": "Announced in the published manifest but no longer known to the hub: {{list}}",
-    "summary": "Manifest {{epoch}}/{{seq}} announces this hub and {{count}} mirrors. Approved mirrors are checked every {{minutes}} min and stay announced for {{hours}} h after their last passing check."
+    "summary": "Manifest {{epoch}}/{{seq}} announces this hub and {{count}} mirrors.",
+    "policy": "Approved mirrors are checked every {{minutes}} min and stay announced for {{hours}} h after their last passing check."
   },
   "feedback": {
     "votes": "Votes",
@@ -542,6 +659,7 @@
       "anyOrigin": "Any network",
       "verified": "Known network",
       "unverified": "Unknown network",
+      "asn": "ASN",
       "country": "Country",
       "setChip": "set {{id}}",
       "keyChip": "key {{key}}"
@@ -552,7 +670,7 @@
     "status": "Published catalogue",
     "statusDesc": "The signed files routers download",
     "actions": "Operations",
-    "actionsDesc": "Published by a background build; the status in the header shows its progress",
+    "actionsDesc": "Published by a background build; each run is listed in the build history below",
     "build": "Build now",
     "buildText": "Queues a build that publishes the catalogue from the store even when nothing changed.",
     "epoch": "Start a new epoch",
@@ -657,18 +775,9 @@
     "reports": "hidden automatically after {{count}} independent reports"
   },
   "build": {
-    "idle": "Idle",
-    "queued": "Build queued",
-    "building": "Publishing",
     "failed": "Build failed",
-    "dirty": "Changes waiting",
-    "published": "Published {{when}}",
     "never": "Nothing has been published yet",
-    "busyHint": "Building and signing the catalogue. Trigger: {{trigger}}",
     "failedHint": "The last build failed at {{when}}: {{message}}. Routers keep the previous catalogue.",
-    "dirtyHint": "Changes are waiting for the next build. Last published {{when}}.",
-    "publishedHint": "{{file}} with {{sets}} sets, published {{when}}",
-    "retry": "Build again",
     "trigger": {
       "manual": "build button",
       "schedule": "scheduled check",
@@ -748,7 +857,7 @@
     "too_many": "Too many items at once, at most {{max}}.",
     "nothing_to_do": "Nothing was selected.",
     "not_pending": "Only a pending version can be edited.",
-    "duplicate_strategy": "The result duplicates another set version.",
+    "duplicate_strategy": "The result duplicates {{set_id}}/{{version}}. Saving is refused.",
     "build_failed": "The build failed: {{message}}",
     "unauthorized": "Sign in again.",
     "forbidden": "The request was refused.",
@@ -888,7 +997,9 @@
     "duplicateReason": "Duplicates {{title}} ({{ref}})",
     "truncated": "Only the closest matches are shown.",
     "checking": "Checking for similar sets",
-    "failed": "Similar sets could not be checked: {{message}}"
+    "failed": "Similar sets could not be checked: {{message}}",
+    "badge": "similar sets: {{count}}",
+    "badgeFailed": "similar sets not checked"
   },
   "bulk": {
     "approve": {
@@ -910,21 +1021,17 @@
     "someRefused": "{{valid}} of {{total}} can be changed; the rest are skipped.",
     "apply": "Apply to {{count}}"
   },
-  "shortcuts": {
-    "title": "Keyboard shortcuts",
-    "next": "Next card",
-    "prev": "Previous card",
-    "open": "Open the set",
-    "approve": "Approve",
-    "reject": "Reject",
-    "edit": "Edit",
-    "hide": "Hide",
-    "compare": "Compare with the listed version",
-    "ban": "Ban the uploader",
-    "select": "Select the card",
-    "bulkApprove": "Approve the selected cards",
-    "bulkReject": "Reject the selected cards",
-    "help": "Show this list"
+  "card": {
+    "menu": "More actions",
+    "select": "Select {{title}}",
+    "by": "by {{author}}",
+    "needsB4": "needs b4 {{version}}",
+    "unreadable": "This set does not decode with the hub's b4 version, so its settings are not shown.",
+    "edited": "edited",
+    "bannedTip": "The author is banned. Nothing of this set is listed until the ban is lifted.",
+    "withdrawnTip": "A moderator withdrew the whole set. Nothing of it is listed until it is reinstated.",
+    "reports": "open reports: {{count}}",
+    "reportsTip": "Open: {{open}} of {{total}}, independent: {{independent}}"
   },
   "targets": {
     "more": "and {{count}} more",
@@ -952,16 +1059,12 @@
   "score": {
     "unrated": "unrated",
     "next": "next: {{score}}",
-    "nDevices": "n {{n}} · devices {{devices}}",
     "publishedTip": "Published: {{score}}, n {{n}}, devices {{devices}}",
     "liveTip": "Next build: {{score}}, n {{n}}, devices {{devices}}",
     "notPublished": "Not in the published catalogue",
     "unratedTip": "Routers show a score once at least two devices voted."
   },
   "evidence": {
-    "devices": "{{count}} dev.",
-    "author": "author +{{works}}/-{{broken}}",
-    "pooled": "pooled from {{count}}",
     "independentTip": "Independent: +{{works}} / -{{broken}} from {{devices}} devices, weighted {{positive}} / {{negative}}",
     "authorTip": "The author's own: +{{works}} / -{{broken}}, counted like any other device",
     "pooledTip": "The score pools votes by strategy fingerprint; {{count}} other sets share it"
@@ -983,71 +1086,56 @@
       "quic_capture": "attached QUIC capture"
     },
     "fake": {
-      "chip": "fake {{strategy}}",
       "text": "fake ClientHello: {{payloadLabel}}, {{strategy}}",
       "domain": "for {{domain}}",
       "ttl": "TTL {{ttl}}",
       "copies": "copies: {{copies}}"
     },
     "sni_mutation": {
-      "chip": "SNI {{mode}}",
       "text": "SNI mutation {{mode}}"
     },
     "tls_mod": {
-      "chip": "TLS mod",
       "text": "TLS modifications: {{mods}}"
     },
     "frag": {
-      "chip": "frag {{strategy}}",
       "text": "{{strategy}} fragmentation",
       "pool": "pool {{pool}}",
       "middle": "split inside the SNI",
       "reverse": "reversed order"
     },
     "syn_fake": {
-      "chip": "SYN fake",
       "text": "fake data in SYN"
     },
     "desync": {
-      "chip": "desync {{mode}}",
       "text": "desync {{mode}}",
       "count": "x{{count}}"
     },
     "incoming": {
-      "chip": "incoming {{mode}}",
       "text": "incoming {{mode}}"
     },
     "window": {
-      "chip": "window {{mode}}",
       "text": "window {{mode}}"
     },
     "duplicate": {
-      "chip": "dup x{{count}}",
       "text": "duplicate segments x{{count}}"
     },
     "rst_protection": {
-      "chip": "RST guard",
       "text": "RST protection"
     },
     "drop_sack": {
-      "chip": "drop SACK",
       "text": "drop SACK"
     },
     "http_method_eol": {
-      "chip": "HTTP EOL",
       "text": "HTTP method EOL"
     },
     "seg2_delay": {
-      "chip": "delay {{ms}} ms",
       "text": "second segment delayed {{ms}} ms"
     },
     "udp": {
-      "chip": "UDP {{mode}}",
       "text": "UDP {{mode}}",
       "payloadLabel": "{{payloadLabel}}"
     },
     "dns": {
-      "chip": "DNS",
       "text": "DNS redirect",
       "host": "via {{host}}",
       "strict": "strict",
@@ -1055,16 +1143,13 @@
       "pins": "pinned domains: {{pins}}"
     },
     "block": {
-      "chip": "block",
       "text": "blocks matched traffic",
       "action": "{{action}}"
     },
     "mss_clamp": {
-      "chip": "MSS {{size}}",
       "text": "MSS clamp {{size}}"
     },
     "passthrough": {
-      "chip": "passthrough",
       "text": "no bypass, matched traffic passes unchanged"
     }
   },

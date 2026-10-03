@@ -421,8 +421,12 @@ func (s *Store) LatestVersion(ctx context.Context, setID string) (*Version, erro
 }
 
 func (s *Store) FindDuplicate(ctx context.Context, fp, targetsKey string) (*Version, error) {
-	v, err := scanVersion(s.db.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM set_versions WHERE fp = ? AND targets_key = ? AND status <> ? ORDER BY
-		CASE status WHEN ? THEN 0 WHEN ? THEN 1 ELSE 2 END, created_at LIMIT 1`, fp, targetsKey, hubwire.SetStatusRejected, hubwire.SetStatusActive, hubwire.SetStatusPending))
+	return s.FindDuplicateExcept(ctx, fp, targetsKey, 0)
+}
+
+func (s *Store) FindDuplicateExcept(ctx context.Context, fp, targetsKey string, rowID int64) (*Version, error) {
+	v, err := scanVersion(s.db.QueryRowContext(ctx, `SELECT `+versionColumns+` FROM set_versions WHERE fp = ? AND targets_key = ? AND status <> ? AND id <> ? ORDER BY
+		CASE status WHEN ? THEN 0 WHEN ? THEN 1 ELSE 2 END, created_at LIMIT 1`, fp, targetsKey, hubwire.SetStatusRejected, rowID, hubwire.SetStatusActive, hubwire.SetStatusPending))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

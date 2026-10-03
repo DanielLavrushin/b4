@@ -47,6 +47,26 @@ type VotesPageView struct {
 	Next  string        `json:"next,omitempty"`
 }
 
+type VoteOriginsView struct {
+	ASNs      []MixView `json:"asns"`
+	Countries []MixView `json:"countries"`
+}
+
+func (s *Server) voteOrigins(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	asns, err := toMix(s.Store.VoteASNs(ctx))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	countries, err := toMix(s.Store.VoteCountries(ctx))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, VoteOriginsView{ASNs: asns, Countries: countries})
+}
+
 func (s *Server) voteRows(ctx context.Context, votes []store.Vote) ([]VoteRowView, error) {
 	out := make([]VoteRowView, 0, len(votes))
 	if len(votes) == 0 {
