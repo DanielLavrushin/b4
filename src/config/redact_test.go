@@ -29,32 +29,44 @@ var credentialPaths = map[string]string{
 }
 
 var sharingPaths = map[string]string{
-	"system.mtproto.dc_relay":           "the user's own relay host",
-	"system.mtproto.ws_custom_domain":   "the user's own relay domain",
-	"system.mtproto.cfworker_domain":    "the user's own Cloudflare Worker",
-	"system.mtproto.web_proxy.hostname": "the user's own server",
-	"system.mtproto.cfproxy_url":        "a custom source is the user's own host",
-	"system.mtproto.dc_fallback_url":    "a custom source is the user's own host",
-	"system.ai.endpoint":                "URL that can carry credentials",
-	"system.geo.sitedat_url":            "URL that can carry credentials",
-	"system.geo.ipdat_url":              "URL that can carry credentials",
-	"system.update.mirrors[]":           "the user's own relays",
-	"system.hub.urls[]":                 "URL that can carry credentials",
-	"sets[].dns.doh_url":                "personal resolver id in the path or the host",
-	"sets[].discovery.urls[]":           "URL that can carry credentials",
+	"system.web_server.mcp.allowed_origins[]": "browser origins, often the router's own name",
+	"system.mtproto.dc_relay":                 "the user's own relay host",
+	"system.mtproto.ws_custom_domain":         "the user's own relay domain",
+	"system.mtproto.cfworker_domain":          "the user's own Cloudflare Worker",
+	"system.mtproto.web_proxy.hostname":       "the user's own server",
+	"system.mtproto.cfproxy_url":              "a custom source is the user's own host",
+	"system.mtproto.dc_fallback_url":          "a custom source is the user's own host",
+	"system.ai.endpoint":                      "URL that can carry credentials",
+	"system.geo.sitedat_url":                  "URL that can carry credentials",
+	"system.geo.ipdat_url":                    "URL that can carry credentials",
+	"system.update.mirrors[]":                 "the user's own relays",
+	"system.hub.urls[]":                       "URL that can carry credentials",
+	"sets[].dns.doh_url":                      "personal resolver id in the path or the host",
+	"sets[].discovery.urls[]":                 "URL that can carry credentials",
 }
 
 var notSecretPaths = map[string]string{
-	"system.web_server.tls_key":         "file path, not key material; the relay hostname inside it is masked",
-	"system.mtproto.web_proxy.tls_key":  "file path, not key material; the relay hostname inside it is masked",
+	"system.web_server.tls_key":         "file path, not key material; host names inside it are masked",
+	"system.mtproto.web_proxy.tls_key":  "file path, not key material; host names inside it are masked",
 	"system.mtproto.ws_endpoint_host":   "override for the public Telegram WebSocket edge",
 	"system.hub.public_key":             "public ed25519 key that pins the hub",
 	"system.checker.reference_domain":   "public domain Discovery checks against",
-	"system.checker.watchdog.domains[]": "domains the watchdog checks, needed to debug it",
+	"system.checker.watchdog.domains[]": "bare domains stay to debug the watchdog; URL entries lose credentials, query values and fragments",
 	"sets[].targets.sni_domains[]":      "target domains, needed to debug a set",
 	"sets[].faking.payload_domain":      "public domain written into the fake ClientHello",
 	"sets[].routing.upstream.host":      "needed to debug routing; the log trace and MCP keep it too",
 }
+
+var placeholderOnlyPaths = map[string]string{
+	"system.web_server.tls_cert":        "file path; host names inside it are masked",
+	"system.web_server.tls_key":         "file path; host names inside it are masked",
+	"system.mtproto.web_proxy.tls_cert": "file path; host names inside it are masked",
+	"system.mtproto.web_proxy.tls_key":  "file path; host names inside it are masked",
+	"system.mtproto.secret":             "legacy single secret that the v50 migration moves into secrets",
+	"system.checker.watchdog.domains[]": "URL entries are masked like Discovery URLs",
+}
+
+var indexInPath = regexp.MustCompile(`\[\d+\]`)
 
 type leafPath struct {
 	path   string
@@ -195,6 +207,39 @@ func TestEverySecretLookingFieldIsClassified(t *testing.T) {
 	}
 }
 
+func TestPlaceholderPathsMatchTheRedactedFields(t *testing.T) {
+	redacted := []map[string]string{credentialPaths, sharingPaths}
+	for _, list := range []map[string]string{credentialPaths, sharingPaths, placeholderOnlyPaths} {
+		for path := range list {
+			if !placeholderPaths[path] {
+				t.Errorf("%s is missing from placeholderPaths, so b4 would load a safe copy that holds it", path)
+			}
+		}
+	}
+	for path := range placeholderPaths {
+		_, credential := credentialPaths[path]
+		_, sharing := sharingPaths[path]
+		_, extra := placeholderOnlyPaths[path]
+		if !credential && !sharing && !extra {
+			t.Errorf("%s is in placeholderPaths, but no list says why", path)
+		}
+	}
+
+	cfg, _ := canaryConfig(t)
+	cfg.RedactForSharing()
+	reported := map[string]bool{}
+	for _, path := range cfg.RedactedValuePaths() {
+		reported[indexInPath.ReplaceAllString(path, "[]")] = true
+	}
+	for _, list := range redacted {
+		for path := range list {
+			if path != "system.web_server.password" && !reported[path] {
+				t.Errorf("%s holds the placeholder in a safe copy, but RedactedValuePaths does not report it", path)
+			}
+		}
+	}
+}
+
 func canaryOutput(t *testing.T, cfg *Config) string {
 	t.Helper()
 	raw, err := json.Marshal(cfg)
@@ -289,6 +334,66 @@ func TestRedactForSharingMasksCustomSourcesAndRelayHostInTLSPaths(t *testing.T) 
 	}
 }
 
+func TestMaskFilePath(t *testing.T) {
+	cases := []struct {
+		path string
+		host string
+		want string
+	}{
+		{"", "", ""},
+		{"/jffs/ssl/cert.pem", "", "/jffs/ssl/cert.pem"},
+		{"../certs/key.pem", "", "../certs/key.pem"},
+		{"/etc/letsencrypt/live/myrouter.duckdns.org/fullchain.pem", "", "/etc/letsencrypt/live/[redacted]/fullchain.pem"},
+		{"/etc/ssl/acme/myrouter.duckdns.org.fullchain.crt", "", "/etc/ssl/acme/[redacted].crt"},
+		{"/jffs/.le/myrouter.asuscomm.com_ecc/fullchain.cer", "", "/jffs/.le/[redacted]/fullchain.cer"},
+		{"/root/.acme.sh/certs/.hidden.pem", "", "/root/[redacted]/certs/.hidden.pem"},
+		{"/opt/relay.example.com-cert.pem", "relay.example.com", "/opt/[redacted]-cert.pem"},
+	}
+	for _, tc := range cases {
+		if got := maskFilePath(tc.path, tc.host); got != tc.want {
+			t.Errorf("maskFilePath(%q, %q) = %q, want %q", tc.path, tc.host, got, tc.want)
+		}
+	}
+}
+
+func TestRedactForSharingMasksTheRouterName(t *testing.T) {
+	cfg := NewConfig()
+	ws := &cfg.System.WebServer
+	ws.TLSCert = "/etc/letsencrypt/live/myrouter.duckdns.org/fullchain.pem"
+	ws.TLSKey = "/etc/ssl/acme/myrouter.duckdns.org.key"
+	ws.MCP.AllowedOrigins = []string{"https://myrouter.duckdns.org:7000", "https://myrouter.duckdns.org", "http://localhost:5173", "http://192.168.1.1:7000", "http://[fd00::1]:7000", "*", "not an origin"}
+	cfg.RedactForSharing()
+	if ws.TLSCert != "/etc/letsencrypt/live/[redacted]/fullchain.pem" || ws.TLSKey != "/etc/ssl/acme/[redacted].key" {
+		t.Errorf("the router name survived in a certificate path: %q %q", ws.TLSCert, ws.TLSKey)
+	}
+	want := []string{"https://[redacted]:7000", "https://[redacted]", "http://localhost:5173", "http://192.168.1.1:7000", "http://[fd00::1]:7000", "*", RedactedMarker}
+	if !reflect.DeepEqual(ws.MCP.AllowedOrigins, want) {
+		t.Errorf("allowed origins = %v, want %v", ws.MCP.AllowedOrigins, want)
+	}
+}
+
+func TestRedactForSharingMasksCredentialsInWatchdogEntries(t *testing.T) {
+	cfg := NewConfig()
+	cfg.System.Checker.Watchdog.Domains = []string{
+		"youtube.com",
+		"https://www.youtube.com/watch",
+		"https://admin:hunter2@nas.example.com/health?token=0123abcd",
+		"admin:hunter2@nas.example.com",
+		"nas.example.com/health?token=0123abcd#part",
+	}
+	cfg.RedactForSharing()
+	want := []string{
+		"youtube.com",
+		"https://www.youtube.com/watch",
+		"https://[redacted]@nas.example.com/health?token=[redacted]",
+		"[redacted]@nas.example.com",
+		"nas.example.com/health?token=[redacted]#[redacted]",
+	}
+	if got := cfg.System.Checker.Watchdog.Domains; !reflect.DeepEqual(got, want) {
+		t.Errorf("watchdog entries = %v, want %v", got, want)
+	}
+}
+
 func TestRedactURL(t *testing.T) {
 	cases := []struct {
 		in       string
@@ -305,10 +410,17 @@ func TestRedactURL(t *testing.T) {
 		{"https://dns.google", false, "https://dns.google"},
 		{"https://1.1.1.1/dns-query", false, "https://1.1.1.1/dns-query"},
 		{"https://[2606:4700::1111]/dns-query", false, "https://[2606:4700::1111]/dns-query"},
-		{"https://dns.nextdns.io/abc123", false, "https://[redacted].nextdns.io/[redacted]"},
+		{"https://dns.nextdns.io/abc123", false, "https://dns.nextdns.io/[redacted]"},
+		{"https://family.adguard-dns.com/dns-query", false, "https://family.adguard-dns.com/dns-query"},
+		{"https://dns.quad9.net/dns-query", false, "https://dns.quad9.net/dns-query"},
 		{"https://d.adguard-dns.com/dns-query/abc123", false, "https://[redacted].adguard-dns.com/[redacted]"},
 		{"https://a1b2c3d4e5.cloudflare-gateway.com/dns-query", false, "https://[redacted].cloudflare-gateway.com/dns-query"},
 		{"https://a1b2c3d4e5.cloudflare-gateway.com:8443/dns-query", false, "https://[redacted].cloudflare-gateway.com:8443/dns-query"},
+		{"https://abc123.dns.nextdns.io/dns-query", false, "https://[redacted].nextdns.io/dns-query"},
+		{"https://ivanov.ru/dns-query", false, "https://[redacted]/dns-query"},
+		{"https://IVANOV.RU/dns-query", false, "https://[redacted]/dns-query"},
+		{"https://dns.ivanov.ru/dns-query", false, "https://[redacted]/dns-query"},
+		{"https://dns.ivanov.ru:8443/dns-query", false, "https://[redacted]:8443/dns-query"},
 	}
 	for _, tc := range cases {
 		if got := redactURL(tc.in, tc.keepPath); got != tc.want {
@@ -337,6 +449,8 @@ func TestLoadWithMigrationRefusesASafeCopy(t *testing.T) {
 	cfg := NewConfig()
 	cfg.System.WebServer.Username = "admin"
 	cfg.System.WebServer.Password = "$2a$12$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuvwxyz01234"
+	cfg.System.WebServer.Port = 8443
+	cfg.System.WebServer.BindAddress = "192.168.1.1"
 	cfg.System.WebServer.MCP.Enabled = true
 	cfg.System.WebServer.MCP.Token = "0123456789abcdef"
 	cfg.System.Socks5.Username = "user"
@@ -345,21 +459,10 @@ func TestLoadWithMigrationRefusesASafeCopy(t *testing.T) {
 	set.Name = "example"
 	cfg.Sets = []*SetConfig{&set}
 
-	safe, err := cfg.RedactedCopy()
-	if err != nil {
-		t.Fatalf("RedactedCopy: %v", err)
-	}
-	data, err := safe.FileBytes()
-	if err != nil {
-		t.Fatalf("FileBytes: %v", err)
-	}
-	path := filepath.Join(t.TempDir(), "b4.json")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	path := writeConfigFile(t, safeCopyBytes(t, &cfg))
 
 	var loaded Config
-	_, err = loaded.LoadWithMigration(path)
+	_, err := loaded.LoadWithMigration(path)
 	if err == nil || !strings.Contains(err.Error(), "safe copy") {
 		t.Fatalf("loading a safe copy must fail with an explanation, got %v", err)
 	}
@@ -368,6 +471,171 @@ func TestLoadWithMigrationRefusesASafeCopy(t *testing.T) {
 	}
 	if loaded.System.WebServer.Username != "" || loaded.System.WebServer.MCP.Enabled || loaded.System.Socks5.Username != "" || len(loaded.Sets) != 0 {
 		t.Error("a refused safe copy must not leave its values in the config b4 starts with")
+	}
+	if loaded.System.WebServer.Port != 8443 || loaded.System.WebServer.BindAddress != "192.168.1.1" {
+		t.Errorf("the web UI must stay where the file put it, got %s:%d", loaded.System.WebServer.BindAddress, loaded.System.WebServer.Port)
+	}
+}
+
+func safeCopyBytes(t *testing.T, cfg *Config) []byte {
+	t.Helper()
+	safe, err := cfg.RedactedCopy()
+	if err != nil {
+		t.Fatalf("RedactedCopy: %v", err)
+	}
+	data, err := safe.FileBytes()
+	if err != nil {
+		t.Fatalf("FileBytes: %v", err)
+	}
+	return data
+}
+
+func writeConfigFile(t *testing.T, data []byte) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "b4.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	return path
+}
+
+func TestLoadWithMigrationRefusesASafeCopyThatDoesNotDecode(t *testing.T) {
+	cfg := NewConfig()
+	cfg.System.Socks5.Username = "user"
+	cfg.System.Socks5.Password = "pass"
+	var doc map[string]any
+	if err := json.Unmarshal(safeCopyBytes(t, &cfg), &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	system, _ := doc["system"].(map[string]any)
+	socks, _ := system["socks5"].(map[string]any)
+	if socks == nil {
+		t.Fatalf("the safe copy has no system.socks5 object: %v", doc)
+	}
+	socks["port"] = "1080"
+	data, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := json.Unmarshal(data, &Config{}); err == nil {
+		t.Fatal("the edited copy decodes, so this test no longer covers a type error")
+	}
+
+	var loaded Config
+	_, err = loaded.LoadWithMigration(writeConfigFile(t, data))
+	if err == nil || !strings.Contains(err.Error(), "system.socks5.password") {
+		t.Fatalf("a safe copy must be refused before it is decoded, got %v", err)
+	}
+	if paths := loaded.RedactedValuePaths(); len(paths) != 0 {
+		t.Errorf("the refused copy left placeholders behind: %v", paths)
+	}
+}
+
+func TestLoadWithMigrationRefusesALegacySecretPlaceholder(t *testing.T) {
+	path := writeConfigFile(t, []byte(`{"version": 49, "system": {"mtproto": {"enabled": true, "secret": "[redacted]"}}}`))
+	var loaded Config
+	_, err := loaded.LoadWithMigration(path)
+	if err == nil || !strings.Contains(err.Error(), "system.mtproto.secret") {
+		t.Fatalf("the legacy secret must be guarded too, got %v", err)
+	}
+	if loaded.System.MTProto.Enabled || len(loaded.System.MTProto.Secrets) != 0 {
+		t.Error("the refused file was migrated into the running config")
+	}
+	if _, err := os.Stat(path + ".v49.bak"); !os.IsNotExist(err) {
+		t.Errorf("a refused file must not be backed up for migration, stat: %v", err)
+	}
+}
+
+func TestLoadWithMigrationLoadsThePlaceholderOutsideRedactedFields(t *testing.T) {
+	cfg := NewConfig()
+	set := NewSetConfig()
+	set.Name = "Work " + RedactedMarker
+	cfg.Sets = []*SetConfig{&set}
+	if paths := cfg.RedactedValuePaths(); len(paths) != 0 {
+		t.Fatalf("a set name is not a redacted field, got %v", paths)
+	}
+	data, err := cfg.FileBytes()
+	if err != nil {
+		t.Fatalf("FileBytes: %v", err)
+	}
+
+	var loaded Config
+	if _, err := loaded.LoadWithMigration(writeConfigFile(t, data)); err != nil {
+		t.Fatalf("LoadWithMigration: %v", err)
+	}
+	if len(loaded.Sets) != 1 || loaded.Sets[0].Name != set.Name {
+		t.Errorf("the set did not load as written, got %d sets", len(loaded.Sets))
+	}
+}
+
+func TestLoadWithMigrationRefusesASafeCopyWithMaskedTLSPaths(t *testing.T) {
+	cfg := NewConfig()
+	cfg.System.WebServer.TLSCert = "/jffs/.le/myrouter.asuscomm.com_ecc/fullchain.cer"
+	cfg.System.WebServer.TLSKey = "/jffs/.le/myrouter.asuscomm.com_ecc/domain.key"
+	cfg.System.MTProto.WebProxy.TLSCert = "/etc/letsencrypt/live/myrouter.duckdns.org/fullchain.pem"
+	cfg.System.MTProto.WebProxy.TLSKey = "/etc/letsencrypt/live/myrouter.duckdns.org/privkey.pem"
+	var loaded Config
+	_, err := loaded.LoadWithMigration(writeConfigFile(t, safeCopyBytes(t, &cfg)))
+	if err == nil {
+		t.Fatal("a safe copy whose only placeholders are masked TLS paths must be refused")
+	}
+	for _, path := range []string{"system.web_server.tls_cert", "system.web_server.tls_key", "system.mtproto.web_proxy.tls_cert", "system.mtproto.web_proxy.tls_key"} {
+		if !strings.Contains(err.Error(), path) {
+			t.Errorf("the refusal does not name %s: %v", path, err)
+		}
+	}
+	if loaded.System.WebServer.TLSCert != "" || loaded.System.MTProto.WebProxy.TLSCert != "" {
+		t.Error("a refused safe copy must not leave its TLS paths in the config b4 starts with")
+	}
+}
+
+func TestLoadWithMigrationRefusesAMaskedWatchdogEntry(t *testing.T) {
+	cfg := NewConfig()
+	cfg.System.Checker.Watchdog.Domains = []string{"youtube.com", "https://admin:hunter2@nas.example.com/health"}
+	var loaded Config
+	_, err := loaded.LoadWithMigration(writeConfigFile(t, safeCopyBytes(t, &cfg)))
+	if err == nil || !strings.Contains(err.Error(), "system.checker.watchdog.domains[1]") {
+		t.Fatalf("a masked watchdog entry must be refused, got %v", err)
+	}
+}
+
+func TestLoadWithMigrationRefusesPlaceholdersUnderAnyKeySpelling(t *testing.T) {
+	cases := map[string]string{
+		"object key case":   `{"version": 52, "system": {"Socks5": {"enabled": true, "username": "[redacted]", "password": "[redacted]"}}}`,
+		"field key case":    `{"version": 52, "system": {"socks5": {"enabled": true, "Username": "[redacted]", "PASSWORD": "[redacted]"}}}`,
+		"MCP token":         `{"version": 52, "system": {"web_server": {"MCP": {"enabled": true, "token": "[redacted]"}}}}`,
+		"repeated object":   `{"version": 52, "system": {"socks5": {"username": "[redacted]", "password": "[redacted]"}, "socks5": {"enabled": true}}}`,
+		"set field case":    `{"version": 52, "sets": [{"name": "a", "routing": {"upstream": {"Password": "[redacted]"}}}]}`,
+		"repeated routing":  `{"version": 52, "sets": [{"name": "a", "routing": {"upstream": {"password": "[redacted]"}}, "routing": {"enabled": true}}]}`,
+		"top-level Sets":    `{"version": 52, "Sets": [{"name": "a", "routing": {"upstream": {"password": "[redacted]"}}}]}`,
+		"with a type error": `{"version": 52, "system": {"Socks5": {"enabled": true, "username": "[redacted]"}, "web_server": {"port": "8443"}}}`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			var loaded Config
+			_, err := loaded.LoadWithMigration(writeConfigFile(t, []byte(body)))
+			if err == nil || !strings.Contains(err.Error(), "safe copy") {
+				t.Fatalf("the file must be refused as a safe copy, got %v", err)
+			}
+			if paths := loaded.RedactedValuePaths(); len(paths) != 0 {
+				t.Errorf("the refused file left placeholders behind: %v", paths)
+			}
+		})
+	}
+}
+
+func TestLoadWithMigrationKeepsTheWebUIOffWhenItRefusesAFile(t *testing.T) {
+	cfg := NewConfig()
+	cfg.System.WebServer.Port = 0
+	cfg.System.Socks5.Username = "user"
+	cfg.System.Socks5.Password = "pass"
+	var loaded Config
+	_, err := loaded.LoadWithMigration(writeConfigFile(t, safeCopyBytes(t, &cfg)))
+	if err == nil || !strings.Contains(err.Error(), "safe copy") {
+		t.Fatalf("loading a safe copy must fail with an explanation, got %v", err)
+	}
+	if loaded.System.WebServer.Port != 0 {
+		t.Errorf("the file had the web UI off, but the refused config opens it on port %d", loaded.System.WebServer.Port)
 	}
 }
 

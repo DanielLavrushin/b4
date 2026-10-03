@@ -22,8 +22,9 @@ import { useSnackbar } from "@context/SnackbarProvider";
 import { RestartDialog } from "./RestartDialog";
 import { colors } from "@design";
 import { getAuthToken } from "@context/AuthProvider";
+import { ApiError } from "@api/apiClient";
 
-interface ApiError {
+interface ErrorBody {
   error?: string;
 }
 
@@ -38,7 +39,7 @@ const saveAttachment = async (path: string, fallbackName: string) => {
 
   const response = await fetch(path, { headers });
   if (!response.ok) {
-    const data = (await response.json().catch(() => ({}))) as ApiError;
+    const data = (await response.json().catch(() => ({}))) as ErrorBody;
     throw new Error(data.error ?? response.statusText);
   }
 
@@ -57,6 +58,14 @@ const saveAttachment = async (path: string, fallbackName: string) => {
   URL.revokeObjectURL(url);
 };
 
+const failureDetail = (error: unknown): string => {
+  if (error instanceof ApiError && error.body && typeof error.body === "object") {
+    const detail = (error.body as Record<string, unknown>).error;
+    if (typeof detail === "string" && detail) return detail;
+  }
+  return error instanceof Error ? error.message : "";
+};
+
 export const BackupSettings = () => {
   const { t } = useTranslation();
   const { showError, showSuccess } = useSnackbar();
@@ -70,7 +79,7 @@ export const BackupSettings = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const showFailure = (key: string, error: unknown) => {
-    const detail = error instanceof Error ? error.message : "";
+    const detail = failureDetail(error);
     showError(detail ? `${t(key)}: ${detail}` : t(key));
   };
 
@@ -135,7 +144,7 @@ export const BackupSettings = () => {
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => ({}))) as ApiError;
+        const data = (await response.json().catch(() => ({}))) as ErrorBody;
         throw new Error(data.error ?? response.statusText);
       }
 

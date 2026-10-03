@@ -9,7 +9,7 @@ import { SettingsPropHandlerType } from "@models/settings";
 import { RestartDialog } from "./RestartDialog";
 import { SystemInfoDialog } from "./SystemInfoDialog";
 
-interface CoreCardProps {
+interface ServiceCardProps {
   config: B4Config;
   onChange: (field: string, value: SettingsPropHandlerType) => void;
 }
@@ -36,7 +36,7 @@ const LANGUAGES = [
   { value: "ru", label: "Русский" },
 ];
 
-export const ServiceSettings = ({ config, onChange }: CoreCardProps) => {
+export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
   const { t } = useTranslation();
 
   const [showRestartDialog, setShowRestartDialog] = useState(false);
@@ -127,7 +127,7 @@ export const ServiceSettings = ({ config, onChange }: CoreCardProps) => {
   );
 };
 
-export const LoggingSettings = ({ config, onChange }: CoreCardProps) => {
+export const LoggingSettings = ({ config, onChange }: ServiceCardProps) => {
   const { t } = useTranslation();
 
   const LOG_LEVELS: Array<{ value: LogLevel; label: string }> = [

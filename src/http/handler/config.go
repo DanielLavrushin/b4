@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"reflect"
 	"runtime/debug"
 	"sort"
@@ -47,14 +48,10 @@ func (a *API) handleConfigDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	safe := false
-	if values, ok := r.URL.Query()["safe"]; ok {
-		parsed, err := strconv.ParseBool(values[0])
-		if err != nil || len(values) > 1 {
-			writeJsonError(w, http.StatusBadRequest, "safe must be given once, as true or false")
-			return
-		}
-		safe = parsed
+	safe, ok := parseSafeQuery(r.URL.RawQuery)
+	if !ok {
+		writeJsonError(w, http.StatusBadRequest, "the only accepted parameter is safe, given once as true or false")
+		return
 	}
 
 	cfg := a.getCfg()
@@ -82,6 +79,30 @@ func (a *API) handleConfigDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(data)
+}
+
+func parseSafeQuery(raw string) (bool, bool) {
+	query, err := url.ParseQuery(raw)
+	if err != nil {
+		return false, false
+	}
+	for key := range query {
+		if key != "safe" {
+			return false, false
+		}
+	}
+	values, present := query["safe"]
+	if !present {
+		return false, true
+	}
+	if len(values) != 1 {
+		return false, false
+	}
+	safe, err := strconv.ParseBool(values[0])
+	if err != nil {
+		return false, false
+	}
+	return safe, true
 }
 
 // @Summary Reset configuration to defaults

@@ -746,7 +746,7 @@
       "restoreFailed": "Failed to restore backup",
       "configTitle": "Download Configuration",
       "configDescription": "The configuration b4 is running with, as a b4.json file",
-      "configInfo": "The safe copy removes passwords and tokens or replaces them with [redacted], together with user names, your own relay hosts and credentials inside URLs, and keeps sets, devices and target domains. Share it when asking for help; b4 refuses to load it as its configuration. The copy as is includes every password and token.",
+      "configInfo": "The safe copy removes passwords and tokens or replaces them with [redacted], together with user names, the host names of your router and your relays, and credentials inside URLs. Sets, devices and target domains stay. Share it when asking for help; b4 refuses to load it as its configuration. The \"as is\" copy includes every password and token.",
       "configDownload": "Download as is",
       "configDownloadSafe": "Download safe copy",
       "configDownloadSuccess": "Configuration downloaded",

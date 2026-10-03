@@ -84,7 +84,7 @@ func TestConfigDownloadSafeMasksSecrets(t *testing.T) {
 			t.Errorf("the safe download still contains %q", secret)
 		}
 	}
-	for _, kept := range []string{"10.0.0.9", "youtube.com", "https://[redacted].nextdns.io/", "https://example.com/geosite.dat"} {
+	for _, kept := range []string{"10.0.0.9", "youtube.com", "https://dns.nextdns.io/[redacted]", "https://example.com/geosite.dat"} {
 		if !strings.Contains(body, kept) {
 			t.Errorf("the safe download dropped %q, which is needed for debugging", kept)
 		}
@@ -132,6 +132,11 @@ func TestConfigDownloadSafeParameter(t *testing.T) {
 		{"?safe", http.StatusBadRequest, false},
 		{"?safe=yes", http.StatusBadRequest, false},
 		{"?safe=false&safe=true", http.StatusBadRequest, false},
+		{"?Safe=true", http.StatusBadRequest, false},
+		{"?safe=true;", http.StatusBadRequest, false},
+		{"?safe%3Dtrue", http.StatusBadRequest, false},
+		{"?other=1", http.StatusBadRequest, false},
+		{"?safe=true&other=1", http.StatusBadRequest, false},
 	}
 	for _, tc := range cases {
 		rec := downloadConfig(t, api, "/api/config/download"+tc.query)

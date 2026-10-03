@@ -324,6 +324,64 @@ func discoverConfigPath() string {
 	return ""
 }
 
+func keepFileListener(dst *Config, data []byte) {
+	var file struct {
+		System struct {
+			WebServer struct {
+				Port        *int    `json:"port"`
+				BindAddress *string `json:"bind_address"`
+			} `json:"web_server"`
+		} `json:"system"`
+	}
+	_ = json.Unmarshal(data, &file)
+	if port := file.System.WebServer.Port; port != nil {
+		dst.System.WebServer.Port = *port
+	}
+	if bind := file.System.WebServer.BindAddress; bind != nil {
+		dst.System.WebServer.BindAddress = *bind
+	}
+}
+
+func (c *Config) refuseSafeCopy(path string, data []byte, paths []string) error {
+	refused := NewConfig()
+	refused.ConfigPath = path
+	keepFileListener(&refused, data)
+	*c = refused
+	return log.Errorf("the config file holds the %s placeholder of a safe copy at %s, so b4 does not load it", RedactedMarker, strings.Join(paths, ", "))
+}
+
+func (c *Config) decodeFile(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	rawSets := raw["sets"]
+	delete(raw, "sets")
+
+	withoutSets, _ := json.Marshal(raw)
+	if err := json.Unmarshal(withoutSets, c); err != nil {
+		return fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	if rawSets == nil {
+		return nil
+	}
+	var setArray []json.RawMessage
+	if err := json.Unmarshal(rawSets, &setArray); err != nil {
+		return fmt.Errorf("failed to parse sets: %w", err)
+	}
+	c.Sets = make([]*SetConfig, 0, len(setArray))
+	for _, rs := range setArray {
+		set := NewSetConfig()
+		if err := json.Unmarshal(rs, &set); err != nil {
+			return fmt.Errorf("failed to parse set: %w", err)
+		}
+		c.Sets = append(c.Sets, &set)
+	}
+	return nil
+}
+
 func (c *Config) LoadWithMigration(path string) (bool, error) {
 	if path == "" {
 		path = discoverConfigPath()
@@ -355,38 +413,16 @@ func (c *Config) LoadWithMigration(path string) (bool, error) {
 		return false, log.Errorf("failed to parse config file: %v", err)
 	}
 
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return false, log.Errorf("failed to parse config file: %v", err)
+	if paths := placeholderValuePaths(rawJSON); len(paths) > 0 {
+		return false, c.refuseSafeCopy(path, data, paths)
 	}
 
-	rawSets := raw["sets"]
-	delete(raw, "sets")
-
-	withoutSets, _ := json.Marshal(raw)
-	if err := json.Unmarshal(withoutSets, c); err != nil {
-		return false, log.Errorf("failed to parse config file: %v", err)
-	}
-
-	if rawSets != nil {
-		var setArray []json.RawMessage
-		if err := json.Unmarshal(rawSets, &setArray); err != nil {
-			return false, log.Errorf("failed to parse sets: %v", err)
-		}
-		c.Sets = make([]*SetConfig, 0, len(setArray))
-		for _, rs := range setArray {
-			set := NewSetConfig()
-			if err := json.Unmarshal(rs, &set); err != nil {
-				return false, log.Errorf("failed to parse set: %v", err)
-			}
-			c.Sets = append(c.Sets, &set)
-		}
-	}
-
+	decodeErr := c.decodeFile(data)
 	if paths := c.RedactedValuePaths(); len(paths) > 0 {
-		*c = NewConfig()
-		c.ConfigPath = path
-		return false, log.Errorf("the config file is a safe copy made for sharing: %s hold %s placeholders instead of real values, so b4 does not load it", strings.Join(paths, ", "), RedactedMarker)
+		return false, c.refuseSafeCopy(path, data, paths)
+	}
+	if decodeErr != nil {
+		return false, log.Errorf("%w", decodeErr)
 	}
 
 	migrated := false

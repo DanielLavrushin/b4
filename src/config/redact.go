@@ -11,6 +11,40 @@ import (
 
 const RedactedMarker = "[redacted]"
 
+var placeholderPaths = map[string]bool{
+	"system.web_server.username":              true,
+	"system.web_server.password":              true,
+	"system.web_server.tls_cert":              true,
+	"system.web_server.tls_key":               true,
+	"system.web_server.mcp.token":             true,
+	"system.web_server.mcp.allowed_origins[]": true,
+	"system.socks5.username":                  true,
+	"system.socks5.password":                  true,
+	"system.mtproto.secret":                   true,
+	"system.mtproto.secrets[].name":           true,
+	"system.mtproto.secrets[].secret":         true,
+	"system.mtproto.dc_relay":                 true,
+	"system.mtproto.ws_custom_domain":         true,
+	"system.mtproto.cfworker_domain":          true,
+	"system.mtproto.cfproxy_url":              true,
+	"system.mtproto.dc_fallback_url":          true,
+	"system.mtproto.web_proxy.hostname":       true,
+	"system.mtproto.web_proxy.tls_cert":       true,
+	"system.mtproto.web_proxy.tls_key":        true,
+	"system.api.ipinfo_token":                 true,
+	"system.ai.api_key_ref":                   true,
+	"system.ai.endpoint":                      true,
+	"system.geo.sitedat_url":                  true,
+	"system.geo.ipdat_url":                    true,
+	"system.update.mirrors[]":                 true,
+	"system.hub.urls[]":                       true,
+	"system.checker.watchdog.domains[]":       true,
+	"sets[].routing.upstream.username":        true,
+	"sets[].routing.upstream.password":        true,
+	"sets[].dns.doh_url":                      true,
+	"sets[].discovery.urls[]":                 true,
+}
+
 func (c *Config) RedactedCopy() (*Config, error) {
 	data, err := json.Marshal(c)
 	if err != nil {
@@ -64,11 +98,10 @@ func (c *Config) RedactForSharing() {
 
 	mt := &c.System.MTProto
 	ws := &c.System.WebServer
-	if host := mt.WebProxy.Hostname; host != "" {
-		for _, path := range []*string{&ws.TLSCert, &ws.TLSKey, &mt.WebProxy.TLSCert, &mt.WebProxy.TLSKey} {
-			*path = strings.ReplaceAll(*path, host, RedactedMarker)
-		}
+	for _, path := range []*string{&ws.TLSCert, &ws.TLSKey, &mt.WebProxy.TLSCert, &mt.WebProxy.TLSKey} {
+		*path = maskFilePath(*path, mt.WebProxy.Hostname)
 	}
+	ws.MCP.AllowedOrigins = maskOrigins(ws.MCP.AllowedOrigins)
 
 	mt.DCRelay = maskValue(mt.DCRelay)
 	mt.WSCustomDomain = maskValue(mt.WSCustomDomain)
@@ -82,6 +115,7 @@ func (c *Config) RedactForSharing() {
 	c.System.Geo.GeoIpURL = maskURL(c.System.Geo.GeoIpURL)
 	c.System.Update.Mirrors = maskValues(c.System.Update.Mirrors)
 	c.System.Hub.URLs = maskURLs(c.System.Hub.URLs)
+	c.System.Checker.Watchdog.Domains = maskWatchdogEntries(c.System.Checker.Watchdog.Domains)
 
 	for _, set := range c.Sets {
 		if set == nil {
@@ -97,31 +131,38 @@ func (c *Config) RedactedValuePaths() []string {
 	if err != nil {
 		return nil
 	}
+	return placeholderValuePaths(m)
+}
+
+func placeholderValuePaths(doc any) []string {
 	var paths []string
-	collectRedactedPaths(m, "", &paths)
+	collectPlaceholders(doc, "", "", &paths)
 	sort.Strings(paths)
 	return paths
 }
 
-func collectRedactedPaths(v interface{}, path string, out *[]string) {
+func collectPlaceholders(v any, path, pattern string, out *[]string) {
 	switch t := v.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		for key, child := range t {
-			next := key
-			if path != "" {
-				next = path + "." + key
-			}
-			collectRedactedPaths(child, next, out)
+			collectPlaceholders(child, joinKey(path, key), joinKey(pattern, key), out)
 		}
-	case []interface{}:
+	case []any:
 		for i, child := range t {
-			collectRedactedPaths(child, fmt.Sprintf("%s[%d]", path, i), out)
+			collectPlaceholders(child, fmt.Sprintf("%s[%d]", path, i), pattern+"[]", out)
 		}
 	case string:
-		if strings.Contains(t, RedactedMarker) {
+		if placeholderPaths[pattern] && strings.Contains(t, RedactedMarker) {
 			*out = append(*out, path)
 		}
 	}
+}
+
+func joinKey(base, key string) string {
+	if base == "" {
+		return key
+	}
+	return base + "." + key
 }
 
 func maskValue(v string) string {
@@ -149,6 +190,59 @@ func maskValues(values []string) []string {
 	return out
 }
 
+func maskFilePath(path, host string) string {
+	if path == "" {
+		return ""
+	}
+	if host != "" {
+		path = strings.ReplaceAll(path, host, RedactedMarker)
+	}
+	segments := strings.Split(path, "/")
+	last := len(segments) - 1
+	for i, s := range segments {
+		name := strings.TrimPrefix(s, ".")
+		if s == "." || s == ".." || !strings.Contains(name, ".") {
+			continue
+		}
+		if i < last {
+			segments[i] = RedactedMarker
+		} else if strings.Count(name, ".") > 1 {
+			segments[i] = RedactedMarker + s[strings.LastIndex(s, "."):]
+		}
+	}
+	return strings.Join(segments, "/")
+}
+
+func maskOrigins(origins []string) []string {
+	if origins == nil {
+		return nil
+	}
+	out := make([]string, len(origins))
+	for i, origin := range origins {
+		out[i] = maskOrigin(origin)
+	}
+	return out
+}
+
+func maskOrigin(raw string) string {
+	if raw == "" || strings.TrimSpace(raw) == "*" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return RedactedMarker
+	}
+	name := u.Hostname()
+	if name == "localhost" || net.ParseIP(name) != nil {
+		return raw
+	}
+	masked := u.Scheme + "://" + RedactedMarker
+	if port := u.Port(); port != "" {
+		masked += ":" + port
+	}
+	return masked
+}
+
 func maskURLs(urls []string) []string {
 	if urls == nil {
 		return nil
@@ -162,6 +256,24 @@ func maskURLs(urls []string) []string {
 
 func maskURL(raw string) string {
 	return redactURL(raw, true)
+}
+
+func maskWatchdogEntries(entries []string) []string {
+	if entries == nil {
+		return nil
+	}
+	out := make([]string, len(entries))
+	for i, entry := range entries {
+		switch {
+		case strings.Contains(entry, "://"):
+			out[i] = maskURL(entry)
+		case strings.ContainsAny(entry, "@?#"):
+			out[i] = strings.TrimPrefix(maskURL("https://"+entry), "https://")
+		default:
+			out[i] = entry
+		}
+	}
+	return out
 }
 
 func maskDoHURL(raw string) string {
@@ -187,7 +299,7 @@ func redactURL(raw string, keepPath bool) string {
 	if keepPath {
 		b.WriteString(u.Host)
 	} else {
-		b.WriteString(maskSubdomain(u))
+		b.WriteString(maskResolverHost(u))
 	}
 
 	path := u.EscapedPath()
@@ -217,16 +329,34 @@ func redactURL(raw string, keepPath bool) string {
 	return b.String()
 }
 
-func maskSubdomain(u *url.URL) string {
-	name := u.Hostname()
-	if net.ParseIP(name) != nil {
+var knownDoHZones = func() map[string]bool {
+	zones := map[string]bool{"cloudflare-gateway.com": true}
+	for host := range KnownDoHHosts {
+		if net.ParseIP(host) != nil {
+			continue
+		}
+		zones[lastLabels(host, 2)] = true
+	}
+	return zones
+}()
+
+func lastLabels(host string, n int) string {
+	labels := strings.Split(host, ".")
+	if len(labels) > n {
+		labels = labels[len(labels)-n:]
+	}
+	return strings.Join(labels, ".")
+}
+
+func maskResolverHost(u *url.URL) string {
+	name := strings.ToLower(u.Hostname())
+	if KnownDoHHosts[name] || net.ParseIP(name) != nil {
 		return u.Host
 	}
-	labels := strings.Split(name, ".")
-	if len(labels) <= 2 {
-		return u.Host
+	masked := RedactedMarker
+	if zone := lastLabels(name, 2); zone != name && knownDoHZones[zone] {
+		masked += "." + zone
 	}
-	masked := RedactedMarker + "." + strings.Join(labels[len(labels)-2:], ".")
 	if port := u.Port(); port != "" {
 		masked += ":" + port
 	}
