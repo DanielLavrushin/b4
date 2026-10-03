@@ -54,15 +54,22 @@ func run(o options) error {
 		return fmt.Errorf("--public-url %q is not a URL", o.publicURL)
 	}
 	layout := hubdata.Layout{Root: o.data}
-	if err := layout.EnsureDirs(); err != nil {
-		return err
-	}
-	id, err := identity(layout)
+	id, err := preflight(layout, o)
 	if err != nil {
 		return err
 	}
-	if err := prepare(layout, o); err != nil {
+	if err := layout.EnsureDirs(); err != nil {
 		return err
+	}
+	if id == nil {
+		if id, err = createIdentity(layout); err != nil {
+			return err
+		}
+	}
+	if o.reset {
+		if err := reset(layout); err != nil {
+			return err
+		}
 	}
 	secret, err := layout.LoadOrCreateSecret()
 	if err != nil {
@@ -120,20 +127,28 @@ func run(o options) error {
 	return s.summary(layout, id)
 }
 
-func prepare(layout hubdata.Layout, o options) error {
+func preflight(layout hubdata.Layout, o options) (*hubwire.Identity, error) {
+	id, err := layout.LoadIdentity()
+	if err != nil && !errors.Is(err, hubdata.ErrNoIdentity) {
+		return nil, err
+	}
+	if id != nil && slices.Contains(hubwire.BuiltinHubKeys, id.KeyID()) {
+		return nil, fmt.Errorf("%s holds a key built into b4; refusing to seed a production hub", layout.KeyPath())
+	}
 	if _, err := os.Stat(layout.DBPath()); err == nil {
 		if !o.reset {
-			return fmt.Errorf("%s already exists; pass --reset to replace it", layout.DBPath())
+			return nil, fmt.Errorf("%s already exists; pass --reset to replace it", layout.DBPath())
 		}
 		if running(o.publicURL) {
-			return fmt.Errorf("a hub answers at %s; stop it before replacing its database", o.publicURL)
+			return nil, fmt.Errorf("a hub answers at %s; stop it before replacing its database", o.publicURL)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+		return nil, err
 	}
-	if !o.reset {
-		return nil
-	}
+	return id, nil
+}
+
+func reset(layout hubdata.Layout) error {
 	for _, name := range []string{layout.DBPath(), layout.DBPath() + "-wal", layout.DBPath() + "-shm"} {
 		if err := os.Remove(name); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -163,22 +178,13 @@ func running(publicURL string) bool {
 	return true
 }
 
-func identity(layout hubdata.Layout) (*hubwire.Identity, error) {
-	id, err := layout.LoadIdentity()
-	if errors.Is(err, hubdata.ErrNoIdentity) {
-		if id, err = hubwire.NewIdentity(); err != nil {
-			return nil, err
-		}
-		if err := layout.WriteIdentity(id, false); err != nil {
-			return nil, err
-		}
-		return id, nil
-	}
+func createIdentity(layout hubdata.Layout) (*hubwire.Identity, error) {
+	id, err := hubwire.NewIdentity()
 	if err != nil {
 		return nil, err
 	}
-	if slices.Contains(hubwire.BuiltinHubKeys, id.KeyID()) {
-		return nil, fmt.Errorf("%s holds a key built into b4; refusing to seed a production hub", layout.KeyPath())
+	if err := layout.WriteIdentity(id, false); err != nil {
+		return nil, err
 	}
 	return id, nil
 }
