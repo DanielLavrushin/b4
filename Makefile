@@ -251,14 +251,13 @@ HUB_DEPLOY_KEY ?=
 HUB_DEPLOY_SSH := ssh $(if $(HUB_DEPLOY_KEY),-i $(HUB_DEPLOY_KEY)) -o StrictHostKeyChecking=accept-new $(HUB_DEPLOY_HOST)
 
 .PHONY: hub-deploy
-hub-deploy: hub-linux-amd64
+hub-deploy:
 	@if [ -z "$(HUB_DEPLOY_HOST)" ]; then \
 		echo "Error: HUB_DEPLOY_HOST (user@host) must be set in .env or on the command line"; \
 		exit 1; \
 	fi
-	@echo "Deploying b4hub $(HUB_VERSION) ($(HUB_SOURCE)) to $(HUB_DEPLOY_HOST)..."
-	@scp $(if $(HUB_DEPLOY_KEY),-i $(HUB_DEPLOY_KEY)) -o StrictHostKeyChecking=accept-new $(OUT_DIR)/b4hub-linux-amd64 $(HUB_DEPLOY_HOST):/tmp/b4hub-linux-amd64
-	@$(HUB_DEPLOY_SSH) 'sudo install -m0755 /tmp/b4hub-linux-amd64 /usr/local/bin/b4hub && rm -f /tmp/b4hub-linux-amd64 && sudo systemctl restart b4hub && sleep 2 && systemctl is-active b4hub && b4hub version'
+	@echo "Updating b4hub on $(HUB_DEPLOY_HOST) to the latest released image..."
+	@$(HUB_DEPLOY_SSH) 'cd /opt/b4hub && sudo docker compose pull -q && sudo docker compose up -d && sleep 5 && curl -fsS http://127.0.0.1:7100/b4/health && echo && sudo docker compose exec -T b4hub b4hub version'
 	@echo "Hub deploy complete."
 
 .PHONY: hub-test
@@ -349,7 +348,7 @@ help:
 	@printf "  %-25s %s\n" "make hub-linux-amd64" "Cross-compile the hub service (also arm64), tarball + sha256 into out/assets"
 	@printf "  %-25s %s\n" "make hub-linux-all" "Cross-compile the hub service for every release architecture"
 	@printf "  %-25s %s\n" "make hub-docker" "Build the lavrushin/b4hub:VERSION image from hub/Dockerfile"
-	@printf "  %-25s %s\n" "make hub-deploy" "Build and install b4hub on the box in .env (HUB_DEPLOY_HOST, HUB_DEPLOY_KEY), then restart the unit"
+	@printf "  %-25s %s\n" "make hub-deploy" "Pull the latest released b4hub image on the box in .env (HUB_DEPLOY_HOST, HUB_DEPLOY_KEY) and restart it"
 	@printf "  %-25s %s\n" "make hub-test" "Run the hub service tests"
 	@printf "  %-25s %s\n" "make hub-types" "Regenerate the console's API types from the Go views"
 	@printf "  %-25s %s\n" "make hub-keygen" "Create a development hub key under hub/data"

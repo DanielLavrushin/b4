@@ -17,7 +17,7 @@ make hub-test                          # go test ./... in hub/
 make hub-run                           # console + binary, serves on 0.0.0.0:7100 with hub/data
 make hub-seed                          # replaces hub/data's database with 45 days of generated activity
 make hub-build HUB_VERSION=1.0.0       # binary into out/b4hub; HUB_VERSION defaults to dev
-make hub-deploy HUB_VERSION=1.0.1      # cross-compile, install and restart on HUB_DEPLOY_HOST from .env
+make hub-deploy                        # pull the latest released image on HUB_DEPLOY_HOST from .env and restart it
 ```
 
 `make hub-run` needs a key once (`make hub-keygen`) and `B4HUB_ADMIN_PASSWORD` in the
