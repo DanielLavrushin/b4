@@ -292,6 +292,36 @@ func TestSweepStaleUpdateFilesCoversEveryRoot(t *testing.T) {
 	}
 }
 
+func TestSweepStaleUpdateFilesKeepsUserFilesInTheConfigDirectory(t *testing.T) {
+	cfgDir := t.TempDir()
+	old := time.Now().Add(-2 * time.Hour)
+
+	entries := map[string]bool{"b4update-custom.json": false, "b4update-old": true, "b4-upload-1.tar.gz": false}
+	for name, isDir := range entries {
+		path := filepath.Join(cfgDir, name)
+		var err error
+		if isDir {
+			err = os.Mkdir(path, 0700)
+		} else {
+			err = os.WriteFile(path, []byte("{}"), 0600)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sweepStaleUpdateFiles([]string{t.TempDir(), cfgDir})
+
+	for name := range entries {
+		if _, err := os.Stat(filepath.Join(cfgDir, name)); err != nil {
+			t.Errorf("%s in the config directory was removed: %v", name, err)
+		}
+	}
+}
+
 func TestEnvWithoutUpdateKeysDropsWhatTheInstallerLeftBehind(t *testing.T) {
 	// Exactly what was found in a live b4 that had been restarted by the installer.
 	t.Setenv("B4_LOCAL_ARCHIVE", "/tmp/b4-upload-1336015582.tar.gz")
