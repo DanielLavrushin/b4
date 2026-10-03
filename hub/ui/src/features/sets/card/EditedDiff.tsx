@@ -4,7 +4,7 @@ import { colors } from "@design";
 import type { EntryView } from "@/models/api";
 import { ProjectionDiff } from "@/features/sets/ProjectionDiff";
 
-export function EditedDiff({ entry }: Readonly<{ entry: EntryView }>) {
+export function EditedDiff({ entry, compact = false }: Readonly<{ entry: EntryView; compact?: boolean }>) {
   const { t } = useTranslation();
   const original = entry.original_projection;
   if (original === undefined) return null;
@@ -34,6 +34,7 @@ export function EditedDiff({ entry }: Readonly<{ entry: EntryView }>) {
         emptyText={t("edit.diffNone")}
         beforeLabel={t("edit.received")}
         afterLabel={t("edit.now")}
+        compact={compact}
       />
     </Box>
   );

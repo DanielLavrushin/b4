@@ -47,17 +47,31 @@ type VotesPageView struct {
 	Next  string        `json:"next,omitempty"`
 }
 
+type VoteASNView struct {
+	MixView
+	Countries []string `json:"countries"`
+}
+
 type VoteOriginsView struct {
-	ASNs      []MixView `json:"asns"`
-	Countries []MixView `json:"countries"`
+	ASNs      []VoteASNView `json:"asns"`
+	Countries []MixView     `json:"countries"`
 }
 
 func (s *Server) voteOrigins(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	asns, err := toMix(s.Store.VoteASNs(ctx))
+	mix, err := toMix(s.Store.VoteASNs(ctx))
 	if err != nil {
 		s.fail(w, err)
 		return
+	}
+	seen, err := s.Store.VoteASNCountries(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	asns := make([]VoteASNView, 0, len(mix))
+	for _, m := range mix {
+		asns = append(asns, VoteASNView{MixView: m, Countries: orEmpty(seen[m.Key])})
 	}
 	countries, err := toMix(s.Store.VoteCountries(ctx))
 	if err != nil {

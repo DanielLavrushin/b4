@@ -219,6 +219,7 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 	needle := strings.ToLower(strings.TrimSpace(q.Get("q")))
 	filter := q.Get("filter")
 	rows := make([]SetRowView, 0, len(versions))
+	projections := make(map[string]map[string]interface{}, len(versions))
 	for _, v := range versions {
 		row := s.setRow(v, ec, pool, at, now)
 		if group == GroupListed {
@@ -253,6 +254,7 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
+		projections[v.SetID+"/"+strconv.Itoa(v.Version)] = v.Projection
 		rows = append(rows, row)
 	}
 	by := q.Get("sort")
@@ -290,6 +292,11 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 	} else {
 		view.Rows = []SetRowView{}
 	}
+	for i, row := range view.Rows {
+		if set, err := DecodeSet(projections[row.SetID+"/"+strconv.Itoa(row.Version)]); err == nil {
+			view.Rows[i].Config = ConfigOf(&set)
+		}
+	}
 	writeJSON(w, http.StatusOK, view)
 }
 
@@ -322,7 +329,6 @@ func (s *Server) setRow(v store.Version, ec *entryContext, pool map[string][]sto
 	}
 	if set, err := DecodeSet(v.Projection); err == nil {
 		row.Techniques = Techniques(&set, v.Payloads)
-		row.Config = ConfigOf(&set)
 	} else {
 		row.DecodeError = true
 	}

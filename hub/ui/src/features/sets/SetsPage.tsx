@@ -23,11 +23,12 @@ import { FacetCompareBar, colors, radius } from "@design";
 import type { SetAction, SetGroupName, SetRowView } from "@/models/api";
 import { PAGE_SIZES, useTableState } from "@/shared/table/useTableState";
 import type { SortDir } from "@/shared/table/sort";
-import { SearchField } from "@/shared/components/SearchField";
+import { SearchField, fieldSx } from "@/shared/components/SearchField";
 import { EmptyState, ErrorState } from "@/shared/components/States";
 import { BulkDialog } from "@/features/moderation/BulkDialog";
 import { useSetRows } from "./api";
 import { RowCard } from "./card/row";
+import { HUB_FACETS } from "./card/SetCard";
 import { SetCardSkeleton } from "./card/SetCardSkeleton";
 import { useCardPanels } from "./card/useCardPanels";
 
@@ -43,6 +44,8 @@ const bulkActions: Partial<Record<SetGroupName, SetAction[]>> = {
 const allSorts = ["updated", "created", "title", "author", "score", "n", "devices", "reports"];
 const plainSorts = ["updated", "created", "title", "author", "reports"];
 const unscored = new Set<SetGroupName>(["hidden", "rejected"]);
+
+const filterFor = (group: SetGroupName, filter: string) => (filter === "attention" && group !== "listed" ? "" : filter);
 
 const gridItem = { xs: 12, sm: 6, lg: 4, xl: 3 } as const;
 const skeletons = [0, 1, 2, 3, 4, 5, 6, 7];
@@ -65,18 +68,6 @@ const tabsSx = {
   "& .MuiTabs-indicator": { height: 2, bgcolor: colors.secondary },
 } as const;
 
-const fieldSx = {
-  minWidth: 190,
-  "& .MuiInputLabel-root": { color: colors.text.secondary },
-  "& .MuiInputLabel-root.Mui-focused": { color: colors.secondary },
-  "& .MuiOutlinedInput-root": {
-    bgcolor: colors.background.dark,
-    "& .MuiOutlinedInput-notchedOutline": { borderColor: colors.border.default },
-    "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: colors.border.strong },
-    "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: colors.secondary },
-  },
-} as const;
-
 const progressSx = { height: 3, bgcolor: colors.accent.secondary, "& .MuiLinearProgress-bar": { bgcolor: colors.secondary } } as const;
 
 interface SortControlProps {
@@ -91,7 +82,7 @@ function SortControl({ value, options, dir, onChange }: Readonly<SortControlProp
   const dirLabel = t(dir === "asc" ? "sets.sort.asc" : "sets.sort.desc");
   return (
     <Stack direction="row" alignItems="center" spacing={0.5}>
-      <TextField select size="small" label={t("sets.sort.label")} value={value} onChange={(e) => onChange(e.target.value, dir)} sx={fieldSx}>
+      <TextField select size="small" label={t("sets.sort.label")} value={value} onChange={(e) => onChange(e.target.value, dir)} sx={{ ...fieldSx, minWidth: 190 }}>
         {options.map((key) => (
           <MenuItem key={key} value={key}>
             {t(`sets.sort.${key}`)}
@@ -119,7 +110,7 @@ export function SetsPage() {
   const { t } = useTranslation();
   const table = useTableState({ sort: "updated", dir: "desc", pageSize: 50 });
   const group = (groups.includes(table.param("group") as SetGroupName) ? table.param("group") : "listed") as SetGroupName;
-  const filter = table.param("filter");
+  const filter = filterFor(group, table.param("filter"));
   const sortOptions = unscored.has(group) ? plainSorts : allSorts;
   const sort = sortOptions.includes(table.sort) ? table.sort : "updated";
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -217,11 +208,13 @@ export function SetsPage() {
       </Tabs>
       <Box sx={{ display: "flex", gap: 1.5, alignItems: "center", flexWrap: "wrap" }}>
         <SearchField value={table.q} onChange={table.setQ} placeholder={t("sets.searchPlaceholder")} />
-        {group === "listed" && (
-          <FilterToggle value="attention" active={filter === "attention"} label={t("sets.needsAttention", { count: data?.attention ?? 0 })} onToggle={() => toggleFilter("attention")} />
-        )}
-        <FilterToggle value="reports" active={filter === "reports"} label={t("sets.withReports")} onToggle={() => toggleFilter("reports")} />
-        <FilterToggle value="edited" active={filter === "edited"} label={t("sets.edited")} onToggle={() => toggleFilter("edited")} />
+        <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1.5 }}>
+          {group === "listed" && (
+            <FilterToggle value="attention" active={filter === "attention"} label={t("sets.needsAttention", { count: data?.attention ?? 0 })} onToggle={() => toggleFilter("attention")} />
+          )}
+          <FilterToggle value="reports" active={filter === "reports"} label={t("sets.withReports")} onToggle={() => toggleFilter("reports")} />
+          <FilterToggle value="edited" active={filter === "edited"} label={t("sets.edited")} onToggle={() => toggleFilter("edited")} />
+        </Box>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, ml: "auto" }}>
           <SortControl value={sort} options={sortOptions} dir={table.dir} onChange={table.setSort} />
           {actions.length > 0 && list.length > 0 && (
@@ -249,7 +242,7 @@ export function SetsPage() {
               alignItems: "center",
               flexWrap: "wrap",
               position: "sticky",
-              top: 0,
+              top: { xs: -16, md: -24 },
               zIndex: 3,
               borderRadius: radius.md,
               bgcolor: colors.background.paper,
@@ -270,7 +263,9 @@ export function SetsPage() {
             </Stack>
           </Paper>
         )}
-        {list.length > 1 && <FacetCompareBar active={panels.compare} onPick={panels.pickCompare} toggle={panels.toggle} onToggle={panels.toggleAll} t={t} />}
+        {list.length > 1 && (
+          <FacetCompareBar active={panels.compare} onPick={panels.pickCompare} toggle={panels.toggle} onToggle={panels.toggleAll} keys={HUB_FACETS} t={t} />
+        )}
         {content}
         {total > 0 && (
           <TablePagination

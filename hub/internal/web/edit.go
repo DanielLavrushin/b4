@@ -9,9 +9,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/hubwire"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
 	"github.com/daniellavrushin/b4hub/internal/moderation"
@@ -36,6 +38,7 @@ const (
 	privateAddressesWarning  = "private_addresses"
 	invalidAddressesWarning  = "invalid_addresses"
 	catchAllAddressesWarning = "catch_all_addresses"
+	invalidDomainsWarning    = "invalid_domains"
 	pinNotTargetedWarning    = "pin_not_targeted"
 	pinPrivateAddressWarning = "pin_private_address"
 
@@ -271,6 +274,27 @@ func addressWarnings(warnings []hubwire.Warning, addresses []string) []hubwire.W
 	return out
 }
 
+func domainSeparator(r rune) bool {
+	return unicode.IsSpace(r) || r == ',' || r == ';'
+}
+
+func domainWarnings(domains []string) []hubwire.Warning {
+	var invalid []string
+	seen := make(map[string]bool)
+	for _, domain := range domains {
+		value, isRegex := sni.ParseDomainEntry(domain)
+		if isRegex || seen[domain] || !strings.ContainsFunc(value, domainSeparator) {
+			continue
+		}
+		seen[domain] = true
+		invalid = append(invalid, domain)
+	}
+	if len(invalid) == 0 {
+		return nil
+	}
+	return []hubwire.Warning{{Code: invalidDomainsWarning, Params: map[string]interface{}{"domains": invalid}}}
+}
+
 func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequest) (*editResult, *editFailure) {
 	if req.Projection == nil {
 		return nil, &editFailure{status: http.StatusBadRequest, code: codeBadRequest, message: "the edit needs a projection"}
@@ -310,6 +334,7 @@ func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequ
 		return nil, &editFailure{status: http.StatusInternalServerError, code: codeInternal, message: err.Error()}
 	}
 	warnings := addressWarnings(imp.Warnings, store.TargetList(projection, "ip"))
+	warnings = append(warnings, domainWarnings(store.TargetList(projection, "sni_domains"))...)
 	warnings = append(warnings, s.categoryWarnings(projection)...)
 	title := clipRunes(imp.Set.Name, ingest.MaxTitleRunes)
 	preview := EditPreview{

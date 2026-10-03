@@ -97,7 +97,7 @@ function MirrorCell({ m, withLastSeen }: Readonly<{ m: MirrorView; withLastSeen:
           underline="hover"
           variant="body2"
           noWrap
-          sx={{ display: "block", maxWidth: { xs: 220, xl: 380 }, color: colors.text.primary, fontWeight: 500 }}
+          sx={{ display: "block", maxWidth: { xs: 220, xl: 380 }, color: colors.text.primary, fontWeight: 500, "&:hover": { color: colors.text.primary } }}
         >
           {m.url}
         </Link>

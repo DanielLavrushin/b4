@@ -11,6 +11,21 @@ export const isBadge = (badge: CardBadge | null | undefined | false): badge is C
 
 export const tipLines = (lines: readonly string[]) => <Box sx={{ whiteSpace: "pre-line" }}>{lines.filter(Boolean).join("\n")}</Box>;
 
+export const optionalTip = (lines: readonly string[]) => (lines.some(Boolean) ? tipLines(lines) : undefined);
+
+export const tipBlocks = (blocks: readonly (readonly string[])[]) => (
+  <Box sx={{ whiteSpace: "pre-line" }}>
+    {blocks
+      .map((lines) => lines.filter(Boolean))
+      .filter((lines) => lines.length > 0)
+      .map((lines, i) => (
+        <Box key={`${String(i)}-${lines[0] ?? ""}`} sx={i > 0 ? { mt: 0.75 } : undefined}>
+          {lines.join("\n")}
+        </Box>
+      ))}
+  </Box>
+);
+
 export const flagTone = (flag: string): CardTone => {
   if (flag === "block") return "error";
   if (flag === "catch_all" || flag === "blanket") return "warning";

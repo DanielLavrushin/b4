@@ -312,7 +312,7 @@ export interface VotesPageView {
 }
 
 export interface VoteOriginsView {
-  asns: MixView[];
+  asns: VoteASNView[];
   countries: MixView[];
 }
 
@@ -815,6 +815,15 @@ export interface KeyClientView {
   engine?: string;
   count: number;
   last: string;
+}
+
+export interface VoteASNView {
+  key: string;
+  name?: string;
+  country?: string;
+  votes: number;
+  keys: number;
+  countries: string[];
 }
 
 export interface MixView {

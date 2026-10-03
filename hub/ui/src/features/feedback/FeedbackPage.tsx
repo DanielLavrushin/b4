@@ -9,11 +9,12 @@ import { SetRef } from "@/shared/components/SetRef";
 import { KeyRef } from "@/shared/components/KeyRef";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { formatAgo, formatStamp } from "@/shared/utils/format";
+import { asnNumber } from "@/shared/utils/asn";
 import { setPath } from "@/features/sets/SetDrawerHost";
 import { AppliedWeight } from "./AppliedWeight";
 import { ReportsInbox } from "./ReportsInbox";
 import { OriginFilters } from "./OriginFilters";
-import { normalizeAsn, normalizeCountry } from "./origins";
+import { normalizeCountry } from "./origins";
 import { useVotes, type VoteFilter } from "./api";
 
 function VotesTab() {
@@ -39,7 +40,7 @@ function VotesTab() {
     sign: get("sign"),
     author: get("author"),
     verified: get("verified"),
-    asn: normalizeAsn(get("asn")),
+    asn: asnNumber(get("asn")) ?? get("asn").trim(),
     cc: normalizeCountry(get("cc")),
   };
   const votes = useVotes(filter);

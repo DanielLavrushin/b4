@@ -1159,6 +1159,10 @@
     "card": {
       "noTargets": "No targets configured",
       "manual": "manual",
+      "domainCount_one": "{{count, number}} domain",
+      "domainCount_other": "{{count, number}} domains",
+      "ipCount_one": "{{count, number}} IP",
+      "ipCount_other": "{{count, number}} IPs",
       "geosite": "geosite",
       "geoip": "geoip",
       "sniFakingOn": "SNI Faking ON",
@@ -1239,6 +1243,7 @@
         "redirect": "redirect",
         "fragment": "Fragment",
         "pins": "Pins",
+        "domains": "Domains",
         "pinsOnly": "pins only",
         "to": "To",
         "onRst": "On RST",

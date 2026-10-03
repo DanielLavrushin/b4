@@ -59,5 +59,3 @@ export function useCardPanels(keys: readonly string[]) {
 
   return { panelOf, setPanel, compare: state.compare, pickCompare, toggle, toggleAll };
 }
-
-export type CardPanels = ReturnType<typeof useCardPanels>;

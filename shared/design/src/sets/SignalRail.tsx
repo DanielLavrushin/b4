@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { Fragment, useRef } from "react";
 import {
   Box,
   Button,
@@ -40,6 +40,7 @@ export interface SignalRailProps {
   onPointerEnter?: () => void;
   expanded?: boolean;
   syncing?: boolean;
+  keys?: FacetKey[];
   t: FacetTranslate;
 }
 
@@ -56,10 +57,12 @@ export const SignalRail = ({
   onPointerEnter,
   expanded,
   syncing,
+  keys = FACET_ORDER,
   t,
 }: SignalRailProps) => {
   const railRef = useRef<HTMLDivElement>(null);
-  const hasSelection = activeKey !== null;
+  const shown = facets.filter((facet) => keys.includes(facet.key));
+  const hasSelection = shown.some((facet) => facet.key === activeKey);
   const open = hasSelection || !!expanded;
 
   if (syncing) {
@@ -99,7 +102,7 @@ export const SignalRail = ({
       onMouseEnter={onPointerEnter}
       sx={{
         display: "grid",
-        gridTemplateColumns: `repeat(${facets.length}, 1fr)`,
+        gridTemplateColumns: `repeat(${shown.length}, 1fr)`,
         gap: "2px",
         alignItems: "start",
         height: RAIL_REST,
@@ -121,10 +124,10 @@ export const SignalRail = ({
         },
       }}
     >
-      {facets.map((facet, i) => {
+      {shown.map((facet, i) => {
         const selected = activeKey === facet.key;
         const first = i === 0;
-        const last = i === facets.length - 1;
+        const last = i === shown.length - 1;
         return (
           <Tooltip
             key={facet.key}
@@ -242,18 +245,17 @@ export const FacetDrawer = ({ facet, onEdit, t }: FacetDrawerProps) => {
       </Stack>
 
       {facet.active && facet.rows.length > 0 ? (
-        <Stack>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: `minmax(${KEY_COLUMN}px, max-content) minmax(0, 1fr)`,
+            columnGap: spacing.sm,
+            gridAutoRows: "minmax(21px, auto)",
+            alignItems: "center",
+          }}
+        >
           {facet.rows.map((row) => (
-            <Box
-              key={`${row.label}-${row.value}`}
-              sx={{
-                display: "grid",
-                gridTemplateColumns: `${KEY_COLUMN}px 1fr`,
-                gap: spacing.sm,
-                alignItems: "center",
-                minHeight: 21,
-              }}
-            >
+            <Fragment key={`${row.label}-${row.value}`}>
               <Typography sx={labelStyle}>{row.label}</Typography>
               <Tooltip
                 title={`${row.value}${row.muted ? ` ${row.muted}` : ""}`}
@@ -273,9 +275,9 @@ export const FacetDrawer = ({ facet, onEdit, t }: FacetDrawerProps) => {
                   )}
                 </Typography>
               </Tooltip>
-            </Box>
+            </Fragment>
           ))}
-        </Stack>
+        </Box>
       ) : (
         <Stack
           direction="row"
@@ -325,6 +327,7 @@ export interface FacetCompareBarProps {
   onPick: (key: FacetKey | null) => void;
   toggle: FacetToggleMode | null;
   onToggle: () => void;
+  keys?: FacetKey[];
   t: FacetTranslate;
 }
 
@@ -333,6 +336,7 @@ export const FacetCompareBar = ({
   onPick,
   toggle,
   onToggle,
+  keys = FACET_ORDER,
   t,
 }: FacetCompareBarProps) => {
   return (
@@ -360,7 +364,7 @@ export const FacetCompareBar = ({
         {t("sets.card.f.compare")}
       </Typography>
 
-      {FACET_ORDER.map((key) => {
+      {keys.map((key) => {
         const color = FACET_COLORS[key];
         const on = active === key;
         return (

@@ -1,14 +1,13 @@
 import type { ReactElement, ReactNode } from "react";
 import type { FacetSetConfig } from "@design";
-import type { StatusTone } from "@/shared/components/StatusDot";
 
-export type CardTone = "default" | "secondary" | "warning" | "error";
+export type CardTone = "default" | "warning" | "error";
 
 export interface CardBadge {
   key: string;
   label: string;
+  ariaLabel?: string;
   tone?: CardTone;
-  filled?: boolean;
   icon?: ReactElement;
   tooltip?: ReactNode;
   panel?: string;
@@ -39,12 +38,6 @@ export interface CardVersion {
   warning?: boolean;
 }
 
-export interface CardStatus {
-  tone: StatusTone;
-  label: string;
-  tooltip?: ReactNode;
-}
-
 export interface CardSelection {
   selected: boolean;
   onToggle: () => void;
@@ -56,8 +49,8 @@ export interface SetCardProps {
   title: string;
   config?: FacetSetConfig;
   targetText?: string;
+  targetTooltip?: ReactNode;
   version?: CardVersion;
-  status?: CardStatus;
   meta?: string[];
   metaTooltip?: ReactNode;
   description?: string;

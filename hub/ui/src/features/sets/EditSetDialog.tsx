@@ -33,7 +33,7 @@ import type { EditPreview, EntryView, Projection, SuggestionView, TidyView, Warn
 import { setRef } from "@/shared/utils/format";
 import { errorText } from "@/shared/utils/notices";
 import { flagHint, flagText, targetsPreview, techniqueText } from "@/shared/utils/terms";
-import { FlagChips } from "./components/TechniqueChips";
+import { FlagChips } from "./components/FlagChips";
 import {
   EMPTY_TARGETS,
   FIELD_LABELS,
@@ -146,6 +146,26 @@ const chipSx = { fontFamily: fonts.mono, fontWeight: 500 };
 
 const listSx = { m: 0, pl: "1.1em" };
 
+const SEPARATED = /[\s,;]/;
+
+const helperOf = (errors: string[], hint: string): ReactNode =>
+  errors.length > 0
+    ? errors.map((error) => (
+        <Box key={error} component="span" sx={{ display: "block" }}>
+          {error}
+        </Box>
+      ))
+    : hint;
+
+function NoteItems({ items }: Readonly<{ items: string[] }>) {
+  if (!items.some((item) => SEPARATED.test(item))) return <Mono>{items.join(", ")}</Mono>;
+  return items.map((item, index) => (
+    <Box key={`${String(index)}:${item}`}>
+      <Mono>{item}</Mono>
+    </Box>
+  ));
+}
+
 function FieldNotes({ notes }: Readonly<{ notes: Note[] }>) {
   const { t } = useTranslation();
   if (notes.length === 0) return null;
@@ -159,7 +179,7 @@ function FieldNotes({ notes }: Readonly<{ notes: Note[] }>) {
             {note.text}
             {shown.length > 0 && (
               <Box sx={{ mt: 0.25 }}>
-                <Mono>{shown.join(", ")}</Mono>
+                <NoteItems items={shown} />
                 {more > 0 && ` ${t("targets.more", { count: more })}`}
               </Box>
             )}
@@ -216,7 +236,7 @@ function ListField({ label, hint, value, disabled, minRows, maxRows, errors, not
         minRows={minRows}
         maxRows={maxRows}
         error={errors.length > 0}
-        helperText={errors.length > 0 ? errors.join(" ") : hint}
+        helperText={helperOf(errors, hint)}
         slotProps={monoInput(13)}
       />
       <FieldNotes notes={notes} />
@@ -277,7 +297,7 @@ function CategoryField({ label, hint, value, options, known, keyOf, disabled, er
             {...params}
             label={label}
             error={errors.length > 0}
-            helperText={errors.length > 0 ? errors.join(" ") : hint}
+            helperText={helperOf(errors, hint)}
           />
         )}
         slotProps={{ listbox: { sx: { fontFamily: fonts.mono, fontSize: 13 } } }}
@@ -770,7 +790,7 @@ export function EditSetDialog({ entry, onClose }: Readonly<EditSetDialogProps>) 
           helperText={t("edit.noteHint")}
         />
         {preview.isPending && <LinearProgress color="secondary" />}
-        {!preview.isPending && checked !== null && stale && <Alert severity="info">{t("edit.stale")}</Alert>}
+        {!preview.isPending && checked !== null && stale && !invalid && !noTargets && <Alert severity="info">{t("edit.stale")}</Alert>}
         {!stale && checked !== null && checked.result === null && <CheckError error={checked.error} noTargets={noTargets} />}
         {result !== null && entry !== null && <CheckResult entry={entry} result={result} warnings={serverWarnings.rest} />}
       </DialogContent>

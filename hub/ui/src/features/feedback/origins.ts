@@ -1,4 +1,4 @@
-import type { MixView } from "@/models/api";
+import type { MixView, VoteASNView } from "@/models/api";
 
 export interface OriginOption {
   key: string;
@@ -6,7 +6,7 @@ export interface OriginOption {
   detail: string;
   label: string;
   votes?: number;
-  country?: string;
+  countries?: string[];
 }
 
 export interface OriginChoice {
@@ -14,23 +14,18 @@ export interface OriginChoice {
   value: OriginOption | null;
 }
 
-export const normalizeAsn = (value: string): string => {
-  const v = value.trim().toUpperCase();
-  return v.startsWith("AS") ? v.slice(2) : v;
-};
-
 export const normalizeCountry = (value: string): string => value.trim().toUpperCase();
 
-const option = (key: string, head: string, detail: string, votes?: number, country?: string): OriginOption => ({
+const option = (key: string, head: string, detail: string, votes?: number, countries?: string[]): OriginOption => ({
   key,
   head,
   detail,
   label: detail ? `${head} ${detail}` : head,
   votes,
-  country,
+  countries,
 });
 
-export const asnOption = (m: MixView): OriginOption => option(m.key, `AS${m.key}`, m.name ?? m.country ?? "", m.votes, m.country);
+export const asnOption = (m: VoteASNView): OriginOption => option(m.key, `AS${m.key}`, m.name ?? m.country ?? "", m.votes, m.countries);
 
 export const asnFallback = (key: string): OriginOption => option(key, `AS${key}`, "");
 

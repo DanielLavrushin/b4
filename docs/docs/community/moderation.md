@@ -90,9 +90,9 @@ Four counts follow, each opening the page it counts: pending versions, listed se
 
 One card per pending version, oldest first, laid out like a set card on the router's **Sets** page.
 
-The strip along the top edge has one segment for each part of the set: **Target**, **Split**, **Fake**, **Route**, **DNS** and **Escalate**, with **Block** in place of **Route** on a block set. A segment is lit when the set configures that part, and a click on it opens the part's settings under the card; **Escalate** is never lit, because escalation does not travel in a shared set. With more than one card, **Compare across sets** above them opens the same part on every card, and **Collapse all** and **Expand all** close and reopen what is open.
+The strip along the top edge has one segment for each part of the set: **Target**, **Split**, **Fake**, **Route** and **DNS**, with **Block** in place of **Route** on a block set. Escalation does not travel in a shared set, so the strip has no segment for it. A segment is lit when the set configures that part, and a click on it opens the part's settings under the card. With more than one card, **Compare across sets** above them opens the same part on every card, and **Collapse all** and **Expand all** close and reopen what is open.
 
-The version sits in the top right corner, `v1` for the first version of a new set. Its tooltip states what approving would mean:
+The version sits in the top right corner, `v1` for the first version of a new set. Its tooltip gives the set id and version and states what approving would mean:
 
 | Tooltip | Meaning |
 | --- | --- |
@@ -186,12 +186,12 @@ The check also reports what the scrub did. A warning that concerns one field sit
 
 | Field | Warnings |
 | --- | --- |
-| **Domains** | Domains that look private, too many domains, a block set matching by pattern, a pin dropped because its domain is not targeted or it points at a private address |
+| **Domains** | Entries other than `regexp:` patterns that hold a space, a comma or a semicolon and so match nothing, domains that look private, too many domains, a block set matching by pattern, a pin dropped because its domain is not targeted or it points at a private address |
 | **Addresses** | Addresses that look private, entries that are neither an IP address nor a CIDR range, which routers skip, a `/0` range covering every address, too many addresses |
 | **ASNs** | Too many ASNs, values b4 does not accept |
 | **Geosite categories**, **GeoIP categories** | Names missing from the hub's own file; the author may use a different source |
 
-**Warnings from the check** lists the rest: fields b4 does not know, other values it does not accept, a DoH host outside the public list, pins, a missing payload. **Stripped fields** lists the settings that cannot travel in a shared set at all, with the reason they were dropped. Addresses, categories and ASNs are checked while they are typed; after a check, the hub's verdict takes the place of those notes on every field that has not changed since.
+**Warnings from the check** lists the rest: fields b4 does not know, other values it does not accept, a DoH host outside the public list, pins, a missing payload. **Stripped fields** lists the settings that cannot travel in a shared set at all, with the reason they were dropped. Addresses, categories and ASNs, and the spaces, commas and semicolons in domain entries, are checked while they are typed; after a check, the hub's verdict takes the place of those notes on every field that has not changed since.
 
 When the check refuses the set, **The check refused the set:** lists each reason with its field, and a target field also shows its reason in red under it, such as an ASN that is not a public AS number.
 
@@ -234,11 +234,11 @@ A card has the strip of the set's parts, the version, the title, the targets and
 
 | Part | What it shows |
 | --- | --- |
-| Version | The set id and version in the tooltip, and on **Listed** the other active versions |
+| Version | The set id and version in the tooltip, and on **Listed** every active version when the set has more than one |
 | The line under the title | The author, the technique family and when the version last changed. The tooltip adds the author's name and tag, the label routers see, whether the key is trusted or banned, the network the upload came from, and when the version was received and updated |
 | The line under the route | **Superseded by vN** with its time, or the reason the version is hidden, rejected or withheld |
 | Marks | The flags, **author banned**, **set withdrawn**, **hidden before approval**, **edited**, the attention marks and the reports |
-| Score | The score routers were given in the last build, green from 70%, orange from 40% and red below, or **unrated**; **next:** with the live value follows it when the next build changes it. Then the independent works and broken votes. The tooltips give the weighted votes and devices behind each, the author's own votes, and how many other sets share the strategy's votes. Not shown on **Hidden** and **Rejected** |
+| Score | The score routers were given in the last build or, for a version that build did not publish, such as those on **Superseded** and **Withheld**, the score computed now: green from 70%, orange from 40% and red below, or **unrated**. **next:** with the live value follows a published score when the next build changes it. Then the independent works and broken votes. The tooltips give the weighted votes and devices behind each, the author's own votes, and how many other sets share the strategy's votes. Not shown on **Hidden** and **Rejected** |
 
 Three toggles narrow the list: **With open reports**, **Edited** and, on **Listed**, **Needs attention**. The attention marks on a listed set are signals for this console only, and routers still list the set:
 
@@ -253,7 +253,7 @@ A card shows them as one mark that names the most severe and adds **+N** for the
 
 Cards can be selected for a bulk action on the tabs where one applies, one by one or with **Select all** for the page: hiding listed and superseded versions, restoring hidden ones and approving rejected ones.
 
-A card opens a panel holding every version of that set, each with its status, its facts and the actions its status allows. A hidden version can be restored and a rejected one approved after all. The panel also lists every vote recorded for the set, and its **History**: every action taken on the set, by whom and with what reason. The menu in the card's corner offers **Open details**, which opens the same panel, and **Open the author's key**.
+A card opens the set's panel at the card's version. The panel holds every version of that set, each with its status, its facts and the actions its status allows. A hidden version can be restored and a rejected one approved after all. The panel also lists every vote recorded for the set, and its **History**: every action taken on the set, by whom and with what reason. The menu in the card's corner offers **Open details**, which opens the same panel, and **Open the author's key**.
 
 ### Withdrawing a set
 
@@ -340,7 +340,7 @@ The **Serves** column compares the catalogue the mirror had at its last check wi
 
 Two tabs.
 
-**Votes** lists every vote, newest first, and loads older ones on request. Per row: when it arrived, the set and version, its kind, the network the hub observed and the one the router claimed, the contributor, the domain the list was filtered by, the b4 version and engine, and the weight it carries. Filters narrow it by works or broken, by whether the voter is the set's author, by known or unknown network, and by **ASN** and **Country**, both picked from the networks and countries votes have arrived from, each with its total number of votes; a chosen country leaves in the **ASN** list only the networks whose votes come mostly from it. A set or key reference adds a filter for it.
+**Votes** lists every vote, newest first, and loads older ones on request. Per row: when it arrived, the set and version, its kind, the network the hub observed and the one the router claimed, the contributor, the domain the list was filtered by, the b4 version and engine, and the weight it carries. Filters narrow it by works or broken, by whether the voter is the set's author, by known or unknown network, and by **ASN** and **Country**, both picked from the networks and countries votes have arrived from, each with its total number of votes; a chosen country leaves in the **ASN** list only the networks with votes from it, and clears a chosen **ASN** that has none. A set or key reference adds a filter for it.
 
 The weight column shows what the vote contributes to the published score: its base weight, the factors for the network, a young key and age, and the result as of the last build. A vote that does not count says why: no listed set uses its strategy, it arrived after the last build, its key is banned or tagged test, or automated votes would outweigh manual ones.
 

@@ -104,7 +104,10 @@ export interface FacetSetConfig {
 
 export type FacetRoutingMode = "interface" | "proxy" | "mtproto-ws" | "block";
 
-export type FacetTranslate = (key: string) => string;
+export type FacetTranslate = (
+  key: string,
+  options?: Record<string, unknown>,
+) => string;
 
 export type FacetKey =
   | "target"
@@ -439,17 +442,23 @@ export const routesViaPins = (set: FacetSetConfig) =>
 export const hasDnsFacet = (set: FacetSetConfig) =>
   !!set.dns?.enabled || dnsPinnedDomains(set).length > 0;
 
-const dnsRows = (set: FacetSetConfig, t: FacetTranslate): FacetRow[] => {
+const dnsRows = (
+  set: FacetSetConfig,
+  t: FacetTranslate,
+  hideEmptyServer: boolean,
+): FacetRow[] => {
   const dns = set.dns;
   const isDoh = !!dns.doh_url;
   const rows: FacetRow[] = [];
 
   if (dns.enabled) {
     rows.push({ label: t(F("mode")), value: isDoh ? "DoH" : t(F("redirect")) });
-    rows.push({
-      label: t(F("dnsTarget")),
-      value: isDoh ? dns.doh_url : dns.target_dns || "-",
-    });
+    if (isDoh || dns.target_dns || !hideEmptyServer) {
+      rows.push({
+        label: t(F("dnsTarget")),
+        value: isDoh ? dns.doh_url : dns.target_dns || "-",
+      });
+    }
     rows.push({ label: t(F("fragment")), value: onOff(t, dns.fragment_query) });
   }
 
@@ -459,7 +468,7 @@ const dnsRows = (set: FacetSetConfig, t: FacetTranslate): FacetRow[] => {
       rows.push({ label: t(F("mode")), value: t(F("pinsOnly")) });
     }
     rows.push({ label: t(F("pins")), value: String(pinned.length) });
-    rows.push({ label: t("core.domains"), value: pinned.join(", ") });
+    rows.push({ label: t(F("domains")), value: pinned.join(", ") });
   }
   return rows;
 };
@@ -509,6 +518,7 @@ export const buildSetFacets = (
   stats: FacetStats | undefined,
   t: FacetTranslate,
   escalatesToName?: string,
+  options?: { hideEmptyDnsServer?: boolean },
 ): SetFacet[] => {
   const routeMode = resolveRoutingMode(set.routing?.mode);
   const isBlock = !!set.routing?.enabled && routeMode === "block";
@@ -557,7 +567,7 @@ export const buildSetFacets = (
       color: FACET_COLORS.dns,
       icon: <DnsIcon />,
       active: hasDnsFacet(set),
-      rows: dnsRows(set, t),
+      rows: dnsRows(set, t, !!options?.hideEmptyDnsServer),
       section: FACET_SECTIONS.dns,
     },
     {
@@ -592,8 +602,8 @@ export const buildTargetSummary = (
 
   const domains = stats?.total_domains ?? targets.sni_domains.length;
   const ips = stats?.total_ips ?? targets.ip.length;
-  if (domains > 0) parts.push(`${domains.toLocaleString()} ${t("core.domains")}`);
-  if (ips > 0) parts.push(`${ips.toLocaleString()} ${t("core.ips")}`);
+  if (domains > 0) parts.push(t("sets.card.domainCount", { count: domains }));
+  if (ips > 0) parts.push(t("sets.card.ipCount", { count: ips }));
   if (targets.tls) parts.push(`TLS ${targets.tls}`);
   if (targets.ip_version) parts.push(targets.ip_version);
 

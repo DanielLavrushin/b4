@@ -30,10 +30,12 @@ import {
   radius,
   spacing,
   typography,
+  type FacetKey,
   type FacetSetConfig,
 } from "@design";
-import { StatusDot } from "@/shared/components/StatusDot";
 import type { CardBadge, CardMenuItem, CardPanel, CardVersion, SetCardProps } from "./types";
+
+export const HUB_FACETS: FacetKey[] = ["target", "split", "fake", "route", "dns"];
 
 const RAIL_REST = 16;
 const ROUTE_ICON = 14;
@@ -83,25 +85,26 @@ export function VersionPill({ version }: Readonly<{ version: CardVersion }>) {
   );
 }
 
-const chipColor = (badge: CardBadge) => (badge.tone && badge.tone !== "default" ? badge.tone : "default");
-
 function BadgeChip({ badge, pressed, onToggle }: Readonly<{ badge: CardBadge; pressed: boolean; onToggle: (panel: string) => void }>) {
   const panel = badge.panel;
   const action = panel === undefined ? badge.onClick : () => onToggle(panel);
+  const focusable = action === undefined && Boolean(badge.tooltip);
   const chip = (
     <Chip
       size="small"
-      variant={badge.filled ? "filled" : "outlined"}
-      color={chipColor(badge)}
+      variant="outlined"
+      color={badge.tone ?? "default"}
       icon={badge.icon}
       label={badge.label}
       onClick={action}
+      tabIndex={focusable ? 0 : undefined}
+      aria-label={badge.ariaLabel ?? (focusable ? badge.label : undefined)}
       aria-pressed={panel === undefined ? undefined : pressed}
       sx={{
         maxWidth: "100%",
         "& .MuiChip-icon": { fontSize: BADGE_ICON, color: "inherit", ml: "8px", mr: "-4px" },
         ...(pressed ? { bgcolor: colors.accent.secondary, borderColor: colors.secondary } : {}),
-        "&.Mui-focusVisible": { outline: `1px solid ${colors.secondary}`, outlineOffset: 1 },
+        "&.Mui-focusVisible, &:focus-visible": { outline: `1px solid ${colors.secondary}`, outlineOffset: 1 },
       }}
     />
   );
@@ -214,9 +217,9 @@ function MetaLine({ parts, tooltip }: Readonly<{ parts: string[]; tooltip?: Reac
   return tooltip ? <Tooltip title={tooltip}>{line}</Tooltip> : line;
 }
 
-function TargetLine({ text }: Readonly<{ text: string }>) {
+function TargetLine({ text, tooltip }: Readonly<{ text: string; tooltip?: ReactNode }>) {
   return (
-    <Tooltip title={text}>
+    <Tooltip title={tooltip ?? text}>
       <Stack direction="row" alignItems="center" spacing={spacing.xs} sx={{ mt: spacing.xs, minWidth: 0 }}>
         <Box sx={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, border: `2px solid ${facetColors.target}` }} />
         <Typography noWrap sx={{ ...typography.recipes.monoSmall, color: colors.text.secondary }}>
@@ -242,9 +245,9 @@ function RouteLine({ config }: Readonly<{ config: FacetSetConfig }>) {
   );
 }
 
-type CardBodyProps = Pick<SetCardProps, "title" | "config" | "targetText" | "meta" | "metaTooltip" | "description" | "extra">;
+type CardBodyProps = Pick<SetCardProps, "title" | "config" | "targetText" | "targetTooltip" | "meta" | "metaTooltip" | "description" | "extra">;
 
-function CardBody({ title, config, targetText, meta, metaTooltip, description, extra }: Readonly<CardBodyProps>) {
+function CardBody({ title, config, targetText, targetTooltip, meta, metaTooltip, description, extra }: Readonly<CardBodyProps>) {
   const { t } = useTranslation();
   const parts = (meta ?? []).filter(Boolean);
   const target = config ? buildTargetSummary(config, undefined, t) : targetText;
@@ -261,7 +264,7 @@ function CardBody({ title, config, targetText, meta, metaTooltip, description, e
         </Typography>
       </Tooltip>
       {parts.length > 0 && <MetaLine parts={parts} tooltip={metaTooltip} />}
-      {target && <TargetLine text={target} />}
+      {target && <TargetLine text={target} tooltip={targetTooltip} />}
       {config ? (
         <RouteLine config={config} />
       ) : (
@@ -331,8 +334,8 @@ export function SetCard({
   title,
   config,
   targetText,
+  targetTooltip,
   version,
-  status,
   meta,
   metaTooltip,
   description,
@@ -351,14 +354,23 @@ export function SetCard({
   const rail = useRailHold();
   const { panel, set: setPanel, toggle: togglePanel } = usePanel(controlledPanel, onPanelChange);
 
-  const facets = config ? buildSetFacets(config, undefined, t) : [];
+  const facets = config ? buildSetFacets(config, undefined, t, undefined, { hideEmptyDnsServer: true }) : [];
   const openFacet = facets.find((f) => f.key === panel);
   const openPanel = openFacet ? undefined : panels.find((p) => p.key === panel);
   const selected = selection?.selected ?? false;
   const ring = `0 0 0 2px ${colors.secondary}`;
   const lift = `0 8px 24px ${colors.accent.primary}`;
   const body = (
-    <CardBody title={title} config={config} targetText={targetText} meta={meta} metaTooltip={metaTooltip} description={description} extra={extra} />
+    <CardBody
+      title={title}
+      config={config}
+      targetText={targetText}
+      targetTooltip={targetTooltip}
+      meta={meta}
+      metaTooltip={metaTooltip}
+      description={description}
+      extra={extra}
+    />
   );
 
   return (
@@ -390,6 +402,7 @@ export function SetCard({
           onSelect={togglePanel}
           onPointerEnter={rail.hold}
           expanded={rail.expanded}
+          keys={HUB_FACETS}
           t={t}
         />
       ) : (
@@ -407,7 +420,6 @@ export function SetCard({
           />
         )}
         <Box sx={{ flex: 1 }} />
-        {status && <StatusDot tone={status.tone} label={status.label} tooltip={status.tooltip} variant="caption" muted />}
         {version && <VersionPill version={version} />}
         {menu.length > 0 && <CardMenu items={menu} panel={panel} onToggle={togglePanel} />}
       </Box>

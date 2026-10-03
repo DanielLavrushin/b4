@@ -2,6 +2,7 @@ import type { TFunction } from "i18next";
 import type { FilterOptionsState } from "@mui/material";
 import { ApiError } from "@/api/client";
 import type { InvalidFieldView, Projection, WarningView } from "@/models/api";
+import { normalizeAsn } from "@/shared/utils/asn";
 
 export type ListKey = "sni_domains" | "ip" | "asns" | "geosite_categories" | "geoip_categories";
 export type FieldKey = ListKey | "tls" | "ip_version" | "domain_only";
@@ -74,25 +75,6 @@ export const lines = (text: string): string[] =>
 export const tokens = (text: string): string[] => text.split(/[\s,]+/).filter((item) => item !== "");
 
 const asnTokens = (text: string): string[] => tokens(text.replace(/\b(asn?)\s+(?=\d)/gi, "$1"));
-
-const RESERVED_ASNS: [number, number][] = [
-  [0, 0],
-  [23456, 23456],
-  [64496, 131071],
-  [4200000000, 4294967295],
-];
-
-export const normalizeAsn = (raw: string): string | null => {
-  let value = raw.trim();
-  if (/^asn/i.test(value)) value = value.slice(3);
-  else if (/^as/i.test(value)) value = value.slice(2);
-  value = value.trim();
-  if (!/^\d+$/.test(value)) return null;
-  const n = Number(value);
-  if (!Number.isSafeInteger(n) || n > 4294967295) return null;
-  if (RESERVED_ASNS.some(([lo, hi]) => n >= lo && n <= hi)) return null;
-  return String(n);
-};
 
 export const asnList = (text: string): string[] => unique(asnTokens(text).map((item) => normalizeAsn(item) ?? item));
 
@@ -243,6 +225,7 @@ const WARNING_FIELDS: Record<string, FieldKey> = {
   pin_not_targeted: "sni_domains",
   pin_private_address: "sni_domains",
   private_domains: "sni_domains",
+  invalid_domains: "sni_domains",
   too_many_domains: "sni_domains",
   block_regexp: "sni_domains",
 };
@@ -294,8 +277,15 @@ export interface KnownCategories {
   geoip: Set<string>;
 }
 
+const DOMAIN_SEPARATOR = /[\s,;]/;
+
+const invalidDomains = (text: string): string[] =>
+  unique(lines(text).filter((line) => !line.toLowerCase().startsWith("regexp:") && DOMAIN_SEPARATOR.test(line)));
+
 export const clientWarnings = (draft: TargetsDraft, known: KnownCategories): FieldWarnings => {
   const out: FieldWarnings = {};
+  const domains = invalidDomains(draft.sni_domains);
+  if (domains.length > 0) push(out, "sni_domains", { code: "invalid_domains", params: { domains } });
   const addresses = tokens(draft.ip);
   const invalid = unique(addresses.filter((item) => classifyAddress(item) === "invalid"));
   const catchAll = unique(addresses.filter((item) => classifyAddress(item) === "catch_all"));

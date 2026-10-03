@@ -104,14 +104,14 @@ export function OriginFilters({ asn, cc, onChange }: OriginFiltersProps) {
   const asns = useMemo(() => (origins.data?.asns ?? []).map(asnOption), [origins.data]);
   const countries = useMemo(() => (origins.data?.countries ?? []).map((m) => countryOption(m, regionName)), [origins.data, regionName]);
   const asnChoice = useMemo(
-    () => choose(cc ? asns.filter((o) => o.country === cc) : asns, asn, () => asns.find((o) => o.key === asn) ?? asnFallback(asn)),
+    () => choose(cc ? asns.filter((o) => o.countries?.includes(cc)) : asns, asn, () => asns.find((o) => o.key === asn) ?? asnFallback(asn)),
     [asns, asn, cc],
   );
   const countryChoice = useMemo(() => choose(countries, cc, () => countryFallback(cc, regionName)), [countries, cc, regionName]);
 
   const pickCountry = (key: string | null) => {
-    const own = asnChoice.value?.country;
-    onChange(key && own && own !== key ? { cc: key, asn: null } : { cc: key });
+    const own = asnChoice.value?.countries;
+    onChange(key && own && !own.includes(key) ? { cc: key, asn: null } : { cc: key });
   };
 
   return (

@@ -8,16 +8,17 @@ import type { EntryView } from "@/models/api";
 import { useSetDetail } from "@/features/sets/api";
 import { ProjectionDiff } from "@/features/sets/ProjectionDiff";
 import { setPath } from "@/features/sets/SetDrawerHost";
-import { isBadge } from "@/features/sets/card/badges";
+import { isBadge, tipLines } from "@/features/sets/card/badges";
 import { useEntryCard } from "@/features/sets/card/entry";
 import { SetCard } from "@/features/sets/card/SetCard";
 import type { CardMenuItem, CardPanel } from "@/features/sets/card/types";
 import type { Moderation } from "@/features/moderation/useModeration";
 import { ErrorState } from "@/shared/components/States";
 import { useOverlay } from "@/shared/hooks/useOverlay";
+import { setRef } from "@/shared/utils/format";
 import { SIMILAR_PANEL, SimilarList, similarBadge, similarLabel, useSimilar } from "./SimilarSets";
 
-export const COMPARE_PANEL = "compare";
+const COMPARE_PANEL = "compare";
 
 const actionPair = { display: "flex", gap: 1 } as const;
 const actionButton = { px: 1.5 } as const;
@@ -38,7 +39,7 @@ function ListedComparison({ entry, listed }: Readonly<{ entry: EntryView; listed
   if (detail.isError) return <ErrorState error={detail.error} onRetry={() => void detail.refetch()} />;
   const version = detail.data.versions.find((v) => v.version === listed);
   if (!version) return null;
-  return <ProjectionDiff before={version.projection} after={entry.projection} beforeVersion={listed} />;
+  return <ProjectionDiff before={version.projection} after={entry.projection} beforeVersion={listed} compact />;
 }
 
 interface QueueCardProps {
@@ -62,7 +63,7 @@ export function QueueCard({ entry, moderation, selected, onToggleSelect, panel, 
     { key: SIMILAR_PANEL, label: similarLabel(t, similar), content: <SimilarList entry={entry} similar={similar} onReject={moderation.reject} /> },
   ];
   if (listed !== undefined) {
-    panels.push({ key: COMPARE_PANEL, label: t("queue.compare", { version: listed }), content: <ListedComparison entry={entry} listed={listed} /> });
+    panels.push({ key: COMPARE_PANEL, label: t("queue.compareTitle"), content: <ListedComparison entry={entry} listed={listed} /> });
   }
   if (parts.editedPanel) panels.push(parts.editedPanel);
 
@@ -94,9 +95,10 @@ export function QueueCard({ entry, moderation, selected, onToggleSelect, panel, 
       title={entry.title}
       config={parts.config}
       targetText={parts.targetText}
+      targetTooltip={parts.targetTooltip}
       version={{
         version: entry.version,
-        tooltip: lineage ? t(`queue.lineage.${lineage.kind}`, { version: listed }) : undefined,
+        tooltip: tipLines([setRef(entry.set_id, entry.version), lineage ? t(`queue.lineage.${lineage.kind}`, { version: listed }) : ""]),
         warning: lineage?.kind === "older",
       }}
       meta={parts.meta}

@@ -13,9 +13,10 @@ import { keyHref } from "@/shared/components/KeyRef";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { formatAgo, formatStamp, setRef } from "@/shared/utils/format";
 import { reasonText } from "@/shared/utils/reason";
-import { bannedBadge, editedBadge, flagBadges, isBadge, reportsBadge, tipLines, withdrawnBadge } from "./badges";
+import { techniqueText } from "@/shared/utils/terms";
+import { bannedBadge, editedBadge, flagBadges, isBadge, optionalTip, reportsBadge, tipBlocks, tipLines, withdrawnBadge } from "./badges";
 import { SetCard } from "./SetCard";
-import { asSetConfig, targetSummaryOf } from "./summary";
+import { asSetConfig, targetPreviewLines, targetSummaryOf } from "./summary";
 import type { CardBadge, CardMenuItem, CardSelection } from "./types";
 
 const attentionRank: Record<string, number> = { low_score: 0, reports: 1, weak: 2, stale: 3 };
@@ -32,6 +33,7 @@ const attentionBadge = (t: TFunction, codes: readonly AttentionCode[]): CardBadg
   return {
     key: "attention",
     label: sorted.length > 1 ? `${label(first)} +${String(sorted.length - 1)}` : label(first),
+    ariaLabel: sorted.map(label).join(", "),
     tone: "warning",
     icon: <WarningIcon />,
     tooltip: tipLines(sorted.map((code) => `${label(code)}: ${t(`attention.${code}.hint`, { defaultValue: "" })}`)),
@@ -95,7 +97,7 @@ export function RowCard({ row, group, selection, panel, onPanelChange }: Readonl
   const { t } = useTranslation();
   const overlay = useOverlay();
   const known = useKnownKey(row.author_hmac);
-  const open = () => overlay.open(setPath(row.set_id));
+  const open = () => overlay.open(setPath(row.set_id, row.version));
   const config = asSetConfig(row.config);
   const awaiting = group === "hidden" && row.status_reason === "reports" && row.open_reports > 0;
   const attention = row.open_reports > 0 ? row.attention.filter((code) => code !== "reports") : row.attention;
@@ -129,16 +131,20 @@ export function RowCard({ row, group, selection, panel, onPanelChange }: Readonl
       title={row.title}
       config={config}
       targetText={config ? undefined : targetSummaryOf(t, row.targets)}
+      targetTooltip={optionalTip(targetPreviewLines(t, row.targets, config))}
       version={{
         version: row.version,
         tooltip: tipLines([setRef(row.set_id, row.version), row.versions && row.versions.length > 1 ? t("sets.versions", { list: row.versions.join(", ") }) : ""]),
       }}
       meta={[t("card.by", { author: known?.name || row.author }), row.family ?? "", t("sets.updatedAgo", { when: formatAgo(t, row.updated_at) })]}
-      metaTooltip={tipLines([
-        author.filter(Boolean).join(" · "),
-        row.asn_observed ? t("entry.seenFrom", { asn: row.asn_observed, country: row.country_observed ?? "" }).trim() : "",
-        t("queue.received", { when: formatStamp(row.created_at) }),
-        t("sets.updatedAgo", { when: formatStamp(row.updated_at) }),
+      metaTooltip={tipBlocks([
+        [
+          author.filter(Boolean).join(" · "),
+          row.asn_observed ? t("entry.seenFrom", { asn: row.asn_observed, country: row.country_observed ?? "" }).trim() : "",
+          t("queue.received", { when: formatStamp(row.created_at) }),
+          t("sets.updatedAgo", { when: formatStamp(row.updated_at) }),
+        ],
+        row.techniques.map((term) => techniqueText(t, term)),
       ])}
       extra={note ? <RowNote note={note} /> : undefined}
       badges={badges}

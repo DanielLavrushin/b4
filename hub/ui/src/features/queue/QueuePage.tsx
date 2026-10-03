@@ -3,6 +3,7 @@ import { Box, Button, Grid, Paper, Stack, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { FacetCompareBar, colors } from "@design";
 import { useQueue } from "@/features/sets/api";
+import { HUB_FACETS } from "@/features/sets/card/SetCard";
 import { useCardPanels } from "@/features/sets/card/useCardPanels";
 import type { EntryView, SetAction } from "@/models/api";
 import { EmptyState, ErrorState, Loading } from "@/shared/components/States";
@@ -60,7 +61,18 @@ export function QueuePage() {
       {selected.size > 0 && (
         <Paper
           variant="outlined"
-          sx={{ p: 1.5, mb: 2, display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap", position: "sticky", top: 0, zIndex: 3, bgcolor: colors.background.paper }}
+          sx={{
+            p: 1.5,
+            mb: 2,
+            display: "flex",
+            gap: 1,
+            alignItems: "center",
+            flexWrap: "wrap",
+            position: "sticky",
+            top: { xs: -16, md: -24 },
+            zIndex: 3,
+            bgcolor: colors.background.paper,
+          }}
         >
           <Typography variant="body2" sx={{ flex: 1 }}>
             {t("table.selected", { count: selected.size })}
@@ -82,7 +94,7 @@ export function QueuePage() {
         </Paper>
       )}
       {pending.length > 1 && (
-        <FacetCompareBar active={panels.compare} onPick={panels.pickCompare} toggle={panels.toggle} onToggle={panels.toggleAll} t={t} />
+        <FacetCompareBar active={panels.compare} onPick={panels.pickCompare} toggle={panels.toggle} onToggle={panels.toggleAll} keys={HUB_FACETS} t={t} />
       )}
       {pending.length === 0 ? (
         <EmptyState text={t("queue.empty")} />

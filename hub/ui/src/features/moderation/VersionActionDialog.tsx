@@ -162,7 +162,7 @@ export function VersionActionDialog({ action, target, initialReason, onClose }: 
           onClick={() => void confirm()}
           disabled={blocked}
           variant="contained"
-          color={action === "approve" || action === "restore" ? "success" : "error"}
+          color={action === "approve" || action === "restore" ? "primary" : "error"}
         >
           {t(`moderation.${action}.confirm`)}
         </Button>

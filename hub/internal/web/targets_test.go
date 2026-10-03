@@ -410,6 +410,28 @@ func TestEditWarnsAboutAddressesRoutersSkip(t *testing.T) {
 	}
 }
 
+func TestEditWarnsAboutDomainLinesHoldingSeveralEntries(t *testing.T) {
+	f := newFixture(t, password)
+	id, _ := f.share("Domains", authorAddress, "domains.example")
+	v := f.versionOf(id, 1)
+	domains := []string{"medium.com, example.org", "a.example b.example", "c.example;d.example", "e.example\tf.example", `regexp:^(a|b), c\.example$`, " Kept.Example. ", "medium.com, example.org"}
+	req := EditRequest{Title: v.Title, Projection: withTargets(t, v.Projection, map[string]interface{}{"sni_domains": domains})}
+	preview := f.preview(id, req)
+	want := []string{"medium.com, example.org", "a.example b.example", "c.example;d.example", "e.example\tf.example"}
+	if got := warnedList(preview.Warnings, invalidDomainsWarning, "domains"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("domain entries that hold a separator: %v", got)
+	}
+	f.expectOK(f.admin(http.MethodPost, setPath(id, 1, "edit"), req))
+	if got := store.TargetList(f.versionOf(id, 1).Projection, "sni_domains"); !reflect.DeepEqual(got, domains) {
+		t.Fatalf("domains are warned about, never rewritten: %v", got)
+	}
+
+	clean := f.preview(id, EditRequest{Title: v.Title, Projection: withTargets(t, v.Projection, map[string]interface{}{"sni_domains": []string{" Clean.Example. ", "*.wild.example", `regexp:^a b$`}})})
+	if warningOf(clean.Warnings, invalidDomainsWarning) != nil {
+		t.Fatalf("trimmed domains and regexp entries pass: %+v", clean.Warnings)
+	}
+}
+
 func TestGeoCategoriesComeFromTheHubFiles(t *testing.T) {
 	f := newFixture(t, password)
 	categories := func() GeoCategoriesView {
@@ -512,6 +534,39 @@ func TestEditAuditListsTargetChanges(t *testing.T) {
 	if got := auditStrings(entry.After["targets_removed"]); !reflect.DeepEqual(got, []string{"ip:93.184.216.0/24", "sni:b.example", "sni:c.example", "sni:d.example"}) {
 		t.Fatalf("removed targets: %v", got)
 	}
+
+	f.clock = f.clock.Add(time.Minute)
+	listed := f.versionOf(id, 1)
+	filtered := withTargets(t, listed.Projection, map[string]interface{}{"tls": "1.3", "domain_only": true})
+	tcp, _ := filtered["tcp"].(map[string]interface{})
+	if tcp == nil {
+		tcp = map[string]interface{}{}
+		filtered["tcp"] = tcp
+	}
+	tcp["dport_filter"] = "443"
+	f.expectOK(f.admin(http.MethodPost, setPath(id, 1, "edit"), EditRequest{Title: listed.Title, Projection: filtered}))
+	entry = f.lastEditAudit(id)
+	if got := auditStrings(entry.After["targets_added"]); !reflect.DeepEqual(got, []string{"domain_only", "tcp_ports:443", "tls:1.3"}) {
+		t.Fatalf("a filter-only edit lists the filters it set: %v", got)
+	}
+	if _, removed := entry.After["targets_removed"]; removed {
+		t.Fatalf("a filter-only edit removes nothing: %v", entry.After)
+	}
+
+	others := make([]string, 0, 25)
+	for i := range 25 {
+		others = append(others, fmt.Sprintf("next%02d.example", i))
+	}
+	f.clock = f.clock.Add(time.Minute)
+	narrowed := f.versionOf(id, 1)
+	f.expectOK(f.admin(http.MethodPost, setPath(id, 1, "edit"), EditRequest{Title: narrowed.Title, Projection: withTargets(t, narrowed.Projection, map[string]interface{}{"tls": "1.2", "domain_only": nil, "sni_domains": others})}))
+	entry = f.lastEditAudit(id)
+	if got := auditStrings(entry.After["targets_added"]); len(got) != 20 || got[0] != "tls:1.2" || got[1] != "sni:next00.example" || entry.After["targets_added_more"] != float64(6) {
+		t.Fatalf("a changed filter leads a capped list: %v more %v", got, entry.After["targets_added_more"])
+	}
+	if got := auditStrings(entry.After["targets_removed"]); len(got) != 20 || !reflect.DeepEqual(got[:3], []string{"domain_only", "tls:1.3", "sni:host00.example"}) || entry.After["targets_removed_more"] != float64(7) {
+		t.Fatalf("removed filters lead a capped list: %v more %v", got, entry.After["targets_removed_more"])
+	}
 }
 
 func TestPreviewDuplicateSkipsTheEditedVersion(t *testing.T) {
@@ -576,6 +631,20 @@ func TestEntriesCarryTheFullConfig(t *testing.T) {
 			}
 		}
 	}
+	for offset, want := range []string{brokenID, id} {
+		var page SetRowsView
+		f.admin(http.MethodGet, fmt.Sprintf("%s/sets/rows?group=pending&sort=title&dir=asc&limit=1&offset=%d", PathAPI, offset), nil).decode(t, &page)
+		if page.Total != 2 || len(page.Rows) != 1 || page.Rows[0].SetID != want {
+			t.Fatalf("page at offset %d: %+v", offset, page)
+		}
+		row := page.Rows[0]
+		if row.SetID == id && !full(row.Config) {
+			t.Fatalf("a row past the first page carries its config: %+v", row)
+		}
+		if row.SetID == brokenID && (row.Config != nil || !row.DecodeError) {
+			t.Fatalf("a paged row that does not decode has no config: %+v", row)
+		}
+	}
 
 	var detail SetDetailView
 	f.admin(http.MethodGet, PathAPI+"/sets/"+id, nil).decode(t, &detail)
@@ -603,24 +672,31 @@ func TestVoteOriginsListEveryRecordedOrigin(t *testing.T) {
 	}
 	var view VoteOriginsView
 	resp.decode(t, &view)
-	wantASNs := []MixView{
-		{Key: "64501", Name: "EXAMPLE-B ISP B", Country: "DE", Votes: 3, Keys: 3},
-		{Key: "64500", Name: "EXAMPLE-A ISP A", Country: "RU", Votes: 2, Keys: 2},
+	wantASNs := []VoteASNView{
+		{MixView: MixView{Key: "64501", Name: "EXAMPLE-B ISP B", Country: "DE", Votes: 3, Keys: 3}, Countries: []string{"DE", "NL"}},
+		{MixView: MixView{Key: "64500", Name: "EXAMPLE-A ISP A", Country: "RU", Votes: 2, Keys: 2}, Countries: []string{"RU"}},
 	}
 	if !reflect.DeepEqual(view.ASNs, wantASNs) {
-		t.Fatalf("ASNs with names and their most common country:\n got %+v\nwant %+v", view.ASNs, wantASNs)
+		t.Fatalf("ASNs with names, their most common country and every country they were seen from:\n got %+v\nwant %+v", view.ASNs, wantASNs)
 	}
 	wantCountries := []MixView{{Key: "DE", Votes: 2, Keys: 2}, {Key: "RU", Votes: 2, Keys: 2}, {Key: "NL", Votes: 1, Keys: 1}}
 	if !reflect.DeepEqual(view.Countries, wantCountries) {
 		t.Fatalf("countries:\n got %+v\nwant %+v", view.Countries, wantCountries)
 	}
 
-	for query, want := range map[string]int{"?asn=AS64501": 3, "?asn=64500": 2, "?cc=nl": 1, "?cc=DE": 2} {
+	for query, want := range map[string]int{"?asn=AS64501": 3, "?asn=64500": 2, "?cc=nl": 1, "?cc=DE": 2, "?asn=64501&cc=NL": 1, "?asn=64501&cc=DE": 2} {
 		var page VotesPageView
 		f.admin(http.MethodGet, PathAPI+"/votes"+query, nil).decode(t, &page)
 		if page.Total != want {
 			t.Fatalf("every listed origin must select its votes: %s gave %d, want %d", query, page.Total, want)
 		}
+	}
+
+	f.vote(id, 1, env.Fingerprint, fourthAddress)
+	f.vote(id, 1, env.Fingerprint, fourthAddress)
+	f.admin(http.MethodGet, PathAPI+"/votes/origins", nil).decode(t, &view)
+	if got := view.ASNs[0]; got.Key != "64501" || got.Country != "NL" || !reflect.DeepEqual(got.Countries, []string{"NL", "DE"}) {
+		t.Fatalf("an ASN's countries follow their vote counts: %+v", got)
 	}
 	if resp := f.get(PathAPI + "/votes/origins"); resp.status != http.StatusUnauthorized {
 		t.Fatalf("origins are a console read: %d", resp.status)

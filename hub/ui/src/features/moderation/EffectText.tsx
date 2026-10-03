@@ -20,9 +20,8 @@ export function EffectText({ item, action }: { item: ModerationItemView; action:
   }
   const effect = catalogueEffect(item);
   const leaves = item.listed > 0 && item.listed_after === 0;
-  const replaces = item.listed > 0 && item.listed_after > 0 && item.listed !== item.listed_after;
   return (
-    <Alert severity={leaves ? "warning" : replaces ? "info" : "success"} variant="outlined">
+    <Alert severity={leaves ? "warning" : "info"}>
       <Stack spacing={0.5}>
         <Typography variant="body2" sx={{ fontWeight: 600 }}>
           {t(effect.key, effect.params)}

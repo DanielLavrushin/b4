@@ -48,6 +48,14 @@ func TestVoteOriginsCoverEveryVote(t *testing.T) {
 	if !reflect.DeepEqual(asns, wantASNs) {
 		t.Fatalf("every observed ASN with its most common country, by votes then key:\n got %+v\nwant %+v", asns, wantASNs)
 	}
+	seen, err := st.VoteASNCountries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSeen := map[string][]string{"100": {"DE", "NL"}, "200": {"KZ", "RU"}, "50": {"RU"}}
+	if !reflect.DeepEqual(seen, wantSeen) {
+		t.Fatalf("every known country of each ASN, by votes then code:\n got %v\nwant %v", seen, wantSeen)
+	}
 
 	countries, err := st.VoteCountries(ctx)
 	if err != nil {

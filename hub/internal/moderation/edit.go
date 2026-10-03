@@ -84,8 +84,33 @@ func (s *Service) Edit(ctx context.Context, a Actor, r Ref, edit store.VersionEd
 const auditTargetsMax = 20
 
 func targetChanges(before, after map[string]interface{}) (added, removed []string) {
-	was := store.TargetEntries(before)
-	now := store.TargetEntries(after)
+	added, removed = entryChanges(filterEntries(before), filterEntries(after))
+	listAdded, listRemoved := entryChanges(store.TargetEntries(before), store.TargetEntries(after))
+	return append(added, listAdded...), append(removed, listRemoved...)
+}
+
+func filterEntries(projection map[string]interface{}) map[string]struct{} {
+	out := make(map[string]struct{})
+	targets, _ := projection["targets"].(map[string]interface{})
+	if tls, _ := targets["tls"].(string); tls != "" {
+		out["tls:"+tls] = struct{}{}
+	}
+	if version, _ := targets["ip_version"].(string); version != "" {
+		out["ip_version:"+version] = struct{}{}
+	}
+	if only, _ := targets["domain_only"].(bool); only {
+		out["domain_only"] = struct{}{}
+	}
+	for _, protocol := range []string{"tcp", "udp"} {
+		section, _ := projection[protocol].(map[string]interface{})
+		if ports, _ := section["dport_filter"].(string); ports != "" {
+			out[protocol+"_ports:"+ports] = struct{}{}
+		}
+	}
+	return out
+}
+
+func entryChanges(was, now map[string]struct{}) (added, removed []string) {
 	for entry := range now {
 		if _, ok := was[entry]; !ok {
 			added = append(added, entry)

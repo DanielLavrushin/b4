@@ -10,7 +10,7 @@ import { CodeBlock } from "@/shared/components/CodeBlock";
 import { Mono } from "@/shared/components/Mono";
 import { formatStamp } from "@/shared/utils/format";
 import { targetsPreview, techniqueText } from "@/shared/utils/terms";
-import { FlagChips } from "./components/TechniqueChips";
+import { FlagChips } from "./components/FlagChips";
 
 const list = (items: string[]) => (items.length ? items.join(", ") : "");
 
