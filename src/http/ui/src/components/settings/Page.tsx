@@ -45,10 +45,8 @@ import { SystemSettings } from "./SystemSettings";
 import { RestartDialog } from "./RestartDialog";
 import {
   CORE_SECTIONS,
-  CoreSectionId,
   SYSTEM_SECTIONS,
   SettingsSection,
-  SystemSectionId,
   sectionIndex,
 } from "./sections";
 
@@ -91,12 +89,12 @@ function TabPanel({
 
 enum TABS {
   GENERAL = 0,
+  SYSTEM,
   DOMAINS,
   DISCOVERY,
   MTPROTO,
   API,
   PAYLOADS,
-  SYSTEM,
 }
 
 const TAB_SECTIONS = new Map<TABS, SettingsSection[]>([
@@ -134,6 +132,12 @@ export function SettingsPage() {
         icon: <CoreIcon />,
       },
       {
+        id: TABS.SYSTEM,
+        path: "system",
+        label: t("settings.tabs.system"),
+        icon: <SystemIcon />,
+      },
+      {
         id: TABS.DOMAINS,
         path: "domains",
         label: t("settings.tabs.geodat"),
@@ -162,12 +166,6 @@ export function SettingsPage() {
         path: "payloads",
         label: t("settings.tabs.payloads"),
         icon: <CaptureIcon />,
-      },
-      {
-        id: TABS.SYSTEM,
-        path: "system",
-        label: t("settings.tabs.system"),
-        icon: <SystemIcon />,
       },
     ],
     [t],
@@ -568,7 +566,7 @@ export function SettingsPage() {
       <Box ref={contentRef} sx={{ flex: 1, overflow: "auto", pb: 2 }}>
         <TabPanel value={validTab} index={TABS.GENERAL}>
           <CoreSettings
-            section={currentSectionId as CoreSectionId}
+            section={currentSectionId}
             config={config}
             onChange={handleChange}
           />
@@ -615,7 +613,7 @@ export function SettingsPage() {
 
         <TabPanel value={validTab} index={TABS.SYSTEM}>
           <SystemSettings
-            section={currentSectionId as SystemSectionId}
+            section={currentSectionId}
             config={config}
             onChange={handleChange}
           />

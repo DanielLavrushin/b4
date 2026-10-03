@@ -32,12 +32,12 @@ func (api *API) RegisterConfigApi() {
 }
 
 // @Summary Download the configuration file
-// @Description Returns the configuration b4 is running with, in the format of its b4.json file. With safe=true, passwords, tokens, secrets, the user's own relay hosts and credentials in URLs are replaced with [redacted], and the web password and the MCP token are left empty.
+// @Description Returns the configuration b4 is running with, in the format of its b4.json file. With safe=true, passwords, tokens, user names, secrets, the user's own relay hosts and credentials in URLs are replaced with [redacted] and the web password is left empty; b4 refuses to load or save a configuration that still holds the [redacted] placeholder.
 // @Tags Config
 // @Produce json
 // @Param safe query bool false "Mask secrets for sharing"
 // @Success 200 {file} binary
-// @Failure 405 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security BearerAuth
 // @Router /config/download [get]
@@ -47,8 +47,17 @@ func (a *API) handleConfigDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	safe := false
+	if values, ok := r.URL.Query()["safe"]; ok {
+		parsed, err := strconv.ParseBool(values[0])
+		if err != nil || len(values) > 1 {
+			writeJsonError(w, http.StatusBadRequest, "safe must be given once, as true or false")
+			return
+		}
+		safe = parsed
+	}
+
 	cfg := a.getCfg()
-	safe, _ := strconv.ParseBool(r.URL.Query().Get("safe"))
 	name := "b4-config"
 	if safe {
 		redacted, err := cfg.RedactedCopy()
@@ -69,7 +78,7 @@ func (a *API) handleConfigDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filename := fmt.Sprintf("%s-%s.json", name, time.Now().Format("20060102-150405"))
-	w.Header().Set("Content-Type", "application/json")
+	setJsonHeader(w)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(data)
@@ -518,6 +527,19 @@ func isRefusal(err error) bool {
 }
 
 func (a *API) pushConfigLocked(newCfg *config.Config) error {
+	if paths := newCfg.RedactedValuePaths(); len(paths) > 0 {
+		fields := make([]FieldError, 0, len(paths))
+		for _, path := range paths {
+			fields = append(fields, FieldError{
+				Path:    path,
+				Code:    "redacted_placeholder",
+				Message: path + " holds the " + config.RedactedMarker + " placeholder of a safe copy instead of a real value",
+				Params:  map[string]any{"path": path},
+			})
+		}
+		return ErrValidation("The configuration holds "+config.RedactedMarker+" placeholders from a safe copy", fields...)
+	}
+
 	for _, check := range []func() error{newCfg.Validate, newCfg.ValidateTLSFiles} {
 		if err := check(); err != nil {
 			var ve *config.ValidationError

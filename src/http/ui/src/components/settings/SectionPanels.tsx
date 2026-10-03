@@ -23,7 +23,7 @@ export const TwoColumns = ({
 
 interface SectionPanelsProps<Id extends string> {
   sections: SettingsSection<Id>[];
-  active: Id;
+  active: string | undefined;
   idPrefix: string;
   content: Record<Id, ReactNode>;
 }

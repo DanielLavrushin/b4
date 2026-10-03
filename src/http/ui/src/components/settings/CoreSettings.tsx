@@ -1,6 +1,6 @@
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
-import { CORE_SECTIONS, CoreSectionId } from "./sections";
+import { CORE_SECTIONS } from "./sections";
 import { SectionPanels, TwoColumns } from "./SectionPanels";
 import { DevicesSettings } from "./Devices";
 import { DnsSettings } from "./Dns";
@@ -20,7 +20,7 @@ import { QueueSettings } from "./Queue";
 import { Socks5Settings } from "./Socks5";
 
 interface CoreSettingsProps {
-  section: CoreSectionId;
+  section: string | undefined;
   config: B4Config;
   onChange: (field: string, value: SettingsPropHandlerType) => void;
 }

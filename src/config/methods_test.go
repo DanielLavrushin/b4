@@ -1297,3 +1297,28 @@ func TestValidateRefusesAQueueMarkCarryingTheBridgeMark(t *testing.T) {
 		t.Errorf("a queue mark one off the bridge mark must stay valid: %v", err)
 	}
 }
+
+func TestFileBytesMatchesTheSavedFile(t *testing.T) {
+	cfg := NewConfig()
+	cfg.System.Socks5.Enabled = true
+	cfg.System.Socks5.Password = "socks-pw"
+	set := NewSetConfig()
+	set.Name = "example"
+	cfg.Sets = []*SetConfig{&set}
+
+	path := filepath.Join(t.TempDir(), "b4.json")
+	if err := cfg.SaveToFile(path); err != nil {
+		t.Fatalf("SaveToFile: %v", err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	data, err := cfg.FileBytes()
+	if err != nil {
+		t.Fatalf("FileBytes: %v", err)
+	}
+	if string(saved) != string(data) {
+		t.Errorf("FileBytes differs from the file SaveToFile writes:\n%s\n---\n%s", data, saved)
+	}
+}

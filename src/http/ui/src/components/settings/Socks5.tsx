@@ -184,22 +184,31 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
         description={t("settings.Socks5.sourcesDesc")}
         columns={1}
       >
-        <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-          <B4TextField
-            label={t("settings.Socks5.addSource")}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addSource(draft);
-              }
-            }}
-            placeholder={t("settings.Socks5.addSourcePlaceholder")}
-            disabled={!enabled}
-            error={!!draftIssue}
-            helperText={draftHelper()}
-          />
+        <Box
+          sx={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 1,
+            alignItems: "flex-start",
+          }}
+        >
+          <Box sx={{ flex: "1 1 220px", minWidth: 0 }}>
+            <B4TextField
+              label={t("settings.Socks5.addSource")}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addSource(draft);
+                }
+              }}
+              placeholder={t("settings.Socks5.addSourcePlaceholder")}
+              disabled={!enabled}
+              error={!!draftIssue}
+              helperText={draftHelper()}
+            />
+          </Box>
           <B4PlusButton
             onClick={() => addSource(draft)}
             disabled={!enabled || !draft.trim() || !!draftIssue}

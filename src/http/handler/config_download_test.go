@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -83,7 +84,7 @@ func TestConfigDownloadSafeMasksSecrets(t *testing.T) {
 			t.Errorf("the safe download still contains %q", secret)
 		}
 	}
-	for _, kept := range []string{"10.0.0.9", "youtube.com", "https://dns.nextdns.io/", "https://example.com/geosite.dat"} {
+	for _, kept := range []string{"10.0.0.9", "youtube.com", "https://[redacted].nextdns.io/", "https://example.com/geosite.dat"} {
 		if !strings.Contains(body, kept) {
 			t.Errorf("the safe download dropped %q, which is needed for debugging", kept)
 		}
@@ -96,8 +97,11 @@ func TestConfigDownloadSafeMasksSecrets(t *testing.T) {
 	if parsed.System.WebServer.Password != "" || !parsed.System.WebServer.PasswordSet {
 		t.Error("the safe download must leave the web password empty and flag that one is set")
 	}
-	if parsed.System.WebServer.MCP.Token != "" {
-		t.Error("the safe download must leave the MCP token empty")
+	if parsed.System.WebServer.MCP.Token != redactedMarker {
+		t.Errorf("the safe download must mark the MCP token, got %q", parsed.System.WebServer.MCP.Token)
+	}
+	if len(parsed.RedactedValuePaths()) == 0 {
+		t.Error("the safe download must carry placeholders that b4 refuses to load")
 	}
 
 	if cfg.System.Socks5.Password != "socks-pw" || cfg.Sets[0].Routing.Upstream.Password != "upstream-pw" || cfg.System.WebServer.MCP.Token != "mcp-token-value" {
@@ -114,18 +118,77 @@ func TestConfigDownloadRejectsOtherMethods(t *testing.T) {
 	}
 }
 
-func TestMCPGetConfigUsesTheSharedRedaction(t *testing.T) {
+func TestConfigDownloadSafeParameter(t *testing.T) {
+	api := configDownloadAPI(secretsDownloadCfg())
+	cases := []struct {
+		query  string
+		status int
+		safe   bool
+	}{
+		{"", http.StatusOK, false},
+		{"?safe=false", http.StatusOK, false},
+		{"?safe=true", http.StatusOK, true},
+		{"?safe=1", http.StatusOK, true},
+		{"?safe", http.StatusBadRequest, false},
+		{"?safe=yes", http.StatusBadRequest, false},
+		{"?safe=false&safe=true", http.StatusBadRequest, false},
+	}
+	for _, tc := range cases {
+		rec := downloadConfig(t, api, "/api/config/download"+tc.query)
+		if rec.Code != tc.status {
+			t.Errorf("%q: status = %d, want %d", tc.query, rec.Code, tc.status)
+			continue
+		}
+		if tc.status != http.StatusOK {
+			if strings.Contains(rec.Body.String(), "socks-pw") {
+				t.Errorf("%q: a rejected request returned secrets", tc.query)
+			}
+			continue
+		}
+		if got := strings.Contains(rec.Header().Get("Content-Disposition"), "b4-config-safe-"); got != tc.safe {
+			t.Errorf("%q: safe copy = %v, want %v", tc.query, got, tc.safe)
+		}
+	}
+}
+
+func TestMCPGetConfigMasksOnlyCredentials(t *testing.T) {
 	raw, err := json.Marshal(redactConfigForMCP(secretsDownloadCfg()))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 	out := string(raw)
-	for _, secret := range []string{"personal.workers.dev", "geo-token", "abc123", "upstream-pw"} {
+	for _, secret := range []string{"socks-pw", "upstream-pw", "mcp-token-value", "deadbeef"} {
 		if strings.Contains(out, secret) {
 			t.Errorf("b4_get_config still returns %q", secret)
 		}
 	}
+	for _, kept := range []string{"personal.workers.dev", "https://dns.nextdns.io/abc123"} {
+		if !strings.Contains(out, kept) {
+			t.Errorf("b4_get_config hides %q, which MCP can also read and write through b4_list_writable_paths", kept)
+		}
+	}
 	if !strings.Contains(out, `"token":"`+redactedMarker+`"`) {
 		t.Error("b4_get_config should still show that an MCP token is set")
+	}
+}
+
+func TestPushConfigRejectsRedactedPlaceholders(t *testing.T) {
+	cfg := secretsDownloadCfg()
+	api := configDownloadAPI(cfg)
+	incoming := cfg.Clone()
+	incoming.System.Socks5.Password = redactedMarker
+	err := api.pushConfigLocked(incoming)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "validation_failed" {
+		t.Fatalf("pushConfigLocked = %v, want a validation error", err)
+	}
+	found := false
+	for _, f := range apiErr.Fields {
+		if f.Path == "system.socks5.password" && f.Code == "redacted_placeholder" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("fields = %+v, want system.socks5.password / redacted_placeholder", apiErr.Fields)
 	}
 }

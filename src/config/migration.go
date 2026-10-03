@@ -383,6 +383,12 @@ func (c *Config) LoadWithMigration(path string) (bool, error) {
 		}
 	}
 
+	if paths := c.RedactedValuePaths(); len(paths) > 0 {
+		*c = NewConfig()
+		c.ConfigPath = path
+		return false, log.Errorf("the config file is a safe copy made for sharing: %s hold %s placeholders instead of real values, so b4 does not load it", strings.Join(paths, ", "), RedactedMarker)
+	}
+
 	migrated := false
 	if c.Version < CurrentConfigVersion {
 		migrated = true

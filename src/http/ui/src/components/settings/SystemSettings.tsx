@@ -1,13 +1,13 @@
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
-import { SYSTEM_SECTIONS, SystemSectionId } from "./sections";
+import { SYSTEM_SECTIONS } from "./sections";
 import { SectionPanels, TwoColumns } from "./SectionPanels";
 import { BackupSettings } from "./Backup";
-import { LoggingSettings, ServiceSettings } from "./Core";
+import { LoggingSettings, ServiceSettings } from "./Service";
 import { WebServerSettings } from "./WebServer";
 
 interface SystemSettingsProps {
-  section: SystemSectionId;
+  section: string | undefined;
   config: B4Config;
   onChange: (field: string, value: SettingsPropHandlerType) => void;
 }

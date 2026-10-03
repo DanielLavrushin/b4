@@ -1005,28 +1005,13 @@ func (api *API) addMCPPrompts(srv *mcp.Server) {
 
 func redactConfigForMCP(cfg *config.Config) *config.Config {
 	clone := cfg.Clone()
-	clone.RedactSecrets()
+	clone.RedactCredentials()
 
 	clone.System.WebServer.Username = ""
 	clone.System.WebServer.TLSKey = ""
 	clone.System.AI.APIKeyRef = ""
-	if cfg.System.WebServer.MCP.Token != "" {
-		clone.System.WebServer.MCP.Token = redactedMarker
-	}
 
 	return clone
-}
-
-func redactSetSecrets(set *config.SetConfig) {
-	if set == nil {
-		return
-	}
-	if set.Routing.Upstream.Username != "" {
-		set.Routing.Upstream.Username = redactedMarker
-	}
-	if set.Routing.Upstream.Password != "" {
-		set.Routing.Upstream.Password = redactedMarker
-	}
 }
 
 func redactedSetForMCP(set *config.SetConfig) (*config.SetConfig, error) {
@@ -1038,7 +1023,7 @@ func redactedSetForMCP(set *config.SetConfig) (*config.SetConfig, error) {
 	if err := json.Unmarshal(raw, &clone); err != nil {
 		return nil, err
 	}
-	redactSetSecrets(&clone)
+	clone.RedactCredentials()
 	return &clone, nil
 }
 

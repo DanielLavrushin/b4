@@ -39,7 +39,7 @@ const saveAttachment = async (path: string, fallbackName: string) => {
   const response = await fetch(path, { headers });
   if (!response.ok) {
     const data = (await response.json().catch(() => ({}))) as ApiError;
-    throw new Error(data.error ?? `Download failed: ${response.statusText}`);
+    throw new Error(data.error ?? response.statusText);
   }
 
   const blob = await response.blob();
@@ -69,6 +69,11 @@ export const BackupSettings = () => {
   const [resetting, setResetting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const showFailure = (key: string, error: unknown) => {
+    const detail = error instanceof Error ? error.message : "";
+    showError(detail ? `${t(key)}: ${detail}` : t(key));
+  };
+
   const handleResetConfirm = async () => {
     try {
       setResetting(true);
@@ -76,9 +81,7 @@ export const BackupSettings = () => {
       showSuccess(t("settings.Control.resetSuccess"));
       setTimeout(() => globalThis.window.location.reload(), 800);
     } catch (error) {
-      showError(
-        error instanceof Error ? error.message : t("settings.Control.resetError"),
-      );
+      showFailure("settings.Control.resetError", error);
       setResetting(false);
       setShowResetDialog(false);
     }
@@ -90,11 +93,7 @@ export const BackupSettings = () => {
       await saveAttachment("/api/backup", "b4-backup.tar.gz");
       showSuccess(t("settings.Backup.downloadSuccess"));
     } catch (error) {
-      showError(
-        error instanceof Error
-          ? error.message
-          : t("settings.Backup.downloadFailed"),
-      );
+      showFailure("settings.Backup.downloadFailed", error);
     } finally {
       setDownloading(false);
     }
@@ -110,11 +109,7 @@ export const BackupSettings = () => {
       );
       showSuccess(t("settings.Backup.configDownloadSuccess"));
     } catch (error) {
-      showError(
-        error instanceof Error
-          ? error.message
-          : t("settings.Backup.configDownloadFailed"),
-      );
+      showFailure("settings.Backup.configDownloadFailed", error);
     } finally {
       setDownloadingConfig(null);
     }
@@ -141,17 +136,13 @@ export const BackupSettings = () => {
 
       if (!response.ok) {
         const data = (await response.json().catch(() => ({}))) as ApiError;
-        throw new Error(data.error ?? `Restore failed: ${response.statusText}`);
+        throw new Error(data.error ?? response.statusText);
       }
 
       showSuccess(t("settings.Backup.restoreSuccess"));
       setShowRestartDialog(true);
     } catch (error) {
-      showError(
-        error instanceof Error
-          ? error.message
-          : t("settings.Backup.restoreFailed"),
-      );
+      showFailure("settings.Backup.restoreFailed", error);
     } finally {
       setRestoring(false);
       if (fileInputRef.current) {
@@ -248,18 +239,6 @@ export const BackupSettings = () => {
                   variant="contained"
                   startIcon={<DownloadIcon />}
                   onClick={() => {
-                    void handleConfigDownload("as-is");
-                  }}
-                  disabled={downloadingConfig !== null}
-                >
-                  {downloadingConfig === "as-is"
-                    ? t("settings.Backup.generating")
-                    : t("settings.Backup.configDownload")}
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<DownloadIcon />}
-                  onClick={() => {
                     void handleConfigDownload("safe");
                   }}
                   disabled={downloadingConfig !== null}
@@ -267,6 +246,18 @@ export const BackupSettings = () => {
                   {downloadingConfig === "safe"
                     ? t("settings.Backup.generating")
                     : t("settings.Backup.configDownloadSafe")}
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<DownloadIcon />}
+                  onClick={() => {
+                    void handleConfigDownload("as-is");
+                  }}
+                  disabled={downloadingConfig !== null}
+                >
+                  {downloadingConfig === "as-is"
+                    ? t("settings.Backup.generating")
+                    : t("settings.Backup.configDownload")}
                 </Button>
               </Box>
             </Stack>

@@ -746,7 +746,7 @@
       "restoreFailed": "Failed to restore backup",
       "configTitle": "Download Configuration",
       "configDescription": "The configuration b4 is running with, as a b4.json file",
-      "configInfo": "The safe copy replaces passwords, tokens and other secrets with [redacted] and keeps everything else, such as addresses, devices and domains. It is meant for sharing when asking for help and cannot restore the secrets.",
+      "configInfo": "The safe copy removes passwords and tokens or replaces them with [redacted], together with user names, your own relay hosts and credentials inside URLs, and keeps sets, devices and target domains. Share it when asking for help; b4 refuses to load it as its configuration. The copy as is includes every password and token.",
       "configDownload": "Download as is",
       "configDownloadSafe": "Download safe copy",
       "configDownloadSuccess": "Configuration downloaded",
@@ -3380,7 +3380,8 @@
     "bad_request": "The request was refused: {{detail}}",
     "not_found": "The set or item no longer exists; it may have been deleted elsewhere. Reload the page.",
     "validation_failed": "Some values were rejected: {{detail}}",
-    "expose_requires_web_auth": "Exposing SOCKS5 to the internet needs a username and password on the web interface, which SOCKS5 clients can otherwise reach through the proxy"
+    "expose_requires_web_auth": "Exposing SOCKS5 to the internet needs a username and password on the web interface, which SOCKS5 clients can otherwise reach through the proxy",
+    "redacted_placeholder": "{{path}} holds the [redacted] placeholder of a safe copy instead of a real value"
   },
   "hub": {
     "title": "Community Hub",

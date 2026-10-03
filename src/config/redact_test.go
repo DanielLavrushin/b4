@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,36 +14,39 @@ import (
 
 var secretLookingName = regexp.MustCompile(`(?i)pass|secret|token|key|user|auth|cred|url|endpoint|domain|host|relay|mirror|cookie|session`)
 
-var redactedPaths = map[string]string{
-	"system.web_server.username":        "web login",
-	"system.web_server.password":        "bcrypt hash of the web login",
-	"system.web_server.mcp.token":       "MCP bearer token",
-	"system.socks5.username":            "SOCKS5 login",
-	"system.socks5.password":            "SOCKS5 login",
-	"system.mtproto.secrets[].name":     "free-text label, usually a person's name",
-	"system.mtproto.secrets[].secret":   "MTProto proxy secret",
+var credentialPaths = map[string]string{
+	"system.web_server.username":       "web login",
+	"system.web_server.password":       "bcrypt hash of the web login",
+	"system.web_server.mcp.token":      "MCP bearer token",
+	"system.socks5.username":           "SOCKS5 login",
+	"system.socks5.password":           "SOCKS5 login",
+	"system.mtproto.secrets[].name":    "free-text label, usually a person's name",
+	"system.mtproto.secrets[].secret":  "MTProto proxy secret",
+	"system.api.ipinfo_token":          "ipinfo.io token",
+	"system.ai.api_key_ref":            "AI key reference",
+	"sets[].routing.upstream.username": "upstream proxy login",
+	"sets[].routing.upstream.password": "upstream proxy login",
+}
+
+var sharingPaths = map[string]string{
 	"system.mtproto.dc_relay":           "the user's own relay host",
 	"system.mtproto.ws_custom_domain":   "the user's own relay domain",
 	"system.mtproto.cfworker_domain":    "the user's own Cloudflare Worker",
 	"system.mtproto.web_proxy.hostname": "the user's own server",
-	"system.mtproto.cfproxy_url":        "URL that can carry credentials",
-	"system.mtproto.dc_fallback_url":    "URL that can carry credentials",
-	"system.api.ipinfo_token":           "ipinfo.io token",
-	"system.ai.api_key_ref":             "AI key reference",
+	"system.mtproto.cfproxy_url":        "a custom source is the user's own host",
+	"system.mtproto.dc_fallback_url":    "a custom source is the user's own host",
 	"system.ai.endpoint":                "URL that can carry credentials",
 	"system.geo.sitedat_url":            "URL that can carry credentials",
 	"system.geo.ipdat_url":              "URL that can carry credentials",
 	"system.update.mirrors[]":           "the user's own relays",
 	"system.hub.urls[]":                 "URL that can carry credentials",
-	"sets[].routing.upstream.username":  "upstream proxy login",
-	"sets[].routing.upstream.password":  "upstream proxy login",
-	"sets[].dns.doh_url":                "personal resolver id in the path",
+	"sets[].dns.doh_url":                "personal resolver id in the path or the host",
 	"sets[].discovery.urls[]":           "URL that can carry credentials",
 }
 
 var notSecretPaths = map[string]string{
-	"system.web_server.tls_key":         "file path, not key material",
-	"system.mtproto.web_proxy.tls_key":  "file path, not key material",
+	"system.web_server.tls_key":         "file path, not key material; the relay hostname inside it is masked",
+	"system.mtproto.web_proxy.tls_key":  "file path, not key material; the relay hostname inside it is masked",
 	"system.mtproto.ws_endpoint_host":   "override for the public Telegram WebSocket edge",
 	"system.hub.public_key":             "public ed25519 key that pins the hub",
 	"system.checker.reference_domain":   "public domain Discovery checks against",
@@ -105,6 +107,8 @@ func fillCanaries(v reflect.Value, path string, depth int, leaves *[]leafPath) {
 			}
 			fillCanaries(v.Field(i), joinPath(path, name), depth+1, leaves)
 		}
+	case reflect.Map:
+		*leaves = append(*leaves, leafPath{path: path + "{}"})
 	case reflect.Slice:
 		elem := v.Type().Elem()
 		if elem.Kind() == reflect.String {
@@ -144,7 +148,7 @@ func canaryConfig(t *testing.T) (*Config, []leafPath) {
 }
 
 func leafName(path string) string {
-	path = strings.TrimSuffix(path, "[]")
+	path = strings.TrimSuffix(strings.TrimSuffix(path, "[]"), "{}")
 	if i := strings.LastIndex(path, "."); i >= 0 {
 		return path[i+1:]
 	}
@@ -153,6 +157,7 @@ func leafName(path string) string {
 
 func TestEverySecretLookingFieldIsClassified(t *testing.T) {
 	_, leaves := canaryConfig(t)
+	lists := []map[string]string{credentialPaths, sharingPaths, notSecretPaths}
 	known := map[string]bool{}
 	var missing []string
 	for _, leaf := range leaves {
@@ -160,78 +165,127 @@ func TestEverySecretLookingFieldIsClassified(t *testing.T) {
 		if !secretLookingName.MatchString(leafName(leaf.path)) {
 			continue
 		}
-		_, redacted := redactedPaths[leaf.path]
-		_, plain := notSecretPaths[leaf.path]
-		if !redacted && !plain {
+		classified := false
+		for _, list := range lists {
+			if _, ok := list[leaf.path]; ok {
+				classified = true
+			}
+		}
+		if !classified {
 			missing = append(missing, leaf.path)
 		}
 	}
 	sort.Strings(missing)
 	for _, path := range missing {
-		t.Errorf("%s looks like it may hold a secret: add it to redactedPaths and RedactSecrets, or to notSecretPaths with the reason", path)
+		t.Errorf("%s looks like it may hold a secret: redact it and add it to credentialPaths or sharingPaths, or add it to notSecretPaths with the reason", path)
 	}
-	for _, list := range []map[string]string{redactedPaths, notSecretPaths} {
+	seen := map[string]int{}
+	for _, list := range lists {
 		for path := range list {
+			seen[path]++
 			if !known[path] {
 				t.Errorf("%s is classified but is not a string field of Config", path)
 			}
 		}
 	}
-	for path := range redactedPaths {
-		if _, ok := notSecretPaths[path]; ok {
-			t.Errorf("%s is in both redactedPaths and notSecretPaths", path)
+	for path, n := range seen {
+		if n > 1 {
+			t.Errorf("%s is classified more than once", path)
 		}
 	}
 }
 
-func TestRedactSecretsRemovesEveryRedactedValue(t *testing.T) {
-	cfg, leaves := canaryConfig(t)
-	cfg.RedactSecrets()
+func canaryOutput(t *testing.T, cfg *Config) string {
+	t.Helper()
 	raw, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	out := string(raw)
+	return string(raw)
+}
+
+func TestRedactCredentialsKeepsWhatMCPMayNeed(t *testing.T) {
+	cfg, leaves := canaryConfig(t)
+	cfg.RedactCredentials()
+	out := canaryOutput(t, cfg)
 	for _, leaf := range leaves {
-		if _, ok := redactedPaths[leaf.path]; !ok {
+		if leaf.canary == "" {
 			continue
 		}
-		if strings.Contains(out, `"`+leaf.canary+`"`) || strings.Contains(out, leaf.canary) {
-			t.Errorf("%s still carries its value after RedactSecrets", leaf.path)
+		_, credential := credentialPaths[leaf.path]
+		_, sharing := sharingPaths[leaf.path]
+		present := strings.Contains(out, leaf.canary)
+		if credential && present {
+			t.Errorf("%s still carries its value after RedactCredentials", leaf.path)
+		}
+		if sharing && !present {
+			t.Errorf("%s was masked by RedactCredentials, but MCP reads and writes it in clear", leaf.path)
 		}
 	}
 }
 
-func TestRedactSecretsMasksOnlySetValues(t *testing.T) {
-	cfg := NewConfig()
-	cfg.RedactSecrets()
-	ws := cfg.System.WebServer
-	if ws.Username != "" || ws.Password != "" || ws.PasswordSet {
-		t.Errorf("empty web credentials must stay empty, got %q %q %v", ws.Username, ws.Password, ws.PasswordSet)
-	}
-	if cfg.System.Socks5.Username != "" || cfg.System.Socks5.Password != "" {
-		t.Error("empty SOCKS5 credentials must stay empty")
-	}
-	if cfg.System.API.IPInfoToken != "" {
-		t.Error("an empty token must stay empty")
+func TestRedactForSharingRemovesEveryClassifiedValue(t *testing.T) {
+	cfg, leaves := canaryConfig(t)
+	cfg.RedactForSharing()
+	out := canaryOutput(t, cfg)
+	for _, leaf := range leaves {
+		if leaf.canary == "" {
+			continue
+		}
+		_, credential := credentialPaths[leaf.path]
+		_, sharing := sharingPaths[leaf.path]
+		if (credential || sharing) && strings.Contains(out, leaf.canary) {
+			t.Errorf("%s still carries its value after RedactForSharing", leaf.path)
+		}
 	}
 }
 
-func TestRedactSecretsLeavesNoUsableCredential(t *testing.T) {
+func TestRedactMasksOnlySetValues(t *testing.T) {
+	cfg := NewConfig()
+	cfg.RedactForSharing()
+	ws := cfg.System.WebServer
+	if ws.Username != "" || ws.Password != "" || ws.PasswordSet || ws.MCP.Token != "" {
+		t.Errorf("empty web credentials must stay empty, got %q %q %v %q", ws.Username, ws.Password, ws.PasswordSet, ws.MCP.Token)
+	}
+	if cfg.System.Socks5.Username != "" || cfg.System.Socks5.Password != "" || cfg.System.API.IPInfoToken != "" {
+		t.Error("empty credentials must stay empty")
+	}
+	if cfg.System.MTProto.CFProxyURL != TGCFProxyURL || cfg.System.MTProto.DCFallbackURL != TGDCFallbackURL {
+		t.Error("the public default sources must stay visible")
+	}
+	if paths := cfg.RedactedValuePaths(); len(paths) != 0 {
+		t.Errorf("a default config must not carry placeholders, got %v", paths)
+	}
+}
+
+func TestRedactCredentialsMarksSetCredentials(t *testing.T) {
 	cfg := NewConfig()
 	cfg.System.WebServer.Username = "admin"
 	cfg.System.WebServer.Password = "$2a$12$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuvwxyz01234"
 	cfg.System.WebServer.MCP.Token = "0123456789abcdef"
-	cfg.RedactSecrets()
+	cfg.RedactCredentials()
 	ws := cfg.System.WebServer
 	if ws.Password != "" || !ws.PasswordSet {
 		t.Errorf("the web password must be emptied and flagged as set, got %q %v", ws.Password, ws.PasswordSet)
 	}
-	if ws.Username != RedactedMarker {
-		t.Errorf("web username = %q, want the marker", ws.Username)
+	if ws.Username != RedactedMarker || ws.MCP.Token != RedactedMarker {
+		t.Errorf("web username and MCP token must carry the marker, got %q %q", ws.Username, ws.MCP.Token)
 	}
-	if ws.MCP.Token != "" {
-		t.Errorf("the MCP token must be emptied so a restored copy refuses MCP clients, got %q", ws.MCP.Token)
+}
+
+func TestRedactForSharingMasksCustomSourcesAndRelayHostInTLSPaths(t *testing.T) {
+	cfg := NewConfig()
+	cfg.System.MTProto.CFProxyURL = "https://my.worker.example/list.txt"
+	cfg.System.MTProto.WebProxy.Hostname = "relay.example.com"
+	cfg.System.MTProto.WebProxy.TLSCert = "/etc/letsencrypt/live/relay.example.com/fullchain.pem"
+	cfg.System.WebServer.TLSKey = "/etc/letsencrypt/live/relay.example.com/privkey.pem"
+	cfg.RedactForSharing()
+	out := canaryOutput(t, &cfg)
+	if strings.Contains(out, "relay.example.com") || strings.Contains(out, "my.worker.example") {
+		t.Errorf("the relay host or a custom source survived: %s", out)
+	}
+	if !strings.HasSuffix(cfg.System.MTProto.WebProxy.TLSCert, "/fullchain.pem") {
+		t.Errorf("the certificate file name should stay, got %q", cfg.System.MTProto.WebProxy.TLSCert)
 	}
 }
 
@@ -248,14 +302,72 @@ func TestRedactURL(t *testing.T) {
 		{"not a url", true, RedactedMarker},
 		{"example.com/path", true, RedactedMarker},
 		{"https://cloudflare-dns.com/dns-query", false, "https://cloudflare-dns.com/dns-query"},
-		{"https://dns.nextdns.io/abc123", false, "https://dns.nextdns.io/[redacted]"},
-		{"https://d.adguard-dns.com/dns-query/abc123", false, "https://d.adguard-dns.com/[redacted]"},
 		{"https://dns.google", false, "https://dns.google"},
+		{"https://1.1.1.1/dns-query", false, "https://1.1.1.1/dns-query"},
+		{"https://[2606:4700::1111]/dns-query", false, "https://[2606:4700::1111]/dns-query"},
+		{"https://dns.nextdns.io/abc123", false, "https://[redacted].nextdns.io/[redacted]"},
+		{"https://d.adguard-dns.com/dns-query/abc123", false, "https://[redacted].adguard-dns.com/[redacted]"},
+		{"https://a1b2c3d4e5.cloudflare-gateway.com/dns-query", false, "https://[redacted].cloudflare-gateway.com/dns-query"},
+		{"https://a1b2c3d4e5.cloudflare-gateway.com:8443/dns-query", false, "https://[redacted].cloudflare-gateway.com:8443/dns-query"},
 	}
 	for _, tc := range cases {
 		if got := redactURL(tc.in, tc.keepPath); got != tc.want {
 			t.Errorf("redactURL(%q, %v) = %q, want %q", tc.in, tc.keepPath, got, tc.want)
 		}
+	}
+}
+
+func TestRedactedValuePaths(t *testing.T) {
+	cfg := NewConfig()
+	if paths := cfg.RedactedValuePaths(); len(paths) != 0 {
+		t.Fatalf("clean config reported %v", paths)
+	}
+	cfg.System.Socks5.Password = RedactedMarker
+	set := NewSetConfig()
+	set.DNS.DoHURL = "https://[redacted].nextdns.io/[redacted]"
+	cfg.Sets = []*SetConfig{&set}
+	got := cfg.RedactedValuePaths()
+	want := []string{"sets[0].dns.doh_url", "system.socks5.password"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("RedactedValuePaths = %v, want %v", got, want)
+	}
+}
+
+func TestLoadWithMigrationRefusesASafeCopy(t *testing.T) {
+	cfg := NewConfig()
+	cfg.System.WebServer.Username = "admin"
+	cfg.System.WebServer.Password = "$2a$12$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuvwxyz01234"
+	cfg.System.WebServer.MCP.Enabled = true
+	cfg.System.WebServer.MCP.Token = "0123456789abcdef"
+	cfg.System.Socks5.Username = "user"
+	cfg.System.Socks5.Password = "pass"
+	set := NewSetConfig()
+	set.Name = "example"
+	cfg.Sets = []*SetConfig{&set}
+
+	safe, err := cfg.RedactedCopy()
+	if err != nil {
+		t.Fatalf("RedactedCopy: %v", err)
+	}
+	data, err := safe.FileBytes()
+	if err != nil {
+		t.Fatalf("FileBytes: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "b4.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	var loaded Config
+	_, err = loaded.LoadWithMigration(path)
+	if err == nil || !strings.Contains(err.Error(), "safe copy") {
+		t.Fatalf("loading a safe copy must fail with an explanation, got %v", err)
+	}
+	if loaded.ConfigPath != path {
+		t.Errorf("ConfigPath = %q, want %q", loaded.ConfigPath, path)
+	}
+	if loaded.System.WebServer.Username != "" || loaded.System.WebServer.MCP.Enabled || loaded.System.Socks5.Username != "" || len(loaded.Sets) != 0 {
+		t.Error("a refused safe copy must not leave its values in the config b4 starts with")
 	}
 }
 
@@ -276,30 +388,5 @@ func TestRedactedCopyLeavesTheOriginalAlone(t *testing.T) {
 	}
 	if cfg.System.Socks5.Password != "socks-pw" || cfg.System.WebServer.MCP.Token != "mcp-token" || cfg.Sets[0].Routing.Upstream.Password != "upstream-pw" {
 		t.Error("RedactedCopy changed the live config")
-	}
-}
-
-func TestFileBytesMatchesTheSavedFile(t *testing.T) {
-	cfg := NewConfig()
-	cfg.System.Socks5.Enabled = true
-	cfg.System.Socks5.Password = "socks-pw"
-	set := NewSetConfig()
-	set.Name = "example"
-	cfg.Sets = []*SetConfig{&set}
-
-	path := filepath.Join(t.TempDir(), "b4.json")
-	if err := cfg.SaveToFile(path); err != nil {
-		t.Fatalf("SaveToFile: %v", err)
-	}
-	saved, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	data, err := cfg.FileBytes()
-	if err != nil {
-		t.Fatalf("FileBytes: %v", err)
-	}
-	if !bytes.Equal(saved, data) {
-		t.Errorf("FileBytes differs from the file SaveToFile writes:\n%s\n---\n%s", data, saved)
 	}
 }
