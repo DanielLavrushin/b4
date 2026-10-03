@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -65,6 +66,8 @@ func (api *API) getServiceManager() string {
 	}
 	return detectServiceManager()
 }
+
+var releaseTagPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.-]*$`)
 
 func detectServiceManager() string {
 	if _, err := os.Stat("/etc/systemd/system/b4.service"); err == nil {
@@ -337,6 +340,17 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	var req UpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Version != "" && !releaseTagPattern.MatchString(req.Version) {
+		log.Warnf("Update refused: %q is not a release tag", req.Version)
+		setJsonHeader(w)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(UpdateResponse{
+			Success: false,
+			Message: fmt.Sprintf("Cannot update: %q is not a release tag such as v1.84.0", req.Version),
+		})
 		return
 	}
 

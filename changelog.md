@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.84.1] - 2026-10-03
+
+- FIXED: **An update from the web interface failed with `Could not fetch the installer: mkdir /tmp/b4update-...: no such file or directory` when nothing could be created in /tmp, as seen in a MikroTik container after a restart, and with /tmp mounted noexec the web interface reported the update as started while nothing happened** - b4 staged the installer in /tmp and ran it from there, and the installer moved to another directory only when /tmp was short of space.
+- FIXED: **A request to `/api/system/update` with a version such as `--remove` or `--arch=mips` removed b4 or installed a binary for another architecture instead of updating** - b4 passed the requested version to the installer unchecked, and the installer read it as one of its own options.
+
 ## [1.84.0] - 2026-09-30
 
 - ADDED: **Expose to internet switches for the ports of the web interface, the MTProto and SOCKS5 proxies and the Telegram Desktop WEB proxy, off by default** - each opens its port in the firewall and keeps it open through firewall restarts, and the MTProto share dialog can switch its link to the internet address.
