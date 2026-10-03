@@ -206,6 +206,7 @@ func TestMCPDiscoveryVerdicts(t *testing.T) {
 	}{
 		{"baseline works", mcpDiscoveryDomain{BaselineWorks: true}, false, "do not create a set"},
 		{"transport blocked", mcpDiscoveryDomain{Blocked: true}, false, "no packet strategy can help"},
+		{"unresolved", mcpDiscoveryDomain{unresolved: true}, false, "check the spelling"},
 		{"found", mcpDiscoveryDomain{Found: true, BestPreset: "combo"}, false, "working strategy was found"},
 		{"nothing worked", mcpDiscoveryDomain{}, false, "no strategy tried made it work"},
 		{"found mid-run", mcpDiscoveryDomain{Found: true, BestPreset: "combo"}, true, "PROVISIONAL"},
@@ -224,6 +225,17 @@ func TestMCPDiscoveryVerdicts(t *testing.T) {
 	both := mcpDiscoveryDomain{BaselineWorks: true, Found: true, Blocked: true}
 	if !strings.Contains(mcpDiscoveryVerdict(both, false), "do not create a set") {
 		t.Error("works-without-b4 must win over every other verdict")
+	}
+}
+
+func TestMCPDiscoveryUnresolvedOutcome(t *testing.T) {
+	row := mcpDiscoveryDomain{Domain: "typo.example", Found: true, Blocked: true}
+	mcpApplyOutcome(&row, discovery.OutcomeUnresolved)
+	if !row.unresolved || row.Found || row.Blocked || row.BaselineWorks {
+		t.Fatalf("an unresolved domain is neither found nor blocked, got %+v", row)
+	}
+	if got := mcpDiscoveryVerdict(row, false); !strings.Contains(got, "does not resolve") {
+		t.Fatalf("the verdict must say the name does not resolve, got %q", got)
 	}
 }
 

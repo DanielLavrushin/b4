@@ -179,15 +179,17 @@ func (ds *DiscoverySuite) setStatus(status CheckStatus) {
 // allDomainsTransportBlocked returns true if DNS discovery flagged all domains
 // as transport-blocked (neither system nor reference IPs could connect).
 func (ds *DiscoverySuite) allDomainsTransportBlocked() bool {
-	if len(ds.dnsResults) == 0 {
-		return false
-	}
-	for _, result := range ds.dnsResults {
+	blocked := false
+	for domain, result := range ds.dnsResults {
+		if ds.unresolved(domain) {
+			continue
+		}
 		if !result.addressBlocked() && !result.gatewayIntercepted() {
 			return false
 		}
+		blocked = true
 	}
-	return true
+	return blocked
 }
 
 func (ds *DiscoverySuite) allDomainsGatewayIntercepted() bool {

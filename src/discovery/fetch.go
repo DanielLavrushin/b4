@@ -85,6 +85,14 @@ func (ds *DiscoverySuite) fetchForDomain(di DomainInput, timeout time.Duration) 
 			Error:  "TCP to every known address is answered by the first hop, not tried",
 		}
 	}
+	if ds.unresolved(di.Domain) {
+		return CheckResult{
+			Domain:  di.Domain,
+			Status:  CheckStatusFailed,
+			Error:   "the name does not resolve, not tried",
+			untried: true,
+		}
+	}
 	// Use IPs already collected during DNS discovery — no fresh DNS lookups.
 	// Fresh lookups are slow (poisoned DNS can timeout) and redundant since
 	// DNS discovery already gathered all valid IPs from DoH + system resolver.
@@ -152,7 +160,7 @@ func (ds *DiscoverySuite) dialNetwork() string {
 // dialNetwork and pins pinnedIP when DNS discovery already resolved one.
 func (ds *DiscoverySuite) dialContext(timeout time.Duration, pinnedHost, pinnedIP string) func(context.Context, string, string) (net.Conn, error) {
 	baseDialer := probeDialer(int(ds.flowMark), timeout/2, timeout)
-	baseDialer.Resolver = netprobe.MarkedResolver(int(ds.flowMark), timeout/2, "")
+	baseDialer.Resolver = probeResolver(int(ds.flowMark), timeout/2)
 	forcedNet := ds.dialNetwork()
 
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -195,6 +203,10 @@ const probeStallTimeout = 2 * time.Second
 
 var probeRefusesAddr = utils.IsReservedAddr
 
+var probeResolver = func(mark int, timeout time.Duration) *net.Resolver {
+	return netprobe.MarkedResolver(mark, timeout, "")
+}
+
 func refusedProbeIP(ip string) bool {
 	if probeRefusesAddr == nil {
 		return false
@@ -205,6 +217,17 @@ func refusedProbeIP(ip string) bool {
 
 func probeDialer(mark int, timeout, keepAlive time.Duration) *net.Dialer {
 	return netprobe.RefuseAddrs(netprobe.Dialer(mark, timeout, keepAlive), probeRefusesAddr)
+}
+
+func lookupFailureOf(err error) nameLookup {
+	var dnsErr *net.DNSError
+	switch {
+	case !errors.As(err, &dnsErr), errors.Is(err, context.Canceled):
+		return lookupOK
+	case dnsErr.IsNotFound:
+		return lookupNotFound
+	}
+	return lookupFailed
 }
 
 type blockPageRedirect struct {
@@ -311,6 +334,9 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		default:
 			_, detail := netprobe.ClassifyTLSError(err)
 			result.Error = detail
+		}
+		if result.FinalHost == "" {
+			result.lookup = lookupFailureOf(err)
 		}
 		result.Duration = time.Since(start)
 		return result

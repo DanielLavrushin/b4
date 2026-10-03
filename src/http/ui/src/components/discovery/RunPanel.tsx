@@ -148,6 +148,8 @@ export const RunPanel = ({
         return t("discovery.run.addressBlocked");
       case "gateway_intercepted":
         return t("discovery.run.gatewayIntercepted");
+      case "unresolved":
+        return t("discovery.run.unresolved");
       default:
         return counts.tested > 0
           ? t("discovery.run.tried", { count: counts.tested })
@@ -198,6 +200,14 @@ export const RunPanel = ({
             variant="outlined"
             color="error"
             label={t("discovery.status.gatewayIntercepted")}
+          />
+        );
+      case "unresolved":
+        return (
+          <B4Badge
+            variant="outlined"
+            color="error"
+            label={t("discovery.status.unresolved")}
           />
         );
       default:

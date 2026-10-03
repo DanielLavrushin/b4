@@ -178,6 +178,14 @@ export const HistoryTable = ({
             label={t("discovery.status.gatewayIntercepted")}
           />
         );
+      case "unresolved":
+        return (
+          <B4Badge
+            variant="outlined"
+            color="error"
+            label={t("discovery.status.unresolved")}
+          />
+        );
       default:
         return (
           <B4Badge
@@ -285,6 +293,12 @@ export const HistoryTable = ({
         return (
           <Typography variant="body2" sx={muted}>
             {t("discovery.history.gatewayIntercepted")}
+          </Typography>
+        );
+      case "unresolved":
+        return (
+          <Typography variant="body2" sx={muted}>
+            {t("discovery.history.unresolved")}
           </Typography>
         );
       default:

@@ -441,6 +441,26 @@ const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
           }
         />
       );
+    case "unresolved": {
+      const dns = entry.result.dns_result;
+      let reason = t("discovery.results.unresolved");
+      if (!dns) reason = t("discovery.results.unresolvedSystem");
+      else if (dns.nxdomain) reason = t("discovery.results.unresolvedNxdomain");
+      return (
+        <B4ResultCard
+          status="error"
+          title={entry.domain}
+          subtitle={reason}
+          badge={
+            <B4Badge
+              variant="outlined"
+              color="error"
+              label={t("discovery.status.unresolved")}
+            />
+          }
+        />
+      );
+    }
     default:
       return (
         <B4ResultCard

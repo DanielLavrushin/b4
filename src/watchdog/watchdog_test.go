@@ -223,6 +223,30 @@ func TestApplyBatchResultsSkipsUnconfirmedGroupWinner(t *testing.T) {
 	}
 }
 
+func TestApplyBatchResultsNamesAnUnresolvedDomain(t *testing.T) {
+	cfg := &config.Config{}
+	suite := healSuite(map[string]*discovery.DomainDiscoveryResult{
+		"typo.example": {
+			Domain:     "typo.example",
+			Unresolved: true,
+			Outcome:    discovery.OutcomeUnresolved,
+			Results:    map[string]*discovery.DomainPresetResult{},
+		},
+	})
+
+	saved := false
+	errs := applyBatchResults(cfg, []string{"typo.example"}, suite, func(*config.Config) error {
+		saved = true
+		return nil
+	})
+	if !errors.Is(errs["typo.example"], errUnresolved) {
+		t.Fatalf("a domain that does not resolve must be reported as such, got %v", errs["typo.example"])
+	}
+	if saved || len(cfg.Sets) != 0 {
+		t.Fatal("nothing is written for a domain that does not resolve")
+	}
+}
+
 func TestDiscoveryInputsKeepHostKeys(t *testing.T) {
 	in := []string{"youtube.com", "example.com/path", "example.org:8443", "https://meduza.io/x"}
 	got := discoveryInputs(in)
@@ -248,6 +272,14 @@ func TestEveryDomainSettled(t *testing.T) {
 	}
 	if everyDomainSettled(suite, []string{"missing.com"}) {
 		t.Error("a domain without results is not settled")
+	}
+
+	suite.DomainDiscoveryResults["typo.example"] = &discovery.DomainDiscoveryResult{
+		Outcome: discovery.OutcomeUnresolved,
+		Results: map[string]*discovery.DomainPresetResult{"no-bypass": {Status: discovery.CheckStatusFailed}},
+	}
+	if !everyDomainSettled(suite, []string{"a.com", "typo.example"}) {
+		t.Error("a domain that does not resolve will never get a result, waiting for it only prolongs the search")
 	}
 }
 
