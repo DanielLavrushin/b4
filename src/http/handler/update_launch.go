@@ -19,6 +19,8 @@ import (
 
 var errInstallerNoLocalArchive = errors.New("the installer published in the b4 repository cannot install from a file")
 
+const stageDirPrefix = "b4update-"
+
 type installerRun struct {
 	serviceManager string
 	logPath        string
@@ -165,7 +167,7 @@ func (api *API) stagingRoots() []string {
 func makeStageDir(roots []string, logPath string) (string, error) {
 	var failures []string
 	for _, root := range roots {
-		dir, err := os.MkdirTemp(root, "b4update-")
+		dir, err := os.MkdirTemp(root, stageDirPrefix)
 		if err != nil {
 			failures = append(failures, err.Error())
 			continue
@@ -179,16 +181,33 @@ func makeStageDir(roots []string, logPath string) (string, error) {
 	return "", fmt.Errorf("cannot stage the installer: %s", strings.Join(failures, "; "))
 }
 
+func isStageDirName(name string) bool {
+	suffix, ok := strings.CutPrefix(name, stageDirPrefix)
+	if !ok || suffix == "" {
+		return false
+	}
+	for _, c := range suffix {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func sweepStaleUpdateFiles(roots []string) {
 	cutoff := time.Now().Add(-time.Hour)
-	for _, dir := range roots {
+	for i, dir := range roots {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
 		for _, e := range entries {
 			name := e.Name()
-			if !strings.HasPrefix(name, "b4update-") && !strings.HasPrefix(name, "b4-upload-") {
+			if i == 0 {
+				if !strings.HasPrefix(name, stageDirPrefix) && !strings.HasPrefix(name, "b4-upload-") {
+					continue
+				}
+			} else if !e.IsDir() || !isStageDirName(name) {
 				continue
 			}
 			info, err := e.Info()
