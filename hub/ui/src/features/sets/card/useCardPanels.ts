@@ -21,6 +21,8 @@ export function useCardPanels(keys: readonly string[]) {
   useEffect(() => {
     const present = new Set(known ? known.split("\n") : []);
     setState((prev) => {
+      const compare = prev.compare;
+      if (compare !== null) return { ...prev, open: Object.fromEntries([...present].map((key) => [key, compare])) };
       const open = prune(prev.open, present);
       const remembered = prune(prev.remembered, present);
       return open === prev.open && remembered === prev.remembered ? prev : { ...prev, open, remembered };
