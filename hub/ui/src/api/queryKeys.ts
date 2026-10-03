@@ -17,6 +17,7 @@ export const qk = {
   preview: {
     all: ["preview"] as const,
   },
+  geoCategories: ["geo", "categories"] as const,
   keys: {
     all: ["keys"] as const,
     list: ["keys", "list"] as const,
@@ -28,6 +29,7 @@ export const qk = {
   votes: {
     all: ["votes"] as const,
     list: (params: Record<string, unknown>) => ["votes", "list", params] as const,
+    origins: ["votes", "origins"] as const,
   },
   mirrors: {
     all: ["mirrors"] as const,

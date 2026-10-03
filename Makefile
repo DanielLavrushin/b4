@@ -277,6 +277,10 @@ hub-keygen: hub-build
 hub-run: hub-build
 	@$(OUT_DIR)/b4hub serve --data $(HUB_DATA) --listen $(HUB_LISTEN) --public-url $(HUB_PUBLIC_URL)
 
+.PHONY: hub-seed
+hub-seed:
+	@go -C $(HUB_DIR) run ./cmd/b4hub-seed --data $(abspath $(HUB_DATA)) --public-url $(HUB_PUBLIC_URL) --reset
+
 .PHONY: hub-mirror
 hub-mirror: hub-build
 	@$(OUT_DIR)/b4hub mirror --data $(HUB_MIRROR_DATA) --upstream $(HUB_UPSTREAM) --listen $(HUB_MIRROR_LISTEN) --public-url http://127.0.0.1:7101

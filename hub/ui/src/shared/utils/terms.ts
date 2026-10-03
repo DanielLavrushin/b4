@@ -31,9 +31,6 @@ const params = (t: TFunction, term: Term): Record<string, unknown> => {
   return p;
 };
 
-export const techniqueChip = (t: TFunction, term: Term): string =>
-  t(`technique.${term.code}.chip`, { ...params(t, term), defaultValue: term.code });
-
 export const techniqueText = (t: TFunction, term: Term): string => {
   const p = params(t, term);
   const parts = [t(`technique.${term.code}.text`, { ...p, defaultValue: term.code })];

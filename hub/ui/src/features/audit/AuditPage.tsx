@@ -5,7 +5,7 @@ import { colors } from "@design";
 import type { AuditEntryView } from "@/models/api";
 import { DataTable, type Column } from "@/shared/table/DataTable";
 import { useTableState } from "@/shared/table/useTableState";
-import { SearchField } from "@/shared/components/SearchField";
+import { SearchField, fieldSx } from "@/shared/components/SearchField";
 import { SetRef } from "@/shared/components/SetRef";
 import { KeyRef } from "@/shared/components/KeyRef";
 import { Mono } from "@/shared/components/Mono";
@@ -139,7 +139,7 @@ export function AuditPage() {
               value={filter.target_kind}
               slotProps={{ inputLabel: { shrink: true }, select: { displayEmpty: true } }}
               onChange={(ev) => table.setParam("kind", ev.target.value || null)}
-              sx={{ minWidth: 150 }}
+              sx={{ ...fieldSx, minWidth: 150 }}
             >
               <MenuItem value="">{t("audit.all")}</MenuItem>
               {kinds.map((k) => (
@@ -155,7 +155,7 @@ export function AuditPage() {
               value={filter.actor}
               slotProps={{ inputLabel: { shrink: true }, select: { displayEmpty: true } }}
               onChange={(ev) => table.setParam("actor", ev.target.value || null)}
-              sx={{ minWidth: 150 }}
+              sx={{ ...fieldSx, minWidth: 150 }}
             >
               <MenuItem value="">{t("audit.all")}</MenuItem>
               {actors.map((a) => (

@@ -1,12 +1,10 @@
-import { Chip } from "@mui/material";
+import { StatusDot, type StatusTone } from "./StatusDot";
 
-type Tone = "default" | "primary" | "secondary" | "success" | "warning" | "error" | "info";
-
-const tones: Record<string, Tone> = {
+const tones: Record<string, StatusTone> = {
   pending: "warning",
   active: "success",
   listed: "success",
-  hidden: "default",
+  hidden: "neutral",
   rejected: "error",
   approved: "success",
   banned: "error",
@@ -16,14 +14,8 @@ const tones: Record<string, Tone> = {
   unhealthy: "error",
 };
 
-export function StatusChip({ status, label }: { status: string; label?: string }) {
-  return (
-    <Chip
-      size="small"
-      variant="outlined"
-      color={tones[status] ?? "default"}
-      label={label ?? status}
-      sx={{ textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 10.5 }}
-    />
-  );
+export const statusTone = (status: string): StatusTone => tones[status] ?? "neutral";
+
+export function StatusChip({ status, label }: Readonly<{ status: string; label?: string }>) {
+  return <StatusDot tone={statusTone(status)} label={label ?? status} />;
 }

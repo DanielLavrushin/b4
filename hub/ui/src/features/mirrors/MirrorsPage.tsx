@@ -1,85 +1,152 @@
-import { Box, Button, Chip, CircularProgress, IconButton, Link, Stack, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  IconButton,
+  Link,
+  Paper,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Tooltip,
+  Typography,
+  useMediaQuery,
+} from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import { useState } from "react";
+import DeleteIcon from "@mui/icons-material/DeleteOutline";
+import InfoIcon from "@mui/icons-material/InfoOutlined";
+import { Fragment, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { colors } from "@design";
+import type { TFunction } from "i18next";
+import { colors, theme } from "@design";
 import { useSnackbar } from "@/app/SnackbarProvider";
 import type { MirrorView, MirrorsView } from "@/models/api";
 import { EmptyState } from "@/shared/components/States";
 import { QueryView } from "@/shared/components/QueryView";
-import { StatusChip } from "@/shared/components/StatusChip";
-import { Mono } from "@/shared/components/Mono";
+import { KeyRef } from "@/shared/components/KeyRef";
+import { StatusDot, type StatusTone } from "@/shared/components/StatusDot";
 import type { Moderation } from "@/features/moderation/useModeration";
 import { useModerationContext } from "@/features/moderation/ModerationProvider";
 import { formatAgo, formatStamp } from "@/shared/utils/format";
 import { useMirrorCheck, useMirrors, useMirrorsCheck } from "./api";
 
-function Announced({ m }: { m: MirrorView }) {
-  const { t } = useTranslation();
-  if (m.status !== "approved") return <Typography variant="caption" sx={{ color: colors.text.disabled }}>{t("mirrors.announced.no")}</Typography>;
-  if (m.kept) return <Chip size="small" color="warning" variant="outlined" label={t("mirrors.announced.kept")} />;
-  if (m.announced && m.announce_next) return <Chip size="small" color="success" variant="outlined" label={t("mirrors.announced.listed")} />;
-  if (m.announced) return <Chip size="small" color="warning" variant="outlined" label={t("mirrors.announced.leaving")} />;
-  if (m.announce_next) return <Chip size="small" color="info" variant="outlined" label={t("mirrors.announced.joining")} />;
-  return <Chip size="small" variant="outlined" label={t("mirrors.announced.notListed")} />;
+type Line = string | false | undefined;
+
+interface Signal {
+  tone: StatusTone;
+  label: string;
+  muted?: boolean;
+  lines: Line[];
 }
 
-function Health({ m }: { m: MirrorView }) {
+const tip = (lines: Line[]): ReactNode => {
+  const shown = lines.filter((line): line is string => typeof line === "string" && line !== "");
+  if (shown.length === 0) return undefined;
+  return <Box sx={{ whiteSpace: "pre-line" }}>{shown.join("\n")}</Box>;
+};
+
+function statusSignal(t: TFunction, m: MirrorView): Signal {
+  const leaving = m.announced && t("mirrors.announced.leaving");
+  if (m.status === "pending") return { tone: "warning", label: t("status.mirror.pending"), lines: [leaving] };
+  if (m.status === "rejected") return { tone: "error", label: t("status.mirror.rejected"), lines: [m.reason, leaving] };
+  const approved = t("status.mirror.approved");
+  const drops = m.drops_at !== undefined && t("mirrors.dropsAt", { when: formatStamp(m.drops_at) });
+  if (m.kept) return { tone: "warning", label: t("mirrors.state.kept"), lines: [approved, t("mirrors.announced.kept")] };
+  if (m.announced && m.announce_next) return { tone: "success", label: t("mirrors.announced.listed"), lines: [approved, drops] };
+  if (m.announced) return { tone: "warning", label: t("mirrors.state.leaving"), lines: [approved, t("mirrors.announced.leaving"), drops] };
+  if (m.announce_next) return { tone: "info", label: t("mirrors.state.joining"), lines: [approved, t("mirrors.announced.joining"), drops] };
+  return { tone: "neutral", label: t("mirrors.announced.notListed"), lines: [approved, t("mirrors.announced.waiting")] };
+}
+
+function checkSignal(t: TFunction, m: MirrorView): Signal {
+  if (!m.last_check) return { tone: "neutral", label: t("mirrors.health.unchecked"), muted: true, lines: [] };
+  const when = formatAgo(t, m.last_check);
+  const stamp = [formatStamp(m.last_check), m.check_ms ? t("mirrors.health.ms", { ms: m.check_ms }) : ""].filter(Boolean).join(" · ");
+  if (m.healthy) return { tone: "success", label: `${t("mirrors.health.ok")} · ${when}`, lines: [stamp] };
+  return {
+    tone: "error",
+    label: `${t("mirrors.health.failed")} · ${when}`,
+    lines: [
+      m.check_code && t(`mirrors.checkCode.${m.check_code}`, { defaultValue: m.check_code }),
+      m.check_error,
+      stamp,
+      m.last_ok !== undefined && t("mirrors.health.lastOk", { when: formatAgo(t, m.last_ok) }),
+    ],
+  };
+}
+
+function SignalDot({ signal }: Readonly<{ signal: Signal }>) {
+  return <StatusDot tone={signal.tone} label={signal.label} muted={signal.muted} tooltip={tip(signal.lines)} />;
+}
+
+function MirrorCell({ m, withLastSeen }: Readonly<{ m: MirrorView; withLastSeen: boolean }>) {
   const { t } = useTranslation();
-  if (!m.last_check) return <StatusChip status="pending" label={t("mirrors.health.unchecked")} />;
-  if (m.healthy) {
-    return (
-      <Tooltip title={formatStamp(m.last_check)}>
-        <span>
-          <StatusChip status="healthy" label={t("mirrors.health.ok", { when: formatAgo(t, m.last_check) })} />
-          {m.check_ms ? (
-            <Typography component="span" variant="caption" sx={{ color: colors.text.disabled, ml: 0.5 }}>
-              {t("mirrors.health.ms", { ms: m.check_ms })}
-            </Typography>
-          ) : null}
-        </span>
+  const lines = [m.url, t("mirrors.firstSeen", { when: formatStamp(m.first_seen) }), withLastSeen && t("mirrors.lastSeen", { when: formatAgo(t, m.last_seen) })];
+  return (
+    <Box sx={{ minWidth: 0 }}>
+      <Tooltip title={tip(lines)} describeChild>
+        <Link
+          href={m.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          underline="hover"
+          variant="body2"
+          noWrap
+          sx={{ display: "block", maxWidth: { xs: 220, xl: 380 }, color: colors.text.primary, fontWeight: 500, "&:hover": { color: colors.text.primary } }}
+        >
+          {m.url}
+        </Link>
       </Tooltip>
+      <Typography variant="caption" component="div" sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0, overflow: "hidden", color: colors.text.secondary, whiteSpace: "nowrap" }}>
+        <span>{m.version || t("mirrors.versionUnknown")}</span>
+        <span aria-hidden>·</span>
+        <KeyRef hmac={m.key_hmac} label={m.key} dot={false} />
+      </Typography>
+    </Box>
+  );
+}
+
+function Serving({ m }: Readonly<{ m: MirrorView }>) {
+  const { t } = useTranslation();
+  if (!m.served_epoch) {
+    return (
+      <Typography variant="body2" sx={{ color: colors.text.disabled }}>
+        {t("mirrors.lag.unknown")}
+      </Typography>
     );
   }
+  const served = [t("mirrors.served", { epoch: m.served_epoch, seq: m.served_seq ?? 0 }), formatStamp(m.served_generated_at)].filter(Boolean).join(" · ");
+  const behind = m.lag === "stale" && m.behind_by !== undefined && t("mirrors.lag.behind", { count: m.behind_by });
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
-      <Tooltip title={m.check_error ?? ""}>
-        <span>
-          <StatusChip status="unhealthy" label={t("mirrors.health.failed", { when: formatAgo(t, m.last_check) })} />
-        </span>
-      </Tooltip>
-      {m.check_code && (
-        <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-          {t(`mirrors.checkCode.${m.check_code}`, { defaultValue: m.check_code })}
-        </Typography>
-      )}
-      {m.last_ok && (
-        <Typography variant="caption" sx={{ color: colors.text.disabled }}>
-          {t("mirrors.health.lastOk", { when: formatAgo(t, m.last_ok) })}
-        </Typography>
-      )}
-    </Box>
+    <Tooltip title={tip([served, behind])} describeChild>
+      <Typography component="span" variant="body2" tabIndex={0} sx={{ color: m.lag === "stale" ? colors.state.error : colors.text.secondary }}>
+        {t(`mirrors.lag.${m.lag}`, { count: m.behind_by ?? 0 })}
+      </Typography>
+    </Tooltip>
   );
 }
 
-function Serving({ m }: { m: MirrorView }) {
+function LastAnnounced({ m }: Readonly<{ m: MirrorView }>) {
   const { t } = useTranslation();
-  if (!m.served_epoch) return <Typography variant="caption" sx={{ color: colors.text.disabled }}>{t("mirrors.lag.unknown")}</Typography>;
-  const tone = m.lag === "current" ? "success" : m.lag === "behind" ? "info" : m.lag === "stale" ? "error" : "default";
   return (
-    <Box>
-      <Mono>
-        {m.served_epoch}/{m.served_seq}
-      </Mono>{" "}
-      <Chip size="small" variant="outlined" color={tone} label={t(`mirrors.lag.${m.lag}`, { count: m.behind_by ?? 0 })} />
-    </Box>
+    <Tooltip title={formatStamp(m.last_seen)} describeChild>
+      <Typography component="span" variant="body2" tabIndex={0} sx={{ color: colors.text.secondary }}>
+        {formatAgo(t, m.last_seen)}
+      </Typography>
+    </Tooltip>
   );
 }
 
-function MirrorRow({ m, busy, moderation }: { m: MirrorView; busy: boolean; moderation: Moderation }) {
+function MirrorActions({ m, busy, moderation }: Readonly<{ m: MirrorView; busy: boolean; moderation: Moderation }>) {
   const { t } = useTranslation();
   const check = useMirrorCheck();
   const { notifyResult, notifyError } = useSnackbar();
+  const locked = busy || moderation.busy;
   const runCheck = async () => {
     try {
       notifyResult(await check.mutateAsync(m.id));
@@ -88,69 +155,114 @@ function MirrorRow({ m, busy, moderation }: { m: MirrorView; busy: boolean; mode
     }
   };
   return (
-    <TableRow hover>
-      <TableCell sx={{ overflowWrap: "anywhere" }}>
-        <Link href={m.url} rel="noreferrer" underline="hover">
-          {m.url}
-        </Link>
-        <Typography variant="caption" sx={{ display: "block", color: colors.text.disabled }}>
-          {m.version ? m.version : t("mirrors.versionUnknown")} · <Mono title={m.key_hmac}>{m.key}</Mono>
-        </Typography>
-      </TableCell>
-      <TableCell>
-        <StatusChip status={m.status} label={t(`status.mirror.${m.status}`)} />
-        {m.status === "rejected" && m.reason && (
-          <Typography variant="caption" sx={{ display: "block", color: colors.text.secondary }}>
-            {m.reason}
-          </Typography>
-        )}
-      </TableCell>
-      <TableCell>
-        <Announced m={m} />
-        {m.drops_at && m.status === "approved" && (
-          <Typography variant="caption" sx={{ display: "block", color: colors.text.disabled }} title={formatStamp(m.drops_at)}>
-            {t("mirrors.dropsAt", { when: formatStamp(m.drops_at) })}
-          </Typography>
-        )}
-      </TableCell>
-      <TableCell>
-        <Health m={m} />
-      </TableCell>
-      <TableCell>
-        <Serving m={m} />
-      </TableCell>
-      <TableCell sx={{ whiteSpace: "nowrap" }} title={formatStamp(m.last_seen)}>
-        {formatAgo(t, m.last_seen)}
-      </TableCell>
-      <TableCell align="right">
-        <Stack direction="row" spacing={1} justifyContent="flex-end" alignItems="center" useFlexGap flexWrap="wrap">
-          <Tooltip title={t("mirrors.checkNow")}>
-            <span>
-              <IconButton size="small" disabled={check.isPending} onClick={() => void runCheck()}>
-                {check.isPending ? <CircularProgress size={16} /> : <RefreshIcon fontSize="small" />}
-              </IconButton>
-            </span>
-          </Tooltip>
-          {m.status !== "approved" && (
-            <Button size="small" variant="contained" color="success" disabled={busy || moderation.busy} onClick={() => moderation.approveMirror(m)}>
-              {t("mirrors.approve")}
-            </Button>
-          )}
-          {m.status !== "rejected" && (
-            <Button size="small" variant="outlined" color="error" disabled={busy || moderation.busy} onClick={() => moderation.rejectMirror(m)}>
-              {t("mirrors.reject")}
-            </Button>
-          )}
-          <Button size="small" variant="text" color="inherit" disabled={busy || moderation.busy} onClick={() => moderation.removeMirror(m)}>
-            {t("mirrors.remove")}
-          </Button>
-        </Stack>
-      </TableCell>
-    </TableRow>
+    <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
+      {m.status !== "approved" && (
+        <Button size="small" variant="contained" disabled={locked} onClick={() => moderation.approveMirror(m)}>
+          {t("mirrors.approve")}
+        </Button>
+      )}
+      {m.status !== "rejected" && (
+        <Button size="small" variant="outlined" disabled={locked} onClick={() => moderation.rejectMirror(m)}>
+          {t("mirrors.reject")}
+        </Button>
+      )}
+      <Tooltip title={t("mirrors.checkNow")}>
+        <span>
+          <IconButton size="small" aria-label={t("mirrors.checkNow")} disabled={check.isPending} onClick={() => void runCheck()} sx={{ color: colors.text.secondary }}>
+            {check.isPending ? <CircularProgress size={16} sx={{ color: colors.secondary }} /> : <RefreshIcon fontSize="small" />}
+          </IconButton>
+        </span>
+      </Tooltip>
+      <Tooltip title={t("mirrors.remove")}>
+        <span>
+          <IconButton size="small" aria-label={t("mirrors.remove")} disabled={locked} onClick={() => moderation.removeMirror(m)} sx={{ color: colors.text.secondary }}>
+            <DeleteIcon fontSize="small" />
+          </IconButton>
+        </span>
+      </Tooltip>
+    </Stack>
   );
 }
 
-function Mirrors({ data }: { data: MirrorsView }) {
+const flat = { borderBottom: "none" };
+
+function MirrorTable({ mirrors, busy, moderation }: Readonly<{ mirrors: MirrorView[]; busy: boolean; moderation: Moderation }>) {
+  const { t } = useTranslation();
+  const compact = useMediaQuery(theme.breakpoints.down(1280));
+  const lastColumn = useMediaQuery(theme.breakpoints.up("xl"));
+  const headers = ["mirror", "status", "check", "serving"];
+  if (!compact && lastColumn) headers.push("lastAnnounced");
+  if (!compact) headers.push("");
+  return (
+    <Paper variant="outlined" sx={{ bgcolor: colors.background.paper, border: `1px solid ${colors.border.default}`, overflow: "hidden", minWidth: 0 }}>
+      <TableContainer>
+        <Table size="small" sx={{ "& .MuiTableCell-root": { px: 1.5, "&:first-of-type": { pl: 2 }, "&:last-of-type": { pr: 2 } } }}>
+          <TableHead>
+            <TableRow>
+              {headers.map((id) => (
+                <TableCell key={id || "actions"} sx={{ whiteSpace: "nowrap" }}>
+                  {id && t(`mirrors.columns.${id}`)}
+                </TableCell>
+              ))}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {mirrors.map((m) =>
+              compact ? (
+                <Fragment key={m.id}>
+                  <TableRow>
+                    <TableCell rowSpan={2} sx={{ verticalAlign: "top", width: "40%", maxWidth: 0 }}>
+                      <MirrorCell m={m} withLastSeen />
+                    </TableCell>
+                    <TableCell sx={{ ...flat, whiteSpace: "nowrap" }}>
+                      <SignalDot signal={statusSignal(t, m)} />
+                    </TableCell>
+                    <TableCell sx={{ ...flat, whiteSpace: "nowrap" }}>
+                      <SignalDot signal={checkSignal(t, m)} />
+                    </TableCell>
+                    <TableCell sx={{ ...flat, whiteSpace: "nowrap" }}>
+                      <Serving m={m} />
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell colSpan={3} sx={{ pt: 0 }}>
+                      <MirrorActions m={m} busy={busy} moderation={moderation} />
+                    </TableCell>
+                  </TableRow>
+                </Fragment>
+              ) : (
+                <TableRow key={m.id} hover>
+                  <TableCell>
+                    <MirrorCell m={m} withLastSeen={!lastColumn} />
+                  </TableCell>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>
+                    <SignalDot signal={statusSignal(t, m)} />
+                  </TableCell>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>
+                    <SignalDot signal={checkSignal(t, m)} />
+                  </TableCell>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>
+                    <Serving m={m} />
+                  </TableCell>
+                  {lastColumn && (
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>
+                      <LastAnnounced m={m} />
+                    </TableCell>
+                  )}
+                  <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                    <MirrorActions m={m} busy={busy} moderation={moderation} />
+                  </TableCell>
+                </TableRow>
+              ),
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Paper>
+  );
+}
+
+function Mirrors({ data }: Readonly<{ data: MirrorsView }>) {
   const { t } = useTranslation();
   const checkAll = useMirrorsCheck();
   const moderation = useModerationContext();
@@ -167,6 +279,7 @@ function Mirrors({ data }: { data: MirrorsView }) {
     }
   };
   const announced = data.manifest.listed.filter((u) => u !== data.manifest.hub_url).length;
+  const policy = t("mirrors.policy", { hours: Math.round(data.window_s / 3600), minutes: Math.round(data.check_interval_s / 60) });
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, flexWrap: "wrap" }}>
@@ -174,51 +287,31 @@ function Mirrors({ data }: { data: MirrorsView }) {
           <Typography variant="sectionHeader" sx={{ display: "block" }}>
             {t("mirrors.title", { count: data.mirrors.length })}
           </Typography>
-          <Typography variant="caption" sx={{ color: colors.text.secondary, display: "block", mt: 0.5 }}>
-            {data.manifest.published
-              ? t("mirrors.summary", {
-                  epoch: data.manifest.epoch,
-                  seq: data.manifest.seq,
-                  count: announced,
-                  hours: Math.round(data.window_s / 3600),
-                  minutes: Math.round(data.check_interval_s / 60),
-                })
-              : t("overview.notPublished")}
+          <Typography variant="caption" component="div" sx={{ display: "flex", alignItems: "center", gap: 0.5, mt: 0.5, color: colors.text.secondary }}>
+            <span>
+              {data.manifest.published
+                ? t("mirrors.summary", { epoch: data.manifest.epoch, seq: data.manifest.seq, count: announced })
+                : t("overview.notPublished")}
+            </span>
+            <Tooltip title={policy}>
+              <Box component="span" role="img" tabIndex={0} sx={{ display: "inline-flex", color: colors.text.secondary, cursor: "help" }}>
+                <InfoIcon sx={{ fontSize: 15 }} />
+              </Box>
+            </Tooltip>
           </Typography>
         </Box>
-        <Button variant="outlined" size="small" startIcon={busy ? <CircularProgress size={14} /> : <RefreshIcon />} disabled={busy} onClick={() => void runAll()}>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={busy ? <CircularProgress size={14} sx={{ color: colors.secondary }} /> : <RefreshIcon />}
+          disabled={busy}
+          onClick={() => void runAll()}
+        >
           {t("mirrors.checkAll")}
         </Button>
       </Box>
-      {data.orphans.length > 0 && (
-        <Typography variant="body2" sx={{ color: colors.state.warning }}>
-          {t("mirrors.orphans", { list: data.orphans.join(", ") })}
-        </Typography>
-      )}
-      {data.mirrors.length === 0 ? (
-        <EmptyState text={t("mirrors.empty")} />
-      ) : (
-        <Box sx={{ overflowX: "auto", border: `1px solid ${colors.border.default}`, borderRadius: 1, bgcolor: colors.background.paper }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t("mirrors.columns.url")}</TableCell>
-                <TableCell>{t("mirrors.columns.status")}</TableCell>
-                <TableCell>{t("mirrors.columns.announced")}</TableCell>
-                <TableCell>{t("mirrors.columns.health")}</TableCell>
-                <TableCell>{t("mirrors.columns.serving")}</TableCell>
-                <TableCell>{t("mirrors.columns.lastAnnounced")}</TableCell>
-                <TableCell />
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {data.mirrors.map((m) => (
-                <MirrorRow key={m.id} m={m} busy={busy} moderation={moderation} />
-              ))}
-            </TableBody>
-          </Table>
-        </Box>
-      )}
+      {data.orphans.length > 0 && <Alert severity="warning">{t("mirrors.orphans", { list: data.orphans.join(", ") })}</Alert>}
+      {data.mirrors.length === 0 ? <EmptyState text={t("mirrors.empty")} /> : <MirrorTable mirrors={data.mirrors} busy={busy} moderation={moderation} />}
     </Box>
   );
 }

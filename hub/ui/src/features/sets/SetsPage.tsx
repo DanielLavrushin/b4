@@ -1,21 +1,36 @@
-import { useEffect, useMemo, useState } from "react";
-import { Box, Button, Chip, Stack, Tab, Tabs, ToggleButton, Tooltip, Typography } from "@mui/material";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  Box,
+  Button,
+  Grid,
+  IconButton,
+  LinearProgress,
+  MenuItem,
+  Paper,
+  Stack,
+  Tab,
+  TablePagination,
+  Tabs,
+  TextField,
+  ToggleButton,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import { useTranslation } from "react-i18next";
-import { colors } from "@design";
+import { FacetCompareBar, colors, radius } from "@design";
 import type { SetAction, SetGroupName, SetRowView } from "@/models/api";
-import { DataTable, type Column } from "@/shared/table/DataTable";
-import { useTableState } from "@/shared/table/useTableState";
-import { SearchField } from "@/shared/components/SearchField";
-import { KeyRef } from "@/shared/components/KeyRef";
-import { useOverlay } from "@/shared/hooks/useOverlay";
-import { formatAgo, formatStamp } from "@/shared/utils/format";
-import { reasonText } from "@/shared/utils/reason";
-import { filterText } from "@/shared/utils/terms";
+import { PAGE_SIZES, useTableState } from "@/shared/table/useTableState";
+import type { SortDir } from "@/shared/table/sort";
+import { SearchField, fieldSx } from "@/shared/components/SearchField";
+import { EmptyState, ErrorState } from "@/shared/components/States";
 import { BulkDialog } from "@/features/moderation/BulkDialog";
 import { useSetRows } from "./api";
-import { setPath } from "./SetDrawerHost";
-import { FlagChips, TechniqueChips } from "./components/TechniqueChips";
-import { EvidenceCell, ScoreCell } from "./components/ScoreCell";
+import { RowCard } from "./card/row";
+import { HUB_FACETS } from "./card/SetCard";
+import { SetCardSkeleton } from "./card/SetCardSkeleton";
+import { useCardPanels } from "./card/useCardPanels";
 
 const groups: SetGroupName[] = ["listed", "superseded", "withheld", "hidden", "rejected"];
 
@@ -26,167 +41,154 @@ const bulkActions: Partial<Record<SetGroupName, SetAction[]>> = {
   rejected: ["approve"],
 };
 
+const allSorts = ["updated", "created", "title", "author", "score", "n", "devices", "reports"];
+const plainSorts = ["updated", "created", "title", "author", "reports"];
+const unscored = new Set<SetGroupName>(["hidden", "rejected"]);
+
+const filterFor = (group: SetGroupName, filter: string) => (filter === "attention" && group !== "listed" ? "" : filter);
+
+const gridItem = { xs: 12, sm: 6, lg: 4, xl: 3 } as const;
+const skeletons = [0, 1, 2, 3, 4, 5, 6, 7];
+
 const rowKey = (r: SetRowView) => `${r.set_id}/${String(r.version)}`;
 
-function Targets({ row }: Readonly<{ row: SetRowView }>) {
+const tabsSx = {
+  minHeight: 38,
+  borderBottom: `1px solid ${colors.border.light}`,
+  "& .MuiTabs-list": { gap: "4px" },
+  "& .MuiTab-root": {
+    minHeight: 38,
+    px: 1.5,
+    py: 1.25,
+    fontSize: 13,
+    textTransform: "none",
+    color: colors.text.secondary,
+    "&.Mui-selected": { color: colors.secondary },
+  },
+  "& .MuiTabs-indicator": { height: 2, bgcolor: colors.secondary },
+} as const;
+
+const progressSx = { height: 3, bgcolor: colors.accent.secondary, "& .MuiLinearProgress-bar": { bgcolor: colors.secondary } } as const;
+
+interface SortControlProps {
+  value: string;
+  options: string[];
+  dir: SortDir;
+  onChange: (by: string, dir: SortDir) => void;
+}
+
+function SortControl({ value, options, dir, onChange }: Readonly<SortControlProps>) {
   const { t } = useTranslation();
-  const tg = row.targets;
-  const parts: string[] = [...tg.domains];
-  const more = tg.domains_total - tg.domains.length;
+  const dirLabel = t(dir === "asc" ? "sets.sort.asc" : "sets.sort.desc");
   return (
-    <Box sx={{ maxWidth: 260 }}>
-      <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
-        {parts.join(", ")}
-        {more > 0 && (
-          <Typography component="span" variant="caption" sx={{ color: colors.text.secondary, ml: 0.5 }}>
-            {t("targets.more", { count: more })}
-          </Typography>
-        )}
-      </Typography>
-      <Typography variant="caption" sx={{ color: colors.text.secondary, display: "block" }}>
-        {[
-          tg.ips ? t("entry.ips", { count: tg.ips }) : "",
-          tg.geosite.length ? `geosite: ${tg.geosite.join(", ")}` : "",
-          tg.geoip.length ? `geoip: ${tg.geoip.join(", ")}` : "",
-          tg.asns.length ? tg.asns.map((a) => `AS${a}`).join(", ") : "",
-          ...tg.filters.map((f) => filterText(t, f)),
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      </Typography>
-    </Box>
+    <Stack direction="row" alignItems="center" spacing={0.5}>
+      <TextField select size="small" label={t("sets.sort.label")} value={value} onChange={(e) => onChange(e.target.value, dir)} sx={{ ...fieldSx, minWidth: 190 }}>
+        {options.map((key) => (
+          <MenuItem key={key} value={key}>
+            {t(`sets.sort.${key}`)}
+          </MenuItem>
+        ))}
+      </TextField>
+      <Tooltip title={dirLabel}>
+        <IconButton size="small" aria-label={dirLabel} onClick={() => onChange(value, dir === "asc" ? "desc" : "asc")} sx={{ color: colors.text.secondary }}>
+          {dir === "asc" ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />}
+        </IconButton>
+      </Tooltip>
+    </Stack>
+  );
+}
+
+function FilterToggle({ value, active, label, onToggle }: Readonly<{ value: string; active: boolean; label: string; onToggle: () => void }>) {
+  return (
+    <ToggleButton size="small" value={value} selected={active} onChange={onToggle} sx={{ textTransform: "none" }}>
+      {label}
+    </ToggleButton>
   );
 }
 
 export function SetsPage() {
   const { t } = useTranslation();
-  const overlay = useOverlay();
   const table = useTableState({ sort: "updated", dir: "desc", pageSize: 50 });
   const group = (groups.includes(table.param("group") as SetGroupName) ? table.param("group") : "listed") as SetGroupName;
-  const filter = table.param("filter");
+  const filter = filterFor(group, table.param("filter"));
+  const sortOptions = unscored.has(group) ? plainSorts : allSorts;
+  const sort = sortOptions.includes(table.sort) ? table.sort : "updated";
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<SetAction | null>(null);
-  const view = `${group}|${String(table.page)}|${String(table.pageSize)}|${table.query}|${filter}|${table.sort}|${table.dir}`;
+  const view = `${group}|${String(table.page)}|${String(table.pageSize)}|${table.query}|${filter}|${sort}|${table.dir}`;
   useEffect(() => {
     setSelected(new Set());
   }, [view]);
-  const rows = useSetRows({ group, q: table.query, sort: table.sort, dir: table.dir, offset: table.page * table.pageSize, limit: table.pageSize, filter });
+  const rows = useSetRows({ group, q: table.query, sort, dir: table.dir, offset: table.page * table.pageSize, limit: table.pageSize, filter });
   const data = rows.data;
+  const shown = data?.group ?? group;
+  const list = useMemo(() => data?.rows ?? [], [data]);
+  const keys = useMemo(() => list.map(rowKey), [list]);
+  const panels = useCardPanels(keys);
+  const total = data?.total ?? 0;
+  const lastPage = Math.max(0, Math.ceil(total / table.pageSize) - 1);
+  const outOfRange = data !== undefined && total > 0 && table.page > lastPage;
+  const { setPage } = table;
 
-  const columns = useMemo(() => {
-    const cols: Column<SetRowView>[] = [
-      {
-        id: "title",
-        header: t("sets.columns.title"),
-        serverSort: true,
-        minWidth: 220,
-        cell: (r) => (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: "anywhere" }}>
-              {r.title}
-            </Typography>
-            <Typography variant="monoSmall" sx={{ color: colors.text.secondary }}>
-              {r.set_id.slice(0, 10)}/v{r.version}
-              {r.versions && r.versions.length > 1 ? ` · ${t("sets.versions", { list: r.versions.join(", ") })}` : ""}
-            </Typography>
-            <FlagChips flags={r.flags} />
-            {r.attention.length > 0 && (
-              <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap">
-                {r.attention.map((a) => (
-                  <Tooltip key={a} title={t(`attention.${a}.hint`)}>
-                    <Chip size="small" color={a === "reports" || a === "low_score" ? "error" : "warning"} label={t(`attention.${a}.label`)} sx={{ height: 20, fontSize: 11 }} />
-                  </Tooltip>
-                ))}
-              </Stack>
-            )}
-            {r.author_banned && <Chip size="small" color="error" variant="outlined" label={t("queue.authorBanned")} sx={{ height: 20, fontSize: 11, alignSelf: "flex-start" }} />}
-          </Box>
-        ),
-      },
-      { id: "techniques", header: t("sets.columns.techniques"), minWidth: 180, hideBelow: "md", cell: (r) => <TechniqueChips terms={r.techniques} /> },
-      { id: "targets", header: t("sets.columns.targets"), hideBelow: "lg", cell: (r) => <Targets row={r} /> },
-    ];
-    if (group !== "hidden" && group !== "rejected") {
-      cols.push(
-        { id: "score", header: t("sets.columns.score"), serverSort: true, align: "right", cell: (r) => <ScoreCell published={r.published} live={r.live} /> },
-        { id: "devices", header: t("sets.columns.evidence"), serverSort: true, align: "right", hideBelow: "sm", cell: (r) => <EvidenceCell evidence={r.evidence} /> },
-      );
-    }
-    cols.push({
-      id: "reports",
-      header: t("sets.columns.reports"),
-      serverSort: true,
-      align: "right",
-      hideBelow: "sm",
-      cell: (r) =>
-        r.reports > 0 ? (
-          <Tooltip title={t("sets.reportsTip", { open: r.open_reports, total: r.reports, independent: r.independent_reports })}>
-            <Chip size="small" color={r.open_reports > 0 ? "warning" : "default"} variant={r.open_reports > 0 ? "filled" : "outlined"} label={`${String(r.open_reports)}/${String(r.reports)}`} />
-          </Tooltip>
-        ) : (
-          ""
-        ),
+  useEffect(() => {
+    const present = new Set(keys);
+    setSelected((prev) => {
+      const next = new Set([...prev].filter((k) => present.has(k)));
+      return next.size === prev.size ? prev : next;
     });
-    cols.push({
-      id: "author",
-      header: t("sets.columns.author"),
-      serverSort: true,
-      hideBelow: "md",
-      cell: (r) => (
-        <Box>
-          <KeyRef hmac={r.author_hmac} label={r.author} banned={r.author_banned} />
-          {r.asn_observed && (
-            <Typography variant="caption" sx={{ display: "block", color: colors.text.disabled }}>
-              AS{r.asn_observed} {r.country_observed}
-            </Typography>
-          )}
-        </Box>
-      ),
-    });
-    if (group === "superseded") {
-      cols.push({
-        id: "superseded",
-        header: t("sets.columns.supersededBy"),
-        nowrap: true,
-        cell: (r) => (
-          <>
-            v{r.superseded_by}
-            <Typography variant="caption" sx={{ display: "block", color: colors.text.disabled }}>
-              {formatStamp(r.superseded_at)}
-            </Typography>
-          </>
-        ),
-      });
-    }
-    if (group === "hidden" || group === "rejected" || group === "withheld") {
-      cols.push({
-        id: "reason",
-        header: t("sets.columns.reason"),
-        cell: (r) => (
-          <Box sx={{ maxWidth: 320, overflowWrap: "anywhere" }}>
-            {group === "withheld" ? t(`sets.withheldReason.${r.withheld ?? "set_withdrawn"}`) : reasonText(t, r.status_reason, r.independent_reports)}
-            {group === "hidden" && r.status_reason === "reports" && r.open_reports > 0 && (
-              <Chip size="small" color="warning" variant="outlined" label={t("sets.awaitingReview")} sx={{ ml: 1 }} />
-            )}
-          </Box>
-        ),
-      });
-    }
-    cols.push({
-      id: "updated",
-      header: t("sets.columns.updated"),
-      serverSort: true,
-      align: "right",
-      nowrap: true,
-      cell: (r) => <span title={formatStamp(r.updated_at)}>{formatAgo(t, r.updated_at)}</span>,
-    });
-    return cols;
-  }, [group, t]);
+  }, [keys]);
 
-  const actions = bulkActions[group] ?? [];
-  const targets = (data?.rows ?? [])
-    .filter((r) => selected.has(rowKey(r)))
-    .map((r) => ({ set_id: r.set_id, version: r.version, title: r.title, status: r.status }));
+  useEffect(() => {
+    if (outOfRange) setPage(lastPage);
+  }, [outOfRange, lastPage, setPage]);
+
+  const actions = bulkActions[shown] ?? [];
+  const targets = list.filter((r) => selected.has(rowKey(r))).map((r) => ({ set_id: r.set_id, version: r.version, title: r.title, status: r.status }));
+  const allSelected = list.length > 0 && list.every((r) => selected.has(rowKey(r)));
+  const filtered = table.query !== "" || filter !== "";
+  const tabLabel = (g: SetGroupName) => (data ? t("sets.tabCount", { label: t(`sets.${g}`), count: data.groups[g] ?? 0 }) : t(`sets.${g}`));
+  const toggleFilter = (name: string) => table.setParam("filter", filter === name ? null : name);
+  const toggleRow = (key: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  let content: ReactNode;
+  if (data === undefined) {
+    content = rows.error ? null : (
+      <Grid container spacing={3}>
+        {skeletons.map((i) => (
+          <Grid key={i} size={gridItem}>
+            <SetCardSkeleton />
+          </Grid>
+        ))}
+      </Grid>
+    );
+  } else if (list.length === 0) {
+    content = <EmptyState text={filtered ? t("sets.noMatch") : t("sets.empty")} />;
+  } else {
+    content = (
+      <Grid container spacing={3}>
+        {list.map((row) => {
+          const key = rowKey(row);
+          return (
+            <Grid key={key} size={gridItem}>
+              <RowCard
+                row={row}
+                group={shown}
+                selection={actions.length > 0 ? { selected: selected.has(key), onToggle: () => toggleRow(key), label: t("card.select", { title: row.title }) } : undefined}
+                panel={panels.panelOf(key)}
+                onPanelChange={(next) => panels.setPanel(key, next)}
+              />
+            </Grid>
+          );
+        })}
+      </Grid>
+    );
+  }
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -198,74 +200,88 @@ export function SetsPage() {
           setSelected(new Set());
           table.setParam("group", v === "listed" ? null : v);
         }}
+        sx={tabsSx}
       >
         {groups.map((g) => (
-          <Tab key={g} value={g} label={`${t(`sets.${g}`)}${data ? ` (${String(data.groups[g] ?? 0)})` : ""}`} />
+          <Tab key={g} value={g} label={tabLabel(g)} />
         ))}
       </Tabs>
-      <DataTable
-        columns={columns}
-        rows={data?.rows}
-        rowKey={rowKey}
-        loading={rows.isLoading}
-        fetching={rows.isFetching}
-        error={rows.error}
-        onRetry={() => void rows.refetch()}
-        emptyText={t("sets.empty")}
-        noMatchText={t("sets.noMatch")}
-        filtered={table.query !== "" || filter !== ""}
-        sort={{ by: table.sort, dir: table.dir }}
-        onSort={table.setSort}
-        paging={{ mode: "server", page: table.page, pageSize: table.pageSize, total: data?.total ?? 0, onPage: table.setPage, onPageSize: table.setPageSize }}
-        onRowClick={(r) => overlay.open(setPath(r.set_id))}
-        selection={actions.length > 0 ? { selected, onChange: setSelected } : undefined}
-        bulkBar={() => (
-          <Stack direction="row" spacing={1}>
-            {actions.map((a) => (
-              <Button key={a} size="small" variant="contained" color={a === "hide" ? "error" : "success"} onClick={() => setBulk(a)}>
-                {t(`moderation.${a}.confirm`)}
-              </Button>
-            ))}
-            <Button size="small" color="inherit" onClick={() => setSelected(new Set())}>
-              {t("table.clearSelection")}
+      <Box sx={{ display: "flex", gap: 1.5, alignItems: "center", flexWrap: "wrap" }}>
+        <SearchField value={table.q} onChange={table.setQ} placeholder={t("sets.searchPlaceholder")} />
+        <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1.5 }}>
+          {group === "listed" && (
+            <FilterToggle value="attention" active={filter === "attention"} label={t("sets.needsAttention", { count: data?.attention ?? 0 })} onToggle={() => toggleFilter("attention")} />
+          )}
+          <FilterToggle value="reports" active={filter === "reports"} label={t("sets.withReports")} onToggle={() => toggleFilter("reports")} />
+          <FilterToggle value="edited" active={filter === "edited"} label={t("sets.edited")} onToggle={() => toggleFilter("edited")} />
+        </Box>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, ml: "auto" }}>
+          <SortControl value={sort} options={sortOptions} dir={table.dir} onChange={table.setSort} />
+          {actions.length > 0 && list.length > 0 && (
+            <Button size="small" onClick={() => setSelected(allSelected ? new Set() : new Set(keys))}>
+              {allSelected ? t("table.clearSelection") : t("queue.selectAll")}
             </Button>
-          </Stack>
+          )}
+        </Box>
+      </Box>
+      <Box sx={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <Box sx={{ height: 3, mb: 1.5 }}>{rows.isFetching && data !== undefined && <LinearProgress sx={progressSx} />}</Box>
+        {rows.error ? (
+          <Box sx={{ mb: 2 }}>
+            <ErrorState error={rows.error} onRetry={() => void rows.refetch()} compact={data !== undefined} />
+          </Box>
+        ) : null}
+        {selected.size > 0 && actions.length > 0 && (
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 1.5,
+              mb: 2,
+              display: "flex",
+              gap: 1,
+              alignItems: "center",
+              flexWrap: "wrap",
+              position: "sticky",
+              top: { xs: -16, md: -24 },
+              zIndex: 3,
+              borderRadius: radius.md,
+              bgcolor: colors.background.paper,
+            }}
+          >
+            <Typography variant="body2" sx={{ flex: 1 }}>
+              {t("table.selected", { count: selected.size })}
+            </Typography>
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+              {actions.map((a) => (
+                <Button key={a} size="small" variant="contained" onClick={() => setBulk(a)}>
+                  {t(`moderation.${a}.confirm`)}
+                </Button>
+              ))}
+              <Button size="small" onClick={() => setSelected(new Set())} sx={{ color: colors.text.secondary }}>
+                {t("table.clearSelection")}
+              </Button>
+            </Stack>
+          </Paper>
         )}
-        toolbar={
-          <>
-            <SearchField value={table.q} onChange={table.setQ} placeholder={t("sets.searchPlaceholder")} />
-            {group === "listed" && (
-              <ToggleButton
-                size="small"
-                value="attention"
-                selected={filter === "attention"}
-                onChange={() => table.setParam("filter", filter === "attention" ? null : "attention")}
-                sx={{ textTransform: "none" }}
-              >
-                {t("sets.needsAttention", { count: data?.attention ?? 0 })}
-              </ToggleButton>
-            )}
-            <ToggleButton
-              size="small"
-              value="reports"
-              selected={filter === "reports"}
-              onChange={() => table.setParam("filter", filter === "reports" ? null : "reports")}
-              sx={{ textTransform: "none" }}
-            >
-              {t("sets.withReports")}
-            </ToggleButton>
-            <ToggleButton
-              size="small"
-              value="edited"
-              selected={filter === "edited"}
-              onChange={() => table.setParam("filter", filter === "edited" ? null : "edited")}
-              sx={{ textTransform: "none" }}
-            >
-              {t("sets.edited")}
-            </ToggleButton>
-          </>
-        }
-      />
+        {list.length > 1 && (
+          <FacetCompareBar active={panels.compare} onPick={panels.pickCompare} toggle={panels.toggle} onToggle={panels.toggleAll} keys={HUB_FACETS} t={t} />
+        )}
+        {content}
+        {total > 0 && (
+          <TablePagination
+            component="div"
+            count={total}
+            page={Math.min(table.page, lastPage)}
+            rowsPerPage={table.pageSize}
+            rowsPerPageOptions={PAGE_SIZES}
+            onPageChange={(_e, p) => table.setPage(p)}
+            onRowsPerPageChange={(e) => table.setPageSize(Number(e.target.value))}
+            labelRowsPerPage={t("sets.perPage")}
+            labelDisplayedRows={({ from, to, count }) => t("table.displayedRows", { from, to, count })}
+            sx={{ mt: 2, borderTop: `1px solid ${colors.border.light}` }}
+          />
+        )}
+      </Box>
       <BulkDialog action={bulk ?? "hide"} targets={targets} open={bulk !== null} onClose={() => setBulk(null)} onDone={() => setSelected(new Set())} />
     </Box>
   );

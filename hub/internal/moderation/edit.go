@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/daniellavrushin/b4/hubwire"
@@ -50,6 +51,13 @@ func (s *Service) Edit(ctx context.Context, a Actor, r Ref, edit store.VersionEd
 		e := entry(a, now, "set.edit", store.TargetSet, r.SetID, r.Version, edit.Note)
 		e.Before = map[string]interface{}{"title": before.Title, "description": before.Description, "fp": before.FP, "targets_key": before.TargetsKey}
 		e.After = map[string]interface{}{"title": edit.Title, "description": edit.Description, "fp": edit.FP, "targets_key": edit.TargetsKey, "fp_changed": edit.FP != before.FP}
+		added, removed := targetChanges(before.Projection, edit.Projection)
+		auditList(e.After, "targets_added", added)
+		auditList(e.After, "targets_removed", removed)
+		if before.B4Min != edit.B4Min {
+			e.Before["b4_min"] = before.B4Min
+			e.After["b4_min"] = edit.B4Min
+		}
 		if _, err := t.Audit(ctx, e); err != nil {
 			return err
 		}
@@ -71,6 +79,62 @@ func (s *Service) Edit(ctx context.Context, a Actor, r Ref, edit store.VersionEd
 		return Result{Code: "set.edited_approved", Params: params, Notice: "edited and approved " + ref(r.SetID, r.Version)}, nil
 	}
 	return Result{Code: "set.edited", Params: params, Notice: "edited " + ref(r.SetID, r.Version)}, nil
+}
+
+const auditTargetsMax = 20
+
+func targetChanges(before, after map[string]interface{}) (added, removed []string) {
+	added, removed = entryChanges(filterEntries(before), filterEntries(after))
+	listAdded, listRemoved := entryChanges(store.TargetEntries(before), store.TargetEntries(after))
+	return append(added, listAdded...), append(removed, listRemoved...)
+}
+
+func filterEntries(projection map[string]interface{}) map[string]struct{} {
+	out := make(map[string]struct{})
+	targets, _ := projection["targets"].(map[string]interface{})
+	if tls, _ := targets["tls"].(string); tls != "" {
+		out["tls:"+tls] = struct{}{}
+	}
+	if version, _ := targets["ip_version"].(string); version != "" {
+		out["ip_version:"+version] = struct{}{}
+	}
+	if only, _ := targets["domain_only"].(bool); only {
+		out["domain_only"] = struct{}{}
+	}
+	for _, protocol := range []string{"tcp", "udp"} {
+		section, _ := projection[protocol].(map[string]interface{})
+		if ports, _ := section["dport_filter"].(string); ports != "" {
+			out[protocol+"_ports:"+ports] = struct{}{}
+		}
+	}
+	return out
+}
+
+func entryChanges(was, now map[string]struct{}) (added, removed []string) {
+	for entry := range now {
+		if _, ok := was[entry]; !ok {
+			added = append(added, entry)
+		}
+	}
+	for entry := range was {
+		if _, ok := now[entry]; !ok {
+			removed = append(removed, entry)
+		}
+	}
+	sort.Strings(added)
+	sort.Strings(removed)
+	return added, removed
+}
+
+func auditList(into map[string]interface{}, key string, items []string) {
+	if len(items) == 0 {
+		return
+	}
+	if len(items) > auditTargetsMax {
+		into[key+"_more"] = len(items) - auditTargetsMax
+		items = items[:auditTargetsMax]
+	}
+	into[key] = items
 }
 
 const (

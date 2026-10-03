@@ -4,6 +4,7 @@
 
 - FIXED: **An update from the web interface failed with `Could not fetch the installer: mkdir /tmp/b4update-...: no such file or directory` when nothing could be created in /tmp, as seen in a MikroTik container after a restart, and with /tmp mounted noexec the web interface reported the update as started while nothing happened** - b4 staged the installer in /tmp and ran it from there, and the installer moved to another directory only when /tmp was short of space.
 - FIXED: **A request to `/api/system/update` with a version such as `--remove` or `--arch=mips` removed b4 or installed a binary for another architecture instead of updating** - b4 passed the requested version to the installer unchecked, and the installer read it as one of its own options.
+- FIXED: **Set cards gave target counts such as `1 domains` and `1 IPs`, and in Russian the longer labels in the panel a set card opens from its Target, Split, Fake, Route, DNS and Escalate tabs ran into their values or wrapped onto a second line** - the number was always followed by the same word, and the label column had a fixed width that the longer Russian labels did not fit.
 
 ## [1.84.0] - 2026-09-30
 

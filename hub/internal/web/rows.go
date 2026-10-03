@@ -38,36 +38,37 @@ type TargetsBriefView struct {
 }
 
 type SetRowView struct {
-	SetID              string           `json:"set_id"`
-	Version            int              `json:"version"`
-	Title              string           `json:"title"`
-	Status             string           `json:"status"`
-	StatusReason       string           `json:"status_reason,omitempty"`
-	Family             string           `json:"family,omitempty"`
-	Flags              []string         `json:"flags"`
-	Techniques         []Term           `json:"techniques"`
-	Targets            TargetsBriefView `json:"targets"`
-	AuthorHMAC         string           `json:"author_hmac"`
-	Author             string           `json:"author"`
-	AuthorBanned       bool             `json:"author_banned,omitempty"`
-	ASNObserved        string           `json:"asn_observed,omitempty"`
-	CountryObserved    string           `json:"country_observed,omitempty"`
-	Published          *ScoreView       `json:"published,omitempty"`
-	Live               ScoreView        `json:"live"`
-	Evidence           EvidenceView     `json:"evidence"`
-	Attention          []string         `json:"attention"`
-	Reports            int              `json:"reports"`
-	OpenReports        int              `json:"open_reports"`
-	IndependentReports int              `json:"independent_reports"`
-	Versions           []int            `json:"versions,omitempty"`
-	SupersededBy       int              `json:"superseded_by,omitempty"`
-	SupersededAt       *time.Time       `json:"superseded_at,omitempty"`
-	Withheld           string           `json:"withheld,omitempty"`
-	HiddenFrom         string           `json:"hidden_from,omitempty"`
-	DecodeError        bool             `json:"decode_error,omitempty"`
-	CreatedAt          time.Time        `json:"created_at"`
-	UpdatedAt          time.Time        `json:"updated_at"`
-	EditedAt           *time.Time       `json:"edited_at,omitempty"`
+	SetID              string                 `json:"set_id"`
+	Version            int                    `json:"version"`
+	Title              string                 `json:"title"`
+	Status             string                 `json:"status"`
+	StatusReason       string                 `json:"status_reason,omitempty"`
+	Family             string                 `json:"family,omitempty"`
+	Flags              []string               `json:"flags"`
+	Techniques         []Term                 `json:"techniques"`
+	Targets            TargetsBriefView       `json:"targets"`
+	AuthorHMAC         string                 `json:"author_hmac"`
+	Author             string                 `json:"author"`
+	AuthorBanned       bool                   `json:"author_banned,omitempty"`
+	ASNObserved        string                 `json:"asn_observed,omitempty"`
+	CountryObserved    string                 `json:"country_observed,omitempty"`
+	Published          *ScoreView             `json:"published,omitempty"`
+	Live               ScoreView              `json:"live"`
+	Evidence           EvidenceView           `json:"evidence"`
+	Attention          []string               `json:"attention"`
+	Reports            int                    `json:"reports"`
+	OpenReports        int                    `json:"open_reports"`
+	IndependentReports int                    `json:"independent_reports"`
+	Versions           []int                  `json:"versions,omitempty"`
+	SupersededBy       int                    `json:"superseded_by,omitempty"`
+	SupersededAt       *time.Time             `json:"superseded_at,omitempty"`
+	Withheld           string                 `json:"withheld,omitempty"`
+	HiddenFrom         string                 `json:"hidden_from,omitempty"`
+	Config             map[string]interface{} `json:"config,omitempty"`
+	DecodeError        bool                   `json:"decode_error,omitempty"`
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
+	EditedAt           *time.Time             `json:"edited_at,omitempty"`
 }
 
 type SetRowsView struct {
@@ -218,6 +219,7 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 	needle := strings.ToLower(strings.TrimSpace(q.Get("q")))
 	filter := q.Get("filter")
 	rows := make([]SetRowView, 0, len(versions))
+	projections := make(map[string]map[string]interface{}, len(versions))
 	for _, v := range versions {
 		row := s.setRow(v, ec, pool, at, now)
 		if group == GroupListed {
@@ -252,6 +254,7 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
+		projections[v.SetID+"/"+strconv.Itoa(v.Version)] = v.Projection
 		rows = append(rows, row)
 	}
 	by := q.Get("sort")
@@ -288,6 +291,11 @@ func (s *Server) setRows(w http.ResponseWriter, r *http.Request) {
 		view.Rows = rows[offset:min(len(rows), offset+limit)]
 	} else {
 		view.Rows = []SetRowView{}
+	}
+	for i, row := range view.Rows {
+		if set, err := DecodeSet(projections[row.SetID+"/"+strconv.Itoa(row.Version)]); err == nil {
+			view.Rows[i].Config = ConfigOf(&set)
+		}
 	}
 	writeJSON(w, http.StatusOK, view)
 }

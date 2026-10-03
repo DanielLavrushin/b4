@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4hub/internal/asn"
 	"github.com/daniellavrushin/b4hub/internal/catalogue"
 	"github.com/daniellavrushin/b4hub/internal/geo"
@@ -62,9 +64,11 @@ type Server struct {
 	Notify        *notify.Service
 	Now           func() time.Time
 
-	logins *ratelimit.Limiter
-	dist   fs.FS
-	index  []byte
+	logins  *ratelimit.Limiter
+	dist    fs.FS
+	index   []byte
+	geoMu   sync.Mutex
+	geodata *geodat.GeodataManager
 }
 
 func (s *Server) now() time.Time {

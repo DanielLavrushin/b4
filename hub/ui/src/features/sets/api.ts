@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { get, post, query } from "@/api/client";
 import { useAdminMutation } from "@/api/mutations";
 import { qk } from "@/api/queryKeys";
-import type { ActionResult, EditPreview, EditRequest, QueueView, SetDetailView, SetGroupName, SetRowsView, TextEditRequest } from "@/models/api";
+import type { ActionResult, EditPreview, EditRequest, GeoCategoriesView, QueueView, SetDetailView, SetGroupName, SetRowsView, TextEditRequest } from "@/models/api";
 
 export interface SetRowsQuery {
   group: SetGroupName;
@@ -57,6 +57,14 @@ export const useSetEdit = () =>
       body.approve
         ? [qk.sets.all, qk.overview, qk.buildStatus, qk.audit.all, qk.counts, qk.health, qk.votes.all, qk.keys.all, qk.reports.all]
         : [qk.sets.all, qk.audit.all, qk.votes.all, qk.keys.all],
+  });
+
+export const useGeoCategories = (enabled: boolean) =>
+  useQuery({
+    queryKey: qk.geoCategories,
+    queryFn: () => get<GeoCategoriesView>("/geo/categories"),
+    enabled,
+    staleTime: 600_000,
   });
 
 export const useSetText = () =>
