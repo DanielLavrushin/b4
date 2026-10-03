@@ -29,8 +29,8 @@ func (s *SetConfig) AdoptStrategy(from *SetConfig) {
 	s.Faking = faking
 
 	if from.DNS.Enabled {
-		pins := s.DNS.Pins
+		pins, strict := s.DNS.Pins, s.DNS.Strict
 		s.DNS = from.DNS
-		s.DNS.Pins = pins
+		s.DNS.Pins, s.DNS.Strict = pins, strict
 	}
 }

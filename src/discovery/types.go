@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/dns/endpoint"
 	"github.com/daniellavrushin/b4/nfq"
 )
 
@@ -270,6 +271,13 @@ type DNSDiscoveryResult struct {
 	GatewayIPs       []string         `json:"gateway_ips,omitempty"`
 	AltScan          *AltScanSummary  `json:"alt_scan,omitempty"`
 	NXDomain         bool             `json:"nxdomain,omitempty"`
+	NoAddressFamily  string           `json:"no_address_family,omitempty"`
+	Reference        string           `json:"reference,omitempty"`
+	ReferenceError   string           `json:"reference_error,omitempty"`
+	Pinned           bool             `json:"pinned,omitempty"`
+
+	referenceIPs     []string
+	referenceTrusted bool
 }
 
 func (r *DNSDiscoveryResult) noAddress() bool {
@@ -296,9 +304,8 @@ type PayloadTestResult struct {
 
 type DiscoverySuite struct {
 	*CheckSuite
-	networkBaseline float64
-	optimalTTL      uint8
-	ttlProbed       bool
+	optimalTTL uint8
+	ttlProbed  bool
 
 	ctx       context.Context
 	ctxCancel context.CancelFunc
@@ -321,6 +328,11 @@ type DiscoverySuite struct {
 	tlsVersion      string // "auto", "tls12", "tls13"
 	ipVersion       string // "auto", "ipv4", "ipv6"
 	flowMark        uint
+
+	trusted           endpoint.Endpoint
+	dnsServerOverride string
+	runPins           map[string][]string
+	pins              map[string][]string
 
 	discoveryCache *DiscoveryCache
 	plainSets      map[string]*config.SetConfig

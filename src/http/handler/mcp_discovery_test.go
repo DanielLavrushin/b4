@@ -242,19 +242,20 @@ func TestMCPDiscoveryUnresolvedOutcome(t *testing.T) {
 func TestMCPDiscoveryUnresolvedVerdictNamesTheEvidence(t *testing.T) {
 	cases := []struct {
 		name                 string
-		family               string
+		family, noAddress    string
 		systemOnly, nxdomain bool
 		want                 string
 	}{
-		{"missing family", "ipv6", false, false, "IPv4 addresses only and this run probed over IPv6"},
-		{"nxdomain", "", false, true, "NXDOMAIN"},
-		{"system resolver only", "", true, false, "run again without skip_dns"},
-		{"every resolver", "", false, false, "DNS for it fails on this network"},
+		{"missing family", "ipv6", "", false, false, "IPv4 addresses only and this run probed over IPv6"},
+		{"no address", "", "ipv4", false, false, "exists, but DNS publishes no IPv4 address"},
+		{"nxdomain", "", "", false, true, "NXDOMAIN"},
+		{"system resolver only", "", "", true, false, "run again without skip_dns"},
+		{"every resolver", "", "", false, false, "DNS for it fails on this network"},
 	}
 	for _, tc := range cases {
 		row := mcpDiscoveryDomain{Domain: "typo.example"}
 		mcpApplyOutcome(&row, discovery.OutcomeUnresolved)
-		mcpNoteUnresolved(&row, tc.family, tc.systemOnly, tc.nxdomain)
+		mcpNoteUnresolved(&row, tc.family, tc.noAddress, tc.systemOnly, tc.nxdomain)
 		if got := mcpDiscoveryVerdict(row, false); !strings.Contains(got, tc.want) {
 			t.Errorf("%s: verdict %q, want it to mention %q", tc.name, got, tc.want)
 		}
@@ -262,8 +263,8 @@ func TestMCPDiscoveryUnresolvedVerdictNamesTheEvidence(t *testing.T) {
 
 	found := mcpDiscoveryDomain{Domain: "ok.example"}
 	mcpApplyOutcome(&found, discovery.OutcomeFound)
-	mcpNoteUnresolved(&found, "ipv6", true, true)
-	if found.missingFamily != "" || found.systemOnly || found.nxdomain {
+	mcpNoteUnresolved(&found, "ipv6", "ipv4", true, true)
+	if found.missingFamily != "" || found.noAddress != "" || found.systemOnly || found.nxdomain {
 		t.Fatalf("only an unresolved row carries the evidence, got %+v", found)
 	}
 }

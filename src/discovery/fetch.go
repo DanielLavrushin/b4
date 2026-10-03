@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netprobe"
 	"github.com/daniellavrushin/b4/utils"
@@ -204,7 +203,7 @@ const probeStallTimeout = 2 * time.Second
 var probeRefusesAddr = utils.IsReservedAddr
 
 var probeResolver = func(mark int, timeout time.Duration) *net.Resolver {
-	return netprobe.MarkedResolver(mark, timeout, "")
+	return netprobe.MarkedResolver(mark, timeout)
 }
 
 func refusedProbeIP(ip string) bool {
@@ -475,57 +474,4 @@ evaluate:
 
 	result.Status = CheckStatusComplete
 	return result
-}
-
-func (ds *DiscoverySuite) measureNetworkBaseline() float64 {
-	// Test a known-good domain to establish actual network speed
-	timeout := time.Duration(ds.cfg.System.Checker.DiscoveryTimeoutSec) * time.Second
-	referenceDomain := ds.cfg.System.Checker.ReferenceDomain
-	if referenceDomain == "" {
-		referenceDomain = config.DefaultConfig.System.Checker.ReferenceDomain
-	}
-
-	log.DiscoveryLogf("Measuring network baseline using %s", referenceDomain)
-
-	testURL := fmt.Sprintf("https://%s/", referenceDomain)
-	ctx, cancel := ds.fetchContext(timeout)
-	defer cancel()
-
-	transport := &http.Transport{
-		TLSClientConfig:   ds.tlsConfig(),
-		DialContext:       ds.dialContext(timeout, "", ""),
-		ForceAttemptHTTP2: true,
-	}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{
-		Timeout:   timeout,
-		Transport: transport,
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "GET", testURL, nil)
-	if err != nil {
-		log.DiscoveryLogf("Failed to create baseline request: %v", err)
-		return 0
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0")
-
-	start := time.Now()
-	resp, err := client.Do(req)
-	if err != nil {
-		log.DiscoveryLogf("Baseline measurement failed: %v", err)
-		return 0
-	}
-	defer resp.Body.Close()
-
-	bytesRead, _ := io.CopyN(io.Discard, resp.Body, 100*1024)
-	duration := time.Since(start)
-
-	if bytesRead == 0 || duration.Seconds() == 0 {
-		return 0
-	}
-
-	speed := float64(bytesRead) / duration.Seconds()
-	log.DiscoveryLogf("Network baseline: %.2f KB/s (%d bytes in %v)", speed/1024, bytesRead, duration)
-
-	return speed
 }

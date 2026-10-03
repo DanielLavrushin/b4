@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/dns/endpoint"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/mtproto"
@@ -471,6 +472,16 @@ func isRefusal(err error) bool {
 }
 
 func (a *API) pushConfigLocked(newCfg *config.Config) error {
+	if server := newCfg.System.Checker.DNSServer; server != "" {
+		if _, err := endpoint.Parse(server); err != nil {
+			return ErrValidation("The trusted DNS server is not valid", FieldError{
+				Path:    "system.checker.dns_server",
+				Code:    "invalid_dns_server",
+				Message: err.Error(),
+			})
+		}
+	}
+
 	for _, check := range []func() error{newCfg.Validate, newCfg.ValidateTLSFiles} {
 		if err := check(); err != nil {
 			var ve *config.ValidationError

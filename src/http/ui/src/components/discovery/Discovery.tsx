@@ -34,6 +34,7 @@ import {
   buildResultEntries,
   describeApiError,
   normalizeProbeUrl,
+  parsePins,
   probeUrlLabel,
   sanitizeProbeUrls,
 } from "@utils";
@@ -90,6 +91,7 @@ export const DiscoveryRunner = () => {
   const [options, setOptions] = useState<DiscoveryOptions>(loadOptions);
   const [ipVersionEnabled, setIpVersionEnabled] = useState(true);
   const [communityEnabled, setCommunityEnabled] = useState(false);
+  const [settingsDnsServer, setSettingsDnsServer] = useState("");
   const [checkUrls, setCheckUrls] = useState<string[]>([]);
   const [urlInput, setUrlInput] = useState("");
   const [logOpen, setLogOpen] = useState(false);
@@ -143,6 +145,7 @@ export const DiscoveryRunner = () => {
       .then((c) => {
         setIpVersionEnabled(!!c.queue?.ipv4 && !!c.queue?.ipv6);
         setCommunityEnabled(Boolean(c.system?.hub?.enabled));
+        setSettingsDnsServer(c.system?.checker?.dns_server ?? "");
       })
       .catch(() => {});
   }, []);
@@ -170,6 +173,8 @@ export const DiscoveryRunner = () => {
         ipVersion: effectiveIpVersion,
         setId: setId ?? undefined,
         stopWhenCovered: setId ? options.stopWhenCovered : undefined,
+        dnsServer: options.checkDns ? options.dnsServer : undefined,
+        pins: parsePins(options.pinsText),
       });
     },
     [startDiscovery, options, effectiveIpVersion, communityEnabled],
@@ -725,6 +730,7 @@ export const DiscoveryRunner = () => {
               ipVersionEnabled={ipVersionEnabled}
               communityEnabled={communityEnabled}
               setPicked={!!pickedSet}
+              settingsDnsServer={settingsDnsServer}
               onChange={setOptions}
               onClearCache={handleClearCache}
               captures={captures}

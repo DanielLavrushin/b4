@@ -280,8 +280,10 @@ func TestResolveDoHOnceAnswerWithoutTheFamilyIsNotNXDomain(t *testing.T) {
 
 	r := &Resolver{Timeout: 2 * time.Second}
 	ips, err := r.ResolveDoHOnce(context.Background(), DoHServer{URL: srv.URL, Format: DoHJSON}, "v6only.example", "A")
-	if err != nil || len(ips) != 0 {
-		t.Fatalf("the name exists without an IPv4 address, want no error and no address, got ips=%v err=%v", ips, err)
+	var nodata *NoDataError
+	var nx *NXDomainError
+	if len(ips) != 0 || !errors.As(err, &nodata) || errors.As(err, &nx) {
+		t.Fatalf("the name exists without an IPv4 address, want a NoDataError and no address, got ips=%v err=%v", ips, err)
 	}
 }
 

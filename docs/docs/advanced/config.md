@@ -83,7 +83,7 @@ The same applies through the API and the web interface: what you read back is wh
     "checker": {
       "discovery_timeout": 5,
       "config_propagate_ms": 1500,
-      "reference_domain": "yandex.ru",
+      "dns_server": "",
       "validation_tries": 1
     },
     "geo": { "sitedat_path": "", "ipdat_path": "", "sitedat_url": "", "ipdat_url": "" },

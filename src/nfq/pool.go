@@ -2,6 +2,8 @@ package nfq
 
 import (
 	"context"
+	"errors"
+	"net"
 	"os"
 	"reflect"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dhcp"
+	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/sni"
@@ -429,6 +432,22 @@ func (p *Pool) GetMatcher() *sni.SuffixSet {
 		return nil
 	}
 	return p.Workers[0].getMatcher()
+}
+
+var errNoDNSWorker = errors.New("no worker to send DNS from")
+
+func (p *Pool) ForwardDNS(ctx context.Context, query []byte, target net.IP, fragment bool) ([]byte, error) {
+	if len(p.Workers) == 0 {
+		return nil, errNoDNSWorker
+	}
+	w := p.Workers[0]
+	cfg := w.getConfig()
+	return dns.ResolveUpstreamContext(ctx, query, target, dns.ForwardOptions{
+		Sender:   w.sock,
+		Fragment: fragment,
+		Mark:     int(cfg.MainInjectedMark()),
+		Timeout:  cfg.DNSQueryTimeout(),
+	})
 }
 
 func (p *Pool) GetFirstWorkerConfig() *config.Config {

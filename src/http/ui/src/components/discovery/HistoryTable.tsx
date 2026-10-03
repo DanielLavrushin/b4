@@ -304,7 +304,11 @@ export const HistoryTable = ({
               ? t("discovery.history.unresolvedFamily", {
                   family: ipFamilyLabel(row.entry.missing_family),
                 })
-              : t("discovery.history.unresolved")}
+              : row.entry.dns_result?.no_address_family
+                ? t("discovery.history.unresolvedNoAddress", {
+                    family: ipFamilyLabel(row.entry.dns_result.no_address_family),
+                  })
+                : t("discovery.history.unresolved")}
           </Typography>
         );
       default:

@@ -96,6 +96,10 @@ export interface DNSDiscoveryResult {
   gateway_ips?: string[];
   alt_scan?: AltScanSummary;
   nxdomain?: boolean;
+  no_address_family?: IPFamily;
+  reference?: string;
+  reference_error?: string;
+  pinned?: boolean;
 }
 
 export interface DiscoveryResult {

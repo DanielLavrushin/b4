@@ -154,7 +154,7 @@ func (ds *DiscoverySuite) markUnresolved(baseline map[string]CheckResult) {
 
 	for _, domain := range marked {
 		family := ds.missingFamily(domain)
-		log.DiscoveryLogf("  ⊘ [%s] %s; %s", domain, unresolvedReason(family, ds.dnsResults[domain]), unresolvedAdvice(family))
+		log.DiscoveryLogf("  ⊘ [%s] %s; %s", domain, unresolvedReason(family, ds.dnsResults[domain]), unresolvedAdvice(family, ds.dnsResults[domain]))
 	}
 }
 
@@ -200,14 +200,26 @@ func unresolvedReason(missingFamily string, dnsResult *DNSDiscoveryResult) strin
 	case dnsResult == nil:
 		return "the system resolver has no address for the name, and the DNS check is off"
 	case dnsResult.NXDomain:
-		return "the name does not exist, DNS over HTTPS answers NXDOMAIN"
+		return fmt.Sprintf("the name does not exist, %s answers NXDOMAIN", referenceName(dnsResult))
+	case dnsResult.NoAddressFamily != "":
+		return fmt.Sprintf("the name exists, but %s answers that it has no %s address", referenceName(dnsResult), familyLabel(dnsResult.NoAddressFamily))
 	}
 	return "no resolver returned an address for the name"
 }
 
-func unresolvedAdvice(missingFamily string) string {
-	if missingFamily != "" {
-		return "there is nothing to test a strategy on over " + familyLabel(missingFamily)
+func referenceName(dnsResult *DNSDiscoveryResult) string {
+	if dnsResult != nil && dnsResult.Reference != "" {
+		return dnsResult.Reference
+	}
+	return "DNS over HTTPS"
+}
+
+func unresolvedAdvice(missingFamily string, dnsResult *DNSDiscoveryResult) string {
+	switch {
+	case missingFamily != "":
+		return fmt.Sprintf("there is nothing to test a strategy on over %s; if the site has a %s address that DNS does not publish, pin it and run again", familyLabel(missingFamily), familyLabel(missingFamily))
+	case dnsResult != nil && dnsResult.NoAddressFamily != "":
+		return "there is nothing to test a strategy on; if the site is reached through an address published elsewhere, pin it and run again"
 	}
 	return "there is nothing to test a strategy on, check the spelling"
 }

@@ -449,6 +449,7 @@ const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
     case "unresolved": {
       const dns = entry.result.dns_result;
       const family = entry.result.missing_family;
+      const server = dns?.reference || "DNS over HTTPS";
       let reason = t("discovery.results.unresolved");
       if (family)
         reason = t("discovery.results.unresolvedFamily", {
@@ -456,7 +457,13 @@ const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
           other: ipFamilyLabel(otherIpFamily(family)),
         });
       else if (!dns) reason = t("discovery.results.unresolvedSystem");
-      else if (dns.nxdomain) reason = t("discovery.results.unresolvedNxdomain");
+      else if (dns.nxdomain)
+        reason = t("discovery.results.unresolvedNxdomain", { server });
+      else if (dns.no_address_family)
+        reason = t("discovery.results.unresolvedNoAddress", {
+          server,
+          family: ipFamilyLabel(dns.no_address_family),
+        });
       return (
         <B4ResultCard
           status="error"

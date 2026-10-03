@@ -5,6 +5,7 @@ import { Box, Grid, IconButton, Link, Stack } from "@mui/material";
 import { AddIcon, DiscoveryIcon, WatchdogIcon } from "@b4.icons";
 import { B4Config } from "@models/config";
 import { colors } from "@design";
+import { dnsEndpointError } from "@utils";
 import {
   B4Slider,
   B4Section,
@@ -25,26 +26,9 @@ interface CheckerSettingsProps {
 
 export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
   const { t } = useTranslation();
-  const [newDns, setNewDns] = useState("");
   const [newWatchdogDomain, setNewWatchdogDomain] = useState("");
-
-  const handleAddDns = () => {
-    if (newDns.trim()) {
-      const current = config.system.checker.reference_dns || [];
-      if (!current.includes(newDns.trim())) {
-        onChange("system.checker.reference_dns", [...current, newDns.trim()]);
-      }
-      setNewDns("");
-    }
-  };
-
-  const handleRemoveDns = (dns: string) => {
-    const current = config.system.checker.reference_dns || [];
-    onChange(
-      "system.checker.reference_dns",
-      current.filter((s) => s !== dns)
-    );
-  };
+  const dnsServer = config.system.checker.dns_server ?? "";
+  const dnsServerError = dnsEndpointError(dnsServer);
 
   const handleAddWatchdogDomain = () => {
     if (newWatchdogDomain.trim()) {
@@ -103,54 +87,25 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
             helperText={t("settings.Checker.configPropagationHelp")}
           />
         </Grid>
-        <Grid size={{ xs: 12, lg: 6 }}>
-          <B4TextField
-            label={t("settings.Checker.referenceDomain")}
-            value={config.system.checker.reference_domain || "yandex.ru"}
-            onChange={(e) =>
-              onChange("system.checker.reference_domain", e.target.value)
-            }
-            placeholder="yandex.ru"
-            helperText={t("settings.Checker.referenceDomainHelp")}
-          />
-        </Grid>
 
         <B4FormHeader label={t("settings.Checker.dnsConfig")} />
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-            <B4TextField
-              label={t("settings.Checker.addDns")}
-              value={newDns}
-              onChange={(e) => setNewDns(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleAddDns();
-                }
-              }}
-              placeholder="e.g., 8.8.8.8"
-              helperText={t("settings.Checker.addDnsHelp")}
-            />
-            <IconButton
-              onClick={handleAddDns}
-              sx={{
-                bgcolor: colors.accent.secondary,
-                color: colors.secondary,
-                "&:hover": { bgcolor: colors.accent.secondaryHover },
-              }}
-            >
-              <AddIcon />
-            </IconButton>
-          </Box>
+        <Grid size={{ xs: 12, lg: 6 }}>
+          <B4TextField
+            label={t("settings.Checker.trustedDns")}
+            value={dnsServer}
+            onChange={(e) =>
+              onChange("system.checker.dns_server", e.target.value.trim())
+            }
+            placeholder={t("settings.Checker.trustedDnsPlaceholder")}
+            slotProps={{ inputLabel: { shrink: true } }}
+            error={dnsServerError !== null}
+            helperText={
+              dnsServerError
+                ? t(`settings.Checker.trustedDnsError.${dnsServerError}`)
+                : t("settings.Checker.trustedDnsHelp")
+            }
+          />
         </Grid>
-        <B4ChipList
-          items={config.system.checker.reference_dns || []}
-          getKey={(d) => d}
-          getLabel={(d) => d}
-          onDelete={handleRemoveDns}
-          title={t("settings.Checker.activeDns")}
-          gridSize={{ xs: 12, md: 6 }}
-        />
       </Grid>
     </B4Section>
 

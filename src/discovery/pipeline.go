@@ -65,15 +65,34 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	}
 	log.DiscoveryLogf("Probe address family: %s (queue IPv4=%v, IPv6=%v)", probeFamily, ds.cfg.Queue.IPv4Enabled, ds.cfg.Queue.IPv6Enabled)
 
+	ds.pins = ds.collectPins()
+	ds.trusted = ds.trustedServer()
+	if !ds.skipDNS && !ds.trusted.IsZero() {
+		log.DiscoveryLogf("Trusted DNS server: %s", ds.trusted.String())
+		if err := ds.checkTrustedServer(); err != nil {
+			log.DiscoveryLogf("Discovery could not start: the trusted DNS server %s does not answer: %v", ds.trusted.String(), err)
+			ds.setStatus(CheckStatusFailed)
+			ds.finalize()
+			return
+		}
+	}
+
 	ds.discoveryCache = LoadDiscoveryCache(ds.cfg.ConfigPath)
 	defer ds.saveResultsToCache()
-
-	ds.networkBaseline = ds.measureNetworkBaseline()
 
 	// DNS phase: per-domain
 	anyDNSPoisoned := false
 	if ds.skipDNS {
 		log.DiscoveryLogf("Skipping DNS discovery (user requested)")
+		for _, di := range ds.Domains {
+			if pins := ds.pinnedFor(di.Domain); len(pins) > 0 {
+				result := ds.pinnedResult(di, pins)
+				ds.dnsResults[di.Domain] = result
+				ds.CheckSuite.mu.Lock()
+				ds.domainResults[di.Domain].DNSResult = result
+				ds.CheckSuite.mu.Unlock()
+			}
+		}
 	} else {
 		ds.setPhase(PhaseDNS)
 		for _, di := range ds.Domains {

@@ -2,15 +2,18 @@ package netprobe
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"time"
 
 	"github.com/daniellavrushin/b4/dns"
+	"github.com/daniellavrushin/b4/dns/endpoint"
 )
 
 type Resolver struct {
@@ -41,7 +44,19 @@ func (e *NXDomainError) Error() string {
 	return fmt.Sprintf("%s answers that %s does not exist", e.Server, e.Domain)
 }
 
-var errNoAddress = errors.New("no server returned an address")
+type NoDataError struct {
+	Domain string
+	Server string
+}
+
+func (e *NoDataError) Error() string {
+	return fmt.Sprintf("%s answers that %s exists but has no address of the asked family", e.Server, e.Domain)
+}
+
+var (
+	errNoAddress = errors.New("no server returned an address")
+	errTruncated = errors.New("the answer was truncated")
+)
 
 type dohJSONResponse struct {
 	Status int `json:"Status"`
@@ -100,10 +115,7 @@ func (r *Resolver) ResolveDoHOnce(ctx context.Context, srv DoHServer, domain, re
 		if err != nil {
 			return nil, err
 		}
-		if rcode, ok := dns.ResponseRcode(body); ok && rcode == dns.RcodeNXDomain {
-			return nil, &NXDomainError{Domain: domain, Server: srv.URL}
-		}
-		return filterIPStrings(dns.ParseResponseIPs(body), recordType), nil
+		return answerIPs(body, 0, srv.URL, domain, recordType)
 	}
 
 	if recordType == "" {
@@ -158,6 +170,9 @@ func (r *Resolver) ResolveDoHOnce(ctx context.Context, srv DoHServer, domain, re
 		}
 		seen[ans.Data] = true
 		ips = append(ips, ans.Data)
+	}
+	if len(ips) == 0 && doh.Status == 0 {
+		return nil, &NoDataError{Domain: domain, Server: srv.URL}
 	}
 	return ips, nil
 }
@@ -231,8 +246,12 @@ func (r *Resolver) ResolveResilient(ctx context.Context, domain, recordType stri
 		return out, nil
 	}
 
+	var nodata *NoDataError
 	var nx *NXDomainError
-	if errors.As(dohErr, &nx) {
+	switch {
+	case errors.As(dohErr, &nodata):
+		return ResolveOutcome{}, nodata
+	case errors.As(dohErr, &nx):
 		return ResolveOutcome{}, nx
 	}
 	return ResolveOutcome{}, fmt.Errorf("no DoH or UDP server resolved %s", domain)
@@ -267,6 +286,7 @@ func (r *Resolver) race(ctx context.Context, attempts []func(context.Context) (R
 	}
 
 	var nxdomain *NXDomainError
+	var nodata *NoDataError
 	for range attempts {
 		select {
 		case ans := <-ch:
@@ -276,18 +296,158 @@ func (r *Resolver) race(ctx context.Context, attempts []func(context.Context) (R
 			if nxdomain == nil {
 				errors.As(ans.err, &nxdomain)
 			}
+			if nodata == nil {
+				errors.As(ans.err, &nodata)
+			}
 		case <-rctx.Done():
-			return ResolveOutcome{}, raceFailure(nxdomain)
+			return ResolveOutcome{}, raceFailure(nxdomain, nodata)
 		}
 	}
-	return ResolveOutcome{}, raceFailure(nxdomain)
+	return ResolveOutcome{}, raceFailure(nxdomain, nodata)
 }
 
-func raceFailure(nxdomain *NXDomainError) error {
-	if nxdomain != nil {
+func raceFailure(nxdomain *NXDomainError, nodata *NoDataError) error {
+	switch {
+	case nodata != nil:
+		return nodata
+	case nxdomain != nil:
 		return nxdomain
 	}
 	return errNoAddress
+}
+
+type EndpointAnswer struct {
+	IPs     []string
+	OverUDP bool
+}
+
+var endpointDoHClient = func(mark int, timeout time.Duration) *http.Client {
+	return dns.MarkedDoHClient(mark, timeout)
+}
+
+func (r *Resolver) ResolveEndpoint(ctx context.Context, ep endpoint.Endpoint, domain, recordType string) (EndpointAnswer, error) {
+	switch ep.Transport {
+	case endpoint.HTTPS:
+		query := dns.BuildQuery(domain, 0, qtypeForRecord(recordType))
+		body, err := dns.ResolveDoH(ctx, endpointDoHClient(r.Mark, r.timeout()), ep.URL, query)
+		if err != nil {
+			return EndpointAnswer{}, err
+		}
+		ips, err := answerIPs(body, 0, ep.String(), domain, recordType)
+		return EndpointAnswer{IPs: ips}, err
+	case endpoint.TCP:
+		ips, err := r.exchange(ctx, "tcp", ep, domain, recordType)
+		return EndpointAnswer{IPs: ips}, err
+	}
+	ips, err := r.exchange(ctx, "udp", ep, domain, recordType)
+	switch {
+	case err == nil, NoAddressAnswer(err):
+		return EndpointAnswer{IPs: ips, OverUDP: true}, err
+	case errors.Is(err, errTruncated), ep.Transport == endpoint.TCPUDP && ctx.Err() == nil:
+		ips, err = r.exchange(ctx, "tcp", ep, domain, recordType)
+		return EndpointAnswer{IPs: ips}, err
+	}
+	return EndpointAnswer{}, err
+}
+
+func NoAddressAnswer(err error) bool {
+	var nx *NXDomainError
+	var nodata *NoDataError
+	return errors.As(err, &nx) || errors.As(err, &nodata)
+}
+
+func (r *Resolver) exchange(ctx context.Context, network string, ep endpoint.Endpoint, domain, recordType string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.timeout())
+	defer cancel()
+
+	conn, err := Dialer(r.Mark, r.timeout(), 0).DialContext(ctx, network, ep.Addr.String())
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Unix(1, 0)) })
+	defer stop()
+
+	id := uint16(rand.N(65535)) + 1
+	query := dns.BuildQuery(domain, id, qtypeForRecord(recordType))
+	var resp []byte
+	if network == "tcp" {
+		resp, err = tcpRoundTrip(conn, query)
+	} else {
+		resp, err = udpRoundTrip(conn, query)
+	}
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, err
+	}
+	return answerIPs(resp, id, ep.String(), domain, recordType)
+}
+
+func udpRoundTrip(conn net.Conn, query []byte) ([]byte, error) {
+	if _, err := conn.Write(query); err != nil {
+		return nil, err
+	}
+	buf := make([]byte, 65535)
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			return nil, err
+		}
+		if n >= 12 && buf[0] == query[0] && buf[1] == query[1] {
+			return buf[:n], nil
+		}
+	}
+}
+
+func tcpRoundTrip(conn net.Conn, query []byte) ([]byte, error) {
+	framed := make([]byte, 2+len(query))
+	binary.BigEndian.PutUint16(framed, uint16(len(query)))
+	copy(framed[2:], query)
+	if _, err := conn.Write(framed); err != nil {
+		return nil, err
+	}
+	var size [2]byte
+	if _, err := io.ReadFull(conn, size[:]); err != nil {
+		return nil, err
+	}
+	resp := make([]byte, binary.BigEndian.Uint16(size[:]))
+	if _, err := io.ReadFull(conn, resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func answerIPs(resp []byte, id uint16, server, domain, recordType string) ([]string, error) {
+	if len(resp) < 12 || resp[2]&0x80 == 0 {
+		return nil, fmt.Errorf("%s sent something that is not a DNS answer", server)
+	}
+	if binary.BigEndian.Uint16(resp) != id {
+		return nil, fmt.Errorf("%s answered another query", server)
+	}
+	if resp[2]&0x02 != 0 {
+		return nil, errTruncated
+	}
+	switch rcode := resp[3] & 0x0F; rcode {
+	case 0:
+	case dns.RcodeNXDomain:
+		return nil, &NXDomainError{Domain: domain, Server: server}
+	case 2:
+		return nil, fmt.Errorf("%s answers SERVFAIL", server)
+	case 5:
+		return nil, fmt.Errorf("%s refuses the query", server)
+	default:
+		return nil, fmt.Errorf("%s answers with error code %d", server, rcode)
+	}
+	ips := filterIPStrings(dns.ParseResponseIPs(resp), recordType)
+	if len(ips) == 0 {
+		return nil, &NoDataError{Domain: domain, Server: server}
+	}
+	return ips, nil
 }
 
 func filterIPStrings(ips []net.IP, recordType string) []string {

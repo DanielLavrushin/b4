@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"reflect"
 	"slices"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
+	"github.com/daniellavrushin/b4/dns/endpoint"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/utils"
@@ -280,6 +282,27 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.DNSServer = strings.TrimSpace(req.DNSServer)
+	if req.DNSServer != "" {
+		if _, err := endpoint.Parse(req.DNSServer); err != nil {
+			writeAPIError(w, &APIError{
+				Status:  http.StatusBadRequest,
+				Code:    "bad_dns_server",
+				Message: "Trusted DNS server: " + err.Error(),
+			})
+			return
+		}
+	}
+	pins, err := runPins(req.Pins)
+	if err != nil {
+		writeAPIError(w, &APIError{
+			Status:  http.StatusBadRequest,
+			Code:    "bad_pin",
+			Message: err.Error(),
+		})
+		return
+	}
+
 	// Use ValidationTries from request, or default to 1 if not provided
 	validationTries := req.ValidationTries
 	if validationTries < 1 {
@@ -301,6 +324,8 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		Source:          discovery.SourceWeb,
 		SetId:           req.SetId,
 		HubPresets:      func() []discovery.ConfigPreset { return api.communityPresets(urls, req.SkipCommunity) },
+		DNSServer:       req.DNSServer,
+		Pins:            pins,
 	}
 	if runSet != nil {
 		opts.SetStrategy = discovery.SetRunStrategy(runSet)
@@ -556,9 +581,9 @@ func replaceStrategy(dst, strategy *config.SetConfig) {
 	udp.DPortFilter = dst.UDP.DPortFilter
 	dst.UDP = udp
 
-	pins := dst.DNS.Pins
+	pins, strict := dst.DNS.Pins, dst.DNS.Strict
 	dst.DNS = strategy.DNS
-	dst.DNS.Pins = pins
+	dst.DNS.Pins, dst.DNS.Strict = pins, strict
 
 	dst.Targets.TLSVersion = strategy.Targets.TLSVersion
 	dst.Targets.IPVersion = strategy.Targets.IPVersion
@@ -951,4 +976,38 @@ func (api *API) handleClearDiscoveryCache(w http.ResponseWriter, r *http.Request
 		"success": true,
 		"message": "Discovery cache cleared",
 	})
+}
+
+const maxRunPins = 64
+
+func runPins(raw map[string][]string) (map[string][]string, error) {
+	var pins map[string][]string
+	total := 0
+	for rawDomain, ips := range raw {
+		domain := config.NormalizePinDomain(rawDomain)
+		if domain == "" {
+			return nil, fmt.Errorf("a pinned address needs a domain name, got %q", rawDomain)
+		}
+		for _, rawIP := range ips {
+			addr, err := netip.ParseAddr(strings.TrimSpace(rawIP))
+			if err != nil {
+				return nil, fmt.Errorf("%q pinned for %s is not an IP address", rawIP, domain)
+			}
+			addr = addr.Unmap()
+			if utils.IsReservedAddr(addr) {
+				return nil, fmt.Errorf("%s pinned for %s is a private or local address: discovery probes sites on the internet", addr, domain)
+			}
+			total++
+			if total > maxRunPins {
+				return nil, fmt.Errorf("at most %d pinned addresses per run", maxRunPins)
+			}
+			if pins == nil {
+				pins = map[string][]string{}
+			}
+			if !slices.Contains(pins[domain], addr.String()) {
+				pins[domain] = append(pins[domain], addr.String())
+			}
+		}
+	}
+	return pins, nil
 }

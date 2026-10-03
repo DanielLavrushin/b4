@@ -377,10 +377,10 @@ func TestNXDomainStillEndsAnIPv6Run(t *testing.T) {
 }
 
 func TestInternationalizedNameIsNotReportedAsNXDomain(t *testing.T) {
-	p := &DNSProber{domain: "пример.test"}
+	p := &DNSProber{domain: "пример.test", ref: referenceAnswer{source: "https://dns.example/resolve", trusted: true, nxdomain: true}}
 	r := &DNSDiscoveryResult{}
 
-	p.noteMissingAddress(r, "https://dns.example/resolve")
+	p.noteMissingAddress(r)
 
 	if r.NXDomain {
 		t.Fatal("DNS over HTTPS was asked for the name as typed, not for its ASCII form, so its NXDOMAIN says nothing")
@@ -531,24 +531,45 @@ func TestUnresolvedOutcomeIsFinal(t *testing.T) {
 }
 
 func TestEncryptedNXDomainSkipsTheRegionScan(t *testing.T) {
-	p := &DNSProber{domain: "typo.example"}
+	nxRef := referenceAnswer{source: "https://dns.example/dns-query", trusted: true, nxdomain: true}
+	p := &DNSProber{domain: "typo.example", ref: nxRef}
 
 	nx := &DNSDiscoveryResult{}
-	p.noteMissingAddress(nx, "https://dns.example/dns-query")
+	p.noteMissingAddress(nx)
 	if !nx.NXDomain || shouldScanAlternatives(nx) {
 		t.Fatalf("other regions cannot answer a name DNS over HTTPS says does not exist, got %+v", nx)
 	}
 
+	p.ref = referenceAnswer{}
 	silent := &DNSDiscoveryResult{}
-	p.noteMissingAddress(silent, "")
+	p.noteMissingAddress(silent)
 	if silent.NXDomain || !shouldScanAlternatives(silent) {
 		t.Fatalf("without an answer the region scan may still find an address, got %+v", silent)
 	}
 
+	p.ref = nxRef
 	known := &DNSDiscoveryResult{ExpectedIPs: []string{"203.0.113.7"}}
-	p.noteMissingAddress(known, "https://dns.example/dns-query")
+	p.noteMissingAddress(known)
 	if known.NXDomain {
 		t.Fatal("a name with an address from any resolver exists")
+	}
+}
+
+func TestANameWithoutAnAddressIsNotATypo(t *testing.T) {
+	p := &DNSProber{domain: "ntc.example", ipVersion: "ipv4", ref: referenceAnswer{source: "https://dns.example/dns-query", trusted: true, nodata: true}}
+	r := &DNSDiscoveryResult{}
+
+	p.noteMissingAddress(r)
+
+	if r.NXDomain || r.NoAddressFamily != "ipv4" {
+		t.Fatalf("NOERROR without an address means the name exists with no IPv4 address, got nxdomain=%v family=%q", r.NXDomain, r.NoAddressFamily)
+	}
+	if !shouldScanAlternatives(r) {
+		t.Fatal("another region's DNS may still publish an address, the scan stays on")
+	}
+	reason, advice := unresolvedReason("", r), unresolvedAdvice("", r)
+	if !strings.Contains(reason, "exists") || strings.Contains(advice, "spelling") || !strings.Contains(advice, "pin it") {
+		t.Fatalf("the verdict must say the name exists and point to a pin, got %q / %q", reason, advice)
 	}
 }
 

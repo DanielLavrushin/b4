@@ -15,6 +15,7 @@ import { CoreIcon, ExpandIcon, CollapseIcon } from "@b4.icons";
 import { B4Badge, B4Slider, B4Switch, B4TextField } from "@b4.elements";
 import { colors } from "@design";
 import { Capture } from "@b4.capture";
+import { dnsEndpointError, parsePins } from "@utils";
 
 export type TLSVersion = "auto" | "tls12" | "tls13";
 export type IPVersion = "auto" | "ipv4" | "ipv6";
@@ -28,6 +29,8 @@ export interface DiscoveryOptions {
   tlsVersion: TLSVersion;
   ipVersion: IPVersion;
   stopWhenCovered: boolean;
+  dnsServer: string;
+  pinsText: string;
 }
 
 const STORAGE_KEY = "b4_discovery_options";
@@ -42,6 +45,8 @@ export const defaultOptions: DiscoveryOptions = {
   tlsVersion: "auto",
   ipVersion: "auto",
   stopWhenCovered: true,
+  dnsServer: "",
+  pinsText: "",
 };
 
 const LEGACY_KEYS = {
@@ -108,6 +113,7 @@ interface DiscoveryOptionsPanelProps {
   ipVersionEnabled?: boolean;
   communityEnabled?: boolean;
   setPicked?: boolean;
+  settingsDnsServer?: string;
 }
 
 const toggleSx = {
@@ -134,6 +140,7 @@ export const DiscoveryOptionsPanel = ({
   ipVersionEnabled = true,
   communityEnabled = false,
   setPicked = false,
+  settingsDnsServer = "",
 }: DiscoveryOptionsPanelProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(
@@ -145,6 +152,7 @@ export const DiscoveryOptionsPanel = ({
   }, [expanded]);
 
   const tlsCaptures = captures.filter((c) => c.protocol === "tls");
+  const dnsServerError = dnsEndpointError(options.dnsServer);
   const summary = summarize(options, t, ipVersionEnabled, setPicked);
 
   return (
@@ -208,6 +216,41 @@ export const DiscoveryOptionsPanel = ({
             checked={options.checkDns}
             onChange={(checked) => onChange({ ...options, checkDns: checked })}
             disabled={disabled}
+          />
+
+          <B4TextField
+            label={t("discovery.options.trustedDns")}
+            value={options.dnsServer}
+            onChange={(e) =>
+              onChange({ ...options, dnsServer: e.target.value.trim() })
+            }
+            placeholder={
+              settingsDnsServer
+                ? t("discovery.options.trustedDnsFromSettings", {
+                    server: settingsDnsServer,
+                  })
+                : t("discovery.options.trustedDnsBuiltin")
+            }
+            disabled={disabled || !options.checkDns}
+            slotProps={{ inputLabel: { shrink: true } }}
+            error={options.checkDns && dnsServerError !== null}
+            helperText={
+              options.checkDns && dnsServerError
+                ? t(`settings.Checker.trustedDnsError.${dnsServerError}`)
+                : t("discovery.options.trustedDnsHint")
+            }
+          />
+
+          <B4TextField
+            label={t("discovery.options.pins")}
+            value={options.pinsText}
+            onChange={(e) => onChange({ ...options, pinsText: e.target.value })}
+            placeholder="130.255.77.28 ntc.party"
+            multiline
+            minRows={2}
+            disabled={disabled}
+            slotProps={{ inputLabel: { shrink: true } }}
+            helperText={t("discovery.options.pinsHint")}
           />
 
           {setPicked && (
@@ -405,6 +448,15 @@ function summarize(
     parts.push(t("discovery.options.summaryFullSearch"));
   }
   if (!options.checkDns) parts.push(t("discovery.options.summaryNoDns"));
+  if (options.checkDns && options.dnsServer) {
+    parts.push(
+      t("discovery.options.summaryDns", { server: options.dnsServer }),
+    );
+  }
+  const pinned = Object.keys(parsePins(options.pinsText)).length;
+  if (pinned > 0) {
+    parts.push(t("discovery.options.summaryPins", { count: pinned }));
+  }
   if (!options.useCache) parts.push(t("discovery.options.summaryNoCache"));
   if (options.tlsVersion === "tls12") parts.push("TLS 1.2");
   if (options.tlsVersion === "tls13") parts.push("TLS 1.3");

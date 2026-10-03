@@ -8,3 +8,5 @@ export * from "./discovery";
 export * from "./errors";
 export * from "./hubLink";
 export * from "./probeUrl";
+export * from "./dnsEndpoint";
+export * from "./pins";

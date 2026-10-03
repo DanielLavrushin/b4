@@ -151,11 +151,15 @@ export const RunPanel = ({
       case "gateway_intercepted":
         return t("discovery.run.gatewayIntercepted");
       case "unresolved":
-        return dr.missing_family
-          ? t("discovery.run.unresolvedFamily", {
-              family: ipFamilyLabel(dr.missing_family),
-            })
-          : t("discovery.run.unresolved");
+        if (dr.missing_family)
+          return t("discovery.run.unresolvedFamily", {
+            family: ipFamilyLabel(dr.missing_family),
+          });
+        if (dr.dns_result?.no_address_family)
+          return t("discovery.run.unresolvedNoAddress", {
+            family: ipFamilyLabel(dr.dns_result.no_address_family),
+          });
+        return t("discovery.run.unresolved");
       default:
         return counts.tested > 0
           ? t("discovery.run.tried", { count: counts.tested })
