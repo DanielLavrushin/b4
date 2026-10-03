@@ -39,10 +39,18 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1 || which "$1" >/dev/null 2>&1
 }
 
-_byte_to_dec() {
-    _btd_oct=$(od -b | head -1 | awk '{print $2}')
-    [ -z "$_btd_oct" ] && return 1
-    printf '%d\n' "0$_btd_oct"
+_byte_at() {
+    _ba_char=$(
+        dd if="$1" bs=1 skip="$2" count=1 2>/dev/null | tr -d '\000'
+        echo .
+    )
+    _ba_char=${_ba_char%.}
+    if [ -n "$_ba_char" ]; then
+        LC_ALL=C printf '%d\n' "'$_ba_char"
+        return 0
+    fi
+    [ "$(dd if="$1" bs=1 skip="$2" count=1 2>/dev/null | wc -c)" -eq 1 ] || return 1
+    echo 0
 }
 
 # --- Root check ---
@@ -363,7 +371,7 @@ is_little_endian() {
     [ -f /proc/cpuinfo ] && grep -qi "little.endian\|byteorder.*little" /proc/cpuinfo 2>/dev/null && return 0
     command_exists opkg && opkg print-architecture 2>/dev/null | grep -qi "mipsel\|mips64el" && return 0
     # ELF header byte 6 (index 5): 1=little-endian, 2=big-endian
-    [ "$(dd if=/bin/sh bs=1 skip=5 count=1 2>/dev/null | _byte_to_dec)" = "1" ] && return 0
+    [ "$(_byte_at /bin/sh 5)" = "1" ] && return 0
     return 1
 }
 
@@ -407,8 +415,8 @@ is_softfloat() {
         [ -f "$_sf_b" ] && _sf_elf_bin="$_sf_b" && break
     done
     if [ -n "$_sf_elf_bin" ]; then
-        _sf_ei_class=$(dd if="$_sf_elf_bin" bs=1 skip=4 count=1 2>/dev/null | _byte_to_dec)
-        _sf_ei_data=$(dd if="$_sf_elf_bin" bs=1 skip=5 count=1 2>/dev/null | _byte_to_dec)
+        _sf_ei_class=$(_byte_at "$_sf_elf_bin" 4)
+        _sf_ei_data=$(_byte_at "$_sf_elf_bin" 5)
         # e_flags offset: 36 for 32-bit ELF, 48 for 64-bit ELF
         _sf_flags_off=""
         [ "$_sf_ei_class" = "1" ] && _sf_flags_off=36
@@ -422,7 +430,7 @@ is_softfloat() {
             else
                 _sf_check_off=$((_sf_flags_off + 2))
             fi
-            _sf_flag_byte=$(dd if="$_sf_elf_bin" bs=1 skip="$_sf_check_off" count=1 2>/dev/null | _byte_to_dec)
+            _sf_flag_byte=$(_byte_at "$_sf_elf_bin" "$_sf_check_off")
             if [ -n "$_sf_flag_byte" ]; then
                 [ $((_sf_flag_byte & 8)) -ne 0 ] && return 0
                 return 1

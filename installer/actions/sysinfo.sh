@@ -48,7 +48,7 @@ action_sysinfo() {
             [ -f "$_eb" ] && _elf_bin="$_eb" && break
         done
         if [ -n "$_elf_bin" ]; then
-            _ei_data=$(dd if="$_elf_bin" bs=1 skip=5 count=1 2>/dev/null | _byte_to_dec)
+            _ei_data=$(_byte_at "$_elf_bin" 5)
             case "$_ei_data" in
                 1) log_detail "ELF endian" "little-endian" ;;
                 2) log_detail "ELF endian" "big-endian" ;;

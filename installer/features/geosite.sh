@@ -78,10 +78,16 @@ _geo_sum_parse() {
 }
 
 _geodat_header_ok() {
-    dd if="$1" bs=8 count=1 2>/dev/null | od -b | head -1 | awk '
-        function oct(s,  i, v) { v = 0; for (i = 1; i <= length(s); i++) v = v * 8 + substr(s, i, 1); return v }
+    _gh_bytes=""
+    _gh_at=0
+    while [ "$_gh_at" -lt 8 ]; do
+        _gh_byte=$(_byte_at "$1" "$_gh_at") || break
+        _gh_bytes="$_gh_bytes $_gh_byte"
+        _gh_at=$((_gh_at + 1))
+    done
+    echo "$_gh_bytes" | awk '
         {
-            for (i = 2; i <= NF; i++) b[n++] = oct($i)
+            for (i = 1; i <= NF; i++) b[n++] = $i
             if (n < 3 || b[0] != 10) exit 1
             for (i = 1; i < n && i <= 5; i++) if (b[i] < 128) break
             if (i >= n - 1 || i > 5) exit 1

@@ -106,10 +106,18 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1 || which "$1" >/dev/null 2>&1
 }
 
-_byte_to_dec() {
-    _btd_oct=$(od -b | head -1 | awk '{print $2}')
-    [ -z "$_btd_oct" ] && return 1
-    printf '%d\n' "0$_btd_oct"
+_byte_at() {
+    _ba_char=$(
+        dd if="$1" bs=1 skip="$2" count=1 2>/dev/null | tr -d '\000'
+        echo .
+    )
+    _ba_char=${_ba_char%.}
+    if [ -n "$_ba_char" ]; then
+        LC_ALL=C printf '%d\n' "'$_ba_char"
+        return 0
+    fi
+    [ "$(dd if="$1" bs=1 skip="$2" count=1 2>/dev/null | wc -c)" -eq 1 ] || return 1
+    echo 0
 }
 
 check_root() {
@@ -420,7 +428,7 @@ is_little_endian() {
     [ -f /sys/kernel/cpu_byteorder ] && grep -qi "little" /sys/kernel/cpu_byteorder 2>/dev/null && return 0
     [ -f /proc/cpuinfo ] && grep -qi "little.endian\|byteorder.*little" /proc/cpuinfo 2>/dev/null && return 0
     command_exists opkg && opkg print-architecture 2>/dev/null | grep -qi "mipsel\|mips64el" && return 0
-    [ "$(dd if=/bin/sh bs=1 skip=5 count=1 2>/dev/null | _byte_to_dec)" = "1" ] && return 0
+    [ "$(_byte_at /bin/sh 5)" = "1" ] && return 0
     return 1
 }
 
@@ -455,8 +463,8 @@ is_softfloat() {
         [ -f "$_sf_b" ] && _sf_elf_bin="$_sf_b" && break
     done
     if [ -n "$_sf_elf_bin" ]; then
-        _sf_ei_class=$(dd if="$_sf_elf_bin" bs=1 skip=4 count=1 2>/dev/null | _byte_to_dec)
-        _sf_ei_data=$(dd if="$_sf_elf_bin" bs=1 skip=5 count=1 2>/dev/null | _byte_to_dec)
+        _sf_ei_class=$(_byte_at "$_sf_elf_bin" 4)
+        _sf_ei_data=$(_byte_at "$_sf_elf_bin" 5)
         _sf_flags_off=""
         [ "$_sf_ei_class" = "1" ] && _sf_flags_off=36
         [ "$_sf_ei_class" = "2" ] && _sf_flags_off=48
@@ -466,7 +474,7 @@ is_softfloat() {
             else
                 _sf_check_off=$((_sf_flags_off + 2))
             fi
-            _sf_flag_byte=$(dd if="$_sf_elf_bin" bs=1 skip="$_sf_check_off" count=1 2>/dev/null | _byte_to_dec)
+            _sf_flag_byte=$(_byte_at "$_sf_elf_bin" "$_sf_check_off")
             if [ -n "$_sf_flag_byte" ]; then
                 [ $((_sf_flag_byte & 8)) -ne 0 ] && return 0
                 return 1
@@ -2655,10 +2663,16 @@ _geo_sum_parse() {
 }
 
 _geodat_header_ok() {
-    dd if="$1" bs=8 count=1 2>/dev/null | od -b | head -1 | awk '
-        function oct(s,  i, v) { v = 0; for (i = 1; i <= length(s); i++) v = v * 8 + substr(s, i, 1); return v }
+    _gh_bytes=""
+    _gh_at=0
+    while [ "$_gh_at" -lt 8 ]; do
+        _gh_byte=$(_byte_at "$1" "$_gh_at") || break
+        _gh_bytes="$_gh_bytes $_gh_byte"
+        _gh_at=$((_gh_at + 1))
+    done
+    echo "$_gh_bytes" | awk '
         {
-            for (i = 2; i <= NF; i++) b[n++] = oct($i)
+            for (i = 1; i <= NF; i++) b[n++] = $i
             if (n < 3 || b[0] != 10) exit 1
             for (i = 1; i < n && i <= 5; i++) if (b[i] < 128) break
             if (i >= n - 1 || i > 5) exit 1
@@ -4696,7 +4710,7 @@ action_sysinfo() {
             [ -f "$_eb" ] && _elf_bin="$_eb" && break
         done
         if [ -n "$_elf_bin" ]; then
-            _ei_data=$(dd if="$_elf_bin" bs=1 skip=5 count=1 2>/dev/null | _byte_to_dec)
+            _ei_data=$(_byte_at "$_elf_bin" 5)
             case "$_ei_data" in
                 1) log_detail "ELF endian" "little-endian" ;;
                 2) log_detail "ELF endian" "big-endian" ;;
