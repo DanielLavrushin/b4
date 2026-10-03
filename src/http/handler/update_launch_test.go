@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 )
@@ -197,6 +198,96 @@ func TestStagedInstallerIsNotAtAPredictablePath(t *testing.T) {
 		}
 		if perm := fi.Mode().Perm(); perm != 0700 {
 			t.Fatalf("staging directory mode = %o, want 0700 so nobody can plant a symlink in it", perm)
+		}
+	}
+}
+
+func TestLaunchInstallerStagesInTheConfigDirWhenTempIsUnusable(t *testing.T) {
+	gone := filepath.Join(t.TempDir(), "gone")
+	t.Setenv("TMPDIR", gone)
+
+	dead := deadServerURL(t)
+	swapBases(t, dead, dead, dead)
+	swapMirrors(t, nil)
+
+	cfgDir := t.TempDir()
+	api := &API{cfgPtr: testCfgPtr(&config.Config{ConfigPath: filepath.Join(cfgDir, "b4.json")})}
+
+	err := api.launchInstaller(installerRun{serviceManager: "systemd"})
+	if err == nil {
+		t.Fatal("expected the unreachable installer to fail the launch")
+	}
+	if strings.Contains(err.Error(), gone) {
+		t.Fatalf("the launch stopped at the unusable temp directory instead of staging in the config directory: %q", err)
+	}
+
+	entries, readErr := os.ReadDir(cfgDir)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "b4update-") {
+			t.Fatalf("staging directory %s was left behind in the config directory", e.Name())
+		}
+	}
+}
+
+func TestMakeStageDirUsesTheNextRootAndNamesEveryFailure(t *testing.T) {
+	gone := filepath.Join(t.TempDir(), "gone")
+	fallback := t.TempDir()
+
+	dir, err := makeStageDir([]string{gone, fallback}, "")
+	if err != nil {
+		t.Fatalf("expected the fallback root to be used, got %v", err)
+	}
+	if filepath.Dir(dir) != fallback {
+		t.Fatalf("staged in %s, want a directory under %s", dir, fallback)
+	}
+	fi, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0700 {
+		t.Fatalf("fallback staging directory mode = %o, want 0700", perm)
+	}
+
+	alsoGone := filepath.Join(t.TempDir(), "also-gone")
+	_, err = makeStageDir([]string{gone, alsoGone}, "")
+	if err == nil {
+		t.Fatal("expected an error when no root is usable")
+	}
+	for _, root := range []string{gone, alsoGone} {
+		if !strings.Contains(err.Error(), root) {
+			t.Errorf("error = %q, want it to name %s", err, root)
+		}
+	}
+}
+
+func TestSweepStaleUpdateFilesCoversEveryRoot(t *testing.T) {
+	roots := []string{t.TempDir(), t.TempDir()}
+	old := time.Now().Add(-2 * time.Hour)
+
+	for _, root := range roots {
+		stale := filepath.Join(root, "b4update-1")
+		if err := os.Mkdir(stale, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(stale, old, old); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(filepath.Join(root, "b4update-2"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sweepStaleUpdateFiles(roots)
+
+	for _, root := range roots {
+		if _, err := os.Stat(filepath.Join(root, "b4update-1")); !os.IsNotExist(err) {
+			t.Errorf("a stale staging directory in %s was kept", root)
+		}
+		if _, err := os.Stat(filepath.Join(root, "b4update-2")); err != nil {
+			t.Errorf("a fresh staging directory in %s was removed: %v", root, err)
 		}
 	}
 }

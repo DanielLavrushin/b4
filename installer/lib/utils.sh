@@ -137,41 +137,36 @@ flush_disk() {
 TEMP_MIN_KB=20000
 
 setup_temp() {
-    _tmp_avail=$(get_avail_kb /tmp)
-    if [ -n "$_tmp_avail" ] && [ "$_tmp_avail" -gt "$TEMP_MIN_KB" ] 2>/dev/null; then
-        TEMP_DIR="/tmp/b4_install_$$"
-    else
-        _fallback=""
-        if [ -n "$B4_BIN_DIR" ] && [ -d "$B4_BIN_DIR" ] && [ -w "$B4_BIN_DIR" ]; then
-            _fb_avail=$(get_avail_kb "$B4_BIN_DIR")
-            if [ -n "$_fb_avail" ] && [ "$_fb_avail" -gt "$TEMP_MIN_KB" ] 2>/dev/null; then
-                _fallback="$B4_BIN_DIR"
+    _tmp_problem="is missing"
+    for _tmp_base in /tmp "$B4_BIN_DIR" /opt /var/tmp /root "$HOME"; do
+        [ -n "$_tmp_base" ] && [ -d "$_tmp_base" ] || continue
+        _tmp_avail=$(get_avail_kb "$_tmp_base")
+        if ! [ "${_tmp_avail:-0}" -gt "$TEMP_MIN_KB" ] 2>/dev/null; then
+            if [ "$_tmp_base" = /tmp ]; then
+                _tmp_problem="is too small (${_tmp_avail:-?}KB free, need ${TEMP_MIN_KB}KB)"
             fi
+            continue
         fi
-        for _fb_dir in /opt /var/tmp /root "$HOME"; do
-            [ -z "$_fallback" ] || break
-            [ -d "$_fb_dir" ] && [ -w "$_fb_dir" ] || continue
-            _fb_avail=$(get_avail_kb "$_fb_dir")
-            if [ -n "$_fb_avail" ] && [ "$_fb_avail" -gt "$TEMP_MIN_KB" ] 2>/dev/null; then
-                _fallback="$_fb_dir"
-            fi
-        done
-        if [ -z "$_fallback" ]; then
-            log_err "Not enough disk space — /tmp has ${_tmp_avail:-?}KB free (need ${TEMP_MIN_KB}KB)"
-            log_err "No writable fallback directory found."
-            log_info "Free space or re-run with --bin-dir on external storage."
-            exit 1
+        if [ "$_tmp_base" = /tmp ]; then
+            TEMP_DIR="/tmp/b4_install_$$"
         else
-            TEMP_DIR="${_fallback}/.b4_install_$$"
-            log_info "Using ${_fallback} for temp files (/tmp too small)"
+            TEMP_DIR="${_tmp_base}/.b4_install_$$"
         fi
-    fi
-
-    rm -rf "$TEMP_DIR" 2>/dev/null || true
-    mkdir -p "$TEMP_DIR" || {
-        log_err "Cannot create temp dir: $TEMP_DIR"
-        exit 1
-    }
+        rm -rf "$TEMP_DIR" 2>/dev/null || true
+        if mkdir -p "$TEMP_DIR" 2>/dev/null; then
+            if [ "$_tmp_base" != /tmp ]; then
+                log_warn "Using ${_tmp_base} for temp files: /tmp ${_tmp_problem}"
+            fi
+            return 0
+        fi
+        if [ "$_tmp_base" = /tmp ]; then
+            _tmp_problem="is not writable"
+        fi
+    done
+    log_err "No usable temp directory: /tmp ${_tmp_problem}"
+    log_err "No writable fallback directory with ${TEMP_MIN_KB}KB free found."
+    log_info "Free space or re-run with --bin-dir on external storage."
+    exit 1
 }
 
 pending_add() {

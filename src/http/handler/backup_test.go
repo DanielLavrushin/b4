@@ -125,6 +125,28 @@ func TestBackupExcludesUnfinishedDownloads(t *testing.T) {
 	}
 }
 
+func TestBackupExcludesInstallerStagingDirectories(t *testing.T) {
+	dir := t.TempDir()
+	writeFileMode(t, filepath.Join(dir, "b4.json"), `{}`, 0644)
+	if err := os.Mkdir(filepath.Join(dir, "b4update-123"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeFileMode(t, filepath.Join(dir, "b4update-123", "install.sh"), "#!/bin/sh\n", 0700)
+
+	rec := httptest.NewRecorder()
+	newBackupAPI(t, dir).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/backup", nil))
+
+	entries := readArchive(t, rec.Body)
+	for _, name := range []string{"b4update-123/", "b4update-123/install.sh"} {
+		if _, ok := entries[name]; ok {
+			t.Errorf("%s should be excluded", name)
+		}
+	}
+	if _, ok := entries["b4.json"]; !ok {
+		t.Error("b4.json should be included")
+	}
+}
+
 func TestBackupOmitsWalkRootEntry(t *testing.T) {
 	dir := t.TempDir()
 	writeFileMode(t, filepath.Join(dir, "b4.json"), `{}`, 0644)

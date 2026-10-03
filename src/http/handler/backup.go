@@ -381,7 +381,7 @@ func shouldExcludeFromBackup(info os.FileInfo) bool {
 		return true
 	}
 
-	if info.IsDir() && (name == "out" || strings.HasPrefix(name, ".")) {
+	if info.IsDir() && (name == "out" || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "b4update-")) {
 		return true
 	}
 

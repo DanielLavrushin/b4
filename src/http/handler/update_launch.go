@@ -150,25 +150,54 @@ func envWithoutUpdateKeys() []string {
 	return out
 }
 
-func sweepStaleUpdateFiles() {
-	dir := os.TempDir()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
+func (api *API) stagingRoots() []string {
+	roots := []string{os.TempDir()}
+	cfg := api.getCfg()
+	if cfg == nil || cfg.ConfigPath == "" {
+		return roots
 	}
+	if dir, err := filepath.Abs(filepath.Dir(cfg.ConfigPath)); err == nil && dir != roots[0] {
+		roots = append(roots, dir)
+	}
+	return roots
+}
 
+func makeStageDir(roots []string, logPath string) (string, error) {
+	var failures []string
+	for _, root := range roots {
+		dir, err := os.MkdirTemp(root, "b4update-")
+		if err != nil {
+			failures = append(failures, err.Error())
+			continue
+		}
+		if len(failures) > 0 {
+			log.Warnf("Cannot create files in %s (%s), staging the installer in %s instead; restarting the container or device usually repairs %s", roots[0], failures[0], root, roots[0])
+			writeUpdateLog(logPath, "WARN: cannot create files in %s (%s), staging the installer in %s instead", roots[0], failures[0], root)
+		}
+		return dir, nil
+	}
+	return "", fmt.Errorf("cannot stage the installer: %s", strings.Join(failures, "; "))
+}
+
+func sweepStaleUpdateFiles(roots []string) {
 	cutoff := time.Now().Add(-time.Hour)
-	for _, e := range entries {
-		name := e.Name()
-		if !strings.HasPrefix(name, "b4update-") && !strings.HasPrefix(name, "b4-upload-") {
+	for _, dir := range roots {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
 			continue
 		}
-		info, err := e.Info()
-		if err != nil || info.ModTime().After(cutoff) {
-			continue
-		}
-		if err := os.RemoveAll(filepath.Join(dir, name)); err == nil {
-			log.Infof("Removed a leftover update file: %s", name)
+		for _, e := range entries {
+			name := e.Name()
+			if !strings.HasPrefix(name, "b4update-") && !strings.HasPrefix(name, "b4-upload-") {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil || info.ModTime().After(cutoff) {
+				continue
+			}
+			if err := os.RemoveAll(filepath.Join(dir, name)); err == nil {
+				log.Infof("Removed a leftover update file: %s", filepath.Join(dir, name))
+			}
 		}
 	}
 }
@@ -179,11 +208,12 @@ func (api *API) launchInstaller(run installerRun) error {
 		return nil
 	}
 
-	sweepStaleUpdateFiles()
+	roots := api.stagingRoots()
+	sweepStaleUpdateFiles(roots)
 
 	// A private 0700 directory: b4 runs as root and execs what it writes here, and a
 	// fixed name under a world-writable /tmp can be pre-created as a symlink by anyone.
-	stageDir, err := os.MkdirTemp("", "b4update-")
+	stageDir, err := makeStageDir(roots, run.logPath)
 	if err != nil {
 		log.Errorf("Failed to create a staging directory: %v", err)
 		writeUpdateLog(run.logPath, "ERROR: failed to create a staging directory: %v", err)
@@ -251,17 +281,17 @@ func (api *API) launchInstaller(run installerRun) error {
 			for _, e := range env {
 				args = append(args, "--setenv="+e)
 			}
-			args = append(args, installerPath, "--update", "--quiet")
+			args = append(args, "/bin/sh", installerPath, "--update", "--quiet")
 			if run.version != "" {
 				args = append(args, run.version)
 			}
 			cmd = exec.Command("systemd-run", args...)
 		} else {
-			args := []string{"--update", "--quiet"}
+			args := []string{installerPath, "--update", "--quiet"}
 			if run.version != "" {
 				args = append(args, run.version)
 			}
-			cmd = exec.Command(installerPath, args...)
+			cmd = exec.Command("/bin/sh", args...)
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 		}
 
