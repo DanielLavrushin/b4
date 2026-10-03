@@ -136,12 +136,8 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
   }
 
   return (
-    <B4Section
-      title={t("settings.Socks5.title")}
-      description={t("settings.Socks5.description")}
-      icon={<ConnectionIcon />}
-    >
-      <B4FormGroup label={t("settings.Socks5.settings")} columns={2}>
+    <B4Section title={t("settings.Socks5.title")} icon={<ConnectionIcon />}>
+      <B4FormGroup columns={2}>
         <B4FormRow>
           <B4Switch
             label={t("settings.Socks5.enable")}
@@ -178,7 +174,6 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
           value={password}
           onChange={(e) => onChange("system.socks5.password", e.target.value)}
           disabled={!enabled}
-          helperText={t("settings.Socks5.passwordHelp")}
           autoComplete="new-password"
         />
       </B4FormGroup>

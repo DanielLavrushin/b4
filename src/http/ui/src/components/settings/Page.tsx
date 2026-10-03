@@ -36,20 +36,18 @@ import { useHubInvalidate } from "@hooks/useHub";
 import { useTelegramBridgeInvalidate } from "@hooks/useTelegramBridge";
 import { useSystemAddressesInvalidate } from "@hooks/useSystemAddresses";
 import { ApiSettings } from "./Api";
-import { DnsSettings } from "./Dns";
-import { IPHealthSettings } from "./IPHealth";
 import { CaptureSettings } from "./Capture";
-import { DevicesSettings } from "./Devices";
 import { CheckerSettings } from "./Discovery";
-import { FeatureSettings } from "./Feature";
 import { GeoSettings } from "./Geo";
-import { LoggingSettings } from "./Core";
-import { MSSClampingSettings } from "./MSSClamping";
-import { QueueSettings } from "./Queue";
-import { Socks5Settings } from "./Socks5";
 import { MTProtoSettings } from "./telegram/MTProto";
 import { BackupSettings } from "./Backup";
-import { WebServerSettings } from "./WebServer";
+import { CoreSettings } from "./CoreSettings";
+import { RestartDialog } from "./RestartDialog";
+import {
+  CORE_SECTIONS,
+  CoreSectionId,
+  coreSectionIndex,
+} from "./coreSections";
 
 import { B4Alert, B4Dialog, B4Tab, B4Tabs } from "@b4.elements";
 import { configApi, SettingsPropHandlerType } from "@b4.settings";
@@ -57,26 +55,6 @@ import { isStaleWriteError, reportSaveError, reportStaleWrite } from "@utils";
 import { colors, spacing } from "@design";
 
 import { B4Config } from "@models/config";
-
-const generalTab = (c: B4Config) => [
-  c.system.logging,
-  c.queue,
-  { ...c.system.web_server, mcp: undefined },
-  c.system.socks5,
-  c.system.tables,
-  c.system.dns,
-];
-
-const generalTabRestartScope = (c: B4Config) => [
-  c.system.logging,
-  c.queue,
-  c.system.web_server.port,
-  c.system.web_server.bind_address,
-  c.system.web_server.tls_cert,
-  c.system.web_server.tls_key,
-  { ...c.system.tables, dscp: undefined },
-  c.system.dns,
-];
 
 const changed = (pick: (c: B4Config) => unknown, a: B4Config, b: B4Config) =>
   JSON.stringify(pick(a)) !== JSON.stringify(pick(b));
@@ -126,6 +104,9 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [showRestartDialog, setShowRestartDialog] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const lastCoreSection = useRef<CoreSectionId>(CORE_SECTIONS[0].id);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -194,18 +175,43 @@ export function SettingsPage() {
   );
 
   // Determine current tab based on URL
-  const currentTabPath = location.pathname.split("/settings/")[1] || "general";
+  const [currentTabPath, currentSectionPath] = (
+    location.pathname.split("/settings/")[1] ?? ""
+  ).split("/");
   const currentTab =
-    settingCategories.find((cat) => cat.path === currentTabPath)?.id ??
-    TABS.GENERAL;
+    settingCategories.find((cat) => cat.path === (currentTabPath || "general"))
+      ?.id ?? TABS.GENERAL;
+  const currentSectionIndex = coreSectionIndex(currentSectionPath);
+  const currentSection = CORE_SECTIONS[currentSectionIndex].id;
+
+  useEffect(() => {
+    if (currentTab === TABS.GENERAL) {
+      lastCoreSection.current = currentSection;
+    }
+  }, [currentTab, currentSection]);
 
   // Handle tab change
   const handleTabChange = (_: React.SyntheticEvent, newValue: TABS) => {
     const category = settingCategories.find((cat) => cat.id === newValue);
     if (category) {
-      navigate(`/settings/${category.path}`)?.catch(() => {});
+      const path =
+        category.id === TABS.GENERAL
+          ? `${category.path}/${lastCoreSection.current}`
+          : category.path;
+      navigate(`/settings/${path}`)?.catch(() => {});
     }
   };
+
+  const handleSectionChange = (_: React.SyntheticEvent, index: number) => {
+    const section = CORE_SECTIONS[index];
+    if (section) {
+      navigate(`/settings/general/${section.id}`)?.catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0 });
+  }, [location.pathname]);
 
   // Navigate to default tab if no specific tab is in URL
   useEffect(() => {
@@ -223,13 +229,28 @@ export function SettingsPage() {
     return JSON.stringify(config) !== JSON.stringify(originalConfig);
   }, [config, originalConfig]);
 
+  const coreSectionState = useMemo(
+    () =>
+      CORE_SECTIONS.map((section) => {
+        if (!hasChanges || !config || !originalConfig) {
+          return { dirty: false, restart: false };
+        }
+        const dirty = changed(section.pick, config, originalConfig);
+        return {
+          dirty,
+          restart: dirty && changed(section.restartPick, config, originalConfig),
+        };
+      }),
+    [config, originalConfig, hasChanges],
+  );
+
   // Check which categories have changes
   const categoryHasChanges = useMemo(() => {
     if (!hasChanges || !config || !originalConfig) return {};
 
     return {
       // Core
-      [TABS.GENERAL]: changed(generalTab, config, originalConfig),
+      [TABS.GENERAL]: coreSectionState.some((s) => s.dirty),
 
       // Geosite Settings
       [TABS.DOMAINS]:
@@ -263,14 +284,9 @@ export function SettingsPage() {
       // Backup
       [TABS.BACKUP]: false,
     };
-  }, [config, originalConfig, hasChanges]);
+  }, [config, originalConfig, hasChanges, coreSectionState]);
 
-  const generalNeedsRestart = useMemo(() => {
-    if (!categoryHasChanges[TABS.GENERAL] || !config || !originalConfig) {
-      return false;
-    }
-    return changed(generalTabRestartScope, config, originalConfig);
-  }, [categoryHasChanges, config, originalConfig]);
+  const generalNeedsRestart = coreSectionState.some((s) => s.restart);
 
   const showErrorRef = useRef(showError);
   showErrorRef.current = showError;
@@ -281,6 +297,7 @@ export function SettingsPage() {
       const data = await configApi.get();
       setConfig(data);
       setOriginalConfig(structuredClone(data));
+      setLanguage(data.system.web_server.language ?? "en");
       return data;
     } catch (error) {
       console.error("Error loading configuration:", error);
@@ -292,14 +309,7 @@ export function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    let bootstrapped = false;
-    loadConfig()
-      .then((data) => {
-        if (bootstrapped || !data) return;
-        bootstrapped = true;
-        setLanguage(data.system.web_server.language ?? "en");
-      })
-      .catch(() => {});
+    loadConfig().catch(() => {});
   }, [loadConfig]);
 
   const { refresh: refreshAiStatus } = useAiStatus();
@@ -316,11 +326,14 @@ export function SettingsPage() {
       await configApi.save(config);
       setOriginalConfig(structuredClone(config));
 
-      showSuccess(
-        generalNeedsRestart
-          ? t("core.configSavedRestart")
-          : t("core.configSaved"),
-      );
+      if (generalNeedsRestart) {
+        showSuccess(t("core.configSavedRestart"), {
+          label: t("settings.RestartDialog.restartButton"),
+          onClick: () => setShowRestartDialog(true),
+        });
+      } else {
+        showSuccess(t("core.configSaved"));
+      }
     } catch (error) {
       if (isStaleWriteError(error)) {
         stale = true;
@@ -345,6 +358,7 @@ export function SettingsPage() {
   const resetChanges = () => {
     if (originalConfig) {
       setConfig(structuredClone(originalConfig));
+      setLanguage(originalConfig.system.web_server.language ?? "en");
       setShowResetDialog(false);
       showSuccess(t("core.changesDiscarded"));
     }
@@ -446,6 +460,8 @@ export function SettingsPage() {
               spacing={1}
               alignItems="center"
               justifyContent="flex-end"
+              flexWrap="wrap"
+              useFlexGap
               sx={{ flex: { xs: "1 1 100%", sm: "0 1 auto" } }}
             >
               {generalNeedsRestart && (
@@ -507,62 +523,42 @@ export function SettingsPage() {
                 />
               ))}
           </B4Tabs>
+          {currentTab === TABS.GENERAL && (
+            <B4Tabs
+              value={currentSectionIndex}
+              onChange={handleSectionChange}
+              sx={{
+                borderBottom: "none",
+                "& .MuiTab-icon": {
+                  display: { xs: "none", sm: "inline-flex" },
+                },
+              }}
+            >
+              {CORE_SECTIONS.map((section, index) => (
+                <B4Tab
+                  key={section.id}
+                  icon={<section.Icon />}
+                  label={t(section.labelKey)}
+                  inline
+                  index={index}
+                  idPrefix="core-section"
+                  hasChanges={coreSectionState[index].dirty}
+                  needsRestart={coreSectionState[index].restart}
+                  needsRestartLabel={t("settings.coreTabs.needsRestart")}
+                />
+              ))}
+            </B4Tabs>
+          )}
         </Box>
       </Paper>
 
-      <Box sx={{ flex: 1, overflow: "auto", pb: 2 }}>
+      <Box ref={contentRef} sx={{ flex: 1, overflow: "auto", pb: 2 }}>
         <TabPanel value={validTab} index={TABS.GENERAL}>
-          <Grid container spacing={spacing.lg} alignItems="stretch">
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
-                <LoggingSettings config={config} onChange={handleChange} />
-              </Box>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
-                <QueueSettings config={config} onChange={handleChange} />
-              </Box>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
-                <FeatureSettings config={config} onChange={handleChange} />
-              </Box>
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
-                <WebServerSettings config={config} onChange={handleChange} />
-              </Box>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
-                <Socks5Settings config={config} onChange={handleChange} />
-              </Box>
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
-                <MSSClampingSettings config={config} onChange={handleChange} />
-              </Box>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
-                <DevicesSettings config={config} onChange={handleChange} />
-              </Box>
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
-                <DnsSettings config={config} onChange={handleChange} />
-              </Box>
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex" }}>
-              <Box sx={{ width: "100%" }}>
-                <IPHealthSettings config={config} onChange={handleChange} />
-              </Box>
-            </Grid>
-          </Grid>
+          <CoreSettings
+            section={currentSection}
+            config={config}
+            onChange={handleChange}
+          />
         </TabPanel>
 
         <TabPanel value={validTab} index={TABS.DOMAINS}>
@@ -630,6 +626,11 @@ export function SettingsPage() {
           <DialogContentText>{t("core.discardConfirm")}</DialogContentText>
         </DialogContent>
       </B4Dialog>
+
+      <RestartDialog
+        open={showRestartDialog}
+        onClose={() => setShowRestartDialog(false)}
+      />
     </Container>
   );
 }

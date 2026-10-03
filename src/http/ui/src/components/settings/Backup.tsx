@@ -1,8 +1,22 @@
 import { useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Grid, Stack, Typography, Box } from "@mui/material";
-import { BackupIcon, DownloadIcon, UploadIcon } from "@b4.icons";
-import { B4Section, B4Alert } from "@b4.elements";
+import {
+  Button,
+  DialogContent,
+  DialogContentText,
+  Grid,
+  Stack,
+  Typography,
+  Box,
+} from "@mui/material";
+import {
+  BackupIcon,
+  DownloadIcon,
+  RestoreIcon,
+  UploadIcon,
+} from "@b4.icons";
+import { B4Section, B4Alert, B4Dialog } from "@b4.elements";
+import { configApi } from "@api/settings";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { RestartDialog } from "./RestartDialog";
 import { colors } from "@design";
@@ -18,7 +32,24 @@ export const BackupSettings = () => {
   const [downloading, setDownloading] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [showRestartDialog, setShowRestartDialog] = useState(false);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleResetConfirm = async () => {
+    try {
+      setResetting(true);
+      await configApi.reset();
+      showSuccess(t("settings.Control.resetSuccess"));
+      setTimeout(() => globalThis.window.location.reload(), 800);
+    } catch (error) {
+      showError(
+        error instanceof Error ? error.message : t("settings.Control.resetError"),
+      );
+      setResetting(false);
+      setShowResetDialog(false);
+    }
+  };
 
   const handleDownload = async () => {
     try {
@@ -116,7 +147,7 @@ export const BackupSettings = () => {
       <B4Alert icon={<BackupIcon />}>{t("settings.Backup.alert")}</B4Alert>
 
       <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 6 }}>
+        <Grid size={{ xs: 12, md: 6, lg: 4 }}>
           <B4Section
             title={t("settings.Backup.downloadTitle")}
             description={t("settings.Backup.downloadDescription")}
@@ -144,7 +175,7 @@ export const BackupSettings = () => {
           </B4Section>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 6 }}>
+        <Grid size={{ xs: 12, md: 6, lg: 4 }}>
           <B4Section
             title={t("settings.Backup.restoreTitle")}
             description={t("settings.Backup.restoreDescription")}
@@ -176,12 +207,68 @@ export const BackupSettings = () => {
             </Stack>
           </B4Section>
         </Grid>
+
+        <Grid size={{ xs: 12, md: 6, lg: 4 }}>
+          <B4Section
+            title={t("settings.Control.resetConfig")}
+            icon={<RestoreIcon />}
+          >
+            <Stack spacing={2}>
+              <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+                {t("settings.Control.resetConfirm")}
+              </Typography>
+              <Box>
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  startIcon={<RestoreIcon />}
+                  onClick={() => setShowResetDialog(true)}
+                >
+                  {t("settings.Control.resetButton")}
+                </Button>
+              </Box>
+            </Stack>
+          </B4Section>
+        </Grid>
       </Grid>
 
       <RestartDialog
         open={showRestartDialog}
         onClose={() => setShowRestartDialog(false)}
       />
+      <B4Dialog
+        title={t("settings.Control.resetConfig")}
+        open={showResetDialog}
+        onClose={() => !resetting && setShowResetDialog(false)}
+        actions={
+          <>
+            <Button
+              onClick={() => setShowResetDialog(false)}
+              disabled={resetting}
+            >
+              {t("core.cancel")}
+            </Button>
+            <Button
+              onClick={() => {
+                void handleResetConfirm();
+              }}
+              variant="contained"
+              color="warning"
+              disabled={resetting}
+            >
+              {resetting
+                ? t("core.saving")
+                : t("settings.Control.resetButton")}
+            </Button>
+          </>
+        }
+      >
+        <DialogContent>
+          <DialogContentText>
+            {t("settings.Control.resetConfirm")}
+          </DialogContentText>
+        </DialogContent>
+      </B4Dialog>
     </Stack>
   );
 };

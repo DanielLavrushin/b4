@@ -27,6 +27,7 @@ export {
   Security as SecurityIcon,
   Timer as TimerIcon,
   Cloud as ApiIcon,
+  Web as WebIcon,
   Share as ShareIcon,
   Groups as CommunityIcon,
   CameraAlt as CaptureIcon,
