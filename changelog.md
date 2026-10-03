@@ -5,6 +5,7 @@
 - FIXED: **An update from the web interface failed with `Could not fetch the installer: mkdir /tmp/b4update-...: no such file or directory` when nothing could be created in /tmp, as seen in a MikroTik container after a restart, and with /tmp mounted noexec the web interface reported the update as started while nothing happened** - b4 staged the installer in /tmp and ran it from there, and the installer moved to another directory only when /tmp was short of space.
 - FIXED: **A request to `/api/system/update` with a version such as `--remove` or `--arch=mips` removed b4 or installed a binary for another architecture instead of updating** - b4 passed the requested version to the installer unchecked, and the installer read it as one of its own options.
 - FIXED: **Discovery for a domain that does not exist, such as a misspelled one, ran through every strategy for minutes, each test failing with `DNS resolution failed (no such host)`** - the run did not tell a name without any address apart from a site that a strategy might still open.
+- FIXED: **After a Discovery run, DNS queries over TCP for sets with a DNS redirect went to the original resolver once b4 next rebuilt its firewall rules, until b4 restarted, and while a run was going the Active Escalations list on the dashboard kept emptying** - Discovery's own packet queue published its state in place of b4's main queue: a DNS-over-TCP listener that was down and an empty escalation list.
 
 ## [1.84.0] - 2026-09-30
 

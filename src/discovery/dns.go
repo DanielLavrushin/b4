@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -159,7 +160,7 @@ func (ds *DiscoverySuite) runDNSDiscoveryForDomain(di DomainInput) *DNSDiscovery
 	defer cancel()
 
 	result := prober.Probe(ctx)
-	if prober.ipNetwork() == "ip4" && shouldScanAlternatives(result) {
+	if prober.ipNetwork() == "ip4" && asciiName(di.Domain) && shouldScanAlternatives(result) {
 		ds.findAlternativeAddresses(di.Domain, port, tlsPort, result)
 	}
 	return result
@@ -276,12 +277,24 @@ func (p *DNSProber) noteMissingAddress(result *DNSDiscoveryResult, nxdomain stri
 	if !result.noAddress() {
 		return
 	}
-	if nxdomain != "" {
+	switch {
+	case !asciiName(p.domain):
+		log.DiscoveryLogf("  DNS: %s is an internationalized name, which the DNS check cannot query; the probes resolve it through the system resolver", p.domain)
+	case nxdomain != "":
 		result.NXDomain = true
 		log.DiscoveryLogf("  ✗ DNS: %s answers that %s does not exist (NXDOMAIN)", nxdomain, p.domain)
-		return
+	default:
+		log.DiscoveryLogf("  ✗ DNS: no resolver returned an address for %s", p.domain)
 	}
-	log.DiscoveryLogf("  ✗ DNS: no resolver returned an address for %s", p.domain)
+}
+
+func asciiName(name string) bool {
+	for i := 0; i < len(name); i++ {
+		if name[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *DNSProber) evaluate(ctx context.Context, systemIPs, expectedIPs []string, referenceServes bool) *DNSDiscoveryResult {

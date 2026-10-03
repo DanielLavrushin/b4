@@ -29,8 +29,11 @@ import {
   confirmationOf,
   formatDuration,
   formatSpeed,
+  ipFamilyLabel,
+  otherIpFamily,
   testedCounts,
   triesUntilFound,
+  unresolvedLabel,
 } from "@utils";
 import { AlternatesList } from "./AlternatesList";
 import { StrategySummary } from "./StrategySummary";
@@ -107,7 +110,9 @@ export const ResultsPanel = ({
           <Typography variant="caption" sx={{ color: colors.text.secondary }}>
             {t("discovery.results.sites", { count: sites })}
             {" · "}
-            {t("discovery.results.tested", { count: suite.completed_checks })}
+            {t("discovery.results.tested", {
+              count: suite.completed_checks - (suite.skipped_checks ?? 0),
+            })}
             {" · "}
             {t("discovery.results.saved")}
           </Typography>
@@ -443,8 +448,14 @@ const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
       );
     case "unresolved": {
       const dns = entry.result.dns_result;
+      const family = entry.result.missing_family;
       let reason = t("discovery.results.unresolved");
-      if (!dns) reason = t("discovery.results.unresolvedSystem");
+      if (family)
+        reason = t("discovery.results.unresolvedFamily", {
+          family: ipFamilyLabel(family),
+          other: ipFamilyLabel(otherIpFamily(family)),
+        });
+      else if (!dns) reason = t("discovery.results.unresolvedSystem");
       else if (dns.nxdomain) reason = t("discovery.results.unresolvedNxdomain");
       return (
         <B4ResultCard
@@ -455,7 +466,7 @@ const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
             <B4Badge
               variant="outlined"
               color="error"
-              label={t("discovery.status.unresolved")}
+              label={unresolvedLabel(family, t)}
             />
           }
         />

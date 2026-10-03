@@ -90,6 +90,7 @@ type SetVerdict struct {
 	Set          *config.SetConfig `json:"set,omitempty"`
 	Covered      []string          `json:"covered,omitempty"`
 	Uncovered    []string          `json:"uncovered,omitempty"`
+	Unresolved   []string          `json:"unresolved,omitempty"`
 	NoBypass     []string          `json:"no_bypass,omitempty"`
 	Confirmed    bool              `json:"confirmed,omitempty"`
 }
@@ -114,6 +115,7 @@ type CheckResult struct {
 	UsedIP      string            `json:"used_ip,omitempty"`
 	Set         *config.SetConfig `json:"set"`
 	lookup      nameLookup
+	lookupHost  string
 	untried     bool
 }
 
@@ -139,6 +141,7 @@ type CheckSuite struct {
 	CompletedChecks        int                               `json:"completed_checks"`
 	SuccessfulChecks       int                               `json:"successful_checks"`
 	FailedChecks           int                               `json:"failed_checks"`
+	SkippedChecks          int                               `json:"skipped_checks,omitempty"`
 	DomainDiscoveryResults map[string]*DomainDiscoveryResult `json:"domain_discovery_results,omitempty"`
 	StrategyGroups         []StrategyGroup                   `json:"strategy_groups,omitempty"`
 	CheckURL               string                            `json:"check_url"`
@@ -195,6 +198,7 @@ type DomainDiscoveryResult struct {
 	FinalHost     string                         `json:"final_host,omitempty"`
 	DNSResult     *DNSDiscoveryResult            `json:"dns_result,omitempty"`
 	Unresolved    bool                           `json:"unresolved,omitempty"`
+	MissingFamily string                         `json:"missing_family,omitempty"`
 	Outcome       Outcome                        `json:"outcome,omitempty"`
 	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
 }

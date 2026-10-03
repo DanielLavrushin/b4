@@ -239,6 +239,67 @@ func TestMCPDiscoveryUnresolvedOutcome(t *testing.T) {
 	}
 }
 
+func TestMCPDiscoveryUnresolvedVerdictNamesTheEvidence(t *testing.T) {
+	cases := []struct {
+		name                 string
+		family               string
+		systemOnly, nxdomain bool
+		want                 string
+	}{
+		{"missing family", "ipv6", false, false, "IPv4 addresses only and this run probed over IPv6"},
+		{"nxdomain", "", false, true, "NXDOMAIN"},
+		{"system resolver only", "", true, false, "run again without skip_dns"},
+		{"every resolver", "", false, false, "DNS for it fails on this network"},
+	}
+	for _, tc := range cases {
+		row := mcpDiscoveryDomain{Domain: "typo.example"}
+		mcpApplyOutcome(&row, discovery.OutcomeUnresolved)
+		mcpNoteUnresolved(&row, tc.family, tc.systemOnly, tc.nxdomain)
+		if got := mcpDiscoveryVerdict(row, false); !strings.Contains(got, tc.want) {
+			t.Errorf("%s: verdict %q, want it to mention %q", tc.name, got, tc.want)
+		}
+	}
+
+	found := mcpDiscoveryDomain{Domain: "ok.example"}
+	mcpApplyOutcome(&found, discovery.OutcomeFound)
+	mcpNoteUnresolved(&found, "ipv6", true, true)
+	if found.missingFamily != "" || found.systemOnly || found.nxdomain {
+		t.Fatalf("only an unresolved row carries the evidence, got %+v", found)
+	}
+}
+
+func TestMCPSetVerdictNamesAddressesWithoutAnAddressToTest(t *testing.T) {
+	none := mcpSetVerdictMeaning("work", &discovery.SetVerdict{Status: discovery.SetVerdictNone, Uncovered: []string{"typo.example"}, Unresolved: []string{"typo.example"}})
+	if strings.Contains(none, "proxy route") || !strings.Contains(none, "nothing was tested") || !strings.Contains(none, "typo.example has no address") {
+		t.Fatalf("a set whose only open address does not resolve needs no proxy advice, got %q", none)
+	}
+
+	fine := mcpSetVerdictMeaning("work", &discovery.SetVerdict{Status: discovery.SetVerdictNone, Uncovered: []string{"typo.example"}, Unresolved: []string{"typo.example"}, NoBypass: []string{"open.example"}})
+	if strings.Contains(fine, "nothing was tested") || !strings.Contains(fine, "open.example load without b4") {
+		t.Fatalf("open.example was tested and loads without b4, got %q", fine)
+	}
+
+	for _, v := range []*discovery.SetVerdict{
+		{Status: discovery.SetVerdictNone, Uncovered: []string{"blocked.example"}},
+		{Status: discovery.SetVerdictPartial, WinnerPreset: "combo", Covered: []string{"a.example"}, Uncovered: []string{"blocked.example"}},
+		{Status: discovery.SetVerdictPartial, WinnerPreset: "combo", Covered: []string{"a.example"}, Uncovered: []string{"typo.example"}, Unresolved: []string{"typo.example"}},
+	} {
+		if meaning := mcpSetVerdictMeaning("work", v); strings.HasSuffix(meaning, ".") {
+			t.Errorf("callers append their own separator, the meaning must not end with a period: %q", meaning)
+		}
+	}
+
+	mixed := mcpSetVerdictMeaning("work", &discovery.SetVerdict{Status: discovery.SetVerdictNone, Uncovered: []string{"blocked.example", "typo.example"}, Unresolved: []string{"typo.example"}})
+	if !strings.Contains(mixed, "made blocked.example load") || strings.Contains(mixed, "made blocked.example and typo.example") || !strings.Contains(mixed, "typo.example has no address") {
+		t.Fatalf("the proxy advice is for the address that was tested, got %q", mixed)
+	}
+
+	partial := mcpSetVerdictMeaning("work", &discovery.SetVerdict{Status: discovery.SetVerdictPartial, WinnerPreset: "combo", Covered: []string{"a.example"}, Uncovered: []string{"typo.example"}, Unresolved: []string{"typo.example"}})
+	if strings.Contains(partial, "need a set of their own") || !strings.Contains(partial, "remove it from the set's Discovery addresses") {
+		t.Fatalf("an address without an address to test needs no set of its own, got %q", partial)
+	}
+}
+
 func TestMCPDiscoveryIsAnnotatedOpenWorld(t *testing.T) {
 	srv := newMCPTestServer(t, probeCfg(t))
 	session, ctx := connectMCP(t, srv)

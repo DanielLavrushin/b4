@@ -347,7 +347,7 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 		dnsResult := ds.dnsResults[di.Domain]
 
 		if domainResult.Unresolved {
-			log.DiscoveryLogf("  ⊘ [%s] does not resolve: %s", di.Domain, unresolvedReason(dnsResult))
+			log.DiscoveryLogf("  ⊘ [%s] no address to test: %s", di.Domain, unresolvedReason(domainResult.MissingFamily, dnsResult))
 			continue
 		}
 

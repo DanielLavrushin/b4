@@ -354,3 +354,64 @@ func TestResolveResilientPlainNXDomainIsNotTrusted(t *testing.T) {
 		t.Fatalf("an NXDOMAIN over plain UDP can be forged on the path, it must not read as one: %v", err)
 	}
 }
+
+func TestResolveResilientSlowerAddressBeatsEarlierNXDomain(t *testing.T) {
+	nx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"Status":3}`))
+	}))
+	defer nx.Close()
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.Write([]byte(`{"Status":0,"Answer":[{"type":1,"data":"5.6.7.8"}]}`))
+	}))
+	defer slow.Close()
+
+	resp := make([]byte, 12)
+	resp[2], resp[3] = 0x81, 0x83
+	udpAddr, stop := startUDPResponder(t, resp)
+	defer stop()
+
+	r := &Resolver{
+		Timeout: 2 * time.Second,
+		DoH:     []DoHServer{{URL: nx.URL, Format: DoHJSON}, {URL: slow.URL, Format: DoHJSON}},
+		UDP:     []string{udpAddr},
+	}
+	out, err := r.ResolveResilient(context.Background(), "filtered.example", "A")
+	if err != nil || len(out.IPs) != 1 || out.IPs[0] != "5.6.7.8" {
+		t.Fatalf("an address from a slower DoH server must beat an earlier NXDOMAIN, got %+v, %v", out, err)
+	}
+}
+
+func TestResolveResilientKeepsNXDomainWhenAnotherServerIsSilent(t *testing.T) {
+	nx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"Status":3}`))
+	}))
+	defer nx.Close()
+	release := make(chan struct{})
+	hang := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer hang.Close()
+	defer close(release)
+
+	resp := make([]byte, 12)
+	resp[2], resp[3] = 0x81, 0x83
+	udpAddr, stop := startUDPResponder(t, resp)
+	defer stop()
+
+	r := &Resolver{
+		Timeout: 2 * time.Second,
+		DoH:     []DoHServer{{URL: nx.URL, Format: DoHJSON}, {URL: hang.URL, Format: DoHJSON}},
+		UDP:     []string{udpAddr},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	_, err := r.ResolveResilient(ctx, "typo.example", "A")
+	var nxErr *NXDomainError
+	if !errors.As(err, &nxErr) {
+		t.Fatalf("the NXDOMAIN must survive a DoH server that never answers, got %v", err)
+	}
+}

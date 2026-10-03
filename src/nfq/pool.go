@@ -125,9 +125,8 @@ func NewPool(cfg *config.Config) *Pool {
 				}
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
-				m := metrics.GetMetricsCollector()
-				m.UpdateEscalations(pool.GetEscalations())
-				m.UpdateInjectStats(InjectOverloaded(), sock.SendDropped())
+				pool.publishEscalations()
+				metrics.GetMetricsCollector().UpdateInjectStats(InjectOverloaded(), sock.SendDropped())
 			case <-pool.stopCleanup:
 				return
 			}
@@ -151,8 +150,20 @@ func (p *Pool) Start() error {
 
 var DNSTCPReadyFunc func(v4, v6 bool)
 
+func (p *Pool) isDiscovery() bool {
+	cfg := p.GetFirstWorkerConfig()
+	return cfg != nil && cfg.Queue.IsDiscovery
+}
+
+func (p *Pool) publishEscalations() {
+	if p.isDiscovery() {
+		return
+	}
+	metrics.GetMetricsCollector().UpdateEscalations(p.GetEscalations())
+}
+
 func (p *Pool) publishDNSTCPReady() {
-	if DNSTCPReadyFunc == nil {
+	if DNSTCPReadyFunc == nil || p.isDiscovery() {
 		return
 	}
 	v4, v6 := p.DNSTCPReady()

@@ -69,6 +69,7 @@ When the run finishes, every site gets a verdict:
 - **No bypass needed** - the site loads without b4, so there is nothing to apply
 - **Address blocked** - connections to the site's addresses fail, so a bypass strategy cannot help and the site needs a proxy or VPN set
 - **Intercepted by the gateway** - the first hop in front of this host answers the connections itself, so nothing b4 does here reaches past it; run b4 on that gateway, or use a proxy set when b4 is the router
+- **Does not resolve** - the name has no address, as with a misspelled domain, so there is nothing to test
 - **Nothing found** - no strategy made the site load
 
 ![Results of a run](/img/quickstart/20260905160700.png)

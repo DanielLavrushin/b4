@@ -22,8 +22,10 @@ import {
   NO_BYPASS_PRESET,
   describeStrategy,
   formatDuration,
+  ipFamilyLabel,
   presetLabel,
   testedCounts,
+  unresolvedLabel,
   verdictOf,
 } from "@utils";
 
@@ -149,7 +151,11 @@ export const RunPanel = ({
       case "gateway_intercepted":
         return t("discovery.run.gatewayIntercepted");
       case "unresolved":
-        return t("discovery.run.unresolved");
+        return dr.missing_family
+          ? t("discovery.run.unresolvedFamily", {
+              family: ipFamilyLabel(dr.missing_family),
+            })
+          : t("discovery.run.unresolved");
       default:
         return counts.tested > 0
           ? t("discovery.run.tried", { count: counts.tested })
@@ -207,7 +213,7 @@ export const RunPanel = ({
           <B4Badge
             variant="outlined"
             color="error"
-            label={t("discovery.status.unresolved")}
+            label={unresolvedLabel(dr?.missing_family, t)}
           />
         );
       default:
@@ -236,7 +242,9 @@ export const RunPanel = ({
           <>
             {t("discovery.run.elapsed", { duration: formatDuration(t, suite.start_time) })}
             {" · "}
-            {t("discovery.run.tested", { count: suite.completed_checks })}
+            {t("discovery.run.tested", {
+              count: suite.completed_checks - (suite.skipped_checks ?? 0),
+            })}
           </>
         }
         onStop={canStop ? (confirming ? onStop : onFinish) : undefined}

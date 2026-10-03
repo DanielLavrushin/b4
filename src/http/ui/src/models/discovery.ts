@@ -34,6 +34,8 @@ export type DiscoveryPhase =
   | "combination"
   | "confirmation";
 
+export type IPFamily = "ipv4" | "ipv6";
+
 export type DiscoveryOutcome =
   | "found"
   | "works_without_bypass"
@@ -110,6 +112,7 @@ export interface DiscoveryResult {
   final_host?: string;
   dns_result?: DNSDiscoveryResult;
   unresolved?: boolean;
+  missing_family?: IPFamily;
   outcome?: DiscoveryOutcome;
   unconfirmed?: boolean;
 }
@@ -121,6 +124,7 @@ export interface DiscoverySuite {
   end_time: string;
   total_checks: number;
   completed_checks: number;
+  skipped_checks?: number;
   current_phase?: DiscoveryPhase;
   current_domain?: string;
   domains?: { domain: string; check_url: string }[];
@@ -150,6 +154,7 @@ export interface SetVerdict {
   set?: B4SetConfig;
   covered?: string[];
   uncovered?: string[];
+  unresolved?: string[];
   no_bypass?: string[];
   confirmed?: boolean;
 }
@@ -208,6 +213,7 @@ export interface HistoryEntry {
   suite_id?: string;
   set?: B4SetConfig;
   outcome?: DiscoveryOutcome;
+  missing_family?: IPFamily;
   unconfirmed?: boolean;
   stopped_early?: boolean;
   order?: number;

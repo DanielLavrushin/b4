@@ -392,3 +392,17 @@ func TestProbeJudgesEachRedirectAgainstTheHopThatSentIt(t *testing.T) {
 		t.Fatalf("a redirect that stays on the site it came from is that site's own, got %q (%s)", res.Status, res.Error)
 	}
 }
+
+func TestRedirectTargetWithoutAddressDoesNotMarkTheSite(t *testing.T) {
+	nxdomainResolver(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://moved.example/", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	ds := newProbeOnlySuite(srv.URL)
+	res := ds.fetchUsingIPForDomain(ds.Domains[0], 2*time.Second, "")
+	if res.Status != CheckStatusFailed || res.FinalHost != "moved.example" || res.lookup != lookupOK || res.lookupHost != "" {
+		t.Fatalf("only a failed lookup of the site's own host counts, got status=%q final=%q lookup=%v host=%q err=%q", res.Status, res.FinalHost, res.lookup, res.lookupHost, res.Error)
+	}
+}

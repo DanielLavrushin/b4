@@ -76,10 +76,12 @@ type mcpSuiteSnapshot struct {
 		BaselineWorks bool    `json:"baseline_works"`
 		Confirmed     int     `json:"confirmed"`
 		Outcome       string  `json:"outcome"`
+		MissingFamily string  `json:"missing_family"`
 		Unconfirmed   bool    `json:"unconfirmed"`
 		DNSResult     *struct {
 			IsPoisoned       bool `json:"is_poisoned"`
 			TransportBlocked bool `json:"transport_blocked"`
+			NXDomain         bool `json:"nxdomain"`
 		} `json:"dns_result"`
 	} `json:"domain_discovery_results"`
 	StrategyGroups []struct {
@@ -120,6 +122,9 @@ type mcpDiscoveryDomain struct {
 	Unconfirmed   bool    `json:"unconfirmed,omitempty"`
 	Verdict       string  `json:"verdict"`
 	unresolved    bool
+	missingFamily string
+	nxdomain      bool
+	systemOnly    bool
 }
 
 type mcpDiscoveryOut struct {
@@ -157,7 +162,7 @@ func mcpDiscoveryVerdict(d mcpDiscoveryDomain, running bool) string {
 	case d.Gateway:
 		return "TCP to every known address is answered by the first hop in front of this host (a transparent proxy on the gateway), so packets from this host never reach the ISP; run b4 on that gateway or exclude this host from its redirect; if this host is the router itself, the ISP does this at its edge and only a proxy route helps"
 	case d.unresolved:
-		return "the name does not resolve: no resolver returned an address for it, so no strategy was tested; check the spelling of the domain"
+		return mcpUnresolvedVerdict(d)
 	case d.Blocked:
 		return "the address itself is unreachable, so no packet strategy can help; only a proxy or VPN route would"
 	case d.Found && running:
@@ -169,6 +174,30 @@ func mcpDiscoveryVerdict(d mcpDiscoveryDomain, running bool) string {
 	default:
 		return "no strategy tried made it work"
 	}
+}
+
+func mcpUnresolvedVerdict(d mcpDiscoveryDomain) string {
+	switch {
+	case d.missingFamily != "":
+		have, probed := "IPv4", "IPv6"
+		if d.missingFamily == "ipv4" {
+			have, probed = probed, have
+		}
+		return fmt.Sprintf("the name has %s addresses only and this run probed over %s, so no strategy was tested", have, probed)
+	case d.nxdomain:
+		return "the name does not resolve: DNS over HTTPS answers that it does not exist (NXDOMAIN), so no strategy was tested; check the spelling of the domain"
+	case d.systemOnly:
+		return "the name does not resolve: the system resolver has no address for it and the DNS check was skipped, so no strategy was tested; check the spelling, or run again without skip_dns"
+	default:
+		return "the name does not resolve: no resolver returned an address for it, so no strategy was tested; check the spelling of the domain; if it is right, DNS for it fails on this network"
+	}
+}
+
+func mcpNoteUnresolved(row *mcpDiscoveryDomain, missingFamily string, systemOnly, nxdomain bool) {
+	if !row.unresolved {
+		return
+	}
+	row.missingFamily, row.systemOnly, row.nxdomain = missingFamily, systemOnly, nxdomain
 }
 
 func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mcpDiscoveryDomain {
@@ -199,6 +228,7 @@ func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mc
 			row.Blocked = r.DNSResult.TransportBlocked
 		}
 		mcpApplyOutcome(&row, discovery.Outcome(r.Outcome))
+		mcpNoteUnresolved(&row, r.MissingFamily, r.DNSResult == nil, r.DNSResult != nil && r.DNSResult.NXDomain)
 		row.Unconfirmed = row.Found && r.Unconfirmed && !running
 		row.Provisional = running && row.Found
 		row.Verdict = mcpDiscoveryVerdict(row, running)
@@ -457,6 +487,7 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 			Confirmed:     e.Confirmed,
 		}
 		mcpApplyOutcome(&row, e.EffectiveOutcome())
+		mcpNoteUnresolved(&row, e.MissingFamily, e.DNSResult == nil, e.DNSResult != nil && e.DNSResult.NXDomain)
 		row.Unconfirmed = row.Found && (e.Unconfirmed || e.Status == discovery.CheckStatusCanceled)
 		row.Verdict = mcpDiscoveryVerdict(row, false)
 		if row.Found && e.ApplicableSet() != nil {
@@ -507,23 +538,47 @@ func mcpSetVerdictView(cfg *config.Config, setID string, v *discovery.SetVerdict
 }
 
 func mcpSetVerdictMeaning(name string, v *discovery.SetVerdict) string {
+	open := mcpWithout(v.Uncovered, v.Unresolved)
+	untested := ""
+	if len(v.Unresolved) > 0 {
+		untested = fmt.Sprintf(". %s has no address this run could test (a misspelled or dead name, or none in the probed IP family): fix it or remove it from the set's Discovery addresses", mcpListOrNone(v.Unresolved))
+	}
 	switch v.Status {
 	case discovery.SetVerdictCovered:
 		return fmt.Sprintf("'%s' passed every confirmation try on every address of set %q in one configuration; action=apply with set writes it into the set, leaving its domains alone", v.WinnerPreset, name)
 	case discovery.SetVerdictCurrentWorks:
 		return fmt.Sprintf("the current strategy of set %q passed every confirmation try on every address; there is nothing to write", name)
 	case discovery.SetVerdictPartial:
-		return fmt.Sprintf("no single strategy works for every address of set %q: '%s' covers %s, nothing found covers %s. apply is refused; those addresses need a set of their own",
-			name, v.WinnerPreset, mcpListOrNone(v.Covered), mcpListOrNone(v.Uncovered))
+		if len(open) == 0 {
+			return fmt.Sprintf("'%s' covers %s of set %q, but not every address, so apply is refused%s", v.WinnerPreset, mcpListOrNone(v.Covered), name, untested)
+		}
+		return fmt.Sprintf("no single strategy works for every address of set %q: '%s' covers %s, nothing found covers %s. apply is refused; those addresses need a set of their own%s",
+			name, v.WinnerPreset, mcpListOrNone(v.Covered), mcpListOrNone(open), untested)
 	case discovery.SetVerdictNotNeeded:
 		return fmt.Sprintf("every address of set %q loads without b4; it needs no strategy for them", name)
 	case discovery.SetVerdictNone:
-		return fmt.Sprintf("no strategy tried made %s load; a packet strategy does not help there, a proxy route might", mcpListOrNone(v.Uncovered))
+		switch {
+		case len(open) == 0 && len(v.NoBypass) > 0:
+			return fmt.Sprintf("%s load without b4; nothing else could be tested%s", mcpListOrNone(v.NoBypass), untested)
+		case len(open) == 0:
+			return "nothing was tested" + untested
+		}
+		return fmt.Sprintf("no strategy tried made %s load; a packet strategy does not help there, a proxy route might%s", mcpListOrNone(open), untested)
 	case discovery.SetVerdictIncomplete:
 		return fmt.Sprintf("the run for set %q was cancelled before it reached a verdict; start it again", name)
 	default:
 		return fmt.Sprintf("unknown set verdict %q", v.Status)
 	}
+}
+
+func mcpWithout(list, drop []string) []string {
+	var out []string
+	for _, item := range list {
+		if !slices.Contains(drop, item) {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func mcpListOrNone(list []string) string {

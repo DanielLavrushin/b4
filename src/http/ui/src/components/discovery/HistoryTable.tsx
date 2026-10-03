@@ -34,7 +34,9 @@ import {
   historySet,
   historyUnconfirmed,
   historyVerdict,
+  ipFamilyLabel,
   presetLabel,
+  unresolvedLabel,
 } from "@utils";
 import { AlternatesList } from "./AlternatesList";
 
@@ -183,7 +185,7 @@ export const HistoryTable = ({
           <B4Badge
             variant="outlined"
             color="error"
-            label={t("discovery.status.unresolved")}
+            label={unresolvedLabel(row.entry.missing_family, t)}
           />
         );
       default:
@@ -298,7 +300,11 @@ export const HistoryTable = ({
       case "unresolved":
         return (
           <Typography variant="body2" sx={muted}>
-            {t("discovery.history.unresolved")}
+            {row.entry.missing_family
+              ? t("discovery.history.unresolvedFamily", {
+                  family: ipFamilyLabel(row.entry.missing_family),
+                })
+              : t("discovery.history.unresolved")}
           </Typography>
         );
       default:

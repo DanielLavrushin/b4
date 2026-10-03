@@ -230,6 +230,14 @@ func lookupFailureOf(err error) nameLookup {
 	return lookupFailed
 }
 
+func lookupHostOf(err error) string {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.Name
+	}
+	return ""
+}
+
 type blockPageRedirect struct {
 	target string
 }
@@ -337,6 +345,7 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		}
 		if result.FinalHost == "" {
 			result.lookup = lookupFailureOf(err)
+			result.lookupHost = lookupHostOf(err)
 		}
 		result.Duration = time.Since(start)
 		return result
