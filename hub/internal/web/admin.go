@@ -101,6 +101,8 @@ func (s *Server) mountAPI(mux *http.ServeMux) {
 	mux.Handle("POST "+PathAPI+"/mirrors/{id}/{action}", s.guard(s.mirrorAction))
 	mux.Handle("GET "+PathAPI+"/feedback", s.guard(s.feedback))
 	mux.Handle("GET "+PathAPI+"/votes", s.guard(s.votes))
+	mux.Handle("GET "+PathAPI+"/votes/origins", s.guard(s.voteOrigins))
+	mux.Handle("GET "+PathAPI+"/geo/categories", s.guard(s.geoCategories))
 	mux.Handle("GET "+PathAPI+"/reports", s.guard(s.reports))
 	mux.Handle("POST "+PathAPI+"/reports/bulk", s.guard(s.reportsBulk))
 	mux.Handle("POST "+PathAPI+"/reports/{id}/{action}", s.guard(s.reportAction))

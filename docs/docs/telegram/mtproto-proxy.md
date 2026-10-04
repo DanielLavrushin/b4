@@ -60,7 +60,7 @@ In **Internet** mode the dialog warns when the link is not expected to work from
 - the port is not open, because **Expose to internet** is off or not saved yet;
 - the proxy is not listening on its port, for example because another program holds it, so b4 does not open it;
 - the firewall rule could not be added, and the dialog shows the error;
-- **Skip IPTables/NFTables setup** is on, so b4 adds no rule at all;
+- **Skip IPTables/NFTables Setup** is on, so b4 adds no rule at all;
 - the proxy is bound to a loopback address, or to an address that is not the WAN address;
 - there is no default route, so there is no WAN address to offer;
 - the WAN address is in `100.64.0.0/10`, carrier-grade NAT, which connections from the internet do not reach over IPv4;

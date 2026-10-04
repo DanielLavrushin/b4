@@ -1,13 +1,21 @@
 # B4 - Bye Bye Big Bro
 
-## [1.84.1] - 2026-10-03
+## [1.85.0] - 2026-10-04
 
 - CHANGED: **The dashboard shows connections per minute in and outside sets, what each set matched in the last hour, and the problems that need attention** - Device Activity and Domains Not In Any Set gave way to links into the Traffic page, the Runtime figures moved to System Info, and Reset Stats became Reset counters, with a Clear button of its own on Active Escalations.
 - FIXED: **Dashboard figures misled: Active flows only grew, Throughput counted only the first packets of each connection, Workers always read all active, Uptime started over at Reset Stats, and Domains Not In Any Set stopped taking new domains** - b4 counted every inspected packet as a connection, never recorded a connection ending and evicted each new domain once the list was full.
 - FIXED: **Reset Stats on the dashboard also sent every escalated site back to the set that had failed for it** - the reset cleared b4's escalations along with the counters.
 - CHANGED: **MCP `b4_status` and `b4_metrics` and the metrics API count each connection once, so their fields changed** - `connections_seen`, `current_cps`, `current_pps` and `memory_percent` gave way to per-minute connection counts, `cpu_percent` and `rss_bytes`, `/api/metrics` and `/api/ws/metrics` carry the new dashboard snapshot, and `POST /api/escalations/clear` clears escalations.
+
+## [1.84.1] - 2026-10-03
+
+- ADDED: **Download Configuration under Settings, System, Backup saves the running configuration as is, or as a safe copy for sharing when asking for help** - the safe copy replaces passwords, tokens, user names, the host names of the router and its relays and credentials inside URLs with `[redacted]`, and b4 refuses to load or save a configuration that still holds these placeholders.
+- CHANGED: **The settings are regrouped: the Core tab has sub-tabs for Packet Engine, Devices, Firewall, DNS and SOCKS5, and a new System tab after it holds Service with logging, Web Server and Backup, which replaced the Backup tab** - a sub-tab shows a dot while it has unsaved changes and an icon while a change waits for a restart.
+- FIXED: **Switching Time Zone back to Auto kept the previously selected zone in log timestamps until b4 restarted** - b4 reloaded the zone it had set itself instead of the system's.
+- FIXED: **A NAT Masquerade interface that was down or renamed disappeared from the card, which then looked as if masquerading covered every interface while it was limited to the missing one** - the card listed only the interfaces present at the moment and left out saved ones that were not.
 - FIXED: **An update from the web interface failed with `Could not fetch the installer: mkdir /tmp/b4update-...: no such file or directory` when nothing could be created in /tmp, as seen in a MikroTik container after a restart, and with /tmp mounted noexec the web interface reported the update as started while nothing happened** - b4 staged the installer in /tmp and ran it from there, and the installer moved to another directory only when /tmp was short of space.
 - FIXED: **A request to `/api/system/update` with a version such as `--remove` or `--arch=mips` removed b4 or installed a binary for another architecture instead of updating** - b4 passed the requested version to the installer unchecked, and the installer read it as one of its own options.
+- FIXED: **Set cards gave target counts such as `1 domains` and `1 IPs`, and in Russian the longer labels in the panel a set card opens from its Target, Split, Fake, Route, DNS and Escalate tabs ran into their values or wrapped onto a second line** - the number was always followed by the same word, and the label column had a fixed width that the longer Russian labels did not fit.
 
 ## [1.84.0] - 2026-09-30
 

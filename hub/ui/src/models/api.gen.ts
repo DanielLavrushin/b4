@@ -311,6 +311,23 @@ export interface VotesPageView {
   next?: string;
 }
 
+export interface VoteOriginsView {
+  asns: VoteASNView[];
+  countries: MixView[];
+}
+
+export interface GeoCategoriesView {
+  geosite: string[];
+  geoip: string[];
+}
+
+export interface InvalidFieldView {
+  path: string;
+  code: string;
+  message: string;
+  params?: Record<string, unknown>;
+}
+
 export interface ReasonPresetView {
   id: number;
   scope: ReasonScope;
@@ -480,6 +497,7 @@ export interface EntryView {
   doh_host?: string;
   payloads: BlobRef[];
   projection: Record<string, unknown>;
+  config?: Record<string, unknown>;
   decode_error?: string;
   reports: ReportView[];
   independent_reports: number;
@@ -689,6 +707,7 @@ export interface SetRowView {
   superseded_at?: string;
   withheld?: WithheldReason;
   hidden_from?: SetStatus;
+  config?: Record<string, unknown>;
   decode_error?: boolean;
   created_at: string;
   updated_at: string;
@@ -798,6 +817,23 @@ export interface KeyClientView {
   last: string;
 }
 
+export interface VoteASNView {
+  key: string;
+  name?: string;
+  country?: string;
+  votes: number;
+  keys: number;
+  countries: string[];
+}
+
+export interface MixView {
+  key: string;
+  name?: string;
+  country?: string;
+  votes: number;
+  keys: number;
+}
+
 export interface IssueView {
   code: IssueCode;
   severity: Severity;
@@ -865,14 +901,6 @@ export interface ScoreStatsView {
   bins: ScoreBinView[];
   low_score: number;
   stale: number;
-}
-
-export interface MixView {
-  key: string;
-  name?: string;
-  country?: string;
-  votes: number;
-  keys: number;
 }
 
 export interface TopSetView {

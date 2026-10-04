@@ -302,8 +302,9 @@ func TestHandleUpdate_ConfigBackup(t *testing.T) {
 	cfg := config.NewConfig()
 	cfg.ConfigPath = configPath
 	api := &API{
-		cfgPtr:                 testCfgPtr(&cfg),
-		overrideServiceManager: func() string { return "systemd" },
+		cfgPtr:                  testCfgPtr(&cfg),
+		overrideServiceManager:  func() string { return "systemd" },
+		overrideLaunchInstaller: func(installerRun) {},
 	}
 	mux := http.NewServeMux()
 	api.mux = mux

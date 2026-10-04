@@ -12,7 +12,7 @@ Basic parameters for processing TCP traffic in a set.
 How many packets at the start of each connection to analyze. After that limit, packets pass without modification. The TLS handshake (ClientHello) normally happens in the first 3-5 packets, so processing the whole connection is not needed.
 
 :::info
-This value cannot exceed the global limit in [Settings -> Core -> Queue](../../settings/core#queue-and-packet-processing). If a higher value is set here, the global limit is used instead.
+This value cannot exceed the global limit in [Settings, Core, Packet Engine](../../settings/core#queue-and-packet-processing). If a higher value is set here, the global limit is used instead.
 :::
 
 ## Inter-packet delay (Seg2Delay)
@@ -57,13 +57,13 @@ A source device discovered from the ARP table is matched by its MAC address; one
 address you entered for it, so such a device needs a fixed address to be usable as a clamp scope.
 :::
 
-The consequence is worth spelling out, because it surprises people:
+Which connections the clamp applies to depends on what the set is scoped by:
 
-- Set scoped by **IP, GeoIP or ASN**: the clamp applies only to connections headed for those addresses. This is what most people expect.
+- Set scoped by **IP, GeoIP or ASN**: the clamp applies only to connections headed for those addresses.
 - Set scoped **only by source device**: the clamp applies to **every** port 443 connection from those devices, wherever it is going - not just to the set's domains. That device's HTTPS is slowed across the board.
 - Set with **both**: the clamp applies to connections from those devices *and* headed for those addresses.
 
-If the goal is simply "slow this one TV down on port 443", the [per-device MSS](../../settings/core#device-filtering) column does the same job and reads more honestly. Reach for a per-set MSS when the set carries IP, GeoIP or ASN targets to aim it at.
+If the goal is to slow one TV down on port 443, the [per-device MSS](../../settings/core#device-table) column does the same job. A per-set MSS makes sense when the set carries IP, GeoIP or ASN targets to aim it at.
 
 :::info
 Enabling the switch fills the size in as `88` if it is empty. That is the smallest useful value and the usual TSPU workaround for smart TVs on YouTube, but it is an aggressive one - every segment carries at most 88 bytes of payload, so large downloads over a clamped connection are slow. Raise it if the connection works but crawls.

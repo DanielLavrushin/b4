@@ -187,7 +187,7 @@ const leafEqual = (a: unknown, b: unknown): boolean => {
 };
 
 const formatLeaf = (val: unknown, t: (key: string) => string): string => {
-  if (isZero(val)) return "—";
+  if (isZero(val)) return "-";
   if (Array.isArray(val)) {
     return (val as unknown[]).map((v) => formatLeaf(v, t)).join(", ");
   }
@@ -350,7 +350,7 @@ const buildGroups = (
     const allRows = mergeFacetRows(facetA, facetB, skip, false);
     const groupLists = key === "target" ? lists : [];
     const shownValues = new Set([
-      "—",
+      "-",
       ...allRows
         .flatMap((r) => [r.a, r.b])
         .flatMap((c) =>
@@ -423,7 +423,7 @@ const Cell = ({
       opacity: (differs || !cell) && !dormant ? 1 : 0.7,
     }}
   >
-    {cell ? cell.value : "—"}
+    {cell ? cell.value : "-"}
     {cell?.muted && (
       <Box
         component="span"
@@ -482,7 +482,7 @@ const ListCell = ({
   if (items.length === 0) {
     return (
       <Typography sx={{ ...valueSx, color: colors.text.disabled }}>
-        —
+        -
       </Typography>
     );
   }

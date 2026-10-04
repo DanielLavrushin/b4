@@ -143,9 +143,9 @@ The diagram updates as settings change.
 Define which network interfaces traffic is intercepted from for routing. Shown as clickable badges - click to toggle.
 
 :::info
-This is an ingress filter, and it is not the same setting as `Settings > Core > Network
-interfaces`, which filters what the engine inspects and compares the interface a packet
-leaves by. [Which interface is which](/docs/guides/interfaces) puts the three side by side.
+This is an ingress filter, and it is not the same setting as **Capture Interfaces** under
+**Settings, Core, Packet Engine**, which filters what the engine inspects and compares the
+interface a packet leaves by. [Which interface is which](/docs/guides/interfaces) puts the three side by side.
 :::
 
 :::info
@@ -257,7 +257,7 @@ For this to work end to end:
 - The upstream device must route that source into the path you want, for example `ip rule add from 192.168.1.51 lookup 100` on Linux, or a `mangle` rule with `src-address` plus `action=mark-routing` on RouterOS.
 - The upstream must not drop the packets on reverse-path checks. A router with strict `rp_filter` and no route back to b4's box for that address discards them before any policy rule is consulted. This is the most common reason a correct-looking setup moves no traffic.
 
-The address family has to match. An IPv4 egress IP rewrites IPv4 only. What happens to the set's IPv6 traffic then depends on **IPv6 support** in [Settings -> Core](../settings/core#protocols):
+The address family has to match. An IPv4 egress IP rewrites IPv4 only. What happens to the set's IPv6 traffic then depends on **Enable IPv6 Support** in [Settings, Core, Packet Engine](../settings/core#protocols):
 
 - **IPv6 support on.** The set's IPv6 traffic is still diverted to the output interface, keeps masquerading, and leaves with the interface's own IPv6 address. A set carries one egress IP, so an IPv6 address entered in its place moves the rewrite to IPv6 and returns IPv4 to masquerading.
 - **IPv6 support off.** The set has no IPv6 rules at all. Its IPv6 traffic is not marked, not diverted and not masqueraded: it follows the router's normal route, which for a dual-stack destination means the set is bypassed rather than routed with the wrong source address.
@@ -381,7 +381,7 @@ On an iptables system the equivalents are `kmod-ipt-tproxy` and `kmod-ipt-socket
 The rule that keeps the router's own addresses out of the diversion uses the address-type match: `kmod-ipt-extra` with `iptables-mod-extra` on an iptables system, `kmod-nft-fib` on nftables. Where that match is rejected, the service writes an explicit list of the router's addresses instead, refreshed the next time the set is rebuilt, and the log says so.
 
 :::tip
-The **System Info** button on Settings -> Core reports, under **Kernel Capabilities**, whether TPROXY is usable, and names the packages that provide what is missing.
+The **System Info** button on **Settings, System, Service** reports, under **Kernel Capabilities**, whether TPROXY is usable, and names the packages that provide what is missing.
 :::
 
 ### Bridge netfilter
@@ -404,7 +404,7 @@ printf 'net.bridge.bridge-nf-call-iptables=0\nnet.bridge.bridge-nf-call-ip6table
 With bridge netfilter off, containers on a Docker network created with `icc=false` are no longer isolated from each other, and with Docker's userland proxy disabled a container cannot reach ports that other containers on the same network publish. OpenWrt's default Docker configuration uses neither. In either configuration dockerd sets `net.bridge.bridge-nf-call-iptables` back to `1` each time it sets up an affected network, which includes every dockerd start and on OpenWrt comes after the boot-time sysctl pass, and does the same with `net.bridge.bridge-nf-call-ip6tables` for a network with IPv6, so the settings above do not stay off there.
 
 :::info
-While bridge netfilter is on for a bridge with ports and a set in this mode or in the Telegram over WebSocket mode, or the Telegram over WebSocket switch, is active, the service logs a warning that names the bridge and the setting to change. **System Info** on Settings -> Core shows the same in the **Bridge netfilter** row under **Firewall**, and the Telegram over WebSocket card shows a warning while the switch is on.
+While bridge netfilter is on for a bridge with ports and a set in this mode or in the Telegram over WebSocket mode, or the Telegram over WebSocket switch, is active, the service logs a warning that names the bridge and the setting to change. **System Info** on **Settings, System, Service** shows the same in the **Bridge netfilter** row under **Firewall**, and the Telegram over WebSocket card shows a warning while the switch is on.
 :::
 
 ### Settings
@@ -424,7 +424,7 @@ Most SOCKS5 proxies carry TCP only. Xray and sing-box need UDP enabled explicitl
 
 With **Route UDP through upstream** off, b4 refuses matched UDP on port 443 with an ICMP port-unreachable. Browsers read that as a signal to fall back to TCP, which the proxy carries. Without it, any site advertising HTTP/3 through the `alt-svc` header would be reached over QUIC directly, bypassing the proxy entirely, and a browser remembers that preference for as long as the header's lifetime says.
 
-That refusal is written per address family. The IPv6 half of it exists only while **IPv6 support** is on in [Settings -> Core](../settings/core#protocols). With IPv6 support off, only the IPv4 rule is created, so a destination the set matches that also answers over IPv6 is still reachable over QUIC there, and the connection does not go through the proxy.
+That refusal is written per address family. The IPv6 half of it exists only while **Enable IPv6 Support** is on in [Settings, Core, Packet Engine](../settings/core#protocols). With IPv6 support off, only the IPv4 rule is created, so a destination the set matches that also answers over IPv6 is still reachable over QUIC there, and the connection does not go through the proxy.
 
 With the option on, matched UDP goes to the proxy through UDP ASSOCIATE. Turn it on only if the upstream implements it. If it does not, matched UDP is dropped and b4 logs a warning naming the set and the upstream.
 
@@ -497,7 +497,7 @@ tproxy: set "TMDB" cannot reach its upstream 10.8.0.1:1080 (1 consecutive failur
 traffic matched by this set is not getting through: dial upstream: dial tcp 10.8.0.1:1080: i/o timeout
 ```
 
-The message repeats at most once a minute while the upstream stays down, and a matching line is logged once it answers again. The same state is carried under `upstreams` in the diagnostics that **Copy JSON** copies from the **System Info** dialog on Settings -> Core, so a diagnostics bundle shows whether the proxy was reachable at the time it was taken:
+The message repeats at most once a minute while the upstream stays down, and a matching line is logged once it answers again. The same state is carried under `upstreams` in the diagnostics that **Copy JSON** copies from the **System Info** dialog on **Settings, System, Service**, so a diagnostics bundle shows whether the proxy was reachable at the time it was taken:
 
 ```json
 {

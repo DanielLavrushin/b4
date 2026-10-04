@@ -24,7 +24,6 @@ const DEFAULTS = {
   tcp_idle_sec: 30,
   tcp_io_sec: 10,
   tcp_dial_sec: 5,
-  keep_ipv6_answers: false,
 };
 
 export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
@@ -33,11 +32,7 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
   const tcpOn = !dns.tcp_disabled;
 
   return (
-    <B4Section
-      title={t("settings.Dns.title")}
-      description={t("settings.Dns.description")}
-      icon={<DnsIcon />}
-    >
+    <B4Section title={t("settings.Dns.title")} icon={<DnsIcon />}>
       <B4Hint>{t("settings.Dns.info")}</B4Hint>
 
       <B4FormGroup label={t("settings.Dns.tcpGroup")} columns={2}>
@@ -108,22 +103,6 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
             helperText={t("settings.Dns.tcpDialHelp")}
           />
         )}
-      </B4FormGroup>
-
-      <B4FormGroup label={t("settings.Dns.ipv6Group")} columns={1}>
-        <B4Switch
-          label={t("settings.Dns.ipv4Fallback")}
-          checked={!dns.keep_ipv6_answers}
-          onChange={(checked: boolean) =>
-            onChange("system.dns.keep_ipv6_answers", !checked)
-          }
-          disabled={config.queue.ipv6}
-          description={t(
-            config.queue.ipv6
-              ? "settings.Dns.ipv4FallbackIdle"
-              : "settings.Dns.ipv4FallbackDesc",
-          )}
-        />
       </B4FormGroup>
     </B4Section>
   );

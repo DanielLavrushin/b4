@@ -32,6 +32,7 @@ const (
 	voterAddress  = "203.0.113.9"
 	otherAddress  = "198.51.100.7"
 	thirdAddress  = "192.0.2.9"
+	fourthAddress = "192.0.2.77"
 	password      = "moderator-secret"
 )
 
@@ -40,6 +41,7 @@ var origins = map[string]testkit.Origin{
 	voterAddress:  {ASN: "64500", Country: "RU", Name: "EXAMPLE-A ISP A"},
 	otherAddress:  {ASN: "64501", Country: "DE", Name: "EXAMPLE-B ISP B"},
 	thirdAddress:  {ASN: "64502", Country: "NL", Name: "EXAMPLE-C ISP C"},
+	fourthAddress: {ASN: "64501", Country: "NL", Name: "EXAMPLE-B ISP B"},
 }
 
 type fixture struct {

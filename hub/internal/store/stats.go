@@ -94,6 +94,42 @@ func (s *Store) ASNMix(ctx context.Context, since time.Time, limit int) ([]MixRo
 		GROUP BY v.asn_observed ORDER BY 5 DESC, 4 DESC LIMIT ?`, formatTime(since), limit)
 }
 
+func (s *Store) VoteASNs(ctx context.Context) ([]MixRow, error) {
+	return s.mix(ctx, `WITH per AS (
+			SELECT asn_observed AS asn, country_observed AS cc, COUNT(*) AS n FROM votes
+			WHERE asn_observed <> '' GROUP BY asn_observed, country_observed
+		), main AS (
+			SELECT asn, cc FROM (SELECT asn, cc, ROW_NUMBER() OVER (PARTITION BY asn ORDER BY cc = '', n DESC, cc) AS rn FROM per) WHERE rn = 1
+		)
+		SELECT v.asn_observed, COALESCE(n.name, ''), COALESCE(m.cc, ''), COUNT(*), COUNT(DISTINCT v.key_hmac)
+		FROM votes v LEFT JOIN asn_names n ON n.asn = v.asn_observed LEFT JOIN main m ON m.asn = v.asn_observed
+		WHERE v.asn_observed <> '' GROUP BY v.asn_observed ORDER BY 4 DESC, 1`)
+}
+
+func (s *Store) VoteASNCountries(ctx context.Context) (map[string][]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT asn_observed, country_observed FROM votes
+		WHERE asn_observed <> '' AND country_observed <> ''
+		GROUP BY asn_observed, country_observed ORDER BY asn_observed, COUNT(*) DESC, country_observed`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string][]string)
+	for rows.Next() {
+		var asn, country string
+		if err := rows.Scan(&asn, &country); err != nil {
+			return nil, err
+		}
+		out[asn] = append(out[asn], country)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) VoteCountries(ctx context.Context) ([]MixRow, error) {
+	return s.mix(ctx, `SELECT country_observed, '', '', COUNT(*), COUNT(DISTINCT key_hmac) FROM votes
+		WHERE country_observed <> '' GROUP BY country_observed ORDER BY 4 DESC, 1`)
+}
+
 func (s *Store) ClientMix(ctx context.Context, since time.Time) ([]MixRow, error) {
 	return s.mix(ctx, `SELECT b4_version, engine, '', COUNT(*), COUNT(*) FROM (
 		SELECT b4_version, engine, ROW_NUMBER() OVER (PARTITION BY key_hmac ORDER BY received_at DESC, id DESC) AS rn

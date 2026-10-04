@@ -1007,55 +1007,13 @@ func (api *API) addMCPPrompts(srv *mcp.Server) {
 
 func redactConfigForMCP(cfg *config.Config) *config.Config {
 	clone := cfg.Clone()
+	clone.RedactCredentials()
 
-	if clone.System.WebServer.Password != "" {
-		clone.System.WebServer.PasswordSet = true
-		clone.System.WebServer.Password = ""
-	}
 	clone.System.WebServer.Username = ""
 	clone.System.WebServer.TLSKey = ""
-
-	if clone.System.WebServer.MCP.Token != "" {
-		clone.System.WebServer.MCP.Token = redactedMarker
-	}
-
-	if clone.System.Socks5.Password != "" {
-		clone.System.Socks5.Password = redactedMarker
-	}
-	if clone.System.Socks5.Username != "" {
-		clone.System.Socks5.Username = redactedMarker
-	}
-
-	for i := range clone.System.MTProto.Secrets {
-		clone.System.MTProto.Secrets[i].Secret = redactedMarker
-		if clone.System.MTProto.Secrets[i].Name != "" {
-			clone.System.MTProto.Secrets[i].Name = redactedMarker
-		}
-	}
-
-	if clone.System.API.IPInfoToken != "" {
-		clone.System.API.IPInfoToken = redactedMarker
-	}
-
 	clone.System.AI.APIKeyRef = ""
 
-	for _, s := range clone.Sets {
-		redactSetSecrets(s)
-	}
-
 	return clone
-}
-
-func redactSetSecrets(set *config.SetConfig) {
-	if set == nil {
-		return
-	}
-	if set.Routing.Upstream.Username != "" {
-		set.Routing.Upstream.Username = redactedMarker
-	}
-	if set.Routing.Upstream.Password != "" {
-		set.Routing.Upstream.Password = redactedMarker
-	}
 }
 
 func redactedSetForMCP(set *config.SetConfig) (*config.SetConfig, error) {
@@ -1067,11 +1025,11 @@ func redactedSetForMCP(set *config.SetConfig) (*config.SetConfig, error) {
 	if err := json.Unmarshal(raw, &clone); err != nil {
 		return nil, err
 	}
-	redactSetSecrets(&clone)
+	clone.RedactCredentials()
 	return &clone, nil
 }
 
-const redactedMarker = "[redacted]"
+const redactedMarker = config.RedactedMarker
 
 func tailLines(path string, limit int, contains string) (tailResult, error) {
 	f, err := os.Open(path)

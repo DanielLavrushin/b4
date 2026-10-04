@@ -117,6 +117,7 @@ type EntryView struct {
 	DoHHost             string                 `json:"doh_host,omitempty"`
 	Payloads            []hubwire.BlobRef      `json:"payloads"`
 	Projection          map[string]interface{} `json:"projection"`
+	Config              map[string]interface{} `json:"config,omitempty"`
 	DecodeError         string                 `json:"decode_error,omitempty"`
 	Reports             []ReportView           `json:"reports"`
 	Independent         int                    `json:"independent_reports"`
@@ -696,6 +697,7 @@ func (s *Server) entry(v store.Version, ec *entryContext) EntryView {
 	if err != nil {
 		e.DecodeError = err.Error()
 	} else {
+		e.Config = ConfigOf(&set)
 		e.Strategy = Techniques(&set, v.Payloads)
 		for _, name := range EmittedNames(&set, v.Payloads) {
 			e.Emitted = append(e.Emitted, EmittedView{Name: name.Name, Source: name.Source, Unreadable: name.Unreadable})

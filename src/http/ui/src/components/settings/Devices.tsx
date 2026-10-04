@@ -217,18 +217,14 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
   const manualDevices = configDevices.filter((d) => d.is_manual);
 
   return (
-    <B4Section
-      title={t("settings.Devices.title")}
-      description={t("settings.Devices.description")}
-      icon={<DeviceUnknowIcon />}
-    >
+    <B4Section title={t("settings.Devices.title")} icon={<DeviceUnknowIcon />}>
       <Grid container spacing={2}>
         <Grid size={{ xs: 12 }}>
           <Box
             sx={{
               display: "flex",
               gap: 3,
-              alignItems: "center",
+              alignItems: "flex-start",
               flexWrap: "wrap",
             }}
           >
@@ -236,7 +232,15 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
               label={t("settings.Devices.enable")}
               checked={enabled}
               onChange={(checked) => onChange("queue.devices.enabled", checked)}
-              description={t("settings.Devices.enableDesc")}
+              description={
+                enabled || wisb ? undefined : t("settings.Devices.enableDesc")
+              }
+            />
+            <B4Switch
+              label={t("settings.Devices.invertSelection")}
+              checked={wisb}
+              onChange={(checked) => onChange("queue.devices.wisb", checked)}
+              disabled={!enabled}
             />
             <B4Switch
               label={t("settings.Devices.vendorLookup")}
@@ -245,17 +249,6 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                 onChange("queue.devices.vendor_lookup", checked)
               }
               description={t("settings.Devices.vendorLookupDesc")}
-            />
-            <B4Switch
-              label={t("settings.Devices.invertSelection")}
-              checked={wisb}
-              onChange={(checked) => onChange("queue.devices.wisb", checked)}
-              description={
-                wisb
-                  ? t("settings.Devices.invertBlacklist")
-                  : t("settings.Devices.invertWhitelist")
-              }
-              disabled={!enabled}
             />
           </Box>
         </Grid>
@@ -504,7 +497,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                                 variant="caption"
                                 color="text.secondary"
                               >
-                                —
+                                -
                               </Typography>
                             )}
                           </TableCell>

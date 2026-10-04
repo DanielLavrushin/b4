@@ -34,7 +34,7 @@ Times on the dashboard are in the browser's time zone. b4 measures every time ag
 | **CPU** | b4's CPU time over the last 10 seconds, as a share of all the router's cores. Hovering shows the busiest minute of the last hour, also as a share of one core |
 | **b4 RAM, last 24 h** | Appears once b4 has run for an hour and takes the rest of the strip: a line with the peak RSS of every ten minutes, from zero up, so a steady rise stands out and small swings stay flat. Hovering a point gives its ten minutes and peak |
 
-The Go runtime figures (heap in use and reserved, goroutines, OS threads, open file descriptors, GC cycles) are under **Process** in the **System Info** dialog on Settings, Core.
+The Go runtime figures (heap in use and reserved, goroutines, OS threads, open file descriptors, GC cycles) are under **Process** in the [System Info](settings/system.md#system-info) dialog on Settings, System, Service.
 
 The menu button at the right end of the strip holds [Customize](#customize) and [Reset counters](#reset-counters).
 
@@ -55,7 +55,7 @@ Figures count as stale when no update arrived for 3 seconds, or for 8 seconds wh
 
 ## Packet engine not running
 
-When the packet engine did not start, a card under the status strip shows the reason and what b4 does next, and **Status** reads **Engine failed**. The state itself is described in [Settings -> Core -> When the engine does not start](settings/core.md#when-the-engine-does-not-start).
+When the packet engine did not start, a card under the status strip shows the reason and what b4 does next, and **Status** reads **Engine failed**. The state itself is described under [When the engine does not start](settings/core.md#when-the-engine-does-not-start).
 
 ![20260928134207](/img/dashboard/20260928134207.png)
 
@@ -65,7 +65,7 @@ The card shows the error that stopped the engine, as written to the log, and the
 | --- | --- |
 | **Switch to TUN** / **Switch to NFQUEUE** | Saves the other engine mode and opens the restart dialog |
 | **Restart b4** | Opens the restart dialog without changing the settings, for example after a missing kernel module was loaded |
-| **Engine settings** | Opens Settings -> Core |
+| **Engine settings** | Opens **Settings, Core, Packet Engine** |
 
 ## Needs attention
 
@@ -80,13 +80,13 @@ The list under the strip collects what needs action, errors before warnings, one
 | **Watchdog checks fail for X**, **The watchdog is looking for a working strategy for X**, **The watchdog cannot check X** | A watched set is Degraded or in Cooldown, waits for or runs a heal, or cannot be verified, see [Statuses](watchdog.md#statuses). The detail gives the reason | **Open set**, the set's Discovery tab |
 | **The watchdog gave up on X; its sites may not open** (error) | Three heals of a watched set failed in a row | **Open set** |
 | **The watchdog is off, but N sets ask for it** | Sets have **Keep this set working with the watchdog** on while the [watchdog](watchdog.md) itself is off | **Watchdog** |
-| **No packets reached b4 in the last N min; if devices are in use, their traffic is not reaching b4** | The packet engine is running and has received no packet for 15 minutes or longer. The line gives the time of the last packet, or of b4's start when none arrived since; it reads **since it started** in that case | **Settings** |
-| Start failures (errors) | The SOCKS5 server, the MTProto proxy or the web server did not start, the web server's TLS certificate and key were unusable and plain HTTP was served instead, or some set targets could not be loaded. The line gives the time, the detail the error | **Settings** (Settings, Core), **Telegram settings** for the MTProto proxy, **Sets** for the targets |
+| **No packets reached b4 in the last N min; if devices are in use, their traffic is not reaching b4** | The packet engine is running and has received no packet for 15 minutes or longer. The line gives the time of the last packet, or of b4's start when none arrived since; it reads **since it started** in that case | **Settings**, Core, Packet Engine |
+| Start failures (errors) | The SOCKS5 server, the MTProto proxy or the web server did not start, the web server's TLS certificate and key were unusable and plain HTTP was served instead, or some set targets could not be loaded. The line gives the time, the detail the error | **Settings**: Core, SOCKS5 for the SOCKS5 server and System, Web Server for the web server; **Telegram settings** for the MTProto proxy; **Sets** for the targets |
 | **b4 was updated on disk; restart to run it** | The file b4 was started from has changed, checked every 10 seconds | **Restart** opens the restart dialog |
-| Overload | Within the last 10 minutes, b4 skipped the bypass for packets because 512 injections were already in flight, could not send packets it crafted, or its packet queue overflowed and the kernel dropped packets meant for it. Each comes with its count | **Settings** |
+| Overload | Within the last 10 minutes, b4 skipped the bypass for packets because 512 injections were already in flight, could not send packets it crafted, or its packet queue overflowed and the kernel dropped packets meant for it. Each comes with its count | **Settings**, Core, Packet Engine |
 | **The router's connection table is N% full; new connections may fail** | `nf_conntrack_count` reached 90% of `nf_conntrack_max`, read every 10 seconds. The detail gives both numbers | - |
 | **b4 holds N OS threads; the Go runtime stops b4 at 4,000** | b4 holds 2,000 OS threads or more. At that point b4 also writes a goroutine dump, `goroutines.txt`, into the log directory when file logging is on | **Logs** |
-| **IPv6 traffic skips all sets: the router has IPv6, b4's IPv6 is off** | The router has a global IPv6 address while **IPv6 support** is off under [Settings, Core](settings/core.md#protocols). In TUN mode the line reads **TUN mode does not handle IPv6; IPv6 traffic skips b4** | **Settings** |
+| **IPv6 traffic skips all sets: the router has IPv6, b4's IPv6 is off** | The router has a global IPv6 address while **IPv6 support** is off under [Settings, Core, Packet Engine](settings/core.md#protocols). In TUN mode the line reads **TUN mode does not handle IPv6; IPv6 traffic skips b4** | **Settings**, Core, Packet Engine |
 
 A start failure and the IPv6 item carry a cross that hides them in this browser. A start failure stays hidden for that one occurrence, so the same failure after the next start shows again. Hiding the IPv6 item also hides the IPv6 warning under Settings, Core.
 

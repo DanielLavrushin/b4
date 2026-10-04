@@ -85,7 +85,7 @@ The `category-ads-all` part needs the GeoSite database loaded - see [Targets](./
 
 ## IPv6
 
-Block rules are written per address family, and b4 only writes rules for the families it is processing. **IPv6 support** is off by default in [Settings -> Core](../settings/core#protocols), and with it off a block set creates no IPv6 rules at all.
+Block rules are written per address family, and b4 only writes rules for the families it is processing. **Enable IPv6 Support** is off by default in [Settings, Core, Packet Engine](../settings/core#protocols), and with it off a block set creates no IPv6 rules at all.
 
 What that costs, layer by layer:
 
@@ -95,7 +95,7 @@ What that costs, layer by layer:
 
 The practical result is that a device holding an IPv6 address for a blocked host, from encrypted DNS the router cannot see or from its own cache, reaches that host over IPv6 with nothing in the way.
 
-To make blocking cover both families, turn **IPv6 support** on in [Settings -> Core](../settings/core#protocols) and restart the service. Blocking IPv6 at the router this way is a different thing from turning IPv6 off for the network, which is a router setting outside b4.
+Blocking covers both families once **Enable IPv6 Support** is on in [Settings, Core, Packet Engine](../settings/core#protocols) and the service has been restarted. Blocking IPv6 at the router this way is a different thing from turning IPv6 off for the network, which is a router setting outside b4.
 
 ## Scope
 

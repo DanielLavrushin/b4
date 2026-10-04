@@ -191,7 +191,7 @@ Docs: [Routing](https://docs.b4core.app/docs/sets/routing) · [Blocking](https:/
 
 ## Telegram
 
-Two independent features, under **Settings → MTProto Proxy**.
+Two independent features, under **Settings → Telegram**.
 
 **MTProto proxy** - a fake-TLS proxy Telegram clients connect to directly, with named revocable secrets and a `tg://proxy` share link. Disabled by default, port 3128.
 
@@ -220,12 +220,12 @@ The web UI and the REST API share one port, 7000 by default.
 | DPI Detector | run diagnostics, with history                                            |
 | Traffic      | live connections with set/domain/TLS/device/ASN, click-to-add into a set |
 | Logs         | live log stream, filters, downloadable trace bundle                      |
-| Settings     | Core, Geodat, Discovery, MTProto Proxy, API, Payloads, Backup            |
+| Settings     | Core, System, Geodat, Discovery, Telegram, Integrations, Payloads        |
 
-Most changes apply immediately. Core settings need a restart, and the UI says so when they do.
+Most changes apply on save. Some settings on the Core and System tabs take effect only after a restart, and the UI marks them.
 
 > [!CAUTION]
-> The web UI and REST API are unauthenticated until you set **both** a username and a password under **Settings → Core → Web Server**. Do not expose port 7000 to the internet without them; the **Expose to internet** switch on that screen refuses to open the port until both are set, and HTTPS keeps them off the wire in plain text.
+> The web UI and REST API are unauthenticated until you set **both** a username and a password under **Settings → System → Web Server**. Do not expose port 7000 to the internet without them; the **Expose to internet** switch on that screen refuses to open the port until both are set, and HTTPS keeps them off the wire in plain text.
 
 HTTPS is enabled by pointing the same screen at a certificate and key. The installer detects router certificates on OpenWrt and Asus Merlin and offers to turn it on.
 
@@ -235,13 +235,13 @@ Docs: [Security](https://docs.b4core.app/docs/settings/security) · [Dashboard](
 
 ## SOCKS5 proxy
 
-B4 also ships a SOCKS5 server for applications that support it. Enable it under **Settings → Core → SOCKS5 Proxy**; it listens on port 1080 by default and routes through the bypass engine.
+B4 also ships a SOCKS5 server for applications that support it. Enable it under **Settings → Core → SOCKS5**; it listens on port 1080 by default and routes through the bypass engine.
 
 ```bash
 curl --socks5 127.0.0.1:1080 https://example.com
 ```
 
-Leaving the username and password empty means no authentication, and it binds all interfaces by default. Restart B4 after changing SOCKS5 settings.
+Leaving the username and password empty means no authentication, and it binds all interfaces by default. SOCKS5 changes apply on save, without a restart.
 
 ## Import from zapret or byedpi
 
@@ -251,16 +251,16 @@ Docs: [Import from another tool](https://docs.b4core.app/docs/sets/import)
 
 ## Configuration file
 
-Everything lives in one JSON file, created on first run and migrated automatically on upgrade. Back it up from **Settings → Backup**.
+Everything lives in one JSON file, created on first run and migrated automatically on upgrade. Back it up from **Settings → System → Backup**.
 
 > [!IMPORTANT]
 > B4 does not watch the config file. Editing it by hand while the service runs has no effect and gets overwritten. Edit while stopped, or use the web UI.
 
-Docs: [Configuration file (RU)](https://docs.b4core.app/ru/docs/advanced/config) · [Core settings](https://docs.b4core.app/docs/settings/core)
+Docs: [Configuration file (RU)](https://docs.b4core.app/ru/docs/advanced/config) · [Core settings](https://docs.b4core.app/docs/settings/core) · [System settings](https://docs.b4core.app/docs/settings/system)
 
 ## TUN mode
 
-For kernels without NFQUEUE support, switch the engine mode to **TUN interface** under **Settings → Core**. B4 creates its own TUN device and steers traffic into it with policy routing, running the same packet engine.
+For kernels without NFQUEUE support, switch the engine mode to **TUN interface** under **Settings → Core → Packet Engine**. B4 creates its own TUN device and steers traffic into it with policy routing, running the same packet engine.
 
 > [!IMPORTANT]
 > TUN mode is a fallback, not an equal alternative. Roughly 60% of the feature set works there: B4 installs none of its usual firewall rules, so anything built on them is unavailable. Discovery and the Watchdog's auto-healing do not run, and IPv6 is not forwarded. Use NFQUEUE where the kernel supports it.
@@ -299,7 +299,7 @@ Updating from the web UI also works, except in Docker.
 
 ## Troubleshooting
 
-`install.sh --sysinfo` reports the kernel, platform, service status, firewall backend, NFQUEUE and conntrack probes, flow-offload state and missing tools. The same data is in the web UI under **Settings → System Info**.
+`install.sh --sysinfo` reports the kernel, platform, service status, firewall backend, NFQUEUE and conntrack probes, flow-offload state and missing tools. The same data is in the web UI under **Settings → System → Service → System Info**.
 
 Common causes when bypass appears to do nothing:
 

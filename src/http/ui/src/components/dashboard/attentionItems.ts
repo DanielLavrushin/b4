@@ -76,11 +76,12 @@ export interface AttentionInput {
 export const IPV6_DISMISS = "ipv6";
 export const CONNTRACK_WARN_SHARE = 0.9;
 export const QUIET_AFTER_MS = 15 * 60_000;
+const ENGINE_SETTINGS = "/settings/general/engine";
 
 export const START_FAILURE_LINK: Partial<Record<EventCode, string>> = {
-  socks5_failed: "/settings/general",
-  web_failed: "/settings/general",
-  web_tls_unusable: "/settings/general",
+  socks5_failed: "/settings/general/socks5",
+  web_failed: "/settings/system/web",
+  web_tls_unusable: "/settings/system/web",
   mtproto_failed: "/settings/mtproto",
   targets_warning: "/sets",
 };
@@ -161,7 +162,7 @@ function ipv6Item(input: AttentionInput, items: AttentionItem[]): void {
     key: "ipv6",
     level: "warning",
     text: t(tun ? "dashboard.attention.ipv6Tun" : "dashboard.attention.ipv6"),
-    action: linkAction(t, "/settings/general", "settings"),
+    action: linkAction(t, ENGINE_SETTINGS, "settings"),
     dismiss: IPV6_DISMISS,
   });
 }
@@ -285,7 +286,7 @@ function overloadItems(input: AttentionInput, items: AttentionItem[]): void {
   const overload = input.attention?.overload;
   if (!overload) return;
   const minutes = Math.max(1, Math.round((overload.window_s || 600) / 60));
-  const action = linkAction(t, "/settings/general", "settings");
+  const action = linkAction(t, ENGINE_SETTINGS, "settings");
   const entries: [string, number][] = [
     ["injectSkipped", overload.inject_skipped],
     ["rawSendDropped", overload.raw_send_dropped],
@@ -340,7 +341,7 @@ function quietItem(input: AttentionInput, items: AttentionItem[]): void {
       ? t("dashboard.attention.quietSinceStart", { duration })
       : t("dashboard.attention.quiet", { duration }),
     time: quiet.since,
-    action: linkAction(t, "/settings/general", "settings"),
+    action: linkAction(t, ENGINE_SETTINGS, "settings"),
   });
 }
 

@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 3
 title: Telegram
 ---
 
@@ -39,7 +39,7 @@ The warnings above the box, each explained under [Troubleshooting](../telegram/t
 | Warning | Meaning |
 | --- | --- |
 | No TPROXY support | The kernel lacks the `tproxy` or `socket` module, so no diversion rule is installed and the header reads **Not working**. The warning names the packages that add them, or the missing modules |
-| Firewall setup is off | **Skip IPTables/NFTables setup** is on in [Settings, Core](./core#firewall), so b4 installs no rules at start-up. A save installs the routing rules until the next restart |
+| Firewall setup is off | **Skip IPTables/NFTables Setup** is on in [Settings, Core, Firewall](./core#firewall), so b4 installs no rules at start-up. A save installs the routing rules until the next restart |
 | The bridge listener failed | Port 13443 could not be bound, with the error. b4 retries, and Telegram connections take the normal path until it succeeds |
 | IPv6 listener note | Shown while IPv6 support is on and only the IPv6 socket failed to open. IPv4 goes through the bridge and Telegram over IPv6 takes the normal path |
 | Downloading the address list failed | Neither telegram.org nor either b4 mirror answered. The list in use is kept, and the warning names its source |

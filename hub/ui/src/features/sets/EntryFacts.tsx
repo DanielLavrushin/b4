@@ -1,5 +1,7 @@
-import { Box, Collapse, Link, Stack, Typography } from "@mui/material";
-import { useState } from "react";
+import { Box, Button, Collapse, Link, Stack, Typography } from "@mui/material";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { colors } from "@design";
 import type { EntryView } from "@/models/api";
@@ -8,29 +10,9 @@ import { CodeBlock } from "@/shared/components/CodeBlock";
 import { Mono } from "@/shared/components/Mono";
 import { formatStamp } from "@/shared/utils/format";
 import { targetsPreview, techniqueText } from "@/shared/utils/terms";
-import { FlagChips } from "./components/TechniqueChips";
+import { FlagChips } from "./components/FlagChips";
 
 const list = (items: string[]) => (items.length ? items.join(", ") : "");
-
-export function TargetsSummary({ entry }: { entry: EntryView }) {
-  const { t } = useTranslation();
-  const parts: string[] = [];
-  if (entry.targets.domains.length) parts.push(t("entry.domains", { count: entry.targets.domains.length }));
-  if (entry.targets.ips.length) parts.push(t("entry.ips", { count: entry.targets.ips.length }));
-  if (entry.targets.geosite.length) parts.push(t("entry.geosite", { count: entry.targets.geosite.length }));
-  if (entry.targets.geoip.length) parts.push(t("entry.geoip", { count: entry.targets.geoip.length }));
-  if (entry.targets.asns.length) parts.push(t("entry.asns", { count: entry.targets.asns.length }));
-  return (
-    <Typography variant="body2" component="span" title={targetsPreview(t, entry.targets)} sx={{ color: colors.text.secondary }}>
-      {targetsPreview(t, entry.targets)}
-      {parts.length > 0 && (
-        <Typography component="span" variant="caption" sx={{ color: colors.text.disabled, ml: 1 }}>
-          {parts.join(", ")}
-        </Typography>
-      )}
-    </Typography>
-  );
-}
 
 export function Origin({ entry }: { entry: EntryView }) {
   const { t } = useTranslation();
@@ -58,6 +40,7 @@ export function Origin({ entry }: { entry: EntryView }) {
 export function EntryFacts({ entry, blobBase = "/b4/hub/blob/" }: { entry: EntryView; blobBase?: string }) {
   const { t } = useTranslation();
   const [showProjection, setShowProjection] = useState(false);
+  const projectionId = useId();
 
   const facts: Fact[] = [
     { label: t("entry.targets"), value: targetsPreview(t, entry.targets) },
@@ -114,7 +97,7 @@ export function EntryFacts({ entry, blobBase = "/b4/hub/blob/" }: { entry: Entry
           {entry.payloads.map((p) => (
             <li key={p.sha256}>
               {t("entry.payloadLine", { protocol: p.protocol, domain: p.domain ?? "", size: p.size })}{" "}
-              <Link href={blobBase + p.sha256} rel="noreferrer" underline="hover">
+              <Link href={blobBase + p.sha256} rel="noreferrer" underline="hover" color="inherit" sx={{ color: colors.text.primary, "&:hover": { color: colors.text.primary } }}>
                 <Mono>{p.sha256.slice(0, 16)}</Mono>
               </Link>
             </li>
@@ -160,11 +143,18 @@ export function EntryFacts({ entry, blobBase = "/b4/hub/blob/" }: { entry: Entry
       {entry.description && <Typography variant="body2">{entry.description}</Typography>}
       <Facts items={facts} />
       <Box>
-        <Link component="button" type="button" underline="hover" variant="body2" onClick={() => setShowProjection((v) => !v)}>
-          {t("entry.projection")} {showProjection ? "▴" : "▾"}
-        </Link>
+        <Button
+          size="small"
+          aria-expanded={showProjection}
+          aria-controls={showProjection ? projectionId : undefined}
+          endIcon={showProjection ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+          onClick={() => setShowProjection((v) => !v)}
+          sx={{ ml: -1, color: colors.text.secondary }}
+        >
+          {t("entry.projection")}
+        </Button>
         <Collapse in={showProjection} unmountOnExit>
-          <Box sx={{ mt: 1 }}>
+          <Box id={projectionId} sx={{ mt: 1 }}>
             <CodeBlock value={entry.projection} />
           </Box>
         </Collapse>

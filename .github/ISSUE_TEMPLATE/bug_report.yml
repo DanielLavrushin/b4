@@ -79,7 +79,7 @@ body:
     attributes:
       label: System diagnostics (JSON)
       description: |
-        In the b4 web UI go to **Settings -> Core -> Core Controls -> System Info**, press **Copy JSON** and paste it here.
+        In the b4 web UI go to **Settings -> System -> Service -> System Info**, press **Copy JSON** and paste it here.
 
         It carries the b4 version, platform, firewall backend and rules, kernel modules, engine mode and interfaces. Passwords are not part of it.
 
@@ -99,7 +99,7 @@ body:
       description: |
         A debug trace shows what b4 did with your traffic, which is usually what decides the issue. To record one:
 
-        1. Set **Settings -> Core -> Service -> Log Level** to **Debug** and press **Save Changes**.
+        1. Set **Settings -> System -> Service -> Log Level** to **Debug** and press **Save Changes**.
         2. Open the **Logs** page and press **Start trace**.
         3. Reproduce the problem: open the site or app that fails. If it only breaks after a while, leave the trace running - it stops on its own after 15 minutes.
         4. Press **Stop & save**. b4 hands you a `b4-trace-*.log` file - drag it into this field.

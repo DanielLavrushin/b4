@@ -3,7 +3,7 @@
     {
       "id": "b4-mcp-token",
       "type": "promptString",
-      "description": "b4 MCP token (Settings -> API -> MCP server -> Generate)",
+      "description": "b4 MCP token (Settings -> Integrations -> MCP server -> Generate)",
       "password": true
     }
   ],

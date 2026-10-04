@@ -1,137 +1,136 @@
-import { Alert, Box, Button, Checkbox, Chip, Collapse, Divider, Link, Paper, Stack, Typography } from "@mui/material";
-import { forwardRef, type ReactNode } from "react";
+import { Box, Button, CircularProgress, Stack, Typography } from "@mui/material";
+import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
+import InfoIcon from "@mui/icons-material/Info";
+import PersonOffIcon from "@mui/icons-material/PersonOff";
 import { useTranslation } from "react-i18next";
-import { colors, radiusPx } from "@design";
+import { colors } from "@design";
 import type { EntryView } from "@/models/api";
 import { useSetDetail } from "@/features/sets/api";
-import { formatAgo, formatStamp, setRef } from "@/shared/utils/format";
-import { EditedNotice } from "@/features/sets/EditedNotice";
-import { EntryFacts, Origin } from "@/features/sets/EntryFacts";
 import { ProjectionDiff } from "@/features/sets/ProjectionDiff";
-import { TechniqueChips } from "@/features/sets/components/TechniqueChips";
+import { setPath } from "@/features/sets/SetDrawerHost";
+import { isBadge, tipLines } from "@/features/sets/card/badges";
+import { useEntryCard } from "@/features/sets/card/entry";
+import { SetCard } from "@/features/sets/card/SetCard";
+import type { CardMenuItem, CardPanel } from "@/features/sets/card/types";
 import type { Moderation } from "@/features/moderation/useModeration";
+import { ErrorState } from "@/shared/components/States";
+import { useOverlay } from "@/shared/hooks/useOverlay";
+import { setRef } from "@/shared/utils/format";
+import { SIMILAR_PANEL, SimilarList, similarBadge, similarLabel, useSimilar } from "./SimilarSets";
+
+const COMPARE_PANEL = "compare";
+
+const actionPair = { display: "flex", gap: 1 } as const;
+const actionButton = { px: 1.5 } as const;
+
+function ListedComparison({ entry, listed }: Readonly<{ entry: EntryView; listed: number }>) {
+  const { t } = useTranslation();
+  const detail = useSetDetail(entry.set_id);
+  if (detail.isPending) {
+    return (
+      <Stack direction="row" alignItems="center" spacing={1}>
+        <CircularProgress size={12} sx={{ color: colors.secondary }} />
+        <Typography variant="caption" sx={{ color: colors.text.secondary }}>
+          {t("app.loading")}
+        </Typography>
+      </Stack>
+    );
+  }
+  if (detail.isError) return <ErrorState error={detail.error} onRetry={() => void detail.refetch()} />;
+  const version = detail.data.versions.find((v) => v.version === listed);
+  if (!version) return null;
+  return <ProjectionDiff before={version.projection} after={entry.projection} beforeVersion={listed} compact />;
+}
 
 interface QueueCardProps {
   entry: EntryView;
   moderation: Moderation;
-  focused: boolean;
   selected: boolean;
-  compare: boolean;
   onToggleSelect: () => void;
-  onToggleCompare: () => void;
-  onOpen: () => void;
-  onFocus: () => void;
-  similar?: ReactNode;
+  panel: string | null;
+  onPanelChange: (panel: string | null) => void;
 }
 
-function Comparison({ entry }: Readonly<{ entry: EntryView }>) {
-  const detail = useSetDetail(entry.set_id);
-  const current = entry.lineage?.current_version;
-  const listed = detail.data?.versions.find((v) => v.version === current);
-  if (!listed || current === undefined) return null;
-  return <ProjectionDiff before={listed.projection} after={entry.projection} beforeVersion={current} />;
-}
-
-export const QueueCard = forwardRef<HTMLDivElement, QueueCardProps>(function QueueCard(
-  { entry, moderation, focused, selected, compare, onToggleSelect, onToggleCompare, onOpen, onFocus, similar },
-  ref,
-) {
+export function QueueCard({ entry, moderation, selected, onToggleSelect, panel, onPanelChange }: Readonly<QueueCardProps>) {
   const { t } = useTranslation();
+  const overlay = useOverlay();
+  const open = () => overlay.open(setPath(entry.set_id, entry.version));
+  const parts = useEntryCard(entry, open);
+  const similar = useSimilar(entry.set_id, entry.version);
   const lineage = entry.lineage;
-  const canCompare = (lineage?.kind === "replaces" || lineage?.kind === "older") && lineage.current_version !== undefined;
-  const severity = lineage?.kind === "older" ? "warning" : lineage?.kind === "replaces" ? "info" : "success";
+  const listed = lineage?.current_version;
+  const panels: CardPanel[] = [
+    { key: SIMILAR_PANEL, label: similarLabel(t, similar), content: <SimilarList entry={entry} similar={similar} onReject={moderation.reject} /> },
+  ];
+  if (listed !== undefined) {
+    panels.push({ key: COMPARE_PANEL, label: t("queue.compareTitle"), content: <ListedComparison entry={entry} listed={listed} /> });
+  }
+  if (parts.editedPanel) panels.push(parts.editedPanel);
+
+  const menu: CardMenuItem[] = [{ key: "open", label: t("queue.openDetails"), icon: <InfoIcon fontSize="small" />, onClick: open }];
+  if (listed !== undefined) {
+    menu.push({
+      key: "compare",
+      label: t("queue.compare", { version: listed }),
+      activeLabel: t("queue.hideCompare"),
+      icon: <CompareArrowsIcon fontSize="small" />,
+      panel: COMPARE_PANEL,
+    });
+  }
+  if (!entry.author_banned) {
+    menu.push({
+      key: "ban",
+      label: t("queue.banUploader"),
+      icon: <PersonOffIcon fontSize="small" />,
+      onClick: () => moderation.ban(entry.uploader_hmac, entry.author),
+      divider: true,
+      accent: true,
+      disabled: moderation.busy,
+    });
+  }
 
   return (
-    <Paper
-      ref={ref}
-      variant="outlined"
-      onMouseDown={onFocus}
-      sx={{
-        p: "20px 24px",
-        bgcolor: colors.background.paper,
-        border: `1px solid ${focused ? colors.primary : colors.border.default}`,
-        boxShadow: focused ? `0 0 0 1px ${colors.primary}` : "none",
-        scrollMarginTop: 16,
-        borderRadius: `${radiusPx.md}px`,
-        display: "flex",
-        flexDirection: "column",
-        gap: 1.5,
-        minWidth: 0,
+    <SetCard
+      setId={entry.set_id}
+      title={entry.title}
+      config={parts.config}
+      targetText={parts.targetText}
+      targetTooltip={parts.targetTooltip}
+      version={{
+        version: entry.version,
+        tooltip: tipLines([setRef(entry.set_id, entry.version), lineage ? t(`queue.lineage.${lineage.kind}`, { version: listed }) : ""]),
+        warning: lineage?.kind === "older",
       }}
-    >
-      <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, flexWrap: "wrap" }}>
-        <Checkbox size="small" checked={selected} onChange={onToggleSelect} sx={{ p: 0.5, mt: -0.25 }} />
-        <Box sx={{ flex: 1, minWidth: 240 }}>
-          <Link component="button" type="button" underline="hover" onClick={onOpen} sx={{ fontSize: 18, fontWeight: 600, lineHeight: 1.3, overflowWrap: "anywhere", textAlign: "left", color: colors.text.primary }}>
-            {entry.title}
-          </Link>
-          <Typography variant="monoSmall" sx={{ color: colors.text.secondary, display: "block", mt: "2px" }}>
-            {setRef(entry.set_id, entry.version)}
-          </Typography>
-          <Box sx={{ mt: 0.75 }}>
-            <TechniqueChips terms={entry.strategy} max={8} />
+      meta={parts.meta}
+      metaTooltip={parts.metaTooltip}
+      description={entry.description}
+      badges={[...parts.flags, parts.banned, parts.withdrawn, parts.edited, similarBadge(t, similar), parts.reports].filter(isBadge)}
+      panels={panels}
+      panel={panel}
+      onPanelChange={onPanelChange}
+      menu={menu}
+      selection={{ selected, onToggle: onToggleSelect, label: t("card.select", { title: entry.title }) }}
+      onOpen={open}
+      actions={
+        <>
+          <Box sx={actionPair}>
+            <Button variant="contained" size="small" disabled={moderation.busy} onClick={() => moderation.approve(entry)} sx={actionButton}>
+              {t("queue.approve")}
+            </Button>
+            <Button variant="outlined" size="small" disabled={moderation.busy} onClick={() => moderation.edit(entry)} sx={actionButton}>
+              {t("queue.edit")}
+            </Button>
           </Box>
-          <Origin entry={entry} />
-        </Box>
-        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" justifyContent="flex-end">
-          {entry.author_banned && <Chip size="small" color="error" label={t("queue.authorBanned")} />}
-          {entry.withheld === "set_withdrawn" && <Chip size="small" color="warning" label={t("queue.setWithdrawn")} />}
-          <Chip
-            size="small"
-            variant="outlined"
-            color="warning"
-            label={t("queue.received", { when: formatAgo(t, entry.created_at) })}
-            title={formatStamp(entry.created_at)}
-          />
-        </Stack>
-      </Box>
-
-      {lineage && (
-        <Alert
-          severity={severity}
-          variant="outlined"
-          action={
-            canCompare ? (
-              <Link component="button" type="button" underline="hover" variant="body2" onClick={onToggleCompare}>
-                {compare ? t("queue.hideCompare") : t("queue.compare", { version: lineage.current_version })}
-              </Link>
-            ) : undefined
-          }
-        >
-          {t(`queue.lineage.${lineage.kind}`, { version: lineage.current_version })}
-        </Alert>
-      )}
-      {canCompare && (
-        <Collapse in={compare} unmountOnExit>
-          <Comparison entry={entry} />
-        </Collapse>
-      )}
-      <EditedNotice entry={entry} />
-      {similar}
-
-      <EntryFacts entry={entry} />
-
-      <Divider sx={{ borderColor: colors.border.light }} />
-      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-        <Button variant="contained" color="success" size="small" disabled={moderation.busy} onClick={() => moderation.approve(entry)}>
-          {t("queue.approve")}
-        </Button>
-        <Button variant="outlined" color="primary" size="small" disabled={moderation.busy} onClick={() => moderation.edit(entry)}>
-          {t("queue.edit")}
-        </Button>
-        <Button variant="outlined" color="error" size="small" disabled={moderation.busy} onClick={() => moderation.reject(entry)}>
-          {t("queue.reject")}
-        </Button>
-        <Button variant="outlined" color="inherit" size="small" disabled={moderation.busy} onClick={() => moderation.hide(entry)}>
-          {t("queue.hide")}
-        </Button>
-        <Box sx={{ flex: 1 }} />
-        {!entry.author_banned && (
-          <Button variant="text" color="error" size="small" disabled={moderation.busy} onClick={() => moderation.ban(entry.uploader_hmac, entry.author)}>
-            {t("queue.banUploader")}
-          </Button>
-        )}
-      </Stack>
-    </Paper>
+          <Box sx={actionPair}>
+            <Button variant="outlined" size="small" disabled={moderation.busy} onClick={() => moderation.reject(entry)} sx={actionButton}>
+              {t("queue.reject")}
+            </Button>
+            <Button variant="outlined" size="small" disabled={moderation.busy} onClick={() => moderation.hide(entry)} sx={actionButton}>
+              {t("queue.hide")}
+            </Button>
+          </Box>
+        </>
+      }
+    />
   );
-});
+}
