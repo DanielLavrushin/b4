@@ -405,7 +405,7 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 	if err := conn.SetDeadline(time.Time{}); err != nil {
 		return fmt.Errorf("clear deadline: %w", err)
 	}
-	remote, err := s.dial(conn.RemoteAddr(), dest)
+	remote, viaSet, err := s.dial(conn.RemoteAddr(), dest)
 	if err != nil {
 		log.Tracef("SOCKS5 connect to %s failed: %v", dest, err)
 		sendReply(conn, repHostUnreachable, nil)
@@ -417,18 +417,22 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 		return fmt.Errorf("send reply: %w", err)
 	}
 
-	s.logAndRecordConnection("TCP", conn.RemoteAddr().String(), dest, "socks5")
+	s.logConnection("TCP", conn.RemoteAddr().String(), dest, "socks5")
+	if viaSet != "" {
+		metrics.GetMetricsCollector().CountConnection(viaSet)
+	}
 
 	return s.relay(conn, remote)
 }
 
-func (s *Server) dial(client net.Addr, dest string) (net.Conn, error) {
+func (s *Server) dial(client net.Addr, dest string) (net.Conn, string, error) {
 	if set, host, port := s.proxySetFor(client, dest); set != nil {
 		if conn, handled, err := s.upstreams.DialViaSet(set.Id, host, port); handled {
-			return conn, err
+			return conn, set.Id, err
 		}
 	}
-	return net.DialTimeout("tcp", dest, dialTimeout)
+	conn, err := net.DialTimeout("tcp", dest, dialTimeout)
+	return conn, "", err
 }
 
 func (s *Server) proxySetFor(client net.Addr, dest string) (*config.SetConfig, string, int) {
@@ -596,11 +600,6 @@ func (s *Server) UpdateConfig(newCfg *config.Config) {
 	log.Tracef("SOCKS5 matcher refreshed from config update")
 }
 
-func (s *Server) matchDestination(dest string) (bool, string, bool, string) {
-	_, sniTarget, _, ipTarget := s.matchDestinationSet(dest)
-	return sniTarget != "", sniTarget, ipTarget != "", ipTarget
-}
-
 func (s *Server) matchDestinationSet(dest string) (*config.SetConfig, string, *config.SetConfig, string) {
 	matcher := s.getMatcher()
 	if matcher == nil {
@@ -635,7 +634,7 @@ func (s *Server) matchDestinationSet(dest string) (*config.SetConfig, string, *c
 
 // --- Logging and metrics ---
 
-func (s *Server) logAndRecordConnection(protocol, clientAddr, dest, metadata string) {
+func (s *Server) logConnection(protocol, clientAddr, dest, metadata string) {
 	clientHost, clientPortStr, _ := net.SplitHostPort(clientAddr)
 
 	domain := dest
@@ -644,25 +643,18 @@ func (s *Server) logAndRecordConnection(protocol, clientAddr, dest, metadata str
 		domain = destHost
 	}
 
-	matchedSNI, sniTarget, matchedIP, ipTarget := s.matchDestination(dest)
+	_, sniTarget, _, ipTarget := s.matchDestinationSet(dest)
 
 	source := net.JoinHostPort(clientHost, clientPortStr)
 	destination := net.JoinHostPort(destHost, destPortStr)
 	log.LogConnectionStr(protocol, sniTarget, domain, source, ipTarget, destination, "", "", metadata)
 
-	setName := ""
-	if matchedSNI {
-		setName = sniTarget
-	} else if matchedIP {
+	setName := sniTarget
+	if setName == "" {
 		setName = ipTarget
 	}
 
 	log.Tracef("SOCKS5 %s relay: %s <-> %s (Set: %s)", protocol, clientAddr, dest, setName)
-
-	if m := metrics.GetMetricsCollector(); m != nil {
-		matched := matchedSNI || matchedIP
-		m.RecordConnection(protocol, domain, clientAddr, dest, matched, "", setName, "")
-	}
 }
 
 // --- Address parsing ---

@@ -102,8 +102,16 @@ func TestDegradedModeSchedulesARetryWhileRetriesRemain(t *testing.T) {
 	if f.RetryAt < before {
 		t.Fatalf("retry_at must lie ahead of the failure, got %d before %d", f.RetryAt, before)
 	}
-	if mc.NFQueueStatus != "error" || mc.TablesStatus != "inactive" {
-		t.Fatalf("the dashboard must show the engine as failed, got nfqueue=%q tables=%q", mc.NFQueueStatus, mc.TablesStatus)
+	if state := mc.Engine().State; state != metrics.EngineFailed {
+		t.Fatalf("the dashboard must show the engine as failed, got %q", state)
+	}
+	events := mc.Hello().Events
+	if events == nil || len(events.Errors) != 1 {
+		t.Fatalf("the failure must be kept as one error event, got %+v", events)
+	}
+	ev := events.Errors[0]
+	if ev.Code != metrics.EventEngineFailed || ev.Args["engine"] != "nfqueue" || ev.Args["error"] != "iptables rejected the NFQUEUE target" {
+		t.Fatalf("unexpected engine failure event: %+v", ev)
 	}
 
 	select {

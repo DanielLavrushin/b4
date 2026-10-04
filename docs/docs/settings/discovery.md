@@ -5,7 +5,7 @@ title: Discovery
 
 **Settings, Discovery** has two cards. **Testing Configuration** holds the timings and the trusted DNS server of [Discovery](../discovery.md) runs. **Watchdog** holds the global switch, the timings of the [watchdog](../watchdog.md) and the older per-domain list.
 
-![The Discovery tab](/img/discovery/20261004000201.png)
+![The Discovery tab](/img/discovery/20261004190000.png)
 
 Changes are saved with **Save Changes** in the page header, see [Saving and restarting](./index.md#saving). None of them needs a restart. A change applies to the next Discovery run, not to one in progress. The watchdog applies the switch within 10 seconds; a check or a cooldown already scheduled keeps its time, and the new timings apply to what is scheduled after it.
 

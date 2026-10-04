@@ -13,7 +13,6 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
-	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/daniellavrushin/b4/utils"
 )
@@ -379,7 +378,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) && !cfg.Queue.IsDiscovery &&
 					config.NormalizeBlockAction(set.Routing.BlockAction) == config.BlockActionDrop {
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionBlock)
-					metrics.GetMetricsCollector().RecordBlock(domain, srcMac)
+					recordBlockedDNS(cfg, set, domain, srcMac)
 					vc.drop()
 					return 0
 				}
@@ -396,7 +395,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 							w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, sport, resp)
 							log.Tracef("DNS sinkhole: %s -> NXDOMAIN for %s (set: %s)", dns.SafeName(domain), clientIP, set.Name)
 							logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionSinkhole)
-							metrics.GetMetricsCollector().RecordBlock(domain, srcMac)
+							recordBlockedDNS(cfg, set, domain, srcMac)
 							vc.drop()
 							return 0
 						}

@@ -15,7 +15,6 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
-	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/socks5"
 	"golang.org/x/sys/unix"
 )
@@ -255,7 +254,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) && !cfg.Queue.IsDiscovery {
 			if resp := dns.BuildBlockResponse(query); resp != nil {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionSinkhole)
-				metrics.GetMetricsCollector().RecordBlock(domain, srcMac)
+				recordBlockedDNS(cfg, set, domain, srcMac)
 				if writeDNSTCPMessage(client, resp, ioTimeout) != nil {
 					return
 				}

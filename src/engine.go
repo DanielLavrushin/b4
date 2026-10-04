@@ -37,13 +37,34 @@ func loadEngineAttempt() int {
 
 func engineMode(cfg *config.Config) string {
 	if cfg.Queue.Mode == "tun" {
-		return "tun"
+		return metrics.EngineModeTUN
 	}
-	return "nfqueue"
+	return metrics.EngineModeNFQueue
+}
+
+func engineInfo(cfg *config.Config, pool *nfq.Pool, state, firewall string) metrics.EngineInfo {
+	threads := cfg.Queue.Threads
+	if pool != nil && len(pool.Workers) > 0 {
+		threads = len(pool.Workers)
+	}
+	return metrics.EngineInfo{State: state, Mode: engineMode(cfg), Threads: threads, Firewall: firewall}
+}
+
+func firewallName(cfg *config.Config) string {
+	if cfg.System.Tables.SkipSetup {
+		return metrics.FirewallExternal
+	}
+	return tables.DetectBackend(cfg)
+}
+
+func setEngineFirewall(mc *metrics.MetricsCollector, firewall string) {
+	info := mc.Engine()
+	info.Firewall = firewall
+	mc.SetEngine(info)
 }
 
 func engineLabel(mode string) string {
-	if mode == "tun" {
+	if mode == metrics.EngineModeTUN {
 		return "TUN"
 	}
 	return "NFQUEUE"
@@ -87,13 +108,7 @@ func startTUNEngine(cfg *config.Config, pool *nfq.Pool, tproxyMgr *tproxy.Manage
 		return nil, fmt.Errorf("TUN engine start failed: %w", err)
 	}
 
-	if skipTables {
-		mc.TablesStatus = "tun (skip-tables)"
-	} else {
-		mc.TablesStatus = "tun"
-	}
-	mc.NFQueueStatus = "active (tun)"
-	mc.RecordEvent("info", fmt.Sprintf("TUN engine started with %d threads", cfg.Queue.Threads))
+	mc.SetEngine(engineInfo(cfg, pool, metrics.EngineRunning, firewallName(cfg)))
 
 	if name := tunEngine.DeviceName(); name != cfg.Queue.TUN.Device() {
 		tables.SetTUNDevice(name)
@@ -123,12 +138,11 @@ func startNFQueueEngine(cfg *config.Config, pool *nfq.Pool, tproxyMgr *tproxy.Ma
 			tables.ClearRules(cfg)
 			return fmt.Errorf("failed to add tables rules: %w", err)
 		}
-		mc.TablesStatus = tables.DetectBackend(cfg)
-		mc.RecordEvent("info", "Tables rules configured successfully")
 	} else {
 		log.Infof("Skipping tables setup (--skip-tables)")
-		mc.TablesStatus = "skipped"
 	}
+	firewall := firewallName(cfg)
+	mc.SetEngine(engineInfo(cfg, pool, metrics.EngineStarting, firewall))
 
 	if !skipTables {
 		tproxyMgr.SyncConfig(cfg)
@@ -145,8 +159,7 @@ func startNFQueueEngine(cfg *config.Config, pool *nfq.Pool, tproxyMgr *tproxy.Ma
 		return fmt.Errorf("netfilter queue start failed: %w", err)
 	}
 
-	mc.RecordEvent("info", fmt.Sprintf("NFQueue started with %d threads", cfg.Queue.Threads))
-	mc.NFQueueStatus = "active"
+	mc.SetEngine(engineInfo(cfg, pool, metrics.EngineRunning, firewall))
 	return nil
 }
 
@@ -154,9 +167,9 @@ func enterDegradedMode(cfg *config.Config, cause error, attempt int, mc *metrics
 	mode := engineMode(cfg)
 	label := engineLabel(mode)
 	log.Errorf("%s engine did not start: %v. b4 keeps running without it: traffic flows past b4 unprocessed, and the web interface stays up to switch the engine mode or fix the cause", label, cause)
-	mc.NFQueueStatus = "error"
-	mc.TablesStatus = "inactive"
-	mc.RecordEvent("error", fmt.Sprintf("%s engine did not start: %v", label, cause))
+	mc.SetEngineState(metrics.EngineFailed)
+	mc.Event(metrics.LevelError, metrics.EventEngineFailed, map[string]string{"engine": mode, "error": cause.Error()},
+		fmt.Sprintf("%s engine did not start: %v", label, cause))
 
 	failure := &metrics.EngineFailure{Mode: mode, Error: cause.Error()}
 	var retry *time.Timer

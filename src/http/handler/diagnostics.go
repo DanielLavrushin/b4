@@ -15,6 +15,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
+	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/nfq"
 	"github.com/daniellavrushin/b4/tables"
 	"golang.org/x/sys/unix"
@@ -122,6 +123,8 @@ func parseMemInfoKB(line string) uint64 {
 }
 
 func collectB4Info(configPath, serviceManager string) DiagB4 {
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
 	info := DiagB4{
 		BinaryReplaced: binaryReplaced(),
 		Version:        Version,
@@ -131,6 +134,12 @@ func collectB4Info(configPath, serviceManager string) DiagB4 {
 		ConfigPath:     configPath,
 		Running:        true,
 		PID:            os.Getpid(),
+		HeapInuse:      mem.HeapInuse,
+		HeapSys:        mem.HeapSys,
+		Goroutines:     runtime.NumGoroutine(),
+		OSThreads:      metrics.GetMetricsCollector().Process().OSThreads,
+		OpenFDs:        metrics.OpenFDs(),
+		NumGC:          mem.NumGC,
 	}
 
 	pid := os.Getpid()

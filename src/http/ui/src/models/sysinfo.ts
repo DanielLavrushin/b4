@@ -20,6 +20,13 @@ interface DiagB4 {
   pid?: number;
   memory_mb?: string;
   uptime?: string;
+  binary_replaced?: boolean;
+  heap_inuse?: number;
+  heap_sys?: number;
+  goroutines?: number;
+  os_threads?: number;
+  open_fds?: number;
+  num_gc?: number;
 }
 
 interface DiagModule {

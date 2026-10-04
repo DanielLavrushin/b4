@@ -24,9 +24,9 @@ Where `<IP-address>` is the address of the device where b4 is installed:
 If HTTPS is enabled in b4 settings, use `https://` instead of `http://`. The browser may show a certificate warning - that is expected with a self-signed certificate and can be accepted.
 :::
 
-![dashboard](../static/img/quickstart/20260418215543.png)
+![The dashboard on a first launch](/img/quickstart/20261003220200.png)
 
-On first launch the dashboard will be empty - that is normal. Data appears after configuration.
+On a first launch there are no sets yet, so b4 changes nothing: the **Sets** panel reads **No sets yet: b4 changes nothing until a set targets sites**, with links to create a set and to Discovery. The **Activity** chart fills anyway, because b4 checks the connections to port 443 whether or not a set exists, and counts them as **not in a set**. Every panel is described on the [Dashboard](./dashboard.md) page.
 
 ## Run discovery
 

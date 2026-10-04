@@ -14,6 +14,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/watchdog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -209,6 +210,7 @@ func (api *API) mcpSave(oldCfg, newCfg *config.Config) error {
 func mcpRecordChange(c mcpChange, before, after *config.Config) {
 	c.PreRevision = watchdog.ConfigRevision(before)
 	c.PostRevision = watchdog.ConfigRevision(after)
+	mcpNoteWrite(c.Path, "MCP changed "+c.Path)
 	mcpStripDerivedTargets(c.Snapshot)
 	mcpHistory = append(mcpHistory, c)
 	if len(mcpHistory) > mcpHistoryLimit {
@@ -219,6 +221,10 @@ func mcpRecordChange(c mcpChange, before, after *config.Config) {
 		}
 		mcpHistory = mcpHistory[:mcpHistoryLimit]
 	}
+}
+
+func mcpNoteWrite(path, message string) {
+	metrics.GetMetricsCollector().Event(metrics.LevelInfo, metrics.EventMCPWrite, map[string]string{"path": path}, message)
 }
 
 func mcpPopChange() (mcpChange, bool) {
@@ -982,6 +988,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		api.PerformSoftRestart(last.Snapshot, oldCfg)
 
 		log.Infof("mcp: reverted %s back to %s", last.Path, last.Previous)
+		mcpNoteWrite(last.Path, "MCP reverted "+last.Path)
 
 		return nil, mcpRevertOut{
 			Reverted:    true,
