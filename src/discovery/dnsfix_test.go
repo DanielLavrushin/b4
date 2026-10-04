@@ -127,9 +127,9 @@ func TestTrustedServerGoesIntoTheSetOnlyWhenASetCanUseIt(t *testing.T) {
 		{"203.0.113.53", false, config.DNSConfig{}, "answered over TCP only"},
 		{"tcp://203.0.113.53", false, config.DNSConfig{}, "tcp://"},
 		{"203.0.113.53:5353", true, config.DNSConfig{}, "port 5353"},
-		{"127.0.0.1", true, config.DNSConfig{}, "this host"},
 		{"tcp+udp://127.0.0.1:53053", true, config.DNSConfig{}, "port 53053"},
-		{"192.0.2.1", true, config.DNSConfig{}, "this host"},
+		{"127.0.0.1", true, config.DNSConfig{}, "runs on this host"},
+		{"192.0.2.1", true, config.DNSConfig{}, "runs on this host"},
 		{"192.168.1.5", true, config.DNSConfig{}, "local network"},
 		{"[fd00::53]:53", true, config.DNSConfig{}, "local network"},
 	}

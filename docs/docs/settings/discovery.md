@@ -33,12 +33,12 @@ A server named here is the only reference. Its answers are taken as each site's 
 
 When the router's resolver gives a site a wrong address, the proposed set gets a DNS fix, the first that works of:
 
-1. the trusted server itself, when a set can use it: a public IP address on port 53 that answered over UDP, or an `https://` URL;
+1. the trusted server itself, when a set can use it: a public IP address on port 53 that answered over UDP and is not one of this host's own, or an `https://` URL;
 2. a built-in DNS-over-HTTPS server that returns the site's correct address;
 3. a built-in plain DNS server that does so, asked plainly and then with the query fragmented;
 4. the addresses DNS over HTTPS or the trusted server gave, [pinned](../dns#pinned-addresses) in the set, when no resolver a set can use returns them; an answer from the built-in plain DNS servers is never pinned, since it can be forged on the way.
 
-A trusted server a set cannot use, such as a local proxy on another port, a resolver on the local network or a `tcp://` server, still decides which addresses are correct, and the run log says why it did not go into the set. A resolver on the local network stays out because a set's DNS redirect also catches the queries that resolver sends upstream through the router, and would hand them back to it.
+A trusted server a set cannot use, such as a local proxy on another port, a resolver on the local network or a `tcp://` server, still decides which addresses are correct, and the run log says why it did not go into the set. A resolver on the local network stays out because a set's DNS redirect forwards that resolver's own upstream queries unchanged only when they come from the very address the set names, see [Resolver types](../dns#resolver-types), and hands its queries from any other address back to it. An `https://` URL goes into the set as it is, wherever its server runs.
 
 The same field is in the [options of a Discovery run](../discovery#options), where it applies to that run only.
 

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net"
-	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -62,20 +61,7 @@ type referenceAnswer struct {
 	failure   string
 }
 
-var ownAddress = func(addr netip.Addr) bool {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return false
-	}
-	for _, a := range addrs {
-		if ipnet, ok := a.(*net.IPNet); ok {
-			if own, ok := netip.AddrFromSlice(ipnet.IP); ok && own.Unmap() == addr.Unmap() {
-				return true
-			}
-		}
-	}
-	return false
-}
+var ownAddress = utils.IsHostAddr
 
 const (
 	gatewayProbeTimeout = 2 * time.Second
@@ -598,9 +584,9 @@ func (p *DNSProber) trustedSetDNS() (config.DNSConfig, string) {
 	case addr.Port() != endpoint.DefaultPort:
 		return config.DNSConfig{}, fmt.Sprintf("it listens on port %d, and a set's DNS asks port 53", addr.Port())
 	case addr.Addr().IsLoopback() || ownAddress(addr.Addr()):
-		return config.DNSConfig{}, "it is this host itself, and a set's DNS would send the queries back to it"
+		return config.DNSConfig{}, "it runs on this host, and a set's DNS would hand the queries it sends upstream back to it"
 	case utils.IsReservedAddr(addr.Addr()):
-		return config.DNSConfig{}, "it is a local network address, and a set's DNS would also catch the queries that server sends upstream through this router"
+		return config.DNSConfig{}, "it is a local network address, and a set's DNS could hand that server's own upstream queries back to it"
 	}
 	return config.DNSConfig{Enabled: true, TargetDNS: addr.Addr().String()}, ""
 }

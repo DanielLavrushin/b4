@@ -670,7 +670,7 @@
       "dnsConfig": "DNS Configuration",
       "trustedDns": "Trusted DNS server",
       "trustedDnsPlaceholder": "Built-in public resolvers",
-      "trustedDnsHelp": "Discovery takes this server's answers as each site's correct address and compares them with the router's resolver. When they differ, the proposed set uses this server for DNS where a set can: a public IP address on port 53 that answers over UDP, or an https:// URL. Forms: 9.9.9.9, 127.0.0.1:53053, tcp://9.9.9.9, tcp+udp://127.0.0.1:53053, https://dns.google/dns-query. Empty: the public resolvers built into b4.",
+      "trustedDnsHelp": "Discovery takes this server's answers as each site's correct address and compares them with the router's resolver. When they differ, the proposed set uses this server for DNS where a set can: a public IP address on port 53 that answers over UDP and is not one of this host's own, or an https:// URL. Forms: 9.9.9.9, 127.0.0.1:53053, tcp://9.9.9.9, tcp+udp://127.0.0.1:53053, https://dns.google/dns-query. Empty: the public resolvers built into b4.",
       "trustedDnsError": {
         "hostname": "Plain DNS needs an IP address; only an https:// URL takes a host name.",
         "http": "DNS over HTTPS needs an https:// URL.",
@@ -3200,6 +3200,7 @@
         "block": "DNS query dropped by a blocking set",
         "servfail": "The set's resolver did not answer in time",
         "bad-target": "The set's DNS server field does not hold a valid IP address, query forwarded unchanged",
+        "from-target": "The query came from the address of the set's own resolver, forwarded unchanged",
         "ipv6-stripped": "AAAA records removed from the answer so the client falls back to IPv4",
         "heal+ipv6-stripped": "DNS answer had unreachable addresses replaced and its AAAA records removed"
       }
