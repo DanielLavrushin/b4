@@ -180,8 +180,10 @@ func TestRoutingStatusClearsASetThatADNSAnswerInstalled(t *testing.T) {
 	since := st.FailingSince
 
 	fail.Store(false)
+	routePhaseMu.Lock()
 	RoutingHandleDNS(cfg, first, []net.IP{net.ParseIP("198.51.100.40")})
 	st = RoutingStatus()
+	routePhaseMu.Unlock()
 	if st.Installed != 1 {
 		t.Fatalf("the DNS answer did not install the set: %+v", st)
 	}
@@ -192,55 +194,76 @@ func TestRoutingStatusClearsASetThatADNSAnswerInstalled(t *testing.T) {
 		t.Fatalf("the set that still fails lost the time its failure began: %+v", st)
 	}
 
-	RoutingHandleDNS(cfg, second, []net.IP{net.ParseIP("198.51.100.41")})
+	waitUntil(t, "the retry the DNS answer brought forward", func() bool { return routingSyncRetryConfig() == nil })
 	st = RoutingStatus()
 	if st.Installed != 2 || len(st.SetErrors) != 0 || st.Error != "" || !st.FailingSince.IsZero() {
-		t.Fatalf("with every set installed by DNS answers before the retry, the status still reports a failure: %+v", st)
+		t.Fatalf("the retry brought forward did not install the other set and clear the failure: %+v", st)
 	}
 }
 
-func TestRoutingStatusKeepsAFailedBaseUntilEverySetIsInstalled(t *testing.T) {
+func TestRoutingStatusKeepsAFailedSyncUntilItsRetryAfterAConfigChange(t *testing.T) {
 	familyResetGlobals(t)
 	stubRetryState(t)
 	routeMu.Lock()
 	routeSyncRetryBase = time.Hour
 	routeMu.Unlock()
 	var fail atomic.Bool
-	fail.Store(true)
 	routeEngine = &mockRouteBackend{ensureBaseFn: func() error {
 		if fail.Load() {
 			return errTestClear
 		}
 		return nil
 	}}
-	first := familyTestSet()
-	second := familyTestSet()
-	second.Id, second.Name = "famtest2", "famtest2"
-	second.Routing.FWMark, second.Routing.Table = 0x7e11, 233
-	cfg := familyTestConfig(true, false)
-	cfg.Sets = []*config.SetConfig{first, second}
-
-	RoutingSyncConfig(cfg)
-	st := RoutingStatus()
-	if st.Error == "" || st.FailingSince.IsZero() || st.NextRetry.IsZero() {
-		t.Fatalf("the base was expected to fail with a retry queued: %+v", st)
+	routed := func(iface string) (*config.Config, *config.SetConfig, *config.SetConfig) {
+		first := familyTestSet()
+		first.Routing.EgressInterface = iface
+		second := familyTestSet()
+		second.Id, second.Name = "famtest2", "famtest2"
+		second.Routing.FWMark, second.Routing.Table = 0x7e11, 233
+		second.Routing.EgressInterface = iface
+		cfg := familyTestConfig(true, false)
+		cfg.Sets = []*config.SetConfig{first, second}
+		return cfg, first, second
 	}
-	since := st.FailingSince
+	ifaceOf := func(id string) string {
+		routeMu.Lock()
+		defer routeMu.Unlock()
+		return routeRuleCache[id].iface
+	}
+
+	before, _, _ := routed("b4fam0")
+	RoutingSyncConfig(before)
+	if st := RoutingStatus(); st.Installed != 2 || st.Error != "" {
+		t.Fatalf("the first sync was expected to install both sets: %+v", st)
+	}
+
+	fail.Store(true)
+	after, first, second := routed("b4fam1")
+	RoutingSyncConfig(after)
+	queued := RoutingStatus()
+	if queued.Error == "" || queued.NextRetry.IsZero() {
+		t.Fatalf("the sync of the changed configuration was expected to fail at its base: %+v", queued)
+	}
 
 	fail.Store(false)
-	RoutingHandleDNS(cfg, first, []net.IP{net.ParseIP("198.51.100.42")})
-	st = RoutingStatus()
-	if st.Installed != 1 {
-		t.Fatalf("the DNS answer did not install the set: %+v", st)
+	routePhaseMu.Lock()
+	RoutingHandleDNS(after, first, []net.IP{net.ParseIP("198.51.100.44")})
+	st := RoutingStatus()
+	rebuilt, stale := ifaceOf(first.Id), ifaceOf(second.Id)
+	routePhaseMu.Unlock()
+	if rebuilt != "b4fam1" || stale != "b4fam0" {
+		t.Fatalf("expected the DNS answer to move only its own set: first on %s, second on %s", rebuilt, stale)
 	}
-	if st.Error == "" || !st.FailingSince.Equal(since) || st.NextRetry.IsZero() {
-		t.Fatalf("one set installed by a DNS answer hid the failed sync while the other set still waits for the retry: %+v", st)
+	if st.Error == "" || st.FailingSince.IsZero() {
+		t.Fatalf("a DNS answer that rebuilt one set hid the failed sync while the other set still routes through %s: %+v", stale, st)
+	}
+	if !st.NextRetry.Before(queued.NextRetry) {
+		t.Fatalf("the retry was not brought forward once a DNS answer showed the base works again: queued for %v, now %v", queued.NextRetry, st.NextRetry)
 	}
 
-	RoutingHandleDNS(cfg, second, []net.IP{net.ParseIP("198.51.100.43")})
-	st = RoutingStatus()
-	if st.Installed != 2 || st.Error != "" || !st.FailingSince.IsZero() {
-		t.Fatalf("with every set installed by DNS answers the status still reports the failed sync: %+v", st)
+	waitUntil(t, "the retry the DNS answer brought forward", func() bool { return routingSyncRetryConfig() == nil })
+	if st := RoutingStatus(); st.Error != "" || !st.FailingSince.IsZero() || ifaceOf(second.Id) != "b4fam1" {
+		t.Fatalf("the full sync did not move the other set to its new interface and clear the failure: %+v, second on %s", st, ifaceOf(second.Id))
 	}
 }
 

@@ -267,7 +267,8 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 		}
 		routeRuleCache[set.Id] = cur
 		routeNoteInstalled(set.Id)
-		routeNoteSetRecovered(cfg, set.Id)
+		routeNoteSetRecovered(set.Id)
+		routeHurrySyncRetry()
 		retireOld()
 		routeRestoreStaticEntries(be, set, cur)
 		switch cur.mode {
@@ -1184,36 +1185,27 @@ func routeNoteSyncDone(attempt time.Time) {
 	routeSyncOutcome = routeSyncReport{attempt: attempt}
 }
 
-func routeNoteSetRecovered(cfg *config.Config, setID string) {
+func routeNoteSetRecovered(setID string) {
 	delete(routeSyncOutcome.setErrs, setID)
-	if routeSyncOutcome.err != "" && routeWantedAllInstalled(cfg) {
-		routeSyncOutcome.err = ""
-	}
 	if len(routeSyncOutcome.setErrs) == 0 && routeSyncOutcome.err == "" {
 		routeSyncOutcome.since = time.Time{}
 	}
 }
 
-func routeSetWantsRouting(set *config.SetConfig) bool {
-	return set != nil && set.Enabled && set.Routing.Enabled
-}
-
-func routeWantedAllInstalled(cfg *config.Config) bool {
-	for _, set := range cfg.RoutingSets() {
-		if !routeSetWantsRouting(set) {
-			continue
-		}
-		if _, ok := routeRuleCache[set.Id]; !ok {
-			return false
-		}
+func routeHurrySyncRetry() {
+	if routeSyncRetry == nil || routeSyncRetryTimer == nil || !routeSyncRetryTimer.Stop() {
+		return
 	}
-	return true
+	cfg := routeSyncRetry
+	routeSyncRetryAt = time.Now()
+	routeSyncRetryTimer = time.AfterFunc(0, func() { routeRetrySync(cfg) })
+	log.Tracef("Routing: a set installed from a DNS answer, so the routing sync that failed is retried now")
 }
 
 func RoutingSetsWanted(cfg *config.Config) int {
 	n := 0
 	for _, set := range cfg.RoutingSets() {
-		if routeSetWantsRouting(set) {
+		if set != nil && set.Enabled && set.Routing.Enabled {
 			n++
 		}
 	}
