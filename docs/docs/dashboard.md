@@ -22,7 +22,7 @@ The status reads **Critical** while the packet engine is not running. The same b
 
 ## Packet engine not running
 
-When the packet engine did not start, a card under the banner shows the reason and what b4 does next. The state itself is described in [Settings -> Core -> When the engine does not start](settings/core.md#when-the-engine-does-not-start).
+When the packet engine did not start, a card under the banner shows the reason and what b4 does next. The state itself is described under [When the engine does not start](settings/core.md#when-the-engine-does-not-start).
 
 ![20260928134207](/img/dashboard/20260928134207.png)
 
@@ -32,7 +32,7 @@ The card shows the error that stopped the engine, as written to the log, and the
 | --- | --- |
 | **Switch to TUN** / **Switch to NFQUEUE** | Saves the other engine mode and opens the restart dialog |
 | **Restart b4** | Opens the restart dialog without changing the settings, for example after a missing kernel module was loaded |
-| **Engine settings** | Opens Settings -> Core |
+| **Engine settings** | Opens **Settings, Core, Packet Engine** |
 
 ## Metrics
 

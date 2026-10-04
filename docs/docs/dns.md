@@ -118,7 +118,7 @@ An answer from the set's resolver is final whatever it says, as it is when the r
 
 ## The IPv4 fallback
 
-b4 processes IPv4 only until **IPv6 support** is turned on in [Settings -> Core](./settings/core#protocols). A dual-stack site that a set targets would otherwise be reached over IPv6, where b4 has no rules at all, and the set would be bypassed without anything looking wrong.
+b4 processes IPv4 only until **Enable IPv6 Support** is on in [Settings, Core, Packet Engine](./settings/core#protocols). A dual-stack site that a set targets would otherwise be reached over IPv6, where b4 has no rules at all, and the set would be bypassed without anything looking wrong.
 
 To close the common path into that, b4 removes IPv6 addresses from DNS answers for domains a set matched, leaving the client with the IPv4 addresses b4 does protect. The answer is rewritten rather than refused: A records stay, AAAA records are dropped, and the client falls back to IPv4 on its own.
 
@@ -127,7 +127,7 @@ To close the common path into that, b4 removes IPv6 addresses from DNS answers f
 - A set whose targets are pinned to IPv6 with `targets.ip_version` set to `6` keeps its IPv6 answers, since IPv6 is what that set exists for.
 - Rewritten answers appear as `dns-ipv6-stripped` in [the result](#reading-the-result).
 
-The switch is **Force IPv4 for matched domains**, under **Settings -> Core -> DNS**, and it is on by default. Turning it off is the same as setting `system.dns.keep_ipv6_answers` to `true`: AAAA records pass through untouched. It is greyed out while IPv6 support is on, because there is then nothing to fall back from.
+The switch is **Force IPv4 for matched domains**, on the **IPv4 / IPv6** card under **Settings, Core, Packet Engine**, and it is on by default. Turning it off is the same as setting `system.dns.keep_ipv6_answers` to `true`: AAAA records pass through untouched. It is greyed out while **Enable IPv6 Support** is on.
 
 :::warning It only reaches DNS that b4 can see
 This carries the same limit as everything else on this page. A client that resolves through its own DoH, DoT or DoQ never shows b4 the answer, so it keeps the IPv6 addresses and reaches the site over IPv6 anyway. The same goes for an address already in the client's cache or written into a hosts file. The fallback narrows the gap, it does not close it: the complete fix is turning IPv6 support on so that b4 has rules on both families.
@@ -135,9 +135,9 @@ This carries the same limit as everything else on this page. A client that resol
 
 ## Global DNS settings
 
-**Settings → Core → DNS** holds what applies to every set: the DNS-over-TCP transport, and the timeouts.
+The **DNS** card on **Settings, Core, DNS** holds the interception of DNS over TCP and the timeouts, which apply to every set.
 
-![DNS settings](/img/dns/20260810210110.png)
+![The DNS card](/img/dns/20261004000100.png)
 
 ### Why DNS over TCP is here
 
@@ -153,7 +153,7 @@ Those queries are ordinary DNS, and without interception they reach the resolver
 | Idle timeout | `system.dns.tcp_idle_sec` | `30` | How long an idle DNS-over-TCP connection is held open for further queries |
 | Read/write timeout | `system.dns.tcp_io_sec` | `10` | Deadline for a single query or answer on an established connection |
 | Forward timeout | `system.dns.tcp_dial_sec` | `5` | How long to wait when forwarding an unmatched TCP query to the resolver the client chose |
-| Force IPv4 for matched domains | `system.dns.keep_ipv6_answers` | on (`false`) | The switch and the field are inverted: the switch on means `keep_ipv6_answers` is `false` and IPv6 addresses are stripped from answers for matched domains. Off leaves the AAAA records in place. See [The IPv4 fallback](#the-ipv4-fallback) |
+| Force IPv4 for matched domains | `system.dns.keep_ipv6_answers` | on (`false`) | On the **IPv4 / IPv6** card under **Settings, Core, Packet Engine**. The switch and the field are inverted: the switch on means `keep_ipv6_answers` is `false` and IPv6 addresses are stripped from answers for matched domains. Off leaves the AAAA records in place. See [The IPv4 fallback](#the-ipv4-fallback) |
 
 The configuration file only stores values that differ from the defaults, so a `system.dns` block is usually absent until one of these is changed.
 

@@ -43,7 +43,7 @@ func (s *Service) share(ctx context.Context, entry record) Response {
 		}
 	}
 	fp := imp.Fingerprint
-	targetsKey := TargetsKey(projection)
+	targetsKey := store.TargetsKey(projection)
 
 	if existing, err := s.Store.FindDuplicate(ctx, fp, targetsKey); err == nil {
 		if err := s.uploadVote(ctx, entry, existing, body); err != nil {
@@ -150,7 +150,7 @@ func (s *Service) authorSibling(ctx context.Context, authorHMAC string, version 
 	if err != nil {
 		return nil, err
 	}
-	targets := TargetSet(version.Projection)
+	targets := store.TargetEntries(version.Projection)
 	var match *store.Set
 	for i := range sets {
 		latest, err := s.Store.LatestVersion(ctx, sets[i].ID)
@@ -160,7 +160,7 @@ func (s *Service) authorSibling(ctx context.Context, authorHMAC string, version 
 		if err != nil {
 			return nil, err
 		}
-		if latest.TargetsKey != version.TargetsKey && !(sameTitle(latest.Title, version.Title) && targetsOverlap(targets, TargetSet(latest.Projection))) {
+		if latest.TargetsKey != version.TargetsKey && !(sameTitle(latest.Title, version.Title) && targetsOverlap(targets, store.TargetEntries(latest.Projection))) {
 			continue
 		}
 		if match == nil || sets[i].UpdatedAt.After(match.UpdatedAt) {

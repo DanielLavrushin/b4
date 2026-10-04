@@ -147,7 +147,7 @@ export function BulkDialog({ action, targets, open, onClose, onDone }: Readonly<
         </Button>
         <Button
           variant="contained"
-          color={action === "approve" || action === "restore" ? "success" : "error"}
+          color={action === "approve" || action === "restore" ? "primary" : "error"}
           disabled={moderate.isPending || needsReason || valid === 0}
           onClick={() => void apply()}
         >

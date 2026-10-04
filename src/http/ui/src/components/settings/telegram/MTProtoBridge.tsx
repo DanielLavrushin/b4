@@ -158,7 +158,9 @@ const BridgeWarnings = ({ data }: { data: TelegramBridgeStatus }) => {
           <Trans
             i18nKey={K("skipSetup")}
             components={{
-              a: <Link component={RouterLink} to="/settings/general" />,
+              a: (
+                <Link component={RouterLink} to="/settings/general/firewall" />
+              ),
             }}
           />
         </B4Alert>
@@ -190,7 +192,7 @@ const BridgeWarnings = ({ data }: { data: TelegramBridgeStatus }) => {
             i18nKey={K("bridgeNetfilter")}
             values={{ bridges: data.bridge_netfilter.join(", ") }}
             components={{
-              a: <Link component={RouterLink} to="/settings/general" />,
+              a: <Link component={RouterLink} to="/settings/system/service" />,
             }}
           />
         </B4Alert>

@@ -7,29 +7,25 @@ The "Targets" tab defines which traffic the set applies to. Traffic is filtered 
 
 ## TLS version filter
 
-At the top of the tab is the TLS version selector:
+The **Bypass Domains** tab has a **TLS Version Filter** with the options **Any** (the default), **TLS 1.2** and **TLS 1.3**. The version compared is the highest one the client's ClientHello offers.
 
-- **Any** - process all TLS traffic
-- **1.2** - only TLS 1.2
-- **1.3** - only TLS 1.3
-
-Useful when different TLS versions need different bypass strategies (some providers block TLS 1.2 and TLS 1.3 in different ways).
+For a match by domain the filter is a preference. Among the sets that match the server name, a set whose filter fits the version is chosen first, and when none fits, the set is chosen as if no filter were set. For a match by IP address, GeoIP category or ASN, a set whose filter does not fit the version does not take the connection.
 
 ## Domains
 
-Manual domain entry for bypass. Enter a domain and press Enter.
+Domains are typed in by hand, and the Enter key adds the typed domain to the set.
 
 - Multiple domains can be added separated by commas or newlines
 - Duplicates with another set trigger a warning
-- The **Edit list** button opens a text editor (one domain per line)
+- The **Edit List** button opens a text editor (one domain per line)
 
 ![20260418234818](../../static/img/targets/20260418234818.png)
 
 ## GeoSite categories
 
-Instead of adding domains one by one, pick a category from the GeoSite database. Each category contains hundreds or thousands of domains (for example, `youtube`, `discord`, `google`).
+Instead of adding domains one by one, a set can take a category from the GeoSite database. Each category contains hundreds or thousands of domains (for example, `youtube`, `discord`, `google`).
 
-To use GeoSite, the database must be loaded (Settings -> Geodat settings).
+To use GeoSite, the database must be loaded (**Settings, Geodat Settings**).
 
 Clicking a category shows the list of domains it contains.
 
@@ -69,7 +65,7 @@ The result is kept in `asn_cache.json` in the directory of the configuration fil
 | Right after start, then every hour | A background check fetches each ASN referenced by any set, enabled or not, whose entry is missing or older than 20 hours. ASNs are fetched one at a time. |
 | A set gains an ASN that has no prefixes yet | The check runs at once. |
 | A fetch fails | The last good copy stays in use. The next attempt follows after 30 seconds, and the wait doubles with every further failure up to one hour. |
-| The prefixes changed | Every set that references the ASN is expanded again and the firewall rules are refreshed, without a save. |
+| The prefixes changed | Every set that references the ASN is expanded again and the firewall rules are refreshed. |
 
 An answer with no prefixes is refused. An answer that covers less than half the address space known before, counted in IPv4 addresses or in IPv6 /64 networks, is taken only after three fetches in a row, an hour apart, return the same shrink; until then the previous list stays in use, so a gap in the RIPEstat data does not empty a set. The refresh button in the set editor follows the same rule: it keeps the previous list and reports the shrink, and only the background check can accept it.
 
@@ -106,10 +102,10 @@ An ASN can also be added from the [Traffic](../connections#adding-addresses-and-
 
 Limits the set to traffic from specific devices on the network.
 
-Devices discovered from the ARP table are matched by their MAC address. Devices you added manually have no MAC address
-on the network, so they are matched by the IP address you entered for them. Give a manually added device a fixed or
-reserved address, and note that it cannot be matched at all when an intermediate router replaces the source address of
-its traffic before it reaches b4.
+Devices discovered from the ARP table are matched by their MAC address. Devices added by hand have no MAC address on
+the network, so they are matched by the IP address entered for them. Such a device needs a fixed or reserved address,
+and it cannot be matched at all when an intermediate router replaces the source address of its traffic before it
+reaches b4.
 
 The table shows available devices:
 
@@ -128,6 +124,6 @@ If no device is selected, the set applies to all traffic. When devices are selec
 Every routing rule matches a destination address. Source devices decide whose traffic is offered to that rule, not
 which traffic is steered, so a set whose only target is a source device routes nothing and b4 installs no rule for it.
 
-To send everything from a device, keep the device selected and turn on **Match any IP address** on the IP addresses
-tab. Traffic the router itself originates is left alone for such a set, because it can never come from a source device.
+With the device selected and **Match any IP address** on in the **Bypass IPs** tab, the set routes everything from that
+device. Traffic the router itself originates is left alone for such a set, because it can never come from a source device.
 :::

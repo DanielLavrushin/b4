@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/hubwire"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4hub/internal/hubdata"
 	"github.com/daniellavrushin/b4hub/internal/ingest"
 	"github.com/daniellavrushin/b4hub/internal/moderation"
@@ -31,12 +34,43 @@ const (
 	strippedPrivate      = "private"
 	strippedNotShareable = "not_shareable"
 	unknownFieldsWarning = "unknown_fields"
+
+	privateAddressesWarning  = "private_addresses"
+	invalidAddressesWarning  = "invalid_addresses"
+	catchAllAddressesWarning = "catch_all_addresses"
+	invalidDomainsWarning    = "invalid_domains"
+	pinNotTargetedWarning    = "pin_not_targeted"
+	pinPrivateAddressWarning = "pin_private_address"
+
+	pinsPath = "dns.pins"
 )
 
 type editFailure struct {
 	status  int
 	code    string
 	message string
+	params  map[string]interface{}
+}
+
+type InvalidFieldView struct {
+	Path    string                 `json:"path"`
+	Code    string                 `json:"code"`
+	Message string                 `json:"message"`
+	Params  map[string]interface{} `json:"params,omitempty"`
+}
+
+func invalidSet(err error) *editFailure {
+	failure := &editFailure{status: http.StatusBadRequest, code: codeInvalidSet, message: err.Error()}
+	var invalid *config.ValidationError
+	if !errors.As(err, &invalid) || len(invalid.Fields) == 0 {
+		return failure
+	}
+	fields := make([]InvalidFieldView, 0, len(invalid.Fields))
+	for _, f := range invalid.Fields {
+		fields = append(fields, InvalidFieldView{Path: strings.TrimPrefix(f.Path, "sets[0]."), Code: f.Code, Message: f.Message, Params: f.Params})
+	}
+	failure.params = map[string]interface{}{"fields": fields}
+	return failure
 }
 
 type editResult struct {
@@ -101,6 +135,28 @@ func unknownFields(warnings []hubwire.Warning) map[string]bool {
 	return out
 }
 
+func pinsWarned(value interface{}, warnings []hubwire.Warning) bool {
+	pins, ok := value.(map[string]interface{})
+	if !ok || len(pins) == 0 {
+		return false
+	}
+	warned := make(map[string]bool)
+	for _, w := range warnings {
+		if w.Code != pinNotTargetedWarning && w.Code != pinPrivateAddressWarning {
+			continue
+		}
+		if domain, ok := w.Params["domain"].(string); ok {
+			warned[domain] = true
+		}
+	}
+	for domain := range pins {
+		if !warned[config.NormalizePinDomain(domain)] {
+			return false
+		}
+	}
+	return true
+}
+
 func strippedPaths(requested, result map[string]interface{}, warnings []hubwire.Warning) ([]hubwire.Stripped, error) {
 	defSet := config.NewSetConfig()
 	def, err := config.SetToMap(&defSet)
@@ -119,6 +175,9 @@ func strippedPaths(requested, result map[string]interface{}, warnings []hubwire.
 			continue
 		}
 		if defValue, ok := lookupPath(def, path); ok && sameJSON(value, defValue) {
+			continue
+		}
+		if path == pinsPath && pinsWarned(value, warnings) {
 			continue
 		}
 		reason := strippedNotShareable
@@ -156,9 +215,89 @@ func (s *Server) versionFromPath(w http.ResponseWriter, r *http.Request) (*store
 	return v, true
 }
 
+func classifyAddress(raw string) (invalid, catchAll bool) {
+	value := strings.TrimSpace(raw)
+	if !strings.Contains(value, "/") {
+		return net.ParseIP(value) == nil, false
+	}
+	_, network, err := net.ParseCIDR(value)
+	if err != nil {
+		return true, false
+	}
+	ones, _ := network.Mask.Size()
+	return false, ones == 0
+}
+
+func addressWarnings(warnings []hubwire.Warning, addresses []string) []hubwire.Warning {
+	var invalid, catchAll []string
+	moved := make(map[string]bool)
+	for _, address := range addresses {
+		if moved[address] {
+			continue
+		}
+		bad, all := classifyAddress(address)
+		switch {
+		case bad:
+			invalid = append(invalid, address)
+		case all:
+			catchAll = append(catchAll, address)
+		default:
+			continue
+		}
+		moved[address] = true
+	}
+	if len(moved) == 0 {
+		return warnings
+	}
+	out := make([]hubwire.Warning, 0, len(warnings)+2)
+	for _, w := range warnings {
+		if listed, ok := w.Params["addresses"].([]string); ok && w.Code == privateAddressesWarning {
+			kept := make([]string, 0, len(listed))
+			for _, address := range listed {
+				if !moved[address] {
+					kept = append(kept, address)
+				}
+			}
+			if len(kept) == 0 {
+				continue
+			}
+			w = hubwire.Warning{Code: w.Code, Params: map[string]interface{}{"addresses": kept}}
+		}
+		out = append(out, w)
+	}
+	if len(invalid) > 0 {
+		out = append(out, hubwire.Warning{Code: invalidAddressesWarning, Params: map[string]interface{}{"addresses": invalid}})
+	}
+	if len(catchAll) > 0 {
+		out = append(out, hubwire.Warning{Code: catchAllAddressesWarning, Params: map[string]interface{}{"addresses": catchAll}})
+	}
+	return out
+}
+
+func domainSeparator(r rune) bool {
+	return unicode.IsSpace(r) || r == ',' || r == ';'
+}
+
+func domainWarnings(domains []string) []hubwire.Warning {
+	var invalid []string
+	seen := make(map[string]bool)
+	for _, domain := range domains {
+		value, isRegex := sni.ParseDomainEntry(domain)
+		if isRegex || seen[domain] || !strings.ContainsFunc(value, domainSeparator) {
+			continue
+		}
+		seen[domain] = true
+		invalid = append(invalid, domain)
+	}
+	if len(invalid) == 0 {
+		return nil
+	}
+	return []hubwire.Warning{{Code: invalidDomainsWarning, Params: map[string]interface{}{"domains": invalid}}}
+}
+
 func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequest) (*editResult, *editFailure) {
 	if req.Projection == nil {
-		return nil, &editFailure{http.StatusBadRequest, codeBadRequest, "the edit needs a projection"}
+		return nil, &editFailure{status: http.StatusBadRequest, code: codeBadRequest, message: "the edit needs a projection"}
 	}
 	env := hubwire.Envelope{
 		Format:      hubwire.Format,
@@ -169,21 +308,21 @@ func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequ
 	for _, ref := range v.Payloads {
 		data, err := s.Blobs.Read(ref.SHA256)
 		if err != nil {
-			return nil, &editFailure{http.StatusInternalServerError, codeInternal, "payload " + ref.SHA256 + " cannot be read, the set was left untouched: " + err.Error()}
+			return nil, &editFailure{status: http.StatusInternalServerError, code: codeInternal, message: "payload " + ref.SHA256 + " cannot be read, the set was left untouched: " + err.Error()}
 		}
 		env.Payloads = append(env.Payloads, hubwire.Payload{SHA256: ref.SHA256, Protocol: ref.Protocol, Domain: ref.Domain, Size: len(data), Data: data})
 	}
 	imp, err := hubwire.Open(&env, hubwire.OpenOptions{Now: s.now})
 	if err != nil {
-		return nil, &editFailure{http.StatusBadRequest, codeInvalidSet, err.Error()}
+		return nil, invalidSet(err)
 	}
 	projection, report, err := hubwire.Scrub(&imp.Set)
 	if err != nil {
-		return nil, &editFailure{http.StatusBadRequest, codeInvalidSet, err.Error()}
+		return nil, invalidSet(err)
 	}
 	for _, w := range report.Warnings {
 		if w.Code == noTargetsWarning {
-			return nil, &editFailure{http.StatusBadRequest, codeInvalidSet, "the set has no targets"}
+			return nil, &editFailure{status: http.StatusBadRequest, code: codeInvalidSet, message: "the set has no targets"}
 		}
 	}
 	payloads := make([]hubwire.BlobRef, 0, len(imp.Payloads))
@@ -192,15 +331,18 @@ func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequ
 	}
 	stripped, err := strippedPaths(req.Projection, projection, imp.Warnings)
 	if err != nil {
-		return nil, &editFailure{http.StatusInternalServerError, codeInternal, err.Error()}
+		return nil, &editFailure{status: http.StatusInternalServerError, code: codeInternal, message: err.Error()}
 	}
+	warnings := addressWarnings(imp.Warnings, store.TargetList(projection, "ip"))
+	warnings = append(warnings, domainWarnings(store.TargetList(projection, "sni_domains"))...)
+	warnings = append(warnings, s.categoryWarnings(projection)...)
 	title := clipRunes(imp.Set.Name, ingest.MaxTitleRunes)
 	preview := EditPreview{
 		Title:       title,
 		Description: env.Description,
 		Projection:  projection,
 		Payloads:    payloads,
-		Warnings:    imp.Warnings,
+		Warnings:    warnings,
 		Stripped:    append(report.Stripped, stripped...),
 		FP:          imp.Fingerprint,
 		FPChanged:   imp.Fingerprint != v.FP,
@@ -215,13 +357,13 @@ func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequ
 	if preview.Warnings == nil {
 		preview.Warnings = []hubwire.Warning{}
 	}
-	targetsKey := ingest.TargetsKey(projection)
-	existing, err := s.Store.FindDuplicate(ctx, imp.Fingerprint, targetsKey)
+	targetsKey := store.TargetsKey(projection)
+	existing, err := s.Store.FindDuplicateExcept(ctx, imp.Fingerprint, targetsKey, v.RowID)
 	switch {
-	case err == nil && (existing.SetID != v.SetID || existing.Version != v.Version):
+	case err == nil:
 		preview.Duplicate = &DuplicateView{SetID: existing.SetID, Version: existing.Version, Title: existing.Title, Status: existing.Status}
-	case err != nil && !errors.Is(err, store.ErrNotFound):
-		return nil, &editFailure{http.StatusInternalServerError, codeInternal, err.Error()}
+	case !errors.Is(err, store.ErrNotFound):
+		return nil, &editFailure{status: http.StatusInternalServerError, code: codeInternal, message: err.Error()}
 	}
 	return &editResult{preview: preview, targetsKey: targetsKey}, nil
 }
@@ -234,7 +376,7 @@ func (s *Server) readEdit(w http.ResponseWriter, r *http.Request, v *store.Versi
 	}
 	result, failure := s.prepareEdit(r.Context(), v, req)
 	if failure != nil {
-		writeError(w, failure.status, failure.code, failure.message)
+		writeJSON(w, failure.status, ErrorBody{Code: failure.code, Error: failure.message, Params: failure.params})
 		return nil, nil, false
 	}
 	return result, &req, true
@@ -267,7 +409,11 @@ func (s *Server) setEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	p := result.preview
 	if p.Duplicate != nil {
-		writeError(w, http.StatusConflict, codeDuplicate, "the edited set duplicates "+p.Duplicate.SetID+"/"+strconv.Itoa(p.Duplicate.Version))
+		writeJSON(w, http.StatusConflict, ErrorBody{
+			Code:   codeDuplicate,
+			Error:  "the edited set duplicates " + p.Duplicate.SetID + "/" + strconv.Itoa(p.Duplicate.Version),
+			Params: map[string]interface{}{"set_id": p.Duplicate.SetID, "version": p.Duplicate.Version},
+		})
 		return
 	}
 	if !p.Changed {

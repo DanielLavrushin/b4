@@ -18,11 +18,15 @@ b4 keeps its configuration in a single JSON file. The default is `/etc/b4/b4.jso
 
 Without `--config`, b4 looks for `b4.json` and `config.json` under `/etc/b4` and `/opt/etc/b4`, and falls back to `/etc/b4/b4.json`. The path it settled on is written to the log at startup.
 
+:::info Downloading the file
+The **Download Configuration** card under [Settings, System, Backup](../settings/system.md#download-configuration) saves the configuration in the form b4 writes to this file. The [safe copy](../settings/system.md#safe-copy) masks credentials and private host names for sharing, and b4 refuses to load or save a configuration that still holds its `[redacted]` placeholders.
+:::
+
 ## Only what differs from the defaults is stored
 
-The file is sparse. A setting that still holds its built-in default is left out of it entirely, so a fresh installation produces a very short file, and a section you have never touched is simply absent. That is not a sign of a missing setting, and adding it back by hand with its default value changes nothing.
+The file is sparse. A setting that still holds its built-in default is left out of it entirely, so a fresh installation produces a very short file, and a section whose settings were never changed is absent. That is not a sign of a missing setting, and adding it back by hand with its default value changes nothing.
 
-The same applies through the API and the web interface: what you read back is what differs from the defaults, not the full effective configuration.
+The same applies to saves through the API and the web interface: the file then holds what differs from the defaults, not the full effective configuration.
 
 ## Structure
 
@@ -83,8 +87,7 @@ The same applies through the API and the web interface: what you read back is wh
     "checker": {
       "discovery_timeout": 5,
       "config_propagate_ms": 1500,
-      "dns_server": "",
-      "validation_tries": 1
+      "dns_server": ""
     },
     "geo": { "sitedat_path": "", "ipdat_path": "", "sitedat_url": "", "ipdat_url": "" },
     "timezone": ""
@@ -93,7 +96,7 @@ The same applies through the API and the web interface: what you read back is wh
 }
 ```
 
-The sample is trimmed to the sections worth recognising. Every section holds more keys than are shown, and none of them appear in a real file until they differ from the default.
+The sample shows only some of the sections. Every section holds more keys than are shown, and none of them appear in a real file until they differ from the default.
 
 `mtproto` holds more than the three keys above. `secrets` is an array of named entries, each with `id`, `name`, `secret` and `enabled`; a file written before configuration version 50 carried a single `mtproto.secret` string, which the migration moves into that array as an entry named `default`. `web_proxy` is an object with `enabled` and `hostname`, and both of its fields are zero-valued by default, so a working relay is the only reason they appear in a file at all. `bridge` holds a single `enabled` field, the [Telegram over WebSocket](../telegram/websocket-bridge.md) switch, and appears only while it is on. See [Settings, Telegram](../settings/mtproto.md).
 
@@ -110,11 +113,11 @@ The sample is trimmed to the sections worth recognising. Every section holds mor
 | `ipv6` | Process IPv6 traffic | `false` |
 | `tcp_conn_bytes_limit` | Global ceiling on how many TCP packets per connection are analysed | `19` |
 | `udp_conn_bytes_limit` | Global ceiling on how many UDP packets per connection are analysed | `8` |
-| `interfaces` | Interfaces to attach the rules to. Empty means all of them | `[]` |
+| `interfaces` | The **Capture Interfaces** field, a filter on the interface a packet passes, see [Capture Interfaces](../settings/core#network-interfaces). Empty means all of them | `[]` |
 
 ### `queue.ipv6`
 
-`queue.ipv6` is the **IPv6 support** switch from [Settings -> Core](../settings/core#protocols), and `--ipv6` on the command line sets the same thing for one run. It says which address families **b4** processes, not what the router does with IPv6.
+`queue.ipv6` is the **Enable IPv6 Support** switch from [Settings, Core, Packet Engine](../settings/core#protocols), and `--ipv6` on the command line sets the same thing for one run. It says which address families **b4** processes, not what the router does with IPv6.
 
 Off, which is the default, means b4 binds its queue to IPv4 only and writes no IPv6 firewall rules for any set. Bypass strategies, routing, blocking and a proxy set's QUIC refusal then exist on IPv4 alone, so a destination that also answers over IPv6 is reachable there with nothing in the way. b4 logs a warning when the host has a working global IPv6 address while this is off, and it strips IPv6 addresses out of DNS answers for matched domains to keep clients on the protected IPv4 path. See [The IPv4 fallback](../dns#the-ipv4-fallback).
 
@@ -134,15 +137,15 @@ Each set is one object in the `sets` array, carrying its whole configuration. It
 - `escalate` - which set to escalate to when this one stops working
 
 :::tip Import and export
-To move a set between devices, use the **Import/Export** tab of the set editor. It shows the same JSON and takes a pasted one back.
+The set editor has an **Import/Export** tab for moving a set between devices. It shows the set as JSON and takes a pasted one back. The exported JSON leaves out values equal to the defaults, the settings of switched-off features, the set's id, its source devices, its watchdog switch and its escalation settings.
 :::
 
 ## Editing it by hand
 
-`version` at the top is the configuration format version. b4 reads it to decide what needs migrating, so leave it alone when editing anything else.
+`version` at the top is the configuration format version. b4 reads it to decide what needs migrating, so it should stay unchanged when anything else is edited.
 
 :::warning
-Editing by hand works, but the web interface validates values and applies migrations on upgrade. After a manual edit, restart b4 so the change is picked up.
+Editing by hand works, but the values in the file are checked only when b4 starts, and a file that fails the check stops b4 with an `invalid configuration` error. The web interface refuses an invalid value when it is saved. b4 reads the file only at start, so a manual edit takes effect after a restart. A save made before then, in the web interface, over MCP, by a watchdog heal, by a geodata download or by an ASN prefix update, writes the running configuration over the file and the manual edit is lost.
 :::
 
 ## Migrations

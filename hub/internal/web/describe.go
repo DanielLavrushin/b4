@@ -24,6 +24,14 @@ func DecodeSet(projection map[string]interface{}) (config.SetConfig, error) {
 	return set, nil
 }
 
+func ConfigOf(set *config.SetConfig) map[string]interface{} {
+	m, err := config.SetToMap(set)
+	if err != nil {
+		return nil
+	}
+	return m
+}
+
 type Targets struct {
 	Domains    []string
 	IPs        []string

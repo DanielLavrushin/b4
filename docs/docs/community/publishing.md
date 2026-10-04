@@ -66,4 +66,4 @@ In the catalogue the author of a set is an author label, not the key id: a short
 - **Show recovery code** displays the code the key is rebuilt from. Anyone with the code can publish and report as this author.
 - **Restore from code** replaces the key of this router with the one the code describes. The sets published under that key can then be versioned from this router, and the reports carry the age of that key on the hub.
 
-A backup made under **Settings, Backup** does not include the `.hub/` directory. A router restored from a backup starts with a new key, which carries the reduced weight the hub gives keys younger than a week. The recovery code is the way to carry the identity to another router.
+A backup made under **Settings, System, Backup** does not include the `.hub/` directory. A router restored from a backup starts with a new key, which carries the reduced weight the hub gives keys younger than a week. The recovery code is the way to carry the identity to another router.

@@ -1,8 +1,8 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { get, post, query } from "@/api/client";
 import { useAdminMutation } from "@/api/mutations";
 import { qk } from "@/api/queryKeys";
-import type { ActionResult, ReportAction, ReportsPageView, VotesPageView } from "@/models/api";
+import type { ActionResult, ReportAction, ReportsPageView, VoteOriginsView, VotesPageView } from "@/models/api";
 
 export interface VoteFilter {
   set: string;
@@ -21,6 +21,14 @@ export const useVotes = (filter: VoteFilter) =>
     initialPageParam: "",
     getNextPageParam: (page) => page.next || undefined,
     refetchInterval: 60_000,
+    placeholderData: keepPreviousData,
+  });
+
+export const useVoteOrigins = () =>
+  useQuery({
+    queryKey: qk.votes.origins,
+    queryFn: () => get<VoteOriginsView>("/votes/origins"),
+    staleTime: 300_000,
   });
 
 export interface ReportFilter {

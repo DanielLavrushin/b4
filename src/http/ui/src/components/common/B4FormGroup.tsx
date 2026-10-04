@@ -3,7 +3,7 @@ import { Box, Grid, Typography } from "@mui/material";
 import { colors, spacing } from "@design";
 
 interface B4FormGroupProps {
-  label: string;
+  label?: string;
   description?: string;
   icon?: React.ReactNode;
   children: React.ReactNode;
@@ -24,26 +24,40 @@ export const B4FormGroup = ({
   columns = 2,
 }: B4FormGroupProps) => (
   <Box>
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: spacing.md }}>
-      {icon}
-      <Box>
-        <Typography variant="h6" sx={{ color: colors.text.primary }}>
-          {label}
-        </Typography>
-        {description && (
-          <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-            {description}
-          </Typography>
-        )}
+    {(label || description) && (
+      <Box
+        sx={{ display: "flex", alignItems: "center", gap: 1, mb: spacing.md }}
+      >
+        {icon}
+        <Box>
+          {label && (
+            <Typography
+              variant="subtitle1"
+              sx={{ color: colors.text.primary, fontWeight: 600 }}
+            >
+              {label}
+            </Typography>
+          )}
+          {description && (
+            <Typography
+              variant="caption"
+              sx={{ color: colors.text.secondary, display: "block" }}
+            >
+              {description}
+            </Typography>
+          )}
+        </Box>
       </Box>
-    </Box>
+    )}
 
     <Grid container spacing={spacing.md}>
-      {Children.map(children, (child) => (
-        <Grid size={{ xs: 12, md: isFullRow(child) ? 12 : 12 / columns }}>
-          {child}
-        </Grid>
-      ))}
+      {Children.map(children, (child) =>
+        child == null ? null : (
+          <Grid size={{ xs: 12, md: isFullRow(child) ? 12 : 12 / columns }}>
+            {child}
+          </Grid>
+        ),
+      )}
     </Grid>
   </Box>
 );

@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -60,23 +59,6 @@ func (api *API) RegisterGeodatApi() {
 	api.mux.HandleFunc("/api/geodat/remove", api.handleGeodatRemove)
 }
 
-//go:embed geodat.json
-var geodatJSON []byte
-
-var (
-	geodatSources []GeodatSource
-	geodatOnce    sync.Once
-)
-
-func loadGeodatSources() {
-	geodatOnce.Do(func() {
-		if err := json.Unmarshal(geodatJSON, &geodatSources); err != nil {
-			log.Errorf("Failed to parse embedded geodat.json: %v", err)
-			geodatSources = []GeodatSource{}
-		}
-	})
-}
-
 // @Summary List available geodat sources
 // @Tags Geodat
 // @Produce json
@@ -89,9 +71,16 @@ func (api *API) handleGeodatSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	loadGeodatSources()
+	sources, err := geodat.Sources()
+	if err != nil {
+		log.Errorf("Failed to parse the embedded geodata sources: %v", err)
+	}
+	list := make([]GeodatSource, len(sources))
+	for i, s := range sources {
+		list[i] = GeodatSource(s)
+	}
 	setJsonHeader(w)
-	json.NewEncoder(w).Encode(geodatSources)
+	json.NewEncoder(w).Encode(list)
 }
 
 // @Summary Download geodat files

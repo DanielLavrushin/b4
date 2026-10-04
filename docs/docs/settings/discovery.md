@@ -1,24 +1,30 @@
 ---
-sidebar_position: 7
+sidebar_position: 8
 title: Discovery
 ---
 
-Parameters of the automatic configuration search. Configured in **Settings -> Discovery**.
+**Settings, Discovery** has two cards. **Testing Configuration** holds the timings and the trusted DNS server of [Discovery](../discovery.md) runs. **Watchdog** holds the global switch, the timings of the [watchdog](../watchdog.md) and the older per-domain list.
 
-![Discovery settings](/img/discovery/20261003230000.png)
+![The Discovery tab](/img/discovery/20261004000201.png)
 
-## Parameters
+Changes are saved with **Save Changes** in the page header, see [Saving and restarting](./index.md#saving). None of them needs a restart. A change applies to the next Discovery run, not to one in progress. The watchdog applies the switch within 10 seconds; a check or a cooldown already scheduled keeps its time, and the new timings apply to what is scheduled after it.
 
-| Parameter | Description | Range | Default |
+## Testing Configuration
+
+| Field | Effect | Range | Default |
 | --- | --- | --- | --- |
-| Search timeout | Maximum time to wait for a response when testing each strategy | 3-30 sec | `5` sec |
-| Propagation delay | Time to wait after applying a configuration before testing. Needed so the rules have time to take effect | 500-5000 ms | `1500` ms |
+| **Discovery Timeout** | Time limit for one fetch of a site through one of its addresses, from the connection to the end of the read. Each address a fetch tries gets the whole limit. The limits of the DNS phase's queries and connection checks are based on the same value. | 3-30 sec | `5` sec |
+| **Config Propagation Delay** | Pause between switching the run's capture queue to a new configuration and the first fetch through it. A run pauses this way after loading each preset and before the confirmation fetches. The watchdog waits the same time after a heal writes a strategy into a watched set, before checking the set's addresses. | 500-5000 ms | `1500` ms |
 
-How many fetches in a row a preset has to pass is chosen per run with **Confirm each strategy** on the [Discovery](../discovery#options) page.
+How many fetches in a row a preset has to pass is not set on this tab. It is chosen for each run with **Confirm each strategy** under [Options](../discovery.md#options).
 
-## Trusted DNS server
+:::info Speeds in Discovery
+Each speed in Discovery's results comes from one fetch of at most 100 KB, timed from the start of the request, connection and TLS handshake included. The figures compare strategies on the same site and are not a measure of the connection's throughput.
+:::
 
-With **Check DNS for tampering** on, Discovery compares each site's address from the router's resolver with the address from a resolver it trusts, to tell whether DNS hands out a wrong one. **Trusted DNS server** names that resolver. Empty, Discovery asks the public resolvers built into b4: DNS over HTTPS first, then plain DNS.
+### Trusted DNS server
+
+**Trusted DNS server** sits under **DNS Configuration** on the card. With **Check DNS for tampering** on, Discovery compares each site's address from the router's resolver with the address from a resolver it trusts, to tell whether DNS hands out a wrong one. **Trusted DNS server** names that resolver. Empty, Discovery asks the public resolvers built into b4: DNS over HTTPS first, then plain DNS. Runs with **Check DNS for tampering** off skip the DNS phase and do not ask the server; every heal the watchdog starts is such a run.
 
 | Form | Transport |
 | --- | --- |
@@ -42,16 +48,26 @@ A trusted server a set cannot use, such as a local proxy on another port, a reso
 
 The same field is in the [options of a Discovery run](../discovery#options), where it applies to that run only.
 
-:::warning Speed in discovery results
-The speed shown in discovery (for example, "40 KB/s") is **not the real speed** of your connection. The test downloads a very small amount of data, not enough for a precise measurement. These numbers are only useful for **comparing strategies against each other** - which is faster, which is slower. Do not treat the absolute values as meaningful.
-:::
-
 ## Watchdog
 
-The Watchdog section holds the global switch **Enable Watchdog**. While it is on, the section also shows four timings, **Max Retries** and the **Older per-domain list**. The switch turns all watching on or off, for watched sets and for the older list alike, and the timings apply to both. Each parameter, with its range and default, is described under [Watchdog parameters](../watchdog#parameters).
+The **Watchdog** card holds the global switch **Enable Watchdog**, off by default. It turns all watching on or off, for watched sets and for the older per-domain list alike, and the timings below apply to both. Turning the switch off cancels a heal whose search is in progress, and that heal writes nothing. A set waiting in the heal queue returns to **Queued** and is checked again once the switch is back on.
 
-**Older per-domain list** holds domains checked one by one, each healed through whichever set lists it at the time; see [Older per-domain list](../watchdog#older-per-domain-list). The same list can be edited on the Watchdog page.
+The other fields show only while the switch is on:
+
+| Field | Effect | Range | Default |
+| --- | --- | --- | --- |
+| **Check Interval** | How often each watched set or domain is checked while healthy | 60-1800 sec | `300` sec |
+| **Failure Re-check Interval** | How often a set or domain is checked again after a failed check | 10-300 sec | `60` sec |
+| **Healing Cooldown** | Pause after a heal attempt before the next check of that set or domain | 60-3600 sec | `900` sec |
+| **Check Timeout** | Time limit for one check fetch, the checks after a heal included | 3-30 sec | `15` sec |
+| **Max Retries** | Failed checks in a row that queue a heal | 1-10 | `3` |
+
+The checks, the heal and the statuses are described on the [Watchdog](../watchdog.md) page. Two more watchdog values exist only in the configuration file, see [Parameters](../watchdog.md#parameters).
+
+### Older per-domain list
+
+**Older per-domain list** holds domains checked one by one, each healed through whichever set lists it at the time; see [Older per-domain list](../watchdog.md#older-per-domain-list). A domain is added with **Add Domain** and removed with the cross on its chip. An entry is a domain, checked as `https://<domain>/`, or a full URL, checked as given. The same list is edited in the **Older domain list** section of the Watchdog page.
 
 :::info Watching a set
-A set is put under the watchdog in its own [Discovery tab](../sets/discovery#watchdog), with **Keep this set working with the watchdog**. Its Discovery addresses are then checked together and a heal writes into that set only. The switch here still has to be on for any set to be checked.
+A set is put under the watchdog in its own [Discovery tab](../sets/discovery.md#watchdog), with **Keep this set working with the watchdog**. Its Discovery addresses are then checked together and a heal writes into that set only. **Enable Watchdog** still has to be on for any set to be checked.
 :::

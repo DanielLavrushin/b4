@@ -1,24 +1,28 @@
 ---
-sidebar_position: 4
+sidebar_position: 5
 title: Security
 ---
 
 ## Authentication
 
-By default the web interface is open without a password. To restrict access, set a username and password:
+By default the web interface is open without a password. To restrict access with a username and password:
 
-1. Go to **Settings -> Core -> Web server**
+1. Go to **Settings, System, Web Server**
 2. Fill in the **Username** and **Password** fields
 3. Save the settings
 
 After that, opening the web interface requires credentials.
+
+:::info
+The fields of the **Web Server** card are listed under [Settings, System, Web Server](./system.md#web-server).
+:::
 
 :::warning Access from outside
 Without authentication, anyone who reaches the web interface port gets full management access. The default bind address `0.0.0.0` listens on every address, IPv6 included, so on a host whose firewall accepts incoming connections, such as a VPS without one, that is anyone on the internet. The web interface's **Expose to internet** switch cannot be turned on without a username and a password; see [Access from the internet](#expose-to-internet).
 :::
 
 :::danger Authentication without HTTPS
-If authentication is enabled but HTTPS is **not configured**, the username and password are transmitted over the network **in plain text**. Anyone who can intercept traffic (for example, on public Wi-Fi) can see your credentials. Always enable HTTPS together with authentication, especially if b4 is reachable outside the local network.
+If authentication is enabled but HTTPS is **not configured**, the username and password are transmitted over the network **in plain text**. Anyone who can intercept traffic (for example, on public Wi-Fi) can see them. With authentication enabled, HTTPS is recommended as well, especially if b4 is reachable outside the local network.
 :::
 
 ## HTTPS
@@ -37,7 +41,7 @@ For a self-signed certificate (suitable for a local network):
 openssl req -x509 -newkey rsa:2048 -keyout server.key -out server.crt -days 365 -nodes -subj "/CN=b4"
 ```
 
-Copy the files to the configuration directory (for example, `/etc/b4/`) and point the settings at them.
+The files can be copied to the configuration directory (for example, `/etc/b4/`) and their paths entered in the settings.
 
 After HTTPS is enabled, the web interface is available over `https://`.
 
@@ -57,10 +61,10 @@ The web interface, the MTProto proxy, the relay port of the Telegram Desktop WEB
 
 | Listener | Where | Config field | Opens the port only when |
 | --- | --- | --- | --- |
-| Web interface | Settings, Core, **Web Server** | `system.web_server.expose` | A username and a password are both set |
+| Web interface | Settings, System, **Web Server** | `system.web_server.expose` | A username and a password are both set |
 | MTProto proxy | Settings, Telegram, **MTProto Proxy** | `system.mtproto.expose` | The proxy is enabled |
 | WEB proxy relay port | Settings, Telegram, **Telegram Desktop WEB proxy** | `system.mtproto.web_proxy.expose` | The proxy and the WEB carrier are enabled, and **Relay port** holds a port |
-| SOCKS5 proxy | Settings, Core, **SOCKS5 Proxy** | `system.socks5.expose` | The proxy is enabled and has credentials or an allowed sources list, and the web interface has a username and a password or has been off (port `0`) since the last start |
+| SOCKS5 proxy | Settings, Core, SOCKS5, **SOCKS5 Proxy** | `system.socks5.expose` | The proxy is enabled and has credentials or an allowed sources list, and the web interface has a username and a password or has been off (port `0`) since the last start |
 
 ### The rule
 
@@ -68,7 +72,7 @@ A listener on `0.0.0.0`, the default, or on `::` accepts IPv4 and IPv6 connectio
 
 b4 opens a port only while its own listener holds it. A listener that did not start, for example because another program had taken the port first, gets no rule, with the reason `not_listening`, which the MTProto share dialog shows as a warning. b4 looks at the listeners again at every check of its rules, so a listener that stops later, such as a WEB proxy relay port, loses its rule as well.
 
-The rule goes wherever the host's firewall can drop the connection, whichever **Firewall engine** b4 uses for its own rules:
+The rule goes wherever the host's firewall can drop the connection, whichever **Firewall Engine** b4 uses for its own rules:
 
 - **iptables.** A chain `B4_EXPOSE` in the `filter` table holds one `ACCEPT` per exposed port, and a single jump in `INPUT` leads to it. The jump goes right below the last ban-list rule in `INPUT`, so an address banned there stays banned on b4's ports, and to the top of `INPUT` when there is none. A ban-list rule is a jump to a fail2ban `f2b-*` chain or to the chain of CrowdSec or sshguard, a `DROP` or `REJECT` that matches an ipset of source addresses, or ufw's `ufw-before-input` jump, behind which ufw keeps its deny rules and fail2ban's ufw bans. A ban tool that adds its rule below b4's jump later moves the jump down at the next check. IPv4 rules go through `iptables` and IPv6 rules through `ip6tables`, in the nf_tables variant and in the legacy one alike, wherever that variant already has a `filter` table. b4 does not load the legacy kernel modules to create one.
 - **nftables.** An `accept` is inserted at the top of every filter chain on the input hook in a table b4 does not own, such as `inet fw4 input` on OpenWrt 22.03 and later and `inet filter input` from `/etc/nftables.conf`, with a comment of the form `b4-expose:mtproto`. A chain whose policy is `accept` and whose priority is below `filter` gets no rule. That is where fail2ban's `f2b-table`, CrowdSec's `crowdsec` tables and banIP place their chains, so the addresses they ban stay banned on b4's ports, and fw4's `mangle_input` is such a chain as well. The `INPUT` chain of iptables-nft's own `filter` table gets its rule through the iptables tools instead, because a native nftables rule in it breaks those tools; a native chain in a table of the same name, such as `table ip filter { chain input ... }`, is treated like any other.
@@ -81,9 +85,9 @@ In nftables an `accept` only ends the packet's path through one base chain. Ever
 
 ### Firewall reloads
 
-Router firmware rebuilds its firewall on its own and takes b4's rule with it: OpenWrt's fw4 flushes its table on every reload, which an interface coming up triggers, ASUS firmware rebuilds the `filter` table on every firewall restart, and Keenetic NDMS removes the chains it does not own on every [rewrite](../install/keenetic.md#firewall-rewrites). b4 checks its rules at the **Firewall monitor interval** (`system.tables.monitor_interval`, 10 seconds by default) and on `SIGUSR1`, puts back the missing ones, and adds the rule to any input chain that has appeared since the previous check. With the interval at `0` the timed check is off, and only `SIGUSR1` makes b4 look for missing rules. The check runs whatever the packet engine: in TUN mode, and while the engine has failed to start, as well.
+Router firmware rebuilds its firewall on its own and takes b4's rule with it. OpenWrt's fw4 flushes its table on every reload, which an interface coming up triggers. ASUS firmware rebuilds the `filter` table on every firewall restart. Keenetic NDMS removes the chains it does not own on every [rewrite](../install/keenetic.md#firewall-rewrites). b4 checks its rules at the interval in **Firewall Monitor Interval (seconds)** (`system.tables.monitor_interval`, 10 seconds by default) and on `SIGUSR1`, puts back the missing ones, and adds the rule to any input chain that has appeared since the previous check. With the interval at `0` the timed check is off, and only `SIGUSR1` makes b4 look for missing rules. The check runs whatever the packet engine: in TUN mode, and while the engine has failed to start, as well.
 
-Turning the switch off, turning the listener off or stopping b4 removes the rule, and so does `b4 --clear-tables`; once shutdown has removed it, no check puts it back. A save removes the rules of the ports it closes before the listeners take the new settings. A rule that cannot be removed, for example while another program holds the xtables lock, is reported and removed at the next check. At start, b4 removes rules left behind by a run that ended without cleaning up, unless **Skip IPTables/NFTables setup** is on: b4 then does not touch the firewall, and `b4 --clear-tables` removes them.
+Turning the switch off, turning the listener off or stopping b4 removes the rule, and so does `b4 --clear-tables`; once shutdown has removed it, no check puts it back. A save removes the rules of the ports it closes before the listeners take the new settings. A rule that cannot be removed, for example while another program holds the xtables lock, is reported and removed at the next check. At start, b4 removes rules left behind by a run that ended without cleaning up, unless **Skip IPTables/NFTables Setup** is on: b4 then does not touch the firewall, and `b4 --clear-tables` removes them.
 
 ### Off adds nothing
 
@@ -105,12 +109,12 @@ The rule opens the port on the host b4 runs on and nowhere else.
 - **Cloud firewalls.** AWS security groups, Azure network security groups, Google Cloud firewall rules and Oracle Cloud security lists filter traffic before it reaches the machine, and each needs a rule of its own. A cloud machine often carries only a private address on its network card, with the provider mapping the public address to it; that mapping needs no forward, only the provider's rule.
 - **A MikroTik container.** b4 changes the firewall inside the container, while RouterOS filters and translates what arrives from the WAN. A connection from outside reaches the container only through a `dst-nat` rule on RouterOS, described under [MikroTik](../install/mikrotik.md#access-from-the-wan).
 - **A table that belongs to another program.** The kernel refuses changes from other programs to an nftables table that its creator marked as owned. firewalld 2.2 and later marks its table that way (`NftablesTableOwner=yes`, the default) where the kernel and nftables support it, from Linux 6.9 and nftables 1.1 on, as on Fedora 42, RHEL 10 and Debian 13. b4 recognises the refusal, `Operation not permitted`, tries that table again every 10 minutes rather than at every check, and reports it in the log and in `GET /api/system/addresses`; for firewalld the report names the commands that open the port in firewalld itself, `firewall-cmd --permanent --add-port=<port>/tcp` followed by `firewall-cmd --reload`, and the alternative, `NftablesTableOwner=no` in `/etc/firewalld/firewalld.conf`. Without the flag, firewalld's `filter_INPUT` chain takes b4's rule like any other input chain. The rule then sits at the top of `filter_INPUT`, above firewalld's zones, so an address blocked through a zone, a rich rule or fail2ban's firewalld actions can still reach the exposed ports.
-- **Skip IPTables/NFTables setup.** With it on, b4 adds no exposure rule. The switches are greyed out, one that is already on can still be turned off, and turning the setting on removes the rules b4 had added.
+- **Skip IPTables/NFTables Setup.** With it on, b4 adds no exposure rule. The switches are greyed out, one that is already on can still be turned off, and turning the setting on removes the rules b4 had added.
 
 The DNS-over-TCP listener (`system.dns.tcp_port`, 5453 by default) and the transparent-proxy listeners of proxy sets and of Telegram over WebSocket have no switch. They exist only as targets of b4's own redirect and diversion rules.
 
 The switches cannot be changed over MCP, and an MCP write that would open a port while one of them is on is refused, such as turning the MTProto proxy on or changing its port with `system.mtproto.expose` on. See [MCP server](./mcp.md#changing-settings).
 
 :::info Checking what is open
-The log records every change on lines that start with `Expose:`: the ports opened and the chains that hold their rules, a switch that is on but opened nothing and the reason, a rule that could not be added or removed, and rules put back after a firewall reload. `GET /api/system/addresses` reports the same state: the exposed ports, the chains, the error for a chain where a rule could not be added or removed, and for a switch whose precondition is not met the reason, `no_auth`, `web_no_auth`, `open_relay`, `shared_port`, `loopback`, `invalid_bind` or `not_listening`. The MTProto share dialog reads that report to warn when the proxy port is not open.
+The log records every change on lines that start with `Expose:`. They name the ports opened and the chains that hold their rules, a switch that is on but opened nothing and the reason, a rule that could not be added or removed, and rules put back after a firewall reload. `GET /api/system/addresses` reports the exposed ports, the chains, the error for a chain where a rule could not be added or removed, and, for a switch whose precondition is not met, the reason, one of `no_auth`, `web_no_auth`, `open_relay`, `shared_port`, `loopback`, `invalid_bind` and `not_listening`. The MTProto share dialog reads that report to warn when the proxy port is not open.
 :::

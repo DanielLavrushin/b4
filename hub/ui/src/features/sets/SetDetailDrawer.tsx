@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import {
   Alert,
   Box,
@@ -26,12 +26,14 @@ import { EmptyState, ErrorState, Loading } from "@/shared/components/States";
 import { HistoryList } from "@/features/audit/HistoryList";
 import { useTargetHistory } from "@/features/audit/api";
 import { QueryView } from "@/shared/components/QueryView";
-import { StatusChip } from "@/shared/components/StatusChip";
-import { Mono } from "@/shared/components/Mono";
-import { formatStamp, setRef } from "@/shared/utils/format";
+import { KeyRef } from "@/shared/components/KeyRef";
+import { statusTone } from "@/shared/components/StatusChip";
+import { StatusDot, statusToneColor } from "@/shared/components/StatusDot";
+import { formatAgo, formatStamp } from "@/shared/utils/format";
 import { reasonText } from "@/shared/utils/reason";
 import { EditedNotice } from "@/features/sets/EditedNotice";
 import { EntryFacts, Origin } from "@/features/sets/EntryFacts";
+import { VersionPill } from "@/features/sets/card/SetCard";
 import type { Moderation } from "@/features/moderation/useModeration";
 
 interface SetDetailDrawerProps {
@@ -42,58 +44,61 @@ interface SetDetailDrawerProps {
   moderation: Moderation;
 }
 
+const quiet = { color: colors.text.secondary, "&:hover": { color: colors.text.primary } } as const;
+
 function VersionActions({ entry, authorBanned, moderation }: { entry: EntryView; authorBanned: boolean; moderation: Moderation }) {
   const { t } = useTranslation();
+  const busy = moderation.busy;
   return (
-    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
       {entry.status === "pending" && (
         <>
-          <Button size="small" variant="contained" color="success" disabled={moderation.busy} onClick={() => moderation.approve(entry)}>
+          <Button size="small" variant="contained" disabled={busy} onClick={() => moderation.approve(entry)}>
             {t("queue.approve")}
           </Button>
-          <Button size="small" variant="outlined" color="primary" disabled={moderation.busy} onClick={() => moderation.edit(entry)}>
+          <Button size="small" variant="outlined" disabled={busy} onClick={() => moderation.edit(entry)}>
             {t("queue.edit")}
           </Button>
-          <Button size="small" variant="outlined" color="error" disabled={moderation.busy} onClick={() => moderation.reject(entry)}>
+          <Button size="small" variant="outlined" disabled={busy} onClick={() => moderation.reject(entry)}>
             {t("queue.reject")}
           </Button>
-          <Button size="small" variant="outlined" color="inherit" disabled={moderation.busy} onClick={() => moderation.hide(entry)}>
+          <Button size="small" variant="outlined" disabled={busy} onClick={() => moderation.hide(entry)}>
             {t("queue.hide")}
           </Button>
         </>
       )}
-      {entry.status === "active" && (
-        <Button size="small" variant="outlined" color="inherit" disabled={moderation.busy} onClick={() => moderation.hide(entry)}>
-          {t("queue.hide")}
-        </Button>
-      )}
-      {(entry.status === "active" || entry.status === "hidden") && (
-        <Button size="small" variant="outlined" color="primary" disabled={moderation.busy} onClick={() => moderation.editText(entry)}>
-          {t("editText.button")}
-        </Button>
-      )}
       {entry.status === "hidden" && (
-        <Button size="small" variant="outlined" color="success" disabled={moderation.busy} onClick={() => moderation.restore(entry)}>
+        <Button size="small" variant="contained" disabled={busy} onClick={() => moderation.restore(entry)}>
           {t("sets.restore")}
         </Button>
       )}
       {entry.status === "rejected" && (
-        <Button size="small" variant="outlined" color="success" disabled={moderation.busy} onClick={() => moderation.approve(entry)}>
+        <Button size="small" variant="contained" disabled={busy} onClick={() => moderation.approve(entry)}>
           {t("sets.approveAfterAll")}
+        </Button>
+      )}
+      {entry.status === "active" && (
+        <Button size="small" variant="outlined" disabled={busy} onClick={() => moderation.hide(entry)}>
+          {t("queue.hide")}
+        </Button>
+      )}
+      {(entry.status === "active" || entry.status === "hidden") && (
+        <Button size="small" variant="outlined" disabled={busy} onClick={() => moderation.editText(entry)}>
+          {t("editText.button")}
         </Button>
       )}
       {entry.open_reports > 0 && (
         <>
-          <Button size="small" variant="outlined" color="warning" disabled={moderation.busy} onClick={() => moderation.reports(entry, "dismiss")}>
+          <Button size="small" variant="outlined" disabled={busy} onClick={() => moderation.reports(entry, "dismiss")}>
             {t("reports.version.dismiss", { count: entry.open_reports })}
           </Button>
-          <Button size="small" variant="text" color="warning" disabled={moderation.busy} onClick={() => moderation.reports(entry, "resolve")}>
+          <Button size="small" variant="outlined" disabled={busy} onClick={() => moderation.reports(entry, "resolve")}>
             {t("reports.version.resolve", { count: entry.open_reports })}
           </Button>
         </>
       )}
       {!authorBanned && (
-        <Button size="small" variant="text" color="error" disabled={moderation.busy} onClick={() => moderation.ban(entry.uploader_hmac, entry.author)}>
+        <Button size="small" disabled={busy} onClick={() => moderation.ban(entry.uploader_hmac, entry.author)} sx={{ ...quiet, ml: "auto" }}>
           {t("queue.banUploader")}
         </Button>
       )}
@@ -101,12 +106,24 @@ function VersionActions({ entry, authorBanned, moderation }: { entry: EntryView;
   );
 }
 
+const breakable = (domain: string) =>
+  domain.split(".").map((part, i, parts) => (
+    <Fragment key={`${String(i)}-${part}`}>
+      {part}
+      {i < parts.length - 1 && (
+        <>
+          .<wbr />
+        </>
+      )}
+    </Fragment>
+  ));
+
 function Votes({ votes }: { votes: VoteView[] }) {
   const { t } = useTranslation();
   if (votes.length === 0) return <EmptyState text={t("detail.noVotes")} />;
   return (
     <Box sx={{ overflowX: "auto" }}>
-      <Table size="small">
+      <Table size="small" sx={{ "& .MuiTableCell-root": { px: 1, "&:first-of-type": { pl: 0 }, "&:last-of-type": { pr: 0 } } }}>
         <TableHead>
           <TableRow>
             <TableCell>{t("detail.voteColumns.when")}</TableCell>
@@ -121,22 +138,31 @@ function Votes({ votes }: { votes: VoteView[] }) {
         <TableBody>
           {votes.map((v) => (
             <TableRow key={v.id}>
-              <TableCell sx={{ whiteSpace: "nowrap" }}>{formatStamp(v.received_at)}</TableCell>
-              <TableCell>
-                <Chip size="small" variant="outlined" color={v.weight >= 0 ? "success" : "error"} label={t(`feedback.kinds.${v.kind}`, { defaultValue: v.kind })} />
+              <TableCell sx={{ whiteSpace: "nowrap" }}>
+                <span title={formatStamp(v.received_at)}>{formatAgo(t, v.received_at)}</span>
+              </TableCell>
+              <TableCell sx={{ whiteSpace: "nowrap" }}>
+                <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.75 }}>
+                  <Box component="span" aria-hidden sx={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, bgcolor: statusToneColor[v.weight >= 0 ? "success" : "error"] }} />
+                  {t(`feedback.kinds.${v.kind}`, { defaultValue: v.kind })}
+                </Box>
               </TableCell>
               <TableCell>{v.version}</TableCell>
-              <TableCell sx={{ whiteSpace: "nowrap" }}>
-                {v.asn_observed ? `AS${v.asn_observed} ${v.country_observed ?? ""}` : ""}
-                <Typography component="span" variant="caption" sx={{ color: colors.text.disabled, ml: 0.5 }}>
+              <TableCell>
+                {v.asn_observed && (
+                  <Box component="span" sx={{ whiteSpace: "nowrap" }}>
+                    AS{v.asn_observed} {v.country_observed ?? ""}
+                  </Box>
+                )}{" "}
+                <Typography component="span" variant="caption" sx={{ color: colors.text.disabled, whiteSpace: "nowrap" }}>
                   {v.origin_verified ? t("detail.verified") : t("detail.unverified")}
                 </Typography>
               </TableCell>
-              <TableCell>
-                <Mono title={v.key_hmac}>{v.key}</Mono>
+              <TableCell sx={{ whiteSpace: "nowrap" }}>
+                <KeyRef hmac={v.key_hmac} label={v.key} dot={false} />
               </TableCell>
-              <TableCell>{v.domain ?? ""}</TableCell>
-              <TableCell>{v.b4_version ?? ""}</TableCell>
+              <TableCell sx={{ overflowWrap: "break-word", minWidth: 96 }}>{v.domain ? breakable(v.domain) : ""}</TableCell>
+              <TableCell sx={{ whiteSpace: "nowrap" }}>{v.b4_version ?? ""}</TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -149,6 +175,7 @@ function SetHeaderState({ data, moderation }: { data: SetDetailView; moderation:
   const { t } = useTranslation();
   const title = data.versions[data.versions.length - 1]?.title ?? data.id;
   const withdrawn = data.withdrawn_at !== undefined;
+  const listed = data.listed_version !== undefined;
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
       {withdrawn && (
@@ -164,25 +191,19 @@ function SetHeaderState({ data, moderation }: { data: SetDetailView; moderation:
           {data.withdraw_reason ? ` ${t("sets.withdrawnReason", { reason: data.withdraw_reason })}` : ""}
         </Alert>
       )}
-      {data.author_banned && (
-        <Alert severity="error" variant="outlined">
-          {t("sets.authorBannedBanner")}
-        </Alert>
-      )}
+      {data.author_banned && <Alert severity="error">{t("sets.authorBannedBanner")}</Alert>}
       {!withdrawn && !data.author_banned && (
-        <Alert
-          severity={data.listed_version ? "success" : "info"}
-          variant="outlined"
-          action={
-            data.listed_version ? (
-              <Button size="small" color="inherit" disabled={moderation.busy} onClick={() => moderation.withdraw(data.id, title)}>
-                {t("sets.withdraw")}
-              </Button>
-            ) : undefined
-          }
-        >
-          {data.listed_version ? t("sets.listedBanner", { version: data.listed_version }) : t("sets.notListedBanner")}
-        </Alert>
+        <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 1, rowGap: 0.5, minHeight: 30 }}>
+          <Box component="span" aria-hidden sx={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, bgcolor: statusToneColor[listed ? "success" : "neutral"] }} />
+          <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }}>
+            {listed ? t("sets.listedBanner", { version: data.listed_version }) : t("sets.notListedBanner")}
+          </Typography>
+          {listed && (
+            <Button size="small" disabled={moderation.busy} onClick={() => moderation.withdraw(data.id, title)} sx={quiet}>
+              {t("sets.withdraw")}
+            </Button>
+          )}
+        </Box>
       )}
     </Box>
   );
@@ -197,7 +218,7 @@ function History({ id }: Readonly<{ id: string }>) {
     <>
       <HistoryList entries={history.data.items} />
       {history.data.next ? (
-        <Link component="button" type="button" variant="body2" underline="hover" sx={{ alignSelf: "flex-start" }} onClick={() => void navigate(`/audit?kind=set&q=${encodeURIComponent(id)}`)}>
+        <Link component="button" type="button" variant="body2" underline="hover" sx={{ alignSelf: "flex-start", color: colors.text.primary }} onClick={() => void navigate(`/audit?kind=set&q=${encodeURIComponent(id)}`)}>
           {t("audit.fullLog")}
         </Link>
       ) : null}
@@ -220,7 +241,7 @@ function Detail({ data, focusVersion, onClose, moderation }: { data: SetDetailVi
           key={v.version}
           ref={v.version === focusVersion ? focused : undefined}
           sx={{
-            border: `1px solid ${v.version === focusVersion ? colors.primary : colors.border.light}`,
+            border: `1px solid ${v.version === focusVersion ? colors.secondary : colors.border.light}`,
             borderRadius: 1,
             p: 2,
             display: "flex",
@@ -230,20 +251,20 @@ function Detail({ data, focusVersion, onClose, moderation }: { data: SetDetailVi
           }}
         >
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-            <Typography sx={{ fontWeight: 600 }}>{setRef(v.set_id, v.version)}</Typography>
-            <StatusChip status={v.status} label={t(`status.set.${v.status}`)} />
+            <VersionPill version={{ version: v.version }} />
+            <StatusDot tone={statusTone(v.status)} label={t(`status.set.${v.status}`)} />
             {v.version === data.listed_version && <Chip size="small" color="secondary" label={t("detail.inCatalogue")} />}
             {v.hidden_from === "pending" && <Chip size="small" variant="outlined" label={t("detail.hiddenFromPending")} />}
             <Typography variant="caption" sx={{ color: colors.text.secondary, ml: "auto" }}>
               {formatStamp(v.updated_at)}
             </Typography>
           </Box>
-          <Typography sx={{ fontSize: 16, overflowWrap: "anywhere" }}>{v.title}</Typography>
+          <Typography sx={{ fontSize: 16, fontWeight: 600, overflowWrap: "anywhere" }}>{v.title}</Typography>
           <Origin entry={v} />
           <EditedNotice entry={v} />
           {v.status_reason && (
-            <Typography variant="body2" sx={{ color: colors.state.warning }}>
-              {reasonText(t, v.status_reason, v.independent_reports)}
+            <Typography variant="body2" sx={{ color: colors.text.secondary, overflowWrap: "anywhere" }}>
+              {t("sets.reasonLine", { reason: reasonText(t, v.status_reason, v.independent_reports) })}
             </Typography>
           )}
           <EntryFacts entry={v} />
@@ -279,7 +300,7 @@ export function SetDetailDrawer({ id, open, focusVersion, onClose, moderation }:
       anchor="right"
       open={open && id !== null}
       onClose={onClose}
-      slotProps={{ paper: { sx: { width: { xs: "100%", md: 760 }, maxWidth: "100%", bgcolor: colors.background.default } } }}
+      slotProps={{ paper: { sx: { width: { xs: "100%", md: 880 }, maxWidth: "100%", bgcolor: colors.background.default } } }}
     >
       <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 2.5, minWidth: 0 }}>
         <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2 }}>
@@ -290,10 +311,17 @@ export function SetDetailDrawer({ id, open, focusVersion, onClose, moderation }:
               {id}
             </Typography>
             {data && (
-              <Typography variant="caption" sx={{ color: colors.text.secondary, display: "block", mt: 0.5 }}>
-                {t("detail.author", { author: data.author })}
-                {data.derived_from_id ? ` · ${t("detail.derived", { id: data.derived_from_id, version: data.derived_from_version ?? 0 })}` : ""}
-              </Typography>
+              <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 1, rowGap: 0.25, mt: 0.75 }}>
+                <Typography variant="caption" sx={{ color: colors.text.secondary }}>
+                  {t("entry.author")}
+                </Typography>
+                <KeyRef hmac={data.author_hmac} label={data.author} banned={data.author_banned} dot={false} />
+                {data.derived_from_id && (
+                  <Typography variant="caption" sx={{ color: colors.text.secondary, overflowWrap: "anywhere" }}>
+                    · {t("detail.derived", { id: data.derived_from_id, version: data.derived_from_version ?? 0 })}
+                  </Typography>
+                )}
+              </Box>
             )}
           </Box>
           <IconButton onClick={onClose} aria-label={t("app.close")}>

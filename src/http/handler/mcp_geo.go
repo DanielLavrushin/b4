@@ -163,10 +163,10 @@ func (api *API) mcpGeoStatus(out mcpGeoOut) (*mcp.CallToolResult, mcpGeoOut, err
 		out.Note = "both databases are installed"
 	case 1:
 		out.Note = fmt.Sprintf(
-			"the %s database is not installed, so every %s category matches nothing and b4 refuses to save a set that selects one. Install it under Settings -> Geodata.",
+			"the %s database is not installed, so every %s category matches nothing and b4 refuses to save a set that selects one. Install it under Settings -> Geodat Settings.",
 			missing[0], missing[0])
 	default:
-		out.Note = "neither the geosite nor the geoip database is installed, so every geo category matches nothing and b4 refuses to save a set that selects one. Install them under Settings -> Geodata."
+		out.Note = "neither the geosite nor the geoip database is installed, so every geo category matches nothing and b4 refuses to save a set that selects one. Install them under Settings -> Geodat Settings."
 	}
 	return nil, out, nil
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ModerationProvider } from "@/features/moderation/ModerationProvider";
 import { KnownKeysProvider } from "@/features/keys/KnownKeys";
 import { KeyDrawerHost } from "@/features/keys/KeyDrawerHost";
@@ -34,7 +34,6 @@ import InventoryIcon from "@mui/icons-material/Inventory2Outlined";
 import TuneIcon from "@mui/icons-material/TuneOutlined";
 import InsightsIcon from "@mui/icons-material/InsightsOutlined";
 import HistoryIcon from "@mui/icons-material/HistoryOutlined";
-import { useEffect } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { colors, Logo, theme } from "@design";
@@ -43,7 +42,7 @@ import { SnackbarProvider } from "@/app/SnackbarProvider";
 import { useCounts } from "./api";
 import { LoginPage } from "@/features/session/LoginPage";
 import { LanguageMenu } from "@/shared/components/LanguageMenu";
-import { BuildStatusChip } from "@/features/catalogue/BuildStatusChip";
+import { useBuildStatus, useRefreshOnPublish } from "@/features/catalogue/api";
 import { SidePanel } from "@/app/SidePanel";
 import { OverviewPage } from "@/features/overview/OverviewPage";
 import { QueuePage } from "@/features/queue/QueuePage";
@@ -80,6 +79,12 @@ const navItems: NavItem[] = [
   { path: "/settings", labelKey: "nav.settings", icon: <TuneIcon /> },
 ];
 
+function PublishWatcher() {
+  const status = useBuildStatus();
+  useRefreshOnPublish(status.data);
+  return null;
+}
+
 function Shell() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -114,6 +119,7 @@ function Shell() {
 
   return (
     <Box sx={{ display: "flex", height: "100vh" }}>
+      <PublishWatcher />
       <Drawer
         variant={isCompact ? "temporary" : "persistent"}
         open={drawerOpen}
@@ -193,7 +199,6 @@ function Shell() {
             <Typography sx={{ flexGrow: 1, fontSize: 18, fontWeight: 600, letterSpacing: "0.01em", ml: "12px", color: "#fff" }}>
               {t(current.labelKey)}
             </Typography>
-            <BuildStatusChip />
             <LanguageMenu color="inherit" />
             <IconButton color="inherit" onClick={() => void logout()} title={t("app.logout")}>
               <LogoutIcon />

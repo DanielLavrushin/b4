@@ -1,12 +1,10 @@
 import { useTranslation } from "react-i18next";
-import { setLanguage } from "../../i18n";
-import { ApiIcon } from "@b4.icons";
+import { WebIcon } from "@b4.icons";
 import {
   B4Alert,
   B4FormGroup,
   B4FormRow,
   B4Section,
-  B4Select,
   B4TextField,
 } from "@b4.elements";
 import { B4Config } from "@models/config";
@@ -18,22 +16,11 @@ interface WebServerSettingsProps {
   onChange: (field: string, value: SettingsPropHandlerType) => void;
 }
 
-const LANGUAGES = [
-  { value: "en", label: "English" },
-  { value: "ru", label: "Русский" },
-];
-
 export const WebServerSettings = ({
   config,
   onChange,
 }: WebServerSettingsProps) => {
   const { t } = useTranslation();
-
-  const handleLanguageChange = (e: { target: { value: string | number } }) => {
-    const lang = String(e.target.value);
-    onChange("system.web_server.language", lang);
-    setLanguage(lang);
-  };
 
   const hasUsername = !!config.system.web_server.username;
   const hasPassword =
@@ -44,12 +31,8 @@ export const WebServerSettings = ({
   const exposed = config.system.web_server.expose ?? false;
 
   return (
-    <B4Section
-      title={t("settings.WebServer.title")}
-      description={t("settings.WebServer.description")}
-      icon={<ApiIcon />}
-    >
-      <B4FormGroup label={t("settings.WebServer.serverSettings")} columns={2}>
+    <B4Section title={t("settings.WebServer.title")} icon={<WebIcon />}>
+      <B4FormGroup columns={2}>
         <B4FormRow>
           <ListenerFields
             path="system.web_server"
@@ -80,13 +63,6 @@ export const WebServerSettings = ({
           }
           placeholder={t("settings.WebServer.tlsKeyPlaceholder")}
           helperText={t("settings.WebServer.tlsKeyHelp")}
-        />
-        <B4Select
-          label={t("core.language")}
-          value={config.system.web_server.language || "en"}
-          options={LANGUAGES}
-          onChange={handleLanguageChange}
-          helperText={t("settings.WebServer.languageHelp")}
         />
       </B4FormGroup>
       <B4FormGroup label={t("settings.WebServer.authentication")} columns={2}>

@@ -3,26 +3,32 @@ sidebar_position: 1
 title: Which interface is which
 ---
 
-Three settings in b4 take an interface name. They sit in two different places in the web
-interface and they filter different things.
+The capture filter of the packet engine and two settings of a routing set take an interface
+name. They sit in two different places in the web interface and do different things.
 
 | Setting | Where | What it filters | Empty means |
 | --- | --- | --- | --- |
-| **Network interfaces** | `Settings > Core` | which packets the engine inspects | every interface |
+| **Capture Interfaces** | **Settings, Core, Packet Engine** | which packets the engine inspects | every interface |
 | **Source interfaces** | `Sets > Routing` | which arriving traffic a set's rules are offered | any interface |
 | **Output interface** | `Sets > Routing` | where a matched packet is sent | routing is off for that set |
 
 The first two are filters and narrow what b4 does. Only the third sends traffic anywhere.
 
-## Network interfaces
+The interface lists of [NAT Masquerade](/docs/settings/core#nat-masquerade) and
+[DSCP](/docs/settings/core#dscp) and the **Uplink interface** of the
+[TUN engine](/docs/settings/core#tun-settings) take interface names as well.
 
-`Settings > Core`. The engine compares every packet the firewall hands it against this list
-before anything else happens.
+## Capture interfaces
+
+**Settings, Core, Packet Engine**. The engine compares every packet the firewall hands it
+against this list before anything else happens.
 
 b4's capture rules sit in the `postrouting` and `output` hooks, where the kernel has already
-chosen where the packet goes. For forwarded traffic the interface compared here is the one
-the packet leaves by. Traffic captured in `prerouting`, which is the reply direction and
-DNS, is matched on the interface it arrived on.
+chosen where the packet goes. While **Device Filtering** is on with devices from the ARP
+table selected, the `forward` hook takes the place of `postrouting`, and the kernel has
+chosen the outgoing interface there as well. For forwarded traffic the interface compared
+here is the one the packet leaves by. Traffic captured in `prerouting`, which is the reply
+direction and DNS, is matched on the interface it arrived on.
 
 The interface a packet leaves by comes from the routing table, so another service can change
 it without touching this list. A VPN client, a policy route or a transparent proxy that
@@ -78,8 +84,8 @@ to a private routing table whose default route points at this interface. See
 
 | Symptom | Setting to check |
 | --- | --- |
-| Nothing on the `Traffic` page, or only traffic from the router itself | Network interfaces |
-| Sets apply to the router but never to a client | Network interfaces, then source interfaces |
+| Nothing on the `Traffic` page, or only traffic from the router itself | Capture interfaces |
+| Sets apply to the router but never to a client | Capture interfaces, then source interfaces |
 | A set's marking rule shows zero packets in the firewall counters | Source interfaces |
 | Traffic is marked but leaves by the wrong path | Output interface, and any other service with `ip rule` entries |
 
