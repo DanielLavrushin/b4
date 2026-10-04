@@ -267,7 +267,7 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 		}
 		routeRuleCache[set.Id] = cur
 		routeNoteInstalled(set.Id)
-		routeNoteSetRecovered(set.Id)
+		routeNoteSetRecovered(cfg, set.Id)
 		retireOld()
 		routeRestoreStaticEntries(be, set, cur)
 		switch cur.mode {
@@ -1184,18 +1184,36 @@ func routeNoteSyncDone(attempt time.Time) {
 	routeSyncOutcome = routeSyncReport{attempt: attempt}
 }
 
-func routeNoteSetRecovered(setID string) {
+func routeNoteSetRecovered(cfg *config.Config, setID string) {
 	delete(routeSyncOutcome.setErrs, setID)
-	routeSyncOutcome.err = ""
-	if len(routeSyncOutcome.setErrs) == 0 {
+	if routeSyncOutcome.err != "" && routeWantedAllInstalled(cfg) {
+		routeSyncOutcome.err = ""
+	}
+	if len(routeSyncOutcome.setErrs) == 0 && routeSyncOutcome.err == "" {
 		routeSyncOutcome.since = time.Time{}
 	}
+}
+
+func routeSetWantsRouting(set *config.SetConfig) bool {
+	return set != nil && set.Enabled && set.Routing.Enabled
+}
+
+func routeWantedAllInstalled(cfg *config.Config) bool {
+	for _, set := range cfg.RoutingSets() {
+		if !routeSetWantsRouting(set) {
+			continue
+		}
+		if _, ok := routeRuleCache[set.Id]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func RoutingSetsWanted(cfg *config.Config) int {
 	n := 0
 	for _, set := range cfg.RoutingSets() {
-		if set != nil && set.Enabled && set.Routing.Enabled {
+		if routeSetWantsRouting(set) {
 			n++
 		}
 	}

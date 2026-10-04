@@ -199,6 +199,51 @@ func TestRoutingStatusClearsASetThatADNSAnswerInstalled(t *testing.T) {
 	}
 }
 
+func TestRoutingStatusKeepsAFailedBaseUntilEverySetIsInstalled(t *testing.T) {
+	familyResetGlobals(t)
+	stubRetryState(t)
+	routeMu.Lock()
+	routeSyncRetryBase = time.Hour
+	routeMu.Unlock()
+	var fail atomic.Bool
+	fail.Store(true)
+	routeEngine = &mockRouteBackend{ensureBaseFn: func() error {
+		if fail.Load() {
+			return errTestClear
+		}
+		return nil
+	}}
+	first := familyTestSet()
+	second := familyTestSet()
+	second.Id, second.Name = "famtest2", "famtest2"
+	second.Routing.FWMark, second.Routing.Table = 0x7e11, 233
+	cfg := familyTestConfig(true, false)
+	cfg.Sets = []*config.SetConfig{first, second}
+
+	RoutingSyncConfig(cfg)
+	st := RoutingStatus()
+	if st.Error == "" || st.FailingSince.IsZero() || st.NextRetry.IsZero() {
+		t.Fatalf("the base was expected to fail with a retry queued: %+v", st)
+	}
+	since := st.FailingSince
+
+	fail.Store(false)
+	RoutingHandleDNS(cfg, first, []net.IP{net.ParseIP("198.51.100.42")})
+	st = RoutingStatus()
+	if st.Installed != 1 {
+		t.Fatalf("the DNS answer did not install the set: %+v", st)
+	}
+	if st.Error == "" || !st.FailingSince.Equal(since) || st.NextRetry.IsZero() {
+		t.Fatalf("one set installed by a DNS answer hid the failed sync while the other set still waits for the retry: %+v", st)
+	}
+
+	RoutingHandleDNS(cfg, second, []net.IP{net.ParseIP("198.51.100.43")})
+	st = RoutingStatus()
+	if st.Installed != 2 || st.Error != "" || !st.FailingSince.IsZero() {
+		t.Fatalf("with every set installed by DNS answers the status still reports the failed sync: %+v", st)
+	}
+}
+
 func TestRoutingWithoutAFirewallToolIsReported(t *testing.T) {
 	familyResetGlobals(t)
 	stubRetryState(t)
