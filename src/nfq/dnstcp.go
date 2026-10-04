@@ -209,7 +209,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		clientIP = ta.IP
 		clientPort = ta.Port
 	}
-	origIP, origPort, origErr := originalDst(client)
+	origIP, origPort, origErr := dnsTCPOriginalDst(client)
 	if origErr != nil {
 		log.Tracef("DNS TCP: original destination unavailable for %s: %v", client.RemoteAddr(), origErr)
 	}
@@ -289,6 +289,13 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 				s.passthrough(client, origIP, origPort, origErr, query)
 				return
 			}
+		}
+
+		if queryFromTarget(set, clientIP) {
+			log.Tracef("DNS TCP: %s comes from %s, the set's own resolver passing a lookup upstream, forwarding it unchanged (set %s)", dns.SafeName(domain), clientIP, set.Name)
+			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFromTarget)
+			s.passthrough(client, origIP, origPort, origErr, query)
+			return
 		}
 
 		s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsRedirectAction(set))
@@ -397,6 +404,7 @@ func (s *dnsTCPServer) escalationTarget(cfg *config.Config, set *config.SetConfi
 }
 
 func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query []byte, targetIP net.IP) ([]byte, error) {
+	defer beginDNSRedirect(query)()
 	if set.DNS.DoHURL != "" {
 		return s.worker.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.MainInjectedMark()), query)
 	}
@@ -420,6 +428,9 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 	if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
 		return nil, errNoDNSTarget
 	}
+	if queryFromTarget(set, clientIP) {
+		return nil, errQueryFromTarget
+	}
 
 	var targetIP net.IP
 	if !useDoH {
@@ -435,15 +446,20 @@ func (s *dnsTCPServer) logEvent(set *config.SetConfig, domain string, clientIP, 
 	logDNSEvent("TCP", set, domain, clientIP, serverIP, uint16(clientPort), srcMac, action)
 }
 
+var dnsTCPOriginalDst = originalDst
+
+var dialDNSTCPUpstream = func(ctx context.Context, cfg *config.Config, addr string) (net.Conn, error) {
+	d := net.Dialer{Timeout: cfg.DNSTCPDialTimeout()}
+	socks5.ApplyBypassMark(&d, uint32(cfg.MainInjectedMark()))
+	return d.DialContext(ctx, "tcp", addr)
+}
+
 func (s *dnsTCPServer) forwardOneQuery(origIP net.IP, origPort int, origErr error, query []byte) []byte {
 	if origErr != nil || origIP == nil || origPort == 0 || origPort == s.port {
 		return nil
 	}
 	cfg := s.worker.getConfig()
-	d := net.Dialer{Timeout: cfg.DNSTCPDialTimeout()}
-	socks5.ApplyBypassMark(&d, uint32(cfg.MainInjectedMark()))
-
-	upstream, err := d.DialContext(s.ctx, "tcp", net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)))
+	upstream, err := dialDNSTCPUpstream(s.ctx, cfg, net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)))
 	if err != nil {
 		log.Tracef("DNS TCP: fallback dial %s:%d failed: %v", origIP, origPort, err)
 		return nil
@@ -470,10 +486,7 @@ func (s *dnsTCPServer) passthrough(client net.Conn, origIP net.IP, origPort int,
 		return
 	}
 	cfg := s.worker.getConfig()
-	d := net.Dialer{Timeout: cfg.DNSTCPDialTimeout()}
-	socks5.ApplyBypassMark(&d, uint32(cfg.MainInjectedMark()))
-
-	upstream, err := d.DialContext(s.ctx, "tcp", net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)))
+	upstream, err := dialDNSTCPUpstream(s.ctx, cfg, net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)))
 	if err != nil {
 		log.Tracef("DNS TCP: passthrough dial %s:%d failed: %v", origIP, origPort, err)
 		return

@@ -125,6 +125,7 @@ func (c *Config) Validate() error {
 	v := &validator{}
 	c.System.WebServer.IsEnabled = c.System.WebServer.Port > 0 && c.System.WebServer.Port <= 65535
 	c.releaseTelegramBridgeReservations()
+	c.sanitizeTrustedDNSServer()
 
 	c.checkPortCollisions(v)
 	if v.hasErrors() {

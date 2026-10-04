@@ -10,7 +10,7 @@ The settings page is split into tabs, and the **Core** and **System** tabs into 
 - [Core](./core) - how b4 handles traffic, on the sub-tabs **Packet Engine** (ingestion mode, IPv4 and IPv6, the queue, IP block detection), **Devices** (device filtering), **Firewall** (firewall rules, MSS clamping, NAT Masquerade, DSCP), **DNS** (DNS over TCP and timeouts) and **SOCKS5** (the built-in SOCKS5 proxy)
 - [System](./system) - the service itself, on the sub-tabs **Service** (restart, System Info, interface language, time zone, memory limit, update mirrors, logging), **Web Server** (port, TLS, authentication, access from the internet) and **Backup** (backup and restore, configuration download, reset to defaults)
 - [Geodat Settings](./geodata) - sources, download and updates of the GeoSite and GeoIP databases
-- [Discovery](./discovery) - the timeouts, DNS servers and reference domain of Discovery, and the watchdog
+- [Discovery](./discovery) - the timeouts and the trusted DNS server of Discovery, and the watchdog
 - [Telegram](./mtproto) - the Telegram over WebSocket switch, the MTProto proxy and its secrets, the shared Telegram upstream and the WEB proxy
 - **Integrations** - the IPinfo token, the AI assistant, the [MCP server](./mcp) and the connection to the [Community Hub](../community/index.md#switching-it-on)
 - [Payloads](./payloads) - generation, upload and management of payloads for faking

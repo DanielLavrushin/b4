@@ -29,6 +29,8 @@ const START_ERROR_CODES = new Set([
   "too_many_urls",
   "reserved_host",
   "routed_set",
+  "bad_dns_server",
+  "bad_pin",
 ]);
 
 const startFailureText = (e: unknown): string => {

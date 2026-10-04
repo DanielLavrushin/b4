@@ -176,10 +176,15 @@ spawn:
 				mu.Unlock()
 			} else {
 				lastResult.Status = CheckStatusFailed
-				if ds.validationTries > 1 {
+				if successCount > 0 {
+					lastResult.lookup = lookupOK
+				}
+				if ds.validationTries > 1 && !lastResult.untried {
 					lastResult.Error = fmt.Sprintf("%s (%d/%d tries)", lastResult.Error, successCount, ds.validationTries)
 				}
-				log.DiscoveryLogf("    [%s] → FAILED (%s)", di.Domain, lastResult.Error)
+				if !lastResult.untried {
+					log.DiscoveryLogf("    [%s] → FAILED (%s)", di.Domain, lastResult.Error)
+				}
 				mu.Lock()
 				results[di.Domain] = lastResult
 				mu.Unlock()
@@ -187,6 +192,9 @@ spawn:
 
 			ds.CheckSuite.mu.Lock()
 			ds.CompletedChecks++
+			if lastResult.untried {
+				ds.SkippedChecks++
+			}
 			ds.CheckSuite.mu.Unlock()
 		}(di)
 	}

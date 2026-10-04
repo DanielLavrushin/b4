@@ -250,3 +250,16 @@ func sharedBacking(a, b reflect.Value, path string) (string, bool) {
 	}
 	return "", false
 }
+
+func TestAdoptStrategyKeepsTheTargetsFailClosedChoice(t *testing.T) {
+	target := NewSetConfig()
+	target.DNS = DNSConfig{Enabled: true, DoHURL: "https://old.example/dns-query", Strict: true, Pins: map[string][]string{"a.example": {"203.0.113.1"}}}
+	found := NewSetConfig()
+	found.DNS = DNSConfig{Enabled: true, DoHURL: "https://new.example/dns-query"}
+
+	target.AdoptStrategy(&found)
+
+	if target.DNS.DoHURL != "https://new.example/dns-query" || !target.DNS.Strict || len(target.DNS.Pins["a.example"]) != 1 {
+		t.Fatalf("the new resolver is adopted, the set's fail-closed choice and pins stay, got %+v", target.DNS)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sock"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 var (
@@ -83,6 +85,7 @@ const (
 	dnsActionSinkhole         = "dns-sinkhole"
 	dnsActionPassthrough      = "dns-passthrough"
 	dnsActionBadTarget        = "dns-bad-target"
+	dnsActionFromTarget       = "dns-from-target"
 	dnsActionIPv6Disabled     = "dns-ipv6-disabled"
 	dnsActionIPv6Stripped     = "dns-ipv6-stripped"
 	dnsActionHealStripped     = "dns-heal+ipv6-stripped"
@@ -103,7 +106,10 @@ const maxDNSResolveInflight = 64
 
 var dnsResolveInflight = make(chan struct{}, maxDNSResolveInflight)
 
-var errNoDNSTarget = errors.New("set carries no usable DNS answer source")
+var (
+	errNoDNSTarget     = errors.New("set carries no usable DNS answer source")
+	errQueryFromTarget = errors.New("the query comes from the set's own resolver")
+)
 
 var errDNSSourceCoolingDown = errors.New("the redirect target is still unreachable")
 
@@ -193,9 +199,12 @@ func (w *Worker) escalateAfterDNS(ipVersion byte, cfg *config.Config, set *confi
 	return true
 }
 
-func (w *Worker) dnsAnswerSource(set *config.SetConfig) (net.IP, bool) {
+func (w *Worker) dnsAnswerSource(set *config.SetConfig, client net.IP) (net.IP, bool) {
 	useDoH := set.DNS.DoHURL != ""
 	if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+		return nil, false
+	}
+	if queryFromTarget(set, client) {
 		return nil, false
 	}
 	if useDoH {
@@ -203,6 +212,51 @@ func (w *Worker) dnsAnswerSource(set *config.SetConfig) (net.IP, bool) {
 	}
 	targetIP := net.ParseIP(set.DNS.TargetDNS)
 	return targetIP, targetIP != nil
+}
+
+var hostAddress = utils.IsHostIP
+
+func redirectTarget(set *config.SetConfig) net.IP {
+	if set.DNS.DoHURL != "" {
+		u, err := url.Parse(set.DNS.DoHURL)
+		if err != nil {
+			return nil
+		}
+		return net.ParseIP(u.Hostname())
+	}
+	return net.ParseIP(set.DNS.TargetDNS)
+}
+
+func queryFromTarget(set *config.SetConfig, client net.IP) bool {
+	target := redirectTarget(set)
+	return target != nil && client != nil && target.Equal(client) && !hostAddress(target)
+}
+
+var (
+	dnsRedirectsMu sync.Mutex
+	dnsRedirects   = map[string]int{}
+)
+
+func beginDNSRedirect(query []byte) func() {
+	domain, _ := dns.ParseQueryDomain(query)
+	key := dnsFailureKey(strings.ToLower(domain), dnsQueryType(query, nil))
+	dnsRedirectsMu.Lock()
+	dnsRedirects[key]++
+	dnsRedirectsMu.Unlock()
+	return func() {
+		dnsRedirectsMu.Lock()
+		dnsRedirects[key]--
+		if dnsRedirects[key] <= 0 {
+			delete(dnsRedirects, key)
+		}
+		dnsRedirectsMu.Unlock()
+	}
+}
+
+func dnsRedirectInFlight(domain string, qtype uint16) bool {
+	dnsRedirectsMu.Lock()
+	defer dnsRedirectsMu.Unlock()
+	return dnsRedirects[dnsFailureKey(domain, qtype)] > 0
 }
 
 func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP) bool {
@@ -217,7 +271,7 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 		return true
 	}
 
-	targetIP, ok := w.dnsAnswerSource(set)
+	targetIP, ok := w.dnsAnswerSource(set, clientIP)
 	if !ok {
 		return false
 	}
@@ -241,7 +295,7 @@ func (w *Worker) answerViaSet(vc *verdictCtx, ipVersion byte, cfg *config.Config
 		return true
 	}
 
-	targetIP, ok := w.dnsAnswerSource(set)
+	targetIP, ok := w.dnsAnswerSource(set, clientIP)
 	if !ok {
 		return false
 	}
@@ -385,6 +439,12 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					}
 				}
 
+				if queryFromTarget(set, clientIP) {
+					log.Tracef("DNS redirect: %s comes from %s, the set's own resolver passing a lookup upstream, forwarding it unchanged (set %s)", dns.SafeName(domain), clientIP, set.Name)
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionFromTarget)
+					return vc.accept()
+				}
+
 				if ipVersion == IPv6 && !cfg.Queue.IPv6Enabled {
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionIPv6Disabled)
 					return vc.accept()
@@ -487,7 +547,11 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 			}
 
 			qtype, hasType := dns.QuestionType(payload)
-			if next := w.noteDNSOutcome(w.getConfig(), failedSet, domain, clientMac, qtype, payload); next != nil {
+			var next *config.SetConfig
+			if failedSet == nil || !failedSet.Escalate.Active() || !dnsRedirectInFlight(domain, qtype) {
+				next = w.noteDNSOutcome(w.getConfig(), failedSet, domain, clientMac, qtype, payload)
+			}
+			if next != nil {
 				cfg := w.getConfig()
 				if hasType {
 					query := dns.BuildQuery(domain, txid, qtype)
@@ -527,6 +591,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 }
 
 func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *config.Config, query []byte, clientIP net.IP, clientPort uint16, originalDst, targetIP net.IP, delay int) {
+	defer beginDNSRedirect(query)()
 	queryDomain, _ := dns.ParseQueryDomain(query)
 	queryDomain = strings.ToLower(queryDomain)
 

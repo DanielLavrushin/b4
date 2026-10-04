@@ -89,7 +89,7 @@ b4 хранит конфигурацию в одном JSON-файле. По у�
     "checker": {
       "discovery_timeout": 5,
       "config_propagate_ms": 1500,
-      "reference_domain": "yandex.ru"
+      "dns_server": ""
     },
     "geo": { "sitedat_path": "", "ipdat_path": "", "sitedat_url": "", "ipdat_url": "" },
     "timezone": ""

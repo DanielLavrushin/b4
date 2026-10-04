@@ -547,3 +547,65 @@ func TestMCPDiscoveryApplyFromHistoryStoresTheEntryURL(t *testing.T) {
 		t.Errorf("a set applied from history must remember the entry's URL, got %+v", created)
 	}
 }
+
+func TestStartDiscoveryChecksTheTrustedServerAndPins(t *testing.T) {
+	_, mux := discoveryAPI(t)
+	start := func(body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/discovery/start", strings.NewReader(body)))
+		return rec
+	}
+
+	for _, server := range []string{"dns.google", "tls://1.1.1.1", "http://dns.example/dns-query", "0.0.0.0"} {
+		expectCode(t, start(`{"check_urls":["ntc.party"],"dns_server":"`+server+`"}`), http.StatusBadRequest, "bad_dns_server")
+	}
+	for _, pins := range []string{
+		`{"ntc.party":["not-an-ip"]}`,
+		`{"ntc.party":["192.168.1.10"]}`,
+		`{"ntc.party":["127.0.0.1"]}`,
+		`{"":["130.255.77.28"]}`,
+	} {
+		expectCode(t, start(`{"check_urls":["ntc.party"],"pins":`+pins+`}`), http.StatusBadRequest, "bad_pin")
+	}
+}
+
+func TestRunPinsAreNormalized(t *testing.T) {
+	pins, err := runPins(map[string][]string{
+		"*.NTC.party.": {" 130.255.77.28 ", "130.255.77.28", "::ffff:130.255.77.29"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string][]string{"ntc.party": {"130.255.77.28", "130.255.77.29"}}; !reflect.DeepEqual(pins, want) {
+		t.Fatalf("got %v, want %v", pins, want)
+	}
+
+	many := map[string][]string{}
+	for i := 0; i <= maxRunPins; i++ {
+		many[fmt.Sprintf("d%d.example", i)] = []string{"198.51.100.1"}
+	}
+	if _, err := runPins(many); err == nil {
+		t.Fatal("too many pinned addresses must be refused")
+	}
+	repeated := []string{}
+	for i := 0; i <= maxRunPins; i++ {
+		repeated = append(repeated, "198.51.100.1", "::ffff:198.51.100.1")
+	}
+	if pins, err := runPins(map[string][]string{"ntc.party": repeated, "NTC.party.": {"198.51.100.1"}}); err != nil || !reflect.DeepEqual(pins, map[string][]string{"ntc.party": {"198.51.100.1"}}) {
+		t.Fatalf("one address repeated is one pin and must not reach the limit, got %v %v", pins, err)
+	}
+	if pins, err := runPins(nil); err != nil || pins != nil {
+		t.Fatalf("no pins is fine, got %v %v", pins, err)
+	}
+	for _, name := range []string{"#", "a..b", "site.example/path", "a b.example"} {
+		if _, err := runPins(map[string][]string{name: {"198.51.100.1"}}); err == nil {
+			t.Errorf("%q is not a name a pin can be for", name)
+		}
+	}
+	if _, err := runPins(map[string][]string{"_dmarc.xn--e1afmkfd.xn--p1ai": {"198.51.100.1"}}); err != nil {
+		t.Errorf("an xn-- name with an underscore label is a name: %v", err)
+	}
+	if _, err := runPins(map[string][]string{"пример.рф": {"198.51.100.1"}}); err == nil || !strings.Contains(err.Error(), "xn--") {
+		t.Errorf("an internationalized name is refused with a pointer to its xn-- form, got %v", err)
+	}
+}

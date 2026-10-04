@@ -27,12 +27,14 @@ var (
 	DefaultDoHServers []DoHServer
 	DefaultUDPServers []string
 	WireDoHServers    []string
+	FixDNSServers     []string
 )
 
 type serversData struct {
 	DoHServers     []DoHServer `json:"doh_servers"`
 	UDPServers     []string    `json:"udp_dns_servers"`
 	WireDoHServers []string    `json:"wire_doh_servers"`
+	FixDNSServers  []string    `json:"fix_dns_servers"`
 }
 
 func init() {
@@ -49,4 +51,5 @@ func init() {
 	DefaultDoHServers = data.DoHServers
 	DefaultUDPServers = data.UDPServers
 	WireDoHServers = data.WireDoHServers
+	FixDNSServers = data.FixDNSServers
 }

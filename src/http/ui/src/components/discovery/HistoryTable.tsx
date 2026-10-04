@@ -34,7 +34,9 @@ import {
   historySet,
   historyUnconfirmed,
   historyVerdict,
+  ipFamilyLabel,
   presetLabel,
+  unresolvedLabel,
 } from "@utils";
 import { AlternatesList } from "./AlternatesList";
 
@@ -178,6 +180,18 @@ export const HistoryTable = ({
             label={t("discovery.status.gatewayIntercepted")}
           />
         );
+      case "unresolved":
+        return (
+          <B4Badge
+            variant="outlined"
+            color="error"
+            label={unresolvedLabel(
+              row.entry.missing_family ??
+                row.entry.dns_result?.no_address_family,
+              t,
+            )}
+          />
+        );
       default:
         return (
           <B4Badge
@@ -285,6 +299,20 @@ export const HistoryTable = ({
         return (
           <Typography variant="body2" sx={muted}>
             {t("discovery.history.gatewayIntercepted")}
+          </Typography>
+        );
+      case "unresolved":
+        return (
+          <Typography variant="body2" sx={muted}>
+            {row.entry.missing_family
+              ? t("discovery.history.unresolvedFamily", {
+                  family: ipFamilyLabel(row.entry.missing_family),
+                })
+              : row.entry.dns_result?.no_address_family
+                ? t("discovery.history.unresolvedNoAddress", {
+                    family: ipFamilyLabel(row.entry.dns_result.no_address_family),
+                  })
+                : t("discovery.history.unresolved")}
           </Typography>
         );
       default:

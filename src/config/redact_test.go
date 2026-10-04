@@ -44,6 +44,7 @@ var sharingPaths = map[string]string{
 	"system.update.mirrors[]":                 "the user's own relays",
 	"system.hub.urls[]":                       "URL that can carry credentials",
 	"sets[].dns.doh_url":                      "personal resolver id in the path or the host",
+	"system.checker.dns_server":               "as an https:// URL, a personal resolver id in the path or the host",
 	"sets[].discovery.urls[]":                 "URL that can carry credentials",
 }
 
@@ -52,7 +53,6 @@ var notSecretPaths = map[string]string{
 	"system.mtproto.web_proxy.tls_key":  "file path, not key material; host names inside it are masked",
 	"system.mtproto.ws_endpoint_host":   "override for the public Telegram WebSocket edge",
 	"system.hub.public_key":             "public ed25519 key that pins the hub",
-	"system.checker.reference_domain":   "public domain Discovery checks against",
 	"system.checker.watchdog.domains[]": "bare domains stay to debug the watchdog; URL entries lose credentials, query values and fragments",
 	"sets[].targets.sni_domains[]":      "target domains, needed to debug a set",
 	"sets[].faking.payload_domain":      "public domain written into the fake ClientHello",
@@ -416,6 +416,30 @@ func TestMaskURL(t *testing.T) {
 	for _, tc := range cases {
 		if got := maskURL(tc.in); got != tc.want {
 			t.Errorf("maskURL(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestMaskDNSServer(t *testing.T) {
+	for _, tc := range []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"9.9.9.9", "9.9.9.9"},
+		{"127.0.0.1:53053", "127.0.0.1:53053"},
+		{"2620:fe::fe", "2620:fe::fe"},
+		{"[2620:fe::fe]:53", "[2620:fe::fe]:53"},
+		{"udp://9.9.9.9", "udp://9.9.9.9"},
+		{"tcp://[2001:db8::1]", "tcp://[2001:db8::1]"},
+		{"tcp+udp://127.0.0.1:53053/", "tcp+udp://127.0.0.1:53053/"},
+		{"https://dns.google/dns-query", "https://dns.google/dns-query"},
+		{"HTTPS://dns.nextdns.io/abc123", "https://dns.nextdns.io/[redacted]"},
+		{"https://dns.ivanov.ru/dns-query", "https://[redacted]/dns-query"},
+		{"dns.ivanov.ru", "[redacted]"},
+		{"tcp://dns.ivanov.ru", "[redacted]"},
+	} {
+		if got := maskDNSServer(tc.in); got != tc.want {
+			t.Errorf("maskDNSServer(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }

@@ -6,6 +6,7 @@ import {
   DiscoverySuite,
   DomainPresetResult,
   HistoryEntry,
+  IPFamily,
   StrategyFamily,
 } from "@models/discovery";
 
@@ -20,6 +21,20 @@ export function presetLabel(preset: string, t: TFn): string {
   return preset === SET_CURRENT_PRESET
     ? t("discovery.presetNames.setCurrent")
     : preset;
+}
+
+export function ipFamilyLabel(family: IPFamily): string {
+  return family === "ipv6" ? "IPv6" : "IPv4";
+}
+
+export function otherIpFamily(family: IPFamily): IPFamily {
+  return family === "ipv6" ? "ipv4" : "ipv6";
+}
+
+export function unresolvedLabel(family: IPFamily | undefined, t: TFn): string {
+  return family
+    ? t("discovery.status.noFamilyAddress", { family: ipFamilyLabel(family) })
+    : t("discovery.status.unresolved");
 }
 
 export function suiteCheckUrls(suite: DiscoverySuite): string[] {

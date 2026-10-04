@@ -695,7 +695,7 @@ func everyDomainSettled(cs *discovery.CheckSuite, domains []string) bool {
 		if dr == nil {
 			return false
 		}
-		if dr.BestSuccess || dr.BaselineWorks {
+		if dr.BestSuccess || dr.BaselineWorks || dr.Outcome == discovery.OutcomeUnresolved {
 			continue
 		}
 		if r := dr.Results["no-bypass"]; r != nil && r.Status == discovery.CheckStatusComplete {

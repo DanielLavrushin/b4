@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"sort"
 	"strings"
@@ -41,6 +42,7 @@ var placeholderPaths = map[string]bool{
 	"system.update.mirrors[]":                 true,
 	"system.hub.urls[]":                       true,
 	"system.checker.watchdog.domains[]":       true,
+	"system.checker.dns_server":               true,
 	"sets[].routing.upstream.username":        true,
 	"sets[].routing.upstream.password":        true,
 	"sets[].dns.doh_url":                      true,
@@ -118,6 +120,7 @@ func (c *Config) RedactForSharing() {
 	c.System.Update.Mirrors = maskValues(c.System.Update.Mirrors)
 	c.System.Hub.URLs = maskURLs(c.System.Hub.URLs)
 	c.System.Checker.Watchdog.Domains = maskWatchdogEntries(c.System.Checker.Watchdog.Domains)
+	c.System.Checker.DNSServer = maskDNSServer(c.System.Checker.DNSServer)
 
 	for _, set := range c.Sets {
 		if set == nil {
@@ -287,6 +290,27 @@ func maskWatchdogEntries(entries []string) []string {
 
 func maskDoHURL(raw string) string {
 	return redactURL(raw, maskResolverHost, dohPath)
+}
+
+func maskDNSServer(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	if scheme, rest, ok := strings.Cut(s, "://"); ok {
+		if strings.EqualFold(scheme, "https") {
+			return maskDoHURL(s)
+		}
+		s = rest
+	}
+	s = strings.TrimSuffix(s, "/")
+	if _, err := netip.ParseAddrPort(s); err == nil {
+		return raw
+	}
+	if _, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")); err == nil {
+		return raw
+	}
+	return RedactedMarker
 }
 
 func keepHost(u *url.URL) string {

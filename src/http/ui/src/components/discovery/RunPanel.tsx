@@ -22,8 +22,10 @@ import {
   NO_BYPASS_PRESET,
   describeStrategy,
   formatDuration,
+  ipFamilyLabel,
   presetLabel,
   testedCounts,
+  unresolvedLabel,
   verdictOf,
 } from "@utils";
 
@@ -148,6 +150,16 @@ export const RunPanel = ({
         return t("discovery.run.addressBlocked");
       case "gateway_intercepted":
         return t("discovery.run.gatewayIntercepted");
+      case "unresolved":
+        if (dr.missing_family)
+          return t("discovery.run.unresolvedFamily", {
+            family: ipFamilyLabel(dr.missing_family),
+          });
+        if (dr.dns_result?.no_address_family)
+          return t("discovery.run.unresolvedNoAddress", {
+            family: ipFamilyLabel(dr.dns_result.no_address_family),
+          });
+        return t("discovery.run.unresolved");
       default:
         return counts.tested > 0
           ? t("discovery.run.tried", { count: counts.tested })
@@ -200,6 +212,17 @@ export const RunPanel = ({
             label={t("discovery.status.gatewayIntercepted")}
           />
         );
+      case "unresolved":
+        return (
+          <B4Badge
+            variant="outlined"
+            color="error"
+            label={unresolvedLabel(
+              dr?.missing_family ?? dr?.dns_result?.no_address_family,
+              t,
+            )}
+          />
+        );
       default:
         return (
           <B4Badge
@@ -226,7 +249,9 @@ export const RunPanel = ({
           <>
             {t("discovery.run.elapsed", { duration: formatDuration(t, suite.start_time) })}
             {" · "}
-            {t("discovery.run.tested", { count: suite.completed_checks })}
+            {t("discovery.run.tested", {
+              count: suite.completed_checks - (suite.skipped_checks ?? 0),
+            })}
           </>
         }
         onStop={canStop ? (confirming ? onStop : onFinish) : undefined}

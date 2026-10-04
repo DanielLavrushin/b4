@@ -24,5 +24,11 @@
     "https://8.8.8.8/dns-query",
     "https://9.9.9.9/dns-query",
     "https://dns.google/dns-query"
+  ],
+  "fix_dns_servers": [
+    "9.9.9.9",
+    "1.1.1.1",
+    "8.8.8.8",
+    "8.8.4.4"
   ]
 }
