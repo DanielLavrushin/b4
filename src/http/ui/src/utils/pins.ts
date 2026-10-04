@@ -23,18 +23,15 @@ const pinLines = (text: string) =>
       .filter(Boolean),
   );
 
-const pinName = (token: string) => token.toLowerCase().replace(/^\*\./, "");
+const pinName = (token: string) =>
+  token.toLowerCase().replace(/^\*\./, "").replace(/\.{1,2}$/, "");
 
 const LABEL = /^[a-z0-9_-]{1,63}$/;
 
-const pinnableName = (name: string) => {
-  const host = name.replace(/\.$/, "");
-  return (
-    host.length > 0 &&
-    host.length <= 253 &&
-    host.split(".").every((label) => LABEL.test(label))
-  );
-};
+const pinnableName = (name: string) =>
+  name.length > 0 &&
+  name.length <= 253 &&
+  name.split(".").every((label) => LABEL.test(label));
 
 export const pinsToText = (pins?: Record<string, string[]>) => {
   const byAddress = new Map<string, string[]>();
