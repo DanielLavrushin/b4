@@ -236,7 +236,7 @@ func maskOrigin(raw string) string {
 	}
 	name := u.Hostname()
 	if name == "localhost" || net.ParseIP(name) != nil {
-		return raw
+		return maskURL(raw)
 	}
 	masked := u.Scheme + "://" + RedactedMarker
 	if port := u.Port(); port != "" {

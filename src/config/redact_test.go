@@ -363,12 +363,12 @@ func TestRedactForSharingMasksTheRouterName(t *testing.T) {
 	ws := &cfg.System.WebServer
 	ws.TLSCert = "/etc/letsencrypt/live/myrouter.duckdns.org/fullchain.pem"
 	ws.TLSKey = "/etc/ssl/acme/myrouter.duckdns.org.key"
-	ws.MCP.AllowedOrigins = []string{"https://myrouter.duckdns.org:7000", "https://myrouter.duckdns.org", "http://localhost:5173", "http://192.168.1.1:7000", "http://[fd00::1]:7000", "*", "not an origin"}
+	ws.MCP.AllowedOrigins = []string{"https://myrouter.duckdns.org:7000", "https://myrouter.duckdns.org", "http://localhost:5173", "http://192.168.1.1:7000", "http://[fd00::1]:7000", "*", "not an origin", "https://admin:secret@192.168.1.1:7000", "http://localhost:5173/", "http://localhost:5173/app?token=abc#x"}
 	cfg.RedactForSharing()
 	if ws.TLSCert != "/etc/letsencrypt/live/[redacted]/fullchain.pem" || ws.TLSKey != "/etc/ssl/acme/[redacted].key" {
 		t.Errorf("the router name survived in a certificate path: %q %q", ws.TLSCert, ws.TLSKey)
 	}
-	want := []string{"https://[redacted]:7000", "https://[redacted]", "http://localhost:5173", "http://192.168.1.1:7000", "http://[fd00::1]:7000", "*", RedactedMarker}
+	want := []string{"https://[redacted]:7000", "https://[redacted]", "http://localhost:5173", "http://192.168.1.1:7000", "http://[fd00::1]:7000", "*", RedactedMarker, "https://[redacted]@192.168.1.1:7000", "http://localhost:5173/", "http://localhost:5173/[redacted]?token=[redacted]#[redacted]"}
 	if !reflect.DeepEqual(ws.MCP.AllowedOrigins, want) {
 		t.Errorf("allowed origins = %v, want %v", ws.MCP.AllowedOrigins, want)
 	}
