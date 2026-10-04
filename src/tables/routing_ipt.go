@@ -44,6 +44,16 @@ func (b *routeIptBackend) available() bool {
 	return hasBinary(b.ipt4()) && hasBinary("ipset")
 }
 
+func (b *routeIptBackend) missingTool() string {
+	if !hasBinary(b.ipt4()) {
+		return b.ipt4()
+	}
+	if !hasBinary("ipset") {
+		return "ipset"
+	}
+	return ""
+}
+
 func iptTable(isMangle bool) string {
 	if isMangle {
 		return "mangle"
@@ -60,7 +70,7 @@ func (b *routeIptBackend) ensureIPSet(name string, v6 bool) error {
 	}
 	out, err := run("ipset", "create", name, "hash:net", "family", family, "timeout", "3600", "-exist")
 	if err != nil {
-		return fmt.Errorf("ipset create %s: %v: %s", name, err, strings.TrimSpace(out))
+		return fmt.Errorf("ipset create %s: %w", name, errWithOutput(err, out))
 	}
 	return nil
 }
@@ -121,7 +131,7 @@ func (b *routeIptBackend) ensureChain(chain string, isMangle bool) error {
 		out, err := run(cmd, "-w", "-t", table, "-N", chain)
 		if err != nil && !strings.Contains(strings.TrimSpace(out), "already exists") {
 			if cmd == ipt4 {
-				return fmt.Errorf("%s -N %s in %s: %v: %s", cmd, chain, table, err, strings.TrimSpace(out))
+				return fmt.Errorf("%s -N %s in %s: %w", cmd, chain, table, errWithOutput(err, out))
 			}
 			log.Tracef("routing: %s -N %s in %s failed (non-fatal): %s", cmd, chain, table, strings.TrimSpace(out))
 		}

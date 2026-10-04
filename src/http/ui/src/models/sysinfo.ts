@@ -68,6 +68,23 @@ interface DiagRuleGroup {
   rules: string[];
 }
 
+interface DiagRoutingError {
+  set: string;
+  error: string;
+}
+
+export interface DiagRouting {
+  sets: number;
+  installed: number;
+  backend?: string;
+  missing_tool?: string;
+  error?: string;
+  set_errors?: DiagRoutingError[];
+  failing_since?: string;
+  last_attempt?: string;
+  next_retry?: string;
+}
+
 interface DiagFirewall {
   backend: string;
   nfqueue_works: boolean;
@@ -81,6 +98,7 @@ interface DiagFirewall {
   rule_groups?: DiagRuleGroup[];
   rules_restores?: number;
   last_rules_restore?: string;
+  routing?: DiagRouting;
 }
 
 interface DiagTUN {

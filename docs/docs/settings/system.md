@@ -47,7 +47,7 @@ The dialog then checks every 2 seconds whether b4 answers, for up to a minute, a
 | **Paths** | The b4 binary, the configuration file, the data directory, `errors.log`, `geosite.dat` and `geoip.dat` |
 | **Geodata** | The size of each database, the totals of domains and IPs, the ASN cache and the ASNs not resolved yet |
 | **Engine** | NFQUEUE or TUN, the start error when the engine failed, and with TUN its device, addresses, capture, packet counters and capture rules |
-| **Firewall** | The backend, the NFQUEUE check, flow offloading, bridge netfilter, the rule restores of the firewall monitor, and b4's own rules |
+| **Firewall** | The backend, the NFQUEUE check, how many routing sets are installed and, while installing them fails, the error and the time of the next attempt (see [Routing, when the rules cannot be installed](../sets/routing.md#install-failures)), flow offloading, bridge netfilter, the rule restores of the firewall monitor, and b4's own rules |
 | **Network** | Every interface except loopback, with its state, MAC address, MTU and addresses |
 | **Kernel Modules**, **Kernel Capabilities** | Whether each module b4 uses is loaded or built in, and whether packet interception, transparent proxying and the reply-side bypass are available, with the packages that provide a missing one |
 | **Firewall Tools (at least one needed)**, **Required Tools**, **Optional Tools** | Which commands are found: `iptables`, `iptables-legacy` and `nft`, at least one of which is needed; `tar` and `curl`; optional ones such as `ipset` and `wget` |

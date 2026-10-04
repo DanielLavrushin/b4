@@ -284,15 +284,41 @@ For stable services with constant IPs you can raise the TTL. For CDN services wh
 
 ### Firewall backend
 
-b4 detects the available backend automatically:
-
 | Backend | Requirements | Description |
 | --- | --- | --- |
 | **nftables** | `nft` binary | Creates the `b4_route` table with `prerouting`, `output`, `postrouting` chains. IP sets support `interval` and `timeout`. |
 | **iptables + ipset** | `iptables`, `ipset` binaries | Uses the `mangle` and `nat` tables. Creates an ipset of type `hash:net` to store IPs. Also checks for `iptables-legacy`. |
 
-:::info
-The backend is chosen automatically. Systems with nftables use nftables, older systems use iptables. No manual setup is required.
+Routing uses the backend of the [Firewall Engine](../settings/core.md#firewall-rules) setting, which on **Auto-detect** is the one b4 finds for its other rules. On iptables, routing also needs the `ipset` binary. Without it, or without the iptables binary, routing falls back to nftables whenever the `nft` binary is present, even where the nftables check of **Auto-detect** failed. With neither backend b4 installs no routing rule. The b4 Docker image carries all three: `nft`, `iptables` and `ipset`.
+
+Nothing is created for routing, not even the `b4_route` table, while no enabled set has routing turned on and the Telegram over WebSocket switch is off.
+
+### When the rules cannot be installed {#install-failures}
+
+b4 installs the routing rules at start, on every save of the configuration, and when the firewall monitor finds them missing. When the backend rejects the base of the rules, such as the `b4_route` table, no set is installed, and the log reads:
+
+```text
+[ERROR] Routing: failed to ensure base during sync (nftables): ensure table: ..., it will be retried
+```
+
+When only some sets fail, each of them gets a line of its own, `Routing: failed to ensure rule for set '<name>' during sync: ...`, and the other sets are installed.
+
+b4 then retries on its own. The first retry comes 10 seconds after the failure, and the wait doubles after each failed retry, to 20, 40, 80, 160 and 320 seconds; from then on b4 retries every 10 minutes until a retry succeeds. The retries write their lines at the trace level, which the log shows only with the log level set to `trace` or `debug`. At the `info` level the cycle leaves three lines:
+
+| Line | Level | When |
+| --- | --- | --- |
+| `Routing: failed to ensure base during sync ...` or `Routing: failed to ensure rule for set ...` | ERROR | The first failure of a configuration |
+| `Routing: the routing sync keeps failing; b4 retries it every 10m0s ...` | WARN | The sixth retry fails, 10 minutes 30 seconds after the first failure |
+| `Routing: the routing sync that failed has been retried successfully` | INFO | A retry succeeds |
+
+A save of the configuration or a restart starts the cycle over, with a new ERROR line and a first retry 10 seconds later. While a retry is pending after a failure at the base, the firewall monitor leaves the routing rules alone and logs `Monitor: a newer routing configuration is waiting to be retried, leaving routing alone this tick` at the trace level at each check.
+
+A kernel that lacks what the backend needs, such as nftables without the `inet` family or iptables without the `ip_set` module, fails every retry the same way, and a retry can succeed only after the kernel or the backend changes.
+
+When neither backend is available, or the `ip` command is missing, b4 logs a warning at each start and save, installs nothing and does not retry. b4 looks these commands up once per run, so a tool installed later takes effect after a restart.
+
+:::info Routing in System Info
+The **Routing Sets** row under **Firewall** in the [System Info](../settings/system.md#system-info) dialog shows how many of the sets with routing turned on are installed, and the backend. While installing fails, the rows below it give the error, or the error of each set that failed, the time the failure began and the time of the next attempt, and name the missing tool, usually `ipset`, when its absence is why routing uses nftables.
 :::
 
 ### FWMark and routing table

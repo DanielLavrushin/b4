@@ -125,11 +125,14 @@ var (
 	routeSyncRetryTimer *time.Timer
 	routeSyncRetryDelay time.Duration
 	routeSyncRetryOwn   bool
+	routeSyncRetryAt    time.Time
 	routeSyncRetryBase  = 10 * time.Second
 	routeSyncRetryMax   = 10 * time.Minute
+	routeSyncOutcome    routeSyncReport
 	routeRuleCache      = make(map[string]routeState)
 	routeIfaceAuto      = make(map[string]routeState)
 	routeEngine         routeBackend
+	routeEngineMissing  string
 	routeLastReResolve  = make(map[string]time.Time)
 	routeLearnLast      = make(map[string]time.Time)
 	routeRefreshedAt    = make(map[string]time.Time)
@@ -147,6 +150,7 @@ func getRouteBackend(cfg *config.Config) routeBackend {
 	be := detectFirewallBackend(cfg)
 	nft := &routeNftBackend{}
 	ipt := &routeIptBackend{legacy: be == backendIPTablesLegacy}
+	routeEngineMissing = ""
 	switch be {
 	case backendNFTables:
 		if nft.available() {
@@ -159,6 +163,7 @@ func getRouteBackend(cfg *config.Config) routeBackend {
 	}
 	if routeEngine == nil && nft.available() {
 		routeEngine = nft
+		routeEngineMissing = ipt.missingTool()
 	} else if routeEngine == nil && ipt.available() {
 		routeEngine = ipt
 	}
@@ -826,8 +831,10 @@ func RoutingClearAll() {
 	routeRuleCache = make(map[string]routeState)
 	routeIfaceAuto = make(map[string]routeState)
 	routeEngine = nil
+	routeEngineMissing = ""
 	routeSyncedCfg = nil
 	routeClearSyncRetry()
+	routeSyncOutcome = routeSyncReport{}
 	proxyTableForget()
 	routeForgetRtTableNames()
 	routeForgetRPFilterState()
@@ -1127,7 +1134,7 @@ func routeQueueSyncRetry(cfg *config.Config) {
 		next := routeSyncRetryDelay * 2
 		if next >= routeSyncRetryMax {
 			if routeSyncRetryDelay < routeSyncRetryMax {
-				log.Warnf("Routing: the routing sync keeps failing, it will be retried every %v until it succeeds", routeSyncRetryMax)
+				log.Warnf("Routing: the routing sync keeps failing; b4 retries it every %v until it succeeds and logs these retries at trace level only. System Info shows the last error and the time of the next attempt under Firewall", routeSyncRetryMax)
 			}
 			next = routeSyncRetryMax
 		}
@@ -1141,6 +1148,7 @@ func routeQueueSyncRetry(cfg *config.Config) {
 		routeSyncRetryTimer.Stop()
 	}
 	delay := routeSyncRetryDelay
+	routeSyncRetryAt = time.Now().Add(delay)
 	routeSyncRetryTimer = time.AfterFunc(delay, func() { routeRetrySync(cfg) })
 	log.Tracef("Routing: the routing sync will be retried in %v", delay)
 }
@@ -1153,6 +1161,73 @@ func routeClearSyncRetry() {
 	routeSyncRetry = nil
 	routeSyncRetryDelay = 0
 	routeSyncRetryOwn = false
+	routeSyncRetryAt = time.Time{}
+}
+
+type routeSyncReport struct {
+	err     string
+	setErrs map[string]string
+	since   time.Time
+	attempt time.Time
+}
+
+func routeNoteSyncFailed(attempt time.Time, err string, setErrs map[string]string) {
+	since := routeSyncOutcome.since
+	if since.IsZero() {
+		since = attempt
+	}
+	routeSyncOutcome = routeSyncReport{err: err, setErrs: setErrs, since: since, attempt: attempt}
+}
+
+func routeNoteSyncDone(attempt time.Time) {
+	routeSyncOutcome = routeSyncReport{attempt: attempt}
+}
+
+func RoutingSetsWanted(cfg *config.Config) int {
+	n := 0
+	for _, set := range cfg.RoutingSets() {
+		if set != nil && set.Enabled && set.Routing.Enabled {
+			n++
+		}
+	}
+	return n
+}
+
+type RoutingSetError struct {
+	Set   string
+	Error string
+}
+
+type RoutingState struct {
+	Backend      string
+	MissingTool  string
+	Installed    int
+	Error        string
+	SetErrors    []RoutingSetError
+	FailingSince time.Time
+	LastAttempt  time.Time
+	NextRetry    time.Time
+}
+
+func RoutingStatus() RoutingState {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	st := RoutingState{
+		Installed:    len(routeRuleCache),
+		Error:        routeSyncOutcome.err,
+		FailingSince: routeSyncOutcome.since,
+		LastAttempt:  routeSyncOutcome.attempt,
+		NextRetry:    routeSyncRetryAt,
+	}
+	if routeEngine != nil {
+		st.Backend = routeEngine.name()
+		st.MissingTool = routeEngineMissing
+	}
+	for name, msg := range routeSyncOutcome.setErrs {
+		st.SetErrors = append(st.SetErrors, RoutingSetError{Set: name, Error: msg})
+	}
+	sort.Slice(st.SetErrors, func(i, j int) bool { return st.SetErrors[i].Set < st.SetErrors[j].Set })
+	return st
 }
 
 func routeRetrySync(cfg *config.Config) {
@@ -1193,22 +1268,33 @@ func routingSyncConfigLocked(cfg *config.Config) {
 	IPTablesLockBudgetReset()
 	routeLoadCTMarkVerdict(cfg)
 
+	if len(routeRuleCache) == 0 && RoutingSetsWanted(cfg) == 0 {
+		log.Tracef("Routing: no set has routing turned on, nothing to install")
+		routeSyncedCfg = cfg
+		routeClearSyncRetry()
+		routeSyncOutcome = routeSyncReport{}
+		return
+	}
+	attempt := time.Now()
+
 	be := getRouteBackend(cfg)
 	if be == nil {
-		log.Tracef("Routing: no firewall backend available, skipping sync")
+		log.Warnf("Routing: no firewall tool can install the routing rules, which need nft, or iptables with ipset, so the sets with routing turned on route nothing")
 		routeRuleCache = make(map[string]routeState)
 		routeIfaceAuto = make(map[string]routeState)
 		routeSyncedCfg = cfg
 		routeClearSyncRetry()
+		routeNoteSyncFailed(attempt, "no firewall tool for routing: it needs nft, or iptables with ipset", nil)
 		return
 	}
 
 	if !hasBinary("ip") {
-		log.Tracef("Routing: ip binary is missing, skipping sync")
+		log.Warnf("Routing: the ip command (iproute2) is missing, so the sets with routing turned on route nothing")
 		routeRuleCache = make(map[string]routeState)
 		routeIfaceAuto = make(map[string]routeState)
 		routeSyncedCfg = cfg
 		routeClearSyncRetry()
+		routeNoteSyncFailed(attempt, "the ip command (iproute2) is missing", nil)
 		return
 	}
 
@@ -1218,11 +1304,13 @@ func routingSyncConfigLocked(cfg *config.Config) {
 		} else {
 			log.Errorf("Routing: failed to ensure base during sync (%s): %v, it will be retried", be.name(), err)
 		}
+		routeNoteSyncFailed(attempt, err.Error(), nil)
 		routeQueueSyncRetry(cfg)
 		return
 	}
 	retrying := routeSyncRetry == cfg
 	failed := false
+	setErrs := make(map[string]string)
 
 	if be.name() == backendNFTables {
 		routeNftSweepBaseOutputBypasses()
@@ -1328,6 +1416,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 					routeRuleCache[set.Id] = previous
 				}
 				failed = true
+				setErrs[set.Name] = err.Error()
 				routeNoteInstallFailed(set.Id)
 				if retrying {
 					log.Tracef("Routing: set '%s' still cannot be installed during the retried sync: %v", set.Name, err)
@@ -1364,8 +1453,10 @@ func routingSyncConfigLocked(cfg *config.Config) {
 
 	routeSyncedCfg = cfg
 	if failed {
+		routeNoteSyncFailed(attempt, "", setErrs)
 		routeQueueSyncRetry(cfg)
 	} else {
+		routeNoteSyncDone(attempt)
 		routeClearSyncRetry()
 	}
 

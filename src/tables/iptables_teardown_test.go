@@ -19,6 +19,9 @@ func stubBinaryPresence(t *testing.T, present map[string]bool) {
 			}
 		})
 		hasBinaryCache.Store(name, found)
+		if name == "ipset" && found {
+			stubIPSetProbe(t, nil)
+		}
 	}
 }
 

@@ -56,6 +56,7 @@ FROM alpine:3.23.3
 RUN apk add --no-cache \
     iptables \
     ip6tables \
+    ipset \
     nftables \
     kmod \
     iproute2 \

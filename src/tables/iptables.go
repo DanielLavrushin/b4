@@ -597,8 +597,12 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
 			dupSetName = "b4_dup_v6"
 			dupSetFamily = "inet6"
 		}
-		if len(dupIPs) > 0 && !hasBinary("ipset") {
-			log.Warnf("ipset binary not found; skipping duplicate-IPs rules for %s (install ipset via your system package manager)", dupSetName)
+		dupSkip := ""
+		if len(dupIPs) > 0 {
+			dupSkip = ipsetUnusable()
+		}
+		if dupSkip != "" {
+			log.Warnf("%s; skipping duplicate-IPs rules for %s", dupSkip, dupSetName)
 		} else if len(dupIPs) > 0 {
 			ipsets = append(ipsets, IPSet{Name: dupSetName, Family: dupSetFamily, Entries: dupIPs})
 			if manager.hasMultiportSupport(ipt) {
@@ -816,9 +820,11 @@ func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain stri
 			if !setHasSourceForFamily(e.Sources, isV6) {
 				continue
 			}
-			if hasIPs && !hasBinary("ipset") {
-				log.Warnf("ipset binary not found; skipping per-set MSS for set %q (install ipset via your system package manager)", e.SetID)
-				continue
+			if hasIPs {
+				if reason := ipsetUnusable(); reason != "" {
+					log.Warnf("%s; skipping per-set MSS for set %q", reason, e.SetID)
+					continue
+				}
 			}
 			if hasIPs {
 				mssIPSets = append(mssIPSets, IPSet{Name: setName, Family: setFamily, Entries: ips})

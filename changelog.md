@@ -2,10 +2,13 @@
 
 ## [1.85.0] - 2026-10-04
 
+- ADDED: **System Info shows how many routing sets are installed and, while installing them fails, the error, when the failure began and when b4 tries again** - the Routing Sets row is under Firewall, and the log warns when no firewall tool on the system can install routing at all.
 - CHANGED: **The dashboard shows connections per minute in and outside sets, what each set matched in the last hour, and the problems that need attention** - Device Activity and Domains Not In Any Set gave way to links into the Traffic page, the Runtime figures moved to System Info, and Reset Stats became Reset counters, with a Clear button of its own on Active Escalations.
 - FIXED: **Dashboard figures misled: Active flows only grew, Throughput counted only the first packets of each connection, Workers always read all active, Uptime started over at Reset Stats, and Domains Not In Any Set stopped taking new domains** - b4 counted every inspected packet as a connection, never recorded a connection ending and evicted each new domain once the list was full.
 - FIXED: **Reset Stats on the dashboard also sent every escalated site back to the set that had failed for it** - the reset cleared b4's escalations along with the counters.
 - CHANGED: **MCP `b4_status` and `b4_metrics` and the metrics API count each connection once, so their fields changed** - `connections_seen`, `current_cps`, `current_pps` and `memory_percent` gave way to per-minute connection counts, `cpu_percent` and `rss_bytes`, `/api/metrics` and `/api/ws/metrics` carry the new dashboard snapshot, and `POST /api/escalations/clear` clears escalations.
+- FIXED: **On a kernel that rejects b4's nftables routing table, such as Synology DSM with b4 in Docker, b4 logged a routing error at every start and save and retried it every 10 minutes even when no set used routing** - b4 created the routing table before checking whether any set needed it.
+- FIXED: **In the Docker image, routing sets failed on a host whose nftables does not work even where the kernel supports ipset, the NFQUEUE engine on such a host left out packet duplication and per-set MSS clamping by address, and the TUN engine gave every packet duplication address a capture rule of its own** - the image did not include ipset.
 
 ## [1.84.1] - 2026-10-03
 
