@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+
+	"github.com/daniellavrushin/b4/geodat"
 )
 
 const RedactedMarker = "[redacted]"
@@ -111,8 +113,8 @@ func (c *Config) RedactForSharing() {
 	mt.DCFallbackURL = maskCustomValue(mt.DCFallbackURL, TGDCFallbackURL)
 
 	c.System.AI.Endpoint = maskURL(c.System.AI.Endpoint)
-	c.System.Geo.GeoSiteURL = maskURL(c.System.Geo.GeoSiteURL)
-	c.System.Geo.GeoIpURL = maskURL(c.System.Geo.GeoIpURL)
+	c.System.Geo.GeoSiteURL = maskGeoURL(c.System.Geo.GeoSiteURL)
+	c.System.Geo.GeoIpURL = maskGeoURL(c.System.Geo.GeoIpURL)
 	c.System.Update.Mirrors = maskValues(c.System.Update.Mirrors)
 	c.System.Hub.URLs = maskURLs(c.System.Hub.URLs)
 	c.System.Checker.Watchdog.Domains = maskWatchdogEntries(c.System.Checker.Watchdog.Domains)
@@ -255,7 +257,14 @@ func maskURLs(urls []string) []string {
 }
 
 func maskURL(raw string) string {
-	return redactURL(raw, true)
+	return redactURL(raw, keepHost, plainPath)
+}
+
+func maskGeoURL(raw string) string {
+	if geodat.IsSourceURL(raw) {
+		return raw
+	}
+	return maskURL(raw)
 }
 
 func maskWatchdogEntries(entries []string) []string {
@@ -267,7 +276,7 @@ func maskWatchdogEntries(entries []string) []string {
 		switch {
 		case strings.Contains(entry, "://"):
 			out[i] = maskURL(entry)
-		case strings.ContainsAny(entry, "@?#"):
+		case strings.ContainsAny(entry, "@?#/"):
 			out[i] = strings.TrimPrefix(maskURL("https://"+entry), "https://")
 		default:
 			out[i] = entry
@@ -277,10 +286,22 @@ func maskWatchdogEntries(entries []string) []string {
 }
 
 func maskDoHURL(raw string) string {
-	return redactURL(raw, false)
+	return redactURL(raw, maskResolverHost, dohPath)
 }
 
-func redactURL(raw string, keepPath bool) string {
+func keepHost(u *url.URL) string {
+	return u.Host
+}
+
+func plainPath(path string) bool {
+	return path == "" || path == "/"
+}
+
+func dohPath(path string) bool {
+	return plainPath(path) || path == "/dns-query"
+}
+
+func redactURL(raw string, host func(*url.URL) string, keepPath func(string) bool) string {
 	if raw == "" {
 		return ""
 	}
@@ -296,14 +317,10 @@ func redactURL(raw string, keepPath bool) string {
 		b.WriteString(RedactedMarker)
 		b.WriteString("@")
 	}
-	if keepPath {
-		b.WriteString(u.Host)
-	} else {
-		b.WriteString(maskResolverHost(u))
-	}
+	b.WriteString(host(u))
 
 	path := u.EscapedPath()
-	if keepPath || path == "" || path == "/" || path == "/dns-query" {
+	if keepPath(path) {
 		b.WriteString(path)
 	} else {
 		b.WriteString("/")

@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/geodat"
 )
 
 var secretLookingName = regexp.MustCompile(`(?i)pass|secret|token|key|user|auth|cred|url|endpoint|domain|host|relay|mirror|cookie|session`)
@@ -380,52 +382,87 @@ func TestRedactForSharingMasksCredentialsInWatchdogEntries(t *testing.T) {
 		"https://admin:hunter2@nas.example.com/health?token=0123abcd",
 		"admin:hunter2@nas.example.com",
 		"nas.example.com/health?token=0123abcd#part",
+		"hc.example.com/ping/0f1e2d3c4b5a",
 	}
 	cfg.RedactForSharing()
 	want := []string{
 		"youtube.com",
-		"https://www.youtube.com/watch",
-		"https://[redacted]@nas.example.com/health?token=[redacted]",
+		"https://www.youtube.com/[redacted]",
+		"https://[redacted]@nas.example.com/[redacted]?token=[redacted]",
 		"[redacted]@nas.example.com",
-		"nas.example.com/health?token=[redacted]#[redacted]",
+		"nas.example.com/[redacted]?token=[redacted]#[redacted]",
+		"hc.example.com/[redacted]",
 	}
 	if got := cfg.System.Checker.Watchdog.Domains; !reflect.DeepEqual(got, want) {
 		t.Errorf("watchdog entries = %v, want %v", got, want)
 	}
 }
 
-func TestRedactURL(t *testing.T) {
+func TestMaskURL(t *testing.T) {
 	cases := []struct {
-		in       string
-		keepPath bool
-		want     string
+		in   string
+		want string
 	}{
-		{"", true, ""},
-		{"https://github.com/owner/repo/releases/latest/download/geosite.dat", true, "https://github.com/owner/repo/releases/latest/download/geosite.dat"},
-		{"https://user:pw@example.com:8443/path/file.dat?token=abc&x=1#part", true, "https://[redacted]@example.com:8443/path/file.dat?token=[redacted]&x=[redacted]#[redacted]"},
-		{"https://example.com/file?abc123", true, "https://example.com/file?[redacted]"},
-		{"not a url", true, RedactedMarker},
-		{"example.com/path", true, RedactedMarker},
-		{"https://cloudflare-dns.com/dns-query", false, "https://cloudflare-dns.com/dns-query"},
-		{"https://dns.google", false, "https://dns.google"},
-		{"https://1.1.1.1/dns-query", false, "https://1.1.1.1/dns-query"},
-		{"https://[2606:4700::1111]/dns-query", false, "https://[2606:4700::1111]/dns-query"},
-		{"https://dns.nextdns.io/abc123", false, "https://dns.nextdns.io/[redacted]"},
-		{"https://family.adguard-dns.com/dns-query", false, "https://family.adguard-dns.com/dns-query"},
-		{"https://dns.quad9.net/dns-query", false, "https://dns.quad9.net/dns-query"},
-		{"https://d.adguard-dns.com/dns-query/abc123", false, "https://[redacted].adguard-dns.com/[redacted]"},
-		{"https://a1b2c3d4e5.cloudflare-gateway.com/dns-query", false, "https://[redacted].cloudflare-gateway.com/dns-query"},
-		{"https://a1b2c3d4e5.cloudflare-gateway.com:8443/dns-query", false, "https://[redacted].cloudflare-gateway.com:8443/dns-query"},
-		{"https://abc123.dns.nextdns.io/dns-query", false, "https://[redacted].nextdns.io/dns-query"},
-		{"https://ivanov.ru/dns-query", false, "https://[redacted]/dns-query"},
-		{"https://IVANOV.RU/dns-query", false, "https://[redacted]/dns-query"},
-		{"https://dns.ivanov.ru/dns-query", false, "https://[redacted]/dns-query"},
-		{"https://dns.ivanov.ru:8443/dns-query", false, "https://[redacted]:8443/dns-query"},
+		{"", ""},
+		{"https://example.com", "https://example.com"},
+		{"https://example.com/", "https://example.com/"},
+		{"https://github.com/owner/repo/releases/latest/download/geosite.dat", "https://github.com/[redacted]"},
+		{"https://example.com/private-token/geosite.dat", "https://example.com/[redacted]"},
+		{"https://user:pw@example.com:8443/path/file.dat?token=abc&x=1#part", "https://[redacted]@example.com:8443/[redacted]?token=[redacted]&x=[redacted]#[redacted]"},
+		{"https://example.com/file?abc123", "https://example.com/[redacted]?[redacted]"},
+		{"not a url", RedactedMarker},
+		{"example.com/path", RedactedMarker},
 	}
 	for _, tc := range cases {
-		if got := redactURL(tc.in, tc.keepPath); got != tc.want {
-			t.Errorf("redactURL(%q, %v) = %q, want %q", tc.in, tc.keepPath, got, tc.want)
+		if got := maskURL(tc.in); got != tc.want {
+			t.Errorf("maskURL(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestMaskDoHURL(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"https://cloudflare-dns.com/dns-query", "https://cloudflare-dns.com/dns-query"},
+		{"https://dns.google", "https://dns.google"},
+		{"https://1.1.1.1/dns-query", "https://1.1.1.1/dns-query"},
+		{"https://[2606:4700::1111]/dns-query", "https://[2606:4700::1111]/dns-query"},
+		{"https://dns.nextdns.io/abc123", "https://dns.nextdns.io/[redacted]"},
+		{"https://family.adguard-dns.com/dns-query", "https://family.adguard-dns.com/dns-query"},
+		{"https://dns.quad9.net/dns-query", "https://dns.quad9.net/dns-query"},
+		{"https://d.adguard-dns.com/dns-query/abc123", "https://[redacted].adguard-dns.com/[redacted]"},
+		{"https://a1b2c3d4e5.cloudflare-gateway.com/dns-query", "https://[redacted].cloudflare-gateway.com/dns-query"},
+		{"https://a1b2c3d4e5.cloudflare-gateway.com:8443/dns-query", "https://[redacted].cloudflare-gateway.com:8443/dns-query"},
+		{"https://abc123.dns.nextdns.io/dns-query", "https://[redacted].nextdns.io/dns-query"},
+		{"https://ivanov.ru/dns-query", "https://[redacted]/dns-query"},
+		{"https://IVANOV.RU/dns-query", "https://[redacted]/dns-query"},
+		{"https://dns.ivanov.ru/dns-query", "https://[redacted]/dns-query"},
+		{"https://dns.ivanov.ru:8443/dns-query", "https://[redacted]:8443/dns-query"},
+	}
+	for _, tc := range cases {
+		if got := maskDoHURL(tc.in); got != tc.want {
+			t.Errorf("maskDoHURL(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestMaskGeoURLKeepsTheBuiltInSources(t *testing.T) {
+	sources, err := geodat.Sources()
+	if err != nil || len(sources) == 0 {
+		t.Fatalf("no built-in geodata sources: %v", err)
+	}
+	for _, s := range sources {
+		for _, u := range []string{s.GeositeURL, s.GeoipURL} {
+			if u != "" && maskGeoURL(u) != u {
+				t.Errorf("the built-in source %s was masked: %q", s.Name, maskGeoURL(u))
+			}
+		}
+	}
+	custom := "https://files.example.com/9f8e7d6c5b4a/geosite.dat?sig=abc"
+	if got, want := maskGeoURL(custom), "https://files.example.com/[redacted]?sig=[redacted]"; got != want {
+		t.Errorf("maskGeoURL(%q) = %q, want %q", custom, got, want)
 	}
 }
 

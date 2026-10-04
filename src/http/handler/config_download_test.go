@@ -84,7 +84,7 @@ func TestConfigDownloadSafeMasksSecrets(t *testing.T) {
 			t.Errorf("the safe download still contains %q", secret)
 		}
 	}
-	for _, kept := range []string{"10.0.0.9", "youtube.com", "https://dns.nextdns.io/[redacted]", "https://example.com/geosite.dat"} {
+	for _, kept := range []string{"10.0.0.9", "youtube.com", "https://dns.nextdns.io/[redacted]", "https://example.com/[redacted]?token=[redacted]"} {
 		if !strings.Contains(body, kept) {
 			t.Errorf("the safe download dropped %q, which is needed for debugging", kept)
 		}
