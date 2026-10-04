@@ -185,7 +185,11 @@ export const HistoryTable = ({
           <B4Badge
             variant="outlined"
             color="error"
-            label={unresolvedLabel(row.entry.missing_family, t)}
+            label={unresolvedLabel(
+              row.entry.missing_family ??
+                row.entry.dns_result?.no_address_family,
+              t,
+            )}
           />
         );
       default:

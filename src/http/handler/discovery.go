@@ -1015,6 +1015,10 @@ func runPins(raw map[string][]string) (map[string][]string, error) {
 			if utils.IsReservedAddr(addr) {
 				return nil, fmt.Errorf("%s pinned for %s is a private or local address: discovery probes sites on the internet", addr, domain)
 			}
+			ip := addr.String()
+			if slices.Contains(pins[domain], ip) {
+				continue
+			}
 			total++
 			if total > maxRunPins {
 				return nil, fmt.Errorf("at most %d pinned addresses per run", maxRunPins)
@@ -1022,9 +1026,7 @@ func runPins(raw map[string][]string) (map[string][]string, error) {
 			if pins == nil {
 				pins = map[string][]string{}
 			}
-			if !slices.Contains(pins[domain], addr.String()) {
-				pins[domain] = append(pins[domain], addr.String())
-			}
+			pins[domain] = append(pins[domain], ip)
 		}
 	}
 	return pins, nil

@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.84.1] - 2026-10-03
+## [1.85.0] - 2026-10-04
 
 - ADDED: **Discovery takes a trusted DNS server, set under Settings, Discovery or for a single run, written as `9.9.9.9`, `127.0.0.1:53053`, `tcp://`, `tcp+udp://` or an `https://` DNS-over-HTTPS URL, and tests a site through pinned addresses, given for a run under Pinned addresses or taken from the set the run is for** - the server's answers are the reference for the DNS check, a proposed set gets the server as its DNS when a set can use it and keeps the pins, and a site whose name exists but has no address in DNS is reported as such, with a pointer to pinning, rather than as misspelled. The Fallback UDP DNS servers list and the unused Reference domain setting are gone.
 - FIXED: **An update from the web interface failed with `Could not fetch the installer: mkdir /tmp/b4update-...: no such file or directory` when nothing could be created in /tmp, as seen in a MikroTik container after a restart, and with /tmp mounted noexec the web interface reported the update as started while nothing happened** - b4 staged the installer in /tmp and ran it from there, and the installer moved to another directory only when /tmp was short of space.

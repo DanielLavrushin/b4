@@ -217,7 +217,10 @@ export const RunPanel = ({
           <B4Badge
             variant="outlined"
             color="error"
-            label={unresolvedLabel(dr?.missing_family, t)}
+            label={unresolvedLabel(
+              dr?.missing_family ?? dr?.dns_result?.no_address_family,
+              t,
+            )}
           />
         );
       default:

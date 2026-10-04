@@ -587,6 +587,13 @@ func TestRunPinsAreNormalized(t *testing.T) {
 	if _, err := runPins(many); err == nil {
 		t.Fatal("too many pinned addresses must be refused")
 	}
+	repeated := []string{}
+	for i := 0; i <= maxRunPins; i++ {
+		repeated = append(repeated, "198.51.100.1", "::ffff:198.51.100.1")
+	}
+	if pins, err := runPins(map[string][]string{"ntc.party": repeated, "NTC.party.": {"198.51.100.1"}}); err != nil || !reflect.DeepEqual(pins, map[string][]string{"ntc.party": {"198.51.100.1"}}) {
+		t.Fatalf("one address repeated is one pin and must not reach the limit, got %v %v", pins, err)
+	}
 	if pins, err := runPins(nil); err != nil || pins != nil {
 		t.Fatalf("no pins is fine, got %v %v", pins, err)
 	}

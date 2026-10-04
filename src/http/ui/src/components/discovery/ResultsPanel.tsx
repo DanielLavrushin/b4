@@ -475,7 +475,7 @@ const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
             <B4Badge
               variant="outlined"
               color="error"
-              label={unresolvedLabel(family, t)}
+              label={unresolvedLabel(family ?? dns?.no_address_family, t)}
             />
           }
         />

@@ -49,7 +49,7 @@ export const pinsToText = (pins?: Record<string, string[]>) => {
 };
 
 export const parsePins = (text: string) => {
-  const parsed: Record<string, string[]> = {};
+  const parsed = Object.create(null) as Record<string, string[]>;
   for (const tokens of pinLines(text)) {
     const addresses = tokens.filter(isAddress);
     const domains = tokens.filter((token) => !isAddress(token)).map(pinName);
