@@ -522,6 +522,14 @@ func runEnsure(args ...string) error {
 	if strings.Contains(msg, "File exists") || strings.Contains(msg, "already exists") {
 		return nil
 	}
+	return errWithOutput(err, out)
+}
+
+func errWithOutput(err error, out string) error {
+	msg := strings.TrimSpace(out)
+	if msg == "" || strings.Contains(err.Error(), msg) {
+		return err
+	}
 	return fmt.Errorf("%v: %s", err, msg)
 }
 

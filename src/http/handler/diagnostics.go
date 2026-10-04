@@ -320,7 +320,41 @@ func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 		info.LastRulesRestore = last.UTC().Format(time.RFC3339)
 	}
 
+	info.Routing = collectRoutingInfo(cfg)
+
 	return info
+}
+
+func collectRoutingInfo(cfg *config.Config) *DiagRouting {
+	sets := 0
+	if cfg != nil {
+		sets = tables.RoutingSetsWanted(cfg)
+	}
+	st := routingStatus()
+	if sets == 0 && st.Installed == 0 && st.Error == "" && len(st.SetErrors) == 0 {
+		return nil
+	}
+	info := &DiagRouting{
+		Sets:         sets,
+		Installed:    st.Installed,
+		Backend:      st.Backend,
+		MissingTool:  st.MissingTool,
+		Error:        st.Error,
+		FailingSince: diagTimestamp(st.FailingSince),
+		LastAttempt:  diagTimestamp(st.LastAttempt),
+		NextRetry:    diagTimestamp(st.NextRetry),
+	}
+	for _, e := range st.SetErrors {
+		info.SetErrors = append(info.SetErrors, DiagRoutingError{ID: e.ID, Set: e.Set, Error: e.Error})
+	}
+	return info
+}
+
+func diagTimestamp(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 func collectPolicyRuleGroup() []DiagRuleGroup {
@@ -337,6 +371,7 @@ func collectPolicyRuleGroup() []DiagRuleGroup {
 var (
 	readBridgeNetfilter   = tables.ReadBridgeNetfilter
 	routingTProxyFamilies = tables.RoutingTProxyFamilies
+	routingStatus         = tables.RoutingStatus
 )
 
 func diagFamilies(cfg *config.Config) (ipv4, ipv6 bool) {

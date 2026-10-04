@@ -159,7 +159,7 @@ func ensureBlockChainIpt(chain string, legacy bool) error {
 		out, err := run(cmd, "-w", "-t", "filter", "-N", chain)
 		if err != nil && !strings.Contains(strings.TrimSpace(out), "already exists") {
 			if cmd == ipt4 {
-				return fmt.Errorf("%s -N %s in filter: %v: %s", cmd, chain, err, strings.TrimSpace(out))
+				return fmt.Errorf("%s -N %s in filter: %w", cmd, chain, errWithOutput(err, out))
 			}
 			log.Tracef("routing: %s -N %s in filter failed (non-fatal): %s", cmd, chain, strings.TrimSpace(out))
 		}

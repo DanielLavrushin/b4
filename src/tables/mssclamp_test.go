@@ -31,6 +31,9 @@ func stubBinaries(t *testing.T, names ...string) {
 			}
 		})
 		hasBinaryCache.Store(name, true)
+		if name == "ipset" {
+			stubIPSetProbe(t, nil)
+		}
 	}
 }
 

@@ -163,6 +163,26 @@ type DiagFirewall struct {
 
 	RulesRestores    int64  `json:"rules_restores,omitempty"`
 	LastRulesRestore string `json:"last_rules_restore,omitempty"`
+
+	Routing *DiagRouting `json:"routing,omitempty"`
+}
+
+type DiagRouting struct {
+	Sets         int                `json:"sets"`
+	Installed    int                `json:"installed"`
+	Backend      string             `json:"backend,omitempty"`
+	MissingTool  string             `json:"missing_tool,omitempty"`
+	Error        string             `json:"error,omitempty"`
+	SetErrors    []DiagRoutingError `json:"set_errors,omitempty"`
+	FailingSince string             `json:"failing_since,omitempty"`
+	LastAttempt  string             `json:"last_attempt,omitempty"`
+	NextRetry    string             `json:"next_retry,omitempty"`
+}
+
+type DiagRoutingError struct {
+	ID    string `json:"id"`
+	Set   string `json:"set"`
+	Error string `json:"error"`
 }
 
 type DiagRuleGroup struct {

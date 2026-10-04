@@ -24,10 +24,11 @@ type IPTablesManager struct {
 	connbytesSupport map[string]error // per-binary cache
 	connmarkSupport  map[string]bool  // per-binary cache
 	nfqueueSupport   map[string]error // per-binary cache
+	ipsetSupport     map[string]error
 }
 
 func NewIPTablesManager(cfg *config.Config, useLegacy bool) *IPTablesManager {
-	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), connmarkSupport: make(map[string]bool), nfqueueSupport: make(map[string]error)}
+	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), connmarkSupport: make(map[string]bool), nfqueueSupport: make(map[string]error), ipsetSupport: make(map[string]error)}
 }
 
 func (im *IPTablesManager) iptablesBin() string {
@@ -113,6 +114,45 @@ func (im *IPTablesManager) hasConnmarkSupport(ipt string) bool {
 		log.Warnf("IPTABLES[%s]: connmark module not available; b4's own marked connections (e.g. MTProto WS bridge upstream) will not be exempted from reply-side processing", ipt)
 	}
 	return supported
+}
+
+const ipsetProbeSet = "b4_ipset_probe"
+
+var ipsetMatchProbe = func(im *IPTablesManager, ipt string) error {
+	family, set := "inet", ipsetProbeSet
+	if strings.HasPrefix(ipt, "ip6") {
+		family, set = "inet6", ipsetProbeSet+"6"
+	}
+	_, _ = run("ipset", "destroy", set)
+	if _, err := run("ipset", "create", set, "hash:net", "family", family, "-exist"); err != nil {
+		return fmt.Errorf("ipset does not work on this kernel (%v)", err)
+	}
+	defer func() { _, _ = run("ipset", "destroy", set) }()
+	if ok, err := im.probeModuleInTempChain(ipt, "mangle", []string{"-m", "set", "--match-set", set, "dst", "-j", "RETURN"}); !ok {
+		return fmt.Errorf("%s rejected the set match, which needs the xt_set kernel module and the iptables set extension (%v)", ipt, err)
+	}
+	return nil
+}
+
+func (im *IPTablesManager) ipsetUnusable(ipt string, teardown bool) string {
+	if !hasBinary("ipset") {
+		return "ipset binary not found (install ipset via your system package manager)"
+	}
+	if teardown {
+		return ""
+	}
+	err, probed := im.ipsetSupport[ipt]
+	if !probed {
+		err = ipsetMatchProbe(im, ipt)
+		if im.ipsetSupport == nil {
+			im.ipsetSupport = make(map[string]error)
+		}
+		im.ipsetSupport[ipt] = err
+	}
+	if err != nil {
+		return err.Error()
+	}
+	return ""
 }
 
 const (
@@ -466,7 +506,7 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 	if err != nil {
 		return Manifest{}, err
 	}
-	return manager.buildManifestFor(ipts), nil
+	return manager.buildManifestFor(ipts, false), nil
 }
 
 func (manager *IPTablesManager) buildTeardownManifest() (Manifest, error) {
@@ -474,10 +514,10 @@ func (manager *IPTablesManager) buildTeardownManifest() (Manifest, error) {
 	if len(ipts) == 0 {
 		return Manifest{}, errors.New("no valid iptables binaries found")
 	}
-	return manager.buildManifestFor(ipts), nil
+	return manager.buildManifestFor(ipts, true), nil
 }
 
-func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
+func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) Manifest {
 	cfg := manager.cfg
 	queueNum := cfg.Queue.StartNum
 	threads := cfg.Queue.Threads
@@ -597,8 +637,12 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
 			dupSetName = "b4_dup_v6"
 			dupSetFamily = "inet6"
 		}
-		if len(dupIPs) > 0 && !hasBinary("ipset") {
-			log.Warnf("ipset binary not found; skipping duplicate-IPs rules for %s (install ipset via your system package manager)", dupSetName)
+		dupSkip := ""
+		if len(dupIPs) > 0 {
+			dupSkip = manager.ipsetUnusable(ipt, teardown)
+		}
+		if dupSkip != "" {
+			log.Warnf("%s; skipping duplicate-IPs rules for %s", dupSkip, dupSetName)
 		} else if len(dupIPs) > 0 {
 			ipsets = append(ipsets, IPSet{Name: dupSetName, Family: dupSetFamily, Entries: dupIPs})
 			if manager.hasMultiportSupport(ipt) {
@@ -760,7 +804,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
 		}
 	}
 
-	mssIPSets, mssRules := manager.buildMSSManifestFor(ipts, preChainName)
+	mssIPSets, mssRules := manager.buildMSSManifestFor(ipts, preChainName, teardown)
 	ipsets = append(ipsets, mssIPSets...)
 	rules = append(rules, mssRules...)
 
@@ -772,10 +816,10 @@ func (manager *IPTablesManager) mssClampBinaries() []string {
 }
 
 func (manager *IPTablesManager) buildMSSManifest(preChain string) (mssIPSets []IPSet, mssRules []Rule) {
-	return manager.buildMSSManifestFor(manager.mssClampBinaries(), preChain)
+	return manager.buildMSSManifestFor(manager.mssClampBinaries(), preChain, false)
 }
 
-func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain string) (mssIPSets []IPSet, mssRules []Rule) {
+func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain string, teardown bool) (mssIPSets []IPSet, mssRules []Rule) {
 	cfg := manager.cfg
 	global, globalSize := cfg.HasGlobalMSSClamp()
 	deviceClamps := cfg.CollectDeviceMSSClamps()
@@ -816,9 +860,11 @@ func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain stri
 			if !setHasSourceForFamily(e.Sources, isV6) {
 				continue
 			}
-			if hasIPs && !hasBinary("ipset") {
-				log.Warnf("ipset binary not found; skipping per-set MSS for set %q (install ipset via your system package manager)", e.SetID)
-				continue
+			if hasIPs {
+				if reason := manager.ipsetUnusable(ipt, teardown); reason != "" {
+					log.Warnf("%s; skipping per-set MSS for set %q", reason, e.SetID)
+					continue
+				}
 			}
 			if hasIPs {
 				mssIPSets = append(mssIPSets, IPSet{Name: setName, Family: setFamily, Entries: ips})
@@ -942,7 +988,7 @@ func (manager *IPTablesManager) ApplyMSSClamp() error {
 }
 
 func (manager *IPTablesManager) ClearMSSClamp() {
-	sets, rules := manager.buildMSSManifestFor(manager.teardownBinaries(), "PREROUTING")
+	sets, rules := manager.buildMSSManifestFor(manager.teardownBinaries(), "PREROUTING", true)
 	m := Manifest{IPSets: sets, Rules: rules}
 	m.RemoveRules()
 	m.DestroyIPSets()

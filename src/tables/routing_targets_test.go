@@ -116,14 +116,17 @@ func stubRetryState(t *testing.T) {
 	t.Helper()
 	routeMu.Lock()
 	prevSynced, prevRetry, prevBase := routeSyncedCfg, routeSyncRetry, routeSyncRetryBase
+	prevOutcome, prevMissing := routeSyncOutcome, routeEngineMissing
 	routeClearSyncRetry()
 	routeSyncedCfg = nil
 	routeSyncRetryBase = 20 * time.Millisecond
+	routeSyncOutcome, routeEngineMissing = routeSyncReport{}, ""
 	routeMu.Unlock()
 	t.Cleanup(func() {
 		routeMu.Lock()
 		routeClearSyncRetry()
 		routeSyncedCfg, routeSyncRetry, routeSyncRetryBase = prevSynced, prevRetry, prevBase
+		routeSyncOutcome, routeEngineMissing = prevOutcome, prevMissing
 		routeMu.Unlock()
 	})
 }

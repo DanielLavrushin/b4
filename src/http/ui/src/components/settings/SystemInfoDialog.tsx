@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import {
   Button,
   Box,
@@ -21,7 +21,11 @@ import { B4Dialog } from "@common/B4Dialog";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { copyText } from "@utils";
 import { formatByteSize, formatInteger } from "@common/charts";
-import { Diagnostics, SystemInfoDialogProps } from "@models/sysinfo";
+import {
+  Diagnostics,
+  DiagRouting,
+  SystemInfoDialogProps,
+} from "@models/sysinfo";
 
 const known = (value: number | undefined): value is number =>
   typeof value === "number" && Number.isFinite(value);
@@ -230,6 +234,83 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
       {right}
     </Stack>
   );
+
+  const errorText = (text: string) => (
+    <Box component="span" sx={{ color: colors.quaternary }}>
+      {text}
+    </Box>
+  );
+
+  const routingRows = (r: DiagRouting) => {
+    const failing = !!r.error || (r.set_errors?.length ?? 0) > 0;
+    const counts = r.backend
+      ? t("settings.SystemInfo.routingInstalledVia", {
+          installed: r.installed,
+          sets: r.sets,
+          backend: r.backend,
+        })
+      : t("settings.SystemInfo.routingInstalled", {
+          installed: r.installed,
+          sets: r.sets,
+        });
+    const hint = failing
+      ? [
+          r.next_retry ? t("settings.SystemInfo.routingRetryHint") : "",
+          r.missing_tool && r.backend
+            ? t("settings.SystemInfo.routingMissingTool", {
+                tool: r.missing_tool,
+                backend: r.backend,
+              })
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : "";
+    return (
+      <>
+        {row(
+          t("settings.SystemInfo.routing"),
+          boolChip(!failing && r.installed >= r.sets, counts, counts),
+        )}
+        {r.error &&
+          row(t("settings.SystemInfo.routingError"), errorText(r.error))}
+        {r.set_errors?.map((e) => (
+          <Fragment key={e.id}>
+            {row(
+              t("settings.SystemInfo.routingSetError", { set: e.set }),
+              errorText(e.error),
+            )}
+          </Fragment>
+        ))}
+        {failing &&
+          r.failing_since &&
+          row(
+            t("settings.SystemInfo.routingFailingSince"),
+            formatRestoreTime(r.failing_since),
+          )}
+        {failing &&
+          row(
+            t("settings.SystemInfo.routingNextRetry"),
+            r.next_retry
+              ? formatRestoreTime(r.next_retry)
+              : t("settings.SystemInfo.routingNoRetry"),
+          )}
+        {hint && (
+          <Typography
+            variant="caption"
+            sx={{
+              display: "block",
+              px: 1,
+              color: colors.text.secondary,
+              fontSize: "0.7rem",
+            }}
+          >
+            {hint}
+          </Typography>
+        )}
+      </>
+    );
+  };
 
   return (
     <B4Dialog
@@ -525,6 +606,7 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
           {row(t("settings.SystemInfo.fwBackend"), data.firewall.backend)}
           {data.engine.mode !== "tun" &&
             row("NFQUEUE", boolChip(data.firewall.nfqueue_works, "OK", "FAIL"))}
+          {data.firewall.routing && routingRows(data.firewall.routing)}
           {row(
             t("settings.SystemInfo.flowOffload"),
             boolChip(
