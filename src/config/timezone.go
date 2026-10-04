@@ -7,19 +7,19 @@ import (
 	"time"
 )
 
+var systemLocation = time.Local
+
 // ApplyTimezone sets time.Local to the given timezone name.
 // Supports IANA names (e.g. "Europe/Oslo") and fixed UTC offsets
 // (e.g. "UTC+1", "UTC-5", "UTC+5:30").
 func ApplyTimezone(tzName string) {
 	if tzName == "" {
-		// Reset to system default
-		loc, err := time.LoadLocation("Local")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[WARN] Failed to load system timezone: %v\n", err)
+		if env := os.Getenv("TZ"); env != "" {
+			ApplyTimezone(env)
 			return
 		}
-		time.Local = loc
-		fmt.Fprintf(os.Stderr, "[INIT] Timezone reset to system default (%s)\n", loc.String())
+		time.Local = systemLocation
+		fmt.Fprintf(os.Stderr, "[INIT] Timezone reset to system default (%s)\n", systemLocation.String())
 		return
 	}
 

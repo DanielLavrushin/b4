@@ -107,7 +107,7 @@ export const EngineFailureCard = ({
           size="small"
           startIcon={<CoreIcon />}
           onClick={() => {
-            navigate("/settings/general")?.catch(() => {});
+            navigate("/settings/general/engine")?.catch(() => {});
           }}
         >
           {t("dashboard.engineFailure.settings")}

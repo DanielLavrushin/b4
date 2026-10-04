@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { Box, Button, Menu, MenuItem, Typography } from "@mui/material";
-import { useTranslation } from "react-i18next";
+import { Box, Button, Link, Menu, MenuItem, Typography } from "@mui/material";
+import { Link as RouterLink } from "react-router";
+import { Trans, useTranslation } from "react-i18next";
 import { ConnectionIcon, DeviceIcon } from "@b4.icons";
 import {
   B4Alert,
@@ -136,12 +137,8 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
   }
 
   return (
-    <B4Section
-      title={t("settings.Socks5.title")}
-      description={t("settings.Socks5.description")}
-      icon={<ConnectionIcon />}
-    >
-      <B4FormGroup label={t("settings.Socks5.settings")} columns={2}>
+    <B4Section title={t("settings.Socks5.title")} icon={<ConnectionIcon />}>
+      <B4FormGroup columns={2}>
         <B4FormRow>
           <B4Switch
             label={t("settings.Socks5.enable")}
@@ -178,7 +175,6 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
           value={password}
           onChange={(e) => onChange("system.socks5.password", e.target.value)}
           disabled={!enabled}
-          helperText={t("settings.Socks5.passwordHelp")}
           autoComplete="new-password"
         />
       </B4FormGroup>
@@ -188,22 +184,31 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
         description={t("settings.Socks5.sourcesDesc")}
         columns={1}
       >
-        <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-          <B4TextField
-            label={t("settings.Socks5.addSource")}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addSource(draft);
-              }
-            }}
-            placeholder={t("settings.Socks5.addSourcePlaceholder")}
-            disabled={!enabled}
-            error={!!draftIssue}
-            helperText={draftHelper()}
-          />
+        <Box
+          sx={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 1,
+            alignItems: "flex-start",
+          }}
+        >
+          <Box sx={{ flex: "1 1 220px", minWidth: 0 }}>
+            <B4TextField
+              label={t("settings.Socks5.addSource")}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addSource(draft);
+                }
+              }}
+              placeholder={t("settings.Socks5.addSourcePlaceholder")}
+              disabled={!enabled}
+              error={!!draftIssue}
+              helperText={draftHelper()}
+            />
+          </Box>
           <B4PlusButton
             onClick={() => addSource(draft)}
             disabled={!enabled || !draft.trim() || !!draftIssue}
@@ -238,7 +243,12 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
 
         {enabled && exposed && guarded && !webProtected && (
           <B4Alert severity="error">
-            {t("settings.Socks5.exposeWebAuthMissing")}
+            <Trans
+              i18nKey="settings.Socks5.exposeWebAuthMissing"
+              components={{
+                a: <Link component={RouterLink} to="/settings/system/web" />,
+              }}
+            />
           </B4Alert>
         )}
 

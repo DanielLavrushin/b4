@@ -47,7 +47,7 @@ rule without a mask, such as nftables `meta mark set 0x00021546` or iptables
 | Bits | Mask | Used for | Value |
 | --- | --- | --- | --- |
 | 0-14, 17 | `0x27fff` | The route of a routing set | One per set; sets routed through the same interface with the same egress IP and kill switch share one. See [sets routed through an interface](#sets-routed-through-an-interface) and [proxy sets](#proxy-sets-and-telegram-over-websocket) |
-| 15 by default | `0x8000` by default | The queue mark: packets b4 sends from its raw sockets, except those toward a device in TUN mode, the DNS queries it sends for clients and for its sets, and its probes that bypass its own processing | **Packet Mark** under `Settings > Core`, `0x8000` (32768) by default |
+| 15 by default | `0x8000` by default | The queue mark: packets b4 sends from its raw sockets, except those toward a device in TUN mode, the DNS queries it sends for clients and for its sets, and its probes that bypass its own processing | **Packet Mark** under **Settings, Core, Packet Engine**, `0x8000` (32768) by default |
 | 18 | `0x40000` | Connections b4 opens to the upstream of a proxy set, to Telegram, the Community Hub, ipinfo and RIPEstat, and its transparent listeners; see [socket marks](#socket-marks) | Fixed |
 | 21 | `0x200000` | b4's own connections whose outgoing packets packet processing leaves alone | Fixed, carried together with bit 18 as `0x240000` |
 | 24 | `0x1000000` | A proxy set's TCP packet that the router sent itself | Fixed, added to the set's mark |
@@ -117,7 +117,7 @@ packet processing and through every set that carries the router's own traffic.
 
 ## The queue mark
 
-The queue mark is the **Packet Mark** setting under `Settings > Core`, `queue.mark` in the
+The queue mark is the **Packet Mark** setting under **Settings, Core, Packet Engine**, `queue.mark` in the
 [configuration file](/docs/advanced/config#the-queue-section) and `--mark` on the command
 line. The default is `0x8000` (32768); the web interface takes the value in decimal, and `0`
 stands for the default. b4 sends every fake, split segment and packet it puts back on the
@@ -146,7 +146,7 @@ that are all given by IP address, so it does the same for the injected packets o
 connections to the set's destinations that the set does not route, such as those from a
 device outside its source interfaces. The source address is matched per address family: in a
 family for which such a set lists no device address, the rule matches the destination alone,
-so with **IPv6 support** on, a set whose devices are all given by IPv4 address gives its mark
+so with **Enable IPv6 Support** on, a set whose devices are all given by IPv4 address gives its mark
 to every queue-marked IPv6 packet to its destinations.
 
 Saving a changed **Packet Mark** moves the packet processing rules, the rules of routing sets
@@ -203,7 +203,7 @@ agree on all three share both.
 | --- | --- |
 | Mark | From a hash of the three, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
 | Table | `100`-`249`, skipping tables named in `rt_tables`, looked up by another service's rule, or holding routes b4 did not add |
-| Rule | `ip rule add fwmark <mark>/0x27fff lookup <table> priority <10000 + table>`, for IPv4, and for IPv6 when **IPv6 support** is on |
+| Rule | `ip rule add fwmark <mark>/0x27fff lookup <table> priority <10000 + table>`, for IPv4, and for IPv6 when **Enable IPv6 Support** is on |
 | Table contents | A default route through the interface, plus `blackhole default metric 4096` with the [kill switch](/docs/sets/routing#kill-switch) |
 | Pinned values | `routing.fwmark` and `routing.table` in the configuration file or through the API, used only when both are set, the mark lies within `0x27fff`, is not `0x24bab`, does not contain every bit of the queue mark and does not equal its bits under `0x27fff` |
 
@@ -222,7 +222,7 @@ this order:
 A set that excludes source devices returns their packets before step 2, only the packets of
 its devices enter the chain of a set limited to source devices, and a set limited to source
 interfaces applies steps 3 and 4 only to packets arriving on them.
-[Device filtering](/docs/settings/core#device-filtering) under `Settings > Core` narrows the
+[Device filtering](/docs/settings/core#device-filtering) under **Settings, Core, Devices** narrows the
 chain the same way. `b4r_<set>_out` does the same for the router's own connections when the
 set carries them, and gives the set's mark to b4's own queue-marked packets addressed to the
 set; a set limited to source devices that are all given by IP address does this only for
@@ -261,7 +261,7 @@ port.
 | Mark | `0x20000`-`0x27dff`, from a hash of the set's ID, or the value after it when the hash equals the queue mark's bits under `0x27fff`; `routing.fwmark` replaces it when it lies within `0x27fff`, is not `0x24bab` and does not equal the queue mark's bits under `0x27fff` |
 | Telegram over WebSocket switch | `0x24bab`, port `13443` |
 | Listener port | `13000 + mark % 50000` |
-| Rule, priority 3 | `fwmark <mark>/0x27fff lookup 252`, for IPv4, and for IPv6 when **IPv6 support** is on; table 252 holds `local default dev lo` and is shared by every proxy set. When 252 belongs to another service, b4 takes 251, 250, then 300-399 |
+| Rule, priority 3 | `fwmark <mark>/0x27fff lookup 252`, for IPv4, and for IPv6 when **Enable IPv6 Support** is on; table 252 holds `local default dev lo` and is shared by every proxy set. When 252 belongs to another service, b4 takes 251, 250, then 300-399 |
 | Rule, priority 2 | `fwmark <mark>/0x1027fff iif lo lookup main`, IPv4 |
 | Router's own packets | `<mark> + 0x1000000`, TCP in the original direction; none for a set limited to source devices or source interfaces |
 

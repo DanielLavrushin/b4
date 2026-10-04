@@ -173,4 +173,4 @@ Points to check:
 - Sets with **Duplicate** enabled for TCP are inspected for the whole life of the connection, so no threshold is high enough for them.
 - The file belongs to the `firewall4` package and is overwritten by package upgrades and by sysupgrade.
 
-The system diagnostics (Settings -> System info, and the installer's diagnostics screen) report the threshold they find and compare it against b4's own limits.
+The system diagnostics (**System Info** on **Settings, System, Service**, and the installer's diagnostics screen) report the threshold they find and compare it against b4's own limits.

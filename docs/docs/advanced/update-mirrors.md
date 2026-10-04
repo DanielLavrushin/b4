@@ -21,7 +21,7 @@ published SHA256.
 
 ## The Update mirrors setting
 
-Under **Settings** -> **Control**, the **Update mirrors** field takes a comma-separated list
+Under **Settings, System, Service**, the **Update mirrors** field takes a comma-separated list
 of base URLs. They are tried ahead of the built-in mirrors, and both the service and the
 installer use them: on update, b4 passes the list to the installer in the `B4_MIRRORS`
 environment variable.
@@ -338,7 +338,7 @@ not running under a service manager.
 The web server only enforces authentication once both are configured, and it listens on
 every interface by default. Uploading a file replaces the binary that runs as root, so the
 route refuses to work at all while the web server would accept any request that reaches the
-port. Credentials are set under **Settings** -> **Web Server**.
+port. Credentials are set under **Settings, System, Web Server**.
 :::
 
 ## The installer

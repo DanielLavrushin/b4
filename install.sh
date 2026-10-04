@@ -3197,7 +3197,7 @@ feature_https_run() {
     cert_info=$(_https_detect_certs) || true
     if [ -z "$cert_info" ]; then
         log_info "No compatible TLS certificates found on this system"
-        log_info "You can configure HTTPS later in B4 Web UI > Settings > Web Server"
+        log_info "You can configure HTTPS later in B4 Web UI > Settings > System > Web Server"
         _https_remove_config
         return 0
     fi

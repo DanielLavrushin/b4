@@ -79,11 +79,11 @@ The card on Settings, Telegram reads **Working** when the diversion rule is inst
 
 ### TPROXY support is missing
 
-The warning reads "This kernel has no TPROXY support". The bridge rides TPROXY, which needs the `tproxy` and `socket` kernel modules. Without them b4 logs that the firewall does not support them, installs no diversion rule for the switch and leaves Telegram on the normal path, and the card reads **Not working**. The warning names the packages that provide the missing modules, or the modules themselves when no package is known; on OpenWrt they are `kmod-nft-tproxy` and `kmod-nft-socket`, and the full list is under [Routing, requirements](../sets/routing.md#requirements). **Check again** re-runs the kernel check once they are installed and then installs the rule. The same result is in the **System Info** dialog on Settings, Core, under **Kernel Capabilities**, where the **Transparent proxy (TPROXY)** row reads available or unavailable.
+The warning reads "This kernel has no TPROXY support". The bridge rides TPROXY, which needs the `tproxy` and `socket` kernel modules. Without them b4 logs that the firewall does not support them, installs no diversion rule for the switch and leaves Telegram on the normal path, and the card reads **Not working**. The warning names the packages that provide the missing modules, or the modules themselves when no package is known; on OpenWrt they are `kmod-nft-tproxy` and `kmod-nft-socket`, and the full list is under [Routing, requirements](../sets/routing.md#requirements). **Check again** re-runs the kernel check once they are installed and then installs the rule. The same result is in the **System Info** dialog on **Settings, System, Service**, under **Kernel Capabilities**, where the **Transparent proxy (TPROXY)** row reads available or unavailable.
 
 ### Firewall setup is turned off
 
-**Skip IPTables/NFTables setup** is on in [Settings, Core](../settings/core#firewall), stored as `system.tables.skip_setup` and also set by the `--skip-tables` flag. b4 then installs no firewall rules at start-up, the bridge's diversion among them, so after a restart no Telegram connection reaches the listener whatever the switch says. Saving the settings installs the routing rules until the next restart.
+**Skip IPTables/NFTables Setup** is on in [Settings, Core, Firewall](../settings/core#firewall), stored as `system.tables.skip_setup` and also set by the `--skip-tables` flag. b4 then installs no firewall rules at start-up, the bridge's diversion among them, so after a restart no Telegram connection reaches the listener whatever the switch says. Saving the settings installs the routing rules until the next restart.
 
 ### The listener could not start
 
@@ -93,11 +93,11 @@ When only the IPv6 socket could not be opened, the card instead shows a note tha
 
 ### Another program's rule sits above the bridge
 
-The status reads **Not working**, and resting the pointer on it names a rule such as `DIVERT`. Another program has put a rule in mangle PREROUTING, above the bridge's, that accepts every packet addressed to a local transparent socket; XrayUI adds one each time xray starts. It takes the packets of connections the bridge diverted, so they never complete their handshake. At the next firewall check b4 moves its rule back above it and logs a warning naming the rule, and **Check again** does the same at once. While the firewall monitor is off, with the monitor interval at `0` or **Skip IPTables/NFTables setup** on in Settings, Core, no check runs, and only **Check again** or saving the settings restores the order. The mechanism is described under [b4 with Xray or XrayUI](../guides/xray.md#xrayuis-tproxy-rule-and-connections-b4-diverts).
+The status reads **Not working**, and resting the pointer on it names a rule such as `DIVERT`. Another program has put a rule in mangle PREROUTING, above the bridge's, that accepts every packet addressed to a local transparent socket; XrayUI adds one each time xray starts. It takes the packets of connections the bridge diverted, so they never complete their handshake. At the next firewall check b4 moves its rule back above it and logs a warning naming the rule, and **Check again** does the same at once. While the firewall monitor is off, with the monitor interval at `0` or **Skip IPTables/NFTables Setup** on in **Settings, Core, Firewall**, no check runs, and only **Check again** or saving the settings restores the order. The mechanism is described under [b4 with Xray or XrayUI](../guides/xray.md#xrayuis-tproxy-rule-and-connections-b4-diverts).
 
 ### Bridge netfilter is on for a network bridge
 
-The warning starts with "Bridge netfilter is on for" and names the network bridges. With `net.bridge.bridge-nf-call-iptables` at `1`, which the `dockerd` package sets on OpenWrt, connections from the devices behind those bridges never reach the listener and hang, while the router's own connections are relayed. The status still reads **Working**, because the rule and the listener are in place. The cause, the fix and its effect on Docker are described under [Bridge netfilter](../sets/routing.md#bridge-netfilter), and the **Bridge netfilter** row under **Firewall** in the **System Info** dialog on Settings, Core names the setting to change.
+The warning starts with "Bridge netfilter is on for" and names the network bridges. With `net.bridge.bridge-nf-call-iptables` at `1`, which the `dockerd` package sets on OpenWrt, connections from the devices behind those bridges never reach the listener and hang, while the router's own connections are relayed. The status still reads **Working**, because the rule and the listener are in place. The cause, the fix and its effect on Docker are described under [Bridge netfilter](../sets/routing.md#bridge-netfilter), and the **Bridge netfilter** row under **Firewall** in the **System Info** dialog on **Settings, System, Service** names the setting to change.
 
 ### The address list could not be downloaded
 
@@ -123,7 +123,7 @@ A line under the status box appears once any of these is above zero.
 
 - **Voice calls** travel over UDP, which the bridge does not take.
 - **QUIC** is not rejected, so a client that prefers QUIC to a Telegram address bypasses the bridge silently.
-- **IPv6** ranges are diverted only while IPv6 support is on in [Settings, Core](../settings/core#protocols).
+- **IPv6** ranges are diverted only while IPv6 support is on in [Settings, Core, Packet Engine](../settings/core#protocols).
 - **Devices excluded by [device filtering](../settings/core.md#device-filtering)** keep the normal path.
 - **A set limited to devices or source interfaces** that matches Telegram addresses handles its devices before the switch does.
 - **An address outside the list in use** is not diverted. The card shows how many ranges are in use and where they came from.

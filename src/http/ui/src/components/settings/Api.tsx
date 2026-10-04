@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
+import { Link as RouterLink } from "react-router";
 import { B4Config, AIProvider } from "@models/config";
 import {
   Autocomplete,
@@ -10,6 +11,7 @@ import {
   DialogContent,
   Grid,
   IconButton,
+  Link,
   Stack,
   Switch,
   Tooltip,
@@ -560,7 +562,14 @@ const MCPCard = ({ config, onChange }: ApiSettingsProps) => {
     if (token) return null;
     if (!authConfigured) {
       return (
-        <B4Alert severity="warning">{t("settings.Mcp.noAuthWarning")}</B4Alert>
+        <B4Alert severity="warning">
+          <Trans
+            i18nKey="settings.Mcp.noAuthWarning"
+            components={{
+              a: <Link component={RouterLink} to="/settings/system/web" />,
+            }}
+          />
+        </B4Alert>
       );
     }
     return <B4Alert severity="info">{t("settings.Mcp.noTokenWarning")}</B4Alert>;

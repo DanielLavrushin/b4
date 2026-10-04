@@ -19,6 +19,10 @@ import (
 	"github.com/daniellavrushin/b4/tlsgen"
 )
 
+func (c *Config) FileBytes() ([]byte, error) {
+	return MarshalSparse(stripCLIOverrides(c))
+}
+
 func (c *Config) SaveToFile(path string) error {
 	if path == "" {
 		log.Tracef("config path is not defined")
@@ -27,7 +31,7 @@ func (c *Config) SaveToFile(path string) error {
 
 	c.Version = CurrentConfigVersion
 
-	data, err := MarshalSparse(stripCLIOverrides(c))
+	data, err := c.FileBytes()
 	if err != nil {
 		return log.Errorf("failed to marshal config: %v", err)
 	}

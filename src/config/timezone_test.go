@@ -75,12 +75,22 @@ func TestApplyTimezone(t *testing.T) {
 		}
 	})
 
-	t.Run("empty resets to Local", func(t *testing.T) {
+	t.Run("empty restores the zone b4 started with", func(t *testing.T) {
+		t.Setenv("TZ", "")
 		ApplyTimezone("UTC+5")
 		ApplyTimezone("")
-		// Should not panic and should reset
-		if time.Local == nil {
-			t.Error("time.Local is nil after empty ApplyTimezone")
+		if time.Local != systemLocation {
+			t.Errorf("time.Local = %q after a switch back to auto, want the system zone %q", time.Local.String(), systemLocation.String())
+		}
+	})
+
+	t.Run("empty applies TZ again when it is set", func(t *testing.T) {
+		t.Setenv("TZ", "MSK-3")
+		ApplyTimezone("UTC+5")
+		ApplyTimezone("")
+		ref := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		if _, offset := ref.In(time.Local).Zone(); offset != 3*3600 {
+			t.Errorf("offset = %d after a switch back to auto with TZ=MSK-3, want %d", offset, 3*3600)
 		}
 	})
 
