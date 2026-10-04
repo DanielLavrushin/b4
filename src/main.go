@@ -266,7 +266,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		nfq.ResetIfaceTraffic()
 		tproxyMgr.SyncConfig(c)
 		tables.RoutingSyncConfig(c)
-		handler.GetMetricsCollector().TablesStatus = tables.DetectBackend(c)
+		setEngineFirewall(metrics.GetMetricsCollector(), tables.DetectBackend(c))
 		return nil
 	}
 	handler.SetTablesRefreshFunc(refreshTables)
@@ -312,20 +312,14 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	config.WarnIPv6Bypass(&cfg)
 
-	// Initialize metrics collector early
-	metrics := handler.GetMetricsCollector()
-	metrics.RecordEvent("info", "B4 starting up")
-
-	if cfg.System.WebServer.Port > 0 {
-		metrics.RecordEvent("info", fmt.Sprintf("Web server started on port %d", cfg.System.WebServer.Port))
-	}
+	mc := metrics.GetMetricsCollector()
 
 	config.InitAsnStore(cfg.ConfigPath)
 
 	_, totalDomains, totalIps, targetWarnings := cfg.LoadTargets()
 	for _, warning := range targetWarnings {
 		log.Errorf("%v", warning)
-		metrics.RecordEvent("error", warning.Error())
+		mc.Event(metrics.LevelError, metrics.EventTargetsWarning, map[string]string{"error": warning.Error()}, warning.Error())
 	}
 
 	log.Infof("Loaded targets: %d domains, %d IPs across %d sets", totalDomains, totalIps, len(cfg.Sets))
@@ -339,15 +333,25 @@ func runB4(cmd *cobra.Command, args []string) error {
 	engineAttempt = loadEngineAttempt()
 
 	pool := nfq.NewPool(&cfg)
+	wireDashboard(mc, dashboardSources{
+		config:    cfgPtr.Load,
+		packets:   pool.PacketsProcessed,
+		upstreams: tproxyMgr.UpstreamHealth,
+		open:      tproxyMgr.OpenConnections,
+		rules:     tables.RulesMonitorStatus,
+		replaced:  handler.BinaryReplaced,
+		overload:  engineOverload,
+	})
 
 	var tunEngine *b4tun.Engine
 	var tablesMonitor *tables.Monitor
 	var engineErr error
 
+	mc.SetEngine(engineInfo(&cfg, pool, metrics.EngineStarting, ""))
 	if isTUN {
-		tunEngine, engineErr = startTUNEngine(&cfg, pool, tproxyMgr, metrics)
+		tunEngine, engineErr = startTUNEngine(&cfg, pool, tproxyMgr, mc)
 	} else {
-		engineErr = startNFQueueEngine(&cfg, pool, tproxyMgr, metrics)
+		engineErr = startNFQueueEngine(&cfg, pool, tproxyMgr, mc)
 	}
 
 	engineName := engineLabel(engineMode(&cfg))
@@ -358,7 +362,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			return log.Errorf("%s engine did not start: %v. b4 stops because the web server is off (port 0)", engineName, engineErr)
 		}
 		engineDown.Store(true)
-		if retry := enterDegradedMode(&cfg, engineErr, engineAttempt, metrics); retry != nil {
+		if retry := enterDegradedMode(&cfg, engineErr, engineAttempt, mc); retry != nil {
 			defer retry.Stop()
 		}
 	} else {
@@ -440,7 +444,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	socks5Server.SetIPBlockCache(pool.GetIPBlockCache())
 	socks5Server.SetUpstreamDialer(tproxyMgr)
 	if err := socks5Server.Start(); err != nil {
-		metrics.RecordEvent("error", fmt.Sprintf("Failed to start SOCKS5 server: %v", err))
+		mc.Event(metrics.LevelError, metrics.EventSOCKS5Failed, map[string]string{"error": err.Error()}, fmt.Sprintf("Failed to start SOCKS5 server: %v", err))
 		log.Errorf("SOCKS5 server did not start: %v (b4 continues without it; fix in Settings or config)", err)
 	}
 	handler.SetSocks5Server(socks5Server)
@@ -448,7 +452,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	// Start MTProto server if configured.
 	mtprotoServer := mtproto.NewServer(&cfg)
 	if err := mtprotoServer.Start(); err != nil {
-		metrics.RecordEvent("error", fmt.Sprintf("Failed to start MTProto server: %v", err))
+		mc.Event(metrics.LevelError, metrics.EventMTProtoFailed, map[string]string{"error": err.Error()}, fmt.Sprintf("Failed to start MTProto server: %v", err))
 		log.Errorf("MTProto server did not start: %v (b4 continues without it; fix in Settings or config)", err)
 	}
 	handler.SetMTProtoServer(mtprotoServer)
@@ -526,7 +530,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	// Start internal web server if configured
 	httpServer, apiHandler, err := b4http.StartServer(&cfgPtr, pool)
 	if err != nil {
-		metrics.RecordEvent("error", fmt.Sprintf("Failed to start web server: %v", err))
+		mc.Event(metrics.LevelError, metrics.EventWebFailed, map[string]string{"error": err.Error()}, fmt.Sprintf("Failed to start web server: %v", err))
 		return log.Errorf("failed to start web server: %w", err)
 	}
 
@@ -601,7 +605,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	})
 
 	log.Infof("B4 is running. Press Ctrl+C to stop")
-	metrics.RecordEvent("info", "B4 is fully operational")
+	noteStarted(mc, Version, engineInfo(cfgPtr.Load(), pool, "", ""))
 
 	// Wait for shutdown signal
 	var sig os.Signal
@@ -625,13 +629,10 @@ func runB4(cmd *cobra.Command, args []string) error {
 	switch {
 	case sig != nil:
 		log.Infof("Received signal: %v, shutting down gracefully", sig)
-		metrics.RecordEvent("info", fmt.Sprintf("Shutdown initiated by signal: %v", sig))
 	case restart == restartEngineRetry:
 		log.Infof("Restarting b4 for automatic engine retry %d of %d", engineAttempt+1, len(engineRetryDelays))
-		metrics.RecordEvent("info", "Restart initiated for an automatic engine retry")
 	default:
 		log.Infof("Restarting b4 in place")
-		metrics.RecordEvent("info", "Restart initiated")
 	}
 
 	hardExit := make(chan struct{})
@@ -665,7 +666,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	// Perform graceful shutdown with timeout
 	shutdownHandled = true
-	return gracefulShutdown(cfgPtr.Load(), pool, tunEngine, !engineDown.Load(), httpServer, socks5Server, mtprotoServer, metrics, discoveryRT)
+	return gracefulShutdown(cfgPtr.Load(), pool, tunEngine, !engineDown.Load(), httpServer, socks5Server, mtprotoServer, mc, discoveryRT)
 }
 
 const (
@@ -687,7 +688,7 @@ func exposeListeningOnly(ports []config.ExposedPort, blocked []config.ExposeBloc
 	return kept, blocked
 }
 
-func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engine, engineUp bool, httpServer *http.Server, socks5Server *socks5.Server, mtprotoServer *mtproto.Server, metrics *handler.MetricsCollector, discoveryRT *discovery.Runtime) error {
+func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engine, engineUp bool, httpServer *http.Server, socks5Server *socks5.Server, mtprotoServer *mtproto.Server, mc *metrics.MetricsCollector, discoveryRT *discovery.Runtime) error {
 	// Create shutdown context with timeout
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
@@ -758,7 +759,7 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 	go func() {
 		defer wg.Done()
 		log.Infof("Stopping netfilter queue pool...")
-		metrics.NFQueueStatus = "stopping"
+		mc.SetEngineState(metrics.EngineStopping)
 
 		// Use a goroutine with timeout for engine stop
 		stopDone := make(chan struct{})
@@ -792,7 +793,6 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 				tables.RevertConntrackSysctls()
 			}()
 		}
-		metrics.TablesStatus = "inactive"
 	} else if engineUp && !cfg.System.Tables.SkipSetup {
 		wg.Add(1)
 		go func() {
@@ -800,11 +800,9 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 			log.Infof("Clearing iptables/nftables rules...")
 			if err := tables.ClearAppliedRules(cfg); err != nil {
 				log.Errorf("Failed to clear tables rules: %v", err)
-				metrics.RecordEvent("error", fmt.Sprintf("Failed to clear tables rules: %v", err))
 				shutdownErrors <- fmt.Errorf("tables cleanup: %w", err)
 			} else {
 				log.Infof("Tables rules cleared")
-				metrics.TablesStatus = "inactive"
 			}
 		}()
 	}
@@ -844,15 +842,12 @@ func gracefulShutdown(cfg *config.Config, pool *nfq.Pool, tunEngine *b4tun.Engin
 			for _, err := range errs {
 				log.Errorf("  - %v", err)
 			}
-			metrics.RecordEvent("warning", fmt.Sprintf("B4 shutdown with %d errors", len(errs)))
 		} else {
 			log.Infof("B4 stopped successfully")
-			metrics.RecordEvent("info", "B4 shutdown complete")
 		}
 
 	case <-shutdownCtx.Done():
 		log.Errorf("Shutdown timeout reached, forcing exit")
-		metrics.RecordEvent("error", "Forced shutdown due to timeout")
 
 		log.Flush()
 		time.Sleep(100 * time.Millisecond)

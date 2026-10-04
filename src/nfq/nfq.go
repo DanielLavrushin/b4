@@ -12,7 +12,6 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
-	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/quic"
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/florianl/go-nfqueue"
@@ -111,7 +110,7 @@ func (w *Worker) Start() error {
 	}
 
 	w.wg.Add(1)
-	go w.gc(cfg)
+	go w.gc()
 
 	w.wg.Add(1)
 	go func() {
@@ -530,7 +529,7 @@ func (w *Worker) Stop() {
 	}
 }
 
-func (w *Worker) gc(cfg *config.Config) {
+func (w *Worker) gc() {
 	defer w.wg.Done()
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
@@ -543,17 +542,10 @@ func (w *Worker) gc(cfg *config.Config) {
 				w.connTracker.Cleanup()
 			}
 			_ = cleanupDNSPendingRoutes(time.Now())
-
-			if cfg.System.WebServer.IsEnabled {
-				mtcs := metrics.GetMetricsCollector()
-				workerID := int(w.qnum - uint16(cfg.Queue.StartNum))
-				processed := atomic.LoadUint64(&w.packetsProcessed)
-				mtcs.UpdateSingleWorker(workerID, "active", processed)
-			}
 		}
 	}
 }
 
-func (w *Worker) GetStats() (uint64, string) {
-	return atomic.LoadUint64(&w.packetsProcessed), "active"
+func (w *Worker) GetStats() uint64 {
+	return atomic.LoadUint64(&w.packetsProcessed)
 }

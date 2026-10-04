@@ -8,7 +8,7 @@ import {
 } from "@components/dashboard/registry";
 
 const STORAGE_KEY = "b4_dashboard_layout";
-const LAYOUT_VERSION = 2;
+const LAYOUT_VERSION = 3;
 const LAYOUT_ENDPOINT = "/api/ui/dashboard";
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -57,9 +57,10 @@ const emptyLayout = (): StoredLayout => ({
 const normalize = (raw: StoredDashboard): StoredLayout => {
   const spans: Record<string, number> = {};
   for (const [id, span] of Object.entries(raw.spans ?? {})) {
-    if (PANELS_BY_ID.has(id) && Number.isFinite(span)) {
-      spans[id] = clampSpan(span);
-    }
+    const panel = PANELS_BY_ID.get(id);
+    if (!panel || !Number.isFinite(span)) continue;
+    const value = clampSpan(span);
+    if (value !== panel.defaultSpan) spans[id] = value;
   }
   return {
     v: LAYOUT_VERSION,
@@ -83,6 +84,14 @@ const loadLayout = (): StoredLayout => {
   }
 };
 
+const saveLocal = (layout: StoredLayout): void => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+  } catch {
+    return;
+  }
+};
+
 const isCustomized = (layout: StoredLayout): boolean =>
   layout.hidden.length > 0 ||
   Object.keys(layout.spans).length > 0 ||
@@ -90,7 +99,7 @@ const isCustomized = (layout: StoredLayout): boolean =>
 
 export function useDashboardLayout() {
   const [layout, setLayout] = useState<StoredLayout>(loadLayout);
-  const hydrated = useRef(false);
+  const [hydrated, setHydrated] = useState(false);
   const dirty = useRef(false);
 
   useEffect(() => {
@@ -101,11 +110,9 @@ export function useDashboardLayout() {
         const next = normalize(remote ?? {});
         if (isCustomized(next)) setLayout(next);
       })
-      .catch(() => {
-        /* keep the local layout while b4 is unreachable */
-      })
+      .catch(() => undefined)
       .finally(() => {
-        if (!cancelled) hydrated.current = true;
+        if (!cancelled) setHydrated(true);
       });
     return () => {
       cancelled = true;
@@ -113,24 +120,17 @@ export function useDashboardLayout() {
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
-    } catch {
-      /* storage unavailable */
-    }
-
-    if (!hydrated.current || !dirty.current) return;
+    saveLocal(layout);
+    if (!hydrated || !dirty.current) return;
     const timer = setTimeout(() => {
       void apiPut<StoredDashboard>(LAYOUT_ENDPOINT, {
         order: layout.order,
         hidden: layout.hidden,
         spans: layout.spans,
-      }).catch(() => {
-        /* layout stays in localStorage until the next change */
-      });
+      }).catch(() => undefined);
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [layout]);
+  }, [layout, hydrated]);
 
   const mutate = useCallback(
     (updater: (prev: StoredLayout) => StoredLayout) => {
@@ -160,6 +160,12 @@ export function useDashboardLayout() {
     (id: string, span: number) => {
       mutate((prev) => {
         const next = clampSpan(span);
+        if (next === PANELS_BY_ID.get(id)?.defaultSpan) {
+          if (!(id in prev.spans)) return prev;
+          const spans = { ...prev.spans };
+          delete spans[id];
+          return { ...prev, spans };
+        }
         if (prev.spans[id] === next) return prev;
         return { ...prev, spans: { ...prev.spans, [id]: next } };
       });

@@ -43,6 +43,7 @@ The dialog then checks every 2 seconds whether b4 answers, for up to a minute, a
 | --- | --- |
 | **System** | Host name, distribution, OS and architecture, kernel, CPU cores, available and total memory, and a **Container** row when b4 runs in one |
 | **B4** | Version and commit, build date, service manager, process ID, memory use, uptime |
+| **Process** | Go heap in use and reserved, goroutines, OS threads, open file descriptors and GC cycles, read when the dialog opens |
 | **Paths** | The b4 binary, the configuration file, the data directory, `errors.log`, `geosite.dat` and `geoip.dat` |
 | **Geodata** | The size of each database, the totals of domains and IPs, the ASN cache and the ASNs not resolved yet |
 | **Engine** | NFQUEUE or TUN, the start error when the engine failed, and with TUN its device, addresses, capture, packet counters and capture rules |

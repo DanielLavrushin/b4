@@ -86,6 +86,12 @@ type DiagB4 struct {
 	MemoryMB       string `json:"memory_mb,omitempty"`
 	Uptime         string `json:"uptime,omitempty"`
 	BinaryReplaced bool   `json:"binary_replaced,omitempty"`
+	HeapInuse      uint64 `json:"heap_inuse"`
+	HeapSys        uint64 `json:"heap_sys"`
+	Goroutines     int    `json:"goroutines"`
+	OSThreads      int    `json:"os_threads"`
+	OpenFDs        int    `json:"open_fds"`
+	NumGC          uint32 `json:"num_gc"`
 }
 
 type DiagPaths struct {

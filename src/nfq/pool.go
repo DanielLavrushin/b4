@@ -13,7 +13,6 @@ import (
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/sni"
-	"github.com/daniellavrushin/b4/sock"
 )
 
 func NewWorkerWithQueue(cfg *config.Config, qnum uint16) *Worker {
@@ -125,9 +124,7 @@ func NewPool(cfg *config.Config) *Pool {
 				}
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
-				m := metrics.GetMetricsCollector()
-				m.UpdateEscalations(pool.GetEscalations())
-				m.UpdateInjectStats(InjectOverloaded(), sock.SendDropped())
+				pool.publishEscalations()
 			case <-pool.stopCleanup:
 				return
 			}

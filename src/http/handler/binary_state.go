@@ -36,3 +36,7 @@ func binaryReplaced() bool {
 	now := executableFingerprint()
 	return now != "" && now != executableFingerprintAtStart
 }
+
+func BinaryReplaced() bool {
+	return binaryReplaced()
+}

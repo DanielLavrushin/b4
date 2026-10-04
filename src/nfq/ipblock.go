@@ -8,7 +8,6 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
-	"github.com/daniellavrushin/b4/metrics"
 )
 
 const (
@@ -176,9 +175,7 @@ func (w *Worker) handleSynHealth(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	log.LogConnection("TCP", set.Name, host, pkt.srcStr, sport, "", pkt.dstStr, dport, pkt.srcMac, "", "ipblock-syn")
 
-	m := metrics.GetMetricsCollector()
-	m.RecordConnection("TCP", host, pkt.srcStr, pkt.dstStr, true, pkt.srcMac, set.Name, "")
-	m.RecordPacket(uint64(len(pkt.raw)))
+	observeFlow(cfg, pkt, sport, dport, set)
 
 	if pkt.ver == IPv4 {
 		w.sendSynRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)

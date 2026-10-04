@@ -42,6 +42,10 @@ Clicking a row opens the **Detail** panel: activity, packet count, the duration 
 | **Domains only** / **All packets** | See [Domains only and all packets](#domains-only-and-all-packets) |
 | Trash can | Clear the packets, see [Pausing and clearing](#pausing-and-clearing) |
 
+:::info Links from the dashboard
+**Domains not in any set** on the dashboard's [Activity](./dashboard.md#activity) panel opens this page with **Unmatched only** on, and a device on its [Blocked](./dashboard.md#blocked) panel opens it with that device selected. Either link opens **Aggregated** mode with the period at **All**.
+:::
+
 ### Devices
 
 The **Devices** panel on the left lists the traffic sources seen within the period, each with the time since its latest packet, its activity over the last minute and its packet count. Clicking a device limits the list to its groups, **All devices** removes the selection. The button in the panel header collapses it; on a narrow screen it starts collapsed.

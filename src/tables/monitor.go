@@ -96,6 +96,7 @@ func (m *Monitor) Start() {
 	}
 
 	m.started = true
+	noteMonitorRunning(m.interval)
 	m.wg.Add(1)
 	go m.monitorLoop()
 	if m.tun {
@@ -125,6 +126,7 @@ func (m *Monitor) Stop() {
 	close(m.stop)
 	m.wg.Wait()
 	m.started = false
+	noteMonitorStopped()
 	log.Infof("Stopped tables monitor")
 }
 
@@ -180,6 +182,7 @@ func (m *Monitor) settleKicks() bool {
 func (m *Monitor) tick(requested bool) bool {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
+	defer noteRulesChecked()
 	m.lost = false
 	_, restored := m.ensureRulesLocked(requested)
 	if ensureDSCPLocked(m.cfgPtr.Load(), requested) {

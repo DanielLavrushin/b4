@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -1102,15 +1104,11 @@ func TestMCPStatusReportsCaptureEngineNotFirewallBackend(t *testing.T) {
 	}
 }
 
-// connections_seen is documented as a running total, so it must come from the
-// counter that only ever grows. ActiveFlows happens to grow today only because
-// CloseConnection has no callers; sourcing a documented total from it would
-// turn into a silent lie the moment anyone wires that up.
-func TestMCPConnectionsSeenIsNotAnInFlightGauge(t *testing.T) {
+func TestMCPStatusCountsEachFlowOnceAsARunningTotal(t *testing.T) {
 	srv := newMCPTestServer(t, mcpTestCfg())
 	session, ctx := connectMCP(t, srv)
 
-	readSeen := func() int64 {
+	readStatus := func() mcpStatusOut {
 		t.Helper()
 		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_status"})
 		if err != nil {
@@ -1120,40 +1118,108 @@ func TestMCPConnectionsSeenIsNotAnInFlightGauge(t *testing.T) {
 		if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		return out.ConnectionsSeen
+		return out
 	}
 
 	m := GetMetricsCollector()
-	m.RecordConnection("TCP", "example.com", "10.0.0.2", "1.2.3.4:443", true, "", "video", "1.3")
-	before := readSeen()
+	m.ResetCounters()
+	flow := mcpTestFlow(1)
+	m.ObserveFlow(flow, "")
+	m.ObserveFlow(flow, "video")
+	m.ObserveFlow(flow, "video")
 
-	// Simulate the close accounting being wired up later.
-	m.CloseConnection()
+	first := readStatus()
+	if first.Connections != 1 {
+		t.Fatalf("one flow seen three times is one connection, got %d", first.Connections)
+	}
+	if first.CountersSince == "" || first.UptimeS < 0 || first.Uptime == "" {
+		t.Fatalf("status must say since when it counts and how long b4 runs: %+v", first)
+	}
 
-	if after := readSeen(); after < before {
-		t.Errorf("connections_seen fell from %d to %d when a connection closed; it is a running total, not a gauge", before, after)
+	m.ObserveFlow(mcpTestFlow(2), "")
+	if second := readStatus(); second.Connections != 2 {
+		t.Fatalf("a second flow adds one connection, got %d", second.Connections)
+	}
+
+	uptime := m.UptimeSeconds()
+	m.ResetCounters()
+	after := readStatus()
+	if after.Connections != 0 {
+		t.Fatalf("a reset starts the running total over, got %d", after.Connections)
+	}
+	if after.UptimeS < uptime {
+		t.Fatalf("a reset must not touch the process uptime: %d before, %d after", uptime, after.UptimeS)
 	}
 }
 
-func TestMCPMetricsReportsNoConcurrencyFigure(t *testing.T) {
+var mcpTestFlowSeq atomic.Uint32
+
+func mcpTestFlow(n byte) metrics.FlowKey {
+	var k metrics.FlowKey
+	copy(k.Addr[0:4], []byte{10, 0, 0, n})
+	copy(k.Addr[16:20], []byte{93, 184, 216, 34})
+	k.SPort = uint16(10000 + mcpTestFlowSeq.Add(1)%50000)
+	k.DPort = 443
+	k.Proto = 6
+	return k
+}
+
+func TestMCPMetricsReportsPerFlowCountsAndNoRates(t *testing.T) {
 	srv := newMCPTestServer(t, mcpTestCfg())
 	session, ctx := connectMCP(t, srv)
+
+	m := GetMetricsCollector()
+	m.ResetCounters()
+	m.ObserveFlow(mcpTestFlow(3), "video")
+	m.ObserveFlow(mcpTestFlow(4), "")
+	m.RecordBlockedDNS("video", "blocked.example", "")
 
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_metrics"})
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
+	raw := mustStructured(t, res)
 	var summary map[string]any
-	if err := json.Unmarshal(mustStructured(t, res), &summary); err != nil {
+	if err := json.Unmarshal(raw, &summary); err != nil {
 		t.Fatalf("decode summary: %v", err)
 	}
-	if _, ok := summary["connections_seen"]; !ok {
-		t.Error("connections_seen should be reported")
+	for _, want := range []string{"connections", "counters_since", "last_minute_in_sets", "last_minute_not_in_set", "last_minute_matched_percent", "rst_dropped", "blocked_dns", "blocked_connections", "cpu_percent", "rss_bytes", "rss_percent_of_ram", "mem_total_bytes", "uptime", "uptime_s"} {
+		if _, ok := summary[want]; !ok {
+			t.Errorf("%q should be reported", want)
+		}
 	}
-	// b4 cannot count connections open right now, so it must not appear to.
-	for _, unwanted := range []string{"active_flows", "total_connections"} {
+	for _, unwanted := range []string{"connections_seen", "current_cps", "current_pps", "memory_percent", "active_flows", "total_connections"} {
 		if _, ok := summary[unwanted]; ok {
-			t.Errorf("%q must not be reported: it duplicates connections_seen or implies a concurrency figure b4 does not have", unwanted)
+			t.Errorf("%q must not be reported: b4 no longer measures it, or it implies a concurrency figure b4 does not have", unwanted)
+		}
+	}
+
+	var out mcpMetricsOut
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Connections != 2 || out.BlockedDNS != 1 || out.BlockedConnections != 0 || out.CountersSince == "" {
+		t.Fatalf("unexpected counters: %+v", out)
+	}
+	if out.RSSPercentOfRAM != mcpPercent(out.RSSBytes, out.MemTotalBytes) || out.RSSPercentOfRAM < 0 || out.RSSPercentOfRAM > 100 {
+		t.Fatalf("rss share of the router RAM out of range: %+v", out)
+	}
+}
+
+func TestMCPPercentIsTheMatchedShare(t *testing.T) {
+	cases := []struct {
+		part, whole uint64
+		want        float64
+	}{
+		{0, 0, 0},
+		{1, 3, 33.33},
+		{2, 3, 66.67},
+		{30, 512, 5.86},
+		{5, 5, 100},
+	}
+	for _, c := range cases {
+		if got := mcpPercent(c.part, c.whole); got != c.want {
+			t.Errorf("mcpPercent(%d, %d) = %v, want %v", c.part, c.whole, got, c.want)
 		}
 	}
 }

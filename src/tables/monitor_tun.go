@@ -9,6 +9,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 )
 
 const tunMonitorFloor = 10 * time.Second
@@ -27,7 +28,7 @@ var (
 	mssNftVerbose   atomic.Bool
 
 	rulesRestoreCount atomic.Int64
-	rulesLastRestore  atomic.Int64
+	rulesLastRestore  atomic.Pointer[time.Time]
 
 	tunDevice         atomic.Pointer[string]
 	tunFirewallClosed atomic.Bool
@@ -56,15 +57,18 @@ func ClearTUNFirewall(cfg *config.Config) {
 
 func RulesRestores() (int64, time.Time) {
 	n := rulesRestoreCount.Load()
-	if n == 0 {
-		return 0, time.Time{}
+	t := rulesLastRestore.Load()
+	if n == 0 || t == nil {
+		return n, time.Time{}
 	}
-	return n, time.Unix(0, rulesLastRestore.Load())
+	return n, *t
 }
 
 func noteRulesRestore() {
-	rulesLastRestore.Store(time.Now().UnixNano())
+	now := time.Now()
+	rulesLastRestore.Store(&now)
 	rulesRestoreCount.Add(1)
+	metrics.GetMetricsCollector().NoteRulesRestored()
 }
 
 func recordMSSApplied(cfg *config.Config, backend string) {

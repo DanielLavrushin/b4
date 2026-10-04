@@ -1,5 +1,12 @@
 # B4 - Bye Bye Big Bro
 
+## [1.85.0] - 2026-10-04
+
+- CHANGED: **The dashboard shows connections per minute in and outside sets, what each set matched in the last hour, and the problems that need attention** - Device Activity and Domains Not In Any Set gave way to links into the Traffic page, the Runtime figures moved to System Info, and Reset Stats became Reset counters, with a Clear button of its own on Active Escalations.
+- FIXED: **Dashboard figures misled: Active flows only grew, Throughput counted only the first packets of each connection, Workers always read all active, Uptime started over at Reset Stats, and Domains Not In Any Set stopped taking new domains** - b4 counted every inspected packet as a connection, never recorded a connection ending and evicted each new domain once the list was full.
+- FIXED: **Reset Stats on the dashboard also sent every escalated site back to the set that had failed for it** - the reset cleared b4's escalations along with the counters.
+- CHANGED: **MCP `b4_status` and `b4_metrics` and the metrics API count each connection once, so their fields changed** - `connections_seen`, `current_cps`, `current_pps` and `memory_percent` gave way to per-minute connection counts, `cpu_percent` and `rss_bytes`, `/api/metrics` and `/api/ws/metrics` carry the new dashboard snapshot, and `POST /api/escalations/clear` clears escalations.
+
 ## [1.84.1] - 2026-10-03
 
 - ADDED: **Download Configuration under Settings, System, Backup saves the running configuration as is, or as a safe copy for sharing when asking for help** - the safe copy replaces passwords, tokens, user names, the host names of the router and its relays and credentials inside URLs with `[redacted]`, and b4 refuses to load or save a configuration that still holds these placeholders.

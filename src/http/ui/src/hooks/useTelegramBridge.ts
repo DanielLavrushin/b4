@@ -17,6 +17,31 @@ export function useTelegramBridgeStatus() {
   });
 }
 
+const BRIDGE_SUMMARY_POLL_MS = 60 * 1000;
+const BRIDGE_SUMMARY_STALE_MS = 30 * 1000;
+
+export function useTelegramBridgeSummary() {
+  return useQuery({
+    queryKey: telegramBridgeKey,
+    queryFn: () => mtprotoApi.telegramBridge(),
+    staleTime: BRIDGE_SUMMARY_STALE_MS,
+    refetchInterval: (query) =>
+      query.state.data?.enabled ? BRIDGE_SUMMARY_POLL_MS : false,
+    retry: false,
+  });
+}
+
+export function useTelegramBridgeEnabled(): boolean {
+  const query = useQuery({
+    queryKey: telegramBridgeKey,
+    queryFn: () => mtprotoApi.telegramBridge(),
+    staleTime: BRIDGE_SUMMARY_STALE_MS,
+    retry: false,
+    select: (data) => data.enabled,
+  });
+  return query.data ?? false;
+}
+
 export function useCheckTelegramBridge() {
   const client = useQueryClient();
   return useMutation({

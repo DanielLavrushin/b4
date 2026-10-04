@@ -15,7 +15,6 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discord"
 	"github.com/daniellavrushin/b4/log"
-	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/quic"
 	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/sock"
@@ -338,9 +337,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		dupConnKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 		dupHost, dupTLS, _ := w.tlsCache.Lookup(dupConnKey)
 
-		m := metrics.GetMetricsCollector()
-		m.RecordConnection("TCP-DUP", dupHost, pkt.srcStr, pkt.dstStr, true, pkt.srcMac, set.Name, config.TLSVersionString(dupTLS))
-		m.RecordPacket(uint64(len(pkt.raw)))
+		observeFlow(cfg, pkt, sport, dport, set)
 
 		if !cfg.Queue.IsDiscovery {
 			log.LogConnection("TCP", "", dupHost, pkt.srcStr, sport, set.Name, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(dupTLS), "tcp-dup")
@@ -370,7 +367,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 			if w.connTracker.ShouldDropOutboundRST(connKey) {
 				log.Warnf("RST protection: dropped outbound RST to %s:%d — connection not established", pkt.dstStr, dport)
-				metrics.GetMetricsCollector().RecordRSTDrop()
+				recordRSTDrop(cfg)
 				vc.drop()
 				return 0
 			}
@@ -391,8 +388,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	if isSyn && !isAck && !routeHandsOff && cfg.IsTCPPort(dport) && matched && !set.TCP.Duplicate.Enabled && needsTCPSynInjection(set) {
 		log.Tracef("TCP SYN to %s:%d (set: %s)", pkt.dstStr, dport, set.Name)
 
-		m := metrics.GetMetricsCollector()
-		m.RecordConnection("TCP-SYN", "", pkt.srcStr, pkt.dstStr, true, pkt.srcMac, set.Name, "")
+		observeFlow(cfg, pkt, sport, dport, set)
 
 		if pkt.ver == IPv4 {
 			if set.TCP.SynFake {
@@ -583,9 +579,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				w.sendRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
 			}
 
-			m := metrics.GetMetricsCollector()
-			m.RecordConnection("TCP", host, pkt.srcStr, pkt.dstStr, true, pkt.srcMac, set.Name, config.TLSVersionString(tlsVersion))
-			m.RecordPacket(uint64(len(pkt.raw)))
+			observeFlow(cfg, pkt, sport, dport, set)
 			vc.drop()
 			log.Tracef("IPBlockDetect: dropped packet to %s:%d (cached)", pkt.dstStr, dport)
 
@@ -597,14 +591,12 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), classifyReason)
 	}
 
-	{
-		m := metrics.GetMetricsCollector()
-		setName := ""
+	if !routeTProxy {
+		var flowSet *config.SetConfig
 		if matched {
-			setName = set.Name
+			flowSet = set
 		}
-		m.RecordConnection("TCP", host, pkt.srcStr, pkt.dstStr, matched, pkt.srcMac, setName, config.TLSVersionString(tlsVersion))
-		m.RecordPacket(uint64(len(pkt.raw)))
+		observeFlow(cfg, pkt, sport, dport, flowSet)
 	}
 
 	stallCount := 0
@@ -643,7 +635,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				if blockedTarget == "" {
 					blockedTarget = pkt.dstStr
 				}
-				metrics.GetMetricsCollector().RecordBlock(blockedTarget, pkt.srcMac)
+				recordBlockedFlow(cfg, pkt, sport, dport, set, blockedTarget)
 			}
 			vc.drop()
 			return 0
@@ -684,8 +676,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 					if !cfg.Queue.IsDiscovery {
 						log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "ipblock")
 					}
-					m := metrics.GetMetricsCollector()
-					m.RecordConnection("TCP", host, pkt.srcStr, pkt.dstStr, true, pkt.srcMac, set.Name, config.TLSVersionString(tlsVersion))
 				}
 				vc.drop()
 				return 0
@@ -876,19 +866,13 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if !shouldHandle {
-		m := metrics.GetMetricsCollector()
-		m.RecordConnection("UDP", host, pkt.srcStr, pkt.dstStr, false, pkt.srcMac, "", udpTLS)
-		m.RecordPacket(uint64(len(pkt.raw)))
+		observeFlow(cfg, pkt, sport, dport, nil)
 		return vc.accept()
 	}
 
-	m := metrics.GetMetricsCollector()
-	setName := ""
-	if matched {
-		setName = set.Name
+	if !udpViaTProxy(set) {
+		observeFlow(cfg, pkt, sport, dport, set)
 	}
-	m.RecordConnection("UDP", host, pkt.srcStr, pkt.dstStr, matched, pkt.srcMac, setName, udpTLS)
-	m.RecordPacket(uint64(len(pkt.raw)))
 
 	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
 		if matchedQUIC || (matchedIP && !matchedLearned) {
@@ -909,7 +893,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				if blockedTarget == "" {
 					blockedTarget = pkt.dstStr
 				}
-				metrics.GetMetricsCollector().RecordBlock(blockedTarget, pkt.srcMac)
+				recordBlockedFlow(cfg, pkt, sport, dport, set, blockedTarget)
 			}
 			vc.drop()
 			return 0
@@ -1010,6 +994,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 func (w *Worker) handleNfqError(e error) int {
 	if errors.Is(e, syscall.ENOBUFS) {
+		if countsTraffic(w.getConfig()) {
+			queueOverflows.Add(1)
+		}
 		now := time.Now().Unix()
 		last := atomic.LoadInt64(&w.lastOverflowLog)
 		if now-last >= 5 {

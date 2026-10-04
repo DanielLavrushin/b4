@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -465,9 +466,13 @@ func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
 		log.Infof("Soft restart completed successfully")
 	}
 
-	m := metrics.GetMetricsCollector()
-	m.RecordEvent("info", fmt.Sprintf("Loaded %d domains and %d IPs across %d sets", allDomainsCount, allIpsCount, len(newConfig.Sets)))
-	log.Infof("Loaded %d domains and %d IPs across %d sets", allDomainsCount, allIpsCount, len(newConfig.Sets))
+	applied := fmt.Sprintf("Loaded %d domains and %d IPs across %d sets", allDomainsCount, allIpsCount, len(newConfig.Sets))
+	metrics.GetMetricsCollector().Event(metrics.LevelInfo, metrics.EventSettingsApplied, map[string]string{
+		"sets":    strconv.Itoa(len(newConfig.Sets)),
+		"domains": strconv.Itoa(allDomainsCount),
+		"ips":     strconv.Itoa(allIpsCount),
+	}, applied)
+	log.Infof("%s", applied)
 
 	stored := &newConfig
 	for i := range setsWithStats {
