@@ -223,7 +223,7 @@ function TimeBarsChart<K extends string>({
     .map((s) => s.label)
     .join("|")}`;
   if (!summaryRef.current || summaryRef.current.key !== summaryKey) {
-    const stats = summarizeRows(rows);
+    const stats = summarizeRows(rows.length > 1 ? rows.slice(0, -1) : rows);
     const busiest =
       stats.busiest >= 0
         ? {
