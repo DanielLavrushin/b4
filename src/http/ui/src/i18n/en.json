@@ -670,7 +670,7 @@
       "dnsConfig": "DNS Configuration",
       "trustedDns": "Trusted DNS server",
       "trustedDnsPlaceholder": "Built-in public resolvers",
-      "trustedDnsHelp": "Discovery takes this server's answers as each site's correct address and compares them with the router's resolver. When they differ, the proposed set uses this server for DNS where a set can: an IP address on port 53 or an https:// URL. Forms: 9.9.9.9, 127.0.0.1:53053, tcp://9.9.9.9, tcp+udp://127.0.0.1:53053, https://dns.google/dns-query. Empty: the public resolvers built into b4.",
+      "trustedDnsHelp": "Discovery takes this server's answers as each site's correct address and compares them with the router's resolver. When they differ, the proposed set uses this server for DNS where a set can: a public IP address on port 53 that answers over UDP, or an https:// URL. Forms: 9.9.9.9, 127.0.0.1:53053, tcp://9.9.9.9, tcp+udp://127.0.0.1:53053, https://dns.google/dns-query. Empty: the public resolvers built into b4.",
       "trustedDnsError": {
         "hostname": "Plain DNS needs an IP address; only an https:// URL takes a host name.",
         "http": "DNS over HTTPS needs an https:// URL.",
@@ -2441,7 +2441,7 @@
       "unresolvedNxdomain": "This name does not exist: {{server}} answers NXDOMAIN, so there is no site to test a strategy on. Check the spelling.",
       "unresolved": "No DNS server returned an address for this name, so no strategy could be tested. Check the spelling; if the name is right, DNS for it fails on this network.",
       "unresolvedSystem": "The system resolver has no address for this name, and with Check DNS for tampering off no other resolver was asked, so no strategy could be tested. Check the spelling, or run again with that option on.",
-      "unresolvedFamily": "This name has {{other}} addresses only, while this run probed over {{family}}, so no strategy could be tested. If the site has a {{family}} address that DNS does not publish, add it under Pinned addresses in Options.",
+      "unresolvedFamily": "This name has {{other}} addresses only, while this run probed over {{family}}, so no strategy could be tested. If the site has an {{family}} address that DNS does not publish, add it under Pinned addresses in Options.",
       "nothingFound_one": "Nothing worked. {{count}} configuration was tried. Retrying with TLS 1.2 or a captured ClientHello sometimes helps; the log shows how each one failed.",
       "nothingFound_other": "Nothing worked. {{count}} configurations were tried. Retrying with TLS 1.2 or a captured ClientHello sometimes helps; the log shows how each one failed.",
       "apply": "Apply as a set",
@@ -2461,7 +2461,9 @@
       "otherStrategies_other": "{{count}} other strategies worked",
       "showAll": "Show all {{count}}",
       "showFewer": "Show fewer",
-      "unresolvedNoAddress": "This name exists, but {{server}} answers that it has no {{family}} address, so there was nothing to test. If the site is reached through an address published elsewhere, add it under Pinned addresses in Options and run again."
+      "unresolvedNoAddress": "This name exists, but {{server}} answers that it has no {{family}} address, so there was nothing to test. If the site is reached through an address published elsewhere, add it under Pinned addresses in Options and run again.",
+      "unresolvedForgeable": "That answer came over plain DNS, which can be forged on the way; a trusted DNS server given as tcp:// or https:// rules that out.",
+      "dohFallback": "DNS over HTTPS"
     },
     "verdict": {
       "perAddress": "Results per address",
@@ -2643,7 +2645,9 @@
       "no_urls": "The set has no addresses to test. Add one to the list.",
       "too_many_urls": "A search for a set tests at most {{max}} addresses.",
       "reserved_host": "Local and private addresses cannot be tested.",
-      "routed_set": "The set routes its traffic to an interface or proxy, so there is no bypass strategy to search for."
+      "routed_set": "The set routes its traffic to an interface or proxy, so there is no bypass strategy to search for.",
+      "bad_dns_server": "The trusted DNS server given for this run is not valid. It takes an IP address with an optional port, udp://, tcp://, tcp+udp:// or an https:// URL.",
+      "bad_pin": "A pinned address was refused. Each line takes a public IP address, then the names it serves."
     },
     "options": {
       "title": "Options",
@@ -2681,10 +2685,18 @@
       "trustedDnsFromSettings": "From Settings: {{server}}",
       "trustedDnsBuiltin": "Built-in public resolvers",
       "pins": "Pinned addresses",
-      "pinsHint": "Hosts file order, one line per address: the address first, then the names it serves. Discovery tests those names through these addresses, skips their DNS check, and the proposed set keeps the pins. For a site DNS has no or a wrong address for.",
+      "pinsHint": "Hosts file order, one line per address: the address first, then the names it serves; text after # is ignored. Discovery tests those names through these addresses, skips their DNS check, and the proposed set keeps the pins. For a site DNS has no or a wrong address for.",
+      "pinsError": {
+        "line": "\"{{value}}\" needs an IP address and at least one name on the same line.",
+        "address": "\"{{value}}\" is not an IP address.",
+        "private": "{{value}} is a private or local address. Discovery probes sites on the internet.",
+        "name": "\"{{value}}\" is not a domain name. A name outside ASCII goes in its xn-- form.",
+        "tooMany": "At most {{max}} pinned addresses per run."
+      },
       "summaryDns": "DNS {{server}}",
       "summaryPins_one": "{{count}} pinned name",
-      "summaryPins_other": "{{count}} pinned names"
+      "summaryPins_other": "{{count}} pinned names",
+      "summaryInvalid": "Some options are not valid"
     },
     "logs": {
       "title": "Discovery log",
@@ -3389,6 +3401,7 @@
     "port_in_use_system": "Port {{port}} on {{bind}} is already in use",
     "out_of_range": "Value is out of allowed range",
     "invalid_host": "\"{{value}}\" is not a host name",
+    "invalid_dns_server": "\"{{value}}\" is not a DNS server Discovery can use: an IP address with an optional port, udp://, tcp://, tcp+udp:// or an https:// URL",
     "required": "This field is required",
     "tls_pair_required": "Both TLS certificate and key must be specified together",
     "file_not_found": "File not found: {{path}}",

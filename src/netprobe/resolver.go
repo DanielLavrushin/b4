@@ -53,6 +53,21 @@ func (e *NoDataError) Error() string {
 	return fmt.Sprintf("%s answers that %s exists but has no address of the asked family", e.Server, e.Domain)
 }
 
+type RcodeError struct {
+	Server string
+	Rcode  uint8
+}
+
+func (e *RcodeError) Error() string {
+	switch e.Rcode {
+	case dns.RcodeServFail:
+		return fmt.Sprintf("%s answers SERVFAIL", e.Server)
+	case dns.RcodeRefused:
+		return fmt.Sprintf("%s refuses the query", e.Server)
+	}
+	return fmt.Sprintf("%s answers with error code %d", e.Server, e.Rcode)
+}
+
 var (
 	errNoAddress = errors.New("no server returned an address")
 	errTruncated = errors.New("the answer was truncated")
@@ -328,8 +343,10 @@ var endpointDoHClient = func(mark int, timeout time.Duration) *http.Client {
 func (r *Resolver) ResolveEndpoint(ctx context.Context, ep endpoint.Endpoint, domain, recordType string) (EndpointAnswer, error) {
 	switch ep.Transport {
 	case endpoint.HTTPS:
+		client := endpointDoHClient(r.Mark, r.timeout())
+		defer client.CloseIdleConnections()
 		query := dns.BuildQuery(domain, 0, qtypeForRecord(recordType))
-		body, err := dns.ResolveDoH(ctx, endpointDoHClient(r.Mark, r.timeout()), ep.URL, query)
+		body, err := dns.ResolveDoH(ctx, client, ep.URL, query)
 		if err != nil {
 			return EndpointAnswer{}, err
 		}
@@ -340,8 +357,9 @@ func (r *Resolver) ResolveEndpoint(ctx context.Context, ep endpoint.Endpoint, do
 		return EndpointAnswer{IPs: ips}, err
 	}
 	ips, err := r.exchange(ctx, "udp", ep, domain, recordType)
+	var rcode *RcodeError
 	switch {
-	case err == nil, NoAddressAnswer(err):
+	case err == nil, NoAddressAnswer(err), errors.As(err, &rcode):
 		return EndpointAnswer{IPs: ips, OverUDP: true}, err
 	case errors.Is(err, errTruncated), ep.Transport == endpoint.TCPUDP && ctx.Err() == nil:
 		ips, err = r.exchange(ctx, "tcp", ep, domain, recordType)
@@ -433,15 +451,11 @@ func answerIPs(resp []byte, id uint16, server, domain, recordType string) ([]str
 		return nil, errTruncated
 	}
 	switch rcode := resp[3] & 0x0F; rcode {
-	case 0:
+	case dns.RcodeNoError:
 	case dns.RcodeNXDomain:
 		return nil, &NXDomainError{Domain: domain, Server: server}
-	case 2:
-		return nil, fmt.Errorf("%s answers SERVFAIL", server)
-	case 5:
-		return nil, fmt.Errorf("%s refuses the query", server)
 	default:
-		return nil, fmt.Errorf("%s answers with error code %d", server, rcode)
+		return nil, &RcodeError{Server: server, Rcode: rcode}
 	}
 	ips := filterIPStrings(dns.ParseResponseIPs(resp), recordType)
 	if len(ips) == 0 {

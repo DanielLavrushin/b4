@@ -180,10 +180,11 @@ func (ds *DiscoverySuite) setStatus(status CheckStatus) {
 // as transport-blocked (neither system nor reference IPs could connect).
 func (ds *DiscoverySuite) allDomainsTransportBlocked() bool {
 	blocked := false
-	for domain, result := range ds.dnsResults {
-		if ds.unresolved(domain) {
+	for _, di := range ds.Domains {
+		if ds.unresolved(di.Domain) {
 			continue
 		}
+		result := ds.dnsResults[di.Domain]
 		if !result.addressBlocked() && !result.gatewayIntercepted() {
 			return false
 		}

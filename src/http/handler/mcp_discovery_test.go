@@ -241,31 +241,62 @@ func TestMCPDiscoveryUnresolvedOutcome(t *testing.T) {
 
 func TestMCPDiscoveryUnresolvedVerdictNamesTheEvidence(t *testing.T) {
 	cases := []struct {
-		name                 string
-		family, noAddress    string
-		systemOnly, nxdomain bool
-		want                 string
+		name     string
+		family   string
+		evidence *mcpNameEvidence
+		want     []string
+		not      []string
 	}{
-		{"missing family", "ipv6", "", false, false, "IPv4 addresses only and this run probed over IPv6"},
-		{"no address", "", "ipv4", false, false, "exists, but DNS publishes no IPv4 address"},
-		{"nxdomain", "", "", false, true, "NXDOMAIN"},
-		{"system resolver only", "", "", true, false, "run again without skip_dns"},
-		{"every resolver", "", "", false, false, "DNS for it fails on this network"},
+		{"missing family", "ipv6", &mcpNameEvidence{}, []string{"IPv4 addresses only and this run probed over IPv6", "Pinned addresses in the web interface", "MCP cannot write pins"}, []string{"dns.pins"}},
+		{"no address", "", &mcpNameEvidence{NoAddressFamily: "ipv4", Reference: "https://dns.google/resolve"}, []string{"exists, but https://dns.google/resolve answers that it has no IPv4 address", "MCP cannot write pins"}, []string{"plain DNS"}},
+		{"nxdomain from the trusted server", "", &mcpNameEvidence{NXDomain: true, Reference: "tcp://9.9.9.9"}, []string{"tcp://9.9.9.9 answers that it does not exist (NXDOMAIN)"}, []string{"DNS over HTTPS", "plain DNS"}},
+		{"nxdomain over plain DNS", "", &mcpNameEvidence{NXDomain: true, Reference: "8.8.8.8", ForgeableAnswer: true}, []string{"8.8.8.8 answers that it does not exist", "came over plain DNS", "tcp:// or https://"}, nil},
+		{"nxdomain without a server", "", &mcpNameEvidence{NXDomain: true}, []string{"DNS answers that it does not exist"}, nil},
+		{"system resolver only", "", nil, []string{"run again without skip_dns"}, nil},
+		{"every resolver", "", &mcpNameEvidence{}, []string{"DNS for it fails on this network"}, nil},
 	}
 	for _, tc := range cases {
 		row := mcpDiscoveryDomain{Domain: "typo.example"}
 		mcpApplyOutcome(&row, discovery.OutcomeUnresolved)
-		mcpNoteUnresolved(&row, tc.family, tc.noAddress, tc.systemOnly, tc.nxdomain)
-		if got := mcpDiscoveryVerdict(row, false); !strings.Contains(got, tc.want) {
-			t.Errorf("%s: verdict %q, want it to mention %q", tc.name, got, tc.want)
+		mcpNoteUnresolved(&row, tc.family, tc.evidence)
+		got := mcpDiscoveryVerdict(row, false)
+		for _, want := range tc.want {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: verdict %q, want it to mention %q", tc.name, got, want)
+			}
+		}
+		for _, not := range tc.not {
+			if strings.Contains(got, not) {
+				t.Errorf("%s: verdict %q must not mention %q", tc.name, got, not)
+			}
 		}
 	}
 
 	found := mcpDiscoveryDomain{Domain: "ok.example"}
 	mcpApplyOutcome(&found, discovery.OutcomeFound)
-	mcpNoteUnresolved(&found, "ipv6", "ipv4", true, true)
-	if found.missingFamily != "" || found.noAddress != "" || found.systemOnly || found.nxdomain {
+	mcpNoteUnresolved(&found, "ipv6", &mcpNameEvidence{NXDomain: true, NoAddressFamily: "ipv4"})
+	if found.missingFamily != "" || found.systemOnly || found.evidence != (mcpNameEvidence{}) {
 		t.Fatalf("only an unresolved row carries the evidence, got %+v", found)
+	}
+}
+
+func TestMCPDiscoverySnapshotReadsTheNameEvidence(t *testing.T) {
+	suite := discovery.NewCheckSuite(nil)
+	suite.DomainDiscoveryResults = map[string]*discovery.DomainDiscoveryResult{
+		"typo.example": {
+			Domain:     "typo.example",
+			Unresolved: true,
+			Outcome:    discovery.OutcomeUnresolved,
+			DNSResult:  &discovery.DNSDiscoveryResult{NXDomain: true, Reference: "8.8.8.8", ForgeableAnswer: true},
+		},
+	}
+	snap, err := mcpSuiteProjection(suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := snap.DomainResults["typo.example"].DNSResult
+	if r == nil || r.mcpNameEvidence != (mcpNameEvidence{NXDomain: true, Reference: "8.8.8.8", ForgeableAnswer: true}) {
+		t.Fatalf("the snapshot must carry what the run learned about the name, got %+v", r)
 	}
 }
 

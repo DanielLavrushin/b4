@@ -54,18 +54,46 @@ func stubReply(query []byte, a stubAnswer) []byte {
 	return reply
 }
 
+type dnsStub struct {
+	addr string
+	pc   net.PacketConn
+	ln   net.Listener
+}
+
+func newDNSStub(t *testing.T) *dnsStub {
+	t.Helper()
+	for range 20 {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("listen tcp: %v", err)
+		}
+		pc, err := net.ListenPacket("udp", ln.Addr().String())
+		if err != nil {
+			ln.Close()
+			continue
+		}
+		t.Cleanup(func() {
+			pc.Close()
+			ln.Close()
+		})
+		return &dnsStub{addr: ln.Addr().String(), pc: pc, ln: ln}
+	}
+	t.Fatal("no port is free for both TCP and UDP")
+	return nil
+}
+
 func udpStub(t *testing.T, a stubAnswer) (string, *atomic.Int32) {
 	t.Helper()
-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen udp: %v", err)
-	}
-	t.Cleanup(func() { pc.Close() })
+	s := newDNSStub(t)
+	return s.addr, s.serveUDP(a)
+}
+
+func (s *dnsStub) serveUDP(a stubAnswer) *atomic.Int32 {
 	var hits atomic.Int32
 	go func() {
 		buf := make([]byte, 1500)
 		for {
-			n, addr, err := pc.ReadFrom(buf)
+			n, addr, err := s.pc.ReadFrom(buf)
 			if err != nil {
 				return
 			}
@@ -74,24 +102,18 @@ func udpStub(t *testing.T, a stubAnswer) (string, *atomic.Int32) {
 				continue
 			}
 			if reply := stubReply(buf[:n], a); reply != nil {
-				pc.WriteTo(reply, addr)
+				s.pc.WriteTo(reply, addr)
 			}
 		}
 	}()
-	return pc.LocalAddr().String(), &hits
+	return &hits
 }
 
-func tcpStub(t *testing.T, addr string, a stubAnswer) *atomic.Int32 {
-	t.Helper()
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		t.Fatalf("listen tcp %s: %v", addr, err)
-	}
-	t.Cleanup(func() { ln.Close() })
+func (s *dnsStub) serveTCP(a stubAnswer) *atomic.Int32 {
 	var hits atomic.Int32
 	go func() {
 		for {
-			conn, err := ln.Accept()
+			conn, err := s.ln.Accept()
 			if err != nil {
 				return
 			}
@@ -157,17 +179,19 @@ func TestResolveEndpointServerFailureIsNotAnAnswer(t *testing.T) {
 	r := &Resolver{Timeout: 2 * time.Second}
 
 	_, err := r.ResolveEndpoint(context.Background(), mustEndpoint(t, addr), "site.example", "A")
-	if err == nil || NoAddressAnswer(err) || !strings.Contains(err.Error(), "SERVFAIL") {
+	var rcode *RcodeError
+	if NoAddressAnswer(err) || !errors.As(err, &rcode) || rcode.Rcode != 2 || !strings.Contains(err.Error(), "SERVFAIL") {
 		t.Fatalf("SERVFAIL is a failure, not an answer about the name, got %v", err)
 	}
 }
 
 func TestResolveEndpointTCP(t *testing.T) {
-	udpAddr, udpHits := udpStub(t, stubAnswer{ip: "198.51.100.1"})
-	tcpHits := tcpStub(t, udpAddr, stubAnswer{ip: "203.0.113.9"})
+	s := newDNSStub(t)
+	udpHits := s.serveUDP(stubAnswer{ip: "198.51.100.1"})
+	tcpHits := s.serveTCP(stubAnswer{ip: "203.0.113.9"})
 	r := &Resolver{Timeout: 2 * time.Second}
 
-	ans, err := r.ResolveEndpoint(context.Background(), mustEndpoint(t, "tcp://"+udpAddr), "site.example", "A")
+	ans, err := r.ResolveEndpoint(context.Background(), mustEndpoint(t, "tcp://"+s.addr), "site.example", "A")
 	if err != nil || len(ans.IPs) != 1 || ans.IPs[0] != "203.0.113.9" || ans.OverUDP {
 		t.Fatalf("tcp:// asks over TCP only, got %+v %v", ans, err)
 	}
@@ -177,22 +201,24 @@ func TestResolveEndpointTCP(t *testing.T) {
 }
 
 func TestResolveEndpointTruncatedUDPRetriesOverTCP(t *testing.T) {
-	udpAddr, _ := udpStub(t, stubAnswer{truncated: true})
-	tcpStub(t, udpAddr, stubAnswer{ip: "203.0.113.9"})
+	s := newDNSStub(t)
+	s.serveUDP(stubAnswer{truncated: true})
+	s.serveTCP(stubAnswer{ip: "203.0.113.9"})
 	r := &Resolver{Timeout: 2 * time.Second}
 
-	ans, err := r.ResolveEndpoint(context.Background(), mustEndpoint(t, udpAddr), "big.example", "A")
+	ans, err := r.ResolveEndpoint(context.Background(), mustEndpoint(t, s.addr), "big.example", "A")
 	if err != nil || len(ans.IPs) != 1 || ans.OverUDP {
 		t.Fatalf("a truncated UDP answer is asked again over TCP, got %+v %v", ans, err)
 	}
 }
 
 func TestResolveEndpointTCPUDPFallsBackWhenUDPFails(t *testing.T) {
-	udpAddr, udpHits := udpStub(t, stubAnswer{silent: true})
-	tcpHits := tcpStub(t, udpAddr, stubAnswer{ip: "203.0.113.9"})
+	s := newDNSStub(t)
+	udpHits := s.serveUDP(stubAnswer{silent: true})
+	tcpHits := s.serveTCP(stubAnswer{ip: "203.0.113.9"})
 	r := &Resolver{Timeout: 500 * time.Millisecond}
 
-	ans, err := r.ResolveEndpoint(context.Background(), mustEndpoint(t, "tcp+udp://"+udpAddr), "site.example", "A")
+	ans, err := r.ResolveEndpoint(context.Background(), mustEndpoint(t, "tcp+udp://"+s.addr), "site.example", "A")
 	if err != nil || len(ans.IPs) != 1 || ans.OverUDP {
 		t.Fatalf("tcp+udp:// retries over TCP when UDP fails, got %+v %v", ans, err)
 	}
@@ -200,22 +226,29 @@ func TestResolveEndpointTCPUDPFallsBackWhenUDPFails(t *testing.T) {
 		t.Fatalf("udp=%d tcp=%d, want UDP first, then one TCP query", udpHits.Load(), tcpHits.Load())
 	}
 
-	plain, _ := udpStub(t, stubAnswer{silent: true})
-	_, err = r.ResolveEndpoint(context.Background(), mustEndpoint(t, plain), "site.example", "A")
-	if err == nil {
-		t.Fatal("plain UDP has no TCP fallback for a silent server")
+	plain := newDNSStub(t)
+	plain.serveUDP(stubAnswer{silent: true})
+	plainTCP := plain.serveTCP(stubAnswer{ip: "203.0.113.9"})
+	_, err = r.ResolveEndpoint(context.Background(), mustEndpoint(t, plain.addr), "site.example", "A")
+	if err == nil || plainTCP.Load() != 0 {
+		t.Fatalf("plain UDP has no TCP fallback for a silent server, got %v with %d TCP queries", err, plainTCP.Load())
 	}
 }
 
 func TestResolveEndpointTCPUDPKeepsAnUDPAnswer(t *testing.T) {
-	udpAddr, _ := udpStub(t, stubAnswer{rcode: 3})
-	tcpHits := tcpStub(t, udpAddr, stubAnswer{ip: "203.0.113.9"})
-	r := &Resolver{Timeout: 2 * time.Second}
+	for _, answer := range []stubAnswer{{rcode: 3}, {rcode: 2}, {rcode: 5}} {
+		s := newDNSStub(t)
+		s.serveUDP(answer)
+		tcpHits := s.serveTCP(stubAnswer{ip: "203.0.113.9"})
+		r := &Resolver{Timeout: 2 * time.Second}
 
-	_, err := r.ResolveEndpoint(context.Background(), mustEndpoint(t, "tcp+udp://"+udpAddr), "typo.example", "A")
-	var nx *NXDomainError
-	if !errors.As(err, &nx) || tcpHits.Load() != 0 {
-		t.Fatalf("an NXDOMAIN over UDP is an answer, not a failure to retry, got %v with %d TCP queries", err, tcpHits.Load())
+		ans, err := r.ResolveEndpoint(context.Background(), mustEndpoint(t, "tcp+udp://"+s.addr), "typo.example", "A")
+		var nx *NXDomainError
+		var rcode *RcodeError
+		answered := errors.As(err, &nx) || errors.As(err, &rcode)
+		if !answered || !ans.OverUDP || tcpHits.Load() != 0 {
+			t.Fatalf("rcode %d over UDP is an answer, not a failure to retry, got %+v %v with %d TCP queries", answer.rcode, ans, err, tcpHits.Load())
+		}
 	}
 }
 

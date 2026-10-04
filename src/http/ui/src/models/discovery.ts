@@ -100,6 +100,7 @@ export interface DNSDiscoveryResult {
   reference?: string;
   reference_error?: string;
   pinned?: boolean;
+  forgeable_answer?: boolean;
 }
 
 export interface DiscoveryResult {

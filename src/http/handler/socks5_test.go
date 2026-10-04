@@ -160,11 +160,20 @@ func TestSaveRejectsABadTrustedDNSServer(t *testing.T) {
 	}
 
 	next = cfg.Clone()
-	next.System.Checker.DNSServer = "tcp+udp://127.0.0.1:53053"
+	next.System.Checker.DNSServer = " tcp+udp://127.0.0.1:53053 "
 	if err := api.saveAndPushConfig(next); err != nil {
 		t.Fatalf("a valid trusted DNS server saves: %v", err)
 	}
 	if api.getCfg().System.Checker.DNSServer != "tcp+udp://127.0.0.1:53053" {
+		t.Fatalf("got %q", api.getCfg().System.Checker.DNSServer)
+	}
+
+	next = cfg.Clone()
+	next.System.Checker.DNSServer = "   "
+	if err := api.saveAndPushConfig(next); err != nil {
+		t.Fatalf("blank means no server, as the field shows it: %v", err)
+	}
+	if api.getCfg().System.Checker.DNSServer != "" {
 		t.Fatalf("got %q", api.getCfg().System.Checker.DNSServer)
 	}
 }

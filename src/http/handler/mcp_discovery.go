@@ -79,10 +79,9 @@ type mcpSuiteSnapshot struct {
 		MissingFamily string  `json:"missing_family"`
 		Unconfirmed   bool    `json:"unconfirmed"`
 		DNSResult     *struct {
-			IsPoisoned       bool   `json:"is_poisoned"`
-			TransportBlocked bool   `json:"transport_blocked"`
-			NXDomain         bool   `json:"nxdomain"`
-			NoAddressFamily  string `json:"no_address_family"`
+			IsPoisoned       bool `json:"is_poisoned"`
+			TransportBlocked bool `json:"transport_blocked"`
+			mcpNameEvidence
 		} `json:"dns_result"`
 	} `json:"domain_discovery_results"`
 	StrategyGroups []struct {
@@ -124,9 +123,15 @@ type mcpDiscoveryDomain struct {
 	Verdict       string  `json:"verdict"`
 	unresolved    bool
 	missingFamily string
-	noAddress     string
-	nxdomain      bool
 	systemOnly    bool
+	evidence      mcpNameEvidence
+}
+
+type mcpNameEvidence struct {
+	NXDomain        bool   `json:"nxdomain"`
+	NoAddressFamily string `json:"no_address_family"`
+	Reference       string `json:"reference"`
+	ForgeableAnswer bool   `json:"forgeable_answer"`
 }
 
 type mcpDiscoveryOut struct {
@@ -179,7 +184,15 @@ func mcpDiscoveryVerdict(d mcpDiscoveryDomain, running bool) string {
 }
 
 func mcpUnresolvedVerdict(d mcpDiscoveryDomain) string {
-	const pinAdvice = "pin the address in a set's dns.pins and run Discovery for that set"
+	const pinAdvice = "ask the user to add it under the set's Pinned addresses in the web interface (MCP cannot write pins), then run Discovery for that set"
+	server := d.evidence.Reference
+	if server == "" {
+		server = "DNS"
+	}
+	forged := ""
+	if d.evidence.ForgeableAnswer {
+		forged = "; that answer came over plain DNS, which an ISP can forge for a blocked name, and a trusted DNS server given as tcp:// or https:// rules that out"
+	}
 	switch {
 	case d.missingFamily != "":
 		have, probed := "IPv4", "IPv6"
@@ -187,14 +200,14 @@ func mcpUnresolvedVerdict(d mcpDiscoveryDomain) string {
 			have, probed = probed, have
 		}
 		return fmt.Sprintf("the name has %s addresses only and this run probed over %s, so no strategy was tested; if the site has an %s address that DNS does not publish, %s", have, probed, probed, pinAdvice)
-	case d.noAddress != "":
+	case d.evidence.NoAddressFamily != "":
 		family := "IPv4"
-		if d.noAddress == "ipv6" {
+		if d.evidence.NoAddressFamily == "ipv6" {
 			family = "IPv6"
 		}
-		return fmt.Sprintf("the name exists, but DNS publishes no %s address for it, so no strategy was tested; if the site is reached through an address published elsewhere, %s", family, pinAdvice)
-	case d.nxdomain:
-		return "the name does not resolve: DNS over HTTPS answers that it does not exist (NXDOMAIN), so no strategy was tested; check the spelling of the domain"
+		return fmt.Sprintf("the name exists, but %s answers that it has no %s address, so no strategy was tested; if the site is reached through an address published elsewhere, %s%s", server, family, pinAdvice, forged)
+	case d.evidence.NXDomain:
+		return fmt.Sprintf("the name does not resolve: %s answers that it does not exist (NXDOMAIN), so no strategy was tested; check the spelling of the domain%s", server, forged)
 	case d.systemOnly:
 		return "the name does not resolve: the system resolver has no address for it and the DNS check was skipped, so no strategy was tested; check the spelling, or run again without skip_dns"
 	default:
@@ -202,11 +215,14 @@ func mcpUnresolvedVerdict(d mcpDiscoveryDomain) string {
 	}
 }
 
-func mcpNoteUnresolved(row *mcpDiscoveryDomain, missingFamily, noAddress string, systemOnly, nxdomain bool) {
+func mcpNoteUnresolved(row *mcpDiscoveryDomain, missingFamily string, evidence *mcpNameEvidence) {
 	if !row.unresolved {
 		return
 	}
-	row.missingFamily, row.noAddress, row.systemOnly, row.nxdomain = missingFamily, noAddress, systemOnly, nxdomain
+	row.missingFamily, row.systemOnly = missingFamily, evidence == nil
+	if evidence != nil {
+		row.evidence = *evidence
+	}
 }
 
 func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mcpDiscoveryDomain {
@@ -237,11 +253,11 @@ func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mc
 			row.Blocked = r.DNSResult.TransportBlocked
 		}
 		mcpApplyOutcome(&row, discovery.Outcome(r.Outcome))
-		noAddress := ""
+		var evidence *mcpNameEvidence
 		if r.DNSResult != nil {
-			noAddress = r.DNSResult.NoAddressFamily
+			evidence = &r.DNSResult.mcpNameEvidence
 		}
-		mcpNoteUnresolved(&row, r.MissingFamily, noAddress, r.DNSResult == nil, r.DNSResult != nil && r.DNSResult.NXDomain)
+		mcpNoteUnresolved(&row, r.MissingFamily, evidence)
 		row.Unconfirmed = row.Found && r.Unconfirmed && !running
 		row.Provisional = running && row.Found
 		row.Verdict = mcpDiscoveryVerdict(row, running)
@@ -500,11 +516,16 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 			Confirmed:     e.Confirmed,
 		}
 		mcpApplyOutcome(&row, e.EffectiveOutcome())
-		noAddress := ""
+		var evidence *mcpNameEvidence
 		if e.DNSResult != nil {
-			noAddress = e.DNSResult.NoAddressFamily
+			evidence = &mcpNameEvidence{
+				NXDomain:        e.DNSResult.NXDomain,
+				NoAddressFamily: e.DNSResult.NoAddressFamily,
+				Reference:       e.DNSResult.Reference,
+				ForgeableAnswer: e.DNSResult.ForgeableAnswer,
+			}
 		}
-		mcpNoteUnresolved(&row, e.MissingFamily, noAddress, e.DNSResult == nil, e.DNSResult != nil && e.DNSResult.NXDomain)
+		mcpNoteUnresolved(&row, e.MissingFamily, evidence)
 		row.Unconfirmed = row.Found && (e.Unconfirmed || e.Status == discovery.CheckStatusCanceled)
 		row.Verdict = mcpDiscoveryVerdict(row, false)
 		if row.Found && e.ApplicableSet() != nil {

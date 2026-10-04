@@ -22,6 +22,7 @@ import (
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netprobe"
 	"github.com/daniellavrushin/b4/nfq"
+	"github.com/daniellavrushin/b4/utils"
 )
 
 //go:embed dns.json
@@ -50,14 +51,15 @@ type DNSProber struct {
 }
 
 type referenceAnswer struct {
-	ips      []string
-	serves   bool
-	source   string
-	trusted  bool
-	overUDP  bool
-	nxdomain bool
-	nodata   bool
-	failure  string
+	ips       []string
+	serves    bool
+	source    string
+	trusted   bool
+	overUDP   bool
+	forgeable bool
+	nxdomain  bool
+	nodata    bool
+	failure   string
 }
 
 var ownAddress = func(addr netip.Addr) bool {
@@ -78,6 +80,7 @@ var ownAddress = func(addr netip.Addr) bool {
 const (
 	gatewayProbeTimeout = 2 * time.Second
 	connectableTimeout  = 5 * time.Second
+	pinCheckTimeout     = 20 * time.Second
 )
 
 var (
@@ -174,10 +177,26 @@ func (ds *DiscoverySuite) installedGeoCategories(geoip, geosite []string) ([]str
 }
 
 func (ds *DiscoverySuite) runDNSDiscoveryForDomain(di DomainInput) *DNSDiscoveryResult {
-	if pins := ds.pinnedFor(di.Domain); len(pins) > 0 {
-		return ds.pinnedResult(di, pins)
+	if pins, fromSet := ds.pinnedFor(di.Domain); len(pins) > 0 {
+		return checkDNSWhenSetPinsAreDead(di.Domain, ds.pinnedResult(di, pins, fromSet), func() *DNSDiscoveryResult {
+			return ds.checkDNS(di)
+		})
 	}
+	return ds.checkDNS(di)
+}
 
+func checkDNSWhenSetPinsAreDead(domain string, pinned *DNSDiscoveryResult, check func() *DNSDiscoveryResult) *DNSDiscoveryResult {
+	if !pinned.setPinned || !pinned.addressBlocked() {
+		return pinned
+	}
+	log.DiscoveryLogf("  DNS: checking the DNS of %s instead, as a set does when its pinned addresses stop answering", domain)
+	if checked := check(); checked != nil && !checked.noAddress() {
+		return checked
+	}
+	return pinned
+}
+
+func (ds *DiscoverySuite) checkDNS(di DomainInput) *DNSDiscoveryResult {
 	log.DiscoveryLogf("  DNS: Checking DNS poisoning for %s", di.Domain)
 
 	port := checkURLPort(di.CheckURL)
@@ -205,16 +224,14 @@ func (ds *DiscoverySuite) runDNSDiscoveryForDomain(di DomainInput) *DNSDiscovery
 	return result
 }
 
-func (ds *DiscoverySuite) pinnedResult(di DomainInput, pins []string) *DNSDiscoveryResult {
-	log.DiscoveryLogf("  DNS: %s is pinned to %v, its DNS is not checked", di.Domain, pins)
-	result := &DNSDiscoveryResult{
-		ProbeResults:   []DNSProbeResult{},
-		ExpectedIPs:    append([]string(nil), pins...),
-		AlternativeIPs: append([]string(nil), pins...),
-		Pinned:         true,
+func (ds *DiscoverySuite) pinnedResult(di DomainInput, pins []string, fromSet bool) *DNSDiscoveryResult {
+	if fromSet {
+		log.DiscoveryLogf("  DNS: the set pins %s to %v, its DNS is not checked", di.Domain, pins)
+	} else {
+		log.DiscoveryLogf("  DNS: %s is pinned to %v, its DNS is not checked", di.Domain, pins)
 	}
 	if ds.cfg == nil {
-		return result
+		return newPinnedResult(pins, fromSet)
 	}
 	prober := NewDNSProber(
 		di.Domain,
@@ -226,13 +243,67 @@ func (ds *DiscoverySuite) pinnedResult(di DomainInput, pins []string) *DNSDiscov
 		ds.flowMark,
 		ds.ipVersion,
 	)
-	ctx, cancel := ds.fetchContext(connectableTimeout + time.Second)
+	ctx, cancel := ds.fetchContext(pinCheckTimeout)
 	defer cancel()
-	if !prober.connectable(ctx, pins) {
-		result.TransportBlocked = true
-		log.DiscoveryLogf("  ✗ DNS: none of the pinned addresses of %s accepts a TCP connection", di.Domain)
+	return prober.checkPins(ctx, pins, fromSet)
+}
+
+func newPinnedResult(pins []string, fromSet bool) *DNSDiscoveryResult {
+	return &DNSDiscoveryResult{
+		ProbeResults:   []DNSProbeResult{},
+		ExpectedIPs:    append([]string(nil), pins...),
+		AlternativeIPs: append([]string(nil), pins...),
+		Pinned:         true,
+		setPinned:      fromSet,
 	}
+}
+
+func (p *DNSProber) checkPins(ctx context.Context, pins []string, fromSet bool) *DNSDiscoveryResult {
+	result := newPinnedResult(pins, fromSet)
+	live := p.liveIPs(ctx, pins)
+	if len(live) == 0 {
+		result.TransportBlocked = true
+		result.AlternativeIPs = nil
+		log.DiscoveryLogf("  ✗ DNS: none of the pinned addresses of %s accepts a TCP connection", p.domain)
+		return result
+	}
+	if dead := withoutIPs(pins, live); len(dead) > 0 {
+		log.DiscoveryLogf("  DNS: the pinned addresses %v of %s do not accept a TCP connection, the probes use %v", dead, p.domain, live)
+	}
+	if p.findValidIP(ctx, live) == "" {
+		if terminated := p.probeGateways(ctx, live); len(terminated) > 0 {
+			result.GatewayIPs = terminated
+			result.ExpectedIPs = withoutIPs(result.ExpectedIPs, terminated)
+			live = withoutIPs(live, terminated)
+		}
+		if len(live) == 0 {
+			result.ExpectedIPs = nil
+			result.AlternativeIPs = nil
+			return result
+		}
+	}
+	result.AlternativeIPs = live
 	return result
+}
+
+func (p *DNSProber) liveIPs(ctx context.Context, ips []string) []string {
+	ok := make([]bool, len(ips))
+	var wg sync.WaitGroup
+	for i, ip := range ips {
+		wg.Add(1)
+		go func(i int, ip string) {
+			defer wg.Done()
+			ok[i] = p.connectable(ctx, []string{ip})
+		}(i, ip)
+	}
+	wg.Wait()
+	var live []string
+	for i, ip := range ips {
+		if ok[i] {
+			live = append(live, ip)
+		}
+	}
+	return live
 }
 
 func pinReferenceWhenNoFix(domain string, result *DNSDiscoveryResult) {
@@ -346,6 +417,7 @@ func (p *DNSProber) Probe(ctx context.Context) *DNSDiscoveryResult {
 	result := p.evaluate(ctx, systemIPs, p.ref.ips, p.ref.serves)
 	result.Reference = p.ref.source
 	result.ReferenceError = p.ref.failure
+	result.ForgeableAnswer = p.ref.forgeable
 	result.referenceIPs = p.ref.ips
 	result.referenceTrusted = p.ref.trusted
 	p.noteMissingAddress(result)
@@ -416,13 +488,17 @@ func (p *DNSProber) evaluate(ctx context.Context, systemIPs, expectedIPs []strin
 			log.DiscoveryLogf("  ✗ DNS: every known address of %s is answered by the first hop in front of this host, nothing left to test", p.domain)
 			return result
 		}
-		if len(systemIPs) > 0 {
+		switch {
+		case len(systemIPs) == 0:
+		case p.ref.nxdomain || p.ref.nodata:
+			log.DiscoveryLogf("  DNS: %s answers that %s has no %s address, while the system resolver gives %v, which fails the TLS check; testing those addresses", p.ref.source, p.domain, familyLabel(p.family()), systemIPs)
+		default:
 			log.DiscoveryLogf("  DNS: no reference IPs available for %s, assuming OK", p.domain)
 		}
 		result.ExpectedIPs = systemIPs
 		return result
 	}
-	log.DiscoveryLogf("  DNS: system IPs %v, reference IPs (DoH): %v", systemIPs, expectedIPs)
+	log.DiscoveryLogf("  DNS: system IPs %v, reference IPs from %s: %v", systemIPs, p.ref.source, expectedIPs)
 
 	if !p.connectable(ctx, expectedIPs) {
 		log.DiscoveryLogf("  DNS: reference IPs for %s are unreachable at TCP level (transport issue or site down)", p.domain)
@@ -467,13 +543,14 @@ func (p *DNSProber) evaluate(ctx context.Context, systemIPs, expectedIPs []strin
 }
 
 func (p *DNSProber) findDNSBypass(ctx context.Context, result *DNSDiscoveryResult, references []string) {
-	if fix, ok := p.trustedSetDNS(); ok {
+	fix, refusal := p.trustedSetDNS()
+	switch {
+	case fix.Enabled:
 		result.BestDoHURL, result.BestServer = fix.DoHURL, fix.TargetDNS
 		log.DiscoveryLogf("  DNS: the trusted DNS server %s answers %s honestly and becomes the set's DNS", p.trusted.String(), p.domain)
 		return
-	}
-	if !p.trusted.IsZero() && len(p.ref.ips) > 0 {
-		log.DiscoveryLogf("  DNS: the trusted DNS server %s answers %s honestly, but a set's DNS can only be an IP address on port 53 or an https:// URL; looking for a server a set can use", p.trusted.String(), p.domain)
+	case refusal != "":
+		log.DiscoveryLogf("  DNS: the trusted DNS server %s answers %s honestly, but it cannot be a set's DNS: %s; looking for a server a set can use", p.trusted.String(), p.domain, refusal)
 	}
 
 	if url := p.findDoHBypass(ctx, result, references); url != "" {
@@ -506,21 +583,26 @@ func (p *DNSProber) findDNSBypass(ctx context.Context, result *DNSDiscoveryResul
 	log.DiscoveryLogf("  DNS: no working DNS config found for %s", p.domain)
 }
 
-func (p *DNSProber) trustedSetDNS() (config.DNSConfig, bool) {
+func (p *DNSProber) trustedSetDNS() (config.DNSConfig, string) {
 	if p.trusted.IsZero() || len(p.ref.ips) == 0 {
-		return config.DNSConfig{}, false
+		return config.DNSConfig{}, ""
 	}
-	switch p.trusted.Transport {
-	case endpoint.HTTPS:
-		return config.DNSConfig{Enabled: true, DoHURL: p.trusted.URL}, true
-	case endpoint.UDP, endpoint.TCPUDP:
-		addr := p.trusted.Addr
-		if !p.ref.overUDP || addr.Port() != endpoint.DefaultPort || addr.Addr().IsLoopback() || ownAddress(addr.Addr()) {
-			return config.DNSConfig{}, false
-		}
-		return config.DNSConfig{Enabled: true, TargetDNS: addr.Addr().String()}, true
+	addr := p.trusted.Addr
+	switch {
+	case p.trusted.Transport == endpoint.HTTPS:
+		return config.DNSConfig{Enabled: true, DoHURL: p.trusted.URL}, ""
+	case p.trusted.Transport == endpoint.TCP:
+		return config.DNSConfig{}, "a tcp:// server is asked over TCP only, and a set's DNS asks over UDP"
+	case !p.ref.overUDP:
+		return config.DNSConfig{}, "it answered over TCP only, and a set's DNS asks over UDP"
+	case addr.Port() != endpoint.DefaultPort:
+		return config.DNSConfig{}, fmt.Sprintf("it listens on port %d, and a set's DNS asks port 53", addr.Port())
+	case addr.Addr().IsLoopback() || ownAddress(addr.Addr()):
+		return config.DNSConfig{}, "it is this host itself, and a set's DNS would send the queries back to it"
+	case utils.IsReservedAddr(addr.Addr()):
+		return config.DNSConfig{}, "it is a local network address, and a set's DNS would also catch the queries that server sends upstream through this router"
 	}
-	return config.DNSConfig{}, false
+	return config.DNSConfig{Enabled: true, TargetDNS: addr.Addr().String()}, ""
 }
 
 func (p *DNSProber) findDoHBypass(ctx context.Context, result *DNSDiscoveryResult, references []string) string {
@@ -705,10 +787,11 @@ func (p *DNSProber) reference(ctx context.Context) referenceAnswer {
 			ref.nodata = true
 		case err != nil:
 			ref.failure = err.Error()
-			log.DiscoveryLogf("  ✗ DNS: the trusted DNS server %s did not answer for %s (%v), so DNS is not compared for it", ref.source, p.domain, err)
+			log.DiscoveryLogf("  ✗ DNS: the trusted DNS server %s gave no usable answer for %s (%v), so DNS is not compared for it", ref.source, p.domain, err)
 		default:
 			ref.ips, ref.serves = p.validateReference(ctx, ans.IPs)
 		}
+		ref.forgeable = ans.OverUDP && !utils.IsReservedAddr(p.trusted.Addr.Addr()) && !ownAddress(p.trusted.Addr.Addr())
 		return ref
 	}
 
@@ -726,7 +809,7 @@ func (p *DNSProber) reference(ctx context.Context) referenceAnswer {
 
 	ref := referenceAnswer{source: out.DoHURL, trusted: out.DoHURL != ""}
 	if ref.source == "" {
-		ref.source = out.UDPSrv
+		ref.source, ref.forgeable = out.UDPSrv, true
 	}
 	ref.ips, ref.serves = p.validateReference(ctx, out.IPs)
 	return ref
@@ -735,7 +818,7 @@ func (p *DNSProber) reference(ctx context.Context) referenceAnswer {
 func (p *DNSProber) validateReference(ctx context.Context, ips []string) ([]string, bool) {
 	var validated []string
 	for _, ip := range ips {
-		if p.testIPServesDomain(ctx, ip) {
+		if p.serves(ctx, ip) {
 			log.Tracef("DNS: verified %s for %s", ip, p.domain)
 			validated = append(validated, ip)
 		}

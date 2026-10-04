@@ -194,7 +194,7 @@ func (api *API) handleFinishCheck(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Param body body DiscoveryRequest true "Discovery request"
 // @Success 202 {object} DiscoveryResponse
-// @Failure 400 {object} APIError "reserved_host, no_urls or too_many_urls"
+// @Failure 400 {object} APIError "reserved_host, no_urls, too_many_urls, bad_dns_server or bad_pin"
 // @Failure 404 {object} APIError "not_found"
 // @Failure 409 {string} string
 // @Security BearerAuth
@@ -980,13 +980,31 @@ func (api *API) handleClearDiscoveryCache(w http.ResponseWriter, r *http.Request
 
 const maxRunPins = 64
 
+func pinnableName(name string) bool {
+	if name == "" || len(name) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(name, ".") {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		for i := 0; i < len(label); i++ {
+			c := label[i]
+			if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func runPins(raw map[string][]string) (map[string][]string, error) {
 	var pins map[string][]string
 	total := 0
 	for rawDomain, ips := range raw {
 		domain := config.NormalizePinDomain(rawDomain)
-		if domain == "" {
-			return nil, fmt.Errorf("a pinned address needs a domain name, got %q", rawDomain)
+		if !pinnableName(domain) {
+			return nil, fmt.Errorf("%q is not a domain name; a name outside ASCII goes in its xn-- form", rawDomain)
 		}
 		for _, rawIP := range ips {
 			addr, err := netip.ParseAddr(strings.TrimSpace(rawIP))

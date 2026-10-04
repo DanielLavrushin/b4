@@ -275,9 +275,11 @@ type DNSDiscoveryResult struct {
 	Reference        string           `json:"reference,omitempty"`
 	ReferenceError   string           `json:"reference_error,omitempty"`
 	Pinned           bool             `json:"pinned,omitempty"`
+	ForgeableAnswer  bool             `json:"forgeable_answer,omitempty"`
 
 	referenceIPs     []string
 	referenceTrusted bool
+	setPinned        bool
 }
 
 func (r *DNSDiscoveryResult) noAddress() bool {
@@ -332,7 +334,8 @@ type DiscoverySuite struct {
 	trusted           endpoint.Endpoint
 	dnsServerOverride string
 	runPins           map[string][]string
-	pins              map[string][]string
+	givenPins         map[string][]string
+	setPins           map[string][]string
 
 	discoveryCache *DiscoveryCache
 	plainSets      map[string]*config.SetConfig

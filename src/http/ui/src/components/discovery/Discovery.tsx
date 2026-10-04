@@ -41,6 +41,7 @@ import {
 import {
   DiscoveryOptionsPanel,
   DiscoveryOptions,
+  optionsInvalid,
   loadOptions,
   saveOptions,
 } from "./Options";
@@ -695,7 +696,12 @@ export const DiscoveryRunner = () => {
                 startIcon={<StartIcon />}
                 variant="contained"
                 onClick={() => start(checkUrls, pickedSet?.id)}
-                disabled={checkUrls.length === 0 || busy || setTooMany}
+                disabled={
+                  checkUrls.length === 0 ||
+                  busy ||
+                  setTooMany ||
+                  optionsInvalid(options)
+                }
                 sx={{ whiteSpace: "nowrap" }}
               >
                 {t("discovery.start")}

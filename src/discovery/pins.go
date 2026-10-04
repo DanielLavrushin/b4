@@ -1,54 +1,77 @@
 package discovery
 
 import (
+	"errors"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/dns/endpoint"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netprobe"
 )
 
-func (ds *DiscoverySuite) collectPins() map[string][]string {
+func (ds *DiscoverySuite) collectPins() {
+	ds.givenPins = normalizedPins(ds.runPins, nil)
+	if ds.setStrategy != nil {
+		ds.setPins = normalizedPins(ds.setStrategy.DNS.Pins, func(domain string, addr netip.Addr) {
+			log.DiscoveryLogf("The set pins %s to %s, a private or local address, which Discovery does not probe", domain, addr)
+		})
+	}
+}
+
+func normalizedPins(src map[string][]string, refused func(string, netip.Addr)) map[string][]string {
 	var pins map[string][]string
-	add := func(src map[string][]string) {
-		for rawDomain, ips := range src {
-			domain := config.NormalizePinDomain(rawDomain)
-			if domain == "" {
+	for rawDomain, ips := range src {
+		domain := config.NormalizePinDomain(rawDomain)
+		if domain == "" {
+			continue
+		}
+		for _, raw := range ips {
+			addr, err := netip.ParseAddr(strings.TrimSpace(raw))
+			if err != nil {
 				continue
 			}
-			for _, raw := range ips {
-				addr, err := netip.ParseAddr(raw)
-				if err != nil {
-					continue
+			addr = addr.Unmap()
+			if refusedProbeIP(addr.String()) {
+				if refused != nil {
+					refused(domain, addr)
 				}
-				if pins == nil {
-					pins = map[string][]string{}
-				}
-				pins[domain] = appendUnique(pins[domain], addr.Unmap().String())
+				continue
 			}
+			if pins == nil {
+				pins = map[string][]string{}
+			}
+			pins[domain] = appendUnique(pins[domain], addr.String())
 		}
 	}
-	if ds.setStrategy != nil {
-		add(ds.setStrategy.DNS.Pins)
-	}
-	add(ds.runPins)
 	return pins
 }
 
-func (ds *DiscoverySuite) pinnedFor(domain string) []string {
-	if len(ds.pins) == 0 {
+func (ds *DiscoverySuite) pinnedFor(domain string) ([]string, bool) {
+	if !asciiName(domain) {
+		return nil, false
+	}
+	if ips := ds.familyPins(ds.givenPins, domain); len(ips) > 0 {
+		return ips, false
+	}
+	ips := ds.familyPins(ds.setPins, domain)
+	return ips, len(ips) > 0
+}
+
+func (ds *DiscoverySuite) familyPins(pins map[string][]string, domain string) []string {
+	if len(pins) == 0 {
 		return nil
 	}
 	network := ds.dialNetwork()
 	var out []string
-	for _, raw := range (&config.DNSConfig{Pins: ds.pins}).PinnedAddresses(domain) {
+	for _, raw := range (&config.DNSConfig{Pins: pins}).PinnedAddresses(domain) {
 		addr, err := netip.ParseAddr(raw)
 		if err != nil {
 			continue
 		}
-		addr = addr.Unmap()
 		if (network == "tcp4" && !addr.Is4()) || (network == "tcp6" && !addr.Is6()) {
 			continue
 		}
@@ -70,12 +93,19 @@ func (ds *DiscoverySuite) trustedServer() endpoint.Endpoint {
 }
 
 func (ds *DiscoverySuite) checkTrustedServer() error {
-	name := "example.com"
+	name := ""
 	for _, di := range ds.Domains {
-		if asciiName(di.Domain) && len(ds.pinnedFor(di.Domain)) == 0 {
+		if pins, _ := ds.pinnedFor(di.Domain); len(pins) > 0 {
+			continue
+		}
+		if asciiName(di.Domain) {
 			name = di.Domain
 			break
 		}
+		name = "example.com"
+	}
+	if name == "" {
+		return nil
 	}
 	record := "A"
 	if ds.dialNetwork() == "tcp6" {
@@ -86,7 +116,11 @@ func (ds *DiscoverySuite) checkTrustedServer() error {
 	ctx, cancel := ds.fetchContext(2 * timeout)
 	defer cancel()
 	_, err := r.ResolveEndpoint(ctx, ds.trusted, name, record)
-	if err == nil || netprobe.NoAddressAnswer(err) {
+	var rcode *netprobe.RcodeError
+	switch {
+	case err == nil, netprobe.NoAddressAnswer(err):
+		return nil
+	case errors.As(err, &rcode) && rcode.Rcode != dns.RcodeRefused:
 		return nil
 	}
 	return err

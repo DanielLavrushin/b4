@@ -29,16 +29,16 @@ With **Check DNS for tampering** on, Discovery compares each site's address from
 
 The port defaults to 53. Plain DNS needs an IP address: a host name works only in an `https://` URL. DNS over TLS and other transports are not supported directly; a local DNS proxy that speaks them covers them when its address is given here.
 
-A server named here is the only reference. Its answers are taken as each site's correct addresses, its NXDOMAIN as a name that does not exist, and no public resolver is asked beside it. A run asks the server once before it starts and stops with an error when it does not answer. A server that stops answering later in the run leaves the site it was asked about without a DNS comparison.
+A server named here is the only reference. Its answers are taken as each site's correct addresses, its NXDOMAIN as a name that does not exist, and no public resolver is asked beside it. Before a run starts, the server is asked once about one of the names the run checks; when no answer comes back, or the server refuses the query, the run stops with an error. An error answer about that name, such as SERVFAIL, does not stop it, and a run whose names are all pinned does not ask. A server that stops answering later in the run leaves the site it was asked about without a DNS comparison.
 
 When the router's resolver gives a site a wrong address, the proposed set gets a DNS fix, the first that works of:
 
-1. the trusted server itself, when a set can use it: an IP address on port 53 that answered over UDP and is not this host's own address, or an `https://` URL;
+1. the trusted server itself, when a set can use it: a public IP address on port 53 that answered over UDP, or an `https://` URL;
 2. a built-in DNS-over-HTTPS server that returns the site's correct address;
 3. a built-in plain DNS server that does so, asked plainly and then with the query fragmented;
-4. the site's correct addresses, [pinned](../dns#pinned-addresses) in the set, when no resolver gives them.
+4. the addresses DNS over HTTPS or the trusted server gave, [pinned](../dns#pinned-addresses) in the set, when no resolver a set can use returns them; an answer from the built-in plain DNS servers is never pinned, since it can be forged on the way.
 
-A trusted server a set cannot use, such as a local proxy on another port or a `tcp://` server, still decides which addresses are correct, and the run log says why it did not go into the set.
+A trusted server a set cannot use, such as a local proxy on another port, a resolver on the local network or a `tcp://` server, still decides which addresses are correct, and the run log says why it did not go into the set. A resolver on the local network stays out because a set's DNS redirect also catches the queries that resolver sends upstream through the router, and would hand them back to it.
 
 The same field is in the [options of a Discovery run](../discovery#options), where it applies to that run only.
 

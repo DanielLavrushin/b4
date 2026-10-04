@@ -1,6 +1,8 @@
 package config
 
 import (
+	"strings"
+
 	"github.com/daniellavrushin/b4/dns/endpoint"
 	"github.com/daniellavrushin/b4/log"
 )
@@ -14,7 +16,8 @@ func (c *Config) TrustedDNSServer() (endpoint.Endpoint, bool) {
 }
 
 func (c *Config) sanitizeTrustedDNSServer() {
-	server := c.System.Checker.DNSServer
+	server := strings.TrimSpace(c.System.Checker.DNSServer)
+	c.System.Checker.DNSServer = server
 	if server == "" {
 		return
 	}

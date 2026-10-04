@@ -16,15 +16,20 @@ func NormalizePinDomain(domain string) string {
 }
 
 func (c *DNSConfig) PinnedAddresses(domain string) []string {
+	_, ips := c.PinnedEntry(domain)
+	return ips
+}
+
+func (c *DNSConfig) PinnedEntry(domain string) (string, []string) {
 	if c == nil || len(c.Pins) == 0 {
-		return nil
+		return "", nil
 	}
 	q := NormalizePinDomain(domain)
 	if q == "" {
-		return nil
+		return "", nil
 	}
 	if ips, ok := c.Pins[q]; ok {
-		return ips
+		return q, ips
 	}
 
 	best := ""
@@ -35,7 +40,7 @@ func (c *DNSConfig) PinnedAddresses(domain string) []string {
 			bestIPs = ips
 		}
 	}
-	return bestIPs
+	return best, bestIPs
 }
 
 func sanitizePins(pins map[string][]string, onInvalid func(domain, value string)) map[string][]string {

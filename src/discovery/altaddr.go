@@ -493,25 +493,27 @@ func plainFixResult(dr *DomainDiscoveryResult) (string, *DomainPresetResult) {
 	return "", nil
 }
 
-func (ds *DiscoverySuite) alternativeIPs(domain string) []string {
-	r := ds.dnsResults[domain]
-	if r == nil {
-		return nil
-	}
-	return r.AlternativeIPs
-}
-
 func (ds *DiscoverySuite) pinsFor(domains []string) map[string][]string {
 	var pins map[string][]string
-	for _, domain := range domains {
-		ips := ds.alternativeIPs(domain)
-		if len(ips) == 0 {
-			continue
+	add := func(domain string, ips []string) {
+		if domain == "" || len(ips) == 0 {
+			return
 		}
 		if pins == nil {
 			pins = map[string][]string{}
 		}
-		pins[config.NormalizePinDomain(domain)] = append([]string(nil), ips...)
+		key := config.NormalizePinDomain(domain)
+		pins[key] = appendUnique(pins[key], ips...)
+	}
+	for _, domain := range domains {
+		r := ds.dnsResults[domain]
+		switch {
+		case r == nil, r.setPinned:
+		case r.Pinned:
+			add((&config.DNSConfig{Pins: ds.givenPins}).PinnedEntry(domain))
+		default:
+			add(domain, r.AlternativeIPs)
+		}
 	}
 	return pins
 }

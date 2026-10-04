@@ -472,12 +472,14 @@ func isRefusal(err error) bool {
 }
 
 func (a *API) pushConfigLocked(newCfg *config.Config) error {
+	newCfg.System.Checker.DNSServer = strings.TrimSpace(newCfg.System.Checker.DNSServer)
 	if server := newCfg.System.Checker.DNSServer; server != "" {
 		if _, err := endpoint.Parse(server); err != nil {
 			return ErrValidation("The trusted DNS server is not valid", FieldError{
 				Path:    "system.checker.dns_server",
 				Code:    "invalid_dns_server",
 				Message: err.Error(),
+				Params:  map[string]any{"value": server},
 			})
 		}
 	}

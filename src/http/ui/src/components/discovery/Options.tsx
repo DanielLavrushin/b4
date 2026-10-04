@@ -15,7 +15,7 @@ import { CoreIcon, ExpandIcon, CollapseIcon } from "@b4.icons";
 import { B4Badge, B4Slider, B4Switch, B4TextField } from "@b4.elements";
 import { colors } from "@design";
 import { Capture } from "@b4.capture";
-import { dnsEndpointError, parsePins } from "@utils";
+import { MAX_RUN_PINS, dnsEndpointError, parsePins, pinsProblem } from "@utils";
 
 export type TLSVersion = "auto" | "tls12" | "tls13";
 export type IPVersion = "auto" | "ipv4" | "ipv6";
@@ -32,6 +32,10 @@ export interface DiscoveryOptions {
   dnsServer: string;
   pinsText: string;
 }
+
+export const optionsInvalid = (options: DiscoveryOptions) =>
+  (options.checkDns && dnsEndpointError(options.dnsServer) !== null) ||
+  pinsProblem(options.pinsText) !== null;
 
 const STORAGE_KEY = "b4_discovery_options";
 const EXPANDED_KEY = "b4_discovery_options_expanded";
@@ -153,6 +157,8 @@ export const DiscoveryOptionsPanel = ({
 
   const tlsCaptures = captures.filter((c) => c.protocol === "tls");
   const dnsServerError = dnsEndpointError(options.dnsServer);
+  const pinsIssue = pinsProblem(options.pinsText);
+  const invalid = optionsInvalid(options);
   const summary = summarize(options, t, ipVersionEnabled, setPicked);
 
   return (
@@ -182,14 +188,24 @@ export const DiscoveryOptionsPanel = ({
           </Typography>
           {!expanded && (
             <B4Badge
-              label={summary || t("discovery.options.defaults")}
+              label={
+                invalid
+                  ? t("discovery.options.summaryInvalid")
+                  : summary || t("discovery.options.defaults")
+              }
               sx={{
                 height: 20,
                 fontSize: "0.7rem",
-                bgcolor: summary
-                  ? colors.accent.secondary
-                  : colors.background.paper,
-                color: summary ? colors.secondary : colors.text.disabled,
+                bgcolor: invalid
+                  ? `${colors.state.error}26`
+                  : summary
+                    ? colors.accent.secondary
+                    : colors.background.paper,
+                color: invalid
+                  ? colors.state.error
+                  : summary
+                    ? colors.secondary
+                    : colors.text.disabled,
               }}
             />
           )}
@@ -250,7 +266,15 @@ export const DiscoveryOptionsPanel = ({
             minRows={2}
             disabled={disabled}
             slotProps={{ inputLabel: { shrink: true } }}
-            helperText={t("discovery.options.pinsHint")}
+            error={pinsIssue !== null}
+            helperText={
+              pinsIssue
+                ? t(`discovery.options.pinsError.${pinsIssue.kind}`, {
+                    value: pinsIssue.value,
+                    max: MAX_RUN_PINS,
+                  })
+                : t("discovery.options.pinsHint")
+            }
           />
 
           {setPicked && (

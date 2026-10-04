@@ -590,4 +590,15 @@ func TestRunPinsAreNormalized(t *testing.T) {
 	if pins, err := runPins(nil); err != nil || pins != nil {
 		t.Fatalf("no pins is fine, got %v %v", pins, err)
 	}
+	for _, name := range []string{"#", "a..b", "site.example/path", "a b.example"} {
+		if _, err := runPins(map[string][]string{name: {"198.51.100.1"}}); err == nil {
+			t.Errorf("%q is not a name a pin can be for", name)
+		}
+	}
+	if _, err := runPins(map[string][]string{"_dmarc.xn--e1afmkfd.xn--p1ai": {"198.51.100.1"}}); err != nil {
+		t.Errorf("an xn-- name with an underscore label is a name: %v", err)
+	}
+	if _, err := runPins(map[string][]string{"пример.рф": {"198.51.100.1"}}); err == nil || !strings.Contains(err.Error(), "xn--") {
+		t.Errorf("an internationalized name is refused with a pointer to its xn-- form, got %v", err)
+	}
 }

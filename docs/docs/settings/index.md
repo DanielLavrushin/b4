@@ -11,7 +11,7 @@ b4 settings are split across several tabs:
 - [Security](./security) - authentication, HTTPS, access from the internet
 - [Payloads](./payloads) - generation and management of TLS payloads for faking
 - [MCP server](./mcp) - letting an external AI application read b4's state
-- [Discovery](./discovery) - timeouts, DNS servers, reference domain
+- [Discovery](./discovery) - timeouts, trusted DNS server, watchdog
 - [Backup](./backup) - backup and restore
 
 The **Integrations** tab also holds the connection to the community hub, described under [Community Hub](../community/index.md#switching-it-on).

@@ -217,11 +217,18 @@ func referenceName(dnsResult *DNSDiscoveryResult) string {
 func unresolvedAdvice(missingFamily string, dnsResult *DNSDiscoveryResult) string {
 	switch {
 	case missingFamily != "":
-		return fmt.Sprintf("there is nothing to test a strategy on over %s; if the site has a %s address that DNS does not publish, pin it and run again", familyLabel(missingFamily), familyLabel(missingFamily))
+		return fmt.Sprintf("there is nothing to test a strategy on over %s; if the site has an %s address that DNS does not publish, pin it and run again", familyLabel(missingFamily), familyLabel(missingFamily))
 	case dnsResult != nil && dnsResult.NoAddressFamily != "":
-		return "there is nothing to test a strategy on; if the site is reached through an address published elsewhere, pin it and run again"
+		return "there is nothing to test a strategy on; if the site is reached through an address published elsewhere, pin it and run again" + forgeryNote(dnsResult)
 	}
-	return "there is nothing to test a strategy on, check the spelling"
+	return "there is nothing to test a strategy on, check the spelling" + forgeryNote(dnsResult)
+}
+
+func forgeryNote(dnsResult *DNSDiscoveryResult) string {
+	if dnsResult == nil || !dnsResult.ForgeableAnswer || (!dnsResult.NXDomain && dnsResult.NoAddressFamily == "") {
+		return ""
+	}
+	return "; that answer came over plain DNS, which can be forged on the way, and a tcp:// or https:// trusted DNS server rules that out"
 }
 
 func (ds *DiscoverySuite) nothingLeftToTest() bool {

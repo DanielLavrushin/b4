@@ -29,6 +29,8 @@ func TestParseAcceptsTheUsualForms(t *testing.T) {
 		{"https://dns.google", HTTPS, "https://dns.google/dns-query"},
 		{"HTTPS://1.1.1.1/dns-query", HTTPS, "https://1.1.1.1/dns-query"},
 		{"https://dns.example:8443/q#frag", HTTPS, "https://dns.example:8443/q"},
+		{"https://[2606:4700:4700::1111]/dns-query", HTTPS, "https://[2606:4700:4700::1111]/dns-query"},
+		{"https://dns.google./dns-query", HTTPS, "https://dns.google./dns-query"},
 	}
 	for _, tc := range cases {
 		ep, err := Parse(tc.in)
@@ -70,6 +72,19 @@ func TestParseRejectsWithAReason(t *testing.T) {
 		{"https://dns.example:0/dns-query", "invalid port"},
 		{"1.2.3", "host name"},
 		{"[1.2.3.4]:53:53", "not an IP address"},
+		{"::ffff:0.0.0.0", "not a server address"},
+		{"[::ffff:0.0.0.0]:53", "not a server address"},
+		{"[1.2.3.4]", "not an IP address"},
+		{"udp://[1.2.3.4]", "not an IP address"},
+		{"[2620:fe::fe", "not an IP address"},
+		{"https://dns.google:443:443/", "not a valid"},
+		{"https://1.2.3.4.5/", "not a valid"},
+		{"https://256.1.1.1/", "not a valid"},
+		{"https://[fe80::1%25eth0]/", "not a valid"},
+		{"https://[1.2.3.4]/", "not a valid"},
+		{"https:///dns.google/dns-query", "not a valid"},
+		{"https://@dns.google/", "user name"},
+		{"https://dns.google/%zz", "not a valid"},
 	}
 	for _, tc := range cases {
 		ep, err := Parse(tc.in)

@@ -65,12 +65,18 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	}
 	log.DiscoveryLogf("Probe address family: %s (queue IPv4=%v, IPv6=%v)", probeFamily, ds.cfg.Queue.IPv4Enabled, ds.cfg.Queue.IPv6Enabled)
 
-	ds.pins = ds.collectPins()
+	ds.collectPins()
 	ds.trusted = ds.trustedServer()
 	if !ds.skipDNS && !ds.trusted.IsZero() {
 		log.DiscoveryLogf("Trusted DNS server: %s", ds.trusted.String())
 		if err := ds.checkTrustedServer(); err != nil {
-			log.DiscoveryLogf("Discovery could not start: the trusted DNS server %s does not answer: %v", ds.trusted.String(), err)
+			if ds.interrupted() {
+				ds.setStatus(CheckStatusCanceled)
+				ds.finalize()
+				ds.logDiscoverySummary()
+				return
+			}
+			log.DiscoveryLogf("Discovery could not start: the trusted DNS server %s gave no usable answer: %v", ds.trusted.String(), err)
 			ds.setStatus(CheckStatusFailed)
 			ds.finalize()
 			return
@@ -85,8 +91,8 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	if ds.skipDNS {
 		log.DiscoveryLogf("Skipping DNS discovery (user requested)")
 		for _, di := range ds.Domains {
-			if pins := ds.pinnedFor(di.Domain); len(pins) > 0 {
-				result := ds.pinnedResult(di, pins)
+			if pins, fromSet := ds.pinnedFor(di.Domain); len(pins) > 0 {
+				result := ds.pinnedResult(di, pins, fromSet)
 				ds.dnsResults[di.Domain] = result
 				ds.CheckSuite.mu.Lock()
 				ds.domainResults[di.Domain].DNSResult = result
@@ -376,6 +382,9 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 			case dnsResult.gatewayIntercepted():
 				log.DiscoveryLogf("  ⊘ [%s] TCP to %v is answered by the first hop in front of this host; b4 here cannot help: run b4 on that gateway or exclude this host from its redirect; if this host is the router itself, the ISP does this at its edge and only a proxy route helps", di.Domain, dnsResult.GatewayIPs)
 				continue
+			case dnsResult.Pinned && dnsResult.TransportBlocked:
+				log.DiscoveryLogf("  ⊘ [%s] none of the pinned addresses %v accepts a TCP connection, a strategy cannot help; pin addresses that answer, or route the site through a proxy", di.Domain, dnsResult.ExpectedIPs)
+				continue
 			case dnsResult.TransportBlocked && len(dnsResult.AlternativeIPs) > 0:
 				log.DiscoveryLogf("  ⚡ [%s] known addresses blocked, answered with %v instead", di.Domain, dnsResult.AlternativeIPs)
 			case dnsResult.TransportBlocked:
@@ -387,6 +396,8 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, bypassed via %s", di.Domain, dnsResult.BestServer)
 			case dnsResult.IsPoisoned && dnsResult.NeedsFragment:
 				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, bypassed via fragmented queries", di.Domain)
+			case dnsResult.IsPoisoned && len(dnsResult.AlternativeIPs) > 0:
+				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, no DNS server a set can use answers honestly, pinned to %v", di.Domain, dnsResult.AlternativeIPs)
 			case dnsResult.IsPoisoned:
 				log.DiscoveryLogf("  ✗ [%s] DNS poisoned, no bypass found", di.Domain)
 			}

@@ -25,6 +25,13 @@ func (ds *DiscoverySuite) collectTargetIPs(domain string, maxIPs int) []string {
 	if dnsResult == nil {
 		return nil
 	}
+	if dnsResult.Pinned && len(dnsResult.AlternativeIPs) > 0 {
+		ips := dnsResult.AlternativeIPs
+		if maxIPs > 0 && len(ips) > maxIPs {
+			ips = ips[:maxIPs]
+		}
+		return append([]string(nil), ips...)
+	}
 	if len(dnsResult.AlternativeIPs) > 0 && dnsResult.TransportBlocked {
 		var ips []string
 		for _, ip := range dnsResult.AlternativeIPs {

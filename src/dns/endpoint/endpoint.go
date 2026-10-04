@@ -60,8 +60,9 @@ func plain(t Transport, s string) (Endpoint, error) {
 	if ap, err := netip.ParseAddrPort(s); err == nil {
 		return checked(t, ap)
 	}
-	host := strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")
-	if addr, err := netip.ParseAddr(host); err == nil {
+	host, bracketed := strings.CutPrefix(s, "[")
+	host, closed := strings.CutSuffix(host, "]")
+	if addr, err := netip.ParseAddr(host); err == nil && bracketed == closed && (!bracketed || addr.Is6()) {
 		return checked(t, netip.AddrPortFrom(addr, DefaultPort))
 	}
 	if strings.HasPrefix(s, "[") || strings.Count(s, ":") > 1 {
@@ -81,7 +82,7 @@ func checked(t Transport, ap netip.AddrPort) (Endpoint, error) {
 	switch {
 	case addr.Zone() != "":
 		return Endpoint{}, errors.New("an IPv6 address with a zone is not supported")
-	case addr.IsUnspecified():
+	case addr.Unmap().IsUnspecified():
 		return Endpoint{}, fmt.Errorf("%s is not a server address", addr)
 	case ap.Port() == 0:
 		return Endpoint{}, errors.New("port 0 is not a server port")
@@ -91,7 +92,7 @@ func checked(t Transport, ap netip.AddrPort) (Endpoint, error) {
 
 func dohURL(s string) (Endpoint, error) {
 	u, err := url.Parse(s)
-	if err != nil || u.Hostname() == "" {
+	if err != nil || !validURLHost(u) {
 		return Endpoint{}, fmt.Errorf("%q is not a valid https:// URL", s)
 	}
 	if u.User != nil {
@@ -108,6 +109,23 @@ func dohURL(s string) (Endpoint, error) {
 		u.Path = "/dns-query"
 	}
 	return Endpoint{Transport: HTTPS, URL: u.String()}, nil
+}
+
+func validURLHost(u *url.URL) bool {
+	host := u.Hostname()
+	switch {
+	case host == "":
+		return false
+	case strings.HasPrefix(u.Host, "["):
+		addr, err := netip.ParseAddr(host)
+		return err == nil && addr.Is6() && addr.Zone() == ""
+	case strings.Contains(host, ":"):
+		return false
+	case strings.Trim(host, "0123456789.") == "":
+		_, err := netip.ParseAddr(host)
+		return err == nil
+	}
+	return true
 }
 
 func (e Endpoint) IsZero() bool {
