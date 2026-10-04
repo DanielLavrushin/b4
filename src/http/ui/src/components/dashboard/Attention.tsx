@@ -17,9 +17,11 @@ import { linkSx, srOnlySx } from "./panels/styles";
 import { writeChoice } from "./panels/storage";
 import {
   IPV6_DISMISS,
+  QUIET_AFTER_MS,
   buildAttentionItems,
   type AttentionItem,
   type AttentionLevel,
+  type QuietView,
   type ThreadView,
   type WatchedSet,
 } from "./attentionItems";
@@ -34,6 +36,7 @@ const COLLAPSED_ITEMS = 6;
 
 const EMPTY_WATCHED: readonly WatchedSet[] = [];
 const EMPTY_EVENTS: readonly B4Event[] = [];
+const NOT_QUIET: QuietView = { since: 0, fromStart: false };
 
 const LEVEL_COLOR: Record<AttentionLevel, string> = {
   error: colors.state.error,
@@ -287,6 +290,20 @@ export const Attention = memo(function Attention({ onRestart }: AttentionProps) 
     }),
     shallowEqual,
   );
+  const quiet = useMetricsFrame((f): QuietView => {
+    if (f.engine.state !== "running" || f.engine_failure) return NOT_QUIET;
+    if (f.last_packet_at > 0) {
+      return f.now - f.last_packet_at >= QUIET_AFTER_MS
+        ? { since: f.last_packet_at, fromStart: false }
+        : NOT_QUIET;
+    }
+    return f.uptime_s * 1000 >= QUIET_AFTER_MS
+      ? {
+          since: Math.floor((f.now - f.uptime_s * 1000) / 60_000) * 60_000,
+          fromStart: true,
+        }
+      : NOT_QUIET;
+  }, shallowEqual);
   const now = useServerNow(NOW_TICK_MS);
   const watchdogQuery = useWatchdogSetStatuses(watched.length > 0);
   const watchdog = useMemo(
@@ -308,6 +325,7 @@ export const Attention = memo(function Attention({ onRestart }: AttentionProps) 
         locale,
         now,
         mode,
+        quiet,
         watched,
         watchdog,
         attention,
@@ -322,6 +340,7 @@ export const Attention = memo(function Attention({ onRestart }: AttentionProps) 
       locale,
       now,
       mode,
+      quiet,
       watched,
       watchdog,
       attention,

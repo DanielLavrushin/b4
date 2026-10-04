@@ -29,10 +29,10 @@ Times on the dashboard are in the browser's time zone. b4 measures every time ag
 | **Status** | **Running**, **Starting**, **Stopping**, or **Engine failed** while the packet engine is down, see [Packet engine not running](#packet-engine-not-running) |
 | **Engine** | `NFQUEUE` or `TUN` with the number of worker threads, such as `NFQUEUE x4` |
 | **Firewall** | The firewall backend in use, such as `iptables` or `nftables`, and when the firewall monitor last checked b4's rules. **not monitored**: the monitor is not running, for example with **Firewall monitor interval** at `0` on NFQUEUE. **Set up externally**: **Skip IPTables/NFTables setup** is on, so b4 installs no rules of its own. A line such as **restored 4 times, last at 19:30** counts how often since b4 started the monitor put back rules that something else had removed; some router firmware does this routinely, and it is not an error. See [Settings, Core, Firewall](settings/core.md#firewall) |
-| **Last packet** | When the packet engine last received a packet of any kind, or **none since start**. When this keeps growing while devices are in use, their traffic does not reach b4 |
 | **Uptime** | Time since b4 started. Hovering shows the start time and, once the counters were reset, the time they count from |
-| **b4 RAM** | b4's resident memory (RSS) and its share of the router's RAM. Once b4 has run for an hour, a line shows the peak of every ten minutes over the last 24 hours; hovering gives the peak, the current value and the router's total |
+| **b4 RAM** | b4's resident memory (RSS) and its share of the router's RAM. Hovering gives the peak of the last 24 hours, the current value and the router's total |
 | **CPU** | b4's CPU time over the last 10 seconds, as a share of all the router's cores. Hovering shows the busiest minute of the last hour, also as a share of one core |
+| **b4 RAM, last 24 h** | Appears once b4 has run for an hour and takes the rest of the strip: a line with the peak RSS of every ten minutes, from zero up, so a steady rise stands out and small swings stay flat. Hovering a point gives its ten minutes and peak |
 
 The Go runtime figures (heap in use and reserved, goroutines, OS threads, open file descriptors, GC cycles) are under **Process** in the **System Info** dialog on Settings, Core.
 
@@ -80,6 +80,7 @@ The list under the strip collects what needs action, errors before warnings, one
 | **Watchdog checks fail for X**, **The watchdog is looking for a working strategy for X**, **The watchdog cannot check X** | A watched set is Degraded or in Cooldown, waits for or runs a heal, or cannot be verified, see [Statuses](watchdog.md#statuses). The detail gives the reason | **Open set**, the set's Discovery tab |
 | **The watchdog gave up on X; its sites may not open** (error) | Three heals of a watched set failed in a row | **Open set** |
 | **The watchdog is off, but N sets ask for it** | Sets have **Keep this set working with the watchdog** on while the [watchdog](watchdog.md) itself is off | **Watchdog** |
+| **No packets reached b4 in the last N min; if devices are in use, their traffic is not reaching b4** | The packet engine is running and has received no packet for 15 minutes or longer. The line gives the time of the last packet, or of b4's start when none arrived since; it reads **since it started** in that case | **Settings** |
 | Start failures (errors) | The SOCKS5 server, the MTProto proxy or the web server did not start, the web server's TLS certificate and key were unusable and plain HTTP was served instead, or some set targets could not be loaded. The line gives the time, the detail the error | **Settings** (Settings, Core), **Telegram settings** for the MTProto proxy, **Sets** for the targets |
 | **b4 was updated on disk; restart to run it** | The file b4 was started from has changed, checked every 10 seconds | **Restart** opens the restart dialog |
 | Overload | Within the last 10 minutes, b4 skipped the bypass for packets because 512 injections were already in flight, could not send packets it crafted, or its packet queue overflowed and the kernel dropped packets meant for it. Each comes with its count | **Settings** |
@@ -186,7 +187,6 @@ What happened to b4 since it started, newest first: eight entries, then **Show N
 | **Watchdog switched X to Y** | A watchdog heal wrote a new strategy into a set | **Open set** |
 | **Watchdog gave up on X** (warning) | The watchdog gave up on a set; the detail gives the reason | **Open set**, the set's Discovery tab |
 | **AI agent changed a setting** | An AI client changed a setting or reverted a change through [MCP](settings/mcp.md). The detail gives the setting's path, never its value | **MCP settings** |
-| **b4 1.84.2 was installed; restart b4 to run it** | An update started from the web interface replaced the binary | - |
 
 The list is held in b4's memory, at most 50 entries, so a restart of b4 starts it over. [Reset counters](#reset-counters) leaves it alone.
 

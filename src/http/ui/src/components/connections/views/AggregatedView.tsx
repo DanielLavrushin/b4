@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Fab, Tooltip, useMediaQuery } from "@mui/material";
-import { useSearchParams } from "react-router";
+import {
+  NavigationType,
+  useLocation,
+  useNavigationType,
+  useSearchParams,
+} from "react-router";
 import { StartIcon, StopIcon } from "@b4.icons";
 import { colors, theme } from "@design";
 import { useConnectionGroups, type EnrichedGroup } from "@hooks/useConnectionGroups";
@@ -136,6 +141,18 @@ export const AggregatedView = ({
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [window, setWindow] = useState<TimeWindow>(() => initialWindow(searchParams));
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const [seenLocation, setSeenLocation] = useState(location.key);
+  if (seenLocation !== location.key) {
+    setSeenLocation(location.key);
+    if (
+      navigationType !== NavigationType.Replace &&
+      (hasTrafficDeepLink(searchParams) || searchParams.has(WINDOW_PARAM))
+    ) {
+      setWindow(initialWindow(searchParams));
+    }
+  }
   const unmatchedOnly = searchParams.get(UNMATCHED_PARAM) === "1";
   const selectedMac = deviceFromParams(searchParams);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);

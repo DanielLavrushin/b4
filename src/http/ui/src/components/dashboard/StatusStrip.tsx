@@ -22,6 +22,7 @@ import {
   SyncIcon,
 } from "@b4.icons";
 import {
+  SPARK_BUCKET_MS,
   SparkLine,
   formatByteSize,
   formatClock,
@@ -326,23 +327,6 @@ const FirewallCell = memo(function FirewallCell() {
   );
 });
 
-const LastPacketCell = memo(function LastPacketCell() {
-  const { t } = useTranslation();
-  const age = useMetricsFrame((f) =>
-    f.last_packet_at > 0
-      ? Math.floor(Math.max(0, f.now - f.last_packet_at) / 1000) * 1000
-      : -1,
-  );
-  if (age === undefined) return null;
-  return (
-    <Cell
-      label={t("dashboard.status.lastPacket")}
-      value={age < 0 ? t("dashboard.status.lastPacketNone") : formatAge(age, t)}
-      hint={[t("dashboard.status.lastPacketHint")]}
-    />
-  );
-});
-
 const UptimeCell = memo(function UptimeCell() {
   const { t, i18n } = useTranslation();
   const view = useMetricsFrame(
@@ -408,7 +392,6 @@ const RamCell = memo(function RamCell() {
     return (
       <Cell
         label={label}
-        narrowRow={2}
         value={t("dashboard.status.notAvailable")}
         hint={[t("dashboard.status.ramUnknownHint")]}
       />
@@ -431,21 +414,7 @@ const RamCell = memo(function RamCell() {
   return (
     <Cell
       label={label}
-      narrowRow={2}
-      value={
-        <>
-          <Box component="span">{size}</Box>
-          {from > 0 && view.now - from >= SPARK_MIN_SPAN_MS && (
-            <SparkLine
-              buckets={view.history ?? EMPTY_RSS}
-              valueKey="max"
-              now={view.now}
-              unit={MIB}
-              ariaLabel={t("dashboard.status.ramTrend")}
-            />
-          )}
-        </>
-      }
+      value={size}
       detail={
         share !== null ? (
           <Detail>
@@ -496,6 +465,67 @@ const CpuCell = memo(function CpuCell() {
   );
 });
 
+interface RamTrendView {
+  rss: number;
+  history: readonly RSSBucket[];
+  now: number;
+}
+
+const RamTrendCell = memo(function RamTrendCell() {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language;
+  const view = useMetricsFrame(
+    (f): RamTrendView => ({
+      rss: f.process.rss_bytes,
+      history: f.rss_history,
+      now: f.now,
+    }),
+    shallowEqual,
+  );
+  if (!view || !(view.rss > 0)) return null;
+  const history = view.history ?? EMPTY_RSS;
+  const from = history.length > 0 ? history[0].t : 0;
+  if (!(from > 0) || view.now - from < SPARK_MIN_SPAN_MS) return null;
+  const now = view.now;
+  return (
+    <Box
+      data-status-cell=""
+      sx={{
+        minWidth: 0,
+        gridColumn: "1 / -1",
+        order: 3,
+        [WIDE]: { order: 0, flex: "1 1 120px", minWidth: 120 },
+      }}
+    >
+      <Box component="span" sx={labelSx}>
+        {t("dashboard.status.ramTrendLabel")}
+      </Box>
+      <Box sx={{ mt: "4px" }}>
+        <SparkLine
+          buckets={history}
+          valueKey="max"
+          now={now}
+          unit={MIB}
+          width="fill"
+          height={30}
+          area
+          ariaLabel={t("dashboard.status.ramTrend")}
+          readout={(bucket) =>
+            t("dashboard.status.ramTrendPoint", {
+              range: formatClockRange(
+                bucket.t,
+                Math.min(bucket.t + SPARK_BUCKET_MS, now),
+                locale,
+              ),
+              value: formatByteSize(bucket.max, locale),
+            })
+          }
+        />
+      </Box>
+    </Box>
+  );
+});
+
 interface StatusStripProps {
   editing: boolean;
   onToggleEditing: () => void;
@@ -535,22 +565,24 @@ export const StatusStrip = memo(function StatusStrip({
             opacity: staleSince > 0 ? STALE_OPACITY : 1,
           },
           [WIDE]: {
+            position: "relative",
             display: "flex",
             flexWrap: "wrap",
             alignItems: "flex-start",
             columnGap: "28px",
             rowGap: "10px",
-            px: "16px",
+            pl: "16px",
+            pr: "52px",
           },
         }}
       >
         <StateCell />
         <EngineCell />
         <FirewallCell />
-        <LastPacketCell />
         <UptimeCell />
         <RamCell />
         <CpuCell />
+        <RamTrendCell />
         <Box
           sx={{
             gridColumn: 2,
@@ -558,7 +590,7 @@ export const StatusStrip = memo(function StatusStrip({
             justifySelf: "end",
             alignSelf: "start",
             mr: "-6px",
-            [WIDE]: { ml: "auto", alignSelf: "center", mr: "-8px" },
+            [WIDE]: { position: "absolute", top: "10px", right: "8px", mr: 0 },
           }}
         >
           <Tooltip title={t("dashboard.status.menu")}>

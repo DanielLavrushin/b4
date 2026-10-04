@@ -51,53 +51,6 @@ func TestMCPWritesAndUndosRaiseAnEventWithThePathOnly(t *testing.T) {
 	}
 }
 
-func TestAnUpdateIsReportedOnceItsBinaryLands(t *testing.T) {
-	prev := executableFingerprintAtStart
-	t.Cleanup(func() {
-		executableFingerprintAtStart = prev
-		launchedUpdate.Store(nil)
-	})
-	if executableFingerprintAtStart == "" {
-		t.Skip("cannot read this test binary's own path")
-	}
-	since := newestEventID()
-
-	noteUpdateLaunched("v1.85.0")
-	if BinaryReplaced() {
-		t.Fatal("the binary has not changed yet")
-	}
-	if got := eventsAfter(since, metrics.EventUpdateInstalled); len(got) != 0 {
-		t.Fatal("nothing is installed before the binary changes")
-	}
-
-	executableFingerprintAtStart = "1:1"
-	if !BinaryReplaced() || !BinaryReplaced() {
-		t.Fatal("a replaced binary must be reported on every check")
-	}
-	events := eventsAfter(since, metrics.EventUpdateInstalled)
-	if len(events) != 1 {
-		t.Fatalf("the update is reported once, got %d events", len(events))
-	}
-	if ev := events[0]; ev.Args["version"] != "v1.85.0" || ev.Level != metrics.LevelInfo || !strings.Contains(ev.Message, "v1.85.0") {
-		t.Fatalf("unexpected update_installed event: %+v", ev)
-	}
-}
-
-func TestAReplacedBinaryWithoutAnUpdateRaisesNoEvent(t *testing.T) {
-	prev := executableFingerprintAtStart
-	t.Cleanup(func() { executableFingerprintAtStart = prev })
-	launchedUpdate.Store(nil)
-	since := newestEventID()
-
-	executableFingerprintAtStart = "1:1"
-	if prev != "" && !BinaryReplaced() {
-		t.Fatal("a swapped binary still reads as replaced")
-	}
-	if got := eventsAfter(since, metrics.EventUpdateInstalled); len(got) != 0 {
-		t.Fatal("a binary swapped by hand is the binary_replaced attention item, not an installed update")
-	}
-}
-
 func TestDiagnosticsCarryTheGoRuntimeFigures(t *testing.T) {
 	info := collectB4Info("", "standalone")
 	if info.HeapSys == 0 || info.HeapInuse == 0 || info.Goroutines < 1 || info.OSThreads < 1 || info.OpenFDs < 1 {

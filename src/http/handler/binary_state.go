@@ -3,9 +3,6 @@ package handler
 import (
 	"fmt"
 	"os"
-	"sync/atomic"
-
-	"github.com/daniellavrushin/b4/metrics"
 )
 
 // executableFingerprint identifies the file this process was started from. Version is
@@ -40,26 +37,6 @@ func binaryReplaced() bool {
 	return now != "" && now != executableFingerprintAtStart
 }
 
-var launchedUpdate atomic.Pointer[string]
-
-func noteUpdateLaunched(version string) {
-	launchedUpdate.Store(&version)
-}
-
 func BinaryReplaced() bool {
-	if !binaryReplaced() {
-		return false
-	}
-	if v := launchedUpdate.Swap(nil); v != nil {
-		reportUpdateInstalled(*v)
-	}
-	return true
-}
-
-func reportUpdateInstalled(version string) {
-	msg := "A new b4 binary was installed; restart b4 to run it"
-	if version != "" {
-		msg = fmt.Sprintf("b4 %s was installed; restart b4 to run it", version)
-	}
-	metrics.GetMetricsCollector().Event(metrics.LevelInfo, metrics.EventUpdateInstalled, map[string]string{"version": version}, msg)
+	return binaryReplaced()
 }

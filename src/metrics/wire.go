@@ -35,7 +35,6 @@ const (
 	EventWatchdogHealed  = "watchdog_healed"
 	EventWatchdogGaveUp  = "watchdog_gave_up"
 	EventMCPWrite        = "mcp_write"
-	EventUpdateInstalled = "update_installed"
 
 	MinuteBuckets         = 61
 	TenMinuteBuckets      = 145

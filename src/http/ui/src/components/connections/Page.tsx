@@ -32,7 +32,12 @@ import { asnApi, asnInUseSets } from "@api/asn";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { devicesApi } from "@b4.devices";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "react-router";
+import {
+  NavigationType,
+  useLocation,
+  useNavigationType,
+  useSearchParams,
+} from "react-router";
 import i18n from "@/i18n";
 
 const VIEW_STORAGE_KEY = "b4_connections_view";
@@ -58,6 +63,16 @@ export function ConnectionsPage() {
       return "aggregated";
     }
   });
+
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const [seenLocation, setSeenLocation] = useState(location.key);
+  if (seenLocation !== location.key) {
+    setSeenLocation(location.key);
+    if (navigationType !== NavigationType.Replace && hasTrafficDeepLink(searchParams)) {
+      setView("aggregated");
+    }
+  }
 
   const chooseView = (next: "aggregated" | "raw") => {
     setView(next);

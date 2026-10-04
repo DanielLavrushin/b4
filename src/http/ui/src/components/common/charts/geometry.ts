@@ -335,21 +335,47 @@ export interface SparkInput {
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 
-export function sparkPoints(input: SparkInput): string | null {
+export interface SparkCoord {
+  x: number;
+  y: number;
+  index: number;
+}
+
+export function sparkCoords(input: SparkInput): SparkCoord[] | null {
   const inset = input.inset ?? 1;
   const from = input.now - input.windowMs;
   const spanX = Math.max(0, input.width - 2 * inset);
   const spanY = Math.max(0, input.height - 2 * inset);
   if (!(input.windowMs > 0) || !(input.ceiling > 0)) return null;
-  const points: string[] = [];
+  const coords: SparkCoord[] = [];
   for (let i = 0; i < input.times.length; i++) {
     const center = input.times[i] + input.bucketMs / 2;
     if (center < from) continue;
     const t = Math.min(center, input.now);
     const v = Math.max(0, Math.min(input.values[i], input.ceiling));
-    const x = inset + ((t - from) / input.windowMs) * spanX;
-    const y = inset + spanY - (v / input.ceiling) * spanY;
-    points.push(`${round2(x)},${round2(y)}`);
+    coords.push({
+      x: round2(inset + ((t - from) / input.windowMs) * spanX),
+      y: round2(inset + spanY - (v / input.ceiling) * spanY),
+      index: i,
+    });
   }
-  return points.length >= 2 ? points.join(" ") : null;
+  return coords.length >= 2 ? coords : null;
+}
+
+export function sparkPoints(input: SparkInput): string | null {
+  const coords = sparkCoords(input);
+  return coords ? coords.map((c) => `${c.x},${c.y}`).join(" ") : null;
+}
+
+export function nearestCoord(coords: readonly SparkCoord[], x: number): number {
+  let best = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < coords.length; i++) {
+    const distance = Math.abs(coords[i].x - x);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = i;
+    }
+  }
+  return best;
 }

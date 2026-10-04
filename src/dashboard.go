@@ -120,5 +120,5 @@ func rulesInfo(mc *metrics.MetricsCollector, st tables.RulesStatus) metrics.Rule
 func noteStarted(mc *metrics.MetricsCollector, version string, info metrics.EngineInfo) {
 	mc.Event(metrics.LevelInfo, metrics.EventStarted,
 		map[string]string{"version": version, "engine": info.Mode, "threads": strconv.Itoa(info.Threads)},
-		fmt.Sprintf("B4 %s is fully operational (%s, %d threads)", version, engineLabel(info.Mode), info.Threads))
+		fmt.Sprintf("B4 %s started (%s, %d threads)", version, engineLabel(info.Mode), info.Threads))
 }

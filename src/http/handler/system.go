@@ -421,7 +421,6 @@ func (api *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	noteUpdateLaunched(req.Version)
 
 	sendResponse(w, response)
 }

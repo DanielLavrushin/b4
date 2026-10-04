@@ -126,10 +126,6 @@ export function describeEvent(
         detail: args.path || undefined,
         link: { to: "/settings/api", kind: "mcp" },
       };
-    case "update_installed":
-      return args.version
-        ? { text: t(k("update_installed"), { version: args.version }) }
-        : { text: t(k("updateInstalledPlain")) };
     default:
       return {
         text: event.message || event.code || "-",

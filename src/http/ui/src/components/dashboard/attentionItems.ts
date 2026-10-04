@@ -11,7 +11,7 @@ import type { TelegramBridgeStatus } from "../../models/mtproto";
 import { formatInteger } from "../common/charts/format";
 import { describeEvent } from "./panels/eventText";
 import { formatSince } from "./panels/format";
-import { formatPercent } from "./statusFormat";
+import { formatPercent, formatUptime } from "./statusFormat";
 
 export type AttentionLevel = "error" | "warning";
 
@@ -52,11 +52,17 @@ export interface ThreadView {
   thread_limit: number;
 }
 
+export interface QuietView {
+  since: number;
+  fromStart: boolean;
+}
+
 export interface AttentionInput {
   t: TFunction;
   locale: string;
   now: number;
   mode: EngineMode | undefined;
+  quiet: QuietView | undefined;
   watched: readonly WatchedSet[];
   watchdog: WatchdogView;
   attention: Attention | undefined;
@@ -69,6 +75,7 @@ export interface AttentionInput {
 
 export const IPV6_DISMISS = "ipv6";
 export const CONNTRACK_WARN_SHARE = 0.9;
+export const QUIET_AFTER_MS = 15 * 60_000;
 
 export const START_FAILURE_LINK: Partial<Record<EventCode, string>> = {
   socks5_failed: "/settings/general",
@@ -320,6 +327,23 @@ function conntrackItem(input: AttentionInput, items: AttentionItem[]): void {
   });
 }
 
+function quietItem(input: AttentionInput, items: AttentionItem[]): void {
+  const { t, quiet, now } = input;
+  if (!quiet || !(quiet.since > 0)) return;
+  const age = now - quiet.since;
+  if (!(age >= QUIET_AFTER_MS)) return;
+  const duration = formatUptime(age / 1000, t);
+  items.push({
+    key: "quiet",
+    level: "warning",
+    text: quiet.fromStart
+      ? t("dashboard.attention.quietSinceStart", { duration })
+      : t("dashboard.attention.quiet", { duration }),
+    time: quiet.since,
+    action: linkAction(t, "/settings/general", "settings"),
+  });
+}
+
 function threadItem(input: AttentionInput, items: AttentionItem[]): void {
   const { t, locale, threads } = input;
   if (!threads || !(threads.thread_warn > 0)) return;
@@ -343,6 +367,7 @@ export function buildAttentionItems(input: AttentionInput): AttentionItem[] {
   }
   bridgeItems(input, items);
   watchdogItems(input, items);
+  quietItem(input, items);
   startFailureItems(input, items);
   if (input.attention?.binary_replaced) {
     items.push({

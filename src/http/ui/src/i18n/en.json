@@ -1145,9 +1145,7 @@
         "rules_restored_other": "Firewall rules restored {{value}} times since {{time}}",
         "watchdog_healed": "Watchdog switched {{set}} to {{preset}}",
         "watchdog_gave_up": "Watchdog gave up on {{set}}",
-        "mcp_write": "AI agent changed a setting",
-        "update_installed": "b4 {{version}} was installed; restart b4 to run it",
-        "updateInstalledPlain": "A new b4 version was installed; restart b4 to run it"
+        "mcp_write": "AI agent changed a setting"
       }
     },
     "blocked": {
@@ -1218,9 +1216,6 @@
       "firewallHint": "b4 checks its firewall rules every {{seconds}} s and puts them back when something removes them.",
       "firewallHintPlain": "b4 checks its firewall rules and puts them back when something removes them.",
       "firewallRestoredHint": "A restore means another program or the router firmware removed b4's rules and b4 put them back. Some firmware does this routinely.",
-      "lastPacket": "Last packet",
-      "lastPacketNone": "none since start",
-      "lastPacketHint": "When b4's engine last received a packet. If devices are browsing while this grows old, their traffic does not reach b4.",
       "uptime": "Uptime",
       "uptimeHint": "b4 started {{time}}",
       "statsSinceHint": "Counters since {{time}}",
@@ -1229,6 +1224,8 @@
       "ramShare": "{{value}} of router",
       "ramHint": "{{range}}: peak {{peak}} - now {{now}} - router RAM {{total}}",
       "ramTrend": "b4 memory use over the last 24 hours",
+      "ramTrendLabel": "b4 RAM, last 24 h",
+      "ramTrendPoint": "{{range}}: peak {{value}}",
       "ramUnknownHint": "b4 could not read its own memory use.",
       "notAvailable": "n/a",
       "cpu": "CPU",
@@ -1310,7 +1307,9 @@
       "conntrack": "The router's connection table is {{percent}} full; new connections may fail",
       "conntrackDetail_one": "{{value}} of {{max}} entries in use",
       "conntrackDetail_other": "{{value}} of {{max}} entries in use",
-      "threads": "b4 holds {{value}} OS threads; the Go runtime stops b4 at {{limit}}"
+      "threads": "b4 holds {{value}} OS threads; the Go runtime stops b4 at {{limit}}",
+      "quiet": "No packets reached b4 in the last {{duration}}; if devices are in use, their traffic is not reaching b4",
+      "quietSinceStart": "No packets reached b4 since it started {{duration}} ago; if devices are in use, their traffic is not reaching b4"
     }
   },
   "sets": {

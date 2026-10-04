@@ -18,8 +18,7 @@ export type EventCode =
   | "rules_restored"
   | "watchdog_healed"
   | "watchdog_gave_up"
-  | "mcp_write"
-  | "update_installed";
+  | "mcp_write";
 
 export const MINUTE_BUCKETS = 61;
 export const TEN_MINUTE_BUCKETS = 145;

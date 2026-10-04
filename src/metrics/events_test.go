@@ -61,7 +61,7 @@ func TestEventTimesAreWallClock(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	r.step(90 * time.Second)
 	r.clk.advance(400 * time.Millisecond)
-	r.m.Event(LevelInfo, EventStarted, map[string]string{"version": "1.85.0", "engine": EngineModeNFQueue, "threads": "4"}, "B4 is fully operational")
+	r.m.Event(LevelInfo, EventStarted, map[string]string{"version": "1.85.0", "engine": EngineModeNFQueue, "threads": "4"}, "B4 1.85.0 started (NFQUEUE, 4 threads)")
 	e := r.m.Hello().Events.Items[0]
 	if e.T != ms(rigStart.Add(90400*time.Millisecond)) {
 		t.Fatalf("event time %d, want %d", e.T, ms(rigStart.Add(90400*time.Millisecond)))
