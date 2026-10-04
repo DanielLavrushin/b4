@@ -7963,6 +7963,9 @@
                 "nfqueue_works": {
                     "type": "boolean"
                 },
+                "routing": {
+                    "$ref": "#/definitions/handler.DiagRouting"
+                },
                 "rule_groups": {
                     "type": "array",
                     "items": {
@@ -8110,6 +8113,55 @@
                     "type": "string"
                 },
                 "geosite": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.DiagRouting": {
+            "type": "object",
+            "properties": {
+                "backend": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "failing_since": {
+                    "type": "string"
+                },
+                "installed": {
+                    "type": "integer"
+                },
+                "last_attempt": {
+                    "type": "string"
+                },
+                "missing_tool": {
+                    "type": "string"
+                },
+                "next_retry": {
+                    "type": "string"
+                },
+                "set_errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.DiagRoutingError"
+                    }
+                },
+                "sets": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.DiagRoutingError": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "set": {
                     "type": "string"
                 }
             }
