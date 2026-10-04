@@ -479,39 +479,6 @@ func hasBinary(name string) bool {
 	return found
 }
 
-const ipsetProbeSet = "b4_ipset_probe"
-
-var ipsetKernelProbe = func() error {
-	_, _ = run("ipset", "destroy", ipsetProbeSet)
-	if _, err := run("ipset", "create", ipsetProbeSet, "hash:net", "family", "inet", "-exist"); err != nil {
-		return err
-	}
-	_, _ = run("ipset", "destroy", ipsetProbeSet)
-	return nil
-}
-
-var (
-	ipsetProbeMu  sync.Mutex
-	ipsetProbed   bool
-	ipsetProbeErr error
-)
-
-func ipsetUnusable() string {
-	if !hasBinary("ipset") {
-		return "ipset binary not found (install ipset via your system package manager)"
-	}
-	ipsetProbeMu.Lock()
-	defer ipsetProbeMu.Unlock()
-	if !ipsetProbed {
-		ipsetProbeErr = ipsetKernelProbe()
-		ipsetProbed = true
-	}
-	if ipsetProbeErr != nil {
-		return fmt.Sprintf("ipset does not work on this kernel (%v)", ipsetProbeErr)
-	}
-	return ""
-}
-
 var runStdin = runStdinExec
 
 func runStdinExec(stdin string, args ...string) error {

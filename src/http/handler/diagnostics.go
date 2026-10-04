@@ -345,7 +345,7 @@ func collectRoutingInfo(cfg *config.Config) *DiagRouting {
 		NextRetry:    diagTimestamp(st.NextRetry),
 	}
 	for _, e := range st.SetErrors {
-		info.SetErrors = append(info.SetErrors, DiagRoutingError{Set: e.Set, Error: e.Error})
+		info.SetErrors = append(info.SetErrors, DiagRoutingError{ID: e.ID, Set: e.Set, Error: e.Error})
 	}
 	return info
 }

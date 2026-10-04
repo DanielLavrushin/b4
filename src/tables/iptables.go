@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -113,6 +114,46 @@ func (im *IPTablesManager) hasConnmarkSupport(ipt string) bool {
 		log.Warnf("IPTABLES[%s]: connmark module not available; b4's own marked connections (e.g. MTProto WS bridge upstream) will not be exempted from reply-side processing", ipt)
 	}
 	return supported
+}
+
+const ipsetProbeSet = "b4_ipset_probe"
+
+var ipsetMatchProbe = func(im *IPTablesManager, ipt string) error {
+	family, set := "inet", ipsetProbeSet
+	if strings.HasPrefix(ipt, "ip6") {
+		family, set = "inet6", ipsetProbeSet+"6"
+	}
+	_, _ = run("ipset", "destroy", set)
+	if _, err := run("ipset", "create", set, "hash:net", "family", family, "-exist"); err != nil {
+		return fmt.Errorf("ipset does not work on this kernel (%v)", err)
+	}
+	defer func() { _, _ = run("ipset", "destroy", set) }()
+	if ok, err := im.probeModuleInTempChain(ipt, "mangle", []string{"-m", "set", "--match-set", set, "dst", "-j", "RETURN"}); !ok {
+		return fmt.Errorf("%s rejected the set match, which needs the xt_set kernel module and the iptables set extension (%v)", ipt, err)
+	}
+	return nil
+}
+
+var (
+	ipsetProbeMu   sync.Mutex
+	ipsetProbeErrs = map[string]error{}
+)
+
+func (im *IPTablesManager) ipsetUnusable(ipt string) string {
+	if !hasBinary("ipset") {
+		return "ipset binary not found (install ipset via your system package manager)"
+	}
+	ipsetProbeMu.Lock()
+	defer ipsetProbeMu.Unlock()
+	err, probed := ipsetProbeErrs[ipt]
+	if !probed {
+		err = ipsetMatchProbe(im, ipt)
+		ipsetProbeErrs[ipt] = err
+	}
+	if err != nil {
+		return err.Error()
+	}
+	return ""
 }
 
 const (
@@ -599,7 +640,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
 		}
 		dupSkip := ""
 		if len(dupIPs) > 0 {
-			dupSkip = ipsetUnusable()
+			dupSkip = manager.ipsetUnusable(ipt)
 		}
 		if dupSkip != "" {
 			log.Warnf("%s; skipping duplicate-IPs rules for %s", dupSkip, dupSetName)
@@ -821,7 +862,7 @@ func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain stri
 				continue
 			}
 			if hasIPs {
-				if reason := ipsetUnusable(); reason != "" {
+				if reason := manager.ipsetUnusable(ipt); reason != "" {
 					log.Warnf("%s; skipping per-set MSS for set %q", reason, e.SetID)
 					continue
 				}

@@ -1166,12 +1166,12 @@ func routeClearSyncRetry() {
 
 type routeSyncReport struct {
 	err     string
-	setErrs map[string]string
+	setErrs map[string]RoutingSetError
 	since   time.Time
 	attempt time.Time
 }
 
-func routeNoteSyncFailed(attempt time.Time, err string, setErrs map[string]string) {
+func routeNoteSyncFailed(attempt time.Time, err string, setErrs map[string]RoutingSetError) {
 	since := routeSyncOutcome.since
 	if since.IsZero() {
 		since = attempt
@@ -1194,6 +1194,7 @@ func RoutingSetsWanted(cfg *config.Config) int {
 }
 
 type RoutingSetError struct {
+	ID    string
 	Set   string
 	Error string
 }
@@ -1223,10 +1224,16 @@ func RoutingStatus() RoutingState {
 		st.Backend = routeEngine.name()
 		st.MissingTool = routeEngineMissing
 	}
-	for name, msg := range routeSyncOutcome.setErrs {
-		st.SetErrors = append(st.SetErrors, RoutingSetError{Set: name, Error: msg})
+	for _, e := range routeSyncOutcome.setErrs {
+		st.SetErrors = append(st.SetErrors, e)
 	}
-	sort.Slice(st.SetErrors, func(i, j int) bool { return st.SetErrors[i].Set < st.SetErrors[j].Set })
+	sort.Slice(st.SetErrors, func(i, j int) bool {
+		a, b := st.SetErrors[i], st.SetErrors[j]
+		if a.Set != b.Set {
+			return a.Set < b.Set
+		}
+		return a.ID < b.ID
+	})
 	return st
 }
 
@@ -1310,7 +1317,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 	}
 	retrying := routeSyncRetry == cfg
 	failed := false
-	setErrs := make(map[string]string)
+	setErrs := make(map[string]RoutingSetError)
 
 	if be.name() == backendNFTables {
 		routeNftSweepBaseOutputBypasses()
@@ -1416,7 +1423,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 					routeRuleCache[set.Id] = previous
 				}
 				failed = true
-				setErrs[set.Name] = err.Error()
+				setErrs[set.Id] = RoutingSetError{ID: set.Id, Set: set.Name, Error: err.Error()}
 				routeNoteInstallFailed(set.Id)
 				if retrying {
 					log.Tracef("Routing: set '%s' still cannot be installed during the retried sync: %v", set.Name, err)

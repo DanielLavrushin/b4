@@ -69,6 +69,7 @@ interface DiagRuleGroup {
 }
 
 interface DiagRoutingError {
+  id: string;
   set: string;
   error: string;
 }

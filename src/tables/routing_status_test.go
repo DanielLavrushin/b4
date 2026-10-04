@@ -121,11 +121,32 @@ func TestRoutingStatusNamesTheSetsThatFailedToInstall(t *testing.T) {
 	if st.Error != "" {
 		t.Fatalf("a failure of one set was reported as a failure of the whole sync: %q", st.Error)
 	}
-	if len(st.SetErrors) != 1 || st.SetErrors[0].Set != set.Name || !strings.Contains(st.SetErrors[0].Error, errTestClear.Error()) {
+	if len(st.SetErrors) != 1 || st.SetErrors[0].ID != set.Id || st.SetErrors[0].Set != set.Name || !strings.Contains(st.SetErrors[0].Error, errTestClear.Error()) {
 		t.Fatalf("the set that failed to install is not named with its error: %+v", st.SetErrors)
 	}
 	if st.NextRetry.IsZero() {
 		t.Fatalf("a set that failed to install carries no time for the next attempt")
+	}
+}
+
+func TestRoutingStatusKeepsEverySetThatFailedWhenNamesRepeat(t *testing.T) {
+	familyResetGlobals(t)
+	stubRetryState(t)
+	routeEngine = &mockRouteBackend{ensureChainFn: func(string, bool) error { return errTestClear }}
+	first := familyTestSet()
+	second := familyTestSet()
+	second.Id = "famtest2"
+	second.Routing.FWMark, second.Routing.Table = 0x7e11, 233
+	cfg := familyTestConfig(true, false)
+	cfg.Sets = []*config.SetConfig{first, second}
+
+	RoutingSyncConfig(cfg)
+	st := RoutingStatus()
+	if len(st.SetErrors) != 2 {
+		t.Fatalf("two failed sets that share the name %q were reported as %d: %+v", first.Name, len(st.SetErrors), st.SetErrors)
+	}
+	if st.SetErrors[0].ID == st.SetErrors[1].ID {
+		t.Fatalf("the failed sets carry the same id, so the list in System Info cannot tell them apart: %+v", st.SetErrors)
 	}
 }
 

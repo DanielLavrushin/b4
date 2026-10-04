@@ -48,9 +48,9 @@ func TestRoutingDiagnostics(t *testing.T) {
 		t.Fatalf("the routing row carries the wrong times: %+v", got)
 	}
 
-	status = tables.RoutingState{Backend: "iptables", SetErrors: []tables.RoutingSetError{{Set: "Video", Error: "ipset create: Kernel error received: Protocol not supported"}}}
+	status = tables.RoutingState{Backend: "iptables", SetErrors: []tables.RoutingSetError{{ID: "s1", Set: "Video", Error: "ipset create: Kernel error received: Protocol not supported"}}}
 	got = collectRoutingInfo(routed(false))
-	if got == nil || len(got.SetErrors) != 1 || got.SetErrors[0].Set != "Video" || got.NextRetry != "" {
+	if got == nil || len(got.SetErrors) != 1 || got.SetErrors[0].ID != "s1" || got.SetErrors[0].Set != "Video" || got.NextRetry != "" {
 		t.Fatalf("a set that failed to install is not named in System Info: %+v", got)
 	}
 }

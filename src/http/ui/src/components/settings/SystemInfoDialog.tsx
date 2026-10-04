@@ -275,7 +275,7 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
         {r.error &&
           row(t("settings.SystemInfo.routingError"), errorText(r.error))}
         {r.set_errors?.map((e) => (
-          <Fragment key={e.set}>
+          <Fragment key={e.id}>
             {row(
               t("settings.SystemInfo.routingSetError", { set: e.set }),
               errorText(e.error),

@@ -180,6 +180,7 @@ type DiagRouting struct {
 }
 
 type DiagRoutingError struct {
+	ID    string `json:"id"`
 	Set   string `json:"set"`
 	Error string `json:"error"`
 }
