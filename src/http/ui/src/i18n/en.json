@@ -142,13 +142,11 @@
       "backup": "Backup"
     },
     "Control": {
-      "title": "Core Controls",
-      "description": "Control core service and config operations",
       "restartService": "Restart Service",
       "systemInfo": "System Info",
       "resetConfig": "Reset Config to Defaults",
       "resetButton": "Reset",
-      "resetConfirm": "This will reset configuration to defaults. Your sets, web server settings, and geo file paths are preserved. Everything else (queue, logging, discovery, API tokens, devices, interfaces, timezone, SOCKS5, MTProto, MSS clamping) will be wiped.",
+      "resetConfirm": "This will reset the configuration to defaults. Sets, the web server settings (including the login, MCP and the interface language) and the geodata settings are kept. Everything else returns to its default, including every Core setting, logging, the time zone, the memory limit and update mirrors, Discovery and the watchdog, Telegram with its MTProto secrets, the community hub connection, the IPinfo token, the AI assistant settings and the dashboard layout.",
       "resetSuccess": "Configuration reset to defaults",
       "resetError": "Failed to reset configuration"
     },
@@ -648,7 +646,7 @@
       "configPropagation": "Config Propagation Delay",
       "configPropagationHelp": "Wait time after applying each preset before testing it. Allows the new configuration to reach all workers. Increase on slow or resource-constrained devices where config updates take longer to settle.",
       "referenceDomain": "Reference Domain",
-      "referenceDomainHelp": "A known accessible domain used to measure your raw network speed without DPI bypass. Discovery compares preset results against this baseline to evaluate performance. Choose a fast, reliable domain that is not blocked in your region.",
+      "referenceDomainHelp": "Domain fetched once at the start of each run; its download speed is written to the run log as the network baseline. Discovery does not use it to judge or rank strategies.",
       "dnsConfig": "DNS Configuration",
       "addDns": "Add fallback DNS server",
       "addDnsHelp": "Fallback UDP DNS servers used during discovery when DoH is unavailable. Discovery resolves over DoH first; if that fails, each server here is tested with plain and fragmented queries to find a working bypass.",
@@ -729,7 +727,7 @@
       "autoUpdateLastRun": "Last run"
     },
     "Backup": {
-      "alert": "Create a backup of your B4 configuration directory or restore from a previous backup. Backups include configuration, discovery history, detector history, device aliases, and captured payloads. Geodat files (.dat) and OUI database are excluded.",
+      "alert": "Create a backup of your B4 configuration directory or restore from a previous backup. Backups include the configuration, the Discovery and DPI Detector history, and captured payloads. Geodat files (.dat) and the OUI database are excluded.",
       "downloadTitle": "Download Backup",
       "downloadDescription": "Generate and download a tar.gz archive of your B4 configuration",
       "downloadInfo": "The backup will include all files from the configuration directory except geodat (.dat) files and the OUI database.",
@@ -746,7 +744,7 @@
       "restoreFailed": "Failed to restore backup",
       "configTitle": "Download Configuration",
       "configDescription": "The configuration b4 is running with, as a b4.json file",
-      "configInfo": "The safe copy removes passwords and tokens or replaces them with [redacted], together with user names, the host names of your router and your relays, and credentials inside URLs. Sets, devices and target domains stay. Share it when asking for help; b4 refuses to load it as its configuration. The \"as is\" copy includes every password and token.",
+      "configInfo": "The safe copy removes passwords and tokens or replaces them with [redacted], together with user names, the host names of your router and your relays, and credentials inside URLs. Sets, devices and target domains stay. Share it when asking for help; b4 refuses to load or save a configuration that still holds these [redacted] placeholders. The \"as is\" copy includes every password and token.",
       "configDownload": "Download as is",
       "configDownloadSafe": "Download safe copy",
       "configDownloadSuccess": "Configuration downloaded",
@@ -754,7 +752,7 @@
     },
     "Capture": {
       "alert": "Generate optimized TLS ClientHello with SNI-first extension order",
-      "alertSub": "Instant generation for DPI bypass. One payload per domain. Use in Faking → Captured Payload",
+      "alertSub": "Instant generation for DPI bypass. One payload per domain. Use in Faking → My own Payload File",
       "uploadTitle": "Upload Custom Payload",
       "uploadDescription": "Upload your own binary payload file (max 64KB)",
       "nameDomain": "Name/Domain",

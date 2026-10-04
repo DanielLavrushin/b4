@@ -146,7 +146,7 @@ Devices are added to the `b4users` address list:
 
 ## Step 8: NAT Masquerade
 
-In the web interface (`http://192.168.210.10:7000`), **NAT Masquerade** is turned on under [Settings -> Core -> Firewall](../settings/core#firewall). The masquerade interface stays at its default, all interfaces.
+In the web interface (`http://192.168.210.10:7000`), **NAT Masquerade** is turned on under [Settings, Core, Firewall](../settings/core#nat-masquerade). The masquerade interface stays at its default, all interfaces.
 
 The routing mark from Step 4 applies only to packets arriving from the LAN, so RouterOS sends the server's replies straight to the client and they never pass through the container. Conntrack inside the container sees the client's SYN, never sees the answer to it, and marks every later packet of the connection as invalid. b4 picks the first packets of a connection by the conntrack packet count, so without masquerade it never receives the TLS ClientHello, and the strategies that act on it do not run.
 
@@ -159,7 +159,7 @@ After the container starts: `http://192.168.210.10:7000`
 :::tip Reduce disk wear
 USB flash and SD cards have a limited number of write cycles. b4 logs can be moved to RAM in the web interface:
 
-**Settings -> Logging Configuration -> Log file path:** `/tmp/log/b4/errors.log`
+**Log Directory** on the **Logging** card under **Settings, System, Service**: `/tmp/log/b4`
 
 Logs are lost on reboot, but storage lasts longer.
 :::

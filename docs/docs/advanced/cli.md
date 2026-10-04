@@ -28,7 +28,7 @@ A value given on the command line is not written back into the file. When b4 sav
 
 ### About `--ipv6`
 
-`--ipv6` is the command-line form of the **IPv6 support** switch in [Settings -> Core](../settings/core#protocols), stored as `queue.ipv6`. It says which address families **b4** works on. It does not enable or disable IPv6 on the router, and the network keeps using IPv6 either way.
+`--ipv6` is the command-line form of the **Enable IPv6 Support** switch in [Settings, Core, Packet Engine](../settings/core#protocols), stored as `queue.ipv6`. It decides whether **b4** processes IPv6. It does not enable or disable IPv6 on the router, and the network keeps using IPv6 either way.
 
 With it off, which is the default:
 

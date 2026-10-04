@@ -112,7 +112,7 @@ The **Block QUIC** switch on this tab sets both of those at once, so the usual c
 
 ### Per-connection packet limit
 
-How many packets at the start of a UDP connection are analysed. It cannot exceed the global limit in [Settings -> Core -> Queue](../settings/core#queue-and-packet-processing).
+How many packets at the start of a UDP connection are analysed. It cannot exceed the global limit in [Settings, Core, Packet Engine](../settings/core#queue-and-packet-processing).
 
 ### Action mode
 
@@ -128,7 +128,7 @@ Both end up on TCP. **Drop** makes the client wait out its own timeout first, wh
 :::
 
 :::note IPv6
-The ICMPv6 reject and everything else on this page apply to IPv6 only while **IPv6 support** is on in [Settings -> Core](../settings/core). With it off, b4 sees no IPv6 packets at all, so a destination that answers over IPv6 keeps working over QUIC there. See [Core settings](../settings/core#protocols).
+The ICMPv6 reject and everything else on this page apply to IPv6 only while **Enable IPv6 Support** is on in [Settings, Core, Packet Engine](../settings/core#protocols). With it off, b4 sees no IPv6 packets at all, so a destination that answers over IPv6 keeps working over QUIC there.
 :::
 
 ---

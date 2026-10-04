@@ -2,6 +2,9 @@
 
 ## [1.84.1] - 2026-10-03
 
+- ADDED: **Download Configuration under Settings, System, Backup saves the running configuration as is, or as a safe copy for sharing when asking for help** - the safe copy replaces passwords, tokens, user names, the host names of the router and its relays and credentials inside URLs with `[redacted]`, and b4 refuses to load or save a configuration that still holds these placeholders.
+- CHANGED: **The settings are regrouped: the Core tab has sub-tabs for Packet Engine, Devices, Firewall, DNS and SOCKS5, and a new System tab after it holds Service with logging, Web Server and Backup, which replaced the Backup tab** - a sub-tab shows a dot while it has unsaved changes and an icon while a change waits for a restart.
+- FIXED: **Switching Time Zone back to Auto kept the previously selected zone in log timestamps until b4 restarted** - b4 reloaded the zone it had set itself instead of the system's.
 - FIXED: **An update from the web interface failed with `Could not fetch the installer: mkdir /tmp/b4update-...: no such file or directory` when nothing could be created in /tmp, as seen in a MikroTik container after a restart, and with /tmp mounted noexec the web interface reported the update as started while nothing happened** - b4 staged the installer in /tmp and ran it from there, and the installer moved to another directory only when /tmp was short of space.
 - FIXED: **A request to `/api/system/update` with a version such as `--remove` or `--arch=mips` removed b4 or installed a binary for another architecture instead of updating** - b4 passed the requested version to the installer unchecked, and the installer read it as one of its own options.
 

@@ -20,7 +20,7 @@ While the switch is on, b4 diverts TCP connections addressed to Telegram's [addr
 - every device behind b4;
 - connections the router opens itself, such as Telegram Desktop running on the same machine.
 
-[Device filtering](../settings/core.md#device-filtering) on Settings, Core applies: with an allow list the selected devices and the router's own connections are diverted, and with a deny list the selected devices keep the normal path. The switch has no source-interface or per-device scoping of its own; that remains the job of the [per-set mode](#limiting-the-bridge-to-some-devices-or-interfaces).
+[Device filtering](../settings/core.md#device-filtering) on **Settings, Core, Devices** applies: with an allow list the selected devices and the router's own connections are diverted, and with a deny list the selected devices keep the normal path. The switch has no source-interface or per-device scoping of its own; that remains the job of the [per-set mode](#limiting-the-bridge-to-some-devices-or-interfaces).
 
 The diversion rules exist only while the listener is running. When port 13443 cannot be bound, b4 keeps retrying, and until it succeeds Telegram connections take the normal path instead of being diverted to a closed port. When only the IPv6 socket fails to open, IPv4 is bridged, Telegram over IPv6 takes the normal path, and the card shows a note; the IPv6 socket is tried again only when the listener restarts.
 
@@ -42,15 +42,15 @@ flowchart TB
 
 ## Requirements
 
-The bridge rides the TPROXY path, which needs the `tproxy` and `socket` kernel modules. On OpenWrt they are `kmod-nft-tproxy` and `kmod-nft-socket`, and the full list for other firewalls and systems is under [Routing, requirements](../sets/routing.md#requirements). Without them b4 installs no diversion rule for the switch, Telegram takes the normal path, and the card reads **Not working** and names the packages that provide what is missing. After the packages are installed, **Check again** on the card re-runs the kernel check and installs the rule. The **System Info** button on Settings, Core shows the same result under **Kernel Capabilities**, in the **Transparent proxy (TPROXY)** row.
+The bridge rides the TPROXY path, which needs the `tproxy` and `socket` kernel modules. On OpenWrt they are `kmod-nft-tproxy` and `kmod-nft-socket`, and the full list for other firewalls and systems is under [Routing, requirements](../sets/routing.md#requirements). Without them b4 installs no diversion rule for the switch, Telegram takes the normal path, and the card reads **Not working** and names the packages that provide what is missing. After the packages are installed, **Check again** on the card re-runs the kernel check and installs the rule. The **System Info** button on **Settings, System, Service** shows the same result under **Kernel Capabilities**, in the **Transparent proxy (TPROXY)** row.
 
-The diversion is a firewall rule, so b4 has to be managing the firewall. With **Skip IPTables/NFTables setup** on in [Settings, Core](../settings/core#firewall) (`system.tables.skip_setup`, the `--skip-tables` flag) no rule is installed at start-up. Saving the settings still installs the routing rules, and they stay until the next restart.
+The diversion is a firewall rule, so b4 has to be managing the firewall. With **Skip IPTables/NFTables Setup** on in [Settings, Core, Firewall](../settings/core#firewall) (`system.tables.skip_setup`, the `--skip-tables` flag) no rule is installed at start-up. Saving the settings still installs the routing rules, and they stay until the next restart.
 
 With bridge netfilter on (`net.bridge.bridge-nf-call-iptables=1`, which the `dockerd` package sets on OpenWrt), connections from devices behind a network bridge such as `br-lan` never reach the listener, while the router's own connections still do, and the card shows a warning. The cause and the fix are described under [Bridge netfilter](../sets/routing.md#bridge-netfilter).
 
 The bridge has not been verified with the TUN engine, and the card says so while b4 runs in that mode.
 
-IPv6 ranges are diverted only while **IPv6 support** is on in [Settings, Core](../settings/core#protocols). With it off, Telegram over IPv6 takes the normal path.
+IPv6 ranges are diverted only while **Enable IPv6 Support** is on in [Settings, Core, Packet Engine](../settings/core#protocols). With it off, Telegram over IPv6 takes the normal path.
 
 On iptables, a rule of another program that matches local sockets, such as the `DIVERT` rule XrayUI adds every time xray starts, takes the packets of diverted connections away from the listener. b4 keeps the diversion rule above such rules, as described under [b4 with Xray or XrayUI](../guides/xray.md#xrayuis-tproxy-rule-and-connections-b4-diverts).
 
@@ -93,7 +93,7 @@ The switch's rules come first among the routing sets that are not limited to dev
 
 A set limited to specific devices, by an included or an excluded source-device list, or to source interfaces still handles its devices first when it also matches Telegram addresses. That is the way to keep one device's Telegram traffic on a different route while the switch covers everyone else.
 
-With device filtering on Settings, Core in allow-list mode, every routing set takes only the selected devices from the network, and the switch comes before all of them.
+With device filtering on **Settings, Core, Devices** in allow-list mode, every routing set takes only the selected devices from the network, and the switch comes before all of them.
 
 :::warning A block set blocks the bridge too
 A block set that is not limited to source interfaces or an included source-device list, and whose targets cover Telegram addresses, still blocks the router's own connections to those addresses. The bridge's own upstream connections are among them, so such a set cuts the bridge off from every address it covers.

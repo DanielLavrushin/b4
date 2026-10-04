@@ -1,5 +1,5 @@
 ---
-sidebar_position: 6
+sidebar_position: 7
 title: MCP server
 ---
 
@@ -7,19 +7,19 @@ An external AI application reads b4's state over the [Model Context Protocol](ht
 
 The model runs inside that application. b4 contacts no AI provider and needs no API key.
 
-Configured in **Settings -> Integrations -> MCP server**.
+Configured in **Settings, Integrations, MCP server**.
 
 ## Fields
 
-![20260817215232](../../static/img/mcp/20260817215232.png)
+![MCP server card](/img/mcp/20261004000301.png)
 
 | Field | Description |
 | --- | --- |
-| **Enable MCP server** | The switch in the card header. Serves the endpoint at `/api/mcp`. Off by default. |
+| **Enable MCP server** | The switch in the card header. Serves the endpoint at `/api/mcp`. Off by default. The rest of the card is shown only while it is on. |
+| **Access token** | The credential AI applications present. The value is masked, with buttons to reveal and copy it. **Generate** fills in a new token; once a token is set, the button reads **Regenerate** and replaces it. A token can also be typed or pasted in. See [Token](#token). |
 | **Allow configuration changes** | Lets the AI change settings as well as read them. Off by default. See [Changing settings](#changing-settings). |
-| **Allow active probes** | Lets the AI fetch a domain from the router to see whether it loads, and run a discovery search for a working bypass strategy. Off by default, and separate from configuration changes: emitting traffic is a different permission from writing settings. |
-| **Access token** | The credential AI applications present. **Generate** creates one, **Regenerate** replaces it. |
-| **Client configuration** | The endpoint URL and header block to paste into the AI application. **Copy** puts the whole block, with the full token, on the clipboard. |
+| **Allow active probes** | Lets the AI fetch a domain from the router to see whether it loads, and run Discovery to find a working bypass strategy. Private and local addresses are refused. Off by default, and a separate permission from **Allow configuration changes**. |
+| **Client configuration** | A server entry named `b4`, with the endpoint URL and the `Authorization` header, to paste into the AI application. The URL is the address the web interface is open at, followed by `/api/mcp`. A long token is shown shortened; **Copy** puts the entry on the clipboard with the full token. While the token field is empty, `<token>` stands in its place and a notice below the entry names the fallback described under [Token](#token). |
 
 :::info Served by the web server
 The endpoint uses the web server's port, TLS certificate and bind address. With the web server disabled (port 0) it is unreachable, and b4 logs a warning at startup. With the web server's [Expose to internet](./security.md#expose-to-internet) on, the endpoint is reachable from the internet along with the interface.
@@ -29,18 +29,18 @@ The endpoint uses the web server's port, TLS certificate and bind address. With 
 
 **Generate** produces a 64-character token. It is not stored until the configuration is saved.
 
-While a token is set it is the only credential accepted at `/api/mcp`. It grants nothing else: presented on any other API route it is rejected.
+While a token is set it is the only credential accepted at `/api/mcp`. It grants nothing else: no other API route accepts it as a credential.
 
-:::tip Set a token rather than relying on the web login
-Leaving the field empty makes the endpoint fall back to web-interface authentication. A web login token expires after a day and is discarded on every restart, so an AI application configured with one stops connecting without notice. The MCP token survives restarts.
+:::tip An MCP token survives restarts
+With the field empty, the endpoint falls back to web-interface authentication. A web login token expires after a day and is discarded on every restart, so an AI application configured with one loses access within a day, or at the next restart. An MCP token keeps working when b4 restarts.
 :::
 
 :::danger Plain HTTP exposes the token
-The token is sent in a header on every request. Without HTTPS anyone on the network path can read it and reuse it. Configure HTTPS under [Security](./security) before the port is reachable outside a trusted network.
+The token is sent in a header on every request. Without [HTTPS](./security.md#https) anyone on the network path can read it and reuse it, so it stays private only while the port is confined to a trusted network.
 :::
 
 :::warning Empty token and no web login
-With the token field empty and no username and password set under [Security](./security), anything that can reach the port can read b4's status, configuration and diagnostics.
+With the token field empty and no username and password set under [Settings, System, Web Server](./system.md#authentication), anything that can reach the port can read b4's status, configuration and diagnostics.
 :::
 
 ## Connecting an application
@@ -94,8 +94,8 @@ Two values are needed: the endpoint URL and an `Authorization: Bearer <token>` h
 
 Each entry appears in the **Integrations** panel as `mcp/<name>` with a toggle beside it. Several entries can be defined at once, for example a router and a local instance, and enabled independently.
 
-:::tip Keep the token out of the file
-The VS Code `inputs` block makes the editor prompt for the token instead of storing it. Applications without an equivalent hold the token in plain text, so the file should not be committed.
+:::tip VS Code can keep the token out of the file
+The VS Code `inputs` block makes the editor prompt for the token instead of keeping it in the file. Applications without an equivalent hold the token in the file as plain text, and committing such a file puts the token into the repository history.
 :::
 
 Only `POST` is served. `GET` and `DELETE` return 405, which is normal for this transport and not a fault.
@@ -128,7 +128,7 @@ A ready-made prompt named `diagnose_domain` is published alongside the tools. Ap
 
 ## What is served depends on what is permitted
 
-The tool list is built from the two permission switches and rebuilt whenever they change, with no restart. With both off, the AI is offered the reading tools alone; the tools that write settings or run a search are not advertised at all, so a model cannot attempt something it has not been permitted to do, and their descriptions cost nothing.
+The tool list is built from the two permission switches and rebuilt whenever they change, with no restart. With both off, the AI is offered the reading tools alone; the tools that write settings or run a search are not advertised at all, so a model cannot attempt something it has not been permitted to do, and their descriptions take up none of the model's context.
 
 | Permitted | Tools served |
 | --- | --- |
@@ -166,21 +166,32 @@ These lines go to the log stream the interface shows and to the console. They ar
 
 Several b4 settings have names that read as something other than what they do, and a zero usually means "use the fixed value" rather than "off". b4 ships a written description of each one, and the model is told to read it before explaining or changing anything.
 
-The same descriptions are published twice. `b4_get_topic` is a tool: pass `topic` for an exact key, `path` for a setting a `b4_set_config_value` path names - `sets[video].tcp.win.mode` works, the set is ignored - or `query` to search. Calling it with no arguments lists every documented key. The `b4://topics/<key>` resources hold the identical text.
+The same descriptions are published twice. The tool `b4_get_topic` takes `topic` for an exact key, `path` for the setting a `b4_set_config_value` path names, or `query` for a search. In a path such as `sets[video].tcp.win.mode` the set is ignored. Calling the tool with no arguments lists every documented key. The `b4://topics/<key>` resources hold the identical text.
 
-The duplication is deliberate. Resources are the tidier fit, but most applications never show them to the model - LM Studio and the OpenAI-compatible bridges list resources for the user, not the assistant. A description reachable only as a resource is a description the model never reads, so it is a tool as well.
+Most applications never show resources to the model: LM Studio and the OpenAI-compatible bridges list them for the user, not the assistant. The tool makes the same text reachable for the model.
 
-Asking about a setting that has no description yet returns a note saying so, along with the documented settings nearby. That answer is deliberate too: it tells the model to say it is unsure rather than guess a unit from the field name.
+Asking about a setting that has no description yet returns a note saying so, along with the documented settings nearby. The note tells the model to say it is unsure rather than infer the setting's unit, default or meaning from its name.
 
-:::info Two different questions about a domain
+:::info Configuration versus traffic
 `b4_check_domain` answers whether a domain is *configured* in a set. `b4_recent_connections` answers whether traffic for it *arrived* and which set matched. A domain can be configured and still see no traffic, which is what separates a targeting mistake from a routing one.
 :::
 
-b4 also publishes a resource per documented setting describing what that setting does. Several b4 settings do not mean what their name suggests, so answers from a model that reads these are more reliable than answers reasoned from field names alone.
-
 ## What is stripped
 
-Tool output may be forwarded to a third-party model, so credentials are removed from anything returned: the web password and username, SOCKS5 credentials, MTProto secrets, the ipinfo token, the MCP token itself, and the proxy username and password a set carries for its upstream.
+Tool output may be forwarded to a third-party model, so b4 removes these values from it or replaces them with `[redacted]`:
+
+- the username and password of the web interface;
+- the MCP token itself;
+- the SOCKS5 username and password;
+- the names and values of the MTProto secrets;
+- the IPinfo token;
+- the reference to the stored AI API key;
+- the username and password of a set's upstream proxy;
+- the path of the web server's TLS key.
+
+:::info The safe copy masks more
+The tools return host names and URLs as they are configured. **Download safe copy** on [Settings, System, Backup](./system.md#safe-copy) masks those as well: the host names of the router and the relays, and credentials inside URLs.
+:::
 
 :::warning Diagnostics identify the network
 `b4_diagnostics` contains no credentials, but it reports the hostname, every interface address and the live firewall ruleset. That is enough to identify the network it came from.
@@ -188,7 +199,7 @@ Tool output may be forwarded to a third-party model, so credentials are removed 
 
 ## Changing settings
 
-With **Allow configuration changes** off, nothing the AI does can alter b4. With it on, two areas become writable:
+With **Allow configuration changes** off, nothing the AI does can alter b4. With it on, these become writable:
 
 - every setting inside a strategy set: targets, fragmentation, faking, TCP and UDP, DNS, escalation and routing
 - the MTProto and SOCKS5 subsystems, the Telegram over WebSocket switch `system.mtproto.bridge.enabled` among them
@@ -212,11 +223,11 @@ Refused whatever this setting is on:
 | The log directory and the geo file locations | Filesystem locations, not contents: a wrong log directory silently stops file logging, and a wrong geo path empties every geosite category at once |
 
 :::info Refusing a path is not the same as refusing access
-Only the *locations* are refused, never the contents. `b4_logs_tail` reads both log files whatever the directory is set to, without being able to move either somewhere it cannot find. Note that `system.logging.level` does not change what reaches `errors.log`: only errors are ever written there, at any level. Raising the level adds detail to the console and the web interface's live log view, which MCP does not read.
+Only the *locations* are refused, never the contents. `b4_logs_tail` reads both log files whatever the directory is set to, without being able to move either somewhere it cannot find. `system.logging.level` does not change what reaches `errors.log`, which receives only errors at any level. Raising the level adds detail to the console and the web interface's live log view, which MCP does not read.
 :::
 
 :::info The dividing line is recoverability, not sensitivity
-A wrong value inside a set breaks some sites, which is visible and reversible. A wrong web server port or capture engine can leave the machine unreachable with no way back in. Anything in the second group stays refused however useful it looks.
+A wrong value inside a set breaks some sites, which is visible and reversible. A wrong web server port or capture engine can leave the machine unreachable with no way back in. Everything in the second group stays refused.
 :::
 
 The writable areas are named as whole subtrees in the binary and the exclusions inside them are marked on the fields themselves, so a setting added to b4 later is unwritable until someone opts it in.
@@ -240,8 +251,8 @@ An undo is refused, and the change stays on the list, in two cases:
 - the configuration was changed after the change being undone, by a [watchdog](../watchdog) heal, the web interface or another tool: restoring the older copy would overwrite that newer change as well;
 - the undo would switch a set's watchdog or the global watchdog on, or bring back watchdog domains or Discovery addresses of a set whose watchdog is on, while **Allow active probes** is off, since the watchdog would then start fetching those sites on a timer. Discovery addresses of a set whose watchdog is off are restored without it, because nothing fetches them.
 
-:::tip Ask for the undo in the same conversation
-The model has the previous value in the tool's reply, so "that made it worse, put it back" is enough.
+:::tip An undo within the same conversation
+The model has the previous value in the tool's reply, so within the same conversation "that made it worse, put it back" is enough.
 :::
 
 ## Browser origins
