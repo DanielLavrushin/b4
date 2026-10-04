@@ -2,7 +2,6 @@ package tables
 
 import (
 	"errors"
-	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -14,17 +13,9 @@ var errTestNoIPSetKernel = errors.New("ipset v7.19: Kernel error received: Opera
 
 func stubIPSetProbe(t *testing.T, err error) {
 	t.Helper()
-	ipsetProbeMu.Lock()
-	prev := maps.Clone(ipsetProbeErrs)
-	for _, bin := range []string{backendIPTables, backendIP6Tables, backendIPTablesLegacy, backendIP6TablesLegacy} {
-		ipsetProbeErrs[bin] = err
-	}
-	ipsetProbeMu.Unlock()
-	t.Cleanup(func() {
-		ipsetProbeMu.Lock()
-		ipsetProbeErrs = prev
-		ipsetProbeMu.Unlock()
-	})
+	prev := ipsetMatchProbe
+	t.Cleanup(func() { ipsetMatchProbe = prev })
+	ipsetMatchProbe = func(*IPTablesManager, string) error { return err }
 }
 
 func manifestUsesIPSet(sets []IPSet, rules []Rule, name string) (declared, matched bool) {
@@ -37,21 +28,22 @@ func manifestUsesIPSet(sets []IPSet, rules []Rule, name string) (declared, match
 	return declared, matched
 }
 
+func buildDupManifest(t *testing.T) Manifest {
+	t.Helper()
+	manager := NewIPTablesManager(dupTestConfig(), false)
+	stubProbes(manager, backendIPTables, backendIP6Tables)
+	m, err := manager.buildManifest()
+	if err != nil {
+		t.Fatalf("buildManifest: %v", err)
+	}
+	return m
+}
+
 func TestDuplicationRulesUseIPSetOnlyWhereTheKernelTakesIt(t *testing.T) {
 	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true, "ipset": true})
-	build := func() Manifest {
-		t.Helper()
-		manager := NewIPTablesManager(dupTestConfig(), false)
-		stubProbes(manager, backendIPTables, backendIP6Tables)
-		m, err := manager.buildManifest()
-		if err != nil {
-			t.Fatalf("buildManifest: %v", err)
-		}
-		return m
-	}
 
 	stubIPSetProbe(t, errTestNoIPSetKernel)
-	m := build()
+	m := buildDupManifest(t)
 	for _, name := range []string{"b4_dup_v4", "b4_dup_v6"} {
 		if declared, matched := manifestUsesIPSet(m.IPSets, m.Rules, name); declared || matched {
 			t.Fatalf("a kernel that rejects ipset still got %s (declared %v, matched %v), and the first ipset create would stop the engine from starting", name, declared, matched)
@@ -59,7 +51,7 @@ func TestDuplicationRulesUseIPSetOnlyWhereTheKernelTakesIt(t *testing.T) {
 	}
 
 	stubIPSetProbe(t, nil)
-	m = build()
+	m = buildDupManifest(t)
 	for _, name := range []string{"b4_dup_v4", "b4_dup_v6"} {
 		if declared, matched := manifestUsesIPSet(m.IPSets, m.Rules, name); !declared || !matched {
 			t.Fatalf("a working ipset was not used for %s (declared %v, matched %v)", name, declared, matched)
@@ -89,39 +81,83 @@ func TestPerSetMSSUsesIPSetOnlyWhereTheKernelTakesIt(t *testing.T) {
 	}
 }
 
-func TestIPSetProbeRunsOncePerBinary(t *testing.T) {
-	stubBinaryPresence(t, map[string]bool{"ipset": true})
-	ipsetProbeMu.Lock()
-	prev := ipsetProbeErrs
-	ipsetProbeErrs = map[string]error{}
-	ipsetProbeMu.Unlock()
-	prevProbe := ipsetMatchProbe
-	t.Cleanup(func() {
-		ipsetMatchProbe = prevProbe
-		ipsetProbeMu.Lock()
-		ipsetProbeErrs = prev
-		ipsetProbeMu.Unlock()
-	})
+func TestIPSetProbeFailureDoesNotOutliveTheApply(t *testing.T) {
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true, "ipset": true})
+	prev := ipsetMatchProbe
+	t.Cleanup(func() { ipsetMatchProbe = prev })
+	failing := true
 	probed := map[string]int{}
 	ipsetMatchProbe = func(_ *IPTablesManager, ipt string) error {
 		probed[ipt]++
-		return errTestNoIPSetKernel
+		if failing {
+			return errTestNoIPSetKernel
+		}
+		return nil
 	}
 
 	cfg := config.NewConfig()
 	im := NewIPTablesManager(&cfg, false)
-	first, second := im.ipsetUnusable(backendIPTables), im.ipsetUnusable(backendIPTables)
-	im.ipsetUnusable(backendIP6Tables)
+	first, second := im.ipsetUnusable(backendIPTables, false), im.ipsetUnusable(backendIPTables, false)
+	im.ipsetUnusable(backendIP6Tables, false)
 	if probed[backendIPTables] != 1 || probed[backendIP6Tables] != 1 {
-		t.Fatalf("the probe ran %v times per binary, want once each: a rebuild would create the probe set again, or one family would decide for the other", probed)
+		t.Fatalf("one apply probed %v times per binary, want once each", probed)
 	}
 	if first != second || !strings.Contains(first, errTestNoIPSetKernel.Error()) {
 		t.Fatalf("the reason does not carry the probe's error: %q", first)
 	}
 
+	m := buildDupManifest(t)
+	if declared, _ := manifestUsesIPSet(m.IPSets, m.Rules, "b4_dup_v4"); declared {
+		t.Fatalf("the duplication set was kept while the probe fails")
+	}
+
+	failing = false
+	m = buildDupManifest(t)
+	if declared, matched := manifestUsesIPSet(m.IPSets, m.Rules, "b4_dup_v4"); !declared || !matched {
+		t.Fatalf("a failed probe kept the duplication rules off on the next apply after ipset started working (declared %v, matched %v)", declared, matched)
+	}
+
 	stubBinaryPresence(t, map[string]bool{"ipset": false})
-	if reason := im.ipsetUnusable(backendIPTables); !strings.Contains(reason, "not found") {
+	if reason := NewIPTablesManager(&cfg, false).ipsetUnusable(backendIPTables, false); !strings.Contains(reason, "not found") {
 		t.Fatalf("a missing ipset command is not named as such: %q", reason)
+	}
+}
+
+func TestTeardownRemovesIPSetRulesWithoutProbing(t *testing.T) {
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true, "ipset": true})
+	prev := ipsetMatchProbe
+	t.Cleanup(func() { ipsetMatchProbe = prev })
+	probes := 0
+	ipsetMatchProbe = func(*IPTablesManager, string) error {
+		probes++
+		return errTestNoIPSetKernel
+	}
+
+	manager := NewIPTablesManager(dupTestConfig(), false)
+	stubProbes(manager, backendIPTables, backendIP6Tables)
+	m, err := manager.buildTeardownManifest()
+	if err != nil {
+		t.Fatalf("buildTeardownManifest: %v", err)
+	}
+	for _, name := range []string{"b4_dup_v4", "b4_dup_v6"} {
+		if declared, matched := manifestUsesIPSet(m.IPSets, m.Rules, name); !declared || !matched {
+			t.Fatalf("teardown left %s out because a probe failed, so rules a working probe installed earlier would stay (declared %v, matched %v)", name, declared, matched)
+		}
+	}
+
+	cfg := config.NewConfig()
+	cfg.Queue.IPv4Enabled = true
+	cfg.Sets = []*config.SetConfig{mssClampSet("s1", 88, []string{"203.0.113.7"}, nil)}
+	mss := NewIPTablesManager(&cfg, false)
+	sets, rules := mss.buildMSSManifestFor(mss.teardownBinaries(), "PREROUTING", true)
+	if len(sets) == 0 {
+		t.Fatalf("the per-set MSS teardown left its set out because a probe failed")
+	}
+	if _, matched := manifestUsesIPSet(sets, rules, sets[0].Name); !matched {
+		t.Fatalf("the per-set MSS teardown has no rule for the set %s, so an installed rule would stay in FORWARD or OUTPUT", sets[0].Name)
+	}
+	if probes != 0 {
+		t.Fatalf("teardown ran the ipset probe %d times; its result would decide what is removed", probes)
 	}
 }
 

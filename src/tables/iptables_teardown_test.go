@@ -290,7 +290,7 @@ func TestMSSClampTeardownCoversDisabledFamily(t *testing.T) {
 		}
 	}
 
-	_, teardownRules := manager.buildMSSManifestFor(manager.teardownBinaries(), "PREROUTING")
+	_, teardownRules := manager.buildMSSManifestFor(manager.teardownBinaries(), "PREROUTING", true)
 	seen := map[string]bool{}
 	for _, r := range teardownRules {
 		seen[r.IPT] = true

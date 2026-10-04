@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -25,10 +24,11 @@ type IPTablesManager struct {
 	connbytesSupport map[string]error // per-binary cache
 	connmarkSupport  map[string]bool  // per-binary cache
 	nfqueueSupport   map[string]error // per-binary cache
+	ipsetSupport     map[string]error
 }
 
 func NewIPTablesManager(cfg *config.Config, useLegacy bool) *IPTablesManager {
-	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), connmarkSupport: make(map[string]bool), nfqueueSupport: make(map[string]error)}
+	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), connmarkSupport: make(map[string]bool), nfqueueSupport: make(map[string]error), ipsetSupport: make(map[string]error)}
 }
 
 func (im *IPTablesManager) iptablesBin() string {
@@ -134,21 +134,20 @@ var ipsetMatchProbe = func(im *IPTablesManager, ipt string) error {
 	return nil
 }
 
-var (
-	ipsetProbeMu   sync.Mutex
-	ipsetProbeErrs = map[string]error{}
-)
-
-func (im *IPTablesManager) ipsetUnusable(ipt string) string {
+func (im *IPTablesManager) ipsetUnusable(ipt string, teardown bool) string {
 	if !hasBinary("ipset") {
 		return "ipset binary not found (install ipset via your system package manager)"
 	}
-	ipsetProbeMu.Lock()
-	defer ipsetProbeMu.Unlock()
-	err, probed := ipsetProbeErrs[ipt]
+	if teardown {
+		return ""
+	}
+	err, probed := im.ipsetSupport[ipt]
 	if !probed {
 		err = ipsetMatchProbe(im, ipt)
-		ipsetProbeErrs[ipt] = err
+		if im.ipsetSupport == nil {
+			im.ipsetSupport = make(map[string]error)
+		}
+		im.ipsetSupport[ipt] = err
 	}
 	if err != nil {
 		return err.Error()
@@ -507,7 +506,7 @@ func (manager *IPTablesManager) buildManifest() (Manifest, error) {
 	if err != nil {
 		return Manifest{}, err
 	}
-	return manager.buildManifestFor(ipts), nil
+	return manager.buildManifestFor(ipts, false), nil
 }
 
 func (manager *IPTablesManager) buildTeardownManifest() (Manifest, error) {
@@ -515,10 +514,10 @@ func (manager *IPTablesManager) buildTeardownManifest() (Manifest, error) {
 	if len(ipts) == 0 {
 		return Manifest{}, errors.New("no valid iptables binaries found")
 	}
-	return manager.buildManifestFor(ipts), nil
+	return manager.buildManifestFor(ipts, true), nil
 }
 
-func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
+func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) Manifest {
 	cfg := manager.cfg
 	queueNum := cfg.Queue.StartNum
 	threads := cfg.Queue.Threads
@@ -640,7 +639,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
 		}
 		dupSkip := ""
 		if len(dupIPs) > 0 {
-			dupSkip = manager.ipsetUnusable(ipt)
+			dupSkip = manager.ipsetUnusable(ipt, teardown)
 		}
 		if dupSkip != "" {
 			log.Warnf("%s; skipping duplicate-IPs rules for %s", dupSkip, dupSetName)
@@ -805,7 +804,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string) Manifest {
 		}
 	}
 
-	mssIPSets, mssRules := manager.buildMSSManifestFor(ipts, preChainName)
+	mssIPSets, mssRules := manager.buildMSSManifestFor(ipts, preChainName, teardown)
 	ipsets = append(ipsets, mssIPSets...)
 	rules = append(rules, mssRules...)
 
@@ -817,10 +816,10 @@ func (manager *IPTablesManager) mssClampBinaries() []string {
 }
 
 func (manager *IPTablesManager) buildMSSManifest(preChain string) (mssIPSets []IPSet, mssRules []Rule) {
-	return manager.buildMSSManifestFor(manager.mssClampBinaries(), preChain)
+	return manager.buildMSSManifestFor(manager.mssClampBinaries(), preChain, false)
 }
 
-func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain string) (mssIPSets []IPSet, mssRules []Rule) {
+func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain string, teardown bool) (mssIPSets []IPSet, mssRules []Rule) {
 	cfg := manager.cfg
 	global, globalSize := cfg.HasGlobalMSSClamp()
 	deviceClamps := cfg.CollectDeviceMSSClamps()
@@ -862,7 +861,7 @@ func (manager *IPTablesManager) buildMSSManifestFor(ipts []string, preChain stri
 				continue
 			}
 			if hasIPs {
-				if reason := manager.ipsetUnusable(ipt); reason != "" {
+				if reason := manager.ipsetUnusable(ipt, teardown); reason != "" {
 					log.Warnf("%s; skipping per-set MSS for set %q", reason, e.SetID)
 					continue
 				}
@@ -989,7 +988,7 @@ func (manager *IPTablesManager) ApplyMSSClamp() error {
 }
 
 func (manager *IPTablesManager) ClearMSSClamp() {
-	sets, rules := manager.buildMSSManifestFor(manager.teardownBinaries(), "PREROUTING")
+	sets, rules := manager.buildMSSManifestFor(manager.teardownBinaries(), "PREROUTING", true)
 	m := Manifest{IPSets: sets, Rules: rules}
 	m.RemoveRules()
 	m.DestroyIPSets()
