@@ -15,6 +15,7 @@ import (
 var (
 	ErrBaselineWorks = errors.New("the domain loads without a bypass")
 	errUnconfirmed   = errors.New("the strategy discovery found did not pass confirmation")
+	errUnresolved    = errors.New("the domain does not resolve, no strategy was tested")
 )
 
 type domainWithSet struct {
@@ -29,6 +30,10 @@ func applyBatchResults(cfg *config.Config, domains []string, suite *discovery.Ch
 	for _, input := range domains {
 		domainKey := ExtractDomain(input)
 		dr, ok := suite.DomainDiscoveryResults[domainKey]
+		if ok && dr.Outcome == discovery.OutcomeUnresolved {
+			results[input] = errUnresolved
+			continue
+		}
 		if !ok || !dr.BestSuccess {
 			results[input] = fmt.Errorf("no working config found")
 			continue

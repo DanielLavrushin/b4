@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/dns/endpoint"
 	"github.com/daniellavrushin/b4/nfq"
 )
 
@@ -68,6 +69,7 @@ const (
 	OutcomeWorksWithoutBypass Outcome = "works_without_bypass"
 	OutcomeAddressBlocked     Outcome = "address_blocked"
 	OutcomeGatewayIntercepted Outcome = "gateway_intercepted"
+	OutcomeUnresolved         Outcome = "unresolved"
 	OutcomeNotFound           Outcome = "not_found"
 )
 
@@ -89,6 +91,7 @@ type SetVerdict struct {
 	Set          *config.SetConfig `json:"set,omitempty"`
 	Covered      []string          `json:"covered,omitempty"`
 	Uncovered    []string          `json:"uncovered,omitempty"`
+	Unresolved   []string          `json:"unresolved,omitempty"`
 	NoBypass     []string          `json:"no_bypass,omitempty"`
 	Confirmed    bool              `json:"confirmed,omitempty"`
 }
@@ -112,7 +115,18 @@ type CheckResult struct {
 	FinalHost   string            `json:"final_host,omitempty"`
 	UsedIP      string            `json:"used_ip,omitempty"`
 	Set         *config.SetConfig `json:"set"`
+	lookup      nameLookup
+	lookupHost  string
+	untried     bool
 }
+
+type nameLookup int
+
+const (
+	lookupOK nameLookup = iota
+	lookupNotFound
+	lookupFailed
+)
 
 type DomainInput struct {
 	Domain   string `json:"domain"`
@@ -128,6 +142,7 @@ type CheckSuite struct {
 	CompletedChecks        int                               `json:"completed_checks"`
 	SuccessfulChecks       int                               `json:"successful_checks"`
 	FailedChecks           int                               `json:"failed_checks"`
+	SkippedChecks          int                               `json:"skipped_checks,omitempty"`
 	DomainDiscoveryResults map[string]*DomainDiscoveryResult `json:"domain_discovery_results,omitempty"`
 	StrategyGroups         []StrategyGroup                   `json:"strategy_groups,omitempty"`
 	CheckURL               string                            `json:"check_url"`
@@ -183,12 +198,16 @@ type DomainDiscoveryResult struct {
 	ConfirmTries  int                            `json:"confirm_tries,omitempty"`
 	FinalHost     string                         `json:"final_host,omitempty"`
 	DNSResult     *DNSDiscoveryResult            `json:"dns_result,omitempty"`
+	Unresolved    bool                           `json:"unresolved,omitempty"`
+	MissingFamily string                         `json:"missing_family,omitempty"`
 	Outcome       Outcome                        `json:"outcome,omitempty"`
 	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
 }
 
 func (dr *DomainDiscoveryResult) refreshOutcome(finished bool) {
 	switch {
+	case dr.Unresolved:
+		dr.Outcome = OutcomeUnresolved
 	case dr.BaselineWorks:
 		dr.Outcome = OutcomeWorksWithoutBypass
 	case dr.BestSuccess && dr.BestPreset != "" && dr.BestPreset != presetNoBypass:
@@ -251,6 +270,20 @@ type DNSDiscoveryResult struct {
 	AlternativeIPs   []string         `json:"alternative_ips,omitempty"`
 	GatewayIPs       []string         `json:"gateway_ips,omitempty"`
 	AltScan          *AltScanSummary  `json:"alt_scan,omitempty"`
+	NXDomain         bool             `json:"nxdomain,omitempty"`
+	NoAddressFamily  string           `json:"no_address_family,omitempty"`
+	Reference        string           `json:"reference,omitempty"`
+	ReferenceError   string           `json:"reference_error,omitempty"`
+	Pinned           bool             `json:"pinned,omitempty"`
+	ForgeableAnswer  bool             `json:"forgeable_answer,omitempty"`
+
+	referenceIPs     []string
+	referenceTrusted bool
+	setPinned        bool
+}
+
+func (r *DNSDiscoveryResult) noAddress() bool {
+	return r != nil && len(r.ExpectedIPs) == 0 && len(r.AlternativeIPs) == 0 && len(r.GatewayIPs) == 0
 }
 
 func (r *DNSDiscoveryResult) addressBlocked() bool {
@@ -273,9 +306,8 @@ type PayloadTestResult struct {
 
 type DiscoverySuite struct {
 	*CheckSuite
-	networkBaseline float64
-	optimalTTL      uint8
-	ttlProbed       bool
+	optimalTTL uint8
+	ttlProbed  bool
 
 	ctx       context.Context
 	ctxCancel context.CancelFunc
@@ -298,6 +330,12 @@ type DiscoverySuite struct {
 	tlsVersion      string // "auto", "tls12", "tls13"
 	ipVersion       string // "auto", "ipv4", "ipv6"
 	flowMark        uint
+
+	trusted           endpoint.Endpoint
+	dnsServerOverride string
+	runPins           map[string][]string
+	givenPins         map[string][]string
+	setPins           map[string][]string
 
 	discoveryCache *DiscoveryCache
 	plainSets      map[string]*config.SetConfig

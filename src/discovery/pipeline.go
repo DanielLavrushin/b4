@@ -65,15 +65,40 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	}
 	log.DiscoveryLogf("Probe address family: %s (queue IPv4=%v, IPv6=%v)", probeFamily, ds.cfg.Queue.IPv4Enabled, ds.cfg.Queue.IPv6Enabled)
 
+	ds.collectPins()
+	ds.trusted = ds.trustedServer()
+	if !ds.skipDNS && !ds.trusted.IsZero() {
+		log.DiscoveryLogf("Trusted DNS server: %s", ds.trusted.String())
+		if err := ds.checkTrustedServer(); err != nil {
+			if ds.interrupted() {
+				ds.setStatus(CheckStatusCanceled)
+				ds.finalize()
+				ds.logDiscoverySummary()
+				return
+			}
+			log.DiscoveryLogf("Discovery could not start: the trusted DNS server %s gave no usable answer: %v", ds.trusted.String(), err)
+			ds.setStatus(CheckStatusFailed)
+			ds.finalize()
+			return
+		}
+	}
+
 	ds.discoveryCache = LoadDiscoveryCache(ds.cfg.ConfigPath)
 	defer ds.saveResultsToCache()
-
-	ds.networkBaseline = ds.measureNetworkBaseline()
 
 	// DNS phase: per-domain
 	anyDNSPoisoned := false
 	if ds.skipDNS {
 		log.DiscoveryLogf("Skipping DNS discovery (user requested)")
+		for _, di := range ds.Domains {
+			if pins, fromSet := ds.pinnedFor(di.Domain); len(pins) > 0 {
+				result := ds.pinnedResult(di, pins, fromSet)
+				ds.dnsResults[di.Domain] = result
+				ds.CheckSuite.mu.Lock()
+				ds.domainResults[di.Domain].DNSResult = result
+				ds.CheckSuite.mu.Unlock()
+			}
+		}
 	} else {
 		ds.setPhase(PhaseDNS)
 		for _, di := range ds.Domains {
@@ -138,8 +163,14 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	ds.CheckSuite.mu.Unlock()
 
 	ds.setPhase(PhaseStrategy)
-	ds.storeResultsMulti(phase1Presets[0], ds.testPresetAllDomains(phase1Presets[0]))
+	baseline := ds.testPresetAllDomains(phase1Presets[0])
+	ds.storeResultsMulti(phase1Presets[0], baseline)
 	ds.determineBest()
+	ds.markUnresolved(baseline)
+	if ds.nothingLeftToTest() {
+		ds.finishRun()
+		return
+	}
 
 	if hasCurrent && !ds.interrupted() {
 		ds.setPhase(PhaseCached)
@@ -223,7 +254,11 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	}
 
 	if !ds.anyDomainNeedsBypass() {
-		log.DiscoveryLogf("Verified: no packet strategy needed for any domain")
+		if ds.anyUnresolved() {
+			log.DiscoveryLogf("Verified: no packet strategy needed for any domain that resolves")
+		} else {
+			log.DiscoveryLogf("Verified: no packet strategy needed for any domain")
+		}
 		ds.finishRun()
 		return
 	}
@@ -336,11 +371,19 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 		domainResult := ds.domainResults[di.Domain]
 		dnsResult := ds.dnsResults[di.Domain]
 
+		if domainResult.Unresolved {
+			log.DiscoveryLogf("  ⊘ [%s] no address to test: %s", di.Domain, unresolvedReason(domainResult.MissingFamily, dnsResult))
+			continue
+		}
+
 		// DNS status line
 		if dnsResult != nil {
 			switch {
 			case dnsResult.gatewayIntercepted():
 				log.DiscoveryLogf("  ⊘ [%s] TCP to %v is answered by the first hop in front of this host; b4 here cannot help: run b4 on that gateway or exclude this host from its redirect; if this host is the router itself, the ISP does this at its edge and only a proxy route helps", di.Domain, dnsResult.GatewayIPs)
+				continue
+			case dnsResult.Pinned && dnsResult.TransportBlocked:
+				log.DiscoveryLogf("  ⊘ [%s] none of the pinned addresses %v accepts a TCP connection, a strategy cannot help; pin addresses that answer, or route the site through a proxy", di.Domain, dnsResult.ExpectedIPs)
 				continue
 			case dnsResult.TransportBlocked && len(dnsResult.AlternativeIPs) > 0:
 				log.DiscoveryLogf("  ⚡ [%s] known addresses blocked, answered with %v instead", di.Domain, dnsResult.AlternativeIPs)
@@ -353,6 +396,8 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, bypassed via %s", di.Domain, dnsResult.BestServer)
 			case dnsResult.IsPoisoned && dnsResult.NeedsFragment:
 				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, bypassed via fragmented queries", di.Domain)
+			case dnsResult.IsPoisoned && len(dnsResult.AlternativeIPs) > 0:
+				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, no DNS server a set can use answers honestly, pinned to %v", di.Domain, dnsResult.AlternativeIPs)
 			case dnsResult.IsPoisoned:
 				log.DiscoveryLogf("  ✗ [%s] DNS poisoned, no bypass found", di.Domain)
 			}

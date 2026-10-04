@@ -63,6 +63,8 @@ Set the resolver on **Sets → a set → DNS & Routing → DNS Redirect**.
 
 A DoH URL takes precedence: when both fields are filled, the DoH URL is used and the IP is ignored. The URL has to start with `https://`, which is checked when the configuration is saved.
 
+A query that comes from the address of the set's own resolver is forwarded unchanged rather than handed back to it, unless b4 blocks the query or answers it from a pin. A resolver elsewhere on the network that asks its upstream over plain DNS passes a client's lookup on through the router, and handing that query back would leave it waiting out the query timeout; any other query from that address is forwarded unchanged as well, including those of containers or VPN clients that reach the network through NAT on the resolver's host. A DoH URL is compared the same way when it names its server by IP address. Only the address the set names is compared: a query the resolver sends from another of its addresses, such as an IPv4 query from a resolver the set names by its IPv6 address, is still handed back to it. The comparison is not made for a resolver on the router itself, so that the router's own lookups go to it. Such a resolver, and the router's resolver whenever a resolver on the network uses it as its upstream, has to reach its own upstream over a transport b4 does not intercept, such as DNS over HTTPS or TLS.
+
 ![DNS redirect in DoH mode](/img/dns/20260810210220.png)
 
 ### Sending one service to a resolver of its own
@@ -214,6 +216,7 @@ Every decision b4 makes about a query is recorded on the [Traffic](./connections
 | `dns-fallback-cache` | The set's resolver did not answer, so the last good addresses for that name were replayed |
 | `dns-fallback-upstream` | The set's resolver did not answer and nothing was cached, so the query went to the resolver the client was addressing |
 | `dns-bad-target` | The set's DNS server field does not hold a valid IP address, so the query was forwarded unchanged |
+| `dns-from-target` | The query came from the address of the set's own resolver, so it was forwarded unchanged instead of being sent back to it. See [Resolver types](#resolver-types) |
 | `dns-ipv6-disabled` | A query that arrived over IPv6 matched a set while IPv6 support is off, so it was forwarded unchanged instead of being handled by the set |
 | `dns-ipv6-stripped` | The IPv6 addresses were removed from the answer, leaving the client the IPv4 path b4 protects. See [The IPv4 fallback](#the-ipv4-fallback) |
 | `dns-heal+ipv6-stripped` | Both of the above happened to the same answer: unreachable addresses were replaced and the IPv6 addresses were removed |

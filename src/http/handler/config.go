@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/dns/endpoint"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/mtproto"
@@ -565,6 +566,18 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 			})
 		}
 		return ErrValidation("The configuration holds "+config.RedactedMarker+" placeholders from a safe copy", fields...)
+	}
+
+	newCfg.System.Checker.DNSServer = strings.TrimSpace(newCfg.System.Checker.DNSServer)
+	if server := newCfg.System.Checker.DNSServer; server != "" {
+		if _, err := endpoint.Parse(server); err != nil {
+			return ErrValidation("The trusted DNS server is not valid", FieldError{
+				Path:    "system.checker.dns_server",
+				Code:    "invalid_dns_server",
+				Message: err.Error(),
+				Params:  map[string]any{"value": server},
+			})
+		}
 	}
 
 	for _, check := range []func() error{newCfg.Validate, newCfg.ValidateTLSFiles} {

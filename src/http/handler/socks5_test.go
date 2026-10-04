@@ -142,3 +142,38 @@ func findAPIField(ae *APIError, path, code string) *FieldError {
 	}
 	return nil
 }
+
+func TestSaveRejectsABadTrustedDNSServer(t *testing.T) {
+	cfg := config.NewConfig()
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "b4.json")
+	api := &API{cfgPtr: testCfgPtr(&cfg)}
+
+	next := cfg.Clone()
+	next.System.Checker.DNSServer = "dns.google"
+	err := api.saveAndPushConfig(next)
+	var ae *APIError
+	if !errors.As(err, &ae) || len(ae.Fields) != 1 || ae.Fields[0].Code != "invalid_dns_server" || ae.Fields[0].Path != "system.checker.dns_server" {
+		t.Fatalf("a host name without https:// must be refused on the field, got %v", err)
+	}
+	if api.getCfg().System.Checker.DNSServer != "" {
+		t.Fatal("a refused save must not be applied")
+	}
+
+	next = cfg.Clone()
+	next.System.Checker.DNSServer = " tcp+udp://127.0.0.1:53053 "
+	if err := api.saveAndPushConfig(next); err != nil {
+		t.Fatalf("a valid trusted DNS server saves: %v", err)
+	}
+	if api.getCfg().System.Checker.DNSServer != "tcp+udp://127.0.0.1:53053" {
+		t.Fatalf("got %q", api.getCfg().System.Checker.DNSServer)
+	}
+
+	next = cfg.Clone()
+	next.System.Checker.DNSServer = "   "
+	if err := api.saveAndPushConfig(next); err != nil {
+		t.Fatalf("blank means no server, as the field shows it: %v", err)
+	}
+	if api.getCfg().System.Checker.DNSServer != "" {
+		t.Fatalf("got %q", api.getCfg().System.Checker.DNSServer)
+	}
+}

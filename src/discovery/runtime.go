@@ -46,6 +46,8 @@ type StartSuiteOptions struct {
 	SetStrategy     *config.SetConfig
 	StopWhenCovered bool
 	HubPresets      func() []ConfigPreset
+	DNSServer       string
+	Pins            map[string][]string
 }
 
 type Runtime struct {
@@ -162,6 +164,8 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 	suite.SetId = opts.SetId
 	suite.setStrategy = opts.SetStrategy
 	suite.stopWhenCovered = opts.StopWhenCovered
+	suite.dnsServerOverride = opts.DNSServer
+	suite.runPins = opts.Pins
 	m.SetActiveSuiteID(suite.Id)
 	RegisterSuite(suite.CheckSuite)
 

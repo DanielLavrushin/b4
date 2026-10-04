@@ -534,7 +534,7 @@ func (ds *DiscoverySuite) buildSetVerdict(domains []string, winner string) *SetV
 			}
 		}
 		if len(uncovered) == 0 {
-			return &SetVerdict{Status: SetVerdictNone, Uncovered: open, NoBypass: fine}
+			return &SetVerdict{Status: SetVerdictNone, Uncovered: open, Unresolved: ds.unresolvedOf(open), NoBypass: fine}
 		}
 		return &SetVerdict{
 			Status:       SetVerdictPartial,
@@ -543,12 +543,23 @@ func (ds *DiscoverySuite) buildSetVerdict(domains []string, winner string) *SetV
 			Set:          group.Set,
 			Covered:      covered,
 			Uncovered:    uncovered,
+			Unresolved:   ds.unresolvedOf(uncovered),
 			NoBypass:     fine,
 			Confirmed:    ds.confirmedOn(group.WinnerPreset, group.Domains),
 		}
 	}
 
-	return &SetVerdict{Status: SetVerdictNone, Uncovered: open, NoBypass: fine}
+	return &SetVerdict{Status: SetVerdictNone, Uncovered: open, Unresolved: ds.unresolvedOf(open), NoBypass: fine}
+}
+
+func (ds *DiscoverySuite) unresolvedOf(domains []string) []string {
+	var out []string
+	for _, domain := range domains {
+		if dr := ds.domainResults[domain]; dr != nil && dr.Unresolved {
+			out = append(out, domain)
+		}
+	}
+	return out
 }
 
 func (v *SetVerdict) CoveredPins() map[string][]string {

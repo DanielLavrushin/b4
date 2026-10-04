@@ -204,8 +204,7 @@ export interface WatchdogConfig {
 export interface DiscoveryConfig {
   discovery_timeout: number;
   config_propagate_ms: number;
-  reference_domain: string;
-  reference_dns: string[];
+  dns_server?: string;
   validation_tries: number;
   discovery_flow_mark?: number;
   discovery_injected_mark?: number;

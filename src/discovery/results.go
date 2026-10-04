@@ -77,6 +77,9 @@ func (ds *DiscoverySuite) recordResultsMulti(preset ConfigPreset, results map[st
 
 	for domain, result := range results {
 		domainResult := ds.domainResults[domain]
+		if result.untried {
+			continue
+		}
 
 		switch result.Status {
 		case CheckStatusComplete:

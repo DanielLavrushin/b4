@@ -34,11 +34,14 @@ export type DiscoveryPhase =
   | "combination"
   | "confirmation";
 
+export type IPFamily = "ipv4" | "ipv6";
+
 export type DiscoveryOutcome =
   | "found"
   | "works_without_bypass"
   | "address_blocked"
   | "gateway_intercepted"
+  | "unresolved"
   | "not_found";
 
 export type DiscoverySource = "web" | "watchdog" | "mcp";
@@ -92,6 +95,12 @@ export interface DNSDiscoveryResult {
   alternative_ips?: string[];
   gateway_ips?: string[];
   alt_scan?: AltScanSummary;
+  nxdomain?: boolean;
+  no_address_family?: IPFamily;
+  reference?: string;
+  reference_error?: string;
+  pinned?: boolean;
+  forgeable_answer?: boolean;
 }
 
 export interface DiscoveryResult {
@@ -107,6 +116,8 @@ export interface DiscoveryResult {
   confirm_tries?: number;
   final_host?: string;
   dns_result?: DNSDiscoveryResult;
+  unresolved?: boolean;
+  missing_family?: IPFamily;
   outcome?: DiscoveryOutcome;
   unconfirmed?: boolean;
 }
@@ -118,6 +129,7 @@ export interface DiscoverySuite {
   end_time: string;
   total_checks: number;
   completed_checks: number;
+  skipped_checks?: number;
   current_phase?: DiscoveryPhase;
   current_domain?: string;
   domains?: { domain: string; check_url: string }[];
@@ -147,6 +159,7 @@ export interface SetVerdict {
   set?: B4SetConfig;
   covered?: string[];
   uncovered?: string[];
+  unresolved?: string[];
   no_bypass?: string[];
   confirmed?: boolean;
 }
@@ -205,6 +218,7 @@ export interface HistoryEntry {
   suite_id?: string;
   set?: B4SetConfig;
   outcome?: DiscoveryOutcome;
+  missing_family?: IPFamily;
   unconfirmed?: boolean;
   stopped_early?: boolean;
   order?: number;

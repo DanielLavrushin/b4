@@ -1,12 +1,6 @@
 package config
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -74,56 +68,23 @@ func TestResolveStrategyPool(t *testing.T) {
 	}
 }
 
-func TestNewConfig_ReferenceDNSDoesNotAliasDefault(t *testing.T) {
-	want := append([]string(nil), DefaultConfig.System.Checker.ReferenceDNS...)
-
+func TestTrustedDNSServer(t *testing.T) {
 	cfg := NewConfig()
-	cfg.System.Checker.ReferenceDNS[0] = "10.0.0.1"
-
-	if DefaultConfig.System.Checker.ReferenceDNS[0] != want[0] {
-		t.Fatalf("DefaultConfig.ReferenceDNS changed through a NewConfig copy: %v", DefaultConfig.System.Checker.ReferenceDNS)
-	}
-}
-
-func TestLoadWithMigration_CustomReferenceDNSSurvivesSparseSave(t *testing.T) {
-	want := append([]string(nil), DefaultConfig.System.Checker.ReferenceDNS...)
-	custom := []string{"1.0.0.1", "1.1.1.1", "8.8.8.8", "9.9.9.9", "8.8.4.4"}
-	if len(custom) != len(want) {
-		t.Fatalf("test list must match the default length %d", len(want))
+	if _, ok := cfg.TrustedDNSServer(); ok {
+		t.Fatal("no trusted DNS server by default, Discovery uses the built-in resolvers")
 	}
 
-	path := filepath.Join(t.TempDir(), "b4.json")
-	body := fmt.Sprintf(`{"version":%d,"system":{"checker":{"reference_dns":["%s"]}}}`, CurrentConfigVersion, strings.Join(custom, `","`))
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
+	cfg.System.Checker.DNSServer = "tcp+udp://127.0.0.1:53053"
+	ep, ok := cfg.TrustedDNSServer()
+	if !ok || ep.String() != "tcp+udp://127.0.0.1:53053" {
+		t.Fatalf("got %+v %v", ep, ok)
 	}
 
-	cfg := NewConfig()
-	if _, err := cfg.LoadWithMigration(path); err != nil {
-		t.Fatal(err)
+	cfg.System.Checker.DNSServer = "dns.google"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("a bad trusted DNS server must not stop b4 from starting: %v", err)
 	}
-	if !reflect.DeepEqual(cfg.System.Checker.ReferenceDNS, custom) {
-		t.Fatalf("loaded reference_dns = %v, want %v", cfg.System.Checker.ReferenceDNS, custom)
-	}
-	if !reflect.DeepEqual(DefaultConfig.System.Checker.ReferenceDNS, want) {
-		t.Fatalf("loading a config rewrote DefaultConfig.ReferenceDNS to %v", DefaultConfig.System.Checker.ReferenceDNS)
-	}
-
-	data, err := MarshalSparse(&cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var saved struct {
-		System struct {
-			Checker struct {
-				ReferenceDNS []string `json:"reference_dns"`
-			} `json:"checker"`
-		} `json:"system"`
-	}
-	if err := json.Unmarshal(data, &saved); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(saved.System.Checker.ReferenceDNS, custom) {
-		t.Fatalf("sparse save dropped the custom reference_dns, got %v in:\n%s", saved.System.Checker.ReferenceDNS, data)
+	if cfg.System.Checker.DNSServer != "" {
+		t.Fatalf("a bad trusted DNS server is dropped with a warning, got %q", cfg.System.Checker.DNSServer)
 	}
 }

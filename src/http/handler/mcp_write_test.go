@@ -315,7 +315,7 @@ func TestMCPWritableRootsAreFailClosed(t *testing.T) {
 		"system.tables.skip_setup",
 		"system.tables.dscp.value",
 		"system.ai.endpoint",
-		"system.checker.reference_domain",
+		"system.checker.dns_server",
 		"queue.mode",
 		"queue.threads",
 		"sets_extra.enabled",

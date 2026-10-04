@@ -645,12 +645,16 @@
       "discoveryTimeoutHelp": "Max time to wait for each connection attempt when testing presets during discovery. Increase if you have a slow or unstable connection.",
       "configPropagation": "Config Propagation Delay",
       "configPropagationHelp": "Wait time after applying each preset before testing it. Allows the new configuration to reach all workers. Increase on slow or resource-constrained devices where config updates take longer to settle.",
-      "referenceDomain": "Reference Domain",
-      "referenceDomainHelp": "Domain fetched once at the start of each run; its download speed is written to the run log as the network baseline. Discovery does not use it to judge or rank strategies.",
       "dnsConfig": "DNS Configuration",
-      "addDns": "Add fallback DNS server",
-      "addDnsHelp": "Fallback UDP DNS servers used during discovery when DoH is unavailable. Discovery resolves over DoH first; if that fails, each server here is tested with plain and fragmented queries to find a working bypass.",
-      "activeDns": "Fallback UDP DNS servers:"
+      "trustedDns": "Trusted DNS server",
+      "trustedDnsPlaceholder": "Built-in public resolvers",
+      "trustedDnsHelp": "Discovery takes this server's answers as each site's correct address and compares them with the router's resolver. When they differ, the proposed set uses this server for DNS where a set can: a public IP address on port 53 that answers over UDP and is not one of this host's own, or an https:// URL. Forms: 9.9.9.9, 127.0.0.1:53053, tcp://9.9.9.9, tcp+udp://127.0.0.1:53053, https://dns.google/dns-query. Empty: the public resolvers built into b4.",
+      "trustedDnsError": {
+        "hostname": "Plain DNS needs an IP address; only an https:// URL takes a host name.",
+        "http": "DNS over HTTPS needs an https:// URL.",
+        "unsupported": "Not supported. Run a local DNS proxy for it and give the proxy's address.",
+        "invalid": "Not a DNS server address. Examples: 9.9.9.9, 127.0.0.1:53053, tcp://9.9.9.9, https://dns.google/dns-query."
+      }
     },
     "Watchdog": {
       "title": "Watchdog",
@@ -2617,9 +2621,12 @@
       "loadsWithout": "Loads without b4. Nothing to fix here.",
       "addressBlocked": "Connections to every known address fail. No bypass strategy can help.",
       "gatewayIntercepted": "TCP to every known address is answered by the gateway in front of this host. No strategy from this host can reach past it.",
+      "unresolved": "DNS has no address for this name, so there is nothing to test. Check the spelling.",
+      "unresolvedFamily": "This name has no {{family}} address, so there is nothing to test over {{family}}.",
       "note": "A found strategy is confirmed before the run ends. Nothing has been found yet, so stopping now ends the run.",
       "noteFound": "Stop ends the search here and confirms what was found. The steps that could have tuned it are skipped.",
-      "noteConfirming": "Confirming the strategies found. Stop now ends the run and keeps them unconfirmed."
+      "noteConfirming": "Confirming the strategies found. Stop now ends the run and keeps them unconfirmed.",
+      "unresolvedNoAddress": "DNS publishes no {{family}} address for this name, so there is nothing to test. Pin the site's address to test it."
     },
     "steps": {
       "dns": "DNS",
@@ -2640,6 +2647,8 @@
       "noBypass": "no bypass needed",
       "addressBlocked": "address blocked",
       "gatewayIntercepted": "intercepted by the gateway",
+      "unresolved": "does not resolve",
+      "noFamilyAddress": "no {{family}} address",
       "nothingFound": "nothing found"
     },
     "results": {
@@ -2656,6 +2665,10 @@
       "worksWithout": "Loads without b4. Nothing to apply.",
       "addressBlocked": "Unreachable at the network level: connections to every known address of this site fail, and no other region's DNS answer reached it either, so no bypass strategy can help. Route it through a proxy or VPN set instead.",
       "gatewayIntercepted": "TCP to {{ips}} is answered by the first hop in front of this host (a transparent proxy on the gateway), so packets from this host never reach the ISP and no strategy can be tested. Run b4 on that gateway or exclude this host from its redirect; if this host is the router itself, the ISP does this at its edge and only a proxy route helps.",
+      "unresolvedNxdomain": "This name does not exist: {{server}} answers NXDOMAIN, so there is no site to test a strategy on. Check the spelling.",
+      "unresolved": "No DNS server returned an address for this name, so no strategy could be tested. Check the spelling; if the name is right, DNS for it fails on this network.",
+      "unresolvedSystem": "The system resolver has no address for this name, and with Check DNS for tampering off no other resolver was asked, so no strategy could be tested. Check the spelling, or run again with that option on.",
+      "unresolvedFamily": "This name has {{other}} addresses only, while this run probed over {{family}}, so no strategy could be tested. If the site has an {{family}} address that DNS does not publish, add it under Pinned addresses in Options.",
       "nothingFound_one": "Nothing worked. {{count}} configuration was tried. Retrying with TLS 1.2 or a captured ClientHello sometimes helps; the log shows how each one failed.",
       "nothingFound_other": "Nothing worked. {{count}} configurations were tried. Retrying with TLS 1.2 or a captured ClientHello sometimes helps; the log shows how each one failed.",
       "apply": "Apply as a set",
@@ -2674,7 +2687,10 @@
       "otherStrategies_one": "{{count}} other strategy worked",
       "otherStrategies_other": "{{count}} other strategies worked",
       "showAll": "Show all {{count}}",
-      "showFewer": "Show fewer"
+      "showFewer": "Show fewer",
+      "unresolvedNoAddress": "This name exists, but {{server}} answers that it has no {{family}} address, so there was nothing to test. If the site is reached through an address published elsewhere, add it under Pinned addresses in Options and run again.",
+      "unresolvedForgeable": "That answer came over plain DNS, which can be forged on the way; a trusted DNS server given as tcp:// or https:// rules that out.",
+      "dohFallback": "DNS over HTTPS"
     },
     "verdict": {
       "perAddress": "Results per address",
@@ -2682,6 +2698,7 @@
       "confirmed": "confirmed on every address",
       "apply": "Apply to {{name}}",
       "missingSet": "The set no longer exists, so the result cannot be written into it.",
+      "unresolved": "{{domains}}: no address to test, because the name is wrong or has no address in the IP family this run probed. Fix it, or remove it from this set's Discovery addresses.",
       "dialogTitle": "Write the strategy into {{name}}",
       "dialogUncovered": "This strategy did not work for {{domains}}. After the change, {{name}} may stop opening them.",
       "pruned": "Removed {{domains}} from the Discovery addresses of {{name}}.",
@@ -2724,6 +2741,7 @@
       },
       "none": {
         "title": "Nothing worked for the addresses that need a bypass",
+        "nothingTested": "Nothing could be tested",
         "body": "The cards below show what happened to each address."
       },
       "incomplete": {
@@ -2841,17 +2859,22 @@
       "loadsWithout": "Loads without b4",
       "needsProxy": "Needs a proxy or VPN set",
       "gatewayIntercepted": "Intercepted by the gateway in front of this host",
+      "unresolved": "The name does not resolve, nothing was tested",
+      "unresolvedFamily": "No {{family}} address, nothing was tested",
       "nothing": "No strategy made it load",
       "sharedWith": "One set together with {{domains}}",
       "stoppedEarly": "search stopped early, not tuned",
-      "lastLog": "Last run log"
+      "lastLog": "Last run log",
+      "unresolvedNoAddress": "DNS publishes no {{family}} address, nothing was tested"
     },
     "errors": {
       "not_found": "The set was not found. It may have been deleted.",
       "no_urls": "The set has no addresses to test. Add one to the list.",
       "too_many_urls": "A search for a set tests at most {{max}} addresses.",
       "reserved_host": "Local and private addresses cannot be tested.",
-      "routed_set": "The set routes its traffic to an interface or proxy, so there is no bypass strategy to search for."
+      "routed_set": "The set routes its traffic to an interface or proxy, so there is no bypass strategy to search for.",
+      "bad_dns_server": "The trusted DNS server given for this run is not valid. It takes an IP address with an optional port, udp://, tcp://, tcp+udp:// or an https:// URL.",
+      "bad_pin": "A pinned address was refused. Each line takes a public IP address, then the names it serves."
     },
     "options": {
       "title": "Options",
@@ -2883,7 +2906,24 @@
       "useCommunityHint": "Refreshes the catalogue from the hub, then tests up to three sets other users published for these domains before the presets.",
       "stopWhenCovered": "Stop at the first strategy that works for every address",
       "stopWhenCoveredHint": "Ends the search once a strategy passes the confirmation on every address of the set. Turned off, every strategy is tested, which takes longer but can find a faster one.",
-      "summaryFullSearch": "full search"
+      "summaryFullSearch": "full search",
+      "trustedDns": "Trusted DNS server",
+      "trustedDnsHint": "For this run only. Empty: the server set under Settings, Discovery.",
+      "trustedDnsFromSettings": "From Settings: {{server}}",
+      "trustedDnsBuiltin": "Built-in public resolvers",
+      "pins": "Pinned addresses",
+      "pinsHint": "Hosts file order, one line per address: the address first, then the names it serves; text after # is ignored. Discovery tests those names through these addresses, skips their DNS check, and the proposed set keeps the pins. For a site DNS has no or a wrong address for.",
+      "pinsError": {
+        "line": "\"{{value}}\" needs an IP address and at least one name on the same line.",
+        "address": "\"{{value}}\" is not an IP address.",
+        "private": "{{value}} is a private or local address. Discovery probes sites on the internet.",
+        "name": "\"{{value}}\" is not a domain name. A name outside ASCII goes in its xn-- form.",
+        "tooMany": "At most {{max}} pinned addresses per run."
+      },
+      "summaryDns": "DNS {{server}}",
+      "summaryPins_one": "{{count}} pinned name",
+      "summaryPins_other": "{{count}} pinned names",
+      "summaryInvalid": "Some options are not valid"
     },
     "logs": {
       "title": "Discovery log",
@@ -3387,6 +3427,7 @@
         "block": "DNS query dropped by a blocking set",
         "servfail": "The set's resolver did not answer in time",
         "bad-target": "The set's DNS server field does not hold a valid IP address, query forwarded unchanged",
+        "from-target": "The query came from the address of the set's own resolver, forwarded unchanged",
         "ipv6-stripped": "AAAA records removed from the answer so the client falls back to IPv4",
         "heal+ipv6-stripped": "DNS answer had unreachable addresses replaced and its AAAA records removed"
       }
@@ -3588,6 +3629,7 @@
     "port_in_use_system": "Port {{port}} on {{bind}} is already in use",
     "out_of_range": "Value is out of allowed range",
     "invalid_host": "\"{{value}}\" is not a host name",
+    "invalid_dns_server": "\"{{value}}\" is not a DNS server Discovery can use: an IP address with an optional port, udp://, tcp://, tcp+udp:// or an https:// URL",
     "required": "This field is required",
     "tls_pair_required": "Both TLS certificate and key must be specified together",
     "file_not_found": "File not found: {{path}}",

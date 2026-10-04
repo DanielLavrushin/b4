@@ -336,9 +336,12 @@ func (ds *DiscoverySuite) findAlternativeAddresses(domain string, port, tlsPort 
 		known[ip] = true
 	}
 
-	if result.TransportBlocked {
+	switch {
+	case result.TransportBlocked:
 		log.DiscoveryLogf("  [%s] every known address is unreachable, asking DNS how other regions are answered", domain)
-	} else {
+	case len(known) == 0:
+		log.DiscoveryLogf("  [%s] no address is known for the name here, asking DNS how other regions are answered", domain)
+	default:
 		log.DiscoveryLogf("  [%s] the known addresses do not serve the site from here, asking DNS how other regions are answered", domain)
 	}
 
@@ -475,7 +478,7 @@ func (ds *DiscoverySuite) gatewayTerminated(ctx context.Context, ips []string, p
 }
 
 func shouldScanAlternatives(result *DNSDiscoveryResult) bool {
-	if result == nil {
+	if result == nil || result.NXDomain {
 		return false
 	}
 	return result.TransportBlocked || (!result.SystemServes && !result.ReferenceServes)
@@ -490,25 +493,27 @@ func plainFixResult(dr *DomainDiscoveryResult) (string, *DomainPresetResult) {
 	return "", nil
 }
 
-func (ds *DiscoverySuite) alternativeIPs(domain string) []string {
-	r := ds.dnsResults[domain]
-	if r == nil {
-		return nil
-	}
-	return r.AlternativeIPs
-}
-
 func (ds *DiscoverySuite) pinsFor(domains []string) map[string][]string {
 	var pins map[string][]string
-	for _, domain := range domains {
-		ips := ds.alternativeIPs(domain)
-		if len(ips) == 0 {
-			continue
+	add := func(domain string, ips []string) {
+		if domain == "" || len(ips) == 0 {
+			return
 		}
 		if pins == nil {
 			pins = map[string][]string{}
 		}
-		pins[config.NormalizePinDomain(domain)] = append([]string(nil), ips...)
+		key := config.NormalizePinDomain(domain)
+		pins[key] = appendUnique(pins[key], ips...)
+	}
+	for _, domain := range domains {
+		r := ds.dnsResults[domain]
+		switch {
+		case r == nil, r.setPinned:
+		case r.Pinned:
+			add((&config.DNSConfig{Pins: ds.givenPins}).PinnedEntry(domain))
+		default:
+			add(domain, r.AlternativeIPs)
+		}
 	}
 	return pins
 }
@@ -604,7 +609,7 @@ func (ds *DiscoverySuite) needsBypass(domain string) bool {
 	if dr == nil {
 		return true
 	}
-	if dr.BaselineWorks {
+	if dr.BaselineWorks || dr.Unresolved {
 		return false
 	}
 	if _, r := plainFixResult(dr); r != nil {

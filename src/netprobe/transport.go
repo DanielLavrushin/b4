@@ -49,15 +49,11 @@ func HTTPClient(mark int, timeout time.Duration) *http.Client {
 	return &http.Client{Transport: tr, Timeout: timeout}
 }
 
-func MarkedResolver(mark int, timeout time.Duration, server string) *net.Resolver {
+func MarkedResolver(mark int, timeout time.Duration) *net.Resolver {
 	return &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			target := addr
-			if server != "" {
-				target = net.JoinHostPort(server, "53")
-			}
-			return Dialer(mark, timeout, timeout).DialContext(ctx, network, target)
+			return Dialer(mark, timeout, timeout).DialContext(ctx, network, addr)
 		},
 	}
 }

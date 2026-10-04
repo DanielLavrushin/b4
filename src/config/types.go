@@ -493,8 +493,7 @@ type WebServerConfig struct {
 type DiscoveryConfig struct {
 	DiscoveryTimeoutSec   int            `json:"discovery_timeout"`
 	ConfigPropagateMs     int            `json:"config_propagate_ms"`
-	ReferenceDomain       string         `json:"reference_domain"`
-	ReferenceDNS          []string       `json:"reference_dns"`
+	DNSServer             string         `json:"dns_server"`
 	ValidationTries       int            `json:"validation_tries"`
 	DiscoveryFlowMark     uint           `json:"discovery_flow_mark"`
 	DiscoveryInjectedMark uint           `json:"discovery_injected_mark"`

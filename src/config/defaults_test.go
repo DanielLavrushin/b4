@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 
 	"github.com/daniellavrushin/b4/log"
@@ -342,34 +341,6 @@ func TestLoadFromFile_NestedStructPartialKeepsSiblings(t *testing.T) {
 	}
 	if cfg.System.Logging.Directory != "/var/log/b4" {
 		t.Errorf("Directory sibling: got %q", cfg.System.Logging.Directory)
-	}
-}
-
-func TestLoadFromFile_SliceAbsentUsesDefault(t *testing.T) {
-	path := writeTempJSON(t, `{"version":34}`)
-
-	cfg := NewConfig()
-	if err := cfg.LoadFromFile(path); err != nil {
-		t.Fatalf("LoadFromFile: %v", err)
-	}
-	want := []string{"9.9.9.9", "1.1.1.1", "8.8.8.8", "9.9.1.1", "8.8.4.4"}
-	if !reflect.DeepEqual(cfg.System.Checker.ReferenceDNS, want) {
-		t.Errorf("ReferenceDNS: want %v, got %v", want, cfg.System.Checker.ReferenceDNS)
-	}
-}
-
-func TestLoadFromFile_SliceEmptyUserSurvives(t *testing.T) {
-	path := writeTempJSON(t, `{"version":34,"system":{"checker":{"reference_dns":[]}}}`)
-
-	cfg := NewConfig()
-	if err := cfg.LoadFromFile(path); err != nil {
-		t.Fatalf("LoadFromFile: %v", err)
-	}
-	if cfg.System.Checker.ReferenceDNS == nil {
-		t.Errorf("ReferenceDNS: want empty non-nil slice, got nil")
-	}
-	if len(cfg.System.Checker.ReferenceDNS) != 0 {
-		t.Errorf("ReferenceDNS: want empty, got %v", cfg.System.Checker.ReferenceDNS)
 	}
 }
 

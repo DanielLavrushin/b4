@@ -206,6 +206,7 @@ func TestMCPDiscoveryVerdicts(t *testing.T) {
 	}{
 		{"baseline works", mcpDiscoveryDomain{BaselineWorks: true}, false, "do not create a set"},
 		{"transport blocked", mcpDiscoveryDomain{Blocked: true}, false, "no packet strategy can help"},
+		{"unresolved", mcpDiscoveryDomain{unresolved: true}, false, "check the spelling"},
 		{"found", mcpDiscoveryDomain{Found: true, BestPreset: "combo"}, false, "working strategy was found"},
 		{"nothing worked", mcpDiscoveryDomain{}, false, "no strategy tried made it work"},
 		{"found mid-run", mcpDiscoveryDomain{Found: true, BestPreset: "combo"}, true, "PROVISIONAL"},
@@ -224,6 +225,110 @@ func TestMCPDiscoveryVerdicts(t *testing.T) {
 	both := mcpDiscoveryDomain{BaselineWorks: true, Found: true, Blocked: true}
 	if !strings.Contains(mcpDiscoveryVerdict(both, false), "do not create a set") {
 		t.Error("works-without-b4 must win over every other verdict")
+	}
+}
+
+func TestMCPDiscoveryUnresolvedOutcome(t *testing.T) {
+	row := mcpDiscoveryDomain{Domain: "typo.example", Found: true, Blocked: true}
+	mcpApplyOutcome(&row, discovery.OutcomeUnresolved)
+	if !row.unresolved || row.Found || row.Blocked || row.BaselineWorks {
+		t.Fatalf("an unresolved domain is neither found nor blocked, got %+v", row)
+	}
+	if got := mcpDiscoveryVerdict(row, false); !strings.Contains(got, "does not resolve") {
+		t.Fatalf("the verdict must say the name does not resolve, got %q", got)
+	}
+}
+
+func TestMCPDiscoveryUnresolvedVerdictNamesTheEvidence(t *testing.T) {
+	cases := []struct {
+		name     string
+		family   string
+		evidence *mcpNameEvidence
+		want     []string
+		not      []string
+	}{
+		{"missing family", "ipv6", &mcpNameEvidence{}, []string{"IPv4 addresses only and this run probed over IPv6", "Pinned addresses in the web interface", "MCP cannot write pins"}, []string{"dns.pins"}},
+		{"no address", "", &mcpNameEvidence{NoAddressFamily: "ipv4", Reference: "https://dns.google/resolve"}, []string{"exists, but https://dns.google/resolve answers that it has no IPv4 address", "MCP cannot write pins"}, []string{"plain DNS"}},
+		{"nxdomain from the trusted server", "", &mcpNameEvidence{NXDomain: true, Reference: "tcp://9.9.9.9"}, []string{"tcp://9.9.9.9 answers that it does not exist (NXDOMAIN)"}, []string{"DNS over HTTPS", "plain DNS"}},
+		{"nxdomain over plain DNS", "", &mcpNameEvidence{NXDomain: true, Reference: "8.8.8.8", ForgeableAnswer: true}, []string{"8.8.8.8 answers that it does not exist", "came over plain DNS", "tcp:// or https://"}, nil},
+		{"nxdomain without a server", "", &mcpNameEvidence{NXDomain: true}, []string{"DNS answers that it does not exist"}, nil},
+		{"system resolver only", "", nil, []string{"run again without skip_dns"}, nil},
+		{"every resolver", "", &mcpNameEvidence{}, []string{"DNS for it fails on this network"}, nil},
+	}
+	for _, tc := range cases {
+		row := mcpDiscoveryDomain{Domain: "typo.example"}
+		mcpApplyOutcome(&row, discovery.OutcomeUnresolved)
+		mcpNoteUnresolved(&row, tc.family, tc.evidence)
+		got := mcpDiscoveryVerdict(row, false)
+		for _, want := range tc.want {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: verdict %q, want it to mention %q", tc.name, got, want)
+			}
+		}
+		for _, not := range tc.not {
+			if strings.Contains(got, not) {
+				t.Errorf("%s: verdict %q must not mention %q", tc.name, got, not)
+			}
+		}
+	}
+
+	found := mcpDiscoveryDomain{Domain: "ok.example"}
+	mcpApplyOutcome(&found, discovery.OutcomeFound)
+	mcpNoteUnresolved(&found, "ipv6", &mcpNameEvidence{NXDomain: true, NoAddressFamily: "ipv4"})
+	if found.missingFamily != "" || found.systemOnly || found.evidence != (mcpNameEvidence{}) {
+		t.Fatalf("only an unresolved row carries the evidence, got %+v", found)
+	}
+}
+
+func TestMCPDiscoverySnapshotReadsTheNameEvidence(t *testing.T) {
+	suite := discovery.NewCheckSuite(nil)
+	suite.DomainDiscoveryResults = map[string]*discovery.DomainDiscoveryResult{
+		"typo.example": {
+			Domain:     "typo.example",
+			Unresolved: true,
+			Outcome:    discovery.OutcomeUnresolved,
+			DNSResult:  &discovery.DNSDiscoveryResult{NXDomain: true, Reference: "8.8.8.8", ForgeableAnswer: true},
+		},
+	}
+	snap, err := mcpSuiteProjection(suite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := snap.DomainResults["typo.example"].DNSResult
+	if r == nil || r.mcpNameEvidence != (mcpNameEvidence{NXDomain: true, Reference: "8.8.8.8", ForgeableAnswer: true}) {
+		t.Fatalf("the snapshot must carry what the run learned about the name, got %+v", r)
+	}
+}
+
+func TestMCPSetVerdictNamesAddressesWithoutAnAddressToTest(t *testing.T) {
+	none := mcpSetVerdictMeaning("work", &discovery.SetVerdict{Status: discovery.SetVerdictNone, Uncovered: []string{"typo.example"}, Unresolved: []string{"typo.example"}})
+	if strings.Contains(none, "proxy route") || !strings.Contains(none, "nothing was tested") || !strings.Contains(none, "typo.example has no address") {
+		t.Fatalf("a set whose only open address does not resolve needs no proxy advice, got %q", none)
+	}
+
+	fine := mcpSetVerdictMeaning("work", &discovery.SetVerdict{Status: discovery.SetVerdictNone, Uncovered: []string{"typo.example"}, Unresolved: []string{"typo.example"}, NoBypass: []string{"open.example"}})
+	if strings.Contains(fine, "nothing was tested") || !strings.Contains(fine, "open.example load without b4") {
+		t.Fatalf("open.example was tested and loads without b4, got %q", fine)
+	}
+
+	for _, v := range []*discovery.SetVerdict{
+		{Status: discovery.SetVerdictNone, Uncovered: []string{"blocked.example"}},
+		{Status: discovery.SetVerdictPartial, WinnerPreset: "combo", Covered: []string{"a.example"}, Uncovered: []string{"blocked.example"}},
+		{Status: discovery.SetVerdictPartial, WinnerPreset: "combo", Covered: []string{"a.example"}, Uncovered: []string{"typo.example"}, Unresolved: []string{"typo.example"}},
+	} {
+		if meaning := mcpSetVerdictMeaning("work", v); strings.HasSuffix(meaning, ".") {
+			t.Errorf("callers append their own separator, the meaning must not end with a period: %q", meaning)
+		}
+	}
+
+	mixed := mcpSetVerdictMeaning("work", &discovery.SetVerdict{Status: discovery.SetVerdictNone, Uncovered: []string{"blocked.example", "typo.example"}, Unresolved: []string{"typo.example"}})
+	if !strings.Contains(mixed, "made blocked.example load") || strings.Contains(mixed, "made blocked.example and typo.example") || !strings.Contains(mixed, "typo.example has no address") {
+		t.Fatalf("the proxy advice is for the address that was tested, got %q", mixed)
+	}
+
+	partial := mcpSetVerdictMeaning("work", &discovery.SetVerdict{Status: discovery.SetVerdictPartial, WinnerPreset: "combo", Covered: []string{"a.example"}, Uncovered: []string{"typo.example"}, Unresolved: []string{"typo.example"}})
+	if strings.Contains(partial, "need a set of their own") || !strings.Contains(partial, "remove it from the set's Discovery addresses") {
+		t.Fatalf("an address without an address to test needs no set of its own, got %q", partial)
 	}
 }
 

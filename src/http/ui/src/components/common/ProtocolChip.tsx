@@ -97,6 +97,12 @@ const DNS_VERDICT_STYLES: Record<string, DnsVerdictStyle> = {
     variant: "filled",
     icon: "warning",
   },
+  "from-target": {
+    label: "from target",
+    color: "default",
+    variant: "outlined",
+    icon: "dns",
+  },
 };
 
 interface DnsVerdict {

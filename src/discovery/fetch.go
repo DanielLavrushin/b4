@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netprobe"
 	"github.com/daniellavrushin/b4/utils"
@@ -25,6 +24,13 @@ func (ds *DiscoverySuite) collectTargetIPs(domain string, maxIPs int) []string {
 	dnsResult := ds.dnsResults[domain]
 	if dnsResult == nil {
 		return nil
+	}
+	if dnsResult.Pinned && len(dnsResult.AlternativeIPs) > 0 {
+		ips := dnsResult.AlternativeIPs
+		if maxIPs > 0 && len(ips) > maxIPs {
+			ips = ips[:maxIPs]
+		}
+		return append([]string(nil), ips...)
 	}
 	if len(dnsResult.AlternativeIPs) > 0 && dnsResult.TransportBlocked {
 		var ips []string
@@ -83,6 +89,14 @@ func (ds *DiscoverySuite) fetchForDomain(di DomainInput, timeout time.Duration) 
 			Domain: di.Domain,
 			Status: CheckStatusFailed,
 			Error:  "TCP to every known address is answered by the first hop, not tried",
+		}
+	}
+	if ds.unresolved(di.Domain) {
+		return CheckResult{
+			Domain:  di.Domain,
+			Status:  CheckStatusFailed,
+			Error:   "the name does not resolve, not tried",
+			untried: true,
 		}
 	}
 	// Use IPs already collected during DNS discovery — no fresh DNS lookups.
@@ -152,7 +166,7 @@ func (ds *DiscoverySuite) dialNetwork() string {
 // dialNetwork and pins pinnedIP when DNS discovery already resolved one.
 func (ds *DiscoverySuite) dialContext(timeout time.Duration, pinnedHost, pinnedIP string) func(context.Context, string, string) (net.Conn, error) {
 	baseDialer := probeDialer(int(ds.flowMark), timeout/2, timeout)
-	baseDialer.Resolver = netprobe.MarkedResolver(int(ds.flowMark), timeout/2, "")
+	baseDialer.Resolver = probeResolver(int(ds.flowMark), timeout/2)
 	forcedNet := ds.dialNetwork()
 
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -195,6 +209,10 @@ const probeStallTimeout = 2 * time.Second
 
 var probeRefusesAddr = utils.IsReservedAddr
 
+var probeResolver = func(mark int, timeout time.Duration) *net.Resolver {
+	return netprobe.MarkedResolver(mark, timeout)
+}
+
 func refusedProbeIP(ip string) bool {
 	if probeRefusesAddr == nil {
 		return false
@@ -205,6 +223,25 @@ func refusedProbeIP(ip string) bool {
 
 func probeDialer(mark int, timeout, keepAlive time.Duration) *net.Dialer {
 	return netprobe.RefuseAddrs(netprobe.Dialer(mark, timeout, keepAlive), probeRefusesAddr)
+}
+
+func lookupFailureOf(err error) nameLookup {
+	var dnsErr *net.DNSError
+	switch {
+	case !errors.As(err, &dnsErr), errors.Is(err, context.Canceled):
+		return lookupOK
+	case dnsErr.IsNotFound:
+		return lookupNotFound
+	}
+	return lookupFailed
+}
+
+func lookupHostOf(err error) string {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.Name
+	}
+	return ""
 }
 
 type blockPageRedirect struct {
@@ -311,6 +348,10 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		default:
 			_, detail := netprobe.ClassifyTLSError(err)
 			result.Error = detail
+		}
+		if result.FinalHost == "" {
+			result.lookup = lookupFailureOf(err)
+			result.lookupHost = lookupHostOf(err)
 		}
 		result.Duration = time.Since(start)
 		return result
@@ -440,57 +481,4 @@ evaluate:
 
 	result.Status = CheckStatusComplete
 	return result
-}
-
-func (ds *DiscoverySuite) measureNetworkBaseline() float64 {
-	// Test a known-good domain to establish actual network speed
-	timeout := time.Duration(ds.cfg.System.Checker.DiscoveryTimeoutSec) * time.Second
-	referenceDomain := ds.cfg.System.Checker.ReferenceDomain
-	if referenceDomain == "" {
-		referenceDomain = config.DefaultConfig.System.Checker.ReferenceDomain
-	}
-
-	log.DiscoveryLogf("Measuring network baseline using %s", referenceDomain)
-
-	testURL := fmt.Sprintf("https://%s/", referenceDomain)
-	ctx, cancel := ds.fetchContext(timeout)
-	defer cancel()
-
-	transport := &http.Transport{
-		TLSClientConfig:   ds.tlsConfig(),
-		DialContext:       ds.dialContext(timeout, "", ""),
-		ForceAttemptHTTP2: true,
-	}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{
-		Timeout:   timeout,
-		Transport: transport,
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "GET", testURL, nil)
-	if err != nil {
-		log.DiscoveryLogf("Failed to create baseline request: %v", err)
-		return 0
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0")
-
-	start := time.Now()
-	resp, err := client.Do(req)
-	if err != nil {
-		log.DiscoveryLogf("Baseline measurement failed: %v", err)
-		return 0
-	}
-	defer resp.Body.Close()
-
-	bytesRead, _ := io.CopyN(io.Discard, resp.Body, 100*1024)
-	duration := time.Since(start)
-
-	if bytesRead == 0 || duration.Seconds() == 0 {
-		return 0
-	}
-
-	speed := float64(bytesRead) / duration.Seconds()
-	log.DiscoveryLogf("Network baseline: %.2f KB/s (%d bytes in %v)", speed/1024, bytesRead, duration)
-
-	return speed
 }

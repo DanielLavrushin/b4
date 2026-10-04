@@ -244,6 +244,35 @@ func TestSetVerdictNotNeededAndNone(t *testing.T) {
 	}
 }
 
+func TestSetVerdictNamesAddressesWithoutAnAddressToTest(t *testing.T) {
+	ds := setRunFixture(t, "a.example", "typo.example", "b.example")
+	for _, d := range []string{"a.example", "typo.example", "b.example"} {
+		ds.put(d, presetNoBypass, CheckStatusFailed, PhaseBaseline, 0)
+	}
+	ds.domainResults["typo.example"].Unresolved = true
+	ds.put("a.example", "pair", CheckStatusComplete, PhaseStrategy, 0)
+	ds.put("b.example", "pair", CheckStatusComplete, PhaseStrategy, 0)
+	ds.determineBest()
+	ds.buildStrategyGroups()
+
+	v := ds.buildSetVerdict(ds.runDomains(), "")
+	if v.Status != SetVerdictPartial || !reflect.DeepEqual(v.Uncovered, []string{"typo.example"}) || !reflect.DeepEqual(v.Unresolved, []string{"typo.example"}) {
+		t.Fatalf("the unresolved address stays uncovered and is named as such, verdict = %+v", v)
+	}
+
+	ds = setRunFixture(t, "typo.example", "open.example")
+	ds.put("typo.example", presetNoBypass, CheckStatusFailed, PhaseBaseline, 0)
+	ds.put("open.example", presetNoBypass, CheckStatusComplete, PhaseBaseline, 0)
+	ds.domainResults["typo.example"].Unresolved = true
+	ds.determineBest()
+	ds.buildStrategyGroups()
+
+	v = ds.buildSetVerdict(ds.runDomains(), "")
+	if v.Status != SetVerdictNone || !reflect.DeepEqual(v.Unresolved, []string{"typo.example"}) || !reflect.DeepEqual(v.NoBypass, []string{"open.example"}) {
+		t.Fatalf("nothing was tested for typo.example, verdict = %+v", v)
+	}
+}
+
 func TestSetVerdictIncompleteWhenCanceled(t *testing.T) {
 	ds := setRunFixture(t, "a.example")
 	ds.setVerdict = &SetVerdict{Status: SetVerdictCovered}

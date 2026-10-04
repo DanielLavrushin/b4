@@ -81,6 +81,15 @@ export const SetVerdictCard = ({
   const setId = suite.set_id ?? "";
   const covered = useMemo(() => verdict.covered ?? [], [verdict.covered]);
   const uncovered = useMemo(() => verdict.uncovered ?? [], [verdict.uncovered]);
+  const unresolved = useMemo(
+    () => verdict.unresolved ?? [],
+    [verdict.unresolved],
+  );
+  const pruneTargets = verdict.status === "none" ? unresolved : uncovered;
+  const testedUncovered = useMemo(
+    () => uncovered.filter((d) => !unresolved.includes(d)),
+    [uncovered, unresolved],
+  );
   const noBypass = verdict.no_bypass ?? [];
   const runDomains = useMemo(
     () => (suite.domains ?? []).map((d) => d.domain),
@@ -144,14 +153,14 @@ export const SetVerdictCard = ({
     const urlOf = new Map(
       (suite.domains ?? []).map((d) => [lower(d.domain), d.check_url]),
     );
-    for (const domain of uncovered) {
+    for (const domain of pruneTargets) {
       hosts.add(lower(domain));
       const url = urlOf.get(lower(domain));
       const host = url ? normalizeProbeUrl(url)?.host : undefined;
       if (host) hosts.add(host);
     }
     return hosts;
-  }, [suite.domains, uncovered]);
+  }, [suite.domains, pruneTargets]);
 
   const storedUrls = set?.discovery?.urls ?? [];
   const baseUrls = storedUrls.length > 0 ? storedUrls : checkUrls;
@@ -160,7 +169,7 @@ export const SetVerdictCard = ({
     return !host || !uncoveredHosts.has(host);
   });
   const canPrune =
-    !!set && uncovered.length > 0 && keptUrls.length < baseUrls.length;
+    !!set && pruneTargets.length > 0 && keptUrls.length < baseUrls.length;
 
   const plainFix =
     verdict.family === "alt_address" || verdict.family === "dns_redirect";
@@ -189,7 +198,7 @@ export const SetVerdictCard = ({
   const prune = async () => {
     if (!set) return;
     setSaving(true);
-    await onSaveUrls(set.id, keptUrls, uncovered, [...uncoveredHosts]);
+    await onSaveUrls(set.id, keptUrls, pruneTargets, [...uncoveredHosts]);
     setSaving(false);
   };
 
@@ -250,6 +259,37 @@ export const SetVerdictCard = ({
         </Stack>
       </Box>
     ) : null;
+
+  const unresolvedNote =
+    unresolved.length > 0 ? (
+      <Typography variant="caption" sx={{ ...muted, display: "block" }}>
+        {t("discovery.verdict.unresolved", { domains: unresolved.join(", ") })}
+      </Typography>
+    ) : null;
+
+  const pruneButton = canPrune ? (
+    <Button
+      size="small"
+      startIcon={
+        saving ? <CircularProgress size={14} color="inherit" /> : <DeleteIcon />
+      }
+      disabled={applying || saving}
+      onClick={() => void prune()}
+      sx={{ textTransform: "none", whiteSpace: "nowrap" }}
+    >
+      {t("discovery.verdict.partial.prune")}
+    </Button>
+  ) : null;
+
+  const pruneNote = canPrune ? (
+    <Typography variant="caption" sx={{ ...muted, display: "block" }}>
+      {keptUrls.length > 0
+        ? t("discovery.verdict.partial.pruneKeeps", {
+            urls: keptUrls.map(probeUrlLabel).join(", "),
+          })
+        : t("discovery.verdict.partial.pruneEmpty")}
+    </Typography>
+  ) : null;
 
   const triedBadge = tried ? (
     <B4Badge
@@ -389,23 +429,7 @@ export const SetVerdictCard = ({
               {applyButton(
                 t("discovery.verdict.partial.applyAnyway", { name: setName }),
               )}
-              {canPrune && (
-                <Button
-                  size="small"
-                  startIcon={
-                    saving ? (
-                      <CircularProgress size={14} color="inherit" />
-                    ) : (
-                      <DeleteIcon />
-                    )
-                  }
-                  disabled={applying || saving}
-                  onClick={() => void prune()}
-                  sx={{ textTransform: "none", whiteSpace: "nowrap" }}
-                >
-                  {t("discovery.verdict.partial.prune")}
-                </Button>
-              )}
+              {pruneButton}
             </>,
           )}
           {(preset === SET_CURRENT_PRESET || plainFix) && (
@@ -413,18 +437,13 @@ export const SetVerdictCard = ({
               {t("discovery.verdict.partial.noApply")}
             </Typography>
           )}
-          {canPrune && (
+          {pruneNote}
+          {unresolvedNote}
+          {testedUncovered.length > 0 && (
             <Typography variant="caption" sx={{ ...muted, display: "block" }}>
-              {keptUrls.length > 0
-                ? t("discovery.verdict.partial.pruneKeeps", {
-                    urls: keptUrls.map(probeUrlLabel).join(", "),
-                  })
-                : t("discovery.verdict.partial.pruneEmpty")}
+              {t("discovery.verdict.partial.separate")}
             </Typography>
           )}
-          <Typography variant="caption" sx={{ ...muted, display: "block" }}>
-            {t("discovery.verdict.partial.separate")}
-          </Typography>
           {missingSet}
         </Stack>
       );
@@ -442,7 +461,12 @@ export const SetVerdictCard = ({
       break;
     case "none":
       status = "error";
-      title = t("discovery.verdict.none.title");
+      title =
+        uncovered.length > 0 &&
+        noBypass.length === 0 &&
+        testedUncovered.length === 0
+          ? t("discovery.verdict.none.nothingTested")
+          : t("discovery.verdict.none.title");
       subtitle = t("discovery.verdict.none.body");
       badge = (
         <B4Badge
@@ -451,6 +475,15 @@ export const SetVerdictCard = ({
           label={t("discovery.verdict.status.none")}
         />
       );
+      if (unresolvedNote || pruneButton) {
+        body = (
+          <Stack spacing={1.5}>
+            {unresolvedNote}
+            {pruneButton && <Box>{pruneButton}</Box>}
+            {pruneNote}
+          </Stack>
+        );
+      }
       break;
     default:
       status = "neutral";
@@ -476,7 +509,7 @@ export const SetVerdictCard = ({
           strategy={strategy}
           preset={preset}
           domains={covered}
-          uncovered={verdict.status === "partial" ? uncovered : []}
+          uncovered={verdict.status === "partial" ? testedUncovered : []}
           probeUrls={checkUrls}
           loading={applying}
           onClose={() => setDialogOpen(false)}
