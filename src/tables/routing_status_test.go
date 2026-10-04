@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"net"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -147,6 +148,54 @@ func TestRoutingStatusKeepsEverySetThatFailedWhenNamesRepeat(t *testing.T) {
 	}
 	if st.SetErrors[0].ID == st.SetErrors[1].ID {
 		t.Fatalf("the failed sets carry the same id, so the list in System Info cannot tell them apart: %+v", st.SetErrors)
+	}
+}
+
+func TestRoutingStatusClearsASetThatADNSAnswerInstalled(t *testing.T) {
+	familyResetGlobals(t)
+	stubRetryState(t)
+	routeMu.Lock()
+	routeSyncRetryBase = time.Hour
+	routeMu.Unlock()
+	var fail atomic.Bool
+	fail.Store(true)
+	routeEngine = &mockRouteBackend{ensureChainFn: func(string, bool) error {
+		if fail.Load() {
+			return errTestClear
+		}
+		return nil
+	}}
+	first := familyTestSet()
+	second := familyTestSet()
+	second.Id, second.Name = "famtest2", "famtest2"
+	second.Routing.FWMark, second.Routing.Table = 0x7e11, 233
+	cfg := familyTestConfig(true, false)
+	cfg.Sets = []*config.SetConfig{first, second}
+
+	RoutingSyncConfig(cfg)
+	st := RoutingStatus()
+	if len(st.SetErrors) != 2 || st.FailingSince.IsZero() {
+		t.Fatalf("both sets were expected to fail their first install: %+v", st)
+	}
+	since := st.FailingSince
+
+	fail.Store(false)
+	RoutingHandleDNS(cfg, first, []net.IP{net.ParseIP("198.51.100.40")})
+	st = RoutingStatus()
+	if st.Installed != 1 {
+		t.Fatalf("the DNS answer did not install the set: %+v", st)
+	}
+	if len(st.SetErrors) != 1 || st.SetErrors[0].ID != second.Id {
+		t.Fatalf("a set a DNS answer installed is still reported as failing, or the other set's failure was dropped: %+v", st.SetErrors)
+	}
+	if !st.FailingSince.Equal(since) {
+		t.Fatalf("the set that still fails lost the time its failure began: %+v", st)
+	}
+
+	RoutingHandleDNS(cfg, second, []net.IP{net.ParseIP("198.51.100.41")})
+	st = RoutingStatus()
+	if st.Installed != 2 || len(st.SetErrors) != 0 || st.Error != "" || !st.FailingSince.IsZero() {
+		t.Fatalf("with every set installed by DNS answers before the retry, the status still reports a failure: %+v", st)
 	}
 }
 

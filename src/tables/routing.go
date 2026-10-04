@@ -267,6 +267,7 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 		}
 		routeRuleCache[set.Id] = cur
 		routeNoteInstalled(set.Id)
+		routeNoteSetRecovered(set.Id)
 		retireOld()
 		routeRestoreStaticEntries(be, set, cur)
 		switch cur.mode {
@@ -1181,6 +1182,14 @@ func routeNoteSyncFailed(attempt time.Time, err string, setErrs map[string]Routi
 
 func routeNoteSyncDone(attempt time.Time) {
 	routeSyncOutcome = routeSyncReport{attempt: attempt}
+}
+
+func routeNoteSetRecovered(setID string) {
+	delete(routeSyncOutcome.setErrs, setID)
+	routeSyncOutcome.err = ""
+	if len(routeSyncOutcome.setErrs) == 0 {
+		routeSyncOutcome.since = time.Time{}
+	}
 }
 
 func RoutingSetsWanted(cfg *config.Config) int {
