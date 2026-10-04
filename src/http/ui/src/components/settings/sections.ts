@@ -11,7 +11,12 @@ import {
 } from "@b4.icons";
 import { B4Config } from "@models/config";
 
-export type CoreSectionId = "engine" | "devices" | "firewall" | "dns" | "socks5";
+export type CoreSectionId =
+  | "engine"
+  | "devices"
+  | "firewall"
+  | "dns"
+  | "socks5";
 
 export type SystemSectionId = "service" | "web" | "backup";
 
@@ -29,6 +34,22 @@ const engineQueue = (c: B4Config) => ({
   mss_clamp: undefined,
 });
 
+const engineRestart = (c: B4Config) => ({
+  ...engineQueue(c),
+  interfaces: undefined,
+  tcp_conn_bytes_limit: undefined,
+  udp_conn_bytes_limit: undefined,
+});
+
+const deviceGate = (c: B4Config) => {
+  const { enabled, wisb, devices } = c.queue.devices;
+  const macs = devices
+    .filter((d) => d.selected && !d.is_manual)
+    .map((d) => d.mac.trim().toUpperCase())
+    .filter((mac) => mac !== "");
+  return [enabled, wisb, [...new Set(macs)].sort()];
+};
+
 const nothing = () => [];
 
 export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
@@ -41,14 +62,14 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
       c.system.ip_health,
       c.system.dns?.keep_ipv6_answers,
     ],
-    restartPick: (c) => [engineQueue(c), c.system.dns?.keep_ipv6_answers],
+    restartPick: (c) => [engineRestart(c)],
   },
   {
     id: "devices",
     labelKey: "settings.coreTabs.devices",
     Icon: DeviceUnknowIcon,
     pick: (c) => [c.queue.devices],
-    restartPick: (c) => [c.queue.devices],
+    restartPick: deviceGate,
   },
   {
     id: "firewall",
@@ -56,8 +77,7 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
     Icon: FilterIcon,
     pick: (c) => [c.system.tables, c.queue.mss_clamp],
     restartPick: (c) => [
-      { ...c.system.tables, dscp: undefined },
-      c.queue.mss_clamp,
+      { ...c.system.tables, dscp: undefined, masquerade: undefined },
     ],
   },
   {
@@ -65,7 +85,7 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
     labelKey: "settings.coreTabs.dns",
     Icon: DnsIcon,
     pick: (c) => [{ ...c.system.dns, keep_ipv6_answers: undefined }],
-    restartPick: (c) => [{ ...c.system.dns, keep_ipv6_answers: undefined }],
+    restartPick: nothing,
   },
   {
     id: "socks5",
@@ -122,5 +142,5 @@ export const sectionIndex = (
   id: string | undefined,
 ) => {
   const index = sections.findIndex((s) => s.id === id);
-  return index < 0 ? 0 : index;
+  return Math.max(index, 0);
 };

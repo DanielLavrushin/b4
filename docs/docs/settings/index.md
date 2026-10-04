@@ -25,13 +25,15 @@ While a change is unsaved, a **Modified** chip shows next to the **Configuration
 
 | Sub-tab | Restart icon on a change to | Applies on save |
 | --- | --- | --- |
-| [Core, Packet Engine](./core#packet-engine) | The **Packet Engine**, **IPv4 / IPv6** and **Queue & Packet Processing** cards | **IP Block Detection** |
-| [Core, Devices](./core#device-filtering) | Every field | - |
-| [Core, Firewall](./core#firewall) | The **Firewall Rules**, **NAT Masquerade** and **Global MSS Clamping** cards | **DSCP** |
-| [Core, DNS](./core#dns) | Every field | - |
+| [Core, Packet Engine](./core#packet-engine) | **Ingestion mode** and the **TUN settings**, **Enable IPv4 Support**, **Enable IPv6 Support**, **Queue Start Number**, **Worker Threads**, **Packet Mark** | **Capture Interfaces**, **Force IPv4 for matched domains**, **TCP Connection Packets Limit**, **UDP Connection Packets Limit**, **IP Block Detection** |
+| [Core, Devices](./core#device-filtering) | **Enable Device Filtering**, **Exclude Selected Devices (Blacklist)**, the selection in **Available Devices** | **Vendor Lookup**, device names, the **MSS** column, **Manual Devices** |
+| [Core, Firewall](./core#firewall) | **Skip IPTables/NFTables Setup**, **Firewall Engine**, **Firewall Monitor Interval (seconds)** | **Global MSS Clamping**, **NAT Masquerade**, **DSCP** |
+| [Core, DNS](./core#dns) | - | Every field |
 | [Core, SOCKS5](./core#socks5-proxy) | - | Every field |
 | [System, Service](./system#service) | **Instant Flush**, **Syslog**, **Memory Limit** | **Language**, **Time Zone**, **Update mirrors**, **Log Level**, **Log Directory** |
 | [System, Web Server](./system#web-server) | **Port**, **Bind Address**, **TLS Certificate**, **TLS Key** | **Username**, **Password**, **Expose to internet** |
+
+While the packet engine is not running, a saved firewall change on these sub-tabs takes effect when b4 restarts.
 
 The [Backup](./system#backup) sub-tab has buttons only, no fields.
 

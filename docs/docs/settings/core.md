@@ -11,7 +11,7 @@ The **Core** tab holds the settings that decide how traffic reaches b4 and what 
 - **DNS**: DNS over TCP and the DNS timeouts;
 - **SOCKS5**: the built-in SOCKS5 proxy.
 
-The **SOCKS5** sub-tab and the **IP Block Detection** and **DSCP** cards apply on save. For the other fields, see [Saving and restarting](./index.md#saving).
+Which fields apply on save and which after a service restart is listed under [Saving and restarting](./index.md#saving).
 
 :::info
 **Restart Service**, **System Info**, logging, the web server and backups are on the [System](./system.md) tab.

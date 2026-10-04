@@ -12,7 +12,6 @@ import (
 	"reflect"
 	"runtime/debug"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -98,11 +97,13 @@ func parseSafeQuery(raw string) (bool, bool) {
 	if len(values) != 1 {
 		return false, false
 	}
-	safe, err := strconv.ParseBool(values[0])
-	if err != nil {
-		return false, false
+	switch values[0] {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
 	}
-	return safe, true
+	return false, false
 }
 
 // @Summary Reset configuration to defaults

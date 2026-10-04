@@ -126,6 +126,56 @@ export const FirewallRulesSettings = ({
   );
 };
 
+interface InterfaceChipsProps {
+  available: string[];
+  selected: string[];
+  disabled: boolean;
+  onToggle: (iface: string) => void;
+}
+
+const InterfaceChips = ({
+  available,
+  selected,
+  disabled,
+  onToggle,
+}: InterfaceChipsProps) => {
+  const { t } = useTranslation();
+  const toggle = (iface: string) =>
+    disabled ? undefined : () => onToggle(iface);
+
+  return (
+    <>
+      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+        {selected
+          .filter((iface) => !available.includes(iface))
+          .map((iface) => (
+            <B4Badge
+              key={iface}
+              label={`${iface} (${t("settings.Feature.missingIface")})`}
+              onClick={toggle(iface)}
+              variant="filled"
+              color="error"
+            />
+          ))}
+        {available.map((iface) => (
+          <B4Badge
+            key={iface}
+            label={iface}
+            onClick={toggle(iface)}
+            variant={selected.includes(iface) ? "filled" : "outlined"}
+            color="primary"
+          />
+        ))}
+      </Box>
+      {available.length === 0 && (
+        <B4Alert severity="warning" sx={{ mt: 1 }}>
+          {t("settings.Feature.noInterfacesDetected")}
+        </B4Alert>
+      )}
+    </>
+  );
+};
+
 export const NatMasqueradeSettings = ({
   config,
   onChange,
@@ -162,25 +212,12 @@ export const NatMasqueradeSettings = ({
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             {t("settings.Feature.masqueradeInterfaceDesc")}
           </Typography>
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-            {(config.available_ifaces ?? []).map((iface) => {
-              const isSelected = (masquerade.interfaces || []).includes(iface);
-              return (
-                <B4Badge
-                  key={iface}
-                  label={iface}
-                  onClick={() => handleMasqueradeToggle(iface)}
-                  variant={isSelected ? "filled" : "outlined"}
-                  color={"primary"}
-                />
-              );
-            })}
-          </Box>
-          {(config.available_ifaces ?? []).length === 0 && (
-            <B4Alert severity="warning" sx={{ mt: 1 }}>
-              {t("settings.Feature.noInterfacesDetected")}
-            </B4Alert>
-          )}
+          <InterfaceChips
+            available={config.available_ifaces ?? []}
+            selected={masquerade.interfaces || []}
+            disabled={skipTables}
+            onToggle={handleMasqueradeToggle}
+          />
         </Box>
       )}
     </B4Section>
@@ -245,45 +282,12 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
               {t("settings.Feature.dscpInterfacesDesc")}
             </Typography>
-            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-              {dscpInterfaces
-                .filter(
-                  (iface) => !(config.available_ifaces ?? []).includes(iface),
-                )
-                .map((iface) => (
-                  <B4Badge
-                    key={iface}
-                    label={`${iface} (${t("settings.Feature.dscpMissingIface")})`}
-                    onClick={
-                      skipTables
-                        ? undefined
-                        : () => handleDscpInterfaceToggle(iface)
-                    }
-                    variant="filled"
-                    color="error"
-                  />
-                ))}
-              {(config.available_ifaces ?? []).map((iface) => (
-                <B4Badge
-                  key={iface}
-                  label={iface}
-                  onClick={
-                    skipTables
-                      ? undefined
-                      : () => handleDscpInterfaceToggle(iface)
-                  }
-                  variant={
-                    dscpInterfaces.includes(iface) ? "filled" : "outlined"
-                  }
-                  color={"primary"}
-                />
-              ))}
-            </Box>
-            {(config.available_ifaces ?? []).length === 0 && (
-              <B4Alert severity="warning" sx={{ mt: 1 }}>
-                {t("settings.Feature.noInterfacesDetected")}
-              </B4Alert>
-            )}
+            <InterfaceChips
+              available={config.available_ifaces ?? []}
+              selected={dscpInterfaces}
+              disabled={skipTables}
+              onToggle={handleDscpInterfaceToggle}
+            />
           </Box>
         </>
       )}
