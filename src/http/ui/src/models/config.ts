@@ -546,6 +546,7 @@ export interface RoutingConfig {
   mode: RoutingMode;
   egress_interface: string;
   egress_ip: string;
+  egress_gateway: string;
   upstream: UpstreamProxyConfig;
   fwmark: number;
   table: number;

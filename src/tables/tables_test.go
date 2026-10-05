@@ -1031,7 +1031,7 @@ func TestRouteResolveIDs(t *testing.T) {
 	t.Run("reuses cached iface auto", func(t *testing.T) {
 		routeRuleCache = make(map[string]routeState)
 		routeIfaceAuto = map[string]routeState{
-			routeIfaceAutoKey("tun0", "", false): {mark: 0x555, table: 150},
+			routeIfaceAutoKey("tun0", "", "", false): {mark: 0x555, table: 150},
 		}
 
 		cfg := config.NewConfig()

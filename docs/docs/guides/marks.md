@@ -46,7 +46,7 @@ rule without a mask, such as nftables `meta mark set 0x00021546` or iptables
 
 | Bits | Mask | Used for | Value |
 | --- | --- | --- | --- |
-| 0-14, 17 | `0x27fff` | The route of a routing set | One per set; sets routed through the same interface with the same egress IP and kill switch share one. See [sets routed through an interface](#sets-routed-through-an-interface) and [proxy sets](#proxy-sets-and-telegram-over-websocket) |
+| 0-14, 17 | `0x27fff` | The route of a routing set | One per set; sets routed through the same interface with the same egress IP, gateway and kill switch share one. See [sets routed through an interface](#sets-routed-through-an-interface) and [proxy sets](#proxy-sets-and-telegram-over-websocket) |
 | 15 by default | `0x8000` by default | The queue mark: packets b4 sends from its raw sockets, except those toward a device in TUN mode, the DNS queries it sends for clients and for its sets, and its probes that bypass its own processing | **Packet Mark** under **Settings, Core, Packet Engine**, `0x8000` (32768) by default |
 | 18 | `0x40000` | Connections b4 opens to the upstream of a proxy set, to Telegram, the Community Hub, ipinfo and RIPEstat, and its transparent listeners; see [socket marks](#socket-marks) | Fixed |
 | 21 | `0x200000` | b4's own connections whose outgoing packets packet processing leaves alone | Fixed, carried together with bit 18 as `0x240000` |
@@ -196,12 +196,12 @@ lies within `0x27fff`.
 ## Sets routed through an interface
 
 A set routed through an [output interface](/docs/sets/routing#output-interface) gets a mark
-and a routing table from the interface name, the egress IP and the kill switch. Sets that
-agree on all three share both.
+and a routing table from the interface name, the egress IP, the gateway and the kill switch. Sets that
+agree on all four share both.
 
 | Item | Value |
 | --- | --- |
-| Mark | From a hash of the three, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
+| Mark | From a hash of the four, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
 | Table | `100`-`249`, skipping tables named in `rt_tables`, looked up by another service's rule, or holding routes b4 did not add |
 | Rule | `ip rule add fwmark <mark>/0x27fff lookup <table> priority <10000 + table>`, for IPv4, and for IPv6 when **Enable IPv6 Support** is on |
 | Table contents | A default route through the interface, plus `blackhole default metric 4096` with the [kill switch](/docs/sets/routing#kill-switch) |

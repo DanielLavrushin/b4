@@ -50,6 +50,7 @@ type routeState struct {
 	table       int
 	iface       string
 	egressIP    string
+	egressGW    string
 	tproxyPort  int
 	upstreamKey string
 	sourcesKey  string
@@ -584,6 +585,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.table = table
 		st.iface = set.Routing.EgressInterface
 		st.egressIP = set.Routing.EgressIP
+		st.egressGW = set.Routing.EgressGateway
 		st.routerOut = set.RoutingIncludesRouterTraffic()
 		st.killSwitch = set.Routing.KillSwitch
 	}
@@ -600,6 +602,7 @@ func routeStateEqual(a, b routeState) bool {
 		a.bypass == b.bypass &&
 		a.table == b.table &&
 		a.iface == b.iface &&
+		a.egressGW == b.egressGW &&
 		a.egressIP == b.egressIP &&
 		a.tproxyPort == b.tproxyPort &&
 		a.upstreamKey == b.upstreamKey &&
@@ -687,7 +690,7 @@ func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 			routeDelRuleAllForms(old.mark, tableStr)
 		}
 		if old.table != cur.table && routeTableShareCount(old.table) == 0 {
-			routeDeleteOwnRoutes(old.iface, tableStr)
+			routeDeleteOwnRoutes(old.iface, old.egressGW, tableStr)
 		}
 	}
 }
@@ -1465,7 +1468,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 		if config.RoutingUsesTProxy(st.mode) || st.iface == "" || routeMarkMatchesOwn(cfg, st.mark) {
 			continue
 		}
-		key := routeIfaceAutoKey(st.iface, st.egressIP, st.killSwitch)
+		key := routeIfaceAutoKey(st.iface, st.egressIP, st.egressGW, st.killSwitch)
 		if _, ok := routeIfaceAuto[key]; !ok {
 			routeIfaceAuto[key] = routeState{mark: st.mark, table: st.table}
 		}
@@ -1908,11 +1911,13 @@ func routeEnsureChainJumps(be routeBackend, st routeState, gate routeDeviceGate)
 	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false, st.egressIP != "")
 }
 
-func routeEgressIPForFamily(egressIP string, v6 bool) string {
-	if egressIP == "" {
+// routeAddrForFamily returns the address only to the family it belongs to, in
+// its canonical form, and nothing at all when it belongs to the other one.
+func routeAddrForFamily(egress string, v6 bool) string {
+	if egress == "" {
 		return ""
 	}
-	parsed := net.ParseIP(egressIP)
+	parsed := net.ParseIP(egress)
 	if parsed == nil {
 		return ""
 	}
@@ -1982,8 +1987,16 @@ func routeDelRuleAllForms(mark uint32, table string) {
 
 func routeEgressAddrKey(iface, ip string) string { return iface + "|" + ip }
 
-func routeIfaceAutoKey(iface, egressIP string, killSwitch bool) string {
+// routeIfaceAutoKey groups the sets that share one mark and one routing table.
+// The gateway is part of it: two sets on one interface with one source address
+// but different next hops would otherwise share a table, and the second route
+// replace would overwrite the first one's. It is appended only when set, so a
+// set without a gateway keeps the hash it had before the field existed.
+func routeIfaceAutoKey(iface, egressIP, egressGW string, killSwitch bool) string {
 	key := iface + "|" + egressIP
+	if egressGW != "" {
+		key += "|gw=" + egressGW
+	}
 	if killSwitch {
 		return key + "|ks"
 	}
@@ -2057,7 +2070,7 @@ func routeReleaseEgressAddress(iface, egressIP string) {
 }
 
 func routeUsableEgressIP(st routeState, iface string, v6 bool) string {
-	src := routeEgressIPForFamily(st.egressIP, v6)
+	src := routeAddrForFamily(st.egressIP, v6)
 	if src == "" || !routeEgressIPOnIface(iface, src) {
 		return ""
 	}
@@ -2066,7 +2079,7 @@ func routeUsableEgressIP(st routeState, iface string, v6 bool) string {
 
 func routeAddEgressRules(be routeBackend, st routeState, ipv4, ipv6 bool) {
 	emit := func(v6 bool, setName string) {
-		src := routeEgressIPForFamily(st.egressIP, v6)
+		src := routeAddrForFamily(st.egressIP, v6)
 		if src == "" {
 			be.addMasqueradeRule(st.chainSNAT, st.mark, st.iface, v6)
 			return
@@ -2095,12 +2108,19 @@ func routeHashlimitName(chain string, v6 bool) string {
 	return fmt.Sprintf("b4rl%08x", h.Sum32())
 }
 
-func routeDeleteOwnRoutes(iface, table string) {
+// routeDeleteOwnRoutes takes out what b4 put in the set's table. gw is the
+// next hop the set was given; its own route goes with the default one, or it
+// would sit in the table as long as the number is not handed to another set.
+func routeDeleteOwnRoutes(iface, gw, table string) {
 	if routeTableArgUnset(table) {
 		return
 	}
 	for _, fam := range routeFamilyArgs(true, true) {
 		base := append([]string{"ip"}, fam.flag...)
+		if hop := routeAddrForFamily(gw, fam.flag != nil); hop != "" {
+			args := append(append([]string{}, base...), "route", "del", hop, "dev", iface, "table", table)
+			runLogged("routing: remove next hop "+fam.name, args...)
+		}
 		if iface != "" {
 			args := append(append([]string{}, base...), "route", "del", "default", "dev", iface, "table", table)
 			runLogged("routing: remove route "+fam.name, args...)
@@ -2145,7 +2165,7 @@ func routeCleanupRule(be routeBackend, st routeState, keepSets bool) {
 			routeDelRuleAllForms(st.mark, tableStr)
 		}
 		if routeTableShareCount(st.table) <= 1 {
-			routeDeleteOwnRoutes(st.iface, tableStr)
+			routeDeleteOwnRoutes(st.iface, st.egressGW, tableStr)
 		}
 	}
 
@@ -2205,10 +2225,10 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 		ifaceV6 = src
 	}
 	if ipv4 {
-		routeReplaceDefaultRoute(iface, ifaceV4, tableStr, false)
+		routeReplaceDefaultRoute(iface, ifaceV4, routeAddrForFamily(st.egressGW, false), tableStr, false)
 	}
 	if ipv6 {
-		routeReplaceDefaultRoute(iface, ifaceV6, tableStr, true)
+		routeReplaceDefaultRoute(iface, ifaceV6, routeAddrForFamily(st.egressGW, true), tableStr, true)
 	}
 
 	addRules()
@@ -2535,7 +2555,11 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 	}
 }
 
-func routeReplaceDefaultRoute(iface, src, table string, ipv6 bool) {
+// routeReplaceDefaultRoute points the set's table at one default route.
+// gw is the next hop the set asked for; it wins over anything read off the
+// interface, and when the kernel refuses it b4 falls back to what the interface
+// already has rather than leaving the table with no route at all.
+func routeReplaceDefaultRoute(iface, src, gw, table string, ipv6 bool) {
 	family := "v4"
 	ipCmd := []string{"ip"}
 	if ipv6 {
@@ -2543,15 +2567,34 @@ func routeReplaceDefaultRoute(iface, src, table string, ipv6 bool) {
 		ipCmd = append(ipCmd, "-6")
 	}
 
-	if gw := routeDefaultGatewayForIface(iface, ipv6); gw != "" {
+	viaArgs := func(gw string) []string {
 		args := append([]string{}, ipCmd...)
 		args = append(args, "route", "replace", "default", "via", gw, "dev", iface)
 		if src != "" {
 			args = append(args, "src", src)
 		}
 		args = append(args, routeProtoArgs()...)
-		args = append(args, "table", table)
-		runLogged("routing: add ip route "+family+" (via gw)", args...)
+		return append(args, "table", table)
+	}
+
+	if gw != "" {
+		// A next hop has to resolve before "via" is accepted. With a subnet
+		// address on the interface the kernel finds it in the local table, but a
+		// point-to-point or TUN interface carries a host address and has no such
+		// entry, so the route to the next hop itself goes in first.
+		nh := append([]string{}, ipCmd...)
+		nh = append(nh, "route", "replace", gw, "dev", iface, "scope", "link")
+		nh = append(nh, routeProtoArgs()...)
+		nh = append(nh, "table", table)
+		runLogged("routing: add ip route "+family+" (next hop)", nh...)
+		if runLogged("routing: add ip route "+family+" (via gw)", viaArgs(gw)...) {
+			return
+		}
+		log.Warnf("Routing: %s was refused as the next hop for table %s on %s, so b4 is falling back to the route the interface already has; check that it is an address %s can reach", gw, table, iface, iface)
+	}
+
+	if found := routeDefaultGatewayForIface(iface, ipv6); found != "" {
+		runLogged("routing: add ip route "+family+" (via gw)", viaArgs(found)...)
 		return
 	}
 
@@ -2715,7 +2758,7 @@ func routeResolveIDs(cfg *config.Config, set *config.SetConfig) (uint32, int) {
 			return set.Routing.FWMark, set.Routing.Table
 		}
 	}
-	autoKey := routeIfaceAutoKey(set.Routing.EgressInterface, set.Routing.EgressIP, set.Routing.KillSwitch)
+	autoKey := routeIfaceAutoKey(set.Routing.EgressInterface, set.Routing.EgressIP, set.Routing.EgressGateway, set.Routing.KillSwitch)
 	if st, ok := routeIfaceAuto[autoKey]; ok && st.mark > 0 && st.table > 0 && !routeMarkMatchesOwn(cfg, st.mark) {
 		return st.mark, st.table
 	}

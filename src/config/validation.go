@@ -241,6 +241,24 @@ func (c *Config) Validate() error {
 			}
 		}
 
+		set.Routing.EgressGateway = strings.TrimSpace(set.Routing.EgressGateway)
+		if set.Routing.EgressGateway != "" {
+			ip := net.ParseIP(set.Routing.EgressGateway)
+			switch {
+			case ip == nil, ip.IsUnspecified(), ip.IsLoopback(), ip.IsMulticast():
+				v.addf(fmt.Sprintf("sets[%d].routing.egress_gateway", setIdx), "invalid_egress_gateway", map[string]any{"set": set.Name, "ip": set.Routing.EgressGateway}, "set %q: routing.egress_gateway %q is not a usable next hop", set.Name, set.Routing.EgressGateway)
+				return v.result()
+			case set.Routing.Mode != RoutingModeInterface:
+				log.Warnf("Set '%s': routing mode %q never looks a default route up, so no packet reaches a gateway through it; dropping routing.egress_gateway", set.Name, set.Routing.Mode)
+				set.Routing.EgressGateway = ""
+			case set.Routing.EgressInterface == "":
+				log.Warnf("Set '%s': routing.egress_gateway names the next hop on routing.egress_interface, and no routing.egress_interface is set; dropping it", set.Name)
+				set.Routing.EgressGateway = ""
+			default:
+				set.Routing.EgressGateway = ip.String()
+			}
+		}
+
 		if set.Routing.Enabled && set.Routing.Mode == RoutingModeProxy {
 			if set.Routing.Upstream.Port < 1 || set.Routing.Upstream.Port > 65535 {
 				v.addf(fmt.Sprintf("sets[%d].routing.upstream.port", setIdx), "out_of_range", map[string]any{"set": set.Name, "min": 1, "max": 65535}, "set %q: upstream proxy port must be 1-65535", set.Name)

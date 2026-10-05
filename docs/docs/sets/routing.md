@@ -270,6 +270,41 @@ An egress IP that nothing answers for is a silent failure: packets leave, replie
 Not available in TUN engine mode with whole-default capture. There b4 reinjects packets on a path that bypasses this rule, so the setting has no effect.
 :::
 
+### Gateway
+
+Optional. The next hop the set's default route goes through. It applies to a set routed through an
+[output interface](#output-interface), where b4 otherwise reads the default route the interface already has and,
+failing that, writes a plain `default dev <iface>` with no next hop at all. Setting a gateway here replaces both:
+the one b4 would have found is ignored.
+
+b4 writes two routes into the set's table:
+
+```
+ip route replace <gateway> dev <iface> scope link table <table>
+ip route replace default via <gateway> dev <iface> [src <egress ip>] table <table>
+```
+
+The first one is there because the kernel refuses `via` until the next hop resolves. With a subnet address on the
+interface it resolves from the local table on its own; a TUN, TAP or WireGuard interface carries a host address and
+has no such entry, so the route to the next hop goes in first. That is what makes the option useful on the tunnel
+interfaces where a bare `scope link` route otherwise leaves the traffic with nowhere to be delivered.
+
+The address family has to match the traffic it carries, the same way an [egress IP](#egress-ip) does: an IPv4 gateway
+serves the set's IPv4 route and the IPv6 route falls back to the interface's own address and next hop. A set carries
+one gateway, so entering an IPv6 address in its place moves it to IPv6 and returns IPv4 to the interface's own route.
+
+If the kernel refuses the route, b4 says so in the log and falls back to the route the interface already has, rather
+than leaving the table with no default route at all - an empty table sends the set's traffic out by the ordinary
+uplink, which is the one outcome routing exists to prevent.
+
+Two sets on one interface with one egress IP but different gateways no longer share a mark and a table, since one
+table cannot hold two default routes. See [the marks a set carries](../guides/marks#the-bits-b4-uses).
+
+::::warning
+A gateway that does not answer is a silent failure: packets leave, replies never come back, and the set's rules still
+look correct. Check the address is one the interface can reach before blaming the set.
+::::
+
 ### IP TTL (entry lifetime)
 
 How long, in seconds, an IP obtained from a DNS response is kept in the routing IP set. When the TTL expires, the entry is removed automatically.
@@ -328,7 +363,7 @@ Each set routed through an output interface is assigned automatically:
 - **fwmark** - packet mark, from a hash in the range `0x100` to `0x7EFF`, or counted up from `0x66` when every hashed value is taken
 - **routing table** - routing table number (range `100` to `249`)
 
-Values are computed from the interface name, the egress IP and the kill-switch setting, and stay stable across reboots. Sets that agree on all three share a `fwmark` and a table; a set that differs in any of them, including one with the kill switch on beside one without, gets its own.
+Values are computed from the interface name, the egress IP, the gateway and the kill-switch setting, and stay stable across reboots. Sets that agree on all four share a `fwmark` and a table; a set that differs in any of them, including one with the kill switch on beside one without, gets its own.
 
 Before claiming a table b4 checks whether it already holds routes it did not put there - the tables Asuswrt-Merlin uses for
 its VPN clients live in the same range - and skips tables named in an `rt_tables` file (`/etc/iproute2/rt_tables` with

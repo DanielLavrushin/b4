@@ -457,6 +457,26 @@ export const TrafficRouting = ({
           {isInterface && (
             <Grid size={{ xs: 12, md: 6 }}>
               <B4TextField
+                label={t("sets.routing.egressGateway")}
+                value={routing.egress_gateway ?? ""}
+                onChange={(e) =>
+                  onChange("routing.egress_gateway", e.target.value)
+                }
+                disabled={!routing.egress_interface}
+                helperText={
+                  routing.egress_interface
+                    ? t("sets.routing.egressGatewayHelper")
+                    : t("sets.routing.egressGatewayNeedsInterface")
+                }
+                placeholder="192.168.1.1"
+                selectOnFocus
+              />
+            </Grid>
+          )}
+
+          {isInterface && (
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4TextField
                 label={t("sets.routing.routerTraffic")}
                 select
                 value={routerTraffic}
