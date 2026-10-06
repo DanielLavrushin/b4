@@ -214,7 +214,11 @@ replies get no mark. The set's chain for packets entering the router, `b4r_<set>
 this order:
 
 1. Returns packets that carry the queue mark, bit `0x40000`, or any bit under `0x27fff`.
-2. Returns packets that arrive on the output interface itself.
+2. Returns packets that arrive on the output interface itself, but only where that interface
+   is a tunnel (`tun`, `tap`, `wg`): the program behind it hands the packet back and answers
+   every turn by opening a connection of its own, and without the guard the loop runs until
+   memory is gone. On a plain NIC the peer is another router and the hop count ends the loop,
+   so the rule is left out and packets arriving on that NIC still get the set's mark.
 3. Restores the mark from the connection mark on later packets of claimed connections that
    travel in the direction of the first packet.
 4. Marks new connections to the set's destinations and saves the mark with the claim.

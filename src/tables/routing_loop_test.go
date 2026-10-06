@@ -116,6 +116,33 @@ func TestRouterTrafficGuardIsScopedToTheSetAndToTunnels(t *testing.T) {
 	}
 }
 
+func TestEgressLoopGuardOnlyLandsWhereTheLoopIsUnbounded(t *testing.T) {
+	loopTestSysfs(t)
+	cfg := familyTestConfig(true, false)
+
+	plain := &mockRouteBackend{}
+	set := familyTestSet()
+	set.Routing.EgressInterface = "eth1"
+	st := buildRouteState(cfg, set)
+	if err := routeEnsureRule(plain, cfg, set, st, nil); err != nil {
+		t.Fatalf("routeEnsureRule: %v", err)
+	}
+	if indexOfPrefix(plain.chainOps[st.chainPre], "loop-guard") >= 0 {
+		t.Fatalf("a plain NIC's peer is another router and the hop count ends the loop; guarding eth1 instead costs every packet arriving on it the set's mark: %v", plain.chainOps[st.chainPre])
+	}
+
+	tunnel := &mockRouteBackend{}
+	tunnelSet := familyTestSet()
+	tunnelSet.Routing.EgressInterface = "xray0"
+	tunnelSt := buildRouteState(cfg, tunnelSet)
+	if err := routeEnsureRule(tunnel, cfg, tunnelSet, tunnelSt, nil); err != nil {
+		t.Fatalf("routeEnsureRule: %v", err)
+	}
+	if indexOfPrefix(tunnel.chainOps[tunnelSt.chainPre], "loop-guard") < 0 {
+		t.Fatalf("a userspace tunnel hands the packet back to a local program that answers every turn until memory is gone: %v", tunnel.chainOps[tunnelSt.chainPre])
+	}
+}
+
 func indexOfOp(ops []string, want string) int {
 	for i, op := range ops {
 		if op == want {
