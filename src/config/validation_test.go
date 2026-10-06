@@ -725,76 +725,84 @@ var egressNextHops = []struct {
 	},
 }
 
-func TestValidate_EgressNextHop(t *testing.T) {
-	dropped := []struct {
-		name string
-		tune func(*SetConfig)
-	}{
-		{"proxy mode takes the connection over", func(s *SetConfig) {
-			s.Routing.Mode = RoutingModeProxy
-			s.Routing.Upstream.Host = "10.0.0.1"
-			s.Routing.Upstream.Port = 1080
-		}},
-		{"block mode has no next hop", func(s *SetConfig) { s.Routing.Mode = RoutingModeBlock }},
-		{"no output interface to reach it on", func(s *SetConfig) { s.Routing.EgressInterface = "" }},
-	}
+// egressDropCases are the routings that leave a set with nowhere to send a
+// next hop; the value must be dropped, not block the save.
+var egressDropCases = []struct {
+	name string
+	tune func(*SetConfig)
+}{
+	{"proxy mode takes the connection over", func(s *SetConfig) {
+		s.Routing.Mode = RoutingModeProxy
+		s.Routing.Upstream.Host = "10.0.0.1"
+		s.Routing.Upstream.Port = 1080
+	}},
+	{"block mode has no next hop", func(s *SetConfig) { s.Routing.Mode = RoutingModeBlock }},
+	{"no output interface to reach it on", func(s *SetConfig) { s.Routing.EgressInterface = "" }},
+}
 
+func TestValidate_EgressNextHopRejected(t *testing.T) {
 	for _, opt := range egressNextHops {
 		t.Run(opt.label, func(t *testing.T) {
-			t.Run("rejects an unusable address", func(t *testing.T) {
-				for _, bad := range opt.bad {
-					t.Run(bad, func(t *testing.T) {
-						cfg := NewConfig()
-						set := opt.new()
-						*opt.field(&set) = bad
-						cfg.Sets = []*SetConfig{&set}
-
-						ve := mustValidationErr(t, cfg.Validate())
-						if findField(ve, opt.path, opt.code) == nil {
-							t.Errorf("missing %s; got %+v", opt.code, ve.Fields)
-						}
-					})
-				}
-			})
-
-			t.Run("accepts and normalizes", func(t *testing.T) {
-				base := opt.new()
-				canonical := *opt.field(&base)
-				for _, in := range []struct{ in, want string }{
-					{"  " + canonical + "  ", canonical},
-					{opt.v6, strings.ToLower(opt.v6)},
-				} {
+			for _, bad := range opt.bad {
+				t.Run(bad, func(t *testing.T) {
 					cfg := NewConfig()
 					set := opt.new()
-					*opt.field(&set) = in.in
+					*opt.field(&set) = bad
+					cfg.Sets = []*SetConfig{&set}
+
+					ve := mustValidationErr(t, cfg.Validate())
+					if findField(ve, opt.path, opt.code) == nil {
+						t.Errorf("missing %s; got %+v", opt.code, ve.Fields)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestValidate_EgressNextHopNormalized(t *testing.T) {
+	for _, opt := range egressNextHops {
+		t.Run(opt.label, func(t *testing.T) {
+			base := opt.new()
+			canonical := *opt.field(&base)
+			for _, in := range []struct{ in, want string }{
+				{"  " + canonical + "  ", canonical},
+				{opt.v6, strings.ToLower(opt.v6)},
+			} {
+				cfg := NewConfig()
+				set := opt.new()
+				*opt.field(&set) = in.in
+				cfg.Sets = []*SetConfig{&set}
+
+				if err := cfg.Validate(); err != nil {
+					t.Fatalf("%q on an interface-mode set must validate: %v", in.in, err)
+				}
+				if got := *opt.field(cfg.Sets[0]); got != in.want {
+					t.Errorf("%q stored as %q, want %q", in.in, got, in.want)
+				}
+			}
+		})
+	}
+}
+
+func TestValidate_EgressNextHopDropped(t *testing.T) {
+	for _, opt := range egressNextHops {
+		t.Run(opt.label, func(t *testing.T) {
+			for _, tc := range egressDropCases {
+				t.Run(tc.name, func(t *testing.T) {
+					cfg := NewConfig()
+					set := opt.new()
+					tc.tune(&set)
 					cfg.Sets = []*SetConfig{&set}
 
 					if err := cfg.Validate(); err != nil {
-						t.Fatalf("%q on an interface-mode set must validate: %v", in.in, err)
+						t.Fatalf("switching a set away from %s must not block the save, the stale value should just be dropped: %v", opt.label, err)
 					}
-					if got := *opt.field(cfg.Sets[0]); got != in.want {
-						t.Errorf("%q stored as %q, want %q", in.in, got, in.want)
+					if got := *opt.field(cfg.Sets[0]); got != "" {
+						t.Errorf("%s %q was kept where it cannot take effect", opt.label, got)
 					}
-				}
-			})
-
-			t.Run("dropped where it cannot apply", func(t *testing.T) {
-				for _, tc := range dropped {
-					t.Run(tc.name, func(t *testing.T) {
-						cfg := NewConfig()
-						set := opt.new()
-						tc.tune(&set)
-						cfg.Sets = []*SetConfig{&set}
-
-						if err := cfg.Validate(); err != nil {
-							t.Fatalf("switching a set away from %s must not block the save, the stale value should just be dropped: %v", opt.label, err)
-						}
-						if got := *opt.field(cfg.Sets[0]); got != "" {
-							t.Errorf("%s %q was kept where it cannot take effect", opt.label, got)
-						}
-					})
-				}
-			})
+				})
+			}
 		})
 	}
 }
