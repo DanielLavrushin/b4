@@ -503,27 +503,17 @@ func TestValidate_QueueFields(t *testing.T) {
 		}
 	})
 
-	t.Run("tun mode follows default route when out_interface is empty", func(t *testing.T) {
-		cfg := NewConfig()
-		cfg.Queue.Mode = "tun"
-		cfg.Queue.TUN.OutInterface = ""
-		if err := cfg.Validate(); err != nil {
-			t.Errorf("empty out_interface (follow-default) rejected: %v", err)
-		}
-		if !cfg.Queue.TUN.FollowsDefaultRoute() {
-			t.Errorf("empty out_interface should follow the default route")
-		}
-	})
-
-	t.Run("tun mode follows default route when out_interface is auto", func(t *testing.T) {
-		cfg := NewConfig()
-		cfg.Queue.Mode = "tun"
-		cfg.Queue.TUN.OutInterface = "auto"
-		if err := cfg.Validate(); err != nil {
-			t.Errorf("out_interface=auto (follow-default) rejected: %v", err)
-		}
-		if !cfg.Queue.TUN.FollowsDefaultRoute() {
-			t.Errorf("out_interface=auto should follow the default route")
+	t.Run("tun mode follows the default route when no interface is named", func(t *testing.T) {
+		for _, iface := range []string{"", "auto"} {
+			cfg := NewConfig()
+			cfg.Queue.Mode = "tun"
+			cfg.Queue.TUN.OutInterface = iface
+			if err := cfg.Validate(); err != nil {
+				t.Errorf("out_interface=%q (follow-default) rejected: %v", iface, err)
+			}
+			if !cfg.Queue.TUN.FollowsDefaultRoute() {
+				t.Errorf("out_interface=%q should follow the default route", iface)
+			}
 		}
 	})
 

@@ -717,7 +717,7 @@ type RoutingConfig struct {
 	Mode             string              `json:"mode"`
 	EgressInterface  string              `json:"egress_interface"`
 	EgressIP         string              `json:"egress_ip"`
-	EgressGateway   string              `json:"egress_gateway"`
+	EgressGateway    string              `json:"egress_gateway"`
 	Upstream         UpstreamProxyConfig `json:"upstream"`
 	FWMark           uint32              `json:"fwmark" mcp:"deny"`
 	Table            int                 `json:"table" mcp:"deny"`
