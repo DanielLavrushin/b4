@@ -681,89 +681,6 @@ func egressIPSet() SetConfig {
 	return set
 }
 
-func TestValidate_EgressIP(t *testing.T) {
-	cases := []struct {
-		name string
-		tune func(*SetConfig)
-		code string
-	}{
-		{"not an address", func(s *SetConfig) { s.Routing.EgressIP = "not-an-ip" }, "invalid_egress_ip"},
-		{"unspecified", func(s *SetConfig) { s.Routing.EgressIP = "0.0.0.0" }, "invalid_egress_ip"},
-		{"loopback", func(s *SetConfig) { s.Routing.EgressIP = "127.0.0.1" }, "invalid_egress_ip"},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := NewConfig()
-			set := egressIPSet()
-			tc.tune(&set)
-			cfg.Sets = []*SetConfig{&set}
-
-			ve := mustValidationErr(t, cfg.Validate())
-			if findField(ve, "sets[0].routing.egress_ip", tc.code) == nil {
-				t.Errorf("missing %s; got %+v", tc.code, ve.Fields)
-			}
-		})
-	}
-}
-
-func TestValidate_EgressIPAcceptedAndNormalized(t *testing.T) {
-	cfg := NewConfig()
-	set := egressIPSet()
-	set.Routing.EgressIP = "  192.0.2.10  "
-	cfg.Sets = []*SetConfig{&set}
-
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("a routable egress IP on an interface-mode set must validate: %v", err)
-	}
-	if cfg.Sets[0].Routing.EgressIP != "192.0.2.10" {
-		t.Errorf("egress IP was not normalized: got %q", cfg.Sets[0].Routing.EgressIP)
-	}
-
-	cfg = NewConfig()
-	set = egressIPSet()
-	set.Routing.EgressIP = "2001:DB8::10"
-	cfg.Sets = []*SetConfig{&set}
-
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("an IPv6 egress IP must validate: %v", err)
-	}
-	if cfg.Sets[0].Routing.EgressIP != "2001:db8::10" {
-		t.Errorf("IPv6 egress IP was not canonicalized: got %q", cfg.Sets[0].Routing.EgressIP)
-	}
-}
-
-func TestValidate_EgressIPDroppedWhereItCannotApply(t *testing.T) {
-	cases := []struct {
-		name string
-		tune func(*SetConfig)
-	}{
-		{"proxy mode terminates the connection", func(s *SetConfig) {
-			s.Routing.Mode = RoutingModeProxy
-			s.Routing.Upstream.Host = "10.0.0.1"
-			s.Routing.Upstream.Port = 1080
-		}},
-		{"block mode has no egress", func(s *SetConfig) { s.Routing.Mode = RoutingModeBlock }},
-		{"no output interface to pin it to", func(s *SetConfig) { s.Routing.EgressInterface = "" }},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := NewConfig()
-			set := egressIPSet()
-			tc.tune(&set)
-			cfg.Sets = []*SetConfig{&set}
-
-			if err := cfg.Validate(); err != nil {
-				t.Fatalf("switching a set away from an egress IP must not block the save, the stale value should just be dropped: %v", err)
-			}
-			if got := cfg.Sets[0].Routing.EgressIP; got != "" {
-				t.Errorf("egress IP %q was kept where it cannot take effect", got)
-			}
-		})
-	}
-}
-
 func gatewaySet() SetConfig {
 	set := NewSetConfig()
 	set.Id = "gateway-set"
@@ -776,85 +693,108 @@ func gatewaySet() SetConfig {
 	return set
 }
 
-func TestValidate_EgressGateway(t *testing.T) {
-	cases := []struct {
+// egressNextHops binds each optional next hop on a set to the builder that
+// already carries a valid value for it, so both fields run one table instead
+// of two copies of the same assertions.
+var egressNextHops = []struct {
+	label string // subtest name and error prefix
+	path  string // validation field path
+	code  string // code reported for an unusable address
+	field func(*SetConfig) *string
+	new   func() SetConfig
+	v6    string // accepted IPv6 input, canonicalized to lower case
+	bad   []string
+}{
+	{
+		label: "egress_ip",
+		path:  "sets[0].routing.egress_ip",
+		code:  "invalid_egress_ip",
+		field: func(s *SetConfig) *string { return &s.Routing.EgressIP },
+		new:   egressIPSet,
+		v6:    "2001:DB8::10",
+		bad:   []string{"not-an-ip", "0.0.0.0", "127.0.0.1"},
+	},
+	{
+		label: "egress_gateway",
+		path:  "sets[0].routing.egress_gateway",
+		code:  "invalid_egress_gateway",
+		field: func(s *SetConfig) *string { return &s.Routing.EgressGateway },
+		new:   gatewaySet,
+		v6:    "2001:DB8::1",
+		bad:   []string{"192.0.2.1 10.0.0.1", "0.0.0.0", "127.0.0.1", "224.0.0.1"},
+	},
+}
+
+func TestValidate_EgressNextHop(t *testing.T) {
+	dropped := []struct {
 		name string
 		tune func(*SetConfig)
 	}{
-		{"not an address", func(s *SetConfig) { s.Routing.EgressGateway = "192.0.2.1 10.0.0.1" }},
-		{"unspecified", func(s *SetConfig) { s.Routing.EgressGateway = "0.0.0.0" }},
-		{"loopback", func(s *SetConfig) { s.Routing.EgressGateway = "127.0.0.1" }},
-		{"multicast", func(s *SetConfig) { s.Routing.EgressGateway = "224.0.0.1" }},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := NewConfig()
-			set := gatewaySet()
-			tc.tune(&set)
-			cfg.Sets = []*SetConfig{&set}
-
-			ve := mustValidationErr(t, cfg.Validate())
-			if findField(ve, "sets[0].routing.egress_gateway", "invalid_egress_gateway") == nil {
-				t.Errorf("missing invalid_egress_gateway; got %+v", ve.Fields)
-			}
-		})
-	}
-}
-
-func TestValidate_EgressGatewayAcceptedAndNormalized(t *testing.T) {
-	cfg := NewConfig()
-	set := gatewaySet()
-	set.Routing.EgressGateway = "  192.0.2.1  "
-	cfg.Sets = []*SetConfig{&set}
-
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("a next hop on an interface-mode set must validate: %v", err)
-	}
-	if cfg.Sets[0].Routing.EgressGateway != "192.0.2.1" {
-		t.Errorf("gateway was not normalized: got %q", cfg.Sets[0].Routing.EgressGateway)
-	}
-
-	cfg = NewConfig()
-	set = gatewaySet()
-	set.Routing.EgressGateway = "2001:DB8::1"
-	cfg.Sets = []*SetConfig{&set}
-
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("an IPv6 gateway must validate: %v", err)
-	}
-	if cfg.Sets[0].Routing.EgressGateway != "2001:db8::1" {
-		t.Errorf("IPv6 gateway was not canonicalized: got %q", cfg.Sets[0].Routing.EgressGateway)
-	}
-}
-
-func TestValidate_EgressGatewayDroppedWhereItCannotApply(t *testing.T) {
-	cases := []struct {
-		name string
-		tune func(*SetConfig)
-	}{
-		{"proxy mode hands the connection over", func(s *SetConfig) {
+		{"proxy mode takes the connection over", func(s *SetConfig) {
 			s.Routing.Mode = RoutingModeProxy
 			s.Routing.Upstream.Host = "10.0.0.1"
 			s.Routing.Upstream.Port = 1080
 		}},
-		{"block mode drops the traffic", func(s *SetConfig) { s.Routing.Mode = RoutingModeBlock }},
-		{"no interface to reach the next hop on", func(s *SetConfig) { s.Routing.EgressInterface = "" }},
+		{"block mode has no next hop", func(s *SetConfig) { s.Routing.Mode = RoutingModeBlock }},
+		{"no output interface to reach it on", func(s *SetConfig) { s.Routing.EgressInterface = "" }},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := NewConfig()
-			set := gatewaySet()
-			tc.tune(&set)
-			cfg.Sets = []*SetConfig{&set}
+	for _, opt := range egressNextHops {
+		t.Run(opt.label, func(t *testing.T) {
+			t.Run("rejects an unusable address", func(t *testing.T) {
+				for _, bad := range opt.bad {
+					t.Run(bad, func(t *testing.T) {
+						cfg := NewConfig()
+						set := opt.new()
+						*opt.field(&set) = bad
+						cfg.Sets = []*SetConfig{&set}
 
-			if err := cfg.Validate(); err != nil {
-				t.Fatalf("switching a set away from a gateway must not block the save, the stale value should just be dropped: %v", err)
-			}
-			if got := cfg.Sets[0].Routing.EgressGateway; got != "" {
-				t.Errorf("gateway %q was kept where it cannot take effect", got)
-			}
+						ve := mustValidationErr(t, cfg.Validate())
+						if findField(ve, opt.path, opt.code) == nil {
+							t.Errorf("missing %s; got %+v", opt.code, ve.Fields)
+						}
+					})
+				}
+			})
+
+			t.Run("accepts and normalizes", func(t *testing.T) {
+				base := opt.new()
+				canonical := *opt.field(&base)
+				for _, in := range []struct{ in, want string }{
+					{"  " + canonical + "  ", canonical},
+					{opt.v6, strings.ToLower(opt.v6)},
+				} {
+					cfg := NewConfig()
+					set := opt.new()
+					*opt.field(&set) = in.in
+					cfg.Sets = []*SetConfig{&set}
+
+					if err := cfg.Validate(); err != nil {
+						t.Fatalf("%q on an interface-mode set must validate: %v", in.in, err)
+					}
+					if got := *opt.field(cfg.Sets[0]); got != in.want {
+						t.Errorf("%q stored as %q, want %q", in.in, got, in.want)
+					}
+				}
+			})
+
+			t.Run("dropped where it cannot apply", func(t *testing.T) {
+				for _, tc := range dropped {
+					t.Run(tc.name, func(t *testing.T) {
+						cfg := NewConfig()
+						set := opt.new()
+						tc.tune(&set)
+						cfg.Sets = []*SetConfig{&set}
+
+						if err := cfg.Validate(); err != nil {
+							t.Fatalf("switching a set away from %s must not block the save, the stale value should just be dropped: %v", opt.label, err)
+						}
+						if got := *opt.field(cfg.Sets[0]); got != "" {
+							t.Errorf("%s %q was kept where it cannot take effect", opt.label, got)
+						}
+					})
+				}
+			})
 		})
 	}
 }
