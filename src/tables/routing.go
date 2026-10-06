@@ -2566,6 +2566,7 @@ func routeReplaceDefaultRoute(iface, src, gw, table string, ipv6 bool) {
 		family = "v6"
 		ipCmd = append(ipCmd, "-6")
 	}
+	routeLabel := "routing: add ip route " + family
 
 	viaArgs := func(gw string) []string {
 		args := append([]string{}, ipCmd...)
@@ -2586,15 +2587,15 @@ func routeReplaceDefaultRoute(iface, src, gw, table string, ipv6 bool) {
 		nh = append(nh, "route", "replace", gw, "dev", iface, "scope", "link")
 		nh = append(nh, routeProtoArgs()...)
 		nh = append(nh, "table", table)
-		runLogged("routing: add ip route "+family+" (next hop)", nh...)
-		if runLogged("routing: add ip route "+family+" (via gw)", viaArgs(gw)...) {
+		runLogged(routeLabel+" (next hop)", nh...)
+		if runLogged(routeLabel+" (via gw)", viaArgs(gw)...) {
 			return
 		}
 		log.Warnf("Routing: %s was refused as the next hop for table %s on %s, so b4 is falling back to the route the interface already has; check that it is an address %s can reach", gw, table, iface, iface)
 	}
 
 	if found := routeDefaultGatewayForIface(iface, ipv6); found != "" {
-		runLogged("routing: add ip route "+family+" (via gw)", viaArgs(found)...)
+		runLogged(routeLabel+" (via gw)", viaArgs(found)...)
 		return
 	}
 
@@ -2605,7 +2606,7 @@ func routeReplaceDefaultRoute(iface, src, gw, table string, ipv6 bool) {
 	}
 	args = append(args, routeProtoArgs()...)
 	args = append(args, "table", table)
-	runLogged("routing: add ip route "+family+" (direct)", args...)
+	runLogged(routeLabel+" (direct)", args...)
 }
 
 func routeDefaultGatewayForIface(iface string, ipv6 bool) string {
