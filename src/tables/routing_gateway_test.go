@@ -5,12 +5,12 @@ import (
 	"testing"
 )
 
-// gatewayRouteCommands runs routeReplaceDefaultRoute with every command
-// captured. ifaceRoutes is what `ip route show default dev <iface>` answers,
-// so the fallback path can be given a gateway of its own or none at all, and
-// refuseVia makes the "via" route come back failed the way the kernel does
-// when the next hop does not resolve.
-func gatewayRouteCommands(t *testing.T, iface, src, gw, table, ifaceRoutes string, ipv6, refuseVia bool) []string {
+// captureRoutes installs the stubs the route helpers run through and returns
+// where their commands land. ifaceRoutes is what `ip route show default dev
+// <iface>` answers, so the fallback path can be given a gateway of its own or
+// none at all, and refuseVia makes the "via" route come back failed the way the
+// kernel does when the next hop does not resolve.
+func captureRoutes(t *testing.T, ifaceRoutes string, refuseVia bool) *[]string {
 	t.Helper()
 
 	prevRun := run
@@ -28,8 +28,7 @@ func gatewayRouteCommands(t *testing.T, iface, src, gw, table, ifaceRoutes strin
 	}
 	t.Cleanup(func() { runLogged = prev })
 
-	routeReplaceDefaultRoute(iface, src, gw, table, ipv6)
-	return cmds
+	return &cmds
 }
 
 func contains(args []string, want string) bool {
@@ -43,9 +42,14 @@ func contains(args []string, want string) bool {
 
 func joined(cmds []string) string { return strings.Join(cmds, "\n") }
 
+// last is the command written last, which is the one a refusal has to leave
+// behind: the route before it is not what the set ends up with.
+func last(cmds *[]string) string { return (*cmds)[len(*cmds)-1] }
+
 func TestASetGatewayBecomesTheNextHopOfItsDefaultRoute(t *testing.T) {
-	cmds := gatewayRouteCommands(t, "mihomo", "10.99.0.2", "10.99.0.1", "132", "", false, false)
-	got := joined(cmds)
+	cmds := captureRoutes(t, "", false)
+	routeReplaceDefaultRoute("mihomo", "10.99.0.2", "10.99.0.1", "132", false)
+	got := joined(*cmds)
 
 	// A TUN carries a host address, so nothing resolves the next hop for the
 	// kernel and `via` is refused unless the route to it is written first.
@@ -55,20 +59,18 @@ func TestASetGatewayBecomesTheNextHopOfItsDefaultRoute(t *testing.T) {
 	if !strings.Contains(got, "route replace default via 10.99.0.1 dev mihomo") || !strings.Contains(got, "src 10.99.0.2") {
 		t.Errorf("the set's default route must go through the gateway it asked for, got:\n%s", got)
 	}
-	if got := cmds[len(cmds)-1]; !strings.Contains(got, "via 10.99.0.1") {
+	if got := last(cmds); !strings.Contains(got, "via 10.99.0.1") {
 		t.Errorf("the gateway route must be the last one written, so a refusal falls through to the fallback: %q", got)
 	}
 }
 
 func TestTheNextHopRouteIsTakenBackWithTheDefaultOne(t *testing.T) {
-	prev := runLogged
-	var cmds []string
-	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
-	t.Cleanup(func() { runLogged = prev })
+	cmds := captureRoutes(t, "", false)
 
 	routeDeleteOwnRoutes("mihomo", "10.99.0.1", "132")
 
-	got := joined(cmds)
+	got := joined(*cmds)
+
 	// Left behind, this one sits in the table until the number is handed to
 	// another set, and a set that changed its gateway would collect them.
 	if !strings.Contains(got, "ip route del 10.99.0.1 dev mihomo table 132") {
@@ -80,9 +82,9 @@ func TestTheNextHopRouteIsTakenBackWithTheDefaultOne(t *testing.T) {
 }
 
 func TestASetGatewayWinsOverTheOneFoundOnTheInterface(t *testing.T) {
-	cmds := gatewayRouteCommands(t, "eth1", "", "192.0.2.254", "140",
-		"default via 192.0.2.1 dev eth1 proto static\n", false, false)
-	got := joined(cmds)
+	cmds := captureRoutes(t, "default via 192.0.2.1 dev eth1 proto static\n", false)
+	routeReplaceDefaultRoute("eth1", "", "192.0.2.254", "140", false)
+	got := joined(*cmds)
 
 	if strings.Contains(got, "via 192.0.2.1") {
 		t.Errorf("the gateway read off the interface must not be used once the set names one, got:\n%s", got)
@@ -92,16 +94,37 @@ func TestASetGatewayWinsOverTheOneFoundOnTheInterface(t *testing.T) {
 	}
 }
 
+func TestAnIPv6GatewayReachesOnlyTheIPv6Route(t *testing.T) {
+	cmds := captureRoutes(t, "", false)
+
+	routeReplaceDefaultRoute("mihomo", "2001:db8::2", "2001:db8::1", "132", true)
+
+	got := joined(*cmds)
+	// The gateway is named once for both families, so the v6 call has to reach
+	// `ip -6`: without the flag the next hop lands in the IPv4 table and the
+	// set's v6 traffic never goes through the gateway at all.
+	if !strings.Contains(got, "ip -6 route replace 2001:db8::1 dev mihomo scope link") {
+		t.Errorf("the IPv6 next hop must be routed into the set's table, got:\n%s", got)
+	}
+	if !strings.Contains(got, "ip -6 route replace default via 2001:db8::1 dev mihomo") || !strings.Contains(got, "src 2001:db8::2") {
+		t.Errorf("the set's IPv6 default route must go through the gateway it asked for, got:\n%s", got)
+	}
+	if strings.Contains(got, "ip route") {
+		t.Errorf("an IPv6 gateway must not reach the IPv4 route table, got:\n%s", got)
+	}
+}
+
 func TestARefusedGatewayLeavesTheSetWithARoute(t *testing.T) {
-	cmds := gatewayRouteCommands(t, "mihomo", "10.99.0.2", "192.0.2.254", "132", "", false, true)
-	got := joined(cmds)
+	cmds := captureRoutes(t, "", true)
+	routeReplaceDefaultRoute("mihomo", "10.99.0.2", "192.0.2.254", "132", false)
+	got := joined(*cmds)
 
 	// The table must never be left without a default route: an empty table
 	// falls through to the main one and the set's traffic leaves by the
 	// ordinary uplink, which is what routing exists to prevent.
-	last := cmds[len(cmds)-1]
-	if !strings.Contains(last, "route replace default dev mihomo") || contains(strings.Fields(last), "via") {
-		t.Errorf("a refused gateway must fall back to the interface route, got %q", last)
+	fallback := last(cmds)
+	if !strings.Contains(fallback, "route replace default dev mihomo") || contains(strings.Fields(fallback), "via") {
+		t.Errorf("a refused gateway must fall back to the interface route, got %q", fallback)
 	}
 	if !strings.Contains(got, "route replace 192.0.2.254 dev mihomo scope link") {
 		t.Errorf("the next hop route is still worth keeping in place, got:\n%s", got)
@@ -109,8 +132,9 @@ func TestARefusedGatewayLeavesTheSetWithARoute(t *testing.T) {
 }
 
 func TestAnInterfaceWithoutAGatewayKeepsTheRouteItHadBefore(t *testing.T) {
-	cmds := gatewayRouteCommands(t, "mihomo", "10.99.0.2", "", "132", "", false, false)
-	got := joined(cmds)
+	cmds := captureRoutes(t, "", false)
+	routeReplaceDefaultRoute("mihomo", "10.99.0.2", "", "132", false)
+	got := joined(*cmds)
 
 	if contains(strings.Fields(got), "via") {
 		t.Errorf("with no gateway b4 must behave exactly as before, got:\n%s", got)
