@@ -689,8 +689,18 @@ func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 		if old.mark != cur.mark && routeMarkShareCount(old.mark) == 0 {
 			routeDelRuleAllForms(old.mark, tableStr)
 		}
-		if old.table != cur.table && routeTableShareCount(old.table) == 0 {
-			routeDeleteOwnRoutes(old.iface, old.egressGW, tableStr)
+		if old.table != cur.table {
+			if routeTableShareCount(old.table) == 0 {
+				routeDeleteOwnRoutes(old.iface, old.egressGW, tableStr)
+			}
+			return
+		}
+		// The replace takes the default, never the route to the old next
+		// hop: that route is a prefix of its own, so it keeps answering for
+		// its address in the table while only the gateway that replaced it
+		// is left to remember it by.
+		if old.egressGW != "" && old.egressGW != cur.egressGW && routeNextHopShareCount(old.table, old.iface, old.egressGW) == 0 {
+			routeDeleteNextHop(old.iface, old.egressGW, tableStr)
 		}
 	}
 }
@@ -2123,11 +2133,8 @@ func routeDeleteOwnRoutes(iface, gw, table string) {
 		return
 	}
 	for _, fam := range routeFamilyArgs(true, true) {
+		routeDeleteNextHopFam(fam, iface, gw, table)
 		base := append([]string{"ip"}, fam.flag...)
-		if hop := routeAddrForFamily(gw, fam.flag != nil); hop != "" {
-			args := append(append([]string{}, base...), "route", "del", hop, "dev", iface, "table", table)
-			runLogged("routing: remove next hop "+fam.name, args...)
-		}
 		if iface != "" {
 			args := append(append([]string{}, base...), "route", "del", "default", "dev", iface, "table", table)
 			runLogged("routing: remove route "+fam.name, args...)
@@ -2135,6 +2142,29 @@ func routeDeleteOwnRoutes(iface, gw, table string) {
 		args := append(append([]string{}, base...), "route", "del", "blackhole", "default", "metric", routeKillSwitchMetric, "table", table)
 		runLogged("routing: remove kill switch "+fam.name, args...)
 	}
+}
+
+// routeDeleteNextHop takes the on-link route to a set's next hop out of its
+// table on its own. The route is a prefix of its own, so replacing the
+// default neither matches nor removes it: a set that changed its gateway
+// leaves it behind unless it is named here, and the default that replaced it
+// must not go with it.
+func routeDeleteNextHop(iface, gw, table string) {
+	if routeTableArgUnset(table) {
+		return
+	}
+	for _, fam := range routeFamilyArgs(true, true) {
+		routeDeleteNextHopFam(fam, iface, gw, table)
+	}
+}
+
+func routeDeleteNextHopFam(fam routeFamily, iface, gw, table string) {
+	hop := routeAddrForFamily(gw, fam.flag != nil)
+	if hop == "" {
+		return
+	}
+	args := append(append([]string{"ip"}, fam.flag...), "route", "del", hop, "dev", iface, "table", table)
+	runLogged("routing: remove next hop "+fam.name, args...)
 }
 
 func routeMarkShareCount(mark uint32) int {
@@ -2157,6 +2187,22 @@ func routeTableShareCount(table int) int {
 			continue
 		}
 		if st.table == table {
+			n++
+		}
+	}
+	return n
+}
+
+// routeNextHopShareCount counts the sets whose default in table still runs
+// through gw off iface: they are the ones the on-link route to that next hop
+// serves, and it stays as long as one of them is cached.
+func routeNextHopShareCount(table int, iface, gw string) int {
+	n := 0
+	for _, st := range routeRuleCache {
+		if config.RoutingUsesTProxy(st.mode) {
+			continue
+		}
+		if st.table == table && st.iface == iface && st.egressGW == gw {
 			n++
 		}
 	}

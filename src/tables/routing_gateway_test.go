@@ -81,6 +81,79 @@ func TestTheNextHopRouteIsTakenBackWithTheDefaultOne(t *testing.T) {
 	}
 }
 
+// A gateway change keeps the mark and the table, so nothing else in the
+// rebuild touches the routes: the default is replaced in place, and without
+// this the route to the old next hop keeps answering for that address until
+// the table number is handed to another set.
+func TestChangingTheGatewayRemovesTheOldNextHopsRoute(t *testing.T) {
+	cmds := captureRoutes(t, "", false)
+	hasBinaryCache.Store("ip", true)
+	t.Cleanup(func() { hasBinaryCache.Delete("ip") })
+	saved := routeRuleCache
+	t.Cleanup(func() { routeRuleCache = saved })
+	routeRuleCache = map[string]routeState{}
+
+	old := routeState{setID: "s1", mark: 0x6c53, table: 190, iface: "mihomo", egressGW: "10.99.0.1"}
+	cur := old
+	cur.egressGW = "10.99.0.2"
+	routeRuleCache["s1"] = cur
+
+	routeCleanupForRebuild(&mockRouteBackend{}, old, cur)()
+
+	want := "ip route del 10.99.0.1 dev mihomo table 190"
+	if len(*cmds) != 1 || (*cmds)[0] != want {
+		t.Errorf("only the old next hop's route may go, so the replacement default keeps standing; got %q", *cmds)
+	}
+}
+
+// The next hop is shared the way the table is: a set still configured with it
+// needs the route in the table for its own default.
+func TestANextHopAnotherSetStillUsesIsKept(t *testing.T) {
+	cmds := captureRoutes(t, "", false)
+	hasBinaryCache.Store("ip", true)
+	t.Cleanup(func() { hasBinaryCache.Delete("ip") })
+	saved := routeRuleCache
+	t.Cleanup(func() { routeRuleCache = saved })
+
+	old := routeState{setID: "s1", mark: 0x6c53, table: 190, iface: "mihomo", egressGW: "10.99.0.1"}
+	cur := old
+	cur.egressGW = "10.99.0.2"
+	routeRuleCache = map[string]routeState{
+		"s1": cur,
+		"s2": {mark: 0x6c54, table: 190, iface: "mihomo", egressGW: "10.99.0.1"},
+	}
+
+	routeCleanupForRebuild(&mockRouteBackend{}, old, cur)()
+
+	if len(*cmds) != 0 {
+		t.Errorf("a next hop set s2 still routes through must stay in table 190, got %q", *cmds)
+	}
+}
+
+// Clearing the gateway is the same leak through the other door: the set goes
+// back to a direct default, and the route to the dropped next hop no longer
+// serves any default in the table.
+func TestClearingTheGatewayRemovesItsNextHopsRoute(t *testing.T) {
+	cmds := captureRoutes(t, "", false)
+	hasBinaryCache.Store("ip", true)
+	t.Cleanup(func() { hasBinaryCache.Delete("ip") })
+	saved := routeRuleCache
+	t.Cleanup(func() { routeRuleCache = saved })
+	routeRuleCache = map[string]routeState{}
+
+	old := routeState{setID: "s1", mark: 0x6c53, table: 190, iface: "mihomo", egressGW: "10.99.0.1"}
+	cur := old
+	cur.egressGW = ""
+	routeRuleCache["s1"] = cur
+
+	routeCleanupForRebuild(&mockRouteBackend{}, old, cur)()
+
+	want := "ip route del 10.99.0.1 dev mihomo table 190"
+	if len(*cmds) != 1 || (*cmds)[0] != want {
+		t.Errorf("only the dropped next hop's route may go, so the direct default keeps standing; got %q", *cmds)
+	}
+}
+
 func TestASetGatewayWinsOverTheOneFoundOnTheInterface(t *testing.T) {
 	cmds := captureRoutes(t, "default via 192.0.2.1 dev eth1 proto static\n", false)
 	routeReplaceDefaultRoute("eth1", "", "192.0.2.254", "140", false)
