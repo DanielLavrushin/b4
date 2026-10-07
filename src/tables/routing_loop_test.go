@@ -118,6 +118,18 @@ func TestRouterTrafficGuardIsScopedToTheSetAndToTunnels(t *testing.T) {
 
 func TestEgressLoopGuardOnlyLandsWhereTheLoopIsUnbounded(t *testing.T) {
 	loopTestSysfs(t)
+	// routeEnsureRule ends in routeEnsurePolicyRouting, which the mock backend
+	// does not intercept: real `ip` commands and rp_filter writes would run.
+	// The fake sysfs above makes eth1/xray0 count as previously seen, so stub
+	// both command runners and the sysctl access before building any rules.
+	prevRun, prevLogged := run, runLogged
+	run = func(args ...string) (string, error) { return "", nil }
+	runLogged = func(op string, args ...string) bool { return true }
+	t.Cleanup(func() { run, runLogged = prevRun, prevLogged })
+	rpFilterHarness(t, map[string]string{"eth1": "1", "xray0": "1"})
+	prevSeen := routeIfaceSeen
+	routeIfaceSeen = make(map[string]bool)
+	t.Cleanup(func() { routeIfaceSeen = prevSeen })
 	cfg := familyTestConfig(true, false)
 
 	plain := &mockRouteBackend{}
