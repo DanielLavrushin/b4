@@ -143,6 +143,31 @@ func TestEgressLoopGuardOnlyLandsWhereTheLoopIsUnbounded(t *testing.T) {
 	}
 }
 
+func TestEgressLoopGuardSurvivesAMissingInterface(t *testing.T) {
+	loopTestSysfs(t)
+	cfg := familyTestConfig(true, false)
+	if !routeWantsEgressLoopGuard("notyet0") {
+		t.Fatal("an interface b4 has never seen may come back as a tunnel, so install the guard while its kind is unknown")
+	}
+	if routeWantsEgressLoopGuard("eth1") {
+		t.Fatal("a plain NIC's peer is another router and the hop count ends the loop, so no guard")
+	}
+	set := familyTestSet()
+	set.Routing.EgressInterface = "notyet0"
+	missing := buildRouteState(cfg, set)
+	if !missing.loopGuard {
+		t.Fatal("the cached state must record the installed guard, or the sync cache-hits and the reinstall sees nothing to refresh")
+	}
+	set.Routing.EgressInterface = "eth1"
+	plain := buildRouteState(cfg, set)
+	if plain.loopGuard {
+		t.Fatal("a plain NIC installs no guard, so the state must say so")
+	}
+	if routeStateEqual(missing, plain) {
+		t.Fatal("missing-iface and plain-NIC states must differ, or a NIC appearing where nothing was keeps the stale guard and drops the set's ingress mark")
+	}
+}
+
 func indexOfOp(ops []string, want string) int {
 	for i, op := range ops {
 		if op == want {

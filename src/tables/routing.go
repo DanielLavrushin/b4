@@ -59,6 +59,7 @@ type routeState struct {
 	quicReject  bool
 	srcScoped   bool
 	routerOut   bool
+	loopGuard   bool
 	killSwitch  bool
 	ipv4        bool
 	ipv6        bool
@@ -587,6 +588,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.egressIP = set.Routing.EgressIP
 		st.egressGW = set.Routing.EgressGateway
 		st.routerOut = set.RoutingIncludesRouterTraffic()
+		st.loopGuard = routeWantsEgressLoopGuard(st.iface)
 		st.killSwitch = set.Routing.KillSwitch
 	}
 	if !config.RoutingIsBlock(mode) {
@@ -612,6 +614,7 @@ func routeStateEqual(a, b routeState) bool {
 		a.deviceKey == b.deviceKey &&
 		a.srcScoped == b.srcScoped &&
 		a.routerOut == b.routerOut &&
+		a.loopGuard == b.loopGuard &&
 		a.killSwitch == b.killSwitch &&
 		a.ipv4 == b.ipv4 &&
 		a.ipv6 == b.ipv6
@@ -1630,6 +1633,13 @@ func routeResolveTargets(set *config.SetConfig) []string {
 	return targets
 }
 
+// routeWantsEgressLoopGuard reports whether the pre chain must return traffic
+// arriving on the egress interface. A missing interface reads as wanting the
+// guard: it may come back as a tunnel, and the chains are not rebuilt for that
+// alone without tracking this decision.
+func routeWantsEgressLoopGuard(iface string) bool {
+	return iface != "" && netif.Of(iface) != netif.KindOther
+}
 func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, sources []string) error {
 	if st.mark == 0 || st.table <= 0 {
 		return fmt.Errorf("no routing mark and table of its own (mark 0x%x, table %d)", st.mark, st.table)
@@ -1682,7 +1692,7 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	// count ends the loop - and guarding there costs every packet arriving on
 	// that NIC the set's mark, which is the whole point when the NIC is also the
 	// ingress the set serves.
-	if netif.Of(st.iface) != netif.KindOther &&
+	if st.loopGuard &&
 		!be.addEgressLoopGuard(st.chainPre, st.iface, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled) && len(sources) == 0 {
 		return fmt.Errorf("the guard on traffic arriving from %s did not install, and without it every packet %s hands back for a destination in this set is marked again and sent straight back to it", st.iface, st.iface)
 	}
@@ -2589,7 +2599,7 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 		if !ok || config.RoutingUsesTProxy(st.mode) || st.iface != iface {
 			continue
 		}
-		if st.routerOut != set.RoutingIncludesRouterTraffic() {
+		if st.routerOut != set.RoutingIncludesRouterTraffic() || st.loopGuard != routeWantsEgressLoopGuard(iface) {
 			rebuild = true
 			continue
 		}
@@ -2603,7 +2613,7 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 		log.Infof("Routing: reinstalled policy routes for interface %s (%d set(s))", iface, count)
 	}
 	if rebuild {
-		log.Infof("Routing: %s came back as %s, which changes whether the router's own traffic follows the sets on it; rebuilding their rules", iface, netif.Describe(iface))
+		log.Infof("Routing: %s came back as %s, which changes the rules the sets on it need; rebuilding their rules", iface, netif.Describe(iface))
 		RoutingSyncConfig(cfg)
 	}
 }
