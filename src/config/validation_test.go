@@ -721,7 +721,7 @@ var egressNextHops = []struct {
 		field: func(s *SetConfig) *string { return &s.Routing.EgressGateway },
 		new:   gatewaySet,
 		v6:    "2001:DB8::1",
-		bad:   []string{"192.0.2.1 10.0.0.1", "0.0.0.0", "127.0.0.1", "224.0.0.1"},
+		bad:   []string{"192.0.2.1 10.0.0.1", "0.0.0.0", "127.0.0.1", "224.0.0.1", "255.255.255.255"},
 	},
 }
 

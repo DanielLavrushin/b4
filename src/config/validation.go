@@ -245,7 +245,7 @@ func (c *Config) Validate() error {
 		if set.Routing.EgressGateway != "" {
 			ip := net.ParseIP(set.Routing.EgressGateway)
 			switch {
-			case ip == nil, ip.IsUnspecified(), ip.IsLoopback(), ip.IsMulticast():
+			case ip == nil, ip.IsUnspecified(), ip.IsLoopback(), ip.IsMulticast(), ip.Equal(net.IPv4bcast):
 				v.addf(fmt.Sprintf("sets[%d].routing.egress_gateway", setIdx), "invalid_egress_gateway", map[string]any{"set": set.Name, "ip": set.Routing.EgressGateway}, "set %q: routing.egress_gateway %q is not a usable next hop", set.Name, set.Routing.EgressGateway)
 				return v.result()
 			case set.Routing.Mode != RoutingModeInterface:
