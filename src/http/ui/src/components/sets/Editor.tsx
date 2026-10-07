@@ -339,7 +339,7 @@ export const SetEditorPage = ({
                   saving ? <CircularProgress size={16} /> : <SaveIcon />
                 }
                 onClick={handleSave}
-                disabled={!editedSet.name.trim() || saving}
+                disabled={!editedSet.name.trim() || saving || (!isNew && !dirty)}
                 sx={{ minWidth: 140 }}
               >
                 {saving && t("core.saving")}
@@ -492,14 +492,15 @@ export const SetEditorPage = ({
         </B4TabPanel>
       </Box>
 
-      <Tooltip title={saveTooltip} placement="left">
-        <span
-          style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1200 }}
-        >
+      {(isNew || dirty) && (
+        <Tooltip title={saveTooltip} placement="left">
+          <span
+            style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1200 }}
+          >
           <Fab
             size="medium"
             onClick={handleSave}
-            disabled={!editedSet.name.trim() || saving}
+            disabled={!editedSet.name.trim() || saving || (!isNew && !dirty)}
             sx={{
               bgcolor: colors.secondary,
               color: colors.background.default,
@@ -513,7 +514,8 @@ export const SetEditorPage = ({
             {saving ? <CircularProgress size={20} /> : <SaveIcon />}
           </Fab>
         </span>
-      </Tooltip>
+        </Tooltip>
+      )}
       <UnsavedChangesDialog
         open={blocker.state === "blocked"}
         groups={changeGroups}
