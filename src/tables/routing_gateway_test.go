@@ -81,24 +81,36 @@ func TestTheNextHopRouteIsTakenBackWithTheDefaultOne(t *testing.T) {
 	}
 }
 
-// A gateway change keeps the mark and the table, so nothing else in the
-// rebuild touches the routes: the default is replaced in place, and without
-// this the route to the old next hop keeps answering for that address until
-// the table number is handed to another set.
-func TestChangingTheGatewayRemovesTheOldNextHopsRoute(t *testing.T) {
+// gatewayRebuildCommands rebuilds set s1 from gateway 10.99.0.1 to newGW and
+// returns the ip commands the rebuild issued. Every gateway-rebuild test goes
+// through the same stubs and the same cached states, so they live here rather
+// than copied into each test.
+func gatewayRebuildCommands(t *testing.T, newGW string, others map[string]routeState) *[]string {
+	t.Helper()
 	cmds := captureRoutes(t, "", false)
 	hasBinaryCache.Store("ip", true)
 	t.Cleanup(func() { hasBinaryCache.Delete("ip") })
 	saved := routeRuleCache
 	t.Cleanup(func() { routeRuleCache = saved })
-	routeRuleCache = map[string]routeState{}
 
 	old := routeState{setID: "s1", mark: 0x6c53, table: 190, iface: "mihomo", egressGW: "10.99.0.1"}
 	cur := old
-	cur.egressGW = "10.99.0.2"
-	routeRuleCache["s1"] = cur
+	cur.egressGW = newGW
+	routeRuleCache = map[string]routeState{"s1": cur}
+	for id, st := range others {
+		routeRuleCache[id] = st
+	}
 
 	routeCleanupForRebuild(&mockRouteBackend{}, old, cur)()
+	return cmds
+}
+
+// A gateway change keeps the mark and the table, so nothing else in the
+// rebuild touches the routes: the default is replaced in place, and without
+// this the route to the old next hop keeps answering for that address until
+// the table number is handed to another set.
+func TestChangingTheGatewayRemovesTheOldNextHopsRoute(t *testing.T) {
+	cmds := gatewayRebuildCommands(t, "10.99.0.2", nil)
 
 	want := "ip route del 10.99.0.1 dev mihomo table 190"
 	if len(*cmds) != 1 || (*cmds)[0] != want {
@@ -109,21 +121,9 @@ func TestChangingTheGatewayRemovesTheOldNextHopsRoute(t *testing.T) {
 // The next hop is shared the way the table is: a set still configured with it
 // needs the route in the table for its own default.
 func TestANextHopAnotherSetStillUsesIsKept(t *testing.T) {
-	cmds := captureRoutes(t, "", false)
-	hasBinaryCache.Store("ip", true)
-	t.Cleanup(func() { hasBinaryCache.Delete("ip") })
-	saved := routeRuleCache
-	t.Cleanup(func() { routeRuleCache = saved })
-
-	old := routeState{setID: "s1", mark: 0x6c53, table: 190, iface: "mihomo", egressGW: "10.99.0.1"}
-	cur := old
-	cur.egressGW = "10.99.0.2"
-	routeRuleCache = map[string]routeState{
-		"s1": cur,
+	cmds := gatewayRebuildCommands(t, "10.99.0.2", map[string]routeState{
 		"s2": {mark: 0x6c54, table: 190, iface: "mihomo", egressGW: "10.99.0.1"},
-	}
-
-	routeCleanupForRebuild(&mockRouteBackend{}, old, cur)()
+	})
 
 	if len(*cmds) != 0 {
 		t.Errorf("a next hop set s2 still routes through must stay in table 190, got %q", *cmds)
@@ -134,19 +134,7 @@ func TestANextHopAnotherSetStillUsesIsKept(t *testing.T) {
 // back to a direct default, and the route to the dropped next hop no longer
 // serves any default in the table.
 func TestClearingTheGatewayRemovesItsNextHopsRoute(t *testing.T) {
-	cmds := captureRoutes(t, "", false)
-	hasBinaryCache.Store("ip", true)
-	t.Cleanup(func() { hasBinaryCache.Delete("ip") })
-	saved := routeRuleCache
-	t.Cleanup(func() { routeRuleCache = saved })
-	routeRuleCache = map[string]routeState{}
-
-	old := routeState{setID: "s1", mark: 0x6c53, table: 190, iface: "mihomo", egressGW: "10.99.0.1"}
-	cur := old
-	cur.egressGW = ""
-	routeRuleCache["s1"] = cur
-
-	routeCleanupForRebuild(&mockRouteBackend{}, old, cur)()
+	cmds := gatewayRebuildCommands(t, "", nil)
 
 	want := "ip route del 10.99.0.1 dev mihomo table 190"
 	if len(*cmds) != 1 || (*cmds)[0] != want {
