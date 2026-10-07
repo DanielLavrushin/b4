@@ -89,7 +89,16 @@ func routeSweepOwnRoutes(fam []string, proxy bool, table string) {
 			}
 			del = append(del, "default", "dev", dev)
 		default:
-			continue
+			// The on-link route to an explicit gateway is a prefix of its own,
+			// so only its own address form is named here; anything else stayed
+			// foreign in the check above. Without a protocol tag a foreign
+			// entry in b4's exact shape is indistinguishable from its own, and
+			// this table is already proven b4's by its orphaned rule, so it is
+			// reclaimed with the table rather than left to steer its reuse.
+			if dev == "" {
+				continue
+			}
+			del = append(del, fields[0], "dev", dev)
 		}
 		del = append(del, routeProtoArgs()...)
 		del = append(del, "table", table)

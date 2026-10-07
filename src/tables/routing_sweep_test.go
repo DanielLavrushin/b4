@@ -108,7 +108,9 @@ func TestSweepRemovesOrphanedOwnRulesAndLeavesForeignOnes(t *testing.T) {
 			fmt.Sprintf("%d", table): strings.Join([]string{
 				"default dev wg0 proto 155 scope link",
 				"blackhole default proto 155 metric " + routeKillSwitchMetric,
+				"10.8.0.1 dev wg0 scope link proto 155",
 				"10.0.0.0/8 via 10.0.0.1 dev tun0",
+				"10.9.0.1 dev eth1 scope link proto static",
 				"default via 192.168.2.1 dev eth1 metric 50",
 			}, "\n"),
 		},
@@ -128,9 +130,11 @@ func TestSweepRemovesOrphanedOwnRulesAndLeavesForeignOnes(t *testing.T) {
 	proxyLocalDel := fmt.Sprintf("ip route del local 0.0.0.0/0 dev lo table %d", sharedProxyTable)
 	defaultDel := fmt.Sprintf("ip route del default dev wg0 proto 155 table %d", table)
 	killSwitchDel := fmt.Sprintf("ip route del blackhole default metric %s proto 155 table %d", routeKillSwitchMetric, table)
-	f.mustRunOnce(t, proxyLocalDel, defaultDel, killSwitchDel)
+	nextHopDel := fmt.Sprintf("ip route del 10.8.0.1 dev wg0 proto 155 table %d", table)
+	f.mustRunOnce(t, proxyLocalDel, defaultDel, killSwitchDel, nextHopDel)
 	f.mustRunBefore(t, proxyLocalDel, fmt.Sprintf("ip rule del fwmark %s lookup %d", proxyMarkA, sharedProxyTable))
 	f.mustRunBefore(t, killSwitchDel, fmt.Sprintf("ip rule del fwmark %s lookup %d", ownMark, table))
+	f.mustRunBefore(t, nextHopDel, fmt.Sprintf("ip rule del fwmark %s lookup %d", ownMark, table))
 	f.mustNotTouch(t, "flush", "tun0", "eth1", "lookup 200", "table 200")
 }
 
@@ -148,6 +152,8 @@ func TestSweepWithoutRouteProtocolsLeavesDefaultRoutesAlone(t *testing.T) {
 				"default dev wg0 scope link",
 				"default via 192.168.2.1 dev eth1 metric 50",
 				"blackhole default metric " + routeKillSwitchMetric,
+				"10.8.0.1 dev wg0 scope link",
+				"10.9.0.1 via 10.9.0.254 dev eth1 scope link",
 				"10.0.0.0/8 via 10.0.0.1 dev tun0",
 				"blackhole 10.99.0.0/16 metric 5",
 			}, "\n"),
@@ -161,5 +167,6 @@ func TestSweepWithoutRouteProtocolsLeavesDefaultRoutesAlone(t *testing.T) {
 		t.Fatalf("the orphaned rule must still be deleted, got %v", f.deleted)
 	}
 	f.mustRunOnce(t, fmt.Sprintf("ip route del blackhole default metric %s table %d", routeKillSwitchMetric, table))
-	f.mustNotTouch(t, "flush", "route del default", "tun0", "eth1", "10.99")
+	f.mustRunOnce(t, fmt.Sprintf("ip route del 10.8.0.1 dev wg0 table %d", table))
+	f.mustNotTouch(t, "flush", "route del default", "tun0", "eth1", "10.99", "10.9.0.1")
 }

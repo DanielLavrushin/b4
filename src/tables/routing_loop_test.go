@@ -199,8 +199,12 @@ func TestRouteLineBelongsToIface(t *testing.T) {
 			{"default dev xray0 scope link", "xray0", true},
 			{"default via 10.8.0.1 dev xray0 src 10.8.0.2", "xray0", true},
 			{"blackhole default metric 4096", "xray0", true},
+			{"10.8.0.1 dev xray0 scope link", "xray0", true},
 			{"default via 192.168.2.1 dev tun13", "tun0", false},
 			{"192.168.1.0/24 dev br0 scope link", "tun0", false},
+			{"10.9.0.1 dev eth1 scope link", "tun0", false},
+			{"10.8.0.1 via 10.8.0.254 dev xray0", "xray0", false},
+			{"10.8.0.1 dev xray0", "xray0", false},
 			{"unreachable default metric 1", "tun0", false},
 			{"default", "tun0", false},
 		} {
@@ -218,9 +222,11 @@ func TestRouteLineBelongsToIface(t *testing.T) {
 		}{
 			{"default dev xray0 proto " + routeProtoID + " scope link", "xray0", true},
 			{"blackhole default metric 4096 proto " + routeProtoID, "xray0", true},
+			{"10.8.0.1 dev xray0 scope link proto " + routeProtoID, "xray0", true},
 			{"default via 94.189.76.193 dev eth0", "eth0", false},
 			{"default via 94.189.76.193 dev eth0 proto static", "eth0", false},
 			{"default dev tun0 scope link", "tun0", false},
+			{"10.8.0.1 dev xray0 scope link", "xray0", false},
 		} {
 			if got := routeLineBelongsToIface(c.line, c.iface); got != c.ours {
 				t.Errorf("routeLineBelongsToIface(%q, %q) = %v, want %v; b4 takes over a table it decides is its own, and a WAN table looks exactly like one of its own routes", c.line, c.iface, got, c.ours)

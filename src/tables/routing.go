@@ -2950,7 +2950,7 @@ func routeLineBelongsToIface(line, iface string) bool {
 		return false
 	case "default":
 	default:
-		return false
+		return routeHostRouteBelongsToIface(fields, iface)
 	}
 	for i := 0; i+1 < len(fields); i++ {
 		if fields[i] == "dev" {
@@ -2958,6 +2958,28 @@ func routeLineBelongsToIface(line, iface string) bool {
 		}
 	}
 	return false
+}
+
+// routeHostRouteBelongsToIface recognises the on-link route b4 adds for an
+// explicit gateway: "<gw> dev <iface> scope link". A subnet prefix, a routed
+// via, or a missing scope link stays foreign: without a protocol tag that is
+// all there is to tell b4's next hop from somebody else's host entry.
+func routeHostRouteBelongsToIface(fields []string, iface string) bool {
+	if net.ParseIP(fields[0]) == nil {
+		return false
+	}
+	var dev, scope string
+	for i := 0; i+1 < len(fields); i++ {
+		switch fields[i] {
+		case "dev":
+			dev = fields[i+1]
+		case "scope":
+			scope = fields[i+1]
+		case "via":
+			return false
+		}
+	}
+	return dev != "" && dev == iface && scope == "link"
 }
 
 func routeTableTakenByOthers(table int, iface string, refs map[string][]string) bool {
