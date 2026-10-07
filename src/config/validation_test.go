@@ -626,26 +626,26 @@ func TestValidate_DefaultsApplied(t *testing.T) {
 			t.Errorf("expected cap to %d, got %d", cfg.Queue.TCPConnBytesLimit, cfg.Sets[0].TCP.ConnBytesLimit)
 		}
 	})
+}
 
-	t.Run("MSS clamp clamped to bounds", func(t *testing.T) {
-		cfg := NewConfig()
-		cfg.Queue.MSSClamp.Enabled = true
-		cfg.Queue.MSSClamp.Size = 5
-		if err := cfg.Validate(); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg.Queue.MSSClamp.Size != 10 {
-			t.Errorf("expected MSSClamp.Size raised to 10, got %d", cfg.Queue.MSSClamp.Size)
-		}
+func TestValidate_MSSClampBounds(t *testing.T) {
+	cfg := NewConfig()
+	cfg.Queue.MSSClamp.Enabled = true
+	cfg.Queue.MSSClamp.Size = 5
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Queue.MSSClamp.Size != 10 {
+		t.Errorf("expected MSSClamp.Size raised to 10, got %d", cfg.Queue.MSSClamp.Size)
+	}
 
-		cfg.Queue.MSSClamp.Size = 99999
-		if err := cfg.Validate(); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg.Queue.MSSClamp.Size != 1460 {
-			t.Errorf("expected MSSClamp.Size capped to 1460, got %d", cfg.Queue.MSSClamp.Size)
-		}
-	})
+	cfg.Queue.MSSClamp.Size = 99999
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Queue.MSSClamp.Size != 1460 {
+		t.Errorf("expected MSSClamp.Size capped to 1460, got %d", cfg.Queue.MSSClamp.Size)
+	}
 }
 
 func TestValidate_Idempotent(t *testing.T) {
