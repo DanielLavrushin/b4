@@ -37,6 +37,7 @@ export interface B4SecretFieldProps {
   removeLabel?: string;
   actions?: React.ReactNode;
   aiTopic?: string;
+  path?: string;
 }
 
 export const B4SecretField = ({
@@ -59,6 +60,7 @@ export const B4SecretField = ({
   removeLabel,
   actions,
   aiTopic,
+  path,
 }: B4SecretFieldProps) => {
   const { t } = useTranslation();
   const { showSuccess, showError } = useSnackbar();
@@ -112,6 +114,7 @@ export const B4SecretField = ({
         <B4TextField
           label={label}
           value={shownValue}
+          path={path}
           type={managed || shown ? "text" : "password"}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
             onChange?.(e.target.value)

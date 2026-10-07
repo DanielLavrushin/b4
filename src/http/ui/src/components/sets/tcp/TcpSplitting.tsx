@@ -74,6 +74,7 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
           label={t("sets.tcp.splitting.method")}
           value={strategy}
           options={fragmentationOptions}
+          path="fragmentation.strategy"
           onChange={(e) => onChange("fragmentation.strategy", e.target.value)}
           aiTopic="fragmentation.strategy"
           aiContext={{
@@ -87,6 +88,7 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
         <B4Switch
           label={t("sets.tcp.splitting.reverseOrder")}
           checked={config.fragmentation.reverse_order}
+          path="fragmentation.reverse_order"
           onChange={(checked: boolean) =>
             onChange("fragmentation.reverse_order", checked)
           }
@@ -193,6 +195,7 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
                   config.fragmentation.oob_position ||
                   1,
               ]}
+              path="fragmentation.oob_position"
               onChange={(value: [number, number]) => {
                 onChange("fragmentation.oob_position", value[0]);
                 onChange("fragmentation.oob_position_max", value[1]);
@@ -239,6 +242,7 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
                   config.fragmentation.tlsrec_pos ||
                   1,
               ]}
+              path="fragmentation.tlsrec_pos"
               onChange={(value: [number, number]) => {
                 onChange("fragmentation.tlsrec_pos", value[0]);
                 onChange("fragmentation.tlsrec_pos_max", value[1]);

@@ -634,6 +634,7 @@ export const GeoSettings = ({
           <B4Switch
             label={t("settings.Geo.autoUpdateOnStartup")}
             checked={config.system.geo.auto_update?.on_startup ?? false}
+            path="system.geo.auto_update.on_startup"
             onChange={(checked: boolean) =>
               onChange("system.geo.auto_update.on_startup", checked)
             }
@@ -643,6 +644,7 @@ export const GeoSettings = ({
             select
             label={t("settings.Geo.autoUpdateInterval")}
             value={config.system.geo.auto_update?.interval ?? ""}
+            path="system.geo.auto_update.interval"
             onChange={(e) =>
               onChange("system.geo.auto_update.interval", e.target.value)
             }

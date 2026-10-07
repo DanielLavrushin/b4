@@ -205,6 +205,7 @@ export const MTProtoUpstreamCard = ({
           <B4Select
             label={t("settings.MTProto.upstreamMode")}
             value={mode}
+            path="system.mtproto.upstream_mode"
             onChange={(e) =>
               onChange("system.mtproto.upstream_mode", String(e.target.value))
             }
@@ -225,6 +226,7 @@ export const MTProtoUpstreamCard = ({
             <B4TextField
               label={t("settings.MTProto.dcRelay")}
               value={dcRelay}
+              path="system.mtproto.dc_relay"
               onChange={(e) =>
                 onChange("system.mtproto.dc_relay", e.target.value)
               }
@@ -257,6 +259,7 @@ export const MTProtoUpstreamCard = ({
           <B4TextField
             label={t("settings.MTProto.cfWorkerDomain")}
             value={mtproto?.cfworker_domain || ""}
+            path="system.mtproto.cfworker_domain"
             onChange={(e) =>
               onChange("system.mtproto.cfworker_domain", e.target.value)
             }
@@ -298,6 +301,7 @@ export const MTProtoUpstreamCard = ({
             <B4Switch
               label={t("settings.MTProto.cfWorkerDpi")}
               checked={mtproto?.cfworker_dpi ?? false}
+              path="system.mtproto.cfworker_dpi"
               onChange={(checked: boolean) =>
                 onChange("system.mtproto.cfworker_dpi", checked)
               }
@@ -309,6 +313,7 @@ export const MTProtoUpstreamCard = ({
           <B4TextField
             label={t("settings.MTProto.wsCustomDomain")}
             value={mtproto?.ws_custom_domain || ""}
+            path="system.mtproto.ws_custom_domain"
             onChange={(e) =>
               onChange("system.mtproto.ws_custom_domain", e.target.value)
             }
@@ -327,6 +332,7 @@ export const MTProtoUpstreamCard = ({
           <B4TextField
             label={t("settings.MTProto.wsEndpointHost")}
             value={mtproto?.ws_endpoint_host || ""}
+            path="system.mtproto.ws_endpoint_host"
             onChange={(e) =>
               onChange("system.mtproto.ws_endpoint_host", e.target.value)
             }
@@ -345,6 +351,7 @@ export const MTProtoUpstreamCard = ({
           <B4TextField
             label={t("settings.MTProto.wsFrontSni")}
             value={mtproto?.ws_front_sni || ""}
+            path="system.mtproto.ws_front_sni"
             onChange={(e) =>
               onChange("system.mtproto.ws_front_sni", e.target.value)
             }
@@ -367,6 +374,7 @@ export const MTProtoUpstreamCard = ({
             <B4Switch
               label={t("settings.MTProto.cfProxyEnabled")}
               checked={mtproto?.cfproxy_enabled ?? true}
+              path="system.mtproto.cfproxy_enabled"
               onChange={(checked: boolean) =>
                 onChange("system.mtproto.cfproxy_enabled", checked)
               }
@@ -376,6 +384,7 @@ export const MTProtoUpstreamCard = ({
               <B4TextField
                 label={t("settings.MTProto.cfProxyURL")}
                 value={mtproto?.cfproxy_url || ""}
+                path="system.mtproto.cfproxy_url"
                 onChange={(e) =>
                   onChange("system.mtproto.cfproxy_url", e.target.value)
                 }
@@ -389,6 +398,7 @@ export const MTProtoUpstreamCard = ({
             <B4Switch
               label={t("settings.MTProto.dcFallbackEnabled")}
               checked={mtproto?.dc_fallback_enabled ?? true}
+              path="system.mtproto.dc_fallback_enabled"
               onChange={(checked: boolean) =>
                 onChange("system.mtproto.dc_fallback_enabled", checked)
               }
@@ -398,6 +408,7 @@ export const MTProtoUpstreamCard = ({
               <B4TextField
                 label={t("settings.MTProto.dcFallbackURL")}
                 value={mtproto?.dc_fallback_url || ""}
+                path="system.mtproto.dc_fallback_url"
                 onChange={(e) =>
                   onChange("system.mtproto.dc_fallback_url", e.target.value)
                 }
@@ -410,6 +421,7 @@ export const MTProtoUpstreamCard = ({
           <B4NumberField
             label={t("settings.MTProto.bridgeWait")}
             value={mtproto?.bridge_wait_sec || 180}
+            path="system.mtproto.bridge_wait_sec"
             onChange={(n) => onChange("system.mtproto.bridge_wait_sec", n)}
             min={-1}
             max={86400}

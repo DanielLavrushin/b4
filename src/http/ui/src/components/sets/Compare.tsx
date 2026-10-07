@@ -30,6 +30,7 @@ import {
   SetFacet,
   buildSetFacets,
 } from "./facets";
+import { flattenConfigLeaves, isZero, leafEqual } from "@utils";
 
 interface SetCompareProps {
   open: boolean;
@@ -55,8 +56,7 @@ const GROUP_COLORS: Record<GroupKey, string> = {
   tcp: colors.text.secondary,
   udp: colors.text.secondary,
 };
-
-const IGNORE_KEYS = new Set([
+export const SET_COMPARE_IGNORE_KEYS = new Set([
   "id",
   "name",
   "enabled",
@@ -75,6 +75,7 @@ const IGNORE_KEYS = new Set([
   "asn_breakdown",
   "asn_unresolved",
 ]);
+const IGNORE_KEYS = SET_COMPARE_IGNORE_KEYS;
 
 const LIST_FIELDS: {
   path: string;
@@ -150,45 +151,6 @@ const groupOfPath = (path: string): GroupKey | null => {
   }
 };
 
-const flattenObject = (
-  obj: Record<string, unknown>,
-  prefix = "",
-): Record<string, unknown> => {
-  const result: Record<string, unknown> = {};
-  for (const key of Object.keys(obj)) {
-    if (IGNORE_KEYS.has(key)) continue;
-    const path = prefix ? `${prefix}.${key}` : key;
-    const value = obj[key];
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      Object.assign(
-        result,
-        flattenObject(value as Record<string, unknown>, path),
-      );
-    } else {
-      result[path] = value;
-    }
-  }
-  return result;
-};
-
-const isZero = (val: unknown): boolean =>
-  val === undefined ||
-  val === null ||
-  val === "" ||
-  val === 0 ||
-  val === false ||
-  (Array.isArray(val) && val.length === 0);
-
-const leafEqual = (a: unknown, b: unknown): boolean => {
-  if (isZero(a) && isZero(b)) return true;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return false;
-    const sortedA = (a as unknown[]).map((v) => JSON.stringify(v)).sort();
-    const sortedB = (b as unknown[]).map((v) => JSON.stringify(v)).sort();
-    return sortedA.every((v, i) => v === sortedB[i]);
-  }
-  return JSON.stringify(a) === JSON.stringify(b);
-};
 
 const formatLeaf = (val: unknown, t: (key: string) => string): string => {
   if (isZero(val)) return "-";
@@ -291,8 +253,8 @@ const buildGroups = (
     dscpRefusal: dscpReasonOf(setB),
   });
 
-  const flatA = flattenObject(setA as unknown as Record<string, unknown>);
-  const flatB = flattenObject(setB as unknown as Record<string, unknown>);
+  const flatA = flattenConfigLeaves(setA as unknown as Record<string, unknown>, "", IGNORE_KEYS);
+  const flatB = flattenConfigLeaves(setB as unknown as Record<string, unknown>, "", IGNORE_KEYS);
   const leavesByGroup = new Map<GroupKey, LeafDiff[]>();
   const activeOf = (list: SetFacet[], key: FacetKey) =>
     list.find((f) => f.key === key)?.active ?? false;

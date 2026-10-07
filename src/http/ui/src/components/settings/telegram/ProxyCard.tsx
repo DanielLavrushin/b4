@@ -28,6 +28,7 @@ export const ProxyCard = ({ config, onChange }: ProxyCardProps) => {
       description={t("settings.MTProto.serverDesc")}
       enabled={enabled}
       onToggle={(checked) => onChange("system.mtproto.enabled", checked)}
+      togglePath="system.mtproto.enabled"
       toggleLabel={t("settings.MTProto.enable")}
     >
       <Grid container spacing={2}>
@@ -44,6 +45,7 @@ export const ProxyCard = ({ config, onChange }: ProxyCardProps) => {
           <B4TextField
             label={t("settings.MTProto.fakeSNI")}
             value={mtproto?.fake_sni || "storage.googleapis.com"}
+            path="system.mtproto.fake_sni"
             onChange={(e) =>
               onChange("system.mtproto.fake_sni", e.target.value)
             }
@@ -58,6 +60,7 @@ export const ProxyCard = ({ config, onChange }: ProxyCardProps) => {
             <B4NumberField
               label={t("settings.MTProto.maxConnections")}
               value={mtproto?.max_connections || 2048}
+              path="system.mtproto.max_connections"
               onChange={(n) => onChange("system.mtproto.max_connections", n)}
               min={16}
               max={100000}
@@ -68,6 +71,7 @@ export const ProxyCard = ({ config, onChange }: ProxyCardProps) => {
             <B4NumberField
               label={t("settings.MTProto.tcpUserTimeout")}
               value={mtproto?.tcp_user_timeout_sec || 120}
+              path="system.mtproto.tcp_user_timeout_sec"
               onChange={(n) =>
                 onChange("system.mtproto.tcp_user_timeout_sec", n)
               }
@@ -80,6 +84,7 @@ export const ProxyCard = ({ config, onChange }: ProxyCardProps) => {
             <B4NumberField
               label={t("settings.MTProto.idleTimeout")}
               value={mtproto?.idle_timeout_sec || 300}
+              path="system.mtproto.idle_timeout_sec"
               onChange={(n) => onChange("system.mtproto.idle_timeout_sec", n)}
               min={-1}
               max={86400}

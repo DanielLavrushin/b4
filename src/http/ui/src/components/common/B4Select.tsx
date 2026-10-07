@@ -9,11 +9,13 @@ import {
 } from "@mui/material";
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { useChangedField } from "@context/ChangedFieldsContext";
 
 interface B4SelectProps extends Omit<SelectProps<string | number>, "variant"> {
   label: string;
   options: { value: string | number; label: string }[];
   helperText?: string;
+  path?: string;
   aiTopic?: string;
   aiContext?: Record<string, unknown>;
   aiQuestion?: string;
@@ -23,14 +25,28 @@ export const B4Select = ({
   label,
   options,
   helperText,
+  path,
   aiTopic,
   aiContext,
   aiQuestion,
   ...props
 }: B4SelectProps) => {
+  const changed = useChangedField(path, label);
   const fc = (
     <FormControl fullWidth size="small">
-      <InputLabel shrink sx={{ color: colors.text.secondary }}>{label}</InputLabel>
+      <InputLabel
+        shrink
+        sx={
+          changed
+            ? {
+                color: colors.secondary,
+                "&.Mui-disabled": { color: colors.text.disabled },
+              }
+            : { color: colors.text.secondary }
+        }
+      >
+        {label}
+      </InputLabel>
       <Select
         {...props}
         label={label}
@@ -41,14 +57,11 @@ export const B4Select = ({
         }}
         sx={{
           bgcolor: colors.background.dark,
+          ...(changed && !props.disabled
+            ? { boxShadow: `inset 3px 0 0 ${colors.secondary}` }
+            : {}),
           "& .MuiOutlinedInput-notchedOutline": {
             borderColor: colors.border.default,
-          },
-          "&:hover .MuiOutlinedInput-notchedOutline": {
-            borderColor: colors.border.medium,
-          },
-          "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-            borderColor: colors.secondary,
           },
 
           ...props.sx,

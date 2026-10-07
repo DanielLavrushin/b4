@@ -106,6 +106,7 @@ export const DevicesTab = ({
                 label={t("sets.targets.excludeDevices")}
                 description={t("sets.targets.excludeDevicesDesc")}
                 checked={exclude}
+                path="targets.source_devices_exclude"
                 onChange={onExcludeChange}
               />
             </Box>

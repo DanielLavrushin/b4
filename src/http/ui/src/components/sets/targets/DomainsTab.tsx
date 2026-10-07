@@ -139,6 +139,7 @@ export const DomainsTab = ({
               value: DOMAIN_CATCH_ALL,
             })}
             checked={catchAll}
+            path="targets.sni_domains"
             onChange={(checked: boolean) =>
               onChange(
                 "targets.sni_domains",
@@ -152,6 +153,7 @@ export const DomainsTab = ({
             label={t("sets.targets.domainOnly")}
             description={t("sets.targets.domainOnlyDesc")}
             checked={config.targets.domain_only ?? false}
+            path="targets.domain_only"
             onChange={(checked: boolean) =>
               onChange("targets.domain_only", checked)
             }
@@ -162,6 +164,7 @@ export const DomainsTab = ({
           <B4Select
             label={t("sets.targets.tlsVersionFilter")}
             value={config.targets.tls ?? ""}
+            path="targets.tls"
             options={[
               { value: "", label: t("sets.targets.tlsAny") },
               { value: "1.2", label: "TLS 1.2" },
@@ -175,12 +178,13 @@ export const DomainsTab = ({
           <Box sx={{ maxWidth: 260, flex: 1, minWidth: 200 }}>
             <B4Select
               label={t("sets.targets.ipVersionFilter")}
-              value={config.targets.ip_version ?? ""}
-              options={[
-                { value: "", label: t("sets.targets.ipVersionAny") },
-                { value: "4", label: "IPv4" },
-                { value: "6", label: "IPv6" },
-              ]}
+            value={config.targets.ip_version ?? ""}
+            path="targets.ip_version"
+            options={[
+              { value: "", label: t("sets.targets.ipVersionAny") },
+              { value: "4", label: "IPv4" },
+              { value: "6", label: "IPv6" },
+            ]}
               helperText={t("sets.targets.ipVersionHelperText")}
               onChange={(e) =>
                 onChange("targets.ip_version", e.target.value as string)

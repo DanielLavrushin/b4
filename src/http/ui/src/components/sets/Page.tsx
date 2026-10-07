@@ -42,7 +42,7 @@ function SetEditorRoute({
   const navigate = useNavigate();
   const { showSuccess, showError, showSnackbar } = useSnackbar();
   const { createSet, updateSet, loading: saving } = useSets();
-
+  const allowNavigationRef = useRef(false);
   const isNew = id === "new";
   const setsData = config.sets || [];
   const sets = setsData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[];
@@ -98,6 +98,7 @@ function SetEditorRoute({
         if (!isNew && result.data) onSaved(result.data);
         onRefresh();
         if (isNew && result.data) {
+          allowNavigationRef.current = true;
           await navigate(`/sets/${result.data.id}`, { replace: true });
         }
       } else if (isStaleWriteError(result.error)) {
@@ -123,6 +124,7 @@ function SetEditorRoute({
       saving={saving}
       onSave={handleSave}
       onRefresh={onRefresh}
+      navigationBypassRef={allowNavigationRef}
     />
   );
 }

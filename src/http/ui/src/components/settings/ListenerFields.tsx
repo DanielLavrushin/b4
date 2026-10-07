@@ -11,6 +11,7 @@ interface ExposeSwitchProps {
   blocked?: string;
   note?: string;
   disabled?: boolean;
+  path?: string;
 }
 
 export const ExposeSwitch = ({
@@ -20,6 +21,7 @@ export const ExposeSwitch = ({
   blocked,
   note,
   disabled,
+  path,
 }: ExposeSwitchProps) => {
   const { t } = useTranslation();
 
@@ -36,6 +38,7 @@ export const ExposeSwitch = ({
     <B4Switch
       label={t("settings.Listener.expose")}
       checked={checked}
+      path={path}
       onChange={onChange}
       disabled={disabled || (!checked && (skipSetup || !!blocked))}
       description={description}
@@ -78,6 +81,7 @@ export const ListenerFields = ({
         <B4TextField
           label={t("settings.Listener.bindAddress")}
           value={listener?.bind_address || "0.0.0.0"}
+          path={`${path}.bind_address`}
           onChange={(e) => onChange(`${path}.bind_address`, e.target.value)}
           placeholder="0.0.0.0"
           helperText={t("settings.Listener.bindAddressHelp")}
@@ -89,6 +93,7 @@ export const ListenerFields = ({
         <B4NumberField
           label={t("settings.Listener.port")}
           value={listener?.port ?? defaultPort}
+          path={`${path}.port`}
           onChange={(n) => onChange(`${path}.port`, n)}
           min={1}
           max={65535}
@@ -99,6 +104,7 @@ export const ListenerFields = ({
       <Grid size={{ xs: 12 }}>
         <ExposeSwitch
           checked={listener?.expose ?? false}
+          path={`${path}.expose`}
           onChange={(checked) => onChange(`${path}.expose`, checked)}
           skipSetup={skipSetup}
           blocked={exposeBlocked}

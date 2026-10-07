@@ -1,9 +1,11 @@
 import { Box, TextField, TextFieldProps } from "@mui/material";
 import { colors } from "@design";
+import { useChangedField } from "@context/ChangedFieldsContext";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
 
 export interface B4TextFieldProps extends Omit<TextFieldProps, "variant"> {
   helperText?: React.ReactNode;
+  path?: string;
   aiTopic?: string;
   aiContext?: Record<string, unknown>;
   aiQuestion?: string;
@@ -12,6 +14,7 @@ export interface B4TextFieldProps extends Omit<TextFieldProps, "variant"> {
 
 export const B4TextField = ({
   helperText,
+  path,
   aiTopic,
   aiContext,
   aiQuestion,
@@ -19,6 +22,7 @@ export const B4TextField = ({
   onFocus,
   ...props
 }: B4TextFieldProps) => {
+  const changed = useChangedField(path, props.label);
   const tf = (
     <TextField
       {...props}
@@ -34,6 +38,9 @@ export const B4TextField = ({
         "& .MuiOutlinedInput-root": {
           bgcolor: colors.background.dark,
           borderColor: colors.border.medium,
+          ...(changed
+            ? { boxShadow: `inset 3px 0 0 ${colors.secondary}` }
+            : {}),
           "&:hover fieldset": {
             borderColor: colors.border.medium,
           },
@@ -46,6 +53,13 @@ export const B4TextField = ({
           WebkitTextFillColor: colors.text.primary,
           caretColor: colors.text.primary,
         },
+        ...(changed
+          ? {
+              "& .MuiInputLabel-root:not(.Mui-disabled)": {
+                color: colors.secondary,
+              },
+            }
+          : {}),
 
         "& .MuiFormHelperText-root": {
           m: 0,

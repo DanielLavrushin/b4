@@ -18,11 +18,11 @@ import {
 import { useState } from "react";
 import {
   Navigate,
-  Route,
-  Routes,
+  Outlet,
   useLocation,
   useNavigate,
 } from "react-router";
+import type { RouteObject } from "react-router";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -80,6 +80,20 @@ const navItems: NavItem[] = [
   { path: "/traffic", labelKey: "core.nav.connections", icon: <ConnectionIcon /> },
   { path: "/logs", labelKey: "core.nav.logs", icon: <LogsIcon /> },
   { path: "/settings", labelKey: "core.nav.settings", icon: <CoreIcon /> },
+];
+export const appRoutes: RouteObject[] = [
+  { index: true, element: <Navigate to="/dashboard" replace /> },
+  { path: "dashboard", element: <DashboardPage /> },
+  { path: "sets/*", element: <SetsPage /> },
+  { path: "traffic", element: <ConnectionsPage /> },
+  { path: "connections", element: <Navigate to="/traffic" replace /> },
+  { path: "discovery", element: <DiscoveryPage /> },
+  { path: "hub", element: <HubPage /> },
+  { path: "watchdog", element: <WatchdogPage /> },
+  { path: "detector", element: <DetectorPage /> },
+  { path: "logs", element: <LogsPage /> },
+  { path: "settings/*", element: <SettingsPage /> },
+  { path: "*", element: <Navigate to="/dashboard" replace /> },
 ];
 
 function UnseenDomainsBadge() {
@@ -289,20 +303,7 @@ export default function App() {
               </Toolbar>
             </AppBar>
 
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/sets/*" element={<SetsPage />} />
-              <Route path="/traffic" element={<ConnectionsPage />} />
-              <Route path="/connections" element={<Navigate to="/traffic" replace />} />
-              <Route path="/discovery" element={<DiscoveryPage />} />
-              <Route path="/hub" element={<HubPage />} />
-              <Route path="/watchdog" element={<WatchdogPage />} />
-              <Route path="/detector" element={<DetectorPage />} />
-              <Route path="/logs" element={<LogsPage />} />
-              <Route path="/settings/*" element={<SettingsPage />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
+            <Outlet />
           </Box>
         </Box>
       </SnackbarProvider>

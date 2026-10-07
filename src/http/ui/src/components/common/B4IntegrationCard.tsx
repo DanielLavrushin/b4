@@ -1,5 +1,6 @@
 import { Box, Divider, Paper, Switch, Typography } from "@mui/material";
 import { colors, radiusPx } from "@design";
+import { useChangedField } from "@context/ChangedFieldsContext";
 
 export interface B4IntegrationCardProps {
   icon: React.ReactNode;
@@ -9,6 +10,7 @@ export interface B4IntegrationCardProps {
   enabled?: boolean;
   onToggle?: (enabled: boolean) => void;
   toggleLabel?: string;
+  togglePath?: string;
   children: React.ReactNode;
 }
 
@@ -20,9 +22,11 @@ export const B4IntegrationCard = ({
   enabled = true,
   onToggle,
   toggleLabel,
+  togglePath,
   children,
 }: B4IntegrationCardProps) => {
   const open = !onToggle || enabled;
+  const changed = useChangedField(togglePath, title);
 
   return (
     <Paper
@@ -30,6 +34,9 @@ export const B4IntegrationCard = ({
       sx={{
         bgcolor: colors.background.paper,
         border: `1px solid ${colors.border.default}`,
+        ...(changed
+          ? { boxShadow: `inset 3px 0 0 ${colors.secondary}` }
+          : {}),
         overflow: "hidden",
         opacity: open ? 1 : 0.75,
         transition: "opacity 120ms",
@@ -61,7 +68,7 @@ export const B4IntegrationCard = ({
               fontSize: 17,
               fontWeight: 600,
               lineHeight: 1.3,
-              color: colors.text.primary,
+              color: changed ? colors.secondary : colors.text.primary,
             }}
           >
             {title}

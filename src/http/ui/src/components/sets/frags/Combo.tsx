@@ -43,6 +43,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
           <B4Switch
             label={t("sets.tcp.splitting.combo.firstByte")}
             checked={combo.first_byte_split}
+            path="fragmentation.combo.first_byte_split"
             onChange={(checked: boolean) =>
               onChange("fragmentation.combo.first_byte_split", checked)
             }
@@ -53,6 +54,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
           <B4Switch
             label={t("sets.tcp.splitting.combo.extensionSplit")}
             checked={combo.extension_split}
+            path="fragmentation.combo.extension_split"
             onChange={(checked: boolean) =>
               onChange("fragmentation.combo.extension_split", checked)
             }
@@ -63,6 +65,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
           <B4Switch
             label={t("sets.tcp.splitting.combo.sniSplit")}
             checked={middleSni}
+            path="fragmentation.middle_sni"
             onChange={(checked: boolean) =>
               onChange("fragmentation.middle_sni", checked)
             }
@@ -184,6 +187,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
         <B4Switch
           label={t("sets.tcp.splitting.combo.decoyEnable")}
           checked={combo.decoy_enabled}
+          path="fragmentation.combo.decoy_enabled"
           onChange={(checked: boolean) =>
             onChange("fragmentation.combo.decoy_enabled", checked)
           }
@@ -280,6 +284,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
           label={t("sets.tcp.splitting.combo.shuffleMode")}
           value={combo.shuffle_mode}
           options={shuffleModeOptions}
+          path="fragmentation.combo.shuffle_mode"
           onChange={(e) =>
             onChange("fragmentation.combo.shuffle_mode", e.target.value)
           }
@@ -309,6 +314,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
             combo.first_delay_ms,
             combo.first_delay_ms_max || combo.first_delay_ms,
           ]}
+          path="fragmentation.combo.first_delay_ms"
           onChange={(value: [number, number]) => {
             onChange("fragmentation.combo.first_delay_ms", value[0]);
             onChange("fragmentation.combo.first_delay_ms_max", value[1]);
@@ -329,6 +335,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
             combo.jitter_max_us,
             combo.jitter_max_us_max || combo.jitter_max_us,
           ]}
+          path="fragmentation.combo.jitter_max_us"
           onChange={(value: [number, number]) => {
             onChange("fragmentation.combo.jitter_max_us", value[0]);
             onChange("fragmentation.combo.jitter_max_us_max", value[1]);
@@ -348,6 +355,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
         <B4Switch
           label={t("sets.tcp.splitting.combo.fakePerSeg")}
           checked={combo.fake_per_segment}
+          path="fragmentation.combo.fake_per_segment"
           onChange={(checked: boolean) =>
             onChange("fragmentation.combo.fake_per_segment", checked)
           }
@@ -367,6 +375,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
               combo.fake_per_seg_count || 1,
               combo.fake_per_seg_count_max || combo.fake_per_seg_count || 1,
             ]}
+            path="fragmentation.combo.fake_per_seg_count"
             onChange={(value: [number, number]) => {
               onChange("fragmentation.combo.fake_per_seg_count", value[0]);
               onChange("fragmentation.combo.fake_per_seg_count_max", value[1]);

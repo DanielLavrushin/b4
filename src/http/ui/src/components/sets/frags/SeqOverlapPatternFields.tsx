@@ -155,6 +155,7 @@ export const SeqOverlapPatternFields = ({
             label: p.label,
             value: p.value,
           }))}
+          path="fragmentation.seq_overlap_pattern"
           onChange={(e) => handlePresetChange(e.target.value as string)}
           helperText={t("sets.tcp.splitting.disorder.overlapPatternHelper")}
           aiTopic="fragmentation.seq_overlap_pattern"
@@ -171,6 +172,7 @@ export const SeqOverlapPatternFields = ({
         <B4NumberField
           label={t("sets.tcp.splitting.disorder.seqOverlapLength")}
           value={length}
+          path="fragmentation.seq_overlap_length"
           onChange={(n) => onLengthChange(n)}
           min={0}
           placeholder="0"

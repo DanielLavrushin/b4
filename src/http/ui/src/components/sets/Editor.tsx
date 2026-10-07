@@ -9,7 +9,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 
 import {
   DiscoveryIcon,
@@ -26,9 +26,20 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { B4Tab, B4TabPanel, B4Tabs, B4TextField } from "@b4.elements";
 
 import { colors } from "@design";
+import { diffConfigLeaves } from "@utils";
+import {
+  ChangedFieldsProvider,
+  useChangedFields,
+} from "@context/ChangedFieldsContext";
+import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
+import {
+  UnsavedChangesDialog,
+  groupChangeItems,
+  type ChangeGroupDef,
+  type UnsavedChangeItem,
+} from "@common/UnsavedChangesDialog";
 import { B4Config, B4SetConfig, SystemConfig } from "@models/config";
 import { dscpEnvironment } from "@utils";
-
 import { DiscoveryTab } from "./DiscoveryTab";
 import { EscalationSettings } from "./Escalation";
 import { ImportExportSettings } from "./ImportExport";
@@ -49,6 +60,44 @@ const EDITOR_TAB_INDEX: Record<string, number> = {
   discovery: 5,
   importExport: 6,
 };
+const SET_EDITOR_DIFF_IGNORE = new Set([
+  "id",
+  "enabled",
+  "stats",
+  "hub_state",
+  "hub",
+  "manual_domains",
+  "manual_ips",
+  "geosite_domains",
+  "geoip_ips",
+  "total_domains",
+  "total_ips",
+  "asn_ips",
+  "geosite_category_breakdown",
+  "geoip_category_breakdown",
+  "asn_breakdown",
+  "asn_unresolved",
+]);
+const SET_EDITOR_CHANGE_GROUPS: ChangeGroupDef[] = [
+  { prefixes: ["targets"], labelKey: "sets.editor.tabs.targets" },
+  {
+    prefixes: ["tcp", "fragmentation", "faking", "mss_clamp"],
+    labelKey: "sets.editor.tabs.tcp",
+  },
+  { prefixes: ["udp"], labelKey: "sets.editor.tabs.udp" },
+  { prefixes: ["routing", "dns"], labelKey: "sets.editor.tabs.routing" },
+  { prefixes: ["escalate"], labelKey: "sets.editor.tabs.escalation" },
+  { prefixes: ["discovery"], labelKey: "sets.editor.tabs.discovery" },
+];
+const TAB_PATH_PREFIXES: string[][] = [
+  ["targets"],
+  ["tcp", "fragmentation", "faking", "mss_clamp"],
+  ["udp"],
+  ["routing", "dns"],
+  ["escalate"],
+  ["discovery"],
+  [],
+];
 
 export interface SetEditorPageProps {
   settings: SystemConfig;
@@ -60,8 +109,8 @@ export interface SetEditorPageProps {
   saving: boolean;
   onSave: (set: B4SetConfig) => void;
   onRefresh?: () => void;
+  navigationBypassRef?: { current: boolean };
 }
-
 export const SetEditorPage = ({
   set: initialSet,
   config,
@@ -72,6 +121,7 @@ export const SetEditorPage = ({
   saving,
   onSave,
   onRefresh,
+  navigationBypassRef,
 }: SetEditorPageProps) => {
   enum TABS {
     TARGETS = 0,
@@ -85,6 +135,7 @@ export const SetEditorPage = ({
 
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const requestedSub = searchParams.get("sub") ?? undefined;
@@ -156,18 +207,54 @@ export const SetEditorPage = ({
     navigate("/sets")?.catch(() => {});
   };
 
+  const draftForDiff = editedSet ?? initialSet;
+  const dscp = dscpEnvironment(config, initialSet.id);
+  const changedLeaves = diffConfigLeaves(
+    draftForDiff as unknown as Record<string, unknown>,
+    initialSet as unknown as Record<string, unknown>,
+    { ignoredRootKeys: SET_EDITOR_DIFF_IGNORE },
+  );
+  const dirty = changedLeaves.length > 0;
+  const changedPaths = new Set(changedLeaves.map((leaf) => leaf.path));
+  const tabHasChanges = (tab: number) =>
+    TAB_PATH_PREFIXES[tab].some((prefix) =>
+      [...changedPaths].some(
+        (path) => path === prefix || path.startsWith(`${prefix}.`),
+      ),
+    );
+  const hasUnsavedChanges = dirty;
+  const blocker = useUnsavedChangesGuard(
+    ({ nextLocation }) => {
+      if (navigationBypassRef?.current) {
+        navigationBypassRef.current = false;
+        return false;
+      }
+      return hasUnsavedChanges && nextLocation.pathname !== location.pathname;
+    },
+    hasUnsavedChanges,
+  );
+  const { snapshotLabels } = useChangedFields();
+  const changeItems: UnsavedChangeItem[] = changedLeaves.map((leaf) => ({
+    path: leaf.path,
+    label: snapshotLabels().get(leaf.path) ?? leaf.path,
+    before: leaf.before,
+    after: leaf.after,
+  }));
+  const changeGroups = groupChangeItems(
+    changeItems,
+    SET_EDITOR_CHANGE_GROUPS,
+  ).map((group) => ({ ...group, label: t(group.label) }));
+
   if (!editedSet) return null;
-
-  const dirty = JSON.stringify(editedSet) !== JSON.stringify(initialSet);
-  const dscp = dscpEnvironment(config, editedSet.id);
-
   let saveTooltip: string;
   if (saving) saveTooltip = t("core.saving");
   else if (isNew) saveTooltip = t("sets.editor.createSet");
   else saveTooltip = t("core.save");
-
   return (
-    <>
+    <ChangedFieldsProvider
+      changedPaths={changedPaths}
+      scope={`set:${editedSet.id}`}
+    >
       {/* Header with tabs */}
       <Paper
         elevation={0}
@@ -205,6 +292,7 @@ export const SetEditorPage = ({
               </Button>
               <B4TextField
                 value={editedSet.name}
+                path="name"
                 onChange={(e) => {
                   handleChange("name", e.target.value);
                 }}
@@ -272,43 +360,43 @@ export const SetEditorPage = ({
               icon={<DomainIcon />}
               label={t("sets.editor.tabs.targets")}
               inline
+              hasChanges={tabHasChanges(TABS.TARGETS)}
               index={TABS.TARGETS}
-              idPrefix="set-tab"
             />
             <B4Tab
               icon={<TcpIcon />}
               label={t("sets.editor.tabs.tcp")}
               inline
+              hasChanges={tabHasChanges(TABS.TCP)}
               index={TABS.TCP}
-              idPrefix="set-tab"
             />
             <B4Tab
               icon={<UdpIcon />}
               label={t("sets.editor.tabs.udp")}
               inline
+              hasChanges={tabHasChanges(TABS.UDP)}
               index={TABS.UDP}
-              idPrefix="set-tab"
             />
             <B4Tab
               icon={<RoutingIcon />}
               label={t("sets.editor.tabs.routing")}
               inline
+              hasChanges={tabHasChanges(TABS.ROUTING)}
               index={TABS.ROUTING}
-              idPrefix="set-tab"
             />
             <B4Tab
               icon={<EscalateIcon />}
               label={t("sets.editor.tabs.escalation")}
               inline
+              hasChanges={tabHasChanges(TABS.ESCALATION)}
               index={TABS.ESCALATION}
-              idPrefix="set-tab"
             />
             <B4Tab
               icon={<DiscoveryIcon />}
               label={t("sets.editor.tabs.discovery")}
               inline
+              hasChanges={tabHasChanges(TABS.DISCOVERY)}
               index={TABS.DISCOVERY}
-              idPrefix="set-tab"
             />
             <B4Tab
               icon={<ImportExportIcon />}
@@ -426,6 +514,13 @@ export const SetEditorPage = ({
           </Fab>
         </span>
       </Tooltip>
-    </>
+      <UnsavedChangesDialog
+        open={blocker.state === "blocked"}
+        groups={changeGroups}
+        total={changeItems.length}
+        onStay={() => blocker.reset?.()}
+        onLeave={() => blocker.proceed?.()}
+      />
+    </ChangedFieldsProvider>
   );
 };

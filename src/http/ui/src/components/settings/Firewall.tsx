@@ -47,6 +47,7 @@ export const FirewallRulesSettings = ({
             <B4Switch
               label={t("settings.Feature.skipIptables")}
               checked={skipTables}
+              path="system.tables.skip_setup"
               onChange={(checked: boolean) =>
                 onChange("system.tables.skip_setup", checked)
               }
@@ -58,6 +59,7 @@ export const FirewallRulesSettings = ({
               TUN_MONITOR_MIN_INTERVAL,
               config.system.tables.monitor_interval,
             )}
+            path="system.tables.monitor_interval"
             onChange={(value: number) =>
               onChange("system.tables.monitor_interval", value)
             }
@@ -77,6 +79,7 @@ export const FirewallRulesSettings = ({
             <B4Switch
               label={t("settings.Feature.skipIptables")}
               checked={skipTables}
+              path="system.tables.skip_setup"
               onChange={(checked: boolean) =>
                 onChange("system.tables.skip_setup", checked)
               }
@@ -86,6 +89,7 @@ export const FirewallRulesSettings = ({
           <B4Select
             label={t("settings.Feature.firewallEngine")}
             value={config.system.tables.engine || "auto"}
+            path="system.tables.engine"
             onChange={(e) =>
               onChange(
                 "system.tables.engine",
@@ -103,6 +107,7 @@ export const FirewallRulesSettings = ({
           <B4Slider
             label={t("settings.Feature.firewallMonitorInterval")}
             value={config.system.tables.monitor_interval}
+            path="system.tables.monitor_interval"
             onChange={(value: number) =>
               onChange("system.tables.monitor_interval", value)
             }
@@ -201,6 +206,7 @@ export const NatMasqueradeSettings = ({
       <B4Switch
         label={t("settings.Feature.natMasqueradeEnable")}
         checked={masquerade.enabled}
+        path="system.tables.masquerade.enabled"
         onChange={(checked: boolean) =>
           onChange("system.tables.masquerade.enabled", checked)
         }
@@ -254,6 +260,7 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
       <B4Switch
         label={t("settings.Feature.dscp")}
         checked={dscp.enabled}
+        path="system.tables.dscp.enabled"
         onChange={(checked: boolean) => {
           onChange("system.tables.dscp.enabled", checked);
           if (checked && !dscp.value) {
@@ -272,36 +279,39 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
         aiTopic="system.tables.dscp.enabled"
       />
       {dscp.enabled && (
-        <B4Slider
-          label={t("settings.Feature.dscpValue")}
-          value={dscp.value}
-          onChange={(value: number) =>
-            onChange("system.tables.dscp.value", value)
-          }
-          min={0}
-          max={DSCP_MAX_VALUE}
-          step={1}
-          disabled={skipTables}
-          helperText={t("settings.Feature.dscpValueHelp")}
-          aiTopic="system.tables.dscp.value"
-        />
-      )}
-      {stampingSets.length > 0 && (
-        <Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            {t("settings.Feature.dscpSetsList")}
-          </Typography>
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-            {stampingSets.map((set) => (
-              <B4Badge
-                key={set.id}
-                label={`${set.name || set.id}: ${set.dscp?.value ?? 0}`}
-                variant="outlined"
-                color="secondary"
-              />
-            ))}
-          </Box>
-        </Box>
+        <>
+          <B4Slider
+            label={t("settings.Feature.dscpValue")}
+            value={dscp.value}
+            path="system.tables.dscp.value"
+            onChange={(value: number) =>
+              onChange("system.tables.dscp.value", value)
+            }
+            min={0}
+            max={DSCP_MAX_VALUE}
+            step={1}
+            disabled={skipTables}
+            helperText={t("settings.Feature.dscpValueHelp")}
+            aiTopic="system.tables.dscp.value"
+          />
+          {stampingSets.length > 0 && (
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                {t("settings.Feature.dscpSetsList")}
+              </Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                {stampingSets.map((set) => (
+                  <B4Badge
+                    key={set.id}
+                    label={`${set.name || set.id}: ${set.dscp?.value ?? 0}`}
+                    variant="outlined"
+                    color="secondary"
+                  />
+                ))}
+              </Box>
+            </Box>
+          )}
+        </>
       )}
       {(dscp.enabled || stampingSets.length > 0) && (
         <Box>

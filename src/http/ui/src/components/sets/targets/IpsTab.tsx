@@ -90,6 +90,7 @@ export const IpsTab = ({
             value: catchAllEntries.join(", "),
           })}
           checked={catchAll}
+          path="targets.ip"
           onChange={(checked: boolean) =>
             onChange("targets.ip", setIpCatchAll(ips, checked, !!ipv6))
           }

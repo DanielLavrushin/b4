@@ -7,6 +7,7 @@ import {
 } from "@mui/material";
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { useChangedField } from "@context/ChangedFieldsContext";
 
 interface B4SliderProps extends Omit<SliderProps, "onChange"> {
   label: string;
@@ -20,6 +21,7 @@ interface B4SliderProps extends Omit<SliderProps, "onChange"> {
   valueSuffix?: string;
   alert?: React.ReactNode;
   disabled?: boolean;
+  path?: string;
   aiTopic?: string;
   aiContext?: Record<string, unknown>;
   aiQuestion?: string;
@@ -37,11 +39,18 @@ export const B4Slider = ({
   valueSuffix = "",
   disabled,
   alert,
+  path,
   aiTopic,
   aiContext,
   aiQuestion,
   ...props
 }: B4SliderProps) => {
+  const changed = useChangedField(path, label);
+  const labelColor = disabled
+    ? colors.text.disabled
+    : changed
+      ? colors.secondary
+      : colors.text.primary;
   const handleChange = (_event: Event, newValue: number | number[]) => {
     onChange(Array.isArray(newValue) ? newValue[0] : newValue);
   };
@@ -59,9 +68,7 @@ export const B4Slider = ({
         <Typography
           variant="body2"
           sx={{
-            color: (disabled
-              ? colors.text.disabled
-              : colors.text.primary) as string,
+            color: labelColor as string,
             fontWeight: 500,
           }}
         >
@@ -110,6 +117,9 @@ export const B4Slider = ({
         valueLabelDisplay="auto"
         sx={{
           color: colors.secondary,
+          ...(changed && !disabled
+            ? { boxShadow: `inset 3px 0 0 ${colors.secondary}` }
+            : {}),
           "& .MuiSlider-thumb": {
             bgcolor: colors.secondary,
             "&:hover, &.Mui-focusVisible": {

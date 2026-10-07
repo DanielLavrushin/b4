@@ -7,6 +7,7 @@ import {
 } from "@mui/material";
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { useChangedField } from "@context/ChangedFieldsContext";
 
 interface B4RangeSliderProps extends Omit<SliderProps, "onChange" | "value"> {
   label: string;
@@ -20,6 +21,7 @@ interface B4RangeSliderProps extends Omit<SliderProps, "onChange" | "value"> {
   valueSuffix?: string;
   alert?: React.ReactNode;
   disabled?: boolean;
+  path?: string;
   aiTopic?: string;
   aiContext?: Record<string, unknown>;
   aiQuestion?: string;
@@ -37,11 +39,18 @@ export const B4RangeSlider = ({
   valueSuffix = "",
   disabled,
   alert,
+  path,
   aiTopic,
   aiContext,
   aiQuestion,
   ...props
 }: B4RangeSliderProps) => {
+  const changed = useChangedField(path, label);
+  const labelColor = disabled
+    ? colors.text.disabled
+    : changed
+      ? colors.secondary
+      : colors.text.primary;
   const handleChange = (_event: Event, newValue: number | number[]) => {
     if (Array.isArray(newValue)) {
       onChange([newValue[0], newValue[1]]);
@@ -63,9 +72,7 @@ export const B4RangeSlider = ({
         <Typography
           variant="body2"
           sx={{
-            color: (disabled
-              ? colors.text.disabled
-              : colors.text.primary) as string,
+            color: labelColor as string,
             fontWeight: 500,
           }}
         >
@@ -120,6 +127,9 @@ export const B4RangeSlider = ({
         disableSwap
         sx={{
           color: colors.secondary,
+          ...(changed && !disabled
+            ? { boxShadow: `inset 3px 0 0 ${colors.secondary}` }
+            : {}),
           "& .MuiSlider-thumb": {
             bgcolor: colors.secondary,
             "&:hover, &.Mui-focusVisible": {

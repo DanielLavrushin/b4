@@ -152,6 +152,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
         <B4Switch
           label={t("sets.dns.enable")}
           checked={dnsConfig.enabled}
+          path="dns.enabled"
           onChange={(checked: boolean) => onChange("dns.enabled", checked)}
           description={t("sets.dns.enableDesc")}
         />
@@ -191,6 +192,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
             <B4Switch
               label={t("sets.dns.strict")}
               checked={dnsConfig.strict || false}
+              path="dns.strict"
               onChange={(checked: boolean) => onChange("dns.strict", checked)}
               description={t("sets.dns.strictDesc")}
             />
@@ -202,6 +204,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                 <B4Switch
                   label={t("sets.dns.fragmentQuery")}
                   checked={dnsConfig.fragment_query || false}
+                  path="dns.fragment_query"
                   onChange={(checked: boolean) =>
                     onChange("dns.fragment_query", checked)
                   }
@@ -212,6 +215,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                 <B4TextField
                   label={t("sets.dns.serverIp")}
                   value={dnsConfig.target_dns}
+                  path="dns.target_dns"
                   onChange={(e) => onChange("dns.target_dns", e.target.value)}
                   placeholder={t("sets.dns.serverIpPlaceholder")}
                   helperText={t("sets.dns.serverIpHelper")}
@@ -352,6 +356,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                 <B4TextField
                   label={t("sets.dns.dohUrl")}
                   value={dnsConfig.doh_url || ""}
+                  path="dns.doh_url"
                   onChange={(e) => onChange("dns.doh_url", e.target.value)}
                   placeholder={t("sets.dns.dohUrlPlaceholder")}
                   helperText={t("sets.dns.dohUrlHelper")}
@@ -553,6 +558,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
         <B4TextField
           label={t("sets.dns.pins")}
           value={pinsText}
+          path="dns.pins"
           onChange={(e) => handlePinsChange(e.target.value)}
           placeholder={t("sets.dns.pinsPlaceholder")}
           multiline

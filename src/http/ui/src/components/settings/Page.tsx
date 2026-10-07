@@ -52,14 +52,48 @@ import {
 
 import { B4Alert, B4Dialog, B4Tab, B4Tabs } from "@b4.elements";
 import { configApi, SettingsPropHandlerType } from "@b4.settings";
-import { isStaleWriteError, reportSaveError, reportStaleWrite } from "@utils";
+import {
+  changedConfigPaths,
+  diffConfigLeaves,
+  isStaleWriteError,
+  reportSaveError,
+  reportStaleWrite,
+} from "@utils";
+import {
+  ChangedFieldsProvider,
+  useChangedFields,
+} from "@context/ChangedFieldsContext";
+import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
+import {
+  UnsavedChangesDialog,
+  groupChangeItems,
+  type ChangeGroupDef,
+  type UnsavedChangeItem,
+} from "@common/UnsavedChangesDialog";
 import { colors, spacing } from "@design";
-
 import { B4Config } from "@models/config";
-
+const SETTINGS_DIFF_IGNORE = new Set(["sets", "available_ifaces", "revision"]);
+const SETTINGS_CHANGE_GROUPS: ChangeGroupDef[] = [
+  { prefixes: ["queue"], labelKey: "settings.Queue.title" },
+  { prefixes: ["system.tables"], labelKey: "settings.Feature.engineTitle" },
+  { prefixes: ["system.dns"], labelKey: "settings.Dns.title" },
+  { prefixes: ["system.socks5"], labelKey: "settings.Socks5.title" },
+  { prefixes: ["system.ip_health"], labelKey: "settings.IPHealth.title" },
+  { prefixes: ["system.mtproto"], labelKey: "settings.MTProto.title" },
+  { prefixes: ["system.api"], labelKey: "settings.Api.ipinfoTitle" },
+  { prefixes: ["system.ai"], labelKey: "settings.Ai.title" },
+  { prefixes: ["system.web_server.mcp"], labelKey: "settings.Mcp.title" },
+  { prefixes: ["system.web_server"], labelKey: "settings.WebServer.title" },
+  { prefixes: ["system.hub"], labelKey: "settings.Hub.title" },
+  { prefixes: ["system.geo"], labelKey: "settings.Geo.title" },
+  { prefixes: ["system.checker"], labelKey: "settings.Checker.title" },
+  { prefixes: ["system.logging"], labelKey: "settings.Logging.loggingTitle" },
+  { prefixes: ["system.memory_limit"], labelKey: "settings.Logging.title" },
+  { prefixes: ["system.timezone"], labelKey: "settings.Logging.title" },
+  { prefixes: ["system.update"], labelKey: "settings.Logging.title" },
+];
 const changed = (pick: (c: B4Config) => unknown, a: B4Config, b: B4Config) =>
   JSON.stringify(pick(a)) !== JSON.stringify(pick(b));
-
 interface TabPanelProps {
   children?: React.ReactNode;
   index: number;
@@ -230,10 +264,45 @@ export function SettingsPage() {
   }, [location.pathname, currentTabPath, navigate]);
 
   // Check if configuration has been modified
-  const hasChanges = useMemo(() => {
-    if (!config || !originalConfig) return false;
-    return JSON.stringify(config) !== JSON.stringify(originalConfig);
+  const changedLeaves = useMemo(() => {
+    if (!config || !originalConfig) return [];
+    return diffConfigLeaves(
+      config as unknown as Record<string, unknown>,
+      originalConfig as unknown as Record<string, unknown>,
+      { ignoredRootKeys: SETTINGS_DIFF_IGNORE },
+    );
   }, [config, originalConfig]);
+  const hasChanges = changedLeaves.length > 0;
+
+  const changedPaths = useMemo<ReadonlySet<string>>(() => {
+    if (!config || !originalConfig) return new Set<string>();
+    return changedConfigPaths(
+      config as unknown as Record<string, unknown>,
+      originalConfig as unknown as Record<string, unknown>,
+      { ignoredRootKeys: SETTINGS_DIFF_IGNORE },
+    );
+  }, [config, originalConfig]);
+  const hasUnsavedChanges = hasChanges;
+  const blocker = useUnsavedChangesGuard(
+    ({ nextLocation }) =>
+      hasUnsavedChanges && !nextLocation.pathname.startsWith("/settings"),
+    hasUnsavedChanges,
+  );
+  const { snapshotLabels } = useChangedFields();
+  const changeItems: UnsavedChangeItem[] = changedLeaves.map((leaf) => ({
+    path: leaf.path,
+    label: snapshotLabels().get(leaf.path) ?? leaf.path,
+    before: leaf.before,
+    after: leaf.after,
+  }));
+  const changeGroups = useMemo(
+    () =>
+      groupChangeItems(changeItems, SETTINGS_CHANGE_GROUPS).map((group) => ({
+        ...group,
+        label: t(group.label),
+      })),
+    [changeItems, t],
+  );
 
   const sectionState = useMemo(() => {
     const state: Partial<Record<TABS, SectionState[]>> = {};
@@ -413,6 +482,7 @@ export function SettingsPage() {
   const validTab = Math.max(currentTab, 0);
 
   return (
+    <ChangedFieldsProvider changedPaths={changedPaths} scope="settings">
     <Container
       maxWidth={false}
       sx={{
@@ -646,6 +716,14 @@ export function SettingsPage() {
         open={showRestartDialog}
         onClose={() => setShowRestartDialog(false)}
       />
+      <UnsavedChangesDialog
+        open={blocker.state === "blocked"}
+        groups={changeGroups}
+        total={changeItems.length}
+        onStay={() => blocker.reset?.()}
+        onLeave={() => blocker.proceed?.()}
+      />
     </Container>
+    </ChangedFieldsProvider>
   );
 }

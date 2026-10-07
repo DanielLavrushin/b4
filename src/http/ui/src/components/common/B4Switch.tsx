@@ -1,5 +1,6 @@
 import {
   FormControlLabel,
+  Stack,
   Switch,
   SwitchProps,
   Typography,
@@ -7,12 +8,14 @@ import {
 } from "@mui/material";
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { useChangedField } from "@context/ChangedFieldsContext";
 
 interface B4SwitchProps extends Omit<SwitchProps, "checked" | "onChange"> {
   label: string;
   checked: boolean;
   description?: string;
   disabled?: boolean;
+  path?: string;
   onChange: (checked: boolean) => void;
   aiTopic?: string;
   aiContext?: Record<string, unknown>;
@@ -25,11 +28,18 @@ export const B4Switch = ({
   description,
   onChange,
   disabled,
+  path,
   aiTopic,
   aiContext,
   aiQuestion,
   ...props
 }: B4SwitchProps) => {
+  const changed = useChangedField(path, label);
+  const labelColor = disabled
+    ? colors.text.disabled
+    : changed
+      ? colors.secondary
+      : colors.text.primary;
   const control = (
     <FormControlLabel
       disabled={disabled}
@@ -42,26 +52,27 @@ export const B4Switch = ({
       }
       label={
         <Box>
-          <Typography
-            sx={{
-              color: disabled ? colors.text.disabled : colors.text.primary,
-              fontWeight: 500,
-            }}
-          >
-            {label}
-          </Typography>
-          {description && (
+          <Stack direction="row" spacing={1} alignItems="center">
+            {changed && !disabled && (
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  bgcolor: colors.secondary,
+                  flexShrink: 0,
+                }}
+              />
+            )}
             <Typography
-              variant="caption"
               sx={{
-                display: "block",
-                color: colors.text.secondary,
-                mt: "2px",
+                color: labelColor as string,
+                fontWeight: 500,
               }}
             >
-              {description}
+              {label}
             </Typography>
-          )}
+          </Stack>
         </Box>
       }
       sx={{

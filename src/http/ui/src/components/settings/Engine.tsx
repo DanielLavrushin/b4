@@ -99,6 +99,7 @@ export const PacketEngineSettings = ({
       <B4Select
         label={t("settings.Feature.tunOutInterface")}
         value={tunFollowsDefault ? "" : tunOutInterface ?? ""}
+        path="queue.tun.out_interface"
         onChange={(e) => onChange("queue.tun.out_interface", e.target.value)}
         options={[
           { value: "", label: t("settings.Feature.tunOutInterfaceAuto") },
@@ -114,6 +115,7 @@ export const PacketEngineSettings = ({
       <B4TextField
         label={t("settings.Feature.tunOutGateway")}
         value={config.queue.tun?.out_gateway || ""}
+        path="queue.tun.out_gateway"
         onChange={(e) => onChange("queue.tun.out_gateway", e.target.value)}
         placeholder={t("settings.Feature.tunOutGatewayPlaceholder")}
         disabled={tunFollowsDefault}
@@ -127,6 +129,7 @@ export const PacketEngineSettings = ({
       <B4TextField
         label={t("settings.Feature.tunAddress")}
         value={config.queue.tun?.address || "10.255.0.1/30"}
+        path="queue.tun.address"
         onChange={(e) => onChange("queue.tun.address", e.target.value)}
         helperText={t("settings.Feature.tunAddressHelp")}
         selectOnFocus
@@ -134,6 +137,7 @@ export const PacketEngineSettings = ({
       <B4TextField
         label={t("settings.Feature.tunDeviceName")}
         value={config.queue.tun?.device_name || "b4tun0"}
+        path="queue.tun.device_name"
         onChange={(e) => onChange("queue.tun.device_name", e.target.value)}
         helperText={t("settings.Feature.tunDeviceNameHelp")}
         selectOnFocus
@@ -191,6 +195,7 @@ export const PacketEngineSettings = ({
       <B4Select
         label={t("settings.Feature.engineModeLabel")}
         value={config.queue.mode || "nfqueue"}
+        path="queue.mode"
         onChange={(e) =>
           onChange(
             "queue.mode",
@@ -254,17 +259,20 @@ export const IpVersionSettings = ({
       <B4Switch
         label={t("settings.Feature.enableIPv4")}
         checked={config.queue.ipv4}
+        path="queue.ipv4"
         onChange={(checked: boolean) => onChange("queue.ipv4", checked)}
       />
       <B4Switch
         label={t("settings.Feature.enableIPv6")}
         checked={config.queue.ipv6}
+        path="queue.ipv6"
         onChange={(checked: boolean) => onChange("queue.ipv6", checked)}
         description={t("settings.Feature.enableIPv6Desc")}
       />
       <B4Switch
         label={t("settings.Dns.ipv4Fallback")}
         checked={!keepIpv6Answers}
+        path="system.dns.keep_ipv6_answers"
         onChange={(checked: boolean) =>
           onChange("system.dns.keep_ipv6_answers", !checked)
         }
