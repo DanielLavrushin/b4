@@ -8,7 +8,7 @@ import {
 } from "@mui/material";
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
-import { useChangedField } from "@context/ChangedFieldsContext";
+import { useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
 
 interface B4RangeSliderProps extends Omit<SliderProps, "onChange" | "value"> {
   label: string;
@@ -47,9 +47,12 @@ export const B4RangeSlider = ({
   ...props
 }: B4RangeSliderProps) => {
   const changed = useChangedField(path, label);
+  const { changedPaths } = useChangedFields();
+  const changedPair =
+    changed || (path ? changedPaths.has(`${path}_max`) : false);
   const labelColor = disabled
     ? colors.text.disabled
-    : changed
+    : changedPair
       ? colors.secondary
       : colors.text.primary;
   const handleChange = (_event: Event, newValue: number | number[]) => {
@@ -80,7 +83,7 @@ export const B4RangeSlider = ({
           >
             {label}
           </Typography>
-          {changed && !disabled && (
+          {changedPair && !disabled && (
             <Box
               sx={{
                 width: 6,
