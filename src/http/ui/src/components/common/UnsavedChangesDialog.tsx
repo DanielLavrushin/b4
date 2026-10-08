@@ -64,12 +64,20 @@ export function UnsavedChangesDialog({
   total,
   onStay,
   onLeave,
+  title,
+  body,
+  stayLabel,
+  leaveLabel,
 }: Readonly<{
   open: boolean;
   groups: UnsavedChangeGroup[];
   total: number;
   onStay: () => void;
   onLeave: () => void;
+  title?: string;
+  body?: string;
+  stayLabel?: string;
+  leaveLabel?: string;
 }>) {
   const { t } = useTranslation();
 
@@ -93,22 +101,22 @@ export function UnsavedChangesDialog({
 
   return (
     <B4Dialog
-      title={t("core.unsavedChangesTitle")}
+      title={title ?? t("core.unsavedChangesTitle")}
       open={open}
       onClose={onStay}
       actions={
         <>
-          <Button onClick={onStay}>{t("core.unsavedStay")}</Button>
+          <Button onClick={onStay}>{stayLabel ?? t("core.unsavedStay")}</Button>
           <Box sx={{ flex: 1 }} />
           <Button onClick={onLeave} variant="contained" color="warning">
-            {t("core.unsavedLeave")}
+            {leaveLabel ?? t("core.unsavedLeave")}
           </Button>
         </>
       }
     >
       <DialogContent>
         <Typography variant="body2" sx={{ color: colors.text.secondary, mb: 2 }}>
-          {t("core.unsavedChangesBody", { count: total })}
+          {body ?? t("core.unsavedChangesBody", { count: total })}
         </Typography>
         <Stack spacing={2}>
           {groups.map((group) => (

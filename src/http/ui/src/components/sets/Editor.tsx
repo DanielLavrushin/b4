@@ -10,6 +10,7 @@ import {
 } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
+import { useSnackbar } from "@context/SnackbarProvider";
 
 import {
   DiscoveryIcon,
@@ -206,6 +207,13 @@ export const SetEditorPage = ({
   const handleBack = () => {
     navigate("/sets")?.catch(() => {});
   };
+  const [showDiscardDialog, setShowDiscardDialog] = useState(false);
+  const { showSuccess } = useSnackbar();
+  const resetDraft = () => {
+    setEditedSet(initialSet);
+    setShowDiscardDialog(false);
+    showSuccess(t("core.changesDiscarded"));
+  };
 
   const draftForDiff = editedSet ?? initialSet;
   const dscp = dscpEnvironment(config, initialSet.id);
@@ -327,10 +335,10 @@ export const SetEditorPage = ({
               <Button
                 size="small"
                 variant="outlined"
-                onClick={handleBack}
-                disabled={saving}
+                onClick={() => setShowDiscardDialog(true)}
+                disabled={saving || (!isNew && !dirty)}
               >
-                {t("core.cancel")}
+                {t("core.discard")}
               </Button>
               <Button
                 size="small"
@@ -522,6 +530,16 @@ export const SetEditorPage = ({
         total={changeItems.length}
         onStay={() => blocker.reset?.()}
         onLeave={() => blocker.proceed?.()}
+      />
+      <UnsavedChangesDialog
+        open={showDiscardDialog}
+        groups={changeGroups}
+        total={changeItems.length}
+        onStay={() => setShowDiscardDialog(false)}
+        onLeave={resetDraft}
+        title={t("core.discardChanges")}
+        stayLabel={t("core.cancel")}
+        leaveLabel={t("core.discard")}
       />
     </ChangedFieldsProvider>
   );

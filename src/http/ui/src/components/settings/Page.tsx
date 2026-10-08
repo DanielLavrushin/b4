@@ -5,8 +5,6 @@ import {
   Chip,
   CircularProgress,
   Container,
-  DialogContent,
-  DialogContentText,
   Fade,
   Grid,
   Paper,
@@ -50,7 +48,7 @@ import {
   sectionIndex,
 } from "./sections";
 
-import { B4Alert, B4Dialog, B4Tab, B4Tabs } from "@b4.elements";
+import { B4Alert, B4Tab, B4Tabs } from "@b4.elements";
 import { configApi, SettingsPropHandlerType } from "@b4.settings";
 import {
   changedConfigPaths,
@@ -691,26 +689,16 @@ export function SettingsPage() {
       </Box>
 
       {/* Reset Confirmation Dialog */}
-      <B4Dialog
-        title={t("core.discardChanges")}
+      <UnsavedChangesDialog
         open={showResetDialog}
-        onClose={() => setShowResetDialog(false)}
-        actions={
-          <>
-            <Button onClick={() => setShowResetDialog(false)}>
-              {t("core.cancel")}
-            </Button>
-            <Box sx={{ flex: 1 }} />
-            <Button onClick={resetChanges} variant="contained">
-              {t("core.discard")}
-            </Button>
-          </>
-        }
-      >
-        <DialogContent>
-          <DialogContentText>{t("core.discardConfirm")}</DialogContentText>
-        </DialogContent>
-      </B4Dialog>
+        groups={changeGroups}
+        total={changeItems.length}
+        onStay={() => setShowResetDialog(false)}
+        onLeave={resetChanges}
+        title={t("core.discardChanges")}
+        stayLabel={t("core.cancel")}
+        leaveLabel={t("core.discard")}
+      />
 
       <RestartDialog
         open={showRestartDialog}
