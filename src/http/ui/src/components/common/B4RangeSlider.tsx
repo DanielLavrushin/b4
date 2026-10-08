@@ -1,6 +1,7 @@
 import {
   Box,
   Slider,
+  Stack,
   Typography,
   FormHelperText,
   SliderProps,
@@ -69,15 +70,28 @@ export const B4RangeSlider = ({
           mb: 1,
         }}
       >
-        <Typography
-          variant="body2"
-          sx={{
-            color: labelColor as string,
-            fontWeight: 500,
-          }}
-        >
-          {label}
-        </Typography>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Typography
+            variant="body2"
+            sx={{
+              color: labelColor as string,
+              fontWeight: 500,
+            }}
+          >
+            {label}
+          </Typography>
+          {changed && !disabled && (
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                bgcolor: colors.secondary,
+                flexShrink: 0,
+              }}
+            />
+          )}
+        </Stack>
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
           {aiTopic && (
             <B4AiExplain
@@ -127,9 +141,6 @@ export const B4RangeSlider = ({
         disableSwap
         sx={{
           color: colors.secondary,
-          ...(changed && !disabled
-            ? { boxShadow: `inset 3px 0 0 ${colors.secondary}` }
-            : {}),
           "& .MuiSlider-thumb": {
             bgcolor: colors.secondary,
             "&:hover, &.Mui-focusVisible": {

@@ -53,6 +53,14 @@ export const B4Switch = ({
       label={
         <Box>
           <Stack direction="row" spacing={1} alignItems="center">
+            <Typography
+              sx={{
+                color: labelColor as string,
+                fontWeight: 500,
+              }}
+            >
+              {label}
+            </Typography>
             {changed && !disabled && (
               <Box
                 sx={{
@@ -64,14 +72,6 @@ export const B4Switch = ({
                 }}
               />
             )}
-            <Typography
-              sx={{
-                color: labelColor as string,
-                fontWeight: 500,
-              }}
-            >
-              {label}
-            </Typography>
           </Stack>
         </Box>
       }
