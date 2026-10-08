@@ -2,6 +2,7 @@ import {
   Box,
   Slider,
   Stack,
+  TextField,
   Typography,
   FormHelperText,
   SliderProps,
@@ -9,6 +10,7 @@ import {
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
 import { useChangedField } from "@context/ChangedFieldsContext";
+import { useEditableNumber } from "./useEditableNumber";
 
 interface B4SliderProps extends Omit<SliderProps, "onChange"> {
   label: string;
@@ -55,6 +57,7 @@ export const B4Slider = ({
   const handleChange = (_event: Event, newValue: number | number[]) => {
     onChange(Array.isArray(newValue) ? newValue[0] : newValue);
   };
+  const editor = useEditableNumber(value, onChange, min, max);
 
   return (
     <Box sx={{ width: "100%", ...aiHoverRevealSx }}>
@@ -99,25 +102,66 @@ export const B4Slider = ({
               question={aiQuestion}
             />
           )}
-          {showValue && (
-            <Typography
-              variant="body2"
-              sx={{
-                color: disabled ? colors.text.disabled : colors.secondary,
-                fontWeight: 600,
-                bgcolor: disabled
-                  ? colors.background.dark
-                  : colors.accent.secondary,
-                px: 1.5,
-                py: 0.5,
-                borderRadius: 1,
-                textAlign: "center",
-              }}
-            >
-              {value}
-              {valueSuffix}
-            </Typography>
-          )}
+          {showValue &&
+            (editor.editing && !disabled ? (
+              <>
+              <TextField
+                size="small"
+                value={editor.text}
+                autoFocus
+                inputMode="numeric"
+                onChange={(e) => editor.setText(e.target.value)}
+                onBlur={() => editor.commit()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") editor.commit();
+                  else if (e.key === "Escape") editor.cancel();
+                }}
+                onFocus={(e) => e.target.select()}
+                slotProps={{ htmlInput: { style: { width: `${Math.max(String(value).length, 2) + 1}ch`, padding: "4px 8px", textAlign: "center" } } }}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    bgcolor: colors.accent.secondary,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: colors.secondary,
+                    "& fieldset": { borderColor: colors.secondary },
+                    "&.Mui-focused fieldset": {
+                      borderColor: colors.secondary,
+                    },
+                  },
+                }}
+              />
+              <Typography
+                variant="body2"
+                sx={{ color: colors.text.secondary, fontWeight: 600 }}
+              >
+                {valueSuffix}
+              </Typography>
+              </>
+            ) : (
+              <Typography
+                variant="body2"
+                onClick={disabled ? undefined : () => editor.start()}
+                sx={{
+                  color: disabled ? colors.text.disabled : colors.secondary,
+                  fontWeight: 600,
+                  bgcolor: disabled
+                    ? colors.background.dark
+                    : colors.accent.secondary,
+                  px: 1.5,
+                  py: 0.5,
+                  borderRadius: 1,
+                  textAlign: "center",
+                  cursor: disabled ? "default" : "text",
+                  "&:hover": disabled
+                    ? {}
+                    : { bgcolor: colors.accent.secondaryHover },
+                }}
+              >
+                {value}
+                {valueSuffix}
+              </Typography>
+            ))}
         </Box>
       </Box>
 
