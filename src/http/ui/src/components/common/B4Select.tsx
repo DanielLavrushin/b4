@@ -36,14 +36,13 @@ export const B4Select = ({
     <FormControl fullWidth size="small">
       <InputLabel
         shrink
-        sx={
-          changed
-            ? {
-                color: colors.secondary,
-                "&.Mui-disabled": { color: colors.text.disabled },
-              }
-            : { color: colors.text.secondary }
-        }
+        sx={{
+          color: changed ? colors.secondary : colors.text.secondary,
+          "&.Mui-disabled": { color: colors.text.disabled },
+          "&.Mui-focused:not(.Mui-disabled)": {
+            color: colors.secondary,
+          },
+        }}
       >
         {label}
       </InputLabel>
@@ -62,6 +61,12 @@ export const B4Select = ({
             : {}),
           "& .MuiOutlinedInput-notchedOutline": {
             borderColor: colors.border.default,
+          },
+          "&:hover .MuiOutlinedInput-notchedOutline": {
+            borderColor: colors.border.medium,
+          },
+          "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+            borderColor: colors.secondary,
           },
 
           ...props.sx,

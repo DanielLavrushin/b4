@@ -59,7 +59,11 @@ export const B4TextField = ({
                 color: colors.secondary,
               },
             }
-          : {}),
+          : {
+              "& .MuiInputLabel-root.Mui-focused:not(.Mui-disabled)": {
+                color: colors.secondary,
+              },
+            }),
 
         "& .MuiFormHelperText-root": {
           m: 0,
