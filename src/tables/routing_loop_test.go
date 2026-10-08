@@ -116,15 +116,11 @@ func TestRouterTrafficGuardIsScopedToTheSetAndToTunnels(t *testing.T) {
 	}
 }
 
-func TestEgressLoopGuardOnlyLandsWhereTheLoopIsUnbounded(t *testing.T) {
+func TestEgressLoopGuardLandsOnEveryEgressInterface(t *testing.T) {
 	loopTestSysfs(t)
 	prevProto := routeIPSupportsProto
 	t.Cleanup(func() { routeIPSupportsProto = prevProto })
 	routeIPSupportsProto = func() bool { return false }
-	// routeEnsureRule ends in routeEnsurePolicyRouting, which the mock backend
-	// does not intercept: real `ip` commands and rp_filter writes would run.
-	// The fake sysfs above makes eth1/xray0 count as previously seen, so stub
-	// both command runners and the sysctl access before building any rules.
 	prevRun, prevLogged := run, runLogged
 	run = func(args ...string) (string, error) { return "", nil }
 	runLogged = func(op string, args ...string) bool { return true }
@@ -134,7 +130,6 @@ func TestEgressLoopGuardOnlyLandsWhereTheLoopIsUnbounded(t *testing.T) {
 	routeIfaceSeen = make(map[string]bool)
 	t.Cleanup(func() { routeIfaceSeen = prevSeen })
 	cfg := familyTestConfig(true, false)
-
 	plain := &mockRouteBackend{}
 	set := familyTestSet()
 	set.Routing.EgressInterface = "eth1"
@@ -142,10 +137,9 @@ func TestEgressLoopGuardOnlyLandsWhereTheLoopIsUnbounded(t *testing.T) {
 	if err := routeEnsureRule(plain, cfg, set, st, nil); err != nil {
 		t.Fatalf("routeEnsureRule: %v", err)
 	}
-	if indexOfPrefix(plain.chainOps[st.chainPre], "loop-guard") >= 0 {
-		t.Fatalf("a plain NIC's peer is another router and the hop count ends the loop; guarding eth1 instead costs every packet arriving on it the set's mark: %v", plain.chainOps[st.chainPre])
+	if indexOfPrefix(plain.chainOps[st.chainPre], "loop-guard") < 0 {
+		t.Fatalf("every egress interface guards traffic arriving on it: %v", plain.chainOps[st.chainPre])
 	}
-
 	tunnel := &mockRouteBackend{}
 	tunnelSet := familyTestSet()
 	tunnelSet.Routing.EgressInterface = "xray0"
@@ -164,8 +158,8 @@ func TestEgressLoopGuardSurvivesAMissingInterface(t *testing.T) {
 	if !routeWantsEgressLoopGuard("notyet0") {
 		t.Fatal("an interface b4 has never seen may come back as a tunnel, so install the guard while its kind is unknown")
 	}
-	if routeWantsEgressLoopGuard("eth1") {
-		t.Fatal("a plain NIC's peer is another router and the hop count ends the loop, so no guard")
+	if !routeWantsEgressLoopGuard("eth1") {
+		t.Fatal("every egress interface wants the guard, including a plain NIC")
 	}
 	set := familyTestSet()
 	set.Routing.EgressInterface = "notyet0"
@@ -175,11 +169,11 @@ func TestEgressLoopGuardSurvivesAMissingInterface(t *testing.T) {
 	}
 	set.Routing.EgressInterface = "eth1"
 	plain := buildRouteState(cfg, set)
-	if plain.loopGuard {
-		t.Fatal("a plain NIC installs no guard, so the state must say so")
+	if !plain.loopGuard {
+		t.Fatal("a plain NIC installs the guard, so the state must say so")
 	}
 	if routeStateEqual(missing, plain) {
-		t.Fatal("missing-iface and plain-NIC states must differ, or a NIC appearing where nothing was keeps the stale guard and drops the set's ingress mark")
+		t.Fatal("missing-iface and plain-NIC states must differ by interface, or a NIC appearing where nothing was keeps stale state")
 	}
 }
 

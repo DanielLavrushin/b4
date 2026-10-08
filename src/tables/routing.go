@@ -1633,12 +1633,8 @@ func routeResolveTargets(set *config.SetConfig) []string {
 	return targets
 }
 
-// routeWantsEgressLoopGuard reports whether the pre chain must return traffic
-// arriving on the egress interface. A missing interface reads as wanting the
-// guard: it may come back as a tunnel, and the chains are not rebuilt for that
-// alone without tracking this decision.
 func routeWantsEgressLoopGuard(iface string) bool {
-	return iface != "" && netif.Of(iface) != netif.KindOther
+	return iface != ""
 }
 func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, sources []string) error {
 	if st.mark == 0 || st.table <= 0 {
@@ -1686,12 +1682,6 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	be.addClaimedBypassRule(st.chainPre, 0)
 
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
-	// A loop needs a peer that answers each turn by opening a connection of its
-	// own, and only a tun/tap/wg device has one: the program behind it answers
-	// until memory is gone. A plain NIC's peer is another router, so the hop
-	// count ends the loop - and guarding there costs every packet arriving on
-	// that NIC the set's mark, which is the whole point when the NIC is also the
-	// ingress the set serves.
 	if st.loopGuard &&
 		!be.addEgressLoopGuard(st.chainPre, st.iface, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled) && len(sources) == 0 {
 		return fmt.Errorf("the guard on traffic arriving from %s did not install, and without it every packet %s hands back for a destination in this set is marked again and sent straight back to it", st.iface, st.iface)

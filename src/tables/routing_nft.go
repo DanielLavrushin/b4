@@ -320,6 +320,7 @@ func (b *routeNftBackend) addMarkFallbackRule(chain string, v6 bool, setName str
 	} else {
 		args = append(args, "ip", "daddr", "@"+sn)
 	}
+	args = append(args, "ct", "direction", "original")
 	args = append(args, routeNftSetMarkArgs(mark)...)
 	runLogged("routing: add mark fallback rule "+chain, append([]string{"nft"}, args...)...)
 }

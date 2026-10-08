@@ -303,7 +303,8 @@ func (b *routeIptBackend) addMarkFallbackRule(chain string, v6 bool, setName str
 	}
 	args = append(args,
 		"-m", "mark", "--mark", fmt.Sprintf("0x0/0x%x", routeSetMarkMask),
-		"-m", "set", "--match-set", setName, "dst")
+		"-m", "set", "--match-set", setName, "dst",
+		"-m", "conntrack", "--ctdir", "ORIGINAL")
 	args = append(args, routeIptSetMarkArgs(mark)...)
 	runLogged("routing: add mark fallback rule "+chain, append([]string{cmd}, args...)...)
 }
