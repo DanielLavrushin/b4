@@ -113,13 +113,13 @@ func TestRuleDeletionRefusesMarkOrTableZero(t *testing.T) {
 	routeDelRuleLoopExec(true, "0x66/0x27fff", "0")
 	routeDelRuleLoopExec(false, "0x0/0x27fff", "120")
 	routeDelRuleLoopExec(false, "0x66/0x27fff", "")
-	routeDeleteOwnRoutes("wg0", "", "0")
+	routeDeleteOwnRoutes("wg0", "0")
 	if len(*ops) != 0 {
 		t.Errorf("with mark 0 or table 0 `ip rule del` removes every rule, main and local included, and `ip route del default` works on the main table; b4 ran %v", *ops)
 	}
 
 	routeDelRuleLoopExec(false, "0x66/0x27fff", "120")
-	routeDeleteOwnRoutes("wg0", "", "120")
+	routeDeleteOwnRoutes("wg0", "120")
 	if len(*ops) == 0 {
 		t.Errorf("a real mark and table must still be cleaned up")
 	}

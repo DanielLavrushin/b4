@@ -167,6 +167,5 @@ func TestSweepWithoutRouteProtocolsLeavesDefaultRoutesAlone(t *testing.T) {
 		t.Fatalf("the orphaned rule must still be deleted, got %v", f.deleted)
 	}
 	f.mustRunOnce(t, fmt.Sprintf("ip route del blackhole default metric %s table %d", routeKillSwitchMetric, table))
-	f.mustRunOnce(t, fmt.Sprintf("ip route del 10.8.0.1 dev wg0 table %d", table))
-	f.mustNotTouch(t, "flush", "route del default", "tun0", "eth1", "10.99", "10.9.0.1")
+	f.mustNotTouch(t, "flush", "route del default", "tun0", "eth1", "10.99", "10.9.0.1", "10.8.0.1")
 }

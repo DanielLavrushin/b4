@@ -208,7 +208,7 @@ func TestRouteLineBelongsToIface(t *testing.T) {
 			{"default dev xray0 scope link", "xray0", true},
 			{"default via 10.8.0.1 dev xray0 src 10.8.0.2", "xray0", true},
 			{"blackhole default metric 4096", "xray0", true},
-			{"10.8.0.1 dev xray0 scope link", "xray0", true},
+			{"10.8.0.1 dev xray0 scope link", "xray0", false},
 			{"default via 192.168.2.1 dev tun13", "tun0", false},
 			{"192.168.1.0/24 dev br0 scope link", "tun0", false},
 			{"10.9.0.1 dev eth1 scope link", "tun0", false},

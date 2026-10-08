@@ -292,6 +292,9 @@ func TestOutChainRefusesAPacketAnotherSetAlreadyClaimed(t *testing.T) {
 }
 
 func TestRouteLineBelongsToIfaceOnlyClaimsItsOwnBlackhole(t *testing.T) {
+	prev := routeIPSupportsProto
+	t.Cleanup(func() { routeIPSupportsProto = prev })
+	routeIPSupportsProto = func() bool { return false }
 	for _, c := range []struct {
 		line string
 		ours bool
@@ -334,7 +337,7 @@ func TestCleanupTakesBackOnlyTheRoutesB4Added(t *testing.T) {
 	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
 	t.Cleanup(func() { runLogged = prev })
 
-	routeDeleteOwnRoutes("wg0", "", "137")
+	routeDeleteOwnRoutes("wg0", "137")
 
 	joined := strings.Join(cmds, "\n")
 	if strings.Contains(joined, "route flush table") {

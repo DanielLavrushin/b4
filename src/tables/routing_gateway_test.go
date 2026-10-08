@@ -15,7 +15,12 @@ func captureRoutes(t *testing.T, ifaceRoutes string, refuseVia bool) *[]string {
 
 	prevRun := run
 	t.Cleanup(func() { run = prevRun })
-	run = func(args ...string) (string, error) { return ifaceRoutes, nil }
+	run = func(args ...string) (string, error) {
+		if contains(args, "main") {
+			return "10.99.0.0/24 dev mihomo proto kernel scope link\n192.0.2.0/24 dev eth1 proto kernel scope link\n2001:db8::/64 dev mihomo proto kernel scope link\n", nil
+		}
+		return ifaceRoutes, nil
+	}
 	prevProto := routeIPSupportsProto
 	t.Cleanup(func() { routeIPSupportsProto = prevProto })
 	routeIPSupportsProto = func() bool { return false }
@@ -52,11 +57,8 @@ func TestASetGatewayBecomesTheNextHopOfItsDefaultRoute(t *testing.T) {
 	cmds := captureRoutes(t, "", false)
 	routeReplaceDefaultRoute("mihomo", "10.99.0.2", "10.99.0.1", "132", false)
 	got := joined(*cmds)
-
-	// A TUN carries a host address, so nothing resolves the next hop for the
-	// kernel and `via` is refused unless the route to it is written first.
-	if !strings.Contains(got, "route replace 10.99.0.1 dev mihomo scope link") || !strings.Contains(got, "table 132") {
-		t.Errorf("the next hop itself must be routed into the set's table, got:\n%s", got)
+	if strings.Contains(got, "scope link") {
+		t.Errorf("the gateway needs no on-link route of its own, got:\n%s", got)
 	}
 	if !strings.Contains(got, "route replace default via 10.99.0.1 dev mihomo") || !strings.Contains(got, "src 10.99.0.2") {
 		t.Errorf("the set's default route must go through the gateway it asked for, got:\n%s", got)
@@ -65,82 +67,18 @@ func TestASetGatewayBecomesTheNextHopOfItsDefaultRoute(t *testing.T) {
 		t.Errorf("the gateway route must be the last one written, so a refusal falls through to the fallback: %q", got)
 	}
 }
-
-func TestTheNextHopRouteIsTakenBackWithTheDefaultOne(t *testing.T) {
+func TestOwnRoutesTakeBackTheDefaultAndTheKillSwitch(t *testing.T) {
 	cmds := captureRoutes(t, "", false)
-
-	routeDeleteOwnRoutes("mihomo", "10.99.0.1", "132")
-
+	routeDeleteOwnRoutes("mihomo", "132")
 	got := joined(*cmds)
-
-	// Left behind, this one sits in the table until the number is handed to
-	// another set, and a set that changed its gateway would collect them.
-	if !strings.Contains(got, "ip route del 10.99.0.1 dev mihomo table 132") {
-		t.Errorf("the IPv4 next hop must be removed with the default route, got:\n%s", got)
+	if !strings.Contains(got, "ip route del default dev mihomo table 132") {
+		t.Errorf("the IPv4 default route must be removed, got:\n%s", got)
 	}
-	if strings.Contains(got, "ip -6 route del 10.99.0.1") {
-		t.Errorf("an IPv4 next hop has no place in the IPv6 route table, got:\n%s", got)
+	if !strings.Contains(got, "blackhole default metric 4096 table 132") {
+		t.Errorf("the kill switch must be removed with the default route, got:\n%s", got)
 	}
-}
-
-// gatewayRebuildCommands rebuilds set s1 from gateway 10.99.0.1 to newGW and
-// returns the ip commands the rebuild issued. Every gateway-rebuild test goes
-// through the same stubs and the same cached states, so they live here rather
-// than copied into each test.
-func gatewayRebuildCommands(t *testing.T, newGW string, others map[string]routeState) *[]string {
-	t.Helper()
-	cmds := captureRoutes(t, "", false)
-	hasBinaryCache.Store("ip", true)
-	t.Cleanup(func() { hasBinaryCache.Delete("ip") })
-	saved := routeRuleCache
-	t.Cleanup(func() { routeRuleCache = saved })
-
-	old := routeState{setID: "s1", mark: 0x6c53, table: 190, iface: "mihomo", egressGW: "10.99.0.1"}
-	cur := old
-	cur.egressGW = newGW
-	routeRuleCache = map[string]routeState{"s1": cur}
-	for id, st := range others {
-		routeRuleCache[id] = st
-	}
-
-	routeCleanupForRebuild(&mockRouteBackend{}, old, cur)()
-	return cmds
-}
-
-// A gateway change keeps the mark and the table, so nothing else in the
-// rebuild touches the routes: the default is replaced in place, and without
-// this the route to the old next hop keeps answering for that address until
-// the table number is handed to another set.
-func TestChangingTheGatewayRemovesTheOldNextHopsRoute(t *testing.T) {
-	cmds := gatewayRebuildCommands(t, "10.99.0.2", nil)
-
-	want := "ip route del 10.99.0.1 dev mihomo table 190"
-	if len(*cmds) != 1 || (*cmds)[0] != want {
-		t.Errorf("only the old next hop's route may go, so the replacement default keeps standing; got %q", *cmds)
-	}
-}
-
-// The next hop is shared the way the table is: a set still configured with it
-// needs the route in the table for its own default.
-func TestANextHopAnotherSetStillUsesIsKept(t *testing.T) {
-	cmds := gatewayRebuildCommands(t, "10.99.0.2", map[string]routeState{
-		"s2": {mark: 0x6c54, table: 190, iface: "mihomo", egressGW: "10.99.0.1"},
-	})
-
-	if len(*cmds) != 0 {
-		t.Errorf("a next hop set s2 still routes through must stay in table 190, got %q", *cmds)
-	}
-}
-
-// Clearing the gateway is the same leak through the other door: the set goes
-// back to a direct default, and the route to the dropped next hop no longer
-// serves any default in the table.
-func TestClearingTheGatewayRemovesItsNextHopsRoute(t *testing.T) {
-	cmds := gatewayRebuildCommands(t, "", nil)
-
-	want := "ip route del 10.99.0.1 dev mihomo table 190"
-	if len(*cmds) != 1 || (*cmds)[0] != want {
-		t.Errorf("only the dropped next hop's route may go, so the direct default keeps standing; got %q", *cmds)
+	if strings.Contains(got, "scope link") || strings.Contains(got, "10.99.0.1") {
+		t.Errorf("no next-hop route exists anymore, got:\n%s", got)
 	}
 }
 
@@ -159,15 +97,10 @@ func TestASetGatewayWinsOverTheOneFoundOnTheInterface(t *testing.T) {
 
 func TestAnIPv6GatewayReachesOnlyTheIPv6Route(t *testing.T) {
 	cmds := captureRoutes(t, "", false)
-
 	routeReplaceDefaultRoute("mihomo", "2001:db8::2", "2001:db8::1", "132", true)
-
 	got := joined(*cmds)
-	// The gateway is named once for both families, so the v6 call has to reach
-	// `ip -6`: without the flag the next hop lands in the IPv4 table and the
-	// set's v6 traffic never goes through the gateway at all.
-	if !strings.Contains(got, "ip -6 route replace 2001:db8::1 dev mihomo scope link") {
-		t.Errorf("the IPv6 next hop must be routed into the set's table, got:\n%s", got)
+	if strings.Contains(got, "scope link") {
+		t.Errorf("the gateway needs no on-link route of its own, got:\n%s", got)
 	}
 	if !strings.Contains(got, "ip -6 route replace default via 2001:db8::1 dev mihomo") || !strings.Contains(got, "src 2001:db8::2") {
 		t.Errorf("the set's IPv6 default route must go through the gateway it asked for, got:\n%s", got)
@@ -179,18 +112,14 @@ func TestAnIPv6GatewayReachesOnlyTheIPv6Route(t *testing.T) {
 
 func TestARefusedGatewayLeavesTheSetWithARoute(t *testing.T) {
 	cmds := captureRoutes(t, "", true)
-	routeReplaceDefaultRoute("mihomo", "10.99.0.2", "192.0.2.254", "132", false)
+	routeReplaceDefaultRoute("mihomo", "10.99.0.2", "10.99.0.9", "132", false)
 	got := joined(*cmds)
-
-	// The table must never be left without a default route: an empty table
-	// falls through to the main one and the set's traffic leaves by the
-	// ordinary uplink, which is what routing exists to prevent.
 	fallback := last(cmds)
 	if !strings.Contains(fallback, "route replace default dev mihomo") || contains(strings.Fields(fallback), "via") {
 		t.Errorf("a refused gateway must fall back to the interface route, got %q", fallback)
 	}
-	if !strings.Contains(got, "route replace 192.0.2.254 dev mihomo scope link") {
-		t.Errorf("the next hop route is still worth keeping in place, got:\n%s", got)
+	if strings.Contains(got, "scope link") {
+		t.Errorf("the refused gateway leaves no on-link route behind, got:\n%s", got)
 	}
 }
 
@@ -246,5 +175,30 @@ func TestASetWithoutAGatewayKeepsTheMarkAndTableItAlreadyHad(t *testing.T) {
 	}
 	if got := routeIfaceAutoKey("eth1", "192.0.2.10", "192.0.2.1", true); got != "eth1|192.0.2.10|gw=192.0.2.1|ks" {
 		t.Errorf("the gateway must sit before the kill switch: got %q", got)
+	}
+}
+func TestAGatewayIsReachableThroughItsOwnSubnetOrMainTable(t *testing.T) {
+	prev := run
+	t.Cleanup(func() { run = prev })
+	run = func(args ...string) (string, error) {
+		return "192.0.2.0/24 dev b4test0 proto kernel scope link\n203.0.113.0/24 dev other0 proto kernel scope link\n", nil
+	}
+	for _, c := range []struct {
+		iface, gw string
+		ok        bool
+	}{
+		{"b4test0", "192.0.2.5", true},
+		{"lo", "127.0.0.2", true},
+		{"b4test0", "198.51.100.5", false},
+		{"other0", "192.0.2.5", false},
+		{"b4test0", "192.0.2.0", false},
+		{"b4test0", "192.0.2.255", false},
+		{"b4test0", "127.0.0.1", false},
+		{"", "192.0.2.5", false},
+		{"b4test0", "not-an-ip", false},
+	} {
+		if got := routeGatewayReachable(c.iface, c.gw); got != c.ok {
+			t.Errorf("routeGatewayReachable(%q, %q) = %v, want %v", c.iface, c.gw, got, c.ok)
+		}
 	}
 }

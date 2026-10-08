@@ -694,16 +694,9 @@ func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 		}
 		if old.table != cur.table {
 			if routeTableShareCount(old.table) == 0 {
-				routeDeleteOwnRoutes(old.iface, old.egressGW, tableStr)
+				routeDeleteOwnRoutes(old.iface, tableStr)
 			}
 			return
-		}
-		// The replace takes the default, never the route to the old next
-		// hop: that route is a prefix of its own, so it keeps answering for
-		// its address in the table while only the gateway that replaced it
-		// is left to remember it by.
-		if old.egressGW != "" && old.egressGW != cur.egressGW && routeNextHopShareCount(old.table, old.iface, old.egressGW) == 0 {
-			routeDeleteNextHop(old.iface, old.egressGW, tableStr)
 		}
 	}
 }
@@ -2125,15 +2118,11 @@ func routeHashlimitName(chain string, v6 bool) string {
 	return fmt.Sprintf("b4rl%08x", h.Sum32())
 }
 
-// routeDeleteOwnRoutes takes out what b4 put in the set's table. gw is the
-// next hop the set was given; its own route goes with the default one, or it
-// would sit in the table as long as the number is not handed to another set.
-func routeDeleteOwnRoutes(iface, gw, table string) {
+func routeDeleteOwnRoutes(iface, table string) {
 	if routeTableArgUnset(table) {
 		return
 	}
 	for _, fam := range routeFamilyArgs(true, true) {
-		routeDeleteNextHopFam(fam, iface, gw, table)
 		base := append([]string{"ip"}, fam.flag...)
 		if iface != "" {
 			args := append(append([]string{}, base...), "route", "del", "default", "dev", iface, "table", table)
@@ -2142,29 +2131,6 @@ func routeDeleteOwnRoutes(iface, gw, table string) {
 		args := append(append([]string{}, base...), "route", "del", "blackhole", "default", "metric", routeKillSwitchMetric, "table", table)
 		runLogged("routing: remove kill switch "+fam.name, args...)
 	}
-}
-
-// routeDeleteNextHop takes the on-link route to a set's next hop out of its
-// table on its own. The route is a prefix of its own, so replacing the
-// default neither matches nor removes it: a set that changed its gateway
-// leaves it behind unless it is named here, and the default that replaced it
-// must not go with it.
-func routeDeleteNextHop(iface, gw, table string) {
-	if routeTableArgUnset(table) {
-		return
-	}
-	for _, fam := range routeFamilyArgs(true, true) {
-		routeDeleteNextHopFam(fam, iface, gw, table)
-	}
-}
-
-func routeDeleteNextHopFam(fam routeFamily, iface, gw, table string) {
-	hop := routeAddrForFamily(gw, fam.flag != nil)
-	if hop == "" {
-		return
-	}
-	args := append(append([]string{"ip"}, fam.flag...), "route", "del", hop, "dev", iface, "table", table)
-	runLogged("routing: remove next hop "+fam.name, args...)
 }
 
 func routeMarkShareCount(mark uint32) int {
@@ -2193,22 +2159,6 @@ func routeTableShareCount(table int) int {
 	return n
 }
 
-// routeNextHopShareCount counts the sets whose default in table still runs
-// through gw off iface: they are the ones the on-link route to that next hop
-// serves, and it stays as long as one of them is cached.
-func routeNextHopShareCount(table int, iface, gw string) int {
-	n := 0
-	for _, st := range routeRuleCache {
-		if config.RoutingUsesTProxy(st.mode) {
-			continue
-		}
-		if st.table == table && st.iface == iface && st.egressGW == gw {
-			n++
-		}
-	}
-	return n
-}
-
 func routeCleanupRule(be routeBackend, st routeState, keepSets bool) {
 	routeReleaseEgressAddress(st.iface, st.egressIP)
 	routeReleaseRPFilter(st.iface, st.setID)
@@ -2218,7 +2168,7 @@ func routeCleanupRule(be routeBackend, st routeState, keepSets bool) {
 			routeDelRuleAllForms(st.mark, tableStr)
 		}
 		if routeTableShareCount(st.table) <= 1 {
-			routeDeleteOwnRoutes(st.iface, st.egressGW, tableStr)
+			routeDeleteOwnRoutes(st.iface, tableStr)
 		}
 	}
 
@@ -2632,16 +2582,11 @@ func routeReplaceDefaultRoute(iface, src, gw, table string, ipv6 bool) {
 	}
 
 	if gw != "" {
-		// A next hop has to resolve before "via" is accepted. With a subnet
-		// address on the interface the kernel finds it in the local table, but a
-		// point-to-point or TUN interface carries a host address and has no such
-		// entry, so the route to the next hop itself goes in first.
-		nh := append([]string{}, ipCmd...)
-		nh = append(nh, "route", "replace", gw, "dev", iface, "scope", "link")
-		nh = append(nh, routeProtoArgs()...)
-		nh = append(nh, "table", table)
-		runLogged(routeLabel+" (next hop)", nh...)
-		if runLogged(routeLabel+" (via gw)", viaArgs(gw)...) {
+		ok := routeGatewayReachable(iface, gw)
+		if ok {
+			ok = runLogged(routeLabel+" (via gw)", viaArgs(gw)...)
+		}
+		if ok {
 			return
 		}
 		log.Warnf("Routing: %s was refused as the next hop for table %s on %s, so b4 is falling back to the route the interface already has; check that it is an address %s can reach", gw, table, iface, iface)
@@ -2777,6 +2722,137 @@ func routeGetIfaceAddr(iface string, wantV6 bool) string {
 		}
 	}
 	return best
+}
+
+func routeGatewayReachable(iface, gw string) bool {
+	target := net.ParseIP(gw)
+	if target == nil || iface == "" {
+		return false
+	}
+	v6 := target.To4() == nil
+	if routeIPIsLocal(target) {
+		return false
+	}
+	prefix, ok := routeIfaceCovers(iface, target)
+	if !ok {
+		prefix, ok = routeMainScopeLinkCovers(iface, target, v6)
+	}
+	if !ok {
+		return false
+	}
+	if base := routeNetworkAddr(target, prefix); base == nil || !base.Equal(target) {
+		if v6 || !routeIsSubnetBroadcast(prefix, target) {
+			return true
+		}
+		return false
+	}
+	return false
+}
+func routeIPIsLocal(target net.IP) bool {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+	for _, ifc := range ifaces {
+		addrs, err := ifc.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			if ipNet, ok := a.(*net.IPNet); ok && ipNet.IP != nil && ipNet.IP.Equal(target) {
+				return true
+			}
+		}
+	}
+	return false
+}
+func routeIfaceCovers(iface string, target net.IP) (net.IPNet, bool) {
+	ifaceObj, err := net.InterfaceByName(iface)
+	if err != nil {
+		return net.IPNet{}, false
+	}
+	addrs, err := ifaceObj.Addrs()
+	if err != nil {
+		return net.IPNet{}, false
+	}
+	for _, a := range addrs {
+		if ipNet, ok := a.(*net.IPNet); ok && ipNet != nil && ipNet.Contains(target) {
+			return *ipNet, true
+		}
+	}
+	return net.IPNet{}, false
+}
+func routeMainScopeLinkCovers(iface string, target net.IP, v6 bool) (net.IPNet, bool) {
+	args := []string{"ip"}
+	if v6 {
+		args = append(args, "-6")
+	}
+	args = append(args, "route", "show", "table", "main")
+	out, err := run(args...)
+	if err != nil {
+		return net.IPNet{}, false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		var prefix *net.IPNet
+		if _, p, err := net.ParseCIDR(fields[0]); err == nil {
+			prefix = p
+		} else if ip := net.ParseIP(fields[0]); ip != nil {
+			bits := 32
+			if ip.To4() == nil {
+				bits = 128
+			}
+			prefix = &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)}
+		}
+		if prefix == nil || !prefix.Contains(target) {
+			continue
+		}
+		if routeRuleField(line, "dev") != iface {
+			continue
+		}
+		linked := false
+		for i := 0; i+1 < len(fields); i++ {
+			if fields[i] == "scope" && fields[i+1] == "link" {
+				linked = true
+				break
+			}
+		}
+		if !linked {
+			continue
+		}
+		return *prefix, true
+	}
+	return net.IPNet{}, false
+}
+func routeNetworkAddr(ip net.IP, prefix net.IPNet) net.IP {
+	ones, bits := prefix.Mask.Size()
+	if v4 := ip.To4(); v4 != nil && bits == 32 {
+		return v4.Mask(net.CIDRMask(ones, 32))
+	}
+	if bits == 128 {
+		return ip.Mask(net.CIDRMask(ones, 128))
+	}
+	return nil
+}
+func routeIsSubnetBroadcast(prefix net.IPNet, target net.IP) bool {
+	ones, bits := prefix.Mask.Size()
+	if bits != 32 {
+		return false
+	}
+	base := target.To4()
+	netIP := prefix.IP.To4()
+	if base == nil || netIP == nil {
+		return false
+	}
+	mask := net.CIDRMask(ones, 32)
+	bcast := make(net.IP, 4)
+	for i := range 4 {
+		bcast[i] = netIP[i] | ^mask[i]
+	}
+	return bcast.Equal(base)
 }
 
 func routeMarkMatchesOwn(cfg *config.Config, mark uint32) bool {
@@ -2940,7 +3016,7 @@ func routeLineBelongsToIface(line, iface string) bool {
 		return false
 	case "default":
 	default:
-		return routeHostRouteBelongsToIface(fields, iface)
+		return false
 	}
 	for i := 0; i+1 < len(fields); i++ {
 		if fields[i] == "dev" {
@@ -2948,28 +3024,6 @@ func routeLineBelongsToIface(line, iface string) bool {
 		}
 	}
 	return false
-}
-
-// routeHostRouteBelongsToIface recognises the on-link route b4 adds for an
-// explicit gateway: "<gw> dev <iface> scope link". A subnet prefix, a routed
-// via, or a missing scope link stays foreign: without a protocol tag that is
-// all there is to tell b4's next hop from somebody else's host entry.
-func routeHostRouteBelongsToIface(fields []string, iface string) bool {
-	if net.ParseIP(fields[0]) == nil {
-		return false
-	}
-	var dev, scope string
-	for i := 0; i+1 < len(fields); i++ {
-		switch fields[i] {
-		case "dev":
-			dev = fields[i+1]
-		case "scope":
-			scope = fields[i+1]
-		case "via":
-			return false
-		}
-	}
-	return dev != "" && dev == iface && scope == "link"
 }
 
 func routeTableTakenByOthers(table int, iface string, refs map[string][]string) bool {
