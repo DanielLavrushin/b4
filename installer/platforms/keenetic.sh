@@ -172,7 +172,7 @@ platform_keenetic_install_hooks() {
 #!/bin/sh
 [ "$type" = "iptables" ] || [ "$type" = "ip6tables" ] || exit 0
 case "$table" in
-mangle | nat | filter) ;;
+mangle | nat | filter | raw) ;;
 *) exit 0 ;;
 esac
 for f in /var/run/b4.pid /run/b4.pid /tmp/b4.pid /opt/var/run/b4.pid; do

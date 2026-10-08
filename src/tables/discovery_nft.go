@@ -89,16 +89,20 @@ func (b *discoveryNftBackend) apply(flowMark uint, injectedMark uint, queueStart
 }
 
 func (b *discoveryNftBackend) keepOutOfQueueChain(flowHex, injectedHex string, flowMark, injectedMark uint) {
-	b.deleteDiscoveryRulesFromChain(nftChainName, flowMark, injectedMark)
-	for _, mark := range []string{injectedHex, flowHex} {
-		if _, err := run("nft", "insert", "rule", "inet", nftTableName, nftChainName, "meta", "mark", mark, "return"); err != nil {
-			log.Tracef("Discovery: no %s chain to keep mark %s out of the packet queue: %v", nftChainName, mark, err)
+	for _, chain := range []string{nftChainName, nftRawPreChain, nftRawOutChain} {
+		b.deleteDiscoveryRulesFromChain(chain, flowMark, injectedMark)
+		for _, mark := range []string{injectedHex, flowHex} {
+			if _, err := run("nft", "insert", "rule", "inet", nftTableName, chain, "meta", "mark", mark, "return"); err != nil {
+				log.Tracef("Discovery: no %s chain to keep mark %s out of the packet queue: %v", chain, mark, err)
+			}
 		}
 	}
 }
 
 func (b *discoveryNftBackend) clear(flowMark uint, injectedMark uint) {
 	b.deleteDiscoveryRulesFromChain(nftChainName, flowMark, injectedMark)
+	b.deleteDiscoveryRulesFromChain(nftRawPreChain, flowMark, injectedMark)
+	b.deleteDiscoveryRulesFromChain(nftRawOutChain, flowMark, injectedMark)
 	b.deleteDiscoveryRulesFromChain("output", flowMark, injectedMark)
 	b.deleteDiscoveryRulesFromChain("prerouting", flowMark, injectedMark)
 	_, _ = run("nft", "flush", "chain", "inet", nftTableName, discoveryChainNFT)

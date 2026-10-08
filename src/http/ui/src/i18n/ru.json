@@ -889,6 +889,7 @@
       "capPacketQueue": "Перехват пакетов (NFQUEUE)",
       "capTransparentProxy": "Прозрачный прокси (TPROXY)",
       "capReplySideBypass": "Обход обратного трафика (connmark)",
+      "capDnsBeforeConntrack": "DNS-запросы в очереди раньше conntrack (raw)",
       "capAvailable": "доступно",
       "capUnavailable": "недоступно",
       "capInstallHint": "Установите: {{packages}}",

@@ -42,6 +42,8 @@ var kmodPackageTable = map[string]kmodPackageSet{
 	"xt_DSCP":      {kernel: []string{"kmod-ipt-ipopt"}, userspace: []string{"iptables-mod-ipopt"}},
 	"nft_fib_inet": {kernel: []string{"kmod-nft-fib"}},
 	"nft_fib":      {kernel: []string{"kmod-nft-fib"}},
+	"iptable_raw":  {kernel: []string{"kmod-ipt-raw"}},
+	"ip6table_raw": {kernel: []string{"kmod-ipt-raw6"}},
 }
 
 type kmodState int

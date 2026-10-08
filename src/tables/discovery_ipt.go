@@ -100,11 +100,13 @@ func (b *discoveryIptBackend) apply(flowMark uint, injectedMark uint, queueStart
 }
 
 func discoveryKeepOutOfQueueChain(bin, flow, injected string) {
-	discoveryDelRuleLoop(bin, iptChainName, "-m", "mark", "--mark", flow, "-j", "RETURN")
-	discoveryDelRuleLoop(bin, iptChainName, "-m", "mark", "--mark", injected, "-j", "RETURN")
-	for _, mark := range []string{injected, flow} {
-		if _, err := run(bin, "-w", "-t", "mangle", "-I", iptChainName, "1", "-m", "mark", "--mark", mark, "-j", "RETURN"); err != nil {
-			log.Tracef("Discovery: %s has no %s chain to keep mark %s out of the packet queue: %v", bin, iptChainName, mark, err)
+	for _, chain := range []struct{ table, name string }{{"mangle", iptChainName}, {"raw", iptRawChainName}} {
+		discoveryDelTableRuleLoop(bin, chain.table, chain.name, "-m", "mark", "--mark", flow, "-j", "RETURN")
+		discoveryDelTableRuleLoop(bin, chain.table, chain.name, "-m", "mark", "--mark", injected, "-j", "RETURN")
+		for _, mark := range []string{injected, flow} {
+			if _, err := run(bin, "-w", "-t", chain.table, "-I", chain.name, "1", "-m", "mark", "--mark", mark, "-j", "RETURN"); err != nil {
+				log.Tracef("Discovery: %s has no %s chain to keep mark %s out of the packet queue: %v", bin, chain.name, mark, err)
+			}
 		}
 	}
 }
@@ -125,13 +127,19 @@ func (b *discoveryIptBackend) clear(flowMark uint, injectedMark uint) {
 		discoveryDelRuleLoop(bin, "PREROUTING", "-j", discoveryChainIPT)
 		discoveryDelRuleLoop(bin, iptChainName, "-m", "mark", "--mark", flow, "-j", "RETURN")
 		discoveryDelRuleLoop(bin, iptChainName, "-m", "mark", "--mark", injected, "-j", "RETURN")
+		discoveryDelTableRuleLoop(bin, "raw", iptRawChainName, "-m", "mark", "--mark", flow, "-j", "RETURN")
+		discoveryDelTableRuleLoop(bin, "raw", iptRawChainName, "-m", "mark", "--mark", injected, "-j", "RETURN")
 		_, _ = run(bin, "-w", "-t", "mangle", "-F", discoveryChainIPT)
 		_, _ = run(bin, "-w", "-t", "mangle", "-X", discoveryChainIPT)
 	}
 }
 
 func discoveryDelRuleLoop(bin string, chain string, ruleArgs ...string) {
-	args := append([]string{bin, "-w", "-t", "mangle", "-D", chain}, ruleArgs...)
+	discoveryDelTableRuleLoop(bin, "mangle", chain, ruleArgs...)
+}
+
+func discoveryDelTableRuleLoop(bin, table, chain string, ruleArgs ...string) {
+	args := append([]string{bin, "-w", "-t", table, "-D", chain}, ruleArgs...)
 	for range 100 {
 		if _, err := run(args...); err != nil {
 			return

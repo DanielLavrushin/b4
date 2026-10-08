@@ -57,7 +57,7 @@ func netnsStartDevice(t *testing.T) *netnsDevice {
 		_, _ = cmd.Process.Wait()
 	})
 
-	self, _ := os.Readlink("/proc/self/ns/net")
+	self, _ := os.Readlink("/proc/thread-self/ns/net")
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		other, err := os.Readlink(fmt.Sprintf("/proc/%d/ns/net", dev.pid))
