@@ -721,7 +721,7 @@ var egressNextHops = []struct {
 		field: func(s *SetConfig) *string { return &s.Routing.EgressGateway },
 		new:   gatewaySet,
 		v6:    "2001:DB8::1",
-		bad:   []string{"192.0.2.1 10.0.0.1", "0.0.0.0", "127.0.0.1", "224.0.0.1", "255.255.255.255"},
+		bad:   []string{"192.0.2.1 10.0.0.1", "0.0.0.0", "127.0.0.1", "224.0.0.1", "255.255.255.255", "::", "::1", "ff02::1"},
 	},
 }
 
@@ -805,4 +805,47 @@ func TestValidate_EgressNextHopDropped(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidate_EgressGatewayAcceptsLinkLocal(t *testing.T) {
+	cfg := NewConfig()
+	set := gatewaySet()
+	set.Routing.EgressGateway = "fe80::1"
+	cfg.Sets = []*SetConfig{&set}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("fe80::1 is an ordinary IPv6 next hop and must validate: %v", err)
+	}
+	if got := cfg.Sets[0].Routing.EgressGateway; got != "fe80::1" {
+		t.Errorf("link-local gateway stored as %q", got)
+	}
+}
+func TestValidate_SharedManualTableWithDifferentGatewaysWarns(t *testing.T) {
+	mk := func(name, gw string) *SetConfig {
+		set := gatewaySet()
+		set.Id = name
+		set.Name = name
+		set.Routing.FWMark = 0x100
+		set.Routing.Table = 200
+		set.Routing.EgressGateway = gw
+		return &set
+	}
+	t.Run("different gateways clash", func(t *testing.T) {
+		got := findSharedTableGatewayClashes([]*SetConfig{mk("a", "192.0.2.1"), mk("b", "192.0.2.2")})
+		if len(got) != 1 || got[0].table != 200 {
+			t.Fatalf("expected one clash on table 200, got %+v", got)
+		}
+	})
+	t.Run("same gateway shares quietly", func(t *testing.T) {
+		got := findSharedTableGatewayClashes([]*SetConfig{mk("a", "192.0.2.1"), mk("b", "192.0.2.1")})
+		if len(got) != 0 {
+			t.Fatalf("one gateway per table needs no warning, got %+v", got)
+		}
+	})
+	t.Run("automatic tables do not clash", func(t *testing.T) {
+		a, b := mk("a", "192.0.2.1"), mk("b", "192.0.2.2")
+		a.Routing.FWMark, a.Routing.Table = 0, 0
+		if got := findSharedTableGatewayClashes([]*SetConfig{a, b}); len(got) != 0 {
+			t.Fatalf("automatic tables are allocated apart, got %+v", got)
+		}
+	})
 }

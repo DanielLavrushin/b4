@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -119,6 +120,43 @@ func tlsKeyIsEncrypted(path string) bool {
 			return true
 		}
 	}
+}
+
+type sharedTableGatewayClash struct {
+	names string
+	table int
+}
+
+func findSharedTableGatewayClashes(sets []*SetConfig) []sharedTableGatewayClash {
+	byTable := map[int]map[string][]string{}
+	for _, set := range sets {
+		if set == nil || set.Routing.Mode != RoutingModeInterface {
+			continue
+		}
+		if set.Routing.FWMark == 0 || set.Routing.Table == 0 || set.Routing.EgressGateway == "" {
+			continue
+		}
+		gws := byTable[set.Routing.Table]
+		if gws == nil {
+			gws = map[string][]string{}
+			byTable[set.Routing.Table] = gws
+		}
+		gws[set.Routing.EgressGateway] = append(gws[set.Routing.EgressGateway], set.Name)
+	}
+	var out []sharedTableGatewayClash
+	for table, gws := range byTable {
+		if len(gws) < 2 {
+			continue
+		}
+		var names []string
+		for _, ns := range gws {
+			names = append(names, ns...)
+		}
+		sort.Strings(names)
+		out = append(out, sharedTableGatewayClash{names: strings.Join(names, ", "), table: table})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].table < out[j].table })
+	return out
 }
 
 func (c *Config) Validate() error {
@@ -256,9 +294,15 @@ func (c *Config) Validate() error {
 				set.Routing.EgressGateway = ""
 			default:
 				set.Routing.EgressGateway = ip.String()
+				if ip.To4() == nil && !c.Queue.IPv6Enabled {
+					log.Warnf("Set '%s': routing.egress_gateway %q is IPv6, but IPv6 support is off, so no IPv6 rule is installed and the gateway is ignored", set.Name, set.Routing.EgressGateway)
+				} else if ip.To4() != nil && c.Queue.IPv6Enabled {
+					log.Warnf("Set '%s': routing.egress_gateway %q carries IPv4 only, so the set's IPv6 traffic leaves by the ordinary route past the set", set.Name, set.Routing.EgressGateway)
+				} else if ip.To4() == nil && c.Queue.IPv4Enabled {
+					log.Warnf("Set '%s': routing.egress_gateway %q carries IPv6 only, so the set's IPv4 traffic leaves by the ordinary route past the set", set.Name, set.Routing.EgressGateway)
+				}
 			}
 		}
-
 		if set.Routing.Enabled && set.Routing.Mode == RoutingModeProxy {
 			if set.Routing.Upstream.Port < 1 || set.Routing.Upstream.Port > 65535 {
 				v.addf(fmt.Sprintf("sets[%d].routing.upstream.port", setIdx), "out_of_range", map[string]any{"set": set.Name, "min": 1, "max": 65535}, "set %q: upstream proxy port must be 1-65535", set.Name)
@@ -365,6 +409,9 @@ func (c *Config) Validate() error {
 				return v.result()
 			}
 		}
+	}
+	for _, clash := range findSharedTableGatewayClashes(c.Sets) {
+		log.Warnf("Sets %s share routing table %d with different routing.egress_gateway values, so their default routes overwrite each other and the last written one wins for all of them; give each its own routing.table", clash.names, clash.table)
 	}
 
 	c.sanitizeEscalation()
