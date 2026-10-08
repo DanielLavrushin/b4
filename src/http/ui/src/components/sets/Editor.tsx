@@ -35,6 +35,7 @@ import {
 import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
 import {
   UnsavedChangesDialog,
+  buildChangeItems,
   groupChangeItems,
   type ChangeGroupDef,
   type UnsavedChangeItem,
@@ -243,12 +244,16 @@ export const SetEditorPage = ({
   );
   const labelsRef = useRef(new Map<string, ReactNode>());
   const snapshotLabels = useCallback(() => new Map(labelsRef.current), []);
-  const changeItems: UnsavedChangeItem[] = changedLeaves.map((leaf) => ({
-    path: leaf.path,
-    label: snapshotLabels().get(leaf.path) ?? leaf.path,
-    before: leaf.before,
-    after: leaf.after,
-  }));
+  const changeItems: UnsavedChangeItem[] = buildChangeItems(
+    changedLeaves,
+    snapshotLabels(),
+  );
+  const changedValues = new Map<string, { before: unknown; after: unknown }>(
+    changedLeaves.map((leaf) => [
+      leaf.path,
+      { before: leaf.before, after: leaf.after },
+    ]),
+  );
   const changeGroups = groupChangeItems(
     changeItems,
     SET_EDITOR_CHANGE_GROUPS,
@@ -262,6 +267,7 @@ export const SetEditorPage = ({
   return (
     <ChangedFieldsProvider
       changedPaths={changedPaths}
+      changedValues={changedValues}
       scope={`set:${editedSet.id}`}
       registry={labelsRef}
     >

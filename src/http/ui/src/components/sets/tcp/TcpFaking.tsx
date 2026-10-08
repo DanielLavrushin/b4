@@ -415,6 +415,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                   label={t("sets.faking.fakeSni.randomizeTlsRandom")}
                   checked={(config.faking.tls_mod || []).includes("rnd")}
                   path="faking.tls_mod"
+                  arrayItem="rnd"
                   onChange={(checked: boolean) => {
                     const current = config.faking.tls_mod || [];
                     const next = checked
@@ -429,6 +430,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                   label={t("sets.faking.fakeSni.dupSessionId")}
                   checked={(config.faking.tls_mod || []).includes("dupsid")}
                   path="faking.tls_mod"
+                  arrayItem="dupsid"
                   onChange={(checked: boolean) => {
                     const current = config.faking.tls_mod || [];
                     const next = checked

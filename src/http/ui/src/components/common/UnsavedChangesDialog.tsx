@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { ChangedLeaf } from "@utils";
 import {
   Box,
   Button,
@@ -16,6 +17,39 @@ export interface UnsavedChangeItem {
   label: ReactNode;
   before: unknown;
   after: unknown;
+}
+
+export function buildChangeItems(
+  leaves: ChangedLeaf[],
+  labels: ReadonlyMap<string, ReactNode>,
+): UnsavedChangeItem[] {
+  return leaves.flatMap((leaf) => {
+    const parent = {
+      path: leaf.path,
+      label: labels.get(leaf.path) ?? leaf.path,
+      before: leaf.before,
+      after: leaf.after,
+    };
+    if (!Array.isArray(leaf.before) && !Array.isArray(leaf.after)) {
+      return [parent];
+    }
+    const before = new Set(
+      (Array.isArray(leaf.before) ? leaf.before : []).map((v) => String(v)),
+    );
+    const after = new Set(
+      (Array.isArray(leaf.after) ? leaf.after : []).map((v) => String(v)),
+    );
+    const rows = [...new Set([...before, ...after])]
+      .filter((el) => labels.has(`${leaf.path}.${el}`))
+      .filter((el) => before.has(el) !== after.has(el))
+      .map((el) => ({
+        path: `${leaf.path}.${el}`,
+        label: labels.get(`${leaf.path}.${el}`) ?? el,
+        before: before.has(el),
+        after: after.has(el),
+      }));
+    return rows.length > 0 ? rows : [parent];
+  });
 }
 
 export interface UnsavedChangeGroup {

@@ -8,16 +8,24 @@ import {
   type ReactNode,
 } from "react";
 
+interface ChangedValues {
+  before: unknown;
+  after: unknown;
+}
+
 interface ChangedFieldsContextValue {
   changedPaths: ReadonlySet<string>;
+  changedValues: ReadonlyMap<string, ChangedValues>;
   registerLabel: (path: string, label: ReactNode) => void;
   snapshotLabels: () => ReadonlyMap<string, ReactNode>;
 }
 
 const EMPTY_CHANGED_PATHS: ReadonlySet<string> = new Set();
+const EMPTY_CHANGED_VALUES: ReadonlyMap<string, ChangedValues> = new Map();
 
 const defaultChangedFields: ChangedFieldsContextValue = {
   changedPaths: EMPTY_CHANGED_PATHS,
+  changedValues: EMPTY_CHANGED_VALUES,
   registerLabel: () => {},
   snapshotLabels: () => new Map(),
 };
@@ -27,11 +35,13 @@ const ChangedFieldsContext =
 
 export function ChangedFieldsProvider({
   changedPaths,
+  changedValues,
   scope,
   registry,
   children,
 }: Readonly<{
   changedPaths: ReadonlySet<string>;
+  changedValues?: ReadonlyMap<string, ChangedValues>;
   scope: string;
   registry?: { current: Map<string, ReactNode> };
   children: ReactNode;
@@ -54,8 +64,13 @@ export function ChangedFieldsProvider({
     ChangedFieldsContextValue["snapshotLabels"]
   >(() => new Map(labelsRef.current), [labelsRef]);
   const value = useMemo(
-    () => ({ changedPaths, registerLabel, snapshotLabels }),
-    [changedPaths, registerLabel, snapshotLabels],
+    () => ({
+      changedPaths,
+      changedValues: changedValues ?? EMPTY_CHANGED_VALUES,
+      registerLabel,
+      snapshotLabels,
+    }),
+    [changedPaths, changedValues, registerLabel, snapshotLabels],
   );
 
   return (
@@ -75,8 +90,31 @@ export function useChangedField(path?: string, label?: ReactNode): boolean {
   return Boolean(path && context.changedPaths.has(path));
 }
 
+export function useChangedArrayItem(
+  path?: string,
+  item?: string,
+  label?: ReactNode,
+): boolean {
+  const context = use(ChangedFieldsContext) ?? defaultChangedFields;
+  const childPath = path && item ? `${path}.${item}` : undefined;
+
+  useEffect(() => {
+    if (childPath && label !== undefined) {
+      context.registerLabel(childPath, label);
+    }
+  }, [context, childPath, label]);
+
+  if (!path || !item) return false;
+  const leaf = context.changedValues.get(path);
+  if (!leaf) return false;
+  const has = (value: unknown): boolean =>
+    Array.isArray(value) && (value as unknown[]).includes(item);
+  return has(leaf.after) !== has(leaf.before);
+}
+
 export function useChangedFields(): {
   changedPaths: ReadonlySet<string>;
+  changedValues: ReadonlyMap<string, ChangedValues>;
   snapshotLabels: () => ReadonlyMap<string, ReactNode>;
 } {
   return use(ChangedFieldsContext) ?? defaultChangedFields;

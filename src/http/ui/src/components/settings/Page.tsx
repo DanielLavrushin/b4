@@ -64,6 +64,7 @@ import {
 import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
 import {
   UnsavedChangesDialog,
+  buildChangeItems,
   groupChangeItems,
   type ChangeGroupDef,
   type UnsavedChangeItem,
@@ -288,12 +289,20 @@ export function SettingsPage() {
   );
   const labelsRef = useRef(new Map<string, ReactNode>());
   const snapshotLabels = useCallback(() => new Map(labelsRef.current), []);
-  const changeItems: UnsavedChangeItem[] = changedLeaves.map((leaf) => ({
-    path: leaf.path,
-    label: snapshotLabels().get(leaf.path) ?? leaf.path,
-    before: leaf.before,
-    after: leaf.after,
-  }));
+  const changeItems: UnsavedChangeItem[] = buildChangeItems(
+    changedLeaves,
+    snapshotLabels(),
+  );
+  const changedValues = useMemo(
+    () =>
+      new Map<string, { before: unknown; after: unknown }>(
+        changedLeaves.map((leaf) => [
+          leaf.path,
+          { before: leaf.before, after: leaf.after },
+        ]),
+      ),
+    [changedLeaves],
+  );
   const changeGroups = useMemo(
     () =>
       groupChangeItems(changeItems, SETTINGS_CHANGE_GROUPS).map((group) => ({
@@ -483,6 +492,7 @@ export function SettingsPage() {
   return (
     <ChangedFieldsProvider
       changedPaths={changedPaths}
+      changedValues={changedValues}
       scope="settings"
       registry={labelsRef}
     >

@@ -8,7 +8,7 @@ import {
 } from "@mui/material";
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
-import { useChangedField } from "@context/ChangedFieldsContext";
+import { useChangedArrayItem, useChangedField } from "@context/ChangedFieldsContext";
 
 interface B4SwitchProps extends Omit<SwitchProps, "checked" | "onChange"> {
   label: string;
@@ -16,6 +16,7 @@ interface B4SwitchProps extends Omit<SwitchProps, "checked" | "onChange"> {
   description?: string;
   disabled?: boolean;
   path?: string;
+  arrayItem?: string;
   onChange: (checked: boolean) => void;
   aiTopic?: string;
   aiContext?: Record<string, unknown>;
@@ -29,12 +30,19 @@ export const B4Switch = ({
   onChange,
   disabled,
   path,
+  arrayItem,
   aiTopic,
   aiContext,
   aiQuestion,
   ...props
 }: B4SwitchProps) => {
-  const changed = useChangedField(path, label);
+  const fieldChanged = useChangedField(arrayItem ? undefined : path, label);
+  const arrayItemChanged = useChangedArrayItem(
+    path,
+    arrayItem,
+    arrayItem ? label : undefined,
+  );
+  const changed = arrayItem ? arrayItemChanged : fieldChanged;
   const labelColor = disabled
     ? colors.text.disabled
     : changed
