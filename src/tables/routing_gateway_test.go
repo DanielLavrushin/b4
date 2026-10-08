@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 // captureRoutes installs the stubs the route helpers run through and returns
@@ -295,5 +297,36 @@ func TestGatewayMACComesFromAUsableNeighborEntry(t *testing.T) {
 		if got := routeGatewayMAC("eth1", "192.0.2.1"); got != c.want {
 			t.Errorf("routeGatewayMAC(%q) = %q, want %q", c.line, got, c.want)
 		}
+	}
+}
+func TestReinstallReemitsTheGatewaySetsRoutes(t *testing.T) {
+	prevRun, prevLogged := run, runLogged
+	t.Cleanup(func() { run, runLogged = prevRun, prevLogged })
+	hasBinaryCache.Store("ip", true)
+	t.Cleanup(func() { hasBinaryCache.Delete("ip") })
+	var cmds []string
+	run = func(args ...string) (string, error) {
+		if contains(args, "main") {
+			return "127.0.0.0/8 dev lo proto kernel scope link\n", nil
+		}
+		return "", nil
+	}
+	runLogged = func(op string, args ...string) bool {
+		cmds = append(cmds, strings.Join(args, " "))
+		return true
+	}
+	prevCache := routeRuleCache
+	t.Cleanup(func() { routeRuleCache = prevCache })
+	cfg := config.NewConfig()
+	set := familyTestSet()
+	set.Routing.EgressInterface = "lo"
+	set.Routing.EgressGateway = "127.0.0.2"
+	cfg.Sets = []*config.SetConfig{set}
+	st := buildRouteState(&cfg, set)
+	routeRuleCache = map[string]routeState{set.Id: st}
+	RoutingReinstallForInterface(&cfg, "lo")
+	joined := strings.Join(cmds, "\n")
+	if !strings.Contains(joined, "route replace default via 127.0.0.2 dev lo") {
+		t.Errorf("the reinstall must re-emit the gateway default, ran:\n%s", joined)
 	}
 }
