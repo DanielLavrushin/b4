@@ -368,17 +368,20 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 
-	if err := n.addQueueRule("prerouting", "udp", "dport", "53", "counter"); err != nil {
+	queriesFromRaw, err := n.addDNSQueryRules(markAccept)
+	if err != nil {
 		return err
 	}
+	noteDNSQueryPlacement(map[string]bool{backendNFTables: queriesFromRaw})
 
-	if err := n.addQueueRule("prerouting", "udp", "sport", "53", "counter"); err != nil {
+	answers := []string{"udp", "sport", "53", "counter"}
+	if queriesFromRaw {
+		answers = []string{"udp", "sport", "53", "udp", "dport", "!=", "53", "counter"}
+	}
+	if err := n.addQueueRule("prerouting", answers...); err != nil {
 		return err
 	}
-	if err := n.addQueueRule("output", "udp", "dport", "53", "counter"); err != nil {
-		return err
-	}
-	if err := n.addQueueRule("output", "udp", "sport", "53", "counter"); err != nil {
+	if err := n.addQueueRule("output", answers...); err != nil {
 		return err
 	}
 
@@ -400,6 +403,11 @@ func (n *NFTablesManager) apply() error {
 		udpPortExpr = udpPorts[0]
 	} else {
 		udpPortExpr = "{ " + strings.Join(udpPorts, ", ") + " }"
+	}
+	if queriesFromRaw {
+		if err := n.addRule(nftChainName, "udp", "dport", "53", "return"); err != nil {
+			return err
+		}
 	}
 	if err := n.addLimitedQueueRule(nftChainName, udpLimit, "udp", "dport", udpPortExpr); err != nil {
 		return err
@@ -471,6 +479,7 @@ func (n *NFTablesManager) clear(revertSysctls bool) error {
 	}
 
 	log.Tracef("NFTABLES: clearing rules")
+	noteDNSQueryPlacement(nil)
 
 	n.ClearMasquerade()
 	n.ClearDNSTCP()

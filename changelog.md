@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.85.1] - 2026-10-08
+
+- FIXED: **On routers with an older kernel, such as Keenetic, a device that asked for a name's IPv4 and IPv6 addresses at once often got no answer to the second question, so apps on it, like a video player on a TV, waited and never connected, and the router's own lookups could stall for seconds** - b4 queued each DNS query only after the kernel's connection tracking had registered it, so a second query sent at the same moment from the same socket was dropped as a duplicate of the first while that one waited in b4's queue.
+- CHANGED: **With iptables, other services' firewall rules for DNS queries, such as an Xray TPROXY rule or mwan3 and KVAS marks, also apply to the queries b4 has already seen** - b4 queues the queries from the raw table, ahead of those rules, where before a query released from its queue skipped the later rules of mangle.
+
 ## [1.85.0] - 2026-10-04
 
 - ADDED: **Discovery takes a trusted DNS server, set under Settings, Discovery or for a single run, written as `9.9.9.9`, `127.0.0.1:53053`, `tcp://`, `tcp+udp://` or an `https://` DNS-over-HTTPS URL, and tests a site through pinned addresses, given for a run under Pinned addresses or taken from the set the run is for** - the server's answers are the reference for the DNS check, a proposed set gets the server as its DNS when a set can use it and keeps the pins, and a site whose name exists but has no address in DNS is reported as such, with a pointer to pinning, rather than as misspelled. The Fallback UDP DNS servers list and the unused Reference domain setting are gone.

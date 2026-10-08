@@ -550,6 +550,7 @@ var diagB4Chains = []diagChainRef{
 	{"mangle", "B4_DISCOVERY"},
 	{"mangle", "B4_DSCP"},
 	{"nat", "B4_MASQ"},
+	{"raw", "B4_RAW"},
 }
 
 func diagChainAlreadyDumped(l string) bool {
@@ -984,6 +985,22 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 		connmarkCap.Detail = "conntrack mark unavailable — b4 cannot exempt its own upstream (e.g. MTProto WS bridge) from reply-side processing; minor reliability impact"
 	}
 	result.Capabilities = append(result.Capabilities, connmarkCap)
+
+	if applied, after, missing, pkgs := tables.DNSQueryPlacement(); applied {
+		dnsCap := DiagCapability{
+			Name:      "dns_before_conntrack",
+			Available: len(after) == 0,
+			Missing:   missing,
+			Packages:  pkgs,
+			Reasons:   tables.KernelModuleReasons(missing),
+		}
+		if len(after) == 0 {
+			dnsCap.Detail = "DNS queries are queued ahead of conntrack"
+		} else {
+			dnsCap.Detail = fmt.Sprintf("DNS queries are queued after conntrack on %s; kernels before 4.18 (4.14 before 4.14.173) then drop the second of two queries a device sends at once from one socket (A and AAAA)", strings.Join(after, ", "))
+		}
+		result.Capabilities = append(result.Capabilities, dnsCap)
+	}
 
 	return result
 }

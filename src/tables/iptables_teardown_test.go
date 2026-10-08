@@ -31,6 +31,7 @@ func stubProbes(manager *IPTablesManager, bins ...string) {
 		manager.connbytesSupport[bin] = nil
 		manager.multiportSupport[bin] = true
 		manager.connmarkSupport[bin] = true
+		manager.rawQueueSupport[bin] = nil
 	}
 }
 
@@ -39,6 +40,7 @@ func failProbe(manager *IPTablesManager, bin string) {
 	manager.connbytesSupport[bin] = nil
 	manager.multiportSupport[bin] = true
 	manager.connmarkSupport[bin] = true
+	manager.rawQueueSupport[bin] = nil
 }
 
 func manifestBinaries(m Manifest) map[string]bool {

@@ -291,11 +291,16 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 			return false
 		}
 		out, _ := run(ipt, "-w", "-t", "mangle", "-S", "B4_PREROUTING")
+		fromRaw := dnsQueriesQueuedFromRaw(ipt)
 		hasDNSResponse := strings.Contains(out, dnsResponsePortMatch) && strings.Contains(out, "NFQUEUE")
-		hasDNSRequest := strings.Contains(out, dnsRequestPortMatch) && strings.Contains(out, "NFQUEUE")
+		hasDNSRequest := fromRaw || (strings.Contains(out, dnsRequestPortMatch) && strings.Contains(out, "NFQUEUE"))
 		hasTCP := strings.Contains(out, "tcp") && strings.Contains(out, "NFQUEUE")
 		if !hasDNSResponse || !hasDNSRequest || !hasTCP {
 			log.Tracef("Monitor: B4_PREROUTING rules missing (dnsReq=%v, dnsResp=%v, tcp=%v)", hasDNSRequest, hasDNSResponse, hasTCP)
+			return false
+		}
+		if fromRaw && !iptRawDNSQueuePresent(ipt) {
+			log.Tracef("Monitor: raw table DNS query rules missing (%s chain or its PREROUTING/OUTPUT jumps)", iptRawChainName)
 			return false
 		}
 
@@ -389,11 +394,16 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		return false
 	}
 	out, _ := nft.runNft("list", "chain", "inet", nftTableName, "prerouting")
+	fromRaw := dnsQueriesQueuedFromRaw(backendNFTables)
 	hasDNSResponse := strings.Contains(out, dnsResponsePortMatch) && strings.Contains(out, "queue")
-	hasDNSRequest := strings.Contains(out, dnsRequestPortMatch) && strings.Contains(out, "queue")
+	hasDNSRequest := fromRaw || (strings.Contains(out, dnsRequestPortMatch) && strings.Contains(out, "queue"))
 	hasTCP := strings.Contains(out, "tcp sport") && strings.Contains(out, "queue")
 	if !hasDNSResponse || !hasDNSRequest || !hasTCP {
 		log.Tracef("Monitor: prerouting rules missing (dnsReq=%v, dnsResp=%v, tcp=%v)", hasDNSRequest, hasDNSResponse, hasTCP)
+		return false
+	}
+	if fromRaw && !nft.dnsQueryQueueChainsPresent() {
+		log.Tracef("Monitor: DNS query chains missing (%s, %s)", nftRawPreChain, nftRawOutChain)
 		return false
 	}
 

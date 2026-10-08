@@ -9,10 +9,14 @@ A set decides which resolver answers the domains it targets. Everything else kee
 
 | Transport | How it reaches b4 | When |
 | --- | --- | --- |
-| UDP port 53 | Queue rules in `PREROUTING` and `OUTPUT`, for requests (`dport 53`) and for replies (`sport 53`) | Always, while b4 is running |
+| UDP port 53 | Queue rules in `PREROUTING` and `OUTPUT`: for requests (`dport 53`) in the raw table, ahead of conntrack (priority -300 on nftables), and for replies (`sport 53`) in the mangle table | Always, while b4 is running |
 | TCP port 53 | A `nat` `REDIRECT` into a local listener, port 5453 by default | Only while at least one enabled set has a DNS server or a DoH URL, and **Intercept DNS over TCP** is on |
 
 Both cases cover traffic forwarded from the network and queries the router makes for itself. The queries b4 sends on a client's behalf and its lookups through a set's resolver carry the [queue mark](./guides/marks.md#the-queue-mark), and these rules skip packets that carry it, so such a query never re-enters the queue through them. Lookups b4 makes through the router's own resolver carry no mark.
+
+:::info Requests and conntrack
+A device usually asks for a name's IPv4 and IPv6 addresses at the same moment from one socket. A request held in the queue after conntrack has seen it carries a connection entry the kernel has not confirmed yet, so the second request gets an entry of its own, and kernels before 4.18 (4.14 before 4.14.173), such as the 4.9 of Keenetic routers, drop it when the two entries clash. Queued from the raw table, the requests reach conntrack one after the other, once b4 has released them. Where the iptables raw table cannot queue packets, b4 queues requests in mangle, logs a warning, and System Info shows **DNS queries queued before conntrack (raw)** as unavailable.
+:::
 
 ```mermaid
 flowchart TB

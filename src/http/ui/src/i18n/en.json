@@ -884,6 +884,7 @@
       "capPacketQueue": "Packet interception (NFQUEUE)",
       "capTransparentProxy": "Transparent proxy (TPROXY)",
       "capReplySideBypass": "Reply-side bypass (connmark)",
+      "capDnsBeforeConntrack": "DNS queries queued before conntrack (raw)",
       "capAvailable": "available",
       "capUnavailable": "unavailable",
       "capInstallHint": "Install: {{packages}}",
