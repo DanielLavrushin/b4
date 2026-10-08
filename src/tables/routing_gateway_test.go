@@ -16,7 +16,9 @@ func captureRoutes(t *testing.T, ifaceRoutes string, refuseVia bool) *[]string {
 	prevRun := run
 	t.Cleanup(func() { run = prevRun })
 	run = func(args ...string) (string, error) { return ifaceRoutes, nil }
-
+	prevProto := routeIPSupportsProto
+	t.Cleanup(func() { routeIPSupportsProto = prevProto })
+	routeIPSupportsProto = func() bool { return false }
 	prev := runLogged
 	var cmds []string
 	runLogged = func(op string, args ...string) bool {

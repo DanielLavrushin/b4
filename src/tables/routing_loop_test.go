@@ -118,6 +118,9 @@ func TestRouterTrafficGuardIsScopedToTheSetAndToTunnels(t *testing.T) {
 
 func TestEgressLoopGuardOnlyLandsWhereTheLoopIsUnbounded(t *testing.T) {
 	loopTestSysfs(t)
+	prevProto := routeIPSupportsProto
+	t.Cleanup(func() { routeIPSupportsProto = prevProto })
+	routeIPSupportsProto = func() bool { return false }
 	// routeEnsureRule ends in routeEnsurePolicyRouting, which the mock backend
 	// does not intercept: real `ip` commands and rp_filter writes would run.
 	// The fake sysfs above makes eth1/xray0 count as previously seen, so stub
@@ -299,6 +302,9 @@ func TestRouteResolveIDsSkipsATableSomebodyElseOwns(t *testing.T) {
 }
 
 func TestKillSwitchHoldsTheTableShut(t *testing.T) {
+	prevProto := routeIPSupportsProto
+	t.Cleanup(func() { routeIPSupportsProto = prevProto })
+	routeIPSupportsProto = func() bool { return false }
 	var cmds []string
 	prev := runLogged
 	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
