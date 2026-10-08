@@ -51,6 +51,7 @@ type routeState struct {
 	iface       string
 	egressIP    string
 	egressGW    string
+	gwMAC       string
 	tproxyPort  int
 	upstreamKey string
 	sourcesKey  string
@@ -93,6 +94,8 @@ type routeBackend interface {
 	learnedSharesStatic() bool
 	addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string)
 	addEgressLoopGuard(chain, iface string, ipv4, ipv6 bool) bool
+	addNarrowEgressGuard(chain, iface, gwV4, gwMAC string, v4, v6 bool) bool
+	addRedirectDrop(chain, iface string)
 	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32, sources []config.DeviceMatch)
 	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
 	jumpPrepends(atTop bool) bool
@@ -587,6 +590,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.iface = set.Routing.EgressInterface
 		st.egressIP = set.Routing.EgressIP
 		st.egressGW = set.Routing.EgressGateway
+		st.gwMAC = routeGatewayMAC(st.iface, st.egressGW)
 		st.routerOut = set.RoutingIncludesRouterTraffic()
 		st.loopGuard = routeWantsEgressLoopGuard(st.iface)
 		st.killSwitch = set.Routing.KillSwitch
@@ -605,6 +609,7 @@ func routeStateEqual(a, b routeState) bool {
 		a.table == b.table &&
 		a.iface == b.iface &&
 		a.egressGW == b.egressGW &&
+		a.gwMAC == b.gwMAC &&
 		a.egressIP == b.egressIP &&
 		a.tproxyPort == b.tproxyPort &&
 		a.upstreamKey == b.upstreamKey &&
@@ -1673,11 +1678,18 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	routeWarnDeviceGate(set.Name, gate)
 	routeSelfDialBypass(be, cfg, st.chainPre)
 	be.addClaimedBypassRule(st.chainPre, 0)
-
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
-	if st.loopGuard &&
-		!be.addEgressLoopGuard(st.chainPre, st.iface, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled) && len(sources) == 0 {
-		return fmt.Errorf("the guard on traffic arriving from %s did not install, and without it every packet %s hands back for a destination in this set is marked again and sent straight back to it", st.iface, st.iface)
+	if st.loopGuard {
+		guarded := true
+		if st.egressGW == "" {
+			guarded = be.addEgressLoopGuard(st.chainPre, st.iface, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+		} else {
+			routeAddLocalDestinationGuard(be, st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+			guarded = be.addNarrowEgressGuard(st.chainPre, st.iface, routeAddrForFamily(st.egressGW, false), st.gwMAC, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+		}
+		if !guarded && len(sources) == 0 {
+			return fmt.Errorf("the guard on traffic arriving from %s did not install, and without it every packet %s hands back for a destination in this set is marked again and sent straight back to it", st.iface, st.iface)
+		}
 	}
 
 	routeAddMarkRestoreRules(be, st.chainPre, sources, st.mark, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
@@ -1805,6 +1817,9 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 	}
 
 	routeSelfDialBypass(be, cfg, st.chainOut)
+	if routeAddrForFamily(st.egressGW, true) != "" {
+		be.addRedirectDrop(st.chainOut, st.iface)
+	}
 
 	if st.srcScoped || !st.routerOut {
 		return
@@ -2853,6 +2868,38 @@ func routeIsSubnetBroadcast(prefix net.IPNet, target net.IP) bool {
 		bcast[i] = netIP[i] | ^mask[i]
 	}
 	return bcast.Equal(base)
+}
+
+func routeGatewayMAC(iface, gw string) string {
+	target := net.ParseIP(gw)
+	if target == nil || iface == "" {
+		return ""
+	}
+	args := []string{"ip"}
+	if target.To4() == nil {
+		args = append(args, "-6")
+	}
+	args = append(args, "neigh", "show", target.String(), "dev", iface)
+	out, err := run(args...)
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(out)
+	if len(fields) == 0 || fields[0] != target.String() {
+		return ""
+	}
+	state := strings.ToUpper(fields[len(fields)-1])
+	switch state {
+	case "REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT":
+	default:
+		return ""
+	}
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] == "lladdr" {
+			return fields[i+1]
+		}
+	}
+	return ""
 }
 
 func routeMarkMatchesOwn(cfg *config.Config, mark uint32) bool {

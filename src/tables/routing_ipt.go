@@ -333,6 +333,48 @@ func (b *routeIptBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 boo
 	}
 	return ok
 }
+func (b *routeIptBackend) addNarrowEgressGuard(chain, iface, gwV4, gwMAC string, v4, v6 bool) bool {
+	if iface == "" {
+		return true
+	}
+	ok := true
+	if v4 && hasBinary(b.ipt4()) {
+		args := []string{b.ipt4(), "-w", "-t", "mangle", "-A", chain, "-i", iface}
+		if gwV4 != "" {
+			args = append(args, "-s", gwV4)
+		}
+		args = append(args, "-j", "RETURN")
+		if !runLogged("routing: add narrow egress guard "+chain, args...) {
+			ok = false
+		}
+	}
+	if v6 && hasBinary(b.ipt6()) {
+		base := []string{b.ipt6(), "-w", "-t", "mangle", "-A", chain, "-i", iface}
+		if gwMAC != "" {
+			macArgs := append(append([]string{}, base...), "-m", "mac", "--mac-source", gwMAC, "-j", "RETURN")
+			if !runLogged("routing: add narrow egress guard "+chain, macArgs...) {
+				fullArgs := append(append([]string{}, base...), "-j", "RETURN")
+				if !runLogged("routing: add narrow egress guard "+chain, fullArgs...) {
+					ok = false
+				}
+			}
+		} else {
+			fullArgs := append(append([]string{}, base...), "-j", "RETURN")
+			if !runLogged("routing: add narrow egress guard "+chain, fullArgs...) {
+				ok = false
+			}
+		}
+	}
+	return ok
+}
+func (b *routeIptBackend) addRedirectDrop(chain, iface string) {
+	cmd := b.ipt6()
+	if iface == "" || !hasBinary(cmd) {
+		return
+	}
+	runLogged("routing: add redirect drop "+chain,
+		cmd, "-w", "-t", "mangle", "-A", chain, "-o", iface, "-p", "icmpv6", "--icmpv6-type", "redirect", "-j", "DROP")
+}
 
 func (b *routeIptBackend) sharesFamilies() bool { return false }
 

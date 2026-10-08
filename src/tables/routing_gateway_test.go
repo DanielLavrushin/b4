@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -199,6 +200,100 @@ func TestAGatewayIsReachableThroughItsOwnSubnetOrMainTable(t *testing.T) {
 	} {
 		if got := routeGatewayReachable(c.iface, c.gw); got != c.ok {
 			t.Errorf("routeGatewayReachable(%q, %q) = %v, want %v", c.iface, c.gw, got, c.ok)
+		}
+	}
+}
+func TestAGatewayNarrowsTheEgressGuardToTheNextHop(t *testing.T) {
+	loopTestSysfs(t)
+	localGuardReset(t)
+	prevProto := routeIPSupportsProto
+	t.Cleanup(func() { routeIPSupportsProto = prevProto })
+	routeIPSupportsProto = func() bool { return false }
+	prevRun, prevLogged := run, runLogged
+	run = func(args ...string) (string, error) { return "", errors.New("no commands in unit test") }
+	runLogged = func(op string, args ...string) bool { return true }
+	t.Cleanup(func() { run, runLogged = prevRun, prevLogged })
+	rpFilterHarness(t, map[string]string{"eth1": "1"})
+	prevSeen := routeIfaceSeen
+	routeIfaceSeen = make(map[string]bool)
+	t.Cleanup(func() { routeIfaceSeen = prevSeen })
+	cfg := familyTestConfig(true, false)
+	be := &mockRouteBackend{}
+	set := familyTestSet()
+	set.Routing.EgressInterface = "eth1"
+	set.Routing.EgressGateway = "192.0.2.1"
+	st := buildRouteState(cfg, set)
+	if err := routeEnsureRule(be, cfg, set, st, nil); err != nil {
+		t.Fatalf("routeEnsureRule: %v", err)
+	}
+	ops := be.chainOps[st.chainPre]
+	if indexOfPrefix(ops, "loop-guard") >= 0 {
+		t.Errorf("a gateway set narrows the guard to the next hop instead of the full guard: %v", ops)
+	}
+	if indexOfOp(ops, "narrow-guard eth1 192.0.2.1 ") < 0 {
+		t.Errorf("the v4 next hop must be guarded by its own address: %v", ops)
+	}
+}
+func TestNarrowGuardKeepsAFamilyGuardWhereTheGatewayDoesNotReach(t *testing.T) {
+	var cmds []string
+	prev := runLogged
+	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
+	t.Cleanup(func() { runLogged = prev })
+	if !(&routeNftBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "", true, true) {
+		t.Fatal("both families installable must report success")
+	}
+	joined := strings.Join(cmds, "\n")
+	if !strings.Contains(joined, `iifname "eth1" ip saddr 192.0.2.1 return`) {
+		t.Errorf("the v4 gateway must be guarded by its address:\n%s", joined)
+	}
+	if !strings.Contains(joined, `iifname "eth1" meta nfproto ipv6 return`) {
+		t.Errorf("the family without a gateway keeps the full guard:\n%s", joined)
+	}
+}
+func TestNarrowGuardFallsBackWhenTheMACMatchIsRejected(t *testing.T) {
+	stubBinaries(t, backendIPTables, backendIP6Tables)
+	var cmds []string
+	prev := runLogged
+	runLogged = func(op string, args ...string) bool {
+		cmds = append(cmds, strings.Join(args, " "))
+		return !strings.Contains(strings.Join(args, " "), "--mac-source")
+	}
+	t.Cleanup(func() { runLogged = prev })
+	if !(&routeIptBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "", "aa:bb:cc:dd:ee:ff", false, true) {
+		t.Fatal("the full-guard fallback must still report success")
+	}
+	joined := strings.Join(cmds, "\n")
+	if !strings.Contains(joined, "-i eth1 -j RETURN") {
+		t.Errorf("a rejected MAC match must fall back to the full guard:\n%s", joined)
+	}
+}
+func TestGatewayMACChangeRebuildsTheChain(t *testing.T) {
+	a := routeState{iface: "eth1", egressGW: "192.0.2.1"}
+	b := a
+	b.gwMAC = "aa:bb:cc:dd:ee:ff"
+	if routeStateEqual(a, b) {
+		t.Error("a new neighbor MAC must rebuild the chain, or the narrow guard keeps matching the old one")
+	}
+}
+func TestGatewayMACComesFromAUsableNeighborEntry(t *testing.T) {
+	prev := run
+	t.Cleanup(func() { run = prev })
+	for _, c := range []struct {
+		line string
+		want string
+	}{
+		{"192.0.2.1 dev eth1 lladdr aa:bb:cc:dd:ee:ff REACHABLE", "aa:bb:cc:dd:ee:ff"},
+		{"192.0.2.1 dev eth1 lladdr aa:bb:cc:dd:ee:ff STALE", "aa:bb:cc:dd:ee:ff"},
+		{"192.0.2.1 dev eth1 lladdr aa:bb:cc:dd:ee:ff DELAY", "aa:bb:cc:dd:ee:ff"},
+		{"192.0.2.1 dev eth1 lladdr aa:bb:cc:dd:ee:ff PROBE", "aa:bb:cc:dd:ee:ff"},
+		{"192.0.2.1 dev eth1 lladdr aa:bb:cc:dd:ee:ff PERMANENT", "aa:bb:cc:dd:ee:ff"},
+		{"192.0.2.1 dev eth1 lladdr aa:bb:cc:dd:ee:ff FAILED", ""},
+		{"192.0.2.1 dev eth1 INCOMPLETE", ""},
+		{"", ""},
+	} {
+		run = func(args ...string) (string, error) { return c.line, nil }
+		if got := routeGatewayMAC("eth1", "192.0.2.1"); got != c.want {
+			t.Errorf("routeGatewayMAC(%q) = %q, want %q", c.line, got, c.want)
 		}
 	}
 }

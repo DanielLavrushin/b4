@@ -1481,6 +1481,13 @@ func (m *mockRouteBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 bo
 	m.recordOp(chain, "loop-guard "+iface)
 	return true
 }
+func (m *mockRouteBackend) addNarrowEgressGuard(chain, iface, gwV4, gwMAC string, v4, v6 bool) bool {
+	m.recordOp(chain, "narrow-guard "+iface+" "+gwV4+" "+gwMAC)
+	return true
+}
+func (m *mockRouteBackend) addRedirectDrop(chain, iface string) {
+	m.recordOp(chain, "redirect-drop "+iface)
+}
 func (m *mockRouteBackend) addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string) {
 	m.recordOp(chain, "fallback")
 }
