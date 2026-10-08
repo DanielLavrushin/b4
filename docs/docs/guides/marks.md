@@ -204,7 +204,7 @@ agree on all four share both.
 | Mark | From a hash of the four, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
 | Table | `100`-`249`, skipping tables named in `rt_tables`, looked up by another service's rule, or holding routes b4 did not add |
 | Rule | `ip rule add fwmark <mark>/0x27fff lookup <table> priority <10000 + table>`, for IPv4, and for IPv6 when **Enable IPv6 Support** is on |
-| Table contents | A default route through the interface, plus `blackhole default metric 4096` with the [kill switch](/docs/sets/routing#kill-switch) |
+| Table contents | A default route through the interface (`default via <gateway>` with a gateway set), plus `blackhole default metric 4096` with the [kill switch](/docs/sets/routing#kill-switch) |
 | Pinned values | `routing.fwmark` and `routing.table` in the configuration file or through the API, used only when both are set, the mark lies within `0x27fff`, is not `0x24bab`, does not contain every bit of the queue mark and does not equal its bits under `0x27fff` |
 
 The set marks the first packet of each connection to its destinations and saves the mark in
@@ -214,11 +214,12 @@ replies get no mark. The set's chain for packets entering the router, `b4r_<set>
 this order:
 
 1. Returns packets that carry the queue mark, bit `0x40000`, or any bit under `0x27fff`.
-2. Returns packets that arrive on the output interface itself, but only where that interface
-   is a tunnel (`tun`, `tap`, `wg`): the program behind it hands the packet back and answers
-   every turn by opening a connection of its own, and without the guard the loop runs until
-   memory is gone. On a plain NIC the peer is another router and the hop count ends the loop,
-   so the rule is left out and packets arriving on that NIC still get the set's mark.
+2. Returns packets that arrive on the output interface itself. Without a gateway the guard is
+   unconditional (`iifname <iface> return`): traffic the next hop sends back is marked again and
+   routed straight back to it otherwise. With a gateway the guard narrows to the next hop alone -
+   its address for IPv4, its MAC address for IPv6, the router's own addresses in both families -
+   so clients sharing the interface with the gateway still get the set's mark. Where the gateway
+   covers only one family, the other family keeps the full guard.
 3. Restores the mark from the connection mark on later packets of claimed connections that
    travel in the direction of the first packet.
 4. Marks new connections to the set's destinations and saves the mark with the claim.

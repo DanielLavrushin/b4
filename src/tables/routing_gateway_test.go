@@ -8,11 +8,6 @@ import (
 	"github.com/daniellavrushin/b4/config"
 )
 
-// captureRoutes installs the stubs the route helpers run through and returns
-// where their commands land. ifaceRoutes is what `ip route show default dev
-// <iface>` answers, so the fallback path can be given a gateway of its own or
-// none at all, and refuseVia makes the "via" route come back failed the way the
-// kernel does when the next hop does not resolve.
 func captureRoutes(t *testing.T, ifaceRoutes string, refuseVia bool) *[]string {
 	t.Helper()
 
@@ -52,8 +47,6 @@ func contains(args []string, want string) bool {
 
 func joined(cmds []string) string { return strings.Join(cmds, "\n") }
 
-// last is the command written last, which is the one a refusal has to leave
-// behind: the route before it is not what the set ends up with.
 func last(cmds *[]string) string { return (*cmds)[len(*cmds)-1] }
 
 func TestASetGatewayBecomesTheNextHopOfItsDefaultRoute(t *testing.T) {
@@ -156,8 +149,6 @@ func TestSetsWithDifferentGatewaysStopSharingATable(t *testing.T) {
 	one := routeIfaceAutoKey("eth1", "192.0.2.10", "192.0.2.1", false)
 	two := routeIfaceAutoKey("eth1", "192.0.2.10", "192.0.2.2", false)
 
-	// One table cannot hold two default routes, so the gateway has to keep
-	// sets apart, not just mark them.
 	if one == two {
 		t.Fatalf("two gateways share the key %q, so the second route replace would overwrite the first", one)
 	}
@@ -167,9 +158,6 @@ func TestSetsWithDifferentGatewaysStopSharingATable(t *testing.T) {
 }
 
 func TestASetWithoutAGatewayKeepsTheMarkAndTableItAlreadyHad(t *testing.T) {
-	// The key feeds the hash the mark and table come from. Adding the gateway
-	// to every key would move every installed set onto a new mark and table
-	// on upgrade, so an empty gateway must leave the key exactly as it was.
 	if got := routeIfaceAutoKey("eth1", "192.0.2.10", "", false); got != "eth1|192.0.2.10" {
 		t.Errorf("the key of a set without a gateway changed: got %q", got)
 	}

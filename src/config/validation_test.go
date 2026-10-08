@@ -693,16 +693,13 @@ func gatewaySet() SetConfig {
 	return set
 }
 
-// egressNextHops binds each optional next hop on a set to the builder that
-// already carries a valid value for it, so both fields run one table instead
-// of two copies of the same assertions.
 var egressNextHops = []struct {
-	label string // subtest name and error prefix
-	path  string // validation field path
-	code  string // code reported for an unusable address
+	label string
+	path  string
+	code  string
 	field func(*SetConfig) *string
 	new   func() SetConfig
-	v6    string // accepted IPv6 input, canonicalized to lower case
+	v6    string
 	bad   []string
 }{
 	{
@@ -725,8 +722,6 @@ var egressNextHops = []struct {
 	},
 }
 
-// egressDropCases are the routings that leave a set with nowhere to send a
-// next hop; the value must be dropped, not block the save.
 var egressDropCases = []struct {
 	name string
 	tune func(*SetConfig)

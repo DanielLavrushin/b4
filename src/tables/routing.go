@@ -1936,8 +1936,6 @@ func routeEnsureChainJumps(be routeBackend, st routeState, gate routeDeviceGate)
 	be.ensureJumpRule("POSTROUTING", st.chainSNAT, false, st.egressIP != "")
 }
 
-// routeAddrForFamily returns the address only to the family it belongs to, in
-// its canonical form, and nothing at all when it belongs to the other one.
 func routeAddrForFamily(egress string, v6 bool) string {
 	if egress == "" {
 		return ""
@@ -2012,11 +2010,6 @@ func routeDelRuleAllForms(mark uint32, table string) {
 
 func routeEgressAddrKey(iface, ip string) string { return iface + "|" + ip }
 
-// routeIfaceAutoKey groups the sets that share one mark and one routing table.
-// The gateway is part of it: two sets on one interface with one source address
-// but different next hops would otherwise share a table, and the second route
-// replace would overwrite the first one's. It is appended only when set, so a
-// set without a gateway keeps the hash it had before the field existed.
 func routeIfaceAutoKey(iface, egressIP, egressGW string, killSwitch bool) string {
 	key := iface + "|" + egressIP
 	if egressGW != "" {
@@ -2573,10 +2566,6 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 	}
 }
 
-// routeReplaceDefaultRoute points the set's table at one default route.
-// gw is the next hop the set asked for; it wins over anything read off the
-// interface, and when the kernel refuses it b4 falls back to what the interface
-// already has rather than leaving the table with no route at all.
 func routeReplaceDefaultRoute(iface, src, gw, table string, ipv6 bool) {
 	family := "v4"
 	ipCmd := []string{"ip"}

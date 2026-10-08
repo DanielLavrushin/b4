@@ -125,12 +125,23 @@ export const TrafficRouting = ({
   } else {
     flowDestination = !routing.egress_interface
       ? t("sets.routing.flowNoOutput")
-      : routing.egress_ip
-        ? t("sets.routing.flowIfaceWithSource", {
-            iface: routing.egress_interface,
-            ip: routing.egress_ip,
-          })
-        : routing.egress_interface;
+      : routing.egress_gateway
+        ? routing.egress_ip
+          ? t("sets.routing.flowIfaceWithSourceAndGateway", {
+              iface: routing.egress_interface,
+              ip: routing.egress_ip,
+              gw: routing.egress_gateway,
+            })
+          : t("sets.routing.flowIfaceWithGateway", {
+              iface: routing.egress_interface,
+              gw: routing.egress_gateway,
+            })
+        : routing.egress_ip
+          ? t("sets.routing.flowIfaceWithSource", {
+              iface: routing.egress_interface,
+              ip: routing.egress_ip,
+            })
+          : routing.egress_interface;
   }
 
   return (
@@ -468,7 +479,7 @@ export const TrafficRouting = ({
                     ? t("sets.routing.egressGatewayHelper")
                     : t("sets.routing.egressGatewayNeedsInterface")
                 }
-                placeholder="192.168.1.1"
+                placeholder="192.168.1.254"
                 selectOnFocus
               />
             </Grid>

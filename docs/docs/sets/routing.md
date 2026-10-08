@@ -277,24 +277,17 @@ Optional. The next hop the set's default route goes through. It applies to a set
 failing that, writes a plain `default dev <iface>` with no next hop at all. Setting a gateway here replaces both:
 the one b4 would have found is ignored.
 
-b4 writes two routes into the set's table:
+b4 writes one route into the set's table:
 
 ```
-ip route replace <gateway> dev <iface> scope link table <table>
 ip route replace default via <gateway> dev <iface> [src <egress ip>] table <table>
 ```
 
-The first one is there because the kernel refuses `via` until the next hop resolves. With a subnet address on the
-interface it resolves from the local table on its own; a TUN, TAP or WireGuard interface carries a host address and
-has no such entry, so the route to the next hop goes in first. That is what makes the option useful on the tunnel
-interfaces where a bare `scope link` route otherwise leaves the traffic with nowhere to be delivered.
-
-The address family has to match the traffic it carries, the same way an [egress IP](#egress-ip) does: an IPv4 gateway
-serves the set's IPv4 route and the IPv6 route falls back to the interface's own address and next hop. A set carries
-one gateway, so entering an IPv6 address in its place moves it to IPv6 and returns IPv4 to the interface's own route.
-
-If the kernel refuses the route, b4 says so in the log and falls back to the route the interface already has, rather
-than leaving the table with no default route at all - an empty table sends the set's traffic out by the ordinary
+Before writing it, b4 checks the gateway itself: it must lie in the interface's subnet or under a
+`scope link` route of the main table through that interface, and it must not be the router's own
+address, the network address, or the subnet broadcast. A gateway that fails the check is refused with
+a log line and the set falls back to the route the interface already has, rather than leaving the
+table with no default route at all - an empty table sends the set's traffic out by the ordinary
 uplink, which is the one outcome routing exists to prevent.
 
 Two sets on one interface with one egress IP but different gateways no longer share a mark and a table, since one
