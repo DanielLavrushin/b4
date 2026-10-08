@@ -707,7 +707,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			udpPorts[i] = strings.ReplaceAll(p, "-", ":")
 		}
 
-		if captureSkipsDNSQueries(cfg, queriesFromRaw) {
+		if queriesFromRaw {
 			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: iptDNSQueryCaptureReturn()})
 		}
 

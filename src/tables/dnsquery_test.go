@@ -149,14 +149,15 @@ func TestDNSQueriesAreQueuedFromTheRawTableBeforeConntrack(t *testing.T) {
 	}
 }
 
-func TestCaptureKeepsDNSQueriesWithAnInterfaceFilterOrWithoutTheRawTable(t *testing.T) {
+func TestCaptureSkipsDNSQueriesExactlyWhileTheRawTableQueuesThem(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		rawErr error
 		ifaces []string
+		skip   bool
 	}{
-		{"raw table unavailable", errors.New("no raw table"), nil},
-		{"interface filter set", nil, []string{"eth0"}},
+		{"raw table unavailable", errors.New("no raw table"), nil, false},
+		{"interface filter set", nil, []string{"eth0"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			manager := dnsQueryTestManager(t, tc.rawErr)
@@ -165,10 +166,17 @@ func TestCaptureKeepsDNSQueriesWithAnInterfaceFilterOrWithoutTheRawTable(t *test
 			if err != nil {
 				t.Fatalf("buildManifest: %v", err)
 			}
+			skips := false
 			for _, s := range manifestSpecs(m, backendIPTables, "mangle", iptChainName) {
 				if s == strings.Join(iptDNSQueryCaptureReturn(), " ") {
-					t.Errorf("the capture chain skips UDP to port 53 although the DNS query rules cannot cover it here")
+					skips = true
 				}
+			}
+			switch {
+			case skips && !tc.skip:
+				t.Errorf("the capture chain skips UDP to port 53 although DNS queries stay in mangle, where the capture rules keep their old behavior")
+			case !skips && tc.skip:
+				t.Errorf("the capture chain queues UDP to port 53 although the raw table already queued every DNS query; with a set on UDP port 53 the query waits a second time, after conntrack, whatever Capture Interfaces holds")
 			}
 		})
 	}
@@ -266,10 +274,10 @@ func TestTeardownRemovesBothDNSQueryPlacements(t *testing.T) {
 
 func TestDNSQueryQueueLinesAreMatchedByPortToken(t *testing.T) {
 	for line, want := range map[string]bool{
-		"1    NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53 NFQUEUE balance 537:540 bypass":   true,
-		"2    NFQUEUE    udp  --  ::/0  ::/0  udp dpt:53 NFQUEUE num 537 bypass":                         true,
+		"1    NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53 NFQUEUE balance 537:540 bypass":      true,
+		"2    NFQUEUE    udp  --  ::/0  ::/0  udp dpt:53 NFQUEUE num 537 bypass":                        true,
 		"3    NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:5353 NFQUEUE num 537 bypass":            false,
-		"4    NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp spt:53 NFQUEUE balance 537:540 bypass":   false,
+		"4    NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp spt:53 NFQUEUE balance 537:540 bypass":      false,
 		"5    ACCEPT     udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53":                                     false,
 		"6    NFQUEUE    tcp  --  0.0.0.0/0  0.0.0.0/0  multiport sports 53,443 NFQUEUE num 537 bypass": false,
 	} {

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/florianl/go-nfqueue"
 )
 
@@ -239,6 +240,60 @@ func TestNetnsDNSQueriesReachTheQueueBeforeConntrack(t *testing.T) {
 			}
 			cleared = true
 			netnsDNSQueryRulesGone(t, engine)
+		})
+	}
+}
+
+func TestNetnsDNSQueriesAreNotQueuedAgainAfterConntrack(t *testing.T) {
+	for _, engine := range []string{backendIPTables, backendNFTables} {
+		t.Run(engine, func(t *testing.T) {
+			netnsRequire(t)
+			if engine == backendNFTables && !hasBinary("nft") {
+				t.Skip("nft is not installed")
+			}
+			netnsDNSQueryLinks(t)
+
+			routeEngine = nil
+			defer func() { routeEngine = nil }()
+
+			cfg := netnsConfig(engine)
+			cfg.Queue.Interfaces = []string{dnsqLink}
+			set := config.NewSetConfig()
+			set.Id = "netns-udp53-set"
+			set.Name = "udp53"
+			set.Enabled = true
+			set.UDP.DPortFilter = "53"
+			cfg.Sets = []*config.SetConfig{&set}
+			if err := AddRules(cfg); err != nil {
+				t.Fatalf("AddRules: %v", err)
+			}
+			defer func() { _ = ClearRules(cfg) }()
+			placement := netnsIptablesBin()
+			if engine == backendNFTables {
+				placement = backendNFTables
+			}
+			if !dnsQueriesQueuedFromRaw(placement) {
+				t.Fatalf("the raw table can queue in this namespace, yet DNS queries were left after conntrack")
+			}
+
+			snapshot, stop := netnsConntrackQueueListener(t, uint16(cfg.Queue.StartNum))
+			netnsSendUDP(t, 41055, 53)
+			time.Sleep(300 * time.Millisecond)
+			stop()
+
+			queued := 0
+			for _, p := range snapshot() {
+				if p.sport != 41055 || p.dport != 53 {
+					continue
+				}
+				queued++
+				if p.ct {
+					t.Errorf("hook %d: with Capture Interfaces set and a set on UDP port 53, the DNS query was queued again after conntrack; a second query from the same socket then clashes with it at confirmation and old kernels drop it", p.hook)
+				}
+			}
+			if queued == 0 {
+				t.Errorf("the DNS query never reached b4's queue")
+			}
 		})
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -71,10 +70,6 @@ func DNSQueryPlacement() (applied bool, afterConntrack, missing, packages []stri
 	sort.Strings(afterConntrack)
 	sort.Strings(missing)
 	return true, afterConntrack, missing, kmodPkgsFor(missing)
-}
-
-func captureSkipsDNSQueries(cfg *config.Config, fromRaw bool) bool {
-	return fromRaw && len(cfg.Queue.Interfaces) == 0
 }
 
 func iptDNSQueryCaptureReturn() []string {

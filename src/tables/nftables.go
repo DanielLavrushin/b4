@@ -404,7 +404,7 @@ func (n *NFTablesManager) apply() error {
 	} else {
 		udpPortExpr = "{ " + strings.Join(udpPorts, ", ") + " }"
 	}
-	if captureSkipsDNSQueries(cfg, queriesFromRaw) {
+	if queriesFromRaw {
 		if err := n.addRule(nftChainName, "udp", "dport", "53", "return"); err != nil {
 			return err
 		}
