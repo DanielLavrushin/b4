@@ -4,6 +4,7 @@ import {
   Button,
   DialogContent,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
@@ -130,13 +131,15 @@ export function UnsavedChangesDialog({
               <Stack spacing={0.5}>
                 {group.items.map((item) => (
                   <Box key={item.path}>
-                    <Typography variant="body2">{item.label}</Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{ color: colors.text.secondary, display: "block" }}
-                    >
-                      {item.path}
-                    </Typography>
+                    {typeof item.label === "string" && item.label !== item.path ? (
+                      <Tooltip title={item.path} placement="top-start">
+                        <Typography variant="body2" sx={{ width: "fit-content" }}>
+                          {item.label}
+                        </Typography>
+                      </Tooltip>
+                    ) : (
+                      <Typography variant="body2">{item.label}</Typography>
+                    )}
                     <Typography
                       variant="caption"
                       sx={{ color: colors.text.secondary, display: "block" }}

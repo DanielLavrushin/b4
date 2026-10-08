@@ -28,13 +28,16 @@ const ChangedFieldsContext =
 export function ChangedFieldsProvider({
   changedPaths,
   scope,
+  registry,
   children,
 }: Readonly<{
   changedPaths: ReadonlySet<string>;
   scope: string;
+  registry?: { current: Map<string, ReactNode> };
   children: ReactNode;
 }>) {
-  const labelsRef = useRef(new Map<string, ReactNode>());
+  const ownRef = useRef(new Map<string, ReactNode>());
+  const labelsRef = registry ?? ownRef;
   const scopeRef = useRef(scope);
   if (scopeRef.current !== scope) {
     scopeRef.current = scope;
@@ -45,11 +48,11 @@ export function ChangedFieldsProvider({
     (path, label) => {
       labelsRef.current.set(path, label);
     },
-    [],
+    [labelsRef],
   );
   const snapshotLabels = useCallback<
     ChangedFieldsContextValue["snapshotLabels"]
-  >(() => new Map(labelsRef.current), []);
+  >(() => new Map(labelsRef.current), [labelsRef]);
   const value = useMemo(
     () => ({ changedPaths, registerLabel, snapshotLabels }),
     [changedPaths, registerLabel, snapshotLabels],

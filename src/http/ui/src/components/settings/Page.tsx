@@ -12,6 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Trans, useTranslation } from "react-i18next";
 import i18n, { setLanguage } from "../../i18n";
@@ -59,7 +60,6 @@ import {
 } from "@utils";
 import {
   ChangedFieldsProvider,
-  useChangedFields,
 } from "@context/ChangedFieldsContext";
 import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
 import {
@@ -286,7 +286,8 @@ export function SettingsPage() {
       hasUnsavedChanges && !nextLocation.pathname.startsWith("/settings"),
     hasUnsavedChanges,
   );
-  const { snapshotLabels } = useChangedFields();
+  const labelsRef = useRef(new Map<string, ReactNode>());
+  const snapshotLabels = useCallback(() => new Map(labelsRef.current), []);
   const changeItems: UnsavedChangeItem[] = changedLeaves.map((leaf) => ({
     path: leaf.path,
     label: snapshotLabels().get(leaf.path) ?? leaf.path,
@@ -480,7 +481,11 @@ export function SettingsPage() {
   const validTab = Math.max(currentTab, 0);
 
   return (
-    <ChangedFieldsProvider changedPaths={changedPaths} scope="settings">
+    <ChangedFieldsProvider
+      changedPaths={changedPaths}
+      scope="settings"
+      registry={labelsRef}
+    >
     <Container
       maxWidth={false}
       sx={{
