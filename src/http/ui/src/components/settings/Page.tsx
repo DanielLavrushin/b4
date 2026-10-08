@@ -526,9 +526,15 @@ export function SettingsPage() {
                 <Chip
                   label={t("core.modified")}
                   size="small"
-                  icon={<WarningIcon />}
+                  icon={<WarningIcon fontSize="small" />}
                   color="secondary"
                   variant="outlined"
+                  sx={{
+                    // Pin the icon margin: MUI defaults set 4px (.MuiChip-icon)
+                    // and 2px (.MuiChip-iconSmall) on the same icon — without
+                    // an explicit override the winner is cascade-order luck.
+                    "& .MuiChip-icon": { marginLeft: "4px" },
+                  }}
                 />
               )}
             </Stack>
