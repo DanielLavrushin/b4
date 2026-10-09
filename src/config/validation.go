@@ -121,6 +121,27 @@ func tlsKeyIsEncrypted(path string) bool {
 		}
 	}
 }
+func egressGatewayIsLocal(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			if ipNet, ok := addr.(*net.IPNet); ok && ipNet.IP != nil && ipNet.IP.Equal(ip) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 type sharedTableGatewayClash struct {
 	names string
@@ -283,7 +304,7 @@ func (c *Config) Validate() error {
 		if set.Routing.EgressGateway != "" {
 			ip := net.ParseIP(set.Routing.EgressGateway)
 			switch {
-			case ip == nil, ip.IsUnspecified(), ip.IsLoopback(), ip.IsMulticast(), ip.Equal(net.IPv4bcast):
+			case ip == nil, ip.IsUnspecified(), ip.IsLoopback(), ip.IsMulticast(), ip.Equal(net.IPv4bcast), egressGatewayIsLocal(ip):
 				v.addf(fmt.Sprintf("sets[%d].routing.egress_gateway", setIdx), "invalid_egress_gateway", map[string]any{"set": set.Name, "ip": set.Routing.EgressGateway}, "set %q: routing.egress_gateway %q is not a usable next hop", set.Name, set.Routing.EgressGateway)
 				return v.result()
 			case set.Routing.Mode != RoutingModeInterface:

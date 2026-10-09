@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -812,6 +813,43 @@ func TestValidate_EgressGatewayAcceptsLinkLocal(t *testing.T) {
 	}
 	if got := cfg.Sets[0].Routing.EgressGateway; got != "fe80::1" {
 		t.Errorf("link-local gateway stored as %q", got)
+	}
+}
+func TestValidate_EgressGatewayRejectsLocalAddress(t *testing.T) {
+	if !egressGatewayIsLocal(net.ParseIP("127.0.0.1")) {
+		t.Fatal("loopback must read as local, or the guard below never fires")
+	}
+	if egressGatewayIsLocal(net.ParseIP("192.0.2.1")) {
+		t.Fatal("TEST-NET-1 must not read as local")
+	}
+	var local string
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatalf("list interfaces: %v", err)
+	}
+outer:
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			if ipNet, ok := addr.(*net.IPNet); ok && ipNet.IP != nil && !ipNet.IP.IsLoopback() {
+				local = ipNet.IP.String()
+				break outer
+			}
+		}
+	}
+	if local == "" {
+		t.Skip("no non-loopback address to offer as a gateway")
+	}
+	cfg := NewConfig()
+	set := gatewaySet()
+	set.Routing.EgressGateway = local
+	cfg.Sets = []*SetConfig{&set}
+	ve := mustValidationErr(t, cfg.Validate())
+	if findField(ve, "sets[0].routing.egress_gateway", "invalid_egress_gateway") == nil {
+		t.Errorf("a router address as gateway must fail validation; got %+v", ve.Fields)
 	}
 }
 func TestValidate_SharedManualTableWithDifferentGatewaysWarns(t *testing.T) {

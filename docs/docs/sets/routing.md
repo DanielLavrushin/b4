@@ -290,8 +290,12 @@ a log line and the set falls back to the route the interface already has, rather
 table with no default route at all - an empty table sends the set's traffic out by the ordinary
 uplink, which is the one outcome routing exists to prevent.
 
+The address family has to match the traffic it carries: an IPv4 gateway serves the set's IPv4 route
+and the IPv6 route falls back to the interface's own route, and vice versa. An unparseable,
+unspecified, loopback or multicast address, the broadcast address, or any address already on the
+router is rejected when the configuration is saved.
+
 Two sets on one interface with one egress IP but different gateways no longer share a mark and a table, since one
-table cannot hold two default routes. See [the marks a set carries](../guides/marks#the-bits-b4-uses).
 
 ::::warning
 A gateway that does not answer is a silent failure: packets leave, replies never come back, and the set's rules still
