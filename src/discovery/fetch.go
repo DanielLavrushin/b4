@@ -99,6 +99,14 @@ func (ds *DiscoverySuite) fetchForDomain(di DomainInput, timeout time.Duration) 
 			untried: true,
 		}
 	}
+	if ds.badLink(di.Domain) {
+		return CheckResult{
+			Domain:  di.Domain,
+			Status:  CheckStatusFailed,
+			Error:   "the link answers an HTTP error without any strategy, not tried",
+			untried: true,
+		}
+	}
 	// Use IPs already collected during DNS discovery — no fresh DNS lookups.
 	// Fresh lookups are slow (poisoned DNS can timeout) and redundant since
 	// DNS discovery already gathered all valid IPs from DoH + system resolver.

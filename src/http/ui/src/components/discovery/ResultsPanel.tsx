@@ -481,6 +481,26 @@ const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
         />
       );
     }
+    case "bad_link": {
+      const status = entry.result.link_status ?? 400;
+      return (
+        <B4ResultCard
+          status="error"
+          title={entry.domain}
+          subtitle={t("discovery.results.badLink", {
+            url: entry.result.url || `https://${entry.domain}/`,
+            status,
+          })}
+          badge={
+            <B4Badge
+              variant="outlined"
+              color="error"
+              label={t("discovery.status.badLink", { status })}
+            />
+          }
+        />
+      );
+    }
     default:
       return (
         <B4ResultCard

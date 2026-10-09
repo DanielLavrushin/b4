@@ -160,6 +160,8 @@ export const RunPanel = ({
             family: ipFamilyLabel(dr.dns_result.no_address_family),
           });
         return t("discovery.run.unresolved");
+      case "bad_link":
+        return t("discovery.run.badLink", { status: dr.link_status ?? 400 });
       default:
         return counts.tested > 0
           ? t("discovery.run.tried", { count: counts.tested })
@@ -221,6 +223,16 @@ export const RunPanel = ({
               dr?.missing_family ?? dr?.dns_result?.no_address_family,
               t,
             )}
+          />
+        );
+      case "bad_link":
+        return (
+          <B4Badge
+            variant="outlined"
+            color="error"
+            label={t("discovery.status.badLink", {
+              status: dr?.link_status ?? 400,
+            })}
           />
         );
       default:

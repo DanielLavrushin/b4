@@ -192,6 +192,16 @@ export const HistoryTable = ({
             )}
           />
         );
+      case "bad_link":
+        return (
+          <B4Badge
+            variant="outlined"
+            color="error"
+            label={t("discovery.status.badLink", {
+              status: row.entry.link_status ?? 400,
+            })}
+          />
+        );
       default:
         return (
           <B4Badge
@@ -315,6 +325,14 @@ export const HistoryTable = ({
                 : t("discovery.history.unresolved")}
           </Typography>
         );
+      case "bad_link":
+        return (
+          <Typography variant="body2" sx={muted}>
+            {t("discovery.history.badLink", {
+              status: row.entry.link_status ?? 400,
+            })}
+          </Typography>
+        );
       default:
         return (
           <Typography variant="body2" sx={muted}>
@@ -392,6 +410,21 @@ export const HistoryTable = ({
                     sx={{ color: colors.text.secondary, whiteSpace: "nowrap" }}
                   >
                     {formatTimeAgo(t, row.entry.end_time, row.entry.start_time)}
+                    {(row.entry.source === "mcp" ||
+                      row.entry.source === "watchdog") && (
+                      <Tooltip
+                        title={t(
+                          `discovery.history.sourceHint.${row.entry.source}`,
+                        )}
+                      >
+                        <Typography
+                          variant="caption"
+                          sx={{ color: colors.text.disabled, display: "block" }}
+                        >
+                          {t(`discovery.history.source.${row.entry.source}`)}
+                        </Typography>
+                      </Tooltip>
+                    )}
                     {!!row.entry.size_bytes && (
                       <Tooltip title={t("discovery.history.sizeHint")}>
                         <Typography

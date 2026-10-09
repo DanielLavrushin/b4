@@ -85,10 +85,15 @@ export const SetVerdictCard = ({
     () => verdict.unresolved ?? [],
     [verdict.unresolved],
   );
-  const pruneTargets = verdict.status === "none" ? unresolved : uncovered;
+  const badLinks = useMemo(() => verdict.bad_links ?? [], [verdict.bad_links]);
+  const untestable = useMemo(
+    () => [...unresolved, ...badLinks],
+    [unresolved, badLinks],
+  );
+  const pruneTargets = verdict.status === "none" ? untestable : uncovered;
   const testedUncovered = useMemo(
-    () => uncovered.filter((d) => !unresolved.includes(d)),
-    [uncovered, unresolved],
+    () => uncovered.filter((d) => !untestable.includes(d)),
+    [uncovered, untestable],
   );
   const noBypass = verdict.no_bypass ?? [];
   const runDomains = useMemo(
@@ -260,11 +265,22 @@ export const SetVerdictCard = ({
       </Box>
     ) : null;
 
-  const unresolvedNote =
-    unresolved.length > 0 ? (
-      <Typography variant="caption" sx={{ ...muted, display: "block" }}>
-        {t("discovery.verdict.unresolved", { domains: unresolved.join(", ") })}
-      </Typography>
+  const untestableNote =
+    untestable.length > 0 ? (
+      <>
+        {unresolved.length > 0 && (
+          <Typography variant="caption" sx={{ ...muted, display: "block" }}>
+            {t("discovery.verdict.unresolved", {
+              domains: unresolved.join(", "),
+            })}
+          </Typography>
+        )}
+        {badLinks.length > 0 && (
+          <Typography variant="caption" sx={{ ...muted, display: "block" }}>
+            {t("discovery.verdict.badLinks", { domains: badLinks.join(", ") })}
+          </Typography>
+        )}
+      </>
     ) : null;
 
   const pruneButton = canPrune ? (
@@ -438,7 +454,7 @@ export const SetVerdictCard = ({
             </Typography>
           )}
           {pruneNote}
-          {unresolvedNote}
+          {untestableNote}
           {testedUncovered.length > 0 && (
             <Typography variant="caption" sx={{ ...muted, display: "block" }}>
               {t("discovery.verdict.partial.separate")}
@@ -475,10 +491,10 @@ export const SetVerdictCard = ({
           label={t("discovery.verdict.status.none")}
         />
       );
-      if (unresolvedNote || pruneButton) {
+      if (untestableNote || pruneButton) {
         body = (
           <Stack spacing={1.5}>
-            {unresolvedNote}
+            {untestableNote}
             {pruneButton && <Box>{pruneButton}</Box>}
             {pruneNote}
           </Stack>

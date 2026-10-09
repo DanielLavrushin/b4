@@ -534,7 +534,7 @@ func (ds *DiscoverySuite) buildSetVerdict(domains []string, winner string) *SetV
 			}
 		}
 		if len(uncovered) == 0 {
-			return &SetVerdict{Status: SetVerdictNone, Uncovered: open, Unresolved: ds.unresolvedOf(open), NoBypass: fine}
+			return &SetVerdict{Status: SetVerdictNone, Uncovered: open, Unresolved: ds.unresolvedOf(open), BadLinks: ds.badLinksOf(open), NoBypass: fine}
 		}
 		return &SetVerdict{
 			Status:       SetVerdictPartial,
@@ -544,12 +544,13 @@ func (ds *DiscoverySuite) buildSetVerdict(domains []string, winner string) *SetV
 			Covered:      covered,
 			Uncovered:    uncovered,
 			Unresolved:   ds.unresolvedOf(uncovered),
+			BadLinks:     ds.badLinksOf(uncovered),
 			NoBypass:     fine,
 			Confirmed:    ds.confirmedOn(group.WinnerPreset, group.Domains),
 		}
 	}
 
-	return &SetVerdict{Status: SetVerdictNone, Uncovered: open, Unresolved: ds.unresolvedOf(open), NoBypass: fine}
+	return &SetVerdict{Status: SetVerdictNone, Uncovered: open, Unresolved: ds.unresolvedOf(open), BadLinks: ds.badLinksOf(open), NoBypass: fine}
 }
 
 func (ds *DiscoverySuite) unresolvedOf(domains []string) []string {

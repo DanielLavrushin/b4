@@ -47,10 +47,12 @@ type HistoryEntry struct {
 	ConfirmTries  int                            `json:"confirm_tries,omitempty"`
 	FinalHost     string                         `json:"final_host,omitempty"`
 	SuiteId       string                         `json:"suite_id,omitempty"`
+	Source        string                         `json:"source,omitempty"`
 	SetId         string                         `json:"set_id,omitempty"`
 	Set           *config.SetConfig              `json:"set,omitempty"`
 	Outcome       Outcome                        `json:"outcome,omitempty"`
 	MissingFamily string                         `json:"missing_family,omitempty"`
+	LinkStatus    int                            `json:"link_status,omitempty"`
 	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
 	StoppedEarly  bool                           `json:"stopped_early,omitempty"`
 	Order         int                            `json:"order,omitempty"`
@@ -226,6 +228,7 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 
 		entry := HistoryEntry{
 			SuiteId:       suite.Id,
+			Source:        suite.Source,
 			SetId:         suite.SetId,
 			Set:           suite.scopedSetFor(domainResult.Domain),
 			Domain:        domainResult.Domain,
@@ -246,6 +249,7 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			FinalHost:     domainResult.FinalHost,
 			Outcome:       domainResult.Outcome,
 			MissingFamily: domainResult.MissingFamily,
+			LinkStatus:    domainResult.LinkStatus,
 			Unconfirmed:   domainResult.Unconfirmed,
 			StoppedEarly:  suite.StoppedEarly,
 			Order:         position + 1,

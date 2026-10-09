@@ -13,6 +13,7 @@ import { MAX_PROBE_URLS, wsUrl, describeApiError } from "@utils";
 import i18n from "@/i18n";
 
 const POLL_MS = 1500;
+const IDLE_POLL_MS = 5000;
 const TERMINAL = new Set(["complete", "failed", "canceled"]);
 
 const failureText = (e: unknown): string => {
@@ -51,6 +52,7 @@ export function useDiscovery() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const initRef = useRef(false);
+  const seenRunRef = useRef<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -77,8 +79,9 @@ export function useDiscovery() {
             setSuite(current);
             setRunning(true);
           }
-        } else if (current?.runtime_active) {
-          setFinishing(true);
+        } else {
+          seenRunRef.current = current?.last_run ?? null;
+          if (current?.runtime_active) setFinishing(true);
         }
       } catch {
         setFinishing(false);
@@ -140,6 +143,47 @@ export function useDiscovery() {
     const timer = setInterval(() => void tick(), POLL_MS);
     return () => clearInterval(timer);
   }, [suiteId, running, finishing, loadHistory]);
+
+  useEffect(() => {
+    if (running || finishing) return;
+    let active = true;
+
+    const tick = async () => {
+      try {
+        const current = await discoveryApi.current();
+        if (!active) return;
+        if (isSuite(current)) {
+          if (
+            !suite &&
+            (current.status === "running" || current.status === "pending")
+          ) {
+            setSuiteId(current.id);
+            setSuite(current);
+            setRunning(true);
+          }
+          return;
+        }
+        const last = current?.last_run;
+        if (last && last !== seenRunRef.current) {
+          seenRunRef.current = last;
+          if (last !== suiteId) void loadHistory();
+        }
+      } catch {
+        return;
+      }
+    };
+
+    const onVisible = () => {
+      if (!document.hidden) void tick();
+    };
+    const timer = setInterval(() => void tick(), IDLE_POLL_MS);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [running, finishing, suite, suiteId, loadHistory]);
 
   const startDiscovery = useCallback(
     async (

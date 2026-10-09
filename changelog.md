@@ -1,5 +1,11 @@
 # B4 - Bye Bye Big Bro
 
+## [1.86.0] - 2026-10-09
+
+- ADDED: **The Discovery page shows a run started through the MCP server or by the watchdog while the page is open, and its history marks such runs** - the run appears within five seconds, the history refreshes when it ends, and its history rows read "via MCP" or "via watchdog" under the time of the run.
+- FIXED: **Discovery tried every strategy for minutes on a link that gives an error even without b4, such as the bare address of an image host, then reported that nothing worked, as if the site were blocked** - when the site answered "bad request", Discovery blamed a strategy for garbling the request, even on the first try, which uses no strategy.
+- FIXED: **Discovery started through the MCP server did worse than the same run from the Discovery page: a link such as a YouTube image link failed with an error on every attempt, and the community hub's strategies were never tried** - the server cut the link at a comma inside it, took the rest for a second site and lowercased its path, so the site was asked for a page that does not exist, and it left the hub out of the run.
+
 ## [1.85.1] - 2026-10-08
 
 - FIXED: **On routers with an older kernel, such as Keenetic, a device that asked for a name's IPv4 and IPv6 addresses at once often got no answer to the second question, so apps on it, like a video player on a TV, waited and never connected, and the router's own lookups could stall for seconds** - b4 queued each DNS query only after the kernel's connection tracking had registered it, so a second query sent at the same moment from the same socket was dropped as a duplicate of the first while that one waited in b4's queue.

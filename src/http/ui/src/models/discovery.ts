@@ -42,6 +42,7 @@ export type DiscoveryOutcome =
   | "address_blocked"
   | "gateway_intercepted"
   | "unresolved"
+  | "bad_link"
   | "not_found";
 
 export type DiscoverySource = "web" | "watchdog" | "mcp";
@@ -118,6 +119,7 @@ export interface DiscoveryResult {
   dns_result?: DNSDiscoveryResult;
   unresolved?: boolean;
   missing_family?: IPFamily;
+  link_status?: number;
   outcome?: DiscoveryOutcome;
   unconfirmed?: boolean;
 }
@@ -160,6 +162,7 @@ export interface SetVerdict {
   covered?: string[];
   uncovered?: string[];
   unresolved?: string[];
+  bad_links?: string[];
   no_bypass?: string[];
   confirmed?: boolean;
 }
@@ -174,7 +177,8 @@ export interface SetRunRecord {
 }
 
 export interface DiscoveryRuntimeState {
-  runtime_active: boolean;
+  runtime_active?: boolean;
+  last_run?: string;
 }
 
 export type DiscoveryCurrent = DiscoverySuite | DiscoveryRuntimeState | null;
@@ -216,9 +220,11 @@ export interface HistoryEntry {
   confirm_tries?: number;
   final_host?: string;
   suite_id?: string;
+  source?: DiscoverySource;
   set?: B4SetConfig;
   outcome?: DiscoveryOutcome;
   missing_family?: IPFamily;
+  link_status?: number;
   unconfirmed?: boolean;
   stopped_early?: boolean;
   order?: number;

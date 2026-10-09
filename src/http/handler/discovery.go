@@ -782,13 +782,20 @@ func (api *API) handleGetCurrentDiscovery(w http.ResponseWriter, r *http.Request
 
 	suite, ok := discovery.GetCurrentSuite()
 	if !ok {
+		idle := map[string]any{}
+		if api.discoveryRT != nil && api.discoveryRT.IsActive() {
+			idle["runtime_active"] = true
+		}
+		if id := discovery.LastRun(); id != "" {
+			idle["last_run"] = id
+		}
 		setJsonHeader(w)
 		w.WriteHeader(http.StatusOK)
-		if api.discoveryRT != nil && api.discoveryRT.IsActive() {
-			w.Write([]byte(`{"runtime_active":true}`))
+		if len(idle) == 0 {
+			w.Write([]byte("null"))
 			return
 		}
-		w.Write([]byte("null"))
+		json.NewEncoder(w).Encode(idle)
 		return
 	}
 
