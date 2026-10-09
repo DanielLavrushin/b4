@@ -267,20 +267,25 @@ For Telegram over WebSocket one line gives the sessions relayed, the time of the
 
 ## Customize
 
-![Customize](/img/dashboard/20261003220140.png)
+![Customize](/img/dashboard/20261009120050.png)
+
+The panels sit in rows. The widths in a row always add up to the full twelve columns, and every panel in a row is as tall as the tallest one: a shorter panel stretches, its content at the top. When a panel has nothing to show or is hidden, the other panels of its row share its width, and a row left empty disappears.
 
 **Customize** in the strip's menu switches the panels into edit mode, and **Done** ends it.
 
 | Action | How |
 | --- | --- |
-| Move a panel | Drag it by the handle in its header, or focus the handle, press Space or Enter, move it with the arrow keys and press Space or Enter again. Escape cancels |
-| Change its width | The minus and plus buttons change it by one column of twelve, between 3 and 12. Dragging its right edge does the same |
-| Hide it | The eye button. Hidden panels are listed in the edit bar, and clicking one brings it back; one that has nothing to show at the moment is marked **no data** |
+| Put a panel beside another | Drag it by the handle in its header onto the other panel; a bar on that panel's left or right edge shows where it lands. Both rows share out their widths again. A row holds up to four panels, so a panel dropped on a full row gets a row of its own below it |
+| Give a panel a row of its own | Drag it into the space between two rows, above the first row or below the last one |
+| Change the widths | Drag the border between two panels, or use the minus and plus buttons, which move one column between the panel and its neighbour. A panel is at least 3 columns wide; a panel alone in its row spans all 12 |
+| Split or join rows | The row button in a panel's header starts a new row at that panel, taking the panels after it along. On the first panel of a row it joins the row to the one above, while that row has room |
+| Move with the keyboard | Focus the handle, press Space or Enter, move with the arrow keys and press Space or Enter again. Escape cancels |
+| Hide a panel | The eye button. Hidden panels are listed in the edit bar, and clicking one brings it back to its row; one that has nothing to show at the moment is marked **no data** |
 | Start over | **Reset layout**, shown once the layout differs from the default |
 
-By default **Activity** spans the full width, **Sets** (8 columns) sits beside **Recent changes** (4), **Top domains**, **Top addresses**, **Active Escalations** and **Blocked** take 6 columns each, and **Telegram** spans the full width. Widths apply while the panel area is at least 960 pixels wide; narrower, the panels stack in their order. A panel that has nothing to show leaves no gap.
+By default **Activity** fills the first row, **Sets** (8 columns) and **Recent changes** (4) share the second, **Top domains** and **Top addresses** the third, **Active Escalations** and **Blocked** the fourth, and **Telegram** fills the last. Rows apply while the panel area is at least 960 pixels wide; narrower, the panels stack in their order.
 
-The layout is saved in b4's configuration, under `ui.dashboard`, so every browser that opens the web interface gets the same one. The browser keeps a copy, which it uses while b4 cannot be reached.
+The layout is saved in b4's configuration, under `ui.dashboard`, so every browser that opens the web interface gets the same one. The browser keeps a copy, which it uses while b4 cannot be reached. A layout saved by an earlier version is arranged into rows by its order and widths.
 
 ## Reset counters
 

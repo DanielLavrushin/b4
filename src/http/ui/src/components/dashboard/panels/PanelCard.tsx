@@ -74,6 +74,9 @@ export function PanelCard({
       sx={{
         containerType: "inline-size",
         minWidth: 0,
+        flex: "1 1 auto",
+        display: "flex",
+        flexDirection: "column",
         bgcolor: colors.background.paper,
         border: `1px solid ${colors.border.default}`,
         borderRadius: `${radiusPx.md}px`,
@@ -161,7 +164,7 @@ export function PanelCard({
           </Box>
         )}
       </Box>
-      <Box sx={{ opacity: dim }}>
+      <Box sx={{ opacity: dim, flex: "1 1 auto" }}>
         {waiting ? (
           <Box sx={emptySx}>{t("metricsLink.waiting")}</Box>
         ) : (
