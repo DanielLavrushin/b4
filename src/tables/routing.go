@@ -104,6 +104,7 @@ type routeBackend interface {
 	addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool)
 	flushIPSet(name string)
 	destroyIPSet(name string)
+	hasIPSet(name string) bool
 	clearAll()
 }
 
@@ -646,10 +647,14 @@ func routeDropSets(be routeBackend, st routeState, keepSets bool) {
 		return
 	}
 	delete(routeStaticApplied, st.setID)
-	be.flushIPSet(st.setV4)
-	be.destroyIPSet(st.setV4)
-	be.flushIPSet(st.setV6)
-	be.destroyIPSet(st.setV6)
+	if st.ipv4 || be.hasIPSet(st.setV4) {
+		be.flushIPSet(st.setV4)
+		be.destroyIPSet(st.setV4)
+	}
+	if st.ipv6 || be.hasIPSet(st.setV6) {
+		be.flushIPSet(st.setV6)
+		be.destroyIPSet(st.setV6)
+	}
 }
 
 func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {

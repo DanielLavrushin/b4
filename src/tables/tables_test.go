@@ -1421,6 +1421,7 @@ type mockRouteBackend struct {
 	addElementsFn func(setName string, ips []string, ttlSec int)
 	delElementsFn func(setName string, ips []string)
 	setOps        []string
+	existingSets  map[string]bool
 	bypass        map[string][]uint32
 	chainOps      map[string][]string
 	jumps         []mockRouteJump
@@ -1539,9 +1540,12 @@ func (m *mockRouteBackend) addMasqueradeRule(chain string, mark uint32, iface st
 func (m *mockRouteBackend) addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool) {
 	m.snat = append(m.snat, mockNATRule{chain: chain, setName: setName, mark: mark, iface: iface, srcIP: srcIP, v6: v6})
 }
-func (m *mockRouteBackend) flushIPSet(name string)   {}
-func (m *mockRouteBackend) destroyIPSet(name string) {}
-func (m *mockRouteBackend) clearAll()                {}
+func (m *mockRouteBackend) flushIPSet(name string)   { m.setOps = append(m.setOps, "flush "+name) }
+func (m *mockRouteBackend) destroyIPSet(name string) { m.setOps = append(m.setOps, "destroy "+name) }
+func (m *mockRouteBackend) hasIPSet(name string) bool {
+	return m.existingSets[name]
+}
+func (m *mockRouteBackend) clearAll() {}
 func (m *mockRouteBackend) addElements(setName string, ips []string, ttlSec int) []string {
 	m.setOps = append(m.setOps, "add "+setName)
 	if m.addElementsFn != nil {

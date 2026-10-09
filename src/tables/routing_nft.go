@@ -581,6 +581,10 @@ func (b *routeNftBackend) destroyIPSet(name string) {
 	dyn := routeNftDynSet(name)
 	runLogged("routing: delete set "+dyn, "nft", "delete", "set", "inet", routeNftTable, dyn)
 }
+func (b *routeNftBackend) hasIPSet(name string) bool {
+	_, err := run("nft", "list", "set", "inet", routeNftTable, name)
+	return err == nil
+}
 
 func (b *routeNftBackend) clearAll() {
 	sweepProxyInputAcceptsNft()
