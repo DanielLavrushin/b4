@@ -1169,6 +1169,13 @@
       "add": "Add to a set",
       "addTo": "Add {{domain}} to a set"
     },
+    "addresses": {
+      "title": "Top addresses",
+      "subtitle": "Connections without a domain name, per address, since {{time}}",
+      "empty": "No connection without a domain name since {{time}}",
+      "add": "Add to a set",
+      "addTo": "Add {{address}} to a set"
+    },
     "telegram": {
       "title": "Telegram",
       "settings": "Telegram settings",
@@ -1255,6 +1262,7 @@
       "clears": {
         "blocked": "Blocked DNS lookups and connections, with the lists of blocked domains and devices",
         "domains": "The Top domains list",
+        "addresses": "The Top addresses list",
         "rst": "Resets dropped by RST protection",
         "escalations": "The escalation count",
         "connections": "Connection totals"

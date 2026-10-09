@@ -2,12 +2,13 @@ package metrics
 
 import (
 	"fmt"
+	"net/netip"
 	"slices"
 	"testing"
 	"time"
 )
 
-func topDomain(t testing.TB, fr Frame, key string) DomainHit {
+func topDomain(t testing.TB, fr Frame, key string) TopEntry {
 	t.Helper()
 	if fr.TopDomains == nil {
 		t.Fatal("frame has no top_domains")
@@ -18,19 +19,19 @@ func topDomain(t testing.TB, fr Frame, key string) DomainHit {
 		}
 	}
 	t.Fatalf("%q missing from top_domains: %+v", key, fr.TopDomains.Items)
-	return DomainHit{}
+	return TopEntry{}
 }
 
 func TestTopDomainsCountEachFlowOnce(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
 
-	m.ObserveFlowHost(flowKey(1), "", "")
-	m.ObserveFlowHost(flowKey(1), "video", "video.example")
-	m.ObserveFlowHost(flowKey(1), "video", "video.example")
-	m.ObserveFlowHost(flowKey(2), "video", "video.example")
-	m.ObserveFlowHost(flowKey(3), "", "other.example")
-	m.ObserveFlowHost(flowKey(3), "", "other.example")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "video", "video.example")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "video", "video.example")
+	m.ObserveFlowTo(flowKey(2), netip.Addr{}, "video", "video.example")
+	m.ObserveFlowTo(flowKey(3), netip.Addr{}, "", "other.example")
+	m.ObserveFlowTo(flowKey(3), netip.Addr{}, "", "other.example")
 
 	fr := m.Hello()
 	if d := topDomain(t, fr, "video.example"); d.Count != 2 || !slices.Equal(d.Sets, []string{"video"}) || d.Last != ms(rigStart) {
@@ -48,8 +49,8 @@ func TestTopDomainsTakeTheSetTheFlowWasCountedIn(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
 
-	m.ObserveFlowHost(flowKey(1), "by-ip", "")
-	m.ObserveFlowHost(flowKey(1), "", "cdn.example")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "by-ip", "")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "cdn.example")
 
 	if d := topDomain(t, m.Hello(), "cdn.example"); !slices.Equal(d.Sets, []string{"by-ip"}) {
 		t.Fatalf("the domain follows the set the flow was classified into: %+v", d)
@@ -60,12 +61,12 @@ func TestTopDomainsListRecentSetsFirst(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
 	for i, set := range []string{"a", "b", "a", "", "c", "d", "c"} {
-		m.ObserveFlowHost(flowKey(i+1), set, "multi.example")
+		m.ObserveFlowTo(flowKey(i+1), netip.Addr{}, set, "multi.example")
 	}
 
 	d := topDomain(t, m.Hello(), "multi.example")
 	if d.Count != 7 || !slices.Equal(d.Sets, []string{"c", "d", "a"}) {
-		t.Fatalf("distinct sets, most recent first, capped at %d; a flow outside every set keeps them: %+v", DomainSetsKept, d)
+		t.Fatalf("distinct sets, most recent first, capped at %d; a flow outside every set keeps them: %+v", TopSetsKept, d)
 	}
 }
 
@@ -131,7 +132,7 @@ func TestTopDomainsNormaliseAndSkipAddresses(t *testing.T) {
 func TestTopDomainsResetWithTheCounters(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
-	m.ObserveFlowHost(flowKey(1), "", "")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "")
 	m.RecordDomain("video.example", "video")
 	before := m.Hello().TopDomains
 
@@ -141,7 +142,7 @@ func TestTopDomainsResetWithTheCounters(t *testing.T) {
 		t.Fatalf("cleared with a new rev: %+v (was %+v)", after, before)
 	}
 
-	m.ObserveFlowHost(flowKey(1), "", "late.example")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "late.example")
 	if items := m.Hello().TopDomains.Items; len(items) != 0 {
 		t.Fatalf("a flow counted before the reset is not named after it: %+v", items)
 	}
@@ -155,12 +156,12 @@ func TestTickCarriesTopDomainsOnlyWhenTheyMoved(t *testing.T) {
 	if fr := m.Tick(&sent); fr.TopDomains != nil {
 		t.Fatal("nothing named since rev 0")
 	}
-	m.ObserveFlowHost(flowKey(1), "", "video.example")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "video.example")
 	fr := m.Tick(&sent)
 	if fr.TopDomains == nil || sent.TopDomains != fr.TopDomains.Rev {
 		t.Fatalf("a new name moves the list: %+v %+v", fr.TopDomains, sent)
 	}
-	m.ObserveFlowHost(flowKey(1), "", "video.example")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "video.example")
 	r.step(time.Second)
 	if fr = m.Tick(&sent); fr.TopDomains != nil {
 		t.Fatal("a flow already named does not move the list")

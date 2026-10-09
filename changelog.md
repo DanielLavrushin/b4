@@ -2,7 +2,7 @@
 
 ## [1.86.0] - 2026-10-09
 
-- ADDED: **The dashboard's Top domains panel lists the domains with the most connections and the sets that matched them, with a + button on a domain outside every set to add it to one** - the + opens the add-domain dialog of the Traffic page, Reset counters clears the list, and `/api/metrics` carries it as `top_domains`.
+- ADDED: **The dashboard's Top domains and Top addresses panels list the domains, and the addresses of connections without a domain name, with the most connections and the sets that matched them, with a + button on an entry no set matched to add it to one** - the + opens the Traffic page's dialog for adding a domain or an address, an address shows its ASN when b4 already holds that ASN, Reset counters clears both lists, and `/api/metrics` carries them as `top_domains` and `top_addresses`.
 - CHANGED: **A device on the dashboard's Blocked panel shows its IP address under its name, with the MAC address on hover** - the MAC address used to take that line.
 - CHANGED: **The dashboard's Telegram panel lists the MTProto secrets as a table, with the traffic figures in bold, zeros dimmed and alternating row shading** - the columns stay next to the secret's name on wide screens, where each secret's figures used to sit at the far edge.
 - FIXED: **In the Russian interface, adding a domain to a set from the Traffic page reported the result in English** - the message had no translation.

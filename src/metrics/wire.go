@@ -45,7 +45,9 @@ const (
 	BlockedDevicesKept    = 50
 	TopDomainsKept        = 512
 	TopDomainsSent        = 20
-	DomainSetsKept        = 3
+	TopAddressesKept      = 512
+	TopAddressesSent      = 20
+	TopSetsKept           = 3
 	OverloadWindowSeconds = 600
 )
 
@@ -64,7 +66,8 @@ type Frame struct {
 	SetsDisabled  int             `json:"sets_disabled"`
 	Totals        Totals          `json:"totals"`
 	Blocked       *BlockedLists   `json:"blocked,omitempty"`
-	TopDomains    *DomainList     `json:"top_domains,omitempty"`
+	TopDomains    *TopList        `json:"top_domains,omitempty"`
+	TopAddresses  *TopList        `json:"top_addresses,omitempty"`
 	Escalations   *EscalationList `json:"escalations,omitempty"`
 	Events        *EventLog       `json:"events,omitempty"`
 	Attention     Attention       `json:"attention"`
@@ -154,16 +157,16 @@ type BlockedLists struct {
 	Devices []BlockedEntry `json:"devices"`
 }
 
-type DomainHit struct {
+type TopEntry struct {
 	Key   string   `json:"key"`
 	Count uint64   `json:"count"`
 	Last  int64    `json:"last"`
 	Sets  []string `json:"sets,omitempty"`
 }
 
-type DomainList struct {
-	Rev   uint64      `json:"rev"`
-	Items []DomainHit `json:"items"`
+type TopList struct {
+	Rev   uint64     `json:"rev"`
+	Items []TopEntry `json:"items"`
 }
 
 type EscalationList struct {

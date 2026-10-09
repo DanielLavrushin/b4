@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"net/netip"
 	"strings"
 	"sync"
 )
@@ -20,6 +21,11 @@ const (
 	flowNamed
 )
 
+const (
+	flowBornShift = 2
+	flowBornMask  = 0x3F
+)
+
 type flowEntry struct {
 	minSeq uint32
 	tenSeq uint32
@@ -28,9 +34,16 @@ type flowEntry struct {
 	gen    uint8
 }
 
+func (e *flowEntry) born() uint8 {
+	return (e.flags >> flowBornShift) & flowBornMask
+}
+
 type flowSeen struct {
 	blocked bool
 	named   bool
+	unnamed bool
+	dropped bool
+	born    uint8
 	set     uint16
 }
 
@@ -86,28 +99,46 @@ func (f *flowState) init(capacity int, mono, off int64, cpu cpuSample) {
 }
 
 func (m *MetricsCollector) ObserveFlow(key FlowKey, setID string) {
-	m.ObserveFlowHost(key, setID, "")
+	m.ObserveFlowTo(key, netip.Addr{}, setID, "")
 }
 
-func (m *MetricsCollector) ObserveFlowHost(key FlowKey, setID, host string) {
+func (m *MetricsCollector) ObserveFlowTo(key FlowKey, dst netip.Addr, setID, host string) {
 	m.initOnce.Do(m.init)
 	now := m.tickMono.Load()
+	tick := m.tickN.Load()
 	f := &m.fl
 	f.mu.Lock()
-	seen := f.touch(key, setID, now, false, host != "")
+	seen := f.touch(key, setID, now, tick, false, host != "")
 	flowSet := ""
-	if seen.named {
+	if seen.named || seen.unnamed {
 		flowSet = f.setID(seen.set)
 	}
 	f.mu.Unlock()
 	if seen.named {
 		m.dom.note(host, flowSet, now)
 	}
+	if !dst.IsValid() {
+		return
+	}
+	switch {
+	case seen.unnamed:
+		m.addr.hold(dst, flowSet, tick, now)
+	case seen.dropped:
+		m.addr.drop(dst, uint32(seen.born))
+	}
 }
 
 func (m *MetricsCollector) RecordDomain(host, setID string) {
 	m.initOnce.Do(m.init)
 	m.dom.note(host, setID, m.tickMono.Load())
+}
+
+func (m *MetricsCollector) RecordAddress(dst netip.Addr, setID string) {
+	if !dst.IsValid() {
+		return
+	}
+	m.initOnce.Do(m.init)
+	m.addr.record(dst, setID, m.tickMono.Load())
 }
 
 func (m *MetricsCollector) CountConnection(setID string) {
@@ -124,7 +155,7 @@ func (m *MetricsCollector) RecordBlockedFlow(key FlowKey, setID, target, mac str
 	now := m.tickMono.Load()
 	f := &m.fl
 	f.mu.Lock()
-	seen := f.touch(key, setID, now, true, false)
+	seen := f.touch(key, setID, now, m.tickN.Load(), true, false)
 	f.mu.Unlock()
 	if seen.blocked {
 		m.bl.note(target, mac, now)
@@ -146,16 +177,16 @@ func (m *MetricsCollector) RecordBlockedDNS(setID, target, mac string) {
 	m.bl.note(target, mac, now)
 }
 
-func (f *flowState) touch(key FlowKey, setID string, now int64, block, named bool) flowSeen {
+func (f *flowState) touch(key FlowKey, setID string, now int64, tick uint32, block, named bool) flowSeen {
 	if e, ok := f.cur[key]; ok {
-		changed, seen := f.update(&e, setID, now, block, named)
+		changed, seen := f.update(&e, setID, now, tick, block, named)
 		if changed {
 			f.cur[key] = e
 		}
 		return seen
 	}
 	if e, ok := f.old[key]; ok {
-		_, seen := f.update(&e, setID, now, block, named)
+		_, seen := f.update(&e, setID, now, tick, block, named)
 		f.insert(key, e, now)
 		return seen
 	}
@@ -168,9 +199,11 @@ func (f *flowState) touch(key FlowKey, setID string, now int64, block, named boo
 	}
 	if named {
 		flags |= flowNamed
+	} else {
+		flags |= (uint8(tick) & flowBornMask) << flowBornShift
 	}
 	f.insert(key, flowEntry{minSeq: f.minSeq, tenSeq: f.tenSeq, set: idx, flags: flags, gen: f.gen}, now)
-	return flowSeen{blocked: block, named: named, set: idx}
+	return flowSeen{blocked: block, named: named, unnamed: !named, set: idx}
 }
 
 func (f *flowState) insert(key FlowKey, e flowEntry, now int64) {
@@ -186,7 +219,7 @@ func (f *flowState) rotate(now int64) {
 	f.rotatedAt = now
 }
 
-func (f *flowState) update(e *flowEntry, setID string, now int64, block, named bool) (bool, flowSeen) {
+func (f *flowState) update(e *flowEntry, setID string, now int64, tick uint32, block, named bool) (bool, flowSeen) {
 	changed := false
 	var seen flowSeen
 	if e.set == 0 && setID != "" {
@@ -200,6 +233,8 @@ func (f *flowState) update(e *flowEntry, setID string, now int64, block, named b
 		if current {
 			seen.named = true
 			seen.set = e.set
+			seen.born = e.born()
+			seen.dropped = (uint8(tick)-seen.born)&flowBornMask < addrSettleTicks
 		}
 	}
 	if block && e.flags&flowBlocked == 0 {

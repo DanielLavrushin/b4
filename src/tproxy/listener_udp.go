@@ -143,7 +143,7 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 			l.udpSessions[key] = newSess
 			l.udpMu.Unlock()
 			l.countConnection()
-			l.countDomain(newSess.domain)
+			l.countTarget(newSess.domain, dst.IP)
 			go l.udpReplyLoop(key, newSess)
 			sess = newSess
 		}

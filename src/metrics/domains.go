@@ -11,7 +11,7 @@ type domainItem struct {
 	count uint64
 	last  int64
 	seq   uint64
-	sets  [DomainSetsKept]string
+	sets  [TopSetsKept]string
 }
 
 type domainState struct {
@@ -60,20 +60,6 @@ func (d *domainState) evict() {
 	delete(d.items, victim)
 }
 
-func withSet(sets [DomainSetsKept]string, id string) [DomainSetsKept]string {
-	if sets[0] == id {
-		return sets
-	}
-	carry := id
-	for i := range sets {
-		sets[i], carry = carry, sets[i]
-		if carry == id || carry == "" {
-			break
-		}
-	}
-	return sets
-}
-
 func domainKey(host string) string {
 	host = strings.TrimSuffix(host, ".")
 	if host == "" || len(host) > maxDomainLen || isIPLiteral(host) {
@@ -107,56 +93,13 @@ func (d *domainState) currentRev() uint64 {
 	return d.rev
 }
 
-type domainRow struct {
-	key string
-	it  domainItem
-}
-
-func (r domainRow) ranksAbove(o domainRow) bool {
-	if r.it.count != o.it.count {
-		return r.it.count > o.it.count
-	}
-	return r.it.seq > o.it.seq
-}
-
-func insertTop(top []domainRow, r domainRow, n int) []domainRow {
-	i := len(top)
-	for i > 0 && r.ranksAbove(top[i-1]) {
-		i--
-	}
-	if i >= n {
-		return top
-	}
-	if len(top) < n {
-		top = append(top, domainRow{})
-	}
-	copy(top[i+1:], top[i:len(top)-1])
-	top[i] = r
-	return top
-}
-
-func (d *domainState) list(off int64) *DomainList {
-	top := make([]domainRow, 0, TopDomainsSent)
+func (d *domainState) list(off int64) *TopList {
+	top := make([]topRow[string], 0, TopDomainsSent)
 	d.mu.Lock()
 	rev := d.rev
 	for k, it := range d.items {
-		top = insertTop(top, domainRow{key: k, it: it}, TopDomainsSent)
+		top = insertTop(top, topRow[string]{key: k, count: it.count, last: it.last, seq: it.seq, sets: it.sets}, TopDomainsSent)
 	}
 	d.mu.Unlock()
-	items := make([]DomainHit, len(top))
-	for i, r := range top {
-		items[i] = DomainHit{Key: r.key, Count: r.it.count, Last: wallMs(r.it.last, off), Sets: setIDs(r.it.sets)}
-	}
-	return &DomainList{Rev: rev, Items: items}
-}
-
-func setIDs(sets [DomainSetsKept]string) []string {
-	var out []string
-	for _, id := range sets {
-		if id == "" {
-			break
-		}
-		out = append(out, id)
-	}
-	return out
+	return &TopList{Rev: rev, Items: topEntries(top, func(k string) string { return k }, off)}
 }

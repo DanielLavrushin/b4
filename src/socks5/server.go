@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -422,7 +423,11 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 		mc := metrics.GetMetricsCollector()
 		mc.CountConnection(viaSet)
 		if host, _, err := net.SplitHostPort(dest); err == nil {
-			mc.RecordDomain(host, viaSet)
+			if addr, err := netip.ParseAddr(host); err == nil {
+				mc.RecordAddress(addr, viaSet)
+			} else {
+				mc.RecordDomain(host, viaSet)
+			}
 		}
 	}
 

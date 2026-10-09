@@ -9,7 +9,6 @@ import type {
   B4Event,
   BlockedEntry,
   BlockedLists,
-  DomainHit,
   EngineInfo,
   EngineMode,
   EngineState,
@@ -26,7 +25,8 @@ import type {
   RulesInfo,
   SetActivity,
   SetKind,
-  TopDomains,
+  TopEntry,
+  TopList,
   Totals,
   UpstreamAttention,
 } from "../models/metrics";
@@ -142,7 +142,7 @@ function blockedLists(v: unknown): BlockedLists | undefined {
   return { rev: num(v.rev), domains: blockedEntries(v.domains), devices: blockedEntries(v.devices) };
 }
 
-function domainHit(o: Obj): DomainHit {
+function topEntry(o: Obj): TopEntry {
   return {
     key: str(o.key),
     count: num(o.count),
@@ -151,9 +151,9 @@ function domainHit(o: Obj): DomainHit {
   };
 }
 
-function topDomains(v: unknown): TopDomains | undefined {
+function topList(v: unknown): TopList | undefined {
   if (!isObj(v)) return undefined;
-  return { rev: num(v.rev), items: objects(v.items).map(domainHit) };
+  return { rev: num(v.rev), items: objects(v.items).map(topEntry) };
 }
 
 function escalationList(v: unknown): EscalationList | undefined {
@@ -283,8 +283,10 @@ export function normalizeFrame(raw: unknown): MetricsFrame | null {
   };
   const blocked = blockedLists(raw.blocked);
   if (blocked) frame.blocked = blocked;
-  const top = topDomains(raw.top_domains);
-  if (top) frame.top_domains = top;
+  const domains = topList(raw.top_domains);
+  if (domains) frame.top_domains = domains;
+  const addresses = topList(raw.top_addresses);
+  if (addresses) frame.top_addresses = addresses;
   const escalations = escalationList(raw.escalations);
   if (escalations) frame.escalations = escalations;
   const events = eventLog(raw.events);
@@ -393,6 +395,12 @@ export function relabelFrame(frame: MetricsFrame, delta: number): MetricsFrame {
       items: shiftEntries(frame.top_domains.items, delta),
     };
   }
+  if (frame.top_addresses) {
+    out.top_addresses = {
+      ...frame.top_addresses,
+      items: shiftEntries(frame.top_addresses.items, delta),
+    };
+  }
   if (frame.events) {
     out.events = {
       ...frame.events,
@@ -424,9 +432,12 @@ export function mergeFrame(prev: MetricsFrame | null, next: MetricsFrame): Metri
   const blocked = newerList(base.blocked, next.blocked);
   if (blocked) merged.blocked = blocked;
   else delete merged.blocked;
-  const top = newerList(base.top_domains, next.top_domains);
-  if (top) merged.top_domains = top;
+  const domains = newerList(base.top_domains, next.top_domains);
+  if (domains) merged.top_domains = domains;
   else delete merged.top_domains;
+  const addresses = newerList(base.top_addresses, next.top_addresses);
+  if (addresses) merged.top_addresses = addresses;
+  else delete merged.top_addresses;
   const escalations = newerList(base.escalations, next.escalations);
   if (escalations) merged.escalations = escalations;
   else delete merged.escalations;

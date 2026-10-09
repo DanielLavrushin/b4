@@ -101,16 +101,16 @@ export interface BlockedLists {
   devices: BlockedEntry[];
 }
 
-export interface DomainHit {
+export interface TopEntry {
   key: string;
   count: number;
   last: number;
   sets: string[];
 }
 
-export interface TopDomains {
+export interface TopList {
   rev: number;
-  items: DomainHit[];
+  items: TopEntry[];
 }
 
 export interface EscalationEntry {
@@ -206,7 +206,8 @@ export interface MetricsFrame {
   sets_disabled: number;
   totals: Totals;
   blocked?: BlockedLists;
-  top_domains?: TopDomains;
+  top_domains?: TopList;
+  top_addresses?: TopList;
   escalations?: EscalationList;
   events?: EventLog;
   attention: Attention;
