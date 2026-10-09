@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "tsc -p tsconfig.json",
     "preview": "vite preview",
-    "lint": "pnpm eslint . --fix"
+    "lint": "oxlint --type-aware --fix --report-unused-disable-directives-severity=warn"
   },
   "dependencies": {
     "@b4/design": "workspace:*",
@@ -25,18 +25,12 @@
     "react-router": "^8.4.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
-    "eslint": "^9.39.4",
-    "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^16.5.0",
     "terser": "^5.47.1",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.59.2",
+    "typescript": "~7.0.2",
     "vite": "^8.3.2",
     "vite-tsconfig-paths": "^5.1.4"
   }

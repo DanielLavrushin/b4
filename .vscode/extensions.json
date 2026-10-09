@@ -2,6 +2,7 @@
   "recommendations": [
     "golang.go",
     "chaunceyxie.vscode-markdown-paste-image-for-vuepress",
-    "ms-vscode.vscode-typescript-next"
+    "TypeScriptTeam.native-preview",
+    "oxc.oxc-vscode"
   ]
 }
