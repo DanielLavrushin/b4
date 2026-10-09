@@ -108,4 +108,5 @@ export {
   AccountTree as AsnIcon,
   ArrowUpward as SentIcon,
   ArrowDownward as ReceivedIcon,
+  Settings as SettingsIcon,
 } from "@mui/icons-material";

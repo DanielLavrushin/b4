@@ -1,6 +1,5 @@
 import { memo, useMemo, type ReactNode } from "react";
-import { Box, Link, Tooltip } from "@mui/material";
-import { Link as RouterLink } from "react-router";
+import { Box, Tooltip } from "@mui/material";
 import { Trans, useTranslation } from "react-i18next";
 import { colors, fonts, radiusPx } from "@design";
 import { ReceivedIcon, SentIcon, TelegramIcon, WarningIcon } from "@b4.icons";
@@ -13,7 +12,7 @@ import { useMetricsFrame } from "@/stores/useMetrics";
 import { useAgoText } from "./Ago";
 import { PanelCard } from "./PanelCard";
 import { parseTimestamp } from "./format";
-import { PANEL_PAD_X, emptySx, linkSx, numeric } from "./styles";
+import { PANEL_PAD_X, emptySx, numeric } from "./styles";
 
 export function bridgeWorking(status: TelegramBridgeStatus): boolean {
   return (
@@ -370,11 +369,7 @@ function TelegramPanelView() {
       title={t("dashboard.telegram.title")}
       icon={<TelegramIcon />}
       waiting={!hasFrame}
-      actions={
-        <Link component={RouterLink} underline="hover" to="/settings/mtproto" sx={linkSx}>
-          {t("dashboard.telegram.settings")}
-        </Link>
-      }
+      settings={{ to: "/settings/mtproto", label: t("dashboard.telegram.settings") }}
     >
       {proxyOn && mtproto && <MTProtoSection stats={mtproto} ends={!bridgeShown} />}
       {bridgeShown && (

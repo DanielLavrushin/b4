@@ -259,7 +259,7 @@ The counts cover what b4 blocked itself. Once the addresses of a blocked site ar
 
 ![Telegram](/img/dashboard/20261009120030.png)
 
-The panel is on the page while the [MTProto proxy](telegram/mtproto-proxy.md) or [Telegram over WebSocket](telegram/websocket-bridge.md) is on. **Telegram settings** opens Settings, Telegram.
+The panel is on the page while the [MTProto proxy](telegram/mtproto-proxy.md) or [Telegram over WebSocket](telegram/websocket-bridge.md) is on. The gear button in the header opens Settings, Telegram.
 
 For the MTProto proxy the first line gives its port, the client networks using it right now, the open connections and the data sent and received. A table below repeats these figures per secret, one row each with alternating shading: **Networks now**, **Open connections**, **Sent** and **Received**. Rows with open connections come first, then the ones with the most data. Hovering a network count lists the addresses. Devices that share one internet connection count as one network. A zero is drawn dimmer than other figures. On a narrow panel each row stacks its figures under the secret's name, each with its label. The data of a session is added when the session ends, so a long session shows its traffic only after it closes. The figures are held in memory since the proxy started, and [Reset counters](#reset-counters) leaves them alone.
 
