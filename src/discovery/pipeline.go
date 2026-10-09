@@ -167,6 +167,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	ds.storeResultsMulti(phase1Presets[0], baseline)
 	ds.determineBest()
 	ds.markUnresolved(baseline)
+	ds.markBadLinks(baseline)
 	if ds.nothingLeftToTest() {
 		ds.finishRun()
 		return
@@ -254,8 +255,8 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	}
 
 	if !ds.anyDomainNeedsBypass() {
-		if ds.anyUnresolved() {
-			log.DiscoveryLogf("Verified: no packet strategy needed for any domain that resolves")
+		if ds.anyUntestable() {
+			log.DiscoveryLogf("Verified: no packet strategy needed for any domain this run can test")
 		} else {
 			log.DiscoveryLogf("Verified: no packet strategy needed for any domain")
 		}
@@ -373,6 +374,10 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 
 		if domainResult.Unresolved {
 			log.DiscoveryLogf("  ⊘ [%s] no address to test: %s", di.Domain, unresolvedReason(domainResult.MissingFamily, dnsResult))
+			continue
+		}
+		if domainResult.LinkStatus != 0 {
+			log.DiscoveryLogf("  ⊘ [%s] nothing to test: %s answers HTTP %d without any strategy, check the link", di.Domain, di.CheckURL, domainResult.LinkStatus)
 			continue
 		}
 

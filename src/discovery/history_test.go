@@ -163,6 +163,24 @@ func TestHistoryKeepsTheOrderTheSitesWereTyped(t *testing.T) {
 	}
 }
 
+func TestHistoryRecordsWhoStartedTheRun(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	SaveToHistory(&CheckSuite{
+		Id: "run-mcp", Status: CheckStatusComplete, EndTime: time.Now(), Source: SourceMCP,
+		DomainDiscoveryResults: map[string]*DomainDiscoveryResult{
+			"meduza.io": {Domain: "meduza.io"},
+		},
+	}, cfgPath)
+
+	hist := LoadDiscoveryHistory(cfgPath)
+	if len(hist.Entries) != 1 || hist.Entries[0].Source != SourceMCP {
+		t.Fatalf("a run started over MCP must say so in the history, got %+v", hist.Entries)
+	}
+	if LastRun() != "run-mcp" {
+		t.Fatalf("an open Discovery page refreshes its history when the last saved run changes, got %q", LastRun())
+	}
+}
+
 func TestCancelSuiteWithoutAChannelDoesNotPanic(t *testing.T) {
 	suite := &CheckSuite{Id: "hand-built", Status: CheckStatusRunning}
 	RegisterSuite(suite)

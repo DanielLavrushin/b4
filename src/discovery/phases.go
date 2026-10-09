@@ -18,8 +18,8 @@ func (ds *DiscoverySuite) runPhase1Multi(presets []ConfigPreset) []StrategyFamil
 	baselineResults := ds.baselineResults(presets[0])
 
 	if !ds.anyDomainNeedsBypass() {
-		if ds.anyUnresolved() {
-			log.DiscoveryLogf("  Every domain that resolves loads without a packet strategy - testing the presets for comparison only")
+		if ds.anyUntestable() {
+			log.DiscoveryLogf("  Every domain this run can test loads without a packet strategy - testing the presets for comparison only")
 		} else {
 			log.DiscoveryLogf("  Every domain loads without a packet strategy - testing the presets for comparison only")
 		}

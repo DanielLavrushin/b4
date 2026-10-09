@@ -86,7 +86,18 @@ func (ds *DiscoverySuite) upgradeDeadEndCheckURLs(presets, cached []ConfigPreset
 	}
 
 	scoped := scopePresets(presets, upgraded)
-	ds.storeResultsMulti(scoped[0], ds.testPresetAllDomains(scoped[0]))
+	baseline := ds.testPresetAllDomains(scoped[0])
+	ds.storeResultsMulti(scoped[0], baseline)
+	ds.markBadLinks(baseline)
+	if testable := ds.testableOf(upgraded); len(testable) < len(upgraded) {
+		ds.CheckSuite.mu.Lock()
+		ds.TotalChecks -= (len(upgraded) - len(testable)) * (len(presets) - 1)
+		ds.CheckSuite.mu.Unlock()
+		if upgraded = testable; len(upgraded) == 0 {
+			return nil
+		}
+		scoped = scopePresets(presets, upgraded)
+	}
 	early := append(scopePresets(cached, upgraded), scopePresets(ds.hubPresets, upgraded)...)
 	if current, ok := ds.setCurrentPreset(); ok {
 		early = append(scopePresets([]ConfigPreset{current}, upgraded), early...)

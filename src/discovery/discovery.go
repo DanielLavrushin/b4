@@ -181,7 +181,7 @@ func (ds *DiscoverySuite) setStatus(status CheckStatus) {
 func (ds *DiscoverySuite) allDomainsTransportBlocked() bool {
 	blocked := false
 	for _, di := range ds.Domains {
-		if ds.unresolved(di.Domain) {
+		if ds.untestable(di.Domain) {
 			continue
 		}
 		result := ds.dnsResults[di.Domain]

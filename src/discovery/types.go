@@ -70,6 +70,7 @@ const (
 	OutcomeAddressBlocked     Outcome = "address_blocked"
 	OutcomeGatewayIntercepted Outcome = "gateway_intercepted"
 	OutcomeUnresolved         Outcome = "unresolved"
+	OutcomeBadLink            Outcome = "bad_link"
 	OutcomeNotFound           Outcome = "not_found"
 )
 
@@ -92,6 +93,7 @@ type SetVerdict struct {
 	Covered      []string          `json:"covered,omitempty"`
 	Uncovered    []string          `json:"uncovered,omitempty"`
 	Unresolved   []string          `json:"unresolved,omitempty"`
+	BadLinks     []string          `json:"bad_links,omitempty"`
 	NoBypass     []string          `json:"no_bypass,omitempty"`
 	Confirmed    bool              `json:"confirmed,omitempty"`
 }
@@ -118,6 +120,7 @@ type CheckResult struct {
 	lookup      nameLookup
 	lookupHost  string
 	untried     bool
+	finalHTTPS  bool
 }
 
 type nameLookup int
@@ -200,6 +203,7 @@ type DomainDiscoveryResult struct {
 	DNSResult     *DNSDiscoveryResult            `json:"dns_result,omitempty"`
 	Unresolved    bool                           `json:"unresolved,omitempty"`
 	MissingFamily string                         `json:"missing_family,omitempty"`
+	LinkStatus    int                            `json:"link_status,omitempty"`
 	Outcome       Outcome                        `json:"outcome,omitempty"`
 	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
 }
@@ -208,6 +212,8 @@ func (dr *DomainDiscoveryResult) refreshOutcome(finished bool) {
 	switch {
 	case dr.Unresolved:
 		dr.Outcome = OutcomeUnresolved
+	case dr.LinkStatus != 0:
+		dr.Outcome = OutcomeBadLink
 	case dr.BaselineWorks:
 		dr.Outcome = OutcomeWorksWithoutBypass
 	case dr.BestSuccess && dr.BestPreset != "" && dr.BestPreset != presetNoBypass:

@@ -2653,6 +2653,7 @@
       "addressBlocked": "Connections to every known address fail. No bypass strategy can help.",
       "gatewayIntercepted": "TCP to every known address is answered by the gateway in front of this host. No strategy from this host can reach past it.",
       "unresolved": "DNS has no address for this name, so there is nothing to test. Check the spelling.",
+      "badLink": "The link answers HTTP {{status}} even without b4, so there is nothing to test. Use the link of a page or file the site serves.",
       "unresolvedFamily": "This name has no {{family}} address, so there is nothing to test over {{family}}.",
       "note": "A found strategy is confirmed before the run ends. Nothing has been found yet, so stopping now ends the run.",
       "noteFound": "Stop ends the search here and confirms what was found. The steps that could have tuned it are skipped.",
@@ -2679,6 +2680,7 @@
       "addressBlocked": "address blocked",
       "gatewayIntercepted": "intercepted by the gateway",
       "unresolved": "does not resolve",
+      "badLink": "link answers {{status}}",
       "noFamilyAddress": "no {{family}} address",
       "nothingFound": "nothing found"
     },
@@ -2699,6 +2701,7 @@
       "unresolvedNxdomain": "This name does not exist: {{server}} answers NXDOMAIN, so there is no site to test a strategy on. Check the spelling.",
       "unresolved": "No DNS server returned an address for this name, so no strategy could be tested. Check the spelling; if the name is right, DNS for it fails on this network.",
       "unresolvedSystem": "The system resolver has no address for this name, and with Check DNS for tampering off no other resolver was asked, so no strategy could be tested. Check the spelling, or run again with that option on.",
+      "badLink": "{{url}} answers HTTP {{status}} even without a strategy: the link is wrong or the site refuses this request, so it cannot show whether a strategy works and none was tested. Run again with the link of a page or file the site serves.",
       "unresolvedFamily": "This name has {{other}} addresses only, while this run probed over {{family}}, so no strategy could be tested. If the site has an {{family}} address that DNS does not publish, add it under Pinned addresses in Options.",
       "nothingFound_one": "Nothing worked. {{count}} configuration was tried. Retrying with TLS 1.2 or a captured ClientHello sometimes helps; the log shows how each one failed.",
       "nothingFound_other": "Nothing worked. {{count}} configurations were tried. Retrying with TLS 1.2 or a captured ClientHello sometimes helps; the log shows how each one failed.",
@@ -2730,6 +2733,7 @@
       "apply": "Apply to {{name}}",
       "missingSet": "The set no longer exists, so the result cannot be written into it.",
       "unresolved": "{{domains}}: no address to test, because the name is wrong or has no address in the IP family this run probed. Fix it, or remove it from this set's Discovery addresses.",
+      "badLinks": "{{domains}}: the link answers an HTTP error even without b4, so nothing could be tested on it. Fix the link, or remove it from this set's Discovery addresses.",
       "dialogTitle": "Write the strategy into {{name}}",
       "dialogUncovered": "This strategy did not work for {{domains}}. After the change, {{name}} may stop opening them.",
       "pruned": "Removed {{domains}} from the Discovery addresses of {{name}}.",
@@ -2891,12 +2895,21 @@
       "needsProxy": "Needs a proxy or VPN set",
       "gatewayIntercepted": "Intercepted by the gateway in front of this host",
       "unresolved": "The name does not resolve, nothing was tested",
+      "badLink": "The link answers HTTP {{status}}, nothing was tested",
       "unresolvedFamily": "No {{family}} address, nothing was tested",
       "nothing": "No strategy made it load",
       "sharedWith": "One set together with {{domains}}",
       "stoppedEarly": "search stopped early, not tuned",
       "lastLog": "Last run log",
-      "unresolvedNoAddress": "DNS publishes no {{family}} address, nothing was tested"
+      "unresolvedNoAddress": "DNS publishes no {{family}} address, nothing was tested",
+      "source": {
+        "mcp": "via MCP",
+        "watchdog": "via watchdog"
+      },
+      "sourceHint": {
+        "mcp": "This search was started through the MCP server",
+        "watchdog": "The watchdog started this search to heal a set"
+      }
     },
     "errors": {
       "not_found": "The set was not found. It may have been deleted.",

@@ -609,7 +609,7 @@ func (ds *DiscoverySuite) needsBypass(domain string) bool {
 	if dr == nil {
 		return true
 	}
-	if dr.BaselineWorks || dr.Unresolved {
+	if dr.BaselineWorks || dr.untestable() {
 		return false
 	}
 	if _, r := plainFixResult(dr); r != nil {
