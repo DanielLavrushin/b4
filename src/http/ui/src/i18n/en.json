@@ -1020,7 +1020,7 @@
       "action": "Customize",
       "done": "Done",
       "reset": "Reset layout",
-      "hint": "Drag a panel by its handle to reorder it, or focus the handle and use Space and the arrow keys. Change its width with the minus and plus buttons or by dragging its right edge, and hide it with the eye. Widths apply when the dashboard is wide enough; on narrow screens panels stack.",
+      "hint": "Drag a panel by its handle onto another panel to put it beside that one, or into the space between rows to give it a row of its own; with the keyboard, focus the handle and use Space and the arrow keys. Drag the border between two panels, or use the minus and plus buttons, to share a row's width. The row button starts a new row at a panel or joins its row to the one above. Panels in a row are as tall as the tallest one; on narrow screens they stack.",
       "hidden": "Hidden",
       "hide": "Hide panel",
       "unavailable": "no data",
@@ -1032,13 +1032,21 @@
       "wider": "Wider",
       "narrowerPanel": "Make {{title}} one column narrower",
       "widerPanel": "Make {{title}} one column wider",
+      "newRow": "Start a new row here",
+      "newRowPanel": "Start a new row at {{title}}",
+      "joinRow": "Join the row above",
+      "joinRowPanel": "Join the row of {{title}} to the row above",
+      "rowFull": "The row above has no room",
+      "newRowHere": "New row",
       "hidePanel": "Hide {{title}}",
       "announce": {
         "instructions": "To move a panel, press Space or Enter, move it with the arrow keys, then press Space or Enter to drop it, or Escape to cancel.",
         "start": "Picked up {{title}}.",
         "over": "{{title}} is over {{target}}.",
+        "overGap": "{{title}} will get a row of its own.",
         "outside": "{{title}} is not over a panel.",
-        "end": "{{title}} moved to the place of {{target}}.",
+        "end": "{{title}} moved next to {{target}}.",
+        "endGap": "{{title}} moved to a row of its own.",
         "cancel": "{{title}} was not moved."
       }
     },
@@ -1158,19 +1166,39 @@
       "note": "Once a blocked site's addresses are learned, the firewall drops further connections before b4 sees them; those are not counted here.",
       "domains": "Domains",
       "devices": "Devices",
+      "mac": "MAC {{value}}",
       "noDomains": "No domain blocked since {{time}}",
       "noDevices": "No device recorded since {{time}}"
+    },
+    "domains": {
+      "title": "Top domains",
+      "subtitle": "Connections per domain since {{time}}",
+      "empty": "No connection with a known domain since {{time}}",
+      "add": "Add to a set",
+      "addTo": "Add {{domain}} to a set"
+    },
+    "addresses": {
+      "title": "Top addresses",
+      "subtitle": "Connections without a domain name, per address, since {{time}}",
+      "empty": "No connection without a domain name since {{time}}",
+      "add": "Add to a set",
+      "addTo": "Add {{address}} to a set"
     },
     "telegram": {
       "title": "Telegram",
       "settings": "Telegram settings",
       "proxyTitle": "MTProto proxy, port {{port}}",
-      "networksNow_one": "{{value}} network now",
-      "networksNow_other": "{{value}} networks now",
-      "openConnections_one": "{{value}} open connection",
-      "openConnections_other": "{{value}} open connections",
-      "sent": "sent {{value}}",
-      "received": "received {{value}}",
+      "networksNow_one": "<b>{{value}}</b> network now",
+      "networksNow_other": "<b>{{value}}</b> networks now",
+      "openConnections_one": "<b>{{value}}</b> open connection",
+      "openConnections_other": "<b>{{value}}</b> open connections",
+      "sent": "sent <b>{{value}}</b>",
+      "received": "received <b>{{value}}</b>",
+      "colSecret": "Secret",
+      "colNetworks": "Networks now",
+      "colConnections": "Open connections",
+      "colSent": "Sent",
+      "colReceived": "Received",
       "perSecret": "Per secret",
       "noSecrets": "No secrets configured",
       "unnamed": "unnamed",
@@ -1241,6 +1269,8 @@
       "clearsTitle": "Cleared",
       "clears": {
         "blocked": "Blocked DNS lookups and connections, with the lists of blocked domains and devices",
+        "domains": "The Top domains list",
+        "addresses": "The Top addresses list",
         "rst": "Resets dropped by RST protection",
         "escalations": "The escalation count",
         "connections": "Connection totals"
@@ -3372,7 +3402,9 @@
       "originalDomain": "Original domain:",
       "mostSpecific": "Most specific - exact match only",
       "broadest": "Broadest - matches all subdomains",
-      "intermediate": "Intermediate specificity"
+      "intermediate": "Intermediate specificity",
+      "added": "Domain {{domain}} added",
+      "failed": "Failed to add the domain: {{error}}"
     },
     "addIp": {
       "title": "Add to a set",

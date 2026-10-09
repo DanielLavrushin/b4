@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { SortDirection } from "@common/SortableTableCell";
 import {
   AsnLabels,
@@ -73,6 +74,7 @@ export function parseSniLogLine(line: string): ParsedLog | null {
 }
 
 export function useDomainActions() {
+  const { t } = useTranslation();
   const { showSuccess, showError } = useSnackbar();
   const [modalState, setModalState] = useState<DomainModalState>({
     open: false,
@@ -104,8 +106,8 @@ export function useDomainActions() {
   }, []);
 
   const addDomain = useCallback(
-    async (setId: string, setName?: string) => {
-      if (!modalState.selected) return;
+    async (setId: string, setName?: string): Promise<boolean> => {
+      if (!modalState.selected) return false;
 
       try {
         const response = await fetch("/api/geosite/domain", {
@@ -119,17 +121,18 @@ export function useDomainActions() {
         });
 
         if (response.ok) {
-          showSuccess(`Domain ${modalState.selected} added successfully`);
+          showSuccess(t("connections.addDomain.added", { domain: modalState.selected }));
           closeModal();
-        } else {
-          const error = (await response.json()) as { message: string };
-          showError(`Failed to add domain: ${error.message}`);
+          return true;
         }
+        const error = (await response.json()) as { message: string };
+        showError(t("connections.addDomain.failed", { error: error.message }));
       } catch (error) {
-        showError(`Failed to add domain: ${String(error)}`);
+        showError(t("connections.addDomain.failed", { error: String(error) }));
       }
+      return false;
     },
-    [modalState.selected, closeModal, showError, showSuccess],
+    [modalState.selected, closeModal, showError, showSuccess, t],
   );
 
   return {

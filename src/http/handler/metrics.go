@@ -44,7 +44,7 @@ func (api *API) RegisterMetricsApi() {
 }
 
 // @Summary Get the dashboard metrics
-// @Description Returns the same hello frame that /api/ws/metrics sends on connect: engine state, uptime, per-minute and per-ten-minute connection buckets, per-set activity, totals since stats_since, blocked lists, escalations, events and attention items. Connections are counted once per flow. All times are wall-clock milliseconds.
+// @Description Returns the same hello frame that /api/ws/metrics sends on connect: engine state, uptime, per-minute and per-ten-minute connection buckets, per-set activity, totals since stats_since, blocked lists, the most connected domains and the most connected addresses of connections without a domain name, escalations, events and attention items. Connections are counted once per flow, and so are domains and addresses. All times are wall-clock milliseconds.
 // @Tags Metrics
 // @Produce json
 // @Success 200 {object} metrics.Frame
@@ -62,7 +62,7 @@ func (a *API) getMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Reset the metrics counters
-// @Description Zeroes the totals, the RST drop and escalation counts and the blocked lists, and moves stats_since to now. Activity history, uptime, events and live escalations are kept.
+// @Description Zeroes the totals, the RST drop and escalation counts, the blocked lists and the domain and address counts, and moves stats_since to now. Activity history, uptime, events and live escalations are kept.
 // @Tags Metrics
 // @Produce json
 // @Success 200 {object} MetricsResetResponse

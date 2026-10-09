@@ -1,8 +1,9 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box, IconButton, Tooltip, Typography } from "@mui/material";
+import { Link as RouterLink } from "react-router";
 import { useTranslation } from "react-i18next";
 import { colors, radiusPx } from "@design";
-import { HistoryIcon } from "@b4.icons";
+import { HistoryIcon, SettingsIcon } from "@b4.icons";
 import { formatClock } from "@common/charts";
 import { useMetrics } from "@/stores/useMetrics";
 import { PANEL_PAD_X, emptySx, tagSx } from "./styles";
@@ -41,11 +42,43 @@ function StaleBadge({ since }: { since: number }) {
   );
 }
 
+export interface PanelSettings {
+  to: string;
+  label: string;
+}
+
+function SettingsButton({ to, label }: PanelSettings) {
+  return (
+    <Tooltip title={label}>
+      <IconButton
+        component={RouterLink}
+        to={to}
+        aria-label={label}
+        size="small"
+        sx={{
+          p: "4px",
+          mr: "-4px",
+          color: colors.text.secondary,
+          "& svg": { fontSize: 18 },
+          "&:hover": { color: colors.secondary, bgcolor: colors.accent.secondaryHover },
+          "&:focus-visible": {
+            outline: `2px solid ${colors.border.strong}`,
+            outlineOffset: "2px",
+          },
+        }}
+      >
+        <SettingsIcon />
+      </IconButton>
+    </Tooltip>
+  );
+}
+
 interface PanelCardProps {
   title: string;
   subtitle?: ReactNode;
   icon?: ReactNode;
   actions?: ReactNode;
+  settings?: PanelSettings;
   footer?: ReactNode;
   live?: boolean;
   waiting?: boolean;
@@ -57,6 +90,7 @@ export function PanelCard({
   subtitle,
   icon,
   actions,
+  settings,
   footer,
   live = true,
   waiting = false,
@@ -74,6 +108,9 @@ export function PanelCard({
       sx={{
         containerType: "inline-size",
         minWidth: 0,
+        flex: "1 1 auto",
+        display: "flex",
+        flexDirection: "column",
         bgcolor: colors.background.paper,
         border: `1px solid ${colors.border.default}`,
         borderRadius: `${radiusPx.md}px`,
@@ -145,7 +182,7 @@ export function PanelCard({
             )}
           </Box>
         </Box>
-        {(staleSince > 0 || actions) && (
+        {(staleSince > 0 || actions || settings) && (
           <Box
             sx={{
               display: "flex",
@@ -158,10 +195,11 @@ export function PanelCard({
           >
             {staleSince > 0 && <StaleBadge since={staleSince} />}
             {actions}
+            {settings && <SettingsButton {...settings} />}
           </Box>
         )}
       </Box>
-      <Box sx={{ opacity: dim }}>
+      <Box sx={{ opacity: dim, flex: "1 1 auto" }}>
         {waiting ? (
           <Box sx={emptySx}>{t("metricsLink.waiting")}</Box>
         ) : (

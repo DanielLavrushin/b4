@@ -6,6 +6,12 @@ import {
   MIN_SPAN,
   PANELS_BY_ID,
 } from "@components/dashboard/registry";
+import {
+  joinRows,
+  splitRows,
+  wrapRows,
+  type Arrangement,
+} from "@components/dashboard/layoutRows";
 
 const STORAGE_KEY = "b4_dashboard_layout";
 const LAYOUT_VERSION = 3;
@@ -16,6 +22,7 @@ interface StoredDashboard {
   order?: string[];
   hidden?: string[];
   spans?: Record<string, number>;
+  breaks?: string[];
 }
 
 interface StoredLayout {
@@ -23,15 +30,23 @@ interface StoredLayout {
   order: string[];
   hidden: string[];
   spans: Record<string, number>;
+  breaks: string[];
 }
 
-const defaultOrder = (): string[] => DASHBOARD_PANELS.map((p) => p.id);
+export const defaultSpanOf = (id: string): number =>
+  PANELS_BY_ID.get(id)?.defaultSpan ?? GRID_COLUMNS;
 
-export const clampSpan = (value: number): number =>
+const clampSpan = (value: number): number =>
   Math.min(GRID_COLUMNS, Math.max(MIN_SPAN, Math.round(value)));
 
+const defaultRows = (): string[][] =>
+  wrapRows(
+    DASHBOARD_PANELS.map((p) => p.id),
+    defaultSpanOf,
+  );
+
 const mergeOrder = (saved: string[]): string[] => {
-  const result = saved.filter((id) => PANELS_BY_ID.has(id));
+  const result = [...saved];
   DASHBOARD_PANELS.forEach((panel, index) => {
     if (result.includes(panel.id)) return;
     let insertAt = 0;
@@ -47,27 +62,55 @@ const mergeOrder = (saved: string[]): string[] => {
   return result;
 };
 
-const emptyLayout = (): StoredLayout => ({
-  v: LAYOUT_VERSION,
-  order: defaultOrder(),
-  hidden: [],
-  spans: {},
-});
+const withNewPanels = (rows: string[][]): string[][] => {
+  const out = rows.map((row) => [...row]);
+  DASHBOARD_PANELS.forEach((panel, index) => {
+    if (out.some((row) => row.includes(panel.id))) return;
+    let at = 0;
+    for (let i = index - 1; i >= 0; i--) {
+      const r = out.findIndex((row) => row.includes(DASHBOARD_PANELS[i].id));
+      if (r >= 0) {
+        at = r + 1;
+        break;
+      }
+    }
+    out.splice(at, 0, [panel.id]);
+  });
+  return out;
+};
 
-const normalize = (raw: StoredDashboard): StoredLayout => {
+const normalizeSpans = (raw: Readonly<Record<string, number>> | undefined): Record<string, number> => {
   const spans: Record<string, number> = {};
-  for (const [id, span] of Object.entries(raw.spans ?? {})) {
+  for (const [id, span] of Object.entries(raw ?? {})) {
     const panel = PANELS_BY_ID.get(id);
     if (!panel || !Number.isFinite(span)) continue;
     const value = clampSpan(span);
     if (value !== panel.defaultSpan) spans[id] = value;
   }
+  return spans;
+};
+
+const emptyLayout = (): StoredLayout => ({
+  v: LAYOUT_VERSION,
+  ...joinRows(defaultRows()),
+  hidden: [],
+  spans: {},
+});
+
+const normalize = (raw: StoredDashboard): StoredLayout => {
+  const spans = normalizeSpans(raw.spans);
+  const saved = (Array.isArray(raw.order) ? raw.order : []).filter(
+    (id, i, all) => PANELS_BY_ID.has(id) && all.indexOf(id) === i,
+  );
+  const breaks = (Array.isArray(raw.breaks) ? raw.breaks : []).filter((id) => saved.includes(id));
+  let rows: string[][];
+  if (saved.length === 0) rows = defaultRows();
+  else if (breaks.length > 0) rows = withNewPanels(splitRows(saved, breaks));
+  else rows = wrapRows(mergeOrder(saved), (id) => spans[id] ?? defaultSpanOf(id));
   return {
     v: LAYOUT_VERSION,
-    order: mergeOrder(Array.isArray(raw.order) ? raw.order : []),
-    hidden: (Array.isArray(raw.hidden) ? raw.hidden : []).filter((id) =>
-      PANELS_BY_ID.has(id),
-    ),
+    ...joinRows(rows),
+    hidden: (Array.isArray(raw.hidden) ? raw.hidden : []).filter((id) => PANELS_BY_ID.has(id)),
     spans,
   };
 };
@@ -92,10 +135,15 @@ const saveLocal = (layout: StoredLayout): void => {
   }
 };
 
-const isCustomized = (layout: StoredLayout): boolean =>
-  layout.hidden.length > 0 ||
-  Object.keys(layout.spans).length > 0 ||
-  layout.order.join() !== defaultOrder().join();
+const isCustomized = (layout: StoredLayout): boolean => {
+  const defaults = emptyLayout();
+  return (
+    layout.hidden.length > 0 ||
+    Object.keys(layout.spans).length > 0 ||
+    layout.order.join() !== defaults.order.join() ||
+    layout.breaks.join() !== defaults.breaks.join()
+  );
+};
 
 export function useDashboardLayout() {
   const [layout, setLayout] = useState<StoredLayout>(loadLayout);
@@ -127,6 +175,7 @@ export function useDashboardLayout() {
         order: layout.order,
         hidden: layout.hidden,
         spans: layout.spans,
+        breaks: layout.breaks,
       }).catch(() => undefined);
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
@@ -142,32 +191,17 @@ export function useDashboardLayout() {
 
   const hidden = useMemo(() => new Set(layout.hidden), [layout.hidden]);
 
-  const move = useCallback(
-    (activeId: string, overId: string) => {
+  const arrange = useCallback(
+    (change: (current: Arrangement) => Arrangement) => {
       mutate((prev) => {
-        const from = prev.order.indexOf(activeId);
-        const to = prev.order.indexOf(overId);
-        if (from < 0 || to < 0 || from === to) return prev;
-        const order = [...prev.order];
-        order.splice(to, 0, order.splice(from, 1)[0]);
-        return { ...prev, order };
-      });
-    },
-    [mutate],
-  );
-
-  const setSpan = useCallback(
-    (id: string, span: number) => {
-      mutate((prev) => {
-        const next = clampSpan(span);
-        if (next === PANELS_BY_ID.get(id)?.defaultSpan) {
-          if (!(id in prev.spans)) return prev;
-          const spans = { ...prev.spans };
-          delete spans[id];
-          return { ...prev, spans };
-        }
-        if (prev.spans[id] === next) return prev;
-        return { ...prev, spans: { ...prev.spans, [id]: next } };
+        const next = change(prev);
+        if (next === prev) return prev;
+        return {
+          ...prev,
+          order: [...next.order],
+          breaks: [...next.breaks],
+          spans: normalizeSpans(next.spans),
+        };
       });
     },
     [mutate],
@@ -190,10 +224,10 @@ export function useDashboardLayout() {
 
   return {
     order: layout.order,
+    breaks: layout.breaks,
     hidden,
     spans: layout.spans,
-    move,
-    setSpan,
+    arrange,
     setHidden,
     reset,
     customized,

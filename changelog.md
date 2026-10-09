@@ -3,6 +3,8 @@
 ## [1.86.0] - 2026-10-09
 
 - ADDED: **The Discovery page shows a run started through the MCP server or by the watchdog while the page is open, and its history marks such runs** - the run appears within five seconds, the history refreshes when it ends, and its history rows read "via MCP" or "via watchdog" under the time of the run.
+- CHANGED: **A device on the dashboard's Blocked panel shows its IP address under its name, with the MAC address on hover** - the MAC address used to take that line.
+- CHANGED: **The dashboard arranges its panels in rows that always fill the full width, each panel as tall as the tallest one in its row, where panels used to be packed into free spots, which left holes and moved them sideways as lists grew** - in Customize, the border between two panels and the minus and plus buttons move width between neighbours, a panel dropped on another joins its row, one dropped between rows gets a row of its own, and the row button splits or joins rows.
 - FIXED: **Discovery tried every strategy for minutes on a link that gives an error even without b4, such as the bare address of an image host, then reported that nothing worked, as if the site were blocked** - when the site answered "bad request", Discovery blamed a strategy for garbling the request, even on the first try, which uses no strategy.
 - FIXED: **Discovery started through the MCP server did worse than the same run from the Discovery page: a link such as a YouTube image link failed with an error on every attempt, and the community hub's strategies were never tried** - the server cut the link at a comma inside it, took the rest for a second site and lowercased its path, so the site was asked for a page that does not exist, and it left the hub out of the run.
 

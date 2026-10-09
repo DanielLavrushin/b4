@@ -16,7 +16,7 @@ interface ResetCountersResult {
 export const resetCounters = () =>
   apiPost<ResetCountersResult>("/api/metrics/reset");
 
-const CLEARS = ["blocked", "rst", "escalations", "connections"] as const;
+const CLEARS = ["blocked", "domains", "addresses", "rst", "escalations", "connections"] as const;
 const KEEPS = ["activity", "uptime", "events", "escalations"] as const;
 
 interface ResetDialogProps {

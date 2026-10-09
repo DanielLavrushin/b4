@@ -14,6 +14,8 @@ From top to bottom the page holds the status strip, a line about the live update
 | [Activity](#activity) | Always |
 | [Sets](#sets) | Always |
 | [Recent changes](#recent-changes) | Always |
+| [Top domains](#top-domains) | Always |
+| [Top addresses](#top-addresses) | Always |
 | [Active Escalations](#active-escalations) | While at least one host is escalated |
 | [Blocked](#blocked) | While a block set is enabled, or once something was blocked since the counters were last reset |
 | [Telegram](#telegram) | While the MTProto proxy or Telegram over WebSocket is on |
@@ -190,6 +192,49 @@ What happened to b4 since it started, newest first: eight entries, then **Show N
 
 The list is held in b4's memory, at most 50 entries, so a restart of b4 starts it over. [Reset counters](#reset-counters) leaves it alone.
 
+## Top domains
+
+![Top domains](/img/dashboard/20261009120010.png)
+
+The domains with the most connections since the counters were last reset, each connection counted once, by the rules under [What a connection count covers](#what-a-connection-count-covers). A connection counts for the name b4 sees for it:
+
+| Connection | Counted for |
+| --- | --- |
+| TCP or QUIC | The server name (SNI) in the TLS ClientHello or the QUIC Initial packet, or the domain the device looked up in DNS when a set matched the connection by an address b4 learned from that lookup |
+| Relayed by a [proxy set](sets/routing.md#upstream-socks5-proxy) | The name the set's listener reads from the connection or learned for its address |
+| Through b4's SOCKS5 server and a set's upstream | The name the client asked for |
+
+A connection without a name, such as one to a bare IP address, counts under [Top addresses](#top-addresses).
+
+| Part | Shows |
+| --- | --- |
+| Name | The full domain name as b4 saw it |
+| Set badges | The enabled sets that matched the name's connections, up to three, the most recent first. Each opens the set's editor. The badge follows the match, not the set's domain list: a name whose connections a set matched by its IP address or ASN targets shows that set as well |
+| **+** | No enabled set matched the name's connections. It opens the dialog of the Traffic page, see [Adding domains to sets](connections.md#adding-domains-to-sets). After a domain is added, the row shows the chosen set until the next connection to the name, which then shows the set that matched it |
+| Count | Connections since the counters were last reset |
+| Time | When the latest of them started |
+
+The panel shows the 20 names with the most connections: ten, then **Show 10 more**. While the pointer is over the list or the keyboard focus is in it, the rows keep their order and only the figures change. b4 keeps the counts of up to 512 names in memory; when the list is full, the name with the fewest connections makes room, the one seen longest ago among equal counts. [Reset counters](#reset-counters) clears the list, and a restart of b4 starts it over.
+
+## Top addresses
+
+![Top addresses](/img/dashboard/20261009120040.png)
+
+The destination addresses of the connections without a domain name since the counters were last reset, each connection counted once, by the rules under [What a connection count covers](#what-a-connection-count-covers). A connection that b4 can name counts under [Top domains](#top-domains) instead. What is left are connections made straight to an address, such as Telegram apps reaching Telegram's servers, voice calls, games and VPN servers, and connections that never get past their first packet, such as ones to an address that does not answer.
+
+A TLS connection names its server in its ClientHello, which follows the first packet. b4 holds a new connection for three updates of the dashboard, two to three seconds, before it counts it here; a connection that names itself in that time is not counted. A [proxy set](sets/routing.md#upstream-socks5-proxy) counts a connection here when its listener finds no name for it, and b4's SOCKS5 server when the client asked for an address.
+
+| Part | Shows |
+| --- | --- |
+| Address | The destination IP address, IPv6 in its short form |
+| ASN | The autonomous system the address belongs to, when b4 already holds that ASN's prefixes: an ASN a set targets, or one looked up on the Traffic page, see [ASN](connections.md#asn). The panel looks nothing up itself |
+| Set badges | The enabled sets that matched the address's connections, up to three, the most recent first, as on [Top domains](#top-domains) |
+| **+** | No enabled set matched the address's connections. It opens the dialog of the Traffic page, see [Adding addresses and networks to sets](connections.md#adding-addresses-and-networks-to-sets), which adds the address, a wider network or its ASN. That dialog asks RIPEstat for the network and the ASN of the address when it opens; private and reserved addresses are never sent. After an address is added, the row shows the chosen set until the next connection to it |
+| Count | Connections since the counters were last reset |
+| Time | When the latest of them started |
+
+The panel shows the 20 addresses with the most connections, ten at first, and keeps the order while the pointer is over the list, as Top domains does. b4 keeps up to 512 addresses in memory; when the list is full, an address whose connections are all still held makes room first, then the one with the fewest connections. [Reset counters](#reset-counters) clears the list, and a restart of b4 starts it over.
+
 ## Active Escalations
 
 ![Active Escalations](/img/dashboard/20261003220100.png)
@@ -200,40 +245,47 @@ The panel is on the page while at least one host is [escalated](sets/escalation.
 
 ## Blocked
 
-![Blocked](/img/dashboard/20261003220110.png)
+![Blocked](/img/dashboard/20261009120020.png)
 
 The panel is on the page while a [block set](sets/blocking.md) is enabled, or once something was blocked since the counters were last reset. The first line counts what b4 blocked in that time: DNS lookups it answered or dropped for a block set, and connections it blocked, each connection once.
 
 **Domains** lists the blocked names, or the address of a connection without a name, and **Devices** the devices whose lookups and connections were blocked, newest first, each with a count and the time of the last block. The lists keep the 100 domains and the 50 devices seen most recently. A device opens the [Traffic](connections.md) page filtered to that device.
 
+A device shows its name and, under it, its IP address from the device list. Hovering gives the MAC address, and the vendor when the name does not already carry it. A device missing from the list shows its MAC address alone.
+
 The counts cover what b4 blocked itself. Once the addresses of a blocked site are known to the set, the firewall drops further connections to them before b4 sees them, as it does for the set's address targets, and those drops are not counted.
 
 ## Telegram
 
-![Telegram](/img/dashboard/20261003220120.png)
+![Telegram](/img/dashboard/20261009120030.png)
 
-The panel is on the page while the [MTProto proxy](telegram/mtproto-proxy.md) or [Telegram over WebSocket](telegram/websocket-bridge.md) is on. **Telegram settings** opens Settings, Telegram.
+The panel is on the page while the [MTProto proxy](telegram/mtproto-proxy.md) or [Telegram over WebSocket](telegram/websocket-bridge.md) is on. The gear button in the header opens Settings, Telegram.
 
-For the MTProto proxy the first line gives its port, the client networks using it right now, the open connections and the data sent and received. A row per secret repeats these figures for that secret, and hovering its network count lists the addresses. Devices that share one internet connection count as one network. The data of a session is added when the session ends, so a long session shows its traffic only after it closes. The figures are held in memory since the proxy started, and [Reset counters](#reset-counters) leaves them alone.
+For the MTProto proxy the first line gives its port, the client networks using it right now, the open connections and the data sent and received. A table below repeats these figures per secret, one row each with alternating shading: **Networks now**, **Open connections**, **Sent** and **Received**. Rows with open connections come first, then the ones with the most data. Hovering a network count lists the addresses. Devices that share one internet connection count as one network. A zero is drawn dimmer than other figures. On a narrow panel each row stacks its figures under the secret's name, each with its label. The data of a session is added when the session ends, so a long session shows its traffic only after it closes. The figures are held in memory since the proxy started, and [Reset counters](#reset-counters) leaves them alone.
 
 For Telegram over WebSocket one line gives the sessions relayed, the time of the last one and the failed connections to Telegram's data centres, followed by **not working** while the bridge's rule or its listener is missing, another program's rule takes its connections, or the kernel has no TPROXY support. The page fetches this status once a minute. The same figures are on the bridge's card under Settings, Telegram, explained under [Troubleshooting](telegram/troubleshooting.md#the-counters-under-the-bridge-status).
 
 ## Customize
 
-![Customize](/img/dashboard/20261003220140.png)
+![Customize](/img/dashboard/20261009120050.png)
+
+The panels sit in rows. The widths in a row always add up to the full twelve columns, and every panel in a row is as tall as the tallest one: a shorter panel stretches, its content at the top. When a panel has nothing to show or is hidden, the other panels of its row share its width, and a row left empty disappears.
 
 **Customize** in the strip's menu switches the panels into edit mode, and **Done** ends it.
 
 | Action | How |
 | --- | --- |
-| Move a panel | Drag it by the handle in its header, or focus the handle, press Space or Enter, move it with the arrow keys and press Space or Enter again. Escape cancels |
-| Change its width | The minus and plus buttons change it by one column of twelve, between 3 and 12. Dragging its right edge does the same |
-| Hide it | The eye button. Hidden panels are listed in the edit bar, and clicking one brings it back; one that has nothing to show at the moment is marked **no data** |
+| Put a panel beside another | Drag it by the handle in its header onto the other panel; a bar on that panel's left or right edge shows where it lands. Both rows share out their widths again. A row holds up to four panels, so a panel dropped on a full row gets a row of its own below it |
+| Give a panel a row of its own | Drag it into the space between two rows, above the first row or below the last one |
+| Change the widths | Drag the border between two panels, or use the minus and plus buttons, which move one column between the panel and its neighbour. A panel is at least 3 columns wide; a panel alone in its row spans all 12 |
+| Split or join rows | The row button in a panel's header starts a new row at that panel, taking the panels after it along. On the first panel of a row it joins the row to the one above, while that row has room |
+| Move with the keyboard | Focus the handle, press Space or Enter, move with the arrow keys and press Space or Enter again. Escape cancels |
+| Hide a panel | The eye button. Hidden panels are listed in the edit bar, and clicking one brings it back to its row; one that has nothing to show at the moment is marked **no data** |
 | Start over | **Reset layout**, shown once the layout differs from the default |
 
-By default **Activity** spans the full width, **Sets** (8 columns) sits beside **Recent changes** (4), **Active Escalations** and **Blocked** take 6 columns each, and **Telegram** spans the full width. Widths apply while the panel area is at least 960 pixels wide; narrower, the panels stack in their order. A panel that has nothing to show leaves no gap.
+By default **Activity** fills the first row, **Sets** (8 columns) and **Recent changes** (4) share the second, **Top domains** and **Top addresses** the third, **Active Escalations** and **Blocked** the fourth, and **Telegram** fills the last. Rows apply while the panel area is at least 960 pixels wide; narrower, the panels stack in their order.
 
-The layout is saved in b4's configuration, under `ui.dashboard`, so every browser that opens the web interface gets the same one. The browser keeps a copy, which it uses while b4 cannot be reached.
+The layout is saved in b4's configuration, under `ui.dashboard`, so every browser that opens the web interface gets the same one. The browser keeps a copy, which it uses while b4 cannot be reached. A layout saved by an earlier version is arranged into rows by its order and widths.
 
 ## Reset counters
 
@@ -244,6 +296,7 @@ The layout is saved in b4's configuration, under `ui.dashboard`, so every browse
 Cleared:
 
 - blocked DNS lookups and connections, the lists of blocked domains and devices, and the **N DNS lookups blocked** of block sets;
+- the **Top domains** and **Top addresses** lists;
 - the resets dropped by RST protection;
 - the escalation count in the **Active Escalations** header;
 - the connection totals, the ones `b4_status`, `b4_metrics` and `/api/metrics/summary` report.
