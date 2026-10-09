@@ -35,6 +35,7 @@ type udpSession struct {
 	relay   udpRelay
 	reply   *net.UDPConn
 	client  *net.UDPAddr
+	domain  string
 	release func()
 	last    atomic.Int64
 }
@@ -142,6 +143,7 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 			l.udpSessions[key] = newSess
 			l.udpMu.Unlock()
 			l.countConnection()
+			l.countDomain(newSess.domain)
 			go l.udpReplyLoop(key, newSess)
 			sess = newSess
 		}
@@ -166,11 +168,12 @@ func (l *Listener) newUDPSession(src, dst *net.UDPAddr, v6 bool) (*udpSession, e
 		return nil, err
 	}
 
-	log.LogConnectionStr("UDP", l.SetName, l.udpLogDomain(src, dst), src.String(), "",
+	domain := l.udpLogDomain(src, dst)
+	log.LogConnectionStr("UDP", l.SetName, domain, src.String(), "",
 		net.JoinHostPort(dst.IP.String(), fmt.Sprintf("%d", dst.Port)),
 		"", "", action)
 
-	sess := &udpSession{relay: relay, reply: reply, client: src, release: release}
+	sess := &udpSession{relay: relay, reply: reply, client: src, domain: domain, release: release}
 	sess.last.Store(time.Now().UnixNano())
 	return sess, nil
 }

@@ -1158,19 +1158,32 @@
       "note": "Once a blocked site's addresses are learned, the firewall drops further connections before b4 sees them; those are not counted here.",
       "domains": "Domains",
       "devices": "Devices",
+      "mac": "MAC {{value}}",
       "noDomains": "No domain blocked since {{time}}",
       "noDevices": "No device recorded since {{time}}"
+    },
+    "domains": {
+      "title": "Top domains",
+      "subtitle": "Connections per domain since {{time}}",
+      "empty": "No connection with a known domain since {{time}}",
+      "add": "Add to a set",
+      "addTo": "Add {{domain}} to a set"
     },
     "telegram": {
       "title": "Telegram",
       "settings": "Telegram settings",
       "proxyTitle": "MTProto proxy, port {{port}}",
-      "networksNow_one": "{{value}} network now",
-      "networksNow_other": "{{value}} networks now",
-      "openConnections_one": "{{value}} open connection",
-      "openConnections_other": "{{value}} open connections",
-      "sent": "sent {{value}}",
-      "received": "received {{value}}",
+      "networksNow_one": "<b>{{value}}</b> network now",
+      "networksNow_other": "<b>{{value}}</b> networks now",
+      "openConnections_one": "<b>{{value}}</b> open connection",
+      "openConnections_other": "<b>{{value}}</b> open connections",
+      "sent": "sent <b>{{value}}</b>",
+      "received": "received <b>{{value}}</b>",
+      "colSecret": "Secret",
+      "colNetworks": "Networks now",
+      "colConnections": "Open connections",
+      "colSent": "Sent",
+      "colReceived": "Received",
       "perSecret": "Per secret",
       "noSecrets": "No secrets configured",
       "unnamed": "unnamed",
@@ -1241,6 +1254,7 @@
       "clearsTitle": "Cleared",
       "clears": {
         "blocked": "Blocked DNS lookups and connections, with the lists of blocked domains and devices",
+        "domains": "The Top domains list",
         "rst": "Resets dropped by RST protection",
         "escalations": "The escalation count",
         "connections": "Connection totals"
@@ -3359,7 +3373,9 @@
       "originalDomain": "Original domain:",
       "mostSpecific": "Most specific - exact match only",
       "broadest": "Broadest - matches all subdomains",
-      "intermediate": "Intermediate specificity"
+      "intermediate": "Intermediate specificity",
+      "added": "Domain {{domain}} added",
+      "failed": "Failed to add the domain: {{error}}"
     },
     "addIp": {
       "title": "Add to a set",

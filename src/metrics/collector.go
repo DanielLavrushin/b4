@@ -24,6 +24,7 @@ type MetricsCollector struct {
 	listener   atomic.Pointer[func()]
 	fl         flowState
 	bl         blockedState
+	dom        domainState
 	ev         eventState
 	esc        escState
 	st         liveState

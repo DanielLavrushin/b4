@@ -419,7 +419,11 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 
 	s.logConnection("TCP", conn.RemoteAddr().String(), dest, "socks5")
 	if viaSet != "" {
-		metrics.GetMetricsCollector().CountConnection(viaSet)
+		mc := metrics.GetMetricsCollector()
+		mc.CountConnection(viaSet)
+		if host, _, err := net.SplitHostPort(dest); err == nil {
+			mc.RecordDomain(host, viaSet)
+		}
 	}
 
 	return s.relay(conn, remote)

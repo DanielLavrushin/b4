@@ -4,6 +4,7 @@ import "time"
 
 type SentRevs struct {
 	Blocked     uint64
+	TopDomains  uint64
 	Escalations uint64
 	Events      uint64
 }
@@ -58,6 +59,12 @@ func (m *MetricsCollector) buildFrame(sent *SentRevs) Frame {
 		fr.Blocked = m.bl.lists(off)
 		if !full {
 			sent.Blocked = fr.Blocked.Rev
+		}
+	}
+	if full || m.dom.currentRev() > sent.TopDomains {
+		fr.TopDomains = m.dom.list(off)
+		if !full {
+			sent.TopDomains = fr.TopDomains.Rev
 		}
 	}
 	if full || m.esc.currentRev() > sent.Escalations {

@@ -35,11 +35,11 @@ func countsTraffic(cfg *config.Config) bool {
 	return cfg != nil && !cfg.Queue.IsDiscovery
 }
 
-func observeFlow(cfg *config.Config, pkt *pktInfo, sport, dport uint16, set *config.SetConfig) {
+func observeFlow(cfg *config.Config, pkt *pktInfo, sport, dport uint16, set *config.SetConfig, host string) {
 	if !countsTraffic(cfg) {
 		return
 	}
-	metrics.GetMetricsCollector().ObserveFlow(pkt.flowKey(sport, dport), setIDOf(set))
+	metrics.GetMetricsCollector().ObserveFlowHost(pkt.flowKey(sport, dport), setIDOf(set), host)
 }
 
 func recordBlockedFlow(cfg *config.Config, pkt *pktInfo, sport, dport uint16, set *config.SetConfig, target string) {

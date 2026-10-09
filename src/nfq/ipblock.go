@@ -175,7 +175,7 @@ func (w *Worker) handleSynHealth(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	log.LogConnection("TCP", set.Name, host, pkt.srcStr, sport, "", pkt.dstStr, dport, pkt.srcMac, "", "ipblock-syn")
 
-	observeFlow(cfg, pkt, sport, dport, set)
+	observeFlow(cfg, pkt, sport, dport, set, host)
 
 	if pkt.ver == IPv4 {
 		w.sendSynRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)

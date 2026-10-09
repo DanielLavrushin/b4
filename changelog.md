@@ -1,5 +1,12 @@
 # B4 - Bye Bye Big Bro
 
+## [1.86.0] - 2026-10-09
+
+- ADDED: **The dashboard's Top domains panel lists the domains with the most connections and the sets that matched them, with a + button on a domain outside every set to add it to one** - the + opens the add-domain dialog of the Traffic page, Reset counters clears the list, and `/api/metrics` carries it as `top_domains`.
+- CHANGED: **A device on the dashboard's Blocked panel shows its IP address under its name, with the MAC address on hover** - the MAC address used to take that line.
+- CHANGED: **The dashboard's Telegram panel lists the MTProto secrets as a table, with the traffic figures in bold, zeros dimmed and alternating row shading** - the columns stay next to the secret's name on wide screens, where each secret's figures used to sit at the far edge.
+- FIXED: **In the Russian interface, adding a domain to a set from the Traffic page reported the result in English** - the message had no translation.
+
 ## [1.85.1] - 2026-10-08
 
 - FIXED: **On routers with an older kernel, such as Keenetic, a device that asked for a name's IPv4 and IPv6 addresses at once often got no answer to the second question, so apps on it, like a video player on a TV, waited and never connected, and the router's own lookups could stall for seconds** - b4 queued each DNS query only after the kernel's connection tracking had registered it, so a second query sent at the same moment from the same socket was dropped as a duplicate of the first while that one waited in b4's queue.

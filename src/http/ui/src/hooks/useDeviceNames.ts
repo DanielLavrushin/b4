@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { DeviceInfo, devicesApi } from "@b4.devices";
-import { resolveDeviceName, resolveDeviceMeta } from "@utils";
+import { resolveDeviceName } from "@utils";
 
 export function useDeviceNames() {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
@@ -23,10 +23,5 @@ export function useDeviceNames() {
     return dev ? resolveDeviceName(dev) : mac;
   };
 
-  const getDeviceMeta = (mac: string): string => {
-    const dev = deviceMap[mac];
-    return dev ? resolveDeviceMeta(dev) : "";
-  };
-
-  return { devices, deviceMap, getDeviceName, getDeviceMeta };
+  return { devices, deviceMap, getDeviceName };
 }

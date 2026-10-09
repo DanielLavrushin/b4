@@ -337,7 +337,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		dupConnKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 		dupHost, dupTLS, _ := w.tlsCache.Lookup(dupConnKey)
 
-		observeFlow(cfg, pkt, sport, dport, set)
+		observeFlow(cfg, pkt, sport, dport, set, dupHost)
 
 		if !cfg.Queue.IsDiscovery {
 			log.LogConnection("TCP", "", dupHost, pkt.srcStr, sport, set.Name, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(dupTLS), "tcp-dup")
@@ -388,7 +388,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	if isSyn && !isAck && !routeHandsOff && cfg.IsTCPPort(dport) && matched && !set.TCP.Duplicate.Enabled && needsTCPSynInjection(set) {
 		log.Tracef("TCP SYN to %s:%d (set: %s)", pkt.dstStr, dport, set.Name)
 
-		observeFlow(cfg, pkt, sport, dport, set)
+		observeFlow(cfg, pkt, sport, dport, set, "")
 
 		if pkt.ver == IPv4 {
 			if set.TCP.SynFake {
@@ -579,7 +579,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				w.sendRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
 			}
 
-			observeFlow(cfg, pkt, sport, dport, set)
+			observeFlow(cfg, pkt, sport, dport, set, host)
 			vc.drop()
 			log.Tracef("IPBlockDetect: dropped packet to %s:%d (cached)", pkt.dstStr, dport)
 
@@ -596,7 +596,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		if matched {
 			flowSet = set
 		}
-		observeFlow(cfg, pkt, sport, dport, flowSet)
+		observeFlow(cfg, pkt, sport, dport, flowSet, host)
 	}
 
 	stallCount := 0
@@ -866,12 +866,12 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if !shouldHandle {
-		observeFlow(cfg, pkt, sport, dport, nil)
+		observeFlow(cfg, pkt, sport, dport, nil, host)
 		return vc.accept()
 	}
 
 	if !udpViaTProxy(set) {
-		observeFlow(cfg, pkt, sport, dport, set)
+		observeFlow(cfg, pkt, sport, dport, set, host)
 	}
 
 	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {

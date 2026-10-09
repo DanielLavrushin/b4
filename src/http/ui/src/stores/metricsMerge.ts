@@ -9,6 +9,7 @@ import type {
   B4Event,
   BlockedEntry,
   BlockedLists,
+  DomainHit,
   EngineInfo,
   EngineMode,
   EngineState,
@@ -25,6 +26,7 @@ import type {
   RulesInfo,
   SetActivity,
   SetKind,
+  TopDomains,
   Totals,
   UpstreamAttention,
 } from "../models/metrics";
@@ -138,6 +140,20 @@ function blockedEntries(v: unknown): BlockedEntry[] {
 function blockedLists(v: unknown): BlockedLists | undefined {
   if (!isObj(v)) return undefined;
   return { rev: num(v.rev), domains: blockedEntries(v.domains), devices: blockedEntries(v.devices) };
+}
+
+function domainHit(o: Obj): DomainHit {
+  return {
+    key: str(o.key),
+    count: num(o.count),
+    last: num(o.last),
+    sets: list(o.sets).filter((s): s is string => typeof s === "string" && s !== ""),
+  };
+}
+
+function topDomains(v: unknown): TopDomains | undefined {
+  if (!isObj(v)) return undefined;
+  return { rev: num(v.rev), items: objects(v.items).map(domainHit) };
 }
 
 function escalationList(v: unknown): EscalationList | undefined {
@@ -267,6 +283,8 @@ export function normalizeFrame(raw: unknown): MetricsFrame | null {
   };
   const blocked = blockedLists(raw.blocked);
   if (blocked) frame.blocked = blocked;
+  const top = topDomains(raw.top_domains);
+  if (top) frame.top_domains = top;
   const escalations = escalationList(raw.escalations);
   if (escalations) frame.escalations = escalations;
   const events = eventLog(raw.events);
@@ -348,7 +366,7 @@ function shiftEvents(items: readonly B4Event[], delta: number): B4Event[] {
   return items.map((e) => ({ ...e, t: shiftTime(e.t, delta) }));
 }
 
-function shiftEntries(items: readonly BlockedEntry[], delta: number): BlockedEntry[] {
+function shiftEntries<T extends { last: number }>(items: readonly T[], delta: number): T[] {
   return items.map((e) => ({ ...e, last: shiftTime(e.last, delta) }));
 }
 
@@ -367,6 +385,12 @@ export function relabelFrame(frame: MetricsFrame, delta: number): MetricsFrame {
       ...frame.blocked,
       domains: shiftEntries(frame.blocked.domains, delta),
       devices: shiftEntries(frame.blocked.devices, delta),
+    };
+  }
+  if (frame.top_domains) {
+    out.top_domains = {
+      ...frame.top_domains,
+      items: shiftEntries(frame.top_domains.items, delta),
     };
   }
   if (frame.events) {
@@ -400,6 +424,9 @@ export function mergeFrame(prev: MetricsFrame | null, next: MetricsFrame): Metri
   const blocked = newerList(base.blocked, next.blocked);
   if (blocked) merged.blocked = blocked;
   else delete merged.blocked;
+  const top = newerList(base.top_domains, next.top_domains);
+  if (top) merged.top_domains = top;
+  else delete merged.top_domains;
   const escalations = newerList(base.escalations, next.escalations);
   if (escalations) merged.escalations = escalations;
   else delete merged.escalations;

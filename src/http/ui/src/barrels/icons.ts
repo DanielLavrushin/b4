@@ -106,4 +106,6 @@ export {
   Verified as AppliedIcon,
   Flag as ReportIcon,
   AccountTree as AsnIcon,
+  ArrowUpward as SentIcon,
+  ArrowDownward as ReceivedIcon,
 } from "@mui/icons-material";

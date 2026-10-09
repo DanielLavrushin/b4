@@ -214,6 +214,7 @@ func (m *MetricsCollector) ResetCounters() {
 	m.rstDropped.Store(0)
 	m.escTotal.Store(0)
 	m.bl.reset()
+	m.dom.reset()
 	m.st.mu.Lock()
 	m.st.v.statsSince = mono
 	m.st.mu.Unlock()

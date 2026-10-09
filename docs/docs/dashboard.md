@@ -14,6 +14,7 @@ From top to bottom the page holds the status strip, a line about the live update
 | [Activity](#activity) | Always |
 | [Sets](#sets) | Always |
 | [Recent changes](#recent-changes) | Always |
+| [Top domains](#top-domains) | Always |
 | [Active Escalations](#active-escalations) | While at least one host is escalated |
 | [Blocked](#blocked) | While a block set is enabled, or once something was blocked since the counters were last reset |
 | [Telegram](#telegram) | While the MTProto proxy or Telegram over WebSocket is on |
@@ -190,6 +191,30 @@ What happened to b4 since it started, newest first: eight entries, then **Show N
 
 The list is held in b4's memory, at most 50 entries, so a restart of b4 starts it over. [Reset counters](#reset-counters) leaves it alone.
 
+## Top domains
+
+![Top domains](/img/dashboard/20261009120010.png)
+
+The domains with the most connections since the counters were last reset, each connection counted once, by the rules under [What a connection count covers](#what-a-connection-count-covers). A connection counts for the name b4 sees for it:
+
+| Connection | Counted for |
+| --- | --- |
+| TCP or QUIC | The server name (SNI) in the TLS ClientHello or the QUIC Initial packet, or the domain the device looked up in DNS when a set matched the connection by an address b4 learned from that lookup |
+| Relayed by a [proxy set](sets/routing.md#upstream-socks5-proxy) | The name the set's listener reads from the connection or learned for its address |
+| Through b4's SOCKS5 server and a set's upstream | The name the client asked for |
+
+A connection without a name, such as one to a bare IP address, is not listed.
+
+| Part | Shows |
+| --- | --- |
+| Name | The full domain name as b4 saw it |
+| Set badges | The enabled sets that matched the name's connections, up to three, the most recent first. Each opens the set's editor. The badge follows the match, not the set's domain list: a name whose connections a set matched by its IP address or ASN targets shows that set as well |
+| **+** | No enabled set matched the name's connections. It opens the dialog of the Traffic page, see [Adding domains to sets](connections.md#adding-domains-to-sets). After a domain is added, the row shows the chosen set until the next connection to the name, which then shows the set that matched it |
+| Count | Connections since the counters were last reset |
+| Time | When the latest of them started |
+
+The panel shows the 20 names with the most connections: ten, then **Show 10 more**. While the pointer is over the list or the keyboard focus is in it, the rows keep their order and only the figures change. b4 keeps the counts of up to 512 names in memory; when the list is full, the name with the fewest connections makes room, the one seen longest ago among equal counts. [Reset counters](#reset-counters) clears the list, and a restart of b4 starts it over.
+
 ## Active Escalations
 
 ![Active Escalations](/img/dashboard/20261003220100.png)
@@ -200,21 +225,23 @@ The panel is on the page while at least one host is [escalated](sets/escalation.
 
 ## Blocked
 
-![Blocked](/img/dashboard/20261003220110.png)
+![Blocked](/img/dashboard/20261009120020.png)
 
 The panel is on the page while a [block set](sets/blocking.md) is enabled, or once something was blocked since the counters were last reset. The first line counts what b4 blocked in that time: DNS lookups it answered or dropped for a block set, and connections it blocked, each connection once.
 
 **Domains** lists the blocked names, or the address of a connection without a name, and **Devices** the devices whose lookups and connections were blocked, newest first, each with a count and the time of the last block. The lists keep the 100 domains and the 50 devices seen most recently. A device opens the [Traffic](connections.md) page filtered to that device.
 
+A device shows its name and, under it, its IP address from the device list. Hovering gives the MAC address, and the vendor when the name does not already carry it. A device missing from the list shows its MAC address alone.
+
 The counts cover what b4 blocked itself. Once the addresses of a blocked site are known to the set, the firewall drops further connections to them before b4 sees them, as it does for the set's address targets, and those drops are not counted.
 
 ## Telegram
 
-![Telegram](/img/dashboard/20261003220120.png)
+![Telegram](/img/dashboard/20261009120030.png)
 
 The panel is on the page while the [MTProto proxy](telegram/mtproto-proxy.md) or [Telegram over WebSocket](telegram/websocket-bridge.md) is on. **Telegram settings** opens Settings, Telegram.
 
-For the MTProto proxy the first line gives its port, the client networks using it right now, the open connections and the data sent and received. A row per secret repeats these figures for that secret, and hovering its network count lists the addresses. Devices that share one internet connection count as one network. The data of a session is added when the session ends, so a long session shows its traffic only after it closes. The figures are held in memory since the proxy started, and [Reset counters](#reset-counters) leaves them alone.
+For the MTProto proxy the first line gives its port, the client networks using it right now, the open connections and the data sent and received. A table below repeats these figures per secret, one row each with alternating shading: **Networks now**, **Open connections**, **Sent** and **Received**. Rows with open connections come first, then the ones with the most data. Hovering a network count lists the addresses. Devices that share one internet connection count as one network. A zero is drawn dimmer than other figures. On a narrow panel each row stacks its figures under the secret's name, each with its label. The data of a session is added when the session ends, so a long session shows its traffic only after it closes. The figures are held in memory since the proxy started, and [Reset counters](#reset-counters) leaves them alone.
 
 For Telegram over WebSocket one line gives the sessions relayed, the time of the last one and the failed connections to Telegram's data centres, followed by **not working** while the bridge's rule or its listener is missing, another program's rule takes its connections, or the kernel has no TPROXY support. The page fetches this status once a minute. The same figures are on the bridge's card under Settings, Telegram, explained under [Troubleshooting](telegram/troubleshooting.md#the-counters-under-the-bridge-status).
 
@@ -231,7 +258,7 @@ For Telegram over WebSocket one line gives the sessions relayed, the time of the
 | Hide it | The eye button. Hidden panels are listed in the edit bar, and clicking one brings it back; one that has nothing to show at the moment is marked **no data** |
 | Start over | **Reset layout**, shown once the layout differs from the default |
 
-By default **Activity** spans the full width, **Sets** (8 columns) sits beside **Recent changes** (4), **Active Escalations** and **Blocked** take 6 columns each, and **Telegram** spans the full width. Widths apply while the panel area is at least 960 pixels wide; narrower, the panels stack in their order. A panel that has nothing to show leaves no gap.
+By default **Activity** spans the full width, **Sets** (8 columns) sits beside **Recent changes** (4), **Top domains**, **Active Escalations** and **Blocked** take 6 columns each, and **Telegram** spans the full width. Widths apply while the panel area is at least 960 pixels wide; narrower, the panels stack in their order. A panel that has nothing to show leaves no gap.
 
 The layout is saved in b4's configuration, under `ui.dashboard`, so every browser that opens the web interface gets the same one. The browser keeps a copy, which it uses while b4 cannot be reached.
 
@@ -244,6 +271,7 @@ The layout is saved in b4's configuration, under `ui.dashboard`, so every browse
 Cleared:
 
 - blocked DNS lookups and connections, the lists of blocked domains and devices, and the **N DNS lookups blocked** of block sets;
+- the **Top domains** list;
 - the resets dropped by RST protection;
 - the escalation count in the **Active Escalations** header;
 - the connection totals, the ones `b4_status`, `b4_metrics` and `/api/metrics/summary` report.

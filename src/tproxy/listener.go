@@ -284,6 +284,13 @@ func (l *Listener) countConnection() {
 	metrics.GetMetricsCollector().CountConnection(l.SetID)
 }
 
+func (l *Listener) countDomain(host string) {
+	if host == "" || l.SetID == config.TelegramBridgeSetID {
+		return
+	}
+	metrics.GetMetricsCollector().RecordDomain(host, l.SetID)
+}
+
 func (l *Listener) acceptLoop(ln net.Listener, family string) {
 	for {
 		conn, err := ln.Accept()
@@ -390,10 +397,12 @@ func (l *Listener) handle(client net.Conn) {
 	if domain := target.logDomain(); domain != "" || len(target.sniffed.prefix) > 0 {
 		log.LogConnectionStr("TCP", l.SetName, domain, src, "", dest,
 			"", config.TLSVersionString(target.sniffed.tlsVersion), "proxy")
+		l.countDomain(domain)
 	} else {
 		namer = &proxyNamer{log: func(host string, tlsVersion uint16) {
 			log.LogConnectionStr("TCP", l.SetName, host, src, "", dest,
 				"", config.TLSVersionString(tlsVersion), "proxy")
+			l.countDomain(host)
 		}}
 		first := time.AfterFunc(max(0, sniffFirstWait-time.Since(accepted)), func() { namer.deadline(client) })
 		defer first.Stop()

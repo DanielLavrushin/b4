@@ -15,12 +15,23 @@ const (
 	staleGen      = uint8(0)
 )
 
+const (
+	flowBlocked uint8 = 1 << iota
+	flowNamed
+)
+
 type flowEntry struct {
-	minSeq  uint32
-	tenSeq  uint32
-	set     uint16
+	minSeq uint32
+	tenSeq uint32
+	set    uint16
+	flags  uint8
+	gen    uint8
+}
+
+type flowSeen struct {
 	blocked bool
-	gen     uint8
+	named   bool
+	set     uint16
 }
 
 type setSlot struct {
@@ -75,12 +86,28 @@ func (f *flowState) init(capacity int, mono, off int64, cpu cpuSample) {
 }
 
 func (m *MetricsCollector) ObserveFlow(key FlowKey, setID string) {
+	m.ObserveFlowHost(key, setID, "")
+}
+
+func (m *MetricsCollector) ObserveFlowHost(key FlowKey, setID, host string) {
 	m.initOnce.Do(m.init)
 	now := m.tickMono.Load()
 	f := &m.fl
 	f.mu.Lock()
-	f.touch(key, setID, now, false)
+	seen := f.touch(key, setID, now, false, host != "")
+	flowSet := ""
+	if seen.named {
+		flowSet = f.setID(seen.set)
+	}
 	f.mu.Unlock()
+	if seen.named {
+		m.dom.note(host, flowSet, now)
+	}
+}
+
+func (m *MetricsCollector) RecordDomain(host, setID string) {
+	m.initOnce.Do(m.init)
+	m.dom.note(host, setID, m.tickMono.Load())
 }
 
 func (m *MetricsCollector) CountConnection(setID string) {
@@ -97,9 +124,9 @@ func (m *MetricsCollector) RecordBlockedFlow(key FlowKey, setID, target, mac str
 	now := m.tickMono.Load()
 	f := &m.fl
 	f.mu.Lock()
-	blocked := f.touch(key, setID, now, true)
+	seen := f.touch(key, setID, now, true, false)
 	f.mu.Unlock()
-	if blocked {
+	if seen.blocked {
 		m.bl.note(target, mac, now)
 	}
 }
@@ -119,26 +146,31 @@ func (m *MetricsCollector) RecordBlockedDNS(setID, target, mac string) {
 	m.bl.note(target, mac, now)
 }
 
-func (f *flowState) touch(key FlowKey, setID string, now int64, block bool) bool {
+func (f *flowState) touch(key FlowKey, setID string, now int64, block, named bool) flowSeen {
 	if e, ok := f.cur[key]; ok {
-		changed, blocked := f.update(&e, setID, now, block)
+		changed, seen := f.update(&e, setID, now, block, named)
 		if changed {
 			f.cur[key] = e
 		}
-		return blocked
+		return seen
 	}
 	if e, ok := f.old[key]; ok {
-		_, blocked := f.update(&e, setID, now, block)
+		_, seen := f.update(&e, setID, now, block, named)
 		f.insert(key, e, now)
-		return blocked
+		return seen
 	}
 	idx := f.setIndex(setID, now)
 	f.addConn(idx, now)
+	var flags uint8
 	if block {
 		f.blockedConns++
+		flags |= flowBlocked
 	}
-	f.insert(key, flowEntry{minSeq: f.minSeq, tenSeq: f.tenSeq, set: idx, blocked: block, gen: f.gen}, now)
-	return block
+	if named {
+		flags |= flowNamed
+	}
+	f.insert(key, flowEntry{minSeq: f.minSeq, tenSeq: f.tenSeq, set: idx, flags: flags, gen: f.gen}, now)
+	return flowSeen{blocked: block, named: named, set: idx}
 }
 
 func (f *flowState) insert(key FlowKey, e flowEntry, now int64) {
@@ -154,21 +186,31 @@ func (f *flowState) rotate(now int64) {
 	f.rotatedAt = now
 }
 
-func (f *flowState) update(e *flowEntry, setID string, now int64, block bool) (bool, bool) {
+func (f *flowState) update(e *flowEntry, setID string, now int64, block, named bool) (bool, flowSeen) {
 	changed := false
+	var seen flowSeen
 	if e.set == 0 && setID != "" {
 		f.classify(e, f.setIndex(setID, now), now)
 		changed = true
 	}
-	if block && !e.blocked {
-		e.blocked = true
-		if e.gen != f.gen {
-			return true, false
+	current := e.gen == f.gen
+	if named && e.flags&flowNamed == 0 {
+		e.flags |= flowNamed
+		changed = true
+		if current {
+			seen.named = true
+			seen.set = e.set
 		}
-		f.blockedConns++
-		return true, true
 	}
-	return changed, false
+	if block && e.flags&flowBlocked == 0 {
+		e.flags |= flowBlocked
+		changed = true
+		if current {
+			f.blockedConns++
+			seen.blocked = true
+		}
+	}
+	return changed, seen
 }
 
 func (f *flowState) addConn(idx uint16, now int64) {
@@ -243,6 +285,13 @@ func (f *flowState) setIndex(setID string, now int64) uint16 {
 	f.sets[i] = setState{id: id, live: true, lastPresent: now}
 	f.setIdx[id] = i
 	return i + 1
+}
+
+func (f *flowState) setID(idx uint16) string {
+	if idx == 0 || idx == setUntracked {
+		return ""
+	}
+	return f.sets[idx-1].id
 }
 
 func (f *flowState) set(id string) *setState {

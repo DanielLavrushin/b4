@@ -105,6 +105,9 @@ func helloRevs(f metrics.Frame) metrics.SentRevs {
 	if f.Blocked != nil {
 		revs.Blocked = f.Blocked.Rev
 	}
+	if f.TopDomains != nil {
+		revs.TopDomains = f.TopDomains.Rev
+	}
 	if f.Escalations != nil {
 		revs.Escalations = f.Escalations.Rev
 	}
