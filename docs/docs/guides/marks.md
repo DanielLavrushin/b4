@@ -217,9 +217,10 @@ this order:
 2. Returns packets that arrive on the output interface itself. Without a gateway the guard is
    unconditional (`iifname <iface> return`): traffic the next hop sends back is marked again and
    routed straight back to it otherwise. With a gateway the guard narrows to the next hop alone -
-   its address for IPv4, its MAC address for IPv6, the router's own addresses in both families -
-   so clients sharing the interface with the gateway still get the set's mark. Where the gateway
-   covers only one family, the other family keeps the full guard.
+   its MAC address while the neighbor entry is known (falling back to its address for IPv4), the
+   router's own addresses in both families - so clients sharing the interface with the gateway
+   still get the set's mark. Where the gateway covers only one family, the other family keeps the
+   full guard.
 3. Restores the mark from the connection mark on later packets of claimed connections that
    travel in the direction of the first packet.
 4. Marks new connections to the set's destinations and saves the mark with the claim.

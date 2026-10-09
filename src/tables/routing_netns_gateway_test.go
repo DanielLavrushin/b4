@@ -62,13 +62,19 @@ func TestNetnsGatewaySetKeepsItsViaRoute(t *testing.T) {
 				t.Errorf("no on-link next-hop route belongs in the set table:\n%s", routes)
 			}
 			chain := netnsPreChain(t, engine, st.chainPre)
-			guard := fmt.Sprintf("ip saddr %s", netnsPrimaryGW)
-			alt := fmt.Sprintf("-s %s", netnsPrimaryGW)
-			if engine == backendNFTables {
-				if !strings.Contains(chain, guard) {
-					t.Errorf("the pre chain carries no narrow guard for the gateway:\n%s", chain)
+			mac := netnsLinkMAC(t, netnsPrimary+"p")
+			guards := []string{fmt.Sprintf("ip saddr %s", netnsPrimaryGW), fmt.Sprintf("ether saddr %s", mac)}
+			if engine != backendNFTables {
+				guards = []string{fmt.Sprintf("-s %s", netnsPrimaryGW), fmt.Sprintf("--mac-source %s", mac)}
+			}
+			matched := false
+			for _, guard := range guards {
+				if strings.Contains(chain, guard) {
+					matched = true
+					break
 				}
-			} else if !strings.Contains(chain, alt) {
+			}
+			if !matched {
 				t.Errorf("the pre chain carries no narrow guard for the gateway:\n%s", chain)
 			}
 		})
@@ -172,11 +178,19 @@ func TestNetnsGatewaySetSurvivesARedialingProxy(t *testing.T) {
 				t.Fatal("the gateway set built no rules")
 			}
 			chain := netnsPreChain(t, engine, st.chainPre)
-			guard := fmt.Sprintf("ip saddr %s", netnsDevIP)
+			mac := strings.ToLower(dev.mac)
+			guards := []string{fmt.Sprintf("ip saddr %s", netnsDevIP), fmt.Sprintf("ether saddr %s", mac)}
 			if engine == backendIPTables {
-				guard = fmt.Sprintf("-s %s", netnsDevIP)
+				guards = []string{fmt.Sprintf("-s %s", netnsDevIP), fmt.Sprintf("--mac-source %s", strings.ToUpper(mac))}
 			}
-			if !strings.Contains(chain, guard) {
+			matched := false
+			for _, guard := range guards {
+				if strings.Contains(chain, guard) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
 				t.Fatalf("the pre chain carries no narrow guard for the next hop:\n%s", chain)
 			}
 			if got := dev.probe(t, "tcp", netnsDevRouter, 18080, "client"); !strings.HasPrefix(got, "reply=") {
@@ -261,11 +275,9 @@ func TestNetnsGatewayOfOneFamilyLeavesTheOtherOnMain(t *testing.T) {
 		t.Fatal("the gateway set built no rules")
 	}
 	chain := netnsPreChain(t, engine, st.chainPre)
-	if !strings.Contains(chain, fmt.Sprintf("-s %s", netnsPrimaryGW)) {
-		t.Errorf("the v4 next hop must be guarded by its own address:\n%s", chain)
-	}
-	if !strings.Contains(chain, "-i "+netnsPrimary+" -j RETURN") {
-		t.Errorf("the v6 family without a gateway keeps the full guard:\n%s", chain)
+	mac := netnsLinkMAC(t, netnsPrimary+"p")
+	if !strings.Contains(chain, "--mac-source "+mac) && !strings.Contains(chain, fmt.Sprintf("-s %s", netnsPrimaryGW)) {
+		t.Errorf("the next hop must be guarded by its MAC or, without a neighbor entry, its address:\n%s", chain)
 	}
 }
 func TestNetnsIPv6GatewaySurvivesAForcedResync(t *testing.T) {

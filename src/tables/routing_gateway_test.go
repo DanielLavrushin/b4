@@ -257,6 +257,51 @@ func TestNarrowGuardFallsBackWhenTheMACMatchIsRejected(t *testing.T) {
 		t.Errorf("a rejected MAC match must fall back to the full guard:\n%s", joined)
 	}
 }
+func TestNarrowGuardPrefersMACOverAddressForIPv4(t *testing.T) {
+	var cmds []string
+	prev := runLogged
+	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
+	t.Cleanup(func() { runLogged = prev })
+	if !(&routeNftBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "aa:bb:cc:dd:ee:ff", true, false) {
+		t.Fatal("a known gateway MAC must install")
+	}
+	joined := strings.Join(cmds, "\n")
+	if !strings.Contains(joined, `ether saddr aa:bb:cc:dd:ee:ff return`) {
+		t.Errorf("with a known MAC the v4 guard must match the NIC, not the address:\n%s", joined)
+	}
+	if strings.Contains(joined, "ip saddr") {
+		t.Errorf("the address rule is redundant once the MAC matches the whole NIC:\n%s", joined)
+	}
+	stubBinaries(t, backendIPTables, backendIP6Tables)
+	cmds = nil
+	if !(&routeIptBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "aa:bb:cc:dd:ee:ff", true, false) {
+		t.Fatal("a known gateway MAC must install")
+	}
+	joined = strings.Join(cmds, "\n")
+	if !strings.Contains(joined, "--mac-source aa:bb:cc:dd:ee:ff") {
+		t.Errorf("with a known MAC the v4 guard must match the NIC, not the address:\n%s", joined)
+	}
+	if strings.Contains(joined, "-s 192.0.2.1") {
+		t.Errorf("the address rule is redundant once the MAC matches the whole NIC:\n%s", joined)
+	}
+}
+func TestNarrowGuardFallsBackToAddressWhenIPv4MACIsRejected(t *testing.T) {
+	stubBinaries(t, backendIPTables, backendIP6Tables)
+	var cmds []string
+	prev := runLogged
+	runLogged = func(op string, args ...string) bool {
+		cmds = append(cmds, strings.Join(args, " "))
+		return !strings.Contains(strings.Join(args, " "), "--mac-source")
+	}
+	t.Cleanup(func() { runLogged = prev })
+	if !(&routeIptBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "aa:bb:cc:dd:ee:ff", true, false) {
+		t.Fatal("a rejected MAC match must fall back to the address rule")
+	}
+	joined := strings.Join(cmds, "\n")
+	if !strings.Contains(joined, "-s 192.0.2.1") {
+		t.Errorf("without xt_mac the v4 guard must fall back to the gateway address, not the full guard:\n%s", joined)
+	}
+}
 func TestGatewayMACChangeRebuildsTheChain(t *testing.T) {
 	a := routeState{iface: "eth1", egressGW: "192.0.2.1"}
 	b := a

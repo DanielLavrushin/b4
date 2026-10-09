@@ -296,7 +296,9 @@ func (b *routeNftBackend) addNarrowEgressGuard(chain, iface, gwV4, gwMAC string,
 	ok := true
 	if v4 {
 		args := []string{"add", "rule", "inet", routeNftTable, chain, "iifname", fmt.Sprintf("%q", iface)}
-		if gwV4 != "" {
+		if gwMAC != "" {
+			args = append(args, "ether", "saddr", gwMAC, "return")
+		} else if gwV4 != "" {
 			args = append(args, "ip", "saddr", gwV4, "return")
 		} else {
 			args = append(args, "meta", "nfproto", "ipv4", "return")
