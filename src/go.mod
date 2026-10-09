@@ -27,9 +27,9 @@ require (
 	github.com/urlesistiana/v2dat v0.0.0-20221215035016-47b8ee51fb52
 	github.com/yl2chen/cidranger v1.0.2
 	go.uber.org/goleak v1.3.0
-	golang.org/x/crypto v0.43.0
-	golang.org/x/net v0.46.0
+	golang.org/x/crypto v0.52.0
+	golang.org/x/net v0.54.0
 	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.41.0
+	golang.org/x/sys v0.45.0
 	google.golang.org/protobuf v1.33.0
 )
