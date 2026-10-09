@@ -18,6 +18,18 @@ export function asnLabel(id: string, name?: string): string {
   return startsWithTag ? holder : `${tag} ${holder}`;
 }
 
+export function cidrCovers(cidr: string, ip: string): boolean {
+  try {
+    const addr = ipaddr.process(stripPort(ip));
+    const range: [ipaddr.IPv4 | ipaddr.IPv6, number] = cidr.includes("/")
+      ? ipaddr.parseCIDR(cidr)
+      : [ipaddr.process(cidr), addr.kind() === "ipv4" ? 32 : 128];
+    return addr.kind() === range[0].kind() && addr.match(range);
+  } catch {
+    return false;
+  }
+}
+
 const LOOKUP_CACHE_SIZE = 10000;
 
 const v4Value = (addr: ipaddr.IPv4): number =>

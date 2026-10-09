@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.86.0] - 2026-10-09
+
+- CHANGED: **A device on the dashboard's Blocked panel shows its IP address under its name, with the MAC address on hover** - the MAC address used to take that line.
+- CHANGED: **The dashboard arranges its panels in rows that always fill the full width, each panel as tall as the tallest one in its row, where panels used to be packed into free spots, which left holes and moved them sideways as lists grew** - in Customize, the border between two panels and the minus and plus buttons move width between neighbours, a panel dropped on another joins its row, one dropped between rows gets a row of its own, and the row button splits or joins rows.
+
 ## [1.85.1] - 2026-10-08
 
 - FIXED: **On routers with an older kernel, such as Keenetic, a device that asked for a name's IPv4 and IPv6 addresses at once often got no answer to the second question, so apps on it, like a video player on a TV, waited and never connected, and the router's own lookups could stall for seconds** - b4 queued each DNS query only after the kernel's connection tracking had registered it, so a second query sent at the same moment from the same socket was dropped as a duplicate of the first while that one waited in b4's queue.

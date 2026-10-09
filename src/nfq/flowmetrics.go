@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"net/netip"
 	"sync/atomic"
 
 	"github.com/daniellavrushin/b4/config"
@@ -24,6 +25,13 @@ func (p *pktInfo) flowKey(sport, dport uint16) metrics.FlowKey {
 	return k
 }
 
+func (p *pktInfo) dstAddr() netip.Addr {
+	if p.ver == IPv4 {
+		return netip.AddrFrom4([4]byte(p.addr[16:20]))
+	}
+	return netip.AddrFrom16([16]byte(p.addr[16:32]))
+}
+
 func setIDOf(set *config.SetConfig) string {
 	if set == nil {
 		return ""
@@ -35,11 +43,11 @@ func countsTraffic(cfg *config.Config) bool {
 	return cfg != nil && !cfg.Queue.IsDiscovery
 }
 
-func observeFlow(cfg *config.Config, pkt *pktInfo, sport, dport uint16, set *config.SetConfig) {
+func observeFlow(cfg *config.Config, pkt *pktInfo, sport, dport uint16, set *config.SetConfig, host string) {
 	if !countsTraffic(cfg) {
 		return
 	}
-	metrics.GetMetricsCollector().ObserveFlow(pkt.flowKey(sport, dport), setIDOf(set))
+	metrics.GetMetricsCollector().ObserveFlowTo(pkt.flowKey(sport, dport), pkt.dstAddr(), setIDOf(set), host)
 }
 
 func recordBlockedFlow(cfg *config.Config, pkt *pktInfo, sport, dport uint16, set *config.SetConfig, target string) {

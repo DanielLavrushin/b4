@@ -19,11 +19,14 @@ type MetricsCollector struct {
 	cores      int
 	off        atomic.Int64
 	tickMono   atomic.Int64
+	tickN      atomic.Uint32
 	rstDropped atomic.Uint64
 	escTotal   atomic.Uint64
 	listener   atomic.Pointer[func()]
 	fl         flowState
 	bl         blockedState
+	dom        domainState
+	addr       addrState
 	ev         eventState
 	esc        escState
 	st         liveState

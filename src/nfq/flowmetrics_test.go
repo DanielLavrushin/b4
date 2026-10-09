@@ -213,8 +213,8 @@ func TestObservingAKnownFlowDoesNotAllocate(t *testing.T) {
 	pkt := &pktInfo{ver: IPv4, proto: 6}
 	copy(pkt.addr[0:4], []byte{10, 9, 9, 9})
 	copy(pkt.addr[16:20], []byte{1, 9, 9, 9})
-	observeFlow(&cfg, pkt, 40404, 443, &set)
-	if n := testing.AllocsPerRun(200, func() { observeFlow(&cfg, pkt, 40404, 443, &set) }); n != 0 {
+	observeFlow(&cfg, pkt, 40404, 443, &set, "video.example")
+	if n := testing.AllocsPerRun(200, func() { observeFlow(&cfg, pkt, 40404, 443, &set, "video.example") }); n != 0 {
 		t.Fatalf("a known flow costs %v allocations per packet", n)
 	}
 }
@@ -240,10 +240,10 @@ func BenchmarkObserveFlowFromThePacketPath(b *testing.B) {
 	pkt := &pktInfo{ver: IPv4, proto: 6}
 	copy(pkt.addr[0:4], []byte{10, 8, 8, 8})
 	copy(pkt.addr[16:20], []byte{1, 8, 8, 8})
-	observeFlow(&cfg, pkt, 40405, 443, &set)
+	observeFlow(&cfg, pkt, 40405, 443, &set, "video.example")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		observeFlow(&cfg, pkt, 40405, 443, &set)
+		observeFlow(&cfg, pkt, 40405, 443, &set, "video.example")
 	}
 }

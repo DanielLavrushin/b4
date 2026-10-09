@@ -174,6 +174,8 @@ func (m *MetricsCollector) tick() {
 		m.fl.mu.Unlock()
 	}
 
+	m.addr.settle(m.tickN.Add(1))
+
 	if fn := m.listener.Load(); fn != nil {
 		(*fn)()
 	}
@@ -214,6 +216,8 @@ func (m *MetricsCollector) ResetCounters() {
 	m.rstDropped.Store(0)
 	m.escTotal.Store(0)
 	m.bl.reset()
+	m.dom.reset()
+	m.addr.reset()
 	m.st.mu.Lock()
 	m.st.v.statsSince = mono
 	m.st.mu.Unlock()

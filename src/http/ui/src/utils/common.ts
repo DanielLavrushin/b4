@@ -15,13 +15,6 @@ export function resolveDeviceName(d: DeviceInfo): string {
   return d.mac;
 }
 
-export function resolveDeviceMeta(d: DeviceInfo): string {
-  const parts: string[] = [];
-  if (d.ip) parts.push(d.ip);
-  if (d.vendor && d.vendor !== "Private") parts.push(d.vendor);
-  return parts.join(" · ");
-}
-
 export function sortDevices(
   devices: DeviceInfo[],
   isSelected: (mac: string) => boolean,
