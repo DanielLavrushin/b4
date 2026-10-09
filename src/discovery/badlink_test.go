@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -9,7 +10,12 @@ import (
 )
 
 func answered400(domain, ip string) CheckResult {
-	return CheckResult{Domain: domain, Status: CheckStatusFailed, StatusCode: http.StatusBadRequest, UsedIP: ip, Error: "server answered HTTP 400, the strategy corrupted the request"}
+	return CheckResult{Domain: domain, Status: CheckStatusFailed, StatusCode: http.StatusBadRequest, UsedIP: ip, Error: "server answered HTTP 400, the strategy corrupted the request", finalHTTPS: true}
+}
+
+func overPlainHTTP(r CheckResult) CheckResult {
+	r.finalHTTPS = false
+	return r
 }
 
 func TestALinkThatAnswers400WithoutAStrategyLeavesNothingToTest(t *testing.T) {
@@ -46,6 +52,7 @@ func TestOnlyAnHonestHTTPSAnswerMarksABadLink(t *testing.T) {
 		"poisoned name, honest address": {"https://yt3.example/a", poisoned, answered400("yt3.example", "203.0.113.7"), true},
 		"poisoned name, its sinkhole":   {"https://yt3.example/a", poisoned, answered400("yt3.example", "198.51.100.9"), false},
 		"plain http":                    {"http://yt3.example/a", nil, answered400("yt3.example", ""), false},
+		"redirected to plain http":      {"https://yt3.example/a", nil, overPlainHTTP(answered400("yt3.example", "")), false},
 		"another status":                {"https://yt3.example/a", nil, CheckResult{Domain: "yt3.example", Status: CheckStatusFailed, StatusCode: http.StatusNotFound}, false},
 		"no answer":                     {"https://yt3.example/a", nil, CheckResult{Domain: "yt3.example", Status: CheckStatusFailed, Error: "connection reset"}, false},
 	}
@@ -59,6 +66,33 @@ func TestOnlyAnHonestHTTPSAnswerMarksABadLink(t *testing.T) {
 		if got := ds.badLink("yt3.example"); got != tc.want {
 			t.Errorf("%s: bad link = %v, want %v", name, got, tc.want)
 		}
+	}
+}
+
+func TestOnlyA400ThatArrivesOverTLSMarksABadLink(t *testing.T) {
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer plain.Close()
+	secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/downgrade" {
+			http.Redirect(w, r, plain.URL+"/", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer secure.Close()
+
+	ds := newProbeOnlySuite(secure.URL + "/")
+	direct := ds.fetchUsingIPForDomain(ds.Domains[0], 5*time.Second, "")
+	if direct.StatusCode != http.StatusBadRequest || !ds.refusedLink(ds.Domains[0], direct) {
+		t.Fatalf("a 400 the site sent over TLS to a clean request is a bad link, got status=%d tls=%v", direct.StatusCode, direct.finalHTTPS)
+	}
+
+	ds = newProbeOnlySuite(secure.URL + "/downgrade")
+	downgraded := ds.fetchUsingIPForDomain(ds.Domains[0], 5*time.Second, "")
+	if downgraded.StatusCode != http.StatusBadRequest || ds.refusedLink(ds.Domains[0], downgraded) {
+		t.Fatalf("a 400 after a redirect to plain http may come from the network, which a strategy can change, got status=%d tls=%v", downgraded.StatusCode, downgraded.finalHTTPS)
 	}
 }
 

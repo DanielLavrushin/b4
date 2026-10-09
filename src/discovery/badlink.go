@@ -36,7 +36,7 @@ func (ds *DiscoverySuite) anyUntestable() bool {
 }
 
 func (ds *DiscoverySuite) refusedLink(di DomainInput, r CheckResult) bool {
-	if r.untried || r.Status != CheckStatusFailed || r.StatusCode != http.StatusBadRequest || !strings.HasPrefix(di.CheckURL, "https://") {
+	if r.untried || !r.finalHTTPS || r.Status != CheckStatusFailed || r.StatusCode != http.StatusBadRequest || !strings.HasPrefix(di.CheckURL, "https://") {
 		return false
 	}
 	dnsResult := ds.dnsResults[di.Domain]

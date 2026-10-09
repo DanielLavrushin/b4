@@ -120,6 +120,7 @@ type CheckResult struct {
 	lookup      nameLookup
 	lookupHost  string
 	untried     bool
+	finalHTTPS  bool
 }
 
 type nameLookup int

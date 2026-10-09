@@ -368,6 +368,7 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 
 	result.StatusCode = resp.StatusCode
 	result.ContentSize = resp.ContentLength
+	result.finalHTTPS = resp.TLS != nil
 
 	// A malformed request is our own doing: the strategy under test corrupted the stream
 	// before the origin parsed it, so the fetch is not evidence that the strategy works.

@@ -164,6 +164,12 @@ export function useDiscovery() {
           return;
         }
         const last = current?.last_run;
+        if (current?.runtime_active) {
+          if (last) seenRunRef.current = last;
+          setSuiteId(null);
+          setFinishing(true);
+          return;
+        }
         if (last && last !== seenRunRef.current) {
           seenRunRef.current = last;
           if (last !== suiteId) void loadHistory();
