@@ -153,28 +153,50 @@ export const SetVerdictCard = ({
     );
   }, [handlers, addressKey]);
 
+  const storedUrls = useMemo(
+    () => set?.discovery?.urls ?? [],
+    [set?.discovery?.urls],
+  );
+
+  const dropTargets = useMemo(() => {
+    if (storedUrls.length === 0) return pruneTargets;
+    const runUrl = new Map(
+      (suite.domains ?? []).map((d) => [
+        lower(d.domain),
+        normalizeProbeUrl(d.check_url)?.url,
+      ]),
+    );
+    const stored = new Set(
+      storedUrls.map((u) => normalizeProbeUrl(u)?.url).filter(Boolean),
+    );
+    return pruneTargets.filter((domain) => {
+      if (!badLinks.includes(domain)) return true;
+      const url = runUrl.get(lower(domain));
+      return !!url && stored.has(url);
+    });
+  }, [pruneTargets, badLinks, storedUrls, suite.domains]);
+
   const uncoveredHosts = useMemo(() => {
     const hosts = new Set<string>();
     const urlOf = new Map(
       (suite.domains ?? []).map((d) => [lower(d.domain), d.check_url]),
     );
-    for (const domain of pruneTargets) {
+    for (const domain of dropTargets) {
       hosts.add(lower(domain));
       const url = urlOf.get(lower(domain));
       const host = url ? normalizeProbeUrl(url)?.host : undefined;
       if (host) hosts.add(host);
     }
     return hosts;
-  }, [suite.domains, pruneTargets]);
+  }, [suite.domains, dropTargets]);
 
-  const storedUrls = set?.discovery?.urls ?? [];
   const baseUrls = storedUrls.length > 0 ? storedUrls : checkUrls;
   const keptUrls = baseUrls.filter((u) => {
     const host = normalizeProbeUrl(u)?.host;
     return !host || !uncoveredHosts.has(host);
   });
   const canPrune =
-    !!set && pruneTargets.length > 0 && keptUrls.length < baseUrls.length;
+    !!set && dropTargets.length > 0 && keptUrls.length < baseUrls.length;
 
   const plainFix =
     verdict.family === "alt_address" || verdict.family === "dns_redirect";
@@ -203,7 +225,7 @@ export const SetVerdictCard = ({
   const prune = async () => {
     if (!set) return;
     setSaving(true);
-    await onSaveUrls(set.id, keptUrls, pruneTargets, [...uncoveredHosts]);
+    await onSaveUrls(set.id, keptUrls, dropTargets, [...uncoveredHosts]);
     setSaving(false);
   };
 
