@@ -81,6 +81,19 @@ func TestTopAddressesSkipConnectionsThatNameThemselves(t *testing.T) {
 	}
 }
 
+func TestTopAddressesKeepANewerConnectionWhenAnOldOneNamesItself(t *testing.T) {
+	r := newRig(t, rigStart, 0)
+	m := r.m
+	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "")
+	r.stepEach(64*time.Second, time.Second)
+	m.ObserveFlowTo(flowKey(2), cdnAddr, "", "")
+	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "late.example")
+	r.stepEach(3*time.Second, time.Second)
+	if a, ok := topAddress(m.Hello(), "142.250.74.14"); !ok || a.Count != 2 {
+		t.Fatalf("a name that arrives a minute later takes nothing from a newer connection: %+v", a)
+	}
+}
+
 func TestTopAddressesRecordedByTheProxies(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m

@@ -21,21 +21,13 @@ const (
 	flowNamed
 )
 
-const (
-	flowBornShift = 2
-	flowBornMask  = 0x3F
-)
-
 type flowEntry struct {
 	minSeq uint32
 	tenSeq uint32
+	born   uint32
 	set    uint16
 	flags  uint8
 	gen    uint8
-}
-
-func (e *flowEntry) born() uint8 {
-	return (e.flags >> flowBornShift) & flowBornMask
 }
 
 type flowSeen struct {
@@ -43,7 +35,7 @@ type flowSeen struct {
 	named   bool
 	unnamed bool
 	dropped bool
-	born    uint8
+	born    uint32
 	set     uint16
 }
 
@@ -124,7 +116,7 @@ func (m *MetricsCollector) ObserveFlowTo(key FlowKey, dst netip.Addr, setID, hos
 	case seen.unnamed:
 		m.addr.hold(dst, flowSet, tick, now)
 	case seen.dropped:
-		m.addr.drop(dst, uint32(seen.born))
+		m.addr.drop(dst, seen.born)
 	}
 }
 
@@ -199,10 +191,8 @@ func (f *flowState) touch(key FlowKey, setID string, now int64, tick uint32, blo
 	}
 	if named {
 		flags |= flowNamed
-	} else {
-		flags |= (uint8(tick) & flowBornMask) << flowBornShift
 	}
-	f.insert(key, flowEntry{minSeq: f.minSeq, tenSeq: f.tenSeq, set: idx, flags: flags, gen: f.gen}, now)
+	f.insert(key, flowEntry{minSeq: f.minSeq, tenSeq: f.tenSeq, born: tick, set: idx, flags: flags, gen: f.gen}, now)
 	return flowSeen{blocked: block, named: named, unnamed: !named, set: idx}
 }
 
@@ -233,8 +223,8 @@ func (f *flowState) update(e *flowEntry, setID string, now int64, tick uint32, b
 		if current {
 			seen.named = true
 			seen.set = e.set
-			seen.born = e.born()
-			seen.dropped = (uint8(tick)-seen.born)&flowBornMask < addrSettleTicks
+			seen.born = e.born
+			seen.dropped = tick-e.born < addrSettleTicks
 		}
 	}
 	if block && e.flags&flowBlocked == 0 {

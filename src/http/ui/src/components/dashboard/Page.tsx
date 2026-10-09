@@ -216,13 +216,8 @@ const DashboardGrid = memo(function DashboardGrid({
       const x = activatorEvent.clientX + delta.x;
       const y = activatorEvent.clientY + delta.y;
       const r = over.rect;
-      side = wideDrag.current
-        ? x < r.left + r.width / 2
-          ? "before"
-          : "after"
-        : y < r.top + r.height / 2
-          ? "before"
-          : "after";
+      const before = wideDrag.current ? x < r.left + r.width / 2 : y < r.top + r.height / 2;
+      side = before ? "before" : "after";
     } else {
       side = flatIds.indexOf(String(active.id)) < flatIds.indexOf(overId) ? "after" : "before";
     }
