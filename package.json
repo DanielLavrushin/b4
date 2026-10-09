@@ -1,4 +1,8 @@
 {
   "name": "b4-web",
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "oxlint": "1.87.0",
+    "oxlint-tsgolint": "7.0.2003"
+  }
 }
