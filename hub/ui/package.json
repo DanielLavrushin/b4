@@ -17,11 +17,11 @@
     "@mui/icons-material": "^7.3.11",
     "@mui/material": "^7.3.11",
     "@tanstack/react-query": "^5.104.1",
-    "i18next": "^25.10.10",
+    "i18next": "^26.4.2",
     "motion": "^12.43.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-i18next": "^16.6.6",
+    "react-i18next": "^17.0.16",
     "react-router": "^8.4.0"
   },
   "devDependencies": {
