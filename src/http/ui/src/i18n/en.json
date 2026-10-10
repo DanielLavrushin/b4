@@ -3433,7 +3433,11 @@
       "addIp": "Add IP to set",
       "addDomainToSet": "Add domain to a set",
       "showDevices": "Show devices",
-      "hideDevices": "Hide devices"
+      "hideDevices": "Hide devices",
+      "sortDevices": "Sort devices",
+      "sortByName": "By name",
+      "sortByRecent": "By latest activity",
+      "sortByPackets": "By packet count"
     },
     "addDomain": {
       "title": "Add Domain to Manual List",

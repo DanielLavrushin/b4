@@ -1,11 +1,63 @@
-import { memo } from "react";
-import { Box, IconButton, List, ListItemButton, Stack, Tooltip, Typography, Divider } from "@mui/material";
-import { DeviceIcon, MenuIcon } from "@b4.icons";
+import { memo, useMemo, useState } from "react";
+import {
+  Box,
+  IconButton,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Stack,
+  Tooltip,
+  Typography,
+  Divider,
+} from "@mui/material";
+import { CheckIcon, DeviceIcon, MenuIcon, SortIcon } from "@b4.icons";
 import { colors } from "@design";
 import { Sparkline } from "./Sparkline";
 import { formatRelativeShort } from "@utils";
 import type { EnrichedDevice } from "@hooks/useConnectionGroups";
 import { useTranslation } from "react-i18next";
+
+type DeviceSort = "name" | "recent" | "packets";
+
+const DEVICE_SORTS: readonly DeviceSort[] = ["name", "recent", "packets"];
+const DEVICE_SORT_STORAGE_KEY = "b4_connections_device_sort";
+const DEVICE_SORT_LABELS: Record<DeviceSort, string> = {
+  name: "connections.aggregated.sortByName",
+  recent: "connections.aggregated.sortByRecent",
+  packets: "connections.aggregated.sortByPackets",
+};
+const MAC_PATTERN = /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/i;
+const labelCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+const loadDeviceSort = (): DeviceSort => {
+  const stored = localStorage.getItem(DEVICE_SORT_STORAGE_KEY);
+  return DEVICE_SORTS.find((s) => s === stored) ?? "name";
+};
+
+const nameTier = (d: EnrichedDevice): number => {
+  if (d.deviceName) return 0;
+  return MAC_PATTERN.test(d.mac) ? 1 : 2;
+};
+
+const primaryOrder = (sort: DeviceSort, a: EnrichedDevice, b: EnrichedDevice): number => {
+  if (sort === "recent") return b.lastSeen - a.lastSeen;
+  if (sort === "packets") return b.packets - a.packets;
+  return 0;
+};
+
+const orderDevices = (devices: EnrichedDevice[], sort: DeviceSort): EnrichedDevice[] => {
+  const keyed = devices.map((d) => ({ d, tier: nameTier(d), label: d.deviceName || d.mac }));
+  keyed.sort(
+    (a, b) =>
+      primaryOrder(sort, a.d, b.d) ||
+      a.tier - b.tier ||
+      labelCollator.compare(a.label, b.label),
+  );
+  return keyed.map((k) => k.d);
+};
 
 interface Props {
   devices: EnrichedDevice[];
@@ -19,8 +71,16 @@ interface Props {
 export const DeviceSidebar = memo<Props>(
   ({ devices, selectedMac, onSelect, collapsed, onToggleCollapsed, width = 240 }) => {
   const { t } = useTranslation();
-  const sorted = [...devices].sort((a, b) => b.lastSeen - a.lastSeen);
+  const [sort, setSort] = useState<DeviceSort>(loadDeviceSort);
+  const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null);
+  const sorted = useMemo(() => orderDevices(devices, sort), [devices, sort]);
   const now = Date.now();
+
+  const chooseSort = (next: DeviceSort) => {
+    setSort(next);
+    setSortAnchor(null);
+    localStorage.setItem(DEVICE_SORT_STORAGE_KEY, next);
+  };
   const totalPackets = devices.reduce((s, d) => s + d.packets, 0);
 
   if (collapsed) {
@@ -71,6 +131,37 @@ export const DeviceSidebar = memo<Props>(
         <Typography sx={{ color: colors.secondary, fontWeight: 600, fontSize: 14, flex: 1 }}>
           {t("connections.aggregated.devices")}
         </Typography>
+        <Tooltip title={t("connections.aggregated.sortDevices")} placement="top" arrow>
+          <IconButton
+            size="small"
+            aria-label={t("connections.aggregated.sortDevices")}
+            aria-haspopup="menu"
+            aria-expanded={sortAnchor ? "true" : undefined}
+            onClick={(e) => setSortAnchor(e.currentTarget)}
+            sx={{ color: colors.text.secondary }}
+          >
+            <SortIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+        </Tooltip>
+        <Menu
+          anchorEl={sortAnchor}
+          open={sortAnchor !== null}
+          onClose={() => setSortAnchor(null)}
+          anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+          transformOrigin={{ vertical: "top", horizontal: "right" }}
+        >
+          {DEVICE_SORTS.map((s) => (
+            <MenuItem
+              key={s}
+              role="menuitemradio"
+              aria-checked={s === sort}
+              onClick={() => chooseSort(s)}
+            >
+              <ListItemIcon>{s === sort && <CheckIcon fontSize="small" />}</ListItemIcon>
+              <ListItemText>{t(DEVICE_SORT_LABELS[s])}</ListItemText>
+            </MenuItem>
+          ))}
+        </Menu>
         <Tooltip title={t("connections.aggregated.hideDevices")} placement="right" arrow>
           <IconButton size="small" onClick={onToggleCollapsed} sx={{ color: colors.text.secondary }}>
             <MenuIcon sx={{ fontSize: 16 }} />
