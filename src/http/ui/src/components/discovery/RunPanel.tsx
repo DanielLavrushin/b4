@@ -28,6 +28,9 @@ import {
   unresolvedLabel,
   verdictOf,
 } from "@utils";
+import { Snake, SnakeButton } from "./Snake";
+
+const SNAKE_NUDGE_AFTER_MS = 12_000;
 
 const STEPS = [
   "dns",
@@ -83,12 +86,15 @@ export const RunPanel = ({
 }: RunPanelProps) => {
   const { t } = useTranslation();
   const [, setTick] = useState(0);
+  const [snake, setSnake] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(id);
   }, []);
 
+  const nudgeSnake =
+    Date.now() - new Date(suite.start_time).getTime() >= SNAKE_NUDGE_AFTER_MS;
   const results = suite.domain_discovery_results ?? {};
   const sites = suite.domains?.map((d) => d.domain) ?? Object.keys(results);
   const all = Object.values(results);
@@ -334,12 +340,25 @@ export const RunPanel = ({
         </Table>
       </Box>
 
-      <Typography
-        variant="caption"
-        sx={{ ...typography.recipes.monoSmall, color: colors.text.disabled }}
-      >
-        {note}
-      </Typography>
+      <Stack direction="row" alignItems="center" spacing={1}>
+        <Typography
+          variant="caption"
+          sx={{
+            ...typography.recipes.monoSmall,
+            color: colors.text.disabled,
+            flex: 1,
+          }}
+        >
+          {note}
+        </Typography>
+        <SnakeButton
+          open={snake}
+          nudge={nudgeSnake}
+          onToggle={() => setSnake((v) => !v)}
+        />
+      </Stack>
+
+      {snake && <Snake />}
     </Stack>
   );
 };

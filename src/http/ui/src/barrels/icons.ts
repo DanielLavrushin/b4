@@ -109,4 +109,5 @@ export {
   ArrowUpward as SentIcon,
   ArrowDownward as ReceivedIcon,
   Settings as SettingsIcon,
+  SportsEsports as GameIcon,
 } from "@mui/icons-material";

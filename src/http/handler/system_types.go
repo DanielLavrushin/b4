@@ -229,9 +229,10 @@ type DiagTools struct {
 }
 
 type DiagTool struct {
-	Name   string `json:"name"`
-	Found  bool   `json:"found"`
-	Detail string `json:"detail,omitempty"`
+	Name    string `json:"name"`
+	Found   bool   `json:"found"`
+	Detail  string `json:"detail,omitempty"`
+	Version string `json:"version,omitempty"`
 }
 
 type DiagMount struct {

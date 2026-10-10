@@ -39,6 +39,13 @@ func (api *API) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) buildDiagnostics() Diagnostics {
+	v, _, _ := api.diagnosticsGroup.Do("diagnostics", func() (any, error) {
+		return api.collectDiagnostics(), nil
+	})
+	return v.(Diagnostics)
+}
+
+func (api *API) collectDiagnostics() Diagnostics {
 	cfg := api.getCfg()
 	serviceManager := api.getServiceManager()
 
@@ -1105,12 +1112,14 @@ func collectTools() DiagTools {
 		Optional:   make([]DiagTool, 0, len(optional)),
 		SearchPath: os.Getenv("PATH"),
 	}
+	versions := newToolVersions()
 
 	for _, name := range firewallTools {
 		dt := DiagTool{Name: name}
 		if path, ok := config.LookupTool(name); ok {
 			dt.Found = true
 			dt.Detail = path
+			dt.Version = versions.of(name, path)
 		}
 		result.Firewall = append(result.Firewall, dt)
 	}
@@ -1120,6 +1129,7 @@ func collectTools() DiagTools {
 		if path, ok := config.LookupTool(t.name); ok {
 			dt.Found = true
 			dt.Detail = path
+			dt.Version = versions.of(t.name, path)
 		} else {
 			dt.Detail = t.missing
 		}
@@ -1131,6 +1141,7 @@ func collectTools() DiagTools {
 		if path, ok := config.LookupTool(t.name); ok {
 			dt.Found = true
 			dt.Detail = path
+			dt.Version = versions.of(t.name, path)
 		} else {
 			dt.Detail = t.missing
 		}
