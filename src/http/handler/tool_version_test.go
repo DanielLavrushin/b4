@@ -108,3 +108,17 @@ func TestToolVersionsGivesUpOnAToolThatHangs(t *testing.T) {
 		t.Errorf("waited %v for a tool that never answers", elapsed)
 	}
 }
+
+func TestToolVersionsKeepsOnlyTheStartOfAFloodOfOutput(t *testing.T) {
+	flood := writeTool(t, t.TempDir(), "flood", "yes 'flood v9.9' | head -n 100000\n")
+	stdout, _, err := runToolVersion(flood)
+	if err != nil {
+		t.Fatalf("the tool did not run to its end: %v", err)
+	}
+	if len(stdout) != toolVersionMaxOutput {
+		t.Errorf("kept %d bytes of a 1.1 MB output, want %d", len(stdout), toolVersionMaxOutput)
+	}
+	if got := parseToolVersion("flood", stdout, "", true); got != "v9.9" {
+		t.Errorf("version = %q, want v9.9", got)
+	}
+}

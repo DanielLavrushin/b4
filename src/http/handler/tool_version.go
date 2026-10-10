@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -13,9 +12,27 @@ import (
 
 var toolVersionTimeout = 2 * time.Second
 
-const toolVersionMaxLen = 200
+const (
+	toolVersionMaxLen    = 200
+	toolVersionMaxOutput = 4096
+)
 
 var busyboxBannerRe = regexp.MustCompile(`BusyBox v\S+`)
+
+type headBuffer struct {
+	buf []byte
+}
+
+func (h *headBuffer) Write(p []byte) (int, error) {
+	if room := toolVersionMaxOutput - len(h.buf); room > 0 {
+		h.buf = append(h.buf, p[:min(room, len(p))]...)
+	}
+	return len(p), nil
+}
+
+func (h *headBuffer) String() string {
+	return string(h.buf)
+}
 
 type toolVersions struct {
 	busybox map[string]string
@@ -43,7 +60,7 @@ func runToolVersion(path string, args ...string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), toolVersionTimeout)
 	defer cancel()
 
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr headBuffer
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	cmd.Stdout = &stdout
