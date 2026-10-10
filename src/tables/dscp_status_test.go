@@ -65,6 +65,16 @@ func TestSetDSCPStatusIptables(t *testing.T) {
 	if got := dscpStatusRow(t, DSCPStatus(next), "a"); got.Applied || got.Value != 32 {
 		t.Errorf("a value the firewall does not carry yet must read as not applied, got %+v", got)
 	}
+
+	grown := cfg.Clone()
+	grown.Sets[0].Targets.IpsToMatch = append(grown.Sets[0].Targets.IpsToMatch, "192.0.2.0/24")
+	if got := dscpStatusRow(t, DSCPStatus(grown), "a"); got.Applied || got.Value != 31 {
+		t.Errorf("targets the firewall does not carry yet must read as not applied, even with the same value, got %+v", got)
+	}
+	dscpLearnApply(t, grown, backendIPTables)
+	if got := dscpStatusRow(t, DSCPStatus(grown), "a"); !got.Applied || got.Static != 4 {
+		t.Errorf("once the firewall carries the new targets the set must read as applied again, got %+v", got)
+	}
 }
 
 func TestSetDSCPStatusNftables(t *testing.T) {

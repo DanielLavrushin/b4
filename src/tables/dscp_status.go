@@ -41,6 +41,7 @@ func DSCPStatus(cfg *config.Config) DSCPState {
 		}
 	}
 	learned := dscpLearnStats()
+	synced := st != nil && st.plan.equal(dscpPlanFor(cfg))
 	seen := make(map[string]bool)
 	for _, set := range cfg.Sets {
 		if set == nil || !set.Enabled || seen[set.Id] {
@@ -54,7 +55,7 @@ func DSCPStatus(cfg *config.Config) DSCPState {
 		row := DSCPSetState{ID: set.Id, Name: set.Name, Value: value, Refusal: cfg.DSCPRefusal(set)}
 		if row.Refusal == "" {
 			count := learned[set.Id]
-			row.Applied = st.perSetApplied(set.Id, value)
+			row.Applied = synced && st.perSetApplied(set.Id, value)
 			row.Static = dscpStaticCount(set)
 			row.LearnedDNS, row.LearnedTLS, row.LearnedPreResolve = count.dns, count.tls, count.preResolve
 		}
