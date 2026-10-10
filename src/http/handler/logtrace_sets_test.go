@@ -152,6 +152,42 @@ func TestCollectTraceSetsOffModesOmitted(t *testing.T) {
 	}
 }
 
+func TestCollectTraceSetsReportsSetDSCP(t *testing.T) {
+	cfg := config.NewConfig()
+	zero := config.DefaultSetConfig
+	zero.Id = "zero"
+	zero.DSCP = config.SetDSCPConfig{Enabled: true, Value: 0}
+	stamped := config.DefaultSetConfig
+	stamped.Id = "stamped"
+	stamped.DSCP = config.SetDSCPConfig{Enabled: true, Value: 31}
+	off := config.DefaultSetConfig
+	off.Id = "off"
+	off.DSCP = config.SetDSCPConfig{Value: 12}
+	cfg.Sets = []*config.SetConfig{&zero, &stamped, &off}
+
+	sets := collectTraceSets(&cfg)
+	if len(sets) != 3 {
+		t.Fatalf("expected three sets, got %d", len(sets))
+	}
+	if sets[0].DSCP == nil || *sets[0].DSCP != 0 {
+		t.Errorf("an enabled DSCP value of 0 clears the field and must be reported, got %v", sets[0].DSCP)
+	}
+	if sets[1].DSCP == nil || *sets[1].DSCP != 31 {
+		t.Errorf("expected DSCP 31, got %v", sets[1].DSCP)
+	}
+	if sets[2].DSCP != nil {
+		t.Errorf("a switched-off DSCP value must be omitted, got %d", *sets[2].DSCP)
+	}
+
+	data, err := json.Marshal(sets)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if text := string(data); strings.Count(text, `"dscp":`) != 2 || !strings.Contains(text, `"dscp":0`) {
+		t.Errorf("the trace must print the value 0 and skip the switched-off one: %s", text)
+	}
+}
+
 func TestCollectTraceSetsNilConfig(t *testing.T) {
 	if collectTraceSets(nil) != nil {
 		t.Error("expected nil for nil config")

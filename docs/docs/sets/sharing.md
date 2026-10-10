@@ -33,6 +33,7 @@ Left out:
 - the DNS server address the set redirects to;
 - IP block detection;
 - the [Discovery addresses](./discovery) and the watchdog switch, which describe what one network checks; the preview lists the addresses as private;
+- the set's own [DSCP value](./routing.md#dscp), which the rules of the router in front of the sharing b4 act on; the preview lists it as private while it is switched on;
 - the set's id and its enabled state.
 
 A DNS pin survives only when the pinned domain is one the set targets and every address in it is public. A pin for another domain, or one pointing at a private address, is dropped and reported.
@@ -63,7 +64,9 @@ The import runs on the router, not in the browser, and reports what it had to ch
 - pins, to which the same rule applies as when the set was prepared: a pin for a domain the set does not target or one pointing at a private address is dropped and named, and the surviving pins are listed so they can be checked in the **DNS** tab before saving;
 - a DoH URL whose host is not a known public resolver, which drops the DNS redirect and names the host.
 
-The set itself is passed through the same validation as a set saved from the editor, so a shared set cannot carry a routing block, a device filter or a DNS server address even when the JSON was edited by hand to include one.
+The set itself is passed through the same validation as a set saved from the editor, and the settings that are left out are removed from it, so a shared set cannot carry a routing block, a device filter, a DNS server address or a DSCP value even when the JSON was edited by hand to include one.
+
+A shared set imported into a set that already exists, in its editor or with **Update** or **Reapply** on the **Community** page, keeps that set's own DSCP value. A value that did not apply to the set before the import, such as the value of a proxy set, is kept but switched off, and the import says so.
 
 ## Provenance
 

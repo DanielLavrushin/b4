@@ -164,6 +164,8 @@ var Fields = map[string]Field{
 	"mss_clamp.enabled": {Class: Crosses},
 	"mss_clamp.size":    {Class: Crosses},
 
+	"dscp": {Class: Never},
+
 	"discovery": {Class: Never},
 }
 

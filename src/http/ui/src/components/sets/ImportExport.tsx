@@ -18,7 +18,12 @@ import { createDefaultSet } from "@models/defaults";
 import { HubWarning, formatWarningParam, isHubEnvelope } from "@models/hub";
 import { hubApi } from "@api/hub";
 import { ApiError } from "@api/apiClient";
-import { copyText, mergeHubLink, sanitizeProbeUrls } from "@utils";
+import {
+  copyText,
+  keepLocalDscp,
+  mergeHubLink,
+  sanitizeProbeUrls,
+} from "@utils";
 
 type Obj = Record<string, unknown>;
 
@@ -68,6 +73,7 @@ const FEATURE_OFF_RULES: Array<{
   { path: ["fragmentation"], toggle: "strategy", offValue: "none" },
   { path: ["dns"], toggle: "enabled", offValue: false, keep: ["pins"] },
   { path: ["routing"], toggle: "enabled", offValue: false },
+  { path: ["dscp"], toggle: "enabled", offValue: false },
 ];
 
 function resolveObjPath(root: Obj, path: string[]): Obj | undefined {
@@ -154,6 +160,9 @@ function buildExportJson(config: B4SetConfig): Record<string, unknown> {
   if (isPlainObject(result.targets)) {
     delete result.targets.source_devices;
   }
+  if ((config.targets.source_devices ?? []).length > 0) {
+    delete result.dscp;
+  }
 
   if (isPlainObject(result.discovery)) {
     const discovery = result.discovery;
@@ -207,11 +216,13 @@ function collectPayloadRefs(cfg: B4SetConfig): string[] {
 
 interface ImportExportSettingsProps {
   config: B4SetConfig;
+  deviceFilter: boolean;
   onImport: (importedConfig: B4SetConfig) => void;
 }
 
 export const ImportExportSettings = ({
   config,
+  deviceFilter,
   onImport,
 }: ImportExportSettingsProps) => {
   const { t } = useTranslation();
@@ -321,18 +332,24 @@ export const ImportExportSettings = ({
     try {
       const result = await hubApi.importEnvelope(raw);
       const link = mergeHubLink(config.hub, result.set.hub, true);
+      const local = keepLocalDscp(config, deviceFilter);
       const parsed = {
         ...result.set,
         id: config.id,
         enabled: config.enabled,
         hub: link.hub,
         discovery: config.discovery ?? result.set.discovery,
+        dscp: local.dscp ?? result.set.dscp,
         revision: config.revision,
       };
       onImport(parsed);
       await loadCaptures();
       setImportedPayloadRefs(collectPayloadRefs(parsed));
-      setImportWarnings([...(result.warnings ?? []), ...link.warnings]);
+      setImportWarnings([
+        ...(result.warnings ?? []),
+        ...link.warnings,
+        ...local.warnings,
+      ]);
       setEnvelopeImported(true);
       setImportSuccess(true);
     } catch (e) {

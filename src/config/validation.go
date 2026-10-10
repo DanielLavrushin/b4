@@ -347,6 +347,13 @@ func (c *Config) Validate() error {
 				return v.result()
 			}
 		}
+
+		if dscp := &set.DSCP; dscp.Enabled && (dscp.Value < 0 || dscp.Value > MaxDSCPValue) {
+			v.addf(fmt.Sprintf("sets[%d].dscp.value", setIdx), "out_of_range",
+				map[string]any{"set": set.Name, "value": dscp.Value, "min": 0, "max": MaxDSCPValue},
+				"set %q: DSCP value %d is outside 0-%d", set.Name, dscp.Value, MaxDSCPValue)
+			return v.result()
+		}
 	}
 
 	c.sanitizeEscalation()
@@ -403,7 +410,7 @@ func (c *Config) Validate() error {
 				m, uint(engine.ClientMark))
 			return v.result()
 		}
-	} else if c.System.Tables.DSCP.Enabled {
+	} else if c.System.Tables.DSCP.Enabled || c.AnySetDSCP() {
 		if m := c.MainInjectedMark(); m&uint(engine.ClientMark) != 0 {
 			v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", m)},
 				"queue mark 0x%x overlaps the reserved client mark bit (0x%x) the DSCP stamp uses to leave b4's packets to LAN clients alone; choose a mark clear of that bit",

@@ -222,6 +222,7 @@ Refused whatever this setting is on:
 | Firewall backend | A wrong value leaves the machine with no rules at all |
 | Every **Expose to internet** switch, and any write that would open a port while one of them is on, such as turning the MTProto proxy on or changing its port or bind address | An open port is reachable from the whole internet at once, and a revert does not undo what reached it |
 | Packet marks, routing tables | Load-bearing for b4's own traffic |
+| **Set DSCP** (`system.tables.dscp`) and a set's own DSCP value (`sets[].dscp`) | Rules on the next router, which b4 cannot see, act on the value, and a wrong one can send every packet this host sends, or the set's traffic, down another route |
 | A set's id | Escalation targets refer to it |
 | A set's Discovery addresses and watchdog switch | Both make the router fetch sites on a timer; `b4_watchdog` with `set` changes them under its own permissions |
 | The log directory and the geo file locations | Filesystem locations, not contents: a wrong log directory silently stops file logging, and a wrong geo path empties every geosite category at once |

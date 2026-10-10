@@ -72,13 +72,11 @@ func routingHandleDNSAvailable() bool {
 }
 
 func registerEscalatedRoute(cfg *config.Config, escSet *config.SetConfig, ips []net.IP) {
-	if cfg == nil || escSet == nil || len(ips) == 0 || !escSet.Routing.Enabled || !routingHandleDNSAvailable() {
+	if cfg == nil || escSet == nil || len(ips) == 0 || escSet.Targets.DomainOnly || cfg.Queue.IsDiscovery {
 		return
 	}
-	if escSet.Targets.DomainOnly {
-		return
-	}
-	if cfg.Queue.IsDiscovery {
+	dscpLearnAsync(cfg, escSet, ips, false)
+	if !escSet.Routing.Enabled || !routingHandleDNSAvailable() {
 		return
 	}
 	log.Tracef("registerEscalatedRoute: adding %d address(es) to %s ipset (mode=%s)", len(ips), escSet.Name, escSet.Routing.Mode)
@@ -86,13 +84,13 @@ func registerEscalatedRoute(cfg *config.Config, escSet *config.SetConfig, ips []
 }
 
 func registerLearnedRoute(cfg *config.Config, set *config.SetConfig, dst net.IP, host string) {
-	if cfg == nil || set == nil || dst == nil || !set.Routing.Enabled {
+	if cfg == nil || set == nil || dst == nil || set.Targets.DomainOnly || cfg.Queue.IsDiscovery {
 		return
 	}
-	if set.Targets.DomainOnly {
-		return
+	if set.DSCP.Enabled {
+		dscpLearnAsync(cfg, set, []net.IP{dst}, true)
 	}
-	if cfg.Queue.IsDiscovery {
+	if !set.Routing.Enabled {
 		return
 	}
 	if RoutingLearnIPAsyncFunc != nil {

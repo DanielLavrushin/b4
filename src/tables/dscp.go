@@ -30,6 +30,47 @@ type dscpState struct {
 	bins    []string
 	stamps  int
 	pending bool
+	plan    *dscpPlan
+	ipt     *dscpIptState
+	nft     *dscpNftLayout
+}
+
+func (st *dscpState) ipsets() []string {
+	if st == nil || st.ipt == nil {
+		return nil
+	}
+	return dscpNftUnion(st.ipt.sets, st.ipt.pending)
+}
+
+func (st *dscpState) perSet() bool {
+	return st != nil && (!st.plan.empty() || st.nft.perSet() || len(st.ipsets()) > 0)
+}
+
+func (st *dscpState) leftover(names []string) *dscpState {
+	if len(names) == 0 && st.ipt == nil {
+		return st
+	}
+	return &dscpState{cfg: st.cfg, backend: st.backend, ipt: &dscpIptState{pending: names}}
+}
+
+func (st *dscpState) withLeftovers(from *dscpState) *dscpState {
+	names := from.ipsets()
+	if len(names) == 0 {
+		return st
+	}
+	next := &dscpState{cfg: from.cfg, backend: from.backend}
+	if st != nil {
+		c := *st
+		next = &c
+	}
+	ipt := &dscpIptState{}
+	if next.ipt != nil {
+		c := *next.ipt
+		ipt = &c
+	}
+	ipt.pending = dscpNftUnion(ipt.pending, names)
+	next.ipt = ipt
+	return next
 }
 
 var (
@@ -111,25 +152,72 @@ func applyDSCPLogged(cfg *config.Config, backend string) {
 }
 
 func applyDSCPFor(cfg *config.Config, backend string) error {
+	rebuilt := false
+	defer func() { dscpLearnAdopt(dscpApplied.Load(), rebuilt) }()
 	value, ifaces, on := cfg.DSCPStamp()
-	if !on {
+	plan := dscpPlanFor(cfg)
+	if !on && plan.empty() {
 		if dscpApplied.Load() != nil {
 			clearDSCPFor(cfg, backend)
 		}
 		return nil
 	}
-	if prev := dscpApplied.Load(); prev != nil && prev.backend != backend {
-		if gone, _ := removeDSCPObjects(prev.cfg, prev.backend); !gone {
-			dscpStale.Store(prev)
-		}
+	prev := dscpApplied.Load()
+	if prev != nil && prev.backend != backend {
+		removeDSCPOrPark(prev)
+		prev = nil
 	}
-	if s := dscpStale.Load(); s != nil && s.backend == backend {
-		dscpStale.CompareAndSwap(s, nil)
+	if s := dscpStale.Load(); s != nil && s.backend == backend && dscpStale.CompareAndSwap(s, nil) {
+		prev = prev.withLeftovers(s)
 	}
-	if backend == backendNFTables {
+	switch {
+	case backend == backendNFTables && plan.empty():
 		return applyDSCPNft(cfg, value, ifaces)
+	case backend == backendNFTables:
+		var err error
+		rebuilt, err = applyDSCPNftPlan(cfg, plan, prev)
+		return err
+	case plan.empty() && !prev.perSet():
+		return applyDSCPIpt(cfg, backend, value, ifaces)
 	}
-	return applyDSCPIpt(cfg, backend, value, ifaces)
+	return applyDSCPIptPlan(cfg, backend, plan, prev)
+}
+
+func applyDSCPNftPlan(cfg *config.Config, plan *dscpPlan, prev *dscpState) (bool, error) {
+	var layout *dscpNftLayout
+	if prev != nil {
+		layout = prev.nft
+	}
+	out, err := dscpNftApplyPlan(plan, layout)
+	switch {
+	case out.layout != nil:
+		dscpApplied.Store(&dscpState{cfg: cfg, backend: backendNFTables, stamps: out.layout.stamps, pending: out.pending, plan: plan, nft: out.layout})
+	case out.pending:
+		dscpApplied.Store(&dscpState{cfg: cfg, backend: backendNFTables, pending: true, plan: plan})
+	default:
+		if !out.gone {
+			dscpStale.Store(&dscpState{cfg: cfg, backend: backendNFTables})
+		}
+		dscpApplied.Store(nil)
+	}
+	return out.rebuilt, err
+}
+
+func applyDSCPIptPlan(cfg *config.Config, backend string, plan *dscpPlan, prev *dscpState) error {
+	var installed *dscpIptState
+	if prev != nil {
+		installed = prev.ipt
+	}
+	ipt, err := dscpIptApplyPlan(cfg, backend, plan, installed)
+	switch {
+	case ipt == installed:
+		return err
+	case len(ipt.bins) == 0 && len(ipt.pending) == 0 && !ipt.retry:
+		dscpApplied.Store(nil)
+		return err
+	}
+	dscpApplied.Store(&dscpState{cfg: cfg, backend: backend, bins: ipt.bins, pending: ipt.retry, plan: plan, ipt: ipt})
+	return err
 }
 
 func dscpTransient(out string, err error) bool {
@@ -208,20 +296,25 @@ var iptAbsentMarkers = []string{
 }
 
 func iptChainPresence(bin, table, chain string) (present, known bool) {
+	_, present, known = iptChainListing(bin, table, chain)
+	return present, known
+}
+
+func iptChainListing(bin, table, chain string) (listing string, present, known bool) {
 	out, err := run(bin, "-w", "-t", table, "-S", chain)
 	if err == nil {
-		return true, true
+		return out, true, true
 	}
 	if dscpTransient(out, err) {
-		return false, false
+		return "", false, false
 	}
 	msg := iptErrText(out, err)
 	for _, marker := range iptAbsentMarkers {
 		if strings.Contains(msg, marker) {
-			return false, true
+			return "", false, true
 		}
 	}
-	return false, false
+	return "", false, false
 }
 
 func (im *IPTablesManager) applyDSCPChain(bin string, specs [][]string) (bool, error) {
@@ -351,25 +444,44 @@ func iptDropExtraJumps(bin, table, parent, target string) {
 }
 
 func (im *IPTablesManager) teardownDSCPChain(bin string) (gone, seen bool) {
-	present, known := iptChainPresence(bin, "mangle", dscpChainName)
+	gone, seen, _ = im.teardownDSCPChainSets(bin)
+	return gone, seen
+}
+
+func (im *IPTablesManager) teardownDSCPChainSets(bin string) (gone, seen bool, sets []string) {
+	listing, present, known := iptChainListing(bin, "mangle", dscpChainName)
 	if !known {
 		log.Tracef("IPTABLES[%s]: could not tell whether the mangle chain %s exists", bin, dscpChainName)
-		return false, false
+		return false, false, nil
 	}
 	if !present {
-		return true, false
+		return true, false, nil
 	}
+	sets = dscpIptListedSets(listing)
 	iptDeleteJumpsTo(bin, "mangle", "POSTROUTING", dscpChainName)
 	_, _ = run(bin, "-w", "-t", "mangle", "-F", dscpChainName)
 	out, err := run(bin, "-w", "-t", "mangle", "-X", dscpChainName)
 	if err == nil {
-		return true, true
+		return true, true, sets
 	}
 	if present, known := iptChainPresence(bin, "mangle", dscpChainName); known && !present {
-		return true, true
+		return true, true, sets
 	}
 	log.Warnf("IPTABLES[%s]: could not delete the mangle chain %s, the firewall monitor tries again: %s", bin, dscpChainName, iptErrText(out, err))
-	return false, true
+	return false, true, sets
+}
+
+func dscpIptListedSets(listing string) []string {
+	var sets []string
+	for _, line := range strings.Split(listing, "\n") {
+		fields := strings.Fields(line)
+		for i := 0; i+1 < len(fields); i++ {
+			if fields[i] == "--match-set" && strings.HasPrefix(fields[i+1], dscpIptSetPrefix) {
+				sets = append(sets, fields[i+1])
+			}
+		}
+	}
+	return sets
 }
 
 func dscpNftTablePresence() (present, known bool) {
@@ -409,46 +521,80 @@ func removeDSCPNft() (gone, seen bool) {
 	return true, true
 }
 
-func removeDSCPObjects(cfg *config.Config, backend string) (gone, seen bool) {
-	if backend == backendNFTables {
-		return removeDSCPNft()
+func removeDSCPObjects(st *dscpState) (gone, seen bool, left []string) {
+	dscpLearnForgetBackend(st.backend)
+	if st.backend == backendNFTables {
+		gone, seen = removeDSCPNft()
+		return gone, seen, nil
 	}
-	im := NewIPTablesManager(cfg, backend == backendIPTablesLegacy)
+	im := NewIPTablesManager(st.cfg, st.backend == backendIPTablesLegacy)
 	gone = true
+	sets := st.ipsets()
 	for _, bin := range im.teardownBinaries() {
-		g, s := im.teardownDSCPChain(bin)
+		g, s, listed := im.teardownDSCPChainSets(bin)
 		if !g {
 			gone = false
 		}
 		if s {
 			seen = true
 		}
+		sets = append(sets, listed...)
 	}
-	return gone, seen
+	slices.Sort(sets)
+	return gone, seen, dscpIptDestroySets(slices.Compact(sets))
+}
+
+func removeDSCPOrPark(st *dscpState) {
+	if gone, _, left := removeDSCPObjects(st); !gone || len(left) > 0 {
+		dscpStale.Store(st.leftover(left))
+	}
+}
+
+func retryStaleDSCP() bool {
+	s := dscpStale.Load()
+	if s == nil {
+		return false
+	}
+	gone, _, left := removeDSCPObjects(s)
+	if owned := dscpApplied.Load().ipsets(); len(owned) > 0 {
+		left = slices.DeleteFunc(left, func(name string) bool { return slices.Contains(owned, name) })
+	}
+	if gone && len(left) == 0 {
+		dscpStale.CompareAndSwap(s, nil)
+		return true
+	}
+	dscpStale.CompareAndSwap(s, s.leftover(left))
+	return false
 }
 
 func clearDSCPFor(cfg *config.Config, backend string) {
+	defer dscpLearnAdopt(nil, false)
 	prev := dscpApplied.Swap(nil)
 	if prev != nil && prev.backend != backend {
-		if gone, _ := removeDSCPObjects(prev.cfg, prev.backend); !gone {
-			dscpStale.Store(prev)
-		}
+		removeDSCPOrPark(prev)
 	}
-	gone, seen := removeDSCPObjects(cfg, backend)
-	if gone {
+	target := &dscpState{cfg: cfg, backend: backend}
+	if prev != nil && prev.backend == backend {
+		target = target.withLeftovers(prev)
+	}
+	if s := dscpStale.Load(); s != nil && s.backend == backend {
+		target = target.withLeftovers(s)
+	}
+	gone, seen, left := removeDSCPObjects(target)
+	if gone && len(left) == 0 {
 		if s := dscpStale.Load(); s != nil && s.backend == backend {
 			dscpStale.CompareAndSwap(s, nil)
 		}
 		return
 	}
-	if seen || (prev != nil && prev.backend == backend) {
-		dscpStale.Store(&dscpState{cfg: cfg, backend: backend})
+	if seen || len(left) > 0 || (prev != nil && prev.backend == backend) {
+		dscpStale.Store((&dscpState{cfg: cfg, backend: backend}).leftover(left))
 	}
 }
 
 func clearDSCPUnlessKept(cfg *config.Config, backend string) {
 	if dscpKeepOnRefresh {
-		if st := dscpApplied.Load(); st != nil && st.backend == backend && st.cfg.System.Tables.DSCP.Equal(cfg.System.Tables.DSCP) {
+		if st := dscpApplied.Load(); st != nil && st.backend == backend && (!st.plan.empty() || st.cfg.System.Tables.DSCP.Equal(cfg.System.Tables.DSCP)) {
 			return
 		}
 	}
@@ -505,30 +651,53 @@ func dscpIptIntact(bin string, stamps int) bool {
 
 func dscpIntact(st *dscpState) bool {
 	if st.backend == backendNFTables {
+		if st.nft != nil {
+			return dscpNftLayoutIntact(st.nft)
+		}
 		out, err := run("nft", "list", "chain", "inet", dscpNftTable, dscpNftChain)
 		return err == nil && dscpNftChainShape(out, st.stamps)
 	}
 	for _, bin := range st.bins {
-		if !dscpIptIntact(bin, st.stamps) {
+		if !st.binIntact(bin) {
 			return false
 		}
 	}
 	return true
 }
 
+func (st *dscpState) binIntact(bin string) bool {
+	if st.ipt == nil {
+		return dscpIptIntact(bin, st.stamps)
+	}
+	specs, ok := st.ipt.chains[bin]
+	return ok && dscpIptPlanIntact(bin, specs)
+}
+
+func retryPendingDSCPSets(st *dscpState) {
+	if st == nil || st.ipt == nil || len(st.ipt.pending) == 0 {
+		return
+	}
+	left := dscpIptDestroySets(st.ipt.pending)
+	if len(left) == len(st.ipt.pending) {
+		return
+	}
+	next, ipt := *st, *st.ipt
+	ipt.pending = left
+	next.ipt = &ipt
+	dscpApplied.CompareAndSwap(st, &next)
+}
+
 func ensureDSCPLocked(cfg *config.Config, requested bool) bool {
 	if cfg != nil && cfg.System.Tables.SkipSetup {
 		return false
 	}
-	acted := false
-	if s := dscpStale.Load(); s != nil {
-		if gone, _ := removeDSCPObjects(s.cfg, s.backend); gone {
-			dscpStale.CompareAndSwap(s, nil)
-			acted = true
-		}
-	}
+	acted := retryStaleDSCP()
 	st := dscpApplied.Load()
-	if st == nil || (!st.pending && dscpIntact(st)) {
+	if st == nil {
+		return acted
+	}
+	if !st.pending && dscpIntact(st) {
+		retryPendingDSCPSets(st)
 		return acted
 	}
 	switch {
@@ -555,6 +724,9 @@ func reapplyDSCPLocked() {
 
 func ApplyDSCPOnly(cfg *config.Config) error {
 	_, _, on := cfg.DSCPStamp()
+	if !on {
+		on = !dscpPlanFor(cfg).empty()
+	}
 	defer dscpLast.Store(cfg)
 	if !on && dscpApplied.Load() == nil {
 		return nil
@@ -566,15 +738,10 @@ func ApplyDSCPOnly(cfg *config.Config) error {
 }
 
 func ClearDSCPOnly(cfg *config.Config) {
+	defer dscpLearnAdopt(nil, false)
 	dscpLast.Store(nil)
 	if st := dscpApplied.Swap(nil); st != nil {
-		if gone, _ := removeDSCPObjects(st.cfg, st.backend); !gone {
-			dscpStale.Store(st)
-		}
+		removeDSCPOrPark(st)
 	}
-	if s := dscpStale.Load(); s != nil {
-		if gone, _ := removeDSCPObjects(s.cfg, s.backend); gone {
-			dscpStale.CompareAndSwap(s, nil)
-		}
-	}
+	retryStaleDSCP()
 }

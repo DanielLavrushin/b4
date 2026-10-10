@@ -32,7 +32,7 @@ The link is required for [works and broken reports](./feedback.md) and for the u
 
 ## Updating and reapplying
 
-When the author publishes a new version, the card shows **Update to version N** in place of **Apply**. An edited set already on the newest version shows **Reapply**. Both replace the whole local set with the published one, after confirmation. The set keeps its id, its place in the list and its enabled state; every other setting comes from the published version.
+When the author publishes a new version, the card shows **Update to version N** in place of **Apply**. An edited set already on the newest version shows **Reapply**. Both replace the whole local set with the published one, after confirmation. The set keeps its id, its place in the list, its enabled state, its [Discovery addresses](../sets/discovery.md) and watchdog switch, and its own [DSCP value](../sets/routing.md#dscp); every other setting comes from the published version. A DSCP value that did not apply to the set before, such as the value of a proxy set, is kept switched off, and a warning says so.
 
 :::warning
 Routing to a proxy or an interface, device filters and escalation are not carried by a publication, so **Update** and **Reapply** return them to their defaults along with the edits to the strategy and the targets. The set has to be routed again afterwards.

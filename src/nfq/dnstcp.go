@@ -362,9 +362,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 				if ips := dns.ParseResponseIPs(alt); len(ips) > 0 && clientIP != nil {
 					observeDNSNames(clientIP, domain, ips)
 					s.worker.storeHostHints(clientIP, next, domain, ips)
-					if next.Routing.Enabled && !next.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
-						RoutingHandleDNSFunc(cfg, next, ips)
-					}
+					s.worker.learnAnswerInline(cfg, next, ips, s.ctx.Done())
 				}
 				if writeDNSTCPMessage(client, alt, ioTimeout) != nil {
 					return
@@ -376,9 +374,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if ips := dns.ParseResponseIPs(resp); len(ips) > 0 && clientIP != nil {
 			observeDNSNames(clientIP, domain, ips)
 			s.worker.storeHostHints(clientIP, set, domain, ips)
-			if set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
-				RoutingHandleDNSFunc(cfg, set, ips)
-			}
+			s.worker.learnAnswerInline(cfg, set, ips, s.ctx.Done())
 		}
 
 		if filtered, action := s.worker.filterDNSAnswer(cfg, set, domain, resp, true); filtered != nil {

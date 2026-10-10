@@ -462,6 +462,12 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 			set.Id = existing.Id
 			set.Enabled = existing.Enabled
 			set.Discovery = existing.Discovery
+			set.DSCP = existing.DSCP
+			if reason := oldCfg.DSCPRefusal(existing); existing.DSCP.Enabled && reason != "" {
+				set.DSCP.Enabled = false
+				warnings = append(warnings, hubwire.Warning{Code: "dscp_off", Params: map[string]interface{}{"value": existing.DSCP.Value}})
+				log.Infof("Hub: set '%s' kept its own DSCP value %d switched off, because the value did not apply to the set before the replace (%s) and the hub version could apply it more widely", existing.Name, existing.DSCP.Value, reason)
+			}
 			newCfg.Sets[i] = &set
 			replaced = true
 			break

@@ -46,7 +46,7 @@ import { ApiError } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useHubStatus, useHubVote } from "@hooks/useHub";
 import { voteTooltip } from "@components/hub/text";
-import { describeApiError } from "@utils";
+import { describeApiError, dscpRefusalText } from "@utils";
 import { SetStats } from "./Manager";
 import {
   EditorSection,
@@ -88,6 +88,7 @@ interface SetCardProps {
   onVoted?: () => void;
   watchStatus?: SetWatchStatus;
   watchdogOn?: boolean;
+  deviceFilter?: boolean;
 }
 
 export const SetCard = ({
@@ -114,6 +115,7 @@ export const SetCard = ({
   onVoted,
   watchStatus,
   watchdogOn = true,
+  deviceFilter = false,
 }: SetCardProps) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -168,10 +170,13 @@ export const SetCard = ({
   const borderColor =
     highlighted || isSelected ? colors.secondary : colors.border.default;
 
-  const facets = buildSetFacets(set, stats, t, escalatesTo?.name);
+  const dscpRefusal = dscpRefusalText(set, deviceFilter, t);
+  const facets = buildSetFacets(set, stats, t, escalatesTo?.name, {
+    dscpRefusal,
+  });
   const openFacet = facets.find((f) => f.key === activeFacet);
   const targetSummary = buildTargetSummary(set, stats, t);
-  const route = buildRouteSummary(set, t);
+  const route = buildRouteSummary(set, t, { dscpRefusal });
   const unresolvedAsns = stats?.asn_unresolved ?? [];
   const watched = !!set.discovery?.watchdog;
   const watchBlock = watched ? setWatchBlock(set) : null;

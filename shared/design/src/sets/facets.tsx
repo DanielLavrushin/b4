@@ -68,6 +68,7 @@ export interface FacetSetConfig {
     ip_version?: string;
   };
   mss_clamp?: { enabled: boolean; size: number };
+  dscp?: { enabled: boolean; value: number };
   routing: {
     enabled: boolean;
     mode: string;
@@ -370,13 +371,40 @@ const fakeRows = (set: FacetSetConfig, t: FacetTranslate): FacetRow[] => {
   return rows;
 };
 
-const routeRows = (set: FacetSetConfig, t: FacetTranslate): FacetRow[] => {
+const dscpRows = (
+  set: FacetSetConfig,
+  t: FacetTranslate,
+  refusal?: string,
+): FacetRow[] =>
+  set.dscp?.enabled
+    ? [
+        {
+          label: t(F("dscp")),
+          value: String(set.dscp.value),
+          muted: refusal ? t(F("dscpOff"), { reason: refusal }) : undefined,
+        },
+      ]
+    : [];
+
+const routeRows = (
+  set: FacetSetConfig,
+  t: FacetTranslate,
+  dscpRefusal?: string,
+): FacetRow[] => {
   const routing = set.routing;
+  const dscp = dscpRows(set, t, dscpRefusal);
   if (routesViaPins(set)) {
     return [
       { label: t(F("mode")), value: t(F("dnsPin")) },
       { label: t(F("pins")), value: dnsPinnedAddresses(set).join(", ") },
       { label: t(F("egress")), value: t(F("defaultRoute")).toLowerCase() },
+      ...dscp,
+    ];
+  }
+  if (dscp.length > 0 && !routing?.enabled) {
+    return [
+      { label: t(F("egress")), value: t(F("defaultRoute")).toLowerCase() },
+      ...dscp,
     ];
   }
   const mode = resolveRoutingMode(routing.mode);
@@ -392,7 +420,7 @@ const routeRows = (set: FacetSetConfig, t: FacetTranslate): FacetRow[] => {
       label: t(F("action")),
       value: routing.block_action || "reject",
     });
-    return rows;
+    return [...rows, ...dscp];
   }
   if (mode === "proxy") {
     const up = routing.upstream;
@@ -405,11 +433,11 @@ const routeRows = (set: FacetSetConfig, t: FacetTranslate): FacetRow[] => {
     if (up?.use_domain) {
       rows.push({ label: t(F("useDomain")), value: onOff(t, true) });
     }
-    return rows;
+    return [...rows, ...dscp];
   }
   if (mode === "mtproto-ws") {
     rows.push({ label: t(F("transport")), value: "websocket" });
-    return rows;
+    return [...rows, ...dscp];
   }
 
   rows.push({
@@ -426,7 +454,7 @@ const routeRows = (set: FacetSetConfig, t: FacetTranslate): FacetRow[] => {
       muted: routing.fwmark ? `fwmark 0x${routing.fwmark.toString(16)}` : undefined,
     });
   }
-  return rows;
+  return [...rows, ...dscp];
 };
 
 export const dnsPinnedDomains = (set: FacetSetConfig): string[] =>
@@ -518,7 +546,7 @@ export const buildSetFacets = (
   stats: FacetStats | undefined,
   t: FacetTranslate,
   escalatesToName?: string,
-  options?: { hideEmptyDnsServer?: boolean },
+  options?: { hideEmptyDnsServer?: boolean; dscpRefusal?: string },
 ): SetFacet[] => {
   const routeMode = resolveRoutingMode(set.routing?.mode);
   const isBlock = !!set.routing?.enabled && routeMode === "block";
@@ -557,8 +585,8 @@ export const buildSetFacets = (
       label: isBlock ? t(F("block")) : t(F("route")),
       color: isBlock ? facets.block : FACET_COLORS.route,
       icon: isBlock ? <BlockIcon /> : <RoutingIcon />,
-      active: !!set.routing?.enabled || pinnedRoute,
-      rows: routeRows(set, t),
+      active: !!set.routing?.enabled || pinnedRoute || !!set.dscp?.enabled,
+      rows: routeRows(set, t, options?.dscpRefusal),
       section: FACET_SECTIONS.route,
     },
     {
@@ -619,15 +647,21 @@ export interface RouteSummary {
 export const buildRouteSummary = (
   set: FacetSetConfig,
   t: FacetTranslate,
+  options?: { dscpRefusal?: string },
 ): RouteSummary => {
   const routing = set.routing;
+  const dscp =
+    set.dscp?.enabled && !options?.dscpRefusal
+      ? ` · DSCP ${set.dscp.value}`
+      : "";
   if (!routing?.enabled) {
     const pinned = routesViaPins(set);
+    const base = pinned
+      ? `${t(F("defaultRoute"))} · ${t(F("dnsPin"))}`
+      : t(F("defaultRoute"));
     return {
-      text: pinned
-        ? `${t(F("defaultRoute"))} · ${t(F("dnsPin"))}`
-        : t(F("defaultRoute")),
-      color: pinned ? facets.route : colors.text.disabled,
+      text: `${base}${dscp}`,
+      color: pinned || dscp ? facets.route : colors.text.disabled,
       icon: <RoutingIcon />,
     };
   }
@@ -655,10 +689,11 @@ export const buildRouteSummary = (
       icon: <RoutingIcon />,
     };
   }
+  const egress = routing.egress_interface
+    ? `iface ${routing.egress_interface}`
+    : t(F("defaultRoute"));
   return {
-    text: routing.egress_interface
-      ? `iface ${routing.egress_interface}`
-      : t(F("defaultRoute")),
+    text: `${egress}${dscp}`,
     color: facets.route,
     icon: <RoutingIcon />,
   };

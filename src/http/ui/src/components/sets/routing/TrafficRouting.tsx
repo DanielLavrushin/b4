@@ -10,15 +10,18 @@ import {
 } from "@b4.elements";
 import { B4SetConfig, RouterTraffic, RoutingMode } from "@models/config";
 import { colors } from "@design";
+import { DscpEnvironment } from "@utils";
 import { Trans, useTranslation } from "react-i18next";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import { hasTargets } from "../facets";
+import { SetDscp } from "./SetDscp";
 
 interface TrafficRoutingProps {
   config: B4SetConfig;
   availableIfaces: string[];
   tunnelIfaces?: string[];
   encapsulatedIfaces?: string[];
+  dscp: DscpEnvironment;
   onChange: (
     field: string,
     value:
@@ -38,6 +41,7 @@ export const TrafficRouting = ({
   availableIfaces,
   tunnelIfaces = [],
   encapsulatedIfaces = [],
+  dscp,
   onChange,
 }: TrafficRoutingProps) => {
   const { t } = useTranslation();
@@ -635,6 +639,14 @@ export const TrafficRouting = ({
           </Grid>
         </>
       )}
+
+      <SetDscp
+        config={config}
+        env={dscp}
+        availableIfaces={availableIfaces}
+        encapsulatedIfaces={encapsulatedIfaces}
+        onChange={onChange}
+      />
     </Grid>
   );
 };

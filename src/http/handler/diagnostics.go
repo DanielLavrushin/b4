@@ -3,12 +3,14 @@ package handler
 import (
 	"bufio"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -307,6 +309,7 @@ func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 
 	info.RuleGroups = append(info.RuleGroups, collectNftRuleGroups()...)
 	info.RuleGroups = append(info.RuleGroups, collectIptablesRuleGroups(info.Backend)...)
+	info.RuleGroups = append(info.RuleGroups, collectDSCPRuleGroup(cfg)...)
 	info.RuleGroups = append(info.RuleGroups, collectPolicyRuleGroup()...)
 	info.RuleGroups = append(info.RuleGroups, collectExposureRuleGroup()...)
 
@@ -372,7 +375,49 @@ var (
 	readBridgeNetfilter   = tables.ReadBridgeNetfilter
 	routingTProxyFamilies = tables.RoutingTProxyFamilies
 	routingStatus         = tables.RoutingStatus
+	dscpStatus            = tables.DSCPStatus
 )
+
+func collectDSCPRuleGroup(cfg *config.Config) []DiagRuleGroup {
+	if cfg == nil {
+		return nil
+	}
+	st := dscpStatus(cfg)
+	if len(st.Sets) == 0 {
+		return nil
+	}
+	rules := make([]string, 0, len(st.Sets)+len(st.Incapable)+1)
+	for _, set := range st.Sets {
+		rules = append(rules, diagDSCPSetLine(set))
+	}
+	for _, bin := range slices.Sorted(maps.Keys(st.Incapable)) {
+		rules = append(rules, fmt.Sprintf("%s writes no per-set value: %s", bin, st.Incapable[bin]))
+	}
+	switch {
+	case st.SkipSetup:
+		rules = append(rules, "skip_setup is on: no rule installed")
+	case st.Backend == "":
+		rules = append(rules, "no DSCP rule installed")
+	case st.Pending:
+		rules = append(rules, "installed with "+st.Backend+", the firewall monitor retries a step that did not apply")
+	default:
+		rules = append(rules, "installed with "+st.Backend)
+	}
+	return []DiagRuleGroup{{Title: "Per-set DSCP", Rules: rules}}
+}
+
+func diagDSCPSetLine(set tables.DSCPSetState) string {
+	head := fmt.Sprintf("%q (%s): DSCP %d", set.Name, set.ID, set.Value)
+	if set.Refusal != "" {
+		return head + ", refused: " + set.Refusal
+	}
+	state := "not applied"
+	if set.Applied {
+		state = "applied"
+	}
+	return fmt.Sprintf("%s, %s, %d static entries, learned addresses written: %d from DNS answers, %d from TLS/QUIC names, %d from lookups",
+		head, state, set.Static, set.LearnedDNS, set.LearnedTLS, set.LearnedPreResolve)
+}
 
 func diagFamilies(cfg *config.Config) (ipv4, ipv6 bool) {
 	if cfg == nil {

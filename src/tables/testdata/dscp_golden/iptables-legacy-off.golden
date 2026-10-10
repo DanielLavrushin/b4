@@ -1,0 +1,1055 @@
+== ClearRules before AddRules -> ok
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t filter -N B4_MODULE_TEST
+iptables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m multiport --dports 80,443 -j ACCEPT
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t filter -F B4_MODULE_TEST
+ip6tables-legacy -w -t filter -X B4_MODULE_TEST
+ip6tables-legacy -w -t filter -N B4_MODULE_TEST
+ip6tables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m multiport --dports 80,443 -j ACCEPT
+ip6tables-legacy -w -t filter -F B4_MODULE_TEST
+ip6tables-legacy -w -t filter -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -N B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -A B4_MODULE_TEST -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -N B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -D POSTROUTING -j B4
+iptables-legacy -w -t mangle -nL FORWARD --line-numbers
+iptables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle --line-numbers -nL PREROUTING
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -D OUTPUT -j B4
+iptables-legacy -w -t mangle --line-numbers -nL OUTPUT
+iptables-legacy -w -t raw -nL PREROUTING --line-numbers
+iptables-legacy -w -t raw -nL OUTPUT --line-numbers
+iptables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x20000000/0x20000000 -j RETURN
+iptables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -nL FORWARD --line-numbers
+iptables-legacy -w -t mangle -nL PREROUTING --line-numbers
+ip6tables-legacy -w -t mangle -D POSTROUTING -j B4
+ip6tables-legacy -w -t mangle -nL FORWARD --line-numbers
+ip6tables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+ip6tables-legacy -w -t mangle --line-numbers -nL PREROUTING
+ip6tables-legacy -w -t mangle -nL OUTPUT --line-numbers
+ip6tables-legacy -w -t mangle -D OUTPUT -j B4
+ip6tables-legacy -w -t mangle --line-numbers -nL OUTPUT
+ip6tables-legacy -w -t raw -nL PREROUTING --line-numbers
+ip6tables-legacy -w -t raw -nL OUTPUT --line-numbers
+ip6tables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x20000000/0x20000000 -j RETURN
+ip6tables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -nL OUTPUT --line-numbers
+ip6tables-legacy -w -t mangle -nL FORWARD --line-numbers
+ip6tables-legacy -w -t mangle -nL PREROUTING --line-numbers
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -D FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -D OUTPUT -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+ip6tables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
+ip6tables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
+ip6tables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+ip6tables-legacy -w -t mangle -D OUTPUT -j B4
+ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+ip6tables-legacy -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D OUTPUT -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+ip6tables-legacy -w -t mangle -D POSTROUTING -j B4
+ip6tables-legacy -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -D OUTPUT -j B4
+iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+iptables-legacy -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D OUTPUT -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -D POSTROUTING -j B4
+iptables-legacy -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t raw -S B4_RAW
+ip6tables-legacy -w -t mangle -S B4_PREROUTING
+ip6tables-legacy -w -t mangle -S B4
+iptables-legacy -w -t raw -S B4_RAW
+iptables-legacy -w -t mangle -S B4_PREROUTING
+iptables-legacy -w -t mangle -S B4
+iptables-legacy -w -t nat -D POSTROUTING -j B4_MASQ
+iptables-legacy -w -t nat -S B4_MASQ
+iptables-legacy -w -t nat -D PREROUTING -p tcp --dport 53 -j B4_DNSTCP
+iptables-legacy -w -t nat -D OUTPUT -p tcp --dport 53 -j B4_DNSTCP
+iptables-legacy -w -t nat -S B4_DNSTCP
+ip6tables-legacy -w -t nat -D POSTROUTING -j B4_MASQ
+ip6tables-legacy -w -t nat -S B4_MASQ
+ip6tables-legacy -w -t nat -D PREROUTING -p tcp --dport 53 -j B4_DNSTCP
+ip6tables-legacy -w -t nat -D OUTPUT -p tcp --dport 53 -j B4_DNSTCP
+ip6tables-legacy -w -t nat -S B4_DNSTCP
+ipset destroy b4_mss_3_v4
+ipset list -name
+sh -c sysctl -w net.netfilter.nf_conntrack_checksum=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+iptables-legacy -w -t mangle -S B4_DSCP
+ip6tables-legacy -w -t mangle -S B4_DSCP
+== AddRules -> ok
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -j NFQUEUE --queue-num 0 --queue-bypass
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t filter -N B4_MODULE_TEST
+iptables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:10 -j ACCEPT
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t raw -F B4_MODULE_TEST
+iptables-legacy -w -t raw -X B4_MODULE_TEST
+iptables-legacy -w -t raw -N B4_MODULE_TEST
+iptables-legacy -w -t raw -A B4_MODULE_TEST -j NFQUEUE --queue-num 0 --queue-bypass
+iptables-legacy -w -t raw -F B4_MODULE_TEST
+iptables-legacy -w -t raw -X B4_MODULE_TEST
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t filter -N B4_MODULE_TEST
+iptables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m multiport --dports 80,443 -j ACCEPT
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+ipset destroy b4_ipset_probe
+ipset create b4_ipset_probe hash:net family inet -exist
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -m set --match-set b4_ipset_probe dst -j RETURN
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+ipset destroy b4_ipset_probe
+ipset create b4_mss_3_v4 hash:net family inet -exist
+ipset flush b4_mss_3_v4
+exec ipset restore -exist
+  add b4_mss_3_v4 100.64.10.0/24
+iptables-legacy -w -t mangle -S B4
+iptables-legacy -w -t mangle -N B4
+iptables-legacy -w -t mangle -S B4_PREROUTING
+iptables-legacy -w -t mangle -N B4_PREROUTING
+iptables-legacy -w -t raw -S B4_RAW
+iptables-legacy -w -t raw -N B4_RAW
+iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -A B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -C B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -A B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -C B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -A B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -C B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -A B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4 -p udp --dport 53 -j RETURN
+iptables-legacy -w -t mangle -A B4 -p udp --dport 53 -j RETURN
+iptables-legacy -w -t mangle -C B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -A B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C POSTROUTING -j B4
+iptables-legacy -w -t mangle -I POSTROUTING -j B4
+iptables-legacy -w -t mangle -C PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -I PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -C OUTPUT -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I OUTPUT -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+iptables-legacy -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+iptables-legacy -w -t mangle -C OUTPUT -j B4
+iptables-legacy -w -t mangle -A OUTPUT -j B4
+iptables-legacy -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -A B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -C B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -A B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -C PREROUTING -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -A PREROUTING -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -C OUTPUT -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -A OUTPUT -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t mangle -C OUTPUT -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -I OUTPUT -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -C FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -I FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+iptables -w -t filter -L FORWARD -n
+iptables-legacy -w -t filter -L FORWARD -n
+iptables-legacy -w -t mangle -nL B4_PREROUTING --line-numbers
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+== ensureDSCPLocked with the stamp in place -> false
+== ensureDSCPLocked after a stamp rule went missing -> false
+== RefreshRules with the same settings -> ok
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t filter -N B4_MODULE_TEST
+iptables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m multiport --dports 80,443 -j ACCEPT
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t filter -F B4_MODULE_TEST
+ip6tables-legacy -w -t filter -X B4_MODULE_TEST
+ip6tables-legacy -w -t filter -N B4_MODULE_TEST
+ip6tables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m multiport --dports 80,443 -j ACCEPT
+ip6tables-legacy -w -t filter -F B4_MODULE_TEST
+ip6tables-legacy -w -t filter -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -N B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -A B4_MODULE_TEST -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -N B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -D POSTROUTING -j B4
+iptables-legacy -w -t mangle -D POSTROUTING -j B4
+iptables-legacy -w -t mangle -nL FORWARD --line-numbers
+iptables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle --line-numbers -nL PREROUTING
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -D OUTPUT 3
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -D OUTPUT -j B4
+iptables-legacy -w -t mangle -D OUTPUT -j B4
+iptables-legacy -w -t mangle --line-numbers -nL OUTPUT
+iptables-legacy -w -t mangle -D OUTPUT 3
+iptables-legacy -w -t mangle --line-numbers -nL OUTPUT
+iptables-legacy -w -t raw -nL PREROUTING --line-numbers
+iptables-legacy -w -t raw -D PREROUTING 1
+iptables-legacy -w -t raw -nL PREROUTING --line-numbers
+iptables-legacy -w -t raw -nL OUTPUT --line-numbers
+iptables-legacy -w -t raw -D OUTPUT 1
+iptables-legacy -w -t raw -nL OUTPUT --line-numbers
+iptables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x20000000/0x20000000 -j RETURN
+iptables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -D OUTPUT 1
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -nL FORWARD --line-numbers
+iptables-legacy -w -t mangle -D FORWARD 1
+iptables-legacy -w -t mangle -nL FORWARD --line-numbers
+iptables-legacy -w -t mangle -nL PREROUTING --line-numbers
+ip6tables-legacy -w -t mangle -D POSTROUTING -j B4
+ip6tables-legacy -w -t mangle -nL FORWARD --line-numbers
+ip6tables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+ip6tables-legacy -w -t mangle --line-numbers -nL PREROUTING
+ip6tables-legacy -w -t mangle -nL OUTPUT --line-numbers
+ip6tables-legacy -w -t mangle -D OUTPUT -j B4
+ip6tables-legacy -w -t mangle --line-numbers -nL OUTPUT
+ip6tables-legacy -w -t raw -nL PREROUTING --line-numbers
+ip6tables-legacy -w -t raw -nL OUTPUT --line-numbers
+ip6tables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x20000000/0x20000000 -j RETURN
+ip6tables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -nL OUTPUT --line-numbers
+ip6tables-legacy -w -t mangle -nL FORWARD --line-numbers
+ip6tables-legacy -w -t mangle -nL PREROUTING --line-numbers
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -D FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -D OUTPUT -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+ip6tables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
+ip6tables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
+ip6tables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+ip6tables-legacy -w -t mangle -D OUTPUT -j B4
+ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+ip6tables-legacy -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D OUTPUT -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+ip6tables-legacy -w -t mangle -D POSTROUTING -j B4
+ip6tables-legacy -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -D OUTPUT -j B4
+iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+iptables-legacy -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D OUTPUT -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -D POSTROUTING -j B4
+iptables-legacy -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t raw -S B4_RAW
+ip6tables-legacy -w -t mangle -S B4_PREROUTING
+ip6tables-legacy -w -t mangle -S B4
+iptables-legacy -w -t raw -S B4_RAW
+iptables-legacy -w -t raw -F B4_RAW
+iptables-legacy -w -t raw -X B4_RAW
+iptables-legacy -w -t mangle -S B4_PREROUTING
+iptables-legacy -w -t mangle -F B4_PREROUTING
+iptables-legacy -w -t mangle -X B4_PREROUTING
+iptables-legacy -w -t mangle -S B4
+iptables-legacy -w -t mangle -F B4
+iptables-legacy -w -t mangle -X B4
+iptables-legacy -w -t nat -D POSTROUTING -j B4_MASQ
+iptables-legacy -w -t nat -S B4_MASQ
+iptables-legacy -w -t nat -D PREROUTING -p tcp --dport 53 -j B4_DNSTCP
+iptables-legacy -w -t nat -D OUTPUT -p tcp --dport 53 -j B4_DNSTCP
+iptables-legacy -w -t nat -S B4_DNSTCP
+ip6tables-legacy -w -t nat -D POSTROUTING -j B4_MASQ
+ip6tables-legacy -w -t nat -S B4_MASQ
+ip6tables-legacy -w -t nat -D PREROUTING -p tcp --dport 53 -j B4_DNSTCP
+ip6tables-legacy -w -t nat -D OUTPUT -p tcp --dport 53 -j B4_DNSTCP
+ip6tables-legacy -w -t nat -S B4_DNSTCP
+ipset destroy b4_mss_3_v4
+ipset list -name
+sh -c sysctl -w net.netfilter.nf_conntrack_checksum=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+iptables-legacy -w -t mangle -S B4_DSCP
+ip6tables-legacy -w -t mangle -S B4_DSCP
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -j NFQUEUE --queue-num 0 --queue-bypass
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t filter -N B4_MODULE_TEST
+iptables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:10 -j ACCEPT
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t raw -F B4_MODULE_TEST
+iptables-legacy -w -t raw -X B4_MODULE_TEST
+iptables-legacy -w -t raw -N B4_MODULE_TEST
+iptables-legacy -w -t raw -A B4_MODULE_TEST -j NFQUEUE --queue-num 0 --queue-bypass
+iptables-legacy -w -t raw -F B4_MODULE_TEST
+iptables-legacy -w -t raw -X B4_MODULE_TEST
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t filter -N B4_MODULE_TEST
+iptables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m multiport --dports 80,443 -j ACCEPT
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+ipset destroy b4_ipset_probe
+ipset create b4_ipset_probe hash:net family inet -exist
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -m set --match-set b4_ipset_probe dst -j RETURN
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+ipset destroy b4_ipset_probe
+ipset create b4_mss_3_v4 hash:net family inet -exist
+ipset flush b4_mss_3_v4
+exec ipset restore -exist
+  add b4_mss_3_v4 100.64.10.0/24
+iptables-legacy -w -t mangle -S B4
+iptables-legacy -w -t mangle -N B4
+iptables-legacy -w -t mangle -S B4_PREROUTING
+iptables-legacy -w -t mangle -N B4_PREROUTING
+iptables-legacy -w -t raw -S B4_RAW
+iptables-legacy -w -t raw -N B4_RAW
+iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -A B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -C B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -A B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -C B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -A B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -C B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -A B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4 -p udp --dport 53 -j RETURN
+iptables-legacy -w -t mangle -A B4 -p udp --dport 53 -j RETURN
+iptables-legacy -w -t mangle -C B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -A B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C POSTROUTING -j B4
+iptables-legacy -w -t mangle -I POSTROUTING -j B4
+iptables-legacy -w -t mangle -C PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -I PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -C OUTPUT -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I OUTPUT -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+iptables-legacy -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+iptables-legacy -w -t mangle -C OUTPUT -j B4
+iptables-legacy -w -t mangle -A OUTPUT -j B4
+iptables-legacy -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -A B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -C B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -A B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -C PREROUTING -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -A PREROUTING -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -C OUTPUT -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -A OUTPUT -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t mangle -C OUTPUT -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -I OUTPUT -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -C FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -I FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+iptables -w -t filter -L FORWARD -n
+iptables-legacy -w -t filter -L FORWARD -n
+iptables-legacy -w -t mangle -nL B4_PREROUTING --line-numbers
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+== RefreshRules with DSCP value 31 -> ok
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t filter -N B4_MODULE_TEST
+iptables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m multiport --dports 80,443 -j ACCEPT
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t filter -F B4_MODULE_TEST
+ip6tables-legacy -w -t filter -X B4_MODULE_TEST
+ip6tables-legacy -w -t filter -N B4_MODULE_TEST
+ip6tables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m multiport --dports 80,443 -j ACCEPT
+ip6tables-legacy -w -t filter -F B4_MODULE_TEST
+ip6tables-legacy -w -t filter -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -N B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -A B4_MODULE_TEST -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -N B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -D POSTROUTING -j B4
+iptables-legacy -w -t mangle -D POSTROUTING -j B4
+iptables-legacy -w -t mangle -nL FORWARD --line-numbers
+iptables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle --line-numbers -nL PREROUTING
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -D OUTPUT 3
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -D OUTPUT -j B4
+iptables-legacy -w -t mangle -D OUTPUT -j B4
+iptables-legacy -w -t mangle --line-numbers -nL OUTPUT
+iptables-legacy -w -t mangle -D OUTPUT 3
+iptables-legacy -w -t mangle --line-numbers -nL OUTPUT
+iptables-legacy -w -t raw -nL PREROUTING --line-numbers
+iptables-legacy -w -t raw -D PREROUTING 1
+iptables-legacy -w -t raw -nL PREROUTING --line-numbers
+iptables-legacy -w -t raw -nL OUTPUT --line-numbers
+iptables-legacy -w -t raw -D OUTPUT 1
+iptables-legacy -w -t raw -nL OUTPUT --line-numbers
+iptables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x20000000/0x20000000 -j RETURN
+iptables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -D OUTPUT 1
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -nL FORWARD --line-numbers
+iptables-legacy -w -t mangle -D FORWARD 1
+iptables-legacy -w -t mangle -nL FORWARD --line-numbers
+iptables-legacy -w -t mangle -nL PREROUTING --line-numbers
+ip6tables-legacy -w -t mangle -D POSTROUTING -j B4
+ip6tables-legacy -w -t mangle -nL FORWARD --line-numbers
+ip6tables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+ip6tables-legacy -w -t mangle --line-numbers -nL PREROUTING
+ip6tables-legacy -w -t mangle -nL OUTPUT --line-numbers
+ip6tables-legacy -w -t mangle -D OUTPUT -j B4
+ip6tables-legacy -w -t mangle --line-numbers -nL OUTPUT
+ip6tables-legacy -w -t raw -nL PREROUTING --line-numbers
+ip6tables-legacy -w -t raw -nL OUTPUT --line-numbers
+ip6tables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x20000000/0x20000000 -j RETURN
+ip6tables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -nL OUTPUT --line-numbers
+ip6tables-legacy -w -t mangle -nL FORWARD --line-numbers
+ip6tables-legacy -w -t mangle -nL PREROUTING --line-numbers
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -D FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -D OUTPUT -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+ip6tables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
+ip6tables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
+ip6tables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+ip6tables-legacy -w -t mangle -D OUTPUT -j B4
+ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+ip6tables-legacy -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D OUTPUT -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+ip6tables-legacy -w -t mangle -D POSTROUTING -j B4
+ip6tables-legacy -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -D OUTPUT -j B4
+iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+iptables-legacy -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D OUTPUT -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -D POSTROUTING -j B4
+iptables-legacy -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t raw -S B4_RAW
+ip6tables-legacy -w -t mangle -S B4_PREROUTING
+ip6tables-legacy -w -t mangle -S B4
+iptables-legacy -w -t raw -S B4_RAW
+iptables-legacy -w -t raw -F B4_RAW
+iptables-legacy -w -t raw -X B4_RAW
+iptables-legacy -w -t mangle -S B4_PREROUTING
+iptables-legacy -w -t mangle -F B4_PREROUTING
+iptables-legacy -w -t mangle -X B4_PREROUTING
+iptables-legacy -w -t mangle -S B4
+iptables-legacy -w -t mangle -F B4
+iptables-legacy -w -t mangle -X B4
+iptables-legacy -w -t nat -D POSTROUTING -j B4_MASQ
+iptables-legacy -w -t nat -S B4_MASQ
+iptables-legacy -w -t nat -D PREROUTING -p tcp --dport 53 -j B4_DNSTCP
+iptables-legacy -w -t nat -D OUTPUT -p tcp --dport 53 -j B4_DNSTCP
+iptables-legacy -w -t nat -S B4_DNSTCP
+ip6tables-legacy -w -t nat -D POSTROUTING -j B4_MASQ
+ip6tables-legacy -w -t nat -S B4_MASQ
+ip6tables-legacy -w -t nat -D PREROUTING -p tcp --dport 53 -j B4_DNSTCP
+ip6tables-legacy -w -t nat -D OUTPUT -p tcp --dport 53 -j B4_DNSTCP
+ip6tables-legacy -w -t nat -S B4_DNSTCP
+ipset destroy b4_mss_3_v4
+ipset list -name
+sh -c sysctl -w net.netfilter.nf_conntrack_checksum=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+iptables-legacy -w -t mangle -S B4_DSCP
+ip6tables-legacy -w -t mangle -S B4_DSCP
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -j NFQUEUE --queue-num 0 --queue-bypass
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t filter -N B4_MODULE_TEST
+iptables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:10 -j ACCEPT
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t raw -F B4_MODULE_TEST
+iptables-legacy -w -t raw -X B4_MODULE_TEST
+iptables-legacy -w -t raw -N B4_MODULE_TEST
+iptables-legacy -w -t raw -A B4_MODULE_TEST -j NFQUEUE --queue-num 0 --queue-bypass
+iptables-legacy -w -t raw -F B4_MODULE_TEST
+iptables-legacy -w -t raw -X B4_MODULE_TEST
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t filter -N B4_MODULE_TEST
+iptables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m multiport --dports 80,443 -j ACCEPT
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+ipset destroy b4_ipset_probe
+ipset create b4_ipset_probe hash:net family inet -exist
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -m set --match-set b4_ipset_probe dst -j RETURN
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+ipset destroy b4_ipset_probe
+ipset create b4_mss_3_v4 hash:net family inet -exist
+ipset flush b4_mss_3_v4
+exec ipset restore -exist
+  add b4_mss_3_v4 100.64.10.0/24
+iptables-legacy -w -t mangle -S B4
+iptables-legacy -w -t mangle -N B4
+iptables-legacy -w -t mangle -S B4_PREROUTING
+iptables-legacy -w -t mangle -N B4_PREROUTING
+iptables-legacy -w -t raw -S B4_RAW
+iptables-legacy -w -t raw -N B4_RAW
+iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -A B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -C B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -A B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -C B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -A B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -C B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -A B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C B4 -p udp --dport 53 -j RETURN
+iptables-legacy -w -t mangle -A B4 -p udp --dport 53 -j RETURN
+iptables-legacy -w -t mangle -C B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -A B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C POSTROUTING -j B4
+iptables-legacy -w -t mangle -I POSTROUTING -j B4
+iptables-legacy -w -t mangle -C PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -I PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -C OUTPUT -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -I OUTPUT -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+iptables-legacy -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+iptables-legacy -w -t mangle -C OUTPUT -j B4
+iptables-legacy -w -t mangle -A OUTPUT -j B4
+iptables-legacy -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -A B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -C B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -A B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -C PREROUTING -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -A PREROUTING -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -C OUTPUT -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -A OUTPUT -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t mangle -C OUTPUT -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -I OUTPUT -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -C FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -I FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+iptables -w -t filter -L FORWARD -n
+iptables-legacy -w -t filter -L FORWARD -n
+iptables-legacy -w -t mangle -nL B4_PREROUTING --line-numbers
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+== ClearRules -> ok
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t filter -N B4_MODULE_TEST
+iptables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m multiport --dports 80,443 -j ACCEPT
+iptables-legacy -w -t filter -F B4_MODULE_TEST
+iptables-legacy -w -t filter -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -N B4_MODULE_TEST
+iptables-legacy -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -F B4_MODULE_TEST
+iptables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t filter -F B4_MODULE_TEST
+ip6tables-legacy -w -t filter -X B4_MODULE_TEST
+ip6tables-legacy -w -t filter -N B4_MODULE_TEST
+ip6tables-legacy -w -t filter -A B4_MODULE_TEST -p tcp -m multiport --dports 80,443 -j ACCEPT
+ip6tables-legacy -w -t filter -F B4_MODULE_TEST
+ip6tables-legacy -w -t filter -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -N B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -A B4_MODULE_TEST -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -N B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+ip6tables-legacy -w -t mangle -F B4_MODULE_TEST
+ip6tables-legacy -w -t mangle -X B4_MODULE_TEST
+iptables-legacy -w -t mangle -D POSTROUTING -j B4
+iptables-legacy -w -t mangle -D POSTROUTING -j B4
+iptables-legacy -w -t mangle -nL FORWARD --line-numbers
+iptables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle --line-numbers -nL PREROUTING
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -D OUTPUT 3
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -D OUTPUT -j B4
+iptables-legacy -w -t mangle -D OUTPUT -j B4
+iptables-legacy -w -t mangle --line-numbers -nL OUTPUT
+iptables-legacy -w -t mangle -D OUTPUT 3
+iptables-legacy -w -t mangle --line-numbers -nL OUTPUT
+iptables-legacy -w -t raw -nL PREROUTING --line-numbers
+iptables-legacy -w -t raw -D PREROUTING 1
+iptables-legacy -w -t raw -nL PREROUTING --line-numbers
+iptables-legacy -w -t raw -nL OUTPUT --line-numbers
+iptables-legacy -w -t raw -D OUTPUT 1
+iptables-legacy -w -t raw -nL OUTPUT --line-numbers
+iptables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x20000000/0x20000000 -j RETURN
+iptables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -D OUTPUT 1
+iptables-legacy -w -t mangle -nL OUTPUT --line-numbers
+iptables-legacy -w -t mangle -nL FORWARD --line-numbers
+iptables-legacy -w -t mangle -D FORWARD 1
+iptables-legacy -w -t mangle -nL FORWARD --line-numbers
+iptables-legacy -w -t mangle -nL PREROUTING --line-numbers
+ip6tables-legacy -w -t mangle -D POSTROUTING -j B4
+ip6tables-legacy -w -t mangle -nL FORWARD --line-numbers
+ip6tables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+ip6tables-legacy -w -t mangle --line-numbers -nL PREROUTING
+ip6tables-legacy -w -t mangle -nL OUTPUT --line-numbers
+ip6tables-legacy -w -t mangle -D OUTPUT -j B4
+ip6tables-legacy -w -t mangle --line-numbers -nL OUTPUT
+ip6tables-legacy -w -t raw -nL PREROUTING --line-numbers
+ip6tables-legacy -w -t raw -nL OUTPUT --line-numbers
+ip6tables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x20000000/0x20000000 -j RETURN
+ip6tables-legacy -w -t nat -D POSTROUTING -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -nL OUTPUT --line-numbers
+ip6tables-legacy -w -t mangle -nL FORWARD --line-numbers
+ip6tables-legacy -w -t mangle -nL PREROUTING --line-numbers
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -D FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables-legacy -w -t mangle -D OUTPUT -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+ip6tables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
+ip6tables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
+ip6tables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+ip6tables-legacy -w -t mangle -D OUTPUT -j B4
+ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+ip6tables-legacy -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D OUTPUT -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+ip6tables-legacy -w -t mangle -D POSTROUTING -j B4
+ip6tables-legacy -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
+iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables-legacy -w -t mangle -D OUTPUT -j B4
+iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
+iptables-legacy -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D OUTPUT -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D PREROUTING -j B4_PREROUTING
+iptables-legacy -w -t mangle -D POSTROUTING -j B4
+iptables-legacy -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
+ip6tables-legacy -w -t raw -S B4_RAW
+ip6tables-legacy -w -t mangle -S B4_PREROUTING
+ip6tables-legacy -w -t mangle -S B4
+iptables-legacy -w -t raw -S B4_RAW
+iptables-legacy -w -t raw -F B4_RAW
+iptables-legacy -w -t raw -X B4_RAW
+iptables-legacy -w -t mangle -S B4_PREROUTING
+iptables-legacy -w -t mangle -F B4_PREROUTING
+iptables-legacy -w -t mangle -X B4_PREROUTING
+iptables-legacy -w -t mangle -S B4
+iptables-legacy -w -t mangle -F B4
+iptables-legacy -w -t mangle -X B4
+iptables-legacy -w -t nat -D POSTROUTING -j B4_MASQ
+iptables-legacy -w -t nat -S B4_MASQ
+iptables-legacy -w -t nat -D PREROUTING -p tcp --dport 53 -j B4_DNSTCP
+iptables-legacy -w -t nat -D OUTPUT -p tcp --dport 53 -j B4_DNSTCP
+iptables-legacy -w -t nat -S B4_DNSTCP
+ip6tables-legacy -w -t nat -D POSTROUTING -j B4_MASQ
+ip6tables-legacy -w -t nat -S B4_MASQ
+ip6tables-legacy -w -t nat -D PREROUTING -p tcp --dport 53 -j B4_DNSTCP
+ip6tables-legacy -w -t nat -D OUTPUT -p tcp --dport 53 -j B4_DNSTCP
+ip6tables-legacy -w -t nat -S B4_DNSTCP
+ipset destroy b4_mss_3_v4
+ipset list -name
+sh -c sysctl -w net.netfilter.nf_conntrack_checksum=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+iptables-legacy -w -t mangle -S B4_DSCP
+ip6tables-legacy -w -t mangle -S B4_DSCP
+== ApplyDSCPOnly -> ok
+== ClearDSCPOnly
+== RoutingClearAll
+nft -a list chain inet filter input
+nft -a list chain inet fw4 input
+nft flush table inet b4_route
+nft delete table inet b4_route
+iptables -w -t mangle -L PREROUTING -n --line-numbers
+iptables -w -t mangle -L INPUT -n --line-numbers
+iptables -w -t mangle -L FORWARD -n --line-numbers
+iptables -w -t mangle -L OUTPUT -n --line-numbers
+iptables -w -t mangle -L POSTROUTING -n --line-numbers
+iptables -w -t mangle -L -n
+ip6tables -w -t mangle -L PREROUTING -n --line-numbers
+ip6tables -w -t mangle -L INPUT -n --line-numbers
+ip6tables -w -t mangle -L FORWARD -n --line-numbers
+ip6tables -w -t mangle -L OUTPUT -n --line-numbers
+ip6tables -w -t mangle -L POSTROUTING -n --line-numbers
+ip6tables -w -t mangle -L -n
+iptables -w -t nat -L PREROUTING -n --line-numbers
+iptables -w -t nat -L INPUT -n --line-numbers
+iptables -w -t nat -L OUTPUT -n --line-numbers
+iptables -w -t nat -L POSTROUTING -n --line-numbers
+iptables -w -t nat -L -n
+ip6tables -w -t nat -L PREROUTING -n --line-numbers
+ip6tables -w -t nat -L INPUT -n --line-numbers
+ip6tables -w -t nat -L OUTPUT -n --line-numbers
+ip6tables -w -t nat -L POSTROUTING -n --line-numbers
+ip6tables -w -t nat -L -n
+iptables -w -t filter -L INPUT -n --line-numbers
+iptables -w -t filter -L FORWARD -n --line-numbers
+iptables -w -t filter -L OUTPUT -n --line-numbers
+iptables -w -t filter -L -n
+ip6tables -w -t filter -L INPUT -n --line-numbers
+ip6tables -w -t filter -L FORWARD -n --line-numbers
+ip6tables -w -t filter -L OUTPUT -n --line-numbers
+ip6tables -w -t filter -L -n
+iptables -w -t filter -nL INPUT --line-numbers
+ip6tables -w -t filter -nL INPUT --line-numbers
+ipset list -n
+ipset flush b4r_stale_v4
+ipset destroy b4r_stale_v4
+iptables-legacy -w -t mangle -L PREROUTING -n --line-numbers
+iptables-legacy -w -t mangle -D PREROUTING 1
+iptables-legacy -w -t mangle -L PREROUTING -n --line-numbers
+iptables-legacy -w -t mangle -L INPUT -n --line-numbers
+iptables-legacy -w -t mangle -L FORWARD -n --line-numbers
+iptables-legacy -w -t mangle -L OUTPUT -n --line-numbers
+iptables-legacy -w -t mangle -L POSTROUTING -n --line-numbers
+iptables-legacy -w -t mangle -L -n
+iptables-legacy -w -t mangle -F b4r_stale_pre
+iptables-legacy -w -t mangle -X b4r_stale_pre
+ip6tables-legacy -w -t mangle -L PREROUTING -n --line-numbers
+ip6tables-legacy -w -t mangle -L INPUT -n --line-numbers
+ip6tables-legacy -w -t mangle -L FORWARD -n --line-numbers
+ip6tables-legacy -w -t mangle -L OUTPUT -n --line-numbers
+ip6tables-legacy -w -t mangle -L POSTROUTING -n --line-numbers
+ip6tables-legacy -w -t mangle -L -n
+iptables-legacy -w -t nat -L PREROUTING -n --line-numbers
+iptables-legacy -w -t nat -L INPUT -n --line-numbers
+iptables-legacy -w -t nat -L OUTPUT -n --line-numbers
+iptables-legacy -w -t nat -L POSTROUTING -n --line-numbers
+iptables-legacy -w -t nat -L -n
+ip6tables-legacy -w -t nat -L PREROUTING -n --line-numbers
+ip6tables-legacy -w -t nat -L INPUT -n --line-numbers
+ip6tables-legacy -w -t nat -L OUTPUT -n --line-numbers
+ip6tables-legacy -w -t nat -L POSTROUTING -n --line-numbers
+ip6tables-legacy -w -t nat -L -n
+iptables-legacy -w -t filter -L INPUT -n --line-numbers
+iptables-legacy -w -t filter -L FORWARD -n --line-numbers
+iptables-legacy -w -t filter -L OUTPUT -n --line-numbers
+iptables-legacy -w -t filter -L -n
+ip6tables-legacy -w -t filter -L INPUT -n --line-numbers
+ip6tables-legacy -w -t filter -L FORWARD -n --line-numbers
+ip6tables-legacy -w -t filter -L OUTPUT -n --line-numbers
+ip6tables-legacy -w -t filter -L -n
+iptables-legacy -w -t filter -nL INPUT --line-numbers
+ip6tables-legacy -w -t filter -nL INPUT --line-numbers
+ipset list -n
+ip rule show
+ip -6 rule show

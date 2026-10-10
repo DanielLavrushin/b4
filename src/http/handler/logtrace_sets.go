@@ -22,6 +22,7 @@ type traceSet struct {
 	Routing  *traceSetRouting  `json:"routing,omitempty"`
 	Escalate *traceSetEscalate `json:"escalate,omitempty"`
 	MSSClamp int               `json:"mss_clamp,omitempty"`
+	DSCP     *int              `json:"dscp,omitempty"`
 }
 
 type traceSetTargets struct {
@@ -162,6 +163,10 @@ func collectTraceSets(cfg *config.Config) []traceSet {
 
 		if set.MSSClamp.Enabled {
 			ts.MSSClamp = set.MSSClamp.Size
+		}
+
+		if value, on := set.DSCPStamp(); on {
+			ts.DSCP = &value
 		}
 
 		sets = append(sets, ts)

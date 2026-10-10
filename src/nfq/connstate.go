@@ -121,6 +121,7 @@ type escalationEntry struct {
 	ttl      time.Duration
 	reason   string
 	routedAt time.Time
+	dscpAt   time.Time
 	capLogAt time.Time
 }
 
@@ -339,6 +340,14 @@ func (t *destStateTracker) ShouldLogHopCap(host string) bool {
 }
 
 func (t *destStateTracker) ShouldRefreshRoute(host string, interval time.Duration) bool {
+	return t.shouldRefresh(host, interval, false)
+}
+
+func (t *destStateTracker) ShouldRefreshDSCP(host string, interval time.Duration) bool {
+	return t.shouldRefresh(host, interval, true)
+}
+
+func (t *destStateTracker) shouldRefresh(host string, interval time.Duration, dscp bool) bool {
 	if interval <= 0 {
 		return false
 	}
@@ -349,10 +358,14 @@ func (t *destStateTracker) ShouldRefreshRoute(host string, interval time.Duratio
 	if e == nil || now.Sub(e.setAt) > e.ttl {
 		return false
 	}
-	if !e.routedAt.IsZero() && now.Sub(e.routedAt) < interval {
+	last := &e.routedAt
+	if dscp {
+		last = &e.dscpAt
+	}
+	if !last.IsZero() && now.Sub(*last) < interval {
 		return false
 	}
-	e.routedAt = now
+	*last = now
 	return true
 }
 

@@ -2,7 +2,9 @@ package tables
 
 import (
 	"fmt"
+	"net/netip"
 	"strings"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -81,7 +83,7 @@ func (b *routeNftBackend) addElements(setName string, ips []string, ttlSec int) 
 	}
 
 	if ttlSec > 0 {
-		return routeNftRefreshElements(routeNftDynSet(setName), ips, ttlSec)
+		return routeNftRefreshElements(routeNftTable, routeNftDynSet(setName), ips, ttlSec)
 	}
 
 	ips = expandZeroPrefix(ips)
@@ -93,11 +95,11 @@ func (b *routeNftBackend) addElements(setName string, ips []string, ttlSec int) 
 
 	var failed []string
 	for _, chunk := range routeNftChunks(ips) {
-		args := append([]string{"nft"}, routeNftElementArgs("add", setName, chunk, 0)...)
+		args := append([]string{"nft"}, routeNftElementArgs(routeNftTable, "add", setName, chunk, 0)...)
 		if out, err := run(args...); err != nil {
 			log.Tracef("routing: batch add to %s failed (%v: %s), falling back to individual adds", setName, err, strings.TrimSpace(out))
 			for _, ip := range chunk {
-				if !runLogged("routing: add element "+ip, append([]string{"nft"}, routeNftElementArgs("add", setName, []string{ip}, 0)...)...) {
+				if !runLogged("routing: add element "+ip, append([]string{"nft"}, routeNftElementArgs(routeNftTable, "add", setName, []string{ip}, 0)...)...) {
 					failed = append(failed, ip)
 				}
 			}
@@ -116,8 +118,8 @@ func routeNftChunks(ips []string) [][]string {
 	return chunks
 }
 
-func routeNftElementArgs(verb, setName string, ips []string, ttlSec int) []string {
-	args := []string{verb, "element", "inet", routeNftTable, setName, "{"}
+func routeNftElementArgs(table, verb, setName string, ips []string, ttlSec int) []string {
+	args := []string{verb, "element", "inet", table, setName, "{"}
 	for i, ip := range ips {
 		if i > 0 {
 			args = append(args, ",")
@@ -130,25 +132,53 @@ func routeNftElementArgs(verb, setName string, ips []string, ttlSec int) []strin
 	return append(args, "}")
 }
 
-func routeNftRefreshArgs(setName string, ips []string, ttlSec int) []string {
+func routeNftRefreshArgs(table, setName string, ips []string, ttlSec int) []string {
 	args := []string{"nft"}
-	args = append(args, routeNftElementArgs("add", setName, ips, ttlSec)...)
+	args = append(args, routeNftElementArgs(table, "add", setName, ips, ttlSec)...)
 	args = append(args, ";")
-	args = append(args, routeNftElementArgs("delete", setName, ips, 0)...)
+	args = append(args, routeNftElementArgs(table, "delete", setName, ips, 0)...)
 	args = append(args, ";")
-	return append(args, routeNftElementArgs("add", setName, ips, ttlSec)...)
+	return append(args, routeNftElementArgs(table, "add", setName, ips, ttlSec)...)
 }
 
-func routeNftRefreshElements(setName string, ips []string, ttlSec int) []string {
+func routeNftRefreshNetlink(table, setName string, ips []string, ttlSec int) bool {
+	addrs := make([]netip.Addr, 0, len(ips))
+	for _, ip := range ips {
+		addr, err := netip.ParseAddr(ip)
+		if err != nil || addr.Zone() != "" {
+			return false
+		}
+		addrs = append(addrs, addr)
+	}
+	if err := nftRefreshElements(table, setName, addrs, time.Duration(ttlSec)*time.Second); err != nil {
+		log.Tracef("routing: refreshing %d elements of %s over netlink failed (%v), handing them to nft", len(ips), setName, err)
+		return false
+	}
+	return true
+}
+
+func routeNftLearnsOverNetlink(table string) bool {
+	if table == dscpNftTable {
+		return true
+	}
+	st := dscpApplied.Load()
+	return st != nil && st.backend == backendNFTables && st.nft.perSet()
+}
+
+func routeNftRefreshElements(table, setName string, ips []string, ttlSec int) []string {
 	var failed []string
+	overNetlink := routeNftLearnsOverNetlink(table)
 	for _, chunk := range routeNftChunks(ips) {
-		out, err := run(routeNftRefreshArgs(setName, chunk, ttlSec)...)
+		if overNetlink && routeNftRefreshNetlink(table, setName, chunk, ttlSec) {
+			continue
+		}
+		out, err := run(routeNftRefreshArgs(table, setName, chunk, ttlSec)...)
 		if err == nil {
 			continue
 		}
 		log.Tracef("routing: batch refresh of %s failed (%v: %s), refreshing one by one", setName, err, strings.TrimSpace(out))
 		for _, ip := range chunk {
-			if !runLogged("routing: refresh element "+ip, routeNftRefreshArgs(setName, []string{ip}, ttlSec)...) {
+			if !runLogged("routing: refresh element "+ip, routeNftRefreshArgs(table, setName, []string{ip}, ttlSec)...) {
 				failed = append(failed, ip)
 			}
 		}

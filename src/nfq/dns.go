@@ -517,13 +517,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 						observeDNSNames(clientIP, domain, ips)
 					}
 					w.storeHostHints(clientIP, set, domain, ips)
-					if set.Routing.Enabled && !set.Targets.DomainOnly && len(ips) > 0 {
-						cfg := w.getConfig()
-						if routingHandleDNSAvailable() && !cfg.Queue.IsDiscovery {
-							routeWaits = routingHandleDNSAwait(cfg, set, ips)
-							routed = true
-						}
-					}
+					routeWaits, routed = learnAnswerAwait(w.getConfig(), set, ips)
 				} else if answersQuery {
 					observeDNSNames(clientIP, domain, dns.ParseResponseIPs(payload))
 				}
@@ -540,7 +534,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 						}
 						w.storeHostHints(clientIP, set, domain, ips)
 						if !set.Targets.DomainOnly && routingHandleDNSAvailable() && !cfg.Queue.IsDiscovery {
-							routeWaits = routingHandleDNSAwait(cfg, set, ips)
+							routeWaits = joinWaits(routeWaits, routingHandleDNSAwait(cfg, set, ips))
 						}
 					}
 				}
@@ -650,9 +644,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 	if ips := dns.ParseResponseIPs(resp); len(ips) > 0 {
 		observeDNSNames(clientIP, queryDomain, ips)
 		w.storeHostHints(clientIP, set, queryDomain, ips)
-		if set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {
-			RoutingHandleDNSFunc(cfg, set, ips)
-		}
+		w.learnAnswerInline(cfg, set, ips, nil)
 	}
 
 	if filtered, action := w.filterDNSAnswer(cfg, set, queryDomain, resp, false); filtered != nil {

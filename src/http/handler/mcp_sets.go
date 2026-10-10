@@ -174,7 +174,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 		out := mcpManageSetOut{Action: action}
 
 		var focusID string
-		var routingDropped bool
+		var routingDropped, dscpSwitchedOff bool
 		var copiedFrom string
 		var copiedDomains, copiedIPs, copiedASNs int
 
@@ -202,6 +202,10 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 				fresh.Discovery.Watchdog = false
 				routingDropped = fresh.Routing.Enabled
 				fresh.Routing = config.RoutingConfig{}
+				if src.DSCP.Enabled && oldCfg.DSCPRefusal(src) != "" {
+					fresh.DSCP.Enabled = false
+					dscpSwitchedOff = true
+				}
 				api.initializeSetDefaults(&fresh)
 				copiedFrom = src.Name
 				copiedDomains = len(fresh.Targets.SNIDomains)
@@ -317,9 +321,13 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 				}
 				newCfg.Sets = append(newCfg.Sets[:idx], newCfg.Sets[idx+1:]...)
 			} else {
-				wasEnabled := target.Enabled
+				wasEnabled, dscp := target.Enabled, target.DSCP
+				if dscp.Enabled && oldCfg.DSCPRefusal(target) != "" {
+					dscp.Enabled = false
+					dscpSwitchedOff = true
+				}
 				target.ResetToDefaults()
-				target.Enabled = wasEnabled
+				target.Enabled, target.DSCP = wasEnabled, dscp
 				api.loadTargetsForSetCached(target)
 				focusID = target.Id
 			}
@@ -382,10 +390,16 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 				if routingDropped {
 					out.Note += ". Routing was NOT copied: the upstream credentials cannot be read here, and a copy pointing at a proxy without them would misroute"
 				}
+				if dscpSwitchedOff {
+					out.Note += fmt.Sprintf(". Its own DSCP value was copied switched off: the value did not apply to %q, and the copy could apply it more widely", copiedFrom)
+				}
 			}
 		}
 		if action == "reset" {
 			out.Note += ". Targets and the enabled switch were kept; every strategy setting is back to its default"
+			if dscpSwitchedOff {
+				out.Note += ". Its own DSCP value was kept but switched off: the value did not apply to the set before the reset, and after it the set could apply it more widely"
+			}
 		}
 		return nil, out, nil
 	})
