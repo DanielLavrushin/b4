@@ -138,24 +138,28 @@ func TestToolVersionsStopsAskingOnceTheBudgetIsSpent(t *testing.T) {
 	}
 }
 
-func TestConcurrentDiagnosticsShareOneRun(t *testing.T) {
+func TestConcurrentDiagnosticsShareOneRunPerAPI(t *testing.T) {
 	dir := t.TempDir()
 	calls := filepath.Join(dir, "calls")
 	writeTool(t, dir, "jq", "echo run >> '"+calls+"'\nsleep 0.3\necho jq-1.0\n")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	cfg := config.NewConfig()
-	api := &API{
-		cfgPtr:                 testCfgPtr(&cfg),
-		overrideServiceManager: func() string { return "systemd" },
-		geodataManager:         geodat.NewGeodataManager("", ""),
+	newAPI := func(configPath string) *API {
+		cfg := config.NewConfig()
+		cfg.ConfigPath = configPath
+		return &API{
+			cfgPtr:                 testCfgPtr(&cfg),
+			overrideServiceManager: func() string { return "systemd" },
+			geodataManager:         geodat.NewGeodataManager("", ""),
+		}
 	}
+	apis := []*API{newAPI("/etc/b4/a.json"), newAPI("/etc/b4/b.json")}
 
-	const callers = 5
 	start := make(chan struct{})
-	reports := make([]Diagnostics, callers)
+	reports := make([]Diagnostics, 3*len(apis))
 	var wg sync.WaitGroup
-	for i := range callers {
+	for i := range reports {
+		api := apis[i%len(apis)]
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -170,10 +174,13 @@ func TestConcurrentDiagnosticsShareOneRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := strings.Count(string(data), "run"); n != 1 {
-		t.Errorf("%d concurrent diagnostics ran jq %d times, want once", callers, n)
+	if n := strings.Count(string(data), "run"); n != len(apis) {
+		t.Errorf("%d concurrent diagnostics on %d APIs ran jq %d times, want once per API", len(reports), len(apis), n)
 	}
 	for i, report := range reports {
+		if want := apis[i%len(apis)].getCfg().ConfigPath; report.B4.ConfigPath != want {
+			t.Errorf("caller %d got the report of %s, want %s", i, report.B4.ConfigPath, want)
+		}
 		for _, tool := range report.Tools.Optional {
 			if tool.Name == "jq" && tool.Version != "1.0" {
 				t.Errorf("caller %d got jq version %q, want 1.0", i, tool.Version)
