@@ -2660,6 +2660,19 @@
       "noteConfirming": "Confirming the strategies found. Stop now ends the run and keeps them unconfirmed.",
       "unresolvedNoAddress": "DNS publishes no {{family}} address for this name, so there is nothing to test. Pin the site's address to test it."
     },
+    "snake": {
+      "show": "Bored of waiting? Click me!",
+      "hide": "Hide the game",
+      "title": "Snake",
+      "start": "Press an arrow key or tap the board to start",
+      "paused": "Paused",
+      "resume": "Press Space or tap the board to continue",
+      "over": "Game over: {{score}}",
+      "restart": "Press Space or tap the board to play again",
+      "score": "Score {{score}}",
+      "best": "Best {{best}}",
+      "help": "Arrows or WASD to steer, Space to pause. Swipe on a touch screen."
+    },
     "steps": {
       "dns": "DNS",
       "baseline": "Without bypass",
