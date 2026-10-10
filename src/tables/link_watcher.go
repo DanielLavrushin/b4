@@ -103,7 +103,7 @@ func (w *linkWatcher) loop() {
 					w.handleEvent(name, false, false)
 				}
 			case unix.RTM_NEWNEIGH, unix.RTM_DELNEIGH:
-				name, ip, mac, alive, verdict := parseNeighMsg(m.Data)
+				name, ip, mac, alive, verdict := parseNeighMsg(m.Header.Type, m.Data)
 				switch verdict {
 				case neighOK:
 					w.handleNeighEvent(name, ip, mac, alive)
@@ -147,18 +147,20 @@ const (
 	neighMalformed
 )
 
-func parseNeighMsg(b []byte) (ifname, ip, mac string, alive bool, verdict neighVerdict) {
+func parseNeighMsg(msgType netlink.HeaderType, b []byte) (ifname, ip, mac string, alive bool, verdict neighVerdict) {
 	if len(b) < ndMsgSize {
 		return "", "", "", false, neighMalformed
 	}
-	state := native.Endian.Uint16(b[8:10])
-	switch state {
-	case unix.NUD_REACHABLE, unix.NUD_STALE, unix.NUD_DELAY, unix.NUD_PROBE, unix.NUD_PERMANENT:
-		alive = true
-	case unix.NUD_FAILED, unix.NUD_INCOMPLETE, unix.NUD_NOARP:
-		alive = false
-	default:
-		return "", "", "", false, neighFilteredState
+	// RTM_DELNEIGH means the entry is gone regardless of the ndm_state in the payload.
+	if msgType != unix.RTM_DELNEIGH {
+		switch native.Endian.Uint16(b[8:10]) {
+		case unix.NUD_REACHABLE, unix.NUD_STALE, unix.NUD_DELAY, unix.NUD_PROBE, unix.NUD_PERMANENT:
+			alive = true
+		case unix.NUD_FAILED, unix.NUD_INCOMPLETE, unix.NUD_NOARP:
+			// alive stays false
+		default:
+			return "", "", "", false, neighFilteredState
+		}
 	}
 	ifindex := int(native.Endian.Uint32(b[4:8]))
 	var dst, lladdr []byte
@@ -204,8 +206,11 @@ func (w *linkWatcher) handleNeighEvent(ifname, ip, mac string, alive bool) {
 		if !strings.EqualFold(set.Routing.EgressGateway, ip) {
 			continue
 		}
+		routeMu.Lock()
+		st, ok := routeRuleCache[set.Id]
+		routeMu.Unlock()
 		cached := ""
-		if st, ok := routeRuleCache[set.Id]; ok {
+		if ok {
 			cached = st.gwMAC
 			if !alive {
 				if st.gwMAC == "" {

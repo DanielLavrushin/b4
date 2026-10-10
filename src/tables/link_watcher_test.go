@@ -158,23 +158,27 @@ func TestParseNeighMsg(t *testing.T) {
 	}
 	mac := []byte{0x02, 0x42, 0xac, 0x11, 0x00, 0x02}
 	buf := buildNeighMsg(t, unix.NUD_REACHABLE, lo.Index, net.ParseIP("192.0.2.1").To4(), mac)
-	ifname, ip, got, alive, verdict := parseNeighMsg(buf)
+	ifname, ip, got, alive, verdict := parseNeighMsg(unix.RTM_NEWNEIGH, buf)
 	if verdict != neighOK || !alive || ifname != "lo" || ip != "192.0.2.1" || got != "02:42:ac:11:00:02" {
 		t.Errorf("parse = %q %q %q %v %v, want lo 192.0.2.1 02:42:ac:11:00:02 true ok", ifname, ip, got, alive, verdict)
 	}
 	buf = buildNeighMsg(t, unix.NUD_FAILED, lo.Index, net.ParseIP("192.0.2.1").To4(), nil)
-	if _, _, _, alive, verdict := parseNeighMsg(buf); verdict != neighOK || alive {
+	if _, _, _, alive, verdict := parseNeighMsg(unix.RTM_NEWNEIGH, buf); verdict != neighOK || alive {
 		t.Error("a FAILED entry parses as dead, not alive: it must resync only when a MAC was cached")
 	}
 	buf = buildNeighMsg(t, unix.NUD_STALE, lo.Index, net.ParseIP("192.0.2.1").To4(), nil)
-	if _, _, got, alive, verdict := parseNeighMsg(buf); verdict != neighOK || !alive || got != "" {
+	if _, _, got, alive, verdict := parseNeighMsg(unix.RTM_NEWNEIGH, buf); verdict != neighOK || !alive || got != "" {
 		t.Errorf("a usable entry without lladdr still resyncs, mac must be empty: %q %v %v", got, alive, verdict)
 	}
 	buf = buildNeighMsg(t, unix.NUD_NONE, lo.Index, net.ParseIP("192.0.2.1").To4(), nil)
-	if _, _, _, _, verdict := parseNeighMsg(buf); verdict != neighFilteredState {
+	if _, _, _, _, verdict := parseNeighMsg(unix.RTM_NEWNEIGH, buf); verdict != neighFilteredState {
 		t.Error("an uninteresting state must report filtered, not malformed")
 	}
-	if _, _, _, _, verdict := parseNeighMsg([]byte{1, 2, 3}); verdict != neighMalformed {
+	buf = buildNeighMsg(t, unix.NUD_REACHABLE, lo.Index, net.ParseIP("192.0.2.1").To4(), mac)
+	if _, _, _, alive, verdict := parseNeighMsg(unix.RTM_DELNEIGH, buf); verdict != neighOK || alive {
+		t.Error("a deleted neighbor parses as dead even when the payload still says reachable")
+	}
+	if _, _, _, _, verdict := parseNeighMsg(unix.RTM_NEWNEIGH, []byte{1, 2, 3}); verdict != neighMalformed {
 		t.Error("a truncated message must report malformed")
 	}
 }
