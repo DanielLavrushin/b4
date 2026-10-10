@@ -10,7 +10,10 @@ import (
 	"time"
 )
 
-var toolVersionTimeout = 2 * time.Second
+var (
+	toolVersionTimeout = 2 * time.Second
+	toolVersionBudget  = 5 * time.Second
+)
 
 const (
 	toolVersionMaxLen    = 200
@@ -35,29 +38,34 @@ func (h *headBuffer) String() string {
 }
 
 type toolVersions struct {
-	busybox map[string]string
+	deadline time.Time
+	busybox  map[string]string
 }
 
 func newToolVersions() *toolVersions {
-	return &toolVersions{busybox: map[string]string{}}
+	return &toolVersions{deadline: time.Now().Add(toolVersionBudget), busybox: map[string]string{}}
 }
 
 func (v *toolVersions) of(name, path string) string {
 	if real, err := filepath.EvalSymlinks(path); err == nil && strings.HasPrefix(filepath.Base(real), "busybox") {
 		version, seen := v.busybox[real]
 		if !seen {
-			stdout, stderr, _ := runToolVersion(real)
+			stdout, stderr, _ := v.run(real)
 			version = busyboxBannerRe.FindString(stdout + "\n" + stderr)
 			v.busybox[real] = version
 		}
 		return version
 	}
-	stdout, stderr, err := runToolVersion(path, "--version")
+	stdout, stderr, err := v.run(path, "--version")
 	return parseToolVersion(name, stdout, stderr, err == nil)
 }
 
-func runToolVersion(path string, args ...string) (string, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), toolVersionTimeout)
+func (v *toolVersions) run(path string, args ...string) (string, string, error) {
+	timeout := min(toolVersionTimeout, time.Until(v.deadline))
+	if timeout <= 0 {
+		return "", "", context.DeadlineExceeded
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	var stdout, stderr headBuffer

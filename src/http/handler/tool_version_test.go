@@ -109,9 +109,34 @@ func TestToolVersionsGivesUpOnAToolThatHangs(t *testing.T) {
 	}
 }
 
+func TestToolVersionsStopsAskingOnceTheBudgetIsSpent(t *testing.T) {
+	oldTimeout, oldBudget := toolVersionTimeout, toolVersionBudget
+	toolVersionTimeout, toolVersionBudget = time.Second, 300*time.Millisecond
+	defer func() { toolVersionTimeout, toolVersionBudget = oldTimeout, oldBudget }()
+
+	dir := t.TempDir()
+	var hung []string
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		hung = append(hung, writeTool(t, dir, name, "exec sleep 10\n"))
+	}
+	healthy := writeTool(t, dir, "ok", "echo 'ok v1.0'\n")
+
+	versions := newToolVersions()
+	start := time.Now()
+	for _, path := range hung {
+		versions.of(filepath.Base(path), path)
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("five tools that never answer took %v, want the %v budget to cap them all", elapsed, toolVersionBudget)
+	}
+	if got := versions.of("ok", healthy); got != "" {
+		t.Errorf("a tool asked after the budget was spent reported %q, want it skipped", got)
+	}
+}
+
 func TestToolVersionsKeepsOnlyTheStartOfAFloodOfOutput(t *testing.T) {
 	flood := writeTool(t, t.TempDir(), "flood", "yes 'flood v9.9' | head -n 100000\n")
-	stdout, _, err := runToolVersion(flood)
+	stdout, _, err := newToolVersions().run(flood)
 	if err != nil {
 		t.Fatalf("the tool did not run to its end: %v", err)
 	}
