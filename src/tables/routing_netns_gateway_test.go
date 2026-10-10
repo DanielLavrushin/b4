@@ -331,6 +331,15 @@ func TestNetnsGatewayOfOneFamilyLeavesTheOtherOnMain(t *testing.T) {
 	if !strings.Contains(chain, "--mac-source "+mac) && !strings.Contains(chain, fmt.Sprintf("-s %s", netnsPrimaryGW)) {
 		t.Errorf("the next hop must be guarded by its MAC or, without a neighbor entry, its address:\n%s", chain)
 	}
+	if hasBinary("ip6tables") {
+		v6chain := netnsRun(t, "ip6tables", "-w", "-t", "mangle", "-S", st.chainPre)
+		if strings.Contains(v6chain, "--mac-source") {
+			t.Errorf("the v6 guard must not narrow by the v4 gateway MAC:\n%s", v6chain)
+		}
+		if !strings.Contains(v6chain, "-i "+netnsPrimary+" -j RETURN") {
+			t.Errorf("without a v6 gateway the v6 guard stays on the full interface:\n%s", v6chain)
+		}
+	}
 }
 func TestNetnsIPv6GatewaySurvivesAForcedResync(t *testing.T) {
 	netnsRequire(t)

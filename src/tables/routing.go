@@ -94,7 +94,7 @@ type routeBackend interface {
 	learnedSharesStatic() bool
 	addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string)
 	addEgressLoopGuard(chain, iface string, ipv4, ipv6 bool) bool
-	addNarrowEgressGuard(chain, iface, gwV4, gwMAC string, v4, v6 bool) bool
+	addNarrowEgressGuard(chain, iface, gwV4, gwV6, gwMAC string, v4, v6 bool) bool
 	addRedirectDrop(chain, iface string)
 	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32, sources []config.DeviceMatch)
 	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
@@ -1690,7 +1690,9 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 			guarded = be.addEgressLoopGuard(st.chainPre, st.iface, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 		} else {
 			routeAddLocalDestinationGuard(be, st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
-			guarded = be.addNarrowEgressGuard(st.chainPre, st.iface, routeAddrForFamily(st.egressGW, false), st.gwMAC, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+			gwV4 := routeAddrForFamily(st.egressGW, false)
+			gwV6 := routeAddrForFamily(st.egressGW, true)
+			guarded = be.addNarrowEgressGuard(st.chainPre, st.iface, gwV4, gwV6, st.gwMAC, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 		}
 		if !guarded && len(sources) == 0 {
 			return fmt.Errorf("the guard on traffic arriving from %s did not install, and without it every packet %s hands back for a destination in this set is marked again and sent straight back to it", st.iface, st.iface)

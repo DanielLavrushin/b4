@@ -289,15 +289,17 @@ func (b *routeNftBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 boo
 		"nft", "add", "rule", "inet", routeNftTable, chain,
 		"iifname", fmt.Sprintf("%q", iface), "return")
 }
-func (b *routeNftBackend) addNarrowEgressGuard(chain, iface, gwV4, gwMAC string, v4, v6 bool) bool {
+func (b *routeNftBackend) addNarrowEgressGuard(chain, iface, gwV4, gwV6, gwMAC string, v4, v6 bool) bool {
 	if iface == "" {
 		return true
 	}
 	ok := true
 	if v4 {
 		args := []string{"add", "rule", "inet", routeNftTable, chain, "iifname", fmt.Sprintf("%q", iface)}
-		if gwMAC != "" {
-			args = append(args, "ether", "saddr", gwMAC, "return")
+		if gwV4 != "" && gwMAC != "" {
+			// The MAC refines the gateway's own family only; without the family match
+			// the rule would also exempt the other family's traffic off the same NIC.
+			args = append(args, "meta", "nfproto", "ipv4", "ether", "saddr", gwMAC, "return")
 		} else if gwV4 != "" {
 			args = append(args, "ip", "saddr", gwV4, "return")
 		} else {
@@ -307,8 +309,8 @@ func (b *routeNftBackend) addNarrowEgressGuard(chain, iface, gwV4, gwMAC string,
 	}
 	if v6 {
 		args := []string{"add", "rule", "inet", routeNftTable, chain, "iifname", fmt.Sprintf("%q", iface)}
-		if gwMAC != "" {
-			args = append(args, "ether", "saddr", gwMAC, "return")
+		if gwV6 != "" && gwMAC != "" {
+			args = append(args, "meta", "nfproto", "ipv6", "ether", "saddr", gwMAC, "return")
 		} else {
 			args = append(args, "meta", "nfproto", "ipv6", "return")
 		}

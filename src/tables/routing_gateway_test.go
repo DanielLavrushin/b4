@@ -220,7 +220,7 @@ func TestAGatewayNarrowsTheEgressGuardToTheNextHop(t *testing.T) {
 	if indexOfPrefix(ops, "loop-guard") >= 0 {
 		t.Errorf("a gateway set narrows the guard to the next hop instead of the full guard: %v", ops)
 	}
-	if indexOfOp(ops, "narrow-guard eth1 192.0.2.1 ") < 0 {
+	if indexOfOp(ops, "narrow-guard eth1 gw4=192.0.2.1 gw6= mac=") < 0 {
 		t.Errorf("the v4 next hop must be guarded by its own address: %v", ops)
 	}
 }
@@ -229,7 +229,7 @@ func TestNarrowGuardKeepsAFamilyGuardWhereTheGatewayDoesNotReach(t *testing.T) {
 	prev := runLogged
 	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
 	t.Cleanup(func() { runLogged = prev })
-	if !(&routeNftBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "", true, true) {
+	if !(&routeNftBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "", "", true, true) {
 		t.Fatal("both families installable must report success")
 	}
 	joined := strings.Join(cmds, "\n")
@@ -240,21 +240,21 @@ func TestNarrowGuardKeepsAFamilyGuardWhereTheGatewayDoesNotReach(t *testing.T) {
 		t.Errorf("the family without a gateway keeps the full guard:\n%s", joined)
 	}
 }
-func TestNarrowGuardFallsBackWhenTheMACMatchIsRejected(t *testing.T) {
+func TestNarrowGuardIgnoresMACWithoutAFamilyGateway(t *testing.T) {
 	stubBinaries(t, backendIPTables, backendIP6Tables)
 	var cmds []string
 	prev := runLogged
-	runLogged = func(op string, args ...string) bool {
-		cmds = append(cmds, strings.Join(args, " "))
-		return !strings.Contains(strings.Join(args, " "), "--mac-source")
-	}
+	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
 	t.Cleanup(func() { runLogged = prev })
-	if !(&routeIptBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "", "aa:bb:cc:dd:ee:ff", false, true) {
+	if !(&routeIptBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "", "", "aa:bb:cc:dd:ee:ff", false, true) {
 		t.Fatal("the full-guard fallback must still report success")
 	}
 	joined := strings.Join(cmds, "\n")
+	if strings.Contains(joined, "--mac-source") {
+		t.Errorf("a MAC without a family gateway must not be matched:\n%s", joined)
+	}
 	if !strings.Contains(joined, "-i eth1 -j RETURN") {
-		t.Errorf("a rejected MAC match must fall back to the full guard:\n%s", joined)
+		t.Errorf("the family without a gateway keeps the full guard:\n%s", joined)
 	}
 }
 func TestNarrowGuardPrefersMACOverAddressForIPv4(t *testing.T) {
@@ -262,7 +262,7 @@ func TestNarrowGuardPrefersMACOverAddressForIPv4(t *testing.T) {
 	prev := runLogged
 	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
 	t.Cleanup(func() { runLogged = prev })
-	if !(&routeNftBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "aa:bb:cc:dd:ee:ff", true, false) {
+	if !(&routeNftBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "", "aa:bb:cc:dd:ee:ff", true, false) {
 		t.Fatal("a known gateway MAC must install")
 	}
 	joined := strings.Join(cmds, "\n")
@@ -274,7 +274,7 @@ func TestNarrowGuardPrefersMACOverAddressForIPv4(t *testing.T) {
 	}
 	stubBinaries(t, backendIPTables, backendIP6Tables)
 	cmds = nil
-	if !(&routeIptBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "aa:bb:cc:dd:ee:ff", true, false) {
+	if !(&routeIptBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "", "aa:bb:cc:dd:ee:ff", true, false) {
 		t.Fatal("a known gateway MAC must install")
 	}
 	joined = strings.Join(cmds, "\n")
@@ -283,6 +283,82 @@ func TestNarrowGuardPrefersMACOverAddressForIPv4(t *testing.T) {
 	}
 	if strings.Contains(joined, "-s 192.0.2.1") {
 		t.Errorf("the address rule is redundant once the MAC matches the whole NIC:\n%s", joined)
+	}
+}
+func TestNarrowGuardUsesMACOnlyInTheGatewayFamily(t *testing.T) {
+	var cmds []string
+	prev := runLogged
+	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
+	t.Cleanup(func() { runLogged = prev })
+	if !(&routeNftBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "", "aa:bb:cc:dd:ee:ff", true, true) {
+		t.Fatal("both families installable must report success")
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("want one rule per family, ran:\n%s", strings.Join(cmds, "\n"))
+	}
+	if !strings.Contains(cmds[0], `meta nfproto ipv4 ether saddr aa:bb:cc:dd:ee:ff return`) {
+		t.Errorf("the gateway family matches the NIC by MAC within its own family:\n%s", cmds[0])
+	}
+	if strings.Contains(cmds[1], "ether saddr") {
+		t.Errorf("the other family must not narrow by the gateway MAC:\n%s", cmds[1])
+	}
+	if !strings.Contains(cmds[1], `meta nfproto ipv6 return`) {
+		t.Errorf("the other family keeps the full guard:\n%s", cmds[1])
+	}
+	stubBinaries(t, backendIPTables, backendIP6Tables)
+	cmds = nil
+	if !(&routeIptBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "", "aa:bb:cc:dd:ee:ff", true, true) {
+		t.Fatal("both families installable must report success")
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("want one rule per family, ran:\n%s", strings.Join(cmds, "\n"))
+	}
+	if !strings.Contains(cmds[0], "--mac-source aa:bb:cc:dd:ee:ff") {
+		t.Errorf("the gateway family matches the NIC by MAC:\n%s", cmds[0])
+	}
+	if strings.Contains(cmds[1], "--mac-source") {
+		t.Errorf("the other family must not narrow by the gateway MAC:\n%s", cmds[1])
+	}
+	if !strings.Contains(cmds[1], "-i eth1 -j RETURN") {
+		t.Errorf("the other family keeps the full guard:\n%s", cmds[1])
+	}
+}
+func TestNarrowGuardKeepsTheFullGuardForIPv4WithoutAGateway(t *testing.T) {
+	var cmds []string
+	prev := runLogged
+	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
+	t.Cleanup(func() { runLogged = prev })
+	if !(&routeNftBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "", "2001:db8::1", "aa:bb:cc:dd:ee:ff", true, true) {
+		t.Fatal("both families installable must report success")
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("want one rule per family, ran:\n%s", strings.Join(cmds, "\n"))
+	}
+	if strings.Contains(cmds[0], "ether saddr") {
+		t.Errorf("the family without a gateway must not narrow by MAC:\n%s", cmds[0])
+	}
+	if !strings.Contains(cmds[0], `meta nfproto ipv4 return`) {
+		t.Errorf("the family without a gateway keeps the full guard:\n%s", cmds[0])
+	}
+	if !strings.Contains(cmds[1], `meta nfproto ipv6 ether saddr aa:bb:cc:dd:ee:ff return`) {
+		t.Errorf("the gateway family matches the NIC by MAC within its own family:\n%s", cmds[1])
+	}
+	stubBinaries(t, backendIPTables, backendIP6Tables)
+	cmds = nil
+	if !(&routeIptBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "", "2001:db8::1", "aa:bb:cc:dd:ee:ff", true, true) {
+		t.Fatal("both families installable must report success")
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("want one rule per family, ran:\n%s", strings.Join(cmds, "\n"))
+	}
+	if strings.Contains(cmds[0], "--mac-source") {
+		t.Errorf("the family without a gateway must not narrow by MAC:\n%s", cmds[0])
+	}
+	if !strings.Contains(cmds[0], "-i eth1 -j RETURN") {
+		t.Errorf("the family without a gateway keeps the full guard:\n%s", cmds[0])
+	}
+	if !strings.Contains(cmds[1], "--mac-source aa:bb:cc:dd:ee:ff") {
+		t.Errorf("the gateway family matches the NIC by MAC:\n%s", cmds[1])
 	}
 }
 func TestNarrowGuardFallsBackToAddressWhenIPv4MACIsRejected(t *testing.T) {
@@ -294,7 +370,7 @@ func TestNarrowGuardFallsBackToAddressWhenIPv4MACIsRejected(t *testing.T) {
 		return !strings.Contains(strings.Join(args, " "), "--mac-source")
 	}
 	t.Cleanup(func() { runLogged = prev })
-	if !(&routeIptBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "aa:bb:cc:dd:ee:ff", true, false) {
+	if !(&routeIptBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "192.0.2.1", "", "aa:bb:cc:dd:ee:ff", true, false) {
 		t.Fatal("a rejected MAC match must fall back to the address rule")
 	}
 	joined := strings.Join(cmds, "\n")
@@ -392,7 +468,7 @@ func TestReinstallRebuildsChainsWhenGatewayMACAppears(t *testing.T) {
 		t.Fatalf("the reinstall kept gwMAC %q, so the chains still guard by address", got)
 	}
 	joined := strings.Join(be.chainOps[routeRuleCache[set.Id].chainPre], "\n")
-	if !strings.Contains(joined, "narrow-guard lo 127.0.0.2 aa:bb:cc:dd:ee:ff") {
+	if !strings.Contains(joined, "narrow-guard lo gw4=127.0.0.2 gw6= mac=aa:bb:cc:dd:ee:ff") {
 		t.Errorf("the rebuilt chain must guard by the new MAC, ran:\n%s", joined)
 	}
 }
