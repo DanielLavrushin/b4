@@ -150,7 +150,11 @@ func routeNftRefreshNetlink(table, setName string, ips []string, ttlSec int) boo
 		}
 		addrs = append(addrs, addr)
 	}
-	if err := nftRefreshElements(table, setName, addrs, time.Duration(ttlSec)*time.Second); err != nil {
+	ttl := time.Duration(ttlSec) * time.Second
+	if ttl/time.Second != time.Duration(ttlSec) {
+		return false
+	}
+	if err := nftRefreshElements(table, setName, addrs, ttl); err != nil {
 		log.Tracef("routing: refreshing %d elements of %s over netlink failed (%v), handing them to nft", len(ips), setName, err)
 		return false
 	}

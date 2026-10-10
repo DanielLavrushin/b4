@@ -4,8 +4,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -217,6 +219,21 @@ func TestNftLearnedRefreshGoesOverNetlink(t *testing.T) {
 		}
 		if got := dscpLearnExpiry(sid, "2001:db8::10"); got.IsZero() {
 			t.Errorf("a netlink write was not recorded as learned")
+		}
+	})
+
+	t.Run("a ttl past the largest duration goes to nft", func(t *testing.T) {
+		if strconv.IntSize < 64 {
+			t.Skip("an int this small cannot hold a ttl that overflows time.Duration")
+		}
+		withDSCPNftPlanApplied(t)
+		rec := recordNftScripts(t, nil, nil)
+		nl := recordNftNetlink(t, nil)
+
+		(&routeNftBackend{}).addElements("b4r_x_v4", []string{"203.0.113.9"}, math.MaxInt)
+		want := []string{strings.Join(routeNftRefreshArgs(routeNftTable, "b4r_x_v4_d", []string{"203.0.113.9"}, math.MaxInt), " ")}
+		if len(nl.calls) != 0 || !slices.Equal(rec.calls, want) {
+			t.Errorf("a ttl that overflows time.Duration went over netlink %+v, or the nft command got %q, want %q", nl.calls, rec.calls, want)
 		}
 	})
 

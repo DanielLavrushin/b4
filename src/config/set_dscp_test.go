@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"math"
 	"reflect"
 	"testing"
 	"time"
@@ -364,6 +365,7 @@ func TestSetDSCPLearnTTL(t *testing.T) {
 		{"routing off", false, 900, time.Hour},
 		{"routing on", true, 900, 900 * time.Second},
 		{"routing on without a ttl", true, 0, time.Hour},
+		{"routing on with a ttl past the largest duration", true, math.MaxInt, time.Duration(min(int64(math.MaxInt), math.MaxInt64/int64(time.Second))) * time.Second},
 	}
 	for _, tc := range cases {
 		set := NewSetConfig()

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -924,6 +925,7 @@ func cleanIfaceList(names []string) []string {
 const (
 	SetDSCPLearnTTL    = time.Hour
 	SetDSCPTLSLearnTTL = 10 * time.Minute
+	maxDurationSeconds = math.MaxInt64 / int64(time.Second)
 )
 
 const (
@@ -982,7 +984,7 @@ func (set *SetConfig) DSCPLearnTTL(fromTLS bool) time.Duration {
 		return SetDSCPTLSLearnTTL
 	}
 	if set.Routing.Enabled && set.Routing.IPTTLSeconds > 0 {
-		return time.Duration(set.Routing.IPTTLSeconds) * time.Second
+		return time.Duration(min(int64(set.Routing.IPTTLSeconds), maxDurationSeconds)) * time.Second
 	}
 	return SetDSCPLearnTTL
 }
