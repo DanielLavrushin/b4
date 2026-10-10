@@ -27,6 +27,7 @@ import { B4Tab, B4TabPanel, B4Tabs, B4TextField } from "@b4.elements";
 
 import { colors } from "@design";
 import { B4Config, B4SetConfig, SystemConfig } from "@models/config";
+import { dscpEnvironment } from "@utils";
 
 import { DiscoveryTab } from "./DiscoveryTab";
 import { EscalationSettings } from "./Escalation";
@@ -158,6 +159,7 @@ export const SetEditorPage = ({
   if (!editedSet) return null;
 
   const dirty = JSON.stringify(editedSet) !== JSON.stringify(initialSet);
+  const dscp = dscpEnvironment(config, editedSet.id);
 
   let saveTooltip: string;
   if (saving) saveTooltip = t("core.saving");
@@ -359,6 +361,7 @@ export const SetEditorPage = ({
             availableIfaces={config.available_ifaces ?? []}
             tunnelIfaces={config.tunnel_ifaces ?? []}
             encapsulatedIfaces={config.encapsulated_ifaces ?? []}
+            dscp={dscp}
             onChange={handleChange}
           />
         </B4TabPanel>
@@ -385,6 +388,7 @@ export const SetEditorPage = ({
         <B4TabPanel value={activeTab} index={TABS.IMPORT_EXPORT} idPrefix="set-tab" sx={{ pt: 3 }}>
           <ImportExportSettings
             config={editedSet}
+            deviceFilter={dscp.deviceFilter}
             onImport={handleApplyImport}
           />
           {settings.hub?.enabled && (

@@ -230,12 +230,13 @@
       "masqueradeInterfaceDesc": "Rewrite the source address (NAT) only on these outgoing interfaces, typically your internet uplinks (WAN). Others, like your LAN, are left untouched. None selected = all interfaces.",
       "noInterfacesDetected": "No interfaces detected",
       "dscp": "Set DSCP",
-      "dscpDesc": "Write a DSCP value into the packets this host sends out, so the router in front of b4 can tell its traffic apart. ECN bits and the packets going back to LAN clients keep their value.",
+      "dscpDesc": "Write a DSCP value into the packets this host sends out, so the router in front of b4 can tell its traffic apart. ECN bits and the packets going back to LAN clients keep their value. Packets to a set's addresses can carry that set's own value instead, even while this switch is off: DNS & Routing -> Traffic Routing in the set editor.",
       "dscpSkipped": "Not applied while Skip IPTables/NFTables Setup is on: b4 is not managing firewall rules.",
       "dscpSettings": "DSCP",
       "dscpValue": "DSCP value",
       "dscpValueHelp": "Written into the DSCP field of the outgoing packets (0-63). 7 comes from the range left for local use and keeps normal priority on Wi-Fi and on Linux routers; 0 clears the field. The router that reads the value should reset it before its internet uplink.",
-      "dscpInterfacesDesc": "Write the value only into packets that leave through these interfaces. None selected = every interface except loopback.",
+      "dscpInterfacesDesc": "Write the Set DSCP value and the sets' own values only into packets that leave through these interfaces. None selected = every interface except loopback.",
+      "dscpSetsList": "Sets that write their own value, whether or not Set DSCP is on:",
       "missingIface": "unavailable",
       "networkInterfaces": "Capture Interfaces",
       "networkInterfacesDesc": "Only inspect packets whose interface is one of these. For forwarded traffic that is the interface the packet leaves by, which a tunnel or a VPN client can change without touching this list. Empty = every interface, which is what almost every setup wants.",
@@ -550,7 +551,8 @@
       "manualDevicesDesc": "Add IP addresses of devices behind another router that are not visible in the ARP table. These devices will appear in device lists and can be used for per-device filtering.",
       "manualIp": "IP Address",
       "manualName": "Name",
-      "manualNamePlaceholder": "Device name (optional)"
+      "manualNamePlaceholder": "Device name (optional)",
+      "dscpNote": "While devices are selected here, sets do not write their own DSCP value: the firewall stage that writes it cannot see which device a packet came from. Set DSCP in Settings -> Core -> Firewall still applies."
     },
     "RestartDialog": {
       "title": "Restart B4 Service",
@@ -1507,7 +1509,9 @@
         "onStall": "On stall",
         "onDns": "On DNS",
         "ttlSec": "TTL",
-        "dnsTarget": "Server"
+        "dnsTarget": "Server",
+        "dscp": "DSCP",
+        "dscpOff": "not applied: {{reason}}"
       },
       "sharedSet": "Imported shared set",
       "sharedSetEdited": "Imported shared set, edited",
@@ -2229,7 +2233,26 @@
       "routerTrafficHeldBack": "{{iface}} is a tunnel a program on this router reads, so B4 leaves the router's own traffic on the normal route. Routing it into {{iface}} would come back out as a new connection to the same address and loop.",
       "killSwitch": "Kill switch",
       "killSwitchDesc": "If the output interface goes away, drop this set's traffic instead of letting it fall back to the normal uplink.",
-      "tunnelManipulationNote": "{{iface}} wraps the packet before anything on the network sees it, so B4 leaves this set's packets alone: no faking, fragmentation or desync, and no SYN health check, dead-IP escalation, IP block detection or TCP duplication. The settings on the Strategy tabs have no effect while the set routes there. Such connections are tagged routed->{{iface}} in the connection log."
+      "tunnelManipulationNote": "{{iface}} wraps the packet before anything on the network sees it, so B4 leaves this set's packets alone: no faking, fragmentation or desync, and no SYN health check, dead-IP escalation, IP block detection or TCP duplication. The settings on the Strategy tabs have no effect while the set routes there. Such connections are tagged routed->{{iface}} in the connection log.",
+      "dscpTitle": "DSCP",
+      "dscpEnable": "Enable per-set DSCP",
+      "dscpEnableDesc": "Write this set's own DSCP value into the packets that go to the set's addresses, so the router in front of b4 can tell this set's traffic apart. ECN bits and the packets going back to LAN clients keep their value.",
+      "dscpValueHelp": "Prefer 7 and 31, then 6 and 25: they keep normal priority in Linux Wi-Fi, cake and pfifo_fast. 0 clears the DSCP field. Other values can land in another queue: 1 (lowest priority); 2-5, 27 and 29 (cake or pfifo_fast); 8-23 (Wi-Fi background); 24, 26, 28, 30 and 32-63 (Wi-Fi video and voice). pfSense cannot match 7, 31, 6 or 25: of its classes, AF11-AF13 (10, 12, 14) disturb traffic least. OPNsense matches any value. The router that reads the value should reset it before its internet uplink.",
+      "dscpReplacesGlobal": "Packets to this set's addresses carry {{value}} in place of the Set DSCP value {{global}}.",
+      "dscpOthersKeep": "Set DSCP is off in <a>Settings -> Core -> Firewall</a>, so b4 writes only the sets' values and other packets keep the value their sender wrote. A device could then write {{value}} itself and take this set's route. For a device whose traffic passes through b4, only turning Set DSCP on prevents this, because b4 then overwrites the value of every other packet; a check on b4's address in the router that reads the value stops only the devices that reach that router directly.",
+      "dscpSameAsGlobal": "{{value}} is also the Set DSCP value, so the router in front of b4 cannot tell this set's traffic from the rest. Pick another value.",
+      "dscpFirstConnection": "Domains get the value through the addresses b4 learns for them: from the DNS answers it sees, from TLS and QUIC names, and from its own lookups of the listed domains. The first packets of a connection to an address b4 has not learned yet leave without this set's value; later connections carry it from the start. Where b4 sees no DNS answers, as when it runs as a container on MikroTik, add IP, GeoIP or ASN targets for traffic that must carry the value from the first packet.",
+      "dscpEncapsulated": "{{iface}} wraps the packet before anything on the network sees it, so the router in front of b4 sees only the tunnel's own packets, which usually do not carry this value (WireGuard writes 0 into their DSCP field).",
+      "dscpInterfaces": "The interface list in <a>Settings -> Core -> Firewall</a> applies to this value too. It is written only into packets that leave through these interfaces:",
+      "dscpOffSkip": "Skip IPTables/NFTables Setup is on in Settings -> Core -> Firewall, so b4 installs no firewall rules and writes no DSCP value.",
+      "dscpOffBlock": "In Block (blackhole) mode the set's packets never leave the router, so there is no packet to write the value into.",
+      "dscpOffProxy": "In Upstream SOCKS5 proxy mode the set's traffic leaves as b4's own connections to the proxy, and the firewall cannot tie those to the set.",
+      "dscpOffTelegram": "In Telegram over WebSocket (built-in) mode the set's traffic leaves over shared WebSocket connections, and the firewall cannot tie those to the set.",
+      "dscpOffDevices": "This set selects source devices (Targets -> Source Devices), and the firewall stage that writes DSCP cannot see which device a packet came from.",
+      "dscpOffSourceIfaces": "This set's routing is limited to source interfaces, and the firewall stage that writes DSCP cannot see which interface a packet came in on.",
+      "dscpOffDeviceFilter": "Device Filtering in Settings -> Core -> Devices has devices selected, and the firewall stage that writes DSCP cannot see which device a packet came from, so no set writes its own value.",
+      "dscpNoAddresses": "This set has no domain, IP, GeoIP or ASN target, so it has no address to write the value for.",
+      "dscpDomainOnly": "Domain-only matching is on, so this set writes its value only for the IP, GeoIP and ASN targets it lists, and it lists none. The value is written by destination address, before the domain name is visible."
     },
     "importExport": {
       "sectionTitle": "Import/Export Set configuration",
@@ -2274,7 +2297,8 @@
         "private_addresses": "Addresses that look private to the author's network: {{addresses}}.",
         "block_regexp": "This block set matches by pattern ({{entry}}), so it may block far more than intended.",
         "foreign_hub_link": "The pasted set was linked to community set {{pasted}}; this set stays linked to {{kept}} and publishing it creates its next version.",
-        "asn_unresolved": "No prefixes are known on this device yet for ASNs {{asns}}. b4 fetches them from RIPEstat in the background; until then they add no addresses to the set."
+        "asn_unresolved": "No prefixes are known on this device yet for ASNs {{asns}}. b4 fetches them from RIPEstat in the background; until then they add no addresses to the set.",
+        "dscp_off": "This set's own DSCP value {{value}} was switched off because it was not applied to the set before the import, and the imported version could apply it more widely. Turn it back on in DNS & Routing -> Traffic Routing if it should apply."
       }
     },
     "editor": {

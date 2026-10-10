@@ -61,6 +61,7 @@ func RefreshRules(cfg *config.Config) error {
 func ClearAppliedRules(fallback *config.Config) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
+	dscpSyncClosed.Store(true)
 	return clearRulesFn(appliedOr(fallback))
 }
 

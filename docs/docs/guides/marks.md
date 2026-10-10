@@ -100,7 +100,7 @@ packet processing and through every set that carries the router's own traffic.
 | TUN capture (`B4_TUN`) | Its mark has every bit of the queue mark, bit `0x20000000` or bit `0x200000`, or its bits under `0x27fff` equal `0x24bab`; on iptables also when its destination is in a routing set other than a block set. A packet to a network in which the router has an IPv4 address of its own is left alone as well, unless it is UDP DNS or a TCP reset the chain captures; while b4 captures only the router's own connections, such a packet is always left alone, except a UDP DNS query to the uplink gateway |
 | TUN on the whole default route | Only packets with bit `0x10000000`, and with bit `0x20000000` when `ip` accepts `suppress_prefixlength`, leave by b4's rules; every other packet that follows the default route enters `b4tun0` |
 | **NAT Masquerade** (`b4_masq`, `B4_MASQ`) | Its mark has bit `0x20000000`. On iptables that `RETURN` sits at the top of nat `POSTROUTING`, so such a packet skips every later rule there, other services' included |
-| **Set DSCP** (`B4_DSCP`, `inet b4_dscp`) | Its mark has bit `0x20000000`, it leaves through `lo`, or it travels in the reply direction of its connection. On iptables the jump to `B4_DSCP` sits at the top of mangle `POSTROUTING`; on nftables `inet b4_dscp` runs in postrouting at priority 150 |
+| **Set DSCP** and the sets' own DSCP values (`B4_DSCP`, `inet b4_dscp`) | Its mark has bit `0x20000000`, it leaves through `lo`, or it travels in the reply direction of its connection. On iptables the jump to `B4_DSCP` sits at the top of mangle `POSTROUTING`; on nftables `inet b4_dscp` runs in postrouting at priority 150. The sets' values are written in the same chain or table, after the **Set DSCP** value, by rules that choose the value by the destination address alone |
 | DNS over TCP redirect | Its mark has every bit of the queue mark |
 | Discovery, during a run | At the top of the chain, a packet whose mark is exactly the injected mark is accepted, and a packet whose mark or connection mark is exactly the flow mark goes to Discovery's queue; either way it skips the rest of the chain. On iptables that is the built-in mangle `PREROUTING` and `OUTPUT`, so it skips every later rule there |
 
@@ -114,6 +114,8 @@ packet processing and through every set that carries the router's own traffic.
 | Packet processing | The queue-mark bits into the connection mark of every connection on which the router itself sends a packet with every bit of the queue mark, a device's connection that b4 sends fakes or split segments into included. NFQUEUE mode only; on nftables not for packets sent to `lo`, on iptables only with the connmark module. Masked |
 | TUN capture | Bit `0x40000000` of the packet mark. Masked |
 | Discovery, during a run | The whole packet mark of a packet whose connection mark is exactly the flow mark, and the whole connection mark of a connection that carries a packet whose mark is exactly the flow mark; both get the flow mark |
+
+**Set DSCP** and the sets' own [DSCP values](/docs/sets/routing#dscp) write the DSCP field of the IP header, not a mark. A set's own value adds no packet mark, connection mark or routing rule: its rules sit in the chain or table **Set DSCP** uses, `B4_DSCP` or `inet b4_dscp`, which b4 installs while **Set DSCP** is on or a set writes its own value, and they choose the value by the destination address alone.
 
 ## The queue mark
 
@@ -171,7 +173,7 @@ b4 refuses a value that:
 - is made only of bits of `0x240000`, the marks of its own connections;
 - is made only of bits of `0x27fff` and `0x1000000`, the bits of set marks;
 - overlaps `0x70000000` in TUN mode;
-- has bit `0x20000000` in NFQUEUE mode while **NAT Masquerade** or **Set DSCP** is on;
+- has bit `0x20000000` in NFQUEUE mode while **NAT Masquerade** or **Set DSCP** is on, or while an enabled set has **Enable per-set DSCP** on;
 - has `0x24bab`, the Telegram over WebSocket mark, as its bits under `0x27fff`;
 - equals the flow or injected mark of Discovery;
 - is above `0xffffffff`, or, while either Discovery mark is left out of the configuration, is
@@ -533,11 +535,11 @@ Where these meet b4:
   mode, though, zapret takes its generated packets out of conntrack, and b4 then queues them
   only toward a set's packet duplication addresses, since its other queue rules count a
   connection's packets. On nftables both queue the packets they select, b4 first (priority
-  -150 against zapret's 99 or 101). With **Set DSCP** on, b4 writes no value into a packet
-  with bit `0x20000000`, so in POSTNAT mode the packets zapret queues after NAT, and the
-  packets it generates from them, leave without the DSCP value. On iptables the `NFQUEUE`
-  rule that sits higher in mangle `POSTROUTING` takes the packets both select there, and the
-  other never
+  -150 against zapret's 99 or 101). With **Set DSCP** or a set's own DSCP value on, b4 writes
+  no value into a packet with bit `0x20000000`, so in POSTNAT mode the packets zapret queues
+  after NAT, and the packets it generates from them, leave without b4's DSCP value. On
+  iptables the `NFQUEUE` rule that sits higher in mangle `POSTROUTING` takes the packets both
+  select there, and the other never
   sees them; b4 also queues the router's own packets earlier, in mangle `OUTPUT`, and with
   device filtering forwarded packets in mangle `FORWARD`, so zapret can still process those
   after b4. zapret drops ICMP time-exceeded messages of connections whose connection mark has
@@ -595,6 +597,10 @@ iptables -t mangle -S
 iptables -t nat -S
 iptables -t raw -S
 
+# the ipsets of the sets' own DSCP values on iptables, and the entry count of one
+ipset list -n | grep '^b4d_'
+ipset save b4d_u_v4 | grep -c '^add'
+
 # routing rules of every service, and b4's tables
 ip rule
 ip -6 rule
@@ -607,4 +613,13 @@ ss -tanpe | grep b4
 grep -o 'mark=[0-9]*' /proc/net/nf_conntrack | sort | uniq -c
 ```
 
-System Info in the web interface lists b4's firewall rules and the output of `ip rule`.
+The addresses of the sets' own DSCP values live in these objects:
+
+| iptables, ipsets | nftables, in `inet b4_dscp` | Holds |
+| --- | --- | --- |
+| `b4d_u_v4`, `b4d_u_v6` | - | Every address of the sets' IP, GeoIP and ASN targets; a packet to none of them and to no learned address leaves `B4_DSCP` before the sets' rules |
+| `b4d_s<value>_v4`, `b4d_s<value>_v6` | Maps `s4_<n>` and `s6_<n>`, and a chain `v<value>` for each value | The same addresses, grouped by the value they get |
+| `b4d_ul_v4`, `b4d_ul_v6` | - | Every address b4 learned for the sets' domains |
+| `b4d_l_<set>_v4`, `b4d_l_<set>_v6` | Sets `l_<set>_4` and `l_<set>_6` | The addresses b4 learned for one set, each with its own timeout |
+
+System Info in the web interface lists b4's firewall rules and the output of `ip rule`. While an enabled set has its own DSCP value switched on, its `Per-set DSCP` group gives each such set's value and why it is refused, or whether it is applied, with the number of its static entries and of the learned addresses b4 wrote for it from each source.

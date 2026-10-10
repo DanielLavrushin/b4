@@ -521,6 +521,10 @@ var DNSNames *dns.NameCache
 var routeSetLookup dns.LookupFunc = dns.LookupIPs
 
 func routeResolveHost(cfg *config.Config, set *config.SetConfig, host string) []net.IP {
+	return routeResolveHostContext(context.Background(), cfg, set, host)
+}
+
+func routeResolveHostContext(parent context.Context, cfg *config.Config, set *config.SetConfig, host string) []net.IP {
 	var srv dns.Server
 	useSet, strict := false, false
 	if set != nil {
@@ -533,7 +537,7 @@ func routeResolveHost(cfg *config.Config, set *config.SetConfig, host string) []
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), srv.Budget()+time.Second)
+	ctx, cancel := context.WithTimeout(parent, srv.Budget()+time.Second)
 	defer cancel()
 
 	ips, err := dns.LookupWithFallback(ctx, routeSetLookup, srv, useSet, strict, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)

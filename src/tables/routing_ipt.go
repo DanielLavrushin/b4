@@ -495,12 +495,17 @@ func (b *routeIptBackend) clearAll() {
 	// Clean up stale b4r_* ipsets
 	if hasBinary("ipset") {
 		out, _ := run("ipset", "list", "-n")
+		var dscpSets []string
 		for _, name := range strings.Split(strings.TrimSpace(out), "\n") {
 			name = strings.TrimSpace(name)
-			if strings.HasPrefix(name, "b4r_") {
+			switch {
+			case strings.HasPrefix(name, "b4r_"):
 				runLogged("routing: flush leftover ipset", "ipset", "flush", name)
 				runLogged("routing: destroy leftover ipset", "ipset", "destroy", name)
+			case strings.HasPrefix(name, dscpIptSetPrefix):
+				dscpSets = append(dscpSets, name)
 			}
 		}
+		dscpIptDestroySets(dscpSets)
 	}
 }

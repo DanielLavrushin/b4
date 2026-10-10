@@ -225,6 +225,61 @@ b4 на отдельной машине с Linux вместо контейнер
 
 RouterOS различает пакеты b4 по интерфейсу, через который они пришли, поэтому этим правилам ничего не нужно от b4 внутри пакетов. Внутренние метки b4, включая метку пакета, не покидают контейнер или машину.
 
+## Маршрутизация трафика сета по значению DSCP {#routing-by-dscp}
+
+Всё, что b4 после обработки отправляет обратно в RouterOS, уходит основным маршрутом, к какому бы сету оно ни относилось. Собственное [значение DSCP](/ru/docs/sets/routing#dscp) сета - поле в этих пакетах, которое RouterOS может прочитать, и по нему RouterOS отправляет трафик этого сета другим маршрутом, например через VPN, а остальной выпускает через WAN. Для маршрутизации трафика в контейнер, описанной выше, ничего подобного не нужно.
+
+Значение сета включает переключатель **Включить DSCP для сета** в разделе **DNS & Маршрутизация → Маршрутизация трафика** редактора сета, здесь это `31`. `wg-vpn` обозначает интерфейс VPN, а `via_vpn` - его таблицу маршрутизации:
+
+```routeros
+/routing table add disabled=no fib name=via_vpn
+/ip route add gateway=wg-vpn routing-table=via_vpn
+
+/ip firewall mangle add chain=prerouting action=mark-connection \
+    new-connection-mark=b4_dscp31 passthrough=yes connection-state=new \
+    connection-mark=no-mark in-interface=bridge-docker \
+    src-address=192.168.210.10 dscp=31
+
+/ip firewall mangle add chain=prerouting action=mark-routing \
+    new-routing-mark=via_vpn passthrough=no connection-mark=b4_dscp31 \
+    in-interface=bridge-docker
+
+/ip firewall mangle add chain=prerouting action=mark-connection \
+    new-connection-mark=b4_other passthrough=yes connection-state=new \
+    connection-mark=no-mark in-interface=bridge-docker src-address=192.168.210.10
+
+/ip firewall mangle add chain=postrouting action=change-dscp new-dscp=0 \
+    out-interface-list=WAN
+
+/ip firewall mangle add chain=postrouting action=change-dscp new-dscp=0 \
+    out-interface=wg-vpn
+
+/ip firewall nat add chain=srcnat action=masquerade out-interface=wg-vpn
+```
+
+| Правило | Что делает |
+| --- | --- |
+| Первое `mark-connection` | Маркирует соединение от b4, первый пакет которого несёт значение. С NAT Masquerade из [шага 8](#шаг-8-nat-masquerade) пересылаемый трафик тоже выходит из контейнера с его адресом. Одно условие `connection-state=new` совпадает и со следующими пакетами до первого ответа, например с повторно отправленным SYN или пакетами QUIC до ответа сервера. С `connection-mark=no-mark` соединение, уже получившее метку `b4_other`, сохраняет её, когда такой пакет несёт значение. Без этого условия RouterOS переводит такое соединение в VPN посередине: он отбрасывает этот пакет, и соединение начинается заново через VPN с адресом `wg-vpn`. Метка действует всё соединение, и соединение, получившее значение позже, остаётся на основном маршруте |
+| `mark-routing` | Направляет маркированные соединения в `via_vpn`. `in-interface=bridge-docker` не пускает под правило ответы сервера, у которых та же метка соединения: без него они уходят обратно в VPN, и соединения не работают |
+| Второе `mark-connection`, `b4_other` | Маркирует остальные соединения b4, и ограничение FastTrack на `no-mark` из [шага 4](#шаг-4-маркировка-трафика) не пускает их в FastTrack. FastTrack пропускает правила `change-dscp`, и соединение, получившее значение после первого пакета, выносило бы его через WAN. Цена в том, что трафик b4 через FastTrack больше не идёт |
+| `change-dscp` на списке `WAN` | Сбрасывает поле перед интернетом |
+| `change-dscp` на `wg-vpn` | Сбрасывает поле перед туннелем. WireGuard в RouterOS копирует во внешний заголовок биты ECN, но не значение DSCP: без этого правила значение доходит до сервера VPN внутри туннеля |
+| `masquerade` на `wg-vpn` | Даёт соединениям адрес интерфейса VPN |
+
+Ограничение FastTrack из шага 4 обязательно: без него маркированные соединения уходят в FastTrack, и их пакеты выходят через основной аплинк с адресом источника VPN и значением.
+
+Если правило accept для `bridge-docker` из раздела [Маршрутизация выбранных адресов через контейнер](#routing-by-destination) стоит в начале mangle prerouting, три правила prerouting пакетов b4 не видят. Их ставят выше него, добавив к каждому (кавычки обязательны):
+
+```routeros
+place-before=[find where action=accept in-interface="bridge-docker"]
+```
+
+Для второго аплинка вместо VPN маршрут в `via_vpn` указывает на шлюз этого аплинка, а последние два правила называют его интерфейс вместо `wg-vpn`. Каждому следующему значению нужно своё правило `mark-connection`. Значению, которое идёт другим путём, нужны ещё своя метка соединения, своё правило `mark-routing`, своя таблица и последние два правила для его интерфейса. Для b4 на отдельной машине её интерфейс и адрес заменяют `bridge-docker` и `192.168.210.10`. `/ip settings rp-filter=strict` отбрасывает ответы, которые возвращаются через VPN; `loose` и значение по умолчанию `no` их пропускают.
+
+В этой схеме устройства разрешают имена через RouterOS, и адреса доменов сета b4 узнаёт только из имён в TLS и QUIC и из собственных запросов. Соединение к адресу, которого он ещё не знает, остаётся на основном маршруте. Значение с первого пакета соединения дают цели IP, GeoIP и ASN, см. [Первое соединение](/ru/docs/sets/routing#dscp-first-connection).
+
+Правила проверены на RouterOS 7.24.5 для IPv4.
+
 ## Решение проблем
 
 **Контейнер не запускается:**

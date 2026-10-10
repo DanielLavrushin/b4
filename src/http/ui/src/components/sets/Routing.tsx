@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { B4Section, B4Tab, B4TabPanel, B4Tabs } from "@b4.elements";
 import { DnsIcon, RoutingIcon } from "@b4.icons";
 import { B4SetConfig } from "@models/config";
+import { DscpEnvironment } from "@utils";
 import { useTranslation } from "react-i18next";
 import { DnsRedirect } from "./routing/DnsRedirect";
 import { TrafficRouting } from "./routing/TrafficRouting";
@@ -23,6 +24,7 @@ interface RoutingSettingsProps {
   availableIfaces: string[];
   tunnelIfaces?: string[];
   encapsulatedIfaces?: string[];
+  dscp: DscpEnvironment;
   onChange: (
     field: string,
     value:
@@ -44,6 +46,7 @@ export const RoutingSettings = ({
   availableIfaces,
   tunnelIfaces,
   encapsulatedIfaces,
+  dscp,
   onChange,
 }: RoutingSettingsProps) => {
   const { t } = useTranslation();
@@ -86,6 +89,7 @@ export const RoutingSettings = ({
           availableIfaces={availableIfaces}
           tunnelIfaces={tunnelIfaces}
           encapsulatedIfaces={encapsulatedIfaces}
+          dscp={dscp}
           onChange={onChange}
         />
       </B4TabPanel>

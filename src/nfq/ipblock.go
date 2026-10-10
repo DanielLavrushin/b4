@@ -126,10 +126,7 @@ func (w *Worker) applyPinnedAnswerAwait(cfg *config.Config, set *config.SetConfi
 		return dnsActionPinEmpty, nil
 	}
 	w.storeHostHints(clientIP, set, domain, ips)
-	var routeWaits []<-chan struct{}
-	if cfg != nil && set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && routingHandleDNSAvailable() {
-		routeWaits = routingHandleDNSAwait(cfg, set, ips)
-	}
+	routeWaits, _ := learnAnswerAwait(cfg, set, ips)
 	log.Infof("DNS pin: answering %s with %s (set: %s)", domain, ips[0], set.Name)
 	return dnsActionPin, routeWaits
 }

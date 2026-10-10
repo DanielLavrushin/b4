@@ -128,6 +128,8 @@ func mcpDeniedPathHint(path string) string {
 		return "changing the web server would move or lock the interface used to undo the change"
 	case strings.HasPrefix(path, "system.tables.dscp"):
 		return "the DSCP stamp is not writable: rules on the next router, which b4 cannot see, act on the value, and a wrong one can send every packet this host sends down another route"
+	case mcpPathUnder(path, mcpSetDSCPPath):
+		return "a set's DSCP value is not writable: rules on the next router, which b4 cannot see, act on the value, and a wrong one can send the set's traffic down another route"
 	case strings.HasPrefix(path, "system.tables"):
 		return "the firewall backend and rule installation are not writable: a wrong value leaves the machine with no rules at all"
 	case strings.HasPrefix(path, "queue.tun") || path == "queue.mode":
@@ -323,9 +325,18 @@ func mcpExpansionNote(e *mcpTargetExpansion) string {
 		e.Domains, addresses, strings.Join(parts, "; "))
 }
 
+const mcpSetDSCPPath = mcpSetPathPrefix + ".dscp"
+
+func mcpPathUnder(path, root string) bool {
+	return path == root || strings.HasPrefix(path, root+".")
+}
+
 func mcpPathAllowed(canonical string) bool {
+	if mcpPathUnder(canonical, mcpSetDSCPPath) {
+		return false
+	}
 	for _, root := range mcpWritableRoots {
-		if canonical == root || strings.HasPrefix(canonical, root+".") {
+		if mcpPathUnder(canonical, root) {
 			return true
 		}
 	}

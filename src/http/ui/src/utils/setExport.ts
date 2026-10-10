@@ -45,6 +45,7 @@ const FEATURE_OFF_RULES: Array<{
   { path: ["fragmentation"], toggle: "strategy", offValue: "none" },
   { path: ["dns"], toggle: "enabled", offValue: false, keep: ["pins"] },
   { path: ["routing"], toggle: "enabled", offValue: false },
+  { path: ["dscp"], toggle: "enabled", offValue: false },
 ];
 
 function resolveObjPath(root: Obj, path: string[]): Obj | undefined {
@@ -109,6 +110,9 @@ export function exportSetJson(config: B4SetConfig): string {
 
   if (isPlainObject(result.targets)) {
     delete result.targets.source_devices;
+  }
+  if ((config.targets.source_devices ?? []).length > 0) {
+    delete result.dscp;
   }
 
   if (isPlainObject(result.discovery)) {

@@ -158,6 +158,8 @@ Routing sets of every mode and [Telegram over WebSocket](../telegram/websocket-b
 
 The filter selects devices on the network, and the router is not one of them. Connections the router opens itself, including the ones the [SOCKS5 proxy](#socks5-proxy) opens for its clients, get DPI bypass in both modes. Block sets act on them, and for TCP so do proxy sets and Telegram over WebSocket sets, unless the set is limited to source interfaces or an included source-device list. Sets in interface mode follow their [Router's own traffic](../sets/routing.md#routers-own-traffic) setting.
 
+While filtering is on and at least one device is selected, in either mode, no set writes its own [DSCP value](../sets/routing.md#dscp): the rules that write it match only the destination address and cannot be limited to the selected devices. **Set DSCP** on the [Firewall](#dscp) sub-tab still applies. While an enabled set has its own value switched on, the card shows this as a note, and as a warning once a device is selected.
+
 ### Available Devices {#device-table}
 
 While filtering is on, the card lists the devices b4 knows, with their source in a chip next to the title:
@@ -258,10 +260,12 @@ In TUN mode masquerading leaves the TUN device out: the TUN engine rewrites the 
 | Field | Description | Default |
 | --- | --- | --- |
 | **Set DSCP** | `system.tables.dscp.enabled`. Writes a DSCP value into the packets this host sends out. Greyed out while **Skip IPTables/NFTables Setup** is on | Off |
-| **DSCP value** | `system.tables.dscp.value`, 0-63. Shown while **Set DSCP** is on. Turning the switch on with the value at `0` fills in `7` | `0` |
-| Interface tags | `system.tables.dscp.interfaces`. Shown while **Set DSCP** is on. The output interfaces whose packets get the value; none selected means every interface except loopback. A saved interface that no longer exists shows as a red tag marked **unavailable** | None |
+| **DSCP value** | `system.tables.dscp.value`, 0-63. Shown while **Set DSCP** is on. Turning the switch on with the value at `0` fills in the first of `7`, `31`, `6` and `25` that no set uses as its own value, or `7` when all four are taken | `0` |
+| Interface tags | `system.tables.dscp.interfaces`. Shown while **Set DSCP** is on or a set writes its own value. The output interfaces whose packets get the **Set DSCP** value and the sets' own values; none selected means every interface except loopback. A saved interface that no longer exists shows as a red tag marked **unavailable** | None |
 
 DSCP is the upper six bits of the IPv4 ToS byte and of the IPv6 Traffic Class byte. With **Set DSCP** on, b4 writes the configured value into that field of every packet the host sends out, and a router in front of b4 can tell b4's traffic apart by a field in the packet itself. The marks b4 uses internally, **Packet Mark** among them, cannot do this: they are kernel metadata of the packet on this host and never appear on the wire.
+
+A set can carry a value of its own, switched on with **Enable per-set DSCP** under **DNS & Routing → Traffic Routing** in the set editor; see [DSCP](../sets/routing.md#dscp). b4 writes it into the packets whose destination address belongs to the set, after the **Set DSCP** value, which it replaces in those packets. The sets' values are written whether or not **Set DSCP** is on; while it is off, every other packet keeps the value its sender wrote. The interface list applies to the **Set DSCP** value and to the sets' values alike. The card lists the enabled sets that write their own value, each as a tag with the set's name and value.
 
 The value is written into:
 
@@ -273,18 +277,20 @@ It is not written into loopback traffic, into the packets b4 itself sends toward
 
 With iptables the rule sits in its own chain `B4_DSCP` in the `mangle` table, jumped from the top of `POSTROUTING` and kept above b4's capture jump there: a packet b4 inspects leaves `mangle POSTROUTING` at that jump, and a rule below it never sees the packet. The DSCP target needs the `xt_DSCP` kernel module, packaged on OpenWrt as `kmod-ipt-ipopt` and `iptables-mod-ipopt`. With nftables the rule sits in its own table `inet b4_dscp` and needs no extra module. With iptables, when the kernel refuses the rule for one address family, b4 logs it once and leaves that family without the value; with nftables, a refused table leaves both families without it. The firewall monitor puts the rule back when another program removes it, in both engine modes.
 
+The rules for the sets' values sit in the same chain or table, after the **Set DSCP** rule, and b4 installs the chain or table while **Set DSCP** is on or a set writes its own value. With iptables these rules also need the `ipset` binary and the `xt_set` kernel module; without them b4 logs a warning and writes no set's value into that address family. With nftables they need nothing extra.
+
 The value is written only while b4 runs with its firewall rules. While b4 is stopped, restarting or running without its packet engine, the host still forwards packets, without the value. A router that uses the value to keep b4's traffic out of a route leading to b4 sends those packets back to b4 meanwhile; a match on the interface or the MAC address does not depend on b4 running.
 
 Every device on the path sees the value until something rewrites it, and some of them act on it. Linux Wi-Fi drivers, and access points that follow the same mapping, choose the WMM queue from it:
 
-- `7`, from the range RFC 2474 leaves for local use, stays in the best-effort queue with traffic that carries no DSCP value;
+- `7`, from the range RFC 2474 leaves for local use, stays in the best-effort queue with traffic that carries no DSCP value, and so do `31`, `6` and `25`;
 - `8` and several other values below `24` go to the background queue;
-- values from `32` up go to the video and voice queues.
+- values from `32` up go to the video and voice queues, and from Linux 6.8 on so do `24`, `26`, `28` and `30`.
 
 `0` clears whatever value the packets carried.
 
 :::warning The value reaches the internet
-The router that reads the value is expected to reset the field on its internet uplink. Without that reset, the ISP sees the value on every connection b4 carries.
+The router that reads the value is expected to reset the field on its internet uplink. Without that reset, the ISP sees the value on every connection b4 carries, and a set's own value marks out that set's connections. A reset rule misses the packets that a fast path, such as RouterOS FastTrack, an nftables flowtable or hardware NAT, carries past it.
 :::
 
 :::info Flow offloading
@@ -292,7 +298,7 @@ Flows that the kernel or the hardware offloads (an nftables flowtable, `FLOWOFFL
 :::
 
 :::info RouterOS
-RouterOS tells the packets of a b4 container, or of a b4 machine with a subnet of its own, apart by the interface they arrive on, and routing through b4 there needs no DSCP value. See [Routing chosen destinations through the container](../install/mikrotik.md#routing-by-destination).
+RouterOS tells the packets of a b4 container, or of a b4 machine with a subnet of its own, apart by the interface they arrive on, and routing through b4 there needs no DSCP value. See [Routing chosen destinations through the container](../install/mikrotik.md#routing-by-destination). Routing one set's traffic onward by the set's own value is described under [Routing a set's traffic by its DSCP value](../install/mikrotik.md#routing-by-dscp).
 :::
 
 ## DNS {#dns}

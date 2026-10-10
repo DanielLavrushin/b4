@@ -22,6 +22,7 @@ import {
   copyText,
   exportSetJson,
   isPlainObject,
+  keepLocalDscp,
   mergeHubLink,
   sanitizeProbeUrls,
 } from "@utils";
@@ -87,11 +88,13 @@ function collectPayloadRefs(cfg: B4SetConfig): string[] {
 
 interface ImportExportSettingsProps {
   config: B4SetConfig;
+  deviceFilter: boolean;
   onImport: (importedConfig: B4SetConfig) => void;
 }
 
 export const ImportExportSettings = ({
   config,
+  deviceFilter,
   onImport,
 }: ImportExportSettingsProps) => {
   const { t } = useTranslation();
@@ -201,18 +204,24 @@ export const ImportExportSettings = ({
     try {
       const result = await hubApi.importEnvelope(raw);
       const link = mergeHubLink(config.hub, result.set.hub, true);
+      const local = keepLocalDscp(config, deviceFilter);
       const parsed = {
         ...result.set,
         id: config.id,
         enabled: config.enabled,
         hub: link.hub,
         discovery: config.discovery ?? result.set.discovery,
+        dscp: local.dscp ?? result.set.dscp,
         revision: config.revision,
       };
       onImport(parsed);
       await loadCaptures();
       setImportedPayloadRefs(collectPayloadRefs(parsed));
-      setImportWarnings([...(result.warnings ?? []), ...link.warnings]);
+      setImportWarnings([
+        ...(result.warnings ?? []),
+        ...link.warnings,
+        ...local.warnings,
+      ]);
       setEnvelopeImported(true);
       setImportSuccess(true);
     } catch (e) {

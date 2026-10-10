@@ -134,11 +134,21 @@ Each set is one object in the `sets` array, carrying its whole configuration. It
 - `udp` - the QUIC filter, the port filter and the UDP action mode
 - `dns` - the set's resolver, DoH URL and pins
 - `routing` - routing mode, output interface, upstream proxy or blocking
+- `dscp` - the set's own DSCP value
 - `escalate` - which set to escalate to when this one stops working
 
 :::tip Import and export
-The set editor has an **Import/Export** tab for moving a set between devices. It shows the set as JSON and takes a pasted one back. The exported JSON leaves out values equal to the defaults, the settings of switched-off features, the set's id, its source devices, its watchdog switch and its escalation settings.
+The set editor has an **Import/Export** tab for moving a set between devices. It shows the set as JSON and takes a pasted one back. The exported JSON leaves out values equal to the defaults, the settings of switched-off features, the set's id, its source devices, its watchdog switch and its escalation settings, and, when the set has source devices, its `dscp`.
 :::
+
+### A set's `dscp` {#set-dscp}
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `dscp.enabled` | **Enable per-set DSCP**: write the set's own value into the packets to the set's addresses, see [DSCP](../sets/routing.md#dscp) | `false` |
+| `dscp.value` | The value written into the DSCP field, 0-63; `0` clears the field | `0` |
+
+Each key is stored only while it differs from its default: a set with the switch on and the value `0` is saved as `"dscp": {"enabled": true}`, and a value kept with the switch off as `"dscp": {"value": 12}`. While `dscp.enabled` is `true`, a `dscp.value` outside 0-63 is refused, not clamped: the web interface refuses the save, and a file that holds one stops b4 at start. While it is `false`, the value is not checked. A set whose routing mode or settings keep b4 from writing the value, such as a block set, still passes the check and keeps both keys. Neither key is writable over MCP or carried in a [shared set](../sets/sharing.md).
 
 ## Editing it by hand
 

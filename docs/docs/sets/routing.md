@@ -542,3 +542,253 @@ Note that this affects **every** address in the set, on every TCP port - includi
 :::warning
 If a client resolves through DNS-over-HTTPS or DNS-over-TLS, b4 never sees its DNS queries, and the set fills only from pre-resolution and from domains observed in TLS handshakes. Turn encrypted DNS off on the client, or add the domains to the set so they are pre-resolved.
 :::
+
+---
+
+## DSCP {#dscp}
+
+A set can write a DSCP value of its own into the packets this host sends to the set's addresses. DSCP is a six-bit field of the IP header, and unlike b4's marks it leaves the host with the packet. By it, the router in front of b4 tells the set's traffic apart and sends it, after b4 has processed it, through a route of its own, such as a VPN or a second uplink. b4 itself does not route by the value.
+
+```mermaid
+flowchart LR
+    D["Device"] --> B["b4<br/>DSCP 31 in the packets<br/>to the set's addresses"]
+    B --> R{"Router in front of b4:<br/>does the first packet of<br/>the connection carry 31?"}
+    R -->|"Yes"| V["VPN or second uplink<br/>DSCP reset to 0"]
+    R -->|"No"| M["Main uplink<br/>DSCP reset to 0"]
+
+    style D fill:#4a9eff,color:#fff,stroke:none
+    style B fill:#e91e63,color:#fff,stroke:none
+    style R fill:#ff9800,color:#fff,stroke:none
+    style V fill:#9c27b0,color:#fff,stroke:none
+    style M fill:#4caf50,color:#fff,stroke:none
+```
+
+The value is written by the rules of [Set DSCP](../settings/core.md#dscp) under **Settings, Core, Firewall**, after the **Set DSCP** value, which it replaces in the packets to the set's addresses. It is written whether or not **Set DSCP** is on. While **Set DSCP** is off, every other packet keeps the value its sender wrote. The packets **Set DSCP** leaves alone keep their value here too: loopback traffic, the packets b4 sends toward LAN clients, and packets in the reply direction of their connection. The interface list of **Set DSCP** limits the sets' values in the same way, also while **Set DSCP** is off.
+
+### Fields {#dscp-settings}
+
+The **DSCP** block closes **DNS & Routing → Traffic Routing** in the set editor. It is shown whether or not **Enable Routing** is on.
+
+| Field | Config field | Description | Default |
+| --- | --- | --- | --- |
+| **Enable per-set DSCP** | `dscp.enabled` | Writes the set's value into the packets sent to the set's addresses. Turning it on with the value at `0` fills in the first of `7`, `31`, `6` and `25` that is neither another set's value nor the **Set DSCP** value; when other sets hold all four, the first that differs from the **Set DSCP** value | Off |
+| **DSCP value** | `dscp.value` | 0-63, shown while the switch is on. `0` clears the field. See [Choosing the value](#dscp-values) | `0` |
+
+When the value cannot be applied, the block names the reason, and the switch cannot be turned on while it holds. The block also warns when **Set DSCP** is on with the same value: the router in front of b4 then has nothing to tell the set's traffic apart by. In the configuration file the block is the set's [`dscp`](../advanced/config.md#set-dscp).
+
+The value stays on this router. A [shared set](./sharing.md#what-leaves-the-router) never carries it, a set updated from the hub keeps its own, and MCP cannot change it, see [Changing settings](../settings/mcp.md#changing-settings).
+
+### Which packets get the value {#dscp-addresses}
+
+The value is chosen by the destination address alone. A packet to one of the set's addresses gets it whatever its protocol and port, and whichever set b4 picked for the connection's strategy. The set's port filters and **TLS Version Filter** do not narrow it, and an address that a CDN shares between several sites carries the value for all of them.
+
+| Addresses | Where they come from | Lifetime |
+| --- | --- | --- |
+| Static | The set's IP and CIDR targets, GeoIP categories and ASNs | As long as the set lists them |
+| Learned from DNS | The answers b4 sees for the set's domains, over UDP and TCP: forwarded to a device, answered from a pin, or resolved through the set's DNS redirect | The set's [IP TTL](#ip-ttl-entry-lifetime) while its routing is on, otherwise 1 hour |
+| Learned from escalation | The addresses of a host that [escalation](./escalation.md) hands over to the set | As for DNS |
+| Learned from TLS and QUIC | The destination of a connection whose TLS ClientHello or QUIC Initial matches the set by name | 10 minutes |
+| b4's own lookups | The first 256 entries of the set's domain list that are not `regexp:` entries; GeoSite categories are not looked up. b4 looks them up when the set starts writing its value or its domains or resolver settings change, then every half lifetime, at least 5 minutes apart, through the set's resolver when its DNS redirect has one ([Lookups b4 makes itself](../dns.md#lookups-b4-makes-itself)) | As for DNS |
+
+A learned address seen again gets a fresh lifetime once less than half of it is left, or at once when b4's own lookup finds it; a shorter lifetime never cuts a longer one.
+
+These target settings narrow the addresses:
+
+- **IP Version Filter** (`targets.ip_version`) at `4` or `6` leaves out the addresses of the other family, static and learned alike.
+- **Domain-only matching** (`targets.domain_only`) turns learning off: only the set's IP, CIDR, GeoIP and ASN targets get the value.
+
+Where the addresses of several sets overlap, one value applies:
+
+1. An address learned for a set takes precedence over every static range, of its own set and of the others.
+2. Among static ranges, the longest prefix wins: a `/32` listed in one set inside a `/16` of another gets the value of the `/32`.
+3. When several sets list the same prefix, or learned the same address, the set higher in the set list wins.
+
+Only sets whose value is applied take part. A narrower target in a set without a value of its own does not take an address out of a wider range of a set with one.
+
+### The first connection {#dscp-first-connection}
+
+A packet to an address that b4 has not written for the set yet leaves without the set's value. Static targets are written as soon as the configuration is applied. The address of a domain has to be learned before the connection starts:
+
+| How b4 learns the address | The connection that follows |
+| --- | --- |
+| A forwarded or pinned answer over UDP, NFQUEUE engine | Carries the value from its first packet. b4 holds the answer until the address is written, at most 250 ms, as it does for [routing](#how-it-works-in-detail) |
+| An answer from the set's DNS redirect, and any answer over TCP | Carries the value from its first packet. The address is written before the answer goes out, within the same 250 ms |
+| A forwarded or pinned answer over UDP, TUN engine | Can start without the value: the answer is not held |
+| The connection's own TLS ClientHello or QUIC Initial | Starts without the value and carries it once b4 has written the address. Later connections to the address carry it from their first packet |
+| b4's own lookup | Carries the value from its first packet when the device got the same address. A CDN can answer the device with another one |
+
+Where the devices' DNS does not pass through b4, b4 learns the addresses of a set's domains only from TLS and QUIC names and from its own lookups. That is the case with b4 running as a [container on MikroTik](../install/mikrotik.md), where the devices resolve through RouterOS, and for devices that resolve over DoH, DoT or DoQ themselves (see [What b4 intercepts](../dns.md#what-b4-intercepts)). There, IP, CIDR, GeoIP and ASN targets are what gives a connection the value from its first packet.
+
+### Routing mode and scope {#dscp-modes}
+
+| Set | Value written | Reason in System Info |
+| --- | --- | --- |
+| Routing off | Yes | - |
+| **Output interface** | Yes, into the set's packets that leave through an interface the interface list covers. Through a tunnel, such as WireGuard, the router in front of b4 sees only the tunnel's own packets, which usually do not carry the value: WireGuard writes 0 into their DSCP field | - |
+| **Upstream SOCKS5 proxy** | No. The set's traffic leaves as b4's own connections to the proxy, which the firewall cannot tie to the set | `routing_proxy` |
+| **Telegram over WebSocket (built-in)** | No. The set's traffic leaves over shared WebSocket connections, which the firewall cannot tie to the set | `routing_mtproto_ws` |
+| **Block** | No. The set's packets never leave the router | `routing_block` |
+| Any [source device](./targets.md#source-devices) listed, included or excluded | No. The firewall stage that writes the value cannot see which device a packet came from | `source_devices` |
+| Routing limited to **Source Interfaces** | No. That stage cannot see the interface a packet came in on | `source_interfaces` |
+| [Device Filtering](../settings/core.md#device-filtering) on with a device selected | No, for every set | `device_filter` |
+| No domain, IP, GeoIP or ASN target, or **Domain-only matching** with no IP, GeoIP or ASN target | No. There is no address to write the value for | `no_addresses` |
+
+With **Skip IPTables/NFTables Setup** on, b4 installs no firewall rules, and no set writes its value.
+
+The rest of what the host sends gets the value by destination as well:
+
+- connections the router opens itself, b4's own among them, and the connections b4's [SOCKS5 proxy](../settings/core.md#socks5-proxy) opens directly for its clients. [Router's own traffic](#routers-own-traffic) has no effect on the value;
+- the fakes, fragments and segments b4 injects for the DPI bypass, which go to the same address as the real packets of their connection and carry the same value.
+
+The set's own DNS traffic gets a value by its destination too: b4's queries to the set's resolver, plain DNS or DoH, carry a value only when some set lists the resolver's address, and then every query to that resolver carries it, those of the devices included.
+
+### Reading the value on the next router {#dscp-reader}
+
+The router in front of b4 that routes by the value has to:
+
+1. **Decide on the first packet of a connection and keep the decision.** The router marks the connection when the packet that opens it carries the value, and routes every later packet of the connection by that mark. Routing each packet by its own DSCP field moves a connection between routes when the value appears or disappears in the middle of it, as it does when b4 learns an address from the connection's own ClientHello or an address expires. Behind NAT, a connection that changes its route changes its source address and breaks. A connection that started without the value stays on the main route for its whole life, and one that started with it stays on the second route.
+2. **Compare the whole field.** nftables `ip dscp` and RouterOS `dscp=` compare all six bits. For IPv4, the `tos` selector of `ip rule` compares only some of them: to it, `7`, `15`, `31` and `63` look the same.
+3. **Reset the field on the internet uplink and on the tunnel.** Without the reset the ISP, or the server at the other end of the tunnel, sees the value on every connection of the set. A reset rule in the forwarding path misses the packets that FastTrack, an nftables flowtable or hardware NAT carries past it.
+4. **Keep other devices from choosing the route.** While **Set DSCP** is off, a packet that goes to no set's address keeps the value its sender wrote, and a device that writes a set's value into its own packets is routed like that set. A check that the packet comes from b4, by its address or MAC address, keeps out the devices that reach the router directly. It does not keep out the devices whose traffic passes through b4: that traffic arrives from b4 as well. **Set DSCP** on, which writes its own value into all of it, does.
+5. **Let in the replies of the second route.** Strict reverse-path filtering, Linux `rp_filter` `1` or RouterOS `rp-filter=strict`, drops the replies that come back through the second uplink.
+
+While b4 is stopped or restarting, new connections carry no value and take the main route.
+
+#### Linux with nftables {#dscp-reader-nftables}
+
+A Linux router reads the value with one nftables table. In the example the router reaches b4 through `br-lan`, its main uplink is `wan`, the second route is the uplink `wanb`, b4 has the addresses `192.168.50.2` and `fd50::2`, and the set's value is `31`. The table goes into a file of its own, such as `/etc/dscp_route.nft`, and `nft -f /etc/dscp_route.nft` loads it; loading the file again replaces the table instead of adding a copy.
+
+```text
+table inet dscp_route
+delete table inet dscp_route
+table inet dscp_route {
+    chain prerouting {
+        type filter hook prerouting priority mangle; policy accept;
+        iifname "br-lan" ip saddr 192.168.50.2 ct state new ct status & confirmed == 0 ip dscp 31 ct mark set ct mark | 0x01000000
+        iifname "br-lan" ip6 saddr { fd50::2, fd10::/64 } ct state new ct status & confirmed == 0 ip6 dscp 31 ct mark set ct mark | 0x01000000
+        iifname "br-lan" ct mark & 0x01000000 == 0x01000000 meta mark set meta mark | 0x01000000
+    }
+    chain postrouting {
+        type filter hook postrouting priority mangle; policy accept;
+        oifname { "wan", "wanb" } ip dscp != 0 ip dscp set 0
+        oifname { "wan", "wanb" } ip6 dscp != 0 ip6 dscp set 0
+    }
+    chain srcnat {
+        type nat hook postrouting priority srcnat; policy accept;
+        oifname { "wan", "wanb" } masquerade
+    }
+}
+```
+
+The marked connections take routing table `100`, whose default route leads out of `wanb`:
+
+```sh
+ip rule add fwmark 0x1000000/0x1000000 iif br-lan lookup 100 priority 1000
+ip route add default via 100.64.2.1 dev wanb table 100
+ip -6 rule add fwmark 0x1000000/0x1000000 iif br-lan lookup 100 priority 1000
+ip -6 route add default via 2001:db8:b::1 dev wanb table 100
+```
+
+The `ip` applet of busybox 1.37 takes the same lines. Neither the table nor these commands outlive a reboot by themselves; they belong in the router's startup scripts.
+
+| In the example | Stands for |
+| --- | --- |
+| `br-lan` | The kernel device name of the router's interface toward b4. `iifname` and `ip rule iif` take device names, not OpenWrt's interface names |
+| `192.168.50.2` | b4's IPv4 address on that segment, best fixed with a static lease. Forwarded IPv4 traffic carries it only while **Enable NAT Masquerade** is on in b4 (see [NAT Masquerade](../settings/core.md#nat-masquerade)); without masquerading, the subnet behind b4 joins it: `ip saddr { 192.168.50.2, <subnet> }` |
+| `fd50::2`, `fd10::/64` | b4's own IPv6 address and the IPv6 prefix of the devices whose traffic passes through b4. Without b4's own address, b4's own IPv6 connections stay on the main route. The line is left out when no IPv6 passes through b4 |
+| `31` | The set's value. Every further value needs a pair of marking lines of its own |
+| `0x01000000` | A bit of the connection mark and the packet mark that nothing else on the router uses, the same in the marking lines, the restore line and both `ip rule` lines. A further route takes another bit and another table |
+| `wan`, `wanb` | The main uplink and the second uplink |
+| `100`, `1000` | The table of the second uplink, and a free rule priority below the main table's `32766` and ahead of other policy routing rules |
+| `100.64.2.1`, `2001:db8:b::1` | The gateways of the second uplink |
+| Chain `srcnat` | Masquerading on both uplinks, which the router's own firewall may already do |
+
+The kernel's reverse-path filter, `rp_filter`, covers IPv4 only. At `1`, strict, the router drops the replies that arrive through `wanb`, and the IPv4 connections routed there fail; at `2`, loose, or at `0` the replies arrive. The kernel applies the larger of `net.ipv4.conf.all.rp_filter` and the interface's own value, here `net.ipv4.conf.wanb.rp_filter`.
+
+What the lines do:
+
+- `ct state new ct status & confirmed == 0` matches only the packet that creates the connection's entry. `ct state new` alone also matches the packets that follow it until the first reply, such as a SYN sent again or QUIC packets sent before the server answers, and moves such a connection to `wanb` in the middle: with masquerading a packet is dropped and the connection starts over, with SNAT it fails. nft 1.0.2 and later list the condition back as `ct status ! confirmed`, which nft 0.9.8 does not accept as input.
+- `ct mark set ct mark | 0x01000000` and `meta mark set meta mark | 0x01000000` change only their bit. Programs that change only their own bits of the connection mark coexist with the table; a program that overwrites the whole connection mark breaks the routing.
+- The restore line marks only packets arriving from `br-lan`: the replies coming back through `wanb` follow the main table back toward b4.
+- `ip dscp != 0 ip dscp set 0` clears the field on both uplinks and keeps the two ECN bits. It clears every value, including the ones LAN devices write for their own traffic.
+
+With b4 on the same Ethernet segment as the router, its MAC address can take the place of its addresses. The check then covers b4's own and forwarded traffic of both families, with NAT Masquerade on or off. The first two lines of `prerouting` become:
+
+```text
+iifname "br-lan" ether saddr 02:00:00:00:00:b4 ct state new ct status & confirmed == 0 ip dscp 31 ct mark set ct mark | 0x01000000
+iifname "br-lan" ether saddr 02:00:00:00:00:b4 ct state new ct status & confirmed == 0 ip6 dscp 31 ct mark set ct mark | 0x01000000
+```
+
+Once an nftables flowtable, such as OpenWrt's software flow offloading, takes over a connection, its packets skip the reset in `postrouting` and leave with the value. With offloading on, two more rules and a table that resets the field on the way out of the uplinks are needed:
+
+```sh
+ip rule add oif wanb lookup 100 priority 1001
+ip -6 rule add oif wanb lookup 100 priority 1001
+```
+
+```text
+table netdev dscp_wash
+delete table netdev dscp_wash
+table netdev dscp_wash {
+    chain egress {
+        type filter hook egress devices = { "wan", "wanb" } priority 0; policy accept;
+        ip dscp != 0 ip dscp set 0
+        ip6 dscp != 0 ip6 dscp set 0
+    }
+}
+```
+
+The `egress` hook needs Linux 5.16 or later; nft 1.0.2 and later load the table, nft 0.9.8 does not. Instead of the table, cake with `wash` on both uplinks resets the field: `tc qdisc add dev wan root cake wash`, and the same for `wanb`. Without the `oif` rules, every UDP flow through `wanb` loses a datagram when it is offloaded. Without `iif br-lan` in the `fwmark` rules, offloaded IPv6 replies are sent back out through `wanb`, and the IPv6 connections routed there fail.
+
+:::note Fakes with a broken checksum
+With `net.netfilter.nf_conntrack_checksum` at its kernel default `1`, the router does not tie packets with a broken TCP checksum, the fakes of the **TCP Check** fake strategy among them, to their connection. Such fakes of a connection on the second route get no mark and no NAT, and leave through the main uplink with b4's own address. OpenWrt sets the value to `0`, and with `0` they follow their connection.
+:::
+
+:::info
+The tables and the `ip` lines above were tested on Linux 7.0 with nft 0.9.8, 1.0.2, 1.0.6 and 1.1.6, outside OpenWrt's firewall4 and without hardware flow offloading.
+:::
+
+#### RouterOS {#dscp-reader-routeros}
+
+RouterOS reads the value with mangle rules. [Routing a set's traffic by its DSCP value](../install/mikrotik.md#routing-by-dscp) gives them with the names of the container setup.
+
+### Choosing the value {#dscp-values}
+
+`7` and `31` come first, then `6` and `25`. These four keep normal priority in Linux Wi-Fi, cake and pfifo_fast. `0` clears the field. Other values can put the packets in another queue:
+
+| Values | Queue they can land in |
+| --- | --- |
+| `1` | The lowest priority |
+| `2`-`5`, `27`, `29` | Another queue of cake or pfifo_fast |
+| `8`-`23` | Wi-Fi background |
+| `24`, `26`, `28`, `30`, `32`-`63` | Wi-Fi video and voice |
+
+pfSense cannot match `7`, `31`, `6` or `25`; of the classes it offers, AF11-AF13 (`10`, `12`, `14`) disturb traffic least. OPNsense matches any value. Sets meant for different routes need different values.
+
+### Firewall rules and cost {#dscp-firewall}
+
+The sets' rules sit after the **Set DSCP** rule, in its chain `B4_DSCP` with iptables or its table `inet b4_dscp` with nftables, which b4 installs while **Set DSCP** is on or an enabled set writes its own value.
+
+| Backend | What the sets add | Needs |
+| --- | --- | --- |
+| iptables | A rule that ends the chain for a packet to none of the sets' addresses, then one rule per value and one per set that learns addresses. The addresses are kept in the ipsets `b4d_u_v4`, `b4d_ul_v4`, `b4d_s<value>_v4` and `b4d_l_<set>_v4`, and their `_v6` pairs | The `ipset` command and the `xt_set` kernel module. Without them b4 logs a warning, and that address family gets only the **Set DSCP** value |
+| nftables | The maps `s4_<n>` and `s6_<n>`, a chain `v<value>` for each value, and the sets `l_<set>_4` and `l_<set>_6` of the addresses each set learned | Nothing beyond **Set DSCP** |
+
+`<set>` is derived from the set's id. [Checking marks on the router](../guides/marks.md#checking-marks-on-the-router) shows the commands that list these objects and what each of them holds. With **Skip IPTables/NFTables Setup** on, none of them is installed.
+
+Every packet the host sends out, apart from the ones left alone at the top of the chain, costs extra lookups:
+
+- with nftables, one in the map of static ranges and one in the learned set of each set that learns addresses;
+- with iptables, up to two, in `b4d_u_v4` and `b4d_ul_v4` or their `_v6` pair; a packet to a set's address then one per distinct value and one per set that learns addresses.
+
+:::info DSCP in System Info
+The rules listed under **Firewall** in the **System Diagnostics** dialog, which [System Info](../settings/system.md#system-info) opens, include a `Per-set DSCP` group while an enabled set has its own value switched on. It has a line for each such set, a line for each iptables binary that cannot use ipsets, and a last line that names the backend the rules are installed with, or says that no rule is installed:
+
+```text
+"Video" (0c5d7e4a-2b1f-4c3d-9e8f-1a2b3c4d5e6f): DSCP 31, applied, 0 static entries, learned addresses written: 412 from DNS answers, 9 from TLS/QUIC names, 37 from lookups
+"Ads" (5b8e2f10-7c4a-4e9d-8a1b-3c2d4e5f6a7b): DSCP 7, refused: routing_block
+installed with nftables
+```
+
+`refused` names the reason from [Routing mode and scope](#dscp-modes). `not applied` in place of `applied` means the set's rules are not in place, for example with iptables and no `ipset` command.
+:::

@@ -63,6 +63,7 @@ var disabledBlockRules = []blockRule{
 	{path: "fragmentation", toggle: "strategy", off: "none"},
 	{path: "dns", toggle: "enabled", off: false, keep: []string{"pins"}},
 	{path: "routing", toggle: "enabled", off: false},
+	{path: "dscp", toggle: "enabled", off: false},
 }
 
 func resetDisabledBlocks(m, def map[string]interface{}) {
