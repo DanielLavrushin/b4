@@ -3,6 +3,7 @@
 ## [1.86.0] - 2026-10-09
 
 - ADDED: **The Discovery page shows a run started through the MCP server or by the watchdog while the page is open, and its history marks such runs** - the run appears within five seconds, the history refreshes when it ends, and its history rows read "via MCP" or "via watchdog" under the time of the run.
+- ADDED: **Copy JSON in Discovery's Apply as a set dialog copies the proposed set without creating it** - in the format of the set editor's Import/Export tab, where it can be imported on another device.
 - ADDED: **System Info shows the version of each tool it lists, such as iptables, nft, ipset, curl and wget, next to the tool's name** - the version is what the tool itself reports, or the BusyBox version for a tool that is part of BusyBox, and Copy JSON and MCP `b4_diagnostics` include it as `version`.
 - CHANGED: **A device on the dashboard's Blocked panel shows its IP address under its name, with the MAC address on hover** - the MAC address used to take that line.
 - CHANGED: **The dashboard arranges its panels in rows that always fill the full width, each panel as tall as the tallest one in its row, where panels used to be packed into free spots, which left holes and moved them sideways as lists grew** - in Customize, the border between two panels and the minus and plus buttons move width between neighbours, a panel dropped on another joins its row, one dropped between rows gets a row of its own, and the row button splits or joins rows.

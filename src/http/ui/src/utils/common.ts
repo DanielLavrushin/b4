@@ -1,6 +1,10 @@
 import type { DeviceInfo } from "@models/devices";
 import { getAuthToken } from "@context/AuthProvider";
 
+export function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
 export function wsUrl(path: string): string {
   const protocol = location.protocol === "https:" ? "wss://" : "ws://";
   const token = getAuthToken();

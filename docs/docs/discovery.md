@@ -152,6 +152,8 @@ The suggested name is the site without its prefix and its top-level domain, `ins
 
 The created set goes to the top of the list and is enabled at once. Its targets are the sites named, plus any geosite or geoip category b4 associates with them through its built-in CDN table, when the corresponding database is installed. The addresses learned during the run are not carried over, so the set matches by server name. A DNS redirect is included only for a site whose resolver was found to be lying, and a [pin](./dns#pinned-addresses) for a site that needed an alternative address, for a name given under **Pinned addresses**, and for a site whose resolver lies when no resolver a set can use returns its address. The check addresses of the sites the set is created for become its [Discovery addresses](./sets/discovery), so the set can be searched again, or watched, on the same pages.
 
+**Copy JSON** copies this set without creating it, in the JSON format of the set editor's [Import/Export](./sets/index.md#import-and-export) tab, whichever of the three choices is selected. The name in it is the suggested one unless **Set name** was changed.
+
 :::tip
 A history entry keeps the set the run built and the sets of the strategies that also worked, so a result can be applied, and another strategy tried in its place, without running Discovery again. The confirmation state travels with it.
 :::
