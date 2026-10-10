@@ -643,9 +643,10 @@ func dscpLearnStats() map[string]dscpLearnCount {
 }
 
 type dscpPreRun struct {
-	domains string
-	last    time.Time
-	running bool
+	domains  string
+	resolver string
+	last     time.Time
+	running  bool
 }
 
 var (
@@ -693,9 +694,20 @@ func dscpPreResolveInterval(member dscpPlanSet) time.Duration {
 	return max(member.dnsTTL/2, dscpPreResolveEvery)
 }
 
-func dscpPreResolve(plan *dscpPlan, _ bool) {
+func dscpPreResolverKey(cfg *config.Config, set *config.SetConfig) string {
+	d := set.DNS
+	return fmt.Sprintf("%t %q %q %t %t %t", d.Enabled, d.TargetDNS, d.DoHURL, d.Strict, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+}
+
+func dscpPreResolve(plan *dscpPlan, cfg *config.Config, _ bool) {
 	st := dscpApplied.Load()
-	if plan.empty() || st == nil || st.plan != plan || st.cfg == nil {
+	if plan.empty() || st == nil || st.plan != plan {
+		return
+	}
+	if cfg == nil {
+		cfg = st.cfg
+	}
+	if cfg == nil {
 		return
 	}
 	view := dscpLearnCur.Load()
@@ -713,26 +725,26 @@ func dscpPreResolve(plan *dscpPlan, _ bool) {
 		if _, ok := view.target(member.id); !ok {
 			continue
 		}
-		set := st.cfg.GetSetById(member.id)
+		set := cfg.GetSetById(member.id)
 		if set == nil {
 			continue
 		}
 		listed[member.id] = true
-		key := strings.Join(member.domains, "\n")
+		key, resolver := strings.Join(member.domains, "\n"), dscpPreResolverKey(cfg, set)
 		run := dscpPreRuns[member.id]
 		if run == nil {
 			run = &dscpPreRun{}
 			dscpPreRuns[member.id] = run
 		}
-		if run.running || (run.domains == key && now.Sub(run.last) < dscpPreResolveInterval(member)-dscpSyncTick/2) {
+		if run.running || (run.domains == key && run.resolver == resolver && now.Sub(run.last) < dscpPreResolveInterval(member)-dscpSyncTick/2) {
 			continue
 		}
 		if run.domains != key && len(member.domains) == dscpPreResolveCap && len(set.Targets.SNIDomains) > dscpPreResolveCap {
 			log.Infof("DSCP stamp: set %s lists more than %d domains, so b4 looks up only the first %d in advance and learns the addresses of the others from DNS answers and TLS names", set.Name, dscpPreResolveCap, dscpPreResolveCap)
 		}
-		run.domains, run.last, run.running = key, now, true
+		run.domains, run.resolver, run.last, run.running = key, resolver, now, true
 		dscpPreWG.Add(1)
-		go dscpPreResolveSet(dscpPreCtx, st.cfg, set, member.domains)
+		go dscpPreResolveSet(dscpPreCtx, cfg, set, member.domains)
 	}
 	for id, run := range dscpPreRuns {
 		if !listed[id] && !run.running {

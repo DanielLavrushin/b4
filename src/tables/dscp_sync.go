@@ -80,7 +80,7 @@ func dscpSyncPass(cfg *config.Config, periodic bool, stop <-chan struct{}) {
 	plan := dscpSyncLocked(cfg, periodic, stop)
 	rulesMu.Unlock()
 	if plan != nil {
-		dscpPreResolveFn(plan, periodic)
+		dscpPreResolveFn(plan, cfg, periodic)
 	}
 }
 

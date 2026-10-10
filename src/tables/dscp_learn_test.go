@@ -1129,7 +1129,7 @@ func (l *dscpPreLookups) runs() map[string]int {
 }
 
 func dscpPreTrigger() {
-	dscpPreResolve(dscpApplied.Load().plan, true)
+	dscpPreResolve(dscpApplied.Load().plan, nil, true)
 	dscpPreWG.Wait()
 }
 
@@ -1219,16 +1219,16 @@ func TestSetDSCPPreResolveSingleFlight(t *testing.T) {
 	release := make(chan struct{})
 	l.block["a1.example"] = release
 
-	dscpPreResolve(dscpApplied.Load().plan, false)
+	dscpPreResolve(dscpApplied.Load().plan, nil, false)
 	select {
 	case <-l.began:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the pre-resolve of set a never started")
 	}
-	dscpPreResolve(dscpApplied.Load().plan, true)
+	dscpPreResolve(dscpApplied.Load().plan, nil, true)
 	grown := dscpPreDomainSet("a", 31, "a1.example", "a2.example", "a3.example")
 	dscpLearnApply(t, dscpIptTestConfig(7, true, nil, grown, b), backendIPTables)
-	dscpPreResolve(dscpApplied.Load().plan, false)
+	dscpPreResolve(dscpApplied.Load().plan, nil, false)
 	if n := l.count("a1.example"); n != 1 {
 		t.Errorf("set a was looked up %d times while its first run was still going", n)
 	}
@@ -1244,6 +1244,55 @@ func TestSetDSCPPreResolveSingleFlight(t *testing.T) {
 	}
 }
 
+func TestSetDSCPPreResolveFollowsTheSetsResolver(t *testing.T) {
+	dscpLearnIptSetup(t, backendIPTables)
+	build := func(redirect string, ipv6 bool) *config.Config {
+		set := dscpPreDomainSet("a", 31, "a1.example")
+		set.DNS.Enabled, set.DNS.TargetDNS = redirect != "", redirect
+		cfg := dscpIptTestConfig(7, true, nil, set)
+		cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled = true, ipv6
+		return cfg
+	}
+	first := build("", false)
+	dscpLearnApply(t, first, backendIPTables)
+	dscpLearnManualQueue(t, dscpLearnQueueSize)
+	dscpPreResolveStart()
+	var mu sync.Mutex
+	var used []string
+	dscpPreLookup = func(_ context.Context, cfg *config.Config, set *config.SetConfig, host string) []net.IP {
+		mu.Lock()
+		defer mu.Unlock()
+		used = append(used, fmt.Sprintf("%s via %q ipv6=%t", host, set.DNS.TargetDNS, cfg.Queue.IPv6Enabled))
+		return []net.IP{net.IPv4(198, 18, 0, byte(len(used)))}
+	}
+	plan := dscpApplied.Load().plan
+	pass := func(cfg *config.Config) {
+		dscpPreResolve(plan, cfg, false)
+		dscpPreWG.Wait()
+	}
+
+	pass(nil)
+	pass(first)
+	redirected, dual := build("1.1.1.1", false), build("1.1.1.1", true)
+	for _, cfg := range []*config.Config{redirected, dual} {
+		if !dscpPlanFor(cfg).equal(plan) {
+			t.Fatal("the set's resolver and the address families are not part of the DSCP plan, so changing them must not re-apply the rules")
+		}
+	}
+	pass(redirected)
+	pass(redirected)
+	pass(dual)
+
+	want := []string{
+		`a1.example via "" ipv6=false`,
+		`a1.example via "1.1.1.1" ipv6=false`,
+		`a1.example via "1.1.1.1" ipv6=true`,
+	}
+	if !slices.Equal(used, want) {
+		t.Errorf("lookups %q, want %q: a changed resolver or address family must be used at once, and an unchanged one must wait for the interval", used, want)
+	}
+}
+
 func TestSetDSCPPreResolveStopCancelsALookupInFlight(t *testing.T) {
 	dscpLearnIptSetup(t, backendIPTables)
 	set := dscpPreDomainSet("a", 31, "a1.example", "a2.example")
@@ -1255,7 +1304,7 @@ func TestSetDSCPPreResolveStopCancelsALookupInFlight(t *testing.T) {
 	l.block["a1.example"] = gate
 	t.Cleanup(func() { close(gate) })
 
-	dscpPreResolve(dscpApplied.Load().plan, false)
+	dscpPreResolve(dscpApplied.Load().plan, nil, false)
 	select {
 	case <-l.began:
 	case <-time.After(5 * time.Second):

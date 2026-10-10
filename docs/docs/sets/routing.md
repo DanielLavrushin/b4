@@ -588,7 +588,7 @@ The value is chosen by the destination address alone. A packet to one of the set
 | Learned from DNS | The answers b4 sees for the set's domains, over UDP and TCP: forwarded to a device, answered from a pin, or resolved through the set's DNS redirect | The set's [IP TTL](#ip-ttl-entry-lifetime) while its routing is on, otherwise 1 hour |
 | Learned from escalation | The addresses of a host that [escalation](./escalation.md) hands over to the set | As for DNS |
 | Learned from TLS and QUIC | The destination of a connection whose TLS ClientHello or QUIC Initial matches the set by name | 10 minutes |
-| b4's own lookups | The first 256 entries of the set's domain list that are not `regexp:` entries; GeoSite categories are not looked up. b4 looks them up when the set starts writing its value or its domains change, then every half lifetime, at least 5 minutes apart, through the set's resolver when its DNS redirect has one ([Lookups b4 makes itself](../dns.md#lookups-b4-makes-itself)) | As for DNS |
+| b4's own lookups | The first 256 entries of the set's domain list that are not `regexp:` entries; GeoSite categories are not looked up. b4 looks them up when the set starts writing its value or its domains or resolver settings change, then every half lifetime, at least 5 minutes apart, through the set's resolver when its DNS redirect has one ([Lookups b4 makes itself](../dns.md#lookups-b4-makes-itself)) | As for DNS |
 
 A learned address seen again gets a fresh lifetime once less than half of it is left, or at once when b4's own lookup finds it; a shorter lifetime never cuts a longer one.
 

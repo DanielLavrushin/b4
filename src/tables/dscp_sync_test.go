@@ -89,7 +89,7 @@ func TestSetDSCPSyncNoopWithoutSets(t *testing.T) {
 			dscpSyncIsolate(t)
 			dscpSyncSetBackend(backendIPTables)
 			hooked := 0
-			dscpPreResolveFn = func(*dscpPlan, bool) { hooked++ }
+			dscpPreResolveFn = func(*dscpPlan, *config.Config, bool) { hooked++ }
 
 			cfg := tc.cfg(7)
 			for _, periodic := range []bool{false, true} {
@@ -122,6 +122,34 @@ func TestSetDSCPSyncNoopWithoutSets(t *testing.T) {
 	}
 }
 
+func TestSetDSCPSyncPassHandsItsConfigToPreResolve(t *testing.T) {
+	build := func(redirect string) *config.Config {
+		set := dscpPlanTestSet("a", 31, "10.0.0.0/8")
+		set.DNS.Enabled, set.DNS.TargetDNS = redirect != "", redirect
+		return dscpIptTestConfig(7, true, nil, set)
+	}
+	h := dscpIptNewHost(t, backendIPTables, backendIP6Tables)
+	dscpSyncIsolate(t)
+	var got []*config.Config
+	dscpPreResolveFn = func(_ *dscpPlan, cfg *config.Config, _ bool) { got = append(got, cfg) }
+	if err := applyDSCPFor(build(""), backendIPTables); err != nil {
+		t.Fatal(err)
+	}
+	redirected := build("1.1.1.1")
+	if !dscpPlanFor(redirected).equal(dscpApplied.Load().plan) {
+		t.Fatal("a set's resolver is not part of the DSCP plan, so changing it must not re-apply the rules")
+	}
+	h.events = nil
+	dscpSyncPass(redirected, false, nil)
+	dscpSyncPass(redirected, true, nil)
+	if len(h.events) != 0 {
+		t.Errorf("a resolver change ran firewall commands: %q", h.events)
+	}
+	if len(got) != 2 || got[0] != redirected || got[1] != redirected {
+		t.Errorf("the pre-resolve hook got %v, want the configuration of each pass, so a changed resolver is used without a firewall change", got)
+	}
+}
+
 func TestSetDSCPSyncNoopUnchangedPlan(t *testing.T) {
 	t.Run("iptables", func(t *testing.T) {
 		build := func() *config.Config {
@@ -133,7 +161,7 @@ func TestSetDSCPSyncNoopUnchangedPlan(t *testing.T) {
 		dscpSyncIsolate(t)
 		var hooked []*dscpPlan
 		var periodics []bool
-		dscpPreResolveFn = func(p *dscpPlan, periodic bool) {
+		dscpPreResolveFn = func(p *dscpPlan, _ *config.Config, periodic bool) {
 			if !rulesMu.TryLock() {
 				t.Errorf("the pre-resolve hook ran while the pass still held the firewall lock")
 			} else {
