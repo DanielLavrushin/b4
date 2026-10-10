@@ -2552,7 +2552,7 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 		if !ok || config.RoutingUsesTProxy(st.mode) || st.iface != iface {
 			continue
 		}
-		if st.routerOut != set.RoutingIncludesRouterTraffic() || st.loopGuard != routeWantsEgressLoopGuard(iface) {
+		if st.routerOut != set.RoutingIncludesRouterTraffic() || st.loopGuard != routeWantsEgressLoopGuard(iface) || routeGatewayMACChanged(iface, set, st) {
 			rebuild = true
 			continue
 		}
@@ -2894,6 +2894,12 @@ func routeGatewayMAC(iface, gw string) string {
 		}
 	}
 	return ""
+}
+func routeGatewayMACChanged(iface string, set *config.SetConfig, st routeState) bool {
+	if set.Routing.EgressGateway == "" && st.egressGW == "" {
+		return false
+	}
+	return routeGatewayMAC(iface, set.Routing.EgressGateway) != st.gwMAC
 }
 
 func routeMarkMatchesOwn(cfg *config.Config, mark uint32) bool {

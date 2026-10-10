@@ -80,6 +80,58 @@ func TestNetnsGatewaySetKeepsItsViaRoute(t *testing.T) {
 		})
 	}
 }
+func TestNetnsGatewayGuardFollowsAChangedNeighborMAC(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	engine := backendNFTables
+	if !hasBinary("nft") {
+		t.Skip("nft is not installed")
+	}
+	st := netnsGatewaySync(t, engine, netnsPrimaryGW)
+	t.Cleanup(func() {
+		_, _ = run("ip", "neigh", "change", netnsPrimaryGW, "lladdr", netnsLinkMAC(t, netnsPrimary+"p"), "dev", netnsPrimary, "nud", "permanent")
+	})
+	before := netnsPreChain(t, engine, st.chainPre)
+	oldMAC := netnsLinkMAC(t, netnsPrimary+"p")
+	if !strings.Contains(strings.ToLower(before), strings.ToLower(oldMAC)) {
+		t.Fatalf("the guard must start on the neighbor MAC:\n%s", before)
+	}
+	netnsRun(t, "ip", "neigh", "change", netnsPrimaryGW, "lladdr", "02:00:00:00:00:99", "dev", netnsPrimary, "nud", "permanent")
+	RoutingSyncConfig(netnsGatewayConfig(engine, netnsPrimaryGW))
+	after := netnsPreChain(t, engine, routeRuleCache["netns-gateway-set"].chainPre)
+	if !strings.Contains(strings.ToLower(after), "02:00:00:00:00:99") {
+		t.Errorf("the guard kept the stale MAC after the neighbor changed:\n%s", after)
+	}
+	if strings.Contains(strings.ToLower(after), strings.ToLower(oldMAC)) {
+		t.Errorf("the stale MAC is still in the chain:\n%s", after)
+	}
+}
+func TestNetnsGatewayGuardFallsBackWhenTheNeighborDies(t *testing.T) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	engine := backendNFTables
+	if !hasBinary("nft") {
+		t.Skip("nft is not installed")
+	}
+	st := netnsGatewaySync(t, engine, netnsPrimaryGW)
+	t.Cleanup(func() {
+		_, _ = run("ip", "neigh", "change", netnsPrimaryGW, "lladdr", netnsLinkMAC(t, netnsPrimary+"p"), "dev", netnsPrimary, "nud", "permanent")
+	})
+	before := netnsPreChain(t, engine, st.chainPre)
+	oldMAC := netnsLinkMAC(t, netnsPrimary+"p")
+	if !strings.Contains(strings.ToLower(before), strings.ToLower(oldMAC)) {
+		t.Fatalf("the guard must start on the neighbor MAC:\n%s", before)
+	}
+	netnsRun(t, "ip", "neigh", "change", netnsPrimaryGW, "lladdr", oldMAC, "dev", netnsPrimary, "nud", "failed")
+	RoutingSyncConfig(netnsGatewayConfig(engine, netnsPrimaryGW))
+	after := netnsPreChain(t, engine, routeRuleCache["netns-gateway-set"].chainPre)
+	if strings.Contains(strings.ToLower(after), strings.ToLower(oldMAC)) {
+		t.Errorf("the dead neighbor MAC is still in the chain:\n%s", after)
+	}
+	if !strings.Contains(after, fmt.Sprintf("ip saddr %s", netnsPrimaryGW)) {
+		t.Errorf("without a neighbor entry the guard must fall back to the gateway address:\n%s", after)
+	}
+}
 
 func TestNetnsGatewaySetFallsBackToTheInterfaceRoute(t *testing.T) {
 	netnsRequire(t)

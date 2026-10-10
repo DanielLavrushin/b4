@@ -363,3 +363,36 @@ func TestReinstallReemitsTheGatewaySetsRoutes(t *testing.T) {
 		t.Errorf("the reinstall must re-emit the gateway default, ran:\n%s", joined)
 	}
 }
+func TestReinstallRebuildsChainsWhenGatewayMACAppears(t *testing.T) {
+	familyResetGlobals(t)
+	hasBinaryCache.Store("ip", true)
+	t.Cleanup(func() { hasBinaryCache.Delete("ip") })
+	prevRun := run
+	t.Cleanup(func() { run = prevRun })
+	run = func(args ...string) (string, error) { return "", nil }
+	cfg := config.NewConfig()
+	set := familyTestSet()
+	set.Routing.EgressInterface = "lo"
+	set.Routing.EgressGateway = "127.0.0.2"
+	cfg.Sets = []*config.SetConfig{set}
+	routeRuleCache = map[string]routeState{set.Id: buildRouteState(&cfg, set)}
+	if routeRuleCache[set.Id].gwMAC != "" {
+		t.Fatal("the seed state must carry no MAC, or the reinstall has nothing to notice")
+	}
+	be := &mockRouteBackend{}
+	routeEngine = be
+	run = func(args ...string) (string, error) {
+		if contains(args, "neigh") {
+			return "127.0.0.2 dev lo lladdr aa:bb:cc:dd:ee:ff REACHABLE", nil
+		}
+		return "", nil
+	}
+	RoutingReinstallForInterface(&cfg, "lo")
+	if got := routeRuleCache[set.Id].gwMAC; got != "aa:bb:cc:dd:ee:ff" {
+		t.Fatalf("the reinstall kept gwMAC %q, so the chains still guard by address", got)
+	}
+	joined := strings.Join(be.chainOps[routeRuleCache[set.Id].chainPre], "\n")
+	if !strings.Contains(joined, "narrow-guard lo 127.0.0.2 aa:bb:cc:dd:ee:ff") {
+		t.Errorf("the rebuilt chain must guard by the new MAC, ran:\n%s", joined)
+	}
+}

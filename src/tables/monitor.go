@@ -110,7 +110,7 @@ func (m *Monitor) Start() {
 			log.Warnf("Link watcher failed to start, falling back to periodic monitoring only: %v", err)
 			m.linkWatcher = nil
 		} else {
-			log.Infof("Started link watcher (RTNETLINK RTMGRP_LINK)")
+			log.Infof("Started link watcher (RTNETLINK RTMGRP_LINK|NEIGH)")
 		}
 	}
 }
