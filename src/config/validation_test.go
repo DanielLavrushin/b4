@@ -868,6 +868,18 @@ func TestValidate_SharedManualTableWithDifferentGatewaysWarns(t *testing.T) {
 			t.Fatalf("expected one clash on table 200, got %+v", got)
 		}
 	})
+	t.Run("gateway against interface default clashes", func(t *testing.T) {
+		got := findSharedTableGatewayClashes([]*SetConfig{mk("a", "192.0.2.1"), mk("b", "")})
+		if len(got) != 1 || got[0].table != 200 {
+			t.Fatalf("a gateway set sharing a pinned table with the interface default must warn, got %+v", got)
+		}
+	})
+	t.Run("two interface defaults share quietly", func(t *testing.T) {
+		got := findSharedTableGatewayClashes([]*SetConfig{mk("a", ""), mk("b", "")})
+		if len(got) != 0 {
+			t.Fatalf("two empty gateways write the same default, got %+v", got)
+		}
+	})
 	t.Run("same gateway shares quietly", func(t *testing.T) {
 		got := findSharedTableGatewayClashes([]*SetConfig{mk("a", "192.0.2.1"), mk("b", "192.0.2.1")})
 		if len(got) != 0 {

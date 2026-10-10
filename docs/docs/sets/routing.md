@@ -296,11 +296,12 @@ unspecified, loopback or multicast address, the broadcast address, or any addres
 router is rejected when the configuration is saved.
 
 Two sets on one interface with one egress IP but different gateways no longer share a mark and a table, since one
+table cannot hold two default routes. See [Packet marks](/docs/guides/marks#the-bits-b4-uses).
 
-::::warning
+:::warning
 A gateway that does not answer is a silent failure: packets leave, replies never come back, and the set's rules still
 look correct. Check the address is one the interface can reach before blaming the set.
-::::
+:::
 
 ### IP TTL (entry lifetime)
 

@@ -154,7 +154,7 @@ func findSharedTableGatewayClashes(sets []*SetConfig) []sharedTableGatewayClash 
 		if set == nil || set.Routing.Mode != RoutingModeInterface {
 			continue
 		}
-		if set.Routing.FWMark == 0 || set.Routing.Table == 0 || set.Routing.EgressGateway == "" {
+		if set.Routing.FWMark == 0 || set.Routing.Table == 0 {
 			continue
 		}
 		gws := byTable[set.Routing.Table]
