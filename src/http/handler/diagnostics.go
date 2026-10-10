@@ -1060,12 +1060,14 @@ func collectTools() DiagTools {
 		Optional:   make([]DiagTool, 0, len(optional)),
 		SearchPath: os.Getenv("PATH"),
 	}
+	versions := newToolVersions()
 
 	for _, name := range firewallTools {
 		dt := DiagTool{Name: name}
 		if path, ok := config.LookupTool(name); ok {
 			dt.Found = true
 			dt.Detail = path
+			dt.Version = versions.of(name, path)
 		}
 		result.Firewall = append(result.Firewall, dt)
 	}
@@ -1075,6 +1077,7 @@ func collectTools() DiagTools {
 		if path, ok := config.LookupTool(t.name); ok {
 			dt.Found = true
 			dt.Detail = path
+			dt.Version = versions.of(t.name, path)
 		} else {
 			dt.Detail = t.missing
 		}
@@ -1086,6 +1089,7 @@ func collectTools() DiagTools {
 		if path, ok := config.LookupTool(t.name); ok {
 			dt.Found = true
 			dt.Detail = path
+			dt.Version = versions.of(t.name, path)
 		} else {
 			dt.Detail = t.missing
 		}
