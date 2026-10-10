@@ -175,15 +175,32 @@ case "$table" in
 mangle | nat | filter | raw) ;;
 *) exit 0 ;;
 esac
-for f in /var/run/b4.pid /run/b4.pid /tmp/b4.pid /opt/var/run/b4.pid; do
+b4_ready() {
+    name=
+    while read -r k v; do
+        case "$k" in
+        Name:) name=$v ;;
+        SigCgt:)
+            [ "$name" = "b4" ] || return 1
+            case "${#v}:$v" in
+            16:*[2367abef]?? | 32:*[89abcdef]???) return 0 ;;
+            esac
+            return 1
+            ;;
+        esac
+    done
+    return 1
+}
+for f in /var/run/b4.pid /run/b4.pid /tmp/b4.pid; do
     [ -f "$f" ] || continue
-    pid=$(cat "$f" 2>/dev/null)
-    [ -n "$pid" ] || continue
-    [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = "b4" ] || continue
+    pid=
+    read -r pid 2>/dev/null <"$f"
+    case "$pid" in
+    '' | *[!0-9]*) continue ;;
+    esac
+    b4_ready 2>/dev/null <"/proc/$pid/status" || continue
     kill -USR1 "$pid" 2>/dev/null && exit 0
 done
-pids=$(pidof b4 2>/dev/null)
-[ -n "$pids" ] && kill -USR1 $pids 2>/dev/null
 exit 0
 EOF
     chmod +x "$B4_KEENETIC_HOOK" || return 1

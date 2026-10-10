@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -21,6 +22,7 @@ const (
 var (
 	restartRequests = make(chan restartKind, 1)
 	pendingRestart  atomic.Int32
+	execSelf        = syscall.Exec
 )
 
 func requestRestart(kind restartKind) {
@@ -42,7 +44,8 @@ func restartIfRequested() error {
 	env := restartEnv(os.Environ(), kind, engineAttempt)
 	log.Flush()
 	_ = log.SetErrorFile("")
-	return fmt.Errorf("b4 could not restart itself: %w", syscall.Exec(exe, os.Args, env))
+	signal.Ignore(syscall.SIGUSR1)
+	return fmt.Errorf("b4 could not restart itself: %w", execSelf(exe, os.Args, env))
 }
 
 func restartEnv(environ []string, kind restartKind, attempt int) []string {
