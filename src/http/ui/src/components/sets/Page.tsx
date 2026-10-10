@@ -1,5 +1,6 @@
 import { useSnackbar } from "@context/SnackbarProvider";
 import { colors } from "@design";
+import { usePageTitleDetail } from "@hooks/usePageTitle";
 import { useSets } from "@hooks/useSets";
 import { isStaleWriteError, reportSaveError, reportStaleWrite } from "@utils";
 import { B4Config, B4SetConfig } from "@models/config";
@@ -81,6 +82,8 @@ function SetEditorRoute({
     [sets.length],
   );
   const set = isNew ? defaultSet : existingSet;
+
+  usePageTitleDetail(isNew ? t("sets.editor.newSet") : existingSet?.name);
 
   const stats = existingSet
     ? (setsStats[sets.findIndex((s) => s.id === existingSet.id)] ?? undefined)
