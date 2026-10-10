@@ -361,6 +361,38 @@ func TestNarrowGuardKeepsTheFullGuardForIPv4WithoutAGateway(t *testing.T) {
 		t.Errorf("the gateway family matches the NIC by MAC:\n%s", cmds[1])
 	}
 }
+func TestNarrowGuardFallsBackToAddressForIPv6WithoutMAC(t *testing.T) {
+	var cmds []string
+	prev := runLogged
+	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
+	t.Cleanup(func() { runLogged = prev })
+	if !(&routeNftBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "", "2001:db8::1", "", true, true) {
+		t.Fatal("both families installable must report success")
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("want one rule per family, ran:\n%s", strings.Join(cmds, "\n"))
+	}
+	if !strings.Contains(cmds[0], `meta nfproto ipv4 return`) || strings.Contains(cmds[0], "saddr") {
+		t.Errorf("the family without a gateway keeps the bare full guard:\n%s", cmds[0])
+	}
+	if !strings.Contains(cmds[1], `ip6 saddr 2001:db8::1 return`) {
+		t.Errorf("the gateway family narrows by address without a MAC:\n%s", cmds[1])
+	}
+	stubBinaries(t, backendIPTables, backendIP6Tables)
+	cmds = nil
+	if !(&routeIptBackend{}).addNarrowEgressGuard("b4r_x_pre", "eth1", "", "2001:db8::1", "", true, true) {
+		t.Fatal("both families installable must report success")
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("want one rule per family, ran:\n%s", strings.Join(cmds, "\n"))
+	}
+	if !strings.Contains(cmds[0], "-i eth1 -j RETURN") || strings.Contains(cmds[0], "-s ") {
+		t.Errorf("the family without a gateway keeps the bare full guard:\n%s", cmds[0])
+	}
+	if !strings.Contains(cmds[1], "-s 2001:db8::1") {
+		t.Errorf("the gateway family narrows by address without a MAC:\n%s", cmds[1])
+	}
+}
 func TestNarrowGuardFallsBackToAddressWhenIPv4MACIsRejected(t *testing.T) {
 	stubBinaries(t, backendIPTables, backendIP6Tables)
 	var cmds []string

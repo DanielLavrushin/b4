@@ -360,19 +360,22 @@ func (b *routeIptBackend) addNarrowEgressGuard(chain, iface, gwV4, gwV6, gwMAC s
 	}
 	if v6 && hasBinary(b.ipt6()) {
 		base := []string{b.ipt6(), "-w", "-t", "mangle", "-A", chain, "-i", iface}
+		addrRule := func() bool {
+			args := append(append([]string{}, base...), "-j", "RETURN")
+			if gwV6 != "" {
+				args = append(append([]string{}, base...), "-s", gwV6, "-j", "RETURN")
+			}
+			return runLogged("routing: add narrow egress guard "+chain, args...)
+		}
 		if gwV6 != "" && gwMAC != "" {
 			macArgs := append(append([]string{}, base...), "-m", "mac", "--mac-source", gwMAC, "-j", "RETURN")
 			if !runLogged("routing: add narrow egress guard "+chain, macArgs...) {
-				fullArgs := append(append([]string{}, base...), "-j", "RETURN")
-				if !runLogged("routing: add narrow egress guard "+chain, fullArgs...) {
+				if !addrRule() {
 					ok = false
 				}
 			}
-		} else {
-			fullArgs := append(append([]string{}, base...), "-j", "RETURN")
-			if !runLogged("routing: add narrow egress guard "+chain, fullArgs...) {
-				ok = false
-			}
+		} else if !addrRule() {
+			ok = false
 		}
 	}
 	return ok
