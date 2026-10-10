@@ -4,8 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/geodat"
 )
 
 func TestParseToolVersionKeepsWhatTheToolReports(t *testing.T) {
@@ -131,6 +135,50 @@ func TestToolVersionsStopsAskingOnceTheBudgetIsSpent(t *testing.T) {
 	}
 	if got := versions.of("ok", healthy); got != "" {
 		t.Errorf("a tool asked after the budget was spent reported %q, want it skipped", got)
+	}
+}
+
+func TestConcurrentDiagnosticsShareOneRun(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	writeTool(t, dir, "jq", "echo run >> '"+calls+"'\nsleep 0.3\necho jq-1.0\n")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	cfg := config.NewConfig()
+	api := &API{
+		cfgPtr:                 testCfgPtr(&cfg),
+		overrideServiceManager: func() string { return "systemd" },
+		geodataManager:         geodat.NewGeodataManager("", ""),
+	}
+
+	const callers = 5
+	start := make(chan struct{})
+	reports := make([]Diagnostics, callers)
+	var wg sync.WaitGroup
+	for i := range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			reports[i] = api.buildDiagnostics()
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	data, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(data), "run"); n != 1 {
+		t.Errorf("%d concurrent diagnostics ran jq %d times, want once", callers, n)
+	}
+	for i, report := range reports {
+		for _, tool := range report.Tools.Optional {
+			if tool.Name == "jq" && tool.Version != "1.0" {
+				t.Errorf("caller %d got jq version %q, want 1.0", i, tool.Version)
+			}
+		}
 	}
 }
 

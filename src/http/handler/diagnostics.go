@@ -18,6 +18,7 @@ import (
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/nfq"
 	"github.com/daniellavrushin/b4/tables"
+	"golang.org/x/sync/singleflight"
 	"golang.org/x/sys/unix"
 )
 
@@ -36,7 +37,16 @@ func (api *API) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	sendResponse(w, DiagnosticsResponse{Success: true, Data: api.buildDiagnostics()})
 }
 
+var diagnosticsGroup singleflight.Group
+
 func (api *API) buildDiagnostics() Diagnostics {
+	v, _, _ := diagnosticsGroup.Do("diagnostics", func() (any, error) {
+		return api.collectDiagnostics(), nil
+	})
+	return v.(Diagnostics)
+}
+
+func (api *API) collectDiagnostics() Diagnostics {
 	cfg := api.getCfg()
 	serviceManager := api.getServiceManager()
 
