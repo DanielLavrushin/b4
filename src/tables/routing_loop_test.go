@@ -116,6 +116,67 @@ func TestRouterTrafficGuardIsScopedToTheSetAndToTunnels(t *testing.T) {
 	}
 }
 
+func TestEgressLoopGuardLandsOnEveryEgressInterface(t *testing.T) {
+	loopTestSysfs(t)
+	prevProto := routeIPSupportsProto
+	t.Cleanup(func() { routeIPSupportsProto = prevProto })
+	routeIPSupportsProto = func() bool { return false }
+	prevRun, prevLogged := run, runLogged
+	run = func(args ...string) (string, error) { return "", nil }
+	runLogged = func(op string, args ...string) bool { return true }
+	t.Cleanup(func() { run, runLogged = prevRun, prevLogged })
+	rpFilterHarness(t, map[string]string{"eth1": "1", "xray0": "1"})
+	prevSeen := routeIfaceSeen
+	routeIfaceSeen = make(map[string]bool)
+	t.Cleanup(func() { routeIfaceSeen = prevSeen })
+	cfg := familyTestConfig(true, false)
+	plain := &mockRouteBackend{}
+	set := familyTestSet()
+	set.Routing.EgressInterface = "eth1"
+	st := buildRouteState(cfg, set)
+	if err := routeEnsureRule(plain, cfg, set, st, nil); err != nil {
+		t.Fatalf("routeEnsureRule: %v", err)
+	}
+	if indexOfPrefix(plain.chainOps[st.chainPre], "loop-guard") < 0 {
+		t.Fatalf("every egress interface guards traffic arriving on it: %v", plain.chainOps[st.chainPre])
+	}
+	tunnel := &mockRouteBackend{}
+	tunnelSet := familyTestSet()
+	tunnelSet.Routing.EgressInterface = "xray0"
+	tunnelSt := buildRouteState(cfg, tunnelSet)
+	if err := routeEnsureRule(tunnel, cfg, tunnelSet, tunnelSt, nil); err != nil {
+		t.Fatalf("routeEnsureRule: %v", err)
+	}
+	if indexOfPrefix(tunnel.chainOps[tunnelSt.chainPre], "loop-guard") < 0 {
+		t.Fatalf("a userspace tunnel hands the packet back to a local program that answers every turn until memory is gone: %v", tunnel.chainOps[tunnelSt.chainPre])
+	}
+}
+
+func TestEgressLoopGuardSurvivesAMissingInterface(t *testing.T) {
+	loopTestSysfs(t)
+	cfg := familyTestConfig(true, false)
+	if !routeWantsEgressLoopGuard("notyet0") {
+		t.Fatal("an interface b4 has never seen may come back as a tunnel, so install the guard while its kind is unknown")
+	}
+	if !routeWantsEgressLoopGuard("eth1") {
+		t.Fatal("every egress interface wants the guard, including a plain NIC")
+	}
+	set := familyTestSet()
+	set.Routing.EgressInterface = "notyet0"
+	missing := buildRouteState(cfg, set)
+	if !missing.loopGuard {
+		t.Fatal("the cached state must record the installed guard, or the sync cache-hits and the reinstall sees nothing to refresh")
+	}
+	set.Routing.EgressInterface = "eth1"
+	plain := buildRouteState(cfg, set)
+	if !plain.loopGuard {
+		t.Fatal("a plain NIC installs the guard, so the state must say so")
+	}
+	if routeStateEqual(missing, plain) {
+		t.Fatal("missing-iface and plain-NIC states must differ by interface, or a NIC appearing where nothing was keeps stale state")
+	}
+}
+
 func indexOfOp(ops []string, want string) int {
 	for i, op := range ops {
 		if op == want {
@@ -147,8 +208,12 @@ func TestRouteLineBelongsToIface(t *testing.T) {
 			{"default dev xray0 scope link", "xray0", true},
 			{"default via 10.8.0.1 dev xray0 src 10.8.0.2", "xray0", true},
 			{"blackhole default metric 4096", "xray0", true},
+			{"10.8.0.1 dev xray0 scope link", "xray0", false},
 			{"default via 192.168.2.1 dev tun13", "tun0", false},
 			{"192.168.1.0/24 dev br0 scope link", "tun0", false},
+			{"10.9.0.1 dev eth1 scope link", "tun0", false},
+			{"10.8.0.1 via 10.8.0.254 dev xray0", "xray0", false},
+			{"10.8.0.1 dev xray0", "xray0", false},
 			{"unreachable default metric 1", "tun0", false},
 			{"default", "tun0", false},
 		} {
@@ -166,9 +231,11 @@ func TestRouteLineBelongsToIface(t *testing.T) {
 		}{
 			{"default dev xray0 proto " + routeProtoID + " scope link", "xray0", true},
 			{"blackhole default metric 4096 proto " + routeProtoID, "xray0", true},
+			{"10.8.0.1 dev xray0 scope link proto " + routeProtoID, "xray0", true},
 			{"default via 94.189.76.193 dev eth0", "eth0", false},
 			{"default via 94.189.76.193 dev eth0 proto static", "eth0", false},
 			{"default dev tun0 scope link", "tun0", false},
+			{"10.8.0.1 dev xray0 scope link", "xray0", false},
 		} {
 			if got := routeLineBelongsToIface(c.line, c.iface); got != c.ours {
 				t.Errorf("routeLineBelongsToIface(%q, %q) = %v, want %v; b4 takes over a table it decides is its own, and a WAN table looks exactly like one of its own routes", c.line, c.iface, got, c.ours)
@@ -229,6 +296,9 @@ func TestRouteResolveIDsSkipsATableSomebodyElseOwns(t *testing.T) {
 }
 
 func TestKillSwitchHoldsTheTableShut(t *testing.T) {
+	prevProto := routeIPSupportsProto
+	t.Cleanup(func() { routeIPSupportsProto = prevProto })
+	routeIPSupportsProto = func() bool { return false }
 	var cmds []string
 	prev := runLogged
 	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }

@@ -75,6 +75,7 @@ export interface FacetSetConfig {
     block_action: string;
     egress_interface: string;
     egress_ip: string;
+    egress_gateway: string;
     table: number;
     fwmark: number;
     upstream?: {
@@ -446,6 +447,9 @@ const routeRows = (
   });
   if (routing.egress_ip) {
     rows.push({ label: t(F("egressIp")), value: routing.egress_ip });
+  }
+  if (routing.egress_gateway) {
+    rows.push({ label: t(F("egressGateway")), value: routing.egress_gateway });
   }
   if (routing.table) {
     rows.push({

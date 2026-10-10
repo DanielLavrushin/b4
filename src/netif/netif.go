@@ -21,6 +21,7 @@ const (
 const cacheTTL = 30 * time.Second
 
 const flagUp = 0x1
+const tunIffTun = 0x1
 
 var Root = "/sys/class/net/"
 
@@ -54,8 +55,10 @@ func classify(name string) (Kind, bool) {
 		return KindMissing, false
 	}
 	up := ifaceUp(name)
-	if _, err := os.Stat(Root + name + "/tun_flags"); err == nil {
-		return KindUserspaceTunnel, up
+	if b, err := os.ReadFile(Root + name + "/tun_flags"); err == nil {
+		if v, err := strconv.ParseUint(strings.TrimSpace(string(b)), 0, 32); err == nil && v&tunIffTun != 0 {
+			return KindUserspaceTunnel, up
+		}
 	}
 	if b, err := os.ReadFile(Root + name + "/uevent"); err == nil {
 		for _, line := range strings.Split(string(b), "\n") {

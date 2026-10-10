@@ -46,7 +46,7 @@ rule without a mask, such as nftables `meta mark set 0x00021546` or iptables
 
 | Bits | Mask | Used for | Value |
 | --- | --- | --- | --- |
-| 0-14, 17 | `0x27fff` | The route of a routing set | One per set; sets routed through the same interface with the same egress IP and kill switch share one. See [sets routed through an interface](#sets-routed-through-an-interface) and [proxy sets](#proxy-sets-and-telegram-over-websocket) |
+| 0-14, 17 | `0x27fff` | The route of a routing set | One per set; sets routed through the same interface with the same egress IP, gateway and kill switch share one. See [sets routed through an interface](#sets-routed-through-an-interface) and [proxy sets](#proxy-sets-and-telegram-over-websocket) |
 | 15 by default | `0x8000` by default | The queue mark: packets b4 sends from its raw sockets, except those toward a device in TUN mode, the DNS queries it sends for clients and for its sets, and its probes that bypass its own processing | **Packet Mark** under **Settings, Core, Packet Engine**, `0x8000` (32768) by default |
 | 18 | `0x40000` | Connections b4 opens to the upstream of a proxy set, to Telegram, the Community Hub, ipinfo and RIPEstat, and its transparent listeners; see [socket marks](#socket-marks) | Fixed |
 | 21 | `0x200000` | b4's own connections whose outgoing packets packet processing leaves alone | Fixed, carried together with bit 18 as `0x240000` |
@@ -199,15 +199,15 @@ lies within `0x27fff`.
 ## Sets routed through an interface
 
 A set routed through an [output interface](/docs/sets/routing#output-interface) gets a mark
-and a routing table from the interface name, the egress IP and the kill switch. Sets that
-agree on all three share both.
+and a routing table from the interface name, the egress IP, the gateway and the kill switch. Sets that
+agree on all four share both.
 
 | Item | Value |
 | --- | --- |
-| Mark | From a hash of the three, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
+| Mark | From a hash of the four, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
 | Table | `100`-`249`, skipping tables named in `rt_tables`, looked up by another service's rule, or holding routes b4 did not add |
 | Rule | `ip rule add fwmark <mark>/0x27fff lookup <table> priority <10000 + table>`, for IPv4, and for IPv6 when **Enable IPv6 Support** is on |
-| Table contents | A default route through the interface, plus `blackhole default metric 4096` with the [kill switch](/docs/sets/routing#kill-switch) |
+| Table contents | A default route through the interface (`default via <gateway>` with a gateway set), plus `blackhole default metric 4096` with the [kill switch](/docs/sets/routing#kill-switch) |
 | Pinned values | `routing.fwmark` and `routing.table` in the configuration file or through the API, used only when both are set, the mark lies within `0x27fff`, is not `0x24bab`, does not contain every bit of the queue mark and does not equal its bits under `0x27fff` |
 
 The set marks the first packet of each connection to its destinations and saves the mark in
@@ -217,7 +217,13 @@ replies get no mark. The set's chain for packets entering the router, `b4r_<set>
 this order:
 
 1. Returns packets that carry the queue mark, bit `0x40000`, or any bit under `0x27fff`.
-2. Returns packets that arrive on the output interface itself.
+2. Returns packets that arrive on the output interface itself. Without a gateway the guard is
+   unconditional (`iifname <iface> return`): traffic the next hop sends back is marked again and
+   routed straight back to it otherwise. With a gateway the guard narrows to the next hop alone -
+   its MAC address while the neighbor entry is known (falling back to its address for IPv4), the
+   router's own addresses in both families - so clients sharing the interface with the gateway
+   still get the set's mark. Where the gateway covers only one family, the other family keeps the
+   full guard.
 3. Restores the mark from the connection mark on later packets of claimed connections that
    travel in the direction of the first packet.
 4. Marks new connections to the set's destinations and saves the mark with the claim.

@@ -129,12 +129,23 @@ export const TrafficRouting = ({
   } else {
     flowDestination = !routing.egress_interface
       ? t("sets.routing.flowNoOutput")
-      : routing.egress_ip
-        ? t("sets.routing.flowIfaceWithSource", {
-            iface: routing.egress_interface,
-            ip: routing.egress_ip,
-          })
-        : routing.egress_interface;
+      : routing.egress_gateway
+        ? routing.egress_ip
+          ? t("sets.routing.flowIfaceWithSourceAndGateway", {
+              iface: routing.egress_interface,
+              ip: routing.egress_ip,
+              gw: routing.egress_gateway,
+            })
+          : t("sets.routing.flowIfaceWithGateway", {
+              iface: routing.egress_interface,
+              gw: routing.egress_gateway,
+            })
+        : routing.egress_ip
+          ? t("sets.routing.flowIfaceWithSource", {
+              iface: routing.egress_interface,
+              ip: routing.egress_ip,
+            })
+          : routing.egress_interface;
   }
 
   return (
@@ -455,6 +466,26 @@ export const TrafficRouting = ({
                   iface: routing.egress_interface,
                 })}
               </B4Alert>
+            </Grid>
+          )}
+
+          {isInterface && (
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4TextField
+                label={t("sets.routing.egressGateway")}
+                value={routing.egress_gateway ?? ""}
+                onChange={(e) =>
+                  onChange("routing.egress_gateway", e.target.value)
+                }
+                disabled={!routing.egress_interface}
+                helperText={
+                  routing.egress_interface
+                    ? t("sets.routing.egressGatewayHelper")
+                    : t("sets.routing.egressGatewayNeedsInterface")
+                }
+                placeholder="192.168.1.254"
+                selectOnFocus
+              />
             </Grid>
           )}
 

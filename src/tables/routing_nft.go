@@ -323,6 +323,45 @@ func (b *routeNftBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 boo
 		"nft", "add", "rule", "inet", routeNftTable, chain,
 		"iifname", fmt.Sprintf("%q", iface), "return")
 }
+func (b *routeNftBackend) addNarrowEgressGuard(chain, iface, gwV4, gwV6, gwMAC string, v4, v6 bool) bool {
+	if iface == "" {
+		return true
+	}
+	ok := true
+	if v4 {
+		args := []string{"add", "rule", "inet", routeNftTable, chain, "iifname", fmt.Sprintf("%q", iface)}
+		if gwV4 != "" && gwMAC != "" {
+			// The MAC refines the gateway's own family only; without the family match
+			// the rule would also exempt the other family's traffic off the same NIC.
+			args = append(args, "meta", "nfproto", "ipv4", "ether", "saddr", gwMAC, "return")
+		} else if gwV4 != "" {
+			args = append(args, "ip", "saddr", gwV4, "return")
+		} else {
+			args = append(args, "meta", "nfproto", "ipv4", "return")
+		}
+		ok = runLogged("routing: add narrow egress guard "+chain, append([]string{"nft"}, args...)...) && ok
+	}
+	if v6 {
+		args := []string{"add", "rule", "inet", routeNftTable, chain, "iifname", fmt.Sprintf("%q", iface)}
+		if gwV6 != "" && gwMAC != "" {
+			args = append(args, "meta", "nfproto", "ipv6", "ether", "saddr", gwMAC, "return")
+		} else if gwV6 != "" {
+			args = append(args, "ip6", "saddr", gwV6, "return")
+		} else {
+			args = append(args, "meta", "nfproto", "ipv6", "return")
+		}
+		ok = runLogged("routing: add narrow egress guard "+chain, append([]string{"nft"}, args...)...) && ok
+	}
+	return ok
+}
+func (b *routeNftBackend) addRedirectDrop(chain, iface string) {
+	if iface == "" {
+		return
+	}
+	runLogged("routing: add redirect drop "+chain,
+		"nft", "add", "rule", "inet", routeNftTable, chain,
+		"oifname", fmt.Sprintf("%q", iface), "icmpv6", "type", "nd-redirect", "drop")
+}
 
 func (b *routeNftBackend) sharesFamilies() bool { return true }
 
@@ -354,6 +393,7 @@ func (b *routeNftBackend) addMarkFallbackRule(chain string, v6 bool, setName str
 	} else {
 		args = append(args, "ip", "daddr", "@"+sn)
 	}
+	args = append(args, "ct", "direction", "original")
 	args = append(args, routeNftSetMarkArgs(mark)...)
 	runLogged("routing: add mark fallback rule "+chain, append([]string{"nft"}, args...)...)
 }
@@ -580,6 +620,13 @@ func (b *routeNftBackend) destroyIPSet(name string) {
 	runLogged("routing: delete set "+name, "nft", "delete", "set", "inet", routeNftTable, name)
 	dyn := routeNftDynSet(name)
 	runLogged("routing: delete set "+dyn, "nft", "delete", "set", "inet", routeNftTable, dyn)
+}
+func (b *routeNftBackend) hasIPSet(name string) bool {
+	if _, err := run("nft", "list", "set", "inet", routeNftTable, name); err == nil {
+		return true
+	}
+	_, err := run("nft", "list", "set", "inet", routeNftTable, routeNftDynSet(name))
+	return err == nil
 }
 
 func (b *routeNftBackend) clearAll() {

@@ -303,7 +303,8 @@ func (b *routeIptBackend) addMarkFallbackRule(chain string, v6 bool, setName str
 	}
 	args = append(args,
 		"-m", "mark", "--mark", fmt.Sprintf("0x0/0x%x", routeSetMarkMask),
-		"-m", "set", "--match-set", setName, "dst")
+		"-m", "set", "--match-set", setName, "dst",
+		"-m", "conntrack", "--ctdir", "ORIGINAL")
 	args = append(args, routeIptSetMarkArgs(mark)...)
 	runLogged("routing: add mark fallback rule "+chain, append([]string{cmd}, args...)...)
 }
@@ -331,6 +332,61 @@ func (b *routeIptBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 boo
 		}
 	}
 	return ok
+}
+func (b *routeIptBackend) addNarrowEgressGuard(chain, iface, gwV4, gwV6, gwMAC string, v4, v6 bool) bool {
+	if iface == "" {
+		return true
+	}
+	ok := true
+	if v4 && hasBinary(b.ipt4()) {
+		base := []string{b.ipt4(), "-w", "-t", "mangle", "-A", chain, "-i", iface}
+		addrRule := func() bool {
+			args := append(append([]string{}, base...), "-j", "RETURN")
+			if gwV4 != "" {
+				args = append(append([]string{}, base...), "-s", gwV4, "-j", "RETURN")
+			}
+			return runLogged("routing: add narrow egress guard "+chain, args...)
+		}
+		if gwV4 != "" && gwMAC != "" {
+			macArgs := append(append([]string{}, base...), "-m", "mac", "--mac-source", gwMAC, "-j", "RETURN")
+			if !runLogged("routing: add narrow egress guard "+chain, macArgs...) {
+				if !addrRule() {
+					ok = false
+				}
+			}
+		} else if !addrRule() {
+			ok = false
+		}
+	}
+	if v6 && hasBinary(b.ipt6()) {
+		base := []string{b.ipt6(), "-w", "-t", "mangle", "-A", chain, "-i", iface}
+		addrRule := func() bool {
+			args := append(append([]string{}, base...), "-j", "RETURN")
+			if gwV6 != "" {
+				args = append(append([]string{}, base...), "-s", gwV6, "-j", "RETURN")
+			}
+			return runLogged("routing: add narrow egress guard "+chain, args...)
+		}
+		if gwV6 != "" && gwMAC != "" {
+			macArgs := append(append([]string{}, base...), "-m", "mac", "--mac-source", gwMAC, "-j", "RETURN")
+			if !runLogged("routing: add narrow egress guard "+chain, macArgs...) {
+				if !addrRule() {
+					ok = false
+				}
+			}
+		} else if !addrRule() {
+			ok = false
+		}
+	}
+	return ok
+}
+func (b *routeIptBackend) addRedirectDrop(chain, iface string) {
+	cmd := b.ipt6()
+	if iface == "" || !hasBinary(cmd) {
+		return
+	}
+	runLogged("routing: add redirect drop "+chain,
+		cmd, "-w", "-t", "mangle", "-A", chain, "-o", iface, "-p", "icmpv6", "--icmpv6-type", "redirect", "-j", "DROP")
 }
 
 func (b *routeIptBackend) sharesFamilies() bool { return false }
@@ -460,6 +516,13 @@ func (b *routeIptBackend) destroyIPSet(name string) {
 		return
 	}
 	runLogged("routing: destroy ipset "+name, "ipset", "destroy", name)
+}
+func (b *routeIptBackend) hasIPSet(name string) bool {
+	if !hasBinary("ipset") {
+		return false
+	}
+	_, err := run("ipset", "list", name)
+	return err == nil
 }
 
 func (b *routeIptBackend) clearAll() {

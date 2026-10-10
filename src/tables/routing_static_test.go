@@ -258,6 +258,35 @@ func TestRouteStaticRecordSurvivesForceResyncAndDiesWithTheSets(t *testing.T) {
 		t.Error("RoutingClearAll must forget every record")
 	}
 }
+func TestDropSetsSkipsTheDisabledFamily(t *testing.T) {
+	be := &mockRouteBackend{}
+	st := routeState{setID: "fam", ipv4: true, setV4: "b4r_fam_v4", setV6: "b4r_fam_v6"}
+	routeStaticApplied["fam"] = routeStaticEntries{}
+	routeDropSets(be, st, false)
+	for _, op := range be.setOps {
+		if op == "flush b4r_fam_v6" || op == "destroy b4r_fam_v6" {
+			t.Errorf("with IPv6 disabled no command may touch the v6 set, ran %v", be.setOps)
+		}
+	}
+	if len(be.setOps) != 2 {
+		t.Errorf("the v4 set must still be flushed and destroyed, ran %v", be.setOps)
+	}
+}
+func TestDropSetsCleansAnOrphanedSetOfTheDisabledFamily(t *testing.T) {
+	be := &mockRouteBackend{existingSets: map[string]bool{"b4r_fam_v6": true}}
+	st := routeState{setID: "fam", ipv4: true, setV4: "b4r_fam_v4", setV6: "b4r_fam_v6"}
+	routeStaticApplied["fam"] = routeStaticEntries{}
+	routeDropSets(be, st, false)
+	found := map[string]bool{}
+	for _, op := range be.setOps {
+		found[op] = true
+	}
+	for _, want := range []string{"flush b4r_fam_v6", "destroy b4r_fam_v6"} {
+		if !found[want] {
+			t.Errorf("a leftover v6 set must be cleaned even with IPv6 disabled, ran %v", be.setOps)
+		}
+	}
+}
 
 func TestIptDelElementsUsesRestoreThenFallsBack(t *testing.T) {
 	stubBinaries(t, "ipset")

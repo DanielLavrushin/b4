@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,7 @@ import (
 const (
 	ifInfoMsgSize       = 16
 	linkWatcherDebounce = 500 * time.Millisecond
+	ndMsgSize           = 12
 )
 
 type linkWatcher struct {
@@ -44,7 +46,7 @@ func (w *linkWatcher) Start() error {
 		return nil
 	}
 	conn, err := netlink.Dial(unix.NETLINK_ROUTE, &netlink.Config{
-		Groups: unix.RTMGRP_LINK,
+		Groups: unix.RTMGRP_LINK | unix.RTMGRP_NEIGH,
 	})
 	if err != nil {
 		return err
@@ -100,6 +102,16 @@ func (w *linkWatcher) loop() {
 				if name, _ := parseIfInfoMsg(m.Data); name != "" {
 					w.handleEvent(name, false, false)
 				}
+			case unix.RTM_NEWNEIGH, unix.RTM_DELNEIGH:
+				name, ip, mac, alive, verdict := parseNeighMsg(m.Header.Type, m.Data)
+				switch verdict {
+				case neighOK:
+					w.handleNeighEvent(name, ip, mac, alive)
+				case neighFilteredState:
+					log.Tracef("Link watcher: ignoring neighbor message in an uninteresting state type=%d len=%d", m.Header.Type, len(m.Data))
+				default:
+					log.Tracef("Link watcher: ignoring malformed neighbor message type=%d len=%d", m.Header.Type, len(m.Data))
+				}
 			}
 		}
 	}
@@ -125,6 +137,97 @@ func parseIfInfoMsg(b []byte) (name string, up bool) {
 		return "", up
 	}
 	return name, up
+}
+
+type neighVerdict int
+
+const (
+	neighOK neighVerdict = iota
+	neighFilteredState
+	neighMalformed
+)
+
+func parseNeighMsg(msgType netlink.HeaderType, b []byte) (ifname, ip, mac string, alive bool, verdict neighVerdict) {
+	if len(b) < ndMsgSize {
+		return "", "", "", false, neighMalformed
+	}
+	// RTM_DELNEIGH means the entry is gone regardless of the ndm_state in the payload.
+	if msgType != unix.RTM_DELNEIGH {
+		switch native.Endian.Uint16(b[8:10]) {
+		case unix.NUD_REACHABLE, unix.NUD_STALE, unix.NUD_DELAY, unix.NUD_PROBE, unix.NUD_PERMANENT:
+			alive = true
+		case unix.NUD_FAILED, unix.NUD_INCOMPLETE, unix.NUD_NOARP:
+			// alive stays false
+		default:
+			return "", "", "", false, neighFilteredState
+		}
+	}
+	ifindex := int(native.Endian.Uint32(b[4:8]))
+	var dst, lladdr []byte
+	ad, err := netlink.NewAttributeDecoder(b[ndMsgSize:])
+	if err != nil {
+		return "", "", "", false, neighMalformed
+	}
+	for ad.Next() {
+		switch ad.Type() {
+		case unix.NDA_DST:
+			dst = append([]byte(nil), ad.Bytes()...)
+		case unix.NDA_LLADDR:
+			lladdr = append([]byte(nil), ad.Bytes()...)
+		}
+	}
+	if err := ad.Err(); err != nil || len(dst) == 0 {
+		return "", "", "", false, neighMalformed
+	}
+	iface, err := net.InterfaceByIndex(ifindex)
+	if err != nil {
+		return "", "", "", false, neighMalformed
+	}
+	if len(lladdr) > 0 {
+		mac = net.HardwareAddr(lladdr).String()
+	}
+	return iface.Name, net.IP(dst).String(), mac, alive, neighOK
+}
+func (w *linkWatcher) handleNeighEvent(ifname, ip, mac string, alive bool) {
+	cfg := w.cfgPtr.Load()
+	if cfg == nil {
+		return
+	}
+	for _, set := range cfg.Sets {
+		if set == nil || !set.Enabled || !set.Routing.Enabled {
+			continue
+		}
+		if set.Routing.Mode != "" && set.Routing.Mode != config.RoutingModeInterface {
+			continue
+		}
+		if set.Routing.EgressInterface != ifname || set.Routing.EgressGateway == "" {
+			continue
+		}
+		if !strings.EqualFold(set.Routing.EgressGateway, ip) {
+			continue
+		}
+		routeMu.Lock()
+		st, ok := routeRuleCache[set.Id]
+		routeMu.Unlock()
+		cached := ""
+		if ok {
+			cached = st.gwMAC
+			if !alive {
+				if st.gwMAC == "" {
+					return
+				}
+			} else if mac != "" && strings.EqualFold(st.gwMAC, mac) {
+				return
+			}
+		}
+		if !alive {
+			log.Infof("Link watcher: neighbor %s on %s died, scheduling routing reinstall for set '%s'", ip, ifname, set.Name)
+		} else {
+			log.Infof("Link watcher: neighbor %s on %s is now %s (was %s), scheduling routing reinstall for set '%s'", ip, ifname, mac, cached, set.Name)
+		}
+		w.scheduleReinstall(ifname)
+		return
+	}
 }
 
 func (w *linkWatcher) handleEvent(ifname string, isNew bool, up bool) {

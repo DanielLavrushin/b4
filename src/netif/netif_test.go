@@ -37,12 +37,16 @@ func TestOfClassifiesInterfaces(t *testing.T) {
 	mkIface(t, root, "xray0", map[string]string{"tun_flags": "0x1001\n"})
 	mkIface(t, root, "wg0", map[string]string{"uevent": "DEVTYPE=wireguard\nINTERFACE=wg0\n"})
 	mkIface(t, root, "eth0", map[string]string{"uevent": "INTERFACE=eth0\n"})
+	mkIface(t, root, "tap0", map[string]string{"tun_flags": "0x1002\n"})
+	mkIface(t, root, "wlp3s0", map[string]string{"tun_flags": "0x1002\n", "uevent": "INTERFACE=wlp3s0\n"})
 
 	for _, c := range []struct {
 		iface string
 		want  Kind
 	}{
 		{"xray0", KindUserspaceTunnel},
+		{"tap0", KindOther},
+		{"wlp3s0", KindOther},
 		{"wg0", KindWireGuard},
 		{"eth0", KindOther},
 		{"nope0", KindMissing},
@@ -55,6 +59,9 @@ func TestOfClassifiesInterfaces(t *testing.T) {
 
 	if !IsUserspaceTunnel("xray0") {
 		t.Error("a device with tun_flags is read by a userspace program and must be reported as one")
+	}
+	if IsUserspaceTunnel("tap0") || IsUserspaceTunnel("wlp3s0") {
+		t.Error("TAP without IFF_TUN (0x1002, Docker bridge layers) hands no packet to a userspace program and must read as a plain interface")
 	}
 	if IsUserspaceTunnel("wg0") {
 		t.Error("WireGuard is a kernel device: it never re-dials a connection, so it must not be treated as a userspace tunnel")

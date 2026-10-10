@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -119,6 +120,64 @@ func tlsKeyIsEncrypted(path string) bool {
 			return true
 		}
 	}
+}
+func egressGatewayIsLocal(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			if ipNet, ok := addr.(*net.IPNet); ok && ipNet.IP != nil && ipNet.IP.Equal(ip) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+type sharedTableGatewayClash struct {
+	names string
+	table int
+}
+
+func findSharedTableGatewayClashes(sets []*SetConfig) []sharedTableGatewayClash {
+	byTable := map[int]map[string][]string{}
+	for _, set := range sets {
+		if set == nil || set.Routing.Mode != RoutingModeInterface {
+			continue
+		}
+		if set.Routing.FWMark == 0 || set.Routing.Table == 0 {
+			continue
+		}
+		gws := byTable[set.Routing.Table]
+		if gws == nil {
+			gws = map[string][]string{}
+			byTable[set.Routing.Table] = gws
+		}
+		gws[set.Routing.EgressGateway] = append(gws[set.Routing.EgressGateway], set.Name)
+	}
+	var out []sharedTableGatewayClash
+	for table, gws := range byTable {
+		if len(gws) < 2 {
+			continue
+		}
+		var names []string
+		for _, ns := range gws {
+			names = append(names, ns...)
+		}
+		sort.Strings(names)
+		out = append(out, sharedTableGatewayClash{names: strings.Join(names, ", "), table: table})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].table < out[j].table })
+	return out
 }
 
 func (c *Config) Validate() error {
@@ -241,6 +300,30 @@ func (c *Config) Validate() error {
 			}
 		}
 
+		set.Routing.EgressGateway = strings.TrimSpace(set.Routing.EgressGateway)
+		if set.Routing.EgressGateway != "" {
+			ip := net.ParseIP(set.Routing.EgressGateway)
+			switch {
+			case ip == nil, ip.IsUnspecified(), ip.IsLoopback(), ip.IsMulticast(), ip.Equal(net.IPv4bcast), egressGatewayIsLocal(ip):
+				v.addf(fmt.Sprintf("sets[%d].routing.egress_gateway", setIdx), "invalid_egress_gateway", map[string]any{"set": set.Name, "ip": set.Routing.EgressGateway}, "set %q: routing.egress_gateway %q is not a usable next hop", set.Name, set.Routing.EgressGateway)
+				return v.result()
+			case set.Routing.Mode != RoutingModeInterface:
+				log.Warnf("Set '%s': routing mode %q never looks a default route up, so no packet reaches a gateway through it; dropping routing.egress_gateway", set.Name, set.Routing.Mode)
+				set.Routing.EgressGateway = ""
+			case set.Routing.EgressInterface == "":
+				log.Warnf("Set '%s': routing.egress_gateway names the next hop on routing.egress_interface, and no routing.egress_interface is set; dropping it", set.Name)
+				set.Routing.EgressGateway = ""
+			default:
+				set.Routing.EgressGateway = ip.String()
+				if ip.To4() == nil && !c.Queue.IPv6Enabled {
+					log.Warnf("Set '%s': routing.egress_gateway %q is IPv6, but IPv6 support is off, so no IPv6 rule is installed and the gateway is ignored", set.Name, set.Routing.EgressGateway)
+				} else if ip.To4() != nil && c.Queue.IPv6Enabled {
+					log.Warnf("Set '%s': routing.egress_gateway %q carries IPv4 only, so the set's IPv6 traffic leaves by the ordinary route past the set", set.Name, set.Routing.EgressGateway)
+				} else if ip.To4() == nil && c.Queue.IPv4Enabled {
+					log.Warnf("Set '%s': routing.egress_gateway %q carries IPv6 only, so the set's IPv4 traffic leaves by the ordinary route past the set", set.Name, set.Routing.EgressGateway)
+				}
+			}
+		}
 		if set.Routing.Enabled && set.Routing.Mode == RoutingModeProxy {
 			if set.Routing.Upstream.Port < 1 || set.Routing.Upstream.Port > 65535 {
 				v.addf(fmt.Sprintf("sets[%d].routing.upstream.port", setIdx), "out_of_range", map[string]any{"set": set.Name, "min": 1, "max": 65535}, "set %q: upstream proxy port must be 1-65535", set.Name)
@@ -354,6 +437,9 @@ func (c *Config) Validate() error {
 				"set %q: DSCP value %d is outside 0-%d", set.Name, dscp.Value, MaxDSCPValue)
 			return v.result()
 		}
+	}
+	for _, clash := range findSharedTableGatewayClashes(c.Sets) {
+		log.Warnf("Sets %s share routing table %d with different routing.egress_gateway values, so their default routes overwrite each other and the last written one wins for all of them; give each its own routing.table", clash.names, clash.table)
 	}
 
 	c.sanitizeEscalation()

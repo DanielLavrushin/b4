@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -503,27 +504,17 @@ func TestValidate_QueueFields(t *testing.T) {
 		}
 	})
 
-	t.Run("tun mode follows default route when out_interface is empty", func(t *testing.T) {
-		cfg := NewConfig()
-		cfg.Queue.Mode = "tun"
-		cfg.Queue.TUN.OutInterface = ""
-		if err := cfg.Validate(); err != nil {
-			t.Errorf("empty out_interface (follow-default) rejected: %v", err)
-		}
-		if !cfg.Queue.TUN.FollowsDefaultRoute() {
-			t.Errorf("empty out_interface should follow the default route")
-		}
-	})
-
-	t.Run("tun mode follows default route when out_interface is auto", func(t *testing.T) {
-		cfg := NewConfig()
-		cfg.Queue.Mode = "tun"
-		cfg.Queue.TUN.OutInterface = "auto"
-		if err := cfg.Validate(); err != nil {
-			t.Errorf("out_interface=auto (follow-default) rejected: %v", err)
-		}
-		if !cfg.Queue.TUN.FollowsDefaultRoute() {
-			t.Errorf("out_interface=auto should follow the default route")
+	t.Run("tun mode follows the default route when no interface is named", func(t *testing.T) {
+		for _, iface := range []string{"", "auto"} {
+			cfg := NewConfig()
+			cfg.Queue.Mode = "tun"
+			cfg.Queue.TUN.OutInterface = iface
+			if err := cfg.Validate(); err != nil {
+				t.Errorf("out_interface=%q (follow-default) rejected: %v", iface, err)
+			}
+			if !cfg.Queue.TUN.FollowsDefaultRoute() {
+				t.Errorf("out_interface=%q should follow the default route", iface)
+			}
 		}
 	})
 
@@ -636,26 +627,26 @@ func TestValidate_DefaultsApplied(t *testing.T) {
 			t.Errorf("expected cap to %d, got %d", cfg.Queue.TCPConnBytesLimit, cfg.Sets[0].TCP.ConnBytesLimit)
 		}
 	})
+}
 
-	t.Run("MSS clamp clamped to bounds", func(t *testing.T) {
-		cfg := NewConfig()
-		cfg.Queue.MSSClamp.Enabled = true
-		cfg.Queue.MSSClamp.Size = 5
-		if err := cfg.Validate(); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg.Queue.MSSClamp.Size != 10 {
-			t.Errorf("expected MSSClamp.Size raised to 10, got %d", cfg.Queue.MSSClamp.Size)
-		}
+func TestValidate_MSSClampBounds(t *testing.T) {
+	cfg := NewConfig()
+	cfg.Queue.MSSClamp.Enabled = true
+	cfg.Queue.MSSClamp.Size = 5
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Queue.MSSClamp.Size != 10 {
+		t.Errorf("expected MSSClamp.Size raised to 10, got %d", cfg.Queue.MSSClamp.Size)
+	}
 
-		cfg.Queue.MSSClamp.Size = 99999
-		if err := cfg.Validate(); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg.Queue.MSSClamp.Size != 1460 {
-			t.Errorf("expected MSSClamp.Size capped to 1460, got %d", cfg.Queue.MSSClamp.Size)
-		}
-	})
+	cfg.Queue.MSSClamp.Size = 99999
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Queue.MSSClamp.Size != 1460 {
+		t.Errorf("expected MSSClamp.Size capped to 1460, got %d", cfg.Queue.MSSClamp.Size)
+	}
 }
 
 func TestValidate_Idempotent(t *testing.T) {
@@ -691,85 +682,215 @@ func egressIPSet() SetConfig {
 	return set
 }
 
-func TestValidate_EgressIP(t *testing.T) {
-	cases := []struct {
-		name string
-		tune func(*SetConfig)
-		code string
-	}{
-		{"not an address", func(s *SetConfig) { s.Routing.EgressIP = "not-an-ip" }, "invalid_egress_ip"},
-		{"unspecified", func(s *SetConfig) { s.Routing.EgressIP = "0.0.0.0" }, "invalid_egress_ip"},
-		{"loopback", func(s *SetConfig) { s.Routing.EgressIP = "127.0.0.1" }, "invalid_egress_ip"},
-	}
+func gatewaySet() SetConfig {
+	set := NewSetConfig()
+	set.Id = "gateway-set"
+	set.Name = "gateway"
+	set.Enabled = true
+	set.Routing.Enabled = true
+	set.Routing.Mode = RoutingModeInterface
+	set.Routing.EgressInterface = "eth0"
+	set.Routing.EgressGateway = "192.0.2.1"
+	return set
+}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := NewConfig()
-			set := egressIPSet()
-			tc.tune(&set)
-			cfg.Sets = []*SetConfig{&set}
+var egressNextHops = []struct {
+	label string
+	path  string
+	code  string
+	field func(*SetConfig) *string
+	new   func() SetConfig
+	v6    string
+	bad   []string
+}{
+	{
+		label: "egress_ip",
+		path:  "sets[0].routing.egress_ip",
+		code:  "invalid_egress_ip",
+		field: func(s *SetConfig) *string { return &s.Routing.EgressIP },
+		new:   egressIPSet,
+		v6:    "2001:DB8::10",
+		bad:   []string{"not-an-ip", "0.0.0.0", "127.0.0.1"},
+	},
+	{
+		label: "egress_gateway",
+		path:  "sets[0].routing.egress_gateway",
+		code:  "invalid_egress_gateway",
+		field: func(s *SetConfig) *string { return &s.Routing.EgressGateway },
+		new:   gatewaySet,
+		v6:    "2001:DB8::1",
+		bad:   []string{"192.0.2.1 10.0.0.1", "0.0.0.0", "127.0.0.1", "224.0.0.1", "255.255.255.255", "::", "::1", "ff02::1"},
+	},
+}
 
-			ve := mustValidationErr(t, cfg.Validate())
-			if findField(ve, "sets[0].routing.egress_ip", tc.code) == nil {
-				t.Errorf("missing %s; got %+v", tc.code, ve.Fields)
+var egressDropCases = []struct {
+	name string
+	tune func(*SetConfig)
+}{
+	{"proxy mode takes the connection over", func(s *SetConfig) {
+		s.Routing.Mode = RoutingModeProxy
+		s.Routing.Upstream.Host = "10.0.0.1"
+		s.Routing.Upstream.Port = 1080
+	}},
+	{"block mode has no next hop", func(s *SetConfig) { s.Routing.Mode = RoutingModeBlock }},
+	{"no output interface to reach it on", func(s *SetConfig) { s.Routing.EgressInterface = "" }},
+}
+
+func TestValidate_EgressNextHopRejected(t *testing.T) {
+	for _, opt := range egressNextHops {
+		t.Run(opt.label, func(t *testing.T) {
+			for _, bad := range opt.bad {
+				t.Run(bad, func(t *testing.T) {
+					cfg := NewConfig()
+					set := opt.new()
+					*opt.field(&set) = bad
+					cfg.Sets = []*SetConfig{&set}
+
+					ve := mustValidationErr(t, cfg.Validate())
+					if findField(ve, opt.path, opt.code) == nil {
+						t.Errorf("missing %s; got %+v", opt.code, ve.Fields)
+					}
+				})
 			}
 		})
 	}
 }
 
-func TestValidate_EgressIPAcceptedAndNormalized(t *testing.T) {
+func TestValidate_EgressNextHopNormalized(t *testing.T) {
+	for _, opt := range egressNextHops {
+		t.Run(opt.label, func(t *testing.T) {
+			base := opt.new()
+			canonical := *opt.field(&base)
+			for _, in := range []struct{ in, want string }{
+				{"  " + canonical + "  ", canonical},
+				{opt.v6, strings.ToLower(opt.v6)},
+			} {
+				cfg := NewConfig()
+				set := opt.new()
+				*opt.field(&set) = in.in
+				cfg.Sets = []*SetConfig{&set}
+
+				if err := cfg.Validate(); err != nil {
+					t.Fatalf("%q on an interface-mode set must validate: %v", in.in, err)
+				}
+				if got := *opt.field(cfg.Sets[0]); got != in.want {
+					t.Errorf("%q stored as %q, want %q", in.in, got, in.want)
+				}
+			}
+		})
+	}
+}
+
+func TestValidate_EgressNextHopDropped(t *testing.T) {
+	for _, opt := range egressNextHops {
+		t.Run(opt.label, func(t *testing.T) {
+			for _, tc := range egressDropCases {
+				t.Run(tc.name, func(t *testing.T) {
+					cfg := NewConfig()
+					set := opt.new()
+					tc.tune(&set)
+					cfg.Sets = []*SetConfig{&set}
+
+					if err := cfg.Validate(); err != nil {
+						t.Fatalf("switching a set away from %s must not block the save, the stale value should just be dropped: %v", opt.label, err)
+					}
+					if got := *opt.field(cfg.Sets[0]); got != "" {
+						t.Errorf("%s %q was kept where it cannot take effect", opt.label, got)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestValidate_EgressGatewayAcceptsLinkLocal(t *testing.T) {
 	cfg := NewConfig()
-	set := egressIPSet()
-	set.Routing.EgressIP = "  192.0.2.10  "
+	set := gatewaySet()
+	set.Routing.EgressGateway = "fe80::1"
 	cfg.Sets = []*SetConfig{&set}
-
 	if err := cfg.Validate(); err != nil {
-		t.Fatalf("a routable egress IP on an interface-mode set must validate: %v", err)
+		t.Fatalf("fe80::1 is an ordinary IPv6 next hop and must validate: %v", err)
 	}
-	if cfg.Sets[0].Routing.EgressIP != "192.0.2.10" {
-		t.Errorf("egress IP was not normalized: got %q", cfg.Sets[0].Routing.EgressIP)
-	}
-
-	cfg = NewConfig()
-	set = egressIPSet()
-	set.Routing.EgressIP = "2001:DB8::10"
-	cfg.Sets = []*SetConfig{&set}
-
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("an IPv6 egress IP must validate: %v", err)
-	}
-	if cfg.Sets[0].Routing.EgressIP != "2001:db8::10" {
-		t.Errorf("IPv6 egress IP was not canonicalized: got %q", cfg.Sets[0].Routing.EgressIP)
+	if got := cfg.Sets[0].Routing.EgressGateway; got != "fe80::1" {
+		t.Errorf("link-local gateway stored as %q", got)
 	}
 }
-
-func TestValidate_EgressIPDroppedWhereItCannotApply(t *testing.T) {
-	cases := []struct {
-		name string
-		tune func(*SetConfig)
-	}{
-		{"proxy mode terminates the connection", func(s *SetConfig) {
-			s.Routing.Mode = RoutingModeProxy
-			s.Routing.Upstream.Host = "10.0.0.1"
-			s.Routing.Upstream.Port = 1080
-		}},
-		{"block mode has no egress", func(s *SetConfig) { s.Routing.Mode = RoutingModeBlock }},
-		{"no output interface to pin it to", func(s *SetConfig) { s.Routing.EgressInterface = "" }},
+func TestValidate_EgressGatewayRejectsLocalAddress(t *testing.T) {
+	if !egressGatewayIsLocal(net.ParseIP("127.0.0.1")) {
+		t.Fatal("loopback must read as local, or the guard below never fires")
 	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := NewConfig()
-			set := egressIPSet()
-			tc.tune(&set)
-			cfg.Sets = []*SetConfig{&set}
-
-			if err := cfg.Validate(); err != nil {
-				t.Fatalf("switching a set away from an egress IP must not block the save, the stale value should just be dropped: %v", err)
-			}
-			if got := cfg.Sets[0].Routing.EgressIP; got != "" {
-				t.Errorf("egress IP %q was kept where it cannot take effect", got)
-			}
-		})
+	if egressGatewayIsLocal(net.ParseIP("192.0.2.1")) {
+		t.Fatal("TEST-NET-1 must not read as local")
 	}
+	var local string
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatalf("list interfaces: %v", err)
+	}
+outer:
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			if ipNet, ok := addr.(*net.IPNet); ok && ipNet.IP != nil && !ipNet.IP.IsLoopback() {
+				local = ipNet.IP.String()
+				break outer
+			}
+		}
+	}
+	if local == "" {
+		t.Skip("no non-loopback address to offer as a gateway")
+	}
+	cfg := NewConfig()
+	set := gatewaySet()
+	set.Routing.EgressGateway = local
+	cfg.Sets = []*SetConfig{&set}
+	ve := mustValidationErr(t, cfg.Validate())
+	if findField(ve, "sets[0].routing.egress_gateway", "invalid_egress_gateway") == nil {
+		t.Errorf("a router address as gateway must fail validation; got %+v", ve.Fields)
+	}
+}
+func TestValidate_SharedManualTableWithDifferentGatewaysWarns(t *testing.T) {
+	mk := func(name, gw string) *SetConfig {
+		set := gatewaySet()
+		set.Id = name
+		set.Name = name
+		set.Routing.FWMark = 0x100
+		set.Routing.Table = 200
+		set.Routing.EgressGateway = gw
+		return &set
+	}
+	t.Run("different gateways clash", func(t *testing.T) {
+		got := findSharedTableGatewayClashes([]*SetConfig{mk("a", "192.0.2.1"), mk("b", "192.0.2.2")})
+		if len(got) != 1 || got[0].table != 200 {
+			t.Fatalf("expected one clash on table 200, got %+v", got)
+		}
+	})
+	t.Run("gateway against interface default clashes", func(t *testing.T) {
+		got := findSharedTableGatewayClashes([]*SetConfig{mk("a", "192.0.2.1"), mk("b", "")})
+		if len(got) != 1 || got[0].table != 200 {
+			t.Fatalf("a gateway set sharing a pinned table with the interface default must warn, got %+v", got)
+		}
+	})
+	t.Run("two interface defaults share quietly", func(t *testing.T) {
+		got := findSharedTableGatewayClashes([]*SetConfig{mk("a", ""), mk("b", "")})
+		if len(got) != 0 {
+			t.Fatalf("two empty gateways write the same default, got %+v", got)
+		}
+	})
+	t.Run("same gateway shares quietly", func(t *testing.T) {
+		got := findSharedTableGatewayClashes([]*SetConfig{mk("a", "192.0.2.1"), mk("b", "192.0.2.1")})
+		if len(got) != 0 {
+			t.Fatalf("one gateway per table needs no warning, got %+v", got)
+		}
+	})
+	t.Run("automatic tables do not clash", func(t *testing.T) {
+		a, b := mk("a", "192.0.2.1"), mk("b", "192.0.2.2")
+		a.Routing.FWMark, a.Routing.Table = 0, 0
+		if got := findSharedTableGatewayClashes([]*SetConfig{a, b}); len(got) != 0 {
+			t.Fatalf("automatic tables are allocated apart, got %+v", got)
+		}
+	})
 }

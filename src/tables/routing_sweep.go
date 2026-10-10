@@ -89,7 +89,10 @@ func routeSweepOwnRoutes(fam []string, proxy bool, table string) {
 			}
 			del = append(del, "default", "dev", dev)
 		default:
-			continue
+			if dev == "" {
+				continue
+			}
+			del = append(del, fields[0], "dev", dev)
 		}
 		del = append(del, routeProtoArgs()...)
 		del = append(del, "table", table)

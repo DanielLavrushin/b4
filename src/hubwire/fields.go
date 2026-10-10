@@ -151,6 +151,7 @@ var Fields = map[string]Field{
 	"routing.block_action":      {Class: Crosses},
 	"routing.egress_interface":  {Class: Never},
 	"routing.egress_ip":         {Class: Never},
+	"routing.egress_gateway":    {Class: Never},
 	"routing.upstream":          {Class: Never},
 	"routing.fwmark":            {Class: Never},
 	"routing.table":             {Class: Never},

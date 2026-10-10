@@ -1031,7 +1031,7 @@ func TestRouteResolveIDs(t *testing.T) {
 	t.Run("reuses cached iface auto", func(t *testing.T) {
 		routeRuleCache = make(map[string]routeState)
 		routeIfaceAuto = map[string]routeState{
-			routeIfaceAutoKey("tun0", "", false): {mark: 0x555, table: 150},
+			routeIfaceAutoKey("tun0", "", "", false): {mark: 0x555, table: 150},
 		}
 
 		cfg := config.NewConfig()
@@ -1421,6 +1421,7 @@ type mockRouteBackend struct {
 	addElementsFn func(setName string, ips []string, ttlSec int)
 	delElementsFn func(setName string, ips []string)
 	setOps        []string
+	existingSets  map[string]bool
 	bypass        map[string][]uint32
 	chainOps      map[string][]string
 	jumps         []mockRouteJump
@@ -1481,6 +1482,13 @@ func (m *mockRouteBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 bo
 	m.recordOp(chain, "loop-guard "+iface)
 	return true
 }
+func (m *mockRouteBackend) addNarrowEgressGuard(chain, iface, gwV4, gwV6, gwMAC string, v4, v6 bool) bool {
+	m.recordOp(chain, "narrow-guard "+iface+" gw4="+gwV4+" gw6="+gwV6+" mac="+gwMAC)
+	return true
+}
+func (m *mockRouteBackend) addRedirectDrop(chain, iface string) {
+	m.recordOp(chain, "redirect-drop "+iface)
+}
 func (m *mockRouteBackend) addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string) {
 	m.recordOp(chain, "fallback")
 }
@@ -1532,9 +1540,12 @@ func (m *mockRouteBackend) addMasqueradeRule(chain string, mark uint32, iface st
 func (m *mockRouteBackend) addSNATRule(chain, setName, iface, srcIP string, mark uint32, v6 bool) {
 	m.snat = append(m.snat, mockNATRule{chain: chain, setName: setName, mark: mark, iface: iface, srcIP: srcIP, v6: v6})
 }
-func (m *mockRouteBackend) flushIPSet(name string)   {}
-func (m *mockRouteBackend) destroyIPSet(name string) {}
-func (m *mockRouteBackend) clearAll()                {}
+func (m *mockRouteBackend) flushIPSet(name string)   { m.setOps = append(m.setOps, "flush "+name) }
+func (m *mockRouteBackend) destroyIPSet(name string) { m.setOps = append(m.setOps, "destroy "+name) }
+func (m *mockRouteBackend) hasIPSet(name string) bool {
+	return m.existingSets[name]
+}
+func (m *mockRouteBackend) clearAll() {}
 func (m *mockRouteBackend) addElements(setName string, ips []string, ttlSec int) []string {
 	m.setOps = append(m.setOps, "add "+setName)
 	if m.addElementsFn != nil {
