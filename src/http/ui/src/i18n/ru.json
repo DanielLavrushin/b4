@@ -3549,7 +3549,11 @@
       "addIp": "Добавить IP в сет",
       "addDomainToSet": "Добавить домен в сет",
       "showDevices": "Показать устройства",
-      "hideDevices": "Скрыть устройства"
+      "hideDevices": "Скрыть устройства",
+      "sortDevices": "Сортировка устройств",
+      "sortByName": "По имени",
+      "sortByRecent": "По последней активности",
+      "sortByPackets": "По числу пакетов"
     },
     "addDomain": {
       "title": "Добавить домен в список",

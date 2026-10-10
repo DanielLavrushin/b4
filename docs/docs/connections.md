@@ -48,7 +48,17 @@ Clicking a row opens the **Detail** panel: activity, packet count, the duration 
 
 ### Devices
 
-The **Devices** panel on the left lists the traffic sources seen within the period, each with the time since its latest packet, its activity over the last minute and its packet count. Clicking a device limits the list to its groups, **All devices** removes the selection. The button in the panel header collapses it; on a narrow screen it starts collapsed.
+The **Devices** panel on the left lists the traffic sources seen within the period, each with the time since its latest packet, its activity over the last minute and its packet count. Clicking a device limits the list to its groups, **All devices** removes the selection. The selected device stays in the panel after its latest packet has fallen out of the period. **Hide devices** in the panel header collapses the panel; on a narrow screen it starts collapsed.
+
+**Sort devices** in the panel header sets the order of the panel. The choice is remembered by the browser.
+
+| Order | Effect |
+| --- | --- |
+| **By name** | The default. Devices with a name come first, in alphabetical order, then devices known only by their MAC address, then sources known only by their IP address, in ascending order |
+| **By latest activity** | The device with the most recent packet first; the order changes as packets arrive |
+| **By packet count** | The device with the most packets first |
+
+Devices with the same latest packet time or packet count keep the name order among themselves.
 
 A device is identified by its MAC address. When the MAC is unknown, for example for a device behind another router, the source is grouped by its IP address. Aliases from the [device filtering](./settings/core#device-filtering) table are always shown. With device filtering or vendor lookup turned on there, the names of discovered devices are used as well, and the router's own addresses are labelled **Router**.
 

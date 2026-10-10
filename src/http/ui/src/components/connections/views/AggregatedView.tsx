@@ -317,8 +317,10 @@ export const AggregatedView = ({
 
   const visibleDevices = useMemo(() => {
     const cutoff = window === 0 || now === 0 ? 0 : now - window * 1000;
-    return state.devices.filter((d) => cutoff === 0 || d.lastSeen >= cutoff);
-  }, [state.devices, window, now]);
+    return state.devices.filter(
+      (d) => cutoff === 0 || d.lastSeen >= cutoff || d.mac === selectedMac,
+    );
+  }, [state.devices, window, now, selectedMac]);
 
   return (
     <Box sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
