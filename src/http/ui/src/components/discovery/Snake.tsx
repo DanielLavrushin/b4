@@ -277,12 +277,7 @@ export const Snake = () => {
       while (pending >= game.current.stepMs) {
         pending -= game.current.stepMs;
         const outcome = advance(game.current);
-        if (outcome === "dead") {
-          draw(canvasRef.current, game.current);
-          setStatus("over");
-          return;
-        }
-        if (outcome === "ate") {
+        if (outcome !== "moved") {
           const points = game.current.score;
           setScore(points);
           setBest((prev) => {
@@ -290,6 +285,11 @@ export const Snake = () => {
             saveBest(points);
             return points;
           });
+        }
+        if (outcome === "dead") {
+          draw(canvasRef.current, game.current);
+          setStatus("over");
+          return;
         }
       }
       draw(canvasRef.current, game.current);
