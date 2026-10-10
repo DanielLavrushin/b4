@@ -58,8 +58,29 @@ func writeTool(t *testing.T, dir, name, body string) string {
 	return p
 }
 
+func trustToolDir(t *testing.T, dir string) {
+	t.Helper()
+	old := toolVersionTrusted
+	toolVersionTrusted = func(path string) bool { return filepath.Dir(path) == dir || old(path) }
+	t.Cleanup(func() { toolVersionTrusted = old })
+}
+
+func TestToolVersionsDoesNotRunAToolOutsideTheSystemDirectories(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	jq := writeTool(t, dir, "jq", "echo run >> '"+calls+"'\necho jq-1.0\n")
+
+	if got := newToolVersions().of("jq", jq); got != "" {
+		t.Errorf("version = %q, want none for a tool outside the system directories", got)
+	}
+	if _, err := os.Stat(calls); !os.IsNotExist(err) {
+		t.Error("ran a tool found outside the system directories")
+	}
+}
+
 func TestToolVersionsAsksBusyboxOnceForAllItsApplets(t *testing.T) {
 	dir := t.TempDir()
+	trustToolDir(t, dir)
 	calls := filepath.Join(dir, "calls")
 	busybox := writeTool(t, dir, "busybox", "echo run >> '"+calls+"'\n"+
 		"[ $# -eq 0 ] && echo 'BusyBox v1.36.1 (2024-09-23 12:34:46 UTC) multi-call binary.'\n")
@@ -87,6 +108,7 @@ func TestToolVersionsAsksBusyboxOnceForAllItsApplets(t *testing.T) {
 
 func TestToolVersionsRunsAMultiCallBinaryUnderItsOwnName(t *testing.T) {
 	dir := t.TempDir()
+	trustToolDir(t, dir)
 	multi := writeTool(t, dir, "xtables-nft-multi", "[ \"$1\" = --version ] && echo \"$(basename \"$0\") v1.8.11 (nf_tables)\"\n")
 	link := filepath.Join(dir, "iptables")
 	if err := os.Symlink(multi, link); err != nil {
@@ -103,7 +125,9 @@ func TestToolVersionsGivesUpOnAToolThatHangs(t *testing.T) {
 	toolVersionTimeout = 100 * time.Millisecond
 	defer func() { toolVersionTimeout = old }()
 
-	hang := writeTool(t, t.TempDir(), "hang", "exec sleep 10\n")
+	dir := t.TempDir()
+	trustToolDir(t, dir)
+	hang := writeTool(t, dir, "hang", "exec sleep 10\n")
 	start := time.Now()
 	if got := newToolVersions().of("hang", hang); got != "" {
 		t.Errorf("version = %q, want none", got)
@@ -119,6 +143,7 @@ func TestToolVersionsStopsAskingOnceTheBudgetIsSpent(t *testing.T) {
 	defer func() { toolVersionTimeout, toolVersionBudget = oldTimeout, oldBudget }()
 
 	dir := t.TempDir()
+	trustToolDir(t, dir)
 	var hung []string
 	for _, name := range []string{"a", "b", "c", "d", "e"} {
 		hung = append(hung, writeTool(t, dir, name, "exec sleep 10\n"))
@@ -140,6 +165,7 @@ func TestToolVersionsStopsAskingOnceTheBudgetIsSpent(t *testing.T) {
 
 func TestConcurrentDiagnosticsShareOneRunPerAPI(t *testing.T) {
 	dir := t.TempDir()
+	trustToolDir(t, dir)
 	calls := filepath.Join(dir, "calls")
 	writeTool(t, dir, "jq", "echo run >> '"+calls+"'\nsleep 0.3\necho jq-1.0\n")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))

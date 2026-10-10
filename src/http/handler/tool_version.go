@@ -8,11 +8,14 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 var (
 	toolVersionTimeout = 2 * time.Second
 	toolVersionBudget  = 5 * time.Second
+	toolVersionTrusted = config.InStandardBinDir
 )
 
 const (
@@ -47,6 +50,9 @@ func newToolVersions() *toolVersions {
 }
 
 func (v *toolVersions) of(name, path string) string {
+	if !toolVersionTrusted(path) {
+		return ""
+	}
 	if real, err := filepath.EvalSymlinks(path); err == nil && strings.HasPrefix(filepath.Base(real), "busybox") {
 		version, seen := v.busybox[real]
 		if !seen {

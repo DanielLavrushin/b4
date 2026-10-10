@@ -207,3 +207,21 @@ func TestExtendedPATHEmptyInput(t *testing.T) {
 		t.Fatalf("expected the standard list, got %q", got)
 	}
 }
+
+func TestInStandardBinDirTrustsOnlyTheSystemDirectories(t *testing.T) {
+	cases := map[string]bool{
+		"/usr/sbin/iptables":           true,
+		"/opt/bin/jq":                  true,
+		"/bin/busybox":                 true,
+		"/tmp/mnt/sda1/opt/bin/jq":     false,
+		"/mnt/usb-5593373d/usr/bin/jq": false,
+		"/jffs/bin/jq":                 false,
+		"/usr/sbin/../../tmp/mnt/x/jq": false,
+		"/usr/sbin/subdir/iptables":    false,
+	}
+	for path, want := range cases {
+		if got := InStandardBinDir(path); got != want {
+			t.Errorf("InStandardBinDir(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
