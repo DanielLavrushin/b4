@@ -370,6 +370,10 @@ export const ApplyDialog = ({
       fullWidth
       actions={
         <>
+          <Button onClick={onClose} disabled={loading}>
+            {t("core.cancel")}
+          </Button>
+          <Box sx={{ flex: 1 }} />
           <Button
             size="small"
             startIcon={<CopyIcon />}
@@ -386,31 +390,25 @@ export const ApplyDialog = ({
           >
             <CopyIcon fontSize="small" />
           </IconButton>
-          <Box sx={{ flex: 1 }} />
-          <Stack direction="row" spacing={2}>
-            <Button onClick={onClose} disabled={loading}>
-              {t("core.cancel")}
-            </Button>
-            <Button
-              variant="contained"
-              onClick={confirm}
-              disabled={
-                loading ||
-                (mode === "existing" && !selectedSetId) ||
-                (mode === "replace" && (!replaceSetId || !matchesReady))
-              }
-              startIcon={
-                loading ? (
-                  <CircularProgress size={18} color="inherit" />
-                ) : (
-                  <AddIcon />
-                )
-              }
-              sx={{ bgcolor: colors.secondary, color: colors.background.default }}
-            >
-              {confirmLabel}
-            </Button>
-          </Stack>
+          <Button
+            variant="contained"
+            onClick={confirm}
+            disabled={
+              loading ||
+              (mode === "existing" && !selectedSetId) ||
+              (mode === "replace" && (!replaceSetId || !matchesReady))
+            }
+            startIcon={
+              loading ? (
+                <CircularProgress size={18} color="inherit" />
+              ) : (
+                <AddIcon />
+              )
+            }
+            sx={{ bgcolor: colors.secondary, color: colors.background.default }}
+          >
+            {confirmLabel}
+          </Button>
         </>
       }
     >
