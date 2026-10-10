@@ -647,6 +647,7 @@ type dscpPreRun struct {
 	resolver string
 	last     time.Time
 	running  bool
+	cancel   context.CancelFunc
 }
 
 var (
@@ -731,31 +732,38 @@ func dscpPreResolve(plan *dscpPlan, cfg *config.Config, _ bool) {
 		}
 		listed[member.id] = true
 		key, resolver := strings.Join(member.domains, "\n"), dscpPreResolverKey(cfg, set)
-		run := dscpPreRuns[member.id]
-		if run == nil {
-			run = &dscpPreRun{}
-			dscpPreRuns[member.id] = run
-		}
-		if run.running || (run.domains == key && run.resolver == resolver && now.Sub(run.last) < dscpPreResolveInterval(member)-dscpSyncTick/2) {
+		prev := dscpPreRuns[member.id]
+		same := prev != nil && prev.domains == key && prev.resolver == resolver
+		if same && (prev.running || now.Sub(prev.last) < dscpPreResolveInterval(member)-dscpSyncTick/2) {
 			continue
 		}
-		if run.domains != key && len(member.domains) == dscpPreResolveCap && len(set.Targets.SNIDomains) > dscpPreResolveCap {
+		if prev != nil && prev.running {
+			log.Tracef("DSCP stamp: the domains or the resolver of set %s changed during its lookups, so b4 drops that run and starts again", set.Name)
+			prev.cancel()
+		}
+		if (prev == nil || prev.domains != key) && len(member.domains) == dscpPreResolveCap && len(set.Targets.SNIDomains) > dscpPreResolveCap {
 			log.Infof("DSCP stamp: set %s lists more than %d domains, so b4 looks up only the first %d in advance and learns the addresses of the others from DNS answers and TLS names", set.Name, dscpPreResolveCap, dscpPreResolveCap)
 		}
-		run.domains, run.resolver, run.last, run.running = key, resolver, now, true
+		ctx, cancel := context.WithCancel(dscpPreCtx)
+		run := &dscpPreRun{domains: key, resolver: resolver, last: now, running: true, cancel: cancel}
+		dscpPreRuns[member.id] = run
 		dscpPreWG.Add(1)
-		go dscpPreResolveSet(dscpPreCtx, cfg, set, member.domains)
+		go dscpPreResolveSet(ctx, run, cfg, set, member.domains)
 	}
 	for id, run := range dscpPreRuns {
-		if !listed[id] && !run.running {
-			delete(dscpPreRuns, id)
+		if listed[id] {
+			continue
 		}
+		if run.running {
+			run.cancel()
+		}
+		delete(dscpPreRuns, id)
 	}
 }
 
-func dscpPreResolveSet(ctx context.Context, cfg *config.Config, set *config.SetConfig, domains []string) {
+func dscpPreResolveSet(ctx context.Context, run *dscpPreRun, cfg *config.Config, set *config.SetConfig, domains []string) {
 	defer dscpPreWG.Done()
-	defer dscpPreResolveDone(set.Id)
+	defer dscpPreResolveDone(set.Id, run)
 	learned := 0
 	for _, domain := range domains {
 		if ctx.Err() != nil {
@@ -765,16 +773,29 @@ func dscpPreResolveSet(ctx context.Context, cfg *config.Config, set *config.SetC
 		if len(ips) == 0 {
 			continue
 		}
-		dscpLearnClaim(set.Id, ips, dscpLearnFromPreResolve)
+		if !dscpPreSubmit(set.Id, run, ips) {
+			return
+		}
 		learned += len(ips)
 	}
 	log.Tracef("DSCP stamp: looked up %d domains of set %s in advance and passed %d addresses on to its DSCP value", len(domains), set.Name, learned)
 }
 
-func dscpPreResolveDone(setID string) {
+func dscpPreSubmit(setID string, run *dscpPreRun, ips []net.IP) bool {
 	dscpPreMu.Lock()
 	defer dscpPreMu.Unlock()
-	if run := dscpPreRuns[setID]; run != nil {
+	if dscpPreRuns[setID] != run {
+		return false
+	}
+	dscpLearnClaim(setID, ips, dscpLearnFromPreResolve)
+	return true
+}
+
+func dscpPreResolveDone(setID string, run *dscpPreRun) {
+	run.cancel()
+	dscpPreMu.Lock()
+	defer dscpPreMu.Unlock()
+	if dscpPreRuns[setID] == run {
 		run.running = false
 	}
 }

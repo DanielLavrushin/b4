@@ -1226,22 +1226,169 @@ func TestSetDSCPPreResolveSingleFlight(t *testing.T) {
 		t.Fatal("the pre-resolve of set a never started")
 	}
 	dscpPreResolve(dscpApplied.Load().plan, nil, true)
-	grown := dscpPreDomainSet("a", 31, "a1.example", "a2.example", "a3.example")
-	dscpLearnApply(t, dscpIptTestConfig(7, true, nil, grown, b), backendIPTables)
-	dscpPreResolve(dscpApplied.Load().plan, nil, false)
+	dscpPreResolve(dscpApplied.Load().plan, cfg, false)
 	if n := l.count("a1.example"); n != 1 {
-		t.Errorf("set a was looked up %d times while its first run was still going", n)
+		t.Errorf("set a was looked up %d times while its run for the same domains was still going", n)
 	}
 	close(release)
 	dscpPreWG.Wait()
-	if l.count("a1.example") != 1 || l.count("a2.example") != 1 || l.count("b1.example") != 1 || l.count("a3.example") != 0 {
+	if l.count("a1.example") != 1 || l.count("a2.example") != 1 || l.count("b1.example") != 1 {
 		t.Fatalf("lookups %v, want one run per set", l.asked)
 	}
+}
 
-	dscpPreTrigger()
-	if l.count("a1.example") != 2 || l.count("a3.example") != 1 || l.count("b1.example") != 1 {
-		t.Errorf("the changed domains of set a were not looked up once its run ended: %v", l.asked)
+type dscpPreLate struct {
+	mu       sync.Mutex
+	asked    []string
+	seen     chan string
+	began    chan struct{}
+	release  chan struct{}
+	released sync.Once
+}
+
+func (l *dscpPreLate) unblock() {
+	l.released.Do(func() { close(l.release) })
+}
+
+func dscpPreLateStub(t *testing.T, slow func(host, resolver string) bool) *dscpPreLate {
+	t.Helper()
+	l := &dscpPreLate{seen: make(chan string, 64), began: make(chan struct{}, 1), release: make(chan struct{})}
+	t.Cleanup(l.unblock)
+	dscpPreLookup = func(_ context.Context, _ *config.Config, set *config.SetConfig, host string) []net.IP {
+		entry := host + " via " + set.DNS.TargetDNS
+		l.mu.Lock()
+		l.asked = append(l.asked, entry)
+		l.mu.Unlock()
+		if slow(host, set.DNS.TargetDNS) {
+			select {
+			case l.began <- struct{}{}:
+			default:
+			}
+			<-l.release
+			return []net.IP{net.IPv4(198, 18, 9, 9)}
+		}
+		l.seen <- entry
+		return []net.IP{net.IPv4(198, 18, 7, 7)}
 	}
+	return l
+}
+
+func (l *dscpPreLate) waitBegan(t *testing.T) {
+	t.Helper()
+	select {
+	case <-l.began:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the slow lookup never started")
+	}
+}
+
+func (l *dscpPreLate) waitSeen(t *testing.T, entry string) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case got := <-l.seen:
+			if got == entry {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("%q was not looked up while the replaced run was still waiting; asked %v", entry, l.lookups())
+		}
+	}
+}
+
+func (l *dscpPreLate) lookups() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.asked)
+}
+
+func dscpPreDrain(queue chan *dscpLearnBatch) []string {
+	var got []string
+	for len(queue) > 0 {
+		batch := <-queue
+		for _, addr := range batch.addrs {
+			got = append(got, addr.String())
+		}
+		dscpLearnSettle(batch)
+	}
+	return got
+}
+
+func TestSetDSCPPreResolveRestartsWhenItsTargetsChange(t *testing.T) {
+	const late = "198.18.9.9"
+	t.Run("domains", func(t *testing.T) {
+		dscpLearnIptSetup(t, backendIPTables)
+		dscpLearnApply(t, dscpIptTestConfig(7, true, nil, dscpPreDomainSet("a", 31, "old.example", "keep.example")), backendIPTables)
+		queue := dscpLearnManualQueue(t, dscpLearnQueueSize)
+		dscpPreResolveStart()
+		l := dscpPreLateStub(t, func(host, _ string) bool { return host == "old.example" })
+
+		dscpPreResolve(dscpApplied.Load().plan, nil, false)
+		l.waitBegan(t)
+		dscpLearnApply(t, dscpIptTestConfig(7, true, nil, dscpPreDomainSet("a", 31, "new.example", "keep.example")), backendIPTables)
+		dscpPreResolve(dscpApplied.Load().plan, nil, false)
+		l.waitSeen(t, "new.example via ")
+		l.unblock()
+		dscpPreWG.Wait()
+
+		if got := dscpPreDrain(queue); slices.Contains(got, late) {
+			t.Errorf("the replaced run handed over the answer for a removed domain: %v", got)
+		}
+		kept := 0
+		for _, entry := range l.lookups() {
+			if strings.HasPrefix(entry, "keep.example ") {
+				kept++
+			}
+		}
+		if kept != 1 {
+			t.Errorf("keep.example was looked up %d times, want once, by the new run only: %v", kept, l.lookups())
+		}
+	})
+
+	t.Run("resolver", func(t *testing.T) {
+		dscpLearnIptSetup(t, backendIPTables)
+		build := func(redirect string) *config.Config {
+			set := dscpPreDomainSet("a", 31, "a1.example")
+			set.DNS.Enabled, set.DNS.TargetDNS = redirect != "", redirect
+			return dscpIptTestConfig(7, true, nil, set)
+		}
+		dscpLearnApply(t, build(""), backendIPTables)
+		queue := dscpLearnManualQueue(t, dscpLearnQueueSize)
+		dscpPreResolveStart()
+		l := dscpPreLateStub(t, func(_, resolver string) bool { return resolver == "" })
+
+		plan := dscpApplied.Load().plan
+		dscpPreResolve(plan, nil, false)
+		l.waitBegan(t)
+		dscpPreResolve(plan, build("1.1.1.1"), false)
+		l.waitSeen(t, "a1.example via 1.1.1.1")
+		l.unblock()
+		dscpPreWG.Wait()
+
+		if got := dscpPreDrain(queue); slices.Contains(got, late) || !slices.Contains(got, "198.18.7.7") {
+			t.Errorf("learned %v, want only the new resolver's answer", got)
+		}
+	})
+
+	t.Run("domains removed", func(t *testing.T) {
+		dscpLearnIptSetup(t, backendIPTables)
+		dscpLearnApply(t, dscpIptTestConfig(7, true, nil, dscpPreDomainSet("a", 31, "old.example")), backendIPTables)
+		queue := dscpLearnManualQueue(t, dscpLearnQueueSize)
+		dscpPreResolveStart()
+		l := dscpPreLateStub(t, func(host, _ string) bool { return host == "old.example" })
+
+		dscpPreResolve(dscpApplied.Load().plan, nil, false)
+		l.waitBegan(t)
+		dscpLearnApply(t, dscpIptTestConfig(7, true, nil, dscpPreDomainSet("a", 31)), backendIPTables)
+		dscpPreResolve(dscpApplied.Load().plan, nil, false)
+		l.unblock()
+		dscpPreWG.Wait()
+
+		if got := dscpPreDrain(queue); slices.Contains(got, late) {
+			t.Errorf("a run for domains the set no longer lists handed over its answer: %v", got)
+		}
+	})
 }
 
 func TestSetDSCPPreResolveFollowsTheSetsResolver(t *testing.T) {
