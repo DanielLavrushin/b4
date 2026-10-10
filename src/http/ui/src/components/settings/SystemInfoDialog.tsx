@@ -218,19 +218,47 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
     </Typography>
   );
 
-  const listRow = (name: string, right: React.ReactNode) => (
+  const listRow = (name: string, right: React.ReactNode, version?: string) => (
     <Stack
       direction="row"
       justifyContent="space-between"
       alignItems="center"
+      spacing={spacing.sm}
       sx={{ py: 0.3, px: 1 }}
     >
-      <Typography
-        variant="caption"
-        sx={{ color: colors.text.primary, fontFamily: "monospace" }}
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={{ xs: 0, sm: spacing.sm }}
+        alignItems={{ xs: "flex-start", sm: "baseline" }}
+        sx={{ minWidth: 0 }}
       >
-        {name}
-      </Typography>
+        <Typography
+          variant="caption"
+          sx={{
+            color: colors.text.primary,
+            fontFamily: "monospace",
+            flexShrink: 0,
+          }}
+        >
+          {name}
+        </Typography>
+        {version && (
+          <Typography
+            variant="caption"
+            noWrap
+            title={version}
+            sx={{
+              color: colors.text.secondary,
+              fontFamily: "monospace",
+              fontSize: "0.65rem",
+              minWidth: 0,
+              maxWidth: "100%",
+            }}
+          >
+            {version}
+          </Typography>
+        )}
+      </Stack>
       {right}
     </Stack>
   );
@@ -841,6 +869,7 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                 )}
                 {boolChip(tool.found, "found", "-")}
               </Stack>,
+              tool.version,
             ),
           )}
 
@@ -859,6 +888,7 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                 )}
                 {boolChip(tool.found, "found", "missing")}
               </Stack>,
+              tool.version,
             ),
           )}
 
@@ -877,6 +907,7 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                 )}
                 {boolChip(tool.found, "found", "missing")}
               </Stack>,
+              tool.version,
             ),
           )}
 

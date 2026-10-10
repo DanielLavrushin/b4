@@ -47,6 +47,7 @@ interface DiagTool {
   name: string;
   found: boolean;
   detail?: string;
+  version?: string;
 }
 
 interface DiagMount {
