@@ -584,7 +584,10 @@ func (b *routeNftBackend) destroyIPSet(name string) {
 	runLogged("routing: delete set "+dyn, "nft", "delete", "set", "inet", routeNftTable, dyn)
 }
 func (b *routeNftBackend) hasIPSet(name string) bool {
-	_, err := run("nft", "list", "set", "inet", routeNftTable, name)
+	if _, err := run("nft", "list", "set", "inet", routeNftTable, name); err == nil {
+		return true
+	}
+	_, err := run("nft", "list", "set", "inet", routeNftTable, routeNftDynSet(name))
 	return err == nil
 }
 
