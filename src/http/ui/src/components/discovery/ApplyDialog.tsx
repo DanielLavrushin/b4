@@ -6,13 +6,14 @@ import {
   Chip,
   CircularProgress,
   FormControlLabel,
+  IconButton,
   Radio,
   RadioGroup,
   Stack,
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { AddIcon } from "@b4.icons";
+import { AddIcon, CopyIcon } from "@b4.icons";
 import { B4Alert, B4Select, B4TextField } from "@b4.elements";
 import { B4Dialog } from "@common/B4Dialog";
 import { colors } from "@design";
@@ -21,8 +22,11 @@ import { SimilarSet } from "@models/discovery";
 import { SetDomainMatch } from "@models/sets";
 import { discoveryApi } from "@api/discovery";
 import { setsApi } from "@api/sets";
+import { useSnackbar } from "@context/SnackbarProvider";
 import {
   ApplyTarget,
+  copyText,
+  exportSetJson,
   generateDomainVariants,
   pinsFor,
   probeUrlLabel,
@@ -91,6 +95,7 @@ export const ApplyDialog = ({
   onReplaceStrategy,
 }: ApplyDialogProps) => {
   const { t } = useTranslation();
+  const { showSuccess, showError } = useSnackbar();
   const single = target?.domains.length === 1 ? target.domains[0] : null;
   const variants = useMemo(
     () => (single ? generateDomainVariants(single) : []),
@@ -287,6 +292,23 @@ export const ApplyDialog = ({
     targets: { ...target.set.targets, sni_domains: domains },
   };
 
+  const newSet: B4SetConfig = {
+    ...previewSet,
+    name: name.trim() || domains[0],
+    discovery: { urls: probeUrls },
+  };
+
+  const copyJson = async () => {
+    const ok = await copyText(
+      exportSetJson({
+        ...newSet,
+        targets: { ...newSet.targets, ip: [], asns: [] },
+      }),
+    );
+    if (ok) showSuccess(t("discovery.apply.copied"));
+    else showError(t("discovery.apply.copyFailed"));
+  };
+
   const confirm = () => {
     if (mode === "existing") {
       if (selectedSetId) {
@@ -313,11 +335,7 @@ export const ApplyDialog = ({
       }
       return;
     }
-    onCreate({
-      ...previewSet,
-      name: name.trim() || domains[0],
-      discovery: { urls: probeUrls },
-    });
+    onCreate(newSet);
   };
 
   const choosePick = (next: string) => {
@@ -351,30 +369,49 @@ export const ApplyDialog = ({
       maxWidth="sm"
       fullWidth
       actions={
-        <Stack direction="row" spacing={2}>
-          <Button onClick={onClose} disabled={loading}>
-            {t("core.cancel")}
-          </Button>
+        <>
           <Button
-            variant="contained"
-            onClick={confirm}
-            disabled={
-              loading ||
-              (mode === "existing" && !selectedSetId) ||
-              (mode === "replace" && (!replaceSetId || !matchesReady))
-            }
-            startIcon={
-              loading ? (
-                <CircularProgress size={18} color="inherit" />
-              ) : (
-                <AddIcon />
-              )
-            }
-            sx={{ bgcolor: colors.secondary, color: colors.background.default }}
+            size="small"
+            startIcon={<CopyIcon />}
+            onClick={() => void copyJson()}
+            sx={{ display: { xs: "none", sm: "inline-flex" } }}
           >
-            {confirmLabel}
+            {t("discovery.apply.copyJson")}
           </Button>
-        </Stack>
+          <IconButton
+            size="small"
+            aria-label={t("discovery.apply.copyJson")}
+            onClick={() => void copyJson()}
+            sx={{ display: { sm: "none" } }}
+          >
+            <CopyIcon fontSize="small" />
+          </IconButton>
+          <Box sx={{ flex: 1 }} />
+          <Stack direction="row" spacing={2}>
+            <Button onClick={onClose} disabled={loading}>
+              {t("core.cancel")}
+            </Button>
+            <Button
+              variant="contained"
+              onClick={confirm}
+              disabled={
+                loading ||
+                (mode === "existing" && !selectedSetId) ||
+                (mode === "replace" && (!replaceSetId || !matchesReady))
+              }
+              startIcon={
+                loading ? (
+                  <CircularProgress size={18} color="inherit" />
+                ) : (
+                  <AddIcon />
+                )
+              }
+              sx={{ bgcolor: colors.secondary, color: colors.background.default }}
+            >
+              {confirmLabel}
+            </Button>
+          </Stack>
+        </>
       }
     >
       <Stack spacing={3} sx={{ mt: 1 }}>
