@@ -1107,7 +1107,8 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 	}
 	result.Capabilities = append(result.Capabilities, connmarkCap)
 
-	result.Capabilities = append(result.Capabilities, dnsQueryCapabilities(dnsQueries)...)
+	listener, _ := nfq.DNSQueryCopyStats()
+	result.Capabilities = append(result.Capabilities, dnsQueryCapabilities(dnsQueries, listener)...)
 	markKeeneticHints(result.Capabilities, tables.KeeneticOS())
 
 	return result
@@ -1127,7 +1128,7 @@ func dnsQueryCopyRelevant(st tables.DNSQueryState) bool {
 	return false
 }
 
-func dnsQueryCapabilities(st tables.DNSQueryState) []DiagCapability {
+func dnsQueryCapabilities(st tables.DNSQueryState, listener nfq.DNSQueryCopyCounters) []DiagCapability {
 	if !st.Applied {
 		return nil
 	}
@@ -1163,17 +1164,29 @@ func dnsQueryCapabilities(st tables.DNSQueryState) []DiagCapability {
 		return caps
 	}
 	copyCap := DiagCapability{Name: "dns_query_copy", Available: len(held) == 0}
-	if copyCap.Available {
-		copyCap.Detail = fmt.Sprintf("DNS queries are copied with NFLOG (group %d) and never held, on %s", st.Group, strings.Join(copied, ", "))
-	} else {
+	var details []string
+	if len(held) > 0 {
 		copyCap.Missing = st.CopyMissing
 		copyCap.Packages = st.CopyPackages
 		copyCap.Reasons = tables.KernelModuleReasons(st.CopyMissing)
 		if st.CopyError != "" {
 			copyCap.Reasons = append(copyCap.Reasons, st.CopyError)
 		}
-		copyCap.Detail = fmt.Sprintf("DNS queries are held after conntrack on %s, and this kernel (%s) drops the second of two queries a device sends at once from one socket", strings.Join(held, ", "), st.Release)
+		details = append(details, fmt.Sprintf("DNS queries are held after conntrack on %s, and this kernel (%s) drops the second of two queries a device sends at once from one socket", strings.Join(held, ", "), st.Release))
 	}
+	switch {
+	case len(copied) > 0 && !(listener.Bound && listener.Alive):
+		copyCap.Available = false
+		reason := fmt.Sprintf("b4's NFLOG listener for group %d is not running", st.Group)
+		if listener.Error != "" {
+			reason = fmt.Sprintf("b4's NFLOG listener for group %d stopped: %s", st.Group, listener.Error)
+		}
+		copyCap.Reasons = append(copyCap.Reasons, reason)
+		details = append(details, fmt.Sprintf("DNS queries are copied with NFLOG (group %d) on %s, but b4 is not reading the copies, so the replies to them pass as they are", st.Group, strings.Join(copied, ", ")))
+	case copyCap.Available:
+		details = append(details, fmt.Sprintf("DNS queries are copied with NFLOG (group %d) and never held, on %s", st.Group, strings.Join(copied, ", ")))
+	}
+	copyCap.Detail = strings.Join(details, "; ")
 	return append(caps, copyCap)
 }
 

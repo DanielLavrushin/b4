@@ -32,11 +32,14 @@ func TestDNSQueryStateRows(t *testing.T) {
 	copyMissing := []string{"nfnetlink_log", "xt_NFLOG"}
 	listenerErr := "b4 has no DNS query copy listener"
 	keeneticReasons := append(tables.KernelModuleReasons(copyMissing), listenerErr)
+	stopped := &nfq.DNSQueryCopyCounters{Group: 537, Bound: true, Error: "the NFLOG socket stopped delivering copies"}
+	stoppedReason := "b4's NFLOG listener for group 537 stopped: the NFLOG socket stopped delivering copies"
 
 	for _, tc := range []struct {
-		name string
-		st   tables.DNSQueryState
-		want []DiagCapability
+		name     string
+		st       tables.DNSQueryState
+		listener *nfq.DNSQueryCopyCounters
+		want     []DiagCapability
 	}{
 		{
 			name: "no rules applied",
@@ -162,9 +165,66 @@ func TestDNSQueryStateRows(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "KeeneticOS copied, but the listener stopped",
+			st: tables.DNSQueryState{
+				Applied: true, Release: "4.9-ndm-5", KeeneticOS: true, Affected: true, Group: 537,
+				Placements: map[string]string{"iptables": "copy", "ip6tables": "copy"},
+			},
+			listener: stopped,
+			want: []DiagCapability{
+				{
+					Name:    "dns_query_copy",
+					Reasons: []string{stoppedReason},
+					Detail:  "DNS queries are copied with NFLOG (group 537) on ip6tables, iptables, but b4 is not reading the copies, so the replies to them pass as they are",
+				},
+			},
+		},
+		{
+			name: "affected vanilla kernel, every binary copied, and the listener closed",
+			st: tables.DNSQueryState{
+				Applied: true, Release: "4.9.303", Affected: true, Group: 537,
+				Placements: map[string]string{"iptables": "copy", "ip6tables": "copy"},
+			},
+			listener: &nfq.DNSQueryCopyCounters{},
+			want: []DiagCapability{
+				{
+					Name:    "dns_query_copy",
+					Reasons: []string{"b4's NFLOG listener for group 537 is not running"},
+					Detail:  "DNS queries are copied with NFLOG (group 537) on ip6tables, iptables, but b4 is not reading the copies, so the replies to them pass as they are",
+				},
+			},
+		},
+		{
+			name: "affected vanilla kernel, IPv4 held in mangle and the IPv6 copies unread",
+			st: tables.DNSQueryState{
+				Applied: true, Release: "4.9.337", Affected: true, Group: 537,
+				Placements:   map[string]string{"iptables": "mangle", "ip6tables": "copy"},
+				RawMissing:   []string{"iptable_raw"},
+				RawPackages:  []string{"kmod-ipt-raw"},
+				CopyMissing:  copyMissing,
+				CopyPackages: []string{"kmod-nfnetlink-log", "kmod-ipt-nflog", "iptables-mod-nflog"},
+				CopyError:    listenerErr,
+			},
+			listener: stopped,
+			want: []DiagCapability{
+				todaysDNSBeforeConntrackRow([]string{"iptables"}, []string{"iptable_raw"}, []string{"kmod-ipt-raw"}),
+				{
+					Name:     "dns_query_copy",
+					Missing:  copyMissing,
+					Packages: []string{"kmod-nfnetlink-log", "kmod-ipt-nflog", "iptables-mod-nflog"},
+					Reasons:  append(tables.KernelModuleReasons(copyMissing), listenerErr, stoppedReason),
+					Detail:   "DNS queries are held after conntrack on iptables, and this kernel (4.9.337) drops the second of two queries a device sends at once from one socket; DNS queries are copied with NFLOG (group 537) on ip6tables, but b4 is not reading the copies, so the replies to them pass as they are",
+				},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := dnsQueryCapabilities(tc.st)
+			listener := nfq.DNSQueryCopyCounters{Group: 537, Bound: true, Alive: true}
+			if tc.listener != nil {
+				listener = *tc.listener
+			}
+			got := dnsQueryCapabilities(tc.st, listener)
 			markKeeneticHints(got, tc.st.KeeneticOS)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("rows =\n%+v\nwant\n%+v", got, tc.want)

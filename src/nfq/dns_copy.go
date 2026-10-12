@@ -178,7 +178,7 @@ func (l *dnsCopyListener) read(b *dnsCopyBinding) {
 	l.running.Store(false)
 	l.setErr(err)
 	if dnsCopyStopWarned.CompareAndSwap(false, true) {
-		log.Warnf("DNS: the NFLOG copy of DNS queries stopped (%v); b4 holds DNS queries in its queue again from the next firewall check", err)
+		log.Warnf("DNS: the NFLOG copy of DNS queries stopped (%v); the replies to DNS queries pass as they are until the firewall monitor starts it again at its next check, or holds the queries in b4's queue if it cannot", err)
 	}
 }
 
