@@ -695,6 +695,63 @@ func TestCaptureInterfacesDoNotHideClaimedReplies(t *testing.T) {
 	}
 }
 
+func TestClaimsMadeWhileCopyingAreEnforcedAfterHoldingAgain(t *testing.T) {
+	t.Run("a drop claim still drops a late reply", func(t *testing.T) {
+		injectAfter(t, time.Minute)
+		r := newCopyRig(t, nil, copyBlockSet(config.BlockActionDrop))
+		r.read(copyOf(copyHookInput, rigDevice, rigRouter, 40000, dns.BuildQuery("www.ads.example", 0x1c0, dnsTypeA)))
+		r.l.setFamilies(false, false)
+		q := newFakeModQueue()
+		r.reply(q, replyRaw(buildDNSResponse(0x1c0, "www.ads.example", resolverIPs), rigRouter, rigDevice, 40000))
+		if v := q.now(t); v.verdict != nfqueue.NfDrop || v.packet != nil {
+			t.Fatalf("verdict %d carrying %d bytes, want the late reply dropped as its claim promised", v.verdict, len(v.packet))
+		}
+	})
+
+	t.Run("a pin claim still rewrites a late masqueraded reply", func(t *testing.T) {
+		injectAfter(t, time.Minute)
+		stubRouteAwait(t)
+		r := newCopyRig(t, nil, copyPinSet())
+		r.read(copyOf(nfHookForward, rigDevice, rigOutside, 40000, dns.BuildQuery("pin.example.com", 0x1c1, dnsTypeA)))
+		r.l.setFamilies(false, false)
+		q := newFakeModQueue()
+		raw := replyRaw(buildDNSResponse(0x1c1, "pin.example.com", resolverIPs), rigOutside, rigWAN, 40000)
+		r.reply(q, raw)
+		onlyAddress(t, rewritten(t, q.now(t), raw), "203.0.113.12")
+	})
+
+	t.Run("a pin claim still rewrites a late reply that Capture Interfaces leaves out", func(t *testing.T) {
+		ifaceCache.Store(uint32(221), "br0")
+		ifaceCache.Store(uint32(222), "eth0")
+		t.Cleanup(func() {
+			ifaceCache.Delete(uint32(221))
+			ifaceCache.Delete(uint32(222))
+		})
+		injectAfter(t, time.Minute)
+		stubRouteAwait(t)
+		r := newCopyRig(t, func(c *config.Config) { c.Queue.Interfaces = []string{"br0"} }, copyPinSet())
+		p := copyOf(nfHookForward, rigDevice, rigOutside, 40000, dns.BuildQuery("pin.example.com", 0x1c2, dnsTypeA))
+		p.InDev, p.OutDev = 221, 222
+		r.read(p)
+		r.l.setFamilies(false, false)
+		q := newFakeModQueue()
+		raw := replyRaw(buildDNSResponse(0x1c2, "pin.example.com", resolverIPs), rigOutside, rigWAN, 40000)
+		id, in := uint32(1), uint32(222)
+		r.w.handleQueued(&verdictCtx{id: id, q: q}, nfqueue.Attribute{PacketID: &id, Payload: &raw, InDev: &in}, uint(r.cfg.Queue.Mark))
+		onlyAddress(t, rewritten(t, q.now(t), raw), "203.0.113.12")
+	})
+
+	t.Run("copies that arrive while holding make no claim", func(t *testing.T) {
+		injectAfter(t, time.Minute)
+		r := newCopyRig(t, nil, copyBlockSet(config.BlockActionDrop))
+		r.l.setFamilies(false, false)
+		r.read(copyOf(copyHookInput, rigDevice, rigRouter, 40000, dns.BuildQuery("www.ads.example", 0x1c3, dnsTypeA)))
+		if n := r.l.claims.live.Load(); n != 0 {
+			t.Fatalf("%d live claims from a copy of a family that is held, want none", n)
+		}
+	})
+}
+
 func TestHeldClaimedReplyIsAcceptedWhenTheWorkerStops(t *testing.T) {
 	injectAfter(t, time.Minute)
 	set := copyRedirectSet()

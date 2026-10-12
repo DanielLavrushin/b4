@@ -378,7 +378,7 @@ func (l *dnsCopyListener) handle(p nflog.Packet) {
 		return
 	}
 	pkt, ok := w.parseIPHeaders(p.Payload)
-	if !ok || pkt.proto != 17 || len(pkt.raw) < pkt.ihl+UDPHeaderLen {
+	if !ok || pkt.proto != 17 || len(pkt.raw) < pkt.ihl+UDPHeaderLen || !l.active(pkt.ver) {
 		l.stats.ignored.Add(1)
 		return
 	}
@@ -523,7 +523,11 @@ func (l *dnsCopyListener) deliver(ver byte, originalDst, clientIP net.IP, client
 
 func (w *Worker) dnsCopyMayClaim(raw []byte) bool {
 	l := w.dnsCopy
-	if l == nil || len(raw) == 0 || !l.active(raw[0]>>4) {
+	if l == nil || len(raw) == 0 {
+		return false
+	}
+	active := l.active(raw[0] >> 4)
+	if !active && l.claims.live.Load() == 0 {
 		return false
 	}
 	l4 := IPv6HeaderLen
@@ -538,7 +542,9 @@ func (w *Worker) dnsCopyMayClaim(raw []byte) bool {
 	if len(raw) < l4+UDPHeaderLen || binary.BigEndian.Uint16(raw[l4:l4+2]) != 53 || binary.BigEndian.Uint16(raw[l4+2:l4+4]) == 53 {
 		return false
 	}
-	l.drain()
+	if active {
+		l.drain()
+	}
 	return l.claims.live.Load() > 0
 }
 
@@ -559,10 +565,12 @@ func (w *Worker) takeClaimHold() bool {
 
 func (w *Worker) dnsCopyGate(vc *verdictCtx, pkt *pktInfo, dport, txid uint16, domain string, payload []byte) bool {
 	l := w.dnsCopy
-	if l == nil || vc.q == nil || vc.copy != nil || dport == 53 || len(payload) < 3 || payload[2]&0x80 == 0 || !l.active(pkt.ver) {
+	if l == nil || vc.q == nil || vc.copy != nil || dport == 53 || len(payload) < 3 || payload[2]&0x80 == 0 {
 		return false
 	}
-	l.drain()
+	if l.active(pkt.ver) {
+		l.drain()
+	}
 	if domain == "" || l.claims.live.Load() == 0 {
 		return false
 	}
