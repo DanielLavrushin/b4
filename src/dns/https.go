@@ -116,23 +116,29 @@ func svcbECH(payload []byte, start, end int) (uint16, []byte) {
 		return 0, nil
 	}
 	priority := binary.BigEndian.Uint16(payload[start : start+2])
-	pos, ok := skipDNSName(payload, start+2)
-	if !ok || pos > end {
+	pos, ok := skipPlainName(payload[:end], start+2)
+	if !ok {
 		return 0, nil
 	}
-	for pos+4 <= end {
-		key := binary.BigEndian.Uint16(payload[pos : pos+2])
+	var ech []byte
+	previous := -1
+	for pos < end {
+		if pos+4 > end {
+			return 0, nil
+		}
+		key := int(binary.BigEndian.Uint16(payload[pos : pos+2]))
 		size := int(binary.BigEndian.Uint16(payload[pos+2 : pos+4]))
 		pos += 4
-		if pos+size > end {
+		if key <= previous || pos+size > end {
 			return 0, nil
 		}
 		if key == svcParamECH {
-			return priority, append([]byte(nil), payload[pos:pos+size]...)
+			ech = append([]byte(nil), payload[pos:pos+size]...)
 		}
+		previous = key
 		pos += size
 	}
-	return priority, nil
+	return priority, ech
 }
 
 func ECHPublicName(configList []byte) string {

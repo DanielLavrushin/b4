@@ -711,3 +711,34 @@ func TestECHPublicNameAgreesWithGo(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceBindingKeyNeedsAWellFormedRecord(t *testing.T) {
+	list := buildECHConfigList(usableECHConfig("cover.example.net"))
+	params := map[uint16][]byte{1: {2, 'h', '2'}, svcParamECH: list, 6: bytes.Repeat([]byte{0x20}, 16)}
+	answer := func(rdata []byte) []byte {
+		return buildResponse("example.com", TypeHTTPS, []testRR{{typ: TypeHTTPS, ttl: 60, rdata: rdata}}, false, false)
+	}
+	valid := svcbRData(1, params, []uint16{1, svcParamECH, 6})
+	if got := ResponseECHPublicNames(answer(valid)); !slices.Equal(got, []string{"cover.example.net"}) {
+		t.Fatalf("rig: a well-formed record yields %v", got)
+	}
+
+	truncatedParam := append(svcbRData(1, params, []uint16{1, svcParamECH}), 0, 6, 0, 16, 0x20)
+	pointerTarget := append([]byte{0, 1, 0xC0, 0x0C}, valid[3:]...)
+	malformed := map[string][]byte{
+		"truncated parameter after the key": truncatedParam,
+		"trailing bytes":                    append(append([]byte(nil), valid...), 0, 7),
+		"keys out of order":                 svcbRData(1, params, []uint16{svcParamECH, 1, 6}),
+		"duplicate key":                     append(append([]byte(nil), valid...), 0, 6, 0, 0),
+		"compressed target name":            pointerTarget,
+	}
+	for name, rdata := range malformed {
+		resp := answer(rdata)
+		if got := ParseResponseECH(resp); got != nil {
+			t.Errorf("%s: key %x taken from a record clients reject", name, got)
+		}
+		if got := ResponseECHPublicNames(resp); len(got) != 0 {
+			t.Errorf("%s: public names %v taken from a record clients reject", name, got)
+		}
+	}
+}
