@@ -146,7 +146,7 @@ A site behind a CDN that supports Encrypted ClientHello (ECH) publishes an ECH k
 | The key is removed from an answer when | Example |
 | --- | --- |
 | The queried name matches a set with the switch on | `steamdb.info` listed in the set |
-| The key in the answer names, as its public name, a domain that a set with the switch on matches | `cloudflare-ech.com` listed in the set: the answers of every Cloudflare site lose their key, whatever the site |
+| A key in the answer names, as its public name, a domain that a set with the switch on matches | `cloudflare-ech.com` listed in the set: the answers of every Cloudflare site lose their key, whatever the site |
 
 - Only the `ech` parameter goes, together with its entry in `mandatory`, and `mandatory` itself when nothing is left in it. The ALPN list, the address hints and the TTL stay as they were.
 - The RRSIG records over the changed records are dropped and the AD flag is cleared, since the changed records no longer match their signatures.

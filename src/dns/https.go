@@ -2,7 +2,10 @@ package dns
 
 import (
 	"encoding/binary"
+	"slices"
 	"strings"
+
+	"golang.org/x/crypto/cryptobyte"
 )
 
 const (
@@ -11,7 +14,12 @@ const (
 
 	svcParamMandatory = 0
 	svcParamECH       = 5
-	echConfigVersion  = 0xfe0d
+
+	echConfigVersion = 0xfe0d
+	echKEMX25519     = 0x0020
+	echX25519KeySize = 32
+	echKDFSHA256     = 0x0001
+	echMandatoryExt  = 0x8000
 
 	rrTypeNS    = 2
 	rrTypeSOA   = 6
@@ -22,48 +30,84 @@ const (
 	headerFlagAD = 0x20
 )
 
+var echAEADs = map[uint16]bool{0x0001: true, 0x0002: true, 0x0003: true}
+
+type echConfig struct {
+	kem        uint16
+	publicKey  []byte
+	suiteOK    bool
+	publicName string
+	mandatory  bool
+}
+
 func ParseResponseECH(payload []byte) []byte {
+	var best []byte
+	var bestPriority uint16
+	eachServiceBindingECH(payload, false, func(priority uint16, ech []byte) {
+		if priority == 0 {
+			return
+		}
+		if best == nil || priority < bestPriority {
+			best, bestPriority = ech, priority
+		}
+	})
+	return best
+}
+
+func ResponseECHPublicNames(payload []byte) []string {
+	var names []string
+	eachServiceBindingECH(payload, true, func(_ uint16, ech []byte) {
+		configs, ok := parseECHConfigs(ech)
+		if !ok {
+			return
+		}
+		for _, c := range configs {
+			if name := strings.ToLower(c.publicName); name != "" && !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	})
+	return names
+}
+
+func eachServiceBindingECH(payload []byte, allSections bool, fn func(priority uint16, ech []byte)) {
 	if len(payload) < 12 {
-		return nil
+		return
 	}
 	qdCount := int(binary.BigEndian.Uint16(payload[4:6]))
-	anCount := int(binary.BigEndian.Uint16(payload[6:8]))
+	records := int(binary.BigEndian.Uint16(payload[6:8]))
+	if allSections {
+		records += int(binary.BigEndian.Uint16(payload[8:10])) + int(binary.BigEndian.Uint16(payload[10:12]))
+	}
 
 	offset := 12
 	for i := 0; i < qdCount; i++ {
 		next, ok := skipDNSName(payload, offset)
 		if !ok || next+4 > len(payload) {
-			return nil
+			return
 		}
 		offset = next + 4
 	}
 
-	var best []byte
-	var bestPriority uint16
-	for i := 0; i < anCount; i++ {
+	for i := 0; i < records; i++ {
 		next, ok := skipDNSName(payload, offset)
 		if !ok || next+10 > len(payload) {
-			break
+			return
 		}
 		typ := binary.BigEndian.Uint16(payload[next : next+2])
 		rdLen := int(binary.BigEndian.Uint16(payload[next+8 : next+10]))
 		start := next + 10
 		if start+rdLen > len(payload) {
-			break
+			return
 		}
 		offset = start + rdLen
 		if typ != TypeHTTPS && typ != TypeSVCB {
 			continue
 		}
-		priority, ech := svcbECH(payload, start, offset)
-		if priority == 0 || len(ech) == 0 {
-			continue
-		}
-		if best == nil || priority < bestPriority {
-			best, bestPriority = ech, priority
+		if priority, ech := svcbECH(payload, start, offset); len(ech) > 0 {
+			fn(priority, ech)
 		}
 	}
-	return best
 }
 
 func svcbECH(payload []byte, start, end int) (uint16, []byte) {
@@ -91,48 +135,99 @@ func svcbECH(payload []byte, start, end int) (uint16, []byte) {
 }
 
 func ECHPublicName(configList []byte) string {
-	if len(configList) < 2 {
+	configs, ok := parseECHConfigs(configList)
+	if !ok {
 		return ""
 	}
-	end := 2 + int(binary.BigEndian.Uint16(configList[0:2]))
-	if end > len(configList) {
-		return ""
-	}
-	for pos := 2; pos+4 <= end; {
-		version := binary.BigEndian.Uint16(configList[pos : pos+2])
-		size := int(binary.BigEndian.Uint16(configList[pos+2 : pos+4]))
-		pos += 4
-		if pos+size > end {
+	for _, c := range configs {
+		if c.kem != echKEMX25519 || !c.suiteOK || c.mandatory || !validECHPublicName(c.publicName) {
+			continue
+		}
+		if len(c.publicKey) != echX25519KeySize {
 			return ""
 		}
-		if version == echConfigVersion {
-			if name := echPublicName(configList[pos : pos+size]); name != "" {
-				return name
-			}
-		}
-		pos += size
+		return strings.ToLower(c.publicName)
 	}
 	return ""
 }
 
-func echPublicName(contents []byte) string {
-	pos := 3
-	for range 2 {
-		if pos+2 > len(contents) {
-			return ""
+func parseECHConfigs(list []byte) ([]echConfig, bool) {
+	s := cryptobyte.String(list)
+	var body cryptobyte.String
+	if !s.ReadUint16LengthPrefixed(&body) || !s.Empty() {
+		return nil, false
+	}
+	var configs []echConfig
+	for !body.Empty() {
+		var version uint16
+		var contents cryptobyte.String
+		if !body.ReadUint16(&version) || !body.ReadUint16LengthPrefixed(&contents) {
+			return nil, false
 		}
-		pos += 2 + int(binary.BigEndian.Uint16(contents[pos:pos+2]))
+		if version != echConfigVersion {
+			continue
+		}
+		c, ok := parseECHConfig(contents)
+		if !ok {
+			return nil, false
+		}
+		configs = append(configs, c)
 	}
-	pos++
-	if pos >= len(contents) {
-		return ""
+	return configs, true
+}
+
+func parseECHConfig(s cryptobyte.String) (echConfig, bool) {
+	var c echConfig
+	var publicKey, suites, name, extensions cryptobyte.String
+	if !s.Skip(1) || !s.ReadUint16(&c.kem) || !s.ReadUint16LengthPrefixed(&publicKey) || !s.ReadUint16LengthPrefixed(&suites) {
+		return echConfig{}, false
 	}
-	size := int(contents[pos])
-	pos++
-	if size == 0 || pos+size > len(contents) {
-		return ""
+	for !suites.Empty() {
+		var kdf, aead uint16
+		if !suites.ReadUint16(&kdf) || !suites.ReadUint16(&aead) {
+			return echConfig{}, false
+		}
+		if kdf == echKDFSHA256 && echAEADs[aead] {
+			c.suiteOK = true
+		}
 	}
-	return strings.ToLower(string(contents[pos : pos+size]))
+	if !s.Skip(1) || !s.ReadUint8LengthPrefixed(&name) || !s.ReadUint16LengthPrefixed(&extensions) {
+		return echConfig{}, false
+	}
+	for !extensions.Empty() {
+		var typ uint16
+		var data cryptobyte.String
+		if !extensions.ReadUint16(&typ) || !extensions.ReadUint16LengthPrefixed(&data) {
+			return echConfig{}, false
+		}
+		if typ&echMandatoryExt != 0 {
+			c.mandatory = true
+		}
+	}
+	c.publicKey = publicKey
+	c.publicName = string(name)
+	return c, true
+}
+
+func validECHPublicName(name string) bool {
+	if len(name) > 253 {
+		return false
+	}
+	labels := strings.Split(name, ".")
+	if len(labels) <= 1 {
+		return false
+	}
+	for _, label := range labels {
+		if label == "" || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && r != '-' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func StripECH(payload []byte, maxSize int) ([]byte, int) {

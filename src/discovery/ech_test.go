@@ -400,3 +400,50 @@ func TestScopedSetKeepsStripECH(t *testing.T) {
 		t.Fatal("a strategy preset turned the switch on")
 	}
 }
+
+func TestRotatedECHKeyMovesTheCover(t *testing.T) {
+	current, _ := echKeyPair(t, 9, "new-cover.example")
+	_, staleList := echKeyPair(t, 8, "cover.example")
+	srv := startECHServer(t, current)
+	ds, di := echProbeSuite(t, srv, "site.example")
+	ds.domainResults = map[string]*DomainDiscoveryResult{"site.example": {Domain: "site.example", ECHCoverName: "cover.example"}}
+	ds.storeECH("site.example", echKey{configList: staleList, coverName: "cover.example"})
+
+	if res := ds.fetchUsingIPForDomain(di, 5*time.Second, "127.0.0.1"); res.Status != CheckStatusComplete {
+		t.Fatalf("fetch: %s (%s)", res.Status, res.Error)
+	}
+	if names := srv.helloNames(); len(names) != 2 || names[1] != "new-cover.example" {
+		t.Fatalf("rig: the retry must name the new key's public name, got %v", names)
+	}
+	if key, _ := ds.echFor("site.example"); key.coverName != "new-cover.example" {
+		t.Fatalf("cached cover %q, want the name of the key the server sent", key.coverName)
+	}
+	if got := ds.domainResults["site.example"].ECHCoverName; got != "new-cover.example" {
+		t.Fatalf("reported cover %q", got)
+	}
+	if got := ds.withECHCoverNames([]string{"site.example"}); !slices.Equal(got, []string{"site.example", "new-cover.example"}) {
+		t.Fatalf("sets target %v, want the name the probes now send", got)
+	}
+}
+
+func TestUnusableECHKeyMeansNoECH(t *testing.T) {
+	_, list := echKeyPair(t, 2, "cloudflare-ech.com")
+	unusable := append([]byte(nil), list...)
+	binary.BigEndian.PutUint16(unusable[7:9], 0x0010)
+	orig := lookupECHConfigList
+	t.Cleanup(func() { lookupECHConfigList = orig })
+	lookupECHConfigList = func(context.Context, uint, string) []byte { return unusable }
+
+	ds := &DiscoverySuite{
+		CheckSuite:    &CheckSuite{Domains: []DomainInput{{Domain: "site.example", CheckURL: "https://site.example/"}}},
+		domainResults: map[string]*DomainDiscoveryResult{"site.example": {Domain: "site.example"}},
+		ctx:           context.Background(),
+	}
+	ds.probeECH()
+	if _, ok := ds.echFor("site.example"); ok {
+		t.Fatal("a key Go's client cannot use would fail every probe locally and read as a block")
+	}
+	if got := ds.domainResults["site.example"].ECHCoverName; got != "" {
+		t.Fatalf("cover %q reported for a key nobody can use", got)
+	}
+}

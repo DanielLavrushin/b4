@@ -28,15 +28,12 @@ func (w *Worker) echStripSet(cfg *config.Config, set *config.SetConfig, clientMa
 	if !cfg.HasECHStrip() {
 		return nil, ""
 	}
-	cover := dns.ECHPublicName(dns.ParseResponseECH(resp))
-	if cover == "" {
-		return nil, ""
+	for _, cover := range dns.ResponseECHPublicNames(resp) {
+		if matched, coverSet := w.getMatcher().MatchSNIWithSource(cover, clientMac); matched && stripsECH(coverSet) {
+			return coverSet, cover
+		}
 	}
-	matched, coverSet := w.getMatcher().MatchSNIWithSource(cover, clientMac)
-	if !matched || !stripsECH(coverSet) {
-		return nil, ""
-	}
-	return coverSet, cover
+	return nil, ""
 }
 
 func (w *Worker) stripECHKeys(cfg *config.Config, set *config.SetConfig, domain, clientMac string, resp []byte, overTCP bool) ([]byte, *config.SetConfig) {

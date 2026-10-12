@@ -27,29 +27,32 @@ func testECHConfigList(publicName string) []byte {
 	return append(binary.BigEndian.AppendUint16(nil, uint16(len(list))), list...)
 }
 
-func httpsAnswerWithECH(qname string, qtype uint16, cover string) []byte {
+func httpsAnswerWithECH(qname string, qtype uint16, covers ...string) []byte {
 	msg := make([]byte, 12)
 	binary.BigEndian.PutUint16(msg[0:2], 0x4242)
 	binary.BigEndian.PutUint16(msg[2:4], 0x8180)
 	binary.BigEndian.PutUint16(msg[4:6], 1)
-	binary.BigEndian.PutUint16(msg[6:8], 1)
+	binary.BigEndian.PutUint16(msg[6:8], uint16(len(covers)))
 	msg = append(msg, encodeTestName(qname)...)
 	msg = binary.BigEndian.AppendUint16(msg, qtype)
 	msg = binary.BigEndian.AppendUint16(msg, 1)
 
-	rdata := []byte{0, 1, 0}
-	rdata = append(rdata, 0, 1, 0, 3, 2, 'h', '2')
-	list := testECHConfigList(cover)
-	rdata = binary.BigEndian.AppendUint16(rdata, 5)
-	rdata = binary.BigEndian.AppendUint16(rdata, uint16(len(list)))
-	rdata = append(rdata, list...)
+	for _, cover := range covers {
+		rdata := []byte{0, 1, 0}
+		rdata = append(rdata, 0, 1, 0, 3, 2, 'h', '2')
+		list := testECHConfigList(cover)
+		rdata = binary.BigEndian.AppendUint16(rdata, 5)
+		rdata = binary.BigEndian.AppendUint16(rdata, uint16(len(list)))
+		rdata = append(rdata, list...)
 
-	msg = append(msg, 0xC0, 0x0C)
-	msg = binary.BigEndian.AppendUint16(msg, qtype)
-	msg = binary.BigEndian.AppendUint16(msg, 1)
-	msg = binary.BigEndian.AppendUint32(msg, 300)
-	msg = binary.BigEndian.AppendUint16(msg, uint16(len(rdata)))
-	return append(msg, rdata...)
+		msg = append(msg, 0xC0, 0x0C)
+		msg = binary.BigEndian.AppendUint16(msg, qtype)
+		msg = binary.BigEndian.AppendUint16(msg, 1)
+		msg = binary.BigEndian.AppendUint32(msg, 300)
+		msg = binary.BigEndian.AppendUint16(msg, uint16(len(rdata)))
+		msg = append(msg, rdata...)
+	}
+	return msg
 }
 
 func echTestSet(id string, strip bool, domains ...string) *config.SetConfig {
@@ -176,5 +179,19 @@ func TestECHStripWanted(t *testing.T) {
 		if got := echStripWanted(tc.cfg, tc.set, tc.qtype); got != tc.want {
 			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestFilterDNSAnswerStripsECHWhenAnyKeyNamesACover(t *testing.T) {
+	cover := echTestSet("other-cdn", true, "ech.other-cdn.example")
+	w, cfg := echTestWorker(t, cover)
+
+	resp := httpsAnswerWithECH("multi.example", dnsTypeHTTPS, "cloudflare-ech.com", "ech.other-cdn.example")
+	out, action, actor := w.filterDNSAnswer(cfg, nil, "multi.example", "", resp, false)
+	if out == nil || action != dnsActionECHStripped || actor != cover {
+		t.Fatalf("action %q by %v: a client may pick the second record, whose key names the set's cover", action, actor)
+	}
+	if names := dns.ResponseECHPublicNames(out); len(names) != 0 {
+		t.Fatalf("keys left in the answer: %v", names)
 	}
 }

@@ -54,6 +54,9 @@ func (ds *DiscoverySuite) probeECH() {
 		list := lookupECHConfigList(ds.ctx, ds.flowMark, di.Domain)
 		cover := dns.ECHPublicName(list)
 		if cover == "" {
+			if len(list) > 0 {
+				log.DiscoveryLogf("  [%s] publishes an ECH key the probes cannot use, so they connect without ECH", di.Domain)
+			}
 			continue
 		}
 		ds.storeECH(di.Domain, echKey{configList: list, coverName: cover})
@@ -82,13 +85,26 @@ func (ds *DiscoverySuite) echFor(host string) (echKey, bool) {
 	return key, ok
 }
 
-func (ds *DiscoverySuite) renewECH(host string, configList []byte) {
+func (ds *DiscoverySuite) renewECH(host string, configList []byte, coverName string) {
+	host = strings.ToLower(host)
 	ds.echMu.Lock()
-	defer ds.echMu.Unlock()
-	if key, ok := ds.ech[strings.ToLower(host)]; ok {
-		key.configList = configList
-		ds.ech[strings.ToLower(host)] = key
+	key, ok := ds.ech[host]
+	previous := key.coverName
+	if ok {
+		key.configList, key.coverName = configList, coverName
+		ds.ech[host] = key
 	}
+	ds.echMu.Unlock()
+	if !ok || previous == coverName {
+		return
+	}
+
+	ds.CheckSuite.mu.Lock()
+	if dr := ds.domainResults[host]; dr != nil {
+		dr.ECHCoverName = coverName
+	}
+	ds.CheckSuite.mu.Unlock()
+	log.DiscoveryLogf("  [%s] its new ECH key names %s instead of %s; the probes and the sets follow it", host, coverName, previous)
 }
 
 func (ds *DiscoverySuite) withECHCoverNames(domains []string) []string {
@@ -125,12 +141,13 @@ func (ds *DiscoverySuite) echDialTLS(dial func(context.Context, string, string) 
 		if !errors.As(err, &rejected) {
 			return conn, err
 		}
-		if len(rejected.RetryConfigList) == 0 {
-			log.Tracef("Discovery: %s turned ECH down without a new key, retrying without ECH as browsers do", host)
+		cover := dns.ECHPublicName(rejected.RetryConfigList)
+		if cover == "" {
+			log.Tracef("Discovery: %s turned ECH down without a key this client can use, retrying without ECH as browsers do", host)
 			return tlsHandshake(ctx, dial, network, addr, plain)
 		}
 		log.Tracef("Discovery: %s rotated its ECH key, retrying with the key it sent", host)
-		ds.renewECH(host, rejected.RetryConfigList)
+		ds.renewECH(host, rejected.RetryConfigList, cover)
 		conf.EncryptedClientHelloConfigList = rejected.RetryConfigList
 		return tlsHandshake(ctx, dial, network, addr, conf)
 	}

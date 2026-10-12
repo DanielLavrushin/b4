@@ -2,10 +2,14 @@ package dns
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
+	"net"
 	"net/netip"
+	"slices"
 	"testing"
+	"time"
 
 	"golang.org/x/net/dns/dnsmessage"
 )
@@ -465,6 +469,206 @@ func TestStripECHMalformedInput(t *testing.T) {
 			mutated := append([]byte(nil), resp...)
 			mutated[i] = b
 			StripECH(mutated, 0)
+		}
+	}
+}
+
+type testECHConfig struct {
+	version    uint16
+	kem        uint16
+	keyLen     int
+	suites     [][2]uint16
+	name       string
+	extensions []uint16
+	noExtField bool
+}
+
+func usableECHConfig(name string) testECHConfig {
+	return testECHConfig{version: echConfigVersion, kem: echKEMX25519, keyLen: 32, suites: [][2]uint16{{0x0001, 0x0001}}, name: name}
+}
+
+func buildECHConfigList(configs ...testECHConfig) []byte {
+	var list []byte
+	for _, tc := range configs {
+		c := []byte{0x07}
+		c = binary.BigEndian.AppendUint16(c, tc.kem)
+		c = binary.BigEndian.AppendUint16(c, uint16(tc.keyLen))
+		c = append(c, bytes.Repeat([]byte{0xab}, tc.keyLen)...)
+		c = binary.BigEndian.AppendUint16(c, uint16(4*len(tc.suites)))
+		for _, s := range tc.suites {
+			c = binary.BigEndian.AppendUint16(c, s[0])
+			c = binary.BigEndian.AppendUint16(c, s[1])
+		}
+		c = append(c, 0, byte(len(tc.name)))
+		c = append(c, tc.name...)
+		if !tc.noExtField {
+			var ext []byte
+			for _, typ := range tc.extensions {
+				ext = binary.BigEndian.AppendUint16(ext, typ)
+				ext = binary.BigEndian.AppendUint16(ext, 0)
+			}
+			c = binary.BigEndian.AppendUint16(c, uint16(len(ext)))
+			c = append(c, ext...)
+		}
+		list = binary.BigEndian.AppendUint16(list, tc.version)
+		list = binary.BigEndian.AppendUint16(list, uint16(len(c)))
+		list = append(list, c...)
+	}
+	return append(binary.BigEndian.AppendUint16(nil, uint16(len(list))), list...)
+}
+
+func TestECHPublicNameNamesOnlyAKeyGoCanUse(t *testing.T) {
+	with := func(change func(*testECHConfig)) testECHConfig {
+		c := usableECHConfig("cover.example.net")
+		change(&c)
+		return c
+	}
+	unusable := map[string]testECHConfig{
+		"P-256 key exchange":    with(func(c *testECHConfig) { c.kem = 0x0010 }),
+		"no supported AEAD":     with(func(c *testECHConfig) { c.suites = [][2]uint16{{0x0001, 0xffff}} }),
+		"no supported KDF":      with(func(c *testECHConfig) { c.suites = [][2]uint16{{0x0002, 0x0001}} }),
+		"mandatory extension":   with(func(c *testECHConfig) { c.extensions = []uint16{0x8001} }),
+		"single-label name":     with(func(c *testECHConfig) { c.name = "localhost" }),
+		"hyphen at label start": with(func(c *testECHConfig) { c.name = "-cover.example" }),
+		"hyphen at label end":   with(func(c *testECHConfig) { c.name = "cover-.example" }),
+		"empty label":           with(func(c *testECHConfig) { c.name = "cover..example" }),
+		"underscore":            with(func(c *testECHConfig) { c.name = "co_ver.example" }),
+		"non-ASCII letter":      with(func(c *testECHConfig) { c.name = "Key.example" }),
+		"short public key":      with(func(c *testECHConfig) { c.keyLen = 31 }),
+		"no extensions field":   with(func(c *testECHConfig) { c.noExtField = true }),
+	}
+	for name, c := range unusable {
+		if got := ECHPublicName(buildECHConfigList(c)); got != "" {
+			t.Errorf("%s: public name %q, want none: Go's client fails on this key before sending anything", name, got)
+		}
+	}
+
+	if got := ECHPublicName(buildECHConfigList(with(func(c *testECHConfig) {
+		c.suites = [][2]uint16{{0x0001, 0xffff}, {0x0001, 0x0003}}
+		c.extensions = []uint16{0x0001}
+	}))); got != "cover.example.net" {
+		t.Errorf("a supported suite after an unsupported one and an optional extension: %q", got)
+	}
+	if got := ECHPublicName(buildECHConfigList(
+		with(func(c *testECHConfig) { c.kem = 0x0010; c.name = "skipped.example" }),
+		usableECHConfig("used.example"),
+	)); got != "used.example" {
+		t.Errorf("the client skips a config it cannot use and takes the next: %q", got)
+	}
+	if got := ECHPublicName(buildECHConfigList(
+		with(func(c *testECHConfig) { c.keyLen = 31; c.name = "picked.example" }),
+		usableECHConfig("never.example"),
+	)); got != "" {
+		t.Errorf("Go fails on the bad key of the config it picked, it does not try the next: %q", got)
+	}
+	list := buildECHConfigList(usableECHConfig("cover.example.net"))
+	if got := ECHPublicName(append(list, 0)); got != "" {
+		t.Errorf("a list longer than its length prefix is malformed: %q", got)
+	}
+}
+
+func TestResponseECHPublicNamesListsEveryKey(t *testing.T) {
+	resp := buildResponse("example.com", TypeHTTPS, []testRR{
+		{typ: TypeHTTPS, ttl: 60, rdata: svcbRData(1, map[uint16][]byte{svcParamECH: buildECHConfigList(usableECHConfig("a.example"))}, []uint16{svcParamECH})},
+		{typ: TypeHTTPS, ttl: 60, rdata: svcbRData(1, map[uint16][]byte{svcParamECH: buildECHConfigList(
+			testECHConfig{version: echConfigVersion, kem: 0x0010, keyLen: 65, suites: [][2]uint16{{1, 1}}, name: "B.Example"},
+			usableECHConfig("a.example"),
+		)}, []uint16{svcParamECH})},
+		{typ: TypeHTTPS, ttl: 60, rdata: svcbRData(2, map[uint16][]byte{svcParamECH: {0, 9, 1}}, []uint16{svcParamECH})},
+	}, false, false)
+	if got := ResponseECHPublicNames(resp); !slices.Equal(got, []string{"a.example", "b.example"}) {
+		t.Fatalf("names = %v, want every public name of every key, lowercased, a malformed list skipped", got)
+	}
+
+	cover := buildECHConfigList(usableECHConfig("additional.example"))
+	msg := builtMessage(t, "example.com.", dnsmessage.TypeHTTPS, dnsmessage.Header{ID: 9, Response: true}, func(b *dnsmessage.Builder) error {
+		if err := b.StartAnswers(); err != nil {
+			return err
+		}
+		if err := b.HTTPSResource(rrHeader("example.com.", dnsmessage.TypeHTTPS), dnsmessage.HTTPSResource{SVCBResource: dnsmessage.SVCBResource{
+			Priority: 0,
+			Target:   dnsmessage.MustNewName("svc.example.net."),
+		}}); err != nil {
+			return err
+		}
+		if err := b.StartAdditionals(); err != nil {
+			return err
+		}
+		return b.HTTPSResource(rrHeader("svc.example.net.", dnsmessage.TypeHTTPS), dnsmessage.HTTPSResource{SVCBResource: dnsmessage.SVCBResource{
+			Priority: 1,
+			Target:   dnsmessage.MustNewName("."),
+			Params:   []dnsmessage.SVCParam{{Key: dnsmessage.SVCParamECH, Value: cover}},
+		}})
+	})
+	if got := ResponseECHPublicNames(msg); !slices.Equal(got, []string{"additional.example"}) {
+		t.Fatalf("names = %v, want the key of the record in the additional section", got)
+	}
+	if ParseResponseECH(msg) != nil {
+		t.Fatal("the site's own key comes from the answer section only")
+	}
+}
+
+func goStartsECHHandshake(t *testing.T, list []byte) bool {
+	t.Helper()
+	client, server := net.Pipe()
+	conn := tls.Client(client, &tls.Config{
+		ServerName:                     "site.example",
+		MinVersion:                     tls.VersionTLS13,
+		EncryptedClientHelloConfigList: list,
+	})
+	handshake := make(chan error, 1)
+	go func() { handshake <- conn.Handshake() }()
+	wrote := make(chan bool, 1)
+	go func() {
+		buf := make([]byte, 5)
+		_, err := server.Read(buf)
+		wrote <- err == nil
+	}()
+
+	var started bool
+	select {
+	case <-handshake:
+		started = false
+		client.Close()
+		server.Close()
+		<-wrote
+	case started = <-wrote:
+		client.Close()
+		server.Close()
+		<-handshake
+	case <-time.After(5 * time.Second):
+		t.Fatal("the client neither failed nor sent a ClientHello")
+	}
+	return started
+}
+
+func TestECHPublicNameAgreesWithGo(t *testing.T) {
+	with := func(change func(*testECHConfig)) []byte {
+		c := usableECHConfig("cover.example.net")
+		change(&c)
+		return buildECHConfigList(c)
+	}
+	lists := map[string][]byte{
+		"usable":                with(func(*testECHConfig) {}),
+		"P-256 key exchange":    with(func(c *testECHConfig) { c.kem = 0x0010 }),
+		"no supported AEAD":     with(func(c *testECHConfig) { c.suites = [][2]uint16{{0x0001, 0xffff}} }),
+		"no supported KDF":      with(func(c *testECHConfig) { c.suites = [][2]uint16{{0x0002, 0x0001}} }),
+		"ChaCha20 only":         with(func(c *testECHConfig) { c.suites = [][2]uint16{{0x0001, 0x0003}} }),
+		"mandatory extension":   with(func(c *testECHConfig) { c.extensions = []uint16{0x8001} }),
+		"optional extension":    with(func(c *testECHConfig) { c.extensions = []uint16{0x0001} }),
+		"single-label name":     with(func(c *testECHConfig) { c.name = "localhost" }),
+		"hyphen at label end":   with(func(c *testECHConfig) { c.name = "cover-.example" }),
+		"non-ASCII letter":      with(func(c *testECHConfig) { c.name = "Key.example" }),
+		"short public key":      with(func(c *testECHConfig) { c.keyLen = 31 }),
+		"no extensions field":   with(func(c *testECHConfig) { c.noExtField = true }),
+		"unusable then usable":  buildECHConfigList(testECHConfig{version: echConfigVersion, kem: 0x0010, keyLen: 65, suites: [][2]uint16{{1, 1}}, name: "a.example"}, usableECHConfig("b.example")),
+		"bad key then usable":   buildECHConfigList(testECHConfig{version: echConfigVersion, kem: echKEMX25519, keyLen: 31, suites: [][2]uint16{{1, 1}}, name: "a.example"}, usableECHConfig("b.example")),
+		"unknown version only":  buildECHConfigList(testECHConfig{version: 0xfe0c, kem: echKEMX25519, keyLen: 32, suites: [][2]uint16{{1, 1}}, name: "a.example"}),
+		"length prefix too big": append(with(func(*testECHConfig) {}), 0),
+	}
+	for name, list := range lists {
+		if named, started := ECHPublicName(list) != "", goStartsECHHandshake(t, list); named != started {
+			t.Errorf("%s: ECHPublicName names a key %v, Go's client starts a handshake %v", name, named, started)
 		}
 	}
 }

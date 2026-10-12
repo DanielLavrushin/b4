@@ -203,7 +203,7 @@ const FoundCard = ({
   const first = group.results[0];
   const counts = first ? testedCounts(first) : null;
   const tries = first ? triesUntilFound(first, group.preset) : 0;
-  const echCover = echCoverNames(group.results)[0];
+  const echCovers = echCoverNames(group.results).join(", ");
   const echBlocked = group.results.some((dr) => dr.ech_only_block);
 
   let badge = (
@@ -359,7 +359,7 @@ const FoundCard = ({
           ) : (
             <B4Alert severity="warning">{t("discovery.results.noSet")}</B4Alert>
           )}
-          {echCover && (
+          {echCovers && (
             <Typography
               variant="body2"
               sx={{ color: colors.text.secondary, mt: 1.25 }}
@@ -368,7 +368,7 @@ const FoundCard = ({
                 group.preset === ECH_STRIP_PRESET
                   ? "discovery.ech.stripNote"
                   : "discovery.ech.coverNote",
-                { cover: echCover },
+                { cover: echCovers },
               )}
             </Typography>
           )}
