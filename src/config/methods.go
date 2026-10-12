@@ -359,7 +359,16 @@ func (c *Config) DNSTCPDialTimeout() time.Duration {
 }
 
 func (c *Config) DNSTCPInterceptEnabled() bool {
-	return !c.System.DNS.TCPDisabled && c.HasDNSRedirect()
+	return !c.System.DNS.TCPDisabled && (c.HasDNSRedirect() || c.HasECHStrip())
+}
+
+func (c *Config) HasECHStrip() bool {
+	for _, set := range c.Sets {
+		if set != nil && set.Enabled && set.DNS.StripECH {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Config) HasDNSRedirect() bool {

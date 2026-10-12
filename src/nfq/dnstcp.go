@@ -219,6 +219,20 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		srcMac = s.worker.getMacByIp(clientIP.String())
 	}
 
+	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
+		if qtype, _ := dns.QuestionType(query); echStripWanted(cfg, set, qtype) {
+			if resp := s.forwardOneQuery(origIP, origPort, origErr, query); resp != nil {
+				if filtered, action, actor := s.worker.filterDNSAnswer(cfg, set, domain, srcMac, resp, true); filtered != nil {
+					s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, action)
+					resp = filtered
+				}
+				return writeDNSTCPMessage(client, resp, cfg.DNSTCPIOTimeout()) == nil
+			}
+		}
+		s.passthrough(client, origIP, origPort, origErr, query)
+		return false
+	}
+
 	for {
 		cfg := s.worker.getConfig()
 		ioTimeout := cfg.DNSTCPIOTimeout()
@@ -242,7 +256,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		matched, set := s.worker.getMatcher().MatchSNIWithSource(domain, srcMac)
 		if !matched {
 			log.Tracef("DNS TCP: %s matched no set (src %s), forwarding unchanged", dns.SafeName(domain), srcMac)
-			s.passthrough(client, origIP, origPort, origErr, query)
+			if relay(cfg, nil, domain, query) {
+				continue
+			}
 			return
 		}
 
@@ -277,7 +293,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		useDoH := set.DNS.DoHURL != ""
 		if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionPassthrough)
-			s.passthrough(client, origIP, origPort, origErr, query)
+			if relay(cfg, set, domain, query) {
+				continue
+			}
 			return
 		}
 
@@ -377,8 +395,8 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			s.worker.learnAnswerInline(cfg, set, ips, s.ctx.Done())
 		}
 
-		if filtered, action := s.worker.filterDNSAnswer(cfg, set, domain, resp, true); filtered != nil {
-			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, action)
+		if filtered, action, actor := s.worker.filterDNSAnswer(cfg, set, domain, srcMac, resp, true); filtered != nil {
+			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, action)
 			resp = filtered
 		}
 

@@ -1,5 +1,11 @@
 # B4 - Bye Bye Big Bro
 
+## [1.87.0] - 2026-10-12
+
+- ADDED: **A set can remove ECH keys from DNS answers, so a browser opens sites such as those on Cloudflare where the network drops connections that use ECH** - the switch is under DNS & Routing, DNS Redirect, Encrypted ClientHello (ECH) in the set editor, and a set that lists cloudflare-ech.com with it on covers every Cloudflare site. Discovery proposes such a set, which changes no packets, for a site that loads only without ECH.
+- FIXED: **Discovery reported a site, such as one on Cloudflare, as loading without b4 while Chrome could not open it** - its probes never used ECH, which a browser such as Chrome uses for every site that publishes an ECH key and which some networks block.
+- FIXED: **Discovery could propose a packet strategy remembered from an earlier run for a site that only needed its DNS answer corrected** - a remembered strategy that also loaded the site won over the DNS fix.
+
 ## [1.86.0] - 2026-10-09
 
 - ADDED: **The Discovery page shows a run started through the MCP server or by the watchdog while the page is open, and its history marks such runs** - the run appears within five seconds, the history refreshes when it ends, and its history rows read "via MCP" or "via watchdog" under the time of the run.

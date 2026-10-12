@@ -28,9 +28,11 @@ func (s *SetConfig) AdoptStrategy(from *SetConfig) {
 	faking.SNIMutation.FakeSNIs = slices.Clone(from.Faking.SNIMutation.FakeSNIs)
 	s.Faking = faking
 
+	stripECH := s.DNS.StripECH || from.DNS.StripECH
 	if from.DNS.Enabled {
 		pins, strict := s.DNS.Pins, s.DNS.Strict
 		s.DNS = from.DNS
 		s.DNS.Pins, s.DNS.Strict = pins, strict
 	}
+	s.DNS.StripECH = stripECH
 }
