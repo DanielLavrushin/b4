@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -91,10 +92,11 @@ type dnsCopyListener struct {
 	v6      atomic.Bool
 	mark    atomic.Uint32
 
-	lostBase        atomic.Uint64
-	lostReported    atomic.Uint64
-	lostLoggedAt    atomic.Int64
-	refusedLoggedAt atomic.Int64
+	lostBase           atomic.Uint64
+	lostReported       atomic.Uint64
+	lostLoggedAt       atomic.Int64
+	refusedLoggedAt    atomic.Int64
+	keyRefusedLoggedAt atomic.Int64
 
 	stats dnsCopyStats
 }
@@ -302,16 +304,27 @@ func (l *dnsCopyListener) warnLost(now time.Time) {
 	log.Warnf("DNS: %d copies of DNS queries were lost; the answers to those queries went through unchanged", lost-reported)
 }
 
-func (l *dnsCopyListener) warnFull() {
+func logDue(at *atomic.Int64, every time.Duration) bool {
 	now := time.Now().UnixNano()
-	last := l.refusedLoggedAt.Load()
-	if last != 0 && time.Duration(now-last) < dnsCopyFullLogEvery {
-		return
+	last := at.Load()
+	if last != 0 && time.Duration(now-last) < every {
+		return false
 	}
-	if !l.refusedLoggedAt.CompareAndSwap(last, now) {
+	return at.CompareAndSwap(last, now)
+}
+
+func (l *dnsCopyListener) warnFull() {
+	if !logDue(&l.refusedLoggedAt, dnsCopyFullLogEvery) {
 		return
 	}
 	log.Warnf("DNS: b4 already has %d DNS answers to deliver, the most it keeps, so the DNS queries copied since then went through unchanged", dnsClaimMax)
+}
+
+func (l *dnsCopyListener) warnKeyFull(key dnsClaimKey, client, server netip.Addr) {
+	if !logDue(&l.keyRefusedLoggedAt, dnsCopyFullLogEvery) {
+		return
+	}
+	log.Warnf("DNS: b4 already has %d DNS answers to deliver for the %s query for %s with ID %d, sent from different sockets, the most it keeps for one query, so the copies of it since then went through unchanged; the last came from %s to %s", dnsClaimKeyMax, dnsTypeName(key.qtype), dns.SafeName(key.name), key.txid, client, server)
 }
 
 func (l *dnsCopyListener) counters() DNSQueryCopyCounters {
@@ -399,7 +412,8 @@ func (l *dnsCopyListener) decide(pkt *pktInfo, sport uint16, payload []byte) {
 		l.stats.ignored.Add(1)
 		return
 	}
-	c, outcome := l.claims.begin(key, dnsClaimAddr(pkt.src), dnsClaimAddr(pkt.dst), sport, time.Now(), dnsClaimTTL(l.w.getConfig()))
+	client, server := dnsClaimAddr(pkt.src), dnsClaimAddr(pkt.dst)
+	c, outcome := l.claims.begin(key, client, server, sport, time.Now(), dnsClaimTTL(l.w.getConfig()))
 	switch outcome {
 	case claimBeginDuplicate:
 		return
@@ -409,6 +423,10 @@ func (l *dnsCopyListener) decide(pkt *pktInfo, sport uint16, payload []byte) {
 	case claimBeginRefused:
 		l.stats.claimsRefused.Add(1)
 		l.warnFull()
+		return
+	case claimBeginKeyFull:
+		l.stats.claimsRefused.Add(1)
+		l.warnKeyFull(key, client, server)
 		return
 	}
 	vc := &verdictCtx{verdict: engine.VerdictAccept, copy: &dnsCopyDecision{claim: c}}
@@ -485,12 +503,15 @@ func (l *dnsCopyListener) inject(c *dnsClaim) {
 	l.stats.injections.Add(1)
 }
 
-func (l *dnsCopyListener) deliver(ver byte, originalDst, clientIP net.IP, clientPort uint16, resp []byte) bool {
+func (l *dnsCopyListener) deliver(ver byte, originalDst, clientIP net.IP, clientPort uint16, query, resp []byte) bool {
 	t := l.claims
 	if t.live.Load() == 0 {
 		return false
 	}
 	key, keyed := dnsClaimKeyOf(ver, resp)
+	if !keyed && query != nil {
+		key, keyed = dnsClaimKeyOf(ver, query)
+	}
 	if !keyed && len(resp) < 12 {
 		return false
 	}

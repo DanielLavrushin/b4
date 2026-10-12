@@ -666,7 +666,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		rememberDNSAnswer(queryDomain, query, resp)
 	}
 
-	w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, resp)
+	w.sendDNSAnswerFor(query, ipVersion, originalDst, clientIP, clientPort, resp)
 
 	upstream := set.DNS.TargetDNS
 	if set.DNS.DoHURL != "" {
@@ -693,10 +693,14 @@ var (
 )
 
 func (w *Worker) sendDNSResponseToClient(ipVersion byte, originalDst, clientIP net.IP, clientPort uint16, resp []byte) {
+	w.sendDNSAnswerFor(nil, ipVersion, originalDst, clientIP, clientPort, resp)
+}
+
+func (w *Worker) sendDNSAnswerFor(query []byte, ipVersion byte, originalDst, clientIP net.IP, clientPort uint16, resp []byte) {
 	if len(resp) == 0 {
 		return
 	}
-	if w.dnsCopy != nil && w.dnsCopy.deliver(ipVersion, originalDst, clientIP, clientPort, resp) {
+	if w.dnsCopy != nil && w.dnsCopy.deliver(ipVersion, originalDst, clientIP, clientPort, query, resp) {
 		return
 	}
 	w.sendDNSPacket(ipVersion, originalDst, clientIP, clientPort, resp)

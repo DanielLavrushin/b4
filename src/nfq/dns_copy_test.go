@@ -463,6 +463,55 @@ func TestCopiesFromPort53AreNotActedOn(t *testing.T) {
 	}
 }
 
+func TestAQueryFloodedFromManySocketsKeepsFewClaimsAndLeavesRoomForOthers(t *testing.T) {
+	injectAfter(t, time.Minute)
+	stubRouteAwait(t)
+	buf := captureLog(t)
+	r := newCopyRig(t, nil, copyBlockSet(config.BlockActionDrop), copyPinSet())
+	prev := dnsClaimMax
+	dnsClaimMax = 512
+	t.Cleanup(func() { dnsClaimMax = prev })
+
+	const copies = 1000
+	flood := dns.BuildQuery("www.ads.example", 0x4242, dnsTypeA)
+	for i := range copies {
+		r.l.handle(copyOf(nfHookForward, rigDevice, rigOutside, uint16(20000+i), flood))
+	}
+	tbl := r.l.claims
+	tbl.mu.Lock()
+	kept := len(tbl.byKey[claimKey("www.ads.example", 0x4242)])
+	tbl.mu.Unlock()
+	if kept == 0 || kept > dnsClaimKeyMax {
+		t.Fatalf("%d claims for one query copied from %d sockets, want 1 to %d: each further copy, each reply and each answer of that query walks all of them under the lock the reply gate waits on", kept, copies, dnsClaimKeyMax)
+	}
+	if got := r.l.stats.claimsRefused.Load(); got != uint64(copies-kept) {
+		t.Fatalf("claims_refused = %d, want the %d copies past the per-query limit", got, copies-kept)
+	}
+	log.Flush()
+	if n := strings.Count(buf.String(), "the most it keeps for one query"); n != 1 {
+		t.Fatalf("the per-query limit was logged %d times, want once a minute: %q", n, buf.String())
+	}
+	if strings.Contains(buf.String(), "the most it keeps, so") {
+		t.Fatalf("the per-query limit was reported as the table's limit of %d: %q", dnsClaimMax, buf.String())
+	}
+
+	other := "192.168.1.101"
+	r.read(copyOf(nfHookForward, other, rigOutside, 40000, dns.BuildQuery("pin.example.com", 0x501, dnsTypeA)))
+	q := newFakeModQueue()
+	raw := replyRaw(buildDNSResponse(0x501, "pin.example.com", resolverIPs), rigOutside, other, 40000)
+	r.reply(q, raw)
+	onlyAddress(t, rewritten(t, q.now(t), raw), "203.0.113.12")
+
+	dropped := newFakeModQueue()
+	r.reply(dropped, replyRaw(buildDNSResponse(0x4242, "www.ads.example", resolverIPs), rigOutside, rigDevice, 20000))
+	if v := dropped.now(t); v.verdict != nfqueue.NfDrop || v.packet != nil {
+		t.Fatalf("the reply to a claimed copy of the flooded query: verdict %d carrying %d bytes, want it dropped", v.verdict, len(v.packet))
+	}
+	passed := newFakeModQueue()
+	r.reply(passed, replyRaw(buildDNSResponse(0x4242, "www.ads.example", resolverIPs), rigOutside, rigDevice, uint16(20000+copies-1)))
+	passedUnchanged(t, passed.now(t), "the reply to a refused copy of the flooded query")
+}
+
 func TestCopyWithQRBitIsIgnored(t *testing.T) {
 	stubRouteAwait(t)
 	r := newCopyRig(t, nil, copyPinSet())

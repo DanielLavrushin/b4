@@ -46,6 +46,40 @@ func TestAFullClaimTableRefusesWithoutWalkingItsClaims(t *testing.T) {
 	}
 }
 
+func TestARetransmittedCopyJoinsItsClaimWhenItsQueryOrTheTableIsFull(t *testing.T) {
+	thisHost(t, rigRouter, rigWAN)
+	var timers sync.WaitGroup
+	tbl := newDNSClaimTable(&timers)
+	client, server := netip.MustParseAddr(rigDevice), netip.MustParseAddr(rigOutside)
+	now := time.Now()
+	key := claimKey("www.ads.example", 0x4242)
+	first, outcome := tbl.begin(key, client, server, 20000, now, time.Minute)
+	if outcome != claimBeginPrimary {
+		t.Fatalf("first copy: outcome %d", outcome)
+	}
+	for i := 1; i < dnsClaimKeyMax; i++ {
+		if _, outcome := tbl.begin(key, client, server, uint16(20000+i), now, time.Minute); outcome != claimBeginPrimary {
+			t.Fatalf("copy %d of the query: outcome %d", i, outcome)
+		}
+	}
+	if _, outcome := tbl.begin(key, client, server, 30000, now, time.Minute); outcome != claimBeginKeyFull {
+		t.Fatalf("a copy past %d claims of one query got outcome %d, want it refused for its query", dnsClaimKeyMax, outcome)
+	}
+	if c, outcome := tbl.begin(key, client, server, 20000, now, time.Minute); outcome != claimBeginDuplicate || c != first {
+		t.Fatalf("a retransmission into a query at its limit got outcome %d, want it joined to its claim, which still settles the reply", outcome)
+	}
+
+	prev := dnsClaimMax
+	dnsClaimMax = int(tbl.live.Load())
+	t.Cleanup(func() { dnsClaimMax = prev })
+	if c, outcome := tbl.begin(key, client, server, 20000, now, time.Minute); outcome != claimBeginDuplicate || c != first {
+		t.Fatalf("a retransmission into a full table got outcome %d, want it joined to its claim rather than counted as refused", outcome)
+	}
+	if _, outcome := tbl.begin(claimKey("other.example", 1), client, server, 40000, now, time.Minute); outcome != claimBeginRefused {
+		t.Fatalf("a new query into a full table got outcome %d, want it refused", outcome)
+	}
+}
+
 func TestExpiredClaimsLeaveTheTableAsNewCopiesArrive(t *testing.T) {
 	injectAfter(t, time.Minute)
 	r := newCopyRig(t, nil)

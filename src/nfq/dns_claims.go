@@ -29,11 +29,15 @@ const (
 	claimBeginDuplicate
 	claimBeginQuiet
 	claimBeginRefused
+	claimBeginKeyFull
 )
 
 const dnsClaimTTLExtra = 2 * time.Second
 
-var dnsClaimMax = 8192
+var (
+	dnsClaimMax    = 8192
+	dnsClaimKeyMax = 64
+)
 
 type dnsClaimKey struct {
 	ver   uint8
@@ -131,17 +135,21 @@ func (t *dnsClaimTable) begin(key dnsClaimKey, client, server netip.Addr, client
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.expireLocked(now)
-	for _, c := range t.byKey[key] {
+	bucket := t.byKey[key]
+	for _, c := range bucket {
 		if c.live(now) && c.client == client && c.clientPort == clientPort && c.server == server {
 			return c, claimBeginDuplicate
 		}
 	}
-	kind, outcome := claimPending, claimBeginPrimary
-	if clientHost && !serverHost && t.waiting[dnsWaitKey{name: key.name, qtype: key.qtype}] > 0 {
-		kind, outcome = claimQuiet, claimBeginQuiet
+	if len(bucket) >= dnsClaimKeyMax {
+		return nil, claimBeginKeyFull
 	}
 	if int(t.live.Load()) >= dnsClaimMax {
 		return nil, claimBeginRefused
+	}
+	kind, outcome := claimPending, claimBeginPrimary
+	if clientHost && !serverHost && t.waiting[dnsWaitKey{name: key.name, qtype: key.qtype}] > 0 {
+		kind, outcome = claimQuiet, claimBeginQuiet
 	}
 	c := &dnsClaim{
 		key:         key,

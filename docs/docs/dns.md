@@ -78,6 +78,7 @@ b4 logs these lines about copying:
 | `DNS: the NFLOG copy of DNS queries stopped (...)` | The listener that receives the copies stopped, and replies pass as they are until it runs again. At the next check of the firewall monitor, b4 starts it again or holds requests in its queue. With **Firewall Monitor Interval (seconds)** at `0` there is no such check, and the listener starts again only at a restart or at a save that rebuilds the firewall rules |
 | `DNS: N copies of DNS queries were lost; ...` | Copies the kernel discarded, at most one such line every 5 minutes |
 | `DNS: b4 already has 8192 DNS answers to deliver, ...` | b4 was already acting on 8192 requests, its limit, and the replies to the requests copied after that passed unchanged |
+| `DNS: b4 already has 64 DNS answers to deliver for the A query for ... with ID ...` | b4 was already acting on 64 copies of one request, with the same name, type and ID but sent from different sockets or devices, its limit for one request, and the replies to further copies of it passed unchanged. The line ends with the addresses of the last such copy. At most one such line a minute |
 | `IPTABLES[iptables]: the nat rule "..." moves DNS queries to port ...` | A `nat` rule that changes the port, see above |
 
 ## How a set handles a query
