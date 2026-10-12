@@ -301,8 +301,8 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 		switch placement {
 		case dnsHeldRaw:
-			if !iptRawDNSQueuePresent(ipt) {
-				log.Tracef("Monitor: raw table DNS query rules missing (%s chain or its PREROUTING/OUTPUT jumps)", iptRawChainName)
+			if !iptRawDNSQueuePresent(ipt, iptMarkAccept(cfg.Queue.Mark)) {
+				log.Tracef("Monitor: raw table DNS query rules missing (%s chain, its return for b4's own packets, or its PREROUTING/OUTPUT jumps)", iptRawChainName)
 				return false
 			}
 		case dnsCopied:

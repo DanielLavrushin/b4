@@ -227,7 +227,7 @@ iptables -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-
 iptables -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t raw -A B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t raw -I B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t raw -C B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t raw -A B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t raw -C PREROUTING -p udp --dport 53 -j B4_RAW
@@ -550,7 +550,7 @@ iptables -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-
 iptables -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t raw -A B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t raw -I B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t raw -C B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t raw -A B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t raw -C PREROUTING -p udp --dport 53 -j B4_RAW
@@ -845,7 +845,7 @@ iptables -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-
 iptables -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t raw -A B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t raw -I B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t raw -C B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t raw -A B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t raw -C PREROUTING -p udp --dport 53 -j B4_RAW

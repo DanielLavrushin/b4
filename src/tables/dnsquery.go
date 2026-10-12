@@ -404,10 +404,13 @@ func iptDNSCopyJumps(manager *IPTablesManager, ipt string) []Rule {
 	}
 }
 
+func iptMarkReturn(markAccept string) []string {
+	return []string{"-m", "mark", "--mark", markAccept, "-j", "RETURN"}
+}
+
 func iptDNSCopyRules(manager *IPTablesManager, ipt, markAccept string, group uint16) []Rule {
 	rules := []Rule{
-		{manager: manager, IPT: ipt, Table: "mangle", Chain: iptDNSCopyChainName, Action: "A",
-			Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "RETURN"}},
+		{manager: manager, IPT: ipt, Table: "mangle", Chain: iptDNSCopyChainName, Action: "I", Spec: iptMarkReturn(markAccept)},
 		{manager: manager, IPT: ipt, Table: "mangle", Chain: iptDNSCopyChainName, Action: "A", Spec: iptDNSCopySpec(group)},
 	}
 	return append(rules, iptDNSCopyJumps(manager, ipt)...)
@@ -540,8 +543,7 @@ func kmodRawPackage(ipt string) string {
 
 func iptRawDNSQueueRules(manager *IPTablesManager, ipt, markAccept string, dnsSpec []string) []Rule {
 	return []Rule{
-		{manager: manager, IPT: ipt, Table: "raw", Chain: iptRawChainName, Action: "A",
-			Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "RETURN"}},
+		{manager: manager, IPT: ipt, Table: "raw", Chain: iptRawChainName, Action: "I", Spec: iptMarkReturn(markAccept)},
 		{manager: manager, IPT: ipt, Table: "raw", Chain: iptRawChainName, Action: "A", Spec: dnsSpec},
 		{manager: manager, IPT: ipt, Table: "raw", Chain: "PREROUTING", Action: "A", Spec: iptRawDNSJump()},
 		{manager: manager, IPT: ipt, Table: "raw", Chain: "OUTPUT", Action: "A", Spec: iptRawDNSJump()},
@@ -600,9 +602,12 @@ func (im *IPTablesManager) dropUnusedDNSQueryPlacement(placements map[string]dns
 	}
 }
 
-func iptRawDNSQueuePresent(ipt string) bool {
+func iptRawDNSQueuePresent(ipt, markAccept string) bool {
 	out, err := run(ipt, "-w", "-t", "raw", "-S", iptRawChainName)
 	if err != nil || !strings.Contains(out, dnsRequestPortMatch) || !strings.Contains(out, "NFQUEUE") {
+		return false
+	}
+	if _, err := run(append([]string{ipt, "-w", "-t", "raw", "-C", iptRawChainName}, iptMarkReturn(markAccept)...)...); err != nil {
 		return false
 	}
 	for _, chain := range []string{"PREROUTING", "OUTPUT"} {

@@ -520,16 +520,20 @@ func (manager *IPTablesManager) buildTeardownManifest() (Manifest, error) {
 	return manager.buildManifestFor(ipts, true), nil
 }
 
+func iptMarkAccept(mark uint) string {
+	if mark == 0 {
+		return "0x8000/0x8000"
+	}
+	return fmt.Sprintf("0x%x/0x%x", mark, mark)
+}
+
 func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) Manifest {
 	cfg := manager.cfg
 	queueNum := cfg.Queue.StartNum
 	threads := cfg.Queue.Threads
 	chainName := iptChainName
 	preChainName := "B4_PREROUTING"
-	markAccept := fmt.Sprintf("0x%x/0x%x", cfg.Queue.Mark, cfg.Queue.Mark)
-	if cfg.Queue.Mark == 0 {
-		markAccept = "0x8000/0x8000"
-	}
+	markAccept := iptMarkAccept(cfg.Queue.Mark)
 
 	var ipsets []IPSet
 	var chains []Chain

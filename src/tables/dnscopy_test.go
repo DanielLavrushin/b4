@@ -116,8 +116,14 @@ func TestKeeneticCopiesDNSQueriesWithNFLOG(t *testing.T) {
 			if queuesDNSQueries(spec) {
 				t.Errorf("%s: a DNS query queue rule in %s holds the queries NFLOG copies, so the clash stays: %s", ipt, r.Chain, spec)
 			}
-			if r.Chain == iptDNSCopyChainName && r.Action != "A" {
-				t.Errorf("%s: the body of %s must be appended in order, got action %q for %s", ipt, iptDNSCopyChainName, r.Action, spec)
+			if r.Chain == iptDNSCopyChainName {
+				want := "A"
+				if strings.HasSuffix(spec, "-j RETURN") {
+					want = "I"
+				}
+				if r.Action != want {
+					t.Errorf("%s: in %s the return for b4's own packets must be inserted, so a restore of that rule alone puts it back above the copy rule, and the copy rule appended, got action %q for %s", ipt, iptDNSCopyChainName, r.Action, spec)
+				}
 			}
 			if strings.Contains(strings.ToLower(spec), "connmark") {
 				lastConnmark = i
