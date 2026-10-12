@@ -776,3 +776,59 @@ func TestResponseECHPublicNamesSkipsAliasMode(t *testing.T) {
 		t.Fatalf("names = %v: clients ignore the parameters of an AliasMode record, so its key must not pick a set", got)
 	}
 }
+
+func TestStripECHExpandsNamesInsideOtherRecords(t *testing.T) {
+	list := buildECHConfigList(usableECHConfig("cloudflare-ech.com"))
+	for _, tc := range []struct {
+		name   string
+		typ    uint16
+		prefix []byte
+	}{
+		{"KX", rrTypeKX, []byte{0, 10}},
+		{"SRV", rrTypeSRV, []byte{0, 1, 0, 5, 0x01, 0xbb}},
+		{"DNAME", rrTypeDNAME, nil},
+	} {
+		msg := make([]byte, 12)
+		binary.BigEndian.PutUint16(msg[0:2], 0x2a2a)
+		binary.BigEndian.PutUint16(msg[2:4], 0x8180)
+		binary.BigEndian.PutUint16(msg[4:6], 1)
+		binary.BigEndian.PutUint16(msg[6:8], 3)
+		msg = append(msg, encodeName("example.com")...)
+		msg = binary.BigEndian.AppendUint16(msg, TypeHTTPS)
+		msg = binary.BigEndian.AppendUint16(msg, 1)
+		appendRecord := func(owner []byte, typ uint16, rdata []byte) {
+			msg = append(msg, owner...)
+			msg = binary.BigEndian.AppendUint16(msg, typ)
+			msg = binary.BigEndian.AppendUint16(msg, 1)
+			msg = binary.BigEndian.AppendUint32(msg, 60)
+			msg = binary.BigEndian.AppendUint16(msg, uint16(len(rdata)))
+			msg = append(msg, rdata...)
+		}
+		appendRecord([]byte{0xC0, 0x0C}, TypeHTTPS, svcbRData(1, map[uint16][]byte{svcParamECH: list}, []uint16{svcParamECH}))
+		target := len(msg)
+		appendRecord(encodeName("mail.example.net"), rrTypeA, []byte{192, 0, 2, 25})
+		pointer := []byte{byte(0xC0 | target>>8), byte(target)}
+		appendRecord([]byte{0xC0, 0x0C}, tc.typ, append(append([]byte(nil), tc.prefix...), pointer...))
+
+		out, verdict := StripECH(msg, 0)
+		if verdict != FilterRewritten {
+			t.Fatalf("%s: verdict %d", tc.name, verdict)
+		}
+		parsedMessage(t, out)
+		offset, _ := skipDNSName(out, 12)
+		offset += 4
+		for range 2 {
+			next, _ := skipDNSName(out, offset)
+			offset = next + 10 + int(binary.BigEndian.Uint16(out[next+8:next+10]))
+		}
+		start, _ := skipDNSName(out, offset)
+		start += 10
+		if !bytes.Equal(out[start:start+len(tc.prefix)], tc.prefix) {
+			t.Fatalf("%s: fixed fields changed: %x", tc.name, out[start:start+len(tc.prefix)])
+		}
+		got, _, ok := readName(out, start+len(tc.prefix))
+		if !ok || got != "mail.example.net" {
+			t.Fatalf("%s: name %q after the rewrite, want mail.example.net: a pointer copied as is lands on other bytes once the answer shrinks", tc.name, got)
+		}
+	}
+}

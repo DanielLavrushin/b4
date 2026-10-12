@@ -26,6 +26,9 @@ const (
 	rrTypeSOA   = 6
 	rrTypePTR   = 12
 	rrTypeMX    = 15
+	rrTypeSRV   = 33
+	rrTypeKX    = 36
+	rrTypeDNAME = 39
 	rrTypeRRSIG = 46
 	rrTypeTSIG  = 250
 
@@ -374,8 +377,14 @@ func portableRData(payload []byte, typ uint16, start, end int) ([]byte, string, 
 			return nil, "", false
 		}
 		return encodeName(name), name, true
-	case typ == rrTypeMX:
+	case typ == rrTypeDNAME:
+		rdata, ok := expandRData(payload, start, end, 0, 1, 0)
+		return rdata, "", ok
+	case typ == rrTypeMX || typ == rrTypeKX:
 		rdata, ok := expandRData(payload, start, end, 2, 1, 0)
+		return rdata, "", ok
+	case typ == rrTypeSRV:
+		rdata, ok := expandRData(payload, start, end, 6, 1, 0)
 		return rdata, "", ok
 	case typ == rrTypeSOA:
 		rdata, ok := expandRData(payload, start, end, 0, 2, 20)
