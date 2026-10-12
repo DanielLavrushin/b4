@@ -24,6 +24,8 @@ const (
 	presetECHStrip   = "ech-strip"
 )
 
+var echRejectionRoots = netprobe.TLSRoots
+
 type echKey struct {
 	configList []byte
 	coverName  string
@@ -159,7 +161,11 @@ func (ds *DiscoverySuite) echDialTLS(dial func(context.Context, string, string) 
 		conf := plain.Clone()
 		conf.MinVersion = tls.VersionTLS13
 		conf.EncryptedClientHelloConfigList = key.configList
-		conf.EncryptedClientHelloRejectionVerify = func(tls.ConnectionState) error { return nil }
+		if roots, verify := echRejectionRoots(); verify {
+			conf.RootCAs = roots
+		} else {
+			conf.EncryptedClientHelloRejectionVerify = func(tls.ConnectionState) error { return nil }
+		}
 		conn, err := tlsHandshake(ctx, dial, network, addr, conf)
 		var rejected *tls.ECHRejectionError
 		if !errors.As(err, &rejected) {

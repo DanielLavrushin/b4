@@ -4,9 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdh"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/binary"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -105,10 +110,50 @@ func startECHServer(t *testing.T, keys ...tls.EncryptedClientHelloKey) *echServe
 		_, _ = w.Write(page)
 	}))
 	s.Listener = helloListener{Listener: s.Listener, s: s}
-	s.TLS = &tls.Config{MinVersion: tls.VersionTLS13, EncryptedClientHelloKeys: keys}
+	cert, pool := echTestCertificate(t, "site.example", "cover.example", "new-cover.example", "cloudflare-ech.com")
+	s.TLS = &tls.Config{MinVersion: tls.VersionTLS13, EncryptedClientHelloKeys: keys, Certificates: []tls.Certificate{cert}}
 	s.StartTLS()
 	t.Cleanup(s.Close)
+	trustECHRejections(t, pool, true)
 	return s
+}
+
+func echTestCertificate(t *testing.T, names ...string) (tls.Certificate, *x509.CertPool) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: names[0]},
+		DNSNames:              names,
+		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1)},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(parsed)
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: parsed}, pool
+}
+
+func trustECHRejections(t *testing.T, pool *x509.CertPool, verify bool) {
+	t.Helper()
+	orig := echRejectionRoots
+	echRejectionRoots = func() (*x509.CertPool, bool) { return pool, verify }
+	t.Cleanup(func() { echRejectionRoots = orig })
 }
 
 func (s *echServer) states() []tls.ConnectionState {
@@ -502,5 +547,35 @@ func TestOneFailedECHFetchIsNotAnECHBlock(t *testing.T) {
 	}
 	if states := srv.states(); len(states) < 2 || !states[len(states)-1].ECHAccepted {
 		t.Fatalf("rig: the recheck must have gone through with ECH, got %+v", states)
+	}
+}
+
+func TestUnverifiedECHRejectionIsNotFollowedByAPlainRetry(t *testing.T) {
+	_, list := echKeyPair(t, 3, "cover.example")
+	srv := startECHServer(t)
+	ds, di := echProbeSuite(t, srv, "site.example")
+	ds.storeECH("site.example", echKey{configList: list, coverName: "cover.example"})
+	trustECHRejections(t, x509.NewCertPool(), true)
+
+	if res := ds.fetchUsingIPForDomain(di, 5*time.Second, "127.0.0.1"); res.Status == CheckStatusComplete {
+		t.Fatal("a rejection whose provider certificate does not verify was followed by a plain retry; a browser aborts there")
+	}
+	if states := srv.states(); len(states) != 0 {
+		t.Fatalf("the server got %d requests, want none", len(states))
+	}
+}
+
+func TestECHRejectionWithoutCARootsFallsBackToPlain(t *testing.T) {
+	_, list := echKeyPair(t, 3, "cover.example")
+	srv := startECHServer(t)
+	ds, di := echProbeSuite(t, srv, "site.example")
+	ds.storeECH("site.example", echKey{configList: list, coverName: "cover.example"})
+	trustECHRejections(t, nil, false)
+
+	if res := ds.fetchUsingIPForDomain(di, 5*time.Second, "127.0.0.1"); res.Status != CheckStatusComplete {
+		t.Fatalf("with no CA store the rejection cannot be checked, as everywhere else in Discovery: %s (%s)", res.Status, res.Error)
+	}
+	if states := srv.states(); len(states) != 1 || states[0].ECHAccepted {
+		t.Fatalf("want one request without ECH, got %+v", states)
 	}
 }
