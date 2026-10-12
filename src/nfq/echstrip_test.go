@@ -2,8 +2,13 @@ package nfq
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
+	"net"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
@@ -193,5 +198,144 @@ func TestFilterDNSAnswerStripsECHWhenAnyKeyNamesACover(t *testing.T) {
 	}
 	if names := dns.ResponseECHPublicNames(out); len(names) != 0 {
 		t.Fatalf("keys left in the answer: %v", names)
+	}
+}
+
+type echUpstream struct {
+	conns atomic.Int32
+}
+
+func tcpECHUpstream(t *testing.T) *echUpstream {
+	t.Helper()
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().(*net.TCPAddr)
+	u := &echUpstream{}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var open []net.Conn
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			u.conns.Add(1)
+			mu.Lock()
+			open = append(open, conn)
+			mu.Unlock()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer conn.Close()
+				for {
+					query, err := readDNSTCPMessage(conn)
+					if err != nil {
+						return
+					}
+					domain, _ := dns.ParseQueryDomain(query)
+					qtype, _ := dns.QuestionType(query)
+					reply := buildDNSResponse(0, domain, []net.IP{net.ParseIP("203.0.113.80")})
+					if qtype == dnsTypeHTTPS {
+						reply = httpsAnswerWithECH(domain, qtype, "cloudflare-ech.com")
+					}
+					copy(reply[:2], query[:2])
+					if writeDNSTCPMessage(conn, reply, time.Second) != nil {
+						return
+					}
+				}
+			}()
+		}
+	}()
+	t.Cleanup(func() {
+		ln.Close()
+		mu.Lock()
+		for _, c := range open {
+			c.Close()
+		}
+		mu.Unlock()
+		wg.Wait()
+	})
+
+	prevDst, prevDial := dnsTCPOriginalDst, dialDNSTCPUpstream
+	dnsTCPOriginalDst = func(net.Conn) (net.IP, int, error) { return addr.IP, addr.Port, nil }
+	dialDNSTCPUpstream = func(ctx context.Context, _ *config.Config, a string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", a)
+	}
+	t.Cleanup(func() { dnsTCPOriginalDst, dialDNSTCPUpstream = prevDst, prevDial })
+	return u
+}
+
+func mixedTCPQueries(t *testing.T, w *Worker) [][]byte {
+	t.Helper()
+	s := newDNSTCPServer(w, 0)
+	t.Cleanup(s.cancel)
+	clientEnd, serverEnd := net.Pipe()
+	handled := make(chan struct{})
+	go func() {
+		defer close(handled)
+		s.handle(remoteAddrConn{Conn: serverEnd, remote: &net.TCPAddr{IP: net.ParseIP("192.0.2.10"), Port: 40000}})
+	}()
+
+	_ = clientEnd.SetDeadline(time.Now().Add(5 * time.Second))
+	var answers [][]byte
+	for i, q := range []struct {
+		name  string
+		qtype uint16
+	}{{"example.org", dnsTypeA}, {"steamdb.info", dnsTypeHTTPS}, {"example.org", dnsTypeA}} {
+		if err := writeDNSTCPMessage(clientEnd, dns.BuildQuery(q.name, uint16(100+i), q.qtype), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		resp, err := readDNSTCPMessage(clientEnd)
+		if err != nil {
+			t.Fatalf("query %d (%s): no answer on the same connection: %v", i, q.name, err)
+		}
+		if got := binary.BigEndian.Uint16(resp[:2]); got != uint16(100+i) {
+			t.Fatalf("query %d: answer id %d", i, got)
+		}
+		answers = append(answers, resp)
+	}
+	clientEnd.Close()
+	select {
+	case <-handled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the connection handler never returned")
+	}
+	return answers
+}
+
+func TestDNSOverTCPStripsECHAfterAnotherQueryOnTheConnection(t *testing.T) {
+	w, _ := echTestWorker(t, echTestSet("cloudflare-ech", true, "cloudflare-ech.com"))
+	upstream := tcpECHUpstream(t)
+
+	answers := mixedTCPQueries(t, w)
+	if names := dns.ResponseECHPublicNames(answers[1]); len(names) != 0 {
+		t.Fatalf("the HTTPS answer after an A query kept its key %v: the connection went raw", names)
+	}
+	if binary.BigEndian.Uint16(answers[1][6:8]) != 1 {
+		t.Fatal("the HTTPS record itself must stay, only its key goes")
+	}
+	for _, i := range []int{0, 2} {
+		if ips := dns.ParseResponseIPs(answers[i]); len(ips) != 1 {
+			t.Fatalf("A answer %d changed: %v", i, ips)
+		}
+	}
+	if n := upstream.conns.Load(); n != 1 {
+		t.Fatalf("%d upstream connections, want the relay to reuse one", n)
+	}
+}
+
+func TestDNSOverTCPStaysRawWithoutAnECHStripSet(t *testing.T) {
+	w, _ := echTestWorker(t, echTestSet("plain", false, "cloudflare-ech.com"))
+	tcpECHUpstream(t)
+
+	answers := mixedTCPQueries(t, w)
+	if names := dns.ResponseECHPublicNames(answers[1]); len(names) != 1 {
+		t.Fatalf("keys %v: with no set stripping, the connection is passed through untouched", names)
 	}
 }
