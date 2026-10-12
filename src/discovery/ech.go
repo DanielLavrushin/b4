@@ -206,10 +206,25 @@ func (ds *DiscoverySuite) noteECHOnlyBlocks(baseline map[string]CheckResult) {
 		if result.Status != CheckStatusComplete {
 			continue
 		}
+		if !ds.echKeepsFailing(di, timeout) {
+			if !ds.interrupted() {
+				log.DiscoveryLogf("  [%s] loaded with ECH on a later try, so its first failure was not this network dropping ECH", di.Domain)
+			}
+			continue
+		}
 		ds.recordECHStrip(di.Domain, result)
-		log.DiscoveryLogf("  [%s] loads without b4 when the ClientHello carries no ECH: this network drops ECH ClientHellos naming %s, not the site", di.Domain, key.coverName)
+		log.DiscoveryLogf("  [%s] loads without b4 when the ClientHello carries no ECH, and failed %d of %d tries with it: this network drops ECH ClientHellos naming %s, not the site", di.Domain, confirmTries, confirmTries, key.coverName)
 		log.DiscoveryLogf("  ★ [%s] loads without any packet change once DNS answers carry no ECH key", di.Domain)
 	}
+}
+
+func (ds *DiscoverySuite) echKeepsFailing(di DomainInput, timeout time.Duration) bool {
+	for range confirmTries - 1 {
+		if ds.interrupted() || ds.fetchForDomain(di, timeout).Status == CheckStatusComplete {
+			return false
+		}
+	}
+	return true
 }
 
 func (ds *DiscoverySuite) recordECHStrip(domain string, result CheckResult) {

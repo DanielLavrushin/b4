@@ -248,6 +248,9 @@ func tcpECHUpstream(t *testing.T) *echUpstream {
 					if qtype == dnsTypeAXFR {
 						messages = 3
 					}
+					if !standardQuery(query) {
+						reply, messages = append([]byte(nil), query...), 2
+					}
 					for range messages {
 						if writeDNSTCPMessage(conn, reply, time.Second) != nil {
 							return
@@ -369,6 +372,40 @@ func TestDNSOverTCPZoneTransferStaysAStream(t *testing.T) {
 		}
 		if binary.BigEndian.Uint16(resp[:2]) != 77 {
 			t.Fatalf("message %d carries id %d", i+1, binary.BigEndian.Uint16(resp[:2]))
+		}
+	}
+	clientEnd.Close()
+	select {
+	case <-handled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the connection handler never returned")
+	}
+}
+
+func TestDNSOverTCPOtherOpcodesStayAStream(t *testing.T) {
+	w, _ := echTestWorker(t, echTestSet("cloudflare-ech", true, "cloudflare-ech.com"))
+	tcpECHUpstream(t)
+	s := newDNSTCPServer(w, 0)
+	t.Cleanup(s.cancel)
+	clientEnd, serverEnd := net.Pipe()
+	handled := make(chan struct{})
+	go func() {
+		defer close(handled)
+		s.handle(remoteAddrConn{Conn: serverEnd, remote: &net.TCPAddr{IP: net.ParseIP("192.0.2.10"), Port: 40000}})
+	}()
+
+	keepalive := make([]byte, 12)
+	binary.BigEndian.PutUint16(keepalive[0:2], 0x0501)
+	keepalive[2] = 6 << 3
+	keepalive = append(keepalive, 0, 1, 0, 8, 0, 0, 0x75, 0x30, 0, 0, 0x27, 0x10)
+
+	_ = clientEnd.SetDeadline(time.Now().Add(3 * time.Second))
+	if err := writeDNSTCPMessage(clientEnd, keepalive, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 2 {
+		if _, err := readDNSTCPMessage(clientEnd); err != nil {
+			t.Fatalf("stateful message %d never arrived: a DSO server sends messages of its own: %v", i+1, err)
 		}
 	}
 	clientEnd.Close()

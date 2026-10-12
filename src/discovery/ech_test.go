@@ -489,3 +489,18 @@ func TestProbeECHLooksUpTheSitesTogether(t *testing.T) {
 		}
 	}
 }
+
+func TestOneFailedECHFetchIsNotAnECHBlock(t *testing.T) {
+	key, list := echKeyPair(t, 5, "cover.example")
+	srv := startECHServer(t, key)
+	ds, _ := echBlockedSuite(t, srv, "site.example", "cover.example", list)
+
+	ds.noteECHOnlyBlocks(map[string]CheckResult{"site.example": {Domain: "site.example", Status: CheckStatusFailed}})
+	dr := ds.domainResults["site.example"]
+	if dr.ECHOnlyBlock || dr.Results[presetECHStrip] != nil {
+		t.Fatal("a single failed ECH fetch, with ECH loading on the next tries, must not become a strip proposal")
+	}
+	if states := srv.states(); len(states) < 2 || !states[len(states)-1].ECHAccepted {
+		t.Fatalf("rig: the recheck must have gone through with ECH, got %+v", states)
+	}
+}
