@@ -628,8 +628,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 		rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: dnsResponseSpec})
 
 		rules = append(rules,
-			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "I",
-				Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "RETURN"}},
+			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "I", Spec: iptMarkReturn(markAccept)},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
 				Spec: []string{"-m", "mark", "--mark", telegramBridgeMarkMatch(), "-j", "RETURN"}},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",

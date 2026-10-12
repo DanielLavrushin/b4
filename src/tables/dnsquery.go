@@ -416,10 +416,14 @@ func iptDNSCopyRules(manager *IPTablesManager, ipt, markAccept string, group uin
 	return append(rules, iptDNSCopyJumps(manager, ipt)...)
 }
 
-func iptIsDNSCopyReturnLine(line string) bool {
-	return iptLineHasTokens(line, []string{"-A", iptDNSCopyChainName}) &&
-		iptLineHasTokens(line, []string{"-m", "mark", "--mark"}) &&
-		iptLineHasTokens(line, []string{"-j", "RETURN"})
+func iptListingHasMarkReturn(listing, chain, markAccept string) bool {
+	want := append([]string{"-A", chain}, iptMarkReturn(markAccept)...)
+	for _, line := range strings.Split(listing, "\n") {
+		if iptLineHasTokens(line, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func iptIsDNSCopyLine(line string, group uint16) bool {
@@ -440,17 +444,16 @@ func iptIsDNSCopyLine(line string, group uint16) bool {
 	return iptLineHasTokens(line, []string{"--nflog-group", strconv.Itoa(int(group))})
 }
 
-func iptDNSCopyPresent(ipt string, group uint16) bool {
+func iptDNSCopyPresent(ipt string, group uint16, markAccept string) bool {
 	out, err := run(ipt, "-w", "-t", "mangle", "-S", iptDNSCopyChainName)
-	if err != nil {
+	if err != nil || !iptListingHasMarkReturn(out, iptDNSCopyChainName, markAccept) {
 		return false
 	}
-	var returns, copies bool
+	copies := false
 	for _, line := range strings.Split(out, "\n") {
-		returns = returns || iptIsDNSCopyReturnLine(line)
 		copies = copies || iptIsDNSCopyLine(line, group)
 	}
-	if !returns || !copies {
+	if !copies {
 		return false
 	}
 	for _, r := range iptDNSCopyJumps(nil, ipt) {
@@ -604,10 +607,7 @@ func (im *IPTablesManager) dropUnusedDNSQueryPlacement(placements map[string]dns
 
 func iptRawDNSQueuePresent(ipt, markAccept string) bool {
 	out, err := run(ipt, "-w", "-t", "raw", "-S", iptRawChainName)
-	if err != nil || !strings.Contains(out, dnsRequestPortMatch) || !strings.Contains(out, "NFQUEUE") {
-		return false
-	}
-	if _, err := run(append([]string{ipt, "-w", "-t", "raw", "-C", iptRawChainName}, iptMarkReturn(markAccept)...)...); err != nil {
+	if err != nil || !strings.Contains(out, dnsRequestPortMatch) || !strings.Contains(out, "NFQUEUE") || !iptListingHasMarkReturn(out, iptRawChainName, markAccept) {
 		return false
 	}
 	for _, chain := range []string{"PREROUTING", "OUTPUT"} {

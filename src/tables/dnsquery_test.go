@@ -480,7 +480,7 @@ func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fake
 	pre += "-A B4_PREROUTING -p tcp -m multiport --sports 443 -m tcp --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-num 537 --queue-bypass\n"
 	out += "-A OUTPUT -j B4\n"
 	f := &fakeListing{chains: map[string]string{
-		"mangle B4":            "-N B4\n",
+		"mangle B4":            "-N B4\n-A B4 -m mark --mark 0x8000/0x8000 -j RETURN\n",
 		"mangle POSTROUTING":   "-P POSTROUTING ACCEPT\n-A POSTROUTING -j B4\n",
 		"mangle PREROUTING":    "-P PREROUTING ACCEPT\n-A PREROUTING -j B4_PREROUTING\n",
 		"mangle B4_PREROUTING": pre,
@@ -574,6 +574,21 @@ func TestMonitorChecksWhereDNSQueriesWereQueued(t *testing.T) {
 		}},
 		{name: "copy mark RETURN wiped", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
 			removeLine(f, "mangle "+iptDNSCopyChainName, "-A B4_DNSCOPY -m mark --mark 0x8000/0x8000 -j RETURN")
+		}},
+		{name: "copy mark RETURN for another mark", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
+			f.chains["mangle "+iptDNSCopyChainName] = strings.Replace(f.chains["mangle "+iptDNSCopyChainName], "0x8000/0x8000", "0x400000/0x400000", 1)
+		}},
+		{name: "raw mark RETURN wiped", placement: dnsHeldRaw, mutate: func(f *fakeListing) {
+			removeLine(f, "raw "+iptRawChainName, "-A B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN")
+		}},
+		{name: "raw mark RETURN for another mark", placement: dnsHeldRaw, mutate: func(f *fakeListing) {
+			f.chains["raw "+iptRawChainName] = strings.Replace(f.chains["raw "+iptRawChainName], "0x8000/0x8000", "0x400000/0x400000", 1)
+		}},
+		{name: "capture chain mark RETURN wiped", placement: dnsHeldRaw, mutate: func(f *fakeListing) {
+			removeLine(f, "mangle B4", "-A B4 -m mark --mark 0x8000/0x8000 -j RETURN")
+		}},
+		{name: "capture chain mark RETURN for another mark", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
+			f.chains["mangle B4"] = strings.Replace(f.chains["mangle B4"], "0x8000/0x8000", "0x400000/0x400000", 1)
 		}},
 		{name: "copy rule logs to another group", placement: dnsCopied, group: 537, mutate: editCopyRule(func(s string) string {
 			return strings.Replace(s, "--nflog-group 537", "--nflog-group 538", 1)

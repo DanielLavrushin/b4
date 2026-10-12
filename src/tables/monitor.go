@@ -263,9 +263,15 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		return true
 	}
 
+	markAccept := iptMarkAccept(cfg.Queue.Mark)
 	for _, ipt := range ipts {
-		if _, err := run(ipt, "-w", "-t", "mangle", "-S", "B4"); err != nil {
+		capture, err := run(ipt, "-w", "-t", "mangle", "-S", iptChainName)
+		if err != nil {
 			log.Tracef("Monitor: B4 chain missing")
+			return false
+		}
+		if !iptListingHasMarkReturn(capture, iptChainName, markAccept) {
+			log.Tracef("Monitor: B4's return for b4's own packets (mark %s) missing", markAccept)
 			return false
 		}
 
@@ -301,7 +307,7 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 		switch placement {
 		case dnsHeldRaw:
-			if !iptRawDNSQueuePresent(ipt, iptMarkAccept(cfg.Queue.Mark)) {
+			if !iptRawDNSQueuePresent(ipt, markAccept) {
 				log.Tracef("Monitor: raw table DNS query rules missing (%s chain, its return for b4's own packets, or its PREROUTING/OUTPUT jumps)", iptRawChainName)
 				return false
 			}
@@ -310,8 +316,8 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 				log.Tracef("Monitor: the NFLOG listener for DNS query copies is not running")
 				return false
 			}
-			if !iptDNSCopyPresent(ipt, uint16(dnsCopyGroup.Load())) {
-				log.Tracef("Monitor: DNS query copy rules missing (%s chain or its INPUT/FORWARD/OUTPUT jumps)", iptDNSCopyChainName)
+			if !iptDNSCopyPresent(ipt, uint16(dnsCopyGroup.Load()), markAccept) {
+				log.Tracef("Monitor: DNS query copy rules missing (%s chain, its return for b4's own packets, or its INPUT/FORWARD/OUTPUT jumps)", iptDNSCopyChainName)
 				return false
 			}
 		}
