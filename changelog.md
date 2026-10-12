@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.86.1] - 2026-10-12
+
+- FIXED: **System Info listed tools such as jq, sha256sum and ipset without a version when they were on the USB drive b4 is installed on** - b4 asked a tool for its version only when it sat in a standard system directory such as `/usr/bin` or `/opt/bin`.
+
 ## [1.86.0] - 2026-10-09
 
 - ADDED: **The Discovery page shows a run started through the MCP server or by the watchdog while the page is open, and its history marks such runs** - the run appears within five seconds, the history refreshes when it ends, and its history rows read "via MCP" or "via watchdog" under the time of the run.
