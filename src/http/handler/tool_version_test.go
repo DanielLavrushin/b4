@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,16 +66,132 @@ func trustToolDir(t *testing.T, dir string) {
 	t.Cleanup(func() { toolVersionTrusted = old })
 }
 
-func TestToolVersionsDoesNotRunAToolOutsideTheSystemDirectories(t *testing.T) {
-	dir := t.TempDir()
-	calls := filepath.Join(dir, "calls")
-	jq := writeTool(t, dir, "jq", "echo run >> '"+calls+"'\necho jq-1.0\n")
+const echoArgv0Env = "B4_TEST_ECHO_ARGV0"
 
-	if got := newToolVersions().of("jq", jq); got != "" {
-		t.Errorf("version = %q, want none for a tool outside the system directories", got)
+func init() {
+	if os.Getenv(echoArgv0Env) != "" {
+		fmt.Println(filepath.Base(os.Args[0]) + " v1.0")
+		os.Exit(0)
+	}
+}
+
+func resolvedTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func fakeDrives(t *testing.T, self string, drives map[string]uint64) {
+	t.Helper()
+	oldExecutable, oldDevice := ownExecutable, fileDevice
+	ownExecutable = func() (string, error) { return self, nil }
+	fileDevice = func(path string) (uint64, bool) {
+		var dev uint64
+		longest := -1
+		for mount, d := range drives {
+			inside := path == mount || strings.HasPrefix(path, strings.TrimSuffix(mount, "/")+"/")
+			if inside && len(mount) > longest {
+				dev, longest = d, len(mount)
+			}
+		}
+		return dev, longest >= 0
+	}
+	t.Cleanup(func() { ownExecutable, fileDevice = oldExecutable, oldDevice })
+}
+
+func recordingTool(t *testing.T, dir, name string) (string, string) {
+	t.Helper()
+	calls := filepath.Join(dir, name+".calls")
+	return writeTool(t, dir, name, "echo run >> '"+calls+"'\necho "+name+"-1.0\n"), calls
+}
+
+func assertToolNotRun(t *testing.T, name, path, calls string) {
+	t.Helper()
+	if got := newToolVersions().of(name, path); got != "" {
+		t.Errorf("version of %s = %q, want none", path, got)
 	}
 	if _, err := os.Stat(calls); !os.IsNotExist(err) {
-		t.Error("ran a tool found outside the system directories")
+		t.Errorf("ran %s", path)
+	}
+}
+
+func TestToolVersionsDoesNotRunAToolOnAnotherDrive(t *testing.T) {
+	usb, other := resolvedTempDir(t), resolvedTempDir(t)
+	fakeDrives(t, filepath.Join(usb, "b4", "b4"), map[string]uint64{"/": 1, usb: 2, other: 3})
+	jq, calls := recordingTool(t, other, "jq")
+	assertToolNotRun(t, "jq", jq, calls)
+}
+
+func TestToolVersionsDoesNotRunALinkOnAnotherDriveToB4sDrive(t *testing.T) {
+	usb, other := resolvedTempDir(t), resolvedTempDir(t)
+	fakeDrives(t, filepath.Join(usb, "b4", "b4"), map[string]uint64{"/": 1, usb: 2, other: 3})
+	target, calls := recordingTool(t, usb, "jq")
+	link := filepath.Join(other, "jq")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	assertToolNotRun(t, "jq", link, calls)
+}
+
+func TestToolVersionsDoesNotTrustTheRootFilesystemAsB4sDrive(t *testing.T) {
+	fakeDrives(t, "/usr/bin/b4", map[string]uint64{"/": 1})
+	jq, calls := recordingTool(t, resolvedTempDir(t), "jq")
+	assertToolNotRun(t, "jq", jq, calls)
+}
+
+func TestToolVersionsAsksAToolOnTheDriveB4RunsFrom(t *testing.T) {
+	usb := resolvedTempDir(t)
+	fakeDrives(t, filepath.Join(usb, "b4", "b4"), map[string]uint64{"/": 1, usb: 2})
+	jq := writeTool(t, usb, "jq", "echo jq-1.8.1\n")
+
+	if got := newToolVersions().of("jq", jq); got != "1.8.1" {
+		t.Errorf("version = %q, want 1.8.1 for a tool on the drive b4 runs from", got)
+	}
+}
+
+func TestToolVersionsRunsTheFileALinkOnB4sDriveResolvesTo(t *testing.T) {
+	usb := resolvedTempDir(t)
+	fakeDrives(t, filepath.Join(usb, "b4", "b4"), map[string]uint64{"/": 1, usb: 2})
+	ran := filepath.Join(usb, "ran")
+	target := writeTool(t, usb, "sha256sum-coreutils", "echo \"$0\" > '"+ran+"'\necho 'sha256sum (GNU coreutils) 8.23'\n")
+	link := filepath.Join(usb, "sha256sum")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := newToolVersions().of("sha256sum", link); got != "(GNU coreutils) 8.23" {
+		t.Errorf("version = %q, want (GNU coreutils) 8.23", got)
+	}
+	data, err := os.ReadFile(ran)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(data)); got != target {
+		t.Errorf("ran %s, want the file the link resolves to, %s, so the link cannot be swapped before it runs", got, target)
+	}
+}
+
+func TestToolVersionsRunsAMultiCallBinaryOnB4sDriveUnderItsOwnName(t *testing.T) {
+	self, err := os.Executable()
+	if err == nil {
+		self, err = filepath.EvalSymlinks(self)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	usb := resolvedTempDir(t)
+	link := filepath.Join(usb, "iptables")
+	if err := os.Symlink(self, link); err != nil {
+		t.Fatal(err)
+	}
+	fakeDrives(t, filepath.Join(usb, "b4", "b4"), map[string]uint64{"/": 1, usb: 2, self: 2})
+	t.Setenv(echoArgv0Env, "1")
+
+	if got := newToolVersions().of("iptables", link); got != "v1.0" {
+		t.Errorf("version = %q, want v1.0 from a binary that answers to the name it was run as", got)
 	}
 }
 
@@ -217,7 +334,7 @@ func TestConcurrentDiagnosticsShareOneRunPerAPI(t *testing.T) {
 
 func TestToolVersionsKeepsOnlyTheStartOfAFloodOfOutput(t *testing.T) {
 	flood := writeTool(t, t.TempDir(), "flood", "yes 'flood v9.9' | head -n 100000\n")
-	stdout, _, err := newToolVersions().run(flood)
+	stdout, _, err := newToolVersions().run(flood, flood)
 	if err != nil {
 		t.Fatalf("the tool did not run to its end: %v", err)
 	}
