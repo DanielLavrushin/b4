@@ -3,6 +3,7 @@ package dns
 import (
 	"encoding/binary"
 	"slices"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/cryptobyte"
@@ -218,7 +219,7 @@ func validECHPublicName(name string) bool {
 		return false
 	}
 	for _, label := range labels {
-		if label == "" || label[0] == '-' || label[len(label)-1] == '-' {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
 			return false
 		}
 		for _, r := range label {
@@ -227,7 +228,43 @@ func validECHPublicName(name string) bool {
 			}
 		}
 	}
-	return true
+	return !ipv4Literal(labels)
+}
+
+func ipv4Literal(labels []string) bool {
+	if len(labels) > 4 {
+		return false
+	}
+	numbers := make([]uint64, len(labels))
+	for i, label := range labels {
+		n, ok := ipv4Number(label)
+		if !ok {
+			return false
+		}
+		numbers[i] = n
+	}
+	last := len(numbers) - 1
+	for _, n := range numbers[:last] {
+		if n > 255 {
+			return false
+		}
+	}
+	return last == 0 || numbers[last] < 1<<(8*(4-last))
+}
+
+func ipv4Number(label string) (uint64, bool) {
+	base := 10
+	switch {
+	case len(label) >= 2 && (label[:2] == "0x" || label[:2] == "0X"):
+		base, label = 16, label[2:]
+		if label == "" {
+			return 0, true
+		}
+	case len(label) >= 2 && label[0] == '0':
+		base, label = 8, label[1:]
+	}
+	n, err := strconv.ParseUint(label, base, 32)
+	return n, err == nil
 }
 
 func StripECH(payload []byte, maxSize int) ([]byte, int) {
@@ -245,7 +282,7 @@ func StripECH(payload []byte, maxSize int) ([]byte, int) {
 
 	var sections [3][]answerRR
 	offset = questionEnd
-	stripped := false
+	changed := map[rrsetKey]bool{}
 	ednsUDPSize := 0
 	for s := range sections {
 		count := int(binary.BigEndian.Uint16(payload[6+2*s : 8+2*s]))
@@ -258,7 +295,7 @@ func StripECH(payload []byte, maxSize int) ([]byte, int) {
 			if rr.typ == TypeHTTPS || rr.typ == TypeSVCB {
 				if rdata, ok := svcbWithoutECH(rr.rdata); ok {
 					rr.rdata = rdata
-					stripped = true
+					changed[rrsetKey{owner: strings.ToLower(rr.name), class: rr.class, typ: rr.typ}] = true
 				}
 			}
 			if rr.typ == rrTypeOPT && int(rr.class) > ednsUDPSize {
@@ -267,7 +304,7 @@ func StripECH(payload []byte, maxSize int) ([]byte, int) {
 			sections[s] = append(sections[s], rr)
 		}
 	}
-	if !stripped {
+	if len(changed) == 0 {
 		return nil, FilterUnchanged
 	}
 
@@ -279,7 +316,7 @@ func StripECH(payload []byte, maxSize int) ([]byte, int) {
 	for s, rrs := range sections {
 		kept := 0
 		for _, rr := range rrs {
-			if signsServiceBinding(rr) {
+			if signsChangedRRset(rr, changed) {
 				continue
 			}
 			out = appendRR(out, rr, qName, names)
@@ -433,12 +470,17 @@ func skipPlainName(b []byte, pos int) (int, bool) {
 	return 0, false
 }
 
-func signsServiceBinding(rr answerRR) bool {
+type rrsetKey struct {
+	owner string
+	class uint16
+	typ   uint16
+}
+
+func signsChangedRRset(rr answerRR, changed map[rrsetKey]bool) bool {
 	if rr.typ != rrTypeRRSIG || len(rr.rdata) < 2 {
 		return false
 	}
-	covered := binary.BigEndian.Uint16(rr.rdata[0:2])
-	return covered == TypeHTTPS || covered == TypeSVCB
+	return changed[rrsetKey{owner: strings.ToLower(rr.name), class: rr.class, typ: binary.BigEndian.Uint16(rr.rdata[0:2])}]
 }
 
 func appendRR(out []byte, rr answerRR, qName string, names map[string]int) []byte {

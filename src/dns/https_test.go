@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -382,6 +383,8 @@ func TestStripECHDropsItsSignaturesAndAD(t *testing.T) {
 		{typ: TypeHTTPS, ttl: 60, rdata: svcbRData(1, map[uint16][]byte{svcParamECH: list}, []uint16{svcParamECH})},
 		{typ: rrTypeRRSIG, ttl: 60, rdata: rrsigRData(TypeHTTPS, "example.com")},
 		{typ: rrTypeRRSIG, ttl: 60, rdata: rrsigRData(rrTypeA, "example.com")},
+		{name: "other.example.com", typ: TypeHTTPS, ttl: 60, rdata: svcbRData(1, map[uint16][]byte{1: {2, 'h', '2'}}, []uint16{1})},
+		{name: "other.example.com", typ: rrTypeRRSIG, ttl: 60, rdata: rrsigRData(TypeHTTPS, "example.com")},
 	}, true, true)
 	resp[3] |= headerFlagAD
 
@@ -393,12 +396,16 @@ func TestStripECHDropsItsSignaturesAndAD(t *testing.T) {
 		t.Fatal("AD still set on an answer b4 changed")
 	}
 	_, an, _, ar := parsedMessage(t, out)
-	if len(an) != 2 || len(ar) != 1 {
-		t.Fatalf("%d answers and %d additionals, want 2 and 1", len(an), len(ar))
+	if len(an) != 4 || len(ar) != 1 {
+		t.Fatalf("%d answers and %d additionals, want 4 and 1", len(an), len(ar))
 	}
 	sig := an[1].Body.(*dnsmessage.UnknownResource)
 	if an[1].Header.Type != dnsmessage.Type(rrTypeRRSIG) || binary.BigEndian.Uint16(sig.Data) != rrTypeA {
-		t.Fatalf("kept %v, want only the signature over the A set", an[1].Header.Type)
+		t.Fatalf("kept %v, want the signature over the A set", an[1].Header.Type)
+	}
+	other := an[3].Body.(*dnsmessage.UnknownResource)
+	if an[3].Header.Name.String() != "other.example.com." || binary.BigEndian.Uint16(other.Data) != TypeHTTPS {
+		t.Fatalf("answer 3 is %v %v, want the signature over the unchanged HTTPS set of another name", an[3].Header.Name, an[3].Header.Type)
 	}
 }
 
@@ -533,13 +540,22 @@ func TestECHPublicNameNamesOnlyAKeyGoCanUse(t *testing.T) {
 		"hyphen at label end":   with(func(c *testECHConfig) { c.name = "cover-.example" }),
 		"empty label":           with(func(c *testECHConfig) { c.name = "cover..example" }),
 		"underscore":            with(func(c *testECHConfig) { c.name = "co_ver.example" }),
-		"non-ASCII letter":      with(func(c *testECHConfig) { c.name = "Key.example" }),
+		"non-ASCII letter":      with(func(c *testECHConfig) { c.name = "\u212aey.example" }),
 		"short public key":      with(func(c *testECHConfig) { c.keyLen = 31 }),
 		"no extensions field":   with(func(c *testECHConfig) { c.noExtField = true }),
+		"64-octet label":        with(func(c *testECHConfig) { c.name = strings.Repeat("a", 64) + ".example" }),
+		"IPv4 literal":          with(func(c *testECHConfig) { c.name = "10.0.0.1" }),
+		"hex IPv4 literal":      with(func(c *testECHConfig) { c.name = "0x7f.1" }),
+		"octal IPv4 literal":    with(func(c *testECHConfig) { c.name = "0177.0.0.01" }),
 	}
 	for name, c := range unusable {
 		if got := ECHPublicName(buildECHConfigList(c)); got != "" {
-			t.Errorf("%s: public name %q, want none: Go's client fails on this key before sending anything", name, got)
+			t.Errorf("%s: public name %q, want none: Go's client or a browser refuses this key", name, got)
+		}
+	}
+	for _, name := range []string{strings.Repeat("a", 63) + ".example", "12a.0.0.1", "08.0.0.1", "1.2.3.4.5", "1.256.0.1"} {
+		if got := ECHPublicName(buildECHConfigList(with(func(c *testECHConfig) { c.name = name }))); got != name {
+			t.Errorf("%q is a host name a browser accepts, got %q", name, got)
 		}
 	}
 
@@ -658,17 +674,27 @@ func TestECHPublicNameAgreesWithGo(t *testing.T) {
 		"optional extension":    with(func(c *testECHConfig) { c.extensions = []uint16{0x0001} }),
 		"single-label name":     with(func(c *testECHConfig) { c.name = "localhost" }),
 		"hyphen at label end":   with(func(c *testECHConfig) { c.name = "cover-.example" }),
-		"non-ASCII letter":      with(func(c *testECHConfig) { c.name = "Key.example" }),
+		"non-ASCII letter":      with(func(c *testECHConfig) { c.name = "\u212aey.example" }),
 		"short public key":      with(func(c *testECHConfig) { c.keyLen = 31 }),
 		"no extensions field":   with(func(c *testECHConfig) { c.noExtField = true }),
 		"unusable then usable":  buildECHConfigList(testECHConfig{version: echConfigVersion, kem: 0x0010, keyLen: 65, suites: [][2]uint16{{1, 1}}, name: "a.example"}, usableECHConfig("b.example")),
 		"bad key then usable":   buildECHConfigList(testECHConfig{version: echConfigVersion, kem: echKEMX25519, keyLen: 31, suites: [][2]uint16{{1, 1}}, name: "a.example"}, usableECHConfig("b.example")),
 		"unknown version only":  buildECHConfigList(testECHConfig{version: 0xfe0c, kem: echKEMX25519, keyLen: 32, suites: [][2]uint16{{1, 1}}, name: "a.example"}),
 		"length prefix too big": append(with(func(*testECHConfig) {}), 0),
+		"64-octet label":        with(func(c *testECHConfig) { c.name = strings.Repeat("a", 64) + ".example" }),
+		"IPv4 literal":          with(func(c *testECHConfig) { c.name = "10.0.0.1" }),
 	}
+	browsersIgnore := map[string]bool{"64-octet label": true, "IPv4 literal": true}
 	for name, list := range lists {
-		if named, started := ECHPublicName(list) != "", goStartsECHHandshake(t, list); named != started {
-			t.Errorf("%s: ECHPublicName names a key %v, Go's client starts a handshake %v", name, named, started)
+		named, started := ECHPublicName(list) != "", goStartsECHHandshake(t, list)
+		if named && !started {
+			t.Errorf("%s: ECHPublicName names a key Go's client fails on before sending anything", name)
+		}
+		if started && !named && !browsersIgnore[name] {
+			t.Errorf("%s: Go's client uses this key, but ECHPublicName does not name it", name)
+		}
+		if browsersIgnore[name] && named {
+			t.Errorf("%s: Go would send this key, but a browser ignores it and connects without ECH", name)
 		}
 	}
 }
