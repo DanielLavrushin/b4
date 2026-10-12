@@ -27,6 +27,7 @@ const (
 	rrTypePTR   = 12
 	rrTypeMX    = 15
 	rrTypeRRSIG = 46
+	rrTypeTSIG  = 250
 
 	headerFlagAD = 0x20
 )
@@ -57,7 +58,10 @@ func ParseResponseECH(payload []byte) []byte {
 
 func ResponseECHPublicNames(payload []byte) []string {
 	var names []string
-	eachServiceBindingECH(payload, true, func(_ uint16, ech []byte) {
+	eachServiceBindingECH(payload, true, func(priority uint16, ech []byte) {
+		if priority == 0 {
+			return
+		}
 		configs, ok := parseECHConfigs(ech)
 		if !ok {
 			return
@@ -295,7 +299,7 @@ func StripECH(payload []byte, maxSize int) ([]byte, int) {
 		count := int(binary.BigEndian.Uint16(payload[6+2*s : 8+2*s]))
 		for range count {
 			rr, next, ok := readPortableRR(payload, offset)
-			if !ok {
+			if !ok || rr.typ == rrTypeTSIG {
 				return nil, FilterUnchanged
 			}
 			offset = next

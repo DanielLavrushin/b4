@@ -742,3 +742,37 @@ func TestServiceBindingKeyNeedsAWellFormedRecord(t *testing.T) {
 		}
 	}
 }
+
+func TestStripECHLeavesASignedMessageAlone(t *testing.T) {
+	list := buildECHConfigList(usableECHConfig("cloudflare-ech.com"))
+	msg := builtMessage(t, "example.com.", dnsmessage.TypeHTTPS, dnsmessage.Header{ID: 11, Response: true}, func(b *dnsmessage.Builder) error {
+		if err := b.StartAnswers(); err != nil {
+			return err
+		}
+		if err := b.HTTPSResource(rrHeader("example.com.", dnsmessage.TypeHTTPS), dnsmessage.HTTPSResource{SVCBResource: dnsmessage.SVCBResource{
+			Priority: 1,
+			Target:   dnsmessage.MustNewName("."),
+			Params:   []dnsmessage.SVCParam{{Key: dnsmessage.SVCParamECH, Value: list}},
+		}}); err != nil {
+			return err
+		}
+		if err := b.StartAdditionals(); err != nil {
+			return err
+		}
+		tsig := dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName("key.example."), Type: dnsmessage.Type(rrTypeTSIG), Class: dnsmessage.ClassANY}
+		return b.UnknownResource(tsig, dnsmessage.UnknownResource{Type: dnsmessage.Type(rrTypeTSIG), Data: append(encodeName("hmac-sha256"), bytes.Repeat([]byte{0x11}, 48)...)})
+	})
+	if out, verdict := StripECH(msg, 0); out != nil || verdict != FilterUnchanged {
+		t.Fatalf("verdict %d: a TSIG record signs the whole message, so any rewrite makes the client reject the answer", verdict)
+	}
+}
+
+func TestResponseECHPublicNamesSkipsAliasMode(t *testing.T) {
+	resp := buildResponse("example.com", TypeHTTPS, []testRR{
+		{typ: TypeHTTPS, ttl: 60, rdata: svcbRData(0, map[uint16][]byte{svcParamECH: buildECHConfigList(usableECHConfig("alias.example"))}, []uint16{svcParamECH})},
+		{typ: TypeHTTPS, ttl: 60, rdata: svcbRData(1, map[uint16][]byte{svcParamECH: buildECHConfigList(usableECHConfig("service.example"))}, []uint16{svcParamECH})},
+	}, false, false)
+	if got := ResponseECHPublicNames(resp); !slices.Equal(got, []string{"service.example"}) {
+		t.Fatalf("names = %v: clients ignore the parameters of an AliasMode record, so its key must not pick a set", got)
+	}
+}
