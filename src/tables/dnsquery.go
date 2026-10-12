@@ -422,6 +422,7 @@ func iptIsDNSCopyReturnLine(line string) bool {
 func iptIsDNSCopyLine(line string, group uint16) bool {
 	for _, want := range [][]string{
 		{"-A", iptDNSCopyChainName},
+		{"-p", "udp"},
 		{"--dport", "53"},
 		{"-j", "NFLOG"},
 		{"--nflog-prefix", config.DNSQueryCopyPrefix},

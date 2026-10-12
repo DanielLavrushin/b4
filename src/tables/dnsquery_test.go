@@ -667,6 +667,7 @@ func TestDNSCopyListingIsReadByToken(t *testing.T) {
 		{"-A B4_DNSCOPY -p udp -m udp --dport 53 -j NFLOG --nflog-prefix b4dns --nflog-group 5370 --nflog-threshold 1", 537, false},
 		{"-A B4_DNSCOPY -p udp -m udp --dport 53 -j NFLOG --nflog-prefix b4dnsx --nflog-group 537", 537, false},
 		{"-A B4_DNSCOPY -p udp -m udp --dport 5353 -j NFLOG --nflog-prefix b4dns --nflog-group 537", 537, false},
+		{"-A B4_DNSCOPY -p tcp -m tcp --dport 53 -j NFLOG --nflog-prefix b4dns --nflog-group 537 --nflog-threshold 1", 537, false},
 		{"-A B4_DNSCOPY -p udp -m udp --dport 53 -j LOG --log-prefix b4dns", 537, false},
 		{"-A INPUT -p udp -m udp --dport 53 -j NFLOG --nflog-prefix b4dns --nflog-group 537", 537, false},
 		{"-A B4_DNSCOPY -p udp -m udp --dport 53 -j NFLOG --nflog-prefix b4dns --nflog-threshold 1", 0, true},
