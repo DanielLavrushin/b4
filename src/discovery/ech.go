@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/daniellavrushin/b4/dns"
@@ -19,6 +20,7 @@ import (
 
 const (
 	echLookupTimeout = 3 * time.Second
+	echLookupWorkers = 8
 	presetECHStrip   = "ech-strip"
 )
 
@@ -44,29 +46,51 @@ func (ds *DiscoverySuite) probeECH() {
 	if ds.tlsVersion == "tls12" {
 		return
 	}
+	var domains []string
 	for _, di := range ds.Domains {
+		if u, err := url.Parse(di.CheckURL); err == nil && u.Scheme == "https" {
+			domains = append(domains, di.Domain)
+		}
+	}
+	lists := ds.lookupECHConfigLists(domains)
+	for i, domain := range domains {
 		if ds.interrupted() {
 			return
 		}
-		if u, err := url.Parse(di.CheckURL); err != nil || u.Scheme != "https" {
-			continue
-		}
-		list := lookupECHConfigList(ds.ctx, ds.flowMark, di.Domain)
-		cover := dns.ECHPublicName(list)
+		cover := dns.ECHPublicName(lists[i])
 		if cover == "" {
-			if len(list) > 0 {
-				log.DiscoveryLogf("  [%s] publishes an ECH key the probes cannot use, so they connect without ECH", di.Domain)
+			if len(lists[i]) > 0 {
+				log.DiscoveryLogf("  [%s] publishes an ECH key the probes cannot use, so they connect without ECH", domain)
 			}
 			continue
 		}
-		ds.storeECH(di.Domain, echKey{configList: list, coverName: cover})
+		ds.storeECH(domain, echKey{configList: lists[i], coverName: cover})
 		ds.CheckSuite.mu.Lock()
-		if dr := ds.domainResults[di.Domain]; dr != nil {
+		if dr := ds.domainResults[domain]; dr != nil {
 			dr.ECHCoverName = cover
 		}
 		ds.CheckSuite.mu.Unlock()
-		log.DiscoveryLogf("  [%s] publishes an ECH key: browsers that use it name %s in the ClientHello instead of the site, and so do the probes", di.Domain, cover)
+		log.DiscoveryLogf("  [%s] publishes an ECH key: browsers that use it name %s in the ClientHello instead of the site, and so do the probes", domain, cover)
 	}
+}
+
+func (ds *DiscoverySuite) lookupECHConfigLists(domains []string) [][]byte {
+	lists := make([][]byte, len(domains))
+	slots := make(chan struct{}, echLookupWorkers)
+	var wg sync.WaitGroup
+	for i, domain := range domains {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			if !ds.interrupted() {
+				lists[i] = lookupECHConfigList(ds.ctx, ds.flowMark, domain)
+			}
+		}()
+	}
+	wg.Wait()
+	return lists
 }
 
 func (ds *DiscoverySuite) storeECH(host string, key echKey) {

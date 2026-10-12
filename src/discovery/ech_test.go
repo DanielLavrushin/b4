@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -213,9 +214,12 @@ func TestProbeECHRecordsTheCoverName(t *testing.T) {
 	_, list := echKeyPair(t, 1, "cloudflare-ech.com")
 	orig := lookupECHConfigList
 	t.Cleanup(func() { lookupECHConfigList = orig })
+	var askedMu sync.Mutex
 	var asked []string
 	lookupECHConfigList = func(_ context.Context, _ uint, domain string) []byte {
+		askedMu.Lock()
 		asked = append(asked, domain)
+		askedMu.Unlock()
 		if domain == "steamdb.info" {
 			return list
 		}
@@ -242,7 +246,8 @@ func TestProbeECHRecordsTheCoverName(t *testing.T) {
 
 	ds := newSuite("auto")
 	ds.probeECH()
-	if !slices.Equal(asked, []string{"steamdb.info", "plain.example"}) {
+	slices.Sort(asked)
+	if !slices.Equal(asked, []string{"plain.example", "steamdb.info"}) {
 		t.Fatalf("an http:// check URL never sends a ClientHello, asked %v", asked)
 	}
 	if got := ds.domainResults["steamdb.info"].ECHCoverName; got != "cloudflare-ech.com" {
@@ -445,5 +450,42 @@ func TestUnusableECHKeyMeansNoECH(t *testing.T) {
 	}
 	if got := ds.domainResults["site.example"].ECHCoverName; got != "" {
 		t.Fatalf("cover %q reported for a key nobody can use", got)
+	}
+}
+
+func TestProbeECHLooksUpTheSitesTogether(t *testing.T) {
+	_, list := echKeyPair(t, 3, "cloudflare-ech.com")
+	orig := lookupECHConfigList
+	t.Cleanup(func() { lookupECHConfigList = orig })
+
+	inputs := []DomainInput{
+		{Domain: "a.example", CheckURL: "https://a.example/"},
+		{Domain: "b.example", CheckURL: "https://b.example/"},
+		{Domain: "c.example", CheckURL: "https://c.example/"},
+	}
+	var arrived atomic.Int32
+	everyone := make(chan struct{})
+	lookupECHConfigList = func(context.Context, uint, string) []byte {
+		if arrived.Add(1) == int32(len(inputs)) {
+			close(everyone)
+		}
+		select {
+		case <-everyone:
+			return list
+		case <-time.After(2 * time.Second):
+			return nil
+		}
+	}
+
+	results := map[string]*DomainDiscoveryResult{}
+	for _, di := range inputs {
+		results[di.Domain] = &DomainDiscoveryResult{Domain: di.Domain}
+	}
+	ds := &DiscoverySuite{CheckSuite: &CheckSuite{Domains: inputs}, domainResults: results, ctx: context.Background()}
+	ds.probeECH()
+	for _, di := range inputs {
+		if got := results[di.Domain].ECHCoverName; got != "cloudflare-ech.com" {
+			t.Fatalf("%s: cover %q: each lookup waited for the one before it, so a slow resolver costs its timeout once per site", di.Domain, got)
+		}
 	}
 }
