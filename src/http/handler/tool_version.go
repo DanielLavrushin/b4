@@ -10,12 +10,15 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"golang.org/x/sys/unix"
 )
 
 var (
 	toolVersionTimeout = 2 * time.Second
 	toolVersionBudget  = 5 * time.Second
 	toolVersionTrusted = config.InStandardBinDir
+	ownExecutable      = os.Executable
+	fileDevice         = statDevice
 )
 
 const (
@@ -50,23 +53,71 @@ func newToolVersions() *toolVersions {
 }
 
 func (v *toolVersions) of(name, path string) string {
-	if !toolVersionTrusted(path) {
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
 		return ""
 	}
-	if real, err := filepath.EvalSymlinks(path); err == nil && strings.HasPrefix(filepath.Base(real), "busybox") {
+	file := path
+	if !toolVersionTrusted(path) {
+		if !onOwnDrive(path, real) {
+			return ""
+		}
+		file = real
+	}
+	if strings.HasPrefix(filepath.Base(real), "busybox") {
 		version, seen := v.busybox[real]
 		if !seen {
-			stdout, stderr, _ := v.run(real)
+			stdout, stderr, _ := v.run(real, real)
 			version = busyboxBannerRe.FindString(stdout + "\n" + stderr)
 			v.busybox[real] = version
 		}
 		return version
 	}
-	stdout, stderr, err := v.run(path, "--version")
+	stdout, stderr, err := v.run(file, path, "--version")
 	return parseToolVersion(name, stdout, stderr, err == nil)
 }
 
-func (v *toolVersions) run(path string, args ...string) (string, string, error) {
+func onOwnDrive(path, real string) bool {
+	drive, ok := ownDrive()
+	if !ok {
+		return false
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return false
+	}
+	for _, p := range []string{dir, real} {
+		if dev, ok := fileDevice(p); !ok || dev != drive {
+			return false
+		}
+	}
+	return true
+}
+
+func ownDrive() (uint64, bool) {
+	self, err := ownExecutable()
+	if err != nil {
+		return 0, false
+	}
+	drive, ok := fileDevice(self)
+	if !ok {
+		return 0, false
+	}
+	if root, ok := fileDevice("/"); !ok || root == drive {
+		return 0, false
+	}
+	return drive, true
+}
+
+func statDevice(path string) (uint64, bool) {
+	var st unix.Stat_t
+	if err := unix.Stat(path, &st); err != nil {
+		return 0, false
+	}
+	return uint64(st.Dev), true
+}
+
+func (v *toolVersions) run(file, name string, args ...string) (string, string, error) {
 	timeout := min(toolVersionTimeout, time.Until(v.deadline))
 	if timeout <= 0 {
 		return "", "", context.DeadlineExceeded
@@ -75,7 +126,8 @@ func (v *toolVersions) run(path string, args ...string) (string, string, error) 
 	defer cancel()
 
 	var stdout, stderr headBuffer
-	cmd := exec.CommandContext(ctx, path, args...)
+	cmd := exec.CommandContext(ctx, file, args...)
+	cmd.Args[0] = name
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
