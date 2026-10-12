@@ -6,6 +6,7 @@
 - CHANGED: **On Keenetic, and on routers with an older kernel where b4 cannot hold DNS queries ahead of the kernel's connection tracking, DNS queries go on to the resolver the device asked, and b4 takes over that resolver's reply for the names a set blocks, pins or sends to its own resolver** - that resolver and the servers it asks still see those names, also for a set with an encrypted resolver. System Info shows the row DNS queries copied, not held (NFLOG).
 - FIXED: **On routers with an older kernel, a device occasionally got only one of the two answers it asked for at once, IPv4 or IPv6, for a name in a set with a DNS redirect** - b4 sent both answers at the same moment, and the kernel's connection tracking dropped one of them as a duplicate of the other.
 - FIXED: **On routers with iptables and an older kernel, such as Keenetic, connections through a set with SYN Fake Packets on took about a second longer to open, and with the UDP mode Fake & Fragment most of the fakes were lost, often along with the real first QUIC packet** - since 1.25.0, b4 put the packets it sends itself through its own queue a second time, and the kernel's connection tracking on such a router dropped some of them.
+- FIXED: **System Info listed tools such as jq, sha256sum and ipset without a version when they were on the USB drive b4 is installed on** - b4 asked a tool for its version only when it sat in a standard system directory such as `/usr/bin` or `/opt/bin`.
 
 ## [1.86.0] - 2026-10-09
 
