@@ -87,6 +87,13 @@ func NewPool(cfg *config.Config) *Pool {
 	}
 
 	pool := &Pool{Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), state: state}
+	if !cfg.Queue.IsDiscovery {
+		pool.dnsCopy = newDNSCopyListener(ws[0])
+		for _, w := range ws {
+			w.dnsCopy = pool.dnsCopy
+		}
+		dnsCopyCurrent.Store(pool.dnsCopy)
+	}
 	pool.startDNSTCP()
 	pool.publishDNSTCPReady()
 
@@ -146,7 +153,27 @@ func (p *Pool) Start() error {
 			return err
 		}
 	}
+	if len(p.Workers) > 0 {
+		p.dnsCopy.enable(uint32(p.Workers[0].getConfig().Queue.Mark))
+	}
 	return nil
+}
+
+func (p *Pool) OpenDNSQueryCopy() (uint16, error) {
+	if p == nil {
+		return 0, errNoDNSCopyListener
+	}
+	return p.dnsCopy.open()
+}
+
+func (p *Pool) DNSQueryCopyAlive() bool {
+	return p != nil && p.dnsCopy.alive()
+}
+
+func (p *Pool) SetDNSQueryCopyFamilies(v4, v6 bool) {
+	if p != nil {
+		p.dnsCopy.setFamilies(v4, v6)
+	}
 }
 
 var DNSTCPReadyFunc func(v4, v6 bool)
@@ -199,7 +226,9 @@ func (p *Pool) ReleaseHolds() {
 }
 
 func (p *Pool) Stop() {
+	p.dnsCopy.disable()
 	p.ReleaseHolds()
+	p.dnsCopy.close()
 	if p.dnsTCP != nil {
 		p.dnsTCP.Stop()
 		p.dnsTCP = nil

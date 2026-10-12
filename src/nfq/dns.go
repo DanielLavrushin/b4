@@ -379,7 +379,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					config.NormalizeBlockAction(set.Routing.BlockAction) == config.BlockActionDrop {
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionBlock)
 					recordBlockedDNS(cfg, set, domain, srcMac)
-					vc.drop()
+					vc.dropUnanswered()
 					return 0
 				}
 
@@ -486,6 +486,10 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 		}
 	}
 
+	if vc.copy != nil {
+		return vc.accept()
+	}
+
 	if sport == 53 {
 		if txid, ok := dns.ParseTransactionID(payload); ok {
 			domain, _ := dns.ParseQueryDomain(payload)
@@ -497,6 +501,12 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 			domain = strings.ToLower(domain)
 			clientIP := pkt.dst
 			dnsServerIP := pkt.src
+			if w.dnsCopyGate(vc, pkt, dport, txid, domain, payload) {
+				return 0
+			}
+			if vc.ifaceFiltered {
+				return vc.accept()
+			}
 
 			routed := false
 			var routeWaits []<-chan struct{}
@@ -533,7 +543,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 							healSet = set
 						}
 						w.storeHostHints(clientIP, set, domain, ips)
-						if !set.Targets.DomainOnly && routingHandleDNSAvailable() && !cfg.Queue.IsDiscovery {
+						if !set.Targets.DomainOnly && !config.RoutingIsBlock(set.Routing.Mode) && routingHandleDNSAvailable() && !cfg.Queue.IsDiscovery {
 							routeWaits = joinWaits(routeWaits, routingHandleDNSAwait(cfg, set, ips))
 						}
 					}
@@ -667,25 +677,54 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 
 var dnsReplyObserver func(resp []byte)
 
+type dnsAnswerSender interface {
+	SendIPv4(packet []byte, destIP net.IP) error
+	SendIPv6(packet []byte, destIP net.IP) error
+}
+
+var (
+	dnsAnswerSendMu    sync.Mutex
+	dnsAnswerSenderFor = func(w *Worker) dnsAnswerSender {
+		if s := w.clientSender(); s != nil {
+			return s
+		}
+		return nil
+	}
+)
+
 func (w *Worker) sendDNSResponseToClient(ipVersion byte, originalDst, clientIP net.IP, clientPort uint16, resp []byte) {
 	if len(resp) == 0 {
 		return
 	}
+	if w.dnsCopy != nil && w.dnsCopy.deliver(ipVersion, originalDst, clientIP, clientPort, resp) {
+		return
+	}
+	w.sendDNSPacket(ipVersion, originalDst, clientIP, clientPort, resp)
+}
+
+func (w *Worker) sendDNSPacket(ipVersion byte, originalDst, clientIP net.IP, clientPort uint16, resp []byte) {
 	if dnsReplyObserver != nil {
 		dnsReplyObserver(resp)
 	}
-	sender := w.clientSender()
+	sender := dnsAnswerSenderFor(w)
 	if sender == nil {
 		return
 	}
+	var pkt []byte
 	if ipVersion == IPv4 {
-		if pkt := sock.BuildUDPPacketV4(originalDst, clientIP, 53, clientPort, resp); pkt != nil {
-			_ = sender.SendIPv4(pkt, clientIP)
-		}
+		pkt = sock.BuildUDPPacketV4(originalDst, clientIP, 53, clientPort, resp)
 	} else {
-		if pkt := sock.BuildUDPPacketV6(originalDst, clientIP, 53, clientPort, resp); pkt != nil {
-			_ = sender.SendIPv6(pkt, clientIP)
-		}
+		pkt = sock.BuildUDPPacketV6(originalDst, clientIP, 53, clientPort, resp)
+	}
+	if pkt == nil {
+		return
+	}
+	dnsAnswerSendMu.Lock()
+	defer dnsAnswerSendMu.Unlock()
+	if ipVersion == IPv4 {
+		_ = sender.SendIPv4(pkt, clientIP)
+	} else {
+		_ = sender.SendIPv6(pkt, clientIP)
 	}
 }
 

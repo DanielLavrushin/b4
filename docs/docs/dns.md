@@ -9,13 +9,15 @@ A set decides which resolver answers the domains it targets. Everything else kee
 
 | Transport | How it reaches b4 | When |
 | --- | --- | --- |
-| UDP port 53 | Queue rules in `PREROUTING` and `OUTPUT`: for requests (`dport 53`) in the raw table, ahead of conntrack (priority -300 on nftables), and for replies (`sport 53`) in the mangle table | Always, while b4 is running |
+| UDP port 53 | Queue rules in `PREROUTING` and `OUTPUT`: for requests (`dport 53`) in the raw table, ahead of conntrack (priority -300 on nftables), and for replies (`sport 53`) in the mangle table. On KeeneticOS, and with iptables on kernels before 4.18 (4.14 before 4.14.173) whose raw table cannot queue packets, requests are not queued: a rule at the top of mangle `INPUT`, `FORWARD` and `OUTPUT` sends b4 a copy of each one with NFLOG and the request goes on at once, while replies are queued as before; see [Copied requests](#copied-requests) | Always, while b4 is running |
 | TCP port 53 | A `nat` `REDIRECT` into a local listener, port 5453 by default | Only while at least one enabled set has a DNS server or a DoH URL, and **Intercept DNS over TCP** is on |
 
 Both cases cover traffic forwarded from the network and queries the router makes for itself. The queries b4 sends on a client's behalf and its lookups through a set's resolver carry the [queue mark](./guides/marks.md#the-queue-mark), and these rules skip packets that carry it, so such a query never re-enters the queue through them. Lookups b4 makes through the router's own resolver carry no mark.
 
 :::info Requests and conntrack
-A device usually asks for a name's IPv4 and IPv6 addresses at the same moment from one socket. A request held in the queue after conntrack has seen it carries a connection entry the kernel has not confirmed yet, so the second request gets an entry of its own, and kernels before 4.18 (4.14 before 4.14.173), such as the 4.9 of Keenetic routers, drop it when the two entries clash. Queued from the raw table, the requests reach conntrack one after the other, once b4 has released them. Where the iptables raw table cannot queue packets, b4 queues requests in mangle, logs a warning, and System Info shows **DNS queries queued before conntrack (raw)** as unavailable.
+A device usually asks for a name's IPv4 and IPv6 addresses at the same moment from one socket. A request held in the queue after conntrack has seen it carries a connection entry the kernel has not confirmed yet, so the second request gets an entry of its own, and kernels before 4.18 (4.14 before 4.14.173) drop it when the two entries clash. Queued from the raw table, the requests reach conntrack one after the other, once b4 has released them. KeeneticOS runs its raw table after conntrack, and b4 does not use it there.
+
+On KeeneticOS, and with iptables on such a kernel whose raw table cannot queue packets, b4 holds no request and works on a copy of each one, see [Copied requests](#copied-requests). On other kernels, where the iptables raw table cannot queue packets, b4 queues requests in mangle, logs a warning, and System Info shows **DNS queries queued before conntrack (raw)** as unavailable.
 :::
 
 ```mermaid
@@ -42,8 +44,40 @@ Everything on this page works on DNS to port 53. When a device resolves over DoH
 
 The usual sources are a browser with its own secure DNS turned on (Firefox, Chrome), Android Private DNS, and a resolver configured as DoH on the device itself. To work with DNS through b4, switch encrypted DNS off on those devices and let them use the router.
 
-An encrypted forwarder on the router is a different matter and does not get in the way. Devices still ask the router on plain port 53, b4 intercepts there, and only what b4 passes through reaches the forwarder.
+An encrypted forwarder on the router is a different matter and does not get in the way. Devices still ask the router on plain port 53, b4 intercepts there, and only what b4 passes through reaches the forwarder. With [copied requests](#copied-requests), every request reaches the forwarder, and b4 acts on its replies.
 :::
+
+### Copied requests {#copied-requests}
+
+On KeeneticOS, and with iptables on a kernel before 4.18 (4.14 before 4.14.173) whose raw table cannot queue packets, b4 holds no DNS request. A rule at the top of mangle `INPUT`, `FORWARD` and `OUTPUT` sends b4 a copy of each request with NFLOG, to the group numbered like the first queue, `queue.start_num`, 537 by default, and the request goes on to its resolver at once. b4 runs the copy through the same set handling as a request in its queue, and the [Traffic](./connections.md) page and the log record the same results. The resolver's reply reaches the queue as before, and b4 settles it by what the set did with the copy:
+
+| The set | The resolver's reply |
+| --- | --- |
+| Blocks the name with the **Reject** action | Replaced with NXDOMAIN |
+| Blocks the name with the **Drop** action | Dropped |
+| Pins the name | Replaced with the pinned answer |
+| Resolves the name through the set's resolver | Held until b4 has its answer, from that resolver or from [a fallback](#when-the-resolver-fails), then replaced with it. A reply held for twice the query timeout plus 2 seconds passes unchanged |
+| Forwards the name unchanged, or does not match it | Handled like any other reply, see step 4 of [How a set handles a query](#how-a-set-handles-a-query) |
+
+When the device asked a resolver on the router itself, b4 also sends its answer on its own once 20 ms have passed without a reply and the answer is ready. A reply that comes later is still replaced with the same answer, and the device then receives it twice.
+
+- **The resolver still sees the name.** The resolver the device asked receives every request and, unless it holds the answer, asks its own upstream, also for a name a set resolves over DoH. The lookup the router's resolver sends upstream while b4 still owes a device the answer for the same name passes unchanged, and that resolver caches the real answer.
+- **A resolver outside the router has to reply.** A device that asks a resolver outside the router gets b4's answer only in place of that resolver's reply, and no answer at all while that resolver does not reply.
+- **Port-changing `nat` rules are not supported.** When a `nat` rule moves DNS requests to another port, such as a `REDIRECT` to a local resolver on port 5353, the replies come back from that port and b4 cannot act on them: the sets do not answer, block or redirect the names asked through such a rule. b4 logs a warning that names the rule.
+- **A lost copy leaves its reply unchanged.** When copies arrive faster than b4 reads them, the kernel discards the excess, and the replies to those requests pass as they are.
+
+System Info shows the row **DNS queries copied, not held (NFLOG)** under **Kernel Capabilities** on these routers: available while b4 copies the requests, unavailable while it holds some of them after conntrack, with the modules that are missing. On KeeneticOS the row **DNS queries queued before conntrack (raw)** is not shown, and an unavailable row names the firmware component to enable instead of packages. Where copying does not work either, b4 holds requests in mangle after conntrack, and the loss described in the note above applies. **Copy JSON** in System Info and the MCP tool `b4_diagnostics` give the counts of copies, lost copies, and replaced, dropped and unchanged replies under `firewall.dns_query_copy`.
+
+b4 logs these lines about copying:
+
+| Log line | Meaning |
+| --- | --- |
+| `IPTABLES[iptables]: KeeneticOS runs its raw table after conntrack (kernel ...), so b4 copies DNS queries with NFLOG (group 537) instead of holding them in its queue` | b4 copies the requests of that binary, `iptables` or `ip6tables`. On other kernels the line starts with the reason the raw table cannot queue them. Logged once |
+| `IPTABLES[iptables]: b4 cannot copy DNS queries with NFLOG (...)` | Copying failed for the reason in the brackets, and b4 holds requests after conntrack. On other kernels the line starts with the reason the raw table cannot queue them and reads `cannot copy DNS queries with NFLOG either`. Logged once |
+| `DNS: the NFLOG copy of DNS queries stopped (...)` | The listener that receives the copies stopped. At the next check of the firewall monitor, b4 starts it again or holds requests in its queue |
+| `DNS: N copies of DNS queries were lost; ...` | Copies the kernel discarded, at most one such line every 5 minutes |
+| `DNS: b4 already has 8192 DNS answers to deliver, ...` | b4 was already acting on 8192 requests, its limit, and the replies to the requests copied after that passed unchanged |
+| `IPTABLES[iptables]: the nat rule "..." moves DNS queries to port ...` | A `nat` rule that changes the port, see above |
 
 ## How a set handles a query
 
@@ -56,6 +90,8 @@ For a matched query b4 works through these steps in order:
 3. **Resolver.** If the redirect is enabled and a resolver is configured, b4 resolves the name itself and answers the client directly. Otherwise the query is forwarded unchanged.
 4. **The answer.** Addresses from the answer are remembered for the client, and written into the set's IP set when [routing](./sets/routing.md) is on. An answer, forwarded or pinned, that brings addresses b4 has not written to the set recently is held until b4's update of the set for those addresses has finished, at most 250 ms each time b4 sees the answer, so the connection that follows it usually takes the set's route. With the TUN engine the answer is not held; see [Routing](./sets/routing.md#how-it-works-in-detail).
 
+With [copied requests](#copied-requests), each answer in these steps takes the place of the resolver's reply, and a dropped query is a dropped reply.
+
 ### Resolver types
 
 Set the resolver on **Sets → a set → DNS & Routing → DNS Redirect**.
@@ -67,7 +103,7 @@ Set the resolver on **Sets → a set → DNS & Routing → DNS Redirect**.
 
 A DoH URL takes precedence: when both fields are filled, the DoH URL is used and the IP is ignored. The URL has to start with `https://`, which is checked when the configuration is saved.
 
-A query that comes from the address of the set's own resolver is forwarded unchanged rather than handed back to it, unless b4 blocks the query or answers it from a pin. A resolver elsewhere on the network that asks its upstream over plain DNS passes a client's lookup on through the router, and handing that query back would leave it waiting out the query timeout; any other query from that address is forwarded unchanged as well, including those of containers or VPN clients that reach the network through NAT on the resolver's host. A DoH URL is compared the same way when it names its server by IP address. Only the address the set names is compared: a query the resolver sends from another of its addresses, such as an IPv4 query from a resolver the set names by its IPv6 address, is still handed back to it. The comparison is not made for a resolver on the router itself, so that the router's own lookups go to it. Such a resolver, and the router's resolver whenever a resolver on the network uses it as its upstream, has to reach its own upstream over a transport b4 does not intercept, such as DNS over HTTPS or TLS.
+A query that comes from the address of the set's own resolver is forwarded unchanged rather than handed back to it, unless b4 blocks the query or answers it from a pin. A resolver elsewhere on the network that asks its upstream over plain DNS passes a client's lookup on through the router, and handing that query back would leave it waiting out the query timeout; any other query from that address is forwarded unchanged as well, including those of containers or VPN clients that reach the network through NAT on the resolver's host. A DoH URL is compared the same way when it names its server by IP address. Only the address the set names is compared: a query the resolver sends from another of its addresses, such as an IPv4 query from a resolver the set names by its IPv6 address, is still handed back to it. The comparison is not made for a resolver on the router itself, so that the router's own lookups go to it. Such a resolver, and the router's resolver whenever a resolver on the network uses it as its upstream, has to reach its own upstream over a transport b4 does not intercept, such as DNS over HTTPS or TLS. With [copied requests](#copied-requests), the lookup the router's resolver sends upstream while b4 still owes a device the answer for that name passes unchanged.
 
 ![DNS redirect in DoH mode](/img/dns/20260810210220.png)
 

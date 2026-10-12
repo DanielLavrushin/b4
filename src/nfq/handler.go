@@ -68,7 +68,10 @@ func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint
 	if q != nil {
 		vc.q = q
 	}
+	return w.handleQueued(vc, a, mark)
+}
 
+func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) int {
 	if a.Mark != nil && selfInjectedMark(*a.Mark, uint32(mark), w.getConfig()) {
 		return vc.accept()
 	}
@@ -78,7 +81,10 @@ func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint
 	}
 
 	if !w.matchesInterface(a) {
-		return vc.accept()
+		if !w.dnsCopyMayClaim(*a.Payload) {
+			return vc.accept()
+		}
+		vc.ifaceFiltered = true
 	}
 
 	select {

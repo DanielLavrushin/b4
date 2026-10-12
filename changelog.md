@@ -1,5 +1,11 @@
 # B4 - Bye Bye Big Bro
 
+## [1.86.1] - 2026-10-12
+
+- FIXED: **On Keenetic, a device that asked for a name's IPv4 and IPv6 addresses at once, and the router itself, still often lost the second answer after 1.85.1, while System Info showed DNS queries queued before conntrack (raw) as available or the log suggested kmod-ipt-raw, an OpenWrt package** - KeeneticOS runs the raw table, where b4 queued DNS queries from 1.85.1 on, only after the kernel's connection tracking has registered them. [#402](https://github.com/DanielLavrushin/b4/issues/402)
+- CHANGED: **On Keenetic, and on routers with an older kernel where b4 cannot hold DNS queries ahead of the kernel's connection tracking, DNS queries go on to the resolver the device asked, and b4 takes over that resolver's reply for the names a set blocks, pins or sends to its own resolver** - that resolver and the servers it asks still see those names, also for a set with an encrypted resolver. System Info shows the row DNS queries copied, not held (NFLOG).
+- FIXED: **On routers with an older kernel, a device occasionally got only one of the two answers it asked for at once, IPv4 or IPv6, for a name in a set with a DNS redirect** - b4 sent both answers at the same moment, and the kernel's connection tracking dropped one of them as a duplicate of the other.
+
 ## [1.86.0] - 2026-10-09
 
 - ADDED: **The Discovery page shows a run started through the MCP server or by the watchdog while the page is open, and its history marks such runs** - the run appears within five seconds, the history refreshes when it ends, and its history rows read "via MCP" or "via watchdog" under the time of the run.
@@ -16,7 +22,7 @@
 
 ## [1.85.1] - 2026-10-08
 
-- FIXED: **On routers with an older kernel, such as Keenetic, a device that asked for a name's IPv4 and IPv6 addresses at once often got no answer to the second question, so apps on it, like a video player on a TV, waited and never connected, and the router's own lookups could stall for seconds** - b4 queued each DNS query only after the kernel's connection tracking had registered it, so a second query sent at the same moment from the same socket was dropped as a duplicate of the first while that one waited in b4's queue.
+- FIXED: **On routers with an older kernel, a device that asked for a name's IPv4 and IPv6 addresses at once often got no answer to the second question, so apps on it, like a video player on a TV, waited and never connected, and the router's own lookups could stall for seconds** - b4 queued each DNS query only after the kernel's connection tracking had registered it, so a second query sent at the same moment from the same socket was dropped as a duplicate of the first while that one waited in b4's queue.
 - CHANGED: **With iptables, other services' firewall rules for DNS queries, such as an Xray TPROXY rule or mwan3 and KVAS marks, also apply to the queries b4 has already seen** - b4 queues the queries from the raw table, ahead of those rules, where before a query released from its queue skipped the later rules of mangle.
 
 ## [1.85.0] - 2026-10-04

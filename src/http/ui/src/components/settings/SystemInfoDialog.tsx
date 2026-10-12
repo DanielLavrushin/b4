@@ -794,7 +794,9 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                         ? t("settings.SystemInfo.capReplySideBypass")
                         : cap.name === "dns_before_conntrack"
                           ? t("settings.SystemInfo.capDnsBeforeConntrack")
-                          : cap.name;
+                          : cap.name === "dns_query_copy"
+                            ? t("settings.SystemInfo.capDnsQueryCopy")
+                            : cap.name;
                 return (
                   <Stack key={cap.name} spacing={0.3} sx={{ py: 0.3, px: 1 }}>
                     <Stack
@@ -832,6 +834,17 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                           })}
                         </Typography>
                       )}
+                    {!cap.available && cap.hint === "keenetic_netfilter" && (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: colors.text.secondary,
+                          fontSize: "0.7rem",
+                        }}
+                      >
+                        {t("settings.SystemInfo.capHintKeeneticNetfilter")}
+                      </Typography>
+                    )}
                     {!cap.available &&
                       cap.reasons &&
                       cap.reasons.map((reason) => (

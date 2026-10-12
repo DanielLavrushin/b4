@@ -71,6 +71,8 @@ const (
 	DefaultDNSTCPDialSec      = 5
 )
 
+const DNSQueryCopyPrefix = "b4dns"
+
 func RoutingUsesTProxy(mode string) bool {
 	return mode == RoutingModeProxy || mode == RoutingModeMTProtoWS
 }

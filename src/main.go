@@ -336,6 +336,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	engineAttempt = loadEngineAttempt()
 
 	pool := nfq.NewPool(&cfg)
+	tables.DNSQueryCopyOpenFunc = pool.OpenDNSQueryCopy
+	tables.DNSQueryCopyAliveFunc = pool.DNSQueryCopyAlive
+	tables.DNSQueryCopyPlacedFunc = pool.SetDNSQueryCopyFamilies
 	wireDashboard(mc, dashboardSources{
 		config:    cfgPtr.Load,
 		packets:   pool.PacketsProcessed,

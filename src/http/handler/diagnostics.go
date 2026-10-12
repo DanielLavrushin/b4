@@ -330,9 +330,50 @@ func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 		info.LastRulesRestore = last.UTC().Format(time.RFC3339)
 	}
 
+	counters, _ := nfq.DNSQueryCopyStats()
+	info.DNSQueryCopy = dnsQueryCopyDiag(tables.DNSQueryPlacement(), counters)
+
 	info.Routing = collectRoutingInfo(cfg)
 
 	return info
+}
+
+func dnsQueryCopyDiag(st tables.DNSQueryState, c nfq.DNSQueryCopyCounters) *DiagDNSQueryCopy {
+	if !(st.Applied && st.Affected) && !c.Bound {
+		return nil
+	}
+	d := &DiagDNSQueryCopy{
+		Group:                  st.Group,
+		Placements:             st.Placements,
+		Listening:              c.Bound && c.Alive,
+		Copies:                 c.Copies,
+		CopiesLost:             c.CopiesLost,
+		CopiesIgnored:          c.CopiesIgnored,
+		ClaimsAnswer:           c.ClaimsAnswer,
+		ClaimsDrop:             c.ClaimsDrop,
+		ClaimsQuiet:            c.ClaimsQuiet,
+		ClaimsRefused:          c.ClaimsRefused,
+		ClaimsLive:             c.ClaimsLive,
+		RepliesReplaced:        c.RepliesReplaced,
+		RepliesReplaceFallback: c.RepliesReplaceFallback,
+		RepliesDropped:         c.RepliesDropped,
+		RepliesQuiet:           c.RepliesQuiet,
+		RepliesFailedOpen:      c.RepliesFailedOpen,
+		Injections:             c.Injections,
+		ExpiredUnanswered:      c.ExpiredUnanswered,
+	}
+	if c.Bound {
+		d.Group = c.Group
+	}
+	var errs []string
+	for _, e := range []string{st.CopyError, c.Error} {
+		if e == "" || slices.ContainsFunc(errs, func(have string) bool { return strings.Contains(have, e) }) {
+			continue
+		}
+		errs = append(errs, e)
+	}
+	d.Error = strings.Join(errs, "; ")
+	return d
 }
 
 func collectRoutingInfo(cfg *config.Config) *DiagRouting {
@@ -548,10 +589,11 @@ func collectIptablesRuleGroups(backend string) []DiagRuleGroup {
 		return nil
 	}
 	wait := tables.WaitArgs(bin)
+	chains, tableNames := diagRuleSources(bin)
 
 	var groups []DiagRuleGroup
 
-	for _, c := range diagB4Chains {
+	for _, c := range chains {
 		out, err := exec.Command(bin, append(append([]string{}, wait...), "-t", c.table, "-S", c.chain)...).CombinedOutput()
 		if err != nil {
 			continue
@@ -564,7 +606,7 @@ func collectIptablesRuleGroups(backend string) []DiagRuleGroup {
 		}
 	}
 
-	for _, table := range []string{"mangle", "nat", "raw", "filter"} {
+	for _, table := range tableNames {
 		out, err := exec.Command(bin, append(append([]string{}, wait...), "-t", table, "-S")...).CombinedOutput()
 		if err != nil {
 			continue
@@ -593,6 +635,23 @@ type diagChainRef struct {
 	chain string
 }
 
+var rawTablePresent = tables.RawTablePresent
+
+func diagRuleSources(bin string) ([]diagChainRef, []string) {
+	raw := rawTablePresent(bin)
+	chains := make([]diagChainRef, 0, len(diagB4Chains))
+	for _, c := range diagB4Chains {
+		if c.table != "raw" || raw {
+			chains = append(chains, c)
+		}
+	}
+	tableNames := []string{"mangle", "nat", "filter"}
+	if raw {
+		tableNames = []string{"mangle", "nat", "raw", "filter"}
+	}
+	return chains, tableNames
+}
+
 var diagB4Chains = []diagChainRef{
 	{"filter", "B4_EXPOSE"},
 	{"mangle", "B4"},
@@ -601,6 +660,7 @@ var diagB4Chains = []diagChainRef{
 	{"mangle", "B4_TUN_GATE"},
 	{"mangle", "B4_DISCOVERY"},
 	{"mangle", "B4_DSCP"},
+	{"mangle", "B4_DNSCOPY"},
 	{"nat", "B4_MASQ"},
 	{"raw", "B4_RAW"},
 }
@@ -959,11 +1019,20 @@ func (api *API) collectGeodataInfo() DiagGeodata {
 	return info
 }
 
-func collectKernelModules(cfg *config.Config) DiagKernel {
-	modules := []string{"xt_NFQUEUE", "nfnetlink_queue", "xt_connbytes", "xt_multiport", "nf_conntrack"}
-	if tables.DetectBackend(cfg) == "nftables" {
-		modules = []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack"}
+func kernelModuleNames(backend string, st tables.DNSQueryState) []string {
+	if backend == "nftables" {
+		return []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack"}
 	}
+	modules := []string{"xt_NFQUEUE", "nfnetlink_queue", "xt_connbytes", "xt_multiport", "nf_conntrack"}
+	if dnsQueryCopyRelevant(st) {
+		modules = append(modules, "xt_NFLOG", "nfnetlink_log")
+	}
+	return modules
+}
+
+func collectKernelModules(cfg *config.Config) DiagKernel {
+	dnsQueries := tables.DNSQueryPlacement()
+	modules := kernelModuleNames(tables.DetectBackend(cfg), dnsQueries)
 	result := DiagKernel{Modules: make([]DiagModule, 0, len(modules))}
 
 	lsmodOutput := ""
@@ -1038,23 +1107,86 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 	}
 	result.Capabilities = append(result.Capabilities, connmarkCap)
 
-	if applied, after, missing, pkgs := tables.DNSQueryPlacement(); applied {
-		dnsCap := DiagCapability{
-			Name:      "dns_before_conntrack",
-			Available: len(after) == 0,
-			Missing:   missing,
-			Packages:  pkgs,
-			Reasons:   tables.KernelModuleReasons(missing),
-		}
-		if len(after) == 0 {
-			dnsCap.Detail = "DNS queries are queued ahead of conntrack"
-		} else {
-			dnsCap.Detail = fmt.Sprintf("DNS queries are queued after conntrack on %s; kernels before 4.18 (4.14 before 4.14.173) then drop the second of two queries a device sends at once from one socket (A and AAAA)", strings.Join(after, ", "))
-		}
-		result.Capabilities = append(result.Capabilities, dnsCap)
-	}
+	result.Capabilities = append(result.Capabilities, dnsQueryCapabilities(dnsQueries)...)
+	markKeeneticHints(result.Capabilities, tables.KeeneticOS())
 
 	return result
+}
+
+const keeneticNetfilterHint = "keenetic_netfilter"
+
+func dnsQueryCopyRelevant(st tables.DNSQueryState) bool {
+	if !st.Affected {
+		return false
+	}
+	for _, placement := range st.Placements {
+		if placement == "copy" || placement == "mangle" {
+			return true
+		}
+	}
+	return false
+}
+
+func dnsQueryCapabilities(st tables.DNSQueryState) []DiagCapability {
+	if !st.Applied {
+		return nil
+	}
+	var held, copied []string
+	for bin, placement := range st.Placements {
+		switch placement {
+		case "mangle":
+			held = append(held, bin)
+		case "copy":
+			copied = append(copied, bin)
+		}
+	}
+	slices.Sort(held)
+	slices.Sort(copied)
+
+	var caps []DiagCapability
+	if !st.KeeneticOS && len(copied) < len(st.Placements) {
+		dnsCap := DiagCapability{
+			Name:      "dns_before_conntrack",
+			Available: len(held) == 0,
+			Missing:   st.RawMissing,
+			Packages:  st.RawPackages,
+			Reasons:   tables.KernelModuleReasons(st.RawMissing),
+		}
+		if len(held) == 0 {
+			dnsCap.Detail = "DNS queries are queued ahead of conntrack"
+		} else {
+			dnsCap.Detail = fmt.Sprintf("DNS queries are queued after conntrack on %s; kernels before 4.18 (4.14 before 4.14.173) then drop the second of two queries a device sends at once from one socket (A and AAAA)", strings.Join(held, ", "))
+		}
+		caps = append(caps, dnsCap)
+	}
+	if !dnsQueryCopyRelevant(st) {
+		return caps
+	}
+	copyCap := DiagCapability{Name: "dns_query_copy", Available: len(held) == 0}
+	if copyCap.Available {
+		copyCap.Detail = fmt.Sprintf("DNS queries are copied with NFLOG (group %d) and never held, on %s", st.Group, strings.Join(copied, ", "))
+	} else {
+		copyCap.Missing = st.CopyMissing
+		copyCap.Packages = st.CopyPackages
+		copyCap.Reasons = tables.KernelModuleReasons(st.CopyMissing)
+		if st.CopyError != "" {
+			copyCap.Reasons = append(copyCap.Reasons, st.CopyError)
+		}
+		copyCap.Detail = fmt.Sprintf("DNS queries are held after conntrack on %s, and this kernel (%s) drops the second of two queries a device sends at once from one socket", strings.Join(held, ", "), st.Release)
+	}
+	return append(caps, copyCap)
+}
+
+func markKeeneticHints(caps []DiagCapability, keenetic bool) {
+	if !keenetic {
+		return
+	}
+	for i := range caps {
+		if caps[i].Available || (caps[i].Name == "dns_query_copy" && len(caps[i].Missing) == 0) {
+			continue
+		}
+		caps[i].Hint = keeneticNetfilterHint
+	}
 }
 
 func unameRelease() string {

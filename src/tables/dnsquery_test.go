@@ -4,8 +4,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -59,8 +61,8 @@ func manifestHasChain(m Manifest, ipt, table, name string) bool {
 func forgetRawFallbackWarnings(t *testing.T) {
 	t.Helper()
 	forget := func() {
-		for _, bin := range []string{backendIPTables, backendIP6Tables, backendIPTablesLegacy, backendIP6TablesLegacy} {
-			rawFallbackWarned.Delete(bin)
+		for _, m := range []*sync.Map{&rawFallbackWarned, &copyFallbackWarned, &dnsCopyNoted, &dnsNatPortWarned, &rawQueueUnusable, &dnsCopyUnusable, &dnsCopyErrors} {
+			m.Clear()
 		}
 	}
 	forget()
@@ -71,6 +73,7 @@ func dnsQueryTestManager(t *testing.T, rawErr error) *IPTablesManager {
 	t.Helper()
 	stubNoExec(t)
 	forgetRawFallbackWarnings(t)
+	stubDNSKernel(t, unaffectedDNSKernel)
 	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true})
 	cfg := config.NewConfig()
 	cfg.Queue.IPv4Enabled = true
@@ -90,7 +93,7 @@ func TestDNSQueriesAreQueuedFromTheRawTableBeforeConntrack(t *testing.T) {
 		t.Fatalf("buildManifest: %v", err)
 	}
 	for _, ipt := range []string{backendIPTables, backendIP6Tables} {
-		if !m.RawDNS[ipt] {
+		if m.DNSQueries[ipt] != dnsHeldRaw {
 			t.Errorf("%s: the manifest does not record that DNS queries go through the raw table", ipt)
 		}
 		if hasSpecWith(manifestSpecs(m, ipt, "mangle", "B4_PREROUTING"), "-p udp --dport 53 -j NFQUEUE") {
@@ -189,7 +192,7 @@ func TestDNSQueriesStayInMangleWhenTheRawTableCannotQueue(t *testing.T) {
 		t.Fatalf("buildManifest: %v", err)
 	}
 	for _, ipt := range []string{backendIPTables, backendIP6Tables} {
-		if m.RawDNS[ipt] {
+		if m.DNSQueries[ipt] == dnsHeldRaw {
 			t.Errorf("%s: the manifest claims the raw table placement without raw table support", ipt)
 		}
 		if !hasSpecWith(manifestSpecs(m, ipt, "mangle", "B4_PREROUTING"), "-p udp --dport 53 -j NFQUEUE") {
@@ -206,6 +209,7 @@ func TestDNSQueriesStayInMangleWhenTheRawTableCannotQueue(t *testing.T) {
 
 func TestARawPlacementThatWorkedSurvivesAFailedProbe(t *testing.T) {
 	stubNoExec(t)
+	forgetRawFallbackWarnings(t)
 	t.Cleanup(func() { rawQueueProven.Delete(backendIPTables) })
 	origSleep := probeSleep
 	probeSleep = func(time.Duration) {}
@@ -225,19 +229,36 @@ func TestARawPlacementThatWorkedSurvivesAFailedProbe(t *testing.T) {
 
 func TestAMovedDNSQueryPlacementIsDetected(t *testing.T) {
 	t.Cleanup(func() { noteDNSQueryPlacement(nil) })
+	dnsQueryPlacementChanged := func(placements map[string]dnsQueryPlacement) bool {
+		return len(dnsQueryPlacementMoves(placements)) > 0
+	}
 
-	noteDNSQueryPlacement(nil)
-	if dnsQueryPlacementChanged(map[string]bool{backendIPTables: true}) {
-		t.Errorf("a first apply has nothing to move")
+	for _, first := range []dnsQueryPlacement{dnsHeldMangle, dnsHeldRaw, dnsCopied} {
+		noteDNSQueryPlacement(nil)
+		if dnsQueryPlacementChanged(map[string]dnsQueryPlacement{backendIPTables: first}) {
+			t.Errorf("a first apply that places DNS queries in %s has nothing to move", first)
+		}
 	}
-	noteDNSQueryPlacement(map[string]bool{backendIPTables: false})
-	if !dnsQueryPlacementChanged(map[string]bool{backendIPTables: true}) {
-		t.Errorf("queries moving from mangle to raw on a restore must rebuild the rules, or the mangle answer rules keep a stale shape and sit above the queue-mark accept")
+	for _, tc := range []struct {
+		was, now dnsQueryPlacement
+		why      string
+	}{
+		{dnsHeldMangle, dnsHeldRaw, "the mangle answer rules keep a stale shape and sit above the queue-mark accept"},
+		{dnsHeldRaw, dnsHeldMangle, "the answer rules keep skipping packets to port 53, so a query to port 53 from port 53 is never handled"},
+		{dnsHeldRaw, dnsCopied, "the raw table keeps holding the queries that NFLOG now copies, so the clash stays"},
+		{dnsCopied, dnsHeldMangle, "the answer rules keep skipping packets to port 53 while the queries are held in mangle again"},
+		{dnsHeldMangle, dnsCopied, "the mangle query rules keep holding the queries that NFLOG now copies, so the clash stays"},
+	} {
+		noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: tc.was})
+		if !dnsQueryPlacementChanged(map[string]dnsQueryPlacement{backendIPTables: tc.now}) {
+			t.Errorf("DNS queries moving from %s to %s on a restore must rebuild the rules, or %s", tc.was, tc.now, tc.why)
+		}
+		if dnsQueryPlacementChanged(map[string]dnsQueryPlacement{backendIPTables: tc.was}) {
+			t.Errorf("an unchanged %s placement must not rebuild the rules", tc.was)
+		}
 	}
-	if dnsQueryPlacementChanged(map[string]bool{backendIPTables: false}) {
-		t.Errorf("an unchanged placement must not rebuild the rules")
-	}
-	if dnsQueryPlacementChanged(map[string]bool{backendIP6Tables: true}) {
+	noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: dnsHeldMangle})
+	if dnsQueryPlacementChanged(map[string]dnsQueryPlacement{backendIP6Tables: dnsHeldRaw}) {
 		t.Errorf("a family without a recorded placement has nothing to move")
 	}
 }
@@ -267,8 +288,128 @@ func TestTeardownRemovesBothDNSQueryPlacements(t *testing.T) {
 	if _, probed := manager.rawQueueSupport[backendIPTables]; probed {
 		t.Errorf("teardown probed the raw table, which a stop must never depend on")
 	}
-	if len(m.RawDNS) != 0 {
-		t.Errorf("a teardown manifest must not record a placement, got %v", m.RawDNS)
+	if len(m.DNSQueries) != 0 {
+		t.Errorf("a teardown manifest must not record a placement, got %v", m.DNSQueries)
+	}
+	assertNoDNSCopyTeardown(t, m, "an unaffected kernel never copies DNS queries, so its teardown must not grow")
+
+	t.Run("an affected kernel also removes the copy chain and its jumps", func(t *testing.T) {
+		stubDNSKernel(t, affectedDNSKernel)
+		stubDNSCopyListener(t, func() (uint16, error) {
+			t.Errorf("teardown opened the DNS query copy listener")
+			return 537, nil
+		})
+		m, err := manager.buildTeardownManifest()
+		if err != nil {
+			t.Fatalf("buildTeardownManifest: %v", err)
+		}
+		assertDNSCopyTeardown(t, m)
+		for _, ipt := range []string{backendIPTables, backendIP6Tables} {
+			if !manifestHasChain(m, ipt, "raw", iptRawChainName) {
+				t.Errorf("%s: a vanilla kernel keeps removing the raw table chain an older b4 left", ipt)
+			}
+		}
+		if len(manager.rawQueueSupport) != 0 || len(manager.dnsCopySupport) != 0 {
+			t.Errorf("teardown probed a placement: raw %v, copy %v", manager.rawQueueSupport, manager.dnsCopySupport)
+		}
+	})
+
+	t.Run("KeeneticOS leaves the raw table alone unless its module is loaded", func(t *testing.T) {
+		stubDNSKernel(t, keeneticDNSKernel)
+		stubDNSCopyListener(t, func() (uint16, error) {
+			t.Errorf("teardown opened the DNS query copy listener")
+			return 537, nil
+		})
+		origSys := kmodSysRoot
+		kmodSysRoot = t.TempDir()
+		t.Cleanup(func() { kmodSysRoot = origSys })
+		if err := os.Mkdir(filepath.Join(kmodSysRoot, "iptable_raw"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		m, err := manager.buildTeardownManifest()
+		if err != nil {
+			t.Fatalf("buildTeardownManifest: %v", err)
+		}
+		if !manifestHasChain(m, backendIPTables, "raw", iptRawChainName) || !hasSpecWith(manifestSpecs(m, backendIPTables, "raw", "PREROUTING"), "-j "+iptRawChainName) {
+			t.Errorf("iptable_raw is loaded, so teardown must still remove a %s that an older b4 left in it", iptRawChainName)
+		}
+		for _, r := range m.Rules {
+			if r.IPT == backendIP6Tables && r.Table == "raw" {
+				t.Errorf("without ip6table_raw every raw command makes the KeeneticOS kernel try to load it, got %v", r)
+			}
+		}
+		if manifestHasChain(m, backendIP6Tables, "raw", iptRawChainName) {
+			t.Errorf("without ip6table_raw teardown must not touch the raw table chain")
+		}
+		for _, ipt := range []string{backendIPTables, backendIP6Tables} {
+			if !hasSpecWith(manifestSpecs(m, ipt, "mangle", "B4_PREROUTING"), "-p udp --dport 53 -j NFQUEUE") {
+				t.Errorf("%s: teardown must still remove the DNS query rules of a mangle placement", ipt)
+			}
+		}
+		assertDNSCopyTeardown(t, m)
+		if len(manager.rawQueueSupport) != 0 || len(manager.dnsCopySupport) != 0 {
+			t.Errorf("teardown probed a placement: raw %v, copy %v", manager.rawQueueSupport, manager.dnsCopySupport)
+		}
+	})
+}
+
+func assertDNSCopyTeardown(t *testing.T, m Manifest) {
+	t.Helper()
+	for _, ipt := range []string{backendIPTables, backendIP6Tables} {
+		if !manifestHasChain(m, ipt, "mangle", iptDNSCopyChainName) {
+			t.Errorf("%s: teardown leaves the %s chain behind", ipt, iptDNSCopyChainName)
+		}
+		for chain, spec := range dnsCopyTestJumps {
+			if !slices.Contains(manifestSpecs(m, ipt, "mangle", chain), spec) {
+				t.Errorf("%s: teardown leaves the mangle %s jump to %s behind", ipt, chain, iptDNSCopyChainName)
+			}
+		}
+		if body := manifestSpecs(m, ipt, "mangle", iptDNSCopyChainName); len(body) != 0 {
+			t.Errorf("%s: the chain body is flushed with the chain and depends on the group, which teardown must not need; got %q", ipt, body)
+		}
+	}
+}
+
+func assertNoDNSCopyTeardown(t *testing.T, m Manifest, why string) {
+	t.Helper()
+	for _, c := range m.Chains {
+		if c.Name == iptDNSCopyChainName {
+			t.Errorf("%s: got the chain %s %s", why, c.IPT, c.Name)
+		}
+	}
+	for _, r := range m.Rules {
+		if spec := strings.Join(r.Spec, " "); strings.Contains(spec, iptDNSCopyChainName) || strings.Contains(spec, "NFLOG") || r.Chain == "INPUT" {
+			t.Errorf("%s: got %s %s %s", why, r.IPT, r.Chain, spec)
+		}
+	}
+}
+
+func TestKeeneticWithoutTheRawModuleRunsNoRawCommand(t *testing.T) {
+	manager := dnsQueryTestManager(t, errors.New("KeeneticOS must never probe the raw table"))
+	delete(manager.rawQueueSupport, backendIPTables)
+	delete(manager.rawQueueSupport, backendIP6Tables)
+	stubDNSKernel(t, keeneticDNSKernel)
+	stubDNSCopyListener(t, nil)
+	origSys := kmodSysRoot
+	kmodSysRoot = t.TempDir()
+	t.Cleanup(func() { kmodSysRoot = origSys })
+	noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: dnsHeldRaw, backendIP6Tables: dnsHeldMangle})
+	t.Cleanup(func() { noteDNSQueryPlacement(nil) })
+	rec := recordFirewall(t, nil)
+
+	if err := manager.Apply(); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if got := dnsQueryPlacementOf(backendIPTables); got != dnsHeldMangle {
+		t.Errorf("without a way to copy DNS queries KeeneticOS must hold them in mangle, got %s", got)
+	}
+	manager.dropUnusedDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: dnsHeldMangle, backendIP6Tables: dnsHeldMangle})
+	if err := manager.Clear(); err != nil {
+		t.Fatalf("Clear: %v", err)
+	}
+	if raw := commandsMatching(rec.commands(), rawTableCommand); len(raw) > 0 {
+		t.Errorf("without iptable_raw each raw command makes the KeeneticOS kernel try to load it, and b4 never uses the raw table there:\n%s", strings.Join(raw, "\n"))
 	}
 }
 
@@ -326,12 +467,15 @@ func (f *fakeListing) run(args ...string) (string, error) {
 	return "", errors.New("exit status 1")
 }
 
-func monitorDNSTestListing(fromRaw bool) *fakeListing {
+func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fakeListing {
 	pre := "-N B4_PREROUTING\n-A B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN\n-A B4_PREROUTING -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
 	out := "-P OUTPUT ACCEPT\n-A OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT\n-A OUTPUT -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
-	if !fromRaw {
+	if placement == dnsHeldMangle {
 		pre += "-A B4_PREROUTING -p udp -m udp --dport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
 		out += "-A OUTPUT -p udp -m udp --dport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
+	}
+	if placement == dnsCopied {
+		out = "-P OUTPUT ACCEPT\n-A OUTPUT " + dnsCopyTestJumps["OUTPUT"] + "\n" + strings.TrimPrefix(out, "-P OUTPUT ACCEPT\n")
 	}
 	pre += "-A B4_PREROUTING -p tcp -m multiport --sports 443 -m tcp --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-num 537 --queue-bypass\n"
 	out += "-A OUTPUT -j B4\n"
@@ -342,11 +486,22 @@ func monitorDNSTestListing(fromRaw bool) *fakeListing {
 		"mangle B4_PREROUTING": pre,
 		"mangle OUTPUT":        out,
 	}}
-	if fromRaw {
+	switch placement {
+	case dnsHeldRaw:
 		jump := strings.Join(iptRawDNSJump(), " ") + "\n"
 		f.chains["raw PREROUTING"] = "-P PREROUTING ACCEPT\n-A PREROUTING " + jump
 		f.chains["raw OUTPUT"] = "-P OUTPUT ACCEPT\n-A OUTPUT " + jump
 		f.chains["raw "+iptRawChainName] = "-N B4_RAW\n-A B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN\n-A B4_RAW -p udp -m udp --dport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
+	case dnsCopied:
+		prefix := "--nflog-prefix b4dns"
+		if iptables1421 {
+			prefix = "--nflog-prefix  b4dns"
+		}
+		f.chains["mangle INPUT"] = "-P INPUT ACCEPT\n-A INPUT " + dnsCopyTestJumps["INPUT"] + "\n"
+		f.chains["mangle FORWARD"] = "-P FORWARD ACCEPT\n-A FORWARD " + dnsCopyTestJumps["FORWARD"] + "\n"
+		f.chains["mangle "+iptDNSCopyChainName] = "-N B4_DNSCOPY\n" +
+			"-A B4_DNSCOPY -m mark --mark 0x8000/0x8000 -j RETURN\n" +
+			"-A B4_DNSCOPY -p udp -m udp --dport 53 -j NFLOG " + prefix + " --nflog-group 537 --nflog-threshold 1\n"
 	}
 	return f
 }
@@ -362,6 +517,9 @@ func TestMonitorChecksWhereDNSQueriesWereQueued(t *testing.T) {
 	prevV4 := dnsTCPListenerReadyV4.Load()
 	dnsTCPListenerReadyV4.Store(false)
 	t.Cleanup(func() { dnsTCPListenerReadyV4.Store(prevV4) })
+	stubDNSCopyListener(t, nil)
+	alive := true
+	stubDNSCopyAlive(t, func() bool { return alive })
 
 	m, _ := newLockTestMonitor(t)
 	cfg := config.NewConfig()
@@ -369,46 +527,167 @@ func TestMonitorChecksWhereDNSQueriesWereQueued(t *testing.T) {
 	cfg.Queue.IPv6Enabled = false
 	cfg.Queue.Mark = 0x8000
 
+	removeLine := func(f *fakeListing, chain, line string) {
+		f.chains[chain] = strings.Replace(f.chains[chain], line+"\n", "", 1)
+	}
+	editCopyRule := func(edit func(string) string) func(f *fakeListing) {
+		return func(f *fakeListing) {
+			f.chains["mangle "+iptDNSCopyChainName] = edit(f.chains["mangle "+iptDNSCopyChainName])
+		}
+	}
 	for _, tc := range []struct {
-		name    string
-		fromRaw bool
-		mutate  func(f *fakeListing)
-		want    bool
+		name      string
+		placement dnsQueryPlacement
+		mutate    func(f *fakeListing)
+		group     uint32
+		dead      bool
+		want      bool
 	}{
-		{"raw placement complete", true, nil, true},
-		{"mangle placement complete", false, nil, true},
-		{"raw PREROUTING jump wiped", true, func(f *fakeListing) { delete(f.chains, "raw PREROUTING") }, false},
-		{"raw OUTPUT jump wiped", true, func(f *fakeListing) { delete(f.chains, "raw OUTPUT") }, false},
-		{"raw chain flushed", true, func(f *fakeListing) { f.chains["raw "+iptRawChainName] = "-N B4_RAW\n" }, false},
-		{"raw table gone", true, func(f *fakeListing) {
+		{name: "raw placement complete", placement: dnsHeldRaw, want: true},
+		{name: "mangle placement complete", placement: dnsHeldMangle, want: true},
+		{name: "raw PREROUTING jump wiped", placement: dnsHeldRaw, mutate: func(f *fakeListing) { delete(f.chains, "raw PREROUTING") }},
+		{name: "raw OUTPUT jump wiped", placement: dnsHeldRaw, mutate: func(f *fakeListing) { delete(f.chains, "raw OUTPUT") }},
+		{name: "raw chain flushed", placement: dnsHeldRaw, mutate: func(f *fakeListing) { f.chains["raw "+iptRawChainName] = "-N B4_RAW\n" }},
+		{name: "raw table gone", placement: dnsHeldRaw, mutate: func(f *fakeListing) {
 			delete(f.chains, "raw PREROUTING")
 			delete(f.chains, "raw OUTPUT")
 			delete(f.chains, "raw "+iptRawChainName)
-		}, false},
-		{"mangle query rule wiped", false, func(f *fakeListing) {
+		}},
+		{name: "mangle query rule wiped", placement: dnsHeldMangle, mutate: func(f *fakeListing) {
 			f.chains["mangle B4_PREROUTING"] = strings.Replace(f.chains["mangle B4_PREROUTING"], "--dport 53", "--dport 853", 1)
-		}, false},
+		}},
+		{name: "copy placement complete", placement: dnsCopied, group: 537, want: true},
+		{name: "copy INPUT jump wiped", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
+			removeLine(f, "mangle INPUT", "-A INPUT "+dnsCopyTestJumps["INPUT"])
+		}},
+		{name: "copy FORWARD jump wiped", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
+			removeLine(f, "mangle FORWARD", "-A FORWARD "+dnsCopyTestJumps["FORWARD"])
+		}},
+		{name: "copy OUTPUT jump wiped", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
+			removeLine(f, "mangle OUTPUT", "-A OUTPUT "+dnsCopyTestJumps["OUTPUT"])
+		}},
+		{name: "copy chain flushed", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
+			f.chains["mangle "+iptDNSCopyChainName] = "-N B4_DNSCOPY\n"
+		}},
+		{name: "copy chain gone", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
+			delete(f.chains, "mangle "+iptDNSCopyChainName)
+		}},
+		{name: "copy mark RETURN wiped", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
+			removeLine(f, "mangle "+iptDNSCopyChainName, "-A B4_DNSCOPY -m mark --mark 0x8000/0x8000 -j RETURN")
+		}},
+		{name: "copy rule logs to another group", placement: dnsCopied, group: 537, mutate: editCopyRule(func(s string) string {
+			return strings.Replace(s, "--nflog-group 537", "--nflog-group 538", 1)
+		})},
+		{name: "copy rule without the b4 prefix", placement: dnsCopied, group: 537, mutate: editCopyRule(func(s string) string {
+			return strings.NewReplacer(" --nflog-prefix  b4dns", "", " --nflog-prefix b4dns", "").Replace(s)
+		})},
+		{name: "copy rule with a foreign prefix", placement: dnsCopied, group: 537, mutate: editCopyRule(func(s string) string {
+			return strings.Replace(s, "b4dns", "ndmdns", 1)
+		})},
+		{name: "copy listener dead", placement: dnsCopied, group: 537, dead: true},
+		{name: "copy to group 0 without a group token", placement: dnsCopied, group: 0, want: true, mutate: editCopyRule(func(s string) string {
+			return strings.Replace(s, " --nflog-group 537", "", 1)
+		})},
+		{name: "copy to group 0 by a rule naming a group", placement: dnsCopied, group: 0},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := monitorDNSTestListing(tc.fromRaw)
-			if tc.mutate != nil {
-				tc.mutate(f)
+		formats := []bool{false}
+		if tc.placement == dnsCopied {
+			formats = []bool{true, false}
+		}
+		for _, iptables1421 := range formats {
+			name := tc.name
+			if tc.placement == dnsCopied {
+				name += map[bool]string{true: ", iptables 1.4.21", false: ", iptables 1.8"}[iptables1421]
 			}
+			t.Run(name, func(t *testing.T) {
+				f := monitorDNSTestListing(tc.placement, iptables1421)
+				if tc.mutate != nil {
+					tc.mutate(f)
+				}
+				run = f.run
+				dnsCopyGroup.Store(tc.group)
+				alive = !tc.dead
+				noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: tc.placement})
+				if got := m.checkIPTablesRules(&cfg); got != tc.want {
+					t.Errorf("checkIPTablesRules = %v, want %v; commands:\n%s", got, tc.want, strings.Join(f.calls, "\n"))
+				}
+			})
+		}
+	}
+
+	t.Run("copy placement without a listener func", func(t *testing.T) {
+		stubDNSCopyAlive(t, nil)
+		run = monitorDNSTestListing(dnsCopied, false).run
+		dnsCopyGroup.Store(537)
+		noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: dnsCopied})
+		if m.checkIPTablesRules(&cfg) {
+			t.Errorf("copy rules without a listener reading them hold nothing, so the monitor must restore")
+		}
+	})
+
+	alive = true
+	for _, placement := range []dnsQueryPlacement{dnsHeldMangle, dnsCopied} {
+		t.Run(placement.String()+" placement whose OUTPUT jump to B4 is gone", func(t *testing.T) {
+			f := monitorDNSTestListing(placement, false)
+			removeLine(f, "mangle OUTPUT", "-A OUTPUT -j B4")
 			run = f.run
-			noteDNSQueryPlacement(map[string]bool{backendIPTables: tc.fromRaw})
-			if got := m.checkIPTablesRules(&cfg); got != tc.want {
-				t.Errorf("checkIPTablesRules = %v, want %v; commands:\n%s", got, tc.want, strings.Join(f.calls, "\n"))
+			dnsCopyGroup.Store(537)
+			noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: placement})
+			if m.checkIPTablesRules(&cfg) {
+				t.Errorf("the router's own traffic no longer reaches B4, so the monitor must restore; commands:\n%s", strings.Join(f.calls, "\n"))
+			}
+		})
+		t.Run(placement.String()+" placement with a device filter", func(t *testing.T) {
+			devices := cfg
+			devices.Queue.Devices.Enabled = true
+			devices.Queue.Devices.Devices = []config.Device{{MAC: "AA:BB:CC:DD:EE:01", Selected: true}}
+			f := monitorDNSTestListing(placement, false)
+			run = f.run
+			dnsCopyGroup.Store(537)
+			noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: placement})
+			if m.checkIPTablesRules(&devices) {
+				t.Errorf("mangle FORWARD holds no jump to B4 for the selected device, so the monitor must restore; FORWARD is:\n%s", f.chains["mangle FORWARD"])
+			}
+			f.chains["mangle FORWARD"] += "-A FORWARD -m mac --mac-source AA:BB:CC:DD:EE:01 -j B4\n"
+			if !m.checkIPTablesRules(&devices) {
+				t.Errorf("the device's FORWARD jump to B4 is in place, yet the monitor wants a restore; commands:\n%s", strings.Join(f.calls, "\n"))
 			}
 		})
 	}
 }
 
+func TestDNSCopyListingIsReadByToken(t *testing.T) {
+	for _, tc := range []struct {
+		line  string
+		group uint16
+		want  bool
+	}{
+		{"-A B4_DNSCOPY -p udp -m udp --dport 53 -j NFLOG --nflog-prefix  b4dns --nflog-group 537 --nflog-threshold 1", 537, true},
+		{"-A B4_DNSCOPY -p udp -m udp --dport 53 -j NFLOG --nflog-prefix b4dns --nflog-group 537 --nflog-threshold 1", 537, true},
+		{"-A B4_DNSCOPY -p udp -m udp --dport 53 -j NFLOG --nflog-prefix b4dns --nflog-group 5370 --nflog-threshold 1", 537, false},
+		{"-A B4_DNSCOPY -p udp -m udp --dport 53 -j NFLOG --nflog-prefix b4dnsx --nflog-group 537", 537, false},
+		{"-A B4_DNSCOPY -p udp -m udp --dport 5353 -j NFLOG --nflog-prefix b4dns --nflog-group 537", 537, false},
+		{"-A B4_DNSCOPY -p udp -m udp --dport 53 -j LOG --log-prefix b4dns", 537, false},
+		{"-A INPUT -p udp -m udp --dport 53 -j NFLOG --nflog-prefix b4dns --nflog-group 537", 537, false},
+		{"-A B4_DNSCOPY -p udp -m udp --dport 53 -j NFLOG --nflog-prefix b4dns --nflog-threshold 1", 0, true},
+		{"-A B4_DNSCOPY -p udp -m udp --dport 53 -j NFLOG --nflog-prefix b4dns --nflog-group 537 --nflog-threshold 1", 0, false},
+	} {
+		if got := iptIsDNSCopyLine(tc.line, tc.group); got != tc.want {
+			t.Errorf("iptIsDNSCopyLine(%q, %d) = %v, want %v", tc.line, tc.group, got, tc.want)
+		}
+	}
+}
+
 type fakeNumberedChains struct {
 	rules   map[string][]string
+	specs   map[string][]string
+	chains  map[string]bool
+	calls   []string
 	deleted []string
 }
 
 func (f *fakeNumberedChains) run(args ...string) (string, error) {
+	f.calls = append(f.calls, strings.Join(args, " "))
 	table := ""
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == "-t" {
@@ -426,79 +705,165 @@ func (f *fakeNumberedChains) run(args ...string) (string, error) {
 			}
 			return b.String(), nil
 		case "-S":
-			if args[i+1] == iptRawChainName {
-				return "-N " + iptRawChainName + "\n", nil
+			if f.chains[key] {
+				return "-N " + args[i+1] + "\n", nil
 			}
 			return "", errors.New("exit status 1")
 		case "-D":
-			n, err := strconv.Atoi(args[len(args)-1])
-			if err != nil || n < 1 || n > len(f.rules[key]) {
+			if n, err := strconv.Atoi(args[len(args)-1]); err == nil && len(args) == i+3 {
+				if n < 1 || n > len(f.rules[key]) {
+					return "", errors.New("exit status 1")
+				}
+				f.deleted = append(f.deleted, key+" "+f.rules[key][n-1])
+				f.rules[key] = append(f.rules[key][:n-1:n-1], f.rules[key][n:]...)
+				return "", nil
+			}
+			spec := strings.Join(args[i+2:], " ")
+			at := slices.Index(f.specs[key], spec)
+			if at < 0 {
 				return "", errors.New("exit status 1")
 			}
-			f.deleted = append(f.deleted, key+" "+f.rules[key][n-1])
-			f.rules[key] = append(f.rules[key][:n-1:n-1], f.rules[key][n:]...)
+			f.deleted = append(f.deleted, key+" "+spec)
+			f.specs[key] = slices.Delete(f.specs[key], at, at+1)
 			return "", nil
 		case "-F", "-X":
 			f.deleted = append(f.deleted, table+" "+args[i]+" "+args[i+1])
+			if args[i] == "-X" {
+				delete(f.chains, key)
+			}
 			return "", nil
 		}
 	}
 	return "", errors.New("exit status 1")
 }
 
+func newPlacementSwitchFake() *fakeNumberedChains {
+	return &fakeNumberedChains{
+		rules: map[string][]string{
+			"mangle B4_PREROUTING": {
+				"NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp spt:53 NFQUEUE num 537 bypass",
+				"NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53 NFQUEUE num 537 bypass",
+			},
+			"mangle OUTPUT": {
+				"ACCEPT     all  --  0.0.0.0/0  0.0.0.0/0  mark match 0x8000/0x8000",
+				"NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53 NFQUEUE num 200 bypass",
+				"NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53 NFQUEUE num 537 bypass",
+				"NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:5353 NFQUEUE num 537 bypass",
+			},
+			"mangle INPUT": {
+				"NFLOG      udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53 nflog-group 100",
+			},
+			"raw PREROUTING": {
+				"NOTRACK    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:123",
+				"B4_RAW     udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53",
+			},
+			"raw OUTPUT": {
+				"B4_RAW     udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53",
+			},
+		},
+		specs: map[string][]string{
+			"mangle INPUT":   {"-p udp --dport 53 -j NFLOG --nflog-group 100", dnsCopyTestJumps["INPUT"]},
+			"mangle FORWARD": {dnsCopyTestJumps["FORWARD"]},
+			"mangle OUTPUT":  {dnsCopyTestJumps["OUTPUT"]},
+		},
+		chains: map[string]bool{"raw " + iptRawChainName: true, "mangle " + iptDNSCopyChainName: true},
+	}
+}
+
 func TestSwitchingPlacementRemovesTheOtherOne(t *testing.T) {
 	origRun := run
 	t.Cleanup(func() { run = origRun })
-
-	f := &fakeNumberedChains{rules: map[string][]string{
-		"mangle B4_PREROUTING": {
-			"NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp spt:53 NFQUEUE num 537 bypass",
-			"NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53 NFQUEUE num 537 bypass",
-		},
-		"mangle OUTPUT": {
-			"ACCEPT     all  --  0.0.0.0/0  0.0.0.0/0  mark match 0x8000/0x8000",
-			"NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53 NFQUEUE num 200 bypass",
-			"NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53 NFQUEUE num 537 bypass",
-			"NFQUEUE    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:5353 NFQUEUE num 537 bypass",
-		},
-		"raw PREROUTING": {
-			"NOTRACK    udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:123",
-			"B4_RAW     udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53",
-		},
-		"raw OUTPUT": {
-			"B4_RAW     udp  --  0.0.0.0/0  0.0.0.0/0  udp dpt:53",
-		},
-	}}
-	run = f.run
+	fx := newKmodFixture(t)
 
 	cfg := config.NewConfig()
 	cfg.Queue.StartNum = 537
 	cfg.Queue.Threads = 1
 	manager := NewIPTablesManager(&cfg, false)
-	manager.dropUnusedDNSQueryPlacement(map[string]bool{backendIPTables: true})
-	got := strings.Join(f.deleted, "\n")
-	if strings.Count(got, "dpt:53 ") != 2 || strings.Contains(got, "spt:53") || strings.Contains(got, "dpt:5353") || strings.Contains(got, "ACCEPT") {
-		t.Errorf("moving queries to the raw table must delete exactly the two mangle query rules, deleted:\n%s", got)
+	drop := func(facts dnsKernel, placement dnsQueryPlacement) (*fakeNumberedChains, string) {
+		t.Helper()
+		stubDNSKernel(t, facts)
+		f := newPlacementSwitchFake()
+		run = f.run
+		manager.dropUnusedDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: placement})
+		return f, strings.Join(f.deleted, "\n")
 	}
-	if strings.Contains(got, "num 200") {
-		t.Errorf("another service's DNS queue rule in mangle OUTPUT was deleted:\n%s", got)
+	copyRemoved := func(got string) bool {
+		return strings.Contains(got, iptDNSCopyChainName)
+	}
+	mangleQueriesRemoved := func(got string) bool {
+		return strings.Count(got, "dpt:53 ") == 2 && !strings.Contains(got, "spt:53") && !strings.Contains(got, "dpt:5353") &&
+			!strings.Contains(got, "ACCEPT") && !strings.Contains(got, "num 200")
+	}
+	rawRemoved := func(got string) bool {
+		return strings.Count(got, "raw PREROUTING B4_RAW") == 1 && strings.Count(got, "raw OUTPUT B4_RAW") == 1 &&
+			strings.Contains(got, "raw -F B4_RAW") && strings.Contains(got, "raw -X B4_RAW")
+	}
+
+	_, got := drop(unaffectedDNSKernel, dnsHeldRaw)
+	if !mangleQueriesRemoved(got) {
+		t.Errorf("moving queries to the raw table must delete exactly the two mangle query rules of this queue, deleted:\n%s", got)
 	}
 	if strings.Contains(got, "B4_RAW") {
 		t.Errorf("the raw placement in use was removed:\n%s", got)
 	}
 
-	f.deleted = nil
-	manager.dropUnusedDNSQueryPlacement(map[string]bool{backendIPTables: false})
-	got = strings.Join(f.deleted, "\n")
-	if strings.Count(got, "raw PREROUTING B4_RAW") != 1 || strings.Count(got, "raw OUTPUT B4_RAW") != 1 {
-		t.Errorf("falling back to mangle must delete both raw jumps, deleted:\n%s", got)
+	f, got := drop(unaffectedDNSKernel, dnsHeldMangle)
+	if !rawRemoved(got) {
+		t.Errorf("falling back to mangle must delete both raw jumps and the raw chain, deleted:\n%s", got)
 	}
 	if strings.Contains(got, "NOTRACK") {
 		t.Errorf("a foreign raw rule was deleted:\n%s", got)
 	}
-	if !strings.Contains(got, "raw -F B4_RAW") || !strings.Contains(got, "raw -X B4_RAW") {
-		t.Errorf("falling back to mangle must remove the raw chain, deleted:\n%s", got)
+	for _, c := range f.calls {
+		if strings.Contains(c, iptDNSCopyChainName) {
+			t.Errorf("an unaffected kernel never copies DNS queries, so it must not touch %s: %s", iptDNSCopyChainName, c)
+		}
 	}
+
+	t.Run("copying on a vanilla kernel drops the held placements", func(t *testing.T) {
+		_, got := drop(affectedDNSKernel, dnsCopied)
+		if !mangleQueriesRemoved(got) {
+			t.Errorf("copying must delete exactly the two mangle query rules of this queue, deleted:\n%s", got)
+		}
+		if !rawRemoved(got) {
+			t.Errorf("copying must delete the raw jumps and chain an earlier placement left, deleted:\n%s", got)
+		}
+		if strings.Contains(got, "NOTRACK") || strings.Contains(got, "nflog-group 100") || copyRemoved(got) {
+			t.Errorf("copying removed a foreign rule or its own copy chain, deleted:\n%s", got)
+		}
+	})
+
+	t.Run("copying on KeeneticOS removes the raw chain only while its module is loaded", func(t *testing.T) {
+		f, got := drop(keeneticDNSKernel, dnsCopied)
+		if !mangleQueriesRemoved(got) {
+			t.Errorf("copying must delete exactly the two mangle query rules of this queue, deleted:\n%s", got)
+		}
+		if raw := commandsMatching(f.calls, rawTableCommand); len(raw) > 0 {
+			t.Errorf("without iptable_raw each raw command makes the KeeneticOS kernel try to load it:\n%s", strings.Join(raw, "\n"))
+		}
+		fx.loaded("iptable_raw")
+		_, got = drop(keeneticDNSKernel, dnsCopied)
+		if !rawRemoved(got) {
+			t.Errorf("with iptable_raw loaded, copying must remove a raw chain an older b4 left, deleted:\n%s", got)
+		}
+	})
+
+	t.Run("holding on an affected kernel drops the copy chain and its jumps", func(t *testing.T) {
+		for _, placement := range []dnsQueryPlacement{dnsHeldMangle, dnsHeldRaw} {
+			_, got := drop(affectedDNSKernel, placement)
+			for chain, spec := range dnsCopyTestJumps {
+				if strings.Count(got, "mangle "+chain+" "+spec) != 1 {
+					t.Errorf("%s: the mangle %s copy jump was not deleted:\n%s", placement, chain, got)
+				}
+			}
+			if !strings.Contains(got, "mangle -F "+iptDNSCopyChainName) || !strings.Contains(got, "mangle -X "+iptDNSCopyChainName) {
+				t.Errorf("%s: the copy chain was not removed, deleted:\n%s", placement, got)
+			}
+			if strings.Contains(got, "nflog-group 100") {
+				t.Errorf("%s: a foreign NFLOG rule was deleted:\n%s", placement, got)
+			}
+		}
+	})
 }
 
 func nftFailingListStub(t *testing.T) string {
@@ -588,6 +953,43 @@ func TestNftFallsBackToQueueingDNSQueriesAfterConntrack(t *testing.T) {
 		if !strings.Contains(argv, want+"\n") {
 			t.Errorf("missing nft command %q in:\n%s", want, argv)
 		}
+	}
+}
+
+func TestDiscoveryLeavesAnAbsentRawTableAlone(t *testing.T) {
+	fx := newKmodFixture(t)
+	stubDNSKernel(t, keeneticDNSKernel)
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true})
+	rec := recordFirewall(t, nil)
+	b := &discoveryIptBackend{}
+	run := func() []string {
+		t.Helper()
+		rec.reset()
+		if err := b.apply(0x8001, 0x8002, 537, 1); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		b.clear(0x8001, 0x8002)
+		return rec.commands()
+	}
+	rawOf := func(cmds []string, ipt string) []string {
+		return commandsMatching(cmds, func(args []string) bool { return args[0] == ipt && rawTableCommand(args) })
+	}
+
+	cmds := run()
+	if raw := commandsMatching(cmds, rawTableCommand); len(raw) > 0 {
+		t.Errorf("without iptable_raw each raw command makes the KeeneticOS kernel try to load it, and no B4_RAW can exist there:\n%s", strings.Join(raw, "\n"))
+	}
+	if !slices.Contains(cmds, "iptables -w -t mangle -I B4 1 -m mark --mark 0x8001/0xffffffff -j RETURN") {
+		t.Errorf("Discovery must still keep its marks out of the mangle chain:\n%s", strings.Join(cmds, "\n"))
+	}
+
+	fx.loaded("iptable_raw")
+	cmds = run()
+	if !slices.Contains(cmds, "iptables -w -t raw -I B4_RAW 1 -m mark --mark 0x8001/0xffffffff -j RETURN") {
+		t.Errorf("with iptable_raw loaded an older b4's B4_RAW may still queue DNS queries, so Discovery must keep its marks out of it:\n%s", strings.Join(rawOf(cmds, backendIPTables), "\n"))
+	}
+	if raw := rawOf(cmds, backendIP6Tables); len(raw) > 0 {
+		t.Errorf("ip6table_raw is not loaded, yet ip6tables ran raw commands:\n%s", strings.Join(raw, "\n"))
 	}
 }
 

@@ -26,10 +26,11 @@ type IPTablesManager struct {
 	nfqueueSupport   map[string]error // per-binary cache
 	ipsetSupport     map[string]error
 	rawQueueSupport  map[string]error
+	dnsCopySupport   map[string]error
 }
 
 func NewIPTablesManager(cfg *config.Config, useLegacy bool) *IPTablesManager {
-	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), connmarkSupport: make(map[string]bool), nfqueueSupport: make(map[string]error), ipsetSupport: make(map[string]error), rawQueueSupport: make(map[string]error)}
+	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), connmarkSupport: make(map[string]bool), nfqueueSupport: make(map[string]error), ipsetSupport: make(map[string]error), rawQueueSupport: make(map[string]error), dnsCopySupport: make(map[string]error)}
 }
 
 func (im *IPTablesManager) iptablesBin() string {
@@ -394,11 +395,11 @@ func (s IPSet) Destroy() {
 }
 
 type Manifest struct {
-	IPSets  []IPSet
-	Chains  []Chain
-	Rules   []Rule
-	Sysctls []SysctlSetting
-	RawDNS  map[string]bool
+	IPSets     []IPSet
+	Chains     []Chain
+	Rules      []Rule
+	Sysctls    []SysctlSetting
+	DNSQueries map[string]dnsQueryPlacement
 }
 
 func (m Manifest) Apply() error {
@@ -533,7 +534,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 	var ipsets []IPSet
 	var chains []Chain
 	var rules []Rule
-	rawDNS := map[string]bool{}
+	dnsQueries := map[string]dnsQueryPlacement{}
 
 	for _, ipt := range ipts {
 		ch := Chain{manager: manager, IPT: ipt, Table: "mangle", Name: chainName}
@@ -544,10 +545,10 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 		tcpConnbytesRange := fmt.Sprintf("0:%d", cfg.Queue.TCPConnBytesLimit)
 		udpConnbytesRange := fmt.Sprintf("0:%d", cfg.Queue.UDPConnBytesLimit)
 
-		queriesFromRaw := false
+		placement := dnsHeldMangle
 		if !teardown {
-			queriesFromRaw = manager.queueDNSQueriesFromRaw(ipt)
-			rawDNS[ipt] = queriesFromRaw
+			placement = manager.dnsQueryPlacementFor(ipt)
+			dnsQueries[ipt] = placement
 		}
 
 		dnsSpec := append(
@@ -556,7 +557,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 		)
 
 		dnsResponseSpec := append(
-			dnsAnswerMatch(queriesFromRaw),
+			dnsAnswerMatch(placement != dnsHeldMangle),
 			manager.buildNFQSpec(queueNum, threads)...,
 		)
 
@@ -617,7 +618,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			}
 		}
 
-		if !queriesFromRaw {
+		if placement == dnsHeldMangle {
 			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: dnsSpec})
 		}
 		rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: dnsResponseSpec})
@@ -707,7 +708,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			udpPorts[i] = strings.ReplaceAll(p, "-", ":")
 		}
 
-		if queriesFromRaw {
+		if placement != dnsHeldMangle {
 			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: iptDNSQueryCaptureReturn()})
 		}
 
@@ -779,7 +780,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 				Spec: []string{"-j", preChainName}},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: dnsResponseSpec},
 		)
-		if !queriesFromRaw {
+		if placement == dnsHeldMangle {
 			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: dnsSpec})
 		}
 		rules = append(rules,
@@ -800,7 +801,16 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			)
 		}
 
-		if queriesFromRaw || teardown {
+		switch {
+		case placement == dnsCopied:
+			chains = append(chains, Chain{manager: manager, IPT: ipt, Table: "mangle", Name: iptDNSCopyChainName})
+			rules = append(rules, iptDNSCopyRules(manager, ipt, markAccept, uint16(dnsCopyGroup.Load()))...)
+		case teardown && DNSQueryCopyKernel():
+			chains = append(chains, Chain{manager: manager, IPT: ipt, Table: "mangle", Name: iptDNSCopyChainName})
+			rules = append(rules, iptDNSCopyJumps(manager, ipt)...)
+		}
+
+		if placement == dnsHeldRaw || (teardown && RawTablePresent(ipt)) {
 			chains = append(chains, Chain{manager: manager, IPT: ipt, Table: "raw", Name: iptRawChainName})
 			rules = append(rules, iptRawDNSQueueRules(manager, ipt, markAccept, dnsSpec)...)
 		}
@@ -830,7 +840,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 	ipsets = append(ipsets, mssIPSets...)
 	rules = append(rules, mssRules...)
 
-	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: b4SysctlSettings(), RawDNS: rawDNS}
+	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: b4SysctlSettings(), DNSQueries: dnsQueries}
 }
 
 func (manager *IPTablesManager) mssClampBinaries() []string {
@@ -1023,17 +1033,20 @@ func (ipt *IPTablesManager) Apply() error {
 	if err != nil {
 		return err
 	}
-	if dnsQueryPlacementChanged(m.RawDNS) {
-		log.Infof("IPTABLES: DNS queries move between the raw and mangle tables, rebuilding the rules")
+	if moves := dnsQueryPlacementMoves(m.DNSQueries); len(moves) > 0 {
+		for _, move := range moves {
+			log.Infof("%s", move)
+		}
 		if err := ipt.Clear(); err != nil {
 			log.Warnf("IPTABLES: clearing the rules before moving DNS queries failed: %v", err)
 		}
 	}
 	result := m.Apply()
 	if result == nil {
-		ipt.dropUnusedDNSQueryPlacement(m.RawDNS)
+		ipt.dropUnusedDNSQueryPlacement(m.DNSQueries)
+		warnPortChangingDNSNat(m.DNSQueries)
 	}
-	noteDNSQueryPlacement(m.RawDNS)
+	noteDNSQueryPlacement(m.DNSQueries)
 
 	if log.Level(log.CurLevel.Load()) >= log.LevelTrace {
 		iptablesTrace, _ := run("sh", "-c", "cat /proc/net/netfilter/nfnetlink_queue && "+ipt.iptablesBin()+" -t mangle -vnL --line-numbers")
@@ -1194,7 +1207,9 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 			}
 		}
 
-		iptRemoveRawDNSJumps(iptBin)
+		if RawTablePresent(iptBin) {
+			iptRemoveRawDNSJumps(iptBin)
+		}
 
 		for _, mk := range []string{ipt.masqClientMark(), ipt.masqMarkAccept()} {
 			for {
