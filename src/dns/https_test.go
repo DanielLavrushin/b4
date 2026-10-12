@@ -488,6 +488,7 @@ type testECHConfig struct {
 	name       string
 	extensions []uint16
 	noExtField bool
+	trailing   []byte
 }
 
 func usableECHConfig(name string) testECHConfig {
@@ -517,6 +518,7 @@ func buildECHConfigList(configs ...testECHConfig) []byte {
 			c = binary.BigEndian.AppendUint16(c, uint16(len(ext)))
 			c = append(c, ext...)
 		}
+		c = append(c, tc.trailing...)
 		list = binary.BigEndian.AppendUint16(list, tc.version)
 		list = binary.BigEndian.AppendUint16(list, uint16(len(c)))
 		list = append(list, c...)
@@ -547,6 +549,10 @@ func TestECHPublicNameNamesOnlyAKeyGoCanUse(t *testing.T) {
 		"IPv4 literal":          with(func(c *testECHConfig) { c.name = "10.0.0.1" }),
 		"hex IPv4 literal":      with(func(c *testECHConfig) { c.name = "0x7f.1" }),
 		"octal IPv4 literal":    with(func(c *testECHConfig) { c.name = "0177.0.0.01" }),
+		"trailing bytes":        with(func(c *testECHConfig) { c.trailing = []byte{0} }),
+		"empty public key":      with(func(c *testECHConfig) { c.keyLen = 0 }),
+		"no cipher suites":      with(func(c *testECHConfig) { c.suites = nil }),
+		"empty public name":     with(func(c *testECHConfig) { c.name = "" }),
 	}
 	for name, c := range unusable {
 		if got := ECHPublicName(buildECHConfigList(c)); got != "" {
@@ -580,6 +586,9 @@ func TestECHPublicNameNamesOnlyAKeyGoCanUse(t *testing.T) {
 	list := buildECHConfigList(usableECHConfig("cover.example.net"))
 	if got := ECHPublicName(append(list, 0)); got != "" {
 		t.Errorf("a list longer than its length prefix is malformed: %q", got)
+	}
+	if got := ECHPublicName(buildECHConfigList(usableECHConfig("used.example"), with(func(c *testECHConfig) { c.trailing = []byte{0} }))); got != "" {
+		t.Errorf("one malformed config makes a browser refuse the whole list: %q", got)
 	}
 }
 
@@ -683,18 +692,22 @@ func TestECHPublicNameAgreesWithGo(t *testing.T) {
 		"length prefix too big": append(with(func(*testECHConfig) {}), 0),
 		"64-octet label":        with(func(c *testECHConfig) { c.name = strings.Repeat("a", 64) + ".example" }),
 		"IPv4 literal":          with(func(c *testECHConfig) { c.name = "10.0.0.1" }),
+		"trailing bytes":        with(func(c *testECHConfig) { c.trailing = []byte{0} }),
+		"empty public key":      with(func(c *testECHConfig) { c.keyLen = 0 }),
+		"no cipher suites":      with(func(c *testECHConfig) { c.suites = nil }),
+		"empty public name":     with(func(c *testECHConfig) { c.name = "" }),
 	}
-	browsersIgnore := map[string]bool{"64-octet label": true, "IPv4 literal": true}
+	browsersRefuse := map[string]bool{"64-octet label": true, "IPv4 literal": true, "trailing bytes": true}
 	for name, list := range lists {
 		named, started := ECHPublicName(list) != "", goStartsECHHandshake(t, list)
 		if named && !started {
 			t.Errorf("%s: ECHPublicName names a key Go's client fails on before sending anything", name)
 		}
-		if started && !named && !browsersIgnore[name] {
+		if started && !named && !browsersRefuse[name] {
 			t.Errorf("%s: Go's client uses this key, but ECHPublicName does not name it", name)
 		}
-		if browsersIgnore[name] && named {
-			t.Errorf("%s: Go would send this key, but a browser ignores it and connects without ECH", name)
+		if browsersRefuse[name] && named {
+			t.Errorf("%s: Go would send this key, but a browser does not use it", name)
 		}
 	}
 }

@@ -180,7 +180,8 @@ func parseECHConfigs(list []byte) ([]echConfig, bool) {
 func parseECHConfig(s cryptobyte.String) (echConfig, bool) {
 	var c echConfig
 	var publicKey, suites, name, extensions cryptobyte.String
-	if !s.Skip(1) || !s.ReadUint16(&c.kem) || !s.ReadUint16LengthPrefixed(&publicKey) || !s.ReadUint16LengthPrefixed(&suites) {
+	if !s.Skip(1) || !s.ReadUint16(&c.kem) || !s.ReadUint16LengthPrefixed(&publicKey) || len(publicKey) == 0 ||
+		!s.ReadUint16LengthPrefixed(&suites) || len(suites) == 0 || len(suites)%4 != 0 {
 		return echConfig{}, false
 	}
 	for !suites.Empty() {
@@ -192,7 +193,7 @@ func parseECHConfig(s cryptobyte.String) (echConfig, bool) {
 			c.suiteOK = true
 		}
 	}
-	if !s.Skip(1) || !s.ReadUint8LengthPrefixed(&name) || !s.ReadUint16LengthPrefixed(&extensions) {
+	if !s.Skip(1) || !s.ReadUint8LengthPrefixed(&name) || len(name) == 0 || !s.ReadUint16LengthPrefixed(&extensions) || !s.Empty() {
 		return echConfig{}, false
 	}
 	for !extensions.Empty() {
