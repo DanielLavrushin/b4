@@ -223,7 +223,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 	defer upstream.close()
 
 	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
-		if cfg.Queue.IsDiscovery || !cfg.HasECHStrip() {
+		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !cfg.HasECHStrip() || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
 			upstream.close()
 			s.passthrough(client, origIP, origPort, origErr, query)
 			return false

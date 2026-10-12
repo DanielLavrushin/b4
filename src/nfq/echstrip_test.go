@@ -244,8 +244,14 @@ func tcpECHUpstream(t *testing.T) *echUpstream {
 						reply = httpsAnswerWithECH(domain, qtype, "cloudflare-ech.com")
 					}
 					copy(reply[:2], query[:2])
-					if writeDNSTCPMessage(conn, reply, time.Second) != nil {
-						return
+					messages := 1
+					if qtype == dnsTypeAXFR {
+						messages = 3
+					}
+					for range messages {
+						if writeDNSTCPMessage(conn, reply, time.Second) != nil {
+							return
+						}
 					}
 				}
 			}()
@@ -337,5 +343,38 @@ func TestDNSOverTCPStaysRawWithoutAnECHStripSet(t *testing.T) {
 	answers := mixedTCPQueries(t, w)
 	if names := dns.ResponseECHPublicNames(answers[1]); len(names) != 1 {
 		t.Fatalf("keys %v: with no set stripping, the connection is passed through untouched", names)
+	}
+}
+
+func TestDNSOverTCPZoneTransferStaysAStream(t *testing.T) {
+	w, _ := echTestWorker(t, echTestSet("cloudflare-ech", true, "cloudflare-ech.com"))
+	tcpECHUpstream(t)
+	s := newDNSTCPServer(w, 0)
+	t.Cleanup(s.cancel)
+	clientEnd, serverEnd := net.Pipe()
+	handled := make(chan struct{})
+	go func() {
+		defer close(handled)
+		s.handle(remoteAddrConn{Conn: serverEnd, remote: &net.TCPAddr{IP: net.ParseIP("192.0.2.10"), Port: 40000}})
+	}()
+
+	_ = clientEnd.SetDeadline(time.Now().Add(3 * time.Second))
+	if err := writeDNSTCPMessage(clientEnd, dns.BuildQuery("example.org", 77, dnsTypeAXFR), time.Second); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 3 {
+		resp, err := readDNSTCPMessage(clientEnd)
+		if err != nil {
+			t.Fatalf("transfer message %d never arrived: a zone transfer answers one query with many messages: %v", i+1, err)
+		}
+		if binary.BigEndian.Uint16(resp[:2]) != 77 {
+			t.Fatalf("message %d carries id %d", i+1, binary.BigEndian.Uint16(resp[:2]))
+		}
+	}
+	clientEnd.Close()
+	select {
+	case <-handled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the connection handler never returned")
 	}
 }

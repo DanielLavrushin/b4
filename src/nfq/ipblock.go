@@ -16,6 +16,8 @@ const (
 	dnsTypeAAAA  = 28
 	dnsTypeSVCB  = 64
 	dnsTypeHTTPS = 65
+	dnsTypeIXFR  = 251
+	dnsTypeAXFR  = 252
 	dnsTypeANY   = 255
 )
 
