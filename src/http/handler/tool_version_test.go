@@ -136,6 +136,17 @@ func TestToolVersionsDoesNotRunALinkOnAnotherDriveToB4sDrive(t *testing.T) {
 	assertToolNotRun(t, "jq", link, calls)
 }
 
+func TestToolVersionsDoesNotRunALinkOnB4sDriveToAnotherDrive(t *testing.T) {
+	usb, other := resolvedTempDir(t), resolvedTempDir(t)
+	fakeDrives(t, filepath.Join(usb, "b4", "b4"), map[string]uint64{"/": 1, usb: 2, other: 3})
+	target, calls := recordingTool(t, other, "jq")
+	link := filepath.Join(usb, "jq")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	assertToolNotRun(t, "jq", link, calls)
+}
+
 func TestToolVersionsDoesNotTrustTheRootFilesystemAsB4sDrive(t *testing.T) {
 	fakeDrives(t, "/usr/bin/b4", map[string]uint64{"/": 1})
 	jq, calls := recordingTool(t, resolvedTempDir(t), "jq")
