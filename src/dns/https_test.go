@@ -832,3 +832,68 @@ func TestStripECHExpandsNamesInsideOtherRecords(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceBindingKeyChecksTheMandatoryList(t *testing.T) {
+	list := buildECHConfigList(usableECHConfig("cover.example.net"))
+	keys := func(k ...uint16) []byte {
+		var b []byte
+		for _, key := range k {
+			b = binary.BigEndian.AppendUint16(b, key)
+		}
+		return b
+	}
+	record := func(priority uint16, list, mandatory []byte) []byte {
+		params := map[uint16][]byte{
+			svcParamMandatory: mandatory, svcParamALPN: {2, 'h', '2'}, svcParamPort: {0x01, 0xbb}, svcParamECH: list,
+			7: []byte("/q{?dns}"), svcParamTrustAnchorIDs: {2, 0x01, 0x02}, 65333: {0xaa},
+		}
+		order := []uint16{svcParamMandatory, svcParamALPN, svcParamPort, svcParamECH, 7, svcParamTrustAnchorIDs, 65333}
+		if mandatory == nil {
+			order = order[1:]
+		}
+		return svcbRData(priority, params, order)
+	}
+	answer := func(records ...[]byte) []byte {
+		var rrs []testRR
+		for _, rdata := range records {
+			rrs = append(rrs, testRR{typ: TypeHTTPS, ttl: 60, rdata: rdata})
+		}
+		return buildResponse("example.com", TypeHTTPS, rrs, false, false)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		mandatory []byte
+		chrome    bool
+		listed    bool
+	}{
+		{"no mandatory list", nil, true, true},
+		{"ech", keys(svcParamECH), true, true},
+		{"alpn and port", keys(svcParamALPN, svcParamPort), true, true},
+		{"trust anchor IDs", keys(svcParamTrustAnchorIDs), true, true},
+		{"dohpath", keys(7), false, true},
+		{"a private key", keys(svcParamECH, 65333), false, true},
+		{"empty list", []byte{}, false, false},
+		{"odd length", []byte{0, svcParamECH, 0}, false, false},
+		{"lists itself", keys(svcParamMandatory, svcParamECH), false, false},
+		{"descending", keys(svcParamECH, svcParamALPN), false, false},
+		{"repeated key", keys(svcParamECH, svcParamECH), false, false},
+	} {
+		resp := answer(record(1, list, tc.mandatory))
+		if got := ParseResponseECH(resp) != nil; got != tc.chrome {
+			t.Errorf("%s: key taken = %v, want %v: Chrome skips a record whose mandatory list names a key it does not know, and rejects a malformed list", tc.name, got, tc.chrome)
+		}
+		if got := len(ResponseECHPublicNames(resp)) > 0; got != tc.listed {
+			t.Errorf("%s: cover listed = %v, want %v: the strip decision sees every key a client may use, and none from a malformed record", tc.name, got, tc.listed)
+		}
+	}
+
+	next := buildECHConfigList(usableECHConfig("next.example.net"))
+	resp := answer(record(1, list, keys(7)), record(2, next, nil))
+	if got := ParseResponseECH(resp); !bytes.Equal(got, next) {
+		t.Fatalf("key %x: Chrome passes over the record it cannot use and takes the next one", got)
+	}
+	if got := ResponseECHPublicNames(resp); !slices.Equal(got, []string{"cover.example.net", "next.example.net"}) {
+		t.Fatalf("covers %v, want both", got)
+	}
+}

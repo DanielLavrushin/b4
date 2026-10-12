@@ -24,7 +24,10 @@ const (
 	presetECHStrip   = "ech-strip"
 )
 
-var echRejectionRoots = netprobe.TLSRoots
+var (
+	echRejectionRoots = netprobe.TLSRoots
+	echNameservers    = netprobe.SystemNameservers
+)
 
 type echKey struct {
 	configList []byte
@@ -33,15 +36,21 @@ type echKey struct {
 
 var lookupECHConfigList = func(ctx context.Context, mark uint, domain string) []byte {
 	r := &netprobe.Resolver{Mark: int(mark), Timeout: echLookupTimeout}
-	for _, server := range netprobe.SystemNameservers() {
+	for _, server := range echNameservers() {
 		id := uint16(rand.N(65535)) + 1
 		resp, err := r.Exchange(ctx, server, dns.BuildQuery(domain, id, dns.TypeHTTPS))
-		if err != nil || len(resp) < 12 || binary.BigEndian.Uint16(resp) != id {
+		if err != nil || !finalAnswer(resp, id) {
 			continue
 		}
 		return dns.ParseResponseECH(resp)
 	}
 	return nil
+}
+
+func finalAnswer(resp []byte, id uint16) bool {
+	rcode, ok := dns.ResponseRcode(resp)
+	return ok && resp[2]&0x80 != 0 && binary.BigEndian.Uint16(resp) == id &&
+		(rcode == dns.RcodeNoError || rcode == dns.RcodeNXDomain)
 }
 
 func (ds *DiscoverySuite) probeECH() {

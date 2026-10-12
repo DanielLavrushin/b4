@@ -13,8 +13,14 @@ const (
 	TypeSVCB  uint16 = 64
 	TypeHTTPS uint16 = 65
 
-	svcParamMandatory = 0
-	svcParamECH       = 5
+	svcParamMandatory      = 0
+	svcParamALPN           = 1
+	svcParamNoDefaultALPN  = 2
+	svcParamPort           = 3
+	svcParamIPv4Hint       = 4
+	svcParamECH            = 5
+	svcParamIPv6Hint       = 6
+	svcParamTrustAnchorIDs = 13930
 
 	echConfigVersion = 0xfe0d
 	echKEMX25519     = 0x0020
@@ -37,6 +43,11 @@ const (
 
 var echAEADs = map[uint16]bool{0x0001: true, 0x0002: true, 0x0003: true}
 
+var chromeSvcParams = map[uint16]bool{
+	svcParamALPN: true, svcParamNoDefaultALPN: true, svcParamPort: true, svcParamIPv4Hint: true,
+	svcParamECH: true, svcParamIPv6Hint: true, svcParamTrustAnchorIDs: true,
+}
+
 type echConfig struct {
 	kem        uint16
 	publicKey  []byte
@@ -48,8 +59,8 @@ type echConfig struct {
 func ParseResponseECH(payload []byte) []byte {
 	var best []byte
 	var bestPriority uint16
-	eachServiceBindingECH(payload, false, func(priority uint16, ech []byte) {
-		if priority == 0 {
+	eachServiceBindingECH(payload, false, func(priority uint16, ech []byte, compatible bool) {
+		if priority == 0 || !compatible {
 			return
 		}
 		if best == nil || priority < bestPriority {
@@ -61,7 +72,7 @@ func ParseResponseECH(payload []byte) []byte {
 
 func ResponseECHPublicNames(payload []byte) []string {
 	var names []string
-	eachServiceBindingECH(payload, true, func(priority uint16, ech []byte) {
+	eachServiceBindingECH(payload, true, func(priority uint16, ech []byte, _ bool) {
 		if priority == 0 {
 			return
 		}
@@ -78,7 +89,7 @@ func ResponseECHPublicNames(payload []byte) []string {
 	return names
 }
 
-func eachServiceBindingECH(payload []byte, allSections bool, fn func(priority uint16, ech []byte)) {
+func eachServiceBindingECH(payload []byte, allSections bool, fn func(priority uint16, ech []byte, compatible bool)) {
 	if len(payload) < 12 {
 		return
 	}
@@ -112,40 +123,63 @@ func eachServiceBindingECH(payload []byte, allSections bool, fn func(priority ui
 		if typ != TypeHTTPS && typ != TypeSVCB {
 			continue
 		}
-		if priority, ech := svcbECH(payload, start, offset); len(ech) > 0 {
-			fn(priority, ech)
+		if priority, ech, compatible := svcbECH(payload, start, offset); len(ech) > 0 {
+			fn(priority, ech, compatible)
 		}
 	}
 }
 
-func svcbECH(payload []byte, start, end int) (uint16, []byte) {
+func svcbECH(payload []byte, start, end int) (uint16, []byte, bool) {
 	if start+2 > end {
-		return 0, nil
+		return 0, nil, false
 	}
 	priority := binary.BigEndian.Uint16(payload[start : start+2])
 	pos, ok := skipPlainName(payload[:end], start+2)
 	if !ok {
-		return 0, nil
+		return 0, nil, false
 	}
 	var ech []byte
+	compatible := true
 	previous := -1
 	for pos < end {
 		if pos+4 > end {
-			return 0, nil
+			return 0, nil, false
 		}
 		key := int(binary.BigEndian.Uint16(payload[pos : pos+2]))
 		size := int(binary.BigEndian.Uint16(payload[pos+2 : pos+4]))
 		pos += 4
 		if key <= previous || pos+size > end {
-			return 0, nil
+			return 0, nil, false
 		}
-		if key == svcParamECH {
+		switch key {
+		case svcParamMandatory:
+			if compatible, ok = mandatoryKeysKnown(payload[pos : pos+size]); !ok {
+				return 0, nil, false
+			}
+		case svcParamECH:
 			ech = append([]byte(nil), payload[pos:pos+size]...)
 		}
 		previous = key
 		pos += size
 	}
-	return priority, ech
+	return priority, ech, compatible
+}
+
+func mandatoryKeysKnown(keys []byte) (known, wellFormed bool) {
+	if len(keys) == 0 || len(keys)%2 != 0 {
+		return false, false
+	}
+	known = true
+	previous := uint16(svcParamMandatory)
+	for i := 0; i < len(keys); i += 2 {
+		key := binary.BigEndian.Uint16(keys[i : i+2])
+		if key <= previous {
+			return false, false
+		}
+		known = known && chromeSvcParams[key]
+		previous = key
+	}
+	return known, true
 }
 
 func ECHPublicName(configList []byte) string {

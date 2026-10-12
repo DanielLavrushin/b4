@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/sni"
 )
 
@@ -577,5 +578,81 @@ func TestECHRejectionWithoutCARootsFallsBackToPlain(t *testing.T) {
 	}
 	if states := srv.states(); len(states) != 1 || states[0].ECHAccepted {
 		t.Fatalf("want one request without ECH, got %+v", states)
+	}
+}
+
+func serveDNS(t *testing.T, answer func(query []byte) []byte) string {
+	t.Helper()
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 1500)
+		for {
+			n, from, err := conn.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			_, _ = conn.WriteTo(answer(buf[:n]), from)
+		}
+	}()
+	t.Cleanup(func() {
+		conn.Close()
+		<-done
+	})
+	return conn.LocalAddr().String()
+}
+
+func httpsReply(query []byte, rcode uint8, list []byte) []byte {
+	resp := append([]byte(nil), query...)
+	resp[2] |= 0x80
+	resp[3] = resp[3]&0xF0 | rcode
+	if list == nil {
+		return resp
+	}
+	binary.BigEndian.PutUint16(resp[6:8], 1)
+	rdata := append(binary.BigEndian.AppendUint16(nil, 1), 0)
+	rdata = binary.BigEndian.AppendUint16(rdata, 5)
+	rdata = binary.BigEndian.AppendUint16(rdata, uint16(len(list)))
+	rdata = append(rdata, list...)
+	resp = append(resp, 0xC0, 0x0C)
+	resp = binary.BigEndian.AppendUint16(resp, dns.TypeHTTPS)
+	resp = binary.BigEndian.AppendUint16(resp, 1)
+	resp = binary.BigEndian.AppendUint32(resp, 60)
+	resp = binary.BigEndian.AppendUint16(resp, uint16(len(rdata)))
+	return append(resp, rdata...)
+}
+
+func TestECHLookupMovesOnFromAResolverThatFails(t *testing.T) {
+	_, list := echKeyPair(t, 9, "cover.example")
+	orig := echNameservers
+	t.Cleanup(func() { echNameservers = orig })
+	second := serveDNS(t, func(q []byte) []byte { return httpsReply(q, dns.RcodeNoError, list) })
+
+	for _, tc := range []struct {
+		name   string
+		answer func(query []byte) []byte
+		moveOn bool
+	}{
+		{"SERVFAIL", func(q []byte) []byte { return httpsReply(q, dns.RcodeServFail, nil) }, true},
+		{"REFUSED", func(q []byte) []byte { return httpsReply(q, dns.RcodeRefused, nil) }, true},
+		{"query echoed back", func(q []byte) []byte { return q }, true},
+		{"NXDOMAIN", func(q []byte) []byte { return httpsReply(q, dns.RcodeNXDomain, nil) }, false},
+		{"answer without a key", func(q []byte) []byte { return httpsReply(q, dns.RcodeNoError, nil) }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			first := serveDNS(t, tc.answer)
+			echNameservers = func() []string { return []string{first, second} }
+			got := lookupECHConfigList(context.Background(), 0, "site.example")
+			switch {
+			case tc.moveOn && !bytes.Equal(got, list):
+				t.Fatalf("key %x: the first resolver failed, so the site's key had to come from the next one", got)
+			case !tc.moveOn && got != nil:
+				t.Fatalf("key %x: the first resolver answered, so its answer stands", got)
+			}
+		})
 	}
 }
