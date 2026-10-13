@@ -20,6 +20,7 @@ export interface UnsavedChangeItem {
   after: unknown;
   groupPrefix?: string;
   subLabel?: string;
+  blockLabel?: string;
 }
 
 export function buildChangeItems(
@@ -94,10 +95,16 @@ const matchPrefix = (prefixes: string[], path: string): string | undefined => {
   return best;
 };
 
+export interface SubDef {
+  label: string;
+  prefixes: string[];
+  blocks?: { prefixes: string[]; label: string }[];
+}
+
 export const groupChangeItems = (
   items: UnsavedChangeItem[],
   defs: ChangeGroupDef[],
-  subDefs?: { label: string; prefixes: string[] }[],
+  subDefs?: SubDef[],
 ): UnsavedChangeGroup[] => {
   // Longest prefix per def, computed once: ranking matches the previous
   // filter+stable-sort by longest, including first-on-tie order.
@@ -125,8 +132,8 @@ export const groupChangeItems = (
       : undefined;
     const group = groups.get(key) ?? { key, label, items: [] };
     let subLabel: string | undefined;
+    let subMatch: SubDef | undefined;
     if (subDefs) {
-      let subMatch: { label: string; prefixes: string[] } | undefined;
       let subMatchIndex = -1;
       for (let i = 0; i < subDefs.length; i++) {
         if (!matchPrefix(subDefs[i].prefixes, item.path)) continue;
@@ -140,7 +147,19 @@ export const groupChangeItems = (
       }
       subLabel = subMatch?.label;
     }
-    group.items.push({ ...item, groupPrefix: matchedPrefix, subLabel });
+    let blockLabel: string | undefined;
+    if (subMatch?.blocks) {
+      let best = -1;
+      for (const block of subMatch.blocks) {
+        if (!matchPrefix(block.prefixes, item.path)) continue;
+        const len = block.prefixes.reduce((m, p) => Math.max(m, p.length), 0);
+        if (best === -1 || len > best) {
+          best = len;
+          blockLabel = block.label;
+        }
+      }
+    }
+    group.items.push({ ...item, groupPrefix: matchedPrefix, subLabel, blockLabel });
     groups.set(key, group);
   }
   const order = new Map(defs.map((def, index) => [def.labelKey, index]));
@@ -194,6 +213,109 @@ const formatValue = (
   }
 };
 
+const ChangeItemView = memo(function ChangeItemView({
+  item,
+  groupLabel,
+  t,
+}: Readonly<{
+  item: UnsavedChangeItem;
+  groupLabel: string;
+  t: (key: string) => string;
+}>) {
+  return (
+    <Box>
+      {typeof item.label === "string" &&
+      item.label !== subgroupOf(item).join(".") &&
+      item.label !== groupLabel &&
+      item.path !== item.groupPrefix ? (
+        <Tooltip title={subgroupLabel(subgroupOf(item))} placement="top-start">
+          <Typography variant="body2" sx={{ width: "fit-content" }}>
+            {item.label}
+          </Typography>
+        </Tooltip>
+      ) : null}
+      <Typography
+        variant="caption"
+        sx={{ color: colors.text.secondary, display: "block" }}
+      >
+        {Array.isArray(item.before) || Array.isArray(item.after) ? (
+          <>
+            {(item.after as unknown[]).length > 0 && (
+              <>{t("core.addedItems")}: {formatValue(item.after, item.path, t)}</>
+            )}
+            {(item.after as unknown[]).length > 0 &&
+              (item.before as unknown[]).length > 0 && <br />}
+            {(item.before as unknown[]).length > 0 && (
+              <>{t("core.removedItems")}: {formatValue(item.before, item.path, t)}</>
+            )}
+          </>
+        ) : (
+          <>
+            {formatValue(item.before, item.path, t)}
+            {" → "}
+            {formatValue(item.after, item.path, t)}
+          </>
+        )}
+      </Typography>
+    </Box>
+  );
+});
+
+const SubgroupView = memo(function SubgroupView({
+  subgroupKey,
+  groupLabel,
+  items,
+  t,
+}: Readonly<{
+  subgroupKey: string;
+  groupLabel: string;
+  items: UnsavedChangeItem[];
+  t: (key: string) => string;
+}>) {
+  const [unblocked, blocks] = useMemo(() => {
+    const plain: UnsavedChangeItem[] = [];
+    const map = new Map<string, UnsavedChangeItem[]>();
+    for (const item of items) {
+      if (!item.blockLabel) {
+        plain.push(item);
+        continue;
+      }
+      const list = map.get(item.blockLabel) ?? [];
+      list.push(item);
+      map.set(item.blockLabel, list);
+    }
+    return [plain, [...map]] as const;
+  }, [items]);
+  return (
+    <Box sx={subgroupKey ? { pl: 1.5 } : undefined}>
+      {subgroupKey && subgroupKey !== groupLabel && (
+        <Typography
+          variant="caption"
+          sx={{ color: colors.text.secondary, fontWeight: 600, display: "block", mb: 0.5, ml: -1.5 }}
+        >
+          {subgroupKey}
+        </Typography>
+      )}
+      {unblocked.map((item) => (
+        <ChangeItemView key={item.path} item={item} groupLabel={groupLabel} t={t} />
+      ))}
+      {blocks.map(([blockLabel, blockItems]) => (
+        <Box key={blockLabel} sx={{ pl: 1.5 }}>
+          <Typography
+            variant="caption"
+            sx={{ color: colors.text.secondary, fontWeight: 600, display: "block", mb: 0.5, ml: -1.5 }}
+          >
+            {blockLabel}
+          </Typography>
+          {blockItems.map((item) => (
+            <ChangeItemView key={item.path} item={item} groupLabel={groupLabel} t={t} />
+          ))}
+        </Box>
+      ))}
+    </Box>
+  );
+});
+
 const ChangeGroupView = memo(function ChangeGroupView({
   group,
   t,
@@ -215,53 +337,13 @@ const ChangeGroupView = memo(function ChangeGroupView({
       </Typography>
       <Stack spacing={0.5}>
         {subgroups.map(([key, items]) => (
-          <Box key={key || "root"} sx={key ? { pl: 1.5 } : undefined}>
-            {key && key !== group.label && (
-              <Typography
-                variant="caption"
-                sx={{ color: colors.text.secondary, fontWeight: 600, display: "block", mb: 0.5, ml: -1.5 }}
-              >
-                {key}
-              </Typography>
-            )}
-            {items.map((item) => (
-              <Box key={item.path}>
-                {typeof item.label === "string" &&
-                item.label !== subgroupOf(item).join(".") &&
-                item.label !== group.label &&
-                item.path !== item.groupPrefix ? (
-                  <Tooltip title={subgroupLabel(subgroupOf(item))} placement="top-start">
-                    <Typography variant="body2" sx={{ width: "fit-content" }}>
-                      {item.label}
-                    </Typography>
-                  </Tooltip>
-                ) : null}
-                <Typography
-                  variant="caption"
-                  sx={{ color: colors.text.secondary, display: "block" }}
-                >
-                  {Array.isArray(item.before) || Array.isArray(item.after) ? (
-                    <>
-                      {(item.after as unknown[]).length > 0 && (
-                        <>{t("core.addedItems")}: {formatValue(item.after, item.path, t)}</>
-                      )}
-                      {(item.after as unknown[]).length > 0 &&
-                        (item.before as unknown[]).length > 0 && <br />}
-                      {(item.before as unknown[]).length > 0 && (
-                        <>{t("core.removedItems")}: {formatValue(item.before, item.path, t)}</>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {formatValue(item.before, item.path, t)}
-                      {" → "}
-                      {formatValue(item.after, item.path, t)}
-                    </>
-                  )}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
+          <SubgroupView
+            key={key || "root"}
+            subgroupKey={key}
+            groupLabel={group.label}
+            items={items}
+            t={t}
+          />
         ))}
       </Stack>
     </Box>
