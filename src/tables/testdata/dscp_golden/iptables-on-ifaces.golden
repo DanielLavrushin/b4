@@ -70,8 +70,9 @@ ip6tables -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 ip6tables -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 ip6tables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables -w -t mangle -D OUTPUT -j B4
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 ip6tables -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -93,8 +94,9 @@ iptables -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 iptables -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 iptables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -D OUTPUT -j B4
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 iptables -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -222,8 +224,8 @@ iptables -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 iptables -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 iptables -w -t mangle -C OUTPUT -j B4
 iptables -w -t mangle -A OUTPUT -j B4
-iptables -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-iptables -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
@@ -380,8 +382,9 @@ ip6tables -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 ip6tables -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 ip6tables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables -w -t mangle -D OUTPUT -j B4
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 ip6tables -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -405,10 +408,11 @@ iptables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:54
 iptables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -D OUTPUT -j B4
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 iptables -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -549,8 +553,8 @@ iptables -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 iptables -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 iptables -w -t mangle -C OUTPUT -j B4
 iptables -w -t mangle -A OUTPUT -j B4
-iptables -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-iptables -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
@@ -677,8 +681,9 @@ ip6tables -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 ip6tables -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 ip6tables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables -w -t mangle -D OUTPUT -j B4
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 ip6tables -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -702,10 +707,11 @@ iptables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:54
 iptables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -D OUTPUT -j B4
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 iptables -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -846,8 +852,8 @@ iptables -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 iptables -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 iptables -w -t mangle -C OUTPUT -j B4
 iptables -w -t mangle -A OUTPUT -j B4
-iptables -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-iptables -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -C OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -I OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
@@ -986,8 +992,9 @@ ip6tables -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 ip6tables -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 ip6tables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables -w -t mangle -D OUTPUT -j B4
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 ip6tables -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -1011,10 +1018,11 @@ iptables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:54
 iptables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
+iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -D OUTPUT -j B4
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT
 iptables -w -t mangle -D OUTPUT -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass

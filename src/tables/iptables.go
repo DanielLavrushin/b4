@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -797,13 +798,19 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 
 		if cfg.Queue.Mark != 0 && manager.hasConnmarkSupport(ipt) {
 			markMaskHex := fmt.Sprintf("0x%x", cfg.Queue.Mark)
+			ownMark := fmt.Sprintf("0x%x/0x%x", cfg.Queue.Mark, cfg.Queue.Mark|engine.ClientMark)
 			rules = append(rules,
 				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
-					Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "CONNMARK",
+					Spec: []string{"-m", "mark", "--mark", ownMark, "-j", "CONNMARK",
 						"--save-mark", "--nfmask", markMaskHex, "--ctmask", markMaskHex}},
 				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I",
 					Spec: []string{"-m", "connmark", "--mark", markAccept, "-j", "RETURN"}},
 			)
+			if teardown {
+				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
+					Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "CONNMARK",
+						"--save-mark", "--nfmask", markMaskHex, "--ctmask", markMaskHex}})
+			}
 		}
 
 		switch {
