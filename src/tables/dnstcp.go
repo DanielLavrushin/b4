@@ -2,6 +2,8 @@ package tables
 
 import (
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -113,6 +115,8 @@ func (im *IPTablesManager) teardownDNSTCPChain(ipt string) {
 const (
 	nftDNSTCPTableName  = "b4_dnsnat"
 	nftDNSTCPTableName6 = "b4_dnsnat6"
+	nftDNSTCPPreChain   = "dnstcp_pre"
+	nftDNSTCPOutChain   = "dnstcp_out"
 )
 
 func nftDNSTCPTable(v6 bool) (family, table string) {
@@ -135,8 +139,51 @@ func (n *NFTablesManager) dnsTCPFamilyExists(v6 bool) bool {
 	if err != nil {
 		return false
 	}
-	_, table := nftDNSTCPTable(v6)
-	return strings.Contains(out, table)
+	family, table := nftDNSTCPTable(v6)
+	for _, line := range strings.Split(out, "\n") {
+		if f := strings.Fields(line); len(f) == 3 && f[0] == "table" && f[1] == family && f[2] == table {
+			return true
+		}
+	}
+	return false
+}
+
+func (n *NFTablesManager) dnsTCPFamilyIntact(v6 bool, mark uint, port int) bool {
+	if !n.dnsTCPFamilyExists(v6) {
+		return false
+	}
+	family, table := nftDNSTCPTable(v6)
+	for _, chain := range []string{nftDNSTCPPreChain, nftDNSTCPOutChain} {
+		out, err := n.runNft("list", "chain", family, table, chain)
+		if err != nil || !nftDNSTCPChainIntact(out, mark, port) {
+			return false
+		}
+	}
+	return true
+}
+
+func nftMarkReturns(fields []string, mark uint) bool {
+	if len(fields) != 7 || fields[0] != "meta" || fields[1] != "mark" || fields[2] != "&" || fields[4] != "==" || fields[6] != "return" {
+		return false
+	}
+	mask, err1 := strconv.ParseUint(fields[3], 0, 32)
+	value, err2 := strconv.ParseUint(fields[5], 0, 32)
+	return err1 == nil && err2 == nil && mask == uint64(mark) && value == uint64(mark)
+}
+
+func nftDNSTCPChainIntact(listing string, mark uint, port int) bool {
+	ret, redirect := -1, -1
+	to := fmt.Sprintf(":%d", port)
+	for i, line := range strings.Split(listing, "\n") {
+		f := strings.Fields(line)
+		switch {
+		case ret < 0 && nftMarkReturns(f, mark):
+			ret = i
+		case redirect < 0 && slices.Contains(f, "redirect") && slices.Contains(f, to):
+			redirect = i
+		}
+	}
+	return ret >= 0 && redirect > ret
 }
 
 func (n *NFTablesManager) applyDNSTCPFamily(v6 bool) error {
@@ -149,8 +196,8 @@ func (n *NFTablesManager) applyDNSTCPFamily(v6 bool) error {
 	}
 
 	for _, c := range []struct{ chain, hook string }{
-		{"dnstcp_pre", "prerouting"},
-		{"dnstcp_out", "output"},
+		{nftDNSTCPPreChain, "prerouting"},
+		{nftDNSTCPOutChain, "output"},
 	} {
 		chain, hook := c.chain, c.hook
 		if _, err := n.runNft("add", "chain", family, table, chain,
