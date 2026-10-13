@@ -45,7 +45,11 @@ function SetEditorRoute({
   const allowNavigationRef = useRef(false);
   const isNew = id === "new";
   const setsData = config.sets || [];
-  const sets = setsData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[];
+  const sets = useMemo(
+    () => setsData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [config.sets],
+  );
   const setsStats = setsData.map((s) =>
     "stats" in s ? s.stats : null,
   ) as (SetStats | null)[];

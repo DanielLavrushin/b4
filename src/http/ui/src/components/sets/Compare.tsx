@@ -436,15 +436,16 @@ const RowShell = ({
 
 const ListCell = ({
   items,
-  other,
+  otherItems,
   color,
 }: {
   items: string[];
-  other: Set<string>;
+  otherItems: string[];
   color: string;
 }) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
+  const other = useMemo(() => new Set(otherItems), [otherItems]);
   const ordered = useMemo(
     () =>
       [...items].sort((x, y) => Number(other.has(x)) - Number(other.has(y))),
@@ -606,8 +607,8 @@ const GroupBlock = ({
           differs={row.differs}
           color={group.color}
         >
-          <ListCell items={row.a} other={new Set(row.b)} color={group.color} />
-          <ListCell items={row.b} other={new Set(row.a)} color={group.color} />
+          <ListCell items={row.a} otherItems={row.b} color={group.color} />
+          <ListCell items={row.b} otherItems={row.a} color={group.color} />
         </RowShell>
       ))}
 

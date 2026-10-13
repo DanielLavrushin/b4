@@ -103,8 +103,11 @@ export const B4RangeSlider = ({
   ...props
 }: B4RangeSliderProps) => {
   const changed = useChangedField(path, label);
-  useChangedField(path ? `${path}_max` : undefined, label);
-  const { changedPaths } = useChangedFields();
+  const { changedPaths, registerLabel } = useChangedFields();
+  const maxPath = path ? `${path}_max` : undefined;
+  useEffect(() => {
+    if (maxPath) registerLabel(maxPath, label);
+  }, [registerLabel, maxPath, label]);
   const changedPair =
     changed || (path ? changedPaths.has(`${path}_max`) : false);
   const labelColor = disabled

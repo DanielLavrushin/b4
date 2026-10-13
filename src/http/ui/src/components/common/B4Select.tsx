@@ -34,13 +34,15 @@ export const B4Select = ({
 }: B4SelectProps) => {
   const changed = useChangedField(path, label);
   const { registerValueLabels, scopeVersion } = useChangedFields();
+  const optionKey = options.map((o) => `${o.value}`).join("\0");
   useEffect(() => {
     if (!path) return;
     registerValueLabels(
       path,
       new Map(options.map((o) => [String(o.value), o.label])),
     );
-  }, [path, options, registerValueLabels, scopeVersion]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, optionKey, registerValueLabels, scopeVersion]);
   const fc = (
     <FormControl fullWidth size="small">
       <InputLabel

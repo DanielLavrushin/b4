@@ -115,10 +115,3 @@ export const diffConfigLeaves = (
   out.sort((a, b) => a.path.localeCompare(b.path));
   return out;
 };
-
-export const changedConfigPaths = (
-  draft: Record<string, unknown>,
-  baseline: Record<string, unknown>,
-  options?: ConfigDiffOptions,
-): ReadonlySet<string> =>
-  new Set(diffConfigLeaves(draft, baseline, options).map((leaf) => leaf.path));

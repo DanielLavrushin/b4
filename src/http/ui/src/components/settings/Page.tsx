@@ -13,7 +13,7 @@ import {
 } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useLocation, useNavigate, type BlockerFunction } from "react-router";
 import { Trans, useTranslation } from "react-i18next";
 import i18n, { setLanguage } from "../../i18n";
 
@@ -52,7 +52,6 @@ import {
 import { B4Alert, B4Tab, B4Tabs } from "@b4.elements";
 import { configApi, SettingsPropHandlerType } from "@b4.settings";
 import {
-  changedConfigPaths,
   diffConfigLeaves,
   isStaleWriteError,
   reportSaveError,
@@ -92,6 +91,15 @@ const SETTINGS_TAB_GROUPS: ChangeGroupDef[] = [
 ];
 const changed = (pick: (c: B4Config) => unknown, a: B4Config, b: B4Config) =>
   JSON.stringify(pick(a)) !== JSON.stringify(pick(b));
+const changedPrefix = (
+  paths: ReadonlySet<string>,
+  prefix: string,
+): boolean => {
+  for (const p of paths) {
+    if (p === prefix || p.startsWith(`${prefix}.`)) return true;
+  }
+  return false;
+};
 interface TabPanelProps {
   children?: React.ReactNode;
   index: number;
@@ -272,20 +280,17 @@ export function SettingsPage() {
   }, [config, originalConfig]);
   const hasChanges = changedLeaves.length > 0;
 
-  const changedPaths = useMemo<ReadonlySet<string>>(() => {
-    if (!config || !originalConfig) return new Set<string>();
-    return changedConfigPaths(
-      config as unknown as Record<string, unknown>,
-      originalConfig as unknown as Record<string, unknown>,
-      { ignoredRootKeys: SETTINGS_DIFF_IGNORE },
-    );
-  }, [config, originalConfig]);
+  const changedPaths = useMemo<ReadonlySet<string>>(
+    () => new Set<string>(changedLeaves.map((leaf) => leaf.path)),
+    [changedLeaves],
+  );
   const hasUnsavedChanges = hasChanges;
-  const blocker = useUnsavedChangesGuard(
+  const shouldBlock = useCallback<BlockerFunction>(
     ({ nextLocation }) =>
       hasUnsavedChanges && !nextLocation.pathname.startsWith("/settings"),
-    hasUnsavedChanges,
+    [hasUnsavedChanges],
   );
+  const blocker = useUnsavedChangesGuard(shouldBlock, hasUnsavedChanges);
   const labelsRef = useRef(new Map<string, ReactNode>());
   const snapshotLabels = useCallback(() => new Map(labelsRef.current), []);
   const valueLabelsRef = useRef(
@@ -425,37 +430,28 @@ export function SettingsPage() {
 
   // Check which categories have changes
   const categoryHasChanges = useMemo(() => {
-    if (!hasChanges || !config || !originalConfig) return {};
+    if (!hasChanges) return {};
 
     return {
       // Core
       [TABS.GENERAL]: !!sectionState[TABS.GENERAL]?.some((s) => s.dirty),
 
       // Geosite Settings
-      [TABS.DOMAINS]:
-        JSON.stringify(config.system.geo) !==
-        JSON.stringify(originalConfig.system.geo),
+      [TABS.DOMAINS]: changedPrefix(changedPaths, "system.geo"),
 
       // Discovery
-      [TABS.DISCOVERY]:
-        JSON.stringify(config.system.checker) !==
-        JSON.stringify(originalConfig.system.checker),
+      [TABS.DISCOVERY]: changedPrefix(changedPaths, "system.checker"),
 
       // MTProto
-      [TABS.MTPROTO]:
-        JSON.stringify(config.system.mtproto) !==
-        JSON.stringify(originalConfig.system.mtproto),
+      [TABS.MTPROTO]: changedPrefix(changedPaths, "system.mtproto"),
 
       // API
-      [TABS.API]:
-        JSON.stringify(config.system.api) !==
-          JSON.stringify(originalConfig.system.api) ||
-        JSON.stringify(config.system.ai) !==
-          JSON.stringify(originalConfig.system.ai) ||
-        JSON.stringify(config.system.web_server.mcp) !==
-          JSON.stringify(originalConfig.system.web_server.mcp) ||
-        JSON.stringify(config.system.hub) !==
-          JSON.stringify(originalConfig.system.hub),
+      [TABS.API]: [
+        "system.api",
+        "system.ai",
+        "system.web_server.mcp",
+        "system.hub",
+      ].some((p) => changedPrefix(changedPaths, p)),
 
       // PAYLOADS
       [TABS.PAYLOADS]: false,
@@ -463,7 +459,7 @@ export function SettingsPage() {
       // System
       [TABS.SYSTEM]: !!sectionState[TABS.SYSTEM]?.some((s) => s.dirty),
     };
-  }, [config, originalConfig, hasChanges, sectionState]);
+  }, [changedPaths, hasChanges, sectionState]);
 
   const needsRestart = Object.values(sectionState).some((list) =>
     list.some((s) => s.restart),
