@@ -57,13 +57,22 @@ export const isZero = (value: unknown): boolean =>
   (Array.isArray(value) && value.length === 0);
 
 export const leafEqual = (a: unknown, b: unknown): boolean => {
+  if (Object.is(a, b)) return true;
   if (isZero(a) && isZero(b)) return true;
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
+    const primitive = (v: unknown): boolean =>
+      v === null || ["string", "number", "boolean"].includes(typeof v);
+    if (a.every(primitive) && b.every(primitive)) {
+      const sortedA = [...(a as (string | number | boolean)[])].sort();
+      const sortedB = [...(b as (string | number | boolean)[])].sort();
+      return sortedA.every((v, i) => v === sortedB[i]);
+    }
     const sortedA = (a as unknown[]).map((v) => JSON.stringify(v)).sort();
     const sortedB = (b as unknown[]).map((v) => JSON.stringify(v)).sort();
     return sortedA.every((v, i) => v === sortedB[i]);
   }
+  if (typeof a !== "object" && typeof b !== "object") return false;
   return JSON.stringify(a) === JSON.stringify(b);
 };
 
@@ -72,30 +81,39 @@ export const diffConfigLeaves = (
   baseline: Record<string, unknown>,
   options?: ConfigDiffOptions,
 ): ChangedLeaf[] => {
-  const flatDraft = flattenConfigLeaves(
-    draft,
-    "",
-    options?.ignoredKeys,
-    options?.ignoredPaths,
-    options?.ignoredRootKeys,
-  );
-  const flatBaseline = flattenConfigLeaves(
-    baseline,
-    "",
-    options?.ignoredKeys,
-    options?.ignoredPaths,
-    options?.ignoredRootKeys,
-  );
-  const paths = Array.from(
-    new Set([...Object.keys(flatDraft), ...Object.keys(flatBaseline)]),
-  ).sort((a, b) => a.localeCompare(b));
-
-  return paths.flatMap((path) => {
-    const before = flatBaseline[path];
-    const after = flatDraft[path];
-    if (leafEqual(after, before)) return [];
-    return [{ path, before, after }];
-  });
+  if (draft === baseline) return [];
+  const out: ChangedLeaf[] = [];
+  // Mirrors flattenConfigLeaves: plain objects recurse, everything else
+  // (incl. arrays) compares as a leaf — so leaf granularity is unchanged.
+  const recurses = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+  const walk = (d: unknown, b: unknown, path: string): void => {
+    if (Object.is(d, b)) return;
+    if (path && options?.ignoredPaths?.has(path)) return;
+    const dRec = recurses(d);
+    const bRec = recurses(b);
+    if (!dRec && !bRec) {
+      if (path && !leafEqual(d, b)) out.push({ path, before: b, after: d });
+      return;
+    }
+    if (
+      path &&
+      ((dRec && !bRec && b !== undefined) || (!dRec && bRec && d !== undefined))
+    ) {
+      if (!leafEqual(d, b)) out.push({ path, before: b, after: d });
+    }
+    const dMap = dRec ? (d as Record<string, unknown>) : {};
+    const bMap = bRec ? (b as Record<string, unknown>) : {};
+    const isRoot = path === "";
+    for (const key of new Set([...Object.keys(dMap), ...Object.keys(bMap)])) {
+      if (options?.ignoredKeys?.has(key)) continue;
+      if (isRoot && options?.ignoredRootKeys?.has(key)) continue;
+      walk(dMap[key], bMap[key], path ? `${path}.${key}` : key);
+    }
+  };
+  walk(draft, baseline, "");
+  out.sort((a, b) => a.path.localeCompare(b.path));
+  return out;
 };
 
 export const changedConfigPaths = (
