@@ -20,11 +20,17 @@ export type CoreSectionId =
 
 export type SystemSectionId = "service" | "web" | "backup";
 
+export interface SectionBlockDef {
+  prefixes: string[];
+  labelKey: string;
+}
+
 export interface SettingsSection<Id extends string = string> {
   id: Id;
   labelKey: string;
   Icon: SvgIconComponent;
   prefixes: string[];
+  blocks?: SectionBlockDef[];
   pick: (c: B4Config) => unknown[];
   restartPick: (c: B4Config) => unknown[];
 }
@@ -53,11 +59,18 @@ const deviceGate = (c: B4Config) => {
 
 const nothing = () => [];
 
+// Convention: blocks mirror the B4Section/B4IntegrationCard layout of the section.
+// New config subtree inside an existing block → append its prefix here,
+// otherwise the path falls back to the section level in the unsaved-changes dialog.
 export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
   {
     id: "engine",
     labelKey: "settings.coreTabs.engine",
     prefixes: ["queue", "system.ip_health", "system.dns.keep_ipv6_answers"],
+    blocks: [
+      { prefixes: ["system.ip_health"], labelKey: "settings.IPHealth.title" },
+      { prefixes: ["queue"], labelKey: "settings.Queue.title" },
+    ],
     Icon: NetworkIcon,
     pick: (c) => [
       engineQueue(c),
@@ -78,6 +91,10 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
     id: "firewall",
     labelKey: "settings.coreTabs.firewall",
     prefixes: ["system.tables", "queue.mss_clamp"],
+    blocks: [
+      { prefixes: ["system.tables.masquerade"], labelKey: "settings.Feature.natMasquerade" },
+      { prefixes: ["system.tables.dscp"], labelKey: "settings.Feature.dscpSettings" },
+    ],
     Icon: FilterIcon,
     pick: (c) => [c.system.tables, c.queue.mss_clamp],
     restartPick: (c) => [
