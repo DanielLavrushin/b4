@@ -357,6 +357,19 @@ export function SettingsPage() {
         prefixes: ["system.mtproto"],
         label: t("settings.tabs.mtproto"),
         blocks: [
+          {
+            prefixes: [
+              "system.mtproto.enabled",
+              "system.mtproto.bind_address",
+              "system.mtproto.port",
+              "system.mtproto.expose",
+              "system.mtproto.fake_sni",
+              "system.mtproto.max_connections",
+              "system.mtproto.tcp_user_timeout_sec",
+              "system.mtproto.idle_timeout_sec",
+            ],
+            label: t("settings.MTProto.title"),
+          },
           { prefixes: ["system.mtproto.secrets"], label: t("settings.MTProto.secretsTitle") },
           {
             prefixes: [
