@@ -33,6 +33,7 @@ interface B4DeviceTableProps {
   onToggle: (mac: string) => void;
   onSelectAll: (checked: boolean) => void;
   onBulkToggle: (macs: string[], checked: boolean) => void;
+  isChanged?: (mac: string) => boolean;
   renderNameCell?: (device: DeviceInfo) => ReactNode;
   getSearchableName?: (device: DeviceInfo) => string;
   extraColumns?: B4DeviceTableColumn[];
@@ -50,6 +51,7 @@ export const B4DeviceTable = ({
   onToggle,
   onSelectAll,
   onBulkToggle,
+  isChanged,
   renderNameCell,
   getSearchableName = defaultName,
   extraColumns = [],
@@ -177,7 +179,14 @@ export const B4DeviceTable = ({
                   onClick={() => onToggle(device.mac)}
                   sx={{ cursor: "pointer" }}
                 >
-                  <TableCell padding="checkbox">
+                  <TableCell
+                    padding="checkbox"
+                    sx={
+                      isChanged?.(device.mac)
+                        ? { boxShadow: `inset 3px 0 0 ${colors.secondary}` }
+                        : undefined
+                    }
+                  >
                     <Checkbox
                       checked={isSelected(device.mac)}
                       color="secondary"

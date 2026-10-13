@@ -24,6 +24,7 @@ import { Box, Grid, Stack, Typography } from "@mui/material";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 
 interface TcpFakingProps {
   config: B4SetConfig;
@@ -32,9 +33,23 @@ interface TcpFakingProps {
     value: string | boolean | number | string[] | number[],
   ) => void;
 }
-
+export const FAKING_ACCORDIONS: { labelKey: string; prefixes: string[] }[] = [
+  { labelKey: "sets.faking.fakeSni.title", prefixes: ["faking.sni", "faking.sni_seq_length", "faking.sni_type", "faking.custom_payload", "faking.payload_domain", "faking.fake_len_mode", "faking.payload_file", "faking.strategy", "faking.seq_offset", "faking.timestamp_decrease", "faking.tls_mod", "faking.ttl", "faking.apply_ttl", "faking.md5_on_fake"] },
+  { labelKey: "sets.faking.synFake.title", prefixes: ["tcp.syn_fake", "tcp.syn_fake_len", "tcp.syn_ttl", "faking.tcp_md5"] },
+  { labelKey: "sets.faking.desync.title", prefixes: ["tcp.desync"] },
+  { labelKey: "sets.faking.window.title", prefixes: ["tcp.win"] },
+  { labelKey: "sets.faking.incoming.title", prefixes: ["tcp.incoming"] },
+  { labelKey: "sets.faking.mutation.title", prefixes: ["faking.sni_mutation"] },
+];
 export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
   const { t } = useTranslation();
+  const { changedPaths } = useChangedFields();
+  const hasSubChanges = (prefixes: string[]): boolean =>
+    prefixes.some((prefix) =>
+      [...changedPaths].some(
+        (path) => path === prefix || path.startsWith(`${prefix}.`),
+      ),
+    );
   const [newFakeSni, setNewFakeSni] = useState("");
   const [newWinValue, setNewWinValue] = useState("");
   const { captures, loadCaptures } = useCaptures();
@@ -42,7 +57,6 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
   useEffect(() => {
     loadCaptures().catch(() => {});
   }, [loadCaptures]);
-
   const FAKE_STRATEGIES = [
     { value: "ttl", label: t("sets.faking.fakeSni.strategyTtl") },
     { value: "randseq", label: t("sets.faking.fakeSni.strategyRandseq") },
@@ -261,6 +275,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         status={fakeSniStatus}
         enabled={config.faking.sni}
         defaultExpanded
+        hasChanges={hasSubChanges(FAKING_ACCORDIONS[0].prefixes)}
       >
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 6 }}>
@@ -530,6 +545,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         title={t("sets.faking.synFake.title")}
         status={synFakeStatus}
         enabled={config.tcp.syn_fake || config.faking.tcp_md5}
+        hasChanges={hasSubChanges(FAKING_ACCORDIONS[1].prefixes)}
       >
         <B4Hint>{t("sets.faking.synFake.alert")}</B4Hint>
         <Grid container spacing={3}>
@@ -595,6 +611,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         title={t("sets.faking.desync.title")}
         status={desyncStatus}
         enabled={isDesyncEnabled}
+        hasChanges={hasSubChanges(FAKING_ACCORDIONS[2].prefixes)}
       >
         <B4Hint>{t("sets.faking.desync.alert")}</B4Hint>
         <Grid container spacing={3}>
@@ -666,6 +683,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         title={t("sets.faking.window.title")}
         status={windowStatus}
         enabled={config.tcp.win.mode !== "off"}
+        hasChanges={hasSubChanges(FAKING_ACCORDIONS[3].prefixes)}
       >
         <B4Hint>{t("sets.faking.window.alert")}</B4Hint>
         <Grid container spacing={3}>
@@ -743,6 +761,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         title={t("sets.faking.incoming.title")}
         status={incomingStatus}
         enabled={(config.tcp.incoming?.mode || "off") !== "off"}
+        hasChanges={hasSubChanges(FAKING_ACCORDIONS[4].prefixes)}
       >
         <B4Hint>{t("sets.faking.incoming.alert")}</B4Hint>
         <Grid container spacing={3}>
@@ -870,6 +889,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         title={t("sets.faking.mutation.title")}
         status={mutationStatus}
         enabled={isMutationEnabled}
+        hasChanges={hasSubChanges(FAKING_ACCORDIONS[5].prefixes)}
       >
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 6 }}>

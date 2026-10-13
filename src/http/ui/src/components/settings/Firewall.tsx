@@ -15,6 +15,11 @@ import {
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
 import {
+  useChangedArrayItem,
+  useChangedField,
+} from "@context/ChangedFieldsContext";
+import { colors } from "@design";
+import {
   DSCP_MAX_VALUE,
   dscpStampingSets,
   setDscpValues,
@@ -140,6 +145,48 @@ interface InterfaceChipsProps {
   selected: string[];
   disabled: boolean;
   onToggle: (iface: string) => void;
+  path: string;
+}
+
+function IfaceBadge({
+  path,
+  iface,
+  label,
+  variant,
+  color,
+  onClick,
+}: {
+  path: string;
+  iface: string;
+  label: string;
+  variant: "filled" | "outlined";
+  color: "error" | "primary";
+  onClick?: () => void;
+}) {
+  const { t } = useTranslation();
+  const changed = useChangedArrayItem(path, iface, t("core.interfaceItem", { name: iface }));
+  return (
+    <B4Badge
+      label={label}
+      onClick={onClick}
+      variant={variant}
+      color={color}
+      sx={
+        changed
+          ? {
+              borderColor: colors.secondary,
+              "&.MuiChip-outlinedPrimary": {
+                borderColor: colors.secondary,
+              },
+              "&.MuiChip-filledPrimary": {
+                backgroundColor: colors.accent.secondary,
+                color: colors.secondary,
+              },
+            }
+          : undefined
+      }
+    />
+  );
 }
 
 const InterfaceChips = ({
@@ -147,6 +194,7 @@ const InterfaceChips = ({
   selected,
   disabled,
   onToggle,
+  path,
 }: InterfaceChipsProps) => {
   const { t } = useTranslation();
   const toggle = (iface: string) =>
@@ -158,8 +206,10 @@ const InterfaceChips = ({
         {selected
           .filter((iface) => !available.includes(iface))
           .map((iface) => (
-            <B4Badge
+            <IfaceBadge
               key={iface}
+              path={path}
+              iface={iface}
               label={`${iface} (${t("settings.Feature.missingIface")})`}
               onClick={toggle(iface)}
               variant="filled"
@@ -167,8 +217,10 @@ const InterfaceChips = ({
             />
           ))}
         {available.map((iface) => (
-          <B4Badge
+          <IfaceBadge
             key={iface}
+            path={path}
+            iface={iface}
             label={iface}
             onClick={toggle(iface)}
             variant={selected.includes(iface) ? "filled" : "outlined"}
@@ -192,7 +244,10 @@ export const NatMasqueradeSettings = ({
   const { t } = useTranslation();
   const skipTables = config.system.tables.skip_setup;
   const masquerade = config.system.tables.masquerade;
-
+  useChangedField(
+    "system.tables.masquerade.interfaces",
+    t("core.interfaces"),
+  );
   const handleMasqueradeToggle = (iface: string) => {
     const current = masquerade.interfaces || [];
     const updated = current.includes(iface)
@@ -227,6 +282,7 @@ export const NatMasqueradeSettings = ({
             selected={masquerade.interfaces || []}
             disabled={skipTables}
             onToggle={handleMasqueradeToggle}
+            path="system.tables.masquerade.interfaces"
           />
         </Box>
       )}
@@ -244,6 +300,10 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
   };
   const dscpInterfaces = dscp.interfaces || [];
   const stampingSets = dscpStampingSets(config);
+  useChangedField(
+    "system.tables.dscp.interfaces",
+    t("core.interfaces"),
+  );
 
   const handleDscpInterfaceToggle = (iface: string) => {
     const updated = dscpInterfaces.includes(iface)
@@ -323,6 +383,7 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
             selected={dscpInterfaces}
             disabled={skipTables}
             onToggle={handleDscpInterfaceToggle}
+            path="system.tables.dscp.interfaces"
           />
         </Box>
       )}

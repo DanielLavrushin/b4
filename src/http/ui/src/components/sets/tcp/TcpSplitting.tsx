@@ -18,7 +18,42 @@ import { ExtSplitSettings } from "../frags/ExtSplit";
 import { FirstByteSettings } from "../frags/FirstByte";
 import { TcpIpSettings } from "../frags/TcpIp";
 import { useTranslation } from "react-i18next";
+import { useChangedArrayItem, useChangedFields } from "@context/ChangedFieldsContext";
 
+function PoolChip({
+  value,
+  label,
+  active,
+  onClick,
+}: {
+  value: FragmentationStrategy;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const changed = useChangedArrayItem(
+    "fragmentation.strategy_pool",
+    value,
+    label,
+  );
+  return (
+    <Chip
+      label={label}
+      size="small"
+      onClick={onClick}
+      sx={{
+        bgcolor: active ? colors.accent.primary : colors.background.dark,
+        color: active || changed ? colors.secondary : colors.text.secondary,
+        fontWeight: active || changed ? 600 : 400,
+        cursor: "pointer",
+        border: `1px solid ${changed ? colors.secondary : active ? colors.primary : colors.border.default}`,
+        "&:hover": {
+          bgcolor: active ? colors.accent.primary : colors.background.paper,
+        },
+      }}
+    />
+  );
+}
 interface TcpSplittingProps {
   config: B4SetConfig;
   onChange: (
@@ -139,33 +174,15 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
           />
         </Box>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
-          {poolOptions.map((opt) => {
-            const active: boolean = pool.includes(opt.value);
-            return (
-              <Chip
-                key={opt.value}
-                label={opt.label}
-                size="small"
-                onClick={() => togglePoolStrategy(opt.value)}
-                sx={{
-                  bgcolor: active
-                    ? colors.accent.primary
-                    : colors.background.dark,
-                  color: active ? colors.secondary : colors.text.secondary,
-                  fontWeight: active ? 600 : 400,
-                  cursor: "pointer",
-                  border: active
-                    ? `1px solid ${colors.secondary}`
-                    : `1px solid ${colors.border.default}`,
-                  "&:hover": {
-                    bgcolor: active
-                      ? colors.accent.primary
-                      : colors.background.paper,
-                  },
-                }}
-              />
-            );
-          })}
+          {poolOptions.map((opt) => (
+            <PoolChip
+              key={opt.value}
+              value={opt.value}
+              label={opt.label}
+              active={pool.includes(opt.value)}
+              onClick={() => togglePoolStrategy(opt.value)}
+            />
+          ))}
         </Box>
         {hasPool && (
           <B4Hint sx={{ mt: 1 }}>

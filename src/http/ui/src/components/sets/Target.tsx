@@ -6,6 +6,7 @@ import { B4SetConfig, GeoConfig } from "@models/config";
 import { useDevices } from "@b4.devices";
 import { useGeoCategories } from "@hooks/useGeoCategories";
 import { useTranslation } from "react-i18next";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 import { hasTargets } from "./facets";
 import { SetStats } from "./Manager";
 import { DomainsTab } from "./targets/DomainsTab";
@@ -15,13 +16,18 @@ import { DevicesTab } from "./targets/DevicesTab";
 import { OtherSetsTargets } from "./targets/overlap";
 
 export type { OtherSetsTargets };
-
 const TARGET_SUB_INDEX: Record<string, number> = {
   domains: 0,
   ips: 1,
   asns: 2,
   devices: 3,
 };
+export const TARGET_SUB_TABS: { labelKey: string; prefixes: string[] }[] = [
+  { labelKey: "sets.targets.tabs.domains", prefixes: ["targets.sni_domains", "targets.domain_only", "targets.tls", "targets.ip_version", "targets.geosite_categories"] },
+  { labelKey: "sets.targets.tabs.ips", prefixes: ["targets.ip", "targets.geoip_categories"] },
+  { labelKey: "sets.targets.tabs.asns", prefixes: ["targets.asns"] },
+  { labelKey: "sets.targets.tabs.sourceDevices", prefixes: ["targets.source_devices", "targets.source_devices_exclude"] },
+];
 
 interface TargetSettingsProps {
   initialSub?: string;
@@ -77,7 +83,13 @@ export const TargetSettings = ({
 
   const selectedSourceDevices: string[] = config.targets.source_devices ?? [];
   const asnCount = config.targets.asns?.length ?? 0;
-
+  const { changedPaths } = useChangedFields();
+  const hasSubChanges = (prefixes: string[]): boolean =>
+    prefixes.some((prefix) =>
+      [...changedPaths].some(
+        (path) => path === prefix || path.startsWith(`${prefix}.`),
+      ),
+    );
   return (
     <Stack spacing={3}>
       <B4Section
@@ -94,11 +106,13 @@ export const TargetSettings = ({
               icon={<DomainIcon />}
               label={t("sets.targets.tabs.domains")}
               inline
+              hasChanges={hasSubChanges(TARGET_SUB_TABS[0].prefixes)}
             />
             <B4Tab
               icon={<IpIcon />}
               label={t("sets.targets.tabs.ips")}
               inline
+              hasChanges={hasSubChanges(TARGET_SUB_TABS[1].prefixes)}
             />
             <B4Tab
               icon={<AsnIcon />}
@@ -108,6 +122,7 @@ export const TargetSettings = ({
                   : t("sets.targets.tabs.asns")
               }
               inline
+              hasChanges={hasSubChanges(TARGET_SUB_TABS[2].prefixes)}
             />
             <B4Tab
               icon={<DeviceIcon />}
@@ -117,6 +132,7 @@ export const TargetSettings = ({
                   : t("sets.targets.tabs.sourceDevices")
               }
               inline
+              hasChanges={hasSubChanges(TARGET_SUB_TABS[3].prefixes)}
             />
           </B4Tabs>
         </Box>

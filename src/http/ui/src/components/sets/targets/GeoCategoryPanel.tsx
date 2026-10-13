@@ -66,6 +66,14 @@ export const GeoCategoryPanel = ({
   const { t } = useTranslation();
   const [input, setInput] = useState("");
   const { changedValues, registerLabel } = useChangedFields();
+  const leaf = path ? changedValues.get(path) : undefined;
+  const has = (category: string): boolean => {
+    if (!leaf || !Array.isArray(leaf.after) || !Array.isArray(leaf.before))
+      return false;
+    const after = (leaf.after as unknown[]).includes(category);
+    const before = (leaf.before as unknown[]).includes(category);
+    return after !== before;
+  };
   useEffect(() => {
     if (!path) return;
     registerLabel(path, title);
@@ -129,6 +137,7 @@ export const GeoCategoryPanel = ({
           )}
           onDelete={(c) => onSelectedChange(selected.filter((s) => s !== c))}
           onClick={onPreview}
+          highlight={path ? (c) => has(c) : undefined}
         />
       </Box>
     </Box>

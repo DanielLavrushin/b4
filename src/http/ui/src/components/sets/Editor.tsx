@@ -29,9 +29,7 @@ import { B4Tab, B4TabPanel, B4Tabs, B4TextField } from "@b4.elements";
 
 import { colors } from "@design";
 import { diffConfigLeaves } from "@utils";
-import {
-  ChangedFieldsProvider,
-} from "@context/ChangedFieldsContext";
+import { ChangedFieldsProvider } from "@context/ChangedFieldsContext";
 import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
 import {
   UnsavedChangesDialog,
@@ -308,6 +306,15 @@ export const SetEditorPage = ({
       changedValues={changedValues}
       scope={`set:${editedSet.id}`}
       registry={labelsRef}
+      valueRegistry={valueLabelsRef}
+    >
+    <Box
+      sx={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
     >
       {/* Header with tabs */}
       <Paper
@@ -464,7 +471,7 @@ export const SetEditorPage = ({
       </Paper>
 
       {/* Tab Content */}
-      <Box sx={{ flex: 1, overflow: "auto", pb: 2 }}>
+      <Box sx={{ flex: 1, overflow: "auto", pb: 2, pr: 1, scrollbarGutter: "stable" }}>
         <B4TabPanel value={activeTab} index={TABS.TARGETS} idPrefix="set-tab" sx={{ pt: 3 }}>
           <TargetSettings
             initialSub={requestedSub}
@@ -570,6 +577,7 @@ export const SetEditorPage = ({
         </span>
         </Tooltip>
       )}
+    </Box>
       <UnsavedChangesDialog
         open={blocker.state === "blocked"}
         groups={changeGroups}

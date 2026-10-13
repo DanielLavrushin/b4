@@ -14,6 +14,8 @@ import {
 } from "@b4.elements";
 import { Box, Typography } from "@mui/material";
 import { EngineFailure, SettingsPropHandlerType } from "@models/settings";
+import { useChangedArrayItem, useChangedFields } from "@context/ChangedFieldsContext";
+import { colors } from "@design";
 
 interface EngineCardProps {
   config: B4Config;
@@ -22,6 +24,41 @@ interface EngineCardProps {
 
 const IPV6_BYPASS_DISMISS_KEY = "b4_ipv6_bypass_dismissed";
 const ENGINE_FAILURE_RECHECK_MS = 15000;
+
+function CaptureIfaceBadge({
+  iface,
+  selected,
+  onClick,
+}: {
+  iface: string;
+  selected: boolean;
+  onClick?: () => void;
+}) {
+  const { t } = useTranslation();
+  const changed = useChangedArrayItem("queue.interfaces", iface, t("core.interfaceItem", { name: iface }));
+  return (
+    <B4Badge
+      label={iface}
+      onClick={onClick}
+      variant={selected ? "filled" : "outlined"}
+      color="primary"
+      sx={
+        changed
+          ? {
+              borderColor: colors.secondary,
+              "&.MuiChip-outlinedPrimary": {
+                borderColor: colors.secondary,
+              },
+              "&.MuiChip-filledPrimary": {
+                backgroundColor: colors.accent.secondary,
+                color: colors.secondary,
+              },
+            }
+          : undefined
+      }
+    />
+  );
+}
 
 export const useEngineStatus = () => {
   const [ipv6BypassesSets, setIpv6BypassesSets] = useState(false);
@@ -60,6 +97,10 @@ export const PacketEngineSettings = ({
   engineFailure,
 }: EngineCardProps & { engineFailure: EngineFailure | null }) => {
   const { t } = useTranslation();
+  const { registerLabel } = useChangedFields();
+  useEffect(() => {
+    registerLabel("queue.interfaces", t("core.interfaces"));
+  }, [registerLabel, t]);
 
   const ifaceTraffic = config.iface_traffic ?? {};
   const selectedIfaces = config.queue.interfaces ?? [];
@@ -155,12 +196,11 @@ export const PacketEngineSettings = ({
           {(config.available_ifaces ?? []).map((iface) => {
             const isSelected = (config.queue.interfaces || []).includes(iface);
             return (
-              <B4Badge
+              <CaptureIfaceBadge
                 key={iface}
-                label={iface}
+                iface={iface}
+                selected={isSelected}
                 onClick={() => handleInterfaceToggle(iface)}
-                variant={isSelected ? "filled" : "outlined"}
-                color={"primary"}
               />
             );
           })}

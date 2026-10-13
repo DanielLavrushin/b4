@@ -8,6 +8,7 @@ import { SetStats } from "../Manager";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 import { GeoCategoryPanel } from "./GeoCategoryPanel";
 import { OtherSetsTargets, findSetOverlaps } from "./overlap";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 import {
   IPV4_CATCH_ALL,
   IPV6_CATCH_ALL,
@@ -44,11 +45,20 @@ export const IpsTab = ({
   onChange,
 }: IpsTabProps) => {
   const { t } = useTranslation();
+  const { changedValues } = useChangedFields();
   const [duplicateWarning, setDuplicateWarning] = useState("");
   const [entryNotice, setEntryNotice] = useState("");
   const ips = config.targets.ip ?? [];
   const catchAllEntries = ipCatchAllEntries(!!ipv6);
   const presentCatchAll = ips.filter(isIpCatchAll).map(catchAllEntryFor);
+  const ipsLeaf = changedValues.get("targets.ip");
+  const isIpChanged = (ip: string): boolean => {
+    if (!ipsLeaf || !Array.isArray(ipsLeaf.after) || !Array.isArray(ipsLeaf.before))
+      return false;
+    const after = (ipsLeaf.after as unknown[]).includes(ip);
+    const before = (ipsLeaf.before as unknown[]).includes(ip);
+    return after !== before;
+  };
   const missingCatchAll = catchAllEntries.filter(
     (entry) => !presentCatchAll.includes(entry),
   );
@@ -132,7 +142,7 @@ export const IpsTab = ({
             warning={duplicateWarning}
             notice={entryNotice}
             normalize={(raw) => normalizeIpEntry(raw, !!ipv6)}
-            highlight={isIpCatchAll}
+            highlight={(item) => isIpCatchAll(item) || isIpChanged(item)}
             getItemLabel={chipLabel}
             onItemsChange={(items) => onChange("targets.ip", items)}
             onInputChange={checkDuplicates}

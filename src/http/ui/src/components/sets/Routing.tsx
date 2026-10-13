@@ -4,6 +4,7 @@ import { DnsIcon, RoutingIcon } from "@b4.icons";
 import { B4SetConfig } from "@models/config";
 import { DscpEnvironment } from "@utils";
 import { useTranslation } from "react-i18next";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 import { DnsRedirect } from "./routing/DnsRedirect";
 import { TrafficRouting } from "./routing/TrafficRouting";
 
@@ -16,6 +17,10 @@ const ROUTING_SUB_INDEX: Record<string, number> = {
   dns: 0,
   traffic: 1,
 };
+export const ROUTING_SUB_TABS: { labelKey: string; prefixes: string[] }[] = [
+  { labelKey: "sets.dns.sectionTitle", prefixes: ["dns"] },
+  { labelKey: "sets.routing.trafficRouting", prefixes: ["routing", "dscp"] },
+];
 
 interface RoutingSettingsProps {
   initialSub?: string;
@@ -58,6 +63,13 @@ export const RoutingSettings = ({
     const index = ROUTING_SUB_INDEX[initialSub ?? ""];
     if (index !== undefined) setActiveTab(index);
   }, [initialSub]);
+  const { changedPaths } = useChangedFields();
+  const hasSubChanges = (prefixes: string[]): boolean =>
+    prefixes.some((prefix) =>
+      [...changedPaths].some(
+        (path) => path === prefix || path.startsWith(`${prefix}.`),
+      ),
+    );
 
   return (
     <B4Section
@@ -71,11 +83,12 @@ export const RoutingSettings = ({
           setActiveTab(v);
         }}
       >
-        <B4Tab icon={<DnsIcon />} label={t("sets.dns.sectionTitle")} inline />
+        <B4Tab icon={<DnsIcon />} label={t("sets.dns.sectionTitle")} inline hasChanges={hasSubChanges(ROUTING_SUB_TABS[0].prefixes)} />
         <B4Tab
           icon={<RoutingIcon />}
           label={t("sets.routing.trafficRouting")}
           inline
+          hasChanges={hasSubChanges(ROUTING_SUB_TABS[1].prefixes)}
         />
       </B4Tabs>
 

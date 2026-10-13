@@ -4,6 +4,7 @@ import {
   Chip,
   CircularProgress,
   Grid,
+  Stack,
   Typography,
 } from "@mui/material";
 import { ClearIcon, RefreshIcon } from "@b4.icons";
@@ -12,7 +13,7 @@ import { DeviceInfo } from "@b4.devices";
 import { B4DeviceTable } from "@common/B4DeviceTable";
 import { colors } from "@design";
 import { useTranslation } from "react-i18next";
-
+import { useChangedFields } from "@context/ChangedFieldsContext";
 interface DevicesTabProps {
   selected: string[];
   exclude: boolean;
@@ -39,6 +40,15 @@ export const DevicesTab = ({
   onExcludeChange,
 }: DevicesTabProps) => {
   const { t } = useTranslation();
+  const { changedValues } = useChangedFields();
+  const devicesLeaf = changedValues.get("targets.source_devices");
+  const isDeviceChanged = (mac: string): boolean => {
+    if (!devicesLeaf || !Array.isArray(devicesLeaf.after) || !Array.isArray(devicesLeaf.before))
+      return false;
+    const after = (devicesLeaf.after as unknown[]).includes(mac);
+    const before = (devicesLeaf.before as unknown[]).includes(mac);
+    return after !== before;
+  };
 
   const isSelected = (mac: string) => selected.includes(mac);
 
@@ -139,13 +149,24 @@ export const DevicesTab = ({
                   </Typography>
                 )}
               </Typography>
-              <B4TooltipButton
-                title={t("core.devices.refreshDevices")}
-                icon={
-                  loading ? <CircularProgress size={18} /> : <RefreshIcon />
-                }
-                onClick={onRefresh}
-              />
+              <Stack direction="row" spacing={1} alignItems="center">
+                {selected.length > 0 && (
+                  <Button
+                    size="small"
+                    onClick={() => onChange([])}
+                    startIcon={<ClearIcon />}
+                  >
+                    {t("core.clearAll")}
+                  </Button>
+                )}
+                <B4TooltipButton
+                  title={t("core.devices.refreshDevices")}
+                  icon={
+                    loading ? <CircularProgress size={18} /> : <RefreshIcon />
+                  }
+                  onClick={onRefresh}
+                />
+              </Stack>
             </Box>
 
             <B4DeviceTable
@@ -153,6 +174,7 @@ export const DevicesTab = ({
               loading={loading}
               isSelected={isSelected}
               onToggle={handleToggle}
+              isChanged={isDeviceChanged}
               onSelectAll={(checked) =>
                 onChange(checked ? devices.map((d) => d.mac) : [])
               }
@@ -177,17 +199,6 @@ export const DevicesTab = ({
               }
             />
 
-            {selected.length > 0 && (
-              <Box sx={{ mt: 2 }}>
-                <Button
-                  size="small"
-                  onClick={() => onChange([])}
-                  startIcon={<ClearIcon />}
-                >
-                  {t("core.clearAll")}
-                </Button>
-              </Box>
-            )}
           </Grid>
         </Grid>
       ) : (

@@ -28,6 +28,7 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "@api/apiClient";
 import { asnApi } from "@api/asn";
 import { useSnackbar } from "@context/SnackbarProvider";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 import { useAsnCache, useAsnViews } from "@hooks/useAsn";
 import { AsnFacts, AsnLargeNetworkAlert } from "@common/AsnFacts";
 import {
@@ -494,6 +495,14 @@ const AsnRow = ({
   onRemove,
 }: AsnRowProps) => {
   const { t, i18n } = useTranslation();
+  const { changedValues } = useChangedFields();
+  const asnsLeaf = changedValues.get("targets.asns");
+  const asnChanged =
+    !!asnsLeaf &&
+    Array.isArray(asnsLeaf.after) &&
+    Array.isArray(asnsLeaf.before) &&
+    (asnsLeaf.after as unknown[]).includes(id) !==
+      (asnsLeaf.before as unknown[]).includes(id);
   const unresolved = state === "unresolved";
   const filtered =
     ipVersion === "4"
@@ -539,6 +548,17 @@ const AsnRow = ({
             >
               {view?.name || (state === "loading" ? "" : t("sets.targets.asn.unnamed"))}
             </Typography>
+            {asnChanged && (
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  bgcolor: colors.secondary,
+                  flexShrink: 0,
+                }}
+              />
+            )}
             {unresolved && (
               <B4Badge
                 label={t("core.asn.pending")}

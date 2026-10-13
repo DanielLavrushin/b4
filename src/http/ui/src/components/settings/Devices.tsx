@@ -17,6 +17,7 @@ import {
   Button,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 import { Device } from "@models/config";
 import { DeviceUnknowIcon, RefreshIcon, AddIcon, DeleteIcon } from "@b4.icons";
 import EditIcon from "@mui/icons-material/Edit";
@@ -120,6 +121,23 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
   const [manualIp, setManualIp] = useState("");
   const [manualName, setManualName] = useState("");
   const { t } = useTranslation();
+  const { changedValues, registerLabel } = useChangedFields();
+  useEffect(() => {
+    registerLabel("queue.devices.devices", t("core.devices.devicesTitle"));
+  }, [registerLabel, t]);
+  const devicesLeaf = changedValues.get("queue.devices.devices");
+  const findLeafDevice = (mac: string, list: unknown): Device | undefined =>
+    Array.isArray(list)
+      ? (list as Device[]).find(
+          (d) => d.mac.toUpperCase() === mac.toUpperCase(),
+        )
+      : undefined;
+  const isDeviceChanged = (mac: string): boolean => {
+    if (!devicesLeaf) return false;
+    const before = findLeafDevice(mac, devicesLeaf.before);
+    const after = findLeafDevice(mac, devicesLeaf.after);
+    return JSON.stringify(before ?? null) !== JSON.stringify(after ?? null);
+  };
 
   const configDevices: Device[] = config.queue.devices?.devices || [];
   const enabled = config.queue.devices?.enabled || false;
@@ -316,6 +334,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                   loading={loading}
                   isSelected={isSelected}
                   onToggle={handleToggle}
+                  isChanged={isDeviceChanged}
                   onSelectAll={handleSelectAll}
                   onBulkToggle={handleBulkToggle}
                   getSearchableName={displayName}

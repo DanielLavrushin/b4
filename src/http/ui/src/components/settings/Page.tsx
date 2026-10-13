@@ -654,7 +654,7 @@ export function SettingsPage() {
         </Box>
       </Paper>
 
-      <Box ref={contentRef} sx={{ flex: 1, overflow: "auto", pb: 2 }}>
+      <Box ref={contentRef} sx={{ flex: 1, overflow: "auto", pb: 2, pr: 1, scrollbarGutter: "stable" }}>
         <TabPanel value={validTab} index={TABS.GENERAL}>
           <CoreSettings
             section={currentSectionId}

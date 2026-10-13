@@ -9,6 +9,7 @@ import { SetStats } from "../Manager";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 import { GeoCategoryPanel } from "./GeoCategoryPanel";
 import { CategoryPreviewDialog } from "./CategoryPreviewDialog";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 import {
   DOMAIN_CATCH_ALL,
   domainEntryNotice,
@@ -46,12 +47,21 @@ export const DomainsTab = ({
   onChange,
 }: DomainsTabProps) => {
   const { t } = useTranslation();
+  const { changedValues } = useChangedFields();
   const showIpVersionFilter = (!!ipv4 && !!ipv6) || !!config.targets.ip_version;
   const [duplicateWarning, setDuplicateWarning] = useState("");
   const [entryNotice, setEntryNotice] = useState("");
   const [previewCategory, setPreviewCategory] = useState<string | null>(null);
   const domains = config.targets.sni_domains ?? [];
   const catchAll = domains.some(isDomainCatchAll);
+  const domainsLeaf = changedValues.get("targets.sni_domains");
+  const isDomainChanged = (domain: string): boolean => {
+    if (!domainsLeaf || !Array.isArray(domainsLeaf.after) || !Array.isArray(domainsLeaf.before))
+      return false;
+    const after = (domainsLeaf.after as unknown[]).includes(domain);
+    const before = (domainsLeaf.before as unknown[]).includes(domain);
+    return after !== before;
+  };
   const checkTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -218,7 +228,7 @@ export const DomainsTab = ({
             warning={duplicateWarning}
             notice={entryNotice}
             normalize={normalizeDomainEntry}
-            highlight={isDomainCatchAll}
+            highlight={(item) => isDomainCatchAll(item) || isDomainChanged(item)}
             getItemLabel={(item) =>
               isDomainCatchAll(item)
                 ? t("sets.targets.catchAllChipDomain")
