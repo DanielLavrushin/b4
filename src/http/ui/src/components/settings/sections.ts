@@ -24,6 +24,7 @@ export interface SettingsSection<Id extends string = string> {
   id: Id;
   labelKey: string;
   Icon: SvgIconComponent;
+  prefixes: string[];
   pick: (c: B4Config) => unknown[];
   restartPick: (c: B4Config) => unknown[];
 }
@@ -56,6 +57,7 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
   {
     id: "engine",
     labelKey: "settings.coreTabs.engine",
+    prefixes: ["queue", "system.ip_health", "system.dns.keep_ipv6_answers"],
     Icon: NetworkIcon,
     pick: (c) => [
       engineQueue(c),
@@ -67,6 +69,7 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
   {
     id: "devices",
     labelKey: "settings.coreTabs.devices",
+    prefixes: ["queue.devices"],
     Icon: DeviceUnknowIcon,
     pick: (c) => [c.queue.devices],
     restartPick: deviceGate,
@@ -74,6 +77,7 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
   {
     id: "firewall",
     labelKey: "settings.coreTabs.firewall",
+    prefixes: ["system.tables", "queue.mss_clamp"],
     Icon: FilterIcon,
     pick: (c) => [c.system.tables, c.queue.mss_clamp],
     restartPick: (c) => [
@@ -83,6 +87,7 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
   {
     id: "dns",
     labelKey: "settings.coreTabs.dns",
+    prefixes: ["system.dns"],
     Icon: DnsIcon,
     pick: (c) => [{ ...c.system.dns, keep_ipv6_answers: undefined }],
     restartPick: nothing,
@@ -90,6 +95,7 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
   {
     id: "socks5",
     labelKey: "settings.coreTabs.socks5",
+    prefixes: ["system.socks5"],
     Icon: ConnectionIcon,
     pick: (c) => [c.system.socks5],
     restartPick: nothing,
@@ -100,6 +106,7 @@ export const SYSTEM_SECTIONS: SettingsSection<SystemSectionId>[] = [
   {
     id: "service",
     labelKey: "settings.systemTabs.service",
+    prefixes: ["system.logging", "system.timezone", "system.memory_limit", "system.update", "system.web_server.language"],
     Icon: ControlIcon,
     pick: (c) => [
       c.system.logging,
@@ -117,6 +124,7 @@ export const SYSTEM_SECTIONS: SettingsSection<SystemSectionId>[] = [
   {
     id: "web",
     labelKey: "settings.systemTabs.web",
+    prefixes: ["system.web_server"],
     Icon: WebIcon,
     pick: (c) => [
       { ...c.system.web_server, mcp: undefined, language: undefined },
@@ -131,6 +139,7 @@ export const SYSTEM_SECTIONS: SettingsSection<SystemSectionId>[] = [
   {
     id: "backup",
     labelKey: "settings.systemTabs.backup",
+    prefixes: [],
     Icon: BackupIcon,
     pick: nothing,
     restartPick: nothing,
