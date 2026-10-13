@@ -219,19 +219,34 @@ export const SetEditorPage = ({
 
   const draftForDiff = editedSet ?? initialSet;
   const dscp = dscpEnvironment(config, initialSet.id);
-  const changedLeaves = diffConfigLeaves(
-    draftForDiff as unknown as Record<string, unknown>,
-    initialSet as unknown as Record<string, unknown>,
-    { ignoredRootKeys: SET_EDITOR_DIFF_IGNORE },
+  const changedLeaves = useMemo(
+    () =>
+      diffConfigLeaves(
+        draftForDiff as unknown as Record<string, unknown>,
+        initialSet as unknown as Record<string, unknown>,
+        { ignoredRootKeys: SET_EDITOR_DIFF_IGNORE },
+      ),
+    [draftForDiff, initialSet],
   );
   const dirty = changedLeaves.length > 0;
-  const changedPaths = new Set(changedLeaves.map((leaf) => leaf.path));
-  const tabHasChanges = (tab: number) =>
-    TAB_PATH_PREFIXES[tab].some((prefix) =>
-      [...changedPaths].some(
-        (path) => path === prefix || path.startsWith(`${prefix}.`),
-      ),
-    );
+  const changedPaths = useMemo(
+    () => new Set(changedLeaves.map((leaf) => leaf.path)),
+    [changedLeaves],
+  );
+  const changedTabs = useMemo(() => {
+    const tabs = new Set<number>();
+    for (const leaf of changedLeaves) {
+      TAB_PATH_PREFIXES.forEach((prefixes, index) => {
+        for (const prefix of prefixes) {
+          if (leaf.path === prefix || leaf.path.startsWith(`${prefix}.`)) {
+            tabs.add(index);
+            break;
+          }
+        }
+      });
+    }
+    return tabs;
+  }, [changedLeaves]);
   const hasUnsavedChanges = dirty;
   const blocker = useUnsavedChangesGuard(
     ({ nextLocation }) => {
@@ -245,7 +260,9 @@ export const SetEditorPage = ({
   );
   const labelsRef = useRef(new Map<string, ReactNode>());
   const snapshotLabels = useCallback(() => new Map(labelsRef.current), []);
-  labelsRef.current.set("name", t("core.setName"));
+  useEffect(() => {
+    labelsRef.current.set("name", t("core.setName"));
+  }, [t]);
   const staticLabels = useMemo(() => {
     const map = new Map<string, ReactNode>();
     for (const [path, key] of Object.entries(SET_PATH_LABEL_KEYS)) {
@@ -277,23 +294,44 @@ export const SetEditorPage = ({
     if (edited?.id) map.set(edited.id, edited.name || edited.id);
     return map;
   }, [config.sets, editedSet]);
-  const changeItems: UnsavedChangeItem[] = buildChangeItems(
-    changedLeaves,
-    new Map([...staticLabels, ...snapshotLabels()]),
-    new Map([...staticValueLabels, ...valueLabelsRef.current, ["escalate.to", setNameById]]),
+  const dialogsOpen = showDiscardDialog || blocker.state === "blocked";
+  const changedValues = useMemo(
+    () =>
+      new Map<string, { before: unknown; after: unknown }>(
+        changedLeaves.map((leaf) => [
+          leaf.path,
+          { before: leaf.before, after: leaf.after },
+        ]),
+      ),
+    [changedLeaves],
   );
-  const changedValues = new Map<string, { before: unknown; after: unknown }>(
-    changedLeaves.map((leaf) => [
-      leaf.path,
-      { before: leaf.before, after: leaf.after },
-    ]),
+  const changeItems: UnsavedChangeItem[] = useMemo(() => {
+    if (!dialogsOpen) return [];
+    return buildChangeItems(
+      changedLeaves,
+      new Map([...staticLabels, ...snapshotLabels()]),
+      new Map([...staticValueLabels, ...valueLabelsRef.current, ["escalate.to", setNameById]]),
+    );
+  }, [dialogsOpen, changedLeaves, staticLabels, staticValueLabels, setNameById, snapshotLabels]);
+  const tabSubDefs = useMemo(
+    () => [
+      ...TARGET_SUB_TABS.map((s) => ({ prefixes: s.prefixes, label: t(s.labelKey) })),
+      ...TCP_SUB_TABS.map((s) => ({ prefixes: s.prefixes, label: t(s.labelKey) })),
+      ...ROUTING_SUB_TABS.map((s) => ({ prefixes: s.prefixes, label: t(s.labelKey) })),
+      ...FAKING_ACCORDIONS.map((s) => ({ prefixes: s.prefixes, label: t(s.labelKey) })),
+    ],
+    [t],
   );
-  const changeGroups = groupChangeItems(changeItems, SET_EDITOR_CHANGE_GROUPS, [
-    ...TARGET_SUB_TABS.map((s) => ({ ...s, label: t(s.labelKey) })),
-    ...TCP_SUB_TABS.map((s) => ({ ...s, label: t(s.labelKey) })),
-    ...ROUTING_SUB_TABS.map((s) => ({ ...s, label: t(s.labelKey) })),
-    ...FAKING_ACCORDIONS.map((s) => ({ ...s, label: t(s.labelKey) })),
-  ]).map((group) => ({ ...group, label: t(group.label) }));
+  const changeGroups = useMemo(
+    () =>
+      dialogsOpen
+        ? groupChangeItems(changeItems, SET_EDITOR_CHANGE_GROUPS, tabSubDefs).map((group) => ({
+            ...group,
+            label: t(group.label),
+          }))
+        : [],
+    [dialogsOpen, changeItems, tabSubDefs, t],
+  );
 
   if (!editedSet) return null;
   let saveTooltip: string;
@@ -421,42 +459,42 @@ export const SetEditorPage = ({
               icon={<DomainIcon />}
               label={t("sets.editor.tabs.targets")}
               inline
-              hasChanges={tabHasChanges(TABS.TARGETS)}
+              hasChanges={changedTabs.has(TABS.TARGETS)}
               index={TABS.TARGETS}
             />
             <B4Tab
               icon={<TcpIcon />}
               label={t("sets.editor.tabs.tcp")}
               inline
-              hasChanges={tabHasChanges(TABS.TCP)}
+              hasChanges={changedTabs.has(TABS.TCP)}
               index={TABS.TCP}
             />
             <B4Tab
               icon={<UdpIcon />}
               label={t("sets.editor.tabs.udp")}
               inline
-              hasChanges={tabHasChanges(TABS.UDP)}
+              hasChanges={changedTabs.has(TABS.UDP)}
               index={TABS.UDP}
             />
             <B4Tab
               icon={<RoutingIcon />}
               label={t("sets.editor.tabs.routing")}
               inline
-              hasChanges={tabHasChanges(TABS.ROUTING)}
+              hasChanges={changedTabs.has(TABS.ROUTING)}
               index={TABS.ROUTING}
             />
             <B4Tab
               icon={<EscalateIcon />}
               label={t("sets.editor.tabs.escalation")}
               inline
-              hasChanges={tabHasChanges(TABS.ESCALATION)}
+              hasChanges={changedTabs.has(TABS.ESCALATION)}
               index={TABS.ESCALATION}
             />
             <B4Tab
               icon={<DiscoveryIcon />}
               label={t("sets.editor.tabs.discovery")}
               inline
-              hasChanges={tabHasChanges(TABS.DISCOVERY)}
+              hasChanges={changedTabs.has(TABS.DISCOVERY)}
               index={TABS.DISCOVERY}
             />
             <B4Tab
