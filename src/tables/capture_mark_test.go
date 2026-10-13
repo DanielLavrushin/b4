@@ -37,8 +37,14 @@ func TestCaptureChainLetsB4sOwnPacketsThroughFirst(t *testing.T) {
 							t.Errorf("%s: the queue-mark RETURN uses action %q; it must be inserted, so a restore that adds only this rule still puts it ahead of the queue rules", ipt, r.Action)
 						}
 					}
-					if firstQueue < 0 && strings.Contains(spec, "NFQUEUE") {
+					if !strings.Contains(spec, "NFQUEUE") {
+						continue
+					}
+					if firstQueue < 0 {
 						firstQueue = i
+					}
+					if r.Action != "A" {
+						t.Errorf("%s: %s inserts the queue rule %q; a restore that adds only this rule would put it above the queue-mark RETURN, and the monitor checks that rules are present, not their order", ipt, iptChainName, spec)
 					}
 				}
 				if returns < 0 {

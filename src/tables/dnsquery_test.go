@@ -127,6 +127,16 @@ func TestDNSQueriesAreQueuedFromTheRawTableBeforeConntrack(t *testing.T) {
 		if r.Table == "raw" && (r.Chain == "PREROUTING" || r.Chain == "OUTPUT") && r.Action != "A" {
 			t.Errorf("the raw %s jump must be appended: a query b4 releases skips the rest of the raw table, so a blocklist drop or a conntrack zone another service keeps there has to run first; got action %q", r.Chain, r.Action)
 		}
+		if r.Table == "raw" && r.Chain == iptRawChainName {
+			spec := strings.Join(r.Spec, " ")
+			want := "A"
+			if strings.HasSuffix(spec, "-j RETURN") {
+				want = "I"
+			}
+			if r.Action != want {
+				t.Errorf("%s: in %s the return for b4's own packets must be inserted and the queue rule appended, so a restore of either one alone keeps the return first; got action %q for %s", r.IPT, iptRawChainName, r.Action, spec)
+			}
+		}
 	}
 	for _, ipt := range []string{backendIPTables, backendIP6Tables} {
 		for _, chain := range []string{"B4_PREROUTING", "OUTPUT"} {
