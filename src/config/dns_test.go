@@ -178,3 +178,23 @@ func TestDNSPortCollidesWithOtherServices(t *testing.T) {
 		}
 	})
 }
+
+func TestDNSTCPInterceptEnabledForAnECHStripSet(t *testing.T) {
+	cfg := NewConfig()
+	set := &SetConfig{Id: "s", Name: "s", Enabled: true}
+	set.DNS.StripECH = true
+	cfg.Sets = []*SetConfig{set}
+
+	if !cfg.DNSTCPInterceptEnabled() {
+		t.Error("a set that strips ECH keys needs the answers that come over TCP too")
+	}
+	set.Enabled = false
+	if cfg.DNSTCPInterceptEnabled() {
+		t.Error("a disabled set must not turn interception on")
+	}
+	set.Enabled = true
+	cfg.System.DNS.TCPDisabled = true
+	if cfg.DNSTCPInterceptEnabled() {
+		t.Error("tcp_disabled=true must win over a set that strips ECH")
+	}
+}

@@ -194,7 +194,7 @@ func (s *Suite) runDNS() {
 	s.setProgress(ScopeDNS, "")
 
 	var runs []*serverRun
-	routers := systemNameservers()
+	routers := netprobe.SystemNameservers()
 	for _, addr := range routers {
 		runs = append(runs, &serverRun{
 			server: DNSServer{Name: addr, Brand: "Router", Address: addr, Kind: "udp"},

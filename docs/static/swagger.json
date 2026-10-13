@@ -4,7 +4,7 @@
         "description": "B4 network packet processor REST API",
         "title": "B4 API",
         "contact": {},
-        "version": "1.86.0"
+        "version": "1.87.0"
     },
     "basePath": "/api",
     "paths": {
@@ -5465,6 +5465,9 @@
                 "strict": {
                     "type": "boolean"
                 },
+                "strip_ech": {
+                    "type": "boolean"
+                },
                 "target_dns": {
                     "type": "string"
                 }
@@ -6298,6 +6301,9 @@
                 "dns": {
                     "$ref": "#/definitions/config.DNSConfig"
                 },
+                "dscp": {
+                    "$ref": "#/definitions/config.SetDSCPConfig"
+                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -6333,6 +6339,17 @@
                 },
                 "udp": {
                     "$ref": "#/definitions/config.UDPConfig"
+                }
+            }
+        },
+        "config.SetDSCPConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "value": {
+                    "type": "integer"
                 }
             }
         },
@@ -7131,6 +7148,7 @@
                 "tcpmd5",
                 "alt_address",
                 "dns_redirect",
+                "ech_strip",
                 "community",
                 "current"
             ],
@@ -7157,6 +7175,7 @@
                 "FamilyTCPMD5",
                 "FamilyAltAddress",
                 "FamilyDNSRedirect",
+                "FamilyECHStrip",
                 "FamilyCommunity",
                 "FamilyCurrent"
             ]
@@ -7530,6 +7549,9 @@
                 },
                 "dns": {
                     "$ref": "#/definitions/config.DNSConfig"
+                },
+                "dscp": {
+                    "$ref": "#/definitions/config.SetDSCPConfig"
                 },
                 "enabled": {
                     "type": "boolean"
@@ -9365,6 +9387,9 @@
                 },
                 "dns": {
                     "$ref": "#/definitions/config.DNSConfig"
+                },
+                "dscp": {
+                    "$ref": "#/definitions/config.SetDSCPConfig"
                 },
                 "enabled": {
                     "type": "boolean"

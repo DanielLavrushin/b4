@@ -524,6 +524,7 @@ export interface DNSConfig {
   fragment_query: boolean;
   strict: boolean;
   pins?: Record<string, string[]>;
+  strip_ech?: boolean;
 }
 
 export type RoutingMode = "interface" | "proxy" | "mtproto-ws" | "block";

@@ -16,6 +16,8 @@ const (
 	dnsTypeAAAA  = 28
 	dnsTypeSVCB  = 64
 	dnsTypeHTTPS = 65
+	dnsTypeIXFR  = 251
+	dnsTypeAXFR  = 252
 	dnsTypeANY   = 255
 )
 
@@ -219,9 +221,12 @@ func (w *Worker) healingSet(cfg *config.Config, set *config.SetConfig) bool {
 	return ibd.Enabled && ibd.HealDNS
 }
 
-func (w *Worker) filterDNSAnswer(cfg *config.Config, set *config.SetConfig, domain string, resp []byte, overTCP bool) ([]byte, string) {
+func (w *Worker) filterDNSAnswer(cfg *config.Config, set *config.SetConfig, domain, clientMac string, resp []byte, overTCP bool) ([]byte, string, *config.SetConfig) {
 	if w == nil || len(resp) == 0 {
-		return nil, ""
+		return nil, "", nil
+	}
+	if echless, actor := w.stripECHKeys(cfg, set, domain, clientMac, resp, overTCP); echless != nil {
+		return echless, dnsActionECHStripped, actor
 	}
 
 	out := resp
@@ -238,13 +243,13 @@ func (w *Worker) filterDNSAnswer(cfg *config.Config, set *config.SetConfig, doma
 
 	switch {
 	case healed && stripped:
-		return out, dnsActionHealStripped
+		return out, dnsActionHealStripped, set
 	case healed:
-		return out, dnsActionHeal
+		return out, dnsActionHeal, set
 	case stripped:
-		return out, dnsActionIPv6Stripped
+		return out, dnsActionIPv6Stripped, set
 	}
-	return nil, ""
+	return nil, "", nil
 }
 
 func ipv6AnswersKept(cfg *config.Config, set *config.SetConfig) bool {

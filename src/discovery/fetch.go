@@ -317,6 +317,9 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 			}
 		}}, nil
 	}
+	if _, ech := ds.echFor(di.Domain); ech && !di.plainTLS {
+		transport.DialTLSContext = ds.echDialTLS(transport.DialContext)
+	}
 
 	client := &http.Client{
 		Timeout:   timeout,

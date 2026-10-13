@@ -2147,7 +2147,10 @@
       "vizSelectDns": "select DNS",
       "vizRealIp": "→ Real IP",
       "noServerWarning": "Select or enter a DNS server IP to enable redirect.",
-      "googleWarning": "Google DNS (8.8.8.8) is commonly poisoned by Russian ISPs. Consider Quad9 (9.9.9.9) or Cloudflare (1.1.1.1) instead."
+      "googleWarning": "Google DNS (8.8.8.8) is commonly poisoned by Russian ISPs. Consider Quad9 (9.9.9.9) or Cloudflare (1.1.1.1) instead.",
+      "stripEchHeader": "Encrypted ClientHello (ECH)",
+      "stripEch": "Remove ECH keys from DNS answers",
+      "stripEchDesc": "Browsers then send an ordinary ClientHello naming the site instead of an encrypted one naming the provider's shared name, such as cloudflare-ech.com, which some networks drop. Applies to answers for this set's domains and to any answer whose ECH key names one of them, so a set listing cloudflare-ech.com covers every Cloudflare site. Devices that use their own secure DNS are not affected."
     },
     "routing": {
       "sectionTitle": "DNS & Routing",
@@ -2719,7 +2722,8 @@
       "unresolved": "does not resolve",
       "badLink": "link answers {{status}}",
       "noFamilyAddress": "no {{family}} address",
-      "nothingFound": "nothing found"
+      "nothingFound": "nothing found",
+      "echBlocked": "ECH blocked"
     },
     "results": {
       "done": "Done in {{duration}}",
@@ -2834,7 +2838,9 @@
       "geosite": "geosite {{list}}",
       "geoip": "geoip {{list}}",
       "asns": "networks {{list}}",
-      "dnsPins": "answered with {{list}}"
+      "dnsPins": "answered with {{list}}",
+      "dnsStripEch": "ECH keys removed from answers",
+      "alsoNames": "also {{list}}"
     },
     "strategy": {
       "split": {
@@ -2859,12 +2865,14 @@
         "delay": "delays the second segment",
         "md5": "signs the fakes with TCP MD5",
         "dns": "redirects DNS",
-        "pins": "answers DNS with an address the block does not cover"
+        "pins": "answers DNS with an address the block does not cover",
+        "stripEch": "removes ECH keys from DNS answers"
       },
       "join": ", ",
       "end": ".",
       "pinsOnly": "answers DNS with an address the block does not cover, no packet changes",
-      "dnsOnly": "only answers DNS through a resolver that is not lying, no packet changes"
+      "dnsOnly": "only answers DNS through a resolver that is not lying, no packet changes",
+      "stripEchOnly": "removes ECH keys from DNS answers so browsers name the site, no packet changes"
     },
     "apply": {
       "title": "Apply as a set",
@@ -2949,7 +2957,9 @@
       "sourceHint": {
         "mcp": "This search was started through the MCP server",
         "watchdog": "The watchdog started this search to heal a set"
-      }
+      },
+      "echOnly": "ECH ClientHellos naming {{cover}} are dropped here, plain ones pass",
+      "echCover": "Probed with ECH, as browsers do: the ClientHello named {{cover}}"
     },
     "errors": {
       "not_found": "The set was not found. It may have been deleted.",
@@ -3042,10 +3052,17 @@
       "tcpmd5": "TCP MD5",
       "alt_address": "Alternative address",
       "dns_redirect": "DNS redirect",
-      "current": "Current strategy"
+      "current": "Current strategy",
+      "ech_strip": "ECH keys removed"
     },
     "presetNames": {
       "setCurrent": "Current strategy of the set"
+    },
+    "ech": {
+      "stripNote": "This network drops ClientHellos that carry ECH and name {{cover}}; without ECH the site loads. The set removes ECH keys from DNS answers, so browsers name the site instead, and because it lists {{cover}}, it does so for every site whose key names {{cover}}. A browser that uses its own secure DNS still sends ECH.",
+      "coverNote": "The site's DNS publishes an ECH key: browsers, and Discovery's probes, put {{cover}} in the ClientHello instead of the site, so the set also targets {{cover}}.",
+      "probesNote": "The probes sent ECH, as browsers do, so each ClientHello named {{cover}}, not the site.",
+      "onlyBlockUnconfirmed": "Without ECH the site loaded once, then failed the confirmation."
     }
   },
   "detector": {
@@ -3519,7 +3536,8 @@
         "bad-target": "The set's DNS server field does not hold a valid IP address, query forwarded unchanged",
         "from-target": "The query came from the address of the set's own resolver, forwarded unchanged",
         "ipv6-stripped": "AAAA records removed from the answer so the client falls back to IPv4",
-        "heal+ipv6-stripped": "DNS answer had unreachable addresses replaced and its AAAA records removed"
+        "heal+ipv6-stripped": "DNS answer had unreachable addresses replaced and its AAAA records removed",
+        "ech-stripped": "ECH key removed from the HTTPS answer, so the browser names the site in its ClientHello"
       }
     }
   },

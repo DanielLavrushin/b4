@@ -139,6 +139,8 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		}
 	}
 
+	ds.probeECH()
+
 	if ds.interrupted() {
 		ds.finishRun()
 		return
@@ -165,6 +167,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	ds.setPhase(PhaseStrategy)
 	baseline := ds.testPresetAllDomains(phase1Presets[0])
 	ds.storeResultsMulti(phase1Presets[0], baseline)
+	ds.noteECHOnlyBlocks(baseline)
 	ds.determineBest()
 	ds.markUnresolved(baseline)
 	ds.markBadLinks(baseline)
@@ -408,9 +411,18 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 			}
 		}
 
-		if domainResult.BestSuccess {
+		switch {
+		case domainResult.BestSuccess && domainResult.BestPreset == presetECHStrip:
+			log.DiscoveryLogf("  ✓ [%s] Best: %s, no packet changes: the set removes the ECH key from DNS answers, so browsers name the site, not %s", di.Domain, presetECHStrip, domainResult.ECHCoverName)
+			log.DiscoveryLogf("    the set also lists %s, so it removes the key of every site that names it as cover", domainResult.ECHCoverName)
+		case domainResult.BestSuccess:
 			log.DiscoveryLogf("  ✓ [%s] Best: %s (%.2f KB/s)", di.Domain, domainResult.BestPreset, domainResult.BestSpeed/1024)
-		} else {
+			if domainResult.ECHCoverName != "" && domainResult.BestPreset != presetNoBypass {
+				log.DiscoveryLogf("    the set also targets %s, the name the site's ECH ClientHellos carry", domainResult.ECHCoverName)
+			}
+		case domainResult.ECHOnlyBlock:
+			log.DiscoveryLogf("  ✗ [%s] Loaded once without ECH, then failed the confirmation; no strategy gets an ECH ClientHello naming %s through", di.Domain, domainResult.ECHCoverName)
+		default:
 			log.DiscoveryLogf("  ✗ [%s] No working DPI bypass found", di.Domain)
 		}
 	}

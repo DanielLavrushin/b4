@@ -2,6 +2,10 @@
 
 Releases of the community hub service, published from the `b4hub` repository. The router changelog is `changelog.md` at the repository root.
 
+## [1.4.0] - 2026-10-12
+
+- ADDED: **Sets with the switch that removes ECH keys from DNS answers, which b4 1.87.0 can share, keep it through the hub** - `dns.strip_ech` crosses like the other DNS settings and marks the set as needing b4 1.87.0, where a hub built from an earlier b4 drops it as an unknown field.
+
 ## [1.3.0] - 2026-09-27
 
 - CHANGED: **Moderation actions return at once and the catalogue is published by a background build** - a build starts 1.5 seconds after the last change, an automatic hide included, and no later than 10 seconds after the first, a failed build stays on Overview and the Catalogue page with its error until one succeeds, and the Catalogue page keeps a history of what each build changed. Approved mirrors are checked every 10 minutes and once before the first build after a start instead of at every build, and `b4hub moderate`, extended to sets, keys, reports, mirrors, builds and the audit log, leaves a build request that a running hub picks up within about ten seconds.

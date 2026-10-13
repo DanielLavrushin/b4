@@ -89,6 +89,7 @@ const (
 	dnsActionIPv6Disabled     = "dns-ipv6-disabled"
 	dnsActionIPv6Stripped     = "dns-ipv6-stripped"
 	dnsActionHealStripped     = "dns-heal+ipv6-stripped"
+	dnsActionECHStripped      = "dns-ech-stripped"
 	dnsActionServfail         = "dns-servfail"
 	dnsActionFallbackCache    = "dns-fallback-cache"
 	dnsActionFallbackUpstream = "dns-fallback-upstream"
@@ -561,11 +562,11 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				}
 			}
 
-			if filtered, action := w.filterDNSAnswer(w.getConfig(), healSet, domain, payload, false); filtered != nil {
+			if filtered, action, actor := w.filterDNSAnswer(w.getConfig(), healSet, domain, clientMac, payload, false); filtered != nil {
 				if !vc.drop() {
 					return 0
 				}
-				logDNSEvent("UDP", healSet, domain, clientIP, dnsServerIP, dport, clientMac, action)
+				logDNSEvent("UDP", actor, domain, clientIP, dnsServerIP, dport, clientMac, action)
 				client := append(net.IP(nil), clientIP...)
 				server := append(net.IP(nil), dnsServerIP...)
 				send := func() { w.sendDNSResponseToClient(ipVersion, server, client, dport, filtered) }
@@ -647,8 +648,9 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		w.learnAnswerInline(cfg, set, ips, nil)
 	}
 
-	if filtered, action := w.filterDNSAnswer(cfg, set, queryDomain, resp, false); filtered != nil {
-		logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), action)
+	clientMac := w.getMacByIp(clientIP.String())
+	if filtered, action, actor := w.filterDNSAnswer(cfg, set, queryDomain, clientMac, resp, false); filtered != nil {
+		logDNSEvent("UDP", actor, queryDomain, clientIP, originalDst, clientPort, clientMac, action)
 		resp = filtered
 	}
 

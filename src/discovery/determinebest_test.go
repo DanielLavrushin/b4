@@ -292,3 +292,28 @@ func TestFailedResultsCarryNoSet(t *testing.T) {
 		t.Error("a first success is provisional until the confirmation pass")
 	}
 }
+
+func TestPlainFixWinsTheGroupOverACachedStrategy(t *testing.T) {
+	for _, fix := range []string{presetECHStrip, presetDNSRedirect, presetAltAddress} {
+		cached := presetResult(CheckStatusComplete, 9000)
+		cached.Phase = PhaseCached
+		plain := presetResult(CheckStatusComplete, 1000)
+		plain.Phase = PhaseBaseline
+		ds := suiteWithResults(map[string]map[string]*DomainPresetResult{
+			"site.example": {
+				presetNoBypass:      presetResult(CheckStatusFailed, 0),
+				"cached-1-incoming": cached,
+				fix:                 plain,
+			},
+		})
+		ds.determineBest()
+		ds.buildStrategyGroups()
+
+		if got := ds.domainResults["site.example"].BestPreset; got != fix {
+			t.Fatalf("%s: BestPreset = %q", fix, got)
+		}
+		if len(ds.StrategyGroups) != 1 || ds.StrategyGroups[0].WinnerPreset != fix {
+			t.Fatalf("%s: groups = %+v, want the plain fix to win over a faster cached strategy", fix, ds.StrategyGroups)
+		}
+	}
+}

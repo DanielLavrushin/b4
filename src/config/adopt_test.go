@@ -263,3 +263,21 @@ func TestAdoptStrategyKeepsTheTargetsFailClosedChoice(t *testing.T) {
 		t.Fatalf("the new resolver is adopted, the set's fail-closed choice and pins stay, got %+v", target.DNS)
 	}
 }
+
+func TestAdoptStrategyTakesTheECHSwitchWithoutDroppingIt(t *testing.T) {
+	target := NewSetConfig()
+	found := NewSetConfig()
+	found.DNS.StripECH = true
+
+	target.AdoptStrategy(&found)
+	if !target.DNS.StripECH {
+		t.Fatal("a discovered ech-strip fix has no redirect, yet its switch must be adopted")
+	}
+
+	redirect := NewSetConfig()
+	redirect.DNS = DNSConfig{Enabled: true, TargetDNS: "9.9.9.9"}
+	target.AdoptStrategy(&redirect)
+	if !target.DNS.StripECH || target.DNS.TargetDNS != "9.9.9.9" {
+		t.Fatalf("adopting a redirect turned the set's ECH switch off: %+v", target.DNS)
+	}
+}
