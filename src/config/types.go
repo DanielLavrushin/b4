@@ -693,6 +693,7 @@ type DNSConfig struct {
 	FragmentQuery bool                `json:"fragment_query"`
 	Strict        bool                `json:"strict"`
 	Pins          map[string][]string `json:"pins,omitempty"`
+	StripECH      bool                `json:"strip_ech"`
 }
 
 type DNSSystemConfig struct {

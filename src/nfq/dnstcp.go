@@ -219,6 +219,26 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		srcMac = s.worker.getMacByIp(clientIP.String())
 	}
 
+	upstream := &dnsTCPUpstream{server: s, ip: origIP, port: origPort, err: origErr}
+	defer upstream.close()
+
+	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
+		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !cfg.HasECHStrip() || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
+			upstream.close()
+			s.passthrough(client, origIP, origPort, origErr, query)
+			return false
+		}
+		resp := upstream.exchange(cfg, query)
+		if resp == nil {
+			return false
+		}
+		if echless, actor := s.worker.stripECHKeys(cfg, set, domain, srcMac, resp, true); echless != nil {
+			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionECHStripped)
+			resp = echless
+		}
+		return writeDNSTCPMessage(client, resp, cfg.DNSTCPIOTimeout()) == nil
+	}
+
 	for {
 		cfg := s.worker.getConfig()
 		ioTimeout := cfg.DNSTCPIOTimeout()
@@ -234,7 +254,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 
 		domain, ok := dns.ParseQueryDomain(query)
 		if !ok {
-			s.passthrough(client, origIP, origPort, origErr, query)
+			if relay(cfg, nil, "", query) {
+				continue
+			}
 			return
 		}
 		domain = strings.ToLower(domain)
@@ -242,7 +264,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		matched, set := s.worker.getMatcher().MatchSNIWithSource(domain, srcMac)
 		if !matched {
 			log.Tracef("DNS TCP: %s matched no set (src %s), forwarding unchanged", dns.SafeName(domain), srcMac)
-			s.passthrough(client, origIP, origPort, origErr, query)
+			if relay(cfg, nil, domain, query) {
+				continue
+			}
 			return
 		}
 
@@ -277,7 +301,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		useDoH := set.DNS.DoHURL != ""
 		if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionPassthrough)
-			s.passthrough(client, origIP, origPort, origErr, query)
+			if relay(cfg, set, domain, query) {
+				continue
+			}
 			return
 		}
 
@@ -286,7 +312,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			targetIP = net.ParseIP(set.DNS.TargetDNS)
 			if targetIP == nil {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionBadTarget)
-				s.passthrough(client, origIP, origPort, origErr, query)
+				if relay(cfg, set, domain, query) {
+					continue
+				}
 				return
 			}
 		}
@@ -294,7 +322,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if queryFromTarget(set, clientIP) {
 			log.Tracef("DNS TCP: %s comes from %s, the set's own resolver passing a lookup upstream, forwarding it unchanged (set %s)", dns.SafeName(domain), clientIP, set.Name)
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFromTarget)
-			s.passthrough(client, origIP, origPort, origErr, query)
+			if relay(cfg, set, domain, query) {
+				continue
+			}
 			return
 		}
 
@@ -377,8 +407,8 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			s.worker.learnAnswerInline(cfg, set, ips, s.ctx.Done())
 		}
 
-		if filtered, action := s.worker.filterDNSAnswer(cfg, set, domain, resp, true); filtered != nil {
-			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, action)
+		if filtered, action, actor := s.worker.filterDNSAnswer(cfg, set, domain, srcMac, resp, true); filtered != nil {
+			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, action)
 			resp = filtered
 		}
 
@@ -475,6 +505,68 @@ func (s *dnsTCPServer) forwardOneQuery(origIP net.IP, origPort int, origErr erro
 		return nil
 	}
 	return resp
+}
+
+func standardQuery(msg []byte) bool {
+	return len(msg) >= 3 && (msg[2]>>3)&0x0f == 0
+}
+
+type dnsTCPUpstream struct {
+	server *dnsTCPServer
+	ip     net.IP
+	port   int
+	err    error
+	conn   net.Conn
+}
+
+func (u *dnsTCPUpstream) exchange(cfg *config.Config, query []byte) []byte {
+	if u.err != nil || u.ip == nil || u.port == 0 || u.port == u.server.port {
+		return nil
+	}
+	for {
+		fresh := u.conn == nil
+		if fresh {
+			conn, err := dialDNSTCPUpstream(u.server.ctx, cfg, net.JoinHostPort(u.ip.String(), fmt.Sprintf("%d", u.port)))
+			if err != nil {
+				log.Tracef("DNS TCP: relay dial %s:%d failed: %v", u.ip, u.port, err)
+				return nil
+			}
+			u.conn = conn
+		}
+		if resp := u.roundTrip(cfg, query); resp != nil {
+			return resp
+		}
+		u.close()
+		if fresh {
+			return nil
+		}
+	}
+}
+
+func (u *dnsTCPUpstream) roundTrip(cfg *config.Config, query []byte) []byte {
+	ioTimeout := cfg.DNSTCPIOTimeout()
+	if writeDNSTCPMessage(u.conn, query, ioTimeout) != nil {
+		return nil
+	}
+	if u.conn.SetReadDeadline(time.Now().Add(ioTimeout)) != nil {
+		return nil
+	}
+	resp, err := readDNSTCPMessage(u.conn)
+	if err != nil {
+		log.Tracef("DNS TCP: relay read from %s:%d failed: %v", u.ip, u.port, err)
+		return nil
+	}
+	if len(resp) < 2 || resp[0] != query[0] || resp[1] != query[1] {
+		return nil
+	}
+	return resp
+}
+
+func (u *dnsTCPUpstream) close() {
+	if u.conn != nil {
+		_ = u.conn.Close()
+		u.conn = nil
+	}
 }
 
 func (s *dnsTCPServer) passthrough(client net.Conn, origIP net.IP, origPort int, origErr error, firstQuery []byte) {

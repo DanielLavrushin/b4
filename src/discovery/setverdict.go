@@ -120,7 +120,7 @@ func coveringPresets(domains []string, results map[string]*DomainDiscoveryResult
 
 func plainFixName(name string) bool {
 	switch name {
-	case presetNoBypass, presetAltAddress, presetDNSRedirect:
+	case presetNoBypass, presetAltAddress, presetDNSRedirect, presetECHStrip:
 		return true
 	}
 	return false

@@ -78,6 +78,12 @@ const DNS_VERDICT_STYLES: Record<string, DnsVerdictStyle> = {
     variant: "outlined",
     icon: "dns",
   },
+  "ech-stripped": {
+    label: "no ech",
+    color: "info",
+    variant: "outlined",
+    icon: "dns",
+  },
   sinkhole: {
     label: "sinkhole",
     color: "error",

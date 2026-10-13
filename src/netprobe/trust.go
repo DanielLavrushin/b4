@@ -27,7 +27,7 @@ func TLSRoots() (*x509.CertPool, bool) {
 	rootsOnce.Do(func() {
 		rootsPool, rootsVerify = loadTLSRoots(x509.SystemCertPool, extraCASources)
 		if !rootsVerify {
-			log.Warnf("No CA certificates found in the system store or under /opt/etc/ssl, so the watchdog and the DPI Detector do not verify TLS certificates")
+			log.Warnf("No CA certificates found in the system store or under /opt/etc/ssl, so the watchdog, the DPI Detector and Discovery's ECH probes do not verify TLS certificates")
 		}
 	})
 	return rootsPool, rootsVerify

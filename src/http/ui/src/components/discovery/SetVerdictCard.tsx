@@ -199,7 +199,9 @@ export const SetVerdictCard = ({
     !!set && dropTargets.length > 0 && keptUrls.length < baseUrls.length;
 
   const plainFix =
-    verdict.family === "alt_address" || verdict.family === "dns_redirect";
+    verdict.family === "alt_address" ||
+    verdict.family === "dns_redirect" ||
+    verdict.family === "ech_strip";
   const canApply =
     !!set &&
     !!strategy &&

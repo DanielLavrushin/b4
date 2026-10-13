@@ -10,7 +10,7 @@ A set decides which resolver answers the domains it targets. Everything else kee
 | Transport | How it reaches b4 | When |
 | --- | --- | --- |
 | UDP port 53 | Queue rules in `PREROUTING` and `OUTPUT`: for requests (`dport 53`) in the raw table, ahead of conntrack (priority -300 on nftables), and for replies (`sport 53`) in the mangle table. On KeeneticOS, and with iptables on kernels before 4.18 (4.14 before 4.14.173) whose raw table cannot queue packets, requests are not queued: a rule at the top of mangle `INPUT`, `FORWARD` and `OUTPUT` sends b4 a copy of each one with NFLOG and the request goes on at once, while replies are queued as before; see [Copied requests](#copied-requests) | Always, while b4 is running |
-| TCP port 53 | A `nat` `REDIRECT` into a local listener, port 5453 by default | Only while at least one enabled set has a DNS server or a DoH URL, and **Intercept DNS over TCP** is on |
+| TCP port 53 | A `nat` `REDIRECT` into a local listener, port 5453 by default | Only while at least one enabled set has a DNS server, a DoH URL or [Remove ECH keys from DNS answers](#removing-ech-keys) on, and **Intercept DNS over TCP** is on |
 
 Both cases cover traffic forwarded from the network and queries the router makes for itself. The queries b4 sends on a client's behalf and its lookups through a set's resolver carry the [queue mark](./guides/marks.md#the-queue-mark), and these rules skip packets that carry it, so such a query never re-enters the queue through them. Lookups b4 makes through the router's own resolver carry no mark.
 
@@ -175,6 +175,32 @@ The switch is **Force IPv4 for matched domains**, on the **IPv4 / IPv6** card un
 This carries the same limit as everything else on this page. A client that resolves through its own DoH, DoT or DoQ never shows b4 the answer, so it keeps the IPv6 addresses and reaches the site over IPv6 anyway. The same goes for an address already in the client's cache or written into a hosts file. The fallback narrows the gap, it does not close it: the complete fix is turning IPv6 support on so that b4 has rules on both families.
 :::
 
+## Removing ECH keys
+
+A site behind a CDN that supports Encrypted ClientHello (ECH) publishes an ECH key in its HTTPS record (DNS type 65). A browser that gets the key encrypts the real ClientHello and sends an outer one that names the CDN's shared public name instead of the site: `cloudflare-ech.com` for every Cloudflare site. Where DPI drops ClientHellos that carry the ECH extension together with that name, every such site stops loading at once in a browser that uses ECH, such as Chrome, while the same sites load with an ordinary ClientHello.
+
+**Remove ECH keys from DNS answers** (`dns.strip_ech`) takes the key out of HTTPS and SVCB answers. A browser that gets no key sends an ordinary ClientHello naming the site, as it does for a site without ECH.
+
+| The key is removed from an answer when | Example |
+| --- | --- |
+| The queried name matches a set with the switch on | `steamdb.info` listed in the set |
+| A key in the answer names, as its public name, a domain that a set with the switch on matches | `cloudflare-ech.com` listed in the set: the answers of every Cloudflare site lose their key, whatever the site |
+
+- Only the `ech` parameter goes, together with its entry in `mandatory`, and `mandatory` itself when nothing is left in it. The ALPN list, the address hints and the TTL stay as they were.
+- The RRSIG records over the changed records are dropped and the AD flag is cleared, since the changed records no longer match their signatures.
+- It acts on forwarded answers, on answers from the set's own resolver and on DNS over TCP: TCP port 53 is intercepted while an enabled set has the switch on.
+- Changed answers appear as `dns-ech-stripped` in [the result](#reading-the-result), under the set whose switch removed the key.
+
+The switch sits under **Encrypted ClientHello (ECH)** on the **DNS Redirect** tab of **DNS & Routing** in the set editor, and works whether or not the redirect is enabled. [Discovery](./discovery.md#sites-with-an-ech-key) proposes a set with it on, and no packet changes, for a site that loads with an ordinary ClientHello but not with ECH.
+
+:::warning It only reaches DNS that b4 can see
+A browser that resolves through its own secure DNS (DoH in Chrome or Firefox), or a device with Android Private DNS, gets the key unchanged and keeps sending ECH. A key already in a client's cache is used until its answer expires.
+:::
+
+:::info A set that lists the public name
+Listing `cloudflare-ech.com` in a set also makes the set match, by server name, the ECH ClientHellos of clients that kept the key, and its TCP and UDP settings apply to them. A set made only to remove keys changes no packets, so those ClientHellos pass unchanged.
+:::
+
 ## Global DNS settings
 
 The **DNS** card on **Settings, Core, DNS** holds the interception of DNS over TCP and the timeouts, which apply to every set.
@@ -262,6 +288,7 @@ Every decision b4 makes about a query is recorded on the [Traffic](./connections
 | `dns-ipv6-disabled` | A query that arrived over IPv6 matched a set while IPv6 support is off, so it was forwarded unchanged instead of being handled by the set |
 | `dns-ipv6-stripped` | The IPv6 addresses were removed from the answer, leaving the client the IPv4 path b4 protects. See [The IPv4 fallback](#the-ipv4-fallback) |
 | `dns-heal+ipv6-stripped` | Both of the above happened to the same answer: unreachable addresses were replaced and the IPv6 addresses were removed |
+| `dns-ech-stripped` | The ECH key was removed from an HTTPS or SVCB answer, so the browser names the site in an ordinary ClientHello. See [Removing ECH keys](#removing-ech-keys) |
 
 :::note
 In TUN mode, requests to port 53 are captured, but replies are only seen when b4 carries the whole default route. Redirects and pins work either way, since b4 produces those answers itself. When b4 cannot install its NOTRACK rule, TUN captures only the device's own traffic, so the DNS of other hosts reaches b4 only when a resolver on this device handles it, see [Packet engine](settings/core.md#packet-engine).

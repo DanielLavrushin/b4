@@ -47,7 +47,7 @@ The options under the field change how the run probes, not what it looks for:
 A run passes through six phases, shown as steps while it is in progress:
 
 1. **DNS**. Each site is resolved and its answers checked, unless the DNS check is off. A site whose known addresses do not serve it is also scanned for alternative addresses here. A pinned name skips this step.
-2. **Without bypass**. Each site is fetched with no strategy at all. A site that loads here through an honest answer is reported as needing no bypass and takes no further part in the search, though it is still fetched through every preset for comparison. A site that loads only once its DNS answer is corrected, or only through an alternative address, is reported as found with a set that changes no packets. A site whose `https://` link is answered here with HTTP 400 takes no further part either, see **Link answers 400** under [Results](#results).
+2. **Without bypass**. Each site is fetched with no strategy at all. A site that loads here through an honest answer is reported as needing no bypass and takes no further part in the search, though it is still fetched through every preset for comparison. A site that loads only once its DNS answer is corrected, only through an alternative address, or only once the ClientHello carries no ECH (see [Sites with an ECH key](#sites-with-an-ech-key)), is reported as found with a set that changes no packets. A site whose `https://` link is answered here with HTTP 400 takes no further part either, see **Link answers 400** under [Results](#results).
 3. **Strategies**. The remembered winners, then the 18 built-in opening presets, are applied one at a time and every site is fetched through each.
 4. **Tuning**. For every technique family that produced a working preset, its parameters are varied on the site that responded best to it, and the result is checked against all sites.
 5. **Combining**. When two or more families worked, presets that combine them are tried.
@@ -98,7 +98,7 @@ Every site the run was given gets one verdict. In a run for a set, these cards a
 
 | Verdict | Meaning |
 | --- | --- |
-| **Strategy found** | Something made the site load: a preset, a corrected DNS answer, or an alternative address. The card names the winner, describes it in a sentence, and lists what the set would do. The badge says whether the confirmation pass succeeded. |
+| **Strategy found** | Something made the site load: a preset, a corrected DNS answer, an alternative address, or an answer without its ECH key. The card names the winner, describes it in a sentence, and lists what the set would do. The badge says whether the confirmation pass succeeded. |
 | **No bypass needed** | The site loaded without any strategy through the address its resolver gave. There is nothing to apply, and a set for it would only push its traffic through packet changes it does not need. |
 | **Address blocked** | Connections to every known address of the site fail before any TLS is spoken, and no other region's DNS answer reached it either, so no packet strategy can help. Such a site needs a set routed through a [proxy or VPN](./sets/routing). |
 | **Intercepted by the gateway** | The TCP handshake to the site's addresses is answered by the first hop in front of this host, not by the site: a SYN sent with a hop limit of one, which nothing beyond the first hop can answer, gets a reply. A transparent proxy on that gateway carries the connection, so no packet strategy from this host reaches past it, and the run stops after the DNS phase when every address is served that way. Behind another router, b4 has to run on that router or this host has to be excluded from its redirect; when b4 is the router itself, the ISP does this at its edge and only a set routed through a proxy helps. When another region's DNS answer gives an address that routes normally, the search goes on with that address instead. |
@@ -134,6 +134,7 @@ Only the bypass strategy is written:
 | Fragmentation and fake packets | Taken from the result. |
 | UDP and QUIC | Unchanged. Discovery fetches over TCP and never tests QUIC, so it has nothing to say about the UDP settings. |
 | DNS redirect | Changed only when the result uses a DNS redirect. The set's own pins are kept. |
+| Removing ECH keys | Turned on when the result removes ECH keys. A write never turns it off. |
 | DNS pins | A pin the result carries for a domain replaces the set's pins for that domain. Pins for other domains stay. |
 | Targets, name, routing, escalation | Unchanged, including the TLS and IP version filters. |
 | Discovery addresses | Unchanged, unless **Use these addresses as the set's discovery URLs** is checked. |
@@ -150,7 +151,7 @@ The dialog also warns when the chosen set matches a site but another set actuall
 
 The suggested name is the site without its prefix and its top-level domain, `instagram` for `www.instagram.com`, with a suffix when the run was limited to a TLS or IP version. For a single site, the match can be shortened to a parent domain so that the set also covers subdomains. Creating a new set moves the site out of any enabled set that lists it, since a domain listed in two enabled sets is handled by whichever comes first in the list.
 
-The created set goes to the top of the list and is enabled at once. Its targets are the sites named, plus any geosite or geoip category b4 associates with them through its built-in CDN table, when the corresponding database is installed. The addresses learned during the run are not carried over, so the set matches by server name. A DNS redirect is included only for a site whose resolver was found to be lying, and a [pin](./dns#pinned-addresses) for a site that needed an alternative address, for a name given under **Pinned addresses**, and for a site whose resolver lies when no resolver a set can use returns its address. The check addresses of the sites the set is created for become its [Discovery addresses](./sets/discovery), so the set can be searched again, or watched, on the same pages.
+The created set goes to the top of the list and is enabled at once. Its targets are the sites named, the public name of a site's [ECH key](#sites-with-an-ech-key), and any geosite or geoip category b4 associates with them through its built-in CDN table, when the corresponding database is installed. The addresses learned during the run are not carried over, so the set matches by server name. A DNS redirect is included only for a site whose resolver was found to be lying, and a [pin](./dns#pinned-addresses) for a site that needed an alternative address, for a name given under **Pinned addresses**, and for a site whose resolver lies when no resolver a set can use returns its address. The check addresses of the sites the set is created for become its [Discovery addresses](./sets/discovery), so the set can be searched again, or watched, on the same pages.
 
 **Copy JSON** copies this set without creating it, in the JSON format of the set editor's [Import/Export](./sets/index.md#import-and-export) tab, whichever of the three choices is selected. The name in it is the suggested one unless **Set name** was changed.
 
@@ -170,6 +171,20 @@ A set with pins, or built for a site whose addresses were blocked, gets the IP b
 
 :::warning
 A probe made from a machine where b4 is already running goes through b4's own sets. A TLS check that passes there measures the bypass, not the network. Discovery's own probes skip the sets, so its verdict on an address is the raw one; a third-party tool run on the router only agrees with it while every set covering the site is disabled.
+:::
+
+## Sites with an ECH key
+
+After the DNS phase, Discovery asks the router's resolver for the HTTPS record of every site with an `https://` link. A site whose record carries an ECH key is probed the way a browser that has the key connects: every fetch sends Encrypted ClientHello, so the outer ClientHello names the key's public name (`cloudflare-ech.com` for every Cloudflare site) instead of the site, and every set the run builds for the site also targets that name, since it is the server name the DPI and b4 see. When the server has changed its key, the fetch is repeated with the key the server sends back, and the sets follow that key's public name; when the server turns ECH down without a key the probes can use, the fetch is repeated without ECH, as browsers do. A key the probes cannot use, such as one for a key exchange other than X25519, counts as no key. A run limited to TLS 1.2 looks up no keys.
+
+When the fetch without bypass fails with ECH, the same fetch without ECH loads the site, and two more fetches with ECH fail as well, the DPI drops ClientHellos that carry ECH and name the public name, not the site. The run reports the site as found with **ECH keys removed** (`ech-strip`): a set that changes no packets and has [Remove ECH keys from DNS answers](./dns#removing-ech-keys) on, so browsers that resolve through the router get no key and connect with an ordinary ClientHello. The set lists the public name as well, which extends the removal to every site whose key names it. The site then counts as needing no packet strategy; the opening presets are still tested for comparison, with ECH, and those that got through appear as other strategies. The confirmation fetches without ECH, as a browser behind the set connects.
+
+The result card of such a site is marked **ECH blocked**. The card says which public name the key gave, and so does the site's history entry.
+
+The lookup skips the sets, like the rest of Discovery's traffic. When the resolver in `/etc/resolv.conf` is a local cache, such as dnsmasq on the router itself, the answers it fetches from its upstream resolvers pass through b4. Where a set removes ECH keys and no include list limits it to specific [source devices](./sets/targets#source-devices), the cache then holds the answer without the key, and the probes send ordinary ClientHellos, as the browsers behind the router do. A remote resolver named directly in `/etc/resolv.conf` returns the key to Discovery.
+
+:::info
+A browser that resolves through its own secure DNS gets the key in any case and keeps sending ECH. For such a browser only a strategy that gets an ECH ClientHello past the DPI helps; the other strategies listed under an **ECH keys removed** result are the ones that did during the run.
 :::
 
 ## History
