@@ -91,7 +91,7 @@ In TUN mode the signal also makes the TUN engine re-check its capture chain `B4_
 
 ## DNS queries {#dns-queries}
 
-KeeneticOS runs the iptables raw table after conntrack, and b4 does not use it there: queueing a DNS query in that table does not keep the second of two queries a device sends at once from one socket from being dropped, see the **Requests and conntrack** note in [What b4 intercepts](../dns.md#what-b4-intercepts). On KeeneticOS b4 holds no DNS query. It takes a copy of each one with NFLOG and acts on the resolver's reply, as described in [Copied requests](../dns.md#copied-requests). At start the log says:
+KeeneticOS runs the iptables raw table after conntrack, and b4 does not use it there: queueing a DNS query in that table does not keep the second of two queries a device sends at once from one socket from being dropped, see the **Requests and conntrack** note in [What b4 intercepts](../dns.md#what-b4-intercepts). With a kernel before 4.18 (4.14 before 4.14.173), which drops that second query, b4 holds no DNS query on KeeneticOS. It takes a copy of each one with NFLOG and acts on the resolver's reply, as described in [Copied requests](../dns.md#copied-requests). At start the log says:
 
 ```text
 IPTABLES[iptables]: KeeneticOS runs its raw table after conntrack (kernel 4.9-ndm-5), so b4 copies DNS queries with NFLOG (group 537) instead of holding them in its queue
@@ -99,7 +99,9 @@ IPTABLES[iptables]: KeeneticOS runs its raw table after conntrack (kernel 4.9-nd
 
 System Info then shows **DNS queries copied, not held (NFLOG)** as available under **Kernel Capabilities**. The group is `queue.start_num`, 537 by default.
 
-The router's resolver still receives every query and resolves the name, also one that a set sends to a DoH resolver, and caches the real answer. For a name a set blocks, pins or sends to its own resolver, a device gets b4's answer in place of the router resolver's reply, or from b4 directly when that reply has not come within 20 ms; a device that asks a resolver outside the router gets b4's answer only when that resolver replies. A `nat` rule that moves DNS to another port is not supported. A rebuild of the tables by NDMS removes the copy rules along with b4's other rules, and queries pass without a copy until b4 restores them, see [Firewall rewrites](#firewall-rewrites).
+With a later kernel, b4 queues DNS queries in the mangle table, as it does the replies, logs no such line, and System Info shows neither DNS row under **Kernel Capabilities**.
+
+While b4 works on copies, the router's resolver still receives every query and resolves the name, also one that a set sends to a DoH resolver, and caches the real answer. For a name a set blocks, pins or sends to its own resolver, a device gets b4's answer in place of the router resolver's reply, or from b4 directly when that reply has not come within 20 ms; a device that asks a resolver outside the router gets b4's answer only when that resolver replies. A `nat` rule that moves DNS to another port is not supported. A rebuild of the tables by NDMS removes the copy rules along with b4's other rules, and queries pass without a copy until b4 restores them, see [Firewall rewrites](#firewall-rewrites).
 
 ## Troubleshooting
 

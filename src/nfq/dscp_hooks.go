@@ -62,6 +62,15 @@ func learnAnswerAwait(cfg *config.Config, set *config.SetConfig, ips []net.IP) (
 	return joinWaits(waits, dscpLearnAwait(cfg, set, ips)), routed
 }
 
+func (w *Worker) learnAnswerAddresses(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, ips []net.IP, cancel <-chan struct{}) {
+	if len(ips) == 0 || clientIP == nil {
+		return
+	}
+	observeDNSNames(clientIP, domain, ips)
+	w.storeHostHints(clientIP, set, domain, ips)
+	w.learnAnswerInline(cfg, set, ips, cancel)
+}
+
 func (w *Worker) learnAnswerInline(cfg *config.Config, set *config.SetConfig, ips []net.IP, cancel <-chan struct{}) {
 	waits := dscpLearnAwait(cfg, set, ips)
 	if set.Routing.Enabled && !config.RoutingIsBlock(set.Routing.Mode) && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery && RoutingHandleDNSFunc != nil {

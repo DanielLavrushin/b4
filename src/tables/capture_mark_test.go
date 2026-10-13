@@ -1,9 +1,73 @@
 package tables
 
 import (
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/engine"
 )
+
+func markMatches(t *testing.T, spec []string, mark uint64) bool {
+	t.Helper()
+	for i := 0; i+1 < len(spec); i++ {
+		if spec[i] != "--mark" {
+			continue
+		}
+		value, mask, _ := strings.Cut(spec[i+1], "/")
+		v, err1 := strconv.ParseUint(value, 0, 32)
+		m, err2 := strconv.ParseUint(mask, 0, 32)
+		if err1 != nil || err2 != nil {
+			t.Fatalf("mark match %q does not parse", spec[i+1])
+		}
+		return mark&m == v
+	}
+	t.Fatalf("no mark match in %q", spec)
+	return false
+}
+
+func TestTheConnmarkSaveLeavesB4sAnswersToDevicesAlone(t *testing.T) {
+	for _, mark := range []uint{0x8000, 0x400000} {
+		manager := dnsQueryTestManager(t, nil)
+		manager.cfg.Queue.Mark = mark
+		manager.connmarkSupport = map[string]bool{backendIPTables: true, backendIP6Tables: true}
+		m, err := manager.buildManifest()
+		if err != nil {
+			t.Fatalf("buildManifest: %v", err)
+		}
+		saves := 0
+		for _, r := range m.Rules {
+			if r.Table != "mangle" || r.Chain != "OUTPUT" || !strings.Contains(strings.Join(r.Spec, " "), "CONNMARK") {
+				continue
+			}
+			saves++
+			if !markMatches(t, r.Spec, uint64(mark)) {
+				t.Errorf("mark %#x: %q skips b4's own connections, so the replies to them reach b4's queue", mark, r.Spec)
+			}
+			if markMatches(t, r.Spec, uint64(mark|engine.ClientMark)) {
+				t.Errorf("mark %#x: %q also saves the mark of b4's answers to devices, so b4 then skips the later lookups the device sends from that socket", mark, r.Spec)
+			}
+		}
+		if saves != 2 {
+			t.Fatalf("mark %#x: %d CONNMARK rules in mangle OUTPUT, want one per binary", mark, saves)
+		}
+
+		teardown, err := manager.buildTeardownManifest()
+		if err != nil {
+			t.Fatalf("buildTeardownManifest: %v", err)
+		}
+		legacy := iptMarkAccept(mark)
+		for _, ipt := range []string{backendIPTables, backendIP6Tables} {
+			found := false
+			for _, s := range manifestSpecs(teardown, ipt, "mangle", "OUTPUT") {
+				found = found || strings.HasPrefix(s, "-m mark --mark "+legacy+" -j CONNMARK")
+			}
+			if !found {
+				t.Errorf("mark %#x, %s: the teardown leaves the CONNMARK rule an earlier version installed, which keeps marking the connections of b4's answers", mark, ipt)
+			}
+		}
+	}
+}
 
 func TestCaptureChainLetsB4sOwnPacketsThroughFirst(t *testing.T) {
 	for _, tc := range []struct {

@@ -187,13 +187,13 @@ func (w *Worker) noteDNSOutcome(cfg *config.Config, set *config.SetConfig, domai
 	return w.tryEscalate(cfg, set, domain, srcMac, nil, escalateReasonDNS)
 }
 
-func (w *Worker) escalateAfterDNS(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query, resp []byte, clientIP net.IP, clientPort uint16, originalDst net.IP) bool {
+func (w *Worker) escalateAfterDNS(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query, resp []byte, clientIP net.IP, clientPort uint16, originalDst net.IP, direct bool) bool {
 	srcMac := w.getMacByIp(clientIP.String())
 	next := w.noteDNSOutcome(cfg, set, domain, srcMac, dnsQueryType(query, resp), resp)
 	if next == nil {
 		return false
 	}
-	if !w.answerViaSetInline(ipVersion, cfg, next, domain, query, clientIP, clientPort, originalDst) {
+	if !w.answerViaSetInline(ipVersion, cfg, next, domain, query, clientIP, clientPort, originalDst, direct) {
 		return false
 	}
 	logDNSEvent("UDP", next, domain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), dnsActionEscalatePrefix+next.Name)
@@ -260,7 +260,7 @@ func dnsRedirectInFlight(domain string, qtype uint16) bool {
 	return dnsRedirects[dnsFailureKey(domain, qtype)] > 0
 }
 
-func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP) bool {
+func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP, direct bool) bool {
 	if w == nil || cfg == nil || set == nil || len(query) == 0 {
 		return false
 	}
@@ -268,7 +268,7 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 	if pinned := w.pinnedAnswer(set, query, domain); pinned != nil {
 		_, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
 		w.waitRoutesInline(routeWaits, nil)
-		w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, pinned)
+		w.answerClient(direct, query, ipVersion, originalDst, clientIP, clientPort, pinned)
 		return true
 	}
 
@@ -278,7 +278,7 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 	}
 
 	delay := config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax)
-	w.resolveDNSRedirect(ipVersion, set, cfg, query, clientIP, clientPort, originalDst, targetIP, delay)
+	w.resolveDNSRedirect(ipVersion, set, cfg, query, clientIP, clientPort, originalDst, targetIP, delay, direct)
 	return true
 }
 
@@ -289,7 +289,7 @@ func (w *Worker) answerViaSet(vc *verdictCtx, ipVersion byte, cfg *config.Config
 
 	if pinned := w.pinnedAnswer(set, query, domain); pinned != nil {
 		_, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
-		send := func() { w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, pinned) }
+		send := func() { w.answerClient(true, query, ipVersion, originalDst, clientIP, clientPort, pinned) }
 		if !w.holdForRoutes(vc, routeWaits, domain, send) {
 			send()
 		}
@@ -314,7 +314,7 @@ func (w *Worker) answerViaSet(vc *verdictCtx, ipVersion byte, cfg *config.Config
 			<-dnsResolveInflight
 			w.wg.Done()
 		}()
-		w.resolveDNSRedirect(ipVersion, set, cfg, query, clientIP, clientPort, originalDst, targetIP, delay)
+		w.resolveDNSRedirect(ipVersion, set, cfg, query, clientIP, clientPort, originalDst, targetIP, delay, true)
 	}()
 	return true
 }
@@ -478,7 +478,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 						<-dnsResolveInflight
 						w.wg.Done()
 					}()
-					w.resolveDNSRedirect(ver, s, c, query, clientIP, clientPort, originalDst, targetIP, delay)
+					w.resolveDNSRedirect(ver, s, c, query, clientIP, clientPort, originalDst, targetIP, delay, false)
 				}(set, cfg)
 				return 0
 			} else {
@@ -573,6 +573,14 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 			}
 
 			if filtered, action, actor := w.filterDNSAnswer(w.getConfig(), healSet, domain, clientMac, payload, false); filtered != nil {
+				if added := addedAnswerIPs(payload, filtered); len(added) > 0 {
+					if answersQuery {
+						observeDNSNames(clientIP, domain, added)
+					}
+					w.storeHostHints(clientIP, healSet, domain, added)
+					waits, _ := learnAnswerAwait(w.getConfig(), healSet, added)
+					routeWaits = joinWaits(routeWaits, waits)
+				}
 				raw := inPlaceReply(vc, pkt, filtered)
 				if raw == nil && !vc.drop() {
 					return 0
@@ -615,7 +623,7 @@ func (w *Worker) releaseFilteredReply(vc *verdictCtx, raw []byte, ver byte, serv
 	w.sendDNSPacket(ver, server, client, dport, resp)
 }
 
-func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *config.Config, query []byte, clientIP net.IP, clientPort uint16, originalDst, targetIP net.IP, delay int) {
+func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *config.Config, query []byte, clientIP net.IP, clientPort uint16, originalDst, targetIP net.IP, delay int, direct bool) {
 	defer beginDNSRedirect(query)()
 	queryDomain, _ := dns.ParseQueryDomain(query)
 	queryDomain = strings.ToLower(queryDomain)
@@ -652,11 +660,11 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		if fallback == nil {
 			log.Warnf("DNS redirect: %s could not answer %s (%v) and nothing else could either, the client gets SERVFAIL (set: %s)",
 				dnsUpstreamLabel(source), dns.SafeName(queryDomain), err, set.Name)
-			if w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, nil, clientIP, clientPort, originalDst) {
+			if w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, nil, clientIP, clientPort, originalDst, direct) {
 				return
 			}
 			logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), dnsActionServfail)
-			w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, dns.BuildServfailResponse(query))
+			w.answerClient(direct, query, ipVersion, originalDst, clientIP, clientPort, dns.BuildServfailResponse(query))
 			return
 		}
 		log.Warnf("DNS redirect: %s could not answer %s (%v), falling back to %s (set: %s)",
@@ -668,19 +676,16 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		noteDNSSourceSuccess(source)
 	}
 
-	if !servedFallback && w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, resp, clientIP, clientPort, originalDst) {
+	if !servedFallback && w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, resp, clientIP, clientPort, originalDst, direct) {
 		return
 	}
 
-	if ips := dns.ParseResponseIPs(resp); len(ips) > 0 {
-		observeDNSNames(clientIP, queryDomain, ips)
-		w.storeHostHints(clientIP, set, queryDomain, ips)
-		w.learnAnswerInline(cfg, set, ips, nil)
-	}
+	w.learnAnswerAddresses(cfg, set, clientIP, queryDomain, dns.ParseResponseIPs(resp), nil)
 
 	clientMac := w.getMacByIp(clientIP.String())
 	if filtered, action, actor := w.filterDNSAnswer(cfg, set, queryDomain, clientMac, resp, false); filtered != nil {
 		logDNSEvent("UDP", actor, queryDomain, clientIP, originalDst, clientPort, clientMac, action)
+		w.learnAnswerAddresses(cfg, set, clientIP, queryDomain, addedAnswerIPs(resp, filtered), nil)
 		resp = filtered
 	}
 
@@ -688,7 +693,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		rememberDNSAnswer(queryDomain, query, resp)
 	}
 
-	w.sendDNSAnswerFor(query, ipVersion, originalDst, clientIP, clientPort, resp)
+	w.answerClient(direct, query, ipVersion, originalDst, clientIP, clientPort, resp)
 
 	upstream := set.DNS.TargetDNS
 	if set.DNS.DoHURL != "" {
@@ -713,6 +718,16 @@ var (
 		return nil
 	}
 )
+
+func (w *Worker) answerClient(direct bool, query []byte, ipVersion byte, originalDst, clientIP net.IP, clientPort uint16, resp []byte) {
+	if !direct {
+		w.sendDNSAnswerFor(query, ipVersion, originalDst, clientIP, clientPort, resp)
+		return
+	}
+	if len(resp) > 0 {
+		w.sendDNSPacket(ipVersion, originalDst, clientIP, clientPort, resp)
+	}
+}
 
 func (w *Worker) sendDNSResponseToClient(ipVersion byte, originalDst, clientIP net.IP, clientPort uint16, resp []byte) {
 	w.sendDNSAnswerFor(nil, ipVersion, originalDst, clientIP, clientPort, resp)

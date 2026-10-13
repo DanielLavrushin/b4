@@ -318,7 +318,7 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 	if cfg.Queue.Mark != 0 {
-		if err := n.addRule("output", "meta", "mark", "&", markAccept, "==", markAccept, "ct", "mark", "set", "ct", "mark", "|", markAccept); err != nil {
+		if err := n.addRule("output", "meta", "mark", "&", fmt.Sprintf("0x%x", markValue|engine.ClientMark), "==", markAccept, "ct", "mark", "set", "ct", "mark", "|", markAccept); err != nil {
 			log.Warnf("nftables: connmark save unavailable; b4's own marked connections (e.g. MTProto WS bridge upstream) will not be exempted from reply-side processing: %v", err)
 		}
 	}

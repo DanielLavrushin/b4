@@ -252,7 +252,7 @@ func dscpHookSites() []dscpHookSite {
 			tune(cfg, set)
 			log := stubDSCPHooks(t)
 			replies := watchReplies(t)
-			w.resolveDNSRedirect(IPv4, set, cfg, dns.BuildQuery("www.example.com", 2, dnsTypeA), net.ParseIP("192.168.1.100").To4(), 40000, net.ParseIP("192.168.1.1").To4(), nil, 0)
+			w.resolveDNSRedirect(IPv4, set, cfg, dns.BuildQuery("www.example.com", 2, dnsTypeA), net.ParseIP("192.168.1.100").To4(), 40000, net.ParseIP("192.168.1.1").To4(), nil, 0, false)
 			onlyAddress(t, oneReply(t, replies), "203.0.113.20")
 			return log.list()
 		}},
@@ -642,7 +642,7 @@ func TestDSCPHookHoldAndInlineWaits(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			w.resolveDNSRedirect(IPv4, set, cfg, dns.BuildQuery("www.example.com", 14, dnsTypeA), net.ParseIP("192.168.1.100").To4(), 40000, net.ParseIP("192.168.1.1").To4(), nil, 0)
+			w.resolveDNSRedirect(IPv4, set, cfg, dns.BuildQuery("www.example.com", 14, dnsTypeA), net.ParseIP("192.168.1.100").To4(), 40000, net.ParseIP("192.168.1.1").To4(), nil, 0, false)
 		}()
 		noReply(t, replies, 60*time.Millisecond, "the redirected answer was sent before its DSCP write landed")
 		if got := route.snapshot()["sync redirect"]; got != 1 {

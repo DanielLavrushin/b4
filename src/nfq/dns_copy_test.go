@@ -666,6 +666,11 @@ func TestDeadCopyListenerIsReopened(t *testing.T) {
 	if !waitFor(t, func() bool { return !pool.DNSQueryCopyAlive() }) {
 		t.Fatal("the listener still reads as alive after its reader stopped")
 	}
+	select {
+	case <-r.l.source.Load().done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the reader of the stopped listener never returned")
+	}
 	log.Flush()
 	if n := strings.Count(buf.String(), "the NFLOG copy of DNS queries stopped"); n != 1 {
 		t.Fatalf("the stop was logged %d times, want once: %q", n, buf.String())

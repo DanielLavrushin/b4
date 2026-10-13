@@ -459,14 +459,9 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		if (v6 && !cfg.Queue.IPv6Enabled) || (!v6 && !cfg.Queue.IPv4Enabled) {
 			continue
 		}
-		family, table := nftDNSTCPTable(v6)
-		if !nft.dnsTCPFamilyExists(v6) {
-			log.Tracef("Monitor: DNS-over-TCP nat table missing (%s)", family)
-			return false
-		}
-		dnsOut, err := nft.runNft("list", "table", family, table)
-		if err == nil && !strings.Contains(dnsOut, "redirect") {
-			log.Tracef("Monitor: DNS-over-TCP redirect rule missing (%s)", family)
+		if !nft.dnsTCPFamilyIntact(v6, cfg.MainInjectedMark(), cfg.DNSTCPListenPort()) {
+			family, table := nftDNSTCPTable(v6)
+			log.Tracef("Monitor: DNS-over-TCP nat rules missing (table %s %s, or the return for b4's own connections ahead of the redirect in %s or %s)", family, table, nftDNSTCPPreChain, nftDNSTCPOutChain)
 			return false
 		}
 	}

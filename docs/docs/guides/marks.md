@@ -67,7 +67,7 @@ them on the packets they take. Bit 16 is left free for XrayUI's `0x10000`.
 | --- | --- | --- |
 | 30 | `0x40000000` | The connection belongs to a set routed through an interface |
 | 0-14, 17 | `0x27fff` | The mark of that set, copied from the connection's first packet |
-| 15 by default | The queue mark, `0x8000` by default | NFQUEUE mode, on iptables when the connmark module is available: a packet carrying the queue mark left the router on this connection, including a fake or split segment b4 sent into a device's connection. b4's queue rules for packets entering the router skip such connections |
+| 15 by default | The queue mark, `0x8000` by default | NFQUEUE mode, on iptables when the connmark module is available: a packet carrying the queue mark left the router on this connection, including a fake or split segment b4 sent into a device's connection, but not a packet b4 sends toward a device. b4's queue rules for packets entering the router skip such connections |
 | all | `0xffffffff` | Discovery's probe connections, while a run is active |
 
 ### Socket marks
@@ -111,7 +111,7 @@ packet processing and through every set that carries the router's own traffic.
 | Sets routed through an interface | The packet mark's bits under `0x27fff`; the connection mark's bits under `0x27fff` and bit `0x40000000`. Masked, the other bits stay |
 | Proxy sets, iptables | The packet mark's bits under `0x1027fff`. Masked |
 | Proxy sets, nftables | The whole packet mark |
-| Packet processing | The queue-mark bits into the connection mark of every connection on which the router itself sends a packet with every bit of the queue mark, a device's connection that b4 sends fakes or split segments into included. NFQUEUE mode only; on nftables not for packets sent to `lo`, on iptables only with the connmark module. Masked |
+| Packet processing | The queue-mark bits into the connection mark of every connection on which the router itself sends a packet with every bit of the queue mark, a device's connection that b4 sends fakes or split segments into included. NFQUEUE mode only; not for a packet whose mark has bit `0x20000000` that the queue mark lacks, such as a DNS answer b4 sends to a device; on nftables not for packets sent to `lo`, on iptables only with the connmark module. Masked |
 | TUN capture | Bit `0x40000000` of the packet mark. Masked |
 | Discovery, during a run | The whole packet mark of a packet whose connection mark is exactly the flow mark, and the whole connection mark of a connection that carries a packet whose mark is exactly the flow mark; both get the flow mark |
 
@@ -129,11 +129,14 @@ carry Discovery's injected mark, with `0x20000000` added on the packets it sends
 its probes. The DNS queries b4 sends for clients and for its sets carry
 the queue mark too; its lookups through the router's own resolver carry no mark. Every rule
 below tests all bits of the queue mark at once, so other bits on the same packet do not hide
-it.
+it. The rule that writes the connection mark for the router's own packets also wants bit
+`0x20000000` clear, so a packet b4 sends toward a device does not mark the device's
+connection; with a queue mark that has bit `0x20000000` itself, the rule does not tell such
+packets apart.
 
 | Rule | nftables | iptables |
 | --- | --- | --- |
-| Router's own packets | `output`: `meta mark & 0x8000 == 0x8000 ct mark set ct mark \| 0x8000`, then `... accept` | mangle `OUTPUT`: `-m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000` (with the connmark module), then `... -j ACCEPT` |
+| Router's own packets | `output`: `meta mark & 0x20008000 == 0x8000 ct mark set ct mark \| 0x8000`, then `meta mark & 0x8000 == 0x8000 accept` | mangle `OUTPUT`: `-m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000` (with the connmark module), then `-m mark --mark 0x8000/0x8000 -j ACCEPT` |
 | Queue chain | `b4_chain`: `meta mark & 0x8000 == 0x8000 return` | `B4`: `-m mark --mark 0x8000/0x8000 -j RETURN` |
 | Packets entering the router | `prerouting`: `ct mark & 0x8000 == 0x8000 return` | `B4_PREROUTING`: `-m connmark --mark 0x8000/0x8000 -j RETURN` (with the connmark module) |
 | DNS queries, ahead of conntrack | `raw_prerouting`, `raw_output`: `meta mark & 0x8000 == 0x8000 return` | `B4_RAW`: `-m mark --mark 0x8000/0x8000 -j RETURN` |
@@ -188,9 +191,9 @@ in the set and its mark has no bit under `0x27fff` and not `0x40000`, unless the
 limited to source devices that are all given by IP address, and a block set rejects it by
 destination as usual. The queue chains of both backends, `b4_chain` and `B4`, and TUN
 capture skip it whatever the rest of its mark holds. In NFQUEUE mode, when the router sends
-it, b4 also copies the queue-mark bits into its connection mark (on nftables not for packets
-sent to `lo`, on iptables only with the connmark module), so its replies are skipped as
-well. A packet that reaches the queue anyway, on both backends through the rules for packets
+it, b4 also copies the queue-mark bits into its connection mark (not when its mark has bit
+`0x20000000` that the queue mark lacks, on nftables not for packets sent to `lo`, on iptables
+only with the connmark module), so its replies are skipped as well. A packet that reaches the queue anyway, on both backends through the rules for packets
 entering the router, which test only the connection mark, is released unchanged only when
 the rest of its mark lies within `0x27fff`, or when the mark has bit `0x200000` or `0x24bab`
 under `0x27fff`. wg-quick's `51820` (`0xca6c`), which it puts on
