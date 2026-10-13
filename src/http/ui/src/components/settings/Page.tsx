@@ -71,6 +71,7 @@ import {
 } from "@common/UnsavedChangesDialog";
 import { colors, spacing } from "@design";
 import { B4Config } from "@models/config";
+import { SETTINGS_PATH_LABEL_KEYS } from "@models/dialogLabels";
 const SETTINGS_DIFF_IGNORE = new Set(["sets", "available_ifaces", "revision"]);
 const SETTINGS_TAB_GROUPS: ChangeGroupDef[] = [
   {
@@ -290,6 +291,13 @@ export function SettingsPage() {
   const valueLabelsRef = useRef(
     new Map<string, ReadonlyMap<string, string>>(),
   );
+  const staticLabels = useMemo(() => {
+    const map = new Map<string, ReactNode>();
+    for (const [path, key] of Object.entries(SETTINGS_PATH_LABEL_KEYS)) {
+      map.set(path, t(key));
+    }
+    return map;
+  }, [t]);
   const staticValueLabels = useMemo(() => {
     const outer = new Map<string, ReadonlyMap<string, string>>();
     outer.set(
@@ -308,10 +316,10 @@ export function SettingsPage() {
     if (!dialogsOpen) return [];
     return buildChangeItems(
       changedLeaves,
-      snapshotLabels(),
+      new Map([...staticLabels, ...snapshotLabels()]),
       new Map([...staticValueLabels, ...valueLabelsRef.current]),
     );
-  }, [dialogsOpen, changedLeaves, snapshotLabels, staticValueLabels]);
+  }, [dialogsOpen, changedLeaves, snapshotLabels, staticLabels, staticValueLabels]);
   const changedValues = useMemo(
     () =>
       new Map<string, { before: unknown; after: unknown }>(

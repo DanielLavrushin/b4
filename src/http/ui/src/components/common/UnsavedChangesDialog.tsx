@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { Fragment, memo, useMemo } from "react";
 import type { ReactNode } from "react";
 import type { ChangedLeaf } from "@utils";
 import {
@@ -296,22 +296,20 @@ const SubgroupView = memo(function SubgroupView({
             <ChangeItemView key={item.path} item={item} groupLabel={groupLabel} t={t} />
           ));
         }
+        // Flat block: header as a divider, items level with it so a field
+        // reads as part of the block instead of a nested outlier.
         return (
-          <Box key={blockLabel} sx={{ pl: 1.5 }}>
+          <Fragment key={blockLabel}>
             <Typography
               variant="caption"
-              sx={{ color: colors.text.secondary, fontWeight: 600, display: "block", mb: 0.5, ml: -1.5 }}
+              sx={{ color: colors.text.secondary, fontWeight: 600, display: "block", mb: 0.5 }}
             >
               {blockLabel}
             </Typography>
             {blockItems.map((item) => (
-              // Label hidden as a block-header duplicate: align the value
-              // with the header instead of indenting it under nothing.
-              <Box key={item.path} sx={item.label === blockLabel ? { ml: -1.5 } : undefined}>
-                <ChangeItemView item={item} groupLabel={groupLabel} t={t} />
-              </Box>
+              <ChangeItemView key={item.path} item={item} groupLabel={groupLabel} t={t} />
             ))}
-          </Box>
+          </Fragment>
         );
       })}
     </Box>
