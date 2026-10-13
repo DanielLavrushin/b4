@@ -68,8 +68,13 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
     labelKey: "settings.coreTabs.engine",
     prefixes: ["queue", "system.ip_health", "system.dns.keep_ipv6_answers"],
     blocks: [
+      { prefixes: ["queue.mode", "queue.interfaces", "queue.tun"], labelKey: "settings.Feature.engineMode" },
+      { prefixes: ["queue.ipv4", "queue.ipv6", "system.dns.keep_ipv6_answers"], labelKey: "settings.Feature.protoFeatures" },
       { prefixes: ["system.ip_health"], labelKey: "settings.IPHealth.title" },
-      { prefixes: ["queue"], labelKey: "settings.Queue.title" },
+      {
+        prefixes: ["queue.start_num", "queue.mark", "queue.threads", "queue.tcp_conn_bytes_limit", "queue.udp_conn_bytes_limit"],
+        labelKey: "settings.Queue.title",
+      },
     ],
     Icon: NetworkIcon,
     pick: (c) => [
@@ -94,6 +99,7 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
     blocks: [
       { prefixes: ["system.tables.masquerade"], labelKey: "settings.Feature.natMasquerade" },
       { prefixes: ["system.tables.dscp"], labelKey: "settings.Feature.dscpSettings" },
+      { prefixes: ["queue.mss_clamp"], labelKey: "settings.MSSClamping.title" },
     ],
     Icon: FilterIcon,
     pick: (c) => [c.system.tables, c.queue.mss_clamp],

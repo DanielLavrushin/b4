@@ -106,23 +106,17 @@ export const groupChangeItems = (
   defs: ChangeGroupDef[],
   subDefs?: SubDef[],
 ): UnsavedChangeGroup[] => {
-  // Longest prefix per def, computed once: ranking matches the previous
-  // filter+stable-sort by longest, including first-on-tie order.
-  const longest = defs.map((def) =>
-    def.prefixes.reduce((m, p) => Math.max(m, p.length), 0),
-  );
-  const subLongest = subDefs?.map((def) =>
-    def.prefixes.reduce((m, p) => Math.max(m, p.length), 0),
-  );
+  // Winner = longest *matched* prefix; first wins on ties. Ranking by the
+  // def's longest prefix overall would let a sibling prefix win the match.
   const groups = new Map<string, UnsavedChangeGroup>();
   for (const item of items) {
     let match: ChangeGroupDef | undefined;
-    let matchIndex = -1;
-    for (let i = 0; i < defs.length; i++) {
-      if (!matchPrefix(defs[i].prefixes, item.path)) continue;
-      if (matchIndex === -1 || longest[i] > longest[matchIndex]) {
-        match = defs[i];
-        matchIndex = i;
+    let matchLen = -1;
+    for (const def of defs) {
+      const hit = matchPrefix(def.prefixes, item.path);
+      if (hit && hit.length > matchLen) {
+        match = def;
+        matchLen = hit.length;
       }
     }
     const key = match ? match.labelKey : item.path.split(".")[0];
@@ -134,27 +128,23 @@ export const groupChangeItems = (
     let subLabel: string | undefined;
     let subMatch: SubDef | undefined;
     if (subDefs) {
-      let subMatchIndex = -1;
-      for (let i = 0; i < subDefs.length; i++) {
-        if (!matchPrefix(subDefs[i].prefixes, item.path)) continue;
-        if (
-          subMatchIndex === -1 ||
-          (subLongest?.[i] ?? 0) > (subLongest?.[subMatchIndex] ?? 0)
-        ) {
-          subMatch = subDefs[i];
-          subMatchIndex = i;
+      let subMatchLen = -1;
+      for (const def of subDefs) {
+        const hit = matchPrefix(def.prefixes, item.path);
+        if (hit && hit.length > subMatchLen) {
+          subMatch = def;
+          subMatchLen = hit.length;
         }
       }
       subLabel = subMatch?.label;
     }
     let blockLabel: string | undefined;
     if (subMatch?.blocks) {
-      let best = -1;
+      let blockLen = -1;
       for (const block of subMatch.blocks) {
-        if (!matchPrefix(block.prefixes, item.path)) continue;
-        const len = block.prefixes.reduce((m, p) => Math.max(m, p.length), 0);
-        if (best === -1 || len > best) {
-          best = len;
+        const hit = matchPrefix(block.prefixes, item.path);
+        if (hit && hit.length > blockLen) {
+          blockLen = hit.length;
           blockLabel = block.label;
         }
       }
@@ -178,8 +168,6 @@ const subgroupOf = (item: UnsavedChangeItem): string[] => {
     : item.path;
   return rest ? rest.split(".").slice(0, -1) : [];
 };
-const subgroupLabel = (segments: string[]): string =>
-  segments.map((s) => capitalize(humanizeSegment(s))).join(" / ");
 const formatEntry = (entry: unknown): string => {
   if (typeof entry === "string" || typeof entry === "number") return String(entry);
   if (entry !== null && typeof entry === "object") {
@@ -227,8 +215,9 @@ const ChangeItemView = memo(function ChangeItemView({
       {typeof item.label === "string" &&
       item.label !== subgroupOf(item).join(".") &&
       item.label !== groupLabel &&
+      item.label !== item.blockLabel &&
       item.path !== item.groupPrefix ? (
-        <Tooltip title={subgroupLabel(subgroupOf(item))} placement="top-start">
+        <Tooltip title={item.path} placement="top-start">
           <Typography variant="body2" sx={{ width: "fit-content" }}>
             {item.label}
           </Typography>
