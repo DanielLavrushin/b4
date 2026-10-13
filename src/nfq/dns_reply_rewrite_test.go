@@ -213,6 +213,44 @@ func TestAnUnclaimedCopiedReplyIsRewrittenInPlace(t *testing.T) {
 	sent.none(t, 30*time.Millisecond, "b4 sent a packet of its own although it rewrote the reply in place")
 }
 
+func TestAnEscalatedAnswerIsNotSwallowedByAPendingClaim(t *testing.T) {
+	injectAfter(t, time.Minute)
+	stubRouteAwait(t)
+	primary := config.NewSetConfig()
+	primary.Id, primary.Name, primary.Enabled = "primary", "primary", true
+	primary.Targets.DomainsToMatch = []string{"youtube.com"}
+	primary.Escalate.To = "backup"
+	primary.Escalate.DNSThreshold = 1
+	backup := config.NewSetConfig()
+	backup.Id, backup.Name, backup.Enabled = "backup", "backup", true
+	backup.Targets.DomainsToMatch = []string{"youtube.com"}
+	backup.DNS.Pins = map[string][]string{"youtube.com": {"142.250.74.14"}}
+	r := newCopyRig(t, nil, &primary, &backup)
+	sent := captureSends(t)
+
+	key := dnsClaimKey{ver: IPv4, txid: 0x1234, qtype: dnsTypeA, name: "youtube.com"}
+	c, outcome := r.l.claims.begin(key, netip.MustParseAddr(rigDevice), netip.MustParseAddr(rigRouter), 40000, time.Now(), time.Minute)
+	if outcome != claimBeginPrimary {
+		t.Fatalf("begin: outcome %d", outcome)
+	}
+	defer r.l.finish(&dnsCopyDecision{claim: c})
+
+	q := newFakeModQueue()
+	nx := dns.BuildBlockResponse(dns.BuildQuery("youtube.com", 0x1234, dnsTypeA))
+	handleReply(t, r.w, &verdictCtx{id: 12, q: q}, replyRaw(nx, rigRouter, rigDevice, 40000))
+
+	if v := q.now(t); v.verdict != nfqueue.NfDrop {
+		t.Fatalf("verdict %d, want the failed reply dropped for the next set's answer", v.verdict)
+	}
+	onlyAddress(t, sent.one(t)[28:], "142.250.74.14")
+	r.l.claims.mu.Lock()
+	attached := c.resp != nil
+	r.l.claims.mu.Unlock()
+	if attached {
+		t.Fatal("the next set's answer to a reply was stored on a copy still being decided, which may never deliver it")
+	}
+}
+
 func TestAFilteredReplyIsNotSwallowedByAPendingClaim(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

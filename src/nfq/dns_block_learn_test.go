@@ -45,7 +45,7 @@ func TestBlockSetsLearnNoAddressesFromDNSAnswers(t *testing.T) {
 			w, cfg := dscpHookWorker(t, set)
 			set.DNS.Enabled, set.DNS.DoHURL = true, dscpDoHServer(t, w, "203.0.113.12")
 			replies := watchReplies(t)
-			w.resolveDNSRedirect(IPv4, set, cfg, dns.BuildQuery("www.example.com", 3, dnsTypeA), client, 40000, server, nil, 0)
+			w.resolveDNSRedirect(IPv4, set, cfg, dns.BuildQuery("www.example.com", 3, dnsTypeA), client, 40000, server, nil, 0, false)
 			onlyAddress(t, oneReply(t, replies), "203.0.113.12")
 		}},
 		{"a pinned answer", "await", func(t *testing.T, set *config.SetConfig) {
