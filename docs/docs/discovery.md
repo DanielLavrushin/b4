@@ -181,7 +181,7 @@ When the fetch without bypass fails with ECH, the same fetch without ECH loads t
 
 The result card of such a site is marked **ECH blocked**. The card says which public name the key gave, and so does the site's history entry.
 
-The key is read as the router's clients get it. On a router where a set already removes ECH keys, the answer arrives without one, and the probes send ordinary ClientHellos, as the browsers behind that router do.
+The lookup skips the sets, like the rest of Discovery's traffic. When the resolver in `/etc/resolv.conf` is a local cache, such as dnsmasq on the router itself, the answers it fetches from its upstream resolvers pass through b4. Where a set removes ECH keys and no include list limits it to specific [source devices](./sets/targets#source-devices), the cache then holds the answer without the key, and the probes send ordinary ClientHellos, as the browsers behind the router do. A remote resolver named directly in `/etc/resolv.conf` returns the key to Discovery.
 
 :::info
 A browser that resolves through its own secure DNS gets the key in any case and keeps sending ECH. For such a browser only a strategy that gets an ECH ClientHello past the DPI helps; the other strategies listed under an **ECH keys removed** result are the ones that did during the run.
