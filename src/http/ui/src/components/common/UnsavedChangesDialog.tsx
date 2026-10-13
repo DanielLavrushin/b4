@@ -201,6 +201,16 @@ const formatValue = (
   }
 };
 
+// Label duplicates the subgroup path remainder, the group header, or the
+// block header — in all three cases there is nothing to show. A path exactly
+// equal to the group prefix is NOT a duplicate: groupLabel equality above
+// already covers real repeats (e.g. set "name").
+const isLabelVisible = (item: UnsavedChangeItem, groupLabel: string): boolean =>
+  typeof item.label === "string" &&
+  item.label !== subgroupOf(item).join(".") &&
+  item.label !== groupLabel &&
+  item.label !== item.blockLabel;
+
 const ChangeItemView = memo(function ChangeItemView({
   item,
   groupLabel,
@@ -212,11 +222,7 @@ const ChangeItemView = memo(function ChangeItemView({
 }>) {
   return (
     <Box>
-      {typeof item.label === "string" &&
-      item.label !== subgroupOf(item).join(".") &&
-      item.label !== groupLabel &&
-      item.label !== item.blockLabel &&
-      item.path !== item.groupPrefix ? (
+      {isLabelVisible(item, groupLabel) ? (
         <Tooltip title={item.path} placement="top-start">
           <Typography variant="body2" sx={{ width: "fit-content" }}>
             {item.label}
@@ -296,8 +302,9 @@ const SubgroupView = memo(function SubgroupView({
             <ChangeItemView key={item.path} item={item} groupLabel={groupLabel} t={t} />
           ));
         }
-        // Flat block: header as a divider, items level with it so a field
-        // reads as part of the block instead of a nested outlier.
+        // Flat block: header as a divider. Items with a visible label read
+        // as sub-settings of the block (indented); headerless values stay
+        // level with the header they belong to.
         return (
           <Fragment key={blockLabel}>
             <Typography
@@ -307,7 +314,12 @@ const SubgroupView = memo(function SubgroupView({
               {blockLabel}
             </Typography>
             {blockItems.map((item) => (
-              <ChangeItemView key={item.path} item={item} groupLabel={groupLabel} t={t} />
+              <Box
+                key={item.path}
+                sx={isLabelVisible(item, groupLabel) ? { pl: 1.5 } : undefined}
+              >
+                <ChangeItemView item={item} groupLabel={groupLabel} t={t} />
+              </Box>
             ))}
           </Fragment>
         );
