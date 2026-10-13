@@ -81,7 +81,7 @@ ip6tables -w -t mangle -D POSTROUTING -j B4
 ip6tables -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
-ip6tables -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+ip6tables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -103,7 +103,7 @@ iptables -w -t mangle -D POSTROUTING -j B4
 iptables -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
-iptables -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -198,8 +198,8 @@ iptables -w -t mangle -C B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE
 iptables -w -t mangle -I B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t mangle -C B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -A B4 -m mark --mark 0x24bab/0x27fff -j RETURN
-iptables -w -t mangle -C B4 -m mark --mark 0x200000/0x200000 -j RETURN
-iptables -w -t mangle -A B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables -w -t mangle -C B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
+iptables -w -t mangle -A B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -C B4 -m mark --mark 0x23445/0x27fff -j RETURN
 iptables -w -t mangle -A B4 -m mark --mark 0x23445/0x27fff -j RETURN
 iptables -w -t mangle -C B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -345,7 +345,7 @@ ip6tables -w -t mangle -D POSTROUTING -j B4
 ip6tables -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
-ip6tables -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+ip6tables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -374,8 +374,8 @@ iptables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --conn
 iptables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
-iptables -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
-iptables -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -479,8 +479,8 @@ iptables -w -t mangle -C B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE
 iptables -w -t mangle -I B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t mangle -C B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -A B4 -m mark --mark 0x24bab/0x27fff -j RETURN
-iptables -w -t mangle -C B4 -m mark --mark 0x200000/0x200000 -j RETURN
-iptables -w -t mangle -A B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables -w -t mangle -C B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
+iptables -w -t mangle -A B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -C B4 -m mark --mark 0x23445/0x27fff -j RETURN
 iptables -w -t mangle -A B4 -m mark --mark 0x23445/0x27fff -j RETURN
 iptables -w -t mangle -C B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -624,7 +624,7 @@ ip6tables -w -t mangle -D POSTROUTING -j B4
 ip6tables -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
-ip6tables -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+ip6tables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -653,8 +653,8 @@ iptables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --conn
 iptables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
-iptables -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
-iptables -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -758,8 +758,8 @@ iptables -w -t mangle -C B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE
 iptables -w -t mangle -I B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t mangle -C B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -A B4 -m mark --mark 0x24bab/0x27fff -j RETURN
-iptables -w -t mangle -C B4 -m mark --mark 0x200000/0x200000 -j RETURN
-iptables -w -t mangle -A B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables -w -t mangle -C B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
+iptables -w -t mangle -A B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -C B4 -m mark --mark 0x23445/0x27fff -j RETURN
 iptables -w -t mangle -A B4 -m mark --mark 0x23445/0x27fff -j RETURN
 iptables -w -t mangle -C B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -903,7 +903,7 @@ ip6tables -w -t mangle -D POSTROUTING -j B4
 ip6tables -w -t mangle -D B4 -p udp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:8 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
-ip6tables -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+ip6tables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -932,8 +932,8 @@ iptables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --conn
 iptables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 0:19 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
-iptables -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
-iptables -w -t mangle -D B4 -m mark --mark 0x200000/0x200000 -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
