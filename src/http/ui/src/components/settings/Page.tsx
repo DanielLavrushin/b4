@@ -72,26 +72,22 @@ import {
 import { colors, spacing } from "@design";
 import { B4Config } from "@models/config";
 const SETTINGS_DIFF_IGNORE = new Set(["sets", "available_ifaces", "revision"]);
-const SETTINGS_CHANGE_GROUPS: ChangeGroupDef[] = [
-  { prefixes: ["queue"], labelKey: "settings.Queue.title" },
-  { prefixes: ["system.tables.masquerade"], labelKey: "settings.Feature.natMasquerade" },
-  { prefixes: ["system.tables.dscp"], labelKey: "settings.Feature.dscpSettings" },
-  { prefixes: ["system.tables"], labelKey: "settings.Feature.firewallFeatures" },
-  { prefixes: ["system.dns"], labelKey: "settings.Dns.title" },
-  { prefixes: ["system.socks5"], labelKey: "settings.Socks5.title" },
-  { prefixes: ["system.ip_health"], labelKey: "settings.IPHealth.title" },
-  { prefixes: ["system.mtproto"], labelKey: "settings.MTProto.title" },
-  { prefixes: ["system.api"], labelKey: "settings.Api.ipinfoTitle" },
-  { prefixes: ["system.ai"], labelKey: "settings.Ai.title" },
-  { prefixes: ["system.web_server.mcp"], labelKey: "settings.Mcp.title" },
-  { prefixes: ["system.web_server"], labelKey: "settings.WebServer.title" },
-  { prefixes: ["system.hub"], labelKey: "settings.Hub.title" },
-  { prefixes: ["system.geo"], labelKey: "settings.Geo.title" },
-  { prefixes: ["system.checker"], labelKey: "settings.Checker.title" },
-  { prefixes: ["system.logging"], labelKey: "settings.Logging.loggingTitle" },
-  { prefixes: ["system.memory_limit"], labelKey: "settings.Logging.title" },
-  { prefixes: ["system.timezone"], labelKey: "settings.Logging.title" },
-  { prefixes: ["system.update"], labelKey: "settings.Logging.title" },
+const SETTINGS_TAB_GROUPS: ChangeGroupDef[] = [
+  {
+    prefixes: ["queue", "system.tables", "system.dns", "system.socks5", "system.ip_health"],
+    labelKey: "settings.tabs.core",
+  },
+  {
+    prefixes: ["system.logging", "system.memory_limit", "system.timezone", "system.update", "system.web_server"],
+    labelKey: "settings.tabs.system",
+  },
+  { prefixes: ["system.geo"], labelKey: "settings.tabs.geodat" },
+  { prefixes: ["system.checker"], labelKey: "settings.tabs.discovery" },
+  { prefixes: ["system.mtproto"], labelKey: "settings.tabs.mtproto" },
+  {
+    prefixes: ["system.api", "system.ai", "system.web_server.mcp", "system.hub"],
+    labelKey: "settings.tabs.api",
+  },
 ];
 const changed = (pick: (c: B4Config) => unknown, a: B4Config, b: B4Config) =>
   JSON.stringify(pick(a)) !== JSON.stringify(pick(b));
@@ -291,10 +287,11 @@ export function SettingsPage() {
   );
   const labelsRef = useRef(new Map<string, ReactNode>());
   const snapshotLabels = useCallback(() => new Map(labelsRef.current), []);
-  const changeItems: UnsavedChangeItem[] = buildChangeItems(
-    changedLeaves,
-    snapshotLabels(),
-  );
+  const dialogsOpen = showResetDialog || blocker.state === "blocked";
+  const changeItems: UnsavedChangeItem[] = useMemo(() => {
+    if (!dialogsOpen) return [];
+    return buildChangeItems(changedLeaves, snapshotLabels());
+  }, [dialogsOpen, changedLeaves, snapshotLabels]);
   const changedValues = useMemo(
     () =>
       new Map<string, { before: unknown; after: unknown }>(
@@ -305,13 +302,36 @@ export function SettingsPage() {
       ),
     [changedLeaves],
   );
+
+  const settingsSubDefs = useMemo(
+    () => [
+      ...CORE_SECTIONS.filter((s) => s.prefixes.length > 0).map((s) => ({
+        prefixes: s.prefixes,
+        label: t(s.labelKey),
+      })),
+      ...SYSTEM_SECTIONS.filter((s) => s.prefixes.length > 0).map((s) => ({
+        prefixes: s.prefixes,
+        label: t(s.labelKey),
+      })),
+      { prefixes: ["system.api"], label: t("settings.Api.ipinfoTitle") },
+      { prefixes: ["system.ai"], label: t("settings.Ai.title") },
+      { prefixes: ["system.web_server.mcp"], label: t("settings.Mcp.title") },
+      { prefixes: ["system.hub"], label: t("settings.Hub.title") },
+      { prefixes: ["system.geo"], label: t("settings.tabs.geodat") },
+      { prefixes: ["system.checker"], label: t("settings.tabs.discovery") },
+      { prefixes: ["system.mtproto"], label: t("settings.tabs.mtproto") },
+    ],
+    [t],
+  );
   const changeGroups = useMemo(
     () =>
-      groupChangeItems(changeItems, SETTINGS_CHANGE_GROUPS).map((group) => ({
-        ...group,
-        label: t(group.label),
-      })),
-    [changeItems, t],
+      dialogsOpen
+        ? groupChangeItems(changeItems, SETTINGS_TAB_GROUPS, settingsSubDefs).map((group) => ({
+            ...group,
+            label: t(group.label),
+          }))
+        : [],
+    [dialogsOpen, changeItems, settingsSubDefs, t],
   );
 
   const sectionState = useMemo(() => {
