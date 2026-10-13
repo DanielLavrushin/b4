@@ -662,6 +662,7 @@ var diagB4Chains = []diagChainRef{
 	{"mangle", "B4_DSCP"},
 	{"mangle", "B4_DNSCOPY"},
 	{"nat", "B4_MASQ"},
+	{"nat", "B4_DNSTCP"},
 	{"raw", "B4_RAW"},
 }
 
