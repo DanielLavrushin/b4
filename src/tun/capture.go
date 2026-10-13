@@ -285,7 +285,7 @@ func (r *routeManager) captureChainRules(excl, local []string) []captureRule {
 	rules := []captureRule{
 		{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", r.mark, r.mark), "-j", "RETURN"}},
 		{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", defaultClientMark, defaultClientMark), "-j", "RETURN"}},
-		{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", config.SelfDialNoDPIBit, config.SelfDialNoDPIBit), "-j", "RETURN"}},
+		{spec: []string{"-m", "mark", "--mark", config.SelfDialSkipMarkMatch(), "-j", "RETURN"}},
 		{spec: []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", config.TelegramBridgeMark, config.PerSetRouteMarkBits), "-j", "RETURN"}},
 	}
 	for _, set := range excl {
