@@ -389,11 +389,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if next := s.escalationTarget(cfg, set, domain, srcMac, qtype, resp, servedFallback); next != nil {
 			if alt, aerr := s.answerVia(next, cfg, query, domain, clientIP); aerr == nil && len(alt) > 0 {
 				s.logEvent(next, domain, clientIP, origIP, clientPort, srcMac, dnsActionEscalatePrefix+next.Name)
-				if ips := dns.ParseResponseIPs(alt); len(ips) > 0 && clientIP != nil {
-					observeDNSNames(clientIP, domain, ips)
-					s.worker.storeHostHints(clientIP, next, domain, ips)
-					s.worker.learnAnswerInline(cfg, next, ips, s.ctx.Done())
-				}
+				s.worker.learnAnswerAddresses(cfg, next, clientIP, domain, dns.ParseResponseIPs(alt), s.ctx.Done())
 				if writeDNSTCPMessage(client, alt, ioTimeout) != nil {
 					return
 				}
@@ -401,14 +397,11 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			}
 		}
 
-		if ips := dns.ParseResponseIPs(resp); len(ips) > 0 && clientIP != nil {
-			observeDNSNames(clientIP, domain, ips)
-			s.worker.storeHostHints(clientIP, set, domain, ips)
-			s.worker.learnAnswerInline(cfg, set, ips, s.ctx.Done())
-		}
+		s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, dns.ParseResponseIPs(resp), s.ctx.Done())
 
 		if filtered, action, actor := s.worker.filterDNSAnswer(cfg, set, domain, srcMac, resp, true); filtered != nil {
 			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, action)
+			s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, addedAnswerIPs(resp, filtered), s.ctx.Done())
 			resp = filtered
 		}
 

@@ -573,6 +573,14 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 			}
 
 			if filtered, action, actor := w.filterDNSAnswer(w.getConfig(), healSet, domain, clientMac, payload, false); filtered != nil {
+				if added := addedAnswerIPs(payload, filtered); len(added) > 0 {
+					if answersQuery {
+						observeDNSNames(clientIP, domain, added)
+					}
+					w.storeHostHints(clientIP, healSet, domain, added)
+					waits, _ := learnAnswerAwait(w.getConfig(), healSet, added)
+					routeWaits = joinWaits(routeWaits, waits)
+				}
 				raw := inPlaceReply(vc, pkt, filtered)
 				if raw == nil && !vc.drop() {
 					return 0
@@ -672,15 +680,12 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		return
 	}
 
-	if ips := dns.ParseResponseIPs(resp); len(ips) > 0 {
-		observeDNSNames(clientIP, queryDomain, ips)
-		w.storeHostHints(clientIP, set, queryDomain, ips)
-		w.learnAnswerInline(cfg, set, ips, nil)
-	}
+	w.learnAnswerAddresses(cfg, set, clientIP, queryDomain, dns.ParseResponseIPs(resp), nil)
 
 	clientMac := w.getMacByIp(clientIP.String())
 	if filtered, action, actor := w.filterDNSAnswer(cfg, set, queryDomain, clientMac, resp, false); filtered != nil {
 		logDNSEvent("UDP", actor, queryDomain, clientIP, originalDst, clientPort, clientMac, action)
+		w.learnAnswerAddresses(cfg, set, clientIP, queryDomain, addedAnswerIPs(resp, filtered), nil)
 		resp = filtered
 	}
 

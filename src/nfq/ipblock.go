@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"net"
+	"slices"
 	"strconv"
 	"time"
 
@@ -250,6 +251,17 @@ func (w *Worker) filterDNSAnswer(cfg *config.Config, set *config.SetConfig, doma
 		return out, dnsActionIPv6Stripped, set
 	}
 	return nil, "", nil
+}
+
+func addedAnswerIPs(before, after []byte) []net.IP {
+	had := dns.ParseResponseIPs(before)
+	var added []net.IP
+	for _, ip := range dns.ParseResponseIPs(after) {
+		if !slices.ContainsFunc(had, ip.Equal) {
+			added = append(added, ip)
+		}
+	}
+	return added
 }
 
 func ipv6AnswersKept(cfg *config.Config, set *config.SetConfig) bool {
