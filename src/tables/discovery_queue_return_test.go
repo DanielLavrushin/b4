@@ -47,7 +47,7 @@ func TestDiscoverySteeringKeepsItsMarksOutOfTheIptablesQueueChain(t *testing.T) 
 		for _, mark := range []string{"0x8001", "0x8002"} {
 			want := bin + " -w -t mangle -I B4 1 -m mark --mark " + mark + "/0xffffffff -j RETURN"
 			if discoveryCallIndex(*calls, want) < 0 {
-				t.Errorf("mangle POSTROUTING jumps to B4, whose queue rules have no return for Discovery's marks, so the main queue gets Discovery's probes and applies the live set's strategy on top of the one under test; missing %q", want)
+				t.Errorf("mangle POSTROUTING jumps to B4, whose queue-mark return misses a Discovery mark that lacks a bit of the queue mark, so the main queue gets Discovery's probes and applies the live set's strategy on top of the one under test; missing %q", want)
 			}
 		}
 	}

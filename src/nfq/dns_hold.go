@@ -15,6 +15,10 @@ var (
 )
 
 func (w *Worker) holdForRoutes(vc *verdictCtx, waits []<-chan struct{}, domain string, release func()) bool {
+	if vc != nil && vc.copy != nil {
+		vc.copy.waits = joinWaits(vc.copy.waits, waits)
+		return false
+	}
 	if len(waits) == 0 || vc == nil || vc.q == nil {
 		return false
 	}

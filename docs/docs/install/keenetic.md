@@ -29,7 +29,7 @@ Keenetic NDMS does not ship all the netfilter kernel modules b4 needs out of the
 
 1. In the router web interface: **System settings** → **Component options**
 2. **Netfilter** - the base netfilter component - is enabled
-3. Once Netfilter is enabled, a new option appears: **Xtables-addons for Netfilter** (provides `xt_connbytes` and other extensions b4 relies on)
+3. Once Netfilter is enabled, a new option appears: **Xtables-addons for Netfilter**
 4. The changes are applied, followed by a router reboot or a component reload
 
 Then, over SSH, the iptables userspace is installed:
@@ -89,6 +89,18 @@ kill -USR1 $(cat /var/run/b4.pid)
 
 In TUN mode the signal also makes the TUN engine re-check its capture chain `B4_TUN` and the jumps into it at once. The engine logs a rebuilt chain at the WARN level as `TUN: capture chain B4_TUN lost N of M rules (removed outside b4) ...`, whether the hook or the poll found it, and the tables monitor's lines cover only the masquerade, MSS clamp, DSCP and routing-set rules. The poll interval in this mode is at least 10 seconds.
 
+## DNS queries {#dns-queries}
+
+KeeneticOS runs the iptables raw table after conntrack, and b4 does not use it there: queueing a DNS query in that table does not keep the second of two queries a device sends at once from one socket from being dropped, see the **Requests and conntrack** note in [What b4 intercepts](../dns.md#what-b4-intercepts). On KeeneticOS b4 holds no DNS query. It takes a copy of each one with NFLOG and acts on the resolver's reply, as described in [Copied requests](../dns.md#copied-requests). At start the log says:
+
+```text
+IPTABLES[iptables]: KeeneticOS runs its raw table after conntrack (kernel 4.9-ndm-5), so b4 copies DNS queries with NFLOG (group 537) instead of holding them in its queue
+```
+
+System Info then shows **DNS queries copied, not held (NFLOG)** as available under **Kernel Capabilities**. The group is `queue.start_num`, 537 by default.
+
+The router's resolver still receives every query and resolves the name, also one that a set sends to a DoH resolver, and caches the real answer. For a name a set blocks, pins or sends to its own resolver, a device gets b4's answer in place of the router resolver's reply, or from b4 directly when that reply has not come within 20 ms; a device that asks a resolver outside the router gets b4's answer only when that resolver replies. A `nat` rule that moves DNS to another port is not supported. A rebuild of the tables by NDMS removes the copy rules along with b4's other rules, and queries pass without a copy until b4 restores them, see [Firewall rewrites](#firewall-rewrites).
+
 ## Troubleshooting
 
 After the service starts, the log is worth checking:
@@ -98,5 +110,7 @@ cat /var/log/b4/errors.log
 ```
 
 The line `xt_connbytes kernel module is not available` means the Netfilter components were not enabled correctly - see [Netfilter components](#netfilter-components) above, where both **Netfilter** and **Xtables-addons for Netfilter** have to be active.
+
+The line `b4 cannot copy DNS queries with NFLOG (...)` means b4 holds DNS queries in its queue after conntrack, and a device that asks for a name's IPv4 and IPv6 addresses at once often loses the second answer. The brackets give the reason, such as a module that did not load, `xt_NFLOG` or `nfnetlink_log`. System Info shows **DNS queries copied, not held (NFLOG)** as unavailable under **Kernel Capabilities**, with the missing modules and a line naming the component to enable; the [Netfilter components](#netfilter-components) above are the place to check.
 
 If the log is empty (or has no errors), the b4 web interface should be reachable on the router's LAN IP.

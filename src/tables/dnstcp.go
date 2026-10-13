@@ -68,8 +68,8 @@ func hasNATRedirectSupport(ipt string, port int) bool {
 	return supported
 }
 
-func (manager *IPTablesManager) dnsTCPMarkAccept() string {
-	mark := manager.cfg.MainInjectedMark()
+func dnsTCPMarkAccept(cfg *config.Config) string {
+	mark := cfg.MainInjectedMark()
 	return fmt.Sprintf("0x%x/0x%x", mark, mark)
 }
 
@@ -81,18 +81,18 @@ func dnsTCPRedirectSpec(port int) []string {
 	return []string{"-p", "tcp", "--dport", "53", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", port)}
 }
 
-func dnsTCPRulesPresent(ipt string, port int) bool {
+func dnsTCPRulesPresent(ipt string, port int, markAccept string) bool {
 	im := &IPTablesManager{}
 	return im.existsRule(ipt, "nat", "PREROUTING", dnsTCPJumpSpec()) &&
 		im.existsRule(ipt, "nat", "OUTPUT", dnsTCPJumpSpec()) &&
+		im.existsRule(ipt, "nat", dnsTCPChainName, iptMarkReturn(markAccept)) &&
 		im.existsRule(ipt, "nat", dnsTCPChainName, dnsTCPRedirectSpec(port))
 }
 
 func (manager *IPTablesManager) buildDNSTCPManifest(ipt string) ([]Chain, []Rule) {
 	chains := []Chain{{manager: manager, IPT: ipt, Table: "nat", Name: dnsTCPChainName}}
 	rules := []Rule{
-		{manager: manager, IPT: ipt, Table: "nat", Chain: dnsTCPChainName, Action: "A",
-			Spec: []string{"-m", "mark", "--mark", manager.dnsTCPMarkAccept(), "-j", "RETURN"}},
+		{manager: manager, IPT: ipt, Table: "nat", Chain: dnsTCPChainName, Action: "I", Spec: iptMarkReturn(dnsTCPMarkAccept(manager.cfg))},
 		{manager: manager, IPT: ipt, Table: "nat", Chain: dnsTCPChainName, Action: "A",
 			Spec: dnsTCPRedirectSpec(manager.cfg.DNSTCPListenPort())},
 		{manager: manager, IPT: ipt, Table: "nat", Chain: "PREROUTING", Action: "I", Spec: dnsTCPJumpSpec()},

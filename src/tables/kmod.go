@@ -28,23 +28,27 @@ type kmodPackageSet struct {
 }
 
 var kmodPackageTable = map[string]kmodPackageSet{
-	"nft_queue":    {kernel: []string{"kmod-nft-queue"}},
-	"nft_ct":       {kernel: []string{"kmod-nft-core"}},
-	"nft_socket":   {kernel: []string{"kmod-nft-socket"}},
-	"nft_tproxy":   {kernel: []string{"kmod-nft-tproxy"}},
-	"xt_NFQUEUE":   {kernel: []string{"kmod-nfnetlink-queue", "kmod-ipt-nfqueue"}, userspace: []string{"iptables-mod-nfqueue"}},
-	"xt_connbytes": {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
-	"xt_socket":    {kernel: []string{"kmod-ipt-socket"}, userspace: []string{"iptables-mod-tproxy"}},
-	"xt_TPROXY":    {kernel: []string{"kmod-ipt-tproxy"}, userspace: []string{"iptables-mod-tproxy"}},
-	"xt_connmark":  {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
-	"xt_CONNMARK":  {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
-	"xt_addrtype":  {kernel: []string{"kmod-ipt-extra"}, userspace: []string{"iptables-mod-extra"}},
-	"xt_DSCP":      {kernel: []string{"kmod-ipt-ipopt"}, userspace: []string{"iptables-mod-ipopt"}},
-	"nft_fib_inet": {kernel: []string{"kmod-nft-fib"}},
-	"nft_fib":      {kernel: []string{"kmod-nft-fib"}},
-	"iptable_raw":  {kernel: []string{"kmod-ipt-raw"}},
-	"ip6table_raw": {kernel: []string{"kmod-ipt-raw6"}},
+	"nft_queue":     {kernel: []string{"kmod-nft-queue"}},
+	"nft_ct":        {kernel: []string{"kmod-nft-core"}},
+	"nft_socket":    {kernel: []string{"kmod-nft-socket"}},
+	"nft_tproxy":    {kernel: []string{"kmod-nft-tproxy"}},
+	"xt_NFQUEUE":    {kernel: []string{"kmod-nfnetlink-queue", "kmod-ipt-nfqueue"}, userspace: []string{"iptables-mod-nfqueue"}},
+	"xt_connbytes":  {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
+	"xt_socket":     {kernel: []string{"kmod-ipt-socket"}, userspace: []string{"iptables-mod-tproxy"}},
+	"xt_TPROXY":     {kernel: []string{"kmod-ipt-tproxy"}, userspace: []string{"iptables-mod-tproxy"}},
+	"xt_connmark":   {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
+	"xt_CONNMARK":   {kernel: []string{"kmod-ipt-conntrack-extra"}, userspace: []string{"iptables-mod-conntrack-extra"}},
+	"xt_addrtype":   {kernel: []string{"kmod-ipt-extra"}, userspace: []string{"iptables-mod-extra"}},
+	"xt_DSCP":       {kernel: []string{"kmod-ipt-ipopt"}, userspace: []string{"iptables-mod-ipopt"}},
+	"nft_fib_inet":  {kernel: []string{"kmod-nft-fib"}},
+	"nft_fib":       {kernel: []string{"kmod-nft-fib"}},
+	"iptable_raw":   {kernel: []string{"kmod-ipt-raw"}},
+	"ip6table_raw":  {kernel: []string{"kmod-ipt-raw6"}},
+	"xt_NFLOG":      {kernel: []string{"kmod-ipt-nflog"}, userspace: []string{"iptables-mod-nflog"}},
+	"nfnetlink_log": {kernel: []string{"kmod-nfnetlink-log"}},
 }
+
+const kmodKeeneticHint = `Enable the "Kernel modules for Netfilter" component of KeeneticOS`
 
 type kmodState int
 
@@ -333,7 +337,7 @@ func kmodStateOf(name string) kmodState {
 }
 
 func kmodPkgsFor(missing []string) []string {
-	if len(missing) == 0 {
+	if len(missing) == 0 || dnsKernelFacts().KeeneticOS {
 		return nil
 	}
 	var out []string
@@ -373,6 +377,8 @@ func kmodMissingHint(missing []string) string {
 	var parts []string
 	if pkgs := kmodPkgsFor(missing); len(pkgs) > 0 {
 		parts = append(parts, "Package(s) that may provide it: "+strings.Join(pkgs, " "))
+	} else if len(missing) > 0 && dnsKernelFacts().KeeneticOS {
+		parts = append(parts, kmodKeeneticHint)
 	}
 	parts = append(parts, KernelModuleReasons(missing)...)
 	if len(parts) == 0 {

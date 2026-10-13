@@ -542,6 +542,9 @@ func (w *Worker) gc() {
 				w.connTracker.Cleanup()
 			}
 			_ = cleanupDNSPendingRoutes(time.Now())
+			if l := w.dnsCopy; l != nil && l.w == w {
+				l.sweep(time.Now())
+			}
 		}
 	}
 }

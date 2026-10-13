@@ -263,15 +263,21 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		return true
 	}
 
+	markAccept := iptMarkAccept(cfg.Queue.Mark)
 	for _, ipt := range ipts {
-		if _, err := run(ipt, "-w", "-t", "mangle", "-S", "B4"); err != nil {
+		capture, err := run(ipt, "-w", "-t", "mangle", "-S", iptChainName)
+		if err != nil {
 			log.Tracef("Monitor: B4 chain missing")
+			return false
+		}
+		if !iptListingHasMarkReturn(capture, iptChainName, markAccept) {
+			log.Tracef("Monitor: B4's return for b4's own packets (mark %s) missing", markAccept)
 			return false
 		}
 
 		if cfg.Queue.Devices.Enabled && len(cfg.Queue.Devices.SelectedMACs()) > 0 {
 			out, _ := run(ipt, "-w", "-t", "mangle", "-S", "FORWARD")
-			if !strings.Contains(out, "B4") {
+			if !iptListingJumpsTo(out, iptChainName) {
 				log.Tracef("Monitor: FORWARD->B4 rule missing")
 				return false
 			}
@@ -291,17 +297,29 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 			return false
 		}
 		out, _ := run(ipt, "-w", "-t", "mangle", "-S", "B4_PREROUTING")
-		fromRaw := dnsQueriesQueuedFromRaw(ipt)
+		placement := dnsQueryPlacementOf(ipt)
 		hasDNSResponse := strings.Contains(out, dnsResponsePortMatch) && strings.Contains(out, "NFQUEUE")
-		hasDNSRequest := fromRaw || (strings.Contains(out, dnsRequestPortMatch) && strings.Contains(out, "NFQUEUE"))
+		hasDNSRequest := placement != dnsHeldMangle || (strings.Contains(out, dnsRequestPortMatch) && strings.Contains(out, "NFQUEUE"))
 		hasTCP := strings.Contains(out, "tcp") && strings.Contains(out, "NFQUEUE")
 		if !hasDNSResponse || !hasDNSRequest || !hasTCP {
 			log.Tracef("Monitor: B4_PREROUTING rules missing (dnsReq=%v, dnsResp=%v, tcp=%v)", hasDNSRequest, hasDNSResponse, hasTCP)
 			return false
 		}
-		if fromRaw && !iptRawDNSQueuePresent(ipt) {
-			log.Tracef("Monitor: raw table DNS query rules missing (%s chain or its PREROUTING/OUTPUT jumps)", iptRawChainName)
-			return false
+		switch placement {
+		case dnsHeldRaw:
+			if !iptRawDNSQueuePresent(ipt, markAccept) {
+				log.Tracef("Monitor: raw table DNS query rules missing (%s chain, its return for b4's own packets, or its PREROUTING/OUTPUT jumps)", iptRawChainName)
+				return false
+			}
+		case dnsCopied:
+			if DNSQueryCopyAliveFunc == nil || !DNSQueryCopyAliveFunc() {
+				log.Tracef("Monitor: the NFLOG listener for DNS query copies is not running")
+				return false
+			}
+			if !iptDNSCopyPresent(ipt, uint16(dnsCopyGroup.Load()), markAccept) {
+				log.Tracef("Monitor: DNS query copy rules missing (%s chain, its return for b4's own packets, or its INPUT/FORWARD/OUTPUT jumps)", iptDNSCopyChainName)
+				return false
+			}
 		}
 
 		markHex := fmt.Sprintf("0x%x", cfg.Queue.Mark)
@@ -318,7 +336,7 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 			log.Tracef("Monitor: OUTPUT mark accept rule missing")
 			return false
 		}
-		if !strings.Contains(out, "-j B4") {
+		if !iptListingJumpsTo(out, iptChainName) {
 			log.Tracef("Monitor: OUTPUT->B4 jump rule missing")
 			return false
 		}
@@ -333,8 +351,8 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 
 		if dnsTCPEnabledFamily(cfg, ipt == ipt6) && hasNATRedirectSupport(ipt, cfg.DNSTCPListenPort()) {
-			if !dnsTCPRulesPresent(ipt, cfg.DNSTCPListenPort()) {
-				log.Tracef("Monitor[%s]: DNS-over-TCP redirect rules missing (PREROUTING/OUTPUT jump or %s chain)", ipt, dnsTCPChainName)
+			if !dnsTCPRulesPresent(ipt, cfg.DNSTCPListenPort(), dnsTCPMarkAccept(cfg)) {
+				log.Tracef("Monitor[%s]: DNS-over-TCP redirect rules missing (PREROUTING/OUTPUT jump, %s chain or its return for b4's own connections)", ipt, dnsTCPChainName)
 				return false
 			}
 		}
@@ -394,7 +412,7 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		return false
 	}
 	out, _ := nft.runNft("list", "chain", "inet", nftTableName, "prerouting")
-	fromRaw := dnsQueriesQueuedFromRaw(backendNFTables)
+	fromRaw := dnsQueryPlacementOf(backendNFTables) == dnsHeldRaw
 	hasDNSResponse := strings.Contains(out, dnsResponsePortMatch) && strings.Contains(out, "queue")
 	hasDNSRequest := fromRaw || (strings.Contains(out, dnsRequestPortMatch) && strings.Contains(out, "queue"))
 	hasTCP := strings.Contains(out, "tcp sport") && strings.Contains(out, "queue")

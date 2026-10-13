@@ -372,7 +372,11 @@ func (n *NFTablesManager) apply() error {
 	if err != nil {
 		return err
 	}
-	noteDNSQueryPlacement(map[string]bool{backendNFTables: queriesFromRaw})
+	placement := dnsHeldMangle
+	if queriesFromRaw {
+		placement = dnsHeldRaw
+	}
+	noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendNFTables: placement})
 
 	answers := []string{"udp", "sport", "53", "counter"}
 	if queriesFromRaw {

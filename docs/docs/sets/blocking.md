@@ -38,7 +38,7 @@ flowchart TB
 
 ### How it works (in detail)
 
-1. **DNS sinkhole (domains).** When a device looks up a domain in the set, b4 answers the query itself with "does not exist" (NXDOMAIN). The name never resolves to an address, so the device cannot connect to it at all. This is the primary layer, and it covers every device on the network whose DNS passes through the router.
+1. **DNS sinkhole (domains).** When a device looks up a domain in the set, b4 answers the query itself with "does not exist" (NXDOMAIN), or leaves it unanswered with the **Drop** action. The device never gets an address for the name, so it cannot connect to it at all. This is the primary layer, and it covers every device on the network whose DNS passes through the router. On KeeneticOS, and on older kernels where b4 [copies DNS requests](../dns.md#copied-requests) instead of holding them, the query still reaches the resolver the device asked, and that resolver resolves the name; b4 puts NXDOMAIN in place of its reply, or with **Drop** drops its replies.
 
 2. **Connection block (domains).** If a device already has an address - for example it uses encrypted DNS that b4 does not see, or a cached result - b4 still reads the destination name from the TLS or QUIC handshake (the SNI) and fails the connection when that name is in the set. This keeps blocking effective even when the DNS layer is bypassed.
 
@@ -62,7 +62,7 @@ No output interface or upstream proxy is required.
 | Action | What the device sees |
 | --- | --- |
 | **Reject** (default) | The connection fails immediately - a TCP reset for TCP, or an ICMP unreachable for UDP and QUIC. Best for ads and trackers, because the page gives up on the slot right away. |
-| **Drop** | The connection is silently swallowed and simply times out. Use it when you want no response sent back at all. |
+| **Drop** | The connection is silently swallowed and simply times out, and a lookup of a blocked name gets no answer. Use it when you want no response sent back at all. |
 
 ## Targets
 
