@@ -573,15 +573,16 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 			}
 
 			if filtered, action, actor := w.filterDNSAnswer(w.getConfig(), healSet, domain, clientMac, payload, false); filtered != nil {
-				if !vc.drop() {
+				raw := inPlaceReply(vc, pkt, filtered)
+				if raw == nil && !vc.drop() {
 					return 0
 				}
 				logDNSEvent("UDP", actor, domain, clientIP, dnsServerIP, dport, clientMac, action)
 				client := append(net.IP(nil), clientIP...)
 				server := append(net.IP(nil), dnsServerIP...)
-				send := func() { w.sendDNSResponseToClient(ipVersion, server, client, dport, filtered) }
-				if !w.holdForRoutes(vc, routeWaits, domain, send) {
-					send()
+				release := func() { w.releaseFilteredReply(vc, raw, ipVersion, server, client, dport, filtered) }
+				if !w.holdForRoutes(vc, routeWaits, domain, release) {
+					release()
 				}
 				return 0
 			}
@@ -593,6 +594,25 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 	}
 
 	return vc.accept()
+}
+
+func inPlaceReply(vc *verdictCtx, pkt *pktInfo, resp []byte) []byte {
+	if _, ok := vc.q.(verdictModifier); !ok {
+		return nil
+	}
+	return sock.ReplaceUDPPayload(pkt.raw, pkt.ihl, resp)
+}
+
+func (w *Worker) releaseFilteredReply(vc *verdictCtx, raw []byte, ver byte, server, client net.IP, dport uint16, resp []byte) {
+	if raw != nil {
+		if vc.replace(raw) {
+			return
+		}
+		if !vc.drop() {
+			return
+		}
+	}
+	w.sendDNSPacket(ver, server, client, dport, resp)
 }
 
 func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *config.Config, query []byte, clientIP net.IP, clientPort uint16, originalDst, targetIP net.IP, delay int) {

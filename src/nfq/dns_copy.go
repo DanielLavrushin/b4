@@ -180,7 +180,7 @@ func (l *dnsCopyListener) read(b *dnsCopyBinding) {
 	l.running.Store(false)
 	l.setErr(err)
 	if dnsCopyStopWarned.CompareAndSwap(false, true) {
-		log.Warnf("DNS: the NFLOG copy of DNS queries stopped (%v); the replies to DNS queries pass as they are until the firewall monitor starts it again at its next check, or holds the queries in b4's queue if it cannot", err)
+		log.Warnf("DNS: the NFLOG copy of DNS queries stopped (%v); the replies to DNS queries are not replaced with b4's answers until the firewall monitor starts it again at its next check, or holds the queries in b4's queue if it cannot", err)
 	}
 }
 
@@ -301,7 +301,7 @@ func (l *dnsCopyListener) warnLost(now time.Time) {
 	}
 	l.lostReported.Store(lost)
 	l.lostLoggedAt.Store(now.UnixNano())
-	log.Warnf("DNS: %d copies of DNS queries were lost; the answers to those queries went through unchanged", lost-reported)
+	log.Warnf("DNS: %d copies of DNS queries were lost; the answers to those queries were not replaced with b4's answers", lost-reported)
 }
 
 func logDue(at *atomic.Int64, every time.Duration) bool {
@@ -317,14 +317,14 @@ func (l *dnsCopyListener) warnFull() {
 	if !logDue(&l.refusedLoggedAt, dnsCopyFullLogEvery) {
 		return
 	}
-	log.Warnf("DNS: b4 already has %d DNS answers to deliver, the most it keeps, so the DNS queries copied since then went through unchanged", dnsClaimMax)
+	log.Warnf("DNS: b4 already has %d DNS answers to deliver, the most it keeps, so the replies to the DNS queries copied since then were not replaced with b4's answers", dnsClaimMax)
 }
 
 func (l *dnsCopyListener) warnKeyFull(key dnsClaimKey, client, server netip.Addr) {
 	if !logDue(&l.keyRefusedLoggedAt, dnsCopyFullLogEvery) {
 		return
 	}
-	log.Warnf("DNS: b4 already has %d DNS answers to deliver for the %s query for %s with ID %d, sent from different sockets, the most it keeps for one query, so the copies of it since then went through unchanged; the last came from %s to %s", dnsClaimKeyMax, dnsTypeName(key.qtype), dns.SafeName(key.name), key.txid, client, server)
+	log.Warnf("DNS: b4 already has %d DNS answers to deliver for the %s query for %s with ID %d, sent from different sockets, the most it keeps for one query, so the replies to the copies of it since then were not replaced with b4's answers; the last came from %s to %s", dnsClaimKeyMax, dnsTypeName(key.qtype), dns.SafeName(key.name), key.txid, client, server)
 }
 
 func (l *dnsCopyListener) counters() DNSQueryCopyCounters {
