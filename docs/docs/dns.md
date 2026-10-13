@@ -9,7 +9,7 @@ A set decides which resolver answers the domains it targets. Everything else kee
 
 | Transport | How it reaches b4 | When |
 | --- | --- | --- |
-| UDP port 53 | Queue rules in `PREROUTING` and `OUTPUT`: for requests (`dport 53`) in the raw table, ahead of conntrack (priority -300 on nftables), and for replies (`sport 53`) in the mangle table. On KeeneticOS, and with iptables on kernels before 4.18 (4.14 before 4.14.173) whose raw table cannot queue packets, requests are not queued: a rule at the top of mangle `INPUT`, `FORWARD` and `OUTPUT` sends b4 a copy of each one with NFLOG and the request goes on at once, while replies are queued as before; see [Copied requests](#copied-requests) | Always, while b4 is running |
+| UDP port 53 | Queue rules in `PREROUTING` and `OUTPUT`: for requests (`dport 53`) in the raw table, ahead of conntrack (priority -300 on nftables), and for replies (`sport 53`) in the mangle table. With iptables on kernels before 4.18 (4.14 before 4.14.173), on KeeneticOS and wherever the raw table cannot queue packets, requests are not queued: a rule at the top of mangle `INPUT`, `FORWARD` and `OUTPUT` sends b4 a copy of each one with NFLOG and the request goes on at once, while replies are queued as before; see [Copied requests](#copied-requests). On KeeneticOS with a later kernel, requests are queued in the mangle table | Always, while b4 is running |
 | TCP port 53 | A `nat` `REDIRECT` into a local listener, port 5453 by default | Only while at least one enabled set has a DNS server, a DoH URL or [Remove ECH keys from DNS answers](#removing-ech-keys) on, and **Intercept DNS over TCP** is on |
 
 Both cases cover traffic forwarded from the network and queries the router makes for itself. The queries b4 sends on a client's behalf and its lookups through a set's resolver carry the [queue mark](./guides/marks.md#the-queue-mark), and these rules skip packets that carry it, so such a query never re-enters the queue through them. Lookups b4 makes through the router's own resolver carry no mark.
@@ -17,7 +17,7 @@ Both cases cover traffic forwarded from the network and queries the router makes
 :::info Requests and conntrack
 A device usually asks for a name's IPv4 and IPv6 addresses at the same moment from one socket. A request held in the queue after conntrack has seen it carries a connection entry the kernel has not confirmed yet, so the second request gets an entry of its own, and kernels before 4.18 (4.14 before 4.14.173) drop it when the two entries clash. Queued from the raw table, the requests reach conntrack one after the other, once b4 has released them. KeeneticOS runs its raw table after conntrack, and b4 does not use it there.
 
-On KeeneticOS, and with iptables on such a kernel whose raw table cannot queue packets, b4 holds no request and works on a copy of each one, see [Copied requests](#copied-requests). On other kernels, where the iptables raw table cannot queue packets, b4 queues requests in mangle, logs a warning, and System Info shows **DNS queries queued before conntrack (raw)** as unavailable.
+On such a kernel b4 holds no request and works on a copy of each one, on KeeneticOS and with iptables wherever the raw table cannot queue packets, see [Copied requests](#copied-requests). On a later kernel b4 queues requests in mangle on KeeneticOS. Elsewhere, where the iptables raw table cannot queue packets, it queues them in mangle as well, logs a warning, and System Info shows **DNS queries queued before conntrack (raw)** as unavailable.
 :::
 
 ```mermaid
@@ -49,7 +49,7 @@ An encrypted forwarder on the router is a different matter and does not get in t
 
 ### Copied requests {#copied-requests}
 
-On KeeneticOS, and with iptables on a kernel before 4.18 (4.14 before 4.14.173) whose raw table cannot queue packets, b4 holds no DNS request. A rule at the top of mangle `INPUT`, `FORWARD` and `OUTPUT` sends b4 a copy of each request with NFLOG, to the group numbered like the first queue, `queue.start_num`, 537 by default, and the request goes on to its resolver at once. b4 runs the copy through the same set handling as a request in its queue, and the [Traffic](./connections.md) page and the log record the same results. The resolver's reply reaches the queue as before, and b4 settles it by what the set did with the copy:
+With iptables on a kernel before 4.18 (4.14 before 4.14.173), on KeeneticOS and wherever the raw table cannot queue packets, b4 holds no DNS request. A rule at the top of mangle `INPUT`, `FORWARD` and `OUTPUT` sends b4 a copy of each request with NFLOG, to the group numbered like the first queue, `queue.start_num`, 537 by default, and the request goes on to its resolver at once. b4 runs the copy through the same set handling as a request in its queue, and the [Traffic](./connections.md) page and the log record the same results. The resolver's reply reaches the queue as before, and b4 settles it by what the set did with the copy:
 
 | The set | The resolver's reply |
 | --- | --- |
@@ -73,8 +73,8 @@ b4 logs these lines about copying:
 
 | Log line | Meaning |
 | --- | --- |
-| `IPTABLES[iptables]: KeeneticOS runs its raw table after conntrack (kernel ...), so b4 copies DNS queries with NFLOG (group 537) instead of holding them in its queue` | b4 copies the requests of that binary, `iptables` or `ip6tables`. On other kernels the line starts with the reason the raw table cannot queue them. Logged once |
-| `IPTABLES[iptables]: b4 cannot copy DNS queries with NFLOG (...)` | Copying failed for the reason in the brackets, and b4 holds requests after conntrack. On other kernels the line starts with the reason the raw table cannot queue them and reads `cannot copy DNS queries with NFLOG either`. Logged once |
+| `IPTABLES[iptables]: KeeneticOS runs its raw table after conntrack (kernel ...), so b4 copies DNS queries with NFLOG (group 537) instead of holding them in its queue` | b4 copies the requests of that binary, `iptables` or `ip6tables`. Outside KeeneticOS the line starts with the reason the raw table cannot queue them. Logged once |
+| `IPTABLES[iptables]: b4 cannot copy DNS queries with NFLOG (...)` | Copying failed for the reason in the brackets, and b4 holds requests after conntrack. Outside KeeneticOS the line starts with the reason the raw table cannot queue them and reads `cannot copy DNS queries with NFLOG either`. Logged once |
 | `DNS: the NFLOG copy of DNS queries stopped (...)` | The listener that receives the copies stopped, and the replies to the requests sent until it runs again are not replaced with b4's answer. At the next check of the firewall monitor, b4 starts it again or holds requests in its queue. With **Firewall Monitor Interval (seconds)** at `0` there is no such check, and the listener starts again only at a restart or at a save that rebuilds the firewall rules |
 | `DNS: N copies of DNS queries were lost; ...` | Copies the kernel discarded, at most one such line every 5 minutes |
 | `DNS: b4 already has 8192 DNS answers to deliver, ...` | b4 was already acting on 8192 requests, its limit, and the replies to the requests copied after that were not replaced with its answer |
