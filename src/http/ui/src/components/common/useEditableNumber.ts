@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const NUMERIC_PATTERN = /^-?\d*$/;
 
@@ -27,61 +27,67 @@ export function useEditableNumber(
     if (!focusedRef.current) setText(String(value));
   }, [value]);
 
-  const clamp = (n: number): number => {
-    if (min != null) n = Math.max(min, n);
-    if (max != null) n = Math.min(max, n);
-    return n;
-  };
+  const clamp = useCallback(
+    (n: number): number => {
+      if (min != null) n = Math.max(min, n);
+      if (max != null) n = Math.min(max, n);
+      return n;
+    },
+    [min, max],
+  );
 
-  return {
-    editing,
-    text,
-    start: () => {
-      focusedRef.current = true;
-      setText(String(value));
-      setEditing(true);
-    },
-    cancel: () => {
-      focusedRef.current = false;
-      setText(String(value));
-      setEditing(false);
-    },
-    setText: (next: string) => {
-      if (!NUMERIC_PATTERN.test(next)) return;
-      setText(next);
-      if (next === "" || next === "-") return;
-      const n = Number(next);
-      if (Number.isNaN(n)) return;
-      const clamped = clamp(n);
-      if (clamped !== value) commitValue(clamped);
-    },
-    commit: () => {
-      focusedRef.current = false;
-      setEditing(false);
-      if (text === "" || text === "-") {
+  return useMemo(
+    () => ({
+      editing,
+      text,
+      start: () => {
+        focusedRef.current = true;
         setText(String(value));
-        return;
-      }
-      const n = Number(text);
-      if (Number.isNaN(n)) {
+        setEditing(true);
+      },
+      cancel: () => {
+        focusedRef.current = false;
         setText(String(value));
-        return;
-      }
-      const clamped = clamp(n);
-      setText(String(clamped));
-      if (clamped !== value) commitValue(clamped);
-    },
-    commitQuiet: () => {
-      if (text === "" || text === "-") return;
-      const n = Number(text);
-      if (Number.isNaN(n)) return;
-      const clamped = clamp(n);
-      setText(String(clamped));
-      if (clamped !== value) commitValue(clamped);
-    },
-    close: () => {
-      focusedRef.current = false;
-      setEditing(false);
-    },
-  };
+        setEditing(false);
+      },
+      setText: (next: string) => {
+        if (!NUMERIC_PATTERN.test(next)) return;
+        setText(next);
+        if (next === "" || next === "-") return;
+        const n = Number(next);
+        if (Number.isNaN(n)) return;
+        const clamped = clamp(n);
+        if (clamped !== value) commitValue(clamped);
+      },
+      commit: () => {
+        focusedRef.current = false;
+        setEditing(false);
+        if (text === "" || text === "-") {
+          setText(String(value));
+          return;
+        }
+        const n = Number(text);
+        if (Number.isNaN(n)) {
+          setText(String(value));
+          return;
+        }
+        const clamped = clamp(n);
+        setText(String(clamped));
+        if (clamped !== value) commitValue(clamped);
+      },
+      commitQuiet: () => {
+        if (text === "" || text === "-") return;
+        const n = Number(text);
+        if (Number.isNaN(n)) return;
+        const clamped = clamp(n);
+        setText(String(clamped));
+        if (clamped !== value) commitValue(clamped);
+      },
+      close: () => {
+        focusedRef.current = false;
+        setEditing(false);
+      },
+    }),
+    [editing, text, value, commitValue, clamp],
+  );
 }

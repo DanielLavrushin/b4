@@ -11,7 +11,7 @@ import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
 import { useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
 import { useEditableNumber } from "./useEditableNumber";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 interface B4RangeSliderProps extends Omit<SliderProps, "onChange" | "value"> {
   label: string;
@@ -118,14 +118,22 @@ export const B4RangeSlider = ({
       onChange([newValue[0], newValue[1]]);
     }
   };
-  const loEditor = useEditableNumber(value[0], (next) => {
-    const hi = Math.max(next, value[1]);
-    if (next !== value[0] || hi !== value[1]) onChange([next, hi]);
-  }, min, max);
-  const hiEditor = useEditableNumber(value[1], (next) => {
-    const hi = Math.max(value[0], next);
-    if (hi !== value[1]) onChange([value[0], hi]);
-  }, min, max);
+  const commitLo = useCallback(
+    (next: number) => {
+      const hi = Math.max(next, value[1]);
+      if (next !== value[0] || hi !== value[1]) onChange([next, hi]);
+    },
+    [value, onChange],
+  );
+  const commitHi = useCallback(
+    (next: number) => {
+      const hi = Math.max(value[0], next);
+      if (hi !== value[1]) onChange([value[0], hi]);
+    },
+    [value, onChange],
+  );
+  const loEditor = useEditableNumber(value[0], commitLo, min, max);
+  const hiEditor = useEditableNumber(value[1], commitHi, min, max);
 
   return (
     <Box sx={{ width: "100%", ...aiHoverRevealSx }}>

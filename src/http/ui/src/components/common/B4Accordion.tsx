@@ -9,7 +9,7 @@ import {
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { colors } from "@design";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 interface B4AccordionProps {
   title: string;
@@ -33,23 +33,25 @@ export const B4Accordion = ({
   children,
 }: B4AccordionProps) => {
   const isControlled = expanded !== undefined;
-  const [, setInnerExpanded] = useState(!!defaultExpanded);
   const [settledCollapsed, setSettledCollapsed] = useState(
     isControlled ? expanded === false : !defaultExpanded,
   );
   const handleChange = (_: unknown, next: boolean) => {
-    if (!isControlled) setInnerExpanded(next);
     if (next) setSettledCollapsed(false);
     onChange?.(next);
   };
+  const transitionProps = useMemo(
+    () => ({
+      onExited: () => setSettledCollapsed(true),
+    }),
+    [],
+  );
   return (
     <Accordion
       defaultExpanded={isControlled ? undefined : defaultExpanded}
       expanded={isControlled ? expanded : undefined}
       onChange={handleChange}
-      TransitionProps={{
-        onExited: () => setSettledCollapsed(true),
-      }}
+      TransitionProps={transitionProps}
       disableGutters
       sx={{
         bgcolor: "transparent",
