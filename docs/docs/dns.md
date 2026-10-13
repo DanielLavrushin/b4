@@ -57,7 +57,7 @@ On KeeneticOS, and with iptables on a kernel before 4.18 (4.14 before 4.14.173) 
 | Blocks the name with the **Drop** action | Dropped |
 | Pins the name | Replaced with the pinned answer |
 | Resolves the name through the set's resolver | Held until b4 has its answer, from that resolver or from [a fallback](#when-the-resolver-fails), then replaced with it. A reply held for twice the query timeout plus 2 seconds passes unchanged |
-| Forwards the name unchanged, or does not match it | Handled like any other reply, see step 4 of [How a set handles a query](#how-a-set-handles-a-query) |
+| Forwards the name unchanged, or does not match it | Handled like any other reply, including [the removal of ECH keys](#removing-ech-keys), see step 4 of [How a set handles a query](#how-a-set-handles-a-query) |
 
 When the device asked a resolver on the router itself, b4 also sends its answer on its own once 20 ms have passed without a reply and the answer is ready. A reply that comes later is still replaced with the same answer, and the device then receives it twice.
 
@@ -65,7 +65,7 @@ When the device asked a resolver on the router itself, b4 also sends its answer 
 - **A resolver outside the router has to reply.** A device that asks a resolver outside the router gets b4's answer only in place of that resolver's reply, and no answer at all while that resolver does not reply.
 - **Port-changing `nat` rules are not supported.** When a `nat` rule moves DNS requests to another port, such as a `REDIRECT` to a local resolver on port 5353, the replies come back from that port and b4 cannot act on them: the sets do not answer, block or redirect the names asked through such a rule. b4 logs a warning that names the rule.
 - **Requests sent from port 53 are not acted on.** A resolver or device that sends its requests from UDP port 53 gets the replies on port 53 as well, and such replies do not reach the queue. b4 ignores the copies of these requests: the sets' resolvers, pins and blocking do not apply to them, their replies pass unchanged, a routing set learns no addresses from those replies, and the Traffic page and the log record nothing about these lookups. For a resolver on the router, this concerns only the requests it sends upstream, and devices that ask it from other ports are handled as usual.
-- **A lost copy leaves its reply unchanged.** When copies arrive faster than b4 reads them, the kernel discards the excess, and the replies to those requests pass as they are.
+- **After a lost copy, the device gets the resolver's answer.** When copies arrive faster than b4 reads them, the kernel discards the excess. The replies to those requests are not replaced with b4's answer and are handled like any other reply, see step 4 of [How a set handles a query](#how-a-set-handles-a-query).
 
 System Info shows the row **DNS queries copied, not held (NFLOG)** under **Kernel Capabilities** on these routers: available while b4 copies the requests, unavailable while it holds some of them after conntrack, with the modules that are missing, and while the listener that receives the copies is stopped, with its error. On KeeneticOS the row **DNS queries queued before conntrack (raw)** is not shown, and an unavailable row names the firmware component to enable instead of packages. Where copying does not work either, b4 holds requests in mangle after conntrack, and the loss described in the note above applies. **Copy JSON** in System Info and the MCP tool `b4_diagnostics` give the counts of copies, lost and ignored copies, and replaced, dropped and unchanged replies under `firewall.dns_query_copy`.
 
@@ -75,10 +75,10 @@ b4 logs these lines about copying:
 | --- | --- |
 | `IPTABLES[iptables]: KeeneticOS runs its raw table after conntrack (kernel ...), so b4 copies DNS queries with NFLOG (group 537) instead of holding them in its queue` | b4 copies the requests of that binary, `iptables` or `ip6tables`. On other kernels the line starts with the reason the raw table cannot queue them. Logged once |
 | `IPTABLES[iptables]: b4 cannot copy DNS queries with NFLOG (...)` | Copying failed for the reason in the brackets, and b4 holds requests after conntrack. On other kernels the line starts with the reason the raw table cannot queue them and reads `cannot copy DNS queries with NFLOG either`. Logged once |
-| `DNS: the NFLOG copy of DNS queries stopped (...)` | The listener that receives the copies stopped, and replies pass as they are until it runs again. At the next check of the firewall monitor, b4 starts it again or holds requests in its queue. With **Firewall Monitor Interval (seconds)** at `0` there is no such check, and the listener starts again only at a restart or at a save that rebuilds the firewall rules |
+| `DNS: the NFLOG copy of DNS queries stopped (...)` | The listener that receives the copies stopped, and the replies to the requests sent until it runs again are not replaced with b4's answer. At the next check of the firewall monitor, b4 starts it again or holds requests in its queue. With **Firewall Monitor Interval (seconds)** at `0` there is no such check, and the listener starts again only at a restart or at a save that rebuilds the firewall rules |
 | `DNS: N copies of DNS queries were lost; ...` | Copies the kernel discarded, at most one such line every 5 minutes |
-| `DNS: b4 already has 8192 DNS answers to deliver, ...` | b4 was already acting on 8192 requests, its limit, and the replies to the requests copied after that passed unchanged |
-| `DNS: b4 already has 64 DNS answers to deliver for the A query for ... with ID ...` | b4 was already acting on 64 copies of one request, with the same name, type and ID but sent from different sockets or devices, its limit for one request, and the replies to further copies of it passed unchanged. The line ends with the addresses of the last such copy. At most one such line a minute |
+| `DNS: b4 already has 8192 DNS answers to deliver, ...` | b4 was already acting on 8192 requests, its limit, and the replies to the requests copied after that were not replaced with its answer |
+| `DNS: b4 already has 64 DNS answers to deliver for the A query for ... with ID ...` | b4 was already acting on 64 copies of one request, with the same name, type and ID but sent from different sockets or devices, its limit for one request, and the replies to further copies of it were not replaced with its answer. The line ends with the addresses of the last such copy. At most one such line a minute |
 | `IPTABLES[iptables]: the nat rule "..." moves DNS queries to port ...` | A `nat` rule that changes the port, see above |
 
 ## How a set handles a query
@@ -90,7 +90,7 @@ For a matched query b4 works through these steps in order:
 1. **Blocking.** If the set's routing mode is `block`, the query is answered with NXDOMAIN or dropped, according to the block action. See [Blocking](./sets/blocking.md).
 2. **Pinned addresses.** If the name has a pin, b4 answers from the pin and stops. This happens whether or not the redirect below is enabled.
 3. **Resolver.** If the redirect is enabled and a resolver is configured, b4 resolves the name itself and answers the client directly. Otherwise the query is forwarded unchanged.
-4. **The answer.** Addresses from the answer are remembered for the client, and written into the set's IP set when [routing](./sets/routing.md) is on. An answer, forwarded or pinned, that brings addresses b4 has not written to the set recently is held until b4's update of the set for those addresses has finished, at most 250 ms each time b4 sees the answer, so the connection that follows it usually takes the set's route. With the TUN engine the answer is not held; see [Routing](./sets/routing.md#how-it-works-in-detail).
+4. **The answer.** Addresses from the answer are remembered for the client, and written into the set's IP set when [routing](./sets/routing.md) is on. An answer, forwarded or pinned, that brings addresses b4 has not written to the set recently is held until b4's update of the set for those addresses has finished, at most 250 ms each time b4 sees the answer, so the connection that follows it usually takes the set's route. With the TUN engine the answer is not held; see [Routing](./sets/routing.md#how-it-works-in-detail). Before the answer reaches the device, b4 can rewrite it: it removes [ECH keys](#removing-ech-keys), removes IPv6 addresses for [the IPv4 fallback](#the-ipv4-fallback), and removes or replaces unreachable addresses when the set's IP block detection has **Heal DNS answers** on.
 
 With [copied requests](#copied-requests), each answer in these steps takes the place of the resolver's reply, and a dropped query is a dropped reply.
 
@@ -189,6 +189,11 @@ A site behind a CDN that supports Encrypted ClientHello (ECH) publishes an ECH k
 - Only the `ech` parameter goes, together with its entry in `mandatory`, and `mandatory` itself when nothing is left in it. The ALPN list, the address hints and the TTL stay as they were.
 - The RRSIG records over the changed records are dropped and the AD flag is cleared, since the changed records no longer match their signatures.
 - It acts on forwarded answers, on answers from the set's own resolver and on DNS over TCP: TCP port 53 is intercepted while an enabled set has the switch on.
+- With [copied requests](#copied-requests), the replies that pass unchanged keep the key:
+  - the replies to requests sent from UDP port 53
+  - a reply held for twice the query timeout plus 2 seconds
+  - a reply from a resolver outside the router that arrives while b4 already holds 512 replies
+  - the reply to the lookup the router's resolver sends upstream while b4 still owes a device the answer for that name. That resolver's cache then holds the key.
 - Changed answers appear as `dns-ech-stripped` in [the result](#reading-the-result), under the set whose switch removed the key.
 
 The switch sits under **Encrypted ClientHello (ECH)** on the **DNS Redirect** tab of **DNS & Routing** in the set editor, and works whether or not the redirect is enabled. [Discovery](./discovery.md#sites-with-an-ech-key) proposes a set with it on, and no packet changes, for a site that loads with an ordinary ClientHello but not with ECH.
@@ -277,7 +282,7 @@ Every decision b4 makes about a query is recorded on the [Traffic](./connections
 | `dns-passthrough` | Matched a set, but the set has no resolver configured, so the query was forwarded unchanged |
 | `dns-pin` | Answered from a pinned address |
 | `dns-pin-empty` | A pinned name was asked for a record type the pin list does not hold, so the answer was empty |
-| `dns-heal` | An answer had unreachable addresses replaced, by the set's IP block detection |
+| `dns-heal` | An answer had unreachable addresses removed or replaced, by the set's IP block detection |
 | `dns-sinkhole` | Answered with NXDOMAIN by a blocking set |
 | `dns-block` | Dropped by a blocking set |
 | `dns-servfail` | The set's resolver did not answer and nothing else could either, or the set is set to fail closed |

@@ -7918,6 +7918,9 @@
                 "detail": {
                     "type": "string"
                 },
+                "hint": {
+                    "type": "string"
+                },
                 "missing": {
                     "type": "array",
                     "items": {
@@ -7938,6 +7941,71 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "handler.DiagDNSQueryCopy": {
+            "type": "object",
+            "properties": {
+                "claims_answer": {
+                    "type": "integer"
+                },
+                "claims_drop": {
+                    "type": "integer"
+                },
+                "claims_live": {
+                    "type": "integer"
+                },
+                "claims_quiet": {
+                    "type": "integer"
+                },
+                "claims_refused": {
+                    "type": "integer"
+                },
+                "copies": {
+                    "type": "integer"
+                },
+                "copies_ignored": {
+                    "type": "integer"
+                },
+                "copies_lost": {
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "expired_unanswered": {
+                    "type": "integer"
+                },
+                "group": {
+                    "type": "integer"
+                },
+                "injections": {
+                    "type": "integer"
+                },
+                "listening": {
+                    "type": "boolean"
+                },
+                "placements": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "replies_dropped": {
+                    "type": "integer"
+                },
+                "replies_failed_open": {
+                    "type": "integer"
+                },
+                "replies_quiet": {
+                    "type": "integer"
+                },
+                "replies_replace_fallback": {
+                    "type": "integer"
+                },
+                "replies_replaced": {
+                    "type": "integer"
                 }
             }
         },
@@ -7981,6 +8049,9 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "dns_query_copy": {
+                    "$ref": "#/definitions/handler.DiagDNSQueryCopy"
                 },
                 "flow_offload": {
                     "type": "string"
