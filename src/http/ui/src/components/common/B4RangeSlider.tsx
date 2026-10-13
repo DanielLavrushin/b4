@@ -103,6 +103,7 @@ export const B4RangeSlider = ({
   ...props
 }: B4RangeSliderProps) => {
   const changed = useChangedField(path, label);
+  useChangedField(path ? `${path}_max` : undefined, label);
   const { changedPaths } = useChangedFields();
   const changedPair =
     changed || (path ? changedPaths.has(`${path}_max`) : false);
