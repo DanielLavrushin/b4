@@ -117,12 +117,13 @@ export function ChangedFieldsProvider({
 
 export function useChangedField(path?: string, label?: ReactNode): boolean {
   const context = use(ChangedFieldsContext) ?? defaultChangedFields;
+  const { registerLabel } = context;
 
   useEffect(() => {
     if (path && label !== undefined) {
-      context.registerLabel(path, label);
+      registerLabel(path, label);
     }
-  }, [context, path, label]);
+  }, [registerLabel, path, label]);
 
   return Boolean(path && context.changedPaths.has(path));
 }
@@ -133,13 +134,14 @@ export function useChangedArrayItem(
   label?: ReactNode,
 ): boolean {
   const context = use(ChangedFieldsContext) ?? defaultChangedFields;
+  const { registerLabel } = context;
   const childPath = path && item ? `${path}.${item}` : undefined;
 
   useEffect(() => {
     if (childPath && label !== undefined) {
-      context.registerLabel(childPath, label);
+      registerLabel(childPath, label);
     }
-  }, [context, childPath, label]);
+  }, [registerLabel, childPath, label]);
 
   if (!path || !item) return false;
   const leaf = context.changedValues.get(path);
