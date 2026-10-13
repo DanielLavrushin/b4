@@ -171,15 +171,19 @@ func nftMarkReturns(fields []string, mark uint) bool {
 	return err1 == nil && err2 == nil && mask == uint64(mark) && value == uint64(mark)
 }
 
+func nftDNSTCPRedirectRule(port int) []string {
+	return []string{"tcp", "dport", "53", "redirect", "to", fmt.Sprintf(":%d", port)}
+}
+
 func nftDNSTCPChainIntact(listing string, mark uint, port int) bool {
 	ret, redirect := -1, -1
-	to := fmt.Sprintf(":%d", port)
+	want := nftDNSTCPRedirectRule(port)
 	for i, line := range strings.Split(listing, "\n") {
 		f := strings.Fields(line)
 		switch {
 		case ret < 0 && nftMarkReturns(f, mark):
 			ret = i
-		case redirect < 0 && slices.Contains(f, "redirect") && slices.Contains(f, to):
+		case redirect < 0 && slices.Equal(f, want):
 			redirect = i
 		}
 	}
@@ -189,7 +193,7 @@ func nftDNSTCPChainIntact(listing string, mark uint, port int) bool {
 func (n *NFTablesManager) applyDNSTCPFamily(v6 bool) error {
 	family, table := nftDNSTCPTable(v6)
 	mark := fmt.Sprintf("0x%x", n.cfg.MainInjectedMark())
-	port := fmt.Sprintf("%d", n.cfg.DNSTCPListenPort())
+	redirect := nftDNSTCPRedirectRule(n.cfg.DNSTCPListenPort())
 
 	if _, err := n.runNft("add", "table", family, table); err != nil {
 		return fmt.Errorf("failed to create nftables dns nat table (%s): %w", family, err)
@@ -211,8 +215,7 @@ func (n *NFTablesManager) applyDNSTCPFamily(v6 bool) error {
 			"meta", "mark", "&", mark, "==", mark, "return"); err != nil {
 			return fmt.Errorf("failed to add dns tcp mark-bypass rule (%s): %w", family, err)
 		}
-		if _, err := n.runNft("add", "rule", family, table, chain,
-			"tcp", "dport", "53", "redirect", "to", ":"+port); err != nil {
+		if _, err := n.runNft(append([]string{"add", "rule", family, table, chain}, redirect...)...); err != nil {
 			return fmt.Errorf("failed to add dns tcp redirect rule (%s): %w", family, err)
 		}
 	}

@@ -78,6 +78,8 @@ func TestTheNftMonitorWantsTheReturnAheadOfTheRedirectInBothDNSTCPChains(t *test
 		{"the return below the redirect", both, []string{nftRedirect, nftPaddedReturn}, intact, false},
 		{"a return for another mark", both, []string{"meta mark & 0x00400000 == 0x00400000 return", nftRedirect}, intact, false},
 		{"a redirect to another port", both, intact, []string{nftPaddedReturn, "tcp dport 53 redirect to :5454"}, false},
+		{"another port's redirect to the listener", both, []string{nftPaddedReturn, "tcp dport 853 redirect to :5453"}, intact, false},
+		{"a UDP redirect to the listener", both, intact, []string{nftPaddedReturn, "udp dport 53 redirect to :5453"}, false},
 		{"only the IPv6 table", "table inet b4_mangle\ntable ip6 b4_dnsnat6\n", intact, intact, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
