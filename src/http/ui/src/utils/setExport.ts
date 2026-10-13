@@ -123,8 +123,7 @@ export function exportSetJson(config: B4SetConfig): string {
     }
     if (Object.keys(discovery).length === 0) delete result.discovery;
   }
-
   delete result.escalate;
 
-  return JSON.stringify(result);
+  return JSON.stringify(result, null, 2);
 }
