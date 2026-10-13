@@ -26,7 +26,7 @@ export const B4IntegrationCard = ({
   children,
 }: B4IntegrationCardProps) => {
   const open = !onToggle || enabled;
-  const changed = useChangedField(togglePath, title);
+  const changed = useChangedField(togglePath, toggleLabel ?? title);
 
   return (
     <Paper
