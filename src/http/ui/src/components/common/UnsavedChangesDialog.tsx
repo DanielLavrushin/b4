@@ -288,19 +288,32 @@ const SubgroupView = memo(function SubgroupView({
       {unblocked.map((item) => (
         <ChangeItemView key={item.path} item={item} groupLabel={groupLabel} t={t} />
       ))}
-      {blocks.map(([blockLabel, blockItems]) => (
-        <Box key={blockLabel} sx={{ pl: 1.5 }}>
-          <Typography
-            variant="caption"
-            sx={{ color: colors.text.secondary, fontWeight: 600, display: "block", mb: 0.5, ml: -1.5 }}
-          >
-            {blockLabel}
-          </Typography>
-          {blockItems.map((item) => (
+      {blocks.map(([blockLabel, blockItems]) => {
+        // Block header repeating the subgroup/group header adds no info:
+        // render such items flat at the subgroup level.
+        if (blockLabel === subgroupKey || blockLabel === groupLabel) {
+          return blockItems.map((item) => (
             <ChangeItemView key={item.path} item={item} groupLabel={groupLabel} t={t} />
-          ))}
-        </Box>
-      ))}
+          ));
+        }
+        return (
+          <Box key={blockLabel} sx={{ pl: 1.5 }}>
+            <Typography
+              variant="caption"
+              sx={{ color: colors.text.secondary, fontWeight: 600, display: "block", mb: 0.5, ml: -1.5 }}
+            >
+              {blockLabel}
+            </Typography>
+            {blockItems.map((item) => (
+              // Label hidden as a block-header duplicate: align the value
+              // with the header instead of indenting it under nothing.
+              <Box key={item.path} sx={item.label === blockLabel ? { ml: -1.5 } : undefined}>
+                <ChangeItemView item={item} groupLabel={groupLabel} t={t} />
+              </Box>
+            ))}
+          </Box>
+        );
+      })}
     </Box>
   );
 });
