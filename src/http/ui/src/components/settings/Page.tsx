@@ -287,11 +287,31 @@ export function SettingsPage() {
   );
   const labelsRef = useRef(new Map<string, ReactNode>());
   const snapshotLabels = useCallback(() => new Map(labelsRef.current), []);
+  const valueLabelsRef = useRef(
+    new Map<string, ReadonlyMap<string, string>>(),
+  );
+  const staticValueLabels = useMemo(() => {
+    const outer = new Map<string, ReadonlyMap<string, string>>();
+    outer.set(
+      "system.logging.level",
+      new Map([
+        ["0", t("settings.Logging.levelError")],
+        ["1", t("settings.Logging.levelInfo")],
+        ["2", t("settings.Logging.levelTrace")],
+        ["3", t("settings.Logging.levelDebug")],
+      ]),
+    );
+    return outer;
+  }, [t]);
   const dialogsOpen = showResetDialog || blocker.state === "blocked";
   const changeItems: UnsavedChangeItem[] = useMemo(() => {
     if (!dialogsOpen) return [];
-    return buildChangeItems(changedLeaves, snapshotLabels());
-  }, [dialogsOpen, changedLeaves, snapshotLabels]);
+    return buildChangeItems(
+      changedLeaves,
+      snapshotLabels(),
+      new Map([...staticValueLabels, ...valueLabelsRef.current]),
+    );
+  }, [dialogsOpen, changedLeaves, snapshotLabels, staticValueLabels]);
   const changedValues = useMemo(
     () =>
       new Map<string, { before: unknown; after: unknown }>(
@@ -548,6 +568,7 @@ export function SettingsPage() {
       changedValues={changedValues}
       scope="settings"
       registry={labelsRef}
+      valueRegistry={valueLabelsRef}
     >
     <Container
       maxWidth={false}
