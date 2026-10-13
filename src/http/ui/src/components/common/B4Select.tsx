@@ -9,7 +9,8 @@ import {
 } from "@mui/material";
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
-import { useChangedField } from "@context/ChangedFieldsContext";
+import { useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
+import { useEffect } from "react";
 
 interface B4SelectProps extends Omit<SelectProps<string | number>, "variant"> {
   label: string;
@@ -32,6 +33,14 @@ export const B4Select = ({
   ...props
 }: B4SelectProps) => {
   const changed = useChangedField(path, label);
+  const { registerValueLabels, scopeVersion } = useChangedFields();
+  useEffect(() => {
+    if (!path) return;
+    registerValueLabels(
+      path,
+      new Map(options.map((o) => [String(o.value), o.label])),
+    );
+  }, [path, options, registerValueLabels, scopeVersion]);
   const fc = (
     <FormControl fullWidth size="small">
       <InputLabel

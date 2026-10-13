@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 
@@ -18,6 +19,9 @@ interface ChangedFieldsContextValue {
   changedValues: ReadonlyMap<string, ChangedValues>;
   registerLabel: (path: string, label: ReactNode) => void;
   snapshotLabels: () => ReadonlyMap<string, ReactNode>;
+  registerValueLabels: (path: string, entries: ReadonlyMap<string, string>) => void;
+  snapshotValueLabels: () => ReadonlyMap<string, ReadonlyMap<string, string>>;
+  scopeVersion: number;
 }
 
 const EMPTY_CHANGED_PATHS: ReadonlySet<string> = new Set();
@@ -28,6 +32,9 @@ const defaultChangedFields: ChangedFieldsContextValue = {
   changedValues: EMPTY_CHANGED_VALUES,
   registerLabel: () => {},
   snapshotLabels: () => new Map(),
+  registerValueLabels: () => {},
+  snapshotValueLabels: () => new Map(),
+  scopeVersion: 0,
 };
 
 const ChangedFieldsContext =
@@ -38,20 +45,27 @@ export function ChangedFieldsProvider({
   changedValues,
   scope,
   registry,
+  valueRegistry,
   children,
 }: Readonly<{
   changedPaths: ReadonlySet<string>;
   changedValues?: ReadonlyMap<string, ChangedValues>;
   scope: string;
   registry?: { current: Map<string, ReactNode> };
+  valueRegistry?: { current: Map<string, ReadonlyMap<string, string>> };
   children: ReactNode;
 }>) {
   const ownRef = useRef(new Map<string, ReactNode>());
   const labelsRef = registry ?? ownRef;
+  const ownValueRef = useRef(new Map<string, ReadonlyMap<string, string>>());
+  const valueLabelsRef = valueRegistry ?? ownValueRef;
   const scopeRef = useRef(scope);
+  const [scopeVersion, setScopeVersion] = useState(0);
   if (scopeRef.current !== scope) {
     scopeRef.current = scope;
     labelsRef.current.clear();
+    valueLabelsRef.current.clear();
+    setScopeVersion((v) => v + 1);
   }
 
   const registerLabel = useCallback<ChangedFieldsContextValue["registerLabel"]>(
@@ -63,14 +77,37 @@ export function ChangedFieldsProvider({
   const snapshotLabels = useCallback<
     ChangedFieldsContextValue["snapshotLabels"]
   >(() => new Map(labelsRef.current), [labelsRef]);
+  const registerValueLabels = useCallback<
+    ChangedFieldsContextValue["registerValueLabels"]
+  >(
+    (path, entries) => {
+      const prev = valueLabelsRef.current.get(path);
+      valueLabelsRef.current.set(path, new Map([...(prev ?? []), ...entries]));
+    },
+    [valueLabelsRef],
+  );
+  const snapshotValueLabels = useCallback<
+    ChangedFieldsContextValue["snapshotValueLabels"]
+  >(() => new Map(valueLabelsRef.current), [valueLabelsRef]);
   const value = useMemo(
     () => ({
       changedPaths,
       changedValues: changedValues ?? EMPTY_CHANGED_VALUES,
       registerLabel,
       snapshotLabels,
+      registerValueLabels,
+      snapshotValueLabels,
+      scopeVersion,
     }),
-    [changedPaths, changedValues, registerLabel, snapshotLabels],
+    [
+      changedPaths,
+      changedValues,
+      registerLabel,
+      snapshotLabels,
+      registerValueLabels,
+      snapshotValueLabels,
+      scopeVersion,
+    ],
   );
 
   return (
@@ -115,7 +152,11 @@ export function useChangedArrayItem(
 export function useChangedFields(): {
   changedPaths: ReadonlySet<string>;
   changedValues: ReadonlyMap<string, ChangedValues>;
+  registerLabel: (path: string, label: ReactNode) => void;
   snapshotLabels: () => ReadonlyMap<string, ReactNode>;
+  registerValueLabels: (path: string, entries: ReadonlyMap<string, string>) => void;
+  snapshotValueLabels: () => ReadonlyMap<string, ReadonlyMap<string, string>>;
+  scopeVersion: number;
 } {
   return use(ChangedFieldsContext) ?? defaultChangedFields;
 }

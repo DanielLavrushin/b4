@@ -47,6 +47,8 @@
     "unsavedLeave": "Уйти без сохранения",
     "valueOn": "вкл",
     "valueOff": "выкл",
+    "addedItems": "Добавлено",
+    "interfaceItem": "Интерфейс {{name}}",
     "back": "Назад",
     "edit": "Редактировать",
     "enable": "Включить",
@@ -109,6 +111,7 @@
     },
     "devices": {
       "availableDevices": "Доступные устройства",
+      "devicesTitle": "Устройства",
       "filter": "Фильтр",
       "filterPlaceholder": "MAC-адрес, IP или имя",
       "clearFilter": "Очистить фильтр",

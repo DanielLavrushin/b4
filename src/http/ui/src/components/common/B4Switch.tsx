@@ -8,7 +8,8 @@ import {
 } from "@mui/material";
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
-import { useChangedArrayItem, useChangedField } from "@context/ChangedFieldsContext";
+import { useChangedArrayItem, useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
+import { useEffect } from "react";
 
 interface B4SwitchProps extends Omit<SwitchProps, "checked" | "onChange"> {
   label: string;
@@ -42,6 +43,10 @@ export const B4Switch = ({
     arrayItem,
     arrayItem ? label : undefined,
   );
+  const { registerValueLabels, scopeVersion } = useChangedFields();
+  useEffect(() => {
+    if (path && arrayItem) registerValueLabels(path, new Map([[arrayItem, label]]));
+  }, [path, arrayItem, label, registerValueLabels, scopeVersion]);
   const changed = arrayItem ? arrayItemChanged : fieldChanged;
   const labelColor = disabled
     ? colors.text.disabled

@@ -91,6 +91,7 @@ export const IpsTab = ({
           })}
           checked={catchAll}
           path="targets.ip"
+          arrayItem={IPV4_CATCH_ALL}
           onChange={(checked: boolean) =>
             onChange("targets.ip", setIpCatchAll(ips, checked, !!ipv6))
           }
@@ -156,6 +157,7 @@ export const IpsTab = ({
               onSelectedChange={(categories) =>
                 onChange("targets.geoip_categories", categories)
               }
+              path="targets.geoip_categories"
             />
           </Grid>
         )}

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Button, Tooltip, Typography } from "@mui/material";
 import { CategoryIcon, ClearIcon, InfoIcon } from "@b4.icons";
 import { B4ChipList } from "@b4.elements";
 import SettingAutocomplete from "@common/B4Autocomplete";
 import { useTranslation } from "react-i18next";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 
 interface GeoCategoryPanelProps {
   title: string;
@@ -18,6 +19,7 @@ interface GeoCategoryPanelProps {
   breakdown?: Record<string, number>;
   onSelectedChange: (categories: string[]) => void;
   onPreview?: (category: string) => void;
+  path?: string;
 }
 
 const CategoryLabel = ({
@@ -59,9 +61,15 @@ export const GeoCategoryPanel = ({
   breakdown,
   onSelectedChange,
   onPreview,
+  path,
 }: GeoCategoryPanelProps) => {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
+  const { changedValues, registerLabel } = useChangedFields();
+  useEffect(() => {
+    if (!path) return;
+    registerLabel(path, title);
+  }, [path, title, registerLabel]);
 
   const handleAdd = (category: string) => {
     if (category && !selected.includes(category)) {

@@ -140,6 +140,7 @@ export const DomainsTab = ({
             })}
             checked={catchAll}
             path="targets.sni_domains"
+            arrayItem={DOMAIN_CATCH_ALL}
             onChange={(checked: boolean) =>
               onChange(
                 "targets.sni_domains",
@@ -247,6 +248,7 @@ export const DomainsTab = ({
                 onChange("targets.geosite_categories", categories)
               }
               onPreview={setPreviewCategory}
+              path="targets.geosite_categories"
             />
           </Grid>
         )}

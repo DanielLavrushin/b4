@@ -47,6 +47,8 @@
     "unsavedLeave": "Leave without saving",
     "valueOn": "on",
     "valueOff": "off",
+    "addedItems": "Added",
+    "interfaceItem": "Interface {{name}}",
     "back": "Back",
     "edit": "Edit",
     "enable": "Enable",
@@ -106,6 +108,7 @@
     },
     "devices": {
       "availableDevices": "Available Devices",
+      "devicesTitle": "Devices",
       "filter": "Filter",
       "filterPlaceholder": "MAC address, IP or name",
       "clearFilter": "Clear filter",

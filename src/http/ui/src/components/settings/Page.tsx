@@ -74,7 +74,9 @@ import { B4Config } from "@models/config";
 const SETTINGS_DIFF_IGNORE = new Set(["sets", "available_ifaces", "revision"]);
 const SETTINGS_CHANGE_GROUPS: ChangeGroupDef[] = [
   { prefixes: ["queue"], labelKey: "settings.Queue.title" },
-  { prefixes: ["system.tables"], labelKey: "settings.Feature.engineTitle" },
+  { prefixes: ["system.tables.masquerade"], labelKey: "settings.Feature.natMasquerade" },
+  { prefixes: ["system.tables.dscp"], labelKey: "settings.Feature.dscpSettings" },
+  { prefixes: ["system.tables"], labelKey: "settings.Feature.firewallFeatures" },
   { prefixes: ["system.dns"], labelKey: "settings.Dns.title" },
   { prefixes: ["system.socks5"], labelKey: "settings.Socks5.title" },
   { prefixes: ["system.ip_health"], labelKey: "settings.IPHealth.title" },

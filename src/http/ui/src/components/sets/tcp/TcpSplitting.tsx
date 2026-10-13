@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Grid, Typography, Box, Chip } from "@mui/material";
 import {
   B4Switch,
@@ -28,6 +29,7 @@ interface TcpSplittingProps {
 
 export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
   const { t } = useTranslation();
+  const { registerValueLabels, scopeVersion } = useChangedFields();
   const strategy = config.fragmentation.strategy;
   const isTcpOrIp = strategy === "tcp" || strategy === "ip";
   const isOob = strategy === "oob";
@@ -65,6 +67,13 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
   ];
 
   const poolOptions = fragmentationOptions.filter((o) => o.value !== "none");
+  useEffect(() => {
+    registerValueLabels(
+      "fragmentation.strategy_pool",
+      new Map(fragmentationOptions.map((o) => [o.value, o.label])),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registerValueLabels, t, scopeVersion]);
 
   return (
     <Grid container spacing={3} sx={{ mt: 2 }}>

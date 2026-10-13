@@ -8,7 +8,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -41,16 +41,18 @@ import {
   type UnsavedChangeItem,
 } from "@common/UnsavedChangesDialog";
 import { B4Config, B4SetConfig, SystemConfig } from "@models/config";
+import { SET_PATH_LABEL_KEYS, SET_VALUE_LABEL_KEYS } from "@models/dialogLabels";
 import { dscpEnvironment } from "@utils";
 import { DiscoveryTab } from "./DiscoveryTab";
 import { EscalationSettings } from "./Escalation";
 import { ImportExportSettings } from "./ImportExport";
 import { ShareEnvelope } from "./ShareEnvelope";
 import { SetStats } from "./Manager";
-import { RoutingSettings } from "./Routing";
-import { TargetSettings } from "./Target";
-import { TcpTabContainer } from "./tcp/TcpTabContainer";
+import { RoutingSettings, ROUTING_SUB_TABS } from "./Routing";
+import { TargetSettings, TARGET_SUB_TABS } from "./Target";
+import { TcpTabContainer, TCP_SUB_TABS } from "./tcp/TcpTabContainer";
 import { UdpSettings } from "./Udp";
+import { FAKING_ACCORDIONS } from "./tcp/TcpFaking";
 import { useTranslation } from "react-i18next";
 
 const EDITOR_TAB_INDEX: Record<string, number> = {
@@ -81,13 +83,14 @@ const SET_EDITOR_DIFF_IGNORE = new Set([
   "asn_unresolved",
 ]);
 const SET_EDITOR_CHANGE_GROUPS: ChangeGroupDef[] = [
+  { prefixes: ["name"], labelKey: "core.setName" },
   { prefixes: ["targets"], labelKey: "sets.editor.tabs.targets" },
   {
     prefixes: ["tcp", "fragmentation", "faking", "mss_clamp"],
     labelKey: "sets.editor.tabs.tcp",
   },
   { prefixes: ["udp"], labelKey: "sets.editor.tabs.udp" },
-  { prefixes: ["routing", "dns"], labelKey: "sets.editor.tabs.routing" },
+  { prefixes: ["routing", "dscp", "dns"], labelKey: "sets.editor.tabs.routing" },
   { prefixes: ["escalate"], labelKey: "sets.editor.tabs.escalation" },
   { prefixes: ["discovery"], labelKey: "sets.editor.tabs.discovery" },
 ];
@@ -95,7 +98,7 @@ const TAB_PATH_PREFIXES: string[][] = [
   ["targets"],
   ["tcp", "fragmentation", "faking", "mss_clamp"],
   ["udp"],
-  ["routing", "dns"],
+  ["routing", "dns", "dscp"],
   ["escalate"],
   ["discovery"],
   [],
@@ -244,9 +247,42 @@ export const SetEditorPage = ({
   );
   const labelsRef = useRef(new Map<string, ReactNode>());
   const snapshotLabels = useCallback(() => new Map(labelsRef.current), []);
+  labelsRef.current.set("name", t("core.setName"));
+  const staticLabels = useMemo(() => {
+    const map = new Map<string, ReactNode>();
+    for (const [path, key] of Object.entries(SET_PATH_LABEL_KEYS)) {
+      map.set(path, t(key));
+    }
+    return map;
+  }, [t]);
+  const staticValueLabels = useMemo(() => {
+    const outer = new Map<string, ReadonlyMap<string, string>>();
+    for (const [path, entries] of Object.entries(SET_VALUE_LABEL_KEYS)) {
+      outer.set(
+        path,
+        new Map(Object.entries(entries).map(([value, key]) => [value, t(key)])),
+      );
+    }
+    return outer;
+  }, [t]);
+  const valueLabelsRef = useRef(
+    new Map<string, ReadonlyMap<string, string>>(),
+  );
+  const setNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of config.sets ?? []) {
+      const nested = item as unknown as { set?: B4SetConfig };
+      const set = nested.set ?? (item as unknown as B4SetConfig);
+      if (set.id) map.set(set.id, set.name || set.id);
+    }
+    const edited = editedSet;
+    if (edited?.id) map.set(edited.id, edited.name || edited.id);
+    return map;
+  }, [config.sets, editedSet]);
   const changeItems: UnsavedChangeItem[] = buildChangeItems(
     changedLeaves,
-    snapshotLabels(),
+    new Map([...staticLabels, ...snapshotLabels()]),
+    new Map([...staticValueLabels, ...valueLabelsRef.current, ["escalate.to", setNameById]]),
   );
   const changedValues = new Map<string, { before: unknown; after: unknown }>(
     changedLeaves.map((leaf) => [
@@ -254,10 +290,12 @@ export const SetEditorPage = ({
       { before: leaf.before, after: leaf.after },
     ]),
   );
-  const changeGroups = groupChangeItems(
-    changeItems,
-    SET_EDITOR_CHANGE_GROUPS,
-  ).map((group) => ({ ...group, label: t(group.label) }));
+  const changeGroups = groupChangeItems(changeItems, SET_EDITOR_CHANGE_GROUPS, [
+    ...TARGET_SUB_TABS.map((s) => ({ ...s, label: t(s.labelKey) })),
+    ...TCP_SUB_TABS.map((s) => ({ ...s, label: t(s.labelKey) })),
+    ...ROUTING_SUB_TABS.map((s) => ({ ...s, label: t(s.labelKey) })),
+    ...FAKING_ACCORDIONS.map((s) => ({ ...s, label: t(s.labelKey) })),
+  ]).map((group) => ({ ...group, label: t(group.label) }));
 
   if (!editedSet) return null;
   let saveTooltip: string;
