@@ -25,6 +25,12 @@ export interface SectionBlockDef {
   labelKey: string;
 }
 
+export interface DialogSubDef {
+  prefixes: string[];
+  labelKey: string;
+  blocks?: SectionBlockDef[];
+}
+
 export interface SettingsSection<Id extends string = string> {
   id: Id;
   labelKey: string;
@@ -176,3 +182,58 @@ export const sectionIndex = (
   const index = sections.findIndex((s) => s.id === id);
   return Math.max(index, 0);
 };
+
+// Dialog-only sub-groups for tabs without SettingsSection defs
+// (domains/discovery/mtproto/api). Keep prefixes in sync with the
+// corresponding tab entry in TAB_GROUP_PREFIXES (settings/Page.tsx).
+export const SETTINGS_DIALOG_SUB_DEFS: DialogSubDef[] = [
+  { prefixes: ["system.api"], labelKey: "settings.Api.ipinfoTitle" },
+  { prefixes: ["system.ai"], labelKey: "settings.Ai.title" },
+  { prefixes: ["system.web_server.mcp"], labelKey: "settings.Mcp.title" },
+  { prefixes: ["system.hub"], labelKey: "settings.Hub.title" },
+  { prefixes: ["system.geo"], labelKey: "settings.tabs.geodat" },
+  {
+    prefixes: ["system.checker"],
+    labelKey: "settings.tabs.discovery",
+    blocks: [{ prefixes: ["system.checker.watchdog"], labelKey: "settings.Watchdog.title" }],
+  },
+  {
+    prefixes: ["system.mtproto"],
+    labelKey: "settings.tabs.mtproto",
+    blocks: [
+      {
+        prefixes: [
+          "system.mtproto.enabled",
+          "system.mtproto.bind_address",
+          "system.mtproto.port",
+          "system.mtproto.expose",
+          "system.mtproto.fake_sni",
+          "system.mtproto.max_connections",
+          "system.mtproto.tcp_user_timeout_sec",
+          "system.mtproto.idle_timeout_sec",
+        ],
+        labelKey: "settings.MTProto.title",
+      },
+      { prefixes: ["system.mtproto.secrets"], labelKey: "settings.MTProto.secretsTitle" },
+      {
+        prefixes: [
+          "system.mtproto.upstream_mode",
+          "system.mtproto.dc_relay",
+          "system.mtproto.cfworker_domain",
+          "system.mtproto.cfworker_dpi",
+          "system.mtproto.ws_custom_domain",
+          "system.mtproto.ws_endpoint_host",
+          "system.mtproto.ws_front_sni",
+          "system.mtproto.cfproxy_enabled",
+          "system.mtproto.cfproxy_url",
+          "system.mtproto.dc_fallback_enabled",
+          "system.mtproto.dc_fallback_url",
+          "system.mtproto.bridge_wait_sec",
+        ],
+        labelKey: "settings.MTProto.upstreamTitle",
+      },
+      { prefixes: ["system.mtproto.bridge"], labelKey: "settings.TelegramBridge.title" },
+      { prefixes: ["system.mtproto.web_proxy"], labelKey: "settings.MTProto.webProxyTitle" },
+    ],
+  },
+];

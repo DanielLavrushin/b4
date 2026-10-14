@@ -9,8 +9,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useSearchParams, type BlockerFunction } from "react-router";
 import { useSnackbar } from "@context/SnackbarProvider";
 
 import {
@@ -28,18 +27,19 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { B4Tab, B4TabPanel, B4Tabs, B4TextField } from "@b4.elements";
 
 import { colors } from "@design";
-import { diffConfigLeaves } from "@utils";
+import { setByPath } from "@utils";
 import { ChangedFieldsProvider } from "@context/ChangedFieldsContext";
 import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
 import {
   UnsavedChangesDialog,
-  buildChangeItems,
-  groupChangeItems,
   type ChangeGroupDef,
-  type UnsavedChangeItem,
 } from "@common/UnsavedChangesDialog";
+import {
+  useChangeItems,
+  useChangeTracker,
+} from "@common/useChangeDialog";
 import { B4Config, B4SetConfig, SystemConfig } from "@models/config";
-import { SET_PATH_LABEL_KEYS, SET_VALUE_LABEL_KEYS } from "@models/dialogLabels";
+import { SET_PATH_LABEL_KEYS } from "@common/dialogLabels";
 import { dscpEnvironment } from "@utils";
 import { DiscoveryTab } from "./DiscoveryTab";
 import { EscalationSettings } from "./Escalation";
@@ -53,15 +53,19 @@ import { UdpSettings } from "./Udp";
 import { FAKING_ACCORDIONS } from "./tcp/TcpFaking";
 import { useTranslation } from "react-i18next";
 
-const EDITOR_TAB_INDEX: Record<string, number> = {
-  targets: 0,
-  tcp: 1,
-  udp: 2,
-  routing: 3,
-  escalation: 4,
-  discovery: 5,
-  importExport: 6,
-};
+const EDITOR_TABS = [
+  { key: "targets", labelKey: "sets.editor.tabs.targets", icon: <DomainIcon />, prefixes: ["targets"] },
+  { key: "tcp", labelKey: "sets.editor.tabs.tcp", icon: <TcpIcon />, prefixes: ["tcp", "fragmentation", "faking", "mss_clamp"] },
+  { key: "udp", labelKey: "sets.editor.tabs.udp", icon: <UdpIcon />, prefixes: ["udp"] },
+  { key: "routing", labelKey: "sets.editor.tabs.routing", icon: <RoutingIcon />, prefixes: ["routing", "dscp", "dns"] },
+  { key: "escalation", labelKey: "sets.editor.tabs.escalation", icon: <EscalateIcon />, prefixes: ["escalate"] },
+  { key: "discovery", labelKey: "sets.editor.tabs.discovery", icon: <DiscoveryIcon />, prefixes: ["discovery"] },
+  { key: "importExport", labelKey: "sets.editor.tabs.importExport", icon: <ImportExportIcon />, prefixes: [] as string[] },
+] as const;
+type EditorTabKey = (typeof EDITOR_TABS)[number]["key"];
+const TAB_INDEX: Record<EditorTabKey, number> = Object.fromEntries(
+  EDITOR_TABS.map((tab, index) => [tab.key, index]),
+) as Record<EditorTabKey, number>;
 const SET_EDITOR_DIFF_IGNORE = new Set([
   "id",
   "enabled",
@@ -82,24 +86,8 @@ const SET_EDITOR_DIFF_IGNORE = new Set([
 ]);
 const SET_EDITOR_CHANGE_GROUPS: ChangeGroupDef[] = [
   { prefixes: ["name"], labelKey: "core.setName" },
-  { prefixes: ["targets"], labelKey: "sets.editor.tabs.targets" },
-  {
-    prefixes: ["tcp", "fragmentation", "faking", "mss_clamp"],
-    labelKey: "sets.editor.tabs.tcp",
-  },
-  { prefixes: ["udp"], labelKey: "sets.editor.tabs.udp" },
-  { prefixes: ["routing", "dscp", "dns"], labelKey: "sets.editor.tabs.routing" },
-  { prefixes: ["escalate"], labelKey: "sets.editor.tabs.escalation" },
-  { prefixes: ["discovery"], labelKey: "sets.editor.tabs.discovery" },
-];
-const TAB_PATH_PREFIXES: string[][] = [
-  ["targets"],
-  ["tcp", "fragmentation", "faking", "mss_clamp"],
-  ["udp"],
-  ["routing", "dns", "dscp"],
-  ["escalate"],
-  ["discovery"],
-  [],
+  ...EDITOR_TABS.filter((t) => t.prefixes.length > 0)
+    .map(({ prefixes, labelKey }) => ({ prefixes: [...prefixes], labelKey })),
 ];
 
 export interface SetEditorPageProps {
@@ -126,25 +114,16 @@ export const SetEditorPage = ({
   onRefresh,
   navigationBypassRef,
 }: SetEditorPageProps) => {
-  enum TABS {
-    TARGETS = 0,
-    TCP,
-    UDP,
-    ROUTING,
-    ESCALATION,
-    DISCOVERY,
-    IMPORT_EXPORT,
-  }
-
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const requestedSub = searchParams.get("sub") ?? undefined;
-  const [activeTab, setActiveTab] = useState<TABS>(
-    (EDITOR_TAB_INDEX[requestedTab ?? ""] ?? TABS.TARGETS),
-  );
+  const [activeTab, setActiveTab] = useState<number>(() => {
+    const index = EDITOR_TABS.findIndex((t) => t.key === requestedTab);
+    return index === -1 ? 0 : index;
+  });
   const [editedSet, setEditedSet] = useState<B4SetConfig | null>(initialSet);
 
   const prevSetId = useRef(initialSet.id);
@@ -158,8 +137,8 @@ export const SetEditorPage = ({
 
   useEffect(() => {
     if (!requestedTab) return;
-    const index = EDITOR_TAB_INDEX[requestedTab];
-    if (index !== undefined) setActiveTab(index);
+    const index = EDITOR_TABS.findIndex((t) => t.key === requestedTab);
+    if (index !== -1) setActiveTab(index);
   }, [requestedTab]);
 
   const handleChange = (
@@ -174,26 +153,7 @@ export const SetEditorPage = ({
       | null
       | undefined,
   ) => {
-    setEditedSet((prev) => {
-      if (!prev) return prev;
-
-      const keys = field.split(".");
-
-      if (keys.length === 1) {
-        return { ...prev, [field]: value };
-      }
-
-      const newConfig = { ...prev };
-      let current: Record<string, unknown> = newConfig;
-
-      for (let i = 0; i < keys.length - 1; i++) {
-        current[keys[i]] = { ...(current[keys[i]] as object) };
-        current = current[keys[i]] as Record<string, unknown>;
-      }
-
-      current[keys.at(-1)!] = value;
-      return newConfig;
-    });
+    setEditedSet((prev) => (prev ? setByPath(prev, field, value) : prev));
   };
 
   const handleSave = () => {
@@ -219,25 +179,21 @@ export const SetEditorPage = ({
 
   const draftForDiff = editedSet ?? initialSet;
   const dscp = dscpEnvironment(config, initialSet.id);
-  const changedLeaves = useMemo(
-    () =>
-      diffConfigLeaves(
-        draftForDiff as unknown as Record<string, unknown>,
-        initialSet as unknown as Record<string, unknown>,
-        { ignoredRootKeys: SET_EDITOR_DIFF_IGNORE },
-      ),
-    [draftForDiff, initialSet],
-  );
+  const {
+    changedLeaves,
+    providerProps: changeProviderProps,
+  } = useChangeTracker({
+    draft: draftForDiff as unknown as Record<string, unknown>,
+    baseline: initialSet as unknown as Record<string, unknown>,
+    ignoredRootKeys: SET_EDITOR_DIFF_IGNORE,
+    scope: `set:${(editedSet ?? initialSet).id}`,
+  });
   const dirty = changedLeaves.length > 0;
-  const changedPaths = useMemo(
-    () => new Set(changedLeaves.map((leaf) => leaf.path)),
-    [changedLeaves],
-  );
   const changedTabs = useMemo(() => {
     const tabs = new Set<number>();
     for (const leaf of changedLeaves) {
-      TAB_PATH_PREFIXES.forEach((prefixes, index) => {
-        for (const prefix of prefixes) {
+      EDITOR_TABS.forEach((tab, index) => {
+        for (const prefix of tab.prefixes) {
           if (leaf.path === prefix || leaf.path.startsWith(`${prefix}.`)) {
             tabs.add(index);
             break;
@@ -248,7 +204,7 @@ export const SetEditorPage = ({
     return tabs;
   }, [changedLeaves]);
   const hasUnsavedChanges = dirty;
-  const blocker = useUnsavedChangesGuard(
+  const shouldBlock = useCallback<BlockerFunction>(
     ({ nextLocation }) => {
       if (navigationBypassRef?.current) {
         navigationBypassRef.current = false;
@@ -256,33 +212,9 @@ export const SetEditorPage = ({
       }
       return hasUnsavedChanges && nextLocation.pathname !== location.pathname;
     },
-    hasUnsavedChanges,
+    [hasUnsavedChanges, location.pathname, navigationBypassRef],
   );
-  const labelsRef = useRef(new Map<string, ReactNode>());
-  const snapshotLabels = useCallback(() => new Map(labelsRef.current), []);
-  useEffect(() => {
-    labelsRef.current.set("name", t("core.setName"));
-  }, [t]);
-  const staticLabels = useMemo(() => {
-    const map = new Map<string, ReactNode>();
-    for (const [path, key] of Object.entries(SET_PATH_LABEL_KEYS)) {
-      map.set(path, t(key));
-    }
-    return map;
-  }, [t]);
-  const staticValueLabels = useMemo(() => {
-    const outer = new Map<string, ReadonlyMap<string, string>>();
-    for (const [path, entries] of Object.entries(SET_VALUE_LABEL_KEYS)) {
-      outer.set(
-        path,
-        new Map(Object.entries(entries).map(([value, key]) => [value, t(key)])),
-      );
-    }
-    return outer;
-  }, [t]);
-  const valueLabelsRef = useRef(
-    new Map<string, ReadonlyMap<string, string>>(),
-  );
+  const blocker = useUnsavedChangesGuard(shouldBlock, hasUnsavedChanges);
   const setNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const item of config.sets ?? []) {
@@ -295,24 +227,6 @@ export const SetEditorPage = ({
     return map;
   }, [config.sets, editedSet]);
   const dialogsOpen = showDiscardDialog || blocker.state === "blocked";
-  const changedValues = useMemo(
-    () =>
-      new Map<string, { before: unknown; after: unknown }>(
-        changedLeaves.map((leaf) => [
-          leaf.path,
-          { before: leaf.before, after: leaf.after },
-        ]),
-      ),
-    [changedLeaves],
-  );
-  const changeItems: UnsavedChangeItem[] = useMemo(() => {
-    if (!dialogsOpen) return [];
-    return buildChangeItems(
-      changedLeaves,
-      new Map([...staticLabels, ...snapshotLabels()]),
-      new Map([...staticValueLabels, ...valueLabelsRef.current, ["escalate.to", setNameById]]),
-    );
-  }, [dialogsOpen, changedLeaves, staticLabels, staticValueLabels, setNameById, snapshotLabels]);
   const tabSubDefs = useMemo(
     () => [
       ...TARGET_SUB_TABS.map((s) => ({ prefixes: s.prefixes, label: t(s.labelKey) })),
@@ -322,16 +236,16 @@ export const SetEditorPage = ({
     ],
     [t],
   );
-  const changeGroups = useMemo(
-    () =>
-      dialogsOpen
-        ? groupChangeItems(changeItems, SET_EDITOR_CHANGE_GROUPS, tabSubDefs).map((group) => ({
-            ...group,
-            label: t(group.label),
-          }))
-        : [],
-    [dialogsOpen, changeItems, tabSubDefs, t],
-  );
+  const { changeItems, changeGroups } = useChangeItems({
+    changedLeaves,
+    registry: changeProviderProps.registry,
+    valueRegistry: changeProviderProps.valueRegistry,
+    pathLabelKeys: SET_PATH_LABEL_KEYS,
+    extraValueLabels: [["escalate.to", setNameById]],
+    groups: SET_EDITOR_CHANGE_GROUPS,
+    subDefs: tabSubDefs,
+    dialogsOpen,
+  });
 
   if (!editedSet) return null;
   let saveTooltip: string;
@@ -340,11 +254,7 @@ export const SetEditorPage = ({
   else saveTooltip = t("core.save");
   return (
     <ChangedFieldsProvider
-      changedPaths={changedPaths}
-      changedValues={changedValues}
-      scope={`set:${editedSet.id}`}
-      registry={labelsRef}
-      valueRegistry={valueLabelsRef}
+      {...changeProviderProps}
     >
     <Box
       sx={{
@@ -455,62 +365,24 @@ export const SetEditorPage = ({
               setActiveTab(v);
             }}
           >
-            <B4Tab
-              icon={<DomainIcon />}
-              label={t("sets.editor.tabs.targets")}
-              inline
-              hasChanges={changedTabs.has(TABS.TARGETS)}
-              index={TABS.TARGETS}
-            />
-            <B4Tab
-              icon={<TcpIcon />}
-              label={t("sets.editor.tabs.tcp")}
-              inline
-              hasChanges={changedTabs.has(TABS.TCP)}
-              index={TABS.TCP}
-            />
-            <B4Tab
-              icon={<UdpIcon />}
-              label={t("sets.editor.tabs.udp")}
-              inline
-              hasChanges={changedTabs.has(TABS.UDP)}
-              index={TABS.UDP}
-            />
-            <B4Tab
-              icon={<RoutingIcon />}
-              label={t("sets.editor.tabs.routing")}
-              inline
-              hasChanges={changedTabs.has(TABS.ROUTING)}
-              index={TABS.ROUTING}
-            />
-            <B4Tab
-              icon={<EscalateIcon />}
-              label={t("sets.editor.tabs.escalation")}
-              inline
-              hasChanges={changedTabs.has(TABS.ESCALATION)}
-              index={TABS.ESCALATION}
-            />
-            <B4Tab
-              icon={<DiscoveryIcon />}
-              label={t("sets.editor.tabs.discovery")}
-              inline
-              hasChanges={changedTabs.has(TABS.DISCOVERY)}
-              index={TABS.DISCOVERY}
-            />
-            <B4Tab
-              icon={<ImportExportIcon />}
-              label={t("sets.editor.tabs.importExport")}
-              inline
-              index={TABS.IMPORT_EXPORT}
-              idPrefix="set-tab"
-            />
+            {EDITOR_TABS.map((tab, index) => (
+              <B4Tab
+                key={tab.key}
+                icon={tab.icon}
+                label={t(tab.labelKey)}
+                inline
+                hasChanges={changedTabs.has(index)}
+                index={index}
+                idPrefix="set-tab"
+              />
+            ))}
           </B4Tabs>
         </Box>
       </Paper>
 
       {/* Tab Content */}
       <Box sx={{ flex: 1, overflow: "auto", pb: 2, pr: 1, scrollbarGutter: "stable" }}>
-        <B4TabPanel value={activeTab} index={TABS.TARGETS} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.targets} idPrefix="set-tab" sx={{ pt: 3 }}>
           <TargetSettings
             initialSub={requestedSub}
             geo={settings.geo}
@@ -523,7 +395,7 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
-        <B4TabPanel value={activeTab} index={TABS.TCP} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.tcp} idPrefix="set-tab" sx={{ pt: 3 }}>
           <TcpTabContainer
             initialSub={requestedSub}
             config={editedSet}
@@ -532,7 +404,7 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
-        <B4TabPanel value={activeTab} index={TABS.UDP} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.udp} idPrefix="set-tab" sx={{ pt: 3 }}>
           <UdpSettings
             config={editedSet}
             queue={config.queue}
@@ -540,7 +412,7 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
-        <B4TabPanel value={activeTab} index={TABS.ROUTING} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.routing} idPrefix="set-tab" sx={{ pt: 3 }}>
           <RoutingSettings
             initialSub={requestedSub}
             set={editedSet}
@@ -553,7 +425,7 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
-        <B4TabPanel value={activeTab} index={TABS.ESCALATION} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.escalation} idPrefix="set-tab" sx={{ pt: 3 }}>
           <EscalationSettings
             config={editedSet}
             allSets={config.sets ?? []}
@@ -561,7 +433,7 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
-        <B4TabPanel value={activeTab} index={TABS.DISCOVERY} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.discovery} idPrefix="set-tab" sx={{ pt: 3 }}>
           <DiscoveryTab
             config={editedSet}
             isNew={isNew}
@@ -572,7 +444,7 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
-        <B4TabPanel value={activeTab} index={TABS.IMPORT_EXPORT} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.importExport} idPrefix="set-tab" sx={{ pt: 3 }}>
           <ImportExportSettings
             config={editedSet}
             deviceFilter={dscp.deviceFilter}

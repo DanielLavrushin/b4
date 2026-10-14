@@ -13,3 +13,4 @@ export * from "./configDiff";
 export * from "./pins";
 export * from "./dscp";
 export * from "./setExport";
+export * from "./setByPath";

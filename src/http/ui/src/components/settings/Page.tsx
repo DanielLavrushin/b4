@@ -12,7 +12,6 @@ import {
   Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
 import { useLocation, useNavigate, type BlockerFunction } from "react-router";
 import { Trans, useTranslation } from "react-i18next";
 import i18n, { setLanguage } from "../../i18n";
@@ -45,6 +44,7 @@ import { RestartDialog } from "./RestartDialog";
 import {
   CORE_SECTIONS,
   SYSTEM_SECTIONS,
+  SETTINGS_DIALOG_SUB_DEFS,
   SettingsSection,
   sectionIndex,
 } from "./sections";
@@ -52,10 +52,10 @@ import {
 import { B4Alert, B4Tab, B4Tabs } from "@b4.elements";
 import { configApi, SettingsPropHandlerType } from "@b4.settings";
 import {
-  diffConfigLeaves,
   isStaleWriteError,
   reportSaveError,
   reportStaleWrite,
+  setByPath,
 } from "@utils";
 import {
   ChangedFieldsProvider,
@@ -63,32 +63,16 @@ import {
 import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
 import {
   UnsavedChangesDialog,
-  buildChangeItems,
-  groupChangeItems,
   type ChangeGroupDef,
-  type UnsavedChangeItem,
 } from "@common/UnsavedChangesDialog";
+import {
+  useChangeItems,
+  useChangeTracker,
+} from "@common/useChangeDialog";
 import { colors, spacing } from "@design";
 import { B4Config } from "@models/config";
-import { SETTINGS_PATH_LABEL_KEYS } from "@models/dialogLabels";
+import { SETTINGS_PATH_LABEL_KEYS } from "@common/dialogLabels";
 const SETTINGS_DIFF_IGNORE = new Set(["sets", "available_ifaces", "revision"]);
-const SETTINGS_TAB_GROUPS: ChangeGroupDef[] = [
-  {
-    prefixes: ["queue", "system.tables", "system.dns", "system.socks5", "system.ip_health"],
-    labelKey: "settings.tabs.core",
-  },
-  {
-    prefixes: ["system.logging", "system.memory_limit", "system.timezone", "system.update", "system.web_server"],
-    labelKey: "settings.tabs.system",
-  },
-  { prefixes: ["system.geo"], labelKey: "settings.tabs.geodat" },
-  { prefixes: ["system.checker"], labelKey: "settings.tabs.discovery" },
-  { prefixes: ["system.mtproto"], labelKey: "settings.tabs.mtproto" },
-  {
-    prefixes: ["system.api", "system.ai", "system.web_server.mcp", "system.hub"],
-    labelKey: "settings.tabs.api",
-  },
-];
 const changed = (pick: (c: B4Config) => unknown, a: B4Config, b: B4Config) =>
   JSON.stringify(pick(a)) !== JSON.stringify(pick(b));
 const changedPrefix = (
@@ -141,6 +125,21 @@ const TAB_SECTIONS = new Map<TABS, SettingsSection[]>([
   [TABS.GENERAL, CORE_SECTIONS],
   [TABS.SYSTEM, SYSTEM_SECTIONS],
 ]);
+
+const TAB_GROUP_PREFIXES: Record<TABS, { labelKey: string; prefixes: string[] }> = {
+  [TABS.GENERAL]: { labelKey: "settings.tabs.core", prefixes: ["queue", "system.tables", "system.dns", "system.socks5", "system.ip_health"] },
+  [TABS.SYSTEM]: { labelKey: "settings.tabs.system", prefixes: ["system.logging", "system.memory_limit", "system.timezone", "system.update", "system.web_server"] },
+  [TABS.DOMAINS]: { labelKey: "settings.tabs.geodat", prefixes: ["system.geo"] },
+  [TABS.DISCOVERY]: { labelKey: "settings.tabs.discovery", prefixes: ["system.checker"] },
+  [TABS.MTPROTO]: { labelKey: "settings.tabs.mtproto", prefixes: ["system.mtproto"] },
+  [TABS.API]: { labelKey: "settings.tabs.api", prefixes: ["system.api", "system.ai", "system.web_server.mcp", "system.hub"] },
+  [TABS.PAYLOADS]: { labelKey: "settings.tabs.payloads", prefixes: [] },
+};
+const SETTINGS_TAB_GROUPS: ChangeGroupDef[] = (
+  Object.values(TAB_GROUP_PREFIXES) as { labelKey: string; prefixes: string[] }[]
+)
+  .filter((g) => g.prefixes.length > 0)
+  .map(({ labelKey, prefixes }) => ({ labelKey, prefixes }));
 
 interface SectionState {
   dirty: boolean;
@@ -270,20 +269,17 @@ export function SettingsPage() {
   }, [location.pathname, currentTabPath, navigate]);
 
   // Check if configuration has been modified
-  const changedLeaves = useMemo(() => {
-    if (!config || !originalConfig) return [];
-    return diffConfigLeaves(
-      config as unknown as Record<string, unknown>,
-      originalConfig as unknown as Record<string, unknown>,
-      { ignoredRootKeys: SETTINGS_DIFF_IGNORE },
-    );
-  }, [config, originalConfig]);
+  const {
+    changedLeaves,
+    changedPaths,
+    providerProps: changeProviderProps,
+  } = useChangeTracker({
+    draft: config as unknown as Record<string, unknown> | null,
+    baseline: originalConfig as unknown as Record<string, unknown> | null,
+    ignoredRootKeys: SETTINGS_DIFF_IGNORE,
+    scope: "settings",
+  });
   const hasChanges = changedLeaves.length > 0;
-
-  const changedPaths = useMemo<ReadonlySet<string>>(
-    () => new Set<string>(changedLeaves.map((leaf) => leaf.path)),
-    [changedLeaves],
-  );
   const hasUnsavedChanges = hasChanges;
   const shouldBlock = useCallback<BlockerFunction>(
     ({ nextLocation }) =>
@@ -291,40 +287,13 @@ export function SettingsPage() {
     [hasUnsavedChanges],
   );
   const blocker = useUnsavedChangesGuard(shouldBlock, hasUnsavedChanges);
-  const labelsRef = useRef(new Map<string, ReactNode>());
-  const snapshotLabels = useCallback(() => new Map(labelsRef.current), []);
-  const valueLabelsRef = useRef(
-    new Map<string, ReadonlyMap<string, string>>(),
-  );
-  const staticLabels = useMemo(() => {
-    const map = new Map<string, ReactNode>();
-    for (const [path, key] of Object.entries(SETTINGS_PATH_LABEL_KEYS)) {
-      map.set(path, t(key));
-    }
-    return map;
-  }, [t]);
   const dialogsOpen = showResetDialog || blocker.state === "blocked";
-  // shortcut: value labels rely on mounted inputs registering via
-  // ChangedFieldsContext; safe while settings tabs stay mounted (hidden).
-  // Revisit if tabs switch to conditional rendering.
-  const changeItems: UnsavedChangeItem[] = useMemo(() => {
-    if (!dialogsOpen) return [];
-    return buildChangeItems(
-      changedLeaves,
-      new Map([...staticLabels, ...snapshotLabels()]),
-      valueLabelsRef.current,
-    );
-  }, [dialogsOpen, changedLeaves, snapshotLabels, staticLabels]);
-  const changedValues = useMemo(
-    () =>
-      new Map<string, { before: unknown; after: unknown }>(
-        changedLeaves.map((leaf) => [
-          leaf.path,
-          { before: leaf.before, after: leaf.after },
-        ]),
-      ),
-    [changedLeaves],
-  );
+  // shortcut: value labels resolve via the ChangedFieldsContext registry whose
+  // entries persist in refs after tabs unmount (cleared only on scope change).
+  // Static tables cover only never-mounted conditional controls. Note: labels
+  // of hidden tabs go stale on language switch (runtime entry shadows the
+  // fresh static one) — pre-existing, both before and after the
+  // static-value-labels removal.
 
   const settingsSubDefs = useMemo(
     () => [
@@ -338,68 +307,23 @@ export function SettingsPage() {
         label: t(s.labelKey),
         blocks: s.blocks?.map((b) => ({ prefixes: b.prefixes, label: t(b.labelKey) })),
       })),
-      { prefixes: ["system.api"], label: t("settings.Api.ipinfoTitle") },
-      { prefixes: ["system.ai"], label: t("settings.Ai.title") },
-      { prefixes: ["system.web_server.mcp"], label: t("settings.Mcp.title") },
-      { prefixes: ["system.hub"], label: t("settings.Hub.title") },
-      { prefixes: ["system.geo"], label: t("settings.tabs.geodat") },
-      {
-        prefixes: ["system.checker"],
-        label: t("settings.tabs.discovery"),
-        blocks: [{ prefixes: ["system.checker.watchdog"], label: t("settings.Watchdog.title") }],
-      },
-      {
-        prefixes: ["system.mtproto"],
-        label: t("settings.tabs.mtproto"),
-        blocks: [
-          {
-            prefixes: [
-              "system.mtproto.enabled",
-              "system.mtproto.bind_address",
-              "system.mtproto.port",
-              "system.mtproto.expose",
-              "system.mtproto.fake_sni",
-              "system.mtproto.max_connections",
-              "system.mtproto.tcp_user_timeout_sec",
-              "system.mtproto.idle_timeout_sec",
-            ],
-            label: t("settings.MTProto.title"),
-          },
-          { prefixes: ["system.mtproto.secrets"], label: t("settings.MTProto.secretsTitle") },
-          {
-            prefixes: [
-              "system.mtproto.upstream_mode",
-              "system.mtproto.dc_relay",
-              "system.mtproto.cfworker_domain",
-              "system.mtproto.cfworker_dpi",
-              "system.mtproto.ws_custom_domain",
-              "system.mtproto.ws_endpoint_host",
-              "system.mtproto.ws_front_sni",
-              "system.mtproto.cfproxy_enabled",
-              "system.mtproto.cfproxy_url",
-              "system.mtproto.dc_fallback_enabled",
-              "system.mtproto.dc_fallback_url",
-              "system.mtproto.bridge_wait_sec",
-            ],
-            label: t("settings.MTProto.upstreamTitle"),
-          },
-          { prefixes: ["system.mtproto.bridge"], label: t("settings.TelegramBridge.title") },
-          { prefixes: ["system.mtproto.web_proxy"], label: t("settings.MTProto.webProxyTitle") },
-        ],
-      },
+      ...SETTINGS_DIALOG_SUB_DEFS.map((s) => ({
+        prefixes: s.prefixes,
+        label: t(s.labelKey),
+        blocks: s.blocks?.map((b) => ({ prefixes: b.prefixes, label: t(b.labelKey) })),
+      })),
     ],
     [t],
   );
-  const changeGroups = useMemo(
-    () =>
-      dialogsOpen
-        ? groupChangeItems(changeItems, SETTINGS_TAB_GROUPS, settingsSubDefs).map((group) => ({
-            ...group,
-            label: t(group.label),
-          }))
-        : [],
-    [dialogsOpen, changeItems, settingsSubDefs, t],
-  );
+  const { changeItems, changeGroups } = useChangeItems({
+    changedLeaves,
+    registry: changeProviderProps.registry,
+    valueRegistry: changeProviderProps.valueRegistry,
+    pathLabelKeys: SETTINGS_PATH_LABEL_KEYS,
+    groups: SETTINGS_TAB_GROUPS,
+    subDefs: settingsSubDefs,
+    dialogsOpen,
+  });
 
   const sectionState = useMemo(() => {
     const state: Partial<Record<TABS, SectionState[]>> = {};
@@ -427,21 +351,24 @@ export function SettingsPage() {
       [TABS.GENERAL]: !!sectionState[TABS.GENERAL]?.some((s) => s.dirty),
 
       // Geosite Settings
-      [TABS.DOMAINS]: changedPrefix(changedPaths, "system.geo"),
+      [TABS.DOMAINS]: TAB_GROUP_PREFIXES[TABS.DOMAINS].prefixes.some((p) =>
+        changedPrefix(changedPaths, p),
+      ),
 
       // Discovery
-      [TABS.DISCOVERY]: changedPrefix(changedPaths, "system.checker"),
+      [TABS.DISCOVERY]: TAB_GROUP_PREFIXES[TABS.DISCOVERY].prefixes.some((p) =>
+        changedPrefix(changedPaths, p),
+      ),
 
       // MTProto
-      [TABS.MTPROTO]: changedPrefix(changedPaths, "system.mtproto"),
+      [TABS.MTPROTO]: TAB_GROUP_PREFIXES[TABS.MTPROTO].prefixes.some((p) =>
+        changedPrefix(changedPaths, p),
+      ),
 
       // API
-      [TABS.API]: [
-        "system.api",
-        "system.ai",
-        "system.web_server.mcp",
-        "system.hub",
-      ].some((p) => changedPrefix(changedPaths, p)),
+      [TABS.API]: TAB_GROUP_PREFIXES[TABS.API].prefixes.some((p) =>
+        changedPrefix(changedPaths, p),
+      ),
 
       // PAYLOADS
       [TABS.PAYLOADS]: false,
@@ -532,26 +459,7 @@ export function SettingsPage() {
   };
 
   const handleChange = (field: string, value: SettingsPropHandlerType) => {
-    setConfig((prev) => {
-      if (!prev) return prev;
-
-      const keys = field.split(".");
-
-      if (keys.length === 1) {
-        return { ...prev, [field]: value };
-      }
-
-      const newConfig = { ...prev };
-      let current: Record<string, unknown> = newConfig;
-
-      for (let i = 0; i < keys.length - 1; i++) {
-        current[keys[i]] = { ...(current[keys[i]] as object) };
-        current = current[keys[i]] as Record<string, unknown>;
-      }
-
-      current[keys.at(-1)!] = value;
-      return newConfig;
-    });
+    setConfig((prev) => (prev ? setByPath(prev, field, value) : prev));
   };
 
   if (loading || !config) {
@@ -571,11 +479,7 @@ export function SettingsPage() {
 
   return (
     <ChangedFieldsProvider
-      changedPaths={changedPaths}
-      changedValues={changedValues}
-      scope="settings"
-      registry={labelsRef}
-      valueRegistry={valueLabelsRef}
+      {...changeProviderProps}
     >
     <Container
       maxWidth={false}
