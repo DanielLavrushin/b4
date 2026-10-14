@@ -9,13 +9,12 @@ import {
   B4Switch,
   B4Select,
   B4Alert,
-  B4Badge,
   B4TextField,
+  InterfaceChips,
 } from "@b4.elements";
 import { Box, Typography } from "@mui/material";
 import { EngineFailure, SettingsPropHandlerType } from "@models/settings";
-import { useChangedArrayItem, useChangedFields } from "@context/ChangedFieldsContext";
-import { colors } from "@design";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 
 interface EngineCardProps {
   config: B4Config;
@@ -24,41 +23,6 @@ interface EngineCardProps {
 
 const IPV6_BYPASS_DISMISS_KEY = "b4_ipv6_bypass_dismissed";
 const ENGINE_FAILURE_RECHECK_MS = 15000;
-
-function CaptureIfaceBadge({
-  iface,
-  selected,
-  onClick,
-}: {
-  iface: string;
-  selected: boolean;
-  onClick?: () => void;
-}) {
-  const { t } = useTranslation();
-  const changed = useChangedArrayItem("queue.interfaces", iface, t("core.interfaceItem", { name: iface }));
-  return (
-    <B4Badge
-      label={iface}
-      onClick={onClick}
-      variant={selected ? "filled" : "outlined"}
-      color="primary"
-      sx={
-        changed
-          ? {
-              borderColor: colors.secondary,
-              "&.MuiChip-outlinedPrimary": {
-                borderColor: colors.secondary,
-              },
-              "&.MuiChip-filledPrimary": {
-                backgroundColor: colors.accent.secondary,
-                color: colors.secondary,
-              },
-            }
-          : undefined
-      }
-    />
-  );
-}
 
 export const useEngineStatus = () => {
   const [ipv6BypassesSets, setIpv6BypassesSets] = useState(false);
@@ -192,24 +156,14 @@ export const PacketEngineSettings = ({
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           {t("settings.Feature.networkInterfacesDesc")}
         </Typography>
-        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-          {(config.available_ifaces ?? []).map((iface) => {
-            const isSelected = (config.queue.interfaces || []).includes(iface);
-            return (
-              <CaptureIfaceBadge
-                key={iface}
-                iface={iface}
-                selected={isSelected}
-                onClick={() => handleInterfaceToggle(iface)}
-              />
-            );
-          })}
-        </Box>
-        {(config.available_ifaces ?? []).length === 0 && (
-          <B4Alert severity="warning" sx={{ mt: 1 }}>
-            {t("settings.Feature.noInterfacesDetected")}
-          </B4Alert>
-        )}
+        <InterfaceChips
+          available={config.available_ifaces ?? []}
+          selected={selectedIfaces}
+          disabled={false}
+          onToggle={handleInterfaceToggle}
+          path="queue.interfaces"
+          showMissing={false}
+        />
         {ifaceFilterSeesNothing && (
           <B4Alert severity="warning" sx={{ mt: 2 }}>
             {t("settings.Feature.interfaceFilterSeesNothing", {

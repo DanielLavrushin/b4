@@ -11,14 +11,11 @@ import {
   B4Select,
   B4Slider,
   B4Switch,
+  InterfaceChips,
 } from "@b4.elements";
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
-import {
-  useChangedArrayItem,
-  useChangedField,
-} from "@context/ChangedFieldsContext";
-import { colors } from "@design";
+import { useChangedField } from "@context/ChangedFieldsContext";
 import {
   DSCP_MAX_VALUE,
   dscpStampingSets,
@@ -140,102 +137,6 @@ export const FirewallRulesSettings = ({
   );
 };
 
-interface InterfaceChipsProps {
-  available: string[];
-  selected: string[];
-  disabled: boolean;
-  onToggle: (iface: string) => void;
-  path: string;
-}
-
-function IfaceBadge({
-  path,
-  iface,
-  label,
-  variant,
-  color,
-  onClick,
-}: {
-  path: string;
-  iface: string;
-  label: string;
-  variant: "filled" | "outlined";
-  color: "error" | "primary";
-  onClick?: () => void;
-}) {
-  const { t } = useTranslation();
-  const changed = useChangedArrayItem(path, iface, t("core.interfaceItem", { name: iface }));
-  return (
-    <B4Badge
-      label={label}
-      onClick={onClick}
-      variant={variant}
-      color={color}
-      sx={
-        changed
-          ? {
-              borderColor: colors.secondary,
-              "&.MuiChip-outlinedPrimary": {
-                borderColor: colors.secondary,
-              },
-              "&.MuiChip-filledPrimary": {
-                backgroundColor: colors.accent.secondary,
-                color: colors.secondary,
-              },
-            }
-          : undefined
-      }
-    />
-  );
-}
-
-const InterfaceChips = ({
-  available,
-  selected,
-  disabled,
-  onToggle,
-  path,
-}: InterfaceChipsProps) => {
-  const { t } = useTranslation();
-  const toggle = (iface: string) =>
-    disabled ? undefined : () => onToggle(iface);
-
-  return (
-    <>
-      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-        {selected
-          .filter((iface) => !available.includes(iface))
-          .map((iface) => (
-            <IfaceBadge
-              key={iface}
-              path={path}
-              iface={iface}
-              label={`${iface} (${t("settings.Feature.missingIface")})`}
-              onClick={toggle(iface)}
-              variant="filled"
-              color="error"
-            />
-          ))}
-        {available.map((iface) => (
-          <IfaceBadge
-            key={iface}
-            path={path}
-            iface={iface}
-            label={iface}
-            onClick={toggle(iface)}
-            variant={selected.includes(iface) ? "filled" : "outlined"}
-            color="primary"
-          />
-        ))}
-      </Box>
-      {available.length === 0 && (
-        <B4Alert severity="warning" sx={{ mt: 1 }}>
-          {t("settings.Feature.noInterfacesDetected")}
-        </B4Alert>
-      )}
-    </>
-  );
-};
 
 export const NatMasqueradeSettings = ({
   config,
