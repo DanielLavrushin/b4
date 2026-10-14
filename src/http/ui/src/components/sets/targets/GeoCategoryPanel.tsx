@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Box, Button, Tooltip, Typography } from "@mui/material";
 import { CategoryIcon, ClearIcon, InfoIcon } from "@b4.icons";
 import { B4ChipList } from "@b4.elements";
@@ -31,7 +31,7 @@ const CategoryLabel = ({
 }) => (
   <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
     <span>{category}</span>
-    {count && (
+    {count ? (
       <Typography
         component="span"
         variant="caption"
@@ -44,7 +44,7 @@ const CategoryLabel = ({
       >
         {count}
       </Typography>
-    )}
+    ) : null}
   </Box>
 );
 
@@ -67,13 +67,18 @@ export const GeoCategoryPanel = ({
   const [input, setInput] = useState("");
   const { changedValues, registerLabel } = useChangedFields();
   const leaf = path ? changedValues.get(path) : undefined;
-  const has = (category: string): boolean => {
-    if (!leaf || !Array.isArray(leaf.after) || !Array.isArray(leaf.before))
-      return false;
-    const after = (leaf.after as unknown[]).includes(category);
-    const before = (leaf.before as unknown[]).includes(category);
-    return after !== before;
-  };
+  // O(1) membership per chip instead of O(n) includes scans.
+  const leafSets = useMemo(() => {
+    if (!leaf || !Array.isArray(leaf.after) || !Array.isArray(leaf.before)) {
+      return null;
+    }
+    return {
+      after: new Set(leaf.after as unknown[]),
+      before: new Set(leaf.before as unknown[]),
+    };
+  }, [leaf]);
+  const has = (category: string): boolean =>
+    !!leafSets && leafSets.after.has(category) !== leafSets.before.has(category);
   useEffect(() => {
     if (!path) return;
     registerLabel(path, title);

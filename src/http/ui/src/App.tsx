@@ -1,5 +1,6 @@
 import {
   AppBar,
+  CircularProgress,
   Box,
   CssBaseline,
   Divider,
@@ -15,7 +16,7 @@ import {
   Typography,
   useMediaQuery,
 } from "@mui/material";
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import {
   Navigate,
   Outlet,
@@ -50,15 +51,34 @@ import {
   useUnseenDomainsCount,
 } from "./context/B4WsProvider";
 
-import { ConnectionsPage } from "@b4.connections";
 import { DashboardPage } from "@b4.dashboard";
-import { DetectorPage } from "@b4.detector";
-import { DiscoveryPage } from "@b4.discovery";
-import { HubPage, useHubStatus } from "@b4.hub";
-import { LogsPage } from "@b4.logs";
-import { SetsPage } from "@b4.sets";
-import { SettingsPage } from "@b4.settings";
-import { WatchdogPage } from "@b4.watchdog";
+import { useHubStatus } from "@hooks/useHub";
+// Dashboard is the landing route: eager. The rest split off the initial
+// chunk and load on first navigation (Suspense boundary around <Outlet />).
+const ConnectionsPage = lazy(() =>
+  import("@b4.connections").then((m) => ({ default: m.ConnectionsPage })),
+);
+const DetectorPage = lazy(() =>
+  import("@b4.detector").then((m) => ({ default: m.DetectorPage })),
+);
+const DiscoveryPage = lazy(() =>
+  import("@b4.discovery").then((m) => ({ default: m.DiscoveryPage })),
+);
+const HubPage = lazy(() =>
+  import("@b4.hub").then((m) => ({ default: m.HubPage })),
+);
+const LogsPage = lazy(() =>
+  import("@b4.logs").then((m) => ({ default: m.LogsPage })),
+);
+const SetsPage = lazy(() =>
+  import("@b4.sets").then((m) => ({ default: m.SetsPage })),
+);
+const SettingsPage = lazy(() =>
+  import("@b4.settings").then((m) => ({ default: m.SettingsPage })),
+);
+const WatchdogPage = lazy(() =>
+  import("@b4.watchdog").then((m) => ({ default: m.WatchdogPage })),
+);
 import { SnackbarProvider } from "@context/SnackbarProvider";
 
 const DRAWER_WIDTH = 240;
@@ -303,7 +323,22 @@ export default function App() {
               </Toolbar>
             </AppBar>
 
-            <Outlet />
+            <Suspense
+              fallback={
+                <Box
+                  sx={{
+                    flex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <CircularProgress />
+                </Box>
+              }
+            >
+              <Outlet />
+            </Suspense>
           </Box>
         </Box>
       </SnackbarProvider>

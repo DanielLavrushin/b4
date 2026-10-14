@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useDeferredValue } from "react";
 import { Button, Stack, Typography } from "@mui/material";
 import { Link } from "react-router";
 import {
@@ -106,24 +106,24 @@ export const ImportExportSettings = ({
   const [capturesReady, setCapturesReady] = useState(false);
   const { showSuccess, showError } = useSnackbar();
   const { captures, loadCaptures } = useCaptures();
-  const hasSourceDevices = useMemo(
-    () => (config.targets.source_devices ?? []).length > 0,
-    [config.targets.source_devices],
-  );
+  const hasSourceDevices = (config.targets.source_devices ?? []).length > 0;
+  const deferredJson = useDeferredValue(jsonValue);
   const jsonParse = useMemo(() => {
-    if (!jsonValue.trim()) return { ok: false as const, error: "" };
+    if (!deferredJson.trim()) return { ok: false as const, error: "" };
     try {
-      return { ok: true as const, value: JSON.parse(jsonValue) as unknown };
+      return { ok: true as const, value: JSON.parse(deferredJson) as unknown };
     } catch (error) {
       return {
         ok: false as const,
         error: error instanceof Error ? error.message : String(error),
       };
     }
-  }, [jsonValue]);
+  }, [deferredJson]);
+  const { id: exportId, revision: exportRevision } = config;
   useEffect(() => {
     setJsonValue(exportSetJson(config));
-  }, [config]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exportId, exportRevision]);
 
   useEffect(() => {
     void loadCaptures().then(() => setCapturesReady(true));

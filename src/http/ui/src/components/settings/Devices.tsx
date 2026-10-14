@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Grid,
   Box,
@@ -126,20 +126,39 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
     registerLabel("queue.devices.devices", t("core.devices.devicesTitle"));
   }, [registerLabel, t]);
   const devicesLeaf = changedValues.get("queue.devices.devices");
-  const findLeafDevice = (mac: string, list: unknown): Device | undefined =>
-    Array.isArray(list)
-      ? (list as Device[]).find(
-          (d) => d.mac.toUpperCase() === mac.toUpperCase(),
-        )
-      : undefined;
-  const isDeviceChanged = (mac: string): boolean => {
-    if (!devicesLeaf) return false;
-    const before = findLeafDevice(mac, devicesLeaf.before);
-    const after = findLeafDevice(mac, devicesLeaf.after);
-    return JSON.stringify(before ?? null) !== JSON.stringify(after ?? null);
-  };
+  // One diff per leaf change, not two serializations per row per render.
+  const changedMacs = useMemo(() => {
+    const out = new Set<string>();
+    if (!devicesLeaf) return out;
+    const beforeList = (
+      Array.isArray(devicesLeaf.before) ? devicesLeaf.before : []
+    ) as Device[];
+    const afterList = (
+      Array.isArray(devicesLeaf.after) ? devicesLeaf.after : []
+    ) as Device[];
+    const beforeByMac = new Map(
+      beforeList.map((d) => [d.mac.toUpperCase(), d] as const),
+    );
+    const afterByMac = new Map(
+      afterList.map((d) => [d.mac.toUpperCase(), d] as const),
+    );
+    for (const [mac, a] of afterByMac) {
+      if (JSON.stringify(a) !== JSON.stringify(beforeByMac.get(mac) ?? null)) {
+        out.add(mac);
+      }
+    }
+    for (const mac of beforeByMac.keys()) {
+      if (!afterByMac.has(mac)) out.add(mac);
+    }
+    return out;
+  }, [devicesLeaf]);
+  const isDeviceChanged = (mac: string): boolean =>
+    changedMacs.has(mac.toUpperCase());
 
-  const configDevices: Device[] = config.queue.devices?.devices || [];
+  const configDevices: Device[] = useMemo(
+    () => config.queue.devices?.devices || [],
+    [config.queue.devices],
+  );
   const enabled = config.queue.devices?.enabled || false;
   const vendorLookup = config.queue.devices?.vendor_lookup || false;
   const wisb = config.queue.devices?.wisb || false;
@@ -200,8 +219,16 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
       checked,
     );
 
-  const displayName = (device: DeviceInfo) =>
-    findConfigDevice(device.mac)?.name || device.alias || device.vendor || "";
+  // Stable identity so the device table's filter memo holds across keystrokes.
+  const displayName = useCallback(
+    (device: DeviceInfo) =>
+      configDevices.find((d) => d.mac.toUpperCase() === device.mac.toUpperCase())
+        ?.name ||
+      device.alias ||
+      device.vendor ||
+      "",
+    [configDevices],
+  );
 
   const handleAddManualDevice = () => {
     const ip = manualIp.trim();

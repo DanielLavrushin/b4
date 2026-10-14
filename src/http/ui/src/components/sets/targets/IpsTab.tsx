@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Box, Grid } from "@mui/material";
 import { IpIcon } from "@b4.icons";
 import { B4Alert, B4Hint, B4Switch } from "@b4.elements";
@@ -52,13 +52,22 @@ export const IpsTab = ({
   const catchAllEntries = ipCatchAllEntries(!!ipv6);
   const presentCatchAll = ips.filter(isIpCatchAll).map(catchAllEntryFor);
   const ipsLeaf = changedValues.get("targets.ip");
-  const isIpChanged = (ip: string): boolean => {
-    if (!ipsLeaf || !Array.isArray(ipsLeaf.after) || !Array.isArray(ipsLeaf.before))
-      return false;
-    const after = (ipsLeaf.after as unknown[]).includes(ip);
-    const before = (ipsLeaf.before as unknown[]).includes(ip);
-    return after !== before;
-  };
+  // O(1) membership per chip instead of O(n) includes scans.
+  const ipsLeafSets = useMemo(() => {
+    if (
+      !ipsLeaf ||
+      !Array.isArray(ipsLeaf.after) ||
+      !Array.isArray(ipsLeaf.before)
+    ) {
+      return null;
+    }
+    return {
+      after: new Set(ipsLeaf.after as unknown[]),
+      before: new Set(ipsLeaf.before as unknown[]),
+    };
+  }, [ipsLeaf]);
+  const isIpChanged = (ip: string): boolean =>
+    !!ipsLeafSets && ipsLeafSets.after.has(ip) !== ipsLeafSets.before.has(ip);
   const missingCatchAll = catchAllEntries.filter(
     (entry) => !presentCatchAll.includes(entry),
   );

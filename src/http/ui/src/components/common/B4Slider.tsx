@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Box,
   Slider,
@@ -54,8 +55,16 @@ export const B4Slider = ({
     : changed
       ? colors.secondary
       : colors.text.primary;
+  // Transient drag value stays local: committing per mousemove tick would
+  // rerender the whole settings section at drag frequency.
+  const [dragValue, setDragValue] = useState<number | null>(null);
   const handleChange = (_event: Event, newValue: number | number[]) => {
-    onChange(Array.isArray(newValue) ? newValue[0] : newValue);
+    setDragValue(Array.isArray(newValue) ? newValue[0] : newValue);
+  };
+  const handleCommit = (_event: unknown, newValue: number | number[]) => {
+    const v = Array.isArray(newValue) ? newValue[0] : newValue;
+    setDragValue(null);
+    if (v !== value) onChange(v);
   };
   const editor = useEditableNumber(value, onChange, min, max);
 
@@ -166,8 +175,9 @@ export const B4Slider = ({
       </Box>
 
       <Slider
-        value={value}
+        value={dragValue ?? value}
         onChange={handleChange}
+        onChangeCommitted={handleCommit}
         min={min}
         max={max}
         step={step}

@@ -11,7 +11,7 @@ import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
 import { useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
 import { useEditableNumber } from "./useEditableNumber";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface B4RangeSliderProps extends Omit<SliderProps, "onChange" | "value"> {
   label: string;
@@ -116,10 +116,15 @@ export const B4RangeSlider = ({
       ? colors.secondary
       : colors.text.primary;
   const isRange = value[0] !== value[1];
+  // Transient drag value stays local: committing per mousemove tick would
+  // rerender the whole settings section at drag frequency.
+  const [dragValue, setDragValue] = useState<[number, number] | null>(null);
   const handleChange = (_event: Event, newValue: number | number[]) => {
-    if (Array.isArray(newValue)) {
-      onChange([newValue[0], newValue[1]]);
-    }
+    if (Array.isArray(newValue)) setDragValue([newValue[0], newValue[1]]);
+  };
+  const handleCommit = (_event: unknown, newValue: number | number[]) => {
+    setDragValue(null);
+    if (Array.isArray(newValue)) onChange([newValue[0], newValue[1]]);
   };
   const commitLo = useCallback(
     (next: number) => {
@@ -247,8 +252,9 @@ export const B4RangeSlider = ({
       </Box>
 
       <Slider
-        value={value}
+        value={dragValue ?? value}
         onChange={handleChange}
+        onChangeCommitted={handleCommit}
         min={min}
         max={max}
         step={step}

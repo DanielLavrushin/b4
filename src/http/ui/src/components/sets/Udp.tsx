@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Grid } from "@mui/material";
 import { Link } from "react-router";
 import { DnsIcon, WarningIcon } from "@b4.icons";
@@ -134,9 +134,13 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
     payloadFileHelperKey = "sets.udp.fakePayloadFileHelper";
   }
 
-  const captureProtocolRank = (proto: string) => (proto === "quic" ? 0 : 1);
-  const sortedCaptures = [...captures].sort(
-    (a, b) => captureProtocolRank(a.protocol) - captureProtocolRank(b.protocol),
+  const sortedCaptures = useMemo(
+    () =>
+      [...captures].sort(
+        (a, b) =>
+          (a.protocol === "quic" ? 0 : 1) - (b.protocol === "quic" ? 0 : 1),
+      ),
+    [captures],
   );
 
   const showSniWarning =

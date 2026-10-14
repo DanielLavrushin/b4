@@ -11,7 +11,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, type BlockerFunction } from "react-router";
 import { Trans, useTranslation } from "react-i18next";
 import i18n, { setLanguage } from "../../i18n";
@@ -268,13 +268,16 @@ export function SettingsPage() {
     }
   }, [location.pathname, currentTabPath, navigate]);
 
-  // Check if configuration has been modified
+  // Track changes off the urgent input path: inputs stay controlled by `config`,
+  // the full-tree diff and section dots derive from the deferred copy instead,
+  // so a keystroke paints before the O(leaves) walk runs.
+  const deferredConfig = useDeferredValue(config);
   const {
     changedLeaves,
     changedPaths,
     providerProps: changeProviderProps,
   } = useChangeTracker({
-    draft: config as unknown as Record<string, unknown> | null,
+    draft: deferredConfig as unknown as Record<string, unknown> | null,
     baseline: originalConfig as unknown as Record<string, unknown> | null,
     ignoredRootKeys: SETTINGS_DIFF_IGNORE,
     scope: "settings",
@@ -329,18 +332,37 @@ export function SettingsPage() {
     const state: Partial<Record<TABS, SectionState[]>> = {};
     for (const [tab, sections] of TAB_SECTIONS) {
       state[tab] = sections.map((section) => {
-        if (!hasChanges || !config || !originalConfig) {
+        if (!hasChanges || !deferredConfig || !originalConfig) {
           return { dirty: false, restart: false };
         }
-        const dirty = changed(section.pick, config, originalConfig);
+        let dirty = false;
+        for (const p of changedPaths) {
+          if (
+            section.exceptPrefixes?.some(
+              (e) => p === e || p.startsWith(`${e}.`),
+            )
+          ) {
+            continue;
+          }
+          if (
+            section.prefixes.some(
+              (prefix) => p === prefix || p.startsWith(`${prefix}.`),
+            )
+          ) {
+            dirty = true;
+            break;
+          }
+        }
         return {
           dirty,
-          restart: dirty && changed(section.restartPick, config, originalConfig),
+          restart:
+            dirty &&
+            changed(section.restartPick, deferredConfig, originalConfig),
         };
       });
     }
     return state;
-  }, [config, originalConfig, hasChanges]);
+  }, [deferredConfig, originalConfig, hasChanges, changedPaths]);
 
   // Check which categories have changes
   const categoryHasChanges = useMemo(() => {

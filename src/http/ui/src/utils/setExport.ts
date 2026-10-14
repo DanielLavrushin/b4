@@ -1,6 +1,7 @@
 import { B4SetConfig } from "@models/config";
 import { createDefaultSet } from "@models/defaults";
 import { isPlainObject } from "./common";
+import { leafEqual } from "./configDiff";
 
 type Obj = Record<string, unknown>;
 
@@ -21,7 +22,13 @@ function stripObjectDefaults(obj: Obj, defaults: Obj): unknown {
 
 function stripDefaults(obj: unknown, defaults: unknown): unknown {
   if (Array.isArray(obj)) {
-    return JSON.stringify(obj) === JSON.stringify(defaults) ? undefined : obj;
+    // Length first, then element-wise (zero-aware): avoids serializing both
+    // arrays on every key and ignores key order inside elements.
+    if (!Array.isArray(defaults) || obj.length !== defaults.length) return obj;
+    const same = obj.every((item, i) =>
+      leafEqual(item, (defaults as unknown[])[i]),
+    );
+    return same ? undefined : obj;
   }
   if (isPlainObject(obj) && isPlainObject(defaults)) {
     return stripObjectDefaults(obj, defaults);

@@ -12,6 +12,7 @@ import { B4Alert, B4Hint, B4Switch, B4TooltipButton } from "@b4.elements";
 import { DeviceInfo } from "@b4.devices";
 import { B4DeviceTable } from "@common/B4DeviceTable";
 import { colors } from "@design";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useChangedFields } from "@context/ChangedFieldsContext";
 interface DevicesTabProps {
@@ -42,15 +43,25 @@ export const DevicesTab = ({
   const { t } = useTranslation();
   const { changedValues } = useChangedFields();
   const devicesLeaf = changedValues.get("targets.source_devices");
-  const isDeviceChanged = (mac: string): boolean => {
-    if (!devicesLeaf || !Array.isArray(devicesLeaf.after) || !Array.isArray(devicesLeaf.before))
-      return false;
-    const after = (devicesLeaf.after as unknown[]).includes(mac);
-    const before = (devicesLeaf.before as unknown[]).includes(mac);
-    return after !== before;
-  };
+  // O(1) membership per row instead of O(n) includes scans.
+  const leafSets = useMemo(() => {
+    if (
+      !devicesLeaf ||
+      !Array.isArray(devicesLeaf.after) ||
+      !Array.isArray(devicesLeaf.before)
+    ) {
+      return null;
+    }
+    return {
+      after: new Set(devicesLeaf.after as unknown[]),
+      before: new Set(devicesLeaf.before as unknown[]),
+    };
+  }, [devicesLeaf]);
+  const isDeviceChanged = (mac: string): boolean =>
+    !!leafSets && leafSets.after.has(mac) !== leafSets.before.has(mac);
 
-  const isSelected = (mac: string) => selected.includes(mac);
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+  const isSelected = (mac: string) => selectedSet.has(mac);
 
   const handleToggle = (mac: string) => {
     onChange(
@@ -69,10 +80,13 @@ export const DevicesTab = ({
 
   const hasMssHints = devices.some((d) => d.mss_clamp);
 
-  const selectedManual = devices.filter(
-    (d) => d.is_manual && isSelected(d.mac),
-  );
-  const manualWithoutIp = selectedManual.filter((d) => !d.ip.trim());
+  const selectedManual: DeviceInfo[] = [];
+  const manualWithoutIp: DeviceInfo[] = [];
+  for (const d of devices) {
+    if (!d.is_manual || !isSelected(d.mac)) continue;
+    selectedManual.push(d);
+    if (!d.ip.trim()) manualWithoutIp.push(d);
+  }
   const showNoDestination =
     routingEnabled && !hasDestination && selected.length > 0 && !exclude;
 

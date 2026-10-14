@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { Box, Grid } from "@mui/material";
 import { DomainIcon } from "@b4.icons";
 import { B4Alert, B4Hint, B4Select, B4Switch } from "@b4.elements";
@@ -55,13 +55,23 @@ export const DomainsTab = ({
   const domains = config.targets.sni_domains ?? [];
   const catchAll = domains.some(isDomainCatchAll);
   const domainsLeaf = changedValues.get("targets.sni_domains");
-  const isDomainChanged = (domain: string): boolean => {
-    if (!domainsLeaf || !Array.isArray(domainsLeaf.after) || !Array.isArray(domainsLeaf.before))
-      return false;
-    const after = (domainsLeaf.after as unknown[]).includes(domain);
-    const before = (domainsLeaf.before as unknown[]).includes(domain);
-    return after !== before;
-  };
+  // O(1) membership per chip instead of O(n) includes scans.
+  const domainsLeafSets = useMemo(() => {
+    if (
+      !domainsLeaf ||
+      !Array.isArray(domainsLeaf.after) ||
+      !Array.isArray(domainsLeaf.before)
+    ) {
+      return null;
+    }
+    return {
+      after: new Set(domainsLeaf.after as unknown[]),
+      before: new Set(domainsLeaf.before as unknown[]),
+    };
+  }, [domainsLeaf]);
+  const isDomainChanged = (domain: string): boolean =>
+    !!domainsLeafSets &&
+    domainsLeafSets.after.has(domain) !== domainsLeafSets.before.has(domain);
   const checkTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );

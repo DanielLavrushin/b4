@@ -45,11 +45,12 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
   const { t } = useTranslation();
   const { changedPaths } = useChangedFields();
   const hasSubChanges = (prefixes: string[]): boolean =>
-    prefixes.some((prefix) =>
-      [...changedPaths].some(
-        (path) => path === prefix || path.startsWith(`${prefix}.`),
-      ),
-    );
+    prefixes.some((prefix) => {
+      for (const path of changedPaths) {
+        if (path === prefix || path.startsWith(`${prefix}.`)) return true;
+      }
+      return false;
+    });
   const [newFakeSni, setNewFakeSni] = useState("");
   const [newWinValue, setNewWinValue] = useState("");
   const { captures, loadCaptures } = useCaptures();

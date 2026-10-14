@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useDeferredValue, useMemo, useState } from "react";
 import {
   Box,
   Checkbox,
@@ -61,14 +61,20 @@ export const B4DeviceTable = ({
   const { t } = useTranslation();
   const [filterText, setFilterText] = useState("");
 
-  const query = filterText.trim().toLowerCase();
-  const filteredDevices = query
-    ? devices.filter((d) =>
-        [d.is_manual ? "" : d.mac, d.ip, getSearchableName(d)].some((field) =>
-          field.toLowerCase().includes(query),
-        ),
-      )
-    : devices;
+  // Filter derivation rides the deferred query: typing stays urgent, the
+  // O(devices) passes run after paint.
+  const deferredQuery = useDeferredValue(filterText.trim().toLowerCase());
+  const filteredDevices = useMemo(
+    () =>
+      deferredQuery
+        ? devices.filter((d) =>
+            [d.is_manual ? "" : d.mac, d.ip, getSearchableName(d)].some(
+              (field) => field.toLowerCase().includes(deferredQuery),
+            ),
+          )
+        : devices,
+    [devices, deferredQuery, getSearchableName],
+  );
 
   const selectedCount = filteredDevices.filter((d) => isSelected(d.mac)).length;
   const allSelected =
@@ -76,7 +82,7 @@ export const B4DeviceTable = ({
   const someSelected = selectedCount > 0 && !allSelected;
 
   const handleSelectAll = (checked: boolean) => {
-    if (query) {
+    if (deferredQuery) {
       onBulkToggle(
         filteredDevices.map((d) => d.mac),
         checked,

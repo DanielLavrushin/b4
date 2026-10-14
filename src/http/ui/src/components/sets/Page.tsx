@@ -54,8 +54,8 @@ function SetEditorRoute({
     "stats" in s ? s.stats : null,
   ) as (SetStats | null)[];
 
-  const existingSet = isNew ? null : sets.find((s) => s.id === id);
-
+  const existingIndex = isNew ? -1 : sets.findIndex((s) => s.id === id);
+  const existingSet = existingIndex >= 0 ? sets[existingIndex] : null;
   const otherSetsTargets = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const s of sets) {
@@ -86,9 +86,8 @@ function SetEditorRoute({
   );
   const set = isNew ? defaultSet : existingSet;
 
-  const stats = existingSet
-    ? (setsStats[sets.findIndex((s) => s.id === existingSet.id)] ?? undefined)
-    : undefined;
+  const stats =
+    existingIndex >= 0 ? (setsStats[existingIndex] ?? undefined) : undefined;
 
   const handleSave = (editedSet: B4SetConfig) => {
     void (async () => {
@@ -119,6 +118,7 @@ function SetEditorRoute({
 
   return (
     <SetEditorPage
+      key={isNew ? "new" : set.id}
       settings={config.system}
       set={set}
       config={config}

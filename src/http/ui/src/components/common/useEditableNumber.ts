@@ -50,14 +50,11 @@ export function useEditableNumber(
         setText(String(value));
         setEditing(false);
       },
+      // Local text only: committing on every keystroke rerenders the whole
+      // settings section per character. Commit happens on blur/Enter instead.
       setText: (next: string) => {
         if (!NUMERIC_PATTERN.test(next)) return;
         setText(next);
-        if (next === "" || next === "-") return;
-        const n = Number(next);
-        if (Number.isNaN(n)) return;
-        const clamped = clamp(n);
-        if (clamped !== value) commitValue(clamped);
       },
       commit: () => {
         focusedRef.current = false;

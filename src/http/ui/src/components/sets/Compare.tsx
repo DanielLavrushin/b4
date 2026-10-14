@@ -222,16 +222,20 @@ const mergeFacetRows = (
 ): CompareRow[] => {
   const rowsA = facetA.active || !activeOnly ? facetA.rows : [];
   const rowsB = facetB.active || !activeOnly ? facetB.rows : [];
+  const byLabelA = new Map(rowsA.map((r) => [r.label, r] as const));
+  const byLabelB = new Map(rowsB.map((r) => [r.label, r] as const));
+  const seen = new Set<string>();
   const labels: string[] = [];
   for (const row of [...rowsA, ...rowsB]) {
-    if (!labels.includes(row.label) && !skip.has(row.label)) {
+    if (!seen.has(row.label) && !skip.has(row.label)) {
+      seen.add(row.label);
       labels.push(row.label);
     }
   }
   const dormant = !facetA.active && !facetB.active;
   return labels.map((label) => {
-    const a = cellOf(rowsA.find((r) => r.label === label));
-    const b = cellOf(rowsB.find((r) => r.label === label));
+    const a = cellOf(byLabelA.get(label));
+    const b = cellOf(byLabelB.get(label));
     return { label, a, b, differs: !dormant && !cellsEqual(a, b) };
   });
 };
@@ -718,14 +722,10 @@ export const SetCompare = ({
     );
   }, [setA, setB, sets, statsOf, t, deviceFilter]);
 
-  const fieldCount = useMemo(
-    () =>
-      groups.reduce(
-        (sum, g) =>
-          sum + g.leaves.length + g.lists.filter((l) => l.differs).length,
-        0,
-      ),
-    [groups],
+  const fieldCount = groups.reduce(
+    (sum, g) =>
+      sum + g.leaves.length + g.lists.filter((l) => l.differs).length,
+    0,
   );
   const differingGroups = groups.filter((g) => g.differs);
 

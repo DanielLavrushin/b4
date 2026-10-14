@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Box, Grid, Stack } from "@mui/material";
 import { EscalateIcon } from "@b4.icons";
 import {
@@ -14,9 +15,8 @@ import { useTranslation } from "react-i18next";
 export const wouldCreateEscalationCycle = (
   candidate: B4SetConfig,
   currentId: string,
-  all: B4SetConfig[],
+  byId: ReadonlyMap<string, B4SetConfig>,
 ): boolean => {
-  const byId = new Map(all.map((s) => [s.id, s]));
   const seen = new Set<string>();
   let cur: B4SetConfig | undefined = candidate;
   while (cur?.escalate?.to) {
@@ -51,6 +51,11 @@ export const EscalationSettings = ({
   onChange,
 }: EscalationSettingsProps) => {
   const { t } = useTranslation();
+  // One index per render, not one per candidate inside the filter below.
+  const setsById = useMemo(
+    () => new Map(allSets.map((s) => [s.id, s] as const)),
+    [allSets],
+  );
   const escalateOn = !!config.escalate?.to;
   const rstOn = config.tcp.rst_protection?.enabled === true;
   const showRstWarn = escalateOn && !rstOn;
@@ -76,7 +81,7 @@ export const EscalationSettings = ({
                     (s) =>
                       s.id &&
                       s.id !== config.id &&
-                      !wouldCreateEscalationCycle(s, config.id, allSets),
+                      !wouldCreateEscalationCycle(s, config.id, setsById),
                   )
                   .map((s) => ({
                     label: s.enabled

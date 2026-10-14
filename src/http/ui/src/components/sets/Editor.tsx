@@ -8,7 +8,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams, type BlockerFunction } from "react-router";
 import { useSnackbar } from "@context/SnackbarProvider";
 
@@ -69,6 +69,7 @@ const TAB_INDEX: Record<EditorTabKey, number> = Object.fromEntries(
 const SET_EDITOR_DIFF_IGNORE = new Set([
   "id",
   "enabled",
+  "revision",
   "stats",
   "hub_state",
   "hub",
@@ -124,16 +125,11 @@ export const SetEditorPage = ({
     const index = EDITOR_TABS.findIndex((t) => t.key === requestedTab);
     return index === -1 ? 0 : index;
   });
+  // Draft resets via key={set.id} in Page.tsx on set switch; no prop-sync
+  // effect here so parent refreshes never wipe the in-progress draft.
+  // "revision" is in SET_EDITOR_DIFF_IGNORE (server concurrency token),
+  // so post-save refetches don't show phantom dirty state.
   const [editedSet, setEditedSet] = useState<B4SetConfig | null>(initialSet);
-
-  const prevSetId = useRef(initialSet.id);
-  useEffect(() => {
-    setEditedSet(initialSet);
-    if (prevSetId.current !== initialSet.id) {
-      setActiveTab(0);
-      prevSetId.current = initialSet.id;
-    }
-  }, [initialSet]);
 
   useEffect(() => {
     if (!requestedTab) return;
@@ -178,7 +174,10 @@ export const SetEditorPage = ({
   };
 
   const draftForDiff = editedSet ?? initialSet;
-  const dscp = dscpEnvironment(config, initialSet.id);
+  const dscp = useMemo(
+    () => dscpEnvironment(config, initialSet.id),
+    [config, initialSet.id],
+  );
   const {
     changedLeaves,
     providerProps: changeProviderProps,
@@ -215,6 +214,8 @@ export const SetEditorPage = ({
     [hasUnsavedChanges, location.pathname, navigationBypassRef],
   );
   const blocker = useUnsavedChangesGuard(shouldBlock, hasUnsavedChanges);
+  const editedId = editedSet?.id;
+  const editedName = editedSet?.name;
   const setNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const item of config.sets ?? []) {
@@ -222,10 +223,9 @@ export const SetEditorPage = ({
       const set = nested.set ?? (item as unknown as B4SetConfig);
       if (set.id) map.set(set.id, set.name || set.id);
     }
-    const edited = editedSet;
-    if (edited?.id) map.set(edited.id, edited.name || edited.id);
+    if (editedId) map.set(editedId, editedName || editedId);
     return map;
-  }, [config.sets, editedSet]);
+  }, [config.sets, editedId, editedName]);
   const dialogsOpen = showDiscardDialog || blocker.state === "blocked";
   const tabSubDefs = useMemo(
     () => [
