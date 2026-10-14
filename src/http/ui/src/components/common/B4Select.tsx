@@ -34,7 +34,9 @@ export const B4Select = ({
 }: B4SelectProps) => {
   const changed = useChangedField(path, label);
   const { registerValueLabels, scopeVersion } = useChangedFields();
-  const optionKey = options.map((o) => `${o.value}`).join("\0");
+  const optionKey = options
+    .map((o) => `${o.value}\0${o.label}`)
+    .join("\0\0");
   useEffect(() => {
     if (!path) return;
     registerValueLabels(

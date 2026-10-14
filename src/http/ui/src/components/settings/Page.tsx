@@ -303,28 +303,18 @@ export function SettingsPage() {
     }
     return map;
   }, [t]);
-  const staticValueLabels = useMemo(() => {
-    const outer = new Map<string, ReadonlyMap<string, string>>();
-    outer.set(
-      "system.logging.level",
-      new Map([
-        ["0", t("settings.Logging.levelError")],
-        ["1", t("settings.Logging.levelInfo")],
-        ["2", t("settings.Logging.levelTrace")],
-        ["3", t("settings.Logging.levelDebug")],
-      ]),
-    );
-    return outer;
-  }, [t]);
   const dialogsOpen = showResetDialog || blocker.state === "blocked";
+  // shortcut: value labels rely on mounted inputs registering via
+  // ChangedFieldsContext; safe while settings tabs stay mounted (hidden).
+  // Revisit if tabs switch to conditional rendering.
   const changeItems: UnsavedChangeItem[] = useMemo(() => {
     if (!dialogsOpen) return [];
     return buildChangeItems(
       changedLeaves,
       new Map([...staticLabels, ...snapshotLabels()]),
-      new Map([...staticValueLabels, ...valueLabelsRef.current]),
+      valueLabelsRef.current,
     );
-  }, [dialogsOpen, changedLeaves, snapshotLabels, staticLabels, staticValueLabels]);
+  }, [dialogsOpen, changedLeaves, snapshotLabels, staticLabels]);
   const changedValues = useMemo(
     () =>
       new Map<string, { before: unknown; after: unknown }>(
