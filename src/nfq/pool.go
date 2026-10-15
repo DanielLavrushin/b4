@@ -81,6 +81,7 @@ func NewPool(cfg *config.Config) *Pool {
 		w.pendingHello = state.pendingHello
 		w.hostHints = state.hostHints
 		w.quicFlows = state.quicFlows
+		w.direction = state.direction
 		w.ipHealth = state.ipHealth
 		w.pinHealth = state.pinHealth
 		w.goodIPs = state.goodIPs
@@ -137,6 +138,7 @@ func NewPool(cfg *config.Config) *Pool {
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
 				pool.publishEscalations()
+				pool.reportQueueDirection(time.Now())
 			case <-pool.stopCleanup:
 				return
 			}
@@ -375,6 +377,9 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 
 	p.reconcileDNSTCP(newCfg)
 	p.checkDNSPins(newCfg)
+	if p.state != nil {
+		p.state.direction.noteChange(time.Now())
+	}
 
 	return nil
 }

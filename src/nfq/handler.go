@@ -93,6 +93,10 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 	default:
 	}
 
+	if a.Hook != nil {
+		vc.hook, vc.hooked = *a.Hook, true
+	}
+
 	return w.dispatch(vc, *a.Payload)
 }
 
@@ -106,6 +110,7 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 	if !ok {
 		return vc.accept()
 	}
+	vc.dir = w.packetDirection(cfg, vc, pkt)
 	if !cfg.Queue.IsDiscovery && cfg.Queue.Mode != "tun" && !cfg.IPFamilyEnabled(pkt.ver == IPv6) {
 		return w.handleECHOnlyPacket(vc, pkt, cfg)
 	}
@@ -309,7 +314,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	sport := binary.BigEndian.Uint16(tcp[0:2])
 	dport := binary.BigEndian.Uint16(tcp[2:4])
 
-	if cfg.IsTCPPort(sport) {
+	if vc.tcpIncoming(cfg, sport) {
 		return w.HandleIncoming(vc, pkt.ver, pkt.raw, pkt.ihl, pkt.src, pkt.dstStr, dport, pkt.srcStr, sport, payload)
 	}
 

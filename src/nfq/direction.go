@@ -111,7 +111,7 @@ func (w *Worker) packetDirection(cfg *config.Config, vc *verdictCtx, pkt *pktInf
 	if !vc.hooked || pkt.proto != 6 {
 		return vc.dir
 	}
-	if !cfg.Queue.IsDiscovery && (cfg.System.Tables.SkipSetup || !w.queueDirection.exactFor(pkt.ver == IPv6)) {
+	if !cfg.Queue.IsDiscovery && (cfg.System.Tables.SkipSetup || !w.direction.exactFor(pkt.ver == IPv6)) {
 		return engine.DirUnknown
 	}
 	return hookDirection(vc.hook)
@@ -125,14 +125,14 @@ func (p *Pool) SetQueueDirectionExact(v4, v6 bool) {
 	if p == nil || p.state == nil {
 		return
 	}
-	p.state.queueDirection.set(v4, v6, time.Now())
+	p.state.direction.set(v4, v6, time.Now())
 }
 
 func (p *Pool) reportQueueDirection(now time.Time) {
 	if p == nil || p.state == nil {
 		return
 	}
-	d := p.state.queueDirection
+	d := p.state.direction
 	if !d.settle(now) {
 		return
 	}
