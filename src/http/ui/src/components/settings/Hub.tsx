@@ -284,7 +284,10 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
       icon={<CommunityIcon />}
       title={t("settings.Hub.title")}
       description={t("settings.Hub.description")}
+      enabled={enabled}
+      onToggle={(checked) => onChange("system.hub.enabled", checked)}
       toggleLabel={t("settings.Hub.enabled")}
+      togglePath="system.hub.enabled"
     >
       <B4Alert severity="info">{t("settings.Hub.note")}</B4Alert>
 
