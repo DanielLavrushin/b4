@@ -82,7 +82,7 @@ func TestProbeDoesNotRetryARealRejection(t *testing.T) {
 	if err := im.checkConnbytesSupport(bin); err == nil {
 		t.Fatalf("probe should fail when the match is rejected and the chain is still there")
 	}
-	if got := countProbeAppends(t, calls); got != 1 {
-		t.Fatalf("probe appended %d times, want 1 (a real rejection is not retried)", got)
+	if got := countProbeAppends(t, calls); got != 2 {
+		t.Fatalf("probe appended %d times, want 2 (the connbytes rule with the conntrack direction match once, then without it once: a real rejection is not retried)", got)
 	}
 }

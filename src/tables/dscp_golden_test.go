@@ -375,6 +375,16 @@ func goldenIsolate(t *testing.T, h *goldenHost) {
 		dnsQueryPlacementMu.Unlock()
 	})
 
+	queueDirectionMu.Lock()
+	origV4, origV6, origPortSelected, origDirectionHook := queueDirectionV4, queueDirectionV6, queueRulesPortSelected, QueueDirectionExactFunc
+	queueDirectionV4, queueDirectionV6, queueRulesPortSelected, QueueDirectionExactFunc = false, false, nil, nil
+	queueDirectionMu.Unlock()
+	t.Cleanup(func() {
+		queueDirectionMu.Lock()
+		queueDirectionV4, queueDirectionV6, queueRulesPortSelected, QueueDirectionExactFunc = origV4, origV6, origPortSelected, origDirectionHook
+		queueDirectionMu.Unlock()
+	})
+
 	kmodStateMu.Lock()
 	origAttempted := kmodAttempted
 	kmodAttempted = map[string]bool{}

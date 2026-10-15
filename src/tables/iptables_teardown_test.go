@@ -29,6 +29,7 @@ func stubProbes(manager *IPTablesManager, bins ...string) {
 	for _, bin := range bins {
 		manager.nfqueueSupport[bin] = nil
 		manager.connbytesSupport[bin] = nil
+		manager.ctdirSupport[bin] = true
 		manager.multiportSupport[bin] = true
 		manager.connmarkSupport[bin] = true
 		manager.rawQueueSupport[bin] = nil
@@ -38,6 +39,7 @@ func stubProbes(manager *IPTablesManager, bins ...string) {
 func failProbe(manager *IPTablesManager, bin string) {
 	manager.nfqueueSupport[bin] = errors.New("NFQUEUE target unavailable")
 	manager.connbytesSupport[bin] = nil
+	manager.ctdirSupport[bin] = true
 	manager.multiportSupport[bin] = true
 	manager.connmarkSupport[bin] = true
 	manager.rawQueueSupport[bin] = nil

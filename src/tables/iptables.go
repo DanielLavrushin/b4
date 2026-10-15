@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ type IPTablesManager struct {
 	useLegacy        bool
 	multiportSupport map[string]bool  // per-binary cache (iptables vs ip6tables may differ)
 	connbytesSupport map[string]error // per-binary cache
+	ctdirSupport     map[string]bool
 	connmarkSupport  map[string]bool  // per-binary cache
 	nfqueueSupport   map[string]error // per-binary cache
 	ipsetSupport     map[string]error
@@ -31,7 +33,7 @@ type IPTablesManager struct {
 }
 
 func NewIPTablesManager(cfg *config.Config, useLegacy bool) *IPTablesManager {
-	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), connmarkSupport: make(map[string]bool), nfqueueSupport: make(map[string]error), ipsetSupport: make(map[string]error), rawQueueSupport: make(map[string]error), dnsCopySupport: make(map[string]error)}
+	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), ctdirSupport: make(map[string]bool), connmarkSupport: make(map[string]bool), nfqueueSupport: make(map[string]error), ipsetSupport: make(map[string]error), rawQueueSupport: make(map[string]error), dnsCopySupport: make(map[string]error)}
 }
 
 func (im *IPTablesManager) iptablesBin() string {
@@ -53,11 +55,21 @@ func (im *IPTablesManager) checkConnbytesSupport(ipt string) error {
 		return err
 	}
 
-	supported, probeErr := im.probeModuleInTempChain(ipt, "filter", []string{"-p", "tcp", "-m", "connbytes", "--connbytes-dir", "original",
-		"--connbytes-mode", "packets", "--connbytes", "0:10", "-j", "ACCEPT"})
+	connbytesSpec := []string{"-p", "tcp", "-m", "connbytes", "--connbytes-dir", "original",
+		"--connbytes-mode", "packets", "--connbytes", "0:10"}
+	ctdirOK, ctdirErr := im.probeModuleInTempChain(ipt, "filter", slices.Concat(connbytesSpec, iptCtdirMatch(true, "ORIGINAL"), []string{"-j", "ACCEPT"}))
+	im.ctdirSupport[ipt] = ctdirOK
+	if ctdirOK {
+		im.connbytesSupport[ipt] = nil
+		log.Tracef("IPTABLES[%s]: connbytes and conntrack direction matches are available", ipt)
+		return nil
+	}
+
+	supported, probeErr := im.probeModuleInTempChain(ipt, "filter", slices.Concat(connbytesSpec, []string{"-j", "ACCEPT"}))
 	if supported {
 		im.connbytesSupport[ipt] = nil
 		log.Tracef("IPTABLES[%s]: connbytes module is available", ipt)
+		log.Warnf("IPTABLES[%s]: the conntrack direction match was rejected (%v), so the %s queue rules select TCP packets by port alone and b4 tells a client's packets from a server's replies by their ports; load the xt_conntrack kernel module to have them selected by conntrack direction", ipt, ctdirErr, iptFamilyLabel(ipt))
 		return nil
 	}
 
@@ -396,12 +408,13 @@ func (s IPSet) Destroy() {
 }
 
 type Manifest struct {
-	IPSets     []IPSet
-	Chains     []Chain
-	Rules      []Rule
-	Sysctls    []SysctlSetting
-	DNSQueries map[string]dnsQueryPlacement
-	ECHOnlyDNS []string
+	IPSets         []IPSet
+	Chains         []Chain
+	Rules          []Rule
+	Sysctls        []SysctlSetting
+	DNSQueries     map[string]dnsQueryPlacement
+	ECHOnlyDNS     []string
+	DirectionExact map[string]bool
 }
 
 func (m Manifest) Apply() error {
@@ -529,6 +542,20 @@ func iptMarkAccept(mark uint) string {
 	return fmt.Sprintf("0x%x/0x%x", mark, mark)
 }
 
+func iptCtdirMatch(on bool, dir string) []string {
+	if !on {
+		return nil
+	}
+	return []string{"-m", "conntrack", "--ctdir", dir}
+}
+
+func (manager *IPTablesManager) queueRulesMatchDirection(ipt string, teardown bool) bool {
+	if supported, probed := manager.ctdirSupport[ipt]; probed {
+		return supported
+	}
+	return teardown
+}
+
 func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) Manifest {
 	cfg := manager.cfg
 	queueNum := cfg.Queue.StartNum
@@ -541,6 +568,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 	var chains []Chain
 	var rules []Rule
 	dnsQueries := map[string]dnsQueryPlacement{}
+	directionExact := map[string]bool{}
 
 	for _, ipt := range ipts {
 		ch := Chain{manager: manager, IPT: ipt, Table: "mangle", Name: chainName}
@@ -573,26 +601,35 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			tcpPorts[i] = strings.ReplaceAll(p, "-", ":")
 		}
 
+		ctdir := manager.queueRulesMatchDirection(ipt, teardown)
+		if !teardown {
+			directionExact[ipt] = ctdir
+		}
+		replyDir, originalDir := iptCtdirMatch(ctdir, "REPLY"), iptCtdirMatch(ctdir, "ORIGINAL")
+
 		// TCP response and SYN-ACK rules (PREROUTING)
 		if manager.hasMultiportSupport(ipt) {
 			tcpPortChunks := chunkPorts(tcpPorts, 15)
 			for _, chunk := range tcpPortChunks {
 				portList := strings.Join(chunk, ",")
-				tcpResponseSpec := append(
+				tcpResponseSpec := slices.Concat(
 					[]string{"-p", "tcp", "-m", "multiport", "--sports", portList,
 						"-m", "connbytes", "--connbytes-dir", "reply",
 						"--connbytes-mode", "packets", "--connbytes", tcpConnbytesRange},
-					manager.buildNFQSpec(queueNum, threads)...,
+					replyDir,
+					manager.buildNFQSpec(queueNum, threads),
 				)
-				synackSpec := append(
+				synackSpec := slices.Concat(
 					[]string{"-p", "tcp", "-m", "multiport", "--sports", portList,
 						"--tcp-flags", "SYN,ACK", "SYN,ACK"},
-					manager.buildNFQSpec(queueNum, threads)...,
+					replyDir,
+					manager.buildNFQSpec(queueNum, threads),
 				)
-				rstSpec := append(
+				rstSpec := slices.Concat(
 					[]string{"-p", "tcp", "-m", "multiport", "--sports", portList,
 						"--tcp-flags", "RST", "RST"},
-					manager.buildNFQSpec(queueNum, threads)...,
+					replyDir,
+					manager.buildNFQSpec(queueNum, threads),
 				)
 				rules = append(rules,
 					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: tcpResponseSpec},
@@ -602,19 +639,22 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			}
 		} else {
 			for _, port := range tcpPorts {
-				tcpResponseSpec := append(
+				tcpResponseSpec := slices.Concat(
 					[]string{"-p", "tcp", "--sport", port,
 						"-m", "connbytes", "--connbytes-dir", "reply",
 						"--connbytes-mode", "packets", "--connbytes", tcpConnbytesRange},
-					manager.buildNFQSpec(queueNum, threads)...,
+					replyDir,
+					manager.buildNFQSpec(queueNum, threads),
 				)
-				synackSpec := append(
+				synackSpec := slices.Concat(
 					[]string{"-p", "tcp", "--sport", port, "--tcp-flags", "SYN,ACK", "SYN,ACK"},
-					manager.buildNFQSpec(queueNum, threads)...,
+					replyDir,
+					manager.buildNFQSpec(queueNum, threads),
 				)
-				rstSpec := append(
+				rstSpec := slices.Concat(
 					[]string{"-p", "tcp", "--sport", port, "--tcp-flags", "RST", "RST"},
-					manager.buildNFQSpec(queueNum, threads)...,
+					replyDir,
+					manager.buildNFQSpec(queueNum, threads),
 				)
 				rules = append(rules,
 					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: tcpResponseSpec},
@@ -690,21 +730,23 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 		// TCP outbound rules (B4 chain)
 		if manager.hasMultiportSupport(ipt) {
 			for _, chunk := range chunkPorts(tcpPorts, 15) {
-				tcpSpec := append(
+				tcpSpec := slices.Concat(
 					[]string{"-p", "tcp", "-m", "multiport", "--dports", strings.Join(chunk, ","),
 						"-m", "connbytes", "--connbytes-dir", "original",
 						"--connbytes-mode", "packets", "--connbytes", tcpConnbytesRange},
-					manager.buildNFQSpec(queueNum, threads)...,
+					originalDir,
+					manager.buildNFQSpec(queueNum, threads),
 				)
 				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: tcpSpec})
 			}
 		} else {
 			for _, port := range tcpPorts {
-				tcpSpec := append(
+				tcpSpec := slices.Concat(
 					[]string{"-p", "tcp", "--dport", port,
 						"-m", "connbytes", "--connbytes-dir", "original",
 						"--connbytes-mode", "packets", "--connbytes", tcpConnbytesRange},
-					manager.buildNFQSpec(queueNum, threads)...,
+					originalDir,
+					manager.buildNFQSpec(queueNum, threads),
 				)
 				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: tcpSpec})
 			}
@@ -863,7 +905,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 	ipsets = append(ipsets, mssIPSets...)
 	rules = append(rules, mssRules...)
 
-	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: b4SysctlSettings(), DNSQueries: dnsQueries, ECHOnlyDNS: echOnly}
+	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: b4SysctlSettings(), DNSQueries: dnsQueries, ECHOnlyDNS: echOnly, DirectionExact: directionExact}
 }
 
 func (manager *IPTablesManager) mssClampBinaries() []string {
@@ -1054,17 +1096,20 @@ func (ipt *IPTablesManager) Apply() error {
 	loadKernelModules()
 	m, err := ipt.buildManifest()
 	if err != nil {
+		noteQueueDirectionExact(false, false)
 		return err
 	}
-	if moves := dnsQueryPlacementMoves(m.DNSQueries); len(moves) > 0 {
+	narrowQueueDirectionExact(m.directionExactFamilies())
+	if moves := append(dnsQueryPlacementMoves(m.DNSQueries), queueDirectionMoves(m.DirectionExact)...); len(moves) > 0 {
 		for _, move := range moves {
 			log.Infof("%s", move)
 		}
 		if err := ipt.Clear(); err != nil {
-			log.Warnf("IPTABLES: clearing the rules before moving DNS queries failed: %v", err)
+			log.Warnf("IPTABLES: clearing the rules before rebuilding them failed: %v", err)
 		}
 	}
 	result := m.Apply()
+	noteQueueRulesApplied(m.DirectionExact, result == nil)
 	if result == nil {
 		ipt.dropUnusedDNSQueryPlacement(m.DNSQueries)
 		warnPortChangingDNSNat(m.DNSQueries)
@@ -1090,6 +1135,7 @@ func (ipt *IPTablesManager) Clear() error {
 
 	ipt.clearB4JumpRules()
 	noteDNSQueryPlacement(nil)
+	noteQueueRulesCleared()
 
 	m.RemoveRules()
 	time.Sleep(30 * time.Millisecond)

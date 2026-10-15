@@ -21,7 +21,7 @@ func TestNftTableIsEmpty(t *testing.T) {
 	t.Run("main engine rules present", func(t *testing.T) {
 		listing := `table inet b4_mangle {
 	chain b4_chain {
-		tcp dport { 443 } ct original packets < 20 counter queue num 200 bypass
+		tcp dport { 443 } ct original packets < 20 ct direction original counter queue num 200 bypass
 	}
 
 	chain output {
