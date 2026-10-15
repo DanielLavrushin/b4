@@ -551,6 +551,18 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
         </>
       )}
 
+      <B4FormHeader label={t("sets.dns.stripEchHeader")} />
+
+      <Grid size={{ xs: 12 }}>
+        <B4Switch
+          label={t("sets.dns.stripEch")}
+          checked={dnsConfig.strip_ech || false}
+          onChange={(checked: boolean) => onChange("dns.strip_ech", checked)}
+          description={t("sets.dns.stripEchDesc")}
+          aiTopic="dns.strip_ech"
+        />
+      </Grid>
+
       <B4FormHeader label={t("sets.dns.pinsHeader")} />
 
       <Grid size={{ xs: 12 }}>

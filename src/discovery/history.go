@@ -54,6 +54,8 @@ type HistoryEntry struct {
 	MissingFamily string                         `json:"missing_family,omitempty"`
 	LinkStatus    int                            `json:"link_status,omitempty"`
 	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
+	ECHCoverName  string                         `json:"ech_cover_name,omitempty"`
+	ECHOnlyBlock  bool                           `json:"ech_only_block,omitempty"`
 	StoppedEarly  bool                           `json:"stopped_early,omitempty"`
 	Order         int                            `json:"order,omitempty"`
 	Applied       map[string]AppliedMark         `json:"applied,omitempty"`
@@ -251,6 +253,8 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			MissingFamily: domainResult.MissingFamily,
 			LinkStatus:    domainResult.LinkStatus,
 			Unconfirmed:   domainResult.Unconfirmed,
+			ECHCoverName:  domainResult.ECHCoverName,
+			ECHOnlyBlock:  domainResult.ECHOnlyBlock,
 			StoppedEarly:  suite.StoppedEarly,
 			Order:         position + 1,
 		}

@@ -39,6 +39,7 @@ func newKmodFixture(t *testing.T) *kmodFixture {
 	kmodDependsOf = func(string) []string { return nil }
 	kmodNow = func() time.Time { return fx.now }
 	kmodResetForTest()
+	stubDNSKernel(t, unaffectedDNSKernel)
 	t.Cleanup(func() {
 		kmodSysRoot, kmodLibRoot, kmodRelease, run, kmodDependsOf, kmodNow = origSys, origLib, origRel, origRun, origDeps, origNow
 		kmodResetForTest()
@@ -281,6 +282,37 @@ func TestKmodPkgsForDeduplicates(t *testing.T) {
 	}
 }
 
+func TestKmodHintsOnKeeneticOS(t *testing.T) {
+	fx := newKmodFixture(t)
+	fx.stubRun(false, "")
+	loadKernelModuleList("xt_NFLOG", "xt_socket")
+
+	stubDNSKernel(t, keeneticDNSKernel)
+	if pkgs := kmodPkgsFor([]string{"xt_NFLOG", "nfnetlink_log", "xt_socket", "iptable_raw"}); pkgs != nil {
+		t.Errorf("Entware has no kernel module packages for KeeneticOS, yet the hint names %v", pkgs)
+	}
+	hint := kmodMissingHint([]string{"xt_socket"})
+	if !strings.HasPrefix(hint, `Enable the "Kernel modules for Netfilter" component of KeeneticOS`) || strings.Contains(hint, "Package(s)") {
+		t.Errorf("on KeeneticOS the hint must name the firmware component instead of packages, got %q", hint)
+	}
+	if !strings.Contains(hint, "xt_socket: modprobe could not load it") {
+		t.Errorf("the component hint must keep the load reason next to it, got %q", hint)
+	}
+
+	stubDNSKernel(t, affectedDNSKernel)
+	for module, want := range map[string]string{
+		"xt_NFLOG":      "kmod-ipt-nflog iptables-mod-nflog",
+		"nfnetlink_log": "kmod-nfnetlink-log",
+	} {
+		if got := strings.Join(kmodPkgsFor([]string{module}), " "); got != want {
+			t.Errorf("kmodPkgsFor(%s) = %q, want %q", module, got, want)
+		}
+	}
+	if hint := kmodMissingHint([]string{"xt_NFLOG"}); !strings.HasPrefix(hint, "Package(s) that may provide it: kmod-ipt-nflog iptables-mod-nflog") || strings.Contains(hint, "Kernel modules for Netfilter") {
+		t.Errorf("a vanilla kernel keeps the package hint, got %q", hint)
+	}
+}
+
 func TestKmodInsmodFileExistsCountsAsLoaded(t *testing.T) {
 	fx := newKmodFixture(t)
 	fx.module("xt_TPROXY.ko")
@@ -328,5 +360,38 @@ func TestKmodIndexRebuildsAfterMissWhenStale(t *testing.T) {
 	fx.now = fx.now.Add(kmodIndexRebuildTTL + time.Second)
 	if got := kmodPath("xt_TPROXY"); got != path {
 		t.Fatalf("path = %q, want %q after the interval", got, path)
+	}
+}
+
+func TestReloadKernelModulesReloadsNFLOGOnceTried(t *testing.T) {
+	fx := newKmodFixture(t)
+	stubDNSKernel(t, keeneticDNSKernel)
+	fx.stubRun(true, "")
+	nflogCalls := func() string {
+		var out []string
+		for _, c := range fx.calls {
+			if strings.Contains(c, dnsCopyModule) || strings.Contains(c, dnsCopyLogModule) {
+				out = append(out, c)
+			}
+		}
+		fx.calls = nil
+		return strings.Join(out, "|")
+	}
+
+	ReloadKernelModules()
+	if got := nflogCalls(); got != "" {
+		t.Fatalf("the NFLOG modules were reloaded before b4 ever tried them: %s", got)
+	}
+	loadKernelModuleList(dnsCopyLogModule, dnsCopyModule)
+	fx.calls = nil
+	ReloadKernelModules()
+	if got, want := nflogCalls(), "modprobe -q nfnetlink_log|modprobe -q xt_NFLOG"; got != want {
+		t.Fatalf("the reload ran %q, want %q: NDMS loads neither module on its own", got, want)
+	}
+
+	stubDNSKernel(t, unaffectedDNSKernel)
+	ReloadKernelModules()
+	if got := nflogCalls(); got != "" {
+		t.Fatalf("an unaffected kernel reloaded the NFLOG modules: %s", got)
 	}
 }

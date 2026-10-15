@@ -1,50 +1,57 @@
 ---
 sidebar_position: 4
 title: Keenetic
+description: Installing b4 on a Keenetic router with Entware.
 ---
 
 ## Requirements
 
-- Keenetic router with OPKG support
-- Entware installed (required)
+- A Keenetic router with OPKG support.
+- Entware.
+- The Netfilter components, see [below](#netfilter-components).
 
 ## Install Entware
 
-### Newer models (with built-in storage)
+### Newer models, with built-in storage
 
-1. The router web interface is opened
-2. Section **System settings**
-3. The **OPKG package manager** component is enabled
+1. Open the router's web interface.
+2. Open **System settings**.
+3. Turn on the **OPKG package manager** component.
 
-### Older models (USB drive required)
+### Older models, with a USB drive
 
-1. A USB drive is attached to the router
-2. Entware is installed through the package manager
+1. Attach a USB drive to the router.
+2. Install Entware through the package manager.
 
-More details: [help.keenetic.com](https://help.keenetic.com/hc/en-us/articles/360021214160)
+The [Keenetic help](https://help.keenetic.com/hc/en-us/articles/360021214160) has the details.
 
 ## Netfilter components {#netfilter-components}
 
-Keenetic NDMS does not ship all the netfilter kernel modules b4 needs out of the box. The required components have to be enabled before b4 is installed:
+KeeneticOS does not ship every netfilter module b4 needs, so two components are turned on before b4 is installed. The components are available only under the `admin` account.
 
-1. In the router web interface: **System settings** → **Component options**
-2. **Netfilter** - the base netfilter component - is enabled
-3. Once Netfilter is enabled, a new option appears: **Xtables-addons for Netfilter** (provides `xt_connbytes` and other extensions b4 relies on)
-4. The changes are applied, followed by a router reboot or a component reload
+1. In the router's web interface, open **System settings** > **Component options**.
+2. Search the components for `netfilter`, and turn on **Kernel modules for Netfilter** if it is not on yet.
+3. Turn on **Xtables-addons for Netfilter**, which appears once the Netfilter modules are on.
+4. Apply the changes, then reboot the router or reload the components.
+5. Over SSH, install the iptables userspace:
 
-Then, over SSH, the iptables userspace is installed:
-
-```bash
-opkg install iptables
-```
+   ```bash
+   opkg install iptables
+   ```
 
 ## Install b4
 
-Over an SSH connection to the router:
+Over SSH on the router:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh
 ```
+
+The installer detects the architecture: `mipsle_softfloat` on older models (MT7621), `arm64` on newer ones (aarch64).
+
+:::warning Without Entware
+Without Entware, b4 goes to `/tmp`, which is cleared on every reboot. Entware keeps b4 installed across reboots.
+:::
 
 ## Service control
 
@@ -62,41 +69,20 @@ curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh 
 | Configuration | `/opt/etc/b4/b4.json` |
 | Service | `/opt/etc/init.d/S99b4` |
 
-## Architecture
-
-- Older models (MT7621) - `mipsle_softfloat`
-- Newer models (aarch64) - `arm64`
-
-The installer detects the architecture automatically.
-
-:::warning Without Entware
-Without Entware, b4 is placed in `/tmp`, which is cleared on every reboot. For persistent operation, Entware is required.
-:::
-
 ## Firewall rewrites {#firewall-rewrites}
 
-NDMS rebuilds its netfilter tables on its own schedule: a UPnP port mapping renewal, a WAN reconnect, a change to a policy or a component. Each rebuild drops the chains it does not own, including those of b4, and then runs every script under `/opt/etc/ndm/netfilter.d/` with the table name in `$table` and the family in `$type`.
+KeeneticOS rebuilds its firewall from time to time and removes b4's rules with it. The installer adds a hook that makes b4 restore them as soon as the rebuild ends. The log lines this leaves are explained under [Router platforms](../troubleshooting/platforms.md#keenetic-firewall-rewrites).
 
-The installer places `50-b4.sh` in that directory. The script sends `SIGUSR1` to the running b4 process, which re-checks its rules as soon as the rebuild settles and restores what is missing. Without the hook, the tables monitor still restores the rules on its next poll, which is up to `system.tables.monitor_interval` seconds later (10 by default).
+## DNS queries {#dns-queries}
 
-The rules of the [Expose to internet](../settings/security.md#expose-to-internet) switches sit in the `filter` table, which NDMS rewrites as well, and are re-checked on the same signal and at the same interval. b4 logs putting them back at the WARN level as `Expose: the rules opening ... were missing from ..., usually after the firewall was reloaded; restored them`, whether the hook or the poll found them missing, so that line follows a rewrite even when the hook works.
-
-A rewrite announced by the hook leaves `Tables rules missing after a firewall rewrite, restoring...` followed by `Tables rules restored successfully` in the log, at the INFO level. The same line at the WARN level, without the rewrite wording, means the poll found the rules gone with no signal from the hook: either the hook is missing or something other than NDMS removed them. The same re-check can be requested by hand:
-
-```bash
-kill -USR1 $(cat /var/run/b4.pid)
-```
-
-In TUN mode the signal also makes the TUN engine re-check its capture chain `B4_TUN` and the jumps into it at once. The engine logs a rebuilt chain at the WARN level as `TUN: capture chain B4_TUN lost N of M rules (removed outside b4) ...`, whether the hook or the poll found it, and the tables monitor's lines cover only the masquerade, MSS clamp, DSCP and routing-set rules. The poll interval in this mode is at least 10 seconds.
+On KeeneticOS with a kernel before 4.18 (4.14 before 4.14.173), b4 copies DNS queries instead of holding them. What that changes is described under [Router platforms](../troubleshooting/platforms.md#keenetic-dns-queries).
 
 ## Troubleshooting
 
-After the service starts, the log is worth checking:
+After the service starts, the error log shows whether anything failed:
 
 ```bash
 cat /var/log/b4/errors.log
 ```
 
-The line `xt_connbytes kernel module is not available` means the Netfilter components were not enabled correctly - see [Netfilter components](#netfilter-components) above, where both **Netfilter** and **Xtables-addons for Netfilter** have to be active.
-
-If the log is empty (or has no errors), the b4 web interface should be reachable on the router's LAN IP.
+The errors and their fixes are listed under [Router platforms](../troubleshooting/platforms.md#keenetic). With no errors, the web interface is at the router's LAN address, on port 7000.

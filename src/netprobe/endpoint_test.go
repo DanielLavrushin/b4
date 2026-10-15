@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/dns/endpoint"
 )
 
@@ -293,5 +294,38 @@ func TestResolveResilientNoDataBeatsNXDomain(t *testing.T) {
 	var nd *NoDataError
 	if !errors.As(err, &nd) || nd.Server != nodata.URL {
 		t.Fatalf("one server saying the name exists outweighs one saying it does not, got %v", err)
+	}
+}
+
+func TestExchangeRetriesATruncatedAnswerOverTCP(t *testing.T) {
+	s := newDNSStub(t)
+	udpHits := s.serveUDP(stubAnswer{truncated: true})
+	tcpHits := s.serveTCP(stubAnswer{ip: "203.0.113.9"})
+	r := &Resolver{Timeout: 2 * time.Second}
+
+	resp, err := r.Exchange(context.Background(), s.addr, dns.BuildQuery("big.example", 0x5150, dns.TypeHTTPS))
+	if err != nil {
+		t.Fatalf("Exchange: %v", err)
+	}
+	if resp[0] != 0x51 || resp[1] != 0x50 || resp[2]&0x02 != 0 || binary.BigEndian.Uint16(resp[6:8]) != 1 {
+		t.Fatalf("want the full TCP answer to the same query, got %x", resp)
+	}
+	if udpHits.Load() != 1 || tcpHits.Load() != 1 {
+		t.Fatalf("want one UDP and one TCP exchange, got %d and %d", udpHits.Load(), tcpHits.Load())
+	}
+}
+
+func TestExchangeKeepsAnUntruncatedUDPAnswer(t *testing.T) {
+	s := newDNSStub(t)
+	s.serveUDP(stubAnswer{ip: "203.0.113.10"})
+	tcpHits := s.serveTCP(stubAnswer{ip: "203.0.113.11"})
+	r := &Resolver{Timeout: 2 * time.Second}
+
+	resp, err := r.Exchange(context.Background(), s.addr, dns.BuildQuery("small.example", 0x6160, dns.TypeHTTPS))
+	if err != nil || binary.BigEndian.Uint16(resp[6:8]) != 1 || !strings.HasSuffix(string(resp), string(net.ParseIP("203.0.113.10").To4())) {
+		t.Fatalf("want the UDP answer, got %x %v", resp, err)
+	}
+	if tcpHits.Load() != 0 {
+		t.Fatalf("an untruncated UDP answer needs no TCP retry, TCP was asked %d times", tcpHits.Load())
 	}
 }

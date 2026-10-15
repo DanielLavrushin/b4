@@ -27,6 +27,7 @@ import {
   ApplyTarget,
   copyText,
   exportSetJson,
+  extraTargetNames,
   generateDomainVariants,
   pinsFor,
   probeUrlLabel,
@@ -147,10 +148,16 @@ export const ApplyDialog = ({
     };
   }, [open, target, single, variants]);
 
+  const coverNames = useMemo(
+    () => (target ? extraTargetNames(target.set, target.domains) : []),
+    [target],
+  );
+
   const domains = useMemo(() => {
     if (!target) return [];
-    return single ? [variant || single] : target.domains;
-  }, [target, single, variant]);
+    const base = single ? [variant || single] : target.domains;
+    return [...base, ...coverNames.filter((n) => !base.includes(n))];
+  }, [target, single, variant, coverNames]);
 
   const tested = useMemo(() => target?.domains ?? [], [target]);
 
@@ -263,12 +270,15 @@ export const ApplyDialog = ({
         COVERING.has(m.relation),
     );
   const coveredTested = tested.filter((d) => !!ownMatch(d));
-  const covers = matchesFailed || coveredTested.length === tested.length;
+  const coveredNames = coverNames.filter((d) => !!ownMatch(d));
+  const covers =
+    matchesFailed ||
+    (coveredTested.length === tested.length &&
+      coveredNames.length === coverNames.length);
+  const covered = [...coveredTested, ...coveredNames];
   const missing = single
     ? domains
-    : domains.filter(
-        (d) => !coveredTested.some((c) => lower(c) === lower(d)),
-      );
+    : domains.filter((d) => !covered.some((c) => lower(c) === lower(d)));
   const keepTargets = covers || !addDomains;
 
   const shadowed: ShadowedDomain[] = [];

@@ -8,6 +8,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/iphealth"
+	"github.com/daniellavrushin/b4/sni"
 )
 
 type connInfo struct {
@@ -26,17 +27,24 @@ type connInfo struct {
 type tlsInfo struct {
 	host       string
 	tlsVersion uint16
+	helloSeq   uint32
+	gen        uint64
 	lastSeen   time.Time
+	decidedBy  *sni.SuffixSet
+	decidedMac string
+	set        *config.SetConfig
 }
 
 type tlsInfoCache struct {
-	mu    sync.RWMutex
-	conns map[string]*tlsInfo
+	mu      sync.RWMutex
+	conns   map[string]*tlsInfo
+	current *sni.SuffixSet
+	gen     uint64
 }
 
 const maxTLSCacheEntries = 20000
 
-func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16) {
+func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, helloSeq uint32) uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -57,11 +65,15 @@ func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16) {
 		}
 	}
 
+	c.gen++
 	c.conns[connKey] = &tlsInfo{
 		host:       host,
 		tlsVersion: tlsVersion,
+		helloSeq:   helloSeq,
+		gen:        c.gen,
 		lastSeen:   time.Now(),
 	}
+	return c.gen
 }
 
 func (c *tlsInfoCache) Lookup(connKey string) (string, uint16, bool) {
@@ -73,6 +85,73 @@ func (c *tlsInfoCache) Lookup(connKey string) (string, uint16, bool) {
 		return "", 0, false
 	}
 	return info.host, info.tlsVersion, true
+}
+
+func (c *tlsInfoCache) Decision(connKey string) (tlsInfo, bool) {
+	c.mu.RLock()
+	info, exists := c.conns[connKey]
+	if !exists {
+		c.mu.RUnlock()
+		return tlsInfo{}, false
+	}
+	decision := *info
+	now := time.Now()
+	stale := now.Sub(info.lastSeen) > time.Second
+	c.mu.RUnlock()
+
+	if stale {
+		c.mu.Lock()
+		if info, exists := c.conns[connKey]; exists {
+			info.lastSeen = now
+		}
+		c.mu.Unlock()
+	}
+	return decision, true
+}
+
+func (c *tlsInfoCache) Decide(connKey string, gen uint64, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.current != nil && c.current != matcher {
+		return
+	}
+	if info, exists := c.conns[connKey]; exists && info.gen == gen {
+		info.decidedBy = matcher
+		info.decidedMac = srcMac
+		info.set = set
+	}
+}
+
+func (c *tlsInfoCache) ForgetDecisions(current *sni.SuffixSet) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.current = current
+	for _, info := range c.conns {
+		info.decidedBy = nil
+		info.set = nil
+	}
+}
+
+func (c *tlsInfoCache) DropOtherConnection(connKey string, firstSeq uint32) {
+	sameConnection := func(info *tlsInfo) bool {
+		return info.helloSeq-firstSeq <= maxPendingHelloRecord
+	}
+
+	c.mu.RLock()
+	info, exists := c.conns[connKey]
+	keep := !exists || sameConnection(info)
+	c.mu.RUnlock()
+	if keep {
+		return
+	}
+
+	c.mu.Lock()
+	if info, exists := c.conns[connKey]; exists && !sameConnection(info) {
+		delete(c.conns, connKey)
+	}
+	c.mu.Unlock()
 }
 
 func (c *tlsInfoCache) Cleanup() {

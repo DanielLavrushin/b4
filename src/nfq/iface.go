@@ -99,7 +99,10 @@ func packetIfaceIndex(a nfqueue.Attribute) (uint32, ifaceRole) {
 }
 
 func (w *Worker) matchesInterface(a nfqueue.Attribute) bool {
-	idx, role := packetIfaceIndex(a)
+	return w.ifaceAllowed(packetIfaceIndex(a))
+}
+
+func (w *Worker) ifaceAllowed(idx uint32, role ifaceRole) bool {
 	recordIfaceTraffic(idx, role)
 
 	cfg := w.getConfig()

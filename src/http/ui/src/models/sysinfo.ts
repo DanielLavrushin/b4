@@ -41,6 +41,7 @@ interface DiagCapability {
   packages?: string[];
   reasons?: string[];
   detail?: string;
+  hint?: string;
 }
 
 interface DiagTool {

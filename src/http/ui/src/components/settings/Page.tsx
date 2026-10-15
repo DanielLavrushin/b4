@@ -31,6 +31,7 @@ import {
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useAiStatus } from "@context/AiStatusProvider";
 import { useHubInvalidate } from "@hooks/useHub";
+import { usePageTitleDetail } from "@hooks/usePageTitle";
 import { useTelegramBridgeInvalidate } from "@hooks/useTelegramBridge";
 import { useSystemAddressesInvalidate } from "@hooks/useSystemAddresses";
 import { ApiSettings } from "./Api";
@@ -230,6 +231,8 @@ export function SettingsPage() {
       lastSection.current[currentTab] = currentSectionId;
     }
   }, [currentTab, currentSectionId]);
+
+  usePageTitleDetail(currentCategory.label);
 
   // Handle tab change
   const handleTabChange = (_: React.SyntheticEvent, newValue: TABS) => {

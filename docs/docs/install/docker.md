@@ -1,9 +1,10 @@
 ---
 sidebar_position: 6
 title: Docker
+description: Running b4 in a Docker container.
 ---
 
-Image: [lavrushin/b4](https://hub.docker.com/r/lavrushin/b4) on Docker Hub.
+The image is [lavrushin/b4](https://hub.docker.com/r/lavrushin/b4) on Docker Hub.
 
 ## docker-compose
 
@@ -24,7 +25,7 @@ services:
     restart: unless-stopped
 ```
 
-Run:
+Start:
 
 ```bash
 mkdir -p config
@@ -50,23 +51,23 @@ docker run -d \
 
 | Parameter | Purpose |
 | --- | --- |
-| `network_mode: host` | b4 works with the host network stack directly |
-| `NET_ADMIN` | manage netfilter and firewall rules |
-| `NET_RAW` | use raw sockets |
-| `SYS_MODULE` | load kernel modules (modprobe) |
-| `-v ./config:/etc/b4` | configuration is stored on the host |
+| `network_mode: host` | b4 works with the host's network stack directly |
+| `NET_ADMIN` | Managing netfilter and the firewall rules |
+| `NET_RAW` | Raw sockets |
+| `SYS_MODULE` | Loading kernel modules |
+| `-v ./config:/etc/b4` | Keeps the configuration on the host |
 
 ## Management
 
 ```bash
 docker compose logs -f b4     # logs
 docker compose restart b4     # restart
-docker compose down            # stop
+docker compose down           # stop
 docker compose pull && docker compose up -d   # update
 ```
 
+The update dialog of the web interface does not update a container. A container started with `docker run` is updated by pulling the new image and creating the container again.
+
 ## Web interface
 
-After startup: `http://localhost:7000`
-
-The port is configured in `config/b4.json` (`web_server.port`).
+After the start, the web interface is at `http://localhost:7000` on the host, or at the host's address from another machine. The port is set under **Settings > System > Web Server** in **Port**, or in `config/b4.json`, see [Configuration file](../advanced/config.md#paths-system).

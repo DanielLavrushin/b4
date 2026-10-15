@@ -93,6 +93,7 @@ export {
   Public as IpInfoIcon,
   Extension as McpIcon,
   Search as SearchIcon,
+  Sort as SortIcon,
   Sync as SyncIcon,
   ThumbUpAlt as WorksIcon,
   ThumbDownAlt as BrokenIcon,

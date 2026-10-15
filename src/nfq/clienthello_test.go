@@ -117,6 +117,12 @@ func TestTruncatedClientHello(t *testing.T) {
 	if truncatedClientHello([]byte{0x17, 0x03, 0x03, 0x00, 0x10, 0x01}) {
 		t.Fatal("application data record must not be buffered")
 	}
+	if truncatedClientHello([]byte{0x16, 0x03, 0x03, 0x00, 0x28, 0x01, 0x9c, 0x4e, 0x10, 0xd2, 0x7a}) {
+		t.Fatal("an encrypted handshake record whose ciphertext starts with 0x01 must not be buffered")
+	}
+	if !truncatedClientHello(full[:8]) {
+		t.Fatal("a ClientHello cut before its version bytes must still be reported as truncated")
+	}
 }
 
 func TestSplitClientHelloIsNotClassifiableAlone(t *testing.T) {

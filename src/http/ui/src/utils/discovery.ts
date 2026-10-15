@@ -14,6 +14,7 @@ export type SiteVerdict = DiscoveryOutcome | "checking";
 
 export const NO_BYPASS_PRESET = "no-bypass";
 export const SET_CURRENT_PRESET = "set-current";
+export const ECH_STRIP_PRESET = "ech-strip";
 
 type TFn = (key: string, opts?: Record<string, unknown>) => string;
 
@@ -173,25 +174,53 @@ export function normalizeSet(set: B4SetConfig): B4SetConfig {
   };
 }
 
+export function echCoverNames(
+  results: { ech_cover_name?: string }[],
+): string[] {
+  return [
+    ...new Set(
+      results
+        .map((r) => r.ech_cover_name)
+        .filter((name): name is string => !!name),
+    ),
+  ];
+}
+
 export function scopeSet(
   set: B4SetConfig,
   domains: string[],
   keepDns: boolean,
+  coverNames: string[] = [],
 ): B4SetConfig {
   const base = normalizeSet(set);
   const pins = pinsFor(base, domains);
+  const names = [...domains];
+  for (const cover of coverNames) {
+    if (!names.includes(cover)) names.push(cover);
+  }
   return {
     ...base,
     targets: {
       ...base.targets,
-      sni_domains: [...domains],
+      sni_domains: names,
       ip: [],
       geosite_categories: [],
       geoip_categories: [],
       asns: [],
     },
-    dns: { ...(keepDns ? base.dns : emptyDns()), pins },
+    dns: {
+      ...(keepDns ? base.dns : emptyDns()),
+      pins,
+      ...(base.dns.strip_ech ? { strip_ech: true } : {}),
+    },
   };
+}
+
+export function extraTargetNames(set: B4SetConfig, domains: string[]): string[] {
+  const shown = new Set(domains.map((d) => d.toLowerCase()));
+  return (set.targets?.sni_domains ?? []).filter(
+    (d) => !shown.has(d.toLowerCase()),
+  );
 }
 
 export const hasPins = (set: B4SetConfig): boolean =>
@@ -283,7 +312,11 @@ export function buildResultEntries(
     const sorted = [...domains].sort(byRank);
     const rs = sorted.map((d) => results[d]);
     const raw = rs[0]?.results?.[preset]?.set;
-    pushGroup(sorted, preset, raw ? scopeSet(raw, sorted, dnsPoisoned(rs)) : null);
+    pushGroup(
+      sorted,
+      preset,
+      raw ? scopeSet(raw, sorted, dnsPoisoned(rs), echCoverNames(rs)) : null,
+    );
   }
 
   return entries.sort((a, b) => a.order - b.order);
@@ -305,6 +338,7 @@ export function alternatesOf(
   domains: string[],
   winner: string,
   keepDns: boolean,
+  coverNames: string[],
   limit = 5,
 ): Alternate[] {
   const first = sources[0];
@@ -319,7 +353,7 @@ export function alternatesOf(
     out.push({
       preset,
       family: r.family,
-      set: scopeSet(r.set, domains, keepDns),
+      set: scopeSet(r.set, domains, keepDns, coverNames),
       speed: Math.min(...sources.map((s) => s.results?.[preset]?.speed ?? 0)),
     });
   }
@@ -333,6 +367,7 @@ export function alternatesFor(group: FoundGroup, limit = 5): Alternate[] {
     group.domains,
     group.preset,
     dnsPoisoned(group.results),
+    echCoverNames(group.results),
     limit,
   );
 }
@@ -347,6 +382,7 @@ export function historyAlternates(
     domains.length > 0 ? domains : [entry.domain],
     entry.best_preset,
     !!entry.dns_result?.is_poisoned,
+    echCoverNames([entry]),
     limit,
   );
 }
@@ -412,6 +448,8 @@ export function describeStrategy(set: B4SetConfig, t: TFn): string {
     parts.push(S("pinsOnly"));
   } else if (set.dns?.enabled) {
     parts.push(S("dnsOnly"));
+  } else if (set.dns?.strip_ech) {
+    parts.push(S("stripEchOnly"));
   } else {
     parts.push(S("split.none"));
   }
@@ -429,6 +467,12 @@ export function describeStrategy(set: B4SetConfig, t: TFn): string {
     parts.push(S("extras.dns"));
   }
   if (pinned && (split !== "none" || faking)) parts.push(S("extras.pins"));
+  if (
+    set.dns?.strip_ech &&
+    (split !== "none" || faking || pinned || set.dns.enabled)
+  ) {
+    parts.push(S("extras.stripEch"));
+  }
 
   const sentence = parts.join(S("join"));
   return sentence.charAt(0).toUpperCase() + sentence.slice(1) + S("end");
@@ -470,7 +514,12 @@ export function historySet(e: HistoryEntry): B4SetConfig | null {
   if (e.set) return normalizeSet(e.set);
   const raw = e.results?.[e.best_preset]?.set;
   if (!raw) return null;
-  return scopeSet(raw, [e.domain], !!e.dns_result?.is_poisoned);
+  return scopeSet(
+    raw,
+    [e.domain],
+    !!e.dns_result?.is_poisoned,
+    echCoverNames([e]),
+  );
 }
 
 export function historyUnconfirmed(e: HistoryEntry): boolean {

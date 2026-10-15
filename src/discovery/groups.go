@@ -23,6 +23,9 @@ func phaseRank(p DiscoveryPhase) int {
 }
 
 func presetRanksBefore(a string, aPhase DiscoveryPhase, aPriority int, b string, bPhase DiscoveryPhase, bPriority int) bool {
+	if aPlain, bPlain := plainFixName(a), plainFixName(b); aPlain != bPlain {
+		return aPlain
+	}
 	ap, bp := phaseRank(aPhase), phaseRank(bPhase)
 	if ap != bp {
 		return ap < bp

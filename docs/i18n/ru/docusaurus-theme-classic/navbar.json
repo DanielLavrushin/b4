@@ -1,18 +1,22 @@
 {
   "item.label.Docs": {
     "message": "Документация",
-    "description": "Navbar item for docs"
+    "description": "Navbar item with label Docs"
   },
   "item.label.API": {
     "message": "API",
-    "description": "Navbar item for Swagger/API"
+    "description": "Navbar item with label API"
   },
   "item.label.GitHub": {
     "message": "GitHub",
-    "description": "Navbar item for GitHub"
+    "description": "Navbar item with label GitHub"
   },
   "logo.alt": {
     "message": "B4 Logo",
-    "description": "Alt text for the navbar logo"
+    "description": "The alt text of navbar logo"
+  },
+  "item.label.Changelog": {
+    "message": "История изменений",
+    "description": "Navbar item with label Changelog"
   }
 }

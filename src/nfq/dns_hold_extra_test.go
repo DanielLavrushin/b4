@@ -446,7 +446,7 @@ func TestEscalatedPinnedAnswerAfterARedirectWaitsForItsAddresses(t *testing.T) {
 
 	answered := make(chan bool, 1)
 	go func() {
-		answered <- w.answerViaSetInline(IPv4, w.getConfig(), set, "pin.example.com", dns.BuildQuery("pin.example.com", 43, dnsTypeA), net.ParseIP("192.168.1.100"), 40000, net.ParseIP("192.168.1.1"))
+		answered <- w.answerViaSetInline(IPv4, w.getConfig(), set, "pin.example.com", dns.BuildQuery("pin.example.com", 43, dnsTypeA), net.ParseIP("192.168.1.100"), 40000, net.ParseIP("192.168.1.1"), false)
 	}()
 	noReply(t, r, 30*time.Millisecond, "the pinned answer was sent before its addresses were in the set")
 	close(gate)

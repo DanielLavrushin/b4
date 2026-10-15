@@ -83,7 +83,7 @@ func (s *Suite) estimateTotal() int {
 		case ScopeSites:
 			total += len(uniqueSites(s.Options.Sites)) * s.modes() * len(s.families())
 		case ScopeDNS:
-			total += len(lists.DNSServers) + len(systemNameservers())
+			total += len(lists.DNSServers) + len(netprobe.SystemNameservers())
 		case ScopeHosting:
 			total += len(lists.TCPTargets)
 		case ScopeTelegram:

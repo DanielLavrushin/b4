@@ -65,6 +65,7 @@ func plainFixPreset(name string, family StrategyFamily) ConfigPreset {
 				Strategy: config.ConfigNone,
 			},
 			Faking: config.FakingConfig{SNI: false},
+			DNS:    config.DNSConfig{StripECH: family == FamilyECHStrip},
 		},
 	}
 }
@@ -485,7 +486,7 @@ func shouldScanAlternatives(result *DNSDiscoveryResult) bool {
 }
 
 func plainFixResult(dr *DomainDiscoveryResult) (string, *DomainPresetResult) {
-	for _, name := range []string{presetAltAddress, presetDNSRedirect} {
+	for _, name := range []string{presetAltAddress, presetDNSRedirect, presetECHStrip} {
 		if r := dr.Results[name]; r != nil && r.Status == CheckStatusComplete {
 			return name, r
 		}
