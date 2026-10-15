@@ -20,7 +20,27 @@ const nftDstnatPriority = -100
 var (
 	dnsTCPListenerReadyV4 atomic.Bool
 	dnsTCPListenerReadyV6 atomic.Bool
+	nftDNSTCPFailedV4     atomic.Bool
+	nftDNSTCPFailedV6     atomic.Bool
 )
+
+func noteNftDNSTCPFailed(v6, failed bool) {
+	if v6 {
+		nftDNSTCPFailedV6.Store(failed)
+		return
+	}
+	nftDNSTCPFailedV4.Store(failed)
+}
+
+func nftDNSTCPExpected(cfg *config.Config, v6 bool) bool {
+	if !dnsTCPEnabledFamily(cfg, v6) || !cfg.QueuesIPFamily(v6) {
+		return false
+	}
+	if v6 {
+		return !nftDNSTCPFailedV6.Load()
+	}
+	return !nftDNSTCPFailedV4.Load()
+}
 
 func SetDNSTCPListenerReady(v4, v6 bool) {
 	dnsTCPListenerReadyV4.Store(v4)
@@ -91,6 +111,10 @@ func dnsTCPRulesPresent(ipt string, port int, markAccept string) bool {
 		im.existsRule(ipt, "nat", dnsTCPChainName, dnsTCPRedirectSpec(port))
 }
 
+func dnsTCPLinkLocalReturnSpec() []string {
+	return []string{"-d", "fe80::/10", "-j", "RETURN"}
+}
+
 func (manager *IPTablesManager) buildDNSTCPManifest(ipt string) ([]Chain, []Rule) {
 	chains := []Chain{{manager: manager, IPT: ipt, Table: "nat", Name: dnsTCPChainName}}
 	rules := []Rule{
@@ -99,6 +123,9 @@ func (manager *IPTablesManager) buildDNSTCPManifest(ipt string) ([]Chain, []Rule
 			Spec: dnsTCPRedirectSpec(manager.cfg.DNSTCPListenPort())},
 		{manager: manager, IPT: ipt, Table: "nat", Chain: "PREROUTING", Action: "I", Spec: dnsTCPJumpSpec()},
 		{manager: manager, IPT: ipt, Table: "nat", Chain: "OUTPUT", Action: "I", Spec: dnsTCPJumpSpec()},
+	}
+	if strings.HasPrefix(ipt, "ip6") {
+		rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "nat", Chain: dnsTCPChainName, Action: "I", Spec: dnsTCPLinkLocalReturnSpec()})
 	}
 	return chains, rules
 }
@@ -215,6 +242,11 @@ func (n *NFTablesManager) applyDNSTCPFamily(v6 bool) error {
 			"meta", "mark", "&", mark, "==", mark, "return"); err != nil {
 			return fmt.Errorf("failed to add dns tcp mark-bypass rule (%s): %w", family, err)
 		}
+		if v6 {
+			if _, err := n.runNft("add", "rule", family, table, chain, "ip6", "daddr", "fe80::/10", "return"); err != nil {
+				return fmt.Errorf("failed to add dns tcp link-local bypass rule (%s): %w", family, err)
+			}
+		}
 		if _, err := n.runNft(append([]string{"add", "rule", family, table, chain}, redirect...)...); err != nil {
 			return fmt.Errorf("failed to add dns tcp redirect rule (%s): %w", family, err)
 		}
@@ -236,9 +268,11 @@ func (n *NFTablesManager) ApplyDNSTCP() error {
 		}
 		if err := n.applyDNSTCPFamily(v6); err != nil {
 			n.clearDNSTCPFamily(v6)
+			noteNftDNSTCPFailed(v6, true)
 			log.Warnf("NFTABLES: %v, DNS over TCP stays with the upstream resolver for this family", err)
 			continue
 		}
+		noteNftDNSTCPFailed(v6, false)
 		family, _ := nftDNSTCPTable(v6)
 		applied = append(applied, family)
 	}

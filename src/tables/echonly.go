@@ -11,21 +11,11 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-var (
-	echOnlyDNSMu      sync.Mutex
-	echOnlyDNSApplied []string
-)
+var echOnlyDNSUnusable sync.Map
 
-func noteECHOnlyDNS(bins []string) {
-	echOnlyDNSMu.Lock()
-	echOnlyDNSApplied = append([]string(nil), bins...)
-	echOnlyDNSMu.Unlock()
-}
-
-func echOnlyDNSBinaries() []string {
-	echOnlyDNSMu.Lock()
-	defer echOnlyDNSMu.Unlock()
-	return append([]string(nil), echOnlyDNSApplied...)
+func echOnlyDNSUsable(ipt string) bool {
+	_, unusable := echOnlyDNSUnusable.Load(ipt)
+	return !unusable
 }
 
 func familyLabel(v6 bool) string {
@@ -107,13 +97,16 @@ func (manager *IPTablesManager) echOnlyBinaries() []string {
 			ipt = manager.ip6tablesBin()
 		}
 		if !hasBinary(ipt) {
+			echOnlyDNSUnusable.Store(ipt, true)
 			log.Warnf("IPTABLES: %s is missing, so %s DNS answers keep their ECH keys while %s support is off", ipt, familyLabel(v6), familyLabel(v6))
 			continue
 		}
 		if err := manager.checkNFQueueSupport(ipt); err != nil {
+			echOnlyDNSUnusable.Store(ipt, true)
 			log.Warnf("IPTABLES[%s]: %s DNS answers keep their ECH keys, %v", ipt, familyLabel(v6), err)
 			continue
 		}
+		echOnlyDNSUnusable.Delete(ipt)
 		ipts = append(ipts, ipt)
 	}
 	return ipts

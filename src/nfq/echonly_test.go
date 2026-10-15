@@ -172,3 +172,76 @@ func TestDNSOverTCPFromIPv4StillUsesThePin(t *testing.T) {
 		t.Fatalf("A answer %v, want the pin for a connection of a family b4 processes", ips)
 	}
 }
+
+func deviceListSet(id string, exclude bool, domains ...string) *config.SetConfig {
+	set := echTestSet(id, true, domains...)
+	set.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
+	set.Targets.SourceDevicesExclude = exclude
+	return set
+}
+
+func TestAnIPv6AnswerToAnUnknownDeviceIsLeftAloneByASetWithADeviceList(t *testing.T) {
+	for _, exclude := range []bool{true, false} {
+		w := ipv6OffWorker(t, deviceListSet("steamdb", exclude, "steamdb.info"))
+		q := newFakeModQueue()
+
+		w.dispatch(&verdictCtx{id: 1, q: q}, v6Answer(httpsAnswerWithECH("steamdb.info", dnsTypeHTTPS, "cloudflare-ech.com")))
+
+		if v := q.now(t); v.verdict != nfqueue.NfAccept || v.packet != nil {
+			t.Errorf("exclude=%v: verdict %d carrying %d bytes: b4 cannot tell which device an IPv6 answer goes to, so a set limited by a device list must leave it alone", exclude, v.verdict, len(v.packet))
+		}
+	}
+}
+
+func TestTheIPv4PathStillRemovesKeysForAnExcludeListWithAnUnknownDevice(t *testing.T) {
+	set := deviceListSet("steamdb", true, "steamdb.info")
+	w, cfg := echTestWorker(t, set)
+
+	out, action, _ := w.filterDNSAnswer(cfg, set, "steamdb.info", "", httpsAnswerWithECH("steamdb.info", dnsTypeHTTPS, "cloudflare-ech.com"), false)
+	if out == nil || action != dnsActionECHStripped {
+		t.Fatalf("action %q: the router's own lookups carry no MAC, and an exclude-list set has always removed keys from them", action)
+	}
+}
+
+func TestDNSOverTCPFromIPv6LeavesKeysToASetWithADeviceList(t *testing.T) {
+	cfg := config.NewConfig()
+	cfg.Queue.IPv6Enabled = false
+	cfg.Sets = []*config.SetConfig{deviceListSet("steamdb", true, "steamdb.info")}
+	w := newTestWorker(t, &cfg)
+	tcpECHUpstream(t)
+
+	answers := tcpQueriesFrom(t, w, net.ParseIP("2001:db8:15::116"), dns.BuildQuery("steamdb.info", 2, dnsTypeHTTPS))
+	if names := dns.ResponseECHPublicNames(answers[0]); len(names) != 1 {
+		t.Fatalf("keys %v: a set limited by a device list must not act on a connection from a device b4 cannot identify", names)
+	}
+}
+
+func TestADNSTCPListenerWithoutItsIPv6SocketIsNotRestartedOnEverySave(t *testing.T) {
+	recordDNSTCPReady(t)
+	held, err := net.Listen("tcp6", "[::]:0")
+	if err != nil {
+		t.Skipf("no IPv6 socket on this host: %v", err)
+	}
+	defer held.Close()
+
+	cfg := config.NewConfig()
+	cfg.Queue.IPv6Enabled = false
+	cfg.System.DNS.TCPPort = held.Addr().(*net.TCPAddr).Port
+	cfg.Sets = []*config.SetConfig{echTestSet("steamdb", true, "steamdb.info")}
+	p := &Pool{Workers: []*Worker{NewWorkerWithQueue(&cfg, 0)}}
+	p.startDNSTCP()
+	t.Cleanup(func() {
+		if p.dnsTCP != nil {
+			p.dnsTCP.Stop()
+		}
+	})
+	if p.dnsTCP == nil || !p.dnsTCP.ReadyV4() || p.dnsTCP.ReadyV6() {
+		t.Skip("could not set up a listener with only its IPv4 socket bound")
+	}
+
+	first := p.dnsTCP
+	p.reconcileDNSTCP(&cfg)
+	if p.dnsTCP != first {
+		t.Fatal("an unchanged config restarted the DNS-over-TCP listener because its IPv6 socket could not bind, dropping every open TCP DNS connection on each save")
+	}
+}

@@ -32,8 +32,8 @@ A value given on the command line is not written back into the file. When b4 sav
 
 With it off, which is the default:
 
-- b4 binds the packet queue to IPv4 only, so it never sees an IPv6 packet.
-- No IPv6 firewall rules are written for any set, in any mode. Routing, blocking and the QUIC refusal a proxy set installs are all IPv4-only.
+- b4 processes no IPv6 packet, with one exception in NFQUEUE mode: while an enabled set has [Remove ECH keys from DNS answers](../dns#removing-ech-keys) on, IPv6 DNS answers and DNS over TCP reach b4, which only removes ECH keys from them.
+- No other IPv6 firewall rules are written for any set, in any mode. Routing, blocking and the QUIC refusal a proxy set installs are all IPv4-only.
 - A site a set targets that also answers over IPv6 is reached over IPv6 by the client and bypasses the set entirely. b4 writes a warning to the log when the host has a working global IPv6 address and this is off.
 - To narrow that gap, b4 strips IPv6 addresses out of DNS answers for domains a set matched, so clients resolving through the router stay on the IPv4 path. See [The IPv4 fallback](../dns#the-ipv4-fallback).
 

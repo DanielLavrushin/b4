@@ -10,9 +10,9 @@ A set decides which resolver answers the domains it targets. Everything else kee
 | Transport | How it reaches b4 | When |
 | --- | --- | --- |
 | UDP port 53 | Queue rules in `PREROUTING` and `OUTPUT`: for requests (`dport 53`) in the raw table, ahead of conntrack (priority -300 on nftables), and for replies (`sport 53`) in the mangle table. With iptables on kernels before 4.18 (4.14 before 4.14.173), on KeeneticOS and wherever the raw table cannot queue packets, requests are not queued: a rule at the top of mangle `INPUT`, `FORWARD` and `OUTPUT` sends b4 a copy of each one with NFLOG and the request goes on at once, while replies are queued as before; see [Copied requests](#copied-requests). On KeeneticOS with a later kernel, requests are queued in the mangle table | Always, while b4 is running |
-| TCP port 53 | A `nat` `REDIRECT` into a local listener, port 5453 by default | Only while at least one enabled set has a DNS server, a DoH URL or [Remove ECH keys from DNS answers](#removing-ech-keys) on, and **Intercept DNS over TCP** is on |
+| TCP port 53 | A `nat` `REDIRECT` into a local listener, port 5453 by default; TCP to a link-local IPv6 address (`fe80::/10`) is left alone | Only while at least one enabled set has a DNS server, a DoH URL or [Remove ECH keys from DNS answers](#removing-ech-keys) on, and **Intercept DNS over TCP** is on |
 
-With **Enable IPv6 Support** off, these rules cover IPv4 only, with one exception: while an enabled set has [Remove ECH keys from DNS answers](#removing-ech-keys) on, DNS replies over IPv6 are queued as well and DNS over TCP to IPv6 port 53 is redirected too. b4 only removes ECH keys from them.
+With **Enable IPv6 Support** off, these rules cover IPv4 only, with one exception in NFQUEUE mode: while an enabled set has [Remove ECH keys from DNS answers](#removing-ech-keys) on, DNS replies over IPv6 are queued as well and DNS over TCP to IPv6 port 53 is redirected too. b4 only removes ECH keys from them.
 
 Both cases cover traffic forwarded from the network and queries the router makes for itself. The queries b4 sends on a client's behalf and its lookups through a set's resolver carry the [queue mark](./guides/marks.md#the-queue-mark), and these rules skip packets that carry it, so such a query never re-enters the queue through them. Lookups b4 makes through the router's own resolver carry no mark.
 
@@ -192,7 +192,7 @@ A site behind a CDN that supports Encrypted ClientHello (ECH) publishes an ECH k
 - Only the `ech` parameter goes, together with its entry in `mandatory`, and `mandatory` itself when nothing is left in it. The ALPN list, the address hints and the TTL stay as they were.
 - The RRSIG records over the changed records are dropped and the AD flag is cleared, since the changed records no longer match their signatures.
 - It acts on forwarded answers, on answers from the set's own resolver and on DNS over TCP: TCP port 53 is intercepted while an enabled set has the switch on.
-- With **Enable IPv6 Support** off, answers that travel over IPv6, by UDP or TCP, still reach b4 while an enabled set has the switch on, and lose nothing but their key: no pin, redirect, block, address learning or other rewrite applies to them.
+- With **Enable IPv6 Support** off, in NFQUEUE mode, answers that travel over IPv6, by UDP or TCP, still reach b4 while an enabled set has the switch on, and lose nothing but their key: no pin, redirect, block, address learning or other rewrite applies to them. b4 cannot tell which device such an answer goes to, so a set limited to or excluding devices leaves it alone. The TUN engine carries no IPv6, and there such answers keep their key.
 - With [copied requests](#copied-requests), the replies that pass unchanged keep the key:
   - the replies to requests sent from UDP port 53
   - a reply held for twice the query timeout plus 2 seconds

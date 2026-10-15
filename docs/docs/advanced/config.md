@@ -119,7 +119,7 @@ The sample shows only some of the sections. Every section holds more keys than a
 
 `queue.ipv6` is the **Enable IPv6 Support** switch from [Settings, Core, Packet Engine](../settings/core#protocols), and `--ipv6` on the command line sets the same thing for one run. It says which address families **b4** processes, not what the router does with IPv6.
 
-Off, which is the default, means b4 binds its queue to IPv4 only and writes no IPv6 firewall rules for any set. Bypass strategies, routing, blocking and a proxy set's QUIC refusal then exist on IPv4 alone, so a destination that also answers over IPv6 is reachable there with nothing in the way. b4 logs a warning when the host has a working global IPv6 address while this is off, and it strips IPv6 addresses out of DNS answers for matched domains to keep clients on the protected IPv4 path. See [The IPv4 fallback](../dns#the-ipv4-fallback).
+Off, which is the default, means b4 processes IPv4 only and writes no IPv6 firewall rules for any set, apart from the IPv6 DNS rules of [Remove ECH keys from DNS answers](../dns#removing-ech-keys) in NFQUEUE mode. Bypass strategies, routing, blocking and a proxy set's QUIC refusal then exist on IPv4 alone, so a destination that also answers over IPv6 is reachable there with nothing in the way. b4 logs a warning when the host has a working global IPv6 address while this is off, and it strips IPv6 addresses out of DNS answers for matched domains to keep clients on the protected IPv4 path. See [The IPv4 fallback](../dns#the-ipv4-fallback).
 
 The address families are bound when the service starts, so a change here needs a restart to take full effect.
 

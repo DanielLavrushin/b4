@@ -25,27 +25,35 @@ func echStripWanted(cfg *config.Config, set *config.SetConfig, qtype uint16) boo
 	return stripsECH(set) || cfg.HasECHStrip()
 }
 
-func (w *Worker) echStripSet(cfg *config.Config, set *config.SetConfig, clientMac string, resp []byte) (*config.SetConfig, string) {
-	if stripsECH(set) {
+func deviceScoped(set *config.SetConfig) bool {
+	return set != nil && len(set.Targets.SourceDevices) > 0
+}
+
+func stripsECHFor(set *config.SetConfig, unknownDevice bool) bool {
+	return stripsECH(set) && !(unknownDevice && deviceScoped(set))
+}
+
+func (w *Worker) echStripSet(cfg *config.Config, set *config.SetConfig, clientMac string, resp []byte, unknownDevice bool) (*config.SetConfig, string) {
+	if stripsECHFor(set, unknownDevice) {
 		return set, ""
 	}
 	if !cfg.HasECHStrip() {
 		return nil, ""
 	}
 	for _, cover := range dns.ResponseECHPublicNames(resp) {
-		if matched, coverSet := w.getMatcher().MatchSNIWithSource(cover, clientMac); matched && stripsECH(coverSet) {
+		if matched, coverSet := w.getMatcher().MatchSNIWithSource(cover, clientMac); matched && stripsECHFor(coverSet, unknownDevice) {
 			return coverSet, cover
 		}
 	}
 	return nil, ""
 }
 
-func (w *Worker) stripECHKeys(cfg *config.Config, set *config.SetConfig, domain, clientMac string, resp []byte, overTCP bool) ([]byte, *config.SetConfig) {
+func (w *Worker) stripECHKeys(cfg *config.Config, set *config.SetConfig, domain, clientMac string, resp []byte, overTCP, unknownDevice bool) ([]byte, *config.SetConfig) {
 	qtype, ok := dns.QuestionType(resp)
 	if !ok || !echStripWanted(cfg, set, qtype) {
 		return nil, nil
 	}
-	actor, cover := w.echStripSet(cfg, set, clientMac, resp)
+	actor, cover := w.echStripSet(cfg, set, clientMac, resp, unknownDevice)
 	if actor == nil {
 		return nil, nil
 	}
@@ -97,7 +105,7 @@ func (w *Worker) handleECHOnlyPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.C
 	if !matched {
 		set = nil
 	}
-	echless, actor := w.stripECHKeys(cfg, set, domain, clientMac, payload, false)
+	echless, actor := w.stripECHKeys(cfg, set, domain, clientMac, payload, false, clientMac == "")
 	if echless == nil {
 		return vc.accept()
 	}

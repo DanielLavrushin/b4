@@ -226,7 +226,7 @@ func (w *Worker) filterDNSAnswer(cfg *config.Config, set *config.SetConfig, doma
 	if w == nil || len(resp) == 0 {
 		return nil, "", nil
 	}
-	if echless, actor := w.stripECHKeys(cfg, set, domain, clientMac, resp, overTCP); echless != nil {
+	if echless, actor := w.stripECHKeys(cfg, set, domain, clientMac, resp, overTCP, false); echless != nil {
 		return echless, dnsActionECHStripped, actor
 	}
 

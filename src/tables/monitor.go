@@ -369,9 +369,12 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 	}
 
-	for _, ipt := range echOnlyDNSBinaries() {
-		v6 := strings.HasPrefix(ipt, "ip6")
-		if !cfg.ECHOnlyFamily(v6) {
+	for _, v6 := range []bool{false, true} {
+		ipt := ipt4
+		if v6 {
+			ipt = ipt6
+		}
+		if !cfg.ECHOnlyFamily(v6) || !hasBinary(ipt) || !echOnlyDNSUsable(ipt) {
 			continue
 		}
 		if !iptECHOnlyDNSPresent(ipt) {
@@ -476,7 +479,7 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 	}
 
 	for _, v6 := range []bool{false, true} {
-		if !dnsTCPEnabledFamily(cfg, v6) || !cfg.QueuesIPFamily(v6) {
+		if !nftDNSTCPExpected(cfg, v6) {
 			continue
 		}
 		if !nft.dnsTCPFamilyIntact(v6, cfg.MainInjectedMark(), cfg.DNSTCPListenPort()) {

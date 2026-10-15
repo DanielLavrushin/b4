@@ -13,11 +13,10 @@ func echOnlyRig(t *testing.T, engine string, strip bool) (*goldenHost, *config.C
 	h := newGoldenHost(t)
 	goldenIsolate(t, h)
 	noteDNSQueryPlacement(nil)
-	noteECHOnlyDNS(nil)
+	resetECHOnlyState(t)
 	prevApplied := rulesAppliedCfg
 	t.Cleanup(func() {
 		noteDNSQueryPlacement(nil)
-		noteECHOnlyDNS(nil)
 		rulesAppliedCfg = prevApplied
 	})
 
@@ -104,9 +103,11 @@ func TestIPTablesQueuesIPv6AnswersOnlyForECHKeysWhileIPv6IsOff(t *testing.T) {
 	}
 	if tb := h.ipt[v6]["nat"]; tb == nil || tb.chain(dnsTCPChainName) == nil {
 		t.Error("DNS over TCP over IPv6 is not redirected to b4, so a resolver that asks the zone over TCP gets the key")
+	} else if indexOfRule(tb.chain(dnsTCPChainName).rules, "fe80::/10", "RETURN") < 0 {
+		t.Errorf("%s = %q: the relay cannot dial a link-local resolver without its zone, so TCP to fe80::/10 must stay out of the redirect", dnsTCPChainName, tb.chain(dnsTCPChainName).rules)
 	}
-	if got := echOnlyDNSBinaries(); !slices.Equal(got, []string{v6}) {
-		t.Errorf("recorded binaries %q, want %q for the monitor", got, v6)
+	if tb := h.ipt[backendIPTables]["nat"]; tb != nil && tb.chain(dnsTCPChainName) != nil && indexOfRule(tb.chain(dnsTCPChainName).rules, "fe80") >= 0 {
+		t.Error("the IPv4 DNS-over-TCP chain got an IPv6 link-local rule")
 	}
 
 	m := &Monitor{}
@@ -143,8 +144,97 @@ func TestIPTablesDropsTheIPv6AnswerRulesWhenNoSetRemovesKeysAnyMore(t *testing.T
 	if left := goldenB4Leftovers(h, backendIP6Tables); len(left) > 0 {
 		t.Errorf("ip6tables keeps b4 rules after the last set stopped removing ECH keys: %q", left)
 	}
-	if got := echOnlyDNSBinaries(); len(got) != 0 {
-		t.Errorf("the monitor still expects IPv6 answer rules in %q", got)
+	if !(&Monitor{}).checkRules(next) {
+		t.Error("the monitor still expects IPv6 answer rules after the last set stopped removing ECH keys")
+	}
+}
+
+func resetECHOnlyState(t *testing.T) {
+	t.Helper()
+	reset := func() {
+		echOnlyDNSUnusable.Clear()
+		noteNftDNSTCPFailed(false, false)
+		noteNftDNSTCPFailed(true, false)
+	}
+	reset()
+	t.Cleanup(reset)
+}
+
+func TestIPTablesMonitorNoticesIPv6AnswerRulesAMissedRefreshSkipped(t *testing.T) {
+	_, applied := echOnlyRig(t, backendIPTables, false)
+
+	c := *applied
+	wanted := &c
+	stripECHOnly(t, wanted)
+	if !wanted.ECHOnlyFamily(true) {
+		t.Fatal("the wanted config must ask for ECH-only IPv6 answers")
+	}
+	if (&Monitor{}).checkRules(wanted) {
+		t.Error("a set that started removing ECH keys while the refresh was missed left ip6tables without its answer rules, and the monitor did not notice")
+	}
+}
+
+func TestIPTablesMonitorLeavesAnIP6TablesThatCannotQueueAlone(t *testing.T) {
+	h, cfg := echOnlyRig(t, backendIPTables, true)
+	for _, chain := range []string{"B4_PREROUTING", "OUTPUT"} {
+		tb := h.ipt[backendIP6Tables]["mangle"].chain(chain)
+		tb.rules = slices.DeleteFunc(tb.rules, func(r string) bool { return strings.Contains(r, "--sport 53") })
+	}
+	echOnlyDNSUnusable.Store(backendIP6Tables, true)
+	if !(&Monitor{}).checkRules(cfg) {
+		t.Error("ip6tables cannot queue, so the monitor must not ask for its answer rules and rebuild the firewall on every tick")
+	}
+}
+
+func ech6Config(t *testing.T) *config.Config {
+	t.Helper()
+	c := config.NewConfig()
+	cfg := &c
+	cfg.Queue.IPv4Enabled = true
+	cfg.Queue.IPv6Enabled = false
+	cfg.Queue.StartNum = 537
+	cfg.Queue.Threads = 1
+	stripECHOnly(t, cfg)
+	return cfg
+}
+
+func TestNftStopsExpectingAnIPv6DNSOverTCPTableItCouldNotBuild(t *testing.T) {
+	resetECHOnlyState(t)
+	nftStubFailing(t, "add chain ip6 "+nftDNSTCPTableName6)
+	cfg := ech6Config(t)
+
+	if err := NewNFTablesManager(cfg).ApplyDNSTCP(); err != nil {
+		t.Fatalf("ApplyDNSTCP: %v", err)
+	}
+	if nftDNSTCPExpected(cfg, true) {
+		t.Error("the monitor still expects the IPv6 DNS-over-TCP table the kernel refused, so it rebuilds the firewall on every tick")
+	}
+	if !nftDNSTCPExpected(cfg, false) {
+		t.Error("the IPv4 DNS-over-TCP table was built and must still be checked")
+	}
+}
+
+func TestNftKeepsLinkLocalDNSOverTCPOutOfTheRelay(t *testing.T) {
+	argvLog := nftFailingListStub(t)
+	n := NewNFTablesManager(ech6Config(t))
+	for _, v6 := range []bool{false, true} {
+		if err := n.applyDNSTCPFamily(v6); err != nil {
+			t.Fatalf("applyDNSTCPFamily(%v): %v", v6, err)
+		}
+	}
+	lines := strings.Split(readLog(t, argvLog), "\n")
+	for _, chain := range []string{nftDNSTCPPreChain, nftDNSTCPOutChain} {
+		prefix := "add rule ip6 " + nftDNSTCPTableName6 + " " + chain + " "
+		ret := slices.Index(lines, prefix+"ip6 daddr fe80::/10 return")
+		redirect := slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(l, prefix+"tcp dport 53 redirect") })
+		if ret < 0 || redirect < 0 || ret > redirect {
+			t.Errorf("%s: link-local destinations must return ahead of the redirect:\n%s", chain, strings.Join(lines, "\n"))
+		}
+	}
+	for _, l := range lines {
+		if strings.HasPrefix(l, "add rule ip "+nftDNSTCPTableName+" ") && strings.Contains(l, "fe80") {
+			t.Errorf("the IPv4 DNS-over-TCP table got an IPv6 rule: %s", l)
+		}
 	}
 }
 

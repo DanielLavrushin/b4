@@ -1074,7 +1074,6 @@ func (ipt *IPTablesManager) Apply() error {
 		}
 	}
 	noteDNSQueryPlacement(m.DNSQueries)
-	noteECHOnlyDNS(m.ECHOnlyDNS)
 
 	if log.Level(log.CurLevel.Load()) >= log.LevelTrace {
 		iptablesTrace, _ := run("sh", "-c", "cat /proc/net/netfilter/nfnetlink_queue && "+ipt.iptablesBin()+" -t mangle -vnL --line-numbers")
@@ -1091,7 +1090,6 @@ func (ipt *IPTablesManager) Clear() error {
 
 	ipt.clearB4JumpRules()
 	noteDNSQueryPlacement(nil)
-	noteECHOnlyDNS(nil)
 
 	m.RemoveRules()
 	time.Sleep(30 * time.Millisecond)
