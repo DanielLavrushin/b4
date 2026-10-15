@@ -102,6 +102,7 @@ type traceSetRouting struct {
 	Mode              string   `json:"mode"`
 	EgressInterface   string   `json:"egress_interface,omitempty"`
 	EgressIP          string   `json:"egress_ip,omitempty"`
+	EgressGateway     string   `json:"egress_gateway,omitempty"`
 	Upstream          string   `json:"upstream,omitempty"`
 	UpstreamAuth      bool     `json:"upstream_auth,omitempty"`
 	UpstreamUDP       bool     `json:"upstream_udp,omitempty"`
@@ -267,6 +268,7 @@ func traceRouting(c config.RoutingConfig) *traceSetRouting {
 		Mode:             c.Mode,
 		EgressInterface:  c.EgressInterface,
 		EgressIP:         c.EgressIP,
+		EgressGateway:    c.EgressGateway,
 		SourceInterfaces: c.SourceInterfaces,
 		IPTTLSeconds:     c.IPTTLSeconds,
 		Table:            c.Table,
