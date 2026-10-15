@@ -805,6 +805,27 @@ func (cfg *Config) IsTCPPort(port uint16) bool {
 	return cfg.tcpPortMap[port]
 }
 
+var ephemeralPortRanges = []PortRange{{Min: 32768, Max: 60999}, {Min: 49152, Max: 65535}}
+
+func (cfg *Config) TCPPortsOverlapEphemeral() (string, bool) {
+	var overlap []string
+	for _, part := range cfg.CollectTCPPorts() {
+		ports, ok := parsePortRangeStr(part)
+		if !ok {
+			continue
+		}
+		for _, eph := range ephemeralPortRanges {
+			if lo, hi := max(ports.Min, eph.Min), min(ports.Max, eph.Max); lo <= hi {
+				overlap = append(overlap, fmt.Sprintf("%d-%d", lo, hi))
+			}
+		}
+	}
+	if len(overlap) == 0 {
+		return "", false
+	}
+	return strings.Join(mergeAndNormalizePorts(overlap), ","), true
+}
+
 func (cfg *Config) CollectDeviceMSSClamps() map[int][]DeviceMatch {
 	result := make(map[int][]DeviceMatch)
 	seen := make(map[int]map[string]struct{})

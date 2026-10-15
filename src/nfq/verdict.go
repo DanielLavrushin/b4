@@ -21,6 +21,9 @@ type verdictCtx struct {
 	verdict       engine.PacketVerdict
 	copy          *dnsCopyDecision
 	ifaceFiltered bool
+	hook          uint8
+	hooked        bool
+	dir           engine.Direction
 }
 
 type dnsCopyDecision struct {
@@ -121,10 +124,14 @@ func (w *Worker) clientSender() *sock.Sender {
 }
 
 func (w *Worker) ProcessPacket(raw []byte) engine.PacketVerdict {
+	return w.ProcessPacketDir(raw, engine.DirUnknown)
+}
+
+func (w *Worker) ProcessPacketDir(raw []byte, dir engine.Direction) engine.PacketVerdict {
 	if len(raw) == 0 {
 		return engine.VerdictAccept
 	}
-	vc := &verdictCtx{verdict: engine.VerdictAccept}
+	vc := &verdictCtx{verdict: engine.VerdictAccept, dir: dir}
 	w.dispatch(vc, raw)
 	return vc.verdict
 }

@@ -13,6 +13,14 @@ const (
 	VerdictDrop
 )
 
+type Direction uint8
+
+const (
+	DirUnknown Direction = iota
+	DirOriginal
+	DirReply
+)
+
 type Engine interface {
 	Start() error
 	Stop()
