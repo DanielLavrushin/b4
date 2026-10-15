@@ -227,6 +227,39 @@ func TestANewQUICConnectionOnTheSamePortDropsThePreviousName(t *testing.T) {
 	})
 }
 
+func TestAnAddressLearnedForAnotherNameDoesNotRestartAStoppedQUICFlow(t *testing.T) {
+	blocked := newDomainOnlyQUICSet(config.UDPModeDrop)
+
+	allowed := config.NewSetConfig()
+	allowed.Id = "allowed"
+	allowed.Name = "Allowed"
+	allowed.Enabled = true
+	allowed.Targets.SNIDomains = []string{"allowed.example"}
+	allowed.UDP.Mode = config.ConfigOff
+	allowed.Fragmentation.Strategy = config.ConfigNone
+	allowed.Fragmentation.StrategyPool = nil
+
+	w := newQUICFlowWorker(t, &blocked, &allowed)
+	flow := newSplitQUICHello(t, []byte{0x80, 1, 2, 3, 4, 5, 6, 7}, []byte{0x81, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+
+	sendQUIC(w, flow.first, 50201)
+	if v := sendQUIC(w, flow.completing, 50201); v != engine.VerdictDrop {
+		t.Fatalf("the blocked name's ClientHello must be stopped, got %v", v)
+	}
+
+	other := buildQUICInitialWithSNI(t, []byte{0x82, 1, 2, 3, 4, 5, 6, 7}, "www.allowed.example")
+	if v := sendQUIC(w, other, 50202); v != engine.VerdictAccept {
+		t.Fatalf("a connection to an allowed name on the same address must pass, got %v", v)
+	}
+
+	if v := sendQUIC(w, flow.resend, 50201); v != engine.VerdictDrop {
+		t.Errorf("the stopped flow's resend must stay stopped after another set learned the address, got %v", v)
+	}
+	if v := sendQUIC(w, flow.oneRTT, 50201); v != engine.VerdictDrop {
+		t.Errorf("a short-header packet of the stopped flow must stay stopped, got %v", v)
+	}
+}
+
 func TestAStaticAddressSetKeepsTheLaterDatagramsOfAQUICFlow(t *testing.T) {
 	named := newDomainOnlyQUICSet(config.UDPModeDrop)
 	static := config.NewSetConfig()

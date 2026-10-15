@@ -926,9 +926,10 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	matchedFlow := false
-	if host == "" && !matchedIP {
+	if matchedLearned || (host == "" && !matchedIP) {
 		if flowSet, flowHost := w.quicFlowSet(cfg, matcher, connKey, pkt, dport, payload); flowSet != nil {
 			matchedFlow = true
+			matchedLearned = false
 			set = flowSet
 			host = flowHost
 			sniTarget = flowSet.Name
