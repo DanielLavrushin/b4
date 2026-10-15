@@ -1,55 +1,24 @@
 ---
 sidebar_position: 2
 title: Installation
+description: Choosing the installation page for a router, a Linux computer or Docker.
 ---
 
-b4 installs on Linux devices: servers, computers, and routers. The available methods:
+b4 installs on Linux routers, computers and servers. Linux, OpenWrt, ASUS Merlin and Keenetic use the same installer script, run over SSH. It detects the platform and the processor architecture. On MikroTik and in Docker, b4 runs as a container.
 
-- [Linux](./linux) - universal installation on any Linux distribution
-- [OpenWRT](./openwrt) - routers running OpenWRT firmware
-- [ASUS Merlin](./merlin) - ASUS routers running Merlin firmware
-- [Keenetic](./keenetic) - Keenetic routers
-- [MikroTik](./mikrotik) - RouterOS 7.x via containers
-- [Docker](./docker) - run inside a Docker container
+| Platform | Page | Notes |
+| --- | --- | --- |
+| Any Linux distribution | [Linux](linux.md) | Ubuntu, Debian, Fedora, Alpine, Arch and others, with systemd, OpenRC or SysV init |
+| OpenWrt 19.07 or newer | [OpenWrt](openwrt.md) | A USB drive or extroot is recommended, since internal storage is small |
+| ASUS routers with Asuswrt-Merlin | [ASUS Merlin](merlin.md) | Needs Entware on a USB drive |
+| Keenetic routers with OPKG | [Keenetic](keenetic.md) | Needs Entware and the Netfilter components |
+| MikroTik with RouterOS 7.21.1 or newer | [MikroTik](mikrotik.md) | A container on ARM64 or AMD64, with external storage formatted as Ext4 |
+| Any system with Docker | [Docker](docker.md) | Host network mode |
 
-After installation, b4 is available through the web interface in the browser (default port `7000`).
+The memory, kernel and architecture requirements are listed under [Requirements](../intro.md#requirements).
+
+After installation, the web interface listens on port `7000`: `http://<device address>:7000`, for example `http://192.168.1.1:7000` on a router. [First steps](../quickstart.md) continues from there.
 
 ## Update and remove {#update-remove}
 
-### Update
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh -s -- --update
-```
-
-Or update to a specific version:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh -s -- v1.46.5
-```
-
-During an update, the current binary is saved as a backup, the service is stopped, replaced with the new version, and started again. The configuration is not touched.
-
-### Remove
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh -s -- --remove
-```
-
-On removal:
-
-1. The service is stopped; if the process cannot be stopped, nothing is removed. The firewall and routing state b4 installed is cleared with b4's own cleanup before the binary is deleted
-2. The binary is deleted
-3. The configuration is kept or removed depending on the answer to the installer's prompt about deleting `/etc/b4` or `/opt/etc/b4`
-
-### Unverified TLS
-
-When neither `curl` nor `wget` can verify GitHub's certificate and installing CA certificates through the package manager does not help, the installer asks before downloading over unverified TLS. In `--quiet` mode it stops instead; `B4_ALLOW_INSECURE_TLS=1` in the environment accepts the risk for that run. A checksum fetched over the same unverified connection proves only that the download was not corrupted.
-
-### Diagnostics
-
-To print system information, the installed version, and the state of kernel modules:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh -s -- --sysinfo
-```
+Updating, backups, removal and the installer's diagnostics are described under [Updating, backing up and removing](update.md).

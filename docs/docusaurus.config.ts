@@ -4,17 +4,39 @@ import type * as Preset from "@docusaurus/preset-classic";
 
 const config: Config = {
   title: "B4 - Bye Bye Big Bro",
-  tagline: "Advanced censorship bypass system",
+  tagline: "Censorship bypass and traffic routing for Linux and routers",
   favicon: "img/favicon.ico",
   url: "https://docs.b4core.app",
   baseUrl: "/",
 
-  onBrokenLinks: "warn",
+  onBrokenLinks: "throw",
+  onBrokenAnchors: "throw",
 
   markdown: {
     mermaid: true,
   },
-  themes: ["@docusaurus/theme-mermaid"],
+  themes: [
+    "@docusaurus/theme-mermaid",
+    [
+      "@easyops-cn/docusaurus-search-local",
+      {
+        hashed: true,
+        language: ["en", "ru"],
+        indexBlog: false,
+        docsRouteBasePath: "/docs",
+        highlightSearchTermsOnTargetPage: true,
+      },
+    ],
+  ],
+
+  plugins: [
+    [
+      "@docusaurus/plugin-client-redirects",
+      {
+        redirects: [{ from: "/docs/advanced", to: "/docs/reference" }],
+      },
+    ],
+  ],
 
   i18n: {
     defaultLocale: "en",

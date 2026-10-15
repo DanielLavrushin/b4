@@ -1,110 +1,73 @@
 ---
 sidebar_position: 4.5
-title: Blocking
+title: Blocking ads and sites
+description: Blocking ads, trackers or any site for every device on the network with a block set.
 ---
 
-Block mode stops the traffic a set matches instead of routing it anywhere. Point a set at ad and tracker domains, unwanted IPs, or a GeoSite category, and b4 blocks them across the whole network - every LAN device and the router itself - with no output interface or upstream proxy.
+A block set stops the traffic it matches instead of sending it anywhere. It blocks ad and tracker domains, unwanted sites or addresses for every device on the network and for the router itself, and it needs no interface or proxy.
 
-It is selected in the [Routing](./routing.md) tab as the **Block** mode.
+## Requirements
 
-:::caution IPv6
-Everything below describes what happens over the address families b4 is processing. IPv6 processing is off by default, and a block set then writes no IPv6 rules at all, so a blocked destination that also answers over IPv6 stays reachable over IPv6. See [IPv6](#ipv6) below.
-:::
-
-## How it works
-
-Whatever way a device tries to reach a blocked site, b4 stops it - and only that site, so the rest of the page keeps working.
-
-```mermaid
-flowchart TB
-    DEV["📱 A device tries to open<br/>an ad or tracker"]
-    DEV --> Q{"How is it<br/>connecting?"}
-
-    Q -->|"Looking up the address<br/>(the usual way)"| A["b4 replies that the<br/>site does not exist"]
-    Q -->|"Already has the address<br/>(hidden or cached)"| C["b4 recognizes the site<br/>and cuts the connection"]
-    Q -->|"Going to a blocked IP"| D["b4 blocks the<br/>address directly"]
-
-    A --> R["🚫 The ad does not load<br/>The rest of the page still works"]
-    C --> R
-    D --> R
-
-    style DEV fill:#4a9eff,color:#fff,stroke:none
-    style Q fill:#e91e63,color:#fff,stroke:none
-    style A fill:#ff9800,color:#fff,stroke:none
-    style C fill:#ff9800,color:#fff,stroke:none
-    style D fill:#ff9800,color:#fff,stroke:none
-    style R fill:#4caf50,color:#fff,stroke:none
-```
-
-### How it works (in detail)
-
-1. **DNS sinkhole (domains).** When a device looks up a domain in the set, b4 answers the query itself with "does not exist" (NXDOMAIN), or leaves it unanswered with the **Drop** action. The device never gets an address for the name, so it cannot connect to it at all. This is the primary layer, and it covers every device on the network whose DNS passes through the router. On KeeneticOS, and on older kernels where b4 [copies DNS requests](../dns.md#copied-requests) instead of holding them, the query still reaches the resolver the device asked, and that resolver resolves the name; b4 puts NXDOMAIN in place of its reply, or with **Drop** drops its replies.
-
-2. **Connection block (domains).** If a device already has an address - for example it uses encrypted DNS that b4 does not see, or a cached result - b4 still reads the destination name from the TLS or QUIC handshake (the SNI) and fails the connection when that name is in the set. This keeps blocking effective even when the DNS layer is bypassed.
-
-3. **Address block (IPs).** Targets given as plain IPs, CIDR ranges, or a GeoIP category are blocked in the firewall by destination address.
-
-Because the first two layers work by **name**, block mode does not break unrelated sites that happen to share the same servers as a blocked host - a common problem when blocking purely by IP address on shared CDNs.
-
-Changes apply live, without a restart.
+- The devices resolve names through the router. A device with encrypted DNS of its own is still blocked by the server name in its connections, see [When it does not work](#when-it-does-not-work).
+- For GeoSite categories such as `category-ads-all`, the GeoSite database loaded under [Settings > Geodat Settings](../settings/geodata.md).
+- For IPv6, **Enable IPv6 Support** turned on under [Settings > Core](../settings/core.md#protocols). Without it, blocking covers IPv4 only, see [IPv6](#ipv6).
 
 ## Setup
 
-1. Open the set's [Routing](./routing.md) tab
-2. Set the **Mode** to **Block**
-3. Pick a **Block action** (see below)
-4. Add the destinations to block in the set's [Targets](./targets.md)
+1. Open **Sets** and click **Create Set**.
+2. On the **Targets** tab, add what to block: domains or `regexp:` patterns, IP addresses and CIDR ranges, GeoSite categories such as `category-ads-all`, or GeoIP categories. [Adding sites to a set](../guides/add-sites.md) lists the ways.
+3. On the **DNS & Routing** tab, open **Traffic Routing** and turn on **Enable Routing**.
+4. Set **Routing mode** to **Block (blackhole)**.
+5. Pick the **Block action**, see [Block options](#block-options). **Reject (fail fast)** is the usual choice for ads.
+6. Click **Create Set**. Changes apply without a restart.
 
-No output interface or upstream proxy is required.
+### Ready-made ad blocker
 
-## Block actions
-
-| Action | What the device sees |
-| --- | --- |
-| **Reject** (default) | The connection fails immediately - a TCP reset for TCP, or an ICMP unreachable for UDP and QUIC. Best for ads and trackers, because the page gives up on the slot right away. |
-| **Drop** | The connection is silently swallowed and simply times out, and a lookup of a blocked name gets no answer. Use it when you want no response sent back at all. |
-
-## Targets
-
-Block mode reuses the same [targeting](./targets.md) as the other routing modes:
-
-- **Domains** - exact names or `regexp:` patterns
-- **IPs and CIDR ranges** - single addresses or subnets
-- **GeoSite categories** - for example `category-ads-all` for a ready-made ad and tracker list
-- **GeoIP categories** - block by country or ASN
-
-## Ready-made ad blocker
-
-To start blocking without adding domains by hand, import a ready-made set. On the [Sets](./index.md) page create a new set, open its **Import/Export** tab, and paste the configuration below. It targets a broad list of ad and tracker domains plus the `category-ads-all` GeoSite category, with the mode already set to Block.
+A set with a broad list of ad and tracker domains and the `category-ads-all` category, already in block mode. To use it, create a set, open its **Import/Export** tab, paste the JSON below, click **Import** and save the set. The category needs the GeoSite database.
 
 ```json
 {"b4_version":"1.65.0","name":"adblock","fragmentation":{"strategy":"none"},"faking":{"sni":false},"targets":{"sni_domains":["ad.mail.ru","advertronic.io","vu.okcdn.ru","adkernel.com","adfox.ru","nr-data.net","rubiconproject.com","adition.com","mc.yandex.com","log.strm.yandex.ru","analytics.yahoo.com","criteo.com","taboola.com","ad4m.at","1rx.io","hbx.media.net","media.net","adform.net","analyticsengine.s3.amazonaws.com","analytics.s3.amazonaws.com","ad.doubleclick.net","analytics.google.com","api.bugsnag.com","app.bugsnag.com","browser.sentry-cdn.com","app.getsentry.com","ads-api.twitter.com","log.byteoversea.com","log.fc.yahoo.com","adtech.yahooinc.com","appmetrica.yandex.ru","metrika.yandex.ru","fingerprintjs.com","px.srvcs.tumblr.com","device-metrics-us.amazon.com","cdn.cookielaw.org","consent.cookiebot.com","sdk.privacy-center.org","cdn.privacy-mgmt.com","api.impact.com","cdn.dynamicyield.com","widget.intercom.io","bnc.lt","bingads.microsoft.com","ads.microsoft.com","snap.licdn.com","ct.pinterest.com","geolocation.onetrust.com","consent.trustarc.com","app.usercentrics.eu","advertising-api-eu.amazon.com","fls-na.amazon.com","advertising.yandex.ru","ironsource.mobi","is.com","pangleglobal.com","posthog.com","o0.ingest.sentry.io","lr-ingest.com","mineralt.io","pixel.quora.com","qevents.quora.com","ads.vk.com","advertising.apple.com","ads.huawei.com","ngfts.lge.com","xp.apple.com","cmp.osano.com","consentcdn.cookiebot.com","zenaps.com","clientstream.launchdarkly.com","match.adsrvr.org","smartyads.com","adcolony.com","mouseflow.com","edge.fullstory.com","stats.wp.com","adsrvr.org","c.bing.com","app-measurement.com","cdn.segment.com","quantcast.com","rudderstack.com","snowplowanalytics.com","adjust.com","singular.net","wzrkt.com","ads.pinterest.com","ads.x.com","ads-sg.tiktok.com","tracking.rus.miui.com","cookiebot.com"],"ip":["5.255.255.77/32"],"geosite_categories":["category-ads-all"]},"enabled":true,"routing":{"enabled":true,"mode":"block"}}
 ```
 
-The `category-ads-all` part needs the GeoSite database loaded - see [Targets](./targets.md).
+## Block options {#block-options}
 
-## IPv6
+The **Block action** decides what a device sees. **Reject (fail fast)** is the default.
 
-Block rules are written per address family, and b4 only writes rules for the families it is processing. **Enable IPv6 Support** is off by default in [Settings, Core, Packet Engine](../settings/core#protocols), and with it off a block set creates no IPv6 rules at all.
+| Option | What the device sees |
+| --- | --- |
+| **Reject (fail fast)** | The connection fails at once: a TCP reset, or ICMP unreachable for UDP and QUIC. A page gives up on an ad slot right away. |
+| **Drop (silent blackhole)** | Nothing comes back: the connection times out, and a lookup of a blocked name gets no answer. |
 
-What that costs, layer by layer:
+b4 blocks a site in three ways:
 
-- **DNS sinkhole.** Still does most of the work. NXDOMAIN hides the name from the client whatever record it asked for, A and AAAA alike, so a device that resolves through the router gets no address of either family. The exception is a query that reaches the router over IPv6 itself: while IPv6 support is off, such a query is forwarded unchanged instead of being sinkholed, and the log records it as `dns-ipv6-disabled`. Devices that were handed an IPv6 resolver address by router advertisements do exactly this.
-- **Connection block by name.** Not applied. b4 reads no IPv6 packets, so the SNI in an IPv6 TLS or QUIC handshake is never inspected.
-- **Address block.** IPv4 only. IPs, CIDR ranges and GeoIP categories are enforced in the firewall for IPv4, and the IPv6 members of the set are not installed anywhere.
+1. **DNS.** A lookup of a blocked domain gets the answer that the name does not exist (NXDOMAIN), or no answer with **Drop (silent blackhole)**. This covers every device whose DNS goes through the router.
+2. **Server name.** A device that already has an address, from encrypted DNS or a cache, is still stopped: b4 reads the server name in the TLS or QUIC handshake and fails the connection.
+3. **Address.** IP addresses, CIDR ranges and GeoIP categories are blocked in the firewall.
 
-The practical result is that a device holding an IPv6 address for a blocked host, from encrypted DNS the router cannot see or from its own cache, reaches that host over IPv6 with nothing in the way.
+The first two work by name, so other sites on the same servers as a blocked host keep working. Blocking by address on a shared CDN blocks every site behind that address.
 
-Blocking covers both families once **Enable IPv6 Support** is on in [Settings, Core, Packet Engine](../settings/core#protocols) and the service has been restarted. Blocking IPv6 at the router this way is a different thing from turning IPv6 off for the network, which is a router setting outside b4.
+## Checking the result
 
-## Scope
+- On a device, the blocked site or ad does not load, and the rest of the page does.
+- The dashboard shows the [Blocked](../dashboard.md#blocked) panel while a block set is enabled: **Domains** lists what was blocked, **Devices** the devices that tried to reach it. Connections that the firewall drops once a blocked site's addresses are known are not counted there. The set's row in the **Sets** panel shows how many DNS lookups it blocked.
+- On the [Traffic](../connections.md) page, blocked packets carry the `block` label, and answers the set replaced carry the `sinkhole` DNS label.
 
-Block mode applies network-wide for the address families b4 is processing: it stops matched destinations for every device on the network and for the router itself. It needs no output interface, routing table, or proxy, so it works on any setup that the other routing modes support.
+## When it does not work
 
-:::tip
-A quick network-wide ad blocker: create a set, add the `category-ads-all` GeoSite category to its [Targets](./targets.md), set the Routing mode to **Block**, and leave the action on **Reject**.
-:::
+**A device still opens a blocked site.** The device may use encrypted DNS of its own (secure DNS in the browser, Android Private DNS) or a cached address. b4 still stops it by the server name, but not over IPv6 while IPv6 support is off, see [IPv6](#ipv6). Turning encrypted DNS off on the device, or IPv6 support on in b4, closes the gap.
 
-:::info
-Blocking by name needs the device's DNS or its TLS/QUIC handshake to pass through the router. Traffic that leaves the network through a separate tunnel the router does not see (for example a VPN configured directly on a device) is outside b4's reach.
-:::
+**A device with a VPN of its own is not blocked.** Traffic inside a tunnel the router cannot see is out of b4's reach.
+
+**A GeoSite category blocks nothing.** The GeoSite database is not loaded, or does not contain the category.
+
+**Too much is blocked.** A `regexp:` pattern can catch far more than intended, and so can an address on a shared CDN. A domain target keeps the block narrow.
+
+### IPv6 {#ipv6}
+
+Block rules are written only for the address families b4 handles. **Enable IPv6 Support** is off by default, and a block set then writes no IPv6 rules:
+
+- DNS still hides the name from devices that resolve through the router, for A and AAAA lookups alike. A lookup that reaches the router over IPv6 itself passes unchanged.
+- The server name of IPv6 connections is not checked.
+- Address targets are blocked for IPv4 only.
+
+A device that already holds an IPv6 address of a blocked host therefore reaches it over IPv6. With **Enable IPv6 Support** on under [Settings > Core](../settings/core.md#protocols) and the service restarted, blocking covers both families. This is not the same as turning IPv6 off for the network, which is a router setting outside b4.

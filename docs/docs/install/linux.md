@@ -1,11 +1,14 @@
 ---
 sidebar_position: 1
 title: Linux
+description: Installing b4 on any Linux distribution.
 ---
 
-Universal installation. Works on any distribution: Ubuntu, Debian, Fedora, Alpine, Arch, and others.
+The installer works on any distribution: Ubuntu, Debian, Fedora, Alpine, Arch and others.
 
 ## Install
+
+As root:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh
@@ -17,29 +20,29 @@ Or with `wget`:
 wget -qO- https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh
 ```
 
-The installer detects the architecture automatically, places the binary in `/usr/local/bin`, and creates the configuration in `/etc/b4`.
+The installer puts the binary in `/usr/local/bin` and the configuration in `/etc/b4`.
 
-For a non-interactive install (default settings, no prompts):
+Without prompts, with the default settings:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh -s -- --quiet
 ```
 
-Without a terminal on standard input, for example under cron or over `ssh` without `-t`, the installer behaves as if `--quiet` had been given. `--remove` in that situation stops with an error unless `--quiet` is passed explicitly, since its prompts about deleting the configuration cannot be shown.
+Without a terminal, such as under cron or over `ssh` without `-t`, the installer runs as if `--quiet` were given.
 
 ## Service control
 
-### systemd (Ubuntu, Debian, Fedora, and most distributions)
+### systemd (Ubuntu, Debian, Fedora and most distributions)
 
 ```bash
 systemctl start b4
 systemctl stop b4
 systemctl restart b4
 systemctl status b4
-systemctl enable b4      # autostart on boot
+systemctl enable b4      # start on boot
 ```
 
-View logs:
+Logs:
 
 ```bash
 journalctl -u b4 -f
@@ -51,7 +54,7 @@ journalctl -u b4 -f
 rc-service b4 start
 rc-service b4 stop
 rc-service b4 restart
-rc-update add b4 default   # autostart on boot
+rc-update add b4 default   # start on boot
 ```
 
 ### SysV init (systems without systemd or OpenRC)
@@ -63,8 +66,6 @@ rc-update add b4 default   # autostart on boot
 /etc/init.d/b4 status
 ```
 
-`stop` waits up to twenty seconds for the process to exit before killing it, and `status` exits with code 3 when b4 is not running.
-
 ## Paths
 
 | What | Where |
@@ -72,11 +73,11 @@ rc-update add b4 default   # autostart on boot
 | Binary | `/usr/local/bin/b4` |
 | Configuration | `/etc/b4/b4.json` |
 | Service (systemd) | `/etc/systemd/system/b4.service` |
-| Service (OpenRC/SysV) | `/etc/init.d/b4` |
+| Service (OpenRC, SysV) | `/etc/init.d/b4` |
 
 ## Kernel modules
 
-b4 uses NFQUEUE to intercept packets. The required kernel modules are usually loaded automatically when the service starts. If problems occur, they can be loaded manually:
+The NFQUEUE engine needs kernel modules that usually load when the service starts. When they do not, they can be loaded by hand:
 
 ```bash
 modprobe nfnetlink_queue
@@ -84,18 +85,19 @@ modprobe xt_NFQUEUE
 modprobe nf_conntrack
 ```
 
-To verify:
+To check:
 
 ```bash
 lsmod | grep nfqueue
 ```
 
-:::info LXC containers
-In LXC containers, kernel modules must be loaded on the host. The container config needs:
+On a kernel without these modules, the TUN engine is the alternative, see [Packet engine](../settings/core.md#packet-engine).
+
+## LXC containers
+
+In an LXC container, the kernel modules are loaded on the host. The container's configuration needs:
 
 ```yaml
 lxc.cgroup2.devices.allow: c 10:200 rwm
 features: nesting=1,keyctl=1
 ```
-
-:::

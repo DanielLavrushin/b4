@@ -1,107 +1,62 @@
 ---
 sidebar_position: 3
-title: Quickstart
+title: First steps
+description: From opening the web interface to a first set that opens a blocked site.
 ---
 
-## Overview
+This tutorial goes from opening the web interface to a set that opens a blocked site. It starts once b4 is [installed](install/index.md) and running.
 
-After installation, b4 runs as a service and is available through the web interface. This page walks through the path from first launch to a working bypass.
+## Opening the web interface {#open-the-web-interface}
 
-## Open the web interface
+1. Open `http://<address>:7000` in a browser. `<address>` is the address of the router or computer b4 runs on, for example `http://192.168.1.1:7000`. On that computer itself, `http://localhost:7000` works too.
+2. When a username and password were set during installation, sign in with them.
 
-Open in the browser:
+When HTTPS was turned on during installation or under **Settings > System > Web Server**, the address starts with `https://`. A browser warns about a self-signed certificate, and the warning can be accepted.
 
-```text
-http://<IP-address>:7000
-```
+The dashboard opens. With no sets yet, the **Sets** panel reads **No sets yet: b4 changes nothing until a set targets sites**. The [Dashboard](dashboard.md) page describes every panel.
 
-Where `<IP-address>` is the address of the device where b4 is installed:
+![The dashboard on a first launch, with no sets](/img/quickstart/20261003220200.png)
 
-- If b4 is on the same computer: `http://localhost:7000`
-- If on a router: `http://192.168.1.1:7000` (use the router's IP)
+## Finding a strategy {#run-discovery}
 
-:::info HTTPS
-If HTTPS is enabled in b4 settings, use `https://` instead of `http://`. The browser may show a certificate warning - that is expected with a self-signed certificate and can be accepted.
-:::
+1. Click **Find a strategy with Discovery** on the **Sets** panel, or open **Discovery** in the side menu.
+2. Type the address of a site that does not open into **Site or URL** and press Enter. Several sites can go in at once, separated by commas.
+3. Click **Start**.
 
-![The dashboard on a first launch](/img/quickstart/20261003220200.png)
+![Two sites added to Discovery](/img/quickstart/20260905160500.png)
 
-On a first launch there are no sets yet, so b4 changes nothing: the **Sets** panel reads **No sets yet: b4 changes nothing until a set targets sites**, with links to create a set and to Discovery. The **Activity** chart fills anyway, because b4 checks the connections to port 443 whether or not a set exists, and counts them as **not in a set**. Every panel is described on the [Dashboard](./dashboard.md) page.
+b4 tries its strategies on the sites. A run takes from one to ten minutes, depending on the provider. When it ends, every site gets a verdict:
 
-## Run discovery
+| Verdict | Meaning and next step |
+| --- | --- |
+| **confirmed 3 of 3**, **not confirmed** | A strategy made the site load. The next section applies it |
+| **no bypass needed** | The site loads without b4. There is nothing to apply |
+| **address blocked** | The provider blocks the site's addresses, and no strategy can help. The site needs a set that sends it through a [VPN](guides/vpn.md) or a [proxy](guides/proxy.md) |
+| **intercepted by the gateway** | A device in front of b4 answers for the site. b4 has to run on that device. When b4 runs on the router itself, only a proxy set helps |
+| **does not resolve** | The name has no address, as with a typo |
+| **nothing found** | No strategy loaded the site. [Discovery](discovery.md#results) describes what to try next |
 
-b4 can pick a working configuration for your provider on its own. This is done in the **Discovery** section.
+![The results of a run](/img/quickstart/20260905160700.png)
 
-### Step 1: Open Discovery
+## Applying the result {#apply-the-configuration}
 
-In the side menu click **Discovery**.
+1. Click **Apply as a set** on the card of a site with a strategy found.
+2. Check the rows under **The set will**. They describe what the set does.
+3. Keep the suggested **Set name** or type another one.
+4. Click **Create set**.
 
-### Step 2: Add sites
+## Checking the result {#verify-it-works}
 
-In the **Site or URL** field enter the address of a blocked site and press Enter. Several sites can be added at once, separated by commas.
+1. Open the site in a browser on a device in the network.
+2. Open **Traffic** in the side menu. The **Set** column shows the name of the new set next to the site's domain.
 
-Examples:
+![The Traffic page, with set names in the Set column](/img/connections/20260923214001.png)
 
-- `youtube.com`
-- `googlevideo.com`
+The **Sets** panel of the dashboard counts the connections the set matched as well. When the site still does not open, [Unblocking a site](guides/unblock.md) lists the next steps.
 
-![Sites added to Discovery](/img/quickstart/20260905160500.png)
+## Next steps {#whats-next}
 
-### Step 3: Start the search
-
-Click **Start**.
-
-b4 tries its bypass strategies against the listed sites. The run goes through six steps, shown on the page: a DNS check, a fetch without any bypass, the strategies themselves, tuning, combining, and a confirmation of the winner.
-
-![A run in progress](/img/quickstart/20260905160600.png)
-
-A run takes from one to ten minutes depending on the provider. **Stop and keep results** ends it early and keeps whatever has been found.
-
-:::tip DNS check
-When DNS is known to be clean, for example with DoH or a third-party resolver already in place, **Check DNS for tampering** under **Options** can be turned off. The run gets shorter and the set gets no DNS redirect.
-:::
-
-### Step 4: Results
-
-When the run finishes, every site gets a verdict:
-
-- **Strategy found** - a working configuration, described in words, with **Apply as a set**
-- **No bypass needed** - the site loads without b4, so there is nothing to apply
-- **Address blocked** - connections to the site's addresses fail, so a bypass strategy cannot help and the site needs a proxy or VPN set
-- **Intercepted by the gateway** - the first hop in front of this host answers the connections itself, so nothing b4 does here reaches past it; run b4 on that gateway, or use a proxy set when b4 is the router
-- **Does not resolve** - the name has no address, as with a misspelled domain, so there is nothing to test
-- **Nothing found** - no strategy made the site load
-
-![Results of a run](/img/quickstart/20260905160700.png)
-
-## Apply the configuration
-
-On a found result click **Apply as a set**.
-
-In the dialog that opens:
-
-1. Check the rows describing what the set will do
-2. Keep the suggested name or enter another one
-3. Click **Create set**, or pick an existing set with the same strategy and click **Add to set**
-
-A set is a bundle of bypass settings tied to a list of domains or IP addresses. More on sets in the [Sets](./sets/) section.
-
-## Verify it works
-
-### Through the browser
-
-Open a site that is covered by the bypass. If everything works, the site loads.
-
-### Through the Traffic section
-
-In the side menu click **Traffic**. This page shows the packets b4 inspects in real time, grouped by device, protocol and domain.
-
-![Traffic](/img/connections/20260923214001.png)
-
-If the bypass is working, the **Set** column shows the name of your set next to the configured domain. More on the page in the [Traffic](./connections.md) section.
-
-## What's next
-
-- Add more domains - through Discovery or manually in the set settings
-- Configure bypass by category (GeoSite) - to avoid adding domains one by one
-- See the [Sets](./sets/) section for a detailed description of all features
+- [Adding sites to a set](guides/add-sites.md): more domains, or whole GeoSite categories.
+- [Keeping sets working](guides/keep-working.md): the watchdog and escalation.
+- [Securing the web interface](settings/security.md): it has no password until one is set.
+- [Key concepts](concepts.md): sets, targets, strategies and the set kinds.

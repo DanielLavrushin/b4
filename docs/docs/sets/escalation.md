@@ -1,98 +1,58 @@
 ---
 sidebar_position: 5
 title: Escalation
+description: The Escalation tab of the set editor, which names a backup set for the sites this set keeps failing on.
 ---
 
-When a set in b4 keeps failing to reach a site, b4 quietly switches that site to a backup set you choose. Name lookups and connections for the site both go through the backup from then on. After some time, b4 retries the original set in case the problem has cleared up.
+When a set keeps failing to open a site, escalation switches that site to a backup set. Name lookups and connections for the site then go through the backup. After a while, b4 tries the original set again. [Keeping sets working](../guides/keep-working.md) shows how escalation fits with Discovery and the watchdog.
 
-```mermaid
-flowchart LR
-    A["Light set (A)"] --> DETECT{"Does the site<br/>get through?"}
-    DETECT -->|"yes"| OK["Keep using set A"]
-    DETECT -->|"no"| SWITCH["Switch this site to backup (B)"]
-    SWITCH --> B["Heavy set (B)<br/>lookups and traffic"]
-    B -->|"after a while"| RETRY["Retry set A"]
+A typical pair is a light set for most sites and a heavier one for the sites that need it. The backup does not have to be another bypass strategy: it can [route through a proxy or an interface](./routing.md), or carry a [pinned address or another DNS server](../dns.md) for the site.
 
-    style A fill:#4a9eff,color:#fff,stroke:none
-    style B fill:#e91e63,color:#fff,stroke:none
-    style DETECT fill:#ff9800,color:#fff,stroke:none
-    style SWITCH fill:#9c27b0,color:#fff,stroke:none
-    style OK fill:#607d8b,color:#fff,stroke:none
-    style RETRY fill:#4caf50,color:#fff,stroke:none
-```
+![The Escalation tab of a set](/img/escalation/escalation-en.png)
 
-## When you'd use it
+## Switch to
 
-If you have a "light" set that works for most sites and a "heavy" one that's slower but more reliable, escalation lets b4 use the light set most of the time and only fall back to the heavy one for sites that need it. Without escalation, sites that hit a block keep failing until you move them by hand.
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Escalate to set** | The backup set. **None** turns escalation off. A disabled set is marked **disabled**: the link stays and sits idle until the set is enabled again. | **None** |
 
-The backup does not have to be another bypass strategy. It can be a set that [routes through a proxy or an interface](./routing), or one that carries a [pinned address or a different DNS server](../dns) for the site. That makes escalation a way to say "try the cheap thing first, fall back to the expensive thing only where it is needed".
+Sets can form a chain, A to B to C: b4 moves a site along it as each set fails, up to eight steps. A backup set limited to source devices is used only for those devices, and other devices stay on the original set.
 
-## Setting it up
+The tab suggests turning on [RST Injection Protection](./tcp/rst-protection.md) in this set. It keeps the current page working while b4 detects the block.
 
-Open the set's **Escalation** tab. Under **Switch to** pick the backup set. Leave the other options at their defaults unless you want to fine-tune.
+## Triggers
 
-You can chain sets: A -> B -> C. b4 walks the chain as each one fails for a given site, up to eight steps.
+Each trigger counts on its own, and whichever reaches its limit first switches the site over.
 
-![The Escalation tab of a set](../../static/img/escalation/escalation-en.png)
+| Field | What it counts | Default |
+| --- | --- | --- |
+| **Unanswered TLS handshakes** | How many times the same connection resends its ClientHello without an answer. | `3` |
+| **Handshake wait** | A resent ClientHello older than this also counts as unanswered. | `3000` ms |
+| **Forged resets** | Resets for the same site that b4 judges injected rather than sent by the server. | `3` |
+| **Reset counting window** | Resets count only within this time. | `30` s |
+| **Unusable DNS answers** | NXDOMAIN, SERVFAIL or answers without an address for the same domain, after which the backup set resolves it. | `2` |
 
-## What sets it off
+A fourth trigger has no field: connection attempts to an address go unanswered, and the address does not answer the router either when b4 tests it. No bypass strategy helps such an address, while a backup set that routes the site elsewhere or pins another address does.
 
-Four things count as the set failing for a site. They are counted separately, and whichever reaches its limit first switches the site over.
+For DNS, IPv4 and IPv6 lookups count separately, and an empty answer to an IPv6 (AAAA) lookup does not count, since a site without IPv6 answers that way. Lookups other than A and AAAA are not counted.
 
-| Trigger | What b4 saw |
-| --- | --- |
-| **Unanswered TLS handshakes** | The same connection resent its ClientHello and never got an answer. This is the classic "the strategy did not fool the filter" case. |
-| **Forged resets** | Connection resets arrived that b4 judges to be injected rather than sent by the server. |
-| **Destination does not answer** | Connection attempts to the address went unanswered, and the address did not answer the router either when b4 probed it directly. This covers an address that is dropped outright, where no bypass strategy can help. |
-| **Unusable DNS answers** | Lookups for the name came back NXDOMAIN, SERVFAIL, or with no address at all. |
+## Tuning
 
-The DNS trigger is what makes a site with no usable address reachable through a backup that pins one. Because nothing else happens until a name resolves, this is the only trigger that can fire for such a site.
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Remember switch for** | How long a site stays on the backup set before b4 tries this set again, 5 to 1440 minutes. | `60` min |
 
-:::info The lookup that trips it is answered too
-For the other three triggers, escalation helps the **next** request; the connection that just failed is already lost. The DNS trigger is different: the lookup that trips the switch is handed to the backup set straight away, so it is answered rather than passed on as a failure.
-:::
+## How a site moves and comes back
 
-## Tuning options
+- **The switch is per site.** It applies to the host name that failed. Other sites on the same server stay on the original set.
+- **The backup takes over the whole site.** Lookups use its pinned addresses, DoH server or forwarding, connections use its bypass strategy, and its routing applies. b4 writes the addresses it knows for the site into that routing.
+- **The failed request is lost, the next one works.** For the DNS trigger, the lookup that trips the switch is already answered by the backup set.
+- **The site comes back** after **Remember switch for**. **Clear** on the dashboard's [Active Escalations](../dashboard.md#active-escalations) panel sends every site back at once and forgets the counted resets and DNS failures. **Reset counters** on the dashboard leaves the switches as they are.
 
-- **Unanswered TLS handshakes** - how many times the same connection resends its ClientHello without an answer before b4 switches over.
-- **Handshake wait** - a resent ClientHello older than this also counts as a stalled handshake.
-- **Forged resets** - how many resets that b4 judges forged, for the same site, before it switches over.
-- **Reset counting window** - resets only count if they happen within this time. Older ones are forgotten.
-- **Unusable DNS answers** - how many NXDOMAIN, SERVFAIL or address-less answers for the same domain before b4 asks the backup set to resolve it.
-- **Remember switch for** - how long the site stays on the backup before b4 retries the original.
+Escalation reacts to failures only, so the first failure of a site is still a failure. It does not replace [Discovery](../discovery.md), which finds a working strategy in advance.
 
-IPv4 and IPv6 lookups are counted separately, and an empty AAAA answer does not count as a failure at all, because a site with no IPv6 address answers that way normally. A site that resolves over IPv6 but not IPv4 still switches over on its IPv4 lookups, which is what a browser needs to reach it. Question types other than A and AAAA are ignored entirely.
-
-:::info Per-site tracking
-The switch is remembered per-site (per-hostname). A problem with one site does not affect other sites that happen to share the same server.
-:::
-
-:::tip Pair with RST Injection Protection
-Enable **RST Injection Protection** in the [TCP](./tcp/) tab of the original set. It helps existing connections survive while b4 detects the block.
-:::
-
-## What the backup set contributes
-
-Once a site is switched over, the backup set governs it end to end:
-
-- **Name lookups** use the backup's pinned addresses, DoH server or forwarding target. A pin on the backup only takes effect after the switch, so a lookup that already works is never redirected.
-- **Connections** use the backup's bypass strategy, including the settings that apply to the very first packet.
-- **Routing** applies if the backup routes through a proxy or an interface. The addresses b4 knows for the site are written into that set's routing, so the traffic leaves the way that set says it should.
-
-If the backup set is narrowed to particular devices, it is only used for those devices. Other devices keep using the original set.
-
-## Watching it work
-
-The **Active Escalations** panel on the [dashboard](../dashboard.md#active-escalations) lists the sites switched right now, with the backup set and the time left before b4 retries the original. **Clear** on that panel sends every site back to its original set at once and forgets the RST and DNS failures counted towards escalation. **Reset counters** on the dashboard leaves the switches as they are.
-
-The log records each switch with the reason, for example:
+The log records each switch with its reason, for example:
 
 ```text
 escalation: ntc.party is not getting through with ntc.party (no usable DNS answer), switching it to ntc.party backup
 ```
-
-## What it does not do
-
-- It only reacts to sites that fail. It does not test sites in advance, so the first failure is still a failure.
-- Turning the backup set off does not delete the link to it. The link stays and sits idle until the set is enabled again.
-- It is not a substitute for [Discovery](../discovery). Discovery proactively finds a working strategy per site; escalation is a reactive safety net.

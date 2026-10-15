@@ -22,8 +22,8 @@ If you don't know which technique your provider needs, Discovery tests strategie
 - [DNS](https://docs.b4core.app/docs/dns): per-set redirect to a plain resolver or DoH, hosts-style pins, fragmented queries, DNS-over-TCP interception, healing of answers pointing at dead addresses
 - [Routing](https://docs.b4core.app/docs/sets/routing): send a set's traffic out a chosen interface (VPN, WireGuard, second WAN), through an upstream SOCKS5 proxy, or block it
 - [Block mode](https://docs.b4core.app/docs/sets/blocking) for network-wide ad and tracker blocking
-- Telegram: [built-in MTProto proxy](https://docs.b4core.app/docs/mtproto), plus a transparent Telegram-over-WebSocket bridge for stock clients
-- [Discovery](https://docs.b4core.app/ru/docs/discovery) finds a working strategy, [Watchdog](https://docs.b4core.app/docs/watchdog) re-heals broken domains, [DPI Detector](https://docs.b4core.app/ru/docs/detector) reports what the provider is doing
+- Telegram: [built-in MTProto proxy](https://docs.b4core.app/docs/telegram/mtproto-proxy), plus a transparent [Telegram-over-WebSocket bridge](https://docs.b4core.app/docs/telegram/websocket-bridge) for stock clients
+- [Discovery](https://docs.b4core.app/docs/discovery) finds a working strategy, [Watchdog](https://docs.b4core.app/docs/watchdog) re-heals broken domains, [DPI Detector](https://docs.b4core.app/docs/detector) reports what the provider is doing
 - [Escalation chains](https://docs.b4core.app/docs/sets/escalation): when a set stops working for a host, that host moves to a heavier backup set
 - Per-device rules by MAC
 - Works on both iptables and nftables, picking the backend automatically, and handles IPv4 and IPv6

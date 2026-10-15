@@ -1,69 +1,58 @@
 ---
 sidebar_position: 4
 title: Publishing a set
+description: Offering a set to other b4 users through the Community Hub.
 ---
 
-# Publishing a set
+A set that works can be published to the Community Hub. Other b4 users find it on their **Community** page once a moderator approves it. b4 publishes the set as a [shared set](../sets/sharing.md): the strategy and the targets, without anything tied to this router.
 
-A set is published from the set editor. The **Share with other b4 users** section is at the bottom of the **Import/Export** tab and is shown while the Community Hub is on. It prepares the set as a [shared set](../sets/sharing.md), the JSON form that can be handed to someone directly, and publishes that same form to the hub.
+## Requirements
 
-![The Share section of the set editor](/img/community/20260914230200.png)
+- The Community Hub is on, see [Switching it on](./index.md#switching-it-on).
+- The set is saved. Unsaved changes are not published.
+- The set was tested on the targets it lists. A domain it was never tried on collects **Broken** reports.
 
-## Preparing
+## Setup
 
-**Prepare shared set** builds the shared set from the editor state and shows:
+1. Open the set and go to the **Import/Export** tab.
+2. In **Share with other b4 users**, click **Prepare shared set**.
+3. Read **Check before sharing** and **Left out of the shared set**, and correct the set where needed.
+4. Click **Publish to hub**.
 
-- **Check before sharing**: domains or addresses that look private to this network, pins that everyone importing the set will use, a DoH resolver outside the public list, a payload file that is missing or unusable, a block set that matches by pattern, more domains, addresses or ASNs than a shared set carries.
-- **Left out of the shared set**: every setting that was dropped and why. Routing to a proxy or an interface, device filters, escalation and the DNS server address are always dropped; the full list is under [What leaves the router](../sets/sharing.md#what-leaves-the-router).
-- The b4 version the set needs and the number of payload files included.
-- The JSON, with **Copy** and **Download**.
+![The Share with other b4 users section of the set editor](/img/community/20260914230200.png)
 
-The same shared set is used for publishing and for handing over as a file.
+## Preparing {#preparing}
 
-:::tip
-A published set is best limited to the targets it was tested on. A domain the set lists without having been tried against it collects broken reports.
-:::
+**Prepare shared set** shows what is sent. **Check before sharing** lists what deserves a second look, such as domains that look private to this network or pins everyone importing the set will use. **Left out of the shared set** lists every dropped setting with the reason. Routing to a proxy or an interface, device filters, escalation and the DNS server address are always dropped, see [What leaves the router](../sets/sharing.md#what-leaves-the-router). The JSON below, with **Copy** and **Download**, hands the set over [directly](../sets/sharing.md).
 
-## Publishing
+The published title is the set's name. The router sends no description, and a moderator can add one on the hub.
 
-**Publish to hub** sends the saved version of the set. A new set has to be saved first; unsaved changes are not published, and the button says so. The published title is the set name; the router sends no description of its own. A moderator can add one on the hub, and it then appears on the card and under **Details**.
+## Checking the result
 
-The hub runs the checks of an import, refuses a set with no targets, stores the payload files by hash and answers with the hub id and the version. The set enters the moderation queue with the status **pending moderation**. Other users, and this router, see it in the catalogue after a moderator approves it and the next catalogue is built and synced. The section shows the id and the status and offers **Open in Community**; until the set is in the local catalogue, that opens the details dialog with a note saying so.
+The section shows the id the hub gave the set and its status, **pending moderation**. The set appears in the catalogue, for other users and for this router, once a moderator approves it and the router syncs. There is no notification of the decision. Until then, **Open in Community** opens **Set details** with a note that the set is not in the catalogue.
 
-The set is now linked to the hub set the same way an applied set is: the card on the Sets page shows **Community set**, and the Share section names the hub set and version it is linked to.
+The published set is now linked to the hub set, like an applied one: its card on the **Sets** page shows **Community set**. A version that a moderator hides later leaves the catalogue, and routers that applied it keep it.
 
-## Versions
+## Versions {#versions}
 
-Publishing a linked set again, after its strategy changed, creates the next version of the same hub set. The button reads **Publish as new version**. The catalogue carries the newest approved version only; routers that applied the previous version see **Update to version N** on their card.
+After the strategy of a published set changes, the button reads **Publish as new version**. Publishing then adds the next version to the same hub set, and routers that applied the previous one see **Update to version N**. When the original set was published by someone else, the hub creates a new set instead.
 
-The hub attaches a publication to an existing set of the same author when:
+A publication whose strategy and targets match a version the hub already holds is not stored. The hub names that set, and the upload counts as a **Works** report for it.
 
-- the set is linked to a hub set published under this router's author key;
-- the set is not linked, or is linked to another author's set, and this author already has a set with the same targets, or with the same title and at least one target in common.
+## Author identity {#author-identity}
 
-Otherwise the hub creates a new set. When the published set started as another author's community set, the hub records which one.
+Every record the router sends to the hub is signed with its author key. The hub knows the router by this key: new versions of a set can be published only under the key that published it, and the moderators can trust or ban the key. The catalogue shows an author label derived from the key, never the key itself.
 
-A publication whose strategy and targets both match a version the hub already holds, by any author, is not stored. A version still waiting for a moderator and a version a moderator has hidden count as well; only rejected ones are passed over. The hub names the existing set and counts the upload as a works report for it, so the set it names is not always one the catalogue lists.
+The key is created on first use and kept in `.hub/` in the configuration directory. A backup made under **Settings > System > Backup** does not include it. A router restored from a backup starts with a new key, and the hub gives a key it first saw less than a week ago less weight in the scores.
 
-## Moderation
+**Settings > Integrations > Community Hub > Author identity** shows the key and two actions:
 
-Every version waits for a moderator. The moderator sees the set as it would be imported, approves it, rejects it, or hides it later, and reads the complaints about it. A rejected or hidden version leaves the catalogue at the next build. Routers that applied it keep it.
+- **Show recovery code** shows the code the key is rebuilt from. Anyone with the code can publish and report as this author, so the code is kept private.
+- **Restore from code** replaces this router's key with the one the code describes. The sets published under it can then get new versions from this router.
 
-There is no notification of the decision. **Open in Community** reports the set as not in the catalogue until it is approved and synced.
+## When it does not work
 
-:::info
-The hub accepts a limited number of publications from one router per day. The limit is set by the hub operator; a publication over it is refused with a message that names the limit and the time it resets.
-:::
-
-## Author identity
-
-Every record a router sends to the hub is signed with its author key. The key is generated on first use and kept as `.hub/identity.json` in the configuration directory. The hub knows the router by this key: the sets it published belong to it, its reports count as one router, and the moderators can mark it trusted, which lifts the daily limits on it, or ban it.
-
-In the catalogue the author of a set is an author label, not the key id: a short pseudonym the hub derives from the author key with a secret of its own. Every set published under the same key carries the same label, the key itself is never published, and a label built by one hub does not match the label another hub builds for the same key.
-
-**Settings, Integrations, Community Hub, Author identity** shows the key id and two actions:
-
-- **Show recovery code** displays the code the key is rebuilt from. Anyone with the code can publish and report as this author.
-- **Restore from code** replaces the key of this router with the one the code describes. The sets published under that key can then be versioned from this router, and the reports carry the age of that key on the hub.
-
-A backup made under **Settings, System, Backup** does not include the `.hub/` directory. A router restored from a backup starts with a new key, which carries the reduced weight the hub gives keys younger than a week. The recovery code is the way to carry the identity to another router.
+| Message | Meaning |
+| --- | --- |
+| **Linked to community set ... nothing to publish.** | The set is linked to a hub set, and its strategy has not changed since. |
+| **The hub refused the set: ...** | The message names the reason, such as a set without targets or the daily limit, see [Limits](./feedback.md#limits). |

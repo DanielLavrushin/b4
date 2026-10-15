@@ -1,72 +1,81 @@
 ---
 sidebar_position: 1
 title: General
+description: The General sub-tab of a set's TCP tab, with the packet limit, port filter, packet duplication, IP block detection, RST injection protection and MSS clamping.
 ---
 
-Basic parameters for processing TCP traffic in a set.
+The **General** sub-tab of the [TCP](./index.md) tab holds the settings that apply whatever splitting or faking method the set uses.
 
-![20260418235044](../../../static/img/general/20260418235044.png)
+![The top of the General sub-tab](/img/general/20260418235044.png)
 
-## TCP per-connection packet limit
+## Limits and filters
 
-How many packets at the start of each connection to analyze. After that limit, packets pass without modification. The TLS handshake (ClientHello) normally happens in the first 3-5 packets, so processing the whole connection is not needed.
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Connection Packets Limit** | How many packets at the start of each connection b4 processes. The TLS handshake fits in the first few, and later packets pass unchanged. It cannot exceed the global limit under [Settings > Core](../../settings/core.md#queue-and-packet-processing). | `19` |
+| **Segment 2 Delay** | Delay between the pieces b4 sends, in milliseconds. A range makes each connection pick a random value from it. | `0` |
+| **Port Filter** | The destination ports the set applies to, such as `443` or `80,5222,8000-9000`. Empty means every port b4 captures. b4 always captures port 443 and adds the ports listed in any set. | Empty |
+| **Drop SACK Options** | Removes the Selective Acknowledgment option from TCP headers. Some DPI uses it to put fragments back in order. | Off |
+| **Empty line before HTTP method** | For plain HTTP on port 80: puts an empty line before the request and shortens the User-Agent by two characters to keep the length. Inspection that expects the method at the start of the request no longer finds the Host header. Needs a User-Agent header, and suits nginx servers. | Off |
 
-:::info
-This value cannot exceed the global limit in [Settings, Core, Packet Engine](../../settings/core#queue-and-packet-processing). If a higher value is set here, the global limit is used instead.
-:::
+## Packet Duplication {#packet-duplication}
 
-## Inter-packet delay (Seg2Delay)
+For providers that slow traffic down by dropping some outgoing packets to certain address ranges, such as Telegram's. b4 drops the original packet and sends several copies instead.
 
-Delay (ms) between sending fragments. Specified as a **min-max** range - each connection picks a random value from the range. When min and max are equal, the delay is fixed.
+![The Packet Duplication section](/img/general/20260418235123.png)
 
-## Port filter
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Enable Packet Duplication** | Sends each packet of the set's TCP connections as several copies. The duplicated packets get none of the set's other bypass techniques. | Off |
+| **Copy Count** | How many copies to send, 1 to 10. | `3` |
 
-Limits the destination ports this set applies to. iptables-style format: `443` or `443,80`.
+The [Traffic](../../connections.md) page labels duplicated packets `dup`.
 
-:::info
-At the firewall level, b4 always intercepts port 443 traffic. Any extra ports listed in sets are added to the intercept. The port filter in a set narrows down what **this particular set** applies to, not what b4 processes globally.
-:::
+## IP Block Detection
 
-## Drop `SACK`
+Some server addresses are blocked at the IP level: nothing reaches the server, so no bypass strategy helps. A CDN often answers DNS with several addresses of which only some are blocked, and the site then works or hangs depending on the address a device picked. The detection finds such addresses, and the [Traffic](../../connections.md) page labels their connections `ip`. The other fields appear once it is on.
 
-Removes the `Selective Acknowledgment` option from TCP packets. `SACK` helps the server and client retransmit lost fragments efficiently - some DPI systems use `SACK` to reassemble fragments in order.
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Enable IP Block Detection** | Detects destinations that never answer and acts on them. | Off |
+| **Heal DNS answers** | Also removes unreachable addresses from DNS answers. When every address is unreachable, the last one that worked for the domain is answered instead. | Off |
+| **Detect unanswered SYNs** | Catches blocks at the address level, where the connection never opens. | On |
+| **SYN Threshold** | How many unanswered connection attempts before the router tests the address itself. Nothing happens until that test fails too. | `3` |
+| **Retransmit Threshold** | How many unanswered repeats of the ClientHello mark the destination blocked. This covers a block that lets the connection open and then swallows the handshake. A low value can mistake a slow server for a block. | `3` |
+| **Detection Timeout** | Also marks the destination blocked when the first attempt has had no answer for this long, in milliseconds. | `3000` |
+| **Healed Answer TTL** | The TTL written into healed DNS answers, in seconds. A short value lets devices pick up a recovered address quickly. | `60` |
+| **Cache Blocked IPs** | Remembers blocked addresses, so new connections to them are reset at once instead of waiting. | On |
 
-## Packet duplication
+How long an address stays marked is set by **Retest interval (seconds)** under [Settings > Core](../../settings/core.md#ip-block-detection).
 
-Sends each packet several times (1-10 copies). Useful when the provider drops some packets on anomaly detection.
+## RST Injection Protection
 
-![20260418235123](../../../static/img/general/20260418235123.png)
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Enable RST Protection** | Drops connection resets that look injected by DPI rather than sent by the server. | Off |
+| **TTL Tolerance** | The largest allowed difference between the TTL of a reset and the TTL of the server's replies. | `3` |
 
-## MSS Clamping
+[RST Injection Protection](./rst-protection.md) describes the checks.
 
-Limits the TCP Maximum Segment Size for connections this set covers. A smaller MSS makes the client's ClientHello arrive split across several segments, which some DPI cannot reassemble.
+## MSS Clamping {#mss-clamping}
 
-![20260815225810](/img/general/20260815225810.png)
+Limits the TCP maximum segment size (MSS) for the set's connections. A smaller MSS makes the client send its ClientHello in several segments, which some DPI cannot put back together.
 
-| Parameter | Description | Range | Default |
-| --- | --- | --- | --- |
-| Enable per-set MSS | Turn on MSS Clamping for this set | - | Off |
-| MSS size | MSS size in bytes. Lower = more fragmentation | 10-1460 | `88` |
+![The MSS Clamping section](/img/general/20260815225810.png)
 
-:::warning What a per-set MSS can and cannot narrow down
-The MSS is written into the TCP `SYN`, which is the very first packet of a connection - long before the TLS handshake reveals which site is being visited. So this clamp can only be scoped by things the kernel already knows at `SYN` time: **IP targets, GeoIP categories, ASNs and source devices**. `SNI domains`, `GeoSite categories` and the TLS version filter play no part in it.
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Enable per-set MSS** | Turns the clamp on for the set. Available once the set has an IP, GeoIP, ASN or source device target. | Off |
+| **MSS size (bytes)** | The MSS, 10 to 1460. `88` is filled in when the switch is turned on. | `88` |
 
-The switch stays disabled until the set has an IP, GeoIP, ASN or source device target. A set whose IP, GeoIP and ASN targets resolve to no addresses yet, such as an ASN not fetched yet or a GeoIP category missing from the file, installs no clamp until they do.
+The MSS is set on the first packet of a connection, before the server name is known. Only IP, GeoIP, ASN and source device targets therefore decide where it applies. Domains, GeoSite categories and the TLS version filter play no part.
 
-A source device discovered from the ARP table is matched by its MAC address; one you added by hand is matched by the IP
-address you entered for it, so such a device needs a fixed address to be usable as a clamp scope.
-:::
+| The set targets | The clamp applies to |
+| --- | --- |
+| IP addresses, GeoIP categories or ASNs | Connections to those addresses |
+| Source devices only | Every port 443 connection from those devices, wherever it goes |
+| Both | Connections from those devices to those addresses |
 
-Which connections the clamp applies to depends on what the set is scoped by:
+A set whose IP, GeoIP and ASN targets resolve to no addresses yet installs no clamp until they do. A device added by hand needs a fixed address to scope a clamp.
 
-- Set scoped by **IP, GeoIP or ASN**: the clamp applies only to connections headed for those addresses.
-- Set scoped **only by source device**: the clamp applies to **every** port 443 connection from those devices, wherever it is going - not just to the set's domains. That device's HTTPS is slowed across the board.
-- Set with **both**: the clamp applies to connections from those devices *and* headed for those addresses.
-
-If the goal is to slow one TV down on port 443, the [per-device MSS](../../settings/core#device-table) column does the same job. A per-set MSS makes sense when the set carries IP, GeoIP or ASN targets to aim it at.
-
-:::info
-Enabling the switch fills the size in as `88` if it is empty. That is the smallest useful value and the usual TSPU workaround for smart TVs on YouTube, but it is an aggressive one - every segment carries at most 88 bytes of payload, so large downloads over a clamped connection are slow. Raise it if the connection works but crawls.
-:::
-
-A per-set MSS takes precedence over the [per-device and global settings](../../settings/core#global-mss-clamping) for the connections it covers.
+`88` is the value suggested for smart TVs on YouTube. Every segment then carries at most 88 bytes, so large downloads are slow, and when a connection works but crawls, a larger value is the next step. To slow down one device's HTTPS without a set, the [per-device MSS](../../settings/core.md#device-table) does the same. A per-set MSS overrides the [per-device and global MSS](../../settings/core.md#global-mss-clamping) for the connections it covers.

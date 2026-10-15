@@ -1,0 +1,58 @@
+{
+  "version.label": {
+    "message": "Next",
+    "description": "The label for version current"
+  },
+  "sidebar.tutorialSidebar.category.Get started": {
+    "message": "Начало работы",
+    "description": "The label for category 'Get started' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.Installation": {
+    "message": "Установка",
+    "description": "The label for category 'Installation' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.Guides": {
+    "message": "Руководства",
+    "description": "The label for category 'Guides' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.Telegram": {
+    "message": "Telegram",
+    "description": "The label for category 'Telegram' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.Community sets": {
+    "message": "Сеты сообщества",
+    "description": "The label for category 'Community sets' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.Web interface": {
+    "message": "Веб-интерфейс",
+    "description": "The label for category 'Web interface' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.Sets": {
+    "message": "Сеты",
+    "description": "The label for category 'Sets' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.TCP": {
+    "message": "TCP",
+    "description": "The label for category 'TCP' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.Settings": {
+    "message": "Настройки",
+    "description": "The label for category 'Settings' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.Troubleshooting": {
+    "message": "Решение проблем",
+    "description": "The label for category 'Troubleshooting' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.Under the hood": {
+    "message": "Как это устроено",
+    "description": "The label for category 'Under the hood' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.Reference": {
+    "message": "Справочник",
+    "description": "The label for category 'Reference' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.Running a hub": {
+    "message": "Свой хаб",
+    "description": "The label for category 'Running a hub' in sidebar 'tutorialSidebar'"
+  }
+}
