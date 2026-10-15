@@ -887,10 +887,8 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	if isQUIC && (host == "" || coalescesInitials(set)) {
 		if h, ok := sni.ParseQUICClientHelloSNI(payload); ok {
 			helloDatagram = true
-			if host == "" {
-				host = h
-				namedByHello = true
-			}
+			host = h
+			namedByHello = true
 		}
 	}
 

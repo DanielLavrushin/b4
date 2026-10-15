@@ -260,6 +260,34 @@ func TestAnAddressLearnedForAnotherNameDoesNotRestartAStoppedQUICFlow(t *testing
 	}
 }
 
+func TestAnAddressLearnedByACoalescingSetDoesNotHideABlockedName(t *testing.T) {
+	coalescing := newDomainOnlyQUICSet(config.UDPModeCoalesce)
+	coalescing.Id = "coalescing"
+	coalescing.Name = "Coalescing"
+	coalescing.Targets.SNIDomains = []string{"allowed.example"}
+	coalescing.Targets.DomainOnly = false
+
+	blocked := newDomainOnlyQUICSet(config.UDPModeDrop)
+	w := newQUICFlowWorker(t, &coalescing, &blocked)
+
+	teach := buildQUICInitialWithSNI(t, []byte{0x90, 1, 2, 3, 4, 5, 6, 7}, "www.allowed.example")
+	if v := sendQUIC(w, teach, 50301); v != engine.VerdictDrop {
+		t.Fatalf("the coalescing set must act on its own name's ClientHello, got %v", v)
+	}
+
+	flow := newSplitQUICHello(t, []byte{0x91, 1, 2, 3, 4, 5, 6, 7}, []byte{0x92, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	sendQUIC(w, flow.first, 50302)
+	if v := sendQUIC(w, flow.completing, 50302); v != engine.VerdictDrop {
+		t.Fatalf("the blocked name's ClientHello must be stopped, got %v", v)
+	}
+	if v := sendQUIC(w, flow.resend, 50302); v != engine.VerdictDrop {
+		t.Errorf("a flow to a blocked name must stay stopped on an address the coalescing set learned, got %v", v)
+	}
+	if v := sendQUIC(w, flow.oneRTT, 50302); v != engine.VerdictDrop {
+		t.Errorf("a short-header packet of the blocked flow must stay stopped, got %v", v)
+	}
+}
+
 func TestAStaticAddressSetKeepsTheLaterDatagramsOfAQUICFlow(t *testing.T) {
 	named := newDomainOnlyQUICSet(config.UDPModeDrop)
 	static := config.NewSetConfig()
