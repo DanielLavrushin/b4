@@ -21,6 +21,7 @@ import (
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netif"
+	"golang.org/x/sys/unix"
 )
 
 const hostRouteCTMark = uint32(0x40000000)
@@ -2782,8 +2783,9 @@ func routeGetIfaceAddr(iface string, wantV6 bool) string {
 }
 
 type routeHostIface struct {
-	up    bool
-	addrs []net.IPNet
+	up       bool
+	addrs    []net.IPNet
+	unrouted []net.IPNet
 }
 
 var routeHostIfaces = routeHostIfacesExec
@@ -2820,23 +2822,31 @@ func routeHostIfacesExec() (map[string]routeHostIface, error) {
 		if err != nil {
 			continue
 		}
-		if addr, ok := routeIfAddr(msg.Data[0], int(msg.Data[1]), attrs); ok {
+		if addr, prefixRoute, ok := routeIfAddr(msg.Data[0], int(msg.Data[1]), attrs); ok {
 			ifc := out[name]
 			ifc.addrs = append(ifc.addrs, addr)
+			if !prefixRoute {
+				ifc.unrouted = append(ifc.unrouted, addr)
+			}
 			out[name] = ifc
 		}
 	}
 	return out, nil
 }
 
-func routeIfAddr(family byte, ones int, attrs []syscall.NetlinkRouteAttr) (net.IPNet, bool) {
+func routeIfAddr(family byte, ones int, attrs []syscall.NetlinkRouteAttr) (net.IPNet, bool, bool) {
 	var addr, local []byte
+	prefixRoute := true
 	for _, a := range attrs {
 		switch a.Attr.Type {
 		case syscall.IFA_ADDRESS:
 			addr = a.Value
 		case syscall.IFA_LOCAL:
 			local = a.Value
+		case unix.IFA_FLAGS:
+			if len(a.Value) >= 4 && binary.NativeEndian.Uint32(a.Value)&unix.IFA_F_NOPREFIXROUTE != 0 {
+				prefixRoute = false
+			}
 		}
 	}
 	if local != nil {
@@ -2844,11 +2854,11 @@ func routeIfAddr(family byte, ones int, attrs []syscall.NetlinkRouteAttr) (net.I
 	}
 	switch {
 	case family == syscall.AF_INET && len(addr) >= net.IPv4len:
-		return net.IPNet{IP: net.IPv4(addr[0], addr[1], addr[2], addr[3]).To4(), Mask: net.CIDRMask(ones, 8*net.IPv4len)}, true
+		return net.IPNet{IP: net.IPv4(addr[0], addr[1], addr[2], addr[3]).To4(), Mask: net.CIDRMask(ones, 8*net.IPv4len)}, prefixRoute, true
 	case family == syscall.AF_INET6 && len(addr) >= net.IPv6len:
-		return net.IPNet{IP: append(net.IP(nil), addr[:net.IPv6len]...), Mask: net.CIDRMask(ones, 8*net.IPv6len)}, true
+		return net.IPNet{IP: append(net.IP(nil), addr[:net.IPv6len]...), Mask: net.CIDRMask(ones, 8*net.IPv6len)}, prefixRoute, true
 	}
-	return net.IPNet{}, false
+	return net.IPNet{}, false, false
 }
 
 const routeArphrdEther = 1
@@ -2957,7 +2967,7 @@ func (p *routeGatewayProbe) check(iface, gw string) (bool, string) {
 	if routeGatewayIsLocal(ifaces, iface, target) {
 		return false, "is one of this router's own addresses"
 	}
-	prefix, onLink := routeGatewayOnLinkAddr(ifaces[iface].addrs, target)
+	prefix, onLink := routeGatewayOnLinkAddr(ifaces[iface], target)
 	if !onLink {
 		prefix, onLink = routeGatewayOnLinkRoute(p.mainRoutes(target.To4() == nil), iface, target)
 	}
@@ -2984,14 +2994,15 @@ func routeGatewayIsLocal(ifaces map[string]routeHostIface, egress string, target
 	return false
 }
 
-func routeGatewayOnLinkAddr(addrs []net.IPNet, target net.IP) (net.IPNet, bool) {
+func routeGatewayOnLinkAddr(ifc routeHostIface, target net.IP) (net.IPNet, bool) {
 	v6 := target.To4() == nil
 	linkLocal := false
-	for _, addr := range addrs {
+	for _, addr := range ifc.addrs {
 		if (addr.IP.To4() == nil) != v6 {
 			continue
 		}
-		if addr.Contains(target) {
+		routed := !slices.ContainsFunc(ifc.unrouted, func(u net.IPNet) bool { return u.IP.Equal(addr.IP) })
+		if routed && addr.Contains(target) {
 			return net.IPNet{IP: addr.IP.Mask(addr.Mask), Mask: addr.Mask}, true
 		}
 		linkLocal = linkLocal || addr.IP.IsLinkLocalUnicast()

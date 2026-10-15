@@ -1,14 +1,17 @@
 package tables
 
 import (
+	"encoding/binary"
 	"net"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"golang.org/x/sys/unix"
 )
 
 func captureRoutes(t *testing.T, ifaceRoutes string, refuseVia bool) *[]string {
@@ -55,7 +58,8 @@ func gwHostIfaces(t *testing.T, spec map[string][]string, down ...string) map[st
 	for name, addrs := range spec {
 		ifc := routeHostIface{up: !slices.Contains(down, name)}
 		for _, a := range addrs {
-			ip, prefix, err := net.ParseCIDR(a)
+			cidr, unrouted := strings.CutSuffix(a, " noprefixroute")
+			ip, prefix, err := net.ParseCIDR(cidr)
 			if err != nil {
 				t.Fatalf("bad address %q: %v", a, err)
 			}
@@ -63,6 +67,9 @@ func gwHostIfaces(t *testing.T, spec map[string][]string, down ...string) map[st
 				ip = v4
 			}
 			ifc.addrs = append(ifc.addrs, net.IPNet{IP: ip, Mask: prefix.Mask})
+			if unrouted {
+				ifc.unrouted = append(ifc.unrouted, net.IPNet{IP: ip, Mask: prefix.Mask})
+			}
 		}
 		out[name] = ifc
 	}
@@ -352,6 +359,7 @@ func TestGatewayUsability(t *testing.T) {
 		"10.33.0.9 dev wg0",
 		"169.254.0.0/16 dev eth1 scope link metric 1000",
 		"192.0.2.0/24 dev eth1 proto kernel scope link src 192.0.2.1",
+		"198.18.8.0/24 dev npr1 proto kernel scope link src 198.18.8.1 metric 100",
 		"198.51.100.0/24 via 192.0.2.254 dev eth1",
 		"unreachable 203.0.113.0/24 metric 1",
 	}, "\n")
@@ -374,6 +382,10 @@ func TestGatewayUsability(t *testing.T) {
 		"p127": {"2001:db8:127::1/127"},
 		"eth2": {"198.18.0.1/30"},
 		"tun9": {"fe80::9/64"},
+		"npr0": {"198.18.7.1/24 noprefixroute"},
+		"npr1": {"198.18.8.1/24 noprefixroute"},
+		"npr6": {"2001:db8:6::1/64 noprefixroute"},
+		"ll4":  {"169.254.1.1/16"},
 	})
 	for _, c := range []struct {
 		iface, gw string
@@ -407,6 +419,11 @@ func TestGatewayUsability(t *testing.T) {
 		{"eth1", "2001:db8:98::1", false, "is not on a network eth1 reaches directly"},
 		{"br0", "192.0.2.5", false, "is not on a network br0 reaches directly"},
 		{"pl0", "fe80::5", false, "is not on a network pl0 reaches directly"},
+		{"npr0", "198.18.7.5", false, "is not on a network npr0 reaches directly"},
+		{"npr0", "198.18.7.1", false, "is one of this router's own addresses"},
+		{"npr1", "198.18.8.5", true, ""},
+		{"npr6", "2001:db8:6::5", false, "is not on a network npr6 reaches directly"},
+		{"ll4", "fe80::1", false, "is not on a network ll4 reaches directly"},
 		{"eth1", "not-an-ip", false, "is not an IP address"},
 	} {
 		usable, reason := routeGatewayUsable(c.iface, c.gw)
@@ -1006,6 +1023,54 @@ func TestTheEnabledSetLineNamesTheGateway(t *testing.T) {
 	}
 	if plainLine == "" || strings.Contains(plainLine, "gw=") {
 		t.Errorf("a set without a gateway keeps the line it had, got %q", plainLine)
+	}
+}
+
+func ifAddrAttr(typ uint16, value []byte) syscall.NetlinkRouteAttr {
+	return syscall.NetlinkRouteAttr{Attr: syscall.RtAttr{Len: uint16(syscall.SizeofRtAttr + len(value)), Type: typ}, Value: value}
+}
+
+func ifAddrFlags(flags uint32) []byte {
+	b := make([]byte, 4)
+	binary.NativeEndian.PutUint32(b, flags)
+	return b
+}
+
+func TestIfAddrTakesTheLocalAddressAndTheNoPrefixRouteFlag(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		family      byte
+		ones        int
+		attrs       []syscall.NetlinkRouteAttr
+		want        string
+		prefixRoute bool
+	}{
+		{"ipv4 peer", syscall.AF_INET, 32, []syscall.NetlinkRouteAttr{
+			ifAddrAttr(syscall.IFA_ADDRESS, net.ParseIP("10.32.0.2").To4()),
+			ifAddrAttr(syscall.IFA_LOCAL, net.ParseIP("10.32.0.1").To4()),
+		}, "10.32.0.1/32", true},
+		{"ipv6 peer", syscall.AF_INET6, 128, []syscall.NetlinkRouteAttr{
+			ifAddrAttr(syscall.IFA_ADDRESS, net.ParseIP("2001:db8::2")),
+			ifAddrAttr(syscall.IFA_LOCAL, net.ParseIP("2001:db8::1")),
+		}, "2001:db8::1/128", true},
+		{"ipv6 address only", syscall.AF_INET6, 64, []syscall.NetlinkRouteAttr{
+			ifAddrAttr(syscall.IFA_ADDRESS, net.ParseIP("2001:db8:1::2")),
+			ifAddrAttr(unix.IFA_FLAGS, ifAddrFlags(unix.IFA_F_PERMANENT)),
+		}, "2001:db8:1::2/64", true},
+		{"ipv4 noprefixroute", syscall.AF_INET, 24, []syscall.NetlinkRouteAttr{
+			ifAddrAttr(syscall.IFA_ADDRESS, net.ParseIP("192.0.2.1").To4()),
+			ifAddrAttr(syscall.IFA_LOCAL, net.ParseIP("192.0.2.1").To4()),
+			ifAddrAttr(unix.IFA_FLAGS, ifAddrFlags(unix.IFA_F_PERMANENT|unix.IFA_F_NOPREFIXROUTE)),
+		}, "192.0.2.1/24", false},
+		{"ipv6 noprefixroute", syscall.AF_INET6, 64, []syscall.NetlinkRouteAttr{
+			ifAddrAttr(syscall.IFA_ADDRESS, net.ParseIP("2001:db8:6::1")),
+			ifAddrAttr(unix.IFA_FLAGS, ifAddrFlags(unix.IFA_F_NOPREFIXROUTE)),
+		}, "2001:db8:6::1/64", false},
+	} {
+		got, prefixRoute, ok := routeIfAddr(c.family, c.ones, c.attrs)
+		if !ok || got.String() != c.want || prefixRoute != c.prefixRoute {
+			t.Errorf("%s: routeIfAddr = %v prefixRoute=%v ok=%v, want %s prefixRoute=%v; a peer address must give the router's own end, and a noprefixroute address puts no network on the link", c.name, got.String(), prefixRoute, ok, c.want, c.prefixRoute)
+		}
 	}
 }
 

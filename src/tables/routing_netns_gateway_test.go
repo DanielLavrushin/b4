@@ -426,6 +426,33 @@ func TestNetnsGatewayOnATunnelOnlySetsTheRoute(t *testing.T) {
 	})
 }
 
+func TestNetnsANoPrefixRouteAddressPutsNoNetworkOnLink(t *testing.T) {
+	netnsRequire(t)
+	const dev, addr, gw, table = "b4np0", "10.201.9.1/24", "10.201.9.5", "4209"
+	_, _ = run("ip", "link", "del", dev)
+	netnsRun(t, "ip", "link", "add", dev, "type", "veth", "peer", "name", dev+"p")
+	t.Cleanup(func() {
+		_, _ = run("ip", "link", "del", dev)
+		_, _ = run("ip", "route", "flush", "table", table)
+	})
+	netnsRun(t, "ip", "link", "set", dev, "up")
+	netnsRun(t, "ip", "link", "set", dev+"p", "up")
+	netnsRun(t, "ip", "addr", "add", addr, "dev", dev, "noprefixroute")
+
+	if usable, reason := routeGatewayUsable(dev, gw); usable || reason != "is not on a network "+dev+" reaches directly" {
+		t.Errorf("an address added with noprefixroute puts no route on the link, yet %s counts as usable=%v (%q)", gw, usable, reason)
+	}
+	if _, err := run("ip", "route", "replace", "default", "via", gw, "dev", dev, "table", table); err == nil {
+		t.Fatalf("the kernel took %s as a next hop with no route covering it, so this test no longer pins what the kernel refuses", gw)
+	}
+
+	netnsRun(t, "ip", "route", "add", "10.201.9.0/24", "dev", dev)
+	if usable, reason := routeGatewayUsable(dev, gw); !usable {
+		t.Errorf("a route through %s covers %s, yet it was refused: %s", dev, gw, reason)
+	}
+	netnsRun(t, "ip", "route", "replace", "default", "via", gw, "dev", dev, "table", table)
+}
+
 func netnsGatewaySnapshot(t *testing.T, engine string, ids ...string) string {
 	t.Helper()
 	var b strings.Builder
