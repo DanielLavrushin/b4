@@ -4,6 +4,8 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -143,6 +145,33 @@ func gwForgetWarnings(t *testing.T) {
 	t.Cleanup(forget)
 }
 
+type gwLinks struct {
+	mu    sync.Mutex
+	types map[string]int
+	reads atomic.Int32
+}
+
+func (l *gwLinks) set(iface string, typ int) {
+	l.mu.Lock()
+	l.types[iface] = typ
+	l.mu.Unlock()
+}
+
+func gwStubLinks(t *testing.T, types map[string]int) *gwLinks {
+	t.Helper()
+	l := &gwLinks{types: types}
+	prev := routeLinkType
+	t.Cleanup(func() { routeLinkType = prev })
+	routeLinkType = func(iface string) (int, bool) {
+		l.reads.Add(1)
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		typ, ok := l.types[iface]
+		return typ, ok
+	}
+	return l
+}
+
 func gwIsolate(t *testing.T) {
 	t.Helper()
 	loopTestSysfs(t)
@@ -152,6 +181,7 @@ func gwIsolate(t *testing.T) {
 	routeIfaceSeen = make(map[string]bool)
 	t.Cleanup(func() { routeIfaceSeen = prevSeen })
 	gwForgetWarnings(t)
+	gwStubLinks(t, map[string]int{"eth1": routeArphrdEther, "eth2": routeArphrdEther, "lo": routeArphrdEther})
 }
 
 func gwTestSet(id, iface, gw string) *config.SetConfig {

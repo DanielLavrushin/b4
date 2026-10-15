@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net"
+	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -1733,8 +1734,12 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	return nil
 }
 
+func routeGuardNarrowed(st routeState) bool {
+	return len(st.gwPeersV4) > 0
+}
+
 func routeAddEgressGuard(be routeBackend, cfg *config.Config, st routeState) bool {
-	if st.gwV4 == "" {
+	if !routeGuardNarrowed(st) {
 		return be.addEgressLoopGuard(st.chainPre, st.iface, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	}
 	routeAddLocalDestinationGuard(be, st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
@@ -1845,7 +1850,7 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 	}
 
 	routeSelfDialBypass(be, cfg, st.chainOut)
-	if st.gwV4 != "" {
+	if routeGuardNarrowed(st) {
 		be.addRedirectDrop(st.chainOut, st.iface)
 	}
 
@@ -2609,7 +2614,7 @@ func routeReinstallForInterface(cfg *config.Config, iface string, stopped func()
 		log.Infof("Routing: %s came back as %s, which changes whether the router's own traffic follows the sets on it; rebuilding their rules", iface, netif.Describe(iface))
 	}
 	if gatewayChanged {
-		log.Infof("Routing: %s came back with a change in which of its sets' gateways b4 can use; rebuilding their rules", iface)
+		log.Infof("Routing: %s came back with a change in which of its sets' gateways b4 can use or in its link type; rebuilding their rules", iface)
 	}
 	RoutingSyncConfig(cfg)
 }
@@ -2838,6 +2843,22 @@ func routeIfAddr(family byte, ones int, attrs []syscall.NetlinkRouteAttr) (net.I
 	return net.IPNet{}, false
 }
 
+const routeArphrdEther = 1
+
+var routeLinkType = routeLinkTypeSysfs
+
+func routeLinkTypeSysfs(iface string) (int, bool) {
+	raw, err := os.ReadFile(netif.Root + iface + "/type")
+	if err != nil {
+		return 0, false
+	}
+	typ, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		return 0, false
+	}
+	return typ, true
+}
+
 type routeGatewayVerdict struct {
 	usable bool
 	reason string
@@ -2848,13 +2869,25 @@ type routeGatewayProbe struct {
 	ifaces   map[string]routeHostIface
 	routes   map[bool][]string
 	verdicts map[string]routeGatewayVerdict
+	ether    map[string]bool
 }
 
 func newRouteGatewayProbe() *routeGatewayProbe {
 	return &routeGatewayProbe{
 		routes:   make(map[bool][]string),
 		verdicts: make(map[string]routeGatewayVerdict),
+		ether:    make(map[string]bool),
 	}
+}
+
+func (p *routeGatewayProbe) ethernet(iface string) bool {
+	if ether, ok := p.ether[iface]; ok {
+		return ether
+	}
+	typ, ok := routeLinkType(iface)
+	ether := ok && typ == routeArphrdEther
+	p.ether[iface] = ether
+	return ether
 }
 
 func routeGatewayUsable(iface, gw string) (bool, string) {
@@ -3048,7 +3081,7 @@ func routeResolveGateways(cfg *config.Config, set *config.SetConfig, st *routeSt
 			st.gwV4 = gw
 		}
 	}
-	if st.gwV4 != "" {
+	if st.gwV4 != "" && probe.ethernet(st.iface) {
 		st.gwPeersV4 = routeEgressGatewaysV4(cfg, st.iface, st.gwV4, probe)
 	}
 }
