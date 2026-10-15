@@ -96,7 +96,7 @@ When b4 installs the set's rules, it checks the gateway against the router's add
 | Not on a network the output interface reaches directly | `is not on a network <interface> reaches directly` |
 | The network or broadcast address of an IPv4 network up to /30, or the network address of an IPv6 network shorter than /127 | `is the network address of <prefix>`, `is the broadcast address of <prefix>` |
 
-The interface reaches a gateway directly when the gateway lies in the prefix of an address on the interface, or under a route of the main table through the interface that has no gateway of its own, host routes included. An IPv6 link-local gateway is also reachable from an interface with a link-local address of its own.
+The interface reaches a gateway directly when the gateway lies in the prefix of an address on the interface, or under a route of the main table through the interface that has no gateway of its own, host routes included. The prefix of an address added with `noprefixroute` counts only through such a route. An IPv6 link-local gateway is also reachable from an interface with a link-local address of its own.
 
 A refused gateway counts as no gateway in its family, for the route and for the guard below. While the interface is up, b4 logs one warning that names the set, the gateway, the interface and the reason. b4 runs the check at start, on every save, when the output interface comes up and when the firewall monitor sees the interface's address change.
 
