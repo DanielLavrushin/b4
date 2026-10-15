@@ -19,7 +19,7 @@ func AddTCPMD5Option(packet []byte, isIPv6 bool) ([]byte, bool) {
 
 	tcpHdrLen := int((packet[ipHdrLen+12] >> 4) * 4)
 	payloadStart := ipHdrLen + tcpHdrLen
-	if len(packet) < payloadStart {
+	if tcpHdrLen < 20 || len(packet) < payloadStart {
 		return packet, false
 	}
 

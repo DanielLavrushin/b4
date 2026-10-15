@@ -213,7 +213,7 @@ func withoutTCPOptions(pkt []byte, l3Len int) []byte {
 
 func synWithoutPayload(raw []byte, ver byte, l3Len, tcpHdrLen int) ([]byte, bool) {
 	end := l3Len + tcpHdrLen
-	if len(raw) <= end || (ver == IPv6 && !hasPlainIPv6Header(raw, ipProtoTCP)) {
+	if tcpHdrLen < TCPHeaderMinLen || len(raw) <= end || (ver == IPv6 && !hasPlainIPv6Header(raw, ipProtoTCP)) {
 		return nil, false
 	}
 	syn := make([]byte, end)

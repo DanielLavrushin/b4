@@ -298,7 +298,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return vc.accept()
 	}
 	datOff := int((tcp[12]>>4)&0x0f) * 4
-	if len(tcp) < datOff {
+	if datOff < TCPHeaderMinLen || len(tcp) < datOff {
 		return vc.accept()
 	}
 	payload := tcp[datOff:]

@@ -44,7 +44,7 @@ func (w *Worker) ManipulateWindowIPv4(cfg *config.SetConfig, packet []byte, dst 
 	}
 
 	tcpHdrLen := int((packet[ipHdrLen+12] >> 4) * 4)
-	if len(packet) < ipHdrLen+tcpHdrLen {
+	if tcpHdrLen < TCPHeaderMinLen || len(packet) < ipHdrLen+tcpHdrLen {
 		return
 	}
 
@@ -224,7 +224,8 @@ func (w *Worker) ManipulateWindowIPv6(cfg *config.SetConfig, packet []byte, dst 
 		return
 	}
 
-	if len(packet) < ipv6HdrLen+int(packet[ipv6HdrLen+12]>>4)*4 {
+	tcpHdrLen := int(packet[ipv6HdrLen+12]>>4) * 4
+	if tcpHdrLen < TCPHeaderMinLen || len(packet) < ipv6HdrLen+tcpHdrLen {
 		return
 	}
 

@@ -17,6 +17,7 @@
 - FIXED: **Apps that use TCP Fast Open could not open sites through a set with a strategy** - such an app puts the start of its secure connection into the packet that opens the connection. b4 split that packet like ordinary data, and every piece opened the connection again with different numbering. The site kept one of them and could not read the start. [#431](https://github.com/DanielLavrushin/b4/issues/431)
 - FIXED: **Window Mode sent malformed fake packets on connections that use TCP timestamps, which Linux turns on by default** - each fake kept the header length of the original packet but carried only the first part of the header.
 - FIXED: **SYN MD5 Signature sent its fake SYN without the MD5 option when the real SYN carried many options, such as one from an app that uses TCP Fast Open** - the option did not fit, and the fake went out without it. A server it reached could take it for a real SYN.
+- FIXED: **b4 could stop on a malformed TCP packet sent to an address a set covers** - the packet's header claimed to be shorter than any TCP header can be. b4 read past the end of the packet while applying the set's strategy.
 
 ## [1.86.0] - 2026-10-09
 

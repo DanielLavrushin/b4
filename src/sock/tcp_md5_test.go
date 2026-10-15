@@ -78,3 +78,13 @@ func TestAddTCPMD5OptionRefusesAHeaderLongerThanThePacket(t *testing.T) {
 		t.Error("a TCP header that claims more bytes than the packet has must be refused")
 	}
 }
+
+func TestAddTCPMD5OptionRefusesAHeaderShorterThan20Bytes(t *testing.T) {
+	for words := byte(0); words < 5; words++ {
+		pkt := buildMinimalIPv4TCPPacket(64)
+		pkt[20+12] = words << 4
+		if got, ok := AddTCPMD5Option(pkt, false); ok || !bytes.Equal(got, pkt) {
+			t.Errorf("a %d-byte TCP header must be refused and returned unchanged", int(words)*4)
+		}
+	}
+}
