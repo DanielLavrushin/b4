@@ -267,7 +267,7 @@ func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, i
 	if !ok {
 		return nil, ""
 	}
-	if decidedBy != matcher {
+	if decidedBy != matcher || (set != nil && !sni.SetMatchesSource(set, srcMac)) {
 		set = nil
 		if matched, named := matcher.MatchSNIWithSourceTLS(host, srcMac, tlsVersion, ipVersion); matched && named.MatchesTCPDPort(dport) {
 			set = named
@@ -347,15 +347,17 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
+	matchedPort := false
 	if !matched && cfg.IsTCPPort(dport) {
 		if portMatched, portSet := matcher.MatchTCPPort(dport, pkt.srcMac); portMatched {
 			matched = true
 			set = portSet
+			matchedPort = true
 		}
 	}
 
 	matchedConn := false
-	takeOver := connSet != nil && (matchedHint || matchedLearned) && set != nil && set.Id != connSet.Id && !addressMatched &&
+	takeOver := connSet != nil && (matchedHint || matchedLearned || matchedPort) && set != nil && set.Id != connSet.Id && !addressMatched &&
 		fragmentsOrDesyncs(connSet) && (needsPayloadlessInjection(connSet) || !needsPayloadlessInjection(set))
 	if connSet != nil && (!matched || takeOver) {
 		matched = true

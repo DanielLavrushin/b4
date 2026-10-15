@@ -325,13 +325,17 @@ func TestAnAddressSetThatLearnedTheAddressKeepsLaterPackets(t *testing.T) {
 	}
 }
 
-func TestAHintedOrLearnedSetKeepsItsWorkOnBareACKs(t *testing.T) {
-	newVideo := func() config.SetConfig {
+func TestAHintedLearnedOrPortSetKeepsItsWorkOnBareACKs(t *testing.T) {
+	newVideo := func(portOnly bool) config.SetConfig {
 		set := newFragmentingYTImagesSet()
 		set.Id = "yt-video"
 		set.Name = "YT video"
 		set.Targets.DomainOnly = false
 		set.Targets.DomainsToMatch = []string{"youtube.com"}
+		if portOnly {
+			set.Targets.DomainsToMatch = nil
+			set.TCP.DPortFilter = "443"
+		}
 		set.TCP.DropSACK = true
 		return set
 	}
@@ -345,21 +349,19 @@ func TestAHintedOrLearnedSetKeepsItsWorkOnBareACKs(t *testing.T) {
 	}
 
 	for _, fragment := range []bool{false, true} {
-		for _, learned := range []bool{false, true} {
-			name := "dns hint"
-			if learned {
-				name = "learned address"
-			}
+		for _, how := range []string{"dns hint", "learned address", "port"} {
+			name := how
 			if fragment {
 				name += ", fragmenting domain set"
 			}
 			t.Run(name, func(t *testing.T) {
 				images := newImages(fragment)
-				video := newVideo()
+				video := newVideo(how == "port")
 				w := newInjectingWorker(t, &images, &video)
-				if learned {
+				switch how {
+				case "learned address":
 					w.ProcessPacket(makeV4TCPPacketFromPort(buildClientHello("www.youtube.com", 16, 0xAB), 500, 1111, 0x18))
-				} else {
+				case "dns hint":
 					w.storeHostHint("10.0.0.1", "1.2.3.4", &video, "www.youtube.com", "dns")
 				}
 
@@ -560,6 +562,107 @@ func TestAConnectionKeepsItsSetWhileItKeepsSending(t *testing.T) {
 	w.tlsCache.Cleanup()
 	if v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), seq+69)); v != engine.VerdictDrop {
 		t.Errorf("a connection that sent a packet 100 s ago keeps its set 200 s after its ClientHello, got %v", v)
+	}
+}
+
+func TestLaterPacketsKeepTheConnectionsSetOverAPortSet(t *testing.T) {
+	for _, domainOnly := range []bool{false, true} {
+		images := newFragmentingYTImagesSet()
+		images.Targets.DomainOnly = domainOnly
+		port := newPassiveSet()
+		port.Id = "port"
+		port.Name = "Port"
+		port.Targets.DomainOnly = false
+		port.Targets.DomainsToMatch = nil
+		port.TCP.DPortFilter = "443"
+		w := newInjectingWorker(t, &images, &port)
+
+		ch, _ := log.GetConnectionHub().Subscribe()
+		hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+		w.ProcessPacket(makeV4TCPPacket(hello, 1000))
+		loggedSet(t, ch)
+		v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello))))
+		got := loggedSet(t, ch)
+		log.GetConnectionHub().Unsubscribe(ch)
+
+		if v != engine.VerdictDrop {
+			t.Errorf("domain-only=%v: later data gets the connection's set, not the port set, got %v", domainOnly, v)
+		}
+		if got != images.Name {
+			t.Errorf("domain-only=%v: a later row names the connection's set, got %q", domainOnly, got)
+		}
+		if bound := w.connTracker.GetSetForIncoming("10.0.0.1", 12345, "1.2.3.4", 443); bound == nil || bound.Id != images.Id {
+			t.Errorf("domain-only=%v: the connection's set keeps its incoming handling, got %v", domainOnly, bound)
+		}
+	}
+}
+
+func TestTheConnectionsSetFollowsItsDeviceOnceTheDeviceIsKnown(t *testing.T) {
+	const device = "AA:BB:CC:DD:EE:01"
+	cases := []struct {
+		name                     string
+		exclude                  bool
+		knownAtHello, knownLater bool
+		hello, later             engine.PacketVerdict
+	}{
+		{"an excluded device identified after the ClientHello", true, false, true, engine.VerdictDrop, engine.VerdictAccept},
+		{"an included device identified after the ClientHello", false, false, true, engine.VerdictAccept, engine.VerdictAccept},
+		{"an excluded device never identified", true, false, false, engine.VerdictDrop, engine.VerdictDrop},
+		{"an included device known from the start", false, true, true, engine.VerdictDrop, engine.VerdictDrop},
+	}
+	for _, domainOnly := range []bool{false, true} {
+		for _, c := range cases {
+			set := newFragmentingYTImagesSet()
+			set.Targets.DomainOnly = domainOnly
+			set.Targets.SourceDevices = []string{device}
+			set.Targets.SourceDevicesExclude = c.exclude
+			w := newInjectingWorker(t, &set)
+			known := map[string]string{"10.0.0.1": device}
+			if c.knownAtHello {
+				w.ipToMac.Store(known)
+			}
+
+			hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+			if v := w.ProcessPacket(makeV4TCPPacket(hello, 1000)); v != c.hello {
+				t.Errorf("domain-only=%v, %s: the ClientHello must get %v, got %v", domainOnly, c.name, c.hello, v)
+			}
+			if c.knownLater {
+				w.ipToMac.Store(known)
+			}
+			if v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello)))); v != c.later {
+				t.Errorf("domain-only=%v, %s: later outgoing data must get %v, got %v", domainOnly, c.name, c.later, v)
+			}
+		}
+	}
+}
+
+func TestAConnectionMovesToTheSetForItsDeviceOnceTheDeviceIsKnown(t *testing.T) {
+	for _, domainOnly := range []bool{false, true} {
+		images := newFragmentingYTImagesSet()
+		images.Targets.DomainOnly = domainOnly
+		images.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:01"}
+		images.Targets.SourceDevicesExclude = true
+		fallback := newFragmentingYTImagesSet()
+		fallback.Id = "yt-fallback"
+		fallback.Name = "YT fallback"
+		fallback.Targets.DomainOnly = domainOnly
+		w := newInjectingWorker(t, &images, &fallback)
+
+		ch, _ := log.GetConnectionHub().Subscribe()
+		hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+		w.ProcessPacket(makeV4TCPPacket(hello, 1000))
+		first := loggedSet(t, ch)
+		w.ipToMac.Store(map[string]string{"10.0.0.1": "AA:BB:CC:DD:EE:01"})
+		v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello))))
+		later := loggedSet(t, ch)
+		log.GetConnectionHub().Unsubscribe(ch)
+
+		if first != images.Name {
+			t.Errorf("domain-only=%v: an unknown device is not excluded, so the ClientHello row names %q, got %q", domainOnly, images.Name, first)
+		}
+		if v != engine.VerdictDrop || later != fallback.Name {
+			t.Errorf("domain-only=%v: once the device is known, later data moves to %q, got %v from %q", domainOnly, fallback.Name, v, later)
+		}
 	}
 }
 
