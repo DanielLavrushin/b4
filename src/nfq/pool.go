@@ -353,6 +353,10 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 		w.matcher.Store(matcher)
 	}
 
+	if !reuse && p.state != nil && p.state.tlsCache != nil {
+		p.state.tlsCache.ForgetDecisions(matcher)
+	}
+
 	if !reuse && p.state != nil && p.state.destState != nil {
 		p.state.destState.PruneEscalations(func(setId string) bool {
 			target := newCfg.GetSetById(setId)
