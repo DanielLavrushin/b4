@@ -176,20 +176,13 @@ func TestASetWithoutFragmentationLeavesLaterEncryptedDataAloneInBothModes(t *tes
 		set.TCP.HTTPMethodEOL = true
 		w := newInjectingWorker(t, &set)
 
-		ch, _ := log.GetConnectionHub().Subscribe()
-
 		hello := buildClientHello("i.ytimg.com", 16, 0xAB)
 		if v := w.ProcessPacket(makeV4TCPPacket(hello, 1000)); v != engine.VerdictDrop {
 			t.Fatalf("domain-only=%v: the ClientHello must get the set's techniques, got %v", domainOnly, v)
 		}
-		loggedSet(t, ch)
 		if v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello)))); v != engine.VerdictAccept {
 			t.Errorf("domain-only=%v: a set without fragmentation or desync leaves encrypted data alone, as it does on an address it learned; got %v", domainOnly, v)
 		}
-		if got := loggedSet(t, ch); got != set.Name {
-			t.Errorf("domain-only=%v: the data row still belongs to the connection's set, want %q, got %q", domainOnly, set.Name, got)
-		}
-		log.GetConnectionHub().Unsubscribe(ch)
 	}
 }
 
@@ -291,11 +284,116 @@ func TestAnAddressSetKeepsLaterPacketsOfADomainOnlyConnection(t *testing.T) {
 	if len(f) < 7 {
 		t.Fatalf("malformed connection line: %v", f)
 	}
-	if f[2] != images.Name || f[5] != address.Name {
-		t.Errorf("a later row names the connection's domain set and the address set that handled it: want %q and %q, got %q and %q", images.Name, address.Name, f[2], f[5])
+	if f[2] != "" || f[5] != address.Name {
+		t.Errorf("a later row names the address set that handled it, as before: want no domain set and %q, got %q and %q", address.Name, f[2], f[5])
 	}
 	if bound := w.connTracker.GetSetForIncoming("10.0.0.1", 12345, "1.2.3.4", 443); bound == nil || bound.Id != address.Id {
 		t.Errorf("the address set keeps the connection's incoming handling, as before, got %v", bound)
+	}
+}
+
+func TestAnAddressSetThatLearnedTheAddressKeepsLaterPackets(t *testing.T) {
+	images := newFragmentingYTImagesSet()
+	address := newStaticAddressSet(true)
+	address.Targets.DomainsToMatch = []string{"example.com"}
+	address.TCP.DropSACK = true
+	w := newInjectingWorker(t, &images, &address)
+
+	w.ProcessPacket(makeV4TCPPacketFromPort(buildClientHello("www.example.com", 16, 0xAB), 500, 1111, 0x18))
+
+	ch, _ := log.GetConnectionHub().Subscribe()
+	defer log.GetConnectionHub().Unsubscribe(ch)
+
+	hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+	w.ProcessPacket(makeV4TCPPacket(hello, 1000))
+	loggedSet(t, ch)
+
+	next := 1000 + uint32(len(hello))
+	if v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), next)); v != engine.VerdictDrop {
+		t.Errorf("the address set fragments later data, as before, got %v", v)
+	}
+	if got := loggedSet(t, ch); got != address.Name {
+		t.Errorf("a later row is the address set's even after it learned the address, want %q, got %q", address.Name, got)
+	}
+	if v := w.ProcessPacket(makeV4TCPPacketFlags(nil, next+69, 0x10)); v != engine.VerdictDrop {
+		t.Errorf("the address set still strips SACK from a bare ACK, got %v", v)
+	}
+	loggedSet(t, ch)
+	if bound := w.connTracker.GetSetForIncoming("10.0.0.1", 12345, "1.2.3.4", 443); bound == nil || bound.Id != address.Id {
+		t.Errorf("the address set keeps the connection's incoming handling, got %v", bound)
+	}
+}
+
+func TestAHintedOrLearnedSetKeepsItsWorkOnBareACKs(t *testing.T) {
+	newVideo := func() config.SetConfig {
+		set := newFragmentingYTImagesSet()
+		set.Id = "yt-video"
+		set.Name = "YT video"
+		set.Targets.DomainOnly = false
+		set.Targets.DomainsToMatch = []string{"youtube.com"}
+		set.TCP.DropSACK = true
+		return set
+	}
+	newImages := func() config.SetConfig {
+		set := newPassiveSet()
+		set.TCP.HTTPMethodEOL = true
+		return set
+	}
+
+	for _, learned := range []bool{false, true} {
+		name := "dns hint"
+		if learned {
+			name = "learned address"
+		}
+		t.Run(name, func(t *testing.T) {
+			images := newImages()
+			video := newVideo()
+			w := newInjectingWorker(t, &images, &video)
+			if learned {
+				w.ProcessPacket(makeV4TCPPacketFromPort(buildClientHello("www.youtube.com", 16, 0xAB), 500, 1111, 0x18))
+			} else {
+				w.storeHostHint("10.0.0.1", "1.2.3.4", &video, "www.youtube.com", "dns")
+			}
+
+			hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+			w.ProcessPacket(makeV4TCPPacket(hello, 1000))
+			next := 1000 + uint32(len(hello))
+			w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), next))
+			if v := w.ProcessPacket(makeV4TCPPacketFlags(nil, next+69, 0x10)); v != engine.VerdictDrop {
+				t.Errorf("the other set still strips SACK from a bare ACK, got %v", v)
+			}
+			if bound := w.connTracker.GetSetForIncoming("10.0.0.1", 12345, "1.2.3.4", 443); bound == nil || bound.Id != video.Id {
+				t.Errorf("the other set keeps the connection's incoming handling, got %v", bound)
+			}
+		})
+	}
+}
+
+func TestARetransmittedFastOpenSynKeepsTheName(t *testing.T) {
+	set := newFragmentingYTImagesSet()
+	w := newInjectingWorker(t, &set)
+	const isn = uint32(1000)
+	const key = "10.0.0.1:12345->1.2.3.4:443"
+
+	hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+	w.ProcessPacket(makeV4TCPPacketFlags(hello, isn, 0x02))
+	w.ProcessPacket(makeV4TCPPacketFlags(nil, isn, 0x02))
+	if host, _, found := w.tlsCache.Lookup(key); !found || host != "i.ytimg.com" {
+		t.Fatalf("a retransmitted SYN of the same connection must keep the name its first SYN carried, got %q found=%v", host, found)
+	}
+
+	ch, _ := log.GetConnectionHub().Subscribe()
+	defer log.GetConnectionHub().Unsubscribe(ch)
+	if v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), isn+1+uint32(len(hello)))); v != engine.VerdictDrop {
+		t.Errorf("later data of the fast-open connection must get the set's strategy, got %v", v)
+	}
+	if got := loggedSet(t, ch); got != set.Name {
+		t.Errorf("later data of the fast-open connection: want set %q, got %q", set.Name, got)
+	}
+
+	w.ProcessPacket(makeV4TCPPacketFlags(nil, 777777, 0x02))
+	if _, _, found := w.tlsCache.Lookup(key); found {
+		t.Error("a SYN with another initial sequence number opens a new connection and must drop the name")
 	}
 }
 

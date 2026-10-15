@@ -27,19 +27,21 @@ type connInfo struct {
 type tlsInfo struct {
 	host       string
 	tlsVersion uint16
+	helloSeq   uint32
 	lastSeen   time.Time
 	decidedBy  *sni.SuffixSet
 	set        *config.SetConfig
 }
 
 type tlsInfoCache struct {
-	mu    sync.RWMutex
-	conns map[string]*tlsInfo
+	mu      sync.RWMutex
+	conns   map[string]*tlsInfo
+	current *sni.SuffixSet
 }
 
 const maxTLSCacheEntries = 20000
 
-func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16) {
+func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, helloSeq uint32) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -63,6 +65,7 @@ func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16) {
 	c.conns[connKey] = &tlsInfo{
 		host:       host,
 		tlsVersion: tlsVersion,
+		helloSeq:   helloSeq,
 		lastSeen:   time.Now(),
 	}
 }
@@ -93,32 +96,43 @@ func (c *tlsInfoCache) Decide(connKey string, matcher *sni.SuffixSet, set *confi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.current != nil && c.current != matcher {
+		return
+	}
 	if info, exists := c.conns[connKey]; exists {
 		info.decidedBy = matcher
 		info.set = set
 	}
 }
 
-func (c *tlsInfoCache) ForgetDecisions() {
+func (c *tlsInfoCache) ForgetDecisions(current *sni.SuffixSet) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	c.current = current
 	for _, info := range c.conns {
 		info.decidedBy = nil
 		info.set = nil
 	}
 }
 
-func (c *tlsInfoCache) Drop(connKey string) {
+func (c *tlsInfoCache) DropOtherConnection(connKey string, firstSeq uint32) {
+	sameConnection := func(info *tlsInfo) bool {
+		return info.helloSeq-firstSeq < 1<<16
+	}
+
 	c.mu.RLock()
-	_, exists := c.conns[connKey]
+	info, exists := c.conns[connKey]
+	keep := !exists || sameConnection(info)
 	c.mu.RUnlock()
-	if !exists {
+	if keep {
 		return
 	}
 
 	c.mu.Lock()
-	delete(c.conns, connKey)
+	if info, exists := c.conns[connKey]; exists && !sameConnection(info) {
+		delete(c.conns, connKey)
+	}
 	c.mu.Unlock()
 }
 

@@ -354,7 +354,7 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	}
 
 	if !reuse && p.state != nil && p.state.tlsCache != nil {
-		p.state.tlsCache.ForgetDecisions()
+		p.state.tlsCache.ForgetDecisions(matcher)
 	}
 
 	if !reuse && p.state != nil && p.state.destState != nil {

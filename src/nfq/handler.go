@@ -307,15 +307,17 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		st = nil
 	}
 
-	tlsKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
+	addressMatched := st != nil
+
+	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 	if cfg.IsTCPPort(dport) && tcp[13]&0x12 == 0x02 {
-		w.tlsCache.Drop(tlsKey)
+		w.tlsCache.DropOtherConnection(connKey, binary.BigEndian.Uint32(tcp[4:8])+1)
 	}
 
 	var connSet *config.SetConfig
 	connHost := ""
 	if cfg.IsTCPPort(dport) && tcp[13]&0x02 == 0 && !startsClientHello(payload) {
-		connSet, connHost = w.connectionSet(matcher, tlsKey, pkt.srcMac, pkt.ver, dport)
+		connSet, connHost = w.connectionSet(matcher, connKey, pkt.srcMac, pkt.ver, dport)
 	}
 
 	matchedHint := false
@@ -353,7 +355,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	matchedConn := false
-	if connSet != nil && (!matched || ((matchedHint || matchedLearned) && (len(payload) == 0 || fragmentsOrDesyncs(connSet)))) {
+	if connSet != nil && connSet != set && (!matched || ((matchedHint || matchedLearned) && !addressMatched && fragmentsOrDesyncs(connSet))) {
 		matched = true
 		set = connSet
 		st = nil
@@ -388,8 +390,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	if matched && !routeHandsOff && cfg.IsTCPPort(dport) && set.TCP.Duplicate.Enabled && set.TCP.Duplicate.Count > 0 {
 		log.Tracef("TCP duplicate to %s:%d (%d copies, set: %s)", pkt.dstStr, dport, set.TCP.Duplicate.Count, set.Name)
 
-		dupConnKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
-		dupHost, dupTLS, _ := w.tlsCache.Lookup(dupConnKey)
+		dupHost, dupTLS, _ := w.tlsCache.Lookup(connKey)
 
 		observeFlow(cfg, pkt, sport, dport, set, dupHost)
 
@@ -422,7 +423,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	if isRst && cfg.IsTCPPort(dport) {
 		log.Tracef("RST to %s:%d", pkt.dstStr, dport)
 		if matched && set != nil && set.TCP.RSTProtection.Enabled {
-			connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 			if w.connTracker.ShouldDropOutboundRST(connKey) {
 				log.Warnf("RST protection: dropped outbound RST to %s:%d — connection not established", pkt.dstStr, dport)
 				recordRSTDrop(cfg)
@@ -433,7 +433,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if isAck && !isSyn && !isRst && cfg.IsTCPPort(dport) && matched && set != nil && set.TCP.RSTProtection.Enabled {
-		connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 		w.connTracker.MarkEstablished(connKey)
 	}
 
@@ -467,7 +466,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
-			connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 			w.connTracker.RegisterOutgoing(connKey, set)
 		}
 
@@ -503,7 +501,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			log.Tracef("TLS record: type=%x ver=%x%x len=%d", payload[0], payload[1], payload[2],
 				int(payload[3])<<8|int(payload[4]))
 		}
-		connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 
 		host, tlsVersion, _ = sni.ParseTLSClientHelloSNI(payload)
 
@@ -524,7 +521,11 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		isClientHello = host != ""
 
 		if host != "" && tlsVersion != 0 {
-			w.tlsCache.Store(connKey, host, tlsVersion)
+			helloSeq := binary.BigEndian.Uint32(tcp[4:8])
+			if tcp[13]&0x02 != 0 {
+				helloSeq++
+			}
+			w.tlsCache.Store(connKey, host, tlsVersion, helloSeq)
 		}
 
 		if captureManager := capture.GetManager(cfg); captureManager != nil {
@@ -532,8 +533,10 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if host != "" {
+			var decided *config.SetConfig
 			if mSNI, stSNI := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, tlsVersion, pkt.ver); mSNI {
 				if stSNI.MatchesTCPDPort(dport) {
+					decided = stSNI
 					matchedSNI = true
 					matched = true
 					set = stSNI
@@ -541,6 +544,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 					registerLearnedRoute(cfg, stSNI, pkt.dst, host)
 				}
 			}
+			w.tlsCache.Decide(connKey, matcher, decided)
 		}
 
 		if matched && !matchedSNI && set != nil && !set.MatchesTLSVersion(tlsVersion) {
@@ -576,7 +580,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if host == "" || tlsVersion == 0 {
-		connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 		if cachedHost, cachedTLS, found := w.tlsCache.Lookup(connKey); found {
 			if host == "" {
 				host = cachedHost
@@ -598,9 +601,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		sniTarget = set.Name
 	} else if matchedIP {
 		ipTarget = st.Name
-	}
-	if sniTarget == "" && connSet != nil && !isClientHello {
-		sniTarget = connSet.Name
 	}
 
 	if matched && host != "" && cfg.IsTCPPort(dport) {
@@ -666,8 +666,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	stallTracked := false
 	if matched && isClientHello && host != "" && cfg.IsTCPPort(dport) &&
 		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) {
-		stallKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
-		stallCount, stallFirstSeen = w.destState.RecordClientHello(stallKey, host)
+		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host)
 		stallTracked = true
 	}
 
@@ -713,7 +712,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		if stallTracked && set.TCP.IPBlockDetect.Enabled && !routeHandsOff {
 			ibd := &set.TCP.IPBlockDetect
 			dstIPPort := fmt.Sprintf("%s:%d", pkt.dstStr, dport)
-			ibConnKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 
 			threshold := ibd.RetransmitThreshold
 			if threshold <= 0 {
@@ -725,8 +723,8 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			}
 
 			if stallCount >= threshold || (stallCount > 1 && time.Since(stallFirstSeen) > timeout) {
-				if !w.destState.HasRSTSent(ibConnKey) {
-					w.destState.MarkRSTSent(ibConnKey)
+				if !w.destState.HasRSTSent(connKey) {
+					w.destState.MarkRSTSent(connKey)
 					if pkt.ver == IPv4 {
 						w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
 					} else {
@@ -745,7 +743,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
-			connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 			w.connTracker.RegisterOutgoing(connKey, set)
 		}
 
