@@ -13,8 +13,8 @@ of them, out of its packet processing.
 Services that route by policy or proxy transparently use the same 32 bits: Xray and XKeen,
 sing-box and mihomo, XrayUI, podkop, Tailscale, WireGuard, mwan3. When two of them use the
 same bit, one can take the other's packets for its own, and a service that writes the whole
-mark erases the bits the others put there. This page lists the bits b4 writes and reads, the
-routing rules that go with them, and the values some other router services use.
+mark erases the bits the others put there. The sections below list the bits b4 writes and
+reads, the routing rules that go with them, and the values some other router services use.
 
 ## Reading a mark
 
@@ -91,7 +91,7 @@ packet processing and through every set that carries the router's own traffic.
 | b4 rules | A packet is left alone when |
 | --- | --- |
 | Packet processing, nftables (`inet b4_mangle`) | `b4_chain`, the rules for outgoing ports, returns it when its mark has every bit of the queue mark, its bits under `0x27fff` equal `0x24bab`, or it has bit `0x200000`, and during a Discovery run when its mark is exactly the flow or injected mark; `output` accepts a packet with every bit of the queue mark before its jump there. `prerouting`, with the rules for DNS answers and other replies, tests no packet mark and skips connections whose connection mark has every bit of the queue mark. `raw_prerouting` and `raw_output`, which queue DNS queries at priority -300, ahead of conntrack, return a packet with every bit of the queue mark, and during a Discovery run one whose mark is exactly the flow or injected mark; `raw_output` also returns one that leaves through `lo`. While they queue DNS queries, `b4_chain` returns UDP to port 53 |
-| Packet processing, iptables (`B4`, `B4_PREROUTING`) | `B4`, the rules for outgoing ports, first returns a packet whose mark has every bit of the queue mark, as `b4_chain` does on nftables. The jumps to `B4` come from mangle `POSTROUTING`, or, when [device filtering](/docs/settings/core#device-filtering) selects devices, from mangle `FORWARD` for their packets, and from mangle `OUTPUT`, which accepts a packet the router sends with every bit of the queue mark before its jump. `B4` also returns a packet whose bits under `0x27fff` equal `0x24bab` or the mark of a proxy set, or that has bit `0x200000`, and during a Discovery run one whose mark is exactly the flow or injected mark. `B4_PREROUTING` and the rules for DNS answers test no packet mark; with the connmark module, `B4_PREROUTING` skips the same connections as `prerouting` on nftables. DNS queries are queued from `B4_RAW` in the raw table, which raw `PREROUTING` and `OUTPUT` jump to for UDP to port 53 and which returns a packet with every bit of the queue mark, and during a Discovery run one whose mark is exactly the flow or injected mark; while it queues them, `B4` returns UDP to port 53. On KeeneticOS, where b4 never uses `B4_RAW`, and on a kernel before 4.18 (4.14 before 4.14.173) whose raw table cannot queue packets, DNS queries are copied instead: mangle `INPUT` and `FORWARD` jump at their top to `B4_DNSCOPY` for UDP to port 53, and mangle `OUTPUT` for such UDP that does not leave through `lo`. `B4_DNSCOPY` returns a packet with every bit of the queue mark and copies every other one to NFLOG group `queue.start_num`, 537 by default, with the prefix `b4dns`; while it copies them, `B4` returns UDP to port 53 as well, and, as with `B4_RAW`, the rules for DNS answers skip UDP to port 53. When b4 can neither queue DNS queries from the raw table nor copy them, the rules for DNS queries sit in `B4_PREROUTING` and mangle `OUTPUT` instead and test no packet mark |
+| Packet processing, iptables (`B4`, `B4_PREROUTING`) | `B4`, the rules for outgoing ports, first returns a packet whose mark has every bit of the queue mark, as `b4_chain` does on nftables. The jumps to `B4` come from mangle `POSTROUTING`, or, when [device filtering](../settings/core.md#device-filtering) selects devices, from mangle `FORWARD` for their packets, and from mangle `OUTPUT`, which accepts a packet the router sends with every bit of the queue mark before its jump. `B4` also returns a packet whose bits under `0x27fff` equal `0x24bab` or the mark of a proxy set, or that has bit `0x200000`, and during a Discovery run one whose mark is exactly the flow or injected mark. `B4_PREROUTING` and the rules for DNS answers test no packet mark; with the connmark module, `B4_PREROUTING` skips the same connections as `prerouting` on nftables. DNS queries are queued from `B4_RAW` in the raw table, which raw `PREROUTING` and `OUTPUT` jump to for UDP to port 53 and which returns a packet with every bit of the queue mark, and during a Discovery run one whose mark is exactly the flow or injected mark; while it queues them, `B4` returns UDP to port 53. On KeeneticOS, where b4 never uses `B4_RAW`, and on a kernel before 4.18 (4.14 before 4.14.173) whose raw table cannot queue packets, DNS queries are copied instead: mangle `INPUT` and `FORWARD` jump at their top to `B4_DNSCOPY` for UDP to port 53, and mangle `OUTPUT` for such UDP that does not leave through `lo`. `B4_DNSCOPY` returns a packet with every bit of the queue mark and copies every other one to NFLOG group `queue.start_num`, 537 by default, with the prefix `b4dns`; while it copies them, `B4` returns UDP to port 53 as well, and, as with `B4_RAW`, the rules for DNS answers skip UDP to port 53. When b4 can neither queue DNS queries from the raw table nor copy them, the rules for DNS queries sit in `B4_PREROUTING` and mangle `OUTPUT` instead and test no packet mark |
 | The queue itself, both backends | b4 releases a packet unchanged when its mark has bit `0x200000`, has `0x24bab` under `0x27fff`, or has every bit of the queue mark with the rest within `0x27fff` and is not exactly one of Discovery's two marks |
 | Routing sets other than block sets, packets entering the router (`b4r_*_pre`), including the router's own packets a proxy set loops through `lo` | Its mark has every bit of the queue mark or bit `0x40000`, or its bits under `0x27fff` are not zero and, in a proxy set's chain, differ from that set's own mark |
 | Routing sets, the router's own packets (`b4r_*_out`) | Its mark has bit `0x40000` or any bit under `0x27fff`. A packet with every bit of the queue mark is left alone as well, after a set routed through an interface has given it the set's mark when its destination is in the set; a set that leaves the router's own traffic alone and lists its devices only by IP address does this only for packets from those addresses |
@@ -115,12 +115,12 @@ packet processing and through every set that carries the router's own traffic.
 | TUN capture | Bit `0x40000000` of the packet mark. Masked |
 | Discovery, during a run | The whole packet mark of a packet whose connection mark is exactly the flow mark, and the whole connection mark of a connection that carries a packet whose mark is exactly the flow mark; both get the flow mark |
 
-**Set DSCP** and the sets' own [DSCP values](/docs/sets/routing#dscp) write the DSCP field of the IP header, not a mark. A set's own value adds no packet mark, connection mark or routing rule: its rules sit in the chain or table **Set DSCP** uses, `B4_DSCP` or `inet b4_dscp`, which b4 installs while **Set DSCP** is on or a set writes its own value, and they choose the value by the destination address alone.
+**Set DSCP** and the sets' own [DSCP values](../sets/routing.md#dscp) write the DSCP field of the IP header, not a mark. A set's own value adds no packet mark, connection mark or routing rule: its rules sit in the chain or table **Set DSCP** uses, `B4_DSCP` or `inet b4_dscp`, which b4 installs while **Set DSCP** is on or a set writes its own value, and they choose the value by the destination address alone.
 
 ## The queue mark
 
 The queue mark is the **Packet Mark** setting under **Settings, Core, Packet Engine**, `queue.mark` in the
-[configuration file](/docs/advanced/config#the-queue-section) and `--mark` on the command
+[configuration file](../advanced/config.md#the-queue-section) and `--mark` on the command
 line. The default is `0x8000` (32768); the web interface takes the value in decimal, and `0`
 stands for the default. b4 sends every fake, split segment and packet it puts back on the
 wire from raw sockets carrying this mark, with bit `0x10000000` added in TUN mode. The
@@ -166,10 +166,10 @@ queries, which already carry the new value, like those of a device, so the DNS r
 set can stop applying. The raw sockets, b4's release of its own packets from the queue and,
 in TUN mode, the `B4_TUN` chain take the new value at the next start of b4, which the web
 interface asks for. Discovery's two marks follow the new value unless `system.checker` sets
-them to something other than the **Packet Mark** plus 1 and plus 2. Before 1.84.0 the web
-interface sent them back with every save, so a save that changed the **Packet Mark**, or one
-made while `--mark` was in effect, could leave them there at values that no longer follow it,
-such as the old value plus 1 and plus 2. Deleting `discovery_flow_mark` and
+them to something other than the **Packet Mark** plus 1 and plus 2. A configuration saved
+from the web interface of a version before 1.84.0 can hold them at values that no longer follow
+it, such as the old value plus 1 and plus 2, after a save that changed the **Packet Mark** or
+one made while `--mark` was in effect. Deleting `discovery_flow_mark` and
 `discovery_injected_mark` from `system.checker` while b4 is stopped lets them follow again.
 
 b4 refuses a value that:
@@ -202,7 +202,7 @@ lies within `0x27fff`.
 
 ## Sets routed through an interface
 
-A set routed through an [output interface](/docs/sets/routing#output-interface) gets a mark
+A set routed through an [output interface](../sets/routing.md#output-interface) gets a mark
 and a routing table from the interface name, the egress IP and the kill switch. Sets that
 agree on all three share both.
 
@@ -211,7 +211,7 @@ agree on all three share both.
 | Mark | From a hash of the three, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
 | Table | `100`-`249`, skipping tables named in `rt_tables`, looked up by another service's rule, or holding routes b4 did not add |
 | Rule | `ip rule add fwmark <mark>/0x27fff lookup <table> priority <10000 + table>`, for IPv4, and for IPv6 when **Enable IPv6 Support** is on |
-| Table contents | A default route through the interface, plus `blackhole default metric 4096` with the [kill switch](/docs/sets/routing#kill-switch) |
+| Table contents | A default route through the interface, plus `blackhole default metric 4096` with the [kill switch](../sets/routing.md#kill-switch) |
 | Pinned values | `routing.fwmark` and `routing.table` in the configuration file or through the API, used only when both are set, the mark lies within `0x27fff`, is not `0x24bab`, does not contain every bit of the queue mark and does not equal its bits under `0x27fff` |
 
 The set marks the first packet of each connection to its destinations and saves the mark in
@@ -229,7 +229,7 @@ this order:
 A set that excludes source devices returns their packets before step 2, only the packets of
 its devices enter the chain of a set limited to source devices, and a set limited to source
 interfaces applies steps 3 and 4 only to packets arriving on them.
-[Device filtering](/docs/settings/core#device-filtering) under **Settings, Core, Devices** narrows the
+[Device filtering](../settings/core.md#device-filtering) under **Settings, Core, Devices** narrows the
 chain the same way. `b4r_<set>_out` does the same for the router's own connections when the
 set carries them, and gives the set's mark to b4's own queue-marked packets addressed to the
 set; a set limited to source devices that are all given by IP address does this only for
@@ -259,7 +259,7 @@ On a test box the two sets on `wg0` got:
 ## Proxy sets and Telegram over WebSocket
 
 Sets in the *Upstream SOCKS5 proxy* and *Telegram over WebSocket* routing modes, and the
-[Telegram over WebSocket](/docs/telegram/websocket-bridge) switch, divert connections to
+[Telegram over WebSocket](../telegram/websocket-bridge.md) switch, divert connections to
 transparent listeners of b4 with TPROXY. Each has a mark, and the mark gives the listener
 port.
 
@@ -338,7 +338,7 @@ route with no strategy at all.
 MTProto proxy and Telegram over WebSocket put it on their connections through
 Cloudflare-proxied domains or a custom WebSocket domain, and to a Cloudflare Worker unless
 **Let sets process Worker connections** is on; see
-[DPI processing](/docs/telegram/websocket-bridge#dpi-processing).
+[DPI processing](../telegram/websocket-bridge.md#dpi-processing).
 
 Lookups and probes carrying the queue mark skip packet processing, and proxy sets leave
 them alone. The DPI Detector's direct mode uses the queue mark to measure the network
@@ -363,7 +363,7 @@ In TUN mode (`queue.mode: "tun"`) packets reach b4 through a TUN device, `b4tun0
 
 | Item | Rule |
 | --- | --- |
-| Capture | Chain `B4_TUN`, jumped from mangle `OUTPUT` and `PREROUTING` (from `PREROUTING` through `B4_TUN_GATE` when [device filtering](/docs/settings/core#device-filtering) selects devices), or only from `OUTPUT` while b4 captures only the router's own connections (see [Packet engine](/docs/settings/core#packet-engine)): sets `0x40000000/0x40000000` on UDP DNS queries and answers, on the first packets of connections to the capture ports (on every packet of them where `xt_connbytes` is missing), on every TCP packet to the capture ports of a set's packet duplication addresses, and on TCP resets from the capture ports while a set has **RST Injection Protection** on or an escalation target |
+| Capture | Chain `B4_TUN`, jumped from mangle `OUTPUT` and `PREROUTING` (from `PREROUTING` through `B4_TUN_GATE` when [device filtering](../settings/core.md#device-filtering) selects devices), or only from `OUTPUT` while b4 captures only the router's own connections (see [Packet engine](../settings/core.md#packet-engine)): sets `0x40000000/0x40000000` on UDP DNS queries and answers, on the first packets of connections to the capture ports (on every packet of them where `xt_connbytes` is missing), on every TCP packet to the capture ports of a set's packet duplication addresses, and on TCP resets from the capture ports while a set has **RST Injection Protection** on or an escalation target |
 | Rule | `fwmark 0x40000000/0x40000000 lookup <table>` at priority 10, or one less than the lowest rule another service has at 5-9, but not below 4 |
 | Table | `default dev b4tun0`; chosen from 96 down to 61, skipping 77 and tables in use, or next to `queue.tun.route_table` |
 | Packets b4 writes back | Socket mark queue mark + `0x10000000`, not tracked by conntrack (`raw OUTPUT ... -j CT --notrack`) unless `system.tables.skip_setup` is on or the kernel has no raw table or no `CT` target. When `system.tables.skip_setup` is off and b4 cannot install this rule, the one for packets toward a device or the SNAT into `b4tun0`, it captures only the router's own connections |
@@ -519,7 +519,7 @@ Where these meet b4:
   mangle rules.
 - **XrayUI.** Its bit 16 is outside b4's. Its `DIVERT` rule and the order of the two
   services in mangle `PREROUTING` are described in
-  [b4 with Xray or XrayUI](/docs/guides/xray#xrayuis-tproxy-rule-and-connections-b4-diverts).
+  [Using b4 with Xray or XrayUI](./xray.md#xrayuis-tproxy-rule-and-connections-b4-diverts).
 - **sing-box, mihomo.** Their default marks lie under `0x27fff`; only sing-box's bridge
   outbound, when it falls back to iptables, uses bit `0x40000000`, b4's TUN capture bit.
   `auto_redirect`, in mihomo only with `route-address-set` or `route-exclude-address-set`,
@@ -593,10 +593,8 @@ Where these meet b4:
   OpenClash takes the router's own connections while router self-proxy is on, the default;
   podkop always takes those to addresses in its lists. Neither exempts b4's own connections.
 
-:::note
 The values in the table come from the releases named there and change between versions.
 `ip rule` and the firewall listing on the router show what is actually installed.
-:::
 
 ## Checking marks on the router
 

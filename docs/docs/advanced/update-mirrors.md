@@ -1,92 +1,41 @@
 ---
 sidebar_position: 3
-title: Update mirrors
+title: Downloading b4 when GitHub is blocked
+description: Mirrors, a personal Cloudflare Worker and installing from a file, for networks where b4 cannot download from GitHub.
 ---
 
-# Update mirrors
+b4 downloads its releases, the installer and the GeoSite and GeoIP databases from GitHub. On some networks the host that serves the release files, `release-assets.githubusercontent.com`, is blocked, and an update stops with a connection timeout. There are three ways around it: mirrors, a personal Cloudflare Worker, and installing from a file.
 
-b4 downloads its own releases, the installer script and the GeoIP and GeoSite databases from
-GitHub. A release archive is not served by `github.com` itself: the download URL answers with
-a redirect to `release-assets.githubusercontent.com`, and that host is dropped by address on
-some networks. The installer then reports a connection timeout and the update stops.
+## How b4 picks a source {#sources}
 
-A mirror is a host that fetches from GitHub on b4's behalf and passes the bytes back, so the
-client never opens a connection to a blocked address. b4 ships with a list of mirrors and
-tries them only after a direct attempt to GitHub has failed, which means an unrestricted
-network never touches them.
+b4 tries GitHub first, then each mirror in **Update mirrors**, then the mirrors built into b4, then SourceForge. Every source serves the same archive, checked against the same published SHA256. On a network without blocks, the mirrors are never used.
 
-The order is fixed: GitHub first, then each configured mirror, then the mirrors built into
-b4, then SourceForge. Every step downloads the same archive and verifies it against the same
-published SHA256.
+## The Update mirrors setting {#the-update-mirrors-setting}
 
-## The Update mirrors setting
+**Update mirrors** under **Settings > System > Service** takes a comma-separated list of mirror addresses. They are tried before the built-in mirrors, and b4 passes them to the installer, so an update from the web interface uses them too. Only `https` addresses are accepted. An entry with a query string or a fragment is ignored.
 
-Under **Settings, System, Service**, the **Update mirrors** field takes a comma-separated list
-of base URLs. They are tried ahead of the built-in mirrors, and both the service and the
-installer use them: on update, b4 passes the list to the installer in the `B4_MIRRORS`
-environment variable.
-
-Only `https` URLs are accepted. An entry carrying a query string or a fragment is ignored,
-as is one that is not a URL at all.
-
-:::info Reachability is per-provider, not per-country
-A mirror that answers on one network can be unreachable on another with the same country
-code. Blocking is applied by individual providers, so the list is a chain rather than a
-single recommended host.
-:::
+A mirror that works on one network can be blocked on another, because each provider blocks on its own. A list of several mirrors is tried in order.
 
 :::warning A mirror serves the binary that becomes b4
-b4 verifies every download against the SHA256 published beside it, but the checksum comes
-from the same host as the archive, so a host serving both can serve a matching pair. Only
-mirrors under the reader's own control, or ones the reader trusts, belong in this field.
+b4 checks every download against the SHA256 published next to it, but the checksum comes from the same host as the archive. A host that serves both can serve a matching pair. Only mirrors under one's own control, or trusted ones, belong in this field.
 :::
 
-The setting is not writable over MCP, for the same reason.
+## A personal Cloudflare Worker {#a-personal-cloudflare-worker}
 
-## A personal Cloudflare Worker
+A Cloudflare Worker is a free mirror on a personal Cloudflare account, under a `*.workers.dev` name. It fetches from GitHub inside Cloudflare's network and passes the result on. Every account gets its own subdomain, so there is no single name to block.
 
-A Cloudflare Worker is a free per-user mirror hosted on the reader's own Cloudflare account
-under a `*.workers.dev` name. It fetches from GitHub inside Cloudflare's network and streams
-the response back.
+On some networks `*.workers.dev` names are throttled: small responses get through, while an archive crawls. b4 abandons a stalled download and moves on to the next source. The [checks](#checking-it-works) below show whether a Worker is usable from a given network. A Worker bound to a custom domain is not affected.
 
-A Worker per reader is harder to block than one shared host. Each account gets its own
-`*.workers.dev` subdomain, so there is no single name to filter, and the free-tier request
-quota is spent only by its owner.
+This Worker is not the [Cloudflare Worker relay](../telegram/cloudflare-worker.md) for Telegram, which runs a different script.
 
-:::warning `workers.dev` is throttled on some networks
-Measured from a Moscow provider: a `*.workers.dev` name completed its TLS handshake in 130 ms
-and delivered the first bytes in 390 ms, then the transfer clamped to about 40 bytes per
-second, so a 128 KB file reached 16 KB after 400 seconds. Over the same link and in the same
-minute, `speed.cloudflare.com` delivered 6 MB in 0.38 seconds and the same file came from
-GitHub directly in 0.22 seconds. Cloudflare is not the limit there; the `workers.dev` name is.
-
-Small responses still get through, so the health check and the release list work while an
-archive does not. b4 handles that: a transfer holding below 1 KB/s for 30 seconds is
-abandoned and the next mirror is tried, which costs about 36 seconds before moving on.
-
-A Worker bound to a custom domain rides ordinary Cloudflare addresses and is not affected.
-Check with the commands below before relying on a `workers.dev` name for downloads.
-:::
-
-:::info This is not the Telegram relay
-The [Cloudflare Worker relay](../telegram/cloudflare-worker) for MTProto is a different
-Worker with a different script. That one carries a long-lived WebSocket, which Cloudflare
-reclaims mid-session, which is why it sits last among the WebSocket routes. A mirror answers
-one short request and closes, so the same limit does not apply to it.
-:::
-
-### Setting one up
+### Setup {#setting-one-up}
 
 1. Create a free Cloudflare account.
-2. Under **Compute** -> **Workers & Pages**, create a Worker from the default template and
-   deploy it.
-3. Replace the Worker code with the script below and deploy again.
-4. Copy the `name-1234.username.workers.dev` domain into **Update mirrors**, as
-   `https://name-1234.username.workers.dev`.
+2. Under **Compute** > **Workers & Pages**, create a Worker from the default template and deploy it.
+3. Replace the Worker's code with the script below and deploy again.
+4. In b4, add the Worker's address, such as `https://name-1234.username.workers.dev`, to **Update mirrors** under **Settings > System > Service**.
 
-`workers.dev` has to be reachable, and fast enough, from the network in question.
-
-### The script
+### The script {#the-script}
 
 ```javascript
 const REPO_OWNER = "DanielLavrushin";
@@ -255,24 +204,9 @@ export default {
 };
 ```
 
-Three details in it are about what the Worker is allowed to reach.
+The script fetches only from GitHub and SourceForge, and only for the repository owners it lists, so it cannot serve as an open proxy. Release archives pass through it without being cached.
 
-`redirect: "follow"` is what makes the Worker useful at all. GitHub answers a release
-download with a redirect to its asset host, and a mirror that passed that redirect back to
-the client would send the client straight to the address it cannot reach.
-
-`allowed()` checks the hostname against a fixed list and the first path segment against a
-list of repository owners, so the Worker cannot be used as a general-purpose proxy for
-arbitrary destinations. The `/b4/` routes build their URLs from a validated tag and file
-name for the same reason.
-
-Release archives are fetched without `cacheEverything`, so they stream through rather than
-populating Cloudflare's cache. Cloudflare's terms reserve large-file delivery through the
-CDN for its paid storage products. Only the small JSON and text responses are cached, for
-five minutes, which is what keeps the GitHub API's hourly per-address limit from being
-reached.
-
-### Checking it works
+### Checking the result {#checking-it-works}
 
 ```sh
 curl -sI https://name-1234.username.workers.dev/b4/health
@@ -280,76 +214,39 @@ curl -sL -o /dev/null -w '%{http_code} %{size_download}\n' \
   https://name-1234.username.workers.dev/b4/dl/latest/b4-linux-arm64.tar.gz
 ```
 
-The second command downloads a release archive through the Worker and prints its status and
-size.
+The first command checks that the Worker answers. The second downloads a release archive through it and prints the status and the size. A download that stalls here means `workers.dev` is throttled on this network.
 
-## Installing from a file
+## Installing from a file {#installing-from-a-file}
 
-When no source can be reached at all, the archive can be carried in by hand. In the update
-window, **Install from a file instead** takes a `b4-linux-<arch>.tar.gz` downloaded on
-another machine.
+When no source can be reached, the archive can be brought in by hand, from a machine that has access.
 
-The window links to both release pages, because the machine running the browser may not
-reach GitHub either. **SourceForge mirror** opens that version's folder at
-`sourceforge.net/projects/b4core/files/<tag>/`, which carries the same archives and the same
-`.sha256` files as the GitHub release.
+Requirements:
 
-Before anything is replaced, the service checks the entry the installer would actually put
-in place: exactly one file named `b4` at the root of the archive, large enough to be the
-service, holding a Linux executable built for this machine. An archive carrying a second
-`b4` deeper in the tree is not what gets installed and does not satisfy the check. An archive for the wrong architecture is refused with both architectures named,
-rather than being installed and rolled back afterwards.
+- A username and a password for the web interface, under **Settings > System > Web Server**. Without them the upload is refused, since it replaces the binary that runs as root.
+- b4 running as a service, not in Docker.
+- The installer script. b4 fetches `install.sh`, or uses the copy it saved at its last successful update. A router that has never been updated from the web interface needs `install.sh` reachable.
 
-The **Expected SHA256** field is optional and compared against the upload before it is
-installed. The checksum on the release page is read in a browser, on a machine that reached
-GitHub, which makes it an independent check: the automatic path takes the archive and its
-`.sha256` from the same host, so a host serving both can serve a matching pair.
+Steps:
 
-Installation itself is the same code path as an ordinary update. The previous binary is set
-aside, the new one is put in place and run once to confirm it works, and a binary that fails
-that check is rolled back.
+1. Open the **Version Management** dialog from the version at the bottom of the side menu.
+2. Click **Install from a file instead**.
+3. On a machine with access, download `b4-linux-<arch>.tar.gz` for the router's architecture from the release page. The dialog links to it on GitHub, and **SourceForge mirror** opens the same release on SourceForge, with the same archives and `.sha256` files.
+4. Click **Choose archive** and pick the file.
+5. Optionally, paste the SHA256 from the release page into **Expected SHA256 (optional)**.
+6. Click **Install**.
 
-:::note MIPS float ABI is not covered by the check
-Hard-float and soft-float MIPS builds carry the same architecture in the executable header,
-so a mismatch between them is not caught by the upload check. It is still caught after the
-swap, by the same check that rolls back any binary that will not run.
-:::
+Before anything is replaced, b4 checks that the archive holds a `b4` binary for this router's architecture, and refuses one built for another. The SHA256 read on the release page, on another machine, is an independent check of the upload. Hard-float and soft-float MIPS builds pass the architecture check alike, so on MIPS the archive name has to match the router, such as `mipsle_softfloat`. A wrong one is rolled back after the swap, as is any new binary that does not run.
 
-:::warning The installer on GitHub has to support it
-b4 fetches `install.sh` from the repository at update time, so the published installer has
-to be a version that understands a supplied archive. b4 checks for that and refuses the
-upload if it is not, rather than handing over to an installer that would ignore the file and
-download a different version instead. A router whose cached installer supports it can use
-that copy instead.
-:::
+## The installer {#the-installer}
 
-:::info The service still needs the installer script
-The upload replaces the download of the release archive, not the download of `install.sh`.
-b4 keeps a copy of the installer next to its configuration after each successful update and
-falls back to it when it cannot be fetched, so a router that has updated once before can
-install from a file with no network at all. On a router that has never updated through the
-service, `install.sh` still has to be reachable.
-:::
-
-Docker is refused, because an image is replaced by pulling a new one, and so is a b4 that is
-not running under a service manager.
-
-:::warning A username and a password have to be set
-The web server only enforces authentication once both are configured, and it listens on
-every interface by default. Uploading a file replaces the binary that runs as root, so the
-route refuses to work at all while the web server would accept any request that reaches the
-port. Credentials are set under **Settings, System, Web Server**.
-:::
-
-## The installer
-
-The installer applies the same order on its own, and reads `B4_MIRRORS` from the
-environment, so a mirror can be used for a first install before there is any configuration
-to hold it:
+The installer tries the sources in the same order and reads `B4_MIRRORS` from the environment. A mirror then works for a first install too, before b4 has any settings:
 
 ```sh
 B4_MIRRORS="https://name-1234.username.workers.dev" sh install.sh
 ```
 
-The value is a space-separated list. `B4_SF_BASE` overrides the SourceForge base in the same
-way.
+The value is a space-separated list. `B4_SF_BASE` replaces the SourceForge address the same way. When `raw.githubusercontent.com` is blocked as well, the Worker serves the installer itself:
+
+```sh
+curl -fsSL https://name-1234.username.workers.dev/b4/raw/main/install.sh -o install.sh
+```

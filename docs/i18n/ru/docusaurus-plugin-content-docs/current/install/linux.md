@@ -1,13 +1,14 @@
 ---
 sidebar_position: 1
 title: Linux
+description: Установка b4 на любой дистрибутив Linux.
 ---
 
-# Linux (универсальная установка)
-
-Подходит для любого дистрибутива: Ubuntu, Debian, Fedora, Alpine, Arch и других.
+Установщик работает на любом дистрибутиве: Ubuntu, Debian, Fedora, Alpine, Arch и других.
 
 ## Установка
+
+От root:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh
@@ -19,15 +20,15 @@ curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh 
 wget -qO- https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh
 ```
 
-Установщик автоматически определяет архитектуру, устанавливает бинарник в `/usr/local/bin` и создаёт конфигурацию в `/etc/b4`.
+Установщик кладёт бинарник в `/usr/local/bin`, а конфигурацию в `/etc/b4`.
 
-Для установки без интерактивных вопросов (с настройками по умолчанию):
+Без вопросов, с настройками по умолчанию:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh -s -- --quiet
 ```
 
-Без терминала на стандартном вводе, например из cron или по `ssh` без `-t`, установщик работает так, как если бы был указан `--quiet`. `--remove` в такой ситуации завершается с ошибкой, если `--quiet` не указан явно, поскольку вопросы об удалении конфигурации показать некому.
+Без терминала, например из cron или по `ssh` без `-t`, установщик работает так, как если бы был указан `--quiet`.
 
 ## Управление сервисом
 
@@ -38,10 +39,10 @@ systemctl start b4
 systemctl stop b4
 systemctl restart b4
 systemctl status b4
-systemctl enable b4      # автозапуск при загрузке
+systemctl enable b4      # запуск при загрузке
 ```
 
-Просмотр логов:
+Логи:
 
 ```bash
 journalctl -u b4 -f
@@ -53,7 +54,7 @@ journalctl -u b4 -f
 rc-service b4 start
 rc-service b4 stop
 rc-service b4 restart
-rc-update add b4 default   # автозапуск при загрузке
+rc-update add b4 default   # запуск при загрузке
 ```
 
 ### SysV init (системы без systemd и OpenRC)
@@ -65,8 +66,6 @@ rc-update add b4 default   # автозапуск при загрузке
 /etc/init.d/b4 status
 ```
 
-`stop` ждёт завершения процесса до двадцати секунд и затем убивает его, а `status` возвращает код 3, если b4 не запущен.
-
 ## Пути
 
 | Что | Где |
@@ -74,11 +73,11 @@ rc-update add b4 default   # автозапуск при загрузке
 | Бинарник | `/usr/local/bin/b4` |
 | Конфигурация | `/etc/b4/b4.json` |
 | Сервис (systemd) | `/etc/systemd/system/b4.service` |
-| Сервис (OpenRC/SysV) | `/etc/init.d/b4` |
+| Сервис (OpenRC, SysV) | `/etc/init.d/b4` |
 
 ## Модули ядра
 
-b4 использует NFQUEUE для перехвата пакетов. Нужные модули ядра обычно загружаются автоматически при запуске сервиса. При проблемах их можно загрузить вручную:
+Движку NFQUEUE нужны модули ядра, которые обычно загружаются при запуске сервиса. Если этого не произошло, их можно загрузить вручную:
 
 ```bash
 modprobe nfnetlink_queue
@@ -86,16 +85,19 @@ modprobe xt_NFQUEUE
 modprobe nf_conntrack
 ```
 
-Для проверки:
+Проверка:
 
 ```bash
 lsmod | grep nfqueue
 ```
 
-:::info LXC-контейнеры
-В LXC-контейнерах модули ядра должны быть загружены на хосте. В конфигурацию контейнера добавляется:
-```
+На ядре без этих модулей можно использовать движок TUN, см. [Движок пакетов](../settings/core.md#packet-engine).
+
+## LXC-контейнеры
+
+В LXC-контейнере модули ядра загружаются на хосте. В конфигурацию контейнера добавляется:
+
+```yaml
 lxc.cgroup2.devices.allow: c 10:200 rwm
 features: nesting=1,keyctl=1
 ```
-:::

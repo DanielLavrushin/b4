@@ -1,40 +1,22 @@
 ---
 sidebar_position: 5
-title: RST Protection
+title: RST Injection Protection
+description: Dropping the connection resets that DPI injects in the server's name.
 ---
 
-Some DPI systems break connections by sending forged TCP RST packets pretending to be the server. The browser treats them as real and closes the connection.
+Some DPI breaks connections by sending a forged TCP reset (RST) in the server's name. The device takes it for a real one and closes the connection. RST injection protection drops resets that do not look like the server's own. It is turned on per set, in the **RST Injection Protection** section of the [General](./general.md) sub-tab.
 
-This feature inspects incoming RST packets and drops the ones that look like injections.
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Enable RST Protection** | Turns the protection on for the set. | Off |
+| **TTL Tolerance** | The largest allowed difference between the TTL of a reset and the TTL of the server's first reply, 1 to 20. | `3` |
 
-## How it works
+b4 drops a reset when, for example:
 
-b4 applies three independent checks to every RST packet:
+- it arrives before the server has answered at all;
+- it is not the first reset on the same connection;
+- its TTL differs from the TTL of the server's replies by more than **TTL Tolerance**, a sign that it came from another point in the network.
 
-| Check | What it drops |
-| --- | --- |
-| **RST before server reply** | The RST arrived before any real reply from the server - a strong sign of an injection |
-| **Repeated RST** | The second or later RST on the same connection - a legitimate connection very rarely sends more than one |
-| **TTL mismatch** | The TTL of the RST packet differs significantly from the TTL of the first real server reply - the packet came from a different network hop |
+A tolerance of 3 fits most networks. When b4 drops resets that the server really sent, a larger value is the fix. Each dropped reset appears in the [logs](../../logs.md) with its reason.
 
-:::info
-Each check runs independently. A packet is dropped when **any one** of them triggers.
-:::
-
-## Settings
-
-### Enable RST Protection
-
-Turns protection on for this set.
-
-### TTL Tolerance
-
-Allowed TTL difference between the RST packet and the real server reply. Range: 1-20, default **3**.
-
-:::tip
-A value of 3 fits most networks. Raise it if b4 falsely drops legitimate RST packets (visible in the logs).
-:::
-
-## Logging
-
-Every dropped RST is shown in the [logs](../../logs) with the trigger reason: TTL mismatch, RST before server reply, or repeated RST.
+The protection pairs with [Escalation](../escalation.md): it keeps the current page working while b4 detects a block, and the **Escalation** tab suggests turning it on.

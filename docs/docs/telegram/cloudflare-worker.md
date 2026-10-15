@@ -1,40 +1,31 @@
 ---
 sidebar_position: 5
 title: Cloudflare Worker relay
+description: Setting up a Cloudflare Worker as a relay to Telegram's data centres, for media that does not load.
 ---
 
-# Cloudflare Worker relay
+A Cloudflare Worker is a small relay that runs on a free Cloudflare account under a `*.workers.dev` name. b4 reaches every Telegram data centre through it. It is the route to add when media, stickers or reactions do not load: data centres 1, 3 and 5 have no WebSocket edge of their own, and where the CF proxy pool is unreachable too, a Worker is their only WebSocket route.
 
-A Cloudflare Worker is a free per-user WebSocket relay, hosted on the reader's own Cloudflare account under a `*.workers.dev` name. b4 can reach any data centre through it, so it covers the ones the shared pool cannot reach from a given network.
+Cloudflare can end a Worker's connection in the middle of a session. b4 therefore tries a Worker last among the WebSocket routes and sets aside one that goes quiet. A Worker is a fallback, not the main route.
 
-It comes last of the WebSocket routes, after Telegram's own edge and after the shared CF proxy pool, and joins the race once those have had a second and a half without connecting, unless it was ranked down after a stall.
+This Worker is not the one under [Update mirrors](../advanced/update-mirrors.md), which stands in for GitHub for b4's own downloads and runs a different script.
 
-:::info A different Worker mirrors b4's own downloads
-[Update mirrors](../advanced/update-mirrors) covers a separate Worker that stands in for GitHub when a release download is blocked. It uses a different script, and the session-length limit below does not apply to it.
-:::
+## Requirements
 
-:::warning A Worker is a fallback, not the main road
-Cloudflare reclaims a stateless Worker mid-session. Measured from a censored network, a single Worker WebSocket carried some 13 to 17 KB before it stopped forwarding and held the connection open in silence, while Telegram's own edge carried a megabyte over the same link. That is long enough to pass a connection test and far too short for a video, which is why a Worker placed ahead of the pool would win the dial and take the session down with it. b4 demotes a Worker that goes quiet mid-session for ten minutes.
-:::
+- A free Cloudflare account.
+- `cloudflare.com`, `cloudflare.dev` and `workers.dev` reachable from the network.
+- For the MTProto proxy, **Transport mode** set to **Auto (WebSocket → TCP)** or **WebSocket only**. Telegram over WebSocket always uses Auto.
 
-Data centres 1, 3 and 5 have no native edge, so a network where the shared pool is also unreachable leaves the Worker as the only WebSocket route to them.
-
-## Setting one up
+## Setup
 
 1. Create a free Cloudflare account.
-2. Under **Compute** -> **Workers & Pages**, create a Worker from the default template and deploy it.
-3. Replace the Worker code with the script below and deploy again.
-4. Copy the `name-1234.username.workers.dev` domain into the **Cloudflare Worker domain** field. Several Workers are comma-separated.
+2. Under **Compute > Workers & Pages**, create a Worker from the default template and deploy it.
+3. Replace the Worker's code with the [script](#the-script) below and deploy it again.
+4. Make sure the Worker's compatibility date is `2026-04-07` or later.
+5. In b4, open **Settings > Telegram** and enter the Worker's domain, such as `name-1234.username.workers.dev`, in **Cloudflare Worker domain** on the **Telegram upstream (shared)** card. Several Workers are separated by commas.
+6. Click **Save Changes**.
 
-`cloudflare.com`, `cloudflare.dev` and `workers.dev` all have to be reachable from the network in question.
-
-:::info Networks that throttle workers.dev
-On some networks the TLS handshake with a `workers.dev` name completes and the stream then stops after the first few kilobytes. b4 counts such a stall against the Worker and sets it aside for ten minutes after two stalls within five minutes. b4's own connections to the Worker skip DPI processing by default; with **Let sets process Worker connections** on, a set whose targets cover the Worker applies its strategy to them. See [DPI processing](./websocket-bridge.md#dpi-processing).
-:::
-
-The Worker needs a **compatibility date of `2026-04-07` or later**. From that date the runtime answers a close frame by itself, which is the documented cause of `The Workers runtime canceled this request because it detected that your Worker's code had hung`.
-
-The step-by-step with screenshots is maintained by tg-ws-proxy: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md). b4 asks the Worker for a data-centre address without a port: Telegram serves the same endpoint on 80, 443 and 5222, `443` is the one every data centre listens on, and DC 203 does not answer on 5222 at all.
+tg-ws-proxy keeps a step-by-step guide with screenshots: [CfWorker.md](https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md).
 
 ## The script
 
@@ -132,13 +123,21 @@ export default {
 };
 ```
 
-Two details in it are about how long the relay lives:
+## Checking the result
 
-The loop that carries data from Telegram back to the browser is passed to `ctx.waitUntil()`. A promise that is neither awaited nor returned nor handed to `waitUntil` is a floating promise, and the runtime may cancel it as soon as the handler returns, which for this Worker is immediately: it returns the moment the WebSocket is accepted. Measured against a Worker under load, 47 of 58 sessions were cancelled that way, half of them inside 400 ms, leaving Telegram with half a photo.
+**Test connection** on the **Telegram upstream (shared)** card lists a result for each route. The Worker's line starts with `wsworker://` and shows its latency, or the stage where it failed.
 
-`socket.closed` and the reader's and writer's `closed` promises get a no-op `catch`. Nothing awaits them, so when Cloudflare reclaims the socket each one surfaces as an unhandled rejection, three per session in the Worker log.
+## When it does not work
 
-Neither makes a stateless Worker a good place for a long session. `waitUntil` is documented to extend execution by about 30 seconds and a Telegram session lasts minutes, so a large download can still be cut. Cloudflare's answer for a connection that must outlive a request is a Durable Object with WebSocket hibernation.
+- **Cloudflare reports `The Workers runtime canceled this request because it detected that your Worker's code had hung`.** The compatibility date is earlier than `2026-04-07`. From that date on, the runtime answers a closing frame by itself.
+- **The stream stops after the first few kilobytes.** Some networks slow down `workers.dev`: the handshake completes, then the data stalls. b4 sets a Worker aside for ten minutes after two stalls within five minutes. When a set already has a strategy that works for Cloudflare, **Let sets process Worker connections** applies it to the Worker connections too, see [DPI processing](./websocket-bridge.md#dpi-processing).
+- The log line of a stall is described under [The upstream goes silent mid-session](./troubleshooting.md#the-upstream-goes-silent-mid-session).
+
+## How the script works
+
+The script accepts a WebSocket on the `/apiws` path and opens a TCP connection to port 443 of the address b4 asks for, the port every Telegram data centre listens on. The loop that carries data back from Telegram is handed to `ctx.waitUntil()`, so the runtime does not cancel it as soon as the handler returns. The `closed` promises get an empty `catch`, so a socket that Cloudflare reclaims does not log unhandled rejections.
+
+A stateless Worker still does not suit long sessions: `waitUntil` extends execution by about 30 seconds, and a large download can be cut. For a connection that has to outlive a request, Cloudflare offers a Durable Object with WebSocket hibernation.
 
 ## Credits
 

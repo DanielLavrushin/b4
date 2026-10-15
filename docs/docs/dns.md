@@ -1,252 +1,101 @@
 ---
 sidebar_position: 15
-title: DNS
+title: DNS for sets
+description: How a set answers DNS for its domains - another resolver, DNS over HTTPS, pinned addresses, the IPv4 fallback and ECH keys.
 ---
 
-A set decides which resolver answers the domains it targets. Everything else keeps going to the resolver the client already chose. This page describes what b4 intercepts, what a set does with a query it matched, and the global DNS settings that apply to every set.
+A set can answer DNS for the domains it targets: send them to another resolver, answer them with fixed addresses, or remove parts of the answers. Names that no set targets go to the resolver the device chose, unchanged.
 
-## What b4 intercepts
+The options are on the set's **DNS & Routing** tab, under **DNS Redirect**, see [DNS & Routing](sets/routing.md#dns-redirect).
 
-| Transport | How it reaches b4 | When |
-| --- | --- | --- |
-| UDP port 53 | Queue rules in `PREROUTING` and `OUTPUT`: for requests (`dport 53`) in the raw table, ahead of conntrack (priority -300 on nftables), and for replies (`sport 53`) in the mangle table. With iptables on kernels before 4.18 (4.14 before 4.14.173), on KeeneticOS and wherever the raw table cannot queue packets, requests are not queued: a rule at the top of mangle `INPUT`, `FORWARD` and `OUTPUT` sends b4 a copy of each one with NFLOG and the request goes on at once, while replies are queued as before; see [Copied requests](#copied-requests). On KeeneticOS with a later kernel, requests are queued in the mangle table | Always, while b4 is running |
-| TCP port 53 | A `nat` `REDIRECT` into a local listener, port 5453 by default; TCP to a link-local IPv6 address (`fe80::/10`) is left alone | Only while at least one enabled set has a DNS server, a DoH URL or [Remove ECH keys from DNS answers](#removing-ech-keys) on, and **Intercept DNS over TCP** is on |
+## What b4 sees {#what-b4-intercepts}
 
-With **Enable IPv6 Support** off, these rules cover IPv4 only, with one exception in NFQUEUE mode: while an enabled set has [Remove ECH keys from DNS answers](#removing-ech-keys) on, DNS replies over IPv6 are queued as well and DNS over TCP to IPv6 port 53 is redirected too. b4 only removes ECH keys from them.
+b4 sees DNS that goes to port 53, from the devices on the network and from the router itself. Encrypted DNS that a device sends by itself (DoH, DoT or DoQ) passes b4 unseen, and the sets do not apply to it. The usual sources are secure DNS in a browser such as Chrome or Firefox, Android Private DNS, and a DoH resolver set up on the device. The sets apply to such a device once encrypted DNS is turned off on it.
 
-Both cases cover traffic forwarded from the network and queries the router makes for itself. The queries b4 sends on a client's behalf and its lookups through a set's resolver carry the [queue mark](./guides/marks.md#the-queue-mark), and these rules skip packets that carry it, so such a query never re-enters the queue through them. Lookups b4 makes through the router's own resolver carry no mark.
-
-:::info Requests and conntrack
-A device usually asks for a name's IPv4 and IPv6 addresses at the same moment from one socket. A request held in the queue after conntrack has seen it carries a connection entry the kernel has not confirmed yet, so the second request gets an entry of its own, and kernels before 4.18 (4.14 before 4.14.173) drop it when the two entries clash. Queued from the raw table, the requests reach conntrack one after the other, once b4 has released them. KeeneticOS runs its raw table after conntrack, and b4 does not use it there.
-
-On such a kernel b4 holds no request and works on a copy of each one, on KeeneticOS and with iptables wherever the raw table cannot queue packets, see [Copied requests](#copied-requests). On a later kernel b4 queues requests in mangle on KeeneticOS. Elsewhere, where the iptables raw table cannot queue packets, it queues them in mangle as well, logs a warning, and System Info shows **DNS queries queued before conntrack (raw)** as unavailable.
-:::
-
-```mermaid
-flowchart TB
-    C["Device or router"] -->|"UDP 53"| Q["Packet queue"]
-    C -->|"TCP 53"| R["nat REDIRECT<br/>port 5453"]
-    Q --> M{"Domain matches<br/>an enabled set?"}
-    R --> M
-    M -->|"No"| U["Forwarded unchanged<br/>to the client's resolver"]
-    M -->|"Yes"| S["Set's DNS handling"]
-    S --> P["Plain DNS server<br/>or DoH URL"]
-
-    style C fill:#4a9eff,color:#fff,stroke:none
-    style Q fill:#e91e63,color:#fff,stroke:none
-    style R fill:#e91e63,color:#fff,stroke:none
-    style M fill:#ff9800,color:#fff,stroke:none
-    style U fill:#9c27b0,color:#fff,stroke:none
-    style S fill:#4caf50,color:#fff,stroke:none
-    style P fill:#4caf50,color:#fff,stroke:none
-```
-
-:::warning b4 only sees DNS that is not encrypted
-Everything on this page works on DNS to port 53. When a device resolves over DoH, DoT or DoQ by itself, the query leaves as TLS or QUIC to port 443 or 853, and b4 cannot read it: the set's resolver, its pins and its blocking never apply to that name, and a routing set learns no addresses from those answers.
-
-The usual sources are a browser with its own secure DNS turned on (Firefox, Chrome), Android Private DNS, and a resolver configured as DoH on the device itself. To work with DNS through b4, switch encrypted DNS off on those devices and let them use the router.
-
-An encrypted forwarder on the router is a different matter and does not get in the way. Devices still ask the router on plain port 53, b4 intercepts there, and only what b4 passes through reaches the forwarder. With [copied requests](#copied-requests), every request reaches the forwarder, and b4 acts on its replies.
-:::
-
-### Copied requests {#copied-requests}
-
-With iptables on a kernel before 4.18 (4.14 before 4.14.173), on KeeneticOS and wherever the raw table cannot queue packets, b4 holds no DNS request. A rule at the top of mangle `INPUT`, `FORWARD` and `OUTPUT` sends b4 a copy of each request with NFLOG, to the group numbered like the first queue, `queue.start_num`, 537 by default, and the request goes on to its resolver at once. b4 runs the copy through the same set handling as a request in its queue, and the [Traffic](./connections.md) page and the log record the same results. The resolver's reply reaches the queue as before, and b4 settles it by what the set did with the copy:
-
-| The set | The resolver's reply |
-| --- | --- |
-| Blocks the name with the **Reject** action | Replaced with NXDOMAIN |
-| Blocks the name with the **Drop** action | Dropped |
-| Pins the name | Replaced with the pinned answer |
-| Resolves the name through the set's resolver | Held until b4 has its answer, from that resolver or from [a fallback](#when-the-resolver-fails), then replaced with it. A reply held for twice the query timeout plus 2 seconds passes unchanged |
-| Forwards the name unchanged, or does not match it | Handled like any other reply, including [the removal of ECH keys](#removing-ech-keys), see step 4 of [How a set handles a query](#how-a-set-handles-a-query) |
-
-When the device asked a resolver on the router itself, b4 also sends its answer on its own once 20 ms have passed without a reply and the answer is ready. A reply that comes later is still replaced with the same answer, and the device then receives it twice.
-
-- **The resolver still sees the name.** The resolver the device asked receives every request and, unless it holds the answer, asks its own upstream, also for a name a set resolves over DoH. The lookup the router's resolver sends upstream while b4 still owes a device the answer for the same name passes unchanged, and that resolver caches the real answer.
-- **A resolver outside the router has to reply.** A device that asks a resolver outside the router gets b4's answer only in place of that resolver's reply, and no answer at all while that resolver does not reply.
-- **Port-changing `nat` rules are not supported.** When a `nat` rule moves DNS requests to another port, such as a `REDIRECT` to a local resolver on port 5353, the replies come back from that port and b4 cannot act on them: the sets do not answer, block or redirect the names asked through such a rule. b4 logs a warning that names the rule.
-- **A request that NAT moves to another source port is not acted on.** b4 matches the resolver's reply to the copy by the port the device sent the request from, and the reply reaches b4 before NAT restores that port. When NAT on the router gives the request another source port, the device gets the resolver's answer, while the Traffic page and the log record what the set did with the copy. Masquerading keeps the port unless another connection to the same resolver already holds it. KeeneticOS before 3.5, MAP-T with a shared IPv4 address and NAT rules with `--random` or `--random-fully` change the port of nearly every request, and there the sets do not act on the names that devices ask resolvers outside the router.
-- **Requests sent from port 53 are not acted on.** A resolver or device that sends its requests from UDP port 53 gets the replies on port 53 as well, and such replies do not reach the queue. b4 ignores the copies of these requests: the sets' resolvers, pins and blocking do not apply to them, their replies pass unchanged, a routing set learns no addresses from those replies, and the Traffic page and the log record nothing about these lookups. For a resolver on the router, this concerns only the requests it sends upstream, and devices that ask it from other ports are handled as usual.
-- **After a lost copy, the device gets the resolver's answer.** When copies arrive faster than b4 reads them, the kernel discards the excess. The replies to those requests are not replaced with b4's answer and are handled like any other reply, see step 4 of [How a set handles a query](#how-a-set-handles-a-query).
-
-System Info shows the row **DNS queries copied, not held (NFLOG)** under **Kernel Capabilities** on these routers: available while b4 copies the requests, unavailable while it holds some of them after conntrack, with the modules that are missing, and while the listener that receives the copies is stopped, with its error. On KeeneticOS the row **DNS queries queued before conntrack (raw)** is not shown, and an unavailable row names the firmware component to enable instead of packages. Where copying does not work either, b4 holds requests in mangle after conntrack, and the loss described in the note above applies. **Copy JSON** in System Info and the MCP tool `b4_diagnostics` give the counts of copies, lost and ignored copies, and replaced, dropped and unchanged replies under `firewall.dns_query_copy`.
-
-b4 logs these lines about copying:
-
-| Log line | Meaning |
-| --- | --- |
-| `IPTABLES[iptables]: KeeneticOS runs its raw table after conntrack (kernel ...), so b4 copies DNS queries with NFLOG (group 537) instead of holding them in its queue` | b4 copies the requests of that binary, `iptables` or `ip6tables`. Outside KeeneticOS the line starts with the reason the raw table cannot queue them. Logged once |
-| `IPTABLES[iptables]: b4 cannot copy DNS queries with NFLOG (...)` | Copying failed for the reason in the brackets, and b4 holds requests after conntrack. Outside KeeneticOS the line starts with the reason the raw table cannot queue them and reads `cannot copy DNS queries with NFLOG either`. Logged once |
-| `DNS: the NFLOG copy of DNS queries stopped (...)` | The listener that receives the copies stopped, and the replies to the requests sent until it runs again are not replaced with b4's answer. At the next check of the firewall monitor, b4 starts it again or holds requests in its queue. With **Firewall Monitor Interval (seconds)** at `0` there is no such check, and the listener starts again only at a restart or at a save that rebuilds the firewall rules |
-| `DNS: N copies of DNS queries were lost; ...` | Copies the kernel discarded, at most one such line every 5 minutes |
-| `DNS: b4 already has 8192 DNS answers to deliver, ...` | b4 was already acting on 8192 requests, its limit, and the replies to the requests copied after that were not replaced with its answer |
-| `DNS: b4 already has 64 DNS answers to deliver for the A query for ... with ID ...` | b4 was already acting on 64 copies of one request, with the same name, type and ID but sent from different sockets or devices, its limit for one request, and the replies to further copies of it were not replaced with its answer. The line ends with the addresses of the last such copy. At most one such line a minute |
-| `IPTABLES[iptables]: the nat rule "..." moves DNS queries to port ...` | A `nat` rule that changes the port, see above |
+An encrypted forwarder on the router is not a problem, since devices still ask the router on port 53. The interception itself is described in [How b4 handles DNS](internals/dns.md#what-b4-intercepts).
 
 ## How a set handles a query
 
-The query name is matched against the set targets exactly like an SNI is, so a domain entry covers its subdomains and `regexp:` entries are supported. Literal entries are tried before regular expressions: a domain listed in one set is not taken over by a `regexp:.*` catch-all in another.
+A query name matches a set the way a server name does: a domain covers its subdomains, and a domain listed in one set wins over a `regexp:` entry in another. A [block set](sets/blocking.md) answers first, then the set's [pins](#pinned-addresses), then the [set's resolver](#resolver-types) while **Enable DNS Redirect** is on. Otherwise the query goes to the device's resolver unchanged. b4 can then remove [ECH keys](#removing-ech-keys) and [IPv6 addresses](#the-ipv4-fallback) from the answer, see [the full sequence](internals/dns.md#how-a-set-handles-a-query).
 
-For a matched query b4 works through these steps in order:
+## Sending a set's domains to another resolver {#resolver-types}
 
-1. **Blocking.** If the set's routing mode is `block`, the query is answered with NXDOMAIN or dropped, according to the block action. See [Blocking](./sets/blocking.md).
-2. **Pinned addresses.** If the name has a pin, b4 answers from the pin and stops. This happens whether or not the redirect below is enabled.
-3. **Resolver.** If the redirect is enabled and a resolver is configured, b4 resolves the name itself and answers the client directly. Otherwise the query is forwarded unchanged.
-4. **The answer.** Addresses from the answer are remembered for the client, and written into the set's IP set when [routing](./sets/routing.md) is on. An answer, forwarded or pinned, that brings addresses b4 has not written to the set recently is held until b4's update of the set for those addresses has finished, at most 250 ms each time b4 sees the answer, so the connection that follows it usually takes the set's route. With the TUN engine the answer is not held; see [Routing](./sets/routing.md#how-it-works-in-detail). Before the answer reaches the device, b4 can rewrite it: it removes [ECH keys](#removing-ech-keys), removes IPv6 addresses for [the IPv4 fallback](#the-ipv4-fallback), and removes or replaces unreachable addresses when the set's IP block detection has **Heal DNS answers** on.
+A set's resolver helps when the provider's DNS answers the set's domains with wrong addresses.
 
-With [copied requests](#copied-requests), each answer in these steps takes the place of the resolver's reply, and a dropped query is a dropped reply.
+1. Open **Sets** and open the set.
+2. On the **DNS & Routing** tab, under **DNS Redirect**, turn on **Enable DNS Redirect**.
+3. Under **Resolver type**, choose **Plain DNS (UDP)** and a **DNS Server IP**, or **DNS-over-HTTPS** and a **DNS-over-HTTPS URL**, typed in or picked from the recommended list.
+4. Click **Save Changes**.
 
-### Resolver types
+| Resolver type | When it fits |
+| --- | --- |
+| **Plain DNS (UDP)** | Plain DNS to other servers arrives intact. **Fragment DNS Queries** splits each query into IP fragments, for DPI that reads the names in DNS queries. |
+| **DNS-over-HTTPS** | The provider tampers with plain DNS to other servers too, or the resolver serves only DoH. The queries leave encrypted. |
 
-Set the resolver on **Sets → a set → DNS & Routing → DNS Redirect**.
+Queries from the set's own resolver go on unchanged, so a resolver on the local network can serve a set. A resolver on the router itself has one more condition, see [When it does not work](#when-it-does-not-work).
 
-| Mode | Config field | What b4 does |
-| --- | --- | --- |
-| Plain DNS (UDP) | `dns.target_dns` | Sends the query to that IP itself, optionally fragmented (**Fragment DNS Queries**) to get past DPI that reads domain names out of queries |
-| DNS-over-HTTPS | `dns.doh_url` | Sends the query as an encrypted HTTPS request, POST first and GET if the server rejects POST |
+A service that checks the address a connection comes from needs another exit rather than another resolver, see [Routing sites through a VPN](guides/vpn.md).
 
-A DoH URL takes precedence: when both fields are filled, the DoH URL is used and the IP is ignored. The URL has to start with `https://`, which is checked when the configuration is saved.
+### Lookups b4 makes itself {#lookups-b4-makes-itself}
 
-A query that comes from the address of the set's own resolver is forwarded unchanged rather than handed back to it, unless b4 blocks the query or answers it from a pin. A resolver elsewhere on the network that asks its upstream over plain DNS passes a client's lookup on through the router, and handing that query back would leave it waiting out the query timeout; any other query from that address is forwarded unchanged as well, including those of containers or VPN clients that reach the network through NAT on the resolver's host. A DoH URL is compared the same way when it names its server by IP address. Only the address the set names is compared: a query the resolver sends from another of its addresses, such as an IPv4 query from a resolver the set names by its IPv6 address, is still handed back to it. The comparison is not made for a resolver on the router itself, so that the router's own lookups go to it. Such a resolver, and the router's resolver whenever a resolver on the network uses it as its upstream, has to reach its own upstream over a transport b4 does not intercept, such as DNS over HTTPS or TLS. With [copied requests](#copied-requests), the lookup the router's resolver sends upstream while b4 still owes a device the answer for that name passes unchanged.
+When b4 looks up a set's names itself, for routing, a [DSCP value](sets/routing.md#dscp) or a proxy upstream, it uses the set's resolver while **Enable DNS Redirect** is on, and the router's resolver otherwise, see [How b4 handles DNS](internals/dns.md#lookups-b4-makes-itself).
 
-![DNS redirect in DoH mode](/img/dns/20260810210220.png)
+## When the resolver fails {#when-the-resolver-fails}
 
-### Sending one service to a resolver of its own
+When the set's resolver does not answer, b4 answers from the last good reply it holds for the name, or else asks the resolver the device was addressing. **Query timeout** under [Settings > Core > DNS](settings/core.md#dns) sets how long b4 waits.
 
-A common reason to redirect a single set is a service that refuses to work from your region. Two different things hide behind that, and only one of them is DNS.
+**Fail closed when the resolver is unreachable** turns the fallback off. The device then gets an error (SERVFAIL), and the set's names resolve through its resolver or not at all.
 
-**The name resolves to the wrong place.** Which address you get for a name depends on who asked: geo-aware DNS hands out the front end nearest to the resolver, and a resolver elsewhere gets a different answer. Some public resolvers go further and run their own front ends for a fixed list of services, answering with the address of a relay they operate, which reads the SNI and forwards the connection on. Either way the connection ends up on a path the service accepts, and pointing one set at such a resolver changes nothing for the rest of your DNS.
-
-**The service checks the address you connect from.** Nothing a resolver returns changes your own address, so a check that happens after the connection is up (an account, a payment, an API key tied to a region) is unaffected by DNS. That needs a different exit: see [traffic routing](./sets/routing.md).
-
-For the first case, make a set that targets only that service's domains, enable the redirect, and enter the resolver's DoH URL. Keep those domains out of a network-wide catch-all set, since the point is that only that service is treated differently.
-
-:::note
-A resolver that answers with its own relay addresses sees which of those names you look up and carries the traffic for them afterwards. That is a real trust decision. Point only the domains that need it at such a resolver, and keep general browsing on a resolver you would pick on its own merits.
+:::warning
+With fail closed on, an unreachable resolver stops every name of the set from resolving, even while the bypass strategy works. On a censored connection, the DoH server itself can get blocked.
 :::
 
-### Pinned addresses
+## Pinned addresses
 
-A pin replaces what DNS hands out for a name, without a hosts file on every device. The field takes hosts file order, one line per address:
+A pin answers a name with fixed addresses, with no hosts file to edit on every device. It helps when DNS keeps handing out an address that does not answer.
+
+**Domain and addresses** under **Pinned addresses** takes hosts file lines, one per address: the address first, then the names it answers for.
 
 ```text
 157.240.0.174 www.instagram.com
 157.240.205.63 scontent.cdninstagram.com scontent-a.cdninstagram.com
 ```
 
-- The address comes first, then the names it should answer for.
-- A pin covers each name and its subdomains, and the longest matching entry wins.
-- **A pin only applies to a name the set already targets.** Pinning a name that no target of the set covers does nothing, and the interface warns about it and offers to add the name to the set's domains.
-- The pin list is the whole address answer for the name. A and AAAA queries are answered with the pinned addresses of the matching family; an AAAA query for a name pinned to IPv4 only, and the CNAME, SVCB, HTTPS and ANY queries, get an empty answer rather than the resolver's, because those answers would carry the site's CNAME and the system cache would follow it past the pins once the pin answer expired. An A query for a name pinned to IPv6 only still goes to the resolver, since an IPv4-only client has nothing else, and so do the other record types, MX, TXT or SRV among them.
-- In a set without routing, a pinned address the router cannot reach on TCP port 443 is left out of the answer. b4 connects to every such pin when it starts, when a set is saved and every `system.ip_health.retest_interval_sec` seconds (300 by default), and an address that stops answering is tried again at the same interval. The pins of a set with routing are not checked: the check connects straight from the router, while the set's connections leave through its route, so an address that fails directly can still be the right one. A round in which no pin answers at all, as during an uplink outage, proves nothing and changes no verdict. When every pin of a family is unreachable the pins are answered anyway, so a pinned host that simply does not listen on port 443 keeps its pin; only with IP block detection on does such a query go to the resolver instead.
-- Pinned answers are handed out with a 60 second TTL.
-- Pins are read even when **Enable DNS Redirect** is off, so a set can pin a few names and leave everything else with the client's resolver.
-
-In the configuration file the same data is stored the other way round, as `dns.pins`, a name mapped to its addresses.
-
-### When the resolver fails
-
-A resolver that times out or errors does not end the lookup. b4 answers from the last good reply it holds for that name, and when it holds none, it puts the query to the resolver the client was already addressing and answers with what comes back. Three failures in a row take the configured resolver out of the path for 30 seconds, so a resolver that has gone away costs one timeout rather than one per query.
-
-A set can ask for the opposite with **Fail closed when the resolver is unreachable** (`dns.strict`). With it on, a resolver that does not answer produces SERVFAIL, b4 does not fall back to plain DNS, and a name b4 took over either resolves through the configured resolver or does not resolve at all.
-
-:::warning
-Fail closed and an unreachable resolver together mean nothing in the set resolves. On a censored connection the DoH server itself is a target, so a resolver that answered when the set was built can stop answering later, and every domain the set covers goes down with it while the bypass strategy underneath is still working.
-:::
-
-### Lookups b4 makes itself
-
-b4 also resolves some of a set's names on its own behalf. It pre-resolves the domains of a set with [routing](./sets/routing.md) on. For a set that writes its own [DSCP value](./sets/routing.md#dscp-addresses) it looks up the first 256 entries of the domain list that are not `regexp:` entries, and for a set in proxy mode it looks a name up when a client of its SOCKS5 proxy asks for it with **Send domain name to upstream** off, when the upstream refuses the name, and when the connection falls back to direct. With the redirect enabled and a resolver configured, these lookups go to that resolver too, not to the router's own, and a change to the resolver settings resolves the domains of a set with routing on, or of a set that writes its own DSCP value, again.
-
-An answer from the set's resolver is final whatever it says, as it is when the redirect hands it to a client: a name that does not exist, no address, SERVFAIL or REFUSED. A resolver that does not answer in time or cannot be reached is followed by the router's resolver, and with **Fail closed when the resolver is unreachable** on the lookup fails instead. The router's own queries for the set's domains pass through the redirect as well, so until the pause below starts, such a fallback can take twice the query timeout. These lookups share the redirect's count of failures: after three in a row the resolver is skipped for 30 seconds, the lookups go straight to the router's resolver, and a set with Fail closed on does not pre-resolve its domains in that time. The last good reply is not used for them, and plain DNS is sent unfragmented.
+- A pin covers each name and its subdomains. The longest matching entry wins.
+- A pin applies only to a name the set targets. For other names the editor offers **Add to this set's domains**.
+- Pins work with **Enable DNS Redirect** off too, and win over the set's resolver.
+- The pins are the whole address answer: a name pinned to IPv4 addresses only gets no IPv6 addresses.
+- In a set without routing, b4 leaves out pinned addresses that do not answer on TCP port 443, checked at start, on save and at the **Retest interval (seconds)** of [IP Block Detection](settings/core.md#ip-block-detection). When none answers, the pins are used anyway.
 
 ## The IPv4 fallback
 
-b4 processes IPv4 only until **Enable IPv6 Support** is on in [Settings, Core, Packet Engine](./settings/core#protocols). A dual-stack site that a set targets would otherwise be reached over IPv6, where b4 has no rules at all, and the set would be bypassed without anything looking wrong.
+While **Enable IPv6 Support** is off, b4 processes IPv4 only, and a site with IPv6 addresses would be reached over IPv6, past every set. b4 therefore removes the IPv6 addresses (AAAA records) from the answers for names a set matches, and the device connects over IPv4. Other names keep their full answers.
 
-To close the common path into that, b4 removes IPv6 addresses from DNS answers for domains a set matched, leaving the client with the IPv4 addresses b4 does protect. The answer is rewritten rather than refused: A records stay, AAAA records are dropped, and the client falls back to IPv4 on its own.
-
-- It applies only to names a set matched. Every other name keeps its full answer, and IPv6 on the network is untouched.
-- It stops on its own once IPv6 support is on, since there is then nothing to bypass.
-- A set whose targets are pinned to IPv6 with `targets.ip_version` set to `6` keeps its IPv6 answers, since IPv6 is what that set exists for.
-- Rewritten answers appear as `dns-ipv6-stripped` in [the result](#reading-the-result).
-
-The switch is **Force IPv4 for matched domains**, on the **IPv4 / IPv6** card under **Settings, Core, Packet Engine**, and it is on by default. Turning it off is the same as setting `system.dns.keep_ipv6_answers` to `true`: AAAA records pass through untouched. It is greyed out while **Enable IPv6 Support** is on.
-
-:::warning It only reaches DNS that b4 can see
-This carries the same limit as everything else on this page. A client that resolves through its own DoH, DoT or DoQ never shows b4 the answer, so it keeps the IPv6 addresses and reaches the site over IPv6 anyway. The same goes for an address already in the client's cache or written into a hosts file. The fallback narrows the gap, it does not close it: the complete fix is turning IPv6 support on so that b4 has rules on both families.
-:::
+- The switch is **Force IPv4 for matched domains** on the **IPv4 / IPv6** card under [Settings > Core > Packet Engine](settings/core.md#protocols). It is on by default and unused while **Enable IPv6 Support** is on.
+- A set limited to **IPv6** by its **IP Version Filter** keeps its IPv6 answers.
+- An address the device already has from its cache, a hosts file or its own encrypted DNS still leads over IPv6. **Enable IPv6 Support** closes that path.
 
 ## Removing ECH keys
 
-A site behind a CDN that supports Encrypted ClientHello (ECH) publishes an ECH key in its HTTPS record (DNS type 65). A browser that gets the key encrypts the real ClientHello and sends an outer one that names the CDN's shared public name instead of the site: `cloudflare-ech.com` for every Cloudflare site. Where DPI drops ClientHellos that carry the ECH extension together with that name, every such site stops loading at once in a browser that uses ECH, such as Chrome, while the same sites load with an ordinary ClientHello.
+Sites behind some CDNs publish an Encrypted ClientHello (ECH) key in DNS. A browser that gets the key, such as Chrome, sends a ClientHello that names the CDN's shared name instead of the site: `cloudflare-ech.com` for every Cloudflare site. Where DPI drops such ClientHellos, all these sites stop loading at once.
 
-**Remove ECH keys from DNS answers** (`dns.strip_ech`) takes the key out of HTTPS and SVCB answers. A browser that gets no key sends an ordinary ClientHello naming the site, as it does for a site without ECH.
+**Remove ECH keys from DNS answers**, under **Encrypted ClientHello (ECH)**, takes the key out, and the browser sends an ordinary ClientHello naming the site. It works with **Enable DNS Redirect** off too. The key is removed when:
 
-| The key is removed from an answer when | Example |
-| --- | --- |
-| The queried name matches a set with the switch on | `steamdb.info` listed in the set |
-| A key in the answer names, as its public name, a domain that a set with the switch on matches | `cloudflare-ech.com` listed in the set: the answers of every Cloudflare site lose their key, whatever the site |
+- the name asked matches the set, such as `steamdb.info` listed in the set;
+- the key's public name is a domain the set matches. A set listing `cloudflare-ech.com` removes the key from every Cloudflare site's answers.
 
-- Only the `ech` parameter goes, together with its entry in `mandatory`, and `mandatory` itself when nothing is left in it. The ALPN list, the address hints and the TTL stay as they were.
-- The RRSIG records over the changed records are dropped and the AD flag is cleared, since the changed records no longer match their signatures.
-- It acts on forwarded answers, on answers from the set's own resolver and on DNS over TCP: TCP port 53 is intercepted while an enabled set has the switch on.
-- With **Enable IPv6 Support** off, in NFQUEUE mode, answers that travel over IPv6, by UDP or TCP, still reach b4 while an enabled set has the switch on, and lose nothing but their key: no pin, redirect, block, address learning or other rewrite applies to them. Unless such an answer goes to a [device added by hand](./settings/core#manual-devices) by its IPv6 address, b4 cannot tell which device it goes to, so only sets without source devices are matched against it. The TUN engine carries no IPv6, and there such answers keep their key.
-- With [copied requests](#copied-requests), the replies that pass unchanged keep the key:
-  - the replies to requests sent from UDP port 53
-  - a reply held for twice the query timeout plus 2 seconds
-  - a reply from a resolver outside the router that arrives while b4 already holds 512 replies
-  - the reply to the lookup the router's resolver sends upstream while b4 still owes a device the answer for that name. That resolver's cache then holds the key.
-- Changed answers appear as `dns-ech-stripped` in [the result](#reading-the-result), under the set whose switch removed the key.
+While **Enable IPv6 Support** is off, b4 in NFQUEUE mode also removes the key from answers that arrive over IPv6. A set that uses **Source Devices** leaves such answers alone, since b4 cannot tell which device they go to. A device [added by hand](settings/core.md#manual-devices) by its IPv6 address is the exception.
 
-The switch sits under **Encrypted ClientHello (ECH)** on the **DNS Redirect** tab of **DNS & Routing** in the set editor, and works whether or not the redirect is enabled. [Discovery](./discovery.md#sites-with-an-ech-key) proposes a set with it on, and no packet changes, for a site that loads with an ordinary ClientHello but not with ECH.
-
-:::warning It only reaches DNS that b4 can see
-A browser that resolves through its own secure DNS (DoH in Chrome or Firefox), or a device with Android Private DNS, gets the key unchanged and keeps sending ECH. A key already in a client's cache is used until its answer expires.
-:::
-
-:::warning Zones signed with DNSSEC
-In a zone signed with DNSSEC, such as `steamdb.info` (`cloudflare-ech.com` is not signed), an HTTPS answer without its key no longer matches its signature. A resolver that validates DNSSEC rejects it as bogus and asks the zone's other servers. BIND answers the HTTPS query with SERVFAIL once none of them gives an answer that validates, so the device gets no key; A and AAAA answers are not affected.
-
-When the resolver reaches one of the zone's servers on a path b4 does not process, it gets the original answer there, validates it, and hands the key to every device that asks it until the record expires. Such paths are DNS over TLS or HTTPS to an upstream, an interface left out of **Capture Interfaces**, and TCP while **Intercept DNS over TCP** is off. A resolver that runs on the b4 host itself sends its answers to devices through b4 as well, and b4 removes the key from those answers after the resolver has validated them.
-:::
-
-:::info A set that lists the public name
-Listing `cloudflare-ech.com` in a set also makes the set match, by server name, the ECH ClientHellos of clients that kept the key, and its TCP and UDP settings apply to them. A set made only to remove keys changes no packets, so those ClientHellos pass unchanged.
-:::
-
-## Global DNS settings
-
-The **DNS** card on **Settings, Core, DNS** holds the interception of DNS over TCP and the timeouts, which apply to every set.
-
-![The DNS card](/img/dns/20261004000100.png)
-
-### Why DNS over TCP is here
-
-DNS normally travels over UDP. A resolver that cannot fit an answer into a UDP packet marks it truncated, and the client asks again over TCP, which is what happens with long address lists, DNSSEC records and some zone transfers. A few stub resolvers prefer TCP outright, and a client that wants to get around something watching UDP can go to TCP on purpose.
-
-Those queries are ordinary DNS, and without interception they reach the resolver the client chose, so the set's resolver, its pins and its blocking are all skipped for them. **Intercept DNS over TCP** closes that path by redirecting TCP port 53 into b4, which then applies the same set handling as it does for UDP.
-
-| Setting | Config field | Default | Meaning |
-| --- | --- | --- | --- |
-| Intercept DNS over TCP | `system.dns.tcp_disabled` | on (`false`) | With this off, a client that falls back to TCP reaches the upstream resolver and the set's DNS server is skipped |
-| Listener port | `system.dns.tcp_port` | `5453` | b4 listens for DNS over TCP on this local port, and a firewall rule sends connections aimed at port 53 to it. Nothing outside the router uses this port, clients keep addressing port 53 as before. Change it only if another program already holds 5453 |
-| Query timeout | `system.dns.query_timeout_sec` | `5` | How long to wait for the set's resolver before falling back, or before answering SERVFAIL when the set is set to fail closed. Applies to UDP and TCP alike |
-| Idle timeout | `system.dns.tcp_idle_sec` | `30` | How long an idle DNS-over-TCP connection is held open for further queries |
-| Read/write timeout | `system.dns.tcp_io_sec` | `10` | Deadline for a single query or answer on an established connection |
-| Forward timeout | `system.dns.tcp_dial_sec` | `5` | How long to wait when forwarding an unmatched TCP query to the resolver the client chose |
-| Force IPv4 for matched domains | `system.dns.keep_ipv6_answers` | on (`false`) | On the **IPv4 / IPv6** card under **Settings, Core, Packet Engine**. The switch and the field are inverted: the switch on means `keep_ipv6_answers` is `false` and IPv6 addresses are stripped from answers for matched domains. Off leaves the AAAA records in place. See [The IPv4 fallback](#the-ipv4-fallback) |
-
-The configuration file only stores values that differ from the defaults, so a `system.dns` block is usually absent until one of these is changed.
-
-:::note
-TCP interception needs `REDIRECT` in the `nat` table. Where the kernel does not provide it, b4 logs a warning and DNS over TCP stays with the client's resolver for that address family. UDP interception is unaffected.
-:::
+[Discovery](discovery.md#sites-with-an-ech-key) proposes such a set, with no packet changes, for a site that loads without ECH but not with it. A key already in a browser's cache is used until it expires.
 
 ## Sending every DNS query to DoH
 
-A set that targets every domain turns the per-set redirect into a network-wide one. Import this on **Sets → Import/Export**:
+A set that targets every name sends the DNS of the whole network and of the router to one DoH resolver. Domains listed in other sets keep their own sets' resolvers.
+
+1. Open **Sets** and click **Create Set**.
+2. On the **Import/Export** tab, paste the configuration below into **Set Configuration JSON** and click **Import**.
+3. To use another resolver, change **DNS-over-HTTPS URL** on the **DNS & Routing** tab.
+4. Click **Create Set**.
 
 ```json
 {
@@ -265,46 +114,44 @@ A set that targets every domain turns the per-set redirect into a network-wide o
 }
 ```
 
-`regexp:.*` matches every name, so every query that no other set claims is resolved over DoH, for every device on the network and for the router itself. The bypass strategies are all turned off, because this set exists to answer DNS and not to modify traffic.
+The set changes no packets, and its port filters of 53 keep it off TLS and QUIC connections. Router host names and `.lan` names stop resolving, since the public resolver does not know them; pins keep the ones that matter working. When the resolver is unreachable, every name [falls back](#when-the-resolver-fails), so a resolver reachable from the connection matters more than its features.
 
-Domains listed literally in another set keep going to that set's resolver, since literal entries are matched before regular expressions. Order the catch-all set last so it is easy to see which sets take precedence over it.
+## Global DNS settings
 
-:::info About the two `dport_filter` fields
-They do limit the set: with `udp.dport_filter` at `53`, the set is not applied to QUIC on port 443, and every port any set lists is also added to what b4 pulls into the queue.
+[Settings > Core > DNS](settings/core.md#dns) holds the interception of DNS over TCP and the timeouts for all sets. Without **Intercept DNS over TCP**, a device that retries a query over TCP reaches its own resolver, past the set.
 
-What they do not do is switch DNS handling on. Port 53 is dispatched before any port filter is read, so the redirect works with both fields empty. Keeping them here is still sensible, since it stops a `regexp:.*` set from claiming every TLS connection as well. The one cost is that `tcp.dport_filter` at `53` also pulls TCP port 53 into the queue for the bypass strategies, which this set does not use.
-:::
+## Checking the result {#reading-the-result}
 
-### What to expect
+1. Open **Traffic**.
+2. Enter `flags:dns` in the filter to keep only DNS queries.
+3. Open a site of the set on a device.
 
-- **Local names stop resolving.** Router hostnames, `.lan` names and anything else the router's own resolver serves are answered by the public resolver instead, which does not know them. Pin the few names that matter, or target the catch-all at a narrower expression.
-- **One resolver carries the whole catch-all.** While the DoH server is unreachable, every name the set covers is answered from cache or by the client's own resolver instead, which is not what the set was built to do. Set to fail closed, the same outage stops those names resolving at all. A resolver reachable from your connection matters more than its feature list.
-- **DNS over TCP follows along.** As soon as this set exists, TCP port 53 is redirected into b4 too, so a client that retries over TCP gets the same answer rather than slipping past.
+Each query shows the set that matched it and a label:
 
-## Reading the result
-
-Every decision b4 makes about a query is recorded on the [Traffic](./connections.md) page and in the [logs](./logs.md), with the protocol, the set, the domain and the client.
-
-| Result | Meaning |
+| Label | Meaning |
 | --- | --- |
-| `dns-doh-><host>` | Resolved over DoH through that server |
-| `dns-forward-><ip>` | Resolved by b4 against that plain DNS server |
-| `dns-passthrough` | Matched a set, but the set has no resolver configured, so the query was forwarded unchanged |
-| `dns-pin` | Answered from a pinned address |
-| `dns-pin-empty` | A pinned name was asked for a record type the pin list does not hold, so the answer was empty |
-| `dns-heal` | An answer had unreachable addresses removed or replaced, by the set's IP block detection |
-| `dns-sinkhole` | Answered with NXDOMAIN by a blocking set |
-| `dns-block` | Dropped by a blocking set |
-| `dns-servfail` | The set's resolver did not answer and nothing else could either, or the set is set to fail closed |
-| `dns-fallback-cache` | The set's resolver did not answer, so the last good addresses for that name were replayed |
-| `dns-fallback-upstream` | The set's resolver did not answer and nothing was cached, so the query went to the resolver the client was addressing |
-| `dns-bad-target` | The set's DNS server field does not hold a valid IP address, so the query was forwarded unchanged |
-| `dns-from-target` | The query came from the address of the set's own resolver, so it was forwarded unchanged instead of being sent back to it. See [Resolver types](#resolver-types) |
-| `dns-ipv6-disabled` | A query that arrived over IPv6 matched a set while IPv6 support is off, so it was forwarded unchanged instead of being handled by the set |
-| `dns-ipv6-stripped` | The IPv6 addresses were removed from the answer, leaving the client the IPv4 path b4 protects. See [The IPv4 fallback](#the-ipv4-fallback) |
-| `dns-heal+ipv6-stripped` | Both of the above happened to the same answer: unreachable addresses were replaced and the IPv6 addresses were removed |
-| `dns-ech-stripped` | The ECH key was removed from an HTTPS or SVCB answer, so the browser names the site in an ordinary ClientHello. See [Removing ECH keys](#removing-ech-keys) |
+| `doh <server>`, `forward <address>` | Resolved through the set's DoH or plain DNS server |
+| `pin`, `pin empty` | Answered from the pins, empty when they hold no address of the type asked |
+| `ipv4 only`, `no ech` | IPv6 addresses or the ECH key removed from the answer |
+| `heal`, `heal + ipv4 only` | Unreachable addresses removed or replaced by **Heal DNS answers** |
+| `sinkhole`, `block` | A block set answered "does not exist" or dropped the query |
+| `fallback-cache`, `fallback-upstream` | The set's resolver did not answer: the last good reply was used, or the device's resolver answered |
+| `servfail` | The set's resolver did not answer and nothing else could, or the set fails closed |
+| `passthrough`, `bad target`, `from target`, `ipv6 off` | Passed on unchanged: the set has no resolver, **DNS Server IP** is not a valid address, the query came from the set's own resolver, or it came over IPv6 while IPv6 support is off |
+| `escalate <set>` | Lookups for the name kept failing, and the backup set of [Escalation](sets/escalation.md) answered |
 
-:::note
-In TUN mode, requests to port 53 are captured, but replies are only seen when b4 carries the whole default route. Redirects and pins work either way, since b4 produces those answers itself. When b4 cannot install its NOTRACK rule, TUN captures only the device's own traffic, so the DNS of other hosts reaches b4 only when a resolver on this device handles it, see [Packet engine](settings/core.md#packet-engine).
-:::
+The [log](logs.md) records the same decisions, as `dns-doh->`, `dns-pin` and so on. Both show DNS decisions while **Log Level** is **Info**, the default, or more detailed.
+
+## When it does not work {#when-it-does-not-work}
+
+| What happens | Cause and fix |
+| --- | --- |
+| A device's lookups never show on the Traffic page | The device uses encrypted DNS. Turning off secure DNS in its browser, or Android Private DNS, sends its lookups to the router. |
+| The site still goes to the old address | The device keeps an answer it already has until the answer expires. |
+| `servfail`, `fallback-cache` or `fallback-upstream` | The set's resolver is unreachable from this connection. Another resolver, or DoH in place of plain DNS, is the next try. |
+| The set's names resolve slowly or not at all, with the set's resolver on the router | A resolver on the router, and the router's resolver when a resolver on the network uses it upstream, has to reach its own upstream over DoH or DoT, which b4 does not intercept. |
+| A browser still uses ECH, with a resolver on the network that checks DNSSEC, such as BIND or Unbound | The resolver gets the original answer on a path b4 does not see: DoT or DoH to its upstream, an interface not selected in **Capture Interfaces**, or TCP while **Intercept DNS over TCP** is off. Plain DNS through a captured interface closes these paths, see [ECH keys](internals/dns.md#ech-keys). |
+
+### On KeeneticOS and older kernels {#copied-requests}
+
+On KeeneticOS and some other routers with an older kernel, b4 works on copies of DNS requests and replaces the resolver's reply with the set's answer. The row **DNS queries copied, not held (NFLOG)** in [System Info](settings/system.md#system-info) shows when. The resolver the device asked then still receives every request, and a resolver outside the router has to reply before the device gets the set's answer. Requests that a `nat` rule moves to another port, or that NAT sends from another source port, get no set handling, see [Copied requests](internals/dns.md#copied-requests).

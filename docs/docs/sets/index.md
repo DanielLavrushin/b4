@@ -1,139 +1,79 @@
 ---
 sidebar_position: 6
 title: Sets
+description: The list of sets, the set card and the tabs of the set editor.
 ---
 
-A set is a bundle of DPI bypass settings tied to a list of domains, IP addresses, ASNs, UDP ports, or GeoSite/GeoIP categories. You can create multiple sets with different strategies for different sites.
+A set ties a list of targets, such as domains, addresses or networks, to what b4 does with their traffic: a DPI bypass strategy, a route through another interface or a proxy, or a block. The **Sets** page lists the sets and opens the set editor.
 
-## Managing sets
+Guides that start here: [Unblocking a site](../guides/unblock.md), [Adding sites to a set](../guides/add-sites.md), [Blocking ads and sites](./blocking.md), [Importing from zapret or byedpi](./import.md) and [Sharing a set](./sharing.md).
 
-The **Sets** page shows every set you have created. For each set you see:
+![The Sets page with one set card](/img/index/20260418234612.png)
 
-- Name and status (on/off)
-- Number of domains and IPs
-- Active techniques (COMBO, DISORDER, HYBRID, etc.)
-- State of DNS routing and SNI Faking
+## Toolbar
 
-![20260418234612](../../static/img/index/20260418234612.png)
+| Control | What it does |
+| --- | --- |
+| **Enable All** / **Disable All** | Turns every set on or off at once. |
+| **Search sets...** | Shows only the sets whose name, domains, GeoSite categories or ASNs contain the text. |
+| **Select** | Selects several sets. **Delete** removes the selected sets after a confirmation, and **Cancel** leaves the selection. |
+| **Import** | Builds sets from a byedpi or zapret command line, see [Importing from zapret or byedpi](./import.md). |
+| **Create Set** | Opens the editor for a new set. |
 
-Available actions:
+## Set order
 
-- **Create set** - a new bundle of settings
-- **Import** - build sets from a byedpi or zapret command line, see [Import from another tool](./import)
-- **Edit** - click the card
-- **Duplicate** - create a copy of an existing set
-- **Compare** - side-by-side comparison of two sets
-- **Delete** - remove one or several sets (via bulk selection)
-- **Drag and drop** - change the order of sets (order affects processing priority)
+The handle at the top left of a card drags the set to another position. When several sets could match the same traffic, b4 picks the most specific match, not the first set in the list, and prefers a set limited to source devices. The order decides only between matches that are equally specific. Routing is the exception: the length of the range plays no part there. Sets limited to selected devices or source interfaces come first, and among sets of the same kind the one higher in the list wins.
+
+[How sets match traffic](../internals/matching.md) describes the full order of checks.
+
+## Set card
+
+A click on a card opens the set in the editor.
+
+| Part | Shows |
+| --- | --- |
+| Switch and number | The switch turns the set on or off. The number is the set's position in the list. |
+| Name and targets | The set's name and a summary of its targets. |
+| Route line | What the set does with the traffic it matches: **Default route** for a set that only applies a bypass strategy, the interface or `socks5` proxy it routes through, **Telegram bridge**, or `block` with the block action. |
+| Facet rail | The marks along the top of the card: **Target**, **Split**, **Fake**, **Route**, **DNS** and **Escalate**. A mark opens a summary of that part of the set, with a link to its tab in the editor. **Compare across sets** above the list opens the same part on every card at once. |
+| Badges | **escalates to** names the [backup set](./escalation.md), and **fallback for** names the sets that use this one as their backup. **N ASN unresolved** means an [ASN](./targets.md#asn) has no prefixes yet. **Watchdog** appears while **Keep this set working with the watchdog** is on for the set, and opens the [watchdog](../watchdog.md) page. **Imported shared set** and **Community set** mark a set that came from someone else. |
+
+The menu at the top right of a card holds:
+
+| Item | What it does |
+| --- | --- |
+| **Edit** | Opens the set in the editor. |
+| **Duplicate** | Creates a copy of the set. |
+| **Compare** | Opens **Compare Sets** with this set and another side by side. **Differences only** hides the fields that match. |
+| **Find a strategy** | Opens [Discovery](../discovery.md) for the set. Not shown for a set that routes its traffic. |
+| **Delete** | Deletes the set after a confirmation. |
 
 ## Set editor
 
-The editor has 7 tabs:
+The top bar holds the set's name. **Save Changes**, or **Create Set** for a new set, saves it, and so does the round button at the bottom right. **Back** and **Cancel** return to the list without saving.
 
-- [Targets](./targets) - domains, IPs, GeoSite/GeoIP categories, ASNs, devices
-- [TCP](./tcp/) - fragmentation, faking, desync, and other TCP strategies
-- [UDP](./udp) - UDP traffic handling, QUIC, STUN
-- [Routing](./routing) - DNS redirect and traffic routing through interfaces
-- [Escalation](./escalation) - automatic fallback to a backup set when this one keeps failing
-- [Discovery](./discovery) - the addresses Discovery tests for the set, the last search for it, and the watchdog switch
-- **Import/Export** - JSON representation of the set configuration for moving between devices, and a [shared set](./sharing) for passing a set to someone else. To bring in a configuration from byedpi or zapret instead, see [Import from another tool](./import)
+![The set editor on the Targets tab](/img/index/20260418234644.png)
 
-![20260418234644](../../static/img/index/20260418234644.png)
+| Tab | What it holds |
+| --- | --- |
+| [Targets](./targets.md) | Which traffic the set applies to: domains, GeoSite categories, addresses, GeoIP categories, ASNs and source devices. |
+| [TCP](./tcp/index.md) | The DPI bypass strategy for TCP, on the **General**, **Splitting** and **Faking** sub-tabs. |
+| [UDP](./udp.md) | Which QUIC and other UDP traffic the set matches, and what b4 does with it. |
+| [DNS & Routing](./routing.md) | The DNS redirect, routing through an interface or a proxy, blocking, and the set's DSCP value. |
+| [Escalation](./escalation.md) | A backup set for the sites this set keeps failing on. |
+| [Discovery](./discovery.md) | The addresses Discovery tests for the set, the last search for it, and the watchdog switch. |
+| [Import/Export](#import-and-export) | The set as JSON, and a shared set for other people. |
 
-## How it works
+## Import/Export {#import-and-export}
 
-```mermaid
-flowchart TD
-    A["Packet from the network"] --> B{"Destination IP\nmatches a set?"}
+The tab shows the set as JSON under **Set Configuration JSON**. **Copy JSON** copies it. A JSON pasted into the field and loaded with **Import** replaces the content of the editor, and it takes effect after **Save Changes**.
 
-    B -->|"Yes"| C["Preliminary set\n(by IP)"]
-    B -->|"No"| D
+The JSON is for moving a set between one's own routers. It leaves out what only makes sense on this router:
 
-    C --> D{"TLS/QUIC data\npresent?"}
+- the source devices, and with them the set's own [DSCP value](./routing.md#dscp);
+- the [Escalation](./escalation.md) settings, which point to other sets;
+- the watchdog switch. The [Discovery addresses](./discovery.md) are carried, and the watchdog switch of the set the JSON is imported into stays as it was.
 
-    D -->|"Yes"| E["Extract domain (SNI)"]
-    D -->|"No"| F
+These are set again on the other router. A set can use a payload file that this router does not have. A warning after the import then names the file, and the fake packets use a built-in payload until it is uploaded under **Settings > Payloads**.
 
-    E --> G{"Domain matches\na set?"}
-    G -->|"Yes"| SEL
-    G -->|"No"| TLSCHK
-
-    TLSCHK{"IP matched earlier\nand TLS version\nmatches?"}
-    TLSCHK -->|"Yes"| SEL
-    TLSCHK -->|"No"| F
-
-    F{"IP previously\nseen with\na domain?"}
-    F -->|"Yes"| SEL
-    F -->|"No"| H
-
-    H{"Is there a set\nby port only?"}
-    H -->|"Yes"| SEL
-    H -->|"No"| SKIP["Skip"]
-
-    SEL{"Set with device\n+ TLS version?"}
-    SEL -->|"Yes"| OK["Apply set"]
-    SEL -->|"No"| SEL2{"Generic set\n+ TLS version?"}
-    SEL2 -->|"Yes"| OK
-    SEL2 -->|"No"| SEL3{"Any\nmatching set?"}
-    SEL3 -->|"Yes"| OK
-    SEL3 -->|"No"| SKIP
-
-    style A fill:#4a9eff,color:#fff,stroke:none
-    style OK fill:#4caf50,color:#fff,stroke:none
-    style SKIP fill:#666,color:#fff,stroke:none
-    style C fill:#ff9800,color:#fff,stroke:none
-    style SEL fill:#9c27b0,color:#fff,stroke:none
-    style SEL2 fill:#9c27b0,color:#fff,stroke:none
-    style SEL3 fill:#9c27b0,color:#fff,stroke:none
-    style TLSCHK fill:#ff9800,color:#fff,stroke:none
-```
-
-### Match order
-
-1. **IP address** - checked first. If the destination IP matches an IP/CIDR in some set, this is remembered as a preliminary match
-2. **Domain (SNI)** - if the packet contains TLS/QUIC data, b4 extracts the domain. If the domain matches a set, **that set replaces** the preliminary IP match. Domain always has priority
-3. **Learned IP** - if b4 has previously seen this IP tied to a domain (from earlier connections), the same set is used
-4. **Port** - checked only if a set is configured by port only (no domains or IPs)
-5. **Preliminary IP** - if neither domain, learned IP, nor port matched, the IP match from step 1 is used
-
-:::tip Port filter
-When a port filter is configured in a set, it acts as an additional condition. Even if the domain or IP matches, the packet is processed only when the port matches as well.
-:::
-
-:::info Picking a set when multiple match
-If the same domain or IP is configured in multiple sets, b4 picks a set by priority:
-
-1. A set with a defined **source device** matching the sender's MAC + matching **TLS version**
-2. A set with no device binding + matching TLS version
-3. If no set matches by TLS, the TLS version is ignored and the check is repeated
-
-This way, device-bound sets always win over generic ones, and the TLS version filter narrows the choice without blocking processing.
-:::
-
-:::info Learned IPs
-When b4 sees a connection where the domain (SNI) matches a set, it remembers the IP -> domain mapping for 10 minutes. This speeds up handling of later packets to the same server even when they do not carry SNI.
-:::
-
-### What happens on a match
-
-For TCP packets, b4 intercepts the original packet and sends a modified version instead. Depending on the set settings, the following may be applied:
-
-1. Removing the SACK option (if enabled)
-2. ClientHello mutation (if enabled)
-3. Desync (RST/FIN/ACK)
-4. TCP window manipulation
-5. Sending fake SNI packets
-6. Fragmentation by the chosen strategy
-
-For UDP, the packet is either dropped (drop mode) or replaced with a fake response (fake mode).
-
-If no set matches, the packet passes through unchanged.
-
-## Import and export
-
-The **Import/Export** tab shows the JSON configuration of a set. You can:
-
-- Copy the JSON to move it to another device
-- Paste JSON to import a configuration
-
-A set meant for another person is prepared as a [shared set](./sharing) instead, which leaves out everything tied to this router. Source devices (MAC addresses) and the [Escalation](./escalation) settings are not exported - they reference local state (devices and other sets) that does not transfer between devices. Configure them again on the target. A set with source devices is exported without its own [DSCP value](./routing.md#dscp) as well. The JSON carries the set's [Discovery addresses](./discovery) but not its watchdog switch, so an imported set starts unwatched.
+A set for someone else is a [shared set](./sharing.md), which leaves out everything tied to this router. With the Community Hub switched on under **Settings > Integrations**, the same tab prepares one. The **Import** field accepts both forms.

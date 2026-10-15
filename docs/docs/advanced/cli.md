@@ -1,11 +1,12 @@
 ---
 sidebar_position: 1
-title: CLI parameters
+title: Command-line flags
+description: The flags b4 accepts at startup and the configuration setting each one overrides.
 ---
 
-b4 accepts command-line parameters, and they take precedence over the values in the configuration file.
+b4 accepts command-line flags, and they take precedence over the values in the [configuration file](./config.md).
 
-A value given on the command line is not written back into the file. When b4 saves its configuration, a setting that came from a flag is stored with the value the file already had, so a flag stays a run-time override rather than a permanent change.
+A flag overrides the setting for one run only. When b4 saves its configuration, a setting that came from a flag keeps the value the file already had.
 
 ## General
 
@@ -18,69 +19,66 @@ A value given on the command line is not written back into the file. When b4 sav
 
 ## Queue and processing
 
-| Flag | Description | Default |
-| --- | --- | --- |
-| `--queue-num` | Netfilter queue number | `537` |
-| `--threads` | Number of worker threads | `4` |
-| `--mark` | Queue mark (`queue.mark`), see [Packet marks](/docs/guides/marks#the-queue-mark) | `32768` |
-| `--ipv4` | Process IPv4 traffic (`queue.ipv4`) | `true` |
-| `--ipv6` | Process IPv6 traffic (`queue.ipv6`) | `false` |
+| Flag | Description | Setting | Default |
+| --- | --- | --- | --- |
+| `--queue-num` | The first netfilter queue number | `queue.start_num` | `537` |
+| `--threads` | Number of worker threads | `queue.threads` | `4` |
+| `--mark` | The queue mark, see [Packet marks](../guides/marks.md) | `queue.mark` | `32768` |
+| `--ipv4` | Process IPv4 traffic | `queue.ipv4` | `true` |
+| `--ipv6` | Process IPv6 traffic | `queue.ipv6` | `false` |
 
-### About `--ipv6`
-
-`--ipv6` is the command-line form of the **Enable IPv6 Support** switch in [Settings, Core, Packet Engine](../settings/core#protocols), stored as `queue.ipv6`. It decides whether **b4** processes IPv6. It does not enable or disable IPv6 on the router, and the network keeps using IPv6 either way.
-
-With it off, which is the default:
-
-- b4 processes no IPv6 packet, with one exception in NFQUEUE mode: while an enabled set has [Remove ECH keys from DNS answers](../dns#removing-ech-keys) on, IPv6 DNS answers and DNS over TCP reach b4, which only removes ECH keys from them.
-- No other IPv6 firewall rules are written for any set, in any mode. Routing, blocking and the QUIC refusal a proxy set installs are all IPv4-only.
-- A site a set targets that also answers over IPv6 is reached over IPv6 by the client and bypasses the set entirely. b4 writes a warning to the log when the host has a working global IPv6 address and this is off.
-- To narrow that gap, b4 strips IPv6 addresses out of DNS answers for domains a set matched, so clients resolving through the router stay on the IPv4 path. See [The IPv4 fallback](../dns#the-ipv4-fallback).
-
-The queue's address families are bound when the service starts, so changing this takes full effect only after a restart.
+`--ipv6` is the **Enable IPv6 Support** switch under **Settings > Core > Packet Engine**. It decides whether b4 processes IPv6, not whether the router uses it. With it off, IPv6 connections pass the router without any set applying to them. In NFQUEUE mode, b4 still removes [ECH keys](../dns.md#removing-ech-keys) from IPv6 DNS answers. See [The `queue` section](./config.md#the-queue-section).
 
 ## Firewall
 
-| Flag | Description | Default |
-| --- | --- | --- |
-| `--skip-tables` | Do not create iptables/nftables rules at startup | `false` |
-| `--tables-monitor-interval` | How often to check and restore the rules, in seconds. With NFQUEUE `0` disables it; in TUN mode the interval is at least 10 and `0` does not disable it | `10` |
+| Flag | Description | Setting | Default |
+| --- | --- | --- | --- |
+| `--skip-tables` | Do not create iptables/nftables rules at startup | `system.tables.skip_setup` | `false` |
+| `--tables-monitor-interval` | How often to check and restore the rules, in seconds. With NFQUEUE `0` turns the check off; in TUN mode the interval is at least 10, and `0` does not turn it off | `system.tables.monitor_interval` | `10` |
 
 ## Logging
 
-| Flag | Description | Default |
-| --- | --- | --- |
-| `-i`, `--instaflush` | Flush log writes immediately | `true` |
-| `--syslog` | Send log lines to syslog as well | `false` |
-| `--log-dir` | Directory for b4's log files. Empty disables file logging | `/var/log/b4` |
+| Flag | Description | Setting | Default |
+| --- | --- | --- | --- |
+| `-i`, `--instaflush` | Flush log writes immediately | `system.logging.instaflush` | `true` |
+| `--syslog` | Send log lines to syslog as well | `system.logging.syslog` | `false` |
+| `--log-dir` | Directory for b4's log files. Empty turns file logging off | `system.logging.directory` | `/var/log/b4` |
 
 ## Web server
 
-| Flag | Description | Default |
+| Flag | Description | Setting | Default |
+| --- | --- | --- | --- |
+| `--web-port` | Port of the web interface. `0` turns it off | `system.web_server.port` | `7000` |
+
+## Environment variables {#environment-variables}
+
+| Variable | Description | Setting |
 | --- | --- | --- |
-| `--web-port` | Port for the web interface. `0` disables it | `7000` |
+| `GOMEMLIMIT` | The memory limit of the Go runtime. While it is set, b4 does not apply [Memory Limit](../settings/system.md#service-settings) | `system.memory_limit` |
+
+`GOMEMLIMIT` takes the Go runtime's format, not the field's: a byte count such as `268435456` or `256MiB`, or `off`. With a value such as `256m`, b4 does not start.
 
 ## Examples
 
-Run with a custom configuration file and debug logging:
+A custom configuration file and debug logging:
 
 ```bash
 b4 --config /opt/etc/b4/b4.json --verbose debug
 ```
 
-Clear the firewall rules:
+Removing b4's firewall rules:
 
 ```bash
 b4 --clear-tables
 ```
 
-Run without automatic firewall setup, managing the rules by hand:
+Running without automatic firewall setup, with the rules managed by hand:
 
 ```bash
 b4 --skip-tables
 ```
 
-Run with IPv6 processing on for this run only, leaving the configuration file alone:
+IPv6 processing for this run only, with the configuration file left as it is:
 
 ```bash
 b4 --ipv6
