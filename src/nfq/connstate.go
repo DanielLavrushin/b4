@@ -82,13 +82,14 @@ func (c *tlsInfoCache) Lookup(connKey string) (string, uint16, bool) {
 }
 
 func (c *tlsInfoCache) Decision(connKey string) (string, uint16, *sni.SuffixSet, *config.SetConfig, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	info, exists := c.conns[connKey]
 	if !exists {
 		return "", 0, nil, nil, false
 	}
+	info.lastSeen = time.Now()
 	return info.host, info.tlsVersion, info.decidedBy, info.set, true
 }
 

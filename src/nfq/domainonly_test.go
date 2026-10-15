@@ -540,6 +540,29 @@ func TestLaterPacketsReuseTheConnectionsDecision(t *testing.T) {
 	}
 }
 
+func TestAConnectionKeepsItsSetWhileItKeepsSending(t *testing.T) {
+	images := newFragmentingYTImagesSet()
+	w := newInjectingWorker(t, &images)
+	age := func(d time.Duration) {
+		w.tlsCache.mu.Lock()
+		defer w.tlsCache.mu.Unlock()
+		for _, info := range w.tlsCache.conns {
+			info.lastSeen = info.lastSeen.Add(-d)
+		}
+	}
+
+	hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+	seq := 1000 + uint32(len(hello))
+	w.ProcessPacket(makeV4TCPPacket(hello, 1000))
+	age(100 * time.Second)
+	w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), seq))
+	age(100 * time.Second)
+	w.tlsCache.Cleanup()
+	if v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), seq+69)); v != engine.VerdictDrop {
+		t.Errorf("a connection that sent a packet 100 s ago keeps its set 200 s after its ClientHello, got %v", v)
+	}
+}
+
 func TestASetChangeForgetsTheConnectionsDecision(t *testing.T) {
 	images := newFragmentingYTImagesSet()
 	cfg := config.NewConfig()
