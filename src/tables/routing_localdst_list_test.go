@@ -155,7 +155,9 @@ func TestARemovedSetsAddressListDoesNotKeepTheMonitorRebuilding(t *testing.T) {
 	m, _ := newLockTestMonitor(t)
 	m.reconcileRouting(false)
 	addrs.set(testCIDR(t, "192.168.1.7/24"))
-	m.reconcileRouting(false)
+	if m.reconcileRouting(false) {
+		t.Fatal("the first tick after the address change rebuilt routing for a list only the removed set carried")
+	}
 	for tick := 1; tick <= 3; tick++ {
 		if m.reconcileRouting(false) {
 			t.Fatalf("tick %d rebuilt routing for an address list no installed set carries any more", tick)
@@ -176,5 +178,109 @@ func TestTheAddressListWarningIsNotAboutProxySetsOnly(t *testing.T) {
 	}
 	if !strings.Contains(got, "while the tables monitor runs") {
 		t.Errorf("with monitor_interval at 0 nothing watches the addresses, so the warning must not promise a rebuild on every address change:\n%s", got)
+	}
+}
+
+func TestTheAddressListIsWatchedForTheRulesTheChainStillCarries(t *testing.T) {
+	familyResetGlobals(t)
+	gwIsolate(t)
+	fw := stubRevertFirewall(t)
+	stubBinaries(t, "ip", "nft")
+	gwStubHost(t, map[string][]string{"lo": {"192.0.2.10/24"}})
+	addrs := stubLocalAddrs(t, testCIDR(t, "192.168.1.1/24"))
+	firewall := run
+	run = func(args ...string) (string, error) {
+		if strings.Contains(strings.Join(args, " "), "fib daddr") {
+			return "Error: Could not process rule: No such file or directory", errors.New("exit status 1")
+		}
+		return firewall(args...)
+	}
+	be := &routeNftBackend{}
+	cfg := familyTestConfig(true, false)
+	set := gwTestSet("relisted", "lo", "192.0.2.1")
+	cfg.Sets = []*config.SetConfig{set}
+	st := gwResolvedState(cfg, set)
+	if !routeGuardNarrowed(st) {
+		t.Fatalf("the gateway set must carry the narrowed guard, peers %v", st.gwPeersV4)
+	}
+	if err := routeEnsureRule(be, cfg, set, st, nil); err != nil {
+		t.Fatalf("routeEnsureRule: %v", err)
+	}
+
+	plain := gwTestSet("relisted", "lo", "")
+	cfg.Sets = []*config.SetConfig{plain}
+	without := gwResolvedState(cfg, plain)
+	fw.refuseRules(`iifname "lo" return`)
+	if err := routeEnsureRule(be, cfg, plain, without, nil); err == nil {
+		t.Fatal("the guard was refused, yet the rebuild reported success")
+	}
+	addrs.set(testCIDR(t, "192.168.1.7/24"))
+	if !routeLocalGuardListsMoved() {
+		t.Fatal("the failed rebuild left the previous rules and their list of router addresses in place, yet an address change no longer counts")
+	}
+
+	addrs.set(testCIDR(t, "192.168.1.1/24"))
+	fw.refuseRules("")
+	if err := routeEnsureRule(be, cfg, plain, without, nil); err != nil {
+		t.Fatalf("routeEnsureRule: %v", err)
+	}
+	addrs.set(testCIDR(t, "192.168.1.7/24"))
+	if routeLocalGuardListsMoved() {
+		t.Fatal("the set was rebuilt without the address list, yet a change of the router's addresses still rebuilds all routing")
+	}
+}
+
+func TestAProxySetsAddressListFollowsTheRulesItsChainCarries(t *testing.T) {
+	familyResetGlobals(t)
+	localGuardReset(t)
+	stubRevertFirewall(t)
+	stubBinaries(t, "ip", "nft")
+	prevSysctl := writeSysctl
+	t.Cleanup(func() { writeSysctl = prevSysctl })
+	writeSysctl = func(path, value string) {}
+	proxyTableMu.Lock()
+	chosen, resolved := proxyTableChosen, proxyTableResolved
+	proxyTableMu.Unlock()
+	t.Cleanup(func() {
+		proxyTableMu.Lock()
+		proxyTableChosen, proxyTableResolved = chosen, resolved
+		proxyTableMu.Unlock()
+	})
+	addrs := stubLocalAddrs(t, testCIDR(t, "192.168.1.1/24"))
+	cfg := familyTestConfig(true, false)
+	set := orderTestSet("plisted", config.RoutingModeProxy, nil)
+	cfg.Sets = []*config.SetConfig{set}
+	st := proxyGuardState(0x5400)
+	st.setID = set.Id
+	st.setV4, st.setV6 = routeBuildSetNames(set.Id)
+	st.chainPre, st.chainOut, st.chainSNAT = routeBuildChainNames(set.Id)
+	st.chainQUIC = routeBuildQUICChainName(set.Id)
+	st.quicReject = true
+	refuseQUIC := false
+	firewall := run
+	run = func(args ...string) (string, error) {
+		line := strings.Join(args, " ")
+		if strings.Contains(line, "fib daddr") || (refuseQUIC && strings.Contains(line, "add chain inet "+routeNftTable+" "+st.chainQUIC)) {
+			return "Error: Could not process rule: No such file or directory", errors.New("exit status 1")
+		}
+		return firewall(args...)
+	}
+	be := &routeNftBackend{}
+
+	if err := routeEnsureProxyRule(be, cfg, set, st, nil); err != nil {
+		t.Fatalf("routeEnsureProxyRule: %v", err)
+	}
+	addrs.set(testCIDR(t, "192.168.1.7/24"))
+	refuseQUIC = true
+	if err := routeEnsureProxyRule(be, cfg, set, st, nil); err == nil {
+		t.Fatal("the QUIC chain was refused, yet the rebuild reported success")
+	}
+	if !routeLocalGuardListsMoved() {
+		t.Fatal("the failed rebuild took its own rules back and left the previous ones, which list 192.168.1.1, yet the list counts as current")
+	}
+
+	routeCleanupProxyRule(be, st, false)
+	if routeLocalGuardListsMoved() {
+		t.Fatal("the proxy set's chain is gone, yet its address list still makes an address change rebuild all routing")
 	}
 }

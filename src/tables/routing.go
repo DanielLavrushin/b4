@@ -1681,9 +1681,13 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		be.snapshotChainRules(st.chainOut, true),
 		be.snapshotChainRules(st.chainSNAT, false),
 	}
+	listed := routeLocalGuardSwapLists(st.chainPre, nil)
 	rebuilt := false
 	appended := false
 	defer func() {
+		if !rebuilt {
+			routeLocalGuardSwapLists(st.chainPre, listed)
+		}
 		for _, snap := range superseded {
 			switch {
 			case rebuilt:
@@ -2222,6 +2226,7 @@ func routeCleanupRule(be routeBackend, st routeState, keepSets bool) {
 
 	be.flushChain(st.chainPre, true)
 	be.deleteChain(st.chainPre, true)
+	routeLocalGuardSwapLists(st.chainPre, nil)
 	be.flushChain(st.chainOut, true)
 	be.deleteChain(st.chainOut, true)
 	be.flushChain(st.chainSNAT, false)

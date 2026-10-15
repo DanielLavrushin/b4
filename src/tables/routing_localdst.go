@@ -62,6 +62,23 @@ func routeLocalGuardForgetLists() {
 	routeLocalGuardMu.Unlock()
 }
 
+func routeLocalGuardSwapLists(chain string, lists map[bool]string) map[bool]string {
+	routeLocalGuardMu.Lock()
+	defer routeLocalGuardMu.Unlock()
+	prev := map[bool]string{}
+	for _, v6 := range []bool{false, true} {
+		key := routeLocalListKey{chain: chain, v6: v6}
+		if list, ok := routeLocalGuardListed[key]; ok {
+			prev[v6] = list
+			delete(routeLocalGuardListed, key)
+		}
+		if list, ok := lists[v6]; ok {
+			routeLocalGuardListed[key] = list
+		}
+	}
+	return prev
+}
+
 func routeLocalGuardList(chain string, v6 bool) []string {
 	list := routeLocalAddressList(v6)
 	routeLocalGuardMu.Lock()
