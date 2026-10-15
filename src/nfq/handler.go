@@ -302,7 +302,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return vc.accept()
 	}
 	datOff := int((tcp[12]>>4)&0x0f) * 4
-	if len(tcp) < datOff {
+	if datOff < TCPHeaderMinLen || len(tcp) < datOff {
 		return vc.accept()
 	}
 	payload := tcp[datOff:]
@@ -463,22 +463,29 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		observeFlow(cfg, pkt, sport, dport, set, "")
 
+		syn := pkt.raw
+		if len(payload) > 0 && needsTCPInjection(set) {
+			if stripped, ok := synWithoutPayload(pkt.raw, pkt.ver, pkt.ihl, datOff); ok {
+				syn = stripped
+			}
+		}
+
 		if pkt.ver == IPv4 {
 			if set.TCP.SynFake {
-				w.sendFakeSyn(set, pkt.raw, pkt.ihl, datOff)
+				w.sendFakeSyn(set, syn, pkt.ihl, datOff)
 			}
 			if set.Faking.TCPMD5 {
-				w.sendFakeSynWithMD5(set, pkt.raw, pkt.ihl, pkt.dst)
+				w.sendFakeSynWithMD5(set, syn, pkt.ihl, pkt.dst)
 			}
-			_ = w.sock.SendIPv4(pkt.raw, pkt.dst)
+			_ = w.sock.SendIPv4(syn, pkt.dst)
 		} else {
 			if set.TCP.SynFake {
-				w.sendFakeSynV6(set, pkt.raw, pkt.ihl, datOff)
+				w.sendFakeSynV6(set, syn, pkt.ihl, datOff)
 			}
 			if set.Faking.TCPMD5 {
-				w.sendFakeSynWithMD5V6(set, pkt.raw, pkt.dst)
+				w.sendFakeSynWithMD5V6(set, syn, pkt.dst)
 			}
-			_ = w.sock.SendIPv6(pkt.raw, pkt.dst)
+			_ = w.sock.SendIPv6(syn, pkt.dst)
 		}
 
 		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
@@ -678,10 +685,15 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		observeFlow(cfg, pkt, sport, dport, flowSet, host)
 	}
 
+	var strippedSyn []byte
+	if isSyn && len(payload) > 0 && matched && set != nil && !routeHandsOff && needsTCPInjection(set) {
+		strippedSyn, _ = synWithoutPayload(pkt.raw, pkt.ver, pkt.ihl, datOff)
+	}
+
 	stallCount := 0
 	stallFirstSeen := time.Time{}
 	stallTracked := false
-	if matched && isClientHello && host != "" && cfg.IsTCPPort(dport) &&
+	if matched && isClientHello && strippedSyn == nil && host != "" && cfg.IsTCPPort(dport) &&
 		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) {
 		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host)
 		stallTracked = true
@@ -772,6 +784,28 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		if len(payload) == 0 && !needsPayloadlessInjection(set) {
 			return vc.accept()
+		}
+
+		if isSyn && len(payload) > 0 {
+			if strippedSyn == nil {
+				return vc.accept()
+			}
+			if set.TCP.DropSACK {
+				if pkt.ver == 4 {
+					strippedSyn = sock.StripSACKFromTCP(strippedSyn)
+				} else {
+					strippedSyn = sock.StripSACKFromTCPv6(strippedSyn)
+				}
+			}
+			if !vc.drop() {
+				return 0
+			}
+			if pkt.ver == 4 {
+				_ = w.sock.SendIPv4(strippedSyn, pkt.dst)
+			} else {
+				_ = w.sock.SendIPv6(strippedSyn, pkt.dst)
+			}
+			return 0
 		}
 
 		if !injectAcquire() {
@@ -884,7 +918,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	namedByHello := false
 	helloDatagram := false
-	if isQUIC && (host == "" || coalescesInitials(set)) {
+	if isQUIC && (host == "" || coalescesInitials(set) || coalescesInitials(w.escalatedSetFor(cfg, host, pkt.srcMac))) {
 		if h, ok := sni.ParseQUICClientHelloSNI(payload); ok {
 			helloDatagram = true
 			host = h

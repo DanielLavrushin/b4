@@ -288,6 +288,44 @@ func TestAnAddressLearnedByACoalescingSetDoesNotHideABlockedName(t *testing.T) {
 	}
 }
 
+func TestAnEscalationToACoalescingSetCoalescesOnALearnedAddress(t *testing.T) {
+	fallback := newDomainOnlyQUICSet(config.UDPModeCoalesce)
+	fallback.Id = "coalesce-fallback"
+	fallback.Name = "CoalesceFallback"
+	fallback.Targets.SNIDomains = []string{"fallback.example"}
+
+	learning := newDomainOnlyQUICSet(config.ConfigOff)
+	learning.Id = "learning"
+	learning.Name = "Learning"
+	learning.Targets.SNIDomains = []string{"escalate.example"}
+	learning.Targets.DomainOnly = false
+	learning.Escalate.To = fallback.Id
+
+	for _, escalated := range []bool{false, true} {
+		w := newQUICFlowWorker(t, &learning, &fallback)
+		sent := captureInjected(t, w)
+		if v := sendQUIC(w, buildQUICInitialWithSNI(t, []byte{0xa0, 1, 2, 3, 4, 5, 6, 7}, "www.escalate.example"), 50401); v != engine.VerdictAccept {
+			t.Fatalf("the learning set leaves QUIC alone, got %v", v)
+		}
+		if escalated {
+			w.destState.SetEscalation("www.escalate.example", fallback.Id, escalateReasonStall, time.Minute)
+		}
+
+		hello := buildQUICInitialWithSNI(t, []byte{0xa1, 1, 2, 3, 4, 5, 6, 7}, "www.escalate.example")
+		v := sendQUIC(w, hello, 50402)
+		got := sent()
+		if !escalated {
+			if v != engine.VerdictAccept || len(got) != 0 {
+				t.Errorf("without escalation the learning set leaves the ClientHello datagram alone, got %v and %d packets", v, len(got))
+			}
+			continue
+		}
+		if v != engine.VerdictDrop || len(got) != 1 || len(got[0]) <= 28+len(hello) {
+			t.Errorf("after escalation to a coalescing set, a ClientHello datagram to the learned address must go out coalesced, got %v and %d packets", v, len(got))
+		}
+	}
+}
+
 func TestAStaticAddressSetKeepsTheLaterDatagramsOfAQUICFlow(t *testing.T) {
 	named := newDomainOnlyQUICSet(config.UDPModeDrop)
 	static := config.NewSetConfig()
