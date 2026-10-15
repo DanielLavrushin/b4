@@ -13,8 +13,24 @@ import { colors } from "@design";
 import { DscpEnvironment } from "@utils";
 import { Trans, useTranslation } from "react-i18next";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import * as ipaddr from "ipaddr.js";
 import { hasTargets } from "../facets";
 import { SetDscp } from "./SetDscp";
+
+const gatewayZone = /^[^\s%/[\]]+$/;
+
+function isGatewayAddress(value: string): boolean {
+  const text = value.trim();
+  if (!text) return true;
+  const zoneAt = text.indexOf("%");
+  if (zoneAt === -1) {
+    return ipaddr.IPv4.isValidFourPartDecimal(text) || ipaddr.IPv6.isValid(text);
+  }
+  return (
+    gatewayZone.test(text.slice(zoneAt + 1)) &&
+    ipaddr.IPv6.isValid(text.slice(0, zoneAt))
+  );
+}
 
 interface TrafficRoutingProps {
   config: B4SetConfig;
@@ -77,6 +93,10 @@ export const TrafficRouting = ({
   const shouldShowUnavailableSelected = Boolean(
     isInterface && routing.egress_interface && !selectedIfaceAvailable,
   );
+
+  const gatewayInvalid =
+    Boolean(routing.egress_interface) &&
+    !isGatewayAddress(routing.egress_gateway ?? "");
 
   const routerTraffic: RouterTraffic = routing.router_traffic ?? "auto";
   const egressIsTunnel = tunnelIfaces.includes(routing.egress_interface);
@@ -478,10 +498,13 @@ export const TrafficRouting = ({
                   onChange("routing.egress_gateway", e.target.value)
                 }
                 disabled={!routing.egress_interface}
+                error={gatewayInvalid}
                 helperText={
-                  routing.egress_interface
-                    ? t("sets.routing.egressGatewayHelper")
-                    : t("sets.routing.egressGatewayNeedsInterface")
+                  !routing.egress_interface
+                    ? t("sets.routing.egressGatewayNeedsInterface")
+                    : gatewayInvalid
+                      ? t("sets.routing.egressGatewayInvalid")
+                      : t("sets.routing.egressGatewayHelper")
                 }
                 placeholder="192.168.1.254"
                 selectOnFocus
