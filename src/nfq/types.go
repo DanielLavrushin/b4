@@ -57,6 +57,7 @@ type Worker struct {
 	destState        *destStateTracker
 	pendingHello     *pendingHelloCache
 	hostHints        *hostHintCache
+	quicFlows        *quicFlowCache
 	ipHealth         *iphealth.Tracker
 	pinHealth        *pinHealth
 	goodIPs          *iphealth.KnownGood

@@ -292,6 +292,10 @@ func duplicatesPackets(set *config.SetConfig) bool {
 	return set.TCP.Duplicate.Enabled && set.TCP.Duplicate.Count > 0
 }
 
+func coalescesInitials(set *config.SetConfig) bool {
+	return set != nil && set.UDP.Mode == config.UDPModeCoalesce
+}
+
 func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, matcher *sni.SuffixSet, matched bool, set *config.SetConfig, st *config.SetConfig) int {
 	tcp := pkt.raw[pkt.ihl:]
 	if len(tcp) < TCPHeaderMinLen {
@@ -878,9 +882,13 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	isQUIC := quic.LooksLikeQUIC(payload)
 
-	if host == "" && isQUIC {
+	namedByHello := false
+	helloDatagram := false
+	if isQUIC && (host == "" || coalescesInitials(set)) {
 		if h, ok := sni.ParseQUICClientHelloSNI(payload); ok {
+			helloDatagram = true
 			host = h
+			namedByHello = true
 		}
 	}
 
@@ -897,6 +905,14 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
+	if namedByHello {
+		if matchedQUIC {
+			w.quicFlows.Store(connKey, host, quic.ParseDCID(payload))
+		} else {
+			w.quicFlows.Forget(connKey)
+		}
+	}
+
 	if !matchedQUIC && (matchedIP || matchedPort) && set.UDP.FilterQUIC == "all" {
 		if isQUIC {
 			matchedQUIC = true
@@ -907,16 +923,28 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		captureManager.CapturePayload(connKey, host, "quic", payload)
 	}
 
-	shouldHandle := (matchedIP || matchedQUIC || matchedPort) && !(isVoiceMedia && set.UDP.FilterSTUN)
+	matchedFlow := false
+	if matchedLearned || (host == "" && !matchedIP) {
+		if flowSet, flowHost := w.quicFlowSet(cfg, matcher, connKey, pkt, dport, payload); flowSet != nil {
+			matchedFlow = true
+			matchedLearned = false
+			set = flowSet
+			host = flowHost
+			sniTarget = flowSet.Name
+			ipTarget = ""
+		}
+	}
+
+	shouldHandle := (matchedIP || matchedQUIC || matchedFlow || matchedPort) && !(isVoiceMedia && set.UDP.FilterSTUN)
 
 	matched = shouldHandle
 
 	udpTLS := ""
-	if matchedQUIC || isQUIC {
+	if matchedQUIC || matchedFlow || isQUIC {
 		udpTLS = "1.3"
 	}
 
-	if shouldHandle && set != nil && host != "" {
+	if shouldHandle && set != nil && host != "" && !matchedFlow {
 		if escSet := w.escalatedSetFor(cfg, host, pkt.srcMac); escSet != nil {
 			if escSet != set {
 				log.Tracef("UDP escalation hit for %s: %s -> %s", host, set.Name, escSet.Name)
@@ -950,7 +978,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
-		if matchedQUIC || (matchedIP && !matchedLearned) {
+		if matchedQUIC || matchedFlow || (matchedIP && !matchedLearned) {
 			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
 				if pkt.ver == IPv4 {
 					if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
@@ -1001,6 +1029,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	case config.UDPModeCoalesce:
 		if !config.RoutingUsesTProxy(set.RoutingModeOrDefault()) && set.RoutingHandsOffPackets() {
+			return vc.accept()
+		}
+		if !helloDatagram {
 			return vc.accept()
 		}
 		coalesced, ok := quic.CoalesceInitial(payload, 0)

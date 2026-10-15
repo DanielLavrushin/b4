@@ -37,7 +37,7 @@ With **By SNI** and no domains or GeoSite categories on the [Targets](./targets.
 | **Fake & Fragment** | Decoy packets go before the real one, and the Initial packet is fragmented. Weak against QUIC. |
 | **Drop** | The packet is dropped without an answer. The client falls back to TCP once it stops waiting, usually after several seconds. |
 | **Reject** | The packet is dropped, and an ICMP port unreachable goes back to the client, which switches to TCP at once. The recommended way to refuse QUIC. |
-| **Coalesce QUIC Initial** | Sends the QUIC handshake behind a padding packet in the same datagram. Inspection that reads only the first packet of a datagram no longer sees the server name. The handshake itself is unchanged. |
+| **Coalesce QUIC Initial** | Sends the handshake packet that carries the server name behind a padding packet in the same datagram. Inspection that reads only the first packet of a datagram no longer sees the name. The rest of the connection goes out untouched, and the handshake itself is unchanged. |
 
 When the set blocks its traffic on the [DNS & Routing](./routing.md) tab, the block action applies instead of the action mode.
 
