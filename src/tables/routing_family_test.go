@@ -28,15 +28,24 @@ func familyTestSet() *config.SetConfig {
 	return &s
 }
 
+func familyForgetGatewayWarnings() {
+	routeGatewayWarned.Range(func(k, _ any) bool {
+		routeGatewayWarned.Delete(k)
+		return true
+	})
+}
+
 func familyResetGlobals(t *testing.T) {
 	t.Helper()
 	engine, cache, auto, refreshed := routeEngine, routeRuleCache, routeIfaceAuto, routeRefreshedAt
 	logged, delRule := runLogged, routeDelRuleLoop
 	addCheck, delCheck := routeAddSourceCheckRule, routeDelSourceCheckRule
+	hostIfaces, linkType := routeHostIfaces, routeLinkType
 	routeMu.Lock()
 	synced := routeSyncedCfg
 	routeSyncedCfg = nil
 	routeMu.Unlock()
+	familyForgetGatewayWarnings()
 	t.Cleanup(func() {
 		routeEngine = engine
 		routeRuleCache = cache
@@ -46,6 +55,9 @@ func familyResetGlobals(t *testing.T) {
 		routeDelRuleLoop = delRule
 		routeAddSourceCheckRule = addCheck
 		routeDelSourceCheckRule = delCheck
+		routeHostIfaces = hostIfaces
+		routeLinkType = linkType
+		familyForgetGatewayWarnings()
 		routeMu.Lock()
 		routeSyncedCfg = synced
 		routeMu.Unlock()

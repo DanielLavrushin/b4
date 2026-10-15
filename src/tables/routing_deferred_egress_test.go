@@ -50,6 +50,10 @@ func TestAbsentEgressInterfaceClearsAStaleBlackhole(t *testing.T) {
 }
 
 func TestPresentEgressInterfaceStillGetsItsRuleAndKillSwitch(t *testing.T) {
+	rpFilterHarness(t, map[string]string{"all": "0", "lo": "0"})
+	prevSeen := routeIfaceSeen
+	routeIfaceSeen = make(map[string]bool)
+	t.Cleanup(func() { routeIfaceSeen = prevSeen })
 	emitted := deferredEgressCommands(t, "lo", true)
 
 	if !strings.Contains(emitted, "rule add fwmark") {
@@ -79,6 +83,10 @@ func TestAVanishedInterfaceKeepsItsKillSwitch(t *testing.T) {
 }
 
 func TestTheTableIsPopulatedBeforeTrafficIsPointedAtIt(t *testing.T) {
+	rpFilterHarness(t, map[string]string{"all": "0", "lo": "0"})
+	prevSeen := routeIfaceSeen
+	routeIfaceSeen = make(map[string]bool)
+	t.Cleanup(func() { routeIfaceSeen = prevSeen })
 	emitted := deferredEgressCommands(t, "lo", true)
 
 	route := strings.Index(emitted, "route replace default")
