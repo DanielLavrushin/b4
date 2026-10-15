@@ -31,8 +31,12 @@ func newPendingHelloCache() *pendingHelloCache {
 	return &pendingHelloCache{flows: make(map[string]*pendingHello)}
 }
 
+func startsClientHello(payload []byte) bool {
+	return len(payload) >= 6 && payload[0] == TLSHandshakeType && payload[5] == TLSClientHello
+}
+
 func truncatedClientHello(payload []byte) bool {
-	if len(payload) < 6 || payload[0] != TLSHandshakeType || payload[5] != TLSClientHello {
+	if !startsClientHello(payload) {
 		return false
 	}
 	recLen := int(payload[3])<<8 | int(payload[4])
