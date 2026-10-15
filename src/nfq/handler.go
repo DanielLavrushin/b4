@@ -292,6 +292,10 @@ func duplicatesPackets(set *config.SetConfig) bool {
 	return set.TCP.Duplicate.Enabled && set.TCP.Duplicate.Count > 0
 }
 
+func coalescesInitials(set *config.SetConfig) bool {
+	return set != nil && set.UDP.Mode == config.UDPModeCoalesce
+}
+
 func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, matcher *sni.SuffixSet, matched bool, set *config.SetConfig, st *config.SetConfig) int {
 	tcp := pkt.raw[pkt.ihl:]
 	if len(tcp) < TCPHeaderMinLen {
@@ -878,11 +882,15 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	isQUIC := quic.LooksLikeQUIC(payload)
 
-	parsedHello := false
-	if host == "" && isQUIC {
+	namedByHello := false
+	helloDatagram := false
+	if isQUIC && (host == "" || coalescesInitials(set)) {
 		if h, ok := sni.ParseQUICClientHelloSNI(payload); ok {
-			host = h
-			parsedHello = true
+			helloDatagram = true
+			if host == "" {
+				host = h
+				namedByHello = true
+			}
 		}
 	}
 
@@ -899,7 +907,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
-	if parsedHello {
+	if namedByHello {
 		if matchedQUIC {
 			w.quicFlows.Store(connKey, host, quic.ParseDCID(payload))
 		} else {
@@ -1022,6 +1030,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	case config.UDPModeCoalesce:
 		if !config.RoutingUsesTProxy(set.RoutingModeOrDefault()) && set.RoutingHandsOffPackets() {
+			return vc.accept()
+		}
+		if !helloDatagram {
 			return vc.accept()
 		}
 		coalesced, ok := quic.CoalesceInitial(payload, 0)

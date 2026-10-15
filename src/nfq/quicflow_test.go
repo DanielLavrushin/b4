@@ -148,6 +148,39 @@ func TestPacketShapingModesLeaveTheLaterDatagramsOfAQUICFlowAlone(t *testing.T) 
 	}
 }
 
+func TestCoalesceActsOnlyOnTheDatagramThatCompletesTheClientHello(t *testing.T) {
+	set := newDomainOnlyQUICSet(config.UDPModeCoalesce)
+	set.Id = "quic-learn"
+	set.Name = "QUICLearn"
+	set.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &set)
+
+	first := newSplitQUICHello(t, []byte{0x70, 1, 2, 3, 4, 5, 6, 7}, []byte{0x71, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, first.first, 50101); v != engine.VerdictAccept {
+		t.Fatalf("the first datagram carries no complete ClientHello, want accept, got %v", v)
+	}
+	if v := sendQUIC(w, first.completing, 50101); v != engine.VerdictDrop {
+		t.Fatalf("the datagram that completes the ClientHello must be coalesced, got %v", v)
+	}
+	if v := sendQUIC(w, first.resend, 50101); v != engine.VerdictAccept {
+		t.Errorf("the resend under the server's connection ID must go out untouched, got %v", v)
+	}
+
+	second := newSplitQUICHello(t, []byte{0x72, 1, 2, 3, 4, 5, 6, 7}, []byte{0x73, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, second.first, 50102); v != engine.VerdictAccept {
+		t.Errorf("once the set has learned the address, a datagram that does not complete the ClientHello must still go out untouched, got %v", v)
+	}
+	if v := sendQUIC(w, second.completing, 50102); v != engine.VerdictDrop {
+		t.Errorf("a later connection's ClientHello must still be coalesced, got %v", v)
+	}
+	if v := sendQUIC(w, second.resend, 50102); v != engine.VerdictAccept {
+		t.Errorf("a later connection's resend must go out untouched, got %v", v)
+	}
+	if v := sendQUIC(w, second.oneRTT, 50102); v != engine.VerdictAccept {
+		t.Errorf("a short-header packet must go out untouched, got %v", v)
+	}
+}
+
 func TestANewQUICConnectionOnTheSamePortDropsThePreviousName(t *testing.T) {
 	set := newDomainOnlyQUICSet(config.UDPModeDrop)
 
