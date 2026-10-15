@@ -243,6 +243,49 @@ func TestAFastOpenSynThatKeepsItsHelloCountsForStallDetection(t *testing.T) {
 	}
 }
 
+func fillInjectionBacklog(t *testing.T) {
+	t.Helper()
+	added := 0
+	for len(injectInflight) < cap(injectInflight) {
+		injectInflight <- struct{}{}
+		added++
+	}
+	t.Cleanup(func() {
+		for i := 0; i < added; i++ {
+			<-injectInflight
+		}
+	})
+}
+
+func TestAFullInjectionBacklogStillStripsAFastOpenSynAndCountsWhatGoesOutUnmodified(t *testing.T) {
+	set := newFragmentingYTImagesSet()
+	set.TCP.IPBlockDetect.Enabled = true
+	w := newDualStackInjectingWorker(t, &set)
+	sent := captureInjected(t, w)
+	fillInjectionBacklog(t)
+
+	hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+	syn := fastOpenSyn(IPv4, hello, 1000)
+	if v := w.ProcessPacket(syn); v != engine.VerdictDrop {
+		t.Fatalf("a full injection backlog must not let the fast-open SYN out with its ClientHello, got %v", v)
+	}
+	if got := sent(); len(got) != 1 {
+		t.Fatalf("the fast-open SYN must go out as one SYN, got %d packets", len(got))
+	} else {
+		assertSynWithoutPayload(t, got[0], syn)
+	}
+	if n := len(w.destState.conns); n != 0 {
+		t.Errorf("the ClientHello cut off the SYN must not be counted, got %d tracked connections", n)
+	}
+
+	if v := w.ProcessPacket(makeV4TCPPacketFlags(hello, 1001, 0x18)); v != engine.VerdictAccept {
+		t.Fatalf("with the backlog full the resent ClientHello goes out unmodified, got %v", v)
+	}
+	if e := w.destState.conns["10.0.0.1:12345->1.2.3.4:443"]; e == nil || e.retransmits != 1 {
+		t.Errorf("a ClientHello that goes out unmodified must be counted once, got %+v", e)
+	}
+}
+
 func TestAFastOpenSynKeepsItsPayloadWhenTheSetLeavesTheHelloAlone(t *testing.T) {
 	set := newPassiveSet()
 	w := newDualStackInjectingWorker(t, &set)

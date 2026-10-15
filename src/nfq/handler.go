@@ -786,20 +786,34 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			return vc.accept()
 		}
 
-		out := pkt.raw
 		if isSyn && len(payload) > 0 {
 			if strippedSyn == nil {
 				return vc.accept()
 			}
-			out = strippedSyn
+			if set.TCP.DropSACK {
+				if pkt.ver == 4 {
+					strippedSyn = sock.StripSACKFromTCP(strippedSyn)
+				} else {
+					strippedSyn = sock.StripSACKFromTCPv6(strippedSyn)
+				}
+			}
+			if !vc.drop() {
+				return 0
+			}
+			if pkt.ver == 4 {
+				_ = w.sock.SendIPv4(strippedSyn, pkt.dst)
+			} else {
+				_ = w.sock.SendIPv6(strippedSyn, pkt.dst)
+			}
+			return 0
 		}
 
 		if !injectAcquire() {
 			return vc.accept()
 		}
 
-		packetCopy := make([]byte, len(out))
-		copy(packetCopy, out)
+		packetCopy := make([]byte, len(pkt.raw))
+		copy(packetCopy, pkt.raw)
 
 		if set.TCP.DropSACK {
 			if pkt.ver == 4 {
