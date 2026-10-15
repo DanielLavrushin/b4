@@ -49,7 +49,7 @@ Issues on GitHub are public. The items above hold details of the router and the 
 | System Info | The host name, the addresses and MAC addresses of the interfaces, the firewall rules, and the proxy address of each proxy set. It is not masked. |
 | Log trace | The System Info report, the enabled sets with up to eight of their domains each, and the log lines. The lines name the sites the devices open, with the devices' IP and MAC addresses. A proxy set's proxy address is listed, its login is not. |
 | Set JSON | The set's domains and addresses. For a proxy set, also the proxy's address, username and password. |
-| Safe copy | The sets, the devices with their names and MAC addresses, the interfaces and the ports. Passwords, tokens, secrets and private host names are masked. |
+| Safe copy | The sets with their domains and the proxy address of each proxy set, the devices with their names and MAC addresses, the interfaces and the ports. Passwords, tokens, secrets and the host names of the router and of the owner's relays are masked. |
 | Installer output | The host name. |
 
 Each item is plain text, and a text editor shows what it holds before it is shared. A name or an address that has to stay private can be replaced with a placeholder, the same one wherever it appears.

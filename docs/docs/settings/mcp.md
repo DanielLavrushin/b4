@@ -75,7 +75,7 @@ While a token is set, it is the only credential the MCP endpoint accepts, and no
 Without a token, the endpoint accepts the login token of the web interface instead. That token expires after a day without use and is discarded on every restart, so an application set up with it soon loses access.
 
 :::warning The token on an untrusted network
-The token travels in a header of every request. Over plain HTTP anyone on the network path can read it and reuse it, so without [HTTPS](./security.md#https) the port belongs on a trusted network only. With no MCP token and no username and password under **Settings > System > Web Server**, anyone who reaches the port can read b4's status, configuration and diagnostics.
+The token travels in a header of every request. Over plain HTTP anyone on the network path can read it and reuse it, so without [HTTPS](./security.md#https) the port belongs on a trusted network only. With no MCP token and no username and password under **Settings > System > Web Server**, anyone who reaches the port can use the server: read b4's status, configuration and diagnostics, and make changes and run probes when those are allowed.
 :::
 
 ## What the assistant can do {#tools}

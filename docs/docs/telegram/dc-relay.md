@@ -31,7 +31,7 @@ The relay serves the [MTProto proxy](./mtproto-proxy.md) only. [Telegram over We
 
 ![The DC Relay socat setup dialog](/img/telegram/20260826233006.png)
 
-Each command forwards one VPS port, the base port plus the data centre's number minus one, to that data centre's port 443. Media data centre 203 shares the port of data centre 2 and needs no command of its own. With **Auto (WebSocket → TCP)**, b4 tries the relay first and the WebSocket routes after it.
+Each command forwards one VPS port, the base port plus the data centre's number minus one, to that data centre's port 443. Media data centre 203 shares the port of data centre 2 and needs no command of its own. With **Auto (WebSocket → TCP)**, b4 tries the relay first and the WebSocket routes after it. A WebSocket connection that b4 keeps open in advance is still used before the relay.
 
 ## IPv4 or IPv6
 

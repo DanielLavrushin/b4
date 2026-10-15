@@ -19,7 +19,7 @@ The assistant explains settings inside the web interface. b4 sends the question 
 | Field | What it does | Default |
 | --- | --- | --- |
 | **Enable AI assistance** | The switch in the card header. | Off |
-| **OpenAI**, **Anthropic**, **Ollama**, **OpenAI-compatible** | The provider. With OpenAI or Anthropic, the questions and the parts of the configuration they touch leave the router for that provider. With Ollama they stay local. | None |
+| **OpenAI**, **Anthropic**, **Ollama**, **OpenAI-compatible** | The provider. With OpenAI or Anthropic, the questions and the parts of the configuration they touch leave the router for that provider. With Ollama they stay local while **Endpoint** points to the router or a computer in the local network. | None |
 | **Model** | The model, picked from the provider's list or typed in. | Empty |
 | **API key** | Required for OpenAI and Anthropic, optional for OpenAI-compatible. **Set key** stores it on the router in a file of its own, not in the configuration. | Empty |
 
@@ -41,7 +41,7 @@ The MCP server lets an AI application, such as Claude Desktop, Cursor or LM Stud
 | Field | What it does | Default |
 | --- | --- | --- |
 | **Enable MCP server** | The switch in the card header. The server uses the port of the web interface. | Off |
-| **Access token** | The token the AI application presents. **Generate** creates one, **Regenerate** replaces it. Without a token the application needs a web login, which ends when b4 restarts. | Empty |
+| **Access token** | The token the AI application presents. **Generate** creates one, **Regenerate** replaces it. Without a token, the application needs a [web login](./security.md#authentication) while one is set, and that login ends when b4 restarts. Without either, anyone who reaches the port can use the server, including changes and probes when they are allowed. | Empty |
 | **Allow configuration changes** | Lets the AI change the sets and the MTProto, SOCKS5 and logging settings, not only read them. Credentials and all other settings stay read-only. | Off |
 | **Allow active probes** | Lets the AI make b4 fetch a domain and run Discovery, which sends real traffic from the router. | Off |
 | **Client configuration** | The entry to paste into the AI application, with the address and the token. | - |

@@ -113,7 +113,7 @@ The **Restart B4 Service** dialog opens after the restore. The restored configur
 
 | Button | Content |
 | --- | --- |
-| **Download safe copy** | The configuration with credentials, private host names and secrets masked, for sharing when asking for help |
+| **Download safe copy** | The configuration with credentials, secrets and the host names of the router and of the owner's relays masked, for sharing when asking for help. Sets, with their domains and proxy addresses, stay as they are |
 | **Download as is** | The full configuration, with the password hash and every token and secret |
 
 #### Safe copy {#safe-copy}
@@ -125,7 +125,7 @@ The safe copy removes the web interface password and puts `[redacted]` in place 
 - credentials and paths in URLs, and private DNS-over-HTTPS addresses;
 - the update mirrors.
 
-Sets with their targets and strategies, devices, interfaces and ports stay as they are.
+Sets with their targets, strategies and proxy addresses, devices, interfaces and ports stay as they are.
 
 b4 refuses to save a configuration that still holds `[redacted]` in a masked field. A configuration file with it does not load. b4 then starts with default settings and keeps only the port and bind address of the web server, so the web interface opens without a login. The next save replaces the file.
 

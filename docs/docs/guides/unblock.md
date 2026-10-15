@@ -47,7 +47,8 @@ The [DPI Detector](../detector.md) shows how the ISP blocks a site: by resetting
 When the set exists but the site still does not open:
 
 - **Traffic** shows another set in the **Set** column: that set handles the site, and the new strategy has no effect there. Applying the result with **Write the strategy into an existing set** and that set puts the strategy where it applies.
-- The browser can reach the site over QUIC (HTTP/3) or IPv6, which Discovery does not test. **Block QUIC (force TCP)** on the set's [UDP](../sets/udp.md) tab makes the browser use TCP.
+- The browser can reach the site over QUIC (HTTP/3), which Discovery does not test. **Block QUIC (force TCP)** on the set's [UDP](../sets/udp.md) tab makes the browser use TCP.
+- The browser can connect over IPv6 while the run tested IPv4. A new run with **IP version for the probes** set to **IPv6** tests the site the way the browser reaches it.
 - The site opened before and stopped later: [Keeping sets working](./keep-working.md) shows how the watchdog searches for a new strategy on its own.
 
 The full list of checks, from the quickest to the slowest, is under [A site does not open](../troubleshooting/index.md#a-site-does-not-open).

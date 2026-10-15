@@ -50,7 +50,7 @@ A run for a set ends with one verdict for the whole set, above **Results per add
 | Verdict | Meaning and what the card offers |
 | --- | --- |
 | **one strategy covers every address** | **Apply to &lt;set&gt;** writes the strategy into the set, see [Writing into an existing set](#writing-into-an-existing-set). |
-| **current strategy works** | The set's strategy loads every address. For sites that still fail in a browser, the card names the addresses another set handles. It also notes that the browser may use QUIC (HTTP/3) or IPv6, which Discovery does not test. |
+| **current strategy works** | The set's strategy loads every address. For sites that still fail in a browser, the card names the addresses another set handles. It also notes that the browser may use QUIC (HTTP/3), which Discovery does not test, or IPv6, which a run tests only with **IP version for the probes** set to **IPv6**. |
 | **covers some addresses** | **Apply to &lt;set&gt; anyway** writes the best strategy. **Remove them from this set's Discovery addresses** drops the uncovered addresses. |
 | **no bypass needed** | Every address loads without b4, so these pages cannot show whether the set works. |
 | **nothing worked** | The cards below show what happened to each address. |
