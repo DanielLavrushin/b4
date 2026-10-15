@@ -656,6 +656,7 @@ func TestMatchSNIForUnknownDevice_MatchesLikeAMatcherWithoutDeviceListSets(t *te
 		v6,
 		scoped(makeSetWithDomains("tv-regex", "regexp:^x\\.example\\.org$", "regexp:^y\\.example\\.edu$"), true),
 		makeSetWithDomains("late", "www.example.com"),
+		makeSetWithDomains("regex-copy", "regexp:^y\\.example\\.edu$"),
 	}
 	var withoutDevices []*config.SetConfig
 	for _, s := range sets {
@@ -677,6 +678,28 @@ func TestMatchSNIForUnknownDevice_MatchesLikeAMatcherWithoutDeviceListSets(t *te
 		if matched != wantMatched || set != want {
 			t.Errorf("%q: got %v %s, a matcher without the sets that have a device list gives %v %s", host, matched, setName(set), wantMatched, setName(want))
 		}
+	}
+}
+
+func TestARegexInTwoSetsReachesTheSecondSetForADeviceTheFirstLeavesOut(t *testing.T) {
+	first := makeSetWithDomains("tv", "regexp:(^|\\.)example\\.com$")
+	first.Id = "tv"
+	first.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+	second := makeSetWithDomains("everyone", "regexp:(^|\\.)example\\.com$")
+	second.Id = "everyone"
+	ss := NewSuffixSet([]*config.SetConfig{first, second})
+
+	if _, set := ss.MatchSNIWithSource("www.example.com", "aa:bb:cc:dd:ee:ff"); setName(set) != "tv" {
+		t.Errorf("the listed device got %s, want the set limited to it", setName(set))
+	}
+	if _, set := ss.MatchSNIWithSource("www.example.com", "11:22:33:44:55:66"); setName(set) != "everyone" {
+		t.Errorf("another device got %s, want the second set, which lists the same pattern", setName(set))
+	}
+	if _, set := ss.MatchSNI("www.example.com"); setName(set) != "tv" {
+		t.Errorf("MatchSNI got %s, want the first set that lists the pattern", setName(set))
+	}
+	if !ss.SetHasDomain(second.Id, "www.example.com") {
+		t.Error("the second set lists the pattern, so the name belongs to it too")
 	}
 }
 

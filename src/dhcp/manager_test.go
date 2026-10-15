@@ -160,14 +160,7 @@ func TestManualDevicesMerge(t *testing.T) {
 	m.ipToMAC = map[string]string{"192.168.1.1": "AA:BB:CC:DD:EE:FF"}
 	m.macToIP = map[string]string{"AA:BB:CC:DD:EE:FF": "192.168.1.1"}
 	m.hostnames = make(map[string]string)
-	for _, d := range m.manualDevices {
-		mac := normalizeMAC(d.MAC)
-		m.ipToMAC[d.IP] = mac
-		m.macToIP[mac] = d.IP
-		if d.Name != "" {
-			m.hostnames[mac] = d.Name
-		}
-	}
+	m.addManualDevicesLocked()
 	m.mu.Unlock()
 
 	if mac := m.GetMACForIP("192.168.10.1"); mac != "02:B4:C0:A8:0A:01" {
@@ -178,6 +171,30 @@ func TestManualDevicesMerge(t *testing.T) {
 	}
 	if mac := m.GetMACForIP("192.168.1.1"); mac != "AA:BB:CC:DD:EE:FF" {
 		t.Errorf("ARP device should still exist, got %q", mac)
+	}
+}
+
+func TestAManualDeviceIsFoundByTheAddressFormItsPacketsCarry(t *testing.T) {
+	m := newTestManager()
+	m.manualDevices = []config.Device{
+		{MAC: "02:B4:00:00:00:02", IP: "2001:DB8:0:0:0:0:0:0002", IsManual: true},
+		{MAC: "02:B4:C0:A8:0A:05", IP: " ::ffff:192.168.10.5 ", IsManual: true},
+		{MAC: "02:B4:00:00:00:09", IP: "not an address", IsManual: true},
+	}
+	m.mu.Lock()
+	m.addManualDevicesLocked()
+	m.mu.Unlock()
+
+	for ip, want := range map[string]string{"2001:db8::2": "02:B4:00:00:00:02", "192.168.10.5": "02:B4:C0:A8:0A:05"} {
+		if got := m.GetMACForIP(ip); got != want {
+			t.Errorf("GetMACForIP(%q) = %q, want %q: b4 looks a client up by the form net.IP prints, not by the form typed into the settings", ip, got, want)
+		}
+	}
+	if got := m.GetIPForMAC("02:B4:00:00:00:02"); got != "2001:db8::2" {
+		t.Errorf("GetIPForMAC = %q, want the address in the form b4 matches it by", got)
+	}
+	if got := len(m.GetAllMappings()); got != 2 {
+		t.Errorf("%d mappings, want 2: an entry that is not an address matches no packet", got)
 	}
 }
 

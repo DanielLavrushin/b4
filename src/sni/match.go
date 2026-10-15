@@ -73,6 +73,11 @@ type regexWithSet struct {
 	set   *config.SetConfig
 }
 
+type setPattern struct {
+	set     *config.SetConfig
+	pattern string
+}
+
 func (e *ipRange) Network() net.IPNet {
 	return *e.ipNet
 }
@@ -105,7 +110,8 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 		learnedIPTTL:        10 * time.Minute,
 	}
 
-	seenRegexes := make(map[string]bool)
+	seenRegexes := make(map[setPattern]bool)
+	compiledRegexes := make(map[string]*regexp.Regexp)
 	ipEntries := make(map[string]*ipRange)
 
 	for setOrder, set := range sets {
@@ -119,12 +125,18 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 			}
 
 			if isRegex {
-				if seenRegexes[d] {
+				key := setPattern{set: set, pattern: d}
+				if seenRegexes[key] {
 					continue
 				}
-				if re, err := regexp.Compile(d); err == nil {
+				seenRegexes[key] = true
+				re, known := compiledRegexes[d]
+				if !known {
+					re, _ = regexp.Compile(d)
+					compiledRegexes[d] = re
+				}
+				if re != nil {
 					s.regexes = append(s.regexes, &regexWithSet{regex: re, set: set})
-					seenRegexes[d] = true
 				}
 				continue
 			}
