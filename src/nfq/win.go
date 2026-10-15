@@ -44,7 +44,7 @@ func (w *Worker) ManipulateWindowIPv4(cfg *config.SetConfig, packet []byte, dst 
 	}
 
 	tcpHdrLen := int((packet[ipHdrLen+12] >> 4) * 4)
-	if len(packet) < ipHdrLen+tcpHdrLen {
+	if tcpHdrLen < TCPHeaderMinLen || len(packet) < ipHdrLen+tcpHdrLen {
 		return
 	}
 
@@ -64,14 +64,20 @@ func (w *Worker) ManipulateWindowIPv4(cfg *config.SetConfig, packet []byte, dst 
 	}
 }
 
+func windowFake(packet []byte, l3Len int) []byte {
+	end := l3Len + int(packet[l3Len+12]>>4)*4
+	fake := make([]byte, end)
+	copy(fake, packet[:end])
+	return fake
+}
+
 // sendOscillatingWindows sends fake packets with oscillating window sizes
 func (w *Worker) sendOscillatingWindows(packet []byte, dst net.IP, ipHdrLen int, wm *WindowManipulator) {
 	log.Tracef("Window manipulation: oscillating mode")
 
 	// Send fake packets with different windows BEFORE real packet
 	for i, winSize := range wm.values {
-		fake := make([]byte, ipHdrLen+20) // Just headers, no payload for fakes
-		copy(fake, packet[:ipHdrLen+20])
+		fake := windowFake(packet, ipHdrLen)
 
 		// Set window size
 		binary.BigEndian.PutUint16(fake[ipHdrLen+14:ipHdrLen+16], uint16(winSize))
@@ -143,8 +149,7 @@ func (w *Worker) sendRandomWindows(packet []byte, dst net.IP, ipHdrLen int, wm *
 	numFakes := 3 + r.Intn(3)
 
 	for i := 0; i < numFakes; i++ {
-		fake := make([]byte, ipHdrLen+20)
-		copy(fake, packet[:ipHdrLen+20])
+		fake := windowFake(packet, ipHdrLen)
 
 		// Random window from configured values or fully random
 		var winSize uint16
@@ -181,8 +186,7 @@ func (w *Worker) sendEscalatingWindows(packet []byte, dst net.IP, ipHdrLen int) 
 	windows := []uint16{0, 100, 500, 1460, 8192, 32768, 65535}
 
 	for i, win := range windows {
-		fake := make([]byte, ipHdrLen+20)
-		copy(fake, packet[:ipHdrLen+20])
+		fake := windowFake(packet, ipHdrLen)
 
 		binary.BigEndian.PutUint16(fake[ipHdrLen+14:ipHdrLen+16], win)
 
@@ -220,6 +224,11 @@ func (w *Worker) ManipulateWindowIPv6(cfg *config.SetConfig, packet []byte, dst 
 		return
 	}
 
+	tcpHdrLen := int(packet[ipv6HdrLen+12]>>4) * 4
+	if tcpHdrLen < TCPHeaderMinLen || len(packet) < ipv6HdrLen+tcpHdrLen {
+		return
+	}
+
 	wm := NewWindowManipulator(&cfg.TCP)
 
 	switch wm.mode {
@@ -240,8 +249,7 @@ func (w *Worker) sendOscillatingWindowsV6(packet []byte, dst net.IP, wm *WindowM
 	ipv6HdrLen := 40
 
 	for i, winSize := range wm.values {
-		fake := make([]byte, ipv6HdrLen+20)
-		copy(fake, packet[:ipv6HdrLen+20])
+		fake := windowFake(packet, ipv6HdrLen)
 
 		// Set window
 		binary.BigEndian.PutUint16(fake[ipv6HdrLen+14:ipv6HdrLen+16], uint16(winSize))
@@ -253,7 +261,7 @@ func (w *Worker) sendOscillatingWindowsV6(packet []byte, dst net.IP, wm *WindowM
 		}
 
 		// Update payload length
-		binary.BigEndian.PutUint16(fake[4:6], 20)
+		binary.BigEndian.PutUint16(fake[4:6], uint16(len(fake)-ipv6HdrLen))
 
 		// ACK only
 		fake[ipv6HdrLen+13] = 0x10
@@ -295,8 +303,7 @@ func (w *Worker) sendRandomWindowsV6(packet []byte, dst net.IP, wm *WindowManipu
 	numFakes := 3 + r.Intn(3)
 
 	for i := 0; i < numFakes; i++ {
-		fake := make([]byte, ipv6HdrLen+20)
-		copy(fake, packet[:ipv6HdrLen+20])
+		fake := windowFake(packet, ipv6HdrLen)
 
 		var winSize uint16
 		if len(wm.values) > 0 {
@@ -311,7 +318,7 @@ func (w *Worker) sendRandomWindowsV6(packet []byte, dst net.IP, wm *WindowManipu
 			fake[7] = 1
 		}
 
-		binary.BigEndian.PutUint16(fake[4:6], 20)
+		binary.BigEndian.PutUint16(fake[4:6], uint16(len(fake)-ipv6HdrLen))
 
 		sock.FixTCPChecksumV6(fake)
 		_ = w.sock.SendIPv6(fake, dst)
@@ -325,8 +332,7 @@ func (w *Worker) sendEscalatingWindowsV6(packet []byte, dst net.IP) {
 	windows := []uint16{0, 100, 500, 1460, 8192, 32768, 65535}
 
 	for i, win := range windows {
-		fake := make([]byte, ipv6HdrLen+20)
-		copy(fake, packet[:ipv6HdrLen+20])
+		fake := windowFake(packet, ipv6HdrLen)
 
 		binary.BigEndian.PutUint16(fake[ipv6HdrLen+14:ipv6HdrLen+16], win)
 		fake[7] = uint8(10 - i)
@@ -334,7 +340,7 @@ func (w *Worker) sendEscalatingWindowsV6(packet []byte, dst net.IP) {
 			fake[7] = 1
 		}
 
-		binary.BigEndian.PutUint16(fake[4:6], 20)
+		binary.BigEndian.PutUint16(fake[4:6], uint16(len(fake)-ipv6HdrLen))
 
 		sock.FixTCPChecksumV6(fake)
 		_ = w.sock.SendIPv6(fake, dst)
