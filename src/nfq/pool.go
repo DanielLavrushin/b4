@@ -80,6 +80,7 @@ func NewPool(cfg *config.Config) *Pool {
 		w.destState = state.destState
 		w.pendingHello = state.pendingHello
 		w.hostHints = state.hostHints
+		w.quicFlows = state.quicFlows
 		w.ipHealth = state.ipHealth
 		w.pinHealth = state.pinHealth
 		w.goodIPs = state.goodIPs
@@ -127,6 +128,7 @@ func NewPool(cfg *config.Config) *Pool {
 				pool.state.tlsCache.Cleanup()
 				pool.state.destState.Cleanup(retest)
 				pool.state.hostHints.Cleanup()
+				pool.state.quicFlows.Cleanup()
 				pool.state.ipHealth.Cleanup(retest)
 				pool.state.goodIPs.Cleanup()
 				if pool.state.pinHealth.due(retest) {
