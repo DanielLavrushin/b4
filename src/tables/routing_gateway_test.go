@@ -645,10 +645,32 @@ func TestAnUnusableGatewayIsReportedOnlyWhileTheEgressIsUp(t *testing.T) {
 	}
 	host.ifaces = gwHostIfaces(t, map[string][]string{"eth1": {"198.51.100.10/24"}})
 	gwResolvedState(cfg, set)
+	gwResolvedState(cfg, set)
+	if n := len(linesWith(strings.Split(logs.String(), "\n"), "set 'downgw' now uses 198.51.100.1 as its gateway on eth1")); n != 1 {
+		t.Errorf("a refused gateway that became usable must be logged once, or the log keeps saying b4 does not use it, got %d:\n%s", n, logs.String())
+	}
 	host.ifaces = gwHostIfaces(t, map[string][]string{"eth1": {"192.0.2.10/24"}})
 	gwResolvedState(cfg, set)
 	if n := reported(); n != 2 {
 		t.Errorf("a gateway that worked in between must be reported again when it stops working, got %d:\n%s", n, logs.String())
+	}
+}
+
+func TestAnUnusableGatewayIsReportedAgainForANewReason(t *testing.T) {
+	gwIsolate(t)
+	gwStubCommands(t)
+	logs := captureTablesLog(t)
+	host := gwStubHost(t, map[string][]string{"eth1": {"198.51.100.10/24"}})
+	cfg := familyTestConfig(true, false)
+	set := gwTestSet("regw", "eth1", "198.51.100.0")
+	cfg.Sets = []*config.SetConfig{set}
+	gwResolvedState(cfg, set)
+	host.ifaces = gwHostIfaces(t, map[string][]string{"eth1": {"192.0.2.10/24"}})
+	gwResolvedState(cfg, set)
+	gwResolvedState(cfg, set)
+	lines := linesWith(strings.Split(logs.String(), "\n"), "set 'regw' names 198.51.100.0 as its gateway")
+	if len(lines) != 2 || !strings.Contains(lines[0], "is the network address of 198.51.100.0/24") || !strings.Contains(lines[1], "is not on a network eth1 reaches directly") {
+		t.Errorf("each reason a gateway is refused for must be reported once, got %d lines:\n%s", len(lines), strings.Join(lines, "\n"))
 	}
 }
 
@@ -665,7 +687,7 @@ func TestEverySetOnAnEgressExemptsEveryGatewayOnIt(t *testing.T) {
 	unrouted.Routing.Enabled = false
 	proxy := gwTestSet("peer-proxy", "eth1", "192.0.2.6")
 	proxy.Routing.Mode = config.RoutingModeProxy
-	other := gwTestSet("peer-other", "eth2", "198.18.0.2")
+	other := gwTestSet("peer-other", "eth2", "192.0.2.7")
 	far := gwTestSet("peer-far", "eth1", "203.0.113.1")
 	v6 := gwTestSet("peer-v6", "eth1", "2001:db8::1")
 	plain := gwTestSet("peer-plain", "eth1", "")
@@ -1102,8 +1124,8 @@ func TestHostIfacesMatchTheKernelsPerInterfaceAddresses(t *testing.T) {
 		if !slices.Equal(want, have) {
 			t.Errorf("%s: one dump gave %v, the per-interface lookup %v", link.Name, have, want)
 		}
-		if up := link.Flags&net.FlagUp != 0; got[link.Name].up != up {
-			t.Errorf("%s: one dump says up=%v, the interface flags %v", link.Name, got[link.Name].up, up)
+		if up := link.Flags&net.FlagUp != 0 && link.Flags&net.FlagRunning != 0; got[link.Name].up != up {
+			t.Errorf("%s: one dump says up=%v, the interface flags %v; an interface without a link has no address to judge a gateway by yet", link.Name, got[link.Name].up, link.Flags)
 		}
 	}
 }

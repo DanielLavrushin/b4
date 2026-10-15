@@ -2798,7 +2798,7 @@ func routeHostIfacesExec() (map[string]routeHostIface, error) {
 	out := make(map[string]routeHostIface, len(links))
 	names := make(map[uint32]string, len(links))
 	for _, link := range links {
-		out[link.Name] = routeHostIface{up: link.Flags&net.FlagUp != 0}
+		out[link.Name] = routeHostIface{up: link.Flags&net.FlagUp != 0 && link.Flags&net.FlagRunning != 0}
 		names[uint32(link.Index)] = link.Name
 	}
 	rib, err := syscall.NetlinkRIB(syscall.RTM_GETADDR, syscall.AF_UNSPEC)
@@ -3093,7 +3093,9 @@ func routeResolveGateways(cfg *config.Config, set *config.SetConfig, st *routeSt
 			}
 			continue
 		}
-		routeForgetGatewayWarning(set.Id)
+		if _, warned := routeGatewayWarned.LoadAndDelete(set.Id); warned {
+			log.Infof("Routing: set '%s' now uses %s as its gateway on %s", set.Name, gw, st.iface)
+		}
 		if v6 {
 			st.gwV6 = gw
 		} else {

@@ -453,6 +453,37 @@ func TestNetnsANoPrefixRouteAddressPutsNoNetworkOnLink(t *testing.T) {
 	netnsRun(t, "ip", "route", "replace", "default", "via", gw, "dev", dev, "table", table)
 }
 
+func TestNetnsARefusedGatewayIsReportedOnlyOnceTheLinkIsUp(t *testing.T) {
+	netnsRequire(t)
+	familyResetGlobals(t)
+	gwForgetWarnings(t)
+	const dev = "b4nc0"
+	_, _ = run("ip", "link", "del", dev)
+	netnsRun(t, "ip", "link", "add", dev, "type", "veth", "peer", "name", dev+"p")
+	t.Cleanup(func() { _, _ = run("ip", "link", "del", dev) })
+	netnsRun(t, "ip", "link", "set", dev, "up")
+	netnsRun(t, "ip", "addr", "add", "10.201.10.1/24", "dev", dev)
+	logs := captureTablesLog(t)
+	cfg := familyTestConfig(true, false)
+	set := gwTestSet("nocarrier", dev, "198.51.100.77")
+	cfg.Sets = []*config.SetConfig{set}
+	reported := func() int {
+		return len(linesWith(strings.Split(logs.String(), "\n"), "set 'nocarrier' names 198.51.100.77 as its gateway"))
+	}
+
+	if st := gwResolvedState(cfg, set); st.gwV4 != "" {
+		t.Fatalf("a gateway %s cannot reach must count as no gateway, got %q", dev, st.gwV4)
+	}
+	if n := reported(); n != 0 {
+		t.Fatalf("%s is up but has no link, so its addresses may still be on their way, yet the gateway was reported:\n%s", dev, logs.String())
+	}
+	netnsRun(t, "ip", "link", "set", dev+"p", "up")
+	gwResolvedState(cfg, set)
+	if n := reported(); n != 1 {
+		t.Errorf("with the link up the refused gateway must be reported once, got %d:\n%s", n, logs.String())
+	}
+}
+
 func netnsGatewaySnapshot(t *testing.T, engine string, ids ...string) string {
 	t.Helper()
 	var b strings.Builder
