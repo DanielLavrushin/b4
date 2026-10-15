@@ -753,6 +753,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
 			w.connTracker.RegisterOutgoing(connKey, set)
+			if isAck && !isSyn && !isRst && cfg.IsTCPPort(dport) && set.TCP.RSTProtection.Enabled {
+				w.connTracker.MarkEstablished(connKey)
+			}
 		}
 
 		if routeHandsOff || !needsTCPInjection(set) {

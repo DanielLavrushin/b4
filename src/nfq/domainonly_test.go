@@ -621,6 +621,20 @@ func TestAConnectionSetThatDuplicatesTakesLaterPacketsFromAPortSet(t *testing.T)
 	}
 }
 
+func TestAClientResetRightAfterTheClientHelloReachesTheServer(t *testing.T) {
+	for _, domainOnly := range []bool{false, true} {
+		images := newFragmentingYTImagesSet()
+		images.Targets.DomainOnly = domainOnly
+		w := newInjectingWorker(t, &images)
+
+		hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+		w.ProcessPacket(makeV4TCPPacket(hello, 1000))
+		if v := w.ProcessPacket(makeV4TCPPacketFlags(nil, 1000+uint32(len(hello)), 0x14)); v != engine.VerdictAccept {
+			t.Errorf("domain-only=%v: the ClientHello completed the handshake, so RST protection lets the client's own reset through, got %v", domainOnly, v)
+		}
+	}
+}
+
 func TestAnEncryptedHandshakeRecordKeepsTheConnectionsSet(t *testing.T) {
 	for _, domainOnly := range []bool{false, true} {
 		images := newFragmentingYTImagesSet()
