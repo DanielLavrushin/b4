@@ -32,6 +32,7 @@ import {
 } from "@b4.elements";
 import { useDevices, DevicesSettingsProps, DeviceInfo } from "@b4.devices";
 import { B4DeviceTable } from "@common/B4DeviceTable";
+import { anySetDscp, deviceFilterSelects } from "@utils";
 
 const toMac = (bytes: number[]): string =>
   `02:B4:${bytes.map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(":")}`;
@@ -215,6 +216,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
 
   const isSelected = (mac: string) => findConfigDevice(mac)?.selected || false;
   const manualDevices = configDevices.filter((d) => d.is_manual);
+  const setsWriteDscp = anySetDscp(config.sets);
 
   return (
     <B4Section title={t("settings.Devices.title")} icon={<DeviceUnknowIcon />}>
@@ -260,6 +262,16 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                 ? t("settings.Devices.blacklistAlert")
                 : t("settings.Devices.whitelistAlert")}
             </B4Alert>
+
+            {setsWriteDscp && (
+              <B4Alert
+                severity={
+                  deviceFilterSelects(config.queue.devices) ? "warning" : "info"
+                }
+              >
+                {t("settings.Devices.dscpNote")}
+              </B4Alert>
+            )}
 
             {available ? (
               <Grid size={{ xs: 12 }}>

@@ -14,6 +14,7 @@ import { B4Dialog } from "@common/B4Dialog";
 import { B4Select } from "@common/B4Select";
 import { B4SetConfig } from "@models/config";
 import { formatAsn } from "@models/asn";
+import { dscpRefusalText } from "@utils";
 import {
   colors,
   facets as facetColors,
@@ -36,6 +37,7 @@ interface SetCompareProps {
   statsOf: (id: string) => SetStats | undefined;
   initialA: string | null;
   initialB: string | null;
+  deviceFilter: boolean;
   onClose: () => void;
 }
 
@@ -96,6 +98,7 @@ const LIST_PATHS = new Set(LIST_FIELDS.map((f) => f.path));
 
 const ACTIVITY_PATHS: Record<string, FacetKey> = {
   "routing.enabled": "route",
+  "dscp.enabled": "route",
   "dns.enabled": "dns",
   "faking.sni": "fake",
 };
@@ -132,6 +135,7 @@ const groupOfPath = (path: string): GroupKey | null => {
     case "faking":
       return "fake";
     case "routing":
+    case "dscp":
       return "route";
     case "dns":
       return "dns";
@@ -278,9 +282,14 @@ const buildGroups = (
   escalateNameA: string | undefined,
   escalateNameB: string | undefined,
   t: (key: string) => string,
+  dscpReasonOf: (set: B4SetConfig) => string | undefined,
 ): CompareGroup[] => {
-  const facetsA = buildSetFacets(setA, statsA, t, escalateNameA);
-  const facetsB = buildSetFacets(setB, statsB, t, escalateNameB);
+  const facetsA = buildSetFacets(setA, statsA, t, escalateNameA, {
+    dscpRefusal: dscpReasonOf(setA),
+  });
+  const facetsB = buildSetFacets(setB, statsB, t, escalateNameB, {
+    dscpRefusal: dscpReasonOf(setB),
+  });
 
   const flatA = flattenObject(setA as unknown as Record<string, unknown>);
   const flatB = flattenObject(setB as unknown as Record<string, unknown>);
@@ -707,6 +716,7 @@ export const SetCompare = ({
   statsOf,
   initialA,
   initialB,
+  deviceFilter,
   onClose,
 }: SetCompareProps) => {
   const { t } = useTranslation();
@@ -741,8 +751,9 @@ export const SetCompare = ({
       escName(setA),
       escName(setB),
       t,
+      (set) => dscpRefusalText(set, deviceFilter, t),
     );
-  }, [setA, setB, sets, statsOf, t]);
+  }, [setA, setB, sets, statsOf, t, deviceFilter]);
 
   const fieldCount = useMemo(
     () =>

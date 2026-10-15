@@ -7,7 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -224,4 +226,51 @@ func TestReexecHelper(t *testing.T) {
 	engineAttempt = 0
 	pendingRestart.Store(int32(restartEngineRetry))
 	t.Fatal(restartIfRequested())
+}
+
+func TestRestartExecsWithSIGUSR1Ignored(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSIGUSR1AtExecHelper$")
+	cmd.Env = append(os.Environ(), "B4_TEST_SIGUSR1_AT_EXEC=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("helper failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "sigusr1 ignored at exec: true") {
+		t.Fatalf("SIGUSR1 must be ignored when the restart execs: until the new image installs its signal handlers, a SIGUSR1 from the Keenetic firewall hook would end it silently:\n%s", out)
+	}
+}
+
+func TestSIGUSR1AtExecHelper(t *testing.T) {
+	if os.Getenv("B4_TEST_SIGUSR1_AT_EXEC") == "" {
+		t.Skip("helper process for TestRestartExecsWithSIGUSR1Ignored")
+	}
+	execSelf = func(string, []string, []string) error {
+		fmt.Printf("sigusr1 ignored at exec: %v\n", sigusr1Ignored(t))
+		return errors.New("exec replaced by the test")
+	}
+	pendingRestart.Store(int32(restartManual))
+	if err := restartIfRequested(); err == nil {
+		t.Fatal("the replaced exec must surface as an error")
+	}
+}
+
+func sigusr1Ignored(t *testing.T) bool {
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		hex, ok := strings.CutPrefix(line, "SigIgn:")
+		if !ok {
+			continue
+		}
+		hex = strings.TrimSpace(hex)
+		mask, err := strconv.ParseUint(hex[max(0, len(hex)-16):], 16, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return mask&(1<<(uint(syscall.SIGUSR1)-1)) != 0
+	}
+	t.Fatal("no SigIgn line in /proc/self/status")
+	return false
 }

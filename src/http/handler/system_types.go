@@ -164,7 +164,31 @@ type DiagFirewall struct {
 	RulesRestores    int64  `json:"rules_restores,omitempty"`
 	LastRulesRestore string `json:"last_rules_restore,omitempty"`
 
+	DNSQueryCopy *DiagDNSQueryCopy `json:"dns_query_copy,omitempty"`
+
 	Routing *DiagRouting `json:"routing,omitempty"`
+}
+
+type DiagDNSQueryCopy struct {
+	Group                  int               `json:"group"`
+	Placements             map[string]string `json:"placements,omitempty"`
+	Listening              bool              `json:"listening"`
+	Error                  string            `json:"error,omitempty"`
+	Copies                 uint64            `json:"copies"`
+	CopiesLost             uint64            `json:"copies_lost"`
+	CopiesIgnored          uint64            `json:"copies_ignored"`
+	ClaimsAnswer           uint64            `json:"claims_answer"`
+	ClaimsDrop             uint64            `json:"claims_drop"`
+	ClaimsQuiet            uint64            `json:"claims_quiet"`
+	ClaimsRefused          uint64            `json:"claims_refused"`
+	ClaimsLive             uint64            `json:"claims_live"`
+	RepliesReplaced        uint64            `json:"replies_replaced"`
+	RepliesReplaceFallback uint64            `json:"replies_replace_fallback"`
+	RepliesDropped         uint64            `json:"replies_dropped"`
+	RepliesQuiet           uint64            `json:"replies_quiet"`
+	RepliesFailedOpen      uint64            `json:"replies_failed_open"`
+	Injections             uint64            `json:"injections"`
+	ExpiredUnanswered      uint64            `json:"expired_unanswered"`
 }
 
 type DiagRouting struct {
@@ -219,6 +243,7 @@ type DiagCapability struct {
 	Packages  []string `json:"packages,omitempty"`
 	Reasons   []string `json:"reasons,omitempty"`
 	Detail    string   `json:"detail,omitempty"`
+	Hint      string   `json:"hint,omitempty"`
 }
 
 type DiagTools struct {
@@ -229,9 +254,10 @@ type DiagTools struct {
 }
 
 type DiagTool struct {
-	Name   string `json:"name"`
-	Found  bool   `json:"found"`
-	Detail string `json:"detail,omitempty"`
+	Name    string `json:"name"`
+	Found   bool   `json:"found"`
+	Detail  string `json:"detail,omitempty"`
+	Version string `json:"version,omitempty"`
 }
 
 type DiagMount struct {

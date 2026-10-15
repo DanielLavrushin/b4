@@ -20,6 +20,7 @@ import { B4SetConfig } from "@models/config";
 import { DiscoverySuite, HistoryEntry } from "@models/discovery";
 import {
   ApplyTarget,
+  ECH_STRIP_PRESET,
   FoundGroup,
   ResultEntry,
   SiteEntry,
@@ -27,6 +28,7 @@ import {
   appliedMarks,
   checkUrlsFor,
   confirmationOf,
+  echCoverNames,
   formatDuration,
   formatSpeed,
   ipFamilyLabel,
@@ -201,6 +203,8 @@ const FoundCard = ({
   const first = group.results[0];
   const counts = first ? testedCounts(first) : null;
   const tries = first ? triesUntilFound(first, group.preset) : 0;
+  const echCovers = echCoverNames(group.results).join(", ");
+  const echBlocked = group.results.some((dr) => dr.ech_only_block);
 
   let badge = (
     <B4Badge
@@ -239,6 +243,19 @@ const FoundCard = ({
           color="secondary"
           label={t("discovery.results.tried")}
         />
+      </>
+    );
+  }
+
+  if (echBlocked) {
+    badge = (
+      <>
+        <B4Badge
+          variant="outlined"
+          color="info"
+          label={t("discovery.status.echBlocked")}
+        />
+        {badge}
       </>
     );
   }
@@ -342,6 +359,19 @@ const FoundCard = ({
           ) : (
             <B4Alert severity="warning">{t("discovery.results.noSet")}</B4Alert>
           )}
+          {echCovers && (
+            <Typography
+              variant="body2"
+              sx={{ color: colors.text.secondary, mt: 1.25 }}
+            >
+              {t(
+                group.preset === ECH_STRIP_PRESET
+                  ? "discovery.ech.stripNote"
+                  : "discovery.ech.coverNote",
+                { cover: echCovers },
+              )}
+            </Typography>
+          )}
         </Box>
         <Stack spacing={1} alignItems="flex-end" sx={{ flexShrink: 0 }}>
           <Button
@@ -401,6 +431,7 @@ interface SiteCardProps {
 const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
   const { t } = useTranslation();
   const counts = testedCounts(entry.result);
+  const echCover = entry.result.ech_cover_name;
 
   switch (entry.verdict) {
     case "works_without_bypass":
@@ -481,16 +512,48 @@ const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
         />
       );
     }
+    case "bad_link": {
+      const status = entry.result.link_status ?? 400;
+      return (
+        <B4ResultCard
+          status="error"
+          title={entry.domain}
+          subtitle={t("discovery.results.badLink", {
+            url: entry.result.url || `https://${entry.domain}/`,
+            status,
+          })}
+          badge={
+            <B4Badge
+              variant="outlined"
+              color="error"
+              label={t("discovery.status.badLink", { status })}
+            />
+          }
+        />
+      );
+    }
     default:
       return (
         <B4ResultCard
           status="warning"
           title={entry.domain}
-          subtitle={t("discovery.results.nothingFound", {
-            count: counts.tested,
-          })}
+          subtitle={[
+            t("discovery.results.nothingFound", { count: counts.tested }),
+            echCover && t("discovery.ech.probesNote", { cover: echCover }),
+            entry.result.ech_only_block &&
+              t("discovery.ech.onlyBlockUnconfirmed"),
+          ]
+            .filter(Boolean)
+            .join(" ")}
           badge={
             <>
+              {entry.result.ech_only_block && (
+                <B4Badge
+                  variant="outlined"
+                  color="info"
+                  label={t("discovery.status.echBlocked")}
+                />
+              )}
               <B4Badge
                 variant="outlined"
                 color="warning"

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -216,6 +217,10 @@ func LookupTool(name string) (string, bool) {
 	}
 
 	return "", false
+}
+
+func InStandardBinDir(path string) bool {
+	return slices.Contains(standardBinPaths, filepath.Dir(path))
 }
 
 func ProfileBinPaths() []string {

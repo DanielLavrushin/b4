@@ -1,6 +1,10 @@
 import type { DeviceInfo } from "@models/devices";
 import { getAuthToken } from "@context/AuthProvider";
 
+export function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
 export function wsUrl(path: string): string {
   const protocol = location.protocol === "https:" ? "wss://" : "ws://";
   const token = getAuthToken();
@@ -13,13 +17,6 @@ export function resolveDeviceName(d: DeviceInfo): string {
   if (d.hostname) return d.hostname;
   if (d.vendor && d.vendor !== "Private") return `${d.vendor} (${d.mac})`;
   return d.mac;
-}
-
-export function resolveDeviceMeta(d: DeviceInfo): string {
-  const parts: string[] = [];
-  if (d.ip) parts.push(d.ip);
-  if (d.vendor && d.vendor !== "Private") parts.push(d.vendor);
-  return parts.join(" · ");
 }
 
 export function sortDevices(

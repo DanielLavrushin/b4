@@ -24,6 +24,7 @@ type Pool struct {
 	state       *runtimeState
 	tunSrc      *tunSrcResolver
 	dnsTCP      *dnsTCPServer
+	dnsCopy     *dnsCopyListener
 }
 
 type PacketInfo struct {
@@ -63,4 +64,5 @@ type Worker struct {
 	holdStop         chan struct{}
 	holdStopOnce     sync.Once
 	holdsLive        atomic.Int32
+	dnsCopy          *dnsCopyListener
 }

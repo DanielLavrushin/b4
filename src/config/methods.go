@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -358,7 +359,31 @@ func (c *Config) DNSTCPDialTimeout() time.Duration {
 }
 
 func (c *Config) DNSTCPInterceptEnabled() bool {
-	return !c.System.DNS.TCPDisabled && c.HasDNSRedirect()
+	return !c.System.DNS.TCPDisabled && (c.HasDNSRedirect() || c.HasECHStrip())
+}
+
+func (c *Config) HasECHStrip() bool {
+	for _, set := range c.Sets {
+		if set != nil && set.Enabled && set.DNS.StripECH {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Config) IPFamilyEnabled(v6 bool) bool {
+	if v6 {
+		return c.Queue.IPv6Enabled
+	}
+	return c.Queue.IPv4Enabled
+}
+
+func (c *Config) ECHOnlyFamily(v6 bool) bool {
+	return !c.IPFamilyEnabled(v6) && c.IPFamilyEnabled(!v6) && c.Queue.Mode != "tun" && !c.Queue.IsDiscovery && c.HasECHStrip()
+}
+
+func (c *Config) QueuesIPFamily(v6 bool) bool {
+	return c.IPFamilyEnabled(v6) || c.ECHOnlyFamily(v6)
 }
 
 func (c *Config) HasDNSRedirect() bool {
@@ -903,6 +928,10 @@ func (cfg *Config) DSCPStamp() (int, []string, bool) {
 	return d.Value, cleanIfaceList(d.Interfaces), true
 }
 
+func (cfg *Config) DSCPInterfaces() []string {
+	return cleanIfaceList(cfg.System.Tables.DSCP.Interfaces)
+}
+
 func cleanIfaceList(names []string) []string {
 	out := make([]string, 0, len(names))
 	seen := make(map[string]bool, len(names))
@@ -915,6 +944,91 @@ func cleanIfaceList(names []string) []string {
 		out = append(out, name)
 	}
 	return out
+}
+
+const (
+	SetDSCPLearnTTL    = time.Hour
+	SetDSCPTLSLearnTTL = 10 * time.Minute
+	maxDurationSeconds = math.MaxInt64 / int64(time.Second)
+)
+
+const (
+	DSCPRefusedRoutingBlock     = "routing_block"
+	DSCPRefusedRoutingProxy     = "routing_proxy"
+	DSCPRefusedRoutingMTProtoWS = "routing_mtproto_ws"
+	DSCPRefusedSourceDevices    = "source_devices"
+	DSCPRefusedSourceInterfaces = "source_interfaces"
+	DSCPRefusedDeviceFilter     = "device_filter"
+	DSCPRefusedNoAddresses      = "no_addresses"
+)
+
+func (set *SetConfig) DSCPStamp() (int, bool) {
+	d := set.DSCP
+	if !d.Enabled || d.Value < 0 || d.Value > MaxDSCPValue {
+		return 0, false
+	}
+	return d.Value, true
+}
+
+func (cfg *Config) AnySetDSCP() bool {
+	for _, set := range cfg.Sets {
+		if set != nil && set.Enabled && set.DSCP.Enabled {
+			return true
+		}
+	}
+	return false
+}
+
+func (cfg *Config) DSCPRefusal(set *SetConfig) string {
+	if set.Routing.Enabled {
+		switch set.RoutingModeOrDefault() {
+		case RoutingModeBlock:
+			return DSCPRefusedRoutingBlock
+		case RoutingModeProxy:
+			return DSCPRefusedRoutingProxy
+		case RoutingModeMTProtoWS:
+			return DSCPRefusedRoutingMTProtoWS
+		}
+	}
+	switch {
+	case anyNonBlank(set.Targets.SourceDevices):
+		return DSCPRefusedSourceDevices
+	case set.Routing.Enabled && anyNonBlank(set.Routing.SourceInterfaces):
+		return DSCPRefusedSourceInterfaces
+	case cfg.Queue.Devices.Enabled && cfg.Queue.Devices.anySelected():
+		return DSCPRefusedDeviceFilter
+	case !set.DeclaresDestinationTargets(), set.Targets.DomainOnly && !set.DeclaresIPTargets():
+		return DSCPRefusedNoAddresses
+	}
+	return ""
+}
+
+func (set *SetConfig) DSCPLearnTTL(fromTLS bool) time.Duration {
+	if fromTLS {
+		return SetDSCPTLSLearnTTL
+	}
+	if set.Routing.Enabled && set.Routing.IPTTLSeconds > 0 {
+		return time.Duration(min(int64(set.Routing.IPTTLSeconds), maxDurationSeconds)) * time.Second
+	}
+	return SetDSCPLearnTTL
+}
+
+func (dc *DevicesConfig) anySelected() bool {
+	for i := range dc.Devices {
+		if dc.Devices[i].Selected {
+			return true
+		}
+	}
+	return false
+}
+
+func anyNonBlank(values []string) bool {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // MSSClampFingerprint returns a string representation of the MSS clamp configuration for comparison.
@@ -1281,6 +1395,9 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 		return true
 	}
 	if oldCfg.DNSTCPInterceptEnabled() != newCfg.DNSTCPInterceptEnabled() {
+		return true
+	}
+	if oldCfg.ECHOnlyFamily(false) != newCfg.ECHOnlyFamily(false) || oldCfg.ECHOnlyFamily(true) != newCfg.ECHOnlyFamily(true) {
 		return true
 	}
 	if oldCfg.Queue.Mark != newCfg.Queue.Mark || oldCfg.Queue.IPv4Enabled != newCfg.Queue.IPv4Enabled || oldCfg.Queue.IPv6Enabled != newCfg.Queue.IPv6Enabled {

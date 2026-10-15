@@ -45,6 +45,24 @@ func TestTopicFactsAreWellFormed(t *testing.T) {
 	}
 }
 
+func TestDSCPTopicCountsLookupsForTheFirstPacket(t *testing.T) {
+	facts := TopicFacts("dscp.enabled")
+	i := strings.Index(facts, "from the first packet")
+	if i < 0 {
+		t.Fatal("dscp.enabled no longer says which addresses carry the set's value from the first packet")
+	}
+	start, end := strings.LastIndex(facts[:i], ". ")+2, len(facts)
+	if n := strings.Index(facts[i:], ". "); n >= 0 {
+		end = i + n
+	}
+	sentence := facts[start:end]
+	for _, way := range []string{"DNS answer", "own lookup"} {
+		if !strings.Contains(sentence, way) {
+			t.Errorf("the first-packet sentence leaves out %q, although b4 learns addresses that way before the connection: %q", way, sentence)
+		}
+	}
+}
+
 func TestTopicFactsMissIsEmpty(t *testing.T) {
 	if got := TopicFacts("no.such.setting"); got != "" {
 		t.Errorf("an unknown topic must return empty so callers can detect the miss, got %q", got)

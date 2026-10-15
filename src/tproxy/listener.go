@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -284,6 +285,20 @@ func (l *Listener) countConnection() {
 	metrics.GetMetricsCollector().CountConnection(l.SetID)
 }
 
+func (l *Listener) countTarget(host string, ip net.IP) {
+	if l.SetID == config.TelegramBridgeSetID {
+		return
+	}
+	mc := metrics.GetMetricsCollector()
+	if host != "" {
+		mc.RecordDomain(host, l.SetID)
+		return
+	}
+	if addr, ok := netip.AddrFromSlice(ip); ok {
+		mc.RecordAddress(addr, l.SetID)
+	}
+}
+
 func (l *Listener) acceptLoop(ln net.Listener, family string) {
 	for {
 		conn, err := ln.Accept()
@@ -390,10 +405,12 @@ func (l *Listener) handle(client net.Conn) {
 	if domain := target.logDomain(); domain != "" || len(target.sniffed.prefix) > 0 {
 		log.LogConnectionStr("TCP", l.SetName, domain, src, "", dest,
 			"", config.TLSVersionString(target.sniffed.tlsVersion), "proxy")
+		l.countTarget(domain, origIP)
 	} else {
 		namer = &proxyNamer{log: func(host string, tlsVersion uint16) {
 			log.LogConnectionStr("TCP", l.SetName, host, src, "", dest,
 				"", config.TLSVersionString(tlsVersion), "proxy")
+			l.countTarget(host, origIP)
 		}}
 		first := time.AfterFunc(max(0, sniffFirstWait-time.Since(accepted)), func() { namer.deadline(client) })
 		defer first.Stop()

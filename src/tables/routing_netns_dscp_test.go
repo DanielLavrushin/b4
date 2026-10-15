@@ -174,6 +174,12 @@ func dscpDialFromNetns(t *testing.T, pid int, addr string) {
 	done := make(chan error, 1)
 	go func() {
 		runtime.LockOSThread()
+		home, err := os.Open("/proc/thread-self/ns/net")
+		if err != nil {
+			done <- err
+			return
+		}
+		defer home.Close()
 		f, err := os.Open(fmt.Sprintf("/proc/%d/ns/net", pid))
 		if err != nil {
 			done <- err
@@ -184,6 +190,11 @@ func dscpDialFromNetns(t *testing.T, pid int, addr string) {
 			done <- err
 			return
 		}
+		defer func() {
+			if unix.Setns(int(home.Fd()), unix.CLONE_NEWNET) == nil {
+				runtime.UnlockOSThread()
+			}
+		}()
 		fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK, 0)
 		if err != nil {
 			done <- err

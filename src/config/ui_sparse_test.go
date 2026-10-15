@@ -22,13 +22,14 @@ func TestDashboardLayoutPersisted(t *testing.T) {
 		Order:  []string{"mtproto", "runtime"},
 		Hidden: []string{"blackhole"},
 		Spans:  map[string]int{"runtime": 4},
+		Breaks: []string{"runtime"},
 	}
 	data, err := MarshalSparse(&cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(data)
-	for _, want := range []string{"\"ui\"", "mtproto", "blackhole", "\"runtime\": 4"} {
+	for _, want := range []string{"\"ui\"", "mtproto", "blackhole", "\"runtime\": 4", "\"breaks\""} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("expected %q in %s", want, s)
 		}
@@ -40,10 +41,14 @@ func TestDashboardLayoutSanitized(t *testing.T) {
 		Order:  []string{"a", "a", "", strings.Repeat("x", 100), "b"},
 		Hidden: nil,
 		Spans:  map[string]int{"a": 99, "b": -3, "": 5},
+		Breaks: []string{"b", "b", ""},
 	}
 	out := in.Sanitized()
 	if len(out.Order) != 2 || out.Order[0] != "a" || out.Order[1] != "b" {
 		t.Fatalf("order not sanitized: %#v", out.Order)
+	}
+	if len(out.Breaks) != 1 || out.Breaks[0] != "b" {
+		t.Fatalf("breaks not sanitized: %#v", out.Breaks)
 	}
 	if out.Hidden != nil {
 		t.Fatalf("empty hidden should stay nil: %#v", out.Hidden)

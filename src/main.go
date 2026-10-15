@@ -241,6 +241,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			log.Infof("Firewall refresh skipped: the packet engine is not running, so the change applies when b4 restarts")
 			return nil
 		}
+		defer func() { tables.SyncDSCP(cfgPtr.Load()) }()
 		if tunEngineRef.Load() != nil {
 			firewallErr := tables.RefreshTUNFirewall(c)
 			tproxyMgr.SyncConfig(c)
@@ -279,6 +280,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	nfq.RoutingHandleDNSAwaitFunc = tables.RoutingHandleDNSAwait
 	nfq.RoutingLearnIPAsyncFunc = tables.RoutingLearnIPAsync
 	nfq.RoutingLearnHostAsyncFunc = tables.RoutingLearnHostAsync
+	nfq.DSCPLearnFunc = tables.DSCPLearn
+	nfq.DSCPLearnAsyncFunc = tables.DSCPLearnAsync
 
 	if err := initLogging(&cfg); err != nil {
 		return fmt.Errorf("logging initialization failed: %w", err)
@@ -333,6 +336,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	engineAttempt = loadEngineAttempt()
 
 	pool := nfq.NewPool(&cfg)
+	tables.DNSQueryCopyOpenFunc = pool.OpenDNSQueryCopy
+	tables.DNSQueryCopyAliveFunc = pool.DNSQueryCopyAlive
+	tables.DNSQueryCopyPlacedFunc = pool.SetDNSQueryCopyFamilies
 	wireDashboard(mc, dashboardSources{
 		config:    cfgPtr.Load,
 		packets:   pool.PacketsProcessed,
@@ -379,6 +385,10 @@ func runB4(cmd *cobra.Command, args []string) error {
 		tablesMonitor.Start()
 		tablesMonitorRef.Store(tablesMonitor)
 	}
+	if !engineDown.Load() {
+		tables.StartDSCPSync()
+		tables.SyncDSCP(cfgPtr.Load())
+	}
 
 	stopExposureWatch := func() {}
 	shutdownHandled := false
@@ -388,6 +398,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 		stopExposureWatch()
 		tables.ClearExposure()
+		tables.StopDSCPSync()
 		if tablesMonitor != nil {
 			tablesMonitor.Stop()
 		}
@@ -431,6 +442,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 		tproxyMgr.SyncConfig(c)
 		tables.RoutingSyncConfig(c)
+		tables.SyncDSCP(c)
 	})
 
 	handler.SetTUNEngine(tunEngine)
@@ -481,6 +493,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if !c.System.Tables.SkipSetup {
 			tproxyMgr.SyncConfig(c)
 			tables.RoutingSyncConfig(c)
+			tables.SyncDSCP(c)
 		}
 		aiManager.Update(c.System.AI)
 		if _, err := config.ApplyMemoryLimit(c.System.MemoryLimit); err != nil {
@@ -594,6 +607,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			if !c.System.Tables.SkipSetup && !engineDown.Load() {
 				tproxyMgr.SyncConfig(c)
 				tables.RoutingSyncConfig(c)
+				tables.SyncDSCP(c)
 			}
 			return nil
 		})
@@ -656,6 +670,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	if geoScheduler != nil {
 		geoScheduler.Stop()
 	}
+	tables.StopDSCPSync()
 	if tablesMonitor != nil {
 		tablesMonitor.Stop()
 	}

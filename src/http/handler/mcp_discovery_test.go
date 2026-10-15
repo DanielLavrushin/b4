@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -236,6 +237,22 @@ func TestMCPDiscoveryUnresolvedOutcome(t *testing.T) {
 	}
 	if got := mcpDiscoveryVerdict(row, false); !strings.Contains(got, "does not resolve") {
 		t.Fatalf("the verdict must say the name does not resolve, got %q", got)
+	}
+}
+
+func TestMCPDiscoveryBadLinkOutcome(t *testing.T) {
+	row := mcpDiscoveryDomain{Domain: "yt3.example", Found: true, Blocked: true, linkStatus: 400}
+	mcpApplyOutcome(&row, discovery.OutcomeBadLink)
+	if row.Found || row.Blocked || row.BaselineWorks {
+		t.Fatalf("a link that answers 400 without b4 is neither found nor blocked, got %+v", row)
+	}
+	if got := mcpDiscoveryVerdict(row, false); !strings.Contains(got, "HTTP 400 even without b4") || strings.Contains(got, "proxy") {
+		t.Fatalf("the verdict must blame the link, not the network, got %q", got)
+	}
+
+	meaning := mcpSetVerdictMeaning("work", &discovery.SetVerdict{Status: discovery.SetVerdictPartial, WinnerPreset: "combo", Covered: []string{"a.example"}, Uncovered: []string{"yt3.example"}, BadLinks: []string{"yt3.example"}})
+	if strings.Contains(meaning, "need a set of their own") || !strings.Contains(meaning, "yt3.example answers its link with an HTTP error") {
+		t.Fatalf("an address whose link answers an error needs a fixed link, not a set of its own, got %q", meaning)
 	}
 }
 
@@ -524,10 +541,39 @@ func TestMCPDiscoveryStartRefusesPrivateHosts(t *testing.T) {
 	srv := newMCPTestServer(t, cfg)
 	session, ctx := connectMCP(t, srv)
 
-	for _, domains := range []string{"192.168.1.50", "169.254.169.254", "rutracker.org,127.0.0.1"} {
+	for _, domains := range []string{"192.168.1.50", "169.254.169.254", "rutracker.org,127.0.0.1", "http://192.168.1.1/admin,x=1"} {
 		res := callDiscovery(t, session, ctx, map[string]any{"action": "start", "domains": domains})
 		if !res.IsError {
 			t.Errorf("%q aims hundreds of fetches at the network b4 runs on and must be refused", domains)
+		}
+	}
+}
+
+func TestMCPDiscoveryKeepsALinkAsGiven(t *testing.T) {
+	const avatar = "https://yt3.googleusercontent.com/22f4ZSVQ1V5g-VVDKqBUFW0QiI4JCMepk6c83PgTPLmbQj5pdeipjaXJgMvhfafMQBHz5F1UAg=w2120-fcrop64=1,00005a57ffffa5a8-k-c0xffffffff-no-nd-rj"
+	for in, want := range map[string][]string{
+		avatar:                                   {avatar},
+		"`" + avatar + "`":                       {avatar},
+		"rutracker.org,Meduza.io.":               {"https://rutracker.org/", "https://meduza.io/"},
+		"rutracker.org, " + avatar + ", x.com":   {"https://rutracker.org/", avatar, "https://x.com/"},
+		avatar + ",https://x.com/a":              {avatar, "https://x.com/a"},
+		"https://x.com/?a=1,next=https://y.com/": {"https://x.com/?a=1,next=https://y.com/"},
+		"https://x.com/a,\nhttps://x.com/b":      {"https://x.com/a"},
+		"  ,  ":                                  nil,
+	} {
+		got, err := mcpDiscoveryURLs(in)
+		if err != nil {
+			t.Errorf("%q was refused: %v", in, err)
+			continue
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%q is probed as %q, want %q", in, got, want)
+		}
+	}
+
+	for _, in := range []string{"ftp://x.com/file", "https://user:secret@x.com/", "https://"} {
+		if _, err := mcpDiscoveryURLs(in); err == nil {
+			t.Errorf("%q cannot be fetched by a probe and must be refused", in)
 		}
 	}
 }

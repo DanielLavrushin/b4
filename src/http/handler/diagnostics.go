@@ -3,12 +3,14 @@ package handler
 import (
 	"bufio"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +39,13 @@ func (api *API) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) buildDiagnostics() Diagnostics {
+	v, _, _ := api.diagnosticsGroup.Do("diagnostics", func() (any, error) {
+		return api.collectDiagnostics(), nil
+	})
+	return v.(Diagnostics)
+}
+
+func (api *API) collectDiagnostics() Diagnostics {
 	cfg := api.getCfg()
 	serviceManager := api.getServiceManager()
 
@@ -307,6 +316,7 @@ func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 
 	info.RuleGroups = append(info.RuleGroups, collectNftRuleGroups()...)
 	info.RuleGroups = append(info.RuleGroups, collectIptablesRuleGroups(info.Backend)...)
+	info.RuleGroups = append(info.RuleGroups, collectDSCPRuleGroup(cfg)...)
 	info.RuleGroups = append(info.RuleGroups, collectPolicyRuleGroup()...)
 	info.RuleGroups = append(info.RuleGroups, collectExposureRuleGroup()...)
 
@@ -320,9 +330,50 @@ func collectFirewallInfo(cfg *config.Config) DiagFirewall {
 		info.LastRulesRestore = last.UTC().Format(time.RFC3339)
 	}
 
+	counters, _ := nfq.DNSQueryCopyStats()
+	info.DNSQueryCopy = dnsQueryCopyDiag(tables.DNSQueryPlacement(), counters)
+
 	info.Routing = collectRoutingInfo(cfg)
 
 	return info
+}
+
+func dnsQueryCopyDiag(st tables.DNSQueryState, c nfq.DNSQueryCopyCounters) *DiagDNSQueryCopy {
+	if !(st.Applied && st.Affected) && !c.Bound {
+		return nil
+	}
+	d := &DiagDNSQueryCopy{
+		Group:                  st.Group,
+		Placements:             st.Placements,
+		Listening:              c.Bound && c.Alive,
+		Copies:                 c.Copies,
+		CopiesLost:             c.CopiesLost,
+		CopiesIgnored:          c.CopiesIgnored,
+		ClaimsAnswer:           c.ClaimsAnswer,
+		ClaimsDrop:             c.ClaimsDrop,
+		ClaimsQuiet:            c.ClaimsQuiet,
+		ClaimsRefused:          c.ClaimsRefused,
+		ClaimsLive:             c.ClaimsLive,
+		RepliesReplaced:        c.RepliesReplaced,
+		RepliesReplaceFallback: c.RepliesReplaceFallback,
+		RepliesDropped:         c.RepliesDropped,
+		RepliesQuiet:           c.RepliesQuiet,
+		RepliesFailedOpen:      c.RepliesFailedOpen,
+		Injections:             c.Injections,
+		ExpiredUnanswered:      c.ExpiredUnanswered,
+	}
+	if c.Bound {
+		d.Group = c.Group
+	}
+	var errs []string
+	for _, e := range []string{st.CopyError, c.Error} {
+		if e == "" || slices.ContainsFunc(errs, func(have string) bool { return strings.Contains(have, e) }) {
+			continue
+		}
+		errs = append(errs, e)
+	}
+	d.Error = strings.Join(errs, "; ")
+	return d
 }
 
 func collectRoutingInfo(cfg *config.Config) *DiagRouting {
@@ -372,7 +423,49 @@ var (
 	readBridgeNetfilter   = tables.ReadBridgeNetfilter
 	routingTProxyFamilies = tables.RoutingTProxyFamilies
 	routingStatus         = tables.RoutingStatus
+	dscpStatus            = tables.DSCPStatus
 )
+
+func collectDSCPRuleGroup(cfg *config.Config) []DiagRuleGroup {
+	if cfg == nil {
+		return nil
+	}
+	st := dscpStatus(cfg)
+	if len(st.Sets) == 0 {
+		return nil
+	}
+	rules := make([]string, 0, len(st.Sets)+len(st.Incapable)+1)
+	for _, set := range st.Sets {
+		rules = append(rules, diagDSCPSetLine(set))
+	}
+	for _, bin := range slices.Sorted(maps.Keys(st.Incapable)) {
+		rules = append(rules, fmt.Sprintf("%s writes no per-set value: %s", bin, st.Incapable[bin]))
+	}
+	switch {
+	case st.SkipSetup:
+		rules = append(rules, "skip_setup is on: no rule installed")
+	case st.Backend == "":
+		rules = append(rules, "no DSCP rule installed")
+	case st.Pending:
+		rules = append(rules, "installed with "+st.Backend+", the firewall monitor retries a step that did not apply")
+	default:
+		rules = append(rules, "installed with "+st.Backend)
+	}
+	return []DiagRuleGroup{{Title: "Per-set DSCP", Rules: rules}}
+}
+
+func diagDSCPSetLine(set tables.DSCPSetState) string {
+	head := fmt.Sprintf("%q (%s): DSCP %d", set.Name, set.ID, set.Value)
+	if set.Refusal != "" {
+		return head + ", refused: " + set.Refusal
+	}
+	state := "not applied"
+	if set.Applied {
+		state = "applied"
+	}
+	return fmt.Sprintf("%s, %s, %d static entries, learned addresses written: %d from DNS answers, %d from TLS/QUIC names, %d from lookups",
+		head, state, set.Static, set.LearnedDNS, set.LearnedTLS, set.LearnedPreResolve)
+}
 
 func diagFamilies(cfg *config.Config) (ipv4, ipv6 bool) {
 	if cfg == nil {
@@ -496,10 +589,11 @@ func collectIptablesRuleGroups(backend string) []DiagRuleGroup {
 		return nil
 	}
 	wait := tables.WaitArgs(bin)
+	chains, tableNames := diagRuleSources(bin)
 
 	var groups []DiagRuleGroup
 
-	for _, c := range diagB4Chains {
+	for _, c := range chains {
 		out, err := exec.Command(bin, append(append([]string{}, wait...), "-t", c.table, "-S", c.chain)...).CombinedOutput()
 		if err != nil {
 			continue
@@ -512,7 +606,7 @@ func collectIptablesRuleGroups(backend string) []DiagRuleGroup {
 		}
 	}
 
-	for _, table := range []string{"mangle", "nat", "raw", "filter"} {
+	for _, table := range tableNames {
 		out, err := exec.Command(bin, append(append([]string{}, wait...), "-t", table, "-S")...).CombinedOutput()
 		if err != nil {
 			continue
@@ -541,6 +635,23 @@ type diagChainRef struct {
 	chain string
 }
 
+var rawTablePresent = tables.RawTablePresent
+
+func diagRuleSources(bin string) ([]diagChainRef, []string) {
+	raw := rawTablePresent(bin)
+	chains := make([]diagChainRef, 0, len(diagB4Chains))
+	for _, c := range diagB4Chains {
+		if c.table != "raw" || raw {
+			chains = append(chains, c)
+		}
+	}
+	tableNames := []string{"mangle", "nat", "filter"}
+	if raw {
+		tableNames = []string{"mangle", "nat", "raw", "filter"}
+	}
+	return chains, tableNames
+}
+
 var diagB4Chains = []diagChainRef{
 	{"filter", "B4_EXPOSE"},
 	{"mangle", "B4"},
@@ -549,7 +660,10 @@ var diagB4Chains = []diagChainRef{
 	{"mangle", "B4_TUN_GATE"},
 	{"mangle", "B4_DISCOVERY"},
 	{"mangle", "B4_DSCP"},
+	{"mangle", "B4_DNSCOPY"},
 	{"nat", "B4_MASQ"},
+	{"nat", "B4_DNSTCP"},
+	{"raw", "B4_RAW"},
 }
 
 func diagChainAlreadyDumped(l string) bool {
@@ -906,11 +1020,20 @@ func (api *API) collectGeodataInfo() DiagGeodata {
 	return info
 }
 
-func collectKernelModules(cfg *config.Config) DiagKernel {
-	modules := []string{"xt_NFQUEUE", "nfnetlink_queue", "xt_connbytes", "xt_multiport", "nf_conntrack"}
-	if tables.DetectBackend(cfg) == "nftables" {
-		modules = []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack"}
+func kernelModuleNames(backend string, st tables.DNSQueryState) []string {
+	if backend == "nftables" {
+		return []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack"}
 	}
+	modules := []string{"xt_NFQUEUE", "nfnetlink_queue", "xt_connbytes", "xt_multiport", "nf_conntrack"}
+	if dnsQueryCopyRelevant(st) {
+		modules = append(modules, "xt_NFLOG", "nfnetlink_log")
+	}
+	return modules
+}
+
+func collectKernelModules(cfg *config.Config) DiagKernel {
+	dnsQueries := tables.DNSQueryPlacement()
+	modules := kernelModuleNames(tables.DetectBackend(cfg), dnsQueries)
 	result := DiagKernel{Modules: make([]DiagModule, 0, len(modules))}
 
 	lsmodOutput := ""
@@ -985,7 +1108,99 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 	}
 	result.Capabilities = append(result.Capabilities, connmarkCap)
 
+	listener, _ := nfq.DNSQueryCopyStats()
+	result.Capabilities = append(result.Capabilities, dnsQueryCapabilities(dnsQueries, listener)...)
+	markKeeneticHints(result.Capabilities, tables.KeeneticOS())
+
 	return result
+}
+
+const keeneticNetfilterHint = "keenetic_netfilter"
+
+func dnsQueryCopyRelevant(st tables.DNSQueryState) bool {
+	if !st.Affected {
+		return false
+	}
+	for _, placement := range st.Placements {
+		if placement == "copy" || placement == "mangle" {
+			return true
+		}
+	}
+	return false
+}
+
+func dnsQueryCapabilities(st tables.DNSQueryState, listener nfq.DNSQueryCopyCounters) []DiagCapability {
+	if !st.Applied {
+		return nil
+	}
+	var held, copied []string
+	for bin, placement := range st.Placements {
+		switch placement {
+		case "mangle":
+			held = append(held, bin)
+		case "copy":
+			copied = append(copied, bin)
+		}
+	}
+	slices.Sort(held)
+	slices.Sort(copied)
+
+	var caps []DiagCapability
+	if !st.KeeneticOS && len(copied) < len(st.Placements) {
+		dnsCap := DiagCapability{
+			Name:      "dns_before_conntrack",
+			Available: len(held) == 0,
+			Missing:   st.RawMissing,
+			Packages:  st.RawPackages,
+			Reasons:   tables.KernelModuleReasons(st.RawMissing),
+		}
+		if len(held) == 0 {
+			dnsCap.Detail = "DNS queries are queued ahead of conntrack"
+		} else {
+			dnsCap.Detail = fmt.Sprintf("DNS queries are queued after conntrack on %s; kernels before 4.18 (4.14 before 4.14.173) then drop the second of two queries a device sends at once from one socket (A and AAAA)", strings.Join(held, ", "))
+		}
+		caps = append(caps, dnsCap)
+	}
+	if !dnsQueryCopyRelevant(st) {
+		return caps
+	}
+	copyCap := DiagCapability{Name: "dns_query_copy", Available: len(held) == 0}
+	var details []string
+	if len(held) > 0 {
+		copyCap.Missing = st.CopyMissing
+		copyCap.Packages = st.CopyPackages
+		copyCap.Reasons = tables.KernelModuleReasons(st.CopyMissing)
+		if st.CopyError != "" {
+			copyCap.Reasons = append(copyCap.Reasons, st.CopyError)
+		}
+		details = append(details, fmt.Sprintf("DNS queries are held after conntrack on %s, and this kernel (%s) drops the second of two queries a device sends at once from one socket", strings.Join(held, ", "), st.Release))
+	}
+	switch {
+	case len(copied) > 0 && !(listener.Bound && listener.Alive):
+		copyCap.Available = false
+		reason := fmt.Sprintf("b4's NFLOG listener for group %d is not running", st.Group)
+		if listener.Error != "" {
+			reason = fmt.Sprintf("b4's NFLOG listener for group %d stopped: %s", st.Group, listener.Error)
+		}
+		copyCap.Reasons = append(copyCap.Reasons, reason)
+		details = append(details, fmt.Sprintf("DNS queries are copied with NFLOG (group %d) on %s, but b4 is not reading the copies, so the replies to them pass as they are", st.Group, strings.Join(copied, ", ")))
+	case copyCap.Available:
+		details = append(details, fmt.Sprintf("DNS queries are copied with NFLOG (group %d) and never held, on %s", st.Group, strings.Join(copied, ", ")))
+	}
+	copyCap.Detail = strings.Join(details, "; ")
+	return append(caps, copyCap)
+}
+
+func markKeeneticHints(caps []DiagCapability, keenetic bool) {
+	if !keenetic {
+		return
+	}
+	for i := range caps {
+		if caps[i].Available || (caps[i].Name == "dns_query_copy" && len(caps[i].Missing) == 0) {
+			continue
+		}
+		caps[i].Hint = keeneticNetfilterHint
+	}
 }
 
 func unameRelease() string {
@@ -1043,12 +1258,14 @@ func collectTools() DiagTools {
 		Optional:   make([]DiagTool, 0, len(optional)),
 		SearchPath: os.Getenv("PATH"),
 	}
+	versions := newToolVersions()
 
 	for _, name := range firewallTools {
 		dt := DiagTool{Name: name}
 		if path, ok := config.LookupTool(name); ok {
 			dt.Found = true
 			dt.Detail = path
+			dt.Version = versions.of(name, path)
 		}
 		result.Firewall = append(result.Firewall, dt)
 	}
@@ -1058,6 +1275,7 @@ func collectTools() DiagTools {
 		if path, ok := config.LookupTool(t.name); ok {
 			dt.Found = true
 			dt.Detail = path
+			dt.Version = versions.of(t.name, path)
 		} else {
 			dt.Detail = t.missing
 		}
@@ -1069,6 +1287,7 @@ func collectTools() DiagTools {
 		if path, ok := config.LookupTool(t.name); ok {
 			dt.Found = true
 			dt.Detail = path
+			dt.Version = versions.of(t.name, path)
 		} else {
 			dt.Detail = t.missing
 		}

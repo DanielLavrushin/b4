@@ -4,7 +4,7 @@
         "description": "B4 network packet processor REST API",
         "title": "B4 API",
         "contact": {},
-        "version": "1.85.0"
+        "version": "1.87.0"
     },
     "basePath": "/api",
     "paths": {
@@ -3465,7 +3465,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the same hello frame that /api/ws/metrics sends on connect: engine state, uptime, per-minute and per-ten-minute connection buckets, per-set activity, totals since stats_since, blocked lists, escalations, events and attention items. Connections are counted once per flow. All times are wall-clock milliseconds.",
+                "description": "Returns the same hello frame that /api/ws/metrics sends on connect: engine state, uptime, per-minute and per-ten-minute connection buckets, per-set activity, totals since stats_since, blocked lists, the most connected domains and the most connected addresses of connections without a domain name, escalations, events and attention items. Connections are counted once per flow, and so are domains and addresses. All times are wall-clock milliseconds.",
                 "produces": [
                     "application/json"
                 ],
@@ -3496,7 +3496,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Zeroes the totals, the RST drop and escalation counts and the blocked lists, and moves stats_since to now. Activity history, uptime, events and live escalations are kept.",
+                "description": "Zeroes the totals, the RST drop and escalation counts, the blocked lists and the domain and address counts, and moves stats_since to now. Activity history, uptime, events and live escalations are kept.",
                 "produces": [
                     "application/json"
                 ],
@@ -5465,6 +5465,9 @@
                 "strict": {
                     "type": "boolean"
                 },
+                "strip_ech": {
+                    "type": "boolean"
+                },
                 "target_dns": {
                     "type": "string"
                 }
@@ -5516,6 +5519,12 @@
         "config.DashboardLayout": {
             "type": "object",
             "properties": {
+                "breaks": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "hidden": {
                     "type": "array",
                     "items": {
@@ -6292,6 +6301,9 @@
                 "dns": {
                     "$ref": "#/definitions/config.DNSConfig"
                 },
+                "dscp": {
+                    "$ref": "#/definitions/config.SetDSCPConfig"
+                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -6327,6 +6339,17 @@
                 },
                 "udp": {
                     "$ref": "#/definitions/config.UDPConfig"
+                }
+            }
+        },
+        "config.SetDSCPConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "value": {
+                    "type": "integer"
                 }
             }
         },
@@ -7034,6 +7057,12 @@
         "discovery.SetVerdict": {
             "type": "object",
             "properties": {
+                "bad_links": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "confirmed": {
                     "type": "boolean"
                 },
@@ -7119,6 +7148,7 @@
                 "tcpmd5",
                 "alt_address",
                 "dns_redirect",
+                "ech_strip",
                 "community",
                 "current"
             ],
@@ -7145,6 +7175,7 @@
                 "FamilyTCPMD5",
                 "FamilyAltAddress",
                 "FamilyDNSRedirect",
+                "FamilyECHStrip",
                 "FamilyCommunity",
                 "FamilyCurrent"
             ]
@@ -7519,6 +7550,9 @@
                 "dns": {
                     "$ref": "#/definitions/config.DNSConfig"
                 },
+                "dscp": {
+                    "$ref": "#/definitions/config.SetDSCPConfig"
+                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -7884,6 +7918,9 @@
                 "detail": {
                     "type": "string"
                 },
+                "hint": {
+                    "type": "string"
+                },
                 "missing": {
                     "type": "array",
                     "items": {
@@ -7904,6 +7941,71 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "handler.DiagDNSQueryCopy": {
+            "type": "object",
+            "properties": {
+                "claims_answer": {
+                    "type": "integer"
+                },
+                "claims_drop": {
+                    "type": "integer"
+                },
+                "claims_live": {
+                    "type": "integer"
+                },
+                "claims_quiet": {
+                    "type": "integer"
+                },
+                "claims_refused": {
+                    "type": "integer"
+                },
+                "copies": {
+                    "type": "integer"
+                },
+                "copies_ignored": {
+                    "type": "integer"
+                },
+                "copies_lost": {
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "expired_unanswered": {
+                    "type": "integer"
+                },
+                "group": {
+                    "type": "integer"
+                },
+                "injections": {
+                    "type": "integer"
+                },
+                "listening": {
+                    "type": "boolean"
+                },
+                "placements": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "replies_dropped": {
+                    "type": "integer"
+                },
+                "replies_failed_open": {
+                    "type": "integer"
+                },
+                "replies_quiet": {
+                    "type": "integer"
+                },
+                "replies_replace_fallback": {
+                    "type": "integer"
+                },
+                "replies_replaced": {
+                    "type": "integer"
                 }
             }
         },
@@ -7947,6 +8049,9 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "dns_query_copy": {
+                    "$ref": "#/definitions/handler.DiagDNSQueryCopy"
                 },
                 "flow_offload": {
                     "type": "string"
@@ -8293,6 +8398,9 @@
                     "type": "boolean"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "version": {
                     "type": "string"
                 }
             }
@@ -9351,6 +9459,9 @@
                 "dns": {
                     "$ref": "#/definitions/config.DNSConfig"
                 },
+                "dscp": {
+                    "$ref": "#/definitions/config.SetDSCPConfig"
+                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -10276,6 +10387,12 @@
                 "stats_since": {
                     "type": "integer"
                 },
+                "top_addresses": {
+                    "$ref": "#/definitions/metrics.TopList"
+                },
+                "top_domains": {
+                    "$ref": "#/definitions/metrics.TopList"
+                },
                 "totals": {
                     "$ref": "#/definitions/metrics.Totals"
                 },
@@ -10454,6 +10571,40 @@
                 },
                 "watched": {
                     "type": "boolean"
+                }
+            }
+        },
+        "metrics.TopEntry": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "last": {
+                    "type": "integer"
+                },
+                "sets": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "metrics.TopList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.TopEntry"
+                    }
+                },
+                "rev": {
+                    "type": "integer"
                 }
             }
         },

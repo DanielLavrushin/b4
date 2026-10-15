@@ -58,6 +58,7 @@ const (
 	FamilyTCPMD5      StrategyFamily = "tcpmd5"
 	FamilyAltAddress  StrategyFamily = "alt_address"
 	FamilyDNSRedirect StrategyFamily = "dns_redirect"
+	FamilyECHStrip    StrategyFamily = "ech_strip"
 	FamilyCommunity   StrategyFamily = "community"
 	FamilyCurrent     StrategyFamily = "current"
 )
@@ -70,6 +71,7 @@ const (
 	OutcomeAddressBlocked     Outcome = "address_blocked"
 	OutcomeGatewayIntercepted Outcome = "gateway_intercepted"
 	OutcomeUnresolved         Outcome = "unresolved"
+	OutcomeBadLink            Outcome = "bad_link"
 	OutcomeNotFound           Outcome = "not_found"
 )
 
@@ -92,6 +94,7 @@ type SetVerdict struct {
 	Covered      []string          `json:"covered,omitempty"`
 	Uncovered    []string          `json:"uncovered,omitempty"`
 	Unresolved   []string          `json:"unresolved,omitempty"`
+	BadLinks     []string          `json:"bad_links,omitempty"`
 	NoBypass     []string          `json:"no_bypass,omitempty"`
 	Confirmed    bool              `json:"confirmed,omitempty"`
 }
@@ -118,6 +121,7 @@ type CheckResult struct {
 	lookup      nameLookup
 	lookupHost  string
 	untried     bool
+	finalHTTPS  bool
 }
 
 type nameLookup int
@@ -131,6 +135,7 @@ const (
 type DomainInput struct {
 	Domain   string `json:"domain"`
 	CheckURL string `json:"check_url"`
+	plainTLS bool
 }
 
 type CheckSuite struct {
@@ -200,14 +205,19 @@ type DomainDiscoveryResult struct {
 	DNSResult     *DNSDiscoveryResult            `json:"dns_result,omitempty"`
 	Unresolved    bool                           `json:"unresolved,omitempty"`
 	MissingFamily string                         `json:"missing_family,omitempty"`
+	LinkStatus    int                            `json:"link_status,omitempty"`
 	Outcome       Outcome                        `json:"outcome,omitempty"`
 	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
+	ECHCoverName  string                         `json:"ech_cover_name,omitempty"`
+	ECHOnlyBlock  bool                           `json:"ech_only_block,omitempty"`
 }
 
 func (dr *DomainDiscoveryResult) refreshOutcome(finished bool) {
 	switch {
 	case dr.Unresolved:
 		dr.Outcome = OutcomeUnresolved
+	case dr.LinkStatus != 0:
+		dr.Outcome = OutcomeBadLink
 	case dr.BaselineWorks:
 		dr.Outcome = OutcomeWorksWithoutBypass
 	case dr.BestSuccess && dr.BestPreset != "" && dr.BestPreset != presetNoBypass:
@@ -353,6 +363,9 @@ type DiscoverySuite struct {
 	jointConfirmed  map[string]bool
 	jointConfirmFn  func(presetName string, domains []string) (map[string]int, bool)
 	setVerdict      *SetVerdict
+
+	echMu sync.Mutex
+	ech   map[string]echKey
 }
 
 type CustomPayload struct {

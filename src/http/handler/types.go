@@ -7,13 +7,15 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/geodat"
+	"golang.org/x/sync/singleflight"
 )
 
 type API struct {
-	cfgPtr         *atomic.Pointer[config.Config]
-	mux            *http.ServeMux
-	geodataManager *geodat.GeodataManager
-	discoveryRT    *discovery.Runtime
+	cfgPtr           *atomic.Pointer[config.Config]
+	mux              *http.ServeMux
+	geodataManager   *geodat.GeodataManager
+	discoveryRT      *discovery.Runtime
+	diagnosticsGroup singleflight.Group
 
 	overrideServiceManager  func() string
 	overrideLaunchInstaller func(installerRun)

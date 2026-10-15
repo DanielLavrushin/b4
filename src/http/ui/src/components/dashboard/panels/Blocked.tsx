@@ -1,5 +1,5 @@
-import { memo, useId, useState } from "react";
-import { Box, Link } from "@mui/material";
+import { memo, useId, useState, type ReactNode } from "react";
+import { Box, Link, Tooltip } from "@mui/material";
 import { Link as RouterLink } from "react-router";
 import { useTranslation } from "react-i18next";
 import { colors, fonts } from "@design";
@@ -21,10 +21,23 @@ interface BlockedRowProps {
   entry: BlockedEntry;
   name: string;
   meta?: string;
+  tip?: ReactNode;
   to?: string;
 }
 
-const BlockedRow = memo(function BlockedRow({ entry, name, meta, to }: BlockedRowProps) {
+function DeviceTip({ mac, vendor }: { mac: string; vendor: string }) {
+  const { t } = useTranslation();
+  return (
+    <Box sx={{ fontSize: 12, lineHeight: 1.5 }}>
+      <Box sx={{ fontFamily: fonts.mono, fontSize: 11 }}>
+        {t("dashboard.blocked.mac", { value: mac })}
+      </Box>
+      {vendor && <Box>{vendor}</Box>}
+    </Box>
+  );
+}
+
+const BlockedRow = memo(function BlockedRow({ entry, name, meta, tip, to }: BlockedRowProps) {
   const { i18n } = useTranslation();
   const label = (
     <Box
@@ -41,6 +54,51 @@ const BlockedRow = memo(function BlockedRow({ entry, name, meta, to }: BlockedRo
       {name}
     </Box>
   );
+  let title: string | undefined;
+  if (!tip) title = meta ? `${name} (${meta})` : name;
+  const info = (
+    <Box sx={{ flex: "1 1 auto", minWidth: 0 }} title={title}>
+      {to ? (
+        <Link
+          component={RouterLink}
+          underline="hover"
+          to={to}
+          sx={{
+            display: "block",
+            minWidth: 0,
+            color: colors.text.primary,
+            textUnderlineOffset: "3px",
+            "&:hover": { color: colors.text.primary, textDecoration: "underline" },
+            "&:focus-visible": {
+              outline: `2px solid ${colors.border.strong}`,
+              outlineOffset: "2px",
+              borderRadius: "2px",
+            },
+          }}
+        >
+          {label}
+        </Link>
+      ) : (
+        <Box sx={{ color: colors.text.primary }}>{label}</Box>
+      )}
+      {meta && (
+        <Box
+          component="span"
+          sx={{
+            display: "block",
+            fontFamily: fonts.mono,
+            fontSize: 11,
+            color: colors.text.secondary,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {meta}
+        </Box>
+      )}
+    </Box>
+  );
   return (
     <Box
       component="li"
@@ -51,47 +109,13 @@ const BlockedRow = memo(function BlockedRow({ entry, name, meta, to }: BlockedRo
         gap: "12px",
       }}
     >
-      <Box sx={{ flex: "1 1 auto", minWidth: 0 }} title={meta ? `${name} (${meta})` : name}>
-        {to ? (
-          <Link
-            component={RouterLink}
-            underline="hover"
-            to={to}
-            sx={{
-              display: "block",
-              minWidth: 0,
-              color: colors.text.primary,
-              textUnderlineOffset: "3px",
-              "&:hover": { color: colors.text.primary, textDecoration: "underline" },
-              "&:focus-visible": {
-                outline: `2px solid ${colors.border.strong}`,
-                outlineOffset: "2px",
-                borderRadius: "2px",
-              },
-            }}
-          >
-            {label}
-          </Link>
-        ) : (
-          <Box sx={{ color: colors.text.primary }}>{label}</Box>
-        )}
-        {meta && (
-          <Box
-            component="span"
-            sx={{
-              display: "block",
-              fontFamily: fonts.mono,
-              fontSize: 11,
-              color: colors.text.secondary,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {meta}
-          </Box>
-        )}
-      </Box>
+      {tip ? (
+        <Tooltip title={tip} placement="top-start" describeChild>
+          {info}
+        </Tooltip>
+      ) : (
+        info
+      )}
       <Box
         component="span"
         sx={{
@@ -165,7 +189,7 @@ function BlockedList({ title, empty, entries, render }: BlockedListProps) {
 function BlockedPanelView() {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
-  const { getDeviceName, getDeviceMeta } = useDeviceNames();
+  const { deviceMap, getDeviceName } = useDeviceNames();
   const hasFrame = useMetricsFrame(() => true) ?? false;
   const blockedDns = useMetricsFrame((f) => f.totals.blocked_dns) ?? 0;
   const blockedConns = useMetricsFrame((f) => f.totals.blocked_conns) ?? 0;
@@ -224,11 +248,20 @@ function BlockedPanelView() {
           empty={t("dashboard.blocked.noDevices", { time: since })}
           entries={devices}
           render={(entry) => {
-            const name = getDeviceName(entry.key);
+            const mac = entry.key;
+            const device = deviceMap[mac];
+            const name = getDeviceName(mac);
+            const vendor =
+              device?.vendor && device.vendor !== "Private" && !name.includes(device.vendor)
+                ? device.vendor
+                : "";
+            const showsMac = name.includes(mac);
+            const meta = device?.ip || (showsMac ? undefined : mac);
             return {
               name,
-              meta: name !== entry.key ? entry.key : getDeviceMeta(entry.key) || undefined,
-              to: `/traffic?device=${encodeURIComponent(entry.key)}`,
+              meta,
+              tip: showsMac || meta === mac ? undefined : <DeviceTip mac={mac} vendor={vendor} />,
+              to: `/traffic?device=${encodeURIComponent(mac)}`,
             };
           }}
         />

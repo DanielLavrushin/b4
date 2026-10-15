@@ -40,6 +40,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 	testSet.Faking = preset.Config.Faking
 	testSet.Hub = preset.Config.Hub
 	testSet.DNS = ds.discoveredDNS
+	testSet.DNS.StripECH = preset.Config.DNS.StripECH
 
 	config.ApplySetDefaults(&testSet)
 
@@ -62,8 +63,8 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 		testSet.DNS = config.DNSConfig{}
 	} else {
 		testSet.Enabled = true
-		testSet.Targets.SNIDomains = []string{ds.Domain}
-		testSet.Targets.DomainsToMatch = []string{ds.Domain}
+		testSet.Targets.SNIDomains = ds.withECHCoverNames([]string{ds.Domain})
+		testSet.Targets.DomainsToMatch = ds.withECHCoverNames([]string{ds.Domain})
 		testSet.Targets.TLSVersion = ds.tlsFilterVersion()
 		testSet.Targets.IPVersion = ds.ipFilterVersion()
 
@@ -133,6 +134,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 	testSet.Faking = preset.Config.Faking
 	testSet.Hub = preset.Config.Hub
 	testSet.DNS = ds.discoveredDNS
+	testSet.DNS.StripECH = preset.Config.DNS.StripECH
 
 	config.ApplySetDefaults(&testSet)
 
@@ -182,8 +184,8 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 			}
 		}
 
-		testSet.Targets.SNIDomains = allDomains
-		testSet.Targets.DomainsToMatch = allDomains
+		testSet.Targets.SNIDomains = ds.withECHCoverNames(allDomains)
+		testSet.Targets.DomainsToMatch = ds.withECHCoverNames(allDomains)
 		testSet.Targets.TLSVersion = ds.tlsFilterVersion()
 		testSet.Targets.IPVersion = ds.ipFilterVersion()
 		testSet.DNS.Pins = ds.pinsFor(allDomains)
@@ -217,15 +219,15 @@ func (ds *DiscoverySuite) scopeSetToDomains(set *config.SetConfig, domains []str
 		return set
 	}
 	scoped := *set
-	scoped.Targets.SNIDomains = append([]string(nil), domains...)
-	scoped.Targets.DomainsToMatch = append([]string(nil), domains...)
+	scoped.Targets.SNIDomains = ds.withECHCoverNames(domains)
+	scoped.Targets.DomainsToMatch = ds.withECHCoverNames(domains)
 	scoped.Targets.GeoIpCategories, scoped.Targets.GeoSiteCategories = ds.geoCategoriesFor(domains)
 	scoped.Targets.IPs = ds.targetIPsFor(domains)
 	scoped.Targets.IpsToMatch = scoped.Targets.IPs
 	scoped.Targets.ASNs = []string{}
 	scoped.DNS.Pins = ds.pinsFor(domains)
 	if scoped.DNS.Enabled && !ds.anyDNSPoisoned(domains) {
-		scoped.DNS = config.DNSConfig{Pins: scoped.DNS.Pins}
+		scoped.DNS = config.DNSConfig{Pins: scoped.DNS.Pins, StripECH: scoped.DNS.StripECH}
 	}
 	if ds.anyAddressBlocked(domains) || len(scoped.DNS.Pins) > 0 {
 		ibd := config.DefaultSetConfig.TCP.IPBlockDetect

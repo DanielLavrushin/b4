@@ -16,12 +16,14 @@ type DashboardLayout struct {
 	Order  []string       `json:"order,omitempty"`
 	Hidden []string       `json:"hidden,omitempty"`
 	Spans  map[string]int `json:"spans,omitempty"`
+	Breaks []string       `json:"breaks,omitempty"`
 }
 
 func (l DashboardLayout) Sanitized() DashboardLayout {
 	out := DashboardLayout{
 		Order:  sanitizePanelIDs(l.Order),
 		Hidden: sanitizePanelIDs(l.Hidden),
+		Breaks: sanitizePanelIDs(l.Breaks),
 	}
 
 	if len(l.Spans) > 0 {

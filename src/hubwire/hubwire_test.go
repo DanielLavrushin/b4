@@ -54,6 +54,7 @@ func sampleSet() config.SetConfig {
 		"private.home": {"10.1.1.1"},
 		"example.org":  {"93.184.216.34"},
 	}
+	set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 46}
 	return set
 }
 
@@ -65,7 +66,7 @@ func TestScrubStripsPrivateFields(t *testing.T) {
 	}
 	raw, _ := json.Marshal(projection)
 	text := string(raw)
-	for _, forbidden := range []string{"secret", "10.0.0.5", "aa:bb:cc", "other-set", "192.168.1.1", "\"routing\"", "\"escalate\"", "\"id\"", "private.home", "example.org"} {
+	for _, forbidden := range []string{"secret", "10.0.0.5", "aa:bb:cc", "other-set", "192.168.1.1", "\"routing\"", "\"escalate\"", "\"id\"", "private.home", "example.org", "\"dscp\""} {
 		if strings.Contains(text, forbidden) {
 			t.Errorf("projection still carries %q: %s", forbidden, text)
 		}
@@ -87,6 +88,7 @@ func TestScrubStripsPrivateFields(t *testing.T) {
 		"dns.target_dns":         "private",
 		"dns.pins.private.home":  "pin_not_targeted",
 		"dns.pins.example.org":   "pin_not_targeted",
+		"dscp":                   "private",
 	} {
 		if stripped[path] != reason {
 			t.Errorf("expected %q stripped as %q, got %q (all: %+v)", path, reason, stripped[path], report.Stripped)
@@ -158,6 +160,25 @@ func TestScrubResetsDisabledBlocks(t *testing.T) {
 	}
 	if _, ok := lookupPath(projection, "faking.ttl"); ok {
 		t.Errorf("a disabled faking block must not carry its tuning: %v", projection["faking"])
+	}
+}
+
+func TestScrubResetsAnOffDSCP(t *testing.T) {
+	set := config.NewSetConfig()
+	set.Name = "x"
+	set.Targets.SNIDomains = []string{"example.com"}
+	set.DSCP = config.SetDSCPConfig{Value: 12}
+	projection, report, err := Scrub(&set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := projection["dscp"]; ok {
+		t.Errorf("a DSCP value must never cross: %v", projection["dscp"])
+	}
+	for _, s := range report.Stripped {
+		if s.Path == "dscp" {
+			t.Errorf("a switched-off DSCP value is not a private setting to report: %+v", report.Stripped)
+		}
 	}
 }
 
@@ -335,6 +356,7 @@ func TestOpenRefusesForeignAndUnknownFields(t *testing.T) {
 			"escalate": map[string]interface{}{"to": "x"},
 			"dns":      map[string]interface{}{"target_dns": "1.2.3.4:53", "enabled": true},
 			"faking":   map[string]interface{}{"sni": true, "future_knob": float64(3)},
+			"dscp":     map[string]interface{}{"enabled": true, "value": float64(46)},
 			"nonsense": "yes",
 		},
 	}
@@ -344,6 +366,9 @@ func TestOpenRefusesForeignAndUnknownFields(t *testing.T) {
 	}
 	if imp.Set.Routing.Enabled || imp.Set.Routing.Upstream.Host != "" || imp.Set.Escalate.To != "" || imp.Set.DNS.TargetDNS != "" {
 		t.Errorf("foreign fields must be dropped: %+v", imp.Set.Routing)
+	}
+	if imp.Set.DSCP != (config.SetDSCPConfig{}) {
+		t.Errorf("a DSCP value in a shared set must be dropped: %+v", imp.Set.DSCP)
 	}
 	var unknown []string
 	for _, w := range imp.Warnings {

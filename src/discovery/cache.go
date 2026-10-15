@@ -196,7 +196,7 @@ func (ds *DiscoverySuite) saveResultsToCache() {
 			if result.Status != CheckStatusComplete {
 				continue
 			}
-			if result.PresetName == presetNoBypass || result.PresetName == presetAltAddress || result.PresetName == presetDNSRedirect || result.PresetName == presetSetCurrent {
+			if plainFixName(result.PresetName) || result.PresetName == presetSetCurrent {
 				continue
 			}
 			if result.Set == nil {

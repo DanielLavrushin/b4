@@ -6,13 +6,14 @@ import {
   Chip,
   CircularProgress,
   FormControlLabel,
+  IconButton,
   Radio,
   RadioGroup,
   Stack,
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { AddIcon } from "@b4.icons";
+import { AddIcon, CopyIcon } from "@b4.icons";
 import { B4Alert, B4Select, B4TextField } from "@b4.elements";
 import { B4Dialog } from "@common/B4Dialog";
 import { colors } from "@design";
@@ -21,8 +22,12 @@ import { SimilarSet } from "@models/discovery";
 import { SetDomainMatch } from "@models/sets";
 import { discoveryApi } from "@api/discovery";
 import { setsApi } from "@api/sets";
+import { useSnackbar } from "@context/SnackbarProvider";
 import {
   ApplyTarget,
+  copyText,
+  exportSetJson,
+  extraTargetNames,
   generateDomainVariants,
   pinsFor,
   probeUrlLabel,
@@ -91,6 +96,7 @@ export const ApplyDialog = ({
   onReplaceStrategy,
 }: ApplyDialogProps) => {
   const { t } = useTranslation();
+  const { showSuccess, showError } = useSnackbar();
   const single = target?.domains.length === 1 ? target.domains[0] : null;
   const variants = useMemo(
     () => (single ? generateDomainVariants(single) : []),
@@ -142,10 +148,16 @@ export const ApplyDialog = ({
     };
   }, [open, target, single, variants]);
 
+  const coverNames = useMemo(
+    () => (target ? extraTargetNames(target.set, target.domains) : []),
+    [target],
+  );
+
   const domains = useMemo(() => {
     if (!target) return [];
-    return single ? [variant || single] : target.domains;
-  }, [target, single, variant]);
+    const base = single ? [variant || single] : target.domains;
+    return [...base, ...coverNames.filter((n) => !base.includes(n))];
+  }, [target, single, variant, coverNames]);
 
   const tested = useMemo(() => target?.domains ?? [], [target]);
 
@@ -258,12 +270,15 @@ export const ApplyDialog = ({
         COVERING.has(m.relation),
     );
   const coveredTested = tested.filter((d) => !!ownMatch(d));
-  const covers = matchesFailed || coveredTested.length === tested.length;
+  const coveredNames = coverNames.filter((d) => !!ownMatch(d));
+  const covers =
+    matchesFailed ||
+    (coveredTested.length === tested.length &&
+      coveredNames.length === coverNames.length);
+  const covered = [...coveredTested, ...coveredNames];
   const missing = single
     ? domains
-    : domains.filter(
-        (d) => !coveredTested.some((c) => lower(c) === lower(d)),
-      );
+    : domains.filter((d) => !covered.some((c) => lower(c) === lower(d)));
   const keepTargets = covers || !addDomains;
 
   const shadowed: ShadowedDomain[] = [];
@@ -285,6 +300,23 @@ export const ApplyDialog = ({
   const previewSet: B4SetConfig = {
     ...target.set,
     targets: { ...target.set.targets, sni_domains: domains },
+  };
+
+  const newSet: B4SetConfig = {
+    ...previewSet,
+    name: name.trim() || domains[0],
+    discovery: { urls: probeUrls },
+  };
+
+  const copyJson = async () => {
+    const ok = await copyText(
+      exportSetJson({
+        ...newSet,
+        targets: { ...newSet.targets, ip: [], asns: [] },
+      }),
+    );
+    if (ok) showSuccess(t("discovery.apply.copied"));
+    else showError(t("discovery.apply.copyFailed"));
   };
 
   const confirm = () => {
@@ -313,11 +345,7 @@ export const ApplyDialog = ({
       }
       return;
     }
-    onCreate({
-      ...previewSet,
-      name: name.trim() || domains[0],
-      discovery: { urls: probeUrls },
-    });
+    onCreate(newSet);
   };
 
   const choosePick = (next: string) => {
@@ -351,10 +379,27 @@ export const ApplyDialog = ({
       maxWidth="sm"
       fullWidth
       actions={
-        <Stack direction="row" spacing={2}>
+        <>
           <Button onClick={onClose} disabled={loading}>
             {t("core.cancel")}
           </Button>
+          <Box sx={{ flex: 1 }} />
+          <Button
+            size="small"
+            startIcon={<CopyIcon />}
+            onClick={() => void copyJson()}
+            sx={{ display: { xs: "none", sm: "inline-flex" } }}
+          >
+            {t("discovery.apply.copyJson")}
+          </Button>
+          <IconButton
+            size="small"
+            aria-label={t("discovery.apply.copyJson")}
+            onClick={() => void copyJson()}
+            sx={{ display: { sm: "none" } }}
+          >
+            <CopyIcon fontSize="small" />
+          </IconButton>
           <Button
             variant="contained"
             onClick={confirm}
@@ -374,7 +419,7 @@ export const ApplyDialog = ({
           >
             {confirmLabel}
           </Button>
-        </Stack>
+        </>
       }
     >
       <Stack spacing={3} sx={{ mt: 1 }}>

@@ -216,6 +216,8 @@ func TestMCPWriteRejectsNonAllowlistedPaths(t *testing.T) {
 		"sets[video].routing.upstream.username",
 		"sets[video].routing.fwmark",
 		"sets[video].routing.table",
+		"sets[video].dscp.enabled",
+		"sets[video].dscp.value",
 		"",
 	}
 	for _, path := range forbidden {
@@ -227,6 +229,36 @@ func TestMCPWriteRejectsNonAllowlistedPaths(t *testing.T) {
 
 	if cfg.System.WebServer.Password != "hashed-secret" || cfg.System.Socks5.Password != "socks-pw" {
 		t.Fatal("credentials were mutated by a rejected write")
+	}
+}
+
+func TestMCPWriteRefusesSetDSCPWithTheReason(t *testing.T) {
+	cfg := writableCfg(t)
+	cfg.Sets[0].DSCP = config.SetDSCPConfig{Enabled: true, Value: 31}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	for _, path := range []string{"sets[video].dscp.enabled", "sets[set-1].dscp.value", "sets[video].dscp"} {
+		res := callSetValue(t, session, ctx, path, "7")
+		if !res.IsError {
+			t.Fatalf("%s must not be writable", path)
+		}
+		if text := mcpErrorText(res); !strings.Contains(text, "set's DSCP value is not writable") || !strings.Contains(text, "next router") {
+			t.Errorf("the refusal of %s must say why: %q", path, text)
+		}
+	}
+	if got := api.getCfg().Sets[0].DSCP; got != (config.SetDSCPConfig{Enabled: true, Value: 31}) {
+		t.Errorf("a refused write changed the set's DSCP value: %+v", got)
+	}
+	for _, info := range mcpWritablePaths(api.getCfg(), api.getCfg().Sets[0]) {
+		if strings.Contains(info.Path, "dscp") {
+			t.Errorf("b4_list_writable_paths offers %s", info.Path)
+		}
+	}
+	for _, path := range []string{"sets[video].dscp.enabled", "sets[video].dscp.value"} {
+		if out := callTopic(t, session, ctx, map[string]any{"path": path}); !out.Found {
+			t.Errorf("a refused setting must still be explained: no topic for %s (%s)", path, out.Note)
+		}
 	}
 }
 
@@ -289,6 +321,8 @@ func TestMCPDenyTagsArePresent(t *testing.T) {
 		{"sets[].routing.table", "video"},
 		{"sets[].discovery.urls", "video"},
 		{"sets[].discovery.watchdog", "video"},
+		{"sets[].dscp.enabled", "video"},
+		{"sets[].dscp.value", "video"},
 		{"system.socks5.username", ""},
 		{"system.socks5.password", ""},
 		{"system.socks5.allowed_sources", ""},
@@ -319,6 +353,9 @@ func TestMCPWritableRootsAreFailClosed(t *testing.T) {
 		"queue.mode",
 		"queue.threads",
 		"sets_extra.enabled",
+		"sets[].dscp",
+		"sets[].dscp.enabled",
+		"sets[].dscp.value",
 	}
 	for _, path := range outside {
 		if mcpPathAllowed(path) {

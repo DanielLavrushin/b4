@@ -19,15 +19,6 @@ func (ds *DiscoverySuite) unresolved(domain string) bool {
 	return dr != nil && dr.Unresolved
 }
 
-func (ds *DiscoverySuite) anyUnresolved() bool {
-	for _, di := range ds.Domains {
-		if ds.unresolved(di.Domain) {
-			return true
-		}
-	}
-	return false
-}
-
 type nameVerdict struct {
 	unresolved    bool
 	missingFamily string
@@ -147,7 +138,7 @@ func (ds *DiscoverySuite) markUnresolved(baseline map[string]CheckResult) {
 		marked = append(marked, di.Domain)
 	}
 	if len(marked) > 0 {
-		ds.moveOffUnresolvedPrimaryLocked()
+		ds.moveOffUntestablePrimaryLocked()
 		ds.refreshOutcomes(false)
 	}
 	ds.CheckSuite.mu.Unlock()
@@ -167,12 +158,12 @@ func (ds *DiscoverySuite) missingFamily(domain string) string {
 	return ""
 }
 
-func (ds *DiscoverySuite) moveOffUnresolvedPrimaryLocked() {
-	if dr := ds.domainResults[ds.Domain]; dr == nil || !dr.Unresolved {
+func (ds *DiscoverySuite) moveOffUntestablePrimaryLocked() {
+	if dr := ds.domainResults[ds.Domain]; dr == nil || !dr.untestable() {
 		return
 	}
 	for _, di := range ds.Domains {
-		if dr := ds.domainResults[di.Domain]; dr != nil && !dr.Unresolved {
+		if dr := ds.domainResults[di.Domain]; dr != nil && !dr.untestable() {
 			ds.Domain, ds.CheckURL = di.Domain, di.CheckURL
 			return
 		}
@@ -235,19 +226,26 @@ func (ds *DiscoverySuite) nothingLeftToTest() bool {
 	if ds.interrupted() || len(ds.Domains) == 0 {
 		return false
 	}
-	unresolved := 0
+	unresolved, badLinks := 0, 0
 	for _, di := range ds.Domains {
 		switch {
 		case ds.unresolved(di.Domain):
 			unresolved++
+		case ds.badLink(di.Domain):
+			badLinks++
 		case !ds.dnsResults[di.Domain].gatewayIntercepted():
 			return false
 		}
 	}
-	if unresolved == len(ds.Domains) {
+	switch {
+	case unresolved == len(ds.Domains):
 		log.DiscoveryLogf("No domain has an address this run can probe, there is nothing to test a strategy on; search skipped")
-	} else {
+	case badLinks == len(ds.Domains):
+		log.DiscoveryLogf("Every link answers with an error without any strategy, there is nothing to test a strategy on; search skipped")
+	case badLinks == 0:
 		log.DiscoveryLogf("Every domain either has no address this run can probe or is answered by the first hop in front of this host; search skipped")
+	default:
+		log.DiscoveryLogf("No domain is left that this run can test a strategy on; search skipped")
 	}
 	return true
 }

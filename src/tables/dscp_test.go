@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -1127,5 +1130,351 @@ func TestDSCPMonitorRestoresAMissingExemption(t *testing.T) {
 	}
 	if ensureDSCPLocked(cfg, false) {
 		t.Errorf("the monitor kept restoring a chain that was back in shape")
+	}
+}
+
+func TestSetDSCPKeepOnRefreshWithPlan(t *testing.T) {
+	a := func() *config.SetConfig { return dscpPlanTestSet("a", 31, "10.1.2.0/24") }
+
+	t.Run("iptables", func(t *testing.T) {
+		h := dscpIptNewHost(t, backendIPTables)
+		dscpSyncIsolate(t)
+		appliedResetGlobals(t)
+		clearRulesFn = func(c *config.Config) error {
+			clearDSCPUnlessKept(c, backendIPTables)
+			return nil
+		}
+		addRulesFn = func(c *config.Config) error {
+			rulesAppliedCfg = c
+			applyDSCPLogged(c, backendIPTables)
+			return nil
+		}
+		torn := func(stage string) {
+			t.Helper()
+			for _, e := range h.events {
+				if strings.Contains(e, " -X ") || strings.Contains(e, " -F ") || strings.HasPrefix(e, "ipset flush") {
+					t.Errorf("%s: the refresh tore down what it keeps: %s", stage, e)
+				}
+			}
+		}
+
+		if err := AddRules(dscpIptTestConfig(7, true, nil, a())); err != nil {
+			t.Fatal(err)
+		}
+		learned := dscpIptLearnedSet(routeSanitizeSetID("a"), false)
+		h.sets[learned]["10.9.9.9"] = true
+
+		h.events = nil
+		changed := dscpIptTestConfig(9, true, nil, a())
+		dscpSyncPass(changed, false, nil)
+		if err := RefreshRules(changed); err != nil {
+			t.Fatal(err)
+		}
+		torn("a global change next to a plan")
+		if i := h.first("ipset destroy"); i >= 0 {
+			t.Errorf("a refresh with the plan unchanged destroyed an ipset: %s", h.events[i])
+		}
+		if got, want := h.chain(backendIPTables), dscpIptCanon(dscpIptRender(dscpPlanFor(changed), false, true)); !slices.Equal(got, want) {
+			t.Errorf("chain after the refresh = %q, want %q", got, want)
+		}
+		if !h.sets[learned]["10.9.9.9"] {
+			t.Errorf("a refresh lost an address learned for the set: %v", h.entries(learned))
+		}
+		if st := dscpApplied.Load(); st == nil || st.cfg != changed {
+			t.Errorf("the refresh did not record the new configuration: %+v", st)
+		}
+
+		h.events = nil
+		dropped := dscpIptTestConfig(9, true, nil)
+		if err := RefreshRules(dropped); err != nil {
+			t.Fatal(err)
+		}
+		torn("the last set leaving")
+		lastRule := h.last(" -D " + dscpChainName + " ")
+		if lastRule < 0 {
+			t.Fatalf("leaving the plan did not replace the chain: %q", h.events)
+		}
+		for i, e := range h.events {
+			if strings.HasPrefix(e, "ipset destroy") && i < lastRule {
+				t.Errorf("%s ran before the rules naming the set were gone", e)
+			}
+		}
+		if got, want := h.chain(backendIPTables), dscpIptCanon(dscpIptSpecs(9, nil)); !slices.Equal(got, want) {
+			t.Errorf("chain after the plan left = %q, want %q", got, want)
+		}
+		if len(h.sets) != 0 {
+			t.Errorf("ipsets survived the plan leaving: %v", h.snapshot())
+		}
+
+		h.mangle.calls = nil
+		if err := RefreshRules(dscpIptTestConfig(9, true, nil)); err != nil {
+			t.Fatal(err)
+		}
+		if m := h.mangle.mutations(); len(m) != 0 {
+			t.Errorf("an unchanged global stamp was rewritten after the plan left: %v", m)
+		}
+	})
+
+	t.Run("nftables", func(t *testing.T) {
+		f := installDSCPNftFake(t)
+		dscpSyncIsolate(t)
+		appliedResetGlobals(t)
+		clearRulesFn = func(c *config.Config) error {
+			clearDSCPUnlessKept(c, backendNFTables)
+			return nil
+		}
+		addRulesFn = func(c *config.Config) error {
+			rulesAppliedCfg = c
+			applyDSCPLogged(c, backendNFTables)
+			return nil
+		}
+		if err := AddRules(dscpSyncNftConfig(config.DSCPConfig{Enabled: true, Value: 7}, a())); err != nil {
+			t.Fatal(err)
+		}
+		learned := dscpNftLearnedSet(routeSanitizeSetID("a"), false)
+		f.learn(learned, "10.9.9.9")
+		mark, commands := len(f.scripts), len(f.commands)
+		changed := dscpSyncNftConfig(config.DSCPConfig{Enabled: true, Value: 9}, a())
+		dscpSyncPass(changed, false, nil)
+		if err := RefreshRules(changed); err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range f.since(mark) {
+			if strings.Contains(s, "delete table") {
+				t.Errorf("the refresh rebuilt the table:\n%s", s)
+			}
+		}
+		if slices.Contains(f.commands[commands:], "nft delete table inet "+dscpNftTable) {
+			t.Errorf("the refresh deleted the table: %q", f.commands[commands:])
+		}
+		if !slices.Contains(f.table.sets[learned], "10.9.9.9") {
+			t.Errorf("a refresh lost an address learned for the set: %v", f.table.sets[learned])
+		}
+		for addr, want := range map[string]int{"10.9.9.9": 31, "10.1.2.3": 31, "192.0.2.1": 9} {
+			if got, _ := f.stamp(netip.MustParseAddr(addr), "wan"); got != want {
+				t.Errorf("after the refresh %s leaves with DSCP %d, want %d", addr, got, want)
+			}
+		}
+	})
+}
+
+func TestSetDSCPTeardownDestroysReferencedSets(t *testing.T) {
+	both := func() *config.Config {
+		return dscpIptTestConfig(7, true, nil, dscpPlanTestSet("a", 31, "10.0.0.0/8", "fd00::/16"), dscpPlanTestSet("b", 6, "10.1.0.0/16"))
+	}
+	off := dscpIptTestConfig(7, false, nil)
+	destroyedAfterChains := func(t *testing.T, h *dscpIptHost, names []string) {
+		t.Helper()
+		lastChain := h.last(" -X " + dscpChainName)
+		for _, name := range names {
+			if i := h.first("ipset destroy " + name); i < 0 || i < lastChain {
+				t.Errorf("%s must be destroyed after the chains naming it are gone (at %d, chains until %d): %q", name, i, lastChain, h.events)
+			}
+		}
+		for _, bin := range []string{backendIPTables, backendIP6Tables} {
+			if _, ok := h.mangle.chains[bin][dscpChainName]; ok {
+				t.Errorf("%s still has %s", bin, dscpChainName)
+			}
+		}
+		if len(h.sets) != 0 {
+			t.Errorf("ipsets survived the teardown: %v", h.snapshot())
+		}
+	}
+
+	t.Run("recorded, referenced and pending sets", func(t *testing.T) {
+		h := dscpIptNewHost(t, backendIPTables, backendIP6Tables)
+		if err := applyDSCPFor(both(), backendIPTables); err != nil {
+			t.Fatal(err)
+		}
+		h.busy["b4d_s6_v4"] = true
+		if err := applyDSCPFor(dscpIptTestConfig(7, true, nil, dscpPlanTestSet("a", 31, "10.0.0.0/8", "fd00::/16")), backendIPTables); err != nil {
+			t.Fatal(err)
+		}
+		if st := dscpApplied.Load(); st == nil || !slices.Equal(st.ipt.pending, []string{"b4d_s6_v4"}) {
+			t.Fatalf("the departed value's ipset should be pending: %+v", st)
+		}
+		delete(h.busy, "b4d_s6_v4")
+		names := slices.Sorted(maps.Keys(h.sets))
+		h.events = nil
+		clearDSCPFor(off, backendIPTables)
+		destroyedAfterChains(t, h, names)
+		if dscpApplied.Load() != nil || dscpStale.Load() != nil {
+			t.Errorf("a complete teardown left records: applied %+v, stale %+v", dscpApplied.Load(), dscpStale.Load())
+		}
+	})
+
+	t.Run("a chain left by an earlier run", func(t *testing.T) {
+		h := dscpIptNewHost(t, backendIPTables, backendIP6Tables)
+		if err := applyDSCPFor(both(), backendIPTables); err != nil {
+			t.Fatal(err)
+		}
+		names := slices.Sorted(maps.Keys(h.sets))
+		dscpApplied.Store(nil)
+		dscpIptRecordMu.Lock()
+		clear(dscpIptRecord)
+		dscpIptRecordMu.Unlock()
+		h.events = nil
+		clearDSCPFor(off, backendIPTables)
+		destroyedAfterChains(t, h, names)
+	})
+
+	t.Run("a set still in use is retried by the monitor", func(t *testing.T) {
+		h := dscpIptNewHost(t, backendIPTables, backendIP6Tables)
+		if err := applyDSCPFor(both(), backendIPTables); err != nil {
+			t.Fatal(err)
+		}
+		h.busy["b4d_u_v4"] = true
+		clearDSCPFor(off, backendIPTables)
+		if _, ok := h.sets["b4d_u_v4"]; !ok || len(h.sets) != 1 {
+			t.Fatalf("only the busy ipset should be left: %v", h.snapshot())
+		}
+		if s := dscpStale.Load(); s == nil || !slices.Equal(s.ipsets(), []string{"b4d_u_v4"}) {
+			t.Fatalf("the busy ipset must stay recorded for a retry: %+v", s)
+		}
+		if ensureDSCPLocked(off, false) {
+			t.Errorf("the monitor reported a retry that could not finish as done")
+		}
+		delete(h.busy, "b4d_u_v4")
+		if !ensureDSCPLocked(off, false) {
+			t.Errorf("the monitor did not finish the retried destroy")
+		}
+		if len(h.sets) != 0 || dscpStale.Load() != nil {
+			t.Errorf("after the retry: ipsets %v, stale %+v", h.snapshot(), dscpStale.Load())
+		}
+	})
+
+	t.Run("a leftover the live stamp took over is not retried", func(t *testing.T) {
+		h := dscpIptNewHost(t, backendIPTables)
+		cfg := dscpIptTestConfig(7, true, nil, dscpPlanTestSet("a", 31, "10.0.0.0/8"))
+		if err := applyDSCPFor(cfg, backendIPTables); err != nil {
+			t.Fatal(err)
+		}
+		dscpStale.Store(&dscpState{cfg: cfg, backend: backendIPTablesLegacy, ipt: &dscpIptState{pending: []string{"b4d_u_v4", "b4d_gone_v4"}}})
+		if !ensureDSCPLocked(cfg, false) {
+			t.Errorf("the monitor did not finish the leftover removal")
+		}
+		if s := dscpStale.Load(); s != nil {
+			t.Errorf("an ipset the live stamp uses stays queued for a destroy that cannot succeed: %+v", s)
+		}
+		if _, ok := h.sets["b4d_u_v4"]; !ok {
+			t.Errorf("the leftover removal destroyed an ipset the live stamp uses")
+		}
+		h.events = nil
+		if ensureDSCPLocked(cfg, false) || len(h.ipsetWrites()) != 0 {
+			t.Errorf("the monitor kept retrying: %q", h.ipsetWrites())
+		}
+	})
+
+	t.Run("the global stamp alone runs no ipset command", func(t *testing.T) {
+		h := dscpIptNewHost(t, backendIPTables, backendIP6Tables)
+		if err := applyDSCPFor(dscpIptTestConfig(7, true, nil), backendIPTables); err != nil {
+			t.Fatal(err)
+		}
+		h.events = nil
+		clearDSCPFor(off, backendIPTables)
+		for _, e := range h.events {
+			if strings.HasPrefix(e, "ipset") {
+				t.Errorf("a teardown of the global stamp ran %s", e)
+			}
+		}
+	})
+}
+
+func TestRoutingClearAllSweepsB4dDestroyOnly(t *testing.T) {
+	resetDSCPState(t)
+	dscpIptResetRecords(t)
+	stubBinaryPresence(t, map[string]bool{
+		backendIPTables: true, backendIP6Tables: false, backendIPTablesLegacy: false, backendIP6TablesLegacy: false,
+		"ipset": true, "nft": false, "ip": false,
+	})
+	routeMu.Lock()
+	origEngine, origCache := routeEngine, routeRuleCache
+	routeEngine = nil
+	routeMu.Unlock()
+	t.Cleanup(func() {
+		routeMu.Lock()
+		routeEngine, routeRuleCache = origEngine, origCache
+		routeMu.Unlock()
+	})
+	origRun := run
+	t.Cleanup(func() { run = origRun })
+	var calls []string
+	run = func(args ...string) (string, error) {
+		cmd := strings.Join(args, " ")
+		calls = append(calls, cmd)
+		switch cmd {
+		case "ipset list -n":
+			return "b4r_old_v4\nb4d_u_v4\nb4d_s31_v4\nb4d_l_a_d39_v6\nforeign\n", nil
+		case "ipset destroy b4d_s31_v4":
+			return "ipset v7.19: Set cannot be destroyed: it is in use by a kernel component", errors.New("exit status 1")
+		}
+		return "", nil
+	}
+	dscpIptRecordMu.Lock()
+	dscpIptRecord["b4d_u_v4"] = map[string]bool{"10.0.0.0/8": true}
+	dscpIptRecord["b4d_s31_v4"] = map[string]bool{"10.0.0.0/8": true}
+	dscpIptRecordMu.Unlock()
+
+	RoutingClearAll()
+
+	for _, name := range []string{"b4d_u_v4", "b4d_s31_v4", "b4d_l_a_d39_v6"} {
+		if !slices.Contains(calls, "ipset destroy "+name) {
+			t.Errorf("the sweep did not destroy %s: %q", name, calls)
+		}
+		if slices.Contains(calls, "ipset flush "+name) {
+			t.Errorf("the sweep flushed %s, which empties a set a live rule may still use", name)
+		}
+	}
+	for _, want := range []string{"ipset flush b4r_old_v4", "ipset destroy b4r_old_v4"} {
+		if !slices.Contains(calls, want) {
+			t.Errorf("the routing sweep no longer runs %q", want)
+		}
+	}
+	for _, c := range calls {
+		if strings.Contains(c, "foreign") {
+			t.Errorf("the sweep touched an ipset b4 does not own: %s", c)
+		}
+	}
+	dscpWarned.Range(func(k, _ any) bool {
+		if strings.Contains(k.(string), "b4d_s31_v4") {
+			t.Errorf("an ipset still in use was reported as a failure: %s", k)
+		}
+		return true
+	})
+	dscpIptRecordMu.Lock()
+	_, lingering := dscpIptRecord["b4d_u_v4"]
+	_, kept := dscpIptRecord["b4d_s31_v4"]
+	dscpIptRecordMu.Unlock()
+	if lingering || !kept {
+		t.Errorf("the record must forget the destroyed ipset and keep the one still in use: forgotten %v, kept %v", !lingering, kept)
+	}
+}
+
+func TestSetDSCPBusyProbeWithTheGlobalOffIsRetried(t *testing.T) {
+	h := dscpIptNewHost(t, backendIPTables)
+	cfg := dscpIptTestConfig(7, false, nil, dscpPlanTestSet("a", 31, "10.0.0.0/8"))
+	h.probeErr[backendIPTables] = errors.New("iptables rejected the set match, which needs the xt_set kernel module and the iptables set extension (could not create probe chain B4_MODULE_TEST: command [iptables -w -t mangle -N B4_MODULE_TEST] failed: exit status 4 (Another app is currently holding the xtables lock. Stopped waiting after 1s.))")
+	if err := applyDSCPFor(cfg, backendIPTables); err == nil || !strings.Contains(err.Error(), "the firewall monitor tries again") {
+		t.Fatalf("a busy firewall during the probe must be reported as retried, got %v", err)
+	}
+	if st := dscpApplied.Load(); st == nil || !st.pending {
+		t.Fatalf("with the global stamp off, a busy probe left nothing for the monitor to retry: %+v", st)
+	}
+	if _, ok := h.mangle.chains[backendIPTables][dscpChainName]; ok {
+		t.Errorf("a chain without a stamp was installed while the probe was undecided: %q", h.chain(backendIPTables))
+	}
+
+	delete(h.probeErr, backendIPTables)
+	if !ensureDSCPLocked(cfg, false) {
+		t.Fatalf("the monitor did not retry the per-set rules")
+	}
+	if st := dscpApplied.Load(); st == nil || st.pending {
+		t.Fatalf("the retry left the per-set rules pending: %+v", st)
+	}
+	if got, want := h.chain(backendIPTables), dscpIptCanon(dscpIptRender(dscpPlanFor(cfg), false, true)); !slices.Equal(got, want) {
+		t.Errorf("chain after the retry = %q, want %q", got, want)
+	}
+	if ensureDSCPLocked(cfg, false) {
+		t.Errorf("the monitor kept restoring per-set rules that were back in place")
 	}
 }

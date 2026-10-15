@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -51,7 +52,7 @@ func mcpResolveSuiteID(explicit string) string {
 
 type mcpDiscoveryIn struct {
 	Action  string `json:"action" jsonschema:"One of: start, status, cancel, apply."`
-	Domains string `json:"domains,omitempty" jsonschema:"Comma-separated domains to find a strategy for, at most 5. For action=start. With set it may be left empty to probe the set's stored discovery URLs."`
+	Domains string `json:"domains,omitempty" jsonschema:"Comma-separated domains or full URLs, at most 5. For action=start. A URL is fetched as given: pass the user's link whole. With set it may be left empty to probe the set's stored discovery URLs."`
 	Id      string `json:"id,omitempty" jsonschema:"Suite id from start. If omitted, the run in progress is used, then the last run this server started."`
 	Domain  string `json:"domain,omitempty" jsonschema:"For action=apply without set: which domain's winning strategy to turn into a new set."`
 	Name    string `json:"name,omitempty" jsonschema:"Optional name for the set created by apply without set."`
@@ -77,6 +78,7 @@ type mcpSuiteSnapshot struct {
 		Confirmed     int     `json:"confirmed"`
 		Outcome       string  `json:"outcome"`
 		MissingFamily string  `json:"missing_family"`
+		LinkStatus    int     `json:"link_status"`
 		Unconfirmed   bool    `json:"unconfirmed"`
 		DNSResult     *struct {
 			IsPoisoned       bool `json:"is_poisoned"`
@@ -123,6 +125,7 @@ type mcpDiscoveryDomain struct {
 	Verdict       string  `json:"verdict"`
 	unresolved    bool
 	missingFamily string
+	linkStatus    int
 	systemOnly    bool
 	evidence      mcpNameEvidence
 }
@@ -170,6 +173,8 @@ func mcpDiscoveryVerdict(d mcpDiscoveryDomain, running bool) string {
 		return "TCP to every known address is answered by the first hop in front of this host (a transparent proxy on the gateway), so packets from this host never reach the ISP; run b4 on that gateway or exclude this host from its redirect; if this host is the router itself, the ISP does this at its edge and only a proxy route helps"
 	case d.unresolved:
 		return mcpUnresolvedVerdict(d)
+	case d.linkStatus != 0:
+		return fmt.Sprintf("the link answers HTTP %d even without b4, so it cannot show whether a strategy works and none was tested; ask the user for the link of a page or file the site serves", d.linkStatus)
 	case d.Blocked:
 		return "the address itself is unreachable, so no packet strategy can help; only a proxy or VPN route would"
 	case d.Found && running:
@@ -253,6 +258,7 @@ func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mc
 			row.Blocked = r.DNSResult.TransportBlocked
 		}
 		mcpApplyOutcome(&row, discovery.Outcome(r.Outcome))
+		row.linkStatus = r.LinkStatus
 		var evidence *mcpNameEvidence
 		if r.DNSResult != nil {
 			evidence = &r.DNSResult.mcpNameEvidence
@@ -279,6 +285,8 @@ func mcpApplyOutcome(row *mcpDiscoveryDomain, outcome discovery.Outcome) {
 		row.Found, row.BaselineWorks, row.Blocked, row.Gateway = false, false, false, true
 	case discovery.OutcomeUnresolved:
 		row.Found, row.BaselineWorks, row.Blocked, row.unresolved = false, false, false, true
+	case discovery.OutcomeBadLink:
+		row.Found, row.BaselineWorks, row.Blocked = false, false, false
 	case discovery.OutcomeNotFound:
 		row.Found, row.BaselineWorks, row.Blocked = false, false, false
 	}
@@ -328,15 +336,9 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		}
 	}
 
-	var urls []string
-	seen := map[string]bool{}
-	for _, raw := range strings.Split(in.Domains, ",") {
-		host := sni.NormalizeDomain(raw)
-		if host == "" || seen[host] {
-			continue
-		}
-		seen[host] = true
-		urls = append(urls, host)
+	urls, err := mcpDiscoveryURLs(in.Domains)
+	if err != nil {
+		return nil, mcpDiscoveryOut{}, err
 	}
 	if len(urls) == 0 && target != nil {
 		urls = slices.Clone(target.Discovery.URLs)
@@ -354,12 +356,15 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	}
 	for _, raw := range urls {
 		if host := probeInputHost(raw); watchdog.IsReservedHost(host) {
-			return nil, mcpDiscoveryOut{}, fmt.Errorf(
-				"%s is a private or local address: discovery fires hundreds of fetches from the router, and aiming them at the network b4 runs on tells you nothing about censorship", host)
+			return nil, mcpDiscoveryOut{}, mcpPrivateHostError(host)
 		}
 	}
 
-	opts := discovery.StartSuiteOptions{ValidationTries: 1, Source: discovery.SourceMCP}
+	opts := discovery.StartSuiteOptions{
+		ValidationTries: 1,
+		Source:          discovery.SourceMCP,
+		HubPresets:      func() []discovery.ConfigPreset { return api.communityPresets(urls, false) },
+	}
 	if strings.EqualFold(strings.TrimSpace(in.SkipDNS), "true") {
 		opts.SkipDNS = true
 	}
@@ -391,7 +396,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		Id:     suite.Id,
 		Status: string(suite.Status),
 		Note: fmt.Sprintf(
-			"started for %s. This runs for minutes, not seconds: it opens with %d strategies per domain and then explores the family that looked best, "+
+			"started for %s. This runs for minutes, not seconds: it opens with %d strategies per domain, plus any the community hub publishes for it when the hub is on, and then explores the family that looked best, "+
 				"which can be another hundred or more, each preceded by a config-propagation pause. It stops early for a domain that turns out to work without b4 and right after the first fetch for one whose name does not resolve. "+
 				"Do NOT poll in a loop - tell the user it is running and call action=status once when they ask. "+
 				"While it runs, the watchdog cannot heal and a firewall refresh will block.",
@@ -406,6 +411,54 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 			target.Name, strings.Join(urls, ", "), target.Name)
 	}
 	return nil, out, nil
+}
+
+var mcpURLStart = regexp.MustCompile("^[\"'`]*[A-Za-z][A-Za-z0-9+.-]*://")
+
+func mcpSplitDomainsInput(raw string) []string {
+	var out []string
+	for _, field := range strings.Fields(raw) {
+		inURL := false
+		for _, part := range strings.Split(field, ",") {
+			switch {
+			case mcpURLStart.MatchString(part):
+				out = append(out, part)
+				inURL = true
+			case inURL:
+				out[len(out)-1] += "," + part
+			case part != "":
+				out = append(out, part)
+			}
+		}
+	}
+	for i, entry := range out {
+		out[i] = strings.TrimRight(entry, ",")
+	}
+	return out
+}
+
+func mcpDiscoveryURLs(raw string) ([]string, error) {
+	var urls []string
+	seen := map[string]bool{}
+	for _, entry := range mcpSplitDomainsInput(raw) {
+		probeURL, host, err := utils.NormalizeProbeURL(entry)
+		switch {
+		case errors.Is(err, utils.ErrProbeURLReservedHost):
+			return nil, mcpPrivateHostError(probeInputHost(entry))
+		case err != nil:
+			return nil, fmt.Errorf("cannot probe %q: %w; pass a domain or a full http or https URL", entry, err)
+		case seen[host]:
+			continue
+		}
+		seen[host] = true
+		urls = append(urls, probeURL)
+	}
+	return urls, nil
+}
+
+func mcpPrivateHostError(host string) error {
+	return fmt.Errorf(
+		"%s is a private or local address: discovery fires hundreds of fetches from the router, and aiming them at the network b4 runs on tells you nothing about censorship", host)
 }
 
 func mcpDiscoverySet(cfg *config.Config, ref string) (*config.SetConfig, error) {
@@ -516,6 +569,7 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 			Confirmed:     e.Confirmed,
 		}
 		mcpApplyOutcome(&row, e.EffectiveOutcome())
+		row.linkStatus = e.LinkStatus
 		var evidence *mcpNameEvidence
 		if e.DNSResult != nil {
 			evidence = &mcpNameEvidence{
@@ -576,10 +630,13 @@ func mcpSetVerdictView(cfg *config.Config, setID string, v *discovery.SetVerdict
 }
 
 func mcpSetVerdictMeaning(name string, v *discovery.SetVerdict) string {
-	open := mcpWithout(v.Uncovered, v.Unresolved)
+	open := mcpWithout(mcpWithout(v.Uncovered, v.Unresolved), v.BadLinks)
 	untested := ""
 	if len(v.Unresolved) > 0 {
 		untested = fmt.Sprintf(". %s has no address this run could test (a misspelled or dead name, or none in the probed IP family): fix it or remove it from the set's Discovery addresses", mcpListOrNone(v.Unresolved))
+	}
+	if len(v.BadLinks) > 0 {
+		untested += fmt.Sprintf(". %s answers its link with an HTTP error even without b4, so no strategy could be tested on it: fix the link or remove it from the set's Discovery addresses", mcpListOrNone(v.BadLinks))
 	}
 	switch v.Status {
 	case discovery.SetVerdictCovered:

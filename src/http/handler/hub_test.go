@@ -511,6 +511,102 @@ func TestHubApplyCreatesSetWithPayloadAndStamp(t *testing.T) {
 	expectCode(t, postJSON(t, env.mux, "/api/hub/sets/missing/apply", map[string]interface{}{}), http.StatusNotFound, "not_found")
 }
 
+func hubDSCPOffWarning(ws []hubwire.Warning) (hubwire.Warning, bool) {
+	for _, w := range ws {
+		if w.Code == "dscp_off" {
+			return w, true
+		}
+	}
+	return hubwire.Warning{}, false
+}
+
+func TestHubApplyReplaceKeepsTheLocalDSCP(t *testing.T) {
+	env := newHubEnv(t)
+	shared := hubStrategySet("Shared video", "youtube.com")
+	cs, _ := hubtest.CatalogueSet(t, "yt-9", 1, &shared, nil)
+	env.publish(t, cs)
+
+	plain := hubStrategySet("Video here", "youtube.com")
+	plain.Id = "local-1"
+	plain.Targets.DomainsToMatch = []string{"youtube.com"}
+	plain.DSCP = config.SetDSCPConfig{Enabled: true, Value: 31}
+	proxied := hubStrategySet("Video by proxy", "googlevideo.com")
+	proxied.Id = "local-2"
+	proxied.Targets.DomainsToMatch = []string{"googlevideo.com"}
+	proxied.Routing = config.RoutingConfig{Enabled: true, Mode: config.RoutingModeProxy, Upstream: config.UpstreamProxyConfig{Host: "10.0.0.9", Port: 1080}}
+	proxied.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	env.update(func(cfg *config.Config) { cfg.Sets = []*config.SetConfig{&plain, &proxied} })
+
+	rec := postJSON(t, env.mux, "/api/hub/sets/yt-9/apply", map[string]interface{}{"replace": "local-1"})
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var resp HubApplyResponse
+	decodeInto(t, rec, &resp)
+	if w, ok := hubDSCPOffWarning(resp.Warnings); ok {
+		t.Errorf("a DSCP value that applied before the replace must stay on without a warning: %+v", w)
+	}
+	if got := env.localSet("local-1").DSCP; got != (config.SetDSCPConfig{Enabled: true, Value: 31}) {
+		t.Errorf("the replaced set must keep its own DSCP value, got %+v", got)
+	}
+
+	rec = postJSON(t, env.mux, "/api/hub/sets/yt-9/apply", map[string]interface{}{"replace": "local-2"})
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	resp = HubApplyResponse{}
+	decodeInto(t, rec, &resp)
+	w, ok := hubDSCPOffWarning(resp.Warnings)
+	if !ok || w.Params["value"] != float64(25) {
+		t.Errorf("switching a refused DSCP value off must be reported with the value: %+v", resp.Warnings)
+	}
+	replaced := env.localSet("local-2")
+	if replaced.Routing.Enabled {
+		t.Fatalf("the hub version carries no proxy routing, so the replaced set has none: %+v", replaced.Routing)
+	}
+	if replaced.DSCP != (config.SetDSCPConfig{Enabled: false, Value: 25}) {
+		t.Errorf("a DSCP value the proxy mode kept from applying must stay, switched off, now that the set has no routing: %+v", replaced.DSCP)
+	}
+	if got := env.localSet("local-1").DSCP; got != (config.SetDSCPConfig{Enabled: true, Value: 31}) {
+		t.Errorf("replacing another set changed this one's DSCP value: %+v", got)
+	}
+}
+
+func TestHubApplyReplaceKeepsTheDSCPOfTargetsNotResolvedYet(t *testing.T) {
+	env := newHubEnv(t)
+	shared := hubStrategySet("Shared video", "youtube.com")
+	cs, _ := hubtest.CatalogueSet(t, "yt-9", 1, &shared, nil)
+	env.publish(t, cs)
+
+	byASN := hubStrategySet("Video by ASN")
+	byASN.Id = "local-asn"
+	byASN.Targets.ASNs = []string{"13335"}
+	byASN.DSCP = config.SetDSCPConfig{Enabled: true, Value: 31}
+	byGeoIP := hubStrategySet("Video by GeoIP")
+	byGeoIP.Id = "local-geoip"
+	byGeoIP.Targets.GeoIpCategories = []string{"zz"}
+	byGeoIP.DSCP = config.SetDSCPConfig{Enabled: true, Value: 6}
+	env.update(func(cfg *config.Config) {
+		cfg.System.Geo.GeoIpPath = filepath.Join(t.TempDir(), "geoip.dat")
+		cfg.Sets = []*config.SetConfig{&byASN, &byGeoIP}
+	})
+
+	for id, want := range map[string]config.SetDSCPConfig{"local-asn": byASN.DSCP, "local-geoip": byGeoIP.DSCP} {
+		rec := postJSON(t, env.mux, "/api/hub/sets/yt-9/apply", map[string]interface{}{"replace": id})
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("%s: expected 202, got %d (%s)", id, rec.Code, rec.Body.String())
+		}
+		var resp HubApplyResponse
+		decodeInto(t, rec, &resp)
+		if w, ok := hubDSCPOffWarning(resp.Warnings); ok {
+			t.Errorf("%s: targets that are declared but not resolved yet are no refusal, the value must stay on: %+v", id, w)
+		}
+		if got := env.localSet(id).DSCP; got != want {
+			t.Errorf("%s: the replaced set must keep its own DSCP value, got %+v, want %+v", id, got, want)
+		}
+	}
+}
+
 func TestHubApplyFailsWhenThePayloadIsUnreachable(t *testing.T) {
 	env := newHubEnv(t)
 	shared := hubStrategySet("Needs payload", "example.com")

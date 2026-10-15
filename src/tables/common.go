@@ -61,6 +61,7 @@ func RefreshRules(cfg *config.Config) error {
 func ClearAppliedRules(fallback *config.Config) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
+	dscpSyncClosed.Store(true)
 	return clearRulesFn(appliedOr(fallback))
 }
 
@@ -559,8 +560,12 @@ func ReloadKernelModules() {
 	loadKernelModuleList(kernelModuleList...)
 	kmodStateMu.Lock()
 	hashlimit := kmodAttempted["xt_hashlimit"]
+	nflog := kmodAttempted[dnsCopyLogModule] || kmodAttempted[dnsCopyModule]
 	kmodStateMu.Unlock()
 	if hashlimit {
 		loadKernelModuleList("xt_hashlimit")
+	}
+	if nflog && DNSQueryCopyKernel() {
+		loadKernelModuleList(dnsCopyLogModule, dnsCopyModule)
 	}
 }

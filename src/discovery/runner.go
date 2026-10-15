@@ -3,6 +3,7 @@ package discovery
 import (
 	"encoding/json"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
@@ -12,7 +13,13 @@ import (
 var (
 	activeSuites = make(map[string]*CheckSuite)
 	suitesMu     sync.RWMutex
+	lastRun      atomic.Value
 )
+
+func LastRun() string {
+	id, _ := lastRun.Load().(string)
+	return id
+}
 
 // GetCurrentSuite returns the first running/pending suite, if any.
 func GetCurrentSuite() (*CheckSuite, bool) {
@@ -41,6 +48,7 @@ func SaveToHistory(suite *CheckSuite, configPath string) {
 	if err != nil {
 		log.Errorf("Failed to save discovery history: %v", err)
 	} else {
+		lastRun.Store(suite.Id)
 		log.Tracef("Saved discovery results to history")
 	}
 }

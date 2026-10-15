@@ -1,20 +1,25 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Box, IconButton, Tooltip } from "@mui/material";
-import { Add as WiderIcon, Remove as NarrowerIcon } from "@mui/icons-material";
+import {
+  Add as WiderIcon,
+  KeyboardReturn as NewRowIcon,
+  MoveUp as JoinRowIcon,
+  Remove as NarrowerIcon,
+} from "@mui/icons-material";
+import { useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useTranslation } from "react-i18next";
 import { colors, radiusPx } from "@design";
 import { DragIcon, HideIcon } from "@b4.icons";
-import { GRID_COLUMNS, MIN_SPAN } from "./registry";
+import type { DropSide, RowBreak } from "./layoutRows";
+import { GRID_COLUMNS } from "./registry";
 
 export const GRID_GAP = 12;
-export const ROW_UNIT = 4;
+export const EDIT_ROW_GAP = 20;
 export const GRID_CONTAINER = "dashgrid";
 export const WIDE_GRID = `@container ${GRID_CONTAINER} (min-width: 960px)`;
-
-const clampSpan = (value: number): number =>
-  Math.min(GRID_COLUMNS, Math.max(MIN_SPAN, Math.round(value)));
+export const GAP_PREFIX = "row-gap:";
 
 const editLabelSx = {
   fontSize: 11,
@@ -30,14 +35,43 @@ const wideOnly = {
   [WIDE_GRID]: { display: "flex" },
 } as const;
 
+const dropBarSx = (side: DropSide) =>
+  ({
+    position: "absolute",
+    zIndex: 3,
+    borderRadius: "2px",
+    bgcolor: colors.secondary,
+    pointerEvents: "none",
+    left: 0,
+    right: 0,
+    height: "3px",
+    ...(side === "before" ? { top: "-8px" } : { bottom: "-8px" }),
+    [WIDE_GRID]: {
+      top: 0,
+      bottom: 0,
+      height: "auto",
+      width: "3px",
+      left: side === "before" ? "-8px" : "auto",
+      right: side === "after" ? "-8px" : "auto",
+    },
+  }) as const;
+
 interface PanelFrameProps {
   id: string;
   title: string;
   span: number;
+  row: number;
   editing: boolean;
-  dropTarget: boolean;
-  onSpanChange: (span: number) => void;
-  onResizeActive: (active: boolean) => void;
+  dropSide: DropSide | null;
+  resizable: boolean;
+  canGrow: boolean;
+  canShrink: boolean;
+  rowBreak: { kind: RowBreak; allowed: boolean };
+  onGrow: () => void;
+  onShrink: () => void;
+  onResizeMove: (delta: number) => void;
+  onResizeEnd: (delta: number) => void;
+  onToggleRowBreak: () => void;
   onHide: () => void;
   children: ReactNode;
 }
@@ -46,31 +80,23 @@ export const PanelFrame = ({
   id,
   title,
   span,
+  row,
   editing,
-  dropTarget,
-  onSpanChange,
-  onResizeActive,
+  dropSide,
+  resizable,
+  canGrow,
+  canShrink,
+  rowBreak,
+  onGrow,
+  onShrink,
+  onResizeMove,
+  onResizeEnd,
+  onToggleRowBreak,
   onHide,
   children,
 }: PanelFrameProps) => {
   const { t } = useTranslation();
-  const frameRef = useRef<HTMLDivElement | null>(null);
   const [resizing, setResizing] = useState(false);
-  const [previewSpan, setPreviewSpan] = useState<number | null>(null);
-  const [rowSpan, setRowSpan] = useState(1);
-  const shownSpan = previewSpan ?? span;
-
-  useEffect(() => {
-    const el = frameRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(() => {
-      const height = el.getBoundingClientRect().height;
-      const rows = Math.max(1, Math.ceil((height + GRID_GAP) / ROW_UNIT));
-      setRowSpan((prev) => (prev === rows ? prev : rows));
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
 
   const {
     attributes,
@@ -87,14 +113,13 @@ export const PanelFrame = ({
   });
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
-    const frame = frameRef.current;
+    const frame = event.currentTarget.parentElement;
     if (!frame) return;
     event.preventDefault();
     event.stopPropagation();
 
     const startX = event.clientX;
-    const startSpan = span;
-    const step = (frame.getBoundingClientRect().width + GRID_GAP) / startSpan;
+    const step = (frame.getBoundingClientRect().width + GRID_GAP) / span;
     const grip = event.currentTarget;
     const pointerId = event.pointerId;
     const capture = (on: boolean) => {
@@ -107,12 +132,14 @@ export const PanelFrame = ({
     };
     capture(true);
     setResizing(true);
-    onResizeActive(true);
+    onResizeMove(0);
 
-    let latest = startSpan;
+    let latest = 0;
     const onMove = (moveEvent: PointerEvent) => {
-      latest = clampSpan(startSpan + (moveEvent.clientX - startX) / step);
-      setPreviewSpan(latest);
+      const delta = Math.round((moveEvent.clientX - startX) / step);
+      if (delta === latest) return;
+      latest = delta;
+      onResizeMove(delta);
     };
     const onEnd = () => {
       capture(false);
@@ -120,9 +147,7 @@ export const PanelFrame = ({
       grip.removeEventListener("pointerup", onEnd);
       grip.removeEventListener("pointercancel", onEnd);
       setResizing(false);
-      onResizeActive(false);
-      setPreviewSpan(null);
-      if (latest !== startSpan) onSpanChange(latest);
+      onResizeEnd(latest);
     };
 
     grip.addEventListener("pointermove", onMove);
@@ -130,17 +155,19 @@ export const PanelFrame = ({
     grip.addEventListener("pointercancel", onEnd);
   };
 
-  const highlight = resizing || dropTarget;
+  const highlight = resizing || dropSide !== null;
+  const joinsRow = rowBreak.kind === "join";
 
   return (
     <Box
       ref={setNodeRef}
       data-panel-id={id}
       sx={{
-        gridColumn: "span 12",
-        gridRow: `span ${rowSpan}`,
+        display: "flex",
+        flexDirection: "column",
         minWidth: 0,
-        [WIDE_GRID]: { gridColumn: `span ${shownSpan}` },
+        gridColumn: "span 12",
+        [WIDE_GRID]: { gridColumn: `span ${span}`, gridRow: row },
       }}
       style={{
         transform: isDragging ? undefined : CSS.Translate.toString(transform),
@@ -149,21 +176,24 @@ export const PanelFrame = ({
       }}
     >
       <Box
-        ref={frameRef}
-        sx={
-          editing
+        sx={{
+          position: "relative",
+          flex: "1 1 auto",
+          display: "flex",
+          flexDirection: "column",
+          ...(editing
             ? {
-                position: "relative",
                 p: "6px",
                 pr: "12px",
                 border: `1px dashed ${highlight ? colors.secondary : colors.border.strong}`,
                 borderRadius: `${radiusPx.md}px`,
-                bgcolor: dropTarget ? colors.accent.secondaryHover : colors.background.control,
+                bgcolor: colors.background.control,
                 opacity: isDragging ? 0.25 : 1,
               }
-            : { position: "relative" }
-        }
+            : {}),
+        }}
       >
+        {dropSide && <Box aria-hidden sx={dropBarSx(dropSide)} />}
         {editing ? (
           <Box
             sx={{
@@ -225,8 +255,8 @@ export const PanelFrame = ({
                   <IconButton
                     size="small"
                     aria-label={t("dashboard.customize.narrowerPanel", { title })}
-                    disabled={shownSpan <= MIN_SPAN}
-                    onClick={() => onSpanChange(clampSpan(span - 1))}
+                    disabled={!canShrink}
+                    onClick={onShrink}
                     sx={{ color: colors.text.secondary, p: "4px" }}
                   >
                     <NarrowerIcon sx={{ fontSize: 16 }} />
@@ -245,24 +275,52 @@ export const PanelFrame = ({
                   textAlign: "center",
                 }}
               >
-                {t("dashboard.customize.columns", {
-                  span: shownSpan,
-                  total: GRID_COLUMNS,
-                })}
+                {t("dashboard.customize.columns", { span, total: GRID_COLUMNS })}
               </Box>
               <Tooltip title={t("dashboard.customize.wider")}>
                 <span>
                   <IconButton
                     size="small"
                     aria-label={t("dashboard.customize.widerPanel", { title })}
-                    disabled={shownSpan >= GRID_COLUMNS}
-                    onClick={() => onSpanChange(clampSpan(span + 1))}
+                    disabled={!canGrow}
+                    onClick={onGrow}
                     sx={{ color: colors.text.secondary, p: "4px" }}
                   >
                     <WiderIcon sx={{ fontSize: 16 }} />
                   </IconButton>
                 </span>
               </Tooltip>
+              {rowBreak.kind && (
+                <Tooltip
+                  title={
+                    joinsRow
+                      ? rowBreak.allowed
+                        ? t("dashboard.customize.joinRow")
+                        : t("dashboard.customize.rowFull")
+                      : t("dashboard.customize.newRow")
+                  }
+                >
+                  <span>
+                    <IconButton
+                      size="small"
+                      aria-label={
+                        joinsRow
+                          ? t("dashboard.customize.joinRowPanel", { title })
+                          : t("dashboard.customize.newRowPanel", { title })
+                      }
+                      disabled={!rowBreak.allowed}
+                      onClick={onToggleRowBreak}
+                      sx={{ color: colors.text.secondary, p: "4px" }}
+                    >
+                      {joinsRow ? (
+                        <JoinRowIcon sx={{ fontSize: 16 }} />
+                      ) : (
+                        <NewRowIcon sx={{ fontSize: 16 }} />
+                      )}
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
             </Box>
 
             <Tooltip title={t("dashboard.customize.hide")}>
@@ -280,14 +338,17 @@ export const PanelFrame = ({
 
         <Box
           inert={editing}
-          sx={
-            editing ? { pointerEvents: "none", userSelect: "none" } : undefined
-          }
+          sx={{
+            flex: "1 1 auto",
+            display: "flex",
+            flexDirection: "column",
+            ...(editing ? { pointerEvents: "none", userSelect: "none" } : {}),
+          }}
         >
           {children}
         </Box>
 
-        {editing ? (
+        {editing && resizable ? (
           <Box
             aria-hidden
             onPointerDown={handleResizeStart}
@@ -315,6 +376,54 @@ export const PanelFrame = ({
           />
         ) : null}
       </Box>
+    </Box>
+  );
+};
+
+export const RowGap = ({
+  id,
+  row,
+  dragging,
+}: {
+  id: string;
+  row: number;
+  dragging: boolean;
+}) => {
+  const { t } = useTranslation();
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <Box
+      ref={setNodeRef}
+      aria-hidden
+      sx={{
+        display: "none",
+        [WIDE_GRID]: {
+          display: "flex",
+          gridColumn: "1 / -1",
+          gridRow: row,
+          height: `${EDIT_ROW_GAP}px`,
+          alignItems: "center",
+          gap: "8px",
+        },
+      }}
+    >
+      {dragging && (
+        <>
+          <Box
+            sx={{
+              flex: 1,
+              height: isOver ? "3px" : "1px",
+              borderRadius: "2px",
+              bgcolor: isOver ? colors.secondary : colors.border.default,
+            }}
+          />
+          {isOver && (
+            <Box component="span" sx={{ ...editLabelSx, color: colors.secondary }}>
+              {t("dashboard.customize.newRowHere")}
+            </Box>
+          )}
+        </>
+      )}
     </Box>
   );
 };

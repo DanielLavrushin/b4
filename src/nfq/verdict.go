@@ -11,10 +11,22 @@ type verdictSetter interface {
 	SetVerdict(id uint32, verdict int) error
 }
 
+type verdictModifier interface {
+	SetVerdictModPacket(id uint32, verdict int, packet []byte) error
+}
+
 type verdictCtx struct {
-	id      uint32
-	q       verdictSetter
-	verdict engine.PacketVerdict
+	id            uint32
+	q             verdictSetter
+	verdict       engine.PacketVerdict
+	copy          *dnsCopyDecision
+	ifaceFiltered bool
+}
+
+type dnsCopyDecision struct {
+	claim *dnsClaim
+	kind  dnsClaimKind
+	waits []<-chan struct{}
 }
 
 func (vc *verdictCtx) accept() int {
@@ -29,12 +41,40 @@ func (vc *verdictCtx) accept() int {
 
 func (vc *verdictCtx) drop() bool {
 	vc.verdict = engine.VerdictDrop
+	if vc.copy != nil {
+		if vc.copy.kind != claimDrop {
+			vc.copy.kind = claimAnswer
+		}
+		return true
+	}
 	if vc.q != nil {
 		if err := vc.q.SetVerdict(vc.id, nfqueue.NfDrop); err != nil {
 			log.Tracef("failed to set drop verdict on packet %d: %v", vc.id, err)
 			return false
 		}
 	}
+	return true
+}
+
+func (vc *verdictCtx) dropUnanswered() bool {
+	if vc.copy == nil {
+		return vc.drop()
+	}
+	vc.verdict = engine.VerdictDrop
+	vc.copy.kind = claimDrop
+	return true
+}
+
+func (vc *verdictCtx) replace(raw []byte) bool {
+	m, ok := vc.q.(verdictModifier)
+	if !ok {
+		return false
+	}
+	if err := m.SetVerdictModPacket(vc.id, nfqueue.NfAccept, raw); err != nil {
+		log.Tracef("failed to replace packet %d: %v", vc.id, err)
+		return false
+	}
+	vc.verdict = engine.VerdictAccept
 	return true
 }
 

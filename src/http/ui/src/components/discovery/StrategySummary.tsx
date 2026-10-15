@@ -4,7 +4,12 @@ import { useTranslation } from "react-i18next";
 import { colors, facets as facetColors, typography } from "@design";
 import { B4SetConfig } from "@models/config";
 import { buildSetFacets } from "@components/sets/facets";
-import { describeStrategy, normalizeSet, presetLabel } from "@utils";
+import {
+  describeStrategy,
+  extraTargetNames,
+  normalizeSet,
+  presetLabel,
+} from "@utils";
 
 interface Row {
   key: string;
@@ -65,6 +70,12 @@ export const StrategySummary = ({
   const targets = set.targets;
   const targetDomains = domains ?? targets?.sni_domains ?? [];
   const targetExtras: string[] = [];
+  const alsoNames = domains ? extraTargetNames(set, domains) : [];
+  if (alsoNames.length > 0) {
+    targetExtras.push(
+      t("discovery.summary.alsoNames", { list: alsoNames.join(", ") }),
+    );
+  }
   if (targets?.geosite_categories?.length) {
     targetExtras.push(
       t("discovery.summary.geosite", {
@@ -115,6 +126,14 @@ export const StrategySummary = ({
     });
     if (dns?.enabled) dnsMuted = pinText;
     else dnsValue = pinText;
+  }
+  if (dns?.strip_ech) {
+    const stripText = t("discovery.summary.dnsStripEch");
+    if (dns.enabled || pinned.length > 0) {
+      dnsMuted = dnsMuted ? `${dnsMuted} · ${stripText}` : stripText;
+    } else {
+      dnsValue = stripText;
+    }
   }
   rows.push({
     key: "dns",

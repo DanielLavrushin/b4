@@ -40,6 +40,7 @@ import {
 } from "@b4.icons";
 import { colors, theme } from "@design";
 import { useAuth } from "@context/AuthProvider";
+import { useDocumentTitle } from "@hooks/usePageTitle";
 import { LoginPage } from "@components/auth/LoginPage";
 
 import { Logo } from "@common/Logo";
@@ -82,6 +83,13 @@ const navItems: NavItem[] = [
   { path: "/settings", labelKey: "core.nav.settings", icon: <CoreIcon /> },
 ];
 
+function pageTitleKey(pathname: string) {
+  return (
+    navItems.find((item) => pathname.startsWith(item.path))?.labelKey ??
+    "core.nav.dashboard"
+  );
+}
+
 function UnseenDomainsBadge() {
   const count = useUnseenDomainsCount();
   if (count <= 0) return null;
@@ -120,6 +128,12 @@ export default function App() {
   const { t } = useTranslation();
   const hubStatus = useHubStatus(!authRequired || isAuthenticated);
   const hubEnabled = Boolean(hubStatus.data?.enabled);
+  const showLogin = authRequired && !isAuthenticated;
+  const pageTitle = showLogin
+    ? t("login.signIn")
+    : t(pageTitleKey(location.pathname));
+
+  useDocumentTitle(isLoading ? "" : pageTitle);
 
   const drawerOpen = isCompact ? mobileDrawerOpen : desktopDrawerOpen;
   const toggleDrawer = () => {
@@ -134,7 +148,7 @@ export default function App() {
     return null;
   }
 
-  if (authRequired && !isAuthenticated) {
+  if (showLogin) {
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
@@ -142,20 +156,6 @@ export default function App() {
       </ThemeProvider>
     );
   }
-
-  const getPageTitle = () => {
-    const path = location.pathname;
-    if (path.startsWith("/dashboard")) return t("core.nav.dashboard");
-    if (path.startsWith("/sets")) return t("core.nav.sets");
-    if (path.startsWith("/traffic")) return t("core.nav.connections");
-    if (path.startsWith("/discovery")) return t("core.nav.discovery");
-    if (path.startsWith("/hub")) return t("core.nav.hub");
-    if (path.startsWith("/watchdog")) return t("core.nav.watchdog");
-    if (path.startsWith("/logs")) return t("core.nav.logs");
-    if (path.startsWith("/detector")) return t("core.nav.detector");
-    if (path.startsWith("/settings")) return t("core.nav.settings");
-    return t("core.nav.dashboard");
-  };
 
   const isNavItemSelected = (navPath: string) => {
     if (navPath === "/settings" || navPath === "/sets") {
@@ -279,7 +279,7 @@ export default function App() {
                     color: "#fff",
                   }}
                 >
-                  {getPageTitle()}
+                  {pageTitle}
                 </Typography>
                 {authRequired && (
                   <IconButton color="inherit" onClick={logout} title={t("core.logout")}>

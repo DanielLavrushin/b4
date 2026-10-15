@@ -302,6 +302,37 @@ func TestMCPManageSetResetKeepsTargets(t *testing.T) {
 	}
 }
 
+func TestMCPManageSetResetKeepsTheLocalDSCP(t *testing.T) {
+	cfg := writableCfg(t)
+	cfg.Sets[0].Routing = config.RoutingConfig{Enabled: true, Mode: config.RoutingModeProxy, Upstream: config.UpstreamProxyConfig{Host: "10.0.0.9", Port: 1080}}
+	cfg.Sets[0].DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	cfg.Sets[1].DSCP = config.SetDSCPConfig{Enabled: true, Value: 31}
+	cfg.Sets[1].Targets.DomainsToMatch = []string{"example.org"}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeManageSet(t, callManageSet(t, session, ctx, map[string]any{
+		"action": "reset", "set": "video", "confirm_name": "video",
+	}))
+	reset := api.getCfg().Sets[0]
+	if reset.Routing.Enabled || reset.DSCP != (config.SetDSCPConfig{Enabled: false, Value: 25}) {
+		t.Errorf("the reset drops the proxy routing that kept the DSCP value from applying, so the value must stay switched off: routing %+v, dscp %+v", reset.Routing, reset.DSCP)
+	}
+	if !strings.Contains(out.Note, "DSCP value was kept but switched off") {
+		t.Errorf("switching the DSCP value off must be reported: %q", out.Note)
+	}
+
+	out = decodeManageSet(t, callManageSet(t, session, ctx, map[string]any{
+		"action": "reset", "set": "disabled-set", "confirm_name": "disabled-set",
+	}))
+	if got := api.getCfg().Sets[1].DSCP; got != (config.SetDSCPConfig{Enabled: true, Value: 31}) {
+		t.Errorf("a reset must keep the set's own DSCP value, which MCP cannot write back: %+v", got)
+	}
+	if strings.Contains(out.Note, "DSCP") {
+		t.Errorf("nothing about DSCP changed, so the note must not mention it: %q", out.Note)
+	}
+}
+
 func TestMCPManageSetRevertRestoresEverything(t *testing.T) {
 	mcpResetHistory()
 	t.Cleanup(mcpResetHistory)
@@ -454,6 +485,50 @@ func TestMCPManageSetDuplicateDropsRoutingAndSaysSo(t *testing.T) {
 	}
 	if !strings.Contains(out.Note, "whichever sits earlier wins") {
 		t.Errorf("a duplicate carries its source's targets and the note must not claim it matches nothing: %q", out.Note)
+	}
+}
+
+func TestMCPManageSetDuplicateSwitchesOffARefusedDSCP(t *testing.T) {
+	cfg := mcpSecretsCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.Sets[0].DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	cfg.Sets[0].Targets.DomainsToMatch = []string{"youtube.com"}
+	cfg.Sets[1].DSCP = config.SetDSCPConfig{Enabled: true, Value: 31}
+	cfg.Sets[1].Targets.DomainsToMatch = []string{"example.org"}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	byName := func(name string) *config.SetConfig {
+		for _, s := range api.getCfg().Sets {
+			if s.Name == name {
+				return s
+			}
+		}
+		t.Fatalf("no set named %q", name)
+		return nil
+	}
+
+	out := decodeManageSet(t, callManageSet(t, session, ctx, map[string]any{
+		"action": "duplicate", "set": "video", "name": "video copy",
+	}))
+	if got := byName("video copy").DSCP; got != (config.SetDSCPConfig{Enabled: false, Value: 25}) {
+		t.Errorf("a copy without the proxy routing that kept the value from applying must carry it switched off, got %+v", got)
+	}
+	if !strings.Contains(out.Note, "DSCP value was copied switched off") {
+		t.Errorf("switching the copy's DSCP value off must be reported: %q", out.Note)
+	}
+	if got := byName("video").DSCP; got != (config.SetDSCPConfig{Enabled: true, Value: 25}) {
+		t.Errorf("the original's DSCP value changed: %+v", got)
+	}
+
+	out = decodeManageSet(t, callManageSet(t, session, ctx, map[string]any{
+		"action": "duplicate", "set": "disabled-set", "name": "plain copy",
+	}))
+	if got := byName("plain copy").DSCP; got != (config.SetDSCPConfig{Enabled: true, Value: 31}) {
+		t.Errorf("a DSCP value that applied to the original must be copied as it is, got %+v", got)
+	}
+	if strings.Contains(out.Note, "DSCP") {
+		t.Errorf("nothing about DSCP changed, so the note must not mention it: %q", out.Note)
 	}
 }
 

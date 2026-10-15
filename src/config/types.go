@@ -71,6 +71,8 @@ const (
 	DefaultDNSTCPDialSec      = 5
 )
 
+const DNSQueryCopyPrefix = "b4dns"
+
 func RoutingUsesTProxy(mode string) bool {
 	return mode == RoutingModeProxy || mode == RoutingModeMTProtoWS
 }
@@ -554,6 +556,7 @@ type SetConfig struct {
 	Routing       RoutingConfig       `json:"routing"`
 	Escalate      EscalateConfig      `json:"escalate"`
 	MSSClamp      MSSClampConfig      `json:"mss_clamp"`
+	DSCP          SetDSCPConfig       `json:"dscp" mcp:"deny"`
 	Discovery     SetDiscoveryConfig  `json:"discovery" mcp:"deny"`
 	Hub           *HubOrigin          `json:"hub,omitempty" mcp:"deny"`
 }
@@ -690,6 +693,7 @@ type DNSConfig struct {
 	FragmentQuery bool                `json:"fragment_query"`
 	Strict        bool                `json:"strict"`
 	Pins          map[string][]string `json:"pins,omitempty"`
+	StripECH      bool                `json:"strip_ech"`
 }
 
 type DNSSystemConfig struct {
@@ -710,6 +714,11 @@ type DuplicateConfig struct {
 type MSSClampConfig struct {
 	Enabled bool `json:"enabled"`
 	Size    int  `json:"size"` // MSS value in bytes (e.g., 88)
+}
+
+type SetDSCPConfig struct {
+	Enabled bool `json:"enabled"`
+	Value   int  `json:"value"`
 }
 
 type RoutingConfig struct {

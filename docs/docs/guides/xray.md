@@ -1,21 +1,14 @@
 ---
 sidebar_position: 2
-title: b4 with Xray or XrayUI
+title: Using b4 with Xray or XrayUI
+description: How a b4 routing set and Xray's TUN inbound share the router, and the two arrangements that work.
 ---
 
-Xray with a TUN inbound and b4 with an output interface both work by putting a route in
-front of the kernel's normal one. Run together they interact in three places, and b4's web
-interface shows only one of them. This page describes the whole path.
-
-The same applies to any service that terminates connections behind a TUN device: sing-box,
-a `tun2socks` client, or Xray driven by hand rather than by [XrayUI](https://daniellavrushin.github.io/asuswrt-merlin-xrayui/en/install).
+Xray with a TUN inbound and a b4 set in **Network interface** mode both put a route in front of the kernel's normal one. Run together, they meet in three places, and b4's web interface shows only one of them. The same applies to any service that terminates connections behind a TUN device: sing-box, a `tun2socks` client, or Xray run by hand instead of by [XrayUI](https://daniellavrushin.github.io/asuswrt-merlin-xrayui/en/install).
 
 ## What each service does
 
-Xray's TUN inbound creates a network device, `xray0` below, and reads packets out of it. It
-does not forward them. It terminates the connection, opens its own to the same destination
-from the same host, and copies bytes between the two. The proxy protocol lives on the
-outbound side.
+Xray's TUN inbound creates a network device, `xray0` below, and reads packets from it. It does not forward them: it terminates each connection, opens its own to the same destination from the same host, and copies bytes between the two.
 
 ```json
 {
@@ -26,15 +19,13 @@ outbound side.
 }
 ```
 
-The device on its own carries nothing. Traffic reaches it through an `ip rule` and a routing
-table. [XrayUI](https://daniellavrushin.github.io/asuswrt-merlin-xrayui/en/install) installs its own; b4 in output interface mode installs its own. Rule priority
-decides which applies, not the order the services were configured in.
+The device carries nothing by itself. Traffic reaches it through an `ip rule` and a routing table. XrayUI installs its own, and b4 installs its own for a set in **Network interface** mode. The rule priority decides which one applies, not the order in which the services were set up.
 
 ## The three layers
 
 ```mermaid
 flowchart TD
-    A[packet from a client] --> B{b4 capture filter<br/>Settings, Capture Interfaces}
+    A[packet from a client] --> B{b4 capture filter<br/>Capture Interfaces}
     B -->|interface not selected| Z[accepted unchanged]
     B -->|selected, or empty| C{a set matches<br/>the destination}
     C -->|no| D[normal route]
@@ -45,118 +36,61 @@ flowchart TD
     H --> I[default route through<br/>the output interface]
 ```
 
-1. **b4's capture filter.** **Capture Interfaces** under **Settings, Core, Packet Engine**
-   selects which packets the engine looks at. For forwarded traffic it compares the
-   interface the packet leaves by, which is `xray0` once anything routes into the tunnel, so
-   a list naming the uplink excludes everything the tunnel carries. See
-   [Which interface is which](/docs/guides/interfaces).
+1. **b4's capture filter.** For forwarded traffic, **Capture Interfaces** under **Settings > Core > Packet Engine** compares the interface a packet leaves by. Once anything routes into the tunnel, that is `xray0`, so a list naming the uplink excludes everything the tunnel carries. See [Which interface is which](./interfaces.md).
+2. **b4's marking.** A set with routing on marks the packets to its addresses. This is the part the web interface shows.
+3. **The `ip rule` list.** The kernel walks the rules from the lowest priority number up and stops at the first one that gives a route. b4's rule has priority `10000 + table number`. XrayUI in TUN mode adds one at priority 51 for the whole local subnet:
 
-2. **b4's marking.** A set with routing enabled marks packets whose destination it matches.
-   This is the part the web interface shows.
-
-3. **The `ip rule` table.** The kernel walks rules from the lowest priority number up and
-   stops at the first one that produces a route. b4 installs its rule at priority
-   `10000 + table number`. XrayUI installs one at priority 51 matching the whole local
-   subnet:
-
-   ```
+   ```text
    51:    from 192.168.1.0/24 lookup 250
    10169: from all fwmark 0x4d05/0x27fff lookup 169
    ```
 
-   51 comes first and table 250 has a default route, so every packet from the local network
-   ends there. b4's rule is never reached, whatever mark the packet carries. b4's interface
-   reports nothing, because b4's own rules are correct.
+   Table 250 has a default route, so every packet from the local network ends there, and b4's rule is never reached, whatever mark the packet carries. b4's interface reports nothing, because b4's own rules are correct.
 
 :::warning
-Two services that both do policy routing do not merge. The one with the lower priority
-number takes every packet its selector matches. `ip rule` on the router shows the real
-order; neither web interface does.
+Two services that both do policy routing do not merge. The one with the lower priority number takes every packet its selector matches. `ip rule` on the router shows the real order; neither web interface does.
 :::
 
-:::info
-Every mark and `ip rule` b4 installs, and the values Xray, XKeen and XrayUI use, are listed in
-[Packet marks](/docs/guides/marks).
-:::
+Every mark and `ip rule` of b4, and the values of Xray, XKeen and XrayUI, are in [Packet marks](./marks.md).
 
-## Deciding which service routes
+## Choosing which service routes
 
-Both arrangements below work. A mixture of the two produces a set that marks traffic and
-changes nothing.
+Both arrangements below work. A mixture of the two gives a set that marks traffic and changes nothing.
 
 ### Xray routes everything, b4 only bypasses DPI
 
-XrayUI's blanket rule stays. Every client's traffic goes through the tunnel, and b4 handles
-the DPI bypass on whatever still goes out directly.
+XrayUI's rule for the subnet stays. Every client's traffic goes through the tunnel, and b4 handles the DPI bypass of whatever still goes out directly.
 
-- **Capture Interfaces** under **Settings, Core, Packet Engine**: **empty**. Naming the
-  uplink here switches b4 off for the whole local network, because none of that traffic
-  leaves by the uplink any more.
-- Routing on b4's sets: **off**. There is nothing for it to steer, and its rule would not be
-  reached.
-- Packet manipulation does little on traffic Xray terminates on the router: the segment b4
-  would alter is the inner one, which never reaches the network as b4 wrote it.
+- **Capture Interfaces** under **Settings > Core > Packet Engine**: none selected. The uplink there switches b4 off for the whole local network, because none of that traffic leaves by the uplink any more.
+- **Enable Routing** on b4's sets: off. Its rule would never be reached.
 
 ### b4 decides what goes into the tunnel
 
-b4's sets pick the destinations and the tunnel carries only those. This is what the output
-interface setting is for.
+b4's sets pick the destinations, and the tunnel carries only those.
 
-- The blanket rule on the Xray side has to go. In XrayUI that means turning off its
-  transparent routing for the subnet; by hand, not installing a
-  `from <subnet> lookup <table>` rule. Left in place it preempts b4 for every client.
-- **Capture Interfaces** under **Settings, Core, Packet Engine**: **empty**.
-- On the set, `Routing > Output interface`: the TUN device, `xray0`.
-- `Routing > Source interfaces`: **empty**, unless the set covers one segment. It is an
-  ingress match, so the uplink there matches nothing from the local network.
-- `Routing > Router's own traffic`: **Automatic**, for the reason below.
+- The rule for the subnet on the Xray side goes: in XrayUI by turning off its transparent routing for the subnet, by hand by not adding a `from <subnet> lookup <table>` rule. Left in place, it takes every client's traffic before b4.
+- **Capture Interfaces** under **Settings > Core > Packet Engine**: none selected.
+- On the set, **DNS & Routing > Traffic Routing**: **Output Interface** `xray0`, **Source Interfaces** none selected unless the set covers one segment, and **Router's own traffic** at **Automatic**.
 
-Xray still needs a route to its own server that does not go back through the tunnel. That is
-the `/32` exception [XrayUI](https://daniellavrushin.github.io/asuswrt-merlin-xrayui/en/install) writes into its table, and it has to survive either arrangement.
+Xray still needs a route to its own server that does not lead back into the tunnel: the `/32` exception XrayUI writes into its table, which both arrangements keep.
 
-## Why the router's own traffic is held back
-
-A proxy behind a TUN answers a connection by opening its own from the same host. If b4
-routed the router's own connections into the tunnel, that new connection, addressed to
-something in the set, would be marked and sent back into the tunnel Xray is reading. Xray
-would answer it the same way. Every turn carries a fresh source port, so the kernel sees no
-repeat, and each turn costs another session and another socket.
-
-b4 recognises a TUN device by `/sys/class/net/<iface>/tun_flags` and leaves the router's own
-traffic on the normal route by default. The setting is per set, under
-[Router's own traffic](/docs/sets/routing#routers-own-traffic). Forcing it on is allowed and
-rate limited, but on a TUN whose reader dials the destination directly it is the loop above.
-
-:::danger
-The same loop happens without b4 when Xray's own routing sends some of those destinations to
-a `freedom` or `direct` outbound while the TUN is still being fed them. Forcing router
-traffic into a tunnel is safe only when the Xray side sends none of the set's destinations
-to a direct outbound.
-:::
+**Automatic** keeps the router's own connections out of the tunnel, because Xray opens its own connection to each destination from the router, and routing it back into `xray0` loops. **Route it too** is safe only when Xray sends none of the set's destinations to a `freedom` or `direct` outbound. See [Router's own traffic](../sets/routing.md#routers-own-traffic).
 
 ## Packet manipulation with a tunnel egress
 
-A set routed into a TUN, TAP or WireGuard interface stops running its bypass strategy: no
-faking, fragmentation or desync, and no SYN health check, dead IP escalation, IP block
-detection or TCP duplication. Those work on the inner segment, which is wrapped or
-terminated on the router before the network sees it. Such connections carry the
-`routed-><iface>` flag: it ends their lines on the `Logs` page, and `flags:routed` finds
-them on the `Traffic` page.
-
-The strategy tabs still show their settings. They are not applied while the set routes into
-a tunnel.
+A set routed into a TUN, TAP or WireGuard interface does not run its bypass strategy: the segment b4 would change is the inner one, which never reaches the network as b4 wrote it. Its connections end with `[routed->xray0]` on the **Logs** page, and `flags:routed` finds them on the **Traffic** page. The strategy tabs keep their settings, which do not apply while the set routes into the tunnel.
 
 ## XrayUI's TPROXY rule and connections b4 diverts
 
-XrayUI adds this rule to the top of mangle PREROUTING every time xray starts:
+Each time xray starts, XrayUI adds this rule to the top of mangle PREROUTING:
 
 ```sh
 iptables -t mangle -I PREROUTING 1 -p tcp -m socket --transparent -j DIVERT
 ```
 
-`DIVERT` marks the packet `0x10000` and accepts it. The rule matches every packet addressed to a local transparent socket, and the connections b4 diverts to its own listeners end on such sockets: sets in the *Upstream SOCKS5 proxy* and *Telegram over WebSocket* routing modes, and the Telegram over WebSocket switch. A packet the rule accepts never reaches b4's rule, and where no `ip rule` sends mark `0x10000` to the router itself, it leaves by the default route. The client's connection then never completes its handshake with b4's listener.
+`DIVERT` marks the packet `0x10000` and accepts it. The rule matches every packet addressed to a local transparent socket, which includes the connections b4 diverts to its own listeners: sets in the **Upstream SOCKS5 proxy** and **Telegram over WebSocket (built-in)** modes, and the Telegram over WebSocket switch. A packet the rule accepts never reaches b4's rule, and where no `ip rule` sends mark `0x10000` to the router itself, it leaves by the default route. The client's connection then never completes its handshake with b4's listener.
 
-On iptables b4 keeps its routing jumps above every rule in mangle PREROUTING that matches local sockets. When such a rule appears above them, the next firewall check moves b4's jumps back above it and logs a warning naming the rule; the check runs at the **Firewall Monitor Interval (seconds)** under **Settings, Core, Firewall**, 10 seconds by default. Until then the Telegram over WebSocket card reads **Not working** and names the rule, and **Check again** on the card moves the jumps back at once. While the firewall monitor is off, with the interval at `0` or **Skip IPTables/NFTables Setup** on, no check runs, and only **Check again** or saving the settings restores the order.
+On iptables b4 keeps its routing jumps above every rule in mangle PREROUTING that matches local sockets. When such a rule appears above them, the next firewall check moves b4's jumps back and logs a warning naming the rule. The check runs at the **Firewall Monitor Interval (seconds)** under **Settings > Core > Firewall**, 10 seconds by default. Until then the Telegram over WebSocket card reads **Not working** and names the rule, and **Check again** on the card moves the jumps back at once. With the monitor off, at interval `0` or with **Skip IPTables/NFTables Setup** on, only **Check again** or saving the settings restores the order.
 
 ```sh
 iptables -t mangle -L PREROUTING -n --line-numbers
@@ -166,26 +100,18 @@ The order is right when every `b4r_*_pre` line comes before `DIVERT`.
 
 ## Checking the result
 
-The commands below run on the router. Each one answers a different layer.
+Each command runs on the router and answers for one layer:
 
 ```sh
 # 3. which table decides, for a client address
 ip rule
 ip route get 1.1.1.1 from 192.168.1.100 iif br0
 
-# 2. whether b4 is marking anything (packet counters on the set's chain)
-iptables -t mangle -L -n -v | grep b4r_        # iptables
-nft list table inet b4_route                   # nftables
+# 2. whether b4 marks anything: packet counters on the set's chain
+iptables -t mangle -L -n -v | grep b4r_
+nft list table inet b4_route
 
-# 1. whether b4 sees anything at all
-#    Traffic in the web interface: when the router is the only source,
-#    the network interface filter is excluding the rest
+# 1. whether b4 sees the clients at all: the Traffic page
 ```
 
-A destination outside every set that still resolves to the tunnel device is being routed by
-another service, and a b4 test against that destination measures the other service.
-
-:::info
-`ip route get` walks the real rules. A destination that comes back with a table b4 did not
-create is not reaching b4's rule.
-:::
+`ip route get` follows the real rules. A destination that comes back with a table b4 did not create does not reach b4's rule. A destination outside every set that still goes to the tunnel device is routed by another service, and a test of b4 against it measures that service.

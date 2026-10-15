@@ -457,6 +457,7 @@ export interface B4SetConfig {
   routing: RoutingConfig;
   escalate?: EscalateConfig;
   mss_clamp?: MSSClampConfig;
+  dscp?: SetDSCPConfig;
   discovery?: SetDiscoveryConfig;
   hub?: B4HubOrigin;
   hub_state?: HubState;
@@ -523,6 +524,7 @@ export interface DNSConfig {
   fragment_query: boolean;
   strict: boolean;
   pins?: Record<string, string[]>;
+  strip_ech?: boolean;
 }
 
 export type RoutingMode = "interface" | "proxy" | "mtproto-ws" | "block";
@@ -585,6 +587,11 @@ export interface RSTProtectionConfig {
 export interface MSSClampConfig {
   enabled: boolean;
   size: number;
+}
+
+export interface SetDSCPConfig {
+  enabled: boolean;
+  value: number;
 }
 
 export const CREATE_SET_SENTINEL = "00000000-0000-0000-0000-000000000000";

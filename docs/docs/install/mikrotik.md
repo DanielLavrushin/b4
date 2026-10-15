@@ -1,34 +1,30 @@
 ---
 sidebar_position: 5
 title: MikroTik
+description: Running b4 as a container on MikroTik RouterOS 7.
 ---
 
-On MikroTik RouterOS 7.x, b4 runs as a container.
+On MikroTik RouterOS 7, b4 runs as a container. RouterOS sends the traffic of chosen clients through it.
 
 ## Requirements
 
-- RouterOS version 7.21.1 or newer
-- ARM64 or AMD64 architecture
-- External storage attached (Flash/SSD/HDD), formatted as Ext4
-
-:::warning
-Containers on MikroTik require external storage - the router's internal memory is not enough.
-:::
+- RouterOS 7.21.1 or newer, on ARM64 or AMD64.
+- External storage (flash, SSD or HDD) formatted as Ext4. The router's internal memory is not enough for containers.
 
 ## Community image
 
-Besides the official `lavrushin/b4` image, there is a community image built specifically for RouterOS: [wiktorbgu/b4-mikrotik](https://hub.docker.com/r/wiktorbgu/b4-mikrotik), maintained by wiktorbgu. It follows b4 releases with matching version tags and packages the service for RouterOS containers:
+Besides the official `lavrushin/b4` image, the community image [wiktorbgu/b4-mikrotik](https://hub.docker.com/r/wiktorbgu/b4-mikrotik) is built for RouterOS and follows b4 releases with the same version tags. Compared with the official image:
 
-- b4 runs as an OpenRC service inside the container, so it can be restarted without stopping the container
-- the entrypoint selects the firewall backend at startup - nftables, or iptables-legacy with ipset - depending on which kernel modules RouterOS exposes to the container
-- it normalizes the priorities of the `main` and `default` routing rules, which RouterOS 7.22 passes into the container in a form that breaks policy routing
-- a companion container, [wiktorbgu/dnsproxy-mikrotik](https://hub.docker.com/r/wiktorbgu/dnsproxy-mikrotik), forwards DNS queries over DoH so they are not intercepted
+- b4 runs as an OpenRC service, so it restarts without stopping the container;
+- the firewall backend, nftables or iptables-legacy with ipset, is picked from the kernel modules RouterOS exposes;
+- the priorities of the `main` and `default` routing rules are fixed, which RouterOS 7.22 passes into containers in a form that breaks policy routing;
+- a companion container, [wiktorbgu/dnsproxy-mikrotik](https://hub.docker.com/r/wiktorbgu/dnsproxy-mikrotik), forwards DNS over DoH.
 
-Setup instructions are on the image page. The image is maintained by the community, not built by the b4 project, and its build sources are not published, so its contents cannot be checked against this repository. The guide below uses the official image.
+Its setup is described on its page. wiktorbgu maintains it, not the b4 project, and its build sources are not published, so its contents cannot be checked against this repository. The steps below use the official image.
 
-## Example parameters
+## Example values
 
-The guide uses the following values, which have to be replaced with the ones matching the local network:
+The steps use these values. They are replaced with the ones of the local network:
 
 | Parameter | Value |
 | --- | --- |
@@ -45,7 +41,7 @@ The guide uses the following values, which have to be replaced with the ones mat
 
 ## Step 1: Bridge
 
-A bridge for the Docker network:
+A bridge for the container network:
 
 ```routeros
 /interface/bridge add name=bridge-docker port-cost-mode=short
@@ -54,7 +50,7 @@ A bridge for the Docker network:
 
 ## Step 2: Interface
 
-A virtual Ethernet interface attached to the bridge:
+A virtual Ethernet interface on the bridge:
 
 ```routeros
 /interface/veth add address=192.168.210.10/24 gateway=192.168.210.1 name=B4
@@ -63,7 +59,7 @@ A virtual Ethernet interface attached to the bridge:
 
 ## Step 3: Routing
 
-A routing table and a route through the container:
+A routing table with a route through the container:
 
 ```routeros
 /routing table add disabled=no fib name=to_b4
@@ -72,7 +68,7 @@ A routing table and a route through the container:
 
 ## Step 4: Traffic marking
 
-Traffic from clients in the `b4users` list is redirected through the container:
+The traffic of the clients in the `b4users` list goes through the container:
 
 ```routeros
 /ip firewall mangle add chain=prerouting action=mark-connection \
@@ -85,32 +81,29 @@ Traffic from clients in the `b4users` list is redirected through the container:
     in-interface-list=LAN log=no place-before=1
 ```
 
-:::caution FastTrack
-FastTrack bypasses mangle rules. It has to be restricted to unmarked connections:
+FastTrack skips mangle rules, so it is limited to unmarked connections:
 
 ```routeros
 /ip firewall filter set [find action=fasttrack-connection] connection-mark=no-mark
 ```
 
-:::
-
-## Step 5: Mount points
+## Step 5: Mount point
 
 ```routeros
 /container/mounts add name=b4_etc src=/usb1/docker/b4-mounts/etc dst=/opt/etc/b4
 ```
 
-The `/usb1/docker/b4-mounts/etc` directory has to exist on the disk.
+The directory `/usb1/docker/b4-mounts/etc` has to exist on the disk.
 
-## Step 6: Run the container
+## Step 6: Container
 
-Registry configuration:
+The registry:
 
 ```routeros
 /container/config set registry-url=https://registry-1.docker.io tmpdir=/usb1/docker/pull
 ```
 
-Creating the container:
+The container:
 
 ```routeros
 /container add remote-image=lavrushin/b4:latest interface=B4 \
@@ -119,25 +112,21 @@ Creating the container:
     logging=yes dns=192.168.100.1
 ```
 
-After the image has been pulled:
+Once the image is pulled:
 
 ```routeros
 /container start [find tag~"b4"]
 ```
 
-:::info DNS hijacking
-Where the ISP intercepts DNS (port 53 redirection), public resolvers inside the container do not help. The way around it is DoH on MikroTik, with the container pointed at the bridge gateway instead of public DNS:
+Where the provider intercepts DNS on port 53, public resolvers inside the container do not help. DoH on RouterOS works around it, with the container pointed at the bridge gateway, `dns=192.168.210.1`:
 
 ```routeros
 /ip dns set use-doh-server=https://cloudflare-dns.com/dns-query verify-doh-cert=yes
 ```
 
-The container DNS then becomes `dns=192.168.210.1` (the bridge gateway).
-:::
+## Step 7: Clients
 
-## Step 7: Add clients
-
-Devices are added to the `b4users` address list:
+The devices that go through b4 are added to the `b4users` list:
 
 ```routeros
 /ip firewall address-list add list=b4users address=192.168.100.50
@@ -146,36 +135,31 @@ Devices are added to the `b4users` address list:
 
 ## Step 8: NAT Masquerade
 
-In the web interface (`http://192.168.210.10:7000`), **NAT Masquerade** is turned on under [Settings, Core, Firewall](../settings/core#nat-masquerade). The masquerade interface stays at its default, all interfaces.
+1. Open the web interface at `http://192.168.210.10:7000`.
+2. Turn on **NAT Masquerade** under [Settings > Core > Firewall](../settings/core.md#nat-masquerade). The masquerade interface stays at its default, all interfaces.
 
-The routing mark from Step 4 applies only to packets arriving from the LAN, so RouterOS sends the server's replies straight to the client and they never pass through the container. Conntrack inside the container sees the client's SYN, never sees the answer to it, and marks every later packet of the connection as invalid. b4 picks the first packets of a connection by the conntrack packet count, so without masquerade it never receives the TLS ClientHello, and the strategies that act on it do not run.
-
-With masquerade on, the container rewrites the source of forwarded traffic to its own address, 192.168.210.10. The replies return to the container, which hands them back to the client through RouterOS. On the leg from the container to the internet, RouterOS sees 192.168.210.10 as the source of every connection, so rules on that leg cannot tell the clients apart.
+Without masquerade, RouterOS sends the server's replies straight to the client, past the container. b4 then never gets the TLS ClientHello of a connection, and its strategies do not run. With masquerade, the connections leave the container from its address, 192.168.210.10, so rules after the container on RouterOS cannot tell the clients apart.
 
 ## Web interface
 
-After the container starts: `http://192.168.210.10:7000`
+After the container starts, the web interface is at `http://192.168.210.10:7000`.
 
-:::tip Reduce disk wear
-USB flash and SD cards have a limited number of write cycles. b4 logs can be moved to RAM in the web interface:
-
-**Log Directory** on the **Logging** card under **Settings, System, Service**: `/tmp/log/b4`
-
-Logs are lost on reboot, but storage lasts longer.
+:::tip Less disk wear
+USB flash drives and SD cards wear out with writes. **Log Directory** on the **Logging** card under **Settings > System > Service** set to `/tmp/log/b4` keeps the logs in RAM. They are then lost on reboot.
 :::
 
 ## Access from the WAN {#access-from-the-wan}
 
-The container sits behind RouterOS, which filters and translates everything that arrives from the WAN before it reaches the bridge. A b4 port, such as the MTProto proxy's `3128`, is reachable from outside only through a `dst-nat` rule on RouterOS towards the container's address:
+RouterOS filters and translates everything that arrives from the WAN before it reaches the bridge. A b4 port, such as `3128` of the MTProto proxy, is reachable from outside only through a `dst-nat` rule towards the container:
 
 ```routeros
 /ip firewall nat add chain=dstnat action=dst-nat in-interface-list=WAN \
     protocol=tcp dst-port=3128 to-addresses=192.168.210.10 to-ports=3128
 ```
 
-**Expose to internet** in b4 changes only the firewall inside the container and does not replace this rule. What the switch does elsewhere is described under [Access from the internet](../settings/security.md#expose-to-internet).
+**Expose to internet** in b4 changes only the firewall inside the container and does not replace this rule, see [Access from the internet](../settings/security.md#expose-to-internet).
 
-## Update
+## Update {#update}
 
 ```routeros
 /container stop [find tag~"b4"]
@@ -186,17 +170,15 @@ The container sits behind RouterOS, which filters and translates everything that
     logging=yes dns=192.168.100.1
 ```
 
-The configuration is stored on the mount point and is preserved when the container is recreated.
+The configuration is on the mount point and stays when the container is created again.
 
 ## Sending a set to another container
 
-A set can hand its traffic to a SOCKS5 proxy in another container on the same bridge, such as Xray, sing-box or mihomo with a SOCKS5 inbound, instead of letting it leave through the main route of RouterOS. The set's **Routing mode** is *Upstream SOCKS5 proxy*, with the other container's address (for example 192.168.210.20) and its SOCKS5 port as the upstream. RouterOS needs no extra rules for this: b4's connection to the proxy stays inside `bridge-docker`, and only the proxy's own connections go out through RouterOS.
-
-In this mode b4 applies no DPI strategy to the set's traffic; the proxy reaches the destination. [Upstream SOCKS5 proxy](/docs/sets/routing#upstream-socks5-proxy) describes the diversion, UDP handling and the kernel modules it needs. Several sets can point at different proxies.
+A set can hand its traffic to a SOCKS5 proxy in another container on the same bridge, such as Xray, sing-box or mihomo with a SOCKS5 inbound. The set's **Routing mode** is **Upstream SOCKS5 proxy**, with the other container's address, for example 192.168.210.20, and its SOCKS5 port. RouterOS needs no extra rules: b4 reaches the proxy inside `bridge-docker`, and only the proxy's own connections go out through RouterOS. See [Sending sites through a SOCKS5 proxy](../guides/proxy.md).
 
 ## Routing chosen destinations through the container {#routing-by-destination}
 
-Step 4 picks the traffic by client. To pick it by destination, for example a site's subnets, the destinations go into an address list, and the marking rules match that list instead of `b4users`:
+Step 4 picks the traffic by client. To pick it by destination, such as a site's subnets, the destinations go into an address list, and the marking rules match it in place of `b4users`:
 
 ```routeros
 /ip firewall address-list add list=via_b4 address=203.0.113.0/24
@@ -211,48 +193,84 @@ Step 4 picks the traffic by client. To pick it by destination, for example a sit
     in-interface-list=LAN log=no place-before=1
 ```
 
-The route through the container stays in table `to_b4` from [Step 3](#step-3-routing). A route to the container in the main table does not work here: the container sends everything it processed back to RouterOS, its default gateway, and a main-table route by destination sends the same packets straight back to the container instead of out through the WAN.
+The route through the container stays in table `to_b4` from [Step 3](#step-3-routing). A route to the container in the main table does not work: the container sends its traffic back to RouterOS, and the main-table route returns it to the container instead of the WAN.
 
-The marking rules, here and in Step 4, apply only to packets that arrive from the LAN interface list, so the packets the container sends back leave through the main table. `bridge-docker` is not in that list after Step 1. If it has been added, a rule above the marking rules keeps the container's packets out of them. It is added after them, so that `place-before=0` puts it on top:
+The marking rules apply only to packets from the LAN interface list, so the packets the container sends back leave through the main table. `bridge-docker` is not in that list after Step 1. If it has been added, this rule keeps the container's packets out of the marking rules. It is added after them, so that `place-before=0` puts it on top:
 
 ```routeros
 /ip firewall mangle add chain=prerouting action=accept \
     in-interface=bridge-docker place-before=0
 ```
 
-b4 on a separate Linux machine instead of a container needs the same layout: a subnet of its own on its own RouterOS port, VLAN or bridge, RouterOS as its default gateway, the route in `to_b4` pointing at the machine's address, NAT Masquerade on in b4 as in Step 8, and that interface kept out of the LAN interface list or exempted by the same accept rule with its name in place of `bridge-docker`. On the clients' own subnet the machine hands the server's replies straight to the client, so RouterOS sees only the client's half of each connection and treats the client's following TCP packets as invalid, which stalls or breaks its TCP connections.
+b4 on a separate Linux machine needs the same layout:
 
-RouterOS tells b4's packets apart by the interface they arrive on, so these rules need nothing from b4 inside the packets. The marks b4 uses internally, the packet mark among them, never leave the container or the machine.
+- a subnet of its own, on its own RouterOS port, VLAN or bridge, with RouterOS as its default gateway;
+- the route in `to_b4` pointing at the machine;
+- NAT Masquerade on in b4, as in Step 8;
+- its interface out of the LAN interface list, or exempted by the same accept rule with its name in place of `bridge-docker`.
+
+On the clients' own subnet, the machine hands the server's replies straight to the clients, and RouterOS stalls or breaks their TCP connections.
+
+## Routing a set's traffic by its DSCP value {#routing-by-dscp}
+
+Everything b4 sends back to RouterOS leaves through the main route, whatever its set. A set's own [DSCP value](../sets/routing.md#dscp) marks its packets, and by it RouterOS sends that set's traffic through another route, such as a VPN. Routing into the container, above, needs nothing of the kind.
+
+The value is turned on with **Enable per-set DSCP** on the set's **DNS & Routing** tab, here `31`. `wg-vpn` stands for the VPN interface and `via_vpn` for its routing table:
+
+```routeros
+/routing table add disabled=no fib name=via_vpn
+/ip route add gateway=wg-vpn routing-table=via_vpn
+
+/ip firewall mangle add chain=prerouting action=mark-connection \
+    new-connection-mark=b4_dscp31 passthrough=yes connection-state=new \
+    connection-mark=no-mark in-interface=bridge-docker \
+    src-address=192.168.210.10 dscp=31
+
+/ip firewall mangle add chain=prerouting action=mark-routing \
+    new-routing-mark=via_vpn passthrough=no connection-mark=b4_dscp31 \
+    in-interface=bridge-docker
+
+/ip firewall mangle add chain=prerouting action=mark-connection \
+    new-connection-mark=b4_other passthrough=yes connection-state=new \
+    connection-mark=no-mark in-interface=bridge-docker src-address=192.168.210.10
+
+/ip firewall mangle add chain=postrouting action=change-dscp new-dscp=0 \
+    out-interface-list=WAN
+
+/ip firewall mangle add chain=postrouting action=change-dscp new-dscp=0 \
+    out-interface=wg-vpn
+
+/ip firewall nat add chain=srcnat action=masquerade out-interface=wg-vpn
+```
+
+| Rule | What it does |
+| --- | --- |
+| The first `mark-connection` | Marks a connection from b4 whose first packet carries the value. `connection-mark=no-mark` keeps a connection already marked `b4_other` from moving to the VPN halfway, which would make it start over |
+| `mark-routing` | Sends the marked connections into `via_vpn`. `in-interface=bridge-docker` keeps the server's replies, which share the connection mark, out of the VPN |
+| The second `mark-connection` | Marks b4's other connections as `b4_other`, which keeps them out of FastTrack. FastTrack skips the `change-dscp` rules. In exchange, none of b4's traffic is fast-tracked |
+| `change-dscp` on `WAN` | Clears the value before the internet |
+| `change-dscp` on `wg-vpn` | Clears the value before the tunnel. Without it, the value reaches the VPN server inside the tunnel |
+| `masquerade` on `wg-vpn` | Gives the connections the address of the VPN interface |
+
+The FastTrack limit from [Step 4](#step-4-traffic-marking) is required. Without it the marked connections are fast-tracked and leave through the main uplink with the VPN's source address.
+
+When the accept rule for `bridge-docker` from [Routing chosen destinations](#routing-by-destination) is at the top of mangle prerouting, the three prerouting rules never see b4's packets. They go above it, with this added to each (the quotes are required):
+
+```routeros
+place-before=[find where action=accept in-interface="bridge-docker"]
+```
+
+Variations:
+
+- **A second uplink instead of a VPN**: the route in `via_vpn` points at the uplink's gateway, and the last two rules name its interface in place of `wg-vpn`.
+- **More values**: each value needs its own `mark-connection` rule. A value that goes another way also needs its own connection mark, `mark-routing` rule, table, and the last two rules for its interface.
+- **b4 on a separate machine**: its interface and address replace `bridge-docker` and `192.168.210.10`.
+- **Reverse path filter**: `/ip settings rp-filter=strict` drops the replies that come back through the VPN. `loose` and the default `no` let them in.
+
+In this layout the devices resolve names through RouterOS, so b4 learns the addresses of a set's domains only from TLS and QUIC names and from its own lookups. A connection to an address b4 has not learned yet stays on the main route. IP, GeoIP and ASN targets give a connection the value from its first packet.
+
+The rules were tested on RouterOS 7.24.5, for IPv4.
 
 ## Troubleshooting
 
-**Container will not start:**
-
-1. Status: `/container print`
-2. Logs: `/log print where topics~"container"`
-3. The disk has to be formatted as Ext4
-
-**No access to the web interface:**
-
-1. The container has to be running: `/container print`
-2. Connectivity: `/ping 192.168.210.10`
-
-**Traffic is not redirected:**
-
-1. The list: `/ip firewall address-list print where list=b4users`
-2. Mangle: `/ip firewall mangle print`
-3. The route: `/ip route print where routing-table=to_b4`
-
-**Destinations routed through the container do not open:**
-
-1. The route to the container has to be in table `to_b4`, not in the main table, see [Routing chosen destinations through the container](#routing-by-destination)
-2. `bridge-docker`, or the interface of a separate b4 machine, has to stay out of the LAN interface list, or its packets have to be exempted from the marking rules as shown there
-
-**Traffic reaches the container but the bypass has no effect:**
-
-1. NAT Masquerade has to be on in b4, see [Step 8](#step-8-nat-masquerade)
-
-**The dashboard reports that the NFQUEUE engine did not start:**
-
-1. The error on the dashboard card names the cause. `Extension NFQUEUE revision 0 not supported, missing kernel module?` means the kernel RouterOS runs the container on has no NFQUEUE support
-2. **Switch to TUN** on the same card selects the TUN engine, which needs no queue modules, and restarts b4, see [Packet engine](../settings/core.md#packet-engine)
+A container that does not start, an unreachable web interface, traffic that does not reach the container and an engine that does not start are covered under [Router platforms](../troubleshooting/platforms.md#mikrotik).

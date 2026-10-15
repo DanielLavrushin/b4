@@ -1,80 +1,78 @@
 ---
 sidebar_position: 1
-title: Introduction
+title: What is b4
+description: What b4 does and does not do, how it handles traffic, and what it needs to run.
 ---
 
-## What b4 is
+b4 (Bye Bye Big Bro) is a service for Linux routers and computers. It helps open sites that an internet provider blocks with DPI (Deep Packet Inspection), and it can send chosen sites through a VPN or a proxy. It is managed from a web interface in the browser.
 
-**b4** (Bye Bye Big Bro) is a service that helps open websites blocked by your internet provider. Providers use DPI technology (Deep Packet Inspection) to recognize and block traffic to specific resources. b4 modifies network packets so that the blocking system cannot recognize them - the destination site still receives the data unchanged and works as usual.
+Installed on a router, b4 covers every device on the network, with no setup on the devices themselves.
 
-b4 runs on Linux devices: regular computers, servers, and routers. When installed on a router, bypass works for every device on the home network without any configuration on the individual devices.
+## What b4 does
 
-Management is done through a **web interface** in the browser.
+- **Helps open blocked sites.** A set changes how the packets of chosen sites look to the provider's DPI. The site receives the same data. See [Unblocking a site](guides/unblock.md).
+- **Routes chosen sites through a VPN** or another interface. See [Routing sites through a VPN or another interface](guides/vpn.md).
+- **Sends chosen sites to a SOCKS5 proxy**, such as Xray or sing-box. See [Sending sites through a SOCKS5 proxy](guides/proxy.md).
+- **Blocks ads and unwanted sites** for the whole network. See [Blocking ads and sites](sets/blocking.md).
+- **Sends the DNS queries** of chosen domains to another resolver. See [DNS](dns.md).
+- **Carries Telegram** through its own proxy or bridge. See [Telegram](telegram/index.md).
+- **Limits any of this to chosen devices.** See [Applying b4 to selected devices](guides/devices.md).
+
+## What b4 does not do
+
+- It changes nothing until a set targets sites.
+- It does not provide a VPN or an upstream proxy. Route sets use a VPN interface that already exists, and the **Upstream SOCKS5 proxy** mode a proxy that already runs.
+- No packet change helps when the provider blocks a site's addresses. Discovery then reports **address blocked**, and only a route or proxy set opens the site.
+- It does not see DNS that a device encrypts itself, such as secure DNS in a browser or Android Private DNS. The DNS settings of the sets do not apply to such lookups.
+- IPv6 connections skip the sets until **Enable IPv6 Support** is turned on under **Settings > Core > Packet Engine**.
 
 ## How it works
 
+b4 checks the first packets of each connection against the sets. A connection that no set matches passes unchanged. A matched connection is handled by the kind of its set:
+
 ```mermaid
 flowchart LR
-    A["Your device"] --> B["b4"]
-    B --> C{"Provider DPI"}
-    C -->|"Not recognized"| D["Site works"]
+    DEV["Devices on the network"] --> B4{"b4 on the router:<br/>does a set match?"}
+    B4 -->|"No"| NET["Internet, unchanged"]
+    B4 -->|"Bypass set"| BYPASS["Packets changed<br/>for the provider's DPI"]
+    B4 -->|"Route set"| VPN["VPN or another interface"]
+    B4 -->|"Proxy set"| PROXY["SOCKS5 proxy"]
+    B4 -->|"Block set"| BLOCK["Blocked"]
 
-    style A fill:#4a9eff,color:#fff,stroke:none
-    style B fill:#e91e63,color:#fff,stroke:none
-    style C fill:#ff9800,color:#fff,stroke:none
-    style D fill:#4caf50,color:#fff,stroke:none
+    style DEV fill:#4a9eff,color:#fff,stroke:none
+    style B4 fill:#e91e63,color:#fff,stroke:none
+    style NET fill:#666,color:#fff,stroke:none
+    style BYPASS fill:#4caf50,color:#fff,stroke:none
+    style VPN fill:#9c27b0,color:#fff,stroke:none
+    style PROXY fill:#9c27b0,color:#fff,stroke:none
+    style BLOCK fill:#ff9800,color:#fff,stroke:none
 ```
 
-**Without b4:** you open a site - the provider sees where you are going and blocks the connection.
+[Key concepts](concepts.md) explains sets, strategies and the set kinds.
 
-**With b4:** packets are modified before they reach the provider. The DPI system cannot determine which site you are requesting and lets the traffic through. The site itself reassembles the packets and works normally.
+## Main parts
 
-Main bypass methods:
+The pages of the web interface, in the order of its menu:
 
-- **Fragmentation** - the request is split into parts that the DPI cannot reassemble
-- **Faking** - sending decoy packets that confuse the DPI
-- **Modification** - altering packet header fields so they do not match blocking signatures
-
-You do not need to understand the details - b4 includes an automatic mechanism that picks a working configuration for your provider.
-
-## Main features
-
-b4 consists of several parts, each described in detail in its own documentation section:
-
-- **Sets** - bypass configurations for TCP/UDP traffic with different strategies
-- **Discovery** - automatic selection of a working configuration
-- **DPI Detector** - identifies the blocking methods used by your provider
-- **Traffic** - the packets b4 inspects, in real time
-- **GeoSite/GeoIP** - work with site categories and IP addresses
-- **Per-device filtering** - different rules for different devices on the network
-- **Routing** - direct traffic through a specific interface (VPN, WireGuard, etc.)
-- **SOCKS5 proxy** - for applications that support proxies
-- **[Telegram](./telegram/index.md)** - an MTProto proxy, a transparent WebSocket bridge for every device behind b4, and a WEB proxy for Telegram Desktop
-
-## System requirements
-
-### Supported platforms
-
-| Platform | Description |
+| Page | What it is for |
 | --- | --- |
-| Linux | Any distribution with kernel 3.13+ (Ubuntu, Debian, Alpine, etc.) |
-| OpenWRT | Routers running OpenWRT firmware |
-| ASUS Merlin | ASUS routers with Merlin firmware (via Entware) |
-| Keenetic | Keenetic routers with OPKG support |
-| MikroTik | RouterOS 7.x with container support |
-| Docker | Any system with Docker |
+| [Dashboard](dashboard.md) | Whether b4 runs, which sets match traffic, and what needs attention |
+| [Sets](sets/index.md) | The list of sets and the set editor |
+| [Discovery](discovery.md) | Finds a strategy for sites that do not open and turns it into a set |
+| [Community](community/index.md) | Sets that other b4 users published, applied in one step |
+| [Watchdog](watchdog.md) | Checks the sites of chosen sets on a schedule and finds a new strategy when they stop opening |
+| [DPI Detector](detector.md) | Reports what the provider blocks and how |
+| [Traffic](connections.md) | The connections b4 sees, live, with the set each one matched |
+| [Logs](logs.md) | The b4 log in real time |
+| [Settings](settings/index.md) | The packet engine, devices, firewall, web interface and backups |
 
-### Supported architectures
+## Requirements {#requirements}
 
-`amd64`, `386`, `arm64`, `armv5`, `armv6`, `armv7`, `mips`, `mipsle`, `mips_softfloat`, `mipsle_softfloat`, `mips64`, `mips64le`, `loong64`, `ppc64`, `ppc64le`, `riscv64`, `s390x`
-
-### Minimum requirements
-
-- **RAM:** 64 MB of free memory
-- **Disk:** ~30 MB for the binary plus space for configuration and geodata
-- **Linux kernel:** 3.13+ with NFQUEUE support (`nfnetlink_queue`)
-- **Privileges:** root (required for netfilter)
-
-:::info
-When installed on a router, bypass works for every device on the network without any per-device setup.
-:::
+| Requirement | Value |
+| --- | --- |
+| System | Linux on a router, a computer or a server, or Docker. The supported platforms are listed under [Installation](install/index.md) |
+| Kernel | 3.13 or newer, with NFQUEUE support (`nfnetlink_queue`). Without it, the TUN engine is the alternative and needs `/dev/net/tun` and `iptables` |
+| Memory | 64 MB free |
+| Disk | About 30 MB for the binary, plus the configuration and the GeoSite and GeoIP databases |
+| Privileges | root |
+| Architectures | `amd64`, `386`, `arm64`, `armv5`, `armv6`, `armv7`, `mips`, `mipsle`, `mips_softfloat`, `mipsle_softfloat`, `mips64`, `mips64le`, `loong64`, `ppc64`, `ppc64le`, `riscv64`, `s390x` |

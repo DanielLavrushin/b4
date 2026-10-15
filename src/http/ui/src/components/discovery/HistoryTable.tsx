@@ -192,6 +192,16 @@ export const HistoryTable = ({
             )}
           />
         );
+      case "bad_link":
+        return (
+          <B4Badge
+            variant="outlined"
+            color="error"
+            label={t("discovery.status.badLink", {
+              status: row.entry.link_status ?? 400,
+            })}
+          />
+        );
       default:
         return (
           <B4Badge
@@ -201,6 +211,21 @@ export const HistoryTable = ({
           />
         );
     }
+  };
+
+  const echLine = (entry: HistoryEntry) => {
+    const cover = entry.ech_cover_name;
+    if (!cover) return null;
+    return (
+      <Typography variant="caption" sx={{ color: colors.text.disabled }}>
+        {t(
+          entry.ech_only_block
+            ? "discovery.history.echOnly"
+            : "discovery.history.echCover",
+          { cover },
+        )}
+      </Typography>
+    );
   };
 
   const strategy = (row: Row) => {
@@ -256,6 +281,7 @@ export const HistoryTable = ({
                 {t("discovery.history.stoppedEarly")}
               </Typography>
             )}
+            {echLine(row.entry)}
             {row.alternates.length > 0 && (
               <Button
                 size="small"
@@ -315,11 +341,22 @@ export const HistoryTable = ({
                 : t("discovery.history.unresolved")}
           </Typography>
         );
-      default:
+      case "bad_link":
         return (
           <Typography variant="body2" sx={muted}>
-            {t("discovery.history.nothing")}
+            {t("discovery.history.badLink", {
+              status: row.entry.link_status ?? 400,
+            })}
           </Typography>
+        );
+      default:
+        return (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography variant="body2" sx={muted}>
+              {t("discovery.history.nothing")}
+            </Typography>
+            {echLine(row.entry)}
+          </Box>
         );
     }
   };
@@ -392,6 +429,21 @@ export const HistoryTable = ({
                     sx={{ color: colors.text.secondary, whiteSpace: "nowrap" }}
                   >
                     {formatTimeAgo(t, row.entry.end_time, row.entry.start_time)}
+                    {(row.entry.source === "mcp" ||
+                      row.entry.source === "watchdog") && (
+                      <Tooltip
+                        title={t(
+                          `discovery.history.sourceHint.${row.entry.source}`,
+                        )}
+                      >
+                        <Typography
+                          variant="caption"
+                          sx={{ color: colors.text.disabled, display: "block" }}
+                        >
+                          {t(`discovery.history.source.${row.entry.source}`)}
+                        </Typography>
+                      </Tooltip>
+                    )}
                     {!!row.entry.size_bytes && (
                       <Tooltip title={t("discovery.history.sizeHint")}>
                         <Typography

@@ -46,7 +46,7 @@ import { CSS } from "@dnd-kit/utilities";
 
 import { B4Dialog, B4Hint, B4Section } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
-import { reportSaveError } from "@utils";
+import { deviceFilterSelects, reportSaveError } from "@utils";
 
 import { SetCompare } from "./Compare";
 import { SetCard } from "./SetCard";
@@ -220,6 +220,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   };
   const facetSelection = useSetFacetSelection(sets.map((s) => s.id));
   const watchdogOn = !!config.system?.checker?.watchdog?.enabled;
+  const deviceFilter = deviceFilterSelects(config.queue?.devices);
   const anyWatched = sets.some((s) => !!s.discovery?.watchdog);
   const watchStatuses = useWatchdogSetStatuses(anyWatched && watchdogOn);
 
@@ -754,6 +755,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           onVoted={onRefresh}
                           watchStatus={watchStatuses.byId.get(set.id)}
                           watchdogOn={watchdogOn}
+                          deviceFilter={deviceFilter}
                         />
                       )}
                     </SortableCardWrapper>
@@ -908,6 +910,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
         statsOf={statsOf}
         initialA={compareDialog.setId}
         initialB={null}
+        deviceFilter={deviceFilter}
         onClose={() => setCompareDialog({ open: false, setId: null })}
       />
     </Stack>

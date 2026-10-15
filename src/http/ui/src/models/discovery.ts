@@ -23,6 +23,7 @@ export type StrategyFamily =
   | "tcpmd5"
   | "alt_address"
   | "dns_redirect"
+  | "ech_strip"
   | "current";
 
 export type DiscoveryPhase =
@@ -42,6 +43,7 @@ export type DiscoveryOutcome =
   | "address_blocked"
   | "gateway_intercepted"
   | "unresolved"
+  | "bad_link"
   | "not_found";
 
 export type DiscoverySource = "web" | "watchdog" | "mcp";
@@ -118,8 +120,11 @@ export interface DiscoveryResult {
   dns_result?: DNSDiscoveryResult;
   unresolved?: boolean;
   missing_family?: IPFamily;
+  link_status?: number;
   outcome?: DiscoveryOutcome;
   unconfirmed?: boolean;
+  ech_cover_name?: string;
+  ech_only_block?: boolean;
 }
 
 export interface DiscoverySuite {
@@ -160,6 +165,7 @@ export interface SetVerdict {
   covered?: string[];
   uncovered?: string[];
   unresolved?: string[];
+  bad_links?: string[];
   no_bypass?: string[];
   confirmed?: boolean;
 }
@@ -174,7 +180,8 @@ export interface SetRunRecord {
 }
 
 export interface DiscoveryRuntimeState {
-  runtime_active: boolean;
+  runtime_active?: boolean;
+  last_run?: string;
 }
 
 export type DiscoveryCurrent = DiscoverySuite | DiscoveryRuntimeState | null;
@@ -216,10 +223,14 @@ export interface HistoryEntry {
   confirm_tries?: number;
   final_host?: string;
   suite_id?: string;
+  source?: DiscoverySource;
   set?: B4SetConfig;
   outcome?: DiscoveryOutcome;
   missing_family?: IPFamily;
+  link_status?: number;
   unconfirmed?: boolean;
+  ech_cover_name?: string;
+  ech_only_block?: boolean;
   stopped_early?: boolean;
   order?: number;
   applied?: Record<string, AppliedMark>;

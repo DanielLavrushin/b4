@@ -3,8 +3,6 @@
 ![GitHub Release](https://img.shields.io/github/v/release/daniellavrushin/b4)
 ![GitHub Downloads](https://img.shields.io/github/downloads/daniellavrushin/b4/total)
 ![Docker Pulls](https://img.shields.io/docker/pulls/lavrushin/b4)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/140c35c115f14640a4010e08091d2034)](https://app.codacy.com/gh/DanielLavrushin/b4/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Quality gate status](https://sonarcloud.io/api/project_badges/measure?project=DanielLavrushin_b4&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=DanielLavrushin_b4)
 
 [[Documentation](https://docs.b4core.app/)] [[Документация (RU)](https://docs.b4core.app/ru/)] [[Telegram](https://t.me/byebyebigbro)]
 
@@ -24,8 +22,8 @@ If you don't know which technique your provider needs, Discovery tests strategie
 - [DNS](https://docs.b4core.app/docs/dns): per-set redirect to a plain resolver or DoH, hosts-style pins, fragmented queries, DNS-over-TCP interception, healing of answers pointing at dead addresses
 - [Routing](https://docs.b4core.app/docs/sets/routing): send a set's traffic out a chosen interface (VPN, WireGuard, second WAN), through an upstream SOCKS5 proxy, or block it
 - [Block mode](https://docs.b4core.app/docs/sets/blocking) for network-wide ad and tracker blocking
-- Telegram: [built-in MTProto proxy](https://docs.b4core.app/docs/mtproto), plus a transparent Telegram-over-WebSocket bridge for stock clients
-- [Discovery](https://docs.b4core.app/ru/docs/discovery) finds a working strategy, [Watchdog](https://docs.b4core.app/docs/watchdog) re-heals broken domains, [DPI Detector](https://docs.b4core.app/ru/docs/detector) reports what the provider is doing
+- Telegram: [built-in MTProto proxy](https://docs.b4core.app/docs/telegram/mtproto-proxy), plus a transparent [Telegram-over-WebSocket bridge](https://docs.b4core.app/docs/telegram/websocket-bridge) for stock clients
+- [Discovery](https://docs.b4core.app/docs/discovery) finds a working strategy, [Watchdog](https://docs.b4core.app/docs/watchdog) re-heals broken domains, [DPI Detector](https://docs.b4core.app/docs/detector) reports what the provider is doing
 - [Escalation chains](https://docs.b4core.app/docs/sets/escalation): when a set stops working for a host, that host moves to a heavier backup set
 - Per-device rules by MAC
 - Works on both iptables and nftables, picking the backend automatically, and handles IPv4 and IPv6

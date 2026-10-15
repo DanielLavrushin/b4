@@ -92,14 +92,27 @@ func (w *Worker) registerEscalatedRoute(cfg *config.Config, escSet *config.SetCo
 }
 
 func (w *Worker) refreshEscalatedRoute(cfg *config.Config, escSet *config.SetConfig, host string, dst net.IP) {
-	if w == nil || w.destState == nil || cfg == nil || escSet == nil || !escSet.Routing.Enabled {
+	if w == nil || w.destState == nil || cfg == nil || escSet == nil {
 		return
 	}
-	if !w.destState.ShouldRefreshRoute(host, routeRefreshInterval(escSet)) {
+	interval := escalatedRefreshInterval(escSet)
+	switch {
+	case escSet.Routing.Enabled:
+		if !w.destState.ShouldRefreshRoute(host, interval) {
+			return
+		}
+	case !dscpLearns(cfg, escSet) || !w.destState.ShouldRefreshDSCP(host, interval):
 		return
 	}
 	log.Tracef("escalation: refreshing the %s route entries for %s", escSet.Name, host)
 	w.registerEscalatedRoute(cfg, escSet, host, dst)
+}
+
+func escalatedRefreshInterval(escSet *config.SetConfig) time.Duration {
+	if escSet.Routing.Enabled {
+		return routeRefreshInterval(escSet)
+	}
+	return escSet.DSCPLearnTTL(false) * 2 / 3
 }
 
 func routeRefreshInterval(escSet *config.SetConfig) time.Duration {

@@ -16,6 +16,7 @@ var (
 	ErrBaselineWorks = errors.New("the domain loads without a bypass")
 	errUnconfirmed   = errors.New("the strategy discovery found did not pass confirmation")
 	errUnresolved    = errors.New("the domain does not resolve, no strategy was tested")
+	errBadLink       = errors.New("the link answers an HTTP error without any strategy, no strategy was tested")
 )
 
 type domainWithSet struct {
@@ -32,6 +33,10 @@ func applyBatchResults(cfg *config.Config, domains []string, suite *discovery.Ch
 		dr, ok := suite.DomainDiscoveryResults[domainKey]
 		if ok && dr.Outcome == discovery.OutcomeUnresolved {
 			results[input] = errUnresolved
+			continue
+		}
+		if ok && dr.Outcome == discovery.OutcomeBadLink {
+			results[input] = errBadLink
 			continue
 		}
 		if !ok || !dr.BestSuccess {

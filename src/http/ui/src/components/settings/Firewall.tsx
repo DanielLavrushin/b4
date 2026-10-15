@@ -14,6 +14,12 @@ import {
 } from "@b4.elements";
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
+import {
+  DSCP_MAX_VALUE,
+  dscpStampingSets,
+  setDscpValues,
+  suggestDscpValue,
+} from "@utils";
 
 interface FirewallCardProps {
   config: B4Config;
@@ -21,8 +27,6 @@ interface FirewallCardProps {
 }
 
 const TUN_MONITOR_MIN_INTERVAL = 10;
-const DSCP_SUGGESTED_VALUE = 7;
-const DSCP_MAX_VALUE = 63;
 
 export const FirewallRulesSettings = ({
   config,
@@ -233,6 +237,7 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
     interfaces: [],
   };
   const dscpInterfaces = dscp.interfaces || [];
+  const stampingSets = dscpStampingSets(config);
 
   const handleDscpInterfaceToggle = (iface: string) => {
     const updated = dscpInterfaces.includes(iface)
@@ -252,7 +257,10 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
         onChange={(checked: boolean) => {
           onChange("system.tables.dscp.enabled", checked);
           if (checked && !dscp.value) {
-            onChange("system.tables.dscp.value", DSCP_SUGGESTED_VALUE);
+            onChange(
+              "system.tables.dscp.value",
+              suggestDscpValue(setDscpValues(config.sets)),
+            );
           }
         }}
         disabled={skipTables}
@@ -264,32 +272,49 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
         aiTopic="system.tables.dscp.enabled"
       />
       {dscp.enabled && (
-        <>
-          <B4Slider
-            label={t("settings.Feature.dscpValue")}
-            value={dscp.value}
-            onChange={(value: number) =>
-              onChange("system.tables.dscp.value", value)
-            }
-            min={0}
-            max={DSCP_MAX_VALUE}
-            step={1}
-            disabled={skipTables}
-            helperText={t("settings.Feature.dscpValueHelp")}
-            aiTopic="system.tables.dscp.value"
-          />
-          <Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {t("settings.Feature.dscpInterfacesDesc")}
-            </Typography>
-            <InterfaceChips
-              available={config.available_ifaces ?? []}
-              selected={dscpInterfaces}
-              disabled={skipTables}
-              onToggle={handleDscpInterfaceToggle}
-            />
+        <B4Slider
+          label={t("settings.Feature.dscpValue")}
+          value={dscp.value}
+          onChange={(value: number) =>
+            onChange("system.tables.dscp.value", value)
+          }
+          min={0}
+          max={DSCP_MAX_VALUE}
+          step={1}
+          disabled={skipTables}
+          helperText={t("settings.Feature.dscpValueHelp")}
+          aiTopic="system.tables.dscp.value"
+        />
+      )}
+      {stampingSets.length > 0 && (
+        <Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            {t("settings.Feature.dscpSetsList")}
+          </Typography>
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+            {stampingSets.map((set) => (
+              <B4Badge
+                key={set.id}
+                label={`${set.name || set.id}: ${set.dscp?.value ?? 0}`}
+                variant="outlined"
+                color="secondary"
+              />
+            ))}
           </Box>
-        </>
+        </Box>
+      )}
+      {(dscp.enabled || stampingSets.length > 0) && (
+        <Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            {t("settings.Feature.dscpInterfacesDesc")}
+          </Typography>
+          <InterfaceChips
+            available={config.available_ifaces ?? []}
+            selected={dscpInterfaces}
+            disabled={skipTables}
+            onToggle={handleDscpInterfaceToggle}
+          />
+        </Box>
       )}
     </B4Section>
   );

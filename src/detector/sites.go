@@ -192,7 +192,7 @@ func (s *Suite) runSites() {
 	s.setProgress(ScopeSites, "")
 
 	families := s.families()
-	result := &SitesResult{Resolvers: systemNameservers()}
+	result := &SitesResult{Resolvers: netprobe.SystemNameservers()}
 	for _, in := range inputs {
 		domain, full := parseSiteInput(in)
 		for _, fam := range families {

@@ -49,6 +49,7 @@ func ClearTUNFirewall(cfg *config.Config) {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
 	tunFirewallClosed.Store(true)
+	dscpSyncClosed.Store(true)
 	IPTablesLockBudgetReset()
 	ClearMasqueradeOnly(cfg)
 	ClearMSSClampOnly(cfg)

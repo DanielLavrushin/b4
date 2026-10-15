@@ -1,78 +1,84 @@
 ---
 sidebar_position: 7
 title: Sharing a set
+description: Handing a set to another b4 user as a shared set, and what the import on the other router checks.
 ---
 
-A set can be handed to another b4 installation as a shared set: one JSON document that carries the strategy, the targets and the payload files the set uses, and nothing that is tied to the router it came from. The set editor prepares it under **Import/Export** once the Community Hub is switched on under **Settings, Integrations**. A shared set pasted into the **Import** field of any b4 is checked, its payload files are installed, and the set opens in the editor for saving.
+A shared set is a set in a form that can be handed to another b4 user. It is one JSON document with the strategy, the targets and the payload files the set uses, and nothing tied to the router it came from. The same form is what **Publish to hub** sends to the [Community Hub](../community/publishing.md).
 
-:::info
-The **Import/Export** JSON described under [Sets](./index.md#import-and-export) copies a set as it is, including routing, and is meant for moving a set between one person's own routers. A shared set is the form to pass to someone else. Both are accepted by the same **Import** field; b4 tells them apart by their shape.
-:::
+The plain JSON of the **Import/Export** tab, described under [Sets](./index.md#import-and-export), copies a set as it is, routing included. It suits moving a set between one's own routers. Both forms are pasted into the same field, and b4 tells them apart.
 
-:::info
-The same shared set is what **Publish to hub** sends to the community hub, where other b4 users find it on their **Community** page. Publishing, moderation and versions are described under [Community Hub](../community/publishing.md).
-:::
+## Requirements
 
-## What leaves the router
+- On the router the set comes from, the Community Hub is on: the **Share with other b4 users** section is shown only then, see [Switching it on](../community/index.md#switching-it-on).
+- The router that imports the set needs no hub.
 
-A shared set is built from an allow-list of settings. Anything not on it is left out, and the preview names every setting that was dropped and why.
+## Setup
+
+On the router the set comes from:
+
+1. Open the set and go to the **Import/Export** tab.
+2. In **Share with other b4 users**, click **Prepare shared set**.
+3. Read **Check before sharing** and **Left out of the shared set**, and correct the set where needed.
+4. Click **Copy** or **Download**, and pass the JSON on.
+
+On the router that receives it:
+
+1. Open **Sets** and click **Create Set**.
+2. Go to the **Import/Export** tab, paste the JSON into **Set Configuration JSON** and click **Import**.
+3. Read **Notes from the import**, and check the other tabs.
+4. Click **Create Set**.
+
+## What leaves the router {#what-leaves-the-router}
+
+A shared set is built from a list of allowed settings. The preview names every setting that was dropped, and why.
 
 Carried:
 
-- the TCP, UDP, fragmentation and fake packet settings, including port filters;
+- the TCP, UDP, fragmentation and fake packet settings, with port filters;
 - the targets: domains, addresses, geosite and geoip category names, ASNs, the TLS and IP version filters;
-- the DNS redirect: whether it is on, the DoH URL, strict mode, and pins for domains the set targets; a DoH URL whose host is not a known public resolver is reported when the set is prepared, and the import drops the whole DNS redirect rather than send every query for the set's domains to an unknown resolver;
+- the DNS redirect, with its DoH URL and pins for the set's own domains;
 - the MSS clamp;
-- routing in block mode, since a set that blackholes ads or trackers carries nothing private.
+- block mode, since a block set carries nothing private.
 
 Left out:
 
-- routing to an interface, a proxy or the Telegram bridge, together with the upstream host, port and credentials;
-- device filters, which name MAC addresses of one network;
-- escalation, which points at a set id that exists on one router only;
-- the DNS server address the set redirects to;
-- IP block detection;
-- the [Discovery addresses](./discovery) and the watchdog switch, which describe what one network checks; the preview lists the addresses as private;
+- routing to an interface, a proxy or the Telegram bridge, with the proxy's address and credentials;
+- device filters and escalation;
+- the DNS server address the set redirects to, and IP block detection;
+- the [Discovery addresses](./discovery.md), the watchdog switch and the set's own [DSCP value](./routing.md#dscp);
 - the set's id and its enabled state.
 
-A DNS pin survives only when the pinned domain is one the set targets and every address in it is public. A pin for another domain, or one pointing at a private address, is dropped and reported.
+ASNs travel as numbers. The router that imports the set fetches their address ranges itself.
 
-An [ASN](./targets#asn) travels as its number only, never as the prefixes the sharing router holds; the importing b4 fetches the prefixes itself. A shared set that carries ASNs needs b4 1.83.0 or newer, and more than 50 ASNs are reported when the set is prepared.
+Domains that look private to the sharing network are reported, not removed: a single label such as `nas`, an IP address in the domain list, or a name ending in `.lan`, `.local` or `.home`. They mean nothing on another network and are worth deleting before the set is passed on.
 
-:::warning
-Domains that look private to the sharing network are reported, not removed: a single label such as `nas`, an address literal, or a suffix such as `.lan`, `.local` or `.home`. They mean nothing on another network and are worth deleting before the set is passed on.
-:::
+## Payload files {#payload-files}
 
-## Payload files
+A set whose fake packets use a captured ClientHello carries that file inside the shared set, so the importing router sends the same fake packets. A file is carried only when it parses as a TLS ClientHello with a server name, or as a QUIC Initial with a readable ClientHello, and only up to 16 KB. When the file is missing on the sharing router, the set is shared without it, and both sides use the built-in payload.
 
-A set whose fake packets use a captured ClientHello refers to a file under `captures/`. That file travels inside the shared set, so the person importing it runs the same fake packet as the author. A file is accepted only when it parses as a TLS ClientHello with a server name or as a QUIC Initial with a readable ClientHello, and only up to 16 KB. When the file named by the set does not exist on the sharing router, the reference is left out and the preview says so: on both sides the fake packets then fall back to a built-in payload, which is what the sharing router was already sending.
+On import, the file appears under **Settings > Payloads**, named after the protocol and the server name, such as `tls_www_google_com.bin`. An existing file with the same name and other contents is never overwritten: the new file gets a short hash suffix.
 
-On import, each file is written under `captures/` and appears under **Settings, Payloads**. The name is the protocol and the server name read from the payload itself, dots replaced by underscores, such as `tls_www_google_com.bin`. An existing file with the same name and different contents is never overwritten; the imported one is saved under a name with a short hash suffix, and the set refers to that.
+## What the import checks {#what-the-import-checks}
 
-## What the import checks
+The import runs on the router and lists every change under **Notes from the import**:
 
-The import runs on the router, not in the browser, and reports what it had to change:
+- A shared set in a newer format is refused. Settings this b4 does not know are dropped, and values it does not accept are replaced by defaults.
+- The b4 version the set needs is compared with the running one.
+- Each payload file must match its hash.
+- Geosite and geoip categories missing from this router's databases are named. A category name means what the local database says, which can differ between the sources under **Settings > Geodat Settings**.
+- ASNs whose address ranges this router has not fetched yet are named. They match nothing until b4 fetches them, which starts once the set is saved.
+- A pin for a domain the set does not target, or for a private address, is dropped. The remaining pins are listed, to be checked on the **DNS & Routing** tab before saving.
+- A DNS redirect to a DoH resolver outside the known public list is dropped.
 
-- the shared set's format; a future format is refused rather than read partially;
-- settings this b4 does not know, which are dropped with a note, since a newer b4 may have produced them;
-- the minimum b4 version the set was prepared for, compared with the running one;
-- values this b4 does not accept, such as a mode name from a newer release, which are replaced by defaults and named;
-- each payload file's hash against its contents, and whether every payload the set refers to is present;
-- geosite and geoip categories the set names that are missing from the databases on this router, or the absence of a database altogether;
-- ASNs whose prefixes this router has not fetched yet, which are named; b4 fetches them in the background once the set is saved, and until then they match nothing;
-- pins, to which the same rule applies as when the set was prepared: a pin for a domain the set does not target or one pointing at a private address is dropped and named, and the surviving pins are listed so they can be checked in the **DNS** tab before saving;
-- a DoH URL whose host is not a known public resolver, which drops the DNS redirect and names the host.
+Settings a shared set leaves out are removed even when the JSON was edited by hand to include them. A shared set imported into an existing set keeps that set's own DSCP value.
 
-The set itself is passed through the same validation as a set saved from the editor, so a shared set cannot carry a routing block, a device filter or a DNS server address even when the JSON was edited by hand to include one.
+## Checking the result
 
-## Provenance
+The card of the imported set on the **Sets** page shows **Imported shared set**. Once the strategy is changed in the editor, the chip reads **Imported shared set, edited**. Targets, port filters and pins can be changed without that.
 
-An imported set remembers the fingerprint of the strategy it arrived with. The fingerprint covers the packet-altering settings and the DNS redirect settings only, so changing the targets, the port filter or the pins does not count as an edit. The set card shows **Shared set** while the strategy is unchanged and **Shared set, edited** once it differs.
+## When it does not work
 
-## Geosite categories
+**The shared set could not be imported: ...** names the reason, such as a format from a newer b4. **Invalid JSON format** means the pasted text is not valid JSON.
 
-A category name means something only relative to the geosite file it is looked up in. The sources offered under **Settings, Geodat Settings** differ in what a category of the same name contains, and a category present in one may be absent from another. A shared set records the source URLs the author's router was using, and the import reports every category that the local database does not have. The categories are carried by name; the databases themselves are never part of a shared set.
-
-:::info
-Command lines from byedpi and zapret are a different import, described under [Import from another tool](./import.md).
-:::
+Command lines from byedpi and zapret are a different import, described under [Importing from zapret or byedpi](./import.md).

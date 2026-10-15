@@ -93,6 +93,7 @@ export {
   Public as IpInfoIcon,
   Extension as McpIcon,
   Search as SearchIcon,
+  Sort as SortIcon,
   Sync as SyncIcon,
   ThumbUpAlt as WorksIcon,
   ThumbDownAlt as BrokenIcon,
@@ -106,4 +107,8 @@ export {
   Verified as AppliedIcon,
   Flag as ReportIcon,
   AccountTree as AsnIcon,
+  ArrowUpward as SentIcon,
+  ArrowDownward as ReceivedIcon,
+  Settings as SettingsIcon,
+  SportsEsports as GameIcon,
 } from "@mui/icons-material";

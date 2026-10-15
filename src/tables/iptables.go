@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -25,10 +26,12 @@ type IPTablesManager struct {
 	connmarkSupport  map[string]bool  // per-binary cache
 	nfqueueSupport   map[string]error // per-binary cache
 	ipsetSupport     map[string]error
+	rawQueueSupport  map[string]error
+	dnsCopySupport   map[string]error
 }
 
 func NewIPTablesManager(cfg *config.Config, useLegacy bool) *IPTablesManager {
-	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), connmarkSupport: make(map[string]bool), nfqueueSupport: make(map[string]error), ipsetSupport: make(map[string]error)}
+	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), connmarkSupport: make(map[string]bool), nfqueueSupport: make(map[string]error), ipsetSupport: make(map[string]error), rawQueueSupport: make(map[string]error), dnsCopySupport: make(map[string]error)}
 }
 
 func (im *IPTablesManager) iptablesBin() string {
@@ -393,10 +396,12 @@ func (s IPSet) Destroy() {
 }
 
 type Manifest struct {
-	IPSets  []IPSet
-	Chains  []Chain
-	Rules   []Rule
-	Sysctls []SysctlSetting
+	IPSets     []IPSet
+	Chains     []Chain
+	Rules      []Rule
+	Sysctls    []SysctlSetting
+	DNSQueries map[string]dnsQueryPlacement
+	ECHOnlyDNS []string
 }
 
 func (m Manifest) Apply() error {
@@ -517,20 +522,25 @@ func (manager *IPTablesManager) buildTeardownManifest() (Manifest, error) {
 	return manager.buildManifestFor(ipts, true), nil
 }
 
+func iptMarkAccept(mark uint) string {
+	if mark == 0 {
+		return "0x8000/0x8000"
+	}
+	return fmt.Sprintf("0x%x/0x%x", mark, mark)
+}
+
 func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) Manifest {
 	cfg := manager.cfg
 	queueNum := cfg.Queue.StartNum
 	threads := cfg.Queue.Threads
 	chainName := iptChainName
 	preChainName := "B4_PREROUTING"
-	markAccept := fmt.Sprintf("0x%x/0x%x", cfg.Queue.Mark, cfg.Queue.Mark)
-	if cfg.Queue.Mark == 0 {
-		markAccept = "0x8000/0x8000"
-	}
+	markAccept := iptMarkAccept(cfg.Queue.Mark)
 
 	var ipsets []IPSet
 	var chains []Chain
 	var rules []Rule
+	dnsQueries := map[string]dnsQueryPlacement{}
 
 	for _, ipt := range ipts {
 		ch := Chain{manager: manager, IPT: ipt, Table: "mangle", Name: chainName}
@@ -541,13 +551,19 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 		tcpConnbytesRange := fmt.Sprintf("0:%d", cfg.Queue.TCPConnBytesLimit)
 		udpConnbytesRange := fmt.Sprintf("0:%d", cfg.Queue.UDPConnBytesLimit)
 
+		placement := dnsHeldMangle
+		if !teardown {
+			placement = manager.dnsQueryPlacementFor(ipt)
+			dnsQueries[ipt] = placement
+		}
+
 		dnsSpec := append(
 			[]string{"-p", "udp", "--dport", "53"},
 			manager.buildNFQSpec(queueNum, threads)...,
 		)
 
 		dnsResponseSpec := append(
-			[]string{"-p", "udp", "--sport", "53"},
+			dnsAnswerMatch(placement != dnsHeldMangle),
 			manager.buildNFQSpec(queueNum, threads)...,
 		)
 
@@ -608,12 +624,13 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			}
 		}
 
-		rules = append(rules,
-			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: dnsSpec},
-			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: dnsResponseSpec},
-		)
+		if placement == dnsHeldMangle {
+			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: dnsSpec})
+		}
+		rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: dnsResponseSpec})
 
 		rules = append(rules,
+			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "I", Spec: iptMarkReturn(markAccept)},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
 				Spec: []string{"-m", "mark", "--mark", telegramBridgeMarkMatch(), "-j", "RETURN"}},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
@@ -698,6 +715,10 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			udpPorts[i] = strings.ReplaceAll(p, "-", ":")
 		}
 
+		if placement != dnsHeldMangle {
+			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: iptDNSQueryCaptureReturn()})
+		}
+
 		if manager.hasMultiportSupport(ipt) {
 			// Use multiport for efficiency (batches up to 15 ports per rule)
 			udpPortChunks := chunkPorts(udpPorts, 15)
@@ -765,7 +786,11 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "PREROUTING", Action: "I",
 				Spec: []string{"-j", preChainName}},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: dnsResponseSpec},
-			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: dnsSpec},
+		)
+		if placement == dnsHeldMangle {
+			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: dnsSpec})
+		}
+		rules = append(rules,
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
 				Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "ACCEPT"}},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "A",
@@ -774,13 +799,43 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 
 		if cfg.Queue.Mark != 0 && manager.hasConnmarkSupport(ipt) {
 			markMaskHex := fmt.Sprintf("0x%x", cfg.Queue.Mark)
+			ownMark := fmt.Sprintf("0x%x/0x%x", cfg.Queue.Mark, cfg.Queue.Mark|engine.ClientMark)
 			rules = append(rules,
 				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
-					Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "CONNMARK",
+					Spec: []string{"-m", "mark", "--mark", ownMark, "-j", "CONNMARK",
 						"--save-mark", "--nfmask", markMaskHex, "--ctmask", markMaskHex}},
 				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I",
 					Spec: []string{"-m", "connmark", "--mark", markAccept, "-j", "RETURN"}},
 			)
+			if teardown {
+				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
+					Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "CONNMARK",
+						"--save-mark", "--nfmask", markMaskHex, "--ctmask", markMaskHex}})
+			}
+		}
+
+		switch {
+		case placement == dnsCopied:
+			chains = append(chains, Chain{manager: manager, IPT: ipt, Table: "mangle", Name: iptDNSCopyChainName})
+			rules = append(rules, iptDNSCopyRules(manager, ipt, markAccept, uint16(dnsCopyGroup.Load()))...)
+		case teardown && DNSQueryCopyKernel():
+			chains = append(chains, Chain{manager: manager, IPT: ipt, Table: "mangle", Name: iptDNSCopyChainName})
+			rules = append(rules, iptDNSCopyJumps(manager, ipt)...)
+		}
+
+		if placement == dnsHeldRaw || (teardown && RawTablePresent(ipt)) {
+			chains = append(chains, Chain{manager: manager, IPT: ipt, Table: "raw", Name: iptRawChainName})
+			rules = append(rules, iptRawDNSQueueRules(manager, ipt, markAccept, dnsSpec)...)
+		}
+	}
+
+	var echOnly []string
+	if !teardown {
+		echOnly = manager.echOnlyBinaries()
+		for _, ipt := range echOnly {
+			ec, er := manager.buildECHOnlyDNSManifest(ipt, preChainName)
+			chains = append(chains, ec...)
+			rules = append(rules, er...)
 		}
 	}
 
@@ -793,7 +848,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 	}
 
 	if dnsTCPWanted(cfg) {
-		for _, ipt := range ipts {
+		for _, ipt := range append(append([]string(nil), ipts...), echOnly...) {
 			isV6 := ipt == manager.ip6tablesBin()
 			if !dnsTCPEnabledFamily(cfg, isV6) || !hasNATRedirectSupport(ipt, cfg.DNSTCPListenPort()) {
 				continue
@@ -808,7 +863,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 	ipsets = append(ipsets, mssIPSets...)
 	rules = append(rules, mssRules...)
 
-	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: b4SysctlSettings()}
+	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: b4SysctlSettings(), DNSQueries: dnsQueries, ECHOnlyDNS: echOnly}
 }
 
 func (manager *IPTablesManager) mssClampBinaries() []string {
@@ -1001,7 +1056,24 @@ func (ipt *IPTablesManager) Apply() error {
 	if err != nil {
 		return err
 	}
+	if moves := dnsQueryPlacementMoves(m.DNSQueries); len(moves) > 0 {
+		for _, move := range moves {
+			log.Infof("%s", move)
+		}
+		if err := ipt.Clear(); err != nil {
+			log.Warnf("IPTABLES: clearing the rules before moving DNS queries failed: %v", err)
+		}
+	}
 	result := m.Apply()
+	if result == nil {
+		ipt.dropUnusedDNSQueryPlacement(m.DNSQueries)
+		warnPortChangingDNSNat(m.DNSQueries)
+		for _, bin := range m.ECHOnlyDNS {
+			label := iptFamilyLabel(bin)
+			log.Infof("IPTABLES[%s]: %s support is off, so %s DNS answers are queued only to remove ECH keys for the sets that ask for it", bin, label, label)
+		}
+	}
+	noteDNSQueryPlacement(m.DNSQueries)
 
 	if log.Level(log.CurLevel.Load()) >= log.LevelTrace {
 		iptablesTrace, _ := run("sh", "-c", "cat /proc/net/netfilter/nfnetlink_queue && "+ipt.iptablesBin()+" -t mangle -vnL --line-numbers")
@@ -1017,6 +1089,7 @@ func (ipt *IPTablesManager) Clear() error {
 	}
 
 	ipt.clearB4JumpRules()
+	noteDNSQueryPlacement(nil)
 
 	m.RemoveRules()
 	time.Sleep(30 * time.Millisecond)
@@ -1159,6 +1232,10 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 			if !removed {
 				break
 			}
+		}
+
+		if RawTablePresent(iptBin) {
+			iptRemoveRawDNSJumps(iptBin)
 		}
 
 		for _, mk := range []string{ipt.masqClientMark(), ipt.masqMarkAccept()} {

@@ -41,12 +41,14 @@ interface DiagCapability {
   packages?: string[];
   reasons?: string[];
   detail?: string;
+  hint?: string;
 }
 
 interface DiagTool {
   name: string;
   found: boolean;
   detail?: string;
+  version?: string;
 }
 
 interface DiagMount {

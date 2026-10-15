@@ -263,15 +263,21 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		return true
 	}
 
+	markAccept := iptMarkAccept(cfg.Queue.Mark)
 	for _, ipt := range ipts {
-		if _, err := run(ipt, "-w", "-t", "mangle", "-S", "B4"); err != nil {
+		capture, err := run(ipt, "-w", "-t", "mangle", "-S", iptChainName)
+		if err != nil {
 			log.Tracef("Monitor: B4 chain missing")
+			return false
+		}
+		if !iptListingHasMarkReturn(capture, iptChainName, markAccept) {
+			log.Tracef("Monitor: B4's return for b4's own packets (mark %s) missing", markAccept)
 			return false
 		}
 
 		if cfg.Queue.Devices.Enabled && len(cfg.Queue.Devices.SelectedMACs()) > 0 {
 			out, _ := run(ipt, "-w", "-t", "mangle", "-S", "FORWARD")
-			if !strings.Contains(out, "B4") {
+			if !iptListingJumpsTo(out, iptChainName) {
 				log.Tracef("Monitor: FORWARD->B4 rule missing")
 				return false
 			}
@@ -291,12 +297,29 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 			return false
 		}
 		out, _ := run(ipt, "-w", "-t", "mangle", "-S", "B4_PREROUTING")
+		placement := dnsQueryPlacementOf(ipt)
 		hasDNSResponse := strings.Contains(out, dnsResponsePortMatch) && strings.Contains(out, "NFQUEUE")
-		hasDNSRequest := strings.Contains(out, dnsRequestPortMatch) && strings.Contains(out, "NFQUEUE")
+		hasDNSRequest := placement != dnsHeldMangle || (strings.Contains(out, dnsRequestPortMatch) && strings.Contains(out, "NFQUEUE"))
 		hasTCP := strings.Contains(out, "tcp") && strings.Contains(out, "NFQUEUE")
 		if !hasDNSResponse || !hasDNSRequest || !hasTCP {
 			log.Tracef("Monitor: B4_PREROUTING rules missing (dnsReq=%v, dnsResp=%v, tcp=%v)", hasDNSRequest, hasDNSResponse, hasTCP)
 			return false
+		}
+		switch placement {
+		case dnsHeldRaw:
+			if !iptRawDNSQueuePresent(ipt, markAccept) {
+				log.Tracef("Monitor: raw table DNS query rules missing (%s chain, its return for b4's own packets, or its PREROUTING/OUTPUT jumps)", iptRawChainName)
+				return false
+			}
+		case dnsCopied:
+			if DNSQueryCopyAliveFunc == nil || !DNSQueryCopyAliveFunc() {
+				log.Tracef("Monitor: the NFLOG listener for DNS query copies is not running")
+				return false
+			}
+			if !iptDNSCopyPresent(ipt, uint16(dnsCopyGroup.Load()), markAccept) {
+				log.Tracef("Monitor: DNS query copy rules missing (%s chain, its return for b4's own packets, or its INPUT/FORWARD/OUTPUT jumps)", iptDNSCopyChainName)
+				return false
+			}
 		}
 
 		markHex := fmt.Sprintf("0x%x", cfg.Queue.Mark)
@@ -313,7 +336,7 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 			log.Tracef("Monitor: OUTPUT mark accept rule missing")
 			return false
 		}
-		if !strings.Contains(out, "-j B4") {
+		if !iptListingJumpsTo(out, iptChainName) {
 			log.Tracef("Monitor: OUTPUT->B4 jump rule missing")
 			return false
 		}
@@ -328,8 +351,8 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 
 		if dnsTCPEnabledFamily(cfg, ipt == ipt6) && hasNATRedirectSupport(ipt, cfg.DNSTCPListenPort()) {
-			if !dnsTCPRulesPresent(ipt, cfg.DNSTCPListenPort()) {
-				log.Tracef("Monitor[%s]: DNS-over-TCP redirect rules missing (PREROUTING/OUTPUT jump or %s chain)", ipt, dnsTCPChainName)
+			if !dnsTCPRulesPresent(ipt, cfg.DNSTCPListenPort(), dnsTCPMarkAccept(cfg)) {
+				log.Tracef("Monitor[%s]: DNS-over-TCP redirect rules missing (PREROUTING/OUTPUT jump, %s chain or its return for b4's own connections)", ipt, dnsTCPChainName)
 				return false
 			}
 		}
@@ -343,6 +366,24 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 				log.Tracef("Monitor: MSS clamp rule missing")
 				return false
 			}
+		}
+	}
+
+	for _, v6 := range []bool{false, true} {
+		ipt := ipt4
+		if v6 {
+			ipt = ipt6
+		}
+		if !cfg.ECHOnlyFamily(v6) || !hasBinary(ipt) || !echOnlyDNSUsable(ipt) {
+			continue
+		}
+		if !iptECHOnlyDNSPresent(ipt) {
+			log.Tracef("Monitor[%s]: the rules that queue %s DNS answers to remove ECH keys are missing", ipt, familyLabel(v6))
+			return false
+		}
+		if dnsTCPEnabledFamily(cfg, v6) && hasNATRedirectSupport(ipt, cfg.DNSTCPListenPort()) && !dnsTCPRulesPresent(ipt, cfg.DNSTCPListenPort(), dnsTCPMarkAccept(cfg)) {
+			log.Tracef("Monitor[%s]: DNS-over-TCP redirect rules missing (PREROUTING/OUTPUT jump, %s chain or its return for b4's own connections)", ipt, dnsTCPChainName)
+			return false
 		}
 	}
 
@@ -389,11 +430,16 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		return false
 	}
 	out, _ := nft.runNft("list", "chain", "inet", nftTableName, "prerouting")
+	fromRaw := dnsQueryPlacementOf(backendNFTables) == dnsHeldRaw
 	hasDNSResponse := strings.Contains(out, dnsResponsePortMatch) && strings.Contains(out, "queue")
-	hasDNSRequest := strings.Contains(out, dnsRequestPortMatch) && strings.Contains(out, "queue")
+	hasDNSRequest := fromRaw || (strings.Contains(out, dnsRequestPortMatch) && strings.Contains(out, "queue"))
 	hasTCP := strings.Contains(out, "tcp sport") && strings.Contains(out, "queue")
 	if !hasDNSResponse || !hasDNSRequest || !hasTCP {
 		log.Tracef("Monitor: prerouting rules missing (dnsReq=%v, dnsResp=%v, tcp=%v)", hasDNSRequest, hasDNSResponse, hasTCP)
+		return false
+	}
+	if fromRaw && !nft.dnsQueryQueueChainsPresent() {
+		log.Tracef("Monitor: DNS query chains missing (%s, %s)", nftRawPreChain, nftRawOutChain)
 		return false
 	}
 
@@ -412,6 +458,16 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		return false
 	}
 
+	if family, _ := echOnlyNfproto(cfg); family != "" {
+		pre, _ := nft.runNft("list", "chain", "inet", nftTableName, "prerouting")
+		for _, queued := range []string{"ipv4", "ipv6"} {
+			if !nftListingQueuesAnswers(pre, queued) || !nftListingQueuesAnswers(out, queued) {
+				log.Tracef("Monitor: the rules that queue %s DNS answers are missing", familyLabel(queued == "ipv6"))
+				return false
+			}
+		}
+	}
+
 	if cfg.System.Tables.Masquerade.Enabled {
 		if !nft.natTableExists() {
 			log.Tracef("Monitor: nftables nat table missing")
@@ -425,20 +481,12 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 	}
 
 	for _, v6 := range []bool{false, true} {
-		if !dnsTCPEnabledFamily(cfg, v6) {
+		if !nftDNSTCPExpected(cfg, v6) {
 			continue
 		}
-		if (v6 && !cfg.Queue.IPv6Enabled) || (!v6 && !cfg.Queue.IPv4Enabled) {
-			continue
-		}
-		family, table := nftDNSTCPTable(v6)
-		if !nft.dnsTCPFamilyExists(v6) {
-			log.Tracef("Monitor: DNS-over-TCP nat table missing (%s)", family)
-			return false
-		}
-		dnsOut, err := nft.runNft("list", "table", family, table)
-		if err == nil && !strings.Contains(dnsOut, "redirect") {
-			log.Tracef("Monitor: DNS-over-TCP redirect rule missing (%s)", family)
+		if !nft.dnsTCPFamilyIntact(v6, cfg.MainInjectedMark(), cfg.DNSTCPListenPort()) {
+			family, table := nftDNSTCPTable(v6)
+			log.Tracef("Monitor: DNS-over-TCP nat rules missing (table %s %s, or the return for b4's own connections ahead of the redirect in %s or %s)", family, table, nftDNSTCPPreChain, nftDNSTCPOutChain)
 			return false
 		}
 	}
@@ -470,6 +518,9 @@ func (m *Monitor) ensureRulesLocked(requested bool) (*config.Config, bool) {
 	cfg := m.cfgPtr.Load()
 	if m.checkRules(cfg) {
 		m.pendingApply = nil
+		if !m.tun && m.firewallBackend() == backendNFTables {
+			NewNFTablesManager(cfg).retryFailedDNSTCP()
+		}
 		return cfg, false
 	}
 	if applied := rulesAppliedCfg; applied != nil && applied != cfg && (m.pendingApply != cfg || activeSteering != nil) && config.FirewallRefreshNeeded(applied, cfg) && m.checkRules(applied) {
