@@ -81,7 +81,7 @@ An IPv4 egress IP rewrites IPv4 only. With **Enable IPv6 Support** on, the set's
 
 **Gateway (optional)** gives the set's table `default via <gateway> dev <interface>` in the gateway's address family. Without a gateway, the default route goes via the gateway b4 finds on the interface, or is `default dev <interface>` when there is none. The other family keeps that route: with an IPv4 gateway, the set's IPv6 route is the one it has without a gateway, and the other way round. A gateway in a family whose support is off is ignored, and b4 logs a warning.
 
-A save checks only the form of the address: one IPv4 or IPv6 address without brackets or a prefix length, a `%zone` only when it names the set's output interface, and not a loopback, multicast, unspecified or broadcast address or the set's own egress IP.
+A save checks only the form of the address: one IPv4 or IPv6 address without brackets or a prefix length, a `%zone` only when it names the set's output interface, and not an unspecified, loopback or multicast address, `255.255.255.255` or the set's own egress IP.
 
 When b4 installs the set's rules, it checks the gateway against the router's addresses and its main routing table:
 

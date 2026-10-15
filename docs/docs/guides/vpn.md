@@ -50,9 +50,9 @@ The VPN can run on another device in the router's network, such as a Raspberry P
 3. In **Gateway (optional)**, enter the device's address in that network, such as `192.168.1.10`.
 4. Click **Save Changes**, or **Create Set** for a new set.
 
-Devices in that network follow the set over IPv4, and the device's own traffic keeps the normal route. IPv6 from that network never follows the set. With an IPv4 gateway and **Enable IPv6 Support** on, the set's IPv6 traffic does not reach the device.
+Devices in that network follow the set over IPv4, and the device's own traffic keeps the normal route. IPv6 from that network never follows the set. With an IPv4 gateway and **Enable IPv6 Support** on, the set's IPv6 traffic leaves through the output interface by that interface's own route, as without a gateway.
 
-b4 ignores a gateway outside the network of the output interface, and the log says why. When the sites stop opening once the gateway is set, the device does not forward the traffic or its VPN is down: packets leave, and no reply comes back. See [Gateway](../internals/routing.md#gateway).
+b4 ignores a gateway outside the network of the output interface, and the log says why. When the sites stop opening once the gateway is set, the address in **Gateway (optional)** is not a device that forwards the traffic, or the VPN on the device is down. The log shows no error then: packets leave, and no reply comes back. See [Gateway](../internals/routing.md#gateway).
 
 ## When it does not work
 
