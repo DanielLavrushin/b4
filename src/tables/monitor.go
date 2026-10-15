@@ -458,11 +458,13 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		return false
 	}
 
-	if family, v6 := echOnlyNfproto(cfg); family != "" {
+	if family, _ := echOnlyNfproto(cfg); family != "" {
 		pre, _ := nft.runNft("list", "chain", "inet", nftTableName, "prerouting")
-		if !nftListingQueuesECHOnlyAnswers(pre, family) || !nftListingQueuesECHOnlyAnswers(out, family) {
-			log.Tracef("Monitor: the rules that queue %s DNS answers to remove ECH keys are missing", familyLabel(v6))
-			return false
+		for _, queued := range []string{"ipv4", "ipv6"} {
+			if !nftListingQueuesAnswers(pre, queued) || !nftListingQueuesAnswers(out, queued) {
+				log.Tracef("Monitor: the rules that queue %s DNS answers are missing", familyLabel(queued == "ipv6"))
+				return false
+			}
 		}
 	}
 

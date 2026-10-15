@@ -295,13 +295,13 @@ func TestNftLeavesIPv6AloneWithoutASetThatRemovesKeys(t *testing.T) {
 
 func TestNftListingOfIPv6AnswerRules(t *testing.T) {
 	listing := "table inet b4_mangle {\n\tchain output {\n\t\tmeta nfproto ipv4 udp sport 53 udp dport != 53 counter packets 0 bytes 0 queue flags bypass to 537-540\n\t\tmeta nfproto ipv6 udp sport 53 counter packets 4 bytes 1188 queue flags bypass to 537-540\n\t}\n}\n"
-	if !nftListingQueuesECHOnlyAnswers(listing, "ipv6") {
+	if !nftListingQueuesAnswers(listing, "ipv6") {
 		t.Error("the IPv6 answer rule in a live listing was not found")
 	}
-	if nftListingQueuesECHOnlyAnswers(strings.Replace(listing, "meta nfproto ipv6 udp sport 53", "meta nfproto ipv6 udp sport 5353", 1), "ipv6") {
+	if nftListingQueuesAnswers(strings.Replace(listing, "meta nfproto ipv6 udp sport 53", "meta nfproto ipv6 udp sport 5353", 1), "ipv6") {
 		t.Error("a rule for port 5353 was taken for the DNS answer rule")
 	}
-	if nftListingQueuesECHOnlyAnswers(strings.Replace(listing, "nfproto ipv6", "nfproto ipv4", 1), "ipv6") {
+	if nftListingQueuesAnswers(strings.Replace(listing, "nfproto ipv6", "nfproto ipv4", 1), "ipv6") {
 		t.Error("an IPv4 rule was taken for the IPv6 one")
 	}
 }

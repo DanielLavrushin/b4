@@ -308,3 +308,30 @@ func TestADNSOverTCPFamilyAnApplyLeftOutIsBuiltOnceItsListenerIsUp(t *testing.T)
 		t.Error("the listener came back without an apply, and the failures from before the apply that left the family out kept its table missing")
 	}
 }
+
+func TestTheNftMonitorWantsTheDNSAnswerRuleOfEachFamilyWhileOneOnlyLosesECHKeys(t *testing.T) {
+	for _, ipv6Support := range []bool{false, true} {
+		for _, gone := range []string{"ipv4", "ipv6"} {
+			t.Run(fmt.Sprintf("ipv6 support %v, %s answer rule gone", ipv6Support, gone), func(t *testing.T) {
+				r := newDNSTCPMonitorRig(t)
+				r.cfg.Queue.IPv4Enabled = !ipv6Support
+				r.cfg.Queue.IPv6Enabled = ipv6Support
+				r.apply()
+				if r.tick() {
+					t.Fatal("the full listing must satisfy the monitor")
+				}
+
+				var kept []string
+				for _, line := range strings.Split(readLog(t, filepath.Join(r.dir, "mangle")), "\n") {
+					if !strings.Contains(line, "nfproto "+gone+" udp sport 53") {
+						kept = append(kept, line)
+					}
+				}
+				r.write(t, "mangle", strings.Join(kept, "\n"), 0o644)
+				if !r.tick() {
+					t.Errorf("the %s DNS answer rule was gone while the other family's stayed, and the monitor did not restore the rules", gone)
+				}
+			})
+		}
+	}
+}

@@ -75,7 +75,7 @@ func fieldsFollow(fields []string, first, second string) bool {
 	return false
 }
 
-func nftListingQueuesECHOnlyAnswers(listing, family string) bool {
+func nftListingQueuesAnswers(listing, family string) bool {
 	for _, line := range strings.Split(listing, "\n") {
 		f := strings.Fields(line)
 		if fieldsFollow(f, "nfproto", family) && fieldsFollow(f, "sport", "53") && slices.Contains(f, "queue") {
