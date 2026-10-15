@@ -2799,7 +2799,7 @@
         "body": "Tested alone, the set's own strategy loaded every address, so there is nothing to write.",
         "stillFails": "If these sites still fail in a browser:",
         "otherSet": "{{domain}} is handled by {{owner}}, not by {{name}}, so the strategy of {{owner}} applies there.",
-        "quic": "the browser may use QUIC (HTTP/3), which Discovery does not test, or IPv6, which a run tests only when IPv6 is chosen in its options.",
+        "quic": "the browser may use QUIC (HTTP/3), which Discovery does not test, or another IP version than the run, such as IPv6.",
         "unmatched": "{{domain}} is not matched by {{name}} at all, so its strategy does not apply to this address."
       },
       "partial": {
