@@ -632,11 +632,22 @@ func (b *routeNftBackend) destroyIPSet(name string) {
 	dyn := routeNftDynSet(name)
 	runLogged("routing: delete set "+dyn, "nft", "delete", "set", "inet", routeNftTable, dyn)
 }
+
 func (b *routeNftBackend) hasIPSet(name string) bool {
-	if _, err := run("nft", "list", "set", "inet", routeNftTable, name); err == nil {
-		return true
+	return routeNftSetExists(name) || routeNftSetExists(routeNftDynSet(name))
+}
+
+func routeNftSetExists(name string) bool {
+	if routeNftTerse.Load() {
+		out, err := run("nft", "-t", "list", "set", "inet", routeNftTable, name)
+		if err == nil {
+			return true
+		}
+		if strings.Contains(out, "No such file or directory") {
+			return false
+		}
 	}
-	_, err := run("nft", "list", "set", "inet", routeNftTable, routeNftDynSet(name))
+	_, err := run("nft", "list", "set", "inet", routeNftTable, name)
 	return err == nil
 }
 

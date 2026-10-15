@@ -509,11 +509,12 @@ func (b *routeIptBackend) destroyIPSet(name string) {
 	}
 	runLogged("routing: destroy ipset "+name, "ipset", "destroy", name)
 }
+
 func (b *routeIptBackend) hasIPSet(name string) bool {
 	if !hasBinary("ipset") {
 		return false
 	}
-	_, err := run("ipset", "list", name)
+	_, err := run("ipset", "list", "-t", name)
 	return err == nil
 }
 

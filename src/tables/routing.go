@@ -889,6 +889,7 @@ func RoutingClearAll() {
 	routeStaticApplied = make(map[string]routeStaticEntries)
 	routeEgressLoopWarned = sync.Map{}
 	routeGatewayWarned = sync.Map{}
+	routeLocalGuardForgetLists()
 }
 
 func RoutingActiveIPSetNames(ipv4, ipv6 bool) []string {
@@ -1155,6 +1156,7 @@ func routingForceResync(cfg *config.Config) {
 	routeLearnLast = make(map[string]time.Time)
 	routeRefreshedAt = make(map[string]time.Time)
 	routeHostResolvedAt = make(map[string]time.Time)
+	routeLocalGuardForgetLists()
 	routingSyncConfigLocked(cfg)
 }
 

@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"maps"
 	"net"
 	"strings"
 	"sync"
@@ -8,10 +9,16 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
+type routeLocalListKey struct {
+	chain string
+	v6    bool
+}
+
 var (
 	routeLocalGuardMu       sync.Mutex
 	routeLocalGuardRejected = map[string]bool{}
 	routeLocalGuardWarned   = map[string]bool{}
+	routeLocalGuardListed   = map[routeLocalListKey]string{}
 	routeLocalGuardKmodNft  sync.Once
 	routeLocalGuardKmodIpt  sync.Once
 	routeHostAddrs          = net.InterfaceAddrs
@@ -37,7 +44,7 @@ func routeLocalGuardReject(tool, module, out string) {
 	if msg == "" {
 		msg = "no error text"
 	}
-	log.Warnf("Routing: %s rejected the address-type match (%s), so a proxy set that matches the router's own addresses keeps them out of the upstream with an explicit list of those addresses instead, refreshed only when the set is rebuilt. %s",
+	log.Warnf("Routing: %s rejected the address-type match (%s), so the sets that must leave traffic addressed to this router alone match its addresses from a list instead; the tables monitor rebuilds those sets when the addresses change. %s",
 		tool, msg, kmodMissingHint([]string{module}))
 }
 
@@ -45,7 +52,44 @@ func routeLocalGuardForget() {
 	routeLocalGuardMu.Lock()
 	routeLocalGuardRejected = map[string]bool{}
 	routeLocalGuardWarned = map[string]bool{}
+	routeLocalGuardListed = map[routeLocalListKey]string{}
 	routeLocalGuardMu.Unlock()
+}
+
+func routeLocalGuardForgetLists() {
+	routeLocalGuardMu.Lock()
+	routeLocalGuardListed = map[routeLocalListKey]string{}
+	routeLocalGuardMu.Unlock()
+}
+
+func routeLocalGuardList(chain string, v6 bool) []string {
+	list := routeLocalAddressList(v6)
+	routeLocalGuardMu.Lock()
+	routeLocalGuardListed[routeLocalListKey{chain: chain, v6: v6}] = strings.Join(list, ",")
+	routeLocalGuardMu.Unlock()
+	return list
+}
+
+func routeLocalGuardListsMoved() bool {
+	routeLocalGuardMu.Lock()
+	listed := maps.Clone(routeLocalGuardListed)
+	routeLocalGuardMu.Unlock()
+	current := make(map[bool]string, 2)
+	for key, was := range listed {
+		now, ok := current[key.v6]
+		if !ok {
+			list, err := routeLocalAddresses(key.v6)
+			if err != nil {
+				return false
+			}
+			now = strings.Join(list, ",")
+			current[key.v6] = now
+		}
+		if now != was {
+			return true
+		}
+	}
+	return false
 }
 
 func routeAddLocalDestinationGuard(be routeBackend, chain string, ipv4, ipv6 bool) {
@@ -110,7 +154,7 @@ func routeAddLocalDestinationGuardIpt(cmd, chain string, v6 bool) {
 }
 
 func routeAddLocalDestinationFallbackIpt(cmd, chain string, v6 bool) {
-	for _, prefix := range routeLocalAddressList(v6) {
+	for _, prefix := range routeLocalGuardList(chain, v6) {
 		runLogged("routing: local destination guard "+chain,
 			cmd, "-w", "-t", "mangle", "-A", chain, "-d", prefix, "-j", "RETURN")
 	}
@@ -121,13 +165,18 @@ func routeAddLocalDestinationFallbackNft(chain string, v6 bool) {
 	if v6 {
 		field = "ip6"
 	}
-	for _, prefix := range routeLocalAddressList(v6) {
+	for _, prefix := range routeLocalGuardList(chain, v6) {
 		runLogged("routing: local destination guard "+chain,
 			"nft", "add", "rule", "inet", routeNftTable, chain, field, "daddr", prefix, "return")
 	}
 }
 
 func routeLocalAddressList(v6 bool) []string {
+	list, _ := routeLocalAddresses(v6)
+	return list
+}
+
+func routeLocalAddresses(v6 bool) ([]string, error) {
 	seen := map[string]struct{}{}
 	var out []string
 	add := func(prefix string) {
@@ -148,7 +197,7 @@ func routeLocalAddressList(v6 bool) []string {
 	}
 	addrs, err := routeHostAddrs()
 	if err != nil {
-		return out
+		return out, err
 	}
 	for _, a := range addrs {
 		ipn, ok := a.(*net.IPNet)
@@ -177,5 +226,5 @@ func routeLocalAddressList(v6 bool) []string {
 		}
 		add(bcast.String() + "/32")
 	}
-	return out
+	return out, nil
 }
