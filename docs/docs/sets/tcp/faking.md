@@ -1,206 +1,128 @@
 ---
 sidebar_position: 3
 title: Faking
+description: The Faking sub-tab of a set's TCP tab, with fake packets, desync, window and incoming manipulation, and ClientHello mutation.
 ---
 
-The Faking tab holds methods for sending fake packets and modifying real ones to deceive the DPI. Each section is a separate accordion in the interface.
+The **Faking** sub-tab sends fake packets that DPI reads and the server discards, and it can change the real ClientHello. Each technique is a separate panel. [Discovery](../../discovery.md) picks the fake settings, the TTL included, for the strategies it finds, and manual changes are for tuning. Fake payloads are generated and uploaded under [Settings > Payloads](../../settings/payloads.md).
 
-See the [Payloads](../../settings/payloads) section for payload types and generation.
+## Fake SNI Packets
 
-## Fake SNI packets
+Fake ClientHello packets sent before the real one. DPI reads the fake, and the real ClientHello passes unnoticed.
 
-Sends packets with fake contents **before** the real ClientHello. The DPI analyzes the fake packet while the real data passes unnoticed. The fake packet does not reach the server thanks to the chosen strategy.
-
-### Fake strategy
-
-Picks **how** the fake packet becomes unprocessable to the server:
-
-| Strategy | Mechanism |
-| --- | --- |
-| **TTL** | Reduced TTL - the packet expires on an intermediate hop and never reaches the server |
-| **Random Sequence** | Random TCP sequence number - the server drops packets with an unexpected seq |
-| **Past Sequence** | Past sequence number - the server has already processed that seq and ignores the repeat |
-| **TCP Check** | Invalid TCP checksum - the server kernel drops the packet before processing |
-| **MD5 Sum** | TCP MD5 option - a server without configured MD5 drops the packet |
-| **TCP Timestamp** | Stale TCP timestamp - the server drops the packet because its timestamp is too far in the past |
-
-### Payload type
-
-The content of the fake packet. Full description of every type is in [Payloads](../../settings/payloads#payload-types).
-
-| Type | Contents |
-| --- | --- |
-| Random | 1200 random bytes |
-| Preset: Google | TLS ClientHello pretending to be Google |
-| Preset: DuckDuckGo | TLS ClientHello pretending to be DuckDuckGo |
-| Generated payload | Optimized ClientHello from [Settings -> Payloads](../../settings/payloads) |
-| All zeros | 1200 zero bytes |
-| Inverted original | Bitwise inversion of the real TLS packet |
-
-:::tip Generated payloads
-If no payload is available in the list, generate them first in [Settings -> Payloads](../../settings/payloads).
-:::
-
-### Parameters
-
-| Parameter | Description | Range |
+| Field | What it does | Default |
 | --- | --- | --- |
-| Fake TTL | TTL for fake packets. Must be enough to reach the DPI but expire before the server | 1-64 |
-| Sequence offset | TCP sequence number shift (for pastseq/randseq strategies) | - |
-| Timestamp decrement | Amount to subtract from the TCP timestamp (for the timestamp strategy, default 600000) | - |
-| Fake packet count | How many fake packets to send before the real data | 1-20 |
+| **Enable Fake SNI** | Sends fake packets before the real ClientHello. | On |
+| **Fake Packet Count** | How many fakes to send, 1 to 20. | `1` |
 
-:::tip Picking TTL
-The right TTL depends on the number of network hops between you and the provider's DPI. Discovery picks TTL automatically. When tuning manually, start at `3` and adjust.
-:::
+### Fake payload
 
-### TLS modifications for fake packets
-
-If the payload type contains a TLS structure (not Random and not all zeros), extra modifications for the fake ClientHello are available:
-
-| Parameter | Description |
-| --- | --- |
-| Randomize TLS Random | Replaces the 32-byte Random field in the fake ClientHello with random bytes. Without it, the DPI may notice the Random field is identical in the fake and the real packet |
-| Duplicate Session ID | Copies the Session ID from the real ClientHello into the fake one. The DPI may use Session ID to tie packets together |
-
----
-
-## Fake SYN packets
-
-Sends fake SYN packets during the TCP handshake - **before** the real connection begins. Confuses the DPI even before the connection is established.
-
-:::warning
-This is an aggressive technique - fake SYNs may affect some network equipment.
-:::
-
-| Parameter | Description | Range |
+| Field | What it does | Default |
 | --- | --- | --- |
-| SYN MD5 Signature | Send a fake SYN with a TCP MD5 option before the real handshake | - |
-| Payload length | Size of data in the fake SYN. `0` = header only, `>0` = attach a fake TLS payload | 0-1200 |
-| TTL | TTL for fake SYN packets | 1-100 |
+| **Fake Payload Type** | What the fake carries, see the table below. | **Preset: Google (classic)** |
+| **Match Fake Size** | Builds the fake from the real ClientHello with the payload's domain fitted to the length of the real name, so both have the same size. A payload that is not a ClientHello is repeated or cut to that size. | Off |
+| **Randomize TLS Random** | Replaces the 32-byte Random field of the fake, so that it differs from the real one. | Off |
+| **Duplicate Session ID** | Copies the Session ID of the real ClientHello into the fake. | Off |
 
----
+The last two are under **Fake Packet TLS Modification**, shown for every payload type except **Random**.
 
-## TCP Desync
+| Payload type | The fake carries |
+| --- | --- |
+| **Random** | Random bytes. |
+| **Preset: Google (classic)**, **Preset: DuckDuckGo** | A ClientHello for that site. |
+| **Preset: STUN** | A STUN request. |
+| **My own Payload File** | A ClientHello generated or uploaded under **Settings > Payloads**, chosen in **Generated Payload**. |
+| **All Zeros** | Zero bytes. |
+| **Inverted Original** | The real ClientHello with every bit inverted. |
+| **Generated from Domain** | A ClientHello generated for the domain entered in **Domain**. |
 
-Desync injects fake TCP control packets (RST/FIN/ACK) with corrupted checksums and low TTL. These packets confuse stateful DPI but are dropped by the real server.
+### Fake strategy {#fake-strategy}
 
-### Desync mode
+The **How the server rejects it** section decides why the server discards the fake while DPI reads it.
+
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Fake Strategy** | How the fake becomes unusable to the server, see the table below. | **Past Sequence** |
+| **Sequence Offset** | How far the sequence number is moved, for **Random Sequence** and **Past Sequence**. | `10000` |
+| **Timestamp Decrease** | How much the TCP timestamp is decreased, for **TCP Timestamp**. | `600000` |
+| **Fake TTL** | The TTL of the fakes, 1 to 64. It has to reach the DPI and expire before the server. | `7` |
+| **Apply Fake TTL** | Uses **Fake TTL** whatever the strategy. Without it, the TTL applies only with the **TTL** strategy. | Off |
+| **MD5 Signature on Fake** | Puts the TCP MD5 option on the fake, so the server discards it while DPI still reads it. | Off |
+
+| Strategy | Why the server discards the fake |
+| --- | --- |
+| **TTL** | The fake expires on the way and never reaches the server. |
+| **Random Sequence** | Its TCP sequence number is random. |
+| **Past Sequence** | Its sequence number is one the server has already processed. |
+| **TCP Check** | Its TCP checksum is wrong. |
+| **MD5 Sum** | It carries a TCP MD5 option that the server has not configured. |
+| **TCP Timestamp** | Its TCP timestamp is too old. |
+
+The right TTL depends on how many hops away the DPI is. Discovery finds it, and for manual tuning `3` is a starting point.
+
+## SYN Fake Packets
+
+Fake SYN packets sent during the TCP handshake, before the real connection starts. An aggressive technique: fake SYNs can upset some network equipment.
+
+| Field | What it does | Default |
+| --- | --- | --- |
+| **SYN Fake Packets** | Sends fake SYN packets during the handshake. | Off |
+| **SYN MD5 Signature** | Sends a fake SYN with a TCP MD5 option before the real handshake. | Off |
+| **SYN Fake Payload Length** | `0` sends the header only, a larger value adds a fake TLS payload, up to 1200 bytes. | `0` |
+| **SYN Fake TTL** | The TTL of the fake SYNs, 1 to 100. | `7` |
+
+## TCP Desync Attack
+
+Fake TCP control packets with broken checksums and a low TTL. They confuse DPI that tracks connections, and the server drops them.
+
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Desync Mode** | Which packets to send, see the table below. | **Disabled** |
+| **Desync TTL** | 1 to 50, low enough for the packets to expire before the server. | `7` |
+| **Desync Packet Count** | Fake packets per desync with **RST Packets**, **FIN Packets** or **ACK Packets**, 1 to 20. The two combined modes send a fixed set. | `3` |
+| **Post-ClientHello RST** | Sends a fake RST after the ClientHello, to remove the connection from the DPI's tracking table. | Off |
 
 | Mode | What it sends |
 | --- | --- |
-| **RST** | Fake RST packets with bad checksums - the DPI considers the connection torn down |
-| **FIN** | Fake FIN packets with stale sequence numbers - the DPI considers the connection finished |
-| **ACK** | Fake ACK packets with random future sequence/ack numbers - the DPI loses state |
-| **Combo** | Sequence of RST + FIN + ACK |
-| **Full** | Full attack: fake SYN, overlapping RST, PSH, and URG packets |
+| **RST Packets** | Fake RSTs, so DPI takes the connection as torn down. |
+| **FIN Packets** | Fake FINs with old sequence numbers, so DPI takes the connection as finished. |
+| **ACK Packets** | Fake ACKs with random future sequence and acknowledgment numbers. |
+| **Combo (RST + FIN)** | RST, FIN and ACK packets in sequence. |
+| **Full (RST + FIN + ACK)** | A fake SYN, then RST, PSH and URG packets. |
 
-### Desync parameters
+## Window Manipulation
 
-| Parameter | Description | Range |
+Fake ACK packets with changed TCP window sizes, sent with a low TTL before the real packet.
+
+| Field | What it does | Default |
 | --- | --- | --- |
-| Desync TTL | Low TTL ensures fake packets expire before the server | 1-50 |
-| Packet count | Number of fake packets per desync attack | 1-20 |
-| Post-ClientHello RST | Send a fake RST **after** the ClientHello to remove the connection from the DPI tracking table | - |
+| **Window Mode** | **Disabled**. **Zero Window** sends a window of 0, then 65535. **Random Window** sends 3 to 5 fakes with sizes from the list. **Oscillate** goes through the list in order. **Escalate** grows from 0 to 65535 in steps. | **Disabled** |
+| **Custom Window Values** | The list for **Random Window** and **Oscillate**, values 0 to 65535. An empty list uses the defaults. | `0`, `1460`, `8192`, `65535` |
 
----
+## Incoming Response Bypass
 
-## Window manipulation
+For DPI that slows a connection down once about 15-20 KB have come from the server. b4 sends fake packets towards the server that DPI sees and that expire before they reach it.
 
-Sends fake ACK packets with altered TCP window sizes **before** the real packet. Fakes use low TTL - they expire before the server but confuse the DPI on intermediate hops.
-
-| Mode | Description |
-| --- | --- |
-| **Zero window** | Fake packets: first window=0, then window=65535 |
-| **Random** | 3-5 fake packets with random window sizes from the configured list |
-| **Oscillation** | Cycles through custom window values |
-| **Escalation** | Gradual increase: 0 -> 100 -> 500 -> 1460 -> 8192 -> 32768 -> 65535 |
-
-In **Random** and **Oscillation** modes a custom list of window values (0-65535) can be specified. When the list is empty, defaults are used.
-
----
-
-## Incoming response bypass
-
-Manipulates the server's **incoming responses**. Used against DPI that throttles connections after a certain amount of data has been transferred (~15-20 KB). b4 injects fake packets toward the server that the DPI sees but that never reach the destination.
-
-### Mode
-
-| Mode | Description |
-| --- | --- |
-| **Fake packets** | Injects broken ACK packets toward the server with low TTL on every incoming data packet |
-| **Reset injection** | Injects fake RST packets once the incoming byte threshold is reached |
-| **FIN injection** | Injects fake FIN packets once the threshold is reached |
-| **Desync Combo** | Injects an RST+FIN+ACK combo once the threshold is reached |
-
-### Corruption strategy
-
-How the fake packet becomes unprocessable:
-
-| Strategy | Description |
-| --- | --- |
-| **Bad Checksum** | Corrupt the TCP checksum - packets get dropped by the kernel |
-| **Bad Sequence** | Corrupt the sequence number - packets get ignored by the TCP stack |
-| **Bad ACK** | Corrupt the ACK number - packets get ignored by the TCP stack |
-| **Random** | Random method pick per packet |
-| **All** | All corruptions at once: bad seq + bad ack + bad checksum |
-
-### Incoming parameters
-
-| Parameter | Description | Range |
+| Field | What it does | Default |
 | --- | --- | --- |
-| Fake TTL | Low TTL ensures fakes expire before the server | 1-20 |
-| Fake count | Number of fake packets per injection | 1-10 |
-| Min threshold | Minimum amount of incoming data before triggering (KB) | 5-50 |
-| Max threshold | Maximum threshold - randomized between min and max per connection | 5-50 |
+| **Incoming Mode** | **Disabled**. **Fake Packets** sends a broken ACK for every incoming data packet. **Reset Injection**, **FIN Injection** and **Desync Combo** send fake RST, FIN, or RST, FIN and ACK once the incoming data reaches the threshold. | **Disabled** |
+| **Corruption Strategy** | How the fakes are made unusable: **Bad Checksum**, **Bad Sequence**, **Bad ACK**, **Random** for each packet, or **All Corruptions**. | **Bad Checksum** |
+| **Fake TTL** | 1 to 20. | `7` |
+| **Fake Count** | Fake packets per injection, 1 to 10. | `3` |
+| **Threshold Min**, **Threshold Max** | The incoming data, in KB, that triggers an injection. Each connection picks a value between the two. Not used by **Fake Packets**. | `14`, `14` |
 
-:::info Thresholds and Fake mode
-In **Fake packets** mode, thresholds are unused - fakes are sent on every incoming packet. Thresholds only apply to Reset, FIN, and Desync Combo modes.
+## ClientHello Mutation
+
+Changes the real ClientHello, not a fake, so that it does not match known DPI signatures.
+
+:::warning
+Mutation changes the ClientHello that reaches the server. When a site stops opening after mutation is turned on, turning it off is the first check.
 :::
 
----
-
-## ClientHello mutation
-
-Modifies the structure of the **real** TLS ClientHello (not a fake). Randomizes the extension order and adds noise so the ClientHello does not match known DPI signatures.
-
-:::warning Mutation changes the real packet
-Unlike other sections on this tab, mutation modifies the **real** ClientHello that reaches the server. If a site stops working after mutation is turned on, disable it.
-:::
-
-### Mutation mode
-
-| Mode | Description |
-| --- | --- |
-| **GREASE Extensions** | Insert GREASE extensions to deceive the DPI |
-| **Padding** | Add a padding extension up to a target size |
-| **Fake Extensions** | Insert fake/unknown TLS extensions |
-| **Fake SNIs** | Add extra fake SNI entries |
-| **Random** | Randomize extension order and add noise |
-| **Advanced** | Combine several mutation techniques with manual tuning |
-
-### Parameters by mode
-
-**GREASE:**
-
-| Parameter | Description | Range |
+| Field | What it does | Default |
 | --- | --- | --- |
-| GREASE count | How many GREASE extensions to insert | 1-10 |
-
-**Padding:**
-
-| Parameter | Description | Range |
-| --- | --- | --- |
-| Padding size | Target ClientHello size with padding | 256-16384 bytes |
-
-**Fake Extensions:**
-
-| Parameter | Description | Range |
-| --- | --- | --- |
-| Fake Extensions count | How many fake TLS extensions to insert | 1-15 |
-
-**Fake SNIs:**
-
-Adds extra SNI values to the ClientHello. Enter domains (for example, `ya.ru`, `vk.com`) - they are injected into the SNI extension alongside the real domain.
-
-**Advanced** exposes every parameter above for manual combination.
+| **Mutation Mode** | **Disabled**, **Random** (random extension order and noise), **GREASE Extensions**, **Padding**, **Fake Extensions** (unknown TLS extensions), **Fake SNIs** (extra server names) or **Advanced (All)**, which combines them with all their settings. | **Disabled** |
+| **GREASE Extension Count** | 1 to 10. | `3` |
+| **Padding Size** | The size of the ClientHello with padding, 256 to 16384 bytes. | `2048` |
+| **Fake Extension Count** | 1 to 15. | `5` |
+| **Add Fake SNI** | Extra server names put into the ClientHello next to the real one. | `ya.ru`, `vk.com`, `max.ru` |

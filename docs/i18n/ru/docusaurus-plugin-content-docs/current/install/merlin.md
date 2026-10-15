@@ -1,26 +1,22 @@
 ---
 sidebar_position: 3
 title: ASUS Merlin
+description: Установка b4 на роутер ASUS с Asuswrt-Merlin.
 ---
-
-# ASUS Merlin
 
 ## Требования
 
-- Роутер ASUS с прошивкой Asuswrt-Merlin
-- Установленный Entware (обязательно)
-- USB-накопитель (для Entware и b4)
+- Роутер ASUS с прошивкой Asuswrt-Merlin.
+- Entware на USB-накопителе.
 
 ## Установка Entware
 
-Entware - обязательное условие. Если он ещё не установлен:
+1. Подключите USB-накопитель к роутеру.
+2. Подключитесь к роутеру по SSH: `ssh admin@192.168.1.1`.
+3. Запустите `amtm`.
+4. Выберите пункт `ep`, чтобы установить Entware.
 
-1. USB-накопитель подключается к роутеру
-2. SSH-подключение к роутеру: `ssh admin@192.168.1.1`
-3. Запускается `amtm`
-4. Пункт `ep` в `amtm` устанавливает Entware
-
-Подробнее: https://diversion.ch/amtm.html
+Подробности - на [странице amtm](https://diversion.ch/amtm.html).
 
 ## Установка b4
 
@@ -38,7 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh 
 /opt/etc/init.d/S99b4 restart
 ```
 
-Сервис запускается автоматически при загрузке роутера через Entware.
+Entware запускает сервис при загрузке роутера.
 
 ## Пути
 
@@ -50,6 +46,4 @@ curl -fsSL https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh 
 
 ## Без Entware
 
-Если Entware не установлен, b4 устанавливается в `/jffs/b4`. В этом случае автозапуск при загрузке не настраивается - бинарник нужно запускать вручную.
-
-Размер `/jffs` обычно ограничен ~60 МБ, поэтому рекомендуется USB-накопитель с Entware.
+Без Entware b4 устанавливается в `/jffs/b4` и не запускается при загрузке: бинарник приходится запускать вручную. Размер `/jffs` обычно ограничен примерно 60 МБ, поэтому рекомендуется USB-накопитель с Entware.

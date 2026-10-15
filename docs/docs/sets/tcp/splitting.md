@@ -1,204 +1,87 @@
 ---
 sidebar_position: 2
 title: Splitting
+description: The Splitting sub-tab of a set's TCP tab, which decides how b4 splits the first data packet of a connection.
 ---
 
-The primary DPI bypass tool. The idea: break a TCP packet into pieces so the DPI cannot reassemble them and read the contents (in particular, the SNI field in the TLS ClientHello).
+The **Splitting** sub-tab decides how b4 splits the first data packet of a connection, the TLS ClientHello, so that DPI cannot read the server name in it. [Discovery](../../discovery.md) tests the methods against a blocked site, and the method it suggests is the first one to try. Manual changes are for tuning.
 
-![20260418235219](../../../static/img/splitting/20260418235219.png)
+![The Splitting Strategy section with the Combo method](/img/splitting/20260418235219.png)
 
-## Splitting method
+## Splitting Strategy
 
-| Method | Description |
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Method** | The splitting method, see the table below. The settings of the chosen method appear under it. | **Combo** |
+| **Reverse Fragment Order** | Sends the second fragment first. | On |
+| **Strategy Randomization Pool** | Methods that b4 picks from at random for each new connection, so that connections differ. An empty pool uses **Method**. | Empty |
+
+| Method | What it does |
 | --- | --- |
-| **tcp** | Splitting at the TCP segment layer. One packet becomes two TCP segments |
-| **ip** | Splitting at the IP layer. One IP packet is broken into IP fragments |
-| **tls** | One TLS record is broken into several TLS records inside a single TCP packet |
-| **oob** | Out-of-Band - inserts a byte with the TCP URG flag that throws off the DPI |
-| **combo** | Combination of several split points with decoys, shuffling, and fakes between fragments |
-| **hybrid** | Hybrid of combo and disorder - combined methods with reordered packets |
-| **disorder** | Fragments are sent out of order with random delays |
-| **extsplit** | Automatic splitting right before the SNI extension in the TLS ClientHello |
-| **firstbyte** | Send a single byte, pause, then the rest - a timing attack |
-| **none** | No splitting (use when only faking is needed) |
+| **Combo** | Splits at several points, shuffles the segments and adds timing jitter. It can add a decoy and fake packets between the segments. |
+| **Hybrid** | Picks Combo, Disorder, Extension Split or First-Byte Desync for each ClientHello, by the split points it finds in it. It has no settings of its own. |
+| **Disorder** | Sends the real segments out of order with timing jitter, without fake packets unless **Fake Per Segment** is on. |
+| **Extension Split** | Splits the ClientHello just before the SNI extension. It has no settings of its own and uses **Reverse Fragment Order** and **Segment 2 Delay**. |
+| **First-Byte Desync** | Sends one byte, waits, then sends the rest, so that DPI gives up before the server name arrives. The wait is **Segment 2 Delay** on the [General](./general.md) sub-tab, at least 100 ms. |
+| **TCP Segmentation** | Splits the packet into TCP segments. |
+| **IP Fragmentation** | Splits the IP packet into IP fragments. |
+| **TLS Record Splitting** | Splits the ClientHello into several TLS records inside one TCP packet. |
+| **OOB (Out-of-Band)** | Inserts a byte with the TCP URG flag. The server ignores it, while DPI that follows the connection reads it as data. |
+| **Disabled** | No splitting. Only fake packets are used, if they are on. |
 
-:::info How to pick a method
-Use [Discovery](../../discovery) - it tests every method and finds one that works. Manual picking is for cases where discovery failed or you want to tune a specific case.
-:::
+## TCP Segmentation and IP Fragmentation
 
-## Strategy pool
-
-When the pool is enabled, b4 picks a method at random from the pool for every new connection. This makes it harder for DPI to adapt to a specific method - each connection looks different.
-
-:::tip
-Pick a few strategies that work on your provider (via discovery) and include them in the pool. The pool is ignored when empty - in that case the method selected above is used.
-:::
-
-## Reverse order
-
-Sends fragments in reverse order (last fragment first). A DPI that expects data in order cannot reassemble the content.
-
----
-
-## TCP/IP Segmentation
-
-Available for the **tcp** or **ip** method.
-
-### Smart SNI splitting
-
-Automatically finds the SNI field in the TLS ClientHello and splits in the middle of the hostname. Try this first - no manual tuning required.
-
-### Fixed split position
-
-Manual offset of the split point (0-50 bytes from the start of the TLS payload). Use this when smart splitting does not work on your provider. Specified as a **min-max** range - each connection picks a random position from the range.
-
-:::info 3 segments
-When both options (smart SNI + fixed position) are enabled, the packet is split into **3 segments**: at the fixed position and in the middle of the SNI.
-:::
-
----
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Smart SNI Split** | Splits in the middle of the server name. The recommended choice. | On |
+| **Fixed Split Position** | Splits at this many bytes from the start of the TLS payload, 0 to 50, where `0` turns it off. A range makes each connection pick a random position. With **Smart SNI Split** also on, the packet becomes three segments. | `1` |
 
 ## Combo
 
-Combines several split points with decoys and shuffling. The most flexible method.
+![The split points of Combo](/img/splitting/20260418235306.png)
 
-### Decoy
-
-Sends a fake ClientHello with an allowed SNI before the real traffic:
-
-1. Fake packet (low TTL) -> DPI sees and analyzes it, but the packet does not reach the server
-2. Real packet (fragmented) -> passes the DPI and is delivered to the server
-
-### Split points
-
-![20260418235306](../../../static/img/splitting/20260418235306.png)
-
-| Parameter | Description |
-| --- | --- |
-| First Byte | Split after the first byte (timing-based desync) |
-| Extension Split | Split before the SNI extension |
-| SNI Split | Split in the middle of the SNI hostname |
-
-Each enabled split point adds another segment. The interface shows the number of active splits and the resulting number of segments.
-
-:::warning
-At least one split point must be enabled, otherwise combo sends the packet as a single segment.
-:::
-
-### Shuffle mode
-
-| Mode | Description |
-| --- | --- |
-| `middle` | First and last segments keep their position, only the middle ones are shuffled |
-| `full` | All segments are shuffled randomly |
-| `reverse` | Segments are sent in reverse order |
-
-### Timing
-
-![20260418235400](../../../static/img/splitting/20260418235400.png)
-
-| Parameter | Description | Range |
+| Field | What it does | Default |
 | --- | --- | --- |
-| First segment delay | Pause after sending the first segment | 10-500 ms |
-| Max jitter | Random delay between the other segments | 100-10000 us |
+| **First Byte** | Splits after the first byte. | On |
+| **Extension Split** | Splits before the SNI extension. | On |
+| **SNI Split** | Splits in the middle of the server name. | On |
+| **Enable Decoy** | Sends a fake ClientHello with an allowed server name before the real one. The fake has a low TTL, so DPI sees it and the server does not. | Off |
+| **Shuffle Mode** | **Middle Only** keeps the first and last segments in place, **Full Shuffle** reorders all of them, **Reverse Order** sends the last one first. | **Full Shuffle** |
+| **First Segment Delay** | Pause after the first segment, 10 to 500 ms. | `30` |
+| **Jitter Max** | The largest random delay between the other segments, 100 to 10,000 µs. | `1000` |
+| **Fake Per Segment** | Sends fake overlapping packets before every segment, not only the first. **Fakes Per Segment** sets how many, 1 to 11. | Off |
 
-### Fake per segment (multidisorder)
+With every split point off, Combo sends the packet in one piece, and the tab shows a warning.
 
-Sends fake overlapping packets before **every** real segment, not only the first. Fills the DPI reassembler with junk.
-
-| Parameter | Description | Range |
-| --- | --- | --- |
-| Fake per segment | Send fakes between segments | - |
-| Fakes per segment | Number of fake packets before each segment | 1-11 |
-
----
+![The timing settings of Combo](/img/splitting/20260418235400.png)
 
 ## Disorder
 
-Sends real TCP segments out of order with random delays. Unlike combo, disorder does not use fake packets (except in multidisorder) - it relies on the DPI expecting sequential data.
+| Field | What it does | Default |
+| --- | --- | --- |
+| **SNI-Based Splitting** | Splits around the server name. | On |
+| **Shuffle Mode** | **Full Shuffle** or **Reverse Order**. | **Full Shuffle** |
+| **Min Jitter**, **Max Jitter** | The random delay between segments, in µs. Used while **Segment 2 Delay** is 0. **Max Jitter** has to be greater than **Min Jitter**. | `1000`, `3000` |
+| **Fake Per Segment** | As in Combo. | Off |
 
-### Disorder shuffle mode
+## Sequence Overlap (seqovl) {#sequence-overlap}
 
-| Mode | Description |
-| --- | --- |
-| `full` | All segments are shuffled randomly |
-| `reverse` | Segments are sent in reverse order |
+Shown for Combo and Disorder. b4 puts fake bytes in front of a real segment and moves its sequence number back by the same amount. DPI reads the fake bytes as the start of the data, and the server discards them.
 
-### Timing jitter
-
-Random delay between segments. Specified as a **min-max** range (us).
-
-:::info
-Jitter is used when Seg2Delay (inter-packet delay on the [General](./general) tab) is 0. When Seg2Delay is set, it takes priority.
-:::
-
-:::warning
-The maximum jitter must be greater than the minimum.
-:::
-
-### Sequence overlap (seqovl)
-
-Adds fake bytes with a decreased TCP sequence number. The DPI sees a fake protocol header while the server discards the overlap (it already has the correct data).
-
-| Pattern | What the DPI sees |
-| --- | --- |
-| `tls12` | TLS 1.2 header |
-| `tls11` | TLS 1.1 header |
-| `tls10` | TLS 1.0 header |
-| `http_get` | HTTP GET request |
-| `zeros` | Zero bytes |
-| `custom` | Custom hex bytes |
-
-### Multidisorder
-
-Same as in combo - sends fake overlapping packets before each real segment.
-
----
-
-## Extension Split
-
-Automatically splits the TLS ClientHello right before the SNI extension. The DPI sees an incomplete extension list and cannot parse the SNI.
-
-```text
-[TLS Header] [Handshake] [Ciphers] [Ext1] [Ext2] | [SNI: youtube.com] [Ext...]
-                                                   ^ split here
-```
-
-:::info No setup required
-Extension Split works automatically. Use the **Reverse order** toggle and **Inter-packet delay** (Seg2Delay) on the [General](./general) tab for extra tuning.
-:::
-
----
-
-## First-Byte Desync
-
-Timing attack: sends a single byte (`0x16` - the TLS record type), pauses, then sends the rest of the ClientHello. The DPI sees an incomplete TLS record and cannot parse the SNI before its timeout.
-
-```text
-[0x16] ---- pause ---- [rest of the TLS ClientHello...]
-```
-
-:::info No setup required
-The delay is controlled by **Seg2Delay** on the [General](./general) tab. A minimum of 100 ms is applied automatically - if Seg2Delay is lower, b4 uses 100 ms.
-:::
-
----
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Overlap Pattern** | The fake bytes: **None**, **TLS 1.2 Header**, **TLS 1.1 Header**, **TLS 1.0 Header**, **HTTP GET**, **Zeros**, or **Custom** hex bytes. | **None** |
+| **Overlap Length** | How many pattern bytes to add. `0` turns the overlap off. | `0` |
 
 ## OOB (Out-of-Band)
 
-Injects a byte with the TCP URG (urgent) flag into the data stream. The server ignores OOB data (it is handled separately from the main stream), but a stateful DPI gets confused - it sees an extra byte that shifts its parsing.
-
-| Parameter | Description | Range |
+| Field | What it does | Default |
 | --- | --- | --- |
-| Insert position | Number of bytes before the OOB insertion point. Specified as a min-max range | 1-50 |
-| OOB byte | Byte sent via OOB (symbol + hex are shown) | - |
-
----
+| **Insert Position** | How many bytes come before the inserted byte, 1 to 50. A range makes each connection pick a random position. | - |
+| **OOB Byte** | The byte sent out of band. | `x` |
 
 ## TLS Record Splitting
 
-Splits the ClientHello into several TLS records inside a single TCP packet. A DPI that expects a single-record handshake cannot match its signature.
-
-| Parameter | Description | Range |
+| Field | What it does | Default |
 | --- | --- | --- |
-| Split position | Size of the first TLS record in bytes. Specified as a min-max range | 1-100 |
+| **Record Split Position** | The size of the first TLS record in bytes, 1 to 100. A range makes each connection pick a random size. | - |
