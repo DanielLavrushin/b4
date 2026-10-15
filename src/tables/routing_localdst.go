@@ -44,7 +44,7 @@ func routeLocalGuardReject(tool, module, out string) {
 	if msg == "" {
 		msg = "no error text"
 	}
-	log.Warnf("Routing: %s rejected the address-type match (%s), so the sets that must leave traffic addressed to this router alone match its addresses from a list instead; the tables monitor rebuilds those sets when the addresses change. %s",
+	log.Warnf("Routing: %s rejected the address-type match (%s), so the sets that must leave traffic addressed to this router alone match its addresses from a list instead. The list is refreshed whenever those sets are rebuilt and, while the tables monitor runs, when the addresses change. %s",
 		tool, msg, kmodMissingHint([]string{module}))
 }
 

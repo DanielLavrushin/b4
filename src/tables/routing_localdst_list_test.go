@@ -174,4 +174,7 @@ func TestTheAddressListWarningIsNotAboutProxySetsOnly(t *testing.T) {
 	if strings.Contains(got, "proxy set") {
 		t.Errorf("gateway sets use the same list, so the warning must not speak of proxy sets alone:\n%s", got)
 	}
+	if !strings.Contains(got, "while the tables monitor runs") {
+		t.Errorf("with monitor_interval at 0 nothing watches the addresses, so the warning must not promise a rebuild on every address change:\n%s", got)
+	}
 }
