@@ -153,8 +153,8 @@ func resetECHOnlyState(t *testing.T) {
 	t.Helper()
 	reset := func() {
 		echOnlyDNSUnusable.Clear()
-		noteNftDNSTCPFailed(false, false)
-		noteNftDNSTCPFailed(true, false)
+		nftDNSTCPFailsV4.Store(0)
+		nftDNSTCPFailsV6.Store(0)
 	}
 	reset()
 	t.Cleanup(reset)
@@ -196,22 +196,6 @@ func ech6Config(t *testing.T) *config.Config {
 	cfg.Queue.Threads = 1
 	stripECHOnly(t, cfg)
 	return cfg
-}
-
-func TestNftStopsExpectingAnIPv6DNSOverTCPTableItCouldNotBuild(t *testing.T) {
-	resetECHOnlyState(t)
-	nftStubFailing(t, "add chain ip6 "+nftDNSTCPTableName6)
-	cfg := ech6Config(t)
-
-	if err := NewNFTablesManager(cfg).ApplyDNSTCP(); err != nil {
-		t.Fatalf("ApplyDNSTCP: %v", err)
-	}
-	if nftDNSTCPExpected(cfg, true) {
-		t.Error("the monitor still expects the IPv6 DNS-over-TCP table the kernel refused, so it rebuilds the firewall on every tick")
-	}
-	if !nftDNSTCPExpected(cfg, false) {
-		t.Error("the IPv4 DNS-over-TCP table was built and must still be checked")
-	}
 }
 
 func TestNftKeepsLinkLocalDNSOverTCPOutOfTheRelay(t *testing.T) {

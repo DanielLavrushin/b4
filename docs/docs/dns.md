@@ -192,7 +192,7 @@ A site behind a CDN that supports Encrypted ClientHello (ECH) publishes an ECH k
 - Only the `ech` parameter goes, together with its entry in `mandatory`, and `mandatory` itself when nothing is left in it. The ALPN list, the address hints and the TTL stay as they were.
 - The RRSIG records over the changed records are dropped and the AD flag is cleared, since the changed records no longer match their signatures.
 - It acts on forwarded answers, on answers from the set's own resolver and on DNS over TCP: TCP port 53 is intercepted while an enabled set has the switch on.
-- With **Enable IPv6 Support** off, in NFQUEUE mode, answers that travel over IPv6, by UDP or TCP, still reach b4 while an enabled set has the switch on, and lose nothing but their key: no pin, redirect, block, address learning or other rewrite applies to them. b4 cannot tell which device such an answer goes to, so a set limited to or excluding devices leaves it alone. The TUN engine carries no IPv6, and there such answers keep their key.
+- With **Enable IPv6 Support** off, in NFQUEUE mode, answers that travel over IPv6, by UDP or TCP, still reach b4 while an enabled set has the switch on, and lose nothing but their key: no pin, redirect, block, address learning or other rewrite applies to them. Unless such an answer goes to a [device added by hand](./settings/core#manual-devices) by its IPv6 address, b4 cannot tell which device it goes to, so only sets without source devices are matched against it. The TUN engine carries no IPv6, and there such answers keep their key.
 - With [copied requests](#copied-requests), the replies that pass unchanged keep the key:
   - the replies to requests sent from UDP port 53
   - a reply held for twice the query timeout plus 2 seconds

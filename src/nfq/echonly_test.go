@@ -216,6 +216,57 @@ func TestDNSOverTCPFromIPv6LeavesKeysToASetWithADeviceList(t *testing.T) {
 	}
 }
 
+func TestAnIPv6AnswerToAnUnknownDeviceFollowsTheSetWithoutADeviceList(t *testing.T) {
+	for _, listed := range []string{"steamdb.info", "www.steamdb.info"} {
+		for _, exclude := range []bool{true, false} {
+			for _, generic := range []bool{true, false} {
+				devices := deviceListSet("steamdb-tv", exclude, listed)
+				devices.DNS.StripECH = !generic
+				w := ipv6OffWorker(t, devices, echTestSet("steamdb", generic, "steamdb.info"))
+				q := newFakeModQueue()
+
+				w.dispatch(&verdictCtx{id: 1, q: q}, v6Answer(httpsAnswerWithECH("www.steamdb.info", dnsTypeHTTPS, "cloudflare-ech.com")))
+
+				v := q.now(t)
+				if stripped := v.packet != nil && dns.ParseResponseECH(v.packet[48:]) == nil; stripped != generic {
+					t.Errorf("device list set on %s, exclude=%v, the set without a device list removes keys=%v: key removed=%v, want that set to decide for a device b4 cannot identify", listed, exclude, generic, stripped)
+				}
+			}
+		}
+	}
+}
+
+func TestAnIPv6AnswerToAnUnknownDeviceLosesTheKeyACoverSetWithoutADeviceListRemoves(t *testing.T) {
+	w := ipv6OffWorker(t, deviceListSet("cloudflare-ech-tv", true, "cloudflare-ech.com"), echTestSet("cloudflare-ech", true, "cloudflare-ech.com"))
+	q := newFakeModQueue()
+
+	w.dispatch(&verdictCtx{id: 1, q: q}, v6Answer(httpsAnswerWithECH("steamdb.info", dnsTypeHTTPS, "cloudflare-ech.com")))
+
+	v := q.now(t)
+	if v.packet == nil || dns.ParseResponseECH(v.packet[48:]) != nil {
+		t.Fatal("the key names a set without a device list, but a set with one listed first took the match and the IPv6 answer kept its key")
+	}
+}
+
+func TestDNSOverTCPFromIPv6FollowsTheSetWithoutADeviceList(t *testing.T) {
+	for _, listed := range []string{"steamdb.info", "www.steamdb.info"} {
+		t.Run(listed, func(t *testing.T) {
+			devices := deviceListSet("steamdb-tv", true, listed)
+			devices.DNS.StripECH = false
+			cfg := config.NewConfig()
+			cfg.Queue.IPv6Enabled = false
+			cfg.Sets = []*config.SetConfig{devices, echTestSet("steamdb", true, "steamdb.info")}
+			w := newTestWorker(t, &cfg)
+			tcpECHUpstream(t)
+
+			answers := tcpQueriesFrom(t, w, net.ParseIP("2001:db8:15::116"), dns.BuildQuery("www.steamdb.info", 2, dnsTypeHTTPS))
+			if names := dns.ResponseECHPublicNames(answers[0]); len(names) != 0 {
+				t.Fatalf("keys %v: an exclude list on %s took the name from the set without a device list that removes keys", names, listed)
+			}
+		})
+	}
+}
+
 func TestADNSTCPListenerWithoutItsIPv6SocketIsNotRestartedOnEverySave(t *testing.T) {
 	recordDNSTCPReady(t)
 	held, err := net.Listen("tcp6", "[::]:0")

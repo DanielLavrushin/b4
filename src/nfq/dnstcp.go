@@ -265,16 +265,13 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		}
 		domain = strings.ToLower(domain)
 
-		matched, set := s.worker.getMatcher().MatchSNIWithSource(domain, srcMac)
 		if !cfg.IPFamilyEnabled(v6) {
-			if !matched {
-				set = nil
-			}
-			if relay(cfg, set, domain, query) {
+			if relay(cfg, s.worker.echMatchSet(domain, srcMac, srcMac == ""), domain, query) {
 				continue
 			}
 			return
 		}
+		matched, set := s.worker.getMatcher().MatchSNIWithSource(domain, srcMac)
 		if !matched {
 			log.Tracef("DNS TCP: %s matched no set (src %s), forwarding unchanged", dns.SafeName(domain), srcMac)
 			if relay(cfg, nil, domain, query) {

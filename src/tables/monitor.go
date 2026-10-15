@@ -516,6 +516,9 @@ func (m *Monitor) ensureRulesLocked(requested bool) (*config.Config, bool) {
 	cfg := m.cfgPtr.Load()
 	if m.checkRules(cfg) {
 		m.pendingApply = nil
+		if !m.tun && m.firewallBackend() == backendNFTables {
+			NewNFTablesManager(cfg).retryFailedDNSTCP()
+		}
 		return cfg, false
 	}
 	if applied := rulesAppliedCfg; applied != nil && applied != cfg && (m.pendingApply != cfg || activeSteering != nil) && config.FirewallRefreshNeeded(applied, cfg) && m.checkRules(applied) {

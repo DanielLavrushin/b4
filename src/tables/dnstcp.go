@@ -17,29 +17,28 @@ const dnsTCPChainName = "B4_DNSTCP"
 
 const nftDstnatPriority = -100
 
+const nftDNSTCPFailStreak = 3
+
 var (
 	dnsTCPListenerReadyV4 atomic.Bool
 	dnsTCPListenerReadyV6 atomic.Bool
-	nftDNSTCPFailedV4     atomic.Bool
-	nftDNSTCPFailedV6     atomic.Bool
+	nftDNSTCPFailsV4      atomic.Int32
+	nftDNSTCPFailsV6      atomic.Int32
 )
 
-func noteNftDNSTCPFailed(v6, failed bool) {
+func nftDNSTCPFails(v6 bool) *atomic.Int32 {
 	if v6 {
-		nftDNSTCPFailedV6.Store(failed)
-		return
+		return &nftDNSTCPFailsV6
 	}
-	nftDNSTCPFailedV4.Store(failed)
+	return &nftDNSTCPFailsV4
+}
+
+func nftDNSTCPWanted(cfg *config.Config, v6 bool) bool {
+	return dnsTCPEnabledFamily(cfg, v6) && cfg.QueuesIPFamily(v6)
 }
 
 func nftDNSTCPExpected(cfg *config.Config, v6 bool) bool {
-	if !dnsTCPEnabledFamily(cfg, v6) || !cfg.QueuesIPFamily(v6) {
-		return false
-	}
-	if v6 {
-		return !nftDNSTCPFailedV6.Load()
-	}
-	return !nftDNSTCPFailedV4.Load()
+	return nftDNSTCPWanted(cfg, v6) && nftDNSTCPFails(v6).Load() == 0
 }
 
 func SetDNSTCPListenerReady(v4, v6 bool) {
@@ -263,16 +262,16 @@ func (n *NFTablesManager) ApplyDNSTCP() error {
 
 	applied := make([]string, 0, 2)
 	for _, v6 := range []bool{false, true} {
-		if !dnsTCPEnabledFamily(n.cfg, v6) || !n.cfg.QueuesIPFamily(v6) {
+		if !nftDNSTCPWanted(n.cfg, v6) {
+			nftDNSTCPFails(v6).Store(0)
 			continue
 		}
-		if err := n.applyDNSTCPFamily(v6); err != nil {
-			n.clearDNSTCPFamily(v6)
-			noteNftDNSTCPFailed(v6, true)
+		if err := n.buildDNSTCPFamily(v6); err != nil {
+			nftDNSTCPFails(v6).Store(1)
 			log.Warnf("NFTABLES: %v, DNS over TCP stays with the upstream resolver for this family", err)
 			continue
 		}
-		noteNftDNSTCPFailed(v6, false)
+		nftDNSTCPFails(v6).Store(0)
 		family, _ := nftDNSTCPTable(v6)
 		applied = append(applied, family)
 	}
@@ -281,6 +280,34 @@ func (n *NFTablesManager) ApplyDNSTCP() error {
 		log.Infof("NFTABLES: DNS over TCP redirected to b4 on port %d (%s)", n.cfg.DNSTCPListenPort(), strings.Join(applied, ", "))
 	}
 	return nil
+}
+
+func (n *NFTablesManager) buildDNSTCPFamily(v6 bool) error {
+	if err := n.applyDNSTCPFamily(v6); err != nil {
+		n.clearDNSTCPFamily(v6)
+		return err
+	}
+	return nil
+}
+
+func (n *NFTablesManager) retryFailedDNSTCP() {
+	for _, v6 := range []bool{false, true} {
+		fails := nftDNSTCPFails(v6)
+		if failed := fails.Load(); failed == 0 || failed >= nftDNSTCPFailStreak || !nftDNSTCPWanted(n.cfg, v6) {
+			continue
+		}
+		if err := n.buildDNSTCPFamily(v6); err != nil {
+			if fails.Add(1) < nftDNSTCPFailStreak {
+				log.Tracef("NFTABLES: %v, the tables monitor tries again", err)
+			} else {
+				log.Warnf("NFTABLES: %v, DNS over TCP stays with the upstream resolver for this family until b4 rebuilds its rules", err)
+			}
+			continue
+		}
+		fails.Store(0)
+		family, _ := nftDNSTCPTable(v6)
+		log.Infof("NFTABLES: DNS over TCP redirected to b4 on port %d (%s)", n.cfg.DNSTCPListenPort(), family)
+	}
 }
 
 func (n *NFTablesManager) clearDNSTCPFamily(v6 bool) {

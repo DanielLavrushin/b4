@@ -633,6 +633,64 @@ func (s *SuffixSet) MatchSNIWithSourceTLS(host string, srcMAC string, tlsVersion
 	return false, nil
 }
 
+func (s *SuffixSet) MatchSNIForUnknownDevice(host string) (bool, *config.SetConfig) {
+	if s == nil || (len(s.sets) == 0 && len(s.regexes) == 0) || host == "" {
+		return false, nil
+	}
+
+	lower := strings.ToLower(host)
+
+	for name := lower; ; {
+		if listed, set := s.unknownDeviceSetAt(name); listed {
+			if set != nil {
+				return true, set
+			}
+			break
+		}
+		idx := strings.IndexByte(name, '.')
+		if idx == -1 {
+			break
+		}
+		name = name[idx+1:]
+	}
+
+	for _, rws := range s.regexes {
+		if len(rws.set.Targets.SourceDevices) == 0 && acceptsAnyVersion(rws.set) && rws.regex.MatchString(lower) {
+			return true, rws.set
+		}
+	}
+	return false, nil
+}
+
+func (s *SuffixSet) unknownDeviceSetAt(name string) (bool, *config.SetConfig) {
+	var only [1]*config.SetConfig
+	sets, ok := s.multiSets[name]
+	if !ok {
+		set, listed := s.sets[name]
+		if !listed {
+			return false, nil
+		}
+		only[0] = set
+		sets = only[:]
+	}
+
+	listed := false
+	for _, set := range sets {
+		if len(set.Targets.SourceDevices) > 0 {
+			continue
+		}
+		listed = true
+		if acceptsAnyVersion(set) {
+			return true, set
+		}
+	}
+	return listed, nil
+}
+
+func acceptsAnyVersion(set *config.SetConfig) bool {
+	return set.MatchesTLSVersion(0) && set.MatchesIPVersion(0)
+}
+
 func (s *SuffixSet) matchDomainWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {
 	single, candidates := s.findDomainCandidates(host)
 
