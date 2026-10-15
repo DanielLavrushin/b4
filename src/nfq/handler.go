@@ -355,7 +355,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	matchedConn := false
-	if connSet != nil && connSet != set && (!matched || ((matchedHint || matchedLearned) && !addressMatched && fragmentsOrDesyncs(connSet))) {
+	takeOver := connSet != nil && (matchedHint || matchedLearned) && set != nil && set.Id != connSet.Id && !addressMatched &&
+		fragmentsOrDesyncs(connSet) && (needsPayloadlessInjection(connSet) || !needsPayloadlessInjection(set))
+	if connSet != nil && (!matched || takeOver) {
 		matched = true
 		set = connSet
 		st = nil
@@ -551,7 +553,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			clearMatch()
 		}
 
-		if (matchedLearned || matchedConn) && !matchedSNI && !(len(payload) >= 1 && payload[0] == 0x16) {
+		if (matchedLearned || (matchedConn && !takeOver)) && !matchedSNI && !(len(payload) >= 1 && payload[0] == 0x16) {
 			if set != nil && !fragmentsOrDesyncs(set) {
 				clearMatch()
 			}

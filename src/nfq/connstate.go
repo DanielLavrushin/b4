@@ -118,7 +118,7 @@ func (c *tlsInfoCache) ForgetDecisions(current *sni.SuffixSet) {
 
 func (c *tlsInfoCache) DropOtherConnection(connKey string, firstSeq uint32) {
 	sameConnection := func(info *tlsInfo) bool {
-		return info.helloSeq-firstSeq < 1<<16
+		return info.helloSeq-firstSeq <= maxPendingHelloRecord
 	}
 
 	c.mu.RLock()

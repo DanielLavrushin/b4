@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
@@ -334,38 +335,124 @@ func TestAHintedOrLearnedSetKeepsItsWorkOnBareACKs(t *testing.T) {
 		set.TCP.DropSACK = true
 		return set
 	}
-	newImages := func() config.SetConfig {
+	newImages := func(fragment bool) config.SetConfig {
+		if fragment {
+			return newFragmentingYTImagesSet()
+		}
 		set := newPassiveSet()
 		set.TCP.HTTPMethodEOL = true
 		return set
 	}
 
-	for _, learned := range []bool{false, true} {
-		name := "dns hint"
-		if learned {
-			name = "learned address"
-		}
-		t.Run(name, func(t *testing.T) {
-			images := newImages()
-			video := newVideo()
-			w := newInjectingWorker(t, &images, &video)
+	for _, fragment := range []bool{false, true} {
+		for _, learned := range []bool{false, true} {
+			name := "dns hint"
 			if learned {
-				w.ProcessPacket(makeV4TCPPacketFromPort(buildClientHello("www.youtube.com", 16, 0xAB), 500, 1111, 0x18))
-			} else {
-				w.storeHostHint("10.0.0.1", "1.2.3.4", &video, "www.youtube.com", "dns")
+				name = "learned address"
 			}
+			if fragment {
+				name += ", fragmenting domain set"
+			}
+			t.Run(name, func(t *testing.T) {
+				images := newImages(fragment)
+				video := newVideo()
+				w := newInjectingWorker(t, &images, &video)
+				if learned {
+					w.ProcessPacket(makeV4TCPPacketFromPort(buildClientHello("www.youtube.com", 16, 0xAB), 500, 1111, 0x18))
+				} else {
+					w.storeHostHint("10.0.0.1", "1.2.3.4", &video, "www.youtube.com", "dns")
+				}
 
-			hello := buildClientHello("i.ytimg.com", 16, 0xAB)
-			w.ProcessPacket(makeV4TCPPacket(hello, 1000))
-			next := 1000 + uint32(len(hello))
-			w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), next))
-			if v := w.ProcessPacket(makeV4TCPPacketFlags(nil, next+69, 0x10)); v != engine.VerdictDrop {
-				t.Errorf("the other set still strips SACK from a bare ACK, got %v", v)
-			}
-			if bound := w.connTracker.GetSetForIncoming("10.0.0.1", 12345, "1.2.3.4", 443); bound == nil || bound.Id != video.Id {
-				t.Errorf("the other set keeps the connection's incoming handling, got %v", bound)
-			}
-		})
+				hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+				w.ProcessPacket(makeV4TCPPacket(hello, 1000))
+				next := 1000 + uint32(len(hello))
+				w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), next))
+				if bound := w.connTracker.GetSetForIncoming("10.0.0.1", 12345, "1.2.3.4", 443); bound == nil || bound.Id != video.Id {
+					t.Errorf("after a data packet the other set keeps the connection's incoming handling, got %v", bound)
+				}
+				if v := w.ProcessPacket(makeV4TCPPacketFlags(nil, next+69, 0x10)); v != engine.VerdictDrop {
+					t.Errorf("the other set still strips SACK from a bare ACK, got %v", v)
+				}
+				if bound := w.connTracker.GetSetForIncoming("10.0.0.1", 12345, "1.2.3.4", 443); bound == nil || bound.Id != video.Id {
+					t.Errorf("after a bare ACK the other set keeps the connection's incoming handling, got %v", bound)
+				}
+			})
+		}
+	}
+}
+
+func TestAConnectionEscalatedToASetWithoutFragmentationKeepsItsWork(t *testing.T) {
+	images := newFragmentingYTImagesSet()
+	video := newPassiveSet()
+	video.Id = "yt-video"
+	video.Name = "YT video"
+	video.Targets.DomainOnly = false
+	video.Targets.DomainsToMatch = []string{"youtube.com"}
+	escalated := newPassiveSet()
+	escalated.Id = "escalated"
+	escalated.Name = "Escalated"
+	escalated.Targets.DomainOnly = false
+	escalated.Targets.DomainsToMatch = []string{"escalated.example"}
+	escalated.TCP.DropSACK = true
+	w := newInjectingWorker(t, &images, &video, &escalated)
+	w.storeHostHint("10.0.0.1", "1.2.3.4", &video, "www.youtube.com", "dns")
+	w.destState.SetEscalation("i.ytimg.com", escalated.Id, "test", time.Minute)
+
+	hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+	w.ProcessPacket(makeV4TCPPacket(hello, 1000))
+	if v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello)))); v != engine.VerdictDrop {
+		t.Errorf("later data of an escalated connection is handled by the set it escalated to, as before, got %v", v)
+	}
+}
+
+func TestAHintForTheConnectionsOwnSetKeepsItsRowAfterAReload(t *testing.T) {
+	set := newFragmentingYTImagesSet()
+	set.Targets.DomainOnly = false
+	cfg := config.NewConfig()
+	cfg.Sets = []*config.SetConfig{&set}
+	w := newTestWorker(t, &cfg)
+	w.sock = &sock.Sender{}
+	t.Cleanup(w.wg.Wait)
+	pool := &Pool{Workers: []*Worker{w}, state: &runtimeState{tlsCache: w.tlsCache}}
+	if err := pool.UpdateConfig(cfg.Clone()); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := w.getConfig().GetSetById(set.Id)
+	w.storeHostHint("10.0.0.1", "1.2.3.4", reloaded, "i.ytimg.com", "dns")
+
+	ch, _ := log.GetConnectionHub().Subscribe()
+	defer log.GetConnectionHub().Unsubscribe(ch)
+
+	hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+	w.ProcessPacket(makeV4TCPPacket(hello, 1000))
+	loggedSet(t, ch)
+	w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello))))
+	f := nextConnectionLine(t, ch)
+	if len(f) < 10 || f[5] != set.Name || f[9] != "dns-hint" {
+		t.Errorf("a hint for the connection's own set keeps the hinted row after a reload that leaves the sets alone, got %v", f)
+	}
+}
+
+func TestOnlyASynFromTheSameConnectionKeepsTheName(t *testing.T) {
+	c := &tlsInfoCache{conns: make(map[string]*tlsInfo)}
+	const key = "10.0.0.1:12345->1.2.3.4:443"
+	cases := []struct {
+		helloSeq, firstSeq uint32
+		keep               bool
+	}{
+		{1001, 1001, true},
+		{1001 + maxPendingHelloRecord, 1001, true},
+		{1001 + maxPendingHelloRecord + 1, 1001, false},
+		{1001, 1002, false},
+		{0x10, 0xFFFFFFF0, true},
+		{1001, 1001 + 1<<31, false},
+	}
+	for _, tc := range cases {
+		c.Store(key, "i.ytimg.com", 0x0304, tc.helloSeq)
+		c.DropOtherConnection(key, tc.firstSeq)
+		if _, _, found := c.Lookup(key); found != tc.keep {
+			t.Errorf("hello at %d, SYN for %d: keep=%v, want %v", tc.helloSeq, tc.firstSeq, found, tc.keep)
+		}
 	}
 }
 
