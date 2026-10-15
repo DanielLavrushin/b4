@@ -174,6 +174,24 @@ func (b *routeIptBackend) dropChainRules(snap routeChainSnapshot) {
 	}
 }
 
+func (b *routeIptBackend) revertChainRules(snap routeChainSnapshot) {
+	table := iptTable(snap.isMangle)
+	for cmd, n := range snap.counts {
+		if n == 0 {
+			runLogged("routing: clear failed install "+snap.chain, cmd, "-w", "-t", table, "-F", snap.chain)
+			continue
+		}
+		extra := iptChainRuleCount(cmd, table, snap.chain) - n
+		for i := 0; i < extra; i++ {
+			if _, err := run(cmd, "-w", "-t", table, "-D", snap.chain, strconv.Itoa(n+1)); err != nil {
+				log.Warnf("routing: %s -t %s -D %s %d failed with %d of %d rules of a failed install left, so b4 stopped rather than cut a rule it never read: %v",
+					cmd, table, snap.chain, n+1, extra-i, extra, err)
+				break
+			}
+		}
+	}
+}
+
 func iptChainRuleCount(cmd, table, chain string) int {
 	out, err := run(cmd, "-w", "-t", table, "-L", chain, "-n", "--line-numbers")
 	if err != nil {

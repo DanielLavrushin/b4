@@ -304,6 +304,24 @@ func (b *routeNftBackend) dropChainRules(snap routeChainSnapshot) {
 	}
 }
 
+func (b *routeNftBackend) revertChainRules(snap routeChainSnapshot) {
+	if len(snap.handles) == 0 {
+		runLogged("routing: clear failed install "+snap.chain, "nft", "flush", "chain", "inet", routeNftTable, snap.chain)
+		return
+	}
+	kept := make(map[string]bool, len(snap.handles))
+	for _, handle := range snap.handles {
+		kept[handle] = true
+	}
+	for _, handle := range b.snapshotChainRules(snap.chain, snap.isMangle).handles {
+		if kept[handle] {
+			continue
+		}
+		runLogged("routing: drop rule of failed install "+snap.chain,
+			"nft", "delete", "rule", "inet", routeNftTable, snap.chain, "handle", handle)
+	}
+}
+
 func (b *routeNftBackend) deleteChain(chain string, _ bool) {
 	runLogged("routing: delete chain "+chain, "nft", "delete", "chain", "inet", routeNftTable, chain)
 }

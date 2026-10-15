@@ -89,6 +89,7 @@ type routeBackend interface {
 	deleteChain(chain string, isMangle bool)
 	snapshotChainRules(chain string, isMangle bool) routeChainSnapshot
 	dropChainRules(snap routeChainSnapshot)
+	revertChainRules(snap routeChainSnapshot)
 	addBypassRule(chain string, mark uint32)
 	addClaimedBypassRule(chain string, own uint32)
 	addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool
@@ -230,6 +231,10 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 		routeNoteInstalled(set.Id)
 		failed := routeAddIPsToSets(be, cur, routeSetTTL(set), ips, cur.ipv4, cur.ipv6)
 		routeAsyncStampExcept(set, ips, failed)
+		return
+	}
+	if routeInstallFailedRecently(set.Id) {
+		log.Tracef("Routing: set '%s' failed to install less than %v ago, so this answer does not try again", set.Name, routeInstallFailureMemo)
 		return
 	}
 	routeResolveGateways(cfg, set, &cur, newRouteGatewayProbe())
@@ -1673,12 +1678,15 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		be.snapshotChainRules(st.chainSNAT, false),
 	}
 	rebuilt := false
+	appended := false
 	defer func() {
-		if !rebuilt {
-			return
-		}
 		for _, snap := range superseded {
-			be.dropChainRules(snap)
+			switch {
+			case rebuilt:
+				be.dropChainRules(snap)
+			case appended:
+				be.revertChainRules(snap)
+			}
 		}
 	}()
 
@@ -1693,6 +1701,7 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		}
 	}
 
+	appended = true
 	gate := routeSetDeviceGate(cfg, set)
 	routeWarnDeviceGate(set.Name, gate)
 	routeSelfDialBypass(be, cfg, st.chainPre)
