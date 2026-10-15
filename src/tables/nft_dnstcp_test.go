@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -111,6 +113,225 @@ func TestTheIPv6DNSTCPTableIsNotTakenForTheIPv4One(t *testing.T) {
 	for _, line := range strings.Split(string(calls), "\n") {
 		if strings.Contains(line, "table ip "+nftDNSTCPTableName) {
 			t.Errorf("clearing the IPv4 family touched a table that does not exist: nft %s", line)
+		}
+	}
+}
+
+const statefulDNSTCPNftScript = `#!/bin/sh
+d="$(dirname "$0")"
+printf '%s\n' "$*" >> "$d/calls"
+case "$*" in
+"list tables")
+	echo "table inet @MANGLE@"
+	if [ -f "$d/ip" ]; then echo "table ip @NAT4@"; fi
+	if [ -f "$d/ip6" ]; then echo "table ip6 @NAT6@"; fi
+	;;
+"list chain inet @MANGLE@ "*) cat "$d/mangle" ;;
+"list chain ip @NAT4@ "*|"list chain ip6 @NAT6@ "*)
+	if [ ! -f "$d/$3" ]; then echo "Error: No such file or directory" >&2; exit 1; fi
+	cat "$d/nat"
+	;;
+"add table ip @NAT4@"|"add table ip6 @NAT6@") touch "$d/$3" ;;
+"delete table ip @NAT4@"|"delete table ip6 @NAT6@") rm -f "$d/$3" ;;
+"add chain ip @NAT4@ "*|"add chain ip6 @NAT6@ "*)
+	left=0
+	if [ -f "$d/refuse.$3" ]; then left=$(cat "$d/refuse.$3"); fi
+	if [ "$left" -gt 0 ]; then
+		echo $((left - 1)) > "$d/refuse.$3"
+		echo "Error: Could not process rule: No such file or directory" >&2
+		exit 1
+	fi
+	;;
+esac
+exit 0
+`
+
+type dnsTCPMonitorRig struct {
+	dir    string
+	cfg    *config.Config
+	m      *Monitor
+	builds int
+}
+
+func newDNSTCPMonitorRig(t *testing.T) *dnsTCPMonitorRig {
+	t.Helper()
+	resetECHOnlyState(t)
+	cfg := ech6Config(t)
+	r := &dnsTCPMonitorRig{dir: t.TempDir(), cfg: cfg}
+
+	markRule := fmt.Sprintf("meta mark & 0x%08x == 0x%08x", cfg.MainInjectedMark(), cfg.MainInjectedMark())
+	answers := fmt.Sprintf("udp sport 53 counter queue flags bypass to %d", cfg.Queue.StartNum)
+	r.write(t, "nft", strings.NewReplacer("@MANGLE@", nftTableName, "@NAT4@", nftDNSTCPTableName, "@NAT6@", nftDNSTCPTableName6).Replace(statefulDNSTCPNftScript), 0o755)
+	r.write(t, "mangle", fmt.Sprintf("table inet %s {\n\tchain any {\n\t\tjump %s\n\t\tmeta nfproto ipv4 %s\n\t\tmeta nfproto ipv6 %s\n\t\tudp dport 53 counter queue flags bypass to %d\n\t\ttcp sport 443 counter queue flags bypass to %d\n\t\t%s accept\n\t}\n}\n",
+		nftTableName, nftChainName, answers, answers, cfg.Queue.StartNum, cfg.Queue.StartNum, markRule), 0o644)
+	r.write(t, "nat", fmt.Sprintf("table any any {\n\tchain any {\n\t\t%s return\n\t\t%s\n\t}\n}\n",
+		markRule, strings.Join(nftDNSTCPRedirectRule(cfg.DNSTCPListenPort()), " ")), 0o644)
+	t.Setenv("PATH", r.dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	sys := t.TempDir()
+	for _, module := range append(append([]string{}, kernelModuleList...), "xt_hashlimit") {
+		if err := os.MkdirAll(filepath.Join(sys, kmodCanonical(module)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	origRun, origAdd, origClear, origSys := run, addRulesFn, clearRulesFn, kmodSysRoot
+	run = func(...string) (string, error) { return "", nil }
+	kmodSysRoot = sys
+	addRulesFn = func(c *config.Config) error {
+		r.builds++
+		return NewNFTablesManager(c).ApplyDNSTCP()
+	}
+	clearRulesFn = func(*config.Config) error { return nil }
+	rulesMu.Lock()
+	origApplied, origBackend := rulesAppliedCfg, rulesAppliedBackend
+	rulesAppliedCfg, rulesAppliedBackend = cfg, backendNFTables
+	rulesMu.Unlock()
+	t.Cleanup(func() {
+		run, addRulesFn, clearRulesFn, kmodSysRoot = origRun, origAdd, origClear, origSys
+		rulesMu.Lock()
+		rulesAppliedCfg, rulesAppliedBackend = origApplied, origBackend
+		rulesMu.Unlock()
+	})
+
+	var current atomic.Pointer[config.Config]
+	current.Store(cfg)
+	r.m = &Monitor{cfgPtr: &current, backend: backendNFTables}
+	return r
+}
+
+func (r *dnsTCPMonitorRig) write(t *testing.T, name, body string, mode os.FileMode) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(r.dir, name), []byte(body), mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (r *dnsTCPMonitorRig) refuse(t *testing.T, family string, times int) {
+	t.Helper()
+	r.write(t, "refuse."+family, strconv.Itoa(times), 0o644)
+}
+
+func (r *dnsTCPMonitorRig) apply() {
+	rulesMu.Lock()
+	defer rulesMu.Unlock()
+	_ = addRulesFn(r.cfg)
+}
+
+func (r *dnsTCPMonitorRig) tick() bool {
+	rulesMu.Lock()
+	defer rulesMu.Unlock()
+	_, restored := r.m.ensureRulesLocked(false)
+	return restored
+}
+
+func (r *dnsTCPMonitorRig) has(family string) bool {
+	_, err := os.Stat(filepath.Join(r.dir, family))
+	return err == nil
+}
+
+func (r *dnsTCPMonitorRig) tries(t *testing.T, v6 bool) int {
+	t.Helper()
+	family, table := nftDNSTCPTable(v6)
+	return strings.Count(readLog(t, filepath.Join(r.dir, "calls")), "add chain "+family+" "+table+" "+nftDNSTCPPreChain+" ")
+}
+
+func TestTheNftMonitorRetriesOnlyTheDNSOverTCPFamilyTheKernelRefuses(t *testing.T) {
+	r := newDNSTCPMonitorRig(t)
+	r.refuse(t, "ip6", 1000)
+	r.apply()
+
+	for i := 1; i <= 2*nftDNSTCPFailStreak; i++ {
+		if r.tick() {
+			t.Fatalf("tick %d rebuilt the whole firewall for the IPv6 DNS-over-TCP table nft refuses", i)
+		}
+	}
+	if got := r.tries(t, true); got != nftDNSTCPFailStreak {
+		t.Errorf("the IPv6 DNS-over-TCP table was tried %d times, want %d: once by the apply, then by the monitor until %d failures in a row", got, nftDNSTCPFailStreak, nftDNSTCPFailStreak)
+	}
+	if r.builds != 1 || r.tries(t, false) != 1 || !r.has("ip") {
+		t.Errorf("%d full builds, %d IPv4 builds, IPv4 table present %v: the IPv4 DNS-over-TCP table was built once and must be left alone", r.builds, r.tries(t, false), r.has("ip"))
+	}
+}
+
+func TestTheNftMonitorRebuildsADNSOverTCPFamilyAfterAPassingFailure(t *testing.T) {
+	r := newDNSTCPMonitorRig(t)
+	r.refuse(t, "ip", 1)
+	r.apply()
+	if r.has("ip") {
+		t.Fatal("the stub was meant to refuse the first IPv4 build")
+	}
+
+	if r.tick() {
+		t.Fatal("one failed DNS-over-TCP build made the monitor rebuild the whole firewall")
+	}
+	if !r.has("ip") {
+		t.Fatal("the monitor left the IPv4 DNS-over-TCP table out after nft worked again, so one passing error keeps DNS over TCP with the upstream resolver until b4 restarts")
+	}
+	if r.tick() {
+		t.Error("the rebuilt IPv4 DNS-over-TCP table did not satisfy the next check")
+	}
+}
+
+func TestAnApplyGivesTheNftMonitorItsDNSOverTCPRetriesBack(t *testing.T) {
+	r := newDNSTCPMonitorRig(t)
+	r.refuse(t, "ip", nftDNSTCPFailStreak)
+	r.apply()
+	for i := 0; i < nftDNSTCPFailStreak; i++ {
+		r.tick()
+	}
+	if r.has("ip") {
+		t.Fatal("the stub was meant to refuse every IPv4 build until the monitor gave up")
+	}
+
+	r.refuse(t, "ip", 1)
+	r.apply()
+	r.tick()
+	if !r.has("ip") {
+		t.Error("an apply after the monitor gave up must give it its retries back, or one later passing error lasts until b4 restarts")
+	}
+}
+
+func TestADNSOverTCPFamilyAnApplyLeftOutIsBuiltOnceItsListenerIsUp(t *testing.T) {
+	r := newDNSTCPMonitorRig(t)
+	r.refuse(t, "ip", 1000)
+	r.apply()
+	for i := 0; i < nftDNSTCPFailStreak; i++ {
+		r.tick()
+	}
+
+	SetDNSTCPListenerReady(false, false)
+	r.apply()
+	r.refuse(t, "ip", 0)
+	SetDNSTCPListenerReady(true, true)
+	r.tick()
+	if !r.has("ip") {
+		t.Error("the listener came back without an apply, and the failures from before the apply that left the family out kept its table missing")
+	}
+}
+
+func TestTheNftMonitorWantsTheDNSAnswerRuleOfEachFamilyWhileOneOnlyLosesECHKeys(t *testing.T) {
+	for _, ipv6Support := range []bool{false, true} {
+		for _, gone := range []string{"ipv4", "ipv6"} {
+			t.Run(fmt.Sprintf("ipv6 support %v, %s answer rule gone", ipv6Support, gone), func(t *testing.T) {
+				r := newDNSTCPMonitorRig(t)
+				r.cfg.Queue.IPv4Enabled = !ipv6Support
+				r.cfg.Queue.IPv6Enabled = ipv6Support
+				r.apply()
+				if r.tick() {
+					t.Fatal("the full listing must satisfy the monitor")
+				}
+
+				var kept []string
+				for _, line := range strings.Split(readLog(t, filepath.Join(r.dir, "mangle")), "\n") {
+					if !strings.Contains(line, "nfproto "+gone+" udp sport 53") {
+						kept = append(kept, line)
+					}
+				}
+				r.write(t, "mangle", strings.Join(kept, "\n"), 0o644)
+				if !r.tick() {
+					t.Errorf("the %s DNS answer rule was gone while the other family's stayed, and the monitor did not restore the rules", gone)
+				}
+			})
 		}
 	}
 }

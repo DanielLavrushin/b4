@@ -2,6 +2,7 @@ package dhcp
 
 import (
 	"context"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -27,7 +28,7 @@ type Manager struct {
 type DetectionResult struct {
 	Available bool
 	Source    string
-	Path     string
+	Path      string
 }
 
 func Detect() DetectionResult {
@@ -36,7 +37,7 @@ func Detect() DetectionResult {
 			return DetectionResult{
 				Available: true,
 				Source:    "arp",
-				Path:     arpPath,
+				Path:      arpPath,
 			}
 		}
 	}
@@ -144,24 +145,38 @@ func (m *Manager) refresh() {
 		}
 	}
 
-	for _, d := range m.manualDevices {
-		if d.IP == "" || d.MAC == "" {
-			continue
-		}
-		mac := normalizeMAC(d.MAC)
-		m.ipToMAC[d.IP] = mac
-		m.macToIP[mac] = d.IP
-		if d.Name != "" {
-			m.hostnames[mac] = d.Name
-		}
-		log.Tracef("DHCP: manual device %s -> %s", d.IP, mac)
-	}
+	m.addManualDevicesLocked()
 
 	count := len(m.ipToMAC)
 	m.mu.Unlock()
 
 	log.Infof("DHCP: loaded %d entries from ARP table", count)
 	m.notifyCallbacks()
+}
+
+func (m *Manager) addManualDevicesLocked() {
+	for _, d := range m.manualDevices {
+		ip := canonicalIP(d.IP)
+		if ip == "" || d.MAC == "" {
+			continue
+		}
+		mac := normalizeMAC(d.MAC)
+		m.ipToMAC[ip] = mac
+		m.macToIP[mac] = ip
+		if d.Name != "" {
+			m.hostnames[mac] = d.Name
+		}
+		log.Tracef("DHCP: manual device %s -> %s", ip, mac)
+	}
+}
+
+func canonicalIP(raw string) string {
+	addr, _, _ := strings.Cut(strings.TrimSpace(raw), "%")
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		return ""
+	}
+	return ip.String()
 }
 
 func (m *Manager) TriggerRefresh() {

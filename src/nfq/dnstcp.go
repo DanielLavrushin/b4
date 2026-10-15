@@ -31,6 +31,8 @@ type dnsTCPServer struct {
 	cancel   context.CancelFunc
 	lnV4     net.Listener
 	lnV6     net.Listener
+	wantV4   bool
+	wantV6   bool
 	wgAccept sync.WaitGroup
 	wg       sync.WaitGroup
 }
@@ -52,8 +54,9 @@ func (s *dnsTCPServer) Start() error {
 
 	lc := net.ListenConfig{}
 	var err4, err6 error
+	s.wantV4, s.wantV6 = cfg.QueuesIPFamily(false), cfg.QueuesIPFamily(true)
 
-	if cfg.Queue.IPv4Enabled {
+	if s.wantV4 {
 		var lnV4 net.Listener
 		if lnV4, err4 = lc.Listen(s.ctx, "tcp4", net.JoinHostPort("0.0.0.0", fmt.Sprintf("%d", s.port))); err4 == nil {
 			s.lnV4 = lnV4
@@ -65,7 +68,7 @@ func (s *dnsTCPServer) Start() error {
 		}
 	}
 
-	if cfg.Queue.IPv6Enabled {
+	if s.wantV6 {
 		var lnV6 net.Listener
 		if lnV6, err6 = lc.Listen(s.ctx, "tcp6", net.JoinHostPort("::", fmt.Sprintf("%d", s.port))); err6 == nil {
 			s.lnV6 = lnV6
@@ -218,6 +221,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 	if clientIP != nil {
 		srcMac = s.worker.getMacByIp(clientIP.String())
 	}
+	v6 := clientIP != nil && clientIP.To4() == nil
 
 	upstream := &dnsTCPUpstream{server: s, ip: origIP, port: origPort, err: origErr}
 	defer upstream.close()
@@ -232,7 +236,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if resp == nil {
 			return false
 		}
-		if echless, actor := s.worker.stripECHKeys(cfg, set, domain, srcMac, resp, true); echless != nil {
+		if echless, actor := s.worker.stripECHKeys(cfg, set, domain, srcMac, resp, true, srcMac == "" && !cfg.IPFamilyEnabled(v6)); echless != nil {
 			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionECHStripped)
 			resp = echless
 		}
@@ -261,6 +265,12 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		}
 		domain = strings.ToLower(domain)
 
+		if !cfg.IPFamilyEnabled(v6) {
+			if relay(cfg, s.worker.echMatchSet(domain, srcMac, srcMac == ""), domain, query) {
+				continue
+			}
+			return
+		}
 		matched, set := s.worker.getMatcher().MatchSNIWithSource(domain, srcMac)
 		if !matched {
 			log.Tracef("DNS TCP: %s matched no set (src %s), forwarding unchanged", dns.SafeName(domain), srcMac)

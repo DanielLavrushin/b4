@@ -27,7 +27,7 @@ A flag overrides the setting for one run only. When b4 saves its configuration, 
 | `--ipv4` | Process IPv4 traffic | `queue.ipv4` | `true` |
 | `--ipv6` | Process IPv6 traffic | `queue.ipv6` | `false` |
 
-`--ipv6` is the **Enable IPv6 Support** switch under **Settings > Core > Packet Engine**. It decides whether b4 processes IPv6, not whether the router uses it. With it off, IPv6 connections pass the router without any set applying to them, see [The `queue` section](./config.md#the-queue-section).
+`--ipv6` is the **Enable IPv6 Support** switch under **Settings > Core > Packet Engine**. It decides whether b4 processes IPv6, not whether the router uses it. With it off, IPv6 connections pass the router without any set applying to them. In NFQUEUE mode, sets with [Remove ECH keys from DNS answers](../dns.md#removing-ech-keys) on still remove ECH keys from IPv6 DNS answers. See [The `queue` section](./config.md#the-queue-section).
 
 ## Firewall
 

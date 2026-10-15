@@ -369,6 +369,24 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 	}
 
+	for _, v6 := range []bool{false, true} {
+		ipt := ipt4
+		if v6 {
+			ipt = ipt6
+		}
+		if !cfg.ECHOnlyFamily(v6) || !hasBinary(ipt) || !echOnlyDNSUsable(ipt) {
+			continue
+		}
+		if !iptECHOnlyDNSPresent(ipt) {
+			log.Tracef("Monitor[%s]: the rules that queue %s DNS answers to remove ECH keys are missing", ipt, familyLabel(v6))
+			return false
+		}
+		if dnsTCPEnabledFamily(cfg, v6) && hasNATRedirectSupport(ipt, cfg.DNSTCPListenPort()) && !dnsTCPRulesPresent(ipt, cfg.DNSTCPListenPort(), dnsTCPMarkAccept(cfg)) {
+			log.Tracef("Monitor[%s]: DNS-over-TCP redirect rules missing (PREROUTING/OUTPUT jump, %s chain or its return for b4's own connections)", ipt, dnsTCPChainName)
+			return false
+		}
+	}
+
 	return true
 }
 
@@ -440,6 +458,16 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		return false
 	}
 
+	if family, _ := echOnlyNfproto(cfg); family != "" {
+		pre, _ := nft.runNft("list", "chain", "inet", nftTableName, "prerouting")
+		for _, queued := range []string{"ipv4", "ipv6"} {
+			if !nftListingQueuesAnswers(pre, queued) || !nftListingQueuesAnswers(out, queued) {
+				log.Tracef("Monitor: the rules that queue %s DNS answers are missing", familyLabel(queued == "ipv6"))
+				return false
+			}
+		}
+	}
+
 	if cfg.System.Tables.Masquerade.Enabled {
 		if !nft.natTableExists() {
 			log.Tracef("Monitor: nftables nat table missing")
@@ -453,10 +481,7 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 	}
 
 	for _, v6 := range []bool{false, true} {
-		if !dnsTCPEnabledFamily(cfg, v6) {
-			continue
-		}
-		if (v6 && !cfg.Queue.IPv6Enabled) || (!v6 && !cfg.Queue.IPv4Enabled) {
+		if !nftDNSTCPExpected(cfg, v6) {
 			continue
 		}
 		if !nft.dnsTCPFamilyIntact(v6, cfg.MainInjectedMark(), cfg.DNSTCPListenPort()) {
@@ -493,6 +518,9 @@ func (m *Monitor) ensureRulesLocked(requested bool) (*config.Config, bool) {
 	cfg := m.cfgPtr.Load()
 	if m.checkRules(cfg) {
 		m.pendingApply = nil
+		if !m.tun && m.firewallBackend() == backendNFTables {
+			NewNFTablesManager(cfg).retryFailedDNSTCP()
+		}
 		return cfg, false
 	}
 	if applied := rulesAppliedCfg; applied != nil && applied != cfg && (m.pendingApply != cfg || activeSteering != nil) && config.FirewallRefreshNeeded(applied, cfg) && m.checkRules(applied) {

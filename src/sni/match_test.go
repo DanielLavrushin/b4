@@ -1,6 +1,7 @@
 package sni
 
 import (
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -558,6 +559,198 @@ func TestMatchSNIWithSource_FallsBackToGeneric(t *testing.T) {
 	if set.Name != "generic" {
 		t.Errorf("expected generic fallback, got %s", set.Name)
 	}
+}
+
+func excludingSetWithDomains(name string, domains ...string) *config.SetConfig {
+	s := makeSetWithDomains(name, domains...)
+	s.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+	s.Targets.SourceDevicesExclude = true
+	return s
+}
+
+func setName(s *config.SetConfig) string {
+	if s == nil {
+		return "no set"
+	}
+	return s.Name
+}
+
+func TestMatchSNIForUnknownDevice_SkipsAnExcludeListAheadOfAGenericSet(t *testing.T) {
+	ss := NewSuffixSet([]*config.SetConfig{excludingSetWithDomains("excluding", "example.com"), makeSetWithDomains("generic", "example.com")})
+
+	if _, set := ss.MatchSNIWithSource("www.example.com", ""); setName(set) != "excluding" {
+		t.Fatalf("the source path gave %s to a connection without a MAC, this test needs it to pick the exclude list", setName(set))
+	}
+	matched, set := ss.MatchSNIForUnknownDevice("www.example.com")
+	if !matched {
+		t.Fatal("expected the set without a device list to match")
+	}
+	if set.Name != "generic" {
+		t.Errorf("expected the set without a device list, got %s", set.Name)
+	}
+}
+
+func TestMatchSNIForUnknownDevice_IgnoresSetsWithADeviceList(t *testing.T) {
+	including := makeSetWithDomains("including", "example.com", "example.org")
+	including.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+	ss := NewSuffixSet([]*config.SetConfig{including, excludingSetWithDomains("excluding", "example.com")})
+
+	for _, host := range []string{"example.com", "example.org"} {
+		if matched, set := ss.MatchSNIForUnknownDevice(host); matched {
+			t.Errorf("%s matched %s: a set with a device list must not match a device b4 cannot identify", host, setName(set))
+		}
+	}
+}
+
+func TestMatchSNIForUnknownDevice_FallsThroughToARegexSet(t *testing.T) {
+	ss := NewSuffixSet([]*config.SetConfig{
+		excludingSetWithDomains("excluding", "example.com"),
+		excludingSetWithDomains("excluding-regex", "regexp:^www\\.example\\.com$"),
+		makeSetWithDomains("regex", "regexp:.*\\.example\\.com$"),
+	})
+
+	matched, set := ss.MatchSNIForUnknownDevice("www.example.com")
+	if !matched {
+		t.Fatal("expected the regex set without a device list to match")
+	}
+	if set.Name != "regex" {
+		t.Errorf("expected the regex set without a device list, got %s", set.Name)
+	}
+}
+
+func TestMatchSNIForUnknownDevice_ReachesAParentDomainPastASetWithADeviceList(t *testing.T) {
+	for _, exclude := range []bool{true, false} {
+		for _, devicesFirst := range []bool{true, false} {
+			devices := excludingSetWithDomains("tv", "www.example.com")
+			devices.Targets.SourceDevicesExclude = exclude
+			generic := makeSetWithDomains("generic", "example.com")
+			sets := []*config.SetConfig{generic, devices}
+			if devicesFirst {
+				sets = []*config.SetConfig{devices, generic}
+			}
+			ss := NewSuffixSet(sets)
+
+			for _, host := range []string{"www.example.com", "a.www.example.com"} {
+				if _, set := ss.MatchSNIForUnknownDevice(host); setName(set) != "generic" {
+					t.Errorf("exclude=%v devicesFirst=%v %s: got %s, want the parent domain's set without a device list", exclude, devicesFirst, host, setName(set))
+				}
+			}
+		}
+	}
+}
+
+func TestMatchSNIForUnknownDevice_MatchesLikeAMatcherWithoutDeviceListSets(t *testing.T) {
+	scoped := func(s *config.SetConfig, exclude bool) *config.SetConfig {
+		s.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+		s.Targets.SourceDevicesExclude = exclude
+		return s
+	}
+	invalidTLS := makeSetWithDomains("invalid-tls", "tls.example.com")
+	invalidTLS.Targets.TLSVersion = "bogus"
+	v6 := makeSetWithDomains("v6", "example.org")
+	v6.Targets.IPVersion = "6"
+	sets := []*config.SetConfig{
+		scoped(makeSetWithDomains("tv-www", "www.example.com", "video.example.org"), true),
+		scoped(makeSetWithDomains("tv-only", "example.com", "deep.a.example.net"), false),
+		makeSetWithDomains("generic", "example.com", "regexp:.*\\.example\\.net$"),
+		invalidTLS,
+		v6,
+		scoped(makeSetWithDomains("tv-regex", "regexp:^x\\.example\\.org$", "regexp:^y\\.example\\.edu$"), true),
+		makeSetWithDomains("late", "www.example.com"),
+		makeSetWithDomains("regex-copy", "regexp:^y\\.example\\.edu$"),
+	}
+	var withoutDevices []*config.SetConfig
+	for _, s := range sets {
+		if len(s.Targets.SourceDevices) == 0 {
+			withoutDevices = append(withoutDevices, s)
+		}
+	}
+	ss, oracle := NewSuffixSet(sets), NewSuffixSet(withoutDevices)
+
+	for _, host := range []string{
+		"example.com", "www.example.com", "a.www.example.com", "EXAMPLE.COM",
+		"tls.example.com", "a.tls.example.com",
+		"example.org", "video.example.org", "x.example.org",
+		"a.example.net", "deep.a.example.net",
+		"y.example.edu", "example.edu", "",
+	} {
+		wantMatched, want := oracle.MatchSNIWithSource(host, "")
+		matched, set := ss.MatchSNIForUnknownDevice(host)
+		if matched != wantMatched || set != want {
+			t.Errorf("%q: got %v %s, a matcher without the sets that have a device list gives %v %s", host, matched, setName(set), wantMatched, setName(want))
+		}
+	}
+}
+
+func TestARegexInTwoSetsReachesTheSecondSetForADeviceTheFirstLeavesOut(t *testing.T) {
+	first := makeSetWithDomains("tv", "regexp:(^|\\.)example\\.com$")
+	first.Id = "tv"
+	first.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+	second := makeSetWithDomains("everyone", "regexp:(^|\\.)example\\.com$")
+	second.Id = "everyone"
+	ss := NewSuffixSet([]*config.SetConfig{first, second})
+
+	if _, set := ss.MatchSNIWithSource("www.example.com", "aa:bb:cc:dd:ee:ff"); setName(set) != "tv" {
+		t.Errorf("the listed device got %s, want the set limited to it", setName(set))
+	}
+	if _, set := ss.MatchSNIWithSource("www.example.com", "11:22:33:44:55:66"); setName(set) != "everyone" {
+		t.Errorf("another device got %s, want the second set, which lists the same pattern", setName(set))
+	}
+	if _, set := ss.MatchSNI("www.example.com"); setName(set) != "tv" {
+		t.Errorf("MatchSNI got %s, want the first set that lists the pattern", setName(set))
+	}
+	if !ss.SetHasDomain(second.Id, "www.example.com") {
+		t.Error("the second set lists the pattern, so the name belongs to it too")
+	}
+}
+
+func TestEachRegexPatternGetsItsOwnResultWithinALookup(t *testing.T) {
+	netSet := makeSetWithDomains("net", "regexp:\\.example\\.net$")
+	orgSet := makeSetWithDomains("org", "regexp:\\.example\\.org$")
+	tvSet := makeSetWithDomains("org-tv", "regexp:\\.example\\.org$")
+	tvSet.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+	ss := NewSuffixSet([]*config.SetConfig{netSet, orgSet, tvSet})
+
+	for name, got := range map[string]*config.SetConfig{
+		"MatchSNI":                  matchedSet(ss.MatchSNI("www.example.org")),
+		"MatchSNIWithSource":        matchedSet(ss.MatchSNIWithSource("www.example.org", "11:22:33:44:55:66")),
+		"MatchSNIWithSource for TV": matchedSet(ss.MatchSNIWithSource("www.example.org", "aa:bb:cc:dd:ee:ff")),
+		"MatchSNIForUnknownDevice":  matchedSet(ss.MatchSNIForUnknownDevice("www.example.org")),
+	} {
+		want := "org"
+		if name == "MatchSNIWithSource for TV" {
+			want = "org-tv"
+		}
+		if setName(got) != want {
+			t.Errorf("%s got %s, want %s: the failed .net pattern decided the .org one", name, setName(got), want)
+		}
+	}
+}
+
+func TestARegexPastTheMemoBufferStillMatches(t *testing.T) {
+	domains := make([]string, regexMemoSize+10)
+	for i := range domains {
+		domains[i] = fmt.Sprintf("regexp:^host%d\\.example\\.com$", i)
+	}
+	many := makeSetWithDomains("many", domains...)
+	tv := makeSetWithDomains("tv", domains[len(domains)-1])
+	tv.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+	ss := NewSuffixSet([]*config.SetConfig{many, tv})
+	host := fmt.Sprintf("host%d.example.com", len(domains)-1)
+
+	if _, set := ss.MatchSNIWithSource(host, "aa:bb:cc:dd:ee:ff"); setName(set) != "tv" {
+		t.Errorf("the TV got %s, want the set limited to it", setName(set))
+	}
+	if _, set := ss.MatchSNIWithSource(host, ""); setName(set) != "many" {
+		t.Errorf("a device without a MAC got %s, want the set without a device list", setName(set))
+	}
+	if _, set := ss.MatchSNI(host); setName(set) != "many" {
+		t.Errorf("MatchSNI got %s, want the first set that lists the pattern", setName(set))
+	}
+}
+
+func matchedSet(_ bool, set *config.SetConfig) *config.SetConfig {
+	return set
 }
 
 // --- MatchSNIWithSourceTLS ---

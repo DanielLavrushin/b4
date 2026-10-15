@@ -84,6 +84,8 @@ Sites behind some CDNs publish an Encrypted ClientHello (ECH) key in DNS. A brow
 - the name asked matches the set, such as `steamdb.info` listed in the set;
 - the key's public name is a domain the set matches. A set listing `cloudflare-ech.com` removes the key from every Cloudflare site's answers.
 
+While **Enable IPv6 Support** is off, b4 in NFQUEUE mode also removes the key from answers that arrive over IPv6. A set that uses **Source Devices** leaves such answers alone, since b4 cannot tell which device they go to. A device [added by hand](settings/core.md#manual-devices) by its IPv6 address is the exception.
+
 [Discovery](discovery.md#sites-with-an-ech-key) proposes such a set, with no packet changes, for a site that loads without ECH but not with it. A key already in a browser's cache is used until it expires.
 
 ## Sending every DNS query to DoH
@@ -148,6 +150,7 @@ The [log](logs.md) records the same decisions, as `dns-doh->`, `dns-pin` and so 
 | The site still goes to the old address | The device keeps an answer it already has until the answer expires. |
 | `servfail`, `fallback-cache` or `fallback-upstream` | The set's resolver is unreachable from this connection. Another resolver, or DoH in place of plain DNS, is the next try. |
 | The set's names resolve slowly or not at all, with the set's resolver on the router | A resolver on the router, and the router's resolver when a resolver on the network uses it upstream, has to reach its own upstream over DoH or DoT, which b4 does not intercept. |
+| A browser still uses ECH, with a resolver on the network that checks DNSSEC, such as BIND or Unbound | The resolver gets the original answer on a path b4 does not see: DoT or DoH to its upstream, an interface left out of **Capture Interfaces**, or TCP while **Intercept DNS over TCP** is off. With **Intercept DNS over TCP** on, plain DNS through a captured interface closes these paths, see [ECH keys](internals/dns.md#ech-keys). |
 
 ### On KeeneticOS and older kernels {#copied-requests}
 

@@ -191,7 +191,7 @@
       "protoFeatures": "IPv4 / IPv6",
       "enableIPv4": "Enable IPv4 Support",
       "enableIPv6": "Enable IPv6 Support",
-      "enableIPv6Desc": "Lets b4 process IPv6 packets, DNS answers and firewall rules. With this off b4 ignores IPv6 entirely: it does not disable IPv6 on the router, and sites a set targets stay reachable over IPv6 with none of the set's strategies applied.",
+      "enableIPv6Desc": "Lets b4 process IPv6 packets, DNS answers and firewall rules. With this off b4 leaves IPv6 alone, except that it removes ECH keys from IPv6 DNS answers for the sets that ask for it. It does not disable IPv6 on the router, and sites a set targets stay reachable over IPv6 with none of the set's strategies applied.",
       "ipv6BypassWarning": "This host has a working global IPv6 address while b4 is processing IPv4 only. Anything that reaches a target over IPv6 goes out with no set applied. Turn IPv6 support on, or keep Force IPv4 for matched domains on.",
       "firewallFeatures": "Firewall Rules",
       "skipIptables": "Skip IPTables/NFTables Setup",

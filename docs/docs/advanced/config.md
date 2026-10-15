@@ -111,7 +111,7 @@ The sample shows some of the sections and some of their keys. A real file holds 
 | `udp_conn_bytes_limit` | The same for UDP | `8` |
 | `interfaces` | **Capture Interfaces**, a filter on the interface a packet passes. Empty means all of them | `[]` |
 
-`queue.ipv6` decides whether b4 processes IPv6, not whether the router uses it. Off, the default, b4 binds its queue to IPv4 only and writes no IPv6 firewall rules for any set, so a client that reaches a site over IPv6 bypasses the sets. b4 then removes IPv6 addresses from DNS answers for the domains sets match, see [DNS](../dns.md). The address families are bound when the service starts, so a change takes full effect after a restart. `--ipv6` sets the same thing for one run.
+`queue.ipv6` decides whether b4 processes IPv6, not whether the router uses it. Off, the default, b4 processes IPv4 only and writes no IPv6 firewall rules for any set, so a client that reaches a site over IPv6 bypasses the sets. b4 then removes IPv6 addresses from DNS answers for the domains sets match, see [DNS](../dns.md). The exception is NFQUEUE mode while an enabled set has `dns.strip_ech` on. In that mode b4 writes IPv6 rules for DNS answers and DNS over TCP, only to remove their [ECH keys](../dns.md#removing-ech-keys). A change takes full effect after a restart. `--ipv6` sets the same thing for one run.
 
 ## The `sets` section
 

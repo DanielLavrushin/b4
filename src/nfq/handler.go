@@ -106,6 +106,9 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 	if !ok {
 		return vc.accept()
 	}
+	if !cfg.Queue.IsDiscovery && cfg.Queue.Mode != "tun" && !cfg.IPFamilyEnabled(pkt.ver == IPv6) {
+		return w.handleECHOnlyPacket(vc, pkt, cfg)
+	}
 
 	matched, st := matcher.MatchIPWithSource(pkt.dst, pkt.srcMac)
 	var set *config.SetConfig
