@@ -493,13 +493,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 
 	if sport == 53 {
 		if txid, ok := dns.ParseTransactionID(payload); ok {
-			domain, _ := dns.ParseQueryDomain(payload)
-			if domain == "" {
-				if d, ok := parseDNSName(payload, 12); ok {
-					domain = d
-				}
-			}
-			domain = strings.ToLower(domain)
+			domain := replyDomain(payload)
 			clientIP := pkt.dst
 			dnsServerIP := pkt.src
 			if w.dnsCopyGate(vc, pkt, dport, txid, domain, payload) {

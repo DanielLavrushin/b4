@@ -98,12 +98,12 @@ func (w *Worker) Start() error {
 		log.Tracef("nfqueue %d: could not raise the netlink read buffer to %d bytes: %v", w.qnum, nfqReadBufferBytes, err)
 	}
 
-	if cfg.Queue.IPv4Enabled {
+	if cfg.QueuesIPFamily(false) {
 		if err := pfBind(q.Con, syscall.AF_INET); err != nil {
 			log.Warnf("nfqueue PF_BIND AF_INET: %v", err)
 		}
 	}
-	if cfg.Queue.IPv6Enabled {
+	if cfg.QueuesIPFamily(true) {
 		if err := pfBind(q.Con, syscall.AF_INET6); err != nil {
 			log.Warnf("nfqueue PF_BIND AF_INET6: %v", err)
 		}

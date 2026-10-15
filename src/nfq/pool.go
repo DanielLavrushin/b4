@@ -378,8 +378,8 @@ func (p *Pool) reconcileDNSTCP(newCfg *config.Config) {
 
 	if p.dnsTCP != nil {
 		samePort := p.dnsTCP.port == newCfg.DNSTCPListenPort()
-		sameFamilies := p.dnsTCP.ReadyV4() == newCfg.Queue.IPv4Enabled &&
-			p.dnsTCP.ReadyV6() == newCfg.Queue.IPv6Enabled
+		sameFamilies := p.dnsTCP.ReadyV4() == newCfg.QueuesIPFamily(false) &&
+			p.dnsTCP.ReadyV6() == newCfg.QueuesIPFamily(true)
 		if wanted && samePort && sameFamilies {
 			return
 		}

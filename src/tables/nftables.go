@@ -378,14 +378,7 @@ func (n *NFTablesManager) apply() error {
 	}
 	noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendNFTables: placement})
 
-	answers := []string{"udp", "sport", "53", "counter"}
-	if queriesFromRaw {
-		answers = []string{"udp", "sport", "53", "udp", "dport", "!=", "53", "counter"}
-	}
-	if err := n.addQueueRule("prerouting", answers...); err != nil {
-		return err
-	}
-	if err := n.addQueueRule("output", answers...); err != nil {
+	if err := n.addDNSAnswerRules(queriesFromRaw); err != nil {
 		return err
 	}
 

@@ -401,6 +401,7 @@ type Manifest struct {
 	Rules      []Rule
 	Sysctls    []SysctlSetting
 	DNSQueries map[string]dnsQueryPlacement
+	ECHOnlyDNS []string
 }
 
 func (m Manifest) Apply() error {
@@ -828,6 +829,16 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 		}
 	}
 
+	var echOnly []string
+	if !teardown {
+		echOnly = manager.echOnlyBinaries()
+		for _, ipt := range echOnly {
+			ec, er := manager.buildECHOnlyDNSManifest(ipt, preChainName)
+			chains = append(chains, ec...)
+			rules = append(rules, er...)
+		}
+	}
+
 	if cfg.System.Tables.Masquerade.Enabled {
 		for _, ipt := range ipts {
 			mc, mr := manager.buildMasqueradeManifest(ipt)
@@ -837,7 +848,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 	}
 
 	if dnsTCPWanted(cfg) {
-		for _, ipt := range ipts {
+		for _, ipt := range append(append([]string(nil), ipts...), echOnly...) {
 			isV6 := ipt == manager.ip6tablesBin()
 			if !dnsTCPEnabledFamily(cfg, isV6) || !hasNATRedirectSupport(ipt, cfg.DNSTCPListenPort()) {
 				continue
@@ -852,7 +863,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 	ipsets = append(ipsets, mssIPSets...)
 	rules = append(rules, mssRules...)
 
-	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: b4SysctlSettings(), DNSQueries: dnsQueries}
+	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: b4SysctlSettings(), DNSQueries: dnsQueries, ECHOnlyDNS: echOnly}
 }
 
 func (manager *IPTablesManager) mssClampBinaries() []string {
@@ -1057,8 +1068,13 @@ func (ipt *IPTablesManager) Apply() error {
 	if result == nil {
 		ipt.dropUnusedDNSQueryPlacement(m.DNSQueries)
 		warnPortChangingDNSNat(m.DNSQueries)
+		for _, bin := range m.ECHOnlyDNS {
+			label := iptFamilyLabel(bin)
+			log.Infof("IPTABLES[%s]: %s support is off, so %s DNS answers are queued only to remove ECH keys for the sets that ask for it", bin, label, label)
+		}
 	}
 	noteDNSQueryPlacement(m.DNSQueries)
+	noteECHOnlyDNS(m.ECHOnlyDNS)
 
 	if log.Level(log.CurLevel.Load()) >= log.LevelTrace {
 		iptablesTrace, _ := run("sh", "-c", "cat /proc/net/netfilter/nfnetlink_queue && "+ipt.iptablesBin()+" -t mangle -vnL --line-numbers")
@@ -1075,6 +1091,7 @@ func (ipt *IPTablesManager) Clear() error {
 
 	ipt.clearB4JumpRules()
 	noteDNSQueryPlacement(nil)
+	noteECHOnlyDNS(nil)
 
 	m.RemoveRules()
 	time.Sleep(30 * time.Millisecond)

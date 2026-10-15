@@ -369,6 +369,21 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 	}
 
+	for _, ipt := range echOnlyDNSBinaries() {
+		v6 := strings.HasPrefix(ipt, "ip6")
+		if !cfg.ECHOnlyFamily(v6) {
+			continue
+		}
+		if !iptECHOnlyDNSPresent(ipt) {
+			log.Tracef("Monitor[%s]: the rules that queue %s DNS answers to remove ECH keys are missing", ipt, familyLabel(v6))
+			return false
+		}
+		if dnsTCPEnabledFamily(cfg, v6) && hasNATRedirectSupport(ipt, cfg.DNSTCPListenPort()) && !dnsTCPRulesPresent(ipt, cfg.DNSTCPListenPort(), dnsTCPMarkAccept(cfg)) {
+			log.Tracef("Monitor[%s]: DNS-over-TCP redirect rules missing (PREROUTING/OUTPUT jump, %s chain or its return for b4's own connections)", ipt, dnsTCPChainName)
+			return false
+		}
+	}
+
 	return true
 }
 
@@ -440,6 +455,14 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		return false
 	}
 
+	if family, v6 := echOnlyNfproto(cfg); family != "" {
+		pre, _ := nft.runNft("list", "chain", "inet", nftTableName, "prerouting")
+		if !nftListingQueuesECHOnlyAnswers(pre, family) || !nftListingQueuesECHOnlyAnswers(out, family) {
+			log.Tracef("Monitor: the rules that queue %s DNS answers to remove ECH keys are missing", familyLabel(v6))
+			return false
+		}
+	}
+
 	if cfg.System.Tables.Masquerade.Enabled {
 		if !nft.natTableExists() {
 			log.Tracef("Monitor: nftables nat table missing")
@@ -453,10 +476,7 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 	}
 
 	for _, v6 := range []bool{false, true} {
-		if !dnsTCPEnabledFamily(cfg, v6) {
-			continue
-		}
-		if (v6 && !cfg.Queue.IPv6Enabled) || (!v6 && !cfg.Queue.IPv4Enabled) {
+		if !dnsTCPEnabledFamily(cfg, v6) || !cfg.QueuesIPFamily(v6) {
 			continue
 		}
 		if !nft.dnsTCPFamilyIntact(v6, cfg.MainInjectedMark(), cfg.DNSTCPListenPort()) {

@@ -231,13 +231,7 @@ func (n *NFTablesManager) ApplyDNSTCP() error {
 
 	applied := make([]string, 0, 2)
 	for _, v6 := range []bool{false, true} {
-		if !dnsTCPEnabledFamily(n.cfg, v6) {
-			continue
-		}
-		if v6 && !n.cfg.Queue.IPv6Enabled {
-			continue
-		}
-		if !v6 && !n.cfg.Queue.IPv4Enabled {
+		if !dnsTCPEnabledFamily(n.cfg, v6) || !n.cfg.QueuesIPFamily(v6) {
 			continue
 		}
 		if err := n.applyDNSTCPFamily(v6); err != nil {

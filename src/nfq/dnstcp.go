@@ -53,7 +53,7 @@ func (s *dnsTCPServer) Start() error {
 	lc := net.ListenConfig{}
 	var err4, err6 error
 
-	if cfg.Queue.IPv4Enabled {
+	if cfg.QueuesIPFamily(false) {
 		var lnV4 net.Listener
 		if lnV4, err4 = lc.Listen(s.ctx, "tcp4", net.JoinHostPort("0.0.0.0", fmt.Sprintf("%d", s.port))); err4 == nil {
 			s.lnV4 = lnV4
@@ -65,7 +65,7 @@ func (s *dnsTCPServer) Start() error {
 		}
 	}
 
-	if cfg.Queue.IPv6Enabled {
+	if cfg.QueuesIPFamily(true) {
 		var lnV6 net.Listener
 		if lnV6, err6 = lc.Listen(s.ctx, "tcp6", net.JoinHostPort("::", fmt.Sprintf("%d", s.port))); err6 == nil {
 			s.lnV6 = lnV6
@@ -218,6 +218,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 	if clientIP != nil {
 		srcMac = s.worker.getMacByIp(clientIP.String())
 	}
+	v6 := clientIP != nil && clientIP.To4() == nil
 
 	upstream := &dnsTCPUpstream{server: s, ip: origIP, port: origPort, err: origErr}
 	defer upstream.close()
@@ -262,6 +263,15 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		domain = strings.ToLower(domain)
 
 		matched, set := s.worker.getMatcher().MatchSNIWithSource(domain, srcMac)
+		if !cfg.IPFamilyEnabled(v6) {
+			if !matched {
+				set = nil
+			}
+			if relay(cfg, set, domain, query) {
+				continue
+			}
+			return
+		}
 		if !matched {
 			log.Tracef("DNS TCP: %s matched no set (src %s), forwarding unchanged", dns.SafeName(domain), srcMac)
 			if relay(cfg, nil, domain, query) {

@@ -371,6 +371,21 @@ func (c *Config) HasECHStrip() bool {
 	return false
 }
 
+func (c *Config) IPFamilyEnabled(v6 bool) bool {
+	if v6 {
+		return c.Queue.IPv6Enabled
+	}
+	return c.Queue.IPv4Enabled
+}
+
+func (c *Config) ECHOnlyFamily(v6 bool) bool {
+	return !c.IPFamilyEnabled(v6) && c.IPFamilyEnabled(!v6) && c.Queue.Mode != "tun" && !c.Queue.IsDiscovery && c.HasECHStrip()
+}
+
+func (c *Config) QueuesIPFamily(v6 bool) bool {
+	return c.IPFamilyEnabled(v6) || c.ECHOnlyFamily(v6)
+}
+
 func (c *Config) HasDNSRedirect() bool {
 	for _, set := range c.Sets {
 		if set == nil || !set.Enabled || !set.DNS.Enabled {
@@ -1380,6 +1395,9 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 		return true
 	}
 	if oldCfg.DNSTCPInterceptEnabled() != newCfg.DNSTCPInterceptEnabled() {
+		return true
+	}
+	if oldCfg.ECHOnlyFamily(false) != newCfg.ECHOnlyFamily(false) || oldCfg.ECHOnlyFamily(true) != newCfg.ECHOnlyFamily(true) {
 		return true
 	}
 	if oldCfg.Queue.Mark != newCfg.Queue.Mark || oldCfg.Queue.IPv4Enabled != newCfg.Queue.IPv4Enabled || oldCfg.Queue.IPv6Enabled != newCfg.Queue.IPv6Enabled {

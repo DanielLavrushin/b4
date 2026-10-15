@@ -12,6 +12,8 @@ A set decides which resolver answers the domains it targets. Everything else kee
 | UDP port 53 | Queue rules in `PREROUTING` and `OUTPUT`: for requests (`dport 53`) in the raw table, ahead of conntrack (priority -300 on nftables), and for replies (`sport 53`) in the mangle table. With iptables on kernels before 4.18 (4.14 before 4.14.173), on KeeneticOS and wherever the raw table cannot queue packets, requests are not queued: a rule at the top of mangle `INPUT`, `FORWARD` and `OUTPUT` sends b4 a copy of each one with NFLOG and the request goes on at once, while replies are queued as before; see [Copied requests](#copied-requests). On KeeneticOS with a later kernel, requests are queued in the mangle table | Always, while b4 is running |
 | TCP port 53 | A `nat` `REDIRECT` into a local listener, port 5453 by default | Only while at least one enabled set has a DNS server, a DoH URL or [Remove ECH keys from DNS answers](#removing-ech-keys) on, and **Intercept DNS over TCP** is on |
 
+With **Enable IPv6 Support** off, these rules cover IPv4 only, with one exception: while an enabled set has [Remove ECH keys from DNS answers](#removing-ech-keys) on, DNS replies over IPv6 are queued as well and DNS over TCP to IPv6 port 53 is redirected too. b4 only removes ECH keys from them.
+
 Both cases cover traffic forwarded from the network and queries the router makes for itself. The queries b4 sends on a client's behalf and its lookups through a set's resolver carry the [queue mark](./guides/marks.md#the-queue-mark), and these rules skip packets that carry it, so such a query never re-enters the queue through them. Lookups b4 makes through the router's own resolver carry no mark.
 
 :::info Requests and conntrack
@@ -190,6 +192,7 @@ A site behind a CDN that supports Encrypted ClientHello (ECH) publishes an ECH k
 - Only the `ech` parameter goes, together with its entry in `mandatory`, and `mandatory` itself when nothing is left in it. The ALPN list, the address hints and the TTL stay as they were.
 - The RRSIG records over the changed records are dropped and the AD flag is cleared, since the changed records no longer match their signatures.
 - It acts on forwarded answers, on answers from the set's own resolver and on DNS over TCP: TCP port 53 is intercepted while an enabled set has the switch on.
+- With **Enable IPv6 Support** off, answers that travel over IPv6, by UDP or TCP, still reach b4 while an enabled set has the switch on, and lose nothing but their key: no pin, redirect, block, address learning or other rewrite applies to them.
 - With [copied requests](#copied-requests), the replies that pass unchanged keep the key:
   - the replies to requests sent from UDP port 53
   - a reply held for twice the query timeout plus 2 seconds
@@ -201,6 +204,12 @@ The switch sits under **Encrypted ClientHello (ECH)** on the **DNS Redirect** ta
 
 :::warning It only reaches DNS that b4 can see
 A browser that resolves through its own secure DNS (DoH in Chrome or Firefox), or a device with Android Private DNS, gets the key unchanged and keeps sending ECH. A key already in a client's cache is used until its answer expires.
+:::
+
+:::warning Zones signed with DNSSEC
+In a zone signed with DNSSEC, such as `steamdb.info` (`cloudflare-ech.com` is not signed), an HTTPS answer without its key no longer matches its signature. A resolver that validates DNSSEC rejects it as bogus and asks the zone's other servers. BIND answers the HTTPS query with SERVFAIL once none of them gives an answer that validates, so the device gets no key; A and AAAA answers are not affected.
+
+When the resolver reaches one of the zone's servers on a path b4 does not process, it gets the original answer there, validates it, and hands the key to every device that asks it until the record expires. Such paths are DNS over TLS or HTTPS to an upstream, an interface left out of **Capture Interfaces**, and TCP while **Intercept DNS over TCP** is off. A resolver that runs on the b4 host itself sends its answers to devices through b4 as well, and b4 removes the key from those answers after the resolver has validated them.
 :::
 
 :::info A set that lists the public name

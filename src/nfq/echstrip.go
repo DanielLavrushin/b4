@@ -1,6 +1,10 @@
 package nfq
 
 import (
+	"encoding/binary"
+	"net"
+	"strings"
+
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
@@ -63,4 +67,47 @@ func (w *Worker) stripECHKeys(cfg *config.Config, set *config.SetConfig, domain,
 		log.Warnf("DNS ECH: the answer for %s without its ECH key would not fit the response size the client allows, passing the original through (set: %s)", dns.SafeName(domain), actor.Name)
 	}
 	return nil, nil
+}
+
+func replyDomain(payload []byte) string {
+	domain, _ := dns.ParseQueryDomain(payload)
+	if domain == "" {
+		if d, ok := parseDNSName(payload, 12); ok {
+			domain = d
+		}
+	}
+	return strings.ToLower(domain)
+}
+
+func (w *Worker) handleECHOnlyPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config) int {
+	if vc.copy != nil || vc.ifaceFiltered || pkt.proto != 17 || len(pkt.raw) < pkt.ihl+UDPHeaderLen {
+		return vc.accept()
+	}
+	udp := pkt.raw[pkt.ihl:]
+	payload := udp[UDPHeaderLen:]
+	if binary.BigEndian.Uint16(udp[0:2]) != 53 || len(payload) < 12 || payload[2]&0x80 == 0 {
+		return vc.accept()
+	}
+
+	domain := replyDomain(payload)
+	client := append(net.IP(nil), pkt.dst...)
+	server := append(net.IP(nil), pkt.src...)
+	clientMac := w.getMacByIp(client.String())
+	matched, set := w.getMatcher().MatchSNIWithSource(domain, clientMac)
+	if !matched {
+		set = nil
+	}
+	echless, actor := w.stripECHKeys(cfg, set, domain, clientMac, payload, false)
+	if echless == nil {
+		return vc.accept()
+	}
+
+	raw := inPlaceReply(vc, pkt, echless)
+	if raw == nil && !vc.drop() {
+		return 0
+	}
+	dport := binary.BigEndian.Uint16(udp[2:4])
+	logDNSEvent("UDP", actor, domain, client, server, dport, clientMac, dnsActionECHStripped)
+	w.releaseFilteredReply(vc, raw, pkt.ver, server, client, dport, echless)
+	return 0
 }

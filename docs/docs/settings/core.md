@@ -110,7 +110,7 @@ The card holds the one global setting of IP block detection. Each set turns the 
 These switches decide which address families **b4** handles. They do not turn IPv6 on or off on the router, and they do not stop the network from using it.
 
 :::warning What IPv6 support being off means
-With it off, b4 creates no IPv6 firewall rules and reads no IPv6 packets. A site that a set targets and that also answers over IPv6 is reached over IPv6 by the client and bypasses the set entirely: no bypass strategies, no routing, no blocking. b4 writes a warning to the log, and the card shows one until it is dismissed, while the host has a working global IPv6 address and this setting is off.
+With it off, b4 creates no IPv6 firewall rules and reads no IPv6 packets, except DNS answers while a set has [Remove ECH keys from DNS answers](../dns.md#removing-ech-keys) on. A site that a set targets and that also answers over IPv6 is reached over IPv6 by the client and bypasses the set entirely: no bypass strategies, no routing, no blocking. b4 writes a warning to the log, and the card shows one until it is dismissed, while the host has a working global IPv6 address and this setting is off.
 
 **Force IPv4 for matched domains** narrows the gap for clients that resolve through the router: their answers for matched domains carry IPv4 addresses only, and they stay on the IPv4 path b4 protects. See [DNS, The IPv4 fallback](../dns.md#the-ipv4-fallback).
 :::
