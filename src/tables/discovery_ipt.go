@@ -101,6 +101,9 @@ func (b *discoveryIptBackend) apply(flowMark uint, injectedMark uint, queueStart
 
 func discoveryKeepOutOfQueueChain(bin, flow, injected string) {
 	for _, chain := range []struct{ table, name string }{{"mangle", iptChainName}, {"raw", iptRawChainName}} {
+		if chain.table == "raw" && !RawTablePresent(bin) {
+			continue
+		}
 		discoveryDelTableRuleLoop(bin, chain.table, chain.name, "-m", "mark", "--mark", flow, "-j", "RETURN")
 		discoveryDelTableRuleLoop(bin, chain.table, chain.name, "-m", "mark", "--mark", injected, "-j", "RETURN")
 		for _, mark := range []string{injected, flow} {
@@ -127,8 +130,10 @@ func (b *discoveryIptBackend) clear(flowMark uint, injectedMark uint) {
 		discoveryDelRuleLoop(bin, "PREROUTING", "-j", discoveryChainIPT)
 		discoveryDelRuleLoop(bin, iptChainName, "-m", "mark", "--mark", flow, "-j", "RETURN")
 		discoveryDelRuleLoop(bin, iptChainName, "-m", "mark", "--mark", injected, "-j", "RETURN")
-		discoveryDelTableRuleLoop(bin, "raw", iptRawChainName, "-m", "mark", "--mark", flow, "-j", "RETURN")
-		discoveryDelTableRuleLoop(bin, "raw", iptRawChainName, "-m", "mark", "--mark", injected, "-j", "RETURN")
+		if RawTablePresent(bin) {
+			discoveryDelTableRuleLoop(bin, "raw", iptRawChainName, "-m", "mark", "--mark", flow, "-j", "RETURN")
+			discoveryDelTableRuleLoop(bin, "raw", iptRawChainName, "-m", "mark", "--mark", injected, "-j", "RETURN")
+		}
 		_, _ = run(bin, "-w", "-t", "mangle", "-F", discoveryChainIPT)
 		_, _ = run(bin, "-w", "-t", "mangle", "-X", discoveryChainIPT)
 	}

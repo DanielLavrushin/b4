@@ -5,7 +5,10 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/tables"
 )
+
+var rawTablePresent = tables.RawTablePresent
 
 func ClearStaleArtifacts(cfg *config.Config) {
 	device := cfg.Queue.TUN.DeviceName
@@ -31,12 +34,14 @@ func ClearStaleArtifacts(cfg *config.Config) {
 	run("iptables", "-t", "mangle", "-X", tunCaptureChain)
 	destroyDupSet()
 
-	for _, markStr := range []string{reinjectMarkMatch(), clientMarkMatch()} {
-		for {
-			if _, err := run("iptables", "-t", "raw", "-D", "OUTPUT", "-m", "mark", "--mark", markStr, "-j", "CT", "--notrack"); err != nil {
-				break
+	if rawTablePresent("iptables") {
+		for _, markStr := range []string{reinjectMarkMatch(), clientMarkMatch()} {
+			for {
+				if _, err := run("iptables", "-t", "raw", "-D", "OUTPUT", "-m", "mark", "--mark", markStr, "-j", "CT", "--notrack"); err != nil {
+					break
+				}
+				cleared = true
 			}
-			cleared = true
 		}
 	}
 

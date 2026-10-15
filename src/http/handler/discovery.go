@@ -581,9 +581,9 @@ func replaceStrategy(dst, strategy *config.SetConfig) {
 	udp.DPortFilter = dst.UDP.DPortFilter
 	dst.UDP = udp
 
-	pins, strict := dst.DNS.Pins, dst.DNS.Strict
+	pins, strict, stripECH := dst.DNS.Pins, dst.DNS.Strict, dst.DNS.StripECH || strategy.DNS.StripECH
 	dst.DNS = strategy.DNS
-	dst.DNS.Pins, dst.DNS.Strict = pins, strict
+	dst.DNS.Pins, dst.DNS.Strict, dst.DNS.StripECH = pins, strict, stripECH
 
 	dst.Targets.TLSVersion = strategy.Targets.TLSVersion
 	dst.Targets.IPVersion = strategy.Targets.IPVersion
@@ -731,6 +731,7 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 			TargetDNS:     set.DNS.TargetDNS,
 			DoHURL:        set.DNS.DoHURL,
 			FragmentQuery: set.DNS.FragmentQuery,
+			StripECH:      set.DNS.StripECH,
 		},
 		Routing: config.RoutingConfig{
 			Enabled: set.Routing.Enabled,

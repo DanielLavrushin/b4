@@ -1,11 +1,10 @@
 ---
 sidebar_position: 6
 title: Docker
+description: Запуск b4 в контейнере Docker.
 ---
 
-# Docker
-
-Образ: [lavrushin/b4](https://hub.docker.com/r/lavrushin/b4) на Docker Hub.
+Образ - [lavrushin/b4](https://hub.docker.com/r/lavrushin/b4) на Docker Hub.
 
 ## docker-compose
 
@@ -53,22 +52,22 @@ docker run -d \
 | Параметр | Зачем |
 | --- | --- |
 | `network_mode: host` | b4 работает с сетевым стеком хоста напрямую |
-| `NET_ADMIN` | управление netfilter и правилами firewall |
-| `NET_RAW` | работа с raw-сокетами |
-| `SYS_MODULE` | загрузка модулей ядра (modprobe) |
-| `-v ./config:/etc/b4` | конфигурация сохраняется на хосте |
+| `NET_ADMIN` | Управление netfilter и правилами файрвола |
+| `NET_RAW` | Raw-сокеты |
+| `SYS_MODULE` | Загрузка модулей ядра |
+| `-v ./config:/etc/b4` | Конфигурация хранится на хосте |
 
-## Управление
+## Управление {#management}
 
 ```bash
 docker compose logs -f b4     # логи
 docker compose restart b4     # перезапуск
-docker compose down            # остановка
+docker compose down           # остановка
 docker compose pull && docker compose up -d   # обновление
 ```
 
+Окно обновления в веб-интерфейсе контейнер не обновляет. Контейнер, запущенный через `docker run`, обновляется так: скачивается новый образ, и контейнер создаётся заново.
+
 ## Веб-интерфейс
 
-После запуска: `http://localhost:7000`
-
-Порт настраивается в `config/b4.json` (параметр `web_server.port`).
+После запуска веб-интерфейс доступен по адресу `http://localhost:7000` на хосте или по адресу хоста с другой машины. Порт задаётся в разделе **Настройки > Система > Веб-сервер**, поле **Порт**, или в `config/b4.json`, см. [Конфигурационный файл](../advanced/config.md#paths-system).

@@ -62,7 +62,7 @@ func TestStripIPv6AddressesDropsAAAAFromMixedAnswer(t *testing.T) {
 	w := fallbackWorker(t)
 	resp := buildTestMixedResponse("youtube.com", dnsTypeA, "142.250.74.14", "2a00:1450:4010:c0d::5d")
 
-	out, action := w.filterDNSAnswer(&config.Config{}, fallbackSet(), "youtube.com", resp, false)
+	out, action, _ := w.filterDNSAnswer(&config.Config{}, fallbackSet(), "youtube.com", "", resp, false)
 	if out == nil {
 		t.Fatal("expected the IPv6 addresses to be stripped")
 	}
@@ -80,7 +80,7 @@ func TestStripIPv6AddressesAnswersEmptyForAAAAOnlyAnswer(t *testing.T) {
 	resp := buildTestMixedResponse("youtube.com", dnsTypeAAAA,
 		"2a00:1450:4010:c0d::5d", "2a00:1450:4010:c0d::88")
 
-	out, action := w.filterDNSAnswer(&config.Config{}, fallbackSet(), "youtube.com", resp, false)
+	out, action, _ := w.filterDNSAnswer(&config.Config{}, fallbackSet(), "youtube.com", "", resp, false)
 	if out == nil {
 		t.Fatal("expected an empty NOERROR answer so the client falls back to IPv4")
 	}
@@ -102,7 +102,7 @@ func TestStripIPv6AddressesLeavesIPv4OnlyAnswerAlone(t *testing.T) {
 	w := fallbackWorker(t)
 	resp := buildTestAResponse("youtube.com", "142.250.74.14", "142.250.74.15")
 
-	if out, action := w.filterDNSAnswer(&config.Config{}, fallbackSet(), "youtube.com", resp, false); out != nil {
+	if out, action, _ := w.filterDNSAnswer(&config.Config{}, fallbackSet(), "youtube.com", "", resp, false); out != nil {
 		t.Errorf("an IPv4-only answer must pass through untouched, got action %q", action)
 	}
 }
@@ -113,7 +113,7 @@ func TestStripIPv6AddressesSkippedWhenIPv6Processed(t *testing.T) {
 	cfg.Queue.IPv6Enabled = true
 	resp := buildTestMixedResponse("youtube.com", dnsTypeAAAA, "2a00:1450:4010:c0d::5d")
 
-	if out, _ := w.filterDNSAnswer(cfg, fallbackSet(), "youtube.com", resp, false); out != nil {
+	if out, _, _ := w.filterDNSAnswer(cfg, fallbackSet(), "youtube.com", "", resp, false); out != nil {
 		t.Errorf("AAAA answers must survive while b4 processes IPv6")
 	}
 }
@@ -124,7 +124,7 @@ func TestStripIPv6AddressesHonoursKeepIPv6Answers(t *testing.T) {
 	cfg.System.DNS.KeepIPv6Answers = true
 	resp := buildTestMixedResponse("youtube.com", dnsTypeAAAA, "2a00:1450:4010:c0d::5d")
 
-	if out, _ := w.filterDNSAnswer(cfg, fallbackSet(), "youtube.com", resp, false); out != nil {
+	if out, _, _ := w.filterDNSAnswer(cfg, fallbackSet(), "youtube.com", "", resp, false); out != nil {
 		t.Errorf("keep_ipv6_answers must switch the fallback off")
 	}
 }
@@ -135,7 +135,7 @@ func TestStripIPv6AddressesSkippedForIPv6OnlySet(t *testing.T) {
 	set.Targets.IPVersion = "6"
 	resp := buildTestMixedResponse("youtube.com", dnsTypeAAAA, "2a00:1450:4010:c0d::5d")
 
-	if out, _ := w.filterDNSAnswer(&config.Config{}, set, "youtube.com", resp, false); out != nil {
+	if out, _, _ := w.filterDNSAnswer(&config.Config{}, set, "youtube.com", "", resp, false); out != nil {
 		t.Errorf("a set that only targets IPv6 must keep its AAAA answers")
 	}
 }
@@ -146,7 +146,7 @@ func TestStripIPv6AddressesSkippedInDiscovery(t *testing.T) {
 	cfg.Queue.IsDiscovery = true
 	resp := buildTestMixedResponse("youtube.com", dnsTypeAAAA, "2a00:1450:4010:c0d::5d")
 
-	if out, _ := w.filterDNSAnswer(cfg, fallbackSet(), "youtube.com", resp, false); out != nil {
+	if out, _, _ := w.filterDNSAnswer(cfg, fallbackSet(), "youtube.com", "", resp, false); out != nil {
 		t.Errorf("a discovery run must not rewrite DNS answers")
 	}
 }
@@ -155,7 +155,7 @@ func TestFilterDNSAnswerLeavesUnmatchedDomainsAlone(t *testing.T) {
 	w := fallbackWorker(t)
 	resp := buildTestMixedResponse("example.com", dnsTypeAAAA, "2a00:1450:4010:c0d::5d")
 
-	if out, _ := w.filterDNSAnswer(&config.Config{}, nil, "example.com", resp, false); out != nil {
+	if out, _, _ := w.filterDNSAnswer(&config.Config{}, nil, "example.com", "", resp, false); out != nil {
 		t.Errorf("a domain no set matched must keep its IPv6 answer")
 	}
 }
@@ -166,7 +166,7 @@ func TestFilterDNSAnswerAppliesHealAndStripTogether(t *testing.T) {
 	resp := buildTestMixedResponse("youtube.com", dnsTypeA,
 		"142.250.74.14", "142.250.74.15", "2a00:1450:4010:c0d::5d")
 
-	out, action := w.filterDNSAnswer(&config.Config{}, set, "youtube.com", resp, false)
+	out, action, _ := w.filterDNSAnswer(&config.Config{}, set, "youtube.com", "", resp, false)
 	if out == nil {
 		t.Fatal("expected both the unreachable address and the IPv6 one to be dropped")
 	}
@@ -195,7 +195,7 @@ func TestFilterDNSAnswerReportsHealWhenOnlyHealingApplies(t *testing.T) {
 	w := healWorker(t, "142.250.74.15")
 	resp := buildTestAResponse("youtube.com", "142.250.74.14", "142.250.74.15")
 
-	out, action := w.filterDNSAnswer(&config.Config{}, healSetWith(true), "youtube.com", resp, false)
+	out, action, _ := w.filterDNSAnswer(&config.Config{}, healSetWith(true), "youtube.com", "", resp, false)
 	if out == nil {
 		t.Fatal("expected the unreachable address to be dropped")
 	}

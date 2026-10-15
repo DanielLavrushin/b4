@@ -318,7 +318,7 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 	if cfg.Queue.Mark != 0 {
-		if err := n.addRule("output", "meta", "mark", "&", markAccept, "==", markAccept, "ct", "mark", "set", "ct", "mark", "|", markAccept); err != nil {
+		if err := n.addRule("output", "meta", "mark", "&", fmt.Sprintf("0x%x", markValue|engine.ClientMark), "==", markAccept, "ct", "mark", "set", "ct", "mark", "|", markAccept); err != nil {
 			log.Warnf("nftables: connmark save unavailable; b4's own marked connections (e.g. MTProto WS bridge upstream) will not be exempted from reply-side processing: %v", err)
 		}
 	}
@@ -373,16 +373,13 @@ func (n *NFTablesManager) apply() error {
 	if err != nil {
 		return err
 	}
-	noteDNSQueryPlacement(map[string]bool{backendNFTables: queriesFromRaw})
-
-	answers := []string{"udp", "sport", "53", "counter"}
+	placement := dnsHeldMangle
 	if queriesFromRaw {
-		answers = []string{"udp", "sport", "53", "udp", "dport", "!=", "53", "counter"}
+		placement = dnsHeldRaw
 	}
-	if err := n.addQueueRule("prerouting", answers...); err != nil {
-		return err
-	}
-	if err := n.addQueueRule("output", answers...); err != nil {
+	noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendNFTables: placement})
+
+	if err := n.addDNSAnswerRules(queriesFromRaw); err != nil {
 		return err
 	}
 

@@ -250,7 +250,7 @@ func TestEscalationDoesNotSendAResolverItsOwnQuery(t *testing.T) {
 		w := redirectWorker(t, false, next)
 		replies := watchReplies(t)
 
-		if w.answerViaSetInline(IPv4, w.getConfig(), next, "www.example.com", query, client, 40000, server) {
+		if w.answerViaSetInline(IPv4, w.getConfig(), next, "www.example.com", query, client, 40000, server, false) {
 			t.Fatalf("%s: the escalated set answered through the resolver that asked", target)
 		}
 		if w.answerViaSet(&verdictCtx{id: 62, q: newFakeQueue()}, IPv4, w.getConfig(), next, "www.example.com", query, client, 40000, server) {

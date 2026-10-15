@@ -375,10 +375,31 @@ func NoAddressAnswer(err error) bool {
 }
 
 func (r *Resolver) exchange(ctx context.Context, network string, ep endpoint.Endpoint, domain, recordType string) ([]string, error) {
+	id := uint16(rand.N(65535)) + 1
+	resp, err := r.roundTrip(ctx, network, ep.Addr.String(), dns.BuildQuery(domain, id, qtypeForRecord(recordType)))
+	if err != nil {
+		return nil, err
+	}
+	return answerIPs(resp, id, ep.String(), domain, recordType)
+}
+
+func (r *Resolver) Exchange(ctx context.Context, server string, query []byte) ([]byte, error) {
+	addr := server
+	if _, _, err := net.SplitHostPort(server); err != nil {
+		addr = net.JoinHostPort(server, "53")
+	}
+	resp, err := r.roundTrip(ctx, "udp", addr, query)
+	if err == nil && len(resp) > 2 && resp[2]&0x02 != 0 {
+		return r.roundTrip(ctx, "tcp", addr, query)
+	}
+	return resp, err
+}
+
+func (r *Resolver) roundTrip(ctx context.Context, network, addr string, query []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout())
 	defer cancel()
 
-	conn, err := Dialer(r.Mark, r.timeout(), 0).DialContext(ctx, network, ep.Addr.String())
+	conn, err := Dialer(r.Mark, r.timeout(), 0).DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -389,8 +410,6 @@ func (r *Resolver) exchange(ctx context.Context, network string, ep endpoint.End
 	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Unix(1, 0)) })
 	defer stop()
 
-	id := uint16(rand.N(65535)) + 1
-	query := dns.BuildQuery(domain, id, qtypeForRecord(recordType))
 	var resp []byte
 	if network == "tcp" {
 		resp, err = tcpRoundTrip(conn, query)
@@ -403,7 +422,7 @@ func (r *Resolver) exchange(ctx context.Context, network string, ep endpoint.End
 		}
 		return nil, err
 	}
-	return answerIPs(resp, id, ep.String(), domain, recordType)
+	return resp, nil
 }
 
 func udpRoundTrip(conn net.Conn, query []byte) ([]byte, error) {

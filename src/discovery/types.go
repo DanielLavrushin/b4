@@ -58,6 +58,7 @@ const (
 	FamilyTCPMD5      StrategyFamily = "tcpmd5"
 	FamilyAltAddress  StrategyFamily = "alt_address"
 	FamilyDNSRedirect StrategyFamily = "dns_redirect"
+	FamilyECHStrip    StrategyFamily = "ech_strip"
 	FamilyCommunity   StrategyFamily = "community"
 	FamilyCurrent     StrategyFamily = "current"
 )
@@ -134,6 +135,7 @@ const (
 type DomainInput struct {
 	Domain   string `json:"domain"`
 	CheckURL string `json:"check_url"`
+	plainTLS bool
 }
 
 type CheckSuite struct {
@@ -206,6 +208,8 @@ type DomainDiscoveryResult struct {
 	LinkStatus    int                            `json:"link_status,omitempty"`
 	Outcome       Outcome                        `json:"outcome,omitempty"`
 	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
+	ECHCoverName  string                         `json:"ech_cover_name,omitempty"`
+	ECHOnlyBlock  bool                           `json:"ech_only_block,omitempty"`
 }
 
 func (dr *DomainDiscoveryResult) refreshOutcome(finished bool) {
@@ -359,6 +363,9 @@ type DiscoverySuite struct {
 	jointConfirmed  map[string]bool
 	jointConfirmFn  func(presetName string, domains []string) (map[string]int, bool)
 	setVerdict      *SetVerdict
+
+	echMu sync.Mutex
+	ech   map[string]echKey
 }
 
 type CustomPayload struct {

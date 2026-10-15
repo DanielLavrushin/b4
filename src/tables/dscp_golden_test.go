@@ -139,6 +139,34 @@ func TestDSCPEmissionUnchangedWithoutSetDSCP(t *testing.T) {
 	}
 }
 
+func TestGoldenIsolateForgetsModulesEarlierTestsTried(t *testing.T) {
+	kmodStateMu.Lock()
+	prev := kmodAttempted
+	kmodAttempted = map[string]bool{"xt_hashlimit": true, dnsCopyLogModule: true, dnsCopyModule: true}
+	kmodStateMu.Unlock()
+	t.Cleanup(func() {
+		kmodStateMu.Lock()
+		kmodAttempted = prev
+		kmodStateMu.Unlock()
+	})
+
+	t.Run("isolated", func(t *testing.T) {
+		goldenIsolate(t, newGoldenHost(t))
+		kmodStateMu.Lock()
+		tried := len(kmodAttempted)
+		kmodStateMu.Unlock()
+		if tried != 0 {
+			t.Errorf("%d module loads tried by earlier tests are visible inside the golden run, and each one makes a monitor restore reload it", tried)
+		}
+	})
+	kmodStateMu.Lock()
+	restored := kmodAttempted["xt_hashlimit"] && kmodAttempted[dnsCopyModule]
+	kmodStateMu.Unlock()
+	if !restored {
+		t.Errorf("the module loads tried before the golden run were not restored after it")
+	}
+}
+
 func goldenEmission(t *testing.T, backend string, global goldenGlobal) string {
 	t.Helper()
 	h := newGoldenHost(t)
@@ -279,7 +307,8 @@ func goldenFirstDifference(got, want string) string {
 func goldenIsolate(t *testing.T, h *goldenHost) {
 	t.Helper()
 	resetDSCPState(t)
-	for _, m := range []*sync.Map{&hasBinaryCache, &iptWaitSupport, &rawQueueProven, &rawFallbackWarned} {
+	stubDNSKernel(t, unaffectedDNSKernel)
+	for _, m := range []*sync.Map{&hasBinaryCache, &iptWaitSupport, &rawQueueProven, &rawFallbackWarned, &copyFallbackWarned, &dnsCopyNoted, &dnsNatPortWarned, &rawQueueUnusable, &dnsCopyUnusable, &dnsCopyErrors} {
 		goldenKeepSyncMap(t, m)
 	}
 	for _, name := range append(slices.Clone(goldenIptBinaries), "ipset", "nft", "ip") {
@@ -337,13 +366,23 @@ func goldenIsolate(t *testing.T, h *goldenHost) {
 	})
 
 	dnsQueryPlacementMu.Lock()
-	origPlacement := dnsQueryFromRaw
-	dnsQueryFromRaw = nil
+	origPlacement := dnsQueryPlacements
+	dnsQueryPlacements = nil
 	dnsQueryPlacementMu.Unlock()
 	t.Cleanup(func() {
 		dnsQueryPlacementMu.Lock()
-		dnsQueryFromRaw = origPlacement
+		dnsQueryPlacements = origPlacement
 		dnsQueryPlacementMu.Unlock()
+	})
+
+	kmodStateMu.Lock()
+	origAttempted := kmodAttempted
+	kmodAttempted = map[string]bool{}
+	kmodStateMu.Unlock()
+	t.Cleanup(func() {
+		kmodStateMu.Lock()
+		kmodAttempted = origAttempted
+		kmodStateMu.Unlock()
 	})
 
 	routeMu.Lock()

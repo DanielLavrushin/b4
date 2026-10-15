@@ -1,20 +1,13 @@
 ---
 sidebar_position: 2
-title: OpenWRT
+title: OpenWrt
+description: Установка b4 на роутер с OpenWrt.
 ---
-
-# OpenWRT
 
 ## Требования
 
-- OpenWRT 19.07 и выше
-- Внешнее хранилище (USB или extroot) - рекомендуется, так как на внутренней памяти роутера может не хватить места
-
-:::warning Место на диске
-На роутерах с OpenWRT внутренняя память ограничена (overlay). Если доступно менее 2 МБ, установщик выводит предупреждение. Рекомендуется extroot или USB-накопитель.
-
-Инструкция по настройке extroot: https://openwrt.org/docs/guide-user/additional-software/extroot_configuration
-:::
+- OpenWrt 19.07 или новее.
+- Свободное место для бинарника. Внутренняя память (overlay) часто мала, и установщик предупреждает, если свободно меньше 2 МБ. Рекомендуется USB-накопитель или [extroot](https://openwrt.org/docs/guide-user/additional-software/extroot_configuration).
 
 ## Установка
 
@@ -36,31 +29,30 @@ opkg update && opkg install curl ca-certificates
 wget -qO- https://raw.githubusercontent.com/DanielLavrushin/b4/main/install.sh | sh
 ```
 
-:::info wget на OpenWRT
-Стандартный `wget` в OpenWRT (BusyBox) не поддерживает HTTPS. Полная версия устанавливается так:
+Встроенный в OpenWrt `wget` из BusyBox не поддерживает HTTPS. Полная версия устанавливается так:
+
 ```bash
 opkg update && opkg install wget-ssl ca-certificates
 ```
-:::
 
-## Модули ядра
+## Модули ядра {#kernel-modules}
 
-Установщик пытается загрузить необходимые модули автоматически. Если при запуске появляется предупреждение `[WARN] No netfilter queue module available` или ошибки, связанные с nftables, модули нужно установить вручную.
+Установщик пытается сам загрузить нужные b4 модули. Если он предупреждает `The kernel cannot queue packets to b4`, то печатает и пакеты, которые нужно установить. Обычно это пакеты из списков ниже.
 
-### OpenWRT 24.x+ (apk)
+### OpenWrt 24.x и новее (apk)
 
 ```bash
 apk add kmod-nft-queue kmod-nft-nat kmod-nft-compat kmod-nft-conntrack
 ```
 
-### OpenWRT 23.x и ниже (opkg)
+### OpenWrt 23.x и ниже (opkg)
 
 ```bash
 opkg update
 opkg install kmod-nft-queue kmod-nft-conntrack nftables-json coreutils-nohup
 ```
 
-Для совсем старых версий (без nftables):
+Для версий без nftables:
 
 ```bash
 opkg install kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue iptables-mod-conntrack-extra
@@ -68,7 +60,7 @@ opkg install kmod-nfnetlink-queue kmod-ipt-nfqueue iptables-mod-nfqueue iptables
 
 ### Загрузка модулей
 
-После установки модулей их может потребоваться загрузить вручную:
+Установленные модули иногда приходится загрузить вручную. Если команда ничего не вывела, модуль загружен:
 
 ```bash
 modprobe nft_queue
@@ -76,101 +68,32 @@ modprobe nft_ct
 modprobe xt_connbytes
 ```
 
-Если команда выполняется без вывода - модуль загружен успешно.
-
 ## Управление сервисом
 
 ```bash
-/etc/init.d/b4 enable     # автозапуск при загрузке
+/etc/init.d/b4 enable     # запуск при загрузке
 /etc/init.d/b4 start
 /etc/init.d/b4 stop
 /etc/init.d/b4 restart
 ```
 
-:::tip Работа через SSH
-Сервис b4 работает как системный демон - он продолжает работать после закрытия SSH-сессии (PuTTY, терминал и т.д.). Ручной `screen` или `nohup` не нужен.
-:::
+Сервис продолжает работать после закрытия SSH-сессии, `screen` или `nohup` не нужны.
 
 ## Пути
 
-При наличии `/opt` (extroot/USB):
-
-| Что | Где |
-| --- | --- |
-| Бинарник | `/opt/bin/b4` |
-| Конфигурация | `/opt/etc/b4/b4.json` |
-
-Без внешнего хранилища (fallback):
-
-| Что | Где |
-| --- | --- |
-| Бинарник | `/usr/bin/b4` |
-| Конфигурация | `/etc/b4/b4.json` |
+| Что | С `/opt` (extroot или USB) | Без внешнего накопителя |
+| --- | --- | --- |
+| Бинарник | `/opt/bin/b4` | `/usr/bin/b4` |
+| Конфигурация | `/opt/etc/b4/b4.json` | `/etc/b4/b4.json` |
 
 ## Веб-интерфейс
 
-После запуска b4 доступен по адресу `http://<IP роутера>:7000`. Например, при IP роутера `192.168.1.1` адрес в браузере:
-
-```text
-http://192.168.1.1:7000
-```
+После запуска веб-интерфейс доступен по адресу `http://<адрес роутера>:7000`, например `http://192.168.1.1:7000`.
 
 ## LuCI-приложение
 
-Существует сторонний пакет [luci-app-b4](https://github.com/BugOldfag/luci-app-b4), который добавляет управление b4 в интерфейс LuCI. Проект находится в стадии alpha и покрывает часть функций. Основной веб-интерфейс b4 (порт 7000) по-прежнему доступен.
+Сторонний пакет [luci-app-b4](https://github.com/BugOldfag/luci-app-b4) добавляет b4 в интерфейс LuCI. Он в стадии alpha и покрывает часть функций. Веб-интерфейс b4 на порту 7000 остаётся доступен.
 
-## Устранение неполадок
+## Решение проблем
 
-### Service crashed / сервис не запускается
-
-1. Модули ядра должны быть установлены и загружены (см. раздел «Модули ядра» выше)
-2. Логи: `logread | grep b4`
-
-### Error: Could not process rule
-
-Если b4 вылетает с ошибкой при добавлении правил в цепочку, возможно остались «битые» таблицы от предыдущего неудачного запуска. Их очистка:
-
-```bash
-nft delete table inet b4_mangle 2>/dev/null
-```
-
-После этого b4 запускается заново:
-
-```bash
-/etc/init.d/b4 restart
-```
-
-### Низкая скорость / тормозит видео
-
-Стоит проверить настройку **Software flow offloading** в разделе Network → Firewall, в обоих положениях - на некоторых устройствах она влияет на производительность b4.
-
-### Как совместить flow offloading и b4
-
-Flow offloading переводит установленное соединение на быстрый путь, минуя хуки netfilter, с которыми работает b4: при включённом offloading b4 запущен, но трафика не видит. На слабом железе выключение offloading заметно снижает пропускную способность.
-
-b4 разбирает только первые пакеты соединения (по умолчанию 19 для TCP и 8 для UDP, параметры `queue.tcp_conn_bytes_limit` и `queue.udp_conn_bytes_limit`), поэтому offloading можно отложить до момента, когда b4 уже отработал. В файле `/usr/share/firewall4/templates/ruleset.uc` нужная строка:
-
-```text
-meta l4proto { tcp, udp } flow offload @ft;
-```
-
-Она заменяется на:
-
-```text
-meta l4proto { tcp, udp } ct original packets ge 40 flow offload @ft;
-```
-
-Затем файрвол перезапускается:
-
-```bash
-fw4 restart
-```
-
-На что обратить внимание:
-
-- Порог должен оставаться выше лимитов пакетов, заданных в b4. Если поднять `tcp_conn_bytes_limit` выше порога, соединение уйдёт на быстрый путь раньше, чем b4 с ним закончит.
-- `ct original packets` читает счётчики conntrack. Если `sysctl net.netfilter.nf_conntrack_acct` возвращает `0`, счётчик остаётся нулевым, правило не срабатывает и offloading не включается вообще.
-- Сеты с включённым **Duplicate** для TCP разбираются на протяжении всего соединения, для них не подойдёт никакой порог.
-- Файл принадлежит пакету `firewall4` и перезаписывается при обновлении пакета и при sysupgrade.
-
-Системная диагностика (окно **Информация о системе** в разделе **Настройки, Система, Сервис** и экран диагностики установщика) показывает найденный порог и сравнивает его с лимитами b4.
+Сервис, который не запускается, ошибка `Could not process rule`, низкая скорость и flow offloading разобраны на странице [Особенности платформ](../troubleshooting/platforms.md#openwrt).

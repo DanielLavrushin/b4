@@ -76,7 +76,7 @@ func registerEscalatedRoute(cfg *config.Config, escSet *config.SetConfig, ips []
 		return
 	}
 	dscpLearnAsync(cfg, escSet, ips, false)
-	if !escSet.Routing.Enabled || !routingHandleDNSAvailable() {
+	if !escSet.Routing.Enabled || config.RoutingIsBlock(escSet.Routing.Mode) || !routingHandleDNSAvailable() {
 		return
 	}
 	log.Tracef("registerEscalatedRoute: adding %d address(es) to %s ipset (mode=%s)", len(ips), escSet.Name, escSet.Routing.Mode)

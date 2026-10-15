@@ -145,6 +145,7 @@ var Fields = map[string]Field{
 	"dns.fragment_query": {Class: Crosses},
 	"dns.strict":         {Class: Crosses},
 	"dns.pins":           {Class: Crosses},
+	"dns.strip_ech":      {Class: Crosses, Since: "1.87.0"},
 
 	"routing.enabled":           {Class: Crosses},
 	"routing.mode":              {Class: Crosses},

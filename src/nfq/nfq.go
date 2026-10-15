@@ -98,15 +98,11 @@ func (w *Worker) Start() error {
 		log.Tracef("nfqueue %d: could not raise the netlink read buffer to %d bytes: %v", w.qnum, nfqReadBufferBytes, err)
 	}
 
-	if cfg.Queue.IPv4Enabled {
-		if err := pfBind(q.Con, syscall.AF_INET); err != nil {
-			log.Warnf("nfqueue PF_BIND AF_INET: %v", err)
-		}
+	if err := pfBind(q.Con, syscall.AF_INET); err != nil {
+		log.Warnf("nfqueue PF_BIND AF_INET: %v", err)
 	}
-	if cfg.Queue.IPv6Enabled {
-		if err := pfBind(q.Con, syscall.AF_INET6); err != nil {
-			log.Warnf("nfqueue PF_BIND AF_INET6: %v", err)
-		}
+	if err := pfBind(q.Con, syscall.AF_INET6); err != nil {
+		log.Warnf("nfqueue PF_BIND AF_INET6: %v", err)
 	}
 
 	w.wg.Add(1)
@@ -542,6 +538,9 @@ func (w *Worker) gc() {
 				w.connTracker.Cleanup()
 			}
 			_ = cleanupDNSPendingRoutes(time.Now())
+			if l := w.dnsCopy; l != nil && l.w == w {
+				l.sweep(time.Now())
+			}
 		}
 	}
 }

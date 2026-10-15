@@ -23,6 +23,7 @@ export type StrategyFamily =
   | "tcpmd5"
   | "alt_address"
   | "dns_redirect"
+  | "ech_strip"
   | "current";
 
 export type DiscoveryPhase =
@@ -122,6 +123,8 @@ export interface DiscoveryResult {
   link_status?: number;
   outcome?: DiscoveryOutcome;
   unconfirmed?: boolean;
+  ech_cover_name?: string;
+  ech_only_block?: boolean;
 }
 
 export interface DiscoverySuite {
@@ -226,6 +229,8 @@ export interface HistoryEntry {
   missing_family?: IPFamily;
   link_status?: number;
   unconfirmed?: boolean;
+  ech_cover_name?: string;
+  ech_only_block?: boolean;
   stopped_early?: boolean;
   order?: number;
   applied?: Record<string, AppliedMark>;

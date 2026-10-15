@@ -35,7 +35,10 @@ func TestIsB4IptablesRuleSkipsChainsDumpedSeparately(t *testing.T) {
 		"-N B4_TUN_GATE",
 		"-N B4_DISCOVERY",
 		"-N B4_MASQ",
+		"-N B4_DNSTCP",
 		"-A B4_TUN -m mark --mark 0x8000/0x8000 -j RETURN",
+		"-A B4_DNSTCP -m mark --mark 0x8000/0x8000 -j RETURN",
+		"-A B4_DNSTCP -p tcp -m tcp --dport 53 -j REDIRECT --to-ports 5453",
 		"-A B4_TUN_GATE -m mac --mac-source 02:42:AC:11:00:03 -j RETURN",
 		"-A B4_DISCOVERY -m mark --mark 0x8002 -j ACCEPT",
 		"-A B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-num 537",
@@ -68,7 +71,9 @@ func TestDiagB4ChainsCoverTheTUNChains(t *testing.T) {
 		"B4_TUN_GATE":   "mangle",
 		"B4_DISCOVERY":  "mangle",
 		"B4_DSCP":       "mangle",
+		"B4_DNSCOPY":    "mangle",
 		"B4_MASQ":       "nat",
+		"B4_DNSTCP":     "nat",
 	}
 	got := make(map[string]string, len(diagB4Chains))
 	for _, c := range diagB4Chains {

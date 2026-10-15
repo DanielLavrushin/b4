@@ -213,6 +213,21 @@ export const HistoryTable = ({
     }
   };
 
+  const echLine = (entry: HistoryEntry) => {
+    const cover = entry.ech_cover_name;
+    if (!cover) return null;
+    return (
+      <Typography variant="caption" sx={{ color: colors.text.disabled }}>
+        {t(
+          entry.ech_only_block
+            ? "discovery.history.echOnly"
+            : "discovery.history.echCover",
+          { cover },
+        )}
+      </Typography>
+    );
+  };
+
   const strategy = (row: Row) => {
     const muted = { color: colors.text.secondary };
     switch (row.verdict) {
@@ -266,6 +281,7 @@ export const HistoryTable = ({
                 {t("discovery.history.stoppedEarly")}
               </Typography>
             )}
+            {echLine(row.entry)}
             {row.alternates.length > 0 && (
               <Button
                 size="small"
@@ -335,9 +351,12 @@ export const HistoryTable = ({
         );
       default:
         return (
-          <Typography variant="body2" sx={muted}>
-            {t("discovery.history.nothing")}
-          </Typography>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography variant="body2" sx={muted}>
+              {t("discovery.history.nothing")}
+            </Typography>
+            {echLine(row.entry)}
+          </Box>
         );
     }
   };

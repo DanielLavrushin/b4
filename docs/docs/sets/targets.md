@@ -1,129 +1,74 @@
 ---
 sidebar_position: 1
 title: Targets
+description: The Targets tab of the set editor, which decides the domains, addresses, networks and devices a set applies to.
 ---
 
-The "Targets" tab defines which traffic the set applies to. Traffic is filtered by domains, IP addresses, GeoSite/GeoIP categories, ASNs, and source devices.
+The **Targets** tab decides which traffic the set applies to. It has four sub-tabs: **Bypass Domains**, **Bypass IPs**, **ASN** and **Source Devices**.
 
-## TLS version filter
+[Adding sites to a set](../guides/add-sites.md) shows the ways to fill this tab, including from the Traffic page and the dashboard. [How sets match traffic](../internals/matching.md) describes how b4 chooses between sets that target the same site.
 
-The **Bypass Domains** tab has a **TLS Version Filter** with the options **Any** (the default), **TLS 1.2** and **TLS 1.3**. The version compared is the highest one the client's ClientHello offers.
+![The Bypass Domains sub-tab with a GeoSite category](/img/targets/20260418234818.png)
 
-For a match by domain the filter is a preference. Among the sets that match the server name, a set whose filter fits the version is chosen first, and when none fits, the set is chosen as if no filter were set. For a match by IP address, GeoIP category or ASN, a set whose filter does not fit the version does not take the connection.
+## Domains {#domains}
 
-## Domains
+The **Bypass Domains** sub-tab holds domain names and GeoSite categories, and the filters that apply to the whole set.
 
-Domains are typed in by hand, and the Enter key adds the typed domain to the set.
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Match any domain** | Adds `regexp:.*`, which matches every domain. A domain that another set lists is still handled by that set, so this set takes only what no other set claims. For routing, it covers only the addresses this set has resolved, not every address. | Off |
+| **Domain-only matching** | Matches the domains only by the server name in the handshake, never by their IP address. Useful on shared CDN addresses, where a neighbouring domain on the same IP would otherwise get this set's strategy. A routing set with this on routes only the addresses listed explicitly. | Off |
+| **TLS Version Filter** | **Any**, **TLS 1.2** or **TLS 1.3**, compared with the highest version the client offers. For a match by domain it is a preference: among the sets that list the domain, one whose filter fits comes first. For a match by address, a set whose filter does not fit does not take the connection. | **Any** |
+| **IP Version Filter** | **Any**, **IPv4** or **IPv6**, a preference for matches by domain and by address alike: among the matching sets, one whose filter fits comes first. Shown while both IPv4 and IPv6 support are on under [Settings > Core](../settings/core.md#protocols). An ASN target then loads only the prefixes of the chosen family. | **Any** |
+| **Manual Bypass Domains** | Domain names, added with Enter. A domain covers its subdomains, so a leading `*.` is removed. Several domains can be pasted at once, separated by commas or new lines. A `regexp:` entry takes a regular expression. | Empty |
+| **Bypass GeoSite Categories** | Ready-made lists of a service's domains from the GeoSite database, such as `youtube` or `discord`. Needs the database loaded under [Settings > Geodat Settings](../settings/geodata.md). A click on a category shows its domains. | Empty |
 
-- Multiple domains can be added separated by commas or newlines
-- Duplicates with another set trigger a warning
-- The **Edit List** button opens a text editor (one domain per line)
+**Edit List** opens all manual entries as text, one per line. When a domain is already in another set, a warning names that set.
 
-![20260418234818](../../static/img/targets/20260418234818.png)
+## IP addresses {#ip-addresses}
 
-## GeoSite categories
+The **Bypass IPs** sub-tab holds addresses and GeoIP categories.
 
-Instead of adding domains one by one, a set can take a category from the GeoSite database. Each category contains hundreds or thousands of domains (for example, `youtube`, `discord`, `google`).
+![The Bypass IPs sub-tab](/img/targets/20260418234851.png)
 
-To use GeoSite, the database must be loaded (**Settings, Geodat Settings**).
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Match any IP address** | Adds `0.0.0.0/0`, and `::/0` while IPv6 support is on, which match every address. For DPI bypass, a narrower range in another set is handled by that set, so this set takes only what no other set claims. For routing, a narrower range in another routing set gets no such priority, so the two are best not combined. | Off |
+| **Manual Bypass IPs** | Addresses and CIDR ranges, such as `192.168.1.100` or `10.0.0.0/8`, entered the same way as domains. | Empty |
+| **Bypass GeoIP Categories** | Address ranges from the GeoIP database, by country or by network. Needs the database loaded under **Settings > Geodat Settings**. | Empty |
 
-Clicking a category shows the list of domains it contains.
+## ASN {#asn}
 
-## IP addresses
+An ASN (autonomous system number) identifies the network of one operator: `AS15169` is Google, `AS13335` is Cloudflare. An ASN target makes the set match every address range, or prefix, the network announces. b4 fetches the prefixes from RIPEstat, refreshes them daily and keeps the last good copy when a fetch fails.
 
-Manual entry of IPs or CIDR ranges (for example, `10.0.0.0/8`, `192.168.1.100`).
-
-Works the same way as domains: bulk editing supported, duplicates warned.
-
-## GeoIP categories
-
-The GeoIP equivalent for IP ranges. Categories are keyed to countries and ASNs.
-
-![20260418234851](../../static/img/targets/20260418234851.png)
-
-## ASN
-
-An ASN (autonomous system number) identifies a network on the internet: `AS15169` is Google, `AS13335` is Cloudflare. An ASN target makes the set match every address range that network announces, without the ranges being listed by hand, and b4 keeps the list current as the network adds and withdraws ranges.
-
-The **ASN** tab accepts a number (`15169`), the same number with its prefix (`AS15169`), or an IP address. For an IP address b4 looks up the network that announces it and offers that ASN, or each of them when more than one network announces the address. Adding an ASN resolves it first, so its row shows the holder name, the number of prefixes (IPv4 / IPv6), the approximate number of IPv4 addresses and the time of the last update. When the resolve fails, the error is shown and the ASN can still be added: b4 keeps trying in the background.
-
-Each row can refresh the prefixes, show the full prefix list and remove the ASN from the set. An ASN whose prefixes are not known yet is shown with a warning and the last fetch error, if there is one. The tab label shows the number of ASNs in the set.
-
-Numbers that never identify a public network are refused with an error: `0`, `23456`, the documentation, private and reserved range `64496`-`131071`, and everything from `4200000000` up.
-
-### Where the prefixes come from
-
-The configuration stores only the number, without the `AS` prefix: `"asns": ["15169"]`. The prefixes are fetched by b4 itself from [RIPEstat](https://stat.ripe.net/), the RIPE NCC data service: the prefixes the ASN originates as seen by the RIS route collectors, with announcements seen by only a few collectors filtered out. Private, reserved and documentation ranges and default routes are dropped, a prefix inside a wider one is dropped, and two adjacent halves of a larger prefix are merged into it. The browser never contacts RIPEstat.
-
-The result is kept in `asn_cache.json` in the directory of the configuration file. The file is shared by every set that names the ASN and by every browser; the ASN labels on the [Traffic](../connections#asn) page come from it as well. A file that is not valid JSON at start is moved aside to `asn_cache.json.corrupt`, and the ASNs the sets reference are fetched again.
-
-### Refresh
-
-| Event | What happens |
+| Field | What it does |
 | --- | --- |
-| b4 starts | Loading `asn_cache.json` makes no network request, and the sets use its prefixes as they are, however old, so after a reboot without internet access the sets keep matching the last known prefixes. The background check below runs right after start. |
-| Right after start, then every hour | A background check fetches each ASN referenced by any set, enabled or not, whose entry is missing or older than 20 hours. ASNs are fetched one at a time. |
-| A set gains an ASN that has no prefixes yet | The check runs at once. |
-| A fetch fails | The last good copy stays in use. The next attempt follows after 30 seconds, and the wait doubles with every further failure up to one hour. |
-| The prefixes changed | Every set that references the ASN is expanded again and the firewall rules are refreshed. |
+| **Add ASN or IP address** | Takes a number (`15169`), the number with its prefix (`AS15169`) or an IP address. For an address, b4 lists the networks that announce it, and a button such as **Add AS15169** adds one. |
+| ASN rows | Each ASN in the set with its holder, the number of IPv4 and IPv6 prefixes, the approximate number of IPv4 addresses and the time of the last update. **Refresh from RIPEstat** fetches the prefixes again, **Show prefixes** lists them, and **Remove from the set** removes the ASN. |
 
-An answer with no prefixes is refused. An answer that covers less than half the address space known before, counted in IPv4 addresses or in IPv6 /64 networks, is taken only after three fetches in a row, an hour apart, return the same shrink; until then the previous list stays in use, so a gap in the RIPEstat data does not empty a set. The refresh button in the set editor follows the same rule: it keeps the previous list and reports the shrink, and only the background check can accept it.
+When a lookup fails, the error is shown, and **Add anyway, resolve later** still adds the ASN. b4 retries in the background. Until a fetch succeeds, the ASN adds no addresses to the set, and the set's card shows **N ASN unresolved**. Private and reserved numbers are refused, since no public network announces them.
 
-### Before the first resolve
-
-An ASN with no cached prefixes contributes no addresses, and the set does not match that network's traffic until the first fetch succeeds. The set editor and the set card show such an ASN as unresolved. A set whose domains, addresses, categories and ASNs all resolve to nothing matches nothing: it does not start acting on every connection to its ports, its MSS clamp is not installed, and its routing rules are installed once a target resolves.
-
-### How the addresses are matched
-
-The prefixes join the set's address list after the GeoIP categories and before the addresses entered by hand. The set's IP version filter applies to them strictly: with `4` only the IPv4 prefixes are loaded, with `6` only the IPv6 ones.
-
-From there an ASN behaves like the same prefixes entered under [IP addresses](#ip-addresses): the DPI bypass, routing, blocking, packet duplication and the MSS clamp all use them, and an ASN counts as an IP target for the [MSS clamp](./tcp/general#mss-clamping) scope. A set with ASN targets and no domains cannot be watched by the [watchdog](../watchdog), which confirms the set that handles a site by its host name.
-
-When a destination is covered by more than one set, the two paths choose differently:
-
-| Path | Which set takes the connection |
-| --- | --- |
-| DPI bypass | A set matching the TLS or QUIC server name comes first, then an address learned from an earlier server name match. Among address targets, IP, GeoIP and ASN alike, a set limited to the source device wins, then the longest prefix; list order only breaks ties between prefixes of the same length. |
-| Routing | Prefix length plays no part. Sets limited to selected devices or source interfaces are evaluated before the others, and among sets of the same kind the one higher in the list claims the connection. |
-
-A routing set for one service therefore keeps its traffic away from a routing set over the whole network only when it sits above it in the list.
+For routing, where two sets of the same kind cover the same addresses, the set higher in the list wins, and sets limited to selected devices or source interfaces come before the others. A set with ASN targets and no domains cannot be kept working by the [watchdog](../watchdog.md), which identifies a set's sites by their names. [How sets match traffic](../internals/matching.md#asn-targets) describes where the prefixes come from and how they are refreshed.
 
 :::warning Large and shared networks
-No size limit is enforced. A large network expands into thousands of prefixes, and each one is an element of the firewall sets that routing, packet duplication and the MSS clamp build, as well as an entry in b4's address matcher, which costs memory and load time on a small router. The ASN tab warns above 2000 prefixes or 16,777,216 IPv4 addresses.
-
-Cloud, hosting and CDN networks such as AWS, Google Cloud, Cloudflare, Akamai or Hetzner carry many unrelated services, so an ASN target for one of them catches every other site hosted there as well. A routing set over such a network also catches the public DNS resolvers it hosts, such as `8.8.8.8` in `AS15169` or `1.1.1.1` in `AS13335`. A domain target, or a narrower set placed above it, keeps the scope to the service meant.
+A large network expands into thousands of prefixes, which costs memory on a small router. The tab warns above 2,000 prefixes or 16,777,216 IPv4 addresses. A cloud, hosting or CDN network such as AWS, Google Cloud, Cloudflare, Akamai or Hetzner carries many unrelated services. Its ASN also catches every other site hosted there, public DNS resolvers such as `8.8.8.8` and `1.1.1.1` included. A domain target, or a narrower set placed above, keeps the set to the service meant.
 :::
 
-:::info
-An ASN can also be added from the [Traffic](../connections#adding-addresses-and-networks-to-sets) page and from the Hosting and CDN results of the [DPI Detector](../detector), and over MCP with [`b4_edit_set_targets`](../settings/mcp#changing-settings).
-:::
+## Source devices {#source-devices}
 
-## Source devices
+The **Source Devices** sub-tab limits the set to traffic from selected devices. [Applying b4 to selected devices](../guides/devices.md) shows the setup.
 
-Limits the set to traffic from specific devices on the network.
+![The Source Devices sub-tab with two devices selected](/img/targets/20260418234934.png)
 
-Devices discovered from the ARP table are matched by their MAC address. Devices added by hand have no MAC address on
-the network, so they are matched by the IP address entered for them. Such a device needs a fixed or reserved address,
-and it cannot be matched at all when an intermediate router replaces the source address of its traffic before it
-reaches b4.
+| Field | What it does | Default |
+| --- | --- | --- |
+| Device table | The devices on the network, with their MAC address, IP address and name. The set applies to the traffic of the selected ones. | None selected |
+| **All devices except selected** | Applies the set to every device except the selected ones. | Off |
 
-The table shows available devices:
+With no device selected, the set applies to all traffic. A set limited to devices takes priority over a set without devices that targets the same site.
 
-| Column | Description |
-| --- | --- |
-| Select | Checkbox to include the device |
-| MAC | Device MAC address, or `matched by IP` for a manually added device |
-| IP | Current IP address |
-| Name | Device alias or vendor |
-
-![20260418234934](../../static/img/targets/20260418234934.png)
-
-If no device is selected, the set applies to all traffic. When devices are selected, only their traffic is matched. Device-bound sets take priority over generic ones.
+Devices found in the router's ARP table are matched by their MAC address. A device added by hand has no MAC address on the network, so it is matched by the IP address entered for it. Such a device needs a fixed or reserved address, and it cannot be matched when a router between it and b4 replaces its source address. Without a working ARP table, the tab says so, and filtering by source device does not work.
 
 :::warning Source devices do not select traffic on their own
-Every routing rule matches a destination address. Source devices decide whose traffic is offered to that rule, not
-which traffic is steered, so a set whose only target is a source device routes nothing and b4 installs no rule for it.
-
-With the device selected and **Match any IP address** on in the **Bypass IPs** tab, the set routes everything from that
-device. Traffic the router itself originates is left alone for such a set, because it can never come from a source device.
+Source devices decide whose traffic the set applies to, not which traffic. A routing set whose only target is a source device routes nothing. To route everything from a device, **Match any IP address** is turned on in the **Bypass IPs** sub-tab. Traffic the router itself sends never comes from a source device, so such a set leaves it alone.
 :::

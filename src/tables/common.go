@@ -560,8 +560,12 @@ func ReloadKernelModules() {
 	loadKernelModuleList(kernelModuleList...)
 	kmodStateMu.Lock()
 	hashlimit := kmodAttempted["xt_hashlimit"]
+	nflog := kmodAttempted[dnsCopyLogModule] || kmodAttempted[dnsCopyModule]
 	kmodStateMu.Unlock()
 	if hashlimit {
 		loadKernelModuleList("xt_hashlimit")
+	}
+	if nflog && DNSQueryCopyKernel() {
+		loadKernelModuleList(dnsCopyLogModule, dnsCopyModule)
 	}
 }

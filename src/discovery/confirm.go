@@ -166,7 +166,7 @@ func (ds *DiscoverySuite) confirmPreset(presetName string, stored *config.SetCon
 	time.Sleep(time.Duration(ds.cfg.System.Checker.ConfigPropagateMs) * time.Millisecond)
 
 	timeout := time.Duration(ds.cfg.System.Checker.DiscoveryTimeoutSec) * time.Second
-	inputs := ds.inputsFor(domains)
+	inputs := ds.confirmInputs(presetName, domains)
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -202,6 +202,16 @@ func (ds *DiscoverySuite) confirmPreset(presetName string, stored *config.SetCon
 		}
 	}
 	return passes, true
+}
+
+func (ds *DiscoverySuite) confirmInputs(presetName string, domains []string) []DomainInput {
+	inputs := ds.inputsFor(domains)
+	if presetName == presetECHStrip {
+		for i := range inputs {
+			inputs[i].plainTLS = true
+		}
+	}
+	return inputs
 }
 
 func (ds *DiscoverySuite) inputsFor(domains []string) []DomainInput {
