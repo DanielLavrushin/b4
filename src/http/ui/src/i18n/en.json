@@ -614,7 +614,7 @@
       "keyRemoveError": "Failed to remove key",
       "statusNotReady": "Not ready",
       "refreshStatus": "Re-check the provider",
-      "privacyCloud": "Your questions and the parts of the config they touch leave the router for {{provider}}. Choose Ollama to keep everything local.",
+      "privacyCloud": "Your questions and the parts of the config they touch leave the router for {{provider}}. With Ollama, everything stays local when it runs on this router or in the local network.",
       "keyStoredHelp": "Held on the server in its own file, mode 0600, never in the config"
     },
     "Mcp": {
@@ -2799,7 +2799,7 @@
         "body": "Tested alone, the set's own strategy loaded every address, so there is nothing to write.",
         "stillFails": "If these sites still fail in a browser:",
         "otherSet": "{{domain}} is handled by {{owner}}, not by {{name}}, so the strategy of {{owner}} applies there.",
-        "quic": "the browser may use QUIC (HTTP/3) or IPv6, which Discovery does not test.",
+        "quic": "the browser may use QUIC (HTTP/3), which Discovery does not test, or IPv6, which a run tests only when IPv6 is chosen in its options.",
         "unmatched": "{{domain}} is not matched by {{name}} at all, so its strategy does not apply to this address."
       },
       "partial": {

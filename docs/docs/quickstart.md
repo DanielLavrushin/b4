@@ -61,7 +61,7 @@ b4 tries its strategies on the sites. A run takes from one to ten minutes, depen
 
 ![The Traffic page, with set names in the Set column](/img/connections/20260923214001.png)
 
-The **Sets** panel of the dashboard counts the connections the set matched as well. When the site still does not open, [Unblocking a site](guides/unblock.md) lists the next steps.
+The **Sets** panel of the dashboard counts the connections the set matched as well. When the site still does not open, [Unblocking a site](guides/unblock.md) lists the next steps. A browser that had the site open before keeps reusing its old connections, see [The browser opens new connections](troubleshooting/index.md#browser).
 
 ## Next steps {#whats-next}
 

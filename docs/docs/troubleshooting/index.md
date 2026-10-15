@@ -37,7 +37,21 @@ The checks go from the quickest to the slowest. The first one that fails points 
 
 **Domains not in any set** on the dashboard's **Activity** panel opens the Traffic page with only the connections no set matched.
 
-### 3. DNS {#dns}
+### 3. The browser opens new connections {#browser}
+
+b4 handles only the first packets of a connection. A connection the browser opened before the set existed, or while the strategy did not work yet, gets no bypass, and the browser keeps reusing it. It keeps DNS answers for a while as well.
+
+In Chrome, Edge and other Chromium browsers:
+
+1. Open `chrome://net-internals/#sockets` and click **Flush socket pools**.
+2. Open `chrome://net-internals/#dns` and click **Clear host cache**.
+3. Reload the site.
+
+A full restart of the browser has the same effect, in Firefox as well. On Windows, `ipconfig /flushdns` also clears the system's DNS cache.
+
+An address typed without `https://` has one more trap. Chrome tries HTTPS first and falls back to plain HTTP when HTTPS fails, for example while the site is blocked. After that it keeps choosing HTTP for the site for some time, and the address bar can suggest the `http://` address. The strategies Discovery finds are tested over HTTPS, so over plain HTTP a blocked site usually stays blocked. Typing the address with `https://` opens the site over HTTPS. Shift+Delete (Shift+Fn+Delete on a Mac) removes the `http://` suggestion from the address bar.
+
+### 4. DNS {#dns}
 
 b4 sees the DNS queries that devices send to port 53. A device with encrypted DNS, such as secure DNS in the browser or Android Private DNS, bypasses b4. The DNS options of the sets then do not apply to it: another resolver, pinned addresses, the [IPv4 fallback](../dns.md#the-ipv4-fallback). Turning encrypted DNS off on the device fixes it, see [What b4 sees](../dns.md#what-b4-intercepts).
 
@@ -45,19 +59,19 @@ b4 sees the DNS queries that devices send to port 53. A device with encrypted DN
 
 When the provider's DNS answers the site with wrong addresses, a set can send its domains to another resolver, see [Sending a set's domains to another resolver](../dns.md#resolver-types). The [DPI Detector](../detector.md) shows whether DNS answers are forged. A device keeps an answer it already has until the answer expires.
 
-### 4. IPv6 {#ipv6}
+### 5. IPv6 {#ipv6}
 
 While **Enable IPv6 Support** is off, b4 handles IPv4 only, and a connection over IPv6 skips every set. When the router has IPv6, the dashboard shows **IPv6 traffic skips all sets** under **Needs attention**. **Force IPv4 for matched domains** removes the IPv6 addresses of the sets' domains from DNS answers. A device with encrypted DNS, or with an address it already has, still connects over IPv6. **Enable IPv6 Support** under [Settings > Core > Packet Engine](../settings/core.md#protocols) brings IPv6 into the sets. In TUN mode, IPv6 always skips b4.
 
-### 5. QUIC {#quic}
+### 6. QUIC {#quic}
 
 YouTube, Google, Discord and other sites load over QUIC (HTTP/3), which runs over UDP. On the **Traffic** page, such connections show `UDP` next to the site's domain. b4 has only weak means against QUIC. **Block QUIC (force TCP)** on the set's [UDP](../sets/udp.md#blocking-quic) tab refuses QUIC, and the browser switches to TCP at once, where the set's strategy applies.
 
-### 6. The strategy still works {#strategy}
+### 7. The strategy still works {#strategy}
 
 A site that opened with its set and stopped later, while the **Traffic** page still shows that set, points to a strategy that no longer works. **Find a strategy** in the set card's menu, or on the set's **Discovery** tab, opens [Discovery](../discovery.md) with the set picked. [Unblocking a site](../guides/unblock.md) walks through a run. [Keeping sets working](../guides/keep-working.md) lets the watchdog search for a new strategy and write it into the set on its own.
 
-### 7. The address is not blocked {#address-blocked}
+### 8. The address is not blocked {#address-blocked}
 
 Some blocks no strategy passes. Discovery marks them on the site's card:
 
