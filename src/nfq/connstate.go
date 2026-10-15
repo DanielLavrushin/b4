@@ -8,6 +8,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/iphealth"
+	"github.com/daniellavrushin/b4/sni"
 )
 
 type connInfo struct {
@@ -27,6 +28,8 @@ type tlsInfo struct {
 	host       string
 	tlsVersion uint16
 	lastSeen   time.Time
+	decidedBy  *sni.SuffixSet
+	set        *config.SetConfig
 }
 
 type tlsInfoCache struct {
@@ -73,6 +76,50 @@ func (c *tlsInfoCache) Lookup(connKey string) (string, uint16, bool) {
 		return "", 0, false
 	}
 	return info.host, info.tlsVersion, true
+}
+
+func (c *tlsInfoCache) Decision(connKey string) (string, uint16, *sni.SuffixSet, *config.SetConfig, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	info, exists := c.conns[connKey]
+	if !exists {
+		return "", 0, nil, nil, false
+	}
+	return info.host, info.tlsVersion, info.decidedBy, info.set, true
+}
+
+func (c *tlsInfoCache) Decide(connKey string, matcher *sni.SuffixSet, set *config.SetConfig) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if info, exists := c.conns[connKey]; exists {
+		info.decidedBy = matcher
+		info.set = set
+	}
+}
+
+func (c *tlsInfoCache) ForgetDecisions() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, info := range c.conns {
+		info.decidedBy = nil
+		info.set = nil
+	}
+}
+
+func (c *tlsInfoCache) Drop(connKey string) {
+	c.mu.RLock()
+	_, exists := c.conns[connKey]
+	c.mu.RUnlock()
+	if !exists {
+		return
+	}
+
+	c.mu.Lock()
+	delete(c.conns, connKey)
+	c.mu.Unlock()
 }
 
 func (c *tlsInfoCache) Cleanup() {

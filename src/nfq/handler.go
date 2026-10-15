@@ -263,15 +263,25 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 }
 
 func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, ipVersion uint8, dport uint16) (*config.SetConfig, string) {
-	host, tlsVersion, ok := w.tlsCache.Lookup(connKey)
+	host, tlsVersion, decidedBy, set, ok := w.tlsCache.Decision(connKey)
 	if !ok {
 		return nil, ""
 	}
-	matched, set := matcher.MatchSNIWithSourceTLS(host, srcMac, tlsVersion, ipVersion)
-	if !matched || !set.MatchesTCPDPort(dport) {
+	if decidedBy != matcher {
+		set = nil
+		if matched, named := matcher.MatchSNIWithSourceTLS(host, srcMac, tlsVersion, ipVersion); matched && named.MatchesTCPDPort(dport) {
+			set = named
+		}
+		w.tlsCache.Decide(connKey, matcher, set)
+	}
+	if set == nil {
 		return nil, ""
 	}
 	return set, host
+}
+
+func fragmentsOrDesyncs(set *config.SetConfig) bool {
+	return set.Fragmentation.Strategy != config.ConfigNone || len(set.Fragmentation.StrategyPool) > 0 || set.TCP.Desync.Mode != config.ConfigOff
 }
 
 func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, matcher *sni.SuffixSet, matched bool, set *config.SetConfig, st *config.SetConfig) int {
@@ -297,15 +307,15 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		st = nil
 	}
 
-	matchedConn := false
+	tlsKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
+	if cfg.IsTCPPort(dport) && tcp[13]&0x12 == 0x02 {
+		w.tlsCache.Drop(tlsKey)
+	}
+
+	var connSet *config.SetConfig
 	connHost := ""
 	if cfg.IsTCPPort(dport) && tcp[13]&0x02 == 0 && !startsClientHello(payload) {
-		if connSet, host := w.connectionSet(matcher, fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport), pkt.srcMac, pkt.ver, dport); connSet != nil {
-			matched = true
-			set = connSet
-			matchedConn = true
-			connHost = host
-		}
+		connSet, connHost = w.connectionSet(matcher, tlsKey, pkt.srcMac, pkt.ver, dport)
 	}
 
 	matchedHint := false
@@ -323,7 +333,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	matchedLearned := false
 	learnedHost := ""
-	if !matchedHint && !matchedConn {
+	if !matchedHint {
 		if mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac); mLearned {
 			if learnedSet.MatchesTCPDPort(dport) {
 				matched = true
@@ -342,11 +352,23 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
+	matchedConn := false
+	if connSet != nil && (!matched || ((matchedHint || matchedLearned) && (len(payload) == 0 || fragmentsOrDesyncs(connSet)))) {
+		matched = true
+		set = connSet
+		st = nil
+		matchedConn = true
+		matchedHint = false
+		hintHost = ""
+		matchedLearned = false
+		learnedHost = ""
+	}
+
 	earlyHost := hintHost
 	if earlyHost == "" {
 		earlyHost = learnedHost
 	}
-	if earlyHost == "" {
+	if earlyHost == "" && matchedConn {
 		earlyHost = connHost
 	}
 	if matched && earlyHost != "" && cfg.IsTCPPort(dport) {
@@ -372,7 +394,11 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		observeFlow(cfg, pkt, sport, dport, set, dupHost)
 
 		if !cfg.Queue.IsDiscovery {
-			log.LogConnection("TCP", "", dupHost, pkt.srcStr, sport, set.Name, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(dupTLS), "tcp-dup")
+			dupSNISet, dupIPSet := "", set.Name
+			if matchedConn {
+				dupSNISet, dupIPSet = set.Name, ""
+			}
+			log.LogConnection("TCP", dupSNISet, dupHost, pkt.srcStr, sport, dupIPSet, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(dupTLS), "tcp-dup")
 		}
 
 		if !vc.drop() {
@@ -522,7 +548,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 
 		if (matchedLearned || matchedConn) && !matchedSNI && !(len(payload) >= 1 && payload[0] == 0x16) {
-			if set != nil && set.Fragmentation.Strategy == config.ConfigNone && len(set.Fragmentation.StrategyPool) == 0 && set.TCP.Desync.Mode == config.ConfigOff {
+			if set != nil && !fragmentsOrDesyncs(set) {
 				clearMatch()
 			}
 		}
@@ -572,6 +598,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		sniTarget = set.Name
 	} else if matchedIP {
 		ipTarget = st.Name
+	}
+	if sniTarget == "" && connSet != nil && !isClientHello {
+		sniTarget = connSet.Name
 	}
 
 	if matched && host != "" && cfg.IsTCPPort(dport) {
