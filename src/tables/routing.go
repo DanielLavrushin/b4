@@ -2544,6 +2544,10 @@ func RoutingProxyTableLines() (int, []string) {
 }
 
 func RoutingReinstallForInterface(cfg *config.Config, iface string) {
+	routeReinstallForInterface(cfg, iface, func() bool { return false })
+}
+
+func routeReinstallForInterface(cfg *config.Config, iface string, stopped func() bool) {
 	if cfg == nil || iface == "" || !hasBinary("ip") {
 		return
 	}
@@ -2585,15 +2589,20 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 	if count > 0 {
 		log.Infof("Routing: reinstalled policy routes for interface %s (%d set(s))", iface, count)
 	}
+	if !kindChanged && !gatewayChanged {
+		return
+	}
+	if stopped() {
+		log.Tracef("Routing: the link watcher stopped, so the sets on %s are not rebuilt", iface)
+		return
+	}
 	if kindChanged {
 		log.Infof("Routing: %s came back as %s, which changes whether the router's own traffic follows the sets on it; rebuilding their rules", iface, netif.Describe(iface))
 	}
 	if gatewayChanged {
 		log.Infof("Routing: %s came back with a change in which of its sets' gateways b4 can use; rebuilding their rules", iface)
 	}
-	if kindChanged || gatewayChanged {
-		RoutingSyncConfig(cfg)
-	}
+	RoutingSyncConfig(cfg)
 }
 
 func routeReplaceDefaultRoute(iface, src, gw, table string, ipv6 bool) {
