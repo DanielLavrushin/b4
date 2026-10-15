@@ -178,6 +178,9 @@ func TestTheHelloResentAfterAStrippedSynGetsTheSetsStrategy(t *testing.T) {
 	} else {
 		assertSynWithoutPayload(t, got[0], syn)
 	}
+	if n := len(w.destState.conns); n != 0 {
+		t.Errorf("a ClientHello cut off the SYN never reaches the server and must not be counted, got %d tracked connections", n)
+	}
 
 	if v := w.ProcessPacket(makeV4TCPPacketFlags(hello, isn+1, 0x18)); v != engine.VerdictDrop {
 		t.Fatalf("the ClientHello the client resends after the handshake must get the set's strategy, got %v", v)
@@ -196,6 +199,47 @@ func TestTheHelloResentAfterAStrippedSynGetsTheSetsStrategy(t *testing.T) {
 	}
 	if e := w.destState.conns["10.0.0.1:12345->1.2.3.4:443"]; e == nil || e.retransmits != 1 {
 		t.Errorf("the ClientHello the SYN carried never reached the server and must not count as a retransmission, got %+v", e)
+	}
+}
+
+func TestAFastOpenSynThatKeepsItsHelloCountsForStallDetection(t *testing.T) {
+	hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+	ext := makeV6ExtHeader(6, 8)
+	extSyn := makeV6TCPPacketWithExt(hello, 1000, 60, ext)
+	extSyn[IPv6HeaderLen+len(ext)+13] = 0x02
+
+	detecting := newPassiveSet()
+	detecting.TCP.IPBlockDetect.Enabled = true
+	escalating := newPassiveSet()
+	escalating.Escalate.To = "next-set"
+	behindExt := newFragmentingYTImagesSet()
+	behindExt.TCP.IPBlockDetect.Enabled = true
+
+	cases := []struct {
+		name string
+		set  config.SetConfig
+		syn  []byte
+	}{
+		{"a set that leaves the hello alone, IP block detection", detecting, fastOpenSyn(IPv4, hello, 1000)},
+		{"a set that leaves the hello alone, escalation", escalating, fastOpenSyn(IPv4, hello, 1000)},
+		{"IPv6 extension headers, IP block detection", behindExt, extSyn},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			set := tc.set
+			w := newDualStackInjectingWorker(t, &set)
+			if v := w.ProcessPacket(tc.syn); v != engine.VerdictAccept {
+				t.Fatalf("this fast-open SYN must go out with its ClientHello, got %v", v)
+			}
+			if len(w.destState.conns) != 1 {
+				t.Fatalf("a ClientHello that reaches the server in the SYN must be counted once, got %d tracked connections", len(w.destState.conns))
+			}
+			for key, e := range w.destState.conns {
+				if e.retransmits != 1 {
+					t.Errorf("%s: counted %d times, want 1", key, e.retransmits)
+				}
+			}
+		})
 	}
 }
 
@@ -292,6 +336,7 @@ func TestTheMD5FakeSynAlwaysCarriesTheMD5Option(t *testing.T) {
 		keepsOptions  bool
 	}{
 		{"options that leave room", roomy, nil, true},
+		{"options ending in EOL", []byte{0x02, 0x04, 0x05, 0xb4, 0x00, 0x00, 0x00, 0x00}, nil, true},
 		{"24 bytes of options", tight, nil, false},
 		{"fast open", fastOpenSynOptions, hello, false},
 	}

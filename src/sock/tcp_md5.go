@@ -42,6 +42,9 @@ func AddTCPMD5Option(packet []byte, isIPv6 bool) ([]byte, bool) {
 
 	if tcpHdrLen > 20 {
 		copy(newPacket[ipHdrLen+20:ipHdrLen+tcpHdrLen], packet[ipHdrLen+20:ipHdrLen+tcpHdrLen])
+		if !prepareOptionsForAppend(newPacket[ipHdrLen+20 : ipHdrLen+tcpHdrLen]) {
+			return packet, false
+		}
 	}
 
 	copy(newPacket[ipHdrLen+tcpHdrLen:ipHdrLen+tcpHdrLen+20], md5Opt)
@@ -62,4 +65,24 @@ func AddTCPMD5Option(packet []byte, isIPv6 bool) ([]byte, bool) {
 	}
 
 	return newPacket, true
+}
+
+func prepareOptionsForAppend(opts []byte) bool {
+	for i := 0; i < len(opts); {
+		switch opts[i] {
+		case 0:
+			for j := i; j < len(opts); j++ {
+				opts[j] = 1
+			}
+			return true
+		case 1:
+			i++
+		default:
+			if i+1 >= len(opts) || opts[i+1] < 2 || i+int(opts[i+1]) > len(opts) {
+				return false
+			}
+			i += int(opts[i+1])
+		}
+	}
+	return true
 }

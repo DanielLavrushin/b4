@@ -71,6 +71,52 @@ func TestAddTCPMD5OptionAddsTheOptionOrSaysItCannot(t *testing.T) {
 	}
 }
 
+func optionKindsAReceiverReads(pkt []byte, l3 int) []byte {
+	opts := pkt[l3+20 : l3+int(pkt[l3+12]>>4)*4]
+	var kinds []byte
+	for i := 0; i < len(opts) && opts[i] != 0; {
+		if opts[i] == 1 {
+			i++
+			continue
+		}
+		kinds = append(kinds, opts[i])
+		if i+1 >= len(opts) || opts[i+1] < 2 {
+			break
+		}
+		i += int(opts[i+1])
+	}
+	return kinds
+}
+
+func TestAddTCPMD5OptionStaysReadableAfterAnEndOfOptionList(t *testing.T) {
+	for _, v6 := range []bool{false, true} {
+		base, l3 := buildMinimalIPv4TCPPacket(30), 20
+		if v6 {
+			base, l3 = buildMinimalIPv6TCPPacket(30), 40
+		}
+		pkt := withTCPOptions(base, l3, []byte{0x02, 0x04, 0x05, 0xb4, 0x00, 0x00, 0x00, 0x00})
+		got, ok := AddTCPMD5Option(pkt, v6)
+		if !ok {
+			t.Fatalf("v6=%v: an 8-byte option list has room for the MD5 option", v6)
+		}
+		if kinds := optionKindsAReceiverReads(got, l3); !bytes.Equal(kinds, []byte{2, 19}) {
+			t.Errorf("v6=%v: a receiver reads options %v, want MSS and MD5", v6, kinds)
+		}
+		if !bytes.Equal(got[l3+20:l3+24], pkt[l3+20:l3+24]) || !bytes.Equal(got[l3+48:], pkt[l3+28:]) {
+			t.Errorf("v6=%v: the MSS option and the payload must be kept", v6)
+		}
+	}
+}
+
+func TestAddTCPMD5OptionRefusesMalformedOptions(t *testing.T) {
+	for _, opts := range [][]byte{{0x02, 0x00, 0x01, 0x01}, {0x02, 0x08, 0x05, 0xb4}} {
+		pkt := withTCPOptions(buildMinimalIPv4TCPPacket(30), 20, opts)
+		if got, ok := AddTCPMD5Option(pkt, false); ok || !bytes.Equal(got, pkt) {
+			t.Errorf("options %x: a malformed option length must be refused and the packet returned unchanged", opts)
+		}
+	}
+}
+
 func TestAddTCPMD5OptionRefusesAHeaderLongerThanThePacket(t *testing.T) {
 	pkt := buildMinimalIPv4TCPPacket(0)
 	pkt[20+12] = 0xa0

@@ -681,10 +681,15 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		observeFlow(cfg, pkt, sport, dport, flowSet, host)
 	}
 
+	var strippedSyn []byte
+	if isSyn && len(payload) > 0 && matched && set != nil && !routeHandsOff && needsTCPInjection(set) {
+		strippedSyn, _ = synWithoutPayload(pkt.raw, pkt.ver, pkt.ihl, datOff)
+	}
+
 	stallCount := 0
 	stallFirstSeen := time.Time{}
 	stallTracked := false
-	if matched && isClientHello && !isSyn && host != "" && cfg.IsTCPPort(dport) &&
+	if matched && isClientHello && strippedSyn == nil && host != "" && cfg.IsTCPPort(dport) &&
 		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) {
 		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host)
 		stallTracked = true
@@ -779,11 +784,10 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		out := pkt.raw
 		if isSyn && len(payload) > 0 {
-			syn, ok := synWithoutPayload(pkt.raw, pkt.ver, pkt.ihl, datOff)
-			if !ok {
+			if strippedSyn == nil {
 				return vc.accept()
 			}
-			out = syn
+			out = strippedSyn
 		}
 
 		if !injectAcquire() {
