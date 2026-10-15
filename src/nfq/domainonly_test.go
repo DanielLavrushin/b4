@@ -339,23 +339,29 @@ func TestAHintedLearnedOrPortSetKeepsItsWorkOnBareACKs(t *testing.T) {
 		set.TCP.DropSACK = true
 		return set
 	}
-	newImages := func(fragment bool) config.SetConfig {
-		if fragment {
+	newImages := func(kind string) config.SetConfig {
+		switch kind {
+		case "fragmenting":
 			return newFragmentingYTImagesSet()
+		case "duplicating":
+			set := newPassiveSet()
+			set.TCP.Duplicate.Enabled = true
+			set.TCP.Duplicate.Count = 2
+			return set
 		}
 		set := newPassiveSet()
 		set.TCP.HTTPMethodEOL = true
 		return set
 	}
 
-	for _, fragment := range []bool{false, true} {
+	for _, kind := range []string{"", "fragmenting", "duplicating"} {
 		for _, how := range []string{"dns hint", "learned address", "port"} {
 			name := how
-			if fragment {
-				name += ", fragmenting domain set"
+			if kind != "" {
+				name += ", " + kind + " domain set"
 			}
 			t.Run(name, func(t *testing.T) {
-				images := newImages(fragment)
+				images := newImages(kind)
 				video := newVideo(how == "port")
 				w := newInjectingWorker(t, &images, &video)
 				switch how {
@@ -562,6 +568,56 @@ func TestAConnectionKeepsItsSetWhileItKeepsSending(t *testing.T) {
 	w.tlsCache.Cleanup()
 	if v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), seq+69)); v != engine.VerdictDrop {
 		t.Errorf("a connection that sent a packet 100 s ago keeps its set 200 s after its ClientHello, got %v", v)
+	}
+}
+
+func TestARetransmittedFirstSegmentOfASplitClientHelloKeepsTheConnectionsSet(t *testing.T) {
+	for _, domainOnly := range []bool{false, true} {
+		images := newFragmentingYTImagesSet()
+		images.Targets.DomainOnly = domainOnly
+		w := newInjectingWorker(t, &images)
+
+		full := buildClientHello("i.ytimg.com", 1400, 0xAB)
+		const cut = 1396
+		w.ProcessPacket(makeV4TCPPacket(full[:cut], 1000))
+		w.ProcessPacket(makeV4TCPPacket(full[cut:], 1000+cut))
+
+		ch, _ := log.GetConnectionHub().Subscribe()
+		v := w.ProcessPacket(makeV4TCPPacket(full[:cut], 1000))
+		got := loggedSet(t, ch)
+		log.GetConnectionHub().Unsubscribe(ch)
+
+		if v != engine.VerdictDrop || got != images.Name {
+			t.Errorf("domain-only=%v: a retransmitted first segment of the ClientHello keeps the connection's set, got %v from %q", domainOnly, v, got)
+		}
+	}
+}
+
+func TestAConnectionSetThatDuplicatesTakesLaterPacketsFromAPortSet(t *testing.T) {
+	for _, domainOnly := range []bool{false, true} {
+		images := newPassiveSet()
+		images.Targets.DomainOnly = domainOnly
+		images.TCP.Duplicate.Enabled = true
+		images.TCP.Duplicate.Count = 2
+		port := newPassiveSet()
+		port.Id = "port"
+		port.Name = "Port"
+		port.Targets.DomainOnly = false
+		port.Targets.DomainsToMatch = nil
+		port.TCP.DPortFilter = "443"
+		w := newInjectingWorker(t, &images, &port)
+
+		ch, _ := log.GetConnectionHub().Subscribe()
+		hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+		w.ProcessPacket(makeV4TCPPacket(hello, 1000))
+		loggedSet(t, ch)
+		v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello))))
+		got := loggedSet(t, ch)
+		log.GetConnectionHub().Unsubscribe(ch)
+
+		if v != engine.VerdictDrop || got != images.Name {
+			t.Errorf("domain-only=%v: later data is duplicated by the connection's set, not passed to the port set, got %v from %q", domainOnly, v, got)
+		}
 	}
 }
 

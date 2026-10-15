@@ -262,9 +262,9 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 	return p, true
 }
 
-func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, ipVersion uint8, dport uint16) (*config.SetConfig, string) {
+func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, ipVersion uint8, dport uint16, payload []byte, seq uint32) (*config.SetConfig, string) {
 	decision, ok := w.tlsCache.Decision(connKey)
-	if !ok {
+	if !ok || (startsClientHello(payload) && decision.helloSeq-seq > maxPendingHelloRecord) {
 		return nil, ""
 	}
 	set := decision.set
@@ -283,6 +283,10 @@ func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, i
 
 func fragmentsOrDesyncs(set *config.SetConfig) bool {
 	return set.Fragmentation.Strategy != config.ConfigNone || len(set.Fragmentation.StrategyPool) > 0 || set.TCP.Desync.Mode != config.ConfigOff
+}
+
+func duplicatesPackets(set *config.SetConfig) bool {
+	return set.TCP.Duplicate.Enabled && set.TCP.Duplicate.Count > 0
 }
 
 func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, matcher *sni.SuffixSet, matched bool, set *config.SetConfig, st *config.SetConfig) int {
@@ -317,8 +321,8 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	var connSet *config.SetConfig
 	connHost := ""
-	if cfg.IsTCPPort(dport) && tcp[13]&0x02 == 0 && !startsClientHello(payload) {
-		connSet, connHost = w.connectionSet(matcher, connKey, pkt.srcMac, pkt.ver, dport)
+	if cfg.IsTCPPort(dport) && tcp[13]&0x02 == 0 {
+		connSet, connHost = w.connectionSet(matcher, connKey, pkt.srcMac, pkt.ver, dport, payload, binary.BigEndian.Uint32(tcp[4:8]))
 	}
 
 	matchedHint := false
@@ -359,7 +363,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	matchedConn := false
 	takeOver := connSet != nil && (matchedHint || matchedLearned || matchedPort) && set != nil && set.Id != connSet.Id && !addressMatched &&
-		fragmentsOrDesyncs(connSet) && (needsPayloadlessInjection(connSet) || !needsPayloadlessInjection(set))
+		(fragmentsOrDesyncs(connSet) || duplicatesPackets(connSet)) && (needsPayloadlessInjection(connSet) || !needsPayloadlessInjection(set))
 	if connSet != nil && (!matched || takeOver) {
 		matched = true
 		set = connSet
@@ -392,7 +396,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	routeIfaceHandoff := matched && set != nil && !routeTProxy && set.RoutingHandsOffPackets()
 	routeHandsOff := routeTProxy || routeIfaceHandoff
 
-	if matched && !routeHandsOff && cfg.IsTCPPort(dport) && set.TCP.Duplicate.Enabled && set.TCP.Duplicate.Count > 0 {
+	if matched && !routeHandsOff && cfg.IsTCPPort(dport) && duplicatesPackets(set) {
 		log.Tracef("TCP duplicate to %s:%d (%d copies, set: %s)", pkt.dstStr, dport, set.TCP.Duplicate.Count, set.Name)
 
 		dupHost, dupTLS, _ := w.tlsCache.Lookup(connKey)
