@@ -317,9 +317,10 @@ func TestValidateMarks(t *testing.T) {
 
 	t.Run("derived discovery flow mark matching the self-dial mark", func(t *testing.T) {
 		cfg := NewConfig()
-		cfg.Queue.Mark = uint(SelfDialRelayMark) - 1 // derived flow mark is MainInjectedMark()+1
-		if err := cfg.Validate(); err == nil {
-			t.Error("a derived discovery flow mark that matches SelfDialRelayMark must be refused, Discovery would test without any strategy")
+		cfg.Queue.Mark = uint(SelfDialRelayMark) - 1
+		ve := mustValidationErr(t, cfg.Validate())
+		if findField(ve, "system.checker.discovery_flow_mark", "mark_conflict") == nil {
+			t.Errorf("a derived discovery flow mark 0x%x matches SelfDialRelayMark and must be refused on discovery_flow_mark, Discovery would test without any strategy: %+v", cfg.DiscoveryFlowMark(), ve.Fields)
 		}
 	})
 

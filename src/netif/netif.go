@@ -16,13 +16,20 @@ const (
 	KindUserspaceTunnel
 	KindWireGuard
 	KindOther
+	KindAmneziaWG
 )
 
 const cacheTTL = 30 * time.Second
 
+const routeTTL = 5 * time.Second
+
 const flagUp = 0x1
 
+const routeFlagReject = 0x0200
+
 var Root = "/sys/class/net/"
+
+var RouteFile = "/proc/net/route"
 
 type entry struct {
 	kind Kind
@@ -33,6 +40,12 @@ type entry struct {
 var (
 	mu    sync.RWMutex
 	cache = make(map[string]entry)
+)
+
+var (
+	routeMu     sync.Mutex
+	routeAt     time.Time
+	routeIfaces map[string]bool
 )
 
 func ifaceUp(name string) bool {
@@ -59,8 +72,11 @@ func classify(name string) (Kind, bool) {
 	}
 	if b, err := os.ReadFile(Root + name + "/uevent"); err == nil {
 		for _, line := range strings.Split(string(b), "\n") {
-			if strings.TrimSpace(line) == "DEVTYPE=wireguard" {
+			switch strings.TrimSpace(line) {
+			case "DEVTYPE=wireguard":
 				return KindWireGuard, up
+			case "DEVTYPE=amneziawg":
+				return KindAmneziaWG, up
 			}
 		}
 	}
@@ -134,6 +150,18 @@ func EncapsulatedAndUp(name string) bool {
 	return false
 }
 
+func TunnelAndUp(name string) bool {
+	e := lookup(name)
+	if !e.up {
+		return false
+	}
+	switch e.kind {
+	case KindUserspaceTunnel, KindWireGuard, KindAmneziaWG:
+		return true
+	}
+	return false
+}
+
 func Describe(name string) string {
 	switch lookup(name).kind {
 	case KindUserspaceTunnel:
@@ -147,10 +175,64 @@ func Describe(name string) string {
 	}
 }
 
+func CarriesDefaultRoute(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	routeMu.Lock()
+	ifaces, fresh := routeIfaces, routeIfaces != nil && time.Since(routeAt) < routeTTL
+	routeMu.Unlock()
+	if !fresh {
+		ifaces = readDefaultRouteIfaces()
+		routeMu.Lock()
+		routeIfaces, routeAt = ifaces, time.Now()
+		routeMu.Unlock()
+	}
+	return ifaces[name]
+}
+
+func readDefaultRouteIfaces() map[string]bool {
+	out := make(map[string]bool)
+	b, err := os.ReadFile(RouteFile)
+	if err != nil {
+		return out
+	}
+	best := int64(-1)
+	for _, line := range strings.Split(string(b), "\n") {
+		if !strings.Contains(line, "\t00000000\t") {
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) < 8 || f[0] == "*" || f[1] != "00000000" || f[7] != "00000000" {
+			continue
+		}
+		flags, err := strconv.ParseUint(f[3], 16, 32)
+		if err != nil || flags&routeFlagReject != 0 {
+			continue
+		}
+		metric, err := strconv.ParseInt(f[6], 10, 64)
+		if err != nil {
+			continue
+		}
+		switch {
+		case best < 0 || metric < best:
+			best = metric
+			out = map[string]bool{f[0]: true}
+		case metric == best:
+			out[f[0]] = true
+		}
+	}
+	return out
+}
+
 func Forget() {
 	mu.Lock()
 	cache = make(map[string]entry)
 	mu.Unlock()
+	routeMu.Lock()
+	routeIfaces = nil
+	routeMu.Unlock()
 }
 
 func MarkDown(name string) {

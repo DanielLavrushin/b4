@@ -135,28 +135,14 @@ const PerSetRouteMarkBits = uint32(0x27FFF)
 
 const RouterOwnProxyMarkBit = uint32(0x1000000)
 
-// SelfDialSkipTransitBits are mark bits the packet path may OR into a genuine
-// self-dial mark on its way out: per-set route bits, the router-own proxy bit
-// and the engine's bits 28-30. Every other bit is written by b4 itself and
-// must match the value it wrote.
 const SelfDialSkipTransitBits = PerSetRouteMarkBits | RouterOwnProxyMarkBit | uint32(0x70000000)
 
-// SelfDialSkipMatchMask is the mark mask for the no-DPI bypass rule. It is
-// deliberately not a bare bit mask: foreign software shares this mark space
-// (Keenetic's _NDM_HOTSPOT chains tag ordinary LAN clients with 0xffffaaa,
-// which happens to carry bit 21), and a bare bit test against
-// SelfDialNoDPIBit then silently exempts all client traffic from DPI
-// processing. With this mask the comparison is exact modulo the transit bits.
 const SelfDialSkipMatchMask = ^SelfDialSkipTransitBits
 
-// IsSelfDialSkipMark reports whether m is b4's own no-DPI dial mark
-// (SelfDialRelayMark), ignoring the bits transit may OR in.
 func IsSelfDialSkipMark(m uint32) bool {
 	return m&^SelfDialSkipTransitBits == SelfDialRelayMark
 }
 
-// SelfDialSkipMarkMatch is the iptables mark match for the no-DPI bypass
-// RETURN rule: value/mask as accepted by -m mark --mark.
 func SelfDialSkipMarkMatch() string {
 	return fmt.Sprintf("0x%x/0x%x", SelfDialRelayMark, SelfDialSkipMatchMask)
 }

@@ -495,8 +495,6 @@ func TestValidate_QueueFields(t *testing.T) {
 	})
 
 	t.Run("discovery marks conflict with the self-dial pattern, not just its bit", func(t *testing.T) {
-		// A mark that merely carries SelfDialNoDPIBit is fine: the runtime
-		// skip matches the full SelfDialRelayMark pattern modulo transit bits.
 		for _, mark := range []uint{0x200000, 0x200123} {
 			cfg := NewConfig()
 			cfg.System.Checker.DiscoveryFlowMark = mark
@@ -504,8 +502,6 @@ func TestValidate_QueueFields(t *testing.T) {
 				t.Errorf("discovery mark 0x%x is not skipped at runtime, yet it was rejected: %v", mark, err)
 			}
 		}
-		// A mark matching the relay pattern (modulo transit bits) is skipped
-		// at runtime, so Discovery would test nothing with it.
 		for _, mark := range []uint{uint(SelfDialRelayMark), 0x240012} {
 			cfg := NewConfig()
 			cfg.System.Checker.DiscoveryInjectedMark = mark
