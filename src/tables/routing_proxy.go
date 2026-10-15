@@ -341,12 +341,15 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		be.snapshotChainRules(st.chainOut, true),
 	}
 	rebuilt := false
+	appended := false
 	defer func() {
-		if !rebuilt {
-			return
-		}
 		for _, snap := range superseded {
-			be.dropChainRules(snap)
+			switch {
+			case rebuilt:
+				be.dropChainRules(snap)
+			case appended:
+				be.revertChainRules(snap)
+			}
 		}
 	}()
 	if cfg.Queue.IPv4Enabled {
@@ -360,6 +363,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		}
 	}
 
+	appended = true
 	gate := routeSetDeviceGate(cfg, set)
 	routeWarnDeviceGate(set.Name, gate)
 	sourceScoped := routeSetIsSourceScoped(set)

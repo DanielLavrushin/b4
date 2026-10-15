@@ -238,6 +238,73 @@ func TestAFailedInstallTakesBackTheRulesItAppended(t *testing.T) {
 	}
 }
 
+func TestAProxySetWhoseQUICRejectFailsTakesBackItsRules(t *testing.T) {
+	for _, engine := range []string{backendNFTables, backendIPTables} {
+		t.Run(engine, func(t *testing.T) {
+			familyResetGlobals(t)
+			localGuardReset(t)
+			fw := stubRevertFirewall(t)
+			stubBinaries(t, "ip", backendIPTables, backendIP6Tables, "ipset")
+			prevSysctl := writeSysctl
+			t.Cleanup(func() { writeSysctl = prevSysctl })
+			writeSysctl = func(path, value string) {}
+			cfg := familyTestConfig(true, true)
+			set := orderTestSet("quicfail", config.RoutingModeProxy, nil)
+			cfg.Sets = []*config.SetConfig{set}
+			st := proxyGuardState(0x5300)
+			st.setID, st.ipv6 = set.Id, true
+			st.setV4, st.setV6 = routeBuildSetNames(set.Id)
+			st.chainPre, st.chainOut, st.chainSNAT = routeBuildChainNames(set.Id)
+			st.chainQUIC = routeBuildQUICChainName(set.Id)
+			st.quicReject = true
+			var be routeBackend = &routeNftBackend{}
+			if engine == backendIPTables {
+				be = &routeIptBackend{}
+			}
+
+			refuse := true
+			firewall := run
+			run = func(args ...string) (string, error) {
+				line := strings.Join(args, " ")
+				if refuse && (strings.Contains(line, "add chain inet "+routeNftTable+" "+st.chainQUIC) || strings.Contains(line, "-N "+st.chainQUIC)) {
+					return "Error: Could not process rule: Operation not supported", errors.New("exit status 1")
+				}
+				return firewall(args...)
+			}
+
+			for attempt := 1; attempt <= 3; attempt++ {
+				if err := routeEnsureProxyRule(be, cfg, set, st, nil); err == nil {
+					t.Fatalf("attempt %d: the QUIC chain was refused, yet the install reported success", attempt)
+				}
+				for i, rules := range fw.setChains(be, st) {
+					if len(rules) != 0 {
+						t.Fatalf("attempt %d left %d rules in chain %d of a proxy set that never installed, so every retry piles up more:\n%s", attempt, len(rules), i, strings.Join(rules, "\n"))
+					}
+				}
+			}
+
+			refuse = false
+			if err := routeEnsureProxyRule(be, cfg, set, st, nil); err != nil {
+				t.Fatalf("routeEnsureProxyRule: %v", err)
+			}
+			installed := fw.setChains(be, st)
+			if len(installed[0]) == 0 || len(installed[1]) == 0 {
+				t.Fatalf("the install that went through left empty chains: %v", installed)
+			}
+
+			refuse = true
+			for attempt := 1; attempt <= 3; attempt++ {
+				if err := routeEnsureProxyRule(be, cfg, set, st, nil); err == nil {
+					t.Fatalf("rebuild %d: the QUIC chain was refused, yet the install reported success", attempt)
+				}
+				if got := fw.setChains(be, st); !sameChains(got, installed) {
+					t.Fatalf("rebuild %d did not leave the chains as the last good install left them:\nwant %v\ngot  %v", attempt, installed, got)
+				}
+			}
+		})
+	}
+}
+
 func TestAnInstallThatFailsBeforeAppendingTouchesNoChain(t *testing.T) {
 	familyResetGlobals(t)
 	gwIsolate(t)
