@@ -565,6 +565,30 @@ func TestAConnectionKeepsItsSetWhileItKeepsSending(t *testing.T) {
 	}
 }
 
+func TestAnEncryptedHandshakeRecordKeepsTheConnectionsSet(t *testing.T) {
+	for _, domainOnly := range []bool{false, true} {
+		images := newFragmentingYTImagesSet()
+		images.Targets.DomainOnly = domainOnly
+		w := newInjectingWorker(t, &images)
+
+		ch, _ := log.GetConnectionHub().Subscribe()
+		hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+		w.ProcessPacket(makeV4TCPPacket(hello, 1000))
+		loggedSet(t, ch)
+		finished := tlsAppData(40)
+		finished[0] = TLSHandshakeType
+		finished[5] = TLSClientHello
+		finished[9] = 0xd2
+		v := w.ProcessPacket(makeV4TCPPacket(finished, 1000+uint32(len(hello))))
+		got := loggedSet(t, ch)
+		log.GetConnectionHub().Unsubscribe(ch)
+
+		if v != engine.VerdictDrop || got != images.Name {
+			t.Errorf("domain-only=%v: an encrypted handshake record whose ciphertext starts with 0x01 keeps the connection's set, got %v from %q", domainOnly, v, got)
+		}
+	}
+}
+
 func TestLaterPacketsKeepTheConnectionsSetOverAPortSet(t *testing.T) {
 	for _, domainOnly := range []bool{false, true} {
 		images := newFragmentingYTImagesSet()

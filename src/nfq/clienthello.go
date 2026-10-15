@@ -32,7 +32,13 @@ func newPendingHelloCache() *pendingHelloCache {
 }
 
 func startsClientHello(payload []byte) bool {
-	return len(payload) >= 6 && payload[0] == TLSHandshakeType && payload[5] == TLSClientHello
+	if len(payload) < 6 || payload[0] != TLSHandshakeType || payload[5] != TLSClientHello {
+		return false
+	}
+	if len(payload) > 9 && payload[9] != TLSVersionMajor {
+		return false
+	}
+	return len(payload) <= 10 || payload[10] <= TLSMaxVersionMinor
 }
 
 func truncatedClientHello(payload []byte) bool {
