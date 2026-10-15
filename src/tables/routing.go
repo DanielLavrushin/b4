@@ -117,6 +117,7 @@ type routeBackend interface {
 type routeChainSnapshot struct {
 	chain    string
 	isMangle bool
+	listed   bool
 	counts   map[string]int
 	handles  []string
 }

@@ -279,6 +279,7 @@ func (b *routeNftBackend) snapshotChainRules(chain string, isMangle bool) routeC
 	if err != nil {
 		return snap
 	}
+	snap.listed = true
 	for _, line := range strings.Split(out, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "table ") || strings.HasPrefix(trimmed, "chain ") {
@@ -305,6 +306,9 @@ func (b *routeNftBackend) dropChainRules(snap routeChainSnapshot) {
 }
 
 func (b *routeNftBackend) revertChainRules(snap routeChainSnapshot) {
+	if !snap.listed {
+		return
+	}
 	if len(snap.handles) == 0 {
 		runLogged("routing: clear failed install "+snap.chain, "nft", "flush", "chain", "inet", routeNftTable, snap.chain)
 		return

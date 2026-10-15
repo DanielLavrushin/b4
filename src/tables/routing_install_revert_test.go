@@ -238,6 +238,63 @@ func TestAFailedInstallTakesBackTheRulesItAppended(t *testing.T) {
 	}
 }
 
+func TestAFailedInstallKeepsThePreviousRulesOfAChainItCouldNotList(t *testing.T) {
+	for _, engine := range []string{backendNFTables, backendIPTables} {
+		t.Run(engine, func(t *testing.T) {
+			familyResetGlobals(t)
+			gwIsolate(t)
+			fw := stubRevertFirewall(t)
+			stubBinaries(t, "ip", backendIPTables, backendIP6Tables, "ipset")
+			cfg := familyTestConfig(true, true)
+			set := gwTestSet("unlisted", "lo", "")
+			cfg.Sets = []*config.SetConfig{set}
+			st := gwResolvedState(cfg, set)
+			var be routeBackend = &routeNftBackend{}
+			guard := `iifname "lo" return`
+			listing := "-a list chain inet " + routeNftTable + " " + st.chainPre
+			if engine == backendIPTables {
+				be = &routeIptBackend{}
+				guard = "-A " + st.chainPre + " -i lo -j RETURN"
+				listing = backendIPTables + " -w -t mangle -L " + st.chainPre + " "
+			}
+			if err := routeEnsureRule(be, cfg, set, st, nil); err != nil {
+				t.Fatalf("routeEnsureRule: %v", err)
+			}
+			installed := fw.setChains(be, st)
+			if len(installed[0]) == 0 {
+				t.Fatalf("the first install left %s empty", st.chainPre)
+			}
+
+			unlisted := 1
+			firewall := run
+			run = func(args ...string) (string, error) {
+				if unlisted > 0 && strings.Contains(strings.Join(args, " "), listing) {
+					unlisted--
+					return "Fatal: can't open lock file /run/xtables.lock: Resource temporarily unavailable", errors.New("exit status 4")
+				}
+				return firewall(args...)
+			}
+			fw.refuseRules(guard)
+			if err := routeEnsureRule(be, cfg, set, st, nil); err == nil {
+				t.Fatal("the guard was refused, yet the rebuild reported success")
+			}
+			if unlisted != 0 {
+				t.Fatalf("the rebuild never listed %s before it started", st.chainPre)
+			}
+
+			got := fw.setChains(be, st)
+			for _, rule := range installed[0] {
+				if !slices.Contains(got[0], rule) {
+					t.Fatalf("listing %s failed before the attempt, and the failed attempt removed the previous install's rule %q, so the set marks nothing while b4 believes it is installed:\n%s", st.chainPre, rule, strings.Join(got[0], "\n"))
+				}
+			}
+			if !sameChains(got[1:], installed[1:]) {
+				t.Fatalf("the chains that were listed must go back to what the last good install left:\nwant %v\ngot  %v", installed[1:], got[1:])
+			}
+		})
+	}
+}
+
 func TestAProxySetWhoseQUICRejectFailsTakesBackItsRules(t *testing.T) {
 	for _, engine := range []string{backendNFTables, backendIPTables} {
 		t.Run(engine, func(t *testing.T) {

@@ -156,7 +156,9 @@ func (b *routeIptBackend) snapshotChainRules(chain string, isMangle bool) routeC
 		if !hasBinary(cmd) {
 			continue
 		}
-		snap.counts[cmd] = iptChainRuleCount(cmd, table, chain)
+		if n, ok := iptChainRuleCount(cmd, table, chain); ok {
+			snap.counts[cmd] = n
+		}
 	}
 	return snap
 }
@@ -181,7 +183,11 @@ func (b *routeIptBackend) revertChainRules(snap routeChainSnapshot) {
 			runLogged("routing: clear failed install "+snap.chain, cmd, "-w", "-t", table, "-F", snap.chain)
 			continue
 		}
-		extra := iptChainRuleCount(cmd, table, snap.chain) - n
+		now, ok := iptChainRuleCount(cmd, table, snap.chain)
+		if !ok {
+			continue
+		}
+		extra := now - n
 		for i := 0; i < extra; i++ {
 			if _, err := run(cmd, "-w", "-t", table, "-D", snap.chain, strconv.Itoa(n+1)); err != nil {
 				log.Warnf("routing: %s -t %s -D %s %d failed with %d of %d rules of a failed install left, so b4 stopped rather than cut a rule it never read: %v",
@@ -192,10 +198,10 @@ func (b *routeIptBackend) revertChainRules(snap routeChainSnapshot) {
 	}
 }
 
-func iptChainRuleCount(cmd, table, chain string) int {
+func iptChainRuleCount(cmd, table, chain string) (int, bool) {
 	out, err := run(cmd, "-w", "-t", table, "-L", chain, "-n", "--line-numbers")
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	last := 0
 	for _, line := range strings.Split(out, "\n") {
@@ -209,7 +215,7 @@ func iptChainRuleCount(cmd, table, chain string) int {
 		}
 		last = n
 	}
-	return last
+	return last, true
 }
 
 func (b *routeIptBackend) deleteChain(chain string, isMangle bool) {
