@@ -530,15 +530,15 @@ func TestLaterPacketsReuseTheConnectionsDecision(t *testing.T) {
 	hello := buildClientHello("i.ytimg.com", 16, 0xAB)
 	w.ProcessPacket(makeV4TCPPacket(hello, 1000))
 	w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello))))
-	if _, _, by, set, ok := w.tlsCache.Decision("10.0.0.1:12345->1.2.3.4:443"); !ok || by != w.getMatcher() || set != &images {
-		t.Errorf("the connection's set must be decided once and kept, got decided=%v set=%v", by == w.getMatcher(), set)
+	if d, ok := w.tlsCache.Decision("10.0.0.1:12345->1.2.3.4:443"); !ok || d.decidedBy != w.getMatcher() || d.set != &images {
+		t.Errorf("the connection's set must be decided once and kept, got decided=%v set=%v", d.decidedBy == w.getMatcher(), d.set)
 	}
 
 	other := buildClientHello("www.google.com", 16, 0xAB)
 	w.ProcessPacket(makeV4TCPPacketFromPort(other, 5000, 23456, 0x18))
 	w.ProcessPacket(makeV4TCPPacketFromPort(tlsAppData(64), 5000+uint32(len(other)), 23456, 0x18))
-	if _, _, by, set, ok := w.tlsCache.Decision("10.0.0.1:23456->1.2.3.4:443"); !ok || by != w.getMatcher() || set != nil {
-		t.Errorf("a name that matches no set must be remembered as such, got decided=%v set=%v", by == w.getMatcher(), set)
+	if d, ok := w.tlsCache.Decision("10.0.0.1:23456->1.2.3.4:443"); !ok || d.decidedBy != w.getMatcher() || d.set != nil {
+		t.Errorf("a name that matches no set must be remembered as such, got decided=%v set=%v", d.decidedBy == w.getMatcher(), d.set)
 	}
 }
 
@@ -606,7 +606,7 @@ func TestTheConnectionsSetFollowsItsDeviceOnceTheDeviceIsKnown(t *testing.T) {
 		hello, later             engine.PacketVerdict
 	}{
 		{"an excluded device identified after the ClientHello", true, false, true, engine.VerdictDrop, engine.VerdictAccept},
-		{"an included device identified after the ClientHello", false, false, true, engine.VerdictAccept, engine.VerdictAccept},
+		{"an included device identified after the ClientHello", false, false, true, engine.VerdictAccept, engine.VerdictDrop},
 		{"an excluded device never identified", true, false, false, engine.VerdictDrop, engine.VerdictDrop},
 		{"an included device known from the start", false, true, true, engine.VerdictDrop, engine.VerdictDrop},
 	}
@@ -637,31 +637,53 @@ func TestTheConnectionsSetFollowsItsDeviceOnceTheDeviceIsKnown(t *testing.T) {
 }
 
 func TestAConnectionMovesToTheSetForItsDeviceOnceTheDeviceIsKnown(t *testing.T) {
-	for _, domainOnly := range []bool{false, true} {
+	const device = "AA:BB:CC:DD:EE:01"
+	excluding := func() (config.SetConfig, config.SetConfig) {
 		images := newFragmentingYTImagesSet()
-		images.Targets.DomainOnly = domainOnly
-		images.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:01"}
+		images.Targets.SourceDevices = []string{device}
 		images.Targets.SourceDevicesExclude = true
 		fallback := newFragmentingYTImagesSet()
 		fallback.Id = "yt-fallback"
 		fallback.Name = "YT fallback"
-		fallback.Targets.DomainOnly = domainOnly
-		w := newInjectingWorker(t, &images, &fallback)
+		return images, fallback
+	}
+	forTheDevice := func() (config.SetConfig, config.SetConfig) {
+		generic := newFragmentingYTImagesSet()
+		own := newFragmentingYTImagesSet()
+		own.Id = "yt-device"
+		own.Name = "YT on this device"
+		own.Targets.SourceDevices = []string{device}
+		return generic, own
+	}
+	cases := []struct {
+		name string
+		sets func() (config.SetConfig, config.SetConfig)
+	}{
+		{"the ClientHello's set excludes the device", excluding},
+		{"another set is for this device", forTheDevice},
+	}
+	for _, c := range cases {
+		for _, domainOnly := range []bool{false, true} {
+			before, after := c.sets()
+			before.Targets.DomainOnly = domainOnly
+			after.Targets.DomainOnly = domainOnly
+			w := newInjectingWorker(t, &before, &after)
 
-		ch, _ := log.GetConnectionHub().Subscribe()
-		hello := buildClientHello("i.ytimg.com", 16, 0xAB)
-		w.ProcessPacket(makeV4TCPPacket(hello, 1000))
-		first := loggedSet(t, ch)
-		w.ipToMac.Store(map[string]string{"10.0.0.1": "AA:BB:CC:DD:EE:01"})
-		v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello))))
-		later := loggedSet(t, ch)
-		log.GetConnectionHub().Unsubscribe(ch)
+			ch, _ := log.GetConnectionHub().Subscribe()
+			hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+			w.ProcessPacket(makeV4TCPPacket(hello, 1000))
+			first := loggedSet(t, ch)
+			w.ipToMac.Store(map[string]string{"10.0.0.1": device})
+			v := w.ProcessPacket(makeV4TCPPacket(tlsAppData(64), 1000+uint32(len(hello))))
+			later := loggedSet(t, ch)
+			log.GetConnectionHub().Unsubscribe(ch)
 
-		if first != images.Name {
-			t.Errorf("domain-only=%v: an unknown device is not excluded, so the ClientHello row names %q, got %q", domainOnly, images.Name, first)
-		}
-		if v != engine.VerdictDrop || later != fallback.Name {
-			t.Errorf("domain-only=%v: once the device is known, later data moves to %q, got %v from %q", domainOnly, fallback.Name, v, later)
+			if first != before.Name {
+				t.Errorf("domain-only=%v, %s: while the device is unknown the ClientHello row names %q, got %q", domainOnly, c.name, before.Name, first)
+			}
+			if v != engine.VerdictDrop || later != after.Name {
+				t.Errorf("domain-only=%v, %s: once the device is known, later data moves to %q, got %v from %q", domainOnly, c.name, after.Name, v, later)
+			}
 		}
 	}
 }
@@ -683,7 +705,7 @@ func TestASetChangeForgetsTheConnectionsDecision(t *testing.T) {
 	if err := pool.UpdateConfig(&cfg); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, by, _, _ := w.tlsCache.Decision(key); by == nil {
+	if d, _ := w.tlsCache.Decision(key); d.decidedBy == nil {
 		t.Fatal("a reload that leaves the sets alone keeps the decision")
 	}
 
@@ -692,7 +714,7 @@ func TestASetChangeForgetsTheConnectionsDecision(t *testing.T) {
 	if err := pool.UpdateConfig(changed); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, by, set, _ := w.tlsCache.Decision(key); by != nil || set != nil {
+	if d, _ := w.tlsCache.Decision(key); d.decidedBy != nil || d.set != nil {
 		t.Fatal("a set change must drop decisions that point at the old matcher and sets")
 	}
 

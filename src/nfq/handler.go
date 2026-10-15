@@ -263,21 +263,22 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 }
 
 func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, ipVersion uint8, dport uint16) (*config.SetConfig, string) {
-	host, tlsVersion, decidedBy, set, ok := w.tlsCache.Decision(connKey)
+	decision, ok := w.tlsCache.Decision(connKey)
 	if !ok {
 		return nil, ""
 	}
-	if decidedBy != matcher || (set != nil && !sni.SetMatchesSource(set, srcMac)) {
+	set := decision.set
+	if decision.decidedBy != matcher || decision.decidedMac != srcMac {
 		set = nil
-		if matched, named := matcher.MatchSNIWithSourceTLS(host, srcMac, tlsVersion, ipVersion); matched && named.MatchesTCPDPort(dport) {
+		if matched, named := matcher.MatchSNIWithSourceTLS(decision.host, srcMac, decision.tlsVersion, ipVersion); matched && named.MatchesTCPDPort(dport) {
 			set = named
 		}
-		w.tlsCache.Decide(connKey, matcher, set)
+		w.tlsCache.Decide(connKey, matcher, srcMac, set)
 	}
 	if set == nil {
 		return nil, ""
 	}
-	return set, host
+	return set, decision.host
 }
 
 func fragmentsOrDesyncs(set *config.SetConfig) bool {
@@ -548,7 +549,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 					registerLearnedRoute(cfg, stSNI, pkt.dst, host)
 				}
 			}
-			w.tlsCache.Decide(connKey, matcher, decided)
+			w.tlsCache.Decide(connKey, matcher, pkt.srcMac, decided)
 		}
 
 		if matched && !matchedSNI && set != nil && !set.MatchesTLSVersion(tlsVersion) {

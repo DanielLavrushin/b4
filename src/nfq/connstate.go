@@ -30,6 +30,7 @@ type tlsInfo struct {
 	helloSeq   uint32
 	lastSeen   time.Time
 	decidedBy  *sni.SuffixSet
+	decidedMac string
 	set        *config.SetConfig
 }
 
@@ -81,14 +82,14 @@ func (c *tlsInfoCache) Lookup(connKey string) (string, uint16, bool) {
 	return info.host, info.tlsVersion, true
 }
 
-func (c *tlsInfoCache) Decision(connKey string) (string, uint16, *sni.SuffixSet, *config.SetConfig, bool) {
+func (c *tlsInfoCache) Decision(connKey string) (tlsInfo, bool) {
 	c.mu.RLock()
 	info, exists := c.conns[connKey]
 	if !exists {
 		c.mu.RUnlock()
-		return "", 0, nil, nil, false
+		return tlsInfo{}, false
 	}
-	host, tlsVersion, decidedBy, set := info.host, info.tlsVersion, info.decidedBy, info.set
+	decision := *info
 	now := time.Now()
 	stale := now.Sub(info.lastSeen) > time.Second
 	c.mu.RUnlock()
@@ -100,10 +101,10 @@ func (c *tlsInfoCache) Decision(connKey string) (string, uint16, *sni.SuffixSet,
 		}
 		c.mu.Unlock()
 	}
-	return host, tlsVersion, decidedBy, set, true
+	return decision, true
 }
 
-func (c *tlsInfoCache) Decide(connKey string, matcher *sni.SuffixSet, set *config.SetConfig) {
+func (c *tlsInfoCache) Decide(connKey string, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -112,6 +113,7 @@ func (c *tlsInfoCache) Decide(connKey string, matcher *sni.SuffixSet, set *confi
 	}
 	if info, exists := c.conns[connKey]; exists {
 		info.decidedBy = matcher
+		info.decidedMac = srcMac
 		info.set = set
 	}
 }
