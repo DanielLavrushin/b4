@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 )
 
-func AddTCPMD5Option(packet []byte, isIPv6 bool) []byte {
+func AddTCPMD5Option(packet []byte, isIPv6 bool) ([]byte, bool) {
 	var ipHdrLen int
 	if isIPv6 {
 		ipHdrLen = 40
@@ -14,11 +14,14 @@ func AddTCPMD5Option(packet []byte, isIPv6 bool) []byte {
 	}
 
 	if len(packet) < ipHdrLen+20 {
-		return packet
+		return packet, false
 	}
 
 	tcpHdrLen := int((packet[ipHdrLen+12] >> 4) * 4)
 	payloadStart := ipHdrLen + tcpHdrLen
+	if len(packet) < payloadStart {
+		return packet, false
+	}
 
 	md5Opt := make([]byte, 20)
 	md5Opt[0] = 1
@@ -29,7 +32,7 @@ func AddTCPMD5Option(packet []byte, isIPv6 bool) []byte {
 
 	newTCPHdrLen := tcpHdrLen + 20
 	if newTCPHdrLen > 60 {
-		return packet
+		return packet, false
 	}
 
 	newPacket := make([]byte, len(packet)+20)
@@ -58,5 +61,5 @@ func AddTCPMD5Option(packet []byte, isIPv6 bool) []byte {
 		FixTCPChecksum(newPacket)
 	}
 
-	return newPacket
+	return newPacket, true
 }

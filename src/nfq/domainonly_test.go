@@ -494,7 +494,14 @@ func TestARetransmittedFastOpenSynKeepsTheName(t *testing.T) {
 	const key = "10.0.0.1:12345->1.2.3.4:443"
 
 	hello := buildClientHello("i.ytimg.com", 16, 0xAB)
-	w.ProcessPacket(makeV4TCPPacketFlags(hello, isn, 0x02))
+	sent := captureInjected(t, w)
+	syn := makeV4TCPPacketFlags(hello, isn, 0x02)
+	w.ProcessPacket(syn)
+	if got := sent(); len(got) != 1 {
+		t.Fatalf("a fast-open SYN must go out as one SYN without the ClientHello, not split like data, got %d packets", len(got))
+	} else {
+		assertSynWithoutPayload(t, got[0], syn)
+	}
 	w.ProcessPacket(makeV4TCPPacketFlags(nil, isn, 0x02))
 	if host, _, found := w.tlsCache.Lookup(key); !found || host != "i.ytimg.com" {
 		t.Fatalf("a retransmitted SYN of the same connection must keep the name its first SYN carried, got %q found=%v", host, found)

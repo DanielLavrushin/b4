@@ -149,10 +149,15 @@ func (w *Worker) sendFakeSynWithMD5(set *config.SetConfig, raw []byte, ihl int, 
 	sock.FixIPv4Checksum(fakeSyn[:ihl])
 	sock.FixTCPChecksum(fakeSyn)
 
-	// Add MD5 option
-	fakeSyn = sock.AddTCPMD5Option(fakeSyn, false)
+	signed, ok := sock.AddTCPMD5Option(fakeSyn, false)
+	if !ok {
+		signed, ok = sock.AddTCPMD5Option(withoutTCPOptions(fakeSyn, ihl), false)
+	}
+	if !ok {
+		return
+	}
 
-	_ = w.sock.SendIPv4(fakeSyn, dst)
+	_ = w.sock.SendIPv4(signed, dst)
 }
 
 func (w *Worker) sendFakeSynWithMD5V6(set *config.SetConfig, raw []byte, dst net.IP) {
@@ -172,8 +177,54 @@ func (w *Worker) sendFakeSynWithMD5V6(set *config.SetConfig, raw []byte, dst net
 	seq := binary.BigEndian.Uint32(fakeSyn[ipv6HdrLen+4 : ipv6HdrLen+8])
 	binary.BigEndian.PutUint32(fakeSyn[ipv6HdrLen+4:ipv6HdrLen+8], seq-10000)
 
-	// Add MD5 option (also fixes checksums)
-	fakeSyn = sock.AddTCPMD5Option(fakeSyn, true)
+	signed, ok := sock.AddTCPMD5Option(fakeSyn, true)
+	if !ok {
+		signed, ok = sock.AddTCPMD5Option(withoutTCPOptions(fakeSyn, ipv6HdrLen), true)
+	}
+	if !ok {
+		return
+	}
 
-	_ = w.sock.SendIPv6(fakeSyn, dst)
+	_ = w.sock.SendIPv6(signed, dst)
+}
+
+func withoutTCPOptions(pkt []byte, l3Len int) []byte {
+	if len(pkt) < l3Len+20 {
+		return pkt
+	}
+	tcpHL := int(pkt[l3Len+12]>>4) * 4
+	if tcpHL < 20 || len(pkt) < l3Len+tcpHL {
+		return pkt
+	}
+	out := make([]byte, len(pkt)-tcpHL+20)
+	copy(out, pkt[:l3Len+20])
+	copy(out[l3Len+20:], pkt[l3Len+tcpHL:])
+	out[l3Len+12] = 5<<4 | out[l3Len+12]&0x0f
+	if out[0]>>4 == IPv6 {
+		binary.BigEndian.PutUint16(out[4:6], uint16(len(out)-IPv6HeaderLen))
+		sock.FixTCPChecksumV6(out)
+	} else {
+		binary.BigEndian.PutUint16(out[2:4], uint16(len(out)))
+		sock.FixIPv4Checksum(out[:l3Len])
+		sock.FixTCPChecksum(out)
+	}
+	return out
+}
+
+func synWithoutPayload(raw []byte, ver byte, l3Len, tcpHdrLen int) ([]byte, bool) {
+	end := l3Len + tcpHdrLen
+	if len(raw) <= end || (ver == IPv6 && !hasPlainIPv6Header(raw, ipProtoTCP)) {
+		return nil, false
+	}
+	syn := make([]byte, end)
+	copy(syn, raw[:end])
+	if ver == IPv4 {
+		binary.BigEndian.PutUint16(syn[2:4], uint16(end))
+		sock.FixIPv4Checksum(syn[:l3Len])
+		sock.FixTCPChecksum(syn)
+	} else {
+		binary.BigEndian.PutUint16(syn[4:6], uint16(end-IPv6HeaderLen))
+		sock.FixTCPChecksumV6(syn)
+	}
+	return syn, true
 }

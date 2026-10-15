@@ -14,6 +14,9 @@
 - FIXED: **System Info listed tools such as jq, sha256sum and ipset without a version when they were on the USB drive b4 is installed on** - b4 asked a tool for its version only when it sat in a standard system directory such as `/usr/bin` or `/opt/bin`.
 - FIXED: **A `regexp:` entry listed in two sets, such as a set and its copy made with Duplicate, worked only in the set higher in the list, so when one of them was limited by Source devices, some devices got the wrong set or none for the names that entry matches** - b4 kept each pattern only for the first set that listed it.
 - FIXED: **A device added by hand by its IPv6 address, typed in another form such as in capitals or with leading zeros, was not recognised when b4 matched its traffic to a set's domains, so a set that selects it under Source devices skipped it and one with All devices except selected applied to it** - b4 looked packets up by the standard form of their address, while it kept the device's address as typed.
+- FIXED: **Apps that use TCP Fast Open could not open sites through a set with a strategy** - such an app puts the start of its secure connection into the packet that opens the connection. b4 split that packet like ordinary data, and every piece opened the connection again with different numbering. The site kept one of them and could not read the start. [#431](https://github.com/DanielLavrushin/b4/issues/431)
+- FIXED: **Window Mode sent malformed fake packets on connections that use TCP timestamps, which Linux turns on by default** - each fake kept the header length of the original packet but carried only the first part of the header.
+- FIXED: **SYN MD5 Signature sent its fake SYN without the MD5 option when the real SYN carried many options, such as one from an app that uses TCP Fast Open** - the option did not fit, and the fake went out without it. A server it reached could take it for a real SYN.
 
 ## [1.86.0] - 2026-10-09
 

@@ -459,22 +459,29 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		observeFlow(cfg, pkt, sport, dport, set, "")
 
+		syn := pkt.raw
+		if len(payload) > 0 && needsTCPInjection(set) {
+			if stripped, ok := synWithoutPayload(pkt.raw, pkt.ver, pkt.ihl, datOff); ok {
+				syn = stripped
+			}
+		}
+
 		if pkt.ver == IPv4 {
 			if set.TCP.SynFake {
-				w.sendFakeSyn(set, pkt.raw, pkt.ihl, datOff)
+				w.sendFakeSyn(set, syn, pkt.ihl, datOff)
 			}
 			if set.Faking.TCPMD5 {
-				w.sendFakeSynWithMD5(set, pkt.raw, pkt.ihl, pkt.dst)
+				w.sendFakeSynWithMD5(set, syn, pkt.ihl, pkt.dst)
 			}
-			_ = w.sock.SendIPv4(pkt.raw, pkt.dst)
+			_ = w.sock.SendIPv4(syn, pkt.dst)
 		} else {
 			if set.TCP.SynFake {
-				w.sendFakeSynV6(set, pkt.raw, pkt.ihl, datOff)
+				w.sendFakeSynV6(set, syn, pkt.ihl, datOff)
 			}
 			if set.Faking.TCPMD5 {
-				w.sendFakeSynWithMD5V6(set, pkt.raw, pkt.dst)
+				w.sendFakeSynWithMD5V6(set, syn, pkt.dst)
 			}
-			_ = w.sock.SendIPv6(pkt.raw, pkt.dst)
+			_ = w.sock.SendIPv6(syn, pkt.dst)
 		}
 
 		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
@@ -677,7 +684,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	stallCount := 0
 	stallFirstSeen := time.Time{}
 	stallTracked := false
-	if matched && isClientHello && host != "" && cfg.IsTCPPort(dport) &&
+	if matched && isClientHello && !isSyn && host != "" && cfg.IsTCPPort(dport) &&
 		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) {
 		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host)
 		stallTracked = true
@@ -770,12 +777,21 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			return vc.accept()
 		}
 
+		out := pkt.raw
+		if isSyn && len(payload) > 0 {
+			syn, ok := synWithoutPayload(pkt.raw, pkt.ver, pkt.ihl, datOff)
+			if !ok {
+				return vc.accept()
+			}
+			out = syn
+		}
+
 		if !injectAcquire() {
 			return vc.accept()
 		}
 
-		packetCopy := make([]byte, len(pkt.raw))
-		copy(packetCopy, pkt.raw)
+		packetCopy := make([]byte, len(out))
+		copy(packetCopy, out)
 
 		if set.TCP.DropSACK {
 			if pkt.ver == 4 {
