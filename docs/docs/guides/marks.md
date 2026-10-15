@@ -46,7 +46,7 @@ rule without a mask, such as nftables `meta mark set 0x00021546` or iptables
 
 | Bits | Mask | Used for | Value |
 | --- | --- | --- | --- |
-| 0-14, 17 | `0x27fff` | The route of a routing set | One per set; sets routed through the same interface with the same egress IP and kill switch share one. See [sets routed through an interface](#sets-routed-through-an-interface) and [proxy sets](#proxy-sets-and-telegram-over-websocket) |
+| 0-14, 17 | `0x27fff` | The route of a routing set | One per set; sets routed through the same interface with the same egress IP, gateway and kill switch share one. See [sets routed through an interface](#sets-routed-through-an-interface) and [proxy sets](#proxy-sets-and-telegram-over-websocket) |
 | 15 by default | `0x8000` by default | The queue mark: packets b4 sends from its raw sockets, except those toward a device in TUN mode, the DNS queries it sends for clients and for its sets, and its probes that bypass its own processing | **Packet Mark** under **Settings, Core, Packet Engine**, `0x8000` (32768) by default |
 | 18 | `0x40000` | Connections b4 opens to the upstream of a proxy set, to Telegram, the Community Hub, ipinfo and RIPEstat, and its transparent listeners; see [socket marks](#socket-marks) | Fixed |
 | 21 | `0x200000` | b4's own connections whose outgoing packets packet processing leaves alone | Fixed, carried together with bit 18 as `0x240000` |
@@ -203,15 +203,15 @@ lies within `0x27fff`.
 ## Sets routed through an interface
 
 A set routed through an [output interface](../sets/routing.md#output-interface) gets a mark
-and a routing table from the interface name, the egress IP and the kill switch. Sets that
-agree on all three share both.
+and a routing table from the interface name, the egress IP, the gateway and the kill switch.
+Sets that agree on all four share both.
 
 | Item | Value |
 | --- | --- |
-| Mark | From a hash of the three, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
+| Mark | From a hash of the four, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
 | Table | `100`-`249`, skipping tables named in `rt_tables`, looked up by another service's rule, or holding routes b4 did not add |
 | Rule | `ip rule add fwmark <mark>/0x27fff lookup <table> priority <10000 + table>`, for IPv4, and for IPv6 when **Enable IPv6 Support** is on |
-| Table contents | A default route through the interface, plus `blackhole default metric 4096` with the [kill switch](../sets/routing.md#kill-switch) |
+| Table contents | A default route through the interface, via the set's [gateway](../internals/routing.md#gateway) in the gateway's address family when b4 can use it, plus `blackhole default metric 4096` with the [kill switch](../sets/routing.md#kill-switch) |
 | Pinned values | `routing.fwmark` and `routing.table` in the configuration file or through the API, used only when both are set, the mark lies within `0x27fff`, is not `0x24bab`, does not contain every bit of the queue mark and does not equal its bits under `0x27fff` |
 
 The set marks the first packet of each connection to its destinations and saves the mark in
@@ -221,10 +221,20 @@ replies get no mark. The set's chain for packets entering the router, `b4r_<set>
 this order:
 
 1. Returns packets that carry the queue mark, bit `0x40000`, or any bit under `0x27fff`.
-2. Returns packets that arrive on the output interface itself.
+2. Returns packets that arrive on the output interface itself, narrowed for a set with a
+   gateway as described below.
 3. Restores the mark from the connection mark on later packets of claimed connections that
    travel in the direction of the first packet.
 4. Marks new connections to the set's destinations and saves the mark with the claim.
+
+With an IPv4 [gateway](../internals/routing.md#gateway) that b4 uses, on an output interface
+of the Ethernet type (Ethernet, bridge, VLAN, Wi-Fi, TAP), step 2 is narrower. The set first
+returns packets to local, broadcast, multicast and IPv6 link-local addresses, whatever
+interface they arrive on. It then returns the IPv4 packets that arrive on the output
+interface from the usable IPv4 gateway of any set routed through that interface, its own
+included, and every IPv6 packet that arrives on it. Other IPv4 packets from the output
+interface go on to steps 3 and 4. A refused gateway, an IPv6 gateway and an interface of
+another type leave step 2 as it is.
 
 A set that excludes source devices returns their packets before step 2, only the packets of
 its devices enter the chain of a set limited to source devices, and a set limited to source
@@ -233,7 +243,9 @@ interfaces applies steps 3 and 4 only to packets arriving on them.
 chain the same way. `b4r_<set>_out` does the same for the router's own connections when the
 set carries them, and gives the set's mark to b4's own queue-marked packets addressed to the
 set; a set limited to source devices that are all given by IP address does this only for
-packets from those addresses. Masquerade matches the
+packets from those addresses. With the narrower step 2, `b4r_<set>_out` also drops the IPv4
+ICMP redirects that leave through the output interface, whether or not the set carries the
+router's own traffic. Masquerade matches the
 set's mark and the output interface; with an egress IP present on the interface, SNAT to
 that address takes its place and also requires the destination to be in the set.
 
@@ -243,7 +255,8 @@ connections have been claimed, the restore has never matched, and no answered co
 `/proc/net/nf_conntrack` still carries bit `0x40000000`, on two checks in a row, b4 writes
 `0` to `.conntrack-mark` next to the configuration file. From then on, and at every later
 start on either backend until the file is deleted, the set marks every packet to its
-destinations that has no bit under `0x27fff`, not only the first.
+destinations that travels in the direction of its connection's first packet and has no bit
+under `0x27fff`, not only the first.
 
 While a set uses an output interface whose effective `rp_filter` is `1`, b4 writes `2` to
 `net.ipv4.conf.<interface>.rp_filter`, and writes the old value back when the last set on

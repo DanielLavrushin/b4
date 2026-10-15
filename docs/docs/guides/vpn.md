@@ -41,6 +41,19 @@ Without the **Kill switch**, the set's traffic leaves through the normal uplink 
 
 **Router's own traffic** decides whether connections the router opens itself follow the set. **Automatic** is the usual choice. A setup with Xray, sing-box or another proxy reading a TUN device is covered in [Using b4 with Xray or XrayUI](./xray.md).
 
+## Sites through a VPN on another device {#another-device}
+
+The VPN can run on another device in the router's network, such as a Raspberry Pi or a second router. The set then sends its sites to that device, which forwards them into its VPN.
+
+1. Follow steps 1 to 4 of [Setup](#setup).
+2. In **Output Interface**, select the interface that faces the device, such as the LAN bridge.
+3. In **Gateway (optional)**, enter the device's address in that network, such as `192.168.1.10`.
+4. Click **Save Changes**, or **Create Set** for a new set.
+
+Devices in that network follow the set over IPv4, and the device's own traffic keeps the normal route. IPv6 from that network never follows the set. With an IPv4 gateway and **Enable IPv6 Support** on, the set's IPv6 traffic does not reach the device.
+
+b4 ignores a gateway outside the network of the output interface, and the log says why. When the sites stop opening once the gateway is set, the device does not forward the traffic or its VPN is down: packets leave, and no reply comes back. See [Gateway](../internals/routing.md#gateway).
+
 ## When it does not work
 
 - **The set routes nothing.** Routing matches destination addresses, and the tab warns when the set has no domain, IP or ASN target. Source devices alone select no traffic.

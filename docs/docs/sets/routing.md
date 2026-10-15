@@ -51,8 +51,11 @@ The set's traffic leaves through the selected interface, such as a WireGuard or 
 | --- | --- | --- |
 | **Output Interface** | The interface the set's traffic leaves by. One that is down or missing is marked **unavailable**, and the set's routing stops until it is back. | None |
 | **Egress IP (optional)** | Rewrites the source address of the set's traffic. b4 adds the address to the output interface itself. The device upstream then routes by that source. | Empty |
+| **Gateway (optional)** | The device on the output interface's network that receives the set's traffic, such as a VPN gateway or another router. Empty uses the gateway b4 finds on the interface. | Empty |
 | **Router's own traffic** | Whether the router's own connections to the set's addresses use the output interface too. See [below](#routers-own-traffic). | **Automatic** |
 | **Kill switch** | Drops the set's traffic while the output interface is gone. See [below](#kill-switch). | Off |
+
+Traffic that arrives on the output interface itself does not follow the set. With a **Gateway** on an Ethernet port, bridge, VLAN, Wi-Fi or TAP interface, IPv4 devices on that network follow the set too, apart from the gateway itself. b4 ignores a gateway that is outside the interface's network or is one of the router's own addresses, and logs the reason. See [Gateway](../internals/routing.md#gateway) and [Sites through a VPN on another device](../guides/vpn.md#another-device).
 
 When the output interface is a tunnel that is up, such as WireGuard or a TUN or TAP device, b4 leaves the set's packets alone: the strategy tabs have no effect, and the set's connections end with `[routed->wg0]` on the **Logs** page. A set routed to a plain interface, such as a second uplink, keeps its bypass strategy.
 
