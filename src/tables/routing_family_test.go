@@ -46,6 +46,8 @@ func familyResetGlobals(t *testing.T) {
 	routeSyncedCfg = nil
 	routeMu.Unlock()
 	familyForgetGatewayWarnings()
+	forgetInstallFailures(t)
+	routeLocalGuardForgetLists()
 	t.Cleanup(func() {
 		routeEngine = engine
 		routeRuleCache = cache
@@ -58,6 +60,7 @@ func familyResetGlobals(t *testing.T) {
 		routeHostIfaces = hostIfaces
 		routeLinkType = linkType
 		familyForgetGatewayWarnings()
+		routeLocalGuardForgetLists()
 		routeMu.Lock()
 		routeSyncedCfg = synced
 		routeMu.Unlock()
@@ -70,6 +73,24 @@ func familyResetGlobals(t *testing.T) {
 	routeDelRuleLoop = func(ipv6 bool, mark, table string) {}
 	routeAddSourceCheckRule = func(mark uint32) {}
 	routeDelSourceCheckRule = func(markStrMask string) {}
+}
+
+func TestFamilyResetGlobalsStartsWithoutInstallFailuresOrAddressLists(t *testing.T) {
+	routeInstallFailedAt.Store("famtest", time.Now())
+	routeLocalGuardMu.Lock()
+	routeLocalGuardListed[routeLocalListKey{chain: "b4r_famtest_pre"}] = "192.0.2.1/32"
+	routeLocalGuardMu.Unlock()
+
+	familyResetGlobals(t)
+	if routeInstallFailedRecently("famtest") {
+		t.Error("a failed install memo from an earlier test survived the reset, so a DNS-path test of the same set skips its install")
+	}
+	routeLocalGuardMu.Lock()
+	listed := len(routeLocalGuardListed)
+	routeLocalGuardMu.Unlock()
+	if listed != 0 {
+		t.Errorf("%d address-list records from an earlier test survived the reset, so a monitor test rebuilds routing for a chain it never built", listed)
+	}
 }
 
 func routeFamilyCountOps(ops []string, want string) int {
