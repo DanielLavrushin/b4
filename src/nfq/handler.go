@@ -904,7 +904,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	namedByHello := false
 	helloDatagram := false
-	if isQUIC && (host == "" || coalescesInitials(set)) {
+	if isQUIC && (host == "" || coalescesInitials(set) || coalescesInitials(w.escalatedSetFor(cfg, host, pkt.srcMac))) {
 		if h, ok := sni.ParseQUICClientHelloSNI(payload); ok {
 			helloDatagram = true
 			host = h
