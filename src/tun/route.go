@@ -75,6 +75,7 @@ type routeManager struct {
 	srcIP              string
 	resolvedCapture    string
 	multiport          bool
+	ctdirOK            bool
 	captureRulesAdded  bool
 	clientBypassOK     atomic.Bool
 	clientBypassAdded  bool

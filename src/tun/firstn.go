@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/daniellavrushin/b4/engine"
 )
 
 const (
@@ -28,6 +30,7 @@ type flowCount struct {
 	isn     uint32
 	synSeen bool
 	closing bool
+	dir     engine.Direction
 	seen    time.Time
 }
 
@@ -89,17 +92,17 @@ func (p *firstNParams) duplicated(dst [4]byte) bool {
 	return false
 }
 
-func (l *firstNLimiter) admit(raw []byte, now time.Time) bool {
+func (l *firstNLimiter) admit(raw []byte, now time.Time) (bool, engine.Direction) {
 	if len(raw) < 20 || raw[0]>>4 != 4 {
-		return true
+		return true, engine.DirUnknown
 	}
 	ihl := int(raw[0]&0x0f) * 4
 	proto := raw[9]
 	if ihl < 20 || (proto != 6 && proto != 17) || len(raw) < ihl+4 {
-		return true
+		return true, engine.DirUnknown
 	}
 	if (uint16(raw[6])<<8|uint16(raw[7]))&0x3fff != 0 {
-		return true
+		return true, engine.DirUnknown
 	}
 	k := flowKey{proto: proto, sport: uint16(raw[ihl])<<8 | uint16(raw[ihl+1]), dport: uint16(raw[ihl+2])<<8 | uint16(raw[ihl+3])}
 	copy(k.src[:], raw[12:16])
@@ -109,20 +112,21 @@ func (l *firstNLimiter) admit(raw []byte, now time.Time) bool {
 	limit := p.udpLimit
 	if proto == 17 {
 		if k.sport == 53 || k.dport == 53 {
-			return true
+			return true, engine.DirUnknown
 		}
 	} else {
 		if p.duplicated(k.dst) {
-			return true
+			return true, engine.DirUnknown
 		}
 		limit = p.tcpLimit
 	}
 
-	var syn, fin bool
+	var syn, synAck, fin bool
 	var seq uint32
 	if proto == 6 && len(raw) >= ihl+14 {
 		flags := raw[ihl+13]
 		syn = flags&0x02 != 0 && flags&0x10 == 0
+		synAck = flags&0x12 == 0x12
 		fin = flags&0x05 != 0
 		seq = binary.BigEndian.Uint32(raw[ihl+4 : ihl+8])
 	}
@@ -140,10 +144,13 @@ func (l *firstNLimiter) admit(raw []byte, now time.Time) bool {
 			}
 		}
 		f = &flowCount{}
+		if synAck {
+			f.dir = engine.DirReply
+		}
 		l.flows[k] = f
 	}
 	if syn && (!f.synSeen || f.isn != seq) {
-		*f = flowCount{isn: seq, synSeen: true}
+		*f = flowCount{isn: seq, synSeen: true, dir: engine.DirOriginal}
 	}
 	f.packets++
 	f.seen = now
@@ -154,7 +161,7 @@ func (l *firstNLimiter) admit(raw []byte, now time.Time) bool {
 	if !pass {
 		l.passed.Add(1)
 	}
-	return pass
+	return pass, f.dir
 }
 
 func (l *firstNLimiter) sweep(now time.Time) {
