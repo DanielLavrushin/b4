@@ -11,8 +11,8 @@
 - FIXED: **Discovery reported a site, such as one on Cloudflare, as loading without b4 while Chrome could not open it** - its probes never used ECH, which a browser such as Chrome uses for every site that publishes an ECH key and which some networks block.
 - FIXED: **Discovery could propose a packet strategy remembered from an earlier run for a site that only needed its DNS answer corrected** - a remembered strategy that also loaded the site won over the DNS fix.
 - FIXED: **System Info listed tools such as jq, sha256sum and ipset without a version when they were on the USB drive b4 is installed on** - b4 asked a tool for its version only when it sat in a standard system directory such as `/usr/bin` or `/opt/bin`.
-- FIXED: **A `regexp:` entry listed in two sets worked only in the first of them, so a copy made with Duplicate and limited to some devices did not take those devices' traffic for the names that entry matches** - b4 kept each pattern only for the first set that listed it.
-- FIXED: **A device added by hand by its IPv6 address got none of the strategies or DNS settings of a set that lists it under Source devices when the address was typed in another form, for example in capitals or with leading zeros** - b4 looked packets up by the standard form of their address, while it kept the device's address as typed.
+- FIXED: **A `regexp:` entry listed in two sets, such as a set and its copy made with Duplicate, worked only in the set higher in the list, so when one of them was limited by Source devices, some devices got the wrong set or none for the names that entry matches** - b4 kept each pattern only for the first set that listed it.
+- FIXED: **A device added by hand by its IPv6 address, typed in another form such as in capitals or with leading zeros, was not recognised when b4 matched its traffic to a set's domains, so a set that selects it under Source devices skipped it and one with All devices except selected applied to it** - b4 looked packets up by the standard form of their address, while it kept the device's address as typed.
 
 ## [1.86.0] - 2026-10-09
 

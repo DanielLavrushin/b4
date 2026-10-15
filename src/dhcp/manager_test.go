@@ -179,13 +179,14 @@ func TestAManualDeviceIsFoundByTheAddressFormItsPacketsCarry(t *testing.T) {
 	m.manualDevices = []config.Device{
 		{MAC: "02:B4:00:00:00:02", IP: "2001:DB8:0:0:0:0:0:0002", IsManual: true},
 		{MAC: "02:B4:C0:A8:0A:05", IP: " ::ffff:192.168.10.5 ", IsManual: true},
+		{MAC: "02:B4:00:00:00:01", IP: "fe80::1%br0", IsManual: true},
 		{MAC: "02:B4:00:00:00:09", IP: "not an address", IsManual: true},
 	}
 	m.mu.Lock()
 	m.addManualDevicesLocked()
 	m.mu.Unlock()
 
-	for ip, want := range map[string]string{"2001:db8::2": "02:B4:00:00:00:02", "192.168.10.5": "02:B4:C0:A8:0A:05"} {
+	for ip, want := range map[string]string{"2001:db8::2": "02:B4:00:00:00:02", "192.168.10.5": "02:B4:C0:A8:0A:05", "fe80::1": "02:B4:00:00:00:01"} {
 		if got := m.GetMACForIP(ip); got != want {
 			t.Errorf("GetMACForIP(%q) = %q, want %q: b4 looks a client up by the form net.IP prints, not by the form typed into the settings", ip, got, want)
 		}
@@ -193,8 +194,8 @@ func TestAManualDeviceIsFoundByTheAddressFormItsPacketsCarry(t *testing.T) {
 	if got := m.GetIPForMAC("02:B4:00:00:00:02"); got != "2001:db8::2" {
 		t.Errorf("GetIPForMAC = %q, want the address in the form b4 matches it by", got)
 	}
-	if got := len(m.GetAllMappings()); got != 2 {
-		t.Errorf("%d mappings, want 2: an entry that is not an address matches no packet", got)
+	if got := len(m.GetAllMappings()); got != 3 {
+		t.Errorf("%d mappings, want 3: an entry that is not an address matches no packet", got)
 	}
 }
 

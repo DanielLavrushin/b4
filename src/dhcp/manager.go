@@ -171,7 +171,8 @@ func (m *Manager) addManualDevicesLocked() {
 }
 
 func canonicalIP(raw string) string {
-	ip := net.ParseIP(strings.TrimSpace(raw))
+	addr, _, _ := strings.Cut(strings.TrimSpace(raw), "%")
+	ip := net.ParseIP(addr)
 	if ip == nil {
 		return ""
 	}

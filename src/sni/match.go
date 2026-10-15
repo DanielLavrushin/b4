@@ -31,6 +31,7 @@ type SuffixSet struct {
 	sets          map[string]*config.SetConfig
 	multiSets     map[string][]*config.SetConfig
 	regexes       []*regexWithSet
+	regexPatterns int
 	regexCache    sync.Map
 	ipRanger      cidranger.Ranger
 	udpPortRanges []portRange
@@ -69,13 +70,33 @@ type learnedIPEntry struct {
 }
 
 type regexWithSet struct {
-	regex *regexp.Regexp
-	set   *config.SetConfig
+	regex   *regexp.Regexp
+	set     *config.SetConfig
+	pattern int
 }
 
 type setPattern struct {
 	set     *config.SetConfig
 	pattern string
+}
+
+const regexMemoSize = 512
+
+func (s *SuffixSet) regexMemo(buf *[regexMemoSize]int8) []int8 {
+	if s.regexPatterns <= len(buf) {
+		return buf[:s.regexPatterns]
+	}
+	return make([]int8, s.regexPatterns)
+}
+
+func (r *regexWithSet) matches(host string, memo []int8) bool {
+	if memo[r.pattern] == 0 {
+		memo[r.pattern] = -1
+		if r.regex.MatchString(host) {
+			memo[r.pattern] = 1
+		}
+	}
+	return memo[r.pattern] > 0
 }
 
 func (e *ipRange) Network() net.IPNet {
@@ -111,7 +132,8 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 	}
 
 	seenRegexes := make(map[setPattern]bool)
-	compiledRegexes := make(map[string]*regexp.Regexp)
+	patternIndex := make(map[string]int)
+	var patterns []*regexp.Regexp
 	ipEntries := make(map[string]*ipRange)
 
 	for setOrder, set := range sets {
@@ -130,13 +152,17 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 					continue
 				}
 				seenRegexes[key] = true
-				re, known := compiledRegexes[d]
+				idx, known := patternIndex[d]
 				if !known {
-					re, _ = regexp.Compile(d)
-					compiledRegexes[d] = re
+					idx = -1
+					if re, err := regexp.Compile(d); err == nil {
+						idx = len(patterns)
+						patterns = append(patterns, re)
+					}
+					patternIndex[d] = idx
 				}
-				if re != nil {
-					s.regexes = append(s.regexes, &regexWithSet{regex: re, set: set})
+				if idx >= 0 {
+					s.regexes = append(s.regexes, &regexWithSet{regex: patterns[idx], set: set, pattern: idx})
 				}
 				continue
 			}
@@ -208,6 +234,7 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 		}
 	}
 
+	s.regexPatterns = len(patterns)
 	return s
 }
 
@@ -437,8 +464,10 @@ func (s *SuffixSet) matchRegex(host string) (bool, *config.SetConfig) {
 
 	var matched bool
 	var matchedSet *config.SetConfig
+	var buf [regexMemoSize]int8
+	memo := s.regexMemo(&buf)
 	for _, rws := range s.regexes {
-		if rws.regex.MatchString(host) {
+		if rws.matches(host, memo) {
 			matched = true
 			matchedSet = rws.set
 			break
@@ -666,8 +695,10 @@ func (s *SuffixSet) MatchSNIForUnknownDevice(host string) (bool, *config.SetConf
 		name = name[idx+1:]
 	}
 
+	var buf [regexMemoSize]int8
+	memo := s.regexMemo(&buf)
 	for _, rws := range s.regexes {
-		if len(rws.set.Targets.SourceDevices) == 0 && acceptsAnyVersion(rws.set) && rws.regex.MatchString(lower) {
+		if len(rws.set.Targets.SourceDevices) == 0 && acceptsAnyVersion(rws.set) && rws.matches(lower, memo) {
 			return true, rws.set
 		}
 	}
@@ -776,8 +807,10 @@ func (s *SuffixSet) SetHasDomain(setID, host string) bool {
 
 func (s *SuffixSet) matchRegexWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {
 	var candidates []*config.SetConfig
+	var buf [regexMemoSize]int8
+	memo := s.regexMemo(&buf)
 	for _, rws := range s.regexes {
-		if rws.regex.MatchString(host) {
+		if rws.matches(host, memo) {
 			candidates = append(candidates, rws.set)
 		}
 	}
