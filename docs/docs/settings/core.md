@@ -55,7 +55,7 @@ IP block detection is turned on per set, on the **TCP > General** tab. This card
 | Field | What it does | Default |
 | --- | --- | --- |
 | **Enable IPv4 Support** | b4 handles IPv4 traffic. | On |
-| **Enable IPv6 Support** | b4 handles IPv6 packets, DNS answers and firewall rules. While it is off, b4 in NFQUEUE mode still removes [ECH keys](../dns.md#removing-ech-keys) from IPv6 DNS answers. | Off |
+| **Enable IPv6 Support** | b4 handles IPv6 packets, DNS answers and firewall rules. While it is off, sets with [Remove ECH keys from DNS answers](../dns.md#removing-ech-keys) on still remove ECH keys from IPv6 DNS answers in NFQUEUE mode. | Off |
 | **Force IPv4 for matched domains** | While IPv6 support is off, b4 removes IPv6 addresses from DNS answers for domains a set matched, so clients reach them over IPv4. | On |
 
 :::warning IPv6 support off

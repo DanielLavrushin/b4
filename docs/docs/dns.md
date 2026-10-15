@@ -150,7 +150,7 @@ The [log](logs.md) records the same decisions, as `dns-doh->`, `dns-pin` and so 
 | The site still goes to the old address | The device keeps an answer it already has until the answer expires. |
 | `servfail`, `fallback-cache` or `fallback-upstream` | The set's resolver is unreachable from this connection. Another resolver, or DoH in place of plain DNS, is the next try. |
 | The set's names resolve slowly or not at all, with the set's resolver on the router | A resolver on the router, and the router's resolver when a resolver on the network uses it upstream, has to reach its own upstream over DoH or DoT, which b4 does not intercept. |
-| A browser still uses ECH, with a resolver on the network that checks DNSSEC, such as BIND or Unbound | The resolver gets the original answer on a path b4 does not see: DoT or DoH to its upstream, an interface not selected in **Capture Interfaces**, or TCP while **Intercept DNS over TCP** is off. Plain DNS through a captured interface closes these paths, see [ECH keys](internals/dns.md#ech-keys). |
+| A browser still uses ECH, with a resolver on the network that checks DNSSEC, such as BIND or Unbound | The resolver gets the original answer on a path b4 does not see: DoT or DoH to its upstream, an interface left out of **Capture Interfaces**, or TCP while **Intercept DNS over TCP** is off. With **Intercept DNS over TCP** on, plain DNS through a captured interface closes these paths, see [ECH keys](internals/dns.md#ech-keys). |
 
 ### On KeeneticOS and older kernels {#copied-requests}
 

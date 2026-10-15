@@ -15,7 +15,7 @@ b4 intercepts DNS on port 53 and answers the names its sets target. The options 
 
 Both cover traffic forwarded from the network and the queries the router makes for itself. The queries b4 sends on a client's behalf, and its lookups through a set's resolver, carry the [queue mark](../guides/marks.md#the-queue-mark). The rules skip packets that carry it, so such a query never re-enters the queue. Lookups b4 makes through the router's own resolver carry no mark.
 
-With **Enable IPv6 Support** off, these rules cover IPv4 only. The exception is NFQUEUE mode while an enabled set has **Remove ECH keys from DNS answers** on: DNS replies over IPv6 are then queued as well, and DNS over TCP to IPv6 port 53 is redirected too. b4 only removes ECH keys from them, see [ECH keys](#ech-keys).
+With **Enable IPv6 Support** off, these rules cover IPv4 only. The exception is NFQUEUE mode while an enabled set has **Remove ECH keys from DNS answers** on. DNS replies over IPv6 are then queued as well, and IPv6 DNS over TCP is redirected too. b4 only removes ECH keys from them, see [ECH keys](#ech-keys).
 
 TCP interception needs `REDIRECT` in the `nat` table. Where the kernel does not provide it, b4 logs a warning, and DNS over TCP stays with the client's resolver for that address family.
 
@@ -98,7 +98,7 @@ Only the address the set names is compared: a query the resolver sends from anot
 - Only the `ech` parameter goes, together with its entry in `mandatory`, and `mandatory` itself when nothing is left in it. The ALPN list, the address hints and the TTL stay as they were.
 - The RRSIG records over the changed records are dropped and the AD flag is cleared, since the changed records no longer match their signatures.
 - Listing `cloudflare-ech.com` in a set also makes the set match, by server name, the ECH ClientHellos of clients that kept the key, and its TCP and UDP settings apply to them. A set made only to remove keys changes no packets, so those ClientHellos pass unchanged.
-- With **Enable IPv6 Support** off, answers that arrive over IPv6 in NFQUEUE mode lose nothing but their key: no pin, redirect, block, address learning or other rewrite applies to them. b4 cannot tell which device such an answer goes to, unless the device was [added by hand](../settings/core.md#manual-devices) by its IPv6 address, so only sets without source devices are matched against it. The TUN engine carries no IPv6, and there such answers keep their key.
+- With **Enable IPv6 Support** off, answers that arrive over IPv6 in NFQUEUE mode lose nothing but their key. No pin, redirect, block, address learning or other rewrite applies to them. b4 cannot tell which device such an answer goes to, so only sets without source devices are matched against it. A device [added by hand](../settings/core.md#manual-devices) by its IPv6 address is the exception. The TUN engine carries no IPv6, and there such answers keep their key.
 
 In a zone signed with DNSSEC, such as `steamdb.info` (`cloudflare-ech.com` is not signed), an HTTPS answer without its key no longer matches its signature. A resolver that validates DNSSEC rejects it as bogus and asks the zone's other servers. BIND answers the HTTPS query with SERVFAIL once none of them gives an answer that validates. The device then gets no key, and A and AAAA answers are not affected.
 
