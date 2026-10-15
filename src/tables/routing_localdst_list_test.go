@@ -58,34 +58,45 @@ func refuseAddrTypeMatch(t *testing.T) *[]string {
 }
 
 func TestTheLocalAddressListIsWatchedOnlyWhileItIsInUse(t *testing.T) {
-	localGuardReset(t)
-	stubBinaries(t, backendIPTables)
-	addrs := stubLocalAddrs(t, testCIDR(t, "192.168.1.1/24"))
-	prevRun := run
-	t.Cleanup(func() { run = prevRun })
-	run = func(args ...string) (string, error) { return "", nil }
+	for _, c := range []struct {
+		engine string
+		be     routeBackend
+		listed string
+	}{
+		{backendIPTables, &routeIptBackend{}, "-A b4r_lw2_pre -d 192.168.1.1/32 -j RETURN"},
+		{backendNFTables, &routeNftBackend{}, "add rule inet " + routeNftTable + " b4r_lw2_pre ip daddr 192.168.1.1/32 return"},
+	} {
+		t.Run(c.engine, func(t *testing.T) {
+			localGuardReset(t)
+			stubBinaries(t, backendIPTables)
+			addrs := stubLocalAddrs(t, testCIDR(t, "192.168.1.1/24"))
+			prevRun := run
+			t.Cleanup(func() { run = prevRun })
+			run = func(args ...string) (string, error) { return "", nil }
 
-	routeAddLocalDestinationGuard(&routeIptBackend{}, "b4r_lw_pre", true, false)
-	addrs.dumps.Store(0)
-	if routeLocalGuardListsMoved() || addrs.dumps.Load() != 0 {
-		t.Fatalf("the address-type match loaded, so no address list is in use and a monitor tick must not read the addresses (%d dumps)", addrs.dumps.Load())
-	}
+			routeAddLocalDestinationGuard(c.be, "b4r_lw_pre", true, false)
+			addrs.dumps.Store(0)
+			if routeLocalGuardListsMoved() || addrs.dumps.Load() != 0 {
+				t.Fatalf("the address-type match loaded, so no address list is in use and a monitor tick must not read the addresses (%d dumps)", addrs.dumps.Load())
+			}
 
-	lines := refuseAddrTypeMatch(t)
-	routeAddLocalDestinationGuard(&routeIptBackend{}, "b4r_lw2_pre", true, false)
-	if firstLineWith(*lines, "-A b4r_lw2_pre -d 192.168.1.1/32 -j RETURN") < 0 {
-		t.Fatalf("the rejected match must fall back to the address list:\n%s", strings.Join(*lines, "\n"))
-	}
-	if routeLocalGuardListsMoved() {
-		t.Fatal("the addresses did not change, yet the list counts as moved")
-	}
-	addrs.set(testCIDR(t, "192.168.1.7/24"))
-	if !routeLocalGuardListsMoved() {
-		t.Fatal("the router's address changed while a chain still lists the old one, and nothing noticed")
-	}
-	routeLocalGuardForgetLists()
-	if routeLocalGuardListsMoved() {
-		t.Fatal("a forced resync rebuilds every list, so the old ones must be forgotten")
+			lines := refuseAddrTypeMatch(t)
+			routeAddLocalDestinationGuard(c.be, "b4r_lw2_pre", true, false)
+			if firstLineWith(*lines, c.listed) < 0 {
+				t.Fatalf("the rejected match must fall back to the address list:\n%s", strings.Join(*lines, "\n"))
+			}
+			if routeLocalGuardListsMoved() {
+				t.Fatal("the addresses did not change, yet the list counts as moved")
+			}
+			addrs.set(testCIDR(t, "192.168.1.7/24"))
+			if !routeLocalGuardListsMoved() {
+				t.Fatal("the router's address changed while a chain still lists the old one, and nothing noticed")
+			}
+			routeLocalGuardForgetLists()
+			if routeLocalGuardListsMoved() {
+				t.Fatal("a forced resync rebuilds every list, so the old ones must be forgotten")
+			}
+		})
 	}
 }
 

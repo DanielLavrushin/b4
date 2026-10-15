@@ -540,6 +540,62 @@ func TestAGatewayLessSetEmitsTheGuardItHadBefore(t *testing.T) {
 	}
 }
 
+func TestAGatewayOfADisabledFamilyCountsAsNoGateway(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		ipv4, ipv6 bool
+		gw         string
+	}{
+		{"ipv4 gateway with ipv4 off", false, true, "192.0.2.1"},
+		{"ipv6 gateway with ipv6 off", true, false, "2001:db8:1::1"},
+	} {
+		for _, engine := range []string{backendNFTables, backendIPTables} {
+			t.Run(c.name+"/"+engine, func(t *testing.T) {
+				gwIsolate(t)
+				cmds := gwStubCommands(t)
+				stubBinaries(t, backendIPTables, backendIP6Tables, "ipset")
+				gwStubHost(t, map[string][]string{"eth1": {"192.0.2.10/24", "2001:db8:1::10/64"}})
+				cfg := familyTestConfig(c.ipv4, c.ipv6)
+				set := gwTestSet("offfam", "eth1", c.gw)
+				cfg.Sets = []*config.SetConfig{set}
+				st := gwResolvedState(cfg, set)
+				if st.gwV4 != "" || st.gwV6 != "" || st.gwPeersV4 != nil {
+					t.Fatalf("validation says a gateway whose family is off is ignored, yet the state took it: gwV4=%q gwV6=%q peers=%v", st.gwV4, st.gwV6, st.gwPeersV4)
+				}
+				var be routeBackend = &routeNftBackend{}
+				needle := `iifname "eth1"`
+				guards := []string{`nft add rule inet b4_route ` + st.chainPre + ` iifname "eth1" return`}
+				if engine == backendIPTables {
+					be = &routeIptBackend{}
+					needle = "-i eth1"
+					guards = nil
+					if c.ipv4 {
+						guards = append(guards, "iptables -w -t mangle -A "+st.chainPre+" -i eth1 -j RETURN")
+					}
+					if c.ipv6 {
+						guards = append(guards, "ip6tables -w -t mangle -A "+st.chainPre+" -i eth1 -j RETURN")
+					}
+				}
+				if err := routeEnsureRule(be, cfg, set, st, nil); err != nil {
+					t.Fatalf("routeEnsureRule: %v", err)
+				}
+				pre := chainRuleLines(cmds.lines, st.chainPre)
+				if got := linesWith(pre, needle); !slices.Equal(got, guards) {
+					t.Errorf("the set must keep the bare guard it has without a gateway, got %v", got)
+				}
+				for _, n := range []string{"saddr", " -s ", "fib daddr", "addrtype"} {
+					if got := linesWith(pre, n); len(got) != 0 {
+						t.Errorf("an ignored gateway adds no gateway or local-destination rule, got %v", got)
+					}
+				}
+				if got := linesWith(chainRuleLines(cmds.lines, st.chainOut), "redirect"); len(got) != 0 {
+					t.Errorf("an ignored gateway drops no redirects, got %v", got)
+				}
+			})
+		}
+	}
+}
+
 func linesWith(lines []string, needle string) []string {
 	var out []string
 	for _, l := range lines {
