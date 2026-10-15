@@ -9,6 +9,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/sock"
 )
 
@@ -461,6 +462,28 @@ func TestOnlyASynFromTheSameConnectionKeepsTheName(t *testing.T) {
 		if _, _, found := c.Lookup(key); found != tc.keep {
 			t.Errorf("hello at %d, SYN for %d: keep=%v, want %v", tc.helloSeq, tc.firstSeq, found, tc.keep)
 		}
+	}
+}
+
+func TestAStaleDecisionDoesNotLandOnANewConnection(t *testing.T) {
+	c := &tlsInfoCache{conns: make(map[string]*tlsInfo)}
+	const key = "10.0.0.1:12345->1.2.3.4:443"
+	matcher := &sni.SuffixSet{}
+	oldSet := &config.SetConfig{Id: "old", Name: "Old"}
+	newSet := &config.SetConfig{Id: "new", Name: "New"}
+
+	c.Decide(key, c.Store(key, "old.example", 0x0304, 1001), matcher, "", oldSet)
+	stale, _ := c.Decision(key)
+
+	gen := c.Store(key, "new.example", 0x0304, 90001)
+	c.Decide(key, stale.gen, matcher, "", oldSet)
+	if d, _ := c.Decision(key); d.set != nil {
+		t.Fatalf("a decision for the previous connection must not land on the new entry before its own, got %q", d.set.Name)
+	}
+	c.Decide(key, gen, matcher, "", newSet)
+	c.Decide(key, stale.gen, matcher, "", oldSet)
+	if d, _ := c.Decision(key); d.host != "new.example" || d.set != newSet {
+		t.Errorf("a decision for the previous connection must not replace the new one's, got %q with %v", d.host, d.set)
 	}
 }
 

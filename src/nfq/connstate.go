@@ -28,6 +28,7 @@ type tlsInfo struct {
 	host       string
 	tlsVersion uint16
 	helloSeq   uint32
+	gen        uint64
 	lastSeen   time.Time
 	decidedBy  *sni.SuffixSet
 	decidedMac string
@@ -38,11 +39,12 @@ type tlsInfoCache struct {
 	mu      sync.RWMutex
 	conns   map[string]*tlsInfo
 	current *sni.SuffixSet
+	gen     uint64
 }
 
 const maxTLSCacheEntries = 20000
 
-func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, helloSeq uint32) {
+func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, helloSeq uint32) uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -63,12 +65,15 @@ func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, hel
 		}
 	}
 
+	c.gen++
 	c.conns[connKey] = &tlsInfo{
 		host:       host,
 		tlsVersion: tlsVersion,
 		helloSeq:   helloSeq,
+		gen:        c.gen,
 		lastSeen:   time.Now(),
 	}
+	return c.gen
 }
 
 func (c *tlsInfoCache) Lookup(connKey string) (string, uint16, bool) {
@@ -104,14 +109,14 @@ func (c *tlsInfoCache) Decision(connKey string) (tlsInfo, bool) {
 	return decision, true
 }
 
-func (c *tlsInfoCache) Decide(connKey string, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig) {
+func (c *tlsInfoCache) Decide(connKey string, gen uint64, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.current != nil && c.current != matcher {
 		return
 	}
-	if info, exists := c.conns[connKey]; exists {
+	if info, exists := c.conns[connKey]; exists && info.gen == gen {
 		info.decidedBy = matcher
 		info.decidedMac = srcMac
 		info.set = set

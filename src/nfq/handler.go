@@ -273,7 +273,7 @@ func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, i
 		if matched, named := matcher.MatchSNIWithSourceTLS(decision.host, srcMac, decision.tlsVersion, ipVersion); matched && named.MatchesTCPDPort(dport) {
 			set = named
 		}
-		w.tlsCache.Decide(connKey, matcher, srcMac, set)
+		w.tlsCache.Decide(connKey, decision.gen, matcher, srcMac, set)
 	}
 	if set == nil {
 		return nil, ""
@@ -529,12 +529,13 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		isClientHello = host != ""
 
+		var helloGen uint64
 		if host != "" && tlsVersion != 0 {
 			helloSeq := binary.BigEndian.Uint32(tcp[4:8])
 			if tcp[13]&0x02 != 0 {
 				helloSeq++
 			}
-			w.tlsCache.Store(connKey, host, tlsVersion, helloSeq)
+			helloGen = w.tlsCache.Store(connKey, host, tlsVersion, helloSeq)
 		}
 
 		if captureManager := capture.GetManager(cfg); captureManager != nil {
@@ -553,7 +554,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 					registerLearnedRoute(cfg, stSNI, pkt.dst, host)
 				}
 			}
-			w.tlsCache.Decide(connKey, matcher, pkt.srcMac, decided)
+			w.tlsCache.Decide(connKey, helloGen, matcher, pkt.srcMac, decided)
 		}
 
 		if matched && !matchedSNI && set != nil && !set.MatchesTLSVersion(tlsVersion) {
