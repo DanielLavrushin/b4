@@ -12,7 +12,7 @@ b4 installs on Linux routers, computers and servers. Linux, OpenWrt, ASUS Merlin
 | OpenWrt 19.07 or newer | [OpenWrt](openwrt.md) | A USB drive or extroot is recommended, since internal storage is small |
 | ASUS routers with Asuswrt-Merlin | [ASUS Merlin](merlin.md) | Needs Entware on a USB drive |
 | Keenetic routers with OPKG | [Keenetic](keenetic.md) | Needs Entware and the Netfilter components |
-| MikroTik with RouterOS 7.21.1 or newer | [MikroTik](mikrotik.md) | A container on ARM64 or AMD64, with external storage formatted as Ext4 |
+| MikroTik with RouterOS 7.21.1 or newer | [MikroTik](mikrotik.md) | A container on ARM64 or AMD64, with external storage formatted as Ext4. The official image or the [community image](mikrotik.md#community-image) |
 | Any system with Docker | [Docker](docker.md) | Host network mode |
 
 The memory, kernel and architecture requirements are listed under [Requirements](../intro.md#requirements).

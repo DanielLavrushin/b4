@@ -52,6 +52,17 @@ The first two work by name, so other sites on the same servers as a blocked host
 - The dashboard shows the [Blocked](../dashboard.md#blocked) panel while a block set is enabled: **Domains** lists what was blocked, **Devices** the devices that tried to reach it. Connections that the firewall drops once a blocked site's addresses are known are not counted there. The set's row in the **Sets** panel shows how many DNS lookups it blocked.
 - On the [Traffic](../connections.md) page, blocked packets carry the `block` label, and answers the set replaced carry the `sinkhole` DNS label.
 
+Ad-blocking test pages show the result in a browser. With the browser's own ad blocker turned off, they show what the block set catches:
+
+- [superadblocktest.com](https://superadblocktest.com/)
+- [adblock.turtlecute.org](https://adblock.turtlecute.org/)
+- [getblockify.com](https://getblockify.com/adblock-test)
+- [obfusgated.com](https://obfusgated.com/tools/ad-block-test)
+- [paileactivist.github.io](https://paileactivist.github.io/toolz/adblock.html)
+- [adblocktester.pages.dev](https://adblocktester.pages.dev/)
+
+A block set stops lookups and connections and does not change pages, so test items that check hidden page elements pass only with a browser extension.
+
 ## When it does not work
 
 **A device still opens a blocked site.** The device may use encrypted DNS of its own (secure DNS in the browser, Android Private DNS) or a cached address. b4 still stops it by the server name, but not over IPv6 while IPv6 support is off, see [IPv6](#ipv6). Turning encrypted DNS off on the device, or IPv6 support on in b4, closes the gap.

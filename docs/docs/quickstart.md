@@ -17,6 +17,15 @@ The dashboard opens. With no sets yet, the **Sets** panel reads **No sets yet: b
 
 ![The dashboard on a first launch, with no sets](/img/quickstart/20261003220200.png)
 
+## Community sets (optional) {#community-sets}
+
+Sets that other b4 users published can be tested before b4's own strategies. Discovery does this while the Community Hub is on.
+
+1. Open **Settings > Integrations** and turn on **Enable Community Hub** in the **Community Hub** card.
+2. Click **Save Changes**.
+
+**Community** then appears in the side menu, and Discovery shows **Try community sets first**, on by default: it tests up to three published sets for each site before the built-in strategies. With the hub on, b4 syncs the catalogue from `hub.b4core.app`. [What leaves the router](community/index.md#what-leaves-the-router) lists what the hub receives.
+
 ## Finding a strategy {#run-discovery}
 
 1. Click **Find a strategy with Discovery** on the **Sets** panel, or open **Discovery** in the side menu.

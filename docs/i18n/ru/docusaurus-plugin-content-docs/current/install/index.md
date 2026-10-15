@@ -12,7 +12,7 @@ b4 устанавливается на роутеры, компьютеры и �
 | OpenWrt 19.07 или новее | [OpenWrt](openwrt.md) | Рекомендуется USB-накопитель или extroot, так как внутренней памяти мало |
 | Роутеры ASUS с Asuswrt-Merlin | [ASUS Merlin](merlin.md) | Нужен Entware на USB-накопителе |
 | Роутеры Keenetic с OPKG | [Keenetic](keenetic.md) | Нужны Entware и компоненты Netfilter |
-| MikroTik с RouterOS 7.21.1 или новее | [MikroTik](mikrotik.md) | Контейнер на ARM64 или AMD64, внешний накопитель в Ext4 |
+| MikroTik с RouterOS 7.21.1 или новее | [MikroTik](mikrotik.md) | Контейнер на ARM64 или AMD64, внешний накопитель в Ext4. Официальный образ или [образ от сообщества](mikrotik.md#образ-от-сообщества) |
 | Любая система с Docker | [Docker](docker.md) | Сетевой режим host |
 
 Требования к памяти, ядру и архитектуре перечислены в разделе [Требования](../intro.md#requirements).
