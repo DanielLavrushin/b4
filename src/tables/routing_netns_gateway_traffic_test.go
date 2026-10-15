@@ -244,8 +244,10 @@ func gwOneArmed(t *testing.T, engine, client string) {
 	_, _ = run("nft", "delete", "table", "inet", gwArmObserver)
 	netnsRun(t, "nft", "add", "table", "inet", gwArmObserver)
 	t.Cleanup(func() { _, _ = run("nft", "delete", "table", "inet", gwArmObserver) })
-	netnsRun(t, "nft", "add", "chain", "inet", gwArmObserver, "out", "{ type filter hook output priority -400 ; }")
-	netnsRun(t, "nft", "add", "rule", "inet", gwArmObserver, "out", "oifname", `"`+gwArmBridge+`"`, "icmp", "type", "redirect", "counter")
+	for _, hook := range []struct{ chain, priority string }{{"out", "-400"}, {"kept", "-125"}} {
+		netnsRun(t, "nft", "add", "chain", "inet", gwArmObserver, hook.chain, "{ type filter hook output priority "+hook.priority+" ; }")
+		netnsRun(t, "nft", "add", "rule", "inet", gwArmObserver, hook.chain, "oifname", `"`+gwArmBridge+`"`, "icmp", "type", "redirect", "counter")
+	}
 
 	targetAddr := net.JoinHostPort(gwArmTarget, strconv.Itoa(gwArmPort))
 	target := gwServe(t, inet, targetAddr, func(c net.Conn, _ int32) {
@@ -322,12 +324,16 @@ func gwOneArmed(t *testing.T, engine, client string) {
 	}
 
 	sent := gwNftPackets(netnsRun(t, "nft", "list", "chain", "inet", gwArmObserver, "out"))
+	kept := gwNftPackets(netnsRun(t, "nft", "list", "chain", "inet", gwArmObserver, "kept"))
 	got := gwNftPackets(cl.run(t, "nft", "list", "chain", "inet", gwArmObserver, "in"))
 	if sent == 0 {
 		t.Errorf("the router sent the client's packets back out the interface they came in on without generating a redirect, so this run cannot show the drop")
 	}
+	if kept != 0 {
+		t.Errorf("%d of the %d ICMP redirect(s) the router generated for the hairpin got past the set's out chain, which must drop them", kept, sent)
+	}
 	if got != 0 {
-		t.Errorf("the client received %d ICMP redirect(s) naming the gateway; b4 must drop them so the set keeps the client's traffic (the router generated %d)", got, sent)
+		t.Errorf("the client received %d ICMP redirect(s) naming the gateway, so it would stop sending the set's traffic through the router", got)
 	}
 }
 
