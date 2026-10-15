@@ -1,7 +1,9 @@
 package tables
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"hash/fnv"
 	"net"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -51,7 +54,9 @@ type routeState struct {
 	iface       string
 	egressIP    string
 	egressGW    string
-	gwMAC       string
+	gwV4        string
+	gwV6        string
+	gwPeersV4   []string
 	tproxyPort  int
 	upstreamKey string
 	sourcesKey  string
@@ -60,7 +65,6 @@ type routeState struct {
 	quicReject  bool
 	srcScoped   bool
 	routerOut   bool
-	loopGuard   bool
 	killSwitch  bool
 	ipv4        bool
 	ipv6        bool
@@ -94,7 +98,7 @@ type routeBackend interface {
 	learnedSharesStatic() bool
 	addMarkFallbackRule(chain string, v6 bool, setName string, mark uint32, sourceIface string)
 	addEgressLoopGuard(chain, iface string, ipv4, ipv6 bool) bool
-	addNarrowEgressGuard(chain, iface, gwV4, gwV6, gwMAC string, v4, v6 bool) bool
+	addGatewayEgressGuard(chain, iface string, gateways []string, ipv6 bool) bool
 	addRedirectDrop(chain, iface string)
 	addInjectedMarkRule(chain string, v6 bool, setName string, mark, queueMark uint32, sources []config.DeviceMatch)
 	ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool)
@@ -222,12 +226,13 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 
 	cur := buildRouteState(cfg, set)
 	cur.set = set
-	if old, ok := routeRuleCache[set.Id]; ok && routeStateEqual(old, cur) {
+	if old, ok := routeRuleCache[set.Id]; ok && routeStateSameConfig(old, cur) {
 		routeNoteInstalled(set.Id)
 		failed := routeAddIPsToSets(be, cur, routeSetTTL(set), ips, cur.ipv4, cur.ipv6)
 		routeAsyncStampExcept(set, ips, failed)
 		return
 	}
+	routeResolveGateways(cfg, set, &cur, newRouteGatewayProbe())
 
 	if err := be.ensureBase(); err != nil {
 		routeNoteInstallFailed(set.Id)
@@ -285,7 +290,11 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 		case config.RoutingModeBlock:
 			log.Infof("Routing [%s]: enabled block set '%s' action=%s", be.name(), set.Name, cur.blockAction)
 		default:
-			log.Infof("Routing [%s]: enabled set '%s' -> iface=%s mark=0x%x table=%d", be.name(), set.Name, set.Routing.EgressInterface, cur.mark, cur.table)
+			gw := ""
+			if cur.egressGW != "" {
+				gw = " gw=" + cur.egressGW
+			}
+			log.Infof("Routing [%s]: enabled set '%s' -> iface=%s%s mark=0x%x table=%d", be.name(), set.Name, set.Routing.EgressInterface, gw, cur.mark, cur.table)
 		}
 		routeReestablishJumpOrder(be, cfg, true)
 	}
@@ -595,9 +604,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.iface = set.Routing.EgressInterface
 		st.egressIP = set.Routing.EgressIP
 		st.egressGW = set.Routing.EgressGateway
-		st.gwMAC = routeGatewayMAC(st.iface, st.egressGW)
 		st.routerOut = set.RoutingIncludesRouterTraffic()
-		st.loopGuard = routeWantsEgressLoopGuard(st.iface)
 		st.killSwitch = set.Routing.KillSwitch
 	}
 	if !config.RoutingIsBlock(mode) {
@@ -607,6 +614,13 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 }
 
 func routeStateEqual(a, b routeState) bool {
+	return routeStateSameConfig(a, b) &&
+		a.gwV4 == b.gwV4 &&
+		a.gwV6 == b.gwV6 &&
+		slices.Equal(a.gwPeersV4, b.gwPeersV4)
+}
+
+func routeStateSameConfig(a, b routeState) bool {
 	return a.mode == b.mode &&
 		a.domainOnly == b.domainOnly &&
 		a.mark == b.mark &&
@@ -614,7 +628,6 @@ func routeStateEqual(a, b routeState) bool {
 		a.table == b.table &&
 		a.iface == b.iface &&
 		a.egressGW == b.egressGW &&
-		a.gwMAC == b.gwMAC &&
 		a.egressIP == b.egressIP &&
 		a.tproxyPort == b.tproxyPort &&
 		a.upstreamKey == b.upstreamKey &&
@@ -624,7 +637,6 @@ func routeStateEqual(a, b routeState) bool {
 		a.deviceKey == b.deviceKey &&
 		a.srcScoped == b.srcScoped &&
 		a.routerOut == b.routerOut &&
-		a.loopGuard == b.loopGuard &&
 		a.killSwitch == b.killSwitch &&
 		a.ipv4 == b.ipv4 &&
 		a.ipv6 == b.ipv6
@@ -706,11 +718,8 @@ func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 		if old.mark != cur.mark && routeMarkShareCount(old.mark) == 0 {
 			routeDelRuleAllForms(old.mark, tableStr)
 		}
-		if old.table != cur.table {
-			if routeTableShareCount(old.table) == 0 {
-				routeDeleteOwnRoutes(old.iface, tableStr)
-			}
-			return
+		if old.table != cur.table && routeTableShareCount(old.table) == 0 {
+			routeDeleteOwnRoutes(old.iface, tableStr)
 		}
 	}
 }
@@ -873,6 +882,7 @@ func RoutingClearAll() {
 	routeOwnedAddrs = make(map[string]bool)
 	routeStaticApplied = make(map[string]routeStaticEntries)
 	routeEgressLoopWarned = sync.Map{}
+	routeGatewayWarned = sync.Map{}
 }
 
 func RoutingActiveIPSetNames(ipv4, ipv6 bool) []string {
@@ -1402,6 +1412,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			routeNoteInstalled(setID)
 			routeForgetSetLearnState(setID)
 			routeForgetEgressLoopWarning(setID)
+			routeForgetGatewayWarning(setID)
 			for host := range routeLearnedHosts[setID] {
 				delete(routeHostResolvedAt, setID+"|"+host)
 			}
@@ -1411,6 +1422,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 
 	var newRoutingSets []*config.SetConfig
 	var retargetedSets []*config.SetConfig
+	probe := newRouteGatewayProbe()
 	for _, set := range routingSets {
 		if set == nil {
 			continue
@@ -1426,6 +1438,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			cur.ipv4 = cur.ipv4 && v4
 			cur.ipv6 = cur.ipv6 && v6
 		}
+		routeResolveGateways(cfg, set, &cur, probe)
 		if !config.RoutingIsBlock(cur.mode) && (cur.mark == 0 || cur.table <= 0) {
 			routeNoteInstallFailed(set.Id)
 			routeWarnIncomplete(set, "b4 could not take a routing table of its own for it")
@@ -1640,9 +1653,6 @@ func routeResolveTargets(set *config.SetConfig) []string {
 	return targets
 }
 
-func routeWantsEgressLoopGuard(iface string) bool {
-	return iface != ""
-}
 func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, sources []string) error {
 	if st.mark == 0 || st.table <= 0 {
 		return fmt.Errorf("no routing mark and table of its own (mark 0x%x, table %d)", st.mark, st.table)
@@ -1687,20 +1697,10 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	routeWarnDeviceGate(set.Name, gate)
 	routeSelfDialBypass(be, cfg, st.chainPre)
 	be.addClaimedBypassRule(st.chainPre, 0)
+
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
-	if st.loopGuard {
-		guarded := true
-		if st.egressGW == "" {
-			guarded = be.addEgressLoopGuard(st.chainPre, st.iface, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
-		} else {
-			routeAddLocalDestinationGuard(be, st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
-			gwV4 := routeAddrForFamily(st.egressGW, false)
-			gwV6 := routeAddrForFamily(st.egressGW, true)
-			guarded = be.addNarrowEgressGuard(st.chainPre, st.iface, gwV4, gwV6, st.gwMAC, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
-		}
-		if !guarded && len(sources) == 0 {
-			return fmt.Errorf("the guard on traffic arriving from %s did not install, and without it every packet %s hands back for a destination in this set is marked again and sent straight back to it", st.iface, st.iface)
-		}
+	if !routeAddEgressGuard(be, cfg, st) && len(sources) == 0 {
+		return fmt.Errorf("the guard on traffic arriving from %s did not install, and without it every packet %s hands back for a destination in this set is marked again and sent straight back to it", st.iface, st.iface)
 	}
 
 	routeAddMarkRestoreRules(be, st.chainPre, sources, st.mark, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
@@ -1722,6 +1722,14 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	routeEnsurePolicyRouting(st, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	rebuilt = true
 	return nil
+}
+
+func routeAddEgressGuard(be routeBackend, cfg *config.Config, st routeState) bool {
+	if st.gwV4 == "" {
+		return be.addEgressLoopGuard(st.chainPre, st.iface, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	}
+	routeAddLocalDestinationGuard(be, st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	return be.addGatewayEgressGuard(st.chainPre, st.iface, st.gwPeersV4, cfg.Queue.IPv6Enabled)
 }
 
 var routeEgressLoopWarned sync.Map
@@ -1828,7 +1836,7 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 	}
 
 	routeSelfDialBypass(be, cfg, st.chainOut)
-	if routeAddrForFamily(st.egressGW, true) != "" {
+	if st.gwV4 != "" {
 		be.addRedirectDrop(st.chainOut, st.iface)
 	}
 
@@ -2247,10 +2255,10 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 		ifaceV6 = src
 	}
 	if ipv4 {
-		routeReplaceDefaultRoute(iface, ifaceV4, routeAddrForFamily(st.egressGW, false), tableStr, false)
+		routeReplaceDefaultRoute(iface, ifaceV4, st.gwV4, tableStr, false)
 	}
 	if ipv6 {
-		routeReplaceDefaultRoute(iface, ifaceV6, routeAddrForFamily(st.egressGW, true), tableStr, true)
+		routeReplaceDefaultRoute(iface, ifaceV6, st.gwV6, tableStr, true)
 	}
 
 	addRules()
@@ -2549,7 +2557,9 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 	ipv4 := cfg.Queue.IPv4Enabled
 	ipv6 := cfg.Queue.IPv6Enabled
 	count := 0
-	rebuild := false
+	kindChanged := false
+	gatewayChanged := false
+	probe := newRouteGatewayProbe()
 	for _, set := range cfg.Sets {
 		if set == nil {
 			continue
@@ -2558,8 +2568,12 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 		if !ok || config.RoutingUsesTProxy(st.mode) || st.iface != iface {
 			continue
 		}
-		if st.routerOut != set.RoutingIncludesRouterTraffic() || st.loopGuard != routeWantsEgressLoopGuard(iface) || routeGatewayMACChanged(iface, set, st) {
-			rebuild = true
+		if st.routerOut != set.RoutingIncludesRouterTraffic() {
+			kindChanged = true
+			continue
+		}
+		if routeGatewaysMoved(cfg, set, st, probe) {
+			gatewayChanged = true
 			continue
 		}
 		routeEnsurePolicyRouting(st, ipv4, ipv6)
@@ -2571,8 +2585,13 @@ func RoutingReinstallForInterface(cfg *config.Config, iface string) {
 	if count > 0 {
 		log.Infof("Routing: reinstalled policy routes for interface %s (%d set(s))", iface, count)
 	}
-	if rebuild {
-		log.Infof("Routing: %s came back as %s, which changes the rules the sets on it need; rebuilding their rules", iface, netif.Describe(iface))
+	if kindChanged {
+		log.Infof("Routing: %s came back as %s, which changes whether the router's own traffic follows the sets on it; rebuilding their rules", iface, netif.Describe(iface))
+	}
+	if gatewayChanged {
+		log.Infof("Routing: %s came back with a change in which of its sets' gateways b4 can use; rebuilding their rules", iface)
+	}
+	if kindChanged || gatewayChanged {
 		RoutingSyncConfig(cfg)
 	}
 }
@@ -2584,7 +2603,6 @@ func routeReplaceDefaultRoute(iface, src, gw, table string, ipv6 bool) {
 		family = "v6"
 		ipCmd = append(ipCmd, "-6")
 	}
-	routeLabel := "routing: add ip route " + family
 
 	viaArgs := func(gw string) []string {
 		args := append([]string{}, ipCmd...)
@@ -2596,19 +2614,12 @@ func routeReplaceDefaultRoute(iface, src, gw, table string, ipv6 bool) {
 		return append(args, "table", table)
 	}
 
-	if gw != "" {
-		ok := routeGatewayReachable(iface, gw)
-		if ok {
-			ok = runLogged(routeLabel+" (via gw)", viaArgs(gw)...)
-		}
-		if ok {
-			return
-		}
-		log.Warnf("Routing: %s was refused as the next hop for table %s on %s, so b4 is falling back to the route the interface already has; check that it is an address %s can reach", gw, table, iface, iface)
+	if gw != "" && runLogged("routing: add ip route "+family+" (via set gateway)", viaArgs(gw)...) {
+		return
 	}
 
 	if found := routeDefaultGatewayForIface(iface, ipv6); found != "" {
-		runLogged(routeLabel+" (via gw)", viaArgs(found)...)
+		runLogged("routing: add ip route "+family+" (via gw)", viaArgs(found)...)
 		return
 	}
 
@@ -2619,7 +2630,7 @@ func routeReplaceDefaultRoute(iface, src, gw, table string, ipv6 bool) {
 	}
 	args = append(args, routeProtoArgs()...)
 	args = append(args, "table", table)
-	runLogged(routeLabel+" (direct)", args...)
+	runLogged("routing: add ip route "+family+" (direct)", args...)
 }
 
 func routeDefaultGatewayForIface(iface string, ipv6 bool) string {
@@ -2739,173 +2750,340 @@ func routeGetIfaceAddr(iface string, wantV6 bool) string {
 	return best
 }
 
-func routeGatewayReachable(iface, gw string) bool {
-	target := net.ParseIP(gw)
-	if target == nil || iface == "" {
-		return false
-	}
-	v6 := target.To4() == nil
-	if routeIPIsLocal(target) {
-		return false
-	}
-	prefix, ok := routeIfaceCovers(iface, target)
-	if !ok {
-		prefix, ok = routeMainScopeLinkCovers(iface, target, v6)
-	}
-	if !ok {
-		return false
-	}
-	if base := routeNetworkAddr(target, prefix); base == nil || !base.Equal(target) {
-		if v6 || !routeIsSubnetBroadcast(prefix, target) {
-			return true
-		}
-		return false
-	}
-	return false
+type routeHostIface struct {
+	up    bool
+	addrs []net.IPNet
 }
-func routeIPIsLocal(target net.IP) bool {
-	ifaces, err := net.Interfaces()
+
+var routeHostIfaces = routeHostIfacesExec
+
+func routeHostIfacesExec() (map[string]routeHostIface, error) {
+	links, err := net.Interfaces()
 	if err != nil {
-		return false
+		return nil, err
 	}
-	for _, ifc := range ifaces {
-		addrs, err := ifc.Addrs()
+	out := make(map[string]routeHostIface, len(links))
+	names := make(map[uint32]string, len(links))
+	for _, link := range links {
+		out[link.Name] = routeHostIface{up: link.Flags&net.FlagUp != 0}
+		names[uint32(link.Index)] = link.Name
+	}
+	rib, err := syscall.NetlinkRIB(syscall.RTM_GETADDR, syscall.AF_UNSPEC)
+	if err != nil {
+		return out, err
+	}
+	msgs, err := syscall.ParseNetlinkMessage(rib)
+	if err != nil {
+		return out, err
+	}
+	for i := range msgs {
+		msg := &msgs[i]
+		if msg.Header.Type != syscall.RTM_NEWADDR || len(msg.Data) < syscall.SizeofIfAddrmsg {
+			continue
+		}
+		name, ok := names[binary.NativeEndian.Uint32(msg.Data[4:8])]
+		if !ok {
+			continue
+		}
+		attrs, err := syscall.ParseNetlinkRouteAttr(msg)
 		if err != nil {
 			continue
 		}
-		for _, a := range addrs {
-			if ipNet, ok := a.(*net.IPNet); ok && ipNet.IP != nil && ipNet.IP.Equal(target) {
+		if addr, ok := routeIfAddr(msg.Data[0], int(msg.Data[1]), attrs); ok {
+			ifc := out[name]
+			ifc.addrs = append(ifc.addrs, addr)
+			out[name] = ifc
+		}
+	}
+	return out, nil
+}
+
+func routeIfAddr(family byte, ones int, attrs []syscall.NetlinkRouteAttr) (net.IPNet, bool) {
+	var addr, local []byte
+	for _, a := range attrs {
+		switch a.Attr.Type {
+		case syscall.IFA_ADDRESS:
+			addr = a.Value
+		case syscall.IFA_LOCAL:
+			local = a.Value
+		}
+	}
+	if local != nil {
+		addr = local
+	}
+	switch {
+	case family == syscall.AF_INET && len(addr) >= net.IPv4len:
+		return net.IPNet{IP: net.IPv4(addr[0], addr[1], addr[2], addr[3]).To4(), Mask: net.CIDRMask(ones, 8*net.IPv4len)}, true
+	case family == syscall.AF_INET6 && len(addr) >= net.IPv6len:
+		return net.IPNet{IP: append(net.IP(nil), addr[:net.IPv6len]...), Mask: net.CIDRMask(ones, 8*net.IPv6len)}, true
+	}
+	return net.IPNet{}, false
+}
+
+type routeGatewayVerdict struct {
+	usable bool
+	reason string
+}
+
+type routeGatewayProbe struct {
+	read     bool
+	ifaces   map[string]routeHostIface
+	routes   map[bool][]string
+	verdicts map[string]routeGatewayVerdict
+}
+
+func newRouteGatewayProbe() *routeGatewayProbe {
+	return &routeGatewayProbe{
+		routes:   make(map[bool][]string),
+		verdicts: make(map[string]routeGatewayVerdict),
+	}
+}
+
+func routeGatewayUsable(iface, gw string) (bool, string) {
+	return newRouteGatewayProbe().usable(iface, gw)
+}
+
+func (p *routeGatewayProbe) hostIfaces() map[string]routeHostIface {
+	if !p.read {
+		p.read = true
+		ifaces, err := routeHostIfaces()
+		if err != nil {
+			log.Tracef("Routing: reading this router's addresses failed: %v", err)
+		}
+		p.ifaces = ifaces
+	}
+	return p.ifaces
+}
+
+func (p *routeGatewayProbe) up(iface string) bool {
+	return p.hostIfaces()[iface].up
+}
+
+func (p *routeGatewayProbe) mainRoutes(v6 bool) []string {
+	if lines, ok := p.routes[v6]; ok {
+		return lines
+	}
+	args := []string{"ip"}
+	if v6 {
+		args = append(args, "-6")
+	}
+	args = append(args, "route", "show", "table", "main")
+	var lines []string
+	if out, err := run(args...); err == nil {
+		lines = strings.Split(out, "\n")
+	}
+	p.routes[v6] = lines
+	return lines
+}
+
+func (p *routeGatewayProbe) usable(iface, gw string) (bool, string) {
+	key := iface + "|" + gw
+	if v, ok := p.verdicts[key]; ok {
+		return v.usable, v.reason
+	}
+	usable, reason := p.check(iface, gw)
+	p.verdicts[key] = routeGatewayVerdict{usable: usable, reason: reason}
+	return usable, reason
+}
+
+func (p *routeGatewayProbe) check(iface, gw string) (bool, string) {
+	target := net.ParseIP(gw)
+	if target == nil {
+		return false, "is not an IP address"
+	}
+	if v4 := target.To4(); v4 != nil {
+		target = v4
+	}
+	ifaces := p.hostIfaces()
+	if routeGatewayIsLocal(ifaces, iface, target) {
+		return false, "is one of this router's own addresses"
+	}
+	prefix, onLink := routeGatewayOnLinkAddr(ifaces[iface].addrs, target)
+	if !onLink {
+		prefix, onLink = routeGatewayOnLinkRoute(p.mainRoutes(target.To4() == nil), iface, target)
+	}
+	if !onLink {
+		return false, "is not on a network " + iface + " reaches directly"
+	}
+	if reason := routeGatewayEdgeAddress(prefix, target); reason != "" {
+		return false, reason
+	}
+	return true, ""
+}
+
+func routeGatewayIsLocal(ifaces map[string]routeHostIface, egress string, target net.IP) bool {
+	for name, ifc := range ifaces {
+		if target.IsLinkLocalUnicast() && name != egress {
+			continue
+		}
+		for _, addr := range ifc.addrs {
+			if addr.IP.Equal(target) {
 				return true
 			}
 		}
 	}
 	return false
 }
-func routeIfaceCovers(iface string, target net.IP) (net.IPNet, bool) {
-	ifaceObj, err := net.InterfaceByName(iface)
-	if err != nil {
-		return net.IPNet{}, false
-	}
-	addrs, err := ifaceObj.Addrs()
-	if err != nil {
-		return net.IPNet{}, false
-	}
-	for _, a := range addrs {
-		if ipNet, ok := a.(*net.IPNet); ok && ipNet != nil && ipNet.Contains(target) {
-			return *ipNet, true
+
+func routeGatewayOnLinkAddr(addrs []net.IPNet, target net.IP) (net.IPNet, bool) {
+	v6 := target.To4() == nil
+	linkLocal := false
+	for _, addr := range addrs {
+		if (addr.IP.To4() == nil) != v6 {
+			continue
 		}
+		if addr.Contains(target) {
+			return net.IPNet{IP: addr.IP.Mask(addr.Mask), Mask: addr.Mask}, true
+		}
+		linkLocal = linkLocal || addr.IP.IsLinkLocalUnicast()
+	}
+	if v6 && linkLocal && target.IsLinkLocalUnicast() {
+		return net.IPNet{IP: net.ParseIP("fe80::"), Mask: net.CIDRMask(10, 8*net.IPv6len)}, true
 	}
 	return net.IPNet{}, false
 }
-func routeMainScopeLinkCovers(iface string, target net.IP, v6 bool) (net.IPNet, bool) {
-	args := []string{"ip"}
-	if v6 {
-		args = append(args, "-6")
-	}
-	args = append(args, "route", "show", "table", "main")
-	out, err := run(args...)
-	if err != nil {
-		return net.IPNet{}, false
-	}
-	for _, line := range strings.Split(out, "\n") {
+
+func routeGatewayOnLinkRoute(lines []string, iface string, target net.IP) (net.IPNet, bool) {
+	v6 := target.To4() == nil
+	for _, line := range lines {
 		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == "unicast" {
+			fields = fields[1:]
+		}
 		if len(fields) == 0 {
 			continue
 		}
-		var prefix *net.IPNet
-		if _, p, err := net.ParseCIDR(fields[0]); err == nil {
-			prefix = p
-		} else if ip := net.ParseIP(fields[0]); ip != nil {
-			bits := 32
-			if ip.To4() == nil {
-				bits = 128
-			}
-			prefix = &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)}
-		}
-		if prefix == nil || !prefix.Contains(target) {
+		prefix, ok := routeParsePrefix(fields[0], v6)
+		if !ok || !prefix.Contains(target) {
 			continue
 		}
-		if routeRuleField(line, "dev") != iface {
+		if routeRuleField(line, "dev") != iface || routeRuleField(line, "via") != "" {
 			continue
 		}
-		linked := false
-		for i := 0; i+1 < len(fields); i++ {
-			if fields[i] == "scope" && fields[i+1] == "link" {
-				linked = true
-				break
-			}
-		}
-		if !linked {
-			continue
-		}
-		return *prefix, true
+		return prefix, true
 	}
 	return net.IPNet{}, false
 }
-func routeNetworkAddr(ip net.IP, prefix net.IPNet) net.IP {
-	ones, bits := prefix.Mask.Size()
-	if v4 := ip.To4(); v4 != nil && bits == 32 {
-		return v4.Mask(net.CIDRMask(ones, 32))
+
+func routeParsePrefix(s string, v6 bool) (net.IPNet, bool) {
+	if s == "default" {
+		if v6 {
+			return net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 8*net.IPv6len)}, true
+		}
+		return net.IPNet{IP: net.IPv4zero.To4(), Mask: net.CIDRMask(0, 8*net.IPv4len)}, true
 	}
-	if bits == 128 {
-		return ip.Mask(net.CIDRMask(ones, 128))
+	if _, prefix, err := net.ParseCIDR(s); err == nil {
+		return *prefix, true
 	}
-	return nil
-}
-func routeIsSubnetBroadcast(prefix net.IPNet, target net.IP) bool {
-	ones, bits := prefix.Mask.Size()
-	if bits != 32 {
-		return false
+	ip := net.ParseIP(s)
+	if ip == nil {
+		return net.IPNet{}, false
 	}
-	base := target.To4()
-	netIP := prefix.IP.To4()
-	if base == nil || netIP == nil {
-		return false
+	if v4 := ip.To4(); v4 != nil {
+		return net.IPNet{IP: v4, Mask: net.CIDRMask(8*net.IPv4len, 8*net.IPv4len)}, true
 	}
-	mask := net.CIDRMask(ones, 32)
-	bcast := make(net.IP, 4)
-	for i := range 4 {
-		bcast[i] = netIP[i] | ^mask[i]
-	}
-	return bcast.Equal(base)
+	return net.IPNet{IP: ip, Mask: net.CIDRMask(8*net.IPv6len, 8*net.IPv6len)}, true
 }
 
-func routeGatewayMAC(iface, gw string) string {
-	target := net.ParseIP(gw)
-	if target == nil || iface == "" {
-		return ""
-	}
-	args := []string{"ip"}
-	if target.To4() == nil {
-		args = append(args, "-6")
-	}
-	args = append(args, "neigh", "show", target.String(), "dev", iface)
-	out, err := run(args...)
-	if err != nil {
-		return ""
-	}
-	fields := strings.Fields(out)
-	if len(fields) == 0 || fields[0] != target.String() {
-		return ""
-	}
-	state := strings.ToUpper(fields[len(fields)-1])
-	switch state {
-	case "REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT":
-	default:
-		return ""
-	}
-	for i := 0; i+1 < len(fields); i++ {
-		if fields[i] == "lladdr" {
-			return fields[i+1]
+func routeGatewayEdgeAddress(prefix net.IPNet, target net.IP) string {
+	ones, bits := prefix.Mask.Size()
+	network := target.Mask(prefix.Mask)
+	switch {
+	case bits == 8*net.IPv4len && ones <= 30:
+		if network.Equal(target) {
+			return "is the network address of " + prefix.String()
 		}
+		broadcast := make(net.IP, net.IPv4len)
+		for i := range broadcast {
+			broadcast[i] = network[i] | ^prefix.Mask[i]
+		}
+		if broadcast.Equal(target) {
+			return "is the broadcast address of " + prefix.String()
+		}
+	case bits == 8*net.IPv6len && ones < 127 && network.Equal(target):
+		return "is the network address of " + prefix.String()
 	}
 	return ""
 }
-func routeGatewayMACChanged(iface string, set *config.SetConfig, st routeState) bool {
-	if set.Routing.EgressGateway == "" && st.egressGW == "" {
+
+func routeResolveGateways(cfg *config.Config, set *config.SetConfig, st *routeState, probe *routeGatewayProbe) {
+	st.gwV4, st.gwV6, st.gwPeersV4 = "", "", nil
+	if st.egressGW == "" || st.iface == "" {
+		return
+	}
+	for _, v6 := range []bool{false, true} {
+		gw := routeAddrForFamily(st.egressGW, v6)
+		if gw == "" || (v6 && !st.ipv6) || (!v6 && !st.ipv4) {
+			continue
+		}
+		usable, reason := probe.usable(st.iface, gw)
+		if !usable {
+			if probe.up(st.iface) {
+				routeWarnUnusableGateway(set, st.iface, gw, reason, v6)
+			}
+			continue
+		}
+		routeForgetGatewayWarning(set.Id)
+		if v6 {
+			st.gwV6 = gw
+		} else {
+			st.gwV4 = gw
+		}
+	}
+	if st.gwV4 != "" {
+		st.gwPeersV4 = routeEgressGatewaysV4(cfg, st.iface, st.gwV4, probe)
+	}
+}
+
+func routeEgressGatewaysV4(cfg *config.Config, iface, own string, probe *routeGatewayProbe) []string {
+	gateways := []string{own}
+	for _, set := range cfg.Sets {
+		if set == nil || !set.Enabled || !set.Routing.Enabled || set.Routing.EgressInterface != iface {
+			continue
+		}
+		if set.Routing.Mode != "" && set.Routing.Mode != config.RoutingModeInterface {
+			continue
+		}
+		gw := routeAddrForFamily(set.Routing.EgressGateway, false)
+		if gw == "" || slices.Contains(gateways, gw) {
+			continue
+		}
+		if usable, _ := probe.usable(iface, gw); usable {
+			gateways = append(gateways, gw)
+		}
+	}
+	slices.SortFunc(gateways, func(a, b string) int {
+		return bytes.Compare(net.ParseIP(a).To4(), net.ParseIP(b).To4())
+	})
+	return gateways
+}
+
+func routeGatewaysMoved(cfg *config.Config, set *config.SetConfig, st routeState, probe *routeGatewayProbe) bool {
+	if st.egressGW == "" {
 		return false
 	}
-	return routeGatewayMAC(iface, set.Routing.EgressGateway) != st.gwMAC
+	fresh := st
+	routeResolveGateways(cfg, set, &fresh, probe)
+	return !routeStateEqual(st, fresh)
+}
+
+var routeGatewayWarned sync.Map
+
+func routeWarnUnusableGateway(set *config.SetConfig, iface, gw, reason string, v6 bool) {
+	key := gw + "|" + reason
+	if prev, ok := routeGatewayWarned.Load(set.Id); ok && prev == key {
+		return
+	}
+	routeGatewayWarned.Store(set.Id, key)
+	family := "IPv4"
+	if v6 {
+		family = "IPv6"
+	}
+	log.Warnf("Routing: set '%s' names %s as its gateway on %s, but %s %s, so b4 does not use it: the set's %s traffic leaves by %s's own route, as it would without a gateway", set.Name, gw, iface, gw, reason, family, iface)
+}
+
+func routeForgetGatewayWarning(setID string) {
+	routeGatewayWarned.Delete(setID)
 }
 
 func routeMarkMatchesOwn(cfg *config.Config, mark uint32) bool {

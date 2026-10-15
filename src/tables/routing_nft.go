@@ -323,44 +323,37 @@ func (b *routeNftBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 boo
 		"nft", "add", "rule", "inet", routeNftTable, chain,
 		"iifname", fmt.Sprintf("%q", iface), "return")
 }
-func (b *routeNftBackend) addNarrowEgressGuard(chain, iface, gwV4, gwV6, gwMAC string, v4, v6 bool) bool {
+
+func (b *routeNftBackend) addGatewayEgressGuard(chain, iface string, gateways []string, _ bool) bool {
 	if iface == "" {
 		return true
 	}
 	ok := true
-	if v4 {
-		args := []string{"add", "rule", "inet", routeNftTable, chain, "iifname", fmt.Sprintf("%q", iface)}
-		if gwV4 != "" && gwMAC != "" {
-			// The MAC refines the gateway's own family only; without the family match
-			// the rule would also exempt the other family's traffic off the same NIC.
-			args = append(args, "meta", "nfproto", "ipv4", "ether", "saddr", gwMAC, "return")
-		} else if gwV4 != "" {
-			args = append(args, "ip", "saddr", gwV4, "return")
+	if len(gateways) > 0 {
+		args := []string{"nft", "add", "rule", "inet", routeNftTable, chain, "iifname", fmt.Sprintf("%q", iface), "ip", "saddr"}
+		if len(gateways) == 1 {
+			args = append(args, gateways[0])
 		} else {
-			args = append(args, "meta", "nfproto", "ipv4", "return")
+			args = append(args, "{", strings.Join(gateways, ", "), "}")
 		}
-		ok = runLogged("routing: add narrow egress guard "+chain, append([]string{"nft"}, args...)...) && ok
+		args = append(args, "return")
+		ok = runLogged("routing: add gateway egress guard "+chain, args...)
 	}
-	if v6 {
-		args := []string{"add", "rule", "inet", routeNftTable, chain, "iifname", fmt.Sprintf("%q", iface)}
-		if gwV6 != "" && gwMAC != "" {
-			args = append(args, "meta", "nfproto", "ipv6", "ether", "saddr", gwMAC, "return")
-		} else if gwV6 != "" {
-			args = append(args, "ip6", "saddr", gwV6, "return")
-		} else {
-			args = append(args, "meta", "nfproto", "ipv6", "return")
-		}
-		ok = runLogged("routing: add narrow egress guard "+chain, append([]string{"nft"}, args...)...) && ok
+	if !runLogged("routing: add gateway egress guard "+chain,
+		"nft", "add", "rule", "inet", routeNftTable, chain,
+		"iifname", fmt.Sprintf("%q", iface), "meta", "nfproto", "ipv6", "return") {
+		ok = false
 	}
 	return ok
 }
+
 func (b *routeNftBackend) addRedirectDrop(chain, iface string) {
 	if iface == "" {
 		return
 	}
 	runLogged("routing: add redirect drop "+chain,
 		"nft", "add", "rule", "inet", routeNftTable, chain,
-		"oifname", fmt.Sprintf("%q", iface), "icmpv6", "type", "nd-redirect", "drop")
+		"oifname", fmt.Sprintf("%q", iface), "icmp", "type", "redirect", "drop")
 }
 
 func (b *routeNftBackend) sharesFamilies() bool { return true }

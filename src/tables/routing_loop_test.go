@@ -121,59 +121,31 @@ func TestEgressLoopGuardLandsOnEveryEgressInterface(t *testing.T) {
 	prevProto := routeIPSupportsProto
 	t.Cleanup(func() { routeIPSupportsProto = prevProto })
 	routeIPSupportsProto = func() bool { return false }
-	prevRun, prevLogged := run, runLogged
+	prevRun, prevLogged, prevDel := run, runLogged, routeDelRuleLoop
 	run = func(args ...string) (string, error) { return "", nil }
 	runLogged = func(op string, args ...string) bool { return true }
-	t.Cleanup(func() { run, runLogged = prevRun, prevLogged })
+	routeDelRuleLoop = func(bool, string, string) {}
+	t.Cleanup(func() { run, runLogged, routeDelRuleLoop = prevRun, prevLogged, prevDel })
 	rpFilterHarness(t, map[string]string{"eth1": "1", "xray0": "1"})
 	prevSeen := routeIfaceSeen
 	routeIfaceSeen = make(map[string]bool)
 	t.Cleanup(func() { routeIfaceSeen = prevSeen })
 	cfg := familyTestConfig(true, false)
-	plain := &mockRouteBackend{}
-	set := familyTestSet()
-	set.Routing.EgressInterface = "eth1"
-	st := buildRouteState(cfg, set)
-	if err := routeEnsureRule(plain, cfg, set, st, nil); err != nil {
-		t.Fatalf("routeEnsureRule: %v", err)
-	}
-	if indexOfPrefix(plain.chainOps[st.chainPre], "loop-guard") < 0 {
-		t.Fatalf("every egress interface guards traffic arriving on it: %v", plain.chainOps[st.chainPre])
-	}
-	tunnel := &mockRouteBackend{}
-	tunnelSet := familyTestSet()
-	tunnelSet.Routing.EgressInterface = "xray0"
-	tunnelSt := buildRouteState(cfg, tunnelSet)
-	if err := routeEnsureRule(tunnel, cfg, tunnelSet, tunnelSt, nil); err != nil {
-		t.Fatalf("routeEnsureRule: %v", err)
-	}
-	if indexOfPrefix(tunnel.chainOps[tunnelSt.chainPre], "loop-guard") < 0 {
-		t.Fatalf("a userspace tunnel hands the packet back to a local program that answers every turn until memory is gone: %v", tunnel.chainOps[tunnelSt.chainPre])
-	}
-}
-
-func TestEgressLoopGuardSurvivesAMissingInterface(t *testing.T) {
-	loopTestSysfs(t)
-	cfg := familyTestConfig(true, false)
-	if !routeWantsEgressLoopGuard("notyet0") {
-		t.Fatal("an interface b4 has never seen may come back as a tunnel, so install the guard while its kind is unknown")
-	}
-	if !routeWantsEgressLoopGuard("eth1") {
-		t.Fatal("every egress interface wants the guard, including a plain NIC")
-	}
-	set := familyTestSet()
-	set.Routing.EgressInterface = "notyet0"
-	missing := buildRouteState(cfg, set)
-	if !missing.loopGuard {
-		t.Fatal("the cached state must record the installed guard, or the sync cache-hits and the reinstall sees nothing to refresh")
-	}
-	set.Routing.EgressInterface = "eth1"
-	plain := buildRouteState(cfg, set)
-	if !plain.loopGuard {
-		t.Fatal("a plain NIC installs the guard, so the state must say so")
-	}
-	if routeStateEqual(missing, plain) {
-		t.Fatal("missing-iface and plain-NIC states must differ by interface, or a NIC appearing where nothing was keeps stale state")
+	for iface, why := range map[string]string{
+		"eth1":    "a plain NIC hands a looped packet back to whatever next hop answers on it",
+		"xray0":   "a userspace tunnel hands the packet back to a local program that answers every turn until memory is gone",
+		"notyet0": "an interface b4 has never seen may come back as a tunnel, so the guard goes in while its kind is unknown",
+	} {
+		be := &mockRouteBackend{}
+		set := familyTestSet()
+		set.Routing.EgressInterface = iface
+		st := buildRouteState(cfg, set)
+		if err := routeEnsureRule(be, cfg, set, st, nil); err != nil {
+			t.Fatalf("routeEnsureRule on %s: %v", iface, err)
+		}
+		if indexOfOp(be.chainOps[st.chainPre], "loop-guard "+iface) < 0 {
+			t.Errorf("%s: %v", why, be.chainOps[st.chainPre])
+		}
 	}
 }
 
