@@ -106,7 +106,7 @@ A gateway that passes the check but does not forward the traffic, such as a mist
 ## Upstream SOCKS5 proxy mode {#proxy-mode}
 
 1. **Listener.** b4 opens a transparent listener on a port derived from the set's mark.
-2. **Diversion.** TPROXY rules in **PREROUTING** send TCP to the set's addresses, and UDP with **Route UDP through upstream** on, to the listener; an `ip rule` and a local route deliver it locally. The router's own addresses, broadcast and multicast are never diverted, so a set matching every address leaves the router's DNS, DHCP and web interface reachable. Where the kernel rejects the address-type match, b4 lists the router's addresses instead and logs it.
+2. **Diversion.** TPROXY rules in **PREROUTING** send TCP to the set's addresses, and UDP with **Route UDP through upstream** on, to the listener; an `ip rule` and a local route deliver it locally. The router's own addresses, broadcast and multicast are never diverted, so a set matching every address leaves the router's DNS, DHCP and web interface reachable. Where the kernel rejects the address-type match, b4 lists the router's addresses instead and logs it. While the firewall monitor runs, b4 rebuilds the rules with a new list when those addresses change.
 3. **Relay.** For each connection b4 opens a SOCKS5 CONNECT to the upstream and copies bytes both ways.
 
 The router's own connections reach the listener by a loop through `lo`, unless the set is limited to source devices or source interfaces. [Proxy sets and Telegram over WebSocket](../guides/marks.md#proxy-sets-and-telegram-over-websocket) lists the marks, rules and ports.
