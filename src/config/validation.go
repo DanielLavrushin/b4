@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
@@ -121,26 +122,74 @@ func tlsKeyIsEncrypted(path string) bool {
 		}
 	}
 }
-func egressGatewayIsLocal(ip net.IP) bool {
-	if ip == nil {
-		return false
+
+var (
+	egressGatewayWarnMu   sync.Mutex
+	egressGatewayWarned   = map[string]struct{}{}
+	egressGatewayWarnSink = func(text string) { log.Warnf("%s", text) }
+)
+
+func warnEgressGatewayOnce(format string, a ...any) {
+	text := fmt.Sprintf(format, a...)
+	egressGatewayWarnMu.Lock()
+	_, seen := egressGatewayWarned[text]
+	if !seen {
+		egressGatewayWarned[text] = struct{}{}
 	}
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return false
+	sink := egressGatewayWarnSink
+	egressGatewayWarnMu.Unlock()
+	if !seen {
+		sink(text)
 	}
-	for _, iface := range ifaces {
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
+}
+
+func parseEgressGateway(raw, egressIface, egressIP string) (net.IP, string) {
+	if strings.ContainsAny(raw, "[]") {
+		return nil, "is written with brackets; enter the address without them"
+	}
+	if strings.Contains(raw, "/") {
+		return nil, "carries a prefix length; enter the gateway's address alone"
+	}
+	host, zone, zoned := strings.Cut(raw, "%")
+	ip := net.ParseIP(host)
+	switch {
+	case ip == nil:
+		return nil, "is not an IP address"
+	case zoned && !strings.Contains(host, ":"):
+		return nil, "carries a zone, which only an IPv6 address can have"
+	case zoned && zone != egressIface:
+		return nil, fmt.Sprintf("names the zone %q, but the only zone it may name is the set's routing.egress_interface %q", zone, egressIface)
+	case ip.IsUnspecified():
+		return nil, "is the unspecified address, which cannot be a next hop"
+	case ip.IsLoopback():
+		return nil, "is a loopback address, which cannot be a next hop"
+	case ip.IsMulticast():
+		return nil, "is a multicast address, which cannot be a next hop"
+	case ip.Equal(net.IPv4bcast):
+		return nil, "is the broadcast address, which cannot be a next hop"
+	case egressIP != "" && ip.Equal(net.ParseIP(egressIP)):
+		return nil, "is the set's own routing.egress_ip; the gateway must be another device"
+	}
+	return ip, ""
+}
+
+func warnEgressGatewayFamilies(c *Config, set *SetConfig) {
+	gw, egress := set.Routing.EgressGateway, set.Routing.EgressInterface
+	if net.ParseIP(gw).To4() != nil {
+		switch {
+		case !c.Queue.IPv4Enabled:
+			warnEgressGatewayOnce("Set '%s': routing.egress_gateway %q is IPv4 and is ignored while IPv4 support is off", set.Name, gw)
+		case c.Queue.IPv6Enabled:
+			warnEgressGatewayOnce("Set '%s': routing.egress_gateway %q is IPv4 and carries the set's IPv4 traffic only: the set's IPv6 traffic leaves through %s by that interface's own route, and IPv6 from devices on %s itself is not routed by the set", set.Name, gw, egress, egress)
 		}
-		for _, addr := range addrs {
-			if ipNet, ok := addr.(*net.IPNet); ok && ipNet.IP != nil && ipNet.IP.Equal(ip) {
-				return true
-			}
-		}
+		return
 	}
-	return false
+	switch {
+	case !c.Queue.IPv6Enabled:
+		warnEgressGatewayOnce("Set '%s': routing.egress_gateway %q is IPv6 and is ignored while IPv6 support is off", set.Name, gw)
+	case c.Queue.IPv4Enabled:
+		warnEgressGatewayOnce("Set '%s': routing.egress_gateway %q is IPv6 and carries the set's IPv6 traffic only: the set's IPv4 traffic leaves through %s by that interface's own route, and IPv4 from devices on %s itself is not routed by the set", set.Name, gw, egress, egress)
+	}
 }
 
 type sharedTableGatewayClash struct {
@@ -151,7 +200,7 @@ type sharedTableGatewayClash struct {
 func findSharedTableGatewayClashes(sets []*SetConfig) []sharedTableGatewayClash {
 	byTable := map[int]map[string][]string{}
 	for _, set := range sets {
-		if set == nil || set.Routing.Mode != RoutingModeInterface {
+		if set == nil || !set.Enabled || !set.Routing.Enabled || set.Routing.Mode != RoutingModeInterface {
 			continue
 		}
 		if set.Routing.FWMark == 0 || set.Routing.Table == 0 {
@@ -302,25 +351,21 @@ func (c *Config) Validate() error {
 
 		set.Routing.EgressGateway = strings.TrimSpace(set.Routing.EgressGateway)
 		if set.Routing.EgressGateway != "" {
-			ip := net.ParseIP(set.Routing.EgressGateway)
+			ip, reason := parseEgressGateway(set.Routing.EgressGateway, set.Routing.EgressInterface, set.Routing.EgressIP)
 			switch {
-			case ip == nil, ip.IsUnspecified(), ip.IsLoopback(), ip.IsMulticast(), ip.Equal(net.IPv4bcast), egressGatewayIsLocal(ip):
-				v.addf(fmt.Sprintf("sets[%d].routing.egress_gateway", setIdx), "invalid_egress_gateway", map[string]any{"set": set.Name, "ip": set.Routing.EgressGateway}, "set %q: routing.egress_gateway %q is not a usable next hop", set.Name, set.Routing.EgressGateway)
+			case ip == nil:
+				v.addf(fmt.Sprintf("sets[%d].routing.egress_gateway", setIdx), "invalid_egress_gateway", map[string]any{"set": set.Name, "ip": set.Routing.EgressGateway}, "set %q: routing.egress_gateway %q %s", set.Name, set.Routing.EgressGateway, reason)
 				return v.result()
 			case set.Routing.Mode != RoutingModeInterface:
-				log.Warnf("Set '%s': routing mode %q never looks a default route up, so no packet reaches a gateway through it; dropping routing.egress_gateway", set.Name, set.Routing.Mode)
+				warnEgressGatewayOnce("Set '%s': routing mode %q never looks a default route up, so no packet reaches a gateway through it; dropping routing.egress_gateway", set.Name, set.Routing.Mode)
 				set.Routing.EgressGateway = ""
 			case set.Routing.EgressInterface == "":
-				log.Warnf("Set '%s': routing.egress_gateway names the next hop on routing.egress_interface, and no routing.egress_interface is set; dropping it", set.Name)
+				warnEgressGatewayOnce("Set '%s': routing.egress_gateway names the next hop on routing.egress_interface, and no routing.egress_interface is set; dropping it", set.Name)
 				set.Routing.EgressGateway = ""
 			default:
 				set.Routing.EgressGateway = ip.String()
-				if ip.To4() == nil && !c.Queue.IPv6Enabled {
-					log.Warnf("Set '%s': routing.egress_gateway %q is IPv6, but IPv6 support is off, so no IPv6 rule is installed and the gateway is ignored", set.Name, set.Routing.EgressGateway)
-				} else if ip.To4() != nil && c.Queue.IPv6Enabled {
-					log.Warnf("Set '%s': routing.egress_gateway %q carries IPv4 only, so the set's IPv6 traffic leaves by the ordinary route past the set", set.Name, set.Routing.EgressGateway)
-				} else if ip.To4() == nil && c.Queue.IPv4Enabled {
-					log.Warnf("Set '%s': routing.egress_gateway %q carries IPv6 only, so the set's IPv4 traffic leaves by the ordinary route past the set", set.Name, set.Routing.EgressGateway)
+				if set.Enabled && set.Routing.Enabled {
+					warnEgressGatewayFamilies(c, set)
 				}
 			}
 		}
@@ -439,7 +484,7 @@ func (c *Config) Validate() error {
 		}
 	}
 	for _, clash := range findSharedTableGatewayClashes(c.Sets) {
-		log.Warnf("Sets %s share routing table %d with different routing.egress_gateway values, so their default routes overwrite each other and the last written one wins for all of them; give each its own routing.table", clash.names, clash.table)
+		warnEgressGatewayOnce("Sets %s share routing table %d with different routing.egress_gateway values, so their default routes overwrite each other and the last written one wins for all of them; give each its own routing.table", clash.names, clash.table)
 	}
 
 	c.sanitizeEscalation()

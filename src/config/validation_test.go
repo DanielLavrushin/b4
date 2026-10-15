@@ -9,7 +9,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"math/big"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -815,43 +814,297 @@ func TestValidate_EgressGatewayAcceptsLinkLocal(t *testing.T) {
 		t.Errorf("link-local gateway stored as %q", got)
 	}
 }
-func TestValidate_EgressGatewayRejectsLocalAddress(t *testing.T) {
-	if !egressGatewayIsLocal(net.ParseIP("127.0.0.1")) {
-		t.Fatal("loopback must read as local, or the guard below never fires")
+
+func captureEgressGatewayWarnings(t *testing.T) *[]string {
+	t.Helper()
+	got := &[]string{}
+	egressGatewayWarnMu.Lock()
+	prev := egressGatewayWarnSink
+	egressGatewayWarned = map[string]struct{}{}
+	egressGatewayWarnSink = func(text string) { *got = append(*got, text) }
+	egressGatewayWarnMu.Unlock()
+	t.Cleanup(func() {
+		egressGatewayWarnMu.Lock()
+		egressGatewayWarnSink = prev
+		egressGatewayWarned = map[string]struct{}{}
+		egressGatewayWarnMu.Unlock()
+	})
+	return got
+}
+
+func resetEgressGatewayWarnings() {
+	egressGatewayWarnMu.Lock()
+	egressGatewayWarned = map[string]struct{}{}
+	egressGatewayWarnMu.Unlock()
+}
+
+func TestValidate_EgressGatewayForms(t *testing.T) {
+	cases := []struct {
+		in     string
+		want   string
+		reason string
+	}{
+		{"fe80::1%eth0", "fe80::1", ""},
+		{"FE80::0001%eth0", "fe80::1", ""},
+		{"2001:db8::1%eth0", "2001:db8::1", ""},
+		{"::ffff:192.0.2.1", "192.0.2.1", ""},
+		{"fe80::1%wan", "", `names the zone "wan"`},
+		{"fe80::1%", "", `names the zone ""`},
+		{"192.0.2.1%eth0", "", "only an IPv6 address"},
+		{"[fe80::1]", "", "brackets"},
+		{"[fe80::1%eth0]", "", "brackets"},
+		{"192.0.2.1/24", "", "prefix length"},
+		{"2001:db8::1/64", "", "prefix length"},
+		{"gateway.lan", "", "is not an IP address"},
+		{"192.0.2.1 10.0.0.1", "", "is not an IP address"},
+		{"0.0.0.0", "", "unspecified"},
+		{"::", "", "unspecified"},
+		{"127.0.0.1", "", "loopback"},
+		{"::1", "", "loopback"},
+		{"224.0.0.1", "", "multicast"},
+		{"ff02::1", "", "multicast"},
+		{"255.255.255.255", "", "broadcast"},
 	}
-	if egressGatewayIsLocal(net.ParseIP("192.0.2.1")) {
-		t.Fatal("TEST-NET-1 must not read as local")
-	}
-	var local string
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		t.Fatalf("list interfaces: %v", err)
-	}
-outer:
-	for _, iface := range ifaces {
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, addr := range addrs {
-			if ipNet, ok := addr.(*net.IPNet); ok && ipNet.IP != nil && !ipNet.IP.IsLoopback() {
-				local = ipNet.IP.String()
-				break outer
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			captureEgressGatewayWarnings(t)
+			cfg := NewConfig()
+			set := gatewaySet()
+			set.Routing.EgressGateway = "  " + tc.in + " "
+			cfg.Sets = []*SetConfig{&set}
+
+			err := cfg.Validate()
+			if tc.reason == "" {
+				if err != nil {
+					t.Fatalf("%q must validate: %v", tc.in, err)
+				}
+				if got := cfg.Sets[0].Routing.EgressGateway; got != tc.want {
+					t.Errorf("%q stored as %q, want %q", tc.in, got, tc.want)
+				}
+				return
 			}
-		}
-	}
-	if local == "" {
-		t.Skip("no non-loopback address to offer as a gateway")
-	}
-	cfg := NewConfig()
-	set := gatewaySet()
-	set.Routing.EgressGateway = local
-	cfg.Sets = []*SetConfig{&set}
-	ve := mustValidationErr(t, cfg.Validate())
-	if findField(ve, "sets[0].routing.egress_gateway", "invalid_egress_gateway") == nil {
-		t.Errorf("a router address as gateway must fail validation; got %+v", ve.Fields)
+			ve := mustValidationErr(t, err)
+			f := findField(ve, "sets[0].routing.egress_gateway", "invalid_egress_gateway")
+			if f == nil {
+				t.Fatalf("missing invalid_egress_gateway; got %+v", ve.Fields)
+			}
+			if f.Params["set"] != "gateway" || f.Params["ip"] != tc.in {
+				t.Errorf("params = %v, want set=gateway ip=%q", f.Params, tc.in)
+			}
+			if !strings.Contains(f.Message, tc.reason) || !strings.Contains(f.Message, tc.in) {
+				t.Errorf("message %q must name %q and say %q", f.Message, tc.in, tc.reason)
+			}
+		})
 	}
 }
+
+func TestValidate_EgressGatewayZoneWithoutInterfaceIsRejected(t *testing.T) {
+	cfg := NewConfig()
+	set := gatewaySet()
+	set.Routing.EgressInterface = ""
+	set.Routing.EgressGateway = "fe80::1%eth0"
+	cfg.Sets = []*SetConfig{&set}
+
+	ve := mustValidationErr(t, cfg.Validate())
+	f := findField(ve, "sets[0].routing.egress_gateway", "invalid_egress_gateway")
+	if f == nil || !strings.Contains(f.Message, `names the zone "eth0"`) {
+		t.Fatalf("a zone with no routing.egress_interface names another interface; got %+v", ve.Fields)
+	}
+}
+
+func TestValidate_EgressGatewayIsNotTheEgressIP(t *testing.T) {
+	cases := []struct {
+		name, egressIP, gateway string
+		rejected                bool
+	}{
+		{"same IPv4", "192.0.2.10", "192.0.2.10", true},
+		{"IPv4-mapped spelling", "192.0.2.10", "::ffff:192.0.2.10", true},
+		{"IPv6 in another spelling", "2001:db8::10", "2001:DB8:0::10", true},
+		{"IPv6 with the egress zone", "fe80::10", "fe80::10%eth0", true},
+		{"another device", "192.0.2.10", "192.0.2.1", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			captureEgressGatewayWarnings(t)
+			cfg := NewConfig()
+			set := gatewaySet()
+			set.Routing.EgressIP = tc.egressIP
+			set.Routing.EgressGateway = tc.gateway
+			cfg.Sets = []*SetConfig{&set}
+
+			err := cfg.Validate()
+			if !tc.rejected {
+				if err != nil {
+					t.Fatalf("a gateway other than the egress IP must validate: %v", err)
+				}
+				return
+			}
+			ve := mustValidationErr(t, err)
+			f := findField(ve, "sets[0].routing.egress_gateway", "invalid_egress_gateway")
+			if f == nil || !strings.Contains(f.Message, "routing.egress_ip") {
+				t.Fatalf("a gateway equal to routing.egress_ip must be refused naming that rule; got %+v", ve.Fields)
+			}
+		})
+	}
+}
+
+func TestValidate_EgressGatewayFamilyWarnings(t *testing.T) {
+	cases := []struct {
+		name    string
+		gateway string
+		v4, v6  bool
+		want    []string
+	}{
+		{"IPv4 gateway, both families", "192.0.2.1", true, true, []string{"IPv4 traffic only", "IPv6 traffic leaves through eth0 by that interface's own route", "IPv6 from devices on eth0 itself is not routed by the set"}},
+		{"IPv4 gateway, IPv4 only", "192.0.2.1", true, false, nil},
+		{"IPv4 gateway, IPv4 off", "192.0.2.1", false, true, []string{"is ignored while IPv4 support is off"}},
+		{"IPv6 gateway, both families", "2001:db8::1", true, true, []string{"IPv6 traffic only", "IPv4 traffic leaves through eth0 by that interface's own route", "IPv4 from devices on eth0 itself is not routed by the set"}},
+		{"IPv6 gateway, IPv6 only", "2001:db8::1", false, true, nil},
+		{"IPv6 gateway, IPv6 off", "2001:db8::1", true, false, []string{"is ignored while IPv6 support is off"}},
+		{"link-local gateway, IPv6 off", "fe80::1", true, false, []string{"is ignored while IPv6 support is off"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := captureEgressGatewayWarnings(t)
+			cfg := NewConfig()
+			cfg.Queue.IPv4Enabled = tc.v4
+			cfg.Queue.IPv6Enabled = tc.v6
+			set := gatewaySet()
+			set.Routing.EgressGateway = tc.gateway
+			cfg.Sets = []*SetConfig{&set}
+
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.Sets[0].Routing.EgressGateway != tc.gateway {
+				t.Errorf("a gateway of a disabled family is kept, got %q", cfg.Sets[0].Routing.EgressGateway)
+			}
+			if tc.want == nil {
+				if len(*got) != 0 {
+					t.Fatalf("expected no warning, got %q", *got)
+				}
+				return
+			}
+			if len(*got) != 1 {
+				t.Fatalf("expected one warning, got %q", *got)
+			}
+			for _, w := range tc.want {
+				if !strings.Contains((*got)[0], w) {
+					t.Errorf("warning %q does not say %q", (*got)[0], w)
+				}
+			}
+		})
+	}
+}
+
+func TestValidate_EgressGatewayWarningsSkipInactiveSets(t *testing.T) {
+	cases := []struct {
+		name string
+		tune func(*SetConfig)
+	}{
+		{"set disabled", func(s *SetConfig) { s.Enabled = false }},
+		{"routing disabled", func(s *SetConfig) { s.Routing.Enabled = false }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := captureEgressGatewayWarnings(t)
+			cfg := NewConfig()
+			cfg.Queue.IPv4Enabled = true
+			cfg.Queue.IPv6Enabled = true
+			a, b := gatewaySet(), gatewaySet()
+			a.Id, a.Name = "a", "a"
+			b.Id, b.Name = "b", "b"
+			b.Routing.EgressGateway = "192.0.2.2"
+			for _, s := range []*SetConfig{&a, &b} {
+				s.Routing.FWMark = 0x100
+				s.Routing.Table = 200
+				tc.tune(s)
+			}
+			cfg.Sets = []*SetConfig{&a, &b}
+
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(*got) != 0 {
+				t.Fatalf("an inactive set must not warn, got %q", *got)
+			}
+			if a.Routing.EgressGateway != "192.0.2.1" {
+				t.Errorf("an inactive set keeps its gateway, got %q", a.Routing.EgressGateway)
+			}
+		})
+	}
+}
+
+func TestValidate_EgressGatewayWarningsLoggedOnce(t *testing.T) {
+	got := captureEgressGatewayWarnings(t)
+	cfg := NewConfig()
+	cfg.Queue.IPv4Enabled = true
+	cfg.Queue.IPv6Enabled = true
+	a, b := gatewaySet(), gatewaySet()
+	a.Id, a.Name = "a", "a"
+	b.Id, b.Name = "b", "b"
+	b.Routing.EgressGateway = "192.0.2.2"
+	for _, s := range []*SetConfig{&a, &b} {
+		s.Routing.FWMark = 0x100
+		s.Routing.Table = 200
+	}
+	cfg.Sets = []*SetConfig{&a, &b}
+
+	for i := 0; i < 3; i++ {
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("validate %d: %v", i, err)
+		}
+		cfg.Clone()
+	}
+	if len(*got) != 3 {
+		t.Fatalf("expected one warning per set plus one clash warning, got %d: %q", len(*got), *got)
+	}
+	clashes := 0
+	for _, w := range *got {
+		if strings.Contains(w, "share routing table 200") {
+			clashes++
+		}
+	}
+	if clashes != 1 {
+		t.Errorf("expected one clash warning, got %d in %q", clashes, *got)
+	}
+
+	b.Routing.EgressGateway = "192.0.2.3"
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(*got) != 4 || !strings.Contains((*got)[3], "192.0.2.3") {
+		t.Fatalf("a new gateway is new text and must warn once, got %q", *got)
+	}
+
+	resetEgressGatewayWarnings()
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(*got) != 7 {
+		t.Fatalf("after a reset every distinct warning logs again, got %d: %q", len(*got), *got)
+	}
+}
+
+func TestValidate_EgressGatewayDropWarningLoggedOnce(t *testing.T) {
+	got := captureEgressGatewayWarnings(t)
+	for i := 0; i < 2; i++ {
+		cfg := NewConfig()
+		set := gatewaySet()
+		set.Routing.EgressInterface = ""
+		cfg.Sets = []*SetConfig{&set}
+		if err := cfg.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if set.Routing.EgressGateway != "" {
+			t.Fatalf("gateway kept without an interface: %q", set.Routing.EgressGateway)
+		}
+	}
+	if len(*got) != 1 || !strings.Contains((*got)[0], "dropping it") {
+		t.Fatalf("expected the drop warning once, got %q", *got)
+	}
+}
+
 func TestValidate_SharedManualTableWithDifferentGatewaysWarns(t *testing.T) {
 	mk := func(name, gw string) *SetConfig {
 		set := gatewaySet()
@@ -884,6 +1137,18 @@ func TestValidate_SharedManualTableWithDifferentGatewaysWarns(t *testing.T) {
 		got := findSharedTableGatewayClashes([]*SetConfig{mk("a", "192.0.2.1"), mk("b", "192.0.2.1")})
 		if len(got) != 0 {
 			t.Fatalf("one gateway per table needs no warning, got %+v", got)
+		}
+	})
+	t.Run("inactive sets do not clash", func(t *testing.T) {
+		for _, tune := range []func(*SetConfig){
+			func(s *SetConfig) { s.Enabled = false },
+			func(s *SetConfig) { s.Routing.Enabled = false },
+		} {
+			a, b := mk("a", "192.0.2.1"), mk("b", "192.0.2.2")
+			tune(b)
+			if got := findSharedTableGatewayClashes([]*SetConfig{a, b}); len(got) != 0 {
+				t.Fatalf("a set that installs nothing writes no default route, got %+v", got)
+			}
 		}
 	})
 	t.Run("automatic tables do not clash", func(t *testing.T) {
