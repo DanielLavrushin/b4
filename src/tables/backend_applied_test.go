@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -27,7 +28,51 @@ func TestTheRulesReportTheBackendTheyWereAppliedWith(t *testing.T) {
 	}
 }
 
+func stubSyncMapEntry(t *testing.T, m interface {
+	Load(any) (any, bool)
+	Store(any, any)
+	Delete(any)
+}, key string, value any) {
+	t.Helper()
+	prev, had := m.Load(key)
+	m.Store(key, value)
+	t.Cleanup(func() {
+		if had {
+			m.Store(key, prev)
+		} else {
+			m.Delete(key)
+		}
+	})
+}
+
+func TestNftablesTablesOfOtherServicesLeaveB4sOwnPacketsUnshielded(t *testing.T) {
+	stubSyncMapEntry(t, &hasBinaryCache, "nft", true)
+	prevRun := run
+	t.Cleanup(func() { run = prevRun })
+	for _, c := range []struct {
+		name    string
+		listing string
+		err     error
+		want    bool
+	}{
+		{"only b4's own tables", "table inet b4_mangle\ntable inet b4_route\ntable ip _b4_queue_probe\n", nil, true},
+		{"tables outside the IP families", "table bridge filter\ntable netdev ingress\ntable arp filter\n", nil, true},
+		{"OpenWrt's fw4", "table inet fw4\ntable inet b4_mangle\n", nil, false},
+		{"another service on iptables-nft", "table ip mangle\n", nil, false},
+		{"an IPv6 table", "table ip6 b4r\n", nil, false},
+		{"nft that cannot list tables", "", errors.New("no nf_tables"), true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			run = func(args ...string) (string, error) { return c.listing, c.err }
+			if got := OwnPacketsShielded(backendIPTablesLegacy); got != c.want {
+				t.Fatalf("%v, want %v: an nftables chain of another service sees b4's packets whatever b4's legacy OUTPUT accept does", got, c.want)
+			}
+		})
+	}
+}
+
 func TestOnlyLegacyIPTablesShieldsB4sOwnPackets(t *testing.T) {
+	stubSyncMapEntry(t, &hasBinaryCache, "nft", false)
 	prev, had := xtVariantCache.Load(backendIPTables)
 	t.Cleanup(func() {
 		if had {

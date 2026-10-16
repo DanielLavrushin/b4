@@ -232,7 +232,7 @@ func (w *Worker) reroutedEgress(vc *verdictCtx, pkt *pktInfo, cfg *config.Config
 		return ""
 	}
 	mark := uint32(cfg.MainInjectedMark())
-	if !rerouteCheckAll.Load() && vc.foreignMark&mark != mark {
+	if (!rerouteCheckAll.Load() || cfg.System.Tables.SkipSetup) && vc.foreignMark&mark != mark {
 		return ""
 	}
 	if vc.foreignMark == uint32(cfg.DiscoveryFlowMark()) || vc.foreignMark == uint32(cfg.DiscoveryInjectedMark()) {

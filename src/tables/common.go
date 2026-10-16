@@ -426,9 +426,33 @@ func getSysctlOrProc(name string) string {
 func OwnPacketsShielded(backend string) bool {
 	switch backend {
 	case backendIPTablesLegacy:
-		return true
 	case backendIPTables:
-		return !xtIsNftVariant(backendIPTables)
+		if xtIsNftVariant(backendIPTables) {
+			return false
+		}
+	default:
+		return false
+	}
+	return !foreignNftTables()
+}
+
+func foreignNftTables() bool {
+	if !hasBinary("nft") {
+		return false
+	}
+	out, err := run("nft", "list", "tables")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) != 3 || f[0] != "table" || strings.HasPrefix(f[2], "b4_") || strings.HasPrefix(f[2], "_b4") {
+			continue
+		}
+		switch f[1] {
+		case "ip", "ip6", "inet":
+			return true
+		}
 	}
 	return false
 }

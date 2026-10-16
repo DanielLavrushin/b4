@@ -181,6 +181,33 @@ func TestWithoutIPTablesOnlyAMarkWithTheQueueMarkIsCheckedForAnotherRoute(t *tes
 	}
 }
 
+func TestWithFirewallSetupSkippedOnlyAMarkWithTheQueueMarkIsChecked(t *testing.T) {
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	magi, hotspot := uint32(0x4d616769), keeneticHotspotMark
+	for _, c := range []struct {
+		name    string
+		mark    *uint32
+		want    int
+		lookups int
+	}{
+		{"MagiTrickle's mark", &magi, nfqueue.NfDrop, 0},
+		{"a mark with every queue-mark bit", &hotspot, nfqueue.NfAccept, 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stub := stubInjectRoute(t, idx["eth7"], true)
+			set := newFragmentingYTImagesSet()
+			w := newInjectingWorker(t, &set)
+			w.getConfig().System.Tables.SkipSetup = true
+			if got := queuedVerdict(t, w, ytimgHello(), c.mark, idx["ppp9"], 0); got != c.want {
+				t.Fatalf("verdict %d, want %d: once Skip Setup is on, b4's OUTPUT accept no longer shields its packets, so every-mark checks from an earlier legacy iptables start must stop", got, c.want)
+			}
+			if calls := stub.got(); len(calls) != c.lookups {
+				t.Fatalf("route lookups %v, want %d", calls, c.lookups)
+			}
+		})
+	}
+}
+
 func TestAHandedOffConnectionAsksTheKernelOnce(t *testing.T) {
 	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
 	stub := stubInjectRoute(t, idx["eth7"], true)
