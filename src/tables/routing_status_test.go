@@ -153,6 +153,7 @@ func TestRoutingStatusKeepsEverySetThatFailedWhenNamesRepeat(t *testing.T) {
 
 func TestRoutingStatusClearsASetThatADNSAnswerInstalled(t *testing.T) {
 	familyResetGlobals(t)
+	forgetInstallFailures(t)
 	stubRetryState(t)
 	routeMu.Lock()
 	routeSyncRetryBase = time.Hour
@@ -180,6 +181,7 @@ func TestRoutingStatusClearsASetThatADNSAnswerInstalled(t *testing.T) {
 	since := st.FailingSince
 
 	fail.Store(false)
+	ageInstallFailure(t, first.Id)
 	routePhaseMu.Lock()
 	RoutingHandleDNS(cfg, first, []net.IP{net.ParseIP("198.51.100.40")})
 	st = RoutingStatus()

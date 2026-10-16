@@ -113,6 +113,10 @@ func NewSender(mark int) (*Sender, error) {
 	return NewSenderWithMark(mark)
 }
 
+func NewSenderWithFDs(fd4, fd6 int) *Sender {
+	return &Sender{fd4: fd4, fd6: fd6}
+}
+
 func (s *Sender) SendIPv4(packet []byte, destIP net.IP) error {
 	if log.Level(log.CurLevel.Load()) >= log.LevelTrace {
 		log.Tracef("Sending IPv4 packet to %s, len=%d", destIP.String(), len(packet))

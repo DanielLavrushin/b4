@@ -89,6 +89,7 @@ func TestSaveAndRestoreUseTheSameMask(t *testing.T) {
 }
 
 func TestRestoreIsEmittedBeforeTheMarkRules(t *testing.T) {
+	familyResetGlobals(t)
 	be := &mockRouteBackend{}
 	cfg := familyTestConfig(true, false)
 	set := familyTestSet()
@@ -156,6 +157,7 @@ func TestMarkRuleMatchesTheDestinationOnlySoRepliesStayUnmarked(t *testing.T) {
 }
 
 func TestEveryChainThatMarksAlsoRestores(t *testing.T) {
+	familyResetGlobals(t)
 	be := &mockRouteBackend{}
 	cfg := familyTestConfig(true, false)
 	set := familyTestSet()
@@ -248,6 +250,7 @@ func TestIptablesStillGetsARestorePerFamily(t *testing.T) {
 }
 
 func TestRestoreIsScopedToEverySourceOfTheSet(t *testing.T) {
+	familyResetGlobals(t)
 	be := &mockRouteBackend{}
 	cfg := familyTestConfig(true, false)
 	set := familyTestSet()

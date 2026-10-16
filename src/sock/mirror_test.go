@@ -255,7 +255,10 @@ func TestBadChecksumSurvivesTheMD5Option(t *testing.T) {
 	if !badsum {
 		t.Fatal("tcp_check must produce a bad checksum")
 	}
-	signed := AddTCPMD5Option(fake, false)
+	signed, ok := AddTCPMD5Option(fake, false)
+	if !ok {
+		t.Fatal("a 20-byte TCP header has room for the MD5 option")
+	}
 	if !TCPChecksumValid(signed) {
 		t.Fatal("AddTCPMD5Option is expected to recompute the checksum; the caller must corrupt it again")
 	}

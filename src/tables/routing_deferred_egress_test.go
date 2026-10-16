@@ -7,10 +7,21 @@ import (
 
 func deferredEgressCommands(t *testing.T, iface string, killSwitch bool) string {
 	t.Helper()
-	prev := runLogged
+	prevLogged, prevRun, prevDel, prevProto := runLogged, run, routeDelRuleLoop, routeIPSupportsProto
 	var cmds []string
 	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
-	t.Cleanup(func() { runLogged = prev })
+	run = func(args ...string) (string, error) { return "", nil }
+	routeDelRuleLoop = func(ipv6 bool, mark, table string) {
+		ip := "ip"
+		if ipv6 {
+			ip = "ip -6"
+		}
+		cmds = append(cmds, ip+" rule del fwmark "+mark+" lookup "+table)
+	}
+	routeIPSupportsProto = func() bool { return false }
+	t.Cleanup(func() {
+		runLogged, run, routeDelRuleLoop, routeIPSupportsProto = prevLogged, prevRun, prevDel, prevProto
+	})
 
 	st := loopTestState(iface, false)
 	st.setID = "deferred"
@@ -50,6 +61,10 @@ func TestAbsentEgressInterfaceClearsAStaleBlackhole(t *testing.T) {
 }
 
 func TestPresentEgressInterfaceStillGetsItsRuleAndKillSwitch(t *testing.T) {
+	rpFilterHarness(t, map[string]string{"all": "0", "lo": "0"})
+	prevSeen := routeIfaceSeen
+	routeIfaceSeen = make(map[string]bool)
+	t.Cleanup(func() { routeIfaceSeen = prevSeen })
 	emitted := deferredEgressCommands(t, "lo", true)
 
 	if !strings.Contains(emitted, "rule add fwmark") {
@@ -79,6 +94,10 @@ func TestAVanishedInterfaceKeepsItsKillSwitch(t *testing.T) {
 }
 
 func TestTheTableIsPopulatedBeforeTrafficIsPointedAtIt(t *testing.T) {
+	rpFilterHarness(t, map[string]string{"all": "0", "lo": "0"})
+	prevSeen := routeIfaceSeen
+	routeIfaceSeen = make(map[string]bool)
+	t.Cleanup(func() { routeIfaceSeen = prevSeen })
 	emitted := deferredEgressCommands(t, "lo", true)
 
 	route := strings.Index(emitted, "route replace default")
