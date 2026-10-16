@@ -175,8 +175,12 @@ func netnsAssertNarrowedGuard(t *testing.T, engine string, st routeState, gws ..
 	}
 	netnsAssertNoMACGuard(t, pre)
 	out := netnsGatewayRules(t, engine, st.chainOut, false)
-	if !slices.Contains(out, netnsGatewayRedirectDrop(engine, st.iface)) {
+	drop := netnsGatewayRedirectDrop(engine, st.iface)
+	switch {
+	case !slices.Contains(out, drop):
 		t.Errorf("a narrowed guard sends packets back out %s, so the router must not tell the sender to skip it; %s has no redirect drop:\n%s", st.iface, st.chainOut, strings.Join(out, "\n"))
+	case out[0] != drop:
+		t.Errorf("a redirect carries the mark of the packet that caused it while net.ipv4.fwmark_reflect is 1, and %s returns marked packets, so its redirect drop must come first:\n%s", st.chainOut, strings.Join(out, "\n"))
 	}
 }
 

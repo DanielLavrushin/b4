@@ -199,14 +199,19 @@ func TestNetnsOneArmedGatewayCarriesALANClientWithoutALoop(t *testing.T) {
 		t.Skip("the gateway's redirect and the counters use nft")
 	}
 	for i, engine := range []string{backendIPTables, backendNFTables} {
-		client := fmt.Sprintf("10.201.5.%d", 100+i)
-		t.Run(engine, func(t *testing.T) { gwOneArmed(t, engine, client) })
+		t.Run(engine, func(t *testing.T) {
+			for j, fwmarkReflect := range []string{"0", "1"} {
+				client := fmt.Sprintf("10.201.5.%d", 100+i+2*j)
+				t.Run("fwmark_reflect="+fwmarkReflect, func(t *testing.T) { gwOneArmed(t, engine, client, fwmarkReflect) })
+			}
+		})
 	}
 }
 
-func gwOneArmed(t *testing.T, engine, client string) {
+func gwOneArmed(t *testing.T, engine, client, fwmarkReflect string) {
 	gwKeepSysctl(t, "net/ipv4/ip_forward", "1")
 	gwKeepSysctl(t, "net/ipv4/conf/all/send_redirects", "1")
+	gwKeepSysctl(t, "net/ipv4/fwmark_reflect", fwmarkReflect)
 
 	_, _ = run("ip", "link", "del", gwArmBridge)
 	netnsRun(t, "ip", "link", "add", gwArmBridge, "type", "bridge")
@@ -292,6 +297,9 @@ func gwOneArmed(t *testing.T, engine, client string) {
 	if !slices.Equal(st.gwPeersV4, []string{gwArmGateway}) {
 		t.Fatalf("the gateway on the bridge must narrow the guard to itself, got gwV4=%q peers=%v", st.gwV4, st.gwPeersV4)
 	}
+	netnsRun(t, "nft", "add", "chain", "inet", gwArmObserver, "marked", "{ type filter hook output priority -400 ; }")
+	netnsRun(t, "nft", "add", "rule", "inet", gwArmObserver, "marked", "oifname", `"`+gwArmBridge+`"`, "icmp", "type", "redirect",
+		"meta", "mark", "&", fmt.Sprintf("0x%x", routeSetMarkMask), "==", fmt.Sprintf("0x%x", st.mark), "counter")
 
 	var reply string
 	err := cl.inside(func() error {
@@ -326,8 +334,15 @@ func gwOneArmed(t *testing.T, engine, client string) {
 	sent := gwNftPackets(netnsRun(t, "nft", "list", "chain", "inet", gwArmObserver, "out"))
 	kept := gwNftPackets(netnsRun(t, "nft", "list", "chain", "inet", gwArmObserver, "kept"))
 	got := gwNftPackets(cl.run(t, "nft", "list", "chain", "inet", gwArmObserver, "in"))
+	marked := gwNftPackets(netnsRun(t, "nft", "list", "chain", "inet", gwArmObserver, "marked"))
 	if sent == 0 {
 		t.Errorf("the router sent the client's packets back out the interface they came in on without generating a redirect, so this run cannot show the drop")
+	}
+	if fwmarkReflect == "1" && marked != sent {
+		t.Errorf("with net.ipv4.fwmark_reflect=1 every redirect the router generates for the hairpin carries the set's mark 0x%x, got %d of %d", st.mark, marked, sent)
+	}
+	if fwmarkReflect == "0" && marked != 0 {
+		t.Errorf("without mark reflection a redirect carries no mark, yet %d of %d carried the set's mark 0x%x", marked, sent, st.mark)
 	}
 	if kept != 0 {
 		t.Errorf("%d of the %d ICMP redirect(s) the router generated for the hairpin got past the set's out chain, which must drop them", kept, sent)
