@@ -156,12 +156,17 @@ export const SetEditorPage = ({
     if (editedSet) {
       const snapshot = editedSet;
       void (async () => {
-        const saved = await onSave(snapshot);
-        // Merge only the concurrency token so edits made during the
-        // request survive; the next save then carries a fresh revision.
-        if (saved?.revision !== undefined) {
-          const revision = saved.revision;
-          setEditedSet((prev) => (prev ? { ...prev, revision } : prev));
+        try {
+          const saved = await onSave(snapshot);
+          // Merge only the concurrency token so edits made during the
+          // request survive; the next save then carries a fresh revision.
+          if (saved && saved.revision !== undefined) {
+            const revision = saved.revision;
+            setEditedSet((prev) => (prev ? { ...prev, revision } : prev));
+          }
+        } catch {
+          // Page reports its own failures; a throw here is unexpected —
+          // leave the draft untouched rather than surfacing noise.
         }
       })();
     }

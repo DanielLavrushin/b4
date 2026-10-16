@@ -255,11 +255,10 @@ export const ImportExportSettings = ({
   const handleFormat = () => {
     try {
       setJsonValue(JSON.stringify(JSON.parse(jsonValue), null, 2));
+      clearImportOutcome();
     } catch {
       showError(t("sets.importExport.invalidJson"));
-      return;
     }
-    clearImportOutcome();
   };
 
   const importJson = (text: string) => {

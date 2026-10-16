@@ -74,7 +74,7 @@ export const leafEqual = (
     if (a.length !== b.length) return false;
     if (path && ORDERED_ARRAY_PATHS[path]) {
       return a.every(
-        (v, i) => JSON.stringify(v) === JSON.stringify((b as unknown[])[i]),
+        (v, i) => JSON.stringify(v) === JSON.stringify(b[i]),
       );
     }
     const primitive = (v: unknown): boolean =>
