@@ -47,9 +47,9 @@ func netnsRequire(t *testing.T) {
 			t.Skipf("%s is not installed", bin)
 		}
 	}
-	orig := nftRefreshElements
-	nftRefreshElements = nftRefreshElementsNetlink
-	t.Cleanup(func() { nftRefreshElements = orig })
+	orig, origDrop := nftRefreshElements, nftWriteUDPDrop
+	nftRefreshElements, nftWriteUDPDrop = nftRefreshElementsNetlink, nftWriteUDPDropNetlink
+	t.Cleanup(func() { nftRefreshElements, nftWriteUDPDrop = orig, origDrop })
 }
 
 func netnsRun(t *testing.T, args ...string) string {

@@ -40,7 +40,7 @@ func TestSNIMatchedQUICReachesSetUDPModeRegardlessOfQUICMatching(t *testing.T) {
 		mode string
 		want engine.PacketVerdict
 	}{
-		{mode: "drop", want: engine.VerdictDrop},
+		{mode: "drop", want: engine.VerdictDropFlow},
 		{mode: config.ConfigOff, want: engine.VerdictAccept},
 	}
 
@@ -99,7 +99,7 @@ func TestNonQUICUDPIsHandledForIPTargetedSet(t *testing.T) {
 func TestQUICFilterAllGatesBlockingForPortOnlySet(t *testing.T) {
 	cases := map[string]engine.PacketVerdict{
 		config.QUICFilterSNI: engine.VerdictAccept,
-		config.QUICFilterAll: engine.VerdictDrop,
+		config.QUICFilterAll: engine.VerdictDropFlow,
 	}
 
 	for filterQUIC, want := range cases {

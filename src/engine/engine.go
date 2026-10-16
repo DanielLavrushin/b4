@@ -12,6 +12,7 @@ type PacketVerdict int
 const (
 	VerdictAccept PacketVerdict = iota
 	VerdictDrop
+	VerdictDropFlow
 )
 
 type Direction uint8

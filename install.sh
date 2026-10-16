@@ -2349,6 +2349,10 @@ _openwrt_check_recommended() {
         rec_missing="${rec_missing} kmod-nft-socket"
     fi
 
+    if ! _kmod_available "nf_conntrack_netlink"; then
+        rec_missing="${rec_missing} kmod-nf-conntrack-netlink"
+    fi
+
     if ! _nft_functional; then
         if ! command_exists ipset; then
             rec_missing="${rec_missing} ipset"

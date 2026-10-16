@@ -888,6 +888,7 @@
       "capReplySideBypass": "Reply-side bypass (connmark)",
       "capDnsBeforeConntrack": "DNS queries queued before conntrack (raw)",
       "capDnsQueryCopy": "DNS queries copied, not held (NFLOG)",
+      "capQuicDropPersistence": "QUIC drop holds for the whole connection",
       "capAvailable": "available",
       "capUnavailable": "unavailable",
       "capInstallHint": "Install: {{packages}}",

@@ -111,13 +111,13 @@ func TestADomainOnlySetStopsTheRestOfAQUICFlowAfterItsClientHello(t *testing.T) 
 			if v := sendQUIC(w, flow.first, 50001); v != engine.VerdictAccept {
 				t.Fatalf("the first datagram carries no complete ClientHello yet, want accept, got %v", v)
 			}
-			if v := sendQUIC(w, flow.completing, 50001); v != engine.VerdictDrop {
+			if v := sendQUIC(w, flow.completing, 50001); v != engine.VerdictDropFlow {
 				t.Fatalf("the datagram that completes the ClientHello must be stopped, got %v", v)
 			}
-			if v := sendQUIC(w, flow.resend, 50001); v != engine.VerdictDrop {
+			if v := sendQUIC(w, flow.resend, 50001); v != engine.VerdictDropFlow {
 				t.Errorf("the resend under the server's connection ID belongs to the same flow and must be stopped, got %v", v)
 			}
-			if v := sendQUIC(w, flow.oneRTT, 50001); v != engine.VerdictDrop {
+			if v := sendQUIC(w, flow.oneRTT, 50001); v != engine.VerdictDropFlow {
 				t.Errorf("a short-header packet of the same flow must be stopped, got %v", v)
 			}
 			if v := sendQUIC(w, flow.oneRTT, 50002); v != engine.VerdictAccept {
@@ -243,7 +243,7 @@ func TestAnAddressLearnedForAnotherNameDoesNotRestartAStoppedQUICFlow(t *testing
 	flow := newSplitQUICHello(t, []byte{0x80, 1, 2, 3, 4, 5, 6, 7}, []byte{0x81, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
 
 	sendQUIC(w, flow.first, 50201)
-	if v := sendQUIC(w, flow.completing, 50201); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.completing, 50201); v != engine.VerdictDropFlow {
 		t.Fatalf("the blocked name's ClientHello must be stopped, got %v", v)
 	}
 
@@ -252,10 +252,10 @@ func TestAnAddressLearnedForAnotherNameDoesNotRestartAStoppedQUICFlow(t *testing
 		t.Fatalf("a connection to an allowed name on the same address must pass, got %v", v)
 	}
 
-	if v := sendQUIC(w, flow.resend, 50201); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.resend, 50201); v != engine.VerdictDropFlow {
 		t.Errorf("the stopped flow's resend must stay stopped after another set learned the address, got %v", v)
 	}
-	if v := sendQUIC(w, flow.oneRTT, 50201); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.oneRTT, 50201); v != engine.VerdictDropFlow {
 		t.Errorf("a short-header packet of the stopped flow must stay stopped, got %v", v)
 	}
 }
@@ -277,13 +277,13 @@ func TestAnAddressLearnedByACoalescingSetDoesNotHideABlockedName(t *testing.T) {
 
 	flow := newSplitQUICHello(t, []byte{0x91, 1, 2, 3, 4, 5, 6, 7}, []byte{0x92, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
 	sendQUIC(w, flow.first, 50302)
-	if v := sendQUIC(w, flow.completing, 50302); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.completing, 50302); v != engine.VerdictDropFlow {
 		t.Fatalf("the blocked name's ClientHello must be stopped, got %v", v)
 	}
-	if v := sendQUIC(w, flow.resend, 50302); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.resend, 50302); v != engine.VerdictDropFlow {
 		t.Errorf("a flow to a blocked name must stay stopped on an address the coalescing set learned, got %v", v)
 	}
-	if v := sendQUIC(w, flow.oneRTT, 50302); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.oneRTT, 50302); v != engine.VerdictDropFlow {
 		t.Errorf("a short-header packet of the blocked flow must stay stopped, got %v", v)
 	}
 }
@@ -340,7 +340,7 @@ func TestAStaticAddressSetKeepsTheLaterDatagramsOfAQUICFlow(t *testing.T) {
 	flow := newSplitQUICHello(t, []byte{0x5c, 1, 2, 3, 4, 5, 6, 7}, []byte{0x5d, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
 
 	sendQUIC(w, flow.first, 50006)
-	if v := sendQUIC(w, flow.completing, 50006); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.completing, 50006); v != engine.VerdictDropFlow {
 		t.Fatalf("the ClientHello's name picks the drop set, got %v", v)
 	}
 	if v := sendQUIC(w, flow.resend, 50006); v != engine.VerdictAccept {
@@ -354,7 +354,7 @@ func TestAQUICFlowFollowsTheCurrentConfig(t *testing.T) {
 	flow := newSplitQUICHello(t, []byte{0x5e, 1, 2, 3, 4, 5, 6, 7}, []byte{0x5f, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
 
 	sendQUIC(w, flow.first, 50007)
-	if v := sendQUIC(w, flow.completing, 50007); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.completing, 50007); v != engine.VerdictDropFlow {
 		t.Fatalf("the ClientHello must be dropped, got %v", v)
 	}
 

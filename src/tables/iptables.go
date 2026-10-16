@@ -1141,6 +1141,7 @@ func (manager *IPTablesManager) ClearMSSClamp() {
 
 func (ipt *IPTablesManager) Apply() error {
 	log.Infof("IPTABLES: adding rules")
+	withdrawUDPDropSets()
 	loadKernelModules()
 	m, err := ipt.buildManifest()
 	if err != nil {

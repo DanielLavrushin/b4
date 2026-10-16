@@ -893,6 +893,7 @@
       "capReplySideBypass": "Обход обратного трафика (connmark)",
       "capDnsBeforeConntrack": "DNS-запросы в очереди раньше conntrack (raw)",
       "capDnsQueryCopy": "DNS-запросы копируются, а не задерживаются (NFLOG)",
+      "capQuicDropPersistence": "Блокировка QUIC действует на всё соединение",
       "capAvailable": "доступно",
       "capUnavailable": "недоступно",
       "capInstallHint": "Установите: {{packages}}",

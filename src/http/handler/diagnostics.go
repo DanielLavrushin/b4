@@ -16,10 +16,12 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/nfq"
 	"github.com/daniellavrushin/b4/tables"
+	b4tun "github.com/daniellavrushin/b4/tun"
 	"golang.org/x/sys/unix"
 )
 
@@ -1022,9 +1024,9 @@ func (api *API) collectGeodataInfo() DiagGeodata {
 
 func kernelModuleNames(backend string, st tables.DNSQueryState) []string {
 	if backend == "nftables" {
-		return []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack"}
+		return []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack", "nf_conntrack_netlink"}
 	}
-	modules := []string{"xt_NFQUEUE", "nfnetlink_queue", "xt_connbytes", "xt_multiport", "nf_conntrack"}
+	modules := []string{"xt_NFQUEUE", "nfnetlink_queue", "xt_connbytes", "xt_conntrack", "xt_multiport", "nf_conntrack", "nf_conntrack_netlink"}
 	if dnsQueryCopyRelevant(st) {
 		modules = append(modules, "xt_NFLOG", "nfnetlink_log")
 	}
@@ -1107,6 +1109,7 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 		connmarkCap.Detail = "conntrack mark unavailable — b4 cannot exempt its own upstream (e.g. MTProto WS bridge) from reply-side processing; minor reliability impact"
 	}
 	result.Capabilities = append(result.Capabilities, connmarkCap)
+	result.Capabilities = append(result.Capabilities, quicDropPersistenceRow(cfg))
 
 	listener, _ := nfq.DNSQueryCopyStats()
 	result.Capabilities = append(result.Capabilities, dnsQueryCapabilities(dnsQueries, listener)...)
@@ -1116,6 +1119,103 @@ func collectKernelModules(cfg *config.Config) DiagKernel {
 }
 
 const keeneticNetfilterHint = "keenetic_netfilter"
+
+const conntrackNetlinkModule = "nf_conntrack_netlink"
+
+func quicDropPersistenceRow(cfg *config.Config) DiagCapability {
+	if globalTUNEngine == nil {
+		return quicDropPersistenceCapability(cfg, nfq.QUICDropPersistenceState(), ctnl.Probe(), ctnl.Stats())
+	}
+	st := globalTUNEngine.QUICDropPersistence()
+	ct := ctnl.CurrentStatus()
+	if st.Conntrack {
+		ct = ctnl.Probe()
+	}
+	return tunQUICDropPersistenceCapability(st, ct, ctnl.Stats())
+}
+
+func tunQUICDropPersistenceCapability(st b4tun.QUICDropPersistence, ct ctnl.Status, counts ctnl.Counters) DiagCapability {
+	c := DiagCapability{Name: "quic_drop_persistence"}
+	if st.FirstN {
+		c.Available = true
+		c.Detail = fmt.Sprintf("A QUIC connection that a set drops, rejects or blocks stays dropped: without xt_connbytes the TUN engine counts the packets of each connection itself and processes every later packet of a dropped connection (since start: %d drops held, %d drops not held)", st.Held, st.Unheld)
+		return c
+	}
+
+	unheld := st.Unheld + counts.Dropped + counts.Unavailable + counts.Invalid + counts.Busy + counts.Failed
+	tally := fmt.Sprintf(" (since start: %d conntrack entries deleted, %d drops not held", counts.Deleted, unheld)
+	if counts.Busy > 0 {
+		tally += fmt.Sprintf(", %d of them offloaded", counts.Busy)
+	}
+	tally += ")"
+
+	c.Available = st.Conntrack && ct.Available
+	if c.Available {
+		c.Detail = "A QUIC connection that a set drops, rejects or blocks stays dropped: b4 deletes its conntrack entry, so its later datagrams are steered into the TUN device again" + tally
+		return c
+	}
+	if !ct.Available {
+		c.Missing = []string{conntrackNetlinkModule}
+		c.Packages = tables.KernelModulePackages(c.Missing)
+		c.Reasons = tables.KernelModuleReasons(c.Missing)
+		if ct.Reason != "" {
+			c.Reasons = append(c.Reasons, "conntrack netlink: "+ct.Reason)
+		}
+	}
+	c.Detail = "Conntrack netlink is unavailable: a QUIC connection that a set drops, rejects or blocks is dropped for the first datagrams steered into the TUN device, and its later datagrams reach the server" + tally
+	return c
+}
+
+func quicDropPersistenceCapability(cfg *config.Config, st nfq.QUICDropPersistence, ct ctnl.Status, counts ctnl.Counters) DiagCapability {
+	c := DiagCapability{Name: "quic_drop_persistence"}
+	var enabled, bySet []string
+	for _, f := range []struct {
+		name string
+		v6   bool
+		set  bool
+	}{{"IPv4", false, st.NftV4}, {"IPv6", true, st.NftV6}} {
+		if !cfg.IPFamilyEnabled(f.v6) {
+			continue
+		}
+		enabled = append(enabled, f.name)
+		if f.set {
+			bySet = append(bySet, f.name)
+		}
+	}
+	setCovers := len(enabled) > 0 && len(bySet) == len(enabled)
+	c.Available = setCovers || ct.Available
+
+	unheld := st.Unpersisted + counts.Dropped + counts.Unavailable + counts.Invalid + counts.Busy + counts.Failed
+	tally := fmt.Sprintf(" (since start: %d added to the drop set, %d conntrack entries deleted, %d drops not held", st.NftWritten, counts.Deleted, unheld)
+	if counts.Busy > 0 {
+		tally += fmt.Sprintf(", %d of them offloaded", counts.Busy)
+	}
+	tally += ")"
+
+	switch {
+	case setCovers && ct.Available:
+		c.Detail = fmt.Sprintf("A QUIC connection that a set drops, rejects or blocks stays dropped: b4 adds it to its nftables drop set (%s) and deletes its conntrack entry, so once the set lets it go its datagrams reach b4 again%s", strings.Join(bySet, " and "), tally)
+	case setCovers:
+		c.Detail = fmt.Sprintf("A QUIC connection that a set drops, rejects or blocks stays dropped while it is in b4's nftables drop set (%s): 2 minutes, or until the firewall rules are rebuilt. Without conntrack netlink (nf_conntrack_netlink) b4 cannot delete its conntrack entry, so after that a connection whose first datagram b4 passed can reach the server%s", strings.Join(bySet, " and "), tally)
+	case ct.Available && len(bySet) > 0:
+		c.Detail = fmt.Sprintf("A QUIC connection that a set drops, rejects or blocks stays dropped: b4 adds %s connections to its nftables drop set and deletes the conntrack entry of every dropped connection, so their later datagrams reach b4 again%s", strings.Join(bySet, " and "), tally)
+	case ct.Available:
+		c.Detail = "A QUIC connection that a set drops, rejects or blocks stays dropped: b4 deletes its conntrack entry, so its later datagrams reach b4 again" + tally
+	default:
+		c.Missing = []string{conntrackNetlinkModule}
+		c.Packages = tables.KernelModulePackages(c.Missing)
+		c.Reasons = tables.KernelModuleReasons(c.Missing)
+		if ct.Reason != "" {
+			c.Reasons = append(c.Reasons, "conntrack netlink: "+ct.Reason)
+		}
+		c.Detail = "Conntrack netlink is unavailable"
+		if len(bySet) > 0 {
+			c.Detail += fmt.Sprintf(" and b4's nftables drop set holds %s connections only", strings.Join(bySet, " and "))
+		}
+		c.Detail += ": a QUIC connection that a set drops, rejects or blocks is dropped for the first datagrams b4 queues, and its later datagrams reach the server" + tally
+	}
+	return c
+}
 
 func dnsQueryCopyRelevant(st tables.DNSQueryState) bool {
 	if !st.Affected {

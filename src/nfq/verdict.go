@@ -24,6 +24,7 @@ type verdictCtx struct {
 	hook          uint8
 	hooked        bool
 	dir           engine.Direction
+	flowDrop      bool
 }
 
 type dnsCopyDecision struct {
@@ -57,6 +58,14 @@ func (vc *verdictCtx) drop() bool {
 		}
 	}
 	return true
+}
+
+func (vc *verdictCtx) dropFlow() {
+	vc.flowDrop = true
+}
+
+func (vc *verdictCtx) dropsFlow() bool {
+	return vc.flowDrop && vc.verdict == engine.VerdictDrop
 }
 
 func (vc *verdictCtx) dropUnanswered() bool {
@@ -140,5 +149,8 @@ func (w *Worker) ProcessPacketDir(raw []byte, dir engine.Direction) engine.Packe
 	}
 	vc := &verdictCtx{verdict: engine.VerdictAccept, dir: dir}
 	w.dispatch(vc, raw)
+	if vc.dropsFlow() {
+		return engine.VerdictDropFlow
+	}
 	return vc.verdict
 }

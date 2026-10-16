@@ -27,6 +27,8 @@ type Engine struct {
 	tunName       string
 	routes        *routeManager
 	limiter       *firstNLimiter
+	conntrack     conntrackDeleter
+	holds         flowHoldCounters
 	sender        *sock.Sender
 	clientSender  *sock.Sender
 	trigger       chan struct{}
@@ -161,6 +163,7 @@ func (e *Engine) Start() error {
 		e.limiter = newFirstNLimiter(capture)
 		log.Infof("TUN: without xt_connbytes b4 counts packets itself and processes the first %d tcp / %d udp packets of each connection, as the kernel match would", routes.tcpLimit, routes.udpLimit)
 	}
+	e.startFlowHold()
 	e.pool.SetQueueDirectionExact(e.tcpDirectionExact(), false)
 
 	threads := cfg.Queue.Threads
@@ -247,16 +250,7 @@ func (e *Engine) readLoop(workerIdx int) {
 		}
 
 		raw := buf[:n]
-		pass, flow := true, engine.DirUnknown
-		if l := e.limiter; l != nil {
-			pass, flow = l.admit(raw, time.Now())
-		}
-		dir := e.packetDirection(raw, flow)
-		if !pass {
-			e.forwardPacket(raw, dir)
-			continue
-		}
-		if worker.ProcessPacketDir(raw, dir) == engine.VerdictAccept {
+		if forward, dir := e.processPacket(worker, raw); forward {
 			e.forwardPacket(raw, dir)
 		}
 	}
@@ -373,6 +367,7 @@ func (e *Engine) Stop() {
 		}
 
 		e.wg.Wait()
+		e.stopFlowHold()
 
 		if e.routes != nil {
 			e.routes.teardown()

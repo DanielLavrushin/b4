@@ -31,10 +31,12 @@ type flowCount struct {
 	synSeen bool
 	closing bool
 	dir     engine.Direction
+	heldGen uint64
 	seen    time.Time
 }
 
 type firstNParams struct {
+	gen      uint64
 	tcpLimit uint32
 	udpLimit uint32
 	dupHosts map[[4]byte]struct{}
@@ -43,6 +45,7 @@ type firstNParams struct {
 
 type firstNLimiter struct {
 	params atomic.Pointer[firstNParams]
+	gen    atomic.Uint64
 	passed atomic.Uint64
 
 	mu        sync.Mutex
@@ -58,6 +61,7 @@ func newFirstNLimiter(p captureParams) *firstNLimiter {
 
 func (l *firstNLimiter) setParams(p captureParams) {
 	np := &firstNParams{
+		gen:      l.gen.Add(1),
 		tcpLimit: uint32(max(p.tcpLimit, 1)),
 		udpLimit: uint32(max(p.udpLimit, 1)),
 		dupHosts: make(map[[4]byte]struct{}),
@@ -92,21 +96,30 @@ func (p *firstNParams) duplicated(dst [4]byte) bool {
 	return false
 }
 
-func (l *firstNLimiter) admit(raw []byte, now time.Time) (bool, engine.Direction) {
+func firstNFlowKey(raw []byte) (flowKey, int, bool) {
 	if len(raw) < 20 || raw[0]>>4 != 4 {
-		return true, engine.DirUnknown
+		return flowKey{}, 0, false
 	}
 	ihl := int(raw[0]&0x0f) * 4
 	proto := raw[9]
 	if ihl < 20 || (proto != 6 && proto != 17) || len(raw) < ihl+4 {
-		return true, engine.DirUnknown
+		return flowKey{}, 0, false
 	}
 	if (uint16(raw[6])<<8|uint16(raw[7]))&0x3fff != 0 {
-		return true, engine.DirUnknown
+		return flowKey{}, 0, false
 	}
 	k := flowKey{proto: proto, sport: uint16(raw[ihl])<<8 | uint16(raw[ihl+1]), dport: uint16(raw[ihl+2])<<8 | uint16(raw[ihl+3])}
 	copy(k.src[:], raw[12:16])
 	copy(k.dst[:], raw[16:20])
+	return k, ihl, true
+}
+
+func (l *firstNLimiter) admit(raw []byte, now time.Time) (bool, engine.Direction) {
+	k, ihl, ok := firstNFlowKey(raw)
+	if !ok {
+		return true, engine.DirUnknown
+	}
+	proto := k.proto
 
 	p := l.params.Load()
 	limit := p.udpLimit
@@ -151,16 +164,35 @@ func (l *firstNLimiter) admit(raw []byte, now time.Time) (bool, engine.Direction
 	if syn && (!f.synSeen || f.isn != seq) {
 		*f = flowCount{isn: seq, synSeen: true, dir: engine.DirOriginal}
 	}
+	if f.heldGen != 0 && f.heldGen != p.gen {
+		f.heldGen, f.packets = 0, 0
+	}
 	f.packets++
 	f.seen = now
 	if fin {
 		f.closing = true
 	}
-	pass := dup || f.packets <= limit
+	pass := dup || f.heldGen == p.gen || f.packets <= limit
 	if !pass {
 		l.passed.Add(1)
 	}
 	return pass, f.dir
+}
+
+func (l *firstNLimiter) hold(raw []byte) bool {
+	k, _, ok := firstNFlowKey(raw)
+	if !ok {
+		return false
+	}
+	gen := l.params.Load().gen
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	f, ok := l.flows[k]
+	if !ok {
+		return false
+	}
+	f.heldGen = gen
+	return true
 }
 
 func (l *firstNLimiter) sweep(now time.Time) {

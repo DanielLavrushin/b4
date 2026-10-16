@@ -31,6 +31,8 @@ type NFTablesManager struct {
 	ctPacketsSupported   bool
 	ctDirectionSupported bool
 	sysctlsApplied       bool
+	dropSetV4            bool
+	dropSetV6            bool
 }
 
 func NewNFTablesManager(cfg *config.Config) *NFTablesManager {
@@ -254,11 +256,13 @@ func (n *NFTablesManager) Apply() error {
 		return err
 	}
 	noteQueueDirectionExact(n.ctDirectionSupported, n.ctDirectionSupported)
+	noteUDPDropSets(n.dropSetV4, n.dropSetV6)
 	return nil
 }
 
 func (n *NFTablesManager) apply() error {
 	cfg := n.cfg
+	withdrawUDPDropSets()
 	if !hasBinary("nft") {
 		return fmt.Errorf("nft binary not found")
 	}
@@ -453,6 +457,7 @@ func (n *NFTablesManager) apply() error {
 			return err
 		}
 	}
+	n.dropSetV4, n.dropSetV6 = n.addUDPDropRules()
 	if err := n.addLimitedQueueRule(nftChainName, "original", udpLimit, false, "udp", "dport", udpPortExpr); err != nil {
 		return err
 	}
@@ -516,6 +521,7 @@ func (n *NFTablesManager) Clear() error {
 }
 
 func (n *NFTablesManager) clear(revertSysctls bool) error {
+	withdrawUDPDropSets()
 	if !hasBinary("nft") {
 		return nil
 	}

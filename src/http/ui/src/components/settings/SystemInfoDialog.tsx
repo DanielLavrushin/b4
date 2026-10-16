@@ -796,7 +796,9 @@ export const SystemInfoDialog = ({ open, onClose }: SystemInfoDialogProps) => {
                           ? t("settings.SystemInfo.capDnsBeforeConntrack")
                           : cap.name === "dns_query_copy"
                             ? t("settings.SystemInfo.capDnsQueryCopy")
-                            : cap.name;
+                            : cap.name === "quic_drop_persistence"
+                              ? t("settings.SystemInfo.capQuicDropPersistence")
+                              : cap.name;
                 return (
                   <Stack key={cap.name} spacing={0.3} sx={{ py: 0.3, px: 1 }}>
                     <Stack

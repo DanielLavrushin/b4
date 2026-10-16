@@ -68,7 +68,15 @@ func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint
 	if q != nil {
 		vc.q = q
 	}
-	return w.handleQueued(vc, a, mark)
+	return w.handleQueuedThenPersist(vc, a, mark)
+}
+
+func (w *Worker) handleQueuedThenPersist(vc *verdictCtx, a nfqueue.Attribute, mark uint) int {
+	ret := w.handleQueued(vc, a, mark)
+	if vc.dropsFlow() {
+		w.persistFlowDrop(*a.Payload)
+	}
+	return ret
 }
 
 func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) int {
@@ -1020,6 +1028,8 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		observeFlow(cfg, pkt, sport, dport, set, host)
 	}
 
+	quicFlow := (matchedQUIC || matchedFlow || isQUIC) && !isVoiceMedia
+
 	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
 		if matchedQUIC || matchedFlow || (matchedIP && !matchedLearned) {
 			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
@@ -1042,6 +1052,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				recordBlockedFlow(cfg, pkt, sport, dport, set, blockedTarget)
 			}
 			vc.drop()
+			if quicFlow {
+				vc.dropFlow()
+			}
 			return 0
 		}
 		return vc.accept()
@@ -1053,6 +1066,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	case "drop":
 		vc.drop()
+		if quicFlow {
+			vc.dropFlow()
+		}
 		return 0
 
 	case "reject":
@@ -1067,6 +1083,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
 				_ = w.clientSender().SendIPv6(icmp, pkt.src)
 			}
+		}
+		if quicFlow {
+			vc.dropFlow()
 		}
 		return 0
 

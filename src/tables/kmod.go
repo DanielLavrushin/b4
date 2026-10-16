@@ -46,6 +46,9 @@ var kmodPackageTable = map[string]kmodPackageSet{
 	"ip6table_raw":  {kernel: []string{"kmod-ipt-raw6"}},
 	"xt_NFLOG":      {kernel: []string{"kmod-ipt-nflog"}, userspace: []string{"iptables-mod-nflog"}},
 	"nfnetlink_log": {kernel: []string{"kmod-nfnetlink-log"}},
+	"xt_conntrack":  {kernel: []string{"kmod-ipt-conntrack"}},
+
+	"nf_conntrack_netlink": {kernel: []string{"kmod-nf-conntrack-netlink"}},
 }
 
 const kmodKeeneticHint = `Enable the "Kernel modules for Netfilter" component of KeeneticOS`
@@ -352,6 +355,10 @@ func kmodPkgsFor(missing []string) []string {
 		}
 	}
 	return utils.FilterUniqueStrings(out)
+}
+
+func KernelModulePackages(missing []string) []string {
+	return kmodPkgsFor(missing)
 }
 
 func KernelModuleReasons(missing []string) []string {

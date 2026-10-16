@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/dhcp"
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
@@ -82,6 +83,7 @@ func NewPool(cfg *config.Config) *Pool {
 		w.hostHints = state.hostHints
 		w.quicFlows = state.quicFlows
 		w.direction = state.direction
+		w.flowDrops = state.flowDrops
 		w.ipHealth = state.ipHealth
 		w.pinHealth = state.pinHealth
 		w.goodIPs = state.goodIPs
@@ -95,6 +97,7 @@ func NewPool(cfg *config.Config) *Pool {
 			w.dnsCopy = pool.dnsCopy
 		}
 		dnsCopyCurrent.Store(pool.dnsCopy)
+		flowDropCurrent.Store(state.flowDrops)
 	}
 	pool.startDNSTCP()
 	pool.publishDNSTCPReady()
@@ -159,6 +162,10 @@ func (p *Pool) Start() error {
 	}
 	if len(p.Workers) > 0 {
 		p.dnsCopy.enable(uint32(p.Workers[0].getConfig().Queue.Mark))
+	}
+	if cfg := p.GetFirstWorkerConfig(); cfg != nil && !cfg.Queue.IsDiscovery && p.state != nil && p.conntrack == nil {
+		p.conntrack = ctnl.NewWorker()
+		p.state.flowDrops.setDeleter(p.conntrack)
 	}
 	return nil
 }
@@ -278,6 +285,12 @@ func (p *Pool) Stop() {
 		log.Infof("All NFQueue workers stopped")
 	case <-time.After(timeout):
 		log.Errorf("Timeout (%v) waiting for NFQueue workers to stop", timeout)
+	}
+
+	if p.conntrack != nil {
+		p.state.flowDrops.setDeleter(nil)
+		p.conntrack.Stop()
+		p.conntrack = nil
 	}
 }
 

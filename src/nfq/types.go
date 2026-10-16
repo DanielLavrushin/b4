@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/dhcp"
 	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/sock"
@@ -25,6 +26,7 @@ type Pool struct {
 	tunSrc      *tunSrcResolver
 	dnsTCP      *dnsTCPServer
 	dnsCopy     *dnsCopyListener
+	conntrack   *ctnl.Worker
 }
 
 type PacketInfo struct {
@@ -60,6 +62,7 @@ type Worker struct {
 	hostHints        *hostHintCache
 	quicFlows        *quicFlowCache
 	direction        *queueDirectionState
+	flowDrops        *flowDropPersistence
 	ipHealth         *iphealth.Tracker
 	pinHealth        *pinHealth
 	goodIPs          *iphealth.KnownGood
