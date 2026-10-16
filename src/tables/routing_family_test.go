@@ -41,6 +41,7 @@ func familyResetGlobals(t *testing.T) {
 	logged, delRule := runLogged, routeDelRuleLoop
 	addCheck, delCheck := routeAddSourceCheckRule, routeDelSourceCheckRule
 	hostIfaces, linkType := routeHostIfaces, routeLinkType
+	marks := routeMarksByIface.Load()
 	routeMu.Lock()
 	synced := routeSyncedCfg
 	routeSyncedCfg = nil
@@ -64,9 +65,11 @@ func familyResetGlobals(t *testing.T) {
 		routeMu.Lock()
 		routeSyncedCfg = synced
 		routeMu.Unlock()
+		routeMarksByIface.Store(marks)
 	})
 	routeEngine = nil
 	routeRuleCache = make(map[string]routeState)
+	routeMarksByIface.Store(&map[string][]uint32{})
 	routeIfaceAuto = make(map[string]routeState)
 	routeRefreshedAt = make(map[string]time.Time)
 	runLogged = func(op string, args ...string) bool { return true }

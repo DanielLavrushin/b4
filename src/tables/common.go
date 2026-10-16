@@ -33,7 +33,7 @@ var (
 	addRulesFn          = addRules
 	clearRulesFn        = clearRules
 
-	BackendAppliedFunc func(backend string)
+	OwnPacketsShieldFunc func(shielded bool)
 )
 
 func AddRules(cfg *config.Config) error {
@@ -84,9 +84,7 @@ func addRules(cfg *config.Config) error {
 
 	backend := detectFirewallBackend(cfg)
 	rulesAppliedBackend = backend
-	if BackendAppliedFunc != nil {
-		BackendAppliedFunc(backend)
-	}
+	publishOwnPacketsShield(backend)
 	log.Tracef("Detected firewall backend: %s", backend)
 
 	if backend == backendNFTables {
@@ -421,6 +419,12 @@ func setSysctlOrProc(name, val string) {
 func getSysctlOrProc(name string) string {
 	out, _ := run("sh", "-c", "sysctl -n "+name+" 2>/dev/null || cat /proc/sys/"+strings.ReplaceAll(name, ".", "/"))
 	return strings.TrimSpace(out)
+}
+
+func publishOwnPacketsShield(backend string) {
+	if OwnPacketsShieldFunc != nil {
+		OwnPacketsShieldFunc(OwnPacketsShielded(backend))
+	}
 }
 
 func OwnPacketsShielded(backend string) bool {

@@ -2,29 +2,133 @@ package tables
 
 import (
 	"errors"
+	"slices"
+	"sync/atomic"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
 )
 
-func TestTheRulesReportTheBackendTheyWereAppliedWith(t *testing.T) {
-	for _, backend := range []string{backendIPTables, backendIPTablesLegacy, backendNFTables} {
-		t.Run(backend, func(t *testing.T) {
+func recordOwnPacketsShield(t *testing.T) *[]bool {
+	t.Helper()
+	var got []bool
+	prev := OwnPacketsShieldFunc
+	OwnPacketsShieldFunc = func(shielded bool) { got = append(got, shielded) }
+	t.Cleanup(func() { OwnPacketsShieldFunc = prev })
+	return &got
+}
+
+func stubNftTableListing(t *testing.T, listing *string) {
+	t.Helper()
+	hostRun := run
+	run = func(args ...string) (string, error) {
+		if slices.Equal(args, []string{"nft", "list", "tables"}) {
+			return *listing, nil
+		}
+		return hostRun(args...)
+	}
+	t.Cleanup(func() { run = hostRun })
+}
+
+func TestAppliedRulesPublishWhetherB4sOwnPacketsAreShielded(t *testing.T) {
+	for _, c := range []struct {
+		backend string
+		want    bool
+	}{
+		{backendIPTablesLegacy, true},
+		{backendNFTables, false},
+	} {
+		t.Run(c.backend, func(t *testing.T) {
 			h := newGoldenHost(t)
 			goldenIsolate(t, h)
-			var got []string
-			prev := BackendAppliedFunc
-			BackendAppliedFunc = func(b string) { got = append(got, b) }
-			t.Cleanup(func() { BackendAppliedFunc = prev })
+			listing := ""
+			stubNftTableListing(t, &listing)
+			got := recordOwnPacketsShield(t)
 
-			cfg := goldenConfig(backend, config.DSCPConfig{})
-			if err := AddRules(cfg); err != nil {
+			if err := AddRules(goldenConfig(c.backend, config.DSCPConfig{})); err != nil {
 				t.Fatalf("AddRules: %v", err)
 			}
-			if len(got) != 1 || got[0] != backend {
-				t.Fatalf("reported %q, want [%s]: the packet engine decides which marks to check for another route by the backend in use", got, backend)
+			if !slices.Equal(*got, []bool{c.want}) {
+				t.Fatalf("published %v, want [%v]: the packet engine checks every mark for another route only while b4's OUTPUT accept shields its own packets", *got, c.want)
 			}
 		})
+	}
+}
+
+func TestEveryMonitorCheckLooksAgainForNftablesTablesOfOtherServices(t *testing.T) {
+	h := newGoldenHost(t)
+	goldenIsolate(t, h)
+	listing := ""
+	stubNftTableListing(t, &listing)
+	cfg := goldenConfig(backendIPTablesLegacy, config.DSCPConfig{})
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	got := recordOwnPacketsShield(t)
+	var ptr atomic.Pointer[config.Config]
+	ptr.Store(cfg)
+	m := &Monitor{cfgPtr: &ptr, backend: backendNFTables}
+
+	for _, listed := range []string{"table inet fw4\n", ""} {
+		listing = listed
+		if _, restored := m.ensureRules(false); restored {
+			t.Fatalf("the monitor rebuilt rules that were in place")
+		}
+	}
+	if want := []bool{false, true}; !slices.Equal(*got, want) {
+		t.Fatalf("published %v, want %v: another service can add or drop its nftables tables while b4's legacy rules stay in place", *got, want)
+	}
+}
+
+func TestAMonitorCheckThatLeavesTheRebuildToARefreshStillLooksForNftablesTables(t *testing.T) {
+	h := newGoldenHost(t)
+	goldenIsolate(t, h)
+	listing := ""
+	stubNftTableListing(t, &listing)
+	applied := goldenConfig(backendIPTablesLegacy, config.DSCPConfig{})
+	if err := AddRules(applied); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	got := recordOwnPacketsShield(t)
+	saved := goldenConfig(backendIPTablesLegacy, config.DSCPConfig{})
+	saved.Queue.Mark = 0x4000000
+	var ptr atomic.Pointer[config.Config]
+	ptr.Store(saved)
+	m := &Monitor{cfgPtr: &ptr, backend: backendNFTables}
+	activeSteering = &discoverySteering{}
+
+	for _, listed := range []string{"table inet fw4\n", ""} {
+		listing = listed
+		if _, acted := m.ensureRules(false); !acted || m.pendingApply != saved {
+			t.Fatalf("the check did not leave the new queue mark to the refresh that waits for the Discovery run")
+		}
+	}
+	if want := []bool{false, true}; !slices.Equal(*got, want) {
+		t.Fatalf("published %v, want %v: b4's applied rules stay in place for the whole Discovery run, and another service can add or drop its nftables tables meanwhile", *got, want)
+	}
+}
+
+func TestATUNMonitorCheckPublishesNothing(t *testing.T) {
+	stubTUNFirewall(t, nil)
+	got := recordOwnPacketsShield(t)
+	newTUNTestMonitor(newTUNTestConfig()).ensureRules(false)
+	if len(*got) != 0 {
+		t.Fatalf("published %v: in TUN mode b4 queues no packet whose foreign mark it could check", *got)
+	}
+}
+
+func TestSkippedRulesPublishNothing(t *testing.T) {
+	h := newGoldenHost(t)
+	goldenIsolate(t, h)
+	got := recordOwnPacketsShield(t)
+
+	cfg := goldenConfig(backendIPTables, config.DSCPConfig{})
+	cfg.System.Tables.SkipSetup = true
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	if len(*got) != 0 {
+		t.Fatalf("published %v: with firewall setup skipped b4 applied no rules", *got)
 	}
 }
 
@@ -73,14 +177,7 @@ func TestNftablesTablesOfOtherServicesLeaveB4sOwnPacketsUnshielded(t *testing.T)
 
 func TestOnlyLegacyIPTablesShieldsB4sOwnPackets(t *testing.T) {
 	stubSyncMapEntry(t, &hasBinaryCache, "nft", false)
-	prev, had := xtVariantCache.Load(backendIPTables)
-	t.Cleanup(func() {
-		if had {
-			xtVariantCache.Store(backendIPTables, prev)
-		} else {
-			xtVariantCache.Delete(backendIPTables)
-		}
-	})
+	stubSyncMapEntry(t, &xtVariantCache, backendIPTables, false)
 	for _, c := range []struct {
 		backend string
 		nft     bool
@@ -101,6 +198,7 @@ func TestOnlyLegacyIPTablesShieldsB4sOwnPackets(t *testing.T) {
 }
 
 func TestTheRouteMarksOfInterfaceSetsArePublished(t *testing.T) {
+	prevSnap := routeMarksByIface.Load()
 	routeMu.Lock()
 	prevCache := routeRuleCache
 	routeRuleCache = map[string]routeState{
@@ -112,7 +210,6 @@ func TestTheRouteMarksOfInterfaceSetsArePublished(t *testing.T) {
 	}
 	routePublishMarksLocked()
 	routeMu.Unlock()
-	prevSnap := routeMarksByIface.Load()
 	t.Cleanup(func() {
 		routeMu.Lock()
 		routeRuleCache = prevCache
@@ -129,23 +226,5 @@ func TestTheRouteMarksOfInterfaceSetsArePublished(t *testing.T) {
 	}
 	if got := RoutedIfaceMarks("eth7"); len(got) != 0 {
 		t.Fatalf("eth7 marks %#x, want none", got)
-	}
-}
-
-func TestSkippedRulesReportNoBackend(t *testing.T) {
-	h := newGoldenHost(t)
-	goldenIsolate(t, h)
-	called := false
-	prev := BackendAppliedFunc
-	BackendAppliedFunc = func(string) { called = true }
-	t.Cleanup(func() { BackendAppliedFunc = prev })
-
-	cfg := goldenConfig(backendIPTables, config.DSCPConfig{})
-	cfg.System.Tables.SkipSetup = true
-	if err := AddRules(cfg); err != nil {
-		t.Fatalf("AddRules: %v", err)
-	}
-	if called {
-		t.Fatal("with firewall setup skipped no backend was applied, so none may be reported")
 	}
 }

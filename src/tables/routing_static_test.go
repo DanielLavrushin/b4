@@ -461,8 +461,6 @@ func TestRoutingSyncConfigPublishesTheMarksOfInterfaceSets(t *testing.T) {
 		t.Skip("RoutingSyncConfig gives up before it touches a set when the ip binary is missing")
 	}
 	staticResetGlobals(t)
-	prevSnap := routeMarksByIface.Load()
-	t.Cleanup(func() { routeMarksByIface.Store(prevSnap) })
 
 	set := staticTestSet(config.RoutingModeInterface, []string{"203.0.113.9"})
 	cfg := familyTestConfig(true, false)
@@ -497,9 +495,6 @@ func TestADNSAnswerThatInstallsASetPublishesItsMark(t *testing.T) {
 		t.Skip("RoutingHandleDNS gives up before it touches a set when the ip binary is missing")
 	}
 	familyResetGlobals(t)
-	prevSnap := routeMarksByIface.Load()
-	t.Cleanup(func() { routeMarksByIface.Store(prevSnap) })
-	routeMarksByIface.Store(&map[string][]uint32{})
 
 	set := familyTestSet()
 	cfg := queueMarkTestConfig(0x8000)

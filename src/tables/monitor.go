@@ -525,6 +525,7 @@ func (m *Monitor) ensureRulesLocked(requested bool) (*config.Config, bool) {
 	cfg := m.cfgPtr.Load()
 	if m.checkRules(cfg) {
 		m.pendingApply = nil
+		m.recheckOwnPacketsShield()
 		if !m.tun && m.firewallBackend() == backendNFTables {
 			NewNFTablesManager(cfg).retryFailedDNSTCP()
 		}
@@ -535,6 +536,7 @@ func (m *Monitor) ensureRulesLocked(requested bool) (*config.Config, bool) {
 			m.pendingApply = cfg
 			log.Infof("Tables rules still match the previous configuration while a newer one is being applied, leaving the rebuild to that apply")
 		}
+		m.recheckOwnPacketsShield()
 		return cfg, true
 	}
 	m.pendingApply = nil
@@ -551,6 +553,12 @@ func (m *Monitor) ensureRulesLocked(requested bool) (*config.Config, bool) {
 	}
 	m.snapshotRoutingIfaces(cfg)
 	return cfg, true
+}
+
+func (m *Monitor) recheckOwnPacketsShield() {
+	if !m.tun {
+		publishOwnPacketsShield(m.firewallBackend())
+	}
 }
 
 func (m *Monitor) restoreRules(cfg *config.Config) error {
