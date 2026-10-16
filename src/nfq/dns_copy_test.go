@@ -563,6 +563,27 @@ func TestMarkedCopiesAreIgnored(t *testing.T) {
 	}
 }
 
+func TestCopiesWithAForeignMarkSharingTheNoDPIBitAreActedOn(t *testing.T) {
+	stubRouteAwait(t)
+	r := newCopyRig(t, nil, copyPinSet())
+
+	for i, mark := range []uint32{0x0ffffaaa, 0x4d616769, config.SelfDialNoDPIBit} {
+		p := copyOf(copyHookOutput, rigWAN, rigOutside, uint16(50200+i), dns.BuildQuery("pin.example.com", uint16(0x300+i), dnsTypeA))
+		p.Mark = mark
+		r.read(p)
+		if got := r.l.stats.claimsAnswer.Load(); got != uint64(i+1) {
+			t.Fatalf("claims_answer = %d after a copy marked 0x%x: another program's mark that only shares bit 0x%x with b4's own dials must still be acted on", got, mark, config.SelfDialNoDPIBit)
+		}
+	}
+
+	p := copyOf(copyHookOutput, rigWAN, rigOutside, 50300, dns.BuildQuery("pin.example.com", 0x3ff, dnsTypeA))
+	p.Mark = config.SelfDialRelayMark | 0x3f00
+	r.read(p)
+	if got := r.l.stats.ignored.Load(); got != 1 {
+		t.Fatalf("copies_ignored = %d: b4's own no-DPI dial must stay ignored when another program adds routing bits to its mark", got)
+	}
+}
+
 func TestForeignPrefixIsIgnored(t *testing.T) {
 	stubRouteAwait(t)
 	r := newCopyRig(t, nil, copyPinSet())

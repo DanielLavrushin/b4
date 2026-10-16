@@ -307,24 +307,33 @@ func TestValidateMarks(t *testing.T) {
 		})
 	}
 
-	t.Run("derived discovery flow mark carrying the no-DPI bit", func(t *testing.T) {
+	t.Run("derived discovery flow mark carrying only the no-DPI bit", func(t *testing.T) {
 		cfg := NewConfig()
 		cfg.Queue.Mark = uint(SelfDialNoDPIBit | 0x8000)
-		if err := cfg.Validate(); err == nil {
-			t.Error("a derived discovery flow mark with the no-DPI bit must be refused, Discovery would test without any strategy")
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("the runtime skip matches the whole self-dial mark, so a derived flow mark that merely carries the bit is not a conflict: %v", err)
 		}
 	})
 
-	t.Run("explicit discovery marks carrying the no-DPI bit", func(t *testing.T) {
+	t.Run("derived discovery flow mark matching the self-dial mark", func(t *testing.T) {
+		cfg := NewConfig()
+		cfg.Queue.Mark = uint(SelfDialRelayMark) - 1
+		ve := mustValidationErr(t, cfg.Validate())
+		if findField(ve, "system.checker.discovery_flow_mark", "mark_conflict") == nil {
+			t.Errorf("a derived discovery flow mark 0x%x matches SelfDialRelayMark and must be refused on discovery_flow_mark, Discovery would test without any strategy: %+v", cfg.DiscoveryFlowMark(), ve.Fields)
+		}
+	})
+
+	t.Run("explicit discovery marks matching the self-dial mark", func(t *testing.T) {
 		for _, tc := range []struct{ flow, injected uint }{
-			{uint(SelfDialNoDPIBit | 0x123), 0xBBBB},
-			{0xAAAA, uint(SelfDialNoDPIBit | 0x456)},
+			{uint(SelfDialRelayMark | 0x123), 0xBBBB},
+			{0xAAAA, uint(SelfDialRelayMark | 0x456)},
 		} {
 			cfg := NewConfig()
 			cfg.System.Checker.DiscoveryFlowMark = tc.flow
 			cfg.System.Checker.DiscoveryInjectedMark = tc.injected
 			if err := cfg.Validate(); err == nil {
-				t.Errorf("discovery marks 0x%x/0x%x carry the no-DPI bit and must be refused", tc.flow, tc.injected)
+				t.Errorf("discovery marks 0x%x/0x%x match the self-dial skip pattern and must be refused", tc.flow, tc.injected)
 			}
 		}
 	})

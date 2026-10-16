@@ -340,13 +340,20 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		be.snapshotChainRules(st.chainPre, true),
 		be.snapshotChainRules(st.chainOut, true),
 	}
+	listed := routeLocalGuardSwapLists(st.chainPre, nil)
 	rebuilt := false
+	appended := false
 	defer func() {
 		if !rebuilt {
-			return
+			routeLocalGuardSwapLists(st.chainPre, listed)
 		}
 		for _, snap := range superseded {
-			be.dropChainRules(snap)
+			switch {
+			case rebuilt:
+				be.dropChainRules(snap)
+			case appended:
+				be.revertChainRules(snap)
+			}
 		}
 	}()
 	if cfg.Queue.IPv4Enabled {
@@ -360,6 +367,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		}
 	}
 
+	appended = true
 	gate := routeSetDeviceGate(cfg, set)
 	routeWarnDeviceGate(set.Name, gate)
 	sourceScoped := routeSetIsSourceScoped(set)
@@ -607,6 +615,7 @@ func routeCleanupProxyRule(be routeBackend, st routeState, keepSets bool) {
 	be.deleteJumpRules("PREROUTING", st.chainPre, true)
 	be.flushChain(st.chainPre, true)
 	be.deleteChain(st.chainPre, true)
+	routeLocalGuardSwapLists(st.chainPre, nil)
 
 	if be.name() == backendNFTables {
 		deleteNftRulesContaining(routeNftOutput, "@"+st.setV4)

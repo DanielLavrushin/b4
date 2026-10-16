@@ -78,7 +78,7 @@ Xray still needs a route to its own server that does not lead back into the tunn
 
 ## Packet manipulation with a tunnel egress
 
-A set routed into a TUN, TAP or WireGuard interface does not run its bypass strategy: the segment b4 would change is the inner one, which never reaches the network as b4 wrote it. Its connections end with `[routed->xray0]` on the **Logs** page, and `flags:routed` finds them on the **Traffic** page. The strategy tabs keep their settings, which do not apply while the set routes into the tunnel.
+A set routed into a TUN, TAP or WireGuard interface does not run its bypass strategy: the segment b4 would change is the inner one, which never reaches the network as b4 wrote it. Its connections end with `[routed->xray0]` on the **Logs** page, and `flags:routed` finds them on the **Traffic** page. The strategy tabs keep their settings, which do not apply while the set routes into the tunnel. In NFQUEUE mode, a connection that another service sends into such an interface gets no strategy either; see [Packets that leave through a tunnel](../internals/capture.md#tunnel-egress).
 
 ## XrayUI's TPROXY rule and connections b4 diverts
 

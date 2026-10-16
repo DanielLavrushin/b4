@@ -27,6 +27,16 @@ Packets that carry the queue mark of b4 pass without being queued. The queue mar
 
 With iptables, an address family whose iptables lacks the `NFQUEUE` target or the `connbytes` match gets no capture rules. When neither IPv4 nor IPv6 can take them, the engine does not start.
 
+### Packets that leave through a tunnel {#tunnel-egress}
+
+A packet that leaves through a WireGuard or AmneziaWG interface or a TUN or TAP device that is up gets no strategy: a set that matches it sends no fakes, splits nothing and leaves its QUIC and the replies of its connection alone. Block sets still block it. The connection of such a packet that a set matches ends with `[tunnel->wg0]` on the **Logs** page, and `flags:tunnel` finds it on the **Traffic** page.
+
+The DPI on the uplink sees only the tunnel's own packets. A service that routes by mark, such as MagiTrickle or a KeeneticOS policy, sends the connection's own packets into the tunnel. The packets b4 injects carry the queue mark instead of that service's mark. They follow the router's main routing and can leave outside the tunnel.
+
+A tunnel that carries the IPv4 default route of the main table, the one with the lowest metric, is the router's uplink. The packets b4 injects follow it too, and packets that leave through it get strategies as usual.
+
+A set that b4 itself routes into such a tunnel keeps its own rules; see [Packet manipulation with a tunnel egress](../guides/xray.md#packet-manipulation-with-a-tunnel-egress).
+
 ### Capture Interfaces in depth {#capture-interfaces}
 
 **Capture Interfaces** is a filter on the rules above, not a list of interfaces b4 attaches to, and it does not choose a direction. For forwarded traffic the interface compared is the one the packet leaves by, which the routing table decides. A VPN client or a transparent proxy that moves the default route therefore moves every packet to another interface, and a selection made before that stops matching.

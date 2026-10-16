@@ -29,6 +29,7 @@ type linkWatcher struct {
 	debounceMu    sync.Mutex
 	debounceTimer *time.Timer
 	pendingIfaces map[string]struct{}
+	reinstalls    sync.WaitGroup
 }
 
 func newLinkWatcher(cfgPtr *atomic.Pointer[config.Config]) *linkWatcher {
@@ -69,11 +70,21 @@ func (w *linkWatcher) Stop() {
 	w.wg.Wait()
 
 	w.debounceMu.Lock()
-	if w.debounceTimer != nil {
-		w.debounceTimer.Stop()
-		w.debounceTimer = nil
+	if w.debounceTimer != nil && w.debounceTimer.Stop() {
+		w.reinstalls.Done()
 	}
+	w.debounceTimer = nil
 	w.debounceMu.Unlock()
+	w.reinstalls.Wait()
+}
+
+func (w *linkWatcher) stopped() bool {
+	select {
+	case <-w.stop:
+		return true
+	default:
+		return false
+	}
 }
 
 func (w *linkWatcher) loop() {
@@ -161,28 +172,36 @@ func isWatchedIface(cfg *config.Config, ifname string) bool {
 func (w *linkWatcher) scheduleReinstall(ifname string) {
 	w.debounceMu.Lock()
 	defer w.debounceMu.Unlock()
+	if w.stopped() {
+		return
+	}
 	w.pendingIfaces[ifname] = struct{}{}
 	if w.debounceTimer != nil {
 		return
 	}
-	w.debounceTimer = time.AfterFunc(linkWatcherDebounce, func() {
-		select {
-		case <-w.stop:
-			return
-		default:
-		}
-		w.debounceMu.Lock()
-		ifaces := w.pendingIfaces
-		w.pendingIfaces = make(map[string]struct{})
-		w.debounceTimer = nil
-		w.debounceMu.Unlock()
+	w.reinstalls.Add(1)
+	w.debounceTimer = time.AfterFunc(linkWatcherDebounce, w.reinstallPending)
+}
 
-		cfg := w.cfgPtr.Load()
-		if cfg == nil {
+func (w *linkWatcher) reinstallPending() {
+	defer w.reinstalls.Done()
+	if w.stopped() {
+		return
+	}
+	w.debounceMu.Lock()
+	ifaces := w.pendingIfaces
+	w.pendingIfaces = make(map[string]struct{})
+	w.debounceTimer = nil
+	w.debounceMu.Unlock()
+
+	cfg := w.cfgPtr.Load()
+	if cfg == nil {
+		return
+	}
+	for iface := range ifaces {
+		if w.stopped() {
 			return
 		}
-		for iface := range ifaces {
-			RoutingReinstallForInterface(cfg, iface)
-		}
-	})
+		routeReinstallForInterface(cfg, iface, w.stopped)
+	}
 }

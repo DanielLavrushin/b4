@@ -25,6 +25,7 @@ type verdictCtx struct {
 	hooked        bool
 	dir           engine.Direction
 	flowDrop      bool
+	tunnel        string
 }
 
 type dnsCopyDecision struct {

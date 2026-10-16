@@ -85,7 +85,7 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 		return vc.accept()
 	}
 
-	if a.Mark != nil && (config.IsTelegramBridgeMark(*a.Mark) || *a.Mark&config.SelfDialNoDPIBit != 0) {
+	if a.Mark != nil && (config.IsTelegramBridgeMark(*a.Mark) || config.IsSelfDialSkipMark(*a.Mark)) {
 		return vc.accept()
 	}
 
@@ -95,6 +95,7 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 		}
 		vc.ifaceFiltered = true
 	}
+	vc.tunnel = tunnelEgress(a)
 
 	select {
 	case <-w.ctx.Done():
@@ -419,7 +420,8 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	routeTProxy := matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode)
 	routeIfaceHandoff := matched && set != nil && !routeTProxy && set.RoutingHandsOffPackets()
-	routeHandsOff := routeTProxy || routeIfaceHandoff
+	foreignTunnel := vc.tunnel != "" && (set == nil || !set.Routing.Enabled)
+	routeHandsOff := routeTProxy || routeIfaceHandoff || foreignTunnel
 
 	if matched && !routeHandsOff && cfg.IsTCPPort(dport) && duplicatesPackets(set) {
 		log.Tracef("TCP duplicate to %s:%d (%d copies, set: %s)", pkt.dstStr, dport, set.TCP.Duplicate.Count, set.Name)
@@ -456,7 +458,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	isRst := (tcpFlags & 0x04) != 0
 	if isRst && cfg.IsTCPPort(dport) {
 		log.Tracef("RST to %s:%d", pkt.dstStr, dport)
-		if matched && set != nil && set.TCP.RSTProtection.Enabled {
+		if matched && set != nil && set.TCP.RSTProtection.Enabled && !foreignTunnel {
 			if w.connTracker.ShouldDropOutboundRST(connKey) {
 				log.Warnf("RST protection: dropped outbound RST to %s:%d — connection not established", pkt.dstStr, dport)
 				recordRSTDrop(cfg)
@@ -663,10 +665,14 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	routeTProxy = matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode)
 	routeIfaceHandoff = matched && set != nil && !routeTProxy && set.RoutingHandsOffPackets()
-	routeHandsOff = routeTProxy || routeIfaceHandoff
+	foreignTunnel = vc.tunnel != "" && (set == nil || !set.Routing.Enabled)
+	routeHandsOff = routeTProxy || routeIfaceHandoff || foreignTunnel
 
 	if routeIfaceHandoff && classifyReason == "" {
 		classifyReason = "routed->" + set.Routing.EgressInterface
+	}
+	if matched && set != nil && foreignTunnel && classifyReason == "" {
+		classifyReason = "tunnel->" + vc.tunnel
 	}
 
 	if matched && isClientHello && !routeHandsOff && set.TCP.IPBlockDetect.Enabled && host != "" && cfg.IsTCPPort(dport) {
@@ -711,7 +717,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	stallCount := 0
 	stallFirstSeen := time.Time{}
 	stallTracked := false
-	if matched && isClientHello && strippedSyn == nil && host != "" && cfg.IsTCPPort(dport) &&
+	if matched && isClientHello && strippedSyn == nil && host != "" && cfg.IsTCPPort(dport) && !foreignTunnel &&
 		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) {
 		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host)
 		stallTracked = true
@@ -789,7 +795,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			}
 		}
 
-		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
+		if !foreignTunnel && (set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active()) {
 			w.connTracker.RegisterOutgoing(connKey, set)
 			if isAck && !isSyn && !isRst && cfg.IsTCPPort(dport) && set.TCP.RSTProtection.Enabled {
 				w.connTracker.MarkEstablished(connKey)
@@ -1012,8 +1018,13 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
+	udpForeignTunnel := vc.tunnel != "" && (set == nil || !set.Routing.Enabled)
+	udpReason := ""
+	if shouldHandle && udpForeignTunnel {
+		udpReason = "tunnel->" + vc.tunnel
+	}
 	if !cfg.Queue.IsDiscovery {
-		log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, "")
+		log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, udpReason)
 	}
 
 	if isVoiceMedia && set != nil && set.UDP.FilterSTUN {
@@ -1058,6 +1069,10 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			}
 			return 0
 		}
+		return vc.accept()
+	}
+
+	if udpForeignTunnel {
 		return vc.accept()
 	}
 

@@ -1502,6 +1502,7 @@
         "telegramBridge": "Telegram bridge",
         "egress": "Egress",
         "egressIp": "Egress IP",
+        "egressGateway": "Gateway",
         "table": "Table",
         "redirect": "redirect",
         "fragment": "Fragment",
@@ -2190,8 +2191,14 @@
       "egressIp": "Egress IP (optional)",
       "egressIpHelper": "Rewrite the source address of this set's traffic. Leave empty to keep the interface's own address.",
       "egressIpNeedsInterface": "Pick an output interface first",
+      "egressGateway": "Gateway (optional)",
+      "egressGatewayHelper": "Next hop for this set's default route. Leave empty to use the gateway B4 finds on the interface, or a plain route through it.",
+      "egressGatewayNeedsInterface": "Pick an output interface first",
+      "egressGatewayInvalid": "Enter an IPv4 or IPv6 address, for example 192.168.1.254 or fe80::1",
       "egressIpNote": "This set leaves through {{iface}} with source {{ip}}. B4 puts that address on {{iface}} for you and takes it back afterwards. The device upstream still has to route that source into the path you want - B4 only stamps it.",
       "flowIfaceWithSource": "{{iface}} as {{ip}}",
+      "flowIfaceWithGateway": "{{iface}} via {{gw}}",
+      "flowIfaceWithSourceAndGateway": "{{iface}} as {{ip}} via {{gw}}",
       "upstreamHost": "Upstream SOCKS5 host",
       "upstreamHostHelper": "Hostname or IP of the SOCKS5 proxy. Use 127.0.0.1 if Xray/sing-box runs on the same router.",
       "upstreamPort": "Upstream SOCKS5 port",
@@ -3775,7 +3782,9 @@
     "not_found": "The set or item no longer exists; it may have been deleted elsewhere. Reload the page.",
     "validation_failed": "Some values were rejected: {{detail}}",
     "expose_requires_web_auth": "Exposing SOCKS5 to the internet needs a username and password on the web interface, which SOCKS5 clients can otherwise reach through the proxy",
-    "redacted_placeholder": "{{path}} holds the [redacted] placeholder of a safe copy instead of a real value"
+    "redacted_placeholder": "{{path}} holds the [redacted] placeholder of a safe copy instead of a real value",
+    "invalid_egress_ip": "Set \"{{set}}\": \"{{ip}}\" cannot be the egress IP. Enter one IPv4 or IPv6 address that is not a loopback, multicast or unspecified (0.0.0.0, ::) address.",
+    "invalid_egress_gateway": "Set \"{{set}}\": \"{{ip}}\" cannot be the gateway. Enter one IPv4 or IPv6 address without brackets or a /prefix; a %zone is allowed only on an IPv6 address and only when it names this set's output interface. Loopback, multicast and unspecified (0.0.0.0, ::) addresses, 255.255.255.255 and the set's own egress IP are refused."
   },
   "hub": {
     "title": "Community Hub",
