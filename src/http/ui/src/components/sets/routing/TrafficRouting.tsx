@@ -498,6 +498,7 @@ export const TrafficRouting = ({
             <Grid size={{ xs: 12, md: 6 }}>
               <B4TextField
                 label={t("sets.routing.egressGateway")}
+                path="routing.egress_gateway"
                 value={routing.egress_gateway ?? ""}
                 onChange={(e) =>
                   onChange("routing.egress_gateway", e.target.value)

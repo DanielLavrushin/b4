@@ -2,12 +2,13 @@ export const SET_PATH_LABEL_KEYS: Record<string, string> = {
   name: "core.setName",
   "targets.sni_domains": "sets.targets.manualDomains",
   "targets.ip": "sets.targets.manualIps",
+  "targets.geoip_categories": "sets.targets.geoipCategories",
+  "targets.geosite_categories": "sets.targets.geositeCategories",
   "targets.asns": "sets.targets.asn.activeTitle",
   "targets.source_devices": "core.devices.devicesTitle",
-  "targets.geosite_categories": "sets.targets.geositeCategories",
-  "targets.geoip_categories": "sets.targets.geoipCategories",
   "fragmentation.strategy_pool": "sets.tcp.splitting.strategyPool",
   "faking.tls_mod": "sets.faking.fakeSni.tlsModTitle",
+  "routing.egress_gateway": "sets.routing.egressGateway",
 };
 
 export const SET_VALUE_LABEL_KEYS: Record<string, Record<string, string>> = {
