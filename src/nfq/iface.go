@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/daniellavrushin/b4/netif"
 	"github.com/florianl/go-nfqueue"
 )
 
@@ -100,6 +101,18 @@ func packetIfaceIndex(a nfqueue.Attribute) (uint32, ifaceRole) {
 
 func (w *Worker) matchesInterface(a nfqueue.Attribute) bool {
 	return w.ifaceAllowed(packetIfaceIndex(a))
+}
+
+func tunnelEgress(a nfqueue.Attribute) string {
+	idx, role := packetIfaceIndex(a)
+	if role != ifaceLeaving {
+		return ""
+	}
+	name := getIfaceName(idx)
+	if name == "" || !netif.TunnelAndUp(name) || netif.CarriesDefaultRoute(name) {
+		return ""
+	}
+	return name
 }
 
 func (w *Worker) ifaceAllowed(idx uint32, role ifaceRole) bool {

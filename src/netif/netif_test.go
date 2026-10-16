@@ -168,3 +168,88 @@ func TestMarkDownKeepsTheKindAndDropsTheCarrier(t *testing.T) {
 		t.Error("marking an interface b4 never classified must not invent a cache entry")
 	}
 }
+
+func TestAmneziaWGCountsAsATunnelOnlyForTheEgressCheck(t *testing.T) {
+	root := fakeSysfs(t)
+	mkIface(t, root, "awg0", map[string]string{"uevent": "DEVTYPE=amneziawg\nINTERFACE=awg0\n", "flags": "0x1003\n"})
+	mkIface(t, root, "awg1", map[string]string{"uevent": "DEVTYPE=amneziawg\nINTERFACE=awg1\n", "flags": "0x1002\n"})
+	mkIface(t, root, "wg0", map[string]string{"uevent": "DEVTYPE=wireguard\nINTERFACE=wg0\n", "flags": "0x1003\n"})
+	mkIface(t, root, "xray0", map[string]string{"tun_flags": "0x1001\n", "flags": "0x1003\n"})
+	mkIface(t, root, "eth0", map[string]string{"uevent": "INTERFACE=eth0\n", "flags": "0x1003\n"})
+
+	if got := Of("awg0"); got != KindAmneziaWG {
+		t.Fatalf("Of(awg0) = %v, want KindAmneziaWG", got)
+	}
+	for _, c := range []struct {
+		iface string
+		want  bool
+	}{
+		{"awg0", true},
+		{"awg1", false},
+		{"wg0", true},
+		{"xray0", true},
+		{"eth0", false},
+	} {
+		if got := TunnelAndUp(c.iface); got != c.want {
+			t.Errorf("TunnelAndUp(%q) = %v, want %v", c.iface, got, c.want)
+		}
+	}
+	if IsEncapsulated("awg0") || EncapsulatedAndUp("awg0") {
+		t.Error("a set b4 routes into AmneziaWG keeps its strategy, so only the egress check may count it as a tunnel")
+	}
+}
+
+func fakeRoutes(t *testing.T, body string) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "route")
+	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prev := RouteFile
+	RouteFile = file
+	Forget()
+	t.Cleanup(func() {
+		RouteFile = prev
+		Forget()
+	})
+}
+
+func TestCarriesDefaultRouteReadsTheMainTable(t *testing.T) {
+	fakeRoutes(t, "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"+
+		"*\t00000000\t00000000\t0201\t0\t0\t0\t00000000\t0\t0\t0\n"+
+		"ppp0\t00000000\t00000000\t0001\t0\t0\t10\t00000000\t0\t0\t0\n"+
+		"ppp1\t00000000\t00000000\t0001\t0\t0\t10\t00000000\t0\t0\t0\n"+
+		"wg0\t0000000A\t00000000\t0001\t0\t0\t0\t000000FF\t0\t0\t0\n"+
+		"wg1\t00000000\t00000000\t0001\t0\t0\t0\t00000080\t0\t0\t0\n"+
+		"wg2\t00000000\t00000000\t0001\t0\t0\t50\t00000000\t0\t0\t0\n"+
+		"br0\t0001A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0\n")
+
+	for _, c := range []struct {
+		iface string
+		want  bool
+		why   string
+	}{
+		{"ppp0", true, "the interface of the main default route is the router's uplink"},
+		{"ppp1", true, "a second default route with the same metric shares the traffic"},
+		{"wg0", false, "a route to one network is not the default route"},
+		{"wg1", false, "a route to half the address space is not the default route"},
+		{"wg2", false, "a backup default route with a higher metric carries nothing while the first one is there"},
+		{"*", false, "an unreachable default route has no interface"},
+		{"br0", false, "a LAN route is not the default route"},
+		{"eth9", false, "an interface the table never names carries no route"},
+		{"", false, "an unnamed interface carries no route"},
+	} {
+		if got := CarriesDefaultRoute(c.iface); got != c.want {
+			t.Errorf("CarriesDefaultRoute(%q) = %v: %s", c.iface, got, c.why)
+		}
+	}
+}
+
+func TestCarriesDefaultRouteWithoutTheRouteFile(t *testing.T) {
+	fakeRoutes(t, "")
+	RouteFile = filepath.Join(t.TempDir(), "missing")
+	Forget()
+	if CarriesDefaultRoute("eth0") {
+		t.Error("without a route table to read, no interface can be shown to carry the default route")
+	}
+}

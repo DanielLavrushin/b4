@@ -76,7 +76,7 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 		return vc.accept()
 	}
 
-	if a.Mark != nil && (config.IsTelegramBridgeMark(*a.Mark) || *a.Mark&config.SelfDialNoDPIBit != 0) {
+	if a.Mark != nil && (config.IsTelegramBridgeMark(*a.Mark) || config.IsSelfDialSkipMark(*a.Mark)) {
 		return vc.accept()
 	}
 
@@ -86,6 +86,7 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 		}
 		vc.ifaceFiltered = true
 	}
+	vc.tunnel = tunnelEgress(a)
 
 	select {
 	case <-w.ctx.Done():
@@ -292,13 +293,17 @@ func duplicatesPackets(set *config.SetConfig) bool {
 	return set.TCP.Duplicate.Enabled && set.TCP.Duplicate.Count > 0
 }
 
+func coalescesInitials(set *config.SetConfig) bool {
+	return set != nil && set.UDP.Mode == config.UDPModeCoalesce
+}
+
 func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, matcher *sni.SuffixSet, matched bool, set *config.SetConfig, st *config.SetConfig) int {
 	tcp := pkt.raw[pkt.ihl:]
 	if len(tcp) < TCPHeaderMinLen {
 		return vc.accept()
 	}
 	datOff := int((tcp[12]>>4)&0x0f) * 4
-	if len(tcp) < datOff {
+	if datOff < TCPHeaderMinLen || len(tcp) < datOff {
 		return vc.accept()
 	}
 	payload := tcp[datOff:]
@@ -397,7 +402,8 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	routeTProxy := matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode)
 	routeIfaceHandoff := matched && set != nil && !routeTProxy && set.RoutingHandsOffPackets()
-	routeHandsOff := routeTProxy || routeIfaceHandoff
+	foreignTunnel := vc.tunnel != "" && (set == nil || !set.Routing.Enabled)
+	routeHandsOff := routeTProxy || routeIfaceHandoff || foreignTunnel
 
 	if matched && !routeHandsOff && cfg.IsTCPPort(dport) && duplicatesPackets(set) {
 		log.Tracef("TCP duplicate to %s:%d (%d copies, set: %s)", pkt.dstStr, dport, set.TCP.Duplicate.Count, set.Name)
@@ -434,7 +440,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	isRst := (tcpFlags & 0x04) != 0
 	if isRst && cfg.IsTCPPort(dport) {
 		log.Tracef("RST to %s:%d", pkt.dstStr, dport)
-		if matched && set != nil && set.TCP.RSTProtection.Enabled {
+		if matched && set != nil && set.TCP.RSTProtection.Enabled && !foreignTunnel {
 			if w.connTracker.ShouldDropOutboundRST(connKey) {
 				log.Warnf("RST protection: dropped outbound RST to %s:%d — connection not established", pkt.dstStr, dport)
 				recordRSTDrop(cfg)
@@ -459,22 +465,29 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		observeFlow(cfg, pkt, sport, dport, set, "")
 
+		syn := pkt.raw
+		if len(payload) > 0 && needsTCPInjection(set) {
+			if stripped, ok := synWithoutPayload(pkt.raw, pkt.ver, pkt.ihl, datOff); ok {
+				syn = stripped
+			}
+		}
+
 		if pkt.ver == IPv4 {
 			if set.TCP.SynFake {
-				w.sendFakeSyn(set, pkt.raw, pkt.ihl, datOff)
+				w.sendFakeSyn(set, syn, pkt.ihl, datOff)
 			}
 			if set.Faking.TCPMD5 {
-				w.sendFakeSynWithMD5(set, pkt.raw, pkt.ihl, pkt.dst)
+				w.sendFakeSynWithMD5(set, syn, pkt.ihl, pkt.dst)
 			}
-			_ = w.sock.SendIPv4(pkt.raw, pkt.dst)
+			_ = w.sock.SendIPv4(syn, pkt.dst)
 		} else {
 			if set.TCP.SynFake {
-				w.sendFakeSynV6(set, pkt.raw, pkt.ihl, datOff)
+				w.sendFakeSynV6(set, syn, pkt.ihl, datOff)
 			}
 			if set.Faking.TCPMD5 {
-				w.sendFakeSynWithMD5V6(set, pkt.raw, pkt.dst)
+				w.sendFakeSynWithMD5V6(set, syn, pkt.dst)
 			}
-			_ = w.sock.SendIPv6(pkt.raw, pkt.dst)
+			_ = w.sock.SendIPv6(syn, pkt.dst)
 		}
 
 		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
@@ -634,10 +647,14 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	routeTProxy = matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode)
 	routeIfaceHandoff = matched && set != nil && !routeTProxy && set.RoutingHandsOffPackets()
-	routeHandsOff = routeTProxy || routeIfaceHandoff
+	foreignTunnel = vc.tunnel != "" && (set == nil || !set.Routing.Enabled)
+	routeHandsOff = routeTProxy || routeIfaceHandoff || foreignTunnel
 
 	if routeIfaceHandoff && classifyReason == "" {
 		classifyReason = "routed->" + set.Routing.EgressInterface
+	}
+	if matched && set != nil && foreignTunnel && classifyReason == "" {
+		classifyReason = "tunnel->" + vc.tunnel
 	}
 
 	if matched && isClientHello && !routeHandsOff && set.TCP.IPBlockDetect.Enabled && host != "" && cfg.IsTCPPort(dport) {
@@ -674,10 +691,15 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		observeFlow(cfg, pkt, sport, dport, flowSet, host)
 	}
 
+	var strippedSyn []byte
+	if isSyn && len(payload) > 0 && matched && set != nil && !routeHandsOff && needsTCPInjection(set) {
+		strippedSyn, _ = synWithoutPayload(pkt.raw, pkt.ver, pkt.ihl, datOff)
+	}
+
 	stallCount := 0
 	stallFirstSeen := time.Time{}
 	stallTracked := false
-	if matched && isClientHello && host != "" && cfg.IsTCPPort(dport) &&
+	if matched && isClientHello && strippedSyn == nil && host != "" && cfg.IsTCPPort(dport) && !foreignTunnel &&
 		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) {
 		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host)
 		stallTracked = true
@@ -755,7 +777,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			}
 		}
 
-		if set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() {
+		if !foreignTunnel && (set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active()) {
 			w.connTracker.RegisterOutgoing(connKey, set)
 			if isAck && !isSyn && !isRst && cfg.IsTCPPort(dport) && set.TCP.RSTProtection.Enabled {
 				w.connTracker.MarkEstablished(connKey)
@@ -768,6 +790,28 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		if len(payload) == 0 && !needsPayloadlessInjection(set) {
 			return vc.accept()
+		}
+
+		if isSyn && len(payload) > 0 {
+			if strippedSyn == nil {
+				return vc.accept()
+			}
+			if set.TCP.DropSACK {
+				if pkt.ver == 4 {
+					strippedSyn = sock.StripSACKFromTCP(strippedSyn)
+				} else {
+					strippedSyn = sock.StripSACKFromTCPv6(strippedSyn)
+				}
+			}
+			if !vc.drop() {
+				return 0
+			}
+			if pkt.ver == 4 {
+				_ = w.sock.SendIPv4(strippedSyn, pkt.dst)
+			} else {
+				_ = w.sock.SendIPv6(strippedSyn, pkt.dst)
+			}
+			return 0
 		}
 
 		if !injectAcquire() {
@@ -878,9 +922,13 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	isQUIC := quic.LooksLikeQUIC(payload)
 
-	if host == "" && isQUIC {
+	namedByHello := false
+	helloDatagram := false
+	if isQUIC && (host == "" || coalescesInitials(set) || coalescesInitials(w.escalatedSetFor(cfg, host, pkt.srcMac))) {
 		if h, ok := sni.ParseQUICClientHelloSNI(payload); ok {
+			helloDatagram = true
 			host = h
+			namedByHello = true
 		}
 	}
 
@@ -897,6 +945,14 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
+	if namedByHello {
+		if matchedQUIC {
+			w.quicFlows.Store(connKey, host, quic.ParseDCID(payload))
+		} else {
+			w.quicFlows.Forget(connKey)
+		}
+	}
+
 	if !matchedQUIC && (matchedIP || matchedPort) && set.UDP.FilterQUIC == "all" {
 		if isQUIC {
 			matchedQUIC = true
@@ -907,16 +963,28 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		captureManager.CapturePayload(connKey, host, "quic", payload)
 	}
 
-	shouldHandle := (matchedIP || matchedQUIC || matchedPort) && !(isVoiceMedia && set.UDP.FilterSTUN)
+	matchedFlow := false
+	if matchedLearned || (host == "" && !matchedIP) {
+		if flowSet, flowHost := w.quicFlowSet(cfg, matcher, connKey, pkt, dport, payload); flowSet != nil {
+			matchedFlow = true
+			matchedLearned = false
+			set = flowSet
+			host = flowHost
+			sniTarget = flowSet.Name
+			ipTarget = ""
+		}
+	}
+
+	shouldHandle := (matchedIP || matchedQUIC || matchedFlow || matchedPort) && !(isVoiceMedia && set.UDP.FilterSTUN)
 
 	matched = shouldHandle
 
 	udpTLS := ""
-	if matchedQUIC || isQUIC {
+	if matchedQUIC || matchedFlow || isQUIC {
 		udpTLS = "1.3"
 	}
 
-	if shouldHandle && set != nil && host != "" {
+	if shouldHandle && set != nil && host != "" && !matchedFlow {
 		if escSet := w.escalatedSetFor(cfg, host, pkt.srcMac); escSet != nil {
 			if escSet != set {
 				log.Tracef("UDP escalation hit for %s: %s -> %s", host, set.Name, escSet.Name)
@@ -932,8 +1000,13 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
+	udpForeignTunnel := vc.tunnel != "" && (set == nil || !set.Routing.Enabled)
+	udpReason := ""
+	if shouldHandle && udpForeignTunnel {
+		udpReason = "tunnel->" + vc.tunnel
+	}
 	if !cfg.Queue.IsDiscovery {
-		log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, "")
+		log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, udpReason)
 	}
 
 	if isVoiceMedia && set != nil && set.UDP.FilterSTUN {
@@ -950,7 +1023,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
-		if matchedQUIC || (matchedIP && !matchedLearned) {
+		if matchedQUIC || matchedFlow || (matchedIP && !matchedLearned) {
 			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
 				if pkt.ver == IPv4 {
 					if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
@@ -973,6 +1046,10 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			vc.drop()
 			return 0
 		}
+		return vc.accept()
+	}
+
+	if udpForeignTunnel {
 		return vc.accept()
 	}
 
@@ -1001,6 +1078,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	case config.UDPModeCoalesce:
 		if !config.RoutingUsesTProxy(set.RoutingModeOrDefault()) && set.RoutingHandsOffPackets() {
+			return vc.accept()
+		}
+		if !helloDatagram {
 			return vc.accept()
 		}
 		coalesced, ok := quic.CoalesceInitial(payload, 0)

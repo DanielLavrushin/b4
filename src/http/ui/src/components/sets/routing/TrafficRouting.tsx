@@ -13,8 +13,24 @@ import { colors } from "@design";
 import { DscpEnvironment } from "@utils";
 import { Trans, useTranslation } from "react-i18next";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import * as ipaddr from "ipaddr.js";
 import { hasTargets } from "../facets";
 import { SetDscp } from "./SetDscp";
+
+const gatewayZone = /^[^\s%/[\]]+$/;
+
+function isGatewayAddress(value: string): boolean {
+  const text = value.trim();
+  if (!text) return true;
+  const zoneAt = text.indexOf("%");
+  if (zoneAt === -1) {
+    return ipaddr.IPv4.isValidFourPartDecimal(text) || ipaddr.IPv6.isValid(text);
+  }
+  return (
+    gatewayZone.test(text.slice(zoneAt + 1)) &&
+    ipaddr.IPv6.isValid(text.slice(0, zoneAt))
+  );
+}
 
 interface TrafficRoutingProps {
   config: B4SetConfig;
@@ -78,6 +94,10 @@ export const TrafficRouting = ({
     isInterface && routing.egress_interface && !selectedIfaceAvailable,
   );
 
+  const gatewayInvalid =
+    Boolean(routing.egress_interface) &&
+    !isGatewayAddress(routing.egress_gateway ?? "");
+
   const routerTraffic: RouterTraffic = routing.router_traffic ?? "auto";
   const egressIsTunnel = tunnelIfaces.includes(routing.egress_interface);
   const sourceScoped =
@@ -129,12 +149,23 @@ export const TrafficRouting = ({
   } else {
     flowDestination = !routing.egress_interface
       ? t("sets.routing.flowNoOutput")
-      : routing.egress_ip
-        ? t("sets.routing.flowIfaceWithSource", {
-            iface: routing.egress_interface,
-            ip: routing.egress_ip,
-          })
-        : routing.egress_interface;
+      : routing.egress_gateway
+        ? routing.egress_ip
+          ? t("sets.routing.flowIfaceWithSourceAndGateway", {
+              iface: routing.egress_interface,
+              ip: routing.egress_ip,
+              gw: routing.egress_gateway,
+            })
+          : t("sets.routing.flowIfaceWithGateway", {
+              iface: routing.egress_interface,
+              gw: routing.egress_gateway,
+            })
+        : routing.egress_ip
+          ? t("sets.routing.flowIfaceWithSource", {
+              iface: routing.egress_interface,
+              ip: routing.egress_ip,
+            })
+          : routing.egress_interface;
   }
 
   return (
@@ -460,6 +491,29 @@ export const TrafficRouting = ({
                   iface: routing.egress_interface,
                 })}
               </B4Alert>
+            </Grid>
+          )}
+
+          {isInterface && (
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4TextField
+                label={t("sets.routing.egressGateway")}
+                value={routing.egress_gateway ?? ""}
+                onChange={(e) =>
+                  onChange("routing.egress_gateway", e.target.value)
+                }
+                disabled={!routing.egress_interface}
+                error={gatewayInvalid}
+                helperText={
+                  !routing.egress_interface
+                    ? t("sets.routing.egressGatewayNeedsInterface")
+                    : gatewayInvalid
+                      ? t("sets.routing.egressGatewayInvalid")
+                      : t("sets.routing.egressGatewayHelper")
+                }
+                placeholder="192.168.1.254"
+                selectOnFocus
+              />
             </Grid>
           )}
 

@@ -151,7 +151,17 @@ func TestRoutingHandleDNSAwaitDoesNotHoldASetThatFailedToInstall(t *testing.T) {
 		t.Fatalf("an answer for a set whose rules just failed to install got %d waits", len(waits))
 	}
 	drainAsync(t)
-	if attempts.Load() < 2 {
+	if n := attempts.Load(); n != 1 {
+		t.Fatalf("an answer within a minute of the failed install ran it again (%d attempts)", n)
+	}
+
+	ageInstallFailure(t, set.Id)
+	if waits := RoutingHandleDNSAwait(cfg, set, []net.IP{net.ParseIP("198.51.100.57")}); len(waits) != 1 {
+		t.Fatalf("the first answer after the failure aged got %d waits, want 1", len(waits))
+	} else {
+		awaitClosed(t, waits[0], "the retried install")
+	}
+	if attempts.Load() != 2 {
 		t.Fatal("b4 stopped trying to install the set")
 	}
 
@@ -187,6 +197,7 @@ func TestASuccessfulInstallClearsTheFailureMemo(t *testing.T) {
 		t.Fatal("a failed install was not remembered")
 	}
 	fail.Store(false)
+	ageInstallFailure(t, set.Id)
 	RoutingHandleDNS(cfg, set, []net.IP{net.ParseIP("198.51.100.74")})
 	if routeInstallFailedRecently(set.Id) {
 		t.Fatal("a set whose rules installed is still remembered as failed, so its answers go unheld for up to a minute")

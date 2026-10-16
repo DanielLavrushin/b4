@@ -216,6 +216,13 @@ func (m *Monitor) reconcileRouting(restored bool) bool {
 		log.Tracef("Routing rules resynced after interface change")
 		return true
 	}
+	if routeLocalGuardListsMoved() {
+		log.Infof("Routing: this router's addresses changed while the address-type match is unavailable, so the sets that list those addresses are out of date; rebuilding the routing rules")
+		routingForceResync(cfg)
+		m.snapshotRoutingIfaces(cfg)
+		routePhaseMu.Unlock()
+		return true
+	}
 	if !RoutingRulesPresent(cfg) {
 		log.Warnf("Routing rules missing, restoring...")
 		m.lost = true

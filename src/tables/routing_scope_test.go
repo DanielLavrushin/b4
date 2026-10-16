@@ -292,6 +292,9 @@ func TestOutChainRefusesAPacketAnotherSetAlreadyClaimed(t *testing.T) {
 }
 
 func TestRouteLineBelongsToIfaceOnlyClaimsItsOwnBlackhole(t *testing.T) {
+	prev := routeIPSupportsProto
+	t.Cleanup(func() { routeIPSupportsProto = prev })
+	routeIPSupportsProto = func() bool { return false }
 	for _, c := range []struct {
 		line string
 		ours bool
