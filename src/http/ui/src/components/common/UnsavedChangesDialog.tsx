@@ -181,6 +181,12 @@ const formatEntry = (entry: unknown): string => {
     return "—";
   }
 };
+// These switches display the inverse of the stored flag: the label reads
+// "enable"/"fallback" while the leaf holds the disabling/opt-out boolean.
+const INVERTED_BOOLEAN_PATHS: Record<string, true> = {
+  "system.dns.tcp_disabled": true,
+  "system.dns.keep_ipv6_answers": true,
+};
 const formatValue = (
   value: unknown,
   path: string,
@@ -188,8 +194,10 @@ const formatValue = (
 ): string => {
   if (SENSITIVE_PATH.test(path)) return "••••••";
   if (value === undefined || value === null || value === "") return "—";
-  if (typeof value === "boolean")
-    return value ? t("core.valueOn") : t("core.valueOff");
+  if (typeof value === "boolean") {
+    const shown = INVERTED_BOOLEAN_PATHS[path] ? !value : value;
+    return shown ? t("core.valueOn") : t("core.valueOff");
+  }
   if (Array.isArray(value))
     return value.length === 0 ? "—" : value.map(formatEntry).join(", ");
   if (typeof value === "string" || typeof value === "number")

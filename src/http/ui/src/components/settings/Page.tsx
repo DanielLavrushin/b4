@@ -286,7 +286,8 @@ export function SettingsPage() {
     scope: "settings",
   });
   const hasChanges = changedLeaves.length > 0;
-  const hasUnsavedChanges = hasChanges;
+  // Guard conservatively while urgent input is ahead of the deferred diff.
+  const hasUnsavedChanges = hasChanges || config !== deferredConfig;
   const shouldBlock = useCallback<BlockerFunction>(
     ({ nextLocation }) =>
       hasUnsavedChanges && !nextLocation.pathname.startsWith("/settings"),

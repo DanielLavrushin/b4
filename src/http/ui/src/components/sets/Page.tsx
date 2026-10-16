@@ -92,27 +92,29 @@ function SetEditorRoute({
   const stats =
     existingIndex >= 0 ? (setsStats[existingIndex] ?? undefined) : undefined;
 
-  const handleSave = (editedSet: B4SetConfig) => {
-    void (async () => {
-      const { id: _, ...setWithoutId } = editedSet;
-      const result = isNew
-        ? await createSet(setWithoutId)
-        : await updateSet(editedSet);
+  const handleSave = async (
+    editedSet: B4SetConfig,
+  ): Promise<B4SetConfig | undefined> => {
+    const { id: _, ...setWithoutId } = editedSet;
+    const result = isNew
+      ? await createSet(setWithoutId)
+      : await updateSet(editedSet);
 
-      if (result.success) {
-        showSuccess(isNew ? t("sets.setCreated") : t("sets.setUpdated"));
-        if (!isNew && result.data) onSaved(result.data);
-        onRefresh();
-        if (isNew && result.data) {
-          allowNavigationRef.current = true;
-          await navigate(`/sets/${result.data.id}`, { replace: true });
-        }
-      } else if (isStaleWriteError(result.error)) {
-        reportStaleWrite(result.error, showSnackbar, t, onRefresh);
-      } else {
-        reportSaveError(result.error, showError, t);
+    if (result.success) {
+      showSuccess(isNew ? t("sets.setCreated") : t("sets.setUpdated"));
+      if (!isNew && result.data) onSaved(result.data);
+      onRefresh();
+      if (isNew && result.data) {
+        allowNavigationRef.current = true;
+        await navigate(`/sets/${result.data.id}`, { replace: true });
       }
-    })();
+      return result.data ?? undefined;
+    } else if (isStaleWriteError(result.error)) {
+      reportStaleWrite(result.error, showSnackbar, t, onRefresh);
+    } else {
+      reportSaveError(result.error, showError, t);
+    }
+    return undefined;
   };
 
   if (!set) {

@@ -86,6 +86,14 @@ export const B4Switch = ({
               />
             )}
           </Stack>
+          {description && (
+            <Typography
+              variant="body2"
+              sx={{ color: colors.text.secondary, mt: 0.5 }}
+            >
+              {description}
+            </Typography>
+          )}
         </Box>
       }
       sx={{

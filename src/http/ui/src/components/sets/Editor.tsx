@@ -99,7 +99,7 @@ export interface SetEditorPageProps {
   otherSetsTargets?: Map<string, string[]>;
   isNew: boolean;
   saving: boolean;
-  onSave: (set: B4SetConfig) => void;
+  onSave: (set: B4SetConfig) => Promise<B4SetConfig | undefined> | void;
   onRefresh?: () => void;
   navigationBypassRef?: { current: boolean };
 }
@@ -154,7 +154,16 @@ export const SetEditorPage = ({
 
   const handleSave = () => {
     if (editedSet) {
-      onSave(editedSet);
+      const snapshot = editedSet;
+      void (async () => {
+        const saved = await onSave(snapshot);
+        // Merge only the concurrency token so edits made during the
+        // request survive; the next save then carries a fresh revision.
+        if (saved?.revision !== undefined) {
+          const revision = saved.revision;
+          setEditedSet((prev) => (prev ? { ...prev, revision } : prev));
+        }
+      })();
     }
   };
 

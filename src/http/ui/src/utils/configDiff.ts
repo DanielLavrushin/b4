@@ -56,11 +56,27 @@ export const isZero = (value: unknown): boolean =>
   value === false ||
   (Array.isArray(value) && value.length === 0);
 
-export const leafEqual = (a: unknown, b: unknown): boolean => {
+// Order is user-visible state for these leaves: mirrors are tried in order,
+// seq_overlap_pattern emits bytes positionally. Everywhere else arrays stay
+// order-insensitive so set-like lists don't produce phantom dirty state.
+const ORDERED_ARRAY_PATHS: Record<string, true> = {
+  "system.update.mirrors": true,
+  "fragmentation.seq_overlap_pattern": true,
+};
+export const leafEqual = (
+  a: unknown,
+  b: unknown,
+  path?: string,
+): boolean => {
   if (Object.is(a, b)) return true;
   if (isZero(a) && isZero(b)) return true;
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
+    if (path && ORDERED_ARRAY_PATHS[path]) {
+      return a.every(
+        (v, i) => JSON.stringify(v) === JSON.stringify((b as unknown[])[i]),
+      );
+    }
     const primitive = (v: unknown): boolean =>
       v === null || ["string", "number", "boolean"].includes(typeof v);
     if (a.every(primitive) && b.every(primitive)) {
@@ -93,14 +109,14 @@ export const diffConfigLeaves = (
     const dRec = recurses(d);
     const bRec = recurses(b);
     if (!dRec && !bRec) {
-      if (path && !leafEqual(d, b)) out.push({ path, before: b, after: d });
+      if (path && !leafEqual(d, b, path)) out.push({ path, before: b, after: d });
       return;
     }
     if (
       path &&
       ((dRec && !bRec && b !== undefined) || (!dRec && bRec && d !== undefined))
     ) {
-      if (!leafEqual(d, b)) out.push({ path, before: b, after: d });
+      if (!leafEqual(d, b, path)) out.push({ path, before: b, after: d });
     }
     const dMap = dRec ? (d as Record<string, unknown>) : {};
     const bMap = bRec ? (b as Record<string, unknown>) : {};
