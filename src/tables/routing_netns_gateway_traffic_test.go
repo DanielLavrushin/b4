@@ -426,6 +426,9 @@ func TestNetnsIPv6GatewayRoutesTheSetAndLeavesInboundIPv6Alone(t *testing.T) {
 		if !hasBinary("ping") {
 			t.Skip("ping is not installed")
 		}
+		if !hasBinary("nft") {
+			t.Skip("the observer's counters use nft")
+		}
 		up, _ := gw6Links(t)
 		counts := gw6Observe(t)
 
