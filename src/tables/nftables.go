@@ -337,8 +337,9 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 
-	noDPI := fmt.Sprintf("0x%x", config.SelfDialNoDPIBit)
-	if err := n.addRule(nftChainName, "meta", "mark", "&", noDPI, "==", noDPI, "return"); err != nil {
+	noDPIVal := fmt.Sprintf("0x%x", config.SelfDialRelayMark)
+	noDPIMask := fmt.Sprintf("0x%x", config.SelfDialSkipMatchMask)
+	if err := n.addRule(nftChainName, "meta", "mark", "&", noDPIMask, "==", noDPIVal, "return"); err != nil {
 		return err
 	}
 

@@ -494,6 +494,24 @@ func TestValidate_QueueFields(t *testing.T) {
 		}
 	})
 
+	t.Run("discovery marks conflict with the self-dial pattern, not just its bit", func(t *testing.T) {
+		for _, mark := range []uint{0x200000, 0x200123} {
+			cfg := NewConfig()
+			cfg.System.Checker.DiscoveryFlowMark = mark
+			if err := cfg.Validate(); err != nil {
+				t.Errorf("discovery mark 0x%x is not skipped at runtime, yet it was rejected: %v", mark, err)
+			}
+		}
+		for _, mark := range []uint{uint(SelfDialRelayMark), 0x240012} {
+			cfg := NewConfig()
+			cfg.System.Checker.DiscoveryInjectedMark = mark
+			ve := mustValidationErr(t, cfg.Validate())
+			if findField(ve, "system.checker.discovery_injected_mark", "mark_conflict") == nil {
+				t.Errorf("discovery mark 0x%x matches the self-dial skip pattern yet was accepted: %+v", mark, ve.Fields)
+			}
+		}
+	})
+
 	t.Run("invalid queue mode", func(t *testing.T) {
 		cfg := NewConfig()
 		cfg.Queue.Mode = "bogus"

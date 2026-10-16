@@ -1892,7 +1892,7 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 
 func routeEgressCanRedial(iface string) bool {
 	switch netif.Of(iface) {
-	case netif.KindOther, netif.KindWireGuard:
+	case netif.KindOther, netif.KindWireGuard, netif.KindAmneziaWG:
 		return false
 	}
 	return true

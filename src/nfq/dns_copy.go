@@ -360,7 +360,7 @@ func (l *dnsCopyListener) counters() DNSQueryCopyCounters {
 func (l *dnsCopyListener) ignoresMark(m uint32, cfg *config.Config) bool {
 	return selfInjectedMark(m, l.mark.Load(), cfg) ||
 		m == uint32(cfg.DiscoveryFlowMark()) || m == uint32(cfg.DiscoveryInjectedMark()) ||
-		config.IsTelegramBridgeMark(m) || m&config.SelfDialNoDPIBit != 0
+		config.IsTelegramBridgeMark(m) || config.IsSelfDialSkipMark(m)
 }
 
 func dnsCopyIface(p nflog.Packet) (uint32, ifaceRole) {

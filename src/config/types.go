@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"math/rand"
 	"path/filepath"
 	"time"
@@ -133,6 +134,18 @@ const SelfDialRelayMark = SelfDialMark | SelfDialNoDPIBit
 const PerSetRouteMarkBits = uint32(0x27FFF)
 
 const RouterOwnProxyMarkBit = uint32(0x1000000)
+
+const SelfDialSkipTransitBits = PerSetRouteMarkBits | RouterOwnProxyMarkBit | uint32(0x70000000)
+
+const SelfDialSkipMatchMask = ^SelfDialSkipTransitBits
+
+func IsSelfDialSkipMark(m uint32) bool {
+	return m&^SelfDialSkipTransitBits == SelfDialRelayMark
+}
+
+func SelfDialSkipMarkMatch() string {
+	return fmt.Sprintf("0x%x/0x%x", SelfDialRelayMark, SelfDialSkipMatchMask)
+}
 
 type QueueConfig struct {
 	Mode              string         `json:"mode"`

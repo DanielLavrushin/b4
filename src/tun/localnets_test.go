@@ -361,7 +361,7 @@ func TestCaptureChainLeavesTelegramBridgeTrafficToTheRouter(t *testing.T) {
 	r := orderedCaptureManager(true)
 	rules := r.captureChainRules(nil, []string{"192.168.31.0/24"})
 
-	relay := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "--mark 0x200000/0x200000 -j RETURN") })
+	relay := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "--mark 0x240000/0x8efd8000 -j RETURN") })
 	bridge := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "--mark 0x24bab/0x27fff -j RETURN") })
 	steer := captureRuleIndex(rules, func(s string) bool { return strings.Contains(s, "connbytes") })
 	if relay < 0 || bridge < 0 || steer < 0 {

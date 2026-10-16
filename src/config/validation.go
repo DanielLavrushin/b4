@@ -612,9 +612,9 @@ func (c *Config) Validate() error {
 		{"system.checker.discovery_flow_mark", flowMark},
 		{"system.checker.discovery_injected_mark", injectedMark},
 	} {
-		if uint32(dm.mark)&SelfDialNoDPIBit != 0 {
+		if IsSelfDialSkipMark(uint32(dm.mark)) {
 			v.addf(dm.path, "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", dm.mark)},
-				"discovery mark 0x%x carries bit 0x%x, which b4 reserves for its own connections that skip DPI processing, so Discovery would test nothing; choose a queue mark or discovery marks clear of that bit", dm.mark, SelfDialNoDPIBit)
+				"discovery mark 0x%x matches b4's own no-DPI dial mark 0x%x (modulo transit bits 0x%x), so Discovery would test nothing; choose a queue mark or discovery marks that do not match that pattern", dm.mark, SelfDialRelayMark, SelfDialSkipTransitBits)
 			return v.result()
 		}
 	}

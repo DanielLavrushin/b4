@@ -175,5 +175,5 @@ func captureProxySetMarks(cfg *config.Config) []uint32 {
 }
 
 func selfDialNoDPIMarkMatch() string {
-	return fmt.Sprintf("0x%x/0x%x", config.SelfDialNoDPIBit, config.SelfDialNoDPIBit)
+	return config.SelfDialSkipMarkMatch()
 }

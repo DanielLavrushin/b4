@@ -37,6 +37,8 @@ func loopTestSysfs(t *testing.T) {
 	for name, files := range map[string]map[string]string{
 		"xray0": {"tun_flags": "0x1001\n", "flags": "0x1003\n"},
 		"eth1":  {"flags": "0x1003\n"},
+		"awg0":  {"uevent": "DEVTYPE=amneziawg\nINTERFACE=awg0\n", "flags": "0x1003\n"},
+		"wg0":   {"uevent": "DEVTYPE=wireguard\nINTERFACE=wg0\n", "flags": "0x1003\n"},
 	} {
 		dir := filepath.Join(root, name)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -165,6 +167,23 @@ func indexOfPrefix(ops []string, prefix string) int {
 		}
 	}
 	return -1
+}
+
+func TestOnlyAUserspaceTunnelCanRedial(t *testing.T) {
+	loopTestSysfs(t)
+	for _, c := range []struct {
+		iface string
+		want  bool
+	}{
+		{"xray0", true},
+		{"eth1", false},
+		{"wg0", false},
+		{"awg0", false},
+	} {
+		if got := routeEgressCanRedial(c.iface); got != c.want {
+			t.Errorf("routeEgressCanRedial(%q) = %v, want %v", c.iface, got, c.want)
+		}
+	}
 }
 
 func TestRouteLineBelongsToIface(t *testing.T) {

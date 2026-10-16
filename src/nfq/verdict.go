@@ -21,6 +21,7 @@ type verdictCtx struct {
 	verdict       engine.PacketVerdict
 	copy          *dnsCopyDecision
 	ifaceFiltered bool
+	tunnel        string
 }
 
 type dnsCopyDecision struct {
