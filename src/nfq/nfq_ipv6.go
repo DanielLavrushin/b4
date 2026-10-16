@@ -359,7 +359,11 @@ func (w *Worker) sendFakeSNISequencev6(cfg *config.SetConfig, original []byte, d
 	}
 	badsum := !sock.TCPChecksumValidV6(fake)
 	if faking.MD5OnFake {
-		fake = sock.AddTCPMD5Option(fake, true)
+		withMD5, ok := sock.AddTCPMD5Option(fake, true)
+		if !ok {
+			log.Tracef("Fake SNI v6 to %s: no room for the TCP MD5 option, sending it without", dst.String())
+		}
+		fake = withMD5
 		if badsum {
 			sock.FixTCPChecksumV6(fake)
 			sock.CorruptTCPChecksumV6(fake)
