@@ -32,6 +32,8 @@ var (
 	rulesAppliedBackend string
 	addRulesFn          = addRules
 	clearRulesFn        = clearRules
+
+	BackendAppliedFunc func(backend string)
 )
 
 func AddRules(cfg *config.Config) error {
@@ -82,6 +84,9 @@ func addRules(cfg *config.Config) error {
 
 	backend := detectFirewallBackend(cfg)
 	rulesAppliedBackend = backend
+	if BackendAppliedFunc != nil {
+		BackendAppliedFunc(backend)
+	}
 	log.Tracef("Detected firewall backend: %s", backend)
 
 	if backend == backendNFTables {

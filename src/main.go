@@ -273,6 +273,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	handler.SetTablesRefreshFunc(refreshTables)
 	handler.SetDiscoveryRuntime(discoveryRT)
 	nfq.DNSTCPReadyFunc = tables.SetDNSTCPListenerReady
+	tables.BackendAppliedFunc = func(backend string) {
+		nfq.SetRerouteCheckAll(rerouteChecksAllMarks(backend))
+	}
 	nfq.RoutingHandleDNSFunc = tables.RoutingHandleDNS
 	nfq.RoutingLearnIPFunc = tables.RoutingLearnIP
 	nfq.RoutingLearnHostFunc = tables.RoutingLearnHost

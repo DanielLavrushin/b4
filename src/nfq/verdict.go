@@ -16,12 +16,16 @@ type verdictModifier interface {
 }
 
 type verdictCtx struct {
-	id            uint32
-	q             verdictSetter
-	verdict       engine.PacketVerdict
-	copy          *dnsCopyDecision
-	ifaceFiltered bool
-	tunnel        string
+	id             uint32
+	q              verdictSetter
+	verdict        engine.PacketVerdict
+	copy           *dnsCopyDecision
+	ifaceFiltered  bool
+	tunnel         string
+	outDev         uint32
+	foreignMark    uint32
+	rerouted       string
+	rerouteChecked bool
 }
 
 type dnsCopyDecision struct {

@@ -28,7 +28,7 @@ exec nft add rule inet b4_mangle output oifname "lo" return
 exec nft add rule inet b4_mangle output meta mark & 0x20008000 == 0x8000 ct mark set ct mark | 0x8000
 exec nft add rule inet b4_mangle output meta mark & 0x8000 == 0x8000 accept
 exec nft add rule inet b4_mangle output jump b4_chain
-exec nft add rule inet b4_mangle b4_chain meta mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x8000 return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
@@ -38,9 +38,9 @@ exec nft add chain inet b4_mangle raw_prerouting { type filter hook prerouting p
 exec nft list chain inet b4_mangle raw_output
 exec nft add chain inet b4_mangle raw_output { type filter hook output priority -300 ; policy accept ; }
 exec nft add rule inet b4_mangle raw_output oifname "lo" return
-exec nft add rule inet b4_mangle raw_prerouting meta mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle raw_prerouting meta mark & 0x8efd8000 == 0x8000 return
 exec nft add rule inet b4_mangle raw_prerouting meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle raw_output meta mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle raw_output meta mark & 0x8efd8000 == 0x8000 return
 exec nft add rule inet b4_mangle raw_output meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
 exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
 exec nft add rule inet b4_mangle output meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
@@ -116,7 +116,7 @@ exec nft add rule inet b4_mangle output oifname "lo" return
 exec nft add rule inet b4_mangle output meta mark & 0x20008000 == 0x8000 ct mark set ct mark | 0x8000
 exec nft add rule inet b4_mangle output meta mark & 0x8000 == 0x8000 accept
 exec nft add rule inet b4_mangle output jump b4_chain
-exec nft add rule inet b4_mangle b4_chain meta mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x8000 return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
@@ -126,9 +126,9 @@ exec nft add chain inet b4_mangle raw_prerouting { type filter hook prerouting p
 exec nft list chain inet b4_mangle raw_output
 exec nft add chain inet b4_mangle raw_output { type filter hook output priority -300 ; policy accept ; }
 exec nft add rule inet b4_mangle raw_output oifname "lo" return
-exec nft add rule inet b4_mangle raw_prerouting meta mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle raw_prerouting meta mark & 0x8efd8000 == 0x8000 return
 exec nft add rule inet b4_mangle raw_prerouting meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle raw_output meta mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle raw_output meta mark & 0x8efd8000 == 0x8000 return
 exec nft add rule inet b4_mangle raw_output meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
 exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
 exec nft add rule inet b4_mangle output meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
@@ -188,7 +188,7 @@ exec nft add rule inet b4_mangle output oifname "lo" return
 exec nft add rule inet b4_mangle output meta mark & 0x20008000 == 0x8000 ct mark set ct mark | 0x8000
 exec nft add rule inet b4_mangle output meta mark & 0x8000 == 0x8000 accept
 exec nft add rule inet b4_mangle output jump b4_chain
-exec nft add rule inet b4_mangle b4_chain meta mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x8000 return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
@@ -198,9 +198,9 @@ exec nft add chain inet b4_mangle raw_prerouting { type filter hook prerouting p
 exec nft list chain inet b4_mangle raw_output
 exec nft add chain inet b4_mangle raw_output { type filter hook output priority -300 ; policy accept ; }
 exec nft add rule inet b4_mangle raw_output oifname "lo" return
-exec nft add rule inet b4_mangle raw_prerouting meta mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle raw_prerouting meta mark & 0x8efd8000 == 0x8000 return
 exec nft add rule inet b4_mangle raw_prerouting meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle raw_output meta mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle raw_output meta mark & 0x8efd8000 == 0x8000 return
 exec nft add rule inet b4_mangle raw_output meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
 exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
 exec nft add rule inet b4_mangle output meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
