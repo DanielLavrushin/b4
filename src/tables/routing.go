@@ -1848,6 +1848,9 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 	if !st.routerOut {
 		injectSources = routeInjectedSourceMatches(gate)
 	}
+	if routeGuardNarrowed(st) {
+		be.addRedirectDrop(st.chainOut, st.iface)
+	}
 	be.addBypassRule(st.chainOut, SelfDialMark)
 	be.addClaimedBypassRule(st.chainOut, 0)
 	if cfg.Queue.IPv4Enabled {
@@ -1858,9 +1861,6 @@ func routeAddOutChainRules(be routeBackend, cfg *config.Config, st routeState, g
 	}
 
 	routeSelfDialBypass(be, cfg, st.chainOut)
-	if routeGuardNarrowed(st) {
-		be.addRedirectDrop(st.chainOut, st.iface)
-	}
 
 	if st.srcScoped || !st.routerOut {
 		return

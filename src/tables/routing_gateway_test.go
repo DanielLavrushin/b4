@@ -818,45 +818,65 @@ func TestGatewayGuardEmission(t *testing.T) {
 }
 
 func TestRedirectDropFollowsTheIPv4Gateway(t *testing.T) {
-	for _, engine := range []string{backendNFTables, backendIPTables} {
+	for _, engine := range []string{"mock", backendNFTables, backendIPTables} {
 		for _, c := range []struct {
 			name, gw string
+			link     int
 			want     bool
 		}{
-			{"ipv4 gateway", "192.0.2.1", true},
-			{"no gateway", "", false},
-			{"ipv6 gateway", "2001:db8:1::1", false},
+			{"ipv4 gateway", "192.0.2.1", routeArphrdEther, true},
+			{"no gateway", "", routeArphrdEther, false},
+			{"ipv6 gateway", "2001:db8:1::1", routeArphrdEther, false},
+			{"ipv4 gateway on a tun egress", "192.0.2.1", gwLinkTun, false},
 		} {
-			t.Run(engine+"/"+c.name, func(t *testing.T) {
-				gwIsolate(t)
-				cmds := gwStubCommands(t)
-				stubBinaries(t, backendIPTables, backendIP6Tables, "ipset")
-				gwStubHost(t, map[string][]string{"eth1": {"192.0.2.10/24", "2001:db8:1::10/64"}})
-				cfg := familyTestConfig(true, true)
-				set := gwTestSet("rdset", "eth1", c.gw)
-				set.Routing.RouterTraffic = config.RouterTrafficExclude
-				cfg.Sets = []*config.SetConfig{set}
-				st := gwResolvedState(cfg, set)
-				var be routeBackend = &routeNftBackend{}
-				want := `nft add rule inet b4_route ` + st.chainOut + ` oifname "eth1" icmp type redirect drop`
-				if engine == backendIPTables {
-					be = &routeIptBackend{}
-					want = "iptables -w -t mangle -A " + st.chainOut + " -o eth1 -p icmp --icmp-type redirect -j DROP"
-				}
-				if err := routeEnsureRule(be, cfg, set, st, nil); err != nil {
-					t.Fatalf("routeEnsureRule: %v", err)
-				}
-				drops := linesWith(chainRuleLines(cmds.lines, st.chainOut), "redirect")
-				if c.want && !slices.Equal(drops, []string{want}) {
-					t.Errorf("an IPv4 gateway set must drop IPv4 redirects through the egress even with router traffic excluded, got %v", drops)
-				}
-				if !c.want && len(drops) != 0 {
-					t.Errorf("no IPv4 gateway in use, so no redirect drop, got %v", drops)
-				}
-				if got := cmds.with("nd-redirect"); len(got) != 0 {
-					t.Errorf("the IPv6 guard stays full, so no ND redirect drop is needed, got %v", got)
-				}
-			})
+			for _, traffic := range []string{config.RouterTrafficInclude, config.RouterTrafficExclude} {
+				t.Run(engine+"/"+c.name+"/router traffic "+traffic, func(t *testing.T) {
+					gwIsolate(t)
+					cmds := gwStubCommands(t)
+					stubBinaries(t, backendIPTables, backendIP6Tables, "ipset")
+					gwStubHost(t, map[string][]string{"eth1": {"192.0.2.10/24", "2001:db8:1::10/64"}})
+					gwStubLinks(t, map[string]int{"eth1": c.link})
+					cfg := familyTestConfig(true, true)
+					set := gwTestSet("rdset", "eth1", c.gw)
+					set.Routing.RouterTraffic = traffic
+					cfg.Sets = []*config.SetConfig{set}
+					st := gwResolvedState(cfg, set)
+					mock := &mockRouteBackend{}
+					var be routeBackend = mock
+					want := "redirect-drop eth1"
+					switch engine {
+					case backendNFTables:
+						be = &routeNftBackend{}
+						want = `nft add rule inet b4_route ` + st.chainOut + ` oifname "eth1" icmp type redirect drop`
+					case backendIPTables:
+						be = &routeIptBackend{}
+						want = "iptables -w -t mangle -A " + st.chainOut + " -o eth1 -p icmp --icmp-type redirect -j DROP"
+					}
+					if err := routeEnsureRule(be, cfg, set, st, nil); err != nil {
+						t.Fatalf("routeEnsureRule: %v", err)
+					}
+					out := chainRuleLines(cmds.lines, st.chainOut)
+					if engine == "mock" {
+						out = mock.chainOps[st.chainOut]
+					}
+					drops := linesWith(out, "redirect")
+					if got := cmds.with("nd-redirect"); len(got) != 0 {
+						t.Errorf("the IPv6 guard stays full, so no ND redirect drop is needed, got %v", got)
+					}
+					if !c.want {
+						if len(drops) != 0 {
+							t.Errorf("no IPv4 gateway narrows the guard, so no redirect drop, got %v", drops)
+						}
+						return
+					}
+					if !slices.Equal(drops, []string{want}) {
+						t.Errorf("an IPv4 gateway set must drop IPv4 redirects through the egress once, whether or not it carries the router's own traffic, got %v", drops)
+					}
+					if len(out) == 0 || out[0] != want {
+						t.Errorf("with net.ipv4.fwmark_reflect=1 a redirect carries the mark of the packet that caused it, and the bypasses of %s return marked packets, so the drop must be its first rule:\n%s", st.chainOut, strings.Join(out, "\n"))
+					}
+				})
+			}
 		}
 	}
 }
