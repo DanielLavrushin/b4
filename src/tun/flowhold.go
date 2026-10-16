@@ -19,10 +19,7 @@ type conntrackDeleter interface {
 	Stop()
 }
 
-var (
-	newConntrackDeleter = func() conntrackDeleter { return ctnl.NewWorker() }
-	conntrackSelfTest   = ctnl.Available
-)
+var newConntrackDeleter = func() conntrackDeleter { return ctnl.NewWorker() }
 
 type flowHoldCounters struct {
 	firstN    atomic.Uint64
@@ -56,7 +53,6 @@ func (e *Engine) startFlowHold() {
 		return
 	}
 	e.conntrack = newConntrackDeleter()
-	conntrackSelfTest()
 }
 
 func (e *Engine) stopFlowHold() {

@@ -477,8 +477,16 @@ func (f *fakeListing) run(args ...string) (string, error) {
 	return "", errors.New("exit status 1")
 }
 
+const monitorInjectedReturnLine = "-A B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 -m tcp --tcp-flags SYN,RST NONE -j RETURN"
+
+var monitorTCPQueueLines = []string{
+	"-A B4_PREROUTING -p tcp -m multiport --sports 443 -m tcp --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-num 537 --queue-bypass",
+	"-A B4_PREROUTING -p tcp -m multiport --sports 443 -m tcp --tcp-flags SYN,ACK SYN,ACK -m conntrack --ctdir REPLY -j NFQUEUE --queue-num 537 --queue-bypass",
+	"-A B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes 0:19 --connbytes-mode packets --connbytes-dir reply -m conntrack --ctdir REPLY -j NFQUEUE --queue-num 537 --queue-bypass",
+}
+
 func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fakeListing {
-	pre := "-N B4_PREROUTING\n-A B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN\n-A B4_PREROUTING -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
+	pre := "-N B4_PREROUTING\n-A B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN\n" + monitorInjectedReturnLine + "\n-A B4_PREROUTING -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
 	out := "-P OUTPUT ACCEPT\n-A OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT\n-A OUTPUT -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
 	if placement == dnsHeldMangle {
 		pre += "-A B4_PREROUTING -p udp -m udp --dport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
@@ -487,7 +495,7 @@ func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fake
 	if placement == dnsCopied {
 		out = "-P OUTPUT ACCEPT\n-A OUTPUT " + dnsCopyTestJumps["OUTPUT"] + "\n" + strings.TrimPrefix(out, "-P OUTPUT ACCEPT\n")
 	}
-	pre += "-A B4_PREROUTING -p tcp -m multiport --sports 443 -m tcp --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-num 537 --queue-bypass\n"
+	pre += strings.Join(monitorTCPQueueLines, "\n") + "\n"
 	f := &fakeListing{chains: map[string]string{
 		"mangle B4":            "-N B4\n-A B4 -m mark --mark 0x8000/0x8000 -j RETURN\n",
 		"mangle POSTROUTING":   "-P POSTROUTING ACCEPT\n-A POSTROUTING -j B4\n",
@@ -684,6 +692,53 @@ func TestMonitorChecksWhereDNSQueriesWereQueued(t *testing.T) {
 				t.Errorf("with a device filter only the jump from mangle OUTPUT brings the router's own packets to B4, and it is gone, so the monitor must restore; OUTPUT is:\n%s", f.chains["mangle OUTPUT"])
 			}
 		})
+	}
+}
+
+func TestMonitorRestoresB4PreroutingWithoutItsTCPQueueRules(t *testing.T) {
+	origRun := run
+	t.Cleanup(func() {
+		run = origRun
+		noteDNSQueryPlacement(nil)
+		hasBinaryCache.Delete(backendIPTables)
+	})
+	hasBinaryCache.Store(backendIPTables, true)
+	prevV4 := dnsTCPListenerReadyV4.Load()
+	dnsTCPListenerReadyV4.Store(false)
+	t.Cleanup(func() { dnsTCPListenerReadyV4.Store(prevV4) })
+
+	m, _ := newLockTestMonitor(t)
+	cfg := config.NewConfig()
+	cfg.Queue.IPv4Enabled = true
+	cfg.Queue.IPv6Enabled = false
+	cfg.Queue.Mark = 0x8000
+
+	f := monitorDNSTestListing(dnsHeldMangle, false)
+	run = f.run
+	noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: dnsHeldMangle})
+	if !m.checkIPTablesRules(&cfg) {
+		t.Fatalf("the complete listing reads as missing rules, so this test proves nothing; commands:\n%s", strings.Join(f.calls, "\n"))
+	}
+
+	for _, line := range monitorTCPQueueLines {
+		f.chains["mangle B4_PREROUTING"] = strings.Replace(f.chains["mangle B4_PREROUTING"], line+"\n", "", 1)
+	}
+	pre := f.chains["mangle B4_PREROUTING"]
+	for _, line := range monitorTCPQueueLines {
+		if strings.Contains(pre, line) {
+			t.Fatalf("%q is still listed, so this test proves nothing:\n%s", line, pre)
+		}
+	}
+	for _, kept := range []string{monitorInjectedReturnLine, "-A B4_PREROUTING -p udp -m udp --sport 53 -j NFQUEUE", "-A B4_PREROUTING -p udp -m udp --dport 53 -j NFQUEUE"} {
+		if !strings.Contains(pre, kept) {
+			t.Fatalf("%q went with the TCP queue rules, so this test proves nothing:\n%s", kept, pre)
+		}
+	}
+	if !strings.Contains(pre, "tcp") || !strings.Contains(pre, "NFQUEUE") {
+		t.Fatalf("the listing no longer holds both words a check of the whole listing would find, so this test proves nothing:\n%s", pre)
+	}
+	if m.checkIPTablesRules(&cfg) {
+		t.Errorf("B4_PREROUTING lost every TCP queue rule, so no SYN-ACK, reset or server packet reaches b4, yet the monitor took the return for the connections b4 sends into and the DNS rules for them and restores nothing:\n%s", pre)
 	}
 }
 

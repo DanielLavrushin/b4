@@ -162,20 +162,7 @@ func wantTCPQueueSpecs(manager *IPTablesManager, multiport, ctdir bool) (pre, ou
 	for _, dst := range destinations {
 		out = append(out, "-p tcp "+dst+" -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes "+window+original+nfq)
 	}
-	if ctdir {
-		tcp, _ := wantInjectedWindowSpecs(manager)
-		out = append(out, tcp)
-	}
 	return pre, out
-}
-
-func wantInjectedWindowSpecs(manager *IPTablesManager) (tcp, udp string) {
-	cfg := manager.cfg
-	nfq := strings.Join(manager.buildNFQSpec(cfg.Queue.StartNum, cfg.Queue.Threads), " ")
-	window := func(proto string, limit int) string {
-		return fmt.Sprintf("-p %s -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes %d:%d -m connmark --mark 0x2000000/0x2000000 -m conntrack --ctdir ORIGINAL %s", proto, limit+1, 2*limit, nfq)
-	}
-	return window("tcp", cfg.Queue.TCPConnBytesLimit), window("udp", cfg.Queue.UDPConnBytesLimit)
 }
 
 func tcpQueueSpecs(m Manifest, ipt, chain string) []string {
@@ -213,12 +200,11 @@ func TestQueueRulesMatchConntrackDirectionPerBinary(t *testing.T) {
 				t.Errorf("families exact v4=%v v6=%v, want IPv4 only", v4, v6)
 			}
 			wantPre, wantOut := wantTCPQueueSpecs(manager, multiport, true)
-			_, udpWindow := wantInjectedWindowSpecs(manager)
-			directed := append(append(wantPre, wantOut...), udpWindow)
+			directed := append(wantPre, wantOut...)
 			for _, r := range m.Rules {
 				spec := strings.Join(r.Spec, " ")
 				if strings.Contains(spec, "conntrack") && (r.IPT != backendIPTables || !slices.Contains(directed, spec)) {
-					t.Errorf("only the TCP queue rules and the wider windows of the connections b4 sends into select by conntrack direction, yet %s %s %s carries it: %q", r.IPT, r.Table, r.Chain, spec)
+					t.Errorf("only the TCP queue rules select by conntrack direction, yet %s %s %s carries it: %q", r.IPT, r.Table, r.Chain, spec)
 				}
 			}
 		})
@@ -259,21 +245,8 @@ func TestQueueRulesWithoutTheConntrackMatchAreTodaysRules(t *testing.T) {
 				t.Fatalf("buildManifest: %v", err)
 			}
 
-			tcpWindow, udpWindow := wantInjectedWindowSpecs(on)
-			widened := map[string]int{}
-			mOn.Rules = slices.DeleteFunc(slices.Clone(mOn.Rules), func(r Rule) bool {
-				spec := strings.Join(r.Spec, " ")
-				if spec != tcpWindow && spec != udpWindow {
-					return false
-				}
-				widened[r.IPT]++
-				return r.Table == "mangle" && r.Chain == iptChainName && r.Action == "A"
-			})
-			if widened[backendIPTables] != 2 || widened[backendIP6Tables] != 2 || len(widened) != 2 {
-				t.Errorf("wider windows for the connections b4 sends into, per binary: %v; want the TCP and the UDP one appended to %s for each binary that has the conntrack match", widened, iptChainName)
-			}
 			if len(mOn.Rules) != len(mOff.Rules) || len(mOn.Chains) != len(mOff.Chains) || len(mOn.IPSets) != len(mOff.IPSets) {
-				t.Fatalf("rules %d/%d, chains %d/%d, ipsets %d/%d: apart from the wider windows the conntrack match may only change rules, never add or drop them",
+				t.Fatalf("rules %d/%d, chains %d/%d, ipsets %d/%d: the conntrack match may only change rules, never add or drop them",
 					len(mOn.Rules), len(mOff.Rules), len(mOn.Chains), len(mOff.Chains), len(mOn.IPSets), len(mOff.IPSets))
 			}
 			for i := range mOff.Rules {
@@ -566,7 +539,6 @@ func TestNFTablesQueueRulesSelectByDirection(t *testing.T) {
 	queue := nftQueueAction(cfg)
 	want := []string{
 		"b4_chain tcp dport 443 ct original packets < 20 ct direction original counter " + queue,
-		"b4_chain meta l4proto tcp ct original packets 20-38 ct mark & 0x2000000 == 0x2000000 ct direction original counter " + queue,
 		"prerouting tcp sport 443 ct original packets < 20 ct direction reply counter " + queue,
 		"prerouting tcp sport 443 tcp flags & (syn|ack) == (syn|ack) ct direction reply counter " + queue,
 		"prerouting tcp sport 443 tcp flags & rst == rst ct direction reply counter " + queue,

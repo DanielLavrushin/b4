@@ -72,9 +72,10 @@ func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint
 }
 
 func (w *Worker) handleQueuedThenPersist(vc *verdictCtx, a nfqueue.Attribute, mark uint) int {
+	gen := w.flowDropGeneration()
 	ret := w.handleQueued(vc, a, mark)
 	if vc.dropsFlow() {
-		w.persistFlowDrop(*a.Payload)
+		w.persistFlowDrop(*a.Payload, gen)
 	}
 	return ret
 }
@@ -1028,7 +1029,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		observeFlow(cfg, pkt, sport, dport, set, host)
 	}
 
-	quicFlow := (matchedQUIC || matchedFlow || isQUIC) && !isVoiceMedia
+	quicFlow := (isQUIC || matchedFlow) && !isVoiceMedia
 
 	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
 		if matchedQUIC || matchedFlow || (matchedIP && !matchedLearned) {

@@ -94,9 +94,11 @@ A set that the [watchdog](watchdog.md) keeps working shows its status: **Healthy
 
 ## Recent changes {#recent-changes}
 
-What happened since b4 started, newest first: starts, applied settings, firewall rules restored, strategies the watchdog switched, settings an AI assistant changed over [MCP](settings/mcp.md), and errors. Most entries link to the related page. The list is kept in memory and starts over when b4 restarts.
+What happened since b4 started, newest first: starts, applied settings, firewall rules restored, strategies the watchdog switched, settings an AI assistant changed over [MCP](settings/mcp.md), warnings and errors. Most entries link to the related page. The list is kept in memory and starts over when b4 restarts.
 
 ![Recent changes](/img/dashboard/20261003220050.png)
+
+The warning **TCP port filters cover the source ports of client connections** means that b4 passes some connections unprocessed. A set's TCP port filter covers the ports devices pick for their own connections, and on this router b4 tells a device's packets from the server's by their ports. The second line names the ports. A filter below 32768 avoids it, and [When b4 tells the direction by port](internals/capture.md#direction-by-port) lists the cases.
 
 ## Top domains and addresses {#top-domains}
 

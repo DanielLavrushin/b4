@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/mdlayher/netlink"
@@ -19,6 +20,7 @@ import (
 
 func init() {
 	nftWriteUDPDrop = func(string, []byte) error { return errNftNetlinkInUnitTests }
+	nftFlushUDPDrop = func([]string) error { return errNftNetlinkInUnitTests }
 }
 
 const (
@@ -223,6 +225,152 @@ func TestUDPDropWriterWritesTheFlowIntoItsFamilysSet(t *testing.T) {
 	recordUDPDropWrites(t, refused)
 	if err := udpDropWriter(false)(netip.MustParseAddrPort("10.0.1.2:40000"), netip.MustParseAddrPort("203.0.113.2:443")); !errors.Is(err, refused) {
 		t.Errorf("a refused write returned %v, want the kernel's error so the caller falls back to conntrack", err)
+	}
+}
+
+func TestUDPDropFlushEmptiesEverySetInOneBatch(t *testing.T) {
+	msgs, err := nftUDPDropFlushMessages([]string{nftUDPDropSetV4, nftUDPDropSetV6})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 4 || msgs[0].Header.Type != unix.NFNL_MSG_BATCH_BEGIN || msgs[3].Header.Type != unix.NFNL_MSG_BATCH_END {
+		t.Fatalf("%d messages, want batch begin, one flush per set and batch end", len(msgs))
+	}
+	for i, set := range []string{nftUDPDropSetV4, nftUDPDropSetV6} {
+		m := msgs[i+1]
+		if want := netlink.HeaderType(unix.NFNL_SUBSYS_NFTABLES<<8 | unix.NFT_MSG_DELSETELEM); m.Header.Type != want {
+			t.Errorf("%s: type %#x, want %#x", set, m.Header.Type, want)
+		}
+		if want := netlink.Request | netlink.Acknowledge; m.Header.Flags != want {
+			t.Errorf("%s: flags %v, want %v so a refused flush is reported", set, m.Header.Flags, want)
+		}
+		if !slices.Equal(m.Data[:4], []byte{unix.NFPROTO_INET, unix.NFNETLINK_V0, 0, 0}) {
+			t.Errorf("%s: header %v, want the inet family and version 0", set, m.Data[:4])
+		}
+		ad, err := netlink.NewAttributeDecoder(m.Data[4:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		attrs := map[uint16]string{}
+		for ad.Next() {
+			attrs[ad.Type()] = ad.String()
+		}
+		if err := ad.Err(); err != nil {
+			t.Fatal(err)
+		}
+		want := map[uint16]string{unix.NFTA_SET_ELEM_LIST_TABLE: nftTableName, unix.NFTA_SET_ELEM_LIST_SET: set}
+		if len(attrs) != len(want) || attrs[unix.NFTA_SET_ELEM_LIST_TABLE] != nftTableName || attrs[unix.NFTA_SET_ELEM_LIST_SET] != set {
+			t.Errorf("%s: attributes %v, want only %v: the kernel empties the whole set only when the message carries no element list, and an empty list removes nothing", set, attrs, want)
+		}
+	}
+}
+
+func TestFlushUDPDropSetsEmptiesThePublishedSetsOnly(t *testing.T) {
+	var flushed [][]string
+	orig := nftFlushUDPDrop
+	nftFlushUDPDrop = func(sets []string) error {
+		flushed = append(flushed, sets)
+		return nil
+	}
+	udpDropMu.Lock()
+	origV4, origV6, origHook := udpDropPublishedV4, udpDropPublishedV6, UDPDropWritersFunc
+	UDPDropWritersFunc = nil
+	udpDropMu.Unlock()
+	t.Cleanup(func() {
+		nftFlushUDPDrop = orig
+		udpDropMu.Lock()
+		publishUDPDropSetsLocked(origV4, origV6)
+		UDPDropWritersFunc = origHook
+		udpDropMu.Unlock()
+	})
+
+	for _, c := range []struct {
+		v4, v6 bool
+		want   []string
+	}{
+		{true, true, []string{nftUDPDropSetV4, nftUDPDropSetV6}},
+		{true, false, []string{nftUDPDropSetV4}},
+		{false, true, []string{nftUDPDropSetV6}},
+		{false, false, nil},
+	} {
+		noteUDPDropSets(c.v4, c.v6)
+		flushed = nil
+		if err := FlushUDPDropSets(); err != nil {
+			t.Fatal(err)
+		}
+		switch {
+		case c.want == nil && len(flushed) != 0:
+			t.Errorf("v4=%v v6=%v: flushed %q with no set installed", c.v4, c.v6, flushed)
+		case c.want != nil && (len(flushed) != 1 || !slices.Equal(flushed[0], c.want)):
+			t.Errorf("v4=%v v6=%v: flushed %q, want one batch for %q", c.v4, c.v6, flushed, c.want)
+		}
+	}
+}
+
+type stalledBatchConn struct {
+	stall          time.Duration
+	events         []string
+	sent           time.Time
+	readDeadline   time.Time
+	writeDeadline  time.Time
+	acknowledgeSeq []uint32
+}
+
+func (c *stalledBatchConn) SetWriteDeadline(t time.Time) error {
+	c.events = append(c.events, "write deadline")
+	c.writeDeadline = t
+	return nil
+}
+
+func (c *stalledBatchConn) SendMessages(msgs []netlink.Message) ([]netlink.Message, error) {
+	time.Sleep(c.stall)
+	c.sent = time.Now()
+	c.events = append(c.events, "send")
+	out := make([]netlink.Message, len(msgs))
+	for i, m := range msgs {
+		m.Header.Sequence = uint32(i + 1)
+		if m.Header.Flags&netlink.Acknowledge != 0 {
+			c.acknowledgeSeq = append(c.acknowledgeSeq, m.Header.Sequence)
+		}
+		out[i] = m
+	}
+	return out, nil
+}
+
+func (c *stalledBatchConn) SetReadDeadline(t time.Time) error {
+	c.events = append(c.events, "read deadline")
+	c.readDeadline = t
+	return nil
+}
+
+func (c *stalledBatchConn) Receive() ([]netlink.Message, error) {
+	c.events = append(c.events, "receive")
+	var acks []netlink.Message
+	for _, seq := range c.acknowledgeSeq {
+		acks = append(acks, netlink.Message{Header: netlink.Header{Type: netlink.Error, Sequence: seq}})
+	}
+	return acks, nil
+}
+
+func TestTheBatchReplyDeadlineStartsWhenTheSendReturns(t *testing.T) {
+	msgs, err := nftUDPDropMessages(nftUDPDropSetV4, mustHex(t, "0a000102 9c400000 cb007102 01bb0000"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const deadline = 20 * time.Millisecond
+	c := &stalledBatchConn{stall: 3 * deadline}
+	start := time.Now()
+	if err := nftExchangeBatch(c, msgs, deadline); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"write deadline", "send", "read deadline", "receive"}; !slices.Equal(c.events, want) {
+		t.Fatalf("calls %q, want %q", c.events, want)
+	}
+	if c.writeDeadline.Before(start) || c.writeDeadline.After(c.sent) {
+		t.Errorf("the send must be bounded by its own deadline, set before it")
+	}
+	if c.readDeadline.Before(c.sent.Add(deadline)) {
+		t.Errorf("the reply deadline %v ends before %v after the send returned: time spent in the send, which waits for nf_tables' commit lock while another transaction runs, would turn a done write into a reported failure", c.readDeadline.Sub(c.sent), deadline)
 	}
 }
 

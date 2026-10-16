@@ -23,6 +23,9 @@ func (w *Worker) HandleIncoming(vc *verdictCtx, v byte, raw []byte, ihl int, src
 	w.recordDestAlive(srcStr, dstStr, isSynAck)
 
 	incomingSet := w.connTracker.GetSetForIncoming(dstStr, dport, srcStr, sport)
+	if incomingSet == nil && isSynAck {
+		w.connTracker.RecordEarlySynAck(dstStr, dport, srcStr, sport, packetTTL(v, raw), int(raw[ihl+12]>>4)*4 > 20)
+	}
 
 	if incomingSet != nil && len(raw) > ihl+13 {
 		tcp := raw[ihl:]
@@ -31,13 +34,7 @@ func (w *Worker) HandleIncoming(vc *verdictCtx, v byte, raw []byte, ihl int, src
 		hasACK := (tcpFlags & 0x10) != 0
 		tcpHdrLen := int((tcp[12] >> 4) * 4)
 		hasOpts := tcpHdrLen > 20
-
-		var pktTTL uint8
-		if v == IPv4 && len(raw) > 8 {
-			pktTTL = raw[8]
-		} else if v == IPv6 && len(raw) > 7 {
-			pktTTL = raw[7]
-		}
+		pktTTL := packetTTL(v, raw)
 
 		if !isRst && pktTTL > 0 {
 			w.connTracker.RecordServerResponse(dstStr, dport, srcStr, sport, pktTTL, hasOpts)
@@ -115,6 +112,16 @@ func (w *Worker) HandleIncoming(vc *verdictCtx, v byte, raw []byte, ihl int, src
 	}
 
 	return vc.accept()
+}
+
+func packetTTL(v byte, raw []byte) uint8 {
+	if v == IPv4 && len(raw) > 8 {
+		return raw[8]
+	}
+	if v == IPv6 && len(raw) > 7 {
+		return raw[7]
+	}
+	return 0
 }
 
 func (w *Worker) applyCorruption(fake []byte, ihl int, strategy string) {

@@ -1,28 +1,26 @@
 package tables
 
 import (
-	"os"
-	"path/filepath"
+	"fmt"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/engine"
 )
 
 const (
 	iptOwnSaveRule       = "-m mark --mark 0x8000/0x22008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000"
 	iptInjectedSaveRule  = "-m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000"
 	iptOwnReturnRule     = "-m connmark --mark 0x8000/0x8000 -j RETURN"
-	iptInjectedReturn    = "-p tcp -m connmark --mark 0x2000000/0x2000000 --tcp-flags SYN,RST NONE -j RETURN"
-	iptWiderTCPWindow    = "-p tcp -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 20:38 -m connmark --mark 0x2000000/0x2000000 -m conntrack --ctdir ORIGINAL -j NFQUEUE --queue-balance 537:540 --queue-bypass"
-	iptWiderUDPWindow    = "-p udp -m connbytes --connbytes-dir original --connbytes-mode packets --connbytes 9:16 -m connmark --mark 0x2000000/0x2000000 -m conntrack --ctdir ORIGINAL -j NFQUEUE --queue-balance 537:540 --queue-bypass"
+	iptInjectedReturn    = "-p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN"
 	nftOwnSaveRule       = "meta mark & 0x22008000 == 0x8000 ct mark set ct mark | 0x8000"
 	nftInjectedSaveRule  = "meta mark & 0x22008000 == 0x2008000 ct mark set ct mark | 0x2000000"
 	nftOwnReturnRule     = "ct mark & 0x8000 == 0x8000 return"
-	nftInjectedReturn    = "ct mark & 0x2000000 == 0x2000000 tcp flags & (syn|rst) == 0 return"
-	nftWiderTCPWindow    = "meta l4proto tcp ct original packets 20-38 ct mark & 0x2000000 == 0x2000000 ct direction original counter queue num 537-540 bypass"
-	nftWiderUDPWindow    = "meta l4proto udp ct original packets 9-16 ct mark & 0x2000000 == 0x2000000 ct direction original counter queue num 537-540 bypass"
+	nftInjectedReturn    = "ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return"
 	nftMarkAcceptRule    = "meta mark & 0x8000 == 0x8000 accept"
 	iptMarkAcceptRuleStr = "-m mark --mark 0x8000/0x8000 -j ACCEPT"
 )
@@ -67,17 +65,13 @@ func lastIndexFunc(rules []string, match func(string) bool) int {
 	return -1
 }
 
-func requireRightAfter(t *testing.T, where string, rules []string, window func(string) bool, wider func(string) bool) {
+func requireNoQueueRuleOnTheInjectedBit(t *testing.T, where string, rules []string) {
 	t.Helper()
-	last := lastIndexFunc(rules, window)
-	at := slices.IndexFunc(rules, wider)
-	switch {
-	case last < 0:
-		t.Errorf("%s holds no window rule, so this check proves nothing: %q", where, rules)
-	case at < 0:
-		t.Errorf("%s lacks the wider window for the connections b4 sends into: %q", where, rules)
-	case at != last+1:
-		t.Errorf("%s: the wider window sits at %d, want it right after the last window rule at %d: %q", where, at, last, rules)
+	injected := regexp.MustCompile(fmt.Sprintf(`0x%x([^0-9a-fA-F]|$)`, engine.InjectedMarkBit))
+	for _, r := range rules {
+		if injected.MatchString(r) {
+			t.Errorf("%s holds a rule on the bit for the connections b4 sends into, %q: those connections share the queue window of every other connection, since b4 processing their later packets lands its fakes inside the server's window", where, r)
+		}
 	}
 }
 
@@ -119,19 +113,10 @@ func TestIPTablesTellsTheConnectionsB4SendsIntoFromItsOwn(t *testing.T) {
 	}
 
 	b4 := mangleRules(h, iptChainName)
-	requireRightAfter(t, "B4 (TCP)", b4,
-		func(r string) bool {
-			return strings.HasPrefix(r, "-p tcp -m multiport --dports ") && strings.Contains(r, "--connbytes 0:19 ")
-		},
-		func(r string) bool { return r == iptWiderTCPWindow })
-	requireRightAfter(t, "B4 (UDP)", b4,
-		func(r string) bool {
-			return strings.HasPrefix(r, "-p udp -m multiport --dports ") && strings.Contains(r, "--connbytes 0:8 ")
-		},
-		func(r string) bool { return r == iptWiderUDPWindow })
 	if b4[0] != "-m mark --mark 0x8000/0x8000 -j RETURN" {
 		t.Errorf("B4 must start with the return for b4's own packets, got %q", b4)
 	}
+	requireNoQueueRuleOnTheInjectedBit(t, "B4", b4)
 
 	m := &Monitor{}
 	if !m.checkRules(cfg) {
@@ -140,8 +125,6 @@ func TestIPTablesTellsTheConnectionsB4SendsIntoFromItsOwn(t *testing.T) {
 
 	preChain := h.iptTable(backendIPTables, "mangle").chain("B4_PREROUTING")
 	preChain.rules = slices.DeleteFunc(preChain.rules, func(r string) bool { return r == iptInjectedReturn })
-	b4Chain := h.iptTable(backendIPTables, "mangle").chain(iptChainName)
-	b4Chain.rules = slices.DeleteFunc(b4Chain.rules, func(r string) bool { return r == iptWiderTCPWindow })
 	if err := AddRules(cfg); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
@@ -150,8 +133,81 @@ func TestIPTablesTellsTheConnectionsB4SendsIntoFromItsOwn(t *testing.T) {
 	if at := slices.Index(pre, iptInjectedReturn); at < 0 || at > firstQueue || countRule(pre, iptInjectedReturn) != 1 {
 		t.Errorf("a restore put the return for the connections b4 sends into back at %d, first queue rule at %d: %q", at, firstQueue, pre)
 	}
-	if got := countRule(mangleRules(h, iptChainName), iptWiderTCPWindow); got != 1 {
-		t.Errorf("after a restore B4 holds the wider TCP window %d times, want once", got)
+}
+
+func TestTheMonitorRestoresTheTCPQueueRulesBesideTheReturnForConnectionsB4SendsInto(t *testing.T) {
+	h := newGoldenHost(t)
+	goldenIsolate(t, h)
+	cfg := sendIntoTestConfig(backendIPTables, false)
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	if !(&Monitor{}).checkRules(cfg) {
+		t.Fatalf("the monitor finds rules missing right after they were installed")
+	}
+
+	preChain := h.iptTable(backendIPTables, "mangle").chain("B4_PREROUTING")
+	preChain.rules = slices.DeleteFunc(preChain.rules, func(r string) bool {
+		return strings.HasPrefix(r, "-p tcp ") && goldenIptTarget(r) == "NFQUEUE"
+	})
+	if countRule(preChain.rules, iptInjectedReturn) != 1 || !slices.ContainsFunc(preChain.rules, func(r string) bool { return goldenIptTarget(r) == "NFQUEUE" }) {
+		t.Fatalf("the return for the connections b4 sends into or the DNS answer rule went with the TCP queue rules, so this test proves nothing: %q", preChain.rules)
+	}
+	if (&Monitor{}).checkRules(cfg) {
+		t.Errorf("B4_PREROUTING holds no TCP queue rule, so b4 never sees a SYN-ACK or a reset, yet the monitor wants no restore: %q", preChain.rules)
+	}
+}
+
+func TestTheReturnForConnectionsB4SendsIntoSkipsForeignMarksWithTheQueueBit(t *testing.T) {
+	parseHex := func(t *testing.T, s string) uint32 {
+		t.Helper()
+		v, err := strconv.ParseUint(strings.TrimPrefix(s, "0x"), 16, 32)
+		if err != nil {
+			t.Fatalf("%q: %v", s, err)
+		}
+		return uint32(v)
+	}
+	for _, q := range []uint{0x8000, 0x10000} {
+		t.Run(fmt.Sprintf("queue mark %#x", q), func(t *testing.T) {
+			spec := iptInjectedReplyReturn(q)
+			at := slices.Index(spec, "--mark")
+			if at < 0 || at+1 >= len(spec) {
+				t.Fatalf("iptables return %q matches no connection mark", spec)
+			}
+			value, mask, ok := strings.Cut(spec[at+1], "/")
+			if !ok {
+				t.Fatalf("iptables return matches %q, want value/mask", spec[at+1])
+			}
+			iptValue, iptMask := parseHex(t, value), parseHex(t, mask)
+
+			nft := strings.Join(nftInjectedReplyReturn(q), " ")
+			fields := strings.Fields(nft)
+			if len(fields) < 6 || fields[0] != "ct" || fields[1] != "mark" || fields[2] != "&" || fields[4] != "==" {
+				t.Fatalf("nftables return %q does not start with a masked ct mark comparison", nft)
+			}
+			nftMask, nftValue := parseHex(t, fields[3]), parseHex(t, fields[5])
+			if nftMask != iptMask || nftValue != iptValue {
+				t.Errorf("the backends disagree: iptables %#x/%#x, nftables & %#x == %#x", iptValue, iptMask, nftMask, nftValue)
+			}
+
+			queueBits := uint32(q)
+			for _, tc := range []struct {
+				name    string
+				ctmark  uint32
+				returns bool
+			}{
+				{"a connection b4 sent packets into", engine.InjectedMarkBit, true},
+				{"the same with an unrelated bit of another service", engine.InjectedMarkBit | 0x1, true},
+				{"a KeeneticOS hotspot mark", 0x0ffff1a3 | queueBits, false},
+				{"a foreign mark with the injected and the queue bit", engine.InjectedMarkBit | queueBits, false},
+				{"b4's own connection", queueBits, false},
+				{"a connection without a mark", 0, false},
+			} {
+				if got := tc.ctmark&iptMask == iptValue; got != tc.returns {
+					t.Errorf("%s (ct mark %#x): returned %v, want %v", tc.name, tc.ctmark, got, tc.returns)
+				}
+			}
+		})
 	}
 }
 
@@ -181,9 +237,6 @@ func TestAnIncomingModeSetKeepsTheServersDataOfConnectionsB4SendsInto(t *testing
 				if countRule(out, save) != 1 {
 					t.Errorf("step %d: mangle OUTPUT holds %q %d times, want once", i, save, countRule(out, save))
 				}
-			}
-			if countRule(mangleRules(h, iptChainName), iptWiderTCPWindow) != 1 {
-				t.Errorf("step %d: the wider TCP window is not in B4 exactly once", i)
 			}
 		}
 	})
@@ -218,8 +271,8 @@ func TestAnIncomingModeSetKeepsTheServersDataOfConnectionsB4SendsInto(t *testing
 	})
 }
 
-func TestTheWiderWindowAndTheMarksNeedTheirMatches(t *testing.T) {
-	injectedRules := func(m Manifest, ipt string) (saves, returns, windows int) {
+func TestTheMarksForConnectionsB4SendsIntoNeedConnmark(t *testing.T) {
+	injectedRules := func(m Manifest, ipt string) (saves, returns int) {
 		for _, r := range m.Rules {
 			spec := strings.Join(r.Spec, " ")
 			if r.IPT != ipt || !strings.Contains(spec, "0x2000000") {
@@ -230,22 +283,20 @@ func TestTheWiderWindowAndTheMarksNeedTheirMatches(t *testing.T) {
 				saves++
 			case r.Chain == "B4_PREROUTING" && strings.HasSuffix(spec, "-j RETURN"):
 				returns++
-			case r.Chain == iptChainName && strings.Contains(spec, "NFQUEUE"):
-				windows++
 			default:
 				t.Errorf("%s: unexpected rule with the bit for the connections b4 sends into, %s: %q", ipt, r.Chain, spec)
 			}
 		}
-		return saves, returns, windows
+		return saves, returns
 	}
 	for _, tc := range []struct {
-		name                    string
-		connmark, ctdir         bool
-		saves, returns, windows int
+		name            string
+		connmark, ctdir bool
+		saves, returns  int
 	}{
-		{"both matches", true, true, 1, 1, 2},
-		{"no conntrack direction match", true, false, 1, 1, 0},
-		{"no connmark match", false, true, 0, 0, 0},
+		{"both matches", true, true, 1, 1},
+		{"no conntrack direction match", true, false, 1, 1},
+		{"no connmark match", false, true, 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			manager := dnsQueryTestManager(t, nil)
@@ -255,11 +306,11 @@ func TestTheWiderWindowAndTheMarksNeedTheirMatches(t *testing.T) {
 			if err != nil {
 				t.Fatalf("buildManifest: %v", err)
 			}
-			if s, r, w := injectedRules(m, backendIP6Tables); s != tc.saves || r != tc.returns || w != tc.windows {
-				t.Errorf("ip6tables: %d save, %d return, %d wider window rules; want %d, %d, %d", s, r, w, tc.saves, tc.returns, tc.windows)
+			if s, r := injectedRules(m, backendIP6Tables); s != tc.saves || r != tc.returns {
+				t.Errorf("ip6tables: %d save, %d return rules; want %d, %d", s, r, tc.saves, tc.returns)
 			}
-			if s, r, w := injectedRules(m, backendIPTables); s != 1 || r != 1 || w != 2 {
-				t.Errorf("iptables, whose matches all load: %d save, %d return, %d wider window rules; want 1, 1, 2", s, r, w)
+			if s, r := injectedRules(m, backendIPTables); s != 1 || r != 1 {
+				t.Errorf("iptables, whose matches all load: %d save, %d return rules; want 1, 1", s, r)
 			}
 			if !tc.connmark && slices.ContainsFunc(m.Rules, func(r Rule) bool {
 				return r.IPT == backendIP6Tables && strings.Contains(strings.Join(r.Spec, " "), "connmark")
@@ -305,18 +356,7 @@ func TestNFTablesTellsTheConnectionsB4SendsIntoFromItsOwn(t *testing.T) {
 		t.Errorf("the return for the connections b4 sends into sits below a queue rule: %q", pre)
 	}
 
-	b4 := table.chains[nftChainName]
-	requireRightAfter(t, "b4_chain (TCP)", b4,
-		func(r string) bool { return strings.Contains(r, "tcp dport 443 ct original packets < 20 ") },
-		func(r string) bool { return strings.HasSuffix(r, nftWiderTCPWindow) })
-	requireRightAfter(t, "b4_chain (UDP)", b4,
-		func(r string) bool { return strings.Contains(r, "udp dport 443 ct original packets < 9 ") },
-		func(r string) bool { return strings.HasSuffix(r, nftWiderUDPWindow) })
-	for _, r := range b4 {
-		if strings.HasSuffix(r, nftWiderTCPWindow) && !strings.HasPrefix(r, "meta nfproto ipv4 ") {
-			t.Errorf("the wider window skips the family filter of the other queue rules: %q", r)
-		}
-	}
+	requireNoQueueRuleOnTheInjectedBit(t, nftChainName, table.chains[nftChainName])
 
 	serveNftListings(t, table)
 	if !(&Monitor{}).checkRules(cfg) {
@@ -324,47 +364,15 @@ func TestNFTablesTellsTheConnectionsB4SendsIntoFromItsOwn(t *testing.T) {
 	}
 }
 
-func TestNFTablesWithoutCtDirectionKeepsTheWindowItHad(t *testing.T) {
+func TestNFTablesMarksTheConnectionsB4SendsIntoWithoutCtDirection(t *testing.T) {
 	r := newDirectionRig(t)
 	r.refuse = refuseNftCtDirectionProbe
 	if err := AddRules(sendIntoTestConfig(backendNFTables, false)); err != nil {
 		t.Fatalf("AddRules: %v", err)
 	}
 	table := nftEmittedTable(r.h.take())
-	for chain, rules := range table.chains {
-		for _, rule := range rules {
-			if strings.Contains(rule, "ct original packets 20-38") || strings.Contains(rule, "ct original packets 9-16") {
-				t.Errorf("%s holds a wider window although its direction match is unavailable: %q", chain, rule)
-			}
-		}
-	}
 	if countRule(table.chains["prerouting"], nftInjectedReturn) != 1 || countRule(table.chains["output"], nftInjectedSaveRule) != 1 {
 		t.Errorf("the marks for the connections b4 sends into need no direction match, yet they are missing: prerouting %q, output %q", table.chains["prerouting"], table.chains["output"])
 	}
-}
-
-func TestNFTablesGoesOnWhenTheWiderWindowIsRefused(t *testing.T) {
-	h := newGoldenHost(t)
-	goldenIsolate(t, h)
-	wrap := t.TempDir()
-	stub := "#!/bin/sh\ncase \"$*\" in\n*\"ct original packets 20-38\"*) printf 'Error: Could not process rule: Operation not supported\\n' >&2; exit 1 ;;\nesac\nexec '" + filepath.Join(h.dir, "bin", "nft") + "' \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(wrap, "nft"), []byte(stub), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", wrap+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	if err := AddRules(sendIntoTestConfig(backendNFTables, false)); err != nil {
-		t.Fatalf("a refused wider window failed the whole apply: %v", err)
-	}
-	table := nftEmittedTable(h.take())
-	b4 := table.chains[nftChainName]
-	if slices.ContainsFunc(b4, func(r string) bool { return strings.HasSuffix(r, nftWiderTCPWindow) }) {
-		t.Fatalf("the refused rule is listed, so this test proves nothing: %q", b4)
-	}
-	if !slices.ContainsFunc(b4, func(r string) bool { return strings.HasSuffix(r, nftWiderUDPWindow) }) {
-		t.Errorf("the rules after the refused one did not go in: %q", b4)
-	}
-	if !slices.ContainsFunc(table.chains["prerouting"], func(r string) bool { return strings.Contains(r, "tcp sport 443") && strings.Contains(r, " queue ") }) {
-		t.Errorf("prerouting lost its queue rules: %q", table.chains["prerouting"])
-	}
+	requireNoQueueRuleOnTheInjectedBit(t, nftChainName, table.chains[nftChainName])
 }

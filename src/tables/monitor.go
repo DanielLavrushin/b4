@@ -244,6 +244,15 @@ func (m *Monitor) checkRules(cfg *config.Config) bool {
 	return m.checkIPTablesRules(cfg)
 }
 
+func iptListingQueuesTCP(listing, chain string) bool {
+	for _, line := range strings.Split(listing, "\n") {
+		if iptLineHasTokens(line, []string{"-A", chain}) && iptLineHasTokens(line, []string{"-p", "tcp"}) && iptLineHasTokens(line, []string{"-j", "NFQUEUE"}) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 	legacy := m.firewallBackend() == backendIPTablesLegacy
 	ipt4 := backendIPTables
@@ -300,7 +309,7 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		placement := dnsQueryPlacementOf(ipt)
 		hasDNSResponse := strings.Contains(out, dnsResponsePortMatch) && strings.Contains(out, "NFQUEUE")
 		hasDNSRequest := placement != dnsHeldMangle || (strings.Contains(out, dnsRequestPortMatch) && strings.Contains(out, "NFQUEUE"))
-		hasTCP := strings.Contains(out, "tcp") && strings.Contains(out, "NFQUEUE")
+		hasTCP := iptListingQueuesTCP(out, "B4_PREROUTING")
 		if !hasDNSResponse || !hasDNSRequest || !hasTCP {
 			log.Tracef("Monitor: B4_PREROUTING rules missing (dnsReq=%v, dnsResp=%v, tcp=%v)", hasDNSRequest, hasDNSResponse, hasTCP)
 			return false

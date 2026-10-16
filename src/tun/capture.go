@@ -564,12 +564,8 @@ func (r *routeManager) steerSpecs() [][]string {
 	steer := r.steerMarkStr()
 	mark := []string{"-j", "MARK", "--set-xmark", steer}
 	original := r.ctdirMatch("ORIGINAL")
-	counted := 1
-	if !r.notrackAdded {
-		counted = 2
-	}
-	tcpRange := fmt.Sprintf("0:%d", counted*r.tcpLimit)
-	udpRange := fmt.Sprintf("0:%d", counted*r.udpLimit)
+	tcpRange := fmt.Sprintf("0:%d", r.tcpLimit)
+	udpRange := fmt.Sprintf("0:%d", r.udpLimit)
 
 	var specs [][]string
 	cb := func(portRange string) []string {

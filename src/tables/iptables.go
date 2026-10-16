@@ -563,21 +563,12 @@ func iptInjectedConnmarkSave(mark uint) []string {
 	return iptConnmarkSave(mark|engine.InjectedMarkBit, mark|engine.ClientMark|engine.InjectedMarkBit, engine.InjectedMarkBit)
 }
 
-func iptInjectedMarkMatch() string {
-	return fmt.Sprintf("0x%x/0x%x", engine.InjectedMarkBit, engine.InjectedMarkBit)
+func iptInjectedConnmarkMatch(mark uint) string {
+	return fmt.Sprintf("0x%x/0x%x", engine.InjectedMarkBit, engine.InjectedMarkBit|mark)
 }
 
-func iptInjectedReplyReturn() []string {
-	return []string{"-p", "tcp", "-m", "connmark", "--mark", iptInjectedMarkMatch(), "--tcp-flags", "SYN,RST", "NONE", "-j", "RETURN"}
-}
-
-func iptInjectedWindow(proto string, limit int) []string {
-	return slices.Concat(
-		[]string{"-p", proto, "-m", "connbytes", "--connbytes-dir", "original",
-			"--connbytes-mode", "packets", "--connbytes", fmt.Sprintf("%d:%d", limit+1, 2*limit),
-			"-m", "connmark", "--mark", iptInjectedMarkMatch()},
-		iptCtdirMatch(true, "ORIGINAL"),
-	)
+func iptInjectedReplyReturn(mark uint) []string {
+	return []string{"-p", "tcp", "-m", "connmark", "--mark", iptInjectedConnmarkMatch(mark), "--tcp-flags", "SYN,RST", "NONE", "-j", "RETURN"}
 }
 
 func (manager *IPTablesManager) queueRulesMatchDirection(ipt string, teardown bool) bool {
@@ -786,11 +777,6 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: tcpSpec})
 			}
 		}
-		injectedWindow := ctdir && cfg.Queue.Mark != 0 && manager.hasConnmarkSupport(ipt)
-		if injectedWindow {
-			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
-				Spec: slices.Concat(iptInjectedWindow("tcp", cfg.Queue.TCPConnBytesLimit), manager.buildNFQSpec(queueNum, threads))})
-		}
 
 		udpPorts := cfg.CollectUDPPorts()
 		for i, p := range udpPorts {
@@ -826,10 +812,6 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 				)
 				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: udpSpec})
 			}
-		}
-		if injectedWindow {
-			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
-				Spec: slices.Concat(iptInjectedWindow("udp", cfg.Queue.UDPConnBytesLimit), manager.buildNFQSpec(queueNum, threads))})
 		}
 
 		selectedMACs := cfg.Queue.Devices.SelectedMACs()
@@ -892,7 +874,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: iptInjectedConnmarkSave(mark)},
 			)
 			if teardown || !cfg.AnySetTCPIncoming() {
-				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: iptInjectedReplyReturn()})
+				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: iptInjectedReplyReturn(mark)})
 			}
 			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I",
 				Spec: []string{"-m", "connmark", "--mark", markAccept, "-j", "RETURN"}})

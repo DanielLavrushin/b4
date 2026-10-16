@@ -2,6 +2,7 @@ package tables
 
 import (
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -242,7 +243,13 @@ func TestMonitorLeavesAPendingApplyToTheRefresh(t *testing.T) {
 		hasBinaryCache.Delete(backendIPTables)
 	})
 
-	present := "-A B4_PREROUTING -p udp --sport 53 -j NFQUEUE -p tcp --dport 53 -j NFQUEUE -m mark 0x8000 -j B4\n-A B4 -m mark --mark 0x8000/0x8000 -j RETURN"
+	present := strings.Join([]string{
+		"-A B4_PREROUTING -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass",
+		"-A B4_PREROUTING -p udp -m udp --dport 53 -j NFQUEUE --queue-num 537 --queue-bypass",
+		"-A B4_PREROUTING -p tcp -m multiport --sports 443 -m tcp --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-num 537 --queue-bypass",
+		"-A OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT",
+		"-A B4 -m mark --mark 0x8000/0x8000 -j RETURN",
+	}, "\n")
 	calls := 0
 	run = func(args ...string) (string, error) {
 		calls++

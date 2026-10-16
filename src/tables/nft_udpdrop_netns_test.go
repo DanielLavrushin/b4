@@ -2,14 +2,21 @@ package tables
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/daniellavrushin/b4/config"
+	"github.com/mdlayher/netlink"
 )
 
 const (
@@ -212,4 +219,159 @@ func TestNetnsTheDropSetDropsTheWrittenFlowAndNoOther(t *testing.T) {
 	if err := stale(netip.MustParseAddrPort(udpDropIP4+":41600"), netip.MustParseAddrPort(udpDropPeer4+":443")); err == nil {
 		t.Errorf("a write into the set of a cleared table was reported as done, so the caller would not fall back to conntrack")
 	}
+}
+
+func netnsDropSetConn() (*netlink.Conn, bool) {
+	udpDropConn.mu.Lock()
+	defer udpDropConn.mu.Unlock()
+	return udpDropConn.conn, udpDropConn.open
+}
+
+func netnsDropSetRules(t *testing.T) (*capturedDropWriters, *config.Config) {
+	t.Helper()
+	netnsRequireNft(t)
+	netnsUDPDropLinks(t)
+	routeEngine = nil
+	t.Cleanup(func() { routeEngine = nil })
+	writers := netnsCaptureUDPDropWriters(t)
+	cfg := netnsConfig(backendNFTables)
+	cfg.Sets = nil
+	cfg.Queue.IPv6Enabled = true
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	t.Cleanup(func() { _ = ClearRules(cfg) })
+	return writers, cfg
+}
+
+func TestNetnsAFlushEmptiesTheDropSetsOverTheWritersConnection(t *testing.T) {
+	writers, cfg := netnsDropSetRules(t)
+	flows := []struct {
+		set      string
+		write    func(src, dst netip.AddrPort) error
+		src, dst netip.AddrPort
+	}{
+		{nftUDPDropSetV4, writers.v4, netip.AddrPortFrom(netip.MustParseAddr(udpDropIP4), udpDropSport), netip.AddrPortFrom(netip.MustParseAddr(udpDropPeer4), udpDropTarget)},
+		{nftUDPDropSetV6, writers.v6, netip.AddrPortFrom(netip.MustParseAddr(udpDropIP6), udpDropSport), netip.AddrPortFrom(netip.MustParseAddr(udpDropPeer6), udpDropTarget)},
+	}
+
+	var shared *netlink.Conn
+	for i, f := range flows {
+		if err := f.write(f.src, f.dst); err != nil {
+			t.Fatalf("write %s -> %s into %s: %v", f.src, f.dst, f.set, err)
+		}
+		conn, _ := netnsDropSetConn()
+		if conn == nil || (i > 0 && conn != shared) {
+			t.Fatalf("write %d left connection %p after %p: the writes share one long-lived connection", i+1, conn, shared)
+		}
+		shared = conn
+		if err := netnsSendUDPFrom(f.src, f.dst); !errors.Is(err, syscall.EPERM) {
+			t.Fatalf("the written flow %s -> %s was sent (%v), so the flush below proves nothing", f.src, f.dst, err)
+		}
+	}
+
+	if err := FlushUDPDropSets(); err != nil {
+		t.Fatalf("FlushUDPDropSets: %v", err)
+	}
+	for _, f := range flows {
+		if got := strings.Count(netnsRun(t, "nft", "list", "set", "inet", nftTableName, f.set), "expires"); got != 0 {
+			t.Errorf("%s holds %d elements after the flush", f.set, got)
+		}
+		if err := netnsSendUDPFrom(f.src, f.dst); err != nil {
+			t.Errorf("after the flush the flow %s -> %s must be let through to be decided again, got %v", f.src, f.dst, err)
+		}
+	}
+	if conn, _ := netnsDropSetConn(); conn != shared {
+		t.Errorf("the flush dialled connection %p instead of using the writers' %p", conn, shared)
+	}
+
+	if err := nftWriteUDPDropNetlink("b4_udp_drop_missing", make([]byte, 16)); err == nil {
+		t.Fatal("a write into a set that does not exist must fail")
+	}
+	if conn, _ := netnsDropSetConn(); conn != nil {
+		t.Fatal("a failed exchange must close the connection, so none of its late replies is read as the answer to the next request")
+	}
+	if err := flows[0].write(flows[0].src, flows[0].dst); err != nil {
+		t.Fatalf("the write after a failed one must dial again: %v", err)
+	}
+	if conn, _ := netnsDropSetConn(); conn == nil || conn == shared {
+		t.Fatalf("connection %p after the redial, want a new one", conn)
+	}
+
+	if err := ClearRules(cfg); err != nil {
+		t.Fatalf("ClearRules: %v", err)
+	}
+	if conn, open := netnsDropSetConn(); conn != nil || open {
+		t.Errorf("ClearRules left the drop sets' connection %p open=%v", conn, open)
+	}
+	if err := FlushUDPDropSets(); err != nil {
+		t.Errorf("with no drop set installed the flush has nothing to do, got %v", err)
+	}
+}
+
+func TestNetnsADropSetWriteWaitingBehindAnotherTransactionIsNotAFailure(t *testing.T) {
+	writers, _ := netnsDropSetRules(t)
+
+	const elements = 100000
+	var b strings.Builder
+	b.WriteString("table inet b4_busy {\n set big { type ipv4_addr . inet_service . ipv4_addr . inet_service; flags interval; elements = {\n")
+	for n := 0; n < elements; n++ {
+		if n > 0 {
+			b.WriteString(",\n")
+		}
+		fmt.Fprintf(&b, "10.%d.%d.%d . 1000-2000 . 172.16.%d.%d . 443", n/65536%256, n/256%256, n%256, n/256%256, n%256)
+	}
+	b.WriteString("\n } }\n}\n")
+	big := filepath.Join(t.TempDir(), "busy.nft")
+	if err := os.WriteFile(big, []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = run("nft", "delete", "table", "inet", "b4_busy") })
+
+	load := exec.Command("nft", "-f", big)
+	if err := load.Start(); err != nil {
+		t.Fatalf("nft -f: %v", err)
+	}
+	loaded := make(chan struct{})
+	var loadErr error
+	go func() {
+		loadErr = load.Wait()
+		close(loaded)
+	}()
+	t.Cleanup(func() {
+		_ = load.Process.Kill()
+		<-loaded
+	})
+
+	dst := netip.AddrPortFrom(netip.MustParseAddr(udpDropPeer4), udpDropTarget)
+	var src netip.AddrPort
+	var took time.Duration
+	var err error
+	for port := udpDropSport + 7; took <= nftUDPDropDeadline; port++ {
+		select {
+		case <-loaded:
+			if loadErr != nil {
+				t.Fatalf("loading the other table failed: %v", loadErr)
+			}
+			t.Skipf("no write waited past the %v reply deadline while the other table loaded, so the case was not reproduced", nftUDPDropDeadline)
+		default:
+		}
+		src = netip.AddrPortFrom(netip.MustParseAddr(udpDropIP4), uint16(port))
+		start := time.Now()
+		err = writers.v4(src, dst)
+		took = time.Since(start)
+		time.Sleep(time.Millisecond)
+	}
+	<-loaded
+	if loadErr != nil {
+		t.Fatalf("loading the other table failed: %v", loadErr)
+	}
+	if err != nil {
+		t.Fatalf("the write waited %v behind another nftables transaction and was reported as failed: %v", took, err)
+	}
+	tuple := udpDropIP4 + " . " + strconv.Itoa(int(src.Port())) + " . " + udpDropPeer4 + " . " + strconv.Itoa(udpDropTarget)
+	if _, ok := netnsDropSetElement(netnsRun(t, "nft", "list", "set", "inet", nftTableName, nftUDPDropSetV4), tuple); !ok {
+		t.Fatalf("the write was reported as done after %v, yet the set does not hold %q", took, tuple)
+	}
+	t.Logf("the write waited %v behind the other transaction and succeeded", took)
 }

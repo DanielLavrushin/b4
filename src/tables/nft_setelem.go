@@ -90,17 +90,31 @@ func nftRefreshElementsNetlink(table, set string, addrs []netip.Addr, ttl time.D
 	return nftSendBatch(msgs, nftNetlinkDeadline)
 }
 
+type nftBatchConn interface {
+	SendMessages(msgs []netlink.Message) ([]netlink.Message, error)
+	Receive() ([]netlink.Message, error)
+	SetReadDeadline(t time.Time) error
+	SetWriteDeadline(t time.Time) error
+}
+
 func nftSendBatch(msgs []netlink.Message, deadline time.Duration) error {
 	conn, err := netlink.Dial(unix.NETLINK_NETFILTER, nil)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(deadline)); err != nil {
+	return nftExchangeBatch(conn, msgs, deadline)
+}
+
+func nftExchangeBatch(conn nftBatchConn, msgs []netlink.Message, deadline time.Duration) error {
+	if err := conn.SetWriteDeadline(time.Now().Add(deadline)); err != nil {
 		return err
 	}
 	sent, err := conn.SendMessages(msgs)
 	if err != nil {
+		return err
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(deadline)); err != nil {
 		return err
 	}
 	waiting := map[uint32]bool{}

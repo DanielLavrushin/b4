@@ -17,7 +17,7 @@ The value goes by destination address alone, whatever the protocol, the port and
 | Static | IP and CIDR targets, GeoIP categories and ASNs | While the set lists them |
 | Learned from DNS | Answers for the set's domains over UDP and TCP: forwarded, pinned or from the set's DNS redirect | **Resolved IP TTL (seconds)** while routing is on, otherwise 1 hour |
 | Learned from escalation | The addresses of a host that [escalation](../sets/escalation.md) hands to the set | As for DNS |
-| Learned from TLS and QUIC | The destination of a connection whose ClientHello or QUIC Initial matches the set by name | 10 minutes |
+| Learned from TLS and QUIC | The destination of a connection whose ClientHello or QUIC Initial matches the set by name, other than a [private address](./matching.md#the-order-of-checks) | 10 minutes |
 | b4's own lookups | The first 256 domain entries that are not `regexp:`, GeoSite excluded, when the set starts writing its value or its domains or resolver change, then every half lifetime, at least 5 minutes apart | As for DNS |
 
 A learned address seen again gets a fresh lifetime once less than half of it is left, or at once when b4's lookup finds it. **IP Version Filter** at `4` or `6` leaves out the other family. **Domain-only matching** turns learning off.

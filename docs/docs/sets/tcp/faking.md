@@ -111,6 +111,8 @@ For DPI that slows a connection down once about 15-20 KB have come from the serv
 | **Fake Count** | Fake packets per injection, 1 to 10. | `3` |
 | **Threshold Min**, **Threshold Max** | The incoming data, in KB, that triggers an injection. Each connection picks a value between the two. Not used by **Fake Packets**. | `14`, `14` |
 
+In NFQUEUE mode, while any enabled set has an incoming mode other than **Disabled**, the server's first packets reach b4 on every connection b4 sends fakes or split segments into, whichever set takes the connection. While no set has one, only the SYN-ACKs and resets of those connections reach b4. See [Packet marks](../../guides/marks.md#connections-b4-sends-packets-into).
+
 ## ClientHello Mutation
 
 Changes the real ClientHello, not a fake, so that it does not match known DPI signatures.

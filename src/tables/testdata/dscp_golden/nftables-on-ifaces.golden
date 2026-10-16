@@ -42,9 +42,8 @@ exec nft add rule inet b4_mangle b4_chain meta mark & 0x8000 == 0x8000 return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x200000 == 0x200000 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle prerouting ct mark & 0x2000000 == 0x2000000 tcp flags & (syn|rst) == 0 return
+exec nft add rule inet b4_mangle prerouting ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return
 exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 tcp dport 443 ct original packets < 20 ct direction original counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 meta l4proto tcp ct original packets 20-38 ct mark & 0x2000000 == 0x2000000 ct direction original counter queue num 537-540 bypass
 exec nft list chain inet b4_mangle raw_prerouting
 exec nft add chain inet b4_mangle raw_prerouting { type filter hook prerouting priority -300 ; policy accept ; }
 exec nft list chain inet b4_mangle raw_output
@@ -63,7 +62,6 @@ exec nft add rule inet b4_mangle b4_chain udp dport 53 return
 exec nft add set inet b4_mangle b4_udp_drop4 { type ipv4_addr . inet_service . ipv4_addr . inet_service ; flags timeout ; timeout 120s ; size 65536 ; }
 exec nft add rule inet b4_mangle b4_chain ip saddr . udp sport . ip daddr . udp dport @b4_udp_drop4 counter drop
 exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 udp dport 443 ct original packets < 9 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 meta l4proto udp ct original packets 9-16 ct mark & 0x2000000 == 0x2000000 ct direction original counter queue num 537-540 bypass
 sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
 sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
 sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
@@ -135,9 +133,8 @@ exec nft add rule inet b4_mangle b4_chain meta mark & 0x8000 == 0x8000 return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x200000 == 0x200000 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle prerouting ct mark & 0x2000000 == 0x2000000 tcp flags & (syn|rst) == 0 return
+exec nft add rule inet b4_mangle prerouting ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return
 exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 tcp dport 443 ct original packets < 20 ct direction original counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 meta l4proto tcp ct original packets 20-38 ct mark & 0x2000000 == 0x2000000 ct direction original counter queue num 537-540 bypass
 exec nft list chain inet b4_mangle raw_prerouting
 exec nft add chain inet b4_mangle raw_prerouting { type filter hook prerouting priority -300 ; policy accept ; }
 exec nft list chain inet b4_mangle raw_output
@@ -156,7 +153,6 @@ exec nft add rule inet b4_mangle b4_chain udp dport 53 return
 exec nft add set inet b4_mangle b4_udp_drop4 { type ipv4_addr . inet_service . ipv4_addr . inet_service ; flags timeout ; timeout 120s ; size 65536 ; }
 exec nft add rule inet b4_mangle b4_chain ip saddr . udp sport . ip daddr . udp dport @b4_udp_drop4 counter drop
 exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 udp dport 443 ct original packets < 9 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 meta l4proto udp ct original packets 9-16 ct mark & 0x2000000 == 0x2000000 ct direction original counter queue num 537-540 bypass
 sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
 sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
 sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
@@ -212,9 +208,8 @@ exec nft add rule inet b4_mangle b4_chain meta mark & 0x8000 == 0x8000 return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x200000 == 0x200000 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle prerouting ct mark & 0x2000000 == 0x2000000 tcp flags & (syn|rst) == 0 return
+exec nft add rule inet b4_mangle prerouting ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return
 exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 tcp dport 443 ct original packets < 20 ct direction original counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 meta l4proto tcp ct original packets 20-38 ct mark & 0x2000000 == 0x2000000 ct direction original counter queue num 537-540 bypass
 exec nft list chain inet b4_mangle raw_prerouting
 exec nft add chain inet b4_mangle raw_prerouting { type filter hook prerouting priority -300 ; policy accept ; }
 exec nft list chain inet b4_mangle raw_output
@@ -233,7 +228,6 @@ exec nft add rule inet b4_mangle b4_chain udp dport 53 return
 exec nft add set inet b4_mangle b4_udp_drop4 { type ipv4_addr . inet_service . ipv4_addr . inet_service ; flags timeout ; timeout 120s ; size 65536 ; }
 exec nft add rule inet b4_mangle b4_chain ip saddr . udp sport . ip daddr . udp dport @b4_udp_drop4 counter drop
 exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 udp dport 443 ct original packets < 9 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 meta l4proto udp ct original packets 9-16 ct mark & 0x2000000 == 0x2000000 ct direction original counter queue num 537-540 bypass
 sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
 sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
 sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal

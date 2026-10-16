@@ -35,11 +35,13 @@ With **By SNI** and no domains or GeoSite categories on the [Targets](./targets.
 | --- | --- |
 | **Off** | Matched UDP passes unchanged. b4 still reads the QUIC ClientHello, so a set with domains keeps learning their addresses, for example for routing. |
 | **Fake & Fragment** | Decoy packets go before the real one, and the Initial packet is fragmented. Weak against QUIC. |
-| **Drop** | The packet is dropped without an answer. The client falls back to TCP once it stops waiting, usually after several seconds. |
-| **Reject** | The packet is dropped, and an ICMP port unreachable goes back to the client, which switches to TCP at once. The recommended way to refuse QUIC. |
+| **Drop** | The packet is dropped without an answer, and for QUIC so is the rest of its connection. The client falls back to TCP once it stops waiting, usually after several seconds. |
+| **Reject** | The packet is dropped, and for QUIC so is the rest of its connection. An ICMP port unreachable goes back to the client, which switches to TCP at once. The recommended way to refuse QUIC. |
 | **Coalesce QUIC Initial** | Sends the handshake packet that carries the server name behind a padding packet in the same datagram. Inspection that reads only the first packet of a datagram no longer sees the name. The rest of the connection goes out untouched, and the handshake itself is unchanged. |
 
 When the set blocks its traffic on the [DNS & Routing](./routing.md) tab, the block action applies instead of the action mode.
+
+Whether the rest of a dropped QUIC connection is dropped too depends on the router. [System Info](../settings/system.md#system-info) shows it under **Kernel Capabilities** in the row **QUIC drop holds for the whole connection**. Where the row reads **unavailable**, only the first packets of the connection are dropped, and the row shows what the router lacks. [Dropped QUIC connections](../internals/capture.md#dropped-quic-connections) describes the cases.
 
 Everything on this tab applies to IPv6 only while **Enable IPv6 Support** is on under [Settings > Core](../settings/core.md#protocols). With it off, b4 sees no IPv6 packets, and a destination that answers over IPv6 keeps working over QUIC there.
 

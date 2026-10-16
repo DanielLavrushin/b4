@@ -163,11 +163,32 @@ func (p *Pool) Start() error {
 	if len(p.Workers) > 0 {
 		p.dnsCopy.enable(uint32(p.Workers[0].getConfig().Queue.Mark))
 	}
-	if cfg := p.GetFirstWorkerConfig(); cfg != nil && !cfg.Queue.IsDiscovery && p.state != nil && p.conntrack == nil {
+	if cfg := p.GetFirstWorkerConfig(); cfg != nil && !cfg.Queue.IsDiscovery && p.state != nil {
+		p.startFlowDropPersistence()
+	}
+	return nil
+}
+
+func (p *Pool) startFlowDropPersistence() {
+	if p.conntrack == nil {
 		p.conntrack = ctnl.NewWorker()
 		p.state.flowDrops.setDeleter(p.conntrack)
 	}
-	return nil
+	if p.dropSets == nil {
+		p.dropSets = p.state.flowDrops.startWriter()
+	}
+}
+
+func (p *Pool) stopFlowDropPersistence() {
+	if p.dropSets != nil {
+		p.state.flowDrops.stopWriter(p.dropSets)
+		p.dropSets = nil
+	}
+	if p.conntrack != nil {
+		p.state.flowDrops.setDeleter(nil)
+		p.conntrack.Stop()
+		p.conntrack = nil
+	}
 }
 
 func (p *Pool) OpenDNSQueryCopy() (uint16, error) {
@@ -287,11 +308,7 @@ func (p *Pool) Stop() {
 		log.Errorf("Timeout (%v) waiting for NFQueue workers to stop", timeout)
 	}
 
-	if p.conntrack != nil {
-		p.state.flowDrops.setDeleter(nil)
-		p.conntrack.Stop()
-		p.conntrack = nil
-	}
+	p.stopFlowDropPersistence()
 }
 
 func (w *Worker) getConfig() *config.Config {
@@ -392,6 +409,7 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	p.checkDNSPins(newCfg)
 	if p.state != nil {
 		p.state.direction.noteChange(time.Now())
+		p.state.flowDrops.settingsChanged()
 	}
 
 	return nil

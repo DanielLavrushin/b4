@@ -933,7 +933,7 @@ func flowOffloadSafe(mode string, guard int, cfg *config.Config) bool {
 		window = cfg.Queue.UDPConnBytesLimit
 	}
 
-	return guard > 2*window
+	return guard > window
 }
 
 func testNFQueue(backend string) bool {
@@ -1024,7 +1024,7 @@ func (api *API) collectGeodataInfo() DiagGeodata {
 
 func kernelModuleNames(backend string, st tables.DNSQueryState) []string {
 	if backend == "nftables" {
-		return []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack", "nf_conntrack_netlink"}
+		return []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack"}
 	}
 	modules := []string{"xt_NFQUEUE", "nfnetlink_queue", "xt_connbytes", "xt_conntrack", "xt_multiport", "nf_conntrack", "nf_conntrack_netlink"}
 	if dnsQueryCopyRelevant(st) {

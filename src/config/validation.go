@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
@@ -463,7 +464,7 @@ func (c *Config) Validate() error {
 	}
 
 	if c.Queue.Mark != 0 && uint32(c.Queue.Mark)&^(PerSetRouteMarkBits|RouterOwnProxyMarkBit) == 0 {
-		v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", c.Queue.Mark)}, "mark value 0x%x conflicts with per-set mark bits {0-14, 17, 24}; bypass rule would catch TPROXY-redirected traffic. Use a value with at least one bit in {15-16, 18-23, 25-31} (default 0x8000 has bit 15)", c.Queue.Mark)
+		v.addf("queue.mark", "mark_conflict", map[string]any{"mark": fmt.Sprintf("0x%x", c.Queue.Mark)}, "mark value 0x%x conflicts with per-set mark bits {0-14, 17, 24}; bypass rule would catch TPROXY-redirected traffic. Use a value with at least one bit in {15-16, 18-23, 26-31} (default 0x8000 has bit 15)", c.Queue.Mark)
 		return v.result()
 	}
 
@@ -491,6 +492,9 @@ func (c *Config) Validate() error {
 		v.add("queue.mark", "mark_conflict", "queue marks must be unique: mark, discovery_flow_mark, discovery_injected_mark", nil)
 		return v.result()
 	}
+	if c.Queue.Mode != "tun" && !c.Queue.IsDiscovery {
+		warnQueueMarkWithInjectedBit(c.Queue.Mark)
+	}
 
 	for setIdx, set := range c.Sets {
 		if set.Id == "" {
@@ -507,6 +511,15 @@ func (c *Config) Validate() error {
 	c.BuildSetPortRanges()
 
 	return v.result()
+}
+
+var injectedBitWarnedMark atomic.Uint64
+
+func warnQueueMarkWithInjectedBit(mark uint) {
+	if mark&engine.InjectedMarkBit == 0 || injectedBitWarnedMark.Swap(uint64(mark)) == uint64(mark) {
+		return
+	}
+	log.Warnf("queue.mark 0x%x has bit 0x%x, the bit b4 adds to the packets it sends into a client's connection, so b4 cannot tell those connections from its own: their SYN-ACKs and resets skip b4, and RST protection, RST escalation and TTL learning miss every connection b4 changed. Choose a queue mark without that bit", mark, uint(engine.InjectedMarkBit))
 }
 
 func normalizeSetASNs(v *validator, setIdx int, set *SetConfig) bool {

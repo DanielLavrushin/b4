@@ -9,14 +9,18 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/engine"
+	"github.com/daniellavrushin/b4/leaktest"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/quic"
 	"github.com/florianl/go-nfqueue"
+	"go.uber.org/goleak"
 	"golang.org/x/sys/unix"
 )
 
@@ -169,6 +173,11 @@ func TestOnlyDecisionDropsOfQUICHoldTheFlow(t *testing.T) {
 	copy(stun[8:], "b4-stun-txid")
 	rtp := make([]byte, 40)
 	rtp[0], rtp[1] = 0x80, 0x78
+	wireguard := make([]byte, 148)
+	wireguard[0] = 0x01
+	dtls := append([]byte{0x16, 0xfe, 0xfd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x30}, make([]byte, 48)...)
+	srtp := make([]byte, 60)
+	srtp[0], srtp[1] = 0x80, 0x60
 
 	learning := newDomainOnlyQUICSet(config.UDPModeDrop)
 	learning.Targets.DomainOnly = false
@@ -195,11 +204,16 @@ func TestOnlyDecisionDropsOfQUICHoldTheFlow(t *testing.T) {
 		{"QUIC of a set that leaves UDP alone", newDomainOnlyQUICSet(config.ConfigOff), false, nil, engine.VerdictAccept},
 		{"STUN to an address learned for a dropped name", learning, true, stun, engine.VerdictDrop},
 		{"Discord voice to an address learned for a dropped name", learning, true, rtp, engine.VerdictDrop},
+		{"a WireGuard initiation to an address learned for a dropped name", learning, true, wireguard, engine.VerdictDrop},
+		{"a DTLS record to an address learned for a dropped name", learning, true, dtls, engine.VerdictDrop},
+		{"SRTP to an address learned for a dropped name", learning, true, srtp, engine.VerdictDrop},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			payload := c.payload
 			if payload == nil {
 				payload = buildQUICInitialWithSNI(t, []byte{0xd2, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+			} else if quic.LooksLikeQUIC(payload) {
+				t.Fatalf("the payload must not look like QUIC, or this case tests nothing: %x", payload[:8])
 			}
 			w, rec := flowDropWorker(t, &c.set)
 			if c.teach {
@@ -217,6 +231,29 @@ func TestOnlyDecisionDropsOfQUICHoldTheFlow(t *testing.T) {
 				t.Fatalf("%d conntrack deletes and %d set writes for a drop that is no decision on a QUIC flow", len(jobs), len(writes))
 			}
 		})
+	}
+}
+
+func TestQUICToAnAddressLearnedForADroppedNameHoldsItsFlow(t *testing.T) {
+	learning := newDomainOnlyQUICSet(config.UDPModeDrop)
+	learning.Targets.DomainOnly = false
+	longHeader := append([]byte{0xc3, 0, 0, 0, 1, 8, 1, 2, 3, 4, 5, 6, 7, 8, 0}, make([]byte, 40)...)
+	if !quic.LooksLikeQUIC(longHeader) {
+		t.Fatal("the long header must look like QUIC")
+	}
+
+	w, rec := flowDropWorker(t, &learning)
+	teach := buildQUICInitialWithSNI(t, []byte{0xd3, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, teach, 50600); v != engine.VerdictDropFlow {
+		t.Fatalf("the ClientHello that teaches the address must hold its own flow, got %v", v)
+	}
+	if v := sendQUIC(w, longHeader, 50601); v != engine.VerdictDropFlow {
+		t.Fatalf("QUIC without a readable ClientHello to the learned address: got %v, want VerdictDropFlow", v)
+	}
+	queueFrom(w, rec, makeV4UDPPacket(longHeader, quicClient, quicServer, 50602, 443))
+	w.wg.Wait()
+	if _, jobs, _ := rec.snapshot(); len(jobs) != 1 || jobs[0].tuple != udpTuple(t, "10.0.0.1:50602", "1.2.3.4:443") {
+		t.Fatalf("conntrack deletes %+v, want the queued QUIC flow's own", jobs)
 	}
 }
 
@@ -240,14 +277,14 @@ func TestATCPStrategyNeverHoldsTheFlow(t *testing.T) {
 }
 
 func TestFlowDropPrefersTheDropSetOfThePacketsFamily(t *testing.T) {
-	f := newFlowDropPersistence()
+	f := writingPersistence(t)
 	rec := &flowDropRecorder{}
 	f.setWriters(rec.write, nil)
 	f.setDeleter(rec)
 	now := time.Unix(1000, 0)
 
 	v4 := makeV4UDPPacket([]byte{0xc0, 0, 0, 0, 1, 0, 0}, net.ParseIP("192.168.1.10"), quicServer, 50001, 443)
-	f.persist(v4, now)
+	persistNow(t, f, v4, now)
 	events, jobs, writes := rec.snapshot()
 	if len(writes) != 1 || len(jobs) != 0 {
 		t.Fatalf("%d set writes and %d counted deletes, want the IPv4 drop set to hold the flow", len(writes), len(jobs))
@@ -263,7 +300,7 @@ func TestFlowDropPrefersTheDropSetOfThePacketsFamily(t *testing.T) {
 	}
 
 	v6 := makeV6UDPPacketWithExt([]byte{0xc0, 0, 0, 0, 1, 0, 0}, 50002, 443, 0, nil)
-	f.persist(v6, now)
+	persistNow(t, f, v6, now)
 	_, jobs, writes = rec.snapshot()
 	if len(writes) != 1 || len(jobs) != 1 || len(rec.behindSet()) != 1 {
 		t.Fatalf("with no IPv6 drop set the IPv6 flow must go to conntrack: %d writes, %d deletes, %d behind the set", len(writes), len(jobs), len(rec.behindSet()))
@@ -279,7 +316,7 @@ func TestFlowDropPrefersTheDropSetOfThePacketsFamily(t *testing.T) {
 
 	f.setDeleter(nil)
 	other := makeV4UDPPacket([]byte{0xc0, 0, 0, 0, 1, 0, 0}, net.ParseIP("192.168.1.10"), quicServer, 50009, 443)
-	f.persist(other, now)
+	persistNow(t, f, other, now)
 	if _, _, writes = rec.snapshot(); len(writes) != 2 || len(rec.behindSet()) != 1 {
 		t.Fatalf("without conntrack the set alone holds the flow: %d writes, %d deletes behind the set", len(writes), len(rec.behindSet()))
 	}
@@ -289,7 +326,7 @@ func TestFlowDropPrefersTheDropSetOfThePacketsFamily(t *testing.T) {
 }
 
 func TestFlowDropWritesAFlowOnceInAFewSeconds(t *testing.T) {
-	f := newFlowDropPersistence()
+	f := writingPersistence(t)
 	rec := &flowDropRecorder{}
 	f.setWriters(rec.write, rec.write)
 	f.setDeleter(rec)
@@ -297,17 +334,17 @@ func TestFlowDropWritesAFlowOnceInAFewSeconds(t *testing.T) {
 	other := makeV4UDPPacket([]byte{1}, quicClient, quicServer, 50004, 443)
 	now := time.Unix(2000, 0)
 
-	f.persist(raw, now)
-	f.persist(raw, now.Add(time.Second))
-	f.persist(other, now.Add(time.Second))
-	f.persist(raw, now.Add(flowDropRecentTTL-time.Millisecond))
+	persistNow(t, f, raw, now)
+	persistNow(t, f, raw, now.Add(time.Second))
+	persistNow(t, f, other, now.Add(time.Second))
+	persistNow(t, f, raw, now.Add(flowDropRecentTTL-time.Millisecond))
 	if _, jobs, writes := rec.snapshot(); len(writes) != 2 || len(jobs) != 0 {
 		t.Fatalf("%d writes and %d deletes, want one write per flow inside the window and no conntrack fallback", len(writes), len(jobs))
 	}
 	if n := len(rec.behindSet()); n != 2 {
 		t.Fatalf("%d deletes behind the set, want one per write", n)
 	}
-	f.persist(raw, now.Add(flowDropRecentTTL))
+	persistNow(t, f, raw, now.Add(flowDropRecentTTL))
 	if _, _, writes := rec.snapshot(); len(writes) != 3 || len(rec.behindSet()) != 3 {
 		t.Fatalf("%d writes and %d deletes behind the set, want the flow written and deleted again once the window passed", len(writes), len(rec.behindSet()))
 	}
@@ -316,7 +353,7 @@ func TestFlowDropWritesAFlowOnceInAFewSeconds(t *testing.T) {
 	}
 
 	f.setWriters(rec.write, rec.write)
-	f.persist(raw, now.Add(flowDropRecentTTL+time.Millisecond))
+	persistNow(t, f, raw, now.Add(flowDropRecentTTL+time.Millisecond))
 	if _, _, writes := rec.snapshot(); len(writes) != 4 {
 		t.Fatal("publishing the drop sets again (a rebuilt table) must forget the recent writes")
 	}
@@ -332,15 +369,15 @@ func TestFlowDropFallsBackToConntrackWhenTheSetWriteFails(t *testing.T) {
 		log.Init(os.Stderr, previous, true)
 	})
 
-	f := newFlowDropPersistence()
+	f := writingPersistence(t)
 	rec := &flowDropRecorder{setErr: errors.New("no such file or directory")}
 	f.setWriters(rec.write, nil)
 	f.setDeleter(rec)
 	raw := makeV4UDPPacket([]byte{1}, quicClient, quicServer, 50005, 443)
 	now := time.Unix(3000, 0)
 
-	f.persist(raw, now)
-	f.persist(raw, now.Add(time.Millisecond))
+	persistNow(t, f, raw, now)
+	persistNow(t, f, raw, now.Add(time.Millisecond))
 	events, jobs, _ := rec.snapshot()
 	want := []string{"nft", "conntrack original", "nft", "conntrack original"}
 	if strings.Join(events, ",") != strings.Join(want, ",") {
@@ -362,14 +399,14 @@ func TestFlowDropCountsWhatItCannotHold(t *testing.T) {
 	udp := makeV4UDPPacket(quic, quicClient, quicServer, 50006, 443)
 
 	f := newFlowDropPersistence()
-	f.persist(udp, time.Now())
+	f.persist(udp, time.Now(), 0)
 	if s := f.snapshot(); s.Unpersisted != 1 {
 		t.Fatalf("with neither a drop set nor conntrack: counters %+v, want one unpersisted", s)
 	}
 
 	rec := &flowDropRecorder{refuse: true}
 	f.setDeleter(rec)
-	f.persist(udp, time.Now())
+	f.persist(udp, time.Now(), 0)
 	if s := f.snapshot(); s.Unpersisted != 1 || s.ConntrackRefused != 1 || s.ConntrackQueued != 0 {
 		t.Fatalf("with conntrack refusing the job: counters %+v, want it counted as refused, not as never tried", s)
 	}
@@ -381,7 +418,7 @@ func TestFlowDropCountsWhatItCannotHold(t *testing.T) {
 	copy(mapped[8:24], net.ParseIP("::ffff:10.0.0.1").To16())
 	copy(mapped[24:40], net.ParseIP("::ffff:1.2.3.4").To16())
 	for _, raw := range [][]byte{tcp, truncated, mapped, nil} {
-		f.persist(raw, time.Now())
+		f.persist(raw, time.Now(), 0)
 	}
 	if s := f.snapshot(); s.Unpersisted != 5 || s.ConntrackQueued != 0 || s.ConntrackRefused != 1 {
 		t.Fatalf("a packet without a complete UDP tuple must be counted, never deleted: counters %+v", s)
@@ -418,4 +455,257 @@ func TestPoolWiresTheDropSetWriters(t *testing.T) {
 	}
 	var nilPool *Pool
 	nilPool.SetUDPDropWriters(rec.write, rec.write)
+}
+
+func writingPersistence(t *testing.T) *flowDropPersistence {
+	t.Helper()
+	f := newFlowDropPersistence()
+	q := f.startWriter()
+	t.Cleanup(func() { f.stopWriter(q) })
+	return f
+}
+
+func drainDropSetWriter(t *testing.T, f *flowDropPersistence) {
+	t.Helper()
+	if !waitFor(t, func() bool { return f.snapshot().NftPending == 0 }) {
+		t.Fatalf("the drop set writer did not finish its writes: %+v", f.snapshot())
+	}
+}
+
+func persistNow(t *testing.T, f *flowDropPersistence, raw []byte, now time.Time) {
+	t.Helper()
+	f.persist(raw, now, f.gen.Load())
+	drainDropSetWriter(t, f)
+}
+
+func stubDropSetFlush(t *testing.T, available bool, err error) *atomic.Int32 {
+	t.Helper()
+	calls := &atomic.Int32{}
+	origFlush, origAvailable := UDPDropFlushFunc, dropSetConntrackAvailable
+	UDPDropFlushFunc = func() error {
+		calls.Add(1)
+		return err
+	}
+	dropSetConntrackAvailable = func() bool { return available }
+	t.Cleanup(func() { UDPDropFlushFunc, dropSetConntrackAvailable = origFlush, origAvailable })
+	return calls
+}
+
+func TestTheDropSetWriteLeavesTheQueueThread(t *testing.T) {
+	f := writingPersistence(t)
+	rec := &flowDropRecorder{}
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	f.setWriters(func(src, dst netip.AddrPort) error {
+		entered <- struct{}{}
+		<-release
+		return rec.write(src, dst)
+	}, nil)
+	f.setDeleter(rec)
+
+	returned := make(chan struct{})
+	go func() {
+		f.persist(makeV4UDPPacket([]byte{1}, quicClient, quicServer, 50010, 443), time.Now(), f.gen.Load())
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("persist waited for the nftables write: a write stuck behind another nftables transaction would stall the queue thread")
+	}
+	<-entered
+	if s := f.snapshot(); s.NftPending != 1 || s.NftWritten != 0 {
+		t.Fatalf("while the write waits it is pending and not yet done: %+v", s)
+	}
+	close(release)
+	drainDropSetWriter(t, f)
+	if s := f.snapshot(); s.NftWritten != 1 || len(rec.behindSet()) != 1 {
+		t.Fatalf("the write and the conntrack delete behind it happen once the write returns: %+v, %d behind the set", s, len(rec.behindSet()))
+	}
+}
+
+func TestAFullDropSetQueueFallsBackToConntrack(t *testing.T) {
+	f := writingPersistence(t)
+	rec := &flowDropRecorder{}
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	var first atomic.Bool
+	first.Store(true)
+	f.setWriters(func(src, dst netip.AddrPort) error {
+		if first.CompareAndSwap(true, false) {
+			entered <- struct{}{}
+			<-release
+		}
+		return rec.write(src, dst)
+	}, nil)
+	f.setDeleter(rec)
+	flow := func(port uint16) []byte {
+		return makeV4UDPPacket([]byte{1}, quicClient, quicServer, port, 443)
+	}
+
+	f.persist(flow(20000), time.Now(), 0)
+	<-entered
+	for i := 0; i < dropSetQueueLen; i++ {
+		f.persist(flow(uint16(20001+i)), time.Now(), 0)
+	}
+	overflow := flow(30000)
+	f.persist(overflow, time.Now(), 0)
+	_, jobs, _ := rec.snapshot()
+	if s := f.snapshot(); s.NftQueueFull != 1 || len(jobs) != 1 || jobs[0].tuple != udpTuple(t, "10.0.0.1:30000", "1.2.3.4:443") {
+		t.Fatalf("a write that finds the queue full is counted and the flow's conntrack entry is deleted instead: %+v, deletes %+v", s, jobs)
+	}
+
+	close(release)
+	drainDropSetWriter(t, f)
+	persistNow(t, f, overflow, time.Now())
+	if s := f.snapshot(); s.NftWritten != dropSetQueueLen+2 || s.NftRecent != 0 {
+		t.Fatalf("every queued write is done, and the flow that found the queue full is written at its next drop instead of being taken as written: %+v", s)
+	}
+}
+
+func TestAWriteDecidedUnderOlderSettingsIsDecidedAgain(t *testing.T) {
+	f := newFlowDropPersistence()
+	rec := &flowDropRecorder{}
+	f.setWriters(rec.write, nil)
+	f.setDeleter(rec)
+	key := flowDropKey{netip.MustParseAddrPort("10.0.0.1:50011"), netip.MustParseAddrPort("1.2.3.4:443")}
+	before := f.gen.Load()
+	f.settingsChanged()
+
+	f.writeQueued(dropSetWrite{key: key, gen: before})
+	_, jobs, writes := rec.snapshot()
+	if len(writes) != 0 || len(jobs) != 1 || jobs[0].tuple != udpTuple(t, "10.0.0.1:50011", "1.2.3.4:443") || jobs[0].dir != ctnl.Original {
+		t.Fatalf("a drop decided before a settings change must not be written; its conntrack entry goes, so its next datagram is decided again: writes %+v, deletes %+v", writes, jobs)
+	}
+	if s := f.snapshot(); s.NftStale != 1 || s.NftWritten != 0 {
+		t.Fatalf("counters %+v", s)
+	}
+
+	f.writeQueued(dropSetWrite{key: key, gen: f.gen.Load()})
+	if _, _, writes = rec.snapshot(); len(writes) != 1 {
+		t.Fatal("a drop decided under the current settings is written")
+	}
+
+	f.setDeleter(nil)
+	other := flowDropKey{netip.MustParseAddrPort("10.0.0.1:50012"), netip.MustParseAddrPort("1.2.3.4:443")}
+	f.writeQueued(dropSetWrite{key: other, gen: before})
+	if _, _, writes = rec.snapshot(); len(writes) != 2 {
+		t.Fatal("without conntrack netlink nothing can decide the flow again, so the set still holds it")
+	}
+}
+
+func TestOnlyADropSetWithAFlowAndConntrackBehindItIsEmptied(t *testing.T) {
+	calls := stubDropSetFlush(t, true, nil)
+	written := func() *flowDropPersistence {
+		f := newFlowDropPersistence()
+		rec := &flowDropRecorder{}
+		f.setWriters(rec.write, nil)
+		f.setDeleter(rec)
+		f.writeQueued(dropSetWrite{key: flowDropKey{netip.MustParseAddrPort("10.0.0.1:50013"), netip.MustParseAddrPort("1.2.3.4:443")}})
+		return f
+	}
+
+	empty := newFlowDropPersistence()
+	empty.setWriters((&flowDropRecorder{}).write, nil)
+	empty.setDeleter(&flowDropRecorder{})
+	empty.flushDropSets()
+	if calls.Load() != 0 {
+		t.Fatal("nothing was written, so there is nothing to empty")
+	}
+
+	noConntrack := written()
+	noConntrack.setDeleter(nil)
+	noConntrack.flushDropSets()
+	unavailable := written()
+	dropSetConntrackAvailable = func() bool { return false }
+	unavailable.flushDropSets()
+	dropSetConntrackAvailable = func() bool { return true }
+	withdrawn := written()
+	withdrawn.setWriters(nil, nil)
+	withdrawn.flushDropSets()
+	if calls.Load() != 0 {
+		t.Fatal("without conntrack netlink a released flow keeps its conntrack entry, so its later datagrams would pass unseen: the sets must keep their flows")
+	}
+
+	f := written()
+	src, dst := netip.MustParseAddrPort("10.0.0.1:50014"), netip.MustParseAddrPort("1.2.3.4:443")
+	now := time.Now()
+	f.seenRecently(src, dst, now)
+	f.flushDropSets()
+	if calls.Load() != 1 {
+		t.Fatalf("the written set must be emptied once, emptied %d times", calls.Load())
+	}
+	if f.seenRecently(src, dst, now) {
+		t.Fatal("emptying the sets must forget the recent writes, or a flow dropped again right after would not be written")
+	}
+	f.flushDropSets()
+	if s := f.snapshot(); calls.Load() != 1 || s.NftFlushed != 1 {
+		t.Fatalf("an emptied set is not emptied again until something is written: %d calls, %+v", calls.Load(), s)
+	}
+}
+
+func TestAFailedEmptyingIsWarnedOnceAndTriedAgain(t *testing.T) {
+	buf := &syncBuffer{}
+	previous := log.Level(log.CurLevel.Load())
+	log.Init(io.Discard, log.LevelInfo, true)
+	log.StartCapture(buf)
+	t.Cleanup(func() {
+		log.StopCapture(buf)
+		log.Init(os.Stderr, previous, true)
+	})
+	calls := stubDropSetFlush(t, true, errors.New("netlink receive: invalid argument"))
+
+	f := newFlowDropPersistence()
+	rec := &flowDropRecorder{}
+	f.setWriters(rec.write, nil)
+	f.setDeleter(rec)
+	f.writeQueued(dropSetWrite{key: flowDropKey{netip.MustParseAddrPort("10.0.0.1:50015"), netip.MustParseAddrPort("1.2.3.4:443")}})
+	f.flushDropSets()
+	f.flushDropSets()
+	if s := f.snapshot(); calls.Load() != 2 || s.NftFlushFailed != 2 || s.NftFlushed != 0 {
+		t.Fatalf("a failed emptying leaves the flows in the set, so the next change tries again: %d calls, %+v", calls.Load(), s)
+	}
+	if n := strings.Count(buf.String(), "Emptying b4's nftables drop sets"); n != 1 {
+		t.Fatalf("the failure was logged %d times, want once:\n%s", n, buf.String())
+	}
+}
+
+func TestASettingsChangeEmptiesTheDropSets(t *testing.T) {
+	calls := stubDropSetFlush(t, true, nil)
+	cfg := directionConfig("443")
+	w := directionWorker(t, &cfg)
+	state := &runtimeState{direction: newQueueDirectionState(time.Now()), flowDrops: newFlowDropPersistence()}
+	w.flowDrops = state.flowDrops
+	pool := &Pool{Workers: []*Worker{w}, state: state}
+	rec := &flowDropRecorder{}
+	state.flowDrops.setWriters(rec.write, nil)
+	state.flowDrops.setDeleter(rec)
+	pool.dropSets = state.flowDrops.startWriter()
+	t.Cleanup(func() { state.flowDrops.stopWriter(pool.dropSets) })
+
+	raw := makeV4UDPPacket([]byte{1}, quicClient, quicServer, 50016, 443)
+	persistNow(t, state.flowDrops, raw, time.Now())
+	next := directionConfig("443,8443")
+	if err := pool.UpdateConfig(&next); err != nil {
+		t.Fatal(err)
+	}
+	if !waitFor(t, func() bool { return calls.Load() == 1 }) {
+		t.Fatalf("a settings change must empty the drop sets once, got %d", calls.Load())
+	}
+	persistNow(t, state.flowDrops, raw, time.Now())
+	if _, _, writes := rec.snapshot(); len(writes) != 2 {
+		t.Fatalf("after the sets were emptied a flow dropped again is written again, got %d writes", len(writes))
+	}
+}
+
+func TestPoolStopJoinsTheDropSetWriter(t *testing.T) {
+	p := &Pool{state: newRuntimeState(), stopCleanup: make(chan struct{})}
+	p.startFlowDropPersistence()
+	if p.state.flowDrops.queue.Load() == nil || p.dropSets == nil || p.conntrack == nil {
+		t.Fatal("the pool must start the drop set writer and the conntrack worker")
+	}
+	p.Stop()
+	if p.state.flowDrops.queue.Load() != nil || p.dropSets != nil || p.conntrack != nil {
+		t.Fatal("Stop must detach the writer and the conntrack worker")
+	}
+	goleak.VerifyNone(t, leaktest.Options()...)
 }

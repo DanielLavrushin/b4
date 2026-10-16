@@ -27,6 +27,7 @@ type Pool struct {
 	dnsTCP      *dnsTCPServer
 	dnsCopy     *dnsCopyListener
 	conntrack   *ctnl.Worker
+	dropSets    *dropSetWriter
 }
 
 type PacketInfo struct {

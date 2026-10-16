@@ -316,7 +316,7 @@ func TestNFLOGModuleRowsOnlyWhereDNSQueriesAreCopiedOrHeldAfterConntrack(t *test
 		{"affected kernel whose raw table queues every query", "iptables", tables.DNSQueryState{Applied: true, Release: "4.1.52", Affected: true, Placements: map[string]string{"iptables": "raw", "ip6tables": "raw"}}, base},
 		{"affected kernel copying IPv6", "iptables", tables.DNSQueryState{Applied: true, Release: "4.1.52", Affected: true, Placements: map[string]string{"iptables": "raw", "ip6tables": "copy"}}, withNFLOG},
 		{"affected kernel holding after conntrack", "iptables-legacy", tables.DNSQueryState{Applied: true, Release: "4.9-ndm-5", KeeneticOS: true, Affected: true, Placements: map[string]string{"iptables-legacy": "mangle"}}, withNFLOG},
-		{"nftables", "nftables", tables.DNSQueryState{Applied: true, Release: "4.9.337", Placements: map[string]string{"nftables": "mangle"}}, []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack", "nf_conntrack_netlink"}},
+		{"nftables", "nftables", tables.DNSQueryState{Applied: true, Release: "4.9.337", Placements: map[string]string{"nftables": "mangle"}}, []string{"nft_queue", "nfnetlink_queue", "nft_ct", "nf_conntrack"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := kernelModuleNames(tc.backend, tc.st); !slices.Equal(got, tc.want) {

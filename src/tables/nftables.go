@@ -211,19 +211,9 @@ func (n *NFTablesManager) addLimitedQueueRule(chain, dir, limit string, ctDirect
 	return n.addQueueRule(chain, queueMatchWithLimit(match, dir, limit, n.ctPacketsSupported, ctDirection)...)
 }
 
-func nftInjectedWindowMatch(proto string, limit int) []string {
-	injected := fmt.Sprintf("0x%x", engine.InjectedMarkBit)
-	return []string{"meta", "l4proto", proto, "ct", "original", "packets", fmt.Sprintf("%d-%d", limit+1, 2*limit),
-		"ct", "mark", "&", injected, "==", injected, "ct", "direction", "original", "counter"}
-}
-
-func (n *NFTablesManager) addInjectedWindowRule(proto string, limit int) {
-	if n.cfg.Queue.Mark == 0 || !n.ctPacketsSupported || !n.ctDirectionSupported {
-		return
-	}
-	if err := n.addQueueRule(nftChainName, nftInjectedWindowMatch(proto, limit)...); err != nil {
-		log.Warnf("nftables: %s connections b4 sends fakes or split segments into keep the window of %d packets, which those packets use up as well: %v", strings.ToUpper(proto), limit, err)
-	}
+func nftInjectedReplyReturn(mark uint) []string {
+	return []string{"ct", "mark", "&", fmt.Sprintf("0x%x", engine.InjectedMarkBit|mark), "==", fmt.Sprintf("0x%x", engine.InjectedMarkBit),
+		"tcp", "flags", "&", "(syn|rst)", "==", "0", "return"}
 }
 
 func (n *NFTablesManager) checkQueueSupport() error {
@@ -355,14 +345,14 @@ func (n *NFTablesManager) apply() error {
 	if err := n.addRule("output", "oifname", `"lo"`, "return"); err != nil {
 		return err
 	}
-	injected := fmt.Sprintf("0x%x", engine.InjectedMarkBit)
 	if cfg.Queue.Mark != 0 {
+		injected := fmt.Sprintf("0x%x", engine.InjectedMarkBit)
 		markMask := fmt.Sprintf("0x%x", markValue|engine.ClientMark|engine.InjectedMarkBit)
 		if err := n.addRule("output", "meta", "mark", "&", markMask, "==", markAccept, "ct", "mark", "set", "ct", "mark", "|", markAccept); err != nil {
 			log.Warnf("nftables: connmark save unavailable; b4's own marked connections (e.g. MTProto WS bridge upstream) will not be exempted from reply-side processing: %v", err)
 		}
 		if err := n.addRule("output", "meta", "mark", "&", markMask, "==", fmt.Sprintf("0x%x", markValue|engine.InjectedMarkBit), "ct", "mark", "set", "ct", "mark", "|", injected); err != nil {
-			log.Warnf("nftables: the connections b4 sends fakes or split segments into cannot be marked, so the server's packets on them stay queued and their outgoing window is not widened: %v", err)
+			log.Warnf("nftables: the connections b4 sends fakes or split segments into cannot be marked, so the server's packets on them stay queued: %v", err)
 		}
 	}
 	if err := n.addRule("output", "meta", "mark", "&", markAccept, "==", markAccept, "accept"); err != nil {
@@ -392,7 +382,7 @@ func (n *NFTablesManager) apply() error {
 			log.Warnf("nftables: connmark reply-side bypass unavailable: %v", err)
 		}
 		if !cfg.AnySetTCPIncoming() {
-			if err := n.addRule("prerouting", "ct", "mark", "&", injected, "==", injected, "tcp", "flags", "&", "(syn|rst)", "==", "0", "return"); err != nil {
+			if err := n.addRule("prerouting", nftInjectedReplyReturn(cfg.Queue.Mark)...); err != nil {
 				log.Warnf("nftables: the server's data packets on connections b4 sends fakes or split segments into cannot be kept out of the queue, so b4 is handed them too: %v", err)
 			}
 		}
@@ -417,7 +407,6 @@ func (n *NFTablesManager) apply() error {
 	if err := n.addLimitedQueueRule(nftChainName, "original", tcpLimit, n.ctDirectionSupported, "tcp", "dport", tcpPortExpr); err != nil {
 		return err
 	}
-	n.addInjectedWindowRule("tcp", cfg.Queue.TCPConnBytesLimit)
 
 	queriesFromRaw, err := n.addDNSQueryRules(markAccept)
 	if err != nil {
@@ -461,7 +450,6 @@ func (n *NFTablesManager) apply() error {
 	if err := n.addLimitedQueueRule(nftChainName, "original", udpLimit, false, "udp", "dport", udpPortExpr); err != nil {
 		return err
 	}
-	n.addInjectedWindowRule("udp", cfg.Queue.UDPConnBytesLimit)
 
 	for _, s := range b4SysctlSettings() {
 		s.Apply()

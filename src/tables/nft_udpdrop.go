@@ -2,6 +2,7 @@ package tables
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net/netip"
 	"sync"
@@ -21,14 +22,62 @@ const (
 
 var UDPDropWritersFunc func(v4, v6 func(src, dst netip.AddrPort) error)
 
-var nftWriteUDPDrop = nftWriteUDPDropNetlink
+var (
+	nftWriteUDPDrop = nftWriteUDPDropNetlink
+	nftFlushUDPDrop = nftFlushUDPDropNetlink
+)
+
+var errUDPDropSetsWithdrawn = errors.New("b4's nftables drop sets are not installed")
 
 var (
 	udpDropMu          sync.Mutex
 	udpDropPublishedV4 bool
 	udpDropPublishedV6 bool
 	udpDropWarned      sync.Map
+	udpDropConn        nftDropSetConn
 )
+
+type nftDropSetConn struct {
+	mu   sync.Mutex
+	open bool
+	conn *netlink.Conn
+}
+
+func (c *nftDropSetConn) exchange(msgs []netlink.Message) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.open {
+		return errUDPDropSetsWithdrawn
+	}
+	if c.conn == nil {
+		conn, err := netlink.Dial(unix.NETLINK_NETFILTER, nil)
+		if err != nil {
+			return err
+		}
+		c.conn = conn
+	}
+	if err := nftExchangeBatch(c.conn, msgs, nftUDPDropDeadline); err != nil {
+		c.closeLocked()
+		return err
+	}
+	return nil
+}
+
+func (c *nftDropSetConn) setOpen(open bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.open = open
+	if !open {
+		c.closeLocked()
+	}
+}
+
+func (c *nftDropSetConn) closeLocked() {
+	if c.conn != nil {
+		_ = c.conn.Close()
+		c.conn = nil
+	}
+}
 
 func udpDropSetName(v6 bool) string {
 	if v6 {
@@ -117,7 +166,61 @@ func nftWriteUDPDropNetlink(set string, key []byte) error {
 	if err != nil {
 		return err
 	}
-	return nftSendBatch(msgs, nftUDPDropDeadline)
+	return udpDropConn.exchange(msgs)
+}
+
+func nftSetFlushMessage(table, set string) (netlink.Message, error) {
+	ae := netlink.NewAttributeEncoder()
+	ae.String(unix.NFTA_SET_ELEM_LIST_TABLE, table)
+	ae.String(unix.NFTA_SET_ELEM_LIST_SET, set)
+	attrs, err := ae.Encode()
+	if err != nil {
+		return netlink.Message{}, err
+	}
+	return netlink.Message{
+		Header: netlink.Header{Type: netlink.HeaderType(unix.NFNL_SUBSYS_NFTABLES<<8 | unix.NFT_MSG_DELSETELEM), Flags: netlink.Request | netlink.Acknowledge},
+		Data:   append(nftGenMsg(unix.NFPROTO_INET, 0), attrs...),
+	}, nil
+}
+
+func nftUDPDropFlushMessages(sets []string) ([]netlink.Message, error) {
+	msgs := []netlink.Message{nftBatchMessage(unix.NFNL_MSG_BATCH_BEGIN)}
+	for _, set := range sets {
+		m, err := nftSetFlushMessage(nftTableName, set)
+		if err != nil {
+			return nil, err
+		}
+		msgs = append(msgs, m)
+	}
+	return append(msgs, nftBatchMessage(unix.NFNL_MSG_BATCH_END)), nil
+}
+
+func nftFlushUDPDropNetlink(sets []string) error {
+	msgs, err := nftUDPDropFlushMessages(sets)
+	if err != nil {
+		return err
+	}
+	return udpDropConn.exchange(msgs)
+}
+
+func FlushUDPDropSets() error {
+	udpDropMu.Lock()
+	v4, v6 := udpDropPublishedV4, udpDropPublishedV6
+	udpDropMu.Unlock()
+	var sets []string
+	if v4 {
+		sets = append(sets, nftUDPDropSetV4)
+	}
+	if v6 {
+		sets = append(sets, nftUDPDropSetV6)
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+	if err := nftFlushUDPDrop(sets); err != nil && !errors.Is(err, errUDPDropSetsWithdrawn) {
+		return err
+	}
+	return nil
 }
 
 func udpDropWriter(v6 bool) func(src, dst netip.AddrPort) error {
@@ -147,6 +250,7 @@ func withdrawUDPDropSets() {
 
 func publishUDPDropSetsLocked(v4, v6 bool) {
 	udpDropPublishedV4, udpDropPublishedV6 = v4, v6
+	udpDropConn.setOpen(v4 || v6)
 	if UDPDropWritersFunc == nil {
 		return
 	}

@@ -1,7 +1,9 @@
 package tun
 
 import (
+	"net"
 	"net/netip"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/leaktest"
+	"github.com/daniellavrushin/b4/nfq"
 	"go.uber.org/goleak"
 	"golang.org/x/sys/unix"
 )
@@ -89,21 +92,93 @@ func firstNEngine(udpLimit int) *Engine {
 	return e
 }
 
-func stubConntrack(t *testing.T) (*recordingDeleter, *int, *int) {
+func stubConntrack(t *testing.T) (*recordingDeleter, *int) {
 	t.Helper()
 	d := &recordingDeleter{}
-	created, tested := 0, 0
-	origNew, origTest := newConntrackDeleter, conntrackSelfTest
+	created := 0
+	orig := newConntrackDeleter
 	newConntrackDeleter = func() conntrackDeleter {
 		created++
 		return d
 	}
-	conntrackSelfTest = func() bool {
-		tested++
-		return true
+	t.Cleanup(func() { newConntrackDeleter = orig })
+	return d, &created
+}
+
+const learnedQUICServer = "203.0.113.10"
+
+func learnedAddressPool(t *testing.T) *nfq.Pool {
+	t.Helper()
+	set := config.NewSetConfig()
+	set.Id, set.Name, set.Enabled = "learned-drop", "LearnedDrop", true
+	set.Targets.SNIDomains = []string{"blocked.example"}
+	set.UDP.Mode = config.UDPModeDrop
+	set.Fragmentation.Strategy = config.ConfigNone
+	set.Fragmentation.StrategyPool = nil
+	cfg := config.NewConfig()
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "b4.json")
+	cfg.Sets = []*config.SetConfig{&set}
+	if _, _, err := cfg.GetTargetsForSet(&set); err != nil {
+		t.Fatal(err)
 	}
-	t.Cleanup(func() { newConntrackDeleter, conntrackSelfTest = origNew, origTest })
-	return d, &created, &tested
+	cfg.BuildTCPPortMap()
+	cfg.BuildSetPortRanges()
+	pool := nfq.NewPool(&cfg)
+	t.Cleanup(pool.Stop)
+	pool.GetMatcher().LearnIPToDomain(net.ParseIP(learnedQUICServer), "www.blocked.example", cfg.Sets[0])
+	return pool
+}
+
+func udpPacketWith(sport uint16, payload []byte) []byte {
+	return append(testPacket(17, "198.51.100.1", learnedQUICServer, sport, 443, 0), payload...)
+}
+
+func TestTUNHoldsQUICButNoOtherUDPToAnAddressLearnedForADroppedName(t *testing.T) {
+	worker := learnedAddressPool(t).Workers[0]
+	wireguard := make([]byte, 148)
+	wireguard[0] = 0x01
+	dtls := append([]byte{0x16, 0xfe, 0xfd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x30}, make([]byte, 48)...)
+	srtp := make([]byte, 60)
+	srtp[0], srtp[1] = 0x80, 0x60
+	longHeader := append([]byte{0xc3, 0, 0, 0, 1, 8, 1, 2, 3, 4, 5, 6, 7, 8, 0}, make([]byte, 40)...)
+
+	for _, c := range []struct {
+		name    string
+		payload []byte
+		held    bool
+	}{
+		{"QUIC", longHeader, true},
+		{"WireGuard", wireguard, false},
+		{"DTLS", dtls, false},
+		{"SRTP", srtp, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			raw := udpPacketWith(40001, c.payload)
+
+			d := &recordingDeleter{}
+			if forward, _ := portsModeEngine(d).processPacket(worker, raw); forward {
+				t.Fatal("the set drops every datagram to the learned address")
+			}
+			if jobs, _ := d.snapshot(); (len(jobs) == 1) != c.held || len(jobs) > 1 {
+				t.Fatalf("kernel window: %d conntrack deletes, want a delete only for QUIC (held=%v)", len(jobs), c.held)
+			}
+
+			counting := firstNEngine(2)
+			forwarded := 0
+			for i := 0; i < 5; i++ {
+				if forward, _ := counting.processPacket(worker, raw); forward {
+					forwarded++
+				}
+			}
+			held := counting.QUICDropPersistence().Held
+			if c.held && (forwarded != 0 || held != 5) {
+				t.Fatalf("b4 counts: QUIC must stay dropped, got %d of 5 forwarded and %d held", forwarded, held)
+			}
+			if !c.held && (forwarded != 3 || held != 0) {
+				t.Fatalf("b4 counts: past the limit of 2 the flow must pass as before, got %d of 5 forwarded and %d held", forwarded, held)
+			}
+		})
+	}
 }
 
 func TestTUNForwardsOnlyWhatB4Accepts(t *testing.T) {
@@ -339,19 +414,23 @@ func TestHoldingAFlowRacesNothing(t *testing.T) {
 }
 
 func TestTheConntrackWorkerRunsOnlyWithTheKernelWindow(t *testing.T) {
-	d, created, tested := stubConntrack(t)
+	d, created := stubConntrack(t)
+	untested := !ctnl.CurrentStatus().Tested
 
 	counting := firstNEngine(8)
 	counting.startFlowHold()
-	if *created != 0 || *tested != 0 || counting.QUICDropPersistence().Conntrack {
-		t.Fatalf("with b4 counting packets itself no conntrack worker or self-test is needed, got %d workers and %d self-tests", *created, *tested)
+	if *created != 0 || counting.QUICDropPersistence().Conntrack {
+		t.Fatalf("with b4 counting packets itself no conntrack worker is needed, got %d workers", *created)
 	}
 
 	window := portsModeEngine(nil)
 	window.startFlowHold()
 	window.startFlowHold()
-	if *created != 1 || *tested != 1 || !window.QUICDropPersistence().Conntrack {
-		t.Fatalf("with the kernel window the engine starts one worker and runs the self-test once, got %d workers and %d self-tests", *created, *tested)
+	if *created != 1 || !window.QUICDropPersistence().Conntrack {
+		t.Fatalf("with the kernel window the engine starts one worker, got %d workers", *created)
+	}
+	if untested && ctnl.CurrentStatus().Tested {
+		t.Fatal("starting the engine ran the conntrack netlink self-test; the worker runs it at its first delete, so a kernel without conntrack netlink warns only once a set drops QUIC")
 	}
 	window.Stop()
 	window.Stop()
@@ -361,10 +440,6 @@ func TestTheConntrackWorkerRunsOnlyWithTheKernelWindow(t *testing.T) {
 }
 
 func TestStopJoinsTheConntrackWorker(t *testing.T) {
-	orig := conntrackSelfTest
-	conntrackSelfTest = func() bool { return true }
-	t.Cleanup(func() { conntrackSelfTest = orig })
-
 	e := portsModeEngine(nil)
 	e.startFlowHold()
 	if _, ok := e.conntrack.(*ctnl.Worker); !ok {

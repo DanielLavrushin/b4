@@ -21,14 +21,12 @@ import (
 )
 
 const (
-	netnsTCPFlagRST   = 0x04
-	netnsHelloSize    = 300
-	netnsReplyChunk   = 200
-	netnsReplyChunks  = 3
-	netnsLateChunk    = 100
-	netnsForgedRSTID  = 0xb4b4
-	netnsSmallWrites  = 25
-	netnsSmallWriteSz = 20
+	netnsTCPFlagRST  = 0x04
+	netnsHelloSize   = 300
+	netnsReplyChunk  = 200
+	netnsReplyChunks = 3
+	netnsLateChunk   = 100
+	netnsForgedRSTID = 0xb4b4
 )
 
 func netnsInjectorMark(queueMark uint) uint32 {
@@ -380,18 +378,19 @@ func TestNetnsTheRulesForConnectionsB4SendsIntoGoInOnceAndLeave(t *testing.T) {
 	}{
 		{"the save for b4's own connections", output, []string{"--mark 0x8000/0x22008000", "CONNMARK", "--nfmask 0x8000"}},
 		{"the save for the connections b4 sends into", output, []string{"--mark 0x2008000/0x22008000", "CONNMARK", "--nfmask 0x2000000"}},
-		{"the return for the connections b4 sends into", pre, []string{"--mark 0x2000000/0x2000000", "--tcp-flags SYN,RST NONE", "-j RETURN"}},
-		{"the wider TCP window", b4, []string{"-p tcp", "--connbytes 20:38", "--mark 0x2000000/0x2000000", "--ctdir ORIGINAL", "NFQUEUE"}},
-		{"the wider UDP window", b4, []string{"-p udp", "--connbytes 9:16", "--mark 0x2000000/0x2000000", "--ctdir ORIGINAL", "NFQUEUE"}},
+		{"the return for the connections b4 sends into", pre, []string{"--mark 0x2000000/0x2008000", "--tcp-flags SYN,RST NONE", "-j RETURN"}},
 	} {
 		if got := netnsCountListed(c.rules, c.parts...); got != 1 {
 			t.Errorf("%s is listed %d times after two applies, want once; iptables -C does not find it by the spec b4 emits: %q", c.what, got, c.rules)
 		}
 	}
+	if got := netnsCountListed(b4, "connmark"); got != 0 {
+		t.Errorf("B4 selects %d rules by the connection mark; the connections b4 sends into share the queue window of every other connection: %q", got, b4)
+	}
 	if got := netnsCountListed(output, "0x8000/0x20008000"); got != 0 {
 		t.Errorf("the CONNMARK save of earlier versions survived the clear and apply of a start: %q", output)
 	}
-	inj := slices.IndexFunc(pre, func(r string) bool { return strings.Contains(r, "--mark 0x2000000/0x2000000") })
+	inj := slices.IndexFunc(pre, func(r string) bool { return strings.Contains(r, "--mark 0x2000000/0x2008000") })
 	own := slices.IndexFunc(pre, func(r string) bool {
 		return strings.Contains(r, "--mark 0x8000/0x8000") && strings.Contains(r, "-j RETURN")
 	})
@@ -405,102 +404,5 @@ func TestNetnsTheRulesForConnectionsB4SendsIntoGoInOnceAndLeave(t *testing.T) {
 	}
 	if left := netnsCountListed(netnsListedRules(t, "OUTPUT"), "CONNMARK"); left != 0 {
 		t.Errorf("%d CONNMARK rules stay in mangle OUTPUT after the clear", left)
-	}
-}
-
-func TestNetnsConnectionsB4SendsIntoKeepTheirOwnWindow(t *testing.T) {
-	for _, engineName := range []string{backendIPTables, backendNFTables} {
-		for _, tc := range []struct {
-			name       string
-			injectMark func(q uint) uint32
-			copies     int
-			want       func(got int) bool
-			wantText   string
-		}{
-			{"b4 sends six packets into the connection", netnsInjectorMark, 6,
-				func(got int) bool { return got == netnsSmallWrites }, "all of them"},
-			{"b4 sends nothing into the connection", netnsInjectorMark, 0,
-				func(got int) bool { return got > 0 && got <= 16 }, "at most 16, the window of 19 less the handshake and the first write"},
-			{"the injector mark of earlier versions", func(q uint) uint32 { return uint32(q) }, 6,
-				func(got int) bool { return got > 0 && got <= 10 }, "at most 10, the window of 19 less the handshake, the first write and the six packets b4 sent"},
-		} {
-			t.Run(engineName+"/"+tc.name, func(t *testing.T) {
-				netnsRequire(t)
-				if engineName == backendNFTables && !hasBinary("nft") {
-					t.Skip("nft is not installed")
-				}
-				srv := netnsStartPeer(t, netnsSrvLink, netnsSrvPeer, netnsSrvRouter, netnsSrvIP)
-				var ln net.Listener
-				netnsInside(t, srv, func() error {
-					var err error
-					ln, err = net.Listen("tcp4", net.JoinHostPort(netnsSrvIP, strconv.Itoa(netnsSrvPort)))
-					return err
-				})
-				var wg sync.WaitGroup
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					c, err := ln.Accept()
-					if err != nil {
-						return
-					}
-					defer c.Close()
-					_ = c.SetDeadline(time.Now().Add(15 * time.Second))
-					_, _ = io.Copy(io.Discard, c)
-				}()
-				defer func() {
-					ln.Close()
-					wg.Wait()
-				}()
-
-				routeEngine = nil
-				defer func() { routeEngine = nil }()
-
-				cfg := netnsConfig(engineName)
-				cfg.Sets = nil
-				if err := AddRules(cfg); err != nil {
-					t.Fatalf("AddRules: %v", err)
-				}
-				defer func() { _ = ClearRules(cfg) }()
-
-				b4, stop := netnsEmulateB4(t, uint16(cfg.Queue.StartNum), tc.injectMark(cfg.Queue.Mark), tc.copies)
-				conn, err := netnsDialServer()
-				if err != nil {
-					t.Fatalf("dial: %v", err)
-				}
-				port := uint16(conn.LocalAddr().(*net.TCPAddr).Port)
-				_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
-				if _, err := conn.Write(bytes.Repeat([]byte{0x16}, netnsHelloSize)); err != nil {
-					t.Fatalf("write: %v", err)
-				}
-				time.Sleep(50 * time.Millisecond)
-				for i := range netnsSmallWrites {
-					if _, err := conn.Write(bytes.Repeat([]byte{byte('a' + i)}, netnsSmallWriteSz)); err != nil {
-						t.Fatalf("write %d: %v", i, err)
-					}
-					time.Sleep(20 * time.Millisecond)
-				}
-				conn.Close()
-				time.Sleep(300 * time.Millisecond)
-				stop()
-
-				queued, _ := b4.snapshot()
-				later := map[uint32]bool{}
-				for _, q := range queued {
-					s, ok := netnsParseIPv4(q.pkt)
-					if !ok || s.proto != unix.IPPROTO_TCP || s.sport != port || s.dport != netnsSrvPort || len(s.payload) != netnsSmallWriteSz {
-						continue
-					}
-					later[s.seq] = true
-				}
-				if tc.copies > 0 && !b4.injected {
-					t.Fatalf("the client's first data packet never reached the queue, so nothing was sent into the connection and this test proves nothing")
-				}
-				if !tc.want(len(later)) {
-					t.Errorf("%d of the client's %d later writes reached the queue, want %s", len(later), netnsSmallWrites, tc.wantText)
-				}
-				t.Logf("%d of %d later writes queued", len(later), netnsSmallWrites)
-			})
-		}
 	}
 }
