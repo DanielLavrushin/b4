@@ -6229,6 +6229,9 @@
                 "block_action": {
                     "type": "string"
                 },
+                "egress_gateway": {
+                    "type": "string"
+                },
                 "egress_interface": {
                     "type": "string"
                 },

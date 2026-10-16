@@ -156,7 +156,9 @@ func (b *routeIptBackend) snapshotChainRules(chain string, isMangle bool) routeC
 		if !hasBinary(cmd) {
 			continue
 		}
-		snap.counts[cmd] = iptChainRuleCount(cmd, table, chain)
+		if n, ok := iptChainRuleCount(cmd, table, chain); ok {
+			snap.counts[cmd] = n
+		}
 	}
 	return snap
 }
@@ -174,10 +176,32 @@ func (b *routeIptBackend) dropChainRules(snap routeChainSnapshot) {
 	}
 }
 
-func iptChainRuleCount(cmd, table, chain string) int {
+func (b *routeIptBackend) revertChainRules(snap routeChainSnapshot) {
+	table := iptTable(snap.isMangle)
+	for cmd, n := range snap.counts {
+		if n == 0 {
+			runLogged("routing: clear failed install "+snap.chain, cmd, "-w", "-t", table, "-F", snap.chain)
+			continue
+		}
+		now, ok := iptChainRuleCount(cmd, table, snap.chain)
+		if !ok {
+			continue
+		}
+		extra := now - n
+		for i := 0; i < extra; i++ {
+			if _, err := run(cmd, "-w", "-t", table, "-D", snap.chain, strconv.Itoa(n+1)); err != nil {
+				log.Warnf("routing: %s -t %s -D %s %d failed with %d of %d rules of a failed install left, so b4 stopped rather than cut a rule it never read: %v",
+					cmd, table, snap.chain, n+1, extra-i, extra, err)
+				break
+			}
+		}
+	}
+}
+
+func iptChainRuleCount(cmd, table, chain string) (int, bool) {
 	out, err := run(cmd, "-w", "-t", table, "-L", chain, "-n", "--line-numbers")
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	last := 0
 	for _, line := range strings.Split(out, "\n") {
@@ -191,7 +215,7 @@ func iptChainRuleCount(cmd, table, chain string) int {
 		}
 		last = n
 	}
-	return last
+	return last, true
 }
 
 func (b *routeIptBackend) deleteChain(chain string, isMangle bool) {
@@ -303,7 +327,8 @@ func (b *routeIptBackend) addMarkFallbackRule(chain string, v6 bool, setName str
 	}
 	args = append(args,
 		"-m", "mark", "--mark", fmt.Sprintf("0x0/0x%x", routeSetMarkMask),
-		"-m", "set", "--match-set", setName, "dst")
+		"-m", "set", "--match-set", setName, "dst",
+		"-m", "conntrack", "--ctdir", "ORIGINAL")
 	args = append(args, routeIptSetMarkArgs(mark)...)
 	runLogged("routing: add mark fallback rule "+chain, append([]string{cmd}, args...)...)
 }
@@ -331,6 +356,35 @@ func (b *routeIptBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 boo
 		}
 	}
 	return ok
+}
+
+func (b *routeIptBackend) addGatewayEgressGuard(chain, iface string, gateways []string, ipv6 bool) bool {
+	if iface == "" {
+		return true
+	}
+	ok := true
+	if hasBinary(b.ipt4()) {
+		for _, gw := range gateways {
+			if !runLogged("routing: add gateway egress guard "+chain,
+				b.ipt4(), "-w", "-t", "mangle", "-A", chain, "-i", iface, "-s", gw, "-j", "RETURN") {
+				ok = false
+			}
+		}
+	}
+	if ipv6 && hasBinary(b.ipt6()) && !runLogged("routing: add gateway egress guard "+chain,
+		b.ipt6(), "-w", "-t", "mangle", "-A", chain, "-i", iface, "-j", "RETURN") {
+		ok = false
+	}
+	return ok
+}
+
+func (b *routeIptBackend) addRedirectDrop(chain, iface string) {
+	cmd := b.ipt4()
+	if iface == "" || !hasBinary(cmd) {
+		return
+	}
+	runLogged("routing: add redirect drop "+chain,
+		cmd, "-w", "-t", "mangle", "-A", chain, "-o", iface, "-p", "icmp", "--icmp-type", "redirect", "-j", "DROP")
 }
 
 func (b *routeIptBackend) sharesFamilies() bool { return false }
@@ -460,6 +514,14 @@ func (b *routeIptBackend) destroyIPSet(name string) {
 		return
 	}
 	runLogged("routing: destroy ipset "+name, "ipset", "destroy", name)
+}
+
+func (b *routeIptBackend) hasIPSet(name string) bool {
+	if !hasBinary("ipset") {
+		return false
+	}
+	_, err := run("ipset", "list", "-t", name)
+	return err == nil
 }
 
 func (b *routeIptBackend) clearAll() {

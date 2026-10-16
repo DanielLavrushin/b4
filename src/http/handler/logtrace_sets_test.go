@@ -188,6 +188,47 @@ func TestCollectTraceSetsReportsSetDSCP(t *testing.T) {
 	}
 }
 
+func TestCollectTraceSetsReportsEgressGateway(t *testing.T) {
+	cfg := config.NewConfig()
+	withGW := config.DefaultSetConfig
+	withGW.Id = "gw"
+	withGW.Enabled = true
+	withGW.Routing = config.RoutingConfig{
+		Enabled:         true,
+		Mode:            config.RoutingModeInterface,
+		EgressInterface: "br0",
+		EgressGateway:   "192.168.1.2",
+	}
+	noGW := config.DefaultSetConfig
+	noGW.Id = "nogw"
+	noGW.Enabled = true
+	noGW.Routing = config.RoutingConfig{
+		Enabled:         true,
+		Mode:            config.RoutingModeInterface,
+		EgressInterface: "wg0",
+	}
+	cfg.Sets = []*config.SetConfig{&withGW, &noGW}
+
+	sets := collectTraceSets(&cfg)
+	if len(sets) != 2 {
+		t.Fatalf("expected two sets, got %d", len(sets))
+	}
+	if sets[0].Routing == nil || sets[0].Routing.EgressGateway != "192.168.1.2" {
+		t.Errorf("expected the gateway in the trace, got %+v", sets[0].Routing)
+	}
+	if sets[1].Routing == nil || sets[1].Routing.EgressGateway != "" {
+		t.Errorf("expected no gateway for a gateway-less set, got %+v", sets[1].Routing)
+	}
+
+	data, err := json.Marshal(sets)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if text := string(data); strings.Count(text, `"egress_gateway":`) != 1 || !strings.Contains(text, `"egress_gateway":"192.168.1.2"`) {
+		t.Errorf("the trace must print the configured gateway and omit an empty one: %s", text)
+	}
+}
+
 func TestCollectTraceSetsNilConfig(t *testing.T) {
 	if collectTraceSets(nil) != nil {
 		t.Error("expected nil for nil config")

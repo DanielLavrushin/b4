@@ -46,7 +46,7 @@ rule without a mask, such as nftables `meta mark set 0x00021546` or iptables
 
 | Bits | Mask | Used for | Value |
 | --- | --- | --- | --- |
-| 0-14, 17 | `0x27fff` | The route of a routing set | One per set; sets routed through the same interface with the same egress IP and kill switch share one. See [sets routed through an interface](#sets-routed-through-an-interface) and [proxy sets](#proxy-sets-and-telegram-over-websocket) |
+| 0-14, 17 | `0x27fff` | The route of a routing set | One per set; sets routed through the same interface with the same egress IP, gateway and kill switch share one. See [sets routed through an interface](#sets-routed-through-an-interface) and [proxy sets](#proxy-sets-and-telegram-over-websocket) |
 | 15 by default | `0x8000` by default | The queue mark: packets b4 sends from its raw sockets, except those toward a device in TUN mode, the DNS queries it sends for clients and for its sets, and its probes that bypass its own processing | **Packet Mark** under **Settings, Core, Packet Engine**, `0x8000` (32768) by default |
 | 18 | `0x40000` | Connections b4 opens to the upstream of a proxy set, to Telegram, the Community Hub, ipinfo and RIPEstat, and its transparent listeners; see [socket marks](#socket-marks) | Fixed |
 | 21 | `0x200000` | b4's own connections whose outgoing packets packet processing leaves alone | Fixed, carried together with bit 18 as `0x240000` |
@@ -94,7 +94,7 @@ packet processing and through every set that carries the router's own traffic.
 | Packet processing, iptables (`B4`, `B4_PREROUTING`) | `B4`, the rules for outgoing ports, first returns a packet whose mark has every bit of the queue mark, as `b4_chain` does on nftables. The jumps to `B4` come from mangle `POSTROUTING`, or, when [device filtering](../settings/core.md#device-filtering) selects devices, from mangle `FORWARD` for their packets, and from mangle `OUTPUT`, which accepts a packet the router sends with every bit of the queue mark before its jump. `B4` also returns a packet whose bits under `0x27fff` equal `0x24bab` or the mark of a proxy set, or that has bit `0x200000`, and during a Discovery run one whose mark is exactly the flow or injected mark. `B4_PREROUTING` and the rules for DNS answers test no packet mark; with the connmark module, `B4_PREROUTING` skips the same connections as `prerouting` on nftables. DNS queries are queued from `B4_RAW` in the raw table, which raw `PREROUTING` and `OUTPUT` jump to for UDP to port 53 and which returns a packet with every bit of the queue mark, and during a Discovery run one whose mark is exactly the flow or injected mark; while it queues them, `B4` returns UDP to port 53. On KeeneticOS, where b4 never uses `B4_RAW`, and on a kernel before 4.18 (4.14 before 4.14.173) whose raw table cannot queue packets, DNS queries are copied instead: mangle `INPUT` and `FORWARD` jump at their top to `B4_DNSCOPY` for UDP to port 53, and mangle `OUTPUT` for such UDP that does not leave through `lo`. `B4_DNSCOPY` returns a packet with every bit of the queue mark and copies every other one to NFLOG group `queue.start_num`, 537 by default, with the prefix `b4dns`; while it copies them, `B4` returns UDP to port 53 as well, and, as with `B4_RAW`, the rules for DNS answers skip UDP to port 53. When b4 can neither queue DNS queries from the raw table nor copy them, the rules for DNS queries sit in `B4_PREROUTING` and mangle `OUTPUT` instead and test no packet mark |
 | The queue itself, both backends | b4 releases a packet unchanged when its mark has bit `0x200000`, has `0x24bab` under `0x27fff`, or has every bit of the queue mark with the rest within `0x27fff` and is not exactly one of Discovery's two marks |
 | Routing sets other than block sets, packets entering the router (`b4r_*_pre`), including the router's own packets a proxy set loops through `lo` | Its mark has every bit of the queue mark or bit `0x40000`, or its bits under `0x27fff` are not zero and, in a proxy set's chain, differ from that set's own mark |
-| Routing sets, the router's own packets (`b4r_*_out`) | Its mark has bit `0x40000` or any bit under `0x27fff`. A packet with every bit of the queue mark is left alone as well, after a set routed through an interface has given it the set's mark when its destination is in the set; a set that leaves the router's own traffic alone and lists its devices only by IP address does this only for packets from those addresses |
+| Routing sets, the router's own packets (`b4r_*_out`) | Its mark has bit `0x40000` or any bit under `0x27fff`. A packet with every bit of the queue mark is left alone as well, after a set routed through an interface has given it the set's mark when its destination is in the set; a set that leaves the router's own traffic alone and lists its devices only by IP address does this only for packets from those addresses. The IPv4 ICMP redirects that a set with a gateway drops, as [sets routed through an interface](#sets-routed-through-an-interface) describes, are dropped whatever their mark |
 | QUIC refusal of a proxy set with **Route UDP through upstream** off (`b4r_*_q`) | Its mark has every bit of the queue mark, or bit `0x40000` |
 | Block sets | Never: they test no mark, only the destination and, when the set has them, its source interfaces and source devices |
 | TUN capture (`B4_TUN`) | Its mark has every bit of the queue mark, bit `0x20000000` or bit `0x200000`, or its bits under `0x27fff` equal `0x24bab`; on iptables also when its destination is in a routing set other than a block set. A packet to a network in which the router has an IPv4 address of its own is left alone as well, unless it is UDP DNS or a TCP reset the chain captures; while b4 captures only the router's own connections, such a packet is always left alone, except a UDP DNS query to the uplink gateway |
@@ -203,15 +203,15 @@ lies within `0x27fff`.
 ## Sets routed through an interface
 
 A set routed through an [output interface](../sets/routing.md#output-interface) gets a mark
-and a routing table from the interface name, the egress IP and the kill switch. Sets that
-agree on all three share both.
+and a routing table from the interface name, the egress IP, the gateway and the kill switch.
+Sets that agree on all four share both.
 
 | Item | Value |
 | --- | --- |
-| Mark | From a hash of the three, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
+| Mark | From a hash of the four, in `0x100`-`0x7eff` and never equal to the queue mark's bits under `0x27fff`; if every hashed candidate is taken, counted up from `0x66` instead |
 | Table | `100`-`249`, skipping tables named in `rt_tables`, looked up by another service's rule, or holding routes b4 did not add |
 | Rule | `ip rule add fwmark <mark>/0x27fff lookup <table> priority <10000 + table>`, for IPv4, and for IPv6 when **Enable IPv6 Support** is on |
-| Table contents | A default route through the interface, plus `blackhole default metric 4096` with the [kill switch](../sets/routing.md#kill-switch) |
+| Table contents | A default route through the interface, via the set's [gateway](../internals/routing.md#gateway) in the gateway's address family when b4 can use it, plus `blackhole default metric 4096` with the [kill switch](../sets/routing.md#kill-switch) |
 | Pinned values | `routing.fwmark` and `routing.table` in the configuration file or through the API, used only when both are set, the mark lies within `0x27fff`, is not `0x24bab`, does not contain every bit of the queue mark and does not equal its bits under `0x27fff` |
 
 The set marks the first packet of each connection to its destinations and saves the mark in
@@ -221,10 +221,20 @@ replies get no mark. The set's chain for packets entering the router, `b4r_<set>
 this order:
 
 1. Returns packets that carry the queue mark, bit `0x40000`, or any bit under `0x27fff`.
-2. Returns packets that arrive on the output interface itself.
+2. Returns packets that arrive on the output interface itself, narrowed for a set with a
+   gateway as described below.
 3. Restores the mark from the connection mark on later packets of claimed connections that
    travel in the direction of the first packet.
 4. Marks new connections to the set's destinations and saves the mark with the claim.
+
+With an IPv4 [gateway](../internals/routing.md#gateway) that b4 uses, on an output interface
+of the Ethernet type (Ethernet, bridge, VLAN, Wi-Fi, TAP), step 2 is narrower. The set first
+returns packets to local, broadcast, multicast and IPv6 link-local addresses, whatever
+interface they arrive on. It then returns the IPv4 packets that arrive on the output
+interface from the usable IPv4 gateway of any set routed through that interface, its own
+included, and every IPv6 packet that arrives on it. Other IPv4 packets from the output
+interface go on to steps 3 and 4. A refused gateway, an IPv6 gateway and an interface of
+another type leave step 2 as it is.
 
 A set that excludes source devices returns their packets before step 2, only the packets of
 its devices enter the chain of a set limited to source devices, and a set limited to source
@@ -233,7 +243,10 @@ interfaces applies steps 3 and 4 only to packets arriving on them.
 chain the same way. `b4r_<set>_out` does the same for the router's own connections when the
 set carries them, and gives the set's mark to b4's own queue-marked packets addressed to the
 set; a set limited to source devices that are all given by IP address does this only for
-packets from those addresses. Masquerade matches the
+packets from those addresses. With the narrower step 2, the first rule of `b4r_<set>_out`
+drops the IPv4 ICMP redirects that leave through the output interface, whatever their mark
+and whether or not the set carries the router's own traffic. With `net.ipv4.fwmark_reflect`
+set to `1`, the kernel gives a redirect the mark of the packet that caused it. Masquerade matches the
 set's mark and the output interface; with an egress IP present on the interface, SNAT to
 that address takes its place and also requires the destination to be in the set.
 
@@ -243,7 +256,8 @@ connections have been claimed, the restore has never matched, and no answered co
 `/proc/net/nf_conntrack` still carries bit `0x40000000`, on two checks in a row, b4 writes
 `0` to `.conntrack-mark` next to the configuration file. From then on, and at every later
 start on either backend until the file is deleted, the set marks every packet to its
-destinations that has no bit under `0x27fff`, not only the first.
+destinations that travels in the direction of its connection's first packet and has no bit
+under `0x27fff`, not only the first.
 
 While a set uses an output interface whose effective `rp_filter` is `1`, b4 writes `2` to
 `net.ipv4.conf.<interface>.rp_filter`, and writes the old value back when the last set on

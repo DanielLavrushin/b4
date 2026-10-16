@@ -279,6 +279,7 @@ func (b *routeNftBackend) snapshotChainRules(chain string, isMangle bool) routeC
 	if err != nil {
 		return snap
 	}
+	snap.listed = true
 	for _, line := range strings.Split(out, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "table ") || strings.HasPrefix(trimmed, "chain ") {
@@ -304,6 +305,27 @@ func (b *routeNftBackend) dropChainRules(snap routeChainSnapshot) {
 	}
 }
 
+func (b *routeNftBackend) revertChainRules(snap routeChainSnapshot) {
+	if !snap.listed {
+		return
+	}
+	if len(snap.handles) == 0 {
+		runLogged("routing: clear failed install "+snap.chain, "nft", "flush", "chain", "inet", routeNftTable, snap.chain)
+		return
+	}
+	kept := make(map[string]bool, len(snap.handles))
+	for _, handle := range snap.handles {
+		kept[handle] = true
+	}
+	for _, handle := range b.snapshotChainRules(snap.chain, snap.isMangle).handles {
+		if kept[handle] {
+			continue
+		}
+		runLogged("routing: drop rule of failed install "+snap.chain,
+			"nft", "delete", "rule", "inet", routeNftTable, snap.chain, "handle", handle)
+	}
+}
+
 func (b *routeNftBackend) deleteChain(chain string, _ bool) {
 	runLogged("routing: delete chain "+chain, "nft", "delete", "chain", "inet", routeNftTable, chain)
 }
@@ -322,6 +344,38 @@ func (b *routeNftBackend) addEgressLoopGuard(chain, iface string, ipv4, ipv6 boo
 	return runLogged("routing: add egress loop guard "+chain,
 		"nft", "add", "rule", "inet", routeNftTable, chain,
 		"iifname", fmt.Sprintf("%q", iface), "return")
+}
+
+func (b *routeNftBackend) addGatewayEgressGuard(chain, iface string, gateways []string, _ bool) bool {
+	if iface == "" {
+		return true
+	}
+	ok := true
+	if len(gateways) > 0 {
+		args := []string{"nft", "add", "rule", "inet", routeNftTable, chain, "iifname", fmt.Sprintf("%q", iface), "ip", "saddr"}
+		if len(gateways) == 1 {
+			args = append(args, gateways[0])
+		} else {
+			args = append(args, "{", strings.Join(gateways, ", "), "}")
+		}
+		args = append(args, "return")
+		ok = runLogged("routing: add gateway egress guard "+chain, args...)
+	}
+	if !runLogged("routing: add gateway egress guard "+chain,
+		"nft", "add", "rule", "inet", routeNftTable, chain,
+		"iifname", fmt.Sprintf("%q", iface), "meta", "nfproto", "ipv6", "return") {
+		ok = false
+	}
+	return ok
+}
+
+func (b *routeNftBackend) addRedirectDrop(chain, iface string) {
+	if iface == "" {
+		return
+	}
+	runLogged("routing: add redirect drop "+chain,
+		"nft", "add", "rule", "inet", routeNftTable, chain,
+		"oifname", fmt.Sprintf("%q", iface), "icmp", "type", "redirect", "drop")
 }
 
 func (b *routeNftBackend) sharesFamilies() bool { return true }
@@ -354,6 +408,7 @@ func (b *routeNftBackend) addMarkFallbackRule(chain string, v6 bool, setName str
 	} else {
 		args = append(args, "ip", "daddr", "@"+sn)
 	}
+	args = append(args, "ct", "direction", "original")
 	args = append(args, routeNftSetMarkArgs(mark)...)
 	runLogged("routing: add mark fallback rule "+chain, append([]string{"nft"}, args...)...)
 }
@@ -580,6 +635,24 @@ func (b *routeNftBackend) destroyIPSet(name string) {
 	runLogged("routing: delete set "+name, "nft", "delete", "set", "inet", routeNftTable, name)
 	dyn := routeNftDynSet(name)
 	runLogged("routing: delete set "+dyn, "nft", "delete", "set", "inet", routeNftTable, dyn)
+}
+
+func (b *routeNftBackend) hasIPSet(name string) bool {
+	return routeNftSetExists(name) || routeNftSetExists(routeNftDynSet(name))
+}
+
+func routeNftSetExists(name string) bool {
+	if routeNftTerse.Load() {
+		out, err := run("nft", "-t", "list", "set", "inet", routeNftTable, name)
+		if err == nil {
+			return true
+		}
+		if strings.Contains(out, "No such file or directory") {
+			return false
+		}
+	}
+	_, err := run("nft", "list", "set", "inet", routeNftTable, name)
+	return err == nil
 }
 
 func (b *routeNftBackend) clearAll() {

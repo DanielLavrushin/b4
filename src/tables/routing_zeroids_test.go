@@ -55,6 +55,7 @@ func zeroIDsAssertNothingTouchedTableZero(t *testing.T, ops []string) {
 
 func TestRoutingHandleDNSSkipsASetWithoutARoutingTable(t *testing.T) {
 	familyResetGlobals(t)
+	forgetInstallFailures(t)
 	stubBinaries(t, "ip")
 	ops := zeroIDsRecord(t)
 	var chains []string
@@ -160,6 +161,7 @@ func TestRoutingHandleDNSKeepsTheWorkingStateOfASetThatLostItsTable(t *testing.T
 
 func TestRoutingHandleDNSStillInstallsABlockSet(t *testing.T) {
 	familyResetGlobals(t)
+	forgetInstallFailures(t)
 	stubBinaries(t, "ip")
 	zeroIDsRecord(t)
 	run = func(args ...string) (string, error) { return "", nil }

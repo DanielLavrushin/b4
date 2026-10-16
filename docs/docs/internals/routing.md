@@ -34,12 +34,12 @@ With the NFQUEUE engine, a forwarded or pinned answer that brings new addresses 
 ## Network interface mode {#interface-mode}
 
 1. **Marking.** The set's chain in **PREROUTING**, `b4r_<set>_pre`, marks forwarded traffic to the set's addresses, only from the source interfaces when the set has them. Its chain in **OUTPUT**, `b4r_<set>_out`, gives the mark to the packets b4 injects for the set's destinations, which would otherwise leave by the normal uplink, and to the router's own traffic unless **Router's own traffic** keeps it out.
-2. **Policy routing.** An `ip rule` sends the mark to the set's routing table, whose default route points at the output interface.
+2. **Policy routing.** An `ip rule` sends the mark to the set's routing table, whose default route points at the output interface, or at the set's [gateway](#gateway) on it.
 3. **Masquerade.** **POSTROUTING** masquerades the set's traffic leaving through the output interface, so the replies return through it. An egress IP replaces it with SNAT.
 
 ### Marks and routing tables {#marks-and-tables}
 
-Each set gets a mark from a hash in `0x100`-`0x7EFF`, counted up from `0x66` when every hashed value is taken, and a table in `100`-`249`. Both come from the interface name, the egress IP and the kill switch, and stay the same across restarts. Sets that agree on all three share them.
+Each set gets a mark from a hash in `0x100`-`0x7EFF`, counted up from `0x66` when every hashed value is taken, and a table in `100`-`249`. Both come from the interface name, the egress IP, the gateway and the kill switch, and stay the same across restarts. Sets that agree on all four share them.
 
 b4 skips a table that holds routes it did not add, as the VPN clients of Asuswrt-Merlin do in this range, a table named in an `rt_tables` file (`/etc/iproute2/rt_tables`, `rt_tables.d/*.conf`, and the same under `/opt/etc/iproute2`, `/usr/share/iproute2` and `/usr/lib/iproute2`), and one that another service's `ip rule` looks up. It logs the move to the next candidate.
 
@@ -77,10 +77,41 @@ An egress IP replaces the set's masquerade with `SNAT --to-source`, pinned to th
 
 An IPv4 egress IP rewrites IPv4 only. With **Enable IPv6 Support** on, the set's IPv6 traffic still leaves through the output interface, masqueraded; an IPv6 address in its place moves the rewrite to IPv6. With IPv6 support off, the set has no IPv6 rules, and its IPv6 traffic takes the normal route. With the TUN engine on the whole default route the setting has no effect.
 
+### Gateway {#gateway}
+
+**Gateway (optional)** gives the set's table `default via <gateway> dev <interface>` in the gateway's address family. Without a gateway, the default route goes via the gateway b4 finds on the interface, or is `default dev <interface>` when there is none. The other family keeps that route: with an IPv4 gateway, the set's IPv6 route is the one it has without a gateway, and the other way round. A gateway in a family whose support is off is ignored, and b4 logs a warning.
+
+A save checks only the form of the address. It refuses:
+
+- anything but one IPv4 or IPv6 address, such as an address in brackets or with a prefix length;
+- a `%zone` on an IPv4 address, and a `%zone` that names an interface other than the set's output interface;
+- an unspecified, loopback or multicast address, and `255.255.255.255`;
+- the set's own egress IP.
+
+When b4 installs the set's rules, it checks the gateway against the router's addresses and its main routing table:
+
+| A gateway is refused when it is | Reason in the log |
+| --- | --- |
+| One of the router's own addresses. A link-local gateway is compared only with the output interface's own addresses | `is one of this router's own addresses` |
+| Not on a network the output interface reaches directly | `is not on a network <interface> reaches directly` |
+| The network or broadcast address of an IPv4 network up to /30, or the network address of an IPv6 network shorter than /127 | `is the network address of <prefix>`, `is the broadcast address of <prefix>` |
+
+The interface reaches a gateway directly when the gateway lies in the prefix of an address on the interface, or under a route of the main table through the interface that has no gateway of its own, host routes included. The prefix of an address added with `noprefixroute` counts only through such a route. An IPv6 link-local gateway is also reachable from an interface with a link-local address of its own.
+
+A refused gateway counts as no gateway in its family, for the route and for the guard below. While the interface is up and has a link, b4 logs one warning that names the set, the gateway, the interface and the reason. When the gateway becomes usable, b4 logs that the set now uses it. b4 runs the check at start, on every save, when the output interface comes up and when the firewall monitor sees the interface's address change.
+
+A set without a gateway leaves every packet that arrives on its output interface unmarked: devices on that interface's network never follow it. A usable IPv4 gateway changes that for IPv4 when the output interface is of the Ethernet type, as Ethernet ports, bridges, VLANs, Wi-Fi and TAP devices are (`/sys/class/net/<interface>/type` is `1`). Such a set leaves alone packets addressed to the router itself and IPv4 packets from the gateway, and marks the IPv4 traffic of the other devices on that network. With several such sets on one interface, each also leaves alone the IPv4 traffic of the other sets' gateways. IPv6 that arrives on the output interface never follows the set, with an IPv6 gateway as well. On interfaces of other types, such as TUN devices, WireGuard and PPP, the gateway only sets the route. [Sets routed through an interface](../guides/marks.md#sets-routed-through-an-interface) lists the rules.
+
+A set with a usable IPv4 gateway on an Ethernet-type interface also drops the IPv4 ICMP redirects the router sends out of that interface. A redirect would point the devices there at the gateway directly, past b4.
+
+Sets that differ only in the gateway get separate marks and tables. Two sets pinned to one `routing.table` with different gateways overwrite each other's default route, and b4 logs a warning.
+
+A gateway that passes the check but does not forward the traffic, such as a mistyped address of another device on the network, breaks the set: packets leave, no reply comes back, and the rules look correct.
+
 ## Upstream SOCKS5 proxy mode {#proxy-mode}
 
 1. **Listener.** b4 opens a transparent listener on a port derived from the set's mark.
-2. **Diversion.** TPROXY rules in **PREROUTING** send TCP to the set's addresses, and UDP with **Route UDP through upstream** on, to the listener; an `ip rule` and a local route deliver it locally. The router's own addresses, broadcast and multicast are never diverted, so a set matching every address leaves the router's DNS, DHCP and web interface reachable. Where the kernel rejects the address-type match, b4 lists the router's addresses instead and logs it.
+2. **Diversion.** TPROXY rules in **PREROUTING** send TCP to the set's addresses, and UDP with **Route UDP through upstream** on, to the listener; an `ip rule` and a local route deliver it locally. The router's own addresses, broadcast and multicast are never diverted, so a set matching every address leaves the router's DNS, DHCP and web interface reachable. Where the kernel rejects the address-type match, b4 lists the router's addresses instead and logs it. While the firewall monitor runs, b4 rebuilds the rules with a new list when those addresses change.
 3. **Relay.** For each connection b4 opens a SOCKS5 CONNECT to the upstream and copies bytes both ways.
 
 The router's own connections reach the listener by a loop through `lo`, unless the set is limited to source devices or source interfaces. [Proxy sets and Telegram over WebSocket](../guides/marks.md#proxy-sets-and-telegram-over-websocket) lists the marks, rules and ports.
