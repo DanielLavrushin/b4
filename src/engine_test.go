@@ -274,20 +274,3 @@ func sigusr1Ignored(t *testing.T) bool {
 	t.Fatal("no SigIgn line in /proc/self/status")
 	return false
 }
-
-func TestOnlyIPTablesChecksEveryForeignMarkForAnotherRoute(t *testing.T) {
-	for _, c := range []struct {
-		firewall string
-		want     bool
-	}{
-		{"iptables", true},
-		{"iptables-legacy", true},
-		{"nftables", false},
-		{"external", false},
-		{"", false},
-	} {
-		if got := rerouteChecksAllMarks(c.firewall); got != c.want {
-			t.Errorf("%q: %v, want %v: b4's OUTPUT accept shields its own packets only when b4 writes iptables rules", c.firewall, got, c.want)
-		}
-	}
-}

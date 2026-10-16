@@ -57,10 +57,6 @@ func firewallName(cfg *config.Config) string {
 	return tables.DetectBackend(cfg)
 }
 
-func rerouteChecksAllMarks(firewall string) bool {
-	return firewall == "iptables" || firewall == "iptables-legacy"
-}
-
 func setEngineFirewall(mc *metrics.MetricsCollector, firewall string) {
 	info := mc.Engine()
 	info.Firewall = firewall
@@ -146,7 +142,7 @@ func startNFQueueEngine(cfg *config.Config, pool *nfq.Pool, tproxyMgr *tproxy.Ma
 		log.Infof("Skipping tables setup (--skip-tables)")
 	}
 	firewall := firewallName(cfg)
-	nfq.SetRerouteCheckAll(rerouteChecksAllMarks(firewall))
+	nfq.SetRerouteCheckAll(tables.OwnPacketsShielded(firewall))
 	mc.SetEngine(engineInfo(cfg, pool, metrics.EngineStarting, firewall))
 
 	if !skipTables {

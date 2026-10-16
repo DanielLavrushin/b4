@@ -423,6 +423,16 @@ func getSysctlOrProc(name string) string {
 	return strings.TrimSpace(out)
 }
 
+func OwnPacketsShielded(backend string) bool {
+	switch backend {
+	case backendIPTablesLegacy:
+		return true
+	case backendIPTables:
+		return !xtIsNftVariant(backendIPTables)
+	}
+	return false
+}
+
 func detectFirewallBackend(cfg *config.Config) string {
 	if b := cfg.System.Tables.Engine; b != "" {
 		switch strings.ToLower(b) {

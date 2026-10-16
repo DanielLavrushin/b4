@@ -264,9 +264,16 @@ func TestARerouteHandOffIsLoggedWithItsInterface(t *testing.T) {
 	}
 }
 
+func stubRouteMarks(t *testing.T, marks map[string][]uint32) {
+	t.Helper()
+	prev := RouteMarksFunc
+	RouteMarksFunc = func(iface string) []uint32 { return marks[iface] }
+	t.Cleanup(func() { RouteMarksFunc = prev })
+}
+
 func TestOnAnInterfaceASetRoutesThroughOnlyTheSetsOwnConnectionsKeepTheStrategy(t *testing.T) {
 	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
-	const setMark = uint32(0x2bd8)
+	const setMark, mwan3Mark = uint32(0x2bd8), uint32(0x200)
 	for _, c := range []struct {
 		name   string
 		mark   uint32
@@ -274,26 +281,21 @@ func TestOnAnInterfaceASetRoutesThroughOnlyTheSetsOwnConnectionsKeepTheStrategy(
 		want   int
 		why    string
 	}{
-		{"another service's mark", keeneticHotspotMark, 0x8000 | keeneticHotspotMark&config.PerSetRouteMarkBits, nfqueue.NfAccept, "the mark takes the connection to ppp9, where b4's own packets would not follow"},
+		{"another service's mark", keeneticHotspotMark, 0x8000, nfqueue.NfAccept, "the mark takes the connection to ppp9, where b4's own packets would not follow"},
+		{"a mark another service routes to the set's interface by its own rule", mwan3Mark, 0x8000, nfqueue.NfAccept, "b4's own packets get the set's mark only for the set's addresses, so they stay on the main route"},
 		{"the routed set's own mark", setMark, 0x8000 | setMark, nfqueue.NfDrop, "b4's own packets get the set's mark and follow the connection to ppp9"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			stub := stubInjectRoute(t, idx["eth7"], true)
 			stub.answerBy(func(_ net.IP, mark uint32) (uint32, bool) {
-				if mark&config.PerSetRouteMarkBits == setMark {
+				if mark&config.PerSetRouteMarkBits == setMark || mark&0x3f00 == mwan3Mark {
 					return idx["ppp9"], true
 				}
 				return idx["eth7"], true
 			})
+			stubRouteMarks(t, map[string][]uint32{"ppp9": {setMark}})
 			set := newFragmentingYTImagesSet()
-			routed := newStaticAddressSet(false)
-			routed.Id = "via-ppp9"
-			routed.Name = "Via ppp9"
-			routed.Targets.IpsToMatch = []string{"203.0.113.9"}
-			routed.Routing.Enabled = true
-			routed.Routing.Mode = config.RoutingModeInterface
-			routed.Routing.EgressInterface = "ppp9"
-			w := newInjectingWorker(t, &set, &routed)
+			w := newInjectingWorker(t, &set)
 
 			m := c.mark
 			if got := queuedVerdict(t, w, ytimgHello(), &m, idx["ppp9"], 0); got != c.want {
@@ -306,20 +308,26 @@ func TestOnAnInterfaceASetRoutesThroughOnlyTheSetsOwnConnectionsKeepTheStrategy(
 	}
 }
 
-func TestADisabledSetDoesNotClaimItsInterface(t *testing.T) {
-	routed := newStaticAddressSet(false)
-	routed.Routing.Enabled = true
-	routed.Routing.Mode = config.RoutingModeInterface
-	routed.Routing.EgressInterface = "ppp9"
-	cfg := config.NewConfig()
-	cfg.Sets = []*config.SetConfig{&routed}
-
-	if !routedBySet(&cfg, "ppp9") {
-		t.Fatal("an enabled set that routes through ppp9 must claim it")
+func TestOnlyTheRouteMarkOfB4sOwnSetCountsOnItsInterface(t *testing.T) {
+	stubRouteMarks(t, map[string][]uint32{"ppp9": {0x2bd8, 0x5aef}})
+	for _, c := range []struct {
+		iface string
+		bits  uint32
+		want  bool
+	}{
+		{"ppp9", 0x2bd8, true},
+		{"ppp9", 0x5aef, true},
+		{"ppp9", 0x200, false},
+		{"ppp9", 0, false},
+		{"eth7", 0x2bd8, false},
+	} {
+		if got := setRoutesWith(c.iface, c.bits); got != c.want {
+			t.Errorf("%s with route bits 0x%x: %v, want %v", c.iface, c.bits, got, c.want)
+		}
 	}
-	routed.Enabled = false
-	if routedBySet(&cfg, "ppp9") {
-		t.Fatal("a disabled set routes nothing, so its interface must still be checked")
+	RouteMarksFunc = nil
+	if setRoutesWith("ppp9", 0x2bd8) {
+		t.Error("without routing state no route bits count")
 	}
 }
 
@@ -575,7 +583,8 @@ func TestAKernelRefusalKeepsTheSocket(t *testing.T) {
 		{"IPv4, no route", "192.0.2.1", unix.ENETUNREACH, true, "b4's own packets cannot leave, which is an answer"},
 		{"IPv4, unreachable route", "192.0.2.1", unix.EHOSTUNREACH, true, "b4's own packets cannot leave, which is an answer"},
 		{"IPv4, prohibit route", "192.0.2.1", unix.EACCES, true, "b4's own packets cannot leave, which is an answer"},
-		{"IPv4, another refusal", "192.0.2.1", unix.EINVAL, false, "only a missing or refused route counts as an answer"},
+		{"IPv4, blackhole route", "192.0.2.1", unix.EINVAL, true, "b4's own packets cannot leave, which is an answer"},
+		{"IPv4, another refusal", "192.0.2.1", unix.EOPNOTSUPP, false, "only a missing or refused route counts as an answer"},
 		{"IPv6, no route", "2001:db8::1", unix.ENETUNREACH, false, "with source-specific IPv6 routes the kernel finds a route once b4's send picks a source"},
 	} {
 		t.Run(c.name, func(t *testing.T) {

@@ -52,6 +52,8 @@ var (
 
 	injectRouteConnMu sync.Mutex
 	injectRouteConn   *netlink.Conn
+
+	RouteMarksFunc func(iface string) []uint32
 )
 
 func SetRerouteCheckAll(on bool) {
@@ -169,7 +171,7 @@ func routeReplyOIF(msgs []netlink.Message) (uint32, bool) {
 }
 
 func routeRefused(errno unix.Errno) bool {
-	return errno == unix.ENETUNREACH || errno == unix.EHOSTUNREACH || errno == unix.EACCES
+	return errno == unix.ENETUNREACH || errno == unix.EHOSTUNREACH || errno == unix.EACCES || errno == unix.EINVAL
 }
 
 func netlinkRouteOIF(dst net.IP, mark uint32) (uint32, bool) {
@@ -209,9 +211,12 @@ func netlinkRouteOIF(dst net.IP, mark uint32) (uint32, bool) {
 	return routeReplyOIF(msgs)
 }
 
-func routedBySet(cfg *config.Config, iface string) bool {
-	for _, s := range cfg.Sets {
-		if s != nil && s.Enabled && s.RoutesToInterface() && s.Routing.EgressInterface == iface {
+func setRoutesWith(iface string, bits uint32) bool {
+	if RouteMarksFunc == nil || bits == 0 {
+		return false
+	}
+	for _, m := range RouteMarksFunc(iface) {
+		if m&config.PerSetRouteMarkBits == bits {
 			return true
 		}
 	}
@@ -238,8 +243,8 @@ func (w *Worker) reroutedEgress(vc *verdictCtx, pkt *pktInfo, cfg *config.Config
 		return ""
 	}
 	lookup := mark
-	if routedBySet(cfg, name) {
-		lookup = mark&^config.PerSetRouteMarkBits | vc.foreignMark&config.PerSetRouteMarkBits
+	if bits := vc.foreignMark & config.PerSetRouteMarkBits; setRoutesWith(name, bits) {
+		lookup = mark&^config.PerSetRouteMarkBits | bits
 	}
 	oif, ok := injectRouteOIF(pkt.dst, lookup, vc.outDev)
 	if !ok || oif == vc.outDev {
