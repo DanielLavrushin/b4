@@ -2,6 +2,7 @@ import { Box, TextField, TextFieldProps } from "@mui/material";
 import { colors } from "@design";
 import { useChangedField } from "@context/ChangedFieldsContext";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { useFieldLabel } from "./dialogLabels";
 
 export interface B4TextFieldProps extends Omit<TextFieldProps, "variant"> {
   helperText?: React.ReactNode;
@@ -22,10 +23,13 @@ export const B4TextField = ({
   onFocus,
   ...props
 }: B4TextFieldProps) => {
-  const changed = useChangedField(path, props.label);
+  const resolvedLabel = useFieldLabel(path, typeof props.label === "string" ? props.label : undefined);
+  const label = props.label ?? resolvedLabel;
+  const changed = useChangedField(path, label);
   const tf = (
     <TextField
       {...props}
+      label={label}
       variant="outlined"
       size="small"
       fullWidth
@@ -75,7 +79,7 @@ export const B4TextField = ({
 
   if (!aiTopic) return tf;
 
-  const labelStr = typeof props.label === "string" ? props.label : undefined;
+  const labelStr = typeof props.label === "string" ? props.label : resolvedLabel;
   const docStr = typeof helperText === "string" ? helperText : undefined;
   const valStr =
     typeof props.value === "string" || typeof props.value === "number"

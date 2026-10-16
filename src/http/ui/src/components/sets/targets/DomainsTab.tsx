@@ -171,7 +171,6 @@ export const DomainsTab = ({
         </Box>
         <Box sx={{ maxWidth: 360, flex: 1, minWidth: 260 }}>
           <B4Switch
-            label={t("sets.targets.domainOnly")}
             description={t("sets.targets.domainOnlyDesc")}
             checked={config.targets.domain_only ?? false}
             path="targets.domain_only"

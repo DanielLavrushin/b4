@@ -467,7 +467,6 @@ export const TrafficRouting = ({
           {isInterface && (
             <Grid size={{ xs: 12, md: 6 }}>
               <B4TextField
-                label={t("sets.routing.egressIp")}
                 value={routing.egress_ip ?? ""}
                 path="routing.egress_ip"
                 onChange={(e) => onChange("routing.egress_ip", e.target.value)}
@@ -497,7 +496,6 @@ export const TrafficRouting = ({
           {isInterface && (
             <Grid size={{ xs: 12, md: 6 }}>
               <B4TextField
-                label={t("sets.routing.egressGateway")}
                 path="routing.egress_gateway"
                 value={routing.egress_gateway ?? ""}
                 onChange={(e) =>
@@ -521,7 +519,6 @@ export const TrafficRouting = ({
           {isInterface && (
             <Grid size={{ xs: 12, md: 6 }}>
               <B4TextField
-                label={t("sets.routing.routerTraffic")}
                 select
                 value={routerTraffic}
                 path="routing.router_traffic"
@@ -551,7 +548,6 @@ export const TrafficRouting = ({
           {isInterface && (
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Switch
-                label={t("sets.routing.killSwitch")}
                 checked={routing.kill_switch ?? false}
                 path="routing.kill_switch"
                 onChange={(checked: boolean) =>
@@ -597,7 +593,6 @@ export const TrafficRouting = ({
             <>
               <Grid size={{ xs: 12, md: 8 }}>
                 <B4TextField
-                  label={t("sets.routing.upstreamHost")}
                   value={upstream.host}
                   path="routing.upstream.host"
                   onChange={(e) =>
@@ -610,7 +605,6 @@ export const TrafficRouting = ({
               </Grid>
               <Grid size={{ xs: 12, md: 4 }}>
                 <B4NumberField
-                  label={t("sets.routing.upstreamPort")}
                   value={upstream.port ?? 0}
                   path="routing.upstream.port"
                   onChange={(n) => onChange("routing.upstream.port", n)}

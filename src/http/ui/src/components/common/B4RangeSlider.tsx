@@ -12,9 +12,10 @@ import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
 import { useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
 import { useEditableNumber } from "./useEditableNumber";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useFieldLabel } from "./dialogLabels";
 
 interface B4RangeSliderProps extends Omit<SliderProps, "onChange" | "value"> {
-  label: string;
+  label?: string;
   value: [number, number];
   onChange: (value: [number, number]) => void;
   min?: number;
@@ -102,12 +103,13 @@ export const B4RangeSlider = ({
   aiQuestion,
   ...props
 }: B4RangeSliderProps) => {
-  const changed = useChangedField(path, label);
+  const resolvedLabel = useFieldLabel(path, label);
+  const changed = useChangedField(path, resolvedLabel);
   const { changedPaths, registerLabel } = useChangedFields();
   const maxPath = path ? `${path}_max` : undefined;
   useEffect(() => {
-    if (maxPath) registerLabel(maxPath, label);
-  }, [registerLabel, maxPath, label]);
+    if (maxPath) registerLabel(maxPath, resolvedLabel);
+  }, [registerLabel, maxPath, resolvedLabel]);
   const changedPair =
     changed || (path ? changedPaths.has(`${path}_max`) : false);
   const labelColor = disabled
@@ -161,7 +163,7 @@ export const B4RangeSlider = ({
               fontWeight: 500,
             }}
           >
-            {label}
+            {resolvedLabel}
           </Typography>
           {changedPair && !disabled && (
             <Box
@@ -179,7 +181,7 @@ export const B4RangeSlider = ({
           {aiTopic && (
             <B4AiExplain
               topic={aiTopic}
-              fieldLabel={label}
+              fieldLabel={resolvedLabel}
               fieldDoc={helperText}
               value={
                 isRange

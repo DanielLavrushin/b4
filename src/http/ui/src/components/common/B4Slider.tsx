@@ -12,9 +12,10 @@ import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
 import { useChangedField } from "@context/ChangedFieldsContext";
 import { useEditableNumber } from "./useEditableNumber";
+import { useFieldLabel } from "./dialogLabels";
 
 interface B4SliderProps extends Omit<SliderProps, "onChange"> {
-  label: string;
+  label?: string;
   value: number;
   onChange: (value: number) => void;
   min?: number;
@@ -49,7 +50,8 @@ export const B4Slider = ({
   aiQuestion,
   ...props
 }: B4SliderProps) => {
-  const changed = useChangedField(path, label);
+  const resolvedLabel = useFieldLabel(path, label);
+  const changed = useChangedField(path, resolvedLabel);
   const labelColor = disabled
     ? colors.text.disabled
     : changed
@@ -86,7 +88,7 @@ export const B4Slider = ({
               fontWeight: 500,
             }}
           >
-            {label}
+            {resolvedLabel}
           </Typography>
           {changed && !disabled && (
             <Box
@@ -104,7 +106,7 @@ export const B4Slider = ({
           {aiTopic && (
             <B4AiExplain
               topic={aiTopic}
-              fieldLabel={label}
+              fieldLabel={resolvedLabel}
               fieldDoc={helperText}
               value={value}
               context={aiContext}

@@ -21,7 +21,6 @@ export const QueueSettings = ({ config, onChange }: QueueSettingsProps) => {
     <B4Section title={t("settings.Queue.title")} icon={<SpeedIcon />}>
       <B4FormGroup columns={2}>
         <B4NumberField
-          label={t("settings.Queue.queueStart")}
           value={config.queue.start_num}
           path="queue.start_num"
           onChange={(n) => onChange("queue.start_num", n)}
@@ -29,7 +28,6 @@ export const QueueSettings = ({ config, onChange }: QueueSettingsProps) => {
           helperText={t("settings.Queue.queueStartHelp")}
         />
         <B4NumberField
-          label={t("settings.Queue.packetMark")}
           value={config.queue.mark}
           path="queue.mark"
           onChange={(n) => onChange("queue.mark", n)}
@@ -37,7 +35,6 @@ export const QueueSettings = ({ config, onChange }: QueueSettingsProps) => {
           helperText={t("settings.Queue.packetMarkHelp")}
         />
         <B4Slider
-          label={t("settings.Queue.workerThreads")}
           value={config.queue.threads}
           path="queue.threads"
           onChange={(value) => onChange("queue.threads", value)}
@@ -47,7 +44,6 @@ export const QueueSettings = ({ config, onChange }: QueueSettingsProps) => {
           helperText={t("settings.Queue.workerThreadsHelp")}
         />
         <B4Slider
-          label={t("settings.Queue.tcpLimit")}
           value={config.queue.tcp_conn_bytes_limit}
           path="queue.tcp_conn_bytes_limit"
           onChange={(value) => onChange("queue.tcp_conn_bytes_limit", value)}
@@ -57,7 +53,6 @@ export const QueueSettings = ({ config, onChange }: QueueSettingsProps) => {
           helperText={t("settings.Queue.tcpLimitHelp")}
         />
         <B4Slider
-          label={t("settings.Queue.udpLimit")}
           value={config.queue.udp_conn_bytes_limit}
           path="queue.udp_conn_bytes_limit"
           onChange={(value) => onChange("queue.udp_conn_bytes_limit", value)}

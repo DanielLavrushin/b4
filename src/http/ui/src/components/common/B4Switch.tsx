@@ -10,9 +10,10 @@ import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
 import { useChangedArrayItem, useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
 import { useEffect } from "react";
+import { useFieldLabel } from "./dialogLabels";
 
 interface B4SwitchProps extends Omit<SwitchProps, "checked" | "onChange"> {
-  label: string;
+  label?: string;
   checked: boolean;
   description?: string;
   disabled?: boolean;
@@ -37,16 +38,17 @@ export const B4Switch = ({
   aiQuestion,
   ...props
 }: B4SwitchProps) => {
-  const fieldChanged = useChangedField(arrayItem ? undefined : path, label);
+  const resolvedLabel = useFieldLabel(path, label);
+  const fieldChanged = useChangedField(arrayItem ? undefined : path, resolvedLabel);
   const arrayItemChanged = useChangedArrayItem(
     path,
     arrayItem,
-    arrayItem ? label : undefined,
+    arrayItem ? resolvedLabel : undefined,
   );
   const { registerValueLabels, scopeVersion } = useChangedFields();
   useEffect(() => {
-    if (path && arrayItem) registerValueLabels(path, new Map([[arrayItem, label]]));
-  }, [path, arrayItem, label, registerValueLabels, scopeVersion]);
+    if (path && arrayItem) registerValueLabels(path, new Map([[arrayItem, resolvedLabel ?? ""]]));
+  }, [path, arrayItem, resolvedLabel, registerValueLabels, scopeVersion]);
   const changed = arrayItem ? arrayItemChanged : fieldChanged;
   const labelColor = disabled
     ? colors.text.disabled
@@ -72,7 +74,7 @@ export const B4Switch = ({
                 fontWeight: 500,
               }}
             >
-              {label}
+              {resolvedLabel}
             </Typography>
             {changed && !disabled && (
               <Box
@@ -122,7 +124,7 @@ export const B4Switch = ({
       <Box sx={{ flex: 1 }}>{control}</Box>
       <B4AiExplain
         topic={aiTopic}
-        fieldLabel={label}
+        fieldLabel={resolvedLabel}
         fieldDoc={description}
         value={checked}
         context={aiContext}

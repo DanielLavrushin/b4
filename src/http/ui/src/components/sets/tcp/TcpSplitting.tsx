@@ -130,7 +130,6 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
 
       <Grid size={{ xs: 12, md: 6 }}>
         <B4Switch
-          label={t("sets.tcp.splitting.reverseOrder")}
           checked={config.fragmentation.reverse_order}
           path="fragmentation.reverse_order"
           onChange={(checked: boolean) =>
@@ -214,7 +213,6 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
 
           <Grid size={{ xs: 12, md: 6 }}>
             <B4RangeSlider
-              label={t("sets.tcp.splitting.oobPosition")}
               value={[
                 config.fragmentation.oob_position || 1,
                 config.fragmentation.oob_position_max ||

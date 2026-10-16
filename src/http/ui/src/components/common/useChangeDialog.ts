@@ -8,6 +8,7 @@ import {
   type ChangeGroupDef,
   type SubDef,
 } from "@common/UnsavedChangesDialog";
+import { labelKeyForPath } from "@common/dialogLabels";
 
 // Split in two because callers compute `dialogsOpen` from the route blocker,
 // which itself needs the diff: tracker (diff + label registries, no gate)
@@ -62,7 +63,6 @@ export interface ChangeItemsOptions {
   changedLeaves: { path: string; before: unknown; after: unknown }[];
   registry: { current: Map<string, ReactNode> };
   valueRegistry: { current: Map<string, ReadonlyMap<string, string>> };
-  pathLabelKeys: Record<string, string>;
   extraValueLabels?: ReadonlyArray<
     readonly [string, ReadonlyMap<string, string>]
   >;
@@ -79,11 +79,12 @@ export const useChangeItems = (o: ChangeItemsOptions) => {
   );
   const staticLabels = useMemo(() => {
     const map = new Map<string, ReactNode>();
-    for (const [path, key] of Object.entries(o.pathLabelKeys)) {
-      map.set(path, t(key));
+    for (const leaf of o.changedLeaves) {
+      const key = labelKeyForPath(leaf.path);
+      if (key !== undefined) map.set(leaf.path, t(key));
     }
     return map;
-  }, [o.pathLabelKeys, t]);
+  }, [o.changedLeaves, t]);
   const changeItems = useMemo(() => {
     if (!o.dialogsOpen) return [];
     return buildChangeItems(

@@ -141,7 +141,6 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
       <B4FormGroup columns={2}>
         <B4FormRow>
           <B4Switch
-            label={t("settings.Socks5.enable")}
             checked={enabled}
             path="system.socks5.enabled"
             onChange={(checked: boolean) =>
@@ -163,7 +162,6 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
           />
         </B4FormRow>
         <B4TextField
-          label={t("settings.Socks5.username")}
           value={username}
           path="system.socks5.username"
           onChange={(e) => onChange("system.socks5.username", e.target.value)}
@@ -172,7 +170,6 @@ export const Socks5Settings = ({ config, onChange }: Socks5SettingsProps) => {
           autoComplete="new-password"
         />
         <B4TextField
-          label={t("settings.Socks5.password")}
           type="password"
           value={password}
           path="system.socks5.password"

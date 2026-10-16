@@ -52,7 +52,6 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
           />
 
           <B4Switch
-            label={t("sets.tcp.splitting.combo.extensionSplit")}
             checked={combo.extension_split}
             path="fragmentation.combo.extension_split"
             onChange={(checked: boolean) =>
@@ -281,7 +280,6 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
       {/* Shuffle Mode */}
       <Grid size={{ xs: 12, md: 6 }}>
         <B4Select
-          label={t("sets.tcp.splitting.combo.shuffleMode")}
           value={combo.shuffle_mode}
           options={shuffleModeOptions}
           path="fragmentation.combo.shuffle_mode"

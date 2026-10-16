@@ -89,7 +89,6 @@ const IPInfoCard = ({ config, onChange }: ApiSettingsProps) => {
     >
       <Box sx={{ maxWidth: 560 }}>
         <B4SecretField
-          label={t("settings.Api.token")}
           value={token}
           path="system.api.ipinfo_token"
           onChange={(value) => onChange("system.api.ipinfo_token", value)}
@@ -358,7 +357,6 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
             renderInput={(params) => (
               <B4TextField
                 {...params}
-                label={t("settings.Ai.model")}
                 path="system.ai.model"
                 placeholder={MODEL_PLACEHOLDERS[provider] ?? ""}
                 size="small"
@@ -428,7 +426,6 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
         <Grid container spacing={2}>
           <Grid size={{ xs: 12 }}>
             <B4TextField
-              label={t("settings.Ai.endpoint")}
               value={ai?.endpoint ?? ""}
               path="system.ai.endpoint"
               onChange={(e) => onChange("system.ai.endpoint", e.target.value)}
@@ -439,7 +436,6 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4NumberField
-              label={t("settings.Ai.maxTokens")}
               value={ai?.max_tokens ?? 1024}
               path="system.ai.max_tokens"
               onChange={(n) => onChange("system.ai.max_tokens", n)}
@@ -449,7 +445,6 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4NumberField
-              label={t("settings.Ai.temperature")}
               value={ai?.temperature ?? 0.2}
               path="system.ai.temperature"
               onChange={(n) => onChange("system.ai.temperature", n)}
@@ -461,7 +456,6 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4NumberField
-              label={t("settings.Ai.timeout")}
               value={ai?.timeout_sec ?? 120}
               path="system.ai.timeout_sec"
               onChange={(n) => onChange("system.ai.timeout_sec", n)}
@@ -596,7 +590,6 @@ const MCPCard = ({ config, onChange }: ApiSettingsProps) => {
         <Grid size={{ xs: 12, lg: 6 }}>
           <Stack spacing={2}>
             <B4SecretField
-              label={t("settings.Mcp.token")}
               value={token}
               path="system.web_server.mcp.token"
               onChange={(value) =>

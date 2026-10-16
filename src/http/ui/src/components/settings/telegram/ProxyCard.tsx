@@ -43,7 +43,6 @@ export const ProxyCard = ({ config, onChange }: ProxyCardProps) => {
         </Grid>
         <Grid size={{ xs: 12 }}>
           <B4TextField
-            label={t("settings.MTProto.fakeSNI")}
             value={mtproto?.fake_sni || "storage.googleapis.com"}
             path="system.mtproto.fake_sni"
             onChange={(e) =>
@@ -58,7 +57,6 @@ export const ProxyCard = ({ config, onChange }: ProxyCardProps) => {
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4NumberField
-              label={t("settings.MTProto.maxConnections")}
               value={mtproto?.max_connections || 2048}
               path="system.mtproto.max_connections"
               onChange={(n) => onChange("system.mtproto.max_connections", n)}
@@ -69,7 +67,6 @@ export const ProxyCard = ({ config, onChange }: ProxyCardProps) => {
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4NumberField
-              label={t("settings.MTProto.tcpUserTimeout")}
               value={mtproto?.tcp_user_timeout_sec || 120}
               path="system.mtproto.tcp_user_timeout_sec"
               onChange={(n) =>
@@ -82,7 +79,6 @@ export const ProxyCard = ({ config, onChange }: ProxyCardProps) => {
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4NumberField
-              label={t("settings.MTProto.idleTimeout")}
               value={mtproto?.idle_timeout_sec || 300}
               path="system.mtproto.idle_timeout_sec"
               onChange={(n) => onChange("system.mtproto.idle_timeout_sec", n)}

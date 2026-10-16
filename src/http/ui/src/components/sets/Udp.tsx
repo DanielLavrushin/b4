@@ -202,7 +202,6 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Switch
-            label={t("sets.udp.filterStun")}
             checked={config.udp.filter_stun}
             path="udp.filter_stun"
             onChange={(checked) => onChange("udp.filter_stun", checked)}
@@ -301,7 +300,6 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
 
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Select
-                label={t("sets.udp.fakePayloadFile")}
                 value={config.udp.fake_payload_file ?? ""}
                 path="udp.fake_payload_file"
                 options={[
@@ -359,7 +357,6 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
 
             <Grid size={{ xs: 12, md: 6 }}>
               <B4RangeSlider
-                label={t("sets.udp.seg2delay")}
                 path="udp.seg2delay"
                 value={[
                   config.udp.seg2delay,

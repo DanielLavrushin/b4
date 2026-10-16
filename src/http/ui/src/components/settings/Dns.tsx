@@ -47,7 +47,6 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
         />
         {tcpOn && (
           <B4NumberField
-            label={t("settings.Dns.tcpPort")}
             value={dns.tcp_port}
             path="system.dns.tcp_port"
             onChange={(value: number) => onChange("system.dns.tcp_port", value)}
@@ -72,7 +71,6 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
         />
         {tcpOn && (
           <B4NumberField
-            label={t("settings.Dns.tcpIdle")}
             value={dns.tcp_idle_sec}
             path="system.dns.tcp_idle_sec"
             onChange={(value: number) =>
@@ -85,7 +83,6 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
         )}
         {tcpOn && (
           <B4NumberField
-            label={t("settings.Dns.tcpIo")}
             value={dns.tcp_io_sec}
             path="system.dns.tcp_io_sec"
             onChange={(value: number) =>
@@ -98,7 +95,6 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
         )}
         {tcpOn && (
           <B4NumberField
-            label={t("settings.Dns.tcpDial")}
             value={dns.tcp_dial_sec}
             path="system.dns.tcp_dial_sec"
             onChange={(value: number) =>

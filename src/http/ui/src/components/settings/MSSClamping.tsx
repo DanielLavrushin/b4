@@ -23,7 +23,6 @@ export const MSSClampingSettings = ({
   return (
     <B4Section title={t("settings.MSSClamping.title")} icon={<FragIcon />}>
       <B4Switch
-        label={t("settings.MSSClamping.enable")}
         checked={mss.enabled}
         path="queue.mss_clamp.enabled"
         onChange={(checked: boolean) =>
@@ -33,7 +32,6 @@ export const MSSClampingSettings = ({
       />
       {mss.enabled && (
         <B4Slider
-          label={t("settings.MSSClamping.mssSize")}
           value={mss.size}
           path="queue.mss_clamp.size"
           onChange={(value: number) => onChange("queue.mss_clamp.size", value)}

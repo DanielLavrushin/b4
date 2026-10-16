@@ -59,7 +59,6 @@ export const DisorderSettings = ({
 
       <Grid size={{ xs: 12, md: 6 }}>
         <B4Select
-          label={t("sets.tcp.splitting.disorder.shuffleMode")}
           value={disorder.shuffle_mode}
           options={shuffleModeOptions}
           path="fragmentation.disorder.shuffle_mode"

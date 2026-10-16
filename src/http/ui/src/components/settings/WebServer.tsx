@@ -47,7 +47,6 @@ export const WebServerSettings = ({
           />
         </B4FormRow>
         <B4TextField
-          label={t("settings.WebServer.tlsCert")}
           value={config.system.web_server.tls_cert || ""}
           path="system.web_server.tls_cert"
           onChange={(e) =>
@@ -57,7 +56,6 @@ export const WebServerSettings = ({
           helperText={t("settings.WebServer.tlsCertHelp")}
         />
         <B4TextField
-          label={t("settings.WebServer.tlsKey")}
           value={config.system.web_server.tls_key || ""}
           path="system.web_server.tls_key"
           onChange={(e) =>
@@ -80,7 +78,6 @@ export const WebServerSettings = ({
           autoComplete="new-password"
         />
         <B4TextField
-          label={t("settings.WebServer.password")}
           type="password"
           value={config.system.web_server.password || ""}
           path="system.web_server.password"

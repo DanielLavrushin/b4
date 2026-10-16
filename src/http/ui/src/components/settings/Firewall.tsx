@@ -47,7 +47,6 @@ export const FirewallRulesSettings = ({
         <>
           {(skipTables || tunSkipShown) && (
             <B4Switch
-              label={t("settings.Feature.skipIptables")}
               checked={skipTables}
               path="system.tables.skip_setup"
               onChange={(checked: boolean) =>
@@ -56,7 +55,6 @@ export const FirewallRulesSettings = ({
             />
           )}
           <B4Slider
-            label={t("settings.Feature.firewallMonitorInterval")}
             value={Math.max(
               TUN_MONITOR_MIN_INTERVAL,
               config.system.tables.monitor_interval,
@@ -79,7 +77,6 @@ export const FirewallRulesSettings = ({
         <B4FormGroup columns={2}>
           <B4FormRow>
             <B4Switch
-              label={t("settings.Feature.skipIptables")}
               checked={skipTables}
               path="system.tables.skip_setup"
               onChange={(checked: boolean) =>
@@ -89,7 +86,6 @@ export const FirewallRulesSettings = ({
             />
           </B4FormRow>
           <B4Select
-            label={t("settings.Feature.firewallEngine")}
             value={config.system.tables.engine || "auto"}
             path="system.tables.engine"
             onChange={(e) =>
@@ -107,7 +103,6 @@ export const FirewallRulesSettings = ({
             helperText={t("settings.Feature.firewallEngineHelp")}
           />
           <B4Slider
-            label={t("settings.Feature.firewallMonitorInterval")}
             value={config.system.tables.monitor_interval}
             path="system.tables.monitor_interval"
             onChange={(value: number) =>
@@ -160,7 +155,6 @@ export const NatMasqueradeSettings = ({
   return (
     <B4Section title={t("settings.Feature.natMasquerade")} icon={<SwapIcon />}>
       <B4Switch
-        label={t("settings.Feature.natMasqueradeEnable")}
         checked={masquerade.enabled}
         path="system.tables.masquerade.enabled"
         onChange={(checked: boolean) =>
@@ -219,7 +213,6 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
       icon={<CategoryIcon />}
     >
       <B4Switch
-        label={t("settings.Feature.dscp")}
         checked={dscp.enabled}
         path="system.tables.dscp.enabled"
         onChange={(checked: boolean) => {
@@ -242,7 +235,6 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
       {dscp.enabled && (
         <>
           <B4Slider
-            label={t("settings.Feature.dscpValue")}
             value={dscp.value}
             path="system.tables.dscp.value"
             onChange={(value: number) =>

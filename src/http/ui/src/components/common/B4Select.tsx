@@ -11,9 +11,10 @@ import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
 import { useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
 import { useEffect } from "react";
+import { useFieldLabel } from "./dialogLabels";
 
 interface B4SelectProps extends Omit<SelectProps<string | number>, "variant"> {
-  label: string;
+  label?: string;
   options: { value: string | number; label: string }[];
   helperText?: string;
   path?: string;
@@ -32,7 +33,8 @@ export const B4Select = ({
   aiQuestion,
   ...props
 }: B4SelectProps) => {
-  const changed = useChangedField(path, label);
+  const resolvedLabel = useFieldLabel(path, label);
+  const changed = useChangedField(path, resolvedLabel);
   const { registerValueLabels, scopeVersion } = useChangedFields();
   const optionKey = options
     .map((o) => `${o.value}\0${o.label}`)
@@ -57,11 +59,11 @@ export const B4Select = ({
           },
         }}
       >
-        {label}
+        {resolvedLabel}
       </InputLabel>
       <Select
         {...props}
-        label={label}
+        label={resolvedLabel}
         displayEmpty
         renderValue={(selected) => {
           const match = options.find((o) => o.value === selected);
@@ -118,7 +120,7 @@ export const B4Select = ({
       <Box sx={{ flex: 1 }}>{fc}</Box>
       <B4AiExplain
         topic={aiTopic}
-        fieldLabel={label}
+        fieldLabel={resolvedLabel}
         fieldDoc={helperText}
         value={valStr}
         context={aiContext}

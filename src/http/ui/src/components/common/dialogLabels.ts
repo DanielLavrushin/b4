@@ -1,41 +1,56 @@
-export const SET_PATH_LABEL_KEYS: Record<string, string> = {
+import { useTranslation } from "react-i18next";
+
+// Dialog label keys derived from config paths by convention: longest-prefix
+// namespace match, remaining segments camelCased, trailing _sec stripped
+// ("system.dns.tcp_port" -> "settings.Dns.tcpPort"). Anything the convention
+// cannot spell lives in LABEL_EXCEPTIONS below.
+const LABEL_NS_BY_PREFIX: Record<string, string> = {
+  dns: "sets.dns",
+  routing: "sets.routing",
+  targets: "sets.targets",
+  "fragmentation.combo": "sets.tcp.splitting.combo",
+  "fragmentation.disorder": "sets.tcp.splitting.disorder",
+  fragmentation: "sets.tcp.splitting",
+  "faking.sni_mutation": "sets.faking.mutation",
+  faking: "sets.faking.fakeSni",
+  "tcp.desync": "sets.faking.desync",
+  "tcp.incoming": "sets.faking.incoming",
+  "tcp.win": "sets.faking.window",
+  tcp: "sets.tcp.general",
+  mss_clamp: "sets.tcp.general",
+  udp: "sets.udp",
+  escalate: "sets.escalation",
+  "queue.devices": "settings.Devices",
+  "queue.mss_clamp": "settings.MSSClamping",
+  "queue.tun": "settings.Feature",
+  "system.ai": "settings.Ai",
+  "system.api": "settings.Api",
+  "system.dns": "settings.Dns",
+  "system.geo": "settings.Geo",
+  "system.hub": "settings.Hub",
+  "system.ip_health": "settings.IPHealth",
+  "system.logging": "settings.Logging",
+  system: "settings.Logging",
+  "system.tables": "settings.Feature",
+  "system.socks5": "settings.Socks5",
+  "system.mtproto": "settings.MTProto",
+  "system.web_server.mcp": "settings.Mcp",
+  "system.web_server": "settings.WebServer",
+  "system.checker.watchdog": "settings.Watchdog",
+  "system.checker": "settings.Checker",
+};
+
+// Labels the convention cannot derive: arbitrary names ("modeLabel"),
+// cross-namespace keys ("core.interfaces") and inverted flags ("tcpEnable").
+// Set entries in editor tab order, settings entries alphabetically.
+const LABEL_EXCEPTIONS: Record<string, string> = {
   name: "core.setName",
   "targets.sni_domains": "sets.targets.manualDomains",
   "targets.ip": "sets.targets.manualIps",
-  "targets.geoip_categories": "sets.targets.geoipCategories",
-  "targets.geosite_categories": "sets.targets.geositeCategories",
   "targets.asns": "sets.targets.asn.activeTitle",
   "targets.source_devices": "core.devices.devicesTitle",
-  "fragmentation.strategy_pool": "sets.tcp.splitting.strategyPool",
   "faking.tls_mod": "sets.faking.fakeSni.tlsModTitle",
-  "routing.egress_gateway": "sets.routing.egressGateway",
-};
-
-export const SET_VALUE_LABEL_KEYS: Record<string, Record<string, string>> = {
-  "fragmentation.strategy_pool": {
-    combo: "sets.tcp.splitting.strategyCombo",
-    hybrid: "sets.tcp.splitting.strategyHybrid",
-    disorder: "sets.tcp.splitting.strategyDisorder",
-    extsplit: "sets.tcp.splitting.strategyExtSplit",
-    firstbyte: "sets.tcp.splitting.strategyFirstByte",
-    tcp: "sets.tcp.splitting.strategyTcp",
-    ip: "sets.tcp.splitting.strategyIp",
-    tls: "sets.tcp.splitting.strategyTls",
-    oob: "sets.tcp.splitting.strategyOob",
-    none: "sets.tcp.splitting.strategyNone",
-  },
-  "faking.tls_mod": {
-    rnd: "sets.faking.fakeSni.randomizeTlsRandom",
-    dupsid: "sets.faking.fakeSni.dupSessionId",
-  },
-};
-
-// Static field labels for the settings unsaved-changes dialog. Runtime
-// registrations (useChangedField) win over this table; it covers fields on
-// unmounted tabs and any control that forgets to register.
-export const SETTINGS_PATH_LABEL_KEYS: Record<string, string> = {
   "queue.devices.enabled": "settings.Devices.enable",
-  "queue.devices.vendor_lookup": "settings.Devices.vendorLookup",
   "queue.devices.wisb": "settings.Devices.invertSelection",
   "queue.interfaces": "core.interfaces",
   "queue.ipv4": "settings.Feature.enableIPv4",
@@ -53,90 +68,84 @@ export const SETTINGS_PATH_LABEL_KEYS: Record<string, string> = {
   "queue.tun.out_interface": "settings.Feature.tunOutInterface",
   "queue.udp_conn_bytes_limit": "settings.Queue.udpLimit",
   "system.ai.enabled": "settings.Ai.title",
-  "system.ai.endpoint": "settings.Ai.endpoint",
-  "system.ai.max_tokens": "settings.Ai.maxTokens",
-  "system.ai.model": "settings.Ai.model",
-  "system.ai.temperature": "settings.Ai.temperature",
-  "system.ai.timeout_sec": "settings.Ai.timeout",
   "system.api.ipinfo_token": "settings.Api.token",
   "system.checker.config_propagate_ms": "settings.Checker.configPropagation",
-  "system.checker.discovery_timeout": "settings.Checker.discoveryTimeout",
   "system.checker.dns_server": "settings.Checker.trustedDns",
-  "system.checker.watchdog.cooldown_sec": "settings.Watchdog.cooldown",
-  "system.checker.watchdog.enabled": "settings.Watchdog.enabled",
-  "system.checker.watchdog.failure_interval": "settings.Watchdog.failureInterval",
-  "system.checker.watchdog.interval_sec": "settings.Watchdog.interval",
-  "system.checker.watchdog.max_retries": "settings.Watchdog.maxRetries",
-  "system.checker.watchdog.timeout_sec": "settings.Watchdog.timeout",
   "system.dns.keep_ipv6_answers": "settings.Dns.ipv4Fallback",
-  "system.dns.query_timeout_sec": "settings.Dns.queryTimeout",
-  "system.dns.tcp_dial_sec": "settings.Dns.tcpDial",
   "system.dns.tcp_disabled": "settings.Dns.tcpEnable",
-  "system.dns.tcp_idle_sec": "settings.Dns.tcpIdle",
-  "system.dns.tcp_io_sec": "settings.Dns.tcpIo",
-  "system.dns.tcp_port": "settings.Dns.tcpPort",
-  "system.geo.auto_update.interval": "settings.Geo.autoUpdateInterval",
-  "system.geo.auto_update.on_startup": "settings.Geo.autoUpdateOnStartup",
-  "system.hub.public_key": "settings.Hub.publicKey",
-  "system.hub.urls": "settings.Hub.urls",
-  "system.ip_health.retest_interval_sec": "settings.IPHealth.retestInterval",
   "system.logging.directory": "settings.Logging.logDirectory",
   "system.logging.instaflush": "settings.Logging.instantFlush",
   "system.logging.level": "settings.Logging.logLevel",
-  "system.logging.syslog": "settings.Logging.syslog",
-  "system.memory_limit": "settings.Logging.memoryLimit",
   "system.mtproto.bind_address": "settings.Listener.bindAddress",
   "system.mtproto.bridge.enabled": "settings.TelegramBridge.title",
-  "system.mtproto.bridge_wait_sec": "settings.MTProto.bridgeWait",
   "system.mtproto.cfproxy_enabled": "settings.MTProto.cfProxyEnabled",
   "system.mtproto.cfproxy_url": "settings.MTProto.cfProxyURL",
   "system.mtproto.cfworker_domain": "settings.MTProto.cfWorkerDomain",
   "system.mtproto.cfworker_dpi": "settings.MTProto.cfWorkerDpi",
-  "system.mtproto.dc_fallback_enabled": "settings.MTProto.dcFallbackEnabled",
   "system.mtproto.dc_fallback_url": "settings.MTProto.dcFallbackURL",
-  "system.mtproto.dc_relay": "settings.MTProto.dcRelay",
   "system.mtproto.enabled": "settings.MTProto.title",
   "system.mtproto.expose": "settings.Listener.expose",
   "system.mtproto.fake_sni": "settings.MTProto.fakeSNI",
-  "system.mtproto.idle_timeout_sec": "settings.MTProto.idleTimeout",
-  "system.mtproto.max_connections": "settings.MTProto.maxConnections",
   "system.mtproto.port": "settings.Listener.port",
   "system.mtproto.secrets": "settings.MTProto.secretsTitle",
-  "system.mtproto.tcp_user_timeout_sec": "settings.MTProto.tcpUserTimeout",
-  "system.mtproto.upstream_mode": "settings.MTProto.upstreamMode",
   "system.mtproto.web_proxy.enabled": "settings.MTProto.webProxyTitle",
   "system.mtproto.web_proxy.expose": "settings.Listener.expose",
-  "system.mtproto.web_proxy.hostname": "settings.MTProto.webProxyHostname",
-  "system.mtproto.web_proxy.port": "settings.MTProto.webProxyPort",
-  "system.mtproto.web_proxy.tls_cert": "settings.MTProto.webProxyTlsCert",
-  "system.mtproto.web_proxy.tls_key": "settings.MTProto.webProxyTlsKey",
-  "system.mtproto.ws_custom_domain": "settings.MTProto.wsCustomDomain",
-  "system.mtproto.ws_endpoint_host": "settings.MTProto.wsEndpointHost",
-  "system.mtproto.ws_front_sni": "settings.MTProto.wsFrontSni",
   "system.socks5.bind_address": "settings.Listener.bindAddress",
   "system.socks5.enabled": "settings.Socks5.enable",
   "system.socks5.expose": "settings.Listener.expose",
-  "system.socks5.password": "settings.Socks5.password",
   "system.socks5.port": "settings.Listener.port",
-  "system.socks5.username": "settings.Socks5.username",
   "system.tables.dscp.enabled": "settings.Feature.dscp",
   "system.tables.dscp.interfaces": "core.interfaces",
-  "system.tables.dscp.value": "settings.Feature.dscpValue",
   "system.tables.engine": "settings.Feature.firewallEngine",
   "system.tables.masquerade.enabled": "settings.Feature.natMasqueradeEnable",
   "system.tables.masquerade.interfaces": "core.interfaces",
   "system.tables.monitor_interval": "settings.Feature.firewallMonitorInterval",
   "system.tables.skip_setup": "settings.Feature.skipIptables",
-  "system.timezone": "settings.Logging.timezone",
-  "system.update.mirrors": "settings.Logging.updateMirrors",
   "system.web_server.bind_address": "settings.Listener.bindAddress",
   "system.web_server.expose": "settings.Listener.expose",
   "system.web_server.language": "core.language",
   "system.web_server.mcp.enabled": "settings.Mcp.title",
-  "system.web_server.mcp.token": "settings.Mcp.token",
-  "system.web_server.password": "settings.WebServer.password",
   "system.web_server.port": "settings.Listener.port",
-  "system.web_server.tls_cert": "settings.WebServer.tlsCert",
-  "system.web_server.tls_key": "settings.WebServer.tlsKey",
-  "system.web_server.username": "settings.WebServer.username",
+};
+
+export function labelKeyForPath(path: string): string | undefined {
+  const hit = LABEL_EXCEPTIONS[path];
+  if (hit !== undefined) return hit;
+  const segs = path.split(".");
+  const maxN = Math.min(3, segs.length - 1);
+  for (let n = maxN; n >= 1; n--) {
+    const ns = LABEL_NS_BY_PREFIX[segs.slice(0, n).join(".")];
+    if (ns === undefined) continue;
+    const raw = segs.slice(n).join("_").replace(/_(sec)$/, "");
+    const field = raw.replace(/_([a-z0-9])/g, (_m: string, c: string) => c.toUpperCase());
+    return `${ns}.${field}`;
+  }
+  return undefined;
+}
+
+
+export function useFieldLabel(path: string | undefined, label: string | undefined): string | undefined {
+  const { t } = useTranslation();
+  if (label !== undefined) return label;
+  if (path === undefined) return undefined;
+  const key = labelKeyForPath(path);
+  return key === undefined ? undefined : t(key);
+}
+export const SET_VALUE_LABEL_KEYS: Record<string, Record<string, string>> = {
+  "fragmentation.strategy_pool": {
+    combo: "sets.tcp.splitting.strategyCombo",
+    hybrid: "sets.tcp.splitting.strategyHybrid",
+    disorder: "sets.tcp.splitting.strategyDisorder",
+    extsplit: "sets.tcp.splitting.strategyExtSplit",
+    firstbyte: "sets.tcp.splitting.strategyFirstByte",
+    tcp: "sets.tcp.splitting.strategyTcp",
+    ip: "sets.tcp.splitting.strategyIp",
+    tls: "sets.tcp.splitting.strategyTls",
+    oob: "sets.tcp.splitting.strategyOob",
+    none: "sets.tcp.splitting.strategyNone",
+  },
+  "faking.tls_mod": {
+    rnd: "sets.faking.fakeSni.randomizeTlsRandom",
+    dupsid: "sets.faking.fakeSni.dupSessionId",
+  },
 };

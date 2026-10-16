@@ -25,7 +25,6 @@ export const IPHealthSettings = ({
   return (
     <B4Section title={t("settings.IPHealth.title")} icon={<IpIcon />}>
       <B4NumberField
-        label={t("settings.IPHealth.retestInterval")}
         value={ipHealth.retest_interval_sec}
         min={30}
         max={3600}

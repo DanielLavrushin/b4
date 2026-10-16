@@ -127,7 +127,6 @@ export const EscalationSettings = ({
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Slider
-                  label={t("sets.escalation.stallTimeoutMs")}
                   value={config.escalate?.stall_timeout_ms || 3000}
                   path="escalate.stall_timeout_ms"
                   onChange={(value: number) =>
@@ -142,7 +141,6 @@ export const EscalationSettings = ({
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Slider
-                  label={t("sets.escalation.rstThreshold")}
                   value={config.escalate?.rst_threshold || 3}
                   path="escalate.rst_threshold"
                   onChange={(value: number) =>
@@ -171,7 +169,6 @@ export const EscalationSettings = ({
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Slider
-                  label={t("sets.escalation.dnsThreshold")}
                   value={config.escalate?.dns_threshold || 2}
                   path="escalate.dns_threshold"
                   onChange={(value: number) =>

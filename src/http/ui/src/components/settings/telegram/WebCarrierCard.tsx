@@ -45,7 +45,6 @@ export const WebCarrierCard = ({ config, onChange }: WebCarrierCardProps) => {
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 8 }}>
           <B4TextField
-            label={t("settings.MTProto.webProxyHostname")}
             value={webProxy?.hostname || ""}
             path="system.mtproto.web_proxy.hostname"
             onChange={(e) =>
@@ -63,7 +62,6 @@ export const WebCarrierCard = ({ config, onChange }: WebCarrierCardProps) => {
         </Grid>
         <Grid size={{ xs: 12, md: 4 }}>
           <B4TextField
-            label={t("settings.MTProto.webProxyPort")}
             value={port > 0 ? String(port) : ""}
             path="system.mtproto.web_proxy.port"
             onChange={(e) => {
@@ -114,7 +112,6 @@ export const WebCarrierCard = ({ config, onChange }: WebCarrierCardProps) => {
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 6 }}>
               <B4TextField
-                label={t("settings.MTProto.webProxyTlsCert")}
                 value={webProxy?.tls_cert || ""}
                 path="system.mtproto.web_proxy.tls_cert"
                 onChange={(e) =>
@@ -126,7 +123,6 @@ export const WebCarrierCard = ({ config, onChange }: WebCarrierCardProps) => {
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <B4TextField
-                label={t("settings.MTProto.webProxyTlsKey")}
                 value={webProxy?.tls_key || ""}
                 path="system.mtproto.web_proxy.tls_key"
                 onChange={(e) =>

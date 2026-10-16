@@ -18,7 +18,7 @@ import { B4TextField } from "./B4TextField";
 const MANAGED_MASK = "••••••••••••••••";
 
 export interface B4SecretFieldProps {
-  label: string;
+  label?: string;
   value?: string;
   onChange?: (value: string) => void;
   managed?: boolean;

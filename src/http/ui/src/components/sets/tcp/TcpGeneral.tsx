@@ -70,7 +70,6 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4RangeSlider
-            label={t("sets.tcp.general.seg2delay")}
             value={[
               config.tcp.seg2delay,
               config.tcp.seg2delay_max || config.tcp.seg2delay,
@@ -103,7 +102,6 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
 
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Switch
-            label={t("sets.tcp.general.dropSack")}
             description={t("sets.tcp.general.dropSackDesc")}
             checked={config.tcp.drop_sack || false}
             path="tcp.drop_sack"

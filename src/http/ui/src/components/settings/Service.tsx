@@ -87,14 +87,12 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
       </Box>
       <Divider />
       <B4Select
-        label={t("core.language")}
         value={config.system.web_server.language || "en"}
         options={LANGUAGES}
         path="system.web_server.language"
         onChange={handleLanguageChange}
       />
       <B4Select
-        label={t("settings.Logging.timezone")}
         value={config.system.timezone ?? ""}
         options={TIMEZONES}
         path="system.timezone"
@@ -102,7 +100,6 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
         helperText={t("settings.Logging.timezoneHelp")}
       />
       <B4TextField
-        label={t("settings.Logging.memoryLimit")}
         value={config.system.memory_limit ?? ""}
         path="system.memory_limit"
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -112,7 +109,6 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
         helperText={t("settings.Logging.memoryLimitHelp")}
       />
       <B4TextField
-        label={t("settings.Logging.updateMirrors")}
         value={(config.system.update?.mirrors ?? []).join(", ")}
         path="system.update.mirrors"
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -148,7 +144,6 @@ export const LoggingSettings = ({ config, onChange }: ServiceCardProps) => {
   return (
     <B4Section title={t("settings.Logging.loggingTitle")} icon={<LogsIcon />}>
       <B4Select
-        label={t("settings.Logging.logLevel")}
         value={config.system.logging.level}
         options={LOG_LEVELS}
         path="system.logging.level"
@@ -157,7 +152,6 @@ export const LoggingSettings = ({ config, onChange }: ServiceCardProps) => {
         }
       />
       <B4TextField
-        label={t("settings.Logging.logDirectory")}
         value={config.system.logging.directory}
         path="system.logging.directory"
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -167,7 +161,6 @@ export const LoggingSettings = ({ config, onChange }: ServiceCardProps) => {
         helperText={t("settings.Logging.logDirectoryHelp")}
       />
       <B4Switch
-        label={t("settings.Logging.instantFlush")}
         checked={config?.system?.logging?.instaflush}
         path="system.logging.instaflush"
         onChange={(checked: boolean) =>
@@ -176,7 +169,6 @@ export const LoggingSettings = ({ config, onChange }: ServiceCardProps) => {
         description={t("settings.Logging.instantFlushDesc")}
       />
       <B4Switch
-        label={t("settings.Logging.syslog")}
         checked={config?.system?.logging?.syslog}
         path="system.logging.syslog"
         onChange={(checked: boolean) =>

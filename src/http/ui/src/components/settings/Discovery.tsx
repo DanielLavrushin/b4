@@ -61,7 +61,6 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 6 }}>
           <B4Slider
-            label={t("settings.Checker.discoveryTimeout")}
             value={config.system.checker.discovery_timeout || 5}
             path="system.checker.discovery_timeout"
             onChange={(value) =>
@@ -76,7 +75,6 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
         </Grid>
         <Grid size={{ xs: 12, lg: 6 }}>
           <B4Slider
-            label={t("settings.Checker.configPropagation")}
             value={config.system.checker.config_propagate_ms || 1500}
             path="system.checker.config_propagate_ms"
             onChange={(value) =>
@@ -120,7 +118,6 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 6 }}>
           <B4Switch
-            label={t("settings.Watchdog.enabled")}
             checked={config.system.checker.watchdog?.enabled ?? false}
             path="system.checker.watchdog.enabled"
             onChange={(checked) =>
@@ -140,7 +137,6 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
         <>
         <Grid size={{ xs: 12, lg: 6 }}>
           <B4Slider
-            label={t("settings.Watchdog.interval")}
             value={config.system.checker.watchdog?.interval_sec ?? 300}
             path="system.checker.watchdog.interval_sec"
             onChange={(value) =>
@@ -156,7 +152,6 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
 
         <Grid size={{ xs: 12, lg: 6 }}>
           <B4Slider
-            label={t("settings.Watchdog.failureInterval")}
             value={config.system.checker.watchdog?.failure_interval ?? 60}
             path="system.checker.watchdog.failure_interval"
             onChange={(value) =>
@@ -172,7 +167,6 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
 
         <Grid size={{ xs: 12, lg: 6 }}>
           <B4Slider
-            label={t("settings.Watchdog.cooldown")}
             value={config.system.checker.watchdog?.cooldown_sec ?? 900}
             path="system.checker.watchdog.cooldown_sec"
             onChange={(value) =>
@@ -188,7 +182,6 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
 
         <Grid size={{ xs: 12, lg: 6 }}>
           <B4Slider
-            label={t("settings.Watchdog.timeout")}
             value={config.system.checker.watchdog?.timeout_sec ?? 10}
             path="system.checker.watchdog.timeout_sec"
             onChange={(value) =>
@@ -204,7 +197,6 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
 
         <Grid size={{ xs: 12, lg: 6 }}>
           <B4Slider
-            label={t("settings.Watchdog.maxRetries")}
             value={config.system.checker.watchdog?.max_retries ?? 3}
             path="system.checker.watchdog.max_retries"
             onChange={(value) =>

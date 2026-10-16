@@ -39,7 +39,6 @@ import {
   useChangeTracker,
 } from "@common/useChangeDialog";
 import { B4Config, B4SetConfig, SystemConfig } from "@models/config";
-import { SET_PATH_LABEL_KEYS } from "@common/dialogLabels";
 import { dscpEnvironment } from "@utils";
 import { DiscoveryTab } from "./DiscoveryTab";
 import { EscalationSettings } from "./Escalation";
@@ -254,7 +253,6 @@ export const SetEditorPage = ({
     changedLeaves,
     registry: changeProviderProps.registry,
     valueRegistry: changeProviderProps.valueRegistry,
-    pathLabelKeys: SET_PATH_LABEL_KEYS,
     extraValueLabels: [["escalate.to", setNameById]],
     groups: SET_EDITOR_CHANGE_GROUPS,
     subDefs: tabSubDefs,

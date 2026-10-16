@@ -642,7 +642,6 @@ export const GeoSettings = ({
           />
           <B4TextField
             select
-            label={t("settings.Geo.autoUpdateInterval")}
             value={config.system.geo.auto_update?.interval ?? ""}
             path="system.geo.auto_update.interval"
             onChange={(e) =>

@@ -190,7 +190,6 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
 
           <Grid size={{ xs: 12 }}>
             <B4Switch
-              label={t("sets.dns.strict")}
               checked={dnsConfig.strict || false}
               path="dns.strict"
               onChange={(checked: boolean) => onChange("dns.strict", checked)}
@@ -202,7 +201,6 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
             <>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Switch
-                  label={t("sets.dns.fragmentQuery")}
                   checked={dnsConfig.fragment_query || false}
                   path="dns.fragment_query"
                   onChange={(checked: boolean) =>
@@ -354,7 +352,6 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
             <>
               <Grid size={{ xs: 12 }}>
                 <B4TextField
-                  label={t("sets.dns.dohUrl")}
                   value={dnsConfig.doh_url || ""}
                   path="dns.doh_url"
                   onChange={(e) => onChange("dns.doh_url", e.target.value)}

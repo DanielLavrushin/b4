@@ -72,7 +72,6 @@ import {
 } from "@common/useChangeDialog";
 import { colors, spacing } from "@design";
 import { B4Config } from "@models/config";
-import { SETTINGS_PATH_LABEL_KEYS } from "@common/dialogLabels";
 const SETTINGS_DIFF_IGNORE = new Set(["sets", "available_ifaces", "revision"]);
 const changed = (pick: (c: B4Config) => unknown, a: B4Config, b: B4Config) =>
   JSON.stringify(pick(a)) !== JSON.stringify(pick(b));
@@ -326,7 +325,6 @@ export function SettingsPage() {
     changedLeaves,
     registry: changeProviderProps.registry,
     valueRegistry: changeProviderProps.valueRegistry,
-    pathLabelKeys: SETTINGS_PATH_LABEL_KEYS,
     groups: SETTINGS_TAB_GROUPS,
     subDefs: settingsSubDefs,
     dialogsOpen,
