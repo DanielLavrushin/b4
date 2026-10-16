@@ -16,8 +16,8 @@ func TestQueueMatchWithLimit(t *testing.T) {
 	}{
 		{"original counter", "tcp dport 443", "original", true, false, "tcp dport 443 ct original packets < 20 counter"},
 		{"original counter and direction", "tcp dport 443", "original", true, true, "tcp dport 443 ct original packets < 20 ct direction original counter"},
-		{"reply counter", "tcp sport 443", "reply", true, false, "tcp sport 443 ct reply packets < 20 counter"},
-		{"reply counter and direction", "tcp sport 443", "reply", true, true, "tcp sport 443 ct reply packets < 20 ct direction reply counter"},
+		{"reply window counts the client's packets", "tcp sport 443", "reply", true, false, "tcp sport 443 ct original packets < 20 counter"},
+		{"reply window counts the client's packets and selects replies", "tcp sport 443", "reply", true, true, "tcp sport 443 ct original packets < 20 ct direction reply counter"},
 		{"ct counters unsupported", "tcp dport 443", "original", false, false, "tcp dport 443 counter"},
 		{"direction without counters", "tcp sport 443", "reply", false, true, "tcp sport 443 ct direction reply counter"},
 	} {

@@ -61,17 +61,40 @@ func pfBind(con *netlink.Conn, family uint8) error {
 	return nil
 }
 
+func injectorMark(cfg *config.Config) uint {
+	if cfg.Queue.IsDiscovery || cfg.Queue.Mark == 0 {
+		return cfg.Queue.Mark
+	}
+	return cfg.Queue.Mark | engine.InjectedMarkBit
+}
+
+func selfInjectedBits(queueMark uint32) uint32 {
+	return queueMark | config.PerSetRouteMarkBits | engine.InjectedMarkBit
+}
+
 func (w *Worker) Start() error {
 	cfg := w.getConfig()
 	mark := cfg.Queue.Mark
-	s, err := sock.NewSenderWithMark(int(mark))
+	inject := injectorMark(cfg)
+	s, err := sock.NewSenderWithMark(int(inject))
 	if err != nil {
 		return err
 	}
 	w.sock = s
+	if inject != mark {
+		ls, err := sock.NewSenderWithMark(int(mark))
+		if err != nil {
+			s.Close()
+			return err
+		}
+		w.lookupSock = ls
+	}
 	cs, err := sock.NewSenderWithMark(int(mark) | engine.ClientMark)
 	if err != nil {
 		s.Close()
+		if w.lookupSock != nil {
+			w.lookupSock.Close()
+		}
 		return err
 	}
 	w.clientSock = cs
@@ -519,6 +542,9 @@ func (w *Worker) Stop() {
 	}
 	if w.clientSock != nil && w.clientSock != w.sock {
 		w.clientSock.Close()
+	}
+	if w.lookupSock != nil {
+		w.lookupSock.Close()
 	}
 	if w.sock != nil {
 		w.sock.Close()

@@ -51,6 +51,7 @@ type Worker struct {
 	matcher          atomic.Value
 	sock             *sock.Sender
 	clientSock       *sock.Sender
+	lookupSock       *sock.Sender
 	ipToMac          atomic.Value
 	tlsCache         *tlsInfoCache
 	connTracker      *connStateTracker

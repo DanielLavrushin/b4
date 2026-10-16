@@ -469,7 +469,7 @@ func (p *Pool) ForwardDNS(ctx context.Context, query []byte, target net.IP, frag
 	w := p.Workers[0]
 	cfg := w.getConfig()
 	return dns.ResolveUpstreamContext(ctx, query, target, dns.ForwardOptions{
-		Sender:   w.sock,
+		Sender:   w.lookupSender(),
 		Fragment: fragment,
 		Mark:     int(cfg.MainInjectedMark()),
 		Timeout:  cfg.DNSQueryTimeout(),

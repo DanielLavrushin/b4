@@ -51,7 +51,7 @@ func selfInjectedMark(m, queueMark uint32, cfg *config.Config) bool {
 	if m&queueMark != queueMark {
 		return false
 	}
-	return m&^(queueMark|config.PerSetRouteMarkBits) == 0
+	return m&^selfInjectedBits(queueMark) == 0
 }
 
 func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint) int {
@@ -316,6 +316,10 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	if vc.tcpIncoming(cfg, sport) {
 		return w.HandleIncoming(vc, pkt.ver, pkt.raw, pkt.ihl, pkt.src, pkt.dstStr, dport, pkt.srcStr, sport, payload)
+	}
+
+	if utils.IsPrivateIP(pkt.dst) {
+		return vc.accept()
 	}
 
 	if matched && !set.MatchesTCPDPort(dport) {

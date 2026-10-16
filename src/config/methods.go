@@ -1000,6 +1000,15 @@ func (cfg *Config) AnySetDSCP() bool {
 	return false
 }
 
+func (cfg *Config) AnySetTCPIncoming() bool {
+	for _, set := range cfg.Sets {
+		if set != nil && set.Enabled && set.TCP.Incoming.Mode != "" && set.TCP.Incoming.Mode != ConfigOff {
+			return true
+		}
+	}
+	return false
+}
+
 func (cfg *Config) DSCPRefusal(set *SetConfig) string {
 	if set.Routing.Enabled {
 		switch set.RoutingModeOrDefault() {
@@ -1410,6 +1419,9 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 		}
 	}
 	if oldCfg.Queue.TCPConnBytesLimit != newCfg.Queue.TCPConnBytesLimit || oldCfg.Queue.UDPConnBytesLimit != newCfg.Queue.UDPConnBytesLimit {
+		return true
+	}
+	if oldCfg.AnySetTCPIncoming() != newCfg.AnySetTCPIncoming() {
 		return true
 	}
 	if oldCfg.System.DNS.TCPDisabled != newCfg.System.DNS.TCPDisabled || oldCfg.DNSTCPListenPort() != newCfg.DNSTCPListenPort() {

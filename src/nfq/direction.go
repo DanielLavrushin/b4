@@ -141,7 +141,7 @@ func (p *Pool) reportQueueDirection(now time.Time) {
 		return
 	}
 	log.Warnf("%s", warning)
-	metrics.GetMetricsCollector().Event(metrics.LevelWarning, metrics.EventTargetsWarning, map[string]string{"error": warning}, warning)
+	metrics.GetMetricsCollector().Event(metrics.LevelWarning, metrics.EventDirectionByPort, map[string]string{"error": warning}, warning)
 }
 
 func queueDirectionWarning(cfg *config.Config, v4, v6 bool) string {
@@ -164,9 +164,11 @@ func queueDirectionWarning(cfg *config.Config, v4, v6 bool) string {
 		return ""
 	}
 	cause := "b4's capture rules do not select TCP packets by conntrack direction, so b4"
+	remedy := "Filters below 32768 avoid it, and so does the kernel's conntrack match (xt_conntrack for iptables, nft_ct for nftables)"
 	if skip {
 		cause = "With skip_setup b4"
+		remedy = "Filters below 32768 avoid it"
 	}
-	return fmt.Sprintf("%s TCP: the sets' TCP port filters cover %s, where devices pick the source ports of their own connections (32768-60999 on Linux and Android, 49152-65535 on Windows, macOS and iOS). %s tells a client's packets from a server's replies by port and cannot tell them apart there, so connections from those source ports pass through unprocessed",
-		strings.Join(families, " and "), ports, cause)
+	return fmt.Sprintf("%s TCP: the sets' TCP port filters cover %s, where devices pick the source ports of their own connections (32768-60999 on Linux and Android, 49152-65535 on Windows, macOS and iOS). %s tells a client's packets from a server's replies by port and cannot tell them apart there: connections from those source ports pass through unprocessed. %s",
+		strings.Join(families, " and "), ports, cause, remedy)
 }

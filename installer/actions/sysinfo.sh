@@ -329,7 +329,7 @@ action_sysinfo() {
             printf "    ${YELLOW}  WARN${NC}  %s\n" "A routing set has TCP duplication enabled, which needs every packet of the connection - turn flow offloading off or disable duplication" >&2
         fi
     elif [ "$_flow_guard" -gt 0 ]; then
-        printf "    ${RED}  WARN${NC}  %s\n" "Flow offloading active (${_flow_offload}), held off only until packet ${_flow_guard} - b4 reads the first ${_flow_window} packets of a connection, so it loses the tail" >&2
+        printf "    ${RED}  WARN${NC}  %s\n" "Flow offloading active (${_flow_offload}), held off only until packet ${_flow_guard} - b4 reads up to the first ${_flow_window} packets of a connection, so it loses the tail" >&2
         printf "    ${DIM}          Raise the threshold above ${_flow_window} in /usr/share/firewall4/templates/ruleset.uc, then: fw4 restart${NC}\n" >&2
     else
         printf "    ${RED}  WARN${NC}  %s\n" "Flow offloading active (${_flow_offload}) - bypasses b4; disable it for b4 to work" >&2

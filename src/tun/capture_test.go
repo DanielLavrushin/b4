@@ -47,11 +47,12 @@ func TestSteerMarkDefault(t *testing.T) {
 
 func TestSteerSpecsMultiport(t *testing.T) {
 	r := &routeManager{
-		multiport: true,
-		tcpPorts:  []string{"443", "8443"},
-		udpPorts:  []string{"443"},
-		tcpLimit:  19,
-		udpLimit:  8,
+		multiport:    true,
+		tcpPorts:     []string{"443", "8443"},
+		udpPorts:     []string{"443"},
+		tcpLimit:     19,
+		udpLimit:     8,
+		notrackAdded: true,
 	}
 	specs := r.steerSpecs()
 	joined := make([]string, len(specs))
@@ -162,6 +163,7 @@ func dupCaptureManager(viaSet, multiport bool) *routeManager {
 		udpLimit:     8,
 		dupIPs:       []string{"20.33.25.0/24", "52.146.136.33", "140.82.112.0/20"},
 		dupSetActive: viaSet,
+		notrackAdded: true,
 	}
 }
 

@@ -110,14 +110,13 @@ func (l *firstNLimiter) admit(raw []byte, now time.Time) (bool, engine.Direction
 
 	p := l.params.Load()
 	limit := p.udpLimit
+	dup := false
 	if proto == 17 {
 		if k.sport == 53 || k.dport == 53 {
 			return true, engine.DirUnknown
 		}
 	} else {
-		if p.duplicated(k.dst) {
-			return true, engine.DirUnknown
-		}
+		dup = p.duplicated(k.dst)
 		limit = p.tcpLimit
 	}
 
@@ -157,7 +156,7 @@ func (l *firstNLimiter) admit(raw []byte, now time.Time) (bool, engine.Direction
 	if fin {
 		f.closing = true
 	}
-	pass := f.packets <= limit
+	pass := dup || f.packets <= limit
 	if !pass {
 		l.passed.Add(1)
 	}

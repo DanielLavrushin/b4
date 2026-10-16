@@ -73,17 +73,22 @@ func TestFlowOffloadSafe(t *testing.T) {
 		}
 	})
 
-	t.Run("guard above the queue window is safe", func(t *testing.T) {
+	t.Run("guard above twice the queue window is safe", func(t *testing.T) {
 		cfg := newCfg()
-		if !flowOffloadSafe("hardware", cfg.Queue.TCPConnBytesLimit+1, cfg) {
-			t.Error("expected guard above the window to be safe")
+		if !flowOffloadSafe("hardware", 2*cfg.Queue.TCPConnBytesLimit+1, cfg) {
+			t.Error("expected guard above twice the window to be safe")
+		}
+		if !flowOffloadSafe("software", 40, cfg) {
+			t.Error("the guard of 40 the troubleshooting page suggests must stay safe with the default limits")
 		}
 	})
 
-	t.Run("guard equal to the queue window is unsafe", func(t *testing.T) {
+	t.Run("guard up to twice the queue window is unsafe", func(t *testing.T) {
 		cfg := newCfg()
-		if flowOffloadSafe("software", cfg.Queue.TCPConnBytesLimit, cfg) {
-			t.Error("expected guard equal to the window to be unsafe")
+		for _, guard := range []int{cfg.Queue.TCPConnBytesLimit, cfg.Queue.TCPConnBytesLimit + 1, 2 * cfg.Queue.TCPConnBytesLimit} {
+			if flowOffloadSafe("software", guard, cfg) {
+				t.Errorf("guard %d: b4 queues packets %d to %d of a connection it sends fakes or split segments into, so an offload from that packet on takes some of them past b4", guard, cfg.Queue.TCPConnBytesLimit+1, 2*cfg.Queue.TCPConnBytesLimit)
+			}
 		}
 	})
 
@@ -91,11 +96,11 @@ func TestFlowOffloadSafe(t *testing.T) {
 		cfg := newCfg()
 		cfg.Queue.TCPConnBytesLimit = 10
 		cfg.Queue.UDPConnBytesLimit = 25
-		if flowOffloadSafe("software", 20, cfg) {
-			t.Error("expected guard below the udp window to be unsafe")
+		if flowOffloadSafe("software", 50, cfg) {
+			t.Error("expected guard up to twice the udp window to be unsafe")
 		}
-		if !flowOffloadSafe("software", 26, cfg) {
-			t.Error("expected guard above both windows to be safe")
+		if !flowOffloadSafe("software", 51, cfg) {
+			t.Error("expected guard above twice both windows to be safe")
 		}
 	})
 

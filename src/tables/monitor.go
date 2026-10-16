@@ -275,7 +275,7 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 			return false
 		}
 
-		if cfg.Queue.Devices.Enabled && len(cfg.Queue.Devices.SelectedMACs()) > 0 {
+		if queueJumpsFromForward(cfg) {
 			out, _ := run(ipt, "-w", "-t", "mangle", "-S", "FORWARD")
 			if !iptListingJumpsTo(out, iptChainName) {
 				log.Tracef("Monitor: FORWARD->B4 rule missing")
@@ -336,7 +336,7 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 			log.Tracef("Monitor: OUTPUT mark accept rule missing")
 			return false
 		}
-		if !iptListingJumpsTo(out, iptChainName) {
+		if queueJumpsFromForward(cfg) && !iptListingJumpsTo(out, iptChainName) {
 			log.Tracef("Monitor: OUTPUT->B4 jump rule missing")
 			return false
 		}
@@ -403,7 +403,7 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		return false
 	}
 
-	if cfg.Queue.Devices.Enabled && len(cfg.Queue.Devices.SelectedMACs()) > 0 {
+	if queueJumpsFromForward(cfg) {
 		if !nft.chainExists("forward") {
 			log.Tracef("Monitor: forward chain missing")
 			return false
@@ -453,8 +453,12 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 		log.Tracef("Monitor: output DNS response rule missing")
 		return false
 	}
-	if !strings.Contains(out, "accept") || !strings.Contains(out, nftChainName) {
+	if !strings.Contains(out, "accept") {
 		log.Tracef("Monitor: output mark accept rule missing")
+		return false
+	}
+	if queueJumpsFromForward(cfg) && !strings.Contains(out, nftChainName) {
+		log.Tracef("Monitor: output->b4_chain jump missing")
 		return false
 	}
 

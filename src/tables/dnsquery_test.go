@@ -488,7 +488,6 @@ func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fake
 		out = "-P OUTPUT ACCEPT\n-A OUTPUT " + dnsCopyTestJumps["OUTPUT"] + "\n" + strings.TrimPrefix(out, "-P OUTPUT ACCEPT\n")
 	}
 	pre += "-A B4_PREROUTING -p tcp -m multiport --sports 443 -m tcp --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-num 537 --queue-bypass\n"
-	out += "-A OUTPUT -j B4\n"
 	f := &fakeListing{chains: map[string]string{
 		"mangle B4":            "-N B4\n-A B4 -m mark --mark 0x8000/0x8000 -j RETURN\n",
 		"mangle POSTROUTING":   "-P POSTROUTING ACCEPT\n-A POSTROUTING -j B4\n",
@@ -652,14 +651,16 @@ func TestMonitorChecksWhereDNSQueriesWereQueued(t *testing.T) {
 
 	alive = true
 	for _, placement := range []dnsQueryPlacement{dnsHeldMangle, dnsCopied} {
-		t.Run(placement.String()+" placement whose OUTPUT jump to B4 is gone", func(t *testing.T) {
+		t.Run(placement.String()+" placement without a device filter wants no OUTPUT jump to B4", func(t *testing.T) {
 			f := monitorDNSTestListing(placement, false)
-			removeLine(f, "mangle OUTPUT", "-A OUTPUT -j B4")
 			run = f.run
 			dnsCopyGroup.Store(537)
 			noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: placement})
-			if m.checkIPTablesRules(&cfg) {
-				t.Errorf("the router's own traffic no longer reaches B4, so the monitor must restore; commands:\n%s", strings.Join(f.calls, "\n"))
+			if strings.Contains(f.chains["mangle OUTPUT"], "-j B4\n") {
+				t.Fatalf("the listing already jumps from mangle OUTPUT to B4, so this test proves nothing:\n%s", f.chains["mangle OUTPUT"])
+			}
+			if !m.checkIPTablesRules(&cfg) {
+				t.Errorf("mangle POSTROUTING already brings the router's own packets to B4, and a jump from OUTPUT would queue each of them twice, yet the monitor wants a restore; commands:\n%s", strings.Join(f.calls, "\n"))
 			}
 		})
 		t.Run(placement.String()+" placement with a device filter", func(t *testing.T) {
@@ -670,12 +671,17 @@ func TestMonitorChecksWhereDNSQueriesWereQueued(t *testing.T) {
 			run = f.run
 			dnsCopyGroup.Store(537)
 			noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: placement})
+			f.chains["mangle OUTPUT"] += "-A OUTPUT -j B4\n"
 			if m.checkIPTablesRules(&devices) {
 				t.Errorf("mangle FORWARD holds no jump to B4 for the selected device, so the monitor must restore; FORWARD is:\n%s", f.chains["mangle FORWARD"])
 			}
 			f.chains["mangle FORWARD"] += "-A FORWARD -m mac --mac-source AA:BB:CC:DD:EE:01 -j B4\n"
 			if !m.checkIPTablesRules(&devices) {
-				t.Errorf("the device's FORWARD jump to B4 is in place, yet the monitor wants a restore; commands:\n%s", strings.Join(f.calls, "\n"))
+				t.Errorf("the device's FORWARD jump and the OUTPUT jump to B4 are in place, yet the monitor wants a restore; commands:\n%s", strings.Join(f.calls, "\n"))
+			}
+			removeLine(f, "mangle OUTPUT", "-A OUTPUT -j B4")
+			if m.checkIPTablesRules(&devices) {
+				t.Errorf("with a device filter only the jump from mangle OUTPUT brings the router's own packets to B4, and it is gone, so the monitor must restore; OUTPUT is:\n%s", f.chains["mangle OUTPUT"])
 			}
 		})
 	}

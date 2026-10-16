@@ -931,7 +931,7 @@ func flowOffloadSafe(mode string, guard int, cfg *config.Config) bool {
 		window = cfg.Queue.UDPConnBytesLimit
 	}
 
-	return guard > window
+	return guard > 2*window
 }
 
 func testNFQueue(backend string) bool {

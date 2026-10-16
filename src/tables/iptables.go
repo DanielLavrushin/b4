@@ -549,11 +549,46 @@ func iptCtdirMatch(on bool, dir string) []string {
 	return []string{"-m", "conntrack", "--ctdir", dir}
 }
 
+func iptConnmarkSave(value, mask, save uint) []string {
+	saveHex := fmt.Sprintf("0x%x", save)
+	return []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0x%x", value, mask), "-j", "CONNMARK",
+		"--save-mark", "--nfmask", saveHex, "--ctmask", saveHex}
+}
+
+func iptOwnConnmarkSave(mark uint) []string {
+	return iptConnmarkSave(mark, mark|engine.ClientMark|engine.InjectedMarkBit, mark)
+}
+
+func iptInjectedConnmarkSave(mark uint) []string {
+	return iptConnmarkSave(mark|engine.InjectedMarkBit, mark|engine.ClientMark|engine.InjectedMarkBit, engine.InjectedMarkBit)
+}
+
+func iptInjectedMarkMatch() string {
+	return fmt.Sprintf("0x%x/0x%x", engine.InjectedMarkBit, engine.InjectedMarkBit)
+}
+
+func iptInjectedReplyReturn() []string {
+	return []string{"-p", "tcp", "-m", "connmark", "--mark", iptInjectedMarkMatch(), "--tcp-flags", "SYN,RST", "NONE", "-j", "RETURN"}
+}
+
+func iptInjectedWindow(proto string, limit int) []string {
+	return slices.Concat(
+		[]string{"-p", proto, "-m", "connbytes", "--connbytes-dir", "original",
+			"--connbytes-mode", "packets", "--connbytes", fmt.Sprintf("%d:%d", limit+1, 2*limit),
+			"-m", "connmark", "--mark", iptInjectedMarkMatch()},
+		iptCtdirMatch(true, "ORIGINAL"),
+	)
+}
+
 func (manager *IPTablesManager) queueRulesMatchDirection(ipt string, teardown bool) bool {
 	if supported, probed := manager.ctdirSupport[ipt]; probed {
 		return supported
 	}
 	return teardown
+}
+
+func queueJumpsFromForward(cfg *config.Config) bool {
+	return cfg.Queue.Devices.Enabled && len(cfg.Queue.Devices.SelectedMACs()) > 0
 }
 
 func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) Manifest {
@@ -751,6 +786,11 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: tcpSpec})
 			}
 		}
+		injectedWindow := ctdir && cfg.Queue.Mark != 0 && manager.hasConnmarkSupport(ipt)
+		if injectedWindow {
+			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
+				Spec: slices.Concat(iptInjectedWindow("tcp", cfg.Queue.TCPConnBytesLimit), manager.buildNFQSpec(queueNum, threads))})
+		}
 
 		udpPorts := cfg.CollectUDPPorts()
 		for i, p := range udpPorts {
@@ -787,9 +827,13 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: udpSpec})
 			}
 		}
+		if injectedWindow {
+			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
+				Spec: slices.Concat(iptInjectedWindow("udp", cfg.Queue.UDPConnBytesLimit), manager.buildNFQSpec(queueNum, threads))})
+		}
 
 		selectedMACs := cfg.Queue.Devices.SelectedMACs()
-		if cfg.Queue.Devices.Enabled && len(selectedMACs) > 0 {
+		if queueJumpsFromForward(cfg) {
 			if cfg.Queue.Devices.WhiteIsBlack {
 				rules = append(rules,
 					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I",
@@ -835,24 +879,28 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 		rules = append(rules,
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
 				Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "ACCEPT"}},
-			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "A",
-				Spec: []string{"-j", chainName}},
 		)
+		if teardown || queueJumpsFromForward(cfg) {
+			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "A",
+				Spec: []string{"-j", chainName}})
+		}
 
 		if cfg.Queue.Mark != 0 && manager.hasConnmarkSupport(ipt) {
-			markMaskHex := fmt.Sprintf("0x%x", cfg.Queue.Mark)
-			ownMark := fmt.Sprintf("0x%x/0x%x", cfg.Queue.Mark, cfg.Queue.Mark|engine.ClientMark)
+			mark := cfg.Queue.Mark
 			rules = append(rules,
-				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
-					Spec: []string{"-m", "mark", "--mark", ownMark, "-j", "CONNMARK",
-						"--save-mark", "--nfmask", markMaskHex, "--ctmask", markMaskHex}},
-				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I",
-					Spec: []string{"-m", "connmark", "--mark", markAccept, "-j", "RETURN"}},
+				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: iptOwnConnmarkSave(mark)},
+				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: iptInjectedConnmarkSave(mark)},
 			)
+			if teardown || !cfg.AnySetTCPIncoming() {
+				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: iptInjectedReplyReturn()})
+			}
+			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I",
+				Spec: []string{"-m", "connmark", "--mark", markAccept, "-j", "RETURN"}})
 			if teardown {
-				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
-					Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "CONNMARK",
-						"--save-mark", "--nfmask", markMaskHex, "--ctmask", markMaskHex}})
+				rules = append(rules,
+					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: iptConnmarkSave(mark, mark|engine.ClientMark, mark)},
+					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: iptConnmarkSave(mark, mark, mark)},
+				)
 			}
 		}
 

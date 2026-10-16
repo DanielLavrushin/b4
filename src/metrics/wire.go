@@ -27,6 +27,7 @@ const (
 	EventEngineFailed    = "engine_failed"
 	EventSettingsApplied = "settings_applied"
 	EventTargetsWarning  = "targets_warning"
+	EventDirectionByPort = "direction_by_port"
 	EventSOCKS5Failed    = "socks5_failed"
 	EventMTProtoFailed   = "mtproto_failed"
 	EventWebFailed       = "web_failed"

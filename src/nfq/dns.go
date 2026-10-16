@@ -636,7 +636,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		resp, err = w.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.MainInjectedMark()), query)
 	default:
 		resp, err = dns.ResolveUpstream(query, targetIP, dns.ForwardOptions{
-			Sender:       w.sock,
+			Sender:       w.lookupSender(),
 			Fragment:     set.DNS.FragmentQuery,
 			Seg2Delay:    delay,
 			ReverseOrder: set.Fragmentation.ReverseOrder,

@@ -1098,9 +1098,9 @@ _b4_queue_window() {
     case "$_qw_tcp" in '' | *[!0-9]*) _qw_tcp=19 ;; esac
     case "$_qw_udp" in '' | *[!0-9]*) _qw_udp=8 ;; esac
     if [ "$_qw_udp" -gt "$_qw_tcp" ]; then
-        echo "$_qw_udp"
+        echo $((_qw_udp * 2))
     else
-        echo "$_qw_tcp"
+        echo $((_qw_tcp * 2))
     fi
 }
 

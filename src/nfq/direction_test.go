@@ -343,7 +343,7 @@ func TestPortClassifierWarning(t *testing.T) {
 		{
 			name:    "IPv4 selected by port",
 			cfg:     overlapping(nil),
-			want:    []string{"IPv4 TCP:", "32768-65535", "conntrack direction", "cannot tell them apart", "pass through unprocessed"},
+			want:    []string{"IPv4 TCP:", "32768-65535", "conntrack direction", "cannot tell them apart", "pass through unprocessed", "below 32768", "xt_conntrack", "nft_ct"},
 			without: []string{"IPv6", "skip_setup"},
 		},
 		{
@@ -363,8 +363,8 @@ func TestPortClassifierWarning(t *testing.T) {
 			cfg:     overlapping(func(c *config.Config) { c.System.Tables.SkipSetup = true }),
 			v4:      true,
 			v6:      true,
-			want:    []string{"IPv4 TCP:", "skip_setup"},
-			without: []string{"conntrack direction"},
+			want:    []string{"IPv4 TCP:", "skip_setup", "below 32768"},
+			without: []string{"conntrack direction", "xt_conntrack"},
 		},
 		{name: "Discovery takes the direction from the hook", cfg: overlapping(func(c *config.Config) { c.Queue.IsDiscovery = true })},
 		{
@@ -407,7 +407,7 @@ func newestMetricsEventID() uint64 {
 func directionWarnings(since uint64) []metrics.Event {
 	var out []metrics.Event
 	for _, ev := range metrics.GetMetricsCollector().Hello().Events.Items {
-		if ev.ID > since && ev.Code == metrics.EventTargetsWarning && strings.Contains(ev.Args["error"], "TCP port filters") {
+		if ev.ID > since && ev.Code == metrics.EventDirectionByPort && strings.Contains(ev.Args["error"], "TCP port filters") {
 			out = append(out, ev)
 		}
 	}
@@ -511,5 +511,72 @@ func TestADiscoveryPoolRaisesNoPortClassifierWarning(t *testing.T) {
 	pool.reportQueueDirection(t0.Add(queueDirectionSettle))
 	if got := directionWarnings(since); len(got) != 0 {
 		t.Fatalf("Discovery takes the direction from the hook, got %+v", got)
+	}
+}
+
+func clientHelloFromTo(src, dst [4]byte, port uint16) []byte {
+	raw := clientHelloFrom(port)
+	copy(raw[12:16], src[:])
+	copy(raw[16:20], dst[:])
+	return raw
+}
+
+func TestAClientHelloToAPrivateAddressPassesUntouched(t *testing.T) {
+	wanClient := [4]byte{203, 0, 113, 5}
+	lanServer := [4]byte{192, 168, 1, 10}
+	publicServer := [4]byte{1, 2, 3, 4}
+	portOnly := func() config.SetConfig {
+		set := newFragmentingYTImagesSet()
+		set.Targets.DomainOnly = false
+		set.Targets.DomainsToMatch = nil
+		return set
+	}
+	sets := []struct {
+		name string
+		make func() config.SetConfig
+	}{
+		{"set matched by SNI", newFragmentingYTImagesSet},
+		{"port-only set", portOnly},
+	}
+	arrivals := []struct {
+		name    string
+		exact   bool
+		deliver func(w *Worker, raw []byte) engine.PacketVerdict
+	}{
+		{"queued in postrouting by direction-exact rules", true, func(w *Worker, raw []byte) engine.PacketVerdict {
+			return queueAt(w, raw, hookAt(nfHookPostRouting))
+		}},
+		{"queued by port", false, func(w *Worker, raw []byte) engine.PacketVerdict {
+			return queueAt(w, raw, hookAt(nfHookPostRouting))
+		}},
+		{"read from the tun as the client's", false, func(w *Worker, raw []byte) engine.PacketVerdict {
+			return w.ProcessPacketDir(raw, engine.DirOriginal)
+		}},
+	}
+	for _, s := range sets {
+		for _, a := range arrivals {
+			t.Run(s.name+"/"+a.name, func(t *testing.T) {
+				cfg := config.NewConfig()
+				set := s.make()
+				set.TCP.DPortFilter = "443"
+				cfg.Sets = []*config.SetConfig{&set}
+				w := directionWorker(t, &cfg)
+				w.direction.set(a.exact, a.exact, time.Now())
+				ch, _ := log.GetConnectionHub().Subscribe()
+				defer log.GetConnectionHub().Unsubscribe(ch)
+
+				if v := a.deliver(w, clientHelloFromTo(wanClient, lanServer, 40000)); v != engine.VerdictAccept {
+					t.Errorf("a ClientHello to a port-forwarded LAN server must pass untouched, got verdict %v", v)
+				}
+				if lines := drainLines(ch); len(lines) != 0 {
+					t.Errorf("a ClientHello to a private address logs no connection row, got %q", lines)
+				}
+				if _, _, found := w.tlsCache.Lookup("203.0.113.5:40000->192.168.1.10:443"); found {
+					t.Error("a ClientHello to a private address must not reach the ClientHello parser")
+				}
+
+				processedAsOutgoing(t, ch, a.deliver(w, clientHelloFromTo(wanClient, publicServer, 40001)), 40001)
+			})
+		}
 	}
 }

@@ -123,6 +123,13 @@ func (w *Worker) clientSender() *sock.Sender {
 	return w.sock
 }
 
+func (w *Worker) lookupSender() *sock.Sender {
+	if w.lookupSock != nil {
+		return w.lookupSock
+	}
+	return w.sock
+}
+
 func (w *Worker) ProcessPacket(raw []byte) engine.PacketVerdict {
 	return w.ProcessPacketDir(raw, engine.DirUnknown)
 }

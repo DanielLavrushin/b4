@@ -354,7 +354,6 @@ func TestFirstNRecordsTheDirectionAFlowStartedWith(t *testing.T) {
 	unrecorded := map[string][]byte{
 		"udp":                            testPacket(17, "62.78.52.126", "203.0.113.10", 50000, 443, 0),
 		"dns":                            testPacket(17, "62.78.52.126", "203.0.113.10", 50000, 53, 0),
-		"duplicated host":                flowPacket("62.78.52.126", "198.51.100.7", 40002, 443, tcpSYN, 1),
 		"icmp":                           testPacket(1, "62.78.52.126", "203.0.113.10", 0, 0, 0),
 		"ipv6":                           {0x60, 0, 0, 0},
 		"fragment of a TCP flow":         frag,
@@ -365,6 +364,24 @@ func TestFirstNRecordsTheDirectionAFlowStartedWith(t *testing.T) {
 		if got := dirOf(raw); got != engine.DirUnknown {
 			t.Errorf("%s: got %d, want no record", name, got)
 		}
+	}
+}
+
+func TestFirstNRecordsFlowsToDuplicationAddressesWithoutLimitingThem(t *testing.T) {
+	l := newFirstNLimiter(captureParams{tcpLimit: 1, udpLimit: 1, dupIPs: []string{"198.51.100.7", "198.51.100.64/26"}})
+	now := time.Now()
+	for _, dst := range []string{"198.51.100.7", "198.51.100.70"} {
+		if pass, dir := l.admit(flowPacket("62.78.52.126", dst, 40002, 443, tcpSYN, 1), now); !pass || dir != engine.DirOriginal {
+			t.Fatalf("%s: a duplicated connection's SYN must pass and record the client's side, got pass=%v dir=%d", dst, pass, dir)
+		}
+		for i := 0; i < 5; i++ {
+			if pass, dir := l.admit(flowPacket("62.78.52.126", dst, 40002, 443, tcpACK, 2), now); !pass || dir != engine.DirOriginal {
+				t.Fatalf("%s: packet %d of a duplicated connection must pass with its record, got pass=%v dir=%d", dst, i, pass, dir)
+			}
+		}
+	}
+	if got := l.passed.Load(); got != 0 {
+		t.Fatalf("duplicated connections are never cut off, yet %d packets were counted as past the limit", got)
 	}
 }
 

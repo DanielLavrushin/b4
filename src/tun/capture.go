@@ -82,7 +82,7 @@ func (r *routeManager) setupPortCapture(srcIP string) error {
 	r.multiport = iptablesMatchSupported([]string{"-p", "tcp", "-m", "multiport", "--dports", "80,443", "-j", "ACCEPT"})
 	r.ctdirOK = iptablesMatchSupported([]string{"-p", "tcp", "-m", "conntrack", "--ctdir", "ORIGINAL", "-j", "ACCEPT"})
 	if !r.ctdirOK {
-		log.Infof("TUN: xt_conntrack not available; the capture rules select TCP packets by port alone, and b4 tells a client's packets from a server's replies by their ports")
+		log.Infof("TUN: xt_conntrack not available; the capture rules select TCP packets by port alone, not by conntrack direction")
 	}
 	r.ensureCaptureChain()
 	r.rebuildCaptureChain()
@@ -564,8 +564,12 @@ func (r *routeManager) steerSpecs() [][]string {
 	steer := r.steerMarkStr()
 	mark := []string{"-j", "MARK", "--set-xmark", steer}
 	original := r.ctdirMatch("ORIGINAL")
-	tcpRange := fmt.Sprintf("0:%d", r.tcpLimit)
-	udpRange := fmt.Sprintf("0:%d", r.udpLimit)
+	counted := 1
+	if !r.notrackAdded {
+		counted = 2
+	}
+	tcpRange := fmt.Sprintf("0:%d", counted*r.tcpLimit)
+	udpRange := fmt.Sprintf("0:%d", counted*r.udpLimit)
 
 	var specs [][]string
 	cb := func(portRange string) []string {

@@ -55,6 +55,7 @@ func TestNetnsPacketsB4InjectsAreNotQueuedAgain(t *testing.T) {
 			snapshot, stop := netnsConntrackQueueListener(t, uint16(cfg.Queue.StartNum))
 			netnsSendUDP(t, 41443, 443)
 			netnsSendMarkedUDP(t, 41444, 443, int(cfg.Queue.Mark))
+			netnsSendMarkedUDP(t, 41445, 443, int(netnsInjectorMark(cfg.Queue.Mark)))
 			time.Sleep(300 * time.Millisecond)
 			stop()
 
@@ -63,7 +64,7 @@ func TestNetnsPacketsB4InjectsAreNotQueuedAgain(t *testing.T) {
 				switch {
 				case p.sport == 41443 && p.dport == 443:
 					plain++
-				case p.sport == 41444 && p.dport == 443:
+				case (p.sport == 41444 || p.sport == 41445) && p.dport == 443:
 					marked[p.hook]++
 				}
 			}
