@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -330,6 +331,143 @@ func TestOnAnInterfaceASetRoutesThroughOnlyTheSetsOwnConnectionsKeepTheStrategy(
 			}
 			if calls := stub.got(); len(calls) != 1 || calls[0].mark != c.lookup {
 				t.Fatalf("route lookups %v, want one with mark 0x%x", calls, c.lookup)
+			}
+		})
+	}
+}
+
+func routedThroughPPP9(set config.SetConfig) config.SetConfig {
+	set.Targets.DomainOnly = false
+	set.Routing.Enabled = true
+	set.Routing.Mode = config.RoutingModeInterface
+	set.Routing.EgressInterface = "ppp9"
+	return set
+}
+
+func TestAMarkWithTheQueueMarkInPlaceOfARoutedSetsMarkIsHandedOff(t *testing.T) {
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	const setMark = uint32(0x2bd8)
+	stubRouteMarks(t, map[string][]uint32{"ppp9": {setMark}})
+	defaults := config.NewConfig()
+	for _, c := range []struct {
+		name string
+		mark uint32
+		out  uint32
+		want int
+		why  string
+	}{
+		{"KeeneticOS hotspot mark, policy route by the uplink", keeneticHotspotMark, idx["eth7"], nfqueue.NfAccept, "the set's output rule sends b4's packets through ppp9 while the connection leaves by eth7"},
+		{"KeeneticOS hotspot mark, policy route by the set's interface", keeneticHotspotMark, idx["ppp9"], nfqueue.NfAccept, "without the set's route mark b4 cannot tell which route its own packets take"},
+		{"the set's own route mark", setMark, idx["ppp9"], nfqueue.NfDrop, "b4 routed the connection itself, so its own packets follow it"},
+		{"another service's mark with the set's route bits", keeneticHotspotMark&^config.PerSetRouteMarkBits | setMark, idx["ppp9"], nfqueue.NfDrop, "the set's route mark is still on the packet"},
+		{"another service's mark without the queue mark", 0x4d616769, idx["eth7"], nfqueue.NfDrop, "a mark b4 already queued before keeps its handling"},
+		{"Discovery's flow mark", uint32(defaults.DiscoveryFlowMark()), idx["eth7"], nfqueue.NfDrop, "Discovery's own packets are never handed off"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stub := stubInjectRoute(t, idx["eth7"], true)
+			set := routedThroughPPP9(newFragmentingYTImagesSet())
+			w := newInjectingWorker(t, &set)
+			if set.RoutingHandsOffPackets() {
+				t.Fatal("a set routed into ppp9 keeps its strategy for the connections it routes")
+			}
+			m := c.mark
+			if got := queuedVerdict(t, w, ytimgHello(), &m, c.out, 0); got != c.want {
+				t.Fatalf("verdict %d, want %d: %s", got, c.want, c.why)
+			}
+			if calls := stub.got(); len(calls) != 0 {
+				t.Fatalf("route lookups %v: a routed set decides by its own route mark", calls)
+			}
+		})
+	}
+}
+
+func TestAHandedOffConnectionOfARoutedSetNamesItsInterface(t *testing.T) {
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	stubRouteMarks(t, map[string][]uint32{"ppp9": {0x2bd8}})
+	set := routedThroughPPP9(newFragmentingYTImagesSet())
+	w := newInjectingWorker(t, &set)
+
+	ch, _ := log.GetConnectionHub().Subscribe()
+	defer log.GetConnectionHub().Unsubscribe(ch)
+
+	hotspot := keeneticHotspotMark
+	if got := queuedVerdict(t, w, ytimgHello(), &hotspot, idx["eth7"], 0); got != nfqueue.NfAccept {
+		t.Fatalf("verdict %d, want the ClientHello accepted unchanged", got)
+	}
+	f := nextConnectionLine(t, ch)
+	if flags := f[len(f)-1]; flags != "reroute->eth7" {
+		t.Fatalf("connection line flags %q, want %q", flags, "reroute->eth7")
+	}
+}
+
+func TestASYNOfAHotspotDeviceToARoutedSetGetsNoFakeSYN(t *testing.T) {
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	stubRouteMarks(t, map[string][]uint32{"ppp9": {0x2bd8}})
+	hotspot := keeneticHotspotMark
+	for _, c := range []struct {
+		name string
+		mark *uint32
+		want int
+	}{
+		{"a KeeneticOS hotspot device", &hotspot, nfqueue.NfAccept},
+		{"a device without a mark", nil, nfqueue.NfDrop},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			set := routedThroughPPP9(newStaticAddressSet(false))
+			set.TCP.SynFake = true
+			w := newInjectingWorker(t, &set)
+			if got := queuedVerdict(t, w, makeV4TCPPacketFlags(nil, 1000, 0x02), c.mark, idx["eth7"], 0); got != c.want {
+				t.Fatalf("verdict %d, want %d: SYN Fake Packets apply to a SYN the set routes and not to one another service's mark sends elsewhere", got, c.want)
+			}
+		})
+	}
+}
+
+func TestABlockSetIsNotLoggedAsHandingAHotspotDeviceOff(t *testing.T) {
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	set := newFragmentingYTImagesSet()
+	set.Routing.Enabled = true
+	set.Routing.Mode = config.RoutingModeBlock
+	set.Routing.BlockAction = config.BlockActionDrop
+	w := newInjectingWorker(t, &set)
+
+	ch, _ := log.GetConnectionHub().Subscribe()
+	defer log.GetConnectionHub().Unsubscribe(ch)
+
+	hotspot := keeneticHotspotMark
+	queuedVerdict(t, w, ytimgHello(), &hotspot, idx["eth7"], 0)
+	for {
+		select {
+		case line := <-ch:
+			if strings.Contains(line, "reroute->") {
+				t.Fatalf("connection line %q: a block set routes nothing, so it has no route for another service's mark to replace", line)
+			}
+		default:
+			return
+		}
+	}
+}
+
+func TestQUICOfAHotspotDeviceToARoutedSetIsHandedOff(t *testing.T) {
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	stubRouteMarks(t, map[string][]uint32{"ppp9": {0x2bd8}})
+	hotspot := keeneticHotspotMark
+	for _, c := range []struct {
+		name string
+		mark *uint32
+		want int
+	}{
+		{"a KeeneticOS hotspot device", &hotspot, nfqueue.NfAccept},
+		{"a device without a mark", nil, nfqueue.NfDrop},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			set := routedThroughPPP9(newDomainUDPSet(config.QUICFilterSNI))
+			cfg := newUDPGateConfig(t, &set)
+			w := newTestWorker(t, &cfg)
+			initial := buildQUICInitialWithSNI(t, []byte{6, 6, 6, 6, 9, 9, 9, 9}, "rr1.googlevideo.com")
+			pkt := makeV4UDPPacket(initial, net.ParseIP("10.0.0.1"), net.ParseIP("1.2.3.4"), 51000, 443)
+			if got := queuedVerdict(t, w, pkt, c.mark, idx["eth7"], 0); got != c.want {
+				t.Fatalf("verdict %d, want %d: udp.mode=drop applies to QUIC the set routes and not to QUIC another service's mark sends elsewhere", got, c.want)
 			}
 		})
 	}

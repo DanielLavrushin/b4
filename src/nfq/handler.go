@@ -422,7 +422,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	routeTProxy := matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode)
 	routeIfaceHandoff := matched && set != nil && !routeTProxy && set.RoutingHandsOffPackets()
-	foreignEgress := matched && set != nil && !set.Routing.Enabled && w.handsOffEgress(vc, pkt, cfg)
+	foreignEgress := matched && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
 	routeHandsOff := routeTProxy || routeIfaceHandoff || foreignEgress
 
 	if matched && !routeHandsOff && cfg.IsTCPPort(dport) && duplicatesPackets(set) {
@@ -667,7 +667,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	routeTProxy = matched && set != nil && set.RoutingDivertsPackets() && config.RoutingUsesTProxy(set.Routing.Mode)
 	routeIfaceHandoff = matched && set != nil && !routeTProxy && set.RoutingHandsOffPackets()
-	foreignEgress = matched && set != nil && !set.Routing.Enabled && w.handsOffEgress(vc, pkt, cfg)
+	foreignEgress = matched && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
 	routeHandsOff = routeTProxy || routeIfaceHandoff || foreignEgress
 
 	if routeIfaceHandoff && classifyReason == "" {
@@ -1020,7 +1020,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
-	udpForeignEgress := shouldHandle && set != nil && !set.Routing.Enabled && w.handsOffEgress(vc, pkt, cfg)
+	udpForeignEgress := shouldHandle && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
 	udpReason := ""
 	if udpForeignEgress {
 		udpReason = vc.handOffReason()

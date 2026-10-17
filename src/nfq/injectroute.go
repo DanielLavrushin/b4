@@ -259,7 +259,30 @@ func (w *Worker) reroutedEgress(vc *verdictCtx, pkt *pktInfo, cfg *config.Config
 	return name
 }
 
-func (w *Worker) handsOffEgress(vc *verdictCtx, pkt *pktInfo, cfg *config.Config) bool {
+func (w *Worker) routedSetOverridden(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig) string {
+	if !set.RoutesToInterface() || vc.foreignMark == 0 || vc.outDev == 0 || cfg.Queue.IsDiscovery {
+		return ""
+	}
+	mark := uint32(cfg.MainInjectedMark())
+	if vc.foreignMark&mark != mark || vc.foreignMark == uint32(cfg.DiscoveryFlowMark()) || vc.foreignMark == uint32(cfg.DiscoveryInjectedMark()) {
+		return ""
+	}
+	if setRoutesWith(set.Routing.EgressInterface, vc.foreignMark&config.PerSetRouteMarkBits) {
+		return ""
+	}
+	name := getIfaceName(vc.outDev)
+	if name == "" {
+		return ""
+	}
+	log.Tracef("NFQ: %s with mark 0x%x leaves by %s without the route mark of set %s, whose own packets b4 routes through %s: handing the connection off", pkt.dstStr, vc.foreignMark, name, set.Name, set.Routing.EgressInterface)
+	vc.rerouted = name
+	return name
+}
+
+func (w *Worker) handsOffEgress(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig) bool {
+	if set.Routing.Enabled {
+		return w.routedSetOverridden(vc, pkt, cfg, set) != ""
+	}
 	return vc.tunnel != "" || w.reroutedEgress(vc, pkt, cfg) != ""
 }
 
