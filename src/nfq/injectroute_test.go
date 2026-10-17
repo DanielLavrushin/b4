@@ -344,27 +344,34 @@ func routedThroughPPP9(set config.SetConfig) config.SetConfig {
 	return set
 }
 
-func TestAMarkWithTheQueueMarkInPlaceOfARoutedSetsMarkIsHandedOff(t *testing.T) {
+func TestAMarkWithTheQueueMarkOnARoutedSetIsHandedOffUnlessB4sPacketsFollowIt(t *testing.T) {
 	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
 	const setMark = uint32(0x2bd8)
 	stubRouteMarks(t, map[string][]uint32{"ppp9": {setMark}})
 	defaults := config.NewConfig()
 	for _, c := range []struct {
-		name string
-		mark uint32
-		out  uint32
-		want int
-		why  string
+		name    string
+		mark    uint32
+		out     uint32
+		want    int
+		lookups int
+		why     string
 	}{
-		{"KeeneticOS hotspot mark, policy route by the uplink", keeneticHotspotMark, idx["eth7"], nfqueue.NfAccept, "the set's output rule sends b4's packets through ppp9 while the connection leaves by eth7"},
-		{"KeeneticOS hotspot mark, policy route by the set's interface", keeneticHotspotMark, idx["ppp9"], nfqueue.NfAccept, "without the set's route mark b4 cannot tell which route its own packets take"},
-		{"the set's own route mark", setMark, idx["ppp9"], nfqueue.NfDrop, "b4 routed the connection itself, so its own packets follow it"},
-		{"another service's mark with the set's route bits", keeneticHotspotMark&^config.PerSetRouteMarkBits | setMark, idx["ppp9"], nfqueue.NfDrop, "the set's route mark is still on the packet"},
-		{"another service's mark without the queue mark", 0x4d616769, idx["eth7"], nfqueue.NfDrop, "a mark b4 already queued before keeps its handling"},
-		{"Discovery's flow mark", uint32(defaults.DiscoveryFlowMark()), idx["eth7"], nfqueue.NfDrop, "Discovery's own packets are never handed off"},
+		{"KeeneticOS hotspot mark, policy route by the uplink", keeneticHotspotMark, idx["eth7"], nfqueue.NfAccept, 0, "the set's output rule sends b4's packets through ppp9 while the connection leaves by eth7"},
+		{"KeeneticOS hotspot mark, policy route by the set's interface", keeneticHotspotMark, idx["ppp9"], nfqueue.NfAccept, 1, "b4's packets to an address the set has not learned follow the main route to eth7"},
+		{"the set's own route mark", setMark, idx["ppp9"], nfqueue.NfDrop, 0, "b4 routed the connection itself, so its own packets follow it"},
+		{"another service's mark with the set's route bits", keeneticHotspotMark&^config.PerSetRouteMarkBits | setMark, idx["ppp9"], nfqueue.NfDrop, 1, "with the set's route mark b4's packets take the set's route like the connection"},
+		{"another service's mark without the queue mark", 0x4d616769, idx["eth7"], nfqueue.NfDrop, 0, "a mark b4 already queued before keeps its handling"},
+		{"Discovery's flow mark", uint32(defaults.DiscoveryFlowMark()), idx["eth7"], nfqueue.NfDrop, 0, "Discovery's own packets are never handed off"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			stub := stubInjectRoute(t, idx["eth7"], true)
+			stub.answerBy(func(_ net.IP, mark uint32) (uint32, bool) {
+				if mark&config.PerSetRouteMarkBits == setMark {
+					return idx["ppp9"], true
+				}
+				return idx["eth7"], true
+			})
 			set := routedThroughPPP9(newFragmentingYTImagesSet())
 			w := newInjectingWorker(t, &set)
 			if set.RoutingHandsOffPackets() {
@@ -374,8 +381,78 @@ func TestAMarkWithTheQueueMarkInPlaceOfARoutedSetsMarkIsHandedOff(t *testing.T) 
 			if got := queuedVerdict(t, w, ytimgHello(), &m, c.out, 0); got != c.want {
 				t.Fatalf("verdict %d, want %d: %s", got, c.want, c.why)
 			}
-			if calls := stub.got(); len(calls) != 0 {
-				t.Fatalf("route lookups %v: a routed set decides by its own route mark", calls)
+			if calls := stub.got(); len(calls) != c.lookups {
+				t.Fatalf("route lookups %v, want %d", calls, c.lookups)
+			}
+		})
+	}
+}
+
+func routingIPSet(egress string) config.SetConfig {
+	set := config.NewSetConfig()
+	set.Id = "routed-ips"
+	set.Name = "Routed IPs"
+	set.Enabled = true
+	set.Targets.DomainOnly = false
+	set.Targets.IpsToMatch = []string{"203.0.113.0/24"}
+	set.Routing.Enabled = true
+	set.Routing.Mode = config.RoutingModeInterface
+	set.Routing.EgressInterface = egress
+	return set
+}
+
+func TestAnInterfaceSetRoutingElsewhereHandsAMarkWithTheQueueMarkOff(t *testing.T) {
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	for _, c := range []struct {
+		name    string
+		tune    func(*config.SetConfig)
+		want    int
+		lookups int
+		why     string
+	}{
+		{"routed through another interface", func(*config.SetConfig) {}, nfqueue.NfAccept, 0, "its output rule may send the packets b4 injects through ppp9 while the connection leaves by eth7"},
+		{"routed through the connection's interface", func(s *config.SetConfig) { s.Routing.EgressInterface = "eth7" }, nfqueue.NfDrop, 1, "b4's packets leave by eth7 either way"},
+		{"a proxy set", func(s *config.SetConfig) { s.Routing.Mode = config.RoutingModeProxy }, nfqueue.NfDrop, 1, "a proxy set marks none of the packets b4 injects"},
+		{"a disabled set", func(s *config.SetConfig) { s.Enabled = false }, nfqueue.NfDrop, 1, "a disabled set routes nothing"},
+		{"a set without addresses", func(s *config.SetConfig) { s.Targets.IpsToMatch = nil; s.TCP.DPortFilter = "8443" }, nfqueue.NfDrop, 1, "a set without destinations routes nothing"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stub := stubInjectRoute(t, idx["eth7"], true)
+			strategy := newFragmentingYTImagesSet()
+			routed := routingIPSet("ppp9")
+			c.tune(&routed)
+			w := newInjectingWorker(t, &strategy, &routed)
+			hotspot := keeneticHotspotMark
+			if got := queuedVerdict(t, w, ytimgHello(), &hotspot, idx["eth7"], 0); got != c.want {
+				t.Fatalf("verdict %d, want %d: %s", got, c.want, c.why)
+			}
+			if calls := stub.got(); len(calls) != c.lookups {
+				t.Fatalf("route lookups %v, want %d", calls, c.lookups)
+			}
+		})
+	}
+}
+
+func TestAPortOnlySetWithRoutingKeepsTheOrdinaryCheck(t *testing.T) {
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	for _, c := range []struct {
+		name string
+		out  uint32
+		want int
+		why  string
+	}{
+		{"policy route by the main uplink", idx["eth7"], nfqueue.NfDrop, "the set routes nothing, so b4's packets follow the main route like the connection"},
+		{"policy route by another uplink", idx["ppp9"], nfqueue.NfAccept, "b4's packets would follow the main route while the connection leaves by ppp9"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stubInjectRoute(t, idx["eth7"], true)
+			set := routedThroughPPP9(newFragmentingYTImagesSet())
+			set.Targets.DomainsToMatch = nil
+			set.TCP.DPortFilter = "443"
+			w := newInjectingWorker(t, &set)
+			hotspot := keeneticHotspotMark
+			if got := queuedVerdict(t, w, ytimgHello(), &hotspot, c.out, 0); got != c.want {
+				t.Fatalf("verdict %d, want %d: %s", got, c.want, c.why)
 			}
 		})
 	}

@@ -259,32 +259,41 @@ func (w *Worker) reroutedEgress(vc *verdictCtx, pkt *pktInfo, cfg *config.Config
 	return name
 }
 
-func (w *Worker) routedSetOverridden(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig) string {
+func foreignQueueMark(vc *verdictCtx, cfg *config.Config) bool {
 	if vc.foreignMark == 0 || vc.outDev == 0 || cfg.Queue.IsDiscovery {
-		return ""
+		return false
 	}
 	mark := uint32(cfg.MainInjectedMark())
-	if vc.foreignMark&mark != mark || vc.foreignMark == uint32(cfg.DiscoveryFlowMark()) || vc.foreignMark == uint32(cfg.DiscoveryInjectedMark()) {
-		return ""
-	}
-	if setRoutesWith(set.Routing.EgressInterface, vc.foreignMark&config.PerSetRouteMarkBits) {
-		return ""
-	}
+	return vc.foreignMark&mark == mark &&
+		vc.foreignMark != uint32(cfg.DiscoveryFlowMark()) && vc.foreignMark != uint32(cfg.DiscoveryInjectedMark())
+}
+
+func (w *Worker) interfaceSetRoutesElsewhere(vc *verdictCtx, pkt *pktInfo, cfg *config.Config) string {
 	name := getIfaceName(vc.outDev)
 	if name == "" {
 		return ""
 	}
-	log.Tracef("NFQ: %s with mark 0x%x leaves by %s without the route mark of set %s, whose own packets b4 routes through %s: handing the connection off", pkt.dstStr, vc.foreignMark, name, set.Name, set.Routing.EgressInterface)
-	vc.rerouted = name
-	return name
+	for _, s := range cfg.Sets {
+		if s == nil || !s.Enabled || !s.RoutesAddressesToInterface() || s.Routing.EgressInterface == name {
+			continue
+		}
+		log.Tracef("NFQ: %s with mark 0x%x leaves by %s, while set %s sends the packets b4 injects to its addresses through %s: handing the connection off", pkt.dstStr, vc.foreignMark, name, s.Name, s.Routing.EgressInterface)
+		vc.rerouted = name
+		return name
+	}
+	return ""
 }
 
 func (w *Worker) handsOffEgress(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig) bool {
 	if set.Routing.Enabled && !set.RoutesToInterface() {
 		return false
 	}
-	if set.RoutesToInterface() && !set.RoutesNoAddress() {
-		return w.routedSetOverridden(vc, pkt, cfg, set) != ""
+	if foreignQueueMark(vc, cfg) {
+		if w.interfaceSetRoutesElsewhere(vc, pkt, cfg) != "" {
+			return true
+		}
+	} else if set.RoutesAddressesToInterface() {
+		return false
 	}
 	return vc.tunnel != "" || w.reroutedEgress(vc, pkt, cfg) != ""
 }
