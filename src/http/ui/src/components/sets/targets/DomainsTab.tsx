@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { Box, Grid } from "@mui/material";
 import { DomainIcon } from "@b4.icons";
 import { B4Alert, B4Hint, B4Select, B4Switch } from "@b4.elements";
@@ -9,6 +9,7 @@ import { SetStats } from "../Manager";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 import { GeoCategoryPanel } from "./GeoCategoryPanel";
 import { CategoryPreviewDialog } from "./CategoryPreviewDialog";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 import {
   DOMAIN_CATCH_ALL,
   domainEntryNotice,
@@ -46,12 +47,31 @@ export const DomainsTab = ({
   onChange,
 }: DomainsTabProps) => {
   const { t } = useTranslation();
+  const { changedValues } = useChangedFields();
   const showIpVersionFilter = (!!ipv4 && !!ipv6) || !!config.targets.ip_version;
   const [duplicateWarning, setDuplicateWarning] = useState("");
   const [entryNotice, setEntryNotice] = useState("");
   const [previewCategory, setPreviewCategory] = useState<string | null>(null);
   const domains = config.targets.sni_domains ?? [];
   const catchAll = domains.some(isDomainCatchAll);
+  const domainsLeaf = changedValues.get("targets.sni_domains");
+  // O(1) membership per chip instead of O(n) includes scans.
+  const domainsLeafSets = useMemo(() => {
+    if (
+      !domainsLeaf ||
+      !Array.isArray(domainsLeaf.after) ||
+      !Array.isArray(domainsLeaf.before)
+    ) {
+      return null;
+    }
+    return {
+      after: new Set(domainsLeaf.after as unknown[]),
+      before: new Set(domainsLeaf.before as unknown[]),
+    };
+  }, [domainsLeaf]);
+  const isDomainChanged = (domain: string): boolean =>
+    !!domainsLeafSets &&
+    domainsLeafSets.after.has(domain) !== domainsLeafSets.before.has(domain);
   const checkTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -139,6 +159,8 @@ export const DomainsTab = ({
               value: DOMAIN_CATCH_ALL,
             })}
             checked={catchAll}
+            path="targets.sni_domains"
+            arrayItem={DOMAIN_CATCH_ALL}
             onChange={(checked: boolean) =>
               onChange(
                 "targets.sni_domains",
@@ -152,6 +174,7 @@ export const DomainsTab = ({
             label={t("sets.targets.domainOnly")}
             description={t("sets.targets.domainOnlyDesc")}
             checked={config.targets.domain_only ?? false}
+            path="targets.domain_only"
             onChange={(checked: boolean) =>
               onChange("targets.domain_only", checked)
             }
@@ -162,6 +185,7 @@ export const DomainsTab = ({
           <B4Select
             label={t("sets.targets.tlsVersionFilter")}
             value={config.targets.tls ?? ""}
+            path="targets.tls"
             options={[
               { value: "", label: t("sets.targets.tlsAny") },
               { value: "1.2", label: "TLS 1.2" },
@@ -175,12 +199,13 @@ export const DomainsTab = ({
           <Box sx={{ maxWidth: 260, flex: 1, minWidth: 200 }}>
             <B4Select
               label={t("sets.targets.ipVersionFilter")}
-              value={config.targets.ip_version ?? ""}
-              options={[
-                { value: "", label: t("sets.targets.ipVersionAny") },
-                { value: "4", label: "IPv4" },
-                { value: "6", label: "IPv6" },
-              ]}
+            value={config.targets.ip_version ?? ""}
+            path="targets.ip_version"
+            options={[
+              { value: "", label: t("sets.targets.ipVersionAny") },
+              { value: "4", label: "IPv4" },
+              { value: "6", label: "IPv6" },
+            ]}
               helperText={t("sets.targets.ipVersionHelperText")}
               onChange={(e) =>
                 onChange("targets.ip_version", e.target.value as string)
@@ -213,7 +238,7 @@ export const DomainsTab = ({
             warning={duplicateWarning}
             notice={entryNotice}
             normalize={normalizeDomainEntry}
-            highlight={isDomainCatchAll}
+            highlight={(item) => isDomainCatchAll(item) || isDomainChanged(item)}
             getItemLabel={(item) =>
               isDomainCatchAll(item)
                 ? t("sets.targets.catchAllChipDomain")
@@ -243,6 +268,7 @@ export const DomainsTab = ({
                 onChange("targets.geosite_categories", categories)
               }
               onPreview={setPreviewCategory}
+              path="targets.geosite_categories"
             />
           </Grid>
         )}

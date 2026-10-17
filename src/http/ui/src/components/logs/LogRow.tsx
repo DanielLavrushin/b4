@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { colors } from "@design";
-import { LogLevel, ParsedLogLine } from "./parse";
+import { LogLineLevel, ParsedLogLine } from "./parse";
 
 interface RowTheme {
   border: string;
@@ -8,7 +8,7 @@ interface RowTheme {
   text: string;
 }
 
-const rowTheme: Record<LogLevel, RowTheme> = {
+const rowTheme: Record<LogLineLevel, RowTheme> = {
   error: {
     border: colors.state.error,
     tint: "rgba(244, 67, 54, 0.10)",

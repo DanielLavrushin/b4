@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -28,6 +28,7 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "@api/apiClient";
 import { asnApi } from "@api/asn";
 import { useSnackbar } from "@context/SnackbarProvider";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 import { useAsnCache, useAsnViews } from "@hooks/useAsn";
 import { AsnFacts, AsnLargeNetworkAlert } from "@common/AsnFacts";
 import {
@@ -175,34 +176,40 @@ export const AsnTab = ({
     setLookup(null);
   };
 
-  const refresh = async (id: string) => {
-    setRefreshing((prev) => new Set(prev).add(id));
-    try {
-      const view = await asnApi.resolve(id, true);
-      store(view);
-      showSuccess(t("sets.targets.asn.refreshed", { asn: formatAsn(id) }));
-    } catch (e) {
-      showError(
-        t("sets.targets.asn.refreshFailed", {
-          asn: formatAsn(id),
-          error: localizeApiError(e),
-        }),
-      );
-      void invalidate();
-    } finally {
-      setRefreshing((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
-  };
+  const refresh = useCallback(
+    async (id: string) => {
+      setRefreshing((prev) => new Set(prev).add(id));
+      try {
+        const view = await asnApi.resolve(id, true);
+        store(view);
+        showSuccess(t("sets.targets.asn.refreshed", { asn: formatAsn(id) }));
+      } catch (e) {
+        showError(
+          t("sets.targets.asn.refreshFailed", {
+            asn: formatAsn(id),
+            error: localizeApiError(e),
+          }),
+        );
+        void invalidate();
+      } finally {
+        setRefreshing((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    },
+    [invalidate, showError, showSuccess, store, t],
+  );
 
-  const remove = (id: string) =>
-    onChange(
-      "targets.asns",
-      asnsRef.current.filter((a) => a !== id),
-    );
+  const remove = useCallback(
+    (id: string) =>
+      onChange(
+        "targets.asns",
+        asnsRef.current.filter((a) => a !== id),
+      ),
+    [onChange],
+  );
 
   const rowState = (id: string): RowState => {
     if (views) return isAsnResolved(views[id]) ? "resolved" : "unresolved";
@@ -362,7 +369,7 @@ export const AsnTab = ({
         ) : (
           <Stack spacing={1}>
             {asns.map((id) => (
-              <AsnRow
+              <MemoAsnRow
                 key={id}
                 id={id}
                 view={views?.[id]}
@@ -370,9 +377,9 @@ export const AsnTab = ({
                 setName={config.name}
                 ipVersion={config.targets.ip_version}
                 refreshing={refreshing.has(id)}
-                onRefresh={() => void refresh(id)}
-                onPreview={() => setPreviewId(id)}
-                onRemove={() => remove(id)}
+                onRefresh={refresh}
+                onPreview={setPreviewId}
+                onRemove={remove}
               />
             ))}
           </Stack>
@@ -477,9 +484,9 @@ interface AsnRowProps {
   setName: string;
   ipVersion?: string;
   refreshing: boolean;
-  onRefresh: () => void;
-  onPreview: () => void;
-  onRemove: () => void;
+  onRefresh: (id: string) => void;
+  onPreview: (id: string) => void;
+  onRemove: (id: string) => void;
 }
 
 const AsnRow = ({
@@ -494,6 +501,14 @@ const AsnRow = ({
   onRemove,
 }: AsnRowProps) => {
   const { t, i18n } = useTranslation();
+  const { changedValues } = useChangedFields();
+  const asnsLeaf = changedValues.get("targets.asns");
+  const asnChanged =
+    !!asnsLeaf &&
+    Array.isArray(asnsLeaf.after) &&
+    Array.isArray(asnsLeaf.before) &&
+    (asnsLeaf.after as unknown[]).includes(id) !==
+      (asnsLeaf.before as unknown[]).includes(id);
   const unresolved = state === "unresolved";
   const filtered =
     ipVersion === "4"
@@ -539,6 +554,17 @@ const AsnRow = ({
             >
               {view?.name || (state === "loading" ? "" : t("sets.targets.asn.unnamed"))}
             </Typography>
+            {asnChanged && (
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  bgcolor: colors.secondary,
+                  flexShrink: 0,
+                }}
+              />
+            )}
             {unresolved && (
               <B4Badge
                 label={t("core.asn.pending")}
@@ -605,7 +631,7 @@ const AsnRow = ({
               <IconButton
                 size="small"
                 disabled={refreshing}
-                onClick={onRefresh}
+                onClick={() => onRefresh(id)}
                 sx={{ "&:hover": { color: colors.secondary } }}
               >
                 {refreshing ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
@@ -617,7 +643,7 @@ const AsnRow = ({
               <IconButton
                 size="small"
                 disabled={!view || view.prefixes.length === 0}
-                onClick={onPreview}
+                onClick={() => onPreview(id)}
                 sx={{ "&:hover": { color: colors.secondary } }}
               >
                 <EyeIcon fontSize="small" />
@@ -627,7 +653,7 @@ const AsnRow = ({
           <Tooltip title={t("sets.targets.asn.remove")}>
             <IconButton
               size="small"
-              onClick={onRemove}
+                onClick={() => onRemove(id)}
               sx={{ "&:hover": { color: colors.secondary } }}
             >
               <ClearIcon fontSize="small" />
@@ -640,3 +666,4 @@ const AsnRow = ({
     </Box>
   );
 };
+const MemoAsnRow = memo(AsnRow);

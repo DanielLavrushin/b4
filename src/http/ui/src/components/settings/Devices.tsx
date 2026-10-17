@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Grid,
   Box,
@@ -17,6 +17,7 @@ import {
   Button,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 import { Device } from "@models/config";
 import { DeviceUnknowIcon, RefreshIcon, AddIcon, DeleteIcon } from "@b4.icons";
 import EditIcon from "@mui/icons-material/Edit";
@@ -120,8 +121,44 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
   const [manualIp, setManualIp] = useState("");
   const [manualName, setManualName] = useState("");
   const { t } = useTranslation();
+  const { changedValues, registerLabel } = useChangedFields();
+  useEffect(() => {
+    registerLabel("queue.devices.devices", t("core.devices.devicesTitle"));
+  }, [registerLabel, t]);
+  const devicesLeaf = changedValues.get("queue.devices.devices");
+  // One diff per leaf change, not two serializations per row per render.
+  const changedMacs = useMemo(() => {
+    const out = new Set<string>();
+    if (!devicesLeaf) return out;
+    const beforeList = (
+      Array.isArray(devicesLeaf.before) ? devicesLeaf.before : []
+    ) as Device[];
+    const afterList = (
+      Array.isArray(devicesLeaf.after) ? devicesLeaf.after : []
+    ) as Device[];
+    const beforeByMac = new Map(
+      beforeList.map((d) => [d.mac.toUpperCase(), d] as const),
+    );
+    const afterByMac = new Map(
+      afterList.map((d) => [d.mac.toUpperCase(), d] as const),
+    );
+    for (const [mac, a] of afterByMac) {
+      if (JSON.stringify(a) !== JSON.stringify(beforeByMac.get(mac) ?? null)) {
+        out.add(mac);
+      }
+    }
+    for (const mac of beforeByMac.keys()) {
+      if (!afterByMac.has(mac)) out.add(mac);
+    }
+    return out;
+  }, [devicesLeaf]);
+  const isDeviceChanged = (mac: string): boolean =>
+    changedMacs.has(mac.toUpperCase());
 
-  const configDevices: Device[] = config.queue.devices?.devices || [];
+  const configDevices: Device[] = useMemo(
+    () => config.queue.devices?.devices || [],
+    [config.queue.devices],
+  );
   const enabled = config.queue.devices?.enabled || false;
   const vendorLookup = config.queue.devices?.vendor_lookup || false;
   const wisb = config.queue.devices?.wisb || false;
@@ -182,8 +219,16 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
       checked,
     );
 
-  const displayName = (device: DeviceInfo) =>
-    findConfigDevice(device.mac)?.name || device.alias || device.vendor || "";
+  // Stable identity so the device table's filter memo holds across keystrokes.
+  const displayName = useCallback(
+    (device: DeviceInfo) =>
+      configDevices.find((d) => d.mac.toUpperCase() === device.mac.toUpperCase())
+        ?.name ||
+      device.alias ||
+      device.vendor ||
+      "",
+    [configDevices],
+  );
 
   const handleAddManualDevice = () => {
     const ip = manualIp.trim();
@@ -233,6 +278,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
             <B4Switch
               label={t("settings.Devices.enable")}
               checked={enabled}
+              path="queue.devices.enabled"
               onChange={(checked) => onChange("queue.devices.enabled", checked)}
               description={
                 enabled || wisb ? undefined : t("settings.Devices.enableDesc")
@@ -241,12 +287,14 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
             <B4Switch
               label={t("settings.Devices.invertSelection")}
               checked={wisb}
+              path="queue.devices.wisb"
               onChange={(checked) => onChange("queue.devices.wisb", checked)}
               disabled={!enabled}
             />
             <B4Switch
               label={t("settings.Devices.vendorLookup")}
               checked={vendorLookup}
+              path="queue.devices.vendor_lookup"
               onChange={(checked) =>
                 onChange("queue.devices.vendor_lookup", checked)
               }
@@ -313,6 +361,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                   loading={loading}
                   isSelected={isSelected}
                   onToggle={handleToggle}
+                  isChanged={isDeviceChanged}
                   onSelectAll={handleSelectAll}
                   onBulkToggle={handleBulkToggle}
                   getSearchableName={displayName}

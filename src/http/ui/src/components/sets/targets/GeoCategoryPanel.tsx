@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Box, Button, Tooltip, Typography } from "@mui/material";
 import { CategoryIcon, ClearIcon, InfoIcon } from "@b4.icons";
 import { B4ChipList } from "@b4.elements";
 import SettingAutocomplete from "@common/B4Autocomplete";
 import { useTranslation } from "react-i18next";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 
 interface GeoCategoryPanelProps {
   title: string;
@@ -18,6 +19,7 @@ interface GeoCategoryPanelProps {
   breakdown?: Record<string, number>;
   onSelectedChange: (categories: string[]) => void;
   onPreview?: (category: string) => void;
+  path?: string;
 }
 
 const CategoryLabel = ({
@@ -29,7 +31,7 @@ const CategoryLabel = ({
 }) => (
   <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
     <span>{category}</span>
-    {count && (
+    {count ? (
       <Typography
         component="span"
         variant="caption"
@@ -42,7 +44,7 @@ const CategoryLabel = ({
       >
         {count}
       </Typography>
-    )}
+    ) : null}
   </Box>
 );
 
@@ -59,9 +61,28 @@ export const GeoCategoryPanel = ({
   breakdown,
   onSelectedChange,
   onPreview,
+  path,
 }: GeoCategoryPanelProps) => {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
+  const { changedValues, registerLabel } = useChangedFields();
+  const leaf = path ? changedValues.get(path) : undefined;
+  // O(1) membership per chip instead of O(n) includes scans.
+  const leafSets = useMemo(() => {
+    if (!leaf || !Array.isArray(leaf.after) || !Array.isArray(leaf.before)) {
+      return null;
+    }
+    return {
+      after: new Set(leaf.after as unknown[]),
+      before: new Set(leaf.before as unknown[]),
+    };
+  }, [leaf]);
+  const has = (category: string): boolean =>
+    !!leafSets && leafSets.after.has(category) !== leafSets.before.has(category);
+  useEffect(() => {
+    if (!path) return;
+    registerLabel(path, title);
+  }, [path, title, registerLabel]);
 
   const handleAdd = (category: string) => {
     if (category && !selected.includes(category)) {
@@ -121,6 +142,7 @@ export const GeoCategoryPanel = ({
           )}
           onDelete={(c) => onSelectedChange(selected.filter((s) => s !== c))}
           onClick={onPreview}
+          highlight={path ? (c) => has(c) : undefined}
         />
       </Box>
     </Box>

@@ -39,6 +39,7 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
         <B4Switch
           label={t("settings.Dns.tcpEnable")}
           checked={tcpOn}
+          path="system.dns.tcp_disabled"
           onChange={(checked: boolean) =>
             onChange("system.dns.tcp_disabled", !checked)
           }
@@ -48,6 +49,7 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
           <B4NumberField
             label={t("settings.Dns.tcpPort")}
             value={dns.tcp_port}
+            path="system.dns.tcp_port"
             onChange={(value: number) => onChange("system.dns.tcp_port", value)}
             min={1}
             max={65535}
@@ -60,6 +62,7 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
         <B4NumberField
           label={t("settings.Dns.queryTimeout")}
           value={dns.query_timeout_sec}
+          path="system.dns.query_timeout_sec"
           onChange={(value: number) =>
             onChange("system.dns.query_timeout_sec", value)
           }
@@ -71,6 +74,7 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
           <B4NumberField
             label={t("settings.Dns.tcpIdle")}
             value={dns.tcp_idle_sec}
+            path="system.dns.tcp_idle_sec"
             onChange={(value: number) =>
               onChange("system.dns.tcp_idle_sec", value)
             }
@@ -83,6 +87,7 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
           <B4NumberField
             label={t("settings.Dns.tcpIo")}
             value={dns.tcp_io_sec}
+            path="system.dns.tcp_io_sec"
             onChange={(value: number) =>
               onChange("system.dns.tcp_io_sec", value)
             }
@@ -95,6 +100,7 @@ export const DnsSettings = ({ config, onChange }: DnsSettingsProps) => {
           <B4NumberField
             label={t("settings.Dns.tcpDial")}
             value={dns.tcp_dial_sec}
+            path="system.dns.tcp_dial_sec"
             onChange={(value: number) =>
               onChange("system.dns.tcp_dial_sec", value)
             }

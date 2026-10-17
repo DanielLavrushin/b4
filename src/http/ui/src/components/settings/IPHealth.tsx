@@ -29,6 +29,7 @@ export const IPHealthSettings = ({
         value={ipHealth.retest_interval_sec}
         min={30}
         max={3600}
+        path="system.ip_health.retest_interval_sec"
         onChange={(value) =>
           onChange("system.ip_health.retest_interval_sec", value)
         }

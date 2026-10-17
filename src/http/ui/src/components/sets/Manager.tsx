@@ -212,12 +212,21 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
     });
   }, []);
 
-  const sets = setsData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[];
-  const setsStats = setsData.map((s) => ("stats" in s ? s.stats : null));
-  const statsOf = (id: string) => {
-    const index = sets.findIndex((s) => s.id === id);
-    return index >= 0 ? setsStats[index] || undefined : undefined;
-  };
+  const sets = useMemo(
+    () => setsData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[],
+    [setsData],
+  );
+  const setsStats = useMemo(
+    () => setsData.map((s) => ("stats" in s ? s.stats : null)),
+    [setsData],
+  );
+  const statsOf = useCallback(
+    (id: string) => {
+      const index = sets.findIndex((s) => s.id === id);
+      return index >= 0 ? setsStats[index] || undefined : undefined;
+    },
+    [sets, setsStats],
+  );
   const facetSelection = useSetFacetSelection(sets.map((s) => s.id));
   const watchdogOn = !!config.system?.checker?.watchdog?.enabled;
   const deviceFilter = deviceFilterSelects(config.queue?.devices);

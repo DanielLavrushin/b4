@@ -9,11 +9,12 @@ import {
   B4Switch,
   B4Select,
   B4Alert,
-  B4Badge,
   B4TextField,
+  InterfaceChips,
 } from "@b4.elements";
 import { Box, Typography } from "@mui/material";
 import { EngineFailure, SettingsPropHandlerType } from "@models/settings";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 
 interface EngineCardProps {
   config: B4Config;
@@ -60,6 +61,10 @@ export const PacketEngineSettings = ({
   engineFailure,
 }: EngineCardProps & { engineFailure: EngineFailure | null }) => {
   const { t } = useTranslation();
+  const { registerLabel } = useChangedFields();
+  useEffect(() => {
+    registerLabel("queue.interfaces", t("core.interfaces"));
+  }, [registerLabel, t]);
 
   const ifaceTraffic = config.iface_traffic ?? {};
   const selectedIfaces = config.queue.interfaces ?? [];
@@ -99,6 +104,7 @@ export const PacketEngineSettings = ({
       <B4Select
         label={t("settings.Feature.tunOutInterface")}
         value={tunFollowsDefault ? "" : tunOutInterface ?? ""}
+        path="queue.tun.out_interface"
         onChange={(e) => onChange("queue.tun.out_interface", e.target.value)}
         options={[
           { value: "", label: t("settings.Feature.tunOutInterfaceAuto") },
@@ -114,6 +120,7 @@ export const PacketEngineSettings = ({
       <B4TextField
         label={t("settings.Feature.tunOutGateway")}
         value={config.queue.tun?.out_gateway || ""}
+        path="queue.tun.out_gateway"
         onChange={(e) => onChange("queue.tun.out_gateway", e.target.value)}
         placeholder={t("settings.Feature.tunOutGatewayPlaceholder")}
         disabled={tunFollowsDefault}
@@ -127,6 +134,7 @@ export const PacketEngineSettings = ({
       <B4TextField
         label={t("settings.Feature.tunAddress")}
         value={config.queue.tun?.address || "10.255.0.1/30"}
+        path="queue.tun.address"
         onChange={(e) => onChange("queue.tun.address", e.target.value)}
         helperText={t("settings.Feature.tunAddressHelp")}
         selectOnFocus
@@ -134,6 +142,7 @@ export const PacketEngineSettings = ({
       <B4TextField
         label={t("settings.Feature.tunDeviceName")}
         value={config.queue.tun?.device_name || "b4tun0"}
+        path="queue.tun.device_name"
         onChange={(e) => onChange("queue.tun.device_name", e.target.value)}
         helperText={t("settings.Feature.tunDeviceNameHelp")}
         selectOnFocus
@@ -147,25 +156,14 @@ export const PacketEngineSettings = ({
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           {t("settings.Feature.networkInterfacesDesc")}
         </Typography>
-        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-          {(config.available_ifaces ?? []).map((iface) => {
-            const isSelected = (config.queue.interfaces || []).includes(iface);
-            return (
-              <B4Badge
-                key={iface}
-                label={iface}
-                onClick={() => handleInterfaceToggle(iface)}
-                variant={isSelected ? "filled" : "outlined"}
-                color={"primary"}
-              />
-            );
-          })}
-        </Box>
-        {(config.available_ifaces ?? []).length === 0 && (
-          <B4Alert severity="warning" sx={{ mt: 1 }}>
-            {t("settings.Feature.noInterfacesDetected")}
-          </B4Alert>
-        )}
+        <InterfaceChips
+          available={config.available_ifaces ?? []}
+          selected={selectedIfaces}
+          disabled={false}
+          onToggle={handleInterfaceToggle}
+          path="queue.interfaces"
+          showMissing={false}
+        />
         {ifaceFilterSeesNothing && (
           <B4Alert severity="warning" sx={{ mt: 2 }}>
             {t("settings.Feature.interfaceFilterSeesNothing", {
@@ -191,6 +189,7 @@ export const PacketEngineSettings = ({
       <B4Select
         label={t("settings.Feature.engineModeLabel")}
         value={config.queue.mode || "nfqueue"}
+        path="queue.mode"
         onChange={(e) =>
           onChange(
             "queue.mode",
@@ -254,17 +253,20 @@ export const IpVersionSettings = ({
       <B4Switch
         label={t("settings.Feature.enableIPv4")}
         checked={config.queue.ipv4}
+        path="queue.ipv4"
         onChange={(checked: boolean) => onChange("queue.ipv4", checked)}
       />
       <B4Switch
         label={t("settings.Feature.enableIPv6")}
         checked={config.queue.ipv6}
+        path="queue.ipv6"
         onChange={(checked: boolean) => onChange("queue.ipv6", checked)}
         description={t("settings.Feature.enableIPv6Desc")}
       />
       <B4Switch
         label={t("settings.Dns.ipv4Fallback")}
         checked={!keepIpv6Answers}
+        path="system.dns.keep_ipv6_answers"
         onChange={(checked: boolean) =>
           onChange("system.dns.keep_ipv6_answers", !checked)
         }

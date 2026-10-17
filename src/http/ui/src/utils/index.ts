@@ -9,6 +9,8 @@ export * from "./errors";
 export * from "./hubLink";
 export * from "./probeUrl";
 export * from "./dnsEndpoint";
+export * from "./configDiff";
 export * from "./pins";
 export * from "./dscp";
 export * from "./setExport";
+export * from "./setByPath";

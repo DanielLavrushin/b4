@@ -1,5 +1,6 @@
 import {
   FormControlLabel,
+  Stack,
   Switch,
   SwitchProps,
   Typography,
@@ -7,12 +8,16 @@ import {
 } from "@mui/material";
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { useChangedArrayItem, useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
+import { useEffect } from "react";
 
 interface B4SwitchProps extends Omit<SwitchProps, "checked" | "onChange"> {
   label: string;
   checked: boolean;
   description?: string;
   disabled?: boolean;
+  path?: string;
+  arrayItem?: string;
   onChange: (checked: boolean) => void;
   aiTopic?: string;
   aiContext?: Record<string, unknown>;
@@ -25,11 +30,29 @@ export const B4Switch = ({
   description,
   onChange,
   disabled,
+  path,
+  arrayItem,
   aiTopic,
   aiContext,
   aiQuestion,
   ...props
 }: B4SwitchProps) => {
+  const fieldChanged = useChangedField(arrayItem ? undefined : path, label);
+  const arrayItemChanged = useChangedArrayItem(
+    path,
+    arrayItem,
+    arrayItem ? label : undefined,
+  );
+  const { registerValueLabels, scopeVersion } = useChangedFields();
+  useEffect(() => {
+    if (path && arrayItem) registerValueLabels(path, new Map([[arrayItem, label]]));
+  }, [path, arrayItem, label, registerValueLabels, scopeVersion]);
+  const changed = arrayItem ? arrayItemChanged : fieldChanged;
+  const labelColor = disabled
+    ? colors.text.disabled
+    : changed
+      ? colors.secondary
+      : colors.text.primary;
   const control = (
     <FormControlLabel
       disabled={disabled}
@@ -42,22 +65,31 @@ export const B4Switch = ({
       }
       label={
         <Box>
-          <Typography
-            sx={{
-              color: disabled ? colors.text.disabled : colors.text.primary,
-              fontWeight: 500,
-            }}
-          >
-            {label}
-          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography
+              sx={{
+                color: labelColor as string,
+                fontWeight: 500,
+              }}
+            >
+              {label}
+            </Typography>
+            {changed && !disabled && (
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  bgcolor: colors.secondary,
+                  flexShrink: 0,
+                }}
+              />
+            )}
+          </Stack>
           {description && (
             <Typography
-              variant="caption"
-              sx={{
-                display: "block",
-                color: colors.text.secondary,
-                mt: "2px",
-              }}
+              variant="body2"
+              sx={{ color: colors.text.secondary, mt: 0.5 }}
             >
               {description}
             </Typography>

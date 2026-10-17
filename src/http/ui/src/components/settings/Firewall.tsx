@@ -11,9 +11,11 @@ import {
   B4Select,
   B4Slider,
   B4Switch,
+  InterfaceChips,
 } from "@b4.elements";
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
+import { useChangedField } from "@context/ChangedFieldsContext";
 import {
   DSCP_MAX_VALUE,
   dscpStampingSets,
@@ -47,6 +49,7 @@ export const FirewallRulesSettings = ({
             <B4Switch
               label={t("settings.Feature.skipIptables")}
               checked={skipTables}
+              path="system.tables.skip_setup"
               onChange={(checked: boolean) =>
                 onChange("system.tables.skip_setup", checked)
               }
@@ -58,6 +61,7 @@ export const FirewallRulesSettings = ({
               TUN_MONITOR_MIN_INTERVAL,
               config.system.tables.monitor_interval,
             )}
+            path="system.tables.monitor_interval"
             onChange={(value: number) =>
               onChange("system.tables.monitor_interval", value)
             }
@@ -77,6 +81,7 @@ export const FirewallRulesSettings = ({
             <B4Switch
               label={t("settings.Feature.skipIptables")}
               checked={skipTables}
+              path="system.tables.skip_setup"
               onChange={(checked: boolean) =>
                 onChange("system.tables.skip_setup", checked)
               }
@@ -86,6 +91,7 @@ export const FirewallRulesSettings = ({
           <B4Select
             label={t("settings.Feature.firewallEngine")}
             value={config.system.tables.engine || "auto"}
+            path="system.tables.engine"
             onChange={(e) =>
               onChange(
                 "system.tables.engine",
@@ -103,6 +109,7 @@ export const FirewallRulesSettings = ({
           <B4Slider
             label={t("settings.Feature.firewallMonitorInterval")}
             value={config.system.tables.monitor_interval}
+            path="system.tables.monitor_interval"
             onChange={(value: number) =>
               onChange("system.tables.monitor_interval", value)
             }
@@ -130,55 +137,6 @@ export const FirewallRulesSettings = ({
   );
 };
 
-interface InterfaceChipsProps {
-  available: string[];
-  selected: string[];
-  disabled: boolean;
-  onToggle: (iface: string) => void;
-}
-
-const InterfaceChips = ({
-  available,
-  selected,
-  disabled,
-  onToggle,
-}: InterfaceChipsProps) => {
-  const { t } = useTranslation();
-  const toggle = (iface: string) =>
-    disabled ? undefined : () => onToggle(iface);
-
-  return (
-    <>
-      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-        {selected
-          .filter((iface) => !available.includes(iface))
-          .map((iface) => (
-            <B4Badge
-              key={iface}
-              label={`${iface} (${t("settings.Feature.missingIface")})`}
-              onClick={toggle(iface)}
-              variant="filled"
-              color="error"
-            />
-          ))}
-        {available.map((iface) => (
-          <B4Badge
-            key={iface}
-            label={iface}
-            onClick={toggle(iface)}
-            variant={selected.includes(iface) ? "filled" : "outlined"}
-            color="primary"
-          />
-        ))}
-      </Box>
-      {available.length === 0 && (
-        <B4Alert severity="warning" sx={{ mt: 1 }}>
-          {t("settings.Feature.noInterfacesDetected")}
-        </B4Alert>
-      )}
-    </>
-  );
-};
 
 export const NatMasqueradeSettings = ({
   config,
@@ -187,7 +145,10 @@ export const NatMasqueradeSettings = ({
   const { t } = useTranslation();
   const skipTables = config.system.tables.skip_setup;
   const masquerade = config.system.tables.masquerade;
-
+  useChangedField(
+    "system.tables.masquerade.interfaces",
+    t("core.interfaces"),
+  );
   const handleMasqueradeToggle = (iface: string) => {
     const current = masquerade.interfaces || [];
     const updated = current.includes(iface)
@@ -201,6 +162,7 @@ export const NatMasqueradeSettings = ({
       <B4Switch
         label={t("settings.Feature.natMasqueradeEnable")}
         checked={masquerade.enabled}
+        path="system.tables.masquerade.enabled"
         onChange={(checked: boolean) =>
           onChange("system.tables.masquerade.enabled", checked)
         }
@@ -221,6 +183,7 @@ export const NatMasqueradeSettings = ({
             selected={masquerade.interfaces || []}
             disabled={skipTables}
             onToggle={handleMasqueradeToggle}
+            path="system.tables.masquerade.interfaces"
           />
         </Box>
       )}
@@ -238,6 +201,10 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
   };
   const dscpInterfaces = dscp.interfaces || [];
   const stampingSets = dscpStampingSets(config);
+  useChangedField(
+    "system.tables.dscp.interfaces",
+    t("core.interfaces"),
+  );
 
   const handleDscpInterfaceToggle = (iface: string) => {
     const updated = dscpInterfaces.includes(iface)
@@ -254,6 +221,7 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
       <B4Switch
         label={t("settings.Feature.dscp")}
         checked={dscp.enabled}
+        path="system.tables.dscp.enabled"
         onChange={(checked: boolean) => {
           onChange("system.tables.dscp.enabled", checked);
           if (checked && !dscp.value) {
@@ -272,36 +240,39 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
         aiTopic="system.tables.dscp.enabled"
       />
       {dscp.enabled && (
-        <B4Slider
-          label={t("settings.Feature.dscpValue")}
-          value={dscp.value}
-          onChange={(value: number) =>
-            onChange("system.tables.dscp.value", value)
-          }
-          min={0}
-          max={DSCP_MAX_VALUE}
-          step={1}
-          disabled={skipTables}
-          helperText={t("settings.Feature.dscpValueHelp")}
-          aiTopic="system.tables.dscp.value"
-        />
-      )}
-      {stampingSets.length > 0 && (
-        <Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            {t("settings.Feature.dscpSetsList")}
-          </Typography>
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-            {stampingSets.map((set) => (
-              <B4Badge
-                key={set.id}
-                label={`${set.name || set.id}: ${set.dscp?.value ?? 0}`}
-                variant="outlined"
-                color="secondary"
-              />
-            ))}
-          </Box>
-        </Box>
+        <>
+          <B4Slider
+            label={t("settings.Feature.dscpValue")}
+            value={dscp.value}
+            path="system.tables.dscp.value"
+            onChange={(value: number) =>
+              onChange("system.tables.dscp.value", value)
+            }
+            min={0}
+            max={DSCP_MAX_VALUE}
+            step={1}
+            disabled={skipTables}
+            helperText={t("settings.Feature.dscpValueHelp")}
+            aiTopic="system.tables.dscp.value"
+          />
+          {stampingSets.length > 0 && (
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                {t("settings.Feature.dscpSetsList")}
+              </Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                {stampingSets.map((set) => (
+                  <B4Badge
+                    key={set.id}
+                    label={`${set.name || set.id}: ${set.dscp?.value ?? 0}`}
+                    variant="outlined"
+                    color="secondary"
+                  />
+                ))}
+              </Box>
+            </Box>
+          )}
+        </>
       )}
       {(dscp.enabled || stampingSets.length > 0) && (
         <Box>
@@ -313,6 +284,7 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
             selected={dscpInterfaces}
             disabled={skipTables}
             onToggle={handleDscpInterfaceToggle}
+            path="system.tables.dscp.interfaces"
           />
         </Box>
       )}

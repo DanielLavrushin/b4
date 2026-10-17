@@ -6,12 +6,17 @@ import { TcpGeneral } from "./TcpGeneral";
 import { TcpSplitting } from "./TcpSplitting";
 import { TcpFaking } from "./TcpFaking";
 import { useTranslation } from "react-i18next";
-
+import { useChangedFields } from "@context/ChangedFieldsContext";
 const TCP_SUB_INDEX: Record<string, number> = {
   general: 0,
   splitting: 1,
   faking: 2,
 };
+export const TCP_SUB_TABS: { labelKey: string; prefixes: string[] }[] = [
+  { labelKey: "sets.tcp.tabs.general", prefixes: ["tcp.conn_bytes_limit", "tcp.dport_filter", "tcp.drop_sack", "tcp.http_methodeol", "tcp.duplicate", "tcp.ip_block_detect", "tcp.rst_protection", "tcp.seg2delay", "tcp.seg2delay_max", "mss_clamp"] },
+  { labelKey: "sets.tcp.tabs.splitting", prefixes: ["fragmentation"] },
+  { labelKey: "sets.tcp.tabs.faking", prefixes: ["faking", "tcp.syn_fake", "tcp.syn_fake_len", "tcp.syn_ttl", "tcp.desync", "tcp.win", "tcp.incoming"] },
+];
 
 interface TcpTabContainerProps {
   initialSub?: string;
@@ -44,6 +49,14 @@ export const TcpTabContainer = ({
     const index = TCP_SUB_INDEX[initialSub ?? ""];
     if (index !== undefined) setActiveTab(index);
   }, [initialSub]);
+  const { changedPaths } = useChangedFields();
+  const hasSubChanges = (prefixes: string[]): boolean =>
+    prefixes.some((prefix) => {
+      for (const path of changedPaths) {
+        if (path === prefix || path.startsWith(`${prefix}.`)) return true;
+      }
+      return false;
+    });
 
   return (
     <B4Section
@@ -57,13 +70,14 @@ export const TcpTabContainer = ({
           setActiveTab(v);
         }}
       >
-        <B4Tab icon={<CoreIcon />} label={t("sets.tcp.tabs.general")} inline />
+        <B4Tab icon={<CoreIcon />} label={t("sets.tcp.tabs.general")} inline hasChanges={hasSubChanges(TCP_SUB_TABS[0].prefixes)} />
         <B4Tab
           icon={<FragIcon />}
           label={t("sets.tcp.tabs.splitting")}
           inline
+          hasChanges={hasSubChanges(TCP_SUB_TABS[1].prefixes)}
         />
-        <B4Tab icon={<FakingIcon />} label={t("sets.tcp.tabs.faking")} inline />
+        <B4Tab icon={<FakingIcon />} label={t("sets.tcp.tabs.faking")} inline hasChanges={hasSubChanges(TCP_SUB_TABS[2].prefixes)} />
       </B4Tabs>
 
       <B4TabPanel value={activeTab} index={TCP_TABS.GENERAL} idPrefix="tcp-tab">

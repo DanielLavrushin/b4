@@ -48,6 +48,7 @@ export const DisorderSettings = ({
         <B4Switch
           label={t("sets.tcp.splitting.disorder.sniSplit")}
           checked={middleSni}
+          path="fragmentation.middle_sni"
           onChange={(checked: boolean) =>
             onChange("fragmentation.middle_sni", checked)
           }
@@ -61,6 +62,7 @@ export const DisorderSettings = ({
           label={t("sets.tcp.splitting.disorder.shuffleMode")}
           value={disorder.shuffle_mode}
           options={shuffleModeOptions}
+          path="fragmentation.disorder.shuffle_mode"
           onChange={(e) =>
             onChange("fragmentation.disorder.shuffle_mode", e.target.value)
           }
@@ -145,6 +147,7 @@ export const DisorderSettings = ({
         <B4Slider
           label={t("sets.tcp.splitting.disorder.minJitter")}
           value={disorder.min_jitter_us}
+          path="fragmentation.disorder.min_jitter_us"
           onChange={(value: number) =>
             onChange("fragmentation.disorder.min_jitter_us", value)
           }
@@ -164,6 +167,7 @@ export const DisorderSettings = ({
         <B4Slider
           label={t("sets.tcp.splitting.disorder.maxJitter")}
           value={disorder.max_jitter_us}
+          path="fragmentation.disorder.max_jitter_us"
           onChange={(value: number) =>
             onChange("fragmentation.disorder.max_jitter_us", value)
           }
@@ -195,6 +199,7 @@ export const DisorderSettings = ({
         <B4Switch
           label={t("sets.tcp.splitting.disorder.fakePerSeg")}
           checked={disorder.fake_per_segment}
+          path="fragmentation.disorder.fake_per_segment"
           onChange={(checked: boolean) =>
             onChange("fragmentation.disorder.fake_per_segment", checked)
           }
@@ -219,6 +224,7 @@ export const DisorderSettings = ({
                 disorder.fake_per_seg_count ||
                 1,
             ]}
+            path="fragmentation.disorder.fake_per_seg_count"
             onChange={(value: [number, number]) => {
               onChange("fragmentation.disorder.fake_per_seg_count", value[0]);
               onChange(

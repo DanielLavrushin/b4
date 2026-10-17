@@ -49,6 +49,7 @@ export const WebServerSettings = ({
         <B4TextField
           label={t("settings.WebServer.tlsCert")}
           value={config.system.web_server.tls_cert || ""}
+          path="system.web_server.tls_cert"
           onChange={(e) =>
             onChange("system.web_server.tls_cert", e.target.value)
           }
@@ -58,6 +59,7 @@ export const WebServerSettings = ({
         <B4TextField
           label={t("settings.WebServer.tlsKey")}
           value={config.system.web_server.tls_key || ""}
+          path="system.web_server.tls_key"
           onChange={(e) =>
             onChange("system.web_server.tls_key", e.target.value)
           }
@@ -69,6 +71,7 @@ export const WebServerSettings = ({
         <B4TextField
           label={t("settings.WebServer.username")}
           value={config.system.web_server.username || ""}
+          path="system.web_server.username"
           onChange={(e) =>
             onChange("system.web_server.username", e.target.value)
           }
@@ -80,6 +83,7 @@ export const WebServerSettings = ({
           label={t("settings.WebServer.password")}
           type="password"
           value={config.system.web_server.password || ""}
+          path="system.web_server.password"
           onChange={(e) =>
             onChange("system.web_server.password", e.target.value)
           }

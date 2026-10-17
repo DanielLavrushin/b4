@@ -63,6 +63,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
           <B4Slider
             label={t("settings.Checker.discoveryTimeout")}
             value={config.system.checker.discovery_timeout || 5}
+            path="system.checker.discovery_timeout"
             onChange={(value) =>
               onChange("system.checker.discovery_timeout", value)
             }
@@ -77,6 +78,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
           <B4Slider
             label={t("settings.Checker.configPropagation")}
             value={config.system.checker.config_propagate_ms || 1500}
+            path="system.checker.config_propagate_ms"
             onChange={(value) =>
               onChange("system.checker.config_propagate_ms", value)
             }
@@ -93,6 +95,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
           <B4TextField
             label={t("settings.Checker.trustedDns")}
             value={dnsServer}
+            path="system.checker.dns_server"
             onChange={(e) =>
               onChange("system.checker.dns_server", e.target.value.trim())
             }
@@ -119,6 +122,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
           <B4Switch
             label={t("settings.Watchdog.enabled")}
             checked={config.system.checker.watchdog?.enabled ?? false}
+            path="system.checker.watchdog.enabled"
             onChange={(checked) =>
               onChange("system.checker.watchdog.enabled", checked)
             }
@@ -138,6 +142,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
           <B4Slider
             label={t("settings.Watchdog.interval")}
             value={config.system.checker.watchdog?.interval_sec ?? 300}
+            path="system.checker.watchdog.interval_sec"
             onChange={(value) =>
               onChange("system.checker.watchdog.interval_sec", value)
             }
@@ -153,6 +158,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
           <B4Slider
             label={t("settings.Watchdog.failureInterval")}
             value={config.system.checker.watchdog?.failure_interval ?? 60}
+            path="system.checker.watchdog.failure_interval"
             onChange={(value) =>
               onChange("system.checker.watchdog.failure_interval", value)
             }
@@ -168,6 +174,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
           <B4Slider
             label={t("settings.Watchdog.cooldown")}
             value={config.system.checker.watchdog?.cooldown_sec ?? 900}
+            path="system.checker.watchdog.cooldown_sec"
             onChange={(value) =>
               onChange("system.checker.watchdog.cooldown_sec", value)
             }
@@ -183,6 +190,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
           <B4Slider
             label={t("settings.Watchdog.timeout")}
             value={config.system.checker.watchdog?.timeout_sec ?? 10}
+            path="system.checker.watchdog.timeout_sec"
             onChange={(value) =>
               onChange("system.checker.watchdog.timeout_sec", value)
             }
@@ -198,6 +206,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
           <B4Slider
             label={t("settings.Watchdog.maxRetries")}
             value={config.system.checker.watchdog?.max_retries ?? 3}
+            path="system.checker.watchdog.max_retries"
             onChange={(value) =>
               onChange("system.checker.watchdog.max_retries", value)
             }

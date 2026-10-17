@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useDeferredValue } from "react";
 import { Button, Stack, Typography } from "@mui/material";
 import { Link } from "react-router";
 import {
@@ -106,14 +106,24 @@ export const ImportExportSettings = ({
   const [capturesReady, setCapturesReady] = useState(false);
   const { showSuccess, showError } = useSnackbar();
   const { captures, loadCaptures } = useCaptures();
-  const hasSourceDevices = useMemo(
-    () => (config.targets.source_devices ?? []).length > 0,
-    [config.targets.source_devices],
-  );
-
+  const hasSourceDevices = (config.targets.source_devices ?? []).length > 0;
+  const deferredJson = useDeferredValue(jsonValue);
+  const jsonParse = useMemo(() => {
+    if (!deferredJson.trim()) return { ok: false as const, error: "" };
+    try {
+      return { ok: true as const, value: JSON.parse(deferredJson) as unknown };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }, [deferredJson]);
+  const { id: exportId, revision: exportRevision } = config;
   useEffect(() => {
     setJsonValue(exportSetJson(config));
-  }, [config]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exportId, exportRevision]);
 
   useEffect(() => {
     void loadCaptures().then(() => setCapturesReady(true));
@@ -235,6 +245,22 @@ export const ImportExportSettings = ({
     }
   };
 
+  const clearImportOutcome = () => {
+    setImportSuccess(false);
+    setEnvelopeImported(false);
+    setImportWarnings([]);
+    setImportedPayloadRefs([]);
+  };
+
+  const handleFormat = () => {
+    try {
+      setJsonValue(JSON.stringify(JSON.parse(jsonValue), null, 2));
+      clearImportOutcome();
+    } catch {
+      showError(t("sets.importExport.invalidJson"));
+    }
+  };
+
   const importJson = (text: string) => {
     try {
       const raw = JSON.parse(text) as Record<string, unknown>;
@@ -288,8 +314,14 @@ export const ImportExportSettings = ({
 
   const handlePaste = (e: React.ClipboardEvent) => {
     const pastedText = e.clipboardData.getData("text");
-    if (importJson(pastedText)) {
+    if (!pastedText.trim()) return;
+    try {
+      setJsonValue(JSON.stringify(JSON.parse(pastedText) as unknown, null, 2));
+      clearImportOutcome();
       e.preventDefault();
+    } catch {
+      setJsonValue(pastedText);
+      clearImportOutcome();
     }
   };
 
@@ -364,15 +396,17 @@ export const ImportExportSettings = ({
           onFocus={(e) => (e.target as HTMLTextAreaElement).select()}
           onChange={(e) => {
             setJsonValue(e.target.value);
-            setImportSuccess(false);
-            setEnvelopeImported(false);
-            setImportWarnings([]);
-            setImportedPayloadRefs([]);
+            clearImportOutcome();
           }}
           onPaste={handlePaste}
           multiline
           rows={10}
-          helperText={t("sets.importExport.jsonHelper")}
+          error={!jsonParse.ok && Boolean(jsonValue.trim() && jsonParse.error)}
+          helperText={
+            !jsonParse.ok && jsonValue.trim() && jsonParse.error
+              ? `${t("sets.importExport.invalidJson")}: ${jsonParse.error}`
+              : t("sets.importExport.jsonHelper")
+          }
         />
         <Stack direction="row" spacing={2} alignItems="center">
           <Button
@@ -382,10 +416,14 @@ export const ImportExportSettings = ({
           >
             {t("sets.importExport.copyJson")}
           </Button>
+          <Button variant="outlined" onClick={handleFormat} disabled={!jsonParse.ok}>
+            {t("sets.importExport.formatJson")}
+          </Button>
           <Button
             variant="outlined"
             startIcon={<DownloadIcon />}
             onClick={handleImport}
+            disabled={!jsonParse.ok}
           >
             {t("sets.importExport.import")}
           </Button>

@@ -33,6 +33,7 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
         <B4Switch
           label={t("sets.tcp.splitting.tcpIp.smartSniSplit")}
           checked={config.fragmentation.middle_sni}
+          path="fragmentation.middle_sni"
           onChange={(checked: boolean) =>
             onChange("fragmentation.middle_sni", checked)
           }
@@ -159,6 +160,7 @@ export const TcpIpSettings = ({ config, onChange }: TcpIpSettingsProps) => {
                 config.fragmentation.sni_position,
                 config.fragmentation.sni_position_max || config.fragmentation.sni_position,
               ]}
+              path="fragmentation.sni_position"
               onChange={(value: [number, number]) => {
                 onChange("fragmentation.sni_position", value[0]);
                 onChange("fragmentation.sni_position_max", value[1]);
