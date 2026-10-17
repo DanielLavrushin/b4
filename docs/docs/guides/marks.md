@@ -258,14 +258,19 @@ While an enabled set uses an incoming mode, the rule is left out. The server's p
 every connection b4 sends packets into then reach the queue rules, whichever set the
 connection belongs to.
 
-Firmware that writes the whole connection mark removes the bit. ASUS firmware does so while
-QoS, AiProtection or app analysis is on. The server's packets of such a connection then reach
-the queue rules as on any other connection.
+Firmware that writes the whole connection mark can remove the bit. ASUS firmware rewrites the
+connection mark of device connections, for example while AiProtection or QoS is on, and the
+bit is gone when that rewrite comes after b4 set it. When the value the firmware writes has
+every bit of the queue mark, as its values on device connections with AiProtection on often
+do, the return for b4's own connections takes the connection for one of them, and none of
+its reply packets reach b4, the SYN-ACK and resets included. Otherwise the server's packets
+reach the queue rules as on any other connection.
 
 A queue mark that has bit `0x2000000` itself makes the two kinds of connection look the
 same. A connection b4 sends packets into then counts as one of b4's own, and its replies skip
-b4, the SYN-ACK and resets included. b4 accepts such a mark in NFQUEUE mode and logs a
-warning.
+b4, the SYN-ACK and resets included. b4 refuses to save such a mark when the save would put
+it on NFQUEUE mode for the first time; a configuration that already runs NFQUEUE mode with
+one keeps working, and b4 logs a warning.
 
 ## Sets routed through an interface
 
