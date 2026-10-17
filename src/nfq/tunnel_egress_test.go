@@ -30,7 +30,9 @@ func fakeEgressIfaces(t *testing.T, routes string) map[string]uint32 {
 		"wgdef0": {"uevent": "DEVTYPE=wireguard\nINTERFACE=wgdef0\n", "flags": up},
 		"wgbak0": {"uevent": "DEVTYPE=wireguard\nINTERFACE=wgbak0\n", "flags": up},
 		"awgt0":  {"uevent": "DEVTYPE=amneziawg\nINTERFACE=awgt0\n", "flags": up},
+		"ppp9":   {"uevent": "INTERFACE=ppp9\n", "flags": up},
 		"eth7":   {"uevent": "INTERFACE=eth7\n", "flags": up},
+		"eth8":   {"uevent": "INTERFACE=eth8\n", "flags": up},
 	}
 	root := t.TempDir() + string(os.PathSeparator)
 	for name, files := range ifaces {
@@ -55,7 +57,7 @@ func fakeEgressIfaces(t *testing.T, routes string) map[string]uint32 {
 
 	idx := make(map[string]uint32, len(ifaces))
 	next := uint32(64000)
-	for _, name := range []string{"wgt0", "tunt0", "wgdn0", "wgdef0", "wgbak0", "awgt0", "eth7"} {
+	for _, name := range []string{"wgt0", "tunt0", "wgdn0", "wgdef0", "wgbak0", "awgt0", "ppp9", "eth7", "eth8"} {
 		ifaceCache.Store(next, name)
 		idx[name] = next
 		next++

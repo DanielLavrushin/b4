@@ -112,7 +112,7 @@ func TestDNSQueriesAreQueuedFromTheRawTableBeforeConntrack(t *testing.T) {
 			t.Fatalf("%s: the raw table chain %s is missing", ipt, iptRawChainName)
 		}
 		chain := manifestSpecs(m, ipt, "raw", iptRawChainName)
-		if len(chain) != 2 || !strings.Contains(chain[0], "--mark 0x8000/0x8000 -j RETURN") || !hasSpecWith(chain[1:], "-p udp --dport 53", "-j NFQUEUE", "--queue-bypass") {
+		if len(chain) != 2 || !strings.Contains(chain[0], "--mark 0x8000/0x8cfd8000 -j RETURN") || !hasSpecWith(chain[1:], "-p udp --dport 53", "-j NFQUEUE", "--queue-bypass") {
 			t.Errorf("%s: %s must let b4's own packets through and then queue DNS queries, got %q", ipt, iptRawChainName, chain)
 		}
 		jump := strings.Join(iptRawDNSJump(), " ")
@@ -497,7 +497,7 @@ func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fake
 	}
 	pre += strings.Join(monitorTCPQueueLines, "\n") + "\n"
 	f := &fakeListing{chains: map[string]string{
-		"mangle B4":            "-N B4\n-A B4 -m mark --mark 0x8000/0x8000 -j RETURN\n",
+		"mangle B4":            "-N B4\n-A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN\n",
 		"mangle POSTROUTING":   "-P POSTROUTING ACCEPT\n-A POSTROUTING -j B4\n",
 		"mangle PREROUTING":    "-P PREROUTING ACCEPT\n-A PREROUTING -j B4_PREROUTING\n",
 		"mangle B4_PREROUTING": pre,
@@ -508,7 +508,7 @@ func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fake
 		jump := strings.Join(iptRawDNSJump(), " ") + "\n"
 		f.chains["raw PREROUTING"] = "-P PREROUTING ACCEPT\n-A PREROUTING " + jump
 		f.chains["raw OUTPUT"] = "-P OUTPUT ACCEPT\n-A OUTPUT " + jump
-		f.chains["raw "+iptRawChainName] = "-N B4_RAW\n-A B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN\n-A B4_RAW -p udp -m udp --dport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
+		f.chains["raw "+iptRawChainName] = "-N B4_RAW\n-A B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN\n-A B4_RAW -p udp -m udp --dport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
 	case dnsCopied:
 		prefix := "--nflog-prefix b4dns"
 		if iptables1421 {
@@ -517,7 +517,7 @@ func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fake
 		f.chains["mangle INPUT"] = "-P INPUT ACCEPT\n-A INPUT " + dnsCopyTestJumps["INPUT"] + "\n"
 		f.chains["mangle FORWARD"] = "-P FORWARD ACCEPT\n-A FORWARD " + dnsCopyTestJumps["FORWARD"] + "\n"
 		f.chains["mangle "+iptDNSCopyChainName] = "-N B4_DNSCOPY\n" +
-			"-A B4_DNSCOPY -m mark --mark 0x8000/0x8000 -j RETURN\n" +
+			"-A B4_DNSCOPY -m mark --mark 0x8000/0x8cfd8000 -j RETURN\n" +
 			"-A B4_DNSCOPY -p udp -m udp --dport 53 -j NFLOG " + prefix + " --nflog-group 537 --nflog-threshold 1\n"
 	}
 	return f
@@ -590,22 +590,22 @@ func TestMonitorChecksWhereDNSQueriesWereQueued(t *testing.T) {
 			delete(f.chains, "mangle "+iptDNSCopyChainName)
 		}},
 		{name: "copy mark RETURN wiped", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
-			removeLine(f, "mangle "+iptDNSCopyChainName, "-A B4_DNSCOPY -m mark --mark 0x8000/0x8000 -j RETURN")
+			removeLine(f, "mangle "+iptDNSCopyChainName, "-A B4_DNSCOPY -m mark --mark 0x8000/0x8cfd8000 -j RETURN")
 		}},
 		{name: "copy mark RETURN for another mark", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
-			f.chains["mangle "+iptDNSCopyChainName] = strings.Replace(f.chains["mangle "+iptDNSCopyChainName], "0x8000/0x8000", "0x400000/0x400000", 1)
+			f.chains["mangle "+iptDNSCopyChainName] = strings.Replace(f.chains["mangle "+iptDNSCopyChainName], "0x8000/0x8cfd8000", "0x400000/0x8cfd8000", 1)
 		}},
 		{name: "raw mark RETURN wiped", placement: dnsHeldRaw, mutate: func(f *fakeListing) {
-			removeLine(f, "raw "+iptRawChainName, "-A B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN")
+			removeLine(f, "raw "+iptRawChainName, "-A B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN")
 		}},
 		{name: "raw mark RETURN for another mark", placement: dnsHeldRaw, mutate: func(f *fakeListing) {
-			f.chains["raw "+iptRawChainName] = strings.Replace(f.chains["raw "+iptRawChainName], "0x8000/0x8000", "0x400000/0x400000", 1)
+			f.chains["raw "+iptRawChainName] = strings.Replace(f.chains["raw "+iptRawChainName], "0x8000/0x8cfd8000", "0x400000/0x8cfd8000", 1)
 		}},
 		{name: "capture chain mark RETURN wiped", placement: dnsHeldRaw, mutate: func(f *fakeListing) {
-			removeLine(f, "mangle B4", "-A B4 -m mark --mark 0x8000/0x8000 -j RETURN")
+			removeLine(f, "mangle B4", "-A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN")
 		}},
 		{name: "capture chain mark RETURN for another mark", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
-			f.chains["mangle B4"] = strings.Replace(f.chains["mangle B4"], "0x8000/0x8000", "0x400000/0x400000", 1)
+			f.chains["mangle B4"] = strings.Replace(f.chains["mangle B4"], "0x8000/0x8cfd8000", "0x400000/0x8cfd8000", 1)
 		}},
 		{name: "copy rule logs to another group", placement: dnsCopied, group: 537, mutate: editCopyRule(func(s string) string {
 			return strings.Replace(s, "--nflog-group 537", "--nflog-group 538", 1)
@@ -984,7 +984,7 @@ func TestNftQueuesDNSQueriesBeforeConntrack(t *testing.T) {
 	cfg.Queue.StartNum = 537
 	cfg.Queue.Threads = 1
 	n := NewNFTablesManager(&cfg)
-	if err := n.addDNSQueryQueueChains("0x8000"); err != nil {
+	if err := n.addDNSQueryQueueChains(nftOwnPacketMark(cfg.Queue.Mark)); err != nil {
 		t.Fatalf("addDNSQueryQueueChains: %v", err)
 	}
 	argv := readLog(t, argvLog)
@@ -993,8 +993,8 @@ func TestNftQueuesDNSQueriesBeforeConntrack(t *testing.T) {
 		"add chain inet b4_mangle raw_prerouting { type filter hook prerouting priority -300 ; policy accept ; }",
 		"add chain inet b4_mangle raw_output { type filter hook output priority -300 ; policy accept ; }",
 		"add rule inet b4_mangle raw_output oifname \"lo\" return",
-		"add rule inet b4_mangle raw_prerouting meta mark & 0x8000 == 0x8000 return",
-		"add rule inet b4_mangle raw_output meta mark & 0x8000 == 0x8000 return",
+		"add rule inet b4_mangle raw_prerouting meta mark & 0x8cfd8000 == 0x8000 return",
+		"add rule inet b4_mangle raw_output meta mark & 0x8cfd8000 == 0x8000 return",
 		"add rule inet b4_mangle raw_prerouting udp dport 53 counter " + queue,
 		"add rule inet b4_mangle raw_output udp dport 53 counter " + queue,
 	} {
@@ -1023,7 +1023,7 @@ func TestNftFallsBackToQueueingDNSQueriesAfterConntrack(t *testing.T) {
 	cfg.Queue.StartNum = 537
 	cfg.Queue.Threads = 1
 	n := NewNFTablesManager(&cfg)
-	fromRaw, err := n.addDNSQueryRules("0x8000")
+	fromRaw, err := n.addDNSQueryRules(nftOwnPacketMark(cfg.Queue.Mark))
 	if err != nil {
 		t.Fatalf("a chain the kernel refuses must not fail the whole apply: %v", err)
 	}

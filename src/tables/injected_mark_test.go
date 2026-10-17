@@ -113,7 +113,7 @@ func TestIPTablesTellsTheConnectionsB4SendsIntoFromItsOwn(t *testing.T) {
 	}
 
 	b4 := mangleRules(h, iptChainName)
-	if b4[0] != "-m mark --mark 0x8000/0x8000 -j RETURN" {
+	if b4[0] != "-m mark --mark 0x8000/0x8cfd8000 -j RETURN" {
 		t.Errorf("B4 must start with the return for b4's own packets, got %q", b4)
 	}
 	requireNoQueueRuleOnTheInjectedBit(t, "B4", b4)

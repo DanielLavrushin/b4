@@ -69,7 +69,7 @@ iptables-legacy -w -t mangle -D OUTPUT -p tcp --dport 443 -m set --match-set b4_
 ip6tables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 ip6tables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 ip6tables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
-ip6tables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
@@ -87,7 +87,7 @@ ip6tables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbyte
 ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
-ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -96,7 +96,7 @@ ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 
 iptables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 iptables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
-iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
@@ -114,7 +114,7 @@ iptables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes
 iptables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 iptables-legacy -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
-iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -206,8 +206,8 @@ iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m multiport --sports 443 -
 iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -C B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -I B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
-iptables-legacy -w -t mangle -C B4 -m mark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t mangle -I B4 -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -C B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+iptables-legacy -w -t mangle -I B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t mangle -C B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables-legacy -w -t mangle -A B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables-legacy -w -t mangle -C B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
@@ -236,8 +236,8 @@ iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m connmark --mark 0x200000
 iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables-legacy -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables-legacy -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t raw -I B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+iptables-legacy -w -t raw -I B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t raw -C B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t raw -A B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t raw -C PREROUTING -p udp --dport 53 -j B4_RAW
@@ -388,7 +388,7 @@ iptables-legacy -w -t mangle -D OUTPUT -p tcp --dport 443 -m set --match-set b4_
 ip6tables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 ip6tables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 ip6tables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
-ip6tables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
@@ -406,7 +406,7 @@ ip6tables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbyte
 ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
-ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -416,8 +416,8 @@ iptables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 iptables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
-iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
@@ -444,8 +444,8 @@ iptables-legacy -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables-legacy -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
-iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -543,8 +543,8 @@ iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m multiport --sports 443 -
 iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -C B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -I B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
-iptables-legacy -w -t mangle -C B4 -m mark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t mangle -I B4 -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -C B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+iptables-legacy -w -t mangle -I B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t mangle -C B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables-legacy -w -t mangle -A B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables-legacy -w -t mangle -C B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
@@ -574,8 +574,8 @@ iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m connmark --mark 0x200000
 iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables-legacy -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables-legacy -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t raw -I B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+iptables-legacy -w -t raw -I B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t raw -C B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t raw -A B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t raw -C PREROUTING -p udp --dport 53 -j B4_RAW
@@ -696,7 +696,7 @@ iptables-legacy -w -t mangle -D OUTPUT -p tcp --dport 443 -m set --match-set b4_
 ip6tables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 ip6tables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 ip6tables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
-ip6tables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
@@ -714,7 +714,7 @@ ip6tables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbyte
 ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
-ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -724,8 +724,8 @@ iptables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 iptables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
-iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
@@ -752,8 +752,8 @@ iptables-legacy -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables-legacy -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
-iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -851,8 +851,8 @@ iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m multiport --sports 443 -
 iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -C B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -I B4_PREROUTING -p udp --sport 53 ! --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
-iptables-legacy -w -t mangle -C B4 -m mark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t mangle -I B4 -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -C B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+iptables-legacy -w -t mangle -I B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t mangle -C B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables-legacy -w -t mangle -A B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables-legacy -w -t mangle -C B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
@@ -882,8 +882,8 @@ iptables-legacy -w -t mangle -C B4_PREROUTING -p tcp -m connmark --mark 0x200000
 iptables-legacy -w -t mangle -I B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables-legacy -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
 iptables-legacy -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t raw -I B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+iptables-legacy -w -t raw -I B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t raw -C B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t raw -A B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t raw -C PREROUTING -p udp --dport 53 -j B4_RAW
@@ -1016,7 +1016,7 @@ iptables-legacy -w -t mangle -D OUTPUT -p tcp --dport 443 -m set --match-set b4_
 ip6tables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 ip6tables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 ip6tables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
-ip6tables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
@@ -1034,7 +1034,7 @@ ip6tables-legacy -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbyte
 ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
-ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8000 -j RETURN
+ip6tables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -1044,8 +1044,8 @@ iptables-legacy -w -t raw -D OUTPUT -p udp --dport 53 -j B4_RAW
 iptables-legacy -w -t raw -D PREROUTING -p udp --dport 53 -j B4_RAW
 iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
-iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+iptables-legacy -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables-legacy -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables-legacy -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
@@ -1072,8 +1072,8 @@ iptables-legacy -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables-legacy -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables-legacy -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
-iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8000 -j RETURN
-iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+iptables-legacy -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -D B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass

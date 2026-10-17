@@ -364,7 +364,8 @@ func (n *NFTablesManager) apply() error {
 		}
 	}
 
-	if err := n.addRule(nftChainName, "meta", "mark", "&", markAccept, "==", markAccept, "return"); err != nil {
+	ownMask, ownValue := nftOwnPacketMark(cfg.Queue.Mark)
+	if err := n.addRule(nftChainName, "meta", "mark", "&", ownMask, "==", ownValue, "return"); err != nil {
 		return err
 	}
 
@@ -409,7 +410,7 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 
-	queriesFromRaw, err := n.addDNSQueryRules(markAccept)
+	queriesFromRaw, err := n.addDNSQueryRules(ownMask, ownValue)
 	if err != nil {
 		return err
 	}

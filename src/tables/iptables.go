@@ -582,6 +582,27 @@ func queueJumpsFromForward(cfg *config.Config) bool {
 	return cfg.Queue.Devices.Enabled && len(cfg.Queue.Devices.SelectedMACs()) > 0
 }
 
+func ownPacketMark(mark uint) (value, mask uint32) {
+	if mark == 0 {
+		mark = 0x8000
+	}
+	value = uint32(mark)
+	return value, (config.SelfDialSkipMatchMask &^ engine.InjectedMarkBit) | value
+}
+
+func iptOwnPacketMark(mark uint) string {
+	value, mask := ownPacketMark(mark)
+	if mask == ^uint32(0) {
+		return fmt.Sprintf("0x%x", value)
+	}
+	return fmt.Sprintf("0x%x/0x%x", value, mask)
+}
+
+func nftOwnPacketMark(mark uint) (mask, value string) {
+	v, m := ownPacketMark(mark)
+	return fmt.Sprintf("0x%x", m), fmt.Sprintf("0x%x", v)
+}
+
 func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) Manifest {
 	cfg := manager.cfg
 	queueNum := cfg.Queue.StartNum
@@ -589,6 +610,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 	chainName := iptChainName
 	preChainName := "B4_PREROUTING"
 	markAccept := iptMarkAccept(cfg.Queue.Mark)
+	ownPacket := iptOwnPacketMark(cfg.Queue.Mark)
 
 	var ipsets []IPSet
 	var chains []Chain
@@ -696,7 +718,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 		rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: dnsResponseSpec})
 
 		rules = append(rules,
-			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "I", Spec: iptMarkReturn(markAccept)},
+			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "I", Spec: iptMarkReturn(ownPacket)},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
 				Spec: []string{"-m", "mark", "--mark", telegramBridgeMarkMatch(), "-j", "RETURN"}},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
@@ -889,7 +911,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 		switch {
 		case placement == dnsCopied:
 			chains = append(chains, Chain{manager: manager, IPT: ipt, Table: "mangle", Name: iptDNSCopyChainName})
-			rules = append(rules, iptDNSCopyRules(manager, ipt, markAccept, uint16(dnsCopyGroup.Load()))...)
+			rules = append(rules, iptDNSCopyRules(manager, ipt, ownPacket, uint16(dnsCopyGroup.Load()))...)
 		case teardown && DNSQueryCopyKernel():
 			chains = append(chains, Chain{manager: manager, IPT: ipt, Table: "mangle", Name: iptDNSCopyChainName})
 			rules = append(rules, iptDNSCopyJumps(manager, ipt)...)
@@ -897,7 +919,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 
 		if placement == dnsHeldRaw || (teardown && RawTablePresent(ipt)) {
 			chains = append(chains, Chain{manager: manager, IPT: ipt, Table: "raw", Name: iptRawChainName})
-			rules = append(rules, iptRawDNSQueueRules(manager, ipt, markAccept, dnsSpec)...)
+			rules = append(rules, iptRawDNSQueueRules(manager, ipt, ownPacket, dnsSpec)...)
 		}
 	}
 

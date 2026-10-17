@@ -14,14 +14,15 @@ type markReturnChain struct {
 	placement    dnsQueryPlacement
 	table, chain string
 	tune         func(t *testing.T, cfg *config.Config)
+	own          func(mark uint) string
 }
 
 var (
 	markReturnChains = []markReturnChain{
-		{"the capture chain", unaffectedDNSKernel, dnsHeldRaw, "mangle", iptChainName, nil},
-		{"DNS queries copied with NFLOG", keeneticDNSKernel, dnsCopied, "mangle", iptDNSCopyChainName, nil},
-		{"DNS queries queued from the raw table", unaffectedDNSKernel, dnsHeldRaw, "raw", iptRawChainName, nil},
-		{"DNS over TCP for a set that only removes ECH keys", keeneticDNSKernel, dnsCopied, "nat", dnsTCPChainName, stripECHOnly},
+		{"the capture chain", unaffectedDNSKernel, dnsHeldRaw, "mangle", iptChainName, nil, iptOwnPacketMark},
+		{"DNS queries copied with NFLOG", keeneticDNSKernel, dnsCopied, "mangle", iptDNSCopyChainName, nil, iptOwnPacketMark},
+		{"DNS queries queued from the raw table", unaffectedDNSKernel, dnsHeldRaw, "raw", iptRawChainName, nil, iptOwnPacketMark},
+		{"DNS over TCP for a set that only removes ECH keys", keeneticDNSKernel, dnsCopied, "nat", dnsTCPChainName, stripECHOnly, iptMarkAccept},
 	}
 	markReturnMarks = []uint{config.NewConfig().Queue.Mark, 0x400000}
 )
@@ -74,7 +75,7 @@ func markReturnRig(t *testing.T, tc markReturnChain, mark uint) (*config.Config,
 		t.Fatalf("DNS queries placed in %s, want %s", got, tc.placement)
 	}
 	chain := func() *goldenIptChain { return h.ipt[backendIPTables][tc.table].chain(tc.chain) }
-	if rules := chain().rules; len(rules) < 2 || rules[0] != goldenIptCanon(iptMarkReturn(iptMarkAccept(mark))) {
+	if rules := chain().rules; len(rules) < 2 || rules[0] != goldenIptCanon(iptMarkReturn(tc.own(mark))) {
 		t.Fatalf("%s = %q, want it to start with the return for b4's own packets", tc.chain, rules)
 	}
 	if !(&Monitor{}).checkRules(cfg) {
@@ -118,8 +119,8 @@ func TestTheMonitorWantsTheMarkReturnForTheConfiguredQueueMark(t *testing.T) {
 				if mark == other {
 					other = 0x8000
 				}
-				want := goldenIptCanon(iptMarkReturn(iptMarkAccept(mark)))
-				chain().rules[0] = goldenIptCanon(iptMarkReturn(iptMarkAccept(other)))
+				want := goldenIptCanon(iptMarkReturn(tc.own(mark)))
+				chain().rules[0] = goldenIptCanon(iptMarkReturn(tc.own(other)))
 
 				m := &Monitor{}
 				if m.checkRules(cfg) {
