@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.87.0] - 2026-10-15
+## [1.87.0] - 2026-10-17
 
 - ADDED: **A set can remove ECH keys from DNS answers, so a browser opens sites such as those on Cloudflare where the network drops connections that use ECH** - the switch is under DNS & Routing, DNS Redirect, Encrypted ClientHello (ECH) in the set editor, a set that lists cloudflare-ech.com with it on covers every Cloudflare site, and in NFQUEUE mode it also acts on DNS answers that travel over IPv6 while IPv6 support is off. Discovery proposes such a set, which changes no packets, for a site that loads only without ECH.
 - ADDED: **The dashboard warns when a set's TCP port filter makes b4 skip connections** - this happens only where b4 tells a device's packets from a server's replies by port. It does so with Skip IPTables/NFTables Setup on or without the kernel's conntrack match. The warning under Recent changes names the ports that cause it.
