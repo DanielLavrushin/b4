@@ -3,6 +3,7 @@ package ctnl
 import (
 	"encoding/binary"
 	"errors"
+	"net"
 	"net/netip"
 	"os"
 	"testing"
@@ -26,11 +27,33 @@ func netnsRequire(t *testing.T) {
 	}
 	self, err1 := os.Readlink("/proc/self/ns/net")
 	init, err2 := os.Readlink("/proc/1/ns/net")
-	if err1 == nil && err2 == nil && self == init {
-		t.Fatal("refusing to run: this is the host network namespace, and the test deletes and flushes conntrack entries")
+	switch {
+	case err1 == nil && err2 == nil:
+		if self == init {
+			t.Fatal("refusing to run: this is the host network namespace, and the test deletes and flushes conntrack entries")
+		}
+	default:
+		if up := netnsInterfacesUp(t); len(up) > 0 {
+			t.Fatalf("refusing to run: the network namespace could not be compared with the host's (%v; %v) and has the interfaces %v up, so it may be the host's, and the test deletes and flushes conntrack entries; run it in a fresh namespace (make test-netns)", err1, err2, up)
+		}
 	}
 	resetState()
 	t.Cleanup(resetState)
+}
+
+func netnsInterfacesUp(t *testing.T) []string {
+	t.Helper()
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatalf("refusing to run: the network interfaces could not be listed to check the namespace: %v", err)
+	}
+	var up []string
+	for _, ifc := range ifaces {
+		if ifc.Flags&net.FlagLoopback == 0 && ifc.Flags&net.FlagUp != 0 {
+			up = append(up, ifc.Name)
+		}
+	}
+	return up
 }
 
 func netnsCreate(t *testing.T, orig, reply Tuple) {
