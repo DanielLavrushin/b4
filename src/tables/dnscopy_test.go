@@ -99,7 +99,7 @@ func TestKeeneticCopiesDNSQueriesWithNFLOG(t *testing.T) {
 		if !manifestHasChain(m, ipt, "mangle", iptDNSCopyChainName) {
 			t.Fatalf("%s: the mangle chain %s is missing", ipt, iptDNSCopyChainName)
 		}
-		if body, want := manifestSpecs(m, ipt, "mangle", iptDNSCopyChainName), []string{"-m mark --mark 0x8000/0x8000 -j RETURN", dnsCopyTestSpec}; !slices.Equal(body, want) {
+		if body, want := manifestSpecs(m, ipt, "mangle", iptDNSCopyChainName), []string{"-m mark --mark 0x8000/0x8efd8000 -j RETURN", dnsCopyTestSpec}; !slices.Equal(body, want) {
 			t.Errorf("%s: %s must first return b4's own packets and then copy UDP to port 53 with exactly the spec iptables 1.4.21 accepts, got %q, want %q", ipt, iptDNSCopyChainName, body, want)
 		}
 

@@ -242,7 +242,7 @@ func TestMonitorLeavesAPendingApplyToTheRefresh(t *testing.T) {
 		hasBinaryCache.Delete(backendIPTables)
 	})
 
-	present := "-A B4_PREROUTING -p udp --sport 53 -j NFQUEUE -p tcp --dport 53 -j NFQUEUE -m mark 0x8000 -j B4\n-A B4 -m mark --mark 0x8000/0x8000 -j RETURN"
+	present := "-A B4_PREROUTING -p udp --sport 53 -j NFQUEUE -p tcp --dport 53 -j NFQUEUE -m mark 0x8000 -j B4\n-A B4 -m mark --mark 0x8000/0x8efd8000 -j RETURN"
 	calls := 0
 	run = func(args ...string) (string, error) {
 		calls++

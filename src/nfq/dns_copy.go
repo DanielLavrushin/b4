@@ -21,6 +21,7 @@ import (
 const (
 	maxDNSClaimHolds    = 512
 	nfHookForward       = 2
+	nfHookLocalOut      = 3
 	dnsCopyLostLogEvery = 5 * time.Minute
 	dnsCopyFullLogEvery = time.Minute
 )
@@ -363,6 +364,11 @@ func (l *dnsCopyListener) ignoresMark(m uint32, cfg *config.Config) bool {
 		config.IsTelegramBridgeMark(m) || config.IsSelfDialSkipMark(m)
 }
 
+func (l *dnsCopyListener) localQueueMarked(p nflog.Packet) bool {
+	q := l.mark.Load()
+	return p.Hook == nfHookLocalOut && q != 0 && p.Mark&q == q
+}
+
 func dnsCopyIface(p nflog.Packet) (uint32, ifaceRole) {
 	if p.Hook == nfHookForward {
 		return p.InDev, ifaceArriving
@@ -386,7 +392,7 @@ func (l *dnsCopyListener) handle(p nflog.Packet) {
 		return
 	}
 	cfg := w.getConfig()
-	if p.Prefix != config.DNSQueryCopyPrefix || l.ignoresMark(p.Mark, cfg) || len(p.Payload) == 0 || !w.ifaceAllowed(dnsCopyIface(p)) {
+	if p.Prefix != config.DNSQueryCopyPrefix || l.ignoresMark(p.Mark, cfg) || l.localQueueMarked(p) || len(p.Payload) == 0 || !w.ifaceAllowed(dnsCopyIface(p)) {
 		l.stats.ignored.Add(1)
 		return
 	}

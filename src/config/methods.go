@@ -686,13 +686,15 @@ func (set *SetConfig) RoutingHandsOffPackets() bool {
 	if RoutingUsesTProxy(set.RoutingModeOrDefault()) {
 		return true
 	}
-	if !set.RoutesToInterface() {
-		return false
-	}
-	if set.Targets.DomainOnly && len(set.Targets.IpsToMatch) == 0 {
+	if !set.RoutesAddressesToInterface() {
 		return false
 	}
 	return netif.EncapsulatedAndUp(set.Routing.EgressInterface)
+}
+
+func (set *SetConfig) RoutesAddressesToInterface() bool {
+	return set.RoutingDivertsPackets() && set.RoutesToInterface() &&
+		!(set.Targets.DomainOnly && len(set.Targets.IpsToMatch) == 0)
 }
 
 func (set *SetConfig) RoutingIncludesRouterTraffic() bool {

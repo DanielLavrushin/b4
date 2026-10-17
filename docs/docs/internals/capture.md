@@ -21,17 +21,19 @@ Only the start of each connection is queued. **TCP Connection Packets Limit** an
 | Opened by the router itself | `output` | The one the packet leaves by |
 | The reply direction, and DNS | `prerouting` | The one the packet arrives on |
 
-Packets that carry the queue mark of b4 pass without being queued. The queue mark is described under [Packet marks](../guides/marks.md#the-queue-mark).
+Packets whose mark has every bit of b4's queue mark and no other bit outside `0x71027fff` pass without being queued. On kernels 3.14 and later, b4 also releases from the queue unchanged a packet that a socket on the router sent with every bit of the queue mark. The queue mark is described under [Packet marks](../guides/marks.md#the-queue-mark).
 
 With iptables, an address family whose iptables lacks the `NFQUEUE` target or the `connbytes` match gets no capture rules. When neither IPv4 nor IPv6 can take them, the engine does not start.
 
-### Packets that leave through a tunnel {#tunnel-egress}
+### Packets that leave by another route {#tunnel-egress}
 
 A packet that leaves through a WireGuard or AmneziaWG interface or a TUN or TAP device that is up gets no strategy: a set that matches it sends no fakes, splits nothing and leaves its QUIC and the replies of its connection alone. Block sets still block it. The connection of such a packet that a set matches ends with `[tunnel->wg0]` on the **Logs** page, and `flags:tunnel` finds it on the **Traffic** page.
 
-The DPI on the uplink sees only the tunnel's own packets. A service that routes by mark, such as MagiTrickle or a KeeneticOS policy, sends the connection's own packets into the tunnel. The packets b4 injects carry the queue mark instead of that service's mark. They follow the router's main routing and can leave outside the tunnel.
+The DPI on the uplink sees only the tunnel's own packets. A service that routes by mark, such as MagiTrickle, sends the connection's own packets into the tunnel. The packets b4 injects carry the queue mark instead of that service's mark. They follow the router's main routing and can leave outside the tunnel.
 
 A tunnel that carries the IPv4 default route of the main table, the one with the lowest metric, is the router's uplink. The packets b4 injects follow it too, and packets that leave through it get strategies as usual.
+
+A packet that carries another service's mark gets no strategy in the same way when the packets b4 injects for its address would leave by another interface than the packet or, over IPv4, would find no route at all. b4 asks the kernel which interface a packet with the queue mark takes to that address. This covers a VPN over PPP, an IPsec tunnel interface and a second uplink that the service chooses by its mark. Such a connection ends with `[reroute->ppp1]` on the **Logs** page, and `flags:reroute` finds it on the **Traffic** page. When the packet carries the route mark of one of b4's own sets that routes through its interface, b4 asks with that mark, so a connection that the set routes keeps its strategy. A packet whose mark has every bit of the queue mark, as KeeneticOS gives the devices of its hotspot, gets no strategy either while an enabled set routes addresses through another interface than the packet leaves by. That set's rule sends the packets b4 injects to its addresses through its own interface, and b4 cannot tell whether the packet's address is among them. A set with **Domain-only matching** on and no IP address listed, or a set without destinations, routes nothing and does not count. b4 makes this check for every mark only with legacy iptables, as long as no other service on the router keeps nftables tables and **Skip IPTables/NFTables Setup** is off. b4 looks for those tables when it sets up its rules and again with every rule check at **Firewall Monitor Interval (seconds)**. In other setups, the output chains of other services still see the packets b4 injects and can give them their own mark. There b4 checks only a mark that has every bit of the queue mark.
 
 A set that b4 itself routes into such a tunnel keeps its own rules; see [Packet manipulation with a tunnel egress](../guides/xray.md#packet-manipulation-with-a-tunnel-egress).
 

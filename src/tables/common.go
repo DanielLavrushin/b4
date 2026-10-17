@@ -32,6 +32,8 @@ var (
 	rulesAppliedBackend string
 	addRulesFn          = addRules
 	clearRulesFn        = clearRules
+
+	OwnPacketsShieldFunc func(shielded bool)
 )
 
 func AddRules(cfg *config.Config) error {
@@ -82,6 +84,7 @@ func addRules(cfg *config.Config) error {
 
 	backend := detectFirewallBackend(cfg)
 	rulesAppliedBackend = backend
+	publishOwnPacketsShield(backend)
 	log.Tracef("Detected firewall backend: %s", backend)
 
 	if backend == backendNFTables {
@@ -416,6 +419,46 @@ func setSysctlOrProc(name, val string) {
 func getSysctlOrProc(name string) string {
 	out, _ := run("sh", "-c", "sysctl -n "+name+" 2>/dev/null || cat /proc/sys/"+strings.ReplaceAll(name, ".", "/"))
 	return strings.TrimSpace(out)
+}
+
+func publishOwnPacketsShield(backend string) {
+	if OwnPacketsShieldFunc != nil {
+		OwnPacketsShieldFunc(OwnPacketsShielded(backend))
+	}
+}
+
+func OwnPacketsShielded(backend string) bool {
+	switch backend {
+	case backendIPTablesLegacy:
+	case backendIPTables:
+		if xtIsNftVariant(backendIPTables) {
+			return false
+		}
+	default:
+		return false
+	}
+	return !foreignNftTables()
+}
+
+func foreignNftTables() bool {
+	if !hasBinary("nft") {
+		return false
+	}
+	out, err := run("nft", "list", "tables")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) != 3 || f[0] != "table" || strings.HasPrefix(f[2], "b4_") || strings.HasPrefix(f[2], "_b4") {
+			continue
+		}
+		switch f[1] {
+		case "ip", "ip6", "inet":
+			return true
+		}
+	}
+	return false
 }
 
 func detectFirewallBackend(cfg *config.Config) string {
