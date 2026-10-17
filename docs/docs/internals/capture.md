@@ -101,6 +101,8 @@ Without `nf_conntrack_netlink`, iptables and TUN with `xt_connbytes` drop only t
 
 A settings change applies to the held connections too. b4 decides each of them again under the new settings. With nftables, b4 empties the drop sets for this only where `nf_conntrack_netlink` is available. Without it, a connection in a drop set stays dropped until its 2 minutes pass or b4 rebuilds its rules.
 
+The drop set holds a connection by its addresses and ports. A new QUIC connection that a device opens from the same port to the same server address and port within those 2 minutes is dropped as well, whatever name it carries.
+
 ## Kernel requirements {#kernel-requirements}
 
 | Feature | Needs |
