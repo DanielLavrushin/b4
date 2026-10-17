@@ -485,7 +485,7 @@ func (n *NFTablesManager) addDuplicateQueueRules(tcpPortExpr string) error {
 		if err := n.addSetElements("b4_dup_v4", dupIPv4); err != nil {
 			return err
 		}
-		args := append([]string{"meta", "nfproto", "ipv4", "ip", "daddr", "@b4_dup_v4", "tcp", "dport", tcpPortExpr, "counter"}, queueAction...)
+		args := append(queueMatchInDirection([]string{"meta", "nfproto", "ipv4", "ip", "daddr", "@b4_dup_v4", "tcp", "dport", tcpPortExpr}, "original", n.ctDirectionSupported), queueAction...)
 		if err := n.addRule(nftChainName, args...); err != nil {
 			return err
 		}
@@ -497,7 +497,7 @@ func (n *NFTablesManager) addDuplicateQueueRules(tcpPortExpr string) error {
 		if err := n.addSetElements("b4_dup_v6", dupIPv6); err != nil {
 			return err
 		}
-		args := append([]string{"meta", "nfproto", "ipv6", "ip6", "daddr", "@b4_dup_v6", "tcp", "dport", tcpPortExpr, "counter"}, queueAction...)
+		args := append(queueMatchInDirection([]string{"meta", "nfproto", "ipv6", "ip6", "daddr", "@b4_dup_v6", "tcp", "dport", tcpPortExpr}, "original", n.ctDirectionSupported), queueAction...)
 		if err := n.addRule(nftChainName, args...); err != nil {
 			return err
 		}

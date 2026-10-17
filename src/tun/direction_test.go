@@ -32,34 +32,45 @@ func isForwardTCPSteer(spec string) bool {
 }
 
 func TestSteerSpecsSelectTCPByConntrackDirection(t *testing.T) {
+	dupMultiport := []string{"-p tcp -m set --match-set b4_tun_dup_v4 dst -m multiport --dports 443,8443" + ctdirOriginal + steerTail}
+	dupPerPort := []string{
+		"-p tcp -m set --match-set b4_tun_dup_v4 dst --dport 443" + ctdirOriginal + steerTail,
+		"-p tcp -m set --match-set b4_tun_dup_v4 dst --dport 8443" + ctdirOriginal + steerTail,
+	}
 	cases := []struct {
 		multiport, noConnbytes bool
-		want                   []string
+		want, dup              []string
 	}{
-		{true, false, []string{"-p tcp -m multiport --dports 443,8443" + connbytes19 + ctdirOriginal + steerTail}},
-		{true, true, []string{"-p tcp -m multiport --dports 443,8443" + ctdirOriginal + steerTail}},
+		{true, false, []string{"-p tcp -m multiport --dports 443,8443" + connbytes19 + ctdirOriginal + steerTail}, dupMultiport},
+		{true, true, []string{"-p tcp -m multiport --dports 443,8443" + ctdirOriginal + steerTail}, dupMultiport},
 		{false, false, []string{
 			"-p tcp --dport 443" + connbytes19 + ctdirOriginal + steerTail,
 			"-p tcp --dport 8443" + connbytes19 + ctdirOriginal + steerTail,
-		}},
+		}, dupPerPort},
 		{false, true, []string{
 			"-p tcp --dport 443" + ctdirOriginal + steerTail,
 			"-p tcp --dport 8443" + ctdirOriginal + steerTail,
-		}},
+		}, dupPerPort},
 	}
 	for _, c := range cases {
 		name := fmt.Sprintf("multiport=%v noConnbytes=%v", c.multiport, c.noConnbytes)
 		with := joinSpecs(directionCaptureManager(c.multiport, c.noConnbytes, true).steerSpecs())
 		without := joinSpecs(directionCaptureManager(c.multiport, c.noConnbytes, false).steerSpecs())
 
-		var forward []string
+		var forward, dup []string
 		for _, s := range with {
-			if isForwardTCPSteer(s) {
+			switch {
+			case isForwardTCPSteer(s):
 				forward = append(forward, s)
+			case isDupSpec(s):
+				dup = append(dup, s)
 			}
 		}
 		if !equalStringSet(forward, c.want) {
 			t.Errorf("%s: forward TCP steer rules\n got %q\nwant %q", name, forward, c.want)
+		}
+		if !equalStringSet(dup, c.dup) {
+			t.Errorf("%s: duplication steer rules must take only the connection's own direction, or a reply from a duplication address enters the TUN as client traffic\n got %q\nwant %q", name, dup, c.dup)
 		}
 		if len(with) != len(without) {
 			t.Fatalf("%s: the conntrack match changes the number of steer rules: %d with, %d without", name, len(with), len(without))
@@ -68,14 +79,14 @@ func TestSteerSpecsSelectTCPByConntrackDirection(t *testing.T) {
 			if strings.Contains(without[i], "conntrack") {
 				t.Errorf("%s: without the conntrack match a steer rule carries it: %q", name, without[i])
 			}
-			if isForwardTCPSteer(with[i]) {
+			if isForwardTCPSteer(with[i]) || isDupSpec(with[i]) {
 				if strings.Replace(with[i], ctdirOriginal, "", 1) != without[i] {
 					t.Errorf("%s: rule %d without the probe must be today's rule minus the direction match:\n with    %q\n without %q", name, i, with[i], without[i])
 				}
 				continue
 			}
 			if with[i] != without[i] {
-				t.Errorf("%s: the UDP and duplication steer rules must not change, rule %d: %q became %q", name, i, without[i], with[i])
+				t.Errorf("%s: the UDP steer rules must not change, rule %d: %q became %q", name, i, without[i], with[i])
 			}
 		}
 	}
@@ -287,8 +298,8 @@ func TestEveryTCPSteerRuleButTheRSTCaptureSelectsTheOriginalDirection(t *testing
 								t.Errorf("%s: the RST capture must select replies: %q", name, s)
 							}
 						case isDupSpec(s):
-							if strings.Contains(s, "conntrack") {
-								t.Errorf("%s: the duplication rules keep their destination match alone: %q", name, s)
+							if !strings.Contains(s, ctdirOriginal) {
+								t.Errorf("%s: a duplication steer rule must select the original direction, or a reply from a duplication address reads as a client's packet: %q", name, s)
 							}
 						default:
 							steers++

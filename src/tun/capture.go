@@ -613,16 +613,19 @@ func (r *routeManager) dupSteerSpecs(mark []string) [][]string {
 		}
 	}
 
+	original := r.ctdirMatch("ORIGINAL")
 	var specs [][]string
 	for _, dst := range dests {
 		if r.multiport {
 			for _, chunk := range chunkPorts(r.tcpPorts, 15) {
 				spec := append(append([]string{"-p", "tcp"}, dst...), "-m", "multiport", "--dports", strings.Join(chunk, ","))
+				spec = append(spec, original...)
 				specs = append(specs, append(spec, mark...))
 			}
 		} else {
 			for _, p := range r.tcpPorts {
 				spec := append(append([]string{"-p", "tcp"}, dst...), "--dport", p)
+				spec = append(spec, original...)
 				specs = append(specs, append(spec, mark...))
 			}
 		}

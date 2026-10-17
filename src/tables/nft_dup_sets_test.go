@@ -90,6 +90,25 @@ func TestNftDuplicateSetsAreCreatedWithAutoMerge(t *testing.T) {
 	}
 }
 
+func TestNftDuplicateRulesTakeOnlyTheConnectionsOwnDirection(t *testing.T) {
+	for _, ctDirection := range []bool{true, false} {
+		argvLog, _ := nftRecordingStub(t)
+		n := NewNFTablesManager(dupTestConfig())
+		n.ctDirectionSupported = ctDirection
+		if err := n.addDuplicateQueueRules("443"); err != nil {
+			t.Fatalf("addDuplicateQueueRules: %v", err)
+		}
+		argv := readLog(t, argvLog)
+		for _, match := range []string{"ip daddr @b4_dup_v4 tcp dport 443", "ip6 daddr @b4_dup_v6 tcp dport 443"} {
+			directed := strings.Contains(argv, match+" ct direction original counter")
+			plain := strings.Contains(argv, match+" counter")
+			if directed != ctDirection || plain == ctDirection {
+				t.Errorf("ct direction supported %v: %q with the original direction %v, without %v; a reply from a duplication address must not be queued as client traffic:\n%s", ctDirection, match, directed, plain, argv)
+			}
+		}
+	}
+}
+
 func TestNftDuplicateSetsFollowTheEnabledFamilies(t *testing.T) {
 	argvLog, _ := nftRecordingStub(t)
 

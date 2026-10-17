@@ -111,8 +111,8 @@ packet processing and through every set that carries the router's own traffic.
 | DNS over TCP redirect | Its mark has every bit of the queue mark |
 | Discovery, during a run | At the top of the chain, a packet whose mark is exactly the injected mark is accepted, and a packet whose mark or connection mark is exactly the flow mark goes to Discovery's queue; either way it skips the rest of the chain. On iptables that is the built-in mangle `PREROUTING` and `OUTPUT`, so it skips every later rule there |
 
-Where the kernel has the conntrack direction match, the TCP queue rules other than those for
-a set's packet duplication addresses also test the direction: `ct direction original` in
+Where the kernel has the conntrack direction match, the TCP queue rules, those for a set's
+packet duplication addresses included, also test the direction: `ct direction original` in
 `b4_chain` and `-m conntrack --ctdir ORIGINAL` in `B4`, `ct direction reply` in `prerouting`
 and `-m conntrack --ctdir REPLY` in `B4_PREROUTING`. See
 [Packet capture](../internals/capture.md#hooks).
@@ -201,6 +201,9 @@ b4 refuses a value that:
 - is made only of bits of `0x27fff` and `0x1000000`, the bits of set marks;
 - overlaps `0x70000000` in TUN mode;
 - has bit `0x20000000` in NFQUEUE mode while **NAT Masquerade** or **Set DSCP** is on, or while an enabled set has **Enable per-set DSCP** on;
+- has bit `0x2000000`, the bit b4 adds to the packets it sends into a connection, when the
+  value is saved as a new one; a configuration that already holds such a value still loads,
+  and b4 logs a warning;
 - has `0x24bab`, the Telegram over WebSocket mark, as its bits under `0x27fff`;
 - equals the flow or injected mark of Discovery;
 - is above `0xffffffff`, or, while either Discovery mark is left out of the configuration, is
@@ -443,7 +446,7 @@ In TUN mode (`queue.mode: "tun"`) packets reach b4 through a TUN device, `b4tun0
 
 | Item | Rule |
 | --- | --- |
-| Capture | Chain `B4_TUN`, jumped from mangle `OUTPUT` and `PREROUTING` (from `PREROUTING` through `B4_TUN_GATE` when [device filtering](../settings/core.md#device-filtering) selects devices), or only from `OUTPUT` while b4 captures only the router's own connections (see [Packet engine](../settings/core.md#packet-engine)): sets `0x40000000/0x40000000` on UDP DNS queries and answers, on the first packets of connections to the capture ports (on every packet of them where `xt_connbytes` is missing; TCP only in the direction of the connection's first packet where `xt_conntrack` is available), on every TCP packet to the capture ports of a set's packet duplication addresses, and on TCP resets from the capture ports, only in the reply direction where `xt_conntrack` is available, while a set has **RST Injection Protection** on or an escalation target |
+| Capture | Chain `B4_TUN`, jumped from mangle `OUTPUT` and `PREROUTING` (from `PREROUTING` through `B4_TUN_GATE` when [device filtering](../settings/core.md#device-filtering) selects devices), or only from `OUTPUT` while b4 captures only the router's own connections (see [Packet engine](../settings/core.md#packet-engine)): sets `0x40000000/0x40000000` on UDP DNS queries and answers, on the first packets of connections to the capture ports (on every packet of them where `xt_connbytes` is missing; TCP only in the direction of the connection's first packet where `xt_conntrack` is available), on every TCP packet to the capture ports of a set's packet duplication addresses (only in the direction of the connection's first packet where `xt_conntrack` is available), and on TCP resets from the capture ports, only in the reply direction where `xt_conntrack` is available, while a set has **RST Injection Protection** on or an escalation target |
 | Rule | `fwmark 0x40000000/0x40000000 lookup <table>` at priority 10, or one less than the lowest rule another service has at 5-9, but not below 4 |
 | Table | `default dev b4tun0`; chosen from 96 down to 61, skipping 77 and tables in use, or next to `queue.tun.route_table` |
 | Packets b4 writes back | Socket mark queue mark + `0x10000000`, not tracked by conntrack (`raw OUTPUT ... -j CT --notrack`) unless `system.tables.skip_setup` is on or the kernel has no raw table or no `CT` target. When `system.tables.skip_setup` is off and b4 cannot install this rule, the one for packets toward a device or the SNAT into `b4tun0`, it captures only the router's own connections |
@@ -630,9 +633,10 @@ Where these meet b4:
 - **zapret, zapret2.** Bits 30 and 29 are b4's TUN capture bit and its bit for packets
   toward a device, and bit 30 of the connection mark is b4's claim. Neither service skips
   the packets the other generates by their mark. On nftables in zapret's default POSTNAT
-  mode, though, zapret takes its generated packets out of conntrack, and b4 then queues them
-  only toward a set's packet duplication addresses, since its other queue rules count a
-  connection's packets. On nftables both queue the packets they select, b4 first (priority
+  mode, though, zapret takes its generated packets out of conntrack, and b4 does not queue
+  them: its queue rules count a connection's packets or test its direction. Only on a kernel
+  without the conntrack direction match does b4 still queue them toward a set's packet
+  duplication addresses. On nftables both queue the packets they select, b4 first (priority
   -150 against zapret's 99 or 101). With **Set DSCP** or a set's own DSCP value on, b4 writes
   no value into a packet with bit `0x20000000`, so in POSTNAT mode the packets zapret queues
   after NAT, and the packets it generates from them, leave without b4's DSCP value. On

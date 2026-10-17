@@ -348,14 +348,14 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return w.HandleIncoming(vc, pkt.ver, pkt.raw, pkt.ihl, pkt.src, pkt.dstStr, dport, pkt.srcStr, sport, payload)
 	}
 
-	if utils.IsPrivateIP(pkt.dst) {
-		return vc.accept()
-	}
-
 	if matched && !set.MatchesTCPDPort(dport) {
 		matched = false
 		set = nil
 		st = nil
+	}
+
+	if !matched && utils.IsPrivateIP(pkt.dst) {
+		return vc.accept()
 	}
 
 	addressMatched := st != nil

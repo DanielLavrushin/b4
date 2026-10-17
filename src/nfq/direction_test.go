@@ -521,6 +521,39 @@ func clientHelloFromTo(src, dst [4]byte, port uint16) []byte {
 	return raw
 }
 
+func TestASetThatListsAPrivateAddressStillProcessesIt(t *testing.T) {
+	lanClient := [4]byte{192, 168, 1, 20}
+	listed := [4]byte{10, 1, 2, 3}
+	unlisted := [4]byte{172, 16, 0, 9}
+	for _, c := range []struct {
+		name  string
+		ports string
+		dst   [4]byte
+		want  engine.PacketVerdict
+		why   string
+	}{
+		{"an address the set lists", "443", listed, engine.VerdictDrop, "a set that lists 10.0.0.0/8 fragments a ClientHello to 10.1.2.3"},
+		{"a private address no set lists", "443", unlisted, engine.VerdictAccept, "a private address no set lists passes untouched, although the ClientHello names a domain of the set"},
+		{"a listed address on a port the set leaves out", "8443", listed, engine.VerdictAccept, "the set does not take port 443, so the address counts as unlisted there"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := config.NewConfig()
+			set := newFragmentingYTImagesSet()
+			set.Targets.DomainOnly = false
+			set.Targets.IPs = []string{"10.0.0.0/8"}
+			set.Targets.IpsToMatch = []string{"10.0.0.0/8"}
+			set.TCP.DPortFilter = c.ports
+			cfg.Sets = []*config.SetConfig{&set}
+			w := directionWorker(t, &cfg)
+			w.direction.set(true, true, time.Now())
+
+			if v := queueAt(w, clientHelloFromTo(lanClient, c.dst, 40010), hookAt(nfHookPostRouting)); v != c.want {
+				t.Errorf("verdict %v, want %v: %s", v, c.want, c.why)
+			}
+		})
+	}
+}
+
 func TestAClientHelloToAPrivateAddressPassesUntouched(t *testing.T) {
 	wanClient := [4]byte{203, 0, 113, 5}
 	lanServer := [4]byte{192, 168, 1, 10}

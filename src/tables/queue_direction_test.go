@@ -228,6 +228,42 @@ func stripCtdir(spec string) string {
 	return strings.ReplaceAll(spec, " -m conntrack --ctdir ORIGINAL", "")
 }
 
+func TestDuplicationQueueRulesTakeOnlyTheConnectionsOwnDirection(t *testing.T) {
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true, "ipset": true})
+	stubIPSetProbe(t, nil)
+	for _, multiport := range []bool{true, false} {
+		manager := NewIPTablesManager(dupTestConfig(), false)
+		stubProbes(manager, backendIPTables, backendIP6Tables)
+		manager.ctdirSupport[backendIP6Tables] = false
+		for _, bin := range []string{backendIPTables, backendIP6Tables} {
+			manager.multiportSupport[bin] = multiport
+		}
+		m, err := manager.buildManifest()
+		if err != nil {
+			t.Fatalf("buildManifest: %v", err)
+		}
+		for ipt, c := range map[string]struct {
+			set   string
+			ctdir bool
+		}{backendIPTables: {"b4_dup_v4", true}, backendIP6Tables: {"b4_dup_v6", false}} {
+			var dup []string
+			for _, s := range manifestSpecs(m, ipt, "mangle", iptChainName) {
+				if strings.Contains(s, "--match-set "+c.set+" dst") {
+					dup = append(dup, s)
+				}
+			}
+			if len(dup) == 0 {
+				t.Fatalf("multiport %v, %s: no duplication queue rule", multiport, ipt)
+			}
+			for _, s := range dup {
+				if has := strings.Contains(s, "-m conntrack --ctdir ORIGINAL -j NFQUEUE"); has != c.ctdir {
+					t.Errorf("multiport %v, %s: duplication rule %q carries the ORIGINAL direction match: %v, want %v; without it a reply from a duplication address is queued at POSTROUTING and duplicated as client traffic", multiport, ipt, s, has, c.ctdir)
+				}
+			}
+		}
+	}
+}
+
 func TestQueueRulesWithoutTheConntrackMatchAreTodaysRules(t *testing.T) {
 	for _, multiport := range []bool{true, false} {
 		t.Run(fmt.Sprintf("multiport %v", multiport), func(t *testing.T) {

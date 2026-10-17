@@ -752,10 +752,11 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			ipsets = append(ipsets, IPSet{Name: dupSetName, Family: dupSetFamily, Entries: dupIPs})
 			if manager.hasMultiportSupport(ipt) {
 				for _, chunk := range chunkPorts(tcpPorts, 15) {
-					dupSpec := append(
+					dupSpec := slices.Concat(
 						[]string{"-p", "tcp", "-m", "set", "--match-set", dupSetName, "dst",
 							"-m", "multiport", "--dports", strings.Join(chunk, ",")},
-						manager.buildNFQSpec(queueNum, threads)...,
+						originalDir,
+						manager.buildNFQSpec(queueNum, threads),
 					)
 					rules = append(rules,
 						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: dupSpec},
@@ -763,10 +764,11 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 				}
 			} else {
 				for _, port := range tcpPorts {
-					dupSpec := append(
+					dupSpec := slices.Concat(
 						[]string{"-p", "tcp", "-m", "set", "--match-set", dupSetName, "dst",
 							"--dport", port},
-						manager.buildNFQSpec(queueNum, threads)...,
+						originalDir,
+						manager.buildNFQSpec(queueNum, threads),
 					)
 					rules = append(rules,
 						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: dupSpec},

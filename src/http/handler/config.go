@@ -18,6 +18,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns/endpoint"
+	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/mtproto"
@@ -599,6 +600,10 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 		})
 	}
 
+	if err := queueMarkRefusal(a.getCfg(), newCfg); err != nil {
+		return err
+	}
+
 	if err := exposureRefusal(a.getCfg(), newCfg); err != nil {
 		return err
 	}
@@ -689,6 +694,19 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 	}
 
 	return nil
+}
+
+func queueMarkRefusal(oldCfg, newCfg *config.Config) error {
+	mark := newCfg.MainInjectedMark()
+	if mark&engine.InjectedMarkBit == 0 || (oldCfg != nil && oldCfg.MainInjectedMark() == mark) {
+		return nil
+	}
+	return ErrValidation("The packet mark has a bit b4 reserves", FieldError{
+		Path:    "queue.mark",
+		Code:    "mark_conflict",
+		Message: fmt.Sprintf("mark value 0x%x has bit 0x%x, which b4 adds to the packets it sends into a client's connection; choose a mark without it", mark, uint(engine.InjectedMarkBit)),
+		Params:  map[string]any{"mark": fmt.Sprintf("0x%x", mark)},
+	})
 }
 
 func (a *API) PerformSoftRestart(newCfg *config.Config, oldCfg *config.Config) bool {
