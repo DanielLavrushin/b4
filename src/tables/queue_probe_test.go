@@ -6,31 +6,54 @@ import (
 )
 
 func TestQueueMatchWithLimit(t *testing.T) {
-	t.Run("ct counters supported", func(t *testing.T) {
-		args := queueMatchWithLimit([]string{"tcp", "dport", "443"}, "20", true)
-		got := strings.Join(args, " ")
-		want := "tcp dport 443 ct original packets < 20 counter"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
-
-	t.Run("ct counters unsupported", func(t *testing.T) {
-		args := queueMatchWithLimit([]string{"tcp", "dport", "443"}, "20", false)
-		got := strings.Join(args, " ")
-		want := "tcp dport 443 counter"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
+	for _, tc := range []struct {
+		name        string
+		match       string
+		dir         string
+		ctPackets   bool
+		ctDirection bool
+		want        string
+	}{
+		{"original counter", "tcp dport 443", "original", true, false, "tcp dport 443 ct original packets < 20 counter"},
+		{"original counter and direction", "tcp dport 443", "original", true, true, "tcp dport 443 ct original packets < 20 ct direction original counter"},
+		{"reply window counts the client's packets", "tcp sport 443", "reply", true, false, "tcp sport 443 ct original packets < 20 counter"},
+		{"reply window counts the client's packets and selects replies", "tcp sport 443", "reply", true, true, "tcp sport 443 ct original packets < 20 ct direction reply counter"},
+		{"ct counters unsupported", "tcp dport 443", "original", false, false, "tcp dport 443 counter"},
+		{"direction without counters", "tcp sport 443", "reply", false, true, "tcp sport 443 ct direction reply counter"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := strings.Join(queueMatchWithLimit(strings.Fields(tc.match), tc.dir, "20", tc.ctPackets, tc.ctDirection), " ")
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
 
 	t.Run("does not alias the match slice", func(t *testing.T) {
-		match := []string{"udp", "dport", "443"}
-		queueMatchWithLimit(match, "9", true)
-		if len(match) != 3 {
-			t.Errorf("match slice was mutated: %v", match)
+		backing := make([]string, 3, 16)
+		copy(backing, []string{"udp", "dport", "443"})
+		first := queueMatchWithLimit(backing, "original", "9", false, true)
+		second := queueMatchWithLimit(backing, "reply", "9", false, false)
+		if got := strings.Join(first, " "); got != "udp dport 443 ct direction original counter" {
+			t.Errorf("a later call rewrote the result of an earlier one through the shared match slice: %q", got)
+		}
+		if got := strings.Join(second, " "); got != "udp dport 443 counter" {
+			t.Errorf("got %q", got)
+		}
+		if got := strings.Join(backing[:cap(backing)][3:5], " "); got != " " {
+			t.Errorf("the match slice's spare capacity was written: %q", got)
 		}
 	})
+}
+
+func TestQueueMatchInDirection(t *testing.T) {
+	syn := []string{"tcp", "sport", "443", "tcp", "flags", "&", "(syn|ack)", "==", "(syn|ack)"}
+	if got := strings.Join(queueMatchInDirection(syn, "reply", true), " "); got != "tcp sport 443 tcp flags & (syn|ack) == (syn|ack) ct direction reply counter" {
+		t.Errorf("got %q", got)
+	}
+	if got := strings.Join(queueMatchInDirection(syn, "reply", false), " "); got != "tcp sport 443 tcp flags & (syn|ack) == (syn|ack) counter" {
+		t.Errorf("without the direction match the rule must stay as it was, got %q", got)
+	}
 }
 
 func TestNFQueueActionExpr(t *testing.T) {

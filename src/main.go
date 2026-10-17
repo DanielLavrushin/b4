@@ -341,6 +341,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	tables.DNSQueryCopyOpenFunc = pool.OpenDNSQueryCopy
 	tables.DNSQueryCopyAliveFunc = pool.DNSQueryCopyAlive
 	tables.DNSQueryCopyPlacedFunc = pool.SetDNSQueryCopyFamilies
+	tables.QueueDirectionExactFunc = pool.SetQueueDirectionExact
+	tables.UDPDropWritersFunc = pool.SetUDPDropWriters
+	nfq.UDPDropFlushFunc = tables.FlushUDPDropSets
 	wireDashboard(mc, dashboardSources{
 		config:    cfgPtr.Load,
 		packets:   pool.PacketsProcessed,

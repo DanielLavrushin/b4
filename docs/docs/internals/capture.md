@@ -10,7 +10,7 @@ The packet engine is the part of b4 that sees traffic. It reads the first packet
 
 In NFQUEUE mode, iptables or nftables rules hand packets to netfilter queues, and b4 reads them. b4 reads one queue per worker thread, numbered upward from **Queue Start Number**: 537 to 540 with the defaults.
 
-Only the start of each connection is queued. **TCP Connection Packets Limit** and **UDP Connection Packets Limit** set how many packets, 19 and 8 by default. With iptables the count uses the `connbytes` match. A limit below these defaults is raised to them when the configuration is saved, and a set cannot go above the global value.
+Only the start of each connection is queued. **TCP Connection Packets Limit** and **UDP Connection Packets Limit** set how many packets, 19 and 8 by default. With iptables the count uses the `connbytes` match. The fakes and split segments b4 sends into a connection count toward the limit as well. A limit below these defaults is raised to them when the configuration is saved, and a set cannot go above the global value.
 
 ### Where the rules sit {#hooks}
 
@@ -18,10 +18,12 @@ Only the start of each connection is queued. **TCP Connection Packets Limit** an
 | --- | --- | --- |
 | Forwarded by the router | `postrouting`, after the routing decision | The one the packet leaves by |
 | Forwarded, with **Device Filtering** on and devices from the ARP table selected | `forward`, matching the source MAC address | The one the packet leaves by |
-| Opened by the router itself | `output` | The one the packet leaves by |
+| Opened by the router itself | `postrouting`; `output` with **Device Filtering** on and devices selected | The one the packet leaves by |
 | The reply direction, and DNS | `prerouting` | The one the packet arrives on |
 
-Packets whose mark has every bit of b4's queue mark and no other bit outside `0x71027fff` pass without being queued. On kernels 3.14 and later, b4 also releases from the queue unchanged a packet that a socket on the router sent with every bit of the queue mark. The queue mark is described under [Packet marks](../guides/marks.md#the-queue-mark).
+The TCP rules select packets by conntrack direction. In `postrouting`, `forward` and `output` they take the packets in the direction of a connection's first packet, in `prerouting` the replies. b4 takes the direction of a TCP packet from the hook it was queued at. Where the kernel cannot select by direction, see [When b4 tells the direction by port](#direction-by-port).
+
+Packets whose mark has every bit of b4's queue mark and no other bit outside `0x73027fff` pass without being queued. On kernels 3.14 and later, b4 also releases from the queue unchanged a packet that a socket on the router sent with every bit of the queue mark. The queue mark is described under [Packet marks](../guides/marks.md#the-queue-mark).
 
 With iptables, an address family whose iptables lacks the `NFQUEUE` target or the `connbytes` match gets no capture rules. When neither IPv4 nor IPv6 can take them, the engine does not start.
 
@@ -33,7 +35,7 @@ The DPI on the uplink sees only the tunnel's own packets. A service that routes 
 
 A tunnel that carries the IPv4 default route of the main table, the one with the lowest metric, is the router's uplink. The packets b4 injects follow it too, and packets that leave through it get strategies as usual.
 
-A packet that carries another service's mark gets no strategy in the same way when the packets b4 injects for its address would leave by another interface than the packet or, over IPv4, would find no route at all. b4 asks the kernel which interface a packet with the queue mark takes to that address. This covers a VPN over PPP, an IPsec tunnel interface and a second uplink that the service chooses by its mark. Such a connection ends with `[reroute->ppp1]` on the **Logs** page, and `flags:reroute` finds it on the **Traffic** page. When the packet carries the route mark of one of b4's own sets that routes through its interface, b4 asks with that mark, so a connection that the set routes keeps its strategy. A packet whose mark has every bit of the queue mark, as KeeneticOS gives the devices of its hotspot, gets no strategy either while an enabled set routes addresses through another interface than the packet leaves by. That set's rule sends the packets b4 injects to its addresses through its own interface, and b4 cannot tell whether the packet's address is among them. A set with **Domain-only matching** on and no IP address listed, or a set without destinations, routes nothing and does not count. b4 makes this check for every mark only with legacy iptables, as long as no other service on the router keeps nftables tables and **Skip IPTables/NFTables Setup** is off. b4 looks for those tables when it sets up its rules and again with every rule check at **Firewall Monitor Interval (seconds)**. In other setups, the output chains of other services still see the packets b4 injects and can give them their own mark. There b4 checks only a mark that has every bit of the queue mark.
+A packet that carries another service's mark gets no strategy in the same way when the packets b4 injects for its address would leave by another interface than the packet or, over IPv4, would find no route at all. b4 asks the kernel which interface a packet with the mark of the packets it injects, the queue mark with `0x2000000` added, takes to that address. This covers a VPN over PPP, an IPsec tunnel interface and a second uplink that the service chooses by its mark. Such a connection ends with `[reroute->ppp1]` on the **Logs** page, and `flags:reroute` finds it on the **Traffic** page. When the packet carries the route mark of one of b4's own sets that routes through its interface, b4 asks with that mark, so a connection that the set routes keeps its strategy. A packet whose mark has every bit of the queue mark, as KeeneticOS gives the devices of its hotspot, gets no strategy either while an enabled set routes addresses through another interface than the packet leaves by. That set's rule sends the packets b4 injects to its addresses through its own interface, and b4 cannot tell whether the packet's address is among them. A set with **Domain-only matching** on and no IP address listed, or a set without destinations, routes nothing and does not count. b4 makes this check for every mark only with legacy iptables, as long as no other service on the router keeps nftables tables and **Skip IPTables/NFTables Setup** is off. b4 looks for those tables when it sets up its rules and again with every rule check at **Firewall Monitor Interval (seconds)**. In other setups, the output chains of other services still see the packets b4 injects and can give them their own mark. There b4 checks only a mark that has every bit of the queue mark.
 
 A set that b4 itself routes into such a tunnel keeps its own rules; see [Packet manipulation with a tunnel egress](../guides/xray.md#packet-manipulation-with-a-tunnel-egress).
 
@@ -56,6 +58,12 @@ In TUN mode, target traffic is routed through a virtual interface, `b4tun0` by d
 
 The capture ports are TCP and UDP 443, the ports in the port filters of the sets, and TCP 80 while a set uses **Empty line before HTTP method**.
 
+In `ports` mode with the `xt_conntrack` match, the TCP capture rules take only the packets in the direction of a connection's first packet, and the reset capture only resets in the reply direction. With **Skip IPTables/NFTables Setup** off, b4 takes the direction of a TCP packet it reads from the TUN device from the first of these that applies:
+
+- In `ports` mode with `xt_conntrack`, every packet other than a reset is the device's.
+- Where b4 counts the packets itself, without `connbytes`, the first packet b4 saw of the connection decides: after a SYN its packets are the device's, after a SYN-ACK they are replies.
+- Otherwise the ports decide: for a reset in `ports` mode with `connbytes`, for every packet in `ports` mode with `connbytes` but without `xt_conntrack`, and for a connection whose first packet b4 did not see. See [When b4 tells the direction by port](#direction-by-port).
+
 ### Forwarded traffic and the raw table {#tun-forwarded}
 
 The router forwards packets for other hosts, such as LAN clients or Docker containers on a bridge network. TUN sends such a packet on as a copy, and the copy has to skip connection tracking. b4 arranges this with a `NOTRACK` rule in the iptables `raw` table. Without it, the kernel's NAT gives the copy a new source port, and the reply never reaches the client.
@@ -72,13 +80,37 @@ The log says so at startup, and **System Diagnostics** shows **This device only*
 
 The TUN engine itself rewrites the source address of captured packets to the uplink address. Its rule stays ahead of any masquerade rule that names no outgoing interface. NAT Masquerade leaves the TUN device out. When TUN captures only the router's own traffic, the rule is a NAT exemption instead, `-o <device> -j ACCEPT`, which keeps the source address.
 
+## When b4 tells the direction by port {#direction-by-port}
+
+b4 tells a TCP packet's direction by its ports with **Skip IPTables/NFTables Setup** on. In NFQUEUE mode it does so as well for an address family whose kernel lacks the conntrack direction match: `xt_conntrack` with iptables, `ct direction` of `nft_ct` with nftables. The cases in TUN mode are listed under [What TUN captures](#tun-capture). A packet from one of the TCP ports b4 queues, 443, the ports in the sets' TCP port filters and 80 while a set uses **Empty line before HTTP method**, counts as a server's reply. Rules added by hand while **Skip IPTables/NFTables Setup** is on are expected to queue a device's packets by destination port and the replies by source port.
+
+Devices pick the source ports of their own connections from 32768-60999 (Linux, Android) or 49152-65535 (Windows, macOS, iOS). In this mode, a set's TCP port filter that covers these ports makes b4 pass the connections from them unprocessed. **Recent changes** on the [dashboard](../dashboard.md#recent-changes) then shows **TCP port filters cover the source ports of client connections**, with the ports. A filter below 32768 avoids it.
+
+## Dropped QUIC connections {#dropped-quic-connections}
+
+b4 sees only the first packets of a connection. When a set drops or rejects a QUIC connection, by its UDP action mode or as a block set, b4 keeps the later packets of the connection from passing as well:
+
+| Engine | How | Needs |
+| --- | --- | --- |
+| NFQUEUE, nftables | The connection's addresses and ports go into the set `b4_udp_drop4` or `b4_udp_drop6` in `inet b4_mangle` for 2 minutes, and a rule in `b4_chain` drops its packets. b4 also deletes the connection's conntrack entry, and once the set lets go of the connection, its packets reach b4 again | `nf_conntrack_netlink` for the deletion |
+| NFQUEUE, iptables | b4 deletes the connection's conntrack entry. The later packets start a new entry, reach b4 and are dropped again | `nf_conntrack_netlink` |
+| TUN, with `xt_connbytes` | b4 deletes the connection's conntrack entry, and the later packets are steered into the TUN device again | `nf_conntrack_netlink` |
+| TUN, without `xt_connbytes` | b4 processes every later packet of the connection | Nothing |
+
+Without `nf_conntrack_netlink`, iptables and TUN with `xt_connbytes` drop only the packets b4 sees, the first 8 by default (**UDP Connection Packets Limit**). With nftables the drop set still holds the connection, for 2 minutes or until b4 rebuilds its rules. On OpenWrt the module is in the package `kmod-nf-conntrack-netlink`, which the installer recommends. The row **QUIC drop holds for the whole connection** under **Kernel Capabilities** in [System Info](../settings/system.md#system-info) shows whether the router holds such a drop. UDP other than QUIC that a set drops, such as a game's, is dropped only within the packets b4 sees.
+
+A settings change applies to the held connections too. b4 decides each of them again under the new settings. With nftables, b4 empties the drop sets for this only where `nf_conntrack_netlink` is available. Without it, a connection in a drop set stays dropped until its 2 minutes pass or b4 rebuilds its rules.
+
+The drop set holds a connection by its addresses and ports. A new QUIC connection that a device opens from the same port to the same server address and port within those 2 minutes is dropped as well, whatever name it carries.
+
 ## Kernel requirements {#kernel-requirements}
 
 | Feature | Needs |
 | --- | --- |
-| NFQUEUE with iptables | `nfnetlink_queue`, the `xt_NFQUEUE` target and the `xt_connbytes` match |
-| NFQUEUE with nftables | `nfnetlink_queue` and `nft_queue` |
-| TUN | `/dev/net/tun` and the `iptables` command or the iptables-nft shim. `xt_connbytes` for capture by port, `iptable_raw` and `xt_CT` for forwarded traffic |
+| NFQUEUE with iptables | `nfnetlink_queue`, the `xt_NFQUEUE` target and the `xt_connbytes` match. `xt_conntrack` for selecting TCP packets by direction |
+| NFQUEUE with nftables | `nfnetlink_queue` and `nft_queue`. `nft_ct` for the packet limits and for selecting TCP packets by direction |
+| TUN | `/dev/net/tun` and the `iptables` command or the iptables-nft shim. `xt_connbytes` for capture by port, `xt_conntrack` for selecting TCP packets by direction, `iptable_raw` and `xt_CT` for forwarded traffic |
+| Holding a dropped QUIC connection | `nf_conntrack_netlink`, with iptables and in TUN mode with `xt_connbytes`; with nftables for deleting the conntrack entry and for releasing held connections after a settings change, see [Dropped QUIC connections](#dropped-quic-connections) |
 | DSCP with iptables | The `xt_DSCP` module, on OpenWrt in `kmod-ipt-ipopt` and `iptables-mod-ipopt`. The values of sets also need the `ipset` command and the `xt_set` module |
 | DSCP with nftables | Nothing extra |
 | Interception of DNS over TCP | The `REDIRECT` target in the `nat` table |
@@ -120,10 +152,13 @@ When TUN captures by port, the **Capture Rules** row of **System Diagnostics** c
 | --- | --- | --- |
 | NAT Masquerade | Chain `B4_MASQ` in the `nat` table, jumped from the end of `POSTROUTING` | Table `ip b4_nat` |
 | DSCP | Chain `B4_DSCP` in the `mangle` table, jumped from the top of `POSTROUTING`, above the capture jump of b4 | Table `inet b4_dscp` |
+| MSS clamping | `TCPMSS` rules at the top of mangle `OUTPUT`, `FORWARD` and `B4_PREROUTING`; in TUN mode at the top of mangle `PREROUTING` instead of `B4_PREROUTING` | Rules at the top of `prerouting`, `output` and `forward` in `inet b4_mangle` |
 
 Masquerading covers IPv4, and IPv6 only with iptables in NFQUEUE mode while **Enable IPv6 Support** is on. Packets b4 sends toward LAN clients keep their source address.
 
 The DSCP jump sits above the capture jump because a packet that b4 inspects leaves `mangle POSTROUTING` at that jump, and a rule below it never sees the packet. When the kernel refuses the DSCP rule with iptables, b4 logs it once and leaves that address family without the value. With nftables, a refused table leaves both families without it. How sets write their own values is described under [DSCP](../sets/routing.md#dscp).
+
+The MSS rules sit above the queue rules of b4 for the same reason: a SYN-ACK, or a SYN of the router itself, that b4 inspects never reaches a rule below them.
 
 With iptables, a device in the **MSS** column that is matched by its MAC address can be matched only on the packets it sends. While the global clamp is off, b4 therefore also sets the smallest such value on every SYN-ACK it forwards from port 443, whichever device it goes to. A device added by hand is matched by its IP address in both directions.
 

@@ -27,14 +27,22 @@ func nftBatchMessage(kind uint16) netlink.Message {
 }
 
 func nftSetElemMessage(kind uint16, table, set string, addrs []netip.Addr, ttl time.Duration) (netlink.Message, error) {
+	keys := make([][]byte, len(addrs))
+	for i, addr := range addrs {
+		keys[i] = addr.AsSlice()
+	}
+	return nftSetElemKeysMessage(kind, table, set, keys, ttl)
+}
+
+func nftSetElemKeysMessage(kind uint16, table, set string, keys [][]byte, ttl time.Duration) (netlink.Message, error) {
 	ae := netlink.NewAttributeEncoder()
 	ae.String(unix.NFTA_SET_ELEM_LIST_TABLE, table)
 	ae.String(unix.NFTA_SET_ELEM_LIST_SET, set)
 	ae.Nested(unix.NFTA_SET_ELEM_LIST_ELEMENTS, func(list *netlink.AttributeEncoder) error {
-		for _, addr := range addrs {
+		for _, k := range keys {
 			list.Nested(unix.NFTA_LIST_ELEM, func(elem *netlink.AttributeEncoder) error {
 				elem.Nested(unix.NFTA_SET_ELEM_KEY, func(key *netlink.AttributeEncoder) error {
-					key.Bytes(unix.NFTA_DATA_VALUE, addr.AsSlice())
+					key.Bytes(unix.NFTA_DATA_VALUE, k)
 					return nil
 				})
 				if ttl > 0 {
@@ -79,16 +87,34 @@ func nftRefreshElementsNetlink(table, set string, addrs []netip.Addr, ttl time.D
 	if err != nil {
 		return err
 	}
+	return nftSendBatch(msgs, nftNetlinkDeadline)
+}
+
+type nftBatchConn interface {
+	SendMessages(msgs []netlink.Message) ([]netlink.Message, error)
+	Receive() ([]netlink.Message, error)
+	SetReadDeadline(t time.Time) error
+	SetWriteDeadline(t time.Time) error
+}
+
+func nftSendBatch(msgs []netlink.Message, deadline time.Duration) error {
 	conn, err := netlink.Dial(unix.NETLINK_NETFILTER, nil)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(nftNetlinkDeadline)); err != nil {
+	return nftExchangeBatch(conn, msgs, deadline)
+}
+
+func nftExchangeBatch(conn nftBatchConn, msgs []netlink.Message, deadline time.Duration) error {
+	if err := conn.SetWriteDeadline(time.Now().Add(deadline)); err != nil {
 		return err
 	}
 	sent, err := conn.SendMessages(msgs)
 	if err != nil {
+		return err
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(deadline)); err != nil {
 		return err
 	}
 	waiting := map[uint32]bool{}

@@ -147,8 +147,8 @@ func TestAConnectionAnotherServiceRoutesAwayByItsMarkIsHandedOff(t *testing.T) {
 				}
 				return
 			}
-			if len(calls) != 1 || calls[0] != (injectRouteCall{dst: "1.2.3.4", mark: 0x8000}) {
-				t.Fatalf("route lookups %v, want one for 1.2.3.4 with the queue mark 0x8000, the mark the packets b4 injects carry", calls)
+			if len(calls) != 1 || calls[0] != (injectRouteCall{dst: "1.2.3.4", mark: 0x2008000}) {
+				t.Fatalf("route lookups %v, want one for 1.2.3.4 with 0x2008000, the queue mark with the injected bit, the mark the packets b4 injects carry", calls)
 			}
 		})
 	}
@@ -237,7 +237,7 @@ func TestACachedRouteIsAskedAgainBeforeAHandOff(t *testing.T) {
 		t.Fatalf("verdict %d: b4's packets would leave by interface 99, so the connection is handed off", got)
 	}
 	stub.set(idx["ppp9"], true)
-	backdateInjectRoute(t, net.ParseIP("1.2.3.4"), 0x8000, injectRouteRecheck)
+	backdateInjectRoute(t, net.ParseIP("1.2.3.4"), 0x2008000, injectRouteRecheck)
 	if got := verdict(); got != nfqueue.NfDrop {
 		t.Fatalf("verdict %d: the route now leads to ppp9, as after a PPP reconnect, and an answer older than the recheck must not hand the connection off", got)
 	}
@@ -309,9 +309,9 @@ func TestOnAnInterfaceASetRoutesThroughOnlyTheSetsOwnConnectionsKeepTheStrategy(
 		want   int
 		why    string
 	}{
-		{"another service's mark", keeneticHotspotMark, 0x8000, nfqueue.NfAccept, "the mark takes the connection to ppp9, where b4's own packets would not follow"},
-		{"a mark another service routes to the set's interface by its own rule", mwan3Mark, 0x8000, nfqueue.NfAccept, "b4's own packets get the set's mark only for the set's addresses, so they stay on the main route"},
-		{"the routed set's own mark", setMark, 0x8000 | setMark, nfqueue.NfDrop, "b4's own packets get the set's mark and follow the connection to ppp9"},
+		{"another service's mark", keeneticHotspotMark, 0x2008000, nfqueue.NfAccept, "the mark takes the connection to ppp9, where b4's own packets would not follow"},
+		{"a mark another service routes to the set's interface by its own rule", mwan3Mark, 0x2008000, nfqueue.NfAccept, "b4's own packets get the set's mark only for the set's addresses, so they stay on the main route"},
+		{"the routed set's own mark", setMark, 0x2008000 | setMark, nfqueue.NfDrop, "b4's own packets get the set's mark and follow the connection to ppp9"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			stub := stubInjectRoute(t, idx["eth7"], true)

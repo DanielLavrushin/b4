@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -611,4 +612,5 @@ func ReloadKernelModules() {
 	if nflog && DNSQueryCopyKernel() {
 		loadKernelModuleList(dnsCopyLogModule, dnsCopyModule)
 	}
+	ctnl.Retest()
 }

@@ -112,7 +112,7 @@ func TestDNSQueriesAreQueuedFromTheRawTableBeforeConntrack(t *testing.T) {
 			t.Fatalf("%s: the raw table chain %s is missing", ipt, iptRawChainName)
 		}
 		chain := manifestSpecs(m, ipt, "raw", iptRawChainName)
-		if len(chain) != 2 || !strings.Contains(chain[0], "--mark 0x8000/0x8efd8000 -j RETURN") || !hasSpecWith(chain[1:], "-p udp --dport 53", "-j NFQUEUE", "--queue-bypass") {
+		if len(chain) != 2 || !strings.Contains(chain[0], "--mark 0x8000/0x8cfd8000 -j RETURN") || !hasSpecWith(chain[1:], "-p udp --dport 53", "-j NFQUEUE", "--queue-bypass") {
 			t.Errorf("%s: %s must let b4's own packets through and then queue DNS queries, got %q", ipt, iptRawChainName, chain)
 		}
 		jump := strings.Join(iptRawDNSJump(), " ")
@@ -477,8 +477,16 @@ func (f *fakeListing) run(args ...string) (string, error) {
 	return "", errors.New("exit status 1")
 }
 
+const monitorInjectedReturnLine = "-A B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 -m tcp --tcp-flags SYN,RST NONE -j RETURN"
+
+var monitorTCPQueueLines = []string{
+	"-A B4_PREROUTING -p tcp -m multiport --sports 443 -m tcp --tcp-flags RST RST -m conntrack --ctdir REPLY -j NFQUEUE --queue-num 537 --queue-bypass",
+	"-A B4_PREROUTING -p tcp -m multiport --sports 443 -m tcp --tcp-flags SYN,ACK SYN,ACK -m conntrack --ctdir REPLY -j NFQUEUE --queue-num 537 --queue-bypass",
+	"-A B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes 0:19 --connbytes-mode packets --connbytes-dir reply -m conntrack --ctdir REPLY -j NFQUEUE --queue-num 537 --queue-bypass",
+}
+
 func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fakeListing {
-	pre := "-N B4_PREROUTING\n-A B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN\n-A B4_PREROUTING -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
+	pre := "-N B4_PREROUTING\n-A B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN\n" + monitorInjectedReturnLine + "\n-A B4_PREROUTING -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
 	out := "-P OUTPUT ACCEPT\n-A OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT\n-A OUTPUT -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
 	if placement == dnsHeldMangle {
 		pre += "-A B4_PREROUTING -p udp -m udp --dport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
@@ -487,10 +495,9 @@ func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fake
 	if placement == dnsCopied {
 		out = "-P OUTPUT ACCEPT\n-A OUTPUT " + dnsCopyTestJumps["OUTPUT"] + "\n" + strings.TrimPrefix(out, "-P OUTPUT ACCEPT\n")
 	}
-	pre += "-A B4_PREROUTING -p tcp -m multiport --sports 443 -m tcp --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-num 537 --queue-bypass\n"
-	out += "-A OUTPUT -j B4\n"
+	pre += strings.Join(monitorTCPQueueLines, "\n") + "\n"
 	f := &fakeListing{chains: map[string]string{
-		"mangle B4":            "-N B4\n-A B4 -m mark --mark 0x8000/0x8efd8000 -j RETURN\n",
+		"mangle B4":            "-N B4\n-A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN\n",
 		"mangle POSTROUTING":   "-P POSTROUTING ACCEPT\n-A POSTROUTING -j B4\n",
 		"mangle PREROUTING":    "-P PREROUTING ACCEPT\n-A PREROUTING -j B4_PREROUTING\n",
 		"mangle B4_PREROUTING": pre,
@@ -501,7 +508,7 @@ func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fake
 		jump := strings.Join(iptRawDNSJump(), " ") + "\n"
 		f.chains["raw PREROUTING"] = "-P PREROUTING ACCEPT\n-A PREROUTING " + jump
 		f.chains["raw OUTPUT"] = "-P OUTPUT ACCEPT\n-A OUTPUT " + jump
-		f.chains["raw "+iptRawChainName] = "-N B4_RAW\n-A B4_RAW -m mark --mark 0x8000/0x8efd8000 -j RETURN\n-A B4_RAW -p udp -m udp --dport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
+		f.chains["raw "+iptRawChainName] = "-N B4_RAW\n-A B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN\n-A B4_RAW -p udp -m udp --dport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
 	case dnsCopied:
 		prefix := "--nflog-prefix b4dns"
 		if iptables1421 {
@@ -510,7 +517,7 @@ func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fake
 		f.chains["mangle INPUT"] = "-P INPUT ACCEPT\n-A INPUT " + dnsCopyTestJumps["INPUT"] + "\n"
 		f.chains["mangle FORWARD"] = "-P FORWARD ACCEPT\n-A FORWARD " + dnsCopyTestJumps["FORWARD"] + "\n"
 		f.chains["mangle "+iptDNSCopyChainName] = "-N B4_DNSCOPY\n" +
-			"-A B4_DNSCOPY -m mark --mark 0x8000/0x8efd8000 -j RETURN\n" +
+			"-A B4_DNSCOPY -m mark --mark 0x8000/0x8cfd8000 -j RETURN\n" +
 			"-A B4_DNSCOPY -p udp -m udp --dport 53 -j NFLOG " + prefix + " --nflog-group 537 --nflog-threshold 1\n"
 	}
 	return f
@@ -583,22 +590,22 @@ func TestMonitorChecksWhereDNSQueriesWereQueued(t *testing.T) {
 			delete(f.chains, "mangle "+iptDNSCopyChainName)
 		}},
 		{name: "copy mark RETURN wiped", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
-			removeLine(f, "mangle "+iptDNSCopyChainName, "-A B4_DNSCOPY -m mark --mark 0x8000/0x8efd8000 -j RETURN")
+			removeLine(f, "mangle "+iptDNSCopyChainName, "-A B4_DNSCOPY -m mark --mark 0x8000/0x8cfd8000 -j RETURN")
 		}},
 		{name: "copy mark RETURN for another mark", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
-			f.chains["mangle "+iptDNSCopyChainName] = strings.Replace(f.chains["mangle "+iptDNSCopyChainName], "0x8000/0x8efd8000", "0x400000/0x8efd8000", 1)
+			f.chains["mangle "+iptDNSCopyChainName] = strings.Replace(f.chains["mangle "+iptDNSCopyChainName], "0x8000/0x8cfd8000", "0x400000/0x8cfd8000", 1)
 		}},
 		{name: "raw mark RETURN wiped", placement: dnsHeldRaw, mutate: func(f *fakeListing) {
-			removeLine(f, "raw "+iptRawChainName, "-A B4_RAW -m mark --mark 0x8000/0x8efd8000 -j RETURN")
+			removeLine(f, "raw "+iptRawChainName, "-A B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN")
 		}},
 		{name: "raw mark RETURN for another mark", placement: dnsHeldRaw, mutate: func(f *fakeListing) {
-			f.chains["raw "+iptRawChainName] = strings.Replace(f.chains["raw "+iptRawChainName], "0x8000/0x8efd8000", "0x400000/0x8efd8000", 1)
+			f.chains["raw "+iptRawChainName] = strings.Replace(f.chains["raw "+iptRawChainName], "0x8000/0x8cfd8000", "0x400000/0x8cfd8000", 1)
 		}},
 		{name: "capture chain mark RETURN wiped", placement: dnsHeldRaw, mutate: func(f *fakeListing) {
-			removeLine(f, "mangle B4", "-A B4 -m mark --mark 0x8000/0x8efd8000 -j RETURN")
+			removeLine(f, "mangle B4", "-A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN")
 		}},
 		{name: "capture chain mark RETURN for another mark", placement: dnsCopied, group: 537, mutate: func(f *fakeListing) {
-			f.chains["mangle B4"] = strings.Replace(f.chains["mangle B4"], "0x8000/0x8efd8000", "0x400000/0x8efd8000", 1)
+			f.chains["mangle B4"] = strings.Replace(f.chains["mangle B4"], "0x8000/0x8cfd8000", "0x400000/0x8cfd8000", 1)
 		}},
 		{name: "copy rule logs to another group", placement: dnsCopied, group: 537, mutate: editCopyRule(func(s string) string {
 			return strings.Replace(s, "--nflog-group 537", "--nflog-group 538", 1)
@@ -652,14 +659,16 @@ func TestMonitorChecksWhereDNSQueriesWereQueued(t *testing.T) {
 
 	alive = true
 	for _, placement := range []dnsQueryPlacement{dnsHeldMangle, dnsCopied} {
-		t.Run(placement.String()+" placement whose OUTPUT jump to B4 is gone", func(t *testing.T) {
+		t.Run(placement.String()+" placement without a device filter wants no OUTPUT jump to B4", func(t *testing.T) {
 			f := monitorDNSTestListing(placement, false)
-			removeLine(f, "mangle OUTPUT", "-A OUTPUT -j B4")
 			run = f.run
 			dnsCopyGroup.Store(537)
 			noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: placement})
-			if m.checkIPTablesRules(&cfg) {
-				t.Errorf("the router's own traffic no longer reaches B4, so the monitor must restore; commands:\n%s", strings.Join(f.calls, "\n"))
+			if strings.Contains(f.chains["mangle OUTPUT"], "-j B4\n") {
+				t.Fatalf("the listing already jumps from mangle OUTPUT to B4, so this test proves nothing:\n%s", f.chains["mangle OUTPUT"])
+			}
+			if !m.checkIPTablesRules(&cfg) {
+				t.Errorf("mangle POSTROUTING already brings the router's own packets to B4, and a jump from OUTPUT would queue each of them twice, yet the monitor wants a restore; commands:\n%s", strings.Join(f.calls, "\n"))
 			}
 		})
 		t.Run(placement.String()+" placement with a device filter", func(t *testing.T) {
@@ -670,14 +679,66 @@ func TestMonitorChecksWhereDNSQueriesWereQueued(t *testing.T) {
 			run = f.run
 			dnsCopyGroup.Store(537)
 			noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: placement})
+			f.chains["mangle OUTPUT"] += "-A OUTPUT -j B4\n"
 			if m.checkIPTablesRules(&devices) {
 				t.Errorf("mangle FORWARD holds no jump to B4 for the selected device, so the monitor must restore; FORWARD is:\n%s", f.chains["mangle FORWARD"])
 			}
 			f.chains["mangle FORWARD"] += "-A FORWARD -m mac --mac-source AA:BB:CC:DD:EE:01 -j B4\n"
 			if !m.checkIPTablesRules(&devices) {
-				t.Errorf("the device's FORWARD jump to B4 is in place, yet the monitor wants a restore; commands:\n%s", strings.Join(f.calls, "\n"))
+				t.Errorf("the device's FORWARD jump and the OUTPUT jump to B4 are in place, yet the monitor wants a restore; commands:\n%s", strings.Join(f.calls, "\n"))
+			}
+			removeLine(f, "mangle OUTPUT", "-A OUTPUT -j B4")
+			if m.checkIPTablesRules(&devices) {
+				t.Errorf("with a device filter only the jump from mangle OUTPUT brings the router's own packets to B4, and it is gone, so the monitor must restore; OUTPUT is:\n%s", f.chains["mangle OUTPUT"])
 			}
 		})
+	}
+}
+
+func TestMonitorRestoresB4PreroutingWithoutItsTCPQueueRules(t *testing.T) {
+	origRun := run
+	t.Cleanup(func() {
+		run = origRun
+		noteDNSQueryPlacement(nil)
+		hasBinaryCache.Delete(backendIPTables)
+	})
+	hasBinaryCache.Store(backendIPTables, true)
+	prevV4 := dnsTCPListenerReadyV4.Load()
+	dnsTCPListenerReadyV4.Store(false)
+	t.Cleanup(func() { dnsTCPListenerReadyV4.Store(prevV4) })
+
+	m, _ := newLockTestMonitor(t)
+	cfg := config.NewConfig()
+	cfg.Queue.IPv4Enabled = true
+	cfg.Queue.IPv6Enabled = false
+	cfg.Queue.Mark = 0x8000
+
+	f := monitorDNSTestListing(dnsHeldMangle, false)
+	run = f.run
+	noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: dnsHeldMangle})
+	if !m.checkIPTablesRules(&cfg) {
+		t.Fatalf("the complete listing reads as missing rules, so this test proves nothing; commands:\n%s", strings.Join(f.calls, "\n"))
+	}
+
+	for _, line := range monitorTCPQueueLines {
+		f.chains["mangle B4_PREROUTING"] = strings.Replace(f.chains["mangle B4_PREROUTING"], line+"\n", "", 1)
+	}
+	pre := f.chains["mangle B4_PREROUTING"]
+	for _, line := range monitorTCPQueueLines {
+		if strings.Contains(pre, line) {
+			t.Fatalf("%q is still listed, so this test proves nothing:\n%s", line, pre)
+		}
+	}
+	for _, kept := range []string{monitorInjectedReturnLine, "-A B4_PREROUTING -p udp -m udp --sport 53 -j NFQUEUE", "-A B4_PREROUTING -p udp -m udp --dport 53 -j NFQUEUE"} {
+		if !strings.Contains(pre, kept) {
+			t.Fatalf("%q went with the TCP queue rules, so this test proves nothing:\n%s", kept, pre)
+		}
+	}
+	if !strings.Contains(pre, "tcp") || !strings.Contains(pre, "NFQUEUE") {
+		t.Fatalf("the listing no longer holds both words a check of the whole listing would find, so this test proves nothing:\n%s", pre)
+	}
+	if m.checkIPTablesRules(&cfg) {
+		t.Errorf("B4_PREROUTING lost every TCP queue rule, so no SYN-ACK, reset or server packet reaches b4, yet the monitor took the return for the connections b4 sends into and the DNS rules for them and restores nothing:\n%s", pre)
 	}
 }
 
@@ -932,8 +993,8 @@ func TestNftQueuesDNSQueriesBeforeConntrack(t *testing.T) {
 		"add chain inet b4_mangle raw_prerouting { type filter hook prerouting priority -300 ; policy accept ; }",
 		"add chain inet b4_mangle raw_output { type filter hook output priority -300 ; policy accept ; }",
 		"add rule inet b4_mangle raw_output oifname \"lo\" return",
-		"add rule inet b4_mangle raw_prerouting meta mark & 0x8efd8000 == 0x8000 return",
-		"add rule inet b4_mangle raw_output meta mark & 0x8efd8000 == 0x8000 return",
+		"add rule inet b4_mangle raw_prerouting meta mark & 0x8cfd8000 == 0x8000 return",
+		"add rule inet b4_mangle raw_output meta mark & 0x8cfd8000 == 0x8000 return",
 		"add rule inet b4_mangle raw_prerouting udp dport 53 counter " + queue,
 		"add rule inet b4_mangle raw_output udp dport 53 counter " + queue,
 	} {

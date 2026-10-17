@@ -51,7 +51,7 @@ func selfInjectedMark(m, queueMark uint32, cfg *config.Config) bool {
 	if m&queueMark != queueMark {
 		return false
 	}
-	return m&^(queueMark|config.PerSetRouteMarkBits) == 0
+	return m&^selfInjectedBits(queueMark) == 0
 }
 
 func localQueueMarked(a nfqueue.Attribute, queueMark uint32, cfg *config.Config) bool {
@@ -79,7 +79,16 @@ func (w *Worker) handlePacket(q *nfqueue.Nfqueue, a nfqueue.Attribute, mark uint
 	if q != nil {
 		vc.q = q
 	}
-	return w.handleQueued(vc, a, mark)
+	return w.handleQueuedThenPersist(vc, a, mark)
+}
+
+func (w *Worker) handleQueuedThenPersist(vc *verdictCtx, a nfqueue.Attribute, mark uint) int {
+	gen := w.flowDropGeneration()
+	ret := w.handleQueued(vc, a, mark)
+	if vc.dropsFlow() {
+		w.persistFlowDrop(*a.Payload, gen)
+	}
+	return ret
 }
 
 func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) int {
@@ -114,6 +123,10 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 	default:
 	}
 
+	if a.Hook != nil {
+		vc.hook, vc.hooked = *a.Hook, true
+	}
+
 	return w.dispatch(vc, *a.Payload)
 }
 
@@ -127,6 +140,7 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 	if !ok {
 		return vc.accept()
 	}
+	vc.dir = w.packetDirection(cfg, vc, pkt)
 	if !cfg.Queue.IsDiscovery && cfg.Queue.Mode != "tun" && !cfg.IPFamilyEnabled(pkt.ver == IPv6) {
 		return w.handleECHOnlyPacket(vc, pkt, cfg)
 	}
@@ -330,7 +344,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	sport := binary.BigEndian.Uint16(tcp[0:2])
 	dport := binary.BigEndian.Uint16(tcp[2:4])
 
-	if cfg.IsTCPPort(sport) {
+	if vc.tcpIncoming(cfg, sport) {
 		return w.HandleIncoming(vc, pkt.ver, pkt.raw, pkt.ihl, pkt.src, pkt.dstStr, dport, pkt.srcStr, sport, payload)
 	}
 
@@ -338,6 +352,10 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		matched = false
 		set = nil
 		st = nil
+	}
+
+	if utils.IsPrivateIP(pkt.dst) && !matcher.ListsPrivateTCPTarget(pkt.dst, pkt.srcMac, dport) {
+		return vc.accept()
 	}
 
 	addressMatched := st != nil
@@ -1042,6 +1060,8 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		observeFlow(cfg, pkt, sport, dport, set, host)
 	}
 
+	quicFlow := (isQUIC || matchedFlow) && !isVoiceMedia
+
 	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
 		if matchedQUIC || matchedFlow || (matchedIP && !matchedLearned) {
 			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
@@ -1064,6 +1084,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				recordBlockedFlow(cfg, pkt, sport, dport, set, blockedTarget)
 			}
 			vc.drop()
+			if quicFlow {
+				vc.dropFlow()
+			}
 			return 0
 		}
 		return vc.accept()
@@ -1079,6 +1102,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	case "drop":
 		vc.drop()
+		if quicFlow {
+			vc.dropFlow()
+		}
 		return 0
 
 	case "reject":
@@ -1093,6 +1119,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
 				_ = w.clientSender().SendIPv6(icmp, pkt.src)
 			}
+		}
+		if quicFlow {
+			vc.dropFlow()
 		}
 		return 0
 

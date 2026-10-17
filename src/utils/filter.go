@@ -25,3 +25,26 @@ func IsPrivateIP(ip net.IP) bool {
 	}
 	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate()
 }
+
+var privateNets = func() []*net.IPNet {
+	var nets []*net.IPNet
+	for _, cidr := range []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "::1/128", "fe80::/10", "fc00::/7"} {
+		_, n, _ := net.ParseCIDR(cidr)
+		nets = append(nets, n)
+	}
+	return nets
+}()
+
+func IsPrivateNet(n *net.IPNet) bool {
+	if n == nil {
+		return false
+	}
+	ones, bits := n.Mask.Size()
+	for _, p := range privateNets {
+		pOnes, pBits := p.Mask.Size()
+		if bits == pBits && ones >= pOnes && p.Contains(n.IP) {
+			return true
+		}
+	}
+	return false
+}

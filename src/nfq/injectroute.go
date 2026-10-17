@@ -242,9 +242,9 @@ func (w *Worker) reroutedEgress(vc *verdictCtx, pkt *pktInfo, cfg *config.Config
 	if name == "" {
 		return ""
 	}
-	lookup := mark
+	lookup := uint32(injectorMark(cfg))
 	if bits := vc.foreignMark & config.PerSetRouteMarkBits; setRoutesWith(name, bits) {
-		lookup = mark&^config.PerSetRouteMarkBits | bits
+		lookup = lookup&^config.PerSetRouteMarkBits | bits
 	}
 	oif, ok := injectRouteOIF(pkt.dst, lookup, vc.outDev)
 	if !ok || oif == vc.outDev {

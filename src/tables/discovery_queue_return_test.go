@@ -85,7 +85,7 @@ func TestDiscoveryClearTakesOnlyItsReturnsOutOfTheNftQueueChain(t *testing.T) {
 		meta mark 0x00008002 return # handle 31
 		meta mark & 0x00008000 == 0x00008000 return # handle 4
 		meta mark & 0x00027fff == 0x00024bab return # handle 5
-		tcp dport 443 ct original packets < 20 counter packets 0 bytes 0 queue flags bypass to 537-540 # handle 7
+		tcp dport 443 ct original packets < 20 ct direction original counter packets 0 bytes 0 queue flags bypass to 537-540 # handle 7
 	}
 }`
 	calls := discoveryRecordRun(t, map[string]string{

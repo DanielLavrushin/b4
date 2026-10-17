@@ -84,6 +84,13 @@ export function describeEvent(
         }),
         link: { to: "/sets", kind: "sets" },
       };
+    case "direction_by_port":
+      return {
+        text: t(k("direction_by_port")),
+        detail: error,
+        detailIsText: true,
+        link: { to: "/sets", kind: "sets" },
+      };
     case "targets_warning":
     case "socks5_failed":
     case "mtproto_failed":

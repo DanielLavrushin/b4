@@ -166,11 +166,22 @@ func (c *tlsInfoCache) Cleanup() {
 }
 
 type connStateTracker struct {
-	mu    sync.RWMutex
-	conns map[string]*connInfo
+	mu      sync.RWMutex
+	conns   map[string]*connInfo
+	synAcks map[string]earlySynAck
 }
 
-const maxConnStateEntries = 10000
+type earlySynAck struct {
+	ttl     uint8
+	hasOpts bool
+	at      time.Time
+}
+
+const (
+	maxConnStateEntries = 10000
+	maxEarlySynAcks     = 4096
+	earlySynAckTTL      = 5 * time.Second
+)
 
 type ipBlockEntry struct {
 	firstSeen   time.Time
@@ -578,6 +589,8 @@ type runtimeState struct {
 	pendingHello *pendingHelloCache
 	hostHints    *hostHintCache
 	quicFlows    *quicFlowCache
+	direction    *queueDirectionState
+	flowDrops    *flowDropPersistence
 	ipHealth     *iphealth.Tracker
 	pinHealth    *pinHealth
 	goodIPs      *iphealth.KnownGood
@@ -588,6 +601,8 @@ func newRuntimeState() *runtimeState {
 		pendingHello: newPendingHelloCache(),
 		hostHints:    newHostHintCache(),
 		quicFlows:    newQUICFlowCache(),
+		direction:    newQueueDirectionState(time.Now()),
+		flowDrops:    newFlowDropPersistence(),
 		ipHealth:     iphealth.NewTracker(nil),
 		pinHealth:    newPinHealth(nil),
 		goodIPs:      iphealth.NewKnownGood(),
@@ -632,9 +647,53 @@ func (t *connStateTracker) RegisterOutgoing(connKey string, set *config.SetConfi
 		existing.set = set
 		existing.lastSeen = time.Now()
 	} else {
-		t.conns[connKey] = &connInfo{
+		info := &connInfo{
 			set:      set,
 			lastSeen: time.Now(),
+		}
+		if seen, ok := t.synAcks[connKey]; ok {
+			delete(t.synAcks, connKey)
+			if info.lastSeen.Sub(seen.at) < earlySynAckTTL {
+				info.responseSeen = true
+				info.serverTTL = seen.ttl
+				info.ttlRecorded = true
+				info.serverHasOpts = seen.hasOpts
+			}
+		}
+		t.conns[connKey] = info
+	}
+}
+
+func (t *connStateTracker) RecordEarlySynAck(clientIP string, clientPort uint16, serverIP string, serverPort uint16, ttl uint8, hasOpts bool) {
+	if ttl == 0 {
+		return
+	}
+	outKey := fmt.Sprintf(connKeyFormat, clientIP, clientPort, serverIP, serverPort)
+	now := time.Now()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, registered := t.conns[outKey]; registered {
+		return
+	}
+	if t.synAcks == nil {
+		t.synAcks = make(map[string]earlySynAck)
+	}
+	if _, ok := t.synAcks[outKey]; !ok && len(t.synAcks) >= maxEarlySynAcks {
+		t.pruneEarlySynAcksLocked(now)
+		for k := range t.synAcks {
+			if len(t.synAcks) < maxEarlySynAcks {
+				break
+			}
+			delete(t.synAcks, k)
+		}
+	}
+	t.synAcks[outKey] = earlySynAck{ttl: ttl, hasOpts: hasOpts, at: now}
+}
+
+func (t *connStateTracker) pruneEarlySynAcksLocked(now time.Time) {
+	for k, v := range t.synAcks {
+		if now.Sub(v.at) >= earlySynAckTTL {
+			delete(t.synAcks, k)
 		}
 	}
 }
@@ -782,4 +841,5 @@ func (t *connStateTracker) Cleanup() {
 			delete(t.conns, k)
 		}
 	}
+	t.pruneEarlySynAcksLocked(now)
 }

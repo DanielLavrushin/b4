@@ -21,6 +21,10 @@ type verdictCtx struct {
 	verdict        engine.PacketVerdict
 	copy           *dnsCopyDecision
 	ifaceFiltered  bool
+	hook           uint8
+	hooked         bool
+	dir            engine.Direction
+	flowDrop       bool
 	tunnel         string
 	outDev         uint32
 	foreignMark    uint32
@@ -59,6 +63,14 @@ func (vc *verdictCtx) drop() bool {
 		}
 	}
 	return true
+}
+
+func (vc *verdictCtx) dropFlow() {
+	vc.flowDrop = true
+}
+
+func (vc *verdictCtx) dropsFlow() bool {
+	return vc.flowDrop && vc.verdict == engine.VerdictDrop
 }
 
 func (vc *verdictCtx) dropUnanswered() bool {
@@ -125,11 +137,25 @@ func (w *Worker) clientSender() *sock.Sender {
 	return w.sock
 }
 
+func (w *Worker) lookupSender() *sock.Sender {
+	if w.lookupSock != nil {
+		return w.lookupSock
+	}
+	return w.sock
+}
+
 func (w *Worker) ProcessPacket(raw []byte) engine.PacketVerdict {
+	return w.ProcessPacketDir(raw, engine.DirUnknown)
+}
+
+func (w *Worker) ProcessPacketDir(raw []byte, dir engine.Direction) engine.PacketVerdict {
 	if len(raw) == 0 {
 		return engine.VerdictAccept
 	}
-	vc := &verdictCtx{verdict: engine.VerdictAccept}
+	vc := &verdictCtx{verdict: engine.VerdictAccept, dir: dir}
 	w.dispatch(vc, raw)
+	if vc.dropsFlow() {
+		return engine.VerdictDropFlow
+	}
 	return vc.verdict
 }

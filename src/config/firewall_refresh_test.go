@@ -32,6 +32,7 @@ func TestFirewallRefreshNeededFlipsOnEveryRefreshedSetting(t *testing.T) {
 		{"masquerade", func(c *Config) { c.System.Tables.Masquerade.Enabled = !c.System.Tables.Masquerade.Enabled }},
 		{"dscp stamp", func(c *Config) { c.System.Tables.DSCP = DSCPConfig{Enabled: true, Value: 7} }},
 		{"mss clamp", func(c *Config) { c.Queue.MSSClamp.Enabled = true; c.Queue.MSSClamp.Size = 1200 }},
+		{"a set's tcp incoming mode", func(c *Config) { c.Sets[0].TCP.Incoming.Mode = "fake" }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -62,6 +63,13 @@ func TestFirewallRefreshNeededIgnoresSettingsThatDoNotRebuildTheFirewall(t *test
 			extra.Id = "two"
 			extra.Enabled = false
 			extra.TCP.DPortFilter = "8080"
+			c.Sets = append(c.Sets, &extra)
+		}},
+		{"tcp incoming mode of a disabled set", func(c *Config) {
+			extra := NewSetConfigWithDefaults()
+			extra.Id = "two"
+			extra.Enabled = false
+			extra.TCP.Incoming.Mode = "reset"
 			c.Sets = append(c.Sets, &extra)
 		}},
 	}

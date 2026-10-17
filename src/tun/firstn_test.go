@@ -32,10 +32,15 @@ const (
 	tcpFIN = 0x01
 )
 
+func passes(l *firstNLimiter, raw []byte, now time.Time) bool {
+	pass, _ := l.admit(raw, now)
+	return pass
+}
+
 func admitted(l *firstNLimiter, raw []byte, n int, now time.Time) int {
 	got := 0
 	for i := 0; i < n; i++ {
-		if l.admit(raw, now) {
+		if passes(l, raw, now) {
 			got++
 		}
 	}
@@ -51,7 +56,7 @@ func TestFirstNLimiterProcessesOnlyTheFirstPacketsOfAFlow(t *testing.T) {
 		t.Fatalf("tcp: %d of 10 packets processed, want 3", got)
 	}
 	other := testPacket(6, "192.168.0.10", "203.0.113.10", 40001, 443, tcpACK)
-	if !l.admit(other, now) {
+	if !passes(l, other, now) {
 		t.Fatal("a second connection must start its own count")
 	}
 	udp := testPacket(17, "192.168.0.10", "203.0.113.10", 50000, 443, 0)
@@ -86,10 +91,10 @@ func TestFirstNLimiterRestartsTheCountForANewConnectionOnTheSameTuple(t *testing
 
 	l.admit(first, now)
 	admitted(l, data, 5, now)
-	if !l.admit(second, now) {
+	if !passes(l, second, now) {
 		t.Fatal("a SYN with a new initial sequence number opens a new connection and must be processed")
 	}
-	if !l.admit(data, now) || l.admit(data, now) {
+	if !passes(l, data, now) || passes(l, data, now) {
 		t.Fatal("the new connection gets its own first packets")
 	}
 }
@@ -103,7 +108,7 @@ func TestFirstNLimiterKeepsCountingAfterFINAndExpiresClosedFlowsSoon(t *testing.
 
 	admitted(l, data, 2, start)
 	l.admit(live, start)
-	if l.admit(fin, start) || l.admit(data, start) {
+	if passes(l, fin, start) || passes(l, data, start) {
 		t.Fatal("packets after a FIN belong to the same connection and must not restart its count")
 	}
 	l.sweep(start.Add(firstNClosedIdle + time.Second))
@@ -133,7 +138,7 @@ func TestFirstNLimiterAlwaysProcessesDNSDuplicatesAndWhatItCannotKey(t *testing.
 	if got := admitted(l, frag, 3, now); got != 3 {
 		t.Errorf("fragments cannot be keyed and must all be processed, got %d of 3", got)
 	}
-	if !l.admit([]byte{0x60, 0, 0, 0}, now) {
+	if !passes(l, []byte{0x60, 0, 0, 0}, now) {
 		t.Error("IPv6 is left to the engine")
 	}
 

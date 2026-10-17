@@ -21,7 +21,6 @@ import (
 const (
 	maxDNSClaimHolds    = 512
 	nfHookForward       = 2
-	nfHookLocalOut      = 3
 	dnsCopyLostLogEvery = 5 * time.Minute
 	dnsCopyFullLogEvery = time.Minute
 )

@@ -395,3 +395,21 @@ func TestReloadKernelModulesReloadsNFLOGOnceTried(t *testing.T) {
 		t.Fatalf("an unaffected kernel reloaded the NFLOG modules: %s", got)
 	}
 }
+
+func TestKmodConntrackModulesNameTheirOpenWrtPackages(t *testing.T) {
+	fx := newKmodFixture(t)
+	fx.stubRun(false, "")
+	loadKernelModuleList("nf_conntrack_netlink", "xt_conntrack")
+	for module, want := range map[string]string{
+		"nf_conntrack_netlink": "kmod-nf-conntrack-netlink",
+		"xt_conntrack":         "kmod-ipt-conntrack",
+	} {
+		if pkgs := KernelModulePackages([]string{module}); strings.Join(pkgs, " ") != want {
+			t.Errorf("%s: packages %v, want %s (OpenWrt builds libxt_conntrack into iptables itself)", module, pkgs, want)
+		}
+	}
+	fx.loaded("nf_conntrack_netlink")
+	if pkgs := KernelModulePackages([]string{"nf_conntrack_netlink"}); len(pkgs) != 0 {
+		t.Fatalf("a loaded nf_conntrack_netlink needs no package, got %v", pkgs)
+	}
+}

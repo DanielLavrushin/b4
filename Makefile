@@ -141,8 +141,18 @@ run: build
 test-netns:
 	@echo "Building the tables test binary..."
 	@go -C $(SRC_DIR) test -c -o ../$(OUT_DIR)/tables.test ./tables/
-	@echo "Running the routing tests in a private network namespace..."
-	@unshare -Urnm sh -c 'mount -t sysfs sysfs /sys 2>/dev/null || echo "warning: could not remount /sys; interface-kind tests will skip" >&2; B4_NETNS_TEST=1 exec $(OUT_DIR)/tables.test -test.run TestNetns -test.v'
+	@tables=0; ctnl=0; \
+	echo "Running the routing tests in a private network namespace..."; \
+	unshare -Urnm sh -c 'mount -t sysfs sysfs /sys 2>/dev/null || echo "warning: could not remount /sys; interface-kind tests will skip" >&2; B4_NETNS_TEST=1 exec $(OUT_DIR)/tables.test -test.run TestNetns -test.v' || tables=$$?; \
+	echo "Building the conntrack netlink test binary..."; \
+	if go -C $(SRC_DIR) test -c -o ../$(OUT_DIR)/ctnl.test ./ctnl/; then \
+		echo "Running the conntrack netlink tests in a private network namespace..."; \
+		unshare -Urnm sh -c 'B4_NETNS_TEST=1 exec $(OUT_DIR)/ctnl.test -test.run TestNetns -test.v' || ctnl=$$?; \
+	else \
+		ctnl=1; \
+	fi; \
+	echo "test-netns: tables netns tests exit $$tables, conntrack netlink netns tests exit $$ctnl"; \
+	[ "$$tables" -eq 0 ] && [ "$$ctnl" -eq 0 ]
 
 .PHONY: install
 install: build
@@ -337,7 +347,7 @@ help:
 	@printf "  %-25s %s\n" "make arm" "Build for Linux armv7"
 	@printf "  %-25s %s\n" "make android" "Build for all Android architectures (requires ANDROID_NDK_HOME)"
 	@printf "  %-25s %s\n" "make run" "Build and run with sudo"
-	@printf "  %-25s %s\n" "make test-netns" "Run the routing egress tests in a network namespace"
+	@printf "  %-25s %s\n" "make test-netns" "Run the routing egress and conntrack netlink tests in a network namespace"
 	@printf "  %-25s %s\n" "make install" "Install to /usr/local/bin"
 	@printf "  %-25s %s\n" "make clean" "Remove build artifacts"
 	@printf "  %-25s %s\n" "make build-installer" "Build the installer script"

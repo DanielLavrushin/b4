@@ -11,6 +11,7 @@ export type EventCode =
   | "engine_failed"
   | "settings_applied"
   | "targets_warning"
+  | "direction_by_port"
   | "socks5_failed"
   | "mtproto_failed"
   | "web_failed"

@@ -14,10 +14,11 @@ var (
 )
 
 type queueCaps struct {
-	probed    bool
-	queue     bool
-	ctPackets bool
-	queueErr  error
+	probed      bool
+	queue       bool
+	ctPackets   bool
+	ctDirection bool
+	queueErr    error
 }
 
 func nfqueueActionExpr(startNum, threads int) string {
@@ -57,6 +58,13 @@ func probeQueueNft(queueAction string) queueCaps {
 		"ct", "original", "packets", "<", "20", "counter", "accept"); err == nil {
 		caps.ctPackets = true
 	} else {
+		kmodNoteRejected("nft_ct", "nft", out)
+	}
+
+	if out, err := run("nft", "add", "rule", "inet", probeTable, "test",
+		"ct", "direction", "original", "counter", "accept"); err == nil {
+		caps.ctDirection = true
+	} else if caps.ctPackets {
 		kmodNoteRejected("nft_ct", "nft", out)
 	}
 
