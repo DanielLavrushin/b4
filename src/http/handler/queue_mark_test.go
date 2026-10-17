@@ -23,22 +23,26 @@ func TestSavingAQueueMarkWithTheInjectedBitIsRefused(t *testing.T) {
 }
 
 func TestAQueueMarkThatAlreadyHasTheInjectedBitKeepsSaving(t *testing.T) {
-	old := config.NewConfig()
-	old.Queue.Mark = 0x2008000
 	for _, c := range []struct {
-		name string
-		mark uint
-		want bool
+		name             string
+		oldMode, newMode string
+		oldMark, newMark uint
+		want             bool
 	}{
-		{"the same mark, while other settings change", 0x2008000, false},
-		{"another mark with the bit", 0x2010000, true},
-		{"a mark without the bit", 0x10000, false},
-		{"the default", 0, false},
+		{"the same mark, while other settings change", "", "", 0x2008000, 0x2008000, false},
+		{"another mark with the bit", "", "", 0x2008000, 0x2010000, true},
+		{"a mark without the bit", "", "", 0x2008000, 0x10000, false},
+		{"the default", "", "", 0x2008000, 0, false},
+		{"TUN mode, where b4 does not add the bit", "", "tun", 0x8000, 0x2008000, false},
+		{"TUN mode keeping such a mark", "tun", "tun", 0x2008000, 0x2008000, false},
+		{"leaving TUN mode with such a mark", "tun", "", 0x2008000, 0x2008000, true},
 	} {
+		old := config.NewConfig()
+		old.Queue.Mode, old.Queue.Mark = c.oldMode, c.oldMark
 		cur := old.Clone()
-		cur.Queue.Mark = c.mark
+		cur.Queue.Mode, cur.Queue.Mark = c.newMode, c.newMark
 		if refused := queueMarkRefusal(&old, cur) != nil; refused != c.want {
-			t.Errorf("%s (0x%x): refused %v, want %v; a configuration that already holds such a mark must keep loading and saving", c.name, c.mark, refused, c.want)
+			t.Errorf("%s (0x%x): refused %v, want %v; only a save that newly puts such a mark on NFQUEUE mode is refused, so a configuration that already runs with one keeps loading and saving", c.name, c.newMark, refused, c.want)
 		}
 	}
 }

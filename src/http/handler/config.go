@@ -698,7 +698,10 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 
 func queueMarkRefusal(oldCfg, newCfg *config.Config) error {
 	mark := newCfg.MainInjectedMark()
-	if mark&engine.InjectedMarkBit == 0 || (oldCfg != nil && oldCfg.MainInjectedMark() == mark) {
+	if newCfg.Queue.Mode == "tun" || mark&engine.InjectedMarkBit == 0 {
+		return nil
+	}
+	if oldCfg != nil && oldCfg.Queue.Mode != "tun" && oldCfg.MainInjectedMark() == mark {
 		return nil
 	}
 	return ErrValidation("The packet mark has a bit b4 reserves", FieldError{

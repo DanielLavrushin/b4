@@ -201,9 +201,9 @@ b4 refuses a value that:
 - is made only of bits of `0x27fff` and `0x1000000`, the bits of set marks;
 - overlaps `0x70000000` in TUN mode;
 - has bit `0x20000000` in NFQUEUE mode while **NAT Masquerade** or **Set DSCP** is on, or while an enabled set has **Enable per-set DSCP** on;
-- has bit `0x2000000`, the bit b4 adds to the packets it sends into a connection, when the
-  value is saved as a new one; a configuration that already holds such a value still loads,
-  and b4 logs a warning;
+- has bit `0x2000000` in NFQUEUE mode, the bit b4 adds there to the packets it sends into a
+  connection. A configuration that already runs NFQUEUE mode with such a value still loads
+  and saves, and b4 logs a warning;
 - has `0x24bab`, the Telegram over WebSocket mark, as its bits under `0x27fff`;
 - equals the flow or injected mark of Discovery;
 - is above `0xffffffff`, or, while either Discovery mark is left out of the configuration, is
