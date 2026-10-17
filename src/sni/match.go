@@ -841,6 +841,26 @@ func (s *SuffixSet) MatchIPWithSource(ip net.IP, srcMAC string) (bool, *config.S
 	return selectSetBySource(candidates, srcMAC, ipVersionOf(ip))
 }
 
+func (s *SuffixSet) MatchedIPNet(ip net.IP, set *config.SetConfig) *net.IPNet {
+	if s == nil || s.ipRanger == nil || ip == nil || set == nil {
+		return nil
+	}
+	entries, err := s.ipRanger.ContainingNetworks(ip)
+	if err != nil || len(entries) == 0 {
+		return nil
+	}
+	sortEntriesBySpecificity(entries)
+	for _, e := range entries {
+		r := e.(*ipRange)
+		for _, candidate := range r.sets {
+			if candidate == set {
+				return r.ipNet
+			}
+		}
+	}
+	return nil
+}
+
 func ipVersionOf(ip net.IP) uint8 {
 	if ip == nil {
 		return 0

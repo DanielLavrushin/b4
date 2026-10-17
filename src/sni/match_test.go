@@ -889,6 +889,28 @@ func TestMatchIPWithSource_IPVersionDispatch(t *testing.T) {
 	}
 }
 
+func TestMatchedIPNetIsTheSetsMostSpecificNetwork(t *testing.T) {
+	anyIP := makeSetWithIPs("any", "0.0.0.0/0", "192.168.1.0/24")
+	lan := makeSetWithIPs("lan", "10.0.0.0/8")
+	ss := NewSuffixSet([]*config.SetConfig{anyIP, lan})
+
+	for _, c := range []struct {
+		ip   string
+		set  *config.SetConfig
+		want string
+	}{
+		{"192.168.1.5", anyIP, "192.168.1.0/24"},
+		{"10.1.1.1", anyIP, "0.0.0.0/0"},
+		{"10.1.1.1", lan, "10.0.0.0/8"},
+		{"8.8.8.8", lan, ""},
+	} {
+		got := ss.MatchedIPNet(net.ParseIP(c.ip), c.set)
+		if (got == nil && c.want != "") || (got != nil && got.String() != c.want) {
+			t.Errorf("MatchedIPNet(%s, %s) = %v, want %q", c.ip, c.set.Name, got, c.want)
+		}
+	}
+}
+
 // --- MatchIPWithSource ---
 
 func TestMatchIPWithSource_SourceFilter(t *testing.T) {

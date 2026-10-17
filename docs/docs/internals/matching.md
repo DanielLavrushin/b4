@@ -41,7 +41,7 @@ flowchart TD
 
 QUIC is matched by the server name in its Initial packet, which b4 reads whatever the set's **QUIC Matching** setting is. UDP to port 53 is DNS and goes to b4's [DNS handling](../dns.md) instead.
 
-b4 does not inspect TCP and UDP, apart from DNS, to private addresses: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, and IPv6 unique local (`fc00::/7`), link-local (`fe80::/10`) and loopback addresses. TCP to such an address is the exception when a set's **Bypass IPs** cover it and the set takes the port: that set handles the connection as usual. No set's strategy applies to any other such connection, and it does not show on the Traffic page. b4 does not learn its address from the server name either. Routing and the sets' own DSCP values still apply to these addresses and learn them from DNS answers. A connection from the internet to a server behind a port forward is one of these. A server on the local network with a public IPv4 or IPv6 address is not, and a set that matches its connections from the internet applies its strategy toward that server.
+b4 does not inspect TCP and UDP, apart from DNS, to private addresses: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, and IPv6 unique local (`fc00::/7`), link-local (`fe80::/10`) and loopback addresses. TCP to such an address is the exception when a set's **Bypass IPs** list the address, or a range inside these private ranges that holds it, and the set takes the port: that set handles the connection as usual. **Match any IP address** does not count as listing it. No set's strategy applies to any other such connection, and it does not show on the Traffic page. b4 does not learn its address from the server name either. Routing and the sets' own DSCP values still apply to these addresses and learn them from DNS answers. A connection from the internet to a server behind a port forward is one of these. A server on the local network with a public IPv4 or IPv6 address is not, and a set that matches its connections from the internet applies its strategy toward that server.
 
 ## Choosing between sets
 
@@ -66,7 +66,7 @@ A routing set for one service therefore keeps its traffic away from a routing se
 
 ## Learned addresses and DNS answers
 
-When a server name matches a set, b4 remembers the destination address with the name and the set. A connection to that address then takes the same set before its ClientHello arrives, and so does a connection that carries no server name. The entry lasts 10 minutes after its last use. b4 learns no private address this way.
+When a server name matches a set, b4 remembers the destination address with the name and the set. A connection to that address then takes the same set before its ClientHello arrives, and so does a connection that carries no server name. The entry lasts 10 minutes after its last use. b4 learns a private address this way only over TCP, to an address a set's **Bypass IPs** list as described above.
 
 When a DNS answer for a set's domain passes through b4, it notes the answered addresses for the device that asked. For two minutes, a connection from that device to one of those addresses takes the set when no address target matches.
 

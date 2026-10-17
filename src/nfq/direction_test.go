@@ -525,30 +525,47 @@ func TestASetThatListsAPrivateAddressStillProcessesIt(t *testing.T) {
 	lanClient := [4]byte{192, 168, 1, 20}
 	listed := [4]byte{10, 1, 2, 3}
 	unlisted := [4]byte{172, 16, 0, 9}
+	lanServer := [4]byte{192, 168, 1, 50}
 	for _, c := range []struct {
-		name  string
-		ports string
-		dst   [4]byte
-		want  engine.PacketVerdict
-		why   string
+		name      string
+		ips       []string
+		ports     string
+		dst       [4]byte
+		want      engine.PacketVerdict
+		untouched bool
+		why       string
 	}{
-		{"an address the set lists", "443", listed, engine.VerdictDrop, "a set that lists 10.0.0.0/8 fragments a ClientHello to 10.1.2.3"},
-		{"a private address no set lists", "443", unlisted, engine.VerdictAccept, "a private address no set lists passes untouched, although the ClientHello names a domain of the set"},
-		{"a listed address on a port the set leaves out", "8443", listed, engine.VerdictAccept, "the set does not take port 443, so the address counts as unlisted there"},
+		{"an address the set lists", []string{"10.0.0.0/8"}, "443", listed, engine.VerdictDrop, false, "a set that lists 10.0.0.0/8 fragments a ClientHello to 10.1.2.3"},
+		{"a private address no set lists", []string{"10.0.0.0/8"}, "443", unlisted, engine.VerdictAccept, true, "a private address no set lists passes untouched, although the ClientHello names a domain of the set"},
+		{"a listed address on a port the set leaves out", []string{"10.0.0.0/8"}, "8443", listed, engine.VerdictAccept, true, "the set does not take port 443, so the address counts as unlisted there and the ClientHello is not even read"},
+		{"a set that matches any address", []string{"0.0.0.0/0"}, "443", lanServer, engine.VerdictAccept, true, "Match any IP address lists no private address, so a port-forwarded LAN server stays untouched"},
+		{"a private range next to any address", []string{"0.0.0.0/0", "10.0.0.0/8"}, "443", listed, engine.VerdictDrop, false, "the set's most specific network for 10.1.2.3 is the private range it lists"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			cfg := config.NewConfig()
 			set := newFragmentingYTImagesSet()
 			set.Targets.DomainOnly = false
-			set.Targets.IPs = []string{"10.0.0.0/8"}
-			set.Targets.IpsToMatch = []string{"10.0.0.0/8"}
+			set.Targets.IPs = c.ips
+			set.Targets.IpsToMatch = c.ips
 			set.TCP.DPortFilter = c.ports
 			cfg.Sets = []*config.SetConfig{&set}
 			w := directionWorker(t, &cfg)
 			w.direction.set(true, true, time.Now())
+			ch, _ := log.GetConnectionHub().Subscribe()
+			defer log.GetConnectionHub().Unsubscribe(ch)
 
 			if v := queueAt(w, clientHelloFromTo(lanClient, c.dst, 40010), hookAt(nfHookPostRouting)); v != c.want {
 				t.Errorf("verdict %v, want %v: %s", v, c.want, c.why)
+			}
+			if !c.untouched {
+				return
+			}
+			if lines := drainLines(ch); len(lines) != 0 {
+				t.Errorf("%s, yet b4 logged a connection row: %q", c.why, lines)
+			}
+			key := fmt.Sprintf("192.168.1.20:40010->%d.%d.%d.%d:443", c.dst[0], c.dst[1], c.dst[2], c.dst[3])
+			if _, _, found := w.tlsCache.Lookup(key); found {
+				t.Errorf("%s, yet b4 read the ClientHello", c.why)
 			}
 		})
 	}
