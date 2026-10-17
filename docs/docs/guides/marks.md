@@ -614,12 +614,13 @@ Where these meet b4:
   skip the replies of these connections, such as DNS answers from resolvers outside the
   router. Interface sets do not route these devices: the whole mark takes the place of b4's
   route mark, and KeeneticOS's own rule `fwmark 0xffffaaa lookup 4096` picks the route. A
-  connection that such a set matches gets no strategy. A proxy set takes their connections
-  when b4's routing chains come before `_NDM_HOTSPOT_PREROUTING_MANGL` in mangle
-  `PREROUTING`, where b4 puts them. These connections then leave through b4's proxy, not by
-  the device's KeeneticOS policy. When KeeneticOS sends a connection by that mark through
-  another interface than b4's injected packets would take, the connection gets no strategy;
-  see [Packets that leave by another route](../internals/capture.md#tunnel-egress).
+  connection that such a set matches gets no strategy. The exception is a set with
+  **Domain-only matching** on and no IP address listed: it routes nothing. A proxy set takes
+  their connections when b4's routing chains come before `_NDM_HOTSPOT_PREROUTING_MANGL` in
+  mangle `PREROUTING`, where b4 puts them. These connections then leave through b4's proxy,
+  not by the device's KeeneticOS policy. When KeeneticOS sends a connection by that mark
+  through another interface than b4's injected packets would take, the connection gets no
+  strategy; see [Packets that leave by another route](../internals/capture.md#tunnel-egress).
 - **zapret, MagiTrickle and b4's connection-mark check.** Both put bit `0x40000000` into
   connection marks. b4 takes any answered connection that carries that bit as proof that the
   router keeps its connection mark, so they can hide firmware that overwrites b4's claim.

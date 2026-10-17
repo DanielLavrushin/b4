@@ -423,8 +423,41 @@ func TestASYNOfAHotspotDeviceToARoutedSetGetsNoFakeSYN(t *testing.T) {
 	}
 }
 
+func TestADomainOnlyInterfaceSetWithoutAddressesKeepsTheOrdinaryCheck(t *testing.T) {
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	stubRouteMarks(t, map[string][]uint32{"ppp9": {0x2bd8}})
+	for _, c := range []struct {
+		name    string
+		ips     []string
+		out     uint32
+		want    int
+		lookups int
+		why     string
+	}{
+		{"policy route by the main uplink", nil, idx["eth7"], nfqueue.NfDrop, 1, "the set routes no address, so b4's own packets follow the main route like the connection"},
+		{"policy route by another uplink", nil, idx["ppp9"], nfqueue.NfAccept, 1, "b4's own packets would follow the main route while the connection leaves by ppp9"},
+		{"with an IP target the set routes", []string{"1.2.3.4"}, idx["eth7"], nfqueue.NfAccept, 0, "the set's output rule sends b4's own packets through ppp9"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stub := stubInjectRoute(t, idx["eth7"], true)
+			set := routedThroughPPP9(newFragmentingYTImagesSet())
+			set.Targets.DomainOnly = true
+			set.Targets.IpsToMatch = c.ips
+			w := newInjectingWorker(t, &set)
+			hotspot := keeneticHotspotMark
+			if got := queuedVerdict(t, w, ytimgHello(), &hotspot, c.out, 0); got != c.want {
+				t.Fatalf("verdict %d, want %d: %s", got, c.want, c.why)
+			}
+			if calls := stub.got(); len(calls) != c.lookups {
+				t.Fatalf("route lookups %v, want %d", calls, c.lookups)
+			}
+		})
+	}
+}
+
 func TestABlockSetIsNotLoggedAsHandingAHotspotDeviceOff(t *testing.T) {
 	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	stubInjectRoute(t, idx["ppp9"], true)
 	set := newFragmentingYTImagesSet()
 	set.Routing.Enabled = true
 	set.Routing.Mode = config.RoutingModeBlock

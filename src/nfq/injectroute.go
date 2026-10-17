@@ -260,7 +260,7 @@ func (w *Worker) reroutedEgress(vc *verdictCtx, pkt *pktInfo, cfg *config.Config
 }
 
 func (w *Worker) routedSetOverridden(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig) string {
-	if !set.RoutesToInterface() || vc.foreignMark == 0 || vc.outDev == 0 || cfg.Queue.IsDiscovery {
+	if vc.foreignMark == 0 || vc.outDev == 0 || cfg.Queue.IsDiscovery {
 		return ""
 	}
 	mark := uint32(cfg.MainInjectedMark())
@@ -280,7 +280,10 @@ func (w *Worker) routedSetOverridden(vc *verdictCtx, pkt *pktInfo, cfg *config.C
 }
 
 func (w *Worker) handsOffEgress(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig) bool {
-	if set.Routing.Enabled {
+	if set.Routing.Enabled && !set.RoutesToInterface() {
+		return false
+	}
+	if set.RoutesToInterface() && !set.RoutesNoAddress() {
 		return w.routedSetOverridden(vc, pkt, cfg, set) != ""
 	}
 	return vc.tunnel != "" || w.reroutedEgress(vc, pkt, cfg) != ""
