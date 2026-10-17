@@ -571,6 +571,29 @@ func TestASetThatListsAPrivateAddressStillProcessesIt(t *testing.T) {
 	}
 }
 
+func TestOverlappingPrivateTargetsLeaveTheConnectionToTheSetForThePort(t *testing.T) {
+	cfg := config.NewConfig()
+	host := newFragmentingYTImagesSet()
+	host.Id, host.Name = "host", "host"
+	host.Targets.DomainOnly = false
+	host.Targets.DomainsToMatch = nil
+	host.Targets.IPs = []string{"10.1.2.3/32"}
+	host.Targets.IpsToMatch = []string{"10.1.2.3/32"}
+	host.TCP.DPortFilter = "8443"
+	lan := newFragmentingYTImagesSet()
+	lan.Targets.DomainOnly = false
+	lan.Targets.IPs = []string{"10.0.0.0/8"}
+	lan.Targets.IpsToMatch = []string{"10.0.0.0/8"}
+	lan.TCP.DPortFilter = "443"
+	cfg.Sets = []*config.SetConfig{&host, &lan}
+	w := directionWorker(t, &cfg)
+	w.direction.set(true, true, time.Now())
+
+	if v := queueAt(w, clientHelloFromTo([4]byte{192, 168, 1, 20}, [4]byte{10, 1, 2, 3}, 40020), hookAt(nfHookPostRouting)); v != engine.VerdictDrop {
+		t.Errorf("verdict %v, want the fragmenting set for port 443 to take the ClientHello: the more specific set for 10.1.2.3 takes only port 8443, and the set that lists 10.0.0.0/8 on 443 names its domain", v)
+	}
+}
+
 func TestAClientHelloToAPrivateAddressPassesUntouched(t *testing.T) {
 	wanClient := [4]byte{203, 0, 113, 5}
 	lanServer := [4]byte{192, 168, 1, 10}

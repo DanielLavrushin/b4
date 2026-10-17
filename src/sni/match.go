@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/utils"
 	"github.com/yl2chen/cidranger"
 )
 
@@ -841,24 +842,30 @@ func (s *SuffixSet) MatchIPWithSource(ip net.IP, srcMAC string) (bool, *config.S
 	return selectSetBySource(candidates, srcMAC, ipVersionOf(ip))
 }
 
-func (s *SuffixSet) MatchedIPNet(ip net.IP, set *config.SetConfig) *net.IPNet {
-	if s == nil || s.ipRanger == nil || ip == nil || set == nil {
-		return nil
+func (s *SuffixSet) ListsPrivateTCPTarget(ip net.IP, srcMAC string, dport uint16) bool {
+	if s == nil || s.ipRanger == nil || ip == nil {
+		return false
 	}
 	entries, err := s.ipRanger.ContainingNetworks(ip)
-	if err != nil || len(entries) == 0 {
-		return nil
+	if err != nil {
+		return false
 	}
-	sortEntriesBySpecificity(entries)
+	version := ipVersionOf(ip)
 	for _, e := range entries {
 		r := e.(*ipRange)
-		for _, candidate := range r.sets {
-			if candidate == set {
-				return r.ipNet
+		if !utils.IsPrivateNet(r.ipNet) {
+			continue
+		}
+		for _, set := range r.sets {
+			if len(set.Targets.SourceDevices) > 0 && !setMatchesSource(set, srcMAC) {
+				continue
+			}
+			if set.MatchesIPVersion(version) && set.MatchesTCPDPort(dport) {
+				return true
 			}
 		}
 	}
-	return nil
+	return false
 }
 
 func ipVersionOf(ip net.IP) uint8 {

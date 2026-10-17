@@ -354,7 +354,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		st = nil
 	}
 
-	if utils.IsPrivateIP(pkt.dst) && !(matched && utils.IsPrivateNet(matcher.MatchedIPNet(pkt.dst, set))) {
+	if utils.IsPrivateIP(pkt.dst) && !matcher.ListsPrivateTCPTarget(pkt.dst, pkt.srcMac, dport) {
 		return vc.accept()
 	}
 

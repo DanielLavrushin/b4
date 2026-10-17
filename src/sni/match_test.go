@@ -889,24 +889,39 @@ func TestMatchIPWithSource_IPVersionDispatch(t *testing.T) {
 	}
 }
 
-func TestMatchedIPNetIsTheSetsMostSpecificNetwork(t *testing.T) {
-	anyIP := makeSetWithIPs("any", "0.0.0.0/0", "192.168.1.0/24")
+func TestListsPrivateTCPTargetNeedsAPrivateNetworkOnThePort(t *testing.T) {
+	anyIP := makeSetWithIPs("any", "0.0.0.0/0", "::/0")
+	host := makeSetWithIPs("host", "10.1.2.3/32")
+	host.TCP.DPortFilter = "8443"
 	lan := makeSetWithIPs("lan", "10.0.0.0/8")
-	ss := NewSuffixSet([]*config.SetConfig{anyIP, lan})
+	lan.TCP.DPortFilter = "443"
+	device := makeSetWithIPs("device", "192.168.7.0/24")
+	device.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:01"}
+	v6only := makeSetWithIPs("v6only", "172.16.0.0/12")
+	v6only.Targets.IPVersion = "6"
+	cfg := config.Config{Sets: []*config.SetConfig{anyIP, host, lan, device, v6only}}
+	cfg.BuildSetPortRanges()
+	ss := NewSuffixSet(cfg.Sets)
 
 	for _, c := range []struct {
+		name string
 		ip   string
-		set  *config.SetConfig
-		want string
+		mac  string
+		port uint16
+		want bool
 	}{
-		{"192.168.1.5", anyIP, "192.168.1.0/24"},
-		{"10.1.1.1", anyIP, "0.0.0.0/0"},
-		{"10.1.1.1", lan, "10.0.0.0/8"},
-		{"8.8.8.8", lan, ""},
+		{"the overlapping set that takes the port", "10.1.2.3", "", 443, true},
+		{"the most specific set on its own port", "10.1.2.3", "", 8443, true},
+		{"a port no listing set takes", "10.1.2.3", "", 80, false},
+		{"an address only Match any IP address covers", "192.168.1.50", "", 443, false},
+		{"a public address", "8.8.8.8", "", 443, false},
+		{"a set for this device", "192.168.7.9", "AA:BB:CC:DD:EE:01", 443, true},
+		{"a set for another device", "192.168.7.9", "AA:BB:CC:DD:EE:02", 443, false},
+		{"a set for the other IP family", "172.16.0.9", "", 443, false},
+		{"an IPv6 address only ::/0 covers", "fd00::5", "", 443, false},
 	} {
-		got := ss.MatchedIPNet(net.ParseIP(c.ip), c.set)
-		if (got == nil && c.want != "") || (got != nil && got.String() != c.want) {
-			t.Errorf("MatchedIPNet(%s, %s) = %v, want %q", c.ip, c.set.Name, got, c.want)
+		if got := ss.ListsPrivateTCPTarget(net.ParseIP(c.ip), c.mac, c.port); got != c.want {
+			t.Errorf("%s: ListsPrivateTCPTarget(%s, %q, %d) = %v, want %v", c.name, c.ip, c.mac, c.port, got, c.want)
 		}
 	}
 }
