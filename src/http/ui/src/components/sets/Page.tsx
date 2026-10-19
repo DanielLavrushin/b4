@@ -30,12 +30,16 @@ import {
 interface SetEditorRouteProps {
   config: B4Config & { sets?: SetWithStats[] };
   onRefresh: () => void;
+  onReload: () => void;
+  reloadToken: number;
   onSaved: (set: B4SetConfig) => void;
 }
 
 function SetEditorRoute({
   config,
   onRefresh,
+  onReload,
+  reloadToken,
   onSaved,
 }: Readonly<SetEditorRouteProps>) {
   const { t } = useTranslation();
@@ -110,7 +114,7 @@ function SetEditorRoute({
       }
       return result.data ?? undefined;
     } else if (isStaleWriteError(result.error)) {
-      reportStaleWrite(result.error, showSnackbar, t, onRefresh);
+      reportStaleWrite(result.error, showSnackbar, t, onReload);
     } else {
       reportSaveError(result.error, showError, t);
     }
@@ -123,7 +127,7 @@ function SetEditorRoute({
 
   return (
     <SetEditorPage
-      key={isNew ? "new" : set.id}
+      key={isNew ? "new" : `${set.id}:${reloadToken}`}
       settings={config.system}
       set={set}
       config={config}
@@ -145,9 +149,10 @@ export function SetsPage() {
     (B4Config & { sets?: SetWithStats[] }) | null
   >(null);
   const [loading, setLoading] = useState(true);
+  const [editorReload, setEditorReload] = useState(0);
   const initialLoadDone = useRef(false);
 
-  const loadConfig = useCallback(async () => {
+  const loadConfig = useCallback(async (resetEditor = false) => {
     try {
       if (!initialLoadDone.current) setLoading(true);
       const response = await fetch("/api/config");
@@ -156,6 +161,9 @@ export function SetsPage() {
         sets?: SetWithStats[];
       };
       setConfig(data);
+      // Same tick as setConfig: one render, so the remounted editor starts
+      // from the fresh config instead of the stale one.
+      if (resetEditor) setEditorReload((n) => n + 1);
     } catch {
       showError(i18n.t("core.configLoadError"));
     } finally {
@@ -226,6 +234,10 @@ export function SetsPage() {
                 onRefresh={() => {
                   loadConfig().catch(() => {});
                 }}
+                onReload={() => {
+                  void loadConfig(true);
+                }}
+                reloadToken={editorReload}
                 onSaved={handleSaved}
               />
             }

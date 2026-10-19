@@ -320,6 +320,7 @@ export const ImportExportSettings = ({
       clearImportOutcome();
       e.preventDefault();
     } catch {
+      e.preventDefault();
       setJsonValue(pastedText);
       clearImportOutcome();
     }
