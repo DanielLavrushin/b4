@@ -87,10 +87,10 @@ export const BackupSettings = () => {
     try {
       setResetting(true);
       await configApi.reset();
-      showSuccess(t("settings.Control.resetSuccess"));
+      showSuccess(t("settings.Service.resetSuccess"));
       setTimeout(() => globalThis.window.location.reload(), 800);
     } catch (error) {
-      showFailure("settings.Control.resetError", error);
+      showFailure("settings.Service.resetError", error);
       setResetting(false);
       setShowResetDialog(false);
     }
@@ -275,12 +275,12 @@ export const BackupSettings = () => {
 
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Section
-            title={t("settings.Control.resetConfig")}
+            title={t("settings.Service.resetConfig")}
             icon={<RestoreIcon />}
           >
             <Stack spacing={2}>
               <Typography variant="body2" sx={{ color: colors.text.secondary }}>
-                {t("settings.Control.resetConfirm")}
+                {t("settings.Service.resetConfirm")}
               </Typography>
               <Box>
                 <Button
@@ -289,7 +289,7 @@ export const BackupSettings = () => {
                   startIcon={<RestoreIcon />}
                   onClick={() => setShowResetDialog(true)}
                 >
-                  {t("settings.Control.resetButton")}
+                  {t("settings.Service.resetButton")}
                 </Button>
               </Box>
             </Stack>
@@ -302,7 +302,7 @@ export const BackupSettings = () => {
         onClose={() => setShowRestartDialog(false)}
       />
       <B4Dialog
-        title={t("settings.Control.resetConfig")}
+        title={t("settings.Service.resetConfig")}
         open={showResetDialog}
         onClose={() => !resetting && setShowResetDialog(false)}
         actions={
@@ -323,14 +323,14 @@ export const BackupSettings = () => {
             >
               {resetting
                 ? t("core.saving")
-                : t("settings.Control.resetButton")}
+                : t("settings.Service.resetButton")}
             </Button>
           </>
         }
       >
         <DialogContent>
           <DialogContentText>
-            {t("settings.Control.resetConfirm")}
+            {t("settings.Service.resetConfirm")}
           </DialogContentText>
         </DialogContent>
       </B4Dialog>

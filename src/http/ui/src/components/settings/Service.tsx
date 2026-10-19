@@ -53,7 +53,7 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
 
   const TIMEZONES = useMemo(
     () => [
-      { value: "", label: t("settings.Logging.timezoneAuto") },
+      { value: "", label: t("settings.Service.timezoneAuto") },
       ...ZONE_ENTRIES,
     ],
     [t],
@@ -66,7 +66,7 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
   };
 
   return (
-    <B4Section title={t("settings.Logging.title")} icon={<ControlIcon />}>
+    <B4Section title={t("settings.Service.title")} icon={<ControlIcon />}>
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
         <Button
           size="small"
@@ -74,7 +74,7 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
           startIcon={<RestartIcon />}
           onClick={() => setShowRestartDialog(true)}
         >
-          {t("settings.Control.restartService")}
+          {t("settings.Service.restartService")}
         </Button>
         <Button
           size="small"
@@ -82,7 +82,7 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
           startIcon={<InfoIcon />}
           onClick={() => setShowSysInfoDialog(true)}
         >
-          {t("settings.Control.systemInfo")}
+          {t("settings.Service.systemInfo")}
         </Button>
       </Box>
       <Divider />
@@ -97,7 +97,7 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
         options={TIMEZONES}
         path="system.timezone"
         onChange={(e) => onChange("system.timezone", String(e.target.value))}
-        helperText={t("settings.Logging.timezoneHelp")}
+        helperText={t("settings.Service.timezoneHelp")}
       />
       <B4TextField
         value={config.system.memory_limit ?? ""}
@@ -105,8 +105,8 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
           onChange("system.memory_limit", e.target.value)
         }
-        placeholder={t("settings.Logging.memoryLimitPlaceholder")}
-        helperText={t("settings.Logging.memoryLimitHelp")}
+        placeholder={t("settings.Service.memoryLimitPlaceholder")}
+        helperText={t("settings.Service.memoryLimitHelp")}
       />
       <B4TextField
         value={(config.system.update?.mirrors ?? []).join(", ")}
@@ -120,8 +120,8 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
               .filter(Boolean),
           )
         }
-        placeholder={t("settings.Logging.updateMirrorsPlaceholder")}
-        helperText={t("settings.Logging.updateMirrorsHelp")}
+        placeholder={t("settings.Service.updateMirrorsPlaceholder")}
+        helperText={t("settings.Service.updateMirrorsHelp")}
       />
 
       <RestartDialog
@@ -142,7 +142,7 @@ export const LoggingSettings = ({ config, onChange }: ServiceCardProps) => {
   const LOG_LEVELS = useMemo(() => logLevelOptions(t), [t]);
 
   return (
-    <B4Section title={t("settings.Logging.loggingTitle")} icon={<LogsIcon />}>
+    <B4Section title={t("settings.Logging.title")} icon={<LogsIcon />}>
       <B4Select
         value={config.system.logging.level}
         options={LOG_LEVELS}

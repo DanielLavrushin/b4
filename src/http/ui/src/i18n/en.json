@@ -42,7 +42,8 @@
     "discardChanges": "Discard changes",
     "discardConfirm": "Are you sure you want to discard all unsaved changes? This action cannot be undone.",
     "unsavedChangesTitle": "Unsaved changes",
-    "unsavedChangesBody": "You have {{count}} unsaved change(s). Leaving will discard them.",
+    "unsavedChangesBody_one": "You have {{count}} unsaved change. Leaving will discard it.",
+    "unsavedChangesBody_other": "You have {{count}} unsaved changes. Leaving will discard them.",
     "unsavedStay": "Stay",
     "unsavedLeave": "Leave without saving",
     "valueOn": "on",
@@ -152,15 +153,6 @@
       "web": "Web Server",
       "backup": "Backup"
     },
-    "Control": {
-      "restartService": "Restart Service",
-      "systemInfo": "System Info",
-      "resetConfig": "Reset Config to Defaults",
-      "resetButton": "Reset",
-      "resetConfirm": "This will reset the configuration to defaults. Sets, the web server settings (including the login, MCP and the interface language) and the geodata settings are kept. Everything else returns to its default, including every Core setting, logging, the time zone, the memory limit and update mirrors, Discovery and the watchdog, Telegram with its MTProto secrets, the community hub connection, the IPinfo token, the AI assistant settings and the dashboard layout.",
-      "resetSuccess": "Configuration reset to defaults",
-      "resetError": "Failed to reset configuration"
-    },
     "Queue": {
       "title": "Queue & Packet Processing",
       "queueStart": "Queue Start Number",
@@ -175,8 +167,7 @@
       "udpLimitHelp": "Max UDP packets per connection to inspect (default 8). Sets cannot exceed this value."
     },
     "Logging": {
-      "title": "Service",
-      "loggingTitle": "Logging",
+      "title": "Logging",
       "logLevel": "Log Level",
       "logDirectory": "Log Directory",
       "logDirectoryPlaceholder": "/var/log/b4",
@@ -187,7 +178,11 @@
       "levelError": "Error",
       "levelInfo": "Info",
       "levelTrace": "Trace",
-      "levelDebug": "Debug",
+      "levelDebug": "Debug"
+    },
+
+    "Service": {
+      "title": "Service",
       "timezone": "Time Zone",
       "timezoneAuto": "Auto (system default)",
       "timezoneHelp": "Timezone for log timestamps (default: system)",
@@ -196,7 +191,14 @@
       "memoryLimitHelp": "Soft cap on b4 memory use. Accepts e.g. 128MiB, 256m, 1g. Leave empty or 'auto' for half of system RAM. Use 'off' to disable.",
       "updateMirrors": "Update mirrors",
       "updateMirrorsPlaceholder": "https://name.account.workers.dev",
-      "updateMirrorsHelp": "Mirrors tried when GitHub cannot be reached, before the built-in ones. Comma-separated, https only. A personal Cloudflare Worker belongs here."
+      "updateMirrorsHelp": "Mirrors tried when GitHub cannot be reached, before the built-in ones. Comma-separated, https only. A personal Cloudflare Worker belongs here.",
+      "restartService": "Restart Service",
+      "systemInfo": "System Info",
+      "resetConfig": "Reset Config to Defaults",
+      "resetButton": "Reset",
+      "resetConfirm": "This will reset the configuration to defaults. Sets, the web server settings (including the login, MCP and the interface language) and the geodata settings are kept. Everything else returns to its default, including every Core setting, logging, the time zone, the memory limit and update mirrors, Discovery and the watchdog, Telegram with its MTProto secrets, the community hub connection, the IPinfo token, the AI assistant settings and the dashboard layout.",
+      "resetSuccess": "Configuration reset to defaults",
+      "resetError": "Failed to reset configuration"
     },
     "Feature": {
       "protoFeatures": "IPv4 / IPv6",
@@ -1564,9 +1566,6 @@
       "catchAllChipV4": "Any IPv4",
       "catchAllChipV6": "Any IPv6",
       "catchAllIpNotice": "Matches every IP address. \"{{value}}\" will be added.",
-      "escalateTo": "Escalate to set",
-      "escalateNone": "None",
-      "escalateHelper": "If this set keeps failing for a site, b4 will use the chosen set for that site instead. After a while, b4 tries this set again.",
       "tabs": {
         "domains": "Bypass Domains",
         "ips": "Bypass IPs",
@@ -2258,6 +2257,7 @@
       "killSwitchDesc": "If the output interface goes away, drop this set's traffic instead of letting it fall back to the normal uplink.",
       "tunnelManipulationNote": "{{iface}} wraps the packet before anything on the network sees it, so B4 leaves this set's packets alone: no faking, fragmentation or desync, and no SYN health check, dead-IP escalation, IP block detection or TCP duplication. The settings on the Strategy tabs have no effect while the set routes there. Such connections are tagged routed->{{iface}} in the connection log.",
       "dscpTitle": "DSCP",
+      "dscpValue": "DSCP value",
       "dscpEnable": "Enable per-set DSCP",
       "dscpEnableDesc": "Write this set's own DSCP value into the packets that go to the set's addresses, so the router in front of b4 can tell this set's traffic apart. ECN bits and the packets going back to LAN clients keep their value.",
       "dscpValueHelp": "Prefer 7 and 31, then 6 and 25: they keep normal priority in Linux Wi-Fi, cake and pfifo_fast. 0 clears the DSCP field. Other values can land in another queue: 1 (lowest priority); 2-5, 27 and 29 (cake or pfifo_fast); 8-23 (Wi-Fi background); 24, 26, 28, 30 and 32-63 (Wi-Fi video and voice). pfSense cannot match 7, 31, 6 or 25: of its classes, AF11-AF13 (10, 12, 14) disturb traffic least. OPNsense matches any value. The router that reads the value should reset it before its internet uplink.",
@@ -2329,7 +2329,6 @@
       "namePlaceholder": "Set name...",
       "newSet": "New Set",
       "createSet": "Create Set",
-      "escalateNeedsRstProtection": "Tip: also enable RST Injection Protection in the TCP tab. It helps keep the current page working while b4 detects the block.",
       "tabs": {
         "targets": "Targets",
         "tcp": "TCP",
@@ -2399,7 +2398,11 @@
       "stallTimeoutMs": "Handshake wait",
       "stallTimeoutHelper": "A resent ClientHello older than this also counts as a stalled handshake.",
       "dnsThreshold": "Unusable DNS answers",
-      "dnsThresholdHelper": "How many NXDOMAIN, SERVFAIL or address-less answers for the same domain before b4 asks the backup set to resolve it."
+      "dnsThresholdHelper": "How many NXDOMAIN, SERVFAIL or address-less answers for the same domain before b4 asks the backup set to resolve it.",
+      "escalateTo": "Escalate to set",
+      "escalateNone": "None",
+      "escalateHelper": "If this set keeps failing for a site, b4 will use the chosen set for that site instead. After a while, b4 tries this set again.",
+      "escalateNeedsRstProtection": "Tip: also enable RST Injection Protection in the TCP tab. It helps keep the current page working while b4 detects the block."
     },
     "convert": {
       "title": "Import from another tool",

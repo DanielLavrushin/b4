@@ -102,7 +102,7 @@ export const SetDscp = ({
       {dscp.enabled && (
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Slider
-            label={t("settings.Feature.dscpValue")}
+            label={t("sets.routing.dscpValue")}
             value={dscp.value}
             path="dscp.value"
             onChange={(value: number) => onChange("dscp.value", value)}

@@ -71,11 +71,11 @@ export const EscalationSettings = ({
         <Grid container spacing={3}>
           <Grid size={{ xs: 12, md: 6 }}>
             <B4Select
-              label={t("sets.targets.escalateTo")}
+              label={t("sets.escalation.escalateTo")}
               value={config.escalate?.to ?? ""}
               path="escalate.to"
               options={[
-                { value: "", label: t("sets.targets.escalateNone") },
+                { value: "", label: t("sets.escalation.escalateNone") },
                 ...allSets
                   .filter(
                     (s) =>
@@ -94,14 +94,14 @@ export const EscalationSettings = ({
             />
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
-            <B4Hint sx={{ mt: 1 }}>{t("sets.targets.escalateHelper")}</B4Hint>
+            <B4Hint sx={{ mt: 1 }}>{t("sets.escalation.escalateHelper")}</B4Hint>
           </Grid>
         </Grid>
 
         {showRstWarn && (
           <Box>
             <B4Alert severity="warning" noWrapper>
-              {t("sets.editor.escalateNeedsRstProtection")}
+              {t("sets.escalation.escalateNeedsRstProtection")}
             </B4Alert>
           </Box>
         )}
