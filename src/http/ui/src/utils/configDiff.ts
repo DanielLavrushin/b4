@@ -59,9 +59,12 @@ export const isZero = (value: unknown): boolean =>
 // Order is user-visible state for these leaves: mirrors are tried in order,
 // seq_overlap_pattern emits bytes positionally. Everywhere else arrays stay
 // order-insensitive so set-like lists don't produce phantom dirty state.
-const ORDERED_ARRAY_PATHS: Record<string, true> = {
+export const ORDERED_ARRAY_PATHS: Record<string, true> = {
   "system.update.mirrors": true,
+  "system.hub.urls": true,
+  "tcp.win.values": true,
   "fragmentation.seq_overlap_pattern": true,
+  "faking.sni_mutation.fake_snis": true,
 };
 export const leafEqual = (
   a: unknown,
