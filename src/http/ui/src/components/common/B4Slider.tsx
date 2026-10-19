@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Box,
+  ButtonBase,
   Slider,
   Stack,
   TextField,
@@ -150,28 +151,34 @@ export const B4Slider = ({
               </Typography>
               </>
             ) : (
-              <Typography
-                variant="body2"
-                onClick={disabled ? undefined : () => editor.start()}
+              <ButtonBase
+                disabled={disabled}
+                onClick={() => editor.start()}
+                aria-label={`${resolvedLabel ?? ""}: ${value}${valueSuffix}`.trim()}
                 sx={{
-                  color: disabled ? colors.text.disabled : colors.secondary,
-                  fontWeight: 600,
-                  bgcolor: disabled
-                    ? colors.background.dark
-                    : colors.accent.secondary,
                   px: 1.5,
                   py: 0.5,
                   borderRadius: 1,
-                  textAlign: "center",
+                  bgcolor: disabled
+                    ? colors.background.dark
+                    : colors.accent.secondary,
                   cursor: disabled ? "default" : "text",
                   "&:hover": disabled
                     ? {}
                     : { bgcolor: colors.accent.secondaryHover },
                 }}
               >
-                {value}
-                {valueSuffix}
-              </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: disabled ? colors.text.disabled : colors.secondary,
+                    fontWeight: 600,
+                  }}
+                >
+                  {value}
+                  {valueSuffix}
+                </Typography>
+              </ButtonBase>
             ))}
         </Box>
       </Box>

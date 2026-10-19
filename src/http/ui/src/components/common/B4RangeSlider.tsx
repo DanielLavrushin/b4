@@ -1,5 +1,6 @@
 import {
   Box,
+  ButtonBase,
   Slider,
   Stack,
   TextField,
@@ -65,8 +66,13 @@ function RangeValueInput({
         if (!(e.relatedTarget instanceof HTMLInputElement)) onPairBlur();
       }}
       onKeyDown={(e) => {
-        if (e.key === "Enter") editor.commit();
-        else if (e.key === "Escape") editor.cancel();
+        if (e.key === "Enter") {
+          editor.commit();
+          onPairBlur();
+        } else if (e.key === "Escape") {
+          editor.cancel();
+          onPairBlur();
+        }
       }}
       onFocus={(e) => e.target.select()}
       slotProps={{ htmlInput: { style: { width: `${Math.max(digits, 2) + 1}ch`, padding: "4px 8px", textAlign: "center" } } }}
@@ -223,32 +229,42 @@ export const B4RangeSlider = ({
                 </Typography>
               </Stack>
             ) : (
-              <Typography
-                variant="body2"
-                onClick={disabled ? undefined : () => {
+              <ButtonBase
+                disabled={disabled}
+                onClick={() => {
                   loEditor.start();
                   hiEditor.start();
                 }}
+                aria-label={`${resolvedLabel ?? ""}: ${
+                  isRange
+                    ? `${value[0]}${valueSuffix} – ${value[1]}${valueSuffix}`
+                    : `${value[0]}${valueSuffix}`
+                }`.trim()}
                 sx={{
-                  color: disabled ? colors.text.disabled : colors.secondary,
-                  fontWeight: 600,
-                  bgcolor: disabled
-                    ? colors.background.dark
-                    : colors.accent.secondary,
                   px: 1.5,
                   py: 0.5,
                   borderRadius: 1,
-                  textAlign: "center",
+                  bgcolor: disabled
+                    ? colors.background.dark
+                    : colors.accent.secondary,
                   cursor: disabled ? "default" : "text",
                   "&:hover": disabled
                     ? {}
                     : { bgcolor: colors.accent.secondaryHover },
                 }}
               >
-                {isRange
-                  ? `${value[0]}${valueSuffix} – ${value[1]}${valueSuffix}`
-                  : `${value[0]}${valueSuffix}`}
-              </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: disabled ? colors.text.disabled : colors.secondary,
+                    fontWeight: 600,
+                  }}
+                >
+                  {isRange
+                    ? `${value[0]}${valueSuffix} – ${value[1]}${valueSuffix}`
+                    : `${value[0]}${valueSuffix}`}
+                </Typography>
+              </ButtonBase>
             ))}
         </Box>
       </Box>
