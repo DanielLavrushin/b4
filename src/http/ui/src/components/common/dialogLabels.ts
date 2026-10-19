@@ -1,4 +1,6 @@
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
 
 // Dialog label keys derived from config paths by convention: longest-prefix
 // namespace match, remaining segments camelCased, trailing _sec stripped
@@ -67,6 +69,7 @@ const LABEL_EXCEPTIONS: Record<string, string> = {
   "system.api.ipinfo_token": "settings.Api.token",
   "system.checker.config_propagate_ms": "settings.Checker.configPropagation",
   "system.checker.dns_server": "settings.Checker.trustedDns",
+  "system.checker.watchdog.domains": "settings.Watchdog.domainsConfig",
   "system.dns.keep_ipv6_answers": "settings.Dns.ipv4Fallback",
   "system.dns.tcp_disabled": "settings.Dns.tcpEnable",
   "system.logging.directory": "settings.Logging.logDirectory",
@@ -103,6 +106,7 @@ const LABEL_EXCEPTIONS: Record<string, string> = {
   "system.web_server.bind_address": "settings.Listener.bindAddress",
   "system.web_server.expose": "settings.Listener.expose",
   "system.web_server.language": "core.language",
+  "system.web_server.mcp.allow_active_probes": "settings.Mcp.allowProbes",
   "system.web_server.mcp.enabled": "settings.Mcp.title",
   "system.web_server.port": "settings.Listener.port",
 };
@@ -117,7 +121,10 @@ export function labelKeyForPath(path: string): string | undefined {
     if (ns === undefined) continue;
     const raw = segs.slice(n).join("_").replace(/_(sec)$/, "");
     const field = raw.replace(/_([a-z0-9])/g, (_m: string, c: string) => c.toUpperCase());
-    return `${ns}.${field}`;
+    const key = `${ns}.${field}`;
+    // Missing keys (dynamic paths like dns.pins.<domain>) must fall back to
+    // the caller instead of rendering the key itself.
+    return i18n.exists(key) ? key : undefined;
   }
   return undefined;
 }
@@ -147,4 +154,27 @@ export const SET_VALUE_LABEL_KEYS: Record<string, Record<string, string>> = {
     rnd: "sets.faking.fakeSni.randomizeTlsRandom",
     dupsid: "sets.faking.fakeSni.dupSessionId",
   },
+};
+
+export const humanizeSegment = (segment: string): string =>
+  segment.replaceAll("_", " ");
+
+export const capitalize = (text: string): string =>
+  text.length > 0 ? text[0].toUpperCase() + text.slice(1) : text;
+
+// Object maps (dns.pins.<domain>) have no label of their own; use the nearest
+// registered ancestor and keep the dynamic remainder visible.
+export const labelForPath = (
+  path: string,
+  labels: ReadonlyMap<string, ReactNode>,
+): ReactNode => {
+  const segs = path.split(".");
+  for (let n = segs.length; n > 0; n--) {
+    const label = labels.get(segs.slice(0, n).join("."));
+    if (label === undefined) continue;
+    const rest = segs.slice(n).join(".");
+    if (!rest) return label;
+    return typeof label === "string" ? `${label}: ${rest}` : rest;
+  }
+  return capitalize(humanizeSegment(segs[segs.length - 1]));
 };

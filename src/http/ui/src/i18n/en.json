@@ -598,6 +598,7 @@
       "title": "AI Assistant",
       "description": "Explains settings and reads diagnostics inside this UI, using a key you supply.",
       "enable": "Enable AI assistance",
+      "provider": "Provider",
       "model": "Model",
       "modelHelp": "Pick from the provider's list, or type a custom model id",
       "modelsError": "Could not load models",

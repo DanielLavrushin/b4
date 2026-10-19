@@ -1,6 +1,6 @@
 import { Fragment, memo, useMemo } from "react";
 import type { ReactNode } from "react";
-import type { ChangedLeaf } from "@utils";
+import { ORDERED_ARRAY_PATHS, type ChangedLeaf } from "@utils";
 import {
   Box,
   Button,
@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { B4Dialog } from "./B4Dialog";
+import { capitalize, humanizeSegment, labelForPath } from "./dialogLabels";
 import { colors } from "@design";
 
 export interface UnsavedChangeItem {
@@ -21,6 +22,7 @@ export interface UnsavedChangeItem {
   groupPrefix?: string;
   subLabel?: string;
   blockLabel?: string;
+  ordered?: boolean;
 }
 
 export function buildChangeItems(
@@ -35,12 +37,13 @@ export function buildChangeItems(
     };
     const parent = {
       path: leaf.path,
-      label:
-        labels.get(leaf.path) ??
-        capitalize(humanizeSegment(leaf.path.split(".").pop() ?? leaf.path)),
+      label: labelForPath(leaf.path, labels),
       before: resolve(leaf.before),
       after: resolve(leaf.after),
     };
+    if (ORDERED_ARRAY_PATHS[leaf.path]) {
+      return [{ ...parent, ordered: true }];
+    }
     if (!Array.isArray(leaf.before) && !Array.isArray(leaf.after)) {
       return [parent];
     }
@@ -80,10 +83,6 @@ export interface ChangeGroupDef {
   prefixes: string[];
   labelKey: string;
 }
-const humanizeSegment = (segment: string): string =>
-  segment.replaceAll("_", " ");
-const capitalize = (text: string): string =>
-  text.length > 0 ? text[0].toUpperCase() + text.slice(1) : text;
 
 const matchPrefix = (prefixes: string[], path: string): string | undefined => {
   let best: string | undefined;
@@ -157,7 +156,10 @@ export const groupChangeItems = (
     (a, b) => (order.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.key) ?? Number.MAX_SAFE_INTEGER),
   );
 };
-const SENSITIVE_PATH = /token|secret|password/i;
+// Mask whole field segments (or *_token style names), not substrings:
+// system.ai.max_tokens is a numeric limit, not a credential.
+const SENSITIVE_SEGMENT =
+  /(^|\.)([a-z0-9]+_)?(token|secrets?|password|passwd)$/i;
 
 const subgroupOf = (item: UnsavedChangeItem): string[] => {
   const prefix = item.groupPrefix;
@@ -192,7 +194,7 @@ const formatValue = (
   path: string,
   t: (key: string) => string,
 ): string => {
-  if (SENSITIVE_PATH.test(path)) return "••••••";
+  if (SENSITIVE_SEGMENT.test(path)) return "••••••";
   if (value === undefined || value === null || value === "") return "—";
   if (typeof value === "boolean") {
     const shown = INVERTED_BOOLEAN_PATHS[path] ? !value : value;
@@ -241,7 +243,13 @@ const ChangeItemView = memo(function ChangeItemView({
         variant="caption"
         sx={{ color: colors.text.secondary, display: "block" }}
       >
-        {Array.isArray(item.before) || Array.isArray(item.after) ? (
+        {item.ordered ? (
+          <>
+            {formatValue(item.before, item.path, t)}
+            {" → "}
+            {formatValue(item.after, item.path, t)}
+          </>
+        ) : Array.isArray(item.before) || Array.isArray(item.after) ? (
           <>
             {(item.after as unknown[]).length > 0 && (
               <>{t("core.addedItems")}: {formatValue(item.after, item.path, t)}</>

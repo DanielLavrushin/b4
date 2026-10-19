@@ -115,6 +115,18 @@ export function ChangedFieldsProvider({
   );
 }
 
+// Object-valued controls (e.g. dns.pins) diff into child leaves, so a parent
+// field must light up when any descendant changed.
+const changedInPath = (
+  paths: ReadonlySet<string>,
+  path: string,
+): boolean => {
+  if (paths.has(path)) return true;
+  const prefix = path + ".";
+  for (const p of paths) if (p.startsWith(prefix)) return true;
+  return false;
+};
+
 export function useChangedField(path?: string, label?: ReactNode): boolean {
   const context = use(ChangedFieldsContext) ?? defaultChangedFields;
   const { registerLabel } = context;
@@ -125,7 +137,7 @@ export function useChangedField(path?: string, label?: ReactNode): boolean {
     }
   }, [registerLabel, path, label]);
 
-  return Boolean(path && context.changedPaths.has(path));
+  return Boolean(path && changedInPath(context.changedPaths, path));
 }
 
 export function useChangedArrayItem(
