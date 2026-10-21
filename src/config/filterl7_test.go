@@ -154,6 +154,7 @@ func TestL7FilterIsOmittedFromASparseSet(t *testing.T) {
 func TestASTUNFakeLengthIsNormalised(t *testing.T) {
 	for _, c := range []struct{ in, want int }{
 		{0, 20}, {19, 20}, {20, 20}, {21, 24}, {23, 24}, {24, 24}, {64, 64}, {100, 100}, {101, 100}, {1203, 1200},
+		{65504, 65504}, {65507, 65504}, {65556, 65504}, {1 << 20, 65504},
 	} {
 		if got := NormalizeSTUNFakeLen(c.in); got != c.want {
 			t.Fatalf("NormalizeSTUNFakeLen(%d) = %d, want %d", c.in, got, c.want)

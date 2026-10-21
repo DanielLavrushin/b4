@@ -132,12 +132,16 @@ func SelectsKnownL7(classes []string) bool {
 	return slices.ContainsFunc(classes, func(c string) bool { return slices.Contains(UDPL7Classes, c) })
 }
 
+const maxSTUNFakeLen = (0xffff - 20 - 8) &^ 3
+
 func NormalizeSTUNFakeLen(size int) int {
 	switch {
 	case size <= 20:
 		return 20
 	case size < 24:
 		return 24
+	case size > maxSTUNFakeLen:
+		return maxSTUNFakeLen
 	}
 	return size - size%4
 }
