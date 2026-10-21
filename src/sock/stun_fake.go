@@ -11,9 +11,13 @@ const (
 	stunBindingRequest = 0x0001
 	stunMagicCookie    = 0x2112A442
 	stunPaddingAttr    = 0x0026
+	stunMaxBodyLen     = 0xffff
 )
 
 func stunFakeLenValid(size int) bool {
+	if size-stunHeaderLen > stunMaxBodyLen {
+		return false
+	}
 	return size == stunHeaderLen || (size >= stunHeaderLen+stunAttrHeaderLen && size%4 == 0)
 }
 

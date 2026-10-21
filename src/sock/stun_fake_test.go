@@ -8,7 +8,7 @@ import (
 )
 
 func TestBuildSTUNRequestIsRecognisedAsSTUN(t *testing.T) {
-	for _, size := range []int{20, 24, 64, 100, 1200} {
+	for _, size := range []int{20, 24, 64, 100, 1200, 65552} {
 		pkt := BuildSTUNRequest(size)
 		if len(pkt) != size {
 			t.Fatalf("size %d: built %d bytes", size, len(pkt))
@@ -20,7 +20,7 @@ func TestBuildSTUNRequestIsRecognisedAsSTUN(t *testing.T) {
 }
 
 func TestBuildSTUNRequestRefusesALengthItCannotEncode(t *testing.T) {
-	for _, size := range []int{0, 19, 21, 23, 65, 101} {
+	for _, size := range []int{0, 19, 21, 23, 65, 101, 65556, 65560} {
 		if pkt := BuildSTUNRequest(size); pkt != nil {
 			t.Fatalf("size %d: built %d bytes, want nothing", size, len(pkt))
 		}
