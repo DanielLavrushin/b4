@@ -8,6 +8,7 @@ const SET_FIELD_ERRORS: Record<string, string> = {
   "udp.dport_filter:required": "udp_l7_ports",
   "udp.filter_l7:conflict": "udp_l7_targets",
   "tcp.dport_filter:conflict": "udp_l7_tcp_ports",
+  "routing.source_interfaces:conflict": "udp_l7_source_interfaces",
 };
 
 function fieldErrorKey(f: FieldError): string {

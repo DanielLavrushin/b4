@@ -111,6 +111,38 @@ func TestAnL7SetAcceptsASourceDeviceScope(t *testing.T) {
 	}
 }
 
+func TestAnL7SetRefusesRoutingSourceInterfaces(t *testing.T) {
+	set := l7Set(t)
+	set.Routing.Enabled = true
+	set.Routing.Mode = RoutingModeBlock
+	set.Routing.SourceInterfaces = []string{"br-guest"}
+	err := l7Config(t, set).Validate()
+	var invalid *ValidationError
+	if !errors.As(err, &invalid) || len(invalid.Fields) != 1 {
+		t.Fatalf("b4 cannot tell which interface a selected packet arrived on, so source interfaces must be refused, got %v", err)
+	}
+	if f := invalid.Fields[0]; f.Path != "sets[0].routing.source_interfaces" || f.Code != "conflict" {
+		t.Errorf("expected a conflict on sets[0].routing.source_interfaces, got %+v", f)
+	}
+
+	for _, c := range []struct {
+		name    string
+		enabled bool
+		ifaces  []string
+	}{
+		{"routing off", false, []string{"br-guest"}},
+		{"blank interfaces", true, []string{"", " "}},
+	} {
+		set := l7Set(t)
+		set.Routing.Enabled = c.enabled
+		set.Routing.Mode = RoutingModeBlock
+		set.Routing.SourceInterfaces = c.ifaces
+		if err := l7Config(t, set).Validate(); err != nil {
+			t.Errorf("%s: an L7 set whose routing takes no source interface must save: %v", c.name, err)
+		}
+	}
+}
+
 func TestAnUnknownL7ClassIsKeptAndValidates(t *testing.T) {
 	set := l7Set(t)
 	set.UDP.FilterL7 = []string{"wireguard"}

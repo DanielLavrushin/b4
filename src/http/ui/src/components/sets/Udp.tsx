@@ -134,6 +134,11 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
   const selectsL7 = filterL7.length > 0;
   const hasDestinationTargets = hasDomainsConfigured || hasIPTargets;
   const hasTcpPortFilter = (config.tcp.dport_filter ?? "").trim() !== "";
+  const hasRoutingSourceIfaces =
+    config.routing.enabled &&
+    (config.routing.source_interfaces ?? []).some(
+      (iface) => iface.trim() !== "",
+    );
   const changeL7 = (next: string[]) => {
     onChange("udp.filter_l7", next);
     const zeroFill = (config.udp.fake_payload_file ?? "") === "";
@@ -301,6 +306,11 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
         {selectsL7 && hasTcpPortFilter && (
           <B4Alert severity="warning" icon={<WarningIcon />}>
             <Trans i18nKey="sets.udp.filterL7TcpPortsWarning" />
+          </B4Alert>
+        )}
+        {selectsL7 && hasRoutingSourceIfaces && (
+          <B4Alert severity="warning" icon={<WarningIcon />}>
+            <Trans i18nKey="sets.udp.filterL7SourceInterfacesWarning" />
           </B4Alert>
         )}
 
