@@ -16,4 +16,6 @@ const (
 	nfqReadBufferBytes = 4 << 20
 
 	connKeyFormat = "%s:%d->%s:%d"
+
+	voiceExemptReason = "voice-exempt"
 )

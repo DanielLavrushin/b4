@@ -47,6 +47,7 @@ export {
   Check as CheckIcon,
   Block as BlockIcon,
   Deblur as FakingIcon,
+  KeyboardVoice as VoiceIcon,
   CallSplit as FragIcon,
   Layers as SetsIcon,
   Layers as ImportExportIcon,

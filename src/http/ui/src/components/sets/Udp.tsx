@@ -18,6 +18,9 @@ import {
   QueueConfig,
   UdpMode,
   UDP_FAKE_PAYLOAD_AUTO_QUIC,
+  UDP_FAKE_PAYLOAD_AUTO_STUN,
+  UDP_L7_DISCORD,
+  UDP_L7_STUN,
   UDP_FAKE_PAYLOAD_PRESET_1,
   UDP_FAKE_PAYLOAD_PRESET_2,
 } from "@models/config";
@@ -27,7 +30,10 @@ import { useTranslation, Trans } from "react-i18next";
 interface UdpSettingsProps {
   config: B4SetConfig;
   queue: QueueConfig;
-  onChange: (field: string, value: string | boolean | number) => void;
+  onChange: (
+    field: string,
+    value: string | boolean | number | string[],
+  ) => void;
 }
 
 export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
@@ -101,11 +107,13 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
     config.targets?.sni_domains?.length > 0 ||
     config.targets?.geosite_categories?.length > 0;
 
-  const hasNonDomainTargets =
+  const hasIPTargets =
     (config.targets?.ip?.length ?? 0) > 0 ||
     (config.targets?.geoip_categories?.length ?? 0) > 0 ||
-    (config.targets?.asns?.length ?? 0) > 0 ||
-    (config.udp.dport_filter ?? "").trim() !== "";
+    (config.targets?.asns?.length ?? 0) > 0;
+
+  const hasNonDomainTargets =
+    hasIPTargets || (config.udp.dport_filter ?? "").trim() !== "";
 
   const isPassthrough = config.udp.mode === "off";
   const blockQuic =
@@ -119,6 +127,15 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
     }
     onChange("udp.filter_quic", "sni");
     onChange("udp.mode", "fake");
+  };
+
+  const filterL7 = config.udp.filter_l7 ?? [];
+  const hasDestinationTargets = hasDomainsConfigured || hasIPTargets;
+  const toggleL7 = (protocol: string, checked: boolean) => {
+    const next = checked
+      ? [...filterL7, protocol]
+      : filterL7.filter((entry) => entry !== protocol);
+    onChange("udp.filter_l7", next);
   };
 
   const showFakeSettings = config.udp.mode === "fake";
@@ -199,8 +216,38 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
             checked={config.udp.filter_stun}
             onChange={(checked) => onChange("udp.filter_stun", checked)}
             description={t("sets.udp.filterStunDesc")}
+            disabled={filterL7.length > 0}
           />
         </Grid>
+
+        <Grid size={{ xs: 12, md: 6 }}>
+          <B4Switch
+            label={t("sets.udp.filterL7Discord")}
+            checked={filterL7.includes(UDP_L7_DISCORD)}
+            onChange={(checked) => toggleL7(UDP_L7_DISCORD, checked)}
+            description={t("sets.udp.filterL7DiscordDesc")}
+          />
+        </Grid>
+        <Grid size={{ xs: 12, md: 6 }}>
+          <B4Switch
+            label={t("sets.udp.filterL7Stun")}
+            checked={filterL7.includes(UDP_L7_STUN)}
+            onChange={(checked) => toggleL7(UDP_L7_STUN, checked)}
+            description={t("sets.udp.filterL7StunDesc")}
+          />
+        </Grid>
+
+        {filterL7.length > 0 && hasDestinationTargets && (
+          <B4Alert severity="warning" icon={<WarningIcon />}>
+            <Trans i18nKey="sets.udp.filterL7TargetsWarning" />
+          </B4Alert>
+        )}
+        {filterL7.length > 0 &&
+          (config.udp.dport_filter ?? "").trim() === "" && (
+            <B4Alert severity="warning" icon={<WarningIcon />}>
+              <Trans i18nKey="sets.udp.filterL7PortsWarning" />
+            </B4Alert>
+          )}
 
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Slider
@@ -299,6 +346,10 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
                   {
                     value: UDP_FAKE_PAYLOAD_AUTO_QUIC,
                     label: t("sets.udp.fakePayloadFileAutoQuicOption"),
+                  },
+                  {
+                    value: UDP_FAKE_PAYLOAD_AUTO_STUN,
+                    label: t("sets.udp.fakePayloadFileAutoStunOption"),
                   },
                   {
                     value: UDP_FAKE_PAYLOAD_PRESET_1,

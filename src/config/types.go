@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/daniellavrushin/b4/geodat"
@@ -27,6 +28,7 @@ const (
 )
 
 const FakePayloadAutoQUIC = "@quic_initial"
+const FakePayloadAutoSTUN = "@stun"
 
 const (
 	RoutingModeInterface = "interface"
@@ -57,6 +59,13 @@ const (
 	UDPModeReject   = "reject"
 	UDPModeCoalesce = "coalesce"
 )
+
+const (
+	UDPL7Discord = "discord"
+	UDPL7STUN    = "stun"
+)
+
+var UDPL7Classes = []string{UDPL7Discord, UDPL7STUN}
 
 const (
 	DefaultIPBlockSynThreshold = 3
@@ -96,6 +105,36 @@ func NormalizeQUICFilter(filter string) string {
 		return QUICFilterAll
 	}
 	return QUICFilterSNI
+}
+
+func NormalizeL7Filter(classes []string) []string {
+	if len(classes) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(classes))
+	seen := make(map[string]bool, len(classes))
+	for _, c := range classes {
+		c = strings.ToLower(strings.TrimSpace(c))
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func NormalizeSTUNFakeLen(size int) int {
+	switch {
+	case size <= 20:
+		return 20
+	case size < 24:
+		return 24
+	}
+	return size - size%4
 }
 
 func NormalizeUDPMode(mode string) string {
@@ -283,18 +322,19 @@ type IncomingConfig struct {
 }
 
 type UDPConfig struct {
-	Mode            string `json:"mode"`
-	FakeSeqLength   int    `json:"fake_seq_length"`
-	FakeLen         int    `json:"fake_len"`
-	FakingStrategy  string `json:"faking_strategy"`
-	FakePayloadFile string `json:"fake_payload_file"` // "" = zero fill, "@quic_initial" = generate fresh QUIC Initial per packet, "@preset:quic1"/"@preset:quic2" = bundled presets, otherwise capture filename relative to config dir (e.g. "captures/quic_youtube_com.bin")
-	FakePayloadData []byte `json:"-"`
-	DPortFilter     string `json:"dport_filter"` // can be a comma separated list of ports and port ranges, e.g. "80,443,1000-2000"
-	FilterQUIC      string `json:"filter_quic"`
-	FilterSTUN      bool   `json:"filter_stun"`
-	ConnBytesLimit  int    `json:"conn_bytes_limit"`
-	Seg2Delay       int    `json:"seg2delay"`
-	Seg2DelayMax    int    `json:"seg2delay_max"`
+	Mode            string   `json:"mode"`
+	FakeSeqLength   int      `json:"fake_seq_length"`
+	FakeLen         int      `json:"fake_len"`
+	FakingStrategy  string   `json:"faking_strategy"`
+	FakePayloadFile string   `json:"fake_payload_file"` // "" = zero fill, "@quic_initial" = generate fresh QUIC Initial per packet, "@preset:quic1"/"@preset:quic2" = bundled presets, otherwise capture filename relative to config dir (e.g. "captures/quic_youtube_com.bin")
+	FakePayloadData []byte   `json:"-"`
+	DPortFilter     string   `json:"dport_filter"` // can be a comma separated list of ports and port ranges, e.g. "80,443,1000-2000"
+	FilterQUIC      string   `json:"filter_quic"`
+	FilterSTUN      bool     `json:"filter_stun"`
+	FilterL7        []string `json:"filter_l7,omitempty"` // empty = every payload; "discord" and "stun" select flows by their first packet
+	ConnBytesLimit  int      `json:"conn_bytes_limit"`
+	Seg2Delay       int      `json:"seg2delay"`
+	Seg2DelayMax    int      `json:"seg2delay_max"`
 }
 
 type FragmentationConfig struct {

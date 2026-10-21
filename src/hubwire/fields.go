@@ -69,6 +69,7 @@ var Fields = map[string]Field{
 	"udp.dport_filter":      {Class: Crosses},
 	"udp.filter_quic":       {Class: Crosses},
 	"udp.filter_stun":       {Class: Crosses},
+	"udp.filter_l7":         {Class: Crosses, Since: "1.88.0"},
 	"udp.conn_bytes_limit":  {Class: Crosses},
 	"udp.seg2delay":         {Class: Crosses},
 	"udp.seg2delay_max":     {Class: Crosses},

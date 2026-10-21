@@ -754,6 +754,22 @@ func (set *SetConfig) MatchesUDPDPort(port uint16) bool {
 	return false
 }
 
+func (set *SetConfig) SelectsL7() bool {
+	return len(set.UDP.FilterL7) > 0
+}
+
+func (set *SetConfig) SelectsL7Class(class string) bool {
+	if class == "" {
+		return false
+	}
+	for _, c := range set.UDP.FilterL7 {
+		if c == class {
+			return true
+		}
+	}
+	return false
+}
+
 func (cfg *Config) BuildSetPortRanges() {
 	for _, set := range cfg.Sets {
 		set.TCPPortRanges = nil
@@ -1264,7 +1280,7 @@ func (c *Config) LoadCapturePayloads() {
 
 		set.UDP.FakePayloadData = nil
 		switch set.UDP.FakePayloadFile {
-		case "", FakePayloadAutoQUIC:
+		case "", FakePayloadAutoQUIC, FakePayloadAutoSTUN:
 		case FakePayloadPreset1:
 			set.UDP.FakePayloadData = FakeQUIC1
 		case FakePayloadPreset2:

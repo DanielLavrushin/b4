@@ -1013,7 +1013,24 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
-	shouldHandle := (matchedIP || matchedQUIC || matchedFlow || matchedPort) && !(isVoiceMedia && set.UDP.FilterSTUN)
+	matchedL7 := false
+	if class := udpL7Class(payload); class != "" {
+		if l7Matched, l7Set := matcher.MatchUDPL7(dport, pkt.srcMac, class); l7Matched {
+			matchedL7 = true
+			matchedIP = false
+			matchedQUIC = false
+			matchedFlow = false
+			matchedPort = false
+			matchedLearned = false
+			set = l7Set
+			sniTarget = ""
+			ipTarget = l7Set.Name
+		}
+	}
+
+	anyMatch := matchedIP || matchedQUIC || matchedFlow || matchedPort || matchedL7
+	shouldHandle := anyMatch && !(isVoiceMedia && !matchedL7 && set.UDP.FilterSTUN)
+	voiceExempt := anyMatch && !shouldHandle
 
 	matched = shouldHandle
 
@@ -1042,12 +1059,14 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	udpReason := ""
 	if udpForeignEgress {
 		udpReason = vc.handOffReason()
+	} else if voiceExempt {
+		udpReason = voiceExemptReason
 	}
 	if !cfg.Queue.IsDiscovery {
 		log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, udpReason)
 	}
 
-	if isVoiceMedia && set != nil && set.UDP.FilterSTUN {
+	if isVoiceMedia && !matchedL7 && set != nil && set.UDP.FilterSTUN {
 		return vc.accept()
 	}
 

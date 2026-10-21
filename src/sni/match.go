@@ -36,6 +36,7 @@ type SuffixSet struct {
 	regexCache    sync.Map
 	ipRanger      cidranger.Ranger
 	udpPortRanges []portRange
+	udpL7Ranges   []portRange
 	tcpPortRanges []portRange
 
 	ipCache      map[string]*cacheEntry
@@ -221,7 +222,11 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 		if set.UDP.DPortFilter != "" {
 			for _, part := range strings.Split(set.UDP.DPortFilter, ",") {
 				if pr, ok := parsePortRange(part, set); ok {
-					s.udpPortRanges = append(s.udpPortRanges, pr)
+					if set.SelectsL7() {
+						s.udpL7Ranges = append(s.udpL7Ranges, pr)
+					} else {
+						s.udpPortRanges = append(s.udpPortRanges, pr)
+					}
 				}
 			}
 		}
@@ -271,6 +276,28 @@ func (s *SuffixSet) MatchUDPPort(dport uint16, srcMAC string) (bool, *config.Set
 
 	for _, r := range s.udpPortRanges {
 		if r.set.DeclaresDestinationTargets() {
+			continue
+		}
+		if !setMatchesSource(r.set, srcMAC) {
+			continue
+		}
+		if port >= r.min && port <= r.max {
+			return true, r.set
+		}
+	}
+
+	return false, nil
+}
+
+func (s *SuffixSet) MatchUDPL7(dport uint16, srcMAC, class string) (bool, *config.SetConfig) {
+	if s == nil || class == "" || len(s.udpL7Ranges) == 0 {
+		return false, nil
+	}
+
+	port := int(dport)
+
+	for _, r := range s.udpL7Ranges {
+		if !r.set.SelectsL7Class(class) {
 			continue
 		}
 		if !setMatchesSource(r.set, srcMAC) {

@@ -9,7 +9,8 @@ import {
   B4Hint,
 } from "@b4.elements";
 import { B4Switch } from "@common/B4Switch";
-import { useTranslation } from "react-i18next";
+import { portFilterCovers } from "@utils";
+import { Trans, useTranslation } from "react-i18next";
 
 interface TcpGeneralProps {
   config: B4SetConfig;
@@ -46,6 +47,14 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
     (config.targets?.asns?.length ?? 0) > 0;
   const hasMACScope = (config.targets?.source_devices?.length ?? 0) > 0;
   const mssScopeOk = hasIPScope || hasMACScope;
+  const hasDestinationTargets =
+    hasIPScope ||
+    (config.targets?.sni_domains?.length ?? 0) > 0 ||
+    (config.targets?.geosite_categories?.length ?? 0) > 0;
+  const portFilterSkipsHttps =
+    hasDestinationTargets &&
+    (config.tcp.dport_filter ?? "").trim() !== "" &&
+    !portFilterCovers(config.tcp.dport_filter, 443);
 
   return (
     <>
@@ -96,6 +105,11 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             helperText={t("sets.tcp.general.portFilterHelper")}
             aiTopic="tcp.dport_filter"
           />
+          {portFilterSkipsHttps && (
+            <B4Alert severity="warning" sx={{ mt: 1 }}>
+              <Trans i18nKey="sets.tcp.general.portFilterNoHttps" />
+            </B4Alert>
+          )}
         </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
