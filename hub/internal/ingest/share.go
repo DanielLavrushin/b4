@@ -153,7 +153,6 @@ func (s *Service) authorSibling(ctx context.Context, authorHMAC string, version 
 	if err != nil {
 		return nil, err
 	}
-	targets := store.TargetEntries(version.Projection)
 	var match *store.Set
 	for i := range sets {
 		latest, err := s.Store.LatestVersion(ctx, sets[i].ID)
@@ -163,7 +162,7 @@ func (s *Service) authorSibling(ctx context.Context, authorHMAC string, version 
 		if err != nil {
 			return nil, err
 		}
-		if latest.TargetsKey != version.TargetsKey && !(sameTitle(latest.Title, version.Title) && targetsOverlap(targets, store.TargetEntries(latest.Projection))) {
+		if latest.TargetsKey != version.TargetsKey && !(sameTitle(latest.Title, version.Title) && siblingTargets(version.Projection, latest.Projection)) {
 			continue
 		}
 		if match == nil || sets[i].UpdatedAt.After(match.UpdatedAt) {

@@ -115,6 +115,30 @@ func TestShareKeepsProtocolSelectionsOnOtherPortsApart(t *testing.T) {
 	}
 }
 
+func TestShareFilesASameTitleProtocolSelectionByItsPorts(t *testing.T) {
+	f := newFixture(t)
+	author := testkit.Identity(t)
+	first := testkit.L7Set("Calls", config.UDPL7STUN)
+	first.UDP.DPortFilter = "3478-3481"
+	disjoint := testkit.L7Set("Calls", config.UDPL7STUN)
+	disjoint.UDP.DPortFilter = "19302-19309"
+	widened := testkit.L7Set("Calls", config.UDPL7STUN)
+	widened.UDP.DPortFilter = "3478-3490"
+
+	a := f.share(t, author, first, peerA)
+	expect(t, a, http.StatusAccepted, "")
+	b := f.share(t, author, disjoint, peerA)
+	expect(t, b, http.StatusAccepted, "")
+	if b.Body["set_id"] == a.Body["set_id"] {
+		t.Errorf("the same title and protocol on disjoint UDP ports is a set of its own, not the next version of %v: %v", a.Body["set_id"], b.Body)
+	}
+	c := f.share(t, author, widened, peerA)
+	expect(t, c, http.StatusAccepted, "")
+	if c.Body["set_id"] != a.Body["set_id"] || c.Body["version"] != 2 {
+		t.Errorf("the same title and protocol on overlapping UDP ports is the next version of %v: %v", a.Body["set_id"], c.Body)
+	}
+}
+
 func TestShareTreatsReorderedProtocolsAsTheSameStrategy(t *testing.T) {
 	f := newFixture(t)
 	first := f.share(t, testkit.Identity(t), testkit.L7Set("Voice", config.UDPL7Discord, config.UDPL7STUN), peerA)

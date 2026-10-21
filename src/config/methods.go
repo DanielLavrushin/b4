@@ -772,24 +772,19 @@ func (set *SetConfig) SelectsL7Class(class string) bool {
 
 func (cfg *Config) BuildSetPortRanges() {
 	for _, set := range cfg.Sets {
-		set.TCPPortRanges = nil
-		set.UDPPortRanges = nil
+		set.TCPPortRanges = ParsePortRanges(set.TCP.DPortFilter)
+		set.UDPPortRanges = ParsePortRanges(set.UDP.DPortFilter)
+	}
+}
 
-		if set.TCP.DPortFilter != "" {
-			for _, part := range strings.Split(set.TCP.DPortFilter, ",") {
-				if pr, ok := parsePortRangeStr(part); ok {
-					set.TCPPortRanges = append(set.TCPPortRanges, pr)
-				}
-			}
-		}
-		if set.UDP.DPortFilter != "" {
-			for _, part := range strings.Split(set.UDP.DPortFilter, ",") {
-				if pr, ok := parsePortRangeStr(part); ok {
-					set.UDPPortRanges = append(set.UDPPortRanges, pr)
-				}
-			}
+func ParsePortRanges(filter string) []PortRange {
+	var out []PortRange
+	for _, part := range strings.Split(filter, ",") {
+		if pr, ok := parsePortRangeStr(part); ok {
+			out = append(out, pr)
 		}
 	}
+	return out
 }
 
 func parsePortRangeStr(part string) (PortRange, bool) {

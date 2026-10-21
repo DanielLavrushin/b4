@@ -29,6 +29,33 @@ func targetsOverlap(a, b map[string]struct{}) bool {
 	return false
 }
 
+func siblingTargets(a, b map[string]interface{}) bool {
+	if !targetsOverlap(store.TargetEntries(a), store.TargetEntries(b)) {
+		return false
+	}
+	if len(hubwire.UDPL7(a)) == 0 || len(hubwire.UDPL7(b)) == 0 {
+		return true
+	}
+	return portRangesIntersect(config.ParsePortRanges(udpPortFilter(a)), config.ParsePortRanges(udpPortFilter(b)))
+}
+
+func udpPortFilter(projection map[string]interface{}) string {
+	udp, _ := projection["udp"].(map[string]interface{})
+	ports, _ := udp["dport_filter"].(string)
+	return ports
+}
+
+func portRangesIntersect(a, b []config.PortRange) bool {
+	for _, x := range a {
+		for _, y := range b {
+			if x.Min <= y.Max && y.Min <= x.Max {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func sameTitle(a, b string) bool {
 	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
