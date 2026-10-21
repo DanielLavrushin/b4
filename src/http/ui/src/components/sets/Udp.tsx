@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Grid } from "@mui/material";
+import { Autocomplete, Grid, Stack, Typography } from "@mui/material";
 import { Link } from "react-router";
 import { DnsIcon, WarningIcon } from "@b4.icons";
 import {
@@ -12,20 +12,21 @@ import {
   B4Alert,
   B4FormHeader,
   B4Hint,
+  B4Badge,
 } from "@b4.elements";
+import { colors } from "@design";
 import {
   B4SetConfig,
   QueueConfig,
   UdpMode,
   UDP_FAKE_PAYLOAD_AUTO_QUIC,
   UDP_FAKE_PAYLOAD_AUTO_STUN,
-  UDP_L7_DISCORD,
-  UDP_L7_STUN,
   UDP_FAKE_PAYLOAD_PRESET_1,
   UDP_FAKE_PAYLOAD_PRESET_2,
 } from "@models/config";
 import { useCaptures } from "@b4.capture";
 import { useTranslation, Trans } from "react-i18next";
+import { UDP_L7_CLASSES, udpL7Class, udpL7Label } from "./udpL7";
 
 interface UdpSettingsProps {
   config: B4SetConfig;
@@ -133,16 +134,14 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
   const selectsL7 = filterL7.length > 0;
   const hasDestinationTargets = hasDomainsConfigured || hasIPTargets;
   const hasTcpPortFilter = (config.tcp.dport_filter ?? "").trim() !== "";
-  const toggleL7 = (protocol: string, checked: boolean) => {
-    const next = checked
-      ? [...filterL7, protocol]
-      : filterL7.filter((entry) => entry !== protocol);
+  const changeL7 = (next: string[]) => {
     onChange("udp.filter_l7", next);
     const zeroFill = (config.udp.fake_payload_file ?? "") === "";
-    if (checked && !selectsL7 && zeroFill) {
+    if (next.length > 0 && !selectsL7 && zeroFill) {
       onChange("udp.fake_payload_file", UDP_FAKE_PAYLOAD_AUTO_STUN);
     }
   };
+  const l7Label = (value: string) => udpL7Label(t, value);
 
   const showFakeSettings = config.udp.mode === "fake";
   const isAutoQuic =
@@ -235,19 +234,57 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
         </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
-          <B4Switch
-            label={t("sets.udp.filterL7Discord")}
-            checked={filterL7.includes(UDP_L7_DISCORD)}
-            onChange={(checked) => toggleL7(UDP_L7_DISCORD, checked)}
-            description={t("sets.udp.filterL7DiscordDesc")}
-          />
-        </Grid>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Switch
-            label={t("sets.udp.filterL7Stun")}
-            checked={filterL7.includes(UDP_L7_STUN)}
-            onChange={(checked) => toggleL7(UDP_L7_STUN, checked)}
-            description={t("sets.udp.filterL7StunDesc")}
+          <Autocomplete
+            multiple
+            disableCloseOnSelect
+            size="small"
+            options={UDP_L7_CLASSES.map((entry) => entry.value)}
+            value={filterL7}
+            onChange={(_, next) => changeL7(next)}
+            getOptionLabel={l7Label}
+            renderOption={(props, value) => {
+              const { key, ...optionProps } = props;
+              const entry = udpL7Class(value);
+              return (
+                <li key={key} {...optionProps}>
+                  <Stack>
+                    <Typography variant="body2">{l7Label(value)}</Typography>
+                    {entry && (
+                      <Typography
+                        variant="caption"
+                        sx={{ color: colors.text.secondary }}
+                      >
+                        {t(entry.descriptionKey)}
+                      </Typography>
+                    )}
+                  </Stack>
+                </li>
+              );
+            }}
+            renderInput={(params) => (
+              <B4TextField
+                {...params}
+                label={t("sets.udp.filterL7")}
+                helperText={t("sets.udp.filterL7Helper")}
+              />
+            )}
+            renderValue={(selected, getItemProps) =>
+              selected.map((value, index) => {
+                const { key, ...itemProps } = getItemProps({ index });
+                return (
+                  <B4Badge
+                    key={key}
+                    {...itemProps}
+                    label={l7Label(value)}
+                    size="small"
+                    sx={{
+                      bgcolor: colors.accent.secondary,
+                      border: `1px solid ${colors.secondary}`,
+                    }}
+                  />
+                );
+              })
+            }
           />
         </Grid>
 

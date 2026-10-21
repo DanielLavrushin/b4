@@ -32,6 +32,7 @@ import {
   ConvertUnresolved,
   convertApi,
 } from "@api/convert";
+import { udpL7Label } from "./udpL7";
 
 const AUTO = "auto";
 
@@ -442,7 +443,7 @@ function ProfileHeader({
   const entry = plan?.role !== "fallback";
   const acceptsTargets = plan?.accepts_targets ?? true;
   const protocols = (plan?.filter_l7 ?? [])
-    .map((p) => t(`sets.convert.l7Protocol.${p}`, { defaultValue: p }))
+    .map((p) => udpL7Label(t, p))
     .join(", ");
 
   return (
