@@ -2449,7 +2449,7 @@
         "alternativeStrategies": "The source file has {{count}} commented-out alternative strategies for {{vars}}. They were not converted - uncomment the one you want and analyze again to import it instead.",
         "setsWithoutStrategy": "{{count}} set(s) carry no bypass options at all, so they pass traffic through unchanged.",
         "unusedVars": "{{vars}} carry options but are not variables {{tool}} reads, so they were left out of the conversion. Rename them or paste their contents on their own if they should be converted.",
-        "catchAllProfile": "{{count}} profile(s) have no host list of their own. In {{tool}} such a profile handles everything the others did not match; a b4 set with no targets matches nothing by domain or address, so it is created disabled. A UDP set with a port filter is the exception: it would act on every flow on those ports.",
+        "catchAllProfile": "{{count}} profile(s) have no host list of their own. In {{tool}} such a profile handles everything the others did not match; a b4 set with no targets matches nothing by domain or address, so it is created disabled. A set with a port filter is the exception: it would act on every connection on those ports.",
         "sharedDomainsUnused": "None of the sets took the shared domains: each one has its own host list, address list or domains, is meant to select UDP packets by protocol, or is reached only through escalation. Enter the domains in the Domains field of the set that should handle them.",
         "sharedDomainsNoSet": "None of the converted sets takes domains: each is meant to select UDP packets by protocol or is reached only through escalation, so the shared domains were not used."
       },
@@ -2565,7 +2565,8 @@
         "templatePlaceholder": "A placeholder from the configuration template. It is substituted before the daemon runs, so there is nothing to convert.",
         "udpOnlySetNotProtocolScoped": "This profile only filters UDP, but a b4 set is not limited to one protocol. If you give it domains it will also claim them for TCP, taking them away from the TCP sets. Leave it without targets unless it is the only set for those domains.",
         "profileNotUnderstood": "{{count}} option(s) in this profile were not recognized, and nothing else in it produced a strategy. The set is created disabled so it cannot claim domains while doing nothing.",
-        "fakeTTLOriginal": "A TTL of 0 means the fake keeps the TTL of the real packet. b4's UDP fakes always use the set's Fake TTL instead.",
+        "fakeTTLOriginal": "A TTL of 0 means the fake keeps the TTL of the real packet, so b4 leaves it alone too.",
+        "udpFakeTTLOriginal": "A TTL of 0 means the fake keeps the TTL of the real packet. b4's UDP fakes always use the set's Fake TTL instead.",
         "repeatedOptionCombined": "The option appears {{count}} times in this profile and every value applies; they were combined into one setting.",
         "supersededByLater": "Given again later as {{winner}}, and that is the value that applies. This one has no effect.",
         "extraSplitPositionDropped": "A set splits at one point for the strategy it uses, and another option already supplied it. This position was dropped.",

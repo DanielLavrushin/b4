@@ -369,7 +369,7 @@ func emitUDP(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet
 			if prof.UDP.TTL > 0 {
 				notes.set(tok, StatusMapped, "udpFakeTTLMapped", "udp.faking_strategy=ttl")
 			} else {
-				notes.set(tok, StatusMapped, "fakeTTLOriginal", "udp.faking_strategy=none")
+				notes.set(tok, StatusMapped, "udpFakeTTLOriginal", "udp.faking_strategy=none")
 			}
 		}
 	}

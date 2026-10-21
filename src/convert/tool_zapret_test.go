@@ -1306,6 +1306,20 @@ func TestZapret_ATCPPortFilterDoesNotMakeAnL7ProfileCoverTCP(t *testing.T) {
 	assertSetsSave(t, res)
 }
 
+func TestZapret_AZeroFakeTTLIsExplainedForItsProtocol(t *testing.T) {
+	for _, c := range []struct{ name, line, reason string }{
+		{"tcp", "--filter-tcp=443 --dpi-desync=fake --dpi-desync-ttl=0", "fakeTTLOriginal"},
+		{"udp", "--filter-udp=443 --dpi-desync=fake --dpi-desync-ttl=0", "udpFakeTTLOriginal"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			res := analyze(t, c.line)
+			if n := noteFor(t, res, "--dpi-desync-ttl=0"); n.Status != StatusMapped || n.Reason != c.reason {
+				t.Fatalf("got %+v, want %s", n, c.reason)
+			}
+		})
+	}
+}
+
 func TestZapret_APortlessL7ProfileGetsTheSTUNFake(t *testing.T) {
 	t.Run("namedFile", func(t *testing.T) {
 		res := analyze(t, "--filter-l7=discord,stun --dpi-desync=fake --dpi-desync-fake-stun=stun.bin")
