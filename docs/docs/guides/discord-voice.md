@@ -18,7 +18,7 @@ The address of a voice server is not known in advance. The set therefore has no 
 2. Enter a name for the set, such as `Discord voice`.
 3. Leave the **Targets** tab empty.
 4. On the **UDP** tab, enter `19294-19344,50000-50100` in **Port Filter**.
-5. Turn on **Only Discord voice setup** and **Only STUN**.
+5. In **Protocols**, select **Discord voice setup** and **STUN**.
 6. Leave **Action Mode** at **Fake & Fragment**. **Fake Packet Payload** now shows **(auto: STUN request)**.
 7. On the **TCP** tab, leave **Port Filter** under **General** empty.
 8. Click **Create Set**.
@@ -28,7 +28,26 @@ The address of a voice server is not known in advance. The set therefore has no 
 | `19294-19344` | Discord's voice servers on Cloudflare |
 | `50000-50100` | The other voice servers, for example in Finland |
 
-**Only Discord voice setup** selects the packet that opens a Discord voice connection. **Only STUN** selects the STUN request that a browser sends first in a call. **Fake Packet Count** and **Fake Packet Size** keep their defaults.
+**Discord voice setup** selects the packet that opens a voice connection in the Discord app. **STUN** selects the request that opens a call in a browser, Discord in a browser included. **Fake Packet Count** and **Fake Packet Size** keep their defaults.
+
+### Importing the set {#import}
+
+The JSON below creates the same set without the steps above. Settings it leaves out keep their defaults.
+
+```json
+{
+  "name": "Discord voice",
+  "udp": {
+    "dport_filter": "19294-19344,50000-50100",
+    "filter_l7": ["discord", "stun"],
+    "fake_payload_file": "@stun"
+  }
+}
+```
+
+1. Open **Sets** and click **Create Set**.
+2. Go to the **Import/Export** tab, paste the JSON into **Set Configuration JSON** and click **Import**.
+3. Click **Create Set**.
 
 The [Community Hub](../community/browsing.md) can carry a set of this kind as well. A zapret line for Discord voice with no host list or ipset of its own, such as `--filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake`, converts into the same set on [import](../sets/import.md#domains).
 
@@ -55,7 +74,7 @@ The packet that opens the voice connection and any STUN requests show the voice 
 
 **b4 refuses to save the voice set.** A warning on the **UDP** tab names the cause: the set has targets, its **Port Filter** is empty, or the **TCP** tab lists ports. The set saves with no targets, both port ranges in the UDP **Port Filter** and an empty TCP **Port Filter**.
 
-**No packet to the voice ports shows the voice set.** The voice set selected neither the packet that opens the call nor the STUN requests. Their port is missing from its **Port Filter**, the switch for that kind of packet is off, or the set is turned off on the **Sets** page. The **IP Version Filter** on the set's **Targets** tab can also exclude one IP version.
+**No packet to the voice ports shows the voice set.** The voice set selected neither the packet that opens the call nor the STUN requests. Their port is missing from its **Port Filter**, that kind of packet is not selected in **Protocols**, or the set is turned off on the **Sets** page. The **IP Version Filter** on the set's **Targets** tab can also exclude one IP version.
 
 **No packets to the voice ports appear.** **All packets** is off, or the port is missing from the voice set's **Port Filter**: b4 sees UDP only on port 443 and on the ports that sets list. With **Enable IPv6 Support** off under [Settings > Core](../settings/core.md#protocols), b4 sees no IPv6 packets at all.
 

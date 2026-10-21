@@ -141,7 +141,7 @@ b4 хранит конфигурацию в одном JSON-файле, по у�
 
 ### `udp.filter_l7` сета {#set-udp-filter-l7}
 
-`udp.filter_l7` перечисляет UDP-протоколы, которые выбирает сет: `discord` для **Только начало голоса Discord**, `stun` для **Только STUN**, см. [Выбор пакетов по протоколу](../sets/udp.md#protocol-selection). Пустой список не хранится. Сету с этим списком нужен `udp.dport_filter`, у него не должно быть `targets.sni_domains`, `targets.ip`, `targets.geosite_categories`, `targets.geoip_categories` и `targets.asns`, а `tcp.dport_filter` должен быть пустым. Сет, который нарушает это правило, отклоняется: веб-интерфейс не даёт его сохранить, а файл с таким сетом останавливает b4 при запуске. Неизвестный элемент остаётся в списке, ни с каким трафиком не совпадает, а b4 пишет о нём предупреждение в журнал. **(авто: STUN-запрос)** - это `"fake_payload_file": "@stun"` в `udp`. `udp.filter_l7` можно изменить через MCP, допустимы только элементы `discord` и `stun`, и ключ передаётся в [общем сете](../sets/sharing.md).
+`udp.filter_l7` перечисляет протоколы, выбранные в поле **Протоколы**: `discord` для **Начало голоса Discord**, `stun` для **STUN**, см. [Выбор пакетов по протоколу](../sets/udp.md#protocol-selection). Пустой список не хранится. Сету с этим списком нужен `udp.dport_filter`, у него не должно быть `targets.sni_domains`, `targets.ip`, `targets.geosite_categories`, `targets.geoip_categories` и `targets.asns`, а `tcp.dport_filter` должен быть пустым. Сет, который нарушает это правило, отклоняется: веб-интерфейс не даёт его сохранить, а файл с таким сетом останавливает b4 при запуске. Неизвестный элемент остаётся в списке, ни с каким трафиком не совпадает, а b4 пишет о нём предупреждение в журнал. **(авто: STUN-запрос)** - это `"fake_payload_file": "@stun"` в `udp`. `udp.filter_l7` можно изменить через MCP, допустимы только элементы `discord` и `stun`, и ключ передаётся в [общем сете](../sets/sharing.md).
 
 ## Настройки и их пути в конфигурации {#settings-and-their-configuration-paths}
 
@@ -306,8 +306,7 @@ API-ключ AI-помощника в этот файл не входит: b4 х
 | TCP > Фейкинг | **Сгенерированный payload** | `faking.payload_file`, путь вида `captures/tls_youtube_com.bin` |
 | UDP | **Совпадение QUIC** | `udp.filter_quic` |
 | UDP | **Фильтр портов** | `udp.dport_filter` |
-| UDP | **Только начало голоса Discord** | `udp.filter_l7`, элемент `discord` |
-| UDP | **Только STUN** | `udp.filter_l7`, элемент `stun` |
+| UDP | **Протоколы** | `udp.filter_l7`, `discord` для **Начало голоса Discord**, `stun` для **STUN** |
 | UDP | **Режим действия** | `udp.mode` |
 | UDP | **Payload фейкового пакета** | `udp.fake_payload_file`, `@stun` для **(авто: STUN-запрос)** |
 | DNS & Маршрутизация | **Включить перенаправление DNS** | `dns.enabled` |

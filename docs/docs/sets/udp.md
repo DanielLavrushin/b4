@@ -21,15 +21,14 @@ QUIC carries HTTP/3 for YouTube, Google, Discord and other sites. Its packets ar
 | **QUIC Matching** | **By SNI** matches QUIC whose ClientHello carries a server name the set targets, which is also how b4 learns the addresses of those domains. **By SNI or matched destination** also matches any QUIC packet to a destination the set already matches by IP or port, with no server name needed. | **By SNI** |
 | **Port Filter** | UDP ports to match, such as `5000-6000,8000`, for VoIP, games and other UDP applications. It also limits the rest of the set: a set with `8443` here does not act on UDP port 443. Empty matches any port. | Empty |
 | **Filter STUN Packets** | Lets STUN requests and Discord voice packets through untouched: the set never acts on them. On suits **Drop** and **Reject** sets, and a set whose fakes must go before voice packets [selects them by protocol](#protocol-selection) instead. | On |
-| **Only Discord voice setup** | The set acts only on the packet that opens a Discord voice connection, see [Selecting packets by protocol](#protocol-selection). | Off |
-| **Only STUN** | The set acts only on STUN requests, which a browser sends first in a call. | Off |
+| **Protocols** | The set acts only on the selected packets on its UDP ports, see [Selecting packets by protocol](#protocol-selection). **Discord voice setup** is the packet that opens a voice connection in the Discord app. **STUN** is the request that opens a call in a browser, Discord in a browser included, and in apps built on WebRTC. | Empty |
 | **Connection Packets Limit** | How many packets at the start of a UDP flow b4 processes. It cannot exceed the global limit under [Settings > Core](../settings/core.md#queue-and-packet-processing). | `8` |
 
 With **By SNI** and no domains or GeoSite categories on the [Targets](./targets.md) tab, no QUIC ClientHello can match, and the tab shows a warning. UDP to port 53 is DNS and goes to b4's [DNS handling](../dns.md) instead.
 
 ### Selecting packets by protocol {#protocol-selection}
 
-**Only Discord voice setup** and **Only STUN** turn on protocol selection. With either switch on, the set acts only on UDP packets of that kind that arrive on the ports in its **Port Filter**. Every other packet on those ports is left to the other sets, or passes untouched. A packet the set selects belongs to it even when another set matches its destination address, such as a GeoIP set that covers the same servers. The same holds when that address belongs to a domain another set handles.
+The **Protocols** field turns on protocol selection. With **Discord voice setup**, **STUN** or both selected, the set acts only on UDP packets of those kinds that arrive on the ports in its **Port Filter**. Every other packet on those ports is left to the other sets, or passes untouched. A packet the set selects belongs to it even when another set matches its destination address, such as a GeoIP set that covers the same servers. The same holds when that address belongs to a domain another set handles.
 
 A set with protocol selection has three requirements. When it breaks one, b4 refuses to save it, and a warning on the tab names the cause.
 

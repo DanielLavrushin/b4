@@ -36,7 +36,7 @@ The local set stays linked to the published one, and the link is what allows rep
 
 Editing the strategy changes the badge to **Applied, edited** and the chip to **Community set, edited**. The strategy here means the TCP, UDP, fragmentation, fake packet, MSS clamp and DNS redirect settings. **Works** and **Broken** are disabled on an edited set.
 
-Targets, port filters, pins, the name, routing and device filters are not part of the strategy. A community set can be narrowed to a few domains or sent through a proxy and stays linked and unedited. [Protocol selection](../sets/udp.md#protocol-selection) on the UDP tab is part of the strategy: turning **Only Discord voice setup** or **Only STUN** on or off changes the badge to **Applied, edited**.
+Targets, port filters, pins, the name, routing and device filters are not part of the strategy. A community set can be narrowed to a few domains or sent through a proxy and stays linked and unedited. [Protocol selection](../sets/udp.md#protocol-selection) on the UDP tab is part of the strategy: changing the selection in **Protocols** changes the badge to **Applied, edited**.
 
 ## Updating and reapplying {#updating-and-reapplying}
 

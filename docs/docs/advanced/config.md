@@ -141,7 +141,7 @@ Each key is stored only while it differs from its default: the switch on with th
 
 ### A set's `udp.filter_l7` {#set-udp-filter-l7}
 
-`udp.filter_l7` lists the UDP protocols the set selects: `discord` for **Only Discord voice setup**, `stun` for **Only STUN**, see [Selecting packets by protocol](../sets/udp.md#protocol-selection). An empty list is not stored. A set with the list needs a `udp.dport_filter`, no `targets.sni_domains`, `targets.ip`, `targets.geosite_categories`, `targets.geoip_categories` or `targets.asns`, and an empty `tcp.dport_filter`. A set that breaks this is refused: the web interface refuses the save, and a file that holds one stops b4 at start. An unknown entry stays in the list, matches no traffic and is logged as a warning. **(auto: STUN request)** is `"fake_payload_file": "@stun"` under `udp`. `udp.filter_l7` is writable over MCP, with `discord` and `stun` as its only entries, and is carried in a [shared set](../sets/sharing.md).
+`udp.filter_l7` lists the protocols selected in **Protocols**: `discord` for **Discord voice setup**, `stun` for **STUN**, see [Selecting packets by protocol](../sets/udp.md#protocol-selection). An empty list is not stored. A set with the list needs a `udp.dport_filter`, no `targets.sni_domains`, `targets.ip`, `targets.geosite_categories`, `targets.geoip_categories` or `targets.asns`, and an empty `tcp.dport_filter`. A set that breaks this is refused: the web interface refuses the save, and a file that holds one stops b4 at start. An unknown entry stays in the list, matches no traffic and is logged as a warning. **(auto: STUN request)** is `"fake_payload_file": "@stun"` under `udp`. `udp.filter_l7` is writable over MCP, with `discord` and `stun` as its only entries, and is carried in a [shared set](../sets/sharing.md).
 
 ## Settings and their configuration paths {#settings-and-their-configuration-paths}
 
@@ -306,8 +306,7 @@ The AI API key is not part of this file. b4 keeps it in `ai_secrets.json`.
 | TCP > Faking | **Generated Payload** | `faking.payload_file`, a path such as `captures/tls_youtube_com.bin` |
 | UDP | **QUIC Matching** | `udp.filter_quic` |
 | UDP | **Port Filter** | `udp.dport_filter` |
-| UDP | **Only Discord voice setup** | `udp.filter_l7`, the entry `discord` |
-| UDP | **Only STUN** | `udp.filter_l7`, the entry `stun` |
+| UDP | **Protocols** | `udp.filter_l7`, `discord` for **Discord voice setup**, `stun` for **STUN** |
 | UDP | **Action Mode** | `udp.mode` |
 | UDP | **Fake Packet Payload** | `udp.fake_payload_file`, `@stun` for **(auto: STUN request)** |
 | DNS & Routing | **Enable DNS Redirect** | `dns.enabled` |
