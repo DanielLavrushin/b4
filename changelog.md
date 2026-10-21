@@ -1,5 +1,14 @@
 # B4 - Bye Bye Big Bro
 
+## [1.88.0] - 2026-10-21
+
+- ADDED: **A set can act only on the packets that open Discord voice calls and on STUN requests** - the switches are Only Discord voice setup and Only STUN on the set's UDP tab, and the guide Discord voice calls describes the setup. Such a set has no targets, lists its UDP ports and takes these packets from any set that matches their address. Turning a switch on in a set that sends zero-filled fakes selects the new fake payload (auto: STUN request).
+- ADDED: **Sets that select Discord voice and STUN packets also come from the import tool and the Community Hub** - a zapret profile with `--filter-l7=discord,stun`, its own UDP ports and no host list, such as Flowseal's Discord line, imports as such a set. The hub accepts these sets without targets, and applying one needs b4 1.88.0.
+- FIXED: **The Traffic page showed voice and STUN packets as handled by a set that let them through** - with Filter STUN Packets on, a set passes these packets through unchanged, yet their rows looked the same as rows of packets the set had handled.
+- FIXED: **Some set editor help texts described the wrong behaviour** - the TCP Port Filter said port 443 is always included, and the UDP Port Filter said an empty field turns it off. A list limits the set to the ports listed, and an empty field means every port. The UDP Evasion Technique said None sends fakes unchanged and TTL lets them expire, while UDP fakes always use the set's Fake TTL.
+- FIXED: **The import tool lost a port filter or the shared domains without a warning** - a zapret port range with equal or reversed ends, such as `3478-3478`, was dropped when the set was saved. A set whose port filter held only that range acted on every port. Shared domains went unused when every profile had a host list of its own.
+- FIXED: **A refused MCP write did not say which setting was wrong** - the answer read only "Configuration is invalid".
+
 ## [1.87.0] - 2026-10-17
 
 - ADDED: **A set can remove ECH keys from DNS answers, so a browser opens sites such as those on Cloudflare where the network drops connections that use ECH** - the switch is under DNS & Routing, DNS Redirect, Encrypted ClientHello (ECH) in the set editor, a set that lists cloudflare-ech.com with it on covers every Cloudflare site, and in NFQUEUE mode it also acts on DNS answers that travel over IPv6 while IPv6 support is off. Discovery proposes such a set, which changes no packets, for a site that loads only without ECH.
