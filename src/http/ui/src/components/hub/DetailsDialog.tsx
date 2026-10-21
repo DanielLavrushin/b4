@@ -279,6 +279,11 @@ export const DetailsDialog = ({
                     {t("hub.card.ipCount", { count: set.targets.ip_count })}
                   </FieldRow>
                 )}
+                {(set.targets.udp_l7 ?? []).length > 0 && (
+                  <FieldRow label={t("hub.details.udpL7")}>
+                    {set.targets.udp_l7.join(", ")}
+                  </FieldRow>
+                )}
               </Stack>
             </Box>
 

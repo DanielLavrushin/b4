@@ -38,6 +38,7 @@ type Targets struct {
 	GeoSite    []string
 	GeoIP      []string
 	ASNs       []string
+	UDPL7      []string
 	TLSVersion string
 	IPVersion  string
 	DomainOnly bool
@@ -50,6 +51,7 @@ func TargetsOf(projection map[string]interface{}) Targets {
 		GeoSite: store.TargetList(projection, "geosite_categories"),
 		GeoIP:   store.TargetList(projection, "geoip_categories"),
 		ASNs:    store.TargetList(projection, "asns"),
+		UDPL7:   hubwire.UDPL7(projection),
 	}
 	if targets, ok := projection["targets"].(map[string]interface{}); ok {
 		t.TLSVersion, _ = targets["tls"].(string)

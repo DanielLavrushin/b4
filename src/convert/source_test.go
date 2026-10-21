@@ -3,8 +3,11 @@ package convert
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 func TestSource_ReadsConfigFileShapes(t *testing.T) {
@@ -172,6 +175,36 @@ func TestCorpus_NfqwsKeeneticConfig(t *testing.T) {
 	if last.Faking.PayloadDomain != "www.google.com" {
 		t.Errorf("the fake SNI from --dpi-desync-fake-tls-mod was lost, got %q", last.Faking.PayloadDomain)
 	}
+
+	voice := res.Sets[3]
+	if !voice.Enabled || !slices.Equal(voice.UDP.FilterL7, discordAndSTUN) ||
+		voice.UDP.DPortFilter != "590-600,1400,3478-3481,5349" {
+		t.Errorf("NFQWS_ARGS_UDP selects Discord and STUN and must become an enabled L7 set: enabled=%v filter_l7=%v ports=%q",
+			voice.Enabled, voice.UDP.FilterL7, voice.UDP.DPortFilter)
+	}
+	assertSetsSave(t, res)
+}
+
+func TestCorpus_NfqwsKeeneticDiscordVoiceLine(t *testing.T) {
+	res := analyze(t, "NFQWS_ARGS=\"--dpi-desync=fake,multisplit --dpi-desync-split-pos=1,midsld\"\n"+
+		"NFQWS_ARGS_UDP=\"--filter-udp=590-600,1400,3478-3481,5349,19294-19344,50000-65535 "+
+		"--filter-l7=discord,stun --dpi-desync=fake --dpi-desync-repeats=6\"\n")
+
+	if len(res.Sets) != 2 {
+		t.Fatalf("NFQWS_ARGS_UDP and NFQWS_ARGS are two profiles, got %d sets", len(res.Sets))
+	}
+	voice := res.Sets[0]
+	if !voice.Enabled || !slices.Equal(voice.UDP.FilterL7, discordAndSTUN) {
+		t.Fatalf("the Discord line must become an enabled L7 set: enabled=%v filter_l7=%v", voice.Enabled, voice.UDP.FilterL7)
+	}
+	if voice.UDP.DPortFilter != "590-600,1400,3478-3481,5349,19294-19344,50000-65535" || voice.UDP.FakeSeqLength != 6 {
+		t.Fatalf("udp: ports=%q fake_seq_length=%d", voice.UDP.DPortFilter, voice.UDP.FakeSeqLength)
+	}
+	if voice.UDP.Mode != config.UDPModeFake {
+		t.Fatalf("udp.mode: got %q", voice.UDP.Mode)
+	}
+	assertNoLostOptions(t, res)
+	assertSetsSave(t, res)
 }
 
 func TestCorpus_WinwsBatchFile(t *testing.T) {

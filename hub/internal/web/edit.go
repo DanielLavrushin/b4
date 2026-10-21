@@ -27,7 +27,8 @@ const (
 	codeUnchanged  = "unchanged"
 	codeStale      = "stale"
 
-	noTargetsWarning = "no_targets"
+	noTargetsWarning     = "no_targets"
+	udpL7TCPPortsWarning = "udp_l7_tcp_ports"
 
 	maxEditBytes = 128 << 10
 
@@ -321,8 +322,13 @@ func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequ
 		return nil, invalidSet(err)
 	}
 	for _, w := range report.Warnings {
-		if w.Code == noTargetsWarning {
+		switch w.Code {
+		case noTargetsWarning:
 			return nil, &editFailure{status: http.StatusBadRequest, code: codeInvalidSet, message: "the set has no targets"}
+		case udpL7TCPPortsWarning:
+			message := "a set that selects UDP traffic by protocol and has no targets takes no TCP port filter"
+			field := InvalidFieldView{Path: "tcp.dport_filter", Code: "conflict", Message: message, Params: w.Params}
+			return nil, &editFailure{status: http.StatusBadRequest, code: codeInvalidSet, message: message, params: map[string]interface{}{"fields": []InvalidFieldView{field}}}
 		}
 	}
 	payloads := make([]hubwire.BlobRef, 0, len(imp.Payloads))

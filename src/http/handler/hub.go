@@ -444,8 +444,14 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 		set.Targets.GeoIpCategories = []string{}
 	}
 	if len(set.Targets.SNIDomains) == 0 && len(set.Targets.IPs) == 0 && len(set.Targets.GeoSiteCategories) == 0 && len(set.Targets.GeoIpCategories) == 0 && len(set.Targets.ASNs) == 0 {
-		writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "no_targets", Message: "The set targets nothing this device can match"})
-		return
+		switch {
+		case !set.SelectsL7():
+			writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "no_targets", Message: "The set targets nothing this device can match"})
+			return
+		case set.TCP.DPortFilter != "":
+			writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "udp_l7_tcp_ports", Message: "The set selects UDP traffic by protocol and has no targets, so its TCP port filter would apply it to every TCP connection on those ports"})
+			return
+		}
 	}
 
 	api.loadTargetsForSetCached(&set)

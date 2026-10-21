@@ -38,8 +38,11 @@ func (s *Service) share(ctx context.Context, entry record) Response {
 		return fail(http.StatusBadRequest, CodeInvalidSet, err.Error())
 	}
 	for _, w := range report.Warnings {
-		if w.Code == "no_targets" {
+		switch w.Code {
+		case "no_targets":
 			return fail(http.StatusBadRequest, CodeInvalidSet, "the set has no targets")
+		case "udp_l7_tcp_ports":
+			return fail(http.StatusBadRequest, CodeInvalidSet, "a set that selects UDP traffic by protocol and has no targets takes no TCP port filter")
 		}
 	}
 	fp := imp.Fingerprint

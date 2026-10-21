@@ -299,6 +299,17 @@ func looksPrivate(entry string) bool {
 	return false
 }
 
+func UDPL7(projection map[string]interface{}) []string {
+	raw, _ := lookupPath(projection, "udp.filter_l7")
+	return config.NormalizeL7Filter(stringList(raw))
+}
+
+func sortedL7(classes []string) []string {
+	out := config.NormalizeL7Filter(classes)
+	sort.Strings(out)
+	return out
+}
+
 func addWarnings(sparse map[string]interface{}, r *Report) {
 	domainsRaw, _ := lookupPath(sparse, "targets.sni_domains")
 	domains := stringList(domainsRaw)
@@ -310,7 +321,14 @@ func addWarnings(sparse map[string]interface{}, r *Report) {
 	asns := stringList(asnsRaw)
 
 	if len(domains) == 0 && len(ips) == 0 && len(stringList(geositeRaw)) == 0 && len(stringList(geoipRaw)) == 0 && len(asns) == 0 {
-		r.warn("no_targets", nil)
+		tcpPortsRaw, _ := lookupPath(sparse, "tcp.dport_filter")
+		tcpPorts, _ := tcpPortsRaw.(string)
+		switch {
+		case len(UDPL7(sparse)) == 0:
+			r.warn("no_targets", nil)
+		case tcpPorts != "":
+			r.warn("udp_l7_tcp_ports", map[string]interface{}{"ports": tcpPorts})
+		}
 	}
 
 	private := make([]string, 0)
@@ -393,6 +411,7 @@ func Scrub(set *config.SetConfig) (map[string]interface{}, *Report, error) {
 	r := &Report{}
 	clone := *set
 	config.ApplySetDefaults(&clone)
+	clone.UDP.FilterL7 = sortedL7(clone.UDP.FilterL7)
 	m, err := config.SetToMap(&clone)
 	if err != nil {
 		return nil, nil, err

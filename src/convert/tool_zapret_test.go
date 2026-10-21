@@ -2,6 +2,7 @@ package convert
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -657,5 +658,381 @@ func TestZapret_AnUnbalancedQuoteStillYieldsTheOptions(t *testing.T) {
 	n := noteFor(t, res, "--dpi-desync-split-seqovl-pattern=/opt/etc/nfqws/tls_clienthello.bin")
 	if n.Status == StatusUnknown {
 		t.Fatalf("the pattern path must survive the quote repair: %+v", n)
+	}
+}
+
+const flowsealDiscordLine = `--filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake ` +
+	`--dpi-desync-fake-discord="%BIN%ACTIVE_DISCORD_UDP.bin" --dpi-desync-fake-stun="%BIN%ACTIVE_DISCORD_UDP.bin" ` +
+	`--dpi-desync-repeats=6`
+
+const discordVoiceSnippet = "nfqws --qnum=200 --filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun " +
+	"--dpi-desync=fake --dpi-desync-repeats=6 --new --filter-tcp=2053,2083,2087,2096,8443 " +
+	"--hostlist-domains=discord.media --dpi-desync=multisplit --dpi-desync-split-seqovl=681 --dpi-desync-split-pos=1"
+
+var discordAndSTUN = []string{config.UDPL7Discord, config.UDPL7STUN}
+
+func assertSetsSave(t *testing.T, res *Result) {
+	t.Helper()
+	cfg := config.NewConfig()
+	for i := range res.Sets {
+		set := res.Sets[i]
+		config.ApplySetDefaults(&set)
+		cfg.Sets = append(cfg.Sets, &set)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("the converted sets must save, the config refused them: %v", err)
+	}
+}
+
+func TestZapret_DiscordAndSTUNBecomeProtocolSelection(t *testing.T) {
+	res := analyze(t, flowsealDiscordLine)
+	if len(res.Sets) != 1 {
+		t.Fatalf("got %d sets", len(res.Sets))
+	}
+	set := res.Sets[0]
+	if !slices.Equal(set.UDP.FilterL7, discordAndSTUN) {
+		t.Fatalf("filter_l7: got %v, want %v", set.UDP.FilterL7, discordAndSTUN)
+	}
+	if !set.Enabled {
+		t.Fatal("a set that selects its packets by protocol needs no targets and must stay enabled")
+	}
+	if set.UDP.DPortFilter != "19294-19344,50000-50100" {
+		t.Fatalf("udp.dport_filter: got %q", set.UDP.DPortFilter)
+	}
+	if set.UDP.Mode != "fake" || set.UDP.FakeSeqLength != 6 {
+		t.Fatalf("udp: got mode=%q fake_seq_length=%d", set.UDP.Mode, set.UDP.FakeSeqLength)
+	}
+	if set.UDP.FilterSTUN != config.DefaultSetConfig.UDP.FilterSTUN {
+		t.Fatal("filter_l7 already overrides filter_stun for the packets it selects, so filter_stun keeps its default")
+	}
+	if len(set.Targets.SNIDomains) > 0 || len(set.Targets.IPs) > 0 {
+		t.Fatalf("an L7 set takes no targets, got %v %v", set.Targets.SNIDomains, set.Targets.IPs)
+	}
+	n := noteFor(t, res, "--filter-l7=discord,stun")
+	if n.Status != StatusMapped || n.Reason != "l7FilterMapped" || !hasField(n, "udp.filter_l7") {
+		t.Fatalf("got %+v", n)
+	}
+	if res.Plan[0].AcceptsTargets || !slices.Equal(res.Plan[0].FilterL7, discordAndSTUN) {
+		t.Fatalf("the plan must show the protocols and refuse targets: %+v", res.Plan[0])
+	}
+	if hasWarning(res, "needsTargets") || hasWarning(res, "catchAllProfile") {
+		t.Fatalf("an L7 set is neither waiting for targets nor a catch-all: %+v", res.Warnings)
+	}
+	assertNoLostOptions(t, res)
+	assertSetsSave(t, res)
+}
+
+func TestZapret_DiscordVoiceProfileStaysItsOwnSet(t *testing.T) {
+	res := analyze(t, discordVoiceSnippet)
+	if len(res.Sets) != 2 {
+		t.Fatalf("the L7 profile must not fold into the TCP set, got %d sets", len(res.Sets))
+	}
+	voice, tcp := res.Sets[0], res.Sets[1]
+	if !voice.Enabled || !slices.Equal(voice.UDP.FilterL7, discordAndSTUN) ||
+		voice.UDP.DPortFilter != "19294-19344,50000-50100" || len(voice.Targets.SNIDomains) > 0 {
+		t.Fatalf("voice set: enabled=%v filter_l7=%v ports=%q domains=%v",
+			voice.Enabled, voice.UDP.FilterL7, voice.UDP.DPortFilter, voice.Targets.SNIDomains)
+	}
+	if !tcp.Enabled || tcp.TCP.DPortFilter != "2053,2083,2087,2096,8443" ||
+		!slices.Equal(tcp.Targets.SNIDomains, []string{"discord.media"}) {
+		t.Fatalf("tcp set: enabled=%v ports=%q domains=%v", tcp.Enabled, tcp.TCP.DPortFilter, tcp.Targets.SNIDomains)
+	}
+	if tcp.SelectsL7() || tcp.UDP.DPortFilter != "" {
+		t.Fatalf("nothing of the UDP profile may reach the TCP set: filter_l7=%v udp ports=%q",
+			tcp.UDP.FilterL7, tcp.UDP.DPortFilter)
+	}
+	if n := noteFor(t, res, "--filter-l7=discord,stun"); n.Status != StatusMapped || n.Reason != "l7FilterMapped" {
+		t.Fatalf("got %+v", n)
+	}
+	for _, n := range res.Notes {
+		if n.Reason == "udpOnlySetNotProtocolScoped" || n.Reason == "udpFoldedIntoSet" {
+			t.Fatalf("an L7 set is protocol scoped and never folded: %+v", n)
+		}
+	}
+	assertNoLostOptions(t, res)
+	assertSetsSave(t, res)
+}
+
+func TestZapret_L7ClassesB4CannotSelectAreReported(t *testing.T) {
+	tests := []struct {
+		name    string
+		l7      string
+		want    []string
+		dropped string
+	}{
+		{"unknown", "discord,stun,unknown", discordAndSTUN, "unknown"},
+		{"quic", "quic,stun", []string{config.UDPL7STUN}, "quic"},
+		{"wireguardAndDHT", "wireguard,discord,dht", []string{config.UDPL7Discord}, "wireguard, dht"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token := "--filter-l7=" + tt.l7
+			res := analyze(t, "--filter-udp=50000-50100 "+token+" --dpi-desync=fake")
+			set := res.Sets[0]
+			if !set.Enabled || !slices.Equal(set.UDP.FilterL7, tt.want) {
+				t.Fatalf("enabled=%v filter_l7=%v, want %v", set.Enabled, set.UDP.FilterL7, tt.want)
+			}
+			n := noteFor(t, res, token)
+			if n.Status != StatusApproximated || n.Reason != "l7FilterPartial" || n.Params["dropped"] != tt.dropped {
+				t.Fatalf("the classes b4 cannot select must be named: %+v", n)
+			}
+			assertSetsSave(t, res)
+		})
+	}
+}
+
+func TestZapret_AnL7ProfileWithItsOwnHostsKeepsThem(t *testing.T) {
+	res := analyze(t, "--filter-udp=50000-50100 --filter-l7=discord --hostlist-domains=discord.gg --dpi-desync=fake")
+	set := res.Sets[0]
+	if set.SelectsL7() {
+		t.Fatalf("protocol selection refuses destination targets, got filter_l7=%v", set.UDP.FilterL7)
+	}
+	if !set.Enabled || !slices.Equal(set.Targets.SNIDomains, []string{"discord.gg"}) {
+		t.Fatalf("the host list must still become the targets: enabled=%v domains=%v",
+			set.Enabled, set.Targets.SNIDomains)
+	}
+	n := noteFor(t, res, "--filter-l7=discord")
+	if n.Status != StatusApproximated || n.Reason != "l7FilterWithTargets" {
+		t.Fatalf("got %+v", n)
+	}
+	assertSetsSave(t, res)
+}
+
+func TestZapret_AnL7ProfileWithoutUDPPortsIsNotSelectedByProtocol(t *testing.T) {
+	for _, l7 := range []string{"discord,stun", "discord"} {
+		t.Run(l7, func(t *testing.T) {
+			token := "--filter-l7=" + l7
+			res := analyze(t, token+" --dpi-desync=fake --dpi-desync-repeats=6")
+			set := res.Sets[0]
+			if set.SelectsL7() || set.Enabled {
+				t.Fatalf("without UDP ports the set could not save: filter_l7=%v enabled=%v",
+					set.UDP.FilterL7, set.Enabled)
+			}
+			if set.Fragmentation.Strategy != config.ConfigNone || set.Faking.SNI {
+				t.Fatalf("Discord voice setup and STUN are UDP, so the set carries no TCP strategy: %q faking=%v",
+					set.Fragmentation.Strategy, set.Faking.SNI)
+			}
+			n := noteFor(t, res, token)
+			if n.Status != StatusApproximated || n.Reason != "l7FilterNeedsPorts" {
+				t.Fatalf("got %+v", n)
+			}
+			assertSetsSave(t, res)
+		})
+	}
+}
+
+func TestZapret_AnL7ProfileNeverActsOnTCP(t *testing.T) {
+	res := analyze(t, "--filter-tcp=443 --filter-udp=50000-50100 --filter-l7=discord,stun --dpi-desync=fake")
+	set := res.Sets[0]
+	if !set.SelectsL7() || set.TCP.DPortFilter != "" || set.UDP.DPortFilter != "50000-50100" {
+		t.Fatalf("a TCP port filter would make the set claim TCP flows: filter_l7=%v tcp=%q udp=%q",
+			set.UDP.FilterL7, set.TCP.DPortFilter, set.UDP.DPortFilter)
+	}
+	n := noteFor(t, res, "--filter-tcp=443")
+	if n.Status != StatusDegenerate || n.Reason != "l7TCPPortsUnused" {
+		t.Fatalf("got %+v", n)
+	}
+	assertSetsSave(t, res)
+}
+
+func TestZapret_AQUICOnlyL7FilterIsUnchanged(t *testing.T) {
+	res := analyze(t, "--filter-udp=443 --filter-l7=quic --dpi-desync=fake --dpi-desync-repeats=6")
+	set := res.Sets[0]
+	if set.SelectsL7() || set.Enabled {
+		t.Fatalf("QUIC is not a class b4 selects by protocol: filter_l7=%v enabled=%v", set.UDP.FilterL7, set.Enabled)
+	}
+	if set.UDP.DPortFilter != "443" || set.UDP.FakeSeqLength != 6 {
+		t.Fatalf("udp: ports=%q fake_seq_length=%d", set.UDP.DPortFilter, set.UDP.FakeSeqLength)
+	}
+	n := noteFor(t, res, "--filter-l7=quic")
+	if n.Status != StatusApproximated || n.Reason != "l7QUICMapped" {
+		t.Fatalf("got %+v", n)
+	}
+}
+
+func TestZapret_AnL7SetTakesNoDomains(t *testing.T) {
+	res, err := Analyze("--filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake --new "+
+		"--filter-tcp=443 --dpi-desync=multisplit", Options{
+		Domains:        []string{"example.com"},
+		ProfileDomains: map[int][]string{0: {"discord.com"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Sets[0].Targets.SNIDomains; len(got) != 0 {
+		t.Fatalf("an L7 set must not take domains, got %v", got)
+	}
+	if got := res.Sets[1].Targets.SNIDomains; !slices.Equal(got, []string{"example.com"}) {
+		t.Fatalf("the shared domains belong to the first set that takes targets, got %v", got)
+	}
+	if res.Plan[0].AcceptsTargets || !res.Plan[1].AcceptsTargets {
+		t.Fatalf("plan: %+v", res.Plan)
+	}
+	assertSetsSave(t, res)
+}
+
+func TestZapret_AnL7SetIsNotACatchAll(t *testing.T) {
+	res := analyze(t, "--filter-udp=443 --dpi-desync=fake --new "+
+		"--filter-udp=50000-50100 --filter-l7=discord,stun --dpi-desync=fake --new "+
+		"--filter-tcp=443 --dpi-desync=multisplit --new "+
+		"--filter-tcp=80 --hostlist-domains=a.com --dpi-desync=multisplit")
+
+	var catchAll *Warning
+	for i := range res.Warnings {
+		if res.Warnings[i].Code == "catchAllProfile" {
+			catchAll = &res.Warnings[i]
+		}
+	}
+	if catchAll == nil || catchAll.Params["count"] != 2 {
+		t.Fatalf("only the UDP 443 and TCP 443 profiles are catch-alls: %+v", res.Warnings)
+	}
+	for _, n := range res.Notes {
+		if n.Reason == "udpOnlySetNotProtocolScoped" && n.Profile != 0 {
+			t.Fatalf("the protocol scope warning belongs to the plain UDP set only: %+v", n)
+		}
+	}
+	if !res.Sets[1].Enabled || res.Sets[0].Enabled || res.Sets[2].Enabled {
+		t.Fatalf("enabled: %v %v %v", res.Sets[0].Enabled, res.Sets[1].Enabled, res.Sets[2].Enabled)
+	}
+	assertSetsSave(t, res)
+}
+
+func TestZapret_AnL7ProfileDoesNotBlockTheUDPFold(t *testing.T) {
+	res := analyze(t, "--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=8 --new "+
+		"--filter-udp=50000-50100 --filter-l7=discord,stun --dpi-desync=fake --new "+
+		"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=multisplit")
+
+	if len(res.Sets) != 2 {
+		t.Fatalf("the plain UDP profile folds into the TCP set and the L7 one stays, got %d sets", len(res.Sets))
+	}
+	voice, tcp := res.Sets[0], res.Sets[1]
+	if !voice.SelectsL7() || !voice.Enabled || voice.UDP.DPortFilter != "50000-50100" {
+		t.Fatalf("voice set: filter_l7=%v enabled=%v ports=%q", voice.UDP.FilterL7, voice.Enabled, voice.UDP.DPortFilter)
+	}
+	if tcp.SelectsL7() || tcp.UDP.DPortFilter != "443" || tcp.UDP.FakeSeqLength != 8 ||
+		!slices.Equal(tcp.Targets.SNIDomains, []string{"example.com"}) {
+		t.Fatalf("tcp set: filter_l7=%v udp ports=%q fake_seq_length=%d domains=%v",
+			tcp.UDP.FilterL7, tcp.UDP.DPortFilter, tcp.UDP.FakeSeqLength, tcp.Targets.SNIDomains)
+	}
+	for _, n := range res.Notes {
+		if n.Profile < 0 || n.Profile >= len(res.Sets) {
+			t.Fatalf("note %q points at profile %d of %d", n.Token, n.Profile, len(res.Sets))
+		}
+	}
+	assertNoLostOptions(t, res)
+	assertSetsSave(t, res)
+}
+
+func TestZapret_AOnePortRangeIsThatPort(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"alone", "--filter-udp=3478-3478 --filter-l7=stun --dpi-desync=fake --dpi-desync-repeats=6", "3478"},
+		{"inAList", "--filter-udp=3478-3478,50000-50100 --filter-l7=stun --dpi-desync=fake", "3478,50000-50100"},
+		{"nextToOtherProfiles", "--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=6 --new " +
+			"--filter-udp=3478-3478 --filter-l7=stun --dpi-desync=fake --new " +
+			"--filter-tcp=443 --hostlist-domains=youtube.com --dpi-desync=multisplit", "3478"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := analyze(t, tt.line)
+			i := slices.IndexFunc(res.Sets, func(s config.SetConfig) bool { return s.SelectsL7() })
+			if i < 0 {
+				t.Fatalf("no set selects STUN: %+v", res.Plan)
+			}
+			if got := res.Sets[i].UDP.DPortFilter; got != tt.want || !res.Sets[i].Enabled {
+				t.Fatalf("zapret reads 3478-3478 as port 3478: ports=%q enabled=%v", got, res.Sets[i].Enabled)
+			}
+			assertNoLostOptions(t, res)
+			assertSetsSave(t, res)
+		})
+	}
+}
+
+func TestZapret_AOnePortTCPRangeIsThatPort(t *testing.T) {
+	res := analyze(t, "--filter-tcp=443-443 --hostlist-domains=a.com --dpi-desync=multisplit")
+	if got := res.Sets[0].TCP.DPortFilter; got != "443" {
+		t.Fatalf("tcp.dport_filter: got %q", got)
+	}
+	assertSetsSave(t, res)
+}
+
+func TestZapret_AReversedPortRangeIsInvalid(t *testing.T) {
+	res := analyze(t, "--filter-udp=50100-50000 --filter-l7=stun --dpi-desync=fake")
+	if n := noteFor(t, res, "--filter-udp=50100-50000"); n.Status != StatusInvalid || n.Reason != "badValue" {
+		t.Fatalf("zapret refuses a port range that ends below its start: %+v", n)
+	}
+	set := res.Sets[0]
+	if set.SelectsL7() || set.UDP.DPortFilter != "" {
+		t.Fatalf("no port of the range survives, so the set cannot select by protocol: filter_l7=%v ports=%q",
+			set.UDP.FilterL7, set.UDP.DPortFilter)
+	}
+	if n := noteFor(t, res, "--filter-l7=stun"); n.Reason != "l7FilterNeedsPorts" {
+		t.Fatalf("got %+v", n)
+	}
+	assertSetsSave(t, res)
+}
+
+func TestZapret_AnL7ProfileIsEnabledOnlyWhenItFakesUDP(t *testing.T) {
+	tests := []struct {
+		desync  string
+		reason  string
+		enabled bool
+	}{
+		{"multisplit", "desyncModesEmpty", false},
+		{"ipfrag2", "desyncModesEmpty", false},
+		{"udplen", "desyncModesDropped", false},
+		{"fake,udplen", "desyncModesDropped", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.desync, func(t *testing.T) {
+			token := "--dpi-desync=" + tt.desync
+			res := analyze(t, "--filter-udp=50000-50100 --filter-l7=discord,stun "+token+" --dpi-desync-repeats=6")
+			set := res.Sets[0]
+			if !set.SelectsL7() {
+				t.Fatalf("the protocol selection maps whatever the desync mode: filter_l7=%v", set.UDP.FilterL7)
+			}
+			if set.Enabled != tt.enabled {
+				t.Fatalf("zapret fakes these UDP packets only in fake mode, and a set without a fake must not fake them for every device: enabled=%v",
+					set.Enabled)
+			}
+			if n := noteFor(t, res, token); n.Reason != tt.reason {
+				t.Fatalf("got %+v", n)
+			}
+			if hasWarning(res, "needsTargets") {
+				t.Fatalf("a set that selects by protocol takes no targets, so it must not ask for them: %+v", res.Warnings)
+			}
+			assertSetsSave(t, res)
+		})
+	}
+}
+
+func TestZapret_APortlessL7ProfileIsNotFoldedIntoTheTCPSet(t *testing.T) {
+	for _, l7 := range []string{"stun", "discord", "discord,stun"} {
+		t.Run(l7, func(t *testing.T) {
+			token := "--filter-l7=" + l7
+			res := analyze(t, "--filter-tcp=443 --hostlist-domains=a.com --dpi-desync=multisplit --new "+
+				token+" --dpi-desync=fake --dpi-desync-repeats=11")
+			if len(res.Sets) != 2 {
+				t.Fatalf("the protocol profile must stay its own set, got %d sets", len(res.Sets))
+			}
+			tcp, voice := res.Sets[0], res.Sets[1]
+			if tcp.UDP.FilterQUIC != config.DefaultSetConfig.UDP.FilterQUIC ||
+				tcp.UDP.FakeSeqLength != config.DefaultSetConfig.UDP.FakeSeqLength {
+				t.Fatalf("the UDP handling of the protocol profile reached the a.com set: filter_quic=%q fake_seq_length=%d",
+					tcp.UDP.FilterQUIC, tcp.UDP.FakeSeqLength)
+			}
+			if voice.SelectsL7() || voice.Enabled {
+				t.Fatalf("without UDP ports the set cannot select by protocol: filter_l7=%v enabled=%v",
+					voice.UDP.FilterL7, voice.Enabled)
+			}
+			if n := noteFor(t, res, token); n.Status != StatusApproximated || n.Reason != "l7FilterNeedsPorts" {
+				t.Fatalf("got %+v", n)
+			}
+			assertNoLostOptions(t, res)
+			assertSetsSave(t, res)
+		})
 	}
 }

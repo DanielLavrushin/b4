@@ -61,6 +61,7 @@ type SetPlan struct {
 	AcceptsTargets bool     `json:"accepts_targets"`
 	Domains        []string `json:"domains"`
 	IPs            []string `json:"ips"`
+	FilterL7       []string `json:"filter_l7"`
 	Strategy       string   `json:"strategy"`
 	Faking         bool     `json:"faking"`
 	Enabled        bool     `json:"enabled"`
@@ -224,9 +225,10 @@ func buildPlan(prog *Program, sets []config.SetConfig) []SetPlan {
 			Name:           s.Name,
 			Role:           role,
 			FallbackFor:    from,
-			AcceptsTargets: entry,
+			AcceptsTargets: entry && !s.SelectsL7(),
 			Domains:        append([]string{}, s.Targets.SNIDomains...),
 			IPs:            append([]string{}, s.Targets.IPs...),
+			FilterL7:       append([]string{}, s.UDP.FilterL7...),
 			Strategy:       s.Fragmentation.Strategy,
 			Faking:         s.Faking.SNI,
 			Enabled:        s.Enabled,
@@ -286,7 +288,7 @@ func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetCo
 	}
 	enabled := 0
 	for _, s := range sets {
-		if s.Enabled && (len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0) {
+		if s.Enabled && (len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0 || s.SelectsL7()) {
 			enabled++
 		}
 	}
@@ -327,7 +329,7 @@ func countCatchAll(prog *Program, sets []config.SetConfig) int {
 			break
 		}
 		p := prog.Profiles[i]
-		if !p.IsEntry() || p.hasOwnTargets() {
+		if !p.IsEntry() || p.hasOwnTargets() || sets[i].SelectsL7() {
 			continue
 		}
 		if len(sets[i].Targets.SNIDomains) == 0 && len(sets[i].Targets.IPs) == 0 {

@@ -37,7 +37,7 @@ func noteBreakTokens(prof *Profile, ti tokenIndex, notes *noteSet, keys []string
 }
 
 func (o emitOpts) domainsFor(prof *Profile, sharedGiven *bool) []string {
-	if !prof.IsEntry() {
+	if !prof.IsEntry() || prof.selectsL7() {
 		return nil
 	}
 	if custom, ok := o.ProfileDomains[prof.Index]; ok {
@@ -107,7 +107,7 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config
 			set.Faking.SNI = false
 			emitUDPFake(prof, ti, notes)
 		}
-		if udpOnly && len(prog.Profiles) > 1 {
+		if udpOnly && len(prog.Profiles) > 1 && !set.SelectsL7() {
 			notes.extra = append(notes.extra, Note{
 				Token:     set.Name,
 				Profile:   prof.Index,
@@ -139,6 +139,7 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config
 
 func emitFilters(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet, udpOnly bool) {
 	f := prof.Filters
+	l7 := prof.selectsL7()
 
 	if len(f.Hosts) > 0 {
 		set.Targets.SNIDomains = append(set.Targets.SNIDomains, f.Hosts...)
@@ -166,7 +167,11 @@ func emitFilters(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *not
 		}
 	}
 
-	if len(f.TCPPorts) > 0 {
+	if len(f.TCPPorts) > 0 && l7 {
+		if tok, ok := ti.first(prof.Index, "filter_tcp"); ok {
+			notes.set(tok, StatusDegenerate, "l7TCPPortsUnused")
+		}
+	} else if len(f.TCPPorts) > 0 {
 		set.TCP.DPortFilter = strings.Join(f.TCPPorts, ",")
 		if tok, ok := ti.first(prof.Index, "filter_tcp"); ok {
 			notes.set(tok, StatusMapped, "portFilterMapped", "tcp.dport_filter="+set.TCP.DPortFilter)
@@ -188,12 +193,11 @@ func emitFilters(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *not
 		set.UDP.FilterQUIC = "sni"
 		set.UDP.Mode = "fake"
 	}
+	if l7 {
+		set.UDP.FilterL7, _ = prof.l7Classes()
+	}
 	if tok, ok := ti.first(prof.Index, "filter_l7"); ok {
-		if f.HasProto("quic") {
-			notes.set(tok, StatusApproximated, "l7QUICMapped", "udp.filter_quic=sni")
-		} else {
-			notes.set(tok, StatusApproximated, "l7FilterApproximated")
-		}
+		noteL7Filter(prof, tok, notes, l7, udpOnly)
 	}
 
 	portFilter := ""
@@ -246,6 +250,26 @@ func emitFilters(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *not
 
 	if f.HasProto("ipv4") {
 		set.Targets.IPVersion = "4"
+	}
+}
+
+func noteL7Filter(prof *Profile, tok Token, notes *noteSet, l7, udpOnly bool) {
+	selected, dropped := prof.l7Classes()
+	field := "udp.filter_l7=" + strings.Join(selected, ",")
+	switch {
+	case l7 && len(dropped) > 0:
+		n := notes.set(tok, StatusApproximated, "l7FilterPartial", field)
+		n.Params = map[string]any{"dropped": strings.Join(dropped, ", ")}
+	case l7:
+		notes.set(tok, StatusMapped, "l7FilterMapped", field)
+	case len(selected) > 0 && udpOnly && prof.hasOwnTargets():
+		notes.set(tok, StatusApproximated, "l7FilterWithTargets")
+	case len(selected) > 0 && udpOnly:
+		notes.set(tok, StatusApproximated, "l7FilterNeedsPorts")
+	case prof.Filters.HasProto("quic"):
+		notes.set(tok, StatusApproximated, "l7QUICMapped", "udp.filter_quic=sni")
+	default:
+		notes.set(tok, StatusApproximated, "l7FilterApproximated")
 	}
 }
 
@@ -913,7 +937,7 @@ func finalize(sets []config.SetConfig, prog *Program, notes *noteSet) {
 			s.Enabled = true
 			continue
 		}
-		s.Enabled = hasTargets && carries && !prog.Profiles[i].Skip
+		s.Enabled = (hasTargets || s.SelectsL7()) && carries && !prog.Profiles[i].Skip
 	}
 	disableShadowedSets(sets, notes)
 }

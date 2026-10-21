@@ -1472,6 +1472,7 @@
         "ipVersion": "IP ver",
         "tcpPorts": "TCP ports",
         "udpPorts": "UDP ports",
+        "udpL7": "UDP protocols",
         "strategy": "Strategy",
         "order": "Order",
         "inOrder": "in order",
@@ -2409,7 +2410,7 @@
       "version": "Version",
       "autoDetect": "Detect automatically",
       "domainsLabel": "Domains (optional)",
-      "domainsHelper": "Comma separated. They go to the first set that has no host list of its own; give the others their own domains below. A b4 set without targets matches nothing.",
+      "domainsHelper": "Comma separated. They go to the first set that takes targets and has no host list of its own; give the others their own domains below. A b4 set without targets matches nothing.",
       "analyze": "Analyze",
       "createSets_one": "Create {{count}} set",
       "createSets_other": "Create {{count}} sets",
@@ -2443,7 +2444,7 @@
         "alternativeStrategies": "The source file has {{count}} commented-out alternative strategies for {{vars}}. They were not converted - uncomment the one you want and analyze again to import it instead.",
         "setsWithoutStrategy": "{{count}} set(s) carry no bypass options at all, so they pass traffic through unchanged.",
         "unusedVars": "{{vars}} carry options but are not variables {{tool}} reads, so they were left out of the conversion. Rename them or paste their contents on their own if they should be converted.",
-        "catchAllProfile": "{{count}} profile(s) have no host list of their own. In {{tool}} such a profile handles everything the others did not match; a b4 set with no targets matches nothing by domain or address, so it is created disabled. A UDP set with a port filter is the exception: it would act on every flow on those ports."
+        "catchAllProfile": "{{count}} profile(s) have no host list of their own. In {{tool}} such a profile handles everything the others did not match; a b4 set with no targets matches nothing by domain or address, so it is created disabled. A UDP set with a port filter is the exception: it would act on every flow on those ports. Sets that select UDP packets by protocol are not counted: they need no targets."
       },
       "reason": {
         "proxyRuntime": "Configures the byedpi proxy process itself. b4 works on packets in the firewall, so there is nothing to carry over.",
@@ -2575,12 +2576,22 @@
         "fakeSplitBoundaryLost": "The fake position also splits the request upstream. This set sends fake packets but passes the real request whole, since no other option asked for a split.",
         "escalationTargetIdentical": "This set ends up identical to {{other}}, so escalating from it would change nothing. The escalation link was removed.",
         "portFilterDroppedOnFallback": "A set reached only through escalation carries no port filter of its own, so the ports from this profile were dropped.",
-        "positionInRange": "Falls inside the range of offsets the set splits at. b4 picks one offset from that range per packet rather than splitting at all of them."
+        "positionInRange": "Falls inside the range of offsets the set splits at. b4 picks one offset from that range per packet rather than splitting at all of them.",
+        "l7FilterMapped": "Became protocol selection: the set acts only on these UDP packets on its ports, whatever their destination, as this profile does. A set that selects by protocol takes no domain or IP targets.",
+        "l7FilterPartial": "Became protocol selection for the protocols b4 recognizes. b4 has no protocol selection for {{dropped}}, so the set leaves those packets alone.",
+        "l7FilterNeedsPorts": "b4 only sees UDP on port 443 and on the ports sets list, so protocol selection needs the UDP ports the protocol arrives on, and this profile lists none. The protocol filter was not carried over and the set is created disabled: to use it, add the ports, such as 19294-19344,50000-50100 for Discord voice, turn protocol selection on in its UDP settings and enable it.",
+        "l7FilterWithTargets": "b4 selects UDP packets by protocol only in a set without targets, and this profile has its own host or address list. The targets were kept, so the set acts on UDP traffic to them rather than on these protocols alone, and with Filter STUN Packets on it passes STUN and Discord voice packets through untouched.",
+        "l7TCPPortsUnused": "zapret recognizes Discord voice setup and STUN only in UDP, so this profile never applies to TCP. The set takes no TCP port filter."
       },
       "sharedDomainsLabel": "Shared domains",
       "usingShared": "Using the shared domains above",
       "willBeDisabled": "created disabled",
       "fallbackNoTargets": "Reached from set #{{index}} when it keeps failing. It needs no targets of its own - giving it any would make it compete with set #{{index}} instead of backing it up.",
+      "l7NoTargets": "Acts only on these packets on its UDP ports, whatever their destination: {{protocols}}. A set that selects by protocol takes no domain or IP targets.",
+      "l7Protocol": {
+        "discord": "Discord voice setup",
+        "stun": "STUN"
+      },
       "role": {
         "entry": "Entry",
         "fallback": "Fallback for #{{index}}"
@@ -3881,7 +3892,8 @@
       "reapply": "Reapply",
       "geosite": "geosite {{list}}",
       "geoip": "geoip {{list}}",
-      "asns": "networks {{list}}"
+      "asns": "networks {{list}}",
+      "udpL7": "UDP: {{list}}"
     },
     "flags": {
       "needs_payload": "needs payload",
@@ -3956,6 +3968,7 @@
       "geoip": "GeoIP",
       "asns": "Networks (ASN)",
       "addresses": "Addresses",
+      "udpL7": "UDP protocols",
       "none": "none",
       "strategy": "Strategy",
       "payloads": "Payloads",

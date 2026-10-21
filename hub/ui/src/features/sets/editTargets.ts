@@ -207,6 +207,11 @@ export const hasTargets = (projection: Projection): boolean => {
   return LIST_KEYS.some((key) => stringsOf(targets[key]).length > 0);
 };
 
+export const selectsL7 = (projection: Projection): boolean => {
+  const udp = isObject(projection.udp) ? projection.udp : {};
+  return stringsOf(udp.filter_l7).some((item) => item.trim() !== "");
+};
+
 export const sameField = (a: Projection, b: Projection, key: FieldKey): boolean =>
   JSON.stringify(targetsOf(a)[key]) === JSON.stringify(targetsOf(b)[key]);
 
@@ -313,8 +318,13 @@ export const invalidFields = (error: unknown): InvalidFieldView[] => {
   return list.filter(isInvalidField);
 };
 
+const PATH_ERRORS: Record<string, string> = {
+  "udp.filter_l7:conflict": "udp_l7_targets",
+  "udp.dport_filter:required": "udp_l7_ports",
+};
+
 export const fieldErrorText = (t: TFunction, field: InvalidFieldView): string =>
-  t(`edit.fieldErrors.${field.code}`, { ...field.params, defaultValue: field.message });
+  t(`edit.fieldErrors.${PATH_ERRORS[`${field.path}:${field.code}`] ?? field.code}`, { ...field.params, defaultValue: field.message });
 
 const show = (value: unknown): string => {
   if (typeof value === "string") return value;

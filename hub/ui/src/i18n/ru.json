@@ -212,7 +212,9 @@
     },
     "fieldErrors": {
       "asn_invalid": "{{value}} не публичный номер AS",
-      "mss_clamp_scope_required": "Для MSS clamping нужна цель: адрес, GeoIP или ASN"
+      "mss_clamp_scope_required": "Для MSS clamping нужна цель: адрес, GeoIP или ASN",
+      "udp_l7_targets": "Сет, который выбирает UDP-трафик по протоколу, не может иметь целей: доменов, адресов, ASN или категорий",
+      "udp_l7_ports": "Сету, который выбирает UDP-трафик по протоколу, нужен фильтр портов UDP"
     },
     "emptyValue": "(пусто)",
     "strippedReasons": {
@@ -269,6 +271,7 @@
         "ipVersion": "Версия IP",
         "tcpPorts": "Порты TCP",
         "udpPorts": "Порты UDP",
+        "udpL7": "Протоколы UDP",
         "strategy": "Стратегия",
         "order": "Порядок",
         "inOrder": "прямой",

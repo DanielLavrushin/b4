@@ -166,6 +166,8 @@ func Techniques(set *config.SetConfig, payloads []hubwire.BlobRef) []Term {
 				p["payload"] = "zero"
 			case config.FakePayloadAutoQUIC:
 				p["payload"] = "quic_initial"
+			case config.FakePayloadAutoSTUN:
+				p["payload"] = "stun"
 			case config.FakePayloadPreset1, config.FakePayloadPreset2:
 				p["payload"] = "quic_preset"
 			default:

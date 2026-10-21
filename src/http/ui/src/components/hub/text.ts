@@ -57,6 +57,9 @@ export function targetsSummary(t: TFunction, targets: HubTargets): string {
   if (targets.ip_count > 0) {
     parts.push(t("hub.card.ipCount", { count: targets.ip_count }));
   }
+  if ((targets.udp_l7 ?? []).length > 0) {
+    parts.push(t("hub.card.udpL7", { list: targets.udp_l7.join(", ") }));
+  }
   return parts.length > 0 ? parts.join(" · ") : t("hub.card.noTargets");
 }
 

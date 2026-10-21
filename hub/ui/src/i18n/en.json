@@ -212,7 +212,9 @@
     },
     "fieldErrors": {
       "asn_invalid": "{{value}} is not a public AS number",
-      "mss_clamp_scope_required": "MSS clamping needs an address, GeoIP or ASN target"
+      "mss_clamp_scope_required": "MSS clamping needs an address, GeoIP or ASN target",
+      "udp_l7_targets": "A set that selects UDP traffic by protocol cannot also have domain, address, ASN or category targets",
+      "udp_l7_ports": "A set that selects UDP traffic by protocol needs a UDP port filter"
     },
     "emptyValue": "(empty)",
     "strippedReasons": {
@@ -269,6 +271,7 @@
         "ipVersion": "IP ver",
         "tcpPorts": "TCP ports",
         "udpPorts": "UDP ports",
+        "udpL7": "UDP protocols",
         "strategy": "Strategy",
         "order": "Order",
         "inOrder": "in order",

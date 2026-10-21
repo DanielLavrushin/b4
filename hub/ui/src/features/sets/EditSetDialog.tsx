@@ -54,6 +54,7 @@ import {
   lines,
   normalizeCategories,
   sameField,
+  selectsL7,
   siteKey,
   splitWarnings,
   tlsUnknown,
@@ -589,7 +590,7 @@ export function EditSetDialog({ entry, onClose }: Readonly<EditSetDialogProps>) 
 
   const busy = preview.isPending || edit.isPending;
   const invalid = parsed.error !== null;
-  const noTargets = projection !== null && !hasTargets(projection);
+  const noTargets = projection !== null && !hasTargets(projection) && !selectsL7(projection);
   const tlsOptions = TLS_OFFERED.includes(targets.tls) ? TLS_OFFERED : [...TLS_OFFERED, targets.tls];
   const ipOptions = IP_VERSIONS.includes(targets.ip_version) ? IP_VERSIONS : [...IP_VERSIONS, targets.ip_version];
   const tlsOdd = tlsUnknown(targets.tls);
