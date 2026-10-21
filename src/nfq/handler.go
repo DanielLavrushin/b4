@@ -1030,7 +1030,6 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	anyMatch := matchedIP || matchedQUIC || matchedFlow || matchedPort || matchedL7
 	shouldHandle := anyMatch && !(isVoiceMedia && !matchedL7 && set.UDP.FilterSTUN)
-	voiceExempt := anyMatch && !shouldHandle
 
 	matched = shouldHandle
 
@@ -1055,7 +1054,8 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
-	udpForeignEgress := shouldHandle && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
+	voiceExempt := anyMatch && isVoiceMedia && !matchedL7 && set != nil && set.UDP.FilterSTUN
+	udpForeignEgress := shouldHandle && !voiceExempt && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
 	udpReason := ""
 	if udpForeignEgress {
 		udpReason = vc.handOffReason()
@@ -1082,7 +1082,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	quicFlow := (isQUIC || matchedFlow) && !isVoiceMedia
 
 	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
-		if matchedQUIC || matchedFlow || (matchedIP && !matchedLearned) {
+		if matchedQUIC || matchedFlow || (matchedIP && !matchedLearned) || matchedL7 {
 			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
 				if pkt.ver == IPv4 {
 					if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {

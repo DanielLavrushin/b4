@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"encoding/binary"
+	"strings"
 	"testing"
 	"time"
 
@@ -155,6 +156,57 @@ func TestAnEscalatedHostDoesNotTakeAPacketAnL7SetSelected(t *testing.T) {
 				t.Fatalf("a packet the L7 set selected belongs to that set even when its address was learned for an escalated host, got %v, want %v", v, c.want)
 			}
 		})
+	}
+}
+
+func TestAnL7SetBlocksThePacketsItSelects(t *testing.T) {
+	voice := newVoiceL7Set(config.UDPL7Discord)
+	voice.UDP.Mode = config.ConfigOff
+	voice.Routing.Enabled = true
+	voice.Routing.Mode = config.RoutingModeBlock
+	voice.Routing.BlockAction = config.BlockActionDrop
+	w := newQUICFlowWorker(t, &voice)
+	if v := sendUDPTo(w, discordIPDiscovery(), 51020, 50005); v != engine.VerdictDrop {
+		t.Fatalf("block routing must block the packet the set selects, got %v", v)
+	}
+	if v := sendUDPTo(w, []byte("plain udp payload"), 51021, 50005); v != engine.VerdictAccept {
+		t.Fatalf("a packet the set does not select is not blocked, got %v", v)
+	}
+}
+
+func TestTheVoiceExemptLabelFollowsTheEscalatedSet(t *testing.T) {
+	const host = "c-fra10-1234.discord.media"
+	escalated := config.NewSetConfig()
+	escalated.Id = "media-escalated"
+	escalated.Name = "MediaEscalated"
+	escalated.Enabled = true
+	escalated.Targets.SNIDomains = []string{"escalated.example"}
+	escalated.UDP.Mode = config.UDPModeDrop
+	escalated.UDP.FilterSTUN = true
+	escalated.Fragmentation.Strategy = config.ConfigNone
+	escalated.Fragmentation.StrategyPool = nil
+
+	media := config.NewSetConfig()
+	media.Id = "discord-media"
+	media.Name = "DiscordMedia"
+	media.Enabled = true
+	media.Targets.SNIDomains = []string{"discord.media"}
+	media.UDP.Mode = config.UDPModeDrop
+	media.UDP.FilterSTUN = false
+	media.Escalate.To = escalated.Id
+	media.Fragmentation.Strategy = config.ConfigNone
+	media.Fragmentation.StrategyPool = nil
+
+	buf := captureLog(t)
+	w := newQUICFlowWorker(t, &media, &escalated)
+	w.matcher.Load().(*sni.SuffixSet).LearnIPToDomain(quicServer, host, &media)
+	w.destState.SetEscalation(host, escalated.Id, escalateReasonStall, time.Minute)
+
+	if v := sendUDPTo(w, stunBindingRequest(), 51022, 3478); v != engine.VerdictAccept {
+		t.Fatalf("the escalated set has Filter STUN Packets on, so it lets the STUN request through, got %v", v)
+	}
+	if !strings.Contains(buf.String(), voiceExemptReason) {
+		t.Fatalf("the packet the escalated set let through must be logged as %s: %q", voiceExemptReason, buf.String())
 	}
 }
 
