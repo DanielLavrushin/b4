@@ -36,7 +36,7 @@ A set with protocol selection has three requirements. When it breaks one, b4 ref
 - A **Port Filter** on this tab with the ports the protocol arrives on.
 - An empty **Port Filter** on the [TCP](./tcp/general.md) tab. Without targets, a TCP port filter would make the set act on every TCP connection on those ports. The **TCP** tab shows a warning too.
 
-While protocol selection is on, **Filter STUN Packets** has no effect on the packets the set selects, and the switch is shown disabled. The **IP Version Filter** on the [Targets](./targets.md) tab limits such a set as well. Turning protocol selection on changes **Fake Packet Payload** from **(zero fill)** to **(auto: STUN request)**, and a payload chosen by hand stays. On some networks zero-filled fakes cut Discord voice calls short. [Discord voice calls](../guides/discord-voice.md) sets up such a set step by step.
+While protocol selection is on, **Filter STUN Packets** has no effect on the packets the set selects, and the switch is shown disabled. Block routing on the [DNS & Routing](./routing.md) tab blocks the packets the set selects. The **IP Version Filter** on the [Targets](./targets.md) tab limits such a set as well. Turning protocol selection on changes **Fake Packet Payload** from **(zero fill)** to **(auto: STUN request)**, and a payload chosen by hand stays. On some networks zero-filled fakes cut Discord voice calls short. [Discord voice calls](../guides/discord-voice.md) sets up such a set step by step.
 
 ## How to Handle Matched Traffic
 

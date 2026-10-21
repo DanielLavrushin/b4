@@ -85,7 +85,9 @@ export const TrafficRouting = ({
 
   const hasDestination = hasTargets(config);
   const sourceDeviceCount = config.targets.source_devices?.length ?? 0;
-  const showNoDestinationWarning = routing.enabled && !hasDestination;
+  const blocksByProtocol = isBlock && (config.udp.filter_l7?.length ?? 0) > 0;
+  const showNoDestinationWarning =
+    routing.enabled && !hasDestination && !blocksByProtocol;
 
   const selectedIfaceAvailable = availableIfaces.includes(
     routing.egress_interface,
