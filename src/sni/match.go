@@ -289,7 +289,7 @@ func (s *SuffixSet) MatchUDPPort(dport uint16, srcMAC string) (bool, *config.Set
 	return false, nil
 }
 
-func (s *SuffixSet) MatchUDPL7(dport uint16, srcMAC, class string) (bool, *config.SetConfig) {
+func (s *SuffixSet) MatchUDPL7(dport uint16, srcMAC, class string, ipVersion uint8) (bool, *config.SetConfig) {
 	if s == nil || class == "" || len(s.udpL7Ranges) == 0 {
 		return false, nil
 	}
@@ -297,7 +297,7 @@ func (s *SuffixSet) MatchUDPL7(dport uint16, srcMAC, class string) (bool, *confi
 	port := int(dport)
 
 	for _, r := range s.udpL7Ranges {
-		if !r.set.SelectsL7Class(class) {
+		if !r.set.SelectsL7Class(class) || !r.set.MatchesIPVersion(ipVersion) {
 			continue
 		}
 		if !setMatchesSource(r.set, srcMAC) {

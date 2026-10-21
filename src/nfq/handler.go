@@ -1015,7 +1015,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	matchedL7 := false
 	if class := udpL7Class(payload); class != "" {
-		if l7Matched, l7Set := matcher.MatchUDPL7(dport, pkt.srcMac, class); l7Matched {
+		if l7Matched, l7Set := matcher.MatchUDPL7(dport, pkt.srcMac, class, pkt.ver); l7Matched {
 			matchedL7 = true
 			matchedIP = false
 			matchedQUIC = false

@@ -8,6 +8,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/sock"
 )
 
 func discordIPDiscovery() []byte {
@@ -152,6 +153,34 @@ func TestAnEscalatedHostDoesNotTakeAPacketAnL7SetSelected(t *testing.T) {
 
 			if v := sendUDPTo(w, discordIPDiscovery(), 51006, 50005); v != c.want {
 				t.Fatalf("a packet the L7 set selected belongs to that set even when its address was learned for an escalated host, got %v, want %v", v, c.want)
+			}
+		})
+	}
+}
+
+func TestAnL7SetSelectsOnlyItsIPVersion(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		version string
+		v4, v6  engine.PacketVerdict
+	}{
+		{"no restriction selects both", "", engine.VerdictDrop, engine.VerdictDrop},
+		{"IPv4 only leaves IPv6 alone", "4", engine.VerdictDrop, engine.VerdictAccept},
+		{"IPv6 only leaves IPv4 alone", "6", engine.VerdictAccept, engine.VerdictDrop},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			set := newVoiceL7Set(config.UDPL7Discord)
+			set.Targets.IPVersion = c.version
+			cfg := newUDPGateConfig(t, &set)
+			cfg.Queue.IPv6Enabled = true
+			w := newTestWorker(t, &cfg)
+			w.sock = &sock.Sender{}
+			t.Cleanup(w.wg.Wait)
+			if v := sendUDPTo(w, discordIPDiscovery(), 51010, 50005); v != c.v4 {
+				t.Fatalf("IPv4 packet: got %v, want %v", v, c.v4)
+			}
+			if v := w.ProcessPacket(makeV6UDPPacketWithExt(discordIPDiscovery(), 51011, 50005, 0, nil)); v != c.v6 {
+				t.Fatalf("IPv6 packet: got %v, want %v", v, c.v6)
 			}
 		})
 	}
