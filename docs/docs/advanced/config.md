@@ -121,7 +121,7 @@ Each set is one object in the `sets` array, carrying its whole configuration. It
 - `tcp` - general TCP settings, desync, window, incoming, RST protection
 - `fragmentation` - the fragmentation method and its parameters
 - `faking` - SNI faking, SYN fakes, mutation
-- `udp` - the QUIC filter, the port filter and the UDP action mode
+- `udp` - the QUIC filter, the port filter, protocol selection and the UDP action mode
 - `dns` - the set's resolver, DoH URL and pins
 - `routing` - routing mode, output interface, upstream proxy or blocking
 - `dscp` - the set's own DSCP value
@@ -138,6 +138,10 @@ The **Import/Export** tab of the set editor shows a set as JSON and takes a past
 | `dscp.value` | The value written into the DSCP field, 0-63. `0` clears the field | `0` |
 
 Each key is stored only while it differs from its default: the switch on with the value `0` is saved as `"dscp": {"enabled": true}`, a value kept with the switch off as `"dscp": {"value": 12}`. While `dscp.enabled` is `true`, a `dscp.value` outside 0-63 is refused, not clamped: the web interface refuses the save, and a file that holds one stops b4 at start. Neither key is writable over MCP or carried in a [shared set](../sets/sharing.md).
+
+### A set's `udp.filter_l7` {#set-udp-filter-l7}
+
+`udp.filter_l7` lists the UDP protocols the set selects: `discord` for **Only Discord voice setup**, `stun` for **Only STUN**, see [Selecting packets by protocol](../sets/udp.md#protocol-selection). An empty list is not stored. A set with the list needs a `udp.dport_filter`, no `targets.sni_domains`, `targets.ip`, `targets.geosite_categories`, `targets.geoip_categories` or `targets.asns`, and an empty `tcp.dport_filter`. A set that breaks this is refused: the web interface refuses the save, and a file that holds one stops b4 at start. An unknown entry stays in the list, matches no traffic and is logged as a warning. **(auto: STUN request)** is `"fake_payload_file": "@stun"` under `udp`. `udp.filter_l7` is writable over MCP, with `discord` and `stun` as its only entries, and is carried in a [shared set](../sets/sharing.md).
 
 ## Settings and their configuration paths {#settings-and-their-configuration-paths}
 
@@ -302,8 +306,10 @@ The AI API key is not part of this file. b4 keeps it in `ai_secrets.json`.
 | TCP > Faking | **Generated Payload** | `faking.payload_file`, a path such as `captures/tls_youtube_com.bin` |
 | UDP | **QUIC Matching** | `udp.filter_quic` |
 | UDP | **Port Filter** | `udp.dport_filter` |
+| UDP | **Only Discord voice setup** | `udp.filter_l7`, the entry `discord` |
+| UDP | **Only STUN** | `udp.filter_l7`, the entry `stun` |
 | UDP | **Action Mode** | `udp.mode` |
-| UDP | **Fake Packet Payload** | `udp.fake_payload_file` |
+| UDP | **Fake Packet Payload** | `udp.fake_payload_file`, `@stun` for **(auto: STUN request)** |
 | DNS & Routing | **Enable DNS Redirect** | `dns.enabled` |
 | DNS & Routing | **DNS Server IP** | `dns.target_dns` |
 | DNS & Routing | **DNS-over-HTTPS URL** | `dns.doh_url` |

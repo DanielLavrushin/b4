@@ -10,7 +10,7 @@ A set that works can be published to the Community Hub. Other b4 users find it o
 
 - The Community Hub is on, see [Switching it on](./index.md#switching-it-on).
 - The set is saved. Unsaved changes are not published.
-- The set was tested on the targets it lists. A domain it was never tried on collects **Broken** reports.
+- The set was tested on the targets it lists. A domain it was never tried on collects **Broken** reports. A set that selects UDP packets by protocol has no targets and is tested with a call through it.
 
 ## Setup
 
@@ -25,6 +25,8 @@ A set that works can be published to the Community Hub. Other b4 users find it o
 
 **Prepare shared set** shows what is sent. **Check before sharing** lists what deserves a second look, such as domains that look private to this network or pins everyone importing the set will use. **Left out of the shared set** lists every dropped setting with the reason. Routing to a proxy or an interface, device filters, escalation and the DNS server address are always dropped, see [What leaves the router](../sets/sharing.md#what-leaves-the-router). The JSON below, with **Copy** and **Download**, hands the set over [directly](../sets/sharing.md).
 
+The hub refuses a set without targets, except one that [selects UDP packets by protocol](../sets/udp.md#protocol-selection). Such a set is published with its protocols and UDP ports.
+
 The published title is the set's name. The router sends no description, and a moderator can add one on the hub.
 
 ## Checking the result
@@ -38,6 +40,8 @@ The published set is now linked to the hub set, like an applied one: its card on
 After the strategy of a published set changes, the button reads **Publish as new version**. Publishing then adds the next version to the same hub set, and routers that applied the previous one see **Update to version N**. When the original set was published by someone else, the hub creates a new set instead.
 
 A publication whose strategy and targets match a version the hub already holds is not stored. The hub names that set, and the upload counts as a **Works** report for it.
+
+For a set that selects UDP packets by protocol, the selected protocols and the UDP ports count as its targets, both for new versions and for duplicates.
 
 ## Author identity {#author-identity}
 
@@ -55,4 +59,4 @@ The key is created on first use and kept in `.hub/` in the configuration directo
 | Message | Meaning |
 | --- | --- |
 | **Linked to community set ... nothing to publish.** | The set is linked to a hub set, and its strategy has not changed since. |
-| **The hub refused the set: ...** | The message names the reason, such as a set without targets or the daily limit, see [Limits](./feedback.md#limits). |
+| **The hub refused the set: ...** | The message names the reason, such as a set without targets that does not select UDP packets by protocol, or the daily limit, see [Limits](./feedback.md#limits). |
