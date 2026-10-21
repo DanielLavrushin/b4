@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -653,8 +654,12 @@ func (c *Config) Validate() error {
 				v.add(fmt.Sprintf("sets[%d].udp.filter_l7", setIdx), "conflict", "UDP protocol selection applies to sets without domain, IP, GeoSite, GeoIP or ASN targets", nil)
 				return v.result()
 			}
+			if set.TCP.DPortFilter != "" {
+				v.add(fmt.Sprintf("sets[%d].tcp.dport_filter", setIdx), "conflict", "a set that selects UDP protocols takes no TCP port filter, as without targets the set would act on every TCP connection on those ports", map[string]any{"ports": set.TCP.DPortFilter})
+				return v.result()
+			}
 			for _, class := range set.UDP.FilterL7 {
-				if class != UDPL7Discord && class != UDPL7STUN {
+				if !slices.Contains(UDPL7Classes, class) {
 					log.Warnf("Set '%s' selects unknown UDP protocol '%s'; this version matches no traffic for it", set.Name, class)
 				}
 			}

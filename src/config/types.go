@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -125,6 +126,10 @@ func NormalizeL7Filter(classes []string) []string {
 		return nil
 	}
 	return out
+}
+
+func SelectsKnownL7(classes []string) bool {
+	return slices.ContainsFunc(classes, func(c string) bool { return slices.Contains(UDPL7Classes, c) })
 }
 
 func NormalizeSTUNFakeLen(size int) int {
@@ -331,7 +336,7 @@ type UDPConfig struct {
 	DPortFilter     string   `json:"dport_filter"` // can be a comma separated list of ports and port ranges, e.g. "80,443,1000-2000"
 	FilterQUIC      string   `json:"filter_quic"`
 	FilterSTUN      bool     `json:"filter_stun"`
-	FilterL7        []string `json:"filter_l7,omitempty"` // empty = every payload; "discord" and "stun" select flows by their first packet
+	FilterL7        []string `json:"filter_l7,omitempty"`
 	ConnBytesLimit  int      `json:"conn_bytes_limit"`
 	Seg2Delay       int      `json:"seg2delay"`
 	Seg2DelayMax    int      `json:"seg2delay_max"`

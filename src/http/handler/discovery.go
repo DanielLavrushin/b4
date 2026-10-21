@@ -579,6 +579,7 @@ func replaceStrategy(dst, strategy *config.SetConfig) {
 	udp := strategy.UDP
 	udp.FakePayloadData = slices.Clone(strategy.UDP.FakePayloadData)
 	udp.DPortFilter = dst.UDP.DPortFilter
+	udp.FilterL7 = slices.Clone(dst.UDP.FilterL7)
 	dst.UDP = udp
 
 	pins, strict, stripECH := dst.DNS.Pins, dst.DNS.Strict, dst.DNS.StripECH || strategy.DNS.StripECH

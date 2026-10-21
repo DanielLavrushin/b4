@@ -321,6 +321,7 @@ export const invalidFields = (error: unknown): InvalidFieldView[] => {
 const PATH_ERRORS: Record<string, string> = {
   "udp.filter_l7:conflict": "udp_l7_targets",
   "udp.dport_filter:required": "udp_l7_ports",
+  "tcp.dport_filter:conflict": "udp_l7_tcp_ports",
 };
 
 export const fieldErrorText = (t: TFunction, field: InvalidFieldView): string =>

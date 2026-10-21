@@ -250,8 +250,12 @@ func gZapretPorts(raw string, _ grammarCtx) (Value, error) {
 			continue
 		}
 		b, err := strconv.Atoi(hi)
-		if err != nil || b < 1 || b > 65535 {
+		if err != nil || b < a || b > 65535 {
 			return Value{}, errors.New("expected a port or port range")
+		}
+		if a == b {
+			out = append(out, strconv.Itoa(a))
+			continue
 		}
 		out = append(out, strconv.Itoa(a)+"-"+strconv.Itoa(b))
 	}

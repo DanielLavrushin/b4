@@ -12,21 +12,12 @@ import (
 	"github.com/daniellavrushin/b4hub/internal/testkit"
 )
 
-func l7Set(name string, classes ...string) config.SetConfig {
-	set := config.NewSetConfig()
-	set.Name = name
-	set.UDP.DPortFilter = "19294-19344,50000-50100"
-	set.UDP.FakePayloadFile = config.FakePayloadAutoSTUN
-	set.UDP.FilterL7 = classes
-	return set
-}
-
 func TestShareAcceptsASetThatSelectsUDPProtocols(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	author := testkit.Identity(t)
 
-	resp := f.share(t, author, l7Set("Discord voice", config.UDPL7Discord), peerA)
+	resp := f.share(t, author, testkit.L7Set("Discord voice", config.UDPL7Discord), peerA)
 	expect(t, resp, http.StatusAccepted, "")
 	setID, _ := resp.Body["set_id"].(string)
 	v, err := f.store.GetVersion(ctx, setID, 1)
@@ -40,13 +31,13 @@ func TestShareAcceptsASetThatSelectsUDPProtocols(t *testing.T) {
 		t.Errorf("the stored projection must keep the protocol selection: %v", v.Projection)
 	}
 
-	stun := f.share(t, author, l7Set("STUN calls", config.UDPL7STUN), peerA)
+	stun := f.share(t, author, testkit.L7Set("STUN calls", config.UDPL7STUN), peerA)
 	expect(t, stun, http.StatusAccepted, "")
 	if stun.Body["set_id"] == setID {
 		t.Errorf("a set that selects another protocol is a set of its own, not the next version of %s: %v", setID, stun.Body)
 	}
 
-	dup := f.share(t, testkit.Identity(t), l7Set("Discord again", config.UDPL7Discord), peerB)
+	dup := f.share(t, testkit.Identity(t), testkit.L7Set("Discord again", config.UDPL7Discord), peerB)
 	expect(t, dup, http.StatusConflict, CodeDuplicateStrategy)
 	if dup.Body["set_id"] != setID {
 		t.Errorf("the same strategy for the same protocol duplicates %s: %v", setID, dup.Body)
@@ -58,13 +49,13 @@ func TestShareRefusesTargetlessAndInvalidL7Sets(t *testing.T) {
 	ctx := context.Background()
 	author := testkit.Identity(t)
 
-	noPorts := l7Set("No ports", config.UDPL7Discord)
+	noPorts := testkit.L7Set("No ports", config.UDPL7Discord)
 	noPorts.UDP.DPortFilter = ""
-	targeted := l7Set("Targeted", config.UDPL7STUN)
+	targeted := testkit.L7Set("Targeted", config.UDPL7STUN)
 	targeted.Targets.SNIDomains = []string{"discord.com"}
-	tcpOnly := l7Set("TCP ports only")
+	tcpOnly := testkit.L7Set("TCP ports only")
 	tcpOnly.TCP.DPortFilter = "443"
-	withTCP := l7Set("Discord voice", config.UDPL7Discord)
+	withTCP := testkit.L7Set("Discord voice", config.UDPL7Discord)
 	withTCP.TCP.DPortFilter = "443,2053,8443"
 
 	for _, c := range []struct {
@@ -72,11 +63,12 @@ func TestShareRefusesTargetlessAndInvalidL7Sets(t *testing.T) {
 		set  config.SetConfig
 		want string
 	}{
-		{"ports without a protocol", l7Set("Ports only"), "the set has no targets"},
+		{"ports without a protocol", testkit.L7Set("Ports only"), "the set has no targets"},
+		{"only a protocol this hub does not match", testkit.L7Set("WireGuard", "wireguard"), "the set has no targets"},
 		{"TCP ports without a protocol", tcpOnly, "the set has no targets"},
 		{"a protocol without ports", noPorts, "udp.dport_filter"},
 		{"a protocol with targets", targeted, "udp.filter_l7"},
-		{"a protocol with TCP ports", withTCP, "TCP port filter"},
+		{"a protocol with TCP ports", withTCP, "tcp.dport_filter"},
 	} {
 		resp := f.share(t, author, c.set, peerA)
 		expect(t, resp, http.StatusBadRequest, CodeInvalidSet)
@@ -96,9 +88,9 @@ func TestShareRefusesTargetlessAndInvalidL7Sets(t *testing.T) {
 func TestShareKeepsProtocolSelectionsOnOtherPortsApart(t *testing.T) {
 	f := newFixture(t)
 	author := testkit.Identity(t)
-	whatsapp := l7Set("WhatsApp calls", config.UDPL7STUN)
+	whatsapp := testkit.L7Set("WhatsApp calls", config.UDPL7STUN)
 	whatsapp.UDP.DPortFilter = "3478-3481"
-	meet := l7Set("Google Meet", config.UDPL7STUN)
+	meet := testkit.L7Set("Google Meet", config.UDPL7STUN)
 	meet.UDP.DPortFilter = "19302-19309"
 	meet.UDP.FakeSeqLength = 3
 
@@ -111,12 +103,12 @@ func TestShareKeepsProtocolSelectionsOnOtherPortsApart(t *testing.T) {
 	}
 
 	other := testkit.Identity(t)
-	calls := f.share(t, other, l7Set("Calls", config.UDPL7STUN), peerB)
+	calls := f.share(t, other, testkit.L7Set("Calls", config.UDPL7STUN), peerB)
 	expect(t, calls, http.StatusAccepted, "")
 	if calls.Body["set_id"] == first.Body["set_id"] || calls.Body["set_id"] == second.Body["set_id"] {
 		t.Errorf("the same strategy for the same protocol on other UDP ports duplicates nothing: %v", calls.Body)
 	}
-	again := f.share(t, testkit.Identity(t), l7Set("Calls again", config.UDPL7STUN), peerC)
+	again := f.share(t, testkit.Identity(t), testkit.L7Set("Calls again", config.UDPL7STUN), peerC)
 	expect(t, again, http.StatusConflict, CodeDuplicateStrategy)
 	if again.Body["set_id"] != calls.Body["set_id"] {
 		t.Errorf("the same strategy for the same protocol on the same UDP ports duplicates %v: %v", calls.Body["set_id"], again.Body)
@@ -125,10 +117,10 @@ func TestShareKeepsProtocolSelectionsOnOtherPortsApart(t *testing.T) {
 
 func TestShareTreatsReorderedProtocolsAsTheSameStrategy(t *testing.T) {
 	f := newFixture(t)
-	first := f.share(t, testkit.Identity(t), l7Set("Voice", config.UDPL7Discord, config.UDPL7STUN), peerA)
+	first := f.share(t, testkit.Identity(t), testkit.L7Set("Voice", config.UDPL7Discord, config.UDPL7STUN), peerA)
 	expect(t, first, http.StatusAccepted, "")
 
-	reordered := l7Set("Voice again", config.UDPL7STUN, config.UDPL7Discord)
+	reordered := testkit.L7Set("Voice again", config.UDPL7STUN, config.UDPL7Discord)
 	built := f.share(t, testkit.Identity(t), reordered, peerB)
 	expect(t, built, http.StatusConflict, CodeDuplicateStrategy)
 	if built.Body["set_id"] != first.Body["set_id"] {

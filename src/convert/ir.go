@@ -171,7 +171,7 @@ func (p *Profile) UDPOnly() bool {
 		return true
 	}
 	if p.Filters.HasProto("quic") || p.Filters.HasProto(config.UDPL7STUN) || p.Filters.HasProto(config.UDPL7Discord) {
-		return !p.Filters.HasProto("tls") && !p.Filters.HasProto("http")
+		return !p.Filters.HasProto("tls") && !p.Filters.HasProto("http") && !p.Filters.HasProto("unknown")
 	}
 	return len(p.Filters.Protos) > 0 && p.Filters.HasProto("udp") &&
 		!p.Filters.HasProto("tls") && !p.Filters.HasProto("http")
@@ -188,9 +188,17 @@ func (p *Profile) l7Classes() (selected, dropped []string) {
 	return selected, dropped
 }
 
-func (p *Profile) selectsL7() bool {
+func (p *Profile) wantsL7() bool {
 	selected, _ := p.l7Classes()
-	return len(selected) > 0 && p.UDPOnly() && !p.hasOwnTargets() && len(p.Filters.UDPPorts) > 0
+	return len(selected) > 0
+}
+
+func (p *Profile) scopedByL7() bool {
+	return p.wantsL7() && p.UDPOnly() && !p.hasOwnTargets()
+}
+
+func (p *Profile) selectsL7() bool {
+	return p.scopedByL7() && len(p.Filters.UDPPorts) > 0
 }
 
 func (p *Profile) IsEntry() bool { return p.Trigger.Kind != TriggerDetect }

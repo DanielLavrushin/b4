@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
@@ -66,6 +67,42 @@ func TestAnL7SetRefusesDestinationTargets(t *testing.T) {
 	}
 }
 
+func TestAnL7SetRefusesATCPPortFilter(t *testing.T) {
+	for _, classes := range [][]string{{UDPL7Discord}, {UDPL7Discord, UDPL7STUN}, {"wireguard"}} {
+		set := l7Set(t)
+		set.UDP.FilterL7 = classes
+		set.TCP.DPortFilter = "443, 2053"
+		err := l7Config(t, set).Validate()
+		var invalid *ValidationError
+		if !errors.As(err, &invalid) || len(invalid.Fields) != 1 {
+			t.Fatalf("%v: a set that selects UDP protocols has no targets, so a TCP port filter must be refused, got %v", classes, err)
+		}
+		if f := invalid.Fields[0]; f.Path != "sets[0].tcp.dport_filter" || f.Code != "conflict" || f.Params["ports"] != "443,2053" {
+			t.Errorf("%v: expected a conflict on sets[0].tcp.dport_filter naming the ports, got %+v", classes, f)
+		}
+	}
+}
+
+func TestOnlyAnL7SetRefusesATCPPortFilter(t *testing.T) {
+	l7 := l7Set(t)
+	if err := l7Config(t, l7).Validate(); err != nil {
+		t.Fatalf("a set that selects UDP protocols without a TCP port filter must save: %v", err)
+	}
+
+	ports := NewSetConfig()
+	ports.Id = "ports"
+	ports.Name = "Ports"
+	ports.Enabled = true
+	ports.TCP.DPortFilter = "443,2053"
+	ports.UDP.DPortFilter = "50000-50100"
+	if err := l7Config(t, &ports).Validate(); err != nil {
+		t.Fatalf("a set without targets or protocol selection keeps its TCP port filter: %v", err)
+	}
+	if ports.TCP.DPortFilter != "443,2053" {
+		t.Fatalf("the TCP port filter of a port-only set must stay, got %q", ports.TCP.DPortFilter)
+	}
+}
+
 func TestAnL7SetAcceptsASourceDeviceScope(t *testing.T) {
 	set := l7Set(t)
 	set.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
@@ -80,8 +117,11 @@ func TestAnUnknownL7ClassIsKeptAndValidates(t *testing.T) {
 	if err := l7Config(t, set).Validate(); err != nil {
 		t.Fatalf("an unknown class must not refuse the config: %v", err)
 	}
-	if !set.SelectsL7() || set.SelectsL7Class(UDPL7Discord) {
+	if !set.SelectsL7() || set.SelectsL7Class(UDPL7Discord) || SelectsKnownL7(set.UDP.FilterL7) {
 		t.Fatal("an unknown class must select nothing this version knows")
+	}
+	if !SelectsKnownL7([]string{"wireguard", UDPL7STUN}) {
+		t.Fatal("a known class next to an unknown one selects something this version knows")
 	}
 }
 

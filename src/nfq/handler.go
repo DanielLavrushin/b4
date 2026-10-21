@@ -1039,7 +1039,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		udpTLS = "1.3"
 	}
 
-	if shouldHandle && set != nil && host != "" && !matchedFlow {
+	if shouldHandle && set != nil && host != "" && !matchedFlow && !matchedL7 {
 		if escSet := w.escalatedSetFor(cfg, host, pkt.srcMac); escSet != nil {
 			if escSet != set {
 				log.Tracef("UDP escalation hit for %s: %s -> %s", host, set.Name, escSet.Name)

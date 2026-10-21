@@ -445,7 +445,7 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(set.Targets.SNIDomains) == 0 && len(set.Targets.IPs) == 0 && len(set.Targets.GeoSiteCategories) == 0 && len(set.Targets.GeoIpCategories) == 0 && len(set.Targets.ASNs) == 0 {
 		switch {
-		case !set.SelectsL7():
+		case !config.SelectsKnownL7(set.UDP.FilterL7):
 			writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "no_targets", Message: "The set targets nothing this device can match"})
 			return
 		case set.TCP.DPortFilter != "":

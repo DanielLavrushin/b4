@@ -324,7 +324,7 @@ func addWarnings(sparse map[string]interface{}, r *Report) {
 		tcpPortsRaw, _ := lookupPath(sparse, "tcp.dport_filter")
 		tcpPorts, _ := tcpPortsRaw.(string)
 		switch {
-		case len(UDPL7(sparse)) == 0:
+		case !config.SelectsKnownL7(UDPL7(sparse)):
 			r.warn("no_targets", nil)
 		case tcpPorts != "":
 			r.warn("udp_l7_tcp_ports", map[string]interface{}{"ports": tcpPorts})

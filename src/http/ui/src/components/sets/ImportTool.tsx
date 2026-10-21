@@ -499,11 +499,13 @@ function ProfileHeader({
         />
       ) : (
         <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-          {entry
-            ? t("sets.convert.l7NoTargets", { protocols })
-            : t("sets.convert.fallbackNoTargets", {
+          {!entry
+            ? t("sets.convert.fallbackNoTargets", {
                 index: (plan?.fallback_for ?? 0) + 1,
-              })}
+              })
+            : protocols
+              ? t("sets.convert.l7NoTargets", { protocols })
+              : t("sets.convert.l7NeedsPortsNoTargets")}
         </Typography>
       )}
     </Stack>

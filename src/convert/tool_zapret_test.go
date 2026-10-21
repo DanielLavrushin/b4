@@ -684,6 +684,18 @@ func assertSetsSave(t *testing.T, res *Result) {
 	}
 }
 
+func reasonNotes(res *Result, reason string) []Note {
+	var out []Note
+	for _, n := range res.Notes {
+		if n.Reason == reason {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+var stunPayloadField = "udp.fake_payload_file=" + config.FakePayloadAutoSTUN
+
 func TestZapret_DiscordAndSTUNBecomeProtocolSelection(t *testing.T) {
 	res := analyze(t, flowsealDiscordLine)
 	if len(res.Sets) != 1 {
@@ -978,18 +990,20 @@ func TestZapret_AReversedPortRangeIsInvalid(t *testing.T) {
 func TestZapret_AnL7ProfileIsEnabledOnlyWhenItFakesUDP(t *testing.T) {
 	tests := []struct {
 		desync  string
+		extra   string
 		reason  string
 		enabled bool
 	}{
-		{"multisplit", "desyncModesEmpty", false},
-		{"ipfrag2", "desyncModesEmpty", false},
-		{"udplen", "desyncModesDropped", false},
-		{"fake,udplen", "desyncModesDropped", true},
+		{"multisplit", "", "desyncModesEmpty", false},
+		{"multisplit", " --dpi-desync-fake-quic=quic.bin", "desyncModesEmpty", false},
+		{"ipfrag2", "", "desyncModesEmpty", false},
+		{"udplen", "", "desyncModesDropped", false},
+		{"fake,udplen", "", "desyncModesDropped", true},
 	}
 	for _, tt := range tests {
-		t.Run(tt.desync, func(t *testing.T) {
+		t.Run(tt.desync+tt.extra, func(t *testing.T) {
 			token := "--dpi-desync=" + tt.desync
-			res := analyze(t, "--filter-udp=50000-50100 --filter-l7=discord,stun "+token+" --dpi-desync-repeats=6")
+			res := analyze(t, "--filter-udp=50000-50100 --filter-l7=discord,stun "+token+tt.extra+" --dpi-desync-repeats=6")
 			set := res.Sets[0]
 			if !set.SelectsL7() {
 				t.Fatalf("the protocol selection maps whatever the desync mode: filter_l7=%v", set.UDP.FilterL7)
@@ -1031,8 +1045,359 @@ func TestZapret_APortlessL7ProfileIsNotFoldedIntoTheTCPSet(t *testing.T) {
 			if n := noteFor(t, res, token); n.Status != StatusApproximated || n.Reason != "l7FilterNeedsPorts" {
 				t.Fatalf("got %+v", n)
 			}
+			if hasWarning(res, "catchAllProfile") {
+				t.Fatalf("a profile scoped by --filter-l7 handles only those packets, not everything the others miss: %+v", res.Warnings)
+			}
 			assertNoLostOptions(t, res)
 			assertSetsSave(t, res)
 		})
 	}
+}
+
+func TestZapret_TheFlowsealDiscordFakesBecomeAGeneratedSTUNRequest(t *testing.T) {
+	res := analyze(t, flowsealDiscordLine)
+	set := res.Sets[0]
+	if !set.SelectsL7() || set.UDP.FakePayloadFile != config.FakePayloadAutoSTUN {
+		t.Fatalf("an L7 set sends a generated STUN request as its fake: filter_l7=%v fake_payload_file=%q",
+			set.UDP.FilterL7, set.UDP.FakePayloadFile)
+	}
+	if set.UDP.FakeLen != config.DefaultSetConfig.UDP.FakeLen {
+		t.Fatalf("the converter leaves the fake length to the config: got %d", set.UDP.FakeLen)
+	}
+	for _, token := range []string{
+		"--dpi-desync-fake-discord=ACTIVE_DISCORD_UDP.bin",
+		"--dpi-desync-fake-stun=ACTIVE_DISCORD_UDP.bin",
+	} {
+		n := noteFor(t, res, token)
+		if n.Status != StatusApproximated || n.Reason != "l7FakeAsSTUN" ||
+			!slices.Equal(n.Fields, []string{stunPayloadField}) || n.Params["path"] != "ACTIVE_DISCORD_UDP.bin" {
+			t.Fatalf("b4 does not read the file, the set sends a STUN request instead: %+v", n)
+		}
+	}
+	if got := reasonNotes(res, "l7DecoySTUN"); len(got) != 0 {
+		t.Fatalf("the line names its own fakes, so the zero-fill explanation does not apply: %+v", got)
+	}
+	if len(res.Unresolved) != 0 {
+		t.Fatalf("b4 never reads these files, so there is nothing to resolve: %+v", res.Unresolved)
+	}
+	assertNoLostOptions(t, res)
+	assertSetsSave(t, res)
+}
+
+func TestZapret_AUDPFakeOnAnL7SetIsNeverSent(t *testing.T) {
+	for _, token := range []string{
+		"--dpi-desync-fake-quic=q.bin",
+		"--dpi-desync-fake-quic=0x00000000",
+		"--dpi-desync-fake-unknown-udp=u.bin",
+	} {
+		t.Run(token, func(t *testing.T) {
+			res := analyze(t, "--filter-udp=443,3478 --filter-l7=quic,stun --dpi-desync=fake "+token)
+			set := res.Sets[0]
+			if !slices.Equal(set.UDP.FilterL7, []string{config.UDPL7STUN}) || set.UDP.FakePayloadFile != config.FakePayloadAutoSTUN {
+				t.Fatalf("filter_l7=%v fake_payload_file=%q", set.UDP.FilterL7, set.UDP.FakePayloadFile)
+			}
+			if n := noteFor(t, res, token); n.Status != StatusDegenerate || n.Reason != "l7FakeUnused" {
+				t.Fatalf("the set acts only on STUN packets, so this fake never goes out: %+v", n)
+			}
+			decoy := reasonNotes(res, "l7DecoySTUN")
+			if len(decoy) != 1 || !decoy[0].Synthetic || decoy[0].Status != StatusApproximated ||
+				!slices.Equal(decoy[0].Fields, []string{stunPayloadField}) {
+				t.Fatalf("no Discord or STUN fake is named, so the set must explain its STUN fake: %+v", decoy)
+			}
+			assertNoLostOptions(t, res)
+			assertSetsSave(t, res)
+		})
+	}
+}
+
+func TestZapret_UDPFakesOutsideAnL7SetKeepTheirMapping(t *testing.T) {
+	tests := []struct {
+		name    string
+		line    string
+		token   string
+		status  Status
+		reason  string
+		payload string
+	}{
+		{"quic", "--filter-udp=443 --dpi-desync=fake --dpi-desync-fake-quic=/opt/zapret/quic.bin",
+			"--dpi-desync-fake-quic=/opt/zapret/quic.bin", StatusApproximated, "fakeQUICApproximated", config.FakePayloadAutoQUIC},
+		{"unknownUDP", "--filter-udp=1400 --dpi-desync=fake --dpi-desync-fake-unknown-udp=/opt/zapret/udp.bin",
+			"--dpi-desync-fake-unknown-udp=/opt/zapret/udp.bin", StatusApproximated, "fakeUnknownUDPApproximated", config.FakePayloadAutoQUIC},
+		{"discordFakeOnAPlainUDPSet", "--filter-udp=50000-50100 --dpi-desync=fake --dpi-desync-fake-discord=discord.bin",
+			"--dpi-desync-fake-discord=discord.bin", StatusUnsupported, "noEquivalent", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := analyze(t, tt.line)
+			set := res.Sets[0]
+			if set.SelectsL7() || set.UDP.FakePayloadFile != tt.payload {
+				t.Fatalf("filter_l7=%v fake_payload_file=%q, want %q", set.UDP.FilterL7, set.UDP.FakePayloadFile, tt.payload)
+			}
+			if n := noteFor(t, res, tt.token); n.Status != tt.status || n.Reason != tt.reason {
+				t.Fatalf("got %+v", n)
+			}
+			if got := reasonNotes(res, "l7DecoySTUN"); len(got) != 0 {
+				t.Fatalf("only a set that selects by protocol sends the STUN fake: %+v", got)
+			}
+			assertSetsSave(t, res)
+		})
+	}
+}
+
+func TestZapret_APortlessL7ProfileTakesNoDomains(t *testing.T) {
+	const line = "--filter-l7=discord,stun --dpi-desync=fake --dpi-desync-repeats=6"
+
+	t.Run("shared", func(t *testing.T) {
+		res, err := Analyze(line, Options{Domains: []string{"example.com"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		set := res.Sets[0]
+		if len(set.Targets.SNIDomains) != 0 || set.Enabled || set.SelectsL7() {
+			t.Fatalf("the set must stay targetless and disabled, as its note says: domains=%v enabled=%v filter_l7=%v",
+				set.Targets.SNIDomains, set.Enabled, set.UDP.FilterL7)
+		}
+		if res.Plan[0].AcceptsTargets {
+			t.Fatalf("the plan must not offer a domain field the conversion ignores: %+v", res.Plan[0])
+		}
+		if !hasWarning(res, "sharedDomainsNoSet") || hasWarning(res, "sharedDomainsUnused") || hasWarning(res, "needsTargets") {
+			t.Fatalf("no set has a domain field, so the unused shared domains get the warning without that advice: %+v", res.Warnings)
+		}
+		set.UDP.DPortFilter = "19294-19344,50000-50100"
+		set.UDP.FilterL7 = discordAndSTUN
+		set.Enabled = true
+		config.ApplySetDefaults(&set)
+		cfg := config.NewConfig()
+		cfg.Sets = append(cfg.Sets, &set)
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("adding the ports and turning protocol selection on, as the note advises, must give a set b4 saves: %v", err)
+		}
+		if set.UDP.FakePayloadFile != config.FakePayloadAutoSTUN {
+			t.Fatalf("following the note must give the STUN fake, not zero fill: %q", set.UDP.FakePayloadFile)
+		}
+	})
+
+	t.Run("ownField", func(t *testing.T) {
+		res, err := Analyze(line, Options{ProfileDomains: map[int][]string{0: {"discord.com"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := res.Sets[0].Targets.SNIDomains; len(got) != 0 || res.Sets[0].Enabled {
+			t.Fatalf("domains typed for the profile do not apply either: domains=%v enabled=%v", got, res.Sets[0].Enabled)
+		}
+		assertSetsSave(t, res)
+	})
+
+	t.Run("nextToATCPProfile", func(t *testing.T) {
+		res, err := Analyze(line+" --new --filter-tcp=443 --dpi-desync=multisplit", Options{Domains: []string{"example.com"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Sets) != 2 {
+			t.Fatalf("got %d sets", len(res.Sets))
+		}
+		if got := res.Sets[0].Targets.SNIDomains; len(got) != 0 {
+			t.Fatalf("the L7 profile must not take the shared domains, got %v", got)
+		}
+		if got := res.Sets[1].Targets.SNIDomains; !slices.Equal(got, []string{"example.com"}) || !res.Sets[1].Enabled {
+			t.Fatalf("the shared domains belong to the TCP set: domains=%v enabled=%v", got, res.Sets[1].Enabled)
+		}
+		if hasWarning(res, "sharedDomainsUnused") {
+			t.Fatalf("a set took the shared domains: %+v", res.Warnings)
+		}
+		for _, n := range res.Notes {
+			if n.Reason == "udpOnlySetNotProtocolScoped" {
+				t.Fatalf("the L7 profile takes no domains, so it cannot claim them for TCP: %+v", n)
+			}
+		}
+		assertNoLostOptions(t, res)
+		assertSetsSave(t, res)
+	})
+}
+
+func TestZapret_AnL7ProfileWithItsOwnHostFileTakesThePastedDomains(t *testing.T) {
+	res, err := Analyze("--filter-udp=50000-50100 --filter-l7=discord --hostlist=/opt/zapret/discord.txt --dpi-desync=fake",
+		Options{Domains: []string{"example.com"}, ProfileDomains: map[int][]string{0: {"discord.gg"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := res.Sets[0]
+	if set.SelectsL7() || !set.Enabled || !slices.Equal(set.Targets.SNIDomains, []string{"discord.gg"}) {
+		t.Fatalf("the domains pasted from the host file become its targets: filter_l7=%v enabled=%v domains=%v",
+			set.UDP.FilterL7, set.Enabled, set.Targets.SNIDomains)
+	}
+	if !res.Plan[0].AcceptsTargets {
+		t.Fatalf("a profile with its own host list keeps its domain field: %+v", res.Plan[0])
+	}
+	if n := noteFor(t, res, "--filter-l7=discord"); n.Status != StatusApproximated || n.Reason != "l7FilterWithTargets" {
+		t.Fatalf("got %+v", n)
+	}
+	if !hasWarning(res, "sharedDomainsUnused") {
+		t.Fatalf("the only profile has its own host list, so the shared domains went nowhere: %+v", res.Warnings)
+	}
+	assertSetsSave(t, res)
+}
+
+func TestZapret_AnL7ProfileThatAlsoCoversTCPKeepsItsPortsAndTargets(t *testing.T) {
+	tests := []struct {
+		name  string
+		line  string
+		token string
+		tcp   string
+	}{
+		{"tls", "--filter-tcp=443 --filter-udp=50000-50100 --filter-l7=discord,stun,tls --dpi-desync=fake,multisplit",
+			"--filter-l7=discord,stun,tls", "443"},
+		{"http", "--filter-tcp=80 --filter-l7=stun,http --dpi-desync=fake,multisplit", "--filter-l7=stun,http", "80"},
+		{"unknown", "--filter-tcp=443 --filter-udp=50000-50100 --filter-l7=stun,unknown --dpi-desync=fake,multisplit",
+			"--filter-l7=stun,unknown", "443"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := Analyze(tt.line, Options{Domains: []string{"example.com"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			set := res.Sets[0]
+			if set.SelectsL7() || set.TCP.DPortFilter != tt.tcp || !set.Enabled ||
+				!slices.Equal(set.Targets.SNIDomains, []string{"example.com"}) {
+				t.Fatalf("filter_l7=%v tcp=%q enabled=%v domains=%v",
+					set.UDP.FilterL7, set.TCP.DPortFilter, set.Enabled, set.Targets.SNIDomains)
+			}
+			if n := noteFor(t, res, tt.token); n.Status != StatusApproximated || n.Reason != "l7FilterNotUDPOnly" {
+				t.Fatalf("got %+v", n)
+			}
+			if !res.Plan[0].AcceptsTargets || hasWarning(res, "sharedDomainsUnused") {
+				t.Fatalf("a profile that covers TCP takes targets: plan=%+v warnings=%+v", res.Plan[0], res.Warnings)
+			}
+			assertNoLostOptions(t, res)
+			assertSetsSave(t, res)
+		})
+	}
+
+	res := analyze(t, "--filter-tcp=443 --filter-l7=discord,stun,tls --dpi-desync=fake,multisplit --new "+
+		"--filter-tcp=80 --hostlist-domains=a.com --dpi-desync=multisplit")
+	var catchAll *Warning
+	for i := range res.Warnings {
+		if res.Warnings[i].Code == "catchAllProfile" {
+			catchAll = &res.Warnings[i]
+		}
+	}
+	if catchAll == nil || catchAll.Params["count"] != 1 {
+		t.Fatalf("without targets the TLS profile handles what the others miss, like any TCP profile: %+v", res.Warnings)
+	}
+}
+
+func TestZapret_ATCPPortFilterDoesNotMakeAnL7ProfileCoverTCP(t *testing.T) {
+	res := analyze(t, "--filter-tcp=443 --filter-l7=discord,stun --dpi-desync=fake")
+	set := res.Sets[0]
+	if set.TCP.DPortFilter != "" || set.SelectsL7() || set.Enabled {
+		t.Fatalf("tcp=%q filter_l7=%v enabled=%v", set.TCP.DPortFilter, set.UDP.FilterL7, set.Enabled)
+	}
+	if n := noteFor(t, res, "--filter-tcp=443"); n.Status != StatusDegenerate || n.Reason != "l7TCPPortsUnused" {
+		t.Fatalf("zapret never applies a Discord and STUN profile to TCP: %+v", n)
+	}
+	if n := noteFor(t, res, "--filter-l7=discord,stun"); n.Status != StatusApproximated || n.Reason != "l7FilterNeedsPorts" {
+		t.Fatalf("got %+v", n)
+	}
+	if res.Plan[0].AcceptsTargets || hasWarning(res, "needsTargets") {
+		t.Fatalf("the set takes no targets: plan=%+v warnings=%+v", res.Plan[0], res.Warnings)
+	}
+	assertNoLostOptions(t, res)
+	assertSetsSave(t, res)
+}
+
+func TestZapret_APortlessL7ProfileGetsTheSTUNFake(t *testing.T) {
+	t.Run("namedFile", func(t *testing.T) {
+		res := analyze(t, "--filter-l7=discord,stun --dpi-desync=fake --dpi-desync-fake-stun=stun.bin")
+		set := res.Sets[0]
+		if set.SelectsL7() || set.Enabled || set.UDP.FakePayloadFile != config.FakePayloadAutoSTUN {
+			t.Fatalf("filter_l7=%v enabled=%v fake_payload_file=%q", set.UDP.FilterL7, set.Enabled, set.UDP.FakePayloadFile)
+		}
+		n := noteFor(t, res, "--dpi-desync-fake-stun=stun.bin")
+		if n.Status != StatusApproximated || n.Reason != "l7FakeAsSTUN" || n.Params["path"] != "stun.bin" {
+			t.Fatalf("got %+v", n)
+		}
+		if got := reasonNotes(res, "l7DecoySTUN"); len(got) != 0 {
+			t.Fatalf("the named fake already explains the STUN fake: %+v", got)
+		}
+		assertSetsSave(t, res)
+	})
+
+	t.Run("noFile", func(t *testing.T) {
+		res := analyze(t, "--filter-l7=discord,stun --dpi-desync=fake --dpi-desync-repeats=6")
+		if got := res.Sets[0].UDP.FakePayloadFile; got != config.FakePayloadAutoSTUN {
+			t.Fatalf("fake_payload_file=%q", got)
+		}
+		if got := reasonNotes(res, "l7DecoySTUN"); len(got) != 1 || !got[0].Synthetic {
+			t.Fatalf("the set must explain why it sends STUN instead of zero bytes: %+v", got)
+		}
+		assertSetsSave(t, res)
+	})
+}
+
+func TestZapret_TheSTUNFakeNoteNeedsAUDPFake(t *testing.T) {
+	for _, line := range []string{
+		"--filter-udp=50000-50100 --filter-l7=discord,stun --dpi-desync=multisplit",
+		"--filter-udp=50000-50100 --filter-l7=discord,stun --dpi-desync=udplen",
+		"--filter-udp=50000-50100 --filter-l7=discord,stun --dpi-desync=ipfrag2",
+	} {
+		t.Run(line, func(t *testing.T) {
+			res := analyze(t, line)
+			set := res.Sets[0]
+			if set.Enabled || set.UDP.FakePayloadFile != config.FakePayloadAutoSTUN {
+				t.Fatalf("enabled=%v fake_payload_file=%q", set.Enabled, set.UDP.FakePayloadFile)
+			}
+			if got := reasonNotes(res, "l7DecoySTUN"); len(got) != 0 {
+				t.Fatalf("this zapret profile sends no fake, so there is nothing to compare: %+v", got)
+			}
+			assertSetsSave(t, res)
+		})
+	}
+}
+
+func TestZapret_SharedDomainsWithNoDomainFieldGetTheirOwnWarning(t *testing.T) {
+	res, err := Analyze(flowsealDiscordLine, Options{Domains: []string{"example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Plan[0].AcceptsTargets || !hasWarning(res, "sharedDomainsNoSet") || hasWarning(res, "sharedDomainsUnused") {
+		t.Fatalf("plan=%+v warnings=%+v", res.Plan[0], res.Warnings)
+	}
+	if got := res.Sets[0].Targets.SNIDomains; len(got) != 0 || !res.Sets[0].Enabled {
+		t.Fatalf("domains=%v enabled=%v", got, res.Sets[0].Enabled)
+	}
+}
+
+func TestZapret_AnL7ProfileThatTakesTargetsStillNeedsThem(t *testing.T) {
+	for _, line := range []string{
+		"--filter-tcp=443 --filter-udp=50000-50100 --filter-l7=discord,stun,tls --dpi-desync=fake,multisplit",
+		"--filter-udp=50000-50100 --filter-l7=discord --hostlist=/opt/zapret/discord.txt --dpi-desync=fake",
+	} {
+		t.Run(line, func(t *testing.T) {
+			res := analyze(t, line)
+			if res.Sets[0].Enabled || !res.Plan[0].AcceptsTargets || !hasWarning(res, "needsTargets") {
+				t.Fatalf("a profile that takes targets and got none still needs them: enabled=%v plan=%+v warnings=%+v",
+					res.Sets[0].Enabled, res.Plan[0], res.Warnings)
+			}
+			assertSetsSave(t, res)
+		})
+	}
+}
+
+func TestZapret_AnL7ProfileWithItsOwnHostsStillWarnsAboutProtocolScope(t *testing.T) {
+	res := analyze(t, "--filter-udp=50000-50100 --filter-l7=discord --hostlist-domains=discord.gg --dpi-desync=fake "+
+		"--new --filter-tcp=443 --hostlist-domains=example.com --dpi-desync=multisplit")
+	if len(res.Sets) != 2 || res.Sets[0].SelectsL7() {
+		t.Fatalf("got %d sets, filter_l7=%v", len(res.Sets), res.Sets[0].UDP.FilterL7)
+	}
+	found := false
+	for _, n := range reasonNotes(res, "udpOnlySetNotProtocolScoped") {
+		if n.Profile == 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a UDP-only set with domains also claims them for TCP: %+v", res.Notes)
+	}
+	assertSetsSave(t, res)
 }

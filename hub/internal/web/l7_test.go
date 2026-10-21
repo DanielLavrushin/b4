@@ -10,15 +10,6 @@ import (
 	"github.com/daniellavrushin/b4hub/internal/testkit"
 )
 
-func l7Set(name string, classes ...string) config.SetConfig {
-	set := config.NewSetConfig()
-	set.Name = name
-	set.UDP.DPortFilter = "19294-19344,50000-50100"
-	set.UDP.FakePayloadFile = config.FakePayloadAutoSTUN
-	set.UDP.FilterL7 = classes
-	return set
-}
-
 func termOf(terms []Term, code string) *Term {
 	for i := range terms {
 		if terms[i].Code == code {
@@ -46,11 +37,11 @@ func withSetting(t *testing.T, projection map[string]interface{}, section, key s
 
 func TestEditKeepsASetThatSelectsUDPProtocols(t *testing.T) {
 	f := newFixture(t, password)
-	id, _ := f.shareAs(testkit.Identity(t), l7Set("Discord voice", config.UDPL7Discord), authorAddress)
+	id, _ := f.shareAs(testkit.Identity(t), testkit.L7Set("Voice", config.UDPL7Discord), authorAddress)
 	before := f.versionOf(id, 1)
 	want := []string{config.UDPL7Discord}
 
-	req := EditRequest{Title: "Discord voice calls", Projection: before.Projection}
+	req := EditRequest{Title: "Voice calls", Projection: before.Projection}
 	preview := f.preview(id, req)
 	if !preview.Changed || preview.FPChanged || preview.B4Min != "1.88.0" || warningOf(preview.Warnings, noTargetsWarning) != nil {
 		t.Fatalf("a title edit of a protocol selection passes the check: %+v", preview)
@@ -63,20 +54,21 @@ func TestEditKeepsASetThatSelectsUDPProtocols(t *testing.T) {
 	}
 	f.expectOK(f.admin(http.MethodPost, setPath(id, 1, "edit"), req))
 	after := f.versionOf(id, 1)
-	if after.Title != "Discord voice calls" || after.FP != before.FP || after.B4Min != "1.88.0" {
+	if after.Title != "Voice calls" || after.FP != before.FP || after.B4Min != "1.88.0" {
 		t.Fatalf("stored edit: %q %s %q", after.Title, after.FP, after.B4Min)
 	}
 
 	if e := entryOf(f.setsView().Pending, id, 1); e == nil || !reflect.DeepEqual(e.Targets.UDPL7, want) {
 		t.Fatalf("the entry must name the protocols the set selects: %+v", e)
 	}
+	plain, _ := f.share("Plain", otherAddress, "plain.example")
+	f.shareAs(testkit.Identity(t), testkit.L7Set("Group calls", config.UDPL7STUN), thirdAddress)
 	var rows SetRowsView
-	f.admin(http.MethodGet, PathAPI+"/sets/rows?group=pending&q=discord", nil).decode(t, &rows)
+	f.admin(http.MethodGet, PathAPI+"/sets/rows?group=pending&q="+config.UDPL7Discord, nil).decode(t, &rows)
 	if len(rows.Rows) != 1 || rows.Rows[0].SetID != id || !reflect.DeepEqual(rows.Rows[0].Targets.UDPL7, want) {
-		t.Fatalf("the row must carry the protocols and be found by them: %+v", rows.Rows)
+		t.Fatalf("a search by protocol must find the set that selects it, although no title, description or technique names it, and no other set: %+v", rows.Rows)
 	}
 
-	plain, _ := f.share("Plain", otherAddress, "plain.example")
 	if e := entryOf(f.setsView().Pending, plain, 1); e == nil || e.Targets.UDPL7 == nil || len(e.Targets.UDPL7) != 0 {
 		t.Fatalf("a set without protocol selection must report an empty list, not null: %+v", e)
 	}
@@ -84,7 +76,7 @@ func TestEditKeepsASetThatSelectsUDPProtocols(t *testing.T) {
 
 func TestEditRefusesL7SetsARouterWouldNotSave(t *testing.T) {
 	f := newFixture(t, password)
-	id, _ := f.shareAs(testkit.Identity(t), l7Set("Discord voice", config.UDPL7Discord), authorAddress)
+	id, _ := f.shareAs(testkit.Identity(t), testkit.L7Set("Discord voice", config.UDPL7Discord), authorAddress)
 	v := f.versionOf(id, 1)
 
 	for _, c := range []struct {
@@ -106,11 +98,19 @@ func TestEditRefusesL7SetsARouterWouldNotSave(t *testing.T) {
 		}
 	}
 
-	dropped := EditRequest{Title: v.Title, Projection: withSetting(t, v.Projection, "udp", "filter_l7", nil)}
-	for _, action := range []string{"preview", "edit"} {
-		body := f.expectError(f.admin(http.MethodPost, setPath(id, 1, action), dropped), http.StatusBadRequest, codeInvalidSet)
-		if !strings.Contains(body.Error, "no targets") {
-			t.Fatalf("%s: a set left with only its ports targets nothing: %+v", action, body)
+	for _, c := range []struct {
+		name    string
+		classes interface{}
+	}{
+		{"protocols removed", nil},
+		{"only a protocol this hub does not match", []string{"wireguard"}},
+	} {
+		req := EditRequest{Title: v.Title, Projection: withSetting(t, v.Projection, "udp", "filter_l7", c.classes)}
+		for _, action := range []string{"preview", "edit"} {
+			body := f.expectError(f.admin(http.MethodPost, setPath(id, 1, action), req), http.StatusBadRequest, codeInvalidSet)
+			if !strings.Contains(body.Error, "no targets") {
+				t.Fatalf("%s, %s: a set that selects nothing this hub matches targets nothing: %+v", c.name, action, body)
+			}
 		}
 	}
 	if after := f.versionOf(id, 1); !after.EditedAt.IsZero() {

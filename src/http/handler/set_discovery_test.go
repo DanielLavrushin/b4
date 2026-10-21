@@ -232,6 +232,46 @@ func TestReplaceNeedsDomainsUnlessTargetsAreKept(t *testing.T) {
 	}
 }
 
+func TestReplaceStrategyKeepsTheSetsUDPProtocolSelection(t *testing.T) {
+	const voicePorts = "19294-19344,50000-50100"
+	voice := func(target *config.SetConfig) {
+		target.Targets.SNIDomains = nil
+		target.TCP.DPortFilter = ""
+		target.UDP.Mode = config.UDPModeFake
+		target.UDP.DPortFilter = voicePorts
+		target.UDP.FilterL7 = []string{config.UDPL7Discord, config.UDPL7STUN}
+	}
+	wantL7 := []string{config.UDPL7Discord, config.UDPL7STUN}
+
+	api, mux := replaceFixture(t, voice)
+	rec := replaceWith(t, mux, DiscoveryReplaceRequest{SetId: "set-a", Set: discoveredStrategy(), KeepTargets: true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("replace: %d (%s)", rec.Code, rec.Body.String())
+	}
+	got, _ := replaceSets(api)
+	if got.UDP.Mode != "drop" || got.Faking.Strategy != "pastseq" {
+		t.Errorf("the discovered strategy must be adopted, got udp=%q faking=%q", got.UDP.Mode, got.Faking.Strategy)
+	}
+	if !reflect.DeepEqual(got.UDP.FilterL7, wantL7) || got.UDP.DPortFilter != voicePorts {
+		t.Errorf("the protocols a set selects and its UDP ports are not part of the strategy and must survive: %+v", got.UDP)
+	}
+	if got.DeclaresDestinationTargets() || got.TCP.DPortFilter != "" {
+		t.Errorf("keep_targets must leave the set without targets: %+v tcp=%q", got.Targets, got.TCP.DPortFilter)
+	}
+
+	api, mux = replaceFixture(t, voice)
+	rec = replaceWith(t, mux, DiscoveryReplaceRequest{SetId: "set-a", Set: discoveredStrategy(), Domains: []string{"discord.media"}})
+	expectCode(t, rec, http.StatusBadRequest, "validation_failed")
+	var refusal APIError
+	decodeInto(t, rec, &refusal)
+	if len(refusal.Fields) != 1 || refusal.Fields[0].Path != "sets[0].udp.filter_l7" || refusal.Fields[0].Code != "conflict" {
+		t.Errorf("moving domains into a set that selects UDP protocols must be refused, not turn it into a domain set: %+v", refusal.Fields)
+	}
+	if got, _ := replaceSets(api); !reflect.DeepEqual(got.UDP.FilterL7, wantL7) || got.DeclaresDestinationTargets() {
+		t.Errorf("a refused replace must leave the set as it was: %+v %+v", got.UDP, got.Targets)
+	}
+}
+
 func discoveryAPI(t *testing.T, sets ...*config.SetConfig) (*API, *http.ServeMux) {
 	t.Helper()
 	cfg := config.NewConfig()

@@ -76,6 +76,10 @@ var mcpEnums = map[string][]string{
 	"system.mtproto.upstream_mode":           {"tcp", "ws", "auto"},
 }
 
+var mcpListEntryEnums = map[string][]string{
+	mcpSetPathPrefix + ".udp.filter_l7": config.UDPL7Classes,
+}
+
 // mcpAlias gives a numeric setting a name a model can write. Order is the
 // order the options are reported in.
 type mcpAlias struct{ Name, Value string }
@@ -193,7 +197,7 @@ func (e *mcpProbesError) Error() string {
 }
 
 func (api *API) mcpSave(oldCfg, newCfg *config.Config) error {
-	return api.saveAndPushConfigIf(newCfg, func(current *config.Config) error {
+	return mcpWithFieldReasons(api.saveAndPushConfigIf(newCfg, func(current *config.Config) error {
 		if current != oldCfg {
 			return errMCPConfigMoved
 		}
@@ -206,7 +210,19 @@ func (api *API) mcpSave(oldCfg, newCfg *config.Config) error {
 			}
 		}
 		return nil
-	})
+	}))
+}
+
+func mcpWithFieldReasons(err error) error {
+	var ae *APIError
+	if !errors.As(err, &ae) || len(ae.Fields) == 0 {
+		return err
+	}
+	reasons := make([]string, 0, len(ae.Fields))
+	for _, f := range ae.Fields {
+		reasons = append(reasons, f.Path+": "+f.Message)
+	}
+	return fmt.Errorf("%w: %s", err, strings.Join(reasons, "; "))
 }
 
 func mcpRecordChange(c mcpChange, before, after *config.Config) {
@@ -532,11 +548,22 @@ func mcpAssignValue(v reflect.Value, canonical, raw string) error {
 		if v.Type().Elem().Kind() != reflect.String {
 			return fmt.Errorf("%s holds a structured list and cannot be written as text", canonical)
 		}
+		opts := mcpListEntryEnums[canonical]
 		items := []string{}
 		for _, part := range strings.Split(val, ",") {
-			if p := strings.TrimSpace(part); p != "" {
-				items = append(items, p)
+			p := strings.TrimSpace(part)
+			if p == "" {
+				continue
 			}
+			if opts != nil {
+				i := slices.IndexFunc(opts, func(opt string) bool { return strings.EqualFold(opt, p) })
+				if i < 0 {
+					return fmt.Errorf("entry %q is not allowed for %s: expected a comma-separated list of %s",
+						p, canonical, strings.Join(opts, ", "))
+				}
+				p = opts[i]
+			}
+			items = append(items, p)
 		}
 		v.Set(reflect.ValueOf(items))
 	default:
@@ -675,6 +702,9 @@ func mcpCollectPaths(v reflect.Value, prefix string) []mcpPathInfo {
 		options := mcpEnums[path]
 		if names := mcpAliasNames(path); names != nil {
 			options = names
+		}
+		if entries, ok := mcpListEntryEnums[path]; ok {
+			options = entries
 		}
 		out = append(out, mcpPathInfo{
 			Path:    path,
@@ -990,7 +1020,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 						"That needs 'Allow active probes' under Settings -> Integrations -> MCP server; nothing was changed and the change stays on the undo list",
 					last.Path, probes.what)
 			}
-			return nil, mcpRevertOut{}, fmt.Errorf("could not restore the previous configuration: %w", err)
+			return nil, mcpRevertOut{}, fmt.Errorf("could not restore the previous configuration: %w", mcpWithFieldReasons(err))
 		}
 		if n := len(mcpHistory); n > 0 && mcpHistory[n-1].PostRevision == last.PreRevision {
 			mcpHistory[n-1].PostRevision = watchdog.ConfigRevision(last.Snapshot)

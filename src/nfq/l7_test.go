@@ -3,9 +3,11 @@ package nfq
 import (
 	"encoding/binary"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
+	"github.com/daniellavrushin/b4/sni"
 )
 
 func discordIPDiscovery() []byte {
@@ -106,6 +108,52 @@ func TestAnL7SetWinsOverAnAddressSetThatWouldExemptVoice(t *testing.T) {
 	w := newQUICFlowWorker(t, &addressSet, &voice)
 	if v := sendUDPTo(w, discordIPDiscovery(), 51003, 50005); v != engine.VerdictDrop {
 		t.Fatalf("the L7 set must claim the packet from the address set, got %v", v)
+	}
+}
+
+func TestAnEscalatedHostDoesNotTakeAPacketAnL7SetSelected(t *testing.T) {
+	const host = "c-fra10-1234.discord.media"
+	for _, c := range []struct {
+		name          string
+		voiceMode     string
+		escalatedMode string
+		want          engine.PacketVerdict
+	}{
+		{"the L7 set's own mode applies", config.UDPModeDrop, config.ConfigOff, engine.VerdictDrop},
+		{"the escalated set's mode and filter_stun do not apply", config.ConfigOff, config.UDPModeDrop, engine.VerdictAccept},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			escalated := config.NewSetConfig()
+			escalated.Id = "media-escalated"
+			escalated.Name = "MediaEscalated"
+			escalated.Enabled = true
+			escalated.Targets.SNIDomains = []string{"escalated.example"}
+			escalated.UDP.Mode = c.escalatedMode
+			escalated.UDP.FilterSTUN = true
+			escalated.Fragmentation.Strategy = config.ConfigNone
+			escalated.Fragmentation.StrategyPool = nil
+
+			media := config.NewSetConfig()
+			media.Id = "discord-media"
+			media.Name = "DiscordMedia"
+			media.Enabled = true
+			media.Targets.SNIDomains = []string{"discord.media"}
+			media.UDP.Mode = config.ConfigOff
+			media.Escalate.To = escalated.Id
+			media.Fragmentation.Strategy = config.ConfigNone
+			media.Fragmentation.StrategyPool = nil
+
+			voice := newVoiceL7Set(config.UDPL7Discord)
+			voice.UDP.Mode = c.voiceMode
+
+			w := newQUICFlowWorker(t, &voice, &media, &escalated)
+			w.matcher.Load().(*sni.SuffixSet).LearnIPToDomain(quicServer, host, &media)
+			w.destState.SetEscalation(host, escalated.Id, escalateReasonStall, time.Minute)
+
+			if v := sendUDPTo(w, discordIPDiscovery(), 51006, 50005); v != c.want {
+				t.Fatalf("a packet the L7 set selected belongs to that set even when its address was learned for an escalated host, got %v, want %v", v, c.want)
+			}
+		})
 	}
 }
 

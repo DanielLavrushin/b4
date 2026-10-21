@@ -130,21 +130,31 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
   };
 
   const filterL7 = config.udp.filter_l7 ?? [];
+  const selectsL7 = filterL7.length > 0;
   const hasDestinationTargets = hasDomainsConfigured || hasIPTargets;
+  const hasTcpPortFilter = (config.tcp.dport_filter ?? "").trim() !== "";
   const toggleL7 = (protocol: string, checked: boolean) => {
     const next = checked
       ? [...filterL7, protocol]
       : filterL7.filter((entry) => entry !== protocol);
     onChange("udp.filter_l7", next);
+    const zeroFill = (config.udp.fake_payload_file ?? "") === "";
+    if (checked && !selectsL7 && zeroFill) {
+      onChange("udp.fake_payload_file", UDP_FAKE_PAYLOAD_AUTO_STUN);
+    }
   };
 
   const showFakeSettings = config.udp.mode === "fake";
   const isAutoQuic =
     config.udp.fake_payload_file === UDP_FAKE_PAYLOAD_AUTO_QUIC;
+  const isAutoStun =
+    config.udp.fake_payload_file === UDP_FAKE_PAYLOAD_AUTO_STUN;
 
   let payloadFileHelperKey: string;
   if (isAutoQuic) {
     payloadFileHelperKey = "sets.udp.fakePayloadFileAutoQuic";
+  } else if (isAutoStun) {
+    payloadFileHelperKey = "sets.udp.fakePayloadFileAutoStun";
   } else if (captures.length === 0) {
     payloadFileHelperKey = "sets.udp.fakePayloadFileEmpty";
   } else {
@@ -215,8 +225,12 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
             label={t("sets.udp.filterStun")}
             checked={config.udp.filter_stun}
             onChange={(checked) => onChange("udp.filter_stun", checked)}
-            description={t("sets.udp.filterStunDesc")}
-            disabled={filterL7.length > 0}
+            description={t(
+              selectsL7
+                ? "sets.udp.filterStunL7Desc"
+                : "sets.udp.filterStunDesc",
+            )}
+            disabled={selectsL7}
           />
         </Grid>
 
@@ -237,17 +251,21 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
           />
         </Grid>
 
-        {filterL7.length > 0 && hasDestinationTargets && (
+        {selectsL7 && hasDestinationTargets && (
           <B4Alert severity="warning" icon={<WarningIcon />}>
             <Trans i18nKey="sets.udp.filterL7TargetsWarning" />
           </B4Alert>
         )}
-        {filterL7.length > 0 &&
-          (config.udp.dport_filter ?? "").trim() === "" && (
-            <B4Alert severity="warning" icon={<WarningIcon />}>
-              <Trans i18nKey="sets.udp.filterL7PortsWarning" />
-            </B4Alert>
-          )}
+        {selectsL7 && (config.udp.dport_filter ?? "").trim() === "" && (
+          <B4Alert severity="warning" icon={<WarningIcon />}>
+            <Trans i18nKey="sets.udp.filterL7PortsWarning" />
+          </B4Alert>
+        )}
+        {selectsL7 && hasTcpPortFilter && (
+          <B4Alert severity="warning" icon={<WarningIcon />}>
+            <Trans i18nKey="sets.udp.filterL7TcpPortsWarning" />
+          </B4Alert>
+        )}
 
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Slider

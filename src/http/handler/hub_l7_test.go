@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -82,16 +83,39 @@ func TestHubApplyAcceptsASetThatSelectsUDPProtocols(t *testing.T) {
 	}
 }
 
-func TestHubApplyRefusesAProtocolSelectionThatAlsoFiltersTCPPorts(t *testing.T) {
+func TestHubApplyAndImportRefuseAProtocolSelectionThatAlsoFiltersTCPPorts(t *testing.T) {
 	env := newHubEnv(t)
 	shared := hubL7Set("Discord voice", config.UDPL7Discord)
 	shared.TCP.DPortFilter = "443,2053,8443"
 	cs, _ := hubtest.CatalogueSet(t, "dc-tcp", 1, &shared, nil)
 	env.publish(t, cs)
 
-	expectCode(t, postJSON(t, env.mux, "/api/hub/sets/dc-tcp/apply", map[string]interface{}{}), http.StatusBadRequest, "udp_l7_tcp_ports")
+	for path, body := range map[string]interface{}{
+		"/api/hub/sets/dc-tcp/apply": map[string]interface{}{},
+		"/api/hub/import":            cs.ToEnvelope(),
+	} {
+		rec := postJSON(t, env.mux, path, body)
+		expectCode(t, rec, http.StatusBadRequest, "bad_request")
+		var refusal APIError
+		decodeInto(t, rec, &refusal)
+		if !strings.Contains(refusal.Message, "tcp.dport_filter") || !strings.Contains(refusal.Message, "TCP port filter") {
+			t.Errorf("%s: the refusal must name the TCP port filter the config refuses on such a set: %q", path, refusal.Message)
+		}
+	}
 	if sets := env.api.getCfg().Sets; len(sets) != 0 {
 		t.Errorf("a set whose TCP ports would catch every TCP connection on them must not be saved: %+v", sets)
+	}
+}
+
+func TestHubApplyRefusesASetThatSelectsOnlyUnknownProtocols(t *testing.T) {
+	env := newHubEnv(t)
+	shared := hubL7Set("WireGuard", "wireguard")
+	cs, _ := hubtest.CatalogueSet(t, "wg-1", 1, &shared, nil)
+	env.publish(t, cs)
+
+	expectCode(t, postJSON(t, env.mux, "/api/hub/sets/wg-1/apply", map[string]interface{}{}), http.StatusBadRequest, "no_targets")
+	if sets := env.api.getCfg().Sets; len(sets) != 0 {
+		t.Errorf("a set that selects only protocols this device does not match must not be saved: %+v", sets)
 	}
 }
 

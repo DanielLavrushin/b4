@@ -203,6 +203,15 @@ func TestCorpus_NfqwsKeeneticDiscordVoiceLine(t *testing.T) {
 	if voice.UDP.Mode != config.UDPModeFake {
 		t.Fatalf("udp.mode: got %q", voice.UDP.Mode)
 	}
+	if voice.UDP.FakePayloadFile != config.FakePayloadAutoSTUN {
+		t.Fatalf("the line names no fake, and the set sends a generated STUN request rather than zero fill: %q",
+			voice.UDP.FakePayloadFile)
+	}
+	decoy := reasonNotes(res, "l7DecoySTUN")
+	if len(decoy) != 1 || decoy[0].Profile != 0 || decoy[0].Token != voice.Name || !decoy[0].Synthetic ||
+		decoy[0].Status != StatusApproximated || !slices.Equal(decoy[0].Fields, []string{stunPayloadField}) {
+		t.Fatalf("the voice set must say why it does not send zapret's 64 zero bytes: %+v", decoy)
+	}
 	assertNoLostOptions(t, res)
 	assertSetsSave(t, res)
 }

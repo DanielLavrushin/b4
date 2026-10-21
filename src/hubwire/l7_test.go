@@ -66,6 +66,53 @@ func TestScrubCountsUDPProtocolSelectionAsATarget(t *testing.T) {
 	}
 }
 
+func TestScrubCountsOnlyTheProtocolsThisBuildMatches(t *testing.T) {
+	unknown := l7OnlySet("wireguard")
+	_, report, err := Scrub(&unknown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := warningCodes(report.Warnings)["no_targets"]; !ok {
+		t.Errorf("a set that selects only protocols this build does not match targets nothing: %+v", report.Warnings)
+	}
+
+	mixed := l7OnlySet("wireguard", config.UDPL7Discord)
+	projection, report, err := Scrub(&mixed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := warningCodes(report.Warnings)["no_targets"]; ok {
+		t.Errorf("a known protocol next to an unknown one still selects something: %+v", report.Warnings)
+	}
+	if got := UDPL7(projection); !reflect.DeepEqual(got, []string{config.UDPL7Discord, "wireguard"}) {
+		t.Errorf("the projection must keep every protocol the set names, got %v", got)
+	}
+}
+
+func TestBuildOfAGeneratedSTUNDecoyAsksForTheReleaseThatSendsIt(t *testing.T) {
+	for _, c := range []struct {
+		payload string
+		want    string
+	}{
+		{config.FakePayloadAutoSTUN, "1.88.0"},
+		{"", BaselineVersion},
+		{config.FakePayloadAutoQUIC, BaselineVersion},
+	} {
+		set := config.NewSetConfig()
+		set.Name = "Calls"
+		set.Targets.SNIDomains = []string{"example.com"}
+		set.UDP.Mode = config.UDPModeFake
+		set.UDP.FakePayloadFile = c.payload
+		env, _, err := Build(&set, BuildOptions{B4Version: "1.88.0"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if env.MinB4 != c.want {
+			t.Errorf("a set whose UDP fake payload is %q needs b4 %s, got %s", c.payload, c.want, env.MinB4)
+		}
+	}
+}
+
 func TestBuildOfAnL7SetAsksForTheReleaseThatReadsIt(t *testing.T) {
 	set := l7OnlySet(config.UDPL7Discord)
 	env, report, err := Build(&set, BuildOptions{B4Version: "1.88.0"})
@@ -135,6 +182,8 @@ func TestOpenRefusesL7SetsARouterWouldNotSave(t *testing.T) {
 	noPorts.UDP.DPortFilter = ""
 	targeted := l7OnlySet(config.UDPL7STUN)
 	targeted.Targets.SNIDomains = []string{"discord.com"}
+	withTCP := l7OnlySet(config.UDPL7Discord)
+	withTCP.TCP.DPortFilter = "443,2053"
 
 	for _, c := range []struct {
 		name string
@@ -144,6 +193,7 @@ func TestOpenRefusesL7SetsARouterWouldNotSave(t *testing.T) {
 	}{
 		{"without ports", noPorts, "sets[0].udp.dport_filter", "required"},
 		{"with targets", targeted, "sets[0].udp.filter_l7", "conflict"},
+		{"with TCP ports", withTCP, "sets[0].tcp.dport_filter", "conflict"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			env, _, err := Build(&c.set, BuildOptions{B4Version: "1.88.0"})

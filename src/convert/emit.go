@@ -37,7 +37,7 @@ func noteBreakTokens(prof *Profile, ti tokenIndex, notes *noteSet, keys []string
 }
 
 func (o emitOpts) domainsFor(prof *Profile, sharedGiven *bool) []string {
-	if !prof.IsEntry() || prof.selectsL7() {
+	if !prof.IsEntry() || prof.scopedByL7() {
 		return nil
 	}
 	if custom, ok := o.ProfileDomains[prof.Index]; ok {
@@ -81,7 +81,7 @@ func (ti tokenIndex) each(profile int, key string, fn func(Token)) {
 	}
 }
 
-func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config.SetConfig {
+func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) ([]config.SetConfig, bool) {
 	ti := indexTokens(tokens)
 	prefix := opts.NamePrefix
 	if prefix == "" {
@@ -99,6 +99,7 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config
 
 		emitFilters(&set, prof, ti, notes, udpOnly)
 		emitUDP(&set, prof, ti, notes, udpOnly)
+		emitL7Decoy(&set, prof, ti, notes)
 		if !udpOnly {
 			emitSplits(&set, prof, ti, notes, opts)
 			emitFake(&set, prog, prof, ti, notes, opts.Defaults)
@@ -107,7 +108,7 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config
 			set.Faking.SNI = false
 			emitUDPFake(prof, ti, notes)
 		}
-		if udpOnly && len(prog.Profiles) > 1 && !set.SelectsL7() {
+		if udpOnly && len(prog.Profiles) > 1 && !prof.scopedByL7() {
 			notes.extra = append(notes.extra, Note{
 				Token:     set.Name,
 				Profile:   prof.Index,
@@ -134,7 +135,7 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) []config
 		noteEmptyProfile(prof, notes)
 	}
 	finalize(sets, prog, notes)
-	return sets
+	return sets, len(opts.Domains) > 0 && !sharedGiven
 }
 
 func emitFilters(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet, udpOnly bool) {
@@ -167,7 +168,7 @@ func emitFilters(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *not
 		}
 	}
 
-	if len(f.TCPPorts) > 0 && l7 {
+	if len(f.TCPPorts) > 0 && prof.scopedByL7() {
 		if tok, ok := ti.first(prof.Index, "filter_tcp"); ok {
 			notes.set(tok, StatusDegenerate, "l7TCPPortsUnused")
 		}
@@ -268,9 +269,47 @@ func noteL7Filter(prof *Profile, tok Token, notes *noteSet, l7, udpOnly bool) {
 		notes.set(tok, StatusApproximated, "l7FilterNeedsPorts")
 	case prof.Filters.HasProto("quic"):
 		notes.set(tok, StatusApproximated, "l7QUICMapped", "udp.filter_quic=sni")
+	case len(selected) > 0 && !udpOnly:
+		notes.set(tok, StatusApproximated, "l7FilterNotUDPOnly")
 	default:
 		notes.set(tok, StatusApproximated, "l7FilterApproximated")
 	}
+}
+
+func emitL7Decoy(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
+	if !prof.scopedByL7() {
+		return
+	}
+	set.UDP.FakePayloadFile = config.FakePayloadAutoSTUN
+	field := "udp.fake_payload_file=" + config.FakePayloadAutoSTUN
+
+	named := false
+	for _, key := range []string{"fake_discord", "fake_stun"} {
+		ti.each(prof.Index, key, func(tok Token) {
+			named = true
+			n := notes.set(tok, StatusApproximated, "l7FakeAsSTUN", field)
+			n.Params = nil
+			if v, err := runGrammar(tok.Spec.Grammar, tok.Value, grammarCtx{Opt: tok.Spec}); err == nil && v.Ref != "" {
+				n.Params = map[string]any{"path": v.Ref}
+			}
+		})
+	}
+	for _, key := range []string{"fake_quic", "fake_unk_udp"} {
+		ti.each(prof.Index, key, func(tok Token) {
+			notes.set(tok, StatusDegenerate, "l7FakeUnused")
+		})
+	}
+	if named || !prof.UDP.Present || prof.Skip {
+		return
+	}
+	notes.extra = append(notes.extra, Note{
+		Token:     set.Name,
+		Profile:   prof.Index,
+		Status:    StatusApproximated,
+		Reason:    "l7DecoySTUN",
+		Fields:    []string{field},
+		Synthetic: true,
+	})
 }
 
 const udpFoldPrefix = "udpfold:"
@@ -921,6 +960,9 @@ func finalize(sets []config.SetConfig, prog *Program, notes *noteSet) {
 		s := &sets[i]
 		hasTargets := len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0
 		carries := prog.Profiles[i].carriesStrategy()
+		if s.SelectsL7() {
+			carries = prog.Profiles[i].UDP.Present
+		}
 		if escalationTarget[s.Id] && !hasTargets {
 			if s.TCP.DPortFilter != "" || s.UDP.DPortFilter != "" {
 				notes.extra = append(notes.extra, Note{

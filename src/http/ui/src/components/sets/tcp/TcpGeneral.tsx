@@ -51,10 +51,13 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
     hasIPScope ||
     (config.targets?.sni_domains?.length ?? 0) > 0 ||
     (config.targets?.geosite_categories?.length ?? 0) > 0;
+  const hasPortFilter = (config.tcp.dport_filter ?? "").trim() !== "";
   const portFilterSkipsHttps =
     hasDestinationTargets &&
-    (config.tcp.dport_filter ?? "").trim() !== "" &&
+    hasPortFilter &&
     !portFilterCovers(config.tcp.dport_filter, 443);
+  const portFilterBlocksL7 =
+    hasPortFilter && (config.udp.filter_l7 ?? []).length > 0;
 
   return (
     <>
@@ -108,6 +111,11 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
           {portFilterSkipsHttps && (
             <B4Alert severity="warning" sx={{ mt: 1 }}>
               <Trans i18nKey="sets.tcp.general.portFilterNoHttps" />
+            </B4Alert>
+          )}
+          {portFilterBlocksL7 && (
+            <B4Alert severity="warning" sx={{ mt: 1 }}>
+              <Trans i18nKey="sets.tcp.general.portFilterL7" />
             </B4Alert>
           )}
         </Grid>
