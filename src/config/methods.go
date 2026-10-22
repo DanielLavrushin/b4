@@ -1439,6 +1439,11 @@ func (c *Config) sanitizeEscalation() {
 			s.Escalate.To = ""
 			continue
 		}
+		if len(NormalizeL7Filter(target.UDP.FilterL7)) > 0 {
+			log.Warnf("Set %q (id=%s): escalate.to %q (id=%s) selects UDP protocols and cannot be an escalation target, clearing", s.Name, s.Id, target.Name, target.Id)
+			s.Escalate.To = ""
+			continue
+		}
 		if !target.Enabled {
 			log.Tracef("Set %q (id=%s): escalate.to %q (id=%s) is disabled, the link is kept but stays idle until it is enabled again", s.Name, s.Id, target.Name, target.Id)
 		}

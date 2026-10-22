@@ -1169,6 +1169,43 @@ func TestEscalateTo_SanitizeMissing(t *testing.T) {
 	}
 }
 
+func TestEscalateTo_SanitizeClearsAProtocolSelectionTarget(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		classes []string
+		cleared bool
+	}{
+		{"known protocols", []string{UDPL7Discord, UDPL7STUN}, true},
+		{"an unknown protocol", []string{"wireguard"}, true},
+		{"only blanks", []string{" ", ""}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := NewConfig()
+			a := NewSetConfig()
+			a.Id = "a"
+			a.Name = "A"
+			a.Escalate.To = "b"
+			b := NewSetConfig()
+			b.Id = "b"
+			b.Name = "B"
+			b.UDP.DPortFilter = "19294-19344,50000-50100"
+			b.UDP.FilterL7 = c.classes
+			cfg.Sets = []*SetConfig{&a, &b}
+
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("Validate: %v", err)
+			}
+			got := cfg.Sets[0].Escalate.To
+			if c.cleared && got != "" {
+				t.Fatalf("a set that selects UDP protocols acts on nothing but the packets it selects, so it cannot take over an escalated host and the link must be cleared, got %q", got)
+			}
+			if !c.cleared && got != "b" {
+				t.Fatalf("a list of blanks selects no protocol, so the target is an ordinary set and the link must stay, got %q", got)
+			}
+		})
+	}
+}
+
 func TestEscalateTo_SanitizeSelfReference(t *testing.T) {
 	cfg := NewConfig()
 	a := NewSetConfig()

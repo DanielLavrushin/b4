@@ -724,3 +724,38 @@ func TestSetChangesForgetAddressesCachedAsBlocked(t *testing.T) {
 		t.Fatal("a new strategy can open an address the old one lost, so the cache must be tested again")
 	}
 }
+
+func TestAHostEscalatedToASetThatTurnsToCallsOnlyLosesItsEscalation(t *testing.T) {
+	ds := newDestState()
+	ds.SetEscalation("ntc.party", "b", escalateReasonRST, 0)
+	cfg := config.NewConfig()
+	cfg.Queue.IsDiscovery = true
+	from := config.NewSetConfig()
+	from.Id = "a"
+	to := config.NewSetConfig()
+	to.Id = "b"
+	cfg.Sets = []*config.SetConfig{&from, &to}
+
+	w := &Worker{}
+	w.cfg.Store(&cfg)
+	w.matcher.Store(buildMatcher(&cfg))
+	pool := &Pool{Workers: []*Worker{w}, state: &runtimeState{destState: ds}}
+
+	tuned := cfg.Clone()
+	tuned.Sets[1].Fragmentation.Strategy = "combo"
+	if err := pool.UpdateConfig(tuned); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := ds.GetEscalation("ntc.party"); !ok {
+		t.Fatal("a new strategy on the target set keeps the hosts escalated to it")
+	}
+
+	calls := tuned.Clone()
+	calls.Sets[1].UDP.FilterL7 = []string{config.UDPL7Discord}
+	if err := pool.UpdateConfig(calls); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := ds.GetEscalation("ntc.party"); ok {
+		t.Fatal("a set that handles only calls acts on nothing but the calls it selects, so a host escalated to it must lose that escalation")
+	}
+}

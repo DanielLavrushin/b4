@@ -402,7 +402,7 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	if !reuse && p.state != nil && p.state.destState != nil {
 		p.state.destState.PruneEscalations(func(setId string) bool {
 			target := newCfg.GetSetById(setId)
-			return target != nil && target.Enabled
+			return target != nil && target.Enabled && !target.SelectsL7()
 		})
 		if n := p.state.destState.ResetBlocked(); n > 0 {
 			log.Infof("IPBlockDetect: the sets changed, %d address(es) cached as blocked are tested again", n)
