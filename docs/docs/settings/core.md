@@ -69,8 +69,8 @@ With IPv6 support off, a targeted site that also answers over IPv6 can be reache
 | **Queue Start Number** | The first NFQUEUE number b4 reads. Another value is needed only when another program uses the same numbers. | `537` |
 | **Packet Mark** | The mark on the packets b4 sends itself, such as fakes, so that they pass its processing unchanged. See [Packet marks](../guides/marks.md#the-queue-mark). | `32768` |
 | **Worker Threads** | How many workers process packets in parallel, from 1 to 16. | `4` |
-| **TCP Connection Packets Limit** | How many packets at the start of each TCP connection reach b4, up to 100. A set can lower it, not raise it. | `19` |
-| **UDP Connection Packets Limit** | The same for UDP, up to 30. | `8` |
+| **TCP Connection Packets Limit** | How many packets at the start of each TCP connection reach b4, up to 100. The limit applies to every set. | `19` |
+| **UDP Connection Packets Limit** | The same for UDP, up to 30, for every set. | `8` |
 
 ## Devices {#device-filtering}
 

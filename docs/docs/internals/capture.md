@@ -10,7 +10,7 @@ The packet engine is the part of b4 that sees traffic. It reads the first packet
 
 In NFQUEUE mode, iptables or nftables rules hand packets to netfilter queues, and b4 reads them. b4 reads one queue per worker thread, numbered upward from **Queue Start Number**: 537 to 540 with the defaults.
 
-Only the start of each connection is queued. **TCP Connection Packets Limit** and **UDP Connection Packets Limit** set how many packets, 19 and 8 by default. With iptables the count uses the `connbytes` match. The fakes and split segments b4 sends into a connection count toward the limit as well. A limit below these defaults is raised to them when the configuration is saved, and a set cannot go above the global value.
+Only the start of each connection is queued. **TCP Connection Packets Limit** and **UDP Connection Packets Limit** under [Settings > Core](../settings/core.md#queue-and-packet-processing) set how many packets, 19 and 8 by default. With iptables the count uses the `connbytes` match. The fakes and split segments b4 sends into a connection count toward the limit as well. A limit below these defaults is raised to them when the configuration is saved. The limits apply to every set.
 
 ### Where the rules sit {#hooks}
 

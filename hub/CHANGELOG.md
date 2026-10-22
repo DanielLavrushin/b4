@@ -4,7 +4,7 @@ Releases of the community hub service, published from the `b4hub` repository. Th
 
 ## [1.5.0] - 2026-10-21
 
-- ADDED: **Sets without targets that select Discord voice or STUN packets, which b4 1.88.0 can share, are accepted** - such a set that also filters TCP ports is refused, and a hub built from an earlier b4 refuses them all as having no targets. Their protocols and UDP ports count like targets for duplicates and versions, and the console shows and searches the protocols. These sets, and any set that uses the generated STUN payload, are marked as needing b4 1.88.0.
+- ADDED: **Sets without targets that handle only calls, which b4 1.88.0 can share, are accepted** - one that also filters TCP ports is refused, and the others are marked as needing b4 1.88.0, as is any set that uses the generated STUN payload. The calls they handle and their UDP ports count like targets for duplicates and versions, but their `udp.filter_stun`, which b4 ignores on such a set, does not. On set cards the console shows their calls, such as `Calls: Discord app, Browsers`, and its search finds them by `discord` or `stun`.
 
 ## [1.4.0] - 2026-10-12
 

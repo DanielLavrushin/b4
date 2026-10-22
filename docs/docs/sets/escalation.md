@@ -14,7 +14,7 @@ A typical pair is a light set for most sites and a heavier one for the sites tha
 
 | Field | What it does | Default |
 | --- | --- | --- |
-| **Escalate to set** | The backup set. **None** turns escalation off. A disabled set is marked **disabled**: the link stays and sits idle until the set is enabled again. | **None** |
+| **Escalate to set** | The backup set. **None** turns escalation off. A disabled set is marked **disabled**: the link stays and sits idle until the set is enabled again. A [set that handles only calls](./udp.md#protocol-selection) is not offered. | **None** |
 
 Sets can form a chain, A to B to C: b4 moves a site along it as each set fails, up to eight steps. A backup set limited to source devices is used only for those devices, and other devices stay on the original set.
 

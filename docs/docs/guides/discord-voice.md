@@ -5,7 +5,7 @@ description: A set that sends fakes before the packets that open a Discord voice
 
 The setup adds a set that sends fakes before the UDP packets that open a Discord voice call. It is needed when a call sends its voice packets but gets no answer, or drops after a few seconds, while the rest of Discord works. A call that hangs at **RTC Connecting** fails on TCP instead, see [When it does not work](#when-it-does-not-work).
 
-The address of a voice server is not known in advance. The set therefore has no targets and selects packets by port and by protocol, see [Selecting packets by protocol](../sets/udp.md#protocol-selection). Once it selects the packet that opens a call, the rest of that call belongs to the set and passes untouched, whatever other sets match its address.
+The address of a voice server is not known in advance. The set therefore has no targets and handles only calls on the voice ports, see [Sets for calls](../sets/udp.md#protocol-selection). Once it takes the packet that opens a call, the rest of that call belongs to the set and passes untouched, whatever other sets match its address.
 
 ## Requirements
 
@@ -17,8 +17,8 @@ The address of a voice server is not known in advance. The set therefore has no 
 1. Open **Sets** and click **Create Set**.
 2. Enter a name for the set, such as `Discord voice`.
 3. Leave the **Targets** tab empty.
-4. On the **UDP** tab, enter `19294-19344,50000-50100` in **Port Filter**.
-5. In **Protocols**, select **Discord voice setup** and **STUN**.
+4. On the **UDP** tab, in **Calls**, select **Handle only calls**. **Which calls** stays at **Discord app and browsers**, and a warning asks for a port filter.
+5. Click **Use Discord ports** in the warning, or enter `19294-19344,50000-50100` in **Port Filter**.
 6. Leave **Action Mode** at **Fake & Fragment**. **Fake Packet Payload** now shows **(auto: STUN request)**.
 7. On the **TCP** tab, leave **Port Filter** under **General** empty.
 8. Click **Create Set**.
@@ -28,7 +28,7 @@ The address of a voice server is not known in advance. The set therefore has no 
 | `19294-19344` | Discord's voice servers on Cloudflare |
 | `50000-50100` | The other voice servers, for example in Finland |
 
-**Discord voice setup** selects the packet that opens a voice connection in the Discord app. **STUN** selects the request that opens a call in a browser, Discord in a browser included. **Fake Packet Count** and **Fake Packet Size** keep their defaults.
+With **Discord app and browsers**, the set takes calls and voice channels in the Discord app, and calls in a browser, Discord in a browser included. **Fake Packet Count** and **Fake Packet Size** keep their defaults.
 
 ### Importing the set {#import}
 
@@ -104,7 +104,7 @@ On some networks no strategy opens the voice server's port when it is not 443. T
 
 **b4 refuses to save the voice set.** A warning on the **UDP** tab names the cause: the set has targets, its **Port Filter** is empty, or the **TCP** tab lists ports. The set saves with no targets, both port ranges in the UDP **Port Filter** and an empty TCP **Port Filter**.
 
-**No packet to the voice ports shows the voice set.** The voice set selected neither the packet that opens the call nor the STUN requests. Their port is missing from its **Port Filter**, that kind of packet is not selected in **Protocols**, or the set is turned off on the **Sets** page. The **IP Version Filter** on the set's **Targets** tab can also exclude one IP version.
+**No packet to the voice ports shows the voice set.** The voice set took neither the packet that opens the call nor the STUN requests. Their port is missing from its **Port Filter**, **Which calls** leaves that kind of call out, or the set is turned off on the **Sets** page. The **IP Version Filter** on the set's **Targets** tab can also exclude one IP version.
 
 **No packets to the voice ports appear.** **All packets** is off, or the port is missing from the voice set's **Port Filter**: b4 sees UDP only on port 443 and on the ports that sets list. With **Enable IPv6 Support** off under [Settings > Core](../settings/core.md#protocols), b4 sees no IPv6 packets at all.
 

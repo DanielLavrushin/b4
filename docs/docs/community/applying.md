@@ -22,7 +22,7 @@ description: Turning a published set into a local set, keeping it up to date and
 
 - The set goes through the checks of a [shared set](../sets/sharing.md#what-the-import-checks) pasted into **Import**. Unknown settings are dropped, values this b4 does not accept are replaced by defaults, and unsafe pins and DNS redirects are dropped.
 - Payload files are installed and appear under **Settings > Payloads**.
-- Geosite and geoip categories missing from this router's databases are named. Without a database, the categories are removed. A set left with no targets is refused, unless it [selects UDP packets by protocol](../sets/udp.md#protocol-selection).
+- Geosite and geoip categories missing from this router's databases are named. Without a database, the categories are removed. A set left with no targets is refused, unless it [handles only calls](../sets/udp.md#protocol-selection).
 - The set is created enabled, at the top of the **Sets** page, named after the published title.
 - Domains the set lists are removed from every other enabled set that listed them.
 
@@ -36,7 +36,7 @@ The local set stays linked to the published one, and the link is what allows rep
 
 Editing the strategy changes the badge to **Applied, edited** and the chip to **Community set, edited**. The strategy here means the TCP, UDP, fragmentation, fake packet, MSS clamp and DNS redirect settings. **Works** and **Broken** are disabled on an edited set.
 
-Targets, port filters, pins, the name, routing and device filters are not part of the strategy. A community set can be narrowed to a few domains or sent through a proxy and stays linked and unedited. [Protocol selection](../sets/udp.md#protocol-selection) on the UDP tab is part of the strategy: changing the selection in **Protocols** changes the badge to **Applied, edited**.
+Targets, port filters, pins, the name, routing and device filters are not part of the strategy. A community set can be narrowed to a few domains or sent through a proxy and stays linked and unedited. **Calls** and **Which calls** on the UDP tab are part of the strategy, see [Sets for calls](../sets/udp.md#protocol-selection): changing either changes the badge to **Applied, edited**.
 
 ## Updating and reapplying {#updating-and-reapplying}
 
