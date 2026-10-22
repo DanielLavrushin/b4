@@ -326,7 +326,7 @@ func (s *Server) prepareEdit(ctx context.Context, v *store.Version, req EditRequ
 		case noTargetsWarning:
 			return nil, &editFailure{status: http.StatusBadRequest, code: codeInvalidSet, message: "the set has no targets"}
 		case udpL7TCPPortsWarning:
-			message := "a set that selects UDP traffic by protocol and has no targets takes no TCP port filter"
+			message := "a set that handles only calls has no targets and takes no TCP port filter"
 			field := InvalidFieldView{Path: "tcp.dport_filter", Code: "conflict", Message: message, Params: w.Params}
 			return nil, &editFailure{status: http.StatusBadRequest, code: codeInvalidSet, message: message, params: map[string]interface{}{"fields": []InvalidFieldView{field}}}
 		}

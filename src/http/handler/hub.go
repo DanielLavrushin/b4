@@ -449,7 +449,7 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "no_targets", Message: "The set targets nothing this device can match"})
 			return
 		case set.TCP.DPortFilter != "":
-			writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "udp_l7_tcp_ports", Message: "The set selects UDP traffic by protocol and has no targets, so its TCP port filter would apply it to every TCP connection on those ports"})
+			writeAPIError(w, &APIError{Status: http.StatusBadRequest, Code: "udp_l7_tcp_ports", Message: "The set handles only calls and has no targets, so its TCP port filter would apply it to every TCP connection on those ports"})
 			return
 		}
 	}
