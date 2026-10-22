@@ -13,12 +13,14 @@ import (
 const (
 	maxQUICFlowEntries = 10000
 	quicFlowIdle       = 60 * time.Second
+	maxCoalescedHellos = 2
 )
 
 type quicFlow struct {
-	host     string
-	odcid    []byte
-	lastSeen time.Time
+	host      string
+	odcid     []byte
+	coalesced int
+	lastSeen  time.Time
 }
 
 type quicFlowCache struct {
@@ -37,10 +39,29 @@ func (c *quicFlowCache) Store(connKey, host string, odcid []byte) {
 	now := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, exists := c.flows[connKey]; !exists && len(c.flows) >= maxQUICFlowEntries {
+	if existing, exists := c.flows[connKey]; exists {
+		if existing.host == host && bytes.Equal(existing.odcid, odcid) {
+			existing.lastSeen = now
+			return
+		}
+	} else if len(c.flows) >= maxQUICFlowEntries {
 		c.evictLocked(now)
 	}
 	c.flows[connKey] = &quicFlow{host: host, odcid: bytes.Clone(odcid), lastSeen: now}
+}
+
+func (c *quicFlowCache) NoteCoalesced(connKey string) int {
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	flow := c.flows[connKey]
+	if flow == nil {
+		return 0
+	}
+	flow.coalesced++
+	return flow.coalesced
 }
 
 func (c *quicFlowCache) Lookup(connKey string, payload []byte) string {

@@ -107,12 +107,13 @@ func stubConntrack(t *testing.T) (*recordingDeleter, *int) {
 
 const learnedQUICServer = "203.0.113.10"
 
-func learnedAddressPool(t *testing.T) *nfq.Pool {
+func learnedAddressPool(t *testing.T, quicFilter string) *nfq.Pool {
 	t.Helper()
 	set := config.NewSetConfig()
 	set.Id, set.Name, set.Enabled = "learned-drop", "LearnedDrop", true
 	set.Targets.SNIDomains = []string{"blocked.example"}
 	set.UDP.Mode = config.UDPModeDrop
+	set.UDP.FilterQUIC = quicFilter
 	set.Fragmentation.Strategy = config.ConfigNone
 	set.Fragmentation.StrategyPool = nil
 	cfg := config.NewConfig()
@@ -134,7 +135,7 @@ func udpPacketWith(sport uint16, payload []byte) []byte {
 }
 
 func TestTUNHoldsQUICButNoOtherUDPToAnAddressLearnedForADroppedName(t *testing.T) {
-	worker := learnedAddressPool(t).Workers[0]
+	worker := learnedAddressPool(t, config.QUICFilterAll).Workers[0]
 	wireguard := make([]byte, 148)
 	wireguard[0] = 0x01
 	dtls := append([]byte{0x16, 0xfe, 0xfd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x30}, make([]byte, 48)...)
@@ -447,4 +448,18 @@ func TestStopJoinsTheConntrackWorker(t *testing.T) {
 	}
 	e.Stop()
 	goleak.VerifyNone(t, leaktest.Options()...)
+}
+
+func TestTUNForwardsNamelessQUICToALearnedAddressByDefault(t *testing.T) {
+	worker := learnedAddressPool(t, config.QUICFilterSNI).Workers[0]
+	longHeader := append([]byte{0xc3, 0, 0, 0, 1, 8, 1, 2, 3, 4, 5, 6, 7, 8, 0}, make([]byte, 40)...)
+	raw := udpPacketWith(40002, longHeader)
+
+	d := &recordingDeleter{}
+	if forward, _ := portsModeEngine(d).processPacket(worker, raw); !forward {
+		t.Fatal("with QUIC matched by SNI, a datagram that carries no readable name must pass on a learned address")
+	}
+	if jobs, _ := d.snapshot(); len(jobs) != 0 {
+		t.Fatalf("kernel window: %d conntrack deletes for a datagram b4 accepts", len(jobs))
+	}
 }

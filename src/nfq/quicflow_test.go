@@ -387,3 +387,143 @@ func TestAnIdleQUICFlowIsForgotten(t *testing.T) {
 		t.Errorf("cleanup kept %d idle flows", len(c.flows))
 	}
 }
+
+func TestALearnedAddressDoesNotHideABlockedQUICName(t *testing.T) {
+	learning := newDomainOnlyQUICSet(config.ConfigOff)
+	learning.Id = "learning"
+	learning.Name = "Learning"
+	learning.Targets.SNIDomains = []string{"allowed.example"}
+	learning.Targets.DomainOnly = false
+
+	blocked := newDomainOnlyQUICSet(config.UDPModeDrop)
+	w := newQUICFlowWorker(t, &learning, &blocked)
+
+	teach := buildQUICInitialWithSNI(t, []byte{0xA0, 1, 2, 3, 4, 5, 6, 7}, "www.allowed.example")
+	if v := sendQUIC(w, teach, 50401); v != engine.VerdictAccept {
+		t.Fatalf("teaching connection: got %v", v)
+	}
+
+	flow := newSplitQUICHello(t, []byte{0xA1, 1, 2, 3, 4, 5, 6, 7}, []byte{0xA2, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	sendQUIC(w, flow.first, 50402)
+	if v := sendQUIC(w, flow.completing, 50402); v != engine.VerdictDropFlow {
+		t.Errorf("ClientHello of the blocked name: got %v, want the flow stopped", v)
+	}
+	if v := sendQUIC(w, flow.resend, 50402); v != engine.VerdictDropFlow {
+		t.Errorf("resend of the blocked flow: got %v, want the flow stopped", v)
+	}
+}
+
+func TestALearningDropSetLeavesUnrelatedQUICNamesAlone(t *testing.T) {
+	dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+	dropper.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &dropper)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xD2, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 50701); v != engine.VerdictDropFlow {
+		t.Fatalf("own name: got %v, want the flow stopped", v)
+	}
+
+	unrelated := buildQUICInitialWithSNI(t, []byte{0xD3, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+	if v := sendQUIC(w, unrelated, 50702); v != engine.VerdictAccept {
+		t.Errorf("a name no set targets, on the learned address: got %v, want accept", v)
+	}
+}
+
+func TestALearningFakeSetLeavesUnrelatedQUICNamesUntouched(t *testing.T) {
+	faking := newDomainOnlyQUICSet(config.UDPModeFake)
+	faking.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &faking)
+	sent := captureInjected(t, w)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xE1, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 50801); v != engine.VerdictDrop {
+		t.Fatalf("the set's own name must be reinjected behind its fakes, got %v", v)
+	}
+	if got := sent(); len(got) == 0 {
+		t.Fatal("the set's own ClientHello datagram must be sent by b4")
+	}
+
+	unrelated := buildQUICInitialWithSNI(t, []byte{0xE2, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+	if v := sendQUIC(w, unrelated, 50802); v != engine.VerdictAccept {
+		t.Errorf("a name no set targets, on the learned address: got %v, want accept", v)
+	}
+	if got := sent(); len(got) != 0 {
+		t.Errorf("%d packets sent for a name no set targets on the learned address", len(got))
+	}
+}
+
+func TestAPortSetTakesTheQUICALearnedAddressNoLongerClaims(t *testing.T) {
+	learning := newDomainOnlyQUICSet(config.ConfigOff)
+	learning.Targets.DomainOnly = false
+
+	ports := config.NewSetConfig()
+	ports.Id = "ports"
+	ports.Name = "Ports"
+	ports.Enabled = true
+	ports.UDP.DPortFilter = "443"
+	ports.UDP.Mode = config.UDPModeDrop
+	ports.Fragmentation.Strategy = config.ConfigNone
+	ports.Fragmentation.StrategyPool = nil
+
+	w := newQUICFlowWorker(t, &learning, &ports)
+
+	teach := buildQUICInitialWithSNI(t, []byte{0xF1, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, teach, 50811); v != engine.VerdictAccept {
+		t.Fatalf("the learning set leaves its own name alone, got %v", v)
+	}
+
+	unrelated := buildQUICInitialWithSNI(t, []byte{0xF2, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+	if v := sendQUIC(w, unrelated, 50812); v != engine.VerdictDropFlow {
+		t.Errorf("a name no set targets on the learned address belongs to the port set, got %v, want the flow stopped", v)
+	}
+}
+
+func TestCoalesceGivesUpOnAHelloTheServerKeepsIgnoring(t *testing.T) {
+	set := newDomainOnlyQUICSet(config.UDPModeCoalesce)
+	w := newQUICFlowWorker(t, &set)
+	sent := captureInjected(t, w)
+
+	hello := buildQUICInitialWithSNI(t, []byte{0x61, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	for attempt := 1; attempt <= maxCoalescedHellos; attempt++ {
+		if v := sendQUIC(w, hello, 50901); v != engine.VerdictDrop {
+			t.Fatalf("attempt %d must be coalesced, got %v", attempt, v)
+		}
+		if got := sent(); len(got) != 1 {
+			t.Fatalf("attempt %d sent %d packets, want the coalesced datagram", attempt, len(got))
+		}
+	}
+	for _, attempt := range []int{maxCoalescedHellos + 1, maxCoalescedHellos + 2} {
+		if v := sendQUIC(w, hello, 50901); v != engine.VerdictAccept {
+			t.Errorf("attempt %d must go out unchanged so the server sees a plain ClientHello, got %v", attempt, v)
+		}
+		if got := sent(); len(got) != 0 {
+			t.Errorf("attempt %d sent %d packets of its own", attempt, len(got))
+		}
+	}
+
+	later := buildQUICInitialWithSNI(t, []byte{0x62, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, later, 50901); v != engine.VerdictDrop {
+		t.Errorf("a new connection on the same ports starts its own count, got %v", v)
+	}
+	if v := sendQUIC(w, hello, 50902); v != engine.VerdictDrop {
+		t.Errorf("another flow to the same address keeps its own count, got %v", v)
+	}
+}
+
+func TestASplitHelloCoalescesOncePerAttempt(t *testing.T) {
+	set := newDomainOnlyQUICSet(config.UDPModeCoalesce)
+	w := newQUICFlowWorker(t, &set)
+	flow := newSplitQUICHello(t, []byte{0x63, 1, 2, 3, 4, 5, 6, 7}, []byte{0x64, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+
+	for attempt := 1; attempt <= maxCoalescedHellos; attempt++ {
+		if v := sendQUIC(w, flow.first, 50911); v != engine.VerdictAccept {
+			t.Fatalf("attempt %d: the datagram that carries no complete ClientHello goes out plain, got %v", attempt, v)
+		}
+		if v := sendQUIC(w, flow.completing, 50911); v != engine.VerdictDrop {
+			t.Fatalf("attempt %d: the datagram that completes the ClientHello must be coalesced, got %v", attempt, v)
+		}
+	}
+	if v := sendQUIC(w, flow.completing, 50911); v != engine.VerdictAccept {
+		t.Errorf("past the limit the ClientHello must reach the server unchanged, got %v", v)
+	}
+}

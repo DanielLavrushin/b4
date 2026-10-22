@@ -336,10 +336,6 @@ func duplicatesPackets(set *config.SetConfig) bool {
 	return set.TCP.Duplicate.Enabled && set.TCP.Duplicate.Count > 0
 }
 
-func coalescesInitials(set *config.SetConfig) bool {
-	return set != nil && set.UDP.Mode == config.UDPModeCoalesce
-}
-
 func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, matcher *sni.SuffixSet, matched bool, set *config.SetConfig, st *config.SetConfig) int {
 	tcp := pkt.raw[pkt.ihl:]
 	if len(tcp) < TCPHeaderMinLen {
@@ -945,6 +941,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	matchedLearned := false
 	isVoiceMedia := false
 	host := ""
+	learnedHost := ""
 	ipTarget := ""
 	sniTarget := ""
 
@@ -965,7 +962,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				matchedLearned = true
 				matched = true
 				set = learnedSet
-				host = learnedDomain
+				learnedHost = learnedDomain
 				sniTarget = learnedSet.Name
 				ipTarget = learnedSet.Name
 			}
@@ -988,12 +985,14 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	namedByHello := false
 	helloDatagram := false
-	if isQUIC && (host == "" || coalescesInitials(set) || coalescesInitials(w.escalatedSetFor(cfg, set, host, pkt.srcMac, keep))) {
+	if isQUIC {
 		if h, ok := sni.ParseQUICClientHelloSNI(payload); ok {
 			helloDatagram = true
 			host = h
 			namedByHello = true
 		}
+	} else {
+		host = learnedHost
 	}
 
 	if host != "" {
@@ -1023,6 +1022,27 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		if isQUIC {
 			matchedQUIC = true
 		}
+	}
+
+	if isQUIC && matchedLearned && !matchedQUIC {
+		matchedIP = false
+		matchedLearned = false
+		matched = false
+		set = nil
+		learnedHost = ""
+		sniTarget = ""
+		ipTarget = ""
+		if portMatched, portSet := matcher.MatchUDPPort(dport, pkt.srcMac, keep); portMatched {
+			matchedPort = true
+			matched = true
+			set = portSet
+			ipTarget = portSet.Name
+			matchedQUIC = portSet.UDP.FilterQUIC == config.QUICFilterAll
+		}
+	}
+
+	if host == "" {
+		host = learnedHost
 	}
 
 	if captureManager := capture.GetManager(cfg); captureManager != nil {
@@ -1163,6 +1183,10 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			return vc.accept()
 		}
 		if !helloDatagram {
+			return vc.accept()
+		}
+		if w.quicFlows.NoteCoalesced(connKey) > maxCoalescedHellos {
+			log.Tracef("QUIC ClientHello to %s repeated past %d coalesced datagrams, sending it unchanged", pkt.dstStr, maxCoalescedHellos)
 			return vc.accept()
 		}
 		coalesced, ok := quic.CoalesceInitial(payload, 0)

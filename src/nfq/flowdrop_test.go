@@ -234,26 +234,43 @@ func TestOnlyDecisionDropsOfQUICHoldTheFlow(t *testing.T) {
 	}
 }
 
-func TestQUICToAnAddressLearnedForADroppedNameHoldsItsFlow(t *testing.T) {
-	learning := newDomainOnlyQUICSet(config.UDPModeDrop)
-	learning.Targets.DomainOnly = false
+func TestQUICWithoutAReadableNameOnALearnedAddressFollowsTheQUICFilter(t *testing.T) {
 	longHeader := append([]byte{0xc3, 0, 0, 0, 1, 8, 1, 2, 3, 4, 5, 6, 7, 8, 0}, make([]byte, 40)...)
 	if !quic.LooksLikeQUIC(longHeader) {
 		t.Fatal("the long header must look like QUIC")
 	}
 
-	w, rec := flowDropWorker(t, &learning)
-	teach := buildQUICInitialWithSNI(t, []byte{0xd3, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
-	if v := sendQUIC(w, teach, 50600); v != engine.VerdictDropFlow {
-		t.Fatalf("the ClientHello that teaches the address must hold its own flow, got %v", v)
-	}
-	if v := sendQUIC(w, longHeader, 50601); v != engine.VerdictDropFlow {
-		t.Fatalf("QUIC without a readable ClientHello to the learned address: got %v, want VerdictDropFlow", v)
-	}
-	queueFrom(w, rec, makeV4UDPPacket(longHeader, quicClient, quicServer, 50602, 443))
-	w.wg.Wait()
-	if _, jobs, _ := rec.snapshot(); len(jobs) != 1 || jobs[0].tuple != udpTuple(t, "10.0.0.1:50602", "1.2.3.4:443") {
-		t.Fatalf("conntrack deletes %+v, want the queued QUIC flow's own", jobs)
+	for _, c := range []struct {
+		filter  string
+		want    engine.PacketVerdict
+		deletes int
+	}{
+		{config.QUICFilterSNI, engine.VerdictAccept, 0},
+		{config.QUICFilterAll, engine.VerdictDropFlow, 1},
+	} {
+		t.Run(c.filter, func(t *testing.T) {
+			learning := newDomainOnlyQUICSet(config.UDPModeDrop)
+			learning.Targets.DomainOnly = false
+			learning.UDP.FilterQUIC = c.filter
+
+			w, rec := flowDropWorker(t, &learning)
+			teach := buildQUICInitialWithSNI(t, []byte{0xd3, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+			if v := sendQUIC(w, teach, 50600); v != engine.VerdictDropFlow {
+				t.Fatalf("the ClientHello that teaches the address must hold its own flow, got %v", v)
+			}
+			if v := sendQUIC(w, longHeader, 50601); v != c.want {
+				t.Fatalf("QUIC without a readable ClientHello to the learned address: got %v, want %v", v, c.want)
+			}
+			queueFrom(w, rec, makeV4UDPPacket(longHeader, quicClient, quicServer, 50602, 443))
+			w.wg.Wait()
+			_, jobs, _ := rec.snapshot()
+			if len(jobs) != c.deletes {
+				t.Fatalf("conntrack deletes %+v, want %d", jobs, c.deletes)
+			}
+			if c.deletes == 1 && jobs[0].tuple != udpTuple(t, "10.0.0.1:50602", "1.2.3.4:443") {
+				t.Fatalf("conntrack deletes %+v, want the queued QUIC flow's own", jobs)
+			}
+		})
 	}
 }
 
