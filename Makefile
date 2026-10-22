@@ -294,45 +294,80 @@ hub-seed:
 hub-mirror: hub-build
 	@$(OUT_DIR)/b4hub mirror --data $(HUB_MIRROR_DATA) --upstream $(HUB_UPSTREAM) --listen $(HUB_MIRROR_LISTEN) --public-url http://127.0.0.1:7101
 
-SFTP_PORT ?= 22
-SSH_OPTS ?= -o StrictHostKeyChecking=no -o IPQoS=none
+BOXES_DIR ?= $(or $(XDG_CONFIG_HOME),$(HOME)/.config)/b4/boxes
+BOXES := $(filter-out $(LINUX_ARCHS),$(sort $(basename $(notdir $(wildcard $(BOXES_DIR)/*.env)))))
+BOX_VARS := ARCH SFTP_HOST SFTP_USER SFTP_PORT SFTP_PATH SFTP_PASS B4_RESTART_CMD
+
+ifneq ($(BOX),)
+BOX_FILE := $(BOXES_DIR)/$(BOX).env
+ifeq ($(wildcard $(BOX_FILE)),)
+$(error No deploy box $(BOX): $(BOX_FILE) does not exist. Boxes: $(or $(BOXES),none, see make boxes))
+endif
+$(foreach v,$(BOX_VARS),$(eval undefine $(v)))
+include $(BOX_FILE)
+endif
+
+SSH_OPTS ?= -o StrictHostKeyChecking=accept-new -o IPQoS=none
 B4_RESTART_CMD ?= /opt/etc/init.d/S99b4
+DEPLOY_DEST = $(if $(SFTP_USER),$(SFTP_USER)@)$(SFTP_HOST)
+DEPLOY_SSHPASS = $(if $(SFTP_PASS),SSHPASS="$$SFTP_PASS" sshpass -e)
+
+.PHONY: boxes
+boxes:
+ifeq ($(BOXES),)
+	@echo "No deploy boxes in $(BOXES_DIR). Add one file per box, e.g. $(BOXES_DIR)/asus.env:"
+	@printf "  %s\n" ARCH=arm64 SFTP_HOST=192.168.1.1 SFTP_USER=admin SFTP_PORT=22 SFTP_PATH=/opt/sbin SFTP_PASS= B4_RESTART_CMD=/opt/etc/init.d/S99b4
+else
+	@echo "Deploy boxes in $(BOXES_DIR):"
+	@printf "  %-14s %-8s %-34s %-6s %-16s %-9s %s\n" BOX ARCH HOST PORT PATH AUTH RESTART
+	@for box in $(BOXES); do $(MAKE) --no-print-directory box-info BOX=$$box; done
+endif
+
+.PHONY: box-info
+box-info:
+	@printf "  %-14s %-8s %-34s %-6s %-16s %-9s %s\n" "$(BOX)" "$(ARCH)" "$(DEPLOY_DEST)" "$(or $(SFTP_PORT),-)" "$(SFTP_PATH)" "$(if $(SFTP_PASS),password,key)" "$(B4_RESTART_CMD)"
+
+ifneq ($(BOXES),)
+.PHONY: $(addprefix deploy-,$(BOXES))
+$(addprefix deploy-,$(BOXES)): deploy-%:
+	@$(MAKE) --no-print-directory deploy BOX=$*
+endif
+
+.PHONY: deploy
+deploy:
+	@if [ -z "$(BOX)" ]; then \
+		echo "Error: name the box: make deploy-<box>, or make deploy BOX=<box>. Boxes: $(or $(BOXES),none, see make boxes)"; \
+		exit 1; \
+	fi
+	@if [ -z "$(filter $(ARCH),$(LINUX_ARCHS))" ]; then \
+		echo "Error: $(BOX_FILE) must set ARCH to one of: $(LINUX_ARCHS)"; \
+		exit 1; \
+	fi
+	@$(MAKE) --no-print-directory deploy-$(ARCH)
 
 .PHONY: deploy-%
 deploy-%:
-
-	@$(eval ARCH := $(subst deploy-,,$@))
-
-	@if [ ! -f .env ]; then \
-		echo "Error: .env file not found. Create one from .env.example"; \
+	@if [ -z "$(filter $*,$(LINUX_ARCHS))" ]; then \
+		echo "Error: $* is neither a deploy box nor an architecture. Boxes: $(or $(BOXES),none, see make boxes)"; \
 		exit 1; \
 	fi
-	@if [ -z "$(SFTP_HOST)" ] || [ -z "$(SFTP_PATH)" ] || [ -z "$(SFTP_USER)" ]; then \
-		echo "Error: SFTP_HOST, SFTP_USER and SFTP_PATH must be set in .env"; \
+	@if [ -n "$(BOX)" ] && [ "$(ARCH)" != "$*" ]; then \
+		echo "Error: box $(BOX) has ARCH=$(ARCH), not $*: run make deploy-$(BOX)"; \
 		exit 1; \
 	fi
-
+	@if [ -z "$(SFTP_HOST)" ] || [ -z "$(SFTP_PATH)" ]; then \
+		echo "Error: $(if $(BOX),$(BOX_FILE) must set SFTP_HOST and SFTP_PATH,no deploy target: run make deploy-<box> (make boxes lists them), or set SFTP_HOST and SFTP_PATH in .env)"; \
+		exit 1; \
+	fi
 	@$(MAKE) --no-print-directory build-ui
-	@$(MAKE) --no-print-directory $(ARCH)
-
-	@$(MAKE) --no-print-directory linux-$(ARCH)
-	@echo "Uploading to $(SFTP_USER)@$(SFTP_HOST):$(SFTP_PATH)/$(BINARY_NAME).new (b4 stays up; avoids ETXTBSY)..."
-	@if [ -n "$(SFTP_PASS)" ]; then \
-		echo "put $(OUT_DIR)/linux-$(ARCH)/$(BINARY_NAME) $(SFTP_PATH)/$(BINARY_NAME).new" | \
-			sshpass -p '$(SFTP_PASS)' sftp $(SSH_OPTS) -P $(SFTP_PORT) $(SFTP_USER)@$(SFTP_HOST) || exit 1; \
-	else \
-		echo "put $(OUT_DIR)/linux-$(ARCH)/$(BINARY_NAME) $(SFTP_PATH)/$(BINARY_NAME).new" | \
-			sftp $(SSH_OPTS) -P $(SFTP_PORT) $(SFTP_USER)@$(SFTP_HOST) || exit 1; \
-	fi
+	@$(MAKE) --no-print-directory linux-$*
+	@echo "Uploading to $(DEPLOY_DEST):$(SFTP_PATH)/$(BINARY_NAME).new (b4 stays up; avoids ETXTBSY)..."
+	@echo "put $(OUT_DIR)/linux-$*/$(BINARY_NAME) $(SFTP_PATH)/$(BINARY_NAME).new" | \
+		$(DEPLOY_SSHPASS) sftp $(SSH_OPTS) $(if $(SFTP_PORT),-P $(SFTP_PORT)) $(DEPLOY_DEST)
 	@echo "Swapping binary + restarting b4 (detached, survives the restart blip)..."
-	@if [ -n "$(SFTP_PASS)" ]; then \
-		sshpass -p '$(SFTP_PASS)' ssh $(SSH_OPTS) -p $(SFTP_PORT) $(SFTP_USER)@$(SFTP_HOST) \
-			'nohup sh -c "$(B4_RESTART_CMD) stop 2>/dev/null; sleep 1; mv -f $(SFTP_PATH)/$(BINARY_NAME).new $(SFTP_PATH)/$(BINARY_NAME); chmod +x $(SFTP_PATH)/$(BINARY_NAME); $(B4_RESTART_CMD) start" >/tmp/b4-deploy.log 2>&1 </dev/null &'; \
-	else \
-		ssh $(SSH_OPTS) -p $(SFTP_PORT) $(SFTP_USER)@$(SFTP_HOST) \
-			'nohup sh -c "$(B4_RESTART_CMD) stop 2>/dev/null; sleep 1; mv -f $(SFTP_PATH)/$(BINARY_NAME).new $(SFTP_PATH)/$(BINARY_NAME); chmod +x $(SFTP_PATH)/$(BINARY_NAME); $(B4_RESTART_CMD) start" >/tmp/b4-deploy.log 2>&1 </dev/null &'; \
-	fi
-	@echo "Deploy dispatched. b4 restarts on the router within a few seconds (see /tmp/b4-deploy.log)."
+	@$(DEPLOY_SSHPASS) ssh $(SSH_OPTS) $(if $(SFTP_PORT),-p $(SFTP_PORT)) $(DEPLOY_DEST) \
+		'nohup sh -c "$(B4_RESTART_CMD) stop 2>/dev/null; sleep 1; mv -f $(SFTP_PATH)/$(BINARY_NAME).new $(SFTP_PATH)/$(BINARY_NAME); chmod +x $(SFTP_PATH)/$(BINARY_NAME); $(B4_RESTART_CMD) start" >/tmp/b4-deploy.log 2>&1 </dev/null &'
+	@echo "Deploy dispatched. b4 restarts on $(or $(BOX),$(SFTP_HOST)) within a few seconds (see /tmp/b4-deploy.log)."
 
 # Show help
 .PHONY: help
@@ -364,7 +399,9 @@ help:
 	@printf "  %-25s %s\n" "make hub-keygen" "Create a development hub key under hub/data"
 	@printf "  %-25s %s\n" "make hub-run" "Run the hub service locally (HUB_LISTEN, default 0.0.0.0:7100)"
 	@printf "  %-25s %s\n" "make hub-mirror" "Run a child hub mirroring HUB_UPSTREAM on port 7101"
-	@printf "  %-25s %s\n" "make deploy-<arch>" "Build and upload via SFTP (requires .env)"
+	@printf "  %-25s %s\n" "make boxes" "List the deploy boxes, one $(BOXES_DIR)/<box>.env each"
+	@printf "  %-25s %s\n" "make deploy-<box>" "Build for the box's ARCH, upload via SFTP and restart b4 there$(if $(BOXES), ($(BOXES)))"
+	@printf "  %-25s %s\n" "make deploy-<arch>" "Same, to SFTP_HOST from .env or the command line"
 	@printf "  %-25s %s\n" "make help" "Show this help"
 	@echo ""
 	@echo "Architecture-specific builds:"
