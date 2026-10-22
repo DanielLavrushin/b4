@@ -272,6 +272,76 @@ func TestReplaceStrategyKeepsTheSetsUDPProtocolSelection(t *testing.T) {
 	}
 }
 
+func TestReplaceStrategyKeepsHowTheSetHandlesCalls(t *testing.T) {
+	voice := func(target *config.SetConfig) {
+		target.Targets.SNIDomains = nil
+		target.TCP.DPortFilter = ""
+		target.UDP.DPortFilter = "19294-19344,50000-50100"
+		target.UDP.FilterL7 = []string{config.UDPL7Discord, config.UDPL7STUN}
+	}
+	for _, c := range []struct {
+		name     string
+		l7       bool
+		strategy string
+		want     string
+	}{
+		{"a zero fill keeps the STUN fake of a set that handles only calls", true, "", config.FakePayloadAutoSTUN},
+		{"a generated QUIC Initial keeps it too", true, config.FakePayloadAutoQUIC, config.FakePayloadAutoSTUN},
+		{"a payload the strategy chose replaces it", true, config.FakePayloadPreset1, config.FakePayloadPreset1},
+		{"a set that handles calls like other UDP takes the zero fill", false, "", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			api, mux := replaceFixture(t, func(target *config.SetConfig) {
+				if c.l7 {
+					voice(target)
+				}
+				target.UDP.FilterSTUN = false
+				target.UDP.FakePayloadFile = config.FakePayloadAutoSTUN
+			})
+			strategy := discoveredStrategy()
+			strategy.UDP.Mode = config.UDPModeFake
+			strategy.UDP.FakePayloadFile = c.strategy
+			rec := replaceWith(t, mux, DiscoveryReplaceRequest{SetId: "set-a", Set: strategy, KeepTargets: true})
+			if rec.Code != http.StatusOK {
+				t.Fatalf("replace: %d (%s)", rec.Code, rec.Body.String())
+			}
+			got, _ := replaceSets(api)
+			if got.UDP.FilterSTUN {
+				t.Error("whether the set passes call setup belongs to the traffic it matches, not to the strategy, and must survive")
+			}
+			if got.UDP.FakePayloadFile != c.want {
+				t.Errorf("fake payload %q, want %q", got.UDP.FakePayloadFile, c.want)
+			}
+		})
+	}
+}
+
+func TestAPlainFixSetSavedWithCallsLikeOtherUDPHasTheSameStrategy(t *testing.T) {
+	plainFix := func(filterSTUN bool) config.SetConfig {
+		set := config.SetConfig{
+			TCP:           config.TCPConfig{ConnBytesLimit: 19},
+			UDP:           config.UDPConfig{Mode: config.ConfigOff, FilterSTUN: filterSTUN},
+			Fragmentation: config.FragmentationConfig{Strategy: config.ConfigNone},
+			Faking:        config.FakingConfig{SNI: false},
+		}
+		config.ApplySetDefaults(&set)
+		return set
+	}
+	existing := plainFix(false)
+	existing.Id, existing.Name, existing.Enabled = "old", "dns-redirect", true
+	existing.Targets.SNIDomains = []string{"example.com"}
+	existing.Targets.DomainsToMatch = []string{"example.com"}
+	api, _ := discoveryAPI(t, &existing)
+
+	found := plainFix(true)
+	if !setsHaveSimilarConfig(&existing, &found) {
+		t.Error("whether the set passes call setup belongs to the traffic it matches, so a plain-fix set from 1.87, saved with it off, must still match the same plain fix found now")
+	}
+	if got := api.setCoveringDomainWith("example.com", &found); got == nil || got.Id != "old" {
+		t.Error("the plain-fix set that already covers example.com must be found, or applying the result adds a second set with the same strategy")
+	}
+}
+
 func discoveryAPI(t *testing.T, sets ...*config.SetConfig) (*API, *http.ServeMux) {
 	t.Helper()
 	cfg := config.NewConfig()

@@ -1553,7 +1553,7 @@ func baselineConfig() config.SetConfig {
 			FakeLen:        0,
 			FakingStrategy: "none",
 			FilterQUIC:     "sni",
-			FilterSTUN:     false,
+			FilterSTUN:     true,
 			ConnBytesLimit: 8,
 		},
 		Fragmentation: config.FragmentationConfig{
