@@ -604,23 +604,24 @@ func (l Logging) UpdateLogPath() string {
 }
 
 type SetConfig struct {
-	Id            string              `json:"id" mcp:"deny"`
-	Name          string              `json:"name"`
-	TCP           TCPConfig           `json:"tcp"`
-	UDP           UDPConfig           `json:"udp"`
-	Fragmentation FragmentationConfig `json:"fragmentation"`
-	Faking        FakingConfig        `json:"faking"`
-	Targets       TargetsConfig       `json:"targets"`
-	Enabled       bool                `json:"enabled"`
-	DNS           DNSConfig           `json:"dns"`
-	TCPPortRanges []PortRange         `json:"-"`
-	UDPPortRanges []PortRange         `json:"-"`
-	Routing       RoutingConfig       `json:"routing"`
-	Escalate      EscalateConfig      `json:"escalate"`
-	MSSClamp      MSSClampConfig      `json:"mss_clamp"`
-	DSCP          SetDSCPConfig       `json:"dscp" mcp:"deny"`
-	Discovery     SetDiscoveryConfig  `json:"discovery" mcp:"deny"`
-	Hub           *HubOrigin          `json:"hub,omitempty" mcp:"deny"`
+	Id             string              `json:"id" mcp:"deny"`
+	Name           string              `json:"name"`
+	TCP            TCPConfig           `json:"tcp"`
+	UDP            UDPConfig           `json:"udp"`
+	Fragmentation  FragmentationConfig `json:"fragmentation"`
+	Faking         FakingConfig        `json:"faking"`
+	Targets        TargetsConfig       `json:"targets"`
+	Enabled        bool                `json:"enabled"`
+	DNS            DNSConfig           `json:"dns"`
+	TCPPortRanges  []PortRange         `json:"-"`
+	UDPPortRanges  []PortRange         `json:"-"`
+	UDPL7OnlyPorts []PortRange         `json:"-"`
+	Routing        RoutingConfig       `json:"routing"`
+	Escalate       EscalateConfig      `json:"escalate"`
+	MSSClamp       MSSClampConfig      `json:"mss_clamp"`
+	DSCP           SetDSCPConfig       `json:"dscp" mcp:"deny"`
+	Discovery      SetDiscoveryConfig  `json:"discovery" mcp:"deny"`
+	Hub            *HubOrigin          `json:"hub,omitempty" mcp:"deny"`
 }
 
 type SetDiscoveryConfig struct {

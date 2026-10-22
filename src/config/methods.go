@@ -760,9 +760,13 @@ func (set *SetConfig) MatchesTCPDPort(port uint16) bool {
 
 func (set *SetConfig) MatchesUDPDPort(port uint16) bool {
 	if len(set.UDPPortRanges) == 0 {
-		return true
+		return !portInRanges(set.UDPL7OnlyPorts, port)
 	}
-	for _, r := range set.UDPPortRanges {
+	return portInRanges(set.UDPPortRanges, port)
+}
+
+func portInRanges(ranges []PortRange, port uint16) bool {
+	for _, r := range ranges {
 		if port >= r.Min && port <= r.Max {
 			return true
 		}
@@ -787,10 +791,50 @@ func (set *SetConfig) SelectsL7Class(class string) bool {
 }
 
 func (cfg *Config) BuildSetPortRanges() {
+	var selected, listed []PortRange
 	for _, set := range cfg.Sets {
 		set.TCPPortRanges = ParsePortRanges(set.TCP.DPortFilter)
 		set.UDPPortRanges = ParsePortRanges(set.UDP.DPortFilter)
+		if !set.Enabled {
+			continue
+		}
+		if set.SelectsL7() {
+			selected = append(selected, set.UDPPortRanges...)
+		} else {
+			listed = append(listed, set.UDPPortRanges...)
+		}
 	}
+	l7Only := subtractPortRanges(selected, append(listed, PortRange{Min: 443, Max: 443}))
+	for _, set := range cfg.Sets {
+		set.UDPL7OnlyPorts = nil
+		if !set.SelectsL7() && len(set.UDPPortRanges) == 0 {
+			set.UDPL7OnlyPorts = l7Only
+		}
+	}
+}
+
+func subtractPortRanges(from, minus []PortRange) []PortRange {
+	if len(from) == 0 {
+		return nil
+	}
+	out := append([]PortRange(nil), from...)
+	for _, m := range minus {
+		var next []PortRange
+		for _, r := range out {
+			if m.Max < r.Min || m.Min > r.Max {
+				next = append(next, r)
+				continue
+			}
+			if r.Min < m.Min {
+				next = append(next, PortRange{Min: r.Min, Max: m.Min - 1})
+			}
+			if r.Max > m.Max {
+				next = append(next, PortRange{Min: m.Max + 1, Max: r.Max})
+			}
+		}
+		out = next
+	}
+	return out
 }
 
 func ParsePortRanges(filter string) []PortRange {

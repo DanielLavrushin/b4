@@ -91,7 +91,7 @@ func BuildFakeUDPFromOriginalV6(orig []byte, fakeLen int, hopLimit uint8, payloa
 
 	copy(out, orig[:ipv6HdrLen])
 
-	out[7] = hopLimit
+	out[7] = fakeTTLOrDefault(hopLimit)
 
 	binary.BigEndian.PutUint16(out[4:6], uint16(8+fakeLen))
 

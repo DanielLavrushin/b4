@@ -62,6 +62,7 @@ type Worker struct {
 	pendingHello     *pendingHelloCache
 	hostHints        *hostHintCache
 	quicFlows        *quicFlowCache
+	voiceFlows       *voiceFlowCache
 	direction        *queueDirectionState
 	flowDrops        *flowDropPersistence
 	ipHealth         *iphealth.Tracker

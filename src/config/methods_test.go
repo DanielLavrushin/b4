@@ -979,6 +979,65 @@ func TestMatchesUDPDPort(t *testing.T) {
 	})
 }
 
+func TestASetWithoutAUDPPortFilterSkipsPortsQueuedOnlyForProtocolSelection(t *testing.T) {
+	newSet := func(id, ports string, l7 ...string) *SetConfig {
+		set := NewSetConfig()
+		set.Id, set.Enabled = id, true
+		set.UDP.DPortFilter = ports
+		set.UDP.FilterL7 = l7
+		return &set
+	}
+	address := newSet("address", "")
+	voice := newSet("voice", "443,19294-19344,50000-50100", UDPL7Discord)
+	listed := newSet("listed", "19300,50050-50060")
+	disabled := newSet("disabled", "3478", UDPL7STUN)
+	disabled.Enabled = false
+	explicit := newSet("explicit", "50001-50002")
+	retired := newSet("retired", "19310,50070")
+	retired.Enabled = false
+
+	cfg := NewConfig()
+	cfg.Sets = []*SetConfig{address, voice, listed, disabled, explicit, retired}
+	cfg.BuildSetPortRanges()
+
+	for port, want := range map[uint16]bool{
+		443:   true,
+		19294: false,
+		19299: false,
+		19300: true,
+		19301: false,
+		19310: false,
+		50070: false,
+		19344: false,
+		19345: true,
+		50000: false,
+		50001: true,
+		50003: false,
+		50050: true,
+		50060: true,
+		50061: false,
+		50100: false,
+		3478:  true,
+		53000: true,
+	} {
+		if got := address.MatchesUDPDPort(port); got != want {
+			t.Errorf("port %d: the set without a UDP port filter matches=%v, want %v", port, got, want)
+		}
+	}
+	if !explicit.MatchesUDPDPort(50001) || explicit.MatchesUDPDPort(19305) {
+		t.Error("a set with an explicit UDP port list keeps matching exactly its own ports")
+	}
+	if len(voice.UDPL7OnlyPorts) != 0 {
+		t.Errorf("the protocol-selection set itself gets no skipped ports, got %v", voice.UDPL7OnlyPorts)
+	}
+
+	voice.Enabled = false
+	cfg.BuildSetPortRanges()
+	if !address.MatchesUDPDPort(19305) {
+		t.Error("with no enabled protocol-selection set a set without a UDP port filter matches every port")
+	}
+}
+
 func TestHasIPOrDomainTargets(t *testing.T) {
 	t.Run("no targets", func(t *testing.T) {
 		set := &SetConfig{}

@@ -351,6 +351,30 @@ func (s *SuffixSet) MatchUDPL7(dport uint16, srcMAC, class string, ipVersion uin
 	return false, nil
 }
 
+func (s *SuffixSet) SelectsUDPL7() bool {
+	return s != nil && len(s.udpL7Ranges) > 0
+}
+
+func (s *SuffixSet) UDPL7Owner(id string, dport uint16, srcMAC string, ipVersion uint8, keep ...SetFilter) *config.SetConfig {
+	if s == nil || id == "" {
+		return nil
+	}
+
+	port := int(dport)
+	keepSet := joinFilters(keep)
+
+	for _, r := range s.udpL7Ranges {
+		if r.set.Id != id || port < r.min || port > r.max {
+			continue
+		}
+		if r.set.MatchesIPVersion(ipVersion) && setMatchesSource(r.set, srcMAC) && keepSet.Keeps(r.set) {
+			return r.set
+		}
+	}
+
+	return nil
+}
+
 func (s *SuffixSet) MatchTCPPort(dport uint16, srcMAC string, keep ...SetFilter) (bool, *config.SetConfig) {
 	if s == nil || len(s.tcpPortRanges) == 0 {
 		return false, nil

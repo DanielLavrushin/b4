@@ -88,6 +88,7 @@ func NewPool(cfg *config.Config) *Pool {
 		w.pendingHello = state.pendingHello
 		w.hostHints = state.hostHints
 		w.quicFlows = state.quicFlows
+		w.voiceFlows = state.voiceFlows
 		w.direction = state.direction
 		w.flowDrops = state.flowDrops
 		w.ipHealth = state.ipHealth
@@ -139,6 +140,7 @@ func NewPool(cfg *config.Config) *Pool {
 				pool.state.destState.Cleanup(retest)
 				pool.state.hostHints.Cleanup()
 				pool.state.quicFlows.Cleanup()
+				pool.state.voiceFlows.Cleanup()
 				pool.state.ipHealth.Cleanup(retest)
 				pool.state.goodIPs.Cleanup()
 				if pool.state.pinHealth.due(retest) {

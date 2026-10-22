@@ -935,6 +935,11 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	keep := w.blockScope(vc, pkt, matcher)
+	voiceSet := w.voiceFlowSet(matcher, connKey, pkt, dport, keep)
+	if voiceSet != nil && !voiceSet.SelectsL7Class(udpL7Class(payload)) {
+		return w.passVoiceFlow(vc, pkt, cfg, voiceSet, sport, dport)
+	}
+
 	matchedIP := st != nil
 	matchedQUIC := false
 	matchedLearned := false
@@ -1037,18 +1042,25 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	matchedL7 := false
-	if class := udpL7Class(payload); class != "" {
-		if l7Matched, l7Set := matcher.MatchUDPL7(dport, pkt.srcMac, class, pkt.ver, keep); l7Matched {
-			matchedL7 = true
-			matchedIP = false
-			matchedQUIC = false
-			matchedFlow = false
-			matchedPort = false
-			matchedLearned = false
-			set = l7Set
-			sniTarget = ""
-			ipTarget = l7Set.Name
+	l7Set := voiceSet
+	if l7Set == nil {
+		if class := udpL7Class(payload); class != "" {
+			if l7Matched, selected := matcher.MatchUDPL7(dport, pkt.srcMac, class, pkt.ver, keep); l7Matched {
+				l7Set = selected
+				w.voiceFlows.Store(connKey, selected.Id)
+			}
 		}
+	}
+	if l7Set != nil {
+		matchedL7 = true
+		matchedIP = false
+		matchedQUIC = false
+		matchedFlow = false
+		matchedPort = false
+		matchedLearned = false
+		set = l7Set
+		sniTarget = ""
+		ipTarget = l7Set.Name
 	}
 
 	anyMatch := matchedIP || matchedQUIC || matchedFlow || matchedPort || matchedL7
@@ -1108,30 +1120,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
 		if matchedQUIC || matchedFlow || (matchedIP && !matchedLearned) || matchedL7 {
-			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
-				if pkt.ver == IPv4 {
-					if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
-						_ = w.clientSender().SendIPv4(icmp, pkt.src)
-					}
-				} else {
-					if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
-						_ = w.clientSender().SendIPv6(icmp, pkt.src)
-					}
-				}
-			}
-			if !cfg.Queue.IsDiscovery {
-				log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, "block")
-				blockedTarget := host
-				if blockedTarget == "" {
-					blockedTarget = pkt.dstStr
-				}
-				recordBlockedFlow(cfg, pkt, sport, dport, set, blockedTarget)
-			}
-			vc.drop()
-			if quicFlow {
-				vc.dropFlow()
-			}
-			return 0
+			return w.blockUDP(vc, pkt, cfg, set, sport, dport, sniTarget, host, ipTarget, udpTLS, quicFlow)
 		}
 		return vc.accept()
 	}
@@ -1201,6 +1190,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return 0
 
 	case "fake":
+		if voiceSet != nil {
+			return vc.accept()
+		}
 		if !config.RoutingUsesTProxy(set.RoutingModeOrDefault()) && set.RoutingHandsOffPackets() {
 			return vc.accept()
 		}
@@ -1238,6 +1230,33 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	default:
 		return vc.accept()
 	}
+}
+
+func (w *Worker) blockUDP(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig, sport, dport uint16, sniTarget, host, ipTarget, udpTLS string, quicFlow bool) int {
+	if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
+		if pkt.ver == IPv4 {
+			if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
+				_ = w.clientSender().SendIPv4(icmp, pkt.src)
+			}
+		} else {
+			if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
+				_ = w.clientSender().SendIPv6(icmp, pkt.src)
+			}
+		}
+	}
+	if !cfg.Queue.IsDiscovery {
+		log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, "block")
+		blockedTarget := host
+		if blockedTarget == "" {
+			blockedTarget = pkt.dstStr
+		}
+		recordBlockedFlow(cfg, pkt, sport, dport, set, blockedTarget)
+	}
+	vc.drop()
+	if quicFlow {
+		vc.dropFlow()
+	}
+	return 0
 }
 
 func (w *Worker) handleNfqError(e error) int {
