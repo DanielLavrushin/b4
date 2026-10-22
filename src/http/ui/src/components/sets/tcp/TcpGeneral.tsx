@@ -1,5 +1,5 @@
 import { Grid } from "@mui/material";
-import { B4SetConfig, MSSClampConfig, QueueConfig } from "@models/config";
+import { B4SetConfig, MSSClampConfig } from "@models/config";
 import {
   B4Slider,
   B4RangeSlider,
@@ -14,14 +14,13 @@ import { Trans, useTranslation } from "react-i18next";
 
 interface TcpGeneralProps {
   config: B4SetConfig;
-  queue: QueueConfig;
   onChange: (
     field: string,
     value: string | number | boolean | number[],
   ) => void;
 }
 
-export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
+export const TcpGeneral = ({ config, onChange }: TcpGeneralProps) => {
   const { t } = useTranslation();
   const dup = config.tcp.duplicate ?? { enabled: false, count: 3 };
   const ibd = {
@@ -62,23 +61,6 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
   return (
     <>
       <Grid container spacing={3} sx={{ mt: 1, mb: 3 }}>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Slider
-            label={t("sets.tcp.general.connPacketsLimit")}
-            value={config.tcp.conn_bytes_limit}
-            onChange={(value: number) =>
-              onChange("tcp.conn_bytes_limit", value)
-            }
-            min={1}
-            max={queue.tcp_conn_bytes_limit}
-            step={1}
-            helperText={t("sets.tcp.general.connPacketsMax", {
-              max: queue.tcp_conn_bytes_limit,
-            })}
-            aiTopic="tcp.conn_bytes_limit"
-            aiContext={{ queue_max: queue.tcp_conn_bytes_limit }}
-          />
-        </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4RangeSlider
             label={t("sets.tcp.general.seg2delay")}

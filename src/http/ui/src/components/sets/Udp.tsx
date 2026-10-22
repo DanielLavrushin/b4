@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Autocomplete, Grid, Stack, Typography } from "@mui/material";
+import { Button, Grid } from "@mui/material";
 import { Link } from "react-router";
 import { DnsIcon, WarningIcon } from "@b4.icons";
 import {
@@ -12,12 +12,9 @@ import {
   B4Alert,
   B4FormHeader,
   B4Hint,
-  B4Badge,
 } from "@b4.elements";
-import { colors } from "@design";
 import {
   B4SetConfig,
-  QueueConfig,
   UdpMode,
   UDP_FAKE_PAYLOAD_AUTO_QUIC,
   UDP_FAKE_PAYLOAD_AUTO_STUN,
@@ -26,18 +23,35 @@ import {
 } from "@models/config";
 import { useCaptures } from "@b4.capture";
 import { useTranslation, Trans } from "react-i18next";
-import { UDP_L7_CLASSES, udpL7Class, udpL7Label } from "./udpL7";
+import {
+  CallsSession,
+  DISCORD_CALL_PORTS,
+  UDP_L7_CLASSES,
+  callsModeOf,
+  classesFor,
+  isCallsWhich,
+  normalizeUdpL7,
+  whichOf,
+} from "./udpL7";
+
+const UNKNOWN_WHICH = "unknown";
 
 interface UdpSettingsProps {
   config: B4SetConfig;
-  queue: QueueConfig;
+  callsSession: CallsSession;
+  onCallsSessionChange: (session: CallsSession) => void;
   onChange: (
     field: string,
-    value: string | boolean | number | string[],
+    value: string | boolean | number | string[] | undefined,
   ) => void;
 }
 
-export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
+export const UdpSettings = ({
+  config,
+  callsSession,
+  onCallsSessionChange,
+  onChange,
+}: UdpSettingsProps) => {
   const { t } = useTranslation();
   const { captures, loadCaptures } = useCaptures();
 
@@ -113,8 +127,8 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
     (config.targets?.geoip_categories?.length ?? 0) > 0 ||
     (config.targets?.asns?.length ?? 0) > 0;
 
-  const hasNonDomainTargets =
-    hasIPTargets || (config.udp.dport_filter ?? "").trim() !== "";
+  const hasUdpPortFilter = (config.udp.dport_filter ?? "").trim() !== "";
+  const hasNonDomainTargets = hasIPTargets || hasUdpPortFilter;
 
   const isPassthrough = config.udp.mode === "off";
   const blockQuic =
@@ -130,18 +144,109 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
     onChange("udp.mode", "fake");
   };
 
-  const filterL7 = config.udp.filter_l7 ?? [];
-  const selectsL7 = filterL7.length > 0;
   const hasDestinationTargets = hasDomainsConfigured || hasIPTargets;
   const hasTcpPortFilter = (config.tcp.dport_filter ?? "").trim() !== "";
-  const changeL7 = (next: string[]) => {
-    onChange("udp.filter_l7", next);
-    const zeroFill = (config.udp.fake_payload_file ?? "") === "";
-    if (next.length > 0 && !selectsL7 && zeroFill) {
-      onChange("udp.fake_payload_file", UDP_FAKE_PAYLOAD_AUTO_STUN);
+
+  const l7 = normalizeUdpL7(config.udp.filter_l7);
+  const calls = callsModeOf(config.udp);
+  const onlyCalls = calls === "only";
+  const which = whichOf(l7);
+  const whichValue = which ?? UNKNOWN_WHICH;
+  const onlyLocked = hasDestinationTargets && !onlyCalls;
+  const blocksCalls =
+    config.udp.mode === "drop" ||
+    config.udp.mode === "reject" ||
+    (!!config.routing?.enabled && config.routing.mode === "block");
+  const showLeftHint =
+    !!callsSession.left &&
+    !onlyCalls &&
+    !hasDestinationTargets &&
+    hasUdpPortFilter;
+
+  const UDP_CALLS = [
+    {
+      value: "pass",
+      label: t("sets.udp.callsPass"),
+      note: t("sets.udp.callsPassNote"),
+      description: t("sets.udp.callsPassDesc"),
+    },
+    {
+      value: "only",
+      label: t("sets.udp.callsOnly"),
+      note: t(
+        onlyLocked
+          ? "sets.udp.callsOnlyNeedsNoTargets"
+          : "sets.udp.callsOnlyNote",
+      ),
+      description: t("sets.udp.callsOnlyDesc"),
+      disabled: onlyLocked,
+    },
+    {
+      value: "udp",
+      label: t("sets.udp.callsAsUdp"),
+      note: t("sets.udp.callsAsUdpNote"),
+      description: t("sets.udp.callsAsUdpDesc"),
+    },
+  ];
+
+  const UDP_CALLS_WHICH = [
+    {
+      value: "all",
+      label: t("sets.udp.callsWhichAll"),
+      description: t("sets.udp.callsWhichAllDesc"),
+    },
+    ...UDP_L7_CLASSES.map((entry) => ({
+      value: entry.value,
+      label: t(entry.labelKey),
+      description: t(entry.descriptionKey),
+    })),
+    ...(onlyCalls && !which
+      ? [
+          {
+            value: UNKNOWN_WHICH,
+            label: l7.join(", "),
+            description: t("sets.udp.callsWhichUnknownDesc"),
+          },
+        ]
+      : []),
+  ];
+
+  const changeCalls = (next: string) => {
+    if (next === calls) return;
+    if (next === "only") {
+      onChange("udp.filter_l7", classesFor(callsSession.which ?? "all"));
+      onChange("udp.filter_stun", true);
+      const payload = config.udp.fake_payload_file ?? "";
+      const autoStun = payload === "" || payload === UDP_FAKE_PAYLOAD_AUTO_QUIC;
+      if (autoStun) {
+        onChange("udp.fake_payload_file", UDP_FAKE_PAYLOAD_AUTO_STUN);
+      }
+      onCallsSessionChange({
+        ...callsSession,
+        payload: autoStun ? payload : undefined,
+      });
+      return;
     }
+    if (next !== "pass" && next !== "udp") return;
+    if ((config.udp.filter_l7 ?? []).length > 0) {
+      onChange("udp.filter_l7", undefined);
+    }
+    onChange("udp.filter_stun", next === "pass");
+    if (!onlyCalls) return;
+    if (
+      callsSession.payload !== undefined &&
+      config.udp.fake_payload_file === UDP_FAKE_PAYLOAD_AUTO_STUN
+    ) {
+      onChange("udp.fake_payload_file", callsSession.payload);
+    }
+    onCallsSessionChange({ which: callsSession.which ?? which, left: true });
   };
-  const l7Label = (value: string) => udpL7Label(t, value);
+
+  const changeWhich = (next: string) => {
+    if (!isCallsWhich(next)) return;
+    onChange("udp.filter_l7", classesFor(next));
+    onCallsSessionChange({ ...callsSession, which: next });
+  };
 
   const showFakeSettings = config.udp.mode === "fake";
   const isAutoQuic =
@@ -166,6 +271,7 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
   );
 
   const showSniWarning =
+    !onlyCalls &&
     !isPassthrough &&
     config.udp.filter_quic === "sni" &&
     !hasDomainsConfigured &&
@@ -178,37 +284,43 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
       icon={<DnsIcon />}
     >
       <Grid container spacing={3}>
-        <B4FormHeader label={t("sets.udp.blockHeader")} />
+        {!onlyCalls && (
+          <>
+            <B4FormHeader label={t("sets.udp.blockHeader")} />
 
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Switch
-            label={t("sets.udp.blockQuic")}
-            checked={blockQuic}
-            onChange={toggleBlockQuic}
-            description={t("sets.udp.blockQuicDesc")}
-          />
-        </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Switch
+                label={t("sets.udp.blockQuic")}
+                checked={blockQuic}
+                onChange={toggleBlockQuic}
+                description={t("sets.udp.blockQuicDesc")}
+              />
+            </Grid>
 
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Hint>
-            <Trans i18nKey="sets.udp.blockQuicInfo" />
-          </B4Hint>
-        </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Hint>
+                <Trans i18nKey="sets.udp.blockQuicInfo" />
+              </B4Hint>
+            </Grid>
+          </>
+        )}
 
         <B4FormHeader label={t("sets.udp.trafficHeader")} />
 
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Select
-            label={t("sets.udp.quicFilter")}
-            value={config.udp.filter_quic}
-            options={UDP_QUIC_FILTERS}
-            onChange={(e) => onChange("udp.filter_quic", e.target.value)}
-            helperText={
-              UDP_QUIC_FILTERS.find((o) => o.value === config.udp.filter_quic)
-                ?.description
-            }
-          />
-        </Grid>
+        {!onlyCalls && (
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4Select
+              label={t("sets.udp.quicFilter")}
+              value={config.udp.filter_quic}
+              options={UDP_QUIC_FILTERS}
+              onChange={(e) => onChange("udp.filter_quic", e.target.value)}
+              helperText={
+                UDP_QUIC_FILTERS.find((o) => o.value === config.udp.filter_quic)
+                  ?.description
+              }
+            />
+          </Grid>
+        )}
 
         <Grid size={{ xs: 12, md: 6 }}>
           <B4TextField
@@ -216,107 +328,92 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
             value={config.udp.dport_filter}
             onChange={(e) => onChange("udp.dport_filter", e.target.value)}
             placeholder={t("sets.udp.portFilterPlaceholder")}
-            helperText={t("sets.udp.portFilterHelper")}
-          />
-        </Grid>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Switch
-            label={t("sets.udp.filterStun")}
-            checked={config.udp.filter_stun}
-            onChange={(checked) => onChange("udp.filter_stun", checked)}
-            description={t(
-              selectsL7
-                ? "sets.udp.filterStunL7Desc"
-                : "sets.udp.filterStunDesc",
+            helperText={t(
+              onlyCalls
+                ? "sets.udp.portFilterCallsHelper"
+                : "sets.udp.portFilterHelper",
             )}
-            disabled={selectsL7}
           />
         </Grid>
+        {onlyCalls && (
+          <Grid
+            size={{ xs: 12, md: 6 }}
+            sx={{ display: { xs: "none", md: "block" } }}
+          />
+        )}
 
         <Grid size={{ xs: 12, md: 6 }}>
-          <Autocomplete
-            multiple
-            disableCloseOnSelect
-            size="small"
-            options={UDP_L7_CLASSES.map((entry) => entry.value)}
-            value={filterL7}
-            onChange={(_, next) => changeL7(next)}
-            getOptionLabel={l7Label}
-            renderOption={(props, value) => {
-              const { key, ...optionProps } = props;
-              const entry = udpL7Class(value);
-              return (
-                <li key={key} {...optionProps}>
-                  <Stack>
-                    <Typography variant="body2">{l7Label(value)}</Typography>
-                    {entry && (
-                      <Typography
-                        variant="caption"
-                        sx={{ color: colors.text.secondary }}
-                      >
-                        {t(entry.descriptionKey)}
-                      </Typography>
-                    )}
-                  </Stack>
-                </li>
-              );
-            }}
-            renderInput={(params) => (
-              <B4TextField
-                {...params}
-                label={t("sets.udp.filterL7")}
-                helperText={t("sets.udp.filterL7Helper")}
-              />
-            )}
-            renderValue={(selected, getItemProps) =>
-              selected.map((value, index) => {
-                const { key, ...itemProps } = getItemProps({ index });
-                return (
-                  <B4Badge
-                    key={key}
-                    {...itemProps}
-                    label={l7Label(value)}
-                    size="small"
-                    sx={{
-                      bgcolor: colors.accent.secondary,
-                      border: `1px solid ${colors.secondary}`,
-                    }}
-                  />
-                );
-              })
-            }
+          <B4Select
+            label={t("sets.udp.calls")}
+            value={calls}
+            options={UDP_CALLS}
+            onChange={(e) => changeCalls(String(e.target.value))}
+            helperText={UDP_CALLS.find((o) => o.value === calls)?.description}
           />
         </Grid>
+        <Grid
+          size={{ xs: 12, md: 6 }}
+          sx={{ display: { xs: onlyCalls ? "block" : "none", md: "block" } }}
+        >
+          {onlyCalls && (
+            <B4Select
+              label={t("sets.udp.callsWhich")}
+              value={whichValue}
+              options={UDP_CALLS_WHICH}
+              onChange={(e) => changeWhich(String(e.target.value))}
+              helperText={
+                UDP_CALLS_WHICH.find((o) => o.value === whichValue)
+                  ?.description
+              }
+            />
+          )}
+        </Grid>
 
-        {selectsL7 && hasDestinationTargets && (
+        {onlyCalls && hasDestinationTargets && (
           <B4Alert severity="warning" icon={<WarningIcon />}>
             <Trans i18nKey="sets.udp.filterL7TargetsWarning" />
           </B4Alert>
         )}
-        {selectsL7 && (config.udp.dport_filter ?? "").trim() === "" && (
-          <B4Alert severity="warning" icon={<WarningIcon />}>
+        {onlyCalls && !hasUdpPortFilter && (
+          <B4Alert
+            severity="warning"
+            icon={<WarningIcon />}
+            sx={{
+              flexWrap: { xs: "wrap", lg: "nowrap" },
+              "& .MuiAlert-message": { flex: { xs: "1 1 0", lg: "0 1 auto" } },
+              "& .MuiAlert-action": {
+                width: { xs: "100%", lg: "auto" },
+                justifyContent: "flex-end",
+                pl: { xs: 0, lg: 2 },
+              },
+            }}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                sx={{ whiteSpace: "nowrap" }}
+                onClick={() => onChange("udp.dport_filter", DISCORD_CALL_PORTS)}
+              >
+                {t("sets.udp.callsUseDiscordPorts")}
+              </Button>
+            }
+          >
             <Trans i18nKey="sets.udp.filterL7PortsWarning" />
           </B4Alert>
         )}
-        {selectsL7 && hasTcpPortFilter && (
+        {onlyCalls && hasTcpPortFilter && (
           <B4Alert severity="warning" icon={<WarningIcon />}>
             <Trans i18nKey="sets.udp.filterL7TcpPortsWarning" />
           </B4Alert>
         )}
-
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Slider
-            label={t("sets.udp.connPacketsLimit")}
-            value={config.udp.conn_bytes_limit}
-            onChange={(value) => onChange("udp.conn_bytes_limit", value)}
-            min={1}
-            max={queue.udp_conn_bytes_limit}
-            step={1}
-            helperText={t("sets.udp.connPacketsMax", {
-              max: queue.udp_conn_bytes_limit,
-            })}
-          />
-        </Grid>
+        {onlyCalls && blocksCalls && (
+          <B4Alert severity="warning" icon={<WarningIcon />}>
+            <Trans i18nKey="sets.udp.callsBlockWarning" />
+          </B4Alert>
+        )}
+        {showLeftHint && (
+          <B4Alert severity="info">{t("sets.udp.callsLeftHint")}</B4Alert>
+        )}
 
         {showSniWarning && (
           <B4Alert severity="warning" icon={<WarningIcon />}>

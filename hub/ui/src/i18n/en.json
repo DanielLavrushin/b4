@@ -144,7 +144,7 @@
     "domainOnlyHint": "Match the domains only by the name in the handshake, never by their IP address.",
     "clear": "Clear",
     "targetsLocked": "The full set JSON is not valid, so the target fields are locked: {{message}}",
-    "noTargets": "The set has no targets. Add a domain, an address, an ASN or a category: a set without targets cannot be saved unless it selects UDP traffic by protocol.",
+    "noTargets": "The set has no targets. Add a domain, an address, an ASN or a category: a set without targets cannot be saved unless it handles only calls.",
     "showJson": "Show the full set JSON",
     "hideJson": "Hide the full set JSON",
     "json": "Full set JSON",
@@ -213,9 +213,9 @@
     "fieldErrors": {
       "asn_invalid": "{{value}} is not a public AS number",
       "mss_clamp_scope_required": "MSS clamping needs an address, GeoIP or ASN target",
-      "udp_l7_targets": "A set that selects UDP traffic by protocol cannot also have domain, address, ASN or category targets",
-      "udp_l7_ports": "A set that selects UDP traffic by protocol needs a UDP port filter",
-      "udp_l7_tcp_ports": "A set that selects UDP traffic by protocol and has no targets takes no TCP port filter: it would act on every TCP connection on those ports"
+      "udp_l7_targets": "A set that handles only calls cannot also have domain, address, ASN or category targets",
+      "udp_l7_ports": "A set that handles only calls needs a UDP port filter",
+      "udp_l7_tcp_ports": "A set that handles only calls and has no targets takes no TCP port filter: it would act on every TCP connection on those ports"
     },
     "emptyValue": "(empty)",
     "strippedReasons": {
@@ -272,7 +272,10 @@
         "ipVersion": "IP ver",
         "tcpPorts": "TCP ports",
         "udpPorts": "UDP ports",
-        "udpL7": "UDP protocols",
+        "udpL7": "Calls",
+        "udpL7Discord": "Discord app",
+        "udpL7Stun": "Browsers",
+        "callsAsUdp": "Handled like other UDP",
         "strategy": "Strategy",
         "order": "Order",
         "inOrder": "in order",

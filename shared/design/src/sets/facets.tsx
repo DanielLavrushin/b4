@@ -19,7 +19,7 @@ export interface FacetStats {
 
 export interface FacetSetConfig {
   tcp?: { dport_filter: string };
-  udp?: { dport_filter: string; filter_l7?: string[] };
+  udp?: { dport_filter: string; filter_l7?: string[]; filter_stun?: boolean };
   fragmentation: {
     strategy: string;
     reverse_order: boolean;
@@ -212,6 +212,20 @@ export const resolveRoutingMode = (
 
 const udpL7 = (set: FacetSetConfig): string[] => set.udp?.filter_l7 ?? [];
 
+const udpL7Label = (t: FacetTranslate, value: string): string => {
+  switch (value) {
+    case "discord":
+      return t(F("udpL7Discord"));
+    case "stun":
+      return t(F("udpL7Stun"));
+    default:
+      return value;
+  }
+};
+
+const udpL7Text = (t: FacetTranslate, classes: string[]): string =>
+  classes.map((value) => udpL7Label(t, value)).join(", ");
+
 const targetRows = (
   set: FacetSetConfig,
   stats: FacetStats | undefined,
@@ -287,7 +301,9 @@ const targetRows = (
   }
   const l7 = udpL7(set);
   if (l7.length > 0) {
-    rows.push({ label: t(F("udpL7")), value: l7.join(", ") });
+    rows.push({ label: t(F("udpL7")), value: udpL7Text(t, l7) });
+  } else if (set.udp?.filter_stun === false) {
+    rows.push({ label: t(F("udpL7")), value: t(F("callsAsUdp")) });
   }
   return rows;
 };
@@ -568,7 +584,10 @@ export const buildSetFacets = (
       label: t(F("target")),
       color: FACET_COLORS.target,
       icon: <DomainIcon />,
-      active: hasTargets(set) || udpL7(set).length > 0,
+      active:
+        hasTargets(set) ||
+        udpL7(set).length > 0 ||
+        set.udp?.filter_stun === false,
       rows: targetRows(set, stats, t),
       section: FACET_SECTIONS.target,
     },
@@ -635,7 +654,9 @@ export const buildTargetSummary = (
   ];
   if (named.length === 0) {
     const l7 = udpL7(set);
-    return l7.length > 0 ? `UDP: ${l7.join(", ")}` : t("sets.card.noTargets");
+    return l7.length > 0
+      ? `${t(F("udpL7"))}: ${udpL7Text(t, l7)}`
+      : t("sets.card.noTargets");
   }
 
   const parts: string[] = [];

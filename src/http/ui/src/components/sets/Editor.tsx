@@ -38,6 +38,7 @@ import { RoutingSettings } from "./Routing";
 import { TargetSettings } from "./Target";
 import { TcpTabContainer } from "./tcp/TcpTabContainer";
 import { UdpSettings } from "./Udp";
+import { CallsSession } from "./udpL7";
 import { useTranslation } from "react-i18next";
 
 const EDITOR_TAB_INDEX: Record<string, number> = {
@@ -92,12 +93,14 @@ export const SetEditorPage = ({
     (EDITOR_TAB_INDEX[requestedTab ?? ""] ?? TABS.TARGETS),
   );
   const [editedSet, setEditedSet] = useState<B4SetConfig | null>(initialSet);
+  const [callsSession, setCallsSession] = useState<CallsSession>({});
 
   const prevSetId = useRef(initialSet.id);
   useEffect(() => {
     setEditedSet(initialSet);
     if (prevSetId.current !== initialSet.id) {
       setActiveTab(0);
+      setCallsSession({});
       prevSetId.current = initialSet.id;
     }
   }, [initialSet]);
@@ -150,6 +153,7 @@ export const SetEditorPage = ({
 
   const handleApplyImport = (importedSet: B4SetConfig) => {
     setEditedSet(importedSet);
+    setCallsSession({});
   };
 
   const handleBack = () => {
@@ -340,7 +344,6 @@ export const SetEditorPage = ({
           <TcpTabContainer
             initialSub={requestedSub}
             config={editedSet}
-            queue={config.queue}
             onChange={handleChange}
           />
         </B4TabPanel>
@@ -348,7 +351,8 @@ export const SetEditorPage = ({
         <B4TabPanel value={activeTab} index={TABS.UDP} idPrefix="set-tab" sx={{ pt: 3 }}>
           <UdpSettings
             config={editedSet}
-            queue={config.queue}
+            callsSession={callsSession}
+            onCallsSessionChange={setCallsSession}
             onChange={handleChange}
           />
         </B4TabPanel>

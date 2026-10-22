@@ -9,6 +9,7 @@ import {
   formatWarningParam,
 } from "@models/hub";
 import { formatAsn } from "@models/asn";
+import { udpL7Label } from "@components/sets/udpL7";
 
 const PREVIEW_DOMAINS = 3;
 const AUTHOR_PREVIEW = 12;
@@ -58,7 +59,11 @@ export function targetsSummary(t: TFunction, targets: HubTargets): string {
     parts.push(t("hub.card.ipCount", { count: targets.ip_count }));
   }
   if ((targets.udp_l7 ?? []).length > 0) {
-    parts.push(t("hub.card.udpL7", { list: targets.udp_l7.join(", ") }));
+    parts.push(
+      t("hub.card.udpL7", {
+        list: targets.udp_l7.map((value) => udpL7Label(t, value)).join(", "),
+      }),
+    );
   }
   return parts.length > 0 ? parts.join(" · ") : t("hub.card.noTargets");
 }
