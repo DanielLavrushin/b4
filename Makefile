@@ -204,7 +204,7 @@ gen-defaults:
 .PHONY: build-ui
 build-ui: gen-defaults
 	@echo "Building web UI..."
-	@cd src/http/ui && pnpm build
+	@cd src/http/ui && VITE_APP_VERSION="$(if $(filter 1.0.0,$(VERSION)),dev,$(VERSION))" pnpm build
 	@echo "Web UI build complete."
 
 HUB_DIR := ./hub
