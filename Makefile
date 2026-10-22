@@ -307,7 +307,7 @@ $(foreach v,$(BOX_VARS),$(eval undefine $(v)))
 include $(BOX_FILE)
 endif
 
-SSH_OPTS ?= -o StrictHostKeyChecking=no -o IPQoS=none
+SSH_OPTS ?= -o StrictHostKeyChecking=accept-new -o IPQoS=none
 B4_RESTART_CMD ?= /opt/etc/init.d/S99b4
 DEPLOY_DEST = $(if $(SFTP_USER),$(SFTP_USER)@)$(SFTP_HOST)
 DEPLOY_SSHPASS = $(if $(SFTP_PASS),SSHPASS="$$SFTP_PASS" sshpass -e)
