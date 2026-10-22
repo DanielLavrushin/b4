@@ -10,6 +10,7 @@ import {
 } from "@b4.elements";
 import { B4SetConfig } from "@models/config";
 import { useTranslation } from "react-i18next";
+import { callsModeOf } from "./udpL7";
 
 export const wouldCreateEscalationCycle = (
   candidate: B4SetConfig,
@@ -75,6 +76,7 @@ export const EscalationSettings = ({
                     (s) =>
                       s.id &&
                       s.id !== config.id &&
+                      callsModeOf(s.udp) !== "only" &&
                       !wouldCreateEscalationCycle(s, config.id, allSets),
                   )
                   .map((s) => ({

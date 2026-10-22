@@ -62,12 +62,14 @@ type Worker struct {
 	pendingHello     *pendingHelloCache
 	hostHints        *hostHintCache
 	quicFlows        *quicFlowCache
+	voiceFlows       *voiceFlowCache
 	direction        *queueDirectionState
 	flowDrops        *flowDropPersistence
 	ipHealth         *iphealth.Tracker
 	pinHealth        *pinHealth
 	goodIPs          *iphealth.KnownGood
 	srcResolver      *tunSrcResolver
+	tunLocalOnly     atomic.Bool
 	holdStop         chan struct{}
 	holdStopOnce     sync.Once
 	holdsLive        atomic.Int32

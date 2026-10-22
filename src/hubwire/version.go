@@ -3,6 +3,8 @@ package hubwire
 import (
 	"strconv"
 	"strings"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 func parseVersion(v string) ([3]int, bool) {
@@ -54,15 +56,25 @@ func CompareVersions(a, b string) int {
 	return 0
 }
 
+var valueSince = map[string]map[string]string{
+	"udp.fake_payload_file": {config.FakePayloadAutoSTUN: "1.88.0"},
+}
+
 func MinVersion(projection map[string]interface{}) string {
 	min := BaselineVersion
-	walkLeaves(projection, "", func(path string, _ interface{}) {
+	raise := func(since string) {
+		if since != "" && CompareVersions(since, min) > 0 {
+			min = since
+		}
+	}
+	walkLeaves(projection, "", func(path string, v interface{}) {
 		f, ok := Fields[path]
-		if !ok || f.Class != Crosses || f.Since == "" {
+		if !ok || f.Class != Crosses {
 			return
 		}
-		if CompareVersions(f.Since, min) > 0 {
-			min = f.Since
+		raise(f.Since)
+		if value, ok := v.(string); ok {
+			raise(valueSince[path][value])
 		}
 	})
 	return min

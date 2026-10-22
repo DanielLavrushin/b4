@@ -39,6 +39,7 @@ const sidebars: SidebarsConfig = {
         "dns",
         "sets/blocking",
         "guides/devices",
+        "guides/discord-voice",
         {
           type: "category",
           label: "Telegram",

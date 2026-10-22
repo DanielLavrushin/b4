@@ -55,7 +55,7 @@ func TestBlockSetsLearnNoAddressesFromDNSAnswers(t *testing.T) {
 			if pinned == nil {
 				t.Fatal("the set gave no pinned answer")
 			}
-			if action, waits := w.applyPinnedAnswerAwait(cfg, set, client, "pin.example.com", pinned); action != dnsActionPin || len(waits) != 0 {
+			if action, waits := w.applyPinnedAnswerAwait(cfg, set, client, "pin.example.com", pinned, true); action != dnsActionPin || len(waits) != 0 {
 				t.Fatalf("action %q with %d waits, want %q with none", action, len(waits), dnsActionPin)
 			}
 		}},

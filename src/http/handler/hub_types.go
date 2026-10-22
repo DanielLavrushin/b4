@@ -11,6 +11,7 @@ type HubTargets struct {
 	GeoIP   []string `json:"geoip"`
 	ASNs    []string `json:"asns"`
 	IPCount int      `json:"ip_count"`
+	UDPL7   []string `json:"udp_l7"`
 }
 
 type HubApplied struct {

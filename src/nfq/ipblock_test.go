@@ -399,7 +399,7 @@ func TestApplyPinnedAnswerRecordsTheHostHint(t *testing.T) {
 	pinned := w.pinnedAnswer(set, dns.BuildQuery("www.instagram.com", 1, 1), "www.instagram.com")
 	w.applyPinnedAnswer(&config.Config{}, set, client, "www.instagram.com", pinned)
 
-	gotSet, host := w.lookupHostHint(&config.Config{Sets: []*config.SetConfig{set}}, client.String(), "157.240.0.174", "")
+	gotSet, host, _, _ := w.lookupHostHint(&config.Config{Sets: []*config.SetConfig{set}}, client.String(), "157.240.0.174", "")
 	if gotSet == nil || host != "www.instagram.com" {
 		t.Errorf("host hint = %v/%q, want the pinned address tied back to the set so the connection still matches", gotSet, host)
 	}

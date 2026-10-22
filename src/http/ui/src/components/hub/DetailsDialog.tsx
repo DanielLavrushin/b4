@@ -17,6 +17,7 @@ import { copyText, describeApiError, formatBytes } from "@utils";
 import { ApiError } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { StrategySummary } from "@components/discovery/StrategySummary";
+import { udpL7Label } from "@components/sets/udpL7";
 import { AppliedActionButton } from "./HubSetCard";
 import {
   appliedAction,
@@ -277,6 +278,13 @@ export const DetailsDialog = ({
                 {set.targets.ip_count > 0 && (
                   <FieldRow label={t("hub.details.addresses")}>
                     {t("hub.card.ipCount", { count: set.targets.ip_count })}
+                  </FieldRow>
+                )}
+                {(set.targets.udp_l7 ?? []).length > 0 && (
+                  <FieldRow label={t("hub.details.udpL7")}>
+                    {set.targets.udp_l7
+                      .map((value) => udpL7Label(t, value))
+                      .join(", ")}
                   </FieldRow>
                 )}
               </Stack>

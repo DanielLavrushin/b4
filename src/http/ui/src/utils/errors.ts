@@ -2,8 +2,21 @@ import i18n from "../i18n";
 import type { TFunction } from "i18next";
 import { ApiError, type FieldError } from "@api/apiClient";
 
+const SET_PATH_PREFIX = /^sets\[\d+\]\./;
+
+const SET_FIELD_ERRORS: Record<string, string> = {
+  "udp.dport_filter:required": "udp_l7_ports",
+  "udp.filter_l7:conflict": "udp_l7_targets",
+  "tcp.dport_filter:conflict": "udp_l7_tcp_ports",
+};
+
+function fieldErrorKey(f: FieldError): string {
+  const path = f.path.replace(SET_PATH_PREFIX, "");
+  return `errors.${SET_FIELD_ERRORS[`${path}:${f.code}`] ?? f.code}`;
+}
+
 export function localizeFieldError(f: FieldError, lng?: string): string {
-  const key = `errors.${f.code}`;
+  const key = fieldErrorKey(f);
   if (i18n.exists(key, { lng })) {
     const out: unknown = i18n.t(key, { ...(f.params ?? {}), lng });
     if (typeof out === "string") return out;

@@ -34,6 +34,8 @@ type pktInfo struct {
 	dstStr string
 	srcMac string
 	ihl    int
+
+	srcUnattributed bool
 }
 
 func selfInjectedMark(m, queueMark uint32, cfg *config.Config) bool {
@@ -126,6 +128,10 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 	if a.Hook != nil {
 		vc.hook, vc.hooked = *a.Hook, true
 	}
+	if a.InDev != nil {
+		vc.inDev = *a.InDev
+	}
+	vc.localSocket = a.UID != nil
 
 	return w.dispatch(vc, *a.Payload)
 }
@@ -145,7 +151,7 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 		return w.handleECHOnlyPacket(vc, pkt, cfg)
 	}
 
-	matched, st := matcher.MatchIPWithSource(pkt.dst, pkt.srcMac)
+	matched, st := matcher.MatchIPWithSource(pkt.dst, pkt.srcMac, w.blockScope(vc, pkt, matcher))
 	var set *config.SetConfig
 	if matched {
 		set = st
@@ -286,10 +292,13 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 	if w.srcResolver != nil && v == IPv4 && (p.proto == 6 || p.proto == 17) && len(raw) >= p.ihl+4 {
 		sport := uint16(raw[p.ihl])<<8 | uint16(raw[p.ihl+1])
 		dport := uint16(raw[p.ihl+2])<<8 | uint16(raw[p.ihl+3])
-		if lan, ok := w.srcResolver.resolve(p.proto, p.src, sport, p.dst, dport); ok {
+		switch lan, origin := w.srcResolver.attribute(p.proto, p.src, sport, p.dst, dport); origin {
+		case tunSrcLAN, tunSrcRouter:
 			if v4 := lan.To4(); v4 != nil {
 				copy(p.addr[0:4], v4)
 			}
+		case tunSrcUnknown:
+			p.srcUnattributed = true
 		}
 	}
 
@@ -300,7 +309,7 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 	return p, true
 }
 
-func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, ipVersion uint8, dport uint16, payload []byte, seq uint32) (*config.SetConfig, string) {
+func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, ipVersion uint8, dport uint16, payload []byte, seq uint32, keep sni.SetFilter) (*config.SetConfig, string) {
 	decision, ok := w.tlsCache.Decision(connKey)
 	if !ok || (startsClientHello(payload) && decision.helloSeq-seq > maxPendingHelloRecord) {
 		return nil, ""
@@ -308,7 +317,7 @@ func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, i
 	set := decision.set
 	if decision.decidedBy != matcher || decision.decidedMac != srcMac {
 		set = nil
-		if matched, named := matcher.MatchSNIWithSourceTLS(decision.host, srcMac, decision.tlsVersion, ipVersion); matched && named.MatchesTCPDPort(dport) {
+		if matched, named := matcher.MatchSNIWithSourceTLS(decision.host, srcMac, decision.tlsVersion, ipVersion, keep); matched && named.MatchesTCPDPort(dport) {
 			set = named
 		}
 		w.tlsCache.Decide(connKey, decision.gen, matcher, srcMac, set)
@@ -348,6 +357,8 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return w.HandleIncoming(vc, pkt.ver, pkt.raw, pkt.ihl, pkt.src, pkt.dstStr, dport, pkt.srcStr, sport, payload)
 	}
 
+	keep := w.blockScope(vc, pkt, matcher)
+
 	if matched && !set.MatchesTCPDPort(dport) {
 		matched = false
 		set = nil
@@ -368,18 +379,21 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	var connSet *config.SetConfig
 	connHost := ""
 	if cfg.IsTCPPort(dport) && tcp[13]&0x02 == 0 {
-		connSet, connHost = w.connectionSet(matcher, connKey, pkt.srcMac, pkt.ver, dport, payload, binary.BigEndian.Uint32(tcp[4:8]))
+		connSet, connHost = w.connectionSet(matcher, connKey, pkt.srcMac, pkt.ver, dport, payload, binary.BigEndian.Uint32(tcp[4:8]), keep)
 	}
 
 	matchedHint := false
 	hintHost := ""
+	var hintTLS uint16
+	var hintIP uint8
 	if !matched && cfg.IsTCPPort(dport) {
-		if hintSet, hinted := w.lookupHostHint(cfg, pkt.srcStr, pkt.dstStr, pkt.srcMac); hintSet != nil {
+		if hintSet, hinted, hintedTLS, hintedIP := w.lookupHostHint(cfg, pkt.srcStr, pkt.dstStr, pkt.srcMac, keep); hintSet != nil {
 			if hintSet.MatchesTCPDPort(dport) {
 				matched = true
 				set = hintSet
 				matchedHint = true
 				hintHost = hinted
+				hintTLS, hintIP = hintedTLS, hintedIP
 			}
 		}
 	}
@@ -387,7 +401,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	matchedLearned := false
 	learnedHost := ""
 	if !matchedHint {
-		if mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac); mLearned {
+		if mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac, keep); mLearned {
 			if learnedSet.MatchesTCPDPort(dport) {
 				matched = true
 				set = learnedSet
@@ -400,7 +414,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	matchedPort := false
 	if !matched && cfg.IsTCPPort(dport) {
-		if portMatched, portSet := matcher.MatchTCPPort(dport, pkt.srcMac); portMatched {
+		if portMatched, portSet := matcher.MatchTCPPort(dport, pkt.srcMac, keep); portMatched {
 			matched = true
 			set = portSet
 			matchedPort = true
@@ -429,7 +443,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		earlyHost = connHost
 	}
 	if matched && earlyHost != "" && cfg.IsTCPPort(dport) {
-		if escSet := w.escalatedSetFor(cfg, earlyHost, pkt.srcMac); escSet != nil && escSet != set {
+		if escSet := w.escalatedSetFor(cfg, set, earlyHost, pkt.srcMac, keep); escSet != nil && escSet != set {
 			log.Tracef("escalation hit for %s before the ClientHello: %s -> %s", earlyHost, set.Name, escSet.Name)
 			set = escSet
 			if st != nil {
@@ -598,14 +612,16 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		if host != "" {
 			var decided *config.SetConfig
-			if mSNI, stSNI := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, tlsVersion, pkt.ver); mSNI {
+			if mSNI, stSNI := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, tlsVersion, pkt.ver, keep); mSNI {
 				if stSNI.MatchesTCPDPort(dport) {
 					decided = stSNI
 					matchedSNI = true
 					matched = true
 					set = stSNI
 					matcher.LearnIPToDomain(pkt.dst, host, stSNI)
-					registerLearnedRoute(cfg, stSNI, pkt.dst, host)
+					if vc.scope.learnsTLS(host, tlsVersion, pkt.ver) {
+						registerLearnedRoute(cfg, stSNI, pkt.dst, host)
+					}
 				}
 			}
 			w.tlsCache.Decide(connKey, helloGen, matcher, pkt.srcMac, decided)
@@ -626,7 +642,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			clearMatch()
 			matchedHint = false
 			hintHost = ""
-			if learnedSet, learnedDomain := learnedMatchAfterHintDrop(matcher, pkt.dst, pkt.srcMac, dport, tlsVersion, payload); learnedSet != nil {
+			if learnedSet, learnedDomain := learnedMatchAfterHintDrop(matcher, pkt.dst, pkt.srcMac, dport, tlsVersion, payload, keep); learnedSet != nil {
 				log.Tracef("host hint for %s dropped, learned address match took over: %s (set: %s)", pkt.dstStr, learnedDomain, learnedSet.Name)
 				matched = true
 				set = learnedSet
@@ -634,7 +650,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				matchedIP = true
 				matchedLearned = true
 				learnedHost = learnedDomain
-				if escSet := w.escalatedSetFor(cfg, learnedHost, pkt.srcMac); escSet != nil && escSet != set {
+				if escSet := w.escalatedSetFor(cfg, set, learnedHost, pkt.srcMac, keep); escSet != nil && escSet != set {
 					log.Tracef("escalation hit for %s after the hint drop: %s -> %s", learnedHost, set.Name, escSet.Name)
 					set = escSet
 					st = escSet
@@ -654,8 +670,10 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
+	hostTLS, hostIP := tlsVersion, pkt.ver
 	if host == "" && hintHost != "" {
 		host = hintHost
+		hostTLS, hostIP = hintTLS, hintIP
 	}
 	if matchedHint && !matchedSNI && classifyReason == "" {
 		classifyReason = "dns-hint"
@@ -668,7 +686,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if matched && host != "" && cfg.IsTCPPort(dport) {
-		if escSet := w.escalatedSetFor(cfg, host, pkt.srcMac); escSet != nil {
+		if escSet := w.escalatedSetFor(cfg, set, host, pkt.srcMac, keep); escSet != nil {
 			if escSet != set {
 				log.Tracef("escalation hit for %s: %s -> %s", host, set.Name, escSet.Name)
 				set = escSet
@@ -679,7 +697,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if ipTarget != "" {
 				ipTarget = set.Name
 			}
-			w.refreshEscalatedRoute(cfg, escSet, host, pkt.dst)
+			if vc.scope.learnsTLS(host, hostTLS, hostIP) {
+				w.refreshEscalatedRoute(cfg, escSet, host, pkt.dst)
+			}
 		}
 	}
 
@@ -744,7 +764,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if stallTracked && escalateOnStall(&set.Escalate, stallCount, stallFirstSeen) {
-		if next := w.tryEscalate(cfg, set, host, pkt.srcMac, pkt.dst, escalateReasonStall); next != nil {
+		if next := w.tryEscalate(cfg, set, host, pkt.srcMac, pkt.dst, escalateReasonStall, hostTLS, hostIP, vc.scope); next != nil {
 			if !cfg.Queue.IsDiscovery {
 				log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "escalate->"+next.Name)
 			}
@@ -914,6 +934,12 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return vc.accept()
 	}
 
+	keep := w.blockScope(vc, pkt, matcher)
+	voiceSet := w.voiceFlowSet(matcher, connKey, pkt, dport, keep)
+	if voiceSet != nil && !voiceSet.SelectsL7Class(udpL7Class(payload)) {
+		return w.passVoiceFlow(vc, pkt, cfg, voiceSet, sport, dport)
+	}
+
 	matchedIP := st != nil
 	matchedQUIC := false
 	matchedLearned := false
@@ -933,7 +959,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if !matchedIP {
-		if mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac); mLearned {
+		if mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac, keep); mLearned {
 			if learnedSet.MatchesUDPDPort(dport) {
 				matchedIP = true
 				matchedLearned = true
@@ -948,7 +974,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	matchedPort := false
 	if !matched {
-		if portMatched, portSet := matcher.MatchUDPPort(dport, pkt.srcMac); portMatched {
+		if portMatched, portSet := matcher.MatchUDPPort(dport, pkt.srcMac, keep); portMatched {
 			matchedPort = true
 			matched = true
 			set = portSet
@@ -962,7 +988,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	namedByHello := false
 	helloDatagram := false
-	if isQUIC && (host == "" || coalescesInitials(set) || coalescesInitials(w.escalatedSetFor(cfg, host, pkt.srcMac))) {
+	if isQUIC && (host == "" || coalescesInitials(set) || coalescesInitials(w.escalatedSetFor(cfg, set, host, pkt.srcMac, keep))) {
 		if h, ok := sni.ParseQUICClientHelloSNI(payload); ok {
 			helloDatagram = true
 			host = h
@@ -971,14 +997,16 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if host != "" {
-		if mSNI, sniSet := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, 0x0304, pkt.ver); mSNI {
+		if mSNI, sniSet := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, 0x0304, pkt.ver, keep); mSNI {
 			if sniSet.MatchesUDPDPort(dport) {
 				matchedQUIC = true
 				set = sniSet
 				sniTarget = sniSet.Name
 				matcher.LearnIPToDomain(pkt.dst, host, sniSet)
-				registerLearnedRoute(cfg, sniSet, pkt.dst, host)
-				w.storeHostHint(pkt.srcStr, pkt.dstStr, sniSet, host, "quic")
+				if vc.scope.learnsTLS(host, 0x0304, pkt.ver) {
+					registerLearnedRoute(cfg, sniSet, pkt.dst, host)
+				}
+				w.storeHostHint(pkt.srcStr, pkt.dstStr, sniSet, host, "quic", 0x0304, pkt.ver)
 			}
 		}
 	}
@@ -1003,7 +1031,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	matchedFlow := false
 	if matchedLearned || (host == "" && !matchedIP) {
-		if flowSet, flowHost := w.quicFlowSet(cfg, matcher, connKey, pkt, dport, payload); flowSet != nil {
+		if flowSet, flowHost := w.quicFlowSet(cfg, matcher, connKey, pkt, dport, payload, keep); flowSet != nil {
 			matchedFlow = true
 			matchedLearned = false
 			set = flowSet
@@ -1013,7 +1041,30 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
-	shouldHandle := (matchedIP || matchedQUIC || matchedFlow || matchedPort) && !(isVoiceMedia && set.UDP.FilterSTUN)
+	matchedL7 := false
+	l7Set := voiceSet
+	if l7Set == nil {
+		if class := udpL7Class(payload); class != "" {
+			if l7Matched, selected := matcher.MatchUDPL7(dport, pkt.srcMac, class, pkt.ver, keep); l7Matched {
+				l7Set = selected
+				w.voiceFlows.Store(connKey, selected.Id)
+			}
+		}
+	}
+	if l7Set != nil {
+		matchedL7 = true
+		matchedIP = false
+		matchedQUIC = false
+		matchedFlow = false
+		matchedPort = false
+		matchedLearned = false
+		set = l7Set
+		sniTarget = ""
+		ipTarget = l7Set.Name
+	}
+
+	anyMatch := matchedIP || matchedQUIC || matchedFlow || matchedPort || matchedL7
+	shouldHandle := anyMatch && !(isVoiceMedia && !matchedL7 && set.UDP.FilterSTUN)
 
 	matched = shouldHandle
 
@@ -1022,8 +1073,8 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		udpTLS = "1.3"
 	}
 
-	if shouldHandle && set != nil && host != "" && !matchedFlow {
-		if escSet := w.escalatedSetFor(cfg, host, pkt.srcMac); escSet != nil {
+	if shouldHandle && set != nil && host != "" && !matchedFlow && !matchedL7 {
+		if escSet := w.escalatedSetFor(cfg, set, host, pkt.srcMac, keep); escSet != nil {
 			if escSet != set {
 				log.Tracef("UDP escalation hit for %s: %s -> %s", host, set.Name, escSet.Name)
 				set = escSet
@@ -1034,20 +1085,25 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if ipTarget != "" {
 				ipTarget = set.Name
 			}
-			w.refreshEscalatedRoute(cfg, escSet, host, pkt.dst)
+			if vc.scope.learnsTLS(host, 0x0304, pkt.ver) {
+				w.refreshEscalatedRoute(cfg, escSet, host, pkt.dst)
+			}
 		}
 	}
 
-	udpForeignEgress := shouldHandle && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
+	voiceExempt := anyMatch && isVoiceMedia && !matchedL7 && set != nil && set.UDP.FilterSTUN
+	udpForeignEgress := shouldHandle && !voiceExempt && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
 	udpReason := ""
 	if udpForeignEgress {
 		udpReason = vc.handOffReason()
+	} else if voiceExempt {
+		udpReason = voiceExemptReason
 	}
 	if !cfg.Queue.IsDiscovery {
 		log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, udpReason)
 	}
 
-	if isVoiceMedia && set != nil && set.UDP.FilterSTUN {
+	if isVoiceMedia && !matchedL7 && set != nil && set.UDP.FilterSTUN {
 		return vc.accept()
 	}
 
@@ -1063,31 +1119,8 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	quicFlow := (isQUIC || matchedFlow) && !isVoiceMedia
 
 	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
-		if matchedQUIC || matchedFlow || (matchedIP && !matchedLearned) {
-			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
-				if pkt.ver == IPv4 {
-					if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
-						_ = w.clientSender().SendIPv4(icmp, pkt.src)
-					}
-				} else {
-					if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
-						_ = w.clientSender().SendIPv6(icmp, pkt.src)
-					}
-				}
-			}
-			if !cfg.Queue.IsDiscovery {
-				log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, "block")
-				blockedTarget := host
-				if blockedTarget == "" {
-					blockedTarget = pkt.dstStr
-				}
-				recordBlockedFlow(cfg, pkt, sport, dport, set, blockedTarget)
-			}
-			vc.drop()
-			if quicFlow {
-				vc.dropFlow()
-			}
-			return 0
+		if matchedQUIC || matchedFlow || (matchedIP && !matchedLearned) || matchedL7 {
+			return w.blockUDP(vc, pkt, cfg, set, sport, dport, sniTarget, host, ipTarget, udpTLS, quicFlow)
 		}
 		return vc.accept()
 	}
@@ -1157,6 +1190,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return 0
 
 	case "fake":
+		if voiceSet != nil {
+			return vc.accept()
+		}
 		if !config.RoutingUsesTProxy(set.RoutingModeOrDefault()) && set.RoutingHandsOffPackets() {
 			return vc.accept()
 		}
@@ -1194,6 +1230,33 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	default:
 		return vc.accept()
 	}
+}
+
+func (w *Worker) blockUDP(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig, sport, dport uint16, sniTarget, host, ipTarget, udpTLS string, quicFlow bool) int {
+	if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
+		if pkt.ver == IPv4 {
+			if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
+				_ = w.clientSender().SendIPv4(icmp, pkt.src)
+			}
+		} else {
+			if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
+				_ = w.clientSender().SendIPv6(icmp, pkt.src)
+			}
+		}
+	}
+	if !cfg.Queue.IsDiscovery {
+		log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, "block")
+		blockedTarget := host
+		if blockedTarget == "" {
+			blockedTarget = pkt.dstStr
+		}
+		recordBlockedFlow(cfg, pkt, sport, dport, set, blockedTarget)
+	}
+	vc.drop()
+	if quicFlow {
+		vc.dropFlow()
+	}
+	return 0
 }
 
 func (w *Worker) handleNfqError(e error) int {

@@ -52,6 +52,12 @@ func (p *Pool) EnableTUNSourceResolver(wanIP string) {
 	log.Infof("TUN: source attribution enabled (recovering LAN source from conntrack; uplink %s)", wanIP)
 }
 
+func (p *Pool) SetTUNLocalOnly(localOnly bool) {
+	for _, w := range p.Workers {
+		w.tunLocalOnly.Store(localOnly)
+	}
+}
+
 func (p *Pool) UpdateTUNSourceWAN(wanIP string) {
 	if p.tunSrc == nil || wanIP == "" {
 		return
@@ -82,6 +88,7 @@ func NewPool(cfg *config.Config) *Pool {
 		w.pendingHello = state.pendingHello
 		w.hostHints = state.hostHints
 		w.quicFlows = state.quicFlows
+		w.voiceFlows = state.voiceFlows
 		w.direction = state.direction
 		w.flowDrops = state.flowDrops
 		w.ipHealth = state.ipHealth
@@ -133,6 +140,7 @@ func NewPool(cfg *config.Config) *Pool {
 				pool.state.destState.Cleanup(retest)
 				pool.state.hostHints.Cleanup()
 				pool.state.quicFlows.Cleanup()
+				pool.state.voiceFlows.Cleanup()
 				pool.state.ipHealth.Cleanup(retest)
 				pool.state.goodIPs.Cleanup()
 				if pool.state.pinHealth.due(retest) {
@@ -394,7 +402,7 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	if !reuse && p.state != nil && p.state.destState != nil {
 		p.state.destState.PruneEscalations(func(setId string) bool {
 			target := newCfg.GetSetById(setId)
-			return target != nil && target.Enabled
+			return target != nil && target.Enabled && !target.SelectsL7()
 		})
 		if n := p.state.destState.ResetBlocked(); n > 0 {
 			log.Infof("IPBlockDetect: the sets changed, %d address(es) cached as blocked are tested again", n)

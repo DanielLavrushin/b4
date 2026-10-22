@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/daniellavrushin/b4/geodat"
@@ -27,6 +29,7 @@ const (
 )
 
 const FakePayloadAutoQUIC = "@quic_initial"
+const FakePayloadAutoSTUN = "@stun"
 
 const (
 	RoutingModeInterface = "interface"
@@ -57,6 +60,13 @@ const (
 	UDPModeReject   = "reject"
 	UDPModeCoalesce = "coalesce"
 )
+
+const (
+	UDPL7Discord = "discord"
+	UDPL7STUN    = "stun"
+)
+
+var UDPL7Classes = []string{UDPL7Discord, UDPL7STUN}
 
 const (
 	DefaultIPBlockSynThreshold = 3
@@ -96,6 +106,44 @@ func NormalizeQUICFilter(filter string) string {
 		return QUICFilterAll
 	}
 	return QUICFilterSNI
+}
+
+func NormalizeL7Filter(classes []string) []string {
+	if len(classes) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(classes))
+	seen := make(map[string]bool, len(classes))
+	for _, c := range classes {
+		c = strings.ToLower(strings.TrimSpace(c))
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func SelectsKnownL7(classes []string) bool {
+	return slices.ContainsFunc(classes, func(c string) bool { return slices.Contains(UDPL7Classes, c) })
+}
+
+const maxSTUNFakeLen = (0xffff - 20 - 8) &^ 3
+
+func NormalizeSTUNFakeLen(size int) int {
+	switch {
+	case size <= 20:
+		return 20
+	case size < 24:
+		return 24
+	case size > maxSTUNFakeLen:
+		return maxSTUNFakeLen
+	}
+	return size - size%4
 }
 
 func NormalizeUDPMode(mode string) string {
@@ -283,18 +331,19 @@ type IncomingConfig struct {
 }
 
 type UDPConfig struct {
-	Mode            string `json:"mode"`
-	FakeSeqLength   int    `json:"fake_seq_length"`
-	FakeLen         int    `json:"fake_len"`
-	FakingStrategy  string `json:"faking_strategy"`
-	FakePayloadFile string `json:"fake_payload_file"` // "" = zero fill, "@quic_initial" = generate fresh QUIC Initial per packet, "@preset:quic1"/"@preset:quic2" = bundled presets, otherwise capture filename relative to config dir (e.g. "captures/quic_youtube_com.bin")
-	FakePayloadData []byte `json:"-"`
-	DPortFilter     string `json:"dport_filter"` // can be a comma separated list of ports and port ranges, e.g. "80,443,1000-2000"
-	FilterQUIC      string `json:"filter_quic"`
-	FilterSTUN      bool   `json:"filter_stun"`
-	ConnBytesLimit  int    `json:"conn_bytes_limit"`
-	Seg2Delay       int    `json:"seg2delay"`
-	Seg2DelayMax    int    `json:"seg2delay_max"`
+	Mode            string   `json:"mode"`
+	FakeSeqLength   int      `json:"fake_seq_length"`
+	FakeLen         int      `json:"fake_len"`
+	FakingStrategy  string   `json:"faking_strategy"`
+	FakePayloadFile string   `json:"fake_payload_file"` // "" = zero fill, "@quic_initial" = generate fresh QUIC Initial per packet, "@preset:quic1"/"@preset:quic2" = bundled presets, otherwise capture filename relative to config dir (e.g. "captures/quic_youtube_com.bin")
+	FakePayloadData []byte   `json:"-"`
+	DPortFilter     string   `json:"dport_filter"` // can be a comma separated list of ports and port ranges, e.g. "80,443,1000-2000"
+	FilterQUIC      string   `json:"filter_quic"`
+	FilterSTUN      bool     `json:"filter_stun"`
+	FilterL7        []string `json:"filter_l7,omitempty"`
+	ConnBytesLimit  int      `json:"conn_bytes_limit"`
+	Seg2Delay       int      `json:"seg2delay"`
+	Seg2DelayMax    int      `json:"seg2delay_max"`
 }
 
 type FragmentationConfig struct {
@@ -555,23 +604,24 @@ func (l Logging) UpdateLogPath() string {
 }
 
 type SetConfig struct {
-	Id            string              `json:"id" mcp:"deny"`
-	Name          string              `json:"name"`
-	TCP           TCPConfig           `json:"tcp"`
-	UDP           UDPConfig           `json:"udp"`
-	Fragmentation FragmentationConfig `json:"fragmentation"`
-	Faking        FakingConfig        `json:"faking"`
-	Targets       TargetsConfig       `json:"targets"`
-	Enabled       bool                `json:"enabled"`
-	DNS           DNSConfig           `json:"dns"`
-	TCPPortRanges []PortRange         `json:"-"`
-	UDPPortRanges []PortRange         `json:"-"`
-	Routing       RoutingConfig       `json:"routing"`
-	Escalate      EscalateConfig      `json:"escalate"`
-	MSSClamp      MSSClampConfig      `json:"mss_clamp"`
-	DSCP          SetDSCPConfig       `json:"dscp" mcp:"deny"`
-	Discovery     SetDiscoveryConfig  `json:"discovery" mcp:"deny"`
-	Hub           *HubOrigin          `json:"hub,omitempty" mcp:"deny"`
+	Id             string              `json:"id" mcp:"deny"`
+	Name           string              `json:"name"`
+	TCP            TCPConfig           `json:"tcp"`
+	UDP            UDPConfig           `json:"udp"`
+	Fragmentation  FragmentationConfig `json:"fragmentation"`
+	Faking         FakingConfig        `json:"faking"`
+	Targets        TargetsConfig       `json:"targets"`
+	Enabled        bool                `json:"enabled"`
+	DNS            DNSConfig           `json:"dns"`
+	TCPPortRanges  []PortRange         `json:"-"`
+	UDPPortRanges  []PortRange         `json:"-"`
+	UDPL7OnlyPorts []PortRange         `json:"-"`
+	Routing        RoutingConfig       `json:"routing"`
+	Escalate       EscalateConfig      `json:"escalate"`
+	MSSClamp       MSSClampConfig      `json:"mss_clamp"`
+	DSCP           SetDSCPConfig       `json:"dscp" mcp:"deny"`
+	Discovery      SetDiscoveryConfig  `json:"discovery" mcp:"deny"`
+	Hub            *HubOrigin          `json:"hub,omitempty" mcp:"deny"`
 }
 
 type SetDiscoveryConfig struct {

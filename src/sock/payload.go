@@ -63,11 +63,17 @@ func fixTLSRecordLength(payload []byte) {
 	payload[4] = byte(len(payload) - 5)
 }
 
-func resolveFakeTTL(configured, originalTTL uint8) uint8 {
-	ttl := configured
-	if ttl == 0 {
-		ttl = 5
+const defaultFakeTTL = 5
+
+func fakeTTLOrDefault(configured uint8) uint8 {
+	if configured == 0 {
+		return defaultFakeTTL
 	}
+	return configured
+}
+
+func resolveFakeTTL(configured, originalTTL uint8) uint8 {
+	ttl := fakeTTLOrDefault(configured)
 	if ttl >= originalTTL && originalTTL > 1 {
 		ttl = originalTTL - 1
 	}

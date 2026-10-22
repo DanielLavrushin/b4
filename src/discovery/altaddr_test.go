@@ -226,3 +226,25 @@ func TestPlainFixSetIsNamedAfterItsStrategy(t *testing.T) {
 		t.Fatalf("the history shows the set's name as the strategy, so it must match the preset: %+v", fix)
 	}
 }
+
+func TestPlainAndBaselineSetsPassCallSetup(t *testing.T) {
+	ds := altSuite(t, "meduza.io", &DNSDiscoveryResult{ExpectedIPs: []string{"8.47.69.0"}})
+	baseline := GetPhase1Presets()[0]
+	if baseline.Name != presetNoBypass {
+		t.Fatalf("the first preset is the no-bypass baseline, got %q", baseline.Name)
+	}
+	sets := map[string]*config.SetConfig{presetNoBypass: ds.buildTestConfigMulti(baseline).Sets[0]}
+	for name, family := range map[string]StrategyFamily{
+		presetAltAddress:  FamilyAltAddress,
+		presetDNSRedirect: FamilyDNSRedirect,
+		presetECHStrip:    FamilyECHStrip,
+	} {
+		sets[name] = ds.plainFixSet(name, family)
+	}
+	want := config.NewSetConfig().UDP.FilterSTUN
+	for name, set := range sets {
+		if set.UDP.FilterSTUN != want {
+			t.Errorf("%s: a set Discovery proposes must pass call setup like a new set, not handle calls like other UDP", name)
+		}
+	}
+}

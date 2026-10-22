@@ -43,6 +43,7 @@ func newTestWorker(t *testing.T, cfg *config.Config) *Worker {
 	w.pendingHello = state.pendingHello
 	w.hostHints = state.hostHints
 	w.quicFlows = state.quicFlows
+	w.voiceFlows = state.voiceFlows
 	return w
 }
 

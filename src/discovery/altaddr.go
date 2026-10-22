@@ -60,7 +60,7 @@ func plainFixPreset(name string, family StrategyFamily) ConfigPreset {
 		Priority:    0,
 		Config: config.SetConfig{
 			TCP: config.TCPConfig{ConnBytesLimit: 19},
-			UDP: config.UDPConfig{Mode: config.ConfigOff},
+			UDP: config.UDPConfig{Mode: config.ConfigOff, FilterSTUN: true},
 			Fragmentation: config.FragmentationConfig{
 				Strategy: config.ConfigNone,
 			},

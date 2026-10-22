@@ -1,5 +1,11 @@
 package convert
 
+import (
+	"slices"
+
+	"github.com/daniellavrushin/b4/config"
+)
+
 type Status string
 
 const (
@@ -164,11 +170,35 @@ func (p *Profile) UDPOnly() bool {
 	if len(p.Filters.UDPPorts) > 0 && len(p.Filters.TCPPorts) == 0 {
 		return true
 	}
-	if p.Filters.HasProto("quic") || p.Filters.HasProto("stun") {
-		return !p.Filters.HasProto("tls") && !p.Filters.HasProto("http")
+	if p.Filters.HasProto("quic") || p.Filters.HasProto(config.UDPL7STUN) || p.Filters.HasProto(config.UDPL7Discord) {
+		return !p.Filters.HasProto("tls") && !p.Filters.HasProto("http") && !p.Filters.HasProto("unknown")
 	}
 	return len(p.Filters.Protos) > 0 && p.Filters.HasProto("udp") &&
 		!p.Filters.HasProto("tls") && !p.Filters.HasProto("http")
+}
+
+func (p *Profile) l7Classes() (selected, dropped []string) {
+	for _, proto := range p.Filters.Protos {
+		if slices.Contains(config.UDPL7Classes, proto) {
+			selected = appendUnique(selected, proto)
+		} else {
+			dropped = appendUnique(dropped, proto)
+		}
+	}
+	return selected, dropped
+}
+
+func (p *Profile) wantsL7() bool {
+	selected, _ := p.l7Classes()
+	return len(selected) > 0
+}
+
+func (p *Profile) scopedByL7() bool {
+	return p.wantsL7() && p.UDPOnly() && !p.hasOwnTargets()
+}
+
+func (p *Profile) selectsL7() bool {
+	return p.scopedByL7() && len(p.Filters.UDPPorts) > 0
 }
 
 func (p *Profile) IsEntry() bool { return p.Trigger.Kind != TriggerDetect }

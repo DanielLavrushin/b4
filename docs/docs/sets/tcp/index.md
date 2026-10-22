@@ -8,7 +8,7 @@ The **TCP** tab holds the set's DPI bypass strategy for TCP connections, such as
 
 | Sub-tab | What it holds |
 | --- | --- |
-| [General](./general.md) | The packet limit, delay and port filter, packet duplication, IP block detection, [RST injection protection](./rst-protection.md) and MSS clamping. |
+| [General](./general.md) | The segment delay and port filter, packet duplication, IP block detection, [RST injection protection](./rst-protection.md) and MSS clamping. |
 | [Splitting](./splitting.md) | How b4 splits the first data packet of a connection, the TLS ClientHello. |
 | [Faking](./faking.md) | Fake packets that DPI reads and the server discards, and changes to the real ClientHello. |
 

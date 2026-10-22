@@ -37,6 +37,15 @@ func SampleSet(name string, domains ...string) config.SetConfig {
 	return set
 }
 
+func L7Set(name string, classes ...string) config.SetConfig {
+	set := config.NewSetConfig()
+	set.Name = name
+	set.UDP.DPortFilter = "19294-19344,50000-50100"
+	set.UDP.FakePayloadFile = config.FakePayloadAutoSTUN
+	set.UDP.FilterL7 = classes
+	return set
+}
+
 func BuildEnvelope(t *testing.T, set *config.SetConfig) *hubwire.Envelope {
 	t.Helper()
 	env, _, err := hubwire.Build(set, hubwire.BuildOptions{B4Version: "1.82.0", Engine: "nfqueue", ReadPayload: ReadPayload})

@@ -12,3 +12,4 @@ export * from "./dnsEndpoint";
 export * from "./pins";
 export * from "./dscp";
 export * from "./setExport";
+export * from "./ports";

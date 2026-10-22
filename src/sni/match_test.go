@@ -1120,7 +1120,7 @@ func TestGetCacheStats_Nil(t *testing.T) {
 // --- selectSetBySourceAndTLS ---
 
 func TestSelectSetBySourceAndTLS_NoMatchReturnsNil(t *testing.T) {
-	matched, set := selectSetBySourceAndTLS(nil, "", 0, 0)
+	matched, set := selectSetBySourceAndTLS(nil, "", 0, 0, nil)
 	if matched || set != nil {
 		t.Error("empty candidates should not match")
 	}

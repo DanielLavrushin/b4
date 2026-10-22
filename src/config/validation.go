@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -635,6 +636,34 @@ func (c *Config) Validate() error {
 
 		set.UDP.DPortFilter = utils.ValidatePorts(set.UDP.DPortFilter)
 		set.TCP.DPortFilter = utils.ValidatePorts(set.TCP.DPortFilter)
+
+		if set.UDP.FakePayloadFile == FakePayloadAutoSTUN {
+			if size := NormalizeSTUNFakeLen(set.UDP.FakeLen); size != set.UDP.FakeLen {
+				log.Warnf("Set '%s' sends a generated STUN fake payload: fake length %d adjusted to %d", set.Name, set.UDP.FakeLen, size)
+				set.UDP.FakeLen = size
+			}
+		}
+
+		set.UDP.FilterL7 = NormalizeL7Filter(set.UDP.FilterL7)
+		if len(set.UDP.FilterL7) > 0 {
+			if set.UDP.DPortFilter == "" {
+				v.add(fmt.Sprintf("sets[%d].udp.dport_filter", setIdx), "required", "a set that selects UDP protocols must list the UDP ports it applies to", nil)
+				return v.result()
+			}
+			if set.DeclaresDestinationTargets() {
+				v.add(fmt.Sprintf("sets[%d].udp.filter_l7", setIdx), "conflict", "UDP protocol selection applies to sets without domain, IP, GeoSite, GeoIP or ASN targets", nil)
+				return v.result()
+			}
+			if set.TCP.DPortFilter != "" {
+				v.add(fmt.Sprintf("sets[%d].tcp.dport_filter", setIdx), "conflict", "a set that selects UDP protocols takes no TCP port filter, as without targets the set would act on every TCP connection on those ports", map[string]any{"ports": set.TCP.DPortFilter})
+				return v.result()
+			}
+			for _, class := range set.UDP.FilterL7 {
+				if !slices.Contains(UDPL7Classes, class) {
+					log.Warnf("Set '%s' selects unknown UDP protocol '%s'; this version matches no traffic for it", set.Name, class)
+				}
+			}
+		}
 	}
 
 	c.LoadCapturePayloads()

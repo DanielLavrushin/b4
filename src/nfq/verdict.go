@@ -3,6 +3,7 @@ package nfq
 import (
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/florianl/go-nfqueue"
 )
@@ -27,9 +28,14 @@ type verdictCtx struct {
 	flowDrop       bool
 	tunnel         string
 	outDev         uint32
+	inDev          uint32
+	localSocket    bool
 	foreignMark    uint32
 	rerouted       string
 	rerouteChecked bool
+	scoped         bool
+	scope          *ingressScope
+	keep           sni.SetFilter
 }
 
 type dnsCopyDecision struct {

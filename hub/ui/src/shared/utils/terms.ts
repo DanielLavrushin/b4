@@ -52,6 +52,7 @@ interface TargetLists {
   geosite: string[];
   geoip: string[];
   asns: string[];
+  udp_l7: string[];
   filters: Term[];
 }
 
@@ -71,6 +72,7 @@ export const targetsPreview = (t: TFunction, targets: TargetLists): string => {
     previewList(t, targets.geosite, "geosite"),
     previewList(t, targets.geoip, "geoip"),
     previewList(t, targets.asns.map((a) => `AS${a}`), "ASN"),
+    previewList(t, targets.udp_l7, "UDP"),
   ].filter(Boolean);
   if (parts.length === 0) parts.push(t("targets.none"));
   targets.filters.forEach((f) => parts.push(filterText(t, f)));

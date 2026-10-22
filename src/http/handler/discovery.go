@@ -579,6 +579,12 @@ func replaceStrategy(dst, strategy *config.SetConfig) {
 	udp := strategy.UDP
 	udp.FakePayloadData = slices.Clone(strategy.UDP.FakePayloadData)
 	udp.DPortFilter = dst.UDP.DPortFilter
+	udp.FilterSTUN = dst.UDP.FilterSTUN
+	udp.FilterL7 = slices.Clone(dst.UDP.FilterL7)
+	if dst.SelectsL7() && (strategy.UDP.FakePayloadFile == "" || strategy.UDP.FakePayloadFile == config.FakePayloadAutoQUIC) {
+		udp.FakePayloadFile = dst.UDP.FakePayloadFile
+		udp.FakePayloadData = slices.Clone(dst.UDP.FakePayloadData)
+	}
 	dst.UDP = udp
 
 	pins, strict, stripECH := dst.DNS.Pins, dst.DNS.Strict, dst.DNS.StripECH || strategy.DNS.StripECH
@@ -744,6 +750,7 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 	shape.TCP.IPBlockDetect = config.IPBlockDetectConfig{}
 	shape.TCP.RSTProtection = config.RSTProtectionConfig{}
 	shape.UDP.DPortFilter = ""
+	shape.UDP.FilterSTUN = false
 	config.ApplySetDefaults(&shape)
 	shape.Faking.PayloadData = nil
 	shape.UDP.FakePayloadData = nil

@@ -11,6 +11,7 @@ import (
 )
 
 func TestATUNDecisionDropLeavesTheHeaderTheTUNReadIntact(t *testing.T) {
+	thisHost(t)
 	for name, set := range map[string]config.SetConfig{
 		"udp.mode drop":   newDomainOnlyQUICSet(config.UDPModeDrop),
 		"udp.mode reject": newDomainOnlyQUICSet(config.UDPModeReject),

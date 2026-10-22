@@ -143,16 +143,16 @@ func dropsQUICFlow(set *config.SetConfig) bool {
 	return set.UDP.Mode == config.UDPModeDrop || set.UDP.Mode == config.UDPModeReject
 }
 
-func (w *Worker) quicFlowSet(cfg *config.Config, matcher *sni.SuffixSet, connKey string, pkt *pktInfo, dport uint16, payload []byte) (*config.SetConfig, string) {
+func (w *Worker) quicFlowSet(cfg *config.Config, matcher *sni.SuffixSet, connKey string, pkt *pktInfo, dport uint16, payload []byte, keep sni.SetFilter) (*config.SetConfig, string) {
 	host := w.quicFlows.Lookup(connKey, payload)
 	if host == "" {
 		return nil, ""
 	}
-	matched, set := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, 0x0304, pkt.ver)
+	matched, set := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, 0x0304, pkt.ver, keep)
 	if !matched || !set.MatchesUDPDPort(dport) {
 		return nil, ""
 	}
-	if escSet := w.escalatedSetFor(cfg, host, pkt.srcMac); escSet != nil {
+	if escSet := w.escalatedSetFor(cfg, set, host, pkt.srcMac, keep); escSet != nil {
 		set = escSet
 	}
 	if !dropsQUICFlow(set) {

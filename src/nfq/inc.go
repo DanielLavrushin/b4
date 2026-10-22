@@ -51,10 +51,10 @@ func (w *Worker) HandleIncoming(vc *verdictCtx, v byte, raw []byte, ihl int, src
 			if drop {
 				if canEscalate && w.destState != nil {
 					outKey := fmt.Sprintf(connKeyFormat, dstStr, dport, srcStr, sport)
-					host, _, _ := w.tlsCache.Lookup(outKey)
+					host, tlsVersion, _ := w.tlsCache.Lookup(outKey)
 					esc := &incomingSet.Escalate
 					if host != "" && w.destState.RecordRSTKill(host, esc.ResolvedRstThreshold(), esc.ResolvedRstWindow()) {
-						w.tryEscalate(w.getConfig(), incomingSet, host, w.getMacByIp(dstStr), src, escalateReasonRST+" ("+reason+")")
+						w.tryEscalate(w.getConfig(), incomingSet, host, w.getMacByIp(dstStr), src, escalateReasonRST+" ("+reason+")", tlsVersion, v, w.clientScope(net.ParseIP(dstStr)))
 					}
 				}
 				if rstProtOn {

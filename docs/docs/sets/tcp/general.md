@@ -1,20 +1,19 @@
 ---
 sidebar_position: 1
 title: General
-description: The General sub-tab of a set's TCP tab, with the packet limit, port filter, packet duplication, IP block detection, RST injection protection and MSS clamping.
+description: The General sub-tab of a set's TCP tab, with the segment delay, port filter, packet duplication, IP block detection, RST injection protection and MSS clamping.
 ---
 
 The **General** sub-tab of the [TCP](./index.md) tab holds the settings that apply whatever splitting or faking method the set uses.
 
 ![The top of the General sub-tab](/img/general/20260418235044.png)
 
-## Limits and filters
+## Delay, ports and headers
 
 | Field | What it does | Default |
 | --- | --- | --- |
-| **Connection Packets Limit** | How many packets at the start of each connection b4 processes. The TLS handshake fits in the first few, and later packets pass unchanged. It cannot exceed the global limit under [Settings > Core](../../settings/core.md#queue-and-packet-processing). | `19` |
 | **Segment 2 Delay** | Delay between the pieces b4 sends, in milliseconds. A range makes each connection pick a random value from it. | `0` |
-| **Port Filter** | The destination ports the set applies to, such as `443` or `80,5222,8000-9000`. Empty means every port b4 captures. b4 always captures port 443 and adds the ports listed in any set. | Empty |
+| **Port Filter** | The TCP ports the set acts on, such as `443` or `80,5222,8000-9000`, and a list without `443` leaves HTTPS out. Empty means every port b4 captures: 443 and the ports any set lists. | Empty |
 | **Drop SACK Options** | Removes the Selective Acknowledgment option from TCP headers. Some DPI uses it to put fragments back in order. | Off |
 | **Empty line before HTTP method** | For plain HTTP on port 80: puts an empty line before the request and shortens the User-Agent by two characters to keep the length. Inspection that expects the method at the start of the request no longer finds the Host header. Needs a User-Agent header, and suits nginx servers. | Off |
 

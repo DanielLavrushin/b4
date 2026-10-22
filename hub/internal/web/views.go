@@ -25,6 +25,7 @@ type TargetsView struct {
 	GeoSite []string `json:"geosite"`
 	GeoIP   []string `json:"geoip"`
 	ASNs    []string `json:"asns"`
+	UDPL7   []string `json:"udp_l7"`
 	Filters []Term   `json:"filters"`
 }
 
@@ -465,6 +466,7 @@ func targetsView(t Targets) TargetsView {
 		GeoSite: orEmpty(t.GeoSite),
 		GeoIP:   orEmpty(t.GeoIP),
 		ASNs:    orEmpty(t.ASNs),
+		UDPL7:   orEmpty(t.UDPL7),
 		Filters: t.FilterTerms(),
 	}
 }

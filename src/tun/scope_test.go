@@ -115,3 +115,55 @@ func TestSteerSpecsWithoutConnbytesTakeWholeConnections(t *testing.T) {
 		}
 	}
 }
+
+type attributionLog struct {
+	resolvers []string
+	localOnly []bool
+	exact     []bool
+}
+
+func (a *attributionLog) EnableTUNSourceResolver(wanIP string) {
+	a.resolvers = append(a.resolvers, wanIP)
+}
+
+func (a *attributionLog) SetTUNLocalOnly(localOnly bool) {
+	a.localOnly = append(a.localOnly, localOnly)
+}
+
+func (a *attributionLog) SetQueueDirectionExact(v4, _ bool) {
+	a.exact = append(a.exact, v4)
+}
+
+func TestTheWorkersFollowTheCaptureScope(t *testing.T) {
+	const uplink = "94.189.76.227"
+	for _, c := range []struct {
+		name       string
+		skipTables bool
+		localOnly  bool
+		resolves   bool
+		exact      bool
+	}{
+		{"full mode", false, false, true, true},
+		{"firewall setup skipped", true, false, false, false},
+		{"only this device's own traffic", false, true, false, true},
+		{"firewall setup skipped and only this device's own traffic", true, true, false, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := &routeManager{skipTables: c.skipTables, localOnly: c.localOnly, srcIP: uplink, resolvedCapture: "ports", ctdirOK: true}
+			var got attributionLog
+			(&Engine{routes: r}).configureWorkers(&got)
+			switch {
+			case c.resolves && (len(got.resolvers) != 1 || got.resolvers[0] != uplink):
+				t.Fatalf("source resolvers enabled %v, want one for the uplink %s", got.resolvers, uplink)
+			case !c.resolves && len(got.resolvers) != 0:
+				t.Fatalf("source resolvers enabled %v, want none", got.resolvers)
+			}
+			if len(got.localOnly) != 1 || got.localOnly[0] != c.localOnly {
+				t.Fatalf("local only passed to the workers %v, want %v once", got.localOnly, c.localOnly)
+			}
+			if len(got.exact) != 1 || got.exact[0] != c.exact {
+				t.Fatalf("exact TCP direction passed to the workers %v, want %v once", got.exact, c.exact)
+			}
+		})
+	}
+}

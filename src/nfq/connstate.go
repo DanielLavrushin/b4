@@ -589,6 +589,7 @@ type runtimeState struct {
 	pendingHello *pendingHelloCache
 	hostHints    *hostHintCache
 	quicFlows    *quicFlowCache
+	voiceFlows   *voiceFlowCache
 	direction    *queueDirectionState
 	flowDrops    *flowDropPersistence
 	ipHealth     *iphealth.Tracker
@@ -601,6 +602,7 @@ func newRuntimeState() *runtimeState {
 		pendingHello: newPendingHelloCache(),
 		hostHints:    newHostHintCache(),
 		quicFlows:    newQUICFlowCache(),
+		voiceFlows:   newVoiceFlowCache(),
 		direction:    newQueueDirectionState(time.Now()),
 		flowDrops:    newFlowDropPersistence(),
 		ipHealth:     iphealth.NewTracker(nil),

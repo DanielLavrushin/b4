@@ -36,6 +36,7 @@ type SuffixSet struct {
 	regexCache    sync.Map
 	ipRanger      cidranger.Ranger
 	udpPortRanges []portRange
+	udpL7Ranges   []portRange
 	tcpPortRanges []portRange
 
 	ipCache      map[string]*cacheEntry
@@ -55,6 +56,29 @@ type SuffixSet struct {
 	learnedIPTTL        time.Duration
 
 	regexCacheSize int32
+
+	scopesBlock bool
+}
+
+type SetFilter func(*config.SetConfig) bool
+
+func (f SetFilter) Keeps(set *config.SetConfig) bool {
+	return f == nil || f(set)
+}
+
+func joinFilters(filters []SetFilter) SetFilter {
+	var joined SetFilter
+	for _, f := range filters {
+		switch {
+		case f == nil:
+		case joined == nil:
+			joined = f
+		default:
+			prev, next := joined, f
+			joined = func(set *config.SetConfig) bool { return prev(set) && next(set) }
+		}
+	}
+	return joined
 }
 
 type cacheEntry struct {
@@ -141,6 +165,9 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 		if !set.Enabled {
 			continue
 		}
+		if set.BlockRoutingScoped() {
+			s.scopesBlock = true
+		}
 		for _, entry := range set.Targets.DomainsToMatch {
 			d, isRegex := ParseDomainEntry(entry)
 			if d == "" {
@@ -221,7 +248,11 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 		if set.UDP.DPortFilter != "" {
 			for _, part := range strings.Split(set.UDP.DPortFilter, ",") {
 				if pr, ok := parsePortRange(part, set); ok {
-					s.udpPortRanges = append(s.udpPortRanges, pr)
+					if set.SelectsL7() {
+						s.udpL7Ranges = append(s.udpL7Ranges, pr)
+					} else {
+						s.udpPortRanges = append(s.udpPortRanges, pr)
+					}
 				}
 			}
 		}
@@ -237,6 +268,18 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 
 	s.regexPatterns = len(patterns)
 	return s
+}
+
+func (s *SuffixSet) ScopesBlockSets() bool {
+	return s != nil && s.scopesBlock
+}
+
+func (s *SuffixSet) ScopedBlockSetWins(host, srcMAC string, tlsVersion uint16, ipVersion uint8) bool {
+	if !s.ScopesBlockSets() {
+		return false
+	}
+	matched, set := s.MatchSNIWithSourceTLS(host, srcMAC, tlsVersion, ipVersion)
+	return matched && set.BlockRoutingScoped()
 }
 
 func parsePortRange(part string, set *config.SetConfig) (portRange, bool) {
@@ -262,12 +305,13 @@ func parsePortRange(part string, set *config.SetConfig) (portRange, bool) {
 	return portRange{}, false
 }
 
-func (s *SuffixSet) MatchUDPPort(dport uint16, srcMAC string) (bool, *config.SetConfig) {
+func (s *SuffixSet) MatchUDPPort(dport uint16, srcMAC string, keep ...SetFilter) (bool, *config.SetConfig) {
 	if s == nil || len(s.udpPortRanges) == 0 {
 		return false, nil
 	}
 
 	port := int(dport)
+	keepSet := joinFilters(keep)
 
 	for _, r := range s.udpPortRanges {
 		if r.set.DeclaresDestinationTargets() {
@@ -276,7 +320,7 @@ func (s *SuffixSet) MatchUDPPort(dport uint16, srcMAC string) (bool, *config.Set
 		if !setMatchesSource(r.set, srcMAC) {
 			continue
 		}
-		if port >= r.min && port <= r.max {
+		if port >= r.min && port <= r.max && keepSet.Keeps(r.set) {
 			return true, r.set
 		}
 	}
@@ -284,12 +328,60 @@ func (s *SuffixSet) MatchUDPPort(dport uint16, srcMAC string) (bool, *config.Set
 	return false, nil
 }
 
-func (s *SuffixSet) MatchTCPPort(dport uint16, srcMAC string) (bool, *config.SetConfig) {
+func (s *SuffixSet) MatchUDPL7(dport uint16, srcMAC, class string, ipVersion uint8, keep ...SetFilter) (bool, *config.SetConfig) {
+	if s == nil || class == "" || len(s.udpL7Ranges) == 0 {
+		return false, nil
+	}
+
+	port := int(dport)
+	keepSet := joinFilters(keep)
+
+	for _, r := range s.udpL7Ranges {
+		if !r.set.SelectsL7Class(class) || !r.set.MatchesIPVersion(ipVersion) {
+			continue
+		}
+		if !setMatchesSource(r.set, srcMAC) {
+			continue
+		}
+		if port >= r.min && port <= r.max && keepSet.Keeps(r.set) {
+			return true, r.set
+		}
+	}
+
+	return false, nil
+}
+
+func (s *SuffixSet) SelectsUDPL7() bool {
+	return s != nil && len(s.udpL7Ranges) > 0
+}
+
+func (s *SuffixSet) UDPL7Owner(id string, dport uint16, srcMAC string, ipVersion uint8, keep ...SetFilter) *config.SetConfig {
+	if s == nil || id == "" {
+		return nil
+	}
+
+	port := int(dport)
+	keepSet := joinFilters(keep)
+
+	for _, r := range s.udpL7Ranges {
+		if r.set.Id != id || port < r.min || port > r.max {
+			continue
+		}
+		if r.set.MatchesIPVersion(ipVersion) && setMatchesSource(r.set, srcMAC) && keepSet.Keeps(r.set) {
+			return r.set
+		}
+	}
+
+	return nil
+}
+
+func (s *SuffixSet) MatchTCPPort(dport uint16, srcMAC string, keep ...SetFilter) (bool, *config.SetConfig) {
 	if s == nil || len(s.tcpPortRanges) == 0 {
 		return false, nil
 	}
 
 	port := int(dport)
+	keepSet := joinFilters(keep)
 
 	for _, r := range s.tcpPortRanges {
 		if r.set.DeclaresDestinationTargets() {
@@ -298,7 +390,7 @@ func (s *SuffixSet) MatchTCPPort(dport uint16, srcMAC string) (bool, *config.Set
 		if !setMatchesSource(r.set, srcMAC) {
 			continue
 		}
-		if port >= r.min && port <= r.max {
+		if port >= r.min && port <= r.max && keepSet.Keeps(r.set) {
 			return true, r.set
 		}
 	}
@@ -643,47 +735,49 @@ func setMatchesSource(set *config.SetConfig, srcMAC string) bool {
 	return exclude
 }
 
-func SetMatchesSource(set *config.SetConfig, srcMAC string) bool {
+func SetMatchesSource(set *config.SetConfig, srcMAC string, keep ...SetFilter) bool {
 	if set == nil {
 		return false
 	}
-	return setMatchesSource(set, srcMAC)
+	return setMatchesSource(set, srcMAC) && joinFilters(keep).Keeps(set)
 }
 
-func (s *SuffixSet) MatchSNIWithSource(host string, srcMAC string) (bool, *config.SetConfig) {
-	return s.MatchSNIWithSourceTLS(host, srcMAC, 0, 0)
+func (s *SuffixSet) MatchSNIWithSource(host string, srcMAC string, keep ...SetFilter) (bool, *config.SetConfig) {
+	return s.MatchSNIWithSourceTLS(host, srcMAC, 0, 0, keep...)
 }
 
 // MatchSNIWithSourceTLS matches a domain with source MAC, TLS version and IP version filtering.
 // tlsVersion is the client's max TLS version in wire format (0x0303=1.2, 0x0304=1.3).
 // ipVersion is the packet's IP version (4 or 6). Pass 0 for either to skip that filter.
-func (s *SuffixSet) MatchSNIWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {
+func (s *SuffixSet) MatchSNIWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8, keep ...SetFilter) (bool, *config.SetConfig) {
 	if s == nil || (len(s.sets) == 0 && len(s.regexes) == 0) || host == "" {
 		return false, nil
 	}
 
 	lower := strings.ToLower(host)
+	keepSet := joinFilters(keep)
 
-	if matched, set := s.matchDomainWithSourceTLS(lower, srcMAC, tlsVersion, ipVersion); matched {
+	if matched, set := s.matchDomainWithSourceTLS(lower, srcMAC, tlsVersion, ipVersion, keepSet); matched {
 		return true, set
 	}
 
 	if len(s.regexes) > 0 {
-		return s.matchRegexWithSourceTLS(lower, srcMAC, tlsVersion, ipVersion)
+		return s.matchRegexWithSourceTLS(lower, srcMAC, tlsVersion, ipVersion, keepSet)
 	}
 
 	return false, nil
 }
 
-func (s *SuffixSet) MatchSNIForUnknownDevice(host string) (bool, *config.SetConfig) {
+func (s *SuffixSet) MatchSNIForUnknownDevice(host string, keep ...SetFilter) (bool, *config.SetConfig) {
 	if s == nil || (len(s.sets) == 0 && len(s.regexes) == 0) || host == "" {
 		return false, nil
 	}
 
 	lower := strings.ToLower(host)
+	keepSet := joinFilters(keep)
 
 	for name := lower; ; {
-		if listed, set := s.unknownDeviceSetAt(name); listed {
+		if listed, set := s.unknownDeviceSetAt(name, keepSet); listed {
 			if set != nil {
 				return true, set
 			}
@@ -699,14 +793,14 @@ func (s *SuffixSet) MatchSNIForUnknownDevice(host string) (bool, *config.SetConf
 	var buf [regexMemoSize]int8
 	memo := s.regexMemo(&buf)
 	for _, rws := range s.regexes {
-		if len(rws.set.Targets.SourceDevices) == 0 && acceptsAnyVersion(rws.set) && rws.matches(lower, memo) {
+		if len(rws.set.Targets.SourceDevices) == 0 && acceptsAnyVersion(rws.set) && rws.matches(lower, memo) && keepSet.Keeps(rws.set) {
 			return true, rws.set
 		}
 	}
 	return false, nil
 }
 
-func (s *SuffixSet) unknownDeviceSetAt(name string) (bool, *config.SetConfig) {
+func (s *SuffixSet) unknownDeviceSetAt(name string, keep SetFilter) (bool, *config.SetConfig) {
 	var only [1]*config.SetConfig
 	sets, ok := s.multiSets[name]
 	if !ok {
@@ -720,7 +814,7 @@ func (s *SuffixSet) unknownDeviceSetAt(name string) (bool, *config.SetConfig) {
 
 	listed := false
 	for _, set := range sets {
-		if len(set.Targets.SourceDevices) > 0 {
+		if len(set.Targets.SourceDevices) > 0 || !keep.Keeps(set) {
 			continue
 		}
 		listed = true
@@ -735,19 +829,19 @@ func acceptsAnyVersion(set *config.SetConfig) bool {
 	return set.MatchesTLSVersion(0) && set.MatchesIPVersion(0)
 }
 
-func (s *SuffixSet) matchDomainWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {
+func (s *SuffixSet) matchDomainWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8, keep SetFilter) (bool, *config.SetConfig) {
 	single, candidates := s.findDomainCandidates(host)
 
 	if single != nil {
 		only := [1]*config.SetConfig{single}
-		return selectSetBySourceAndTLS(only[:], srcMAC, tlsVersion, ipVersion)
+		return selectSetBySourceAndTLS(only[:], srcMAC, tlsVersion, ipVersion, keep)
 	}
 
 	if len(candidates) == 0 {
 		return false, nil
 	}
 
-	return selectSetBySourceAndTLS(candidates, srcMAC, tlsVersion, ipVersion)
+	return selectSetBySourceAndTLS(candidates, srcMAC, tlsVersion, ipVersion, keep)
 }
 
 func (s *SuffixSet) findDomainCandidates(host string) (*config.SetConfig, []*config.SetConfig) {
@@ -806,7 +900,7 @@ func (s *SuffixSet) SetHasDomain(setID, host string) bool {
 	return false
 }
 
-func (s *SuffixSet) matchRegexWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {
+func (s *SuffixSet) matchRegexWithSourceTLS(host string, srcMAC string, tlsVersion uint16, ipVersion uint8, keep SetFilter) (bool, *config.SetConfig) {
 	var candidates []*config.SetConfig
 	var buf [regexMemoSize]int8
 	memo := s.regexMemo(&buf)
@@ -818,10 +912,10 @@ func (s *SuffixSet) matchRegexWithSourceTLS(host string, srcMAC string, tlsVersi
 	if len(candidates) == 0 {
 		return false, nil
 	}
-	return selectSetBySourceAndTLS(candidates, srcMAC, tlsVersion, ipVersion)
+	return selectSetBySourceAndTLS(candidates, srcMAC, tlsVersion, ipVersion, keep)
 }
 
-func (s *SuffixSet) MatchIPWithSource(ip net.IP, srcMAC string) (bool, *config.SetConfig) {
+func (s *SuffixSet) MatchIPWithSource(ip net.IP, srcMAC string, keep ...SetFilter) (bool, *config.SetConfig) {
 	if s == nil || s.ipRanger == nil || ip == nil {
 		return false, nil
 	}
@@ -839,7 +933,7 @@ func (s *SuffixSet) MatchIPWithSource(ip net.IP, srcMAC string) (bool, *config.S
 		candidates = append(candidates, e.(*ipRange).sets...)
 	}
 
-	return selectSetBySource(candidates, srcMAC, ipVersionOf(ip))
+	return selectSetBySource(candidates, srcMAC, ipVersionOf(ip), joinFilters(keep))
 }
 
 func (s *SuffixSet) ListsPrivateTCPTarget(ip net.IP, srcMAC string, dport uint16) bool {
@@ -898,7 +992,7 @@ func sortEntriesBySpecificity(entries []cidranger.RangerEntry) {
 	})
 }
 
-func (s *SuffixSet) MatchLearnedIPWithSource(ip net.IP, srcMAC string) (bool, *config.SetConfig, string) {
+func (s *SuffixSet) MatchLearnedIPWithSource(ip net.IP, srcMAC string, keep ...SetFilter) (bool, *config.SetConfig, string) {
 	if s == nil || ip == nil {
 		return false, nil, ""
 	}
@@ -914,6 +1008,10 @@ func (s *SuffixSet) MatchLearnedIPWithSource(ip net.IP, srcMAC string) (bool, *c
 	}
 	if entry.set != nil && entry.set.Targets.DomainOnly {
 		return false, nil, ""
+	}
+
+	if keepSet := joinFilters(keep); keepSet != nil {
+		return s.matchLearnedIPKept(ipStr, ipVersionOf(ip), srcMAC, keepSet)
 	}
 
 	s.learnedIPCacheMu.Lock()
@@ -949,29 +1047,62 @@ func (s *SuffixSet) MatchLearnedIPWithSource(ip net.IP, srcMAC string) (bool, *c
 	return true, entry.set, entry.domain
 }
 
-func selectSetBySource(candidates []*config.SetConfig, srcMAC string, ipVersion uint8) (bool, *config.SetConfig) {
-	return selectSetBySourceAndTLS(candidates, srcMAC, 0, ipVersion)
+func (s *SuffixSet) matchLearnedIPKept(ipStr string, ipVersion uint8, srcMAC string, keep SetFilter) (bool, *config.SetConfig, string) {
+	s.learnedIPCacheMu.Lock()
+	entry, exists := s.learnedIPCache[ipStr]
+	if !exists || (entry.set != nil && entry.set.Targets.DomainOnly) {
+		s.learnedIPCacheMu.Unlock()
+		return false, nil, ""
+	}
+	if time.Since(entry.learnedAt) > s.learnedIPTTL {
+		delete(s.learnedIPCache, ipStr)
+		s.learnedIPCacheLRU.Remove(entry.element)
+		s.learnedIPCacheMu.Unlock()
+		return false, nil, ""
+	}
+	set, domain := entry.set, entry.domain
+	s.learnedIPCacheMu.Unlock()
+
+	if !setMatchesSource(set, srcMAC) || !set.MatchesIPVersion(ipVersion) || !keep(set) {
+		matched, altSet := s.MatchSNIWithSourceTLS(domain, srcMAC, 0, ipVersion, keep)
+		if !matched {
+			return false, nil, ""
+		}
+		set = altSet
+	}
+
+	s.learnedIPCacheMu.Lock()
+	if current, ok := s.learnedIPCache[ipStr]; ok && current == entry {
+		entry.learnedAt = time.Now()
+		s.learnedIPCacheLRU.MoveToFront(entry.element)
+	}
+	s.learnedIPCacheMu.Unlock()
+	return true, set, domain
 }
 
-func selectSetBySourceAndTLS(candidates []*config.SetConfig, srcMAC string, tlsVersion uint16, ipVersion uint8) (bool, *config.SetConfig) {
+func selectSetBySource(candidates []*config.SetConfig, srcMAC string, ipVersion uint8, keep SetFilter) (bool, *config.SetConfig) {
+	return selectSetBySourceAndTLS(candidates, srcMAC, 0, ipVersion, keep)
+}
+
+func selectSetBySourceAndTLS(candidates []*config.SetConfig, srcMAC string, tlsVersion uint16, ipVersion uint8, keep SetFilter) (bool, *config.SetConfig) {
 	if len(candidates) == 0 {
 		return false, nil
 	}
 
 	for _, set := range candidates {
-		if len(set.Targets.SourceDevices) > 0 && setMatchesSource(set, srcMAC) && set.MatchesTLSVersion(tlsVersion) && set.MatchesIPVersion(ipVersion) {
+		if len(set.Targets.SourceDevices) > 0 && setMatchesSource(set, srcMAC) && set.MatchesTLSVersion(tlsVersion) && set.MatchesIPVersion(ipVersion) && keep.Keeps(set) {
 			return true, set
 		}
 	}
 
 	for _, set := range candidates {
-		if len(set.Targets.SourceDevices) == 0 && set.MatchesTLSVersion(tlsVersion) && set.MatchesIPVersion(ipVersion) {
+		if len(set.Targets.SourceDevices) == 0 && set.MatchesTLSVersion(tlsVersion) && set.MatchesIPVersion(ipVersion) && keep.Keeps(set) {
 			return true, set
 		}
 	}
 
 	if tlsVersion != 0 || ipVersion != 0 {
-		return selectSetBySourceAndTLS(candidates, srcMAC, 0, 0)
+		return selectSetBySourceAndTLS(candidates, srcMAC, 0, 0, keep)
 	}
 
 	return false, nil

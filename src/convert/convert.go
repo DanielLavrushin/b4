@@ -2,6 +2,7 @@ package convert
 
 import (
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 
@@ -61,6 +62,7 @@ type SetPlan struct {
 	AcceptsTargets bool     `json:"accepts_targets"`
 	Domains        []string `json:"domains"`
 	IPs            []string `json:"ips"`
+	FilterL7       []string `json:"filter_l7"`
 	Strategy       string   `json:"strategy"`
 	Faking         bool     `json:"faking"`
 	Enabled        bool     `json:"enabled"`
@@ -169,7 +171,7 @@ func Analyze(input string, opts Options) (*Result, error) {
 	runNormalizer(spec.Normalize, prog, resolved, notes)
 	resolved = dropTrailing(prog, resolved, spec.ProfileModel)
 	resolved = foldUDPProfiles(prog, resolved, notes)
-	sets := emit(prog, resolved, notes, emitOpts{
+	sets, sharedUnused := emit(prog, resolved, notes, emitOpts{
 		NamePrefix:     opts.NamePrefix,
 		Domains:        opts.Domains,
 		ProfileDomains: opts.ProfileDomains,
@@ -196,7 +198,7 @@ func Analyze(input string, opts Options) (*Result, error) {
 	res.Notes = notes.list()
 	res.Applicable = anyProfileCarriesStrategy(prog)
 	res.Plan = buildPlan(prog, sets)
-	res.Warnings = buildWarnings(spec, argv, prog, sets, inferred, srcRep)
+	res.Warnings = buildWarnings(spec, argv, prog, sets, inferred, srcRep, sharedUnused)
 	res.Fidelity = score(res.Notes)
 	return res, nil
 }
@@ -224,9 +226,10 @@ func buildPlan(prog *Program, sets []config.SetConfig) []SetPlan {
 			Name:           s.Name,
 			Role:           role,
 			FallbackFor:    from,
-			AcceptsTargets: entry,
+			AcceptsTargets: entry && !prog.Profiles[i].scopedByL7(),
 			Domains:        append([]string{}, s.Targets.SNIDomains...),
 			IPs:            append([]string{}, s.Targets.IPs...),
+			FilterL7:       append([]string{}, s.UDP.FilterL7...),
 			Strategy:       s.Fragmentation.Strategy,
 			Faking:         s.Faking.SNI,
 			Enabled:        s.Enabled,
@@ -253,7 +256,7 @@ func collectUnresolved(prog *Program) []Unresolved {
 
 const minToolConfidence = 0.35
 
-func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetConfig, inferred bool, src sourceReport) []Warning {
+func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetConfig, inferred bool, src sourceReport, sharedUnused bool) []Warning {
 	out := []Warning{}
 	if inferred {
 		if amb := ambiguousFlags(spec, argv); len(amb) > 0 {
@@ -286,14 +289,21 @@ func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetCo
 	}
 	enabled := 0
 	for _, s := range sets {
-		if s.Enabled && (len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0) {
+		if s.Enabled && (len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0 || s.SelectsL7()) {
 			enabled++
 		}
 	}
-	if enabled == 0 {
+	if enabled == 0 && slices.ContainsFunc(prog.Profiles, func(p *Profile) bool { return !p.scopedByL7() }) {
 		out = append(out, Warning{Code: "needsTargets", Params: map[string]any{
 			"sets": len(sets), "tool": spec.Label,
 		}})
+	}
+	if sharedUnused {
+		code := "sharedDomainsNoSet"
+		if slices.ContainsFunc(prog.Profiles, func(p *Profile) bool { return p.IsEntry() && !p.scopedByL7() }) {
+			code = "sharedDomainsUnused"
+		}
+		out = append(out, Warning{Code: code})
 	}
 	if !anyProfileCarriesStrategy(prog) {
 		out = append(out, Warning{Code: "nothingRecognized", Params: map[string]any{"tool": spec.Label}})
@@ -327,7 +337,7 @@ func countCatchAll(prog *Program, sets []config.SetConfig) int {
 			break
 		}
 		p := prog.Profiles[i]
-		if !p.IsEntry() || p.hasOwnTargets() {
+		if !p.IsEntry() || p.hasOwnTargets() || p.scopedByL7() {
 			continue
 		}
 		if len(sets[i].Targets.SNIDomains) == 0 && len(sets[i].Targets.IPs) == 0 {

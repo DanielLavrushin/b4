@@ -19,6 +19,7 @@ func srcResolverWithConntrack(t *testing.T, wan, contents string) *tunSrcResolve
 }
 
 func TestResolveRecoversTheLANSource(t *testing.T) {
+	thisHost(t)
 	r := srcResolverWithConntrack(t, "62.78.37.161",
 		"udp      17 29 src=192.168.31.140 dst=1.1.1.1 sport=25954 dport=53 src=1.1.1.1 dst=62.78.37.161 sport=53 dport=25954 mark=0 use=2\n")
 

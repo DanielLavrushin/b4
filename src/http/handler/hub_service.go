@@ -249,6 +249,7 @@ func hubSetView(res hub.Result, applied map[string]*HubApplied) HubSet {
 			GeoIP:   nonNilStrings(hub.TargetList(cs.Set, "geoip_categories")),
 			ASNs:    nonNilStrings(hub.TargetList(cs.Set, "asns")),
 			IPCount: len(hub.TargetList(cs.Set, "ip")),
+			UDPL7:   nonNilStrings(hubwire.UDPL7(cs.Set)),
 		},
 		Display: res.Display,
 		Match:   res.Match,

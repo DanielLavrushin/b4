@@ -16,8 +16,12 @@ const (
 	escalateReasonDNS    = "no usable DNS answer"
 )
 
-func (w *Worker) escalatedSetFor(cfg *config.Config, host, srcMac string) *config.SetConfig {
-	if w == nil || w.destState == nil || cfg == nil || host == "" {
+func routingBlocks(set *config.SetConfig) bool {
+	return set != nil && set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode)
+}
+
+func (w *Worker) escalatedSetFor(cfg *config.Config, selected *config.SetConfig, host, srcMac string, keep ...sni.SetFilter) *config.SetConfig {
+	if w == nil || w.destState == nil || cfg == nil || host == "" || routingBlocks(selected) {
 		return nil
 	}
 	escId, _, ok := w.destState.GetEscalation(host)
@@ -29,22 +33,23 @@ func (w *Worker) escalatedSetFor(cfg *config.Config, host, srcMac string) *confi
 		w.destState.ClearEscalation(host)
 		return nil
 	}
-	if !sni.SetMatchesSource(escSet, srcMac) {
+	if !sni.SetMatchesSource(escSet, srcMac, keep...) {
 		return nil
 	}
 	return escSet
 }
 
-func (w *Worker) tryEscalate(cfg *config.Config, set *config.SetConfig, host, srcMac string, dst net.IP, reason string) *config.SetConfig {
-	if w == nil || w.destState == nil || cfg == nil || set == nil || host == "" || !set.Escalate.Active() {
+func (w *Worker) tryEscalate(cfg *config.Config, set *config.SetConfig, host, srcMac string, dst net.IP, reason string, tlsVersion uint16, ipVersion uint8, from ...*ingressScope) *config.SetConfig {
+	if w == nil || w.destState == nil || cfg == nil || set == nil || host == "" || !set.Escalate.Active() || routingBlocks(set) {
 		return nil
 	}
 	next := cfg.GetSetById(set.Escalate.To)
 	if next == nil || !next.Enabled {
 		return nil
 	}
-	if !sni.SetMatchesSource(next, srcMac) {
-		log.Tracef("escalation for %s not applied: %s does not target the device it came from", host, next.Name)
+	scope := scopeFrom(from)
+	if !sni.SetMatchesSource(next, srcMac, scope.filter()) {
+		log.Tracef("escalation for %s not applied: %s does not cover the device or the interface it came from", host, next.Name)
 		return nil
 	}
 	if !w.destState.SetEscalation(host, next.Id, reason, set.Escalate.ResolvedTTL()) {
@@ -54,7 +59,9 @@ func (w *Worker) tryEscalate(cfg *config.Config, set *config.SetConfig, host, sr
 		return nil
 	}
 	recordEscalation(cfg)
-	w.registerEscalatedRoute(cfg, next, host, dst)
+	if scope.learnsTLS(host, tlsVersion, ipVersion) {
+		w.registerEscalatedRoute(cfg, next, host, dst)
+	}
 	log.Warnf("escalation: %s is not getting through with %s (%s), switching it to %s", host, set.Name, reason, next.Name)
 	return next
 }

@@ -19,6 +19,7 @@ const (
 	injectRouteCacheMax = 4096
 	injectRouteSlotsMax = 4
 	injectRouteTimeout  = 250 * time.Millisecond
+	sourceRouteTTL      = 30 * time.Second
 )
 
 type injectRouteKey struct {
@@ -49,6 +50,9 @@ var (
 	injectRouteSlots    = make(chan struct{}, injectRouteSlotsMax)
 	injectRouteLookup   = netlinkRouteOIF
 	injectRouteWait     = injectRouteTimeout
+
+	sourceRouteCache    = make(map[[16]byte]injectRouteEntry)
+	sourceRouteInflight = make(map[[16]byte]*injectRouteFlight)
 
 	injectRouteConnMu sync.Mutex
 	injectRouteConn   *netlink.Conn
@@ -91,7 +95,10 @@ func injectRouteOIF(dst net.IP, mark, outDev uint32) (uint32, bool) {
 		go injectRouteResolve(key, f, append(net.IP(nil), dst...), mark, outDev)
 	}
 	injectRouteMu.Unlock()
+	return f.wait()
+}
 
+func (f *injectRouteFlight) wait() (uint32, bool) {
 	left := time.Until(f.until)
 	if left <= 0 {
 		select {
@@ -109,6 +116,53 @@ func injectRouteOIF(dst net.IP, mark, outDev uint32) (uint32, bool) {
 	case <-t.C:
 		return 0, false
 	}
+}
+
+func (e injectRouteEntry) servesSource(now time.Time) bool {
+	age := now.Sub(e.at)
+	if e.ok && e.oif != 0 {
+		return age < sourceRouteTTL
+	}
+	return age < injectRouteRecheck
+}
+
+func sourceRouteOIF(src net.IP) (uint32, bool) {
+	var key [16]byte
+	copy(key[:], src.To16())
+
+	injectRouteMu.Lock()
+	if e, had := sourceRouteCache[key]; had && e.servesSource(time.Now()) {
+		injectRouteMu.Unlock()
+		return e.oif, e.ok
+	}
+	f, running := sourceRouteInflight[key]
+	if !running {
+		select {
+		case injectRouteSlots <- struct{}{}:
+		default:
+			injectRouteMu.Unlock()
+			return 0, false
+		}
+		f = &injectRouteFlight{done: make(chan struct{}), until: time.Now().Add(injectRouteWait)}
+		sourceRouteInflight[key] = f
+		go sourceRouteResolve(key, f, append(net.IP(nil), src...))
+	}
+	injectRouteMu.Unlock()
+	return f.wait()
+}
+
+func sourceRouteResolve(key [16]byte, f *injectRouteFlight, src net.IP) {
+	defer func() { <-injectRouteSlots }()
+	oif, ok := injectRouteLookup(src, 0)
+	injectRouteMu.Lock()
+	if len(sourceRouteCache) >= injectRouteCacheMax {
+		sourceRouteCache = make(map[[16]byte]injectRouteEntry)
+	}
+	sourceRouteCache[key] = injectRouteEntry{oif: oif, ok: ok, at: time.Now()}
+	delete(sourceRouteInflight, key)
+	injectRouteMu.Unlock()
+	f.oif, f.ok = oif, ok
+	close(f.done)
 }
 
 func injectRouteResolve(key injectRouteKey, f *injectRouteFlight, dst net.IP, mark, outDev uint32) {

@@ -57,6 +57,7 @@ export interface ConvertSetPlan {
   accepts_targets: boolean;
   domains: string[];
   ips: string[];
+  filter_l7: string[];
   strategy: string;
   faking: boolean;
   enabled: boolean;

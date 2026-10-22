@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { B4SetConfig, QueueConfig } from "@models/config";
+import { B4SetConfig } from "@models/config";
 import { B4Tabs, B4Tab, B4TabPanel, B4Section } from "@b4.elements";
 import { TcpIcon, FragIcon, FakingIcon, CoreIcon } from "@b4.icons";
 import { TcpGeneral } from "./TcpGeneral";
@@ -16,7 +16,6 @@ const TCP_SUB_INDEX: Record<string, number> = {
 interface TcpTabContainerProps {
   initialSub?: string;
   config: B4SetConfig;
-  queue: QueueConfig;
   onChange: (
     field: string,
     value: string | number | boolean | string[] | number[],
@@ -32,7 +31,6 @@ enum TCP_TABS {
 export const TcpTabContainer = ({
   initialSub,
   config,
-  queue,
   onChange,
 }: TcpTabContainerProps) => {
   const { t } = useTranslation();
@@ -67,7 +65,7 @@ export const TcpTabContainer = ({
       </B4Tabs>
 
       <B4TabPanel value={activeTab} index={TCP_TABS.GENERAL} idPrefix="tcp-tab">
-        <TcpGeneral config={config} queue={queue} onChange={onChange} />
+        <TcpGeneral config={config} onChange={onChange} />
       </B4TabPanel>
 
       <B4TabPanel value={activeTab} index={TCP_TABS.SPLITTING} idPrefix="tcp-tab">

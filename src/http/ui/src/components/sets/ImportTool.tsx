@@ -32,6 +32,7 @@ import {
   ConvertUnresolved,
   convertApi,
 } from "@api/convert";
+import { udpL7Label } from "./udpL7";
 
 const AUTO = "auto";
 
@@ -440,6 +441,10 @@ function ProfileHeader({
 }: Readonly<ProfileHeaderProps>) {
   const { t } = useTranslation();
   const entry = plan?.role !== "fallback";
+  const acceptsTargets = plan?.accepts_targets ?? true;
+  const protocols = (plan?.filter_l7 ?? [])
+    .map((p) => udpL7Label(t, p))
+    .join(", ");
 
   return (
     <Stack gap={1} sx={{ mb: 1 }}>
@@ -473,7 +478,7 @@ function ProfileHeader({
         )}
       </Stack>
 
-      {entry ? (
+      {acceptsTargets ? (
         <B4TextField
           label={t("sets.convert.domainsLabel")}
           value={value}
@@ -495,9 +500,13 @@ function ProfileHeader({
         />
       ) : (
         <Typography variant="caption" sx={{ color: colors.text.secondary }}>
-          {t("sets.convert.fallbackNoTargets", {
-            index: (plan?.fallback_for ?? 0) + 1,
-          })}
+          {!entry
+            ? t("sets.convert.fallbackNoTargets", {
+                index: (plan?.fallback_for ?? 0) + 1,
+              })
+            : protocols
+              ? t("sets.convert.l7NoTargets", { protocols })
+              : t("sets.convert.l7NeedsPortsNoTargets")}
         </Typography>
       )}
     </Stack>

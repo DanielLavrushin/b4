@@ -1,5 +1,17 @@
 # B4 - Bye Bye Big Bro
 
+## [1.88.0] - 2026-10-21
+
+- ADDED: **A set can handle only calls, such as Discord voice calls** - the option is Handle only calls in the Calls field on a set's UDP tab, and Which calls can narrow it to the Discord app or to browsers. Such a set has no targets and acts only on the packet that opens each call on its UDP ports, taking the call from any other set. The guide Discord voice calls describes the setup, and such sets also come from the import tool or the Community Hub.
+- CHANGED: **Filter STUN Packets on a set's UDP tab became the Calls field** - on became Pass call setup, and off became Handle like other UDP. With Pass call setup, the set lets STUN requests and the Discord app's voice packets through unchanged. The rest of a call, such as browser audio and video, still gets the set's Action Mode.
+- FIXED: **The Traffic page showed STUN and Discord voice packets as handled by a set that let them through** - with Filter STUN Packets on, a set passed these packets through unchanged, yet their rows looked the same as rows of packets the set had handled.
+- FIXED: **Some set editor help texts described the wrong behaviour** - the TCP Port Filter said port 443 is always included, and the UDP Port Filter said an empty field turns it off. A list limits the set to the ports listed, and an empty field means every port. The UDP Evasion Technique said None sends fakes unchanged and TTL lets them expire, while UDP fakes always use the set's Fake TTL.
+- FIXED: **The Connection Packets Limit sliders on a set's TCP and UDP tabs had no effect** - b4 took the limit for every set from TCP Connection Packets Limit and UDP Connection Packets Limit under Settings, Core, Packet Engine.
+- FIXED: **The import tool lost a port filter or the shared domains without a warning** - a zapret port range with equal or reversed ends, such as `3478-3478`, was dropped when the set was saved. A set whose port filter held only that range acted on every port. Shared domains went unused when every profile had a host list of its own.
+- FIXED: **A refused MCP write did not say which setting was wrong** - the answer read only "Configuration is invalid".
+- FIXED: **A block set limited to Source Interfaces also blocked other interfaces and the router itself** - only blocking by address followed the list. Blocking by name, in DNS lookups and in connections, applied to every device and to the router's own connections. A block set with an escalation target also stopped blocking a site once a device retried a blocked connection a few times.
+- FIXED: **In TUN mode, memory use grew with every new connection** - b4 kept a record of where each connection came from and never removed old records.
+
 ## [1.87.0] - 2026-10-17
 
 - ADDED: **A set can remove ECH keys from DNS answers, so a browser opens sites such as those on Cloudflare where the network drops connections that use ECH** - the switch is under DNS & Routing, DNS Redirect, Encrypted ClientHello (ECH) in the set editor, a set that lists cloudflare-ech.com with it on covers every Cloudflare site, and in NFQUEUE mode it also acts on DNS answers that travel over IPv6 while IPv6 support is off. Discovery proposes such a set, which changes no packets, for a site that loads only without ECH.

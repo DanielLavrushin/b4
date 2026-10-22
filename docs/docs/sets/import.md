@@ -24,7 +24,7 @@ This is not the **Import/Export** tab of the set editor, which moves a b4 set be
 3. Leave **Source tool** and **Version** on **Detect automatically**. When the report says **Version guessed** and the result looks wrong, pick the version by hand: byedpi changed the meaning of several options between 0.13 and 0.15.
 4. Click **Analyze**. Nothing is saved yet.
 5. Read the report, see [The report](#the-report).
-6. Enter the domains, see [Domains](#domains). **Shared domains** go to the first set that has no host list of its own, and each set has its own **Domains (optional)** field.
+6. Enter the domains, see [Domains](#domains). **Shared domains** go to the first set that takes targets and has no host list of its own, and each set has its own **Domains (optional)** field. The report warns when no set takes the shared domains.
 7. Click **Create N sets**.
 
 :::warning Importing moves domains away from existing sets
@@ -43,9 +43,10 @@ A configuration file is read the way its launch script reads it, so the sets fol
 
 ## Domains {#domains}
 
-A b4 set acts only on its [targets](./targets.md). A byedpi command line usually has no host list, and a zapret one points at a file on its machine, so the import asks for domains per set. A set left without targets is created disabled.
+A b4 set acts only on its [targets](./targets.md). A byedpi command line usually has no host list, and a zapret one points at a file on its machine, so the import asks for domains per set. A set left without targets is created disabled, unless it handles only calls.
 
 - **A fallback set gets no domain field.** It is reached through escalation from the set before it, and the same domains would make it compete with that set.
+- **A set for calls gets no domain field either.** Such a set comes from a zapret profile with `--filter-l7` naming `discord` or `stun`. The profile covers UDP only and has no host list or ipset of its own. The set gets **(auto: STUN request)** as its fake payload. With a `--filter-udp` port list, it [handles only calls](./udp.md#protocol-selection) and is created enabled when the profile sends fakes. Without a UDP port list, it is created disabled, with **Calls** on **Pass call setup**. Its report row says to add the ports, choose **Handle only calls** in **Calls** and enable the set. The Discord line `--filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake` becomes the voice set of [Discord voice calls](../guides/discord-voice.md).
 - **Only one set acts on a domain.** Profiles that share a host list and differ only by port become sets that are created disabled and named in the report. Each needs its own domains, or it can be deleted.
 - **A host list file** (`--hostlist=...`, `-H ...`) is named next to the domain field of its set. Its contents are copied from the other machine and pasted there.
 - **A fake payload file** (`--dpi-desync-fake-tls=/opt/.../tls_clienthello.bin`) is replaced by a built-in payload. The original can be uploaded under [Settings > Payloads](../settings/payloads.md). An all-zero hex pattern becomes b4's all-zero payload.
@@ -69,7 +70,7 @@ These do not carry over:
 - **Automatic TTL** (`--dpi-desync-autottl`, byedpi's hop count probing). b4 sends fakes with a fixed TTL, taken from `--dpi-desync-ttl` when the source has one.
 - **Changes to plain HTTP** (`--hostcase`, `--domcase`, byedpi's `--mod-http`).
 - **Exclusion lists** (`--hostlist-exclude`, `--ipset-exclude`). b4 has no exclusion list, so those entries are kept out of the set targets by hand.
-- **Packet ranges** (`--dpi-desync-start`, `--dpi-desync-cutoff`, byedpi's `--round`). b4 has a per-connection packet limit on the [General](./tcp/general.md) sub-tab.
+- **Packet ranges** (`--dpi-desync-start`, `--dpi-desync-cutoff`, byedpi's `--round`). b4 has the same packet limits for every set, **TCP Connection Packets Limit** and **UDP Connection Packets Limit** under [Settings > Core](../settings/core.md#queue-and-packet-processing).
 - **Negated port filters** (`--filter-tcp=~80`). A b4 port filter lists the ports to act on.
 - **Proxy settings** of byedpi, which is a SOCKS5 proxy: its listening address, buffers and connection limits.
 
