@@ -527,3 +527,52 @@ func TestASplitHelloCoalescesOncePerAttempt(t *testing.T) {
 		t.Errorf("past the limit the ClientHello must reach the server unchanged, got %v", v)
 	}
 }
+
+func TestALearnedAddressDoesNotClaimTheRestOfAnUnrelatedQUICFlow(t *testing.T) {
+	dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+	dropper.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &dropper)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xC1, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 51001); v != engine.VerdictDropFlow {
+		t.Fatalf("the set's own name teaches it the address, got %v", v)
+	}
+
+	unrelated := newSplitQUICHello(t, []byte{0xC2, 1, 2, 3, 4, 5, 6, 7}, []byte{0xC3, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+	if v := sendQUIC(w, unrelated.first, 51002); v != engine.VerdictAccept {
+		t.Fatalf("the first datagram of the unrelated flow carries no readable name, got %v", v)
+	}
+	if v := sendQUIC(w, unrelated.completing, 51002); v != engine.VerdictAccept {
+		t.Fatalf("the unrelated name matches no set, got %v", v)
+	}
+	if v := sendQUIC(w, unrelated.resend, 51002); v != engine.VerdictAccept {
+		t.Errorf("the resend of the unrelated flow: got %v, want accept", v)
+	}
+	if v := sendQUIC(w, unrelated.oneRTT, 51002); v != engine.VerdictAccept {
+		t.Errorf("a short-header packet of the unrelated flow carries no name b4 can read, so the learned address must not claim it either: got %v, want accept", v)
+	}
+}
+
+func TestCoalesceGivesUpForASetMatchedByItsDestination(t *testing.T) {
+	set := config.NewSetConfig()
+	set.Id = "ip-coalesce"
+	set.Name = "IPCoalesce"
+	set.Enabled = true
+	set.Targets.IPs = []string{"1.2.3.4/32"}
+	set.UDP.Mode = config.UDPModeCoalesce
+	set.UDP.FilterQUIC = config.QUICFilterAll
+	set.Fragmentation.Strategy = config.ConfigNone
+	set.Fragmentation.StrategyPool = nil
+
+	w := newQUICFlowWorker(t, &set)
+	hello := buildQUICInitialWithSNI(t, []byte{0xC4, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+
+	for attempt := 1; attempt <= maxCoalescedHellos; attempt++ {
+		if v := sendQUIC(w, hello, 51101); v != engine.VerdictDrop {
+			t.Fatalf("attempt %d of a set matched by address must be coalesced, got %v", attempt, v)
+		}
+	}
+	if v := sendQUIC(w, hello, 51101); v != engine.VerdictAccept {
+		t.Errorf("a set matched by address must stop coalescing a repeated ClientHello too, got %v", v)
+	}
+}
