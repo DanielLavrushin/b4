@@ -130,7 +130,7 @@ export const EscalationSettings = ({
                   min={500}
                   max={15000}
                   step={500}
-                  valueSuffix=" ms"
+                  valueSuffix={t("core.units.ms")}
                   helperText={t("sets.escalation.stallTimeoutHelper")}
                 />
               </Grid>
@@ -157,7 +157,7 @@ export const EscalationSettings = ({
                   min={5}
                   max={600}
                   step={5}
-                  valueSuffix=" s"
+                  valueSuffix={t("core.units.s")}
                   helperText={t("sets.escalation.rstWindowHelper")}
                 />
               </Grid>
@@ -188,7 +188,7 @@ export const EscalationSettings = ({
                   min={5}
                   max={1440}
                   step={15}
-                  valueSuffix=" min"
+                  valueSuffix={t("core.units.min")}
                   helperText={t("sets.escalation.ttlHelper")}
                 />
               </Grid>

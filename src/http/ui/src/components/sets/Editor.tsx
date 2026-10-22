@@ -239,7 +239,14 @@ export const SetEditorPage = ({
               )}
             </Stack>
 
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Stack
+              direction="row"
+              spacing={1}
+              justifyContent="flex-end"
+              flexWrap="wrap"
+              useFlexGap
+              sx={{ flex: { xs: "1 1 100%", sm: "0 1 auto" } }}
+            >
               <Button
                 size="small"
                 variant="outlined"

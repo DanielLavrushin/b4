@@ -58,6 +58,14 @@
     "targetSet": "Target Set",
     "setName": "Set Name",
     "createNewSet": "Create New Set",
+    "units": {
+      "s": " s",
+      "ms": " ms",
+      "us": " μs",
+      "min": " min",
+      "bytes": " bytes",
+      "kb": " KB"
+    },
     "nav": {
       "dashboard": "Dashboard",
       "sets": "Sets",
@@ -2347,6 +2355,7 @@
     "editor": {
       "namePlaceholder": "Set name...",
       "newSet": "New Set",
+      "defaultName": "Set {{n}}",
       "createSet": "Create Set",
       "escalateNeedsRstProtection": "Tip: also enable RST Injection Protection in the TCP tab. It helps keep the current page working while b4 detects the block.",
       "tabs": {

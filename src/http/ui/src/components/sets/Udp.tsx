@@ -481,7 +481,7 @@ export const UdpSettings = ({
                 min={32}
                 max={1500}
                 step={8}
-                valueSuffix=" bytes"
+                valueSuffix={t("core.units.bytes")}
                 helperText={t("sets.udp.fakeSizeHelper")}
               />
             </Grid>
@@ -560,7 +560,7 @@ export const UdpSettings = ({
                 min={0}
                 max={1000}
                 step={10}
-                valueSuffix=" ms"
+                valueSuffix={t("core.units.ms")}
                 helperText={t("sets.udp.seg2delayHelper")}
               />
             </Grid>
