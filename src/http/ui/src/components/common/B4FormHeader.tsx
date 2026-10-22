@@ -9,7 +9,19 @@ export const B4FormHeader = ({
 }) => {
   return (
     <Grid size={{ xs: 12 }}>
-      <Divider sx={{ ...props.sx }}>{label.toUpperCase()}</Divider>
+      <Divider
+        sx={{
+          "& .MuiDivider-wrapper": {
+            whiteSpace: "normal",
+            flexShrink: 0,
+            minWidth: 0,
+            maxWidth: "100%",
+          },
+          ...props.sx,
+        }}
+      >
+        {label.toUpperCase()}
+      </Divider>
     </Grid>
   );
 };

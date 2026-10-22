@@ -69,7 +69,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
             min={3}
             max={30}
             step={1}
-            valueSuffix=" sec"
+            valueSuffix={t("core.units.s")}
             helperText={t("settings.Checker.discoveryTimeoutHelp")}
           />
         </Grid>
@@ -83,7 +83,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
             min={500}
             max={5000}
             step={100}
-            valueSuffix=" ms"
+            valueSuffix={t("core.units.ms")}
             helperText={t("settings.Checker.configPropagationHelp")}
           />
         </Grid>
@@ -144,7 +144,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
             min={60}
             max={1800}
             step={30}
-            valueSuffix=" sec"
+            valueSuffix={t("core.units.s")}
             helperText={t("settings.Watchdog.intervalHelp")}
           />
         </Grid>
@@ -159,7 +159,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
             min={10}
             max={300}
             step={10}
-            valueSuffix=" sec"
+            valueSuffix={t("core.units.s")}
             helperText={t("settings.Watchdog.failureIntervalHelp")}
           />
         </Grid>
@@ -174,7 +174,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
             min={60}
             max={3600}
             step={60}
-            valueSuffix=" sec"
+            valueSuffix={t("core.units.s")}
             helperText={t("settings.Watchdog.cooldownHelp")}
           />
         </Grid>
@@ -189,7 +189,7 @@ export const CheckerSettings = ({ config, onChange }: CheckerSettingsProps) => {
             min={3}
             max={30}
             step={1}
-            valueSuffix=" sec"
+            valueSuffix={t("core.units.s")}
             helperText={t("settings.Watchdog.timeoutHelp")}
           />
         </Grid>

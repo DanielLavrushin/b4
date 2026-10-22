@@ -75,7 +75,7 @@ export const TcpGeneral = ({ config, onChange }: TcpGeneralProps) => {
             min={0}
             max={1000}
             step={10}
-            valueSuffix=" ms"
+            valueSuffix={t("core.units.ms")}
             helperText={t("sets.tcp.general.seg2delayHelper")}
             aiTopic="tcp.seg2delay"
           />
@@ -251,7 +251,7 @@ export const TcpGeneral = ({ config, onChange }: TcpGeneralProps) => {
                 min={1000}
                 max={10000}
                 step={500}
-                valueSuffix=" ms"
+                valueSuffix={t("core.units.ms")}
                 helperText={t("sets.tcp.general.ibdTimeoutHelper")}
               />
             </Grid>
@@ -267,7 +267,7 @@ export const TcpGeneral = ({ config, onChange }: TcpGeneralProps) => {
                   min={10}
                   max={600}
                   step={10}
-                  valueSuffix=" s"
+                  valueSuffix={t("core.units.s")}
                   helperText={t("sets.tcp.general.ibdHealTtlHelper")}
                   aiTopic="tcp.ip_block_detect.heal_ttl_sec"
                 />
