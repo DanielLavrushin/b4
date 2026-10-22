@@ -326,7 +326,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	cfg := api.getCfg()
 	if !cfg.System.WebServer.MCP.AllowActiveProbes {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf(
-			"active probes are disabled: a discovery run is the heaviest traffic b4 can generate, so it needs 'Allow active probes' under Settings -> Integrations -> MCP server")
+			"active probes are disabled: a discovery run is the heaviest traffic b4 can generate, so it needs %s", mcpNeedsSwitch("'Allow active probes'"))
 	}
 	var target *config.SetConfig
 	if ref := strings.TrimSpace(in.Set); ref != "" {
@@ -804,8 +804,7 @@ func (api *API) mcpDiscoveryCancel(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 
 func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDiscoveryOut, error) {
 	if !api.getCfg().System.WebServer.MCP.AllowWrites {
-		return nil, mcpDiscoveryOut{}, fmt.Errorf(
-			"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
+		return nil, mcpDiscoveryOut{}, errMCPWritesOff
 	}
 	var target *config.SetConfig
 	if ref := strings.TrimSpace(in.Set); ref != "" {

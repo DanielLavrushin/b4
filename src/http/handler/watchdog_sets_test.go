@@ -414,6 +414,9 @@ func TestMCPRevertRefusesToStartProbesWithoutTheGate(t *testing.T) {
 	if !res.IsError || !strings.Contains(mcpErrorText(res), "Allow active probes") {
 		t.Fatalf("undoing a disable turns the watchdog back on and needs the probe gate: %s", mcpErrorText(res))
 	}
+	if text := mcpErrorText(res); !strings.Contains(text, mcpSwitchWhere) || !strings.Contains(text, "Do not retry") || strings.Contains(text, "retry the call") {
+		t.Errorf("turning the switch on changes the configuration, which makes this undo stale, so the refusal must not promise a retry: %s", text)
+	}
 	if api.getCfg().GetSetById("set-1").Discovery.Watchdog {
 		t.Error("the refused revert changed nothing")
 	}

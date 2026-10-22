@@ -127,7 +127,8 @@ func mcpApplyAlias(canonical, raw string) (string, bool, error) {
 func mcpDeniedPathHint(path string) string {
 	switch {
 	case strings.HasPrefix(path, "system.web_server.mcp"):
-		return "the MCP server's own settings are never writable, so the AI cannot widen its own permissions"
+		return "the MCP server's own settings are never writable, so the AI cannot widen its own permissions; " +
+			"the switches 'Allow configuration changes' and 'Allow active probes' are " + mcpSwitchWhere
 	case strings.HasPrefix(path, "system.web_server"):
 		return "changing the web server would move or lock the interface used to undo the change"
 	case strings.HasPrefix(path, "system.tables.dscp"):
@@ -187,13 +188,14 @@ func mcpStripDerivedTargets(c *config.Config) {
 var (
 	errMCPConfigMoved = errors.New("the configuration changed while this change was prepared (by the watchdog, the web interface or another tool); nothing was written, read the current value and retry")
 	errMCPRevertStale = errors.New("the configuration changed since the change being undone")
+	errMCPWritesOff   = errors.New("configuration writes are disabled: they need " + mcpNeedsSwitch("'Allow configuration changes'"))
 )
 
 type mcpProbesError struct{ what string }
 
 func (e *mcpProbesError) Error() string {
 	return fmt.Sprintf("this change would %s, which makes the router fetch sites on a timer. "+
-		"That needs allow_active_probes ('Allow active probes' under Settings -> Integrations -> MCP server); nothing was written", e.what)
+		"That needs allow_active_probes ('Allow active probes'), which the user turns on %s; nothing was written. %s", e.what, mcpSwitchWhere, mcpSwitchRetry)
 }
 
 func (api *API) mcpSave(oldCfg, newCfg *config.Config) error {
@@ -843,8 +845,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		Annotations: mcpDestructive,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpSetValueIn) (*mcp.CallToolResult, mcpSetValueOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
-			return nil, mcpSetValueOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
+			return nil, mcpSetValueOut{}, errMCPWritesOff
 		}
 
 		canonical, setRef, err := parseMCPWritePath(in.Path)
@@ -969,8 +970,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		Annotations: mcpDestructive,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRevertOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
-			return nil, mcpRevertOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
+			return nil, mcpRevertOut{}, errMCPWritesOff
 		}
 
 		mcpWriteMu.Lock()
@@ -1016,9 +1016,10 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 					last.Path)
 			case errors.As(err, &probes):
 				return nil, mcpRevertOut{}, fmt.Errorf(
-					"refusing to undo %s: it would %s, which makes the router fetch sites on a timer. "+
-						"That needs 'Allow active probes' under Settings -> Integrations -> MCP server; nothing was changed and the change stays on the undo list",
-					last.Path, probes.what)
+					"refusing to undo %s: it would %s, which makes the router fetch sites on a timer, and that needs 'Allow active probes', which the user turns on %s. "+
+						"Nothing was changed. Do not retry this undo: turning the switch on is itself a configuration change, after which the undo is refused as stale. "+
+						"Once the switch is on, set the value back with b4_watchdog instead",
+					last.Path, probes.what, mcpSwitchWhere)
 			}
 			return nil, mcpRevertOut{}, fmt.Errorf("could not restore the previous configuration: %w", mcpWithFieldReasons(err))
 		}

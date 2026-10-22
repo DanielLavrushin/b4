@@ -77,7 +77,7 @@ A request with an `Origin` header is accepted when that origin is b4's own addre
 
 ### Tools {#mcp-tools}
 
-The server offers tools according to the two permission switches on the **MCP server** card and rebuilds the list when they change, without a restart. A tool that is not permitted is not offered at all, and the server tells the model which permission is off, so the model can say what to turn on.
+The server offers tools according to the two permission switches on the **MCP server** card and rebuilds the list when they change, without a restart. An application that was connected before the change keeps its old list until it reconnects. A tool that is not permitted is not offered at all, and the server tells the model which permission is off, so the model can say what to turn on.
 
 | Permitted | Tools offered |
 | --- | --- |

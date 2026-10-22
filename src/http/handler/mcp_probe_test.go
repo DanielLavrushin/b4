@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/daniellavrushin/b4/netprobe"
+	"github.com/daniellavrushin/b4/watchdog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -59,6 +61,10 @@ func TestMCPProbeValidatesInputBeforeEmittingTraffic(t *testing.T) {
 		"unknown mode":  {"domain": "a.com", "mode": "sideways"},
 		"private host":  {"domain": "192.168.1.1"},
 		"router itself": {"domain": "http://127.0.0.1/admin"},
+		"a space":       {"domain": "a b.com"},
+		"an at sign":    {"domain": "user@example.com"},
+		"a fragment":    {"domain": "example.com#top"},
+		"not ASCII":     {"domain": "пример.рф"},
 	} {
 		res, err := session.CallTool(ctx, &mcp.CallToolParams{
 			Name: "b4_test_domain_now", Arguments: args,
@@ -135,6 +141,168 @@ func TestMCPProbeVerdictNote(t *testing.T) {
 
 	if got := mcpProbeVerdictNote("example.com", nil, nil); got != "" {
 		t.Errorf("no results should produce no note, got %q", got)
+	}
+}
+
+func TestMCPProbeVerdictNoteCountsAnAnswerAsReached(t *testing.T) {
+	failed := &mcpProbeResult{Verdict: "TLS_DPI"}
+	loads := &mcpProbeResult{OK: true, answered: true}
+	offSite := &mcpProbeResult{Verdict: string(watchdog.VerdictRedirect), answered: true, redirect: "x.com"}
+	looped := &mcpProbeResult{Verdict: string(watchdog.VerdictRedirect), answered: true, redirect: "www.twitter.com"}
+	short := &mcpProbeResult{Verdict: string(netprobe.DomainError), answered: true, status: 202}
+
+	cases := []struct {
+		name          string
+		through, base *mcpProbeResult
+		wants, nots   []string
+	}{
+		{"redirect both ways", offSite, offSite,
+			[]string{"answers either way", "redirect to x.com, a different site", "test x.com with b4_test_domain_now"},
+			[]string{"fails both ways", "blocked"}},
+		{"redirect through b4, fails bypassed", offSite, failed,
+			[]string{"censored", "bypass is working", "fails without b4 (TLS_DPI)", "redirect to x.com", "test x.com"},
+			[]string{"fails both ways"}},
+		{"fails through b4, redirect bypassed", failed, offSite,
+			[]string{"FAILS through b4 (TLS_DPI)", "b4 setting is breaking it", "redirect to x.com"},
+			[]string{"fails both ways", "test x.com"}},
+		{"loads through b4, redirect bypassed", loads, offSite,
+			[]string{"answers either way", "through b4 it loads", "with b4 bypassed it answers only with a redirect to x.com"},
+			[]string{"test x.com", "fails both ways"}},
+		{"redirect through b4, loads bypassed", offSite, loads,
+			[]string{"answers either way", "with b4 bypassed it loads", "test x.com"},
+			[]string{"fails both ways"}},
+		{"redirects within the site", looped, looped,
+			[]string{"answers either way", "redirects within the site", "cannot tell"},
+			[]string{"test www.twitter.com", "different site", "fails both ways"}},
+		{"short reply both ways", short, short,
+			[]string{"answers either way", "HTTP 202, 0 bytes", "cannot tell"},
+			[]string{"fails both ways", "address itself", "b4_find_bypass_strategy"}},
+		{"short reply through b4, fails bypassed", short, failed,
+			[]string{"censored", "bypass is working", "HTTP 202"},
+			[]string{"fails both ways"}},
+		{"fails both ways", failed, failed,
+			[]string{"fails both ways", "not something a packet strategy fixes", "b4_find_bypass_strategy"},
+			nil},
+	}
+	for _, tc := range cases {
+		got := mcpProbeVerdictNote("twitter.com", tc.through, tc.base)
+		for _, want := range tc.wants {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: note %q should mention %q", tc.name, got, want)
+			}
+		}
+		for _, not := range tc.nots {
+			if strings.Contains(got, not) {
+				t.Errorf("%s: note %q must not say %q", tc.name, got, not)
+			}
+		}
+		if strings.Contains(got, ". ") {
+			t.Errorf("%s: notes for several domains are joined with '. ', so one note must not contain it: %q", tc.name, got)
+		}
+	}
+
+	if got := mcpProbeVerdictNote("twitter.com", offSite, nil); !strings.Contains(got, "fetched through b4") || !strings.Contains(got, "test x.com") {
+		t.Errorf("a single through-b4 fetch that redirects away must say where to look next: %q", got)
+	}
+	if got, want := mcpProbeVerdictNote("twitter.com", nil, failed), "twitter.com fails with b4 bypassed (TLS_DPI)"; got != want {
+		t.Errorf("single-mode failure: got %q, want %q", got, want)
+	}
+}
+
+func TestMCPMessagesOutsideTheGatesSayWhereTheSwitchIs(t *testing.T) {
+	for name, text := range map[string]string{
+		"a write that would start probes": (&mcpProbesError{what: "start the watchdog of set \"video\""}).Error(),
+		"a write to the MCP settings":     mcpDeniedPathHint("system.web_server.mcp.allow_writes"),
+		"a check that keeps a give-up":    mcpForceCheckNote("video", watchdog.ForceCheckScheduled, false),
+	} {
+		if !strings.Contains(text, mcpSwitchWhere) {
+			t.Errorf("%s: the message must say the switch is in b4's own web interface: %q", name, text)
+		}
+	}
+}
+
+func TestMCPProbeNoteForResultsThatAreNotAFetchVerdict(t *testing.T) {
+	refused := &mcpProbeResult{Error: "\"a b.com\" is not a bare hostname: pass a domain such as example.com"}
+	sinkholed := &mcpProbeResult{Verdict: string(netprobe.DomainDNSFake), Error: "every address youtube.com resolves to is private or local"}
+	bareAddress := &mcpProbeResult{Verdict: string(watchdog.VerdictRedirect), answered: true, redirect: "203.0.113.5"}
+	noHost := &mcpProbeResult{Verdict: string(watchdog.VerdictRedirect), answered: true}
+
+	for _, c := range []struct {
+		name          string
+		through, base *mcpProbeResult
+		wants, nots   []string
+	}{
+		{"input refused before any fetch", refused, refused,
+			[]string{"was not fetched", "not a bare hostname"},
+			[]string{"fails both ways", "b4_find_bypass_strategy", "blocked"}},
+		{"sinkholed both ways", sinkholed, sinkholed,
+			[]string{"forged DNS answer", "DNS_FAKE", "b4_find_bypass_strategy checks DNS"},
+			[]string{"address itself may be blocked", "site may be down"}},
+		{"redirect to a bare address", bareAddress, bareAddress,
+			[]string{"bare address 203.0.113.5", "cannot tell"},
+			[]string{"test 203.0.113.5", "different site"}},
+		{"redirect that names no host", noHost, noHost,
+			[]string{"names no host", "cannot tell"},
+			[]string{"test ", "redirect to ,"}},
+	} {
+		got := mcpProbeVerdictNote("youtube.com", c.through, c.base)
+		for _, want := range c.wants {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: note %q should mention %q", c.name, got, want)
+			}
+		}
+		for _, not := range c.nots {
+			if strings.Contains(got, not) {
+				t.Errorf("%s: note %q must not say %q", c.name, got, not)
+			}
+		}
+	}
+	if got := mcpProbeVerdictNote("a b.com", refused, nil); !strings.Contains(got, "was not fetched") {
+		t.Errorf("a single refused fetch is not a failure verdict either: %q", got)
+	}
+}
+
+func TestMCPProbeResultOfNamesTheSinkholedHop(t *testing.T) {
+	hop := mcpProbeResultOf("youtube.com", probeModeBaseline, watchdog.CheckResult{},
+		&watchdog.ErrPrivateDestination{Addr: "10.0.0.7", Host: "www.youtube.com"})
+	if hop.Verdict != string(netprobe.DomainDNSFake) ||
+		!strings.Contains(hop.Error, "youtube.com redirects to www.youtube.com") ||
+		!strings.Contains(hop.Error, "every address www.youtube.com resolves to") {
+		t.Errorf("a sinkhole met after a redirect must name the name that is forged: %+v", hop)
+	}
+
+	own := mcpProbeResultOf("youtube.com", probeModeBaseline, watchdog.CheckResult{},
+		&watchdog.ErrPrivateDestination{Addr: "10.0.0.7", Host: "YouTube.com"})
+	if strings.Contains(own.Error, "redirects to") || !strings.Contains(own.Error, "every address youtube.com resolves to") {
+		t.Errorf("the probed name itself, in any case, is reported as before: %+v", own)
+	}
+
+	redirect := mcpProbeResultOf("twitter.com", probeModeThroughB4, watchdog.CheckResult{
+		Verdict: watchdog.VerdictRedirect, RedirectTo: "x.com", Answered: true, Error: "answered with a redirect to x.com",
+	}, nil)
+	if !mcpProbeAnswered(&redirect) || redirect.redirect != "x.com" || !mcpProbeOffSite("twitter.com", &redirect) {
+		t.Errorf("the redirect target must reach the note: %+v", redirect)
+	}
+	short := mcpProbeResultOf("amazon.com", probeModeThroughB4, watchdog.CheckResult{
+		Verdict: netprobe.DomainError, Answered: true, StatusCode: 202, Error: "insufficient data: 0 bytes (HTTP 202)",
+	}, nil)
+	if note := mcpProbeVerdictNote("amazon.com", &short, &short); short.status != 202 || !strings.Contains(note, "HTTP 202") {
+		t.Errorf("the status of a short reply must reach the note: %+v, %q", short, note)
+	}
+	raw, err := json.Marshal(redirect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys map[string]any
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		t.Fatal(err)
+	}
+	for key := range keys {
+		switch key {
+		case "domain", "mode", "ok", "verdict", "error", "kb_per_sec", "bytes_read":
+		default:
+			t.Errorf("the result's JSON grew a key %q; the tool-list byte budget counts the output schema", key)
+		}
 	}
 }
 
