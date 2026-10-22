@@ -3,9 +3,9 @@ title: Discord voice calls
 description: A set that sends fakes before the packets that open a Discord voice call, for networks where calls fail while the rest of Discord works.
 ---
 
-The setup adds a set that sends fakes before the packets that open a Discord voice call. It is needed when calls do not connect, or drop after a few seconds, while the rest of Discord works.
+The setup adds a set that sends fakes before the UDP packets that open a Discord voice call. It is needed when a call sends its voice packets but gets no answer, or drops after a few seconds, while the rest of Discord works. A call that hangs at **RTC Connecting** fails on TCP instead, see [When it does not work](#when-it-does-not-work).
 
-The address of a voice server is not known in advance. The set therefore has no targets and selects packets by port and by protocol, see [Selecting packets by protocol](../sets/udp.md#protocol-selection).
+The address of a voice server is not known in advance. The set therefore has no targets and selects packets by port and by protocol, see [Selecting packets by protocol](../sets/udp.md#protocol-selection). Once it selects the packet that opens a call, the rest of that call belongs to the set and passes untouched, whatever other sets match its address.
 
 ## Requirements
 
@@ -61,6 +61,8 @@ The Discord app, text chat and the signalling connection of a call run over TCP.
 
 The list limits the set to these ports, and `443` keeps it on HTTPS.
 
+The voice server picks one of these ports for the signalling connection of a call, and the set's strategy has to work on each of them. A strategy that opens `discord.com` on port 443 can still fail on the port of a voice server, and [Checking the voice server](#voice-server-check) tests that port. The [watchdog](../watchdog.md) checks a new strategy only on the set's Discovery addresses, and an address given as a domain is checked on port 443. A strategy it writes can then open Discord and break calls, so keeping the watchdog off for this set is the usual choice.
+
 ## Checking the result
 
 1. Join a voice channel in Discord.
@@ -68,9 +70,37 @@ The list limits the set to these ports, and `443` keeps it on HTTPS.
 3. Turn on **All packets**. Voice packets carry no domain and show only with it on.
 4. Switch to **Raw feed** in the top right corner.
 
-The packet that opens the voice connection and any STUN requests show the voice set's name in the **Set** column, with a destination port from the two ranges. The voice packets that follow show no set, or another set that matches their address. A `voice` [label](../connections.md#labels) next to them means that set has **Filter STUN Packets** on and passed them through untouched.
+The packet that opens the voice connection and the STUN requests show the voice set's name in the **Set** column, with a destination port from the two ranges. The packets that follow on the same connection show the voice set as well, with a `voice` [label](../connections.md#labels): the set passed them through untouched.
 
-## When it does not work
+### Checking the voice server {#voice-server-check}
+
+Before the first voice packet, Discord opens a TCP connection to the voice server. Its domain ends in `discord.media`, and its port is one of the ports in [The Discord set's TCP ports](#tcp-ports).
+
+1. Join a voice channel in Discord.
+2. On the [Traffic](../connections.md) page, switch to **Raw feed** and enter `domain:discord.media` in the filter field.
+3. Note the domain of the latest row, such as `c-xxx.discord.media`, and the port in its destination.
+4. On a computer behind the router, run the command below with that domain and port.
+
+```sh
+curl -s -o /dev/null -w '%{http_code}/%{size_download}\n' https://c-xxx.discord.media:2087/
+```
+
+| Output | Meaning |
+| --- | --- |
+| `403` and a few thousand bytes, such as `403/4548` | The server's answer passes. |
+| `000/0` or `403/0` | The connection to this port is cut. |
+
+## When it does not work {#when-it-does-not-work}
+
+While a call hangs, the [Traffic](../connections.md) page with **All packets** on shows which side fails.
+
+| The Traffic page shows | Cause |
+| --- | --- |
+| No TCP row with a `discord.media` domain | b4 does not capture the voice server's port: it is missing from the **Port Filter** of the set with Discord's domains. |
+| A TCP row with a `discord.media` domain, and no UDP packet to the voice ports | The TCP connection to the voice server fails, and Discord sends no voice packet. [Checking the voice server](#voice-server-check) confirms it, and the set with Discord's domains needs a strategy that works on that port, see [Unblocking a site](./unblock.md). |
+| UDP packets to the voice ports with the voice set's name | The voice server does not answer them, see the causes below. |
+
+On some networks no strategy opens the voice server's port when it is not 443. The check then reads `000/0` whatever the strategy, and calls through that server need a [proxy](./proxy.md) or a [VPN](./vpn.md) for `discord.media`.
 
 **b4 refuses to save the voice set.** A warning on the **UDP** tab names the cause: the set has targets, its **Port Filter** is empty, or the **TCP** tab lists ports. The set saves with no targets, both port ranges in the UDP **Port Filter** and an empty TCP **Port Filter**.
 
@@ -78,4 +108,8 @@ The packet that opens the voice connection and any STUN requests show the voice 
 
 **No packets to the voice ports appear.** **All packets** is off, or the port is missing from the voice set's **Port Filter**: b4 sees UDP only on port 443 and on the ports that sets list. With **Enable IPv6 Support** off under [Settings > Core](../settings/core.md#protocols), b4 sees no IPv6 packets at all.
 
-**The app or the call does not connect at all.** The set with Discord's domains does not cover the TCP side. Its **Port Filter** needs the ports from [The Discord set's TCP ports](#tcp-ports), and its strategy has to open Discord, see [Unblocking a site](./unblock.md).
+**Calls through one Discord server fail, and calls through other servers work.** A voice channel uses the region Discord picks automatically. When a provider blocks the addresses of that region's voice servers, no strategy helps. Someone who can manage the voice channel sets another region for it in the channel's settings in Discord.
+
+**The voice server check passes over IPv4 and fails over IPv6.** With the **TTL** strategy, or with **Apply Fake TTL** on, the set with Discord's domains sends its fakes with one **Fake TTL** for IPv4 and IPv6. A voice server can be fewer hops away over IPv6, and a fake that reaches the server breaks the connection. A lower **Fake TTL** on the [Faking](../sets/tcp/faking.md#fake-strategy) sub-tab, checked over both IP versions, is the fix.
+
+**Discord does not open at all.** The set with Discord's domains does not cover the TCP side. Its **Port Filter** needs the ports from [The Discord set's TCP ports](#tcp-ports), and its strategy has to open Discord, see [Unblocking a site](./unblock.md).
