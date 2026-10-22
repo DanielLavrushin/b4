@@ -86,6 +86,18 @@ func TestHostHintStoreAndLookup(t *testing.T) {
 	}
 }
 
+func TestAHostHintKeepsTheVersionsOfTheLatestSelection(t *testing.T) {
+	c := newHostHintCache()
+	c.StoreTLS("10.0.0.1", "1.2.3.4", "video", "rr1.googlevideo.com", 0x0304, 4)
+	if hint, ok := c.LookupTLS("10.0.0.1", "1.2.3.4"); !ok || hint.tlsVersion != 0x0304 || hint.ipVersion != 4 {
+		t.Fatalf("a hint from a QUIC Initial: %+v, %v; want TLS 1.3 over IPv4", hint, ok)
+	}
+	c.Store("10.0.0.1", "1.2.3.4", "video", "rr1.googlevideo.com")
+	if hint, ok := c.LookupTLS("10.0.0.1", "1.2.3.4"); !ok || hint.tlsVersion != 0 || hint.ipVersion != 0 {
+		t.Fatalf("the same hint from a DNS answer: %+v, %v; want no versions, as the answer chose its set without them", hint, ok)
+	}
+}
+
 func TestHostHintIsSourceScoped(t *testing.T) {
 	c := newHostHintCache()
 	c.Store("10.0.0.1", "1.2.3.4", "video", "rr1.googlevideo.com")
@@ -285,7 +297,7 @@ func TestLookupHostHintRefusesDomainOnlySet(t *testing.T) {
 	w := newTestWorker(t, &cfg)
 	w.hostHints.Store("10.0.0.1", "1.2.3.4", set.Id, "i.ytimg.com")
 
-	if got, _ := w.lookupHostHint(&cfg, "10.0.0.1", "1.2.3.4", ""); got != nil {
+	if got, _, _, _ := w.lookupHostHint(&cfg, "10.0.0.1", "1.2.3.4", ""); got != nil {
 		t.Fatalf("a domain-only set must not be selected from a DNS hint, got %q", got.Name)
 	}
 }
@@ -299,7 +311,7 @@ func TestLookupHostHintRefusesDisabledSet(t *testing.T) {
 	w := newTestWorker(t, &cfg)
 	w.hostHints.Store("10.0.0.1", "1.2.3.4", set.Id, "i.ytimg.com")
 
-	if got, _ := w.lookupHostHint(&cfg, "10.0.0.1", "1.2.3.4", ""); got != nil {
+	if got, _, _, _ := w.lookupHostHint(&cfg, "10.0.0.1", "1.2.3.4", ""); got != nil {
 		t.Fatalf("a disabled set must not be selected, got %q", got.Name)
 	}
 }
@@ -312,7 +324,7 @@ func TestLookupHostHintRefusesStaleSetId(t *testing.T) {
 	w := newTestWorker(t, &cfg)
 	w.hostHints.Store("10.0.0.1", "1.2.3.4", "set-removed-by-a-config-reload", "i.ytimg.com")
 
-	if got, _ := w.lookupHostHint(&cfg, "10.0.0.1", "1.2.3.4", ""); got != nil {
+	if got, _, _, _ := w.lookupHostHint(&cfg, "10.0.0.1", "1.2.3.4", ""); got != nil {
 		t.Fatalf("a hint naming a set that no longer exists must not resolve, got %q", got.Name)
 	}
 }
@@ -326,10 +338,10 @@ func TestLookupHostHintChecksSourceDevices(t *testing.T) {
 	w := newTestWorker(t, &cfg)
 	w.hostHints.Store("10.0.0.1", "1.2.3.4", set.Id, "i.ytimg.com")
 
-	if got, _ := w.lookupHostHint(&cfg, "10.0.0.1", "1.2.3.4", "11:22:33:44:55:66"); got != nil {
+	if got, _, _, _ := w.lookupHostHint(&cfg, "10.0.0.1", "1.2.3.4", "11:22:33:44:55:66"); got != nil {
 		t.Fatalf("a set restricted to other devices must not be selected, got %q", got.Name)
 	}
-	if got, _ := w.lookupHostHint(&cfg, "10.0.0.1", "1.2.3.4", "aa:bb:cc:dd:ee:ff"); got == nil {
+	if got, _, _, _ := w.lookupHostHint(&cfg, "10.0.0.1", "1.2.3.4", "aa:bb:cc:dd:ee:ff"); got == nil {
 		t.Fatal("the permitted device should be selected")
 	}
 }

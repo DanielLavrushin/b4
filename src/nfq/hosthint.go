@@ -17,9 +17,11 @@ const (
 )
 
 type hostHintCandidate struct {
-	setId   string
-	host    string
-	expires time.Time
+	setId      string
+	host       string
+	tlsVersion uint16
+	ipVersion  uint8
+	expires    time.Time
 }
 
 type hostHintEntry struct {
@@ -41,6 +43,10 @@ func newHostHintCache() *hostHintCache {
 }
 
 func (c *hostHintCache) Store(clientIP, destIP, setId, host string) {
+	c.StoreTLS(clientIP, destIP, setId, host, 0, 0)
+}
+
+func (c *hostHintCache) StoreTLS(clientIP, destIP, setId, host string, tlsVersion uint16, ipVersion uint8) {
 	if c == nil || clientIP == "" || destIP == "" || setId == "" {
 		return
 	}
@@ -62,15 +68,18 @@ func (c *hostHintCache) Store(clientIP, destIP, setId, host string) {
 
 	for i := range entry.candidates {
 		if entry.candidates[i].setId == setId && entry.candidates[i].host == host {
+			entry.candidates[i].tlsVersion, entry.candidates[i].ipVersion = tlsVersion, ipVersion
 			entry.candidates[i].expires = now.Add(hostHintTTL)
 			return
 		}
 	}
 
 	entry.candidates = append(pruneCandidates(entry.candidates, now), hostHintCandidate{
-		setId:   setId,
-		host:    host,
-		expires: now.Add(hostHintTTL),
+		setId:      setId,
+		host:       host,
+		tlsVersion: tlsVersion,
+		ipVersion:  ipVersion,
+		expires:    now.Add(hostHintTTL),
 	})
 	if len(entry.candidates) > maxHostHintCandidates {
 		entry.candidates = entry.candidates[len(entry.candidates)-maxHostHintCandidates:]
@@ -78,8 +87,13 @@ func (c *hostHintCache) Store(clientIP, destIP, setId, host string) {
 }
 
 func (c *hostHintCache) Lookup(clientIP, destIP string) (string, string, bool) {
+	hint, ok := c.LookupTLS(clientIP, destIP)
+	return hint.setId, hint.host, ok
+}
+
+func (c *hostHintCache) LookupTLS(clientIP, destIP string) (hostHintCandidate, bool) {
 	if c == nil {
-		return "", "", false
+		return hostHintCandidate{}, false
 	}
 
 	now := time.Now()
@@ -88,32 +102,30 @@ func (c *hostHintCache) Lookup(clientIP, destIP string) (string, string, bool) {
 
 	entry := c.keys[hostHintKey{client: clientIP, dest: destIP}]
 	if entry == nil {
-		return "", "", false
+		return hostHintCandidate{}, false
 	}
 
-	setId := ""
-	host := ""
+	var hint hostHintCandidate
 	for _, candidate := range entry.candidates {
 		if !now.Before(candidate.expires) {
 			continue
 		}
-		if setId == "" {
-			setId = candidate.setId
-			host = candidate.host
+		if hint.setId == "" {
+			hint = candidate
 			continue
 		}
-		if candidate.setId != setId {
+		if candidate.setId != hint.setId {
 			log.Tracef("host hint for %s -> %s is ambiguous between sets %s and %s, ignoring",
-				clientIP, destIP, setId, candidate.setId)
-			return "", "", false
+				clientIP, destIP, hint.setId, candidate.setId)
+			return hostHintCandidate{}, false
 		}
 	}
 
-	if setId == "" {
-		return "", "", false
+	if hint.setId == "" {
+		return hostHintCandidate{}, false
 	}
 
-	return setId, host, true
+	return hint, true
 }
 
 func pruneCandidates(candidates []hostHintCandidate, now time.Time) []hostHintCandidate {
@@ -178,12 +190,12 @@ func (c *hostHintCache) Cleanup() {
 	}
 }
 
-func (w *Worker) storeHostHint(clientIP, destIP string, set *config.SetConfig, host, source string) {
+func (w *Worker) storeHostHint(clientIP, destIP string, set *config.SetConfig, host, source string, tlsVersion uint16, ipVersion uint8) {
 	if w == nil || set == nil || set.Id == "" || host == "" || clientIP == "" || destIP == "" {
 		return
 	}
 
-	w.hostHints.Store(clientIP, destIP, set.Id, host)
+	w.hostHints.StoreTLS(clientIP, destIP, set.Id, host, tlsVersion, ipVersion)
 	log.Tracef("host hint from %s: %s -> %s is %s (set: %s)", source, clientIP, destIP, host, set.Name)
 }
 
@@ -200,40 +212,40 @@ func (w *Worker) storeHostHints(clientIP net.IP, set *config.SetConfig, host str
 		if ip == nil {
 			continue
 		}
-		w.storeHostHint(client, ip.String(), set, host, "dns")
+		w.storeHostHint(client, ip.String(), set, host, "dns", 0, 0)
 		if observe {
 			w.goodIPs.Observe(host, ip)
 		}
 	}
 }
 
-func (w *Worker) lookupHostHint(cfg *config.Config, clientIP, destIP, srcMac string) (*config.SetConfig, string) {
+func (w *Worker) lookupHostHint(cfg *config.Config, clientIP, destIP, srcMac string, keep ...sni.SetFilter) (*config.SetConfig, string, uint16, uint8) {
 	if w == nil || cfg == nil {
-		return nil, ""
+		return nil, "", 0, 0
 	}
 
-	setId, host, ok := w.hostHints.Lookup(clientIP, destIP)
+	hint, ok := w.hostHints.LookupTLS(clientIP, destIP)
 	if !ok {
-		return nil, ""
+		return nil, "", 0, 0
 	}
 
-	set := cfg.GetSetById(setId)
+	set := cfg.GetSetById(hint.setId)
 	if set == nil || !set.Enabled {
-		return nil, ""
+		return nil, "", 0, 0
 	}
 	if set.Targets.DomainOnly {
 		log.Tracef("host hint for %s -> %s names domain-only set %s, not applied", clientIP, destIP, set.Name)
-		return nil, ""
+		return nil, "", 0, 0
 	}
-	if !sni.SetMatchesSource(set, srcMac) {
-		return nil, ""
+	if !sni.SetMatchesSource(set, srcMac, keep...) {
+		return nil, "", 0, 0
 	}
 
-	return set, host
+	return set, hint.host, hint.tlsVersion, hint.ipVersion
 }
 
-func learnedMatchAfterHintDrop(matcher *sni.SuffixSet, dst net.IP, srcMac string, dport, tlsVersion uint16, payload []byte) (*config.SetConfig, string) {
-	mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(dst, srcMac)
+func learnedMatchAfterHintDrop(matcher *sni.SuffixSet, dst net.IP, srcMac string, dport, tlsVersion uint16, payload []byte, keep sni.SetFilter) (*config.SetConfig, string) {
+	mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(dst, srcMac, keep)
 	if !mLearned || !learnedSet.MatchesTCPDPort(dport) || !learnedSet.MatchesTLSVersion(tlsVersion) {
 		return nil, ""
 	}

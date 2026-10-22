@@ -155,16 +155,12 @@ func (e *Engine) Start() error {
 		log.Infof("TUN: reply-direction RST capture enabled (experimental; RST protection / escalation). Validate on a real device")
 	}
 
-	if !cfg.System.Tables.SkipSetup && !e.routes.localOnly {
-		e.pool.EnableTUNSourceResolver(e.routes.currentSrcIP())
-	}
-
 	if e.routes.noConnbytes {
 		e.limiter = newFirstNLimiter(capture)
 		log.Infof("TUN: without xt_connbytes b4 counts packets itself and processes the first %d tcp / %d udp packets of each connection, as the kernel match would", routes.tcpLimit, routes.udpLimit)
 	}
 	e.startFlowHold()
-	e.pool.SetQueueDirectionExact(e.tcpDirectionExact(), false)
+	e.configureWorkers(e.pool)
 
 	threads := cfg.Queue.Threads
 	if threads < 1 {
@@ -188,6 +184,16 @@ func (e *Engine) Start() error {
 	}
 
 	return nil
+}
+
+type workerPool interface {
+	sourceAttribution
+	SetQueueDirectionExact(v4, v6 bool)
+}
+
+func (e *Engine) configureWorkers(pool workerPool) {
+	e.routes.attributeSources(pool)
+	pool.SetQueueDirectionExact(e.tcpDirectionExact(), false)
 }
 
 func (e *Engine) reconcileLoop() {

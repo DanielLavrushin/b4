@@ -17,10 +17,13 @@ const (
 	conntrackPath     = "/proc/net/nf_conntrack"
 	tunSrcCacheTTL    = 5 * time.Minute
 	tunSrcNegativeTTL = 2 * time.Second
+	tunSrcCacheMax    = 4096
 )
 
 type tunSrcEntry struct {
 	ip      string
+	addr    net.IP
+	origin  tunSrcOrigin
 	expires time.Time
 }
 
@@ -51,9 +54,11 @@ func (r *tunSrcResolver) setWAN(wanIP string) {
 	r.mu.Unlock()
 }
 
-func cacheKey(proto uint8, sport, dport uint16, dst string) string {
+func cacheKey(proto uint8, src string, sport, dport uint16, dst string) string {
 	var b strings.Builder
 	b.WriteByte(proto)
+	b.WriteString(src)
+	b.WriteByte('#')
 	b.WriteString(strconv.Itoa(int(sport)))
 	b.WriteByte(':')
 	b.WriteString(strconv.Itoa(int(dport)))
@@ -62,54 +67,90 @@ func cacheKey(proto uint8, sport, dport uint16, dst string) string {
 	return b.String()
 }
 
+type tunSrcOrigin uint8
+
+const (
+	tunSrcWire tunSrcOrigin = iota
+	tunSrcLAN
+	tunSrcRouter
+	tunSrcUnknown
+)
+
 func (r *tunSrcResolver) resolve(proto uint8, src net.IP, sport uint16, dst net.IP, dport uint16) (net.IP, bool) {
-	wan, _ := r.wanIP.Load().(string)
-	if wan == "" {
-		return nil, false
+	ip, origin := r.attribute(proto, src, sport, dst, dport)
+	return ip, origin == tunSrcLAN
+}
+
+func originOf(lan, self string) (net.IP, tunSrcOrigin) {
+	switch lan {
+	case "":
+		return nil, tunSrcUnknown
+	case self:
+		return nil, tunSrcRouter
 	}
-	srcStr := src.String()
-	if srcStr != wan {
-		return nil, false
+	ip := net.ParseIP(lan)
+	switch {
+	case ip == nil:
+		return nil, tunSrcUnknown
+	case hostAddress(ip):
+		return ip, tunSrcRouter
+	}
+	return ip, tunSrcLAN
+}
+
+func (r *tunSrcResolver) attribute(proto uint8, src net.IP, sport uint16, dst net.IP, dport uint16) (net.IP, tunSrcOrigin) {
+	wan, _ := r.wanIP.Load().(string)
+	self := src.String()
+	if self != wan && !hostAddress(src) {
+		return nil, tunSrcWire
 	}
 
-	key := cacheKey(proto, sport, dport, dst.String())
+	key := cacheKey(proto, self, sport, dport, dst.String())
 	now := time.Now()
 
 	r.mu.Lock()
 	if e, ok := r.cache[key]; ok && now.Before(e.expires) {
 		r.mu.Unlock()
-		if e.ip == "" || e.ip == wan {
-			return nil, false
-		}
-		if ip := net.ParseIP(e.ip); ip != nil {
-			return ip, true
-		}
-		return nil, false
+		return e.addr, e.origin
 	}
 	r.mu.Unlock()
 
 	dstStr := dst.String()
-	lan := r.lookupConntrack(proto, wan, sport, dstStr, dport)
+	lan := r.lookupConntrack(proto, self, sport, dstStr, dport)
 	if lan == dstStr {
 		log.Tracef("TUN source: conntrack named the destination %s as the source of %s:%d, ignoring it", dstStr, dstStr, dport)
 		lan = ""
 	}
 
-	r.mu.Lock()
-	if lan == "" {
-		r.cache[key] = tunSrcEntry{expires: now.Add(tunSrcNegativeTTL)}
-	} else {
-		r.cache[key] = tunSrcEntry{ip: lan, expires: now.Add(tunSrcCacheTTL)}
+	ip, origin := originOf(lan, self)
+	ttl := tunSrcCacheTTL
+	if origin != tunSrcLAN {
+		ttl = tunSrcNegativeTTL
 	}
+	r.mu.Lock()
+	r.pruneLocked(now)
+	r.cache[key] = tunSrcEntry{ip: lan, addr: ip, origin: origin, expires: now.Add(ttl)}
 	r.mu.Unlock()
 
-	if lan == "" || lan == wan {
-		return nil, false
+	return ip, origin
+}
+
+func (r *tunSrcResolver) pruneLocked(now time.Time) {
+	if len(r.cache) < tunSrcCacheMax {
+		return
 	}
-	if ip := net.ParseIP(lan); ip != nil {
-		return ip, true
+	for k, e := range r.cache {
+		if !now.Before(e.expires) {
+			delete(r.cache, k)
+		}
 	}
-	return nil, false
+	keep := tunSrcCacheMax * 3 / 4
+	for k := range r.cache {
+		if len(r.cache) <= keep {
+			return
+		}
+		delete(r.cache, k)
+	}
 }
 
 func (r *tunSrcResolver) addressable(proto uint8, src net.IP, sport uint16, dst net.IP, dport uint16) bool {
@@ -118,7 +159,7 @@ func (r *tunSrcResolver) addressable(proto uint8, src net.IP, sport uint16, dst 
 		return true
 	}
 
-	key := cacheKey(proto, sport, dport, dst.String())
+	key := cacheKey(proto, wan, sport, dport, dst.String())
 
 	r.mu.Lock()
 	e, ok := r.cache[key]

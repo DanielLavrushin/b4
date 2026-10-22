@@ -8,6 +8,8 @@
 - FIXED: **Some set editor help texts described the wrong behaviour** - the TCP Port Filter said port 443 is always included, and the UDP Port Filter said an empty field turns it off. A list limits the set to the ports listed, and an empty field means every port. The UDP Evasion Technique said None sends fakes unchanged and TTL lets them expire, while UDP fakes always use the set's Fake TTL.
 - FIXED: **The import tool lost a port filter or the shared domains without a warning** - a zapret port range with equal or reversed ends, such as `3478-3478`, was dropped when the set was saved. A set whose port filter held only that range acted on every port. Shared domains went unused when every profile had a host list of its own.
 - FIXED: **A refused MCP write did not say which setting was wrong** - the answer read only "Configuration is invalid".
+- FIXED: **A block set limited to Source Interfaces also blocked other interfaces and the router itself** - only blocking by address followed the list. Blocking by name, in DNS lookups and in connections, applied to every device and to the router's own connections. A block set with an escalation target also stopped blocking a site once a device retried a blocked connection a few times.
+- FIXED: **In TUN mode, memory use grew with every new connection** - b4 kept a record of where each connection came from and never removed old records.
 
 ## [1.87.0] - 2026-10-17
 

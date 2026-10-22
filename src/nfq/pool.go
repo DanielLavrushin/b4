@@ -52,6 +52,12 @@ func (p *Pool) EnableTUNSourceResolver(wanIP string) {
 	log.Infof("TUN: source attribution enabled (recovering LAN source from conntrack; uplink %s)", wanIP)
 }
 
+func (p *Pool) SetTUNLocalOnly(localOnly bool) {
+	for _, w := range p.Workers {
+		w.tunLocalOnly.Store(localOnly)
+	}
+}
+
 func (p *Pool) UpdateTUNSourceWAN(wanIP string) {
 	if p.tunSrc == nil || wanIP == "" {
 		return

@@ -166,7 +166,7 @@ func dnsQueryType(query, resp []byte) uint16 {
 	return qtype
 }
 
-func (w *Worker) noteDNSOutcome(cfg *config.Config, set *config.SetConfig, domain, srcMac string, qtype uint16, resp []byte) *config.SetConfig {
+func (w *Worker) noteDNSOutcome(cfg *config.Config, set *config.SetConfig, domain, srcMac string, qtype uint16, resp []byte, from ...*ingressScope) *config.SetConfig {
 	if w == nil || w.destState == nil || cfg == nil || set == nil || domain == "" || !set.Escalate.Active() {
 		return nil
 	}
@@ -184,16 +184,16 @@ func (w *Worker) noteDNSOutcome(cfg *config.Config, set *config.SetConfig, domai
 	if !w.destState.RecordDNSFailure(key, set.Escalate.ResolvedDNSThreshold(), DNSFailWindow) {
 		return nil
 	}
-	return w.tryEscalate(cfg, set, domain, srcMac, nil, escalateReasonDNS)
+	return w.tryEscalate(cfg, set, domain, srcMac, nil, escalateReasonDNS, 0, 0, from...)
 }
 
-func (w *Worker) escalateAfterDNS(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query, resp []byte, clientIP net.IP, clientPort uint16, originalDst net.IP, direct bool) bool {
+func (w *Worker) escalateAfterDNS(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query, resp []byte, clientIP net.IP, clientPort uint16, originalDst net.IP, direct bool, scope *ingressScope) bool {
 	srcMac := w.getMacByIp(clientIP.String())
-	next := w.noteDNSOutcome(cfg, set, domain, srcMac, dnsQueryType(query, resp), resp)
+	next := w.noteDNSOutcome(cfg, set, domain, srcMac, dnsQueryType(query, resp), resp, scope)
 	if next == nil {
 		return false
 	}
-	if !w.answerViaSetInline(ipVersion, cfg, next, domain, query, clientIP, clientPort, originalDst, direct) {
+	if !w.answerViaSetInline(ipVersion, cfg, next, domain, query, clientIP, clientPort, originalDst, direct, scope) {
 		return false
 	}
 	logDNSEvent("UDP", next, domain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), dnsActionEscalatePrefix+next.Name)
@@ -260,13 +260,14 @@ func dnsRedirectInFlight(domain string, qtype uint16) bool {
 	return dnsRedirects[dnsFailureKey(domain, qtype)] > 0
 }
 
-func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP, direct bool) bool {
+func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP, direct bool, from ...*ingressScope) bool {
 	if w == nil || cfg == nil || set == nil || len(query) == 0 {
 		return false
 	}
+	scope := scopeFrom(from)
 
 	if pinned := w.pinnedAnswer(set, query, domain); pinned != nil {
-		_, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
+		_, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned, scope.learns(domain))
 		w.waitRoutesInline(routeWaits, nil)
 		w.answerClient(direct, query, ipVersion, originalDst, clientIP, clientPort, pinned)
 		return true
@@ -278,17 +279,18 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 	}
 
 	delay := config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax)
-	w.resolveDNSRedirect(ipVersion, set, cfg, query, clientIP, clientPort, originalDst, targetIP, delay, direct)
+	w.resolveDNSRedirect(ipVersion, set, cfg, query, clientIP, clientPort, originalDst, targetIP, delay, direct, scope)
 	return true
 }
 
-func (w *Worker) answerViaSet(vc *verdictCtx, ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP) bool {
+func (w *Worker) answerViaSet(vc *verdictCtx, ipVersion byte, cfg *config.Config, set *config.SetConfig, domain string, query []byte, clientIP net.IP, clientPort uint16, originalDst net.IP, from ...*ingressScope) bool {
 	if w == nil || cfg == nil || set == nil || len(query) == 0 {
 		return false
 	}
+	scope := scopeFrom(from)
 
 	if pinned := w.pinnedAnswer(set, query, domain); pinned != nil {
-		_, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
+		_, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned, scope.learns(domain))
 		send := func() { w.answerClient(true, query, ipVersion, originalDst, clientIP, clientPort, pinned) }
 		if !w.holdForRoutes(vc, routeWaits, domain, send) {
 			send()
@@ -314,7 +316,7 @@ func (w *Worker) answerViaSet(vc *verdictCtx, ipVersion byte, cfg *config.Config
 			<-dnsResolveInflight
 			w.wg.Done()
 		}()
-		w.resolveDNSRedirect(ipVersion, set, cfg, query, clientIP, clientPort, originalDst, targetIP, delay, true)
+		w.resolveDNSRedirect(ipVersion, set, cfg, query, clientIP, clientPort, originalDst, targetIP, delay, true, scope)
 	}()
 	return true
 }
@@ -364,11 +366,12 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				noteDNSNameQuery(dnsRouteKeyRequest(ipVersion, pkt.src, sport, pkt.dst, dport, txid, domain))
 			}
 			matcher := w.getMatcher()
-			if matchedSet, set := matcher.MatchSNIWithSource(domain, srcMac); matchedSet {
+			keep := w.blockScope(vc, pkt, matcher)
+			if matchedSet, set := matcher.MatchSNIWithSource(domain, srcMac, keep); matchedSet {
 				cfg := w.getConfig()
 				log.Tracef("DNS query: %s matched set %s (src %s)", dns.SafeName(domain), set.Name, srcMac)
 
-				if escSet := w.escalatedSetFor(cfg, domain, srcMac); escSet != nil && escSet != set {
+				if escSet := w.escalatedSetFor(cfg, set, domain, srcMac, keep); escSet != nil && escSet != set {
 					log.Tracef("DNS escalation hit for %s: %s -> %s", dns.SafeName(domain), set.Name, escSet.Name)
 					set = escSet
 				}
@@ -407,7 +410,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					if !vc.drop() {
 						return 0
 					}
-					action, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
+					action, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned, vc.scope.learns(domain))
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, action)
 					send := func() { w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, sport, pinned) }
 					if !w.holdForRoutes(vc, routeWaits, domain, send) {
@@ -416,7 +419,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					return 0
 				}
 
-				if txidOK && set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery {
+				if txidOK && vc.scope.learns(domain) && set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery {
 					storeDNSPendingRoute(
 						dnsRouteKeyRequest(ipVersion, clientIP, sport, originalDst, dport, txid, domain),
 						set.Id,
@@ -473,13 +476,13 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				vc.drop()
 
 				w.wg.Add(1)
-				go func(s *config.SetConfig, c *config.Config) {
+				go func(s *config.SetConfig, c *config.Config, scope *ingressScope) {
 					defer func() {
 						<-dnsResolveInflight
 						w.wg.Done()
 					}()
-					w.resolveDNSRedirect(ver, s, c, query, clientIP, clientPort, originalDst, targetIP, delay, false)
-				}(set, cfg)
+					w.resolveDNSRedirect(ver, s, c, query, clientIP, clientPort, originalDst, targetIP, delay, false, scope)
+				}(set, cfg, vc.scope.orSnapshot(matcher))
 				return 0
 			} else {
 				log.Tracef("DNS query: %s matched no set (src %s), forwarding unchanged", dns.SafeName(domain), srcMac)
@@ -508,13 +511,16 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 			var healSet *config.SetConfig
 			var failedSet *config.SetConfig
 			clientMac := w.getMacByIp(clientIP.String())
+			matcher := w.getMatcher()
+			scope := clientScopeIn(matcher, clientIP, clientMac)
+			keep := scope.filter()
 			answersQuery := domain != "" && DNSNames.Wanted() &&
 				consumeDNSNameQuery(dnsRouteKeyResponse(ipVersion, clientIP, dport, dnsServerIP, sport, txid, domain))
 			if domain != "" {
-				if matched, set := w.getMatcher().MatchSNIWithSource(domain, clientMac); matched && set.Enabled {
+				if matched, set := matcher.MatchSNIWithSource(domain, clientMac, keep); matched && set.Enabled {
 					healSet = set
 					failedSet = set
-					if escSet := w.escalatedSetFor(w.getConfig(), domain, clientMac); escSet != nil {
+					if escSet := w.escalatedSetFor(w.getConfig(), set, domain, clientMac, keep); escSet != nil {
 						failedSet = escSet
 					}
 					ips := dns.ParseResponseIPs(payload)
@@ -522,7 +528,9 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 						observeDNSNames(clientIP, domain, ips)
 					}
 					w.storeHostHints(clientIP, set, domain, ips)
-					routeWaits, routed = learnAnswerAwait(w.getConfig(), set, ips)
+					if scope.learns(domain) {
+						routeWaits, routed = learnAnswerAwait(w.getConfig(), set, ips)
+					}
 				} else if answersQuery {
 					observeDNSNames(clientIP, domain, dns.ParseResponseIPs(payload))
 				}
@@ -538,7 +546,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 							healSet = set
 						}
 						w.storeHostHints(clientIP, set, domain, ips)
-						if !set.Targets.DomainOnly && !config.RoutingIsBlock(set.Routing.Mode) && routingHandleDNSAvailable() && !cfg.Queue.IsDiscovery {
+						if scope.learns(domain) && !set.Targets.DomainOnly && !config.RoutingIsBlock(set.Routing.Mode) && routingHandleDNSAvailable() && !cfg.Queue.IsDiscovery {
 							routeWaits = joinWaits(routeWaits, routingHandleDNSAwait(cfg, set, ips))
 						}
 					}
@@ -548,7 +556,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 			qtype, hasType := dns.QuestionType(payload)
 			var next *config.SetConfig
 			if failedSet == nil || !failedSet.Escalate.Active() || !dnsRedirectInFlight(domain, qtype) {
-				next = w.noteDNSOutcome(w.getConfig(), failedSet, domain, clientMac, qtype, payload)
+				next = w.noteDNSOutcome(w.getConfig(), failedSet, domain, clientMac, qtype, payload, scope)
 			}
 			if next != nil {
 				cfg := w.getConfig()
@@ -556,7 +564,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					query := dns.BuildQuery(domain, txid, qtype)
 					client := append(net.IP(nil), clientIP...)
 					server := append(net.IP(nil), dnsServerIP...)
-					if w.answerViaSet(vc, ipVersion, cfg, next, domain, query, client, dport, server) {
+					if w.answerViaSet(vc, ipVersion, cfg, next, domain, query, client, dport, server, scope) {
 						if !vc.drop() {
 							return 0
 						}
@@ -566,14 +574,16 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				}
 			}
 
-			if filtered, action, actor := w.filterDNSAnswer(w.getConfig(), healSet, domain, clientMac, payload, false); filtered != nil {
+			if filtered, action, actor := w.filterDNSAnswer(w.getConfig(), healSet, domain, clientMac, payload, false, scope); filtered != nil {
 				if added := addedAnswerIPs(payload, filtered); len(added) > 0 {
 					if answersQuery {
 						observeDNSNames(clientIP, domain, added)
 					}
 					w.storeHostHints(clientIP, healSet, domain, added)
-					waits, _ := learnAnswerAwait(w.getConfig(), healSet, added)
-					routeWaits = joinWaits(routeWaits, waits)
+					if scope.learns(domain) {
+						waits, _ := learnAnswerAwait(w.getConfig(), healSet, added)
+						routeWaits = joinWaits(routeWaits, waits)
+					}
 				}
 				raw := inPlaceReply(vc, pkt, filtered)
 				if raw == nil && !vc.drop() {
@@ -617,8 +627,9 @@ func (w *Worker) releaseFilteredReply(vc *verdictCtx, raw []byte, ver byte, serv
 	w.sendDNSPacket(ver, server, client, dport, resp)
 }
 
-func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *config.Config, query []byte, clientIP net.IP, clientPort uint16, originalDst, targetIP net.IP, delay int, direct bool) {
+func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *config.Config, query []byte, clientIP net.IP, clientPort uint16, originalDst, targetIP net.IP, delay int, direct bool, from ...*ingressScope) {
 	defer beginDNSRedirect(query)()
+	scope := scopeFrom(from)
 	queryDomain, _ := dns.ParseQueryDomain(query)
 	queryDomain = strings.ToLower(queryDomain)
 
@@ -654,7 +665,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		if fallback == nil {
 			log.Warnf("DNS redirect: %s could not answer %s (%v) and nothing else could either, the client gets SERVFAIL (set: %s)",
 				dnsUpstreamLabel(source), dns.SafeName(queryDomain), err, set.Name)
-			if w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, nil, clientIP, clientPort, originalDst, direct) {
+			if w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, nil, clientIP, clientPort, originalDst, direct, scope) {
 				return
 			}
 			logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), dnsActionServfail)
@@ -670,16 +681,16 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		noteDNSSourceSuccess(source)
 	}
 
-	if !servedFallback && w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, resp, clientIP, clientPort, originalDst, direct) {
+	if !servedFallback && w.escalateAfterDNS(ipVersion, cfg, set, queryDomain, query, resp, clientIP, clientPort, originalDst, direct, scope) {
 		return
 	}
 
-	w.learnAnswerAddresses(cfg, set, clientIP, queryDomain, dns.ParseResponseIPs(resp), nil)
+	w.learnAnswerAddresses(cfg, set, clientIP, queryDomain, dns.ParseResponseIPs(resp), scope.learns(queryDomain), nil)
 
 	clientMac := w.getMacByIp(clientIP.String())
-	if filtered, action, actor := w.filterDNSAnswer(cfg, set, queryDomain, clientMac, resp, false); filtered != nil {
+	if filtered, action, actor := w.filterDNSAnswer(cfg, set, queryDomain, clientMac, resp, false, scope); filtered != nil {
 		logDNSEvent("UDP", actor, queryDomain, clientIP, originalDst, clientPort, clientMac, action)
-		w.learnAnswerAddresses(cfg, set, clientIP, queryDomain, addedAnswerIPs(resp, filtered), nil)
+		w.learnAnswerAddresses(cfg, set, clientIP, queryDomain, addedAnswerIPs(resp, filtered), scope.learns(queryDomain), nil)
 		resp = filtered
 	}
 

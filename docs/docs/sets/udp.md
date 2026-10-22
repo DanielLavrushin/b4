@@ -30,12 +30,11 @@ With **By SNI** and no domains or GeoSite categories on the [Targets](./targets.
 
 The **Protocols** field turns on protocol selection. With **Discord voice setup**, **STUN** or both selected, the set acts only on UDP packets of those kinds that arrive on the ports in its **Port Filter**. Every other packet on those ports is left to the other sets, or passes untouched. A packet the set selects belongs to it even when another set matches its destination address, such as a GeoIP set that covers the same servers. The same holds when that address belongs to a domain another set handles.
 
-A set with protocol selection has four requirements. When it breaks one, b4 refuses to save it, and a warning on the tab names the cause.
+A set with protocol selection has three requirements. When it breaks one, b4 refuses to save it, and a warning on the tab names the cause.
 
 - No targets: no domains, IPs, GeoSite or GeoIP categories and no ASNs. Source devices are allowed.
 - A **Port Filter** on this tab with the ports the protocol arrives on.
 - An empty **Port Filter** on the [TCP](./tcp/general.md) tab. Without targets, a TCP port filter would make the set act on every TCP connection on those ports. The **TCP** tab shows a warning too.
-- No **Source Interfaces** on the [DNS & Routing](./routing.md) tab. b4 cannot tell which interface a selected packet arrived on.
 
 While protocol selection is on, **Filter STUN Packets** has no effect on the packets the set selects, and the switch is shown disabled. Block routing on the [DNS & Routing](./routing.md) tab blocks the packets the set selects. The **IP Version Filter** on the [Targets](./targets.md) tab limits such a set as well. Turning protocol selection on changes **Fake Packet Payload** from **(zero fill)** to **(auto: STUN request)**, and a payload chosen by hand stays. On some networks zero-filled fakes cut Discord voice calls short. [Discord voice calls](../guides/discord-voice.md) sets up such a set step by step.
 

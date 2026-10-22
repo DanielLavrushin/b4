@@ -68,6 +68,7 @@ type Worker struct {
 	pinHealth        *pinHealth
 	goodIPs          *iphealth.KnownGood
 	srcResolver      *tunSrcResolver
+	tunLocalOnly     atomic.Bool
 	holdStop         chan struct{}
 	holdStopOnce     sync.Once
 	holdsLive        atomic.Int32

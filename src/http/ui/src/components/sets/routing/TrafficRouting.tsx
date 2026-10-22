@@ -87,10 +87,6 @@ export const TrafficRouting = ({
   const sourceDeviceCount = config.targets.source_devices?.length ?? 0;
   const selectsL7 = (config.udp.filter_l7?.length ?? 0) > 0;
   const blocksByProtocol = isBlock && selectsL7;
-  const sourceIfacesRefusedByL7 =
-    routing.enabled &&
-    selectsL7 &&
-    (routing.source_interfaces ?? []).some((iface) => iface.trim() !== "");
   const showNoDestinationWarning =
     routing.enabled && !hasDestination && !blocksByProtocol;
 
@@ -410,12 +406,6 @@ export const TrafficRouting = ({
                 );
               })}
             </Box>
-
-            {sourceIfacesRefusedByL7 && (
-              <B4Alert severity="warning" sx={{ mt: 2 }}>
-                <Trans i18nKey="sets.routing.sourceInterfacesL7" />
-              </B4Alert>
-            )}
 
             {availableIfaces.length === 0 && isInterface && (
               <B4Alert severity="warning" sx={{ mt: 2 }}>

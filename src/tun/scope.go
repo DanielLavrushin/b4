@@ -34,6 +34,18 @@ func (r *routeManager) decideScope() {
 		strings.Join(missing, " and "), r.tunName)
 }
 
+type sourceAttribution interface {
+	EnableTUNSourceResolver(wanIP string)
+	SetTUNLocalOnly(localOnly bool)
+}
+
+func (r *routeManager) attributeSources(pool sourceAttribution) {
+	if !r.skipTables && !r.localOnly {
+		pool.EnableTUNSourceResolver(r.currentSrcIP())
+	}
+	pool.SetTUNLocalOnly(r.localOnly)
+}
+
 func (r *routeManager) natGuardSpec() []string {
 	return []string{"-o", r.tunName, "-j", "ACCEPT"}
 }

@@ -21,6 +21,10 @@ A block set stops the traffic it matches instead of sending it anywhere. It bloc
 5. Pick the **Block action**, see [Block options](#block-options). **Reject (fail fast)** is the usual choice for ads.
 6. Click **Create Set**. Changes apply without a restart.
 
+### Blocking on some interfaces only {#source-interfaces}
+
+**Source Interfaces** in the same **Traffic Routing** section limit the set to traffic that arrives on the selected interfaces, such as the bridge of a guest network. Devices on other interfaces and the router's own connections are then not blocked, and the other sets handle their traffic. [Which interface is which](../guides/interfaces.md) explains the interface names.
+
 ### Ready-made ad blocker
 
 A set with a broad list of ad and tracker domains and the `category-ads-all` category, already in block mode. To use it, create a set, open its **Import/Export** tab, paste the JSON below, click **Import** and save the set. The category needs the GeoSite database.

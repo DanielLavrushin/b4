@@ -53,7 +53,7 @@ func waitInjectRouteIdle(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		injectRouteMu.Lock()
-		n := len(injectRouteInflight)
+		n := len(injectRouteInflight) + len(sourceRouteInflight)
 		injectRouteMu.Unlock()
 		if n == 0 && len(injectRouteSlots) == 0 {
 			return
@@ -68,6 +68,7 @@ func waitInjectRouteIdle(t *testing.T) {
 func resetInjectRouteCache() {
 	injectRouteMu.Lock()
 	injectRouteCache = make(map[injectRouteKey]injectRouteEntry)
+	sourceRouteCache = make(map[[16]byte]injectRouteEntry)
 	injectRouteMu.Unlock()
 }
 
@@ -966,5 +967,58 @@ func TestTheKernelNamesTheInterfaceForAnAddress(t *testing.T) {
 		if oif != uint32(lo.Index) {
 			t.Fatalf("route to 127.0.0.1 leaves by ifindex %d, want lo (%d)", oif, lo.Index)
 		}
+	}
+}
+
+func backdateSourceRoute(t *testing.T, src net.IP, by time.Duration) {
+	t.Helper()
+	var key [16]byte
+	copy(key[:], src.To16())
+	injectRouteMu.Lock()
+	defer injectRouteMu.Unlock()
+	e, had := sourceRouteCache[key]
+	if !had {
+		t.Fatalf("no cached route back to %s", src)
+	}
+	e.at = e.at.Add(-by)
+	sourceRouteCache[key] = e
+}
+
+func TestAFailedRouteBackToASourceIsAskedAgainAfterARecheck(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		oif  uint32
+		ok   bool
+	}{
+		{"the lookup failed", 0, false},
+		{"no route", 0, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stub := stubInjectRoute(t, c.oif, c.ok)
+			src := net.ParseIP("10.0.0.1")
+			if oif, ok := sourceRouteOIF(src); ok && oif != 0 {
+				t.Fatalf("route back = %d, %v; want no interface", oif, ok)
+			}
+			stub.set(7, true)
+			if oif, _ := sourceRouteOIF(src); oif != 0 {
+				t.Fatalf("route back = %d within the recheck, want the failure remembered", oif)
+			}
+			backdateSourceRoute(t, src, injectRouteRecheck)
+			if oif, ok := sourceRouteOIF(src); !ok || oif != 7 {
+				t.Fatalf("route back = %d, %v after the recheck, want interface 7 from a second lookup", oif, ok)
+			}
+			backdateSourceRoute(t, src, injectRouteRecheck)
+			if oif, ok := sourceRouteOIF(src); !ok || oif != 7 {
+				t.Fatalf("route back = %d, %v, want the answer kept past the recheck", oif, ok)
+			}
+			if calls := stub.got(); len(calls) != 2 {
+				t.Fatalf("%d route lookups, want one failed and one that found interface 7", len(calls))
+			}
+			stub.set(9, true)
+			backdateSourceRoute(t, src, sourceRouteTTL)
+			if oif, ok := sourceRouteOIF(src); !ok || oif != 9 {
+				t.Fatalf("route back = %d, %v once its TTL passed, want interface 9 from a fresh lookup", oif, ok)
+			}
+		})
 	}
 }

@@ -111,25 +111,14 @@ func TestAnL7SetAcceptsASourceDeviceScope(t *testing.T) {
 	}
 }
 
-func TestAnL7SetRefusesRoutingSourceInterfaces(t *testing.T) {
-	set := l7Set(t)
-	set.Routing.Enabled = true
-	set.Routing.Mode = RoutingModeBlock
-	set.Routing.SourceInterfaces = []string{"br-guest"}
-	err := l7Config(t, set).Validate()
-	var invalid *ValidationError
-	if !errors.As(err, &invalid) || len(invalid.Fields) != 1 {
-		t.Fatalf("b4 cannot tell which interface a selected packet arrived on, so source interfaces must be refused, got %v", err)
-	}
-	if f := invalid.Fields[0]; f.Path != "sets[0].routing.source_interfaces" || f.Code != "conflict" {
-		t.Errorf("expected a conflict on sets[0].routing.source_interfaces, got %+v", f)
-	}
-
+func TestAnL7SetAcceptsRoutingSourceInterfaces(t *testing.T) {
 	for _, c := range []struct {
 		name    string
 		enabled bool
 		ifaces  []string
 	}{
+		{"block routing scoped to an interface", true, []string{"br-guest"}},
+		{"block routing scoped to two interfaces", true, []string{"br-guest", "wgs1"}},
 		{"routing off", false, []string{"br-guest"}},
 		{"blank interfaces", true, []string{"", " "}},
 	} {
@@ -138,7 +127,7 @@ func TestAnL7SetRefusesRoutingSourceInterfaces(t *testing.T) {
 		set.Routing.Mode = RoutingModeBlock
 		set.Routing.SourceInterfaces = c.ifaces
 		if err := l7Config(t, set).Validate(); err != nil {
-			t.Errorf("%s: an L7 set whose routing takes no source interface must save: %v", c.name, err)
+			t.Errorf("%s: b4 tells which interface a selected packet arrived on, so an L7 set with routing source interfaces must save: %v", c.name, err)
 		}
 	}
 }

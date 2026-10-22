@@ -658,10 +658,6 @@ func (c *Config) Validate() error {
 				v.add(fmt.Sprintf("sets[%d].tcp.dport_filter", setIdx), "conflict", "a set that selects UDP protocols takes no TCP port filter, as without targets the set would act on every TCP connection on those ports", map[string]any{"ports": set.TCP.DPortFilter})
 				return v.result()
 			}
-			if set.Routing.Enabled && anyNonBlank(set.Routing.SourceInterfaces) {
-				v.add(fmt.Sprintf("sets[%d].routing.source_interfaces", setIdx), "conflict", "a set that selects UDP protocols takes no routing source interfaces, as b4 cannot tell which interface a selected packet arrived on", nil)
-				return v.result()
-			}
 			for _, class := range set.UDP.FilterL7 {
 				if !slices.Contains(UDPL7Classes, class) {
 					log.Warnf("Set '%s' selects unknown UDP protocol '%s'; this version matches no traffic for it", set.Name, class)

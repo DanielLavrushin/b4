@@ -730,6 +730,22 @@ func (set *SetConfig) RoutingSourceScoped() bool {
 	return false
 }
 
+func (set *SetConfig) BlockRoutingScoped() bool {
+	return set.Routing.Enabled && RoutingIsBlock(set.Routing.Mode) && anyNonBlank(set.Routing.SourceInterfaces)
+}
+
+func (set *SetConfig) ListsSourceInterface(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, s := range set.Routing.SourceInterfaces {
+		if strings.TrimSpace(s) == name {
+			return true
+		}
+	}
+	return false
+}
+
 func (set *SetConfig) MatchesTCPDPort(port uint16) bool {
 	if len(set.TCPPortRanges) == 0 {
 		return true
