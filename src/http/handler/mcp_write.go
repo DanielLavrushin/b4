@@ -227,9 +227,18 @@ func mcpWithFieldReasons(err error) error {
 	return fmt.Errorf("%w: %s", err, strings.Join(reasons, "; "))
 }
 
+func mcpRevision(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	neutral := *cfg
+	neutral.System.WebServer.MCP = config.MCPConfig{}
+	return watchdog.ConfigRevision(&neutral)
+}
+
 func mcpRecordChange(c mcpChange, before, after *config.Config) {
-	c.PreRevision = watchdog.ConfigRevision(before)
-	c.PostRevision = watchdog.ConfigRevision(after)
+	c.PreRevision = mcpRevision(before)
+	c.PostRevision = mcpRevision(after)
 	mcpNoteWrite(c.Path, "MCP changed "+c.Path)
 	mcpStripDerivedTargets(c.Snapshot)
 	mcpHistory = append(mcpHistory, c)
@@ -988,20 +997,23 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			api.loadTargetsForSetCached(set)
 		}
 		var oldCfg *config.Config
-		err := api.saveAndPushConfigIf(last.Snapshot, func(current *config.Config) error {
-			if last.PostRevision != "" && watchdog.ConfigRevision(current) != last.PostRevision {
-				return errMCPRevertStale
+		err := api.updateAndPushConfig(func(current *config.Config) (*config.Config, error) {
+			if last.PostRevision != "" && mcpRevision(current) != last.PostRevision {
+				return nil, errMCPRevertStale
 			}
 			if err := mcpExposureRefusal(current, last.Snapshot); err != nil {
-				return err
+				return nil, err
 			}
 			if !current.System.WebServer.MCP.AllowActiveProbes {
 				if what := mcpStartsProbes(last.Snapshot, current); what != "" {
-					return &mcpProbesError{what: what}
+					return nil, &mcpProbesError{what: what}
 				}
 			}
+			live := current.System.WebServer.MCP
+			live.AllowedOrigins = append([]string(nil), live.AllowedOrigins...)
+			last.Snapshot.System.WebServer.MCP = live
 			oldCfg = current
-			return nil
+			return last.Snapshot, nil
 		})
 		if err != nil {
 			mcpStripDerivedTargets(last.Snapshot)
@@ -1016,15 +1028,14 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 					last.Path)
 			case errors.As(err, &probes):
 				return nil, mcpRevertOut{}, fmt.Errorf(
-					"refusing to undo %s: it would %s, which makes the router fetch sites on a timer, and that needs 'Allow active probes', which the user turns on %s. "+
-						"Nothing was changed. Do not retry this undo: turning the switch on is itself a configuration change, after which the undo is refused as stale. "+
-						"Once the switch is on, set the value back with b4_watchdog instead",
-					last.Path, probes.what, mcpSwitchWhere)
+					"refusing to undo %s: it would %s, which makes the router fetch sites on a timer. "+
+						"That needs 'Allow active probes', which the user turns on %s; nothing was changed and the change stays on the undo list. %s",
+					last.Path, probes.what, mcpSwitchWhere, mcpSwitchRetry)
 			}
 			return nil, mcpRevertOut{}, fmt.Errorf("could not restore the previous configuration: %w", mcpWithFieldReasons(err))
 		}
 		if n := len(mcpHistory); n > 0 && mcpHistory[n-1].PostRevision == last.PreRevision {
-			mcpHistory[n-1].PostRevision = watchdog.ConfigRevision(last.Snapshot)
+			mcpHistory[n-1].PostRevision = mcpRevision(last.Snapshot)
 		}
 		api.applyRuntimeChanges(last.Snapshot, oldCfg)
 		api.PerformSoftRestart(last.Snapshot, oldCfg)
