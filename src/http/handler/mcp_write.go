@@ -998,18 +998,21 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		}
 		var oldCfg *config.Config
 		err := api.updateAndPushConfig(func(current *config.Config) (*config.Config, error) {
+			live := current.System.WebServer.MCP
+			if !live.Enabled || !live.AllowWrites {
+				return nil, errMCPWritesOff
+			}
 			if last.PostRevision != "" && mcpRevision(current) != last.PostRevision {
 				return nil, errMCPRevertStale
 			}
 			if err := mcpExposureRefusal(current, last.Snapshot); err != nil {
 				return nil, err
 			}
-			if !current.System.WebServer.MCP.AllowActiveProbes {
+			if !live.AllowActiveProbes {
 				if what := mcpStartsProbes(last.Snapshot, current); what != "" {
 					return nil, &mcpProbesError{what: what}
 				}
 			}
-			live := current.System.WebServer.MCP
 			live.AllowedOrigins = append([]string(nil), live.AllowedOrigins...)
 			last.Snapshot.System.WebServer.MCP = live
 			oldCfg = current
@@ -1020,6 +1023,8 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			mcpHistory = append(mcpHistory, last)
 			var probes *mcpProbesError
 			switch {
+			case errors.Is(err, errMCPWritesOff):
+				return nil, mcpRevertOut{}, errMCPWritesOff
 			case errors.Is(err, errMCPRevertStale):
 				return nil, mcpRevertOut{}, fmt.Errorf(
 					"refusing to undo %s: the configuration was changed after that change (by the watchdog, the web interface or another tool), "+
