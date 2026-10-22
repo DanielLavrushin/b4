@@ -161,3 +161,27 @@ func TestShareTreatsReorderedProtocolsAsTheSameStrategy(t *testing.T) {
 		t.Errorf("an envelope that lists the protocols in another order duplicates %v: %v", first.Body["set_id"], crafted.Body)
 	}
 }
+
+func TestShareTreatsFilterSTUNOnAProtocolSelectionAsTheSameStrategy(t *testing.T) {
+	f := newFixture(t)
+	first := f.share(t, testkit.Identity(t), testkit.L7Set("Voice", config.UDPL7Discord, config.UDPL7STUN), peerA)
+	expect(t, first, http.StatusAccepted, "")
+
+	off := testkit.L7Set("Voice again", config.UDPL7Discord, config.UDPL7STUN)
+	off.UDP.FilterSTUN = false
+	built := f.share(t, testkit.Identity(t), off, peerB)
+	expect(t, built, http.StatusConflict, CodeDuplicateStrategy)
+	if built.Body["set_id"] != first.Body["set_id"] {
+		t.Errorf("a protocol selection that differs only in filter_stun duplicates %v: %v", first.Body["set_id"], built.Body)
+	}
+
+	env := testkit.BuildEnvelope(t, &off)
+	udp, _ := env.Set["udp"].(map[string]interface{})
+	udp["filter_stun"] = false
+	env.Fingerprint = hubwire.Fingerprint(env.Set)
+	crafted := f.post(t, testkit.SignShare(t, testkit.Identity(t), env, f.clock), peerC)
+	expect(t, crafted, http.StatusConflict, CodeDuplicateStrategy)
+	if crafted.Body["set_id"] != first.Body["set_id"] {
+		t.Errorf("an envelope that carries filter_stun on a protocol selection duplicates %v: %v", first.Body["set_id"], crafted.Body)
+	}
+}

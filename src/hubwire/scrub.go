@@ -412,6 +412,9 @@ func Scrub(set *config.SetConfig) (map[string]interface{}, *Report, error) {
 	clone := *set
 	config.ApplySetDefaults(&clone)
 	clone.UDP.FilterL7 = sortedL7(clone.UDP.FilterL7)
+	if len(clone.UDP.FilterL7) > 0 {
+		clone.UDP.FilterSTUN = config.DefaultSetConfig.UDP.FilterSTUN
+	}
 	m, err := config.SetToMap(&clone)
 	if err != nil {
 		return nil, nil, err

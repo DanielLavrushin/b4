@@ -279,3 +279,61 @@ func TestTheOrderOfUDPProtocolsDoesNotChangeTheSharedSet(t *testing.T) {
 		t.Errorf("a local set that lists the protocols in another order is unchanged: %s vs %s", live, imp.Fingerprint)
 	}
 }
+
+func TestFilterSTUNChangesTheSharedSetOnlyWithoutProtocolSelection(t *testing.T) {
+	on := l7OnlySet(config.UDPL7Discord, config.UDPL7STUN)
+	off := l7OnlySet(config.UDPL7Discord, config.UDPL7STUN)
+	off.UDP.FilterSTUN = false
+	envOn, _, err := Build(&on, BuildOptions{B4Version: "1.88.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envOff, _, err := Build(&off, BuildOptions{B4Version: "1.88.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(envOn.Set, envOff.Set) || envOn.Fingerprint != envOff.Fingerprint {
+		t.Errorf("filter_stun does nothing on a set that selects UDP protocols, so it must not change the shared set: %v %s vs %v %s", envOn.Set["udp"], envOn.Fingerprint, envOff.Set["udp"], envOff.Fingerprint)
+	}
+	if off.UDP.FilterSTUN {
+		t.Error("building an envelope must not change the local set")
+	}
+
+	imp, err := Open(envOff, OpenOptions{B4Version: "1.88.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imp.Fingerprint != envOn.Fingerprint || !imp.Set.UDP.FilterSTUN {
+		t.Errorf("the imported set must carry the one fingerprint and the default filter_stun: %s %v", imp.Fingerprint, imp.Set.UDP.FilterSTUN)
+	}
+	live, err := LiveFingerprint(&off, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live != imp.Fingerprint {
+		t.Errorf("a local set that differs only in filter_stun is unchanged: %s vs %s", live, imp.Fingerprint)
+	}
+
+	plain := func(filterSTUN bool) config.SetConfig {
+		set := config.NewSetConfig()
+		set.Name = "Calls"
+		set.Targets.SNIDomains = []string{"example.com"}
+		set.UDP.FilterSTUN = filterSTUN
+		return set
+	}
+	plainOn, plainOff := plain(true), plain(false)
+	envPlainOn, _, err := Build(&plainOn, BuildOptions{B4Version: "1.88.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envPlainOff, _, err := Build(&plainOff, BuildOptions{B4Version: "1.88.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := lookupPath(envPlainOff.Set, "udp.filter_stun"); !ok || v != false {
+		t.Errorf("without protocol selection filter_stun decides whether the set passes call setup, so it must cross: %v", envPlainOff.Set["udp"])
+	}
+	if envPlainOn.Fingerprint == envPlainOff.Fingerprint {
+		t.Error("without protocol selection filter_stun is part of the strategy")
+	}
+}
