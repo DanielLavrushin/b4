@@ -24,6 +24,7 @@ import { Box, Grid, Stack, Typography } from "@mui/material";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 
 interface TcpFakingProps {
   config: B4SetConfig;
@@ -32,9 +33,24 @@ interface TcpFakingProps {
     value: string | boolean | number | string[] | number[],
   ) => void;
 }
-
+export const FAKING_ACCORDIONS: { labelKey: string; prefixes: string[] }[] = [
+  { labelKey: "sets.faking.fakeSni.title", prefixes: ["faking.sni", "faking.sni_seq_length", "faking.sni_type", "faking.custom_payload", "faking.payload_domain", "faking.fake_len_mode", "faking.payload_file", "faking.strategy", "faking.seq_offset", "faking.timestamp_decrease", "faking.tls_mod", "faking.ttl", "faking.apply_ttl", "faking.md5_on_fake"] },
+  { labelKey: "sets.faking.synFake.title", prefixes: ["tcp.syn_fake", "tcp.syn_fake_len", "tcp.syn_ttl", "faking.tcp_md5"] },
+  { labelKey: "sets.faking.desync.title", prefixes: ["tcp.desync"] },
+  { labelKey: "sets.faking.window.title", prefixes: ["tcp.win"] },
+  { labelKey: "sets.faking.incoming.title", prefixes: ["tcp.incoming"] },
+  { labelKey: "sets.faking.mutation.title", prefixes: ["faking.sni_mutation"] },
+];
 export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
   const { t } = useTranslation();
+  const { changedPaths } = useChangedFields();
+  const hasSubChanges = (prefixes: string[]): boolean =>
+    prefixes.some((prefix) => {
+      for (const path of changedPaths) {
+        if (path === prefix || path.startsWith(`${prefix}.`)) return true;
+      }
+      return false;
+    });
   const [newFakeSni, setNewFakeSni] = useState("");
   const [newWinValue, setNewWinValue] = useState("");
   const { captures, loadCaptures } = useCaptures();
@@ -42,7 +58,6 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
   useEffect(() => {
     loadCaptures().catch(() => {});
   }, [loadCaptures]);
-
   const FAKE_STRATEGIES = [
     { value: "ttl", label: t("sets.faking.fakeSni.strategyTtl") },
     { value: "randseq", label: t("sets.faking.fakeSni.strategyRandseq") },
@@ -261,12 +276,14 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         status={fakeSniStatus}
         enabled={config.faking.sni}
         defaultExpanded
+        hasChanges={hasSubChanges(FAKING_ACCORDIONS[0].prefixes)}
       >
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 6 }}>
             <B4Switch
               label={t("sets.faking.fakeSni.enable")}
               checked={config.faking.sni}
+              path="faking.sni"
               onChange={(checked: boolean) => onChange("faking.sni", checked)}
               description={t("sets.faking.fakeSni.enableDesc")}
               aiTopic="faking.sni"
@@ -276,6 +293,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
             <B4Slider
               label={t("sets.faking.fakeSni.packetCount")}
               value={config.faking.sni_seq_length}
+              path="faking.sni_seq_length"
               onChange={(value: number) =>
                 onChange("faking.sni_seq_length", value)
               }
@@ -295,6 +313,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                 label={t("sets.faking.fakeSni.payloadType")}
                 value={config.faking.sni_type}
                 options={FAKE_PAYLOAD_TYPES}
+                path="faking.sni_type"
                 onChange={(e) =>
                   onChange("faking.sni_type", Number(e.target.value))
                 }
@@ -309,8 +328,8 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               {config.faking.sni_type === FakingPayloadType.CUSTOM && (
                 <Box sx={{ mt: 2 }}>
                   <B4TextField
-                    label={t("sets.faking.fakeSni.customPayload")}
                     value={config.faking.custom_payload}
+                    path="faking.custom_payload"
                     onChange={(e) =>
                       onChange("faking.custom_payload", e.target.value)
                     }
@@ -326,6 +345,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                   <B4TextField
                     label={t("sets.faking.fakeSni.payloadDomainLabel")}
                     value={config.faking.payload_domain}
+                    path="faking.payload_domain"
                     onChange={(e) =>
                       onChange("faking.payload_domain", e.target.value)
                     }
@@ -342,6 +362,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               label={t("sets.faking.fakeSni.matchLength")}
               description={t("sets.faking.fakeSni.matchLengthDesc")}
               checked={config.faking.fake_len_mode === "match"}
+              path="faking.fake_len_mode"
               onChange={(checked) =>
                 onChange("faking.fake_len_mode", checked ? "match" : "")
               }
@@ -356,6 +377,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                   <B4Select
                     label={t("sets.faking.fakeSni.generatedPayload")}
                     value={config.faking.payload_file}
+                    path="faking.payload_file"
                     options={[
                       {
                         value: "",
@@ -407,6 +429,8 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                 <B4Switch
                   label={t("sets.faking.fakeSni.randomizeTlsRandom")}
                   checked={(config.faking.tls_mod || []).includes("rnd")}
+                  path="faking.tls_mod"
+                  arrayItem="rnd"
                   onChange={(checked: boolean) => {
                     const current = config.faking.tls_mod || [];
                     const next = checked
@@ -420,6 +444,8 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                 <B4Switch
                   label={t("sets.faking.fakeSni.dupSessionId")}
                   checked={(config.faking.tls_mod || []).includes("dupsid")}
+                  path="faking.tls_mod"
+                  arrayItem="dupsid"
                   onChange={(checked: boolean) => {
                     const current = config.faking.tls_mod || [];
                     const next = checked
@@ -441,6 +467,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               label={t("sets.faking.fakeSni.strategy")}
               value={config.faking.strategy}
               options={FAKE_STRATEGIES}
+              path="faking.strategy"
               onChange={(e) => onChange("faking.strategy", e.target.value)}
               helperText={t("sets.faking.fakeSni.strategyHelper")}
               disabled={!config.faking.sni}
@@ -452,8 +479,8 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
             config.faking.strategy === "randseq") && (
             <Grid size={{ xs: 12, md: 6 }}>
               <B4NumberField
-                label={t("sets.faking.fakeSni.seqOffset")}
                 value={config.faking.seq_offset}
+                path="faking.seq_offset"
                 onChange={(n) => onChange("faking.seq_offset", n)}
                 helperText={t("sets.faking.fakeSni.seqOffsetHelper")}
                 disabled={!config.faking.sni}
@@ -463,8 +490,8 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
           {config.faking.strategy === "timestamp" && (
             <Grid size={{ xs: 12, md: 6 }}>
               <B4NumberField
-                label={t("sets.faking.fakeSni.timestampDecrease")}
                 value={config.faking.timestamp_decrease || 600000}
+                path="faking.timestamp_decrease"
                 onChange={(n) => onChange("faking.timestamp_decrease", n)}
                 min={0}
                 helperText={t("sets.faking.fakeSni.timestampDecreaseHelper")}
@@ -475,8 +502,8 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
 
           <Grid size={{ xs: 12, md: 4 }}>
             <B4Slider
-              label={t("sets.faking.fakeSni.ttl")}
               value={config.faking.ttl}
+              path="faking.ttl"
               onChange={(value: number) => onChange("faking.ttl", value)}
               min={1}
               max={64}
@@ -487,9 +514,9 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4Switch
-              label={t("sets.faking.fakeSni.applyTtl")}
               description={t("sets.faking.fakeSni.applyTtlDesc")}
               checked={config.faking.apply_ttl || false}
+              path="faking.apply_ttl"
               onChange={(checked) => onChange("faking.apply_ttl", checked)}
               disabled={!config.faking.sni || config.faking.strategy === "ttl"}
               aiTopic="faking.apply_ttl"
@@ -497,9 +524,9 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4Switch
-              label={t("sets.faking.fakeSni.md5OnFake")}
               description={t("sets.faking.fakeSni.md5OnFakeDesc")}
               checked={config.faking.md5_on_fake || false}
+              path="faking.md5_on_fake"
               onChange={(checked) => onChange("faking.md5_on_fake", checked)}
               disabled={!config.faking.sni}
               aiTopic="faking.md5_on_fake"
@@ -513,6 +540,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         title={t("sets.faking.synFake.title")}
         status={synFakeStatus}
         enabled={config.tcp.syn_fake || config.faking.tcp_md5}
+        hasChanges={hasSubChanges(FAKING_ACCORDIONS[1].prefixes)}
       >
         <B4Hint>{t("sets.faking.synFake.alert")}</B4Hint>
         <Grid container spacing={3}>
@@ -521,6 +549,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               label={t("sets.faking.synFake.enable")}
               description={t("sets.faking.synFake.enableDesc")}
               checked={config.tcp.syn_fake || false}
+              path="tcp.syn_fake"
               onChange={(checked) => onChange("tcp.syn_fake", checked)}
               aiTopic="tcp.syn_fake"
             />
@@ -531,6 +560,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               label={t("sets.faking.synFake.md5Enable")}
               description={t("sets.faking.synFake.md5Desc")}
               checked={config.faking.tcp_md5 || false}
+              path="faking.tcp_md5"
               onChange={(checked) => onChange("faking.tcp_md5", checked)}
               aiTopic="faking.tcp_md5"
             />
@@ -542,6 +572,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                 <B4Slider
                   label={t("sets.faking.synFake.payloadLen")}
                   value={config.tcp.syn_fake_len || 0}
+                  path="tcp.syn_fake_len"
                   onChange={(value: number) =>
                     onChange("tcp.syn_fake_len", value)
                   }
@@ -556,6 +587,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                 <B4Slider
                   label={t("sets.faking.synFake.ttl")}
                   value={config.tcp.syn_ttl || 0}
+                  path="tcp.syn_ttl"
                   onChange={(value: number) => onChange("tcp.syn_ttl", value)}
                   min={1}
                   max={100}
@@ -574,14 +606,15 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         title={t("sets.faking.desync.title")}
         status={desyncStatus}
         enabled={isDesyncEnabled}
+        hasChanges={hasSubChanges(FAKING_ACCORDIONS[2].prefixes)}
       >
         <B4Hint>{t("sets.faking.desync.alert")}</B4Hint>
         <Grid container spacing={3}>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4Select
-              label={t("sets.faking.desync.mode")}
               value={config.tcp.desync.mode}
               options={desyncModeOptions}
+              path="tcp.desync.mode"
               onChange={(e) => onChange("tcp.desync.mode", e.target.value)}
               helperText={desyncModeDescriptions[config.tcp.desync.mode]}
               aiTopic="tcp.desync.mode"
@@ -591,8 +624,8 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
 
           <Grid size={{ xs: 12, md: 4 }}>
             <B4Slider
-              label={t("sets.faking.desync.ttl")}
               value={config.tcp.desync.ttl}
+              path="tcp.desync.ttl"
               onChange={(value: number) => onChange("tcp.desync.ttl", value)}
               min={1}
               max={50}
@@ -608,8 +641,8 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
 
           <Grid size={{ xs: 12, md: 4 }}>
             <B4Slider
-              label={t("sets.faking.desync.count")}
               value={config.tcp.desync.count}
+              path="tcp.desync.count"
               onChange={(value: number) => onChange("tcp.desync.count", value)}
               min={1}
               max={20}
@@ -624,9 +657,9 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
             <B4Switch
-              label={t("sets.faking.desync.postDesync")}
               description={t("sets.faking.desync.postDesyncDesc")}
               checked={config.tcp.desync.post_desync || false}
+              path="tcp.desync.post_desync"
               onChange={(checked) =>
                 onChange("tcp.desync.post_desync", checked)
               }
@@ -641,14 +674,15 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         title={t("sets.faking.window.title")}
         status={windowStatus}
         enabled={config.tcp.win.mode !== "off"}
+        hasChanges={hasSubChanges(FAKING_ACCORDIONS[3].prefixes)}
       >
         <B4Hint>{t("sets.faking.window.alert")}</B4Hint>
         <Grid container spacing={3}>
           <Grid size={{ xs: 12, md: 6 }}>
             <B4Select
-              label={t("sets.faking.window.mode")}
               value={config.tcp.win.mode}
               options={windowModeOptions}
+              path="tcp.win.mode"
               onChange={(e) => onChange("tcp.win.mode", e.target.value)}
               helperText={windowModeDescriptions[config.tcp.win.mode]}
               aiTopic="tcp.win.mode"
@@ -717,14 +751,15 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         title={t("sets.faking.incoming.title")}
         status={incomingStatus}
         enabled={(config.tcp.incoming?.mode || "off") !== "off"}
+        hasChanges={hasSubChanges(FAKING_ACCORDIONS[4].prefixes)}
       >
         <B4Hint>{t("sets.faking.incoming.alert")}</B4Hint>
         <Grid container spacing={3}>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4Select
-              label={t("sets.faking.incoming.mode")}
               value={config.tcp.incoming?.mode || "off"}
               options={incomingModeOptions}
+              path="tcp.incoming.mode"
               onChange={(e) => onChange("tcp.incoming.mode", e.target.value)}
               helperText={
                 incomingModeDescriptions[config.tcp.incoming?.mode || "off"]
@@ -736,9 +771,9 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
 
           <Grid size={{ xs: 12, md: 4 }}>
             <B4Select
-              label={t("sets.faking.incoming.strategy")}
               value={config.tcp.incoming?.strategy || "badsum"}
               options={incomingStrategyOptions}
+              path="tcp.incoming.strategy"
               onChange={(e) =>
                 onChange("tcp.incoming.strategy", e.target.value)
               }
@@ -761,6 +796,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
             <B4Slider
               label={t("sets.faking.incoming.ttl")}
               value={config.tcp.incoming?.fake_ttl || 3}
+              path="tcp.incoming.fake_ttl"
               onChange={(value: number) =>
                 onChange("tcp.incoming.fake_ttl", value)
               }
@@ -774,8 +810,8 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
 
           <Grid size={{ xs: 12, md: 4 }}>
             <B4Slider
-              label={t("sets.faking.incoming.fakeCount")}
               value={config.tcp.incoming?.fake_count || 3}
+              path="tcp.incoming.fake_count"
               onChange={(value: number) =>
                 onChange("tcp.incoming.fake_count", value)
               }
@@ -791,6 +827,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
             <B4Slider
               label={t("sets.faking.incoming.thresholdMin")}
               value={config.tcp.incoming?.min || 14}
+              path="tcp.incoming.min"
               onChange={(value: number) => onChange("tcp.incoming.min", value)}
               min={5}
               max={config.tcp.incoming?.max || 150}
@@ -812,6 +849,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
             <B4Slider
               label={t("sets.faking.incoming.thresholdMax")}
               value={config.tcp.incoming?.max || 14}
+              path="tcp.incoming.max"
               onChange={(value: number) => onChange("tcp.incoming.max", value)}
               min={config.tcp.incoming?.min || 5}
               max={50}
@@ -838,13 +876,14 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
         title={t("sets.faking.mutation.title")}
         status={mutationStatus}
         enabled={isMutationEnabled}
+        hasChanges={hasSubChanges(FAKING_ACCORDIONS[5].prefixes)}
       >
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 6 }}>
             <B4Select
-              label={t("sets.faking.mutation.mode")}
               value={mutation.mode}
               options={MUTATION_MODES}
+              path="faking.sni_mutation.mode"
               onChange={(e) =>
                 onChange("faking.sni_mutation.mode", e.target.value)
               }
@@ -865,6 +904,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                     <B4Slider
                       label={t("sets.faking.mutation.greaseCount")}
                       value={mutation.grease_count}
+                      path="faking.sni_mutation.grease_count"
                       onChange={(value: number) =>
                         onChange("faking.sni_mutation.grease_count", value)
                       }
@@ -886,6 +926,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                     <B4Slider
                       label={t("sets.faking.mutation.paddingSize")}
                       value={mutation.padding_size}
+                      path="faking.sni_mutation.padding_size"
                       onChange={(value: number) =>
                         onChange("faking.sni_mutation.padding_size", value)
                       }
@@ -908,6 +949,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                     <B4Slider
                       label={t("sets.faking.mutation.fakeExtCount")}
                       value={mutation.fake_ext_count}
+                      path="faking.sni_mutation.fake_ext_count"
                       onChange={(value: number) =>
                         onChange("faking.sni_mutation.fake_ext_count", value)
                       }

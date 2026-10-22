@@ -9,11 +9,15 @@ import {
 } from "@mui/material";
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
+import { useEffect } from "react";
+import { useFieldLabel } from "./dialogLabels";
 
 interface B4SelectProps extends Omit<SelectProps<string | number>, "variant"> {
-  label: string;
+  label?: string;
   options: { value: string | number; label: string }[];
   helperText?: string;
+  path?: string;
   aiTopic?: string;
   aiContext?: Record<string, unknown>;
   aiQuestion?: string;
@@ -23,17 +27,43 @@ export const B4Select = ({
   label,
   options,
   helperText,
+  path,
   aiTopic,
   aiContext,
   aiQuestion,
   ...props
 }: B4SelectProps) => {
+  const resolvedLabel = useFieldLabel(path, label);
+  const changed = useChangedField(path, resolvedLabel);
+  const { registerValueLabels, scopeVersion } = useChangedFields();
+  const optionKey = options
+    .map((o) => `${o.value}\0${o.label}`)
+    .join("\0\0");
+  useEffect(() => {
+    if (!path) return;
+    registerValueLabels(
+      path,
+      new Map(options.map((o) => [String(o.value), o.label])),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, optionKey, registerValueLabels, scopeVersion]);
   const fc = (
     <FormControl fullWidth size="small">
-      <InputLabel shrink sx={{ color: colors.text.secondary }}>{label}</InputLabel>
+      <InputLabel
+        shrink
+        sx={{
+          color: changed ? colors.secondary : colors.text.secondary,
+          "&.Mui-disabled": { color: colors.text.disabled },
+          "&.Mui-focused:not(.Mui-disabled)": {
+            color: colors.secondary,
+          },
+        }}
+      >
+        {resolvedLabel}
+      </InputLabel>
       <Select
         {...props}
-        label={label}
+        label={resolvedLabel}
         displayEmpty
         renderValue={(selected) => {
           const match = options.find((o) => o.value === selected);
@@ -41,6 +71,9 @@ export const B4Select = ({
         }}
         sx={{
           bgcolor: colors.background.dark,
+          ...(changed && !props.disabled
+            ? { boxShadow: `inset 3px 0 0 ${colors.secondary}` }
+            : {}),
           "& .MuiOutlinedInput-notchedOutline": {
             borderColor: colors.border.default,
           },
@@ -87,7 +120,7 @@ export const B4Select = ({
       <Box sx={{ flex: 1 }}>{fc}</Box>
       <B4AiExplain
         topic={aiTopic}
-        fieldLabel={label}
+        fieldLabel={resolvedLabel}
         fieldDoc={helperText}
         value={valStr}
         context={aiContext}

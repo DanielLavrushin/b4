@@ -89,8 +89,8 @@ const IPInfoCard = ({ config, onChange }: ApiSettingsProps) => {
     >
       <Box sx={{ maxWidth: 560 }}>
         <B4SecretField
-          label={t("settings.Api.token")}
           value={token}
+          path="system.api.ipinfo_token"
           onChange={(value) => onChange("system.api.ipinfo_token", value)}
           placeholder={t("settings.Api.tokenPlaceholder")}
           helperText={
@@ -279,6 +279,7 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
       status={notReady}
       enabled={ai?.enabled ?? false}
       onToggle={(checked) => onChange("system.ai.enabled", checked)}
+      togglePath="system.ai.enabled"
       toggleLabel={t("settings.Ai.enable")}
     >
       <Stack spacing={2}>
@@ -356,7 +357,7 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
             renderInput={(params) => (
               <B4TextField
                 {...params}
-                label={t("settings.Ai.model")}
+                path="system.ai.model"
                 placeholder={MODEL_PLACEHOLDERS[provider] ?? ""}
                 size="small"
                 helperText={modelsError || t("settings.Ai.modelHelp")}
@@ -425,8 +426,8 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
         <Grid container spacing={2}>
           <Grid size={{ xs: 12 }}>
             <B4TextField
-              label={t("settings.Ai.endpoint")}
               value={ai?.endpoint ?? ""}
+              path="system.ai.endpoint"
               onChange={(e) => onChange("system.ai.endpoint", e.target.value)}
               placeholder={DEFAULT_ENDPOINTS[provider] ?? ""}
               disabled={!provider}
@@ -435,8 +436,8 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4NumberField
-              label={t("settings.Ai.maxTokens")}
               value={ai?.max_tokens ?? 1024}
+              path="system.ai.max_tokens"
               onChange={(n) => onChange("system.ai.max_tokens", n)}
               min={1}
               helperText={t("settings.Ai.maxTokensHelp")}
@@ -444,8 +445,8 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4NumberField
-              label={t("settings.Ai.temperature")}
               value={ai?.temperature ?? 0.2}
+              path="system.ai.temperature"
               onChange={(n) => onChange("system.ai.temperature", n)}
               allowDecimal
               min={0}
@@ -455,8 +456,8 @@ const AICard = ({ config, onChange }: ApiSettingsProps) => {
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <B4NumberField
-              label={t("settings.Ai.timeout")}
               value={ai?.timeout_sec ?? 120}
+              path="system.ai.timeout_sec"
               onChange={(n) => onChange("system.ai.timeout_sec", n)}
               min={1}
               helperText={t("settings.Ai.timeoutHelp")}
@@ -582,14 +583,15 @@ const MCPCard = ({ config, onChange }: ApiSettingsProps) => {
       description={t("settings.Mcp.description")}
       enabled={enabled}
       onToggle={(checked) => onChange("system.web_server.mcp.enabled", checked)}
+      togglePath="system.web_server.mcp.enabled"
       toggleLabel={t("settings.Mcp.enabled")}
     >
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 6 }}>
           <Stack spacing={2}>
             <B4SecretField
-              label={t("settings.Mcp.token")}
               value={token}
+              path="system.web_server.mcp.token"
               onChange={(value) =>
                 onChange("system.web_server.mcp.token", value)
               }

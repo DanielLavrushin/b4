@@ -4,6 +4,7 @@ import {
   Chip,
   CircularProgress,
   Grid,
+  Stack,
   Typography,
 } from "@mui/material";
 import { ClearIcon, RefreshIcon } from "@b4.icons";
@@ -11,8 +12,9 @@ import { B4Alert, B4Hint, B4Switch, B4TooltipButton } from "@b4.elements";
 import { DeviceInfo } from "@b4.devices";
 import { B4DeviceTable } from "@common/B4DeviceTable";
 import { colors } from "@design";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-
+import { useChangedFields } from "@context/ChangedFieldsContext";
 interface DevicesTabProps {
   selected: string[];
   exclude: boolean;
@@ -39,8 +41,27 @@ export const DevicesTab = ({
   onExcludeChange,
 }: DevicesTabProps) => {
   const { t } = useTranslation();
+  const { changedValues } = useChangedFields();
+  const devicesLeaf = changedValues.get("targets.source_devices");
+  // O(1) membership per row instead of O(n) includes scans.
+  const leafSets = useMemo(() => {
+    if (
+      !devicesLeaf ||
+      !Array.isArray(devicesLeaf.after) ||
+      !Array.isArray(devicesLeaf.before)
+    ) {
+      return null;
+    }
+    return {
+      after: new Set(devicesLeaf.after as unknown[]),
+      before: new Set(devicesLeaf.before as unknown[]),
+    };
+  }, [devicesLeaf]);
+  const isDeviceChanged = (mac: string): boolean =>
+    !!leafSets && leafSets.after.has(mac) !== leafSets.before.has(mac);
 
-  const isSelected = (mac: string) => selected.includes(mac);
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+  const isSelected = (mac: string) => selectedSet.has(mac);
 
   const handleToggle = (mac: string) => {
     onChange(
@@ -59,10 +80,13 @@ export const DevicesTab = ({
 
   const hasMssHints = devices.some((d) => d.mss_clamp);
 
-  const selectedManual = devices.filter(
-    (d) => d.is_manual && isSelected(d.mac),
-  );
-  const manualWithoutIp = selectedManual.filter((d) => !d.ip.trim());
+  const selectedManual: DeviceInfo[] = [];
+  const manualWithoutIp: DeviceInfo[] = [];
+  for (const d of devices) {
+    if (!d.is_manual || !isSelected(d.mac)) continue;
+    selectedManual.push(d);
+    if (!d.ip.trim()) manualWithoutIp.push(d);
+  }
   const showNoDestination =
     routingEnabled && !hasDestination && selected.length > 0 && !exclude;
 
@@ -106,6 +130,7 @@ export const DevicesTab = ({
                 label={t("sets.targets.excludeDevices")}
                 description={t("sets.targets.excludeDevicesDesc")}
                 checked={exclude}
+                path="targets.source_devices_exclude"
                 onChange={onExcludeChange}
               />
             </Box>
@@ -138,13 +163,24 @@ export const DevicesTab = ({
                   </Typography>
                 )}
               </Typography>
-              <B4TooltipButton
-                title={t("core.devices.refreshDevices")}
-                icon={
-                  loading ? <CircularProgress size={18} /> : <RefreshIcon />
-                }
-                onClick={onRefresh}
-              />
+              <Stack direction="row" spacing={1} alignItems="center">
+                {selected.length > 0 && (
+                  <Button
+                    size="small"
+                    onClick={() => onChange([])}
+                    startIcon={<ClearIcon />}
+                  >
+                    {t("core.clearAll")}
+                  </Button>
+                )}
+                <B4TooltipButton
+                  title={t("core.devices.refreshDevices")}
+                  icon={
+                    loading ? <CircularProgress size={18} /> : <RefreshIcon />
+                  }
+                  onClick={onRefresh}
+                />
+              </Stack>
             </Box>
 
             <B4DeviceTable
@@ -152,6 +188,7 @@ export const DevicesTab = ({
               loading={loading}
               isSelected={isSelected}
               onToggle={handleToggle}
+              isChanged={isDeviceChanged}
               onSelectAll={(checked) =>
                 onChange(checked ? devices.map((d) => d.mac) : [])
               }
@@ -176,17 +213,6 @@ export const DevicesTab = ({
               }
             />
 
-            {selected.length > 0 && (
-              <Box sx={{ mt: 2 }}>
-                <Button
-                  size="small"
-                  onClick={() => onChange([])}
-                  startIcon={<ClearIcon />}
-                >
-                  {t("core.clearAll")}
-                </Button>
-              </Box>
-            )}
           </Grid>
         </Grid>
       ) : (

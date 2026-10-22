@@ -174,6 +174,7 @@ export const TrafficRouting = ({
         <B4Switch
           label={t("sets.routing.enable")}
           checked={routing.enabled}
+          path="routing.enabled"
           onChange={(checked: boolean) => onChange("routing.enabled", checked)}
           description={t("sets.routing.enableDesc")}
           disabled={
@@ -205,6 +206,7 @@ export const TrafficRouting = ({
               label={t("sets.routing.modeLabel")}
               select
               value={mode}
+              path="routing.mode"
               onChange={(e) => onChange("routing.mode", e.target.value)}
               helperText={t("sets.routing.modeHelper")}
             >
@@ -237,6 +239,7 @@ export const TrafficRouting = ({
                 label={t("sets.routing.blockActionLabel")}
                 select
                 value={blockAction}
+                path="routing.block_action"
                 onChange={(e) =>
                   onChange("routing.block_action", e.target.value)
                 }
@@ -435,6 +438,7 @@ export const TrafficRouting = ({
                 label={t("sets.routing.outputInterface")}
                 select
                 value={routing.egress_interface}
+                path="routing.egress_interface"
                 onChange={(e) =>
                   onChange("routing.egress_interface", e.target.value)
                 }
@@ -463,8 +467,8 @@ export const TrafficRouting = ({
           {isInterface && (
             <Grid size={{ xs: 12, md: 6 }}>
               <B4TextField
-                label={t("sets.routing.egressIp")}
                 value={routing.egress_ip ?? ""}
+                path="routing.egress_ip"
                 onChange={(e) => onChange("routing.egress_ip", e.target.value)}
                 disabled={!routing.egress_interface}
                 helperText={
@@ -492,7 +496,7 @@ export const TrafficRouting = ({
           {isInterface && (
             <Grid size={{ xs: 12, md: 6 }}>
               <B4TextField
-                label={t("sets.routing.egressGateway")}
+                path="routing.egress_gateway"
                 value={routing.egress_gateway ?? ""}
                 onChange={(e) =>
                   onChange("routing.egress_gateway", e.target.value)
@@ -515,9 +519,9 @@ export const TrafficRouting = ({
           {isInterface && (
             <Grid size={{ xs: 12, md: 6 }}>
               <B4TextField
-                label={t("sets.routing.routerTraffic")}
                 select
                 value={routerTraffic}
+                path="routing.router_traffic"
                 onChange={(e) =>
                   onChange("routing.router_traffic", e.target.value)
                 }
@@ -544,8 +548,8 @@ export const TrafficRouting = ({
           {isInterface && (
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Switch
-                label={t("sets.routing.killSwitch")}
                 checked={routing.kill_switch ?? false}
+                path="routing.kill_switch"
                 onChange={(checked: boolean) =>
                   onChange("routing.kill_switch", checked)
                 }
@@ -589,8 +593,8 @@ export const TrafficRouting = ({
             <>
               <Grid size={{ xs: 12, md: 8 }}>
                 <B4TextField
-                  label={t("sets.routing.upstreamHost")}
                   value={upstream.host}
+                  path="routing.upstream.host"
                   onChange={(e) =>
                     onChange("routing.upstream.host", e.target.value)
                   }
@@ -601,8 +605,8 @@ export const TrafficRouting = ({
               </Grid>
               <Grid size={{ xs: 12, md: 4 }}>
                 <B4NumberField
-                  label={t("sets.routing.upstreamPort")}
                   value={upstream.port ?? 0}
+                  path="routing.upstream.port"
                   onChange={(n) => onChange("routing.upstream.port", n)}
                   min={0}
                   max={65535}
@@ -614,6 +618,7 @@ export const TrafficRouting = ({
                 <B4TextField
                   label={t("sets.routing.upstreamUser")}
                   value={upstream.username || ""}
+                  path="routing.upstream.username"
                   onChange={(e) =>
                     onChange("routing.upstream.username", e.target.value)
                   }
@@ -626,6 +631,7 @@ export const TrafficRouting = ({
                   label={t("sets.routing.upstreamPass")}
                   type="password"
                   value={upstream.password || ""}
+                  path="routing.upstream.password"
                   onChange={(e) =>
                     onChange("routing.upstream.password", e.target.value)
                   }
@@ -637,6 +643,7 @@ export const TrafficRouting = ({
                 <B4Switch
                   label={t("sets.routing.useDomain")}
                   checked={upstream.use_domain !== false}
+                  path="routing.upstream.use_domain"
                   onChange={(checked: boolean) =>
                     onChange("routing.upstream.use_domain", checked)
                   }
@@ -647,6 +654,7 @@ export const TrafficRouting = ({
                 <B4Switch
                   label={t("sets.routing.udp")}
                   checked={upstream.udp === true}
+                  path="routing.upstream.udp"
                   onChange={(checked: boolean) =>
                     onChange("routing.upstream.udp", checked)
                   }
@@ -657,6 +665,7 @@ export const TrafficRouting = ({
                 <B4Switch
                   label={t("sets.routing.failOpen")}
                   checked={upstream.fail_open === true}
+                  path="routing.upstream.fail_open"
                   onChange={(checked: boolean) =>
                     onChange("routing.upstream.fail_open", checked)
                   }
@@ -678,6 +687,7 @@ export const TrafficRouting = ({
             <B4NumberField
               label={t("sets.routing.ipTtl")}
               value={routing.ip_ttl_seconds}
+              path="routing.ip_ttl_seconds"
               onChange={(n) => onChange("routing.ip_ttl_seconds", n)}
               min={0}
               helperText={t("sets.routing.ipTtlHelper")}

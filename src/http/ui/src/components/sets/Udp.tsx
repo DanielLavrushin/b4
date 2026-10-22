@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Grid } from "@mui/material";
 import { Link } from "react-router";
 import { DnsIcon, WarningIcon } from "@b4.icons";
@@ -134,9 +134,13 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
     payloadFileHelperKey = "sets.udp.fakePayloadFileHelper";
   }
 
-  const captureProtocolRank = (proto: string) => (proto === "quic" ? 0 : 1);
-  const sortedCaptures = [...captures].sort(
-    (a, b) => captureProtocolRank(a.protocol) - captureProtocolRank(b.protocol),
+  const sortedCaptures = useMemo(
+    () =>
+      [...captures].sort(
+        (a, b) =>
+          (a.protocol === "quic" ? 0 : 1) - (b.protocol === "quic" ? 0 : 1),
+      ),
+    [captures],
   );
 
   const showSniWarning =
@@ -158,6 +162,7 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
           <B4Switch
             label={t("sets.udp.blockQuic")}
             checked={blockQuic}
+            path="udp.filter_quic"
             onChange={toggleBlockQuic}
             description={t("sets.udp.blockQuicDesc")}
           />
@@ -176,6 +181,7 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
             label={t("sets.udp.quicFilter")}
             value={config.udp.filter_quic}
             options={UDP_QUIC_FILTERS}
+            path="udp.filter_quic"
             onChange={(e) => onChange("udp.filter_quic", e.target.value)}
             helperText={
               UDP_QUIC_FILTERS.find((o) => o.value === config.udp.filter_quic)
@@ -188,6 +194,7 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
           <B4TextField
             label={t("sets.udp.portFilter")}
             value={config.udp.dport_filter}
+            path="udp.dport_filter"
             onChange={(e) => onChange("udp.dport_filter", e.target.value)}
             placeholder={t("sets.udp.portFilterPlaceholder")}
             helperText={t("sets.udp.portFilterHelper")}
@@ -195,8 +202,8 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Switch
-            label={t("sets.udp.filterStun")}
             checked={config.udp.filter_stun}
+            path="udp.filter_stun"
             onChange={(checked) => onChange("udp.filter_stun", checked)}
             description={t("sets.udp.filterStunDesc")}
           />
@@ -206,6 +213,7 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
           <B4Slider
             label={t("sets.udp.connPacketsLimit")}
             value={config.udp.conn_bytes_limit}
+            path="udp.conn_bytes_limit"
             onChange={(value) => onChange("udp.conn_bytes_limit", value)}
             min={1}
             max={queue.udp_conn_bytes_limit}
@@ -229,6 +237,7 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
             label={t("sets.udp.actionMode")}
             value={config.udp.mode}
             options={UDP_MODES}
+            path="udp.mode"
             onChange={(e) => onChange("udp.mode", e.target.value)}
             helperText={
               UDP_MODES.find((o) => o.value === config.udp.mode)?.description
@@ -266,6 +275,7 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
               <B4Slider
                 label={t("sets.udp.fakeCount")}
                 value={config.udp.fake_seq_length}
+                path="udp.fake_seq_length"
                 onChange={(value) => onChange("udp.fake_seq_length", value)}
                 min={1}
                 max={20}
@@ -278,6 +288,7 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
               <B4Slider
                 label={t("sets.udp.fakeSize")}
                 value={config.udp.fake_len}
+                path="udp.fake_len"
                 onChange={(value) => onChange("udp.fake_len", value)}
                 min={32}
                 max={1500}
@@ -289,8 +300,8 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
 
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Select
-                label={t("sets.udp.fakePayloadFile")}
                 value={config.udp.fake_payload_file ?? ""}
+                path="udp.fake_payload_file"
                 options={[
                   {
                     value: "",
@@ -332,6 +343,7 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
                 label={t("sets.udp.evasionTechnique")}
                 value={config.udp.faking_strategy}
                 options={UDP_FAKING_STRATEGIES}
+                path="udp.faking_strategy"
                 onChange={(e) =>
                   onChange("udp.faking_strategy", e.target.value)
                 }
@@ -345,7 +357,7 @@ export const UdpSettings = ({ config, queue, onChange }: UdpSettingsProps) => {
 
             <Grid size={{ xs: 12, md: 6 }}>
               <B4RangeSlider
-                label={t("sets.udp.seg2delay")}
+                path="udp.seg2delay"
                 value={[
                   config.udp.seg2delay,
                   config.udp.seg2delay_max || config.udp.seg2delay,

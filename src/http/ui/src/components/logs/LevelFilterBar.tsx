@@ -1,9 +1,9 @@
 import { Chip, Stack } from "@mui/material";
 import { FilterIcon } from "@b4.icons";
 import { colors, fonts } from "@design";
-import { LogLevel, LOG_LEVELS } from "./parse";
+import { LogLineLevel, LOG_LEVELS } from "./parse";
 
-const levelColor: Record<LogLevel, string> = {
+const levelColor: Record<LogLineLevel, string> = {
   error: colors.state.error,
   warn: colors.state.warning,
   info: colors.state.info,
@@ -12,9 +12,9 @@ const levelColor: Record<LogLevel, string> = {
 };
 
 interface LevelFilterBarProps {
-  enabledLevels: Set<LogLevel>;
-  levelCounts: Record<LogLevel, number>;
-  onToggle: (level: LogLevel) => void;
+  enabledLevels: Set<LogLineLevel>;
+  levelCounts: Record<LogLineLevel, number>;
+  onToggle: (level: LogLineLevel) => void;
 }
 
 export function LevelFilterBar({

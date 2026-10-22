@@ -321,6 +321,7 @@ export const MTProtoBridgeCard = ({
       status={headerStatus}
       enabled={enabled}
       onToggle={(checked) => onChange("system.mtproto.bridge.enabled", checked)}
+      togglePath="system.mtproto.bridge.enabled"
       toggleLabel={t(K("enable"))}
     >
       {data && <BridgeWarnings data={data} />}

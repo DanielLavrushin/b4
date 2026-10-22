@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Box, Grid, Stack } from "@mui/material";
 import { EscalateIcon } from "@b4.icons";
 import {
@@ -14,9 +15,8 @@ import { useTranslation } from "react-i18next";
 export const wouldCreateEscalationCycle = (
   candidate: B4SetConfig,
   currentId: string,
-  all: B4SetConfig[],
+  byId: ReadonlyMap<string, B4SetConfig>,
 ): boolean => {
-  const byId = new Map(all.map((s) => [s.id, s]));
   const seen = new Set<string>();
   let cur: B4SetConfig | undefined = candidate;
   while (cur?.escalate?.to) {
@@ -51,6 +51,11 @@ export const EscalationSettings = ({
   onChange,
 }: EscalationSettingsProps) => {
   const { t } = useTranslation();
+  // One index per render, not one per candidate inside the filter below.
+  const setsById = useMemo(
+    () => new Map(allSets.map((s) => [s.id, s] as const)),
+    [allSets],
+  );
   const escalateOn = !!config.escalate?.to;
   const rstOn = config.tcp.rst_protection?.enabled === true;
   const showRstWarn = escalateOn && !rstOn;
@@ -66,16 +71,17 @@ export const EscalationSettings = ({
         <Grid container spacing={3}>
           <Grid size={{ xs: 12, md: 6 }}>
             <B4Select
-              label={t("sets.targets.escalateTo")}
+              label={t("sets.escalation.escalateTo")}
               value={config.escalate?.to ?? ""}
+              path="escalate.to"
               options={[
-                { value: "", label: t("sets.targets.escalateNone") },
+                { value: "", label: t("sets.escalation.escalateNone") },
                 ...allSets
                   .filter(
                     (s) =>
                       s.id &&
                       s.id !== config.id &&
-                      !wouldCreateEscalationCycle(s, config.id, allSets),
+                      !wouldCreateEscalationCycle(s, config.id, setsById),
                   )
                   .map((s) => ({
                     label: s.enabled
@@ -88,14 +94,14 @@ export const EscalationSettings = ({
             />
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
-            <B4Hint sx={{ mt: 1 }}>{t("sets.targets.escalateHelper")}</B4Hint>
+            <B4Hint sx={{ mt: 1 }}>{t("sets.escalation.escalateHelper")}</B4Hint>
           </Grid>
         </Grid>
 
         {showRstWarn && (
           <Box>
             <B4Alert severity="warning" noWrapper>
-              {t("sets.editor.escalateNeedsRstProtection")}
+              {t("sets.escalation.escalateNeedsRstProtection")}
             </B4Alert>
           </Box>
         )}
@@ -109,6 +115,7 @@ export const EscalationSettings = ({
                 <B4Slider
                   label={t("sets.escalation.stallThreshold")}
                   value={config.escalate?.stall_threshold || 3}
+                  path="escalate.stall_threshold"
                   onChange={(value: number) =>
                     onChange("escalate.stall_threshold", value)
                   }
@@ -120,8 +127,8 @@ export const EscalationSettings = ({
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Slider
-                  label={t("sets.escalation.stallTimeoutMs")}
                   value={config.escalate?.stall_timeout_ms || 3000}
+                  path="escalate.stall_timeout_ms"
                   onChange={(value: number) =>
                     onChange("escalate.stall_timeout_ms", value)
                   }
@@ -134,8 +141,8 @@ export const EscalationSettings = ({
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Slider
-                  label={t("sets.escalation.rstThreshold")}
                   value={config.escalate?.rst_threshold || 3}
+                  path="escalate.rst_threshold"
                   onChange={(value: number) =>
                     onChange("escalate.rst_threshold", value)
                   }
@@ -149,6 +156,7 @@ export const EscalationSettings = ({
                 <B4Slider
                   label={t("sets.escalation.rstWindowSec")}
                   value={config.escalate?.rst_window_sec || 30}
+                  path="escalate.rst_window_sec"
                   onChange={(value: number) =>
                     onChange("escalate.rst_window_sec", value)
                   }
@@ -161,8 +169,8 @@ export const EscalationSettings = ({
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Slider
-                  label={t("sets.escalation.dnsThreshold")}
                   value={config.escalate?.dns_threshold || 2}
+                  path="escalate.dns_threshold"
                   onChange={(value: number) =>
                     onChange("escalate.dns_threshold", value)
                   }
@@ -180,6 +188,7 @@ export const EscalationSettings = ({
                 <B4Slider
                   label={t("sets.escalation.ttlMin")}
                   value={Math.round((config.escalate?.ttl_sec || 3600) / 60)}
+                  path="escalate.ttl_sec"
                   onChange={(value: number) =>
                     onChange("escalate.ttl_sec", value * 60)
                   }

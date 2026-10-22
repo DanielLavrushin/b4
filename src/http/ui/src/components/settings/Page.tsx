@@ -5,16 +5,14 @@ import {
   Chip,
   CircularProgress,
   Container,
-  DialogContent,
-  DialogContentText,
   Fade,
   Grid,
   Paper,
   Stack,
   Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, type BlockerFunction } from "react-router";
 import { Trans, useTranslation } from "react-i18next";
 import i18n, { setLanguage } from "../../i18n";
 
@@ -47,20 +45,45 @@ import { RestartDialog } from "./RestartDialog";
 import {
   CORE_SECTIONS,
   SYSTEM_SECTIONS,
+  SETTINGS_DIALOG_SUB_DEFS,
   SettingsSection,
   sectionIndex,
 } from "./sections";
 
-import { B4Alert, B4Dialog, B4Tab, B4Tabs } from "@b4.elements";
+import { B4Alert, B4Tab, B4Tabs } from "@b4.elements";
 import { configApi, SettingsPropHandlerType } from "@b4.settings";
-import { isStaleWriteError, reportSaveError, reportStaleWrite } from "@utils";
+import {
+  isStaleWriteError,
+  reportSaveError,
+  reportStaleWrite,
+  setByPath,
+} from "@utils";
+import {
+  ChangedFieldsProvider,
+} from "@context/ChangedFieldsContext";
+import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
+import {
+  UnsavedChangesDialog,
+  type ChangeGroupDef,
+} from "@common/UnsavedChangesDialog";
+import {
+  useChangeItems,
+  useChangeTracker,
+} from "@common/useChangeDialog";
 import { colors, spacing } from "@design";
-
 import { B4Config } from "@models/config";
-
+const SETTINGS_DIFF_IGNORE = new Set(["sets", "available_ifaces", "revision"]);
 const changed = (pick: (c: B4Config) => unknown, a: B4Config, b: B4Config) =>
   JSON.stringify(pick(a)) !== JSON.stringify(pick(b));
-
+const changedPrefix = (
+  paths: ReadonlySet<string>,
+  prefix: string,
+): boolean => {
+  for (const p of paths) {
+    if (p === prefix || p.startsWith(`${prefix}.`)) return true;
+  }
+  return false;
+};
 interface TabPanelProps {
   children?: React.ReactNode;
   index: number;
@@ -102,6 +125,21 @@ const TAB_SECTIONS = new Map<TABS, SettingsSection[]>([
   [TABS.GENERAL, CORE_SECTIONS],
   [TABS.SYSTEM, SYSTEM_SECTIONS],
 ]);
+
+const TAB_GROUP_PREFIXES: Record<TABS, { labelKey: string; prefixes: string[] }> = {
+  [TABS.GENERAL]: { labelKey: "settings.tabs.core", prefixes: ["queue", "system.tables", "system.dns", "system.socks5", "system.ip_health"] },
+  [TABS.SYSTEM]: { labelKey: "settings.tabs.system", prefixes: ["system.logging", "system.memory_limit", "system.timezone", "system.update", "system.web_server"] },
+  [TABS.DOMAINS]: { labelKey: "settings.tabs.geodat", prefixes: ["system.geo"] },
+  [TABS.DISCOVERY]: { labelKey: "settings.tabs.discovery", prefixes: ["system.checker"] },
+  [TABS.MTPROTO]: { labelKey: "settings.tabs.mtproto", prefixes: ["system.mtproto"] },
+  [TABS.API]: { labelKey: "settings.tabs.api", prefixes: ["system.api", "system.ai", "system.web_server.mcp", "system.hub"] },
+  [TABS.PAYLOADS]: { labelKey: "settings.tabs.payloads", prefixes: [] },
+};
+const SETTINGS_TAB_GROUPS: ChangeGroupDef[] = (
+  Object.values(TAB_GROUP_PREFIXES) as { labelKey: string; prefixes: string[] }[]
+)
+  .filter((g) => g.prefixes.length > 0)
+  .map(({ labelKey, prefixes }) => ({ labelKey, prefixes }));
 
 interface SectionState {
   dirty: boolean;
@@ -232,62 +270,129 @@ export function SettingsPage() {
     }
   }, [location.pathname, currentTabPath, navigate]);
 
-  // Check if configuration has been modified
-  const hasChanges = useMemo(() => {
-    if (!config || !originalConfig) return false;
-    return JSON.stringify(config) !== JSON.stringify(originalConfig);
-  }, [config, originalConfig]);
+  // Track changes off the urgent input path: inputs stay controlled by `config`,
+  // the full-tree diff and section dots derive from the deferred copy instead,
+  // so a keystroke paints before the O(leaves) walk runs.
+  const deferredConfig = useDeferredValue(config);
+  const {
+    changedLeaves,
+    changedPaths,
+    providerProps: changeProviderProps,
+  } = useChangeTracker({
+    draft: deferredConfig as unknown as Record<string, unknown> | null,
+    baseline: originalConfig as unknown as Record<string, unknown> | null,
+    ignoredRootKeys: SETTINGS_DIFF_IGNORE,
+    scope: "settings",
+  });
+  const hasChanges = changedLeaves.length > 0;
+  // Guard conservatively while urgent input is ahead of the deferred diff.
+  const hasUnsavedChanges = hasChanges || config !== deferredConfig;
+  const shouldBlock = useCallback<BlockerFunction>(
+    ({ nextLocation }) =>
+      hasUnsavedChanges && !nextLocation.pathname.startsWith("/settings"),
+    [hasUnsavedChanges],
+  );
+  const blocker = useUnsavedChangesGuard(shouldBlock, hasUnsavedChanges);
+  const dialogsOpen = showResetDialog || blocker.state === "blocked";
+  // shortcut: value labels resolve via the ChangedFieldsContext registry whose
+  // entries persist in refs after tabs unmount (cleared only on scope change).
+  // Static tables cover only never-mounted conditional controls. Note: labels
+  // of hidden tabs go stale on language switch (runtime entry shadows the
+  // fresh static one) — pre-existing, both before and after the
+  // static-value-labels removal.
+
+  const settingsSubDefs = useMemo(
+    () => [
+      ...CORE_SECTIONS.filter((s) => s.prefixes.length > 0).map((s) => ({
+        prefixes: s.prefixes,
+        label: t(s.labelKey),
+        blocks: s.blocks?.map((b) => ({ prefixes: b.prefixes, label: t(b.labelKey) })),
+      })),
+      ...SYSTEM_SECTIONS.filter((s) => s.prefixes.length > 0).map((s) => ({
+        prefixes: s.prefixes,
+        label: t(s.labelKey),
+        blocks: s.blocks?.map((b) => ({ prefixes: b.prefixes, label: t(b.labelKey) })),
+      })),
+      ...SETTINGS_DIALOG_SUB_DEFS.map((s) => ({
+        prefixes: s.prefixes,
+        label: t(s.labelKey),
+        blocks: s.blocks?.map((b) => ({ prefixes: b.prefixes, label: t(b.labelKey) })),
+      })),
+    ],
+    [t],
+  );
+  const { changeItems, changeGroups } = useChangeItems({
+    changedLeaves,
+    registry: changeProviderProps.registry,
+    valueRegistry: changeProviderProps.valueRegistry,
+    groups: SETTINGS_TAB_GROUPS,
+    subDefs: settingsSubDefs,
+    dialogsOpen,
+  });
 
   const sectionState = useMemo(() => {
     const state: Partial<Record<TABS, SectionState[]>> = {};
     for (const [tab, sections] of TAB_SECTIONS) {
       state[tab] = sections.map((section) => {
-        if (!hasChanges || !config || !originalConfig) {
+        if (!hasChanges || !deferredConfig || !originalConfig) {
           return { dirty: false, restart: false };
         }
-        const dirty = changed(section.pick, config, originalConfig);
+        let dirty = false;
+        for (const p of changedPaths) {
+          if (
+            section.exceptPrefixes?.some(
+              (e) => p === e || p.startsWith(`${e}.`),
+            )
+          ) {
+            continue;
+          }
+          if (
+            section.prefixes.some(
+              (prefix) => p === prefix || p.startsWith(`${prefix}.`),
+            )
+          ) {
+            dirty = true;
+            break;
+          }
+        }
         return {
           dirty,
-          restart: dirty && changed(section.restartPick, config, originalConfig),
+          restart:
+            dirty &&
+            changed(section.restartPick, deferredConfig, originalConfig),
         };
       });
     }
     return state;
-  }, [config, originalConfig, hasChanges]);
+  }, [deferredConfig, originalConfig, hasChanges, changedPaths]);
 
   // Check which categories have changes
   const categoryHasChanges = useMemo(() => {
-    if (!hasChanges || !config || !originalConfig) return {};
+    if (!hasChanges) return {};
 
     return {
       // Core
       [TABS.GENERAL]: !!sectionState[TABS.GENERAL]?.some((s) => s.dirty),
 
       // Geosite Settings
-      [TABS.DOMAINS]:
-        JSON.stringify(config.system.geo) !==
-        JSON.stringify(originalConfig.system.geo),
+      [TABS.DOMAINS]: TAB_GROUP_PREFIXES[TABS.DOMAINS].prefixes.some((p) =>
+        changedPrefix(changedPaths, p),
+      ),
 
       // Discovery
-      [TABS.DISCOVERY]:
-        JSON.stringify(config.system.checker) !==
-        JSON.stringify(originalConfig.system.checker),
+      [TABS.DISCOVERY]: TAB_GROUP_PREFIXES[TABS.DISCOVERY].prefixes.some((p) =>
+        changedPrefix(changedPaths, p),
+      ),
 
       // MTProto
-      [TABS.MTPROTO]:
-        JSON.stringify(config.system.mtproto) !==
-        JSON.stringify(originalConfig.system.mtproto),
+      [TABS.MTPROTO]: TAB_GROUP_PREFIXES[TABS.MTPROTO].prefixes.some((p) =>
+        changedPrefix(changedPaths, p),
+      ),
 
       // API
-      [TABS.API]:
-        JSON.stringify(config.system.api) !==
-          JSON.stringify(originalConfig.system.api) ||
-        JSON.stringify(config.system.ai) !==
-          JSON.stringify(originalConfig.system.ai) ||
-        JSON.stringify(config.system.web_server.mcp) !==
-          JSON.stringify(originalConfig.system.web_server.mcp) ||
-        JSON.stringify(config.system.hub) !==
-          JSON.stringify(originalConfig.system.hub),
+      [TABS.API]: TAB_GROUP_PREFIXES[TABS.API].prefixes.some((p) =>
+        changedPrefix(changedPaths, p),
+      ),
 
       // PAYLOADS
       [TABS.PAYLOADS]: false,
@@ -295,7 +400,7 @@ export function SettingsPage() {
       // System
       [TABS.SYSTEM]: !!sectionState[TABS.SYSTEM]?.some((s) => s.dirty),
     };
-  }, [config, originalConfig, hasChanges, sectionState]);
+  }, [changedPaths, hasChanges, sectionState]);
 
   const needsRestart = Object.values(sectionState).some((list) =>
     list.some((s) => s.restart),
@@ -378,26 +483,7 @@ export function SettingsPage() {
   };
 
   const handleChange = (field: string, value: SettingsPropHandlerType) => {
-    setConfig((prev) => {
-      if (!prev) return prev;
-
-      const keys = field.split(".");
-
-      if (keys.length === 1) {
-        return { ...prev, [field]: value };
-      }
-
-      const newConfig = { ...prev };
-      let current: Record<string, unknown> = newConfig;
-
-      for (let i = 0; i < keys.length - 1; i++) {
-        current[keys[i]] = { ...(current[keys[i]] as object) };
-        current = current[keys[i]] as Record<string, unknown>;
-      }
-
-      current[keys.at(-1)!] = value;
-      return newConfig;
-    });
+    setConfig((prev) => (prev ? setByPath(prev, field, value) : prev));
   };
 
   if (loading || !config) {
@@ -416,6 +502,9 @@ export function SettingsPage() {
   const validTab = Math.max(currentTab, 0);
 
   return (
+    <ChangedFieldsProvider
+      {...changeProviderProps}
+    >
     <Container
       maxWidth={false}
       sx={{
@@ -461,9 +550,15 @@ export function SettingsPage() {
                 <Chip
                   label={t("core.modified")}
                   size="small"
-                  icon={<WarningIcon />}
+                  icon={<WarningIcon fontSize="small" />}
                   color="secondary"
                   variant="outlined"
+                  sx={{
+                    // Pin the icon margin: MUI defaults set 4px (.MuiChip-icon)
+                    // and 2px (.MuiChip-iconSmall) on the same icon — without
+                    // an explicit override the winner is cascade-order luck.
+                    "& .MuiChip-icon": { marginLeft: "4px" },
+                  }}
                 />
               )}
             </Stack>
@@ -566,7 +661,7 @@ export function SettingsPage() {
         </Box>
       </Paper>
 
-      <Box ref={contentRef} sx={{ flex: 1, overflow: "auto", pb: 2 }}>
+      <Box ref={contentRef} sx={{ flex: 1, overflow: "auto", pb: 2, pr: 1, scrollbarGutter: "stable" }}>
         <TabPanel value={validTab} index={TABS.GENERAL}>
           <CoreSettings
             section={currentSectionId}
@@ -624,31 +719,29 @@ export function SettingsPage() {
       </Box>
 
       {/* Reset Confirmation Dialog */}
-      <B4Dialog
-        title={t("core.discardChanges")}
+      <UnsavedChangesDialog
         open={showResetDialog}
-        onClose={() => setShowResetDialog(false)}
-        actions={
-          <>
-            <Button onClick={() => setShowResetDialog(false)}>
-              {t("core.cancel")}
-            </Button>
-            <Box sx={{ flex: 1 }} />
-            <Button onClick={resetChanges} variant="contained">
-              {t("core.discard")}
-            </Button>
-          </>
-        }
-      >
-        <DialogContent>
-          <DialogContentText>{t("core.discardConfirm")}</DialogContentText>
-        </DialogContent>
-      </B4Dialog>
+        groups={changeGroups}
+        total={changeItems.length}
+        onStay={() => setShowResetDialog(false)}
+        onLeave={resetChanges}
+        title={t("core.discardChanges")}
+        stayLabel={t("core.cancel")}
+        leaveLabel={t("core.discard")}
+      />
 
       <RestartDialog
         open={showRestartDialog}
         onClose={() => setShowRestartDialog(false)}
       />
+      <UnsavedChangesDialog
+        open={blocker.state === "blocked"}
+        groups={changeGroups}
+        total={changeItems.length}
+        onStay={() => blocker.reset?.()}
+        onLeave={() => blocker.proceed?.()}
+      />
     </Container>
+    </ChangedFieldsProvider>
   );
 }

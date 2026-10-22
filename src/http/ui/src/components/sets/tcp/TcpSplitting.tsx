@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Grid, Typography, Box, Chip } from "@mui/material";
 import {
   B4Switch,
@@ -17,7 +18,42 @@ import { ExtSplitSettings } from "../frags/ExtSplit";
 import { FirstByteSettings } from "../frags/FirstByte";
 import { TcpIpSettings } from "../frags/TcpIp";
 import { useTranslation } from "react-i18next";
+import { useChangedArrayItem, useChangedFields } from "@context/ChangedFieldsContext";
 
+function PoolChip({
+  value,
+  label,
+  active,
+  onClick,
+}: {
+  value: FragmentationStrategy;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const changed = useChangedArrayItem(
+    "fragmentation.strategy_pool",
+    value,
+    label,
+  );
+  return (
+    <Chip
+      label={label}
+      size="small"
+      onClick={onClick}
+      sx={{
+        bgcolor: active ? colors.accent.primary : colors.background.dark,
+        color: active || changed ? colors.secondary : colors.text.secondary,
+        fontWeight: active || changed ? 600 : 400,
+        cursor: "pointer",
+        border: `1px solid ${changed ? colors.secondary : active ? colors.primary : colors.border.default}`,
+        "&:hover": {
+          bgcolor: active ? colors.accent.primary : colors.background.paper,
+        },
+      }}
+    />
+  );
+}
 interface TcpSplittingProps {
   config: B4SetConfig;
   onChange: (
@@ -28,6 +64,7 @@ interface TcpSplittingProps {
 
 export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
   const { t } = useTranslation();
+  const { registerValueLabels, scopeVersion } = useChangedFields();
   const strategy = config.fragmentation.strategy;
   const isTcpOrIp = strategy === "tcp" || strategy === "ip";
   const isOob = strategy === "oob";
@@ -65,6 +102,13 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
   ];
 
   const poolOptions = fragmentationOptions.filter((o) => o.value !== "none");
+  useEffect(() => {
+    registerValueLabels(
+      "fragmentation.strategy_pool",
+      new Map(fragmentationOptions.map((o) => [o.value, o.label])),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registerValueLabels, t, scopeVersion]);
 
   return (
     <Grid container spacing={3} sx={{ mt: 2 }}>
@@ -74,6 +118,7 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
           label={t("sets.tcp.splitting.method")}
           value={strategy}
           options={fragmentationOptions}
+          path="fragmentation.strategy"
           onChange={(e) => onChange("fragmentation.strategy", e.target.value)}
           aiTopic="fragmentation.strategy"
           aiContext={{
@@ -85,8 +130,8 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
 
       <Grid size={{ xs: 12, md: 6 }}>
         <B4Switch
-          label={t("sets.tcp.splitting.reverseOrder")}
           checked={config.fragmentation.reverse_order}
+          path="fragmentation.reverse_order"
           onChange={(checked: boolean) =>
             onChange("fragmentation.reverse_order", checked)
           }
@@ -128,33 +173,15 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
           />
         </Box>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
-          {poolOptions.map((opt) => {
-            const active: boolean = pool.includes(opt.value);
-            return (
-              <Chip
-                key={opt.value}
-                label={opt.label}
-                size="small"
-                onClick={() => togglePoolStrategy(opt.value)}
-                sx={{
-                  bgcolor: active
-                    ? colors.accent.primary
-                    : colors.background.dark,
-                  color: active ? colors.secondary : colors.text.secondary,
-                  fontWeight: active ? 600 : 400,
-                  cursor: "pointer",
-                  border: active
-                    ? `1px solid ${colors.secondary}`
-                    : `1px solid ${colors.border.default}`,
-                  "&:hover": {
-                    bgcolor: active
-                      ? colors.accent.primary
-                      : colors.background.paper,
-                  },
-                }}
-              />
-            );
-          })}
+          {poolOptions.map((opt) => (
+            <PoolChip
+              key={opt.value}
+              value={opt.value}
+              label={opt.label}
+              active={pool.includes(opt.value)}
+              onClick={() => togglePoolStrategy(opt.value)}
+            />
+          ))}
         </Box>
         {hasPool && (
           <B4Hint sx={{ mt: 1 }}>
@@ -186,13 +213,13 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
 
           <Grid size={{ xs: 12, md: 6 }}>
             <B4RangeSlider
-              label={t("sets.tcp.splitting.oobPosition")}
               value={[
                 config.fragmentation.oob_position || 1,
                 config.fragmentation.oob_position_max ||
                   config.fragmentation.oob_position ||
                   1,
               ]}
+              path="fragmentation.oob_position"
               onChange={(value: [number, number]) => {
                 onChange("fragmentation.oob_position", value[0]);
                 onChange("fragmentation.oob_position_max", value[1]);
@@ -239,6 +266,7 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
                   config.fragmentation.tlsrec_pos ||
                   1,
               ]}
+              path="fragmentation.tlsrec_pos"
               onChange={(value: [number, number]) => {
                 onChange("fragmentation.tlsrec_pos", value[0]);
                 onChange("fragmentation.tlsrec_pos_max", value[1]);

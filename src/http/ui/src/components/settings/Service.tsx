@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Box, Button, Divider } from "@mui/material";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { setLanguage } from "../../i18n";
 import { ControlIcon, InfoIcon, LogsIcon, RestartIcon } from "@b4.icons";
 import { B4Section, B4Select, B4Switch, B4TextField } from "@b4.elements";
@@ -8,7 +9,6 @@ import { B4Config, LogLevel } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
 import { RestartDialog } from "./RestartDialog";
 import { SystemInfoDialog } from "./SystemInfoDialog";
-
 interface ServiceCardProps {
   config: B4Config;
   onChange: (field: string, value: SettingsPropHandlerType) => void;
@@ -36,6 +36,15 @@ const LANGUAGES = [
   { value: "ru", label: "Русский" },
 ];
 
+export const logLevelOptions = (
+  t: TFunction,
+): Array<{ value: LogLevel; label: string }> => [
+  { value: LogLevel.ERROR, label: t("settings.Logging.levelError") },
+  { value: LogLevel.INFO, label: t("settings.Logging.levelInfo") },
+  { value: LogLevel.TRACE, label: t("settings.Logging.levelTrace") },
+  { value: LogLevel.DEBUG, label: t("settings.Logging.levelDebug") },
+];
+
 export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
   const { t } = useTranslation();
 
@@ -44,7 +53,7 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
 
   const TIMEZONES = useMemo(
     () => [
-      { value: "", label: t("settings.Logging.timezoneAuto") },
+      { value: "", label: t("settings.Service.timezoneAuto") },
       ...ZONE_ENTRIES,
     ],
     [t],
@@ -57,7 +66,7 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
   };
 
   return (
-    <B4Section title={t("settings.Logging.title")} icon={<ControlIcon />}>
+    <B4Section title={t("settings.Service.title")} icon={<ControlIcon />}>
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
         <Button
           size="small"
@@ -65,7 +74,7 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
           startIcon={<RestartIcon />}
           onClick={() => setShowRestartDialog(true)}
         >
-          {t("settings.Control.restartService")}
+          {t("settings.Service.restartService")}
         </Button>
         <Button
           size="small"
@@ -73,35 +82,35 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
           startIcon={<InfoIcon />}
           onClick={() => setShowSysInfoDialog(true)}
         >
-          {t("settings.Control.systemInfo")}
+          {t("settings.Service.systemInfo")}
         </Button>
       </Box>
       <Divider />
       <B4Select
-        label={t("core.language")}
         value={config.system.web_server.language || "en"}
         options={LANGUAGES}
+        path="system.web_server.language"
         onChange={handleLanguageChange}
       />
       <B4Select
-        label={t("settings.Logging.timezone")}
         value={config.system.timezone ?? ""}
         options={TIMEZONES}
+        path="system.timezone"
         onChange={(e) => onChange("system.timezone", String(e.target.value))}
-        helperText={t("settings.Logging.timezoneHelp")}
+        helperText={t("settings.Service.timezoneHelp")}
       />
       <B4TextField
-        label={t("settings.Logging.memoryLimit")}
         value={config.system.memory_limit ?? ""}
+        path="system.memory_limit"
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
           onChange("system.memory_limit", e.target.value)
         }
-        placeholder={t("settings.Logging.memoryLimitPlaceholder")}
-        helperText={t("settings.Logging.memoryLimitHelp")}
+        placeholder={t("settings.Service.memoryLimitPlaceholder")}
+        helperText={t("settings.Service.memoryLimitHelp")}
       />
       <B4TextField
-        label={t("settings.Logging.updateMirrors")}
         value={(config.system.update?.mirrors ?? []).join(", ")}
+        path="system.update.mirrors"
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
           onChange(
             "system.update.mirrors",
@@ -111,8 +120,8 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
               .filter(Boolean),
           )
         }
-        placeholder={t("settings.Logging.updateMirrorsPlaceholder")}
-        helperText={t("settings.Logging.updateMirrorsHelp")}
+        placeholder={t("settings.Service.updateMirrorsPlaceholder")}
+        helperText={t("settings.Service.updateMirrorsHelp")}
       />
 
       <RestartDialog
@@ -130,26 +139,21 @@ export const ServiceSettings = ({ config, onChange }: ServiceCardProps) => {
 export const LoggingSettings = ({ config, onChange }: ServiceCardProps) => {
   const { t } = useTranslation();
 
-  const LOG_LEVELS: Array<{ value: LogLevel; label: string }> = [
-    { value: LogLevel.ERROR, label: t("settings.Logging.levelError") },
-    { value: LogLevel.INFO, label: t("settings.Logging.levelInfo") },
-    { value: LogLevel.TRACE, label: t("settings.Logging.levelTrace") },
-    { value: LogLevel.DEBUG, label: t("settings.Logging.levelDebug") },
-  ];
+  const LOG_LEVELS = useMemo(() => logLevelOptions(t), [t]);
 
   return (
-    <B4Section title={t("settings.Logging.loggingTitle")} icon={<LogsIcon />}>
+    <B4Section title={t("settings.Logging.title")} icon={<LogsIcon />}>
       <B4Select
-        label={t("settings.Logging.logLevel")}
         value={config.system.logging.level}
         options={LOG_LEVELS}
+        path="system.logging.level"
         onChange={(e) =>
           onChange("system.logging.level", Number(e.target.value))
         }
       />
       <B4TextField
-        label={t("settings.Logging.logDirectory")}
         value={config.system.logging.directory}
+        path="system.logging.directory"
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
           onChange("system.logging.directory", e.target.value)
         }
@@ -157,16 +161,16 @@ export const LoggingSettings = ({ config, onChange }: ServiceCardProps) => {
         helperText={t("settings.Logging.logDirectoryHelp")}
       />
       <B4Switch
-        label={t("settings.Logging.instantFlush")}
         checked={config?.system?.logging?.instaflush}
+        path="system.logging.instaflush"
         onChange={(checked: boolean) =>
           onChange("system.logging.instaflush", Boolean(checked))
         }
         description={t("settings.Logging.instantFlushDesc")}
       />
       <B4Switch
-        label={t("settings.Logging.syslog")}
         checked={config?.system?.logging?.syslog}
+        path="system.logging.syslog"
         onChange={(checked: boolean) =>
           onChange("system.logging.syslog", Boolean(checked))
         }

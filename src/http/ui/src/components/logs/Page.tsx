@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { useTraceSession } from "@hooks/useTraceSession";
 import {
-  LogLevel,
+  LogLineLevel,
   LOG_LEVELS,
   ParsedLogLine,
   loadEnabledLevels,
@@ -25,7 +25,7 @@ export function LogsPage() {
   const { showSuccess } = useSnackbar();
   const [filter, setFilter] = useState("");
   const [enabledLevels, setEnabledLevels] =
-    useState<Set<LogLevel>>(loadEnabledLevels);
+    useState<Set<LogLineLevel>>(loadEnabledLevels);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
@@ -53,7 +53,7 @@ export function LogsPage() {
   }, [logs, logsBase]);
 
   const levelCounts = useMemo(() => {
-    const counts: Record<LogLevel, number> = {
+    const counts: Record<LogLineLevel, number> = {
       error: 0,
       warn: 0,
       info: 0,
@@ -104,7 +104,7 @@ export function LogsPage() {
     saveEnabledLevels(enabledLevels);
   }, [enabledLevels]);
 
-  const toggleLevel = (level: LogLevel) => {
+  const toggleLevel = (level: LogLineLevel) => {
     setEnabledLevels((prev) => {
       const next = new Set(prev);
       if (next.has(level)) {

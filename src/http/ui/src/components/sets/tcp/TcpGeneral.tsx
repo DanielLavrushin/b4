@@ -54,6 +54,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
           <B4Slider
             label={t("sets.tcp.general.connPacketsLimit")}
             value={config.tcp.conn_bytes_limit}
+            path="tcp.conn_bytes_limit"
             onChange={(value: number) =>
               onChange("tcp.conn_bytes_limit", value)
             }
@@ -69,11 +70,11 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4RangeSlider
-            label={t("sets.tcp.general.seg2delay")}
             value={[
               config.tcp.seg2delay,
               config.tcp.seg2delay_max || config.tcp.seg2delay,
             ]}
+            path="tcp.seg2delay"
             onChange={(value: [number, number]) => {
               onChange("tcp.seg2delay", value[0]);
               onChange("tcp.seg2delay_max", value[1]);
@@ -91,6 +92,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
           <B4TextField
             label={t("sets.tcp.general.portFilter")}
             value={config.tcp.dport_filter}
+            path="tcp.dport_filter"
             onChange={(e) => onChange("tcp.dport_filter", e.target.value)}
             placeholder={t("sets.tcp.general.portFilterPlaceholder")}
             helperText={t("sets.tcp.general.portFilterHelper")}
@@ -100,9 +102,9 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
 
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Switch
-            label={t("sets.tcp.general.dropSack")}
             description={t("sets.tcp.general.dropSackDesc")}
             checked={config.tcp.drop_sack || false}
+            path="tcp.drop_sack"
             onChange={(checked) => onChange("tcp.drop_sack", checked)}
             aiTopic="tcp.drop_sack"
           />
@@ -113,6 +115,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             label={t("sets.tcp.general.httpMethodEol")}
             description={t("sets.tcp.general.httpMethodEolDesc")}
             checked={config.tcp.http_methodeol || false}
+            path="tcp.http_methodeol"
             onChange={(checked) => onChange("tcp.http_methodeol", checked)}
             aiTopic="tcp.http_methodeol"
           />
@@ -127,6 +130,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             label={t("sets.tcp.general.dupEnable")}
             description={t("sets.tcp.general.dupEnableDesc")}
             checked={dup.enabled}
+            path="tcp.duplicate.enabled"
             onChange={(checked) => onChange("tcp.duplicate.enabled", checked)}
             aiTopic="tcp.duplicate"
             aiContext={{ count: dup.count }}
@@ -140,6 +144,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             <B4Slider
               label={t("sets.tcp.general.dupCount")}
               value={dup.count}
+              path="tcp.duplicate.count"
               onChange={(value: number) =>
                 onChange("tcp.duplicate.count", value)
               }
@@ -160,6 +165,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             label={t("sets.tcp.general.ibdEnable")}
             description={t("sets.tcp.general.ibdEnableDesc")}
             checked={ibd.enabled}
+            path="tcp.ip_block_detect.enabled"
             onChange={(checked) =>
               onChange("tcp.ip_block_detect.enabled", checked)
             }
@@ -181,6 +187,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
                 label={t("sets.tcp.general.ibdHealDns")}
                 description={t("sets.tcp.general.ibdHealDnsDesc")}
                 checked={ibd.heal_dns}
+                path="tcp.ip_block_detect.heal_dns"
                 onChange={(checked) =>
                   onChange("tcp.ip_block_detect.heal_dns", checked)
                 }
@@ -193,6 +200,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
                 label={t("sets.tcp.general.ibdSynDetect")}
                 description={t("sets.tcp.general.ibdSynDetectDesc")}
                 checked={ibd.syn_detect}
+                path="tcp.ip_block_detect.syn_detect"
                 onChange={(checked) =>
                   onChange("tcp.ip_block_detect.syn_detect", checked)
                 }
@@ -205,6 +213,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
                 <B4Slider
                   label={t("sets.tcp.general.ibdSynThreshold")}
                   value={ibd.syn_threshold}
+                  path="tcp.ip_block_detect.syn_threshold"
                   onChange={(value: number) =>
                     onChange("tcp.ip_block_detect.syn_threshold", value)
                   }
@@ -220,8 +229,9 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Slider
                 label={t("sets.tcp.general.ibdThreshold")}
-                value={ibd.retransmit_threshold}
-                onChange={(value: number) =>
+              value={ibd.retransmit_threshold}
+              path="tcp.ip_block_detect.retransmit_threshold"
+              onChange={(value: number) =>
                   onChange("tcp.ip_block_detect.retransmit_threshold", value)
                 }
                 min={1}
@@ -240,8 +250,9 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Slider
                 label={t("sets.tcp.general.ibdTimeout")}
-                value={ibd.timeout_ms}
-                onChange={(value: number) =>
+              value={ibd.timeout_ms}
+              path="tcp.ip_block_detect.timeout_ms"
+              onChange={(value: number) =>
                   onChange("tcp.ip_block_detect.timeout_ms", value)
                 }
                 min={1000}
@@ -257,6 +268,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
                 <B4Slider
                   label={t("sets.tcp.general.ibdHealTtl")}
                   value={ibd.heal_ttl_sec}
+                  path="tcp.ip_block_detect.heal_ttl_sec"
                   onChange={(value: number) =>
                     onChange("tcp.ip_block_detect.heal_ttl_sec", value)
                   }
@@ -275,6 +287,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
                 label={t("sets.tcp.general.ibdCache")}
                 description={t("sets.tcp.general.ibdCacheDesc")}
                 checked={ibd.cache_blocked_ips}
+                path="tcp.ip_block_detect.cache_blocked_ips"
                 onChange={(checked) =>
                   onChange("tcp.ip_block_detect.cache_blocked_ips", checked)
                 }
@@ -292,6 +305,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             label={t("sets.tcp.general.rstEnable")}
             description={t("sets.tcp.general.rstEnableDesc")}
             checked={rstProt.enabled}
+            path="tcp.rst_protection.enabled"
             onChange={(checked) =>
               onChange("tcp.rst_protection.enabled", checked)
             }
@@ -308,6 +322,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             <B4Slider
               label={t("sets.tcp.general.rstTtlTolerance")}
               value={rstProt.ttl_tolerance}
+              path="tcp.rst_protection.ttl_tolerance"
               onChange={(value: number) =>
                 onChange("tcp.rst_protection.ttl_tolerance", value)
               }
@@ -328,6 +343,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             label={t("sets.tcp.general.mssEnable")}
             description={t("sets.tcp.general.mssEnableDesc")}
             checked={mss.enabled}
+            path="mss_clamp.enabled"
             onChange={(checked) => {
               onChange("mss_clamp.enabled", checked);
               if (checked && (!mss.size || mss.size < 10)) {
@@ -360,6 +376,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             <B4Slider
               label={t("sets.tcp.general.mssSize")}
               value={mss.size}
+              path="mss_clamp.size"
               onChange={(value: number) => onChange("mss_clamp.size", value)}
               min={10}
               max={1460}

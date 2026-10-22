@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Box, Grid } from "@mui/material";
 import { IpIcon } from "@b4.icons";
 import { B4Alert, B4Hint, B4Switch } from "@b4.elements";
@@ -8,6 +8,7 @@ import { SetStats } from "../Manager";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 import { GeoCategoryPanel } from "./GeoCategoryPanel";
 import { OtherSetsTargets, findSetOverlaps } from "./overlap";
+import { useChangedFields } from "@context/ChangedFieldsContext";
 import {
   IPV4_CATCH_ALL,
   IPV6_CATCH_ALL,
@@ -44,11 +45,29 @@ export const IpsTab = ({
   onChange,
 }: IpsTabProps) => {
   const { t } = useTranslation();
+  const { changedValues } = useChangedFields();
   const [duplicateWarning, setDuplicateWarning] = useState("");
   const [entryNotice, setEntryNotice] = useState("");
   const ips = config.targets.ip ?? [];
   const catchAllEntries = ipCatchAllEntries(!!ipv6);
   const presentCatchAll = ips.filter(isIpCatchAll).map(catchAllEntryFor);
+  const ipsLeaf = changedValues.get("targets.ip");
+  // O(1) membership per chip instead of O(n) includes scans.
+  const ipsLeafSets = useMemo(() => {
+    if (
+      !ipsLeaf ||
+      !Array.isArray(ipsLeaf.after) ||
+      !Array.isArray(ipsLeaf.before)
+    ) {
+      return null;
+    }
+    return {
+      after: new Set(ipsLeaf.after as unknown[]),
+      before: new Set(ipsLeaf.before as unknown[]),
+    };
+  }, [ipsLeaf]);
+  const isIpChanged = (ip: string): boolean =>
+    !!ipsLeafSets && ipsLeafSets.after.has(ip) !== ipsLeafSets.before.has(ip);
   const missingCatchAll = catchAllEntries.filter(
     (entry) => !presentCatchAll.includes(entry),
   );
@@ -90,6 +109,8 @@ export const IpsTab = ({
             value: catchAllEntries.join(", "),
           })}
           checked={catchAll}
+          path="targets.ip"
+          arrayItem={IPV4_CATCH_ALL}
           onChange={(checked: boolean) =>
             onChange("targets.ip", setIpCatchAll(ips, checked, !!ipv6))
           }
@@ -130,7 +151,7 @@ export const IpsTab = ({
             warning={duplicateWarning}
             notice={entryNotice}
             normalize={(raw) => normalizeIpEntry(raw, !!ipv6)}
-            highlight={isIpCatchAll}
+            highlight={(item) => isIpCatchAll(item) || isIpChanged(item)}
             getItemLabel={chipLabel}
             onItemsChange={(items) => onChange("targets.ip", items)}
             onInputChange={checkDuplicates}
@@ -155,6 +176,7 @@ export const IpsTab = ({
               onSelectedChange={(categories) =>
                 onChange("targets.geoip_categories", categories)
               }
+              path="targets.geoip_categories"
             />
           </Grid>
         )}
