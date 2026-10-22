@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
@@ -44,7 +46,25 @@ func canonicalASN(s string) string {
 func udpPorts(projection map[string]interface{}) []string {
 	udp, _ := projection["udp"].(map[string]interface{})
 	ports, _ := udp["dport_filter"].(string)
-	return strings.Split(ports, ",")
+	ranges := config.ParsePortRanges(ports)
+	sort.Slice(ranges, func(i, j int) bool { return ranges[i].Min < ranges[j].Min })
+	var merged []config.PortRange
+	for _, r := range ranges {
+		if n := len(merged); n > 0 && int(r.Min) <= int(merged[n-1].Max)+1 {
+			merged[n-1].Max = max(merged[n-1].Max, r.Max)
+			continue
+		}
+		merged = append(merged, r)
+	}
+	out := make([]string, 0, len(merged))
+	for _, r := range merged {
+		if r.Min == r.Max {
+			out = append(out, strconv.Itoa(int(r.Min)))
+		} else {
+			out = append(out, fmt.Sprintf("%d-%d", r.Min, r.Max))
+		}
+	}
+	return out
 }
 
 func TargetsKey(projection map[string]interface{}) string {
@@ -59,7 +79,7 @@ func TargetsKey(projection map[string]interface{}) string {
 	}
 	if classes := canonicalTargets(hubwire.UDPL7(projection), lowerTrimmed); len(classes) > 0 {
 		canon["udp_l7"] = classes
-		canon["udp_ports"] = canonicalTargets(udpPorts(projection), lowerTrimmed)
+		canon["udp_ports"] = udpPorts(projection)
 	}
 	data, _ := json.Marshal(canon)
 	sum := sha256.Sum256(data)

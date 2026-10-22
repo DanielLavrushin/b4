@@ -130,3 +130,32 @@ func TestTargetsKeyOfAProtocolSelectionCountsItsUDPPorts(t *testing.T) {
 		}
 	}
 }
+
+func TestTargetsKeyOfAProtocolSelectionReadsItsUDPPortsAsNumbers(t *testing.T) {
+	stun := func(ports string) string {
+		return TargetsKey(map[string]interface{}{"udp": map[string]interface{}{"dport_filter": ports, "filter_l7": []interface{}{"stun"}}})
+	}
+	for _, same := range [][2]string{
+		{"3478-3481", "3478,3479,3480,3481"},
+		{"3478-3481", "3478-3480,3479-3481"},
+		{"3478-3481", "3478-3479,3480-3481"},
+		{"3478-3481", "3479-3481,3478"},
+		{"9000,10000", "10000,9000"},
+		{"19294-19344,50000-50100", "50000-50100,19300,19294-19344"},
+		{"65534-65535", "65535,65534"},
+	} {
+		if stun(same[0]) != stun(same[1]) {
+			t.Errorf("%q and %q select the same ports and must give one key", same[0], same[1])
+		}
+	}
+	for _, other := range [][2]string{
+		{"3478-3481", "3478-3480"},
+		{"3478,3480", "3478-3480"},
+		{"3478-3481", "3480-3481,3478"},
+		{"9000,10000", "9000-10000"},
+	} {
+		if stun(other[0]) == stun(other[1]) {
+			t.Errorf("%q and %q select different ports and must give different keys", other[0], other[1])
+		}
+	}
+}
