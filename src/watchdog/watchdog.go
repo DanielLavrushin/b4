@@ -379,9 +379,9 @@ func (w *Watchdog) tickLegacy(cfg *config.Config, watchers map[string]setRef) {
 	}
 }
 
-func (w *Watchdog) legacyHealGroup(cfg *config.Config, domains []string) ([]string, *int, []string) {
+func (w *Watchdog) legacyHealGroup(cfg *config.Config, domains []string) ([]string, *config.DSCPProbe, []string) {
 	var group, later []string
-	var dscp *int
+	var dscp *config.DSCPProbe
 	for i, domain := range domains {
 		value := w.legacyProbeDSCP(cfg, domain)
 		if i == 0 {
@@ -396,21 +396,21 @@ func (w *Watchdog) legacyHealGroup(cfg *config.Config, domains []string) ([]stri
 	return group, dscp, later
 }
 
-func (w *Watchdog) legacyProbeDSCP(cfg *config.Config, domain string) *int {
+func (w *Watchdog) legacyProbeDSCP(cfg *config.Config, domain string) *config.DSCPProbe {
 	if w.engine == nil {
 		return nil
 	}
-	return discovery.SetRunDSCP(cfg, w.engine.Owner(ExtractDomain(domain)))
+	return cfg.ProbeDSCP(w.engine.Owner(ExtractDomain(domain)))
 }
 
-func sameDSCP(a, b *int) bool {
+func sameDSCP(a, b *config.DSCPProbe) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
 	return *a == *b
 }
 
-func (w *Watchdog) healBatch(domains []string, dscp *int) {
+func (w *Watchdog) healBatch(domains []string, dscp *config.DSCPProbe) {
 	cfg := w.cfgPtr.Load()
 	wdCfg := cfg.System.Checker.Watchdog
 

@@ -329,7 +329,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 	}
 	if runSet != nil {
 		opts.SetStrategy = discovery.SetRunStrategy(runSet)
-		opts.DSCP = discovery.SetRunDSCP(api.getCfg(), runSet)
+		opts.DSCP = api.getCfg().ProbeDSCP(runSet)
 		opts.StopWhenCovered = req.StopWhenCovered
 		opts.TLSVersion, opts.IPVersion = discovery.SetRunVersions(runSet, req.TLSVersion, req.IPVersion)
 	}

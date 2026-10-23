@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 )
@@ -38,6 +39,21 @@ func discoveryRecordNftScripts(t *testing.T, fail error) *[]string {
 	return &scripts
 }
 
+func discoveryRefuseDSCP(bins ...string) {
+	recorded := run
+	run = func(args ...string) (string, error) {
+		out, err := recorded(args...)
+		if slices.Contains(bins, args[0]) && slices.Contains(args, "DSCP") && slices.Contains(args, "-A") {
+			return "iptables: No chain/target/match by that name.", errors.New("exit status 2")
+		}
+		return out, err
+	}
+}
+
+func discoveryProbe(value int) *config.DSCPProbe {
+	return &config.DSCPProbe{Value: value, IPv4: true, IPv6: true}
+}
+
 func TestDiscoveryDSCPRunsAfterB4DSCPOnIptables(t *testing.T) {
 	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true})
 
@@ -49,7 +65,7 @@ func TestDiscoveryDSCPRunsAfterB4DSCPOnIptables(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := discoveryRecordRun(t, discoveryDSCPListings(tc.listing))
-			if err := (&discoveryIptBackend{}).apply(0x8001, 0x8002, 541, 1, &discoveryStamp{value: 25}); err != nil {
+			if err := (&discoveryIptBackend{}).apply(0x8001, 0x8002, 541, 1, &discoveryStamp{value: 25, v4: true, v6: true}); err != nil {
 				t.Fatalf("apply: %v", err)
 			}
 			for _, bin := range []string{backendIPTables, backendIP6Tables} {
@@ -72,7 +88,7 @@ func TestDiscoveryDSCPFollowsTheDSCPInterfaceScopeOnIptables(t *testing.T) {
 	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: false})
 	calls := discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
 
-	if err := (&discoveryIptBackend{}).apply(0x8001, 0x8002, 541, 1, &discoveryStamp{value: 7, ifaces: []string{"wan0", "wg1"}}); err != nil {
+	if err := (&discoveryIptBackend{}).apply(0x8001, 0x8002, 541, 1, &discoveryStamp{value: 7, ifaces: []string{"wan0", "wg1"}, v4: true, v6: true}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	for _, iface := range []string{"wan0", "wg1"} {
@@ -128,7 +144,7 @@ func TestDiscoveryDSCPRunsAfterB4DSCPOnNftables(t *testing.T) {
 	calls := discoveryRecordRun(t, nil)
 	scripts := discoveryRecordNftScripts(t, nil)
 
-	if err := (&discoveryNftBackend{}).apply(0x8001, 0x8002, 541, 1, &discoveryStamp{value: 25, ifaces: []string{"wan0"}}); err != nil {
+	if err := (&discoveryNftBackend{}).apply(0x8001, 0x8002, 541, 1, &discoveryStamp{value: 25, ifaces: []string{"wan0"}, v4: true, v6: true}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if len(*scripts) != 1 {
@@ -175,6 +191,65 @@ func TestDiscoveryWithoutDSCPLeavesNoStampOnNftables(t *testing.T) {
 	}
 }
 
+func TestDiscoveryDSCPStampsOnlyTheFamiliesTheSetsTrafficCarriesItIn(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true})
+	calls := discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+	stamped := func(bin string) bool {
+		return discoveryCallIndex(*calls, bin+" -w -t mangle -I POSTROUTING 2 -j B4_DISCOVERY_DSCP") >= 0
+	}
+	cfg := config.NewConfig()
+	cfg.System.Tables.Engine = backendIPTables
+
+	dscpApplied.Store(&dscpState{backend: backendIPTables, ipt: &dscpIptState{incapable: map[string]string{
+		backendIP6Tables: "ip6tables rejected the set match, which needs the xt_set kernel module",
+	}}})
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if !stamped(backendIPTables) || stamped(backendIP6Tables) {
+		t.Errorf("ip6tables cannot match ipsets, so the set's IPv6 traffic leaves with the global value only; the run's IPv6 probes must too, and IPv4 keeps the set's value: %v", *calls)
+	}
+	if got := ActiveDiscoveryDSCP(); got == nil || *got != 25 {
+		t.Errorf("IPv4 probes still carry DSCP 25, got %v", got)
+	}
+
+	*calls = nil
+	dscpApplied.Store(&dscpState{backend: backendIPTables, ipt: &dscpIptState{incapable: map[string]string{
+		backendIPTables:  "the ipset command is not installed",
+		backendIP6Tables: "the ipset command is not installed",
+	}}})
+	rulesMu.Lock()
+	reapplyDiscoverySteering()
+	rulesMu.Unlock()
+	if stamped(backendIPTables) || stamped(backendIP6Tables) {
+		t.Errorf("after a rebuild with no ipset at all, no live packet carries the set's value, and the run's probes must not either: %v", *calls)
+	}
+	if got := ActiveDiscoveryDSCP(); got != nil {
+		t.Errorf("a run that stamps nothing must not report DSCP %d", *got)
+	}
+
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+	resetDSCPState(t)
+	*calls = nil
+	ipv4Only := &config.DSCPProbe{Value: 25, IPv4: true}
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, ipv4Only, nil); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if !stamped(backendIPTables) || stamped(backendIP6Tables) {
+		t.Errorf("a set limited to IPv4 writes its value into IPv4 packets only: %v", *calls)
+	}
+
+	scripts := discoveryRecordNftScripts(t, nil)
+	if err := (&discoveryNftBackend{}).apply(0x8001, 0x8002, 541, 1, &discoveryStamp{value: 25, v4: true}); err != nil {
+		t.Fatalf("nft apply: %v", err)
+	}
+	if len(*scripts) != 1 || strings.Contains((*scripts)[0], "ip6 dscp") || !strings.Contains((*scripts)[0], "ip dscp set 25") {
+		t.Errorf("on nftables an IPv4-only stamp must hold no IPv6 rule: %v", *scripts)
+	}
+}
+
 func TestDiscoverySteeringRefusesADSCPOutOfRange(t *testing.T) {
 	appliedResetGlobals(t)
 	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: false})
@@ -183,7 +258,7 @@ func TestDiscoverySteeringRefusesADSCPOutOfRange(t *testing.T) {
 	cfg := config.NewConfig()
 	cfg.System.Tables.Engine = backendIPTables
 	for _, bad := range []int{-1, config.MaxDSCPValue + 1} {
-		if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, &bad); err == nil {
+		if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(bad), nil); err == nil {
 			t.Errorf("DSCP %d is not a DSCP value, the run must not start", bad)
 		}
 	}
@@ -194,22 +269,15 @@ func TestDiscoverySteeringRefusesADSCPOutOfRange(t *testing.T) {
 
 func TestDiscoverySteeringIsTakenBackWhenItsStampFails(t *testing.T) {
 	appliedResetGlobals(t)
+	resetDSCPState(t)
 	t.Cleanup(kmodResetForTest)
 	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: false})
 	calls := discoveryRecordRun(t, nil)
-	recorded := run
-	run = func(args ...string) (string, error) {
-		out, err := recorded(args...)
-		if slices.Contains(args, "DSCP") && slices.Contains(args, "-A") {
-			return "iptables: No chain/target/match by that name.", errors.New("exit status 2")
-		}
-		return out, err
-	}
+	discoveryRefuseDSCP(backendIPTables)
 
 	cfg := config.NewConfig()
 	cfg.System.Tables.Engine = backendIPTables
-	value := 25
-	err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, &value)
+	err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil)
 	if err == nil || !strings.Contains(err.Error(), "DSCP 25") {
 		t.Fatalf("a run whose probes cannot carry the set's DSCP value would test another path; it must not start, got %v", err)
 	}
@@ -230,16 +298,9 @@ func TestDiscoveryDSCPFailureLeavesTheOtherFamilysSteeringInPlace(t *testing.T) 
 	t.Cleanup(kmodResetForTest)
 	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true})
 	calls := discoveryRecordRun(t, nil)
-	recorded := run
-	run = func(args ...string) (string, error) {
-		out, err := recorded(args...)
-		if args[0] == backendIPTables && slices.Contains(args, "DSCP") && slices.Contains(args, "-A") {
-			return "iptables: No chain/target/match by that name.", errors.New("exit status 2")
-		}
-		return out, err
-	}
+	discoveryRefuseDSCP(backendIPTables)
 
-	if err := (&discoveryIptBackend{}).apply(0x8001, 0x8002, 541, 1, &discoveryStamp{value: 25}); err == nil {
+	if err := (&discoveryIptBackend{}).apply(0x8001, 0x8002, 541, 1, &discoveryStamp{value: 25, v4: true, v6: true}); err == nil {
 		t.Fatal("the IPv4 DSCP rule was refused, so apply must report it")
 	}
 	for _, want := range []string{
@@ -252,16 +313,56 @@ func TestDiscoveryDSCPFailureLeavesTheOtherFamilysSteeringInPlace(t *testing.T) 
 	}
 }
 
+func TestDiscoveryRunIsToldWhenARebuildCannotPutItsStampBack(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true})
+	calls := discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+
+	cfg := config.NewConfig()
+	cfg.System.Tables.Engine = backendIPTables
+	lost := make(chan error, 2)
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), func(err error) { lost <- err }); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	*calls = nil
+	discoveryRefuseDSCP(backendIPTables)
+	rulesMu.Lock()
+	reapplyDiscoverySteering()
+	rulesMu.Unlock()
+
+	select {
+	case err := <-lost:
+		if !strings.Contains(err.Error(), "DSCP 25") {
+			t.Errorf("the run should learn why it has to stop, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a rebuild left the run's probes without the set's DSCP value and the run was never told, so it goes on testing another path")
+	}
+	for _, bin := range []string{backendIPTables, backendIP6Tables} {
+		want := bin + " -w -t mangle -I B4 1 -m mark --mark 0x8001/0xffffffff -j RETURN"
+		if discoveryCallIndex(*calls, want) < 0 {
+			t.Errorf("the run's probes must stay out of the main queue until the run stops; missing %q", want)
+		}
+	}
+	if activeSteering == nil {
+		t.Error("the steering stays registered until the run itself clears it")
+	}
+}
+
 func TestDiscoveryDSCPComesBackAfterAFirewallRebuild(t *testing.T) {
 	appliedResetGlobals(t)
+	resetDSCPState(t)
 	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: false})
 	calls := discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
 
 	cfg := config.NewConfig()
 	cfg.System.Tables.Engine = backendIPTables
 	cfg.System.Tables.DSCP.Interfaces = []string{"wan0"}
-	value := 25
-	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, &value); err != nil {
+	lost := make(chan error, 1)
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), func(err error) { lost <- err }); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 
@@ -276,6 +377,11 @@ func TestDiscoveryDSCPComesBackAfterAFirewallRebuild(t *testing.T) {
 		if discoveryCallIndex(*calls, want) < 0 {
 			t.Errorf("a firewall rebuild during a run must put the run's DSCP rules back; missing %q", want)
 		}
+	}
+	select {
+	case err := <-lost:
+		t.Errorf("the rules came back, yet the run was told they were lost: %v", err)
+	case <-time.After(50 * time.Millisecond):
 	}
 
 	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)

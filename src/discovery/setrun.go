@@ -48,11 +48,3 @@ func SetRunVersions(set *config.SetConfig, tlsVersion, ipVersion string) (string
 	}
 	return tlsVersion, ipVersion
 }
-
-func SetRunDSCP(cfg *config.Config, set *config.SetConfig) *int {
-	value, on := cfg.ProbeDSCP(set)
-	if !on {
-		return nil
-	}
-	return &value
-}

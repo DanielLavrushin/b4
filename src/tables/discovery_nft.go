@@ -115,8 +115,12 @@ func discoveryNftStampScript(flowHex, injectedHex string, stamp *discoveryStamp)
 	}
 	for _, scope := range scopes {
 		for _, mark := range []string{flowHex, injectedHex} {
-			fmt.Fprintf(&b, "add rule inet %s %s %smeta mark %s meta nfproto ipv4 ip dscp set %d\n", nftTableName, discoveryStampChainNFT, scope, mark, stamp.value)
-			fmt.Fprintf(&b, "add rule inet %s %s %smeta mark %s meta nfproto ipv6 ip6 dscp set %d\n", nftTableName, discoveryStampChainNFT, scope, mark, stamp.value)
+			if stamp.v4 {
+				fmt.Fprintf(&b, "add rule inet %s %s %smeta mark %s meta nfproto ipv4 ip dscp set %d\n", nftTableName, discoveryStampChainNFT, scope, mark, stamp.value)
+			}
+			if stamp.v6 {
+				fmt.Fprintf(&b, "add rule inet %s %s %smeta mark %s meta nfproto ipv6 ip6 dscp set %d\n", nftTableName, discoveryStampChainNFT, scope, mark, stamp.value)
+			}
 		}
 	}
 	return b.String()

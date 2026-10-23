@@ -375,7 +375,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		}
 		opts.SetId = target.Id
 		opts.SetStrategy = discovery.SetRunStrategy(target)
-		opts.DSCP = discovery.SetRunDSCP(cfg, target)
+		opts.DSCP = cfg.ProbeDSCP(target)
 		opts.StopWhenCovered = true
 		opts.TLSVersion, opts.IPVersion = discovery.SetRunVersions(target, "", "")
 	}
@@ -412,7 +412,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 				"While it runs, the watchdog cannot heal and a firewall refresh will block.",
 			target.Name, strings.Join(urls, ", "), target.Name)
 	}
-	out.Note = mcpWithProbeDSCP(out.Note, opts.DSCP)
+	out.Note = mcpWithProbeDSCP(out.Note, suite.DSCP)
 	return nil, out, nil
 }
 

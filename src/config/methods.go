@@ -1106,15 +1106,21 @@ func (cfg *Config) DSCPRefusal(set *SetConfig) string {
 	return ""
 }
 
-func (cfg *Config) ProbeDSCP(set *SetConfig) (int, bool) {
+type DSCPProbe struct {
+	Value int
+	IPv4  bool
+	IPv6  bool
+}
+
+func (cfg *Config) ProbeDSCP(set *SetConfig) *DSCPProbe {
 	if cfg == nil || set == nil || cfg.System.Tables.SkipSetup || set.Targets.DomainOnly {
-		return 0, false
+		return nil
 	}
 	value, on := set.DSCPStamp()
 	if !on || cfg.DSCPRefusal(set) != "" {
-		return 0, false
+		return nil
 	}
-	return value, true
+	return &DSCPProbe{Value: value, IPv4: set.MatchesIPVersion(4), IPv6: set.MatchesIPVersion(6)}
 }
 
 func (set *SetConfig) DSCPLearnTTL(fromTLS bool) time.Duration {

@@ -17,16 +17,44 @@ type discoveryBackend interface {
 type discoveryStamp struct {
 	value  int
 	ifaces []string
+	v4     bool
+	v6     bool
 }
 
-func discoveryStampFor(cfg *config.Config, dscp *int) (*discoveryStamp, error) {
+func (s *discoveryStamp) covers(v6 bool) bool {
+	return s != nil && ((v6 && s.v6) || (!v6 && s.v4))
+}
+
+func discoveryStampFor(cfg *config.Config, dscp *config.DSCPProbe) (*discoveryStamp, error) {
 	if dscp == nil {
 		return nil, nil
 	}
-	if *dscp < 0 || *dscp > config.MaxDSCPValue {
-		return nil, fmt.Errorf("DSCP %d for Discovery's probes is outside 0-%d", *dscp, config.MaxDSCPValue)
+	if dscp.Value < 0 || dscp.Value > config.MaxDSCPValue {
+		return nil, fmt.Errorf("DSCP %d for Discovery's probes is outside 0-%d", dscp.Value, config.MaxDSCPValue)
 	}
-	return &discoveryStamp{value: *dscp, ifaces: cfg.DSCPInterfaces()}, nil
+	stamp := &discoveryStamp{
+		value:  dscp.Value,
+		ifaces: cfg.DSCPInterfaces(),
+		v4:     dscp.IPv4 && dscpFamilyTakesSetValues(false),
+		v6:     dscp.IPv6 && dscpFamilyTakesSetValues(true),
+	}
+	if !stamp.v4 && !stamp.v6 {
+		return nil, nil
+	}
+	return stamp, nil
+}
+
+func dscpFamilyTakesSetValues(v6 bool) bool {
+	st := dscpApplied.Load()
+	if st == nil || st.ipt == nil {
+		return true
+	}
+	for bin, reason := range st.ipt.incapable {
+		if reason != "" && dscpIptBinV6(bin) == v6 {
+			return false
+		}
+	}
+	return true
 }
 
 func getDiscoveryBackend(cfg *config.Config) discoveryBackend {
@@ -71,12 +99,14 @@ type discoverySteering struct {
 	injectedMark uint
 	queueStart   int
 	threads      int
+	dscp         *config.DSCPProbe
 	stamp        *discoveryStamp
+	lost         func(error)
 }
 
 var activeSteering *discoverySteering
 
-func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark uint, queueStart int, threads int, dscp *int) error {
+func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark uint, queueStart int, threads int, dscp *config.DSCPProbe, lost func(error)) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
 	stamp, err := discoveryStampFor(cfg, dscp)
@@ -91,7 +121,17 @@ func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark
 		be.clear(flowMark, injectedMark)
 		return err
 	}
-	activeSteering = &discoverySteering{cfg: cfg, backend: be, flowMark: flowMark, injectedMark: injectedMark, queueStart: queueStart, threads: threads, stamp: stamp}
+	activeSteering = &discoverySteering{cfg: cfg, backend: be, flowMark: flowMark, injectedMark: injectedMark, queueStart: queueStart, threads: threads, dscp: dscp, stamp: stamp, lost: lost}
+	return nil
+}
+
+func ActiveDiscoveryDSCP() *int {
+	rulesMu.Lock()
+	defer rulesMu.Unlock()
+	if s := activeSteering; s != nil && s.stamp != nil {
+		value := s.stamp.value
+		return &value
+	}
 	return nil
 }
 
@@ -119,13 +159,26 @@ func reapplyDiscoverySteering() {
 	}
 	be := currentDiscoveryBackend(s.cfg)
 	if be == nil {
+		s.fail(fmt.Errorf("no discovery firewall backend available"))
 		return
 	}
 	if s.backend != nil && s.backend.name() != be.name() {
 		s.backend.clear(s.flowMark, s.injectedMark)
 	}
 	s.backend = be
-	if err := be.apply(s.flowMark, s.injectedMark, s.queueStart, s.threads, s.stamp); err != nil {
-		log.Warnf("Discovery: putting the steering rules back after the firewall rules were rebuilt failed: %v", err)
+	stamp, err := discoveryStampFor(s.cfg, s.dscp)
+	if err == nil {
+		s.stamp = stamp
+		err = be.apply(s.flowMark, s.injectedMark, s.queueStart, s.threads, stamp)
+	}
+	if err != nil {
+		s.fail(err)
+	}
+}
+
+func (s *discoverySteering) fail(err error) {
+	log.Warnf("Discovery: putting the steering rules back after the firewall rules were rebuilt failed: %v", err)
+	if s.lost != nil {
+		go s.lost(err)
 	}
 }

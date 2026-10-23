@@ -32,6 +32,7 @@ type runtimeState struct {
 type StartResult struct {
 	Pool     *nfq.Pool
 	FlowMark uint
+	DSCP     *int
 }
 
 type StartSuiteOptions struct {
@@ -44,7 +45,7 @@ type StartSuiteOptions struct {
 	Source          string
 	SetId           string
 	SetStrategy     *config.SetConfig
-	DSCP            *int
+	DSCP            *config.DSCPProbe
 	StopWhenCovered bool
 	HubPresets      func() []ConfigPreset
 	DNSServer       string
@@ -66,7 +67,7 @@ func (m *Runtime) IsActive() bool {
 	return m.state != nil
 }
 
-func (m *Runtime) Start(cfg *config.Config, dscp *int) (*StartResult, error) {
+func (m *Runtime) Start(cfg *config.Config, dscp *config.DSCPProbe) (*StartResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -88,12 +89,13 @@ func (m *Runtime) Start(cfg *config.Config, dscp *int) (*StartResult, error) {
 
 	log.Infof("Discovery queue range: main=%d-%d discovery=%d-%d", mainStart, mainStart+mainThreads-1, discoveryStart, discoveryEnd)
 	log.Infof("Discovery marks: main_injected=0x%x discovery_flow=0x%x discovery_injected=0x%x", cfg.MainInjectedMark(), flowMark, injectedMark)
-	if dscp != nil {
-		log.Infof("Discovery probes leave with DSCP %d", *dscp)
-	}
 
-	if err := tables.ApplyDiscoverySteeringRules(cfg, flowMark, injectedMark, discoveryStart, discoveryThreads, dscp); err != nil {
+	if err := tables.ApplyDiscoverySteeringRules(cfg, flowMark, injectedMark, discoveryStart, discoveryThreads, dscp, m.rulesLost); err != nil {
 		return nil, fmt.Errorf("failed to apply discovery steering rules: %w", err)
+	}
+	stamped := tables.ActiveDiscoveryDSCP()
+	if stamped != nil {
+		log.Infof("Discovery probes leave with DSCP %d", *stamped)
 	}
 
 	discoveryCfg := discoveryPoolConfig(cfg, discoveryStart, discoveryThreads, flowMark, injectedMark)
@@ -116,7 +118,23 @@ func (m *Runtime) Start(cfg *config.Config, dscp *int) (*StartResult, error) {
 	return &StartResult{
 		Pool:     pool,
 		FlowMark: flowMark,
+		DSCP:     stamped,
 	}, nil
+}
+
+func (m *Runtime) rulesLost(err error) {
+	m.mu.Lock()
+	suiteID := ""
+	if m.state != nil && !m.state.stopping {
+		suiteID = m.state.activeSuiteID
+	}
+	m.mu.Unlock()
+	if suiteID == "" {
+		return
+	}
+	log.Warnf("Discovery: stopping run %s, its firewall rules could not be put back after a firewall rebuild: %v", suiteID, err)
+	log.DiscoveryLogf("Stopped: the firewall rules this run depends on could not be put back after a firewall rebuild (%v), so later results would not be reliable", err)
+	_ = CancelCheckSuite(suiteID)
 }
 
 func discoveryPoolConfig(cfg *config.Config, start, threads int, flowMark, injectedMark uint) *config.Config {
@@ -166,7 +184,7 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 		suite.Source = SourceWeb
 	}
 	suite.SetId = opts.SetId
-	suite.DSCP = opts.DSCP
+	suite.DSCP = runtimeState.DSCP
 	suite.setStrategy = opts.SetStrategy
 	suite.stopWhenCovered = opts.StopWhenCovered
 	suite.dnsServerOverride = opts.DNSServer

@@ -114,7 +114,7 @@ func (b *discoveryIptBackend) apply(flowMark uint, injectedMark uint, queueStart
 
 func discoveryIptStamp(bin, flow, injected string, stamp *discoveryStamp) error {
 	discoveryIptDropStamp(bin)
-	if stamp == nil {
+	if !stamp.covers(dscpIptBinV6(bin)) {
 		return nil
 	}
 	loadKernelModuleList("xt_DSCP")
