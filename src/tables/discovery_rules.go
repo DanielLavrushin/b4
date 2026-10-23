@@ -177,6 +177,11 @@ func discoveryDSCPRewritten() {
 	}
 }
 
+func DiscoveryRunInvalidated() bool {
+	s := discoverySetRun.Load()
+	return s != nil && s.failed.Load()
+}
+
 func reapplyDiscoverySteering() {
 	s := activeSteering
 	if s == nil {

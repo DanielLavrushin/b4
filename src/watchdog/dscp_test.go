@@ -26,6 +26,20 @@ func TestSetHealWaitsWhileTheDSCPRulesArePending(t *testing.T) {
 	}
 }
 
+func TestLegacyHealWritesNothingFromARunWhoseRulesChanged(t *testing.T) {
+	h := legacyHarness(t)
+	h.driver.rulesLost = true
+
+	h.w.healBatch([]string{"youtube.com"}, &config.DSCPProbe{Value: 25, IPv4: true, IPv6: true})
+
+	if got := h.set("yt").Fragmentation.Strategy; got != "tcp" {
+		t.Errorf("the run's confirmed winner was found while b4 rewrote its DSCP rules and must not be written, the set's strategy became %q", got)
+	}
+	if n := h.saves.Load(); n != 0 {
+		t.Errorf("nothing may be saved, got %d saves", n)
+	}
+}
+
 func TestSetHealStoppedByADSCPRewriteWritesNothing(t *testing.T) {
 	tagged := watchedSet("yt", ytURL)
 	tagged.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}

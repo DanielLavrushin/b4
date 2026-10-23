@@ -507,8 +507,12 @@ func (w *Watchdog) healBatch(domains []string, dscp *config.DSCPProbe) {
 	}
 
 	cs, ok := w.disc.Snapshot(suiteID)
-	if !ok {
-		log.Warnf("[WATCHDOG] discovery suite disappeared")
+	if !ok || cs.RulesChanged {
+		if ok {
+			log.Warnf("[WATCHDOG] b4 rewrote its DSCP rules during the discovery run, so its results could come from another network path; nothing is written")
+		} else {
+			log.Warnf("[WATCHDOG] discovery suite disappeared")
+		}
 		w.mu.Lock()
 		for _, domain := range domains {
 			st, ok := w.domainStates[domain]

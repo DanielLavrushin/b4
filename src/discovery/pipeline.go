@@ -5,6 +5,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/tables"
 )
 
 func (ds *DiscoverySuite) RunDiscovery() {
@@ -332,13 +333,23 @@ func (ds *DiscoverySuite) finishRun() {
 	ds.logDiscoverySummary()
 }
 
-var suiteRetention = 30 * time.Second
+var (
+	suiteRetention   = 30 * time.Second
+	rulesInvalidated = tables.DiscoveryRunInvalidated
+)
 
 func (ds *DiscoverySuite) finalize() {
 	ds.buildStrategyGroups()
 
 	ds.CheckSuite.mu.Lock()
 	failed := ds.Status == CheckStatusFailed
+	if rulesInvalidated() && !ds.RulesChanged {
+		ds.RulesChanged = true
+		if !failed {
+			ds.Status = CheckStatusCanceled
+		}
+		log.DiscoveryLogf("Stopped: b4 rewrote its DSCP rules during the run, so its results could come from another network path")
+	}
 	if !failed {
 		ds.DomainDiscoveryResults = ds.domainResults
 	}

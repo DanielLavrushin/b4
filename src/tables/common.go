@@ -79,6 +79,7 @@ func addRules(cfg *config.Config) error {
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
+	discoveryDSCPRewritten()
 	rulesAppliedCfg = cfg
 
 	IPTablesLockBudgetReset()
@@ -109,6 +110,7 @@ func clearRules(cfg *config.Config) error {
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
+	discoveryDSCPRewritten()
 
 	IPTablesLockBudgetReset()
 

@@ -4,6 +4,9 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/daniellavrushin/b4/nfq"
 )
 
 func newTestSuite(t *testing.T) *CheckSuite {
@@ -92,6 +95,52 @@ func TestALossSignalDuringStartupStopsTheRunOnceItIsRegistered(t *testing.T) {
 	}
 	if got, ok := GetCheckSuite(suite.Id); !ok || got != suite {
 		t.Error("the run must still be registered, so its result can be read")
+	}
+}
+
+func TestARunWhoseRulesChangedIsNotPublishedAsComplete(t *testing.T) {
+	previous, previousCheck := suiteRetention, rulesInvalidated
+	suiteRetention = 10 * time.Millisecond
+	t.Cleanup(func() { suiteRetention, rulesInvalidated = previous, previousCheck })
+
+	for _, invalidated := range []bool{false, true} {
+		rulesInvalidated = func() bool { return invalidated }
+		suite := NewCheckSuite([]DomainInput{{Domain: "example.com", CheckURL: "https://example.com/"}})
+		suite.SetId = "set-a"
+		suite.Status = CheckStatusRunning
+		ds := &DiscoverySuite{
+			CheckSuite: suite,
+			pool:       &nfq.Pool{},
+			domainResults: map[string]*DomainDiscoveryResult{"example.com": {
+				Domain: "example.com", BestPreset: "p", BestSuccess: true,
+				Results: map[string]*DomainPresetResult{"p": {PresetName: "p", Status: CheckStatusComplete}},
+			}},
+			dnsResults: map[string]*DNSDiscoveryResult{},
+			setVerdict: &SetVerdict{Status: SetVerdictCovered, WinnerPreset: "p", Confirmed: true},
+		}
+		ds.initCancelContext()
+		RegisterSuite(ds.CheckSuite)
+
+		ds.finalize()
+
+		switch {
+		case invalidated && (ds.Status != CheckStatusCanceled || !ds.RulesChanged || ds.SetVerdict == nil || ds.SetVerdict.Status != SetVerdictIncomplete):
+			t.Errorf("the DSCP rules changed while the run was finishing, so its covered verdict must not be published: status %q, rules changed %t, verdict %+v", ds.Status, ds.RulesChanged, ds.SetVerdict)
+		case !invalidated && (ds.Status != CheckStatusComplete || ds.RulesChanged || ds.SetVerdict == nil || ds.SetVerdict.Status != SetVerdictCovered):
+			t.Errorf("an undisturbed run publishes its verdict: status %q, rules changed %t, verdict %+v", ds.Status, ds.RulesChanged, ds.SetVerdict)
+		}
+
+		ds.ctxCancel()
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			if _, ok := GetCheckSuite(ds.Id); !ok {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("the finished run was never released")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
 	}
 }
 

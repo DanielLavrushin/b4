@@ -404,6 +404,58 @@ func TestDiscoverySetRunStopsWhenTheDSCPRulesAreRewritten(t *testing.T) {
 	expectLost(lost, false, "after the run ended")
 }
 
+func TestDiscoverySetRunIsInvalidatedBeforeTheRulesChange(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
+	discoveryIpsetReady(t, false)
+	discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+	cfg := config.NewConfig()
+	cfg.System.Tables.Engine = backendIPTables
+	cfg.System.Tables.DSCP = config.DSCPConfig{Enabled: true, Value: 7}
+
+	recorded := run
+	var firstCommand []bool
+	run = func(args ...string) (string, error) {
+		firstCommand = append(firstCommand, DiscoveryRunInvalidated())
+		return recorded(args...)
+	}
+
+	for _, op := range []struct {
+		name string
+		do   func() error
+	}{
+		{"a DSCP-only apply", func() error { return ApplyDSCPOnly(&cfg) }},
+		{"a firewall rebuild", func() error { return AddRules(&cfg) }},
+		{"a firewall teardown", func() error { return ClearRules(&cfg) }},
+	} {
+		ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+		if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); err != nil {
+			t.Fatalf("%s: apply: %v", op.name, err)
+		}
+		if DiscoveryRunInvalidated() {
+			t.Fatalf("%s: a fresh run starts valid", op.name)
+		}
+		firstCommand = nil
+		_ = op.do()
+		if len(firstCommand) == 0 || !firstCommand[0] {
+			t.Errorf("%s: the run must count as invalid before the first rule changes, or a run that finishes meanwhile publishes results from the old path: %v", op.name, firstCommand)
+		}
+	}
+
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+	if DiscoveryRunInvalidated() {
+		t.Error("with no run there is nothing to invalidate")
+	}
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	_ = ApplyDSCPOnly(&cfg)
+	if DiscoveryRunInvalidated() {
+		t.Error("a run for no set value does not depend on the DSCP rules and stays valid")
+	}
+}
+
 func TestDiscoverySteeringRefusesADSCPOutOfRange(t *testing.T) {
 	appliedResetGlobals(t)
 	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: false})
