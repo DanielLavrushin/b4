@@ -26,14 +26,16 @@ interface DevicesTabProps {
   onExcludeChange: (exclude: boolean) => void;
 }
 
+const macKey = (mac: string) => mac.trim().toUpperCase();
+
 const withUnlistedSelection = (
   devices: DeviceInfo[],
   selected: string[],
 ): DeviceInfo[] => {
-  const known = new Set(devices.map((d) => d.mac.toUpperCase()));
+  const known = new Set(devices.map((d) => macKey(d.mac)));
   const unlisted: DeviceInfo[] = [];
   for (const mac of selected) {
-    const key = mac.toUpperCase();
+    const key = macKey(mac);
     if (known.has(key)) continue;
     known.add(key);
     unlisted.push({
@@ -62,21 +64,32 @@ export const DevicesTab = ({
 }: DevicesTabProps) => {
   const { t } = useTranslation();
 
-  const isSelected = (mac: string) => selected.includes(mac);
+  const selectedKeys = new Set(selected.map(macKey));
+  const isSelected = (mac: string) => selectedKeys.has(macKey(mac));
 
   const handleToggle = (mac: string) => {
+    const key = macKey(mac);
     onChange(
-      isSelected(mac) ? selected.filter((m) => m !== mac) : [...selected, mac],
+      selectedKeys.has(key)
+        ? selected.filter((m) => macKey(m) !== key)
+        : [...selected, mac],
     );
   };
 
   const handleBulkToggle = (macs: string[], checked: boolean) => {
-    const macSet = new Set(macs);
-    onChange(
-      checked
-        ? Array.from(new Set([...selected, ...macs]))
-        : selected.filter((m) => !macSet.has(m)),
-    );
+    const keys = new Set(macs.map(macKey));
+    if (!checked) {
+      onChange(selected.filter((m) => !keys.has(macKey(m))));
+      return;
+    }
+    const seen = new Set(selectedKeys);
+    const added = macs.filter((m) => {
+      const key = macKey(m);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    onChange([...selected, ...added]);
   };
 
   const hasMssHints = devices.some((d) => d.mss_clamp);

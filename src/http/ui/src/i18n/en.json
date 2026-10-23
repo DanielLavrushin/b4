@@ -572,6 +572,7 @@
         "inSets": "sets: {{names}}",
         "filterWarning": "Device Filtering then has no device selected by MAC address, so DPI bypass applies to every device.",
         "setWarning": "Set {{name}} then has no source devices left and applies to every device.",
+        "mssBlocked": "Set {{name}} uses MSS Clamping, which needs a source device or an IP, GeoIP or ASN target. Without its source devices the set has neither, and b4 cannot save it. Turn off MSS Clamping in the set or add such a target first.",
         "confirm": "Forget ({{count}})"
       }
     },

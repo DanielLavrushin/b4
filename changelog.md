@@ -20,7 +20,7 @@
 - FIXED: **In TUN mode, memory use grew with every new connection** - b4 kept a record of where each connection came from and never removed old records.
 - FIXED: **On a phone the set editor's Cancel and Save buttons covered the set name, and long section headers were cut off** - the buttons shared a row with the name field, which cannot shrink below its minimum width. Section headers were held to one line, so a header wider than its card ran past the edge. Russian headers, being longer, hit it first. [#448](https://github.com/DanielLavrushin/b4/issues/448), [#449](https://github.com/DanielLavrushin/b4/issues/449)
 - FIXED: **In the Russian interface the units on sliders and the name of a new set stayed in English** - sliders read `bytes`, `ms` and `sec`, and a new set was named `Set 5`. In both languages the SYN Fake TTL slider showed its value in milliseconds, although the setting counts hops rather than time. [#450](https://github.com/DanielLavrushin/b4/issues/450)
-- FIXED: **A device without a name vanished from the device lists when it went offline, while b4 kept its selection and MSS value** - this hit the list under Settings, Core, Devices and a set's Source Devices list. Such a device still counted as selected but could not be seen or unselected on its own.
+- FIXED: **A device without a name vanished from the device lists when it went offline, while b4 kept its selection and MSS value** - this hit the list under Settings, Core, Devices and a set's Source Devices list. Such a device still counted as selected but could not be seen or unselected on its own. In a set's list, a device whose MAC address was stored in lowercase also showed as not selected.
 
 ## [1.87.0] - 2026-10-17
 

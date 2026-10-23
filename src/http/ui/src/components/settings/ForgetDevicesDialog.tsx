@@ -3,7 +3,7 @@ import { Box, Button, Checkbox, Stack, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { B4Alert, B4Dialog } from "@b4.elements";
 import { DeleteIcon } from "@b4.icons";
-import { B4Config } from "@models/config";
+import { B4Config, B4SetConfig } from "@models/config";
 
 interface ForgetCandidate {
   mac: string;
@@ -31,15 +31,19 @@ const filterLosesEveryDevice = (config: B4Config, drop: Set<string>) => {
 
 const setsLeftWithoutDevices = (config: B4Config, drop: Set<string>) =>
   config.sets.filter((s) => {
-    const macs = (s.targets.source_devices ?? []).filter(
-      (m) => m.trim() !== "",
-    );
+    const macs = s.targets.source_devices ?? [];
     return (
       !s.targets.source_devices_exclude &&
       macs.length > 0 &&
       macs.every((m) => drop.has(macKey(m)))
     );
   });
+
+const clampsWithoutAddressTargets = (s: B4SetConfig) =>
+  !!s.mss_clamp?.enabled &&
+  (s.targets.ip ?? []).length === 0 &&
+  (s.targets.geoip_categories ?? []).length === 0 &&
+  (s.targets.asns ?? []).length === 0;
 
 export const ForgetDevicesDialog = ({
   open,
@@ -54,7 +58,11 @@ export const ForgetDevicesDialog = ({
   );
   const several = candidates.length > 1;
   const picked = candidates.filter((c) => checked.has(macKey(c.mac)));
-  const widenedSets = setsLeftWithoutDevices(config, checked);
+  const emptiedSets = setsLeftWithoutDevices(config, checked);
+  const blockedSets = emptiedSets.filter(clampsWithoutAddressTargets);
+  const widenedSets = emptiedSets.filter(
+    (s) => !clampsWithoutAddressTargets(s),
+  );
 
   const toggle = (key: string) =>
     setChecked((prev) => {
@@ -114,7 +122,7 @@ export const ForgetDevicesDialog = ({
           <Box sx={{ flex: 1 }} />
           <Button
             variant="contained"
-            disabled={picked.length === 0}
+            disabled={picked.length === 0 || blockedSets.length > 0}
             onClick={() => onForget(picked.map((c) => c.mac))}
           >
             {t("settings.Devices.forgetDialog.confirm", {
@@ -167,6 +175,11 @@ export const ForgetDevicesDialog = ({
         })}
       </Stack>
 
+      {blockedSets.map((s) => (
+        <B4Alert key={s.id} noWrapper severity="error" sx={{ mt: 2 }}>
+          {t("settings.Devices.forgetDialog.mssBlocked", { name: s.name })}
+        </B4Alert>
+      ))}
       {filterLosesEveryDevice(config, checked) && (
         <B4Alert noWrapper severity="warning" sx={{ mt: 2 }}>
           {t("settings.Devices.forgetDialog.filterWarning")}
