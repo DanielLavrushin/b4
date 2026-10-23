@@ -27,6 +27,7 @@ import { useTranslation } from "react-i18next";
 interface Props {
   lines: string[];
   deviceMap: Record<string, string>;
+  vendorMap: Record<string, string>;
   ipToMac: Record<string, string>;
   paused: boolean;
   onTogglePause: () => void;
@@ -49,7 +50,7 @@ const getGroupFieldValue = (g: EnrichedGroup, field: string): string => {
       return g.asnName?.toLowerCase() || "";
     case "alias":
     case "device":
-      return `${g.deviceName || ""} ${g.deviceIp || ""} ${g.mac || ""}`.toLowerCase();
+      return `${g.deviceLabel || ""} ${g.deviceIp || ""} ${g.mac || ""}`.toLowerCase();
     case "domain":
       return g.domain.toLowerCase();
     case "destination":
@@ -73,7 +74,7 @@ const getGroupSearchableValues = (g: EnrichedGroup): (string | null)[] => [
   g.asnName,
   g.hostSet,
   g.ipSet,
-  g.deviceName,
+  g.deviceLabel,
   g.deviceIp,
   g.mac,
   g.protocol,
@@ -87,6 +88,7 @@ const MAC_PATTERN = /^[0-9a-f]{2}([:-][0-9a-f]{2}){5}$/i;
 
 export const UNMATCHED_PARAM = "unmatched";
 export const DEVICE_PARAM = "device";
+export const DEVICE_IP_PARAM = "ip";
 export const WINDOW_PARAM = "window";
 
 export const normalizeDeviceParam = (value: string): string => {
@@ -124,6 +126,7 @@ const loadAggSort = (): { column: AggSortColumn | null; direction: SortDirection
 export const AggregatedView = ({
   lines,
   deviceMap,
+  vendorMap,
   ipToMac,
   paused,
   onTogglePause,
@@ -156,6 +159,7 @@ export const AggregatedView = ({
   }
   const unmatchedOnly = searchParams.get(UNMATCHED_PARAM) === "1";
   const selectedMac = deviceFromParams(searchParams);
+  const fallbackIp = searchParams.get(DEVICE_IP_PARAM);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const setParam = useCallback(
@@ -179,8 +183,18 @@ export const AggregatedView = ({
   );
 
   const setSelectedMac = useCallback(
-    (mac: string | null) => setParam(DEVICE_PARAM, mac),
-    [setParam],
+    (mac: string | null) =>
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (mac === null) next.delete(DEVICE_PARAM);
+          else next.set(DEVICE_PARAM, mac);
+          next.delete(DEVICE_IP_PARAM);
+          return next;
+        },
+        { replace: true },
+      ),
+    [setSearchParams],
   );
   const isCompact = useMediaQuery(theme.breakpoints.down("md"));
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -231,12 +245,15 @@ export const AggregatedView = ({
     });
   }, []);
 
-  const state = useConnectionGroups(lines, deviceMap, paused, ipToMac);
+  const state = useConnectionGroups(lines, deviceMap, paused, ipToMac, vendorMap);
 
   const selectedDevice = useMemo(() => {
     if (selectedMac === null || state.devices.some((d) => d.mac === selectedMac)) return selectedMac;
-    return state.devices.find((d) => d.ip === selectedMac)?.mac ?? selectedMac;
-  }, [selectedMac, state.devices]);
+    const holder = state.devices.find((d) => d.ip === selectedMac);
+    if (holder) return holder.mac;
+    if (fallbackIp && state.devices.some((d) => d.mac === fallbackIp)) return fallbackIp;
+    return selectedMac;
+  }, [selectedMac, fallbackIp, state.devices]);
 
   const groups = useMemo(
     () =>

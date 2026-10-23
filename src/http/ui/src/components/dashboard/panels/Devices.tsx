@@ -58,7 +58,7 @@ const DeviceRow = memo(function DeviceRow(props: DeviceRowProps) {
       <Link
         component={RouterLink}
         underline="hover"
-        to={deviceTrafficLink(entry.key)}
+        to={deviceTrafficLink(entry.key, entry.ip)}
         sx={{
           ...ellipsisSx,
           fontSize: 13,

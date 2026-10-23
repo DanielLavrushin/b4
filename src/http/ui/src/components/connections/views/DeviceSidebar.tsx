@@ -37,11 +37,11 @@ const loadDeviceSort = (): DeviceSort => {
 };
 
 const nameTier = (d: EnrichedDevice): number => {
-  if (d.deviceName) return 0;
+  if (d.deviceName || d.deviceVendor) return 0;
   return d.ip ? 1 : 2;
 };
 
-const deviceLabel = (d: EnrichedDevice): string => d.deviceName || d.ip || d.mac;
+const deviceLabel = (d: EnrichedDevice): string => d.deviceLabel;
 
 const primaryOrder = (sort: DeviceSort, a: EnrichedDevice, b: EnrichedDevice): number => {
   if (sort === "recent") return b.lastSeen - a.lastSeen;

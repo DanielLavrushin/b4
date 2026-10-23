@@ -17,7 +17,6 @@ import {
   asnLabel,
   asnStorage,
   stripPort,
-  resolveDeviceName,
   localizeApiError,
 } from "@utils";
 import { colors } from "@design";
@@ -135,14 +134,29 @@ export function ConnectionsPage() {
   const deviceMap = useMemo(() => {
     const map: Record<string, string> = {};
     for (const d of networkDevices?.devices || []) {
-      const name = resolveDeviceName(d);
-      map[d.mac.toUpperCase().replaceAll("-", ":")] = name === d.mac || name === d.ip ? "" : name;
+      map[d.mac.toUpperCase().replaceAll("-", ":")] = d.alias || d.hostname || "";
     }
     for (const ip of networkDevices?.router_ips || []) {
       map[ip] = t("connections.aggregated.router");
     }
     return { ...map, ...configDeviceNames };
   }, [networkDevices, configDeviceNames, t]);
+
+  const vendorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const d of networkDevices?.devices || []) {
+      if (d.vendor && d.vendor !== "Private") map[d.mac.toUpperCase().replaceAll("-", ":")] = d.vendor;
+    }
+    return map;
+  }, [networkDevices]);
+
+  const rawDeviceMap = useMemo(() => {
+    const map: Record<string, string> = { ...vendorMap };
+    for (const [mac, name] of Object.entries(deviceMap)) {
+      if (name) map[mac] = name;
+    }
+    return map;
+  }, [deviceMap, vendorMap]);
 
   const fetchSets = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -375,6 +389,7 @@ export function ConnectionsPage() {
           <AggregatedView
             lines={domains}
             deviceMap={deviceMap}
+            vendorMap={vendorMap}
             ipToMac={ipToMac}
             paused={pauseDomains}
             onTogglePause={() => setPauseDomains(!pauseDomains)}
@@ -395,7 +410,7 @@ export function ConnectionsPage() {
         ) : (
           <RawView
             entries={parsedDomains}
-            deviceMap={deviceMap}
+            deviceMap={rawDeviceMap}
             paused={pauseDomains}
             onTogglePause={() => setPauseDomains(!pauseDomains)}
             showAll={showAll}

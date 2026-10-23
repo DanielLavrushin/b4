@@ -42,5 +42,5 @@ export function macDeviceLabel(
   };
 }
 
-export const deviceTrafficLink = (key: string): string =>
-  `/traffic?device=${encodeURIComponent(key)}`;
+export const deviceTrafficLink = (key: string, ip = ""): string =>
+  `/traffic?device=${encodeURIComponent(key)}${ip ? `&ip=${encodeURIComponent(ip)}` : ""}`;
