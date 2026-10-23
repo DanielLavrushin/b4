@@ -58,14 +58,16 @@ A large network expands into thousands of prefixes, which costs memory on a smal
 
 The **Source Devices** sub-tab limits the set to traffic from selected devices. [Applying b4 to selected devices](../guides/devices.md) shows the setup.
 
-![The Source Devices sub-tab with two devices selected](/img/targets/20260418234934.png)
+![The Source Devices sub-tab with two devices selected, one of them offline](/img/targets/20261023183500.png)
 
 | Field | What it does | Default |
 | --- | --- | --- |
-| Device table | The devices on the network, with their MAC address, IP address and name. The set applies to the traffic of the selected ones. | None selected |
+| Device table | The devices with their MAC address, IP address and name. **offline** marks a device not on the network now. The set applies to the traffic of the selected ones. | None selected |
 | **All devices except selected** | Applies the set to every device except the selected ones. | Off |
 
 With no device selected, the set applies to all traffic. A set limited to devices takes priority over a set without devices that targets the same site.
+
+A device that has left the network for good is removed from this set by clearing its checkbox, or from every set by [forgetting it](../settings/core.md#device-table) under **Settings > Core > Devices**.
 
 Devices found in the router's ARP table are matched by their MAC address. A device added by hand has no MAC address on the network, so it is matched by the IP address entered for it. Such a device needs a fixed or reserved address, and it cannot be matched when a router between it and b4 replaces its source address. Without a working ARP table, the tab says so, and filtering by source device does not work.
 
