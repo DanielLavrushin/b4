@@ -286,8 +286,7 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 		Annotations: mcpDestructive,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpEditTargetsIn) (*mcp.CallToolResult, mcpEditTargetsOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
-			return nil, mcpEditTargetsOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
+			return nil, mcpEditTargetsOut{}, errMCPWritesOff
 		}
 
 		kind := strings.ToLower(strings.TrimSpace(in.Kind))

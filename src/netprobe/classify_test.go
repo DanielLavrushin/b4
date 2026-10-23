@@ -140,3 +140,32 @@ func TestBlockPageRedirectMustLeaveTheSite(t *testing.T) {
 		}
 	}
 }
+
+func TestSameSiteComparesRegistrableDomains(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"youtube.com", "www.youtube.com", true},
+		{"www.wikipedia.org", "wikipedia.org", true},
+		{"music.youtube.com", "consent.youtube.com", true},
+		{"mail.google.com", "accounts.google.com", true},
+		{"YouTube.com", "www.youtube.com.", true},
+		{"bbc.co.uk", "www.bbc.co.uk", true},
+		{"twitter.com", "x.com", false},
+		{"youtu.be", "www.youtube.com", false},
+		{"notion.so", "www.notion.com", false},
+		{"alice.github.io", "bob.github.io", false},
+		{"bbc.co.uk", "co.uk", false},
+		{"203.0.113.5", "203.0.113.5", true},
+		{"example.com", "203.0.113.5", false},
+		{"example.com", "10.1.2.3", false},
+		{"example.com", "", false},
+		{"", "", false},
+	}
+	for _, c := range cases {
+		if got := SameSite(c.a, c.b); got != c.want {
+			t.Errorf("SameSite(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+}

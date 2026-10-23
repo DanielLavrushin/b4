@@ -54,7 +54,14 @@ func IsBlockPageRedirectFrom(origin, target *url.URL) bool {
 	if origin == nil {
 		return true
 	}
-	return siteOf(origin.Hostname()) != siteOf(target.Hostname())
+	return !SameSite(origin.Hostname(), target.Hostname())
+}
+
+func SameSite(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	return siteOf(a) == siteOf(b)
 }
 
 func siteOf(host string) string {

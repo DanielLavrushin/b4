@@ -501,7 +501,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_status",
 		Title:       "B4 status",
-		Description: "High-level health of the running b4 daemon: version, packet capture engine (nfqueue or tun), firewall backend, how many strategy sets exist and are enabled, which subsystems are on, process uptime and connections counted. Call this first when diagnosing, and whenever you are unsure whether b4 can do something: it reports which capabilities are switched on for you, so an ability you have no tool for reads as gated rather than missing. 'connections' counts each flow once since 'counters_since' (b4_metrics says what counts), not open connections.",
+		Description: "High-level health of the running b4 daemon: version, packet capture engine (nfqueue or tun), firewall backend, how many strategy sets exist and are enabled, which subsystems are on, process uptime and connections counted. Call this first when diagnosing, and whenever you are unsure whether b4 can do something: it reports which capabilities are switched on in b4, so an ability you have no tool for reads as gated rather than missing. 'connections' counts each flow once since 'counters_since' (b4_metrics says what counts), not open connections.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpStatusOut, error) {
 		cfg := api.getCfg()
@@ -907,9 +907,25 @@ func mcpRelatedTopics(keys []string, want string) []string {
 	return nil
 }
 
-const mcpProbesOffInstruction = "'Allow active probes' is off, so two things b4 CAN do are not available to you here: " +
+const (
+	mcpSwitchWhere     = "in b4's own web interface (Settings -> Integrations -> MCP server), not in the AI app or the IDE"
+	mcpSwitchRetry     = "A switch there takes effect as soon as the user clicks Save Changes; then retry the call - b4 needs no restart"
+	mcpSwitchReconnect = "A switch there takes effect as soon as the user clicks Save Changes, and b4 needs no restart, but an AI app that is already connected, " +
+		"such as the one you run in, keeps the tool list it fetched earlier: the tools a switch adds show up once the user reconnects that app to this MCP server"
+	mcpStaleToolList = "If your tool list lacks a tool for a capability that is on, the AI app most likely fetched the list before that switch was turned on: " +
+		"ask the user to reconnect the AI app to this MCP server, which fetches the current list"
+)
+
+func mcpNeedsSwitch(names string) string {
+	return fmt.Sprintf("%s, which the user turns on %s. %s", names, mcpSwitchWhere, mcpSwitchRetry)
+}
+
+const mcpProbesOffInstruction = "'Allow active probes' is switched off in b4, so this MCP server does not offer two things b4 CAN do: " +
 	"fetching a domain to see whether it actually loads, and running a discovery search that brute-forces bypass strategies until one works. " +
-	"If the user asks for either, say b4 supports it and that enabling 'Allow active probes' under Settings -> Integrations -> MCP server would let you do it - do not conclude the feature does not exist."
+	"If the user asks for either, say b4 supports it and that the user can allow it by turning on 'Allow active probes' " + mcpSwitchWhere +
+	" - do not conclude the feature does not exist."
+
+const mcpWritesOffInstruction = "If the user wants you to make changes yourself, that switch is " + mcpSwitchWhere + "."
 
 func mcpCapabilityNote(writes, probes bool) string {
 	var off []string
@@ -920,10 +936,15 @@ func mcpCapabilityNote(writes, probes bool) string {
 		off = append(off, "testing whether a domain loads, and running a discovery search for a working bypass strategy ('Allow active probes')")
 	}
 	if len(off) == 0 {
-		return "b4 supports everything this server exposes: reading, changing settings, testing a domain and running discovery"
+		return "b4 supports everything this server exposes: reading, changing settings, testing a domain and running discovery. " + mcpStaleToolList
 	}
-	return "b4 SUPPORTS these, but they are switched off for this connection so no tool for them is offered: " +
-		strings.Join(off, "; ") + ". If the user asks for one, say b4 can do it and name the setting under Settings -> Integrations -> MCP server - do not tell them the feature does not exist."
+	note := "b4 SUPPORTS these, but they are switched off in b4's own settings, so no tool for them is offered: " +
+		strings.Join(off, "; ") + ". If the user asks for one, say b4 can do it and that its switch is " + mcpSwitchWhere +
+		" - do not tell them the feature does not exist. " + mcpSwitchReconnect
+	if writes || probes {
+		note += ". " + mcpStaleToolList
+	}
+	return note
 }
 
 func mcpCapabilityInstruction(caps mcpCapabilities) string {
@@ -931,11 +952,14 @@ func mcpCapabilityInstruction(caps mcpCapabilities) string {
 	case caps.Writes && caps.Probes:
 		return "A write reports the value read back after saving, so a 'changed: false' result means b4 did not accept the value."
 	case caps.Writes:
-		return "A write reports the value read back after saving, so a 'changed: false' result means b4 did not accept the value. " + mcpProbesOffInstruction
+		return "A write reports the value read back after saving, so a 'changed: false' result means b4 did not accept the value. " +
+			mcpProbesOffInstruction + " " + mcpSwitchReconnect + "."
 	case caps.Probes:
-		return "This server is read-only apart from probing: 'Allow configuration changes' is off, so report what should change rather than offering to change it."
+		return "This server is read-only apart from probing: 'Allow configuration changes' is off, so report what should change rather than offering to change it. " +
+			mcpWritesOffInstruction + " " + mcpSwitchReconnect + "."
 	default:
-		return "This server is read-only: 'Allow configuration changes' is off, so report what should change rather than offering to change it. " + mcpProbesOffInstruction
+		return "This server is read-only: 'Allow configuration changes' is off, so report what should change rather than offering to change it. " +
+			mcpWritesOffInstruction + " " + mcpProbesOffInstruction + " " + mcpSwitchReconnect + "."
 	}
 }
 

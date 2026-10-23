@@ -127,7 +127,8 @@ func mcpApplyAlias(canonical, raw string) (string, bool, error) {
 func mcpDeniedPathHint(path string) string {
 	switch {
 	case strings.HasPrefix(path, "system.web_server.mcp"):
-		return "the MCP server's own settings are never writable, so the AI cannot widen its own permissions"
+		return "the MCP server's own settings are never writable, so the AI cannot widen its own permissions; " +
+			"the switches 'Allow configuration changes' and 'Allow active probes' are " + mcpSwitchWhere
 	case strings.HasPrefix(path, "system.web_server"):
 		return "changing the web server would move or lock the interface used to undo the change"
 	case strings.HasPrefix(path, "system.tables.dscp"):
@@ -187,13 +188,14 @@ func mcpStripDerivedTargets(c *config.Config) {
 var (
 	errMCPConfigMoved = errors.New("the configuration changed while this change was prepared (by the watchdog, the web interface or another tool); nothing was written, read the current value and retry")
 	errMCPRevertStale = errors.New("the configuration changed since the change being undone")
+	errMCPWritesOff   = errors.New("configuration writes are disabled: they need " + mcpNeedsSwitch("'Allow configuration changes'"))
 )
 
 type mcpProbesError struct{ what string }
 
 func (e *mcpProbesError) Error() string {
 	return fmt.Sprintf("this change would %s, which makes the router fetch sites on a timer. "+
-		"That needs allow_active_probes ('Allow active probes' under Settings -> Integrations -> MCP server); nothing was written", e.what)
+		"That needs allow_active_probes ('Allow active probes'), which the user turns on %s; nothing was written. %s", e.what, mcpSwitchWhere, mcpSwitchRetry)
 }
 
 func (api *API) mcpSave(oldCfg, newCfg *config.Config) error {
@@ -225,9 +227,18 @@ func mcpWithFieldReasons(err error) error {
 	return fmt.Errorf("%w: %s", err, strings.Join(reasons, "; "))
 }
 
+func mcpRevision(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	neutral := *cfg
+	neutral.System.WebServer.MCP = config.MCPConfig{}
+	return watchdog.ConfigRevision(&neutral)
+}
+
 func mcpRecordChange(c mcpChange, before, after *config.Config) {
-	c.PreRevision = watchdog.ConfigRevision(before)
-	c.PostRevision = watchdog.ConfigRevision(after)
+	c.PreRevision = mcpRevision(before)
+	c.PostRevision = mcpRevision(after)
 	mcpNoteWrite(c.Path, "MCP changed "+c.Path)
 	mcpStripDerivedTargets(c.Snapshot)
 	mcpHistory = append(mcpHistory, c)
@@ -843,8 +854,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		Annotations: mcpDestructive,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpSetValueIn) (*mcp.CallToolResult, mcpSetValueOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
-			return nil, mcpSetValueOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
+			return nil, mcpSetValueOut{}, errMCPWritesOff
 		}
 
 		canonical, setRef, err := parseMCPWritePath(in.Path)
@@ -969,8 +979,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		Annotations: mcpDestructive,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRevertOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
-			return nil, mcpRevertOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
+			return nil, mcpRevertOut{}, errMCPWritesOff
 		}
 
 		mcpWriteMu.Lock()
@@ -988,26 +997,34 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			api.loadTargetsForSetCached(set)
 		}
 		var oldCfg *config.Config
-		err := api.saveAndPushConfigIf(last.Snapshot, func(current *config.Config) error {
-			if last.PostRevision != "" && watchdog.ConfigRevision(current) != last.PostRevision {
-				return errMCPRevertStale
+		err := api.updateAndPushConfig(func(current *config.Config) (*config.Config, error) {
+			live := current.System.WebServer.MCP
+			if !live.Enabled || !live.AllowWrites {
+				return nil, errMCPWritesOff
+			}
+			if last.PostRevision != "" && mcpRevision(current) != last.PostRevision {
+				return nil, errMCPRevertStale
 			}
 			if err := mcpExposureRefusal(current, last.Snapshot); err != nil {
-				return err
+				return nil, err
 			}
-			if !current.System.WebServer.MCP.AllowActiveProbes {
+			if !live.AllowActiveProbes {
 				if what := mcpStartsProbes(last.Snapshot, current); what != "" {
-					return &mcpProbesError{what: what}
+					return nil, &mcpProbesError{what: what}
 				}
 			}
+			live.AllowedOrigins = append([]string(nil), live.AllowedOrigins...)
+			last.Snapshot.System.WebServer.MCP = live
 			oldCfg = current
-			return nil
+			return last.Snapshot, nil
 		})
 		if err != nil {
 			mcpStripDerivedTargets(last.Snapshot)
 			mcpHistory = append(mcpHistory, last)
 			var probes *mcpProbesError
 			switch {
+			case errors.Is(err, errMCPWritesOff):
+				return nil, mcpRevertOut{}, errMCPWritesOff
 			case errors.Is(err, errMCPRevertStale):
 				return nil, mcpRevertOut{}, fmt.Errorf(
 					"refusing to undo %s: the configuration was changed after that change (by the watchdog, the web interface or another tool), "+
@@ -1017,13 +1034,13 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			case errors.As(err, &probes):
 				return nil, mcpRevertOut{}, fmt.Errorf(
 					"refusing to undo %s: it would %s, which makes the router fetch sites on a timer. "+
-						"That needs 'Allow active probes' under Settings -> Integrations -> MCP server; nothing was changed and the change stays on the undo list",
-					last.Path, probes.what)
+						"That needs 'Allow active probes', which the user turns on %s; nothing was changed and the change stays on the undo list. %s",
+					last.Path, probes.what, mcpSwitchWhere, mcpSwitchRetry)
 			}
 			return nil, mcpRevertOut{}, fmt.Errorf("could not restore the previous configuration: %w", mcpWithFieldReasons(err))
 		}
 		if n := len(mcpHistory); n > 0 && mcpHistory[n-1].PostRevision == last.PreRevision {
-			mcpHistory[n-1].PostRevision = watchdog.ConfigRevision(last.Snapshot)
+			mcpHistory[n-1].PostRevision = mcpRevision(last.Snapshot)
 		}
 		api.applyRuntimeChanges(last.Snapshot, oldCfg)
 		api.PerformSoftRestart(last.Snapshot, oldCfg)

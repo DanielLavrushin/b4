@@ -394,6 +394,40 @@ func TestMCPSetWatchdogEditsTheSet(t *testing.T) {
 	}
 }
 
+func TestMCPRevertWorksOnceTheUserTurnsTheProbeSwitchOn(t *testing.T) {
+	cfg := mcpWatchdogCfg(true, false)
+	cfg.Sets[0].Discovery.Watchdog = true
+	mcpResetHistory()
+	t.Cleanup(mcpResetHistory)
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	decodeManageSet(t, callManageSet(t, session, ctx, map[string]any{"action": "set_enabled", "set": "video", "enabled": "false"}))
+	if api.getCfg().GetSetById("set-1").Enabled {
+		t.Fatal("precondition: b4_manage_set disabled the watched set")
+	}
+	if res := callRevert(t, session); !res.IsError || !strings.Contains(mcpErrorText(res), "retry the call") {
+		t.Fatalf("with probes off the undo restarts a watchdog and is refused, with a retry once the switch is on: %s", mcpErrorText(res))
+	}
+
+	saved := api.getCfg().Clone()
+	saved.System.WebServer.MCP.AllowActiveProbes = true
+	saved.System.WebServer.MCP.AllowedOrigins = []string{"http://b4.lan"}
+	api.cfgPtr.Store(saved)
+
+	res := callRevert(t, session)
+	if res.IsError {
+		t.Fatalf("the user's change to the MCP switches is one an undo never overwrites, so it must not make the undo stale: %s", mcpErrorText(res))
+	}
+	live := api.getCfg()
+	if !live.GetSetById("set-1").Enabled {
+		t.Error("the undo must re-enable the set, which b4_watchdog cannot do for a disabled set")
+	}
+	if mcpCfg := live.System.WebServer.MCP; !mcpCfg.AllowActiveProbes || len(mcpCfg.AllowedOrigins) != 1 {
+		t.Errorf("the undo must keep the MCP settings the user saved after the change: %+v", mcpCfg)
+	}
+}
+
 func TestMCPRevertRefusesToStartProbesWithoutTheGate(t *testing.T) {
 	cfg := mcpWatchdogCfg(true, false)
 	cfg.Sets[0].Discovery.Watchdog = true
@@ -413,6 +447,9 @@ func TestMCPRevertRefusesToStartProbesWithoutTheGate(t *testing.T) {
 	}
 	if !res.IsError || !strings.Contains(mcpErrorText(res), "Allow active probes") {
 		t.Fatalf("undoing a disable turns the watchdog back on and needs the probe gate: %s", mcpErrorText(res))
+	}
+	if text := mcpErrorText(res); !strings.Contains(text, mcpSwitchWhere) || !strings.Contains(text, "retry the call") {
+		t.Errorf("the refusal must say where the switch is and that the undo can be retried once it is on: %s", text)
 	}
 	if api.getCfg().GetSetById("set-1").Discovery.Watchdog {
 		t.Error("the refused revert changed nothing")

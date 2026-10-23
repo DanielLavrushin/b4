@@ -157,8 +157,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 		Annotations: mcpDestructive,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpManageSetIn) (*mcp.CallToolResult, mcpManageSetOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
-			return nil, mcpManageSetOut{}, fmt.Errorf(
-				"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
+			return nil, mcpManageSetOut{}, errMCPWritesOff
 		}
 
 		action := strings.ToLower(strings.TrimSpace(in.Action))

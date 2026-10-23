@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"sort"
 	"strings"
 	"sync"
@@ -43,6 +44,9 @@ type mcpProbeResult struct {
 	Error     string  `json:"error,omitempty"`
 	KBPerSec  float64 `json:"kb_per_sec,omitempty"`
 	BytesRead int64   `json:"bytes_read,omitempty"`
+	answered  bool
+	redirect  string
+	status    int
 }
 
 type mcpProbeOut struct {
@@ -61,14 +65,19 @@ func probeDomain(ctx context.Context, cfg *config.Config, domain, mode string, t
 		opts.Mark = cfg.MainInjectedMark()
 	}
 	res, err := watchdog.ProbeHost(ctx, domain, opts)
+	return mcpProbeResultOf(domain, mode, res, err)
+}
+
+func mcpProbeResultOf(domain, mode string, res watchdog.CheckResult, err error) mcpProbeResult {
 	var priv *watchdog.ErrPrivateDestination
 	if errors.As(err, &priv) {
-		return mcpProbeResult{
-			Domain: domain, Mode: mode,
-			Verdict: string(netprobe.DomainDNSFake),
-			Error: fmt.Sprintf("every address %s resolves to is private or local (%s), so the name is sinkholed: "+
-				"the answer is being forged, and no packet strategy fixes that", domain, priv.Addr),
+		msg := fmt.Sprintf("every address %s resolves to is private or local (%s), so the name is sinkholed: "+
+			"the answer is being forged, and no packet strategy fixes that", domain, priv.Addr)
+		if priv.Host != "" && !strings.EqualFold(strings.TrimSuffix(priv.Host, "."), strings.TrimSuffix(domain, ".")) {
+			msg = fmt.Sprintf("%s redirects to %s, and every address %s resolves to is private or local (%s), so that name is sinkholed: "+
+				"its DNS answer is being forged, and no packet strategy fixes that", domain, priv.Host, priv.Host, priv.Addr)
 		}
+		return mcpProbeResult{Domain: domain, Mode: mode, Verdict: string(netprobe.DomainDNSFake), Error: msg}
 	}
 	if err != nil {
 		return mcpProbeResult{Domain: domain, Mode: mode, Error: err.Error()}
@@ -81,6 +90,9 @@ func probeDomain(ctx context.Context, cfg *config.Config, domain, mode string, t
 		Error:     res.Error,
 		KBPerSec:  res.Speed / 1024,
 		BytesRead: res.BytesRead,
+		answered:  res.Answered,
+		redirect:  res.RedirectTo,
+		status:    res.StatusCode,
 	}
 }
 
@@ -110,29 +122,110 @@ func mcpProbeTimeout(v int) time.Duration {
 	}
 }
 
+func mcpProbeAnswered(r *mcpProbeResult) bool {
+	return r.OK || r.answered
+}
+
+func mcpProbeUnfetched(r *mcpProbeResult) bool {
+	return !r.OK && !r.answered && r.Verdict == ""
+}
+
+func mcpProbeOffSite(domain string, r *mcpProbeResult) bool {
+	return r.Verdict == string(watchdog.VerdictRedirect) && r.redirect != "" && !netprobe.SameSite(domain, r.redirect)
+}
+
+func mcpProbeTestable(domain string, r *mcpProbeResult) bool {
+	if !mcpProbeOffSite(domain, r) {
+		return false
+	}
+	_, err := netip.ParseAddr(r.redirect)
+	return err != nil
+}
+
+func mcpProbeAnswer(domain string, r *mcpProbeResult) string {
+	switch {
+	case r.OK:
+		return "loads"
+	case r.Verdict == string(watchdog.VerdictRedirect) && r.redirect == "":
+		return "answers only with a redirect that names no host"
+	case mcpProbeTestable(domain, r):
+		return fmt.Sprintf("answers only with a redirect to %s, a different site, which the probe does not follow", r.redirect)
+	case mcpProbeOffSite(domain, r):
+		return fmt.Sprintf("answers only with a redirect to the bare address %s, which the probe does not follow", r.redirect)
+	case r.Verdict == string(watchdog.VerdictRedirect):
+		return fmt.Sprintf("answers only with redirects within the site, more than the %d the probe follows", watchdog.ProbeMaxRedirects)
+	}
+	return fmt.Sprintf("answers only with a short reply (HTTP %d, %d bytes), too little for the probe to count as a page", r.status, r.BytesRead)
+}
+
+func mcpProbeNext(domain string, r *mcpProbeResult) string {
+	switch {
+	case r.OK:
+		return ""
+	case mcpProbeTestable(domain, r):
+		return fmt.Sprintf("; test %s with b4_test_domain_now to see whether that site loads", r.redirect)
+	}
+	return ", so the probe cannot tell whether the site loads"
+}
+
+func mcpProbeSingleNote(domain, how string, r *mcpProbeResult) string {
+	switch {
+	case r.OK:
+		return fmt.Sprintf("%s loads %s", domain, how)
+	case mcpProbeUnfetched(r):
+		return fmt.Sprintf("%s was not fetched: %s", domain, r.Error)
+	case !r.answered:
+		return fmt.Sprintf("%s fails %s (%s)", domain, how, r.Verdict)
+	}
+	return fmt.Sprintf("%s, fetched %s, %s%s", domain, how, mcpProbeAnswer(domain, r), mcpProbeNext(domain, r))
+}
+
 func mcpProbeVerdictNote(domain string, through, baseline *mcpProbeResult) string {
 	switch {
 	case through == nil && baseline == nil:
 		return ""
 	case through == nil:
-		if baseline.OK {
-			return fmt.Sprintf("%s loads with b4 bypassed", domain)
-		}
-		return fmt.Sprintf("%s fails with b4 bypassed (%s)", domain, baseline.Verdict)
+		return mcpProbeSingleNote(domain, "with b4 bypassed", baseline)
 	case baseline == nil:
-		if through.OK {
-			return fmt.Sprintf("%s loads through b4", domain)
-		}
-		return fmt.Sprintf("%s fails through b4 (%s)", domain, through.Verdict)
-	case through.OK && !baseline.OK:
-		return fmt.Sprintf("%s is censored and b4's bypass is working: it fails without b4 (%s) and loads through it", domain, baseline.Verdict)
+		return mcpProbeSingleNote(domain, "through b4", through)
+	case mcpProbeUnfetched(through):
+		return fmt.Sprintf("%s was not fetched: %s", domain, through.Error)
+	case mcpProbeUnfetched(baseline):
+		return fmt.Sprintf("%s was not fetched: %s", domain, baseline.Error)
+	}
+	viaB4, bypassed := mcpProbeAnswered(through), mcpProbeAnswered(baseline)
+	dnsFake := string(netprobe.DomainDNSFake)
+	switch {
 	case through.OK && baseline.OK:
 		return fmt.Sprintf("%s loads either way, so nothing here is being blocked and no set is needed for it", domain)
-	case !through.OK && baseline.OK:
+	case through.OK && !bypassed:
+		return fmt.Sprintf("%s is censored and b4's bypass is working: it fails without b4 (%s) and loads through it", domain, baseline.Verdict)
+	case viaB4 && !bypassed:
+		return fmt.Sprintf("%s is censored and b4's bypass is working: it fails without b4 (%s), and through b4 it %s%s",
+			domain, baseline.Verdict, mcpProbeAnswer(domain, through), mcpProbeNext(domain, through))
+	case baseline.OK && !viaB4:
 		return fmt.Sprintf("%s loads with b4 bypassed but FAILS through b4 (%s) - a b4 setting is breaking it, not the censor", domain, through.Verdict)
-	default:
-		return fmt.Sprintf("%s fails both ways (%s through b4, %s bypassed), so this is not something a packet strategy fixes - the address itself may be blocked, or the site may be down", domain, through.Verdict, baseline.Verdict)
+	case bypassed && !viaB4:
+		return fmt.Sprintf("%s FAILS through b4 (%s), while with b4 bypassed it %s - a b4 setting is breaking it, not the censor",
+			domain, through.Verdict, mcpProbeAnswer(domain, baseline))
+	case through.Verdict == dnsFake && baseline.Verdict == dnsFake:
+		return fmt.Sprintf("%s fails both ways because the router gets a forged DNS answer for it (DNS_FAKE), which says nothing about whether the site itself is blocked or down; "+
+			"b4_find_bypass_strategy checks DNS before any strategy and can give the set it builds a resolver that answers truthfully", domain)
+	case !viaB4:
+		return fmt.Sprintf("%s fails both ways (%s through b4, %s bypassed), so whatever b4 does for it now does not help; "+
+			"if b4_find_bypass_strategy finds no working strategy for it either, this is not something a packet strategy fixes - "+
+			"the address itself may be blocked, or the site may be down", domain, through.Verdict, baseline.Verdict)
 	}
+	answer := mcpProbeAnswer(domain, through)
+	if answer == mcpProbeAnswer(domain, baseline) {
+		return fmt.Sprintf("%s answers either way, but %s%s", domain, strings.TrimPrefix(answer, "answers "), mcpProbeNext(domain, through))
+	}
+	next := ""
+	if mcpProbeTestable(domain, through) {
+		next = mcpProbeNext(domain, through)
+	}
+	return fmt.Sprintf("%s answers either way: through b4 it %s, and with b4 bypassed it %s%s",
+		domain, answer, mcpProbeAnswer(domain, baseline), next)
 }
 
 func (api *API) addMCPProbeTools(srv *mcp.Server) {
@@ -147,13 +240,13 @@ func (api *API) addMCPProbeTools(srv *mcp.Server) {
 		cfg := api.getCfg()
 		if !cfg.System.WebServer.MCP.AllowActiveProbes {
 			return nil, mcpProbeOut{}, fmt.Errorf(
-				"active probes are disabled: turn on 'Allow active probes' under Settings -> Integrations -> MCP server to let b4 fetch a domain on request")
+				"active probes are disabled: fetching a domain on request needs %s", mcpNeedsSwitch("'Allow active probes'"))
 		}
 
 		var domains []string
 		seen := map[string]bool{}
 		for _, raw := range strings.Split(in.Domain, ",") {
-			host := watchdog.ExtractDomain(strings.TrimSpace(raw))
+			host := strings.TrimSuffix(watchdog.ExtractDomain(strings.TrimSpace(raw)), ".")
 			if host == "" || seen[host] {
 				continue
 			}
@@ -171,6 +264,9 @@ func (api *API) addMCPProbeTools(srv *mcp.Server) {
 			if watchdog.IsReservedHost(host) {
 				return nil, mcpProbeOut{}, fmt.Errorf(
 					"%s is a private or local address: b4 probes the internet from the router, and fetching a LAN address would tell you about the network b4 runs on, not about censorship", host)
+			}
+			if err := watchdog.ValidateProbeHost(host); err != nil {
+				return nil, mcpProbeOut{}, err
 			}
 		}
 
@@ -301,16 +397,13 @@ func (api *API) mcpWatchdog(in mcpWatchdogIn) (*mcp.CallToolResult, mcpWatchdogO
 
 	mcpCfg := api.getCfg().System.WebServer.MCP
 	if mcpWatchdogEmitsTraffic(action) && !mcpCfg.AllowActiveProbes {
-		return nil, mcpWatchdogOut{}, fmt.Errorf(
-			"active probes are disabled: %s makes the router fetch a site, so it needs 'Allow active probes' under Settings -> Integrations -> MCP server. "+
-				"action=status reports the verdicts already recorded and needs no permission", action)
+		return nil, mcpWatchdogOut{}, mcpWatchdogProbesOff(action, mcpCfg.AllowWrites)
 	}
 	if action == "check" {
 		return api.mcpWatchdogCheck(in.Domain)
 	}
 	if !mcpCfg.AllowWrites {
-		return nil, mcpWatchdogOut{}, fmt.Errorf(
-			"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
+		return nil, mcpWatchdogOut{}, errMCPWritesOff
 	}
 
 	mcpWriteMu.Lock()
@@ -391,6 +484,15 @@ func (api *API) mcpWatchdog(in mcpWatchdogIn) (*mcp.CallToolResult, mcpWatchdogO
 		out.Note += ". While it is on, b4 may rewrite a set's strategy on its own when a watched domain keeps failing"
 	}
 	return nil, out, nil
+}
+
+func mcpWatchdogProbesOff(action string, writes bool) error {
+	names := "'Allow active probes'"
+	if !writes && action != "check" {
+		names = "'Allow active probes' and 'Allow configuration changes'"
+	}
+	return fmt.Errorf("active probes are disabled: %s makes the router fetch a site, so it needs %s. "+
+		"action=status reports the verdicts already recorded and needs no permission", action, mcpNeedsSwitch(names))
 }
 
 func mcpWatchdogEmitsTraffic(action string) bool {
@@ -545,7 +647,7 @@ func mcpForceCheckNote(name, outcome string, cleared bool) string {
 	if cleared {
 		note += ", its heal failures and any give-up"
 	} else {
-		note += "; a give-up and the heal failures stay, clearing them needs 'Allow configuration changes'"
+		note += "; a give-up and the heal failures stay, clearing them needs 'Allow configuration changes', which the user turns on " + mcpSwitchWhere
 	}
 	return note + "; call action=status again in a few seconds for the result"
 }
@@ -606,9 +708,7 @@ func (api *API) mcpWatchdogSet(action, ref string, in mcpWatchdogIn) (*mcp.CallT
 	}
 
 	if mcpWatchdogEmitsTraffic(action) && !mcpCfg.AllowActiveProbes {
-		return nil, mcpWatchdogOut{}, fmt.Errorf(
-			"active probes are disabled: %s makes the router fetch a site, so it needs 'Allow active probes' under Settings -> Integrations -> MCP server. "+
-				"action=status reports the verdicts already recorded and needs no permission", action)
+		return nil, mcpWatchdogOut{}, mcpWatchdogProbesOff(action, mcpCfg.AllowWrites)
 	}
 
 	if action == "check" {
@@ -625,8 +725,7 @@ func (api *API) mcpWatchdogSet(action, ref string, in mcpWatchdogIn) (*mcp.CallT
 	}
 
 	if !mcpCfg.AllowWrites {
-		return nil, mcpWatchdogOut{}, fmt.Errorf(
-			"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
+		return nil, mcpWatchdogOut{}, errMCPWritesOff
 	}
 
 	mcpWriteMu.Lock()

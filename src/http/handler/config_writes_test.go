@@ -364,6 +364,61 @@ func TestMCPRevertRefusesWhenTheConfigChangedSince(t *testing.T) {
 	}
 }
 
+func TestMCPRevertRechecksWritePermissionUnderTheConfigLock(t *testing.T) {
+	cfg := writableCfg(t)
+	t.Cleanup(mcpResetHistory)
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].tcp.seg2delay", "10"))
+
+	unlock := config.LockWrites()
+	type outcome struct {
+		res *mcp.CallToolResult
+		err error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_revert_last_change"})
+		done <- outcome{res, err}
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for mcpWriteMu.TryLock() {
+		mcpWriteMu.Unlock()
+		if time.Now().After(deadline) {
+			unlock()
+			t.Fatal("the undo never reached the write lock")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	off := api.getCfg().Clone()
+	off.System.WebServer.MCP.AllowWrites = false
+	api.cfgPtr.Store(off)
+	unlock()
+
+	got := <-done
+	if got.err != nil {
+		t.Fatal(got.err)
+	}
+	if !got.res.IsError || !strings.Contains(mcpErrorText(got.res), "Allow configuration changes") {
+		t.Fatalf("writes were turned off while the undo waited for the lock, so it must not write: %s", mcpErrorText(got.res))
+	}
+	if live := api.getCfg().Sets[0]; live.TCP.Seg2Delay != 10 {
+		t.Errorf("the refused undo changed seg2delay to %d", live.TCP.Seg2Delay)
+	}
+
+	on := api.getCfg().Clone()
+	on.System.WebServer.MCP.AllowWrites = true
+	api.cfgPtr.Store(on)
+	if res := callRevert(t, session); res.IsError {
+		t.Fatalf("the refusal kept the change on the undo list, so it can be retried once writes are back on: %s", mcpErrorText(res))
+	}
+	if live := api.getCfg().Sets[0]; live.TCP.Seg2Delay != 0 {
+		t.Errorf("the retried undo must restore seg2delay, got %d", live.TCP.Seg2Delay)
+	}
+}
+
 func TestMCPRevertWalksBackAcrossToolsAndStopsAtAForeignChange(t *testing.T) {
 	cfg := mcpWatchdogCfg(true, true)
 	mcpResetHistory()
