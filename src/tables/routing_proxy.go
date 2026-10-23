@@ -475,31 +475,37 @@ const quicRejectPort = 443
 
 func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, gate routeDeviceGate, sources []string) error {
 	out := routeQUICOutChain(st)
+	chains := []string{st.chainQUIC}
+	if out != "" {
+		chains = append(chains, out)
+	}
 	switch be.name() {
 	case backendNFTables:
 		if err := ensureBlockBaseNft(); err != nil {
 			return err
 		}
-		if err := routeFillQUICChainNft(be, cfg, st, st.chainQUIC, gate, sources); err != nil {
-			return err
-		}
-		ensureBlockJumpNft(routeNftBlockFwd, st.chainQUIC, gate)
-		if out != "" {
-			if err := routeFillQUICChainNft(be, cfg, st, out, routeDeviceGate{}, nil); err != nil {
+		for _, chain := range chains {
+			if err := be.ensureChain(chain, true); err != nil {
 				return err
 			}
+		}
+		routeFillQUICChainNft(be, cfg, st, st.chainQUIC, gate, sources)
+		ensureBlockJumpNft(routeNftBlockFwd, st.chainQUIC, gate)
+		if out != "" {
+			routeFillQUICChainNft(be, cfg, st, out, routeDeviceGate{}, nil)
 			ensureBlockJumpNft(routeNftBlockOut, out, routeDeviceGate{})
 		}
 	default:
 		legacy := isLegacyIptBackend(be)
-		if err := routeFillQUICChainIpt(be, cfg, st, st.chainQUIC, gate, sources, legacy); err != nil {
-			return err
-		}
-		ensureBlockJumpIpt("FORWARD", st.chainQUIC, legacy, true, gate)
-		if out != "" {
-			if err := routeFillQUICChainIpt(be, cfg, st, out, routeDeviceGate{}, nil, legacy); err != nil {
+		for _, chain := range chains {
+			if err := createBlockChainIpt(chain, legacy); err != nil {
 				return err
 			}
+		}
+		routeFillQUICChainIpt(be, cfg, st, st.chainQUIC, gate, sources, legacy)
+		ensureBlockJumpIpt("FORWARD", st.chainQUIC, legacy, true, gate)
+		if out != "" {
+			routeFillQUICChainIpt(be, cfg, st, out, routeDeviceGate{}, nil, legacy)
 			ensureBlockJumpIpt("OUTPUT", out, legacy, false, routeDeviceGate{})
 		}
 	}
@@ -513,10 +519,7 @@ func routeQUICOutChain(st routeState) string {
 	return st.chainQOut
 }
 
-func routeFillQUICChainNft(be routeBackend, cfg *config.Config, st routeState, chain string, gate routeDeviceGate, sources []string) error {
-	if err := be.ensureChain(chain, true); err != nil {
-		return err
-	}
+func routeFillQUICChainNft(be routeBackend, cfg *config.Config, st routeState, chain string, gate routeDeviceGate, sources []string) {
 	be.flushChain(chain, true)
 	routeSelfDialBypass(be, cfg, chain)
 	routeAddBlacklistGate(be, "filter", chain, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
@@ -526,13 +529,10 @@ func routeFillQUICChainNft(be routeBackend, cfg *config.Config, st routeState, c
 	if cfg.Queue.IPv6Enabled {
 		addQUICRejectRuleNft(chain, true, st.setV6, sources)
 	}
-	return nil
 }
 
-func routeFillQUICChainIpt(be routeBackend, cfg *config.Config, st routeState, chain string, gate routeDeviceGate, sources []string, legacy bool) error {
-	if err := ensureBlockChainIpt(chain, legacy); err != nil {
-		return err
-	}
+func routeFillQUICChainIpt(be routeBackend, cfg *config.Config, st routeState, chain string, gate routeDeviceGate, sources []string, legacy bool) {
+	flushBlockChainIpt(chain, legacy)
 	for _, m := range quicBypassMarks(cfg) {
 		addQUICBypassRuleIpt(chain, m, legacy)
 	}
@@ -543,7 +543,6 @@ func routeFillQUICChainIpt(be routeBackend, cfg *config.Config, st routeState, c
 	if cfg.Queue.IPv6Enabled {
 		addQUICRejectRuleIpt(true, chain, st.setV6, sources, legacy)
 	}
-	return nil
 }
 
 func routeCleanupQUICReject(be routeBackend, st routeState) {

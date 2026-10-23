@@ -150,6 +150,14 @@ func iptBlockCmd(v6, legacy bool) string {
 }
 
 func ensureBlockChainIpt(chain string, legacy bool) error {
+	if err := createBlockChainIpt(chain, legacy); err != nil {
+		return err
+	}
+	flushBlockChainIpt(chain, legacy)
+	return nil
+}
+
+func createBlockChainIpt(chain string, legacy bool) error {
 	ipt4 := iptBlockCmd(false, legacy)
 	for _, v6 := range []bool{false, true} {
 		cmd := iptBlockCmd(v6, legacy)
@@ -163,9 +171,18 @@ func ensureBlockChainIpt(chain string, legacy bool) error {
 			}
 			log.Tracef("routing: %s -N %s in filter failed (non-fatal): %s", cmd, chain, strings.TrimSpace(out))
 		}
-		runLogged("routing: flush block chain "+chain, cmd, "-w", "-t", "filter", "-F", chain)
 	}
 	return nil
+}
+
+func flushBlockChainIpt(chain string, legacy bool) {
+	for _, v6 := range []bool{false, true} {
+		cmd := iptBlockCmd(v6, legacy)
+		if !hasBinary(cmd) {
+			continue
+		}
+		runLogged("routing: flush block chain "+chain, cmd, "-w", "-t", "filter", "-F", chain)
+	}
 }
 
 func flushDeleteBlockChainIpt(chain string, legacy bool) {

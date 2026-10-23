@@ -363,6 +363,84 @@ func TestAProxySetWhoseQUICRejectFailsTakesBackItsRules(t *testing.T) {
 	}
 }
 
+func (f *revertFirewall) filterRules(be routeBackend, chains ...string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for _, chain := range chains {
+		if be.name() == backendNFTables {
+			for _, r := range f.nft[chain] {
+				out = append(out, chain+" "+r.text)
+			}
+			continue
+		}
+		for _, cmd := range []string{backendIPTables, backendIP6Tables} {
+			for _, rule := range f.ipt[cmd+"|filter|"+chain] {
+				out = append(out, cmd+" "+chain+" "+strings.Join(rule, " "))
+			}
+		}
+	}
+	return out
+}
+
+func TestARebuildThatFailsToAddTheRouterQUICChainKeepsTheOldRefusal(t *testing.T) {
+	for _, engine := range []string{backendNFTables, backendIPTables} {
+		t.Run(engine, func(t *testing.T) {
+			familyResetGlobals(t)
+			localGuardReset(t)
+			fw := stubRevertFirewall(t)
+			stubBinaries(t, "ip", backendIPTables, backendIP6Tables, "ipset")
+			prevSysctl := writeSysctl
+			t.Cleanup(func() { writeSysctl = prevSysctl })
+			writeSysctl = func(path, value string) {}
+			cfg := familyTestConfig(true, true)
+			set := orderTestSet("quicscope", config.RoutingModeProxy, nil)
+			set.Routing.SourceInterfaces = []string{"br0"}
+			cfg.Sets = []*config.SetConfig{set}
+			st := proxyGuardState(0x5300)
+			st.setID, st.ipv6 = set.Id, true
+			st.setV4, st.setV6 = routeBuildSetNames(set.Id)
+			st.chainPre, st.chainOut, st.chainSNAT = routeBuildChainNames(set.Id)
+			st.chainQUIC = routeBuildQUICChainName(set.Id)
+			st.chainQOut = routeBuildQUICOutChainName(set.Id)
+			st.quicReject, st.srcScoped = true, true
+			var be routeBackend = &routeNftBackend{}
+			parent := routeNftBlockFwd
+			if engine == backendIPTables {
+				be, parent = &routeIptBackend{}, "FORWARD"
+			}
+
+			refuse := false
+			firewall := run
+			run = func(args ...string) (string, error) {
+				line := strings.Join(args, " ")
+				if refuse && (strings.Contains(line, "add chain inet "+routeNftTable+" "+st.chainQOut) || strings.Contains(line, "-N "+st.chainQOut)) {
+					return "Error: Could not process rule: Operation not supported", errors.New("exit status 1")
+				}
+				return firewall(args...)
+			}
+
+			if err := routeEnsureProxyRule(be, cfg, set, st, []string{"br0"}); err != nil {
+				t.Fatalf("routeEnsureProxyRule: %v", err)
+			}
+			installed := fw.filterRules(be, st.chainQUIC, parent)
+			if !strings.Contains(strings.Join(installed, "\n"), "br0") {
+				t.Fatalf("the set limited to br0 refuses QUIC from every interface:\n%s", strings.Join(installed, "\n"))
+			}
+
+			set.Routing.SourceInterfaces = nil
+			st.srcScoped = false
+			refuse = true
+			if err := routeEnsureProxyRule(be, cfg, set, st, nil); err == nil {
+				t.Fatalf("%s was refused, yet the rebuild reported success", st.chainQOut)
+			}
+			if got := fw.filterRules(be, st.chainQUIC, parent); !slices.Equal(got, installed) {
+				t.Errorf("the rebuild failed and the set keeps its old rules, yet its QUIC refusal already covers every interface, so devices outside br0 lose QUIC with no proxy behind them:\nwant %v\ngot  %v", installed, got)
+			}
+		})
+	}
+}
+
 func TestAnInstallThatFailsBeforeAppendingTouchesNoChain(t *testing.T) {
 	familyResetGlobals(t)
 	gwIsolate(t)
