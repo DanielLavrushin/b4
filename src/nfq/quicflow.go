@@ -13,6 +13,7 @@ import (
 const (
 	maxQUICFlowEntries = 10000
 	quicFlowIdle       = 60 * time.Second
+	quicFlowShared     = 5 * time.Second
 	maxCoalescedHellos = 2
 )
 
@@ -39,16 +40,20 @@ func (c *quicFlowCache) Store(connKey, host string, odcid []byte) {
 	now := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	carried := 0
 	if existing, exists := c.flows[connKey]; exists {
 		if bytes.Equal(existing.odcid, odcid) {
 			existing.host = host
 			existing.lastSeen = now
 			return
 		}
+		if now.Sub(existing.lastSeen) <= quicFlowShared {
+			carried = existing.coalesced
+		}
 	} else if len(c.flows) >= maxQUICFlowEntries {
 		c.evictLocked(now)
 	}
-	c.flows[connKey] = &quicFlow{host: host, odcid: bytes.Clone(odcid), lastSeen: now}
+	c.flows[connKey] = &quicFlow{host: host, odcid: bytes.Clone(odcid), coalesced: carried, lastSeen: now}
 }
 
 func (c *quicFlowCache) NoteQUIC(connKey string, odcid []byte) {
@@ -177,6 +182,21 @@ func (c *quicFlowCache) Cleanup() {
 			delete(c.flows, k)
 		}
 	}
+}
+
+func looksLikeWireGuard(payload []byte) bool {
+	return len(payload) >= 4 && payload[0] >= 1 && payload[0] <= 4 && payload[1] == 0 && payload[2] == 0 && payload[3] == 0
+}
+
+func looksLikeDTLS(payload []byte) bool {
+	return len(payload) >= 3 && payload[0] >= 0x14 && payload[0] <= 0x17 && payload[1] == 0xfe
+}
+
+func mayBelongToAQUICFlow(payload []byte, isVoiceMedia bool) bool {
+	if isVoiceMedia || !quic.LooksLikeShortHeader(payload) {
+		return false
+	}
+	return !looksLikeWireGuard(payload) && !looksLikeDTLS(payload)
 }
 
 func dropsQUICFlow(set *config.SetConfig) bool {
