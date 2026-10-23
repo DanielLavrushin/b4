@@ -221,13 +221,29 @@ func (s *deviceState) name(from Device, host string) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	it, ok := s.items[k]
-	if !ok {
+	it := s.counted(k, from)
+	if it == nil {
 		return
 	}
 	s.seq++
 	it.note(host, 1, s.seq)
 	s.rev++
+}
+
+func (s *deviceState) counted(k deviceKey, from Device) *deviceItem {
+	if it, ok := s.items[k]; ok {
+		return it
+	}
+	if k.mac != "" {
+		if byAddr, ok := from.addrKey(); ok {
+			return s.adopt(k.mac, nil, byAddr)
+		}
+		return nil
+	}
+	if mac := loadMAC(k.addr.String()); mac != "" {
+		return s.items[deviceKey{mac: mac}]
+	}
+	return nil
 }
 
 func (s *deviceState) reset() {

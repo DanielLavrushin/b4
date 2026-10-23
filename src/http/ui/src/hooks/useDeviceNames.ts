@@ -11,7 +11,7 @@ const macKey = (mac: string): string => mac.toUpperCase().replaceAll("-", ":");
 
 export function useDeviceNames() {
   const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: DEVICES_KEY, queryFn: devicesApi.list });
+  const query = useQuery({ queryKey: DEVICES_KEY, queryFn: devicesApi.list, staleTime: 0 });
   const devices = query.data?.devices ?? NO_DEVICES;
   const routerIps = query.data?.router_ips ?? NO_ROUTER_IPS;
 

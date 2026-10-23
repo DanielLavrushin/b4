@@ -136,6 +136,48 @@ func TestSlowTickFoldsAddressesWhoseMACTheTableLearned(t *testing.T) {
 	}
 }
 
+func TestANameWithTheMACReachesTheRowCountedByAddress(t *testing.T) {
+	r := newRig(t, rigStart, 0)
+	m := r.m
+
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "", Device{Addr: phone.Addr})
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "video.example", phone)
+
+	fr := m.Hello()
+	if d := deviceEntry(t, fr, phone.MAC); len(fr.Devices.Items) != 1 || d.Count != 1 || !slices.Equal(d.Domains, []string{"video.example"}) {
+		t.Fatalf("the MAC table learned the phone between a flow's first packet and its name: %+v", fr.Devices.Items)
+	}
+}
+
+func TestANameByAddressReachesTheRowMovedToItsMAC(t *testing.T) {
+	r := newRig(t, rigStart, 0)
+	m := r.m
+	known := map[string]string{}
+	SetMACProvider(func(ip string) string { return known[ip] })
+	t.Cleanup(func() { SetMACProvider(nil) })
+
+	proxied := Device{Addr: laptop.Addr}
+	m.CountConnection("work", proxied)
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "", proxied)
+	known[laptop.Addr.String()] = laptop.MAC
+	r.step(10 * time.Second)
+	m.RecordDomain("mail.example", "work", proxied)
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "chat.example", proxied)
+
+	fr := m.Hello()
+	if d := deviceEntry(t, fr, laptop.MAC); len(fr.Devices.Items) != 1 || d.Count != 2 || !slices.Equal(d.Domains, []string{"chat.example", "mail.example"}) {
+		t.Fatalf("the slow tick moved the laptop's row to its MAC while its connections still named it by address: %+v", fr.Devices.Items)
+	}
+
+	known["192.168.1.201"] = "AA:BB:CC:00:00:C9"
+	m.RecordDomain("ads.example", "", Device{Addr: netip.MustParseAddr("192.168.1.200")})
+	m.RecordDomain("ads.example", "", Device{Addr: netip.MustParseAddr("192.168.1.201")})
+	m.RecordDomain("ads.example", "", Device{MAC: "AA:BB:CC:00:00:CA", Addr: netip.MustParseAddr("192.168.1.202")})
+	if n := len(m.Hello().Devices.Items); n != 1 {
+		t.Fatalf("a name never lists a device with no counted connection: %d devices", n)
+	}
+}
+
 func TestDevicesKeepTheirBusiestDomainsInBoundedSlots(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
