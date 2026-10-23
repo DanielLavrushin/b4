@@ -994,7 +994,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	flowKnown := false
-	if host == "" {
+	if host == "" && (isQUIC || quic.LooksLikeShortHeader(payload)) {
 		_, flowKnown = w.quicFlows.Lookup(connKey, payload)
 	}
 	quicTraffic := isQUIC || flowKnown

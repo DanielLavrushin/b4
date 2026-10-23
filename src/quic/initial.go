@@ -24,8 +24,10 @@ const (
 )
 
 const (
-	longHdrBit  = 0x80
-	longHdrMask = 0xC0
+	longHdrBit       = 0x80
+	longHdrMask      = 0xC0
+	shortHdrFixedBit = 0x40
+	shortHdrMinLen   = 18
 )
 
 func IsInitial(b []byte) bool {
@@ -68,6 +70,10 @@ func LooksLikeQUIC(b []byte) bool {
 		return false
 	}
 	return true
+}
+
+func LooksLikeShortHeader(b []byte) bool {
+	return len(b) >= shortHdrMinLen && b[0]&longHdrMask == shortHdrFixedBit
 }
 
 func DecryptInitial(dcid, packet []byte) ([]byte, bool) {

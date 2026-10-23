@@ -1,12 +1,14 @@
 package nfq
 
 import (
+	"fmt"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
+	"github.com/daniellavrushin/b4/quic"
 	"github.com/daniellavrushin/b4/sock"
 )
 
@@ -617,5 +619,65 @@ func TestMatchingQUICByDestinationKeepsTheRestOfAKnownFlow(t *testing.T) {
 	}
 	if got := sent(); len(got) == 0 {
 		t.Error("no packet was sent for the short-header packet of the known flow")
+	}
+}
+
+func TestACachedQUICFlowDoesNotExemptOtherProtocolsOnTheSameTuple(t *testing.T) {
+	dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+	dropper.Targets.DomainOnly = false
+	dropper.UDP.FilterSTUN = false
+	w := newQUICFlowWorker(t, &dropper)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xA1, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 53001); v != engine.VerdictDropFlow {
+		t.Fatalf("the set's own name teaches it the address, got %v", v)
+	}
+
+	nameless := append([]byte{0xc3, 0, 0, 0, 1, 8, 0xA2, 2, 3, 4, 5, 6, 7, 8, 0}, make([]byte, 60)...)
+	if v := sendQUIC(w, nameless, 53002); v != engine.VerdictAccept {
+		t.Fatalf("an Initial b4 cannot name must pass and mark the flow, got %v", v)
+	}
+
+	wireguard := make([]byte, 148)
+	wireguard[0] = 0x01
+	if quic.LooksLikeQUIC(wireguard) || quic.LooksLikeShortHeader(wireguard) {
+		t.Fatal("the WireGuard initiation must not look like QUIC, or this test proves nothing")
+	}
+	if v := sendQUIC(w, wireguard, 53002); v != engine.VerdictDrop {
+		t.Errorf("another protocol on a tuple that once carried QUIC still follows the learned address: got %v, want drop", v)
+	}
+}
+
+func TestAnExpiredFlowEntryDoesNotBlockANewOneOnTheSameTuple(t *testing.T) {
+	dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+	dropper.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &dropper)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xA3, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 53101); v != engine.VerdictDropFlow {
+		t.Fatalf("the set's own name teaches it the address, got %v", v)
+	}
+
+	nameless := append([]byte{0xc3, 0, 0, 0, 1, 8, 0xA4, 2, 3, 4, 5, 6, 7, 8, 0}, make([]byte, 60)...)
+	if v := sendQUIC(w, nameless, 53102); v != engine.VerdictAccept {
+		t.Fatalf("the first nameless Initial must pass, got %v", v)
+	}
+
+	key := fmt.Sprintf(connKeyFormat, quicClient.String(), 53102, quicServer.String(), 443)
+	w.quicFlows.mu.Lock()
+	entry := w.quicFlows.flows[key]
+	if entry == nil {
+		w.quicFlows.mu.Unlock()
+		t.Fatal("the nameless Initial left no entry to expire")
+	}
+	entry.lastSeen = time.Now().Add(-quicFlowIdle - time.Second)
+	w.quicFlows.mu.Unlock()
+
+	if v := sendQUIC(w, nameless, 53102); v != engine.VerdictAccept {
+		t.Fatalf("a nameless Initial on the reused tuple must pass, got %v", v)
+	}
+	oneRTT := append(append([]byte{0x41}, []byte{0xA4, 2, 3, 4, 5, 6, 7, 8}...), make([]byte, 40)...)
+	if v := sendQUIC(w, oneRTT, 53102); v != engine.VerdictAccept {
+		t.Errorf("the short-header packets of the flow that replaced the expired entry must pass: got %v, want accept", v)
 	}
 }

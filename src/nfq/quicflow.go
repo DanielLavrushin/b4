@@ -58,10 +58,11 @@ func (c *quicFlowCache) NoteQUIC(connKey string, odcid []byte) {
 	now := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, exists := c.flows[connKey]; exists {
-		return
-	}
-	if len(c.flows) >= maxQUICFlowEntries {
+	if existing, exists := c.flows[connKey]; exists {
+		if now.Sub(existing.lastSeen) <= quicFlowIdle {
+			return
+		}
+	} else if len(c.flows) >= maxQUICFlowEntries {
 		c.evictLocked(now)
 	}
 	c.flows[connKey] = &quicFlow{odcid: bytes.Clone(odcid), lastSeen: now}
@@ -95,7 +96,11 @@ func (c *quicFlowCache) Lookup(connKey string, payload []byte) (string, bool) {
 		host, odcid, idle = flow.host, flow.odcid, now.Sub(flow.lastSeen)
 	}
 	c.mu.RUnlock()
-	if flow == nil || idle > quicFlowIdle {
+	if flow == nil {
+		return "", false
+	}
+	if idle > quicFlowIdle {
+		c.forgetFlow(connKey, flow)
 		return "", false
 	}
 
