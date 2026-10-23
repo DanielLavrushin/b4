@@ -110,7 +110,7 @@ func DecryptInitial(dcid, packet []byte) ([]byte, bool) {
 
 	// Token (varint + bytes)
 	tlen, n := readVar(packet[off:])
-	if n == 0 || len(packet) < off+n+int(tlen) {
+	if n == 0 || tlen > uint64(len(packet)) || len(packet) < off+n+int(tlen) {
 		return nil, false
 	}
 	off += n + int(tlen)
