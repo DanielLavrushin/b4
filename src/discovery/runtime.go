@@ -44,6 +44,7 @@ type StartSuiteOptions struct {
 	Source          string
 	SetId           string
 	SetStrategy     *config.SetConfig
+	DSCP            *int
 	StopWhenCovered bool
 	HubPresets      func() []ConfigPreset
 	DNSServer       string
@@ -65,7 +66,7 @@ func (m *Runtime) IsActive() bool {
 	return m.state != nil
 }
 
-func (m *Runtime) Start(cfg *config.Config) (*StartResult, error) {
+func (m *Runtime) Start(cfg *config.Config, dscp *int) (*StartResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -87,8 +88,11 @@ func (m *Runtime) Start(cfg *config.Config) (*StartResult, error) {
 
 	log.Infof("Discovery queue range: main=%d-%d discovery=%d-%d", mainStart, mainStart+mainThreads-1, discoveryStart, discoveryEnd)
 	log.Infof("Discovery marks: main_injected=0x%x discovery_flow=0x%x discovery_injected=0x%x", cfg.MainInjectedMark(), flowMark, injectedMark)
+	if dscp != nil {
+		log.Infof("Discovery probes leave with DSCP %d", *dscp)
+	}
 
-	if err := tables.ApplyDiscoverySteeringRules(cfg, flowMark, injectedMark, discoveryStart, discoveryThreads); err != nil {
+	if err := tables.ApplyDiscoverySteeringRules(cfg, flowMark, injectedMark, discoveryStart, discoveryThreads, dscp); err != nil {
 		return nil, fmt.Errorf("failed to apply discovery steering rules: %w", err)
 	}
 
@@ -140,7 +144,7 @@ func (m *Runtime) SetActiveSuiteID(suiteID string) {
 }
 
 func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteOptions) (*DiscoverySuite, error) {
-	runtimeState, err := m.Start(cfg)
+	runtimeState, err := m.Start(cfg, opts.DSCP)
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +166,7 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 		suite.Source = SourceWeb
 	}
 	suite.SetId = opts.SetId
+	suite.DSCP = opts.DSCP
 	suite.setStrategy = opts.SetStrategy
 	suite.stopWhenCovered = opts.StopWhenCovered
 	suite.dnsServerOverride = opts.DNSServer

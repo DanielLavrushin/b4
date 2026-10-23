@@ -19,6 +19,7 @@
 - FIXED: **In TUN mode, memory use grew with every new connection** - b4 kept a record of where each connection came from and never removed old records.
 - FIXED: **On a phone the set editor's Cancel and Save buttons covered the set name, and long section headers were cut off** - the buttons shared a row with the name field, which cannot shrink below its minimum width. Section headers were held to one line, so a header wider than its card ran past the edge. Russian headers, being longer, hit it first. [#448](https://github.com/DanielLavrushin/b4/issues/448), [#449](https://github.com/DanielLavrushin/b4/issues/449)
 - FIXED: **In the Russian interface the units on sliders and the name of a new set stayed in English** - sliders read `bytes`, `ms` and `sec`, and a new set was named `Set 5`. In both languages the SYN Fake TTL slider showed its value in milliseconds, although the setting counts hops rather than time. [#450](https://github.com/DanielLavrushin/b4/issues/450)
+- FIXED: **Discovery for a set that writes its own DSCP value, and the watchdog's heals of such a set, ran their tests without that value** - the tests carried it only to addresses the set had already learned from other traffic. Where a router in front of b4 picks the internet provider by DSCP, the search ran through another provider than the set's traffic. A heal could then write a strategy found there into the set.
 
 ## [1.87.0] - 2026-10-17
 

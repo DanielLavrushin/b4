@@ -270,6 +270,12 @@ export const RunPanel = ({
             {t("discovery.run.tested", {
               count: suite.completed_checks - (suite.skipped_checks ?? 0),
             })}
+            {suite.dscp !== undefined && (
+              <>
+                {" · "}
+                {t("discovery.dscp", { value: suite.dscp })}
+              </>
+            )}
           </>
         }
         onStop={canStop ? (confirming ? onStop : onFinish) : undefined}

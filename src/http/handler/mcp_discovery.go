@@ -93,6 +93,7 @@ type mcpSuiteSnapshot struct {
 		Set          *config.SetConfig `json:"set"`
 	} `json:"strategy_groups"`
 	SetId          string                `json:"set_id"`
+	DSCP           *int                  `json:"dscp"`
 	SetVerdict     *discovery.SetVerdict `json:"set_verdict"`
 	StoppedCovered bool                  `json:"stopped_covered"`
 }
@@ -374,6 +375,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		}
 		opts.SetId = target.Id
 		opts.SetStrategy = discovery.SetRunStrategy(target)
+		opts.DSCP = discovery.SetRunDSCP(cfg, target)
 		opts.StopWhenCovered = true
 		opts.TLSVersion, opts.IPVersion = discovery.SetRunVersions(target, "", "")
 	}
@@ -410,7 +412,18 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 				"While it runs, the watchdog cannot heal and a firewall refresh will block.",
 			target.Name, strings.Join(urls, ", "), target.Name)
 	}
+	out.Note = mcpWithProbeDSCP(out.Note, opts.DSCP)
 	return nil, out, nil
+}
+
+func mcpWithProbeDSCP(note string, dscp *int) string {
+	if dscp == nil {
+		return note
+	}
+	if note != "" && !strings.HasSuffix(note, ".") {
+		note += "."
+	}
+	return note + fmt.Sprintf(" The probes carry DSCP %d, the set's own value, so they take the path the set's traffic takes.", *dscp)
 }
 
 var mcpURLStart = regexp.MustCompile("^[\"'`]*[A-Za-z][A-Za-z0-9+.-]*://")
@@ -595,7 +608,7 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 	switch {
 	case record != nil:
 		out.SetVerdict = mcpSetVerdictView(cfg, record.SetId, &record.Verdict, false)
-		out.Note += " This run was for a set: " + out.SetVerdict.Meaning
+		out.Note = mcpWithProbeDSCP(out.Note+" This run was for a set: "+out.SetVerdict.Meaning, record.DSCP)
 	case len(out.Domains) == 0:
 		out.Note = "no run is in progress and nothing has been discovered yet"
 	case applicable > 0:
@@ -782,6 +795,7 @@ func (api *API) mcpDiscoverySuiteStatus(snap *mcpSuiteSnapshot) (*mcp.CallToolRe
 	if discovery.CheckStatus(snap.Status) == discovery.CheckStatusCanceled && out.SetVerdict != nil {
 		out.Note += ". " + out.SetVerdict.Meaning
 	}
+	out.Note = mcpWithProbeDSCP(out.Note, snap.DSCP)
 	return nil, out, nil
 }
 

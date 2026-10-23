@@ -140,6 +140,7 @@ func (w *Watchdog) healSet(id string) {
 		Source:          discovery.SourceWatchdog,
 		SetId:           set.Id,
 		SetStrategy:     discovery.SetRunStrategy(set),
+		DSCP:            discovery.SetRunDSCP(cfg, set),
 		StopWhenCovered: true,
 		TLSVersion:      tlsVersion,
 		IPVersion:       ipVersion,

@@ -115,6 +115,12 @@ export const ResultsPanel = ({
             {t("discovery.results.tested", {
               count: suite.completed_checks - (suite.skipped_checks ?? 0),
             })}
+            {suite.dscp !== undefined && (
+              <>
+                {" · "}
+                {t("discovery.dscp", { value: suite.dscp })}
+              </>
+            )}
             {" · "}
             {t("discovery.results.saved")}
           </Typography>

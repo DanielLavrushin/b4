@@ -181,6 +181,41 @@ func TestHistoryRecordsWhoStartedTheRun(t *testing.T) {
 	}
 }
 
+func TestHistoryRecordsTheDSCPTheProbesCarried(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	value := 25
+	SaveToHistory(&CheckSuite{
+		Id: "run-dscp", Status: CheckStatusComplete, EndTime: time.Now(), SetId: "yt", DSCP: &value,
+		SetVerdict: &SetVerdict{Status: SetVerdictNone},
+		DomainDiscoveryResults: map[string]*DomainDiscoveryResult{
+			"youtube.com": {Domain: "youtube.com"},
+		},
+	}, cfgPath)
+	SaveToHistory(&CheckSuite{
+		Id: "run-plain", Status: CheckStatusComplete, EndTime: time.Now(),
+		DomainDiscoveryResults: map[string]*DomainDiscoveryResult{
+			"meduza.io": {Domain: "meduza.io"},
+		},
+	}, cfgPath)
+
+	hist := LoadDiscoveryHistory(cfgPath)
+	for _, e := range hist.Entries {
+		switch e.Domain {
+		case "youtube.com":
+			if e.DSCP == nil || *e.DSCP != 25 {
+				t.Errorf("a result found with DSCP 25 holds for that path only, so the history must keep the value, got %v", e.DSCP)
+			}
+		case "meduza.io":
+			if e.DSCP != nil {
+				t.Errorf("a run on the default path records no value, got %d", *e.DSCP)
+			}
+		}
+	}
+	if rec, ok := hist.SetRuns["yt"]; !ok || rec.DSCP == nil || *rec.DSCP != 25 {
+		t.Errorf("the saved set run must keep the value too, got %+v", rec)
+	}
+}
+
 func TestCancelSuiteWithoutAChannelDoesNotPanic(t *testing.T) {
 	suite := &CheckSuite{Id: "hand-built", Status: CheckStatusRunning}
 	RegisterSuite(suite)

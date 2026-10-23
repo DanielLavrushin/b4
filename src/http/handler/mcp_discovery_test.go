@@ -22,6 +22,39 @@ func probeCfg(t *testing.T) *config.Config {
 	return cfg
 }
 
+func TestMCPDiscoveryStatusNamesTheDSCPASetRunCarried(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	set := config.NewSetConfig()
+	set.Id, set.Name, set.Enabled = "yt", "YouTube", true
+	set.Targets.SNIDomains = []string{"youtube.com"}
+	set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	cfg.Sets = append(cfg.Sets, &set)
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	value := 25
+	discovery.SaveToHistory(&discovery.CheckSuite{
+		Id: "set-run-dscp", Status: discovery.CheckStatusComplete, EndTime: time.Now(), SetId: "yt", DSCP: &value,
+		SetVerdict: &discovery.SetVerdict{Status: discovery.SetVerdictNone},
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"youtube.com": {Domain: "youtube.com"},
+		},
+	}, cfg.ConfigPath)
+
+	out := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "status", "set": "yt"}))
+	if !strings.Contains(out.Note, "DSCP 25") {
+		t.Errorf("a set run searched on the path DSCP 25 selects, and the answer must say so: %q", out.Note)
+	}
+
+	if got := mcpWithProbeDSCP("the run was cancelled; any results below are partial", &value); !strings.Contains(got, "partial. The probes carry DSCP 25") {
+		t.Errorf("the value must read as a sentence of its own: %q", got)
+	}
+	if got := mcpWithProbeDSCP("finished.", nil); got != "finished." {
+		t.Errorf("a run without a value adds nothing: %q", got)
+	}
+}
+
 func callDiscovery(t *testing.T, session *mcp.ClientSession, ctx context.Context, args map[string]any) *mcp.CallToolResult {
 	t.Helper()
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_find_bypass_strategy", Arguments: args})

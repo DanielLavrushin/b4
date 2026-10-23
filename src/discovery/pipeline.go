@@ -27,6 +27,9 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	default:
 		log.DiscoveryLogf("Starting discovery for %d domains: %v", len(ds.Domains), domainNames)
 	}
+	if ds.DSCP != nil {
+		log.DiscoveryLogf("Probes leave with DSCP %d, the value of the set this run is for", *ds.DSCP)
+	}
 	log.DiscoveryLogf("═══════════════════════════════════════")
 
 	defer func() {

@@ -8,7 +8,10 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-const discoveryChainNFT = "b4_discovery"
+const (
+	discoveryChainNFT      = "b4_discovery"
+	discoveryStampChainNFT = "b4_discovery_dscp"
+)
 
 type discoveryNftBackend struct{}
 
@@ -29,7 +32,7 @@ func (b *discoveryNftBackend) ensureBase() error {
 	return nil
 }
 
-func (b *discoveryNftBackend) apply(flowMark uint, injectedMark uint, queueStart int, threads int) error {
+func (b *discoveryNftBackend) apply(flowMark uint, injectedMark uint, queueStart int, threads int, stamp *discoveryStamp) error {
 	if err := b.ensureBase(); err != nil {
 		return err
 	}
@@ -85,7 +88,43 @@ func (b *discoveryNftBackend) apply(flowMark uint, injectedMark uint, queueStart
 		return err
 	}
 	b.keepOutOfQueueChain(flowHex, injectedHex, flowMark, injectedMark)
+	return b.applyStamp(flowHex, injectedHex, stamp)
+}
+
+func (b *discoveryNftBackend) applyStamp(flowHex, injectedHex string, stamp *discoveryStamp) error {
+	b.dropStamp()
+	if stamp == nil {
+		return nil
+	}
+	if out, err := runNftStdin(discoveryNftStampScript(flowHex, injectedHex, stamp)); err != nil {
+		b.dropStamp()
+		return fmt.Errorf("nftables rejected the chain that writes DSCP %d into Discovery's probes: %s", stamp.value, iptErrText(out, err))
+	}
 	return nil
+}
+
+func discoveryNftStampScript(flowHex, injectedHex string, stamp *discoveryStamp) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "add chain inet %s %s { type filter hook postrouting priority %d ; policy accept ; }\n", nftTableName, discoveryStampChainNFT, dscpNftPriority+1)
+	scopes := []string{""}
+	if len(stamp.ifaces) > 0 {
+		scopes = scopes[:0]
+		for _, iface := range stamp.ifaces {
+			scopes = append(scopes, fmt.Sprintf("oifname %q ", iface))
+		}
+	}
+	for _, scope := range scopes {
+		for _, mark := range []string{flowHex, injectedHex} {
+			fmt.Fprintf(&b, "add rule inet %s %s %smeta mark %s meta nfproto ipv4 ip dscp set %d\n", nftTableName, discoveryStampChainNFT, scope, mark, stamp.value)
+			fmt.Fprintf(&b, "add rule inet %s %s %smeta mark %s meta nfproto ipv6 ip6 dscp set %d\n", nftTableName, discoveryStampChainNFT, scope, mark, stamp.value)
+		}
+	}
+	return b.String()
+}
+
+func (b *discoveryNftBackend) dropStamp() {
+	_, _ = run("nft", "flush", "chain", "inet", nftTableName, discoveryStampChainNFT)
+	_, _ = run("nft", "delete", "chain", "inet", nftTableName, discoveryStampChainNFT)
 }
 
 func (b *discoveryNftBackend) keepOutOfQueueChain(flowHex, injectedHex string, flowMark, injectedMark uint) {
@@ -107,6 +146,7 @@ func (b *discoveryNftBackend) clear(flowMark uint, injectedMark uint) {
 	b.deleteDiscoveryRulesFromChain("prerouting", flowMark, injectedMark)
 	_, _ = run("nft", "flush", "chain", "inet", nftTableName, discoveryChainNFT)
 	_, _ = run("nft", "delete", "chain", "inet", nftTableName, discoveryChainNFT)
+	b.dropStamp()
 	b.dropTableIfEmpty()
 }
 

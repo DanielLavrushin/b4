@@ -2686,6 +2686,7 @@
   "discovery": {
     "title": "Discovery",
     "description": "Finds a bypass strategy for the sites you name and turns it into a set.",
+    "dscp": "DSCP {{value}}, as the set's traffic",
     "input": {
       "label": "Site or URL",
       "placeholder": "youtube.com, https://discord.com/app",

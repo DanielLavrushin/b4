@@ -10,8 +10,23 @@ import (
 type discoveryBackend interface {
 	name() string
 	available() bool
-	apply(flowMark uint, injectedMark uint, queueStart int, threads int) error
+	apply(flowMark uint, injectedMark uint, queueStart int, threads int, stamp *discoveryStamp) error
 	clear(flowMark uint, injectedMark uint)
+}
+
+type discoveryStamp struct {
+	value  int
+	ifaces []string
+}
+
+func discoveryStampFor(cfg *config.Config, dscp *int) (*discoveryStamp, error) {
+	if dscp == nil {
+		return nil, nil
+	}
+	if *dscp < 0 || *dscp > config.MaxDSCPValue {
+		return nil, fmt.Errorf("DSCP %d for Discovery's probes is outside 0-%d", *dscp, config.MaxDSCPValue)
+	}
+	return &discoveryStamp{value: *dscp, ifaces: cfg.DSCPInterfaces()}, nil
 }
 
 func getDiscoveryBackend(cfg *config.Config) discoveryBackend {
@@ -56,21 +71,27 @@ type discoverySteering struct {
 	injectedMark uint
 	queueStart   int
 	threads      int
+	stamp        *discoveryStamp
 }
 
 var activeSteering *discoverySteering
 
-func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark uint, queueStart int, threads int) error {
+func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark uint, queueStart int, threads int, dscp *int) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
+	stamp, err := discoveryStampFor(cfg, dscp)
+	if err != nil {
+		return err
+	}
 	be := currentDiscoveryBackend(cfg)
 	if be == nil {
 		return fmt.Errorf("no discovery firewall backend available")
 	}
-	if err := be.apply(flowMark, injectedMark, queueStart, threads); err != nil {
+	if err := be.apply(flowMark, injectedMark, queueStart, threads, stamp); err != nil {
+		be.clear(flowMark, injectedMark)
 		return err
 	}
-	activeSteering = &discoverySteering{cfg: cfg, backend: be, flowMark: flowMark, injectedMark: injectedMark, queueStart: queueStart, threads: threads}
+	activeSteering = &discoverySteering{cfg: cfg, backend: be, flowMark: flowMark, injectedMark: injectedMark, queueStart: queueStart, threads: threads, stamp: stamp}
 	return nil
 }
 
@@ -104,7 +125,7 @@ func reapplyDiscoverySteering() {
 		s.backend.clear(s.flowMark, s.injectedMark)
 	}
 	s.backend = be
-	if err := be.apply(s.flowMark, s.injectedMark, s.queueStart, s.threads); err != nil {
+	if err := be.apply(s.flowMark, s.injectedMark, s.queueStart, s.threads, s.stamp); err != nil {
 		log.Warnf("Discovery: putting the steering rules back after the firewall rules were rebuilt failed: %v", err)
 	}
 }

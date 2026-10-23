@@ -1106,6 +1106,17 @@ func (cfg *Config) DSCPRefusal(set *SetConfig) string {
 	return ""
 }
 
+func (cfg *Config) ProbeDSCP(set *SetConfig) (int, bool) {
+	if cfg == nil || set == nil || cfg.System.Tables.SkipSetup || set.Targets.DomainOnly {
+		return 0, false
+	}
+	value, on := set.DSCPStamp()
+	if !on || cfg.DSCPRefusal(set) != "" {
+		return 0, false
+	}
+	return value, true
+}
+
 func (set *SetConfig) DSCPLearnTTL(fromTLS bool) time.Duration {
 	if fromTLS {
 		return SetDSCPTLSLearnTTL

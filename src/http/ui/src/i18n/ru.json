@@ -2766,6 +2766,7 @@
   "discovery": {
     "title": "Дискавери",
     "description": "Подбирает стратегию обхода для указанных сайтов и превращает её в сет.",
+    "dscp": "DSCP {{value}}, как у трафика сета",
     "input": {
       "label": "Сайт или URL",
       "placeholder": "youtube.com, https://discord.com/app",

@@ -402,7 +402,11 @@ export const HistoryTable = ({
                     {row.entry.domain}
                     {setName && (
                       <Tooltip
-                        title={t("discovery.results.forSet", { name: setName })}
+                        title={
+                          row.entry.dscp === undefined
+                            ? t("discovery.results.forSet", { name: setName })
+                            : `${t("discovery.results.forSet", { name: setName })} · ${t("discovery.dscp", { value: row.entry.dscp })}`
+                        }
                       >
                         <B4Badge
                           size="small"

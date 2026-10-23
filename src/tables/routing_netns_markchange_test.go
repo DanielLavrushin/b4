@@ -40,7 +40,7 @@ func netnsDiscoveryProbesStayOutOfTheMainQueue(t *testing.T, engine string, flow
 	defer stop()
 
 	defer ClearDiscoverySteeringRules(cfg, uint(flow), uint(injected))
-	if err := ApplyDiscoverySteeringRules(cfg, uint(flow), uint(injected), cfg.Queue.StartNum+cfg.Queue.Threads, 1); err != nil {
+	if err := ApplyDiscoverySteeringRules(cfg, uint(flow), uint(injected), cfg.Queue.StartNum+cfg.Queue.Threads, 1, nil); err != nil {
 		t.Fatalf("ApplyDiscoverySteeringRules: %v", err)
 	}
 	netnsSendMarked(t, flow, 42001, 443)
@@ -86,7 +86,7 @@ func TestNetnsDiscoveryKeepsItsRulesThroughAFirewallRefresh(t *testing.T) {
 
 			flow, injected := uint32(0x1001), uint32(0x1002)
 			defer ClearDiscoverySteeringRules(cfg, uint(flow), uint(injected))
-			if err := ApplyDiscoverySteeringRules(cfg, uint(flow), uint(injected), cfg.Queue.StartNum+cfg.Queue.Threads, 1); err != nil {
+			if err := ApplyDiscoverySteeringRules(cfg, uint(flow), uint(injected), cfg.Queue.StartNum+cfg.Queue.Threads, 1, nil); err != nil {
 				t.Fatalf("ApplyDiscoverySteeringRules: %v", err)
 			}
 

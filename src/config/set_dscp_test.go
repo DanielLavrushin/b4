@@ -387,3 +387,54 @@ func TestSetDSCPDoesNotNeedFirewallRefresh(t *testing.T) {
 		t.Error("a set's stamp must not ask for a full firewall refresh")
 	}
 }
+
+func TestProbeDSCPFollowsTheSetsLiveStamp(t *testing.T) {
+	cases := []struct {
+		name   string
+		dscp   SetDSCPConfig
+		change func(*Config, *SetConfig)
+		value  int
+		on     bool
+	}{
+		{"stamp off", SetDSCPConfig{Value: 7}, nil, 0, false},
+		{"stamp on", SetDSCPConfig{Enabled: true, Value: 7}, nil, 7, true},
+		{"stamp on with 0, which clears the field", SetDSCPConfig{Enabled: true}, nil, 0, true},
+		{"value out of range", SetDSCPConfig{Enabled: true, Value: 64}, nil, 0, false},
+		{"refused for source devices", SetDSCPConfig{Enabled: true, Value: 7}, func(_ *Config, s *SetConfig) {
+			s.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
+		}, 0, false},
+		{"refused for block routing", SetDSCPConfig{Enabled: true, Value: 7}, func(_ *Config, s *SetConfig) {
+			s.Routing.Enabled = true
+			s.Routing.Mode = RoutingModeBlock
+		}, 0, false},
+		{"domain-only, which writes the value for listed addresses only", SetDSCPConfig{Enabled: true, Value: 7}, func(_ *Config, s *SetConfig) {
+			s.Targets.DomainOnly = true
+		}, 0, false},
+		{"firewall setup skipped", SetDSCPConfig{Enabled: true, Value: 7}, func(c *Config, _ *SetConfig) {
+			c.System.Tables.SkipSetup = true
+		}, 0, false},
+		{"set switched off", SetDSCPConfig{Enabled: true, Value: 7}, func(_ *Config, s *SetConfig) {
+			s.Enabled = false
+		}, 7, true},
+		{"global stamp on as well", SetDSCPConfig{Enabled: true, Value: 7}, func(c *Config, _ *SetConfig) {
+			c.System.Tables.DSCP = DSCPConfig{Enabled: true, Value: 46}
+		}, 7, true},
+	}
+	for _, tc := range cases {
+		cfg, set := setDSCPTestConfig(tc.dscp)
+		if tc.change != nil {
+			tc.change(cfg, set)
+		}
+		if value, on := cfg.ProbeDSCP(set); value != tc.value || on != tc.on {
+			t.Errorf("%s: got value %d, on %v; want value %d, on %v", tc.name, value, on, tc.value, tc.on)
+		}
+	}
+
+	cfg, set := setDSCPTestConfig(SetDSCPConfig{Enabled: true, Value: 7})
+	if _, on := cfg.ProbeDSCP(nil); on {
+		t.Error("no set, no value")
+	}
+	if _, on := (*Config)(nil).ProbeDSCP(set); on {
+		t.Error("no config, no value")
+	}
+}

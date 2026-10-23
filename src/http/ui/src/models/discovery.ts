@@ -145,6 +145,7 @@ export interface DiscoverySuite {
   stopped_phase?: DiscoveryPhase;
   runtime_active?: boolean;
   set_id?: string;
+  dscp?: number;
   set_verdict?: SetVerdict;
   stopped_covered?: boolean;
 }
@@ -176,6 +177,7 @@ export interface SetRunRecord {
   start_time: string;
   end_time: string;
   urls?: string[];
+  dscp?: number;
   verdict: SetVerdict;
 }
 
@@ -236,6 +238,7 @@ export interface HistoryEntry {
   applied?: Record<string, AppliedMark>;
   size_bytes?: number;
   set_id?: string;
+  dscp?: number;
 }
 
 export interface SimilarSet {
