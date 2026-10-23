@@ -226,11 +226,21 @@ func looksLikeDTLS(payload []byte) bool {
 	return int(binary.BigEndian.Uint16(payload[11:13]))+13 <= len(payload)
 }
 
+func looksLikeSTUN(payload []byte) bool {
+	if len(payload) < 20 || binary.BigEndian.Uint16(payload[0:2])&0xC000 != 0 {
+		return false
+	}
+	if binary.BigEndian.Uint32(payload[4:8]) != 0x2112A442 {
+		return false
+	}
+	return len(payload) == int(binary.BigEndian.Uint16(payload[2:4]))+20
+}
+
 func mayBelongToAQUICFlow(payload []byte, isVoiceMedia bool) bool {
 	if isVoiceMedia || !quic.LooksLikeShortHeader(payload) {
 		return false
 	}
-	return !looksLikeWireGuard(payload) && !looksLikeDTLS(payload)
+	return !looksLikeWireGuard(payload) && !looksLikeDTLS(payload) && !looksLikeSTUN(payload)
 }
 
 func dropsQUICFlow(set *config.SetConfig) bool {

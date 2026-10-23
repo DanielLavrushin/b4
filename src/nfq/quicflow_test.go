@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/quic"
 	"github.com/daniellavrushin/b4/sock"
+	"github.com/daniellavrushin/b4/stun"
 )
 
 func sealQUICInitial(t *testing.T, hdrDCID, keyDCID []byte, pn byte, frames []byte) []byte {
@@ -807,5 +809,52 @@ func TestAnInterleavedSplitHelloKeepsTheCoalesceBudgetOfItsTuple(t *testing.T) {
 	}
 	if v := sendQUIC(w, first, 53701); v != engine.VerdictAccept {
 		t.Errorf("an interleaved connection must not reset the limit, so this attempt goes out unchanged: got %v, want accept", v)
+	}
+}
+
+func stunMessage(class uint16, body int) []byte {
+	msg := make([]byte, 20+body)
+	binary.BigEndian.PutUint16(msg[0:2], class)
+	binary.BigEndian.PutUint16(msg[2:4], uint16(body))
+	binary.BigEndian.PutUint32(msg[4:8], 0x2112A442)
+	copy(msg[8:20], "b4-stun-txid")
+	return msg
+}
+
+func TestSTUNRepliesOnACachedQUICTupleKeepFollowingTheLearnedAddress(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		class uint16
+	}{
+		{"a binding success response", 0x0101},
+		{"a binding error response", 0x0111},
+		{"an indication", 0x0011},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			payload := stunMessage(c.class, 8)
+			if stun.IsSTUNMessage(payload) {
+				t.Fatalf("%s must not be taken for a STUN request, or this case tests nothing", c.name)
+			}
+			if mayBelongToAQUICFlow(payload, false) {
+				t.Fatalf("%s is taken for QUIC traffic of a known flow", c.name)
+			}
+
+			dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+			dropper.Targets.DomainOnly = false
+			dropper.UDP.FilterSTUN = false
+			w := newQUICFlowWorker(t, &dropper)
+
+			own := buildQUICInitialWithSNI(t, []byte{0xC8, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+			if v := sendQUIC(w, own, 53801); v != engine.VerdictDropFlow {
+				t.Fatalf("the set's own name teaches it the address, got %v", v)
+			}
+			nameless := append([]byte{0xc3, 0, 0, 0, 1, 8, 0xC9, 2, 3, 4, 5, 6, 7, 8, 0}, make([]byte, 60)...)
+			if v := sendQUIC(w, nameless, 53802); v != engine.VerdictAccept {
+				t.Fatalf("an Initial b4 cannot name must pass and mark the flow, got %v", v)
+			}
+			if v := sendQUIC(w, payload, 53802); v != engine.VerdictDrop {
+				t.Errorf("%s on a tuple that once carried QUIC still follows the learned address: got %v, want drop", c.name, v)
+			}
+		})
 	}
 }
