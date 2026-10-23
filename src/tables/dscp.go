@@ -153,7 +153,7 @@ func applyDSCPLogged(cfg *config.Config, backend string) {
 
 func applyDSCPFor(cfg *config.Config, backend string) error {
 	rebuilt := false
-	discoveryDSCPRewritten()
+	discoveryDSCPRewritten(cfg)
 	defer func() { dscpLearnAdopt(dscpApplied.Load(), rebuilt) }()
 	value, ifaces, on := cfg.DSCPStamp()
 	plan := dscpPlanFor(cfg)
@@ -573,7 +573,7 @@ func retryStaleDSCP() bool {
 }
 
 func clearDSCPFor(cfg *config.Config, backend string) {
-	discoveryDSCPRewritten()
+	discoveryDSCPRewritten(nil)
 	defer dscpLearnAdopt(nil, false)
 	prev := dscpApplied.Swap(nil)
 	if prev != nil && prev.backend != backend {
@@ -728,11 +728,18 @@ func reapplyDSCPLocked() {
 	}
 }
 
-func ApplyDSCPOnly(cfg *config.Config) error {
-	_, _, on := cfg.DSCPStamp()
-	if !on {
-		on = !dscpPlanFor(cfg).empty()
+func dscpWanted(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
 	}
+	if _, _, on := cfg.DSCPStamp(); on {
+		return true
+	}
+	return !dscpPlanFor(cfg).empty()
+}
+
+func ApplyDSCPOnly(cfg *config.Config) error {
+	on := dscpWanted(cfg)
 	defer dscpLast.Store(cfg)
 	if !on && dscpApplied.Load() == nil {
 		return nil
@@ -744,7 +751,7 @@ func ApplyDSCPOnly(cfg *config.Config) error {
 }
 
 func ClearDSCPOnly(cfg *config.Config) {
-	discoveryDSCPRewritten()
+	discoveryDSCPRewritten(nil)
 	defer dscpLearnAdopt(nil, false)
 	dscpLast.Store(nil)
 	if st := dscpApplied.Swap(nil); st != nil {

@@ -415,6 +415,7 @@ func TestApplyGroup_NewSetKeepsTheDSCPTheRunTestedWith(t *testing.T) {
 	refSet := &config.SetConfig{}
 	refSet.Fragmentation.Strategy = "combo"
 	refSet.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	refSet.Targets.IPVersion = "4"
 
 	applyGroup(cfg, []domainWithSet{{domain: "youtube.com", set: refSet}})
 
@@ -423,6 +424,28 @@ func TestApplyGroup_NewSetKeepsTheDSCPTheRunTestedWith(t *testing.T) {
 	}
 	if got := cfg.Sets[0].DSCP; got != refSet.DSCP {
 		t.Errorf("the strategy was tested on the path DSCP 25 selects, and the new set takes the domain from its owner, so it must keep that value, got %+v", got)
+	}
+	if got := cfg.Sets[0].Targets.IPVersion; got != "4" {
+		t.Errorf("the strategy was tested over IPv4 only, so the new set must not take the domain's IPv6 traffic too, got %q", got)
+	}
+}
+
+func TestLegacyHealOfASingleFamilyDSCPOwnerSearchesThatFamilyOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		dscp *config.DSCPProbe
+		want string
+	}{
+		{"IPv4 only", &config.DSCPProbe{Value: 25, IPv4: true}, "ipv4"},
+		{"IPv6 only", &config.DSCPProbe{Value: 25, IPv6: true}, "ipv6"},
+		{"both families", &config.DSCPProbe{Value: 25, IPv4: true, IPv6: true}, ""},
+		{"no DSCP", nil, ""},
+	} {
+		h := legacyHarness(t)
+		h.w.healBatch([]string{"youtube.com"}, tc.dscp)
+		if len(h.driver.starts) != 1 || h.driver.starts[0].IPVersion != tc.want {
+			t.Errorf("%s: the owner's traffic carries its DSCP value in these families only, so the search must test the same ones, got %+v", tc.name, h.driver.starts)
+		}
 	}
 }
 

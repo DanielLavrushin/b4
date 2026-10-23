@@ -403,6 +403,17 @@ func (w *Watchdog) legacyProbeDSCP(cfg *config.Config, domain string) *config.DS
 	return cfg.ProbeDSCP(w.engine.Owner(ExtractDomain(domain)))
 }
 
+func legacyIPVersion(dscp *config.DSCPProbe) string {
+	switch {
+	case dscp == nil || dscp.IPv4 == dscp.IPv6:
+		return ""
+	case dscp.IPv4:
+		return "ipv4"
+	default:
+		return "ipv6"
+	}
+}
+
 func sameDSCP(a, b *config.DSCPProbe) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -439,6 +450,7 @@ func (w *Watchdog) healBatch(domains []string, dscp *config.DSCPProbe) {
 		ValidationTries: tries,
 		Source:          discovery.SourceWatchdog,
 		DSCP:            dscp,
+		IPVersion:       legacyIPVersion(dscp),
 	})
 	if err != nil {
 		log.Warnf("[WATCHDOG] failed to start discovery: %v", err)

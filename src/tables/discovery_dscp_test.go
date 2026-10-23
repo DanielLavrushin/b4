@@ -396,7 +396,7 @@ func TestDiscoverySetRunStopsWhenTheDSCPRulesAreRewritten(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	ClearDSCPOnly(&cfg)
-	expectLost(plain, false, "a run for no set value keeps running through a DSCP change, as before")
+	expectLost(plain, true, "the run's probes carried the global stamp that was just removed, so a run for no set value must stop too")
 	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
 	if err := ApplyDSCPOnly(&cfg); err != nil {
 		t.Fatalf("ApplyDSCPOnly after the run: %v", err)
@@ -451,8 +451,22 @@ func TestDiscoverySetRunIsInvalidatedBeforeTheRulesChange(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	_ = ApplyDSCPOnly(&cfg)
+	if !DiscoveryRunInvalidated() {
+		t.Error("the run's probes pass the global DSCP stamp too, so a run for no set value is invalid once that stamp is rewritten")
+	}
+
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+	dscpApplied.Store(nil)
+	dscpStale.Store(nil)
+	plain := config.NewConfig()
+	plain.System.Tables.Engine = backendIPTables
+	if err := ApplyDiscoverySteeringRules(&plain, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	_ = AddRules(&plain)
+	_ = ClearRules(&plain)
 	if DiscoveryRunInvalidated() {
-		t.Error("a run for no set value does not depend on the DSCP rules and stays valid")
+		t.Error("with no DSCP rules before or after, a firewall rebuild leaves the probes' path alone, so the run stays valid")
 	}
 }
 

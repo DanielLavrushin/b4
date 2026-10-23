@@ -11,7 +11,7 @@ import (
 
 var (
 	ErrDiscoveryDSCPPending   = errors.New("b4 is still applying its DSCP rules, so the run would not take the path the set's traffic takes; start it again once they are in place")
-	errDiscoveryDSCPRewritten = errors.New("b4 rewrote its DSCP rules during the run, so the path the set's traffic takes may have changed")
+	errDiscoveryDSCPRewritten = errors.New("b4 rewrote its DSCP rules during the run, so the network path of its probes may have changed")
 )
 
 type discoveryBackend interface {
@@ -167,8 +167,12 @@ func ClearDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark
 	be.clear(flowMark, injectedMark)
 }
 
-func discoveryDSCPRewritten() {
-	if s := discoveryRun.Load(); s != nil && s.dscp != nil {
+func discoveryDSCPRewritten(next *config.Config) {
+	s := discoveryRun.Load()
+	if s == nil {
+		return
+	}
+	if s.dscp != nil || dscpApplied.Load() != nil || dscpStale.Load() != nil || dscpWanted(next) {
 		s.fail(errDiscoveryDSCPRewritten)
 	}
 }
