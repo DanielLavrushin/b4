@@ -34,7 +34,7 @@ func TestATUNDecisionDropLeavesTheHeaderTheTUNReadIntact(t *testing.T) {
 				t.Fatal("ProcessPacketDir changed the packet the TUN read, whose post-SNAT header the TUN turns into the conntrack reply tuple")
 			}
 			lanKey := fmt.Sprintf(connKeyFormat, "192.168.1.100", 50601, quicServer.String(), 443)
-			if host := w.quicFlows.Lookup(lanKey, hello); host != "www.blocked.example" {
+			if host, _ := w.quicFlows.Lookup(lanKey, hello); host != "www.blocked.example" {
 				t.Fatalf("b4 must have decided the flow as the LAN client 192.168.1.100, got %q for that key", host)
 			}
 		})

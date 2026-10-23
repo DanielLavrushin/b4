@@ -24,8 +24,9 @@ const (
 )
 
 const (
-	longHdrBit  = 0x80
-	longHdrMask = 0xC0
+	longHdrBit     = 0x80
+	longHdrMask    = 0xC0
+	shortHdrMinLen = 18
 )
 
 func IsInitial(b []byte) bool {
@@ -70,6 +71,31 @@ func LooksLikeQUIC(b []byte) bool {
 	return true
 }
 
+func LooksLikeShortHeader(b []byte) bool {
+	return len(b) >= shortHdrMinLen && b[0]&longHdrBit == 0
+}
+
+func LooksLikeVersionedLongHeader(b []byte) bool {
+	if len(b) < 7 || b[0]&longHdrBit == 0 {
+		return false
+	}
+	switch binary.BigEndian.Uint32(b[1:5]) {
+	case versionV1, versionV2:
+	default:
+		return false
+	}
+	off := 1 + 4
+	dlen := int(b[off])
+	off++
+	if dlen > maxCIDLen || len(b) < off+dlen+1 {
+		return false
+	}
+	off += dlen
+	slen := int(b[off])
+	off++
+	return slen <= maxCIDLen && len(b) >= off+slen
+}
+
 func DecryptInitial(dcid, packet []byte) ([]byte, bool) {
 	if len(packet) < 7 || packet[0]&0x80 == 0 {
 		return nil, false
@@ -104,7 +130,7 @@ func DecryptInitial(dcid, packet []byte) ([]byte, bool) {
 
 	// Token (varint + bytes)
 	tlen, n := readVar(packet[off:])
-	if n == 0 || len(packet) < off+n+int(tlen) {
+	if n == 0 || tlen > uint64(len(packet)) || len(packet) < off+n+int(tlen) {
 		return nil, false
 	}
 	off += n + int(tlen)

@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"bytes"
+	"encoding/binary"
 	"sync"
 	"time"
 
@@ -13,12 +14,15 @@ import (
 const (
 	maxQUICFlowEntries = 10000
 	quicFlowIdle       = 60 * time.Second
+	quicFlowShared     = 5 * time.Second
+	maxCoalescedHellos = 2
 )
 
 type quicFlow struct {
-	host     string
-	odcid    []byte
-	lastSeen time.Time
+	host      string
+	odcid     []byte
+	coalesced int
+	lastSeen  time.Time
 }
 
 type quicFlowCache struct {
@@ -37,15 +41,56 @@ func (c *quicFlowCache) Store(connKey, host string, odcid []byte) {
 	now := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, exists := c.flows[connKey]; !exists && len(c.flows) >= maxQUICFlowEntries {
+	carried := 0
+	if existing, exists := c.flows[connKey]; exists {
+		if bytes.Equal(existing.odcid, odcid) {
+			existing.host = host
+			existing.lastSeen = now
+			return
+		}
+		if now.Sub(existing.lastSeen) <= quicFlowShared {
+			carried = existing.coalesced
+		}
+	} else if len(c.flows) >= maxQUICFlowEntries {
 		c.evictLocked(now)
 	}
-	c.flows[connKey] = &quicFlow{host: host, odcid: bytes.Clone(odcid), lastSeen: now}
+	c.flows[connKey] = &quicFlow{host: host, odcid: bytes.Clone(odcid), coalesced: carried, lastSeen: now}
 }
 
-func (c *quicFlowCache) Lookup(connKey string, payload []byte) string {
+func (c *quicFlowCache) NoteQUIC(connKey string, odcid []byte) {
+	if c == nil || len(odcid) == 0 {
+		return
+	}
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if existing, exists := c.flows[connKey]; exists {
+		if now.Sub(existing.lastSeen) <= quicFlowIdle {
+			return
+		}
+	} else if len(c.flows) >= maxQUICFlowEntries {
+		c.evictLocked(now)
+	}
+	c.flows[connKey] = &quicFlow{odcid: bytes.Clone(odcid), lastSeen: now}
+}
+
+func (c *quicFlowCache) NoteCoalesced(connKey string) int {
 	if c == nil {
-		return ""
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	flow := c.flows[connKey]
+	if flow == nil {
+		return 0
+	}
+	flow.coalesced++
+	return flow.coalesced
+}
+
+func (c *quicFlowCache) Lookup(connKey string, payload []byte) (string, bool) {
+	if c == nil {
+		return "", false
 	}
 	now := time.Now()
 	c.mu.RLock()
@@ -57,8 +102,12 @@ func (c *quicFlowCache) Lookup(connKey string, payload []byte) string {
 		host, odcid, idle = flow.host, flow.odcid, now.Sub(flow.lastSeen)
 	}
 	c.mu.RUnlock()
-	if flow == nil || idle > quicFlowIdle {
-		return ""
+	if flow == nil {
+		return "", false
+	}
+	if idle > quicFlowIdle {
+		c.forgetFlow(connKey, flow)
+		return "", false
 	}
 
 	if quic.IsInitial(payload) {
@@ -66,9 +115,9 @@ func (c *quicFlowCache) Lookup(connKey string, payload []byte) string {
 		if !bytes.Equal(dcid, odcid) {
 			if _, ok := quic.DecryptInitial(odcid, payload); !ok {
 				if _, own := quic.DecryptInitial(dcid, payload); own {
-					c.forgetFlow(connKey, flow)
+					c.takeOverFlow(connKey, flow, dcid)
 				}
-				return ""
+				return "", false
 			}
 		}
 	}
@@ -80,7 +129,7 @@ func (c *quicFlowCache) Lookup(connKey string, payload []byte) string {
 		}
 		c.mu.Unlock()
 	}
-	return host
+	return host, true
 }
 
 func (c *quicFlowCache) Forget(connKey string) {
@@ -104,6 +153,20 @@ func (c *quicFlowCache) forgetFlow(connKey string, flow *quicFlow) {
 	if current, ok := c.flows[connKey]; ok && current == flow {
 		delete(c.flows, connKey)
 	}
+}
+
+func (c *quicFlowCache) takeOverFlow(connKey string, flow *quicFlow, odcid []byte) {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if current, ok := c.flows[connKey]; !ok || current != flow {
+		return
+	}
+	carried := 0
+	if now.Sub(flow.lastSeen) <= quicFlowShared {
+		carried = flow.coalesced
+	}
+	c.flows[connKey] = &quicFlow{odcid: bytes.Clone(odcid), coalesced: carried, lastSeen: now}
 }
 
 func (c *quicFlowCache) evictLocked(now time.Time) {
@@ -136,6 +199,56 @@ func (c *quicFlowCache) Cleanup() {
 	}
 }
 
+func looksLikeWireGuard(payload []byte) bool {
+	if len(payload) < 4 || payload[1] != 0 || payload[2] != 0 || payload[3] != 0 {
+		return false
+	}
+	switch payload[0] {
+	case 1:
+		return len(payload) == 148
+	case 2:
+		return len(payload) == 92
+	case 3:
+		return len(payload) == 64
+	case 4:
+		return len(payload) >= 32
+	}
+	return false
+}
+
+func looksLikeDTLS(payload []byte) bool {
+	if len(payload) < 13 || payload[0] < 0x14 || payload[0] > 0x17 || payload[1] != 0xfe {
+		return false
+	}
+	if payload[2] != 0xfd && payload[2] != 0xff {
+		return false
+	}
+	return int(binary.BigEndian.Uint16(payload[11:13]))+13 <= len(payload)
+}
+
+func looksLikeSTUN(payload []byte) bool {
+	if len(payload) < 20 || binary.BigEndian.Uint16(payload[0:2])&0xC000 != 0 {
+		return false
+	}
+	if binary.BigEndian.Uint32(payload[4:8]) != 0x2112A442 {
+		return false
+	}
+	return len(payload) == int(binary.BigEndian.Uint16(payload[2:4]))+20
+}
+
+func mayBelongToAQUICFlow(payload []byte, isVoiceMedia bool) bool {
+	if isVoiceMedia {
+		return false
+	}
+	if quic.LooksLikeVersionedLongHeader(payload) {
+		return true
+	}
+	if !quic.LooksLikeShortHeader(payload) {
+		return false
+	}
+	return !looksLikeWireGuard(payload) && !looksLikeDTLS(payload) && !looksLikeSTUN(payload)
+}
+
 func dropsQUICFlow(set *config.SetConfig) bool {
 	if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
 		return true
@@ -144,7 +257,7 @@ func dropsQUICFlow(set *config.SetConfig) bool {
 }
 
 func (w *Worker) quicFlowSet(cfg *config.Config, matcher *sni.SuffixSet, connKey string, pkt *pktInfo, dport uint16, payload []byte, keep sni.SetFilter) (*config.SetConfig, string) {
-	host := w.quicFlows.Lookup(connKey, payload)
+	host, _ := w.quicFlows.Lookup(connKey, payload)
 	if host == "" {
 		return nil, ""
 	}

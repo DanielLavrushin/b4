@@ -78,6 +78,9 @@ func parseHeaderLength(packet []byte) (int, int, bool) {
 	if n == 0 {
 		return 0, 0, false
 	}
+	if tlen > uint64(len(packet)) || off+n+int(tlen) > len(packet) {
+		return 0, 0, false
+	}
 	off += n + int(tlen)
 
 	// Length field (varint)
