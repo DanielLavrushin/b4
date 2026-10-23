@@ -502,11 +502,11 @@ func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, g
 		if cfg.Queue.IPv6Enabled {
 			addQUICRejectRuleIpt(true, st.chainQUIC, st.setV6, sources, legacy)
 		}
-		ensureBlockJumpIpt("FORWARD", st.chainQUIC, legacy, gate)
+		ensureBlockJumpIpt("FORWARD", st.chainQUIC, legacy, true, gate)
 		if sourceScoped {
 			deleteBlockJumpIpt("OUTPUT", st.chainQUIC, legacy)
 		} else {
-			ensureBlockJumpIpt("OUTPUT", st.chainQUIC, legacy, routeDeviceGate{})
+			ensureBlockJumpIpt("OUTPUT", st.chainQUIC, legacy, false, routeDeviceGate{})
 		}
 	}
 	return nil

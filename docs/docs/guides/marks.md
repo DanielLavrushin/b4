@@ -547,6 +547,12 @@ kernels before 4.3 their IPv6 rules get 16383 and sit below b4's either way.
   local sockets; with neither, as in TUN mode, it appends them, and it moves them back when
   they end up below either. A rule another service inserts at the top afterwards runs first,
   unless it matches local sockets.
+- On iptables, the jump to the QUIC refusal of a proxy set (`b4r_*_q`) sits at the top of
+  filter `FORWARD`, so the router firewall's own rules, such as Asuswrt-Merlin's accept for
+  traffic from `br0`, run after it. Its jump in filter `OUTPUT` and the jumps of block sets
+  are appended, and a rule above them that accepts a packet keeps it from them. On nftables
+  these chains hang off b4's `block_fwd` and `block_out`, filter chains at priority -150,
+  ahead of the filter priority (0).
 - On iptables in NFQUEUE mode, a packet b4 releases from its queue skips every later rule of
   the built-in chain it was queued from, so another service's rules lower in that chain
   never see it. That covers the UDP packets from port 53 that `B4_PREROUTING` and b4's rules

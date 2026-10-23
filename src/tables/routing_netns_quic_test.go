@@ -168,6 +168,21 @@ func quicNsRig(t *testing.T) (client, inet *gwNode) {
 	return client, inet
 }
 
+func quicNsHostFirewall(t *testing.T, engine string) {
+	t.Helper()
+	if engine == backendNFTables {
+		_, _ = run("nft", "delete", "table", "inet", "b4qhost")
+		netnsRun(t, "nft", "add", "table", "inet", "b4qhost")
+		t.Cleanup(func() { _, _ = run("nft", "delete", "table", "inet", "b4qhost") })
+		netnsRun(t, "nft", "add", "chain", "inet", "b4qhost", "forward", "{ type filter hook forward priority 0 ; policy accept ; }")
+		netnsRun(t, "nft", "add", "rule", "inet", "b4qhost", "forward", "iifname", `"`+quicNsLAN+`"`, "accept")
+		return
+	}
+	rule := []string{"FORWARD", "-i", quicNsLAN, "-j", "ACCEPT"}
+	netnsRun(t, append([]string{"iptables", "-w", "-t", "filter", "-A"}, rule...)...)
+	t.Cleanup(func() { _, _ = run(append([]string{"iptables", "-w", "-t", "filter", "-D"}, rule...)...) })
+}
+
 func quicNsBlock(set *config.SetConfig, on bool) {
 	if on {
 		set.UDP.Mode, set.UDP.FilterQUIC = config.UDPModeReject, config.QUICFilterAll
@@ -219,6 +234,7 @@ func netnsBlockQUICOnAUDPProxySet(t *testing.T, engine string) {
 		t.Skip("nft is not installed")
 	}
 	client, inet := quicNsRig(t)
+	quicNsHostFirewall(t, engine)
 
 	routeEngine = nil
 	defer func() { routeEngine = nil }()
@@ -258,7 +274,7 @@ func netnsBlockQUICOnAUDPProxySet(t *testing.T, engine string) {
 	}
 	if got := quicNsUDP(client, quicNsMatched, 443, "quic"); got != "refused" {
 		quicNsLogState(t, engine)
-		t.Errorf("client QUIC to a matched address: %s, want ICMP port unreachable so the browser falls back to TCP at once (diverted to the upstream: %v)", got, quicNsDiverted(s, "quic"))
+		t.Errorf("client QUIC to a matched address: %s, want ICMP port unreachable so the browser falls back to TCP at once, also behind a router firewall that accepts LAN traffic first (diverted to the upstream: %v)", got, quicNsDiverted(s, "quic"))
 	}
 	got := quicNsUDP(client, quicNsMatched, quicNsSTUN, "stun")
 	if !s.got("udp", "tproxy", "stun@"+net.JoinHostPort(quicNsMatched, strconv.Itoa(quicNsSTUN))) {
@@ -311,7 +327,7 @@ func netnsBlockQUICOnAUDPProxySet(t *testing.T, engine string) {
 	RoutingSyncConfig(cfg)
 	if got := quicNsUDP(client, quicNsMatched, 443, "quic3"); got != "refused" {
 		quicNsLogState(t, engine)
-		t.Errorf("with UDP off the upstream, client QUIC to a matched address: %s; it was refused before this change and must still be", got)
+		t.Errorf("with UDP off the upstream, client QUIC to a matched address: %s, want it refused although the router's own firewall accepts LAN traffic first", got)
 	}
 	if got := quicNsUDP(client, quicNsMatched, quicNsSTUN, "stun3"); got != "reply=echo:stun3" {
 		t.Errorf("with UDP off the upstream, client STUN to a matched address: %s; it leaves directly as before", got)

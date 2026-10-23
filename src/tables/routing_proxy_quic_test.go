@@ -106,7 +106,7 @@ func TestABlockQUICProxySetKeepsUDP443OutOfItsTProxyRules(t *testing.T) {
 			parents := []string{routeNftBlockFwd + " jump ", routeNftBlockOut + " jump "}
 			if engine == backendIPTables {
 				except, perFamily = "! --dport 443", 1
-				parents = []string{"FORWARD -j ", "OUTPUT -j "}
+				parents = []string{"-I FORWARD 1 -j ", "-A OUTPUT -j "}
 			}
 
 			pre := chainRuleLines(*emitted, st.chainPre)
@@ -146,7 +146,7 @@ func TestABlockQUICProxySetKeepsUDP443OutOfItsTProxyRules(t *testing.T) {
 			}
 			for _, parent := range parents {
 				if firstLineWith(*emitted, parent+st.chainQUIC) < 0 {
-					t.Errorf("nothing jumps to %s from %q, so neither forwarded nor the router's own QUIC is refused", st.chainQUIC, strings.TrimSpace(parent))
+					t.Errorf("no %q%s; on iptables the FORWARD jump goes to the top, because a router firewall accepts LAN traffic above an appended one and the set's QUIC then leaves directly:\n%s", parent, st.chainQUIC, strings.Join(*emitted, "\n"))
 				}
 			}
 

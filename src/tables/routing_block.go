@@ -62,11 +62,11 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		if cfg.Queue.IPv6Enabled {
 			addBlockRuleIpt(true, st.chainPre, st.setV6, st.blockAction, sources, legacy)
 		}
-		ensureBlockJumpIpt("FORWARD", st.chainPre, legacy, gate)
+		ensureBlockJumpIpt("FORWARD", st.chainPre, legacy, false, gate)
 		if sourceScoped {
 			deleteBlockJumpIpt("OUTPUT", st.chainPre, legacy)
 		} else {
-			ensureBlockJumpIpt("OUTPUT", st.chainPre, legacy, routeDeviceGate{})
+			ensureBlockJumpIpt("OUTPUT", st.chainPre, legacy, false, routeDeviceGate{})
 		}
 	}
 	return nil
@@ -222,14 +222,14 @@ func addBlockRuleIpt(v6 bool, chain, setName, action string, sources []string, l
 	}
 }
 
-func ensureBlockJumpIpt(parent, chain string, legacy bool, gate routeDeviceGate) {
+func ensureBlockJumpIpt(parent, chain string, legacy, insertTop bool, gate routeDeviceGate) {
 	for _, v6 := range []bool{false, true} {
 		cmd := iptBlockCmd(v6, legacy)
 		if !hasBinary(cmd) {
 			continue
 		}
 		iptDeleteJumpsTo(cmd, "filter", parent, chain)
-		iptEmitGatedJump(cmd, "filter", parent, chain, false, gate)
+		iptEmitGatedJump(cmd, "filter", parent, chain, insertTop, gate)
 	}
 }
 
