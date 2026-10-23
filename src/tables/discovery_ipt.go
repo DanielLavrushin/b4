@@ -43,8 +43,14 @@ func (b *discoveryIptBackend) takesSetValues(cfg *config.Config, v6 bool) (bool,
 	if v6 {
 		bin = b.ipt6()
 	}
-	if !hasBinary(bin) {
+	if !hasBinary(bin) || !hasBinary("ipset") {
 		return false, nil
+	}
+	dscpIptProbeMu.Lock()
+	recorded, known := dscpIptProbes[bin]
+	dscpIptProbeMu.Unlock()
+	if known {
+		return recorded.err == nil, nil
 	}
 	err := dscpIptCapability(NewIPTablesManager(cfg, b.legacy), bin)
 	if err != nil && dscpIptProbeBusy(err) {

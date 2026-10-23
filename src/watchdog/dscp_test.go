@@ -22,7 +22,31 @@ func TestSetHealWaitsWhileTheDSCPRulesArePending(t *testing.T) {
 		t.Fatalf("no search ran while b4 was still applying its DSCP rules, so the heal waits without counting a failure: %+v", st)
 	}
 	if q := h.queue(); len(q) != 1 || q[0] != "yt" {
-		t.Errorf("the set goes back to the head of the queue: %v", q)
+		t.Errorf("the set is queued again: %v", q)
+	}
+}
+
+func TestSetHealWaitingForDSCPRulesLetsTheOtherSetsGoFirst(t *testing.T) {
+	tagged := watchedSet("yt", ytURL)
+	tagged.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	plain := watchedSet("tr", otherURL)
+	h := newHarness(t, tagged, plain)
+	h.w.mu.Lock()
+	h.w.syncSetStatesLocked(h.ptr.Load())
+	h.w.setStates["tr"].Status = SetStatusHealQueued
+	h.w.enqueueHealLocked("tr", false)
+	h.w.mu.Unlock()
+
+	h.driver.startErr = fmt.Errorf("failed to apply discovery steering rules: %w", discovery.ErrDSCPRulesPending)
+	h.healNow("yt")
+	if q := h.queue(); len(q) != 2 || q[0] != "tr" || q[1] != "yt" {
+		t.Errorf("a set that waits for its DSCP rules goes behind the others, whose runs can start meanwhile: %v", q)
+	}
+
+	h.driver.startErr = discovery.ErrDiscoveryAlreadyRunning
+	h.healNow("yt")
+	if q := h.queue(); len(q) != 2 || q[0] != "yt" {
+		t.Errorf("a set that only found the runtime busy keeps its place at the front: %v", q)
 	}
 }
 

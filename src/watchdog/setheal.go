@@ -158,7 +158,7 @@ func (w *Watchdog) healSet(id string) {
 		if st := w.setStates[id]; st != nil {
 			st.Status = SetStatusHealQueued
 			st.Reason = reason
-			w.enqueueHealLocked(id, true)
+			w.enqueueHealLocked(id, reason == ReasonBusy)
 		}
 		w.mu.Unlock()
 		return

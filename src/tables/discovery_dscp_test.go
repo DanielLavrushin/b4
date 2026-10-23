@@ -775,6 +775,46 @@ func TestDiscoveryTriesTheSetMatchBeforeStampingAFamilyNoSetHasUsed(t *testing.T
 	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
 }
 
+func TestDiscoveryFollowsAFamilysFallbackUntilItsRulesAreRestored(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
+	discoveryIpsetReady(t, false)
+	calls := discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+	probed := 0
+	stubIPSetProbe(t, nil)
+	ipsetMatchProbe = func(*IPTablesManager, string) error {
+		probed++
+		return nil
+	}
+	dscpIptProbeMu.Lock()
+	dscpIptProbes[backendIPTables] = dscpIptProbe{err: errors.New("iptables rejected the set match"), at: dscpIptNow().Add(-time.Hour)}
+	dscpIptProbeMu.Unlock()
+	cfg := config.NewConfig()
+	cfg.System.Tables.Engine = backendIPTables
+
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if probed != 0 || discoveryCallIndex(*calls, "iptables -w -t mangle -I POSTROUTING 2 -j B4_DISCOVERY_DSCP") >= 0 {
+		t.Errorf("the set's rules fell back to the global value an hour ago and nothing has put them back, so its traffic still leaves without its value and the run must follow that, not a new probe (probed %d times)", probed)
+	}
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+
+	dscpIptProbeMu.Lock()
+	dscpIptProbes[backendIPTables] = dscpIptProbe{at: dscpIptNow()}
+	dscpIptProbeMu.Unlock()
+	stubBinaryPresence(t, map[string]bool{"ipset": false})
+	*calls = nil
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if discoveryCallIndex(*calls, "iptables -w -t mangle -I POSTROUTING 2 -j B4_DISCOVERY_DSCP") >= 0 {
+		t.Error("the ipset command is gone, so the set's rules fall back although the last probe passed, and the run must follow the fallback")
+	}
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+}
+
 func TestDiscoveryTriesTheNftablesSetObjectsBeforeStampingTheirValue(t *testing.T) {
 	appliedResetGlobals(t)
 	resetDSCPState(t)
