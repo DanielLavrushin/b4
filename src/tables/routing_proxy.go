@@ -385,21 +385,25 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	legacy := isLegacyIptBackend(be)
 
 	udp := set.Routing.Upstream.UDP
+	udpExcept := 0
+	if udp && st.quicReject {
+		udpExcept = quicRejectPort
+	}
 
 	switch be.name() {
 	case backendNFTables:
 		if cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleNft(st.chainPre, false, st.setV4, st.mark)
-			addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp")
+			addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp", 0)
 			if udp {
-				addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "udp")
+				addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "udp", udpExcept)
 			}
 		}
 		if cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleNft(st.chainPre, true, st.setV6, st.mark)
-			addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp")
+			addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp", 0)
 			if udp {
-				addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "udp")
+				addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "udp", udpExcept)
 			}
 		}
 		if !sourceScoped {
@@ -409,9 +413,9 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		proxyIptPreflight(legacy)
 		if cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleIpt(false, st.chainPre, st.setV4, st.mark, legacy)
-			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp")
+			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp", 0)
 			if udp {
-				addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "udp")
+				addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "udp", udpExcept)
 			}
 			if !sourceScoped {
 				addProxyOutputMarkRuleIpt(false, st.chainOut, st.setV4, st.mark, legacy)
@@ -419,9 +423,9 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		}
 		if cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleIpt(true, st.chainPre, st.setV6, st.mark, legacy)
-			addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp")
+			addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp", 0)
 			if udp {
-				addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "udp")
+				addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "udp", udpExcept)
 			}
 			if !sourceScoped {
 				addProxyOutputMarkRuleIpt(true, st.chainOut, st.setV6, st.mark, legacy)
@@ -445,8 +449,13 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		if err := routeEnsureQUICReject(be, cfg, st, gate, sourceScoped, sources); err != nil {
 			return err
 		}
-		log.Infof("Routing [%s]: set '%s' refuses QUIC (UDP/%d) to matched addresses so clients fall back to TCP through the upstream; enable 'Route UDP through upstream' if the proxy supports UDP ASSOCIATE",
-			be.name(), set.Name, quicRejectPort)
+		if udp {
+			log.Infof("Routing [%s]: set '%s' blocks QUIC: its UDP/%d to matched addresses is refused so clients fall back to TCP through the upstream, and its other UDP goes through the upstream",
+				be.name(), set.Name, quicRejectPort)
+		} else {
+			log.Infof("Routing [%s]: set '%s' refuses QUIC (UDP/%d) to matched addresses so clients fall back to TCP through the upstream; enable 'Route UDP through upstream' if the proxy supports UDP ASSOCIATE",
+				be.name(), set.Name, quicRejectPort)
+		}
 	}
 
 	routeEnsureLocalDelivery(st.mark, st.table, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
@@ -988,7 +997,7 @@ func removeProxyInputAccept(be routeBackend, mark uint32) {
 	}
 }
 
-func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, port int, sources []string, proto string) {
+func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, port int, sources []string, proto string, exceptDPort int) {
 	markHex := fmt.Sprintf("0x%x", mark)
 	portStr := fmt.Sprintf(":%d", port)
 
@@ -997,23 +1006,17 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 		if src != "" {
 			args = append(args, "iifname", fmt.Sprintf("%q", src))
 		}
+		family := "ip"
 		if v6 {
-			args = append(args,
-				"meta", "l4proto", proto,
-				"ip6", "daddr", "@"+sn,
-				"meta", "mark", "set", markHex,
-				"tproxy", "ip6", "to", portStr,
-				"accept",
-			)
+			family = "ip6"
+			args = append(args, "meta", "l4proto", proto, "ip6", "daddr", "@"+sn)
 		} else {
-			args = append(args,
-				"ip", "protocol", proto,
-				"ip", "daddr", "@"+sn,
-				"meta", "mark", "set", markHex,
-				"tproxy", "ip", "to", portStr,
-				"accept",
-			)
+			args = append(args, "ip", "protocol", proto, "ip", "daddr", "@"+sn)
 		}
+		if exceptDPort > 0 {
+			args = append(args, proto, "dport", "!=", fmt.Sprintf("%d", exceptDPort))
+		}
+		args = append(args, "meta", "mark", "set", markHex, "tproxy", family, "to", portStr, "accept")
 		runLogged("routing: add tproxy rule "+chain, append([]string{"nft"}, args...)...)
 	}
 
@@ -1028,7 +1031,7 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 	}
 }
 
-func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int, sources []string, legacy bool, proto string) {
+func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int, sources []string, legacy bool, proto string, exceptDPort int) {
 	cmd := backendIPTables
 	if v6 {
 		cmd = backendIP6Tables
@@ -1049,6 +1052,9 @@ func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int
 		args := []string{cmd, "-w", "-t", "mangle", "-A", chain, "-p", proto}
 		if src != "" {
 			args = append(args, "-i", src)
+		}
+		if exceptDPort > 0 {
+			args = append(args, "!", "--dport", fmt.Sprintf("%d", exceptDPort))
 		}
 		args = append(args,
 			"-m", "set", "--match-set", setName, "dst",

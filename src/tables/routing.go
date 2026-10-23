@@ -623,7 +623,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.table = proxyTable()
 		st.tproxyPort = port
 		st.upstreamKey = fmt.Sprintf("%s:%d|%s|udp=%t", set.Routing.Upstream.Host, set.Routing.Upstream.Port, set.Routing.Upstream.Username, set.Routing.Upstream.UDP)
-		st.quicReject = mode == config.RoutingModeProxy && !set.Routing.Upstream.UDP
+		st.quicReject = mode == config.RoutingModeProxy && (!set.Routing.Upstream.UDP || set.BlocksQUIC())
 	} else {
 		mark, table := routeResolveIDs(cfg, set)
 		st.mark = mark
@@ -708,10 +708,10 @@ func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 	sameFamilies := old.ipv4 == cur.ipv4 && old.ipv6 == cur.ipv6
 
 	if sameShape && sameFamilies && config.RoutingUsesTProxy(old.mode) {
-		if !cur.quicReject {
-			routeCleanupQUICReject(be, old)
-		}
 		return func() {
+			if !cur.quicReject {
+				routeCleanupQUICReject(be, old)
+			}
 			if old.mark == cur.mark && old.table == cur.table {
 				return
 			}

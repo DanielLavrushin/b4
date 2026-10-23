@@ -790,6 +790,10 @@ func (set *SetConfig) SelectsL7Class(class string) bool {
 	return false
 }
 
+func (set *SetConfig) BlocksQUIC() bool {
+	return set.UDP.Mode == UDPModeReject && set.UDP.FilterQUIC == QUICFilterAll
+}
+
 func (cfg *Config) BuildSetPortRanges() {
 	var selected, listed []PortRange
 	for _, set := range cfg.Sets {
