@@ -28,7 +28,7 @@ export function macDeviceLabel(
   device: DeviceInfo | undefined,
   lastIp = "",
 ): DeviceLabel {
-  const ip = device?.ip || lastIp;
+  const ip = lastIp || device?.ip || "";
   const name = device ? resolveDeviceName({ ...device, ip }) : ip || mac;
   const vendor =
     device?.vendor && device.vendor !== "Private" && !name.includes(device.vendor)

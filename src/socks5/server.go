@@ -420,15 +420,16 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 
 	from := metrics.DeviceOf(conn.RemoteAddr())
 	s.logConnection("TCP", conn.RemoteAddr().String(), dest, from.MAC, "socks5")
-	if viaSet != "" {
-		mc := metrics.GetMetricsCollector()
+	mc := metrics.GetMetricsCollector()
+	host, _, _ := net.SplitHostPort(dest)
+	if viaSet == "" {
+		mc.CountRelayedConnection(from, host)
+	} else {
 		mc.CountConnection(viaSet, from)
-		if host, _, err := net.SplitHostPort(dest); err == nil {
-			if addr, err := netip.ParseAddr(host); err == nil {
-				mc.RecordAddress(addr, viaSet)
-			} else {
-				mc.RecordDomain(host, viaSet, from)
-			}
+		if addr, err := netip.ParseAddr(host); err == nil {
+			mc.RecordAddress(addr, viaSet)
+		} else if host != "" {
+			mc.RecordDomain(host, viaSet, from)
 		}
 	}
 

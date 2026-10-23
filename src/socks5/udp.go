@@ -206,7 +206,10 @@ func (s *Server) handleUDPPacket(bindLn *net.UDPConn, srcAddr *net.UDPAddr, dest
 
 	go s.udpReadFromTarget(bindLn, targetNew, srcAddr, destUDP, connKey, conns)
 
-	s.logConnection("UDP", srcAddr.String(), dest, metrics.DeviceOf(srcAddr).MAC, "socks5")
+	from := metrics.DeviceOf(srcAddr)
+	s.logConnection("UDP", srcAddr.String(), dest, from.MAC, "socks5")
+	destHost, _, _ := net.SplitHostPort(dest)
+	metrics.GetMetricsCollector().CountRelayedConnection(from, destHost)
 
 	// Send initial data
 	if _, err := targetNew.Write(data); err != nil {

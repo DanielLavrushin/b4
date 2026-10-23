@@ -2,6 +2,8 @@ package socks5
 
 import (
 	"net"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +43,78 @@ func sessionLineMAC(t *testing.T, lines chan string, proto, domain string) strin
 			t.Fatalf("no %s session line for %s", proto, domain)
 			return ""
 		}
+	}
+}
+
+func clientDevice(t *testing.T) metrics.DeviceEntry {
+	t.Helper()
+	for _, d := range metrics.GetMetricsCollector().Hello().Devices.Items {
+		if d.Key == testClientMAC {
+			return d
+		}
+	}
+	return metrics.DeviceEntry{}
+}
+
+func clientCount(t *testing.T) uint64 {
+	t.Helper()
+	var n uint64
+	for _, d := range metrics.GetMetricsCollector().Hello().Devices.Items {
+		if d.Key == testClientMAC || d.Key == "127.0.0.1" {
+			n += d.Count
+		}
+	}
+	return n
+}
+
+func TestADirectSessionCountsForItsClientOnly(t *testing.T) {
+	withClientMAC(t)
+	direct := startGreeter(t, "direct")
+	_, portStr, _ := net.SplitHostPort(direct)
+	directPort, _ := strconv.Atoi(portStr)
+	port := startUpstreamTestServer(t, &fakeUpstreams{handled: true}, torSet(config.RoutingModeProxy))
+	before, clientBefore := metrics.GetMetricsCollector().Totals(), clientCount(t)
+
+	if got, err := fetchThrough(t, port, "localhost", directPort); err != nil || got != "direct" {
+		t.Fatalf("CONNECT: %q, %v", got, err)
+	}
+	if d := clientDevice(t); clientCount(t)-clientBefore != 1 || !slices.Contains(d.Domains, "localhost") {
+		t.Fatalf("a direct session counts once for the client that opened it, with its name: %+v (count before %d)", d, clientBefore)
+	}
+	if conns, _ := countedSince(t, before); conns != 0 {
+		t.Fatalf("the queue counts the outbound flow, so the totals must not count the session again: %d", conns)
+	}
+}
+
+func TestAUDPSessionCountsOnceForItsClient(t *testing.T) {
+	withClientMAC(t)
+	echoPort := startUDPEcho(t)
+	_, addr := startTestServer(t, config.Socks5Config{UDPReadTimeout: 5})
+	before, clientBefore := metrics.GetMetricsCollector().Totals(), clientCount(t)
+
+	c, relay := associate(t, addr, [4]byte{0, 0, 0, 0}, 0)
+	defer c.Close()
+	u, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer u.Close()
+	buf := make([]byte, 2048)
+	for i := 0; i < 2; i++ {
+		if _, err := u.WriteToUDP(udpDatagram(echoPort, []byte("relayed")), relay); err != nil {
+			t.Fatalf("send through relay: %v", err)
+		}
+		_ = u.SetReadDeadline(time.Now().Add(3 * time.Second))
+		if _, _, err := u.ReadFromUDP(buf); err != nil {
+			t.Fatalf("echo through relay: %v", err)
+		}
+	}
+
+	if got := clientCount(t) - clientBefore; got != 1 {
+		t.Fatalf("one UDP session counts once for its client, however many datagrams it carries: %d", got)
+	}
+	if conns, _ := countedSince(t, before); conns != 0 {
+		t.Fatalf("the queue counts the relayed flow, so the totals must not count the session again: %d", conns)
 	}
 }
 

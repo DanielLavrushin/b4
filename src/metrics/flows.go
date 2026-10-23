@@ -149,6 +149,12 @@ func (m *MetricsCollector) CountConnection(setID string, from Device) {
 	m.dev.count(from, now)
 }
 
+func (m *MetricsCollector) CountRelayedConnection(from Device, host string) {
+	m.initOnce.Do(m.init)
+	m.dev.count(from, m.tickMono.Load())
+	m.dev.name(from, host)
+}
+
 func (m *MetricsCollector) RecordBlockedFlow(key FlowKey, setID, target string, from Device) {
 	m.initOnce.Do(m.init)
 	now := m.tickMono.Load()
