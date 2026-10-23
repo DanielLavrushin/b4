@@ -23,8 +23,29 @@ func quicTestState(set *config.SetConfig, quicReject bool) routeState {
 	st.setV4, st.setV6 = routeBuildSetNames(set.Id)
 	st.chainPre, st.chainOut, st.chainSNAT = routeBuildChainNames(set.Id)
 	st.chainQUIC = routeBuildQUICChainName(set.Id)
+	st.chainQOut = routeBuildQUICOutChainName(set.Id)
 	st.quicReject = quicReject
 	return st
+}
+
+func linesNaming(lines []string, chain string) []string {
+	var out []string
+	for _, line := range lines {
+		if strings.Contains(" "+line+" ", " "+chain+" ") {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func jumpLines(lines []string, parent, chain string) []string {
+	var out []string
+	for _, line := range lines {
+		if strings.HasSuffix(line, parent+chain) {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 func quicTestBackend(engine string) routeBackend {
@@ -61,14 +82,23 @@ func TestAUDPProxySetRefusesQUICOnlyWhenItBlocksQUIC(t *testing.T) {
 	if routeStateEqual(plain, blocking) {
 		t.Error("turning Block QUIC on or off must change the rule state, or the set's rules are never rebuilt")
 	}
-	watched := false
+	parents := map[string]string{}
 	for _, r := range routeStateChains(blocking) {
-		if r.chain == blocking.chainQUIC && r.table == "filter" {
-			watched = true
+		if r.table == "filter" {
+			parents[r.chain] = r.parent
 		}
 	}
-	if !watched {
-		t.Errorf("the monitor must watch the QUIC chain of a set that blocks QUIC, got %+v", routeStateChains(blocking))
+	if parents[blocking.chainQUIC] != "FORWARD" || parents[blocking.chainQOut] != "OUTPUT" {
+		t.Errorf("the monitor must watch %s from FORWARD and %s from OUTPUT for a set that blocks QUIC, got %+v",
+			blocking.chainQUIC, blocking.chainQOut, routeStateChains(blocking))
+	}
+
+	scoped := quicTestSet(true, true)
+	scoped.Routing.SourceInterfaces = []string{"br0"}
+	for _, r := range routeStateChains(buildRouteState(&cfg, scoped)) {
+		if r.table == "filter" && r.parent == "OUTPUT" {
+			t.Errorf("a set limited to source interfaces leaves the router's own traffic alone and builds no %s, so the monitor must not wait for it", r.chain)
+		}
 	}
 
 	tcpOnly := buildRouteState(&cfg, quicTestSet(false, false))
@@ -122,10 +152,10 @@ func TestABlockQUICProxySetStopsItsQUICAheadOfTheTProxyRules(t *testing.T) {
 			}
 
 			perFamily := 2
-			parents := []string{routeNftBlockFwd + " jump ", routeNftBlockOut + " jump "}
+			fwd, out := routeNftBlockFwd+" jump ", routeNftBlockOut+" jump "
 			if engine == backendIPTables {
 				perFamily = 1
-				parents = []string{"-I FORWARD 1 -j ", "-A OUTPUT -j "}
+				fwd, out = "-I FORWARD 1 -j ", "-A OUTPUT -j "
 			}
 
 			pre := chainRuleLines(*emitted, st.chainPre)
@@ -157,23 +187,29 @@ func TestABlockQUICProxySetStopsItsQUICAheadOfTheTProxyRules(t *testing.T) {
 				}
 			}
 
-			quic := chainRuleLines(*emitted, st.chainQUIC)
-			for _, sn := range []string{st.setV4, st.setV6} {
-				refused := false
-				for _, line := range quic {
-					if strings.Contains(line, sn) && strings.Contains(line, "443") &&
-						(strings.Contains(line, "reject with icmpx type port-unreachable") || strings.Contains(line, "-j REJECT")) {
-						refused = true
+			for _, chain := range []string{st.chainQUIC, st.chainQOut} {
+				quic := chainRuleLines(*emitted, chain)
+				for _, sn := range []string{st.setV4, st.setV6} {
+					refused := false
+					for _, line := range quic {
+						if strings.Contains(line, sn) && strings.Contains(line, "443") &&
+							(strings.Contains(line, "reject with icmpx type port-unreachable") || strings.Contains(line, "-j REJECT")) {
+							refused = true
+						}
+					}
+					if !refused {
+						t.Errorf("no rule in %s refuses UDP 443 to %s:\n%s", chain, sn, strings.Join(quic, "\n"))
 					}
 				}
-				if !refused {
-					t.Errorf("no rule in %s refuses UDP 443 to %s:\n%s", st.chainQUIC, sn, strings.Join(quic, "\n"))
-				}
 			}
-			for _, parent := range parents {
-				if firstLineWith(*emitted, parent+st.chainQUIC) < 0 {
-					t.Errorf("no %q%s; on iptables the FORWARD jump goes to the top, because a router firewall accepts LAN traffic above an appended one and the set's QUIC then leaves directly:\n%s", parent, st.chainQUIC, strings.Join(*emitted, "\n"))
-				}
+			if len(jumpLines(*emitted, fwd, st.chainQUIC)) == 0 {
+				t.Errorf("no %q%s; on iptables the FORWARD jump goes to the top, because a router firewall accepts LAN traffic above an appended one and the set's QUIC then leaves directly:\n%s", fwd, st.chainQUIC, strings.Join(*emitted, "\n"))
+			}
+			if len(jumpLines(*emitted, out, st.chainQOut)) == 0 {
+				t.Errorf("no %q%s, so the router's own QUIC to the set's addresses is never refused:\n%s", out, st.chainQOut, strings.Join(*emitted, "\n"))
+			}
+			if wrong := append(jumpLines(*emitted, out, st.chainQUIC), jumpLines(*emitted, fwd, st.chainQOut)...); len(wrong) != 0 {
+				t.Errorf("%s serves forwarded traffic and %s the router's own; a jump to either from the other hook: %v", st.chainQUIC, st.chainQOut, wrong)
 			}
 
 			for _, line := range chainRuleLines(*emitted, st.chainOut) {
@@ -213,8 +249,10 @@ func TestAUDPProxySetWithoutBlockQUICSendsAllItsUDPUpstream(t *testing.T) {
 			if pass := quicPassRules(pre); len(pass) != 0 {
 				t.Errorf("with Block QUIC off nothing may stop the set's QUIC ahead of the upstream: %v", pass)
 			}
-			if n := countLinesWith(*emitted, st.chainQUIC); n != 0 {
-				t.Errorf("a set that refuses no QUIC built or touched %s %d time(s)", st.chainQUIC, n)
+			for _, chain := range []string{st.chainQUIC, st.chainQOut} {
+				if n := len(linesNaming(*emitted, chain)); n != 0 {
+					t.Errorf("a set that refuses no QUIC built or touched %s %d time(s)", chain, n)
+				}
 			}
 		})
 	}
@@ -245,6 +283,57 @@ func TestAProxySetWithUDPOffKeepsItsQUICFromLaterSets(t *testing.T) {
 	}
 }
 
+func TestTheQUICRefusalReturnsDevicesTheSetExcludes(t *testing.T) {
+	const mac = "aa:bb:cc:dd:ee:01"
+	for _, engine := range []string{backendNFTables, backendIPTables} {
+		t.Run(engine, func(t *testing.T) {
+			localGuardReset(t)
+			emitted := captureProxyRuleArgv(t)
+			stubBinaries(t, backendIPTables, backendIP6Tables)
+
+			cfg := v4OnlyConfig()
+			cfg.Queue.IPv6Enabled = true
+			set := quicTestSet(true, true)
+			set.Targets.SourceDevices = []string{mac}
+			set.Targets.SourceDevicesExclude = true
+			st := quicTestState(set, true)
+			if err := routeEnsureProxyRule(quicTestBackend(engine), cfg, set, st, nil); err != nil {
+				t.Fatalf("routeEnsureProxyRule: %v", err)
+			}
+
+			quic := chainRuleLines(*emitted, st.chainQUIC)
+			isReturn := func(l string) bool {
+				return strings.Contains(strings.ToLower(l), mac) && (strings.HasSuffix(l, " return") || strings.HasSuffix(l, "-j RETURN"))
+			}
+			isReject := func(l string) bool {
+				return strings.Contains(l, "reject with icmpx") || strings.Contains(l, "-j REJECT")
+			}
+			skip, reject := indexOfLine(quic, isReturn), indexOfLine(quic, isReject)
+			if skip < 0 || reject < 0 || skip > reject {
+				t.Errorf("%s must return the excluded device %s ahead of its reject rule (return at %d, reject at %d), as the set's own chain does:\n%s",
+					st.chainQUIC, mac, skip, reject, strings.Join(quic, "\n"))
+			}
+
+			own := chainRuleLines(*emitted, st.chainQOut)
+			if indexOfLine(own, isReject) < 0 {
+				t.Errorf("excluding a device must not stop %s refusing the router's own QUIC:\n%s", st.chainQOut, strings.Join(own, "\n"))
+			}
+			for _, line := range own {
+				if strings.Contains(strings.ToLower(line), mac) {
+					t.Errorf("%s is reached from OUTPUT, where iptables refuses a MAC match and no device sends the router's own traffic: %s", st.chainQOut, line)
+				}
+			}
+			out := routeNftBlockOut + " jump "
+			if engine == backendIPTables {
+				out = "-A OUTPUT -j "
+			}
+			if wrong := jumpLines(*emitted, out, st.chainQUIC); len(wrong) != 0 {
+				t.Errorf("OUTPUT jumps to %s, which matches device MACs; iptables refuses that jump and the set's install fails: %v", st.chainQUIC, wrong)
+			}
+		})
+	}
+}
+
 func TestTurningTheQUICRefusalOffKeepsItUntilTheNewRulesAreIn(t *testing.T) {
 	for _, engine := range []string{backendNFTables, backendIPTables} {
 		t.Run(engine, func(t *testing.T) {
@@ -255,12 +344,40 @@ func TestTurningTheQUICRefusalOffKeepsItUntilTheNewRulesAreIn(t *testing.T) {
 			cur := old
 			cur.quicReject = false
 			retire := routeCleanupForRebuild(quicTestBackend(engine), old, cur)
-			if n := countLinesWith(*emitted, old.chainQUIC); n != 0 {
-				t.Fatalf("the QUIC chain came down before the set's new rules went in, so its QUIC left directly in between:\n%s", strings.Join(*emitted, "\n"))
+			for _, chain := range []string{old.chainQUIC, old.chainQOut} {
+				if n := len(linesNaming(*emitted, chain)); n != 0 {
+					t.Fatalf("%s came down before the set's new rules went in, so its QUIC left directly in between:\n%s", chain, strings.Join(*emitted, "\n"))
+				}
 			}
 			retire()
-			if n := countLinesWith(*emitted, old.chainQUIC); n == 0 {
-				t.Error("the QUIC chain of a set that no longer refuses QUIC was never taken down")
+			for _, chain := range []string{old.chainQUIC, old.chainQOut} {
+				if n := len(linesNaming(*emitted, chain)); n == 0 {
+					t.Errorf("%s of a set that no longer refuses QUIC was never taken down", chain)
+				}
+			}
+		})
+	}
+}
+
+func TestLimitingTheSetToSourcesTakesDownOnlyTheRouterQUICChain(t *testing.T) {
+	for _, engine := range []string{backendNFTables, backendIPTables} {
+		t.Run(engine, func(t *testing.T) {
+			emitted := captureProxyRuleArgv(t)
+			stubBinaries(t, backendIPTables, backendIP6Tables)
+
+			old := quicTestState(quicTestSet(true, true), true)
+			cur := old
+			cur.srcScoped = true
+			retire := routeCleanupForRebuild(quicTestBackend(engine), old, cur)
+			if n := len(linesNaming(*emitted, old.chainQOut)); n != 0 {
+				t.Fatalf("%s came down before the set's new rules went in:\n%s", old.chainQOut, strings.Join(*emitted, "\n"))
+			}
+			retire()
+			if n := len(linesNaming(*emitted, old.chainQOut)); n == 0 {
+				t.Errorf("a set limited to source devices or interfaces leaves the router's own traffic alone, yet %s stayed", old.chainQOut)
+			}
+			if n := len(linesNaming(*emitted, old.chainQUIC)); n != 0 {
+				t.Errorf("%s still refuses the QUIC of the set's devices and must stay:\n%s", old.chainQUIC, strings.Join(*emitted, "\n"))
 			}
 		})
 	}

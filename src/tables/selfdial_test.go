@@ -141,6 +141,7 @@ func TestRouteStateChains_OnlyDivertingChainsWantBypass(t *testing.T) {
 		chainOut:   "out",
 		chainSNAT:  "snat",
 		chainQUIC:  "quic",
+		chainQOut:  "quico",
 		quicReject: true,
 	}
 	for _, c := range routeStateChains(st) {

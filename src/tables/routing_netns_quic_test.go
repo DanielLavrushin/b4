@@ -179,19 +179,23 @@ func quicNsRig(t *testing.T) (client, inet *gwNode, clientMAC string) {
 	return client, inet, clientMAC
 }
 
-func quicNsHostFirewall(t *testing.T, engine string) {
+func quicNsHostFirewall(t *testing.T, engine string, links ...string) {
 	t.Helper()
 	if engine == backendNFTables {
 		_, _ = run("nft", "delete", "table", "inet", "b4qhost")
 		netnsRun(t, "nft", "add", "table", "inet", "b4qhost")
 		t.Cleanup(func() { _, _ = run("nft", "delete", "table", "inet", "b4qhost") })
 		netnsRun(t, "nft", "add", "chain", "inet", "b4qhost", "forward", "{ type filter hook forward priority 0 ; policy accept ; }")
-		netnsRun(t, "nft", "add", "rule", "inet", "b4qhost", "forward", "iifname", `"`+quicNsLAN+`"`, "accept")
+		for _, link := range links {
+			netnsRun(t, "nft", "add", "rule", "inet", "b4qhost", "forward", "iifname", `"`+link+`"`, "accept")
+		}
 		return
 	}
-	rule := []string{"FORWARD", "-i", quicNsLAN, "-j", "ACCEPT"}
-	netnsRun(t, append([]string{"iptables", "-w", "-t", "filter", "-A"}, rule...)...)
-	t.Cleanup(func() { _, _ = run(append([]string{"iptables", "-w", "-t", "filter", "-D"}, rule...)...) })
+	for _, link := range links {
+		rule := []string{"FORWARD", "-i", link, "-j", "ACCEPT"}
+		netnsRun(t, append([]string{"iptables", "-w", "-t", "filter", "-A"}, rule...)...)
+		t.Cleanup(func() { _, _ = run(append([]string{"iptables", "-w", "-t", "filter", "-D"}, rule...)...) })
+	}
 }
 
 func quicNsBlock(set *config.SetConfig, on bool) {
@@ -245,7 +249,7 @@ func netnsBlockQUICOnAUDPProxySet(t *testing.T, engine string) {
 		t.Skip("nft is not installed")
 	}
 	client, inet, _ := quicNsRig(t)
-	quicNsHostFirewall(t, engine)
+	quicNsHostFirewall(t, engine, quicNsLAN)
 
 	routeEngine = nil
 	defer func() { routeEngine = nil }()
@@ -326,8 +330,10 @@ func netnsBlockQUICOnAUDPProxySet(t *testing.T, engine string) {
 		quicNsLogState(t, engine)
 		t.Errorf("with Block QUIC off, client QUIC to a matched address (%s) never reached the transparent socket", got)
 	}
-	if quicNsChainExists(engine, st.chainQUIC) {
-		t.Errorf("%s outlived Block QUIC", st.chainQUIC)
+	for _, chain := range []string{st.chainQUIC, st.chainQOut} {
+		if quicNsChainExists(engine, chain) {
+			t.Errorf("%s outlived Block QUIC", chain)
+		}
 	}
 	if !RoutingRulesPresent(cfg) {
 		t.Error("the monitor finds the rules incomplete after Block QUIC was turned off")
@@ -364,7 +370,7 @@ func netnsBlockQUICHoldsAgainstALaterProxySet(t *testing.T, engine string) {
 	}
 	client, inet, mac := quicNsRig(t)
 	other, _ := quicNsAttachClient(t, quicNsLAN2, quicNsLAN2Peer, quicNsLAN2Rtr, quicNsClient2)
-	quicNsHostFirewall(t, engine)
+	quicNsHostFirewall(t, engine, quicNsLAN)
 
 	routeEngine = nil
 	defer func() { routeEngine = nil }()
@@ -434,4 +440,64 @@ func TestNetnsBlockQUICHoldsAgainstALaterProxySet(t *testing.T) {
 
 func TestNetnsBlockQUICHoldsAgainstALaterProxySetNft(t *testing.T) {
 	netnsBlockQUICHoldsAgainstALaterProxySet(t, backendNFTables)
+}
+
+func netnsQUICRefusalSkipsExcludedDevices(t *testing.T, engine string) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	if engine == backendNFTables && !hasBinary("nft") {
+		t.Skip("nft is not installed")
+	}
+	client, inet, _ := quicNsRig(t)
+	other, otherMAC := quicNsAttachClient(t, quicNsLAN2, quicNsLAN2Peer, quicNsLAN2Rtr, quicNsClient2)
+	quicNsHostFirewall(t, engine, quicNsLAN, quicNsLAN2)
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := quicNsConfig(engine)
+	set := cfg.Sets[0]
+	set.Targets.SourceDevices = []string{otherMAC}
+	set.Targets.SourceDevicesExclude = true
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+	quicNsServeEcho(t, inet, quicNsMatched, 443)
+
+	for _, mode := range []struct {
+		name string
+		udp  bool
+	}{
+		{"Block QUIC with UDP through the upstream", true},
+		{"UDP off the upstream", false},
+	} {
+		set.Routing.Upstream.UDP = mode.udp
+		quicNsBlock(set, mode.udp)
+		RoutingSyncConfig(cfg)
+		if got := quicNsUDP(client, quicNsMatched, 443, "in"); got != "refused" {
+			quicNsLogState(t, engine)
+			t.Errorf("%s: QUIC from a device of the set: %s, want refused", mode.name, got)
+		}
+		if got := quicNsUDP(other, quicNsMatched, 443, "out"); got != "reply=echo:out" {
+			quicNsLogState(t, engine)
+			t.Errorf("%s: QUIC from a device the set excludes: %s, want it left alone like the rest of that device's traffic", mode.name, got)
+		}
+		if got := quicNsUDP(nil, quicNsMatched, 443, "own"); !strings.HasPrefix(got, "refused") {
+			quicNsLogState(t, engine)
+			t.Errorf("%s: the router's own QUIC to a matched address: %s, want it refused; the excluded device's MAC rule cannot sit in a chain reached from OUTPUT", mode.name, got)
+		}
+		if !RoutingRulesPresent(cfg) {
+			t.Errorf("%s: the monitor finds the rules of a set that excludes a device incomplete, so it would rebuild them on every tick", mode.name)
+		}
+	}
+	RoutingClearAll()
+}
+
+func TestNetnsQUICRefusalSkipsExcludedDevices(t *testing.T) {
+	netnsQUICRefusalSkipsExcludedDevices(t, backendIPTables)
+}
+
+func TestNetnsQUICRefusalSkipsExcludedDevicesNft(t *testing.T) {
+	netnsQUICRefusalSkipsExcludedDevices(t, backendNFTables)
 }

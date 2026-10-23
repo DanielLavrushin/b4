@@ -454,7 +454,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	}
 
 	if st.quicReject {
-		if err := routeEnsureQUICReject(be, cfg, st, gate, sourceScoped, sources); err != nil {
+		if err := routeEnsureQUICReject(be, cfg, st, gate, sources); err != nil {
 			return err
 		}
 		if udp {
@@ -473,68 +473,97 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 
 const quicRejectPort = 443
 
-func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, gate routeDeviceGate, sourceScoped bool, sources []string) error {
+func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, gate routeDeviceGate, sources []string) error {
+	out := routeQUICOutChain(st)
 	switch be.name() {
 	case backendNFTables:
 		if err := ensureBlockBaseNft(); err != nil {
 			return err
 		}
-		if err := be.ensureChain(st.chainQUIC, true); err != nil {
+		if err := routeFillQUICChainNft(be, cfg, st, st.chainQUIC, gate, sources); err != nil {
 			return err
 		}
-		be.flushChain(st.chainQUIC, true)
-		routeSelfDialBypass(be, cfg, st.chainQUIC)
-		if cfg.Queue.IPv4Enabled {
-			addQUICRejectRuleNft(st.chainQUIC, false, st.setV4, sources)
-		}
-		if cfg.Queue.IPv6Enabled {
-			addQUICRejectRuleNft(st.chainQUIC, true, st.setV6, sources)
-		}
 		ensureBlockJumpNft(routeNftBlockFwd, st.chainQUIC, gate)
-		if sourceScoped {
-			deleteNftJumpRules(routeNftTable, routeNftBlockOut, st.chainQUIC)
-		} else {
-			ensureBlockJumpNft(routeNftBlockOut, st.chainQUIC, routeDeviceGate{})
+		if out != "" {
+			if err := routeFillQUICChainNft(be, cfg, st, out, routeDeviceGate{}, nil); err != nil {
+				return err
+			}
+			ensureBlockJumpNft(routeNftBlockOut, out, routeDeviceGate{})
 		}
 	default:
 		legacy := isLegacyIptBackend(be)
-		if err := ensureBlockChainIpt(st.chainQUIC, legacy); err != nil {
+		if err := routeFillQUICChainIpt(be, cfg, st, st.chainQUIC, gate, sources, legacy); err != nil {
 			return err
 		}
-		for _, m := range quicBypassMarks(cfg) {
-			addQUICBypassRuleIpt(st.chainQUIC, m, legacy)
-		}
-		if cfg.Queue.IPv4Enabled {
-			addQUICRejectRuleIpt(false, st.chainQUIC, st.setV4, sources, legacy)
-		}
-		if cfg.Queue.IPv6Enabled {
-			addQUICRejectRuleIpt(true, st.chainQUIC, st.setV6, sources, legacy)
-		}
 		ensureBlockJumpIpt("FORWARD", st.chainQUIC, legacy, true, gate)
-		if sourceScoped {
-			deleteBlockJumpIpt("OUTPUT", st.chainQUIC, legacy)
-		} else {
-			ensureBlockJumpIpt("OUTPUT", st.chainQUIC, legacy, false, routeDeviceGate{})
+		if out != "" {
+			if err := routeFillQUICChainIpt(be, cfg, st, out, routeDeviceGate{}, nil, legacy); err != nil {
+				return err
+			}
+			ensureBlockJumpIpt("OUTPUT", out, legacy, false, routeDeviceGate{})
 		}
 	}
 	return nil
 }
 
+func routeQUICOutChain(st routeState) string {
+	if !st.quicReject || !routeWantsOutputJump(st) {
+		return ""
+	}
+	return st.chainQOut
+}
+
+func routeFillQUICChainNft(be routeBackend, cfg *config.Config, st routeState, chain string, gate routeDeviceGate, sources []string) error {
+	if err := be.ensureChain(chain, true); err != nil {
+		return err
+	}
+	be.flushChain(chain, true)
+	routeSelfDialBypass(be, cfg, chain)
+	routeAddBlacklistGate(be, "filter", chain, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
+	if cfg.Queue.IPv4Enabled {
+		addQUICRejectRuleNft(chain, false, st.setV4, sources)
+	}
+	if cfg.Queue.IPv6Enabled {
+		addQUICRejectRuleNft(chain, true, st.setV6, sources)
+	}
+	return nil
+}
+
+func routeFillQUICChainIpt(be routeBackend, cfg *config.Config, st routeState, chain string, gate routeDeviceGate, sources []string, legacy bool) error {
+	if err := ensureBlockChainIpt(chain, legacy); err != nil {
+		return err
+	}
+	for _, m := range quicBypassMarks(cfg) {
+		addQUICBypassRuleIpt(chain, m, legacy)
+	}
+	routeAddBlacklistGate(be, "filter", chain, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
+	if cfg.Queue.IPv4Enabled {
+		addQUICRejectRuleIpt(false, chain, st.setV4, sources, legacy)
+	}
+	if cfg.Queue.IPv6Enabled {
+		addQUICRejectRuleIpt(true, chain, st.setV6, sources, legacy)
+	}
+	return nil
+}
+
 func routeCleanupQUICReject(be routeBackend, st routeState) {
-	if st.chainQUIC == "" {
+	routeDropQUICChain(be, st.chainQUIC, routeNftBlockFwd, "FORWARD")
+	routeDropQUICChain(be, routeQUICOutChain(st), routeNftBlockOut, "OUTPUT")
+}
+
+func routeDropQUICChain(be routeBackend, chain, nftParent, iptParent string) {
+	if chain == "" {
 		return
 	}
 	switch be.name() {
 	case backendNFTables:
-		deleteNftJumpRules(routeNftTable, routeNftBlockFwd, st.chainQUIC)
-		deleteNftJumpRules(routeNftTable, routeNftBlockOut, st.chainQUIC)
-		be.flushChain(st.chainQUIC, true)
-		be.deleteChain(st.chainQUIC, true)
+		deleteNftJumpRules(routeNftTable, nftParent, chain)
+		be.flushChain(chain, true)
+		be.deleteChain(chain, true)
 	default:
 		legacy := isLegacyIptBackend(be)
-		deleteBlockJumpIpt("FORWARD", st.chainQUIC, legacy)
-		deleteBlockJumpIpt("OUTPUT", st.chainQUIC, legacy)
-		flushDeleteBlockChainIpt(st.chainQUIC, legacy)
+		deleteBlockJumpIpt(iptParent, chain, legacy)
+		flushDeleteBlockChainIpt(chain, legacy)
 	}
 }
 

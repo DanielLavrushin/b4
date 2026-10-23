@@ -76,6 +76,7 @@ type routeState struct {
 	chainOut    string
 	chainSNAT   string
 	chainQUIC   string
+	chainQOut   string
 	set         *config.SetConfig
 }
 
@@ -613,6 +614,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		setV4:      setV4, setV6: setV6,
 		chainPre: chainPre, chainOut: chainOut, chainSNAT: chainSNAT,
 		chainQUIC: routeBuildQUICChainName(set.Id),
+		chainQOut: routeBuildQUICOutChainName(set.Id),
 	}
 
 	if config.RoutingIsBlock(mode) {
@@ -711,6 +713,8 @@ func routeCleanupForRebuild(be routeBackend, old, cur routeState) func() {
 		return func() {
 			if !cur.quicReject {
 				routeCleanupQUICReject(be, old)
+			} else if routeQUICOutChain(cur) == "" {
+				routeDropQUICChain(be, routeQUICOutChain(old), routeNftBlockOut, "OUTPUT")
 			}
 			if old.mark == cur.mark && old.table == cur.table {
 				return
@@ -1076,6 +1080,9 @@ func routeStateChains(st routeState) []routeChainRef {
 		}
 		if st.quicReject && st.chainQUIC != "" {
 			refs = append(refs, routeChainRef{st.chainQUIC, "filter", true, "FORWARD"})
+			if out := routeQUICOutChain(st); out != "" {
+				refs = append(refs, routeChainRef{out, "filter", true, "OUTPUT"})
+			}
 		}
 		return refs
 	default:
@@ -3437,6 +3444,10 @@ func routeBuildChainNames(setID string) (string, string, string) {
 
 func routeBuildQUICChainName(setID string) string {
 	return "b4r_" + routeSanitizeSetID(setID) + "_q"
+}
+
+func routeBuildQUICOutChainName(setID string) string {
+	return "b4r_" + routeSanitizeSetID(setID) + "_qo"
 }
 
 func routeSanitizeSetID(setID string) string {

@@ -102,7 +102,7 @@ packet processing and through every set that carries the router's own traffic.
 | The queue itself, both backends | b4 releases a packet unchanged when its mark matches `0x240000/0x8efd8000`, has `0x24bab` under `0x27fff`, or has every bit of the queue mark with the rest made only of bits of `0x27fff` and `0x2000000`, and is not exactly one of Discovery's two marks. On kernels 3.14 and later it also releases a packet that a socket on the router sent with every bit of the queue mark, unless the mark is exactly one of Discovery's two marks. A packet that leaves through a tunnel gets no strategy either, and neither does one that another service's mark sends by another route than the packets b4 injects would take. With legacy iptables that check covers every mark, as long as no other service on the router keeps nftables tables and **Skip IPTables/NFTables Setup** is off. Otherwise it covers only marks with every bit of the queue mark; see [Packets that leave by another route](../internals/capture.md#tunnel-egress) |
 | Routing sets other than block sets, packets entering the router (`b4r_*_pre`), including the router's own packets a proxy set loops through `lo` | Its mark has every bit of the queue mark or bit `0x40000`, or its bits under `0x27fff` are not zero and, in a proxy set's chain, differ from that set's own mark |
 | Routing sets, the router's own packets (`b4r_*_out`) | Its mark has bit `0x40000` or any bit under `0x27fff`. A packet with every bit of the queue mark is left alone as well, after a set routed through an interface has given it the set's mark when its destination is in the set; a set that leaves the router's own traffic alone and lists its devices only by IP address does this only for packets from those addresses. The IPv4 ICMP redirects that a set with a gateway drops, as [sets routed through an interface](#sets-routed-through-an-interface) describes, are dropped whatever their mark |
-| QUIC refusal of a proxy set with **Route UDP through upstream** off or **Block QUIC (force TCP)** on (`b4r_*_q`) | Its mark has every bit of the queue mark, or bit `0x40000` |
+| QUIC refusal of a proxy set with **Route UDP through upstream** off or **Block QUIC (force TCP)** on, for forwarded packets (`b4r_*_q`) and the router's own (`b4r_*_qo`) | Its mark has every bit of the queue mark, or bit `0x40000`; in `b4r_*_q` also when it comes from a device outside the set's source devices |
 | Block sets | Never: they test no mark, only the destination and, when the set has them, its source interfaces and source devices |
 | TUN capture (`B4_TUN`) | Its mark has every bit of the queue mark or bit `0x20000000`, matches `0x240000/0x8efd8000`, or has `0x24bab` as its bits under `0x27fff`; on iptables also when its destination is in a routing set other than a block set. A packet to a network in which the router has an IPv4 address of its own is left alone as well, unless it is UDP DNS or a TCP reset the chain captures; while b4 captures only the router's own connections, such a packet is always left alone, except a UDP DNS query to the uplink gateway |
 | TUN on the whole default route | Only packets with bit `0x10000000`, and with bit `0x20000000` when `ip` accepts `suppress_prefixlength`, leave by b4's rules; every other packet that follows the default route enters `b4tun0` |
@@ -549,10 +549,11 @@ kernels before 4.3 their IPv6 rules get 16383 and sit below b4's either way.
   local sockets; with neither, as in TUN mode, it appends them, and it moves them back when
   they end up below either. A rule another service inserts at the top afterwards runs first,
   unless it matches local sockets.
-- On iptables, the jump to the QUIC refusal of a proxy set (`b4r_*_q`) sits at the top of
-  filter `FORWARD`, so the router firewall's own rules, such as Asuswrt-Merlin's accept for
-  traffic from `br0`, run after it. Its jump in filter `OUTPUT` and the jumps of block sets
-  are appended, and a rule above them that accepts a packet keeps it from them. On nftables
+- On iptables, the jump to the QUIC refusal of a proxy set for forwarded packets (`b4r_*_q`)
+  sits at the top of filter `FORWARD`, so the router firewall's own rules, such as
+  Asuswrt-Merlin's accept for traffic from `br0`, run after it. The jump in filter `OUTPUT` to
+  its refusal for the router's own packets (`b4r_*_qo`) and the jumps of block sets are
+  appended, and a rule above them that accepts a packet keeps it from them. On nftables
   these chains hang off b4's `block_fwd` and `block_out`, filter chains at priority -150,
   ahead of the filter priority (0).
 - On iptables in NFQUEUE mode, a packet b4 releases from its queue skips every later rule of
