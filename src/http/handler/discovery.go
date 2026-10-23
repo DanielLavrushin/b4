@@ -747,6 +747,9 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 	}
 	shape.Targets.TLSVersion = set.Targets.TLSVersion
 	shape.Targets.IPVersion = set.Targets.IPVersion
+	if set.DSCP.Enabled {
+		shape.DSCP = set.DSCP
+	}
 	shape.TCP.DPortFilter = ""
 	shape.TCP.IPBlockDetect = config.IPBlockDetectConfig{}
 	shape.TCP.RSTProtection = config.RSTProtectionConfig{}

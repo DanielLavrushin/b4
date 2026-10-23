@@ -29,3 +29,27 @@ func TestDiscoveryPoolConfigKeepsTheRunsMarks(t *testing.T) {
 		t.Errorf("building the pool config changed the main configuration")
 	}
 }
+
+func TestTheRunsProbesCarryTheSetsDSCPInEveryFamilyTheRunTests(t *testing.T) {
+	ipv4Only := &config.DSCPProbe{Value: 25, IPv4: true}
+	for _, tc := range []struct {
+		ipVersion  string
+		ipv4, ipv6 bool
+	}{
+		{"ipv6", false, true},
+		{"ipv4", true, false},
+		{"auto", true, true},
+		{"", true, true},
+	} {
+		got := probeForRun(ipv4Only, tc.ipVersion)
+		if got == nil || got.Value != 25 || got.IPv4 != tc.ipv4 || got.IPv6 != tc.ipv6 {
+			t.Errorf("%q: a set made from the run's result carries DSCP 25 in every family the run tested, so the probes must carry it there too, got %+v", tc.ipVersion, got)
+		}
+	}
+	if !ipv4Only.IPv4 || ipv4Only.IPv6 {
+		t.Errorf("the set's own probe must stay as it was, got %+v", ipv4Only)
+	}
+	if probeForRun(nil, "ipv6") != nil {
+		t.Error("a run for no set value carries none")
+	}
+}

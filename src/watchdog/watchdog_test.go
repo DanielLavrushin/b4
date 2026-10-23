@@ -404,6 +404,28 @@ func TestApplyGroup_NewSet(t *testing.T) {
 	}
 }
 
+func TestApplyGroup_NewSetKeepsTheDSCPTheRunTestedWith(t *testing.T) {
+	owner := config.NewSetConfig()
+	owner.Name = "video by category"
+	owner.Enabled = true
+	owner.Targets.GeoSiteCategories = []string{"youtube"}
+	owner.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	cfg := &config.Config{Sets: []*config.SetConfig{&owner}}
+
+	refSet := &config.SetConfig{}
+	refSet.Fragmentation.Strategy = "combo"
+	refSet.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+
+	applyGroup(cfg, []domainWithSet{{domain: "youtube.com", set: refSet}})
+
+	if len(cfg.Sets) != 2 {
+		t.Fatalf("the owner lists the domain through a category only, so the heal creates a set, got %d sets", len(cfg.Sets))
+	}
+	if got := cfg.Sets[0].DSCP; got != refSet.DSCP {
+		t.Errorf("the strategy was tested on the path DSCP 25 selects, and the new set takes the domain from its owner, so it must keep that value, got %+v", got)
+	}
+}
+
 func TestApplyGroup_ExistingSet(t *testing.T) {
 	existingSet := config.NewSetConfig()
 	existingSet.Name = "MyYouTube"

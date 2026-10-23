@@ -114,6 +114,11 @@ func TestMCPDiscoveryApplyKeepsTheDSCPTheRunTestedWith(t *testing.T) {
 	cfg := probeCfg(t)
 	cfg.System.WebServer.MCP.AllowWrites = true
 	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	other := config.NewSetConfig()
+	other.Id, other.Name, other.Enabled = "on-7", "same strategy on 7", true
+	other.Targets.SNIDomains = []string{"rutracker.org"}
+	other.DSCP = config.SetDSCPConfig{Enabled: true, Value: 7}
+	cfg.Sets = append(cfg.Sets, &other)
 	srv, api := newMCPTestServerAPI(t, cfg)
 	session, ctx := connectMCP(t, srv)
 
@@ -133,7 +138,7 @@ func TestMCPDiscoveryApplyKeepsTheDSCPTheRunTestedWith(t *testing.T) {
 
 	applied := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "rutracker.org", "id": suite.Id}))
 	if !applied.Changed || applied.Applied == nil {
-		t.Fatalf("apply: %+v", applied)
+		t.Fatalf("a set with the same strategy on DSCP 7 takes another path than the one tested, so it does not cover the domain and apply must create a set: %+v", applied)
 	}
 	for _, s := range api.getCfg().Sets {
 		if s.Id == applied.Applied.Id && s.DSCP != set.DSCP {

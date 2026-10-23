@@ -157,6 +157,7 @@ func applyGroup(cfg *config.Config, group []domainWithSet) {
 		newSet.Targets.SNIDomains = groupDomains
 		newSet.Targets.DomainsToMatch = groupDomains
 		newSet.AdoptStrategy(refSet)
+		newSet.DSCP = refSet.DSCP
 		cfg.Sets = append([]*config.SetConfig{&newSet}, cfg.Sets...)
 		log.Infof("[WATCHDOG] %s: created set %q (strategy: %s)",
 			strings.Join(groupDomains, ", "), newSet.Name, refSet.Fragmentation.Strategy)

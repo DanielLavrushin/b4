@@ -182,8 +182,16 @@ func (m *Runtime) activateSuite(suite *CheckSuite) {
 	}
 }
 
+func probeForRun(dscp *config.DSCPProbe, ipVersion string) *config.DSCPProbe {
+	if dscp == nil {
+		return nil
+	}
+	return &config.DSCPProbe{Value: dscp.Value, IPv4: ipVersion != "ipv6", IPv6: ipVersion != "ipv4"}
+}
+
 func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteOptions) (*DiscoverySuite, error) {
-	runtimeState, err := m.Start(cfg, opts.DSCP)
+	dscp := probeForRun(opts.DSCP, opts.IPVersion)
+	runtimeState, err := m.Start(cfg, dscp)
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +215,7 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 	suite.SetId = opts.SetId
 	suite.DSCP = runtimeState.DSCP
 	suite.setStrategy = opts.SetStrategy
-	suite.setDSCP = opts.DSCP
+	suite.setDSCP = dscp
 	suite.stopWhenCovered = opts.StopWhenCovered
 	suite.dnsServerOverride = opts.DNSServer
 	suite.runPins = opts.Pins

@@ -110,6 +110,27 @@ func TestSimilarSetsNeedTheWholeStrategyToMatch(t *testing.T) {
 	if setsHaveSimilarConfig(&base, &redirected) {
 		t.Fatal("a DNS redirect changes what the added domain resolves to")
 	}
+
+	tagged := base
+	tagged.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	if setsHaveSimilarConfig(&base, &tagged) {
+		t.Fatal("a set that writes its own DSCP value sends the domain over another network path than the one the run tested")
+	}
+	otherValue := tagged
+	otherValue.DSCP.Value = 7
+	if setsHaveSimilarConfig(&tagged, &otherValue) {
+		t.Fatal("DSCP 7 selects another network path than the DSCP 25 the run tested")
+	}
+	sameValue := tagged
+	sameValue.Name = "tagged too"
+	if !setsHaveSimilarConfig(&tagged, &sameValue) {
+		t.Fatal("two sets writing the same DSCP value take the same path")
+	}
+	switchedOff := base
+	switchedOff.DSCP = config.SetDSCPConfig{Value: 25}
+	if !setsHaveSimilarConfig(&base, &switchedOff) {
+		t.Fatal("a value left behind with the switch off writes nothing")
+	}
 }
 
 func TestHistoryOffersTheAlternativesAndRemembersWhatWasTried(t *testing.T) {
