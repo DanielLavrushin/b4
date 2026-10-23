@@ -1212,6 +1212,11 @@
       "add": "Add to a set",
       "addTo": "Add {{address}} to a set"
     },
+    "devices": {
+      "title": "Devices",
+      "subtitle": "Connections per device since {{time}}",
+      "empty": "No connection from a device since {{time}}"
+    },
     "telegram": {
       "title": "Telegram",
       "settings": "Telegram settings",
@@ -1299,6 +1304,7 @@
         "blocked": "Blocked DNS lookups and connections, with the lists of blocked domains and devices",
         "domains": "The Top domains list",
         "addresses": "The Top addresses list",
+        "devices": "The Devices list",
         "rst": "Resets dropped by RST protection",
         "escalations": "The escalation count",
         "connections": "Connection totals"

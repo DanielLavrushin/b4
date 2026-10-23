@@ -352,6 +352,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		rules:     tables.RulesMonitorStatus,
 		replaced:  handler.BinaryReplaced,
 		overload:  engineOverload,
+		mac:       pool.Dhcp.GetMACForIP,
 	})
 
 	var tunEngine *b4tun.Engine

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/socks5"
 )
 
@@ -121,7 +122,8 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 	l.udpMu.Unlock()
 
 	if !ok {
-		newSess, err := l.newUDPSession(src, dst, v6)
+		from := metrics.DeviceOf(src)
+		newSess, err := l.newUDPSession(src, dst, from, v6)
 		if err != nil {
 			l.udpFailWarn.Do(func() {
 				log.Warnf("tproxy: set %q cannot relay UDP through %s:%d: %v. Matched UDP (including QUIC/HTTP-3) is being dropped; most SOCKS5 proxies are TCP-only, so turn 'Route UDP through upstream' off unless the proxy supports UDP ASSOCIATE",
@@ -142,8 +144,8 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 		} else {
 			l.udpSessions[key] = newSess
 			l.udpMu.Unlock()
-			l.countConnection()
-			l.countTarget(newSess.domain, dst.IP)
+			l.countConnection(from)
+			l.countTarget(from, newSess.domain, dst.IP)
 			go l.udpReplyLoop(key, newSess)
 			sess = newSess
 		}
@@ -156,7 +158,7 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 	}
 }
 
-func (l *Listener) newUDPSession(src, dst *net.UDPAddr, v6 bool) (*udpSession, error) {
+func (l *Listener) newUDPSession(src, dst *net.UDPAddr, from metrics.Device, v6 bool) (*udpSession, error) {
 	reply, err := openReplySocket(l.ctx, dst, v6, l.Upstream.BypassMark)
 	if err != nil {
 		return nil, fmt.Errorf("reply socket: %w", err)
@@ -171,7 +173,7 @@ func (l *Listener) newUDPSession(src, dst *net.UDPAddr, v6 bool) (*udpSession, e
 	domain := l.udpLogDomain(src, dst)
 	log.LogConnectionStr("UDP", l.SetName, domain, src.String(), "",
 		net.JoinHostPort(dst.IP.String(), fmt.Sprintf("%d", dst.Port)),
-		"", "", action)
+		from.MAC, "", action)
 
 	sess := &udpSession{relay: relay, reply: reply, client: src, domain: domain, release: release}
 	sess.last.Store(time.Now().UnixNano())

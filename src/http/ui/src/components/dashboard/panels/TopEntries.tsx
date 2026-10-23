@@ -1,4 +1,4 @@
-import { memo, useId, useMemo, useState, type FocusEvent, type ReactNode } from "react";
+import { memo, useId, useMemo, useState, type ReactNode } from "react";
 import { Box, IconButton, Tooltip } from "@mui/material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -10,6 +10,7 @@ import type { B4Config, B4SetConfig } from "@models/config";
 import type { TopEntry } from "@models/metrics";
 import { shallowEqual, useMetricsFrame } from "@/stores/useMetrics";
 import { Ago } from "./Ago";
+import { useHeldOrder } from "./heldOrder";
 import { ShowMore, visibleRows } from "./ShowMore";
 import { Tag } from "./Tag";
 import { emptySx, listSx, numeric, rowSx } from "./styles";
@@ -22,11 +23,6 @@ const DIALOG_CONFIG_KEY = ["dashboard", "dialog-config"] as const;
 export interface PendingSet {
   setId: string;
   setName: string;
-}
-
-interface HeldOrder {
-  keys: string[];
-  byKey: Map<string, TopEntry>;
 }
 
 const addSx = {
@@ -219,42 +215,13 @@ export function TopEntries({
   const listId = useId();
   const setNames = useSetNames();
   const [expanded, setExpanded] = useState(false);
-  const [held, setHeld] = useState<HeldOrder | null>(null);
-
-  const rows = useMemo(() => {
-    if (!held) return entries;
-    const live = new Map(entries.map((entry) => [entry.key, entry]));
-    return held.keys
-      .map((key) => live.get(key) ?? held.byKey.get(key))
-      .filter((entry): entry is TopEntry => entry !== undefined);
-  }, [entries, held]);
+  const { rows, holdProps } = useHeldOrder(entries);
 
   if (rows.length === 0) return <Box sx={emptySx}>{empty}</Box>;
 
-  const hold = () =>
-    setHeld(
-      (prev) =>
-        prev ?? {
-          keys: entries.map((entry) => entry.key),
-          byKey: new Map(entries.map((entry) => [entry.key, entry])),
-        },
-    );
-  const release = () => setHeld(null);
-  const releaseOnLeave = (e: FocusEvent<HTMLElement>) => {
-    if (!e.currentTarget.contains(e.relatedTarget)) release();
-  };
-
   return (
     <>
-      <Box
-        component="ul"
-        id={listId}
-        sx={listSx}
-        onMouseEnter={hold}
-        onMouseLeave={release}
-        onFocus={hold}
-        onBlur={releaseOnLeave}
-      >
+      <Box component="ul" id={listId} sx={listSx} {...holdProps}>
         {visibleRows(rows, expanded, TOP_ROWS).map((entry) => (
           <TopEntryRow
             key={entry.key}
