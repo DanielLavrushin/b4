@@ -86,7 +86,7 @@ The **Device Filtering** card limits DPI bypass to selected devices, or excludes
 
 ### Available Devices {#device-table}
 
-While filtering is on, the card lists the devices from the router's ARP table and those added by hand. A device that has left the network stays in the list as long as b4 keeps a name, a selection or an MSS value for it.
+While filtering is on, the card lists the devices from the router's ARP table and those added by hand. A device that has left the network stays in the list as long as b4 keeps a name, a selection or an MSS value for it, or a set uses it as a source device.
 
 | Column | What it shows |
 | --- | --- |

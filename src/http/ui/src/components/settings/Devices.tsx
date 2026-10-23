@@ -33,7 +33,12 @@ import {
 } from "@b4.elements";
 import { useDevices, DevicesSettingsProps, DeviceInfo } from "@b4.devices";
 import { B4DeviceTable } from "@common/B4DeviceTable";
-import { anySetDscp, deviceFilterSelects } from "@utils";
+import {
+  anySetDscp,
+  deviceFilterSelects,
+  macKey,
+  offlineDeviceInfo,
+} from "@utils";
 import { ForgetDevicesDialog } from "./ForgetDevicesDialog";
 
 const toMac = (bytes: number[]): string =>
@@ -141,10 +146,21 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
   const findConfigDevice = (mac: string): Device | undefined =>
     configDevices.find((d) => d.mac.toUpperCase() === mac.toUpperCase());
 
-  const listedDevices = devices.filter(
-    (d) =>
-      findConfigDevice(d.mac) || (d.is_online !== false && !d.is_manual),
+  const setSourceKeys = new Set(
+    config.sets.flatMap((s) => (s.targets.source_devices ?? []).map(macKey)),
   );
+  setSourceKeys.delete("");
+  const remembered = (mac: string) =>
+    !!findConfigDevice(mac) || setSourceKeys.has(macKey(mac));
+  const apiKeys = new Set(devices.map((d) => macKey(d.mac)));
+  const listedDevices = [
+    ...devices.filter(
+      (d) => remembered(d.mac) || (d.is_online !== false && !d.is_manual),
+    ),
+    ...[...setSourceKeys]
+      .filter((key) => !apiKeys.has(key))
+      .map((key) => offlineDeviceInfo(key)),
+  ];
   const offlineDevices = listedDevices.filter(
     (d) => d.is_online === false && !d.is_manual,
   );

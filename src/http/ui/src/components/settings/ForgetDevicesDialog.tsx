@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { B4Alert, B4Dialog } from "@b4.elements";
 import { DeleteIcon } from "@b4.icons";
 import { B4Config, B4SetConfig } from "@models/config";
+import { macKey } from "@utils";
 
 interface ForgetCandidate {
   mac: string;
@@ -17,8 +18,6 @@ interface ForgetDevicesDialogProps {
   onClose: () => void;
   onForget: (macs: string[]) => void;
 }
-
-const macKey = (mac: string) => mac.trim().toUpperCase();
 
 const filterLosesEveryDevice = (config: B4Config, drop: Set<string>) => {
   const { enabled, wisb, devices } = config.queue.devices;

@@ -11,6 +11,7 @@ import { B4Alert, B4Hint, B4Switch, B4TooltipButton } from "@b4.elements";
 import { DeviceInfo } from "@b4.devices";
 import { B4DeviceTable } from "@common/B4DeviceTable";
 import { colors } from "@design";
+import { macKey, offlineDeviceInfo } from "@utils";
 import { useTranslation } from "react-i18next";
 
 interface DevicesTabProps {
@@ -26,8 +27,6 @@ interface DevicesTabProps {
   onExcludeChange: (exclude: boolean) => void;
 }
 
-const macKey = (mac: string) => mac.trim().toUpperCase();
-
 const withUnlistedSelection = (
   devices: DeviceInfo[],
   selected: string[],
@@ -38,14 +37,7 @@ const withUnlistedSelection = (
     const key = macKey(mac);
     if (known.has(key)) continue;
     known.add(key);
-    unlisted.push({
-      mac,
-      ip: "",
-      hostname: "",
-      vendor: "",
-      country: "",
-      is_online: false,
-    });
+    unlisted.push(offlineDeviceInfo(mac));
   }
   return unlisted.length > 0 ? [...devices, ...unlisted] : devices;
 };
