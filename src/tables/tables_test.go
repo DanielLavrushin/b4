@@ -550,8 +550,8 @@ func TestRouteBuildNamesFitKernelLimits(t *testing.T) {
 	}
 	for _, id := range setIDs {
 		pre, out, nat := routeBuildChainNames(id)
-		quic := routeBuildQUICChainName(id)
-		for _, name := range []string{pre, out, nat, quic} {
+		quic, quicOut := routeBuildQUICChainName(id), routeBuildQUICOutChainName(id)
+		for _, name := range []string{pre, out, nat, quic, quicOut} {
 			if len(name) > routeMaxChainNameLen {
 				t.Errorf("chain name %q for set %q is %d chars, iptables rejects anything over %d",
 					name, id, len(name), routeMaxChainNameLen)

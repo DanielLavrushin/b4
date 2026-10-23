@@ -391,6 +391,9 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		if cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleNft(st.chainPre, false, st.setV4, st.mark)
 			addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp")
+			if st.quicReject {
+				addQUICPassRuleNft(st.chainPre, false, st.setV4, sources)
+			}
 			if udp {
 				addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "udp")
 			}
@@ -398,6 +401,9 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		if cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleNft(st.chainPre, true, st.setV6, st.mark)
 			addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp")
+			if st.quicReject {
+				addQUICPassRuleNft(st.chainPre, true, st.setV6, sources)
+			}
 			if udp {
 				addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "udp")
 			}
@@ -410,6 +416,9 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		if cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleIpt(false, st.chainPre, st.setV4, st.mark, legacy)
 			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp")
+			if st.quicReject {
+				addQUICPassRuleIpt(false, st.chainPre, st.setV4, sources, legacy)
+			}
 			if udp {
 				addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "udp")
 			}
@@ -420,6 +429,9 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		if cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleIpt(true, st.chainPre, st.setV6, st.mark, legacy)
 			addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp")
+			if st.quicReject {
+				addQUICPassRuleIpt(true, st.chainPre, st.setV6, sources, legacy)
+			}
 			if udp {
 				addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "udp")
 			}
@@ -442,11 +454,16 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	}
 
 	if st.quicReject {
-		if err := routeEnsureQUICReject(be, cfg, st, gate, sourceScoped, sources); err != nil {
+		if err := routeEnsureQUICReject(be, cfg, st, gate, sources); err != nil {
 			return err
 		}
-		log.Infof("Routing [%s]: set '%s' refuses QUIC (UDP/%d) to matched addresses so clients fall back to TCP through the upstream; enable 'Route UDP through upstream' if the proxy supports UDP ASSOCIATE",
-			be.name(), set.Name, quicRejectPort)
+		if udp {
+			log.Infof("Routing [%s]: set '%s' blocks QUIC: its UDP/%d to matched addresses is refused so clients fall back to TCP through the upstream, and its other UDP goes through the upstream",
+				be.name(), set.Name, quicRejectPort)
+		} else {
+			log.Infof("Routing [%s]: set '%s' refuses QUIC (UDP/%d) to matched addresses so clients fall back to TCP through the upstream; enable 'Route UDP through upstream' if the proxy supports UDP ASSOCIATE",
+				be.name(), set.Name, quicRejectPort)
+		}
 	}
 
 	routeEnsureLocalDelivery(st.mark, st.table, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
@@ -456,72 +473,109 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 
 const quicRejectPort = 443
 
-func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, gate routeDeviceGate, sourceScoped bool, sources []string) error {
+func routeEnsureQUICReject(be routeBackend, cfg *config.Config, st routeState, gate routeDeviceGate, sources []string) error {
+	out := routeQUICOutChain(st)
+	chains := []string{st.chainQUIC}
+	if out != "" {
+		chains = append(chains, out)
+	}
 	switch be.name() {
 	case backendNFTables:
 		if err := ensureBlockBaseNft(); err != nil {
 			return err
 		}
-		if err := be.ensureChain(st.chainQUIC, true); err != nil {
-			return err
+		for _, chain := range chains {
+			if err := be.ensureChain(chain, true); err != nil {
+				return err
+			}
 		}
-		be.flushChain(st.chainQUIC, true)
-		routeSelfDialBypass(be, cfg, st.chainQUIC)
-		if cfg.Queue.IPv4Enabled {
-			addQUICRejectRuleNft(st.chainQUIC, false, st.setV4, sources)
-		}
-		if cfg.Queue.IPv6Enabled {
-			addQUICRejectRuleNft(st.chainQUIC, true, st.setV6, sources)
-		}
+		routeFillQUICChainNft(be, cfg, st, st.chainQUIC, gate, sources)
 		ensureBlockJumpNft(routeNftBlockFwd, st.chainQUIC, gate)
-		if sourceScoped {
-			deleteNftJumpRules(routeNftTable, routeNftBlockOut, st.chainQUIC)
-		} else {
-			ensureBlockJumpNft(routeNftBlockOut, st.chainQUIC, routeDeviceGate{})
+		if out != "" {
+			routeFillQUICChainNft(be, cfg, st, out, routeDeviceGate{}, nil)
+			ensureBlockJumpNft(routeNftBlockOut, out, routeDeviceGate{})
 		}
 	default:
 		legacy := isLegacyIptBackend(be)
-		if err := ensureBlockChainIpt(st.chainQUIC, legacy); err != nil {
-			return err
+		for _, chain := range chains {
+			if err := createBlockChainIpt(chain, legacy); err != nil {
+				return err
+			}
 		}
-		for _, m := range quicBypassMarks(cfg) {
-			addQUICBypassRuleIpt(st.chainQUIC, m, legacy)
-		}
-		if cfg.Queue.IPv4Enabled {
-			addQUICRejectRuleIpt(false, st.chainQUIC, st.setV4, sources, legacy)
-		}
-		if cfg.Queue.IPv6Enabled {
-			addQUICRejectRuleIpt(true, st.chainQUIC, st.setV6, sources, legacy)
-		}
-		ensureBlockJumpIpt("FORWARD", st.chainQUIC, legacy, gate)
-		if sourceScoped {
-			deleteBlockJumpIpt("OUTPUT", st.chainQUIC, legacy)
-		} else {
-			ensureBlockJumpIpt("OUTPUT", st.chainQUIC, legacy, routeDeviceGate{})
+		routeFillQUICChainIpt(be, cfg, st, st.chainQUIC, gate, sources, legacy)
+		ensureBlockJumpIpt("FORWARD", st.chainQUIC, legacy, true, gate)
+		if out != "" {
+			routeFillQUICChainIpt(be, cfg, st, out, routeDeviceGate{}, nil, legacy)
+			ensureBlockJumpIpt("OUTPUT", out, legacy, false, routeDeviceGate{})
 		}
 	}
 	return nil
 }
 
+func routeQUICOutChain(st routeState) string {
+	if !st.quicReject || !routeWantsOutputJump(st) {
+		return ""
+	}
+	return st.chainQOut
+}
+
+func routeFillQUICChainNft(be routeBackend, cfg *config.Config, st routeState, chain string, gate routeDeviceGate, sources []string) {
+	be.flushChain(chain, true)
+	routeSelfDialBypass(be, cfg, chain)
+	routeAddBlacklistGate(be, "filter", chain, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
+	if cfg.Queue.IPv4Enabled {
+		addQUICRejectRuleNft(chain, false, st.setV4, sources)
+	}
+	if cfg.Queue.IPv6Enabled {
+		addQUICRejectRuleNft(chain, true, st.setV6, sources)
+	}
+}
+
+func routeFillQUICChainIpt(be routeBackend, cfg *config.Config, st routeState, chain string, gate routeDeviceGate, sources []string, legacy bool) {
+	flushBlockChainIpt(chain, legacy)
+	for _, m := range quicBypassMarks(cfg) {
+		addQUICBypassRuleIpt(chain, m, legacy)
+	}
+	routeAddBlacklistGate(be, "filter", chain, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
+	if cfg.Queue.IPv4Enabled {
+		addQUICRejectRuleIpt(false, chain, st.setV4, sources, legacy)
+	}
+	if cfg.Queue.IPv6Enabled {
+		addQUICRejectRuleIpt(true, chain, st.setV6, sources, legacy)
+	}
+}
+
 func routeCleanupQUICReject(be routeBackend, st routeState) {
-	if st.chainQUIC == "" {
+	routeDropQUICChain(be, st.chainQUIC, routeNftBlockFwd, "FORWARD")
+	routeDropQUICChain(be, routeQUICOutChain(st), routeNftBlockOut, "OUTPUT")
+}
+
+func routeDropQUICChain(be routeBackend, chain, nftParent, iptParent string) {
+	if chain == "" {
 		return
 	}
 	switch be.name() {
 	case backendNFTables:
-		deleteNftJumpRules(routeNftTable, routeNftBlockFwd, st.chainQUIC)
-		deleteNftJumpRules(routeNftTable, routeNftBlockOut, st.chainQUIC)
-		be.flushChain(st.chainQUIC, true)
-		be.deleteChain(st.chainQUIC, true)
+		deleteNftJumpRules(routeNftTable, nftParent, chain)
+		be.flushChain(chain, true)
+		be.deleteChain(chain, true)
 	default:
 		legacy := isLegacyIptBackend(be)
-		deleteBlockJumpIpt("FORWARD", st.chainQUIC, legacy)
-		deleteBlockJumpIpt("OUTPUT", st.chainQUIC, legacy)
-		flushDeleteBlockChainIpt(st.chainQUIC, legacy)
+		deleteBlockJumpIpt(iptParent, chain, legacy)
+		flushDeleteBlockChainIpt(chain, legacy)
 	}
 }
 
 func addQUICRejectRuleNft(chain string, v6 bool, setName string, sources []string) {
+	addQUICRuleNft("routing: add quic reject "+chain, chain, v6, setName, sources,
+		"reject", "with", "icmpx", "type", "port-unreachable")
+}
+
+func addQUICPassRuleNft(chain string, v6 bool, setName string, sources []string) {
+	addQUICRuleNft("routing: add quic pass "+chain, chain, v6, setName, sources, "accept")
+}
+
+func addQUICRuleNft(op, chain string, v6 bool, setName string, sources []string, verdict ...string) {
 	emit := func(sn, src string) {
 		args := []string{"nft", "add", "rule", "inet", routeNftTable, chain}
 		if src != "" {
@@ -532,9 +586,8 @@ func addQUICRejectRuleNft(chain string, v6 bool, setName string, sources []strin
 		} else {
 			args = append(args, "ip", "protocol", "udp", "ip", "daddr", "@"+sn)
 		}
-		args = append(args, "udp", "dport", fmt.Sprintf("%d", quicRejectPort),
-			"reject", "with", "icmpx", "type", "port-unreachable")
-		runLogged("routing: add quic reject "+chain, args...)
+		args = append(args, "udp", "dport", fmt.Sprintf("%d", quicRejectPort))
+		runLogged(op, append(args, verdict...)...)
 	}
 
 	for _, sn := range []string{setName, routeNftDynSet(setName)} {
@@ -568,24 +621,32 @@ func addQUICBypassRuleIpt(chain string, mark uint32, legacy bool) {
 }
 
 func addQUICRejectRuleIpt(v6 bool, chain, setName string, sources []string, legacy bool) {
-	cmd := iptCmdFor(v6, legacy)
-	if !hasBinary(cmd) {
-		return
-	}
 	icmpReject := "icmp-port-unreachable"
 	if v6 {
 		icmpReject = "icmp6-port-unreachable"
 	}
+	addQUICRuleIpt("routing: add quic reject "+chain, v6, "filter", chain, setName, sources, legacy,
+		"-j", "REJECT", "--reject-with", icmpReject)
+}
+
+func addQUICPassRuleIpt(v6 bool, chain, setName string, sources []string, legacy bool) {
+	addQUICRuleIpt("routing: add quic pass "+chain, v6, "mangle", chain, setName, sources, legacy, "-j", "ACCEPT")
+}
+
+func addQUICRuleIpt(op string, v6 bool, table, chain, setName string, sources []string, legacy bool, target ...string) {
+	cmd := iptCmdFor(v6, legacy)
+	if !hasBinary(cmd) {
+		return
+	}
 
 	emit := func(src string) {
-		args := []string{cmd, "-w", "-t", "filter", "-A", chain}
+		args := []string{cmd, "-w", "-t", table, "-A", chain}
 		if src != "" {
 			args = append(args, "-i", src)
 		}
 		args = append(args, "-p", "udp", "--dport", fmt.Sprintf("%d", quicRejectPort),
-			"-m", "set", "--match-set", setName, "dst",
-			"-j", "REJECT", "--reject-with", icmpReject)
-		runLogged("routing: add quic reject "+chain, args...)
+			"-m", "set", "--match-set", setName, "dst")
+		runLogged(op, append(args, target...)...)
 	}
 
 	if len(sources) == 0 {

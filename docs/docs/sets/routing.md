@@ -85,7 +85,7 @@ b4 takes over the set's TCP connections and opens each one again through a SOCKS
 | **Upstream SOCKS5 port** | The proxy's port, commonly `1080`. | `0` |
 | **Username (optional)**, **Password (optional)** | For a proxy that requires authentication. | Empty |
 | **Send domain name to upstream** | Sends the proxy the host name instead of the address when b4 can tie a name to the connection. Names pinned in the set always go as addresses. TCP only. | On |
-| **Route UDP through upstream** | Sends the set's UDP through the proxy too. Off, b4 refuses the set's QUIC, and browsers fall back to TCP. | Off |
+| **Route UDP through upstream** | Sends the set's UDP through the proxy too. Off, or with **Block QUIC (force TCP)** on the [UDP](./udp.md#blocking-quic) tab, b4 refuses the set's QUIC, and browsers fall back to TCP. | Off |
 | **Fall back to direct on upstream failure** | Connects directly while the proxy cannot be reached. | Off |
 
 #### Requirements
