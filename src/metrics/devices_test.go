@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 )
@@ -193,6 +194,43 @@ func TestANameByAddressReachesTheRowMovedToItsMAC(t *testing.T) {
 	m.RecordDomain("ads.example", "", Device{MAC: "AA:BB:CC:00:00:CA", Addr: netip.MustParseAddr("192.168.1.202")})
 	if n := len(m.Hello().Devices.Items); n != 1 {
 		t.Fatalf("a name never lists a device with no counted connection: %d devices", n)
+	}
+}
+
+func TestANameRacingTheFirstPacketKeepsItsDomain(t *testing.T) {
+	r := newRig(t, rigStart, 0)
+	m := r.m
+	lost := 0
+	for round := 0; round < 100; round++ {
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		devs := make([]Device, 100)
+		for i := range devs {
+			d := Device{MAC: fmt.Sprintf("AA:BB:%02X:%02X:%02X:%02X", round>>8, round&0xff, i>>8, i&0xff)}
+			devs[i] = d
+			k := flowKey(round*1000 + i + 1)
+			first := func() { m.ObserveFlowTo(k, netip.Addr{}, "", "", d) }
+			if i%2 == 1 {
+				first = func() { m.RecordBlockedFlow(k, "ads", "", d) }
+			}
+			wg.Add(2)
+			go func() { defer wg.Done(); <-start; first() }()
+			go func() { defer wg.Done(); <-start; m.ObserveFlowTo(k, netip.Addr{}, "", "race.example", d) }()
+		}
+		close(start)
+		wg.Wait()
+		m.dev.mu.Lock()
+		for _, d := range devs {
+			k, _ := d.key()
+			if it := m.dev.items[k]; it == nil || it.domains[0].name != "race.example" {
+				lost++
+			}
+		}
+		m.dev.mu.Unlock()
+		m.ResetCounters()
+	}
+	if lost > 0 {
+		t.Fatalf("%d of 10000 names lost: a packet that names a flow while another counts its first packet must find the device", lost)
 	}
 }
 

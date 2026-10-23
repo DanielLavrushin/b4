@@ -233,6 +233,11 @@ export const AggregatedView = ({
 
   const state = useConnectionGroups(lines, deviceMap, paused, ipToMac);
 
+  const selectedDevice = useMemo(() => {
+    if (selectedMac === null || state.devices.some((d) => d.mac === selectedMac)) return selectedMac;
+    return state.devices.find((d) => d.ip === selectedMac)?.mac ?? selectedMac;
+  }, [selectedMac, state.devices]);
+
   const groups = useMemo(
     () =>
       state.groups.map((g) => {
@@ -276,7 +281,7 @@ export const AggregatedView = ({
       if (cutoff > 0 && g.lastSeen < cutoff) return false;
       if (unmatchedOnly && (g.hostSet || g.ipSet)) return false;
       if (!showAll && !g.domain) return false;
-      if (selectedMac !== null && g.mac !== selectedMac) return false;
+      if (selectedDevice !== null && g.mac !== selectedDevice) return false;
       if (
         parsedFilter &&
         !matchesConnectionFilter(
@@ -288,7 +293,7 @@ export const AggregatedView = ({
         return false;
       return true;
     });
-  }, [groups, window, unmatchedOnly, showAll, selectedMac, filter, now]);
+  }, [groups, window, unmatchedOnly, showAll, selectedDevice, filter, now]);
 
   const sortedGroups = useMemo(() => {
     const arr = [...filteredGroups];
@@ -319,9 +324,9 @@ export const AggregatedView = ({
   const visibleDevices = useMemo(() => {
     const cutoff = window === 0 || now === 0 ? 0 : now - window * 1000;
     return state.devices.filter(
-      (d) => cutoff === 0 || d.lastSeen >= cutoff || d.mac === selectedMac,
+      (d) => cutoff === 0 || d.lastSeen >= cutoff || d.mac === selectedDevice,
     );
-  }, [state.devices, window, now, selectedMac]);
+  }, [state.devices, window, now, selectedDevice]);
 
   return (
     <Box sx={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -340,7 +345,7 @@ export const AggregatedView = ({
       <Box sx={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
         <DeviceSidebar
           devices={visibleDevices}
-          selectedMac={selectedMac}
+          selectedMac={selectedDevice}
           onSelect={setSelectedMac}
           collapsed={sidebarCollapsed}
           onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}

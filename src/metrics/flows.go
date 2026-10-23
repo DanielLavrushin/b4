@@ -106,10 +106,10 @@ func (m *MetricsCollector) ObserveFlowTo(key FlowKey, dst netip.Addr, setID, hos
 	if seen.named || seen.unnamed {
 		flowSet = f.setID(seen.set)
 	}
-	f.mu.Unlock()
 	if seen.fresh {
 		m.dev.count(from, now)
 	}
+	f.mu.Unlock()
 	if seen.named {
 		m.dom.note(host, flowSet, now)
 		m.dev.name(from, host)
@@ -161,10 +161,10 @@ func (m *MetricsCollector) RecordBlockedFlow(key FlowKey, setID, target string, 
 	f := &m.fl
 	f.mu.Lock()
 	seen := f.touch(key, setID, now, m.tickN.Load(), true, false)
-	f.mu.Unlock()
 	if seen.fresh {
 		m.dev.count(from, now)
 	}
+	f.mu.Unlock()
 	if seen.blocked {
 		m.bl.note(target, from.MAC, now)
 	}
