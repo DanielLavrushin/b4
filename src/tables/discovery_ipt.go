@@ -120,7 +120,9 @@ func (b *discoveryIptBackend) apply(flowMark uint, injectedMark uint, queueStart
 }
 
 func discoveryIptStamp(bin, flow, injected string, stamp *discoveryStamp) error {
-	discoveryIptDropStamp(bin)
+	if err := discoveryIptDropStamp(bin); err != nil {
+		return err
+	}
 	if !stamp.covers(dscpIptBinV6(bin)) {
 		return nil
 	}
@@ -148,10 +150,14 @@ func discoveryIptStamp(bin, flow, injected string, stamp *discoveryStamp) error 
 	return nil
 }
 
-func discoveryIptDropStamp(bin string) {
+func discoveryIptDropStamp(bin string) error {
 	discoveryDelRuleLoop(bin, "POSTROUTING", "-j", discoveryStampChainIPT)
 	_, _ = run(bin, "-w", "-t", "mangle", "-F", discoveryStampChainIPT)
-	_, _ = run(bin, "-w", "-t", "mangle", "-X", discoveryStampChainIPT)
+	out, err := run(bin, "-w", "-t", "mangle", "-X", discoveryStampChainIPT)
+	if err == nil || iptReportsAbsent(out, err) {
+		return nil
+	}
+	return fmt.Errorf("%s could not remove %s, which may still write an earlier run's DSCP value into Discovery's probes: %s", bin, discoveryStampChainIPT, iptErrText(out, err))
 }
 
 func discoveryKeepOutOfQueueChain(bin, flow, injected string) {
@@ -191,7 +197,9 @@ func (b *discoveryIptBackend) clear(flowMark uint, injectedMark uint) {
 		}
 		_, _ = run(bin, "-w", "-t", "mangle", "-F", discoveryChainIPT)
 		_, _ = run(bin, "-w", "-t", "mangle", "-X", discoveryChainIPT)
-		discoveryIptDropStamp(bin)
+		if err := discoveryIptDropStamp(bin); err != nil {
+			log.Warnf("Discovery: %v, so the next run does not start until it is gone", err)
+		}
 	}
 }
 

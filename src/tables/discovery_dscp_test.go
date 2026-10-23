@@ -707,3 +707,49 @@ func TestDiscoveryRunWithoutDSCPCountsAsInvalidOnceItsSteeringIsLost(t *testing.
 		t.Error("with no run there is nothing to invalidate")
 	}
 }
+
+func TestDiscoveryRunDoesNotStartOverAStampItCouldNotRemove(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: false, "nft": true})
+	discoveryRecordRun(t, nil)
+	rulesMu.Lock()
+	rulesAppliedBackend = ""
+	rulesMu.Unlock()
+	recorded := run
+	busy := false
+	run = func(args ...string) (string, error) {
+		switch {
+		case slices.Contains(args, "-X") && slices.Contains(args, discoveryStampChainIPT):
+			if busy {
+				return "iptables v1.8.11 (nf_tables):  CHAIN_DEL failed (Device or resource busy): chain B4_DISCOVERY_DSCP", errors.New("exit status 4")
+			}
+			return "iptables: No chain/target/match by that name.", errors.New("exit status 1")
+		case args[0] == "nft" && slices.Contains(args, "delete") && slices.Contains(args, discoveryStampChainNFT):
+			if busy {
+				return "Error: Could not process rule: Device or resource busy", errors.New("exit status 1")
+			}
+			return "Error: Could not process rule: No such file or directory", errors.New("exit status 1")
+		}
+		return recorded(args...)
+	}
+
+	for _, engine := range []string{backendIPTables, backendNFTables} {
+		cfg := config.NewConfig()
+		cfg.System.Tables.Engine = engine
+		busy = true
+		err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, nil, nil)
+		if err == nil || !strings.Contains(err.Error(), "earlier run's DSCP value") {
+			t.Errorf("%s: an earlier run's stamp may still write its value into these marks, so the run must not start on top of it, got %v", engine, err)
+		}
+		if activeSteering != nil {
+			t.Errorf("%s: a refused run must not stay registered", engine)
+		}
+		busy = false
+		if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
+			t.Errorf("%s: a stamp that is already gone is no reason to refuse, got %v", engine, err)
+		}
+		ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+	}
+}

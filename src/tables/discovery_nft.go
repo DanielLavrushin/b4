@@ -93,12 +93,14 @@ func (b *discoveryNftBackend) apply(flowMark uint, injectedMark uint, queueStart
 }
 
 func (b *discoveryNftBackend) applyStamp(flowHex, injectedHex string, stamp *discoveryStamp) error {
-	b.dropStamp()
+	if err := b.dropStamp(); err != nil {
+		return err
+	}
 	if stamp == nil {
 		return nil
 	}
 	if out, err := runNftStdin(discoveryNftStampScript(flowHex, injectedHex, stamp)); err != nil {
-		b.dropStamp()
+		_ = b.dropStamp()
 		return fmt.Errorf("nftables rejected the chain that writes DSCP %d into Discovery's probes: %s", stamp.value, iptErrText(out, err))
 	}
 	return nil
@@ -127,9 +129,13 @@ func discoveryNftStampScript(flowHex, injectedHex string, stamp *discoveryStamp)
 	return b.String()
 }
 
-func (b *discoveryNftBackend) dropStamp() {
+func (b *discoveryNftBackend) dropStamp() error {
 	_, _ = run("nft", "flush", "chain", "inet", nftTableName, discoveryStampChainNFT)
-	_, _ = run("nft", "delete", "chain", "inet", nftTableName, discoveryStampChainNFT)
+	out, err := run("nft", "delete", "chain", "inet", nftTableName, discoveryStampChainNFT)
+	if err == nil || strings.Contains(out, "No such file or directory") {
+		return nil
+	}
+	return fmt.Errorf("nftables could not remove the chain %s, which may still write an earlier run's DSCP value into Discovery's probes: %s", discoveryStampChainNFT, iptErrText(out, err))
 }
 
 func (b *discoveryNftBackend) keepOutOfQueueChain(flowHex, injectedHex string, flowMark, injectedMark uint) {
@@ -151,7 +157,9 @@ func (b *discoveryNftBackend) clear(flowMark uint, injectedMark uint) {
 	b.deleteDiscoveryRulesFromChain("prerouting", flowMark, injectedMark)
 	_, _ = run("nft", "flush", "chain", "inet", nftTableName, discoveryChainNFT)
 	_, _ = run("nft", "delete", "chain", "inet", nftTableName, discoveryChainNFT)
-	b.dropStamp()
+	if err := b.dropStamp(); err != nil {
+		log.Warnf("Discovery: %v, so the next run does not start until it is gone", err)
+	}
 	b.dropTableIfEmpty()
 }
 

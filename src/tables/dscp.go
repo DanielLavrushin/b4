@@ -309,13 +309,17 @@ func iptChainListing(bin, table, chain string) (listing string, present, known b
 	if dscpTransient(out, err) {
 		return "", false, false
 	}
+	return "", false, iptReportsAbsent(out, err)
+}
+
+func iptReportsAbsent(out string, err error) bool {
 	msg := iptErrText(out, err)
 	for _, marker := range iptAbsentMarkers {
 		if strings.Contains(msg, marker) {
-			return "", false, true
+			return true
 		}
 	}
-	return "", false, false
+	return false
 }
 
 func (im *IPTablesManager) applyDSCPChain(bin string, specs [][]string) (bool, error) {
