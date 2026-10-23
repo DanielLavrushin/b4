@@ -11,8 +11,10 @@ import (
 var (
 	dscpSyncTick     = 5 * time.Minute
 	dscpSyncWanted   atomic.Pointer[config.Config]
+	dscpSyncSettled  atomic.Pointer[config.Config]
 	dscpSyncKick     = make(chan struct{}, 1)
 	dscpSyncClosed   atomic.Bool
+	dscpSyncRunning  atomic.Bool
 	dscpSyncMu       sync.Mutex
 	dscpSyncStop     chan struct{}
 	dscpSyncDone     chan struct{}
@@ -39,6 +41,7 @@ func StartDSCPSync() {
 	}
 	rulesMu.Lock()
 	dscpSyncClosed.Store(false)
+	dscpSyncRunning.Store(true)
 	rulesMu.Unlock()
 	dscpLearnStart()
 	dscpPreResolveStart()
@@ -54,6 +57,7 @@ func StopDSCPSync() {
 	}
 	close(dscpSyncStop)
 	<-dscpSyncDone
+	dscpSyncRunning.Store(false)
 	dscpPreResolveStop()
 	dscpLearnStop()
 	dscpSyncStop, dscpSyncDone = nil, nil
@@ -78,10 +82,18 @@ func dscpSyncLoop(stop <-chan struct{}, done chan<- struct{}, every time.Duratio
 func dscpSyncPass(cfg *config.Config, periodic bool, stop <-chan struct{}) {
 	rulesMu.Lock()
 	plan := dscpSyncLocked(cfg, periodic, stop)
+	if !periodic {
+		dscpSyncSettled.Store(cfg)
+	}
 	rulesMu.Unlock()
 	if plan != nil {
 		dscpPreResolveFn(plan, cfg, periodic)
 	}
+}
+
+func dscpSyncQueued() bool {
+	wanted := dscpSyncWanted.Load()
+	return wanted != nil && dscpSyncRunning.Load() && wanted != dscpSyncSettled.Load()
 }
 
 func dscpSyncLocked(cfg *config.Config, periodic bool, stop <-chan struct{}) *dscpPlan {

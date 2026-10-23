@@ -40,7 +40,7 @@ func discoveryCheckDSCP(dscp *config.DSCPProbe) error {
 	if dscp.Value < 0 || dscp.Value > config.MaxDSCPValue {
 		return fmt.Errorf("DSCP %d for Discovery's probes is outside 0-%d", dscp.Value, config.MaxDSCPValue)
 	}
-	if st := dscpApplied.Load(); st != nil && st.pending {
+	if st := dscpApplied.Load(); (st != nil && st.pending) || dscpSyncQueued() {
 		return ErrDiscoveryDSCPPending
 	}
 	return nil
@@ -114,8 +114,8 @@ type discoverySteering struct {
 }
 
 var (
-	activeSteering  *discoverySteering
-	discoverySetRun atomic.Pointer[discoverySteering]
+	activeSteering *discoverySteering
+	discoveryRun   atomic.Pointer[discoverySteering]
 )
 
 func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark uint, queueStart int, threads int, dscp *config.DSCPProbe, lost func(error)) error {
@@ -135,11 +135,7 @@ func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark
 	}
 	s := &discoverySteering{cfg: cfg, backend: be, flowMark: flowMark, injectedMark: injectedMark, queueStart: queueStart, threads: threads, dscp: dscp, stamp: stamp, lost: lost}
 	activeSteering = s
-	if dscp != nil {
-		discoverySetRun.Store(s)
-	} else {
-		discoverySetRun.Store(nil)
-	}
+	discoveryRun.Store(s)
 	return nil
 }
 
@@ -161,7 +157,7 @@ func ClearDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark
 		be = s.backend
 	}
 	activeSteering = nil
-	discoverySetRun.Store(nil)
+	discoveryRun.Store(nil)
 	if be == nil {
 		be = currentDiscoveryBackend(cfg)
 	}
@@ -172,13 +168,13 @@ func ClearDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark
 }
 
 func discoveryDSCPRewritten() {
-	if s := discoverySetRun.Load(); s != nil {
+	if s := discoveryRun.Load(); s != nil && s.dscp != nil {
 		s.fail(errDiscoveryDSCPRewritten)
 	}
 }
 
 func DiscoveryRunInvalidated() bool {
-	s := discoverySetRun.Load()
+	s := discoveryRun.Load()
 	return s != nil && s.failed.Load()
 }
 

@@ -216,6 +216,57 @@ func TestHistoryRecordsTheDSCPTheProbesCarried(t *testing.T) {
 	}
 }
 
+func TestHistoryKeepsAResultOfARunWhoseRulesChangedOutOfReach(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	set := config.NewSetConfig()
+	SaveToHistory(&CheckSuite{
+		Id: "run-moved", Status: CheckStatusCanceled, EndTime: time.Now(), RulesChanged: true,
+		StrategyGroups: []StrategyGroup{{WinnerPreset: "p", Domains: []string{"youtube.com"}, Set: &set}},
+		DomainDiscoveryResults: map[string]*DomainDiscoveryResult{
+			"youtube.com": {Domain: "youtube.com", BestPreset: "p", BestSuccess: true, Results: map[string]*DomainPresetResult{
+				"p": {PresetName: "p", Status: CheckStatusComplete, Set: &set},
+			}},
+		},
+	}, cfgPath)
+
+	hist := LoadDiscoveryHistory(cfgPath)
+	if len(hist.Entries) != 1 || !hist.Entries[0].RulesChanged {
+		t.Fatalf("the saved result must remember that the run's rules changed, got %+v", hist.Entries)
+	}
+	if got := hist.Entries[0].ApplicableSet(); got != nil {
+		t.Errorf("a result from a run whose rules changed could come from another network path, so the history must not offer it, got %q", got.Name)
+	}
+}
+
+func TestResultSetsCarryTheDSCPValueOfTheSetTheRunWasFor(t *testing.T) {
+	ds := &DiscoverySuite{
+		CheckSuite: &CheckSuite{Domain: "site.example", Domains: []DomainInput{{Domain: "site.example", CheckURL: "https://site.example/"}}},
+		cfg:        &config.Config{},
+		dnsResults: map[string]*DNSDiscoveryResult{},
+		setDSCP:    &config.DSCPProbe{Value: 25, IPv4: true},
+	}
+	preset := ConfigPreset{Name: "combo-pastseq", Config: config.NewSetConfig()}
+	single := ds.buildTestConfig(preset).Sets[0]
+	multi := ds.buildTestConfigMulti(preset).Sets[0]
+	for name, set := range map[string]*config.SetConfig{
+		"single":        single,
+		"multi":         multi,
+		"scoped single": ds.scopeSetToDomains(single, []string{"site.example"}),
+		"scoped multi":  ds.scopeSetToDomains(multi, []string{"site.example"}),
+		"plain fix":     ds.plainFixSet(presetAltAddress, FamilyAltAddress),
+		"no bypass":     ds.buildTestConfig(ConfigPreset{Name: presetNoBypass, Config: config.NewSetConfig()}).Sets[0],
+	} {
+		if want := (config.SetDSCPConfig{Enabled: true, Value: 25}); set.DSCP != want {
+			t.Errorf("%s: the strategy was tested on the path of DSCP 25, so a set made from it must carry that value, got %+v", name, set.DSCP)
+		}
+	}
+
+	ds.setDSCP = nil
+	if set := ds.buildTestConfig(preset).Sets[0]; set.DSCP.Enabled {
+		t.Errorf("a run for no set value leaves the result's DSCP off, got %+v", set.DSCP)
+	}
+}
+
 func TestCancelSuiteWithoutAChannelDoesNotPanic(t *testing.T) {
 	suite := &CheckSuite{Id: "hand-built", Status: CheckStatusRunning}
 	RegisterSuite(suite)

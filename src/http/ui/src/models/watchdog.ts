@@ -58,7 +58,7 @@ export type WatchReason =
   | "verify_failed"
   | "edited"
   | "busy"
-  | "dscp_rules";
+  | "rules_changed";
 
 export interface URLWatchStatus {
   url: string;

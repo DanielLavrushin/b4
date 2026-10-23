@@ -345,9 +345,10 @@ func (ds *DiscoverySuite) finalize() {
 	failed := ds.Status == CheckStatusFailed
 	if rulesInvalidated() || ds.RulesChanged {
 		if !ds.RulesChanged {
-			log.DiscoveryLogf("Stopped: b4 rewrote its DSCP rules during the run, so its results could come from another network path")
+			log.DiscoveryLogf("Stopped: the firewall rules this run depends on changed during it, so its results could come from another network path and none of them can be applied")
 		}
 		ds.RulesChanged = true
+		ds.dropApplicableSetsLocked()
 		if !failed {
 			ds.Status = CheckStatusCanceled
 		}
@@ -376,6 +377,22 @@ func (ds *DiscoverySuite) finalize() {
 		delete(activeSuites, ds.Id)
 		suitesMu.Unlock()
 	}()
+}
+
+func (ds *DiscoverySuite) dropApplicableSetsLocked() {
+	for i := range ds.StrategyGroups {
+		ds.StrategyGroups[i].Set = nil
+	}
+	for _, dr := range ds.domainResults {
+		if dr == nil {
+			continue
+		}
+		for _, r := range dr.Results {
+			if r != nil {
+				r.Set = nil
+			}
+		}
+	}
 }
 
 func (ds *DiscoverySuite) logDiscoverySummary() {

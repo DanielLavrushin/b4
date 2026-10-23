@@ -25,6 +25,7 @@ import (
 const (
 	mcpDiscoveryMaxDomains = 5
 	mcpDiscoveryMaxGroups  = 20
+	mcpRulesChangedNote    = "the run was stopped because the firewall rules it depends on changed during it, so its results could come from another network path"
 )
 
 var (
@@ -772,7 +773,7 @@ func (api *API) mcpDiscoverySuiteStatus(snap *mcpSuiteSnapshot) (*mcp.CallToolRe
 	case discovery.CheckStatusCanceled:
 		out.Note = "the run was cancelled; any results below are partial"
 		if snap.RulesChanged {
-			out.Note = "the run was stopped because b4 rewrote its DSCP rules during it, so its results could come from another network path; start it again"
+			out.Note = mcpRulesChangedNote + ", so none of its results can be applied; start it again"
 		}
 	default:
 		applicable := 0
@@ -873,6 +874,9 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		switch status {
 		case discovery.CheckStatusComplete:
 		case discovery.CheckStatusCanceled:
+			if snap.RulesChanged {
+				return nil, mcpDiscoveryOut{}, fmt.Errorf("%s, so none of its results can be applied. Start it again", mcpRulesChangedNote)
+			}
 			unconfirmed = true
 		default:
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
@@ -923,6 +927,9 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		if !entry.BestSuccess {
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
 				"the saved run found no working strategy for %s, so there is nothing to apply. Run discovery for it again", domain)
+		}
+		if entry.RulesChanged {
+			return nil, mcpDiscoveryOut{}, fmt.Errorf("%s, so its result for %s cannot be applied. Run discovery for it again", mcpRulesChangedNote, domain)
 		}
 		unconfirmed = entry.Status == discovery.CheckStatusCanceled || entry.Confirmed == 0
 		chosen = entry.ApplicableSet()

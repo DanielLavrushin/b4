@@ -18,7 +18,7 @@ func TestSetHealWaitsWhileTheDSCPRulesArePending(t *testing.T) {
 	h.healNow("yt")
 
 	st := h.state("yt")
-	if st.Status != SetStatusHealQueued || st.Reason != ReasonDSCPRules || st.HealFailures != 0 {
+	if st.Status != SetStatusHealQueued || st.Reason != ReasonRulesChanged || st.HealFailures != 0 {
 		t.Fatalf("no search ran while b4 was still applying its DSCP rules, so the heal waits without counting a failure: %+v", st)
 	}
 	if q := h.queue(); len(q) != 1 || q[0] != "yt" {
@@ -51,8 +51,8 @@ func TestSetHealStoppedByADSCPRewriteWritesNothing(t *testing.T) {
 	h.healNow("yt")
 
 	st := h.state("yt")
-	if st.Reason != ReasonDSCPRules || st.HealFailures != 1 {
-		t.Fatalf("a run stopped by a DSCP rewrite must say so, and it still counts toward giving up on a firewall that keeps changing: %+v", st)
+	if st.Reason != ReasonRulesChanged || st.HealFailures != 1 {
+		t.Fatalf("a run stopped by a rules change must say so, and it still counts toward giving up on a firewall that keeps changing: %+v", st)
 	}
 	if got := h.set("yt").Fragmentation.Strategy; got != "tcp" {
 		t.Errorf("results from a run whose path changed must not be written, the set's strategy became %q", got)

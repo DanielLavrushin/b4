@@ -58,6 +58,7 @@ type HistoryEntry struct {
 	ECHCoverName  string                         `json:"ech_cover_name,omitempty"`
 	ECHOnlyBlock  bool                           `json:"ech_only_block,omitempty"`
 	StoppedEarly  bool                           `json:"stopped_early,omitempty"`
+	RulesChanged  bool                           `json:"rules_changed,omitempty"`
 	Order         int                            `json:"order,omitempty"`
 	Applied       map[string]AppliedMark         `json:"applied,omitempty"`
 }
@@ -98,6 +99,9 @@ func (e HistoryEntry) EffectiveOutcome() Outcome {
 // group-scoped winner the run built, or the winning preset's own set for an
 // entry written before that was recorded.
 func (e HistoryEntry) ApplicableSet() *config.SetConfig {
+	if e.RulesChanged {
+		return nil
+	}
 	if e.Set != nil {
 		return e.Set
 	}
@@ -259,6 +263,7 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			ECHCoverName:  domainResult.ECHCoverName,
 			ECHOnlyBlock:  domainResult.ECHOnlyBlock,
 			StoppedEarly:  suite.StoppedEarly,
+			RulesChanged:  suite.RulesChanged,
 			Order:         position + 1,
 		}
 

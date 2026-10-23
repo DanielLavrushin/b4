@@ -43,6 +43,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 	testSet.DNS.StripECH = preset.Config.DNS.StripECH
 
 	config.ApplySetDefaults(&testSet)
+	testSet.DSCP = ds.resultDSCP()
 
 	if testSet.TCP.Win.Mode == "" {
 		testSet.TCP.Win.Mode = config.ConfigOff
@@ -137,6 +138,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 	testSet.DNS.StripECH = preset.Config.DNS.StripECH
 
 	config.ApplySetDefaults(&testSet)
+	testSet.DSCP = ds.resultDSCP()
 
 	if testSet.TCP.Win.Mode == "" {
 		testSet.TCP.Win.Mode = config.ConfigOff
@@ -212,6 +214,13 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 		System:     ds.cfg.System,
 		Sets:       []*config.SetConfig{&testSet},
 	}
+}
+
+func (ds *DiscoverySuite) resultDSCP() config.SetDSCPConfig {
+	if ds.setDSCP == nil {
+		return config.SetDSCPConfig{}
+	}
+	return config.SetDSCPConfig{Enabled: true, Value: ds.setDSCP.Value}
 }
 
 func (ds *DiscoverySuite) scopeSetToDomains(set *config.SetConfig, domains []string) *config.SetConfig {

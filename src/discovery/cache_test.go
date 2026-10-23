@@ -36,7 +36,12 @@ func makeTestConfig(strategy string, ttl uint8, fakeSNI bool) config.SetConfig {
 
 func TestStripTargets(t *testing.T) {
 	sc := makeTestConfig("combo", 5, true)
+	sc.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
 	stripped := stripTargets(sc)
+
+	if stripped.DSCP.Enabled {
+		t.Errorf("the DSCP value names the path a run took, not the strategy, so the cache must not keep it: %+v", stripped.DSCP)
+	}
 
 	if stripped.Id != "" {
 		t.Errorf("expected empty Id, got %q", stripped.Id)

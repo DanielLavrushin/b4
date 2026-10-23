@@ -148,7 +148,7 @@ func (m *Runtime) rulesLost(state *runtimeState, err error) {
 
 func stopForLostRules(suiteID string, err error) {
 	log.Warnf("Discovery: stopping run %s, its firewall rules changed or could not be put back after a firewall rebuild: %v", suiteID, err)
-	log.DiscoveryLogf("Stopped: the firewall rules this run depends on changed or could not be put back after a firewall rebuild (%v), so later results would not be reliable", err)
+	log.DiscoveryLogf("Stopped: the firewall rules this run depends on changed or could not be put back after a firewall rebuild (%v), so its results could come from another network path and none of them can be applied", err)
 	cancelCheckSuite(suiteID, true)
 }
 
@@ -207,6 +207,7 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 	suite.SetId = opts.SetId
 	suite.DSCP = runtimeState.DSCP
 	suite.setStrategy = opts.SetStrategy
+	suite.setDSCP = opts.DSCP
 	suite.stopWhenCovered = opts.StopWhenCovered
 	suite.dnsServerOverride = opts.DNSServer
 	suite.runPins = opts.Pins

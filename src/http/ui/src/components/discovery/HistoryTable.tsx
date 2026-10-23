@@ -117,7 +117,9 @@ export const HistoryTable = ({
         domains,
         urls: domains.map((d) => urlOf.get(d) ?? `https://${d}/`),
         alternates:
-          verdict === "found" ? historyAlternates(entry, domains) : [],
+          verdict === "found" && !entry.rules_changed
+            ? historyAlternates(entry, domains)
+            : [],
       };
     });
   }, [entries]);
@@ -279,6 +281,11 @@ export const HistoryTable = ({
             {row.entry.stopped_early && !row.unconfirmed && (
               <Typography variant="caption" sx={{ color: colors.text.disabled }}>
                 {t("discovery.history.stoppedEarly")}
+              </Typography>
+            )}
+            {row.entry.rules_changed && (
+              <Typography variant="caption" sx={{ color: colors.text.disabled }}>
+                {t("discovery.history.rulesChanged")}
               </Typography>
             )}
             {echLine(row.entry)}

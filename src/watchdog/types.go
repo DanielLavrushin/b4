@@ -132,7 +132,7 @@ const (
 	ReasonVerifyFailed = "verify_failed"
 	ReasonEdited       = "edited"
 	ReasonBusy         = "busy"
-	ReasonDSCPRules    = "dscp_rules"
+	ReasonRulesChanged = "rules_changed"
 )
 
 const (

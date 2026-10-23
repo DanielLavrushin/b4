@@ -18,6 +18,7 @@ func appliedResetGlobals(t *testing.T) {
 		rulesAppliedCfg, rulesAppliedBackend = origApplied, origBackend
 		rulesMu.Unlock()
 		activeSteering = nil
+		discoveryRun.Store(nil)
 	})
 }
 

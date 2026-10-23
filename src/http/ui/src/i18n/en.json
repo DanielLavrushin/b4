@@ -2838,6 +2838,7 @@
       "unconfirmedNote": "This run was stopped before the confirmation pass, so the strategy worked at least once but was not re-checked.",
       "stoppedEarlyNote": "The search was stopped before it finished. The strategy passed the confirmation pass, but the steps that could have tuned it were skipped, so a faster one may exist.",
       "noSet": "The run did not keep the set for this strategy. Run it again to apply.",
+      "rulesChanged": "The firewall rules this run depends on changed while it ran, so this result could come from another network path. Run it again to apply.",
       "otherStrategies_one": "{{count}} other strategy worked",
       "otherStrategies_other": "{{count}} other strategies worked",
       "showAll": "Show all {{count}}",
@@ -3027,6 +3028,7 @@
       "nothing": "No strategy made it load",
       "sharedWith": "One set together with {{domains}}",
       "stoppedEarly": "search stopped early, not tuned",
+      "rulesChanged": "stopped: firewall rules changed during the search, run it again",
       "lastLog": "Last run log",
       "unresolvedNoAddress": "DNS publishes no {{family}} address, nothing was tested",
       "source": {
@@ -3757,7 +3759,7 @@
       "verify_failed": "The strategy found did not pass the live check of the addresses and was undone.",
       "edited": "The set was changed while the search ran, so the result was not written.",
       "busy": "Another Discovery search was running. The watchdog tries again later.",
-      "dscp_rules": "b4 was applying or rewriting its DSCP rules, so the search could not follow the path the set's traffic takes. The watchdog tries again later."
+      "rules_changed": "b4 was applying or rewriting the firewall rules the search depends on, so it could not follow the path the set's traffic takes. The watchdog tries again later."
     },
     "errors": {
       "no_urls": "The set has no Discovery addresses to check.",

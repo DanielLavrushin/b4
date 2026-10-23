@@ -204,7 +204,7 @@ const FoundCard = ({
 }: FoundCardProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const alternates = alternatesFor(group, 0);
+  const alternates = suite.rules_changed ? [] : alternatesFor(group, 0);
   const applied = appliedMarks(history, group.domains);
   const first = group.results[0];
   const counts = first ? testedCounts(first) : null;
@@ -363,7 +363,13 @@ const FoundCard = ({
               }
             />
           ) : (
-            <B4Alert severity="warning">{t("discovery.results.noSet")}</B4Alert>
+            <B4Alert severity="warning">
+              {t(
+                suite.rules_changed
+                  ? "discovery.results.rulesChanged"
+                  : "discovery.results.noSet",
+              )}
+            </B4Alert>
           )}
           {echCovers && (
             <Typography

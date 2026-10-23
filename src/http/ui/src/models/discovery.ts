@@ -148,6 +148,7 @@ export interface DiscoverySuite {
   dscp?: number;
   set_verdict?: SetVerdict;
   stopped_covered?: boolean;
+  rules_changed?: boolean;
 }
 
 export type SetVerdictStatus =
@@ -234,6 +235,7 @@ export interface HistoryEntry {
   ech_cover_name?: string;
   ech_only_block?: boolean;
   stopped_early?: boolean;
+  rules_changed?: boolean;
   order?: number;
   applied?: Record<string, AppliedMark>;
   size_bytes?: number;

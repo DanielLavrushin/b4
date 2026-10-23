@@ -149,7 +149,7 @@ func (w *Watchdog) healSet(id string) {
 	if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) || errors.Is(err, discovery.ErrDSCPRulesPending) {
 		reason := ReasonBusy
 		if errors.Is(err, discovery.ErrDSCPRulesPending) {
-			reason = ReasonDSCPRules
+			reason = ReasonRulesChanged
 			log.Infof("[WATCHDOG] set %q: b4 is still applying its DSCP rules, the heal waits", set.Name)
 		} else {
 			log.Infof("[WATCHDOG] set %q: another discovery run holds the runtime, the heal waits", set.Name)
@@ -180,7 +180,7 @@ func (w *Watchdog) healSet(id string) {
 		w.healFailed(id, ReasonBudget, fmt.Sprintf("the discovery run did not finish within %s", healCancelAfter))
 		return
 	case setRunRulesChanged:
-		w.healFailed(id, ReasonDSCPRules, "b4 rewrote its DSCP rules during the run, so its results could come from another network path")
+		w.healFailed(id, ReasonRulesChanged, "the firewall rules the run depends on changed during it, so its results could come from another network path")
 		return
 	}
 

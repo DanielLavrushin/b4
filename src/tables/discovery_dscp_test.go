@@ -621,3 +621,89 @@ func TestDiscoveryDSCPComesBackAfterAFirewallRebuild(t *testing.T) {
 		t.Errorf("after the run ended a rebuild put its rules back: %v", *calls)
 	}
 }
+
+func TestDiscoverySetRunWaitsForADSCPSaveTheWorkerHasNotApplied(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
+	dscpSyncIsolate(t)
+	dscpSyncTick = time.Hour
+	discoveryIpsetReady(t, false)
+	calls := discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+	entered, release, settled := make(chan struct{}, 1), make(chan struct{}), make(chan struct{}, 1)
+	dscpSyncPassFn = func(cfg *config.Config, periodic bool, stop <-chan struct{}) {
+		entered <- struct{}{}
+		<-release
+		dscpSyncPass(cfg, periodic, stop)
+		settled <- struct{}{}
+	}
+	saved := config.NewConfig()
+	saved.System.Tables.Engine = backendIPTables
+
+	StartDSCPSync()
+	SyncDSCP(&saved)
+	<-entered
+	if err := ApplyDiscoverySteeringRules(&saved, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); !errors.Is(err, ErrDiscoveryDSCPPending) {
+		t.Errorf("b4 has saved a DSCP change it has not applied yet, so the set's traffic still carries the old value and a run for the set must wait, got %v", err)
+	}
+	if len(*calls) != 0 || activeSteering != nil {
+		t.Errorf("a refused run must leave the firewall alone: %v", *calls)
+	}
+	if err := ApplyDiscoverySteeringRules(&saved, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
+		t.Errorf("a run for no set value does not depend on the DSCP rules and starts, got %v", err)
+	}
+	ClearDiscoverySteeringRules(&saved, 0x8001, 0x8002)
+
+	close(release)
+	<-settled
+	if err := ApplyDiscoverySteeringRules(&saved, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); err != nil {
+		t.Errorf("once the worker has applied the saved change the run for the set starts, got %v", err)
+	}
+	ClearDiscoverySteeringRules(&saved, 0x8001, 0x8002)
+
+	StopDSCPSync()
+	later := config.NewConfig()
+	SyncDSCP(&later)
+	if err := ApplyDiscoverySteeringRules(&saved, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); err != nil {
+		t.Errorf("with the worker stopped nothing applies a saved change, so a run must not wait for one, got %v", err)
+	}
+	ClearDiscoverySteeringRules(&saved, 0x8001, 0x8002)
+}
+
+func TestDiscoveryRunWithoutDSCPCountsAsInvalidOnceItsSteeringIsLost(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: false})
+	discoveryRecordRun(t, nil)
+	cfg := config.NewConfig()
+	cfg.System.Tables.Engine = backendIPTables
+
+	lost := make(chan error, 1)
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, nil, func(err error) { lost <- err }); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	recorded := run
+	run = func(args ...string) (string, error) {
+		if slices.Contains(args, "NFQUEUE") {
+			return "iptables: No chain/target/match by that name.", errors.New("exit status 2")
+		}
+		return recorded(args...)
+	}
+	rulesMu.Lock()
+	reapplyDiscoverySteering()
+	rulesMu.Unlock()
+
+	if !DiscoveryRunInvalidated() {
+		t.Error("a rebuild left the run's probes outside its queue, and the run must count as invalid before the stop signal lands, or a run that finishes meanwhile publishes results b4 did not test")
+	}
+	select {
+	case <-lost:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run was never told that its steering is gone")
+	}
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+	if DiscoveryRunInvalidated() {
+		t.Error("with no run there is nothing to invalidate")
+	}
+}

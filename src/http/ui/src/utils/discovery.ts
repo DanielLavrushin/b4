@@ -272,7 +272,7 @@ export function buildResultEntries(
       domains,
       preset,
       family: family ?? rs[0]?.results?.[preset]?.family,
-      set,
+      set: suite.rules_changed ? null : set,
       results: rs,
       confirmation,
       unconfirmed,
@@ -511,6 +511,7 @@ export function historyVerdict(e: HistoryEntry): DiscoveryOutcome {
 }
 
 export function historySet(e: HistoryEntry): B4SetConfig | null {
+  if (e.rules_changed) return null;
   if (e.set) return normalizeSet(e.set);
   const raw = e.results?.[e.best_preset]?.set;
   if (!raw) return null;

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/nfq"
 )
 
@@ -122,7 +123,7 @@ func TestARunWhoseRulesChangedIsNotPublishedAsComplete(t *testing.T) {
 			pool:       &nfq.Pool{},
 			domainResults: map[string]*DomainDiscoveryResult{"example.com": {
 				Domain: "example.com", BestPreset: "p", BestSuccess: true,
-				Results: map[string]*DomainPresetResult{"p": {PresetName: "p", Status: CheckStatusComplete}},
+				Results: map[string]*DomainPresetResult{"p": {PresetName: "p", Status: CheckStatusComplete, Set: &config.SetConfig{Name: "p"}}},
 			}},
 			dnsResults: map[string]*DNSDiscoveryResult{},
 			setVerdict: &SetVerdict{Status: SetVerdictCovered, WinnerPreset: "p", Confirmed: true},
@@ -137,6 +138,14 @@ func TestARunWhoseRulesChangedIsNotPublishedAsComplete(t *testing.T) {
 			t.Errorf("%s: the DSCP rules changed while the run was finishing, so its covered verdict must not be published: status %q, rules changed %t, verdict %+v", tc.name, ds.Status, ds.RulesChanged, ds.SetVerdict)
 		case !invalidated && (ds.Status != CheckStatusComplete || ds.RulesChanged || ds.SetVerdict == nil || ds.SetVerdict.Status != SetVerdictCovered):
 			t.Errorf("%s: publishes its verdict: status %q, rules changed %t, verdict %+v", tc.name, ds.Status, ds.RulesChanged, ds.SetVerdict)
+		}
+		grouped := len(ds.StrategyGroups) == 1 && ds.StrategyGroups[0].Set != nil
+		kept := ds.domainResults["example.com"].Results["p"].Set != nil
+		switch {
+		case invalidated && (grouped || kept):
+			t.Errorf("%s: the run's results could come from another network path, so none may be left to apply: group set %t, result set %t", tc.name, grouped, kept)
+		case !invalidated && (!grouped || !kept):
+			t.Errorf("%s: keeps its result applicable: group set %t, result set %t", tc.name, grouped, kept)
 		}
 
 		ds.ctxCancel()
