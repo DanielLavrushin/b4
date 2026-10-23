@@ -560,7 +560,20 @@
       "manualIp": "IP Address",
       "manualName": "Name",
       "manualNamePlaceholder": "Device name (optional)",
-      "dscpNote": "While devices are selected here, sets do not write their own DSCP value: the firewall stage that writes it cannot see which device a packet came from. Set DSCP in Settings -> Core -> Firewall still applies."
+      "dscpNote": "While devices are selected here, sets do not write their own DSCP value: the firewall stage that writes it cannot see which device a packet came from. Set DSCP in Settings -> Core -> Firewall still applies.",
+      "forget": "Forget device",
+      "forgetOffline": "Forget offline ({{count}})",
+      "forgetDialog": {
+        "title": "Forget devices",
+        "subtitle": "Offline devices that b4 still keeps settings for",
+        "intro": "For each device below, b4 deletes the name, selection and MSS value it keeps and removes the device from the source devices of sets. A forgotten device that connects again is listed as a new one. Nothing changes until the settings are saved.",
+        "selected": "selected",
+        "excluded": "excluded",
+        "inSets": "sets: {{names}}",
+        "filterWarning": "Device Filtering then has no device selected by MAC address, so DPI bypass applies to every device.",
+        "setWarning": "Set {{name}} then has no source devices left and applies to every device.",
+        "confirm": "Forget ({{count}})"
+      }
     },
     "RestartDialog": {
       "title": "Restart B4 Service",

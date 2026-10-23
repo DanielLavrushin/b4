@@ -26,6 +26,28 @@ interface DevicesTabProps {
   onExcludeChange: (exclude: boolean) => void;
 }
 
+const withUnlistedSelection = (
+  devices: DeviceInfo[],
+  selected: string[],
+): DeviceInfo[] => {
+  const known = new Set(devices.map((d) => d.mac.toUpperCase()));
+  const unlisted: DeviceInfo[] = [];
+  for (const mac of selected) {
+    const key = mac.toUpperCase();
+    if (known.has(key)) continue;
+    known.add(key);
+    unlisted.push({
+      mac,
+      ip: "",
+      hostname: "",
+      vendor: "",
+      country: "",
+      is_online: false,
+    });
+  }
+  return unlisted.length > 0 ? [...devices, ...unlisted] : devices;
+};
+
 export const DevicesTab = ({
   selected,
   exclude,
@@ -58,6 +80,10 @@ export const DevicesTab = ({
   };
 
   const hasMssHints = devices.some((d) => d.mss_clamp);
+  const listed =
+    loading && devices.length === 0
+      ? devices
+      : withUnlistedSelection(devices, selected);
 
   const selectedManual = devices.filter(
     (d) => d.is_manual && isSelected(d.mac),
@@ -148,14 +174,15 @@ export const DevicesTab = ({
             </Box>
 
             <B4DeviceTable
-              devices={devices}
+              devices={listed}
               loading={loading}
               isSelected={isSelected}
               onToggle={handleToggle}
               onSelectAll={(checked) =>
-                onChange(checked ? devices.map((d) => d.mac) : [])
+                onChange(checked ? listed.map((d) => d.mac) : [])
               }
               onBulkToggle={handleBulkToggle}
+              showOfflineChip
               extraColumns={
                 hasMssHints
                   ? [
