@@ -303,7 +303,7 @@ func dscpIptCapability(im *IPTablesManager, bin string) error {
 }
 
 func dscpIptTakesSetValues(bin string) bool {
-	if !hasBinary("ipset") {
+	if !hasBinary(bin) || !hasBinary("ipset") {
 		return false
 	}
 	dscpIptProbeMu.Lock()

@@ -456,6 +456,28 @@ func TestDiscoverySetRunIsInvalidatedBeforeTheRulesChange(t *testing.T) {
 	}
 }
 
+func TestDiscoveryDSCPNeedsTheFamilysFirewallBinary(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	discoveryIpsetReady(t, false)
+	calls := discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+	cfg := config.NewConfig()
+	cfg.System.Tables.Engine = backendIPTables
+
+	ipv6Only := &config.DSCPProbe{Value: 25, IPv6: true}
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, ipv6Only, nil); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if got := ActiveDiscoveryDSCP(); got != nil {
+		t.Errorf("without ip6tables no IPv6 rule can be installed, so a run for an IPv6-only set must not report DSCP %d", *got)
+	}
+	for _, c := range *calls {
+		if strings.Contains(c, "-A B4_DISCOVERY_DSCP") {
+			t.Errorf("no family can carry the value here, yet a stamp rule went in: %q", c)
+		}
+	}
+}
+
 func TestDiscoverySteeringRefusesADSCPOutOfRange(t *testing.T) {
 	appliedResetGlobals(t)
 	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: false})
