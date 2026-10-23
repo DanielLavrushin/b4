@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -37,11 +38,19 @@ func (b *discoveryIptBackend) available() bool {
 	return hasBinary(b.ipt4()) || hasBinary(b.ipt6())
 }
 
-func (b *discoveryIptBackend) takesSetValues(v6 bool) bool {
+func (b *discoveryIptBackend) takesSetValues(cfg *config.Config, v6 bool) (bool, error) {
+	bin := b.ipt4()
 	if v6 {
-		return dscpIptTakesSetValues(b.ipt6())
+		bin = b.ipt6()
 	}
-	return dscpIptTakesSetValues(b.ipt4())
+	if !hasBinary(bin) {
+		return false, nil
+	}
+	err := dscpIptCapability(NewIPTablesManager(cfg, b.legacy), bin)
+	if err != nil && dscpIptProbeBusy(err) {
+		return false, ErrDiscoveryDSCPPending
+	}
+	return err == nil, nil
 }
 
 func discoveryQueueAction(queueStart int, threads int) []string {

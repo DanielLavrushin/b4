@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -15,9 +16,16 @@ const (
 
 type discoveryNftBackend struct{}
 
-func (b *discoveryNftBackend) name() string               { return backendNFTables }
-func (b *discoveryNftBackend) available() bool            { return hasBinary("nft") }
-func (b *discoveryNftBackend) takesSetValues(_ bool) bool { return !dscpNftSetsRefused.Load() }
+func (b *discoveryNftBackend) name() string    { return backendNFTables }
+func (b *discoveryNftBackend) available() bool { return hasBinary("nft") }
+
+func (b *discoveryNftBackend) takesSetValues(_ *config.Config, _ bool) (bool, error) {
+	usable, known := dscpNftSetsUsable()
+	if !known {
+		return false, ErrDiscoveryDSCPPending
+	}
+	return usable, nil
+}
 
 func (b *discoveryNftBackend) ensureBase() error {
 	loadKernelModules()

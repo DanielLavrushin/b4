@@ -302,16 +302,6 @@ func dscpIptCapability(im *IPTablesManager, bin string) error {
 	return err
 }
 
-func dscpIptTakesSetValues(bin string) bool {
-	if !hasBinary(bin) || !hasBinary("ipset") {
-		return false
-	}
-	dscpIptProbeMu.Lock()
-	defer dscpIptProbeMu.Unlock()
-	p, ok := dscpIptProbes[bin]
-	return !ok || p.err == nil
-}
-
 func dscpIptProbeBusy(err error) bool {
 	msg := err.Error()
 	return isXtablesLockBusy(msg, err) || strings.Contains(msg, context.DeadlineExceeded.Error())

@@ -17,7 +17,7 @@ var (
 type discoveryBackend interface {
 	name() string
 	available() bool
-	takesSetValues(v6 bool) bool
+	takesSetValues(cfg *config.Config, v6 bool) (bool, error)
 	apply(flowMark uint, injectedMark uint, queueStart int, threads int, stamp *discoveryStamp) error
 	clear(flowMark uint, injectedMark uint)
 }
@@ -46,23 +46,32 @@ func discoveryCheckDSCP(dscp *config.DSCPProbe) error {
 	return nil
 }
 
-func discoveryStampFor(cfg *config.Config, dscp *config.DSCPProbe, be discoveryBackend) *discoveryStamp {
+func discoveryStampFor(cfg *config.Config, dscp *config.DSCPProbe, be discoveryBackend) (*discoveryStamp, error) {
 	if dscp == nil {
-		return nil
+		return nil, nil
 	}
 	if st := dscpApplied.Load(); st != nil && st.cfg != nil {
 		cfg = st.cfg
 	}
-	stamp := &discoveryStamp{
-		value:  dscp.Value,
-		ifaces: cfg.DSCPInterfaces(),
-		v4:     dscp.IPv4 && be.takesSetValues(false),
-		v6:     dscp.IPv6 && be.takesSetValues(true),
+	stamp := &discoveryStamp{value: dscp.Value, ifaces: cfg.DSCPInterfaces()}
+	for _, family := range []struct {
+		v6     bool
+		wanted bool
+		takes  *bool
+	}{{false, dscp.IPv4, &stamp.v4}, {true, dscp.IPv6, &stamp.v6}} {
+		if !family.wanted {
+			continue
+		}
+		takes, err := be.takesSetValues(cfg, family.v6)
+		if err != nil {
+			return nil, err
+		}
+		*family.takes = takes
 	}
 	if !stamp.v4 && !stamp.v6 {
-		return nil
+		return nil, nil
 	}
-	return stamp
+	return stamp, nil
 }
 
 func getDiscoveryBackend(cfg *config.Config) discoveryBackend {
@@ -128,7 +137,10 @@ func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark
 	if be == nil {
 		return fmt.Errorf("no discovery firewall backend available")
 	}
-	stamp := discoveryStampFor(cfg, dscp, be)
+	stamp, err := discoveryStampFor(cfg, dscp, be)
+	if err != nil {
+		return err
+	}
 	if err := be.apply(flowMark, injectedMark, queueStart, threads, stamp); err != nil {
 		be.clear(flowMark, injectedMark)
 		return err
@@ -196,7 +208,11 @@ func reapplyDiscoverySteering() {
 		s.backend.clear(s.flowMark, s.injectedMark)
 	}
 	s.backend = be
-	s.stamp = discoveryStampFor(s.cfg, s.dscp, be)
+	stamp, err := discoveryStampFor(s.cfg, s.dscp, be)
+	if err != nil {
+		s.fail(err)
+	}
+	s.stamp = stamp
 	if err := be.apply(s.flowMark, s.injectedMark, s.queueStart, s.threads, s.stamp); err != nil {
 		s.fail(err)
 	}

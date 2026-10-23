@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -62,7 +63,7 @@ func discoveryIpsetReady(t *testing.T, ipt6 bool) {
 
 func discoveryRefuseSetMatch(bin string) {
 	dscpIptProbeMu.Lock()
-	dscpIptProbes[bin] = dscpIptProbe{err: errors.New(bin + " rejected the set match, which needs the xt_set kernel module")}
+	dscpIptProbes[bin] = dscpIptProbe{err: errors.New(bin + " rejected the set match, which needs the xt_set kernel module"), at: dscpIptNow()}
 	dscpIptProbeMu.Unlock()
 }
 
@@ -259,13 +260,13 @@ func TestDiscoveryDSCPStampsOnlyTheFamiliesTheSetsTrafficCarriesItIn(t *testing.
 	}
 
 	nft := &discoveryNftBackend{}
-	dscpNftSetsRefused.Store(true)
-	if got := discoveryStampFor(&cfg, discoveryProbe(25), nft); got != nil {
-		t.Errorf("nftables refused the per-set rules, so the set's traffic carries no set value and the probes must not either: %+v", got)
+	dscpNftSets.Store(dscpNftSetsRejected)
+	if got, err := discoveryStampFor(&cfg, discoveryProbe(25), nft); got != nil || err != nil {
+		t.Errorf("nftables refused the per-set rules, so the set's traffic carries no set value and the probes must not either: %+v, %v", got, err)
 	}
-	dscpNftSetsRefused.Store(false)
-	if got := discoveryStampFor(&cfg, discoveryProbe(25), nft); got == nil || !got.v4 || !got.v6 {
-		t.Errorf("with the per-set rules loaded both families take the value, got %+v", got)
+	dscpNftSets.Store(dscpNftSetsTaken)
+	if got, err := discoveryStampFor(&cfg, discoveryProbe(25), nft); err != nil || got == nil || !got.v4 || !got.v6 {
+		t.Errorf("with the per-set rules loaded both families take the value, got %+v, %v", got, err)
 	}
 
 	scripts := discoveryRecordNftScripts(t, nil)
@@ -339,16 +340,18 @@ func TestDiscoverySetRunWaitsForPendingDSCPRules(t *testing.T) {
 
 func TestDiscoveryStampTakesTheInterfacesOfTheAppliedDSCPRules(t *testing.T) {
 	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
 	discoveryIpsetReady(t, false)
+	discoveryRecordRun(t, nil)
 	start := config.NewConfig()
 	start.System.Tables.DSCP.Interfaces = []string{"wan0"}
 	applied := config.NewConfig()
 	applied.System.Tables.DSCP.Interfaces = []string{"wan1"}
 
 	dscpApplied.Store(&dscpState{cfg: &applied, backend: backendIPTables})
-	stamp := discoveryStampFor(&start, discoveryProbe(25), &discoveryIptBackend{})
-	if stamp == nil || !slices.Equal(stamp.ifaces, []string{"wan1"}) {
-		t.Errorf("the sets' values are written on the interfaces the applied rules name, so the run's must be too, got %+v", stamp)
+	stamp, err := discoveryStampFor(&start, discoveryProbe(25), &discoveryIptBackend{})
+	if err != nil || stamp == nil || !slices.Equal(stamp.ifaces, []string{"wan1"}) {
+		t.Errorf("the sets' values are written on the interfaces the applied rules name, so the run's must be too, got %+v, %v", stamp, err)
 	}
 }
 
@@ -720,6 +723,119 @@ func TestDiscoveryRunWithoutDSCPCountsAsInvalidOnceItsSteeringIsLost(t *testing.
 	if DiscoveryRunInvalidated() {
 		t.Error("with no run there is nothing to invalidate")
 	}
+}
+
+func TestDiscoveryTriesTheSetMatchBeforeStampingAFamilyNoSetHasUsed(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
+	discoveryIpsetReady(t, false)
+	calls := discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+	setMatch := ""
+	stubIPSetProbe(t, nil)
+	ipsetMatchProbe = func(*IPTablesManager, string) error {
+		switch setMatch {
+		case "rejected":
+			return errors.New("iptables rejected the set match, which needs the xt_set kernel module and the iptables set extension (command [iptables -A B4_MODULE_TEST] failed: exit status 2 (Couldn't load match `set':No such file or directory))")
+		case "busy":
+			return errors.New("iptables rejected the set match, which needs the xt_set kernel module and the iptables set extension (command [iptables -A B4_MODULE_TEST] failed: exit status 4 (Another app is currently holding the xtables lock))")
+		}
+		return nil
+	}
+	cfg := config.NewConfig()
+	cfg.System.Tables.Engine = backendIPTables
+	stamped := func() bool {
+		return discoveryCallIndex(*calls, "iptables -w -t mangle -I POSTROUTING 2 -j B4_DISCOVERY_DSCP") >= 0
+	}
+
+	setMatch = "busy"
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); !errors.Is(err, ErrDiscoveryDSCPPending) {
+		t.Errorf("a probe that could not run says nothing about the kernel, so the run must wait, got %v", err)
+	}
+
+	setMatch = "rejected"
+	*calls = nil
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if stamped() {
+		t.Error("no set has used the set match yet and the kernel rejects it, so the set's traffic would leave without its value, and the run's probes must too")
+	}
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+
+	dscpIptResetRecords(t)
+	setMatch = ""
+	*calls = nil
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if !stamped() {
+		t.Error("the kernel takes the set match, so the run's probes carry the set's value")
+	}
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+}
+
+func TestDiscoveryTriesTheNftablesSetObjectsBeforeStampingTheirValue(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
+	stubBinaryPresence(t, map[string]bool{"nft": true, backendIPTables: false, backendIP6Tables: false})
+	discoveryRecordRun(t, nil)
+	rulesMu.Lock()
+	rulesAppliedBackend = ""
+	rulesMu.Unlock()
+	orig := runNftStdin
+	t.Cleanup(func() { runNftStdin = orig })
+	var scripts []string
+	mode := ""
+	runNftStdin = func(script string) (string, error) {
+		scripts = append(scripts, script)
+		if strings.Contains(script, dscpNftProbeTable) {
+			switch mode {
+			case "rejected":
+				return "Error: Could not process rule: Operation not supported", errors.New("exit status 1")
+			case "busy":
+				return "", fmt.Errorf("command [nft -f -] gave up after 15s: %w", context.DeadlineExceeded)
+			}
+		}
+		return "", nil
+	}
+	cfg := config.NewConfig()
+	cfg.System.Tables.Engine = backendNFTables
+	stamped := func() bool {
+		return slices.ContainsFunc(scripts, func(s string) bool {
+			return strings.Contains(s, discoveryStampChainNFT) && strings.Contains(s, "dscp set 25")
+		})
+	}
+
+	mode = "busy"
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); !errors.Is(err, ErrDiscoveryDSCPPending) {
+		t.Errorf("a test table nftables did not answer for says nothing about the kernel, so the run must wait, got %v", err)
+	}
+	if dscpNftSets.Load() != dscpNftSetsUntested {
+		t.Error("an unanswered test must leave the capability untested")
+	}
+
+	mode = "rejected"
+	scripts = nil
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if stamped() || dscpNftSets.Load() != dscpNftSetsRejected {
+		t.Errorf("no set has loaded the per-set objects yet and nftables rejects them, so the set's traffic would leave without its value, and the run's probes must too: %v", scripts)
+	}
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+
+	dscpNftSets.Store(dscpNftSetsUntested)
+	mode = ""
+	scripts = nil
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if !stamped() || dscpNftSets.Load() != dscpNftSetsTaken {
+		t.Errorf("nftables takes the per-set objects, so the run's probes carry the set's value: %v", scripts)
+	}
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
 }
 
 func TestDiscoveryRunDoesNotStartOverAStampItCouldNotRemove(t *testing.T) {

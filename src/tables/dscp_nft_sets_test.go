@@ -1486,7 +1486,7 @@ func TestSetDSCPNftRefusalOutlivesTheTable(t *testing.T) {
 	if err == nil || out.layout != nil {
 		t.Fatalf("precondition: with the global stamp off a refused per-set table leaves nothing applied, got %+v, %v", out, err)
 	}
-	if !dscpNftSetsRefused.Load() {
+	if dscpNftSets.Load() != dscpNftSetsRejected {
 		t.Error("nothing is applied, yet the refusal must be remembered: a Discovery run would otherwise stamp the sets' values that their traffic never carries")
 	}
 
@@ -1494,7 +1494,7 @@ func TestSetDSCPNftRefusalOutlivesTheTable(t *testing.T) {
 	if out, err := dscpNftApplyPlan(plan, nil); err != nil || !out.layout.perSet() {
 		t.Fatalf("the per-set table must load once nftables accepts it, got %+v, %v", out, err)
 	}
-	if dscpNftSetsRefused.Load() {
+	if dscpNftSets.Load() != dscpNftSetsTaken {
 		t.Error("an accepted per-set table must clear the remembered refusal")
 	}
 }

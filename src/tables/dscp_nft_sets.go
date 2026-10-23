@@ -14,11 +14,60 @@ import (
 )
 
 const (
-	dscpNftFillBatch = 2000
-	dscpNftFillChunk = 1000
+	dscpNftFillBatch  = 2000
+	dscpNftFillChunk  = 1000
+	dscpNftProbeTable = "b4_dscp_probe"
 )
 
-var dscpNftSetsRefused atomic.Bool
+const (
+	dscpNftSetsUntested int32 = iota
+	dscpNftSetsTaken
+	dscpNftSetsRejected
+)
+
+var dscpNftSets atomic.Int32
+
+func dscpNftProbeScript() string {
+	var b strings.Builder
+	t, value := dscpNftProbeTable, dscpNftValueChain(0)
+	fmt.Fprintf(&b, "add table inet %s\n", t)
+	fmt.Fprintf(&b, "delete table inet %s\n", t)
+	fmt.Fprintf(&b, "add table inet %s\n", t)
+	fmt.Fprintf(&b, "add chain inet %s %s\n", t, value)
+	fmt.Fprintf(&b, "add rule inet %s %s ip dscp set 0\n", t, value)
+	fmt.Fprintf(&b, "add rule inet %s %s ip6 dscp set 0\n", t, value)
+	fmt.Fprintf(&b, "add chain inet %s %s\n", t, dscpNftChain)
+	for _, family := range []struct {
+		v6            bool
+		proto, prefix string
+	}{{false, "ip", "192.0.2.0/24"}, {true, "ip6", "2001:db8::/32"}} {
+		vmap, learned := dscpNftMap(1, family.v6), dscpNftLearnedSet("probe", family.v6)
+		fmt.Fprintf(&b, "add map inet %s %s %s\n", t, vmap, dscpNftMapSpec(family.v6))
+		fmt.Fprintf(&b, "add set inet %s %s %s\n", t, learned, dscpNftLearnedSpec(family.v6))
+		fmt.Fprintf(&b, "add element inet %s %s { %s : jump %s }\n", t, vmap, family.prefix, value)
+		fmt.Fprintf(&b, "add rule inet %s %s %s daddr vmap @%s\n", t, dscpNftChain, family.proto, vmap)
+		fmt.Fprintf(&b, "add rule inet %s %s %s daddr @%s %s dscp set 0\n", t, dscpNftChain, family.proto, learned, family.proto)
+	}
+	fmt.Fprintf(&b, "delete table inet %s\n", t)
+	return b.String()
+}
+
+func dscpNftSetsUsable() (usable, known bool) {
+	if state := dscpNftSets.Load(); state != dscpNftSetsUntested {
+		return state == dscpNftSetsTaken, true
+	}
+	out, err := runNftStdin(dscpNftProbeScript())
+	switch {
+	case err == nil:
+		dscpNftSets.Store(dscpNftSetsTaken)
+	case dscpTransient(out, err):
+		return false, false
+	default:
+		log.Tracef("NFTABLES: the per-set DSCP objects were rejected by a test table: %s", routeNftScriptError(err))
+		dscpNftSets.Store(dscpNftSetsRejected)
+	}
+	return dscpNftSets.Load() == dscpNftSetsTaken, true
+}
 
 type dscpNftLayout struct {
 	generation int
@@ -475,7 +524,7 @@ func dscpNftApplyPlan(plan *dscpPlan, prev *dscpNftLayout) (dscpNftOutcome, erro
 		layout, transient, err := dscpNftUpdate(plan, prev)
 		switch {
 		case err == nil:
-			dscpNftSetsRefused.Store(false)
+			dscpNftSets.Store(dscpNftSetsTaken)
 			dscpNftLogApplied(plan)
 			return dscpNftOutcome{layout: layout}, nil
 		case transient:
@@ -486,13 +535,13 @@ func dscpNftApplyPlan(plan *dscpPlan, prev *dscpNftLayout) (dscpNftOutcome, erro
 	layout, transient, err := dscpNftReplace(plan)
 	switch {
 	case err == nil:
-		dscpNftSetsRefused.Store(false)
+		dscpNftSets.Store(dscpNftSetsTaken)
 		dscpNftLogApplied(plan)
 		return dscpNftOutcome{layout: layout, rebuilt: true}, errors.Join(errs...)
 	case transient:
 		return dscpNftOutcome{pending: true, rebuilt: true}, errors.Join(append(errs, dscpNftBusy(err))...)
 	}
-	dscpNftSetsRefused.Store(true)
+	dscpNftSets.Store(dscpNftSetsRejected)
 	switch {
 	case plan.globalOn:
 		errs = append(errs, fmt.Errorf("nftables rejected the per-set DSCP rules of the %s table, so packets to the sets' addresses get DSCP %d like all others: %s", dscpNftTable, plan.global, routeNftScriptError(err)))
