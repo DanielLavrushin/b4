@@ -560,6 +560,7 @@ func retryStaleDSCP() bool {
 	if s == nil {
 		return false
 	}
+	discoveryDSCPRewritten(nil)
 	gone, _, left := removeDSCPObjects(s)
 	if owned := dscpApplied.Load().ipsets(); len(owned) > 0 {
 		left = slices.DeleteFunc(left, func(name string) bool { return slices.Contains(owned, name) })

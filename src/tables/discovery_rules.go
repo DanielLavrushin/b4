@@ -40,7 +40,7 @@ func discoveryCheckDSCP(dscp *config.DSCPProbe) error {
 	if dscp == nil && !dscpInPlay(dscpSyncWanted.Load()) {
 		return nil
 	}
-	if st := dscpApplied.Load(); (st != nil && st.pending) || dscpSyncQueued() {
+	if st := dscpApplied.Load(); (st != nil && st.pending) || dscpStale.Load() != nil || dscpSyncQueued() {
 		return ErrDiscoveryDSCPPending
 	}
 	return nil

@@ -343,6 +343,36 @@ func TestDiscoverySetRunWaitsForPendingDSCPRules(t *testing.T) {
 	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
 }
 
+func TestDiscoveryRunWaitsWhileOldDSCPObjectsAwaitCleanup(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
+	discoveryIpsetReady(t, false)
+	discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+	cfg := config.NewConfig()
+	cfg.System.Tables.Engine = backendIPTables
+
+	dscpStale.Store(&dscpState{cfg: &cfg, backend: backendNFTables})
+	for _, probe := range []*config.DSCPProbe{nil, discoveryProbe(25)} {
+		if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, probe, nil); !errors.Is(err, ErrDiscoveryDSCPPending) {
+			t.Errorf("a DSCP table b4 could not remove still writes its values until the monitor takes it away, so a run must wait (probe %+v), got %v", probe, err)
+		}
+	}
+
+	dscpStale.Store(nil)
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
+		t.Fatalf("with the old objects gone the run starts, got %v", err)
+	}
+	dscpStale.Store(&dscpState{cfg: &cfg, backend: backendNFTables})
+	rulesMu.Lock()
+	retryStaleDSCP()
+	rulesMu.Unlock()
+	if !DiscoveryRunInvalidated() {
+		t.Error("taking old DSCP objects away changes the path of the run's probes, so the run must count as invalid")
+	}
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+}
+
 func TestDiscoveryRunWaitsWhileASavedChangeStillHasToTakeDSCPRulesAway(t *testing.T) {
 	appliedResetGlobals(t)
 	resetDSCPState(t)
