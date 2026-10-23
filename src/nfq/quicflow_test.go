@@ -375,11 +375,11 @@ func TestAnIdleQUICFlowIsForgotten(t *testing.T) {
 	c.Store("k", "www.blocked.example", odcid)
 	short := append([]byte{0x41}, odcid...)
 
-	if host := c.Lookup("k", short); host != "www.blocked.example" {
+	if host, _ := c.Lookup("k", short); host != "www.blocked.example" {
 		t.Fatalf("lookup of a fresh flow returned %q", host)
 	}
 	c.flows["k"].lastSeen = time.Now().Add(-quicFlowIdle - time.Second)
-	if host := c.Lookup("k", short); host != "" {
+	if host, _ := c.Lookup("k", short); host != "" {
 		t.Errorf("an idle flow must not name later datagrams, got %q", host)
 	}
 	c.Cleanup()
@@ -574,5 +574,48 @@ func TestCoalesceGivesUpForASetMatchedByItsDestination(t *testing.T) {
 	}
 	if v := sendQUIC(w, hello, 51101); v != engine.VerdictAccept {
 		t.Errorf("a set matched by address must stop coalescing a repeated ClientHello too, got %v", v)
+	}
+}
+
+func TestALearnedAddressDoesNotClaimAQUICFlowItCouldNotName(t *testing.T) {
+	dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+	dropper.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &dropper)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xB1, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 52001); v != engine.VerdictDropFlow {
+		t.Fatalf("the set's own name teaches it the address, got %v", v)
+	}
+
+	nameless := append([]byte{0xc3, 0, 0, 0, 1, 8, 0xB2, 2, 3, 4, 5, 6, 7, 8, 0}, make([]byte, 60)...)
+	if v := sendQUIC(w, nameless, 52002); v != engine.VerdictAccept {
+		t.Fatalf("an Initial whose ClientHello b4 cannot read, got %v", v)
+	}
+	oneRTT := append(append([]byte{0x41}, []byte{0xB3, 2, 3, 4, 5, 6, 7, 8}...), make([]byte, 40)...)
+	if v := sendQUIC(w, oneRTT, 52002); v != engine.VerdictAccept {
+		t.Errorf("a short-header packet carries no name either, so the flow whose Initial b4 saw must keep passing: got %v, want accept", v)
+	}
+}
+
+func TestMatchingQUICByDestinationKeepsTheRestOfAKnownFlow(t *testing.T) {
+	faking := newDomainOnlyQUICSet(config.UDPModeFake)
+	faking.Targets.DomainOnly = false
+	faking.UDP.FilterQUIC = config.QUICFilterAll
+	w := newQUICFlowWorker(t, &faking)
+	sent := captureInjected(t, w)
+
+	flow := newSplitQUICHello(t, []byte{0xB4, 1, 2, 3, 4, 5, 6, 7}, []byte{0xB5, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	sendQUIC(w, flow.first, 52101)
+	sent()
+	if v := sendQUIC(w, flow.completing, 52101); v != engine.VerdictDrop {
+		t.Fatalf("the ClientHello of the set's own name must be handled, got %v", v)
+	}
+	sent()
+
+	if v := sendQUIC(w, flow.oneRTT, 52101); v != engine.VerdictDrop {
+		t.Errorf("By SNI or matched destination asks for every QUIC packet to a matched address, short headers included, got %v", v)
+	}
+	if got := sent(); len(got) == 0 {
+		t.Error("no packet was sent for the short-header packet of the known flow")
 	}
 }

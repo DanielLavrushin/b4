@@ -40,7 +40,8 @@ func (c *quicFlowCache) Store(connKey, host string, odcid []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if existing, exists := c.flows[connKey]; exists {
-		if existing.host == host && bytes.Equal(existing.odcid, odcid) {
+		if bytes.Equal(existing.odcid, odcid) {
+			existing.host = host
 			existing.lastSeen = now
 			return
 		}
@@ -48,6 +49,22 @@ func (c *quicFlowCache) Store(connKey, host string, odcid []byte) {
 		c.evictLocked(now)
 	}
 	c.flows[connKey] = &quicFlow{host: host, odcid: bytes.Clone(odcid), lastSeen: now}
+}
+
+func (c *quicFlowCache) NoteQUIC(connKey string, odcid []byte) {
+	if c == nil || len(odcid) == 0 {
+		return
+	}
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, exists := c.flows[connKey]; exists {
+		return
+	}
+	if len(c.flows) >= maxQUICFlowEntries {
+		c.evictLocked(now)
+	}
+	c.flows[connKey] = &quicFlow{odcid: bytes.Clone(odcid), lastSeen: now}
 }
 
 func (c *quicFlowCache) NoteCoalesced(connKey string) int {
@@ -64,9 +81,9 @@ func (c *quicFlowCache) NoteCoalesced(connKey string) int {
 	return flow.coalesced
 }
 
-func (c *quicFlowCache) Lookup(connKey string, payload []byte) string {
+func (c *quicFlowCache) Lookup(connKey string, payload []byte) (string, bool) {
 	if c == nil {
-		return ""
+		return "", false
 	}
 	now := time.Now()
 	c.mu.RLock()
@@ -79,7 +96,7 @@ func (c *quicFlowCache) Lookup(connKey string, payload []byte) string {
 	}
 	c.mu.RUnlock()
 	if flow == nil || idle > quicFlowIdle {
-		return ""
+		return "", false
 	}
 
 	if quic.IsInitial(payload) {
@@ -89,7 +106,7 @@ func (c *quicFlowCache) Lookup(connKey string, payload []byte) string {
 				if _, own := quic.DecryptInitial(dcid, payload); own {
 					c.forgetFlow(connKey, flow)
 				}
-				return ""
+				return "", false
 			}
 		}
 	}
@@ -101,7 +118,7 @@ func (c *quicFlowCache) Lookup(connKey string, payload []byte) string {
 		}
 		c.mu.Unlock()
 	}
-	return host
+	return host, true
 }
 
 func (c *quicFlowCache) Forget(connKey string) {
@@ -165,7 +182,7 @@ func dropsQUICFlow(set *config.SetConfig) bool {
 }
 
 func (w *Worker) quicFlowSet(cfg *config.Config, matcher *sni.SuffixSet, connKey string, pkt *pktInfo, dport uint16, payload []byte, keep sni.SetFilter) (*config.SetConfig, string) {
-	host := w.quicFlows.Lookup(connKey, payload)
+	host, _ := w.quicFlows.Lookup(connKey, payload)
 	if host == "" {
 		return nil, ""
 	}

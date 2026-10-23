@@ -993,12 +993,13 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
-	flowHost := ""
+	flowKnown := false
 	if host == "" {
-		flowHost = w.quicFlows.Lookup(connKey, payload)
-		if flowHost == "" && !isQUIC {
-			host = learnedHost
-		}
+		_, flowKnown = w.quicFlows.Lookup(connKey, payload)
+	}
+	quicTraffic := isQUIC || flowKnown
+	if host == "" && !quicTraffic {
+		host = learnedHost
 	}
 
 	if host != "" {
@@ -1018,15 +1019,17 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	if namedByHello {
 		w.quicFlows.Store(connKey, host, quic.ParseDCID(payload))
+	} else if isQUIC && quic.IsInitial(payload) {
+		w.quicFlows.NoteQUIC(connKey, quic.ParseDCID(payload))
 	}
 
 	if !matchedQUIC && (matchedIP || matchedPort) && set.UDP.FilterQUIC == "all" {
-		if isQUIC {
+		if quicTraffic {
 			matchedQUIC = true
 		}
 	}
 
-	if matchedLearned && !matchedQUIC && (isQUIC || flowHost != "") {
+	if matchedLearned && !matchedQUIC && quicTraffic {
 		matchedIP = false
 		matchedLearned = false
 		matched = false
