@@ -19,6 +19,21 @@ export function resolveDeviceName(d: DeviceInfo): string {
   return d.mac;
 }
 
+export function macKey(mac: string): string {
+  return mac.trim().toUpperCase();
+}
+
+export function offlineDeviceInfo(mac: string): DeviceInfo {
+  return {
+    mac,
+    ip: "",
+    hostname: "",
+    vendor: "",
+    country: "",
+    is_online: false,
+  };
+}
+
 export function sortDevices(
   devices: DeviceInfo[],
   isSelected: (mac: string) => boolean,

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -300,30 +301,43 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 
 	cfg := api.getCfg()
 	sourceName, _ := globalPool.Dhcp.SourceInfo()
-	mappings := globalPool.Dhcp.GetAllMappings()
-	hostnames := globalPool.Dhcp.GetAllHostnames()
+	var lookup func(string) string
+	if cfg.Queue.Devices.VendorLookup {
+		lookup = ouiDB.Lookup
+	}
+
+	json.NewEncoder(w).Encode(DevicesResponse{
+		Available: true,
+		Source:    sourceName,
+		Devices:   listDevices(&cfg.Queue.Devices, globalPool.Dhcp.GetAllMappings(), globalPool.Dhcp.GetAllHostnames(), lookup),
+		RouterIPs: globalPool.Dhcp.RouterIPs(),
+	})
+}
+
+func listDevices(dc *config.DevicesConfig, mappings, hostnames map[string]string, lookup func(string) string) []DeviceInfo {
 	hostnamesNorm := make(map[string]string, len(hostnames))
 	for mac, hn := range hostnames {
 		hostnamesNorm[normalizeMAC(mac)] = hn
 	}
-	devices := make([]DeviceInfo, 0, len(mappings))
+	vendorOf := func(mac string) (string, bool) {
+		if isPrivateMAC(mac) {
+			return "Private", true
+		}
+		if lookup != nil {
+			return lookup(mac), false
+		}
+		return "", false
+	}
+	devices := make([]DeviceInfo, 0, len(mappings)+len(dc.Devices))
 	seen := make(map[string]struct{}, len(mappings))
 
 	for ip, macAddr := range mappings {
-		var vendor string
-		var isPrivate bool
-
-		if isPrivateMAC(macAddr) {
-			vendor = "Private"
-			isPrivate = true
-		} else if cfg.Queue.Devices.VendorLookup {
-			vendor = ouiDB.Lookup(macAddr)
-		}
+		vendor, isPrivate := vendorOf(macAddr)
 
 		var alias string
 		var isManual bool
 		var mssClamp int
-		if d := cfg.Queue.Devices.FindByMAC(macAddr); d != nil {
+		if d := dc.FindByMAC(macAddr); d != nil {
 			alias = d.Name
 			isManual = d.IsManual
 			mssClamp = d.MSSClamp
@@ -343,9 +357,9 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	for i := range cfg.Queue.Devices.Devices {
-		d := &cfg.Queue.Devices.Devices[i]
-		if d.Name == "" || d.MAC == "" {
+	for i := range dc.Devices {
+		d := &dc.Devices[i]
+		if d.MAC == "" {
 			continue
 		}
 		mac := normalizeMAC(d.MAC)
@@ -354,14 +368,7 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 		}
 		seen[mac] = struct{}{}
 
-		var vendor string
-		isPrivate := isPrivateMAC(mac)
-		if isPrivate {
-			vendor = "Private"
-		} else if cfg.Queue.Devices.VendorLookup {
-			vendor = ouiDB.Lookup(mac)
-		}
-
+		vendor, isPrivate := vendorOf(mac)
 		devices = append(devices, DeviceInfo{
 			MAC:       d.MAC,
 			IP:        d.IP,
@@ -375,12 +382,7 @@ func (api *API) handleDevices(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	json.NewEncoder(w).Encode(DevicesResponse{
-		Available: true,
-		Source:    sourceName,
-		Devices:   devices,
-		RouterIPs: globalPool.Dhcp.RouterIPs(),
-	})
+	return devices
 }
 
 func normalizeMAC(mac string) string {
