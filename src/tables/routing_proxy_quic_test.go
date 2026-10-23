@@ -284,53 +284,64 @@ func TestAProxySetWithUDPOffKeepsItsQUICFromLaterSets(t *testing.T) {
 }
 
 func TestTheQUICRefusalReturnsDevicesTheSetExcludes(t *testing.T) {
+	for _, scope := range []string{"set", "global"} {
+		for _, engine := range []string{backendNFTables, backendIPTables} {
+			t.Run(scope+"/"+engine, func(t *testing.T) {
+				quicExcludedDeviceCheck(t, engine, scope == "global")
+			})
+		}
+	}
+}
+
+func quicExcludedDeviceCheck(t *testing.T, engine string, global bool) {
 	const mac = "aa:bb:cc:dd:ee:01"
-	for _, engine := range []string{backendNFTables, backendIPTables} {
-		t.Run(engine, func(t *testing.T) {
-			localGuardReset(t)
-			emitted := captureProxyRuleArgv(t)
-			stubBinaries(t, backendIPTables, backendIP6Tables)
+	localGuardReset(t)
+	emitted := captureProxyRuleArgv(t)
+	stubBinaries(t, backendIPTables, backendIP6Tables)
 
-			cfg := v4OnlyConfig()
-			cfg.Queue.IPv6Enabled = true
-			set := quicTestSet(true, true)
-			set.Targets.SourceDevices = []string{mac}
-			set.Targets.SourceDevicesExclude = true
-			st := quicTestState(set, true)
-			if err := routeEnsureProxyRule(quicTestBackend(engine), cfg, set, st, nil); err != nil {
-				t.Fatalf("routeEnsureProxyRule: %v", err)
-			}
+	cfg := v4OnlyConfig()
+	cfg.Queue.IPv6Enabled = true
+	set := quicTestSet(true, true)
+	if global {
+		cfg.Queue.Devices.Enabled, cfg.Queue.Devices.WhiteIsBlack = true, true
+		cfg.Queue.Devices.Devices = []config.Device{{MAC: mac, Selected: true}}
+	} else {
+		set.Targets.SourceDevices = []string{mac}
+		set.Targets.SourceDevicesExclude = true
+	}
+	st := quicTestState(set, true)
+	if err := routeEnsureProxyRule(quicTestBackend(engine), cfg, set, st, nil); err != nil {
+		t.Fatalf("routeEnsureProxyRule: %v", err)
+	}
 
-			quic := chainRuleLines(*emitted, st.chainQUIC)
-			isReturn := func(l string) bool {
-				return strings.Contains(strings.ToLower(l), mac) && (strings.HasSuffix(l, " return") || strings.HasSuffix(l, "-j RETURN"))
-			}
-			isReject := func(l string) bool {
-				return strings.Contains(l, "reject with icmpx") || strings.Contains(l, "-j REJECT")
-			}
-			skip, reject := indexOfLine(quic, isReturn), indexOfLine(quic, isReject)
-			if skip < 0 || reject < 0 || skip > reject {
-				t.Errorf("%s must return the excluded device %s ahead of its reject rule (return at %d, reject at %d), as the set's own chain does:\n%s",
-					st.chainQUIC, mac, skip, reject, strings.Join(quic, "\n"))
-			}
+	quic := chainRuleLines(*emitted, st.chainQUIC)
+	isReturn := func(l string) bool {
+		return strings.Contains(strings.ToLower(l), mac) && (strings.HasSuffix(l, " return") || strings.HasSuffix(l, "-j RETURN"))
+	}
+	isReject := func(l string) bool {
+		return strings.Contains(l, "reject with icmpx") || strings.Contains(l, "-j REJECT")
+	}
+	skip, reject := indexOfLine(quic, isReturn), indexOfLine(quic, isReject)
+	if skip < 0 || reject < 0 || skip > reject {
+		t.Errorf("%s must return the excluded device %s ahead of its reject rule (return at %d, reject at %d), as the set's own chain does:\n%s",
+			st.chainQUIC, mac, skip, reject, strings.Join(quic, "\n"))
+	}
 
-			own := chainRuleLines(*emitted, st.chainQOut)
-			if indexOfLine(own, isReject) < 0 {
-				t.Errorf("excluding a device must not stop %s refusing the router's own QUIC:\n%s", st.chainQOut, strings.Join(own, "\n"))
-			}
-			for _, line := range own {
-				if strings.Contains(strings.ToLower(line), mac) {
-					t.Errorf("%s is reached from OUTPUT, where iptables refuses a MAC match and no device sends the router's own traffic: %s", st.chainQOut, line)
-				}
-			}
-			out := routeNftBlockOut + " jump "
-			if engine == backendIPTables {
-				out = "-A OUTPUT -j "
-			}
-			if wrong := jumpLines(*emitted, out, st.chainQUIC); len(wrong) != 0 {
-				t.Errorf("OUTPUT jumps to %s, which matches device MACs; iptables refuses that jump and the set's install fails: %v", st.chainQUIC, wrong)
-			}
-		})
+	own := chainRuleLines(*emitted, st.chainQOut)
+	if indexOfLine(own, isReject) < 0 {
+		t.Errorf("excluding a device must not stop %s refusing the router's own QUIC:\n%s", st.chainQOut, strings.Join(own, "\n"))
+	}
+	for _, line := range own {
+		if strings.Contains(strings.ToLower(line), mac) {
+			t.Errorf("%s is reached from OUTPUT, where iptables refuses a MAC match and no device sends the router's own traffic: %s", st.chainQOut, line)
+		}
+	}
+	out := routeNftBlockOut + " jump "
+	if engine == backendIPTables {
+		out = "-A OUTPUT -j "
+	}
+	if wrong := jumpLines(*emitted, out, st.chainQUIC); len(wrong) != 0 {
+		t.Errorf("OUTPUT jumps to %s, which matches device MACs; iptables refuses that jump and the set's install fails: %v", st.chainQUIC, wrong)
 	}
 }
 
