@@ -330,12 +330,60 @@ func TestDiscoverySetRunWaitsForPendingDSCPRules(t *testing.T) {
 			t.Errorf("%s: while b4 is still applying its DSCP rules the set's traffic does not carry its value yet, so a run for the set must wait, got %v", backend, err)
 		}
 	}
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, nil, nil); !errors.Is(err, ErrDiscoveryDSCPPending) {
+		t.Errorf("the DSCP rules b4 is still applying decide the path of every probe, so a run for no set value waits too, got %v", err)
+	}
 	if len(*calls) != 0 || activeSteering != nil {
 		t.Errorf("a refused run must leave the firewall alone: %v", *calls)
 	}
+	dscpApplied.Store(nil)
 	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
-		t.Errorf("a run for no set value does not depend on the DSCP rules and starts, got %v", err)
+		t.Errorf("with no DSCP rules at all a run for no set value starts, got %v", err)
 	}
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+}
+
+func TestDiscoveryRunWaitsWhileASavedChangeStillHasToTakeDSCPRulesAway(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
+	discoveryIpsetReady(t, false)
+	discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+	running := dscpSyncRunning.Load()
+	t.Cleanup(func() {
+		dscpSyncRunning.Store(running)
+		dscpSyncWanted.Store(nil)
+		dscpSyncSettled.Store(nil)
+	})
+	tagged := dscpPlanTestConfig(dscpPlanTestSet("a", 25, "10.1.2.0/24"))
+	tagged.System.Tables.Engine = backendIPTables
+	switchedOff := config.NewConfig()
+	switchedOff.System.Tables.Engine = backendIPTables
+
+	dscpApplied.Store(&dscpState{cfg: tagged, backend: backendIPTables})
+	dscpSyncRunning.Store(true)
+	dscpSyncSettled.Store(tagged)
+	dscpSyncWanted.Store(&switchedOff)
+	if err := ApplyDiscoverySteeringRules(&switchedOff, 0x8001, 0x8002, 541, 1, nil, nil); !errors.Is(err, ErrDiscoveryDSCPPending) {
+		t.Errorf("the set's DSCP was switched off, but its rules still write 25 into packets to its addresses until the worker takes them away, so a run for the set must wait, got %v", err)
+	}
+
+	dscpApplied.Store(nil)
+	dscpSyncSettled.Store(&switchedOff)
+	if err := ApplyDiscoverySteeringRules(&switchedOff, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
+		t.Errorf("once the rules are gone the run starts, got %v", err)
+	}
+	ClearDiscoverySteeringRules(&switchedOff, 0x8001, 0x8002)
+
+	plain := config.NewConfig()
+	plain.System.Tables.Engine = backendIPTables
+	other := config.NewConfig()
+	dscpSyncSettled.Store(&other)
+	dscpSyncWanted.Store(&plain)
+	if err := ApplyDiscoverySteeringRules(&plain, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
+		t.Errorf("with no DSCP rules before or after a save, a run for no set value does not wait for it, got %v", err)
+	}
+	ClearDiscoverySteeringRules(&plain, 0x8001, 0x8002)
 }
 
 func TestDiscoveryStampTakesTheInterfacesOfTheAppliedDSCPRules(t *testing.T) {
@@ -876,6 +924,45 @@ func TestDiscoveryTriesTheNftablesSetObjectsBeforeStampingTheirValue(t *testing.
 		t.Errorf("nftables takes the per-set objects, so the run's probes carry the set's value: %v", scripts)
 	}
 	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+}
+
+func TestDiscoveryReadsEveryWayIptablesSaysTheStampChainIsGone(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: false})
+	discoveryRecordRun(t, nil)
+	rulesMu.Lock()
+	rulesAppliedBackend = ""
+	rulesMu.Unlock()
+	recorded := run
+	deleted, listedGone := "", false
+	run = func(args ...string) (string, error) {
+		switch {
+		case slices.Contains(args, "-X") && slices.Contains(args, discoveryStampChainIPT):
+			return deleted, errors.New("exit status 1")
+		case listedGone && slices.Contains(args, "-S") && slices.Contains(args, discoveryStampChainIPT):
+			return "iptables: No chain/target/match by that name.", errors.New("exit status 1")
+		}
+		return recorded(args...)
+	}
+	cfg := config.NewConfig()
+	cfg.System.Tables.Engine = backendIPTables
+
+	for _, tc := range []struct {
+		name, deleted string
+		listedGone    bool
+	}{
+		{"an older iptables-nft", "iptables v1.8.4 (nf_tables):  CHAIN_DEL failed (No such file or directory): chain B4_DISCOVERY_DSCP", false},
+		{"an even older iptables-nft", "iptables v1.8.2 (nf_tables):  CHAIN_USER_DEL failed (No such file or directory): chain B4_DISCOVERY_DSCP", false},
+		{"an answer b4 does not know, with no such chain listed", "iptables v1.8.7 (nf_tables): an answer b4 does not know", true},
+	} {
+		deleted, listedGone = tc.deleted, tc.listedGone
+		if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
+			t.Errorf("%s: the chain is already gone, so the run must start, got %v", tc.name, err)
+		}
+		ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+	}
 }
 
 func TestDiscoveryRunDoesNotStartOverAStampItCouldNotRemove(t *testing.T) {

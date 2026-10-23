@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -169,7 +170,10 @@ func discoveryIptDropStamp(bin string) error {
 	discoveryDelRuleLoop(bin, "POSTROUTING", "-j", discoveryStampChainIPT)
 	_, _ = run(bin, "-w", "-t", "mangle", "-F", discoveryStampChainIPT)
 	out, err := run(bin, "-w", "-t", "mangle", "-X", discoveryStampChainIPT)
-	if err == nil || iptReportsAbsent(out, err) {
+	if err == nil || iptReportsAbsent(out, err) || strings.Contains(iptErrText(out, err), "failed (No such file or directory)") {
+		return nil
+	}
+	if present, known := iptChainPresence(bin, "mangle", discoveryStampChainIPT); known && !present {
 		return nil
 	}
 	return fmt.Errorf("%s could not remove %s, which may still write an earlier run's DSCP value into Discovery's probes: %s", bin, discoveryStampChainIPT, iptErrText(out, err))

@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrDiscoveryDSCPPending   = errors.New("b4 is still applying its DSCP rules, so the run would not take the path the set's traffic takes; start it again once they are in place")
+	ErrDiscoveryDSCPPending   = errors.New("b4 is still applying its DSCP rules, which decide the network path of the run's probes; start it again once they are in place")
 	errDiscoveryDSCPRewritten = errors.New("b4 rewrote its DSCP rules during the run, so the network path of its probes may have changed")
 )
 
@@ -34,16 +34,20 @@ func (s *discoveryStamp) covers(v6 bool) bool {
 }
 
 func discoveryCheckDSCP(dscp *config.DSCPProbe) error {
-	if dscp == nil {
-		return nil
-	}
-	if dscp.Value < 0 || dscp.Value > config.MaxDSCPValue {
+	if dscp != nil && (dscp.Value < 0 || dscp.Value > config.MaxDSCPValue) {
 		return fmt.Errorf("DSCP %d for Discovery's probes is outside 0-%d", dscp.Value, config.MaxDSCPValue)
+	}
+	if dscp == nil && !dscpInPlay(dscpSyncWanted.Load()) {
+		return nil
 	}
 	if st := dscpApplied.Load(); (st != nil && st.pending) || dscpSyncQueued() {
 		return ErrDiscoveryDSCPPending
 	}
 	return nil
+}
+
+func dscpInPlay(next *config.Config) bool {
+	return dscpApplied.Load() != nil || dscpStale.Load() != nil || dscpWanted(next)
 }
 
 func discoveryStampFor(cfg *config.Config, dscp *config.DSCPProbe, be discoveryBackend) (*discoveryStamp, error) {
@@ -184,7 +188,7 @@ func discoveryDSCPRewritten(next *config.Config) {
 	if s == nil {
 		return
 	}
-	if s.dscp != nil || dscpApplied.Load() != nil || dscpStale.Load() != nil || dscpWanted(next) {
+	if s.dscp != nil || dscpInPlay(next) {
 		s.fail(errDiscoveryDSCPRewritten)
 	}
 }
