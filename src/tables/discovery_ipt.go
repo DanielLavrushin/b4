@@ -37,6 +37,13 @@ func (b *discoveryIptBackend) available() bool {
 	return hasBinary(b.ipt4()) || hasBinary(b.ipt6())
 }
 
+func (b *discoveryIptBackend) takesSetValues(v6 bool) bool {
+	if v6 {
+		return dscpIptTakesSetValues(b.ipt6())
+	}
+	return dscpIptTakesSetValues(b.ipt4())
+}
+
 func discoveryQueueAction(queueStart int, threads int) []string {
 	if threads > 1 {
 		return []string{"--queue-balance", fmt.Sprintf("%d:%d", queueStart, queueStart+threads-1), "--queue-bypass"}

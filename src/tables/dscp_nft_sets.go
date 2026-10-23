@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
@@ -16,6 +17,8 @@ const (
 	dscpNftFillBatch = 2000
 	dscpNftFillChunk = 1000
 )
+
+var dscpNftSetsRefused atomic.Bool
 
 type dscpNftLayout struct {
 	generation int
@@ -472,6 +475,7 @@ func dscpNftApplyPlan(plan *dscpPlan, prev *dscpNftLayout) (dscpNftOutcome, erro
 		layout, transient, err := dscpNftUpdate(plan, prev)
 		switch {
 		case err == nil:
+			dscpNftSetsRefused.Store(false)
 			dscpNftLogApplied(plan)
 			return dscpNftOutcome{layout: layout}, nil
 		case transient:
@@ -482,10 +486,14 @@ func dscpNftApplyPlan(plan *dscpPlan, prev *dscpNftLayout) (dscpNftOutcome, erro
 	layout, transient, err := dscpNftReplace(plan)
 	switch {
 	case err == nil:
+		dscpNftSetsRefused.Store(false)
 		dscpNftLogApplied(plan)
 		return dscpNftOutcome{layout: layout, rebuilt: true}, errors.Join(errs...)
 	case transient:
 		return dscpNftOutcome{pending: true, rebuilt: true}, errors.Join(append(errs, dscpNftBusy(err))...)
+	}
+	dscpNftSetsRefused.Store(true)
+	switch {
 	case plan.globalOn:
 		errs = append(errs, fmt.Errorf("nftables rejected the per-set DSCP rules of the %s table, so packets to the sets' addresses get DSCP %d like all others: %s", dscpNftTable, plan.global, routeNftScriptError(err)))
 	default:

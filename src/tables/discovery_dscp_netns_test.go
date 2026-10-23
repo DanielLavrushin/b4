@@ -110,34 +110,88 @@ func TestNetnsDiscoveryProbesCarryTheRunsDSCP(t *testing.T) {
 	})
 }
 
-func TestNetnsDiscoveryProbesFollowAGlobalOnlyFallback(t *testing.T) {
-	setDSCPEngines(t, []string{backendIPTables, backendIPTablesLegacy}, func(t *testing.T, engine string) {
-		setDSCPObserve(t)
-		stubBinaryPresence(t, map[string]bool{"ipset": false})
+func discoveryDSCPMarkedProbes(t *testing.T, cfg *config.Config, sport uint16) func() {
+	return func() {
+		setDSCPSendMarked(t, uint32(cfg.DiscoveryFlowMark()), sport, setDSCPAddrA, setDSCPAddrOther)
+		setDSCPSendMarked(t, uint32(cfg.DiscoveryInjectedMark()), sport+1, setDSCPAddrA, setDSCPAddrOther)
+	}
+}
 
-		cfg := setDSCPConfig(engine, true, dscpPlanTestSet("dscp-a", 31, setDSCPAddrA))
-		setDSCPStart(t, cfg)
-		st := dscpApplied.Load()
+func discoveryDSCPStartRun(t *testing.T, cfg *config.Config, lost func(error)) {
+	t.Helper()
+	flow, injected := uint(cfg.DiscoveryFlowMark()), uint(cfg.DiscoveryInjectedMark())
+	t.Cleanup(func() { ClearDiscoverySteeringRules(cfg, flow, injected) })
+	probe := &config.DSCPProbe{Value: 25, IPv4: true, IPv6: true}
+	if err := ApplyDiscoverySteeringRules(cfg, flow, injected, cfg.Queue.StartNum+cfg.Queue.Threads, 1, probe, lost); err != nil {
+		t.Fatalf("ApplyDiscoverySteeringRules: %v", err)
+	}
+}
+
+func netnsDiscoveryFollowsAFallback(t *testing.T, engine string, global bool) {
+	setDSCPObserve(t)
+	stubBinaryPresence(t, map[string]bool{"ipset": false})
+
+	cfg := setDSCPConfig(engine, global, dscpPlanTestSet("dscp-a", 31, setDSCPAddrA))
+	setDSCPStart(t, cfg)
+	want := 0
+	if st := dscpApplied.Load(); global {
+		want = dscpTestValue
 		if st == nil || st.ipt == nil || st.ipt.incapable[setDSCPBinaries(engine)[0]] == "" {
 			t.Fatalf("without the ipset command the IPv4 firewall must fall back to the global value only, state %+v", st)
 		}
-		globalOnly := map[string]int{setDSCPAddrA: dscpTestValue, setDSCPAddrOther: dscpTestValue}
-		setDSCPCheck(t, "this host's own traffic with the set's value out of reach", globalOnly, func() {
-			setDSCPSendUDP(t, 0, setDSCPDataPort, setDSCPAddrA, setDSCPAddrOther)
-		})
+	} else if st != nil {
+		t.Fatalf("precondition: with the global stamp off and no ipset, b4 keeps no DSCP state, got %+v", st)
+	}
+	live := map[string]int{setDSCPAddrA: want, setDSCPAddrOther: want}
+	setDSCPCheck(t, "this host's own traffic with the set's value out of reach", live, func() {
+		setDSCPSendUDP(t, 0, setDSCPDataPort, setDSCPAddrA, setDSCPAddrOther)
+	})
 
-		flow, injected := uint32(cfg.DiscoveryFlowMark()), uint32(cfg.DiscoveryInjectedMark())
-		t.Cleanup(func() { ClearDiscoverySteeringRules(cfg, uint(flow), uint(injected)) })
-		probe := &config.DSCPProbe{Value: 25, IPv4: true, IPv6: true}
-		if err := ApplyDiscoverySteeringRules(cfg, uint(flow), uint(injected), cfg.Queue.StartNum+cfg.Queue.Threads, 1, probe, nil); err != nil {
-			t.Fatalf("ApplyDiscoverySteeringRules: %v", err)
+	discoveryDSCPStartRun(t, cfg, nil)
+	if got := ActiveDiscoveryDSCP(); got != nil {
+		t.Errorf("the set's traffic never carries its own value here, so the run must not claim DSCP %d", *got)
+	}
+	setDSCPCheck(t, "a run for the set probes the path its traffic takes", live, discoveryDSCPMarkedProbes(t, cfg, 42201))
+}
+
+func TestNetnsDiscoveryProbesFollowAGlobalOnlyFallback(t *testing.T) {
+	setDSCPEngines(t, []string{backendIPTables, backendIPTablesLegacy}, func(t *testing.T, engine string) {
+		netnsDiscoveryFollowsAFallback(t, engine, true)
+	})
+}
+
+func TestNetnsDiscoveryProbesFollowAnUnstampedFallback(t *testing.T) {
+	setDSCPEngines(t, []string{backendIPTables, backendIPTablesLegacy}, func(t *testing.T, engine string) {
+		netnsDiscoveryFollowsAFallback(t, engine, false)
+	})
+}
+
+func TestNetnsDiscoveryRunIsStoppedWhenARebuildMovesItsProbes(t *testing.T) {
+	setDSCPEngines(t, []string{backendIPTables, backendIPTablesLegacy}, func(t *testing.T, engine string) {
+		setDSCPObserve(t)
+		build := func() *config.Config {
+			return setDSCPConfig(engine, true, dscpPlanTestSet("dscp-a", 31, setDSCPAddrA))
 		}
-		if got := ActiveDiscoveryDSCP(); got != nil {
-			t.Errorf("the set's traffic leaves with the global value, so the run must not claim DSCP %d", *got)
+		cfg := build()
+		setDSCPStart(t, cfg)
+		setDSCPAssertPerSet(t, engine)
+
+		lost := make(chan error, 4)
+		discoveryDSCPStartRun(t, cfg, func(err error) { lost <- err })
+		setDSCPCheck(t, "the run's probes before the rebuild", map[string]int{setDSCPAddrA: 25, setDSCPAddrOther: 25}, discoveryDSCPMarkedProbes(t, cfg, 42301))
+
+		stubBinaryPresence(t, map[string]bool{"ipset": false})
+		if err := RefreshRules(build()); err != nil {
+			t.Fatalf("RefreshRules: %v", err)
 		}
-		setDSCPCheck(t, "a run for the set probes the path its traffic takes, the global value", globalOnly, func() {
-			setDSCPSendMarked(t, flow, 42201, setDSCPAddrA, setDSCPAddrOther)
-			setDSCPSendMarked(t, injected, 42202, setDSCPAddrA, setDSCPAddrOther)
-		})
+		select {
+		case err := <-lost:
+			if !strings.Contains(err.Error(), "mix two network paths") {
+				t.Errorf("the run should learn that its probes changed path, got %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the rebuild took the set's value off the set's traffic and the run's probes, and the run was never told, so it would mix results from two paths")
+		}
+		setDSCPCheck(t, "the run's probes after the rebuild follow the set's traffic to the global value", map[string]int{setDSCPAddrA: dscpTestValue, setDSCPAddrOther: dscpTestValue}, discoveryDSCPMarkedProbes(t, cfg, 42311))
 	})
 }

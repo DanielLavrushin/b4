@@ -15,8 +15,9 @@ const (
 
 type discoveryNftBackend struct{}
 
-func (b *discoveryNftBackend) name() string    { return backendNFTables }
-func (b *discoveryNftBackend) available() bool { return hasBinary("nft") }
+func (b *discoveryNftBackend) name() string               { return backendNFTables }
+func (b *discoveryNftBackend) available() bool            { return hasBinary("nft") }
+func (b *discoveryNftBackend) takesSetValues(_ bool) bool { return !dscpNftSetsRefused.Load() }
 
 func (b *discoveryNftBackend) ensureBase() error {
 	loadKernelModules()

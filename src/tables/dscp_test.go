@@ -173,6 +173,7 @@ func resetDSCPState(t *testing.T) {
 		dscpApplied.Store(nil)
 		dscpStale.Store(nil)
 		dscpLast.Store(nil)
+		dscpNftSetsRefused.Store(false)
 		dscpKeepOnRefresh = false
 		dscpWarned.Range(func(k, _ any) bool {
 			dscpWarned.Delete(k)

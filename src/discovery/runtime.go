@@ -26,6 +26,7 @@ type runtimeState struct {
 	discoveryInjMark  uint
 	activeSuiteID     string
 	stopping          bool
+	lostErr           error
 	wg                sync.WaitGroup
 }
 
@@ -90,7 +91,14 @@ func (m *Runtime) Start(cfg *config.Config, dscp *config.DSCPProbe) (*StartResul
 	log.Infof("Discovery queue range: main=%d-%d discovery=%d-%d", mainStart, mainStart+mainThreads-1, discoveryStart, discoveryEnd)
 	log.Infof("Discovery marks: main_injected=0x%x discovery_flow=0x%x discovery_injected=0x%x", cfg.MainInjectedMark(), flowMark, injectedMark)
 
-	if err := tables.ApplyDiscoverySteeringRules(cfg, flowMark, injectedMark, discoveryStart, discoveryThreads, dscp, m.rulesLost); err != nil {
+	state := &runtimeState{
+		discoveryStartNum: discoveryStart,
+		discoveryThreads:  discoveryThreads,
+		discoveryFlowMark: flowMark,
+		discoveryInjMark:  injectedMark,
+	}
+	lost := func(err error) { m.rulesLost(state, err) }
+	if err := tables.ApplyDiscoverySteeringRules(cfg, flowMark, injectedMark, discoveryStart, discoveryThreads, dscp, lost); err != nil {
 		return nil, fmt.Errorf("failed to apply discovery steering rules: %w", err)
 	}
 	stamped := tables.ActiveDiscoveryDSCP()
@@ -106,14 +114,9 @@ func (m *Runtime) Start(cfg *config.Config, dscp *config.DSCPProbe) (*StartResul
 		return nil, fmt.Errorf("failed to start discovery pool: %w", err)
 	}
 
-	m.state = &runtimeState{
-		pool:              pool,
-		clearRules:        func() { tables.ClearDiscoverySteeringRules(cfg, flowMark, injectedMark) },
-		discoveryStartNum: discoveryStart,
-		discoveryThreads:  discoveryThreads,
-		discoveryFlowMark: flowMark,
-		discoveryInjMark:  injectedMark,
-	}
+	state.pool = pool
+	state.clearRules = func() { tables.ClearDiscoverySteeringRules(cfg, flowMark, injectedMark) }
+	m.state = state
 
 	return &StartResult{
 		Pool:     pool,
@@ -122,18 +125,27 @@ func (m *Runtime) Start(cfg *config.Config, dscp *config.DSCPProbe) (*StartResul
 	}, nil
 }
 
-func (m *Runtime) rulesLost(err error) {
+func (m *Runtime) rulesLost(state *runtimeState, err error) {
 	m.mu.Lock()
-	suiteID := ""
-	if m.state != nil && !m.state.stopping {
-		suiteID = m.state.activeSuiteID
-	}
-	m.mu.Unlock()
-	if suiteID == "" {
+	if m.state != state || state.stopping {
+		m.mu.Unlock()
 		return
 	}
-	log.Warnf("Discovery: stopping run %s, its firewall rules could not be put back after a firewall rebuild: %v", suiteID, err)
-	log.DiscoveryLogf("Stopped: the firewall rules this run depends on could not be put back after a firewall rebuild (%v), so later results would not be reliable", err)
+	suiteID := state.activeSuiteID
+	if suiteID == "" {
+		if state.lostErr == nil {
+			state.lostErr = err
+		}
+		m.mu.Unlock()
+		return
+	}
+	m.mu.Unlock()
+	stopForLostRules(suiteID, err)
+}
+
+func stopForLostRules(suiteID string, err error) {
+	log.Warnf("Discovery: stopping run %s, its firewall rules changed or could not be put back after a firewall rebuild: %v", suiteID, err)
+	log.DiscoveryLogf("Stopped: the firewall rules this run depends on changed or could not be put back after a firewall rebuild (%v), so later results would not be reliable", err)
 	_ = CancelCheckSuite(suiteID)
 }
 
@@ -153,11 +165,17 @@ func discoveryPoolConfig(cfg *config.Config, start, threads int, flowMark, injec
 	return discoveryCfg
 }
 
-func (m *Runtime) SetActiveSuiteID(suiteID string) {
+func (m *Runtime) activateSuite(suite *CheckSuite) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	var lost error
 	if m.state != nil {
-		m.state.activeSuiteID = suiteID
+		m.state.activeSuiteID = suite.Id
+		lost = m.state.lostErr
+	}
+	RegisterSuite(suite)
+	m.mu.Unlock()
+	if lost != nil {
+		stopForLostRules(suite.Id, lost)
 	}
 }
 
@@ -189,10 +207,9 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 	suite.stopWhenCovered = opts.StopWhenCovered
 	suite.dnsServerOverride = opts.DNSServer
 	suite.runPins = opts.Pins
-	m.SetActiveSuiteID(suite.Id)
-	RegisterSuite(suite.CheckSuite)
 
 	log.GetDiscoveryHub().Reset()
+	m.activateSuite(suite.CheckSuite)
 
 	m.launchSuite(suite.Id, func() {
 		suite.RunDiscovery()

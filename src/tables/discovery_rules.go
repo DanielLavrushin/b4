@@ -2,6 +2,7 @@ package tables
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -10,6 +11,7 @@ import (
 type discoveryBackend interface {
 	name() string
 	available() bool
+	takesSetValues(v6 bool) bool
 	apply(flowMark uint, injectedMark uint, queueStart int, threads int, stamp *discoveryStamp) error
 	clear(flowMark uint, injectedMark uint)
 }
@@ -25,36 +27,34 @@ func (s *discoveryStamp) covers(v6 bool) bool {
 	return s != nil && ((v6 && s.v6) || (!v6 && s.v4))
 }
 
-func discoveryStampFor(cfg *config.Config, dscp *config.DSCPProbe) (*discoveryStamp, error) {
-	if dscp == nil {
-		return nil, nil
+func (s *discoveryStamp) same(o *discoveryStamp) bool {
+	if s == nil || o == nil {
+		return s == o
 	}
-	if dscp.Value < 0 || dscp.Value > config.MaxDSCPValue {
-		return nil, fmt.Errorf("DSCP %d for Discovery's probes is outside 0-%d", dscp.Value, config.MaxDSCPValue)
+	return s.value == o.value && s.v4 == o.v4 && s.v6 == o.v6 && slices.Equal(s.ifaces, o.ifaces)
+}
+
+func discoveryCheckDSCP(dscp *config.DSCPProbe) error {
+	if dscp != nil && (dscp.Value < 0 || dscp.Value > config.MaxDSCPValue) {
+		return fmt.Errorf("DSCP %d for Discovery's probes is outside 0-%d", dscp.Value, config.MaxDSCPValue)
+	}
+	return nil
+}
+
+func discoveryStampFor(cfg *config.Config, dscp *config.DSCPProbe, be discoveryBackend) *discoveryStamp {
+	if dscp == nil {
+		return nil
 	}
 	stamp := &discoveryStamp{
 		value:  dscp.Value,
 		ifaces: cfg.DSCPInterfaces(),
-		v4:     dscp.IPv4 && dscpFamilyTakesSetValues(false),
-		v6:     dscp.IPv6 && dscpFamilyTakesSetValues(true),
+		v4:     dscp.IPv4 && be.takesSetValues(false),
+		v6:     dscp.IPv6 && be.takesSetValues(true),
 	}
 	if !stamp.v4 && !stamp.v6 {
-		return nil, nil
+		return nil
 	}
-	return stamp, nil
-}
-
-func dscpFamilyTakesSetValues(v6 bool) bool {
-	st := dscpApplied.Load()
-	if st == nil || st.ipt == nil {
-		return true
-	}
-	for bin, reason := range st.ipt.incapable {
-		if reason != "" && dscpIptBinV6(bin) == v6 {
-			return false
-		}
-	}
-	return true
+	return stamp
 }
 
 func getDiscoveryBackend(cfg *config.Config) discoveryBackend {
@@ -109,14 +109,14 @@ var activeSteering *discoverySteering
 func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark uint, queueStart int, threads int, dscp *config.DSCPProbe, lost func(error)) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
-	stamp, err := discoveryStampFor(cfg, dscp)
-	if err != nil {
+	if err := discoveryCheckDSCP(dscp); err != nil {
 		return err
 	}
 	be := currentDiscoveryBackend(cfg)
 	if be == nil {
 		return fmt.Errorf("no discovery firewall backend available")
 	}
+	stamp := discoveryStampFor(cfg, dscp, be)
 	if err := be.apply(flowMark, injectedMark, queueStart, threads, stamp); err != nil {
 		be.clear(flowMark, injectedMark)
 		return err
@@ -166,18 +166,20 @@ func reapplyDiscoverySteering() {
 		s.backend.clear(s.flowMark, s.injectedMark)
 	}
 	s.backend = be
-	stamp, err := discoveryStampFor(s.cfg, s.dscp)
-	if err == nil {
-		s.stamp = stamp
-		err = be.apply(s.flowMark, s.injectedMark, s.queueStart, s.threads, stamp)
-	}
-	if err != nil {
+	stamp := discoveryStampFor(s.cfg, s.dscp, be)
+	changed := !stamp.same(s.stamp)
+	s.stamp = stamp
+	if err := be.apply(s.flowMark, s.injectedMark, s.queueStart, s.threads, stamp); err != nil {
 		s.fail(err)
+		return
+	}
+	if changed {
+		s.fail(fmt.Errorf("the rebuild changed which of the run's probes can carry DSCP %d, so its results would mix two network paths", s.dscp.Value))
 	}
 }
 
 func (s *discoverySteering) fail(err error) {
-	log.Warnf("Discovery: putting the steering rules back after the firewall rules were rebuilt failed: %v", err)
+	log.Warnf("Discovery: the run's firewall rules changed or could not be put back after the firewall rules were rebuilt: %v", err)
 	if s.lost != nil {
 		go s.lost(err)
 	}

@@ -1473,6 +1473,32 @@ func TestSetDSCPNftValueChainLifecycle(t *testing.T) {
 	}
 }
 
+func TestSetDSCPNftRefusalOutlivesTheTable(t *testing.T) {
+	f := installDSCPNftFake(t)
+	f.fail = func(script string) (string, error) {
+		if strings.Contains(script, "vmap") {
+			return "Error: syntax error", errors.New("command [nft -f -] failed: exit status 1 (Error: syntax error)")
+		}
+		return "", nil
+	}
+	plan := dscpNftTestPlanTwo(config.DSCPConfig{Value: 7})
+	out, err := dscpNftApplyPlan(plan, nil)
+	if err == nil || out.layout != nil {
+		t.Fatalf("precondition: with the global stamp off a refused per-set table leaves nothing applied, got %+v, %v", out, err)
+	}
+	if !dscpNftSetsRefused.Load() {
+		t.Error("nothing is applied, yet the refusal must be remembered: a Discovery run would otherwise stamp the sets' values that their traffic never carries")
+	}
+
+	f.fail = nil
+	if out, err := dscpNftApplyPlan(plan, nil); err != nil || !out.layout.perSet() {
+		t.Fatalf("the per-set table must load once nftables accepts it, got %+v, %v", out, err)
+	}
+	if dscpNftSetsRefused.Load() {
+		t.Error("an accepted per-set table must clear the remembered refusal")
+	}
+}
+
 func TestSetDSCPNftGlobalOnlyUnchanged(t *testing.T) {
 	configs := []config.DSCPConfig{
 		{Enabled: true, Value: 7},
