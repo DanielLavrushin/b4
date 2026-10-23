@@ -343,12 +343,14 @@ func (ds *DiscoverySuite) finalize() {
 
 	ds.CheckSuite.mu.Lock()
 	failed := ds.Status == CheckStatusFailed
-	if rulesInvalidated() && !ds.RulesChanged {
+	if rulesInvalidated() || ds.RulesChanged {
+		if !ds.RulesChanged {
+			log.DiscoveryLogf("Stopped: b4 rewrote its DSCP rules during the run, so its results could come from another network path")
+		}
 		ds.RulesChanged = true
 		if !failed {
 			ds.Status = CheckStatusCanceled
 		}
-		log.DiscoveryLogf("Stopped: b4 rewrote its DSCP rules during the run, so its results could come from another network path")
 	}
 	if !failed {
 		ds.DomainDiscoveryResults = ds.domainResults

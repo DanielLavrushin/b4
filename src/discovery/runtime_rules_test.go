@@ -103,11 +103,20 @@ func TestARunWhoseRulesChangedIsNotPublishedAsComplete(t *testing.T) {
 	suiteRetention = 10 * time.Millisecond
 	t.Cleanup(func() { suiteRetention, rulesInvalidated = previous, previousCheck })
 
-	for _, invalidated := range []bool{false, true} {
-		rulesInvalidated = func() bool { return invalidated }
+	for _, tc := range []struct {
+		name                 string
+		invalidated, flagged bool
+	}{
+		{"an undisturbed run", false, false},
+		{"rules invalidated while the run was finishing", true, false},
+		{"flagged by the stop signal before its cancel landed", false, true},
+	} {
+		invalidated := tc.invalidated || tc.flagged
+		rulesInvalidated = func() bool { return tc.invalidated }
 		suite := NewCheckSuite([]DomainInput{{Domain: "example.com", CheckURL: "https://example.com/"}})
 		suite.SetId = "set-a"
 		suite.Status = CheckStatusRunning
+		suite.RulesChanged = tc.flagged
 		ds := &DiscoverySuite{
 			CheckSuite: suite,
 			pool:       &nfq.Pool{},
@@ -125,9 +134,9 @@ func TestARunWhoseRulesChangedIsNotPublishedAsComplete(t *testing.T) {
 
 		switch {
 		case invalidated && (ds.Status != CheckStatusCanceled || !ds.RulesChanged || ds.SetVerdict == nil || ds.SetVerdict.Status != SetVerdictIncomplete):
-			t.Errorf("the DSCP rules changed while the run was finishing, so its covered verdict must not be published: status %q, rules changed %t, verdict %+v", ds.Status, ds.RulesChanged, ds.SetVerdict)
+			t.Errorf("%s: the DSCP rules changed while the run was finishing, so its covered verdict must not be published: status %q, rules changed %t, verdict %+v", tc.name, ds.Status, ds.RulesChanged, ds.SetVerdict)
 		case !invalidated && (ds.Status != CheckStatusComplete || ds.RulesChanged || ds.SetVerdict == nil || ds.SetVerdict.Status != SetVerdictCovered):
-			t.Errorf("an undisturbed run publishes its verdict: status %q, rules changed %t, verdict %+v", ds.Status, ds.RulesChanged, ds.SetVerdict)
+			t.Errorf("%s: publishes its verdict: status %q, rules changed %t, verdict %+v", tc.name, ds.Status, ds.RulesChanged, ds.SetVerdict)
 		}
 
 		ds.ctxCancel()
@@ -141,6 +150,18 @@ func TestARunWhoseRulesChangedIsNotPublishedAsComplete(t *testing.T) {
 			}
 			time.Sleep(5 * time.Millisecond)
 		}
+	}
+}
+
+func TestALateLossSignalLeavesAFinishedRunAlone(t *testing.T) {
+	suite := newTestSuite(t)
+	suite.Status = CheckStatusComplete
+	RegisterSuite(suite)
+
+	stopForLostRules(suite.Id, errors.New("a rewrite that began after the run had finished"))
+
+	if suite.Status != CheckStatusComplete || suite.RulesChanged {
+		t.Errorf("the run finished before its rules changed, so its result stands: status %q, rules changed %t", suite.Status, suite.RulesChanged)
 	}
 }
 

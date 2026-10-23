@@ -149,12 +149,7 @@ func (m *Runtime) rulesLost(state *runtimeState, err error) {
 func stopForLostRules(suiteID string, err error) {
 	log.Warnf("Discovery: stopping run %s, its firewall rules changed or could not be put back after a firewall rebuild: %v", suiteID, err)
 	log.DiscoveryLogf("Stopped: the firewall rules this run depends on changed or could not be put back after a firewall rebuild (%v), so later results would not be reliable", err)
-	if suite, ok := GetCheckSuite(suiteID); ok {
-		suite.mu.Lock()
-		suite.RulesChanged = true
-		suite.mu.Unlock()
-	}
-	_ = CancelCheckSuite(suiteID)
+	cancelCheckSuite(suiteID, true)
 }
 
 func discoveryPoolConfig(cfg *config.Config, start, threads int, flowMark, injectedMark uint) *config.Config {
