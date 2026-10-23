@@ -31,6 +31,7 @@ const (
 	setRunStopped
 	setRunAborted
 	setRunOverBudget
+	setRunRulesChanged
 )
 
 type strategySections struct {
@@ -145,12 +146,18 @@ func (w *Watchdog) healSet(id string) {
 		TLSVersion:      tlsVersion,
 		IPVersion:       ipVersion,
 	})
-	if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) {
-		log.Infof("[WATCHDOG] set %q: another discovery run holds the runtime, the heal waits", set.Name)
+	if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) || errors.Is(err, discovery.ErrDSCPRulesPending) {
+		reason := ReasonBusy
+		if errors.Is(err, discovery.ErrDSCPRulesPending) {
+			reason = ReasonDSCPRules
+			log.Infof("[WATCHDOG] set %q: b4 is still applying its DSCP rules, the heal waits", set.Name)
+		} else {
+			log.Infof("[WATCHDOG] set %q: another discovery run holds the runtime, the heal waits", set.Name)
+		}
 		w.mu.Lock()
 		if st := w.setStates[id]; st != nil {
 			st.Status = SetStatusHealQueued
-			st.Reason = ReasonBusy
+			st.Reason = reason
 			w.enqueueHealLocked(id, true)
 		}
 		w.mu.Unlock()
@@ -171,6 +178,9 @@ func (w *Watchdog) healSet(id string) {
 		return
 	case setRunOverBudget:
 		w.healFailed(id, ReasonBudget, fmt.Sprintf("the discovery run did not finish within %s", healCancelAfter))
+		return
+	case setRunRulesChanged:
+		w.healFailed(id, ReasonDSCPRules, "b4 rewrote its DSCP rules during the run, so its results could come from another network path")
 		return
 	}
 
@@ -256,7 +266,10 @@ poll:
 	}
 
 	snap, ok := w.disc.Snapshot(suiteID)
-	if !ok || snap.SetVerdict == nil {
+	switch {
+	case ok && snap.RulesChanged:
+		return nil, setRunRulesChanged
+	case !ok || snap.SetVerdict == nil:
 		return &discovery.SetVerdict{Status: discovery.SetVerdictIncomplete}, setRunDone
 	}
 	return snap.SetVerdict, setRunDone

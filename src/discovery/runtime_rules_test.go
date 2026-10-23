@@ -42,6 +42,9 @@ func TestLostFirewallRulesStopTheRunTheyBelongTo(t *testing.T) {
 	if suite.Status != CheckStatusCanceled || !suite.canceledForTest() {
 		t.Errorf("results tested without the set's DSCP value come from another network path, so the run must stop; status %q", suite.Status)
 	}
+	if !suite.RulesChanged {
+		t.Error("the run must record why it stopped, so a watchdog heal can tell a rules change from a failed search")
+	}
 
 	stopping := newTestSuite(t)
 	rt2 := NewRuntime()
@@ -84,8 +87,8 @@ func TestALossSignalDuringStartupStopsTheRunOnceItIsRegistered(t *testing.T) {
 		t.Fatal("a signal before registration must be kept, or the run starts with missing rules")
 	}
 	rt.activateSuite(suite)
-	if suite.Status != CheckStatusCanceled || !suite.canceledForTest() {
-		t.Errorf("the kept signal must stop the run when it is registered; status %q", suite.Status)
+	if suite.Status != CheckStatusCanceled || !suite.canceledForTest() || !suite.RulesChanged {
+		t.Errorf("the kept signal must stop the run when it is registered and say why; status %q, rules changed %t", suite.Status, suite.RulesChanged)
 	}
 	if got, ok := GetCheckSuite(suite.Id); !ok || got != suite {
 		t.Error("the run must still be registered, so its result can be read")

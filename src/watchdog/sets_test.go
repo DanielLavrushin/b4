@@ -75,6 +75,7 @@ type fakeDriver struct {
 	finished   int
 	canceled   int
 	onSnapshot func(n int)
+	rulesLost  bool
 }
 
 func (d *fakeDriver) IsActive() bool {
@@ -111,6 +112,7 @@ func (d *fakeDriver) Snapshot(id string) (*discovery.CheckSuite, bool) {
 	}
 	verdict := d.verdict
 	results := d.results
+	rulesLost := d.rulesLost
 	d.mu.Unlock()
 	if hook != nil {
 		hook(n)
@@ -119,6 +121,10 @@ func (d *fakeDriver) Snapshot(id string) (*discovery.CheckSuite, bool) {
 	if status == discovery.CheckStatusComplete {
 		suite.SetVerdict = verdict
 		suite.DomainDiscoveryResults = results
+		if rulesLost {
+			suite.Status = discovery.CheckStatusCanceled
+			suite.RulesChanged = true
+		}
 	}
 	return suite, true
 }

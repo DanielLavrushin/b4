@@ -55,6 +55,22 @@ func TestMCPDiscoveryStatusNamesTheDSCPASetRunCarried(t *testing.T) {
 	}
 }
 
+func TestMCPDiscoveryStatusSaysWhyARunStoppedForItsRules(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	value := 25
+	suite := &discovery.CheckSuite{Id: "rules-changed-run", Status: discovery.CheckStatusCanceled, DSCP: &value, RulesChanged: true}
+	discovery.RegisterSuite(suite)
+
+	out := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "status", "id": suite.Id}))
+	if !strings.Contains(out.Note, "rewrote its DSCP rules") {
+		t.Errorf("a run stopped by a DSCP rewrite is not an ordinary cancel, and the answer must say so: %q", out.Note)
+	}
+}
+
 func callDiscovery(t *testing.T, session *mcp.ClientSession, ctx context.Context, args map[string]any) *mcp.CallToolResult {
 	t.Helper()
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_find_bypass_strategy", Arguments: args})

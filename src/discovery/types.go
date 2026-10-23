@@ -162,6 +162,7 @@ type CheckSuite struct {
 	StoppedEarly           bool                              `json:"stopped_early,omitempty"`
 	StoppedPhase           DiscoveryPhase                    `json:"stopped_phase,omitempty"`
 	StoppedCovered         bool                              `json:"stopped_covered,omitempty"`
+	RulesChanged           bool                              `json:"rules_changed,omitempty"`
 	mu                     sync.RWMutex                      `json:"-"`
 	cancel                 chan struct{}                     `json:"-"`
 	finish                 chan struct{}                     `json:"-"`

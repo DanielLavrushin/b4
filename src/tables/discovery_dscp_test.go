@@ -229,6 +229,7 @@ func TestDiscoveryDSCPStampsOnlyTheFamiliesTheSetsTrafficCarriesItIn(t *testing.
 	*calls = nil
 	discoveryRefuseSetMatch(backendIPTables)
 	rulesMu.Lock()
+	applyDSCPLogged(&cfg, backendIPTables)
 	reapplyDiscoverySteering()
 	rulesMu.Unlock()
 	if stamped(backendIPTables) || stamped(backendIP6Tables) {
@@ -239,8 +240,8 @@ func TestDiscoveryDSCPStampsOnlyTheFamiliesTheSetsTrafficCarriesItIn(t *testing.
 	}
 	select {
 	case err := <-lost:
-		if !strings.Contains(err.Error(), "mix two network paths") {
-			t.Errorf("the run should learn that its paths changed, got %v", err)
+		if !errors.Is(err, errDiscoveryDSCPRewritten) {
+			t.Errorf("the run should learn that the DSCP rules were rewritten, got %v", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the rebuild moved the run's IPv4 probes from the set's path to the global one, and the run was not told, so it would mix results from two paths")
@@ -312,6 +313,95 @@ func TestDiscoveryDSCPKnowsSetValuesAreOutOfReachWithNoDSCPRulesApplied(t *testi
 			t.Errorf("iptables refused the set match earlier, so the set's traffic leaves unstamped, and the run's probes must too: %q", c)
 		}
 	}
+}
+
+func TestDiscoverySetRunWaitsForPendingDSCPRules(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	discoveryIpsetReady(t, false)
+	calls := discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+	cfg := config.NewConfig()
+	cfg.System.Tables.Engine = backendIPTables
+
+	for _, backend := range []string{backendIPTables, backendNFTables} {
+		dscpApplied.Store(&dscpState{cfg: &cfg, backend: backend, pending: true})
+		if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), nil); !errors.Is(err, ErrDiscoveryDSCPPending) {
+			t.Errorf("%s: while b4 is still applying its DSCP rules the set's traffic does not carry its value yet, so a run for the set must wait, got %v", backend, err)
+		}
+	}
+	if len(*calls) != 0 || activeSteering != nil {
+		t.Errorf("a refused run must leave the firewall alone: %v", *calls)
+	}
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
+		t.Errorf("a run for no set value does not depend on the DSCP rules and starts, got %v", err)
+	}
+}
+
+func TestDiscoveryStampTakesTheInterfacesOfTheAppliedDSCPRules(t *testing.T) {
+	resetDSCPState(t)
+	discoveryIpsetReady(t, false)
+	start := config.NewConfig()
+	start.System.Tables.DSCP.Interfaces = []string{"wan0"}
+	applied := config.NewConfig()
+	applied.System.Tables.DSCP.Interfaces = []string{"wan1"}
+
+	dscpApplied.Store(&dscpState{cfg: &applied, backend: backendIPTables})
+	stamp := discoveryStampFor(&start, discoveryProbe(25), &discoveryIptBackend{})
+	if stamp == nil || !slices.Equal(stamp.ifaces, []string{"wan1"}) {
+		t.Errorf("the sets' values are written on the interfaces the applied rules name, so the run's must be too, got %+v", stamp)
+	}
+}
+
+func TestDiscoverySetRunStopsWhenTheDSCPRulesAreRewritten(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	t.Cleanup(kmodResetForTest)
+	discoveryIpsetReady(t, false)
+	discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+	cfg := config.NewConfig()
+	cfg.System.Tables.Engine = backendIPTables
+	cfg.System.Tables.DSCP = config.DSCPConfig{Enabled: true, Value: 7}
+	expectLost := func(lost chan error, want bool, why string) {
+		t.Helper()
+		select {
+		case err := <-lost:
+			if !want {
+				t.Errorf("%s: unexpected stop signal %v", why, err)
+			} else if !errors.Is(err, errDiscoveryDSCPRewritten) {
+				t.Errorf("%s: got %v", why, err)
+			}
+		case <-time.After(200 * time.Millisecond):
+			if want {
+				t.Errorf("%s: the run was not told", why)
+			}
+		}
+	}
+
+	lost := make(chan error, 4)
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, discoveryProbe(25), func(err error) { lost <- err }); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if err := ApplyDSCPOnly(&cfg); err != nil {
+		t.Fatalf("ApplyDSCPOnly: %v", err)
+	}
+	expectLost(lost, true, "a DSCP-only save rewrote the rules the set's traffic follows, so the run for the set must stop")
+	if err := ApplyDSCPOnly(&cfg); err != nil {
+		t.Fatalf("ApplyDSCPOnly: %v", err)
+	}
+	expectLost(lost, false, "the run is told once")
+
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+	plain := make(chan error, 4)
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, nil, func(err error) { plain <- err }); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	ClearDSCPOnly(&cfg)
+	expectLost(plain, false, "a run for no set value keeps running through a DSCP change, as before")
+	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
+	if err := ApplyDSCPOnly(&cfg); err != nil {
+		t.Fatalf("ApplyDSCPOnly after the run: %v", err)
+	}
+	expectLost(lost, false, "after the run ended")
 }
 
 func TestDiscoverySteeringRefusesADSCPOutOfRange(t *testing.T) {

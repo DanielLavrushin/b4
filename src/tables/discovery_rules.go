@@ -1,11 +1,17 @@
 package tables
 
 import (
+	"errors"
 	"fmt"
-	"slices"
+	"sync/atomic"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+)
+
+var (
+	ErrDiscoveryDSCPPending   = errors.New("b4 is still applying its DSCP rules, so the run would not take the path the set's traffic takes; start it again once they are in place")
+	errDiscoveryDSCPRewritten = errors.New("b4 rewrote its DSCP rules during the run, so the path the set's traffic takes may have changed")
 )
 
 type discoveryBackend interface {
@@ -27,16 +33,15 @@ func (s *discoveryStamp) covers(v6 bool) bool {
 	return s != nil && ((v6 && s.v6) || (!v6 && s.v4))
 }
 
-func (s *discoveryStamp) same(o *discoveryStamp) bool {
-	if s == nil || o == nil {
-		return s == o
-	}
-	return s.value == o.value && s.v4 == o.v4 && s.v6 == o.v6 && slices.Equal(s.ifaces, o.ifaces)
-}
-
 func discoveryCheckDSCP(dscp *config.DSCPProbe) error {
-	if dscp != nil && (dscp.Value < 0 || dscp.Value > config.MaxDSCPValue) {
+	if dscp == nil {
+		return nil
+	}
+	if dscp.Value < 0 || dscp.Value > config.MaxDSCPValue {
 		return fmt.Errorf("DSCP %d for Discovery's probes is outside 0-%d", dscp.Value, config.MaxDSCPValue)
+	}
+	if st := dscpApplied.Load(); st != nil && st.pending {
+		return ErrDiscoveryDSCPPending
 	}
 	return nil
 }
@@ -44,6 +49,9 @@ func discoveryCheckDSCP(dscp *config.DSCPProbe) error {
 func discoveryStampFor(cfg *config.Config, dscp *config.DSCPProbe, be discoveryBackend) *discoveryStamp {
 	if dscp == nil {
 		return nil
+	}
+	if st := dscpApplied.Load(); st != nil && st.cfg != nil {
+		cfg = st.cfg
 	}
 	stamp := &discoveryStamp{
 		value:  dscp.Value,
@@ -102,9 +110,13 @@ type discoverySteering struct {
 	dscp         *config.DSCPProbe
 	stamp        *discoveryStamp
 	lost         func(error)
+	failed       atomic.Bool
 }
 
-var activeSteering *discoverySteering
+var (
+	activeSteering  *discoverySteering
+	discoverySetRun atomic.Pointer[discoverySteering]
+)
 
 func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark uint, queueStart int, threads int, dscp *config.DSCPProbe, lost func(error)) error {
 	rulesMu.Lock()
@@ -121,7 +133,13 @@ func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark
 		be.clear(flowMark, injectedMark)
 		return err
 	}
-	activeSteering = &discoverySteering{cfg: cfg, backend: be, flowMark: flowMark, injectedMark: injectedMark, queueStart: queueStart, threads: threads, dscp: dscp, stamp: stamp, lost: lost}
+	s := &discoverySteering{cfg: cfg, backend: be, flowMark: flowMark, injectedMark: injectedMark, queueStart: queueStart, threads: threads, dscp: dscp, stamp: stamp, lost: lost}
+	activeSteering = s
+	if dscp != nil {
+		discoverySetRun.Store(s)
+	} else {
+		discoverySetRun.Store(nil)
+	}
 	return nil
 }
 
@@ -143,6 +161,7 @@ func ClearDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark
 		be = s.backend
 	}
 	activeSteering = nil
+	discoverySetRun.Store(nil)
 	if be == nil {
 		be = currentDiscoveryBackend(cfg)
 	}
@@ -150,6 +169,12 @@ func ClearDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark
 		return
 	}
 	be.clear(flowMark, injectedMark)
+}
+
+func discoveryDSCPRewritten() {
+	if s := discoverySetRun.Load(); s != nil {
+		s.fail(errDiscoveryDSCPRewritten)
+	}
 }
 
 func reapplyDiscoverySteering() {
@@ -166,20 +191,17 @@ func reapplyDiscoverySteering() {
 		s.backend.clear(s.flowMark, s.injectedMark)
 	}
 	s.backend = be
-	stamp := discoveryStampFor(s.cfg, s.dscp, be)
-	changed := !stamp.same(s.stamp)
-	s.stamp = stamp
-	if err := be.apply(s.flowMark, s.injectedMark, s.queueStart, s.threads, stamp); err != nil {
+	s.stamp = discoveryStampFor(s.cfg, s.dscp, be)
+	if err := be.apply(s.flowMark, s.injectedMark, s.queueStart, s.threads, s.stamp); err != nil {
 		s.fail(err)
-		return
-	}
-	if changed {
-		s.fail(fmt.Errorf("the rebuild changed which of the run's probes can carry DSCP %d, so its results would mix two network paths", s.dscp.Value))
 	}
 }
 
 func (s *discoverySteering) fail(err error) {
-	log.Warnf("Discovery: the run's firewall rules changed or could not be put back after the firewall rules were rebuilt: %v", err)
+	if !s.failed.CompareAndSwap(false, true) {
+		return
+	}
+	log.Tracef("Discovery: the run's firewall rules changed or could not be put back: %v", err)
 	if s.lost != nil {
 		go s.lost(err)
 	}

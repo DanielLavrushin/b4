@@ -96,6 +96,7 @@ type mcpSuiteSnapshot struct {
 	DSCP           *int                  `json:"dscp"`
 	SetVerdict     *discovery.SetVerdict `json:"set_verdict"`
 	StoppedCovered bool                  `json:"stopped_covered"`
+	RulesChanged   bool                  `json:"rules_changed"`
 }
 
 func mcpSuiteProjection(suite *discovery.CheckSuite) (*mcpSuiteSnapshot, error) {
@@ -770,6 +771,9 @@ func (api *API) mcpDiscoverySuiteStatus(snap *mcpSuiteSnapshot) (*mcp.CallToolRe
 		}
 	case discovery.CheckStatusCanceled:
 		out.Note = "the run was cancelled; any results below are partial"
+		if snap.RulesChanged {
+			out.Note = "the run was stopped because b4 rewrote its DSCP rules during it, so its results could come from another network path; start it again"
+		}
 	default:
 		applicable := 0
 		for _, d := range out.Domains {

@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"errors"
 	"net"
 	"strings"
 	"testing"
@@ -97,11 +98,14 @@ func TestNetnsDiscoveryProbesCarryTheRunsDSCP(t *testing.T) {
 		if err := RefreshRules(setDSCPConfig(engine, true, dscpPlanTestSet("dscp-a", 31, setDSCPAddrA))); err != nil {
 			t.Fatalf("RefreshRules: %v", err)
 		}
-		setDSCPCheck(t, "a run's probes after a firewall rebuild during the run", tagged, probes(42121))
+		setDSCPCheck(t, "a run's probes after a firewall rebuild, until the run stops", tagged, probes(42121))
 		select {
 		case err := <-lost:
-			t.Errorf("the rebuild put the run's rules back, yet the run was told they were lost: %v", err)
-		default:
+			if !errors.Is(err, errDiscoveryDSCPRewritten) {
+				t.Errorf("the run should learn that the DSCP rules were rewritten, got %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("a rebuild rewrote the DSCP rules during a run for a set, and the run was never told, so packets sent while they were rewritten could take another path")
 		}
 
 		ClearDiscoverySteeringRules(cfg, uint(flow), uint(injected))
@@ -186,12 +190,38 @@ func TestNetnsDiscoveryRunIsStoppedWhenARebuildMovesItsProbes(t *testing.T) {
 		}
 		select {
 		case err := <-lost:
-			if !strings.Contains(err.Error(), "mix two network paths") {
-				t.Errorf("the run should learn that its probes changed path, got %v", err)
+			if !errors.Is(err, errDiscoveryDSCPRewritten) {
+				t.Errorf("the run should learn that the DSCP rules were rewritten, got %v", err)
 			}
 		case <-time.After(5 * time.Second):
 			t.Fatal("the rebuild took the set's value off the set's traffic and the run's probes, and the run was never told, so it would mix results from two paths")
 		}
 		setDSCPCheck(t, "the run's probes after the rebuild follow the set's traffic to the global value", map[string]int{setDSCPAddrA: dscpTestValue, setDSCPAddrOther: dscpTestValue}, discoveryDSCPMarkedProbes(t, cfg, 42311))
+	})
+}
+
+func TestNetnsDiscoveryRunIsStoppedByADSCPOnlyChange(t *testing.T) {
+	setDSCPEngines(t, setDSCPAllEngines, func(t *testing.T, engine string) {
+		setDSCPObserve(t)
+		cfg := setDSCPConfig(engine, true, dscpPlanTestSet("dscp-a", 31, setDSCPAddrA))
+		setDSCPStart(t, cfg)
+		setDSCPAssertPerSet(t, engine)
+
+		lost := make(chan error, 4)
+		discoveryDSCPStartRun(t, cfg, func(err error) { lost <- err })
+
+		next := setDSCPConfig(engine, true, dscpPlanTestSet("dscp-a", 6, setDSCPAddrA))
+		setDSCPSync(t, next)
+		select {
+		case err := <-lost:
+			if !errors.Is(err, errDiscoveryDSCPRewritten) {
+				t.Errorf("the run should learn that the DSCP rules were rewritten, got %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("a save that changed only the DSCP rules gave the set's traffic another value during the run, and the run was never told")
+		}
+		setDSCPCheck(t, "this host's own traffic after the change", map[string]int{setDSCPAddrA: 6, setDSCPAddrOther: dscpTestValue}, func() {
+			setDSCPSendUDP(t, 0, setDSCPDataPort, setDSCPAddrA, setDSCPAddrOther)
+		})
 	})
 }

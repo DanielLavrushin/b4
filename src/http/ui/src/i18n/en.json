@@ -3742,7 +3742,8 @@
       "start_failed": "The search could not start.",
       "verify_failed": "The strategy found did not pass the live check of the addresses and was undone.",
       "edited": "The set was changed while the search ran, so the result was not written.",
-      "busy": "Another Discovery search was running. The watchdog tries again later."
+      "busy": "Another Discovery search was running. The watchdog tries again later.",
+      "dscp_rules": "b4 was applying or rewriting its DSCP rules, so the search could not follow the path the set's traffic takes. The watchdog tries again later."
     },
     "errors": {
       "no_urls": "The set has no Discovery addresses to check.",

@@ -11,7 +11,10 @@ import (
 	"github.com/daniellavrushin/b4/tables"
 )
 
-var ErrDiscoveryAlreadyRunning = errors.New("discovery is already running")
+var (
+	ErrDiscoveryAlreadyRunning = errors.New("discovery is already running")
+	ErrDSCPRulesPending        = tables.ErrDiscoveryDSCPPending
+)
 
 type poolStopper interface {
 	Stop()
@@ -146,6 +149,11 @@ func (m *Runtime) rulesLost(state *runtimeState, err error) {
 func stopForLostRules(suiteID string, err error) {
 	log.Warnf("Discovery: stopping run %s, its firewall rules changed or could not be put back after a firewall rebuild: %v", suiteID, err)
 	log.DiscoveryLogf("Stopped: the firewall rules this run depends on changed or could not be put back after a firewall rebuild (%v), so later results would not be reliable", err)
+	if suite, ok := GetCheckSuite(suiteID); ok {
+		suite.mu.Lock()
+		suite.RulesChanged = true
+		suite.mu.Unlock()
+	}
 	_ = CancelCheckSuite(suiteID)
 }
 
