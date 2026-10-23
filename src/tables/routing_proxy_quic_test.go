@@ -87,7 +87,26 @@ func TestAUDPProxySetRefusesQUICOnlyWhenItBlocksQUIC(t *testing.T) {
 	}
 }
 
-func TestABlockQUICProxySetKeepsUDP443OutOfItsTProxyRules(t *testing.T) {
+func quicPassRules(lines []string) []string {
+	var out []string
+	for _, line := range lines {
+		if strings.Contains(line, "udp dport 443 accept") || (strings.Contains(line, "--dport 443") && strings.HasSuffix(line, "-j ACCEPT")) {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func indexOfLine(lines []string, match func(string) bool) int {
+	for i, line := range lines {
+		if match(line) {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestABlockQUICProxySetStopsItsQUICAheadOfTheTProxyRules(t *testing.T) {
 	for _, engine := range []string{backendNFTables, backendIPTables} {
 		t.Run(engine, func(t *testing.T) {
 			localGuardReset(t)
@@ -102,23 +121,30 @@ func TestABlockQUICProxySetKeepsUDP443OutOfItsTProxyRules(t *testing.T) {
 				t.Fatalf("routeEnsureProxyRule: %v", err)
 			}
 
-			except, perFamily := "udp dport != 443", 2
+			perFamily := 2
 			parents := []string{routeNftBlockFwd + " jump ", routeNftBlockOut + " jump "}
 			if engine == backendIPTables {
-				except, perFamily = "! --dport 443", 1
+				perFamily = 1
 				parents = []string{"-I FORWARD 1 -j ", "-A OUTPUT -j "}
 			}
 
 			pre := chainRuleLines(*emitted, st.chainPre)
+			pass := quicPassRules(pre)
 			udp := quicTProxyRules(pre, "udp")
 			for _, sn := range []string{st.setV4, st.setV6} {
-				if n := countLinesWith(udp, sn); n != perFamily {
-					t.Errorf("expected %d UDP TPROXY rule(s) for %s, got %d:\n%s", perFamily, sn, n, strings.Join(udp, "\n"))
+				if n := countLinesWith(pass, sn); n != perFamily {
+					t.Errorf("expected %d rule(s) ending %s for UDP 443 to %s, got %d; without them the UDP TPROXY rule or a later proxy set takes the QUIC this set refuses:\n%s",
+						perFamily, st.chainPre, sn, n, strings.Join(pre, "\n"))
+				}
+				passAt := indexOfLine(pre, func(l string) bool { return strings.Contains(l, sn) && len(quicPassRules([]string{l})) == 1 })
+				udpAt := indexOfLine(pre, func(l string) bool { return strings.Contains(l, sn) && len(quicTProxyRules([]string{l}, "udp")) == 1 })
+				if udpAt < 0 || passAt > udpAt {
+					t.Errorf("for %s the UDP 443 rule must precede the UDP TPROXY rule (443 at %d, TPROXY at %d):\n%s", sn, passAt, udpAt, strings.Join(pre, "\n"))
 				}
 			}
 			for _, line := range udp {
-				if !strings.Contains(line, except) {
-					t.Errorf("the UDP TPROXY rule still diverts QUIC to the upstream, so it never reaches the reject rule: %s", line)
+				if strings.Contains(line, "dport") {
+					t.Errorf("the UDP TPROXY rule needs no port match, the rule before it already took UDP 443: %s", line)
 				}
 			}
 			tcp := quicTProxyRules(pre, "tcp")
@@ -152,7 +178,7 @@ func TestABlockQUICProxySetKeepsUDP443OutOfItsTProxyRules(t *testing.T) {
 
 			for _, line := range chainRuleLines(*emitted, st.chainOut) {
 				if strings.Contains(line, "udp") {
-					t.Errorf("%s marks only the router's own TCP for the upstream; a UDP rule here needs the same port 443 exception as %s: %s", st.chainOut, st.chainPre, line)
+					t.Errorf("%s marks only the router's own TCP for the upstream; a UDP rule here needs the same port 443 stop as %s: %s", st.chainOut, st.chainPre, line)
 				}
 			}
 		})
@@ -174,7 +200,8 @@ func TestAUDPProxySetWithoutBlockQUICSendsAllItsUDPUpstream(t *testing.T) {
 				t.Fatalf("routeEnsureProxyRule: %v", err)
 			}
 
-			udp := quicTProxyRules(chainRuleLines(*emitted, st.chainPre), "udp")
+			pre := chainRuleLines(*emitted, st.chainPre)
+			udp := quicTProxyRules(pre, "udp")
 			if len(udp) == 0 {
 				t.Fatal("no UDP TPROXY rule for a set that routes UDP through the upstream")
 			}
@@ -183,8 +210,36 @@ func TestAUDPProxySetWithoutBlockQUICSendsAllItsUDPUpstream(t *testing.T) {
 					t.Errorf("with Block QUIC off the set's QUIC goes to the upstream with the rest of its UDP: %s", line)
 				}
 			}
+			if pass := quicPassRules(pre); len(pass) != 0 {
+				t.Errorf("with Block QUIC off nothing may stop the set's QUIC ahead of the upstream: %v", pass)
+			}
 			if n := countLinesWith(*emitted, st.chainQUIC); n != 0 {
 				t.Errorf("a set that refuses no QUIC built or touched %s %d time(s)", st.chainQUIC, n)
+			}
+		})
+	}
+}
+
+func TestAProxySetWithUDPOffKeepsItsQUICFromLaterSets(t *testing.T) {
+	for _, engine := range []string{backendNFTables, backendIPTables} {
+		t.Run(engine, func(t *testing.T) {
+			localGuardReset(t)
+			emitted := captureProxyRuleArgv(t)
+			stubBinaries(t, backendIPTables, backendIP6Tables)
+
+			cfg := v4OnlyConfig()
+			set := quicTestSet(false, false)
+			st := quicTestState(set, true)
+			if err := routeEnsureProxyRule(quicTestBackend(engine), cfg, set, st, nil); err != nil {
+				t.Fatalf("routeEnsureProxyRule: %v", err)
+			}
+
+			pre := chainRuleLines(*emitted, st.chainPre)
+			if udp := quicTProxyRules(pre, "udp"); len(udp) != 0 {
+				t.Errorf("a set with UDP off the upstream diverts no UDP: %v", udp)
+			}
+			if pass := quicPassRules(pre); len(pass) == 0 {
+				t.Errorf("a set that refuses its QUIC ends %s for UDP 443 to its addresses, or a later set that routes UDP upstream takes it:\n%s", st.chainPre, strings.Join(pre, "\n"))
 			}
 		})
 	}

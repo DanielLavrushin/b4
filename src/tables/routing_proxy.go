@@ -385,25 +385,27 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	legacy := isLegacyIptBackend(be)
 
 	udp := set.Routing.Upstream.UDP
-	udpExcept := 0
-	if udp && st.quicReject {
-		udpExcept = quicRejectPort
-	}
 
 	switch be.name() {
 	case backendNFTables:
 		if cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleNft(st.chainPre, false, st.setV4, st.mark)
-			addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp", 0)
+			addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp")
+			if st.quicReject {
+				addQUICPassRuleNft(st.chainPre, false, st.setV4, sources)
+			}
 			if udp {
-				addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "udp", udpExcept)
+				addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "udp")
 			}
 		}
 		if cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleNft(st.chainPre, true, st.setV6, st.mark)
-			addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp", 0)
+			addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp")
+			if st.quicReject {
+				addQUICPassRuleNft(st.chainPre, true, st.setV6, sources)
+			}
 			if udp {
-				addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "udp", udpExcept)
+				addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "udp")
 			}
 		}
 		if !sourceScoped {
@@ -413,9 +415,12 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		proxyIptPreflight(legacy)
 		if cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleIpt(false, st.chainPre, st.setV4, st.mark, legacy)
-			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp", 0)
+			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp")
+			if st.quicReject {
+				addQUICPassRuleIpt(false, st.chainPre, st.setV4, sources, legacy)
+			}
 			if udp {
-				addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "udp", udpExcept)
+				addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "udp")
 			}
 			if !sourceScoped {
 				addProxyOutputMarkRuleIpt(false, st.chainOut, st.setV4, st.mark, legacy)
@@ -423,9 +428,12 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		}
 		if cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleIpt(true, st.chainPre, st.setV6, st.mark, legacy)
-			addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp", 0)
+			addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp")
+			if st.quicReject {
+				addQUICPassRuleIpt(true, st.chainPre, st.setV6, sources, legacy)
+			}
 			if udp {
-				addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "udp", udpExcept)
+				addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "udp")
 			}
 			if !sourceScoped {
 				addProxyOutputMarkRuleIpt(true, st.chainOut, st.setV6, st.mark, legacy)
@@ -531,6 +539,15 @@ func routeCleanupQUICReject(be routeBackend, st routeState) {
 }
 
 func addQUICRejectRuleNft(chain string, v6 bool, setName string, sources []string) {
+	addQUICRuleNft("routing: add quic reject "+chain, chain, v6, setName, sources,
+		"reject", "with", "icmpx", "type", "port-unreachable")
+}
+
+func addQUICPassRuleNft(chain string, v6 bool, setName string, sources []string) {
+	addQUICRuleNft("routing: add quic pass "+chain, chain, v6, setName, sources, "accept")
+}
+
+func addQUICRuleNft(op, chain string, v6 bool, setName string, sources []string, verdict ...string) {
 	emit := func(sn, src string) {
 		args := []string{"nft", "add", "rule", "inet", routeNftTable, chain}
 		if src != "" {
@@ -541,9 +558,8 @@ func addQUICRejectRuleNft(chain string, v6 bool, setName string, sources []strin
 		} else {
 			args = append(args, "ip", "protocol", "udp", "ip", "daddr", "@"+sn)
 		}
-		args = append(args, "udp", "dport", fmt.Sprintf("%d", quicRejectPort),
-			"reject", "with", "icmpx", "type", "port-unreachable")
-		runLogged("routing: add quic reject "+chain, args...)
+		args = append(args, "udp", "dport", fmt.Sprintf("%d", quicRejectPort))
+		runLogged(op, append(args, verdict...)...)
 	}
 
 	for _, sn := range []string{setName, routeNftDynSet(setName)} {
@@ -577,24 +593,32 @@ func addQUICBypassRuleIpt(chain string, mark uint32, legacy bool) {
 }
 
 func addQUICRejectRuleIpt(v6 bool, chain, setName string, sources []string, legacy bool) {
-	cmd := iptCmdFor(v6, legacy)
-	if !hasBinary(cmd) {
-		return
-	}
 	icmpReject := "icmp-port-unreachable"
 	if v6 {
 		icmpReject = "icmp6-port-unreachable"
 	}
+	addQUICRuleIpt("routing: add quic reject "+chain, v6, "filter", chain, setName, sources, legacy,
+		"-j", "REJECT", "--reject-with", icmpReject)
+}
+
+func addQUICPassRuleIpt(v6 bool, chain, setName string, sources []string, legacy bool) {
+	addQUICRuleIpt("routing: add quic pass "+chain, v6, "mangle", chain, setName, sources, legacy, "-j", "ACCEPT")
+}
+
+func addQUICRuleIpt(op string, v6 bool, table, chain, setName string, sources []string, legacy bool, target ...string) {
+	cmd := iptCmdFor(v6, legacy)
+	if !hasBinary(cmd) {
+		return
+	}
 
 	emit := func(src string) {
-		args := []string{cmd, "-w", "-t", "filter", "-A", chain}
+		args := []string{cmd, "-w", "-t", table, "-A", chain}
 		if src != "" {
 			args = append(args, "-i", src)
 		}
 		args = append(args, "-p", "udp", "--dport", fmt.Sprintf("%d", quicRejectPort),
-			"-m", "set", "--match-set", setName, "dst",
-			"-j", "REJECT", "--reject-with", icmpReject)
-		runLogged("routing: add quic reject "+chain, args...)
+			"-m", "set", "--match-set", setName, "dst")
+		runLogged(op, append(args, target...)...)
 	}
 
 	if len(sources) == 0 {
@@ -997,7 +1021,7 @@ func removeProxyInputAccept(be routeBackend, mark uint32) {
 	}
 }
 
-func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, port int, sources []string, proto string, exceptDPort int) {
+func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, port int, sources []string, proto string) {
 	markHex := fmt.Sprintf("0x%x", mark)
 	portStr := fmt.Sprintf(":%d", port)
 
@@ -1006,17 +1030,23 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 		if src != "" {
 			args = append(args, "iifname", fmt.Sprintf("%q", src))
 		}
-		family := "ip"
 		if v6 {
-			family = "ip6"
-			args = append(args, "meta", "l4proto", proto, "ip6", "daddr", "@"+sn)
+			args = append(args,
+				"meta", "l4proto", proto,
+				"ip6", "daddr", "@"+sn,
+				"meta", "mark", "set", markHex,
+				"tproxy", "ip6", "to", portStr,
+				"accept",
+			)
 		} else {
-			args = append(args, "ip", "protocol", proto, "ip", "daddr", "@"+sn)
+			args = append(args,
+				"ip", "protocol", proto,
+				"ip", "daddr", "@"+sn,
+				"meta", "mark", "set", markHex,
+				"tproxy", "ip", "to", portStr,
+				"accept",
+			)
 		}
-		if exceptDPort > 0 {
-			args = append(args, proto, "dport", "!=", fmt.Sprintf("%d", exceptDPort))
-		}
-		args = append(args, "meta", "mark", "set", markHex, "tproxy", family, "to", portStr, "accept")
 		runLogged("routing: add tproxy rule "+chain, append([]string{"nft"}, args...)...)
 	}
 
@@ -1031,7 +1061,7 @@ func addProxyTProxyRuleNft(chain string, v6 bool, setName string, mark uint32, p
 	}
 }
 
-func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int, sources []string, legacy bool, proto string, exceptDPort int) {
+func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int, sources []string, legacy bool, proto string) {
 	cmd := backendIPTables
 	if v6 {
 		cmd = backendIP6Tables
@@ -1052,9 +1082,6 @@ func addProxyTProxyRuleIpt(v6 bool, chain, setName string, mark uint32, port int
 		args := []string{cmd, "-w", "-t", "mangle", "-A", chain, "-p", proto}
 		if src != "" {
 			args = append(args, "-i", src)
-		}
-		if exceptDPort > 0 {
-			args = append(args, "!", "--dport", fmt.Sprintf("%d", exceptDPort))
 		}
 		args = append(args,
 			"-m", "set", "--match-set", setName, "dst",

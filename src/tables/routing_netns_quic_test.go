@@ -28,6 +28,11 @@ const (
 	quicNsUnmatched = "198.18.47.8"
 	quicNsSTUN      = 3478
 	quicNsSetID     = "netns-quic-proxy"
+	quicNsLaterID   = "netns-quic-later"
+	quicNsLAN2      = "b4qd"
+	quicNsLAN2Peer  = "b4qdn"
+	quicNsLAN2Rtr   = "10.201.23.1"
+	quicNsClient2   = "10.201.23.100"
 )
 
 type quicNsEcho struct {
@@ -134,10 +139,10 @@ func quicNsTCP(from *gwNode, host string, port int, msg string) string {
 	return "reply=" + string(buf[:size])
 }
 
-func quicNsDiverted(s *netnsSockets, msg string) bool {
+func quicNsDiverted(s *netnsSockets, key, msg string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, item := range s.udp["tproxy"] {
+	for _, item := range s.udp[key] {
 		if strings.HasPrefix(item, msg+"@") {
 			return true
 		}
@@ -145,17 +150,23 @@ func quicNsDiverted(s *netnsSockets, msg string) bool {
 	return false
 }
 
-func quicNsRig(t *testing.T) (client, inet *gwNode) {
+func quicNsAttachClient(t *testing.T, routerSide, nodeSide, routerIP, clientIP string) (*gwNode, string) {
+	t.Helper()
+	n := gwStartNode(t)
+	mac := n.attach(t, routerSide, nodeSide)
+	netnsRun(t, "ip", "addr", "add", routerIP+"/24", "dev", routerSide)
+	netnsRun(t, "ip", "link", "set", routerSide, "up")
+	n.run(t, "ip", "addr", "add", clientIP+"/24", "dev", nodeSide)
+	n.run(t, "ip", "route", "add", "default", "via", routerIP)
+	return n, mac
+}
+
+func quicNsRig(t *testing.T) (client, inet *gwNode, clientMAC string) {
 	t.Helper()
 	gwKeepSysctl(t, "net/ipv4/ip_forward", "1")
-	client, inet = gwStartNode(t), gwStartNode(t)
+	client, clientMAC = quicNsAttachClient(t, quicNsLAN, quicNsLANPeer, quicNsLANRouter, quicNsClient)
 
-	client.attach(t, quicNsLAN, quicNsLANPeer)
-	netnsRun(t, "ip", "addr", "add", quicNsLANRouter+"/24", "dev", quicNsLAN)
-	netnsRun(t, "ip", "link", "set", quicNsLAN, "up")
-	client.run(t, "ip", "addr", "add", quicNsClient+"/24", "dev", quicNsLANPeer)
-	client.run(t, "ip", "route", "add", "default", "via", quicNsLANRouter)
-
+	inet = gwStartNode(t)
 	inet.attach(t, quicNsWAN, quicNsWANPeer)
 	netnsRun(t, "ip", "addr", "add", quicNsWANRouter+"/24", "dev", quicNsWAN)
 	netnsRun(t, "ip", "link", "set", quicNsWAN, "up")
@@ -165,7 +176,7 @@ func quicNsRig(t *testing.T) (client, inet *gwNode) {
 		inet.run(t, "ip", "addr", "add", ip+"/32", "dev", "lo")
 	}
 	inet.run(t, "ip", "route", "add", "default", "via", quicNsWANRouter)
-	return client, inet
+	return client, inet, clientMAC
 }
 
 func quicNsHostFirewall(t *testing.T, engine string) {
@@ -233,7 +244,7 @@ func netnsBlockQUICOnAUDPProxySet(t *testing.T, engine string) {
 	if engine == backendNFTables && !hasBinary("nft") {
 		t.Skip("nft is not installed")
 	}
-	client, inet := quicNsRig(t)
+	client, inet, _ := quicNsRig(t)
 	quicNsHostFirewall(t, engine)
 
 	routeEngine = nil
@@ -261,12 +272,12 @@ func netnsBlockQUICOnAUDPProxySet(t *testing.T, engine string) {
 	matchedSTUN := quicNsServeEcho(t, inet, quicNsMatched, quicNsSTUN)
 	quicNsServeEcho(t, inet, quicNsUnmatched, 443)
 
-	except := "udp dport != 443"
+	pass := "udp dport 443 accept"
 	if engine == backendIPTables {
-		except = "! --dport 443"
+		pass = "--dport 443 -m set --match-set " + st.setV4 + " dst -j ACCEPT"
 	}
-	if pre := netnsPreChain(t, engine, st.chainPre); !strings.Contains(pre, except) {
-		t.Errorf("the set blocks QUIC, yet its UDP TPROXY rule carries no exception for UDP 443:\n%s", pre)
+	if pre := netnsPreChain(t, engine, st.chainPre); !strings.Contains(pre, pass) {
+		t.Errorf("the set blocks QUIC, yet its chain does not stop UDP 443 ahead of the UDP TPROXY rule:\n%s", pre)
 	}
 
 	if got := quicNsTCP(client, quicNsMatched, 443, "web"); got != "reply=tproxy:web" {
@@ -274,7 +285,7 @@ func netnsBlockQUICOnAUDPProxySet(t *testing.T, engine string) {
 	}
 	if got := quicNsUDP(client, quicNsMatched, 443, "quic"); got != "refused" {
 		quicNsLogState(t, engine)
-		t.Errorf("client QUIC to a matched address: %s, want ICMP port unreachable so the browser falls back to TCP at once, also behind a router firewall that accepts LAN traffic first (diverted to the upstream: %v)", got, quicNsDiverted(s, "quic"))
+		t.Errorf("client QUIC to a matched address: %s, want ICMP port unreachable so the browser falls back to TCP at once, also behind a router firewall that accepts LAN traffic first (diverted to the upstream: %v)", got, quicNsDiverted(s, "tproxy", "quic"))
 	}
 	got := quicNsUDP(client, quicNsMatched, quicNsSTUN, "stun")
 	if !s.got("udp", "tproxy", "stun@"+net.JoinHostPort(quicNsMatched, strconv.Itoa(quicNsSTUN))) {
@@ -343,4 +354,84 @@ func TestNetnsBlockQUICOnAProxySetThatRoutesUDPUpstream(t *testing.T) {
 
 func TestNetnsBlockQUICOnAProxySetThatRoutesUDPUpstreamNft(t *testing.T) {
 	netnsBlockQUICOnAUDPProxySet(t, backendNFTables)
+}
+
+func netnsBlockQUICHoldsAgainstALaterProxySet(t *testing.T, engine string) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	if engine == backendNFTables && !hasBinary("nft") {
+		t.Skip("nft is not installed")
+	}
+	client, inet, mac := quicNsRig(t)
+	other, _ := quicNsAttachClient(t, quicNsLAN2, quicNsLAN2Peer, quicNsLAN2Rtr, quicNsClient2)
+	quicNsHostFirewall(t, engine)
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := quicNsConfig(engine)
+	cfg.Sets[0].Targets.SourceDevices = []string{mac}
+	later := config.NewSetConfig()
+	later.Id = quicNsLaterID
+	later.Name = "netnsquiclater"
+	later.Enabled = true
+	later.Routing.Enabled = true
+	later.Routing.Mode = config.RoutingModeProxy
+	later.Routing.Upstream.Host = "127.0.0.1"
+	later.Routing.Upstream.Port = 31903
+	later.Routing.Upstream.UDP = true
+	later.Targets.IPs = []string{quicNsMatched}
+	later.Targets.IpsToMatch = []string{quicNsMatched}
+	cfg.Sets = append(cfg.Sets, &later)
+
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+	RoutingSyncConfig(cfg)
+	defer RoutingClearAll()
+
+	first, ok := routeRuleCache[quicNsSetID]
+	second, ok2 := routeRuleCache[quicNsLaterID]
+	if !ok || !ok2 {
+		t.Fatalf("both proxy sets must install, got %v", routeRuleCache)
+	}
+	firstPort, _ := portFromState(first)
+	secondPort, _ := portFromState(second)
+	s := &netnsSockets{tcp: map[string][]string{}, udp: map[string][]string{}}
+	netnsServeUDP(t, netnsTransparentUDP(t, firstPort), "first", s, true)
+	netnsServeUDP(t, netnsTransparentUDP(t, secondPort), "second", s, true)
+	direct := quicNsServeEcho(t, inet, quicNsMatched, 443)
+
+	dst443 := net.JoinHostPort(quicNsMatched, "443")
+	dstSTUN := net.JoinHostPort(quicNsMatched, strconv.Itoa(quicNsSTUN))
+
+	if got := quicNsUDP(client, quicNsMatched, 443, "quic"); got != "refused" {
+		quicNsLogState(t, engine)
+		t.Errorf("QUIC from a device of the set that blocks it: %s, want it refused; taken by the later set: %v, left directly: %v",
+			got, quicNsDiverted(s, "second", "quic"), len(direct.got()) > 0)
+	}
+	got := quicNsUDP(client, quicNsMatched, quicNsSTUN, "stun")
+	if !s.got("udp", "first", "stun@"+dstSTUN) {
+		t.Errorf("STUN from a device of the first set (%s) must reach that set's upstream", got)
+	}
+	got = quicNsUDP(other, quicNsMatched, 443, "quic2")
+	if !s.got("udp", "second", "quic2@"+dst443) {
+		t.Errorf("QUIC from a device outside the blocking set (%s) must still reach the later set's upstream", got)
+	}
+	got = quicNsUDP(other, quicNsMatched, quicNsSTUN, "stun2")
+	if !s.got("udp", "second", "stun2@"+dstSTUN) {
+		t.Errorf("STUN from a device outside the first set (%s) must reach the later set's upstream", got)
+	}
+	if !RoutingRulesPresent(cfg) {
+		t.Error("the monitor finds the rules of two overlapping proxy sets incomplete")
+	}
+}
+
+func TestNetnsBlockQUICHoldsAgainstALaterProxySet(t *testing.T) {
+	netnsBlockQUICHoldsAgainstALaterProxySet(t, backendIPTables)
+}
+
+func TestNetnsBlockQUICHoldsAgainstALaterProxySetNft(t *testing.T) {
+	netnsBlockQUICHoldsAgainstALaterProxySet(t, backendNFTables)
 }

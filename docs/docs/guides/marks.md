@@ -363,9 +363,11 @@ port.
 link-local addresses. Of the packets to the set's destinations, it then marks TCP packets of
 connections already held by a transparent socket and accepts them, and hands the other TCP
 packets, and UDP ones when **Route UDP through upstream** is on, to TPROXY with the set's
-mark; a set limited to source interfaces hands over only packets arriving on them. With
-**Block QUIC (force TCP)** on as well, UDP to port 443 is not handed over, and the set's
-QUIC refusal rejects it. Source devices limit this chain as they do for
+mark; a set limited to source interfaces hands over only packets arriving on them. When the
+set refuses QUIC, with **Route UDP through upstream** off or **Block QUIC (force TCP)** on,
+the chain accepts its UDP to port 443 instead, so no later set's chain takes it and the QUIC
+refusal rejects it; on iptables that accept also skips every later rule in mangle
+`PREROUTING`. Source devices limit this chain as they do for
 [sets routed through an interface](#sets-routed-through-an-interface). iptables writes the
 mark under the mask `0x1027fff`; nftables writes the whole mark.
 
