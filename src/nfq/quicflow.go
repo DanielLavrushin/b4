@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"bytes"
+	"encoding/binary"
 	"sync"
 	"time"
 
@@ -114,7 +115,7 @@ func (c *quicFlowCache) Lookup(connKey string, payload []byte) (string, bool) {
 		if !bytes.Equal(dcid, odcid) {
 			if _, ok := quic.DecryptInitial(odcid, payload); !ok {
 				if _, own := quic.DecryptInitial(dcid, payload); own {
-					c.forgetFlow(connKey, flow)
+					c.takeOverFlow(connKey, flow, dcid)
 				}
 				return "", false
 			}
@@ -154,6 +155,20 @@ func (c *quicFlowCache) forgetFlow(connKey string, flow *quicFlow) {
 	}
 }
 
+func (c *quicFlowCache) takeOverFlow(connKey string, flow *quicFlow, odcid []byte) {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if current, ok := c.flows[connKey]; !ok || current != flow {
+		return
+	}
+	carried := 0
+	if now.Sub(flow.lastSeen) <= quicFlowShared {
+		carried = flow.coalesced
+	}
+	c.flows[connKey] = &quicFlow{odcid: bytes.Clone(odcid), coalesced: carried, lastSeen: now}
+}
+
 func (c *quicFlowCache) evictLocked(now time.Time) {
 	var oldestKey string
 	var oldestAt time.Time
@@ -185,11 +200,30 @@ func (c *quicFlowCache) Cleanup() {
 }
 
 func looksLikeWireGuard(payload []byte) bool {
-	return len(payload) >= 4 && payload[0] >= 1 && payload[0] <= 4 && payload[1] == 0 && payload[2] == 0 && payload[3] == 0
+	if len(payload) < 4 || payload[1] != 0 || payload[2] != 0 || payload[3] != 0 {
+		return false
+	}
+	switch payload[0] {
+	case 1:
+		return len(payload) == 148
+	case 2:
+		return len(payload) == 92
+	case 3:
+		return len(payload) == 64
+	case 4:
+		return len(payload) >= 32
+	}
+	return false
 }
 
 func looksLikeDTLS(payload []byte) bool {
-	return len(payload) >= 3 && payload[0] >= 0x14 && payload[0] <= 0x17 && payload[1] == 0xfe
+	if len(payload) < 13 || payload[0] < 0x14 || payload[0] > 0x17 || payload[1] != 0xfe {
+		return false
+	}
+	if payload[2] != 0xfd && payload[2] != 0xff {
+		return false
+	}
+	return int(binary.BigEndian.Uint16(payload[11:13]))+13 <= len(payload)
 }
 
 func mayBelongToAQUICFlow(payload []byte, isVoiceMedia bool) bool {

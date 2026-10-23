@@ -752,3 +752,60 @@ func TestInterleavedQUICConnectionsShareTheCoalesceBudgetOfTheirTuple(t *testing
 		t.Errorf("connections sharing one tuple must not reset each other's limit, so this repeat goes out unchanged: got %v, want accept", v)
 	}
 }
+
+func TestGreasedShortHeadersThatMimicOtherProtocolsStillBelongToTheirFlow(t *testing.T) {
+	wireguardPrefix := append(append([]byte{0x01}, []byte{0, 0, 0}...), make([]byte, 45)...)
+	dtlsPrefix := append(append([]byte{0x16}, []byte{0xfe, 0x00}...), make([]byte, 46)...)
+
+	for _, c := range []struct {
+		name    string
+		payload []byte
+	}{
+		{"a first byte and connection id that start like WireGuard", wireguardPrefix},
+		{"a first byte and connection id that start like DTLS", dtlsPrefix},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if !mayBelongToAQUICFlow(c.payload, false) {
+				t.Fatalf("%s is taken for another protocol, so a greased QUIC packet would lose its flow", c.name)
+			}
+
+			dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+			dropper.Targets.DomainOnly = false
+			w := newQUICFlowWorker(t, &dropper)
+
+			own := buildQUICInitialWithSNI(t, []byte{0xD5, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+			if v := sendQUIC(w, own, 53601); v != engine.VerdictDropFlow {
+				t.Fatalf("the set's own name teaches it the address, got %v", v)
+			}
+			unrelated := newSplitQUICHello(t, []byte{0xD6, 1, 2, 3, 4, 5, 6, 7}, []byte{0xD7, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+			sendQUIC(w, unrelated.first, 53602)
+			if v := sendQUIC(w, unrelated.completing, 53602); v != engine.VerdictAccept {
+				t.Fatalf("the unrelated name matches no set, got %v", v)
+			}
+			if v := sendQUIC(w, c.payload, 53602); v != engine.VerdictAccept {
+				t.Errorf("a greased packet of the unrelated flow: got %v, want accept", v)
+			}
+		})
+	}
+}
+
+func TestAnInterleavedSplitHelloKeepsTheCoalesceBudgetOfItsTuple(t *testing.T) {
+	set := newDomainOnlyQUICSet(config.UDPModeCoalesce)
+	w := newQUICFlowWorker(t, &set)
+
+	first := buildQUICInitialWithSNI(t, []byte{0xE7, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	other := newSplitQUICHello(t, []byte{0xE8, 1, 2, 3, 4, 5, 6, 7}, []byte{0xE9, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+
+	if v := sendQUIC(w, first, 53701); v != engine.VerdictDrop {
+		t.Fatalf("the first connection's ClientHello must be coalesced, got %v", v)
+	}
+	if v := sendQUIC(w, other.first, 53701); v != engine.VerdictAccept {
+		t.Fatalf("another connection's incomplete ClientHello carries no name, got %v", v)
+	}
+	if v := sendQUIC(w, first, 53701); v != engine.VerdictDrop {
+		t.Fatalf("the first connection's second attempt must be coalesced, got %v", v)
+	}
+	if v := sendQUIC(w, first, 53701); v != engine.VerdictAccept {
+		t.Errorf("an interleaved connection must not reset the limit, so this attempt goes out unchanged: got %v, want accept", v)
+	}
+}
