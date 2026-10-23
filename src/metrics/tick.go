@@ -148,6 +148,7 @@ func (m *MetricsCollector) tick() {
 		ts.lastSlow = mono
 		ct, ctOK = m.sampler.conntrack()
 		replaced = loadBinaryReplaced()
+		m.dev.resolve()
 	}
 
 	m.st.mu.Lock()
@@ -218,6 +219,7 @@ func (m *MetricsCollector) ResetCounters() {
 	m.bl.reset()
 	m.dom.reset()
 	m.addr.reset()
+	m.dev.reset()
 	m.st.mu.Lock()
 	m.st.v.statsSince = mono
 	m.st.mu.Unlock()

@@ -278,20 +278,20 @@ func (l *Listener) Active() int64 {
 	return l.activeConns.Load()
 }
 
-func (l *Listener) countConnection() {
+func (l *Listener) countConnection(from metrics.Device) {
 	if l.SetID == config.TelegramBridgeSetID {
 		return
 	}
-	metrics.GetMetricsCollector().CountConnection(l.SetID)
+	metrics.GetMetricsCollector().CountConnection(l.SetID, from)
 }
 
-func (l *Listener) countTarget(host string, ip net.IP) {
+func (l *Listener) countTarget(from metrics.Device, host string, ip net.IP) {
 	if l.SetID == config.TelegramBridgeSetID {
 		return
 	}
 	mc := metrics.GetMetricsCollector()
 	if host != "" {
-		mc.RecordDomain(host, l.SetID)
+		mc.RecordDomain(host, l.SetID, from)
 		return
 	}
 	if addr, ok := netip.AddrFromSlice(ip); ok {
@@ -322,7 +322,8 @@ func (l *Listener) handle(client net.Conn) {
 	l.activeConns.Add(1)
 	defer l.activeConns.Add(-1)
 	defer client.Close()
-	l.countConnection()
+	from := metrics.DeviceOf(client.RemoteAddr())
+	l.countConnection(from)
 
 	tcpAddr, ok := client.LocalAddr().(*net.TCPAddr)
 	if !ok || tcpAddr == nil || tcpAddr.IP == nil {
@@ -405,12 +406,12 @@ func (l *Listener) handle(client net.Conn) {
 	if domain := target.logDomain(); domain != "" || len(target.sniffed.prefix) > 0 {
 		log.LogConnectionStr("TCP", l.SetName, domain, src, "", dest,
 			"", config.TLSVersionString(target.sniffed.tlsVersion), "proxy")
-		l.countTarget(domain, origIP)
+		l.countTarget(from, domain, origIP)
 	} else {
 		namer = &proxyNamer{log: func(host string, tlsVersion uint16) {
 			log.LogConnectionStr("TCP", l.SetName, host, src, "", dest,
 				"", config.TLSVersionString(tlsVersion), "proxy")
-			l.countTarget(host, origIP)
+			l.countTarget(from, host, origIP)
 		}}
 		first := time.AfterFunc(max(0, sniffFirstWait-time.Since(accepted)), func() { namer.deadline(client) })
 		defer first.Stop()

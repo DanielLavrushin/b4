@@ -421,12 +421,13 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 	s.logConnection("TCP", conn.RemoteAddr().String(), dest, "socks5")
 	if viaSet != "" {
 		mc := metrics.GetMetricsCollector()
-		mc.CountConnection(viaSet)
+		from := metrics.DeviceOf(conn.RemoteAddr())
+		mc.CountConnection(viaSet, from)
 		if host, _, err := net.SplitHostPort(dest); err == nil {
 			if addr, err := netip.ParseAddr(host); err == nil {
 				mc.RecordAddress(addr, viaSet)
 			} else {
-				mc.RecordDomain(host, viaSet)
+				mc.RecordDomain(host, viaSet, from)
 			}
 		}
 	}

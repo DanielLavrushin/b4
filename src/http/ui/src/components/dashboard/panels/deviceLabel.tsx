@@ -1,0 +1,42 @@
+import type { ReactNode } from "react";
+import { Box } from "@mui/material";
+import { useTranslation } from "react-i18next";
+import { fonts } from "@design";
+import type { DeviceInfo } from "@b4.devices";
+import { resolveDeviceName } from "@utils";
+
+export interface DeviceLabel {
+  name: string;
+  meta?: string;
+  tip?: ReactNode;
+}
+
+export function DeviceTip({ mac, vendor }: { mac: string; vendor: string }) {
+  const { t } = useTranslation();
+  return (
+    <Box sx={{ fontSize: 12, lineHeight: 1.5 }}>
+      <Box sx={{ fontFamily: fonts.mono, fontSize: 11 }}>
+        {t("dashboard.blocked.mac", { value: mac })}
+      </Box>
+      {vendor && <Box>{vendor}</Box>}
+    </Box>
+  );
+}
+
+export function macDeviceLabel(mac: string, device: DeviceInfo | undefined): DeviceLabel {
+  const name = device ? resolveDeviceName(device) : mac;
+  const vendor =
+    device?.vendor && device.vendor !== "Private" && !name.includes(device.vendor)
+      ? device.vendor
+      : "";
+  const showsMac = name.includes(mac);
+  const meta = device?.ip || (showsMac ? undefined : mac);
+  return {
+    name,
+    meta,
+    tip: showsMac || meta === mac ? undefined : <DeviceTip mac={mac} vendor={vendor} />,
+  };
+}
+
+export const deviceTrafficLink = (key: string): string =>
+  `/traffic?device=${encodeURIComponent(key)}`;

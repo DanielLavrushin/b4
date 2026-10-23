@@ -56,7 +56,7 @@ func TestResetCountersTouchesCountersOnly(t *testing.T) {
 
 	m.ObserveFlow(flowKey(1), "video")
 	m.ObserveFlow(flowKey(2), "")
-	m.RecordBlockedFlow(flowKey(3), "ads", "ads.example", "aa:bb:cc:dd:ee:ff")
+	m.RecordBlockedFlow(flowKey(3), "ads", "ads.example", Device{MAC: "aa:bb:cc:dd:ee:ff"})
 	m.RecordBlockedDNS("ads", "ads.example", "aa:bb:cc:dd:ee:ff")
 	m.RecordRSTDrop()
 	m.RecordEscalation()

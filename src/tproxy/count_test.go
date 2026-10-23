@@ -29,11 +29,11 @@ func TestListenerCountsEachAcceptedConnectionForItsSet(t *testing.T) {
 func TestTelegramBridgeConnectionsAreNotCountedAsASet(t *testing.T) {
 	mc := metrics.GetMetricsCollector()
 	before := mc.Totals()
-	(&Listener{SetID: config.TelegramBridgeSetID, MTProtoWS: true}).countConnection()
+	(&Listener{SetID: config.TelegramBridgeSetID, MTProtoWS: true}).countConnection(metrics.Device{})
 	if after := mc.Totals(); after.Conns != before.Conns {
 		t.Fatalf("the Telegram bridge is not a set and keeps its own counters, conns moved by %d", after.Conns-before.Conns)
 	}
-	(&Listener{SetID: "user-mtproto-ws", MTProtoWS: true}).countConnection()
+	(&Listener{SetID: "user-mtproto-ws", MTProtoWS: true}).countConnection(metrics.Device{})
 	if after := mc.Totals(); after.Conns != before.Conns+1 || after.ConnsInSets != before.ConnsInSets+1 {
 		t.Fatalf("a user set in Telegram WebSocket mode is counted like any proxy set: %+v -> %+v", before, after)
 	}

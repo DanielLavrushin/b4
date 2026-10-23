@@ -31,6 +31,7 @@ type flowEntry struct {
 }
 
 type flowSeen struct {
+	fresh   bool
 	blocked bool
 	named   bool
 	unnamed bool
@@ -91,10 +92,10 @@ func (f *flowState) init(capacity int, mono, off int64, cpu cpuSample) {
 }
 
 func (m *MetricsCollector) ObserveFlow(key FlowKey, setID string) {
-	m.ObserveFlowTo(key, netip.Addr{}, setID, "")
+	m.ObserveFlowTo(key, netip.Addr{}, setID, "", Device{})
 }
 
-func (m *MetricsCollector) ObserveFlowTo(key FlowKey, dst netip.Addr, setID, host string) {
+func (m *MetricsCollector) ObserveFlowTo(key FlowKey, dst netip.Addr, setID, host string, from Device) {
 	m.initOnce.Do(m.init)
 	now := m.tickMono.Load()
 	tick := m.tickN.Load()
@@ -106,8 +107,12 @@ func (m *MetricsCollector) ObserveFlowTo(key FlowKey, dst netip.Addr, setID, hos
 		flowSet = f.setID(seen.set)
 	}
 	f.mu.Unlock()
+	if seen.fresh {
+		m.dev.count(from, now)
+	}
 	if seen.named {
 		m.dom.note(host, flowSet, now)
+		m.dev.name(from, host)
 	}
 	if !dst.IsValid() {
 		return
@@ -120,9 +125,10 @@ func (m *MetricsCollector) ObserveFlowTo(key FlowKey, dst netip.Addr, setID, hos
 	}
 }
 
-func (m *MetricsCollector) RecordDomain(host, setID string) {
+func (m *MetricsCollector) RecordDomain(host, setID string, from Device) {
 	m.initOnce.Do(m.init)
 	m.dom.note(host, setID, m.tickMono.Load())
+	m.dev.name(from, host)
 }
 
 func (m *MetricsCollector) RecordAddress(dst netip.Addr, setID string) {
@@ -133,24 +139,28 @@ func (m *MetricsCollector) RecordAddress(dst netip.Addr, setID string) {
 	m.addr.record(dst, setID, m.tickMono.Load())
 }
 
-func (m *MetricsCollector) CountConnection(setID string) {
+func (m *MetricsCollector) CountConnection(setID string, from Device) {
 	m.initOnce.Do(m.init)
 	now := m.tickMono.Load()
 	f := &m.fl
 	f.mu.Lock()
 	f.addConn(f.setIndex(setID, now), now)
 	f.mu.Unlock()
+	m.dev.count(from, now)
 }
 
-func (m *MetricsCollector) RecordBlockedFlow(key FlowKey, setID, target, mac string) {
+func (m *MetricsCollector) RecordBlockedFlow(key FlowKey, setID, target string, from Device) {
 	m.initOnce.Do(m.init)
 	now := m.tickMono.Load()
 	f := &m.fl
 	f.mu.Lock()
 	seen := f.touch(key, setID, now, m.tickN.Load(), true, false)
 	f.mu.Unlock()
+	if seen.fresh {
+		m.dev.count(from, now)
+	}
 	if seen.blocked {
-		m.bl.note(target, mac, now)
+		m.bl.note(target, from.MAC, now)
 	}
 }
 
@@ -193,7 +203,7 @@ func (f *flowState) touch(key FlowKey, setID string, now int64, tick uint32, blo
 		flags |= flowNamed
 	}
 	f.insert(key, flowEntry{minSeq: f.minSeq, tenSeq: f.tenSeq, born: tick, set: idx, flags: flags, gen: f.gen}, now)
-	return flowSeen{blocked: block, named: named, unnamed: !named, set: idx}
+	return flowSeen{fresh: true, blocked: block, named: named, unnamed: !named, set: idx}
 }
 
 func (f *flowState) insert(key FlowKey, e flowEntry, now int64) {

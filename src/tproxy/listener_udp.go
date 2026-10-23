@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/socks5"
 )
 
@@ -142,8 +143,9 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 		} else {
 			l.udpSessions[key] = newSess
 			l.udpMu.Unlock()
-			l.countConnection()
-			l.countTarget(newSess.domain, dst.IP)
+			from := metrics.DeviceOf(src)
+			l.countConnection(from)
+			l.countTarget(from, newSess.domain, dst.IP)
 			go l.udpReplyLoop(key, newSess)
 			sess = newSess
 		}

@@ -3,6 +3,7 @@ import {
   ActivityPanel,
   AddressesPanel,
   BlockedPanel,
+  DevicesPanel,
   DomainsPanel,
   EscalationsPanel,
   EventsPanel,
@@ -55,6 +56,12 @@ export const DASHBOARD_PANELS: readonly PanelDescriptor[] = [
     titleKey: "dashboard.addresses.title",
     defaultSpan: 6,
     Component: AddressesPanel,
+  },
+  {
+    id: "devices",
+    titleKey: "dashboard.devices.title",
+    defaultSpan: 12,
+    Component: DevicesPanel,
   },
   {
     id: "escalations",

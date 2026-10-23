@@ -9,6 +9,8 @@ import type {
   B4Event,
   BlockedEntry,
   BlockedLists,
+  DeviceEntry,
+  DeviceList,
   EngineInfo,
   EngineMode,
   EngineState,
@@ -156,6 +158,20 @@ function topList(v: unknown): TopList | undefined {
   return { rev: num(v.rev), items: objects(v.items).map(topEntry) };
 }
 
+function deviceEntry(o: Obj): DeviceEntry {
+  return {
+    key: str(o.key),
+    count: num(o.count),
+    last: num(o.last),
+    domains: list(o.domains).filter((d): d is string => typeof d === "string" && d !== ""),
+  };
+}
+
+function deviceList(v: unknown): DeviceList | undefined {
+  if (!isObj(v)) return undefined;
+  return { rev: num(v.rev), items: objects(v.items).map(deviceEntry) };
+}
+
 function escalationList(v: unknown): EscalationList | undefined {
   if (!isObj(v)) return undefined;
   const items: EscalationEntry[] = objects(v.items).map((o) => ({
@@ -287,6 +303,8 @@ export function normalizeFrame(raw: unknown): MetricsFrame | null {
   if (domains) frame.top_domains = domains;
   const addresses = topList(raw.top_addresses);
   if (addresses) frame.top_addresses = addresses;
+  const devices = deviceList(raw.devices);
+  if (devices) frame.devices = devices;
   const escalations = escalationList(raw.escalations);
   if (escalations) frame.escalations = escalations;
   const events = eventLog(raw.events);
@@ -401,6 +419,12 @@ export function relabelFrame(frame: MetricsFrame, delta: number): MetricsFrame {
       items: shiftEntries(frame.top_addresses.items, delta),
     };
   }
+  if (frame.devices) {
+    out.devices = {
+      ...frame.devices,
+      items: shiftEntries(frame.devices.items, delta),
+    };
+  }
   if (frame.events) {
     out.events = {
       ...frame.events,
@@ -438,6 +462,9 @@ export function mergeFrame(prev: MetricsFrame | null, next: MetricsFrame): Metri
   const addresses = newerList(base.top_addresses, next.top_addresses);
   if (addresses) merged.top_addresses = addresses;
   else delete merged.top_addresses;
+  const devices = newerList(base.devices, next.devices);
+  if (devices) merged.devices = devices;
+  else delete merged.devices;
   const escalations = newerList(base.escalations, next.escalations);
   if (escalations) merged.escalations = escalations;
   else delete merged.escalations;
