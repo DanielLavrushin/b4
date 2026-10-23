@@ -16,6 +16,7 @@ export interface EnrichedGroup extends ConnectionGroup {
   asnId: string | null;
   asnName: string | null;
   deviceName: string;
+  deviceIp: string;
 }
 
 export interface EnrichedDevice extends DeviceSummary {
@@ -151,6 +152,7 @@ export function useConnectionGroups(
 
   return useMemo<GroupsState>(() => {
     if (!snapshot) return EMPTY_STATE;
+    const ipOf = new Map(snapshot.devices.map((d) => [d.mac, d.ip]));
     const groups: EnrichedGroup[] = snapshot.groups.map((g) => {
       const asn = g.destIp ? asnStorage.findAsnForIp(g.destIp) : null;
       return {
@@ -158,6 +160,7 @@ export function useConnectionGroups(
         asnId: asn?.id ?? null,
         asnName: asn?.name ?? null,
         deviceName: deviceMap[g.mac] ?? "",
+        deviceIp: ipOf.get(g.mac) ?? "",
       };
     });
     const devices: EnrichedDevice[] = snapshot.devices.map((d) => ({

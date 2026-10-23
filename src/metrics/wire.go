@@ -177,6 +177,7 @@ type TopList struct {
 
 type DeviceEntry struct {
 	Key     string   `json:"key"`
+	IP      string   `json:"ip,omitempty"`
 	Count   uint64   `json:"count"`
 	Last    int64    `json:"last"`
 	Domains []string `json:"domains,omitempty"`

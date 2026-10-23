@@ -23,18 +23,22 @@ export function DeviceTip({ mac, vendor }: { mac: string; vendor: string }) {
   );
 }
 
-export function macDeviceLabel(mac: string, device: DeviceInfo | undefined): DeviceLabel {
-  const name = device ? resolveDeviceName(device) : mac;
+export function macDeviceLabel(
+  mac: string,
+  device: DeviceInfo | undefined,
+  lastIp = "",
+): DeviceLabel {
+  const ip = device?.ip || lastIp;
+  const name = device ? resolveDeviceName({ ...device, ip }) : ip || mac;
   const vendor =
     device?.vendor && device.vendor !== "Private" && !name.includes(device.vendor)
       ? device.vendor
       : "";
-  const showsMac = name.includes(mac);
-  const meta = device?.ip || (showsMac ? undefined : mac);
+  const named = Boolean(device?.alias || device?.hostname);
   return {
     name,
-    meta,
-    tip: showsMac || meta === mac ? undefined : <DeviceTip mac={mac} vendor={vendor} />,
+    meta: (named && ip) || undefined,
+    tip: name.includes(mac) ? undefined : <DeviceTip mac={mac} vendor={vendor} />,
   };
 }
 

@@ -250,10 +250,12 @@ function ingest(lines: string[]): void {
     const idx = bucketIndex(p.timestamp, now);
     if (idx >= 0) g.buckets[idx] += 1;
 
+    const ip = stripPort(p.source);
     let d = devices.get(mac);
     if (!d) {
       d = {
         mac,
+        ip,
         packets: 0,
         groups: 0,
         lastSeen: p.timestamp,
@@ -262,6 +264,7 @@ function ingest(lines: string[]): void {
       devices.set(mac, d);
     }
     rotateBuckets(d, now);
+    if (ip && p.timestamp >= d.lastSeen) d.ip = ip;
     d.lastSeen = Math.max(d.lastSeen, p.timestamp);
     d.packets += 1;
     if (idx >= 0) d.buckets[idx] += 1;

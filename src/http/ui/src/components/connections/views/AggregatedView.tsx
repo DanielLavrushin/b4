@@ -49,7 +49,7 @@ const getGroupFieldValue = (g: EnrichedGroup, field: string): string => {
       return g.asnName?.toLowerCase() || "";
     case "alias":
     case "device":
-      return `${g.deviceName || ""} ${g.mac || ""}`.toLowerCase();
+      return `${g.deviceName || ""} ${g.deviceIp || ""} ${g.mac || ""}`.toLowerCase();
     case "domain":
       return g.domain.toLowerCase();
     case "destination":
@@ -74,6 +74,7 @@ const getGroupSearchableValues = (g: EnrichedGroup): (string | null)[] => [
   g.hostSet,
   g.ipSet,
   g.deviceName,
+  g.deviceIp,
   g.mac,
   g.protocol,
   g.tls,

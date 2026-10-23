@@ -41,7 +41,7 @@ interface DeviceRowProps {
 }
 
 function labelFor({ entry, device, routerName }: DeviceRowProps): DeviceLabel {
-  if (isMac(entry.key)) return macDeviceLabel(entry.key, device);
+  if (isMac(entry.key)) return macDeviceLabel(entry.key, device, entry.ip);
   if (routerName) return { name: routerName, meta: entry.key };
   return { name: entry.key };
 }

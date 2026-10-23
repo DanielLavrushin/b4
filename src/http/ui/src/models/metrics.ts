@@ -116,6 +116,7 @@ export interface TopList {
 
 export interface DeviceEntry {
   key: string;
+  ip: string;
   count: number;
   last: number;
   domains: string[];

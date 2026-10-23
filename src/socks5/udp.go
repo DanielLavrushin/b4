@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 )
 
 // handleUDPAssociate handles the SOCKS5 UDP ASSOCIATE command.
@@ -205,7 +206,7 @@ func (s *Server) handleUDPPacket(bindLn *net.UDPConn, srcAddr *net.UDPAddr, dest
 
 	go s.udpReadFromTarget(bindLn, targetNew, srcAddr, destUDP, connKey, conns)
 
-	s.logConnection("UDP", srcAddr.String(), dest, "socks5")
+	s.logConnection("UDP", srcAddr.String(), dest, metrics.DeviceOf(srcAddr).MAC, "socks5")
 
 	// Send initial data
 	if _, err := targetNew.Write(data); err != nil {

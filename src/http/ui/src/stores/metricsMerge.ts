@@ -161,6 +161,7 @@ function topList(v: unknown): TopList | undefined {
 function deviceEntry(o: Obj): DeviceEntry {
   return {
     key: str(o.key),
+    ip: str(o.ip),
     count: num(o.count),
     last: num(o.last),
     domains: list(o.domains).filter((d): d is string => typeof d === "string" && d !== ""),

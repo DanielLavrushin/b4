@@ -48,7 +48,8 @@ export const GroupRow = memo<Props>(
     const ipBase = stripPort(group.destIp);
     const isEnriching = enrichingIps.has(ipBase);
     const hasDomain = !!group.domain;
-    const deviceLabel = group.deviceName || group.mac;
+    const deviceLabel = group.deviceName || group.deviceIp || group.mac;
+    const deviceTip = deviceLabel && deviceLabel !== group.mac ? `${deviceLabel} (${group.mac})` : deviceLabel;
 
     let asnSlot: React.ReactNode = null;
     if (group.asnName) {
@@ -225,7 +226,7 @@ export const GroupRow = memo<Props>(
         </Box>
 
         <Box sx={{ width: 100, flexShrink: 0 }}>
-          <Tooltip title={deviceLabel || ""} arrow placement="top">
+          <Tooltip title={deviceTip || ""} arrow placement="top">
             <Typography
               sx={{
                 fontSize: 12,
@@ -286,6 +287,7 @@ export const GroupRow = memo<Props>(
     prev.group.ipSet === next.group.ipSet &&
     prev.group.domain === next.group.domain &&
     prev.group.deviceName === next.group.deviceName &&
+    prev.group.deviceIp === next.group.deviceIp &&
     prev.group.mac === next.group.mac &&
     prev.group.protocol === next.group.protocol &&
     prev.group.tls === next.group.tls &&

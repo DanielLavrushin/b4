@@ -44,8 +44,12 @@ export const DetailPane = memo<Props>(
 
     const deviceLabel =
       group.deviceName ||
+      group.deviceIp ||
       group.mac ||
       t("connections.aggregated.unknownDevice");
+    const deviceDetail = [...new Set([group.deviceIp, group.mac])]
+      .filter((value) => value && value !== deviceLabel)
+      .join(" · ");
 
     const duration = Math.max(
       0,
@@ -155,7 +159,7 @@ export const DetailPane = memo<Props>(
             >
               {deviceLabel}
             </Typography>
-            {group.mac && group.deviceName && (
+            {deviceDetail && (
               <Typography
                 sx={{
                   fontSize: 11,
@@ -163,7 +167,7 @@ export const DetailPane = memo<Props>(
                   fontFamily: "monospace",
                 }}
               >
-                {group.mac}
+                {deviceDetail}
               </Typography>
             )}
           </Box>

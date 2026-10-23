@@ -1,7 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { DeviceInfo, devicesApi } from "@b4.devices";
-import { resolveDeviceName } from "@utils";
 
 const DEVICES_KEY = ["dashboard", "devices"] as const;
 const NO_DEVICES: DeviceInfo[] = [];
@@ -23,15 +22,10 @@ export function useDeviceNames() {
 
   const findDevice = (mac: string): DeviceInfo | undefined => deviceMap[macKey(mac)];
 
-  const getDeviceName = (mac: string): string => {
-    const dev = findDevice(mac);
-    return dev ? resolveDeviceName(dev) : mac;
-  };
-
   const refresh = useCallback(
     () => queryClient.invalidateQueries({ queryKey: DEVICES_KEY }),
     [queryClient],
   );
 
-  return { devices, deviceMap, routerIps, findDevice, getDeviceName, refresh };
+  return { routerIps, findDevice, refresh };
 }

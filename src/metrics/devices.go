@@ -58,6 +58,7 @@ type deviceItem struct {
 	count   uint64
 	last    int64
 	seq     uint64
+	addr    netip.Addr
 	domains [DeviceDomainsKept]deviceDomain
 }
 
@@ -82,6 +83,9 @@ func (it *deviceItem) note(name string, n, seq uint64) {
 }
 
 func (it *deviceItem) absorb(o *deviceItem) {
+	if o.seq > it.seq {
+		it.addr = o.addr
+	}
 	it.count += o.count
 	it.last = max(it.last, o.last)
 	it.seq = max(it.seq, o.seq)
@@ -130,6 +134,9 @@ func (s *deviceState) count(from Device, now int64) {
 	it.count++
 	it.last = now
 	it.seq = s.seq
+	if byAddr, ok := from.addrKey(); ok {
+		it.addr = byAddr.addr
+	}
 	s.rev++
 }
 
@@ -268,7 +275,11 @@ func (s *deviceState) list(off int64) *DeviceList {
 	}
 	items := make([]DeviceEntry, len(top))
 	for i, r := range top {
-		items[i] = DeviceEntry{Key: r.key.String(), Count: r.count, Last: wallMs(r.last, off), Domains: s.items[r.key].topDomains()}
+		it := s.items[r.key]
+		items[i] = DeviceEntry{Key: r.key.String(), Count: r.count, Last: wallMs(r.last, off), Domains: it.topDomains()}
+		if r.key.mac != "" && it.addr.IsValid() {
+			items[i].IP = it.addr.String()
+		}
 	}
 	return &DeviceList{Rev: s.rev, Items: items}
 }

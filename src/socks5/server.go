@@ -418,10 +418,10 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 		return fmt.Errorf("send reply: %w", err)
 	}
 
-	s.logConnection("TCP", conn.RemoteAddr().String(), dest, "socks5")
+	from := metrics.DeviceOf(conn.RemoteAddr())
+	s.logConnection("TCP", conn.RemoteAddr().String(), dest, from.MAC, "socks5")
 	if viaSet != "" {
 		mc := metrics.GetMetricsCollector()
-		from := metrics.DeviceOf(conn.RemoteAddr())
 		mc.CountConnection(viaSet, from)
 		if host, _, err := net.SplitHostPort(dest); err == nil {
 			if addr, err := netip.ParseAddr(host); err == nil {
@@ -644,7 +644,7 @@ func (s *Server) matchDestinationSet(dest string) (*config.SetConfig, string, *c
 
 // --- Logging and metrics ---
 
-func (s *Server) logConnection(protocol, clientAddr, dest, metadata string) {
+func (s *Server) logConnection(protocol, clientAddr, dest, srcMac, metadata string) {
 	clientHost, clientPortStr, _ := net.SplitHostPort(clientAddr)
 
 	domain := dest
@@ -657,7 +657,7 @@ func (s *Server) logConnection(protocol, clientAddr, dest, metadata string) {
 
 	source := net.JoinHostPort(clientHost, clientPortStr)
 	destination := net.JoinHostPort(destHost, destPortStr)
-	log.LogConnectionStr(protocol, sniTarget, domain, source, ipTarget, destination, "", "", metadata)
+	log.LogConnectionStr(protocol, sniTarget, domain, source, ipTarget, destination, srcMac, "", metadata)
 
 	setName := sniTarget
 	if setName == "" {

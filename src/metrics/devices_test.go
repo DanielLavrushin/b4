@@ -53,6 +53,24 @@ func TestDevicesCountEachFlowOnce(t *testing.T) {
 	}
 }
 
+func TestAMACRowCarriesTheAddressItsDeviceUsedLast(t *testing.T) {
+	r := newRig(t, rigStart, 0)
+	m := r.m
+	renumbered := Device{MAC: phone.MAC, Addr: netip.MustParseAddr("192.168.1.99")}
+
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "", phone)
+	m.ObserveFlowTo(flowKey(2), netip.Addr{}, "", "", renumbered)
+	m.ObserveFlowTo(flowKey(3), netip.Addr{}, "", "", router)
+
+	fr := m.Hello()
+	if d := deviceEntry(t, fr, phone.MAC); d.IP != "192.168.1.99" {
+		t.Fatalf("a MAC row names its device's latest address, which the dashboard shows when the router no longer lists the device: %+v", d)
+	}
+	if d := deviceEntry(t, fr, router.Addr.String()); d.IP != "" {
+		t.Fatalf("an address row needs no second copy of its address: %+v", d)
+	}
+}
+
 func TestDevicesListTheirMostConnectedDomains(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m

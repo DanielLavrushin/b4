@@ -15,8 +15,9 @@ export function wsUrl(path: string): string {
 export function resolveDeviceName(d: DeviceInfo): string {
   if (d.alias) return d.alias;
   if (d.hostname) return d.hostname;
-  if (d.vendor && d.vendor !== "Private") return `${d.vendor} (${d.mac})`;
-  return d.mac;
+  const address = d.ip || d.mac;
+  if (d.vendor && d.vendor !== "Private") return `${d.vendor} (${address})`;
+  return address;
 }
 
 export function sortDevices(

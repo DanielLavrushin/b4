@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
+import { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from "react";
 import {
   Box,
   Container,
@@ -30,7 +30,7 @@ import { B4Config, B4SetConfig } from "@models/config";
 import { formatAsn } from "@models/asn";
 import { asnApi, asnInUseSets } from "@api/asn";
 import { useSnackbar } from "@context/SnackbarProvider";
-import { devicesApi } from "@b4.devices";
+import { devicesApi, type DevicesResponse } from "@b4.devices";
 import { useTranslation } from "react-i18next";
 import {
   NavigationType,
@@ -104,9 +104,7 @@ export function ConnectionsPage() {
 
   const [availableSets, setAvailableSets] = useState<B4SetConfig[]>([]);
   const [ipInfoToken, setIpInfoToken] = useState<string>("");
-  const [devicesEnabled, setDevicesEnabled] = useState<boolean>(false);
-  const [deviceMap, setDeviceMap] = useState<Record<string, string>>({});
-  const [ipToMac, setIpToMac] = useState<Record<string, string>>({});
+  const [networkDevices, setNetworkDevices] = useState<DevicesResponse | null>(null);
   const [configIpToMac, setConfigIpToMac] = useState<Record<string, string>>(
     {},
   );
@@ -120,36 +118,31 @@ export function ConnectionsPage() {
   }, [filter]);
 
   useEffect(() => {
-    if (!devicesEnabled) {
-      setDeviceMap({ ...configDeviceNames });
-      setIpToMac({ ...configIpToMac });
-      return;
-    }
     devicesApi
       .list()
-      .then((data) => {
-        const map: Record<string, string> = {};
-        const ipMap: Record<string, string> = {};
-        for (const d of data.devices || []) {
-          const normalized = d.mac.toUpperCase().replaceAll("-", ":");
-          const name = resolveDeviceName(d);
-          map[normalized] = name === d.mac ? "" : name;
-          if (d.ip) ipMap[d.ip] = normalized;
-        }
-        for (const ip of data.router_ips || []) {
-          map[ip] = t("connections.aggregated.router");
-        }
-        for (const [mac, name] of Object.entries(configDeviceNames)) {
-          map[mac] = name;
-        }
-        for (const [ip, mac] of Object.entries(configIpToMac)) {
-          ipMap[ip] = mac;
-        }
-        setDeviceMap(map);
-        setIpToMac(ipMap);
-      })
+      .then(setNetworkDevices)
       .catch(() => {});
-  }, [devicesEnabled, configDeviceNames, configIpToMac, t]);
+  }, []);
+
+  const ipToMac = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const d of networkDevices?.devices || []) {
+      if (d.ip) map[d.ip] = d.mac.toUpperCase().replaceAll("-", ":");
+    }
+    return { ...map, ...configIpToMac };
+  }, [networkDevices, configIpToMac]);
+
+  const deviceMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const d of networkDevices?.devices || []) {
+      const name = resolveDeviceName(d);
+      map[d.mac.toUpperCase().replaceAll("-", ":")] = name === d.mac || name === d.ip ? "" : name;
+    }
+    for (const ip of networkDevices?.router_ips || []) {
+      map[ip] = t("connections.aggregated.router");
+    }
+    return { ...map, ...configDeviceNames };
+  }, [networkDevices, configDeviceNames, t]);
 
   const fetchSets = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -162,11 +155,6 @@ export function ConnectionsPage() {
         if (data.system?.api?.ipinfo_token) {
           setIpInfoToken(data.system.api.ipinfo_token);
         }
-        setDevicesEnabled(
-          data.queue?.devices?.enabled ||
-            data.queue?.devices?.vendor_lookup ||
-            false,
-        );
         const names: Record<string, string> = {};
         const configIps: Record<string, string> = {};
         for (const d of data.queue?.devices?.devices || []) {
