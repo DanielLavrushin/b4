@@ -237,7 +237,13 @@ func looksLikeSTUN(payload []byte) bool {
 }
 
 func mayBelongToAQUICFlow(payload []byte, isVoiceMedia bool) bool {
-	if isVoiceMedia || !quic.LooksLikeShortHeader(payload) {
+	if isVoiceMedia {
+		return false
+	}
+	if quic.LooksLikeVersionedLongHeader(payload) {
+		return true
+	}
+	if !quic.LooksLikeShortHeader(payload) {
 		return false
 	}
 	return !looksLikeWireGuard(payload) && !looksLikeDTLS(payload) && !looksLikeSTUN(payload)

@@ -858,3 +858,54 @@ func TestSTUNRepliesOnACachedQUICTupleKeepFollowingTheLearnedAddress(t *testing.
 		})
 	}
 }
+
+func TestAGreasedLongHeaderOfAnUnrelatedQUICFlowPasses(t *testing.T) {
+	greased := append([]byte{0xa1, 0x00, 0x00, 0x00, 0x01, 8, 0xF7, 1, 2, 3, 4, 5, 6, 7, 0}, make([]byte, 40)...)
+	if quic.LooksLikeQUIC(greased) {
+		t.Fatal("the fixture must have its QUIC bit greased away, or this test proves nothing")
+	}
+	if quic.LooksLikeShortHeader(greased) {
+		t.Fatal("the fixture is a long header, so the short-header door must stay shut")
+	}
+	if !mayBelongToAQUICFlow(greased, false) {
+		t.Fatal("a greased Handshake packet of a known version is taken for another protocol")
+	}
+
+	dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+	dropper.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &dropper)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xF5, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 53901); v != engine.VerdictDropFlow {
+		t.Fatalf("the set's own name teaches it the address, got %v", v)
+	}
+	unrelated := newSplitQUICHello(t, []byte{0xF6, 1, 2, 3, 4, 5, 6, 7}, []byte{0xF7, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+	sendQUIC(w, unrelated.first, 53902)
+	if v := sendQUIC(w, unrelated.completing, 53902); v != engine.VerdictAccept {
+		t.Fatalf("the unrelated name matches no set, got %v", v)
+	}
+	if v := sendQUIC(w, greased, 53902); v != engine.VerdictAccept {
+		t.Errorf("a greased Handshake packet of the unrelated flow: got %v, want accept", v)
+	}
+}
+
+func TestMediaWithTheLongHeaderBitSetIsNotTakenForAQUICFlow(t *testing.T) {
+	rtp := make([]byte, 60)
+	rtp[0], rtp[1] = 0x80, 0x60
+	rtcp := make([]byte, 32)
+	rtcp[0], rtcp[1] = 0x81, 0xc9
+
+	for _, c := range []struct {
+		name    string
+		payload []byte
+	}{
+		{"RTP", rtp},
+		{"RTCP", rtcp},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if mayBelongToAQUICFlow(c.payload, false) {
+				t.Errorf("%s is taken for QUIC traffic of a known flow", c.name)
+			}
+		})
+	}
+}
