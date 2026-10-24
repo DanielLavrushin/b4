@@ -2671,6 +2671,10 @@
       "movedFrom": "{{count}} domain(s) moved to the imported sets from: {{sets}}. A domain resolves in one set only, so {{domains}} no longer applies there."
     },
     "share": {
+      "linkId": "Hub set ID",
+      "linkVersion": "Version",
+      "linkVote": "Your report",
+      "linkVotedAt": "Reported on",
       "sectionTitle": "Share with other b4 users",
       "info": "A shared set carries the strategy and its targets only. Routing (except block mode), device filters, escalation, the DNS server address and anything else tied to this router are left out. Payload files travel inside the shared set.",
       "prepare": "Prepare shared set",
