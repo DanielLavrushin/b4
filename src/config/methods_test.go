@@ -1072,6 +1072,28 @@ func TestHasIPOrDomainTargets(t *testing.T) {
 	})
 }
 
+func TestBlocksQUICIsTheUDPTabSwitch(t *testing.T) {
+	for _, tc := range []struct {
+		mode, quic string
+		want       bool
+	}{
+		{UDPModeReject, QUICFilterAll, true},
+		{UDPModeReject, QUICFilterSNI, false},
+		{UDPModeDrop, QUICFilterAll, false},
+		{UDPModeFake, QUICFilterAll, false},
+		{ConfigOff, QUICFilterAll, false},
+	} {
+		set := NewSetConfig()
+		set.UDP.Mode, set.UDP.FilterQUIC = tc.mode, tc.quic
+		if got := set.BlocksQUIC(); got != tc.want {
+			t.Errorf("udp.mode=%s udp.filter_quic=%s: BlocksQUIC()=%v, want %v; the set editor's Block QUIC switch is on exactly for reject with QUIC matching on every matched destination", tc.mode, tc.quic, got, tc.want)
+		}
+	}
+	if set := NewSetConfig(); set.BlocksQUIC() {
+		t.Error("a new set must not block QUIC")
+	}
+}
+
 func TestResetToDefaults(t *testing.T) {
 	set := NewSetConfig()
 	set.Id = "custom"

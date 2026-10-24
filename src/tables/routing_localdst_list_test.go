@@ -266,6 +266,7 @@ func TestAProxySetsAddressListFollowsTheRulesItsChainCarries(t *testing.T) {
 	st.setV4, st.setV6 = routeBuildSetNames(set.Id)
 	st.chainPre, st.chainOut, st.chainSNAT = routeBuildChainNames(set.Id)
 	st.chainQUIC = routeBuildQUICChainName(set.Id)
+	st.chainQOut = routeBuildQUICOutChainName(set.Id)
 	st.quicReject = true
 	refuseQUIC := false
 	firewall := run

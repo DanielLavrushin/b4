@@ -14,6 +14,8 @@ The **UDP** tab decides which UDP traffic the set matches, QUIC above all, and w
 
 QUIC carries HTTP/3 for YouTube, Google, Discord and other sites. Its packets are encrypted end to end, so b4 cannot desync the handshake the way it does with TLS over TCP: only decoys and a fragmented Initial packet are left, and both are weak. When a provider silently drops UDP to port 443, a video stalls without an error, and nothing tells the browser to stop trying QUIC. Browsers also remember that a host offered HTTP/3 and keep trying QUIC with it. A refusal from the router makes the browser switch to TCP at once.
 
+On a set sent through an [Upstream SOCKS5 proxy](./routing.md#upstream-socks5-proxy) with **Route UDP through upstream** on, the switch refuses only the set's QUIC, and the rest of its UDP goes through the proxy. The other settings on this tab do not apply to UDP that goes through the proxy.
+
 ## What UDP Traffic to Match
 
 | Field | What it does | Default |
