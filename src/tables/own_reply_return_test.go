@@ -217,6 +217,42 @@ func TestNFTablesTakesUpTheSocketExpressionOnceNftSocketLoads(t *testing.T) {
 	}
 }
 
+func TestNFTablesKeepsItsQueueSupportWhenTheSocketRefreshFails(t *testing.T) {
+	r := newDirectionRig(t)
+	cfg := sendIntoTestConfig(backendNFTables, false)
+	module := filepath.Join(kmodSysRoot, kmodCanonical("nft_socket"))
+	if err := os.RemoveAll(module); err != nil {
+		t.Fatal(err)
+	}
+	r.refuse = refuseNftSocketProbe("wildcard", "transparent")
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules with nft_socket absent: %v", err)
+	}
+	r.h.take()
+
+	if err := os.MkdirAll(module, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r.refuse = func(args []string) bool {
+		return args[0] == "nft" && slices.Contains(args, "_b4_queue_probe") && slices.Contains(args, "queue")
+	}
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("a firewall reload during the refresh after nft_socket loaded broke the apply: %v", err)
+	}
+	r.h.take()
+
+	r.refuse = nil
+	for i := range 2 {
+		if err := AddRules(cfg); err != nil {
+			t.Fatalf("apply %d after the disturbed refresh: %v; queue support proven before it must survive it", i, err)
+		}
+	}
+	want := "ct mark & 0x8000 == 0x8000 ct direction reply socket wildcard 0 return"
+	if got := nftOwnReplyReturnsIn(r.h.take()); !slices.Equal(got, []string{want}) {
+		t.Errorf("after the disturbed refresh prerouting holds %q, want %q: the refresh must run again on a later apply", got, want)
+	}
+}
+
 func TestNFTablesDoesNotProbeAgainASocketExpressionTheLoadedModuleRefused(t *testing.T) {
 	r := newDirectionRig(t)
 	cfg := sendIntoTestConfig(backendNFTables, false)

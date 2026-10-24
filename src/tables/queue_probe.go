@@ -28,6 +28,10 @@ func (c queueCaps) socketKmodLoadedSince() bool {
 	return c.socketKey == "" && !c.socketKmod && kmodLoaded("nft_socket")
 }
 
+func (c queueCaps) lacksAnyOf(proven queueCaps) bool {
+	return (proven.queue && !c.queue) || (proven.ctPackets && !c.ctPackets) || (proven.ctDirection && !c.ctDirection)
+}
+
 func nfqueueActionExpr(startNum, threads int) string {
 	if threads > 1 {
 		return fmt.Sprintf("queue num %d-%d bypass", startNum, startNum+threads-1)
@@ -100,10 +104,10 @@ func probeQueueNftCached(queueAction string) queueCaps {
 	}
 
 	caps := probeQueueNft(queueAction)
+	if ok && (!caps.probed || caps.lacksAnyOf(cached)) {
+		return cached
+	}
 	if !caps.probed {
-		if ok {
-			return cached
-		}
 		return caps
 	}
 	queueProbeMu.Lock()
