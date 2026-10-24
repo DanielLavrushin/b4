@@ -3049,7 +3049,8 @@
       "reserved_host": "Local and private addresses cannot be tested.",
       "routed_set": "The set routes its traffic to an interface or proxy, so there is no bypass strategy to search for.",
       "bad_dns_server": "The trusted DNS server given for this run is not valid. It takes an IP address with an optional port, udp://, tcp://, tcp+udp:// or an https:// URL.",
-      "bad_pin": "A pinned address was refused. Each line takes a public IP address, then the names it serves."
+      "bad_pin": "A pinned address was refused. Each line takes a public IP address, then the names it serves.",
+      "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the probes. Start the search again in a moment."
     },
     "options": {
       "title": "Options",

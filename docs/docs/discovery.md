@@ -41,11 +41,15 @@ The defaults are the usual choice.
 
 **Stop and confirm** ends the search and confirms what was found, without tuning it. **Stop** ends a run that has found nothing. **Stop now**, during the confirmation, ends the run at once and keeps the results unconfirmed.
 
+A run stops when b4 rewrites its DSCP rules during it, for example after a set's new DSCP value is saved. Its results cannot be applied, and the history marks the row **stopped: firewall rules changed during the search, run it again**.
+
 One run is in progress at a time, the searches of the [watchdog](./watchdog.md) included. A watchdog search shows on this page but cannot be stopped here.
 
 ## A run for a set
 
 A run for a set ends with one verdict for the whole set, above **Results per address**. The set's own strategy is tested first, as **Current strategy of the set**, and a strategy is confirmed on all addresses together.
+
+For a set with its own [DSCP value](./sets/routing.md#dscp), the probes carry that value, as the set's traffic does, and take the set's route through the router in front of b4. The progress and the results show **DSCP &lt;value&gt;, as the set's traffic**. The probes of any other run carry the value of **Set DSCP** under [Settings > Core > Firewall](./settings/core.md#dscp) while it is on, or none, also to the addresses of such a set.
 
 | Verdict | Meaning and what the card offers |
 | --- | --- |
@@ -82,9 +86,11 @@ Sites that won with the same strategy share one card and one set. **N other stra
 
 - **Create a new set**, then **Create set**: see [Creating a set](#creating-a-set).
 - **Write the strategy into an existing set**, then **Replace strategy**: see below. This is the default when the run was for a set or a set lists the site exactly.
-- **Add to &lt;set&gt;, which already uses the same strategy**, then **Add to set**: adds the sites to that set.
+- **Add to &lt;set&gt;, which already uses the same strategy**, then **Add to set**: adds the sites to that set. When the set's strategy changed after the dialog opened, nothing is added.
 
 **Copy JSON** copies the set without creating it, in the **Import/Export** format.
+
+A result is applied only to a set whose traffic takes the network path the run tested: the DSCP value of the run's probes, written on the same interfaces. A change to the set's DSCP value, to **Set DSCP** or to its interface list after the run can change that path. The error then names the difference, and a new run for the set tests the new path. For a few seconds after such a change is saved, while b4 applies its DSCP rules, applying and starting a run are refused.
 
 ### Writing into an existing set
 

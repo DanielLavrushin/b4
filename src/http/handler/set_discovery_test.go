@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -946,6 +947,35 @@ func TestStartDiscoveryChecksTheTrustedServerAndPins(t *testing.T) {
 		`{"":["130.255.77.28"]}`,
 	} {
 		expectCode(t, start(`{"check_urls":["ntc.party"],"pins":`+pins+`}`), http.StatusBadRequest, "bad_pin")
+	}
+}
+
+func TestStartDiscoveryWhileDSCPRulesArePending(t *testing.T) {
+	api, mux := discoveryAPI(t)
+	api.discoveryRT = discovery.NewRuntime()
+	prev := discoveryStartSuite
+	t.Cleanup(func() { discoveryStartSuite = prev })
+	var startErr error
+	discoveryStartSuite = func(*discovery.Runtime, *config.Config, []string, discovery.StartSuiteOptions) (*discovery.DiscoverySuite, error) {
+		return nil, startErr
+	}
+	start := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/discovery/start", strings.NewReader(`{"check_url":"youtube.com"}`)))
+		return rec
+	}
+
+	startErr = fmt.Errorf("failed to apply discovery steering rules: %w", discovery.ErrDSCPRulesPending)
+	expectCode(t, start(), http.StatusConflict, "dscp_rules_pending")
+
+	startErr = discovery.ErrDiscoveryAlreadyRunning
+	if rec := start(); rec.Code != http.StatusConflict || strings.Contains(rec.Body.String(), "dscp_rules_pending") {
+		t.Errorf("a run in progress must still answer 409 without the DSCP code, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	startErr = errors.New("the discovery queue could not start")
+	if rec := start(); rec.Code != http.StatusInternalServerError {
+		t.Errorf("any other start failure must stay a 500, got %d (%s)", rec.Code, rec.Body.String())
 	}
 }
 

@@ -37,6 +37,7 @@ const START_ERROR_CODES = new Set([
   "routed_set",
   "bad_dns_server",
   "bad_pin",
+  "dscp_rules_pending",
 ]);
 
 const startFailureText = (e: unknown): string => {

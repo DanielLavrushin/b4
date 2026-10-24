@@ -198,7 +198,7 @@ func (api *API) handleFinishCheck(w http.ResponseWriter, r *http.Request) {
 // @Success 202 {object} DiscoveryResponse
 // @Failure 400 {object} APIError "reserved_host, no_urls, too_many_urls, bad_dns_server or bad_pin"
 // @Failure 404 {object} APIError "not_found"
-// @Failure 409 {string} string
+// @Failure 409 {object} APIError "dscp_rules_pending while b4 is still applying its DSCP rules; another run in progress answers in plain text"
 // @Security BearerAuth
 // @Router /discovery/start [post]
 func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
@@ -336,11 +336,14 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		opts.TLSVersion, opts.IPVersion = discovery.SetRunVersions(runSet, req.TLSVersion, req.IPVersion)
 	}
 
-	suite, err := api.discoveryRT.StartSuite(api.getCfg(), urls, opts)
+	suite, err := discoveryStartSuite(api.discoveryRT, api.getCfg(), urls, opts)
 	if err != nil {
-		if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) {
+		switch {
+		case errors.Is(err, discovery.ErrDiscoveryAlreadyRunning):
 			http.Error(w, err.Error(), http.StatusConflict)
-		} else {
+		case errors.Is(err, discovery.ErrDSCPRulesPending):
+			writeAPIError(w, &APIError{Status: http.StatusConflict, Code: "dscp_rules_pending", Message: discovery.ErrDSCPRulesPending.Error()})
+		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -613,7 +616,10 @@ func replaceStrategy(dst, strategy *config.SetConfig) {
 	dst.Targets.IPVersion = strategy.Targets.IPVersion
 }
 
-var discoveryDSCPStamp = tables.DiscoveryDSCPStamp
+var (
+	discoveryDSCPStamp  = tables.DiscoveryDSCPStamp
+	discoveryStartSuite = (*discovery.Runtime).StartSuite
+)
 
 const errDSCPRulesPending = "b4 is still applying its DSCP rules, which decide the network path of the set's traffic; try again in a moment"
 

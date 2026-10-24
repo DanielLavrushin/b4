@@ -4,7 +4,7 @@
         "description": "B4 network packet processor REST API",
         "title": "B4 API",
         "contact": {},
-        "version": "1.87.0"
+        "version": "1.88.0"
     },
     "basePath": "/api",
     "paths": {
@@ -1600,12 +1600,12 @@
                 "summary": "Add discovery preset as a new set",
                 "parameters": [
                     {
-                        "description": "Set configuration",
+                        "description": "The discovered set, and the dscp_path of the run it comes from. A bare set configuration is accepted too",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/config.SetConfig"
+                            "$ref": "#/definitions/handler.DiscoveredSetRequest"
                         }
                     }
                 ],
@@ -1615,6 +1615,12 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "code: dscp_path_changed when the strategy was tested on another DSCP path than the new set's traffic would take, dscp_rules_pending while b4 is still applying its DSCP rules",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
                         }
                     }
                 }
@@ -1931,7 +1937,7 @@
                 "summary": "Replace the strategy of an existing set with a discovered one",
                 "parameters": [
                     {
-                        "description": "Target set, discovered strategy, domains and pins. strategy_only adopts only the TCP, fragmentation and faking strategy (and DNS when the discovered one is enabled); keep_targets leaves the set's domains and other sets alone and makes domains optional; probe_urls become the set's discovery URLs",
+                        "description": "Target set, discovered strategy, domains and pins. strategy_only adopts only the TCP, fragmentation and faking strategy (and DNS when the discovered one is enabled); keep_targets leaves the set's domains and other sets alone and makes domains optional; probe_urls become the set's discovery URLs; dscp_path is the dscp_path of the run the strategy comes from: the DSCP value its probes carried over IPv4 and IPv6 and the interfaces b4 wrote DSCP values on",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -1956,6 +1962,12 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "code: dscp_path_changed when the strategy was tested on another DSCP path than the set's traffic takes, dscp_rules_pending while b4 is still applying its DSCP rules",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -2018,12 +2030,12 @@
                 "summary": "Find sets with similar configuration",
                 "parameters": [
                     {
-                        "description": "Set to compare",
+                        "description": "The discovered set, and the dscp_path of the run it comes from, which leaves out sets whose traffic takes another DSCP path. A bare set configuration is accepted too",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/config.SetConfig"
+                            "$ref": "#/definitions/handler.DiscoveredSetRequest"
                         }
                     }
                 ],
@@ -2089,9 +2101,9 @@
                         }
                     },
                     "409": {
-                        "description": "Conflict",
+                        "description": "dscp_rules_pending while b4 is still applying its DSCP rules; another run in progress answers in plain text",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/handler.APIError"
                         }
                     }
                 }
@@ -4364,7 +4376,7 @@
                         "required": true
                     },
                     {
-                        "description": "Domain object",
+                        "description": "domain or domains, optional pins. Discovery adds tested, the discovered set, and the dscp_path of its run: the set must still carry that strategy, and its traffic the path the run tested",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -4385,6 +4397,12 @@
                         "description": "Not Found",
                         "schema": {
                             "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "code: similar_set_changed, dscp_path_changed or dscp_rules_pending, when tested is given",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
                         }
                     }
                 }
@@ -5516,6 +5534,23 @@
                 }
             }
         },
+        "config.DSCPPath": {
+            "type": "object",
+            "properties": {
+                "interfaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ipv4": {
+                    "type": "integer"
+                },
+                "ipv6": {
+                    "type": "integer"
+                }
+            }
+        },
         "config.DashboardLayout": {
             "type": "object",
             "properties": {
@@ -6630,6 +6665,12 @@
                 "faking_strategy": {
                     "type": "string"
                 },
+                "filter_l7": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "filter_quic": {
                     "type": "string"
                 },
@@ -6926,6 +6967,12 @@
                 "fallback_for": {
                     "type": "integer"
                 },
+                "filter_l7": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "ips": {
                     "type": "array",
                     "items": {
@@ -7031,6 +7078,15 @@
         "discovery.SetRunRecord": {
             "type": "object",
             "properties": {
+                "dscp": {
+                    "type": "integer"
+                },
+                "dscp_ip_version": {
+                    "type": "string"
+                },
+                "dscp_path": {
+                    "$ref": "#/definitions/config.DSCPPath"
+                },
                 "end_time": {
                     "type": "string"
                 },
@@ -8521,6 +8577,9 @@
                 }
             }
         },
+        "handler.DiscoveredSetRequest": {
+            "type": "object"
+        },
         "handler.DiscoveryReplaceRequest": {
             "type": "object",
             "properties": {
@@ -8529,6 +8588,9 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "dscp_path": {
+                    "$ref": "#/definitions/config.DSCPPath"
                 },
                 "keep_targets": {
                     "type": "boolean"
@@ -9241,6 +9303,12 @@
                 },
                 "ip_count": {
                     "type": "integer"
+                },
+                "udp_l7": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
