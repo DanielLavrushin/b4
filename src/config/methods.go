@@ -1537,6 +1537,9 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 	if oldCfg.Queue.Mark != newCfg.Queue.Mark || oldCfg.Queue.IPv4Enabled != newCfg.Queue.IPv4Enabled || oldCfg.Queue.IPv6Enabled != newCfg.Queue.IPv6Enabled {
 		return true
 	}
+	if oldCfg.Queue.Devices.GateKey() != newCfg.Queue.Devices.GateKey() {
+		return true
+	}
 	if !oldCfg.System.Tables.Masquerade.Equal(newCfg.System.Tables.Masquerade) {
 		return true
 	}

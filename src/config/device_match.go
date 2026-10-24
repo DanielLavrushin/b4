@@ -71,6 +71,18 @@ func (dc *DevicesConfig) SelectedMatches() ([]DeviceMatch, int) {
 	return matches, unresolved
 }
 
+func (dc *DevicesConfig) GateKey() string {
+	matches, _ := dc.SelectedMatches()
+	if !dc.Enabled || len(matches) == 0 {
+		return ""
+	}
+	mode := "allow:"
+	if dc.WhiteIsBlack {
+		mode = "exclude:"
+	}
+	return mode + deviceMatchKeys(matches)
+}
+
 func AppendDeviceMatch(out []DeviceMatch, seen map[string]struct{}, m DeviceMatch) []DeviceMatch {
 	k := m.Key()
 	if _, dup := seen[k]; dup {

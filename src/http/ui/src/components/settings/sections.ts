@@ -55,19 +55,6 @@ const engineRestart = (c: B4Config) => ({
   udp_conn_bytes_limit: undefined,
 });
 
-const deviceGate = (c: B4Config) => {
-  const { enabled, wisb, devices } = c.queue.devices;
-  const matches = devices
-    .filter((d) => d.selected)
-    .map((d) =>
-      d.is_manual
-        ? `ip:${(d.ip ?? "").trim().toLowerCase()}`
-        : `mac:${d.mac.trim().toUpperCase()}`,
-    )
-    .filter((m) => m !== "ip:" && m !== "mac:");
-  return [enabled, wisb, [...new Set(matches)].sort()];
-};
-
 const nothing = () => [];
 
 export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
@@ -99,7 +86,7 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
     prefixes: ["queue.devices"],
     Icon: DeviceUnknowIcon,
     pick: (c) => [c.queue.devices],
-    restartPick: deviceGate,
+    restartPick: nothing,
   },
   {
     id: "firewall",

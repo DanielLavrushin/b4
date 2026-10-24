@@ -54,7 +54,11 @@ func TestFirewallRefreshNeededIgnoresSettingsThatDoNotRebuildTheFirewall(t *test
 		name   string
 		change func(c *Config)
 	}{
-		{"device filtering", func(c *Config) { c.Queue.Devices.Enabled = !c.Queue.Devices.Enabled }},
+		{"device filtering with no device selected", func(c *Config) { c.Queue.Devices.Enabled = !c.Queue.Devices.Enabled }},
+		{"devices selected while filtering is off", func(c *Config) {
+			c.Queue.Devices.Devices = []Device{{MAC: "AA:BB:CC:DD:EE:01", Selected: true}}
+			c.Queue.Devices.WhiteIsBlack = true
+		}},
 		{"set domains", func(c *Config) { c.Sets[0].Targets.SNIDomains = []string{"a.example"} }},
 		{"monitor interval", func(c *Config) { c.System.Tables.MonitorInterval += 5 }},
 		{"value of a dscp stamp that is off", func(c *Config) { c.System.Tables.DSCP.Value = 31 }},
@@ -80,6 +84,41 @@ func TestFirewallRefreshNeededIgnoresSettingsThatDoNotRebuildTheFirewall(t *test
 			tc.change(after)
 			if FirewallRefreshNeeded(before, after) {
 				t.Fatalf("a change to %s was read as needing a refresh although nothing rebuilds the firewall for it", tc.name)
+			}
+		})
+	}
+}
+
+func TestFirewallRefreshNeededFollowsTheDeviceFilter(t *testing.T) {
+	filtered := func() *Config {
+		c := refreshTestConfig()
+		c.Queue.Devices.Enabled = true
+		c.Queue.Devices.Devices = []Device{
+			{MAC: "AA:BB:CC:DD:EE:01", Selected: true},
+			{MAC: "AA:BB:CC:DD:EE:02"},
+			{MAC: "02:B4:C0:A8:33:02", IP: "192.168.51.2", Selected: true, IsManual: true},
+			{MAC: "02:B4:C0:A8:33:03", IP: "192.168.51.3", IsManual: true},
+		}
+		return c
+	}
+	for _, tc := range []struct {
+		name    string
+		change  func(c *Config)
+		refresh bool
+	}{
+		{"turning the filter off", func(c *Config) { c.Queue.Devices.Enabled = false }, true},
+		{"selecting another device", func(c *Config) { c.Queue.Devices.Devices[1].Selected = true }, true},
+		{"the address of a selected device added by hand", func(c *Config) { c.Queue.Devices.Devices[2].IP = "192.168.51.9" }, true},
+		{"excluding the selected devices", func(c *Config) { c.Queue.Devices.WhiteIsBlack = true }, true},
+		{"the address of a device added by hand that is not selected", func(c *Config) { c.Queue.Devices.Devices[3].IP = "192.168.51.9" }, false},
+		{"a device name", func(c *Config) { c.Queue.Devices.Devices[0].Name = "phone" }, false},
+		{"vendor lookup", func(c *Config) { c.Queue.Devices.VendorLookup = !c.Queue.Devices.VendorLookup }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before, after := filtered(), filtered()
+			tc.change(after)
+			if got := FirewallRefreshNeeded(before, after); got != tc.refresh {
+				t.Errorf("a change to %s was read as needing a refresh: %v, want %v; the capture hooks follow the selected devices and nothing else", tc.name, got, tc.refresh)
 			}
 		})
 	}

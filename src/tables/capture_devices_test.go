@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"maps"
 	"slices"
 	"testing"
 
@@ -116,6 +117,64 @@ func TestAClearWithAnotherConfigStillTakesTheDeviceGateAway(t *testing.T) {
 				t.Errorf("%s: the clear left %q in mangle FORWARD; a stale RETURN there skips every later mangle FORWARD rule for that device", bin, rule)
 			}
 		}
+	}
+}
+
+func captureHooks(h *goldenHost) map[string][]string {
+	hooks := map[string][]string{}
+	for _, bin := range []string{backendIPTables, backendIP6Tables} {
+		mangle := h.iptTable(bin, "mangle")
+		for _, chain := range []string{"OUTPUT", "POSTROUTING", "FORWARD", iptForwardChainName} {
+			if c := mangle.chain(chain); c != nil {
+				hooks[bin+" "+chain] = slices.Clone(c.rules)
+			}
+		}
+	}
+	return hooks
+}
+
+func TestSavingADeviceFilterChangeLeavesTheHooksOfTheNewFilter(t *testing.T) {
+	off := captureDevicesConfig(backendIPTables, false, gateMACDevice)
+	off.Queue.Devices.Enabled = false
+	allowOne := captureDevicesConfig(backendIPTables, false, gateMACDevice)
+	allowTwo := captureDevicesConfig(backendIPTables, false, gateMACDevice, gateManualV4)
+	excludeTwo := captureDevicesConfig(backendIPTables, true, gateMACDevice, gateManualV4)
+	for _, c := range []struct {
+		name     string
+		from, to *config.Config
+	}{
+		{"turning the filter on", off, allowTwo},
+		{"turning the filter off", allowTwo, off},
+		{"selecting a device added by hand", allowOne, allowTwo},
+		{"excluding the devices instead", allowTwo, excludeTwo},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newGoldenHost(t)
+			goldenIsolate(t, h)
+			if err := AddRules(c.from); err != nil {
+				t.Fatalf("AddRules: %v", err)
+			}
+			m, ptr := newLockTestMonitor(t)
+			ptr.Store(c.to)
+			if config.FirewallRefreshNeeded(c.from, c.to) {
+				if err := RefreshRules(c.to); err != nil {
+					t.Fatalf("RefreshRules: %v", err)
+				}
+			}
+			m.ensureRules(false)
+			got := captureHooks(h)
+
+			if err := ClearRules(c.to); err != nil {
+				t.Fatalf("ClearRules: %v", err)
+			}
+			if err := AddRules(c.to); err != nil {
+				t.Fatalf("AddRules: %v", err)
+			}
+			want := captureHooks(h)
+			if !maps.EqualFunc(got, want, slices.Equal) {
+				t.Errorf("after the save and a monitor check the capture hooks are\n%q\nwant the hooks of the new filter\n%q\nstacked hooks queue the router's own packets twice, and missing ones leave the change for a restart", got, want)
+			}
+		})
 	}
 }
 
