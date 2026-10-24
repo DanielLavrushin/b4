@@ -115,8 +115,6 @@ export function ChangedFieldsProvider({
   );
 }
 
-// Object-valued controls (e.g. dns.pins) diff into child leaves, so a parent
-// field must light up when any descendant changed.
 const changedInPath = (
   paths: ReadonlySet<string>,
   path: string,

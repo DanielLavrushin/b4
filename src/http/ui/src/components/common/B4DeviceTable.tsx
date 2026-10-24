@@ -61,8 +61,6 @@ export const B4DeviceTable = ({
   const { t } = useTranslation();
   const [filterText, setFilterText] = useState("");
 
-  // Filter derivation rides the deferred query: typing stays urgent, the
-  // O(devices) passes run after paint.
   const deferredQuery = useDeferredValue(filterText.trim().toLowerCase());
   const filteredDevices = useMemo(
     () =>

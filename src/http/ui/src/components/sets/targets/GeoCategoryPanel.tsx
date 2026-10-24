@@ -67,7 +67,6 @@ export const GeoCategoryPanel = ({
   const [input, setInput] = useState("");
   const { changedValues, registerLabel } = useChangedFields();
   const leaf = path ? changedValues.get(path) : undefined;
-  // O(1) membership per chip instead of O(n) includes scans.
   const leafSets = useMemo(() => {
     if (!leaf || !Array.isArray(leaf.after) || !Array.isArray(leaf.before)) {
       return null;

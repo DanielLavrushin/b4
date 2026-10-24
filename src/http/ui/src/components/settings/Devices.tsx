@@ -138,7 +138,6 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
     registerLabel("queue.devices.devices", t("core.devices.devicesTitle"));
   }, [registerLabel, t]);
   const devicesLeaf = changedValues.get("queue.devices.devices");
-  // One diff per leaf change, not two serializations per row per render.
   const changedMacs = useMemo(() => {
     const out = new Set<string>();
     if (!devicesLeaf) return out;
@@ -250,7 +249,6 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
       checked,
     );
 
-  // Stable identity so the device table's filter memo holds across keystrokes.
   const displayName = useCallback(
     (device: DeviceInfo) =>
       configDevices.find((d) => d.mac.toUpperCase() === device.mac.toUpperCase())

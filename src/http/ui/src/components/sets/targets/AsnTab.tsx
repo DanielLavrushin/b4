@@ -177,27 +177,30 @@ export const AsnTab = ({
   };
 
   const refresh = useCallback(
-    async (id: string) => {
-      setRefreshing((prev) => new Set(prev).add(id));
-      try {
-        const view = await asnApi.resolve(id, true);
-        store(view);
-        showSuccess(t("sets.targets.asn.refreshed", { asn: formatAsn(id) }));
-      } catch (e) {
-        showError(
-          t("sets.targets.asn.refreshFailed", {
-            asn: formatAsn(id),
-            error: localizeApiError(e),
-          }),
-        );
-        void invalidate();
-      } finally {
-        setRefreshing((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-      }
+    (id: string) => {
+      const run = async () => {
+        setRefreshing((prev) => new Set(prev).add(id));
+        try {
+          const view = await asnApi.resolve(id, true);
+          store(view);
+          showSuccess(t("sets.targets.asn.refreshed", { asn: formatAsn(id) }));
+        } catch (e) {
+          showError(
+            t("sets.targets.asn.refreshFailed", {
+              asn: formatAsn(id),
+              error: localizeApiError(e),
+            }),
+          );
+          void invalidate();
+        } finally {
+          setRefreshing((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+        }
+      };
+      void run();
     },
     [invalidate, showError, showSuccess, store, t],
   );

@@ -36,18 +36,11 @@ export interface SettingsSection<Id extends string = string> {
   labelKey: string;
   Icon: SvgIconComponent;
   prefixes: string[];
-  // Leaf prefixes owned by another section (pick excludes them).
-  // Keeps leaf-derived dirty flags aligned with pick semantics.
   exceptPrefixes?: string[];
   blocks?: SectionBlockDef[];
   pick: (c: B4Config) => unknown[];
   restartPick: (c: B4Config) => unknown[];
 }
-
-// Dirty flags derive from changed leaf paths (see sectionState in Page.tsx):
-// a section is dirty when a leaf matches its prefixes minus exceptPrefixes.
-// Unlike pick-based JSON comparison this honors the diff's zero-equivalence,
-// so ""<->null never lights a dot with no dialog row.
 
 const engineQueue = (c: B4Config) => ({
   ...c.queue,
@@ -73,15 +66,11 @@ const deviceGate = (c: B4Config) => {
 
 const nothing = () => [];
 
-// Convention: blocks mirror the B4Section/B4IntegrationCard layout of the section.
-// New config subtree inside an existing block → append its prefix here,
-// otherwise the path falls back to the section level in the unsaved-changes dialog.
 export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
   {
     id: "engine",
     labelKey: "settings.coreTabs.engine",
     prefixes: ["queue", "system.ip_health", "system.dns.keep_ipv6_answers"],
-    // queue.devices and queue.mss_clamp belong to the devices/firewall sections.
     exceptPrefixes: ["queue.devices", "queue.mss_clamp"],
     blocks: [
       { prefixes: ["queue.mode", "queue.interfaces", "queue.tun"], labelKey: "settings.Feature.engineMode" },
@@ -127,7 +116,6 @@ export const CORE_SECTIONS: SettingsSection<CoreSectionId>[] = [
     id: "dns",
     labelKey: "settings.coreTabs.dns",
     prefixes: ["system.dns"],
-    // keep_ipv6_answers is owned by the engine section.
     exceptPrefixes: ["system.dns.keep_ipv6_answers"],
     Icon: DnsIcon,
     pick: (c) => [{ ...c.system.dns, keep_ipv6_answers: undefined }],
@@ -166,7 +154,6 @@ export const SYSTEM_SECTIONS: SettingsSection<SystemSectionId>[] = [
     id: "web",
     labelKey: "settings.systemTabs.web",
     prefixes: ["system.web_server"],
-    // language and mcp belong to the service section / API tab.
     exceptPrefixes: ["system.web_server.language", "system.web_server.mcp"],
     Icon: WebIcon,
     pick: (c) => [
@@ -197,9 +184,6 @@ export const sectionIndex = (
   return Math.max(index, 0);
 };
 
-// Dialog-only sub-groups for tabs without SettingsSection defs
-// (domains/discovery/mtproto/api). Keep prefixes in sync with the
-// corresponding tab entry in TAB_GROUP_PREFIXES (settings/Page.tsx).
 export const SETTINGS_DIALOG_SUB_DEFS: DialogSubDef[] = [
   { prefixes: ["system.api"], labelKey: "settings.Api.ipinfoTitle" },
   { prefixes: ["system.ai"], labelKey: "settings.Ai.title" },

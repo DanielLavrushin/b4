@@ -20,7 +20,6 @@ import {
 import { resolveRoutingMode } from "../facets";
 
 const FIREWALL_SETTINGS = "/settings/general/firewall";
-// Static element: no render-dependent props, shared by the Trans components below.
 const firewallLink = <Link component={RouterLink} to={FIREWALL_SETTINGS} />;
 
 interface SetDscpProps {

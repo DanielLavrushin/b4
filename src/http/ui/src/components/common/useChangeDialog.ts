@@ -10,9 +10,6 @@ import {
 } from "@common/UnsavedChangesDialog";
 import { labelKeyForPath } from "@common/dialogLabels";
 
-// Split in two because callers compute `dialogsOpen` from the route blocker,
-// which itself needs the diff: tracker (diff + label registries, no gate)
-// runs first, items (gated labels + groups) run after the blocker.
 export interface ChangeTrackerOptions {
   draft: Record<string, unknown> | null;
   baseline: Record<string, unknown> | null;

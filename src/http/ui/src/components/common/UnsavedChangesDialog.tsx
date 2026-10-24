@@ -105,8 +105,6 @@ export const groupChangeItems = (
   defs: ChangeGroupDef[],
   subDefs?: SubDef[],
 ): UnsavedChangeGroup[] => {
-  // Winner = longest *matched* prefix; first wins on ties. Ranking by the
-  // def's longest prefix overall would let a sibling prefix win the match.
   const groups = new Map<string, UnsavedChangeGroup>();
   for (const item of items) {
     let match: ChangeGroupDef | undefined;
@@ -156,8 +154,6 @@ export const groupChangeItems = (
     (a, b) => (order.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.key) ?? Number.MAX_SAFE_INTEGER),
   );
 };
-// Mask whole field segments (or *_token style names), not substrings:
-// system.ai.max_tokens is a numeric limit, not a credential.
 const SENSITIVE_SEGMENT =
   /(^|\.)([a-z0-9]+_)?(token|secrets?|password|passwd)$/i;
 
@@ -170,6 +166,7 @@ const subgroupOf = (item: UnsavedChangeItem): string[] => {
     : item.path;
   return rest ? rest.split(".").slice(0, -1) : [];
 };
+const EMPTY_VALUE = "-";
 const formatEntry = (entry: unknown): string => {
   if (typeof entry === "string" || typeof entry === "number") return String(entry);
   if (entry !== null && typeof entry === "object") {
@@ -178,13 +175,11 @@ const formatEntry = (entry: unknown): string => {
     if (typeof name === "string" && name) return name;
   }
   try {
-    return JSON.stringify(entry) ?? "—";
+    return JSON.stringify(entry) ?? EMPTY_VALUE;
   } catch {
-    return "—";
+    return EMPTY_VALUE;
   }
 };
-// These switches display the inverse of the stored flag: the label reads
-// "enable"/"fallback" while the leaf holds the disabling/opt-out boolean.
 const INVERTED_BOOLEAN_PATHS: Record<string, true> = {
   "system.dns.tcp_disabled": true,
   "system.dns.keep_ipv6_answers": true,
@@ -195,26 +190,22 @@ const formatValue = (
   t: (key: string) => string,
 ): string => {
   if (SENSITIVE_SEGMENT.test(path)) return "••••••";
-  if (value === undefined || value === null || value === "") return "—";
+  if (value === undefined || value === null || value === "") return EMPTY_VALUE;
   if (typeof value === "boolean") {
     const shown = INVERTED_BOOLEAN_PATHS[path] ? !value : value;
     return shown ? t("core.valueOn") : t("core.valueOff");
   }
   if (Array.isArray(value))
-    return value.length === 0 ? "—" : value.map(formatEntry).join(", ");
+    return value.length === 0 ? EMPTY_VALUE : value.map(formatEntry).join(", ");
   if (typeof value === "string" || typeof value === "number")
     return String(value);
   try {
-    return JSON.stringify(value) ?? "—";
+    return JSON.stringify(value) ?? EMPTY_VALUE;
   } catch {
-    return "—";
+    return EMPTY_VALUE;
   }
 };
 
-// Label duplicates the subgroup path remainder, the group header, or the
-// block header — in all three cases there is nothing to show. A path exactly
-// equal to the group prefix is NOT a duplicate: groupLabel equality above
-// already covers real repeats (e.g. set "name").
 const isLabelVisible = (item: UnsavedChangeItem, groupLabel: string): boolean =>
   typeof item.label === "string" &&
   item.label !== subgroupOf(item).join(".") &&
@@ -311,16 +302,11 @@ const SubgroupView = memo(function SubgroupView({
         <ChangeItemView key={item.path} item={item} groupLabel={groupLabel} t={t} />
       ))}
       {blocks.map(([blockLabel, blockItems]) => {
-        // Block header repeating the subgroup/group header adds no info:
-        // render such items flat at the subgroup level.
         if (blockLabel === subgroupKey || blockLabel === groupLabel) {
           return blockItems.map((item) => (
             <ChangeItemView key={item.path} item={item} groupLabel={groupLabel} t={t} />
           ));
         }
-        // Flat block: header as a divider. Items with a visible label read
-        // as sub-settings of the block (indented); headerless values stay
-        // level with the header they belong to.
         return (
           <Fragment key={blockLabel}>
             <Typography

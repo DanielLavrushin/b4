@@ -270,9 +270,6 @@ export function SettingsPage() {
     }
   }, [location.pathname, currentTabPath, navigate]);
 
-  // Track changes off the urgent input path: inputs stay controlled by `config`,
-  // the full-tree diff and section dots derive from the deferred copy instead,
-  // so a keystroke paints before the O(leaves) walk runs.
   const deferredConfig = useDeferredValue(config);
   const {
     changedLeaves,
@@ -291,7 +288,6 @@ export function SettingsPage() {
     [draftSets, baselineSets],
   );
   const hasChanges = changedLeaves.length > 0 || setsChanged;
-  // Guard conservatively while urgent input is ahead of the deferred diff.
   const hasUnsavedChanges = hasChanges || config !== deferredConfig;
   const shouldBlock = useCallback<BlockerFunction>(
     ({ nextLocation }) =>
@@ -300,12 +296,6 @@ export function SettingsPage() {
   );
   const blocker = useUnsavedChangesGuard(shouldBlock, hasUnsavedChanges);
   const dialogsOpen = showResetDialog || blocker.state === "blocked";
-  // shortcut: value labels resolve via the ChangedFieldsContext registry whose
-  // entries persist in refs after tabs unmount (cleared only on scope change).
-  // Static tables cover only never-mounted conditional controls. Note: labels
-  // of hidden tabs go stale on language switch (runtime entry shadows the
-  // fresh static one) — pre-existing, both before and after the
-  // static-value-labels removal.
 
   const settingsSubDefs = useMemo(
     () => [
@@ -560,9 +550,6 @@ export function SettingsPage() {
                   color="secondary"
                   variant="outlined"
                   sx={{
-                    // Pin the icon margin: MUI defaults set 4px (.MuiChip-icon)
-                    // and 2px (.MuiChip-iconSmall) on the same icon — without
-                    // an explicit override the winner is cascade-order luck.
                     "& .MuiChip-icon": { marginLeft: "4px" },
                   }}
                 />

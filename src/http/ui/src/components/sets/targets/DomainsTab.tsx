@@ -55,7 +55,6 @@ export const DomainsTab = ({
   const domains = config.targets.sni_domains ?? [];
   const catchAll = domains.some(isDomainCatchAll);
   const domainsLeaf = changedValues.get("targets.sni_domains");
-  // O(1) membership per chip instead of O(n) includes scans.
   const domainsLeafSets = useMemo(() => {
     if (
       !domainsLeaf ||

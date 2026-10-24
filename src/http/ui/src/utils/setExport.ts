@@ -22,8 +22,6 @@ function stripObjectDefaults(obj: Obj, defaults: Obj): unknown {
 
 function stripDefaults(obj: unknown, defaults: unknown): unknown {
   if (Array.isArray(obj)) {
-    // Length first, then element-wise (zero-aware): avoids serializing both
-    // arrays on every key and ignores key order inside elements.
     if (!Array.isArray(defaults) || obj.length !== defaults.length) return obj;
     const same = obj.every((item, i) =>
       leafEqual(item, (defaults as unknown[])[i]),

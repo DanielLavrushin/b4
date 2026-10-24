@@ -52,7 +52,6 @@ export const EscalationSettings = ({
   onChange,
 }: EscalationSettingsProps) => {
   const { t } = useTranslation();
-  // One index per render, not one per candidate inside the filter below.
   const setsById = useMemo(
     () => new Map(allSets.map((s) => [s.id, s] as const)),
     [allSets],

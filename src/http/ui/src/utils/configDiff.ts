@@ -58,9 +58,6 @@ export const isZero = (value: unknown): boolean =>
   value === false ||
   (Array.isArray(value) && value.length === 0);
 
-// Order is user-visible state for these leaves: mirrors are tried in order,
-// seq_overlap_pattern emits bytes positionally. Everywhere else arrays stay
-// order-insensitive so set-like lists don't produce phantom dirty state.
 export const ORDERED_ARRAY_PATHS: Record<string, true> = {
   "system.update.mirrors": true,
   "system.hub.urls": true,
@@ -104,8 +101,6 @@ export const diffConfigLeaves = (
 ): ChangedLeaf[] => {
   if (draft === baseline) return [];
   const out: ChangedLeaf[] = [];
-  // Mirrors flattenConfigLeaves: plain objects recurse, everything else
-  // (incl. arrays) compares as a leaf — so leaf granularity is unchanged.
   const recurses = (v: unknown): v is Record<string, unknown> =>
     typeof v === "object" && v !== null && !Array.isArray(v);
   const walk = (d: unknown, b: unknown, path: string): void => {

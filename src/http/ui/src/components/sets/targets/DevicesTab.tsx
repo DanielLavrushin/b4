@@ -59,7 +59,6 @@ export const DevicesTab = ({
   const { t } = useTranslation();
   const { changedValues } = useChangedFields();
   const devicesLeaf = changedValues.get("targets.source_devices");
-  // O(1) membership per row instead of O(n) includes scans.
   const leafSets = useMemo(() => {
     if (
       !devicesLeaf ||

@@ -45,17 +45,16 @@ export const B4Select = ({
   const resolvedLabel = useFieldLabel(path, label);
   const changed = useChangedField(path, resolvedLabel);
   const { registerValueLabels, scopeVersion } = useChangedFields();
-  const optionKey = options
-    .map((o) => `${o.value}\0${o.label}`)
-    .join("\0\0");
+  const optionLabels = JSON.stringify(
+    options.map((o) => [String(o.value), o.label]),
+  );
   useEffect(() => {
     if (!path) return;
     registerValueLabels(
       path,
-      new Map(options.map((o) => [String(o.value), o.label])),
+      new Map(JSON.parse(optionLabels) as [string, string][]),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, optionKey, registerValueLabels, scopeVersion]);
+  }, [path, optionLabels, registerValueLabels, scopeVersion]);
   const fc = (
     <FormControl fullWidth size="small">
       <InputLabel

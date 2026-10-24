@@ -51,8 +51,8 @@ function SetEditorRoute({
   const isNew = id === "new";
   const setsData = config.sets || [];
   const sets = useMemo(
-    () => setsData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () =>
+      (config.sets ?? []).map((s) => ("set" in s ? s.set : s)) as B4SetConfig[],
     [config.sets],
   );
   const setsStats = setsData.map((s) =>
@@ -162,8 +162,6 @@ export function SetsPage() {
         sets?: SetWithStats[];
       };
       setConfig(data);
-      // Same tick as setConfig: one render, so the remounted editor starts
-      // from the fresh config instead of the stale one.
       if (resetEditor) setEditorReload((n) => n + 1);
     } catch {
       showError(i18n.t("core.configLoadError"));

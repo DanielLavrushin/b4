@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Grid, Typography, Box, Chip } from "@mui/material";
 import {
   B4Switch,
@@ -85,21 +85,23 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
     onChange("fragmentation.strategy_pool", current);
   };
 
-  const fragmentationOptions: {
-    label: string;
-    value: FragmentationStrategy;
-  }[] = [
-    { label: t("sets.tcp.splitting.strategyCombo"), value: "combo" },
-    { label: t("sets.tcp.splitting.strategyHybrid"), value: "hybrid" },
-    { label: t("sets.tcp.splitting.strategyDisorder"), value: "disorder" },
-    { label: t("sets.tcp.splitting.strategyExtSplit"), value: "extsplit" },
-    { label: t("sets.tcp.splitting.strategyFirstByte"), value: "firstbyte" },
-    { label: t("sets.tcp.splitting.strategyTcp"), value: "tcp" },
-    { label: t("sets.tcp.splitting.strategyIp"), value: "ip" },
-    { label: t("sets.tcp.splitting.strategyTls"), value: "tls" },
-    { label: t("sets.tcp.splitting.strategyOob"), value: "oob" },
-    { label: t("sets.tcp.splitting.strategyNone"), value: "none" },
-  ];
+  const fragmentationOptions = useMemo<
+    { label: string; value: FragmentationStrategy }[]
+  >(
+    () => [
+      { label: t("sets.tcp.splitting.strategyCombo"), value: "combo" },
+      { label: t("sets.tcp.splitting.strategyHybrid"), value: "hybrid" },
+      { label: t("sets.tcp.splitting.strategyDisorder"), value: "disorder" },
+      { label: t("sets.tcp.splitting.strategyExtSplit"), value: "extsplit" },
+      { label: t("sets.tcp.splitting.strategyFirstByte"), value: "firstbyte" },
+      { label: t("sets.tcp.splitting.strategyTcp"), value: "tcp" },
+      { label: t("sets.tcp.splitting.strategyIp"), value: "ip" },
+      { label: t("sets.tcp.splitting.strategyTls"), value: "tls" },
+      { label: t("sets.tcp.splitting.strategyOob"), value: "oob" },
+      { label: t("sets.tcp.splitting.strategyNone"), value: "none" },
+    ],
+    [t],
+  );
 
   const poolOptions = fragmentationOptions.filter((o) => o.value !== "none");
   useEffect(() => {
@@ -107,8 +109,7 @@ export const TcpSplitting = ({ config, onChange }: TcpSplittingProps) => {
       "fragmentation.strategy_pool",
       new Map(fragmentationOptions.map((o) => [o.value, o.label])),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registerValueLabels, t, scopeVersion]);
+  }, [registerValueLabels, fragmentationOptions, scopeVersion]);
 
   return (
     <Grid container spacing={3} sx={{ mt: 2 }}>

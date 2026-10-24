@@ -52,7 +52,6 @@ export const IpsTab = ({
   const catchAllEntries = ipCatchAllEntries(!!ipv6);
   const presentCatchAll = ips.filter(isIpCatchAll).map(catchAllEntryFor);
   const ipsLeaf = changedValues.get("targets.ip");
-  // O(1) membership per chip instead of O(n) includes scans.
   const ipsLeafSets = useMemo(() => {
     if (
       !ipsLeaf ||

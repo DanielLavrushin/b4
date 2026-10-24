@@ -2,10 +2,6 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 
-// Dialog label keys derived from config paths by convention: longest-prefix
-// namespace match, remaining segments camelCased, trailing _sec stripped
-// ("system.dns.tcp_port" -> "settings.Dns.tcpPort"). Anything the convention
-// cannot spell lives in LABEL_EXCEPTIONS below.
 const LABEL_NS_BY_PREFIX: Record<string, string> = {
   dns: "sets.dns",
   routing: "sets.routing",
@@ -38,9 +34,6 @@ const LABEL_NS_BY_PREFIX: Record<string, string> = {
   "system.checker": "settings.Checker",
 };
 
-// Labels the convention cannot derive: arbitrary names ("modeLabel"),
-// cross-namespace keys ("core.interfaces") and inverted flags ("tcpEnable").
-// Set entries in editor tab order, settings entries alphabetically.
 const LABEL_EXCEPTIONS: Record<string, string> = {
   name: "core.setName",
   enabled: "core.enabled",
@@ -123,13 +116,10 @@ export function labelKeyForPath(path: string): string | undefined {
     const raw = segs.slice(n).join("_").replace(/_(sec)$/, "");
     const field = raw.replace(/_([a-z0-9])/g, (_m: string, c: string) => c.toUpperCase());
     const key = `${ns}.${field}`;
-    // Missing keys (dynamic paths like dns.pins.<domain>) must fall back to
-    // the caller instead of rendering the key itself.
     return i18n.exists(key) ? key : undefined;
   }
   return undefined;
 }
-
 
 export function useFieldLabel(path: string | undefined, label: string | undefined): string | undefined {
   const { t } = useTranslation();
@@ -163,8 +153,6 @@ export const humanizeSegment = (segment: string): string =>
 export const capitalize = (text: string): string =>
   text.length > 0 ? text[0].toUpperCase() + text.slice(1) : text;
 
-// Object maps (dns.pins.<domain>) have no label of their own; use the nearest
-// registered ancestor and keep the dynamic remainder visible.
 export const labelForPath = (
   path: string,
   labels: ReadonlyMap<string, ReactNode>,
