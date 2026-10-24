@@ -359,11 +359,11 @@ func TestAddAsNewSetRefusesAStrategyTestedOnAnotherDSCPPath(t *testing.T) {
 	}{
 		{"tested in the IPv4 probes only, a new set would write 25 into IPv6 too", stampsTheSetsValue,
 			func(set config.SetConfig) any {
-				return DiscoveryAddRequest{Set: mustJSON(t, set), DSCPPath: &config.DSCPPath{IPv4: dscpValue(25)}}
+				return DiscoveredSetRequest{Set: mustJSON(t, set), DSCPPath: &config.DSCPPath{IPv4: dscpValue(25)}}
 			}, false},
 		{"tested in the IPv4 probes only, the new set's IPv6 traffic would leave without it too", stampsIPv4Only,
 			func(set config.SetConfig) any {
-				return DiscoveryAddRequest{Set: mustJSON(t, set), DSCPPath: &config.DSCPPath{IPv4: dscpValue(25)}}
+				return DiscoveredSetRequest{Set: mustJSON(t, set), DSCPPath: &config.DSCPPath{IPv4: dscpValue(25)}}
 			}, true},
 		{"a bare set from an older page is still taken", stampsTheSetsValue,
 			func(set config.SetConfig) any { return set }, true},
@@ -379,6 +379,95 @@ func TestAddAsNewSetRefusesAStrategyTestedOnAnotherDSCPPath(t *testing.T) {
 			created := len(api.getCfg().Sets) == before+1
 			if created != tc.created || (tc.created && rec.Code != http.StatusAccepted) || (!tc.created && rec.Code != http.StatusConflict) {
 				t.Errorf("want created %t, got %t: %d (%s)", tc.created, created, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func stampsGlobal(value int) dscpStampFunc {
+	return func(*config.Config, *config.DSCPProbe) (*config.DSCPProbe, *config.DSCPPath, error) {
+		return nil, &config.DSCPPath{IPv4: dscpValue(value), IPv6: dscpValue(value)}, nil
+	}
+}
+
+func TestAddToExistingChecksTheSetStillTakesTheTestedPath(t *testing.T) {
+	onGlobal7 := &config.DSCPPath{IPv4: dscpValue(7), IPv6: dscpValue(7)}
+	for _, tc := range []struct {
+		name     string
+		stamp    dscpStampFunc
+		tested   func(set config.SetConfig) *config.SetConfig
+		path     *config.DSCPPath
+		refusal  string
+		domainIn bool
+	}{
+		{"a set on the global value the run tested on", stampsGlobal(7), func(set config.SetConfig) *config.SetConfig { return &set }, onGlobal7, "", true},
+		{"the global value moved from 7 to 31 since the run", stampsGlobal(31), func(set config.SetConfig) *config.SetConfig { return &set }, onGlobal7, "dscp_path_changed", false},
+		{"the set no longer carries the strategy the run found", stampsGlobal(7), func(set config.SetConfig) *config.SetConfig {
+			set.Faking.Strategy = "pastseq"
+			return &set
+		}, onGlobal7, "similar_set_changed", false},
+		{"a plain add from elsewhere is not checked", stampsGlobal(31), func(config.SetConfig) *config.SetConfig { return nil }, nil, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stubDiscoveryDSCPStamp(t, tc.stamp)
+			api, mux := replaceFixture(t, nil)
+			api.RegisterSetsApi()
+			target, _ := replaceSets(api)
+			body := map[string]any{"domains": []string{"new.example"}, "tested": tc.tested(*target), "dscp_path": tc.path}
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/sets/set-a/add-domain", strings.NewReader(string(mustJSON(t, body)))))
+			got, _ := replaceSets(api)
+			if added := domainInList(got.Targets.SNIDomains, "new.example"); added != tc.domainIn {
+				t.Errorf("want the domain added %t, got %t: %d (%s)", tc.domainIn, added, rec.Code, rec.Body.String())
+			}
+			if tc.refusal == "" {
+				return
+			}
+			var refusal APIError
+			if err := json.Unmarshal(rec.Body.Bytes(), &refusal); err != nil || rec.Code != http.StatusConflict || len(refusal.Fields) != 1 || refusal.Fields[0].Code != tc.refusal {
+				t.Errorf("want a %s refusal, got %d (%s)", tc.refusal, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestAddToExistingRefusesADSCPPathOutOfRange(t *testing.T) {
+	stubDiscoveryDSCPStamp(t, stampsGlobal(7))
+	api, mux := replaceFixture(t, nil)
+	api.RegisterSetsApi()
+	target, _ := replaceSets(api)
+	body := map[string]any{"domains": []string{"new.example"}, "tested": target, "dscp_path": config.DSCPPath{IPv4: dscpValue(64)}}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/sets/set-a/add-domain", strings.NewReader(string(mustJSON(t, body)))))
+	if got, _ := replaceSets(api); rec.Code != http.StatusBadRequest || domainInList(got.Targets.SNIDomains, "new.example") {
+		t.Errorf("a DSCP value is 0-63, and nothing may be added, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSimilarSetsLeaveOutSetsOnAnotherDSCPPath(t *testing.T) {
+	onGlobal7 := &config.DSCPPath{IPv4: dscpValue(7), IPv6: dscpValue(7)}
+	for _, tc := range []struct {
+		name   string
+		stamp  dscpStampFunc
+		path   *config.DSCPPath
+		listed bool
+	}{
+		{"the set still takes the path the run tested on", stampsGlobal(7), onGlobal7, true},
+		{"the global value moved since the run", stampsGlobal(31), onGlobal7, false},
+		{"a bare set from an older page compares the set's own value only", stampsGlobal(31), nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stubDiscoveryDSCPStamp(t, tc.stamp)
+			api, mux := replaceFixture(t, nil)
+			target, _ := replaceSets(api)
+			var body any = DiscoveredSetRequest{Set: mustJSON(t, target), DSCPPath: tc.path}
+			if tc.path == nil {
+				body = target
+			}
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/discovery/similar", strings.NewReader(string(mustJSON(t, body)))))
+			if listed := strings.Contains(rec.Body.String(), `"id":"set-a"`); listed != tc.listed {
+				t.Errorf("want set-a listed %t, got %d (%s)", tc.listed, rec.Code, rec.Body.String())
 			}
 		})
 	}

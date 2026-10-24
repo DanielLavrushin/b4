@@ -23,7 +23,7 @@ type DiscoveryReplaceRequest struct {
 	DSCPPath     *config.DSCPPath    `json:"dscp_path,omitempty"`
 }
 
-type DiscoveryAddRequest struct {
+type DiscoveredSetRequest struct {
 	Set      json.RawMessage  `json:"set"`
 	DSCPPath *config.DSCPPath `json:"dscp_path,omitempty"`
 }

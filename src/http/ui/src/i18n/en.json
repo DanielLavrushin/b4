@@ -3867,6 +3867,7 @@
     "dscp_path_tested_without_family": "This strategy was tested without a DSCP value over {{family}}, but the {{family}} traffic of set \"{{set}}\" now carries DSCP {{now}} and takes another network path. Run Discovery for the set to test a strategy on that path.",
     "dscp_path_now_without_family": "This strategy was tested with DSCP {{tested}} over {{family}}, but the {{family}} traffic of set \"{{set}}\" no longer carries a DSCP value and takes another network path. Run Discovery for the set to test a strategy on that path.",
     "dscp_path_interfaces": "This strategy was tested while b4 wrote DSCP values on other network interfaces, so the traffic of set \"{{set}}\" takes another network path now. Run Discovery for the set to test a strategy on that path.",
+    "similar_set_changed": "Set \"{{set}}\" no longer uses the strategy this result found, so its domains were not added. Open the result again to choose a set.",
     "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the set's traffic. Try again in a moment."
   },
   "hub": {

@@ -28,13 +28,35 @@ type discoveryStamp struct {
 	ifaces []string
 	v4     bool
 	v6     bool
+	rest4  *int
+	rest6  *int
 }
 
 func (s *discoveryStamp) covers(v6 bool) bool {
 	return s != nil && ((v6 && s.v6) || (!v6 && s.v4))
 }
 
+func (s *discoveryStamp) write(v6 bool) (int, bool) {
+	if s.covers(v6) {
+		return s.value, true
+	}
+	if s == nil {
+		return 0, false
+	}
+	rest := s.rest4
+	if v6 {
+		rest = s.rest6
+	}
+	if rest == nil {
+		return 0, false
+	}
+	return *rest, true
+}
+
 func (s *discoveryStamp) probe() *config.DSCPProbe {
+	if s == nil || (!s.v4 && !s.v6) {
+		return nil
+	}
 	return &config.DSCPProbe{Value: s.value, IPv4: s.v4, IPv6: s.v6}
 }
 
@@ -56,50 +78,70 @@ func dscpInPlay(next *config.Config) bool {
 }
 
 func discoveryStampFor(cfg *config.Config, dscp *config.DSCPProbe, be discoveryBackend) (*discoveryStamp, error) {
-	if dscp == nil {
-		return nil, nil
-	}
-	if st := dscpApplied.Load(); st != nil && st.cfg != nil {
+	st := dscpApplied.Load()
+	if st != nil && st.cfg != nil {
 		cfg = st.cfg
 	}
-	stamp := &discoveryStamp{value: dscp.Value, ifaces: cfg.DSCPInterfaces()}
-	for _, family := range []struct {
-		v6     bool
-		wanted bool
-		takes  *bool
-	}{{false, dscp.IPv4, &stamp.v4}, {true, dscp.IPv6, &stamp.v6}} {
-		if !family.wanted {
-			continue
+	stamp := &discoveryStamp{ifaces: cfg.DSCPInterfaces()}
+	if dscp != nil {
+		stamp.value = dscp.Value
+		for _, family := range []struct {
+			v6     bool
+			wanted bool
+			takes  *bool
+		}{{false, dscp.IPv4, &stamp.v4}, {true, dscp.IPv6, &stamp.v6}} {
+			if !family.wanted {
+				continue
+			}
+			takes, err := be.takesSetValues(cfg, family.v6)
+			if err != nil {
+				return nil, err
+			}
+			*family.takes = takes
 		}
-		takes, err := be.takesSetValues(cfg, family.v6)
-		if err != nil {
-			return nil, err
-		}
-		*family.takes = takes
 	}
-	if !stamp.v4 && !stamp.v6 {
+	if st.perSet() {
+		for _, family := range []struct {
+			v6   bool
+			rest **int
+		}{{false, &stamp.rest4}, {true, &stamp.rest6}} {
+			if stamp.covers(family.v6) || !dscpFamilyStamped(st, family.v6) {
+				continue
+			}
+			value, _ := dscpGlobalOn(st, family.v6)
+			*family.rest = &value
+		}
+	}
+	if !stamp.v4 && !stamp.v6 && stamp.rest4 == nil && stamp.rest6 == nil {
 		return nil, nil
 	}
 	return stamp, nil
 }
 
+func dscpFamilyStamped(st *dscpState, v6 bool) bool {
+	if st == nil {
+		return false
+	}
+	if st.backend == backendNFTables {
+		return true
+	}
+	for _, bin := range st.bins {
+		if dscpIptBinV6(bin) == v6 {
+			return true
+		}
+	}
+	return false
+}
+
 func dscpGlobalOn(st *dscpState, v6 bool) (int, bool) {
-	if st == nil || st.cfg == nil {
+	if st == nil || st.cfg == nil || !dscpFamilyStamped(st, v6) {
 		return 0, false
 	}
 	value, _, on := st.cfg.DSCPStamp()
 	if !on {
 		return 0, false
 	}
-	if st.backend == backendNFTables {
-		return value, true
-	}
-	for _, bin := range st.bins {
-		if dscpIptBinV6(bin) == v6 {
-			return value, true
-		}
-	}
-	return 0, false
+	return value, true
 }
 
 func discoveryPathFor(cfg *config.Config, stamp *discoveryStamp) *config.DSCPPath {

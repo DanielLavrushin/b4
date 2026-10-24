@@ -412,10 +412,20 @@ export const DiscoveryRunner = () => {
   ) => {
     const applied = applyTarget;
     setApplying(true);
-    const res = await addDomainsToSet(setId, domains, pins);
+    const res = await addDomainsToSet(
+      setId,
+      domains,
+      pins,
+      applied?.set,
+      applied?.dscpPath,
+    );
     setApplying(false);
     if (!res.success) {
-      showError(t("discovery.apply.addFailed"));
+      showError(
+        [t("discovery.apply.addFailed"), describeApiError(res.error)]
+          .filter(Boolean)
+          .join(" "),
+      );
       return;
     }
     if (applied) await markApplied(applied.domains, applied.preset, setId);

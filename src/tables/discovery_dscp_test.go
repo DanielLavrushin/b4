@@ -948,6 +948,104 @@ func TestDiscoveryDSCPStampNamesTheValueARunWouldCarryNow(t *testing.T) {
 	}
 }
 
+func TestDiscoveryProbesTheSetsValueDoesNotReachCarryTheRecordedPath(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	discoveryIpsetReady(t, true)
+	discoveryRefuseSetMatch(backendIP6Tables)
+	dscpIptProbeMu.Lock()
+	dscpIptProbes[backendIPTables] = dscpIptProbe{at: dscpIptNow()}
+	dscpIptProbeMu.Unlock()
+
+	both := []string{backendIPTables, backendIP6Tables}
+	for _, tc := range []struct {
+		name         string
+		globalOn     bool
+		perSet       bool
+		bins         []string
+		probe        *config.DSCPProbe
+		want4, want6 string
+	}{
+		{"without per-set rules a run with no set value leaves the probes alone", true, false, both, nil, "-", "-"},
+		{"per-set rules: probes of a run with no set value carry the global value even to a set's own addresses", true, true, both, nil, "7", "7"},
+		{"per-set rules and no global value: probes leave without a destination's value", false, true, both, nil, "0", "0"},
+		{"a set run whose IPv6 traffic falls back to the global value", true, true, both, discoveryProbe(25), "25", "7"},
+		{"a family without b4's DSCP rules gets no destination's value, so its probes are left alone", true, true, []string{backendIPTables}, nil, "7", "-"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var sets []*config.SetConfig
+			if tc.perSet {
+				sets = append(sets, dscpPlanTestSet("a", 31, "10.1.2.0/24"))
+			}
+			cfg := dscpIptTestConfig(7, tc.globalOn, nil, sets...)
+			dscpApplied.Store(&dscpState{cfg: cfg, backend: backendIPTables, bins: tc.bins, plan: dscpPlanFor(cfg)})
+			stamp, err := discoveryStampFor(cfg, tc.probe, &discoveryIptBackend{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			written := func(v6 bool) string {
+				if value, ok := stamp.write(v6); ok {
+					return strconv.Itoa(value)
+				}
+				return "-"
+			}
+			if written(false) != tc.want4 || written(true) != tc.want6 {
+				t.Errorf("want IPv4 %s, IPv6 %s, got %s, %s", tc.want4, tc.want6, written(false), written(true))
+			}
+			if tc.probe == nil && stamp.probe() != nil {
+				t.Errorf("a run with no set value must not claim one, got %+v", stamp.probe())
+			}
+		})
+	}
+}
+
+func TestDiscoveryWritesTheRecordedPathIntoProbesTheSetsValueDoesNotReach(t *testing.T) {
+	seven := 7
+	stamp := &discoveryStamp{value: 25, v4: true, rest6: &seven}
+
+	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true})
+	calls := discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+	if err := (&discoveryIptBackend{}).apply(0x8001, 0x8002, 541, 1, stamp); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	for bin, value := range map[string]string{backendIPTables: "25", backendIP6Tables: "7"} {
+		if discoveryCallIndex(*calls, bin+" -w -t mangle -A B4_DISCOVERY_DSCP -m mark --mark 0x8001/0xffffffff -j DSCP --set-dscp "+value) < 0 {
+			t.Errorf("%s: the run's probes must get DSCP %s: %v", bin, value, *calls)
+		}
+	}
+
+	scripts := discoveryRecordNftScripts(t, nil)
+	if err := (&discoveryNftBackend{}).apply(0x8001, 0x8002, 541, 1, stamp); err != nil {
+		t.Fatalf("nft apply: %v", err)
+	}
+	for _, want := range []string{"meta mark 0x8001 meta nfproto ipv4 ip dscp set 25", "meta mark 0x8001 meta nfproto ipv6 ip6 dscp set 7"} {
+		if len(*scripts) != 1 || !strings.Contains((*scripts)[0], want) {
+			t.Errorf("missing %q in %v", want, *scripts)
+		}
+	}
+}
+
+func TestDiscoveryRunWithoutASetValueOverridesADestinationsValue(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	discoveryIpsetReady(t, false)
+	calls := discoveryRecordRun(t, discoveryDSCPListings(discoveryDSCPPostrouting))
+	cfg := dscpIptTestConfig(7, true, nil, dscpPlanTestSet("a", 31, "10.1.2.0/24"))
+	cfg.System.Tables.Engine = backendIPTables
+	dscpApplied.Store(&dscpState{cfg: cfg, backend: backendIPTables, bins: []string{backendIPTables}, plan: dscpPlanFor(cfg)})
+
+	if err := ApplyDiscoverySteeringRules(cfg, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	t.Cleanup(func() { ClearDiscoverySteeringRules(cfg, 0x8001, 0x8002) })
+	if discoveryCallIndex(*calls, "iptables -w -t mangle -A B4_DISCOVERY_DSCP -m mark --mark 0x8001/0xffffffff -j DSCP --set-dscp 7") < 0 {
+		t.Errorf("set a's rules would write 31 into the probes sent to its addresses, while the run records the global 7, so the probes must get 7: %v", *calls)
+	}
+	if stamp, path := ActiveDiscoveryDSCP(); stamp != nil || dscpPathText(path) != "IPv4 7, IPv6 -, on []" {
+		t.Errorf("the run carries no set value and records the global value its probes carry, got %+v, %s", stamp, dscpPathText(path))
+	}
+}
+
 func TestDiscoveryDSCPStampWaitsForTheRulesOfASetThatJustDroppedItsValue(t *testing.T) {
 	appliedResetGlobals(t)
 	resetDSCPState(t)

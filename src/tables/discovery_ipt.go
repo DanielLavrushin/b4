@@ -139,7 +139,8 @@ func discoveryIptStamp(bin, flow, injected string, stamp *discoveryStamp) error 
 	if err := discoveryIptDropStamp(bin); err != nil {
 		return err
 	}
-	if !stamp.covers(dscpIptBinV6(bin)) {
+	value, ok := stamp.write(dscpIptBinV6(bin))
+	if !ok {
 		return nil
 	}
 	loadKernelModuleList("xt_DSCP")
@@ -148,10 +149,10 @@ func discoveryIptStamp(bin, flow, injected string, stamp *discoveryStamp) error 
 	for _, scope := range dscpIptScopes(stamp.ifaces) {
 		for _, mark := range []string{flow, injected} {
 			spec := slices.Concat([]string{bin, "-w", "-t", "mangle", "-A", discoveryStampChainIPT}, scope,
-				[]string{"-m", "mark", "--mark", mark, "-j", "DSCP", "--set-dscp", strconv.Itoa(stamp.value)})
+				[]string{"-m", "mark", "--mark", mark, "-j", "DSCP", "--set-dscp", strconv.Itoa(value)})
 			if out, err := run(spec...); err != nil {
 				kmodNoteRejected("xt_DSCP", bin, out)
-				return fmt.Errorf("%s rejected the rule that writes DSCP %d into Discovery's probes (%s). %s", bin, stamp.value, iptErrText(out, err), kmodMissingHint([]string{"xt_DSCP"}))
+				return fmt.Errorf("%s rejected the rule that writes DSCP %d into Discovery's probes (%s). %s", bin, value, iptErrText(out, err), kmodMissingHint([]string{"xt_DSCP"}))
 			}
 		}
 	}

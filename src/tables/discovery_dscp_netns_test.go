@@ -73,11 +73,12 @@ func TestNetnsDiscoveryProbesCarryTheRunsDSCP(t *testing.T) {
 			}
 		}
 		untagged := map[string]int{setDSCPAddrA: 31, setDSCPAddrOther: dscpTestValue}
+		plain := map[string]int{setDSCPAddrA: dscpTestValue, setDSCPAddrOther: dscpTestValue}
 
 		if err := ApplyDiscoverySteeringRules(cfg, uint(flow), uint(injected), queue, 1, nil, nil); err != nil {
 			t.Fatalf("ApplyDiscoverySteeringRules without a value: %v", err)
 		}
-		setDSCPCheck(t, "a run with no set value: the global value, and a set's value for that set's own addresses", untagged, probes(42101))
+		setDSCPCheck(t, "a run with no set value: the global value it records, also to a set's own addresses", plain, probes(42101))
 		setDSCPExpect(t, "IPv6 probe of a run with no set value", discoveryDSCPSendV6(t, flow, setDSCPAddrOther6), map[string]int{setDSCPAddrOther6: dscpTestValue})
 
 		lost := make(chan error, 4)

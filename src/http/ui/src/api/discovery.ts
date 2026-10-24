@@ -105,8 +105,11 @@ export const discoveryApi = {
         ? `/api/discovery/set-runs?set_id=${encodeURIComponent(setId)}`
         : "/api/discovery/set-runs",
     ),
-  similar: (set: B4SetConfig) =>
-    apiPost<SimilarSet[]>("/api/discovery/similar", set),
+  similar: (set: B4SetConfig, dscpPath?: DSCPPath) =>
+    apiPost<SimilarSet[]>("/api/discovery/similar", {
+      set,
+      dscp_path: dscpPath,
+    }),
   clearCache: () => apiPost("/api/discovery/cache/clear", {}),
   current: () => apiGet<DiscoveryCurrent>("/api/discovery/current"),
   history: () => apiGet<HistoryEntry[]>("/api/discovery/history"),

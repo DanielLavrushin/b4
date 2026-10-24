@@ -109,7 +109,7 @@ func (b *discoveryNftBackend) applyStamp(flowHex, injectedHex string, stamp *dis
 	}
 	if out, err := runNftStdin(discoveryNftStampScript(flowHex, injectedHex, stamp)); err != nil {
 		_ = b.dropStamp()
-		return fmt.Errorf("nftables rejected the chain that writes DSCP %d into Discovery's probes: %s", stamp.value, iptErrText(out, err))
+		return fmt.Errorf("nftables rejected the chain that writes DSCP values into Discovery's probes: %s", iptErrText(out, err))
 	}
 	return nil
 }
@@ -126,11 +126,11 @@ func discoveryNftStampScript(flowHex, injectedHex string, stamp *discoveryStamp)
 	}
 	for _, scope := range scopes {
 		for _, mark := range []string{flowHex, injectedHex} {
-			if stamp.v4 {
-				fmt.Fprintf(&b, "add rule inet %s %s %smeta mark %s meta nfproto ipv4 ip dscp set %d\n", nftTableName, discoveryStampChainNFT, scope, mark, stamp.value)
+			if value, ok := stamp.write(false); ok {
+				fmt.Fprintf(&b, "add rule inet %s %s %smeta mark %s meta nfproto ipv4 ip dscp set %d\n", nftTableName, discoveryStampChainNFT, scope, mark, value)
 			}
-			if stamp.v6 {
-				fmt.Fprintf(&b, "add rule inet %s %s %smeta mark %s meta nfproto ipv6 ip6 dscp set %d\n", nftTableName, discoveryStampChainNFT, scope, mark, stamp.value)
+			if value, ok := stamp.write(true); ok {
+				fmt.Fprintf(&b, "add rule inet %s %s %smeta mark %s meta nfproto ipv6 ip6 dscp set %d\n", nftTableName, discoveryStampChainNFT, scope, mark, value)
 			}
 		}
 	}
