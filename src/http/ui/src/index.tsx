@@ -8,6 +8,19 @@ import { AuthProvider } from "./context/AuthProvider";
 import { WebSocketProvider } from "./context/B4WsProvider";
 import { AiStatusProvider } from "./context/AiStatusProvider";
 
+const CHUNK_RELOAD_KEY = "b4_chunk_reload_at";
+
+window.addEventListener("vite:preloadError", () => {
+  try {
+    const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) ?? 0);
+    if (Date.now() - last < 10_000) return;
+    sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
+  } catch {
+    return;
+  }
+  window.location.reload();
+});
+
 const router = createBrowserRouter([
   { path: "/", element: <App />, children: appRoutes },
 ]);

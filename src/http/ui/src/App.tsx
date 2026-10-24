@@ -1,5 +1,6 @@
 import {
   AppBar,
+  Button,
   CircularProgress,
   Box,
   CssBaseline,
@@ -22,6 +23,7 @@ import {
   Outlet,
   useLocation,
   useNavigate,
+  useRouteError,
 } from "react-router";
 import type { RouteObject } from "react-router";
 import { useTranslation } from "react-i18next";
@@ -53,9 +55,10 @@ import {
 } from "./context/B4WsProvider";
 
 import { DashboardPage } from "@b4.dashboard";
+import { B4Alert } from "@b4.elements";
 import { useHubStatus } from "@hooks/useHub";
-// Dashboard is the landing route: eager. The rest split off the initial
-// chunk and load on first navigation (Suspense boundary around <Outlet />).
+import { SnackbarProvider } from "@context/SnackbarProvider";
+
 const ConnectionsPage = lazy(() =>
   import("@b4.connections").then((m) => ({ default: m.ConnectionsPage })),
 );
@@ -80,7 +83,6 @@ const SettingsPage = lazy(() =>
 const WatchdogPage = lazy(() =>
   import("@b4.watchdog").then((m) => ({ default: m.WatchdogPage })),
 );
-import { SnackbarProvider } from "@context/SnackbarProvider";
 
 const DRAWER_WIDTH = 240;
 const HEADER_HEIGHT = 64;
@@ -102,19 +104,57 @@ const navItems: NavItem[] = [
   { path: "/logs", labelKey: "core.nav.logs", icon: <LogsIcon /> },
   { path: "/settings", labelKey: "core.nav.settings", icon: <CoreIcon /> },
 ];
+function PageLoadError() {
+  const { t } = useTranslation();
+  const error = useRouteError();
+  return (
+    <Box sx={{ p: 3 }}>
+      <B4Alert
+        severity="error"
+        noWrapper
+        action={
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => window.location.reload()}
+          >
+            {t("core.reload")}
+          </Button>
+        }
+      >
+        {t("core.pageLoadFailed")}
+        {error instanceof Error && error.message && (
+          <Typography
+            variant="caption"
+            component="div"
+            sx={{ mt: 0.5, opacity: 0.8 }}
+          >
+            {error.message}
+          </Typography>
+        )}
+      </B4Alert>
+    </Box>
+  );
+}
+
 export const appRoutes: RouteObject[] = [
-  { index: true, element: <Navigate to="/dashboard" replace /> },
-  { path: "dashboard", element: <DashboardPage /> },
-  { path: "sets/*", element: <SetsPage /> },
-  { path: "traffic", element: <ConnectionsPage /> },
-  { path: "connections", element: <Navigate to="/traffic" replace /> },
-  { path: "discovery", element: <DiscoveryPage /> },
-  { path: "hub", element: <HubPage /> },
-  { path: "watchdog", element: <WatchdogPage /> },
-  { path: "detector", element: <DetectorPage /> },
-  { path: "logs", element: <LogsPage /> },
-  { path: "settings/*", element: <SettingsPage /> },
-  { path: "*", element: <Navigate to="/dashboard" replace /> },
+  {
+    errorElement: <PageLoadError />,
+    children: [
+      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { path: "dashboard", element: <DashboardPage /> },
+      { path: "sets/*", element: <SetsPage /> },
+      { path: "traffic", element: <ConnectionsPage /> },
+      { path: "connections", element: <Navigate to="/traffic" replace /> },
+      { path: "discovery", element: <DiscoveryPage /> },
+      { path: "hub", element: <HubPage /> },
+      { path: "watchdog", element: <WatchdogPage /> },
+      { path: "detector", element: <DetectorPage /> },
+      { path: "logs", element: <LogsPage /> },
+      { path: "settings/*", element: <SettingsPage /> },
+      { path: "*", element: <Navigate to="/dashboard" replace /> },
+    ],
+  },
 ];
 
 function pageTitleKey(pathname: string) {

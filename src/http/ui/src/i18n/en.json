@@ -36,6 +36,7 @@
     "configSavedRestart": "Configuration saved. Some changes take effect after a B4 restart.",
     "configSaved": "Configuration saved successfully!",
     "configLoadError": "Failed to load configuration",
+    "pageLoadFailed": "This page could not be loaded. If b4 was updated while this tab was open, reload the page to get the new version.",
     "configSaveError": "Failed to save",
     "changesDiscarded": "Changes discarded",
     "coreRestartWarning": "Some changes require a <strong>B4</strong> restart to take effect",
