@@ -233,38 +233,36 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
         aiTopic="system.tables.dscp.enabled"
       />
       {dscp.enabled && (
-        <>
-          <B4Slider
-            value={dscp.value}
-            path="system.tables.dscp.value"
-            onChange={(value: number) =>
-              onChange("system.tables.dscp.value", value)
-            }
-            min={0}
-            max={DSCP_MAX_VALUE}
-            step={1}
-            disabled={skipTables}
-            helperText={t("settings.Feature.dscpValueHelp")}
-            aiTopic="system.tables.dscp.value"
-          />
-          {stampingSets.length > 0 && (
-            <Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                {t("settings.Feature.dscpSetsList")}
-              </Typography>
-              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                {stampingSets.map((set) => (
-                  <B4Badge
-                    key={set.id}
-                    label={`${set.name || set.id}: ${set.dscp?.value ?? 0}`}
-                    variant="outlined"
-                    color="secondary"
-                  />
-                ))}
-              </Box>
-            </Box>
-          )}
-        </>
+        <B4Slider
+          value={dscp.value}
+          path="system.tables.dscp.value"
+          onChange={(value: number) =>
+            onChange("system.tables.dscp.value", value)
+          }
+          min={0}
+          max={DSCP_MAX_VALUE}
+          step={1}
+          disabled={skipTables}
+          helperText={t("settings.Feature.dscpValueHelp")}
+          aiTopic="system.tables.dscp.value"
+        />
+      )}
+      {stampingSets.length > 0 && (
+        <Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            {t("settings.Feature.dscpSetsList")}
+          </Typography>
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+            {stampingSets.map((set) => (
+              <B4Badge
+                key={set.id}
+                label={`${set.name || set.id}: ${set.dscp?.value ?? 0}`}
+                variant="outlined"
+                color="secondary"
+              />
+            ))}
+          </Box>
+        </Box>
       )}
       {(dscp.enabled || stampingSets.length > 0) && (
         <Box>
