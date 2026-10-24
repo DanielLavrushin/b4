@@ -609,102 +609,29 @@ var discoveryDSCPStamp = tables.DiscoveryDSCPStamp
 
 const errDSCPRulesPending = "b4 is still applying its DSCP rules, which decide the network path of the set's traffic; try again in a moment"
 
-type dscpPathChange struct {
-	set, family string
-	tested, now *int
-}
-
-type dscpFamilyPath struct {
-	family      string
-	tested, now *int
-}
-
-func sameDSCP(a, b *int) bool {
-	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
-}
-
-func dscpPathChanged(cfg *config.Config, set, tested *config.SetConfig, testedOnly string) (*dscpPathChange, error) {
-	probe := cfg.ProbeDSCP(set)
-	if probe != nil {
-		probe.IPv4 = probe.IPv4 && tested.MatchesIPVersion(4)
-		probe.IPv6 = probe.IPv6 && tested.MatchesIPVersion(6)
-		if !probe.IPv4 && !probe.IPv6 {
-			probe = nil
-		}
-	}
-	now, err := discoveryDSCPStamp(cfg, probe)
-	if err != nil {
-		return nil, err
-	}
-	var paths []dscpFamilyPath
-	for _, f := range []struct {
-		family, only string
-		version      uint8
-	}{{"IPv4", "4", 4}, {"IPv6", "6", 6}} {
-		if !set.MatchesIPVersion(f.version) || !tested.MatchesIPVersion(f.version) {
-			continue
-		}
-		path := dscpFamilyPath{family: f.family}
-		if tested.DSCP.Enabled && (testedOnly == "" || testedOnly == f.only) {
-			value := tested.DSCP.Value
-			path.tested = &value
-		}
-		if now != nil && ((f.version == 4 && now.IPv4) || (f.version == 6 && now.IPv6)) {
-			value := now.Value
-			path.now = &value
-		}
-		paths = append(paths, path)
-	}
-	for _, path := range paths {
-		if sameDSCP(path.tested, path.now) {
-			continue
-		}
-		change := &dscpPathChange{set: set.Name, tested: path.tested, now: path.now}
-		if len(paths) == 2 && !(sameDSCP(paths[0].tested, paths[1].tested) && sameDSCP(paths[0].now, paths[1].now)) {
-			change.family = path.family
-		}
-		return change, nil
-	}
-	return nil, nil
-}
-
-func (c *dscpPathChange) Error() string {
-	over, traffic := "", fmt.Sprintf("the traffic of set %q", c.set)
-	if c.family != "" {
-		over, traffic = " over "+c.family, fmt.Sprintf("the %s traffic of set %q", c.family, c.set)
-	}
+func dscpPathField(c *discovery.DSCPPathChange) FieldError {
+	f := FieldError{Path: "dscp", Code: "dscp_path_changed", Message: c.Error(), Params: map[string]any{"set": c.Set}}
 	switch {
-	case c.tested == nil:
-		return fmt.Sprintf("the strategy was tested without a DSCP value of the set%s, but %s now carries DSCP %d, so it takes another network path", over, traffic, *c.now)
-	case c.now == nil:
-		return fmt.Sprintf("the strategy was tested with DSCP %d%s, but %s no longer carries a DSCP value of its own, so it takes another network path", *c.tested, over, traffic)
-	}
-	return fmt.Sprintf("the strategy was tested with DSCP %d%s, but %s now carries DSCP %d, so it takes another network path", *c.tested, over, traffic, *c.now)
-}
-
-func (c *dscpPathChange) field() FieldError {
-	f := FieldError{Path: "dscp", Code: "dscp_path_changed", Message: c.Error(), Params: map[string]any{"set": c.set}}
-	switch {
-	case c.tested == nil:
+	case c.Tested == nil:
 		f.Code = "dscp_path_tested_without"
-	case c.now == nil:
+	case c.Now == nil:
 		f.Code = "dscp_path_now_without"
 	}
-	if c.family != "" {
+	if c.Family != "" {
 		f.Code += "_family"
-		f.Params["family"] = c.family
+		f.Params["family"] = c.Family
 	}
-	if c.tested != nil {
-		f.Params["tested"] = *c.tested
+	if c.Tested != nil {
+		f.Params["tested"] = *c.Tested
 	}
-	if c.now != nil {
-		f.Params["now"] = *c.now
+	if c.Now != nil {
+		f.Params["now"] = *c.Now
 	}
 	return f
 }
 
 func dscpPathRefusal(cfg *config.Config, set, tested *config.SetConfig, testedOnly string) error {
-	change, err := dscpPathChanged(cfg, set, tested, testedOnly)
+	change, err := discovery.DSCPPathChanged(cfg, set, tested, testedOnly, discoveryDSCPStamp)
 	switch {
 	case errors.Is(err, tables.ErrDiscoveryDSCPPending):
 		return &APIError{Status: http.StatusConflict, Code: "dscp_rules_pending", Message: errDSCPRulesPending,
@@ -713,7 +640,7 @@ func dscpPathRefusal(cfg *config.Config, set, tested *config.SetConfig, testedOn
 		return err
 	case change != nil:
 		return &APIError{Status: http.StatusConflict, Code: "dscp_path_changed", Message: "Nothing written: " + change.Error() + ". Run Discovery for the set to test a strategy on that path",
-			Fields: []FieldError{change.field()}}
+			Fields: []FieldError{dscpPathField(change)}}
 	}
 	return nil
 }

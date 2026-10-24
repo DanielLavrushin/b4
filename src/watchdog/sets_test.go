@@ -76,6 +76,7 @@ type fakeDriver struct {
 	canceled   int
 	onSnapshot func(n int)
 	rulesLost  bool
+	dscpOnly   string
 }
 
 func (d *fakeDriver) IsActive() bool {
@@ -113,11 +114,12 @@ func (d *fakeDriver) Snapshot(id string) (*discovery.CheckSuite, bool) {
 	verdict := d.verdict
 	results := d.results
 	rulesLost := d.rulesLost
+	dscpOnly := d.dscpOnly
 	d.mu.Unlock()
 	if hook != nil {
 		hook(n)
 	}
-	suite := &discovery.CheckSuite{Id: id, Status: status}
+	suite := &discovery.CheckSuite{Id: id, Status: status, DSCPIPVersion: dscpOnly}
 	if status == discovery.CheckStatusComplete {
 		suite.SetVerdict = verdict
 		suite.DomainDiscoveryResults = results
@@ -208,8 +210,35 @@ func watchedSet(id string, urls ...string) *config.SetConfig {
 	return &set
 }
 
+func stampsEveryFamily(_ *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, error) {
+	if dscp == nil {
+		return nil, nil
+	}
+	taken := *dscp
+	return &taken, nil
+}
+
+func stampsIPv4Only(_ *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, error) {
+	if dscp == nil || !dscp.IPv4 {
+		return nil, nil
+	}
+	return &config.DSCPProbe{Value: dscp.Value, IPv4: true}, nil
+}
+
+func stampsNothing(*config.Config, *config.DSCPProbe) (*config.DSCPProbe, error) {
+	return nil, nil
+}
+
+func stubDSCPStampNow(t *testing.T) {
+	t.Helper()
+	orig := dscpStampNow
+	t.Cleanup(func() { dscpStampNow = orig })
+	dscpStampNow = stampsEveryFamily
+}
+
 func newHarness(t *testing.T, sets ...*config.SetConfig) *harness {
 	t.Helper()
+	stubDSCPStampNow(t)
 	cfg := config.NewConfig()
 	cfg.System.Checker.ConfigPropagateMs = 0
 	wd := &cfg.System.Checker.Watchdog

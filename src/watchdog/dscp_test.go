@@ -3,6 +3,7 @@ package watchdog
 import (
 	"fmt"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -61,6 +62,80 @@ func TestLegacyHealWritesNothingFromARunWhoseRulesChanged(t *testing.T) {
 	}
 	if n := h.saves.Load(); n != 0 {
 		t.Errorf("nothing may be saved, got %d saves", n)
+	}
+}
+
+func TestLegacyHealWritesNothingIntoASetSavedWithAnotherDSCPAfterTheRun(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		savedAs int
+		stamp   func(*config.Config, *config.DSCPProbe) (*config.DSCPProbe, error)
+		only    string
+		adopted bool
+	}{
+		{"saved with DSCP 7 between the run and the write", 7, stampsEveryFamily, "", false},
+		{"still on DSCP 25", 25, stampsEveryFamily, "", true},
+		{"still on DSCP 25 in IPv4 only, like the run's probes", 25, stampsIPv4Only, "4", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := legacyHarness(t)
+			dscpStampNow = tc.stamp
+			h.driver.dscpOnly = tc.only
+			h.edit("yt", func(s *config.SetConfig) { s.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25} })
+			h.driver.results["youtube.com"].Results["p"].Set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+			h.check.set("youtube.com", okCheck)
+			var once sync.Once
+			h.beforeUpdate = func() {
+				once.Do(func() { h.edit("yt", func(s *config.SetConfig) { s.DSCP.Value = tc.savedAs }) })
+			}
+
+			h.w.healBatch([]string{"youtube.com"}, &config.DSCPProbe{Value: 25, IPv4: true, IPv6: true})
+
+			if adopted := h.set("yt").Fragmentation.Strategy == "disorder"; adopted != tc.adopted {
+				t.Errorf("the run tested its winner on DSCP 25 and the set carries %d at the write, adopted %t, want %t", tc.savedAs, adopted, tc.adopted)
+			}
+			if saved := h.saves.Load() > 0; saved != tc.adopted {
+				t.Errorf("a result from another network path saves nothing, saved %t, want %t", saved, tc.adopted)
+			}
+		})
+	}
+}
+
+func TestSetHealWritesNothingOnceTheSetsDSCPPathMovedAfterTheRun(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		stamp   func(*config.Config, *config.DSCPProbe) (*config.DSCPProbe, error)
+		only    string
+		adopted bool
+	}{
+		{"the firewall still writes the set's value", stampsEveryFamily, "", true},
+		{"the firewall writes it in IPv4 only, like the run's probes", stampsIPv4Only, "4", true},
+		{"the firewall no longer writes the set's value", stampsNothing, "", false},
+		{"b4 is still applying its DSCP rules", func(*config.Config, *config.DSCPProbe) (*config.DSCPProbe, error) {
+			return nil, discovery.ErrDSCPRulesPending
+		}, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tagged := watchedSet("yt", ytURL)
+			tagged.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+			h := newHarness(t, tagged)
+			dscpStampNow = tc.stamp
+			h.driver.dscpOnly = tc.only
+			h.check.set(ytURL, okCheck)
+			verdict := coveredVerdict("disorder")
+			verdict.Set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+			h.driver.verdict = verdict
+
+			h.healNow("yt")
+
+			st := h.state("yt")
+			if adopted := h.set("yt").Fragmentation.Strategy == "disorder"; adopted != tc.adopted {
+				t.Fatalf("the run tested its winner on DSCP 25, adopted %t, want %t: %+v", adopted, tc.adopted, st)
+			}
+			if !tc.adopted && (st.Reason != ReasonRulesChanged || st.HealFailures != 1) {
+				t.Errorf("the set's traffic left the path the run tested on, so the heal must say so and count it: %+v", st)
+			}
+		})
 	}
 }
 

@@ -173,6 +173,48 @@ func TestApplyBatchResultsUsesConfirmedGroupWinner(t *testing.T) {
 	}
 }
 
+func TestApplyBatchResultsDefersOnlyTheDomainsWhoseSetMovedToAnotherDSCPPath(t *testing.T) {
+	stubDSCPStampNow(t)
+	moved := config.NewSetConfig()
+	moved.Id, moved.Name, moved.Enabled = "yt", "YouTube", true
+	moved.Targets.SNIDomains = []string{"youtube.com"}
+	moved.Targets.DomainsToMatch = []string{"youtube.com"}
+	moved.Fragmentation.Strategy = "tcp"
+	moved.DSCP = config.SetDSCPConfig{Enabled: true, Value: 7}
+	cfg := &config.Config{Sets: []*config.SetConfig{&moved}}
+
+	tested := func() *config.SetConfig {
+		set := config.NewSetConfig()
+		set.Fragmentation.Strategy = "disorder"
+		set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+		return &set
+	}
+	found := func(domain string) *discovery.DomainDiscoveryResult {
+		return &discovery.DomainDiscoveryResult{
+			Domain: domain, BestPreset: "p", BestSuccess: true,
+			Results: map[string]*discovery.DomainPresetResult{"p": {Status: discovery.CheckStatusComplete, Set: tested()}},
+		}
+	}
+	suite := healSuite(map[string]*discovery.DomainDiscoveryResult{"youtube.com": found("youtube.com"), "meduza.io": found("meduza.io")})
+
+	saved := 0
+	errs := applyBatchResults(cfg, []string{"youtube.com", "meduza.io"}, suite, func(*config.Config) error {
+		saved++
+		return nil
+	})
+
+	var change *discovery.DSCPPathChange
+	if !errors.As(errs["youtube.com"], &change) || change.Tested == nil || *change.Tested != 25 || change.Now == nil || *change.Now != 7 {
+		t.Errorf("youtube.com was tested on DSCP 25 and its set now carries 7, so its result must wait for a run on that path, got %v", errs["youtube.com"])
+	}
+	if got := cfg.GetSetById("yt").Fragmentation.Strategy; got != "tcp" {
+		t.Errorf("nothing may be adopted into the set that moved, its strategy became %q", got)
+	}
+	if err := errs["meduza.io"]; err != nil || saved != 1 || len(cfg.Sets) != 2 || cfg.Sets[0].DSCP.Value != 25 {
+		t.Errorf("meduza.io gets a new set on the path it was tested on and is saved, got err %v, %d saves, %d sets", err, saved, len(cfg.Sets))
+	}
+}
+
 func TestApplyBatchResultsSkipsUnconfirmedGroupWinner(t *testing.T) {
 	existing := config.NewSetConfig()
 	existing.Id = "yt"
@@ -383,7 +425,9 @@ func TestApplyGroup_NewSet(t *testing.T) {
 		{domain: "googlevideo.com", set: refSet},
 	}
 
-	applyGroup(cfg, group)
+	if err := applyGroup(cfg, group, ""); err != nil {
+		t.Fatal(err)
+	}
 
 	if len(cfg.Sets) != 1 {
 		t.Fatalf("expected 1 set, got %d", len(cfg.Sets))
@@ -405,6 +449,7 @@ func TestApplyGroup_NewSet(t *testing.T) {
 }
 
 func TestApplyGroup_NewSetKeepsTheDSCPTheRunTestedWith(t *testing.T) {
+	stubDSCPStampNow(t)
 	owner := config.NewSetConfig()
 	owner.Name = "video by category"
 	owner.Enabled = true
@@ -417,7 +462,9 @@ func TestApplyGroup_NewSetKeepsTheDSCPTheRunTestedWith(t *testing.T) {
 	refSet.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
 	refSet.Targets.IPVersion = "4"
 
-	applyGroup(cfg, []domainWithSet{{domain: "youtube.com", set: refSet}})
+	if err := applyGroup(cfg, []domainWithSet{{domain: "youtube.com", set: refSet}}, ""); err != nil {
+		t.Fatal(err)
+	}
 
 	if len(cfg.Sets) != 2 {
 		t.Fatalf("the owner lists the domain through a category only, so the heal creates a set, got %d sets", len(cfg.Sets))
@@ -427,6 +474,12 @@ func TestApplyGroup_NewSetKeepsTheDSCPTheRunTestedWith(t *testing.T) {
 	}
 	if got := cfg.Sets[0].Targets.IPVersion; got != "4" {
 		t.Errorf("the strategy was tested over IPv4 only, so the new set must not take the domain's IPv6 traffic too, got %q", got)
+	}
+
+	dscpStampNow = stampsNothing
+	var change *discovery.DSCPPathChange
+	if err := applyGroup(cfg, []domainWithSet{{domain: "meduza.io", set: refSet}}, ""); !errors.As(err, &change) || len(cfg.Sets) != 2 {
+		t.Errorf("the firewall no longer writes DSCP 25, so a new set would leave without the value the run's probes carried, and none may be created: %v, %d sets", err, len(cfg.Sets))
 	}
 }
 
@@ -471,7 +524,9 @@ func TestApplyGroup_ExistingSet(t *testing.T) {
 		{domain: "googlevideo.com", set: refSet},
 	}
 
-	applyGroup(cfg, group)
+	if err := applyGroup(cfg, group, ""); err != nil {
+		t.Fatal(err)
+	}
 
 	if len(cfg.Sets) != 1 {
 		t.Fatalf("should reuse existing set, got %d sets", len(cfg.Sets))
@@ -511,7 +566,9 @@ func TestApplyGroup_SkipsRoutingSetMatchedViaGeosite(t *testing.T) {
 		{domain: "youtube.com", set: refSet},
 	}
 
-	applyGroup(cfg, group)
+	if err := applyGroup(cfg, group, ""); err != nil {
+		t.Fatal(err)
+	}
 
 	if len(cfg.Sets) != 2 {
 		t.Fatalf("should reuse YouTube set, got %d sets", len(cfg.Sets))
@@ -544,7 +601,9 @@ func TestApplyGroup_SkipsDisabledSet(t *testing.T) {
 		{domain: "youtube.com", set: refSet},
 	}
 
-	applyGroup(cfg, group)
+	if err := applyGroup(cfg, group, ""); err != nil {
+		t.Fatal(err)
+	}
 
 	if len(cfg.Sets) != 2 {
 		t.Fatalf("should create new set (not reuse disabled), got %d sets", len(cfg.Sets))
@@ -615,7 +674,9 @@ func TestApplyGroup_ExistingSet_CaseInsensitive(t *testing.T) {
 		{domain: "youtube.com", set: refSet},
 	}
 
-	applyGroup(cfg, group)
+	if err := applyGroup(cfg, group, ""); err != nil {
+		t.Fatal(err)
+	}
 
 	if len(cfg.Sets) != 1 {
 		t.Fatalf("should reuse existing set despite case difference, got %d sets", len(cfg.Sets))

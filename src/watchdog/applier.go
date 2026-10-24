@@ -9,15 +9,32 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/tables"
 	"github.com/google/uuid"
 )
 
 var (
-	ErrBaselineWorks = errors.New("the domain loads without a bypass")
-	errUnconfirmed   = errors.New("the strategy discovery found did not pass confirmation")
-	errUnresolved    = errors.New("the domain does not resolve, no strategy was tested")
-	errBadLink       = errors.New("the link answers an HTTP error without any strategy, no strategy was tested")
+	ErrBaselineWorks    = errors.New("the domain loads without a bypass")
+	errUnconfirmed      = errors.New("the strategy discovery found did not pass confirmation")
+	errUnresolved       = errors.New("the domain does not resolve, no strategy was tested")
+	errBadLink          = errors.New("the link answers an HTTP error without any strategy, no strategy was tested")
+	errDSCPRulesPending = errors.New("b4 is still applying its DSCP rules, which decide the network path of the set's traffic")
+
+	dscpStampNow = tables.DiscoveryDSCPStamp
 )
+
+func dscpPathMoved(cfg *config.Config, set, tested *config.SetConfig, testedOnly string) error {
+	change, err := discovery.DSCPPathChanged(cfg, set, tested, testedOnly, dscpStampNow)
+	switch {
+	case errors.Is(err, discovery.ErrDSCPRulesPending):
+		return errDSCPRulesPending
+	case err != nil:
+		return err
+	case change != nil:
+		return change
+	}
+	return nil
+}
 
 type domainWithSet struct {
 	domain string
@@ -59,16 +76,23 @@ func applyBatchResults(cfg *config.Config, domains []string, suite *discovery.Ch
 		successful = append(successful, domainWithSet{domain: input, set: set})
 	}
 
-	if len(successful) == 0 {
+	var applied []domainWithSet
+	for _, group := range groupBySet(successful) {
+		if err := applyGroup(cfg, group, suite.DSCPIPVersion); err != nil {
+			for _, ds := range group {
+				results[ds.domain] = err
+			}
+			continue
+		}
+		applied = append(applied, group...)
+	}
+
+	if len(applied) == 0 {
 		return results
 	}
 
-	for _, group := range groupBySet(successful) {
-		applyGroup(cfg, group)
-	}
-
 	if err := saveFunc(cfg); err != nil {
-		for _, ds := range successful {
+		for _, ds := range applied {
 			results[ds.domain] = err
 		}
 		return results
@@ -109,7 +133,7 @@ func groupBySet(items []domainWithSet) [][]domainWithSet {
 	return groups
 }
 
-func applyGroup(cfg *config.Config, group []domainWithSet) {
+func applyGroup(cfg *config.Config, group []domainWithSet, testedOnly string) error {
 	groupDomains := make([]string, len(group))
 	for i, ds := range group {
 		groupDomains[i] = ExtractDomain(ds.domain)
@@ -131,6 +155,9 @@ func applyGroup(cfg *config.Config, group []domainWithSet) {
 	}
 
 	if existingSet != nil {
+		if err := dscpPathMoved(cfg, existingSet, refSet, testedOnly); err != nil {
+			return err
+		}
 		changes := describeSetChanges(existingSet, refSet)
 
 		existingSet.AdoptStrategy(refSet)
@@ -159,10 +186,14 @@ func applyGroup(cfg *config.Config, group []domainWithSet) {
 		newSet.AdoptStrategy(refSet)
 		newSet.DSCP = refSet.DSCP
 		newSet.Targets.IPVersion = refSet.Targets.IPVersion
+		if err := dscpPathMoved(cfg, &newSet, refSet, testedOnly); err != nil {
+			return err
+		}
 		cfg.Sets = append([]*config.SetConfig{&newSet}, cfg.Sets...)
 		log.Infof("[WATCHDOG] %s: created set %q (strategy: %s)",
 			strings.Join(groupDomains, ", "), newSet.Name, refSet.Fragmentation.Strategy)
 	}
+	return nil
 }
 
 // describeSetChanges lists the fields the discovered strategy will overwrite, so

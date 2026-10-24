@@ -1177,7 +1177,7 @@ func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bo
 	if live == nil {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("set %q disappeared before the write", target.Name)
 	}
-	change, err := dscpPathChanged(newCfg, live, v.Set, run.dscpIPVersion)
+	change, err := discovery.DSCPPathChanged(newCfg, live, v.Set, run.dscpIPVersion, discoveryDSCPStamp)
 	switch {
 	case errors.Is(err, tables.ErrDiscoveryDSCPPending):
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("nothing written: %s", errDSCPRulesPending)
