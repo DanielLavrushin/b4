@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useDeferredValue } from "react";
+import type { ClipboardEvent } from "react";
 import { Button, Stack, Typography } from "@mui/material";
 import { Link } from "react-router";
 import {
@@ -28,6 +29,12 @@ import {
 } from "@utils";
 
 type Obj = Record<string, unknown>;
+
+const SET_ROOT_KEYS = ["name", "tcp", "udp", "targets", "fragmentation", "faking"];
+
+const isWholeSetJson = (value: unknown) =>
+  isHubEnvelope(value) ||
+  (isPlainObject(value) && SET_ROOT_KEYS.some((key) => key in value));
 
 function mergeObjectWithDefaults(partial: Obj, defaults: Obj): Obj {
   const result = { ...defaults };
@@ -98,7 +105,11 @@ export const ImportExportSettings = ({
   onImport,
 }: ImportExportSettingsProps) => {
   const { t } = useTranslation();
-  const [jsonValue, setJsonValue] = useState("");
+  const exportJson = useMemo(() => exportSetJson(config), [config]);
+  const [jsonValue, setJsonValue] = useState(exportJson);
+  const [jsonEdited, setJsonEdited] = useState(false);
+  const [syncedExport, setSyncedExport] = useState(exportJson);
+  const [importedExport, setImportedExport] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState(false);
   const [envelopeImported, setEnvelopeImported] = useState(false);
   const [importWarnings, setImportWarnings] = useState<HubWarning[]>([]);
@@ -119,11 +130,24 @@ export const ImportExportSettings = ({
       };
     }
   }, [deferredJson]);
-  const { id: exportId, revision: exportRevision } = config;
-  useEffect(() => {
-    setJsonValue(exportSetJson(config));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exportId, exportRevision]);
+  const clearImportOutcome = () => {
+    setImportSuccess(false);
+    setEnvelopeImported(false);
+    setImportWarnings([]);
+    setImportedPayloadRefs([]);
+  };
+
+  if (exportJson !== syncedExport) {
+    setSyncedExport(exportJson);
+    setImportedExport(null);
+    if (!jsonEdited) setJsonValue(exportJson);
+    if (exportJson !== importedExport) clearImportOutcome();
+  }
+
+  const markImported = (imported: B4SetConfig) => {
+    setJsonEdited(false);
+    setImportedExport(exportSetJson(imported));
+  };
 
   useEffect(() => {
     void loadCaptures().then(() => setCapturesReady(true));
@@ -225,6 +249,7 @@ export const ImportExportSettings = ({
         revision: config.revision,
       };
       onImport(parsed);
+      markImported(parsed);
       await loadCaptures();
       setImportedPayloadRefs(collectPayloadRefs(parsed));
       setImportWarnings([
@@ -243,13 +268,6 @@ export const ImportExportSettings = ({
       setImportedPayloadRefs([]);
       showError(t("sets.importExport.envelopeFailed", { error: detail }));
     }
-  };
-
-  const clearImportOutcome = () => {
-    setImportSuccess(false);
-    setEnvelopeImported(false);
-    setImportWarnings([]);
-    setImportedPayloadRefs([]);
   };
 
   const handleFormat = () => {
@@ -300,6 +318,7 @@ export const ImportExportSettings = ({
       const link = mergeHubLink(config.hub, configFields.hub);
       parsed.hub = link.hub;
       onImport(parsed);
+      markImported(parsed);
       setImportedPayloadRefs(collectPayloadRefs(parsed));
       setImportWarnings(link.warnings);
       setEnvelopeImported(false);
@@ -312,18 +331,18 @@ export const ImportExportSettings = ({
     }
   };
 
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const pastedText = e.clipboardData.getData("text");
-    if (!pastedText.trim()) return;
+  const handlePaste = (e: ClipboardEvent) => {
+    let pasted: unknown;
     try {
-      setJsonValue(JSON.stringify(JSON.parse(pastedText) as unknown, null, 2));
-      clearImportOutcome();
-      e.preventDefault();
+      pasted = JSON.parse(e.clipboardData.getData("text"));
     } catch {
-      e.preventDefault();
-      setJsonValue(pastedText);
-      clearImportOutcome();
+      return;
     }
+    if (!isWholeSetJson(pasted)) return;
+    e.preventDefault();
+    setJsonValue(JSON.stringify(pasted, null, 2));
+    setJsonEdited(true);
+    clearImportOutcome();
   };
 
   const handleImport = () => {
@@ -397,6 +416,7 @@ export const ImportExportSettings = ({
           onFocus={(e) => (e.target as HTMLTextAreaElement).select()}
           onChange={(e) => {
             setJsonValue(e.target.value);
+            setJsonEdited(e.target.value.trim() !== "");
             clearImportOutcome();
           }}
           onPaste={handlePaste}
