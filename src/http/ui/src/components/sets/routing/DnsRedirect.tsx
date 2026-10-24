@@ -82,10 +82,14 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
   const [mode, setMode] = useState<ResolverMode>(
     dnsConfig.doh_url ? "doh" : "udp",
   );
-  let storedMode: ResolverMode | null = null;
-  if (dnsConfig.doh_url) storedMode = "doh";
-  else if (dnsConfig.target_dns) storedMode = "udp";
-  if (storedMode && storedMode !== mode) setMode(storedMode);
+  const dohUrl = dnsConfig.doh_url ?? "";
+  const targetDns = dnsConfig.target_dns ?? "";
+  const [seenResolver, setSeenResolver] = useState({ dohUrl, targetDns });
+  if (dohUrl !== seenResolver.dohUrl || targetDns !== seenResolver.targetDns) {
+    setSeenResolver({ dohUrl, targetDns });
+    if (dohUrl && !seenResolver.dohUrl) setMode("doh");
+    else if (targetDns && !seenResolver.targetDns && !dohUrl) setMode("udp");
+  }
 
   const handleModeChange = (_: unknown, next: ResolverMode | null) => {
     if (!next || next === mode) return;
