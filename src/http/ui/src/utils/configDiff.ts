@@ -1,5 +1,3 @@
-import { setByPath } from "./setByPath";
-
 export type ConfigLeafMap = Record<string, unknown>;
 
 export interface ChangedLeaf {
@@ -132,16 +130,32 @@ export const diffConfigLeaves = (
   return out;
 };
 
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
 export const rebaseDraft = <T extends object>(
   draft: T,
   from: T,
   onto: T,
   options?: ConfigDiffOptions,
 ): T => {
-  if (draft === from) return onto;
-  return diffConfigLeaves(
-    draft as Record<string, unknown>,
-    from as Record<string, unknown>,
-    options,
-  ).reduce((next, leaf) => setByPath(next, leaf.path, leaf.after), onto);
+  const merge = (d: unknown, f: unknown, o: unknown, path: string): unknown => {
+    if (Object.is(d, f)) return o;
+    if (path && options?.ignoredPaths?.has(path)) return o;
+    if (isRecord(d) && isRecord(f) && isRecord(o)) {
+      const out: Record<string, unknown> = { ...o };
+      let changed = false;
+      for (const key of new Set([...Object.keys(d), ...Object.keys(f)])) {
+        if (options?.ignoredKeys?.has(key)) continue;
+        if (!path && options?.ignoredRootKeys?.has(key)) continue;
+        const next = merge(d[key], f[key], o[key], path ? `${path}.${key}` : key);
+        if (next === o[key]) continue;
+        out[key] = next;
+        changed = true;
+      }
+      return changed ? out : o;
+    }
+    return leafEqual(d, f, path) ? o : d;
+  };
+  return merge(draft, from, onto, "") as T;
 };
