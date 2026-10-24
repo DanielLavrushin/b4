@@ -49,6 +49,9 @@ type HistoryEntry struct {
 	SuiteId       string                         `json:"suite_id,omitempty"`
 	Source        string                         `json:"source,omitempty"`
 	SetId         string                         `json:"set_id,omitempty"`
+	DSCP          *int                           `json:"dscp,omitempty"`
+	DSCPIPVersion string                         `json:"dscp_ip_version,omitempty"`
+	DSCPPath      *config.DSCPPath               `json:"dscp_path,omitempty"`
 	Set           *config.SetConfig              `json:"set,omitempty"`
 	Outcome       Outcome                        `json:"outcome,omitempty"`
 	MissingFamily string                         `json:"missing_family,omitempty"`
@@ -57,6 +60,7 @@ type HistoryEntry struct {
 	ECHCoverName  string                         `json:"ech_cover_name,omitempty"`
 	ECHOnlyBlock  bool                           `json:"ech_only_block,omitempty"`
 	StoppedEarly  bool                           `json:"stopped_early,omitempty"`
+	RulesChanged  bool                           `json:"rules_changed,omitempty"`
 	Order         int                            `json:"order,omitempty"`
 	Applied       map[string]AppliedMark         `json:"applied,omitempty"`
 }
@@ -97,6 +101,9 @@ func (e HistoryEntry) EffectiveOutcome() Outcome {
 // group-scoped winner the run built, or the winning preset's own set for an
 // entry written before that was recorded.
 func (e HistoryEntry) ApplicableSet() *config.SetConfig {
+	if e.RulesChanged {
+		return nil
+	}
 	if e.Set != nil {
 		return e.Set
 	}
@@ -110,13 +117,16 @@ func (e HistoryEntry) ApplicableSet() *config.SetConfig {
 }
 
 type SetRunRecord struct {
-	SetId          string     `json:"set_id"`
-	SuiteId        string     `json:"suite_id"`
-	StartTime      time.Time  `json:"start_time"`
-	EndTime        time.Time  `json:"end_time"`
-	URLs           []string   `json:"urls"`
-	StoppedCovered bool       `json:"stopped_covered,omitempty"`
-	Verdict        SetVerdict `json:"verdict"`
+	SetId          string           `json:"set_id"`
+	SuiteId        string           `json:"suite_id"`
+	StartTime      time.Time        `json:"start_time"`
+	EndTime        time.Time        `json:"end_time"`
+	URLs           []string         `json:"urls"`
+	DSCP           *int             `json:"dscp,omitempty"`
+	DSCPIPVersion  string           `json:"dscp_ip_version,omitempty"`
+	DSCPPath       *config.DSCPPath `json:"dscp_path,omitempty"`
+	StoppedCovered bool             `json:"stopped_covered,omitempty"`
+	Verdict        SetVerdict       `json:"verdict"`
 }
 
 // DiscoveryHistory manages persistent discovery results.
@@ -232,6 +242,9 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			SuiteId:       suite.Id,
 			Source:        suite.Source,
 			SetId:         suite.SetId,
+			DSCP:          suite.DSCP,
+			DSCPIPVersion: suite.DSCPIPVersion,
+			DSCPPath:      suite.DSCPPath,
 			Set:           suite.scopedSetFor(domainResult.Domain),
 			Domain:        domainResult.Domain,
 			Url:           domainResult.Url,
@@ -256,6 +269,7 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			ECHCoverName:  domainResult.ECHCoverName,
 			ECHOnlyBlock:  domainResult.ECHOnlyBlock,
 			StoppedEarly:  suite.StoppedEarly,
+			RulesChanged:  suite.RulesChanged,
 			Order:         position + 1,
 		}
 
@@ -302,6 +316,9 @@ func (dh *DiscoveryHistory) recordSetRun(suite *CheckSuite) {
 		StartTime:      suite.StartTime,
 		EndTime:        suite.EndTime,
 		URLs:           urls,
+		DSCP:           suite.DSCP,
+		DSCPIPVersion:  suite.DSCPIPVersion,
+		DSCPPath:       suite.DSCPPath,
 		StoppedCovered: suite.StoppedCovered,
 		Verdict:        *suite.SetVerdict,
 	}

@@ -365,17 +365,63 @@ func (w *Watchdog) tickLegacy(cfg *config.Config, watchers map[string]setRef) {
 	w.mu.Unlock()
 
 	if len(needsHealing) > 0 && w.healing.CompareAndSwap(false, true) {
+		domains, dscp, later := w.legacyHealGroup(cfg, needsHealing)
+		if len(later) > 0 {
+			log.Infof("[WATCHDOG] %v: their traffic leaves with a different DSCP value, so they get a discovery run of their own after this one if they still fail", later)
+		}
 		w.healWG.Add(1)
 		go func(domains []string) {
 			defer w.healWG.Done()
 			defer w.healing.Store(false)
 			log.Infof("[WATCHDOG] starting heal for %d domain(s): %v", len(domains), domains)
-			w.healBatch(domains)
-		}(needsHealing)
+			w.healBatch(domains, dscp)
+		}(domains)
 	}
 }
 
-func (w *Watchdog) healBatch(domains []string) {
+func (w *Watchdog) legacyHealGroup(cfg *config.Config, domains []string) ([]string, *config.DSCPProbe, []string) {
+	var group, later []string
+	var dscp *config.DSCPProbe
+	for i, domain := range domains {
+		value := w.legacyProbeDSCP(cfg, domain)
+		if i == 0 {
+			dscp = value
+		}
+		if sameDSCP(value, dscp) {
+			group = append(group, domain)
+		} else {
+			later = append(later, domain)
+		}
+	}
+	return group, dscp, later
+}
+
+func (w *Watchdog) legacyProbeDSCP(cfg *config.Config, domain string) *config.DSCPProbe {
+	if w.engine == nil {
+		return nil
+	}
+	return cfg.ProbeDSCP(w.engine.Owner(ExtractDomain(domain)))
+}
+
+func legacyIPVersion(dscp *config.DSCPProbe) string {
+	switch {
+	case dscp == nil || dscp.IPv4 == dscp.IPv6:
+		return ""
+	case dscp.IPv4:
+		return "ipv4"
+	default:
+		return "ipv6"
+	}
+}
+
+func sameDSCP(a, b *config.DSCPProbe) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func (w *Watchdog) healBatch(domains []string, dscp *config.DSCPProbe) {
 	cfg := w.cfgPtr.Load()
 	wdCfg := cfg.System.Checker.Watchdog
 
@@ -403,6 +449,8 @@ func (w *Watchdog) healBatch(domains []string) {
 		SkipDNS:         true,
 		ValidationTries: tries,
 		Source:          discovery.SourceWatchdog,
+		DSCP:            dscp,
+		IPVersion:       legacyIPVersion(dscp),
 	})
 	if err != nil {
 		log.Warnf("[WATCHDOG] failed to start discovery: %v", err)
@@ -471,8 +519,12 @@ func (w *Watchdog) healBatch(domains []string) {
 	}
 
 	cs, ok := w.disc.Snapshot(suiteID)
-	if !ok {
-		log.Warnf("[WATCHDOG] discovery suite disappeared")
+	if !ok || cs.RulesChanged {
+		if ok {
+			log.Warnf("[WATCHDOG] the firewall rules the discovery run depends on changed during it, so its results could come from another network path; nothing is written")
+		} else {
+			log.Warnf("[WATCHDOG] discovery suite disappeared")
+		}
 		w.mu.Lock()
 		for _, domain := range domains {
 			st, ok := w.domainStates[domain]

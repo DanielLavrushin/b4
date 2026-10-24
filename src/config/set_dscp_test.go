@@ -387,3 +387,61 @@ func TestSetDSCPDoesNotNeedFirewallRefresh(t *testing.T) {
 		t.Error("a set's stamp must not ask for a full firewall refresh")
 	}
 }
+
+func TestProbeDSCPFollowsTheSetsLiveStamp(t *testing.T) {
+	both := func(value int) *DSCPProbe { return &DSCPProbe{Value: value, IPv4: true, IPv6: true} }
+	cases := []struct {
+		name   string
+		dscp   SetDSCPConfig
+		change func(*Config, *SetConfig)
+		want   *DSCPProbe
+	}{
+		{"stamp off", SetDSCPConfig{Value: 7}, nil, nil},
+		{"stamp on", SetDSCPConfig{Enabled: true, Value: 7}, nil, both(7)},
+		{"stamp on with 0, which clears the field", SetDSCPConfig{Enabled: true}, nil, both(0)},
+		{"value out of range", SetDSCPConfig{Enabled: true, Value: 64}, nil, nil},
+		{"refused for source devices", SetDSCPConfig{Enabled: true, Value: 7}, func(_ *Config, s *SetConfig) {
+			s.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
+		}, nil},
+		{"refused for block routing", SetDSCPConfig{Enabled: true, Value: 7}, func(_ *Config, s *SetConfig) {
+			s.Routing.Enabled = true
+			s.Routing.Mode = RoutingModeBlock
+		}, nil},
+		{"domain-only, which writes the value for listed addresses only", SetDSCPConfig{Enabled: true, Value: 7}, func(_ *Config, s *SetConfig) {
+			s.Targets.DomainOnly = true
+		}, nil},
+		{"firewall setup skipped", SetDSCPConfig{Enabled: true, Value: 7}, func(c *Config, _ *SetConfig) {
+			c.System.Tables.SkipSetup = true
+		}, nil},
+		{"set switched off", SetDSCPConfig{Enabled: true, Value: 7}, func(_ *Config, s *SetConfig) {
+			s.Enabled = false
+		}, both(7)},
+		{"global stamp on as well", SetDSCPConfig{Enabled: true, Value: 7}, func(c *Config, _ *SetConfig) {
+			c.System.Tables.DSCP = DSCPConfig{Enabled: true, Value: 46}
+		}, both(7)},
+		{"a set limited to IPv4 writes nothing into IPv6", SetDSCPConfig{Enabled: true, Value: 7}, func(_ *Config, s *SetConfig) {
+			s.Targets.IPVersion = "4"
+		}, &DSCPProbe{Value: 7, IPv4: true}},
+		{"a set limited to IPv6 writes nothing into IPv4", SetDSCPConfig{Enabled: true, Value: 7}, func(_ *Config, s *SetConfig) {
+			s.Targets.IPVersion = "6"
+		}, &DSCPProbe{Value: 7, IPv6: true}},
+	}
+	for _, tc := range cases {
+		cfg, set := setDSCPTestConfig(tc.dscp)
+		if tc.change != nil {
+			tc.change(cfg, set)
+		}
+		got := cfg.ProbeDSCP(set)
+		if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
+			t.Errorf("%s: got %+v, want %+v", tc.name, got, tc.want)
+		}
+	}
+
+	cfg, set := setDSCPTestConfig(SetDSCPConfig{Enabled: true, Value: 7})
+	if got := cfg.ProbeDSCP(nil); got != nil {
+		t.Errorf("no set, no value: %+v", got)
+	}
+	if got := (*Config)(nil).ProbeDSCP(set); got != nil {
+		t.Errorf("no config, no value: %+v", got)
+	}
+}

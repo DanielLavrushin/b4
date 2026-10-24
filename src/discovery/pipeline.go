@@ -5,6 +5,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/tables"
 )
 
 func (ds *DiscoverySuite) RunDiscovery() {
@@ -26,6 +27,12 @@ func (ds *DiscoverySuite) RunDiscovery() {
 		log.DiscoveryLogf("Starting discovery for %d domains: %v (IP: %s)", len(ds.Domains), domainNames, ds.ipVersion)
 	default:
 		log.DiscoveryLogf("Starting discovery for %d domains: %v", len(ds.Domains), domainNames)
+	}
+	switch {
+	case ds.DSCP != nil && ds.DSCPIPVersion != "":
+		log.DiscoveryLogf("IPv%s probes leave with DSCP %d, the value of the set this run is for; the other probes leave without it, like the set's own traffic of that IP version", ds.DSCPIPVersion, *ds.DSCP)
+	case ds.DSCP != nil:
+		log.DiscoveryLogf("Probes leave with DSCP %d, the value of the set this run is for", *ds.DSCP)
 	}
 	log.DiscoveryLogf("═══════════════════════════════════════")
 
@@ -329,13 +336,26 @@ func (ds *DiscoverySuite) finishRun() {
 	ds.logDiscoverySummary()
 }
 
-var suiteRetention = 30 * time.Second
+var (
+	suiteRetention   = 30 * time.Second
+	rulesInvalidated = tables.DiscoveryRunInvalidated
+)
 
 func (ds *DiscoverySuite) finalize() {
 	ds.buildStrategyGroups()
 
 	ds.CheckSuite.mu.Lock()
 	failed := ds.Status == CheckStatusFailed
+	if rulesInvalidated() || ds.RulesChanged {
+		if !ds.RulesChanged {
+			log.DiscoveryLogf("Stopped: the firewall rules this run depends on changed during it, so its results could come from another network path and none of them can be applied")
+		}
+		ds.RulesChanged = true
+		ds.dropApplicableSetsLocked()
+		if !failed {
+			ds.Status = CheckStatusCanceled
+		}
+	}
 	if !failed {
 		ds.DomainDiscoveryResults = ds.domainResults
 	}
@@ -360,6 +380,22 @@ func (ds *DiscoverySuite) finalize() {
 		delete(activeSuites, ds.Id)
 		suitesMu.Unlock()
 	}()
+}
+
+func (ds *DiscoverySuite) dropApplicableSetsLocked() {
+	for i := range ds.StrategyGroups {
+		ds.StrategyGroups[i].Set = nil
+	}
+	for _, dr := range ds.domainResults {
+		if dr == nil {
+			continue
+		}
+		for _, r := range dr.Results {
+			if r != nil {
+				r.Set = nil
+			}
+		}
+	}
 }
 
 func (ds *DiscoverySuite) logDiscoverySummary() {

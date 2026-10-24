@@ -2,12 +2,18 @@ package tables
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
+	"strings"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
-const discoveryChainIPT = "B4_DISCOVERY"
+const (
+	discoveryChainIPT      = "B4_DISCOVERY"
+	discoveryStampChainIPT = "B4_DISCOVERY_DSCP"
+)
 
 type discoveryIptBackend struct {
 	legacy bool
@@ -33,6 +39,27 @@ func (b *discoveryIptBackend) available() bool {
 	return hasBinary(b.ipt4()) || hasBinary(b.ipt6())
 }
 
+func (b *discoveryIptBackend) takesSetValues(cfg *config.Config, v6 bool) (bool, error) {
+	bin := b.ipt4()
+	if v6 {
+		bin = b.ipt6()
+	}
+	if !hasBinary(bin) || !hasBinary("ipset") || !dscpIptStampWorks(bin) {
+		return false, nil
+	}
+	dscpIptProbeMu.Lock()
+	recorded, known := dscpIptProbes[bin]
+	dscpIptProbeMu.Unlock()
+	if known {
+		return recorded.err == nil, nil
+	}
+	err := dscpIptCapability(NewIPTablesManager(cfg, b.legacy), bin)
+	if err != nil && dscpIptProbeBusy(err) {
+		return false, ErrDiscoveryDSCPPending
+	}
+	return err == nil, nil
+}
+
 func discoveryQueueAction(queueStart int, threads int) []string {
 	if threads > 1 {
 		return []string{"--queue-balance", fmt.Sprintf("%d:%d", queueStart, queueStart+threads-1), "--queue-bypass"}
@@ -40,7 +67,7 @@ func discoveryQueueAction(queueStart int, threads int) []string {
 	return []string{"--queue-num", strconv.Itoa(queueStart), "--queue-bypass"}
 }
 
-func (b *discoveryIptBackend) apply(flowMark uint, injectedMark uint, queueStart int, threads int) error {
+func (b *discoveryIptBackend) apply(flowMark uint, injectedMark uint, queueStart int, threads int, stamp *discoveryStamp) error {
 	loadKernelModules()
 
 	for _, bin := range []string{b.ipt4(), b.ipt6()} {
@@ -96,7 +123,61 @@ func (b *discoveryIptBackend) apply(flowMark uint, injectedMark uint, queueStart
 		discoveryKeepOutOfQueueChain(bin, flow, injected)
 	}
 
+	for _, bin := range []string{b.ipt4(), b.ipt6()} {
+		if !hasBinary(bin) {
+			continue
+		}
+		if err := discoveryIptStamp(bin, fmt.Sprintf("0x%x/0xffffffff", flowMark), fmt.Sprintf("0x%x/0xffffffff", injectedMark), stamp); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func discoveryIptStamp(bin, flow, injected string, stamp *discoveryStamp) error {
+	if err := discoveryIptDropStamp(bin); err != nil {
+		return err
+	}
+	value, ok := stamp.write(dscpIptBinV6(bin))
+	if !ok {
+		return nil
+	}
+	loadKernelModuleList("xt_DSCP")
+	_, _ = run(bin, "-w", "-t", "mangle", "-N", discoveryStampChainIPT)
+	_, _ = run(bin, "-w", "-t", "mangle", "-F", discoveryStampChainIPT)
+	for _, scope := range dscpIptScopes(stamp.ifaces) {
+		for _, mark := range []string{flow, injected} {
+			spec := slices.Concat([]string{bin, "-w", "-t", "mangle", "-A", discoveryStampChainIPT}, scope,
+				[]string{"-m", "mark", "--mark", mark, "-j", "DSCP", "--set-dscp", strconv.Itoa(value)})
+			if out, err := run(spec...); err != nil {
+				kmodNoteRejected("xt_DSCP", bin, out)
+				return fmt.Errorf("%s rejected the rule that writes DSCP %d into Discovery's probes (%s). %s", bin, value, iptErrText(out, err), kmodMissingHint([]string{"xt_DSCP"}))
+			}
+		}
+	}
+	listing, err := run(bin, "-w", "-t", "mangle", "-L", "POSTROUTING", "-n", "--line-numbers")
+	if err != nil {
+		return fmt.Errorf("%s could not read mangle POSTROUTING to place Discovery's DSCP rules: %s", bin, iptErrText(listing, err))
+	}
+	jump, _, _ := dscpJumpPlacement(listing)
+	if out, err := run(bin, "-w", "-t", "mangle", "-I", "POSTROUTING", strconv.Itoa(jump+1), "-j", discoveryStampChainIPT); err != nil {
+		return fmt.Errorf("%s could not jump to %s from mangle POSTROUTING: %s", bin, discoveryStampChainIPT, iptErrText(out, err))
+	}
+	return nil
+}
+
+func discoveryIptDropStamp(bin string) error {
+	discoveryDelRuleLoop(bin, "POSTROUTING", "-j", discoveryStampChainIPT)
+	_, _ = run(bin, "-w", "-t", "mangle", "-F", discoveryStampChainIPT)
+	out, err := run(bin, "-w", "-t", "mangle", "-X", discoveryStampChainIPT)
+	if err == nil || iptReportsAbsent(out, err) || strings.Contains(iptErrText(out, err), "failed (No such file or directory)") {
+		return nil
+	}
+	if present, known := iptChainPresence(bin, "mangle", discoveryStampChainIPT); known && !present {
+		return nil
+	}
+	return fmt.Errorf("%s could not remove %s, which may still write an earlier run's DSCP value into Discovery's probes: %s", bin, discoveryStampChainIPT, iptErrText(out, err))
 }
 
 func discoveryKeepOutOfQueueChain(bin, flow, injected string) {
@@ -136,6 +217,9 @@ func (b *discoveryIptBackend) clear(flowMark uint, injectedMark uint) {
 		}
 		_, _ = run(bin, "-w", "-t", "mangle", "-F", discoveryChainIPT)
 		_, _ = run(bin, "-w", "-t", "mangle", "-X", discoveryChainIPT)
+		if err := discoveryIptDropStamp(bin); err != nil {
+			log.Warnf("Discovery: %v, so the next run does not start until it is gone", err)
+		}
 	}
 }
 

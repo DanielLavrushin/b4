@@ -25,6 +25,7 @@ func dscpSyncIsolate(t *testing.T) {
 	reset := func() {
 		dscpSyncClosed.Store(false)
 		dscpSyncWanted.Store(nil)
+		dscpSyncSettled.Store(nil)
 		select {
 		case <-dscpSyncKick:
 		default:
@@ -645,5 +646,20 @@ func TestSetDSCPSyncStopSkipsAPassWaitingForTheLock(t *testing.T) {
 	}
 	if len(h.events) != 0 || dscpApplied.Load() != nil {
 		t.Errorf("a pass that got the lock after the stop still changed the firewall: %q", h.events)
+	}
+}
+
+func TestSetDSCPSyncSettlesASaveOnlyInASavePass(t *testing.T) {
+	dscpSyncIsolate(t)
+	cfg := config.NewConfig()
+	cfg.System.Tables.SkipSetup = true
+
+	dscpSyncPass(&cfg, true, nil)
+	if dscpSyncSettled.Load() == &cfg {
+		t.Error("a periodic pass leaves a saved DSCP change unapplied, so it must not count the save as settled")
+	}
+	dscpSyncPass(&cfg, false, nil)
+	if dscpSyncSettled.Load() != &cfg {
+		t.Error("a save pass settles the configuration it was given")
 	}
 }

@@ -22,6 +22,174 @@ func probeCfg(t *testing.T) *config.Config {
 	return cfg
 }
 
+func TestMCPDiscoveryStatusNamesTheDSCPASetRunCarried(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	set := config.NewSetConfig()
+	set.Id, set.Name, set.Enabled = "yt", "YouTube", true
+	set.Targets.SNIDomains = []string{"youtube.com"}
+	set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	cfg.Sets = append(cfg.Sets, &set)
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	value := 25
+	discovery.SaveToHistory(&discovery.CheckSuite{
+		Id: "set-run-dscp", Status: discovery.CheckStatusComplete, EndTime: time.Now(), SetId: "yt", DSCP: &value,
+		SetVerdict: &discovery.SetVerdict{Status: discovery.SetVerdictNone},
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"youtube.com": {Domain: "youtube.com"},
+		},
+	}, cfg.ConfigPath)
+
+	out := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "status", "set": "yt"}))
+	if !strings.Contains(out.Note, "DSCP 25") {
+		t.Errorf("a set run searched on the path DSCP 25 selects, and the answer must say so: %q", out.Note)
+	}
+
+	if got := mcpWithProbeDSCP("the run was cancelled; any results below are partial", &value, ""); !strings.Contains(got, "partial. The probes carry DSCP 25") {
+		t.Errorf("the value must read as a sentence of its own: %q", got)
+	}
+	if got := mcpWithProbeDSCP("finished.", &value, "4"); !strings.Contains(got, "The IPv4 probes carry DSCP 25") || !strings.Contains(got, "the other probes carry none") {
+		t.Errorf("a value only the IPv4 probes carried must be named as such: %q", got)
+	}
+	if got := mcpWithProbeDSCP("finished.", nil, ""); got != "finished." {
+		t.Errorf("a run without a value adds nothing: %q", got)
+	}
+}
+
+func TestMCPDiscoveryStatusSaysWhyARunStoppedForItsRules(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	value := 25
+	suite := &discovery.CheckSuite{Id: "rules-changed-run", Status: discovery.CheckStatusCanceled, DSCP: &value, RulesChanged: true}
+	discovery.RegisterSuite(suite)
+
+	out := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "status", "id": suite.Id}))
+	if !strings.Contains(out.Note, "firewall rules it depends on changed") || !strings.Contains(out.Note, "none of its results can be applied") {
+		t.Errorf("a run stopped by a rules change is not an ordinary cancel, and the answer must say so: %q", out.Note)
+	}
+}
+
+func TestMCPDiscoveryApplyRefusesARunWhoseRulesChanged(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	set := config.NewSetConfig()
+	set.Name = "moved"
+	set.Targets.SNIDomains = []string{"rutracker.org"}
+	results := map[string]*discovery.DomainDiscoveryResult{
+		"rutracker.org": {Domain: "rutracker.org", BestPreset: "combo", BestSuccess: true, Results: map[string]*discovery.DomainPresetResult{
+			"combo": {PresetName: "combo", Status: discovery.CheckStatusComplete, Set: &set},
+		}},
+	}
+	groups := []discovery.StrategyGroup{{WinnerPreset: "combo", Domains: []string{"rutracker.org"}, Set: &set}}
+	live := &discovery.CheckSuite{Id: "rules-changed-live", Status: discovery.CheckStatusCanceled, RulesChanged: true, DomainDiscoveryResults: results, StrategyGroups: groups}
+	discovery.RegisterSuite(live)
+	t.Cleanup(func() { mcpRememberSuite("") })
+
+	before := len(api.getCfg().Sets)
+	res := callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "rutracker.org", "id": live.Id})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "none of its results can be applied") {
+		t.Errorf("the run's results could come from another network path, so apply must be refused and say why: %q", mcpErrorText(res))
+	}
+
+	discovery.SaveToHistory(&discovery.CheckSuite{
+		Id: "rules-changed-saved", Status: discovery.CheckStatusCanceled, EndTime: time.Now(), RulesChanged: true,
+		DomainDiscoveryResults: results, StrategyGroups: groups,
+	}, cfg.ConfigPath)
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "rutracker.org", "id": "rules-changed-saved"})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "cannot be applied") {
+		t.Errorf("the saved result of that run must be refused as well, and say why: %q", mcpErrorText(res))
+	}
+	if got := len(api.getCfg().Sets); got != before {
+		t.Errorf("nothing should have been created, got %d from %d", got, before)
+	}
+}
+
+func TestMCPDiscoveryApplyKeepsTheDSCPTheRunTestedWith(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	other := config.NewSetConfig()
+	other.Id, other.Name, other.Enabled = "on-7", "same strategy on 7", true
+	other.Targets.SNIDomains = []string{"rutracker.org"}
+	other.DSCP = config.SetDSCPConfig{Enabled: true, Value: 7}
+	cfg.Sets = append(cfg.Sets, &other)
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	stubDiscoveryDSCPStamp(t, stampsTheSetsValue)
+
+	set := config.NewSetConfig()
+	set.Name = "tested on 25"
+	set.Targets.SNIDomains = []string{"rutracker.org"}
+	set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	suite := &discovery.CheckSuite{
+		Id: "dscp-run", Status: discovery.CheckStatusComplete,
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"rutracker.org": {Domain: "rutracker.org", BestPreset: "combo", BestSuccess: true, Confirmed: 3},
+		},
+		StrategyGroups: []discovery.StrategyGroup{{WinnerPreset: "combo", Domains: []string{"rutracker.org"}, Set: &set}},
+	}
+	discovery.RegisterSuite(suite)
+	t.Cleanup(func() { mcpRememberSuite("") })
+
+	applied := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "rutracker.org", "id": suite.Id}))
+	if !applied.Changed || applied.Applied == nil {
+		t.Fatalf("a set with the same strategy on DSCP 7 takes another path than the one tested, so it does not cover the domain and apply must create a set: %+v", applied)
+	}
+	for _, s := range api.getCfg().Sets {
+		if s.Id == applied.Applied.Id && s.DSCP != set.DSCP {
+			t.Errorf("the strategy was tested on the path DSCP 25 selects, so the set made from it must keep that value, got %+v", s.DSCP)
+		}
+	}
+}
+
+func TestMCPDiscoveryApplyRefusesANewSetOnAnotherDSCPPath(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	stamp := stampsTheSetsValue
+	stubDiscoveryDSCPStamp(t, func(c *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, *config.DSCPPath, error) {
+		return stamp(c, dscp)
+	})
+
+	set := config.NewSetConfig()
+	set.Name = "tested on 25 over IPv4"
+	set.Targets.SNIDomains = []string{"rutracker.org"}
+	set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	value := 25
+	suite := &discovery.CheckSuite{
+		Id: "dscp-ipv4-run", Status: discovery.CheckStatusComplete, DSCP: &value, DSCPPath: &config.DSCPPath{IPv4: &value},
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"rutracker.org": {Domain: "rutracker.org", BestPreset: "combo", BestSuccess: true, Confirmed: 3},
+		},
+		StrategyGroups: []discovery.StrategyGroup{{WinnerPreset: "combo", Domains: []string{"rutracker.org"}, Set: &set}},
+	}
+	discovery.RegisterSuite(suite)
+	t.Cleanup(func() { mcpRememberSuite("") })
+	before := len(api.getCfg().Sets)
+
+	res := callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "rutracker.org", "id": suite.Id})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "IPv6 traffic") || len(api.getCfg().Sets) != before {
+		t.Errorf("the run's IPv6 probes carried no value, and a new set on DSCP 25 would write it into IPv6 too, so nothing may be created: %q", mcpErrorText(res))
+	}
+
+	stamp = stampsIPv4Only
+	applied := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "rutracker.org", "id": suite.Id}))
+	if !applied.Changed || len(api.getCfg().Sets) != before+1 {
+		t.Errorf("the firewall writes the value into IPv4 only, like the run's probes, so the set is created: %+v", applied)
+	}
+}
+
 func callDiscovery(t *testing.T, session *mcp.ClientSession, ctx context.Context, args map[string]any) *mcp.CallToolResult {
 	t.Helper()
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_find_bypass_strategy", Arguments: args})

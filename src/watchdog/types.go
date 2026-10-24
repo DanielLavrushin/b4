@@ -132,6 +132,7 @@ const (
 	ReasonVerifyFailed = "verify_failed"
 	ReasonEdited       = "edited"
 	ReasonBusy         = "busy"
+	ReasonRulesChanged = "rules_changed"
 )
 
 const (

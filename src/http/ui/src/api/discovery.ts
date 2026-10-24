@@ -1,6 +1,7 @@
 import { apiDelete, apiPost, apiGet } from "./apiClient";
 import { B4SetConfig } from "@models/config";
 import {
+  DSCPPath,
   DiscoveryCurrent,
   DiscoveryResponse,
   DiscoverySuite,
@@ -44,6 +45,7 @@ export interface ReplaceStrategyOptions {
   strategyOnly?: boolean;
   keepTargets?: boolean;
   probeUrls?: string[];
+  dscpPath?: DSCPPath;
 }
 
 export const discoveryApi = {
@@ -68,8 +70,11 @@ export const discoveryApi = {
   status: (id: string) => apiGet<DiscoverySuite>(`/api/discovery/status/${id}`),
   cancel: (id: string) => apiDelete(`/api/discovery/cancel/${id}`),
   finish: (id: string) => apiPost(`/api/discovery/finish/${id}`, {}),
-  addPresetAsSet: (preset: B4SetConfig) =>
-    apiPost<AddPresetResult>("/api/discovery/add", preset),
+  addPresetAsSet: (preset: B4SetConfig, dscpPath?: DSCPPath) =>
+    apiPost<AddPresetResult>("/api/discovery/add", {
+      set: preset,
+      dscp_path: dscpPath,
+    }),
   replaceStrategy: (
     setId: string,
     set: B4SetConfig,
@@ -88,6 +93,7 @@ export const discoveryApi = {
         opts?.probeUrls && opts.probeUrls.length > 0
           ? opts.probeUrls
           : undefined,
+      dscp_path: opts?.dscpPath,
     }),
   suggest: (setId: string) =>
     apiGet<ProbeSuggestions>(
@@ -99,8 +105,11 @@ export const discoveryApi = {
         ? `/api/discovery/set-runs?set_id=${encodeURIComponent(setId)}`
         : "/api/discovery/set-runs",
     ),
-  similar: (set: B4SetConfig) =>
-    apiPost<SimilarSet[]>("/api/discovery/similar", set),
+  similar: (set: B4SetConfig, dscpPath?: DSCPPath) =>
+    apiPost<SimilarSet[]>("/api/discovery/similar", {
+      set,
+      dscp_path: dscpPath,
+    }),
   clearCache: () => apiPost("/api/discovery/cache/clear", {}),
   current: () => apiGet<DiscoveryCurrent>("/api/discovery/current"),
   history: () => apiGet<HistoryEntry[]>("/api/discovery/history"),

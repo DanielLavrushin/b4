@@ -173,6 +173,7 @@ func resetDSCPState(t *testing.T) {
 		dscpApplied.Store(nil)
 		dscpStale.Store(nil)
 		dscpLast.Store(nil)
+		dscpNftSets.Store(dscpNftSetsUntested)
 		dscpKeepOnRefresh = false
 		dscpWarned.Range(func(k, _ any) bool {
 			dscpWarned.Delete(k)
@@ -1476,5 +1477,33 @@ func TestSetDSCPBusyProbeWithTheGlobalOffIsRetried(t *testing.T) {
 	}
 	if ensureDSCPLocked(cfg, false) {
 		t.Errorf("the monitor kept restoring per-set rules that were back in place")
+	}
+}
+
+func TestIptChainPresenceReadsTheWholeTableWhenTheAnswerIsUnknown(t *testing.T) {
+	orig := run
+	t.Cleanup(func() { run = orig })
+	whole, wholeErr := "", error(nil)
+	run = func(args ...string) (string, error) {
+		switch {
+		case slices.Equal(args, []string{backendIPTables, "-w", "-t", "mangle", "-S", dscpChainName}):
+			return "# Warning: iptables-legacy tables present, use iptables-legacy to see them\niptables: Incompatible with this kernel.", errors.New("exit status 1")
+		case slices.Equal(args, []string{backendIPTables, "-w", "-t", "mangle", "-S"}):
+			return whole, wholeErr
+		}
+		return "", nil
+	}
+
+	whole = "# Warning: iptables-legacy tables present, use iptables-legacy to see them\n-P PREROUTING ACCEPT\n-P POSTROUTING ACCEPT\n"
+	if present, known := iptChainPresence(backendIPTables, "mangle", dscpChainName); present || !known {
+		t.Errorf("with legacy tables present, iptables-nft answers a missing chain with 'Incompatible with this kernel', and the whole table shows it is gone: present %t, known %t", present, known)
+	}
+	whole += "-N " + dscpChainName + "\n"
+	if _, known := iptChainPresence(backendIPTables, "mangle", dscpChainName); known {
+		t.Error("the whole table still lists the chain, so whether it is gone is not known")
+	}
+	whole, wholeErr = "", errors.New("exit status 4")
+	if _, known := iptChainPresence(backendIPTables, "mangle", dscpChainName); known {
+		t.Error("a whole-table listing that failed tells nothing")
 	}
 }

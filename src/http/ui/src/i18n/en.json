@@ -2706,6 +2706,7 @@
   "discovery": {
     "title": "Discovery",
     "description": "Finds a bypass strategy for the sites you name and turns it into a set.",
+    "dscp": "DSCP {{value}}, as the set's traffic",
     "input": {
       "label": "Site or URL",
       "placeholder": "youtube.com, https://discord.com/app",
@@ -2843,6 +2844,7 @@
       "unconfirmedNote": "This run was stopped before the confirmation pass, so the strategy worked at least once but was not re-checked.",
       "stoppedEarlyNote": "The search was stopped before it finished. The strategy passed the confirmation pass, but the steps that could have tuned it were skipped, so a faster one may exist.",
       "noSet": "The run did not keep the set for this strategy. Run it again to apply.",
+      "rulesChanged": "The firewall rules this run depends on changed while it ran, so this result could come from another network path. Run it again to apply.",
       "otherStrategies_one": "{{count}} other strategy worked",
       "otherStrategies_other": "{{count}} other strategies worked",
       "showAll": "Show all {{count}}",
@@ -3032,6 +3034,7 @@
       "nothing": "No strategy made it load",
       "sharedWith": "One set together with {{domains}}",
       "stoppedEarly": "search stopped early, not tuned",
+      "rulesChanged": "stopped: firewall rules changed during the search, run it again",
       "lastLog": "Last run log",
       "unresolvedNoAddress": "DNS publishes no {{family}} address, nothing was tested",
       "source": {
@@ -3761,7 +3764,8 @@
       "start_failed": "The search could not start.",
       "verify_failed": "The strategy found did not pass the live check of the addresses and was undone.",
       "edited": "The set was changed while the search ran, so the result was not written.",
-      "busy": "Another Discovery search was running. The watchdog tries again later."
+      "busy": "Another Discovery search was running. The watchdog tries again later.",
+      "rules_changed": "b4 was applying or rewriting the firewall rules the search depends on, so it could not follow the path the set's traffic takes. The watchdog tries again later."
     },
     "errors": {
       "no_urls": "The set has no Discovery addresses to check.",
@@ -3861,7 +3865,16 @@
     "expose_requires_web_auth": "Exposing SOCKS5 to the internet needs a username and password on the web interface, which SOCKS5 clients can otherwise reach through the proxy",
     "redacted_placeholder": "{{path}} holds the [redacted] placeholder of a safe copy instead of a real value",
     "invalid_egress_ip": "Set \"{{set}}\": \"{{ip}}\" cannot be the egress IP. Enter one IPv4 or IPv6 address that is not a loopback, multicast or unspecified (0.0.0.0, ::) address.",
-    "invalid_egress_gateway": "Set \"{{set}}\": \"{{ip}}\" cannot be the gateway. Enter one IPv4 or IPv6 address without brackets or a /prefix; a %zone is allowed only on an IPv6 address and only when it names this set's output interface. Loopback, multicast and unspecified (0.0.0.0, ::) addresses, 255.255.255.255 and the set's own egress IP are refused."
+    "invalid_egress_gateway": "Set \"{{set}}\": \"{{ip}}\" cannot be the gateway. Enter one IPv4 or IPv6 address without brackets or a /prefix; a %zone is allowed only on an IPv6 address and only when it names this set's output interface. Loopback, multicast and unspecified (0.0.0.0, ::) addresses, 255.255.255.255 and the set's own egress IP are refused.",
+    "dscp_path_changed": "This strategy was tested with DSCP {{tested}}, but the traffic of set \"{{set}}\" now carries DSCP {{now}} and takes another network path. Run Discovery for the set to test a strategy on that path.",
+    "dscp_path_tested_without": "This strategy was tested without a DSCP value, but the traffic of set \"{{set}}\" now carries DSCP {{now}} and takes another network path. Run Discovery for the set to test a strategy on that path.",
+    "dscp_path_now_without": "This strategy was tested with DSCP {{tested}}, but the traffic of set \"{{set}}\" no longer carries a DSCP value and takes another network path. Run Discovery for the set to test a strategy on that path.",
+    "dscp_path_changed_family": "This strategy was tested with DSCP {{tested}} over {{family}}, but the {{family}} traffic of set \"{{set}}\" now carries DSCP {{now}} and takes another network path. Run Discovery for the set to test a strategy on that path.",
+    "dscp_path_tested_without_family": "This strategy was tested without a DSCP value over {{family}}, but the {{family}} traffic of set \"{{set}}\" now carries DSCP {{now}} and takes another network path. Run Discovery for the set to test a strategy on that path.",
+    "dscp_path_now_without_family": "This strategy was tested with DSCP {{tested}} over {{family}}, but the {{family}} traffic of set \"{{set}}\" no longer carries a DSCP value and takes another network path. Run Discovery for the set to test a strategy on that path.",
+    "dscp_path_interfaces": "This strategy was tested while b4 wrote DSCP values on other network interfaces, so the traffic of set \"{{set}}\" takes another network path now. Run Discovery for the set to test a strategy on that path.",
+    "similar_set_changed": "Set \"{{set}}\" no longer uses the strategy this result found, so its domains were not added. Open the result again to choose a set.",
+    "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the set's traffic. Try again in a moment."
   },
   "hub": {
     "title": "Community Hub",
