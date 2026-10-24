@@ -50,6 +50,7 @@ type HistoryEntry struct {
 	Source        string                         `json:"source,omitempty"`
 	SetId         string                         `json:"set_id,omitempty"`
 	DSCP          *int                           `json:"dscp,omitempty"`
+	DSCPIPVersion string                         `json:"dscp_ip_version,omitempty"`
 	Set           *config.SetConfig              `json:"set,omitempty"`
 	Outcome       Outcome                        `json:"outcome,omitempty"`
 	MissingFamily string                         `json:"missing_family,omitempty"`
@@ -121,6 +122,7 @@ type SetRunRecord struct {
 	EndTime        time.Time  `json:"end_time"`
 	URLs           []string   `json:"urls"`
 	DSCP           *int       `json:"dscp,omitempty"`
+	DSCPIPVersion  string     `json:"dscp_ip_version,omitempty"`
 	StoppedCovered bool       `json:"stopped_covered,omitempty"`
 	Verdict        SetVerdict `json:"verdict"`
 }
@@ -239,6 +241,7 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			Source:        suite.Source,
 			SetId:         suite.SetId,
 			DSCP:          suite.DSCP,
+			DSCPIPVersion: suite.DSCPIPVersion,
 			Set:           suite.scopedSetFor(domainResult.Domain),
 			Domain:        domainResult.Domain,
 			Url:           domainResult.Url,
@@ -311,6 +314,7 @@ func (dh *DiscoveryHistory) recordSetRun(suite *CheckSuite) {
 		EndTime:        suite.EndTime,
 		URLs:           urls,
 		DSCP:           suite.DSCP,
+		DSCPIPVersion:  suite.DSCPIPVersion,
 		StoppedCovered: suite.StoppedCovered,
 		Verdict:        *suite.SetVerdict,
 	}

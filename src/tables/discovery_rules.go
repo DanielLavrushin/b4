@@ -33,6 +33,10 @@ func (s *discoveryStamp) covers(v6 bool) bool {
 	return s != nil && ((v6 && s.v6) || (!v6 && s.v4))
 }
 
+func (s *discoveryStamp) probe() *config.DSCPProbe {
+	return &config.DSCPProbe{Value: s.value, IPv4: s.v4, IPv6: s.v6}
+}
+
 func discoveryCheckDSCP(dscp *config.DSCPProbe) error {
 	if dscp != nil && (dscp.Value < 0 || dscp.Value > config.MaxDSCPValue) {
 		return fmt.Errorf("DSCP %d for Discovery's probes is outside 0-%d", dscp.Value, config.MaxDSCPValue)
@@ -78,7 +82,7 @@ func discoveryStampFor(cfg *config.Config, dscp *config.DSCPProbe, be discoveryB
 	return stamp, nil
 }
 
-func DiscoveryDSCPStamp(cfg *config.Config, dscp *config.DSCPProbe) (*int, error) {
+func DiscoveryDSCPStamp(cfg *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, error) {
 	if dscp == nil {
 		return nil, nil
 	}
@@ -95,8 +99,7 @@ func DiscoveryDSCPStamp(cfg *config.Config, dscp *config.DSCPProbe) (*int, error
 	if err != nil || stamp == nil {
 		return nil, err
 	}
-	value := stamp.value
-	return &value, nil
+	return stamp.probe(), nil
 }
 
 func getDiscoveryBackend(cfg *config.Config) discoveryBackend {
@@ -176,12 +179,11 @@ func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark
 	return nil
 }
 
-func ActiveDiscoveryDSCP() *int {
+func ActiveDiscoveryDSCP() *config.DSCPProbe {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
 	if s := activeSteering; s != nil && s.stamp != nil {
-		value := s.stamp.value
-		return &value
+		return s.stamp.probe()
 	}
 	return nil
 }

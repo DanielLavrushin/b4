@@ -146,6 +146,7 @@ export interface DiscoverySuite {
   runtime_active?: boolean;
   set_id?: string;
   dscp?: number;
+  dscp_ip_version?: string;
   set_verdict?: SetVerdict;
   stopped_covered?: boolean;
   rules_changed?: boolean;
@@ -179,6 +180,7 @@ export interface SetRunRecord {
   end_time: string;
   urls?: string[];
   dscp?: number;
+  dscp_ip_version?: string;
   verdict: SetVerdict;
 }
 
@@ -241,6 +243,7 @@ export interface HistoryEntry {
   size_bytes?: number;
   set_id?: string;
   dscp?: number;
+  dscp_ip_version?: string;
 }
 
 export interface SimilarSet {

@@ -447,6 +447,7 @@ export const DiscoveryRunner = () => {
       strategyOnly: true,
       keepTargets: opts.keepTargets,
       probeUrls: opts.probeUrls,
+      dscpIpVersion: applied?.dscpIpVersion,
     });
     setApplying(false);
     if (!res.success) {
@@ -482,6 +483,7 @@ export const DiscoveryRunner = () => {
       strategyOnly: true,
       keepTargets: true,
       probeUrls: req.probeUrls,
+      dscpIpVersion: req.dscpIpVersion,
     });
     setApplying(false);
     if (!res.success) {

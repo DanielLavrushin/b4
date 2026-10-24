@@ -298,6 +298,7 @@ const FoundCard = ({
                 preset: alt.preset,
                 urls: checkUrlsFor(suite, group.domains),
                 setId: suite.set_id,
+                dscpIpVersion: suite.dscp_ip_version,
               })
             }
           />
@@ -404,6 +405,7 @@ const FoundCard = ({
                 preset: group.preset,
                 urls: checkUrlsFor(suite, group.domains),
                 setId: suite.set_id,
+                dscpIpVersion: suite.dscp_ip_version,
               })
             }
             sx={{

@@ -47,10 +47,13 @@ func TestMCPDiscoveryStatusNamesTheDSCPASetRunCarried(t *testing.T) {
 		t.Errorf("a set run searched on the path DSCP 25 selects, and the answer must say so: %q", out.Note)
 	}
 
-	if got := mcpWithProbeDSCP("the run was cancelled; any results below are partial", &value); !strings.Contains(got, "partial. The probes carry DSCP 25") {
+	if got := mcpWithProbeDSCP("the run was cancelled; any results below are partial", &value, ""); !strings.Contains(got, "partial. The probes carry DSCP 25") {
 		t.Errorf("the value must read as a sentence of its own: %q", got)
 	}
-	if got := mcpWithProbeDSCP("finished.", nil); got != "finished." {
+	if got := mcpWithProbeDSCP("finished.", &value, "4"); !strings.Contains(got, "The IPv4 probes carry DSCP 25") || !strings.Contains(got, "the other probes carry none") {
+		t.Errorf("a value only the IPv4 probes carried must be named as such: %q", got)
+	}
+	if got := mcpWithProbeDSCP("finished.", nil, ""); got != "finished." {
 		t.Errorf("a run without a value adds nothing: %q", got)
 	}
 }

@@ -28,7 +28,10 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	default:
 		log.DiscoveryLogf("Starting discovery for %d domains: %v", len(ds.Domains), domainNames)
 	}
-	if ds.DSCP != nil {
+	switch {
+	case ds.DSCP != nil && ds.DSCPIPVersion != "":
+		log.DiscoveryLogf("IPv%s probes leave with DSCP %d, the value of the set this run is for; the other probes leave without it, like the set's own traffic of that IP version", ds.DSCPIPVersion, *ds.DSCP)
+	case ds.DSCP != nil:
 		log.DiscoveryLogf("Probes leave with DSCP %d, the value of the set this run is for", *ds.DSCP)
 	}
 	log.DiscoveryLogf("═══════════════════════════════════════")

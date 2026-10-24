@@ -85,8 +85,8 @@ func TestNetnsDiscoveryProbesCarryTheRunsDSCP(t *testing.T) {
 		if err := ApplyDiscoverySteeringRules(cfg, uint(flow), uint(injected), queue, 1, probe, func(err error) { lost <- err }); err != nil {
 			t.Fatalf("ApplyDiscoverySteeringRules with DSCP 25: %v", err)
 		}
-		if got := ActiveDiscoveryDSCP(); got == nil || *got != 25 {
-			t.Fatalf("the run reports the value it stamps, got %v", got)
+		if got := ActiveDiscoveryDSCP(); got == nil || *got != *probe {
+			t.Fatalf("the run reports the value it stamps and the families it stamps it in, got %+v", got)
 		}
 		tagged := map[string]int{setDSCPAddrA: 25, setDSCPAddrOther: 25}
 		setDSCPCheck(t, "probes and injected packets of a run for a set with DSCP 25", tagged, probes(42111))
@@ -153,7 +153,7 @@ func netnsDiscoveryFollowsAFallback(t *testing.T, engine string, global bool) {
 
 	discoveryDSCPStartRun(t, cfg, nil)
 	if got := ActiveDiscoveryDSCP(); got != nil {
-		t.Errorf("the set's traffic never carries its own value here, so the run must not claim DSCP %d", *got)
+		t.Errorf("the set's traffic never carries its own value here, so the run must not claim a value, got %+v", got)
 	}
 	setDSCPCheck(t, "a run for the set probes the path its traffic takes", live, discoveryDSCPMarkedProbes(t, cfg, 42201))
 }

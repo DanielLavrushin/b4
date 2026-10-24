@@ -233,25 +233,32 @@ func TestReplaceNeedsDomainsUnlessTargetsAreKept(t *testing.T) {
 	}
 }
 
-func stubDiscoveryDSCPStamp(t *testing.T, stamp func(dscp *config.DSCPProbe) (*int, error)) {
+func stubDiscoveryDSCPStamp(t *testing.T, stamp func(dscp *config.DSCPProbe) (*config.DSCPProbe, error)) {
 	t.Helper()
 	orig := discoveryDSCPStamp
 	t.Cleanup(func() { discoveryDSCPStamp = orig })
-	discoveryDSCPStamp = func(_ *config.Config, dscp *config.DSCPProbe) (*int, error) {
+	discoveryDSCPStamp = func(_ *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, error) {
 		return stamp(dscp)
 	}
 }
 
-func stampsTheSetsValue(dscp *config.DSCPProbe) (*int, error) {
+func stampsTheSetsValue(dscp *config.DSCPProbe) (*config.DSCPProbe, error) {
 	if dscp == nil {
 		return nil, nil
 	}
-	value := dscp.Value
-	return &value, nil
+	taken := *dscp
+	return &taken, nil
 }
 
-func stampsNoSetValue(*config.DSCPProbe) (*int, error) {
+func stampsNoSetValue(*config.DSCPProbe) (*config.DSCPProbe, error) {
 	return nil, nil
+}
+
+func stampsIPv4Only(dscp *config.DSCPProbe) (*config.DSCPProbe, error) {
+	if dscp == nil || !dscp.IPv4 {
+		return nil, nil
+	}
+	return &config.DSCPProbe{Value: dscp.Value, IPv4: true}, nil
 }
 
 func strategyTestedOn(dscp int, ipVersion string) config.SetConfig {
@@ -264,29 +271,26 @@ func strategyTestedOn(dscp int, ipVersion string) config.SetConfig {
 }
 
 func TestReplaceRefusesAStrategyTestedOnAnotherDSCPPath(t *testing.T) {
-	stampsIPv4Only := func(dscp *config.DSCPProbe) (*int, error) {
-		if dscp == nil || !dscp.IPv4 {
-			return nil, nil
-		}
-		return stampsTheSetsValue(dscp)
-	}
 	for _, tc := range []struct {
 		name            string
 		setDSCP         int
-		stamp           func(*config.DSCPProbe) (*int, error)
+		stamp           func(*config.DSCPProbe) (*config.DSCPProbe, error)
 		tested          int
-		ipVersion       string
+		ipVersion, only string
 		refusal, params string
 	}{
-		{"tested on 25, the set's traffic carries 7", 7, stampsTheSetsValue, 25, "", "dscp_path_changed", "map[now:7 set:meduza tested:25]"},
-		{"tested without a value, the set's traffic carries 7", 7, stampsTheSetsValue, -1, "", "dscp_path_tested_without", "map[now:7 set:meduza]"},
-		{"tested on 25, the set carries no value", -1, stampsTheSetsValue, 25, "", "dscp_path_now_without", "map[set:meduza tested:25]"},
-		{"tested on 7, the firewall no longer stamps the set's value", 7, stampsNoSetValue, 7, "", "dscp_path_now_without", "map[set:meduza tested:7]"},
-		{"tested over IPv4 without a value, the set's 7 reaches IPv4", 7, stampsIPv4Only, -1, "4", "dscp_path_tested_without", "map[now:7 set:meduza]"},
-		{"tested on 7, the set's traffic carries 7", 7, stampsTheSetsValue, 7, "", "", ""},
-		{"tested without a value, the set carries none", -1, stampsTheSetsValue, -1, "", "", ""},
-		{"tested without a value, the firewall cannot stamp the set's 7", 7, stampsNoSetValue, -1, "", "", ""},
-		{"tested over IPv6 without a value, the set's 7 reaches only IPv4", 7, stampsIPv4Only, -1, "6", "", ""},
+		{"tested on 25, the set's traffic carries 7", 7, stampsTheSetsValue, 25, "", "", "dscp_path_changed", "map[now:7 set:meduza tested:25]"},
+		{"tested without a value, the set's traffic carries 7", 7, stampsTheSetsValue, -1, "", "", "dscp_path_tested_without", "map[now:7 set:meduza]"},
+		{"tested on 25, the set carries no value", -1, stampsTheSetsValue, 25, "", "", "dscp_path_now_without", "map[set:meduza tested:25]"},
+		{"tested on 7, the firewall no longer stamps the set's value", 7, stampsNoSetValue, 7, "", "", "dscp_path_now_without", "map[set:meduza tested:7]"},
+		{"tested over IPv4 without a value, the set's 7 reaches IPv4", 7, stampsIPv4Only, -1, "4", "", "dscp_path_tested_without", "map[now:7 set:meduza]"},
+		{"tested on 25 in the IPv4 probes only, the set's IPv6 traffic carries 25 too now", 25, stampsTheSetsValue, 25, "", "4", "dscp_path_tested_without_family", "map[family:IPv6 now:25 set:meduza]"},
+		{"tested on 25 in both families, the set's IPv6 traffic lost it", 25, stampsIPv4Only, 25, "", "", "dscp_path_now_without_family", "map[family:IPv6 set:meduza tested:25]"},
+		{"tested on 7, the set's traffic carries 7", 7, stampsTheSetsValue, 7, "", "", "", ""},
+		{"tested without a value, the set carries none", -1, stampsTheSetsValue, -1, "", "", "", ""},
+		{"tested without a value, the firewall cannot stamp the set's 7", 7, stampsNoSetValue, -1, "", "", "", ""},
+		{"tested over IPv6 without a value, the set's 7 reaches only IPv4", 7, stampsIPv4Only, -1, "6", "", "", ""},
+		{"tested on 25 in the IPv4 probes only, the set's IPv6 traffic still leaves without it", 25, stampsIPv4Only, 25, "", "4", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stubDiscoveryDSCPStamp(t, tc.stamp)
@@ -295,7 +299,7 @@ func TestReplaceRefusesAStrategyTestedOnAnotherDSCPPath(t *testing.T) {
 					target.DSCP = config.SetDSCPConfig{Enabled: true, Value: tc.setDSCP}
 				}
 			})
-			rec := replaceWith(t, mux, DiscoveryReplaceRequest{SetId: "set-a", Set: strategyTestedOn(tc.tested, tc.ipVersion), StrategyOnly: true, KeepTargets: true})
+			rec := replaceWith(t, mux, DiscoveryReplaceRequest{SetId: "set-a", Set: strategyTestedOn(tc.tested, tc.ipVersion), StrategyOnly: true, KeepTargets: true, DSCPIPVersion: tc.only})
 			got, _ := replaceSets(api)
 			if tc.refusal == "" {
 				if rec.Code != http.StatusOK || got.Faking.Strategy != "pastseq" {
@@ -317,8 +321,19 @@ func TestReplaceRefusesAStrategyTestedOnAnotherDSCPPath(t *testing.T) {
 	}
 }
 
+func TestReplaceRefusesAnUnknownDSCPIPVersion(t *testing.T) {
+	stubDiscoveryDSCPStamp(t, stampsTheSetsValue)
+	api, mux := replaceFixture(t, nil)
+	if rec := replaceWith(t, mux, DiscoveryReplaceRequest{SetId: "set-a", Set: discoveredStrategy(), StrategyOnly: true, KeepTargets: true, DSCPIPVersion: "ipv4"}); rec.Code != http.StatusBadRequest {
+		t.Errorf("dscp_ip_version is 4, 6 or empty, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if got, _ := replaceSets(api); got.Faking.Strategy == "pastseq" {
+		t.Error("a refused request writes nothing")
+	}
+}
+
 func TestReplaceWaitsWhileTheDSCPRulesAreStillChanging(t *testing.T) {
-	stubDiscoveryDSCPStamp(t, func(*config.DSCPProbe) (*int, error) { return nil, tables.ErrDiscoveryDSCPPending })
+	stubDiscoveryDSCPStamp(t, func(*config.DSCPProbe) (*config.DSCPProbe, error) { return nil, tables.ErrDiscoveryDSCPPending })
 	api, mux := replaceFixture(t, func(target *config.SetConfig) {
 		target.DSCP = config.SetDSCPConfig{Enabled: true, Value: 7}
 	})

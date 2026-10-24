@@ -38,6 +38,7 @@ export interface VerdictApply {
   pins?: Record<string, string[]>;
   probeUrls?: string[];
   preset: string;
+  dscpIpVersion?: string;
 }
 
 interface SetVerdictCardProps {
@@ -220,6 +221,7 @@ export const SetVerdictCard = ({
       pins: pinsFor(strategy, covered),
       probeUrls: useUrls && checkUrls.length > 0 ? checkUrls : undefined,
       preset,
+      dscpIpVersion: suite.dscp_ip_version,
     });
     if (ok) setDialogOpen(false);
   };

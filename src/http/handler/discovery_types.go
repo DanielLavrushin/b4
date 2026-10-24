@@ -11,13 +11,14 @@ type HistoryEntryView struct {
 }
 
 type DiscoveryReplaceRequest struct {
-	SetId        string              `json:"set_id"`
-	Set          config.SetConfig    `json:"set"`
-	Domains      []string            `json:"domains"`
-	Pins         map[string][]string `json:"pins,omitempty"`
-	StrategyOnly bool                `json:"strategy_only,omitempty"`
-	KeepTargets  bool                `json:"keep_targets,omitempty"`
-	ProbeURLs    []string            `json:"probe_urls,omitempty"`
+	SetId         string              `json:"set_id"`
+	Set           config.SetConfig    `json:"set"`
+	Domains       []string            `json:"domains"`
+	Pins          map[string][]string `json:"pins,omitempty"`
+	StrategyOnly  bool                `json:"strategy_only,omitempty"`
+	KeepTargets   bool                `json:"keep_targets,omitempty"`
+	ProbeURLs     []string            `json:"probe_urls,omitempty"`
+	DSCPIPVersion string              `json:"dscp_ip_version,omitempty"`
 }
 
 type HistoryAppliedRequest struct {

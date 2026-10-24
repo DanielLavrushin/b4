@@ -44,6 +44,7 @@ export interface ReplaceStrategyOptions {
   strategyOnly?: boolean;
   keepTargets?: boolean;
   probeUrls?: string[];
+  dscpIpVersion?: string;
 }
 
 export const discoveryApi = {
@@ -88,6 +89,7 @@ export const discoveryApi = {
         opts?.probeUrls && opts.probeUrls.length > 0
           ? opts.probeUrls
           : undefined,
+      dscp_ip_version: opts?.dscpIpVersion || undefined,
     }),
   suggest: (setId: string) =>
     apiGet<ProbeSuggestions>(

@@ -97,6 +97,7 @@ export interface ApplyTarget {
   preset: string;
   urls: string[];
   setId?: string;
+  dscpIpVersion?: string;
 }
 
 export function checkUrlsFor(

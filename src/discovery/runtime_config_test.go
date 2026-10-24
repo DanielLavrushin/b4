@@ -53,3 +53,32 @@ func TestTheRunsProbesCarryTheSetsDSCPInEveryFamilyTheRunTests(t *testing.T) {
 		t.Error("a run for no set value carries none")
 	}
 }
+
+func TestARunRecordsTheIPVersionItsDSCPValueWasLimitedTo(t *testing.T) {
+	both := &config.DSCPProbe{Value: 25, IPv4: true, IPv6: true}
+	ipv4 := &config.DSCPProbe{Value: 25, IPv4: true}
+	ipv6 := &config.DSCPProbe{Value: 25, IPv6: true}
+	for _, tc := range []struct {
+		name           string
+		asked, stamped *config.DSCPProbe
+		want           string
+	}{
+		{"both families asked, IPv4 stamped", both, ipv4, "4"},
+		{"both families asked, IPv6 stamped", both, ipv6, "6"},
+		{"both families asked and stamped", both, both, ""},
+		{"an IPv4 run stamped", ipv4, ipv4, ""},
+	} {
+		suite := &CheckSuite{}
+		suite.recordStamp(tc.asked, tc.stamped)
+		if suite.DSCP == nil || *suite.DSCP != 25 || suite.DSCPIPVersion != tc.want {
+			t.Errorf("%s: want DSCP 25 limited to %q, got %v, %q", tc.name, tc.want, suite.DSCP, suite.DSCPIPVersion)
+		}
+	}
+	for _, asked := range []*config.DSCPProbe{both, nil} {
+		suite := &CheckSuite{}
+		suite.recordStamp(asked, nil)
+		if suite.DSCP != nil || suite.DSCPIPVersion != "" {
+			t.Errorf("a run whose probes carry no value records none, got %v, %q", suite.DSCP, suite.DSCPIPVersion)
+		}
+	}
+}

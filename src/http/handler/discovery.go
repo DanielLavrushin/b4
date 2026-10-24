@@ -479,7 +479,7 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 // @Tags Discovery
 // @Accept json
 // @Produce json
-// @Param body body DiscoveryReplaceRequest true "Target set, discovered strategy, domains and pins. strategy_only adopts only the TCP, fragmentation and faking strategy (and DNS when the discovered one is enabled); keep_targets leaves the set's domains and other sets alone and makes domains optional; probe_urls become the set's discovery URLs"
+// @Param body body DiscoveryReplaceRequest true "Target set, discovered strategy, domains and pins. strategy_only adopts only the TCP, fragmentation and faking strategy (and DNS when the discovered one is enabled); keep_targets leaves the set's domains and other sets alone and makes domains optional; probe_urls become the set's discovery URLs; dscp_ip_version is the dscp_ip_version of the run the strategy comes from, set when its DSCP value reached the probes of one IP version only"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} APIError
 // @Failure 404 {object} APIError
@@ -505,6 +505,10 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.SetId == "" || (len(domains) == 0 && !req.KeepTargets) {
 		http.Error(w, "set_id and domains are required", http.StatusBadRequest)
+		return
+	}
+	if req.DSCPIPVersion != "" && req.DSCPIPVersion != "4" && req.DSCPIPVersion != "6" {
+		http.Error(w, "dscp_ip_version must be 4, 6 or empty", http.StatusBadRequest)
 		return
 	}
 	config.ApplySetDefaults(&req.Set)
@@ -548,7 +552,7 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 		if len(probeURLs) > 0 {
 			target.Discovery.URLs = slices.Clone(probeURLs)
 		}
-		if err := dscpPathRefusal(next, target, &req.Set); err != nil {
+		if err := dscpPathRefusal(next, target, &req.Set, req.DSCPIPVersion); err != nil {
 			return err
 		}
 		name = target.Name
@@ -606,11 +610,20 @@ var discoveryDSCPStamp = tables.DiscoveryDSCPStamp
 const errDSCPRulesPending = "b4 is still applying its DSCP rules, which decide the network path of the set's traffic; try again in a moment"
 
 type dscpPathChange struct {
-	set         string
+	set, family string
 	tested, now *int
 }
 
-func dscpPathChanged(cfg *config.Config, set, tested *config.SetConfig) (*dscpPathChange, error) {
+type dscpFamilyPath struct {
+	family      string
+	tested, now *int
+}
+
+func sameDSCP(a, b *int) bool {
+	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
+}
+
+func dscpPathChanged(cfg *config.Config, set, tested *config.SetConfig, testedOnly string) (*dscpPathChange, error) {
 	probe := cfg.ProbeDSCP(set)
 	if probe != nil {
 		probe.IPv4 = probe.IPv4 && tested.MatchesIPVersion(4)
@@ -623,25 +636,50 @@ func dscpPathChanged(cfg *config.Config, set, tested *config.SetConfig) (*dscpPa
 	if err != nil {
 		return nil, err
 	}
-	var was *int
-	if tested.DSCP.Enabled {
-		value := tested.DSCP.Value
-		was = &value
+	var paths []dscpFamilyPath
+	for _, f := range []struct {
+		family, only string
+		version      uint8
+	}{{"IPv4", "4", 4}, {"IPv6", "6", 6}} {
+		if !set.MatchesIPVersion(f.version) || !tested.MatchesIPVersion(f.version) {
+			continue
+		}
+		path := dscpFamilyPath{family: f.family}
+		if tested.DSCP.Enabled && (testedOnly == "" || testedOnly == f.only) {
+			value := tested.DSCP.Value
+			path.tested = &value
+		}
+		if now != nil && ((f.version == 4 && now.IPv4) || (f.version == 6 && now.IPv6)) {
+			value := now.Value
+			path.now = &value
+		}
+		paths = append(paths, path)
 	}
-	if (was == nil && now == nil) || (was != nil && now != nil && *was == *now) {
-		return nil, nil
+	for _, path := range paths {
+		if sameDSCP(path.tested, path.now) {
+			continue
+		}
+		change := &dscpPathChange{set: set.Name, tested: path.tested, now: path.now}
+		if len(paths) == 2 && !(sameDSCP(paths[0].tested, paths[1].tested) && sameDSCP(paths[0].now, paths[1].now)) {
+			change.family = path.family
+		}
+		return change, nil
 	}
-	return &dscpPathChange{set: set.Name, tested: was, now: now}, nil
+	return nil, nil
 }
 
 func (c *dscpPathChange) Error() string {
+	over, traffic := "", fmt.Sprintf("the traffic of set %q", c.set)
+	if c.family != "" {
+		over, traffic = " over "+c.family, fmt.Sprintf("the %s traffic of set %q", c.family, c.set)
+	}
 	switch {
 	case c.tested == nil:
-		return fmt.Sprintf("the strategy was tested without a DSCP value of the set, but the traffic of set %q now carries DSCP %d, so it takes another network path", c.set, *c.now)
+		return fmt.Sprintf("the strategy was tested without a DSCP value of the set%s, but %s now carries DSCP %d, so it takes another network path", over, traffic, *c.now)
 	case c.now == nil:
-		return fmt.Sprintf("the strategy was tested with DSCP %d, but the traffic of set %q no longer carries a DSCP value of its own, so it takes another network path", *c.tested, c.set)
+		return fmt.Sprintf("the strategy was tested with DSCP %d%s, but %s no longer carries a DSCP value of its own, so it takes another network path", *c.tested, over, traffic)
 	}
-	return fmt.Sprintf("the strategy was tested with DSCP %d, but the traffic of set %q now carries DSCP %d, so it takes another network path", *c.tested, c.set, *c.now)
+	return fmt.Sprintf("the strategy was tested with DSCP %d%s, but %s now carries DSCP %d, so it takes another network path", *c.tested, over, traffic, *c.now)
 }
 
 func (c *dscpPathChange) field() FieldError {
@@ -652,6 +690,10 @@ func (c *dscpPathChange) field() FieldError {
 	case c.now == nil:
 		f.Code = "dscp_path_now_without"
 	}
+	if c.family != "" {
+		f.Code += "_family"
+		f.Params["family"] = c.family
+	}
 	if c.tested != nil {
 		f.Params["tested"] = *c.tested
 	}
@@ -661,8 +703,8 @@ func (c *dscpPathChange) field() FieldError {
 	return f
 }
 
-func dscpPathRefusal(cfg *config.Config, set, tested *config.SetConfig) error {
-	change, err := dscpPathChanged(cfg, set, tested)
+func dscpPathRefusal(cfg *config.Config, set, tested *config.SetConfig, testedOnly string) error {
+	change, err := dscpPathChanged(cfg, set, tested, testedOnly)
 	switch {
 	case errors.Is(err, tables.ErrDiscoveryDSCPPending):
 		return &APIError{Status: http.StatusConflict, Code: "dscp_rules_pending", Message: errDSCPRulesPending,

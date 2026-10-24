@@ -376,6 +376,7 @@ export const HistoryTable = ({
           preset: row.preset,
           urls: row.urls,
           setId: row.entry.set_id,
+          dscpIpVersion: row.entry.dscp_ip_version,
         }
       : null;
 
@@ -549,6 +550,7 @@ export const HistoryTable = ({
                                 preset: alt.preset,
                                 urls: row.urls,
                                 setId: row.entry.set_id,
+                                dscpIpVersion: row.entry.dscp_ip_version,
                               })
                             }
                           />

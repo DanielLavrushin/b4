@@ -36,7 +36,7 @@ type runtimeState struct {
 type StartResult struct {
 	Pool     *nfq.Pool
 	FlowMark uint
-	DSCP     *int
+	DSCP     *config.DSCPProbe
 }
 
 type StartSuiteOptions struct {
@@ -106,7 +106,7 @@ func (m *Runtime) Start(cfg *config.Config, dscp *config.DSCPProbe) (*StartResul
 	}
 	stamped := tables.ActiveDiscoveryDSCP()
 	if stamped != nil {
-		log.Infof("Discovery probes leave with DSCP %d", *stamped)
+		log.Infof("Discovery probes leave with DSCP %d", stamped.Value)
 	}
 
 	discoveryCfg := discoveryPoolConfig(cfg, discoveryStart, discoveryThreads, flowMark, injectedMark)
@@ -189,6 +189,20 @@ func probeForRun(dscp *config.DSCPProbe, ipVersion string) *config.DSCPProbe {
 	return &config.DSCPProbe{Value: dscp.Value, IPv4: ipVersion != "ipv6", IPv6: ipVersion != "ipv4"}
 }
 
+func (s *CheckSuite) recordStamp(asked, stamped *config.DSCPProbe) {
+	if stamped == nil {
+		return
+	}
+	value := stamped.Value
+	s.DSCP = &value
+	if asked != nil && asked.IPv4 && asked.IPv6 && stamped.IPv4 != stamped.IPv6 {
+		s.DSCPIPVersion = "6"
+		if stamped.IPv4 {
+			s.DSCPIPVersion = "4"
+		}
+	}
+}
+
 func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteOptions) (*DiscoverySuite, error) {
 	dscp := probeForRun(opts.DSCP, opts.IPVersion)
 	runtimeState, err := m.Start(cfg, dscp)
@@ -213,7 +227,7 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 		suite.Source = SourceWeb
 	}
 	suite.SetId = opts.SetId
-	suite.DSCP = runtimeState.DSCP
+	suite.recordStamp(dscp, runtimeState.DSCP)
 	suite.setStrategy = opts.SetStrategy
 	suite.stopWhenCovered = opts.StopWhenCovered
 	suite.dnsServerOverride = opts.DNSServer
