@@ -344,7 +344,7 @@ func TestNetnsTheRouterOwnPacketsAreQueuedOnce(t *testing.T) {
 
 				cfg := netnsConfig(engine)
 				cfg.Sets = nil
-				l.apply(cfg, "AA:BB:CC:DD:EE:01")
+				l.apply(cfg, "AA:BB:CC:DD:EE:01", "192.0.2.77")
 				if err := AddRules(cfg); err != nil {
 					t.Fatalf("AddRules: %v", err)
 				}
@@ -433,7 +433,7 @@ func TestNetnsTheMSSClampReachesTheHandshakeBeforeTheQueue(t *testing.T) {
 				cfg := netnsConfig(engine)
 				cfg.Sets = nil
 				cfg.Queue.MSSClamp.Enabled, cfg.Queue.MSSClamp.Size = true, netnsClampSize
-				l.apply(cfg, dev.mac)
+				l.apply(cfg, dev.mac, netnsDevIP)
 				if err := AddRules(cfg); err != nil {
 					t.Fatalf("AddRules: %v", err)
 				}

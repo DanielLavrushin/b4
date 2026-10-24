@@ -156,7 +156,18 @@ func countChainRules(dump, chain string) int {
 }
 
 func (r *routeManager) deviceFilterActive() bool {
-	return r.devicesEnabled && len(r.selectedMACs) > 0
+	return r.devicesEnabled && len(r.devices) > 0
+}
+
+func gateMatchArgs(m config.DeviceMatch) ([]string, string, bool) {
+	if m.IsIP() {
+		if m.V6 {
+			return nil, "", false
+		}
+		return []string{"-s", m.IP}, m.IP, true
+	}
+	mac := strings.ToUpper(m.MAC)
+	return []string{"-m", "mac", "--mac-source", mac}, mac, true
 }
 
 func (r *routeManager) ensureJump(base string, spec ...string) bool {
@@ -227,47 +238,44 @@ func gateRulesFromDump(out string) []string {
 		if !strings.HasPrefix(line, "-A "+tunGateChain) {
 			continue
 		}
-		cur = append(cur, strings.ToUpper(ruleFieldValue(line, "--mac-source"))+" "+ruleFieldValue(line, "-j"))
+		source := strings.ToUpper(ruleFieldValue(line, "--mac-source"))
+		if source == "" {
+			source = strings.TrimSuffix(ruleFieldValue(line, "-s"), "/32")
+		}
+		cur = append(cur, source+" "+ruleFieldValue(line, "-j"))
 	}
 	return cur
 }
 
+func (r *routeManager) gateTarget() string {
+	if r.whiteIsBlack {
+		return "RETURN"
+	}
+	return tunCaptureChain
+}
+
 func (r *routeManager) desiredGateRules() []string {
 	var want []string
+	for _, m := range r.devices {
+		if _, source, ok := gateMatchArgs(m); ok {
+			want = append(want, source+" "+r.gateTarget())
+		}
+	}
 	if r.whiteIsBlack {
-		for _, mac := range r.selectedMACs {
-			if mac = strings.ToUpper(strings.TrimSpace(mac)); mac != "" {
-				want = append(want, mac+" RETURN")
-			}
-		}
 		want = append(want, " "+tunCaptureChain)
-	} else {
-		for _, mac := range r.selectedMACs {
-			if mac = strings.ToUpper(strings.TrimSpace(mac)); mac != "" {
-				want = append(want, mac+" "+tunCaptureChain)
-			}
-		}
 	}
 	return want
 }
 
 func (r *routeManager) rebuildGateChain() {
 	run("iptables", "-t", "mangle", "-F", tunGateChain)
+	for _, m := range r.devices {
+		if match, _, ok := gateMatchArgs(m); ok {
+			run(append(append([]string{"iptables", "-t", "mangle", "-A", tunGateChain}, match...), "-j", r.gateTarget())...)
+		}
+	}
 	if r.whiteIsBlack {
-		for _, mac := range r.selectedMACs {
-			if mac = strings.ToUpper(strings.TrimSpace(mac)); mac == "" {
-				continue
-			}
-			run("iptables", "-t", "mangle", "-A", tunGateChain, "-m", "mac", "--mac-source", mac, "-j", "RETURN")
-		}
 		run("iptables", "-t", "mangle", "-A", tunGateChain, "-j", tunCaptureChain)
-	} else {
-		for _, mac := range r.selectedMACs {
-			if mac = strings.ToUpper(strings.TrimSpace(mac)); mac == "" {
-				continue
-			}
-			run("iptables", "-t", "mangle", "-A", tunGateChain, "-m", "mac", "--mac-source", mac, "-j", tunCaptureChain)
-		}
 	}
 }
 

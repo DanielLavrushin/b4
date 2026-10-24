@@ -1,8 +1,11 @@
 package tun
 
 import (
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 func TestChunkPorts(t *testing.T) {
@@ -133,7 +136,7 @@ func TestCountChainRules(t *testing.T) {
 
 func TestGateRulesFromDumpMatchesMACsPrintedInLowercase(t *testing.T) {
 	for _, whiteIsBlack := range []bool{true, false} {
-		r := &routeManager{whiteIsBlack: whiteIsBlack, selectedMACs: []string{"02:07:15:be:63:58", "00:0C:29:87:6C:85"}}
+		r := &routeManager{whiteIsBlack: whiteIsBlack, devices: []config.DeviceMatch{{MAC: "02:07:15:be:63:58"}, {MAC: "00:0C:29:87:6C:85"}}}
 		var dump strings.Builder
 		dump.WriteString("-N B4_TUN_GATE\n")
 		target := tunCaptureChain
@@ -149,6 +152,66 @@ func TestGateRulesFromDumpMatchesMACsPrintedInLowercase(t *testing.T) {
 		if !equalStringSet(got, want) {
 			t.Errorf("whiteIsBlack=%v: gate dump %q does not match desired %q, so the gate would be rebuilt every reconcile", whiteIsBlack, got, want)
 		}
+	}
+}
+
+func TestTheGateMatchesManualDevicesByTheirIPv4Address(t *testing.T) {
+	for _, whiteIsBlack := range []bool{true, false} {
+		var calls [][]string
+		origRun := run
+		t.Cleanup(func() { run = origRun })
+		run = func(args ...string) (string, error) {
+			calls = append(calls, args)
+			return "", nil
+		}
+		r := &routeManager{whiteIsBlack: whiteIsBlack, devicesEnabled: true, devices: []config.DeviceMatch{
+			{MAC: "02:07:15:BE:63:58"},
+			{IP: "192.168.51.2"},
+			{IP: "fd42:2::2", V6: true},
+		}}
+		if !r.deviceFilterActive() {
+			t.Fatalf("whiteIsBlack=%v: a filter of selected devices is inactive", whiteIsBlack)
+		}
+		r.rebuildGateChain()
+
+		target := tunCaptureChain
+		if whiteIsBlack {
+			target = "RETURN"
+		}
+		var dump strings.Builder
+		var gate []string
+		for _, c := range calls {
+			if len(c) > 4 && c[3] == "-A" && c[4] == tunGateChain {
+				line := strings.Join(c[3:], " ")
+				gate = append(gate, line)
+				dump.WriteString(line + "\n")
+			}
+		}
+		want := []string{
+			"-A B4_TUN_GATE -m mac --mac-source 02:07:15:BE:63:58 -j " + target,
+			"-A B4_TUN_GATE -s 192.168.51.2 -j " + target,
+		}
+		if whiteIsBlack {
+			want = append(want, "-A B4_TUN_GATE -j B4_TUN")
+		}
+		if !slices.Equal(gate, want) {
+			t.Errorf("whiteIsBlack=%v: the gate holds %q, want %q: a manual device has no MAC on the wire and the TUN engine captures IPv4 only", whiteIsBlack, gate, want)
+		}
+
+		printed := strings.ReplaceAll(dump.String(), "-s 192.168.51.2 ", "-s 192.168.51.2/32 ")
+		if got, desired := gateRulesFromDump(printed), r.desiredGateRules(); !equalStringSet(got, desired) {
+			t.Errorf("whiteIsBlack=%v: gate dump %q does not match desired %q, so the gate would be rebuilt every reconcile", whiteIsBlack, got, desired)
+		}
+	}
+}
+
+func TestOnlyIPv6ManualDevicesStillLimitTheGate(t *testing.T) {
+	r := &routeManager{devicesEnabled: true, devices: []config.DeviceMatch{{IP: "fd42:2::2", V6: true}}}
+	if !r.deviceFilterActive() {
+		t.Fatalf("a device filter selecting one IPv6 device is inactive, so the TUN engine would capture every device's IPv4 traffic")
+	}
+	if got := r.desiredGateRules(); len(got) != 0 {
+		t.Errorf("the gate wants %q, want no rule: the selected device has no IPv4 address to match", got)
 	}
 }
 

@@ -306,29 +306,24 @@ func (n *NFTablesManager) apply() error {
 	}
 	markAccept := fmt.Sprintf("0x%x", markValue)
 
-	selectedMACs := cfg.Queue.Devices.SelectedMACs()
-	if queueJumpsFromForward(cfg) {
+	if gate := routeDeviceGateFor(cfg); gate.enabled {
 		if err := n.createChain("forward", "forward", nftBaseChainPriority, "accept"); err != nil {
 			return err
 		}
 
-		if cfg.Queue.Devices.WhiteIsBlack {
-			for _, mac := range selectedMACs {
-				if mac = strings.ToUpper(strings.TrimSpace(mac)); mac != "" {
-					if err := n.addRule("forward", "ether", "saddr", mac, "return"); err != nil {
-						return err
-					}
+		if gate.blacklist {
+			for _, m := range gate.matches {
+				if err := n.addRule("forward", append(nftMatchArgs(m), "return")...); err != nil {
+					return err
 				}
 			}
 			if err := n.addRule("forward", "jump", nftChainName); err != nil {
 				return err
 			}
 		} else {
-			for _, mac := range selectedMACs {
-				if mac = strings.ToUpper(strings.TrimSpace(mac)); mac != "" {
-					if err := n.addRule("forward", "ether", "saddr", mac, "jump", nftChainName); err != nil {
-						return err
-					}
+			for _, m := range gate.matches {
+				if err := n.addRule("forward", append(nftMatchArgs(m), "jump", nftChainName)...); err != nil {
+					return err
 				}
 			}
 		}

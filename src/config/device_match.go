@@ -50,6 +50,27 @@ func (dc *DevicesConfig) MatchForMAC(mac string) (DeviceMatch, bool) {
 	return DeviceMatch{MAC: mac}, true
 }
 
+func (dc *DevicesConfig) SelectedMatches() ([]DeviceMatch, int) {
+	var matches []DeviceMatch
+	seen := make(map[string]struct{})
+	unresolved := 0
+	for i := range dc.Devices {
+		d := &dc.Devices[i]
+		if !d.Selected {
+			continue
+		}
+		m, ok := d.Match()
+		if !ok {
+			if d.IsManual {
+				unresolved++
+			}
+			continue
+		}
+		matches = AppendDeviceMatch(matches, seen, m)
+	}
+	return matches, unresolved
+}
+
 func AppendDeviceMatch(out []DeviceMatch, seen map[string]struct{}, m DeviceMatch) []DeviceMatch {
 	k := m.Key()
 	if _, dup := seen[k]; dup {

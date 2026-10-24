@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -799,29 +800,44 @@ func containsSubstr(s, substr string) bool {
 	return false
 }
 
-func TestSelectedMACs(t *testing.T) {
-	t.Run("returns only selected non-manual devices", func(t *testing.T) {
+func TestSelectedMatches(t *testing.T) {
+	t.Run("matches a manual device by its address and the others by MAC", func(t *testing.T) {
 		dc := DevicesConfig{
 			Devices: []Device{
-				{MAC: "AA:BB:CC:DD:EE:01", Selected: true},
+				{MAC: "aa:bb:cc:dd:ee:01", Selected: true},
 				{MAC: "AA:BB:CC:DD:EE:02", Selected: false},
-				{MAC: "02:B4:C0:A8:01:01", Selected: true, IsManual: true},
+				{MAC: "02:B4:C0:A8:33:02", IP: "192.168.51.2", Selected: true, IsManual: true},
+				{MAC: "02:B4:00:00:00:02", IP: "FD42:2::2", Selected: true, IsManual: true},
+				{MAC: "AA:BB:CC:DD:EE:01", Selected: true},
 			},
 		}
-		macs := dc.SelectedMACs()
-		if len(macs) != 1 || macs[0] != "AA:BB:CC:DD:EE:01" {
-			t.Errorf("expected [AA:BB:CC:DD:EE:01], got %v", macs)
+		matches, unresolved := dc.SelectedMatches()
+		want := []DeviceMatch{{MAC: "AA:BB:CC:DD:EE:01"}, {IP: "192.168.51.2"}, {IP: "fd42:2::2", V6: true}}
+		if !slices.Equal(matches, want) || unresolved != 0 {
+			t.Errorf("SelectedMatches = %v, %d unresolved; want %v, 0", matches, unresolved, want)
 		}
 	})
 
-	t.Run("returns nil when none selected", func(t *testing.T) {
+	t.Run("counts a selected manual device without a usable address", func(t *testing.T) {
+		dc := DevicesConfig{
+			Devices: []Device{
+				{MAC: "02:B4:C0:A8:33:03", IP: "", Selected: true, IsManual: true},
+				{MAC: "02:B4:C0:A8:33:04", IP: "192.168.51.4", Selected: false, IsManual: true},
+			},
+		}
+		if matches, unresolved := dc.SelectedMatches(); len(matches) != 0 || unresolved != 1 {
+			t.Errorf("SelectedMatches = %v, %d unresolved; want none, 1", matches, unresolved)
+		}
+	})
+
+	t.Run("returns nothing when none selected", func(t *testing.T) {
 		dc := DevicesConfig{
 			Devices: []Device{
 				{MAC: "AA:BB:CC:DD:EE:01", Selected: false},
 			},
 		}
-		if macs := dc.SelectedMACs(); macs != nil {
-			t.Errorf("expected nil, got %v", macs)
+		if matches, unresolved := dc.SelectedMatches(); matches != nil || unresolved != 0 {
+			t.Errorf("SelectedMatches = %v, %d unresolved; want nil, 0", matches, unresolved)
 		}
 	})
 }

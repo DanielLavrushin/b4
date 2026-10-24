@@ -14,6 +14,7 @@ func TestIsB4IptablesRuleKeepsTheRulesThatDecideTUNBehaviour(t *testing.T) {
 		"-A OUTPUT -m mark --mark 0x10000000/0x10000000 -j CT --notrack",
 		"-A OUTPUT -m mark --mark 0x20000000/0x20000000 -j CT --notrack",
 		"-A PREROUTING -j B4_TUN_GATE",
+		"-A FORWARD -j B4_FORWARD",
 		"-A OUTPUT -j B4_TUN",
 		"-A POSTROUTING -o b4tun0 -j SNAT --to-source 62.78.37.161",
 		"-A FORWARD -o b4tun0 -j ACCEPT",
@@ -40,6 +41,8 @@ func TestIsB4IptablesRuleSkipsChainsDumpedSeparately(t *testing.T) {
 		"-A B4_DNSTCP -m mark --mark 0x8000/0x8000 -j RETURN",
 		"-A B4_DNSTCP -p tcp -m tcp --dport 53 -j REDIRECT --to-ports 5453",
 		"-A B4_TUN_GATE -m mac --mac-source 02:42:AC:11:00:03 -j RETURN",
+		"-N B4_FORWARD",
+		"-A B4_FORWARD -s 192.168.51.2/32 -j B4",
 		"-A B4_DISCOVERY -m mark --mark 0x8002 -j ACCEPT",
 		"-A B4_PREROUTING -p udp --dport 53 -j NFQUEUE --queue-num 537",
 	}
@@ -67,6 +70,7 @@ func TestDiagB4ChainsCoverTheTUNChains(t *testing.T) {
 	want := map[string]string{
 		"B4":            "mangle",
 		"B4_PREROUTING": "mangle",
+		"B4_FORWARD":    "mangle",
 		"B4_TUN":        "mangle",
 		"B4_TUN_GATE":   "mangle",
 		"B4_DISCOVERY":  "mangle",

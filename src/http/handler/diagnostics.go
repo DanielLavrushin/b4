@@ -658,6 +658,7 @@ var diagB4Chains = []diagChainRef{
 	{"filter", "B4_EXPOSE"},
 	{"mangle", "B4"},
 	{"mangle", "B4_PREROUTING"},
+	{"mangle", "B4_FORWARD"},
 	{"mangle", "B4_TUN"},
 	{"mangle", "B4_TUN_GATE"},
 	{"mangle", "B4_DISCOVERY"},

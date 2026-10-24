@@ -57,11 +57,15 @@ const engineRestart = (c: B4Config) => ({
 
 const deviceGate = (c: B4Config) => {
   const { enabled, wisb, devices } = c.queue.devices;
-  const macs = devices
-    .filter((d) => d.selected && !d.is_manual)
-    .map((d) => d.mac.trim().toUpperCase())
-    .filter((mac) => mac !== "");
-  return [enabled, wisb, [...new Set(macs)].sort()];
+  const matches = devices
+    .filter((d) => d.selected)
+    .map((d) =>
+      d.is_manual
+        ? `ip:${(d.ip ?? "").trim().toLowerCase()}`
+        : `mac:${d.mac.trim().toUpperCase()}`,
+    )
+    .filter((m) => m !== "ip:" && m !== "mac:");
+  return [enabled, wisb, [...new Set(matches)].sort()];
 };
 
 const nothing = () => [];

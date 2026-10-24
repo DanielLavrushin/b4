@@ -15,18 +15,25 @@ type captureLayout struct {
 	name         string
 	devices      bool
 	whiteIsBlack bool
+	manual       bool
 }
 
 var captureLayouts = []captureLayout{
 	{name: "postrouting"},
 	{name: "device filter", devices: true},
 	{name: "device filter excluding devices", devices: true, whiteIsBlack: true},
+	{name: "device filter of a device added by hand", devices: true, manual: true},
+	{name: "device filter excluding a device added by hand", devices: true, whiteIsBlack: true, manual: true},
 }
 
-func (l captureLayout) apply(cfg *config.Config, mac string) {
+func (l captureLayout) apply(cfg *config.Config, mac, ip string) {
 	cfg.Queue.Devices.Enabled = l.devices
 	cfg.Queue.Devices.WhiteIsBlack = l.whiteIsBlack
-	cfg.Queue.Devices.Devices = append(cfg.Queue.Devices.Devices, config.Device{MAC: mac, Selected: true})
+	device := config.Device{MAC: mac, Selected: true}
+	if l.manual {
+		device = config.Device{MAC: "02:B4:00:00:00:01", IP: ip, Selected: true, IsManual: true}
+	}
+	cfg.Queue.Devices.Devices = append(cfg.Queue.Devices.Devices, device)
 }
 
 func captureLayoutConfig(backend string, l captureLayout) *config.Config {
@@ -35,7 +42,7 @@ func captureLayoutConfig(backend string, l captureLayout) *config.Config {
 	cfg.Queue.IPv4Enabled = true
 	cfg.Queue.MSSClamp.Enabled, cfg.Queue.MSSClamp.Size = true, 600
 	cfg.Queue.Devices.Devices = []config.Device{{MAC: "AA:BB:CC:DD:EE:02", MSSClamp: 700}}
-	l.apply(&cfg, "AA:BB:CC:DD:EE:01")
+	l.apply(&cfg, "AA:BB:CC:DD:EE:01", "192.168.51.2")
 	cfg.Sets = []*config.SetConfig{mssClampSet("mss", 800, []string{"203.0.113.7"}, nil)}
 	return &cfg
 }
@@ -60,17 +67,21 @@ func clampRulesLead(t *testing.T, where string, rules []string, isClamp func(str
 	}
 }
 
-func iptJumpsToB4(c *goldenIptChain) int {
+func iptJumpsTo(c *goldenIptChain, target string) int {
 	if c == nil {
 		return 0
 	}
 	n := 0
 	for _, rule := range c.rules {
-		if goldenIptTarget(rule) == iptChainName {
+		if goldenIptTarget(rule) == target {
 			n++
 		}
 	}
 	return n
+}
+
+func iptJumpsToB4(c *goldenIptChain) int {
+	return iptJumpsTo(c, iptChainName)
 }
 
 func TestTheRouterOwnPacketsMeetB4OnceOnIptables(t *testing.T) {
@@ -83,12 +94,22 @@ func TestTheRouterOwnPacketsMeetB4OnceOnIptables(t *testing.T) {
 				t.Fatalf("AddRules: %v", err)
 			}
 			mangle := h.iptTable(backendIPTables, "mangle")
-			output, post, forward := iptJumpsToB4(mangle.chain("OUTPUT")), iptJumpsToB4(mangle.chain("POSTROUTING")), iptJumpsToB4(mangle.chain("FORWARD"))
+			output, post := iptJumpsToB4(mangle.chain("OUTPUT")), iptJumpsToB4(mangle.chain("POSTROUTING"))
+			forward, gated := iptJumpsTo(mangle.chain("FORWARD"), iptForwardChainName), iptJumpsToB4(mangle.chain(iptForwardChainName))
 			switch {
-			case !l.devices && (output != 0 || post != 1 || forward != 0):
+			case !l.devices && (output != 0 || post != 1 || forward != 0 || iptJumpsToB4(mangle.chain("FORWARD")) != 0):
 				t.Errorf("jumps to %s: OUTPUT %d, POSTROUTING %d, FORWARD %d; without a device filter POSTROUTING alone must jump there, since the router's own packets pass POSTROUTING too and a jump from OUTPUT queues each of them twice", iptChainName, output, post, forward)
-			case l.devices && (output != 1 || post != 0 || forward == 0):
-				t.Errorf("jumps to %s: OUTPUT %d, POSTROUTING %d, FORWARD %d; with a device filter FORWARD jumps there for the devices and OUTPUT for the router's own packets, which never cross FORWARD", iptChainName, output, post, forward)
+			case l.devices && (output != 1 || post != 0 || forward != 1 || gated == 0 || iptJumpsToB4(mangle.chain("FORWARD")) != 0):
+				t.Errorf("jumps to %s: OUTPUT %d, POSTROUTING %d, from %s %d, FORWARD to %s %d; with a device filter FORWARD jumps to %s once, which jumps there for the devices, and OUTPUT for the router's own packets, which never cross FORWARD", iptChainName, output, post, iptForwardChainName, gated, iptForwardChainName, forward, iptForwardChainName)
+			}
+			if l.manual {
+				want := []string{"-s 192.168.51.2 -j " + iptChainName}
+				if l.whiteIsBlack {
+					want = []string{"-s 192.168.51.2 -j RETURN", "-j " + iptChainName}
+				}
+				if got := mangle.chain(iptForwardChainName).rules; !slices.Equal(got, want) {
+					t.Errorf("%s holds %q, want %q: a device added by hand has no MAC address on the wire, so only its address matches it", iptForwardChainName, got, want)
+				}
 			}
 
 			rules := mangle.chain("OUTPUT").rules
@@ -294,6 +315,15 @@ func TestNFTablesTheRouterOwnPacketsMeetB4OnceAndTheClampComesFirst(t *testing.T
 			isClamp := func(r string) bool { return strings.Contains(r, "maxseg size set") }
 			for _, chain := range []string{"prerouting", "output", "forward"} {
 				clampRulesLead(t, chain, table.chains[chain], isClamp)
+			}
+			if l.manual {
+				want := []string{"ip saddr 192.168.51.2 jump " + nftChainName}
+				if l.whiteIsBlack {
+					want = []string{"ip saddr 192.168.51.2 return", "jump " + nftChainName}
+				}
+				if got := slices.DeleteFunc(slices.Clone(table.chains["forward"]), isClamp); !slices.Equal(got, want) {
+					t.Errorf("forward holds %q besides the MSS clamp, want %q: a device added by hand has no MAC address on the wire, so only its address matches it", got, want)
+				}
 			}
 
 			serveNftListings(t, table)

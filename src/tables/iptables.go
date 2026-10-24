@@ -17,7 +17,10 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-const iptChainName = "B4"
+const (
+	iptChainName        = "B4"
+	iptForwardChainName = "B4_FORWARD"
+)
 
 type IPTablesManager struct {
 	cfg              *config.Config
@@ -579,7 +582,27 @@ func (manager *IPTablesManager) queueRulesMatchDirection(ipt string, teardown bo
 }
 
 func queueJumpsFromForward(cfg *config.Config) bool {
-	return cfg.Queue.Devices.Enabled && len(cfg.Queue.Devices.SelectedMACs()) > 0
+	return routeDeviceGateFor(cfg).enabled
+}
+
+func (manager *IPTablesManager) forwardGateRules(ipt string, gate routeDeviceGate) []Rule {
+	var rules []Rule
+	target, action := iptChainName, "A"
+	if gate.blacklist {
+		rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: iptForwardChainName, Action: "A",
+			Spec: []string{"-j", iptChainName}})
+		target, action = "RETURN", "I"
+	}
+	v6 := strings.HasPrefix(ipt, "ip6")
+	for _, m := range gate.matches {
+		match, ok := iptMatchArgs(m, v6)
+		if !ok {
+			continue
+		}
+		rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: iptForwardChainName, Action: action,
+			Spec: append(match, "-j", target)})
+	}
+	return rules
 }
 
 func ownPacketMark(mark uint) (value, mask uint32) {
@@ -838,35 +861,14 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			}
 		}
 
-		selectedMACs := cfg.Queue.Devices.SelectedMACs()
-		if queueJumpsFromForward(cfg) {
-			if cfg.Queue.Devices.WhiteIsBlack {
-				rules = append(rules,
-					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I",
-						Spec: []string{"-j", chainName}},
-				)
-				for _, mac := range selectedMACs {
-					mac = strings.ToUpper(strings.TrimSpace(mac))
-					if mac == "" {
-						continue
-					}
-					rules = append(rules,
-						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I",
-							Spec: []string{"-m", "mac", "--mac-source", mac, "-j", "RETURN"}},
-					)
-				}
-			} else {
-				for _, mac := range selectedMACs {
-					mac = strings.ToUpper(strings.TrimSpace(mac))
-					if mac == "" {
-						continue
-					}
-					rules = append(rules,
-						Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I",
-							Spec: []string{"-m", "mac", "--mac-source", mac, "-j", chainName}},
-					)
-				}
-			}
+		gate := routeDeviceGateFor(cfg)
+		if teardown || gate.enabled {
+			chains = append(chains, Chain{manager: manager, IPT: ipt, Table: "mangle", Name: iptForwardChainName})
+		}
+		if gate.enabled {
+			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I",
+				Spec: []string{"-j", iptForwardChainName}})
+			rules = append(rules, manager.forwardGateRules(ipt, gate)...)
 		} else {
 			rules = append(rules,
 				Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "POSTROUTING", Action: "I",
@@ -1271,7 +1273,7 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 		// Clean FORWARD
 		iptDeleteListedLines(iptBin, "mangle", "FORWARD", func(line string) bool {
 			target := iptListLineTarget(line)
-			return target == "B4" || (target == "RETURN" && strings.Contains(line, "MAC "))
+			return target == "B4" || target == iptForwardChainName || (target == "RETURN" && strings.Contains(line, "MAC "))
 		})
 
 		for {

@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/tables"
@@ -67,7 +68,7 @@ type routeManager struct {
 
 	devicesEnabled bool
 	whiteIsBlack   bool
-	selectedMACs   []string
+	devices        []config.DeviceMatch
 
 	followDefault bool
 
