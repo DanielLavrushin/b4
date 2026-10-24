@@ -23,7 +23,9 @@ const filterLosesEveryDevice = (config: B4Config, drop: Set<string>) => {
   const { enabled, wisb, devices } = config.queue.devices;
   if (!enabled || wisb) return false;
   const selected = devices.filter(
-    (d) => d.selected && !d.is_manual && d.mac.trim() !== "",
+    (d) =>
+      d.selected &&
+      (d.is_manual ? (d.ip ?? "").trim() !== "" : d.mac.trim() !== ""),
   );
   return selected.length > 0 && selected.every((d) => drop.has(macKey(d.mac)));
 };

@@ -1,8 +1,11 @@
 package tun
 
 import (
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 func TestChunkPorts(t *testing.T) {
@@ -133,12 +136,14 @@ func TestCountChainRules(t *testing.T) {
 
 func TestGateRulesFromDumpMatchesMACsPrintedInLowercase(t *testing.T) {
 	for _, whiteIsBlack := range []bool{true, false} {
-		r := &routeManager{whiteIsBlack: whiteIsBlack, selectedMACs: []string{"02:07:15:be:63:58", "00:0C:29:87:6C:85"}}
+		r := &routeManager{whiteIsBlack: whiteIsBlack, devices: []config.DeviceMatch{{MAC: "02:07:15:be:63:58"}, {MAC: "00:0C:29:87:6C:85"}}}
 		var dump strings.Builder
 		dump.WriteString("-N B4_TUN_GATE\n")
 		target := tunCaptureChain
 		if whiteIsBlack {
 			target = "RETURN"
+		} else {
+			dump.WriteString("-A B4_TUN_GATE -p udp -m udp --sport 53 -j B4_TUN\n")
 		}
 		dump.WriteString("-A B4_TUN_GATE -m mac --mac-source 02:07:15:be:63:58 -j " + target + "\n")
 		dump.WriteString("-A B4_TUN_GATE -m mac --mac-source 00:0c:29:87:6c:85 -j " + target + "\n")
@@ -148,6 +153,115 @@ func TestGateRulesFromDumpMatchesMACsPrintedInLowercase(t *testing.T) {
 		got, want := gateRulesFromDump(dump.String()), r.desiredGateRules()
 		if !equalStringSet(got, want) {
 			t.Errorf("whiteIsBlack=%v: gate dump %q does not match desired %q, so the gate would be rebuilt every reconcile", whiteIsBlack, got, want)
+		}
+	}
+}
+
+func TestTheGateMatchesManualDevicesByTheirIPv4Address(t *testing.T) {
+	for _, whiteIsBlack := range []bool{true, false} {
+		var calls [][]string
+		origRun := run
+		t.Cleanup(func() { run = origRun })
+		run = func(args ...string) (string, error) {
+			calls = append(calls, args)
+			return "", nil
+		}
+		r := &routeManager{whiteIsBlack: whiteIsBlack, devicesEnabled: true, devices: []config.DeviceMatch{
+			{MAC: "02:07:15:BE:63:58"},
+			{IP: "192.168.51.2"},
+			{IP: "fd42:2::2", V6: true},
+		}}
+		if !r.deviceFilterActive() {
+			t.Fatalf("whiteIsBlack=%v: a filter of selected devices is inactive", whiteIsBlack)
+		}
+		r.rebuildGateChain()
+
+		target := tunCaptureChain
+		if whiteIsBlack {
+			target = "RETURN"
+		}
+		var dump strings.Builder
+		var gate []string
+		for _, c := range calls {
+			if len(c) > 4 && c[3] == "-A" && c[4] == tunGateChain {
+				line := strings.Join(c[3:], " ")
+				gate = append(gate, line)
+				dump.WriteString(line + "\n")
+			}
+		}
+		want := []string{
+			"-A B4_TUN_GATE -m mac --mac-source 02:07:15:BE:63:58 -j " + target,
+			"-A B4_TUN_GATE -s 192.168.51.2 -j " + target,
+		}
+		if whiteIsBlack {
+			want = append(want, "-A B4_TUN_GATE -j B4_TUN")
+		} else {
+			want = append([]string{"-A B4_TUN_GATE -p udp --sport 53 -j B4_TUN"}, want...)
+		}
+		if !slices.Equal(gate, want) {
+			t.Errorf("whiteIsBlack=%v: the gate holds %q, want %q: a manual device has no MAC on the wire and the TUN engine captures IPv4 only", whiteIsBlack, gate, want)
+		}
+
+		printed := strings.NewReplacer("-s 192.168.51.2 ", "-s 192.168.51.2/32 ", "-p udp --sport", "-p udp -m udp --sport").Replace(dump.String())
+		if got, desired := gateRulesFromDump(printed), r.desiredGateRules(); !equalStringSet(got, desired) {
+			t.Errorf("whiteIsBlack=%v: gate dump %q does not match desired %q, so the gate would be rebuilt every reconcile", whiteIsBlack, got, desired)
+		}
+	}
+}
+
+func TestOnlyIPv6ManualDevicesStillLimitTheGate(t *testing.T) {
+	r := &routeManager{devicesEnabled: true, devices: []config.DeviceMatch{{IP: "fd42:2::2", V6: true}}}
+	if !r.deviceFilterActive() {
+		t.Fatalf("a device filter selecting one IPv6 device is inactive, so the TUN engine would capture every device's IPv4 traffic")
+	}
+	for _, rule := range r.gateRules() {
+		if slices.Contains(rule, "-s") || slices.Contains(rule, "--mac-source") {
+			t.Errorf("the gate holds %q: the selected device has no IPv4 address to match", rule)
+		}
+	}
+}
+
+func TestAnAllowListGateStillSendsRepliesToTheCaptureChain(t *testing.T) {
+	for _, multiport := range []bool{true, false} {
+		r := &routeManager{devicesEnabled: true, replyCapture: true, ctdirOK: true, multiport: multiport,
+			tcpPorts: []string{"443"}, devices: []config.DeviceMatch{{MAC: "02:07:15:BE:63:58"}, {IP: "192.168.51.2"}}}
+		rules := r.gateRules()
+		replies := map[string]bool{"DNS answer": false, "reset": false}
+		for i, rule := range rules {
+			line := strings.Join(rule, " ")
+			switch {
+			case line == "-p udp --sport 53 -j B4_TUN":
+				replies["DNS answer"] = true
+			case strings.Contains(line, "--tcp-flags RST RST") && strings.HasSuffix(line, "-m conntrack --ctdir REPLY -j B4_TUN"):
+				replies["reset"] = true
+			default:
+				continue
+			}
+			if i > 1 {
+				t.Errorf("multiport=%v: the reply rule %q comes after a device rule", multiport, line)
+			}
+		}
+		for what, found := range replies {
+			if !found {
+				t.Errorf("multiport=%v: the allow-list gate %q sends no %s to %s: a reply comes from the server, so no device rule matches it and the selected device loses DNS answer processing and RST Injection Protection", multiport, rules, what, tunCaptureChain)
+			}
+		}
+
+		var dump strings.Builder
+		for _, rule := range rules {
+			line := "-A B4_TUN_GATE " + strings.Join(rule, " ")
+			line = strings.NewReplacer("-p udp --sport", "-p udp -m udp --sport", " --tcp-flags", " -m tcp --tcp-flags", "-s 192.168.51.2 ", "-s 192.168.51.2/32 ").Replace(line)
+			dump.WriteString(line + "\n")
+		}
+		if got, want := gateRulesFromDump(dump.String()), r.desiredGateRules(); !equalStringSet(got, want) {
+			t.Errorf("multiport=%v: gate dump %q does not match desired %q, so the gate would be rebuilt every reconcile", multiport, got, want)
+		}
+
+		r.whiteIsBlack = true
+		for _, rule := range r.gateRules() {
+			if line := strings.Join(rule, " "); strings.Contains(line, "--sport") {
+				t.Errorf("multiport=%v: the exclude-list gate holds %q; its last rule already sends every reply to %s", multiport, line, tunCaptureChain)
+			}
 		}
 	}
 }

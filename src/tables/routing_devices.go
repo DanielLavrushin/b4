@@ -23,23 +23,7 @@ type routeDeviceGate struct {
 }
 
 func routeDeviceGateFor(cfg *config.Config) routeDeviceGate {
-	var matches []config.DeviceMatch
-	seen := make(map[string]struct{})
-	unresolved := 0
-	for i := range cfg.Queue.Devices.Devices {
-		d := &cfg.Queue.Devices.Devices[i]
-		if !d.Selected {
-			continue
-		}
-		m, ok := d.Match()
-		if !ok {
-			if d.IsManual {
-				unresolved++
-			}
-			continue
-		}
-		matches = config.AppendDeviceMatch(matches, seen, m)
-	}
+	matches, unresolved := cfg.Queue.Devices.SelectedMatches()
 	if !cfg.Queue.Devices.Enabled {
 		return routeDeviceGate{}
 	}

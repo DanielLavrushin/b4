@@ -15,7 +15,7 @@ type captureParams struct {
 	replyCapture   bool
 	devicesEnabled bool
 	whiteIsBlack   bool
-	selectedMACs   []string
+	devices        []config.DeviceMatch
 }
 
 func captureParamsFrom(cfg *config.Config) captureParams {
@@ -28,6 +28,7 @@ func captureParamsFrom(cfg *config.Config) captureParams {
 		udpLimit = 8
 	}
 	dupV4, _ := cfg.CollectDuplicateIPs()
+	devices, _ := cfg.Queue.Devices.SelectedMatches()
 	return captureParams{
 		tcpPorts:       normalizePorts(cfg.CollectTCPPorts()),
 		udpPorts:       normalizePorts(cfg.CollectUDPPorts()),
@@ -37,7 +38,7 @@ func captureParamsFrom(cfg *config.Config) captureParams {
 		replyCapture:   replyCaptureNeeded(cfg),
 		devicesEnabled: cfg.Queue.Devices.Enabled,
 		whiteIsBlack:   cfg.Queue.Devices.WhiteIsBlack,
-		selectedMACs:   cfg.Queue.Devices.SelectedMACs(),
+		devices:        devices,
 	}
 }
 
@@ -53,7 +54,7 @@ func (p captureParams) sameChain(o captureParams) bool {
 func (p captureParams) sameGate(o captureParams) bool {
 	return p.devicesEnabled == o.devicesEnabled &&
 		p.whiteIsBlack == o.whiteIsBlack &&
-		slices.Equal(p.selectedMACs, o.selectedMACs)
+		slices.Equal(p.devices, o.devices)
 }
 
 func (r *routeManager) captureParams() captureParams {
@@ -66,7 +67,7 @@ func (r *routeManager) captureParams() captureParams {
 		replyCapture:   r.replyCapture,
 		devicesEnabled: r.devicesEnabled,
 		whiteIsBlack:   r.whiteIsBlack,
-		selectedMACs:   r.selectedMACs,
+		devices:        r.devices,
 	}
 }
 
@@ -81,7 +82,7 @@ func (r *routeManager) setCaptureParams(p captureParams) {
 	r.replyCapture = p.replyCapture
 	r.devicesEnabled = p.devicesEnabled
 	r.whiteIsBlack = p.whiteIsBlack
-	r.selectedMACs = p.selectedMACs
+	r.devices = p.devices
 }
 
 func (r *routeManager) replyPorts() []string {

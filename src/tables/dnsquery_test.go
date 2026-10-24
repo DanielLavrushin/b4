@@ -681,11 +681,19 @@ func TestMonitorChecksWhereDNSQueriesWereQueued(t *testing.T) {
 			noteDNSQueryPlacement(map[string]dnsQueryPlacement{backendIPTables: placement})
 			f.chains["mangle OUTPUT"] += "-A OUTPUT -j B4\n"
 			if m.checkIPTablesRules(&devices) {
-				t.Errorf("mangle FORWARD holds no jump to B4 for the selected device, so the monitor must restore; FORWARD is:\n%s", f.chains["mangle FORWARD"])
+				t.Errorf("mangle FORWARD holds no jump to %s, so the monitor must restore; FORWARD is:\n%s", iptForwardChainName, f.chains["mangle FORWARD"])
 			}
-			f.chains["mangle FORWARD"] += "-A FORWARD -m mac --mac-source AA:BB:CC:DD:EE:01 -j B4\n"
+			f.chains["mangle FORWARD"] += "-A FORWARD -j B4_FORWARD\n"
+			if m.checkIPTablesRules(&devices) {
+				t.Errorf("%s does not exist, so nothing jumps to B4 for the selected device and the monitor must restore", iptForwardChainName)
+			}
+			f.chains["mangle "+iptForwardChainName] = "-N B4_FORWARD\n"
+			if m.checkIPTablesRules(&devices) {
+				t.Errorf("%s holds no jump to B4 for the selected device, so the monitor must restore", iptForwardChainName)
+			}
+			f.chains["mangle "+iptForwardChainName] += "-A B4_FORWARD -m mac --mac-source AA:BB:CC:DD:EE:01 -j B4\n"
 			if !m.checkIPTablesRules(&devices) {
-				t.Errorf("the device's FORWARD jump and the OUTPUT jump to B4 are in place, yet the monitor wants a restore; commands:\n%s", strings.Join(f.calls, "\n"))
+				t.Errorf("the device's jump to B4 and the OUTPUT jump to B4 are in place, yet the monitor wants a restore; commands:\n%s", strings.Join(f.calls, "\n"))
 			}
 			removeLine(f, "mangle OUTPUT", "-A OUTPUT -j B4")
 			if m.checkIPTablesRules(&devices) {

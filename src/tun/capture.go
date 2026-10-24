@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -156,7 +157,17 @@ func countChainRules(dump, chain string) int {
 }
 
 func (r *routeManager) deviceFilterActive() bool {
-	return r.devicesEnabled && len(r.selectedMACs) > 0
+	return r.devicesEnabled && len(r.devices) > 0
+}
+
+func gateMatchArgs(m config.DeviceMatch) ([]string, bool) {
+	if m.IsIP() {
+		if m.V6 {
+			return nil, false
+		}
+		return []string{"-s", m.IP}, true
+	}
+	return []string{"-m", "mac", "--mac-source", strings.ToUpper(m.MAC)}, true
 }
 
 func (r *routeManager) ensureJump(base string, spec ...string) bool {
@@ -221,53 +232,64 @@ func (r *routeManager) ensureGateChain() bool {
 	return false
 }
 
+func gateRuleKey(rule string) string {
+	source := strings.ToUpper(ruleFieldValue(rule, "--mac-source"))
+	if source == "" {
+		source = strings.TrimSuffix(ruleFieldValue(rule, "-s"), "/32")
+	}
+	return strings.Join([]string{
+		ruleFieldValue(rule, "-p"),
+		ruleFieldValue(rule, "--sport") + ruleFieldValue(rule, "--sports"),
+		ruleFieldValue(rule, "--tcp-flags"),
+		ruleFieldValue(rule, "--ctdir"),
+		source,
+		ruleFieldValue(rule, "-j"),
+	}, " ")
+}
+
 func gateRulesFromDump(out string) []string {
 	var cur []string
 	for _, line := range strings.Split(out, "\n") {
-		if !strings.HasPrefix(line, "-A "+tunGateChain) {
-			continue
+		if strings.HasPrefix(line, "-A "+tunGateChain) {
+			cur = append(cur, gateRuleKey(line))
 		}
-		cur = append(cur, strings.ToUpper(ruleFieldValue(line, "--mac-source"))+" "+ruleFieldValue(line, "-j"))
 	}
 	return cur
 }
 
+func (r *routeManager) gateRules() [][]string {
+	var rules [][]string
+	target := tunCaptureChain
+	if r.whiteIsBlack {
+		target = "RETURN"
+	} else {
+		for _, reply := range append([][]string{dnsAnswerMatch}, r.replyMatches()...) {
+			rules = append(rules, slices.Concat(reply, []string{"-j", tunCaptureChain}))
+		}
+	}
+	for _, m := range r.devices {
+		if match, ok := gateMatchArgs(m); ok {
+			rules = append(rules, slices.Concat(match, []string{"-j", target}))
+		}
+	}
+	if r.whiteIsBlack {
+		rules = append(rules, []string{"-j", tunCaptureChain})
+	}
+	return rules
+}
+
 func (r *routeManager) desiredGateRules() []string {
 	var want []string
-	if r.whiteIsBlack {
-		for _, mac := range r.selectedMACs {
-			if mac = strings.ToUpper(strings.TrimSpace(mac)); mac != "" {
-				want = append(want, mac+" RETURN")
-			}
-		}
-		want = append(want, " "+tunCaptureChain)
-	} else {
-		for _, mac := range r.selectedMACs {
-			if mac = strings.ToUpper(strings.TrimSpace(mac)); mac != "" {
-				want = append(want, mac+" "+tunCaptureChain)
-			}
-		}
+	for _, rule := range r.gateRules() {
+		want = append(want, gateRuleKey(strings.Join(rule, " ")))
 	}
 	return want
 }
 
 func (r *routeManager) rebuildGateChain() {
 	run("iptables", "-t", "mangle", "-F", tunGateChain)
-	if r.whiteIsBlack {
-		for _, mac := range r.selectedMACs {
-			if mac = strings.ToUpper(strings.TrimSpace(mac)); mac == "" {
-				continue
-			}
-			run("iptables", "-t", "mangle", "-A", tunGateChain, "-m", "mac", "--mac-source", mac, "-j", "RETURN")
-		}
-		run("iptables", "-t", "mangle", "-A", tunGateChain, "-j", tunCaptureChain)
-	} else {
-		for _, mac := range r.selectedMACs {
-			if mac = strings.ToUpper(strings.TrimSpace(mac)); mac == "" {
-				continue
-			}
-			run("iptables", "-t", "mangle", "-A", tunGateChain, "-m", "mac", "--mac-source", mac, "-j", tunCaptureChain)
-		}
+	for _, rule := range r.gateRules() {
+		run(append([]string{"iptables", "-t", "mangle", "-A", tunGateChain}, rule...)...)
 	}
 }
 
@@ -524,11 +546,13 @@ func cidrNetwork(cidr string) string {
 	return ipnet.String()
 }
 
+var dnsAnswerMatch = []string{"-p", "udp", "--sport", "53"}
+
 func (r *routeManager) dnsSteerSpecs() [][]string {
 	mark := []string{"-j", "MARK", "--set-xmark", r.steerMarkStr()}
 	return [][]string{
 		append([]string{"-p", "udp", "--dport", "53"}, mark...),
-		append([]string{"-p", "udp", "--sport", "53"}, mark...),
+		slices.Concat(dnsAnswerMatch, mark),
 	}
 }
 
@@ -539,23 +563,29 @@ func (r *routeManager) ctdirMatch(dir string) []string {
 	return []string{"-m", "conntrack", "--ctdir", dir}
 }
 
-func (r *routeManager) replySteerSpecs() [][]string {
-	mark := []string{"-j", "MARK", "--set-xmark", r.steerMarkStr()}
-	reply := r.ctdirMatch("REPLY")
-	var specs [][]string
+func (r *routeManager) replyMatches() [][]string {
 	if !r.replyCapture {
-		return specs
+		return nil
 	}
+	reply := r.ctdirMatch("REPLY")
+	var matches [][]string
 	if r.multiport {
 		for _, chunk := range chunkPorts(r.tcpPorts, 15) {
-			spec := append([]string{"-p", "tcp", "-m", "multiport", "--sports", strings.Join(chunk, ","), "--tcp-flags", "RST", "RST"}, reply...)
-			specs = append(specs, append(spec, mark...))
+			matches = append(matches, slices.Concat([]string{"-p", "tcp", "-m", "multiport", "--sports", strings.Join(chunk, ","), "--tcp-flags", "RST", "RST"}, reply))
 		}
-		return specs
+		return matches
 	}
 	for _, p := range r.tcpPorts {
-		spec := append([]string{"-p", "tcp", "--sport", p, "--tcp-flags", "RST", "RST"}, reply...)
-		specs = append(specs, append(spec, mark...))
+		matches = append(matches, slices.Concat([]string{"-p", "tcp", "--sport", p, "--tcp-flags", "RST", "RST"}, reply))
+	}
+	return matches
+}
+
+func (r *routeManager) replySteerSpecs() [][]string {
+	mark := []string{"-j", "MARK", "--set-xmark", r.steerMarkStr()}
+	var specs [][]string
+	for _, m := range r.replyMatches() {
+		specs = append(specs, slices.Concat(m, mark))
 	}
 	return specs
 }

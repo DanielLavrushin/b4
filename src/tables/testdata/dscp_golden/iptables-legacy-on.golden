@@ -121,9 +121,11 @@ iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -
 iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 --tcp-flags SYN,ACK SYN,ACK -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables-legacy -w -t raw -S B4_RAW
+ip6tables-legacy -w -t mangle -S B4_FORWARD
 ip6tables-legacy -w -t mangle -S B4_PREROUTING
 ip6tables-legacy -w -t mangle -S B4
 iptables-legacy -w -t raw -S B4_RAW
+iptables-legacy -w -t mangle -S B4_FORWARD
 iptables-legacy -w -t mangle -S B4_PREROUTING
 iptables-legacy -w -t mangle -S B4
 iptables-legacy -w -t nat -D POSTROUTING -j B4_MASQ
@@ -460,11 +462,13 @@ iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -
 iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables-legacy -w -t raw -S B4_RAW
+ip6tables-legacy -w -t mangle -S B4_FORWARD
 ip6tables-legacy -w -t mangle -S B4_PREROUTING
 ip6tables-legacy -w -t mangle -S B4
 iptables-legacy -w -t raw -S B4_RAW
 iptables-legacy -w -t raw -F B4_RAW
 iptables-legacy -w -t raw -X B4_RAW
+iptables-legacy -w -t mangle -S B4_FORWARD
 iptables-legacy -w -t mangle -S B4_PREROUTING
 iptables-legacy -w -t mangle -F B4_PREROUTING
 iptables-legacy -w -t mangle -X B4_PREROUTING
@@ -775,11 +779,13 @@ iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -
 iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables-legacy -w -t raw -S B4_RAW
+ip6tables-legacy -w -t mangle -S B4_FORWARD
 ip6tables-legacy -w -t mangle -S B4_PREROUTING
 ip6tables-legacy -w -t mangle -S B4
 iptables-legacy -w -t raw -S B4_RAW
 iptables-legacy -w -t raw -F B4_RAW
 iptables-legacy -w -t raw -X B4_RAW
+iptables-legacy -w -t mangle -S B4_FORWARD
 iptables-legacy -w -t mangle -S B4_PREROUTING
 iptables-legacy -w -t mangle -F B4_PREROUTING
 iptables-legacy -w -t mangle -X B4_PREROUTING
@@ -1102,11 +1108,13 @@ iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -
 iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
 iptables-legacy -w -t mangle -D B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes-dir reply --connbytes-mode packets --connbytes 0:19 -m conntrack --ctdir REPLY -j NFQUEUE --queue-balance 537:540 --queue-bypass
 ip6tables-legacy -w -t raw -S B4_RAW
+ip6tables-legacy -w -t mangle -S B4_FORWARD
 ip6tables-legacy -w -t mangle -S B4_PREROUTING
 ip6tables-legacy -w -t mangle -S B4
 iptables-legacy -w -t raw -S B4_RAW
 iptables-legacy -w -t raw -F B4_RAW
 iptables-legacy -w -t raw -X B4_RAW
+iptables-legacy -w -t mangle -S B4_FORWARD
 iptables-legacy -w -t mangle -S B4_PREROUTING
 iptables-legacy -w -t mangle -F B4_PREROUTING
 iptables-legacy -w -t mangle -X B4_PREROUTING
