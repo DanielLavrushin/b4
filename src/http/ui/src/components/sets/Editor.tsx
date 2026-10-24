@@ -112,7 +112,8 @@ export const SetEditorPage = ({
   });
   const [editedSet, setEditedSet] = useState<B4SetConfig | null>(initialSet);
   const [baseSet, setBaseSet] = useState(initialSet);
-  if (baseSet !== initialSet) {
+  const [saveInFlight, setSaveInFlight] = useState(false);
+  if (!saveInFlight && baseSet !== initialSet) {
     setBaseSet(initialSet);
     setEditedSet((prev) =>
       prev ? rebaseDraft(prev, baseSet, initialSet, SET_EDITOR_DIFF_OPTIONS) : prev,
@@ -144,15 +145,17 @@ export const SetEditorPage = ({
   const handleSave = () => {
     if (!editedSet) return;
     const snapshot = editedSet;
+    setSaveInFlight(true);
     Promise.resolve(onSave(snapshot))
       .then((saved) => {
-        if (saved) {
-          setEditedSet((prev) =>
-            prev ? rebaseDraft(prev, snapshot, saved, SET_EDITOR_DIFF_OPTIONS) : prev,
-          );
-        }
+        setSaveInFlight(false);
+        if (!saved) return;
+        setBaseSet(saved);
+        setEditedSet((prev) =>
+          prev ? rebaseDraft(prev, snapshot, saved, SET_EDITOR_DIFF_OPTIONS) : prev,
+        );
       })
-      .catch(() => {});
+      .catch(() => setSaveInFlight(false));
   };
 
   const handleApplyImport = (importedSet: B4SetConfig) => {

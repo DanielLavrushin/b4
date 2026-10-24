@@ -149,6 +149,13 @@ export const rebaseDraft = <T extends object>(
         if (options?.ignoredKeys?.has(key)) continue;
         if (!path && options?.ignoredRootKeys?.has(key)) continue;
         const next = merge(d[key], f[key], o[key], path ? `${path}.${key}` : key);
+        if (next === undefined && !(key in d)) {
+          if (key in o) {
+            delete out[key];
+            changed = true;
+          }
+          continue;
+        }
         if (next === o[key]) continue;
         out[key] = next;
         changed = true;
