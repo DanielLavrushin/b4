@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -152,6 +154,8 @@ type dashboardIDs struct {
 	bypass, block, proxy string
 }
 
+const dashboardPhoneMAC = "AA:BB:CC:00:00:01"
+
 func checkDashboardFrame(t *testing.T, label string, ids dashboardIDs, fr metrics.Frame) {
 	t.Helper()
 	if fr.Type != metrics.FrameHello {
@@ -203,6 +207,9 @@ func checkDashboardFrame(t *testing.T, label string, ids dashboardIDs, fr metric
 	if fr.Blocked == nil || len(fr.Blocked.Domains) != 2 || len(fr.Blocked.Devices) != 1 || fr.Blocked.Devices[0].Key != "aa:bb:cc:dd:ee:ff" {
 		t.Fatalf("%s: blocked %+v", label, fr.Blocked)
 	}
+	if fr.Devices == nil || len(fr.Devices.Items) != 1 || fr.Devices.Items[0].Key != dashboardPhoneMAC || fr.Devices.Items[0].Count != 1 {
+		t.Fatalf("%s: the first flow came from a device whose MAC the wired lookup knows: %+v", label, fr.Devices)
+	}
 	if len(fr.Attention.Upstreams) != 1 || fr.Attention.Upstreams[0].SetID != ids.proxy || fr.Attention.Upstreams[0].LastFailure == 0 {
 		t.Fatalf("%s: upstreams %+v", label, fr.Attention.Upstreams)
 	}
@@ -249,6 +256,12 @@ func TestDashboardFramesCarryTheWiredState(t *testing.T) {
 		},
 		replaced: func() bool { return false },
 		overload: func() (uint64, uint64, uint64) { return 0, 0, 0 },
+		mac: func(ip string) string {
+			if ip == "192.168.1.1" {
+				return dashboardPhoneMAC
+			}
+			return ""
+		},
 	})
 	t.Cleanup(func() {
 		wireDashboard(mc, dashboardSources{})
@@ -257,11 +270,12 @@ func TestDashboardFramesCarryTheWiredState(t *testing.T) {
 	mc.ResetCounters()
 	mc.SetEngine(metrics.EngineInfo{State: metrics.EngineRunning, Mode: metrics.EngineModeNFQueue, Threads: 2, Firewall: "nftables"})
 
-	mc.ObserveFlow(dashboardFlow(1, 6, seq), "")
+	phone := metrics.DeviceOf(&net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 50000})
+	mc.ObserveFlowTo(dashboardFlow(1, 6, seq), netip.Addr{}, "", "", phone)
 	mc.ObserveFlow(dashboardFlow(1, 6, seq), ids.bypass)
 	mc.ObserveFlow(dashboardFlow(2, 17, seq), "")
 	mc.ObserveFlow(dashboardFlow(3, 6, seq), ids.block)
-	mc.RecordBlockedFlow(dashboardFlow(3, 6, seq), ids.block, "ads.example", "aa:bb:cc:dd:ee:ff")
+	mc.RecordBlockedFlow(dashboardFlow(3, 6, seq), ids.block, "ads.example", metrics.Device{MAC: "aa:bb:cc:dd:ee:ff"})
 	mc.RecordBlockedDNS(ids.block, "tracker.example", "")
 	packets.Add(5)
 

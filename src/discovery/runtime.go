@@ -11,7 +11,10 @@ import (
 	"github.com/daniellavrushin/b4/tables"
 )
 
-var ErrDiscoveryAlreadyRunning = errors.New("discovery is already running")
+var (
+	ErrDiscoveryAlreadyRunning = errors.New("discovery is already running")
+	ErrDSCPRulesPending        = tables.ErrDiscoveryDSCPPending
+)
 
 type poolStopper interface {
 	Stop()
@@ -26,12 +29,15 @@ type runtimeState struct {
 	discoveryInjMark  uint
 	activeSuiteID     string
 	stopping          bool
+	lostErr           error
 	wg                sync.WaitGroup
 }
 
 type StartResult struct {
 	Pool     *nfq.Pool
 	FlowMark uint
+	DSCP     *config.DSCPProbe
+	Path     *config.DSCPPath
 }
 
 type StartSuiteOptions struct {
@@ -44,6 +50,7 @@ type StartSuiteOptions struct {
 	Source          string
 	SetId           string
 	SetStrategy     *config.SetConfig
+	DSCP            *config.DSCPProbe
 	StopWhenCovered bool
 	HubPresets      func() []ConfigPreset
 	DNSServer       string
@@ -65,7 +72,7 @@ func (m *Runtime) IsActive() bool {
 	return m.state != nil
 }
 
-func (m *Runtime) Start(cfg *config.Config) (*StartResult, error) {
+func (m *Runtime) Start(cfg *config.Config, dscp *config.DSCPProbe) (*StartResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -88,8 +95,19 @@ func (m *Runtime) Start(cfg *config.Config) (*StartResult, error) {
 	log.Infof("Discovery queue range: main=%d-%d discovery=%d-%d", mainStart, mainStart+mainThreads-1, discoveryStart, discoveryEnd)
 	log.Infof("Discovery marks: main_injected=0x%x discovery_flow=0x%x discovery_injected=0x%x", cfg.MainInjectedMark(), flowMark, injectedMark)
 
-	if err := tables.ApplyDiscoverySteeringRules(cfg, flowMark, injectedMark, discoveryStart, discoveryThreads); err != nil {
+	state := &runtimeState{
+		discoveryStartNum: discoveryStart,
+		discoveryThreads:  discoveryThreads,
+		discoveryFlowMark: flowMark,
+		discoveryInjMark:  injectedMark,
+	}
+	lost := func(err error) { m.rulesLost(state, err) }
+	if err := tables.ApplyDiscoverySteeringRules(cfg, flowMark, injectedMark, discoveryStart, discoveryThreads, dscp, lost); err != nil {
 		return nil, fmt.Errorf("failed to apply discovery steering rules: %w", err)
+	}
+	stamped, path := tables.ActiveDiscoveryDSCP()
+	if stamped != nil {
+		log.Infof("Discovery probes leave with DSCP %d", stamped.Value)
 	}
 
 	discoveryCfg := discoveryPoolConfig(cfg, discoveryStart, discoveryThreads, flowMark, injectedMark)
@@ -100,19 +118,40 @@ func (m *Runtime) Start(cfg *config.Config) (*StartResult, error) {
 		return nil, fmt.Errorf("failed to start discovery pool: %w", err)
 	}
 
-	m.state = &runtimeState{
-		pool:              pool,
-		clearRules:        func() { tables.ClearDiscoverySteeringRules(cfg, flowMark, injectedMark) },
-		discoveryStartNum: discoveryStart,
-		discoveryThreads:  discoveryThreads,
-		discoveryFlowMark: flowMark,
-		discoveryInjMark:  injectedMark,
-	}
+	state.pool = pool
+	state.clearRules = func() { tables.ClearDiscoverySteeringRules(cfg, flowMark, injectedMark) }
+	m.state = state
 
 	return &StartResult{
 		Pool:     pool,
 		FlowMark: flowMark,
+		DSCP:     stamped,
+		Path:     path,
 	}, nil
+}
+
+func (m *Runtime) rulesLost(state *runtimeState, err error) {
+	m.mu.Lock()
+	if m.state != state || state.stopping {
+		m.mu.Unlock()
+		return
+	}
+	suiteID := state.activeSuiteID
+	if suiteID == "" {
+		if state.lostErr == nil {
+			state.lostErr = err
+		}
+		m.mu.Unlock()
+		return
+	}
+	m.mu.Unlock()
+	stopForLostRules(suiteID, err)
+}
+
+func stopForLostRules(suiteID string, err error) {
+	log.Warnf("Discovery: stopping run %s, its firewall rules changed or could not be put back after a firewall rebuild: %v", suiteID, err)
+	log.DiscoveryLogf("Stopped: the firewall rules this run depends on changed or could not be put back after a firewall rebuild (%v), so its results could come from another network path and none of them can be applied", err)
+	cancelCheckSuite(suiteID, true)
 }
 
 func discoveryPoolConfig(cfg *config.Config, start, threads int, flowMark, injectedMark uint) *config.Config {
@@ -131,16 +170,45 @@ func discoveryPoolConfig(cfg *config.Config, start, threads int, flowMark, injec
 	return discoveryCfg
 }
 
-func (m *Runtime) SetActiveSuiteID(suiteID string) {
+func (m *Runtime) activateSuite(suite *CheckSuite) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	var lost error
 	if m.state != nil {
-		m.state.activeSuiteID = suiteID
+		m.state.activeSuiteID = suite.Id
+		lost = m.state.lostErr
+	}
+	RegisterSuite(suite)
+	m.mu.Unlock()
+	if lost != nil {
+		stopForLostRules(suite.Id, lost)
+	}
+}
+
+func probeForRun(dscp *config.DSCPProbe, ipVersion string) *config.DSCPProbe {
+	if dscp == nil {
+		return nil
+	}
+	return &config.DSCPProbe{Value: dscp.Value, IPv4: ipVersion != "ipv6", IPv6: ipVersion != "ipv4"}
+}
+
+func (s *CheckSuite) recordStamp(asked, stamped *config.DSCPProbe, path *config.DSCPPath) {
+	s.DSCPPath = path
+	if stamped == nil {
+		return
+	}
+	value := stamped.Value
+	s.DSCP = &value
+	if asked != nil && asked.IPv4 && asked.IPv6 && stamped.IPv4 != stamped.IPv6 {
+		s.DSCPIPVersion = "6"
+		if stamped.IPv4 {
+			s.DSCPIPVersion = "4"
+		}
 	}
 }
 
 func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteOptions) (*DiscoverySuite, error) {
-	runtimeState, err := m.Start(cfg)
+	dscp := probeForRun(opts.DSCP, opts.IPVersion)
+	runtimeState, err := m.Start(cfg, dscp)
 	if err != nil {
 		return nil, err
 	}
@@ -162,14 +230,14 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 		suite.Source = SourceWeb
 	}
 	suite.SetId = opts.SetId
+	suite.recordStamp(dscp, runtimeState.DSCP, runtimeState.Path)
 	suite.setStrategy = opts.SetStrategy
 	suite.stopWhenCovered = opts.StopWhenCovered
 	suite.dnsServerOverride = opts.DNSServer
 	suite.runPins = opts.Pins
-	m.SetActiveSuiteID(suite.Id)
-	RegisterSuite(suite.CheckSuite)
 
 	log.GetDiscoveryHub().Reset()
+	m.activateSuite(suite.CheckSuite)
 
 	m.launchSuite(suite.Id, func() {
 		suite.RunDiscovery()

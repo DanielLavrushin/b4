@@ -29,7 +29,6 @@ const DEVICE_SORT_LABELS: Record<DeviceSort, string> = {
   recent: "connections.aggregated.sortByRecent",
   packets: "connections.aggregated.sortByPackets",
 };
-const MAC_PATTERN = /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/i;
 const labelCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 const loadDeviceSort = (): DeviceSort => {
@@ -38,9 +37,11 @@ const loadDeviceSort = (): DeviceSort => {
 };
 
 const nameTier = (d: EnrichedDevice): number => {
-  if (d.deviceName) return 0;
-  return MAC_PATTERN.test(d.mac) ? 1 : 2;
+  if (d.deviceName || d.deviceVendor) return 0;
+  return d.ip ? 1 : 2;
 };
+
+const deviceLabel = (d: EnrichedDevice): string => d.deviceLabel;
 
 const primaryOrder = (sort: DeviceSort, a: EnrichedDevice, b: EnrichedDevice): number => {
   if (sort === "recent") return b.lastSeen - a.lastSeen;
@@ -49,7 +50,7 @@ const primaryOrder = (sort: DeviceSort, a: EnrichedDevice, b: EnrichedDevice): n
 };
 
 const orderDevices = (devices: EnrichedDevice[], sort: DeviceSort): EnrichedDevice[] => {
-  const keyed = devices.map((d) => ({ d, tier: nameTier(d), label: d.deviceName || d.mac }));
+  const keyed = devices.map((d) => ({ d, tier: nameTier(d), label: deviceLabel(d) }));
   keyed.sort(
     (a, b) =>
       primaryOrder(sort, a.d, b.d) ||
@@ -190,7 +191,7 @@ export const DeviceSidebar = memo<Props>(
         </ListItemButton>
         <Divider sx={{ borderColor: colors.border.light }} />
         {sorted.map((d) => {
-          const label = d.deviceName || d.mac || t("connections.aggregated.unknownDevice");
+          const label = deviceLabel(d) || t("connections.aggregated.unknownDevice");
           const isSelected = selectedMac === d.mac;
           return (
             <ListItemButton

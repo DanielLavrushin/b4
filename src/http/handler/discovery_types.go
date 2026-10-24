@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/json"
+
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
 )
@@ -18,6 +20,12 @@ type DiscoveryReplaceRequest struct {
 	StrategyOnly bool                `json:"strategy_only,omitempty"`
 	KeepTargets  bool                `json:"keep_targets,omitempty"`
 	ProbeURLs    []string            `json:"probe_urls,omitempty"`
+	DSCPPath     *config.DSCPPath    `json:"dscp_path,omitempty"`
+}
+
+type DiscoveredSetRequest struct {
+	Set      json.RawMessage  `json:"set"`
+	DSCPPath *config.DSCPPath `json:"dscp_path,omitempty"`
 }
 
 type HistoryAppliedRequest struct {

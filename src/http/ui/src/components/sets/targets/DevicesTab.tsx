@@ -11,6 +11,7 @@ import { B4Alert, B4Hint, B4Switch, B4TooltipButton } from "@b4.elements";
 import { DeviceInfo } from "@b4.devices";
 import { B4DeviceTable } from "@common/B4DeviceTable";
 import { colors } from "@design";
+import { macKey, offlineDeviceInfo } from "@utils";
 import { useTranslation } from "react-i18next";
 
 interface DevicesTabProps {
@@ -26,6 +27,21 @@ interface DevicesTabProps {
   onExcludeChange: (exclude: boolean) => void;
 }
 
+const withUnlistedSelection = (
+  devices: DeviceInfo[],
+  selected: string[],
+): DeviceInfo[] => {
+  const known = new Set(devices.map((d) => macKey(d.mac)));
+  const unlisted: DeviceInfo[] = [];
+  for (const mac of selected) {
+    const key = macKey(mac);
+    if (known.has(key)) continue;
+    known.add(key);
+    unlisted.push(offlineDeviceInfo(mac));
+  }
+  return unlisted.length > 0 ? [...devices, ...unlisted] : devices;
+};
+
 export const DevicesTab = ({
   selected,
   exclude,
@@ -40,24 +56,39 @@ export const DevicesTab = ({
 }: DevicesTabProps) => {
   const { t } = useTranslation();
 
-  const isSelected = (mac: string) => selected.includes(mac);
+  const selectedKeys = new Set(selected.map(macKey));
+  const isSelected = (mac: string) => selectedKeys.has(macKey(mac));
 
   const handleToggle = (mac: string) => {
+    const key = macKey(mac);
     onChange(
-      isSelected(mac) ? selected.filter((m) => m !== mac) : [...selected, mac],
+      selectedKeys.has(key)
+        ? selected.filter((m) => macKey(m) !== key)
+        : [...selected, mac],
     );
   };
 
   const handleBulkToggle = (macs: string[], checked: boolean) => {
-    const macSet = new Set(macs);
-    onChange(
-      checked
-        ? Array.from(new Set([...selected, ...macs]))
-        : selected.filter((m) => !macSet.has(m)),
-    );
+    const keys = new Set(macs.map(macKey));
+    if (!checked) {
+      onChange(selected.filter((m) => !keys.has(macKey(m))));
+      return;
+    }
+    const seen = new Set(selectedKeys);
+    const added = macs.filter((m) => {
+      const key = macKey(m);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    onChange([...selected, ...added]);
   };
 
   const hasMssHints = devices.some((d) => d.mss_clamp);
+  const listed =
+    loading && devices.length === 0
+      ? devices
+      : withUnlistedSelection(devices, selected);
 
   const selectedManual = devices.filter(
     (d) => d.is_manual && isSelected(d.mac),
@@ -148,14 +179,15 @@ export const DevicesTab = ({
             </Box>
 
             <B4DeviceTable
-              devices={devices}
+              devices={listed}
               loading={loading}
               isSelected={isSelected}
               onToggle={handleToggle}
               onSelectAll={(checked) =>
-                onChange(checked ? devices.map((d) => d.mac) : [])
+                onChange(checked ? listed.map((d) => d.mac) : [])
               }
               onBulkToggle={handleBulkToggle}
+              showOfflineChip
               extraColumns={
                 hasMssHints
                   ? [

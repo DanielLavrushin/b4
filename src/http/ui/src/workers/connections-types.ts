@@ -17,6 +17,7 @@ export interface ConnectionGroup {
 
 export interface DeviceSummary {
   mac: string;
+  ip: string;
   packets: number;
   groups: number;
   lastSeen: number;

@@ -153,6 +153,7 @@ func applyDSCPLogged(cfg *config.Config, backend string) {
 
 func applyDSCPFor(cfg *config.Config, backend string) error {
 	rebuilt := false
+	discoveryDSCPRewritten(cfg)
 	defer func() { dscpLearnAdopt(dscpApplied.Load(), rebuilt) }()
 	value, ifaces, on := cfg.DSCPStamp()
 	plan := dscpPlanFor(cfg)
@@ -251,11 +252,13 @@ func applyDSCPIpt(cfg *config.Config, backend string, value int, ifaces []string
 	for _, bin := range im.teardownBinaries() {
 		permanent, err := im.applyDSCPChain(bin, specs)
 		if err == nil {
+			dscpIptNoteStamp(bin, false)
 			installed = append(installed, bin)
 			wanted = append(wanted, bin)
 			continue
 		}
 		if permanent {
+			dscpIptNoteStamp(bin, true)
 			im.teardownDSCPChain(bin)
 			errs = append(errs, fmt.Errorf("%s, so %s packets go out without the DSCP value: %w", bin, iptFamilyLabel(bin), err))
 			continue
@@ -308,13 +311,33 @@ func iptChainListing(bin, table, chain string) (listing string, present, known b
 	if dscpTransient(out, err) {
 		return "", false, false
 	}
+	if iptReportsAbsent(out, err) {
+		return "", false, true
+	}
+	whole, err := run(bin, "-w", "-t", table, "-S")
+	if err != nil || iptListsChain(whole, chain) {
+		return "", false, false
+	}
+	return "", false, true
+}
+
+func iptListsChain(listing, chain string) bool {
+	for _, line := range strings.Split(listing, "\n") {
+		if strings.TrimSpace(line) == "-N "+chain {
+			return true
+		}
+	}
+	return false
+}
+
+func iptReportsAbsent(out string, err error) bool {
 	msg := iptErrText(out, err)
 	for _, marker := range iptAbsentMarkers {
 		if strings.Contains(msg, marker) {
-			return "", false, true
+			return true
 		}
 	}
-	return "", false, false
+	return false
 }
 
 func (im *IPTablesManager) applyDSCPChain(bin string, specs [][]string) (bool, error) {
@@ -555,6 +578,7 @@ func retryStaleDSCP() bool {
 	if s == nil {
 		return false
 	}
+	discoveryDSCPRewritten(nil)
 	gone, _, left := removeDSCPObjects(s)
 	if owned := dscpApplied.Load().ipsets(); len(owned) > 0 {
 		left = slices.DeleteFunc(left, func(name string) bool { return slices.Contains(owned, name) })
@@ -568,6 +592,7 @@ func retryStaleDSCP() bool {
 }
 
 func clearDSCPFor(cfg *config.Config, backend string) {
+	discoveryDSCPRewritten(nil)
 	defer dscpLearnAdopt(nil, false)
 	prev := dscpApplied.Swap(nil)
 	if prev != nil && prev.backend != backend {
@@ -722,11 +747,18 @@ func reapplyDSCPLocked() {
 	}
 }
 
-func ApplyDSCPOnly(cfg *config.Config) error {
-	_, _, on := cfg.DSCPStamp()
-	if !on {
-		on = !dscpPlanFor(cfg).empty()
+func dscpWanted(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
 	}
+	if _, _, on := cfg.DSCPStamp(); on {
+		return true
+	}
+	return !dscpPlanFor(cfg).empty()
+}
+
+func ApplyDSCPOnly(cfg *config.Config) error {
+	on := dscpWanted(cfg)
 	defer dscpLast.Store(cfg)
 	if !on && dscpApplied.Load() == nil {
 		return nil
@@ -738,6 +770,7 @@ func ApplyDSCPOnly(cfg *config.Config) error {
 }
 
 func ClearDSCPOnly(cfg *config.Config) {
+	discoveryDSCPRewritten(nil)
 	defer dscpLearnAdopt(nil, false)
 	dscpLast.Store(nil)
 	if st := dscpApplied.Swap(nil); st != nil {

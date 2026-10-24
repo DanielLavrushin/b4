@@ -26,12 +26,12 @@ func TestTopDomainsCountEachFlowOnce(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
 
-	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "")
-	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "video", "video.example")
-	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "video", "video.example")
-	m.ObserveFlowTo(flowKey(2), netip.Addr{}, "video", "video.example")
-	m.ObserveFlowTo(flowKey(3), netip.Addr{}, "", "other.example")
-	m.ObserveFlowTo(flowKey(3), netip.Addr{}, "", "other.example")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "", Device{})
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "video", "video.example", Device{})
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "video", "video.example", Device{})
+	m.ObserveFlowTo(flowKey(2), netip.Addr{}, "video", "video.example", Device{})
+	m.ObserveFlowTo(flowKey(3), netip.Addr{}, "", "other.example", Device{})
+	m.ObserveFlowTo(flowKey(3), netip.Addr{}, "", "other.example", Device{})
 
 	fr := m.Hello()
 	if d := topDomain(t, fr, "video.example"); d.Count != 2 || !slices.Equal(d.Sets, []string{"video"}) || d.Last != ms(rigStart) {
@@ -49,8 +49,8 @@ func TestTopDomainsTakeTheSetTheFlowWasCountedIn(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
 
-	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "by-ip", "")
-	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "cdn.example")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "by-ip", "", Device{})
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "cdn.example", Device{})
 
 	if d := topDomain(t, m.Hello(), "cdn.example"); !slices.Equal(d.Sets, []string{"by-ip"}) {
 		t.Fatalf("the domain follows the set the flow was classified into: %+v", d)
@@ -61,7 +61,7 @@ func TestTopDomainsListRecentSetsFirst(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
 	for i, set := range []string{"a", "b", "a", "", "c", "d", "c"} {
-		m.ObserveFlowTo(flowKey(i+1), netip.Addr{}, set, "multi.example")
+		m.ObserveFlowTo(flowKey(i+1), netip.Addr{}, set, "multi.example", Device{})
 	}
 
 	d := topDomain(t, m.Hello(), "multi.example")
@@ -75,7 +75,7 @@ func TestTopDomainsSendTheMostConnectedFirst(t *testing.T) {
 	m := r.m
 	for i := 0; i < TopDomainsSent+5; i++ {
 		for n := 0; n <= i%4; n++ {
-			m.RecordDomain(fmt.Sprintf("d%02d.example", i), "")
+			m.RecordDomain(fmt.Sprintf("d%02d.example", i), "", Device{})
 		}
 	}
 
@@ -96,13 +96,13 @@ func TestTopDomainsSendTheMostConnectedFirst(t *testing.T) {
 func TestTopDomainsEvictTheLowestCountSeenLongestAgo(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
-	m.RecordDomain("busy.example", "")
-	m.RecordDomain("busy.example", "")
+	m.RecordDomain("busy.example", "", Device{})
+	m.RecordDomain("busy.example", "", Device{})
 	for i := 1; i < TopDomainsKept; i++ {
-		m.RecordDomain(fmt.Sprintf("once%03d.example", i), "")
+		m.RecordDomain(fmt.Sprintf("once%03d.example", i), "", Device{})
 	}
-	m.RecordDomain("busy.example", "")
-	m.RecordDomain("new.example", "")
+	m.RecordDomain("busy.example", "", Device{})
+	m.RecordDomain("new.example", "", Device{})
 
 	m.dom.mu.Lock()
 	kept := len(m.dom.items)
@@ -120,7 +120,7 @@ func TestTopDomainsNormaliseAndSkipAddresses(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
 	for _, host := range []string{"Video.Example.", "video.example", "", ".", "93.184.216.34", "2001:db8::1", "[2001:db8::1]"} {
-		m.RecordDomain(host, "")
+		m.RecordDomain(host, "", Device{})
 	}
 
 	items := m.Hello().TopDomains.Items
@@ -132,8 +132,8 @@ func TestTopDomainsNormaliseAndSkipAddresses(t *testing.T) {
 func TestTopDomainsResetWithTheCounters(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
-	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "")
-	m.RecordDomain("video.example", "video")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "", Device{})
+	m.RecordDomain("video.example", "video", Device{})
 	before := m.Hello().TopDomains
 
 	m.ResetCounters()
@@ -142,7 +142,7 @@ func TestTopDomainsResetWithTheCounters(t *testing.T) {
 		t.Fatalf("cleared with a new rev: %+v (was %+v)", after, before)
 	}
 
-	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "late.example")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "late.example", Device{})
 	if items := m.Hello().TopDomains.Items; len(items) != 0 {
 		t.Fatalf("a flow counted before the reset is not named after it: %+v", items)
 	}
@@ -156,12 +156,12 @@ func TestTickCarriesTopDomainsOnlyWhenTheyMoved(t *testing.T) {
 	if fr := m.Tick(&sent); fr.TopDomains != nil {
 		t.Fatal("nothing named since rev 0")
 	}
-	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "video.example")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "video.example", Device{})
 	fr := m.Tick(&sent)
 	if fr.TopDomains == nil || sent.TopDomains != fr.TopDomains.Rev {
 		t.Fatalf("a new name moves the list: %+v %+v", fr.TopDomains, sent)
 	}
-	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "video.example")
+	m.ObserveFlowTo(flowKey(1), netip.Addr{}, "", "video.example", Device{})
 	r.step(time.Second)
 	if fr = m.Tick(&sent); fr.TopDomains != nil {
 		t.Fatal("a flow already named does not move the list")
@@ -170,8 +170,8 @@ func TestTickCarriesTopDomainsOnlyWhenTheyMoved(t *testing.T) {
 
 func TestNamingAKnownDomainDoesNotAllocate(t *testing.T) {
 	r := newRig(t, rigStart, 0)
-	r.m.RecordDomain("video.example", "video")
-	if n := testing.AllocsPerRun(200, func() { r.m.RecordDomain("video.example", "video") }); n != 0 {
+	r.m.RecordDomain("video.example", "video", Device{})
+	if n := testing.AllocsPerRun(200, func() { r.m.RecordDomain("video.example", "video", Device{}) }); n != 0 {
 		t.Fatalf("a known domain costs %v allocations", n)
 	}
 }

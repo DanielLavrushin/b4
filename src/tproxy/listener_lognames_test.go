@@ -2,16 +2,18 @@ package tproxy
 
 import (
 	"bytes"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 )
 
 type connLine struct {
-	set, domain, tls, meta string
+	set, domain, mac, tls, meta string
 }
 
 func watchConnLines(t *testing.T) chan string {
@@ -26,7 +28,7 @@ func parseConnLine(raw string) connLine {
 	if len(f) < 9 {
 		return connLine{}
 	}
-	cl := connLine{set: f[2], domain: f[3], tls: f[8]}
+	cl := connLine{set: f[2], domain: f[3], mac: f[7], tls: f[8]}
 	if len(f) > 9 {
 		cl.meta = f[9]
 	}
@@ -171,6 +173,39 @@ func TestProxyLineNamesTheSiteWhenUseDomainIsOff(t *testing.T) {
 		t.Fatalf("the upstream got %d bytes after CONNECT, want the client's %d-byte hello intact", len(r.payload), len(hello))
 	}
 	noMoreConnLines(t, lines, l.SetName, 100*time.Millisecond)
+}
+
+func TestProxyLineCarriesTheClientMACTheDashboardCountsItUnder(t *testing.T) {
+	const mac = "AA:BB:CC:00:00:01"
+	metrics.SetMACProvider(func(ip string) string {
+		if ip == "127.0.0.1" {
+			return mac
+		}
+		return ""
+	})
+	t.Cleanup(func() { metrics.SetMACProvider(nil) })
+	cases := []struct {
+		name  string
+		names fakeNames
+	}{
+		{"named from the first bytes", fakeNames{}},
+		{"named before relaying", fakeNames{learned: "www.formula1.com"}},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := watchConnLines(t)
+			hello := realClientHello(t, "www.formula1.com")
+			up := startMockSocks(t, len(hello), func(byte) byte { return 0 })
+			l := newTestListener(t, up.port(), tc.names)
+			l.SetName = fmt.Sprintf("names-client-mac-%d", i)
+
+			proxySent(t, l, hello)
+			if line := nextConnLine(t, lines, l.SetName); line.mac != mac {
+				t.Fatalf("connection line %+v, want the client's MAC: the Traffic page groups a line by it, and without device mappings it has no other way to match the dashboard's device link", line)
+			}
+			up.next(t)
+		})
+	}
 }
 
 func TestProxyLineNamesTheSiteOfAnAddressOnlySet(t *testing.T) {

@@ -86,6 +86,7 @@ func (dc *DiscoveryCache) Save(configPath string) error {
 func stripTargets(sc config.SetConfig) config.SetConfig {
 	sc.Targets = config.TargetsConfig{}
 	sc.DNS = config.DNSConfig{}
+	sc.DSCP = config.SetDSCPConfig{}
 	sc.Enabled = false
 	sc.Id = ""
 	sc.Name = ""

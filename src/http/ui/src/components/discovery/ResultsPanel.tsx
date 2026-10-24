@@ -115,6 +115,12 @@ export const ResultsPanel = ({
             {t("discovery.results.tested", {
               count: suite.completed_checks - (suite.skipped_checks ?? 0),
             })}
+            {suite.dscp !== undefined && (
+              <>
+                {" · "}
+                {t("discovery.dscp", { value: suite.dscp })}
+              </>
+            )}
             {" · "}
             {t("discovery.results.saved")}
           </Typography>
@@ -198,7 +204,7 @@ const FoundCard = ({
 }: FoundCardProps) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const alternates = alternatesFor(group, 0);
+  const alternates = suite.rules_changed ? [] : alternatesFor(group, 0);
   const applied = appliedMarks(history, group.domains);
   const first = group.results[0];
   const counts = first ? testedCounts(first) : null;
@@ -292,6 +298,7 @@ const FoundCard = ({
                 preset: alt.preset,
                 urls: checkUrlsFor(suite, group.domains),
                 setId: suite.set_id,
+                dscpPath: suite.dscp_path,
               })
             }
           />
@@ -357,7 +364,13 @@ const FoundCard = ({
               }
             />
           ) : (
-            <B4Alert severity="warning">{t("discovery.results.noSet")}</B4Alert>
+            <B4Alert severity="warning">
+              {t(
+                suite.rules_changed
+                  ? "discovery.results.rulesChanged"
+                  : "discovery.results.noSet",
+              )}
+            </B4Alert>
           )}
           {echCovers && (
             <Typography
@@ -392,6 +405,7 @@ const FoundCard = ({
                 preset: group.preset,
                 urls: checkUrlsFor(suite, group.domains),
                 setId: suite.set_id,
+                dscpPath: suite.dscp_path,
               })
             }
             sx={{

@@ -1,5 +1,6 @@
 import { apiDelete, apiFetch, apiPost, apiPut } from "./apiClient";
 import { B4SetConfig } from "@b4.sets";
+import { DSCPPath } from "@models/discovery";
 import { DomainReassignment, SetDomainMatch } from "@models/sets";
 
 export type { SetDomainMatch } from "@models/sets";
@@ -24,10 +25,14 @@ export const setsApi = {
     setId: string,
     domains: string[],
     pins?: Record<string, string[]>,
+    tested?: B4SetConfig,
+    dscpPath?: DSCPPath,
   ) =>
     apiPost<AddDomainsResult>(`/api/sets/${setId}/add-domain`, {
       domains,
       pins,
+      tested,
+      dscp_path: dscpPath,
     }),
   deleteSets: (ids: string[]) =>
     apiPost<void>("/api/sets/batch-delete", { ids }),

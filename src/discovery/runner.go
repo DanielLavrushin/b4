@@ -115,12 +115,17 @@ func SnapshotCheckSuite(id string) (*CheckSuite, bool) {
 }
 
 func CancelCheckSuite(id string) error {
+	cancelCheckSuite(id, false)
+	return nil
+}
+
+func cancelCheckSuite(id string, rulesChanged bool) {
 	suitesMu.Lock()
 	defer suitesMu.Unlock()
 
 	suite, ok := activeSuites[id]
 	if !ok {
-		return nil
+		return
 	}
 
 	suite.mu.Lock()
@@ -135,9 +140,10 @@ func CancelCheckSuite(id string) error {
 			}
 		}
 		suite.Status = CheckStatusCanceled
+		if rulesChanged {
+			suite.RulesChanged = true
+		}
 	}
-
-	return nil
 }
 
 func FinishCheckSuite(id string) error {

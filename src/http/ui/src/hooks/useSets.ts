@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { B4SetConfig } from "@models/config";
+import { DSCPPath } from "@models/discovery";
 import { ApiResponse } from "@api/apiClient";
 import { setsApi } from "@b4.sets";
 import { AddDomainsResult } from "@api/sets";
@@ -123,9 +124,17 @@ export function useSets() {
       setId: string,
       domains: string[],
       pins?: Record<string, string[]>,
+      tested?: B4SetConfig,
+      dscpPath?: DSCPPath,
     ): Promise<ApiResponse<AddDomainsResult>> => {
       try {
-        const data = await setsApi.addDomainsToSet(setId, domains, pins);
+        const data = await setsApi.addDomainsToSet(
+          setId,
+          domains,
+          pins,
+          tested,
+          dscpPath,
+        );
         return { success: true, data };
       } catch (e) {
         return { success: false, error: e };

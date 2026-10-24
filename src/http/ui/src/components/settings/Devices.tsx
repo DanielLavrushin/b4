@@ -15,6 +15,7 @@ import {
   IconButton,
   TextField,
   Button,
+  Tooltip,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { Device } from "@models/config";
@@ -32,7 +33,13 @@ import {
 } from "@b4.elements";
 import { useDevices, DevicesSettingsProps, DeviceInfo } from "@b4.devices";
 import { B4DeviceTable } from "@common/B4DeviceTable";
-import { anySetDscp, deviceFilterSelects } from "@utils";
+import {
+  anySetDscp,
+  deviceFilterSelects,
+  macKey,
+  offlineDeviceInfo,
+} from "@utils";
+import { ForgetDevicesDialog } from "./ForgetDevicesDialog";
 
 const toMac = (bytes: number[]): string =>
   `02:B4:${bytes.map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(":")}`;
@@ -119,6 +126,11 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
   const [editingMac, setEditingMac] = useState<string | null>(null);
   const [manualIp, setManualIp] = useState("");
   const [manualName, setManualName] = useState("");
+  const [forget, setForget] = useState<{
+    open: boolean;
+    devices: DeviceInfo[];
+    seq: number;
+  }>({ open: false, devices: [], seq: 0 });
   const { t } = useTranslation();
 
   const configDevices: Device[] = config.queue.devices?.devices || [];
@@ -133,6 +145,25 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
 
   const findConfigDevice = (mac: string): Device | undefined =>
     configDevices.find((d) => d.mac.toUpperCase() === mac.toUpperCase());
+
+  const setSourceKeys = new Set(
+    config.sets.flatMap((s) => (s.targets.source_devices ?? []).map(macKey)),
+  );
+  setSourceKeys.delete("");
+  const remembered = (mac: string) =>
+    !!findConfigDevice(mac) || setSourceKeys.has(macKey(mac));
+  const apiKeys = new Set(devices.map((d) => macKey(d.mac)));
+  const listedDevices = [
+    ...devices.filter(
+      (d) => remembered(d.mac) || (d.is_online !== false && !d.is_manual),
+    ),
+    ...[...setSourceKeys]
+      .filter((key) => !apiKeys.has(key))
+      .map((key) => offlineDeviceInfo(key)),
+  ];
+  const offlineDevices = listedDevices.filter(
+    (d) => d.is_online === false && !d.is_manual,
+  );
 
   const saveDevices = (list: Device[]) => {
     const cleaned = list.filter(
@@ -178,12 +209,35 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
 
   const handleSelectAll = (checked: boolean) =>
     handleBulkToggle(
-      (checked ? devices : configDevices).map((d) => d.mac),
+      (checked ? listedDevices : configDevices).map((d) => d.mac),
       checked,
     );
 
   const displayName = (device: DeviceInfo) =>
-    findConfigDevice(device.mac)?.name || device.alias || device.vendor || "";
+    findConfigDevice(device.mac)?.name || device.vendor || "";
+
+  const openForget = (list: DeviceInfo[]) =>
+    setForget((prev) => ({ open: true, devices: list, seq: prev.seq + 1 }));
+
+  const closeForget = () => setForget((prev) => ({ ...prev, open: false }));
+
+  const forgetDevices = (macs: string[]) => {
+    const drop = new Set(macs.map((m) => m.trim().toUpperCase()));
+    onChange(
+      "queue.devices.devices",
+      configDevices.filter((d) => !drop.has(d.mac.trim().toUpperCase())),
+    );
+    let setsChanged = false;
+    const sets = config.sets.map((s) => {
+      const current = s.targets.source_devices ?? [];
+      const kept = current.filter((m) => !drop.has(m.trim().toUpperCase()));
+      if (kept.length === current.length) return s;
+      setsChanged = true;
+      return { ...s, targets: { ...s.targets, source_devices: kept } };
+    });
+    if (setsChanged) onChange("sets", sets);
+    closeForget();
+  };
 
   const handleAddManualDevice = () => {
     const ip = manualIp.trim();
@@ -280,6 +334,8 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 1,
                     mb: 1,
                   }}
                 >
@@ -297,19 +353,36 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                       />
                     )}
                   </Typography>
-                  <B4TooltipButton
-                    title={t("core.devices.refreshDevices")}
-                    icon={
-                      loading ? <CircularProgress size={18} /> : <RefreshIcon />
-                    }
-                    onClick={() => {
-                      loadDevices().catch(() => {});
-                    }}
-                  />
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    {offlineDevices.length > 0 && (
+                      <Button
+                        size="small"
+                        startIcon={<DeleteIcon />}
+                        onClick={() => openForget(offlineDevices)}
+                      >
+                        {t("settings.Devices.forgetOffline", {
+                          count: offlineDevices.length,
+                        })}
+                      </Button>
+                    )}
+                    <B4TooltipButton
+                      title={t("core.devices.refreshDevices")}
+                      icon={
+                        loading ? (
+                          <CircularProgress size={18} />
+                        ) : (
+                          <RefreshIcon />
+                        )
+                      }
+                      onClick={() => {
+                        loadDevices().catch(() => {});
+                      }}
+                    />
+                  </Box>
                 </Box>
 
                 <B4DeviceTable
-                  devices={devices}
+                  devices={listedDevices}
                   loading={loading}
                   isSelected={isSelected}
                   onToggle={handleToggle}
@@ -322,8 +395,9 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                     editingMac === device.mac ? (
                       <B4InlineEdit
                         value={displayName(device)}
+                        allowEmpty
                         onSave={(name) => {
-                          updateDevice(device.mac, { name });
+                          updateDevice(device.mac, { name: name || undefined });
                           setEditingMac(null);
                         }}
                         onCancel={() => setEditingMac(null)}
@@ -362,6 +436,21 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                         >
                           <EditIcon sx={{ fontSize: 16 }} />
                         </IconButton>
+                        {device.is_online === false && !device.is_manual && (
+                          <Tooltip title={t("settings.Devices.forget")}>
+                            <IconButton
+                              size="small"
+                              aria-label={t("settings.Devices.forget")}
+                              onClick={() => openForget([device])}
+                              sx={{
+                                opacity: 0.6,
+                                "&:hover": { opacity: 1, color: "error.main" },
+                              }}
+                            >
+                              <DeleteIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                       </Box>
                     )
                   }
@@ -535,6 +624,18 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
           </>
         )}
       </Grid>
+
+      <ForgetDevicesDialog
+        key={forget.seq}
+        open={forget.open}
+        candidates={forget.devices.map((d) => ({
+          mac: d.mac,
+          label: displayName(d),
+        }))}
+        config={config}
+        onClose={closeForget}
+        onForget={forgetDevices}
+      />
     </B4Section>
   );
 };

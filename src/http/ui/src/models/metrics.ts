@@ -114,6 +114,19 @@ export interface TopList {
   items: TopEntry[];
 }
 
+export interface DeviceEntry {
+  key: string;
+  ip: string;
+  count: number;
+  last: number;
+  domains: string[];
+}
+
+export interface DeviceList {
+  rev: number;
+  items: DeviceEntry[];
+}
+
 export interface EscalationEntry {
   host: string;
   to_set: string;
@@ -209,6 +222,7 @@ export interface MetricsFrame {
   blocked?: BlockedLists;
   top_domains?: TopList;
   top_addresses?: TopList;
+  devices?: DeviceList;
   escalations?: EscalationList;
   events?: EventLog;
   attention: Attention;

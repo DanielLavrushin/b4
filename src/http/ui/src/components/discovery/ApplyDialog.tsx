@@ -133,7 +133,7 @@ export const ApplyDialog = ({
 
     let active = true;
     discoveryApi
-      .similar(target.set)
+      .similar(target.set, target.dscpPath)
       .then((list) => {
         if (!active) return;
         const found = Array.isArray(list) ? list : [];

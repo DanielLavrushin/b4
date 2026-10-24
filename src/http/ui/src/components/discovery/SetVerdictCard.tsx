@@ -12,6 +12,7 @@ import { colors } from "@design";
 import { B4Badge, B4ResultCard, B4ResultStatus } from "@b4.elements";
 import { B4SetConfig } from "@models/config";
 import {
+  DSCPPath,
   DiscoverySuite,
   HistoryEntry,
   SetVerdict,
@@ -38,6 +39,7 @@ export interface VerdictApply {
   pins?: Record<string, string[]>;
   probeUrls?: string[];
   preset: string;
+  dscpPath?: DSCPPath;
 }
 
 interface SetVerdictCardProps {
@@ -220,6 +222,7 @@ export const SetVerdictCard = ({
       pins: pinsFor(strategy, covered),
       probeUrls: useUrls && checkUrls.length > 0 ? checkUrls : undefined,
       preset,
+      dscpPath: suite.dscp_path,
     });
     if (ok) setDialogOpen(false);
   };

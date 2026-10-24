@@ -109,7 +109,7 @@ packet processing and through every set that carries the router's own traffic.
 | **NAT Masquerade** (`b4_masq`, `B4_MASQ`) | Its mark has bit `0x20000000`. On iptables that `RETURN` sits at the top of nat `POSTROUTING`, so such a packet skips every later rule there, other services' included |
 | **Set DSCP** and the sets' own DSCP values (`B4_DSCP`, `inet b4_dscp`) | Its mark has bit `0x20000000`, it leaves through `lo`, or it travels in the reply direction of its connection. On iptables the jump to `B4_DSCP` sits at the top of mangle `POSTROUTING`; on nftables `inet b4_dscp` runs in postrouting at priority 150. The sets' values are written in the same chain or table, after the **Set DSCP** value, by rules that choose the value by the destination address alone |
 | DNS over TCP redirect | Its mark has every bit of the queue mark |
-| Discovery, during a run | At the top of the chain, a packet whose mark is exactly the injected mark is accepted, and a packet whose mark or connection mark is exactly the flow mark goes to Discovery's queue; either way it skips the rest of the chain. On iptables that is the built-in mangle `PREROUTING` and `OUTPUT`, so it skips every later rule there |
+| Discovery, during a run | At the top of the chain, a packet whose mark is exactly the injected mark is accepted, and a packet whose mark or connection mark is exactly the flow mark goes to Discovery's queue; either way it skips the rest of the chain. On iptables that is the built-in mangle `PREROUTING` and `OUTPUT`, so it skips every later rule there. Its DSCP chain, `B4_DISCOVERY_DSCP` or `b4_discovery_dscp`, leaves alone every packet whose mark is not exactly one of the two |
 
 Where the kernel has the conntrack direction match, the TCP queue rules, those for a set's
 packet duplication addresses included, also test the direction: `ct direction original` in
@@ -492,6 +492,16 @@ iptables and ip6tables, do the same, so b4's sets never answer Discovery's name 
 `B4_DNSCOPY` gets no such rule: with the default values, `0x8001` and `0x8002`, its return
 for the queue mark covers Discovery's packets, and b4 ignores a copy whose mark is exactly
 the flow or injected mark.
+
+While a set writes its own DSCP value, a run also writes a DSCP value into its packets: the
+chain `B4_DISCOVERY_DSCP` in mangle (iptables and ip6tables), jumped to from `POSTROUTING`
+right after the jump to `B4_DSCP`, or `b4_discovery_dscp` in `inet b4_mangle` (nftables),
+hooked at postrouting priority 151, after `inet b4_dscp`. It sets the DSCP field of every
+packet whose mark is exactly the flow or the injected mark, on the interfaces the list of
+**Set DSCP** allows: in a run for a set with its own value, to that value in the IP versions
+the set's traffic carries it in, and otherwise to the **Set DSCP** value, or 0 while it is
+off. It runs after the sets' rules, so its value replaces the one they chose by destination.
+See [DSCP rules](../internals/dscp.md#discovery).
 
 During a run, a connection of another service whose mark is exactly the flow mark goes to
 Discovery's queue too, and a packet whose mark is exactly the flow or injected mark skips the

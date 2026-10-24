@@ -18,6 +18,7 @@ func appliedResetGlobals(t *testing.T) {
 		rulesAppliedCfg, rulesAppliedBackend = origApplied, origBackend
 		rulesMu.Unlock()
 		activeSteering = nil
+		discoveryRun.Store(nil)
 	})
 }
 
@@ -185,7 +186,7 @@ func TestDiscoverySteeringComesBackAfterAFirewallRebuild(t *testing.T) {
 
 	cfg := config.NewConfig()
 	cfg.System.Tables.Engine = backendIPTables
-	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1); err != nil {
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 
@@ -258,7 +259,7 @@ func TestDiscoverySteeringMovesWithTheFirewallBackend(t *testing.T) {
 
 	cfg := config.NewConfig()
 	rulesAppliedBackend = backendIPTables
-	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1); err != nil {
+	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, nil, nil); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 

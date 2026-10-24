@@ -151,8 +151,8 @@ func TestAFlowCountedBeforeAResetAddsNothingToTheNewTotals(t *testing.T) {
 
 	m.ResetCounters()
 	m.ObserveFlow(early, "video")
-	m.RecordBlockedFlow(blocked, "ads", "ads.example", "aa:bb:cc:dd:ee:ff")
-	m.RecordBlockedFlow(blocked, "ads", "ads.example", "aa:bb:cc:dd:ee:ff")
+	m.RecordBlockedFlow(blocked, "ads", "ads.example", Device{MAC: "aa:bb:cc:dd:ee:ff"})
+	m.RecordBlockedFlow(blocked, "ads", "ads.example", Device{MAC: "aa:bb:cc:dd:ee:ff"})
 
 	fr := m.Hello()
 	if fr.Totals.Conns != 0 || fr.Totals.ConnsInSets != 0 || fr.Totals.BlockedConns != 0 {
@@ -170,7 +170,7 @@ func TestAFlowCountedBeforeAResetAddsNothingToTheNewTotals(t *testing.T) {
 
 	m.ObserveFlow(late, "")
 	m.ObserveFlow(late, "video")
-	m.RecordBlockedFlow(late, "video", "late.example", "")
+	m.RecordBlockedFlow(late, "video", "late.example", Device{})
 	if tot := m.Totals(); tot.Conns != 1 || tot.ConnsInSets != 1 || tot.BlockedConns != 1 {
 		t.Fatalf("a flow first seen after the reset counts in full: %+v", tot)
 	}
@@ -321,9 +321,9 @@ func TestProxySetsReportOpenConnections(t *testing.T) {
 
 func TestCountConnectionNeverDedups(t *testing.T) {
 	r := newRig(t, rigStart, 0)
-	r.m.CountConnection("socks")
-	r.m.CountConnection("socks")
-	r.m.CountConnection("")
+	r.m.CountConnection("socks", Device{})
+	r.m.CountConnection("socks", Device{})
+	r.m.CountConnection("", Device{})
 	tot := r.m.Totals()
 	if tot.Conns != 3 || tot.ConnsInSets != 2 {
 		t.Fatalf("totals %+v", tot)
@@ -339,9 +339,9 @@ func TestBlockedFlowCountsOncePerFlow(t *testing.T) {
 	m := r.m
 	k := flowKey(9)
 	m.ObserveFlow(k, "ads")
-	m.RecordBlockedFlow(k, "ads", "ads.example", "aa:bb:cc:dd:ee:ff")
-	m.RecordBlockedFlow(k, "ads", "ads.example", "aa:bb:cc:dd:ee:ff")
-	m.RecordBlockedFlow(flowKey(10), "ads", "ads.example", "")
+	m.RecordBlockedFlow(k, "ads", "ads.example", Device{MAC: "aa:bb:cc:dd:ee:ff"})
+	m.RecordBlockedFlow(k, "ads", "ads.example", Device{MAC: "aa:bb:cc:dd:ee:ff"})
+	m.RecordBlockedFlow(flowKey(10), "ads", "ads.example", Device{})
 
 	tot := m.Totals()
 	if tot.BlockedConns != 2 {

@@ -27,7 +27,7 @@ Each speed in the results comes from one fetch of at most 100 KB, timed from the
 
 ### One run at a time
 
-Only one run is in progress at a time, and the watchdog shares it. A heal that comes due during a run started by hand waits for it, and a run cannot start by hand during a heal. A firewall refresh started during a run waits for the run to finish. After a run, its capture queue and firewall rules are released, which takes a few seconds.
+Only one run is in progress at a time, and the watchdog shares it. A heal that comes due during a run started by hand waits for it, and a run cannot start by hand during a heal. A firewall refresh started during a run waits for the run to finish. A rewrite of b4's DSCP rules does not wait and stops the run, see [DSCP rules](./dscp.md#discovery). After a run, its capture queue and firewall rules are released, which takes a few seconds.
 
 Discovery's own fetches skip the sets, so its verdict on an address is the raw one. Another tool run on a machine where b4 works goes through b4's sets, and a TLS check that passes there measures the bypass, not the network. Local and private destinations, and names or redirects that lead to them, are never fetched.
 
@@ -38,6 +38,7 @@ A run for a set tests at most five addresses as one group and ends with one verd
 - **The set's own strategy goes first.** Right after the fetch without bypass, every address is fetched through the set's current TCP, fragmentation and fake packet settings, tested alone.
 - **Confirmation is joint.** While **Stop at the first strategy that works for every address** is on, a strategy that loaded every address is rebuilt as the set would carry it, and each address is fetched three times through it in one configuration. When every fetch passes, the search stops there. After three strategies have failed this confirmation, the run no longer stops early. With the option off, the run completes and then confirms up to three strategies the same way. The first to pass decides the verdict.
 - **A missing DNS part counts.** When the set's strategy loads every address only with a DNS redirect or a pin the set lacks, the verdict is **one strategy covers every address**, so applying it writes that DNS part into the set.
+- **The set's DSCP value goes along.** The probes of a set with its own [DSCP value](./dscp.md#discovery) carry it, so the router in front of b4 routes them as the set's traffic.
 
 A name the set pins is tested through the set's pins, unless the name is given under **Pinned addresses**. When none of them accepts a connection and the DNS check is on, the name is checked as if it had no pins. Applying the result keeps the set's pins unless the run found other addresses for that name.
 
@@ -138,7 +139,7 @@ After **Max Retries** failed checks in a row, the set is queued. Heals run one a
 
 A heal is a run for the set on the addresses the set handles and can use. The DNS check is skipped, the current strategy goes first, each strategy has to pass three fetches in a row, and the search stops at the first strategy confirmed on every address. After 15 minutes the search is stopped and what was found is confirmed. After 20 minutes the run is canceled, and the heal fails.
 
-Only **one strategy covers every address** is written, by the rules of writing into an existing set from the Discovery page. IP block detection stays as it was, unless the result turns it on. Nothing is written when the set was edited during the heal.
+Only **one strategy covers every address** is written, by the rules of writing into an existing set from the Discovery page. IP block detection stays as it was, unless the result turns it on. Nothing is written when the set was edited during the heal, or when the set's traffic no longer takes the DSCP path the heal's probes took, see [DSCP rules](./dscp.md#discovery).
 
 After the write, b4 clears the escalations it holds for the set's hosts, waits for **Config Propagation Delay**, and fetches every address the heal ran on, up to two tries each. When all load, the heal is done. Otherwise the set's TCP, UDP, fragmentation, fake packet and DNS settings are put back. The put-back is skipped when the set was edited after the write, so a hand edit is never overwritten. No other set is touched.
 
@@ -149,6 +150,8 @@ Settings pages and the set editor send the revision they loaded with every save.
 ### The older per-domain list
 
 An entry of the older list is checked on its own. After **Max Retries** failed checks, Discovery runs for the domain with the DNS check skipped. A confirmed result for a domain that needs a bypass goes into the first enabled set without routing whose domain list holds the domain or a parent of it. A GeoSite match does not count. Without such a set, a new set `watchdog-<domain>` is created at the top of the list. A matched parent gets the domain itself added, and the firewall rules are refreshed when the write changes the intercepted ports.
+
+The run for a domain carries the DSCP value of the set that handles the domain at that moment. Domains whose sets carry another value get a run of their own right after it, if they still fail. A result goes into a set only when that set's traffic takes the path the probes took.
 
 The watchdog's reactive approach is inspired by the [belotserkovtsev/ladon](https://github.com/belotserkovtsev/ladon) project.
 

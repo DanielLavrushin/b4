@@ -64,12 +64,29 @@ func (e *dscpIptSetRuleError) Error() string {
 }
 
 var (
-	dscpIptNow      = time.Now
-	dscpIptProbeMu  sync.Mutex
-	dscpIptProbes   = map[string]dscpIptProbe{}
-	dscpIptRecordMu sync.Mutex
-	dscpIptRecord   = map[string]map[string]bool{}
+	dscpIptNow          = time.Now
+	dscpIptProbeMu      sync.Mutex
+	dscpIptProbes       = map[string]dscpIptProbe{}
+	dscpIptStampRefused = map[string]bool{}
+	dscpIptRecordMu     sync.Mutex
+	dscpIptRecord       = map[string]map[string]bool{}
 )
+
+func dscpIptNoteStamp(bin string, refused bool) {
+	dscpIptProbeMu.Lock()
+	defer dscpIptProbeMu.Unlock()
+	if refused {
+		dscpIptStampRefused[bin] = true
+		return
+	}
+	delete(dscpIptStampRefused, bin)
+}
+
+func dscpIptStampWorks(bin string) bool {
+	dscpIptProbeMu.Lock()
+	defer dscpIptProbeMu.Unlock()
+	return !dscpIptStampRefused[bin]
+}
 
 func dscpIptBinV6(bin string) bool {
 	return strings.HasPrefix(bin, "ip6")
@@ -659,10 +676,12 @@ func (st *dscpIptState) install(im *IPTablesManager, bin string, plan *dscpPlan,
 	perSet := dscpIptShapeOf(specs).guard
 	switch {
 	case err == nil:
+		dscpIptNoteStamp(bin, false)
 		st.chains[bin] = specs
 		st.bins = append(st.bins, bin)
 		return perSet, nil
 	case permanent:
+		dscpIptNoteStamp(bin, true)
 		im.teardownDSCPChain(bin)
 		return false, fmt.Errorf("%s, so %s packets go out without the DSCP value: %w", bin, iptFamilyLabel(bin), err)
 	}

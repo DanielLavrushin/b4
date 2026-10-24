@@ -276,6 +276,76 @@ func TestMCPDiscoveryApplyWritesACoveredVerdictIntoTheSet(t *testing.T) {
 	}
 }
 
+func TestMCPDiscoveryApplyForASetRefusesAResultFromAnotherDSCPPath(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	cfg.Sets[0].DSCP = config.SetDSCPConfig{Enabled: true, Value: 7}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	mcpResetHistory()
+	t.Cleanup(func() { mcpRememberSuite("") })
+	stamp := stampsTheSetsValue
+	stubDiscoveryDSCPStamp(t, func(c *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, *config.DSCPPath, error) {
+		return stamp(c, dscp)
+	})
+
+	onOtherPath := coveredVerdict()
+	onOtherPath.Set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	discovery.RegisterSuite(&discovery.CheckSuite{Id: "set-run-on-25", Status: discovery.CheckStatusComplete, SetId: "set-1", SetVerdict: onOtherPath})
+	res := callDiscovery(t, session, ctx, map[string]any{"action": "apply", "id": "set-run-on-25"})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "DSCP 25") || !strings.Contains(mcpErrorText(res), "DSCP 7") {
+		t.Errorf("the strategy was tested on the path DSCP 25 selects, the set now writes 7, so the write must be refused and say why: %q", mcpErrorText(res))
+	}
+
+	discovery.SaveToHistory(&discovery.CheckSuite{
+		Id: "set-run-before-dscp", Status: discovery.CheckStatusComplete, EndTime: time.Now(), SetId: "set-1", SetVerdict: coveredVerdict(),
+	}, cfg.ConfigPath)
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "set": "video", "id": "set-run-before-dscp"})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "now carries DSCP 7") {
+		t.Errorf("a saved run tested without the set's value cannot be written into the set whose traffic now carries 7: %q", mcpErrorText(res))
+	}
+	if live := api.getCfg().GetSetById("set-1"); live.Fragmentation.Strategy == "tls" {
+		t.Fatal("nothing may be written from a run on another path")
+	}
+
+	stamp = stampsNoSetValue
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "set": "video", "id": "set-run-before-dscp"})
+	if res.IsError || api.getCfg().GetSetById("set-1").Fragmentation.Strategy != "tls" {
+		t.Errorf("the set's 7 is out of the firewall's reach, so its traffic leaves without a value like the run's probes did, and the run is written: %q", mcpErrorText(res))
+	}
+
+	onThisPath := coveredVerdict()
+	onThisPath.Set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 7}
+	discovery.SaveToHistory(&discovery.CheckSuite{
+		Id: "set-run-on-7", Status: discovery.CheckStatusComplete, EndTime: time.Now(), SetId: "set-1", SetVerdict: onThisPath,
+	}, cfg.ConfigPath)
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "set": "video", "id": "set-run-on-7"})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "no longer carries a DSCP value") {
+		t.Errorf("the firewall no longer stamps the set's 7, so its traffic leaves without it and a run on 7 cannot be written: %q", mcpErrorText(res))
+	}
+
+	stamp = stampsTheSetsValue
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "set": "video", "id": "set-run-on-7"})
+	if res.IsError {
+		t.Errorf("a run tested on the set's own path is written: %q", mcpErrorText(res))
+	}
+
+	seven := 7
+	discovery.RegisterSuite(&discovery.CheckSuite{
+		Id: "set-run-on-7-ipv4", Status: discovery.CheckStatusComplete, SetId: "set-1", SetVerdict: onThisPath, DSCP: &seven, DSCPIPVersion: "4", DSCPPath: &config.DSCPPath{IPv4: &seven},
+	})
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "id": "set-run-on-7-ipv4"})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "IPv6 traffic") || !strings.Contains(mcpErrorText(res), "DSCP 7") {
+		t.Errorf("the run's IPv6 probes left without the value while the set's IPv6 traffic now carries 7, so the write must be refused and name IPv6: %q", mcpErrorText(res))
+	}
+	stamp = stampsIPv4Only
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "id": "set-run-on-7-ipv4"})
+	if res.IsError {
+		t.Errorf("the set's IPv6 traffic still leaves without the value, like the run's IPv6 probes, so the run is written: %q", mcpErrorText(res))
+	}
+}
+
 func TestMCPDiscoveryApplyForASetFollowsTheVerdict(t *testing.T) {
 	cfg := probeCfg(t)
 	cfg.System.WebServer.MCP.AllowWrites = true
