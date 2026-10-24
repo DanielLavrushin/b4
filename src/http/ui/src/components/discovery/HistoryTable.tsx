@@ -117,7 +117,8 @@ export const HistoryTable = ({
         domains,
         urls: domains.map((d) => urlOf.get(d) ?? `https://${d}/`),
         alternates:
-          verdict === "found" && !entry.rules_changed
+          (verdict === "found" || verdict === "works_without_bypass") &&
+          !entry.rules_changed
             ? historyAlternates(entry, domains)
             : [],
       };
@@ -230,6 +231,30 @@ export const HistoryTable = ({
     );
   };
 
+  const alternatesToggle = (row: Row) =>
+    row.alternates.length > 0 && (
+      <Button
+        size="small"
+        endIcon={open[row.entry.domain] ? <CollapseIcon /> : <ExpandIcon />}
+        onClick={() =>
+          setOpen((prev) => ({
+            ...prev,
+            [row.entry.domain]: !prev[row.entry.domain],
+          }))
+        }
+        sx={{
+          textTransform: "none",
+          alignSelf: "flex-start",
+          px: 0.5,
+          color: colors.text.secondary,
+        }}
+      >
+        {t("discovery.results.otherStrategies", {
+          count: row.alternates.length,
+        })}
+      </Button>
+    );
+
   const strategy = (row: Row) => {
     const muted = { color: colors.text.secondary };
     switch (row.verdict) {
@@ -289,38 +314,18 @@ export const HistoryTable = ({
               </Typography>
             )}
             {echLine(row.entry)}
-            {row.alternates.length > 0 && (
-              <Button
-                size="small"
-                endIcon={
-                  open[row.entry.domain] ? <CollapseIcon /> : <ExpandIcon />
-                }
-                onClick={() =>
-                  setOpen((prev) => ({
-                    ...prev,
-                    [row.entry.domain]: !prev[row.entry.domain],
-                  }))
-                }
-                sx={{
-                  textTransform: "none",
-                  alignSelf: "flex-start",
-                  px: 0.5,
-                  color: colors.text.secondary,
-                }}
-              >
-                {t("discovery.results.otherStrategies", {
-                  count: row.alternates.length,
-                })}
-              </Button>
-            )}
+            {alternatesToggle(row)}
           </Box>
         );
       }
       case "works_without_bypass":
         return (
-          <Typography variant="body2" sx={muted}>
-            {t("discovery.history.loadsWithout")}
-          </Typography>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography variant="body2" sx={muted}>
+              {t("discovery.history.loadsWithout")}
+            </Typography>
+            {alternatesToggle(row)}
+          </Box>
         );
       case "address_blocked":
         return (
@@ -399,6 +404,7 @@ export const HistoryTable = ({
         <TableBody>
           {rows.map((row) => {
             const target = row.verdict === "found" ? applyTarget(row) : null;
+            const noBypass = row.verdict === "works_without_bypass";
             const expanded = !!open[row.entry.domain];
             const setName = row.entry.set_id
               ? setNames.get(row.entry.set_id)
@@ -539,10 +545,27 @@ export const HistoryTable = ({
                             left: 0,
                           }}
                         >
+                          {noBypass && (
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: colors.text.secondary,
+                                display: "block",
+                                mb: 1,
+                              }}
+                            >
+                              {t("discovery.results.worksWithoutNote")}
+                            </Typography>
+                          )}
                           <AlternatesList
                             alternates={row.alternates}
                             applied={row.entry.applied}
                             busy={busy}
+                            actionLabel={
+                              noBypass
+                                ? t("discovery.results.applyAlternate")
+                                : undefined
+                            }
                             onUse={(alt) =>
                               onApply({
                                 domains: row.domains,

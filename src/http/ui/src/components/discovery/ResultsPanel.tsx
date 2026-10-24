@@ -33,6 +33,7 @@ import {
   formatSpeed,
   ipFamilyLabel,
   otherIpFamily,
+  siteAlternates,
   testedCounts,
   triesUntilFound,
   unresolvedLabel,
@@ -168,20 +169,35 @@ export const ResultsPanel = ({
       )}
 
       <Stack spacing={1.5}>
-        {entries.map((entry) =>
-          entry.kind === "found" ? (
-            <FoundCard
-              key={entry.key}
-              group={entry}
-              suite={suite}
-              history={history}
-              applying={applying}
-              onApply={onApply}
-            />
-          ) : (
+        {entries.map((entry) => {
+          if (entry.kind === "found") {
+            return (
+              <FoundCard
+                key={entry.key}
+                group={entry}
+                suite={suite}
+                history={history}
+                applying={applying}
+                onApply={onApply}
+              />
+            );
+          }
+          if (entry.verdict === "works_without_bypass") {
+            return (
+              <NoBypassCard
+                key={entry.key}
+                entry={entry}
+                suite={suite}
+                history={history}
+                applying={applying}
+                onApply={onApply}
+              />
+            );
+          }
+          return (
             <SiteCard key={entry.key} entry={entry} onShowLog={onShowLog} />
-          ),
-        )}
+          );
+        })}
       </Stack>
     </Stack>
   );
@@ -437,6 +453,93 @@ const FoundCard = ({
   );
 };
 
+interface NoBypassCardProps {
+  entry: SiteEntry;
+  suite: DiscoverySuite;
+  history: HistoryEntry[];
+  applying: boolean;
+  onApply: (target: ApplyTarget) => void;
+}
+
+const NoBypassCard = ({
+  entry,
+  suite,
+  history,
+  applying,
+  onApply,
+}: NoBypassCardProps) => {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const alternates = suite.rules_changed ? [] : siteAlternates(entry.result);
+  const domains = [entry.domain];
+  const badge = (
+    <B4Badge variant="outlined" label={t("discovery.status.noBypass")} />
+  );
+
+  if (alternates.length === 0) {
+    return (
+      <B4ResultCard
+        status="neutral"
+        title={entry.domain}
+        subtitle={t("discovery.results.worksWithout")}
+        badge={badge}
+      />
+    );
+  }
+
+  return (
+    <B4ResultCard
+      status="neutral"
+      title={entry.domain}
+      subtitle={t("discovery.results.worksWithoutAlternates")}
+      badge={badge}
+      expanded={expanded}
+      details={
+        <Stack spacing={1.5}>
+          <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+            {t("discovery.results.worksWithoutNote")}
+          </Typography>
+          <AlternatesList
+            alternates={alternates}
+            applied={appliedMarks(history, domains)}
+            busy={applying}
+            actionLabel={t("discovery.results.applyAlternate")}
+            onUse={(alt) =>
+              onApply({
+                domains,
+                set: alt.set,
+                preset: alt.preset,
+                urls: checkUrlsFor(suite, domains),
+                setId: suite.set_id,
+                dscpPath: suite.dscp_path,
+              })
+            }
+          />
+        </Stack>
+      }
+    >
+      <Button
+        size="small"
+        endIcon={expanded ? <CollapseIcon /> : <ExpandIcon />}
+        onClick={() => setExpanded((v) => !v)}
+        sx={{
+          textTransform: "none",
+          color: colors.text.secondary,
+          px: 0.5,
+          ml: -0.5,
+          mt: -0.75,
+        }}
+      >
+        {expanded
+          ? t("discovery.results.hideDetails")
+          : t("discovery.results.otherStrategies", {
+              count: alternates.length,
+            })}
+      </Button>
+    </B4ResultCard>
+  );
+};
+
 interface SiteCardProps {
   entry: SiteEntry;
   onShowLog: () => void;
@@ -448,17 +551,6 @@ const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
   const echCover = entry.result.ech_cover_name;
 
   switch (entry.verdict) {
-    case "works_without_bypass":
-      return (
-        <B4ResultCard
-          status="neutral"
-          title={entry.domain}
-          subtitle={t("discovery.results.worksWithout")}
-          badge={
-            <B4Badge variant="outlined" label={t("discovery.status.noBypass")} />
-          }
-        />
-      );
     case "address_blocked":
       return (
         <B4ResultCard
