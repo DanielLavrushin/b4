@@ -133,6 +133,10 @@ With `net.netfilter.nf_conntrack_checksum` at the kernel default `1`, fakes with
 
 RouterOS reads the value with mangle rules. [Routing a set's traffic by its DSCP value](../install/mikrotik.md#routing-by-dscp) gives them with the names of the container setup.
 
+## Finding a strategy for the set {#discovery}
+
+[Discovery for the set](../discovery.md#a-run-for-a-set) and the heals of the [watchdog](../watchdog.md) test strategies with the set's value, so on the set's route. A run for sites without a set tests the main route, also for the set's addresses. When a change to the set's value, to **Set DSCP** or to its interface list moves the set's traffic to another path after a run, the run's strategy is not applied, and the set needs a new run.
+
 ## Checking the result
 
 - The **DSCP** block of the set shows no reason under the switch.

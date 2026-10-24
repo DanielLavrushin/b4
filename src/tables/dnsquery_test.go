@@ -1052,7 +1052,7 @@ func TestDiscoveryLeavesAnAbsentRawTableAlone(t *testing.T) {
 	run := func() []string {
 		t.Helper()
 		rec.reset()
-		if err := b.apply(0x8001, 0x8002, 537, 1); err != nil {
+		if err := b.apply(0x8001, 0x8002, 537, 1, nil); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
 		b.clear(0x8001, 0x8002)

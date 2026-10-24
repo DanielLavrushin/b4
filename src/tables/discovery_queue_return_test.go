@@ -40,7 +40,7 @@ func TestDiscoverySteeringKeepsItsMarksOutOfTheIptablesQueueChain(t *testing.T) 
 	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true})
 	calls := discoveryRecordRun(t, nil)
 
-	if err := (&discoveryIptBackend{}).apply(0x8001, 0x8002, 541, 1); err != nil {
+	if err := (&discoveryIptBackend{}).apply(0x8001, 0x8002, 541, 1, nil); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	for _, bin := range []string{backendIPTables, backendIP6Tables} {
@@ -67,7 +67,7 @@ func TestDiscoverySteeringKeepsItsMarksOutOfTheIptablesQueueChain(t *testing.T) 
 func TestDiscoverySteeringKeepsItsMarksOutOfTheNftQueueChain(t *testing.T) {
 	calls := discoveryRecordRun(t, nil)
 
-	if err := (&discoveryNftBackend{}).apply(0x8001, 0x8002, 541, 1); err != nil {
+	if err := (&discoveryNftBackend{}).apply(0x8001, 0x8002, 541, 1, nil); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	for _, mark := range []string{"0x8001", "0x8002"} {

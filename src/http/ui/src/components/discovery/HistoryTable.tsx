@@ -117,7 +117,9 @@ export const HistoryTable = ({
         domains,
         urls: domains.map((d) => urlOf.get(d) ?? `https://${d}/`),
         alternates:
-          verdict === "found" ? historyAlternates(entry, domains) : [],
+          verdict === "found" && !entry.rules_changed
+            ? historyAlternates(entry, domains)
+            : [],
       };
     });
   }, [entries]);
@@ -281,6 +283,11 @@ export const HistoryTable = ({
                 {t("discovery.history.stoppedEarly")}
               </Typography>
             )}
+            {row.entry.rules_changed && (
+              <Typography variant="caption" sx={{ color: colors.text.disabled }}>
+                {t("discovery.history.rulesChanged")}
+              </Typography>
+            )}
             {echLine(row.entry)}
             {row.alternates.length > 0 && (
               <Button
@@ -369,6 +376,7 @@ export const HistoryTable = ({
           preset: row.preset,
           urls: row.urls,
           setId: row.entry.set_id,
+          dscpPath: row.entry.dscp_path,
         }
       : null;
 
@@ -402,7 +410,11 @@ export const HistoryTable = ({
                     {row.entry.domain}
                     {setName && (
                       <Tooltip
-                        title={t("discovery.results.forSet", { name: setName })}
+                        title={
+                          row.entry.dscp === undefined
+                            ? t("discovery.results.forSet", { name: setName })
+                            : `${t("discovery.results.forSet", { name: setName })} · ${t("discovery.dscp", { value: row.entry.dscp })}`
+                        }
                       >
                         <B4Badge
                           size="small"
@@ -538,6 +550,7 @@ export const HistoryTable = ({
                                 preset: alt.preset,
                                 urls: row.urls,
                                 setId: row.entry.set_id,
+                                dscpPath: row.entry.dscp_path,
                               })
                             }
                           />

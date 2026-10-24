@@ -7,7 +7,12 @@ import {
   ReplaceStrategyResult,
   discoveryApi,
 } from "@api/discovery";
-import { DiscoverySuite, HistoryEntry, isSuite } from "@models/discovery";
+import {
+  DSCPPath,
+  DiscoverySuite,
+  HistoryEntry,
+  isSuite,
+} from "@models/discovery";
 import { B4SetConfig } from "@models/config";
 import { MAX_PROBE_URLS, wsUrl, describeApiError } from "@utils";
 import i18n from "@/i18n";
@@ -32,6 +37,7 @@ const START_ERROR_CODES = new Set([
   "routed_set",
   "bad_dns_server",
   "bad_pin",
+  "dscp_rules_pending",
 ]);
 
 const startFailureText = (e: unknown): string => {
@@ -259,9 +265,12 @@ export function useDiscovery() {
   }, []);
 
   const addPresetAsSet = useCallback(
-    async (config: B4SetConfig): Promise<ApiResponse<AddPresetResult>> => {
+    async (
+      config: B4SetConfig,
+      dscpPath?: DSCPPath,
+    ): Promise<ApiResponse<AddPresetResult>> => {
       try {
-        const res = await discoveryApi.addPresetAsSet(config);
+        const res = await discoveryApi.addPresetAsSet(config, dscpPath);
         return { success: true, data: res };
       } catch (e) {
         return { success: false, error: describeApiError(e) };
