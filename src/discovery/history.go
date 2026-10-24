@@ -51,6 +51,7 @@ type HistoryEntry struct {
 	SetId         string                         `json:"set_id,omitempty"`
 	DSCP          *int                           `json:"dscp,omitempty"`
 	DSCPIPVersion string                         `json:"dscp_ip_version,omitempty"`
+	DSCPPath      *config.DSCPPath               `json:"dscp_path,omitempty"`
 	Set           *config.SetConfig              `json:"set,omitempty"`
 	Outcome       Outcome                        `json:"outcome,omitempty"`
 	MissingFamily string                         `json:"missing_family,omitempty"`
@@ -116,15 +117,16 @@ func (e HistoryEntry) ApplicableSet() *config.SetConfig {
 }
 
 type SetRunRecord struct {
-	SetId          string     `json:"set_id"`
-	SuiteId        string     `json:"suite_id"`
-	StartTime      time.Time  `json:"start_time"`
-	EndTime        time.Time  `json:"end_time"`
-	URLs           []string   `json:"urls"`
-	DSCP           *int       `json:"dscp,omitempty"`
-	DSCPIPVersion  string     `json:"dscp_ip_version,omitempty"`
-	StoppedCovered bool       `json:"stopped_covered,omitempty"`
-	Verdict        SetVerdict `json:"verdict"`
+	SetId          string           `json:"set_id"`
+	SuiteId        string           `json:"suite_id"`
+	StartTime      time.Time        `json:"start_time"`
+	EndTime        time.Time        `json:"end_time"`
+	URLs           []string         `json:"urls"`
+	DSCP           *int             `json:"dscp,omitempty"`
+	DSCPIPVersion  string           `json:"dscp_ip_version,omitempty"`
+	DSCPPath       *config.DSCPPath `json:"dscp_path,omitempty"`
+	StoppedCovered bool             `json:"stopped_covered,omitempty"`
+	Verdict        SetVerdict       `json:"verdict"`
 }
 
 // DiscoveryHistory manages persistent discovery results.
@@ -242,6 +244,7 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			SetId:         suite.SetId,
 			DSCP:          suite.DSCP,
 			DSCPIPVersion: suite.DSCPIPVersion,
+			DSCPPath:      suite.DSCPPath,
 			Set:           suite.scopedSetFor(domainResult.Domain),
 			Domain:        domainResult.Domain,
 			Url:           domainResult.Url,
@@ -315,6 +318,7 @@ func (dh *DiscoveryHistory) recordSetRun(suite *CheckSuite) {
 		URLs:           urls,
 		DSCP:           suite.DSCP,
 		DSCPIPVersion:  suite.DSCPIPVersion,
+		DSCPPath:       suite.DSCPPath,
 		StoppedCovered: suite.StoppedCovered,
 		Verdict:        *suite.SetVerdict,
 	}

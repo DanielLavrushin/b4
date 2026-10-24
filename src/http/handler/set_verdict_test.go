@@ -286,7 +286,9 @@ func TestMCPDiscoveryApplyForASetRefusesAResultFromAnotherDSCPPath(t *testing.T)
 	mcpResetHistory()
 	t.Cleanup(func() { mcpRememberSuite("") })
 	stamp := stampsTheSetsValue
-	stubDiscoveryDSCPStamp(t, func(dscp *config.DSCPProbe) (*config.DSCPProbe, error) { return stamp(dscp) })
+	stubDiscoveryDSCPStamp(t, func(c *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, *config.DSCPPath, error) {
+		return stamp(c, dscp)
+	})
 
 	onOtherPath := coveredVerdict()
 	onOtherPath.Set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
@@ -331,7 +333,7 @@ func TestMCPDiscoveryApplyForASetRefusesAResultFromAnotherDSCPPath(t *testing.T)
 
 	seven := 7
 	discovery.RegisterSuite(&discovery.CheckSuite{
-		Id: "set-run-on-7-ipv4", Status: discovery.CheckStatusComplete, SetId: "set-1", SetVerdict: onThisPath, DSCP: &seven, DSCPIPVersion: "4",
+		Id: "set-run-on-7-ipv4", Status: discovery.CheckStatusComplete, SetId: "set-1", SetVerdict: onThisPath, DSCP: &seven, DSCPIPVersion: "4", DSCPPath: &config.DSCPPath{IPv4: &seven},
 	})
 	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "id": "set-run-on-7-ipv4"})
 	if !res.IsError || !strings.Contains(mcpErrorText(res), "IPv6 traffic") || !strings.Contains(mcpErrorText(res), "DSCP 7") {

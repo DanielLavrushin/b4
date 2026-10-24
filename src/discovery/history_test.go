@@ -3,6 +3,7 @@ package discovery
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -184,8 +185,9 @@ func TestHistoryRecordsWhoStartedTheRun(t *testing.T) {
 func TestHistoryRecordsTheDSCPTheProbesCarried(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	value := 25
+	path := &config.DSCPPath{IPv4: &value, Interfaces: []string{"wan0"}}
 	SaveToHistory(&CheckSuite{
-		Id: "run-dscp", Status: CheckStatusComplete, EndTime: time.Now(), SetId: "yt", DSCP: &value, DSCPIPVersion: "4",
+		Id: "run-dscp", Status: CheckStatusComplete, EndTime: time.Now(), SetId: "yt", DSCP: &value, DSCPIPVersion: "4", DSCPPath: path,
 		SetVerdict: &SetVerdict{Status: SetVerdictNone},
 		DomainDiscoveryResults: map[string]*DomainDiscoveryResult{
 			"youtube.com": {Domain: "youtube.com"},
@@ -202,8 +204,8 @@ func TestHistoryRecordsTheDSCPTheProbesCarried(t *testing.T) {
 	for _, e := range hist.Entries {
 		switch e.Domain {
 		case "youtube.com":
-			if e.DSCP == nil || *e.DSCP != 25 || e.DSCPIPVersion != "4" {
-				t.Errorf("a result found with DSCP 25 in its IPv4 probes only holds for that path only, so the history must keep the value and its IP version, got %v, %q", e.DSCP, e.DSCPIPVersion)
+			if e.DSCP == nil || *e.DSCP != 25 || e.DSCPIPVersion != "4" || !reflect.DeepEqual(e.DSCPPath, path) {
+				t.Errorf("a result found with DSCP 25 in its IPv4 probes only holds for that path only, so the history must keep the value, its IP version and the path, got %v, %q, %+v", e.DSCP, e.DSCPIPVersion, e.DSCPPath)
 			}
 		case "meduza.io":
 			if e.DSCP != nil {
@@ -211,8 +213,8 @@ func TestHistoryRecordsTheDSCPTheProbesCarried(t *testing.T) {
 			}
 		}
 	}
-	if rec, ok := hist.SetRuns["yt"]; !ok || rec.DSCP == nil || *rec.DSCP != 25 || rec.DSCPIPVersion != "4" {
-		t.Errorf("the saved set run must keep the value and its IP version too, got %+v", rec)
+	if rec, ok := hist.SetRuns["yt"]; !ok || rec.DSCP == nil || *rec.DSCP != 25 || rec.DSCPIPVersion != "4" || !reflect.DeepEqual(rec.DSCPPath, path) {
+		t.Errorf("the saved set run must keep the value, its IP version and the path too, got %+v", rec)
 	}
 }
 

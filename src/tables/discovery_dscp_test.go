@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -223,8 +224,8 @@ func TestDiscoveryDSCPStampsOnlyTheFamiliesTheSetsTrafficCarriesItIn(t *testing.
 	if !stamped(backendIPTables) || stamped(backendIP6Tables) {
 		t.Errorf("ip6tables cannot match ipsets, so the set's IPv6 traffic leaves with the global value only; the run's IPv6 probes must too, and IPv4 keeps the set's value: %v", *calls)
 	}
-	if got := ActiveDiscoveryDSCP(); got == nil || *got != (config.DSCPProbe{Value: 25, IPv4: true}) {
-		t.Errorf("IPv4 probes still carry DSCP 25 and the run reports that its IPv6 probes do not, got %+v", got)
+	if got, path := ActiveDiscoveryDSCP(); got == nil || *got != (config.DSCPProbe{Value: 25, IPv4: true}) || dscpPathText(path) != "IPv4 25, IPv6 -, on []" {
+		t.Errorf("IPv4 probes still carry DSCP 25 and the run reports that its IPv6 probes do not, got %+v, %s", got, dscpPathText(path))
 	}
 
 	*calls = nil
@@ -236,7 +237,7 @@ func TestDiscoveryDSCPStampsOnlyTheFamiliesTheSetsTrafficCarriesItIn(t *testing.
 	if stamped(backendIPTables) || stamped(backendIP6Tables) {
 		t.Errorf("once IPv4 also lost the set match, no live packet carries the set's value, and the run's probes must not either: %v", *calls)
 	}
-	if got := ActiveDiscoveryDSCP(); got != nil {
+	if got, _ := ActiveDiscoveryDSCP(); got != nil {
 		t.Errorf("a run that stamps nothing must not report a value, got %+v", got)
 	}
 	select {
@@ -298,7 +299,7 @@ func TestDiscoveryDSCPKnowsSetValuesAreOutOfReachWithNoDSCPRulesApplied(t *testi
 			t.Errorf("without the ipset command the set's traffic leaves unstamped, and the run's probes must too: %q", c)
 		}
 	}
-	if got := ActiveDiscoveryDSCP(); got != nil {
+	if got, _ := ActiveDiscoveryDSCP(); got != nil {
 		t.Errorf("the run must not claim a value, got %+v", got)
 	}
 
@@ -563,7 +564,7 @@ func TestDiscoveryDSCPNeedsTheFamilysFirewallBinary(t *testing.T) {
 	if err := ApplyDiscoverySteeringRules(&cfg, 0x8001, 0x8002, 541, 1, ipv6Only, nil); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if got := ActiveDiscoveryDSCP(); got != nil {
+	if got, _ := ActiveDiscoveryDSCP(); got != nil {
 		t.Errorf("without ip6tables no IPv6 rule can be installed, so a run for an IPv6-only set must not report a value, got %+v", got)
 	}
 	for _, c := range *calls {
@@ -920,24 +921,58 @@ func TestDiscoveryDSCPStampNamesTheValueARunWouldCarryNow(t *testing.T) {
 	appliedResetGlobals(t)
 	h := dscpIptNewHost(t, backendIPTables, backendIP6Tables)
 	h.mangle.rejectDSCP[backendIP6Tables] = true
-	cfg := dscpIptTestConfig(7, true, nil, dscpPlanTestSet("a", 25, "10.1.2.0/24"))
+	cfg := dscpIptTestConfig(7, true, []string{"wan0"}, dscpPlanTestSet("a", 25, "10.1.2.0/24"))
 	cfg.System.Tables.Engine = backendIPTables
 	_ = applyDSCPFor(cfg, backendIPTables)
 
-	if got, err := DiscoveryDSCPStamp(cfg, nil); got != nil || err != nil {
-		t.Errorf("a set without a value of its own leaves a run unstamped: %v, %v", got, err)
-	}
-	if got, err := DiscoveryDSCPStamp(cfg, &config.DSCPProbe{Value: 25, IPv6: true}); got != nil || err != nil {
-		t.Errorf("ip6tables refused the DSCP target, so the set's IPv6 traffic and a run over IPv6 leave without the value: %+v, %v", got, err)
-	}
-	if got, err := DiscoveryDSCPStamp(cfg, discoveryProbe(25)); err != nil || got == nil || *got != (config.DSCPProbe{Value: 25, IPv4: true}) {
-		t.Errorf("IPv4 took the set's rules and IPv6 did not, so a run over both families carries the value in its IPv4 probes only: %+v, %v", got, err)
+	for _, tc := range []struct {
+		name        string
+		probe       *config.DSCPProbe
+		stamp, path string
+	}{
+		{"a set without a value of its own carries the global value where ip6tables took it", nil, "<nil>", "IPv4 7, IPv6 -, on [wan0]"},
+		{"a set limited to IPv6, which refused the DSCP target", &config.DSCPProbe{Value: 25, IPv6: true}, "<nil>", "IPv4 7, IPv6 -, on [wan0]"},
+		{"a set over both families gets its value where ip6tables took the rules", discoveryProbe(25), "&{Value:25 IPv4:true IPv6:false}", "IPv4 25, IPv6 -, on [wan0]"},
+	} {
+		stamp, path, err := DiscoveryDSCPStamp(cfg, tc.probe)
+		if err != nil || fmt.Sprintf("%+v", stamp) != tc.stamp || dscpPathText(path) != tc.path {
+			t.Errorf("%s: got %+v, %s, %v; want %s, %s", tc.name, stamp, dscpPathText(path), err, tc.stamp, tc.path)
+		}
 	}
 
 	dscpApplied.Store(&dscpState{cfg: cfg, backend: backendIPTables, pending: true})
-	if _, err := DiscoveryDSCPStamp(cfg, discoveryProbe(25)); !errors.Is(err, ErrDiscoveryDSCPPending) {
-		t.Errorf("while b4 is still applying its DSCP rules the value the set's traffic carries is unknown, got %v", err)
+	for _, probe := range []*config.DSCPProbe{nil, discoveryProbe(25)} {
+		if _, _, err := DiscoveryDSCPStamp(cfg, probe); !errors.Is(err, ErrDiscoveryDSCPPending) {
+			t.Errorf("while b4 is still applying its DSCP rules the value the traffic carries is unknown, with or without a value of the set's own (%+v), got %v", probe, err)
+		}
 	}
+}
+
+func TestDiscoveryDSCPStampWaitsForTheRulesOfASetThatJustDroppedItsValue(t *testing.T) {
+	appliedResetGlobals(t)
+	resetDSCPState(t)
+	cfg := config.NewConfig()
+	dscpStale.Store(&dscpState{cfg: &cfg, backend: backendIPTables})
+	if _, _, err := DiscoveryDSCPStamp(&cfg, nil); !errors.Is(err, ErrDiscoveryDSCPPending) {
+		t.Errorf("the set's old DSCP rules still wait to be removed, so its traffic may still carry the old value, got %v", err)
+	}
+	dscpStale.Store(nil)
+	if stamp, path, err := DiscoveryDSCPStamp(&cfg, nil); err != nil || stamp != nil || dscpPathText(path) != "IPv4 -, IPv6 -, on []" {
+		t.Errorf("with no DSCP rules at all the traffic carries no value, got %+v, %s, %v", stamp, dscpPathText(path), err)
+	}
+}
+
+func dscpPathText(p *config.DSCPPath) string {
+	if p == nil {
+		return "<nil>"
+	}
+	value := func(v *int) string {
+		if v == nil {
+			return "-"
+		}
+		return strconv.Itoa(*v)
+	}
+	return fmt.Sprintf("IPv4 %s, IPv6 %s, on %v", value(p.IPv4), value(p.IPv6), p.Interfaces)
 }
 
 func TestDiscoveryTriesTheNftablesSetObjectsBeforeStampingTheirValue(t *testing.T) {

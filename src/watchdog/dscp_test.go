@@ -69,18 +69,19 @@ func TestLegacyHealWritesNothingIntoASetSavedWithAnotherDSCPAfterTheRun(t *testi
 	for _, tc := range []struct {
 		name    string
 		savedAs int
-		stamp   func(*config.Config, *config.DSCPProbe) (*config.DSCPProbe, error)
-		only    string
+		stamp   dscpStampFunc
+		path    *config.DSCPPath
 		adopted bool
 	}{
-		{"saved with DSCP 7 between the run and the write", 7, stampsEveryFamily, "", false},
-		{"still on DSCP 25", 25, stampsEveryFamily, "", true},
-		{"still on DSCP 25 in IPv4 only, like the run's probes", 25, stampsIPv4Only, "4", true},
+		{"saved with DSCP 7 between the run and the write", 7, stampsEveryFamily, nil, false},
+		{"saved with DSCP 7 after a run that recorded its path", 7, stampsEveryFamily, &config.DSCPPath{IPv4: dscpValue(25), IPv6: dscpValue(25)}, false},
+		{"still on DSCP 25", 25, stampsEveryFamily, nil, true},
+		{"still on DSCP 25 in IPv4 only, like the run's probes", 25, stampsIPv4Only, &config.DSCPPath{IPv4: dscpValue(25)}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := legacyHarness(t)
 			dscpStampNow = tc.stamp
-			h.driver.dscpOnly = tc.only
+			h.driver.dscpPath = tc.path
 			h.edit("yt", func(s *config.SetConfig) { s.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25} })
 			h.driver.results["youtube.com"].Results["p"].Set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
 			h.check.set("youtube.com", okCheck)
@@ -104,23 +105,23 @@ func TestLegacyHealWritesNothingIntoASetSavedWithAnotherDSCPAfterTheRun(t *testi
 func TestSetHealWritesNothingOnceTheSetsDSCPPathMovedAfterTheRun(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
-		stamp   func(*config.Config, *config.DSCPProbe) (*config.DSCPProbe, error)
-		only    string
+		stamp   dscpStampFunc
+		path    *config.DSCPPath
 		adopted bool
 	}{
-		{"the firewall still writes the set's value", stampsEveryFamily, "", true},
-		{"the firewall writes it in IPv4 only, like the run's probes", stampsIPv4Only, "4", true},
-		{"the firewall no longer writes the set's value", stampsNothing, "", false},
-		{"b4 is still applying its DSCP rules", func(*config.Config, *config.DSCPProbe) (*config.DSCPProbe, error) {
-			return nil, discovery.ErrDSCPRulesPending
-		}, "", false},
+		{"the firewall still writes the set's value", stampsEveryFamily, nil, true},
+		{"the firewall writes it in IPv4 only, like the run's probes", stampsIPv4Only, &config.DSCPPath{IPv4: dscpValue(25)}, true},
+		{"the firewall no longer writes the set's value", stampsNothing, nil, false},
+		{"b4 is still applying its DSCP rules", func(*config.Config, *config.DSCPProbe) (*config.DSCPProbe, *config.DSCPPath, error) {
+			return nil, nil, discovery.ErrDSCPRulesPending
+		}, nil, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tagged := watchedSet("yt", ytURL)
 			tagged.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
 			h := newHarness(t, tagged)
 			dscpStampNow = tc.stamp
-			h.driver.dscpOnly = tc.only
+			h.driver.dscpPath = tc.path
 			h.check.set(ytURL, okCheck)
 			verdict := coveredVerdict("disorder")
 			verdict.Set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}

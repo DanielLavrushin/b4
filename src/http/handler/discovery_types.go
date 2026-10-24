@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/json"
+
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
 )
@@ -11,14 +13,19 @@ type HistoryEntryView struct {
 }
 
 type DiscoveryReplaceRequest struct {
-	SetId         string              `json:"set_id"`
-	Set           config.SetConfig    `json:"set"`
-	Domains       []string            `json:"domains"`
-	Pins          map[string][]string `json:"pins,omitempty"`
-	StrategyOnly  bool                `json:"strategy_only,omitempty"`
-	KeepTargets   bool                `json:"keep_targets,omitempty"`
-	ProbeURLs     []string            `json:"probe_urls,omitempty"`
-	DSCPIPVersion string              `json:"dscp_ip_version,omitempty"`
+	SetId        string              `json:"set_id"`
+	Set          config.SetConfig    `json:"set"`
+	Domains      []string            `json:"domains"`
+	Pins         map[string][]string `json:"pins,omitempty"`
+	StrategyOnly bool                `json:"strategy_only,omitempty"`
+	KeepTargets  bool                `json:"keep_targets,omitempty"`
+	ProbeURLs    []string            `json:"probe_urls,omitempty"`
+	DSCPPath     *config.DSCPPath    `json:"dscp_path,omitempty"`
+}
+
+type DiscoveryAddRequest struct {
+	Set      json.RawMessage  `json:"set"`
+	DSCPPath *config.DSCPPath `json:"dscp_path,omitempty"`
 }
 
 type HistoryAppliedRequest struct {

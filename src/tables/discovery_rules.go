@@ -3,6 +3,7 @@ package tables
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sync/atomic"
 
 	"github.com/daniellavrushin/b4/config"
@@ -82,24 +83,71 @@ func discoveryStampFor(cfg *config.Config, dscp *config.DSCPProbe, be discoveryB
 	return stamp, nil
 }
 
-func DiscoveryDSCPStamp(cfg *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, error) {
-	if dscp == nil {
-		return nil, nil
+func dscpGlobalOn(st *dscpState, v6 bool) (int, bool) {
+	if st == nil || st.cfg == nil {
+		return 0, false
 	}
+	value, _, on := st.cfg.DSCPStamp()
+	if !on {
+		return 0, false
+	}
+	if st.backend == backendNFTables {
+		return value, true
+	}
+	for _, bin := range st.bins {
+		if dscpIptBinV6(bin) == v6 {
+			return value, true
+		}
+	}
+	return 0, false
+}
+
+func discoveryPathFor(cfg *config.Config, stamp *discoveryStamp) *config.DSCPPath {
+	st := dscpApplied.Load()
+	if st != nil && st.cfg != nil {
+		cfg = st.cfg
+	}
+	path := &config.DSCPPath{}
+	for _, f := range []struct {
+		v6    bool
+		value **int
+	}{{false, &path.IPv4}, {true, &path.IPv6}} {
+		value, on := dscpGlobalOn(st, f.v6)
+		if stamp.covers(f.v6) {
+			value, on = stamp.value, true
+		}
+		if on {
+			*f.value = &value
+		}
+	}
+	if path.IPv4 != nil || path.IPv6 != nil {
+		path.Interfaces = cfg.DSCPInterfaces()
+	}
+	return path
+}
+
+func DiscoveryDSCPStamp(cfg *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, *config.DSCPPath, error) {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
 	if err := discoveryCheckDSCP(dscp); err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	if dscp == nil {
+		return nil, discoveryPathFor(cfg, nil), nil
 	}
 	be := currentDiscoveryBackend(cfg)
 	if be == nil {
-		return nil, nil
+		return nil, discoveryPathFor(cfg, nil), nil
 	}
 	stamp, err := discoveryStampFor(cfg, dscp, be)
-	if err != nil || stamp == nil {
-		return nil, err
+	if err != nil {
+		return nil, nil, err
 	}
-	return stamp.probe(), nil
+	var probe *config.DSCPProbe
+	if stamp != nil {
+		probe = stamp.probe()
+	}
+	return probe, discoveryPathFor(cfg, stamp), nil
 }
 
 func getDiscoveryBackend(cfg *config.Config) discoveryBackend {
@@ -146,6 +194,7 @@ type discoverySteering struct {
 	threads      int
 	dscp         *config.DSCPProbe
 	stamp        *discoveryStamp
+	path         *config.DSCPPath
 	lost         func(error)
 	failed       atomic.Bool
 }
@@ -173,19 +222,26 @@ func ApplyDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark
 		be.clear(flowMark, injectedMark)
 		return err
 	}
-	s := &discoverySteering{cfg: cfg, backend: be, flowMark: flowMark, injectedMark: injectedMark, queueStart: queueStart, threads: threads, dscp: dscp, stamp: stamp, lost: lost}
+	s := &discoverySteering{cfg: cfg, backend: be, flowMark: flowMark, injectedMark: injectedMark, queueStart: queueStart, threads: threads, dscp: dscp, stamp: stamp, path: discoveryPathFor(cfg, stamp), lost: lost}
 	activeSteering = s
 	discoveryRun.Store(s)
 	return nil
 }
 
-func ActiveDiscoveryDSCP() *config.DSCPProbe {
+func ActiveDiscoveryDSCP() (*config.DSCPProbe, *config.DSCPPath) {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
-	if s := activeSteering; s != nil && s.stamp != nil {
-		return s.stamp.probe()
+	s := activeSteering
+	if s == nil {
+		return nil, nil
 	}
-	return nil
+	var stamp *config.DSCPProbe
+	if s.stamp != nil {
+		stamp = s.stamp.probe()
+	}
+	path := *s.path
+	path.Interfaces = slices.Clone(s.path.Interfaces)
+	return stamp, &path
 }
 
 func ClearDiscoverySteeringRules(cfg *config.Config, flowMark uint, injectedMark uint) {
@@ -240,6 +296,7 @@ func reapplyDiscoverySteering() {
 		s.fail(err)
 	}
 	s.stamp = stamp
+	s.path = discoveryPathFor(s.cfg, stamp)
 	if err := be.apply(s.flowMark, s.injectedMark, s.queueStart, s.threads, s.stamp); err != nil {
 		s.fail(err)
 	}

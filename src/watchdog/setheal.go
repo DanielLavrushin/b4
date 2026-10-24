@@ -169,7 +169,7 @@ func (w *Watchdog) healSet(id string) {
 	}
 	log.Infof("[WATCHDOG] set %q: started a discovery run for %s", set.Name, strings.Join(urls, ", "))
 
-	verdict, testedOnly, outcome := w.awaitSetRun(id, suiteID, key)
+	verdict, dscpPath, outcome := w.awaitSetRun(id, suiteID, key)
 	switch outcome {
 	case setRunStopped:
 		return
@@ -209,10 +209,10 @@ func (w *Watchdog) healSet(id string) {
 		return
 	}
 
-	w.adoptAndVerify(id, key, expectedRevision, urls, verdict, testedOnly)
+	w.adoptAndVerify(id, key, expectedRevision, urls, verdict, dscpPath)
 }
 
-func (w *Watchdog) awaitSetRun(id, suiteID, key string) (*discovery.SetVerdict, string, setRunOutcome) {
+func (w *Watchdog) awaitSetRun(id, suiteID, key string) (*discovery.SetVerdict, *config.DSCPPath, setRunOutcome) {
 	start := w.clock()
 	finishRequested := false
 	pollEvery := w.pollEvery
@@ -226,7 +226,7 @@ poll:
 		case <-w.stop:
 			log.Infof("[WATCHDOG] shutting down, canceling the set heal run")
 			w.disc.Cancel(suiteID)
-			return nil, "", setRunStopped
+			return nil, nil, setRunStopped
 		case <-time.After(pollEvery):
 		}
 
@@ -235,14 +235,14 @@ poll:
 		if !cfg.System.Checker.Watchdog.Enabled || !set.WatchdogActive() || urlKeyOf(set) != key {
 			log.Infof("[WATCHDOG] set heal canceled: the set or the watchdog changed")
 			w.disc.Cancel(suiteID)
-			return nil, "", setRunAborted
+			return nil, nil, setRunAborted
 		}
 
 		elapsed := w.clock().Sub(start)
 		if elapsed >= healCancelAfter {
 			log.Warnf("[WATCHDOG] set %q: the heal run exceeded %s, canceling it", set.Name, healCancelAfter)
 			w.disc.Cancel(suiteID)
-			return nil, "", setRunOverBudget
+			return nil, nil, setRunOverBudget
 		}
 		if elapsed >= healFinishAfter && !finishRequested {
 			log.Infof("[WATCHDOG] set %q: the heal run passed %s, stopping the search and confirming what was found", set.Name, healFinishAfter)
@@ -262,20 +262,20 @@ poll:
 	}
 	w.waitDiscoveryIdle(limit)
 	if w.stopping() {
-		return nil, "", setRunStopped
+		return nil, nil, setRunStopped
 	}
 
 	snap, ok := w.disc.Snapshot(suiteID)
 	switch {
 	case ok && snap.RulesChanged:
-		return nil, "", setRunRulesChanged
+		return nil, nil, setRunRulesChanged
 	case !ok || snap.SetVerdict == nil:
-		return &discovery.SetVerdict{Status: discovery.SetVerdictIncomplete}, "", setRunDone
+		return &discovery.SetVerdict{Status: discovery.SetVerdictIncomplete}, nil, setRunDone
 	}
-	return snap.SetVerdict, snap.DSCPIPVersion, setRunDone
+	return snap.SetVerdict, snap.DSCPPath, setRunDone
 }
 
-func (w *Watchdog) adoptAndVerify(id, key, expectedRevision string, urls []string, verdict *discovery.SetVerdict, testedOnly string) {
+func (w *Watchdog) adoptAndVerify(id, key, expectedRevision string, urls []string, verdict *discovery.SetVerdict, dscpPath *config.DSCPPath) {
 	var saved strategySections
 	var written *config.Config
 	err := w.update(func(current *config.Config) (*config.Config, error) {
@@ -286,7 +286,7 @@ func (w *Watchdog) adoptAndVerify(id, key, expectedRevision string, urls []strin
 		if SetRevision(set) != expectedRevision {
 			return nil, errSetEdited
 		}
-		if err := dscpPathMoved(current, set, verdict.Set, testedOnly); err != nil {
+		if err := dscpPathMoved(current, set, verdict.Set, dscpPath); err != nil {
 			return nil, err
 		}
 		fresh := current.Clone()

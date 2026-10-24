@@ -76,7 +76,7 @@ type fakeDriver struct {
 	canceled   int
 	onSnapshot func(n int)
 	rulesLost  bool
-	dscpOnly   string
+	dscpPath   *config.DSCPPath
 }
 
 func (d *fakeDriver) IsActive() bool {
@@ -114,12 +114,12 @@ func (d *fakeDriver) Snapshot(id string) (*discovery.CheckSuite, bool) {
 	verdict := d.verdict
 	results := d.results
 	rulesLost := d.rulesLost
-	dscpOnly := d.dscpOnly
+	dscpPath := d.dscpPath
 	d.mu.Unlock()
 	if hook != nil {
 		hook(n)
 	}
-	suite := &discovery.CheckSuite{Id: id, Status: status, DSCPIPVersion: dscpOnly}
+	suite := &discovery.CheckSuite{Id: id, Status: status, DSCPPath: dscpPath}
 	if status == discovery.CheckStatusComplete {
 		suite.SetVerdict = verdict
 		suite.DomainDiscoveryResults = results
@@ -210,23 +210,37 @@ func watchedSet(id string, urls ...string) *config.SetConfig {
 	return &set
 }
 
-func stampsEveryFamily(_ *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, error) {
-	if dscp == nil {
-		return nil, nil
+type dscpStampFunc = func(*config.Config, *config.DSCPProbe) (*config.DSCPProbe, *config.DSCPPath, error)
+
+func stampsFamilies(v4, v6 bool) dscpStampFunc {
+	return func(_ *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, *config.DSCPPath, error) {
+		path := &config.DSCPPath{}
+		if dscp == nil {
+			return nil, path, nil
+		}
+		taken := config.DSCPProbe{Value: dscp.Value, IPv4: dscp.IPv4 && v4, IPv6: dscp.IPv6 && v6}
+		if !taken.IPv4 && !taken.IPv6 {
+			return nil, path, nil
+		}
+		value := taken.Value
+		if taken.IPv4 {
+			path.IPv4 = &value
+		}
+		if taken.IPv6 {
+			path.IPv6 = &value
+		}
+		return &taken, path, nil
 	}
-	taken := *dscp
-	return &taken, nil
 }
 
-func stampsIPv4Only(_ *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, error) {
-	if dscp == nil || !dscp.IPv4 {
-		return nil, nil
-	}
-	return &config.DSCPProbe{Value: dscp.Value, IPv4: true}, nil
-}
+var (
+	stampsEveryFamily = stampsFamilies(true, true)
+	stampsIPv4Only    = stampsFamilies(true, false)
+	stampsNothing     = stampsFamilies(false, false)
+)
 
-func stampsNothing(*config.Config, *config.DSCPProbe) (*config.DSCPProbe, error) {
-	return nil, nil
+func dscpValue(v int) *int {
+	return &v
 }
 
 func stubDSCPStampNow(t *testing.T) {

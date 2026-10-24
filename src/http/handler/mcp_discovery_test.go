@@ -124,6 +124,7 @@ func TestMCPDiscoveryApplyKeepsTheDSCPTheRunTestedWith(t *testing.T) {
 	cfg.Sets = append(cfg.Sets, &other)
 	srv, api := newMCPTestServerAPI(t, cfg)
 	session, ctx := connectMCP(t, srv)
+	stubDiscoveryDSCPStamp(t, stampsTheSetsValue)
 
 	set := config.NewSetConfig()
 	set.Name = "tested on 25"
@@ -147,6 +148,45 @@ func TestMCPDiscoveryApplyKeepsTheDSCPTheRunTestedWith(t *testing.T) {
 		if s.Id == applied.Applied.Id && s.DSCP != set.DSCP {
 			t.Errorf("the strategy was tested on the path DSCP 25 selects, so the set made from it must keep that value, got %+v", s.DSCP)
 		}
+	}
+}
+
+func TestMCPDiscoveryApplyRefusesANewSetOnAnotherDSCPPath(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	stamp := stampsTheSetsValue
+	stubDiscoveryDSCPStamp(t, func(c *config.Config, dscp *config.DSCPProbe) (*config.DSCPProbe, *config.DSCPPath, error) {
+		return stamp(c, dscp)
+	})
+
+	set := config.NewSetConfig()
+	set.Name = "tested on 25 over IPv4"
+	set.Targets.SNIDomains = []string{"rutracker.org"}
+	set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	value := 25
+	suite := &discovery.CheckSuite{
+		Id: "dscp-ipv4-run", Status: discovery.CheckStatusComplete, DSCP: &value, DSCPPath: &config.DSCPPath{IPv4: &value},
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"rutracker.org": {Domain: "rutracker.org", BestPreset: "combo", BestSuccess: true, Confirmed: 3},
+		},
+		StrategyGroups: []discovery.StrategyGroup{{WinnerPreset: "combo", Domains: []string{"rutracker.org"}, Set: &set}},
+	}
+	discovery.RegisterSuite(suite)
+	t.Cleanup(func() { mcpRememberSuite("") })
+	before := len(api.getCfg().Sets)
+
+	res := callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "rutracker.org", "id": suite.Id})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "IPv6 traffic") || len(api.getCfg().Sets) != before {
+		t.Errorf("the run's IPv6 probes carried no value, and a new set on DSCP 25 would write it into IPv6 too, so nothing may be created: %q", mcpErrorText(res))
+	}
+
+	stamp = stampsIPv4Only
+	applied := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "rutracker.org", "id": suite.Id}))
+	if !applied.Changed || len(api.getCfg().Sets) != before+1 {
+		t.Errorf("the firewall writes the value into IPv4 only, like the run's probes, so the set is created: %+v", applied)
 	}
 }
 

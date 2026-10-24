@@ -37,6 +37,7 @@ type StartResult struct {
 	Pool     *nfq.Pool
 	FlowMark uint
 	DSCP     *config.DSCPProbe
+	Path     *config.DSCPPath
 }
 
 type StartSuiteOptions struct {
@@ -104,7 +105,7 @@ func (m *Runtime) Start(cfg *config.Config, dscp *config.DSCPProbe) (*StartResul
 	if err := tables.ApplyDiscoverySteeringRules(cfg, flowMark, injectedMark, discoveryStart, discoveryThreads, dscp, lost); err != nil {
 		return nil, fmt.Errorf("failed to apply discovery steering rules: %w", err)
 	}
-	stamped := tables.ActiveDiscoveryDSCP()
+	stamped, path := tables.ActiveDiscoveryDSCP()
 	if stamped != nil {
 		log.Infof("Discovery probes leave with DSCP %d", stamped.Value)
 	}
@@ -125,6 +126,7 @@ func (m *Runtime) Start(cfg *config.Config, dscp *config.DSCPProbe) (*StartResul
 		Pool:     pool,
 		FlowMark: flowMark,
 		DSCP:     stamped,
+		Path:     path,
 	}, nil
 }
 
@@ -189,7 +191,8 @@ func probeForRun(dscp *config.DSCPProbe, ipVersion string) *config.DSCPProbe {
 	return &config.DSCPProbe{Value: dscp.Value, IPv4: ipVersion != "ipv6", IPv6: ipVersion != "ipv4"}
 }
 
-func (s *CheckSuite) recordStamp(asked, stamped *config.DSCPProbe) {
+func (s *CheckSuite) recordStamp(asked, stamped *config.DSCPProbe, path *config.DSCPPath) {
+	s.DSCPPath = path
 	if stamped == nil {
 		return
 	}
@@ -227,7 +230,7 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 		suite.Source = SourceWeb
 	}
 	suite.SetId = opts.SetId
-	suite.recordStamp(dscp, runtimeState.DSCP)
+	suite.recordStamp(dscp, runtimeState.DSCP, runtimeState.Path)
 	suite.setStrategy = opts.SetStrategy
 	suite.stopWhenCovered = opts.StopWhenCovered
 	suite.dnsServerOverride = opts.DNSServer

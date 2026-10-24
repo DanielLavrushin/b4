@@ -1,6 +1,7 @@
 import { B4SetConfig } from "@models/config";
 import {
   AppliedMark,
+  DSCPPath,
   DiscoveryOutcome,
   DiscoveryResult,
   DiscoverySuite,
@@ -97,7 +98,7 @@ export interface ApplyTarget {
   preset: string;
   urls: string[];
   setId?: string;
-  dscpIpVersion?: string;
+  dscpPath?: DSCPPath;
 }
 
 export function checkUrlsFor(

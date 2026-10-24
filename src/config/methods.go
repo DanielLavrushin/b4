@@ -1112,6 +1112,27 @@ type DSCPProbe struct {
 	IPv6  bool
 }
 
+type DSCPPath struct {
+	IPv4       *int     `json:"ipv4,omitempty"`
+	IPv6       *int     `json:"ipv6,omitempty"`
+	Interfaces []string `json:"interfaces,omitempty"`
+}
+
+func (p *DSCPPath) Value(v6 bool) *int {
+	if p == nil {
+		return nil
+	}
+	v := p.IPv4
+	if v6 {
+		v = p.IPv6
+	}
+	if v == nil {
+		return nil
+	}
+	value := *v
+	return &value
+}
+
 func (cfg *Config) ProbeDSCP(set *SetConfig) *DSCPProbe {
 	if cfg == nil || set == nil || cfg.System.Tables.SkipSetup || set.Targets.DomainOnly {
 		return nil

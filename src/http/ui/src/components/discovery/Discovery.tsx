@@ -373,7 +373,7 @@ export const DiscoveryRunner = () => {
   const handleCreate = async (set: B4SetConfig) => {
     const applied = applyTarget;
     setApplying(true);
-    const res = await addPresetAsSet(set);
+    const res = await addPresetAsSet(set, applied?.dscpPath);
     setApplying(false);
     if (!res.success) {
       showError(
@@ -447,7 +447,7 @@ export const DiscoveryRunner = () => {
       strategyOnly: true,
       keepTargets: opts.keepTargets,
       probeUrls: opts.probeUrls,
-      dscpIpVersion: applied?.dscpIpVersion,
+      dscpPath: applied?.dscpPath,
     });
     setApplying(false);
     if (!res.success) {
@@ -483,7 +483,7 @@ export const DiscoveryRunner = () => {
       strategyOnly: true,
       keepTargets: true,
       probeUrls: req.probeUrls,
-      dscpIpVersion: req.dscpIpVersion,
+      dscpPath: req.dscpPath,
     });
     setApplying(false);
     if (!res.success) {

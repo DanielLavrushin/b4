@@ -69,16 +69,18 @@ func TestARunRecordsTheIPVersionItsDSCPValueWasLimitedTo(t *testing.T) {
 		{"an IPv4 run stamped", ipv4, ipv4, ""},
 	} {
 		suite := &CheckSuite{}
-		suite.recordStamp(tc.asked, tc.stamped)
+		suite.recordStamp(tc.asked, tc.stamped, nil)
 		if suite.DSCP == nil || *suite.DSCP != 25 || suite.DSCPIPVersion != tc.want {
 			t.Errorf("%s: want DSCP 25 limited to %q, got %v, %q", tc.name, tc.want, suite.DSCP, suite.DSCPIPVersion)
 		}
 	}
+	global := 30
+	path := &config.DSCPPath{IPv4: &global, Interfaces: []string{"wan0"}}
 	for _, asked := range []*config.DSCPProbe{both, nil} {
 		suite := &CheckSuite{}
-		suite.recordStamp(asked, nil)
-		if suite.DSCP != nil || suite.DSCPIPVersion != "" {
-			t.Errorf("a run whose probes carry no value records none, got %v, %q", suite.DSCP, suite.DSCPIPVersion)
+		suite.recordStamp(asked, nil, path)
+		if suite.DSCP != nil || suite.DSCPIPVersion != "" || suite.DSCPPath != path {
+			t.Errorf("a run whose probes carry no value of the set records none, but keeps the path its probes took, got %v, %q, %+v", suite.DSCP, suite.DSCPIPVersion, suite.DSCPPath)
 		}
 	}
 }

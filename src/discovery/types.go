@@ -159,6 +159,7 @@ type CheckSuite struct {
 	SetId                  string                            `json:"set_id,omitempty"`
 	DSCP                   *int                              `json:"dscp,omitempty"`
 	DSCPIPVersion          string                            `json:"dscp_ip_version,omitempty"`
+	DSCPPath               *config.DSCPPath                  `json:"dscp_path,omitempty"`
 	SetVerdict             *SetVerdict                       `json:"set_verdict,omitempty"`
 	StoppedEarly           bool                              `json:"stopped_early,omitempty"`
 	StoppedPhase           DiscoveryPhase                    `json:"stopped_phase,omitempty"`

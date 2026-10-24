@@ -2,6 +2,7 @@ package watchdog
 
 import (
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -215,6 +216,53 @@ func TestApplyBatchResultsDefersOnlyTheDomainsWhoseSetMovedToAnotherDSCPPath(t *
 	}
 }
 
+func TestApplyBatchResultsDefersOnlyTheGroupMembersWhoseOwnSetMoved(t *testing.T) {
+	stubDSCPStampNow(t)
+	for _, movedFirst := range []bool{true, false} {
+		t.Run(fmt.Sprintf("moved set first %t", movedFirst), func(t *testing.T) {
+			owner := func(id, domain string, dscp int) *config.SetConfig {
+				set := config.NewSetConfig()
+				set.Id, set.Name, set.Enabled = id, id, true
+				set.Targets.SNIDomains = []string{domain}
+				set.Targets.DomainsToMatch = []string{domain}
+				set.Fragmentation.Strategy = "tcp"
+				set.DSCP = config.SetDSCPConfig{Enabled: true, Value: dscp}
+				return &set
+			}
+			moved, kept := owner("md", "meduza.io", 7), owner("yt", "youtube.com", 25)
+			cfg := &config.Config{Sets: []*config.SetConfig{kept, moved}}
+			if movedFirst {
+				cfg.Sets = []*config.SetConfig{moved, kept}
+			}
+
+			winner := config.NewSetConfig()
+			winner.Fragmentation.Strategy = "disorder"
+			winner.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+			found := func(domain string) *discovery.DomainDiscoveryResult {
+				return &discovery.DomainDiscoveryResult{
+					Domain: domain, BestPreset: "p", BestSuccess: true,
+					Results: map[string]*discovery.DomainPresetResult{"p": {Status: discovery.CheckStatusComplete, Set: &winner, Confirmed: 3, ConfirmTries: 3}},
+				}
+			}
+			suite := healSuite(map[string]*discovery.DomainDiscoveryResult{"youtube.com": found("youtube.com"), "meduza.io": found("meduza.io")},
+				discovery.StrategyGroup{WinnerPreset: "p", Domains: []string{"youtube.com", "meduza.io"}, Set: &winner})
+
+			errs := applyBatchResults(cfg, []string{"youtube.com", "meduza.io"}, suite, func(*config.Config) error { return nil })
+
+			var change *discovery.DSCPPathChange
+			if !errors.As(errs["meduza.io"], &change) || cfg.GetSetById("md").Fragmentation.Strategy != "tcp" {
+				t.Errorf("meduza.io's own set moved to DSCP 7, so its result waits for a run on that path: %v", errs["meduza.io"])
+			}
+			if err := errs["youtube.com"]; err != nil || cfg.GetSetById("yt").Fragmentation.Strategy != "disorder" {
+				t.Errorf("youtube.com's set still carries 25, so it is healed whatever the set order: %v", err)
+			}
+			if domainInSNIList(cfg.GetSetById("yt").Targets.SNIDomains, "meduza.io") {
+				t.Error("meduza.io may not be moved into the set on DSCP 25, away from the path its own set takes now")
+			}
+		})
+	}
+}
+
 func TestApplyBatchResultsSkipsUnconfirmedGroupWinner(t *testing.T) {
 	existing := config.NewSetConfig()
 	existing.Id = "yt"
@@ -425,7 +473,7 @@ func TestApplyGroup_NewSet(t *testing.T) {
 		{domain: "googlevideo.com", set: refSet},
 	}
 
-	if err := applyGroup(cfg, group, ""); err != nil {
+	if err := applyGroup(cfg, group, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -462,7 +510,7 @@ func TestApplyGroup_NewSetKeepsTheDSCPTheRunTestedWith(t *testing.T) {
 	refSet.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
 	refSet.Targets.IPVersion = "4"
 
-	if err := applyGroup(cfg, []domainWithSet{{domain: "youtube.com", set: refSet}}, ""); err != nil {
+	if err := applyGroup(cfg, []domainWithSet{{domain: "youtube.com", set: refSet}}, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -478,7 +526,7 @@ func TestApplyGroup_NewSetKeepsTheDSCPTheRunTestedWith(t *testing.T) {
 
 	dscpStampNow = stampsNothing
 	var change *discovery.DSCPPathChange
-	if err := applyGroup(cfg, []domainWithSet{{domain: "meduza.io", set: refSet}}, ""); !errors.As(err, &change) || len(cfg.Sets) != 2 {
+	if err := applyGroup(cfg, []domainWithSet{{domain: "meduza.io", set: refSet}}, nil); !errors.As(err, &change) || len(cfg.Sets) != 2 {
 		t.Errorf("the firewall no longer writes DSCP 25, so a new set would leave without the value the run's probes carried, and none may be created: %v, %d sets", err, len(cfg.Sets))
 	}
 }
@@ -524,7 +572,7 @@ func TestApplyGroup_ExistingSet(t *testing.T) {
 		{domain: "googlevideo.com", set: refSet},
 	}
 
-	if err := applyGroup(cfg, group, ""); err != nil {
+	if err := applyGroup(cfg, group, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -566,7 +614,7 @@ func TestApplyGroup_SkipsRoutingSetMatchedViaGeosite(t *testing.T) {
 		{domain: "youtube.com", set: refSet},
 	}
 
-	if err := applyGroup(cfg, group, ""); err != nil {
+	if err := applyGroup(cfg, group, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -601,7 +649,7 @@ func TestApplyGroup_SkipsDisabledSet(t *testing.T) {
 		{domain: "youtube.com", set: refSet},
 	}
 
-	if err := applyGroup(cfg, group, ""); err != nil {
+	if err := applyGroup(cfg, group, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -674,7 +722,7 @@ func TestApplyGroup_ExistingSet_CaseInsensitive(t *testing.T) {
 		{domain: "youtube.com", set: refSet},
 	}
 
-	if err := applyGroup(cfg, group, ""); err != nil {
+	if err := applyGroup(cfg, group, nil); err != nil {
 		t.Fatal(err)
 	}
 

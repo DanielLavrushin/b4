@@ -97,6 +97,7 @@ type mcpSuiteSnapshot struct {
 	SetId          string                `json:"set_id"`
 	DSCP           *int                  `json:"dscp"`
 	DSCPIPVersion  string                `json:"dscp_ip_version"`
+	DSCPPath       *config.DSCPPath      `json:"dscp_path"`
 	SetVerdict     *discovery.SetVerdict `json:"set_verdict"`
 	StoppedCovered bool                  `json:"stopped_covered"`
 	RulesChanged   bool                  `json:"rules_changed"`
@@ -863,6 +864,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	}
 
 	var chosen *config.SetConfig
+	var dscpPath *config.DSCPPath
 	var preset string
 	var groupDomains []string
 	suiteID := id
@@ -888,6 +890,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 				"that run is %s, so it holds nothing settled to apply. Call action=status, and action=cancel if you want to stop it and keep what it has found", status)
 		}
 		suiteID = snap.Id
+		dscpPath = snap.DSCPPath
 		for _, di := range snap.Domains {
 			mcpRememberCheckURL(checkURLs, di.Domain, di.CheckURL)
 		}
@@ -943,6 +946,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 				"the saved result for %s predates b4 recording the set it built, so only the summary survives. Run discovery for it again", domain)
 		}
 		preset = entry.BestPreset
+		dscpPath = entry.DSCPPath
 		groupDomains = chosen.Targets.SNIDomains
 		if len(groupDomains) == 0 {
 			groupDomains = []string{domain}
@@ -1011,6 +1015,9 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	newCfg.Sets = append([]*config.SetConfig{&set}, newCfg.Sets...)
 	api.loadTargetsForSetCached(&set)
 
+	if err := mcpDSCPPathRefusal(newCfg, &set, chosen, dscpPath, "Run discovery for it again"); err != nil {
+		return nil, mcpDiscoveryOut{}, err
+	}
 	if err := mcpValidateCandidate(oldCfg, newCfg); err != nil {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("rejected: %w", err)
 	}
@@ -1073,7 +1080,7 @@ type mcpSetRun struct {
 	status         discovery.CheckStatus
 	verdict        *discovery.SetVerdict
 	stoppedCovered bool
-	dscpIPVersion  string
+	dscpPath       *config.DSCPPath
 	source         string
 }
 
@@ -1097,7 +1104,7 @@ func (api *API) mcpSetRunFor(id string, explicit bool, target *config.SetConfig)
 					status:         discovery.CheckStatus(strings.ToLower(snap.Status)),
 					verdict:        snap.SetVerdict,
 					stoppedCovered: snap.StoppedCovered,
-					dscpIPVersion:  snap.DSCPIPVersion,
+					dscpPath:       snap.DSCPPath,
 					source:         "run",
 				}, true, nil
 			}
@@ -1123,7 +1130,20 @@ func (api *API) mcpSetRunFor(id string, explicit bool, target *config.SetConfig)
 		status = discovery.CheckStatusCanceled
 	}
 	verdict := rec.Verdict
-	return mcpSetRun{setID: rec.SetId, suiteID: rec.SuiteId, status: status, verdict: &verdict, dscpIPVersion: rec.DSCPIPVersion, source: "history"}, true, nil
+	return mcpSetRun{setID: rec.SetId, suiteID: rec.SuiteId, status: status, verdict: &verdict, dscpPath: rec.DSCPPath, source: "history"}, true, nil
+}
+
+func mcpDSCPPathRefusal(cfg *config.Config, set, tested *config.SetConfig, path *config.DSCPPath, again string) error {
+	change, err := discovery.DSCPPathChanged(cfg, set, tested, path, discoveryDSCPStamp)
+	switch {
+	case errors.Is(err, tables.ErrDiscoveryDSCPPending):
+		return fmt.Errorf("nothing written: %s", errDSCPRulesPending)
+	case err != nil:
+		return fmt.Errorf("nothing written: %w", err)
+	case change != nil:
+		return fmt.Errorf("nothing written: %s. %s", change.Error(), again)
+	}
+	return nil
 }
 
 func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bool) (*mcp.CallToolResult, mcpDiscoveryOut, error) {
@@ -1177,14 +1197,8 @@ func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bo
 	if live == nil {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("set %q disappeared before the write", target.Name)
 	}
-	change, err := discovery.DSCPPathChanged(newCfg, live, v.Set, run.dscpIPVersion, discoveryDSCPStamp)
-	switch {
-	case errors.Is(err, tables.ErrDiscoveryDSCPPending):
-		return nil, mcpDiscoveryOut{}, fmt.Errorf("nothing written: %s", errDSCPRulesPending)
-	case err != nil:
-		return nil, mcpDiscoveryOut{}, fmt.Errorf("nothing written: %w", err)
-	case change != nil:
-		return nil, mcpDiscoveryOut{}, fmt.Errorf("nothing written: %s. Start the run again", change.Error())
+	if err := mcpDSCPPathRefusal(newCfg, live, v.Set, run.dscpPath, "Start the run again"); err != nil {
+		return nil, mcpDiscoveryOut{}, err
 	}
 	live.AdoptStrategy(v.Set)
 	if pins := v.CoveredPins(); len(pins) > 0 {

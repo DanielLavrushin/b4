@@ -23,8 +23,8 @@ var (
 	dscpStampNow = tables.DiscoveryDSCPStamp
 )
 
-func dscpPathMoved(cfg *config.Config, set, tested *config.SetConfig, testedOnly string) error {
-	change, err := discovery.DSCPPathChanged(cfg, set, tested, testedOnly, dscpStampNow)
+func dscpPathMoved(cfg *config.Config, set, tested *config.SetConfig, path *config.DSCPPath) error {
+	change, err := discovery.DSCPPathChanged(cfg, set, tested, path, dscpStampNow)
 	switch {
 	case errors.Is(err, discovery.ErrDSCPRulesPending):
 		return errDSCPRulesPending
@@ -78,13 +78,24 @@ func applyBatchResults(cfg *config.Config, domains []string, suite *discovery.Ch
 
 	var applied []domainWithSet
 	for _, group := range groupBySet(successful) {
-		if err := applyGroup(cfg, group, suite.DSCPIPVersion); err != nil {
-			for _, ds := range group {
+		var ready []domainWithSet
+		for _, ds := range group {
+			if err := dscpPathMoved(cfg, healTarget(cfg, ds), ds.set, suite.DSCPPath); err != nil {
+				results[ds.domain] = err
+				continue
+			}
+			ready = append(ready, ds)
+		}
+		if len(ready) == 0 {
+			continue
+		}
+		if err := applyGroup(cfg, ready, suite.DSCPPath); err != nil {
+			for _, ds := range ready {
 				results[ds.domain] = err
 			}
 			continue
 		}
-		applied = append(applied, group...)
+		applied = append(applied, ready...)
 	}
 
 	if len(applied) == 0 {
@@ -133,29 +144,46 @@ func groupBySet(items []domainWithSet) [][]domainWithSet {
 	return groups
 }
 
-func applyGroup(cfg *config.Config, group []domainWithSet, testedOnly string) error {
+func listingSet(cfg *config.Config, domains []string) *config.SetConfig {
+	for _, set := range cfg.Sets {
+		if set.Enabled && !set.Routing.Enabled && setListsAnyDomain(set, domains) {
+			return set
+		}
+	}
+	return nil
+}
+
+func newHealSet(domains []string, refSet *config.SetConfig) config.SetConfig {
+	newSet := config.NewSetConfig()
+	newSet.Id = uuid.New().String()
+	newSet.Name = "watchdog-" + domains[0]
+	newSet.Enabled = true
+	newSet.Targets.SNIDomains = domains
+	newSet.Targets.DomainsToMatch = domains
+	newSet.AdoptStrategy(refSet)
+	newSet.DSCP = refSet.DSCP
+	newSet.Targets.IPVersion = refSet.Targets.IPVersion
+	return newSet
+}
+
+func healTarget(cfg *config.Config, ds domainWithSet) *config.SetConfig {
+	domains := []string{ExtractDomain(ds.domain)}
+	if set := listingSet(cfg, domains); set != nil {
+		return set
+	}
+	set := newHealSet(domains, ds.set)
+	return &set
+}
+
+func applyGroup(cfg *config.Config, group []domainWithSet, path *config.DSCPPath) error {
 	groupDomains := make([]string, len(group))
 	for i, ds := range group {
 		groupDomains[i] = ExtractDomain(ds.domain)
 	}
 	refSet := group[0].set
 
-	var existingSet *config.SetConfig
-	for _, set := range cfg.Sets {
-		if !set.Enabled {
-			continue
-		}
-		if set.Routing.Enabled {
-			continue
-		}
-		if setListsAnyDomain(set, groupDomains) {
-			existingSet = set
-			break
-		}
-	}
-
-	if existingSet != nil {
-		if err := dscpPathMoved(cfg, existingSet, refSet, testedOnly); err != nil {
+	if existingSet := listingSet(cfg, groupDomains); existingSet != nil {
+		if err := dscpPathMoved(cfg, existingSet, refSet, path); err != nil {
 			return err
 		}
 		changes := describeSetChanges(existingSet, refSet)
@@ -176,23 +204,16 @@ func applyGroup(cfg *config.Config, group []domainWithSet, testedOnly string) er
 			log.Infof("[WATCHDOG] %s: adopted the discovered strategy into set %q (%s)",
 				strings.Join(groupDomains, ", "), existingSet.Name, strings.Join(changes, ", "))
 		}
-	} else {
-		newSet := config.NewSetConfig()
-		newSet.Id = uuid.New().String()
-		newSet.Name = "watchdog-" + groupDomains[0]
-		newSet.Enabled = true
-		newSet.Targets.SNIDomains = groupDomains
-		newSet.Targets.DomainsToMatch = groupDomains
-		newSet.AdoptStrategy(refSet)
-		newSet.DSCP = refSet.DSCP
-		newSet.Targets.IPVersion = refSet.Targets.IPVersion
-		if err := dscpPathMoved(cfg, &newSet, refSet, testedOnly); err != nil {
-			return err
-		}
-		cfg.Sets = append([]*config.SetConfig{&newSet}, cfg.Sets...)
-		log.Infof("[WATCHDOG] %s: created set %q (strategy: %s)",
-			strings.Join(groupDomains, ", "), newSet.Name, refSet.Fragmentation.Strategy)
+		return nil
 	}
+
+	newSet := newHealSet(groupDomains, refSet)
+	if err := dscpPathMoved(cfg, &newSet, refSet, path); err != nil {
+		return err
+	}
+	cfg.Sets = append([]*config.SetConfig{&newSet}, cfg.Sets...)
+	log.Infof("[WATCHDOG] %s: created set %q (strategy: %s)",
+		strings.Join(groupDomains, ", "), newSet.Name, refSet.Fragmentation.Strategy)
 	return nil
 }
 
