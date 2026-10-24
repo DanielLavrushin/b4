@@ -72,7 +72,7 @@ ip6tables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:5
 ip6tables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
 ip6tables -w -t mangle -D B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x22008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
@@ -99,7 +99,7 @@ iptables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:54
 iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x22008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
@@ -179,6 +179,12 @@ iptables -w -t mangle -N B4_MODULE_TEST
 iptables -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -F B4_MODULE_TEST
 iptables -w -t mangle -X B4_MODULE_TEST
+iptables -w -t mangle -F B4_MODULE_TEST
+iptables -w -t mangle -X B4_MODULE_TEST
+iptables -w -t mangle -N B4_MODULE_TEST
+iptables -w -t mangle -A B4_MODULE_TEST -m socket -j RETURN
+iptables -w -t mangle -F B4_MODULE_TEST
+iptables -w -t mangle -X B4_MODULE_TEST
 ipset destroy b4_ipset_probe
 ipset create b4_ipset_probe hash:net family inet -exist
 iptables -w -t mangle -F B4_MODULE_TEST
@@ -234,8 +240,8 @@ iptables -w -t mangle -C OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK 
 iptables -w -t mangle -I OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000
 iptables -w -t mangle -C B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables -w -t mangle -I B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
-iptables -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
+iptables -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
 iptables -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t raw -I B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t raw -C B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -250,6 +256,9 @@ iptables -w -t mangle -C FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_
 iptables -w -t mangle -I FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
 iptables -w -t mangle -C B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
 iptables -w -t mangle -I B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m socket -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -j RETURN
 sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
 sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
 sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
@@ -349,7 +358,7 @@ ip6tables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:5
 ip6tables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
 ip6tables -w -t mangle -D B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x22008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
@@ -378,8 +387,8 @@ iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000
@@ -476,6 +485,12 @@ iptables -w -t mangle -N B4_MODULE_TEST
 iptables -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -F B4_MODULE_TEST
 iptables -w -t mangle -X B4_MODULE_TEST
+iptables -w -t mangle -F B4_MODULE_TEST
+iptables -w -t mangle -X B4_MODULE_TEST
+iptables -w -t mangle -N B4_MODULE_TEST
+iptables -w -t mangle -A B4_MODULE_TEST -m socket -j RETURN
+iptables -w -t mangle -F B4_MODULE_TEST
+iptables -w -t mangle -X B4_MODULE_TEST
 ipset destroy b4_ipset_probe
 ipset create b4_ipset_probe hash:net family inet -exist
 iptables -w -t mangle -F B4_MODULE_TEST
@@ -531,8 +546,8 @@ iptables -w -t mangle -C OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK 
 iptables -w -t mangle -I OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000
 iptables -w -t mangle -C B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables -w -t mangle -I B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
-iptables -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
+iptables -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
 iptables -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t raw -I B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t raw -C B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -547,6 +562,9 @@ iptables -w -t mangle -C FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_
 iptables -w -t mangle -I FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
 iptables -w -t mangle -C B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
 iptables -w -t mangle -I B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m socket -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -j RETURN
 sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
 sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
 sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
@@ -644,7 +662,7 @@ ip6tables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:5
 ip6tables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
 ip6tables -w -t mangle -D B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x22008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
@@ -673,8 +691,8 @@ iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000
@@ -771,6 +789,12 @@ iptables -w -t mangle -N B4_MODULE_TEST
 iptables -w -t mangle -A B4_MODULE_TEST -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -F B4_MODULE_TEST
 iptables -w -t mangle -X B4_MODULE_TEST
+iptables -w -t mangle -F B4_MODULE_TEST
+iptables -w -t mangle -X B4_MODULE_TEST
+iptables -w -t mangle -N B4_MODULE_TEST
+iptables -w -t mangle -A B4_MODULE_TEST -m socket -j RETURN
+iptables -w -t mangle -F B4_MODULE_TEST
+iptables -w -t mangle -X B4_MODULE_TEST
 ipset destroy b4_ipset_probe
 ipset create b4_ipset_probe hash:net family inet -exist
 iptables -w -t mangle -F B4_MODULE_TEST
@@ -826,8 +850,8 @@ iptables -w -t mangle -C OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK 
 iptables -w -t mangle -I OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000
 iptables -w -t mangle -C B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables -w -t mangle -I B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
-iptables -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -C B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
+iptables -w -t mangle -I B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
 iptables -w -t raw -C B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t raw -I B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t raw -C B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -842,6 +866,9 @@ iptables -w -t mangle -C FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_
 iptables -w -t mangle -I FORWARD -p tcp --dport 443 -m set --match-set b4_mss_3_v4 dst --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
 iptables -w -t mangle -C B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
 iptables -w -t mangle -I B4_PREROUTING -p tcp --sport 443 -m set --match-set b4_mss_3_v4 src --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 88
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m socket -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -j RETURN
 sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
 sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
 sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
@@ -939,7 +966,7 @@ ip6tables -w -t raw -D B4_RAW -p udp --dport 53 -j NFQUEUE --queue-balance 537:5
 ip6tables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+ip6tables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
 ip6tables -w -t mangle -D B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000
 ip6tables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x22008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
@@ -968,8 +995,8 @@ iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t raw -D B4_RAW -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x8000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x8000/0x20008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000
-iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
-iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
+iptables -w -t mangle -D B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN
 iptables -w -t mangle -D OUTPUT -m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000

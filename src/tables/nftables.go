@@ -30,6 +30,7 @@ type NFTablesManager struct {
 	ipVersionFilter      string
 	ctPacketsSupported   bool
 	ctDirectionSupported bool
+	socketKey            string
 	sysctlsApplied       bool
 	dropSetV4            bool
 	dropSetV6            bool
@@ -216,6 +217,17 @@ func nftInjectedReplyReturn(mark uint) []string {
 		"tcp", "flags", "&", "(syn|rst)", "==", "0", "return"}
 }
 
+func nftOwnReplyReturn(mark string, ctDirection bool, socketKey string) []string {
+	rule := []string{"ct", "mark", "&", mark, "==", mark}
+	if ctDirection {
+		rule = append(rule, "ct", "direction", "reply")
+	}
+	if socketKey != "" {
+		rule = append(rule, "socket", socketKey, "0")
+	}
+	return append(rule, "return")
+}
+
 func (n *NFTablesManager) checkQueueSupport() error {
 	caps := probeQueueNftCached(n.buildNFQueueAction())
 	if !caps.probed {
@@ -235,6 +247,10 @@ func (n *NFTablesManager) checkQueueSupport() error {
 	n.ctDirectionSupported = caps.ctDirection
 	if !caps.ctDirection {
 		log.Warnf("nftables: the conntrack direction match (ct direction) is unavailable, so the queue rules select TCP packets by port alone and b4 tells a client's packets from a server's replies by their ports - install kmod-nft-core (kmod-nft-conntrack) to have them selected by conntrack direction")
+	}
+	n.socketKey = caps.socketKey
+	if caps.socketKey == "" && n.cfg.Queue.Mark != 0 {
+		warnOwnReplySocketMissing("NFTABLES", "the socket expression", caps.socketErr, kmodMissingHint([]string{"nft_socket"}))
 	}
 	return nil
 }
@@ -349,7 +365,7 @@ func (n *NFTablesManager) apply() error {
 		injected := fmt.Sprintf("0x%x", engine.InjectedMarkBit)
 		markMask := fmt.Sprintf("0x%x", markValue|engine.ClientMark|engine.InjectedMarkBit)
 		if err := n.addRule("output", "meta", "mark", "&", markMask, "==", markAccept, "ct", "mark", "set", "ct", "mark", "|", markAccept); err != nil {
-			log.Warnf("nftables: connmark save unavailable; b4's own marked connections (e.g. MTProto WS bridge upstream) will not be exempted from reply-side processing: %v", err)
+			log.Warnf("nftables: connmark save unavailable, so the replies to b4's own lookups and probes reach its queue rules like those of a device: %v", err)
 		}
 		if err := n.addRule("output", "meta", "mark", "&", markMask, "==", fmt.Sprintf("0x%x", markValue|engine.InjectedMarkBit), "ct", "mark", "set", "ct", "mark", "|", injected); err != nil {
 			log.Warnf("nftables: the connections b4 sends fakes or split segments into cannot be marked, so the server's packets on them stay queued: %v", err)
@@ -380,8 +396,8 @@ func (n *NFTablesManager) apply() error {
 	}
 
 	if cfg.Queue.Mark != 0 {
-		if err := n.addRule("prerouting", "ct", "mark", "&", markAccept, "==", markAccept, "return"); err != nil {
-			log.Warnf("nftables: connmark reply-side bypass unavailable: %v", err)
+		if err := n.addRule("prerouting", nftOwnReplyReturn(markAccept, n.ctDirectionSupported, n.socketKey)...); err != nil {
+			log.Warnf("nftables: the return for the replies to b4's own lookups and probes is unavailable, so they reach its queue rules like those of a device: %v", err)
 		}
 		if !cfg.AnySetTCPIncoming() {
 			if err := n.addRule("prerouting", nftInjectedReplyReturn(cfg.Queue.Mark)...); err != nil {

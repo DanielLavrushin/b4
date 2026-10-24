@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -25,6 +26,7 @@ type IPTablesManager struct {
 	multiportSupport map[string]bool  // per-binary cache (iptables vs ip6tables may differ)
 	connbytesSupport map[string]error // per-binary cache
 	ctdirSupport     map[string]bool
+	socketSupport    map[string]bool
 	connmarkSupport  map[string]bool  // per-binary cache
 	nfqueueSupport   map[string]error // per-binary cache
 	ipsetSupport     map[string]error
@@ -33,7 +35,7 @@ type IPTablesManager struct {
 }
 
 func NewIPTablesManager(cfg *config.Config, useLegacy bool) *IPTablesManager {
-	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), ctdirSupport: make(map[string]bool), connmarkSupport: make(map[string]bool), nfqueueSupport: make(map[string]error), ipsetSupport: make(map[string]error), rawQueueSupport: make(map[string]error), dnsCopySupport: make(map[string]error)}
+	return &IPTablesManager{cfg: cfg, useLegacy: useLegacy, multiportSupport: make(map[string]bool), connbytesSupport: make(map[string]error), ctdirSupport: make(map[string]bool), connmarkSupport: make(map[string]bool), socketSupport: make(map[string]bool), nfqueueSupport: make(map[string]error), ipsetSupport: make(map[string]error), rawQueueSupport: make(map[string]error), dnsCopySupport: make(map[string]error)}
 }
 
 func (im *IPTablesManager) iptablesBin() string {
@@ -126,9 +128,68 @@ func (im *IPTablesManager) hasConnmarkSupport(ipt string) bool {
 	if supported {
 		log.Tracef("IPTABLES[%s]: connmark module is available", ipt)
 	} else {
-		log.Warnf("IPTABLES[%s]: connmark module not available; b4's own marked connections (e.g. MTProto WS bridge upstream) will not be exempted from reply-side processing", ipt)
+		log.Warnf("IPTABLES[%s]: connmark module not available, so the replies to b4's own lookups and probes reach its queue rules like those of a device", ipt)
 	}
 	return supported
+}
+
+var (
+	socketMatchProven   sync.Map
+	socketMatchUnusable sync.Map
+	socketMatchWarned   sync.Map
+)
+
+func (im *IPTablesManager) hasSocketMatchSupport(ipt string) bool {
+	if result, ok := im.socketSupport[ipt]; ok {
+		return result
+	}
+	supported := im.probeSocketMatch(ipt)
+	if im.socketSupport == nil {
+		im.socketSupport = make(map[string]bool)
+	}
+	im.socketSupport[ipt] = supported
+	return supported
+}
+
+func (im *IPTablesManager) probeSocketMatch(ipt string) bool {
+	const module = "xt_socket"
+	_, proven := socketMatchProven.Load(ipt)
+	if !proven {
+		if err := cachedProbeFailure(&socketMatchUnusable, ipt, module); err != nil {
+			warnOwnReplySocketMissing(fmt.Sprintf("IPTABLES[%s]", ipt), "the socket match", err, "")
+			return false
+		}
+	}
+	spec := []string{"-m", "socket", "-j", "RETURN"}
+	supported, err := im.probeModuleInTempChain(ipt, "mangle", spec)
+	if !supported {
+		loadKernelModuleList(module)
+		supported, err = im.probeModuleInTempChain(ipt, "mangle", spec)
+	}
+	switch {
+	case supported:
+		socketMatchProven.Store(ipt, true)
+		log.Tracef("IPTABLES[%s]: socket match is available", ipt)
+	case proven:
+		log.Debugf("IPTABLES[%s]: the socket match probe failed (%v) after it had worked, keeping the socket match", ipt, err)
+		supported = true
+	default:
+		cacheProbeFailure(&socketMatchUnusable, ipt, module, err)
+		warnOwnReplySocketMissing(fmt.Sprintf("IPTABLES[%s]", ipt), "the socket match", err, kmodMissingHint([]string{module}))
+	}
+	return supported
+}
+
+func warnOwnReplySocketMissing(label, what string, err error, hint string) {
+	if _, warned := socketMatchWarned.LoadOrStore(label, true); warned {
+		log.Debugf("%s: %s is still not available: %v", label, what, err)
+		return
+	}
+	msg := fmt.Sprintf("%s: %s is not available (%v), so b4 keeps out of its queue the replies of every connection whose connection mark has all bits of the queue mark, not only those of its own lookups and probes. Firmware that writes its own connection marks, such as ASUS firmware with AiProtection on, gives such marks to device connections, and b4 then sees none of their SYN-ACKs, resets or DNS answers", label, what, err)
+	if hint != "" {
+		msg += ". " + hint
+	}
+	log.Warnf("%s", msg)
 }
 
 const ipsetProbeSet = "b4_ipset_probe"
@@ -411,6 +472,7 @@ type Manifest struct {
 	IPSets         []IPSet
 	Chains         []Chain
 	Rules          []Rule
+	Stale          []Rule
 	Sysctls        []SysctlSetting
 	DNSQueries     map[string]dnsQueryPlacement
 	ECHOnlyDNS     []string
@@ -430,6 +492,9 @@ func (m Manifest) Apply() error {
 		if err := r.Apply(); err != nil {
 			return err
 		}
+	}
+	for _, r := range m.Stale {
+		r.Remove()
 	}
 	for _, s := range m.Sysctls {
 		s.Apply()
@@ -571,6 +636,30 @@ func iptInjectedReplyReturn(mark uint) []string {
 	return []string{"-p", "tcp", "-m", "connmark", "--mark", iptInjectedConnmarkMatch(mark), "--tcp-flags", "SYN,RST", "NONE", "-j", "RETURN"}
 }
 
+func iptOwnReplyReturn(markAccept string, replyDir, socket bool) []string {
+	spec := append([]string{"-m", "connmark", "--mark", markAccept}, iptCtdirMatch(replyDir, "REPLY")...)
+	if socket {
+		spec = append(spec, "-m", "socket")
+	}
+	return append(spec, "-j", "RETURN")
+}
+
+func (manager *IPTablesManager) ownReplyReturnRules(ipt, chain, markAccept string, replyDir, teardown bool) (Rule, []Rule) {
+	socket := teardown || manager.hasSocketMatchSupport(ipt)
+	own := Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chain, Action: "I", Spec: iptOwnReplyReturn(markAccept, replyDir, socket)}
+	var stale []Rule
+	for _, dir := range []bool{false, true} {
+		for _, sk := range []bool{false, true} {
+			if dir != replyDir || sk != socket {
+				r := own
+				r.Spec = iptOwnReplyReturn(markAccept, dir, sk)
+				stale = append(stale, r)
+			}
+		}
+	}
+	return own, stale
+}
+
 func (manager *IPTablesManager) queueRulesMatchDirection(ipt string, teardown bool) bool {
 	if supported, probed := manager.ctdirSupport[ipt]; probed {
 		return supported
@@ -615,6 +704,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 	var ipsets []IPSet
 	var chains []Chain
 	var rules []Rule
+	var stale []Rule
 	dnsQueries := map[string]dnsQueryPlacement{}
 	directionExact := map[string]bool{}
 
@@ -900,13 +990,15 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			if teardown || !cfg.AnySetTCPIncoming() {
 				rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I", Spec: iptInjectedReplyReturn(mark)})
 			}
-			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I",
-				Spec: []string{"-m", "connmark", "--mark", markAccept, "-j", "RETURN"}})
+			own, ownStale := manager.ownReplyReturnRules(ipt, preChainName, markAccept, ctdir, teardown)
+			rules = append(rules, own)
 			if teardown {
 				rules = append(rules,
 					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: iptConnmarkSave(mark, mark|engine.ClientMark, mark)},
 					Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I", Spec: iptConnmarkSave(mark, mark, mark)},
 				)
+			} else {
+				stale = append(stale, ownStale...)
 			}
 		}
 
@@ -929,9 +1021,10 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 	if !teardown {
 		echOnly = manager.echOnlyBinaries()
 		for _, ipt := range echOnly {
-			ec, er := manager.buildECHOnlyDNSManifest(ipt, preChainName)
+			ec, er, es := manager.buildECHOnlyDNSManifest(ipt, preChainName)
 			chains = append(chains, ec...)
 			rules = append(rules, er...)
+			stale = append(stale, es...)
 		}
 	}
 
@@ -959,7 +1052,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 	ipsets = append(ipsets, mssIPSets...)
 	rules = append(rules, mssRules...)
 
-	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Sysctls: b4SysctlSettings(), DNSQueries: dnsQueries, ECHOnlyDNS: echOnly, DirectionExact: directionExact}
+	return Manifest{IPSets: ipsets, Chains: chains, Rules: rules, Stale: stale, Sysctls: b4SysctlSettings(), DNSQueries: dnsQueries, ECHOnlyDNS: echOnly, DirectionExact: directionExact}
 }
 
 func (manager *IPTablesManager) mssClampBinaries() []string {

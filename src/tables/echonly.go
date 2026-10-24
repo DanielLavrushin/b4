@@ -112,7 +112,7 @@ func (manager *IPTablesManager) echOnlyBinaries() []string {
 	return ipts
 }
 
-func (manager *IPTablesManager) buildECHOnlyDNSManifest(ipt, preChainName string) ([]Chain, []Rule) {
+func (manager *IPTablesManager) buildECHOnlyDNSManifest(ipt, preChainName string) ([]Chain, []Rule, []Rule) {
 	cfg := manager.cfg
 	markAccept := iptMarkAccept(cfg.Queue.Mark)
 	answers := append(dnsAnswerMatch(false), manager.buildNFQSpec(cfg.Queue.StartNum, cfg.Queue.Threads)...)
@@ -125,18 +125,20 @@ func (manager *IPTablesManager) buildECHOnlyDNSManifest(ipt, preChainName string
 		{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
 			Spec: []string{"-m", "mark", "--mark", markAccept, "-j", "ACCEPT"}},
 	}
+	var stale []Rule
 	if cfg.Queue.Mark != 0 && manager.hasConnmarkSupport(ipt) {
 		markMaskHex := fmt.Sprintf("0x%x", cfg.Queue.Mark)
 		ownMark := fmt.Sprintf("0x%x/0x%x", cfg.Queue.Mark, cfg.Queue.Mark|engine.ClientMark)
+		own, ownStale := manager.ownReplyReturnRules(ipt, preChainName, markAccept, manager.queueRulesMatchDirection(ipt, false), false)
 		rules = append(rules,
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "OUTPUT", Action: "I",
 				Spec: []string{"-m", "mark", "--mark", ownMark, "-j", "CONNMARK",
 					"--save-mark", "--nfmask", markMaskHex, "--ctmask", markMaskHex}},
-			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: preChainName, Action: "I",
-				Spec: []string{"-m", "connmark", "--mark", markAccept, "-j", "RETURN"}},
+			own,
 		)
+		stale = ownStale
 	}
-	return chains, rules
+	return chains, rules, stale
 }
 
 func iptECHOnlyDNSPresent(ipt string) bool {

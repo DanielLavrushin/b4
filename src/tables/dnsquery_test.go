@@ -486,7 +486,7 @@ var monitorTCPQueueLines = []string{
 }
 
 func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fakeListing {
-	pre := "-N B4_PREROUTING\n-A B4_PREROUTING -m connmark --mark 0x8000/0x8000 -j RETURN\n" + monitorInjectedReturnLine + "\n-A B4_PREROUTING -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
+	pre := "-N B4_PREROUTING\n-A B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN\n" + monitorInjectedReturnLine + "\n-A B4_PREROUTING -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
 	out := "-P OUTPUT ACCEPT\n-A OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT\n-A OUTPUT -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
 	if placement == dnsHeldMangle {
 		pre += "-A B4_PREROUTING -p udp -m udp --dport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"

@@ -18,6 +18,8 @@ type queueCaps struct {
 	queue       bool
 	ctPackets   bool
 	ctDirection bool
+	socketKey   string
+	socketErr   error
 	queueErr    error
 }
 
@@ -66,6 +68,18 @@ func probeQueueNft(queueAction string) queueCaps {
 		caps.ctDirection = true
 	} else if caps.ctPackets {
 		kmodNoteRejected("nft_ct", "nft", out)
+	}
+
+	for _, key := range []string{"wildcard", "transparent"} {
+		out, err := run("nft", "add", "rule", "inet", probeTable, "test", "socket", key, "0", "counter", "accept")
+		if err == nil {
+			caps.socketKey, caps.socketErr = key, nil
+			break
+		}
+		caps.socketErr = err
+		if key == "transparent" {
+			kmodNoteRejected("nft_socket", "nft", out)
+		}
 	}
 
 	return caps
