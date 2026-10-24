@@ -284,7 +284,13 @@ export function SettingsPage() {
     ignoredRootKeys: SETTINGS_DIFF_IGNORE,
     scope: "settings",
   });
-  const hasChanges = changedLeaves.length > 0;
+  const draftSets = deferredConfig?.sets;
+  const baselineSets = originalConfig?.sets;
+  const setsChanged = useMemo(
+    () => JSON.stringify(draftSets) !== JSON.stringify(baselineSets),
+    [draftSets, baselineSets],
+  );
+  const hasChanges = changedLeaves.length > 0 || setsChanged;
   // Guard conservatively while urgent input is ahead of the deferred diff.
   const hasUnsavedChanges = hasChanges || config !== deferredConfig;
   const shouldBlock = useCallback<BlockerFunction>(

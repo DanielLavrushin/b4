@@ -29,12 +29,15 @@ type DomainStatus struct {
 }
 
 type CheckResult struct {
-	OK        bool
-	Speed     float64
-	Error     string
-	Verdict   netprobe.DomainStatus
-	BytesRead int64
-	Unusable  bool
+	OK         bool
+	Speed      float64
+	Error      string
+	Verdict    netprobe.DomainStatus
+	BytesRead  int64
+	Unusable   bool
+	StatusCode int
+	RedirectTo string
+	Answered   bool
 }
 
 type WatchdogState struct {
@@ -129,6 +132,7 @@ const (
 	ReasonVerifyFailed = "verify_failed"
 	ReasonEdited       = "edited"
 	ReasonBusy         = "busy"
+	ReasonRulesChanged = "rules_changed"
 )
 
 const (

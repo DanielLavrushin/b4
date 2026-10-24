@@ -3,6 +3,7 @@ package discovery
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -178,6 +179,93 @@ func TestHistoryRecordsWhoStartedTheRun(t *testing.T) {
 	}
 	if LastRun() != "run-mcp" {
 		t.Fatalf("an open Discovery page refreshes its history when the last saved run changes, got %q", LastRun())
+	}
+}
+
+func TestHistoryRecordsTheDSCPTheProbesCarried(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	value := 25
+	path := &config.DSCPPath{IPv4: &value, Interfaces: []string{"wan0"}}
+	SaveToHistory(&CheckSuite{
+		Id: "run-dscp", Status: CheckStatusComplete, EndTime: time.Now(), SetId: "yt", DSCP: &value, DSCPIPVersion: "4", DSCPPath: path,
+		SetVerdict: &SetVerdict{Status: SetVerdictNone},
+		DomainDiscoveryResults: map[string]*DomainDiscoveryResult{
+			"youtube.com": {Domain: "youtube.com"},
+		},
+	}, cfgPath)
+	SaveToHistory(&CheckSuite{
+		Id: "run-plain", Status: CheckStatusComplete, EndTime: time.Now(),
+		DomainDiscoveryResults: map[string]*DomainDiscoveryResult{
+			"meduza.io": {Domain: "meduza.io"},
+		},
+	}, cfgPath)
+
+	hist := LoadDiscoveryHistory(cfgPath)
+	for _, e := range hist.Entries {
+		switch e.Domain {
+		case "youtube.com":
+			if e.DSCP == nil || *e.DSCP != 25 || e.DSCPIPVersion != "4" || !reflect.DeepEqual(e.DSCPPath, path) {
+				t.Errorf("a result found with DSCP 25 in its IPv4 probes only holds for that path only, so the history must keep the value, its IP version and the path, got %v, %q, %+v", e.DSCP, e.DSCPIPVersion, e.DSCPPath)
+			}
+		case "meduza.io":
+			if e.DSCP != nil {
+				t.Errorf("a run on the default path records no value, got %d", *e.DSCP)
+			}
+		}
+	}
+	if rec, ok := hist.SetRuns["yt"]; !ok || rec.DSCP == nil || *rec.DSCP != 25 || rec.DSCPIPVersion != "4" || !reflect.DeepEqual(rec.DSCPPath, path) {
+		t.Errorf("the saved set run must keep the value, its IP version and the path too, got %+v", rec)
+	}
+}
+
+func TestHistoryKeepsAResultOfARunWhoseRulesChangedOutOfReach(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	set := config.NewSetConfig()
+	SaveToHistory(&CheckSuite{
+		Id: "run-moved", Status: CheckStatusCanceled, EndTime: time.Now(), RulesChanged: true,
+		StrategyGroups: []StrategyGroup{{WinnerPreset: "p", Domains: []string{"youtube.com"}, Set: &set}},
+		DomainDiscoveryResults: map[string]*DomainDiscoveryResult{
+			"youtube.com": {Domain: "youtube.com", BestPreset: "p", BestSuccess: true, Results: map[string]*DomainPresetResult{
+				"p": {PresetName: "p", Status: CheckStatusComplete, Set: &set},
+			}},
+		},
+	}, cfgPath)
+
+	hist := LoadDiscoveryHistory(cfgPath)
+	if len(hist.Entries) != 1 || !hist.Entries[0].RulesChanged {
+		t.Fatalf("the saved result must remember that the run's rules changed, got %+v", hist.Entries)
+	}
+	if got := hist.Entries[0].ApplicableSet(); got != nil {
+		t.Errorf("a result from a run whose rules changed could come from another network path, so the history must not offer it, got %q", got.Name)
+	}
+}
+
+func TestResultSetsCarryTheDSCPValueTheRunStamped(t *testing.T) {
+	stamped := 25
+	ds := &DiscoverySuite{
+		CheckSuite: &CheckSuite{Domain: "site.example", Domains: []DomainInput{{Domain: "site.example", CheckURL: "https://site.example/"}}, DSCP: &stamped},
+		cfg:        &config.Config{},
+		dnsResults: map[string]*DNSDiscoveryResult{},
+	}
+	preset := ConfigPreset{Name: "combo-pastseq", Config: config.NewSetConfig()}
+	single := ds.buildTestConfig(preset).Sets[0]
+	multi := ds.buildTestConfigMulti(preset).Sets[0]
+	for name, set := range map[string]*config.SetConfig{
+		"single":        single,
+		"multi":         multi,
+		"scoped single": ds.scopeSetToDomains(single, []string{"site.example"}),
+		"scoped multi":  ds.scopeSetToDomains(multi, []string{"site.example"}),
+		"plain fix":     ds.plainFixSet(presetAltAddress, FamilyAltAddress),
+		"no bypass":     ds.buildTestConfig(ConfigPreset{Name: presetNoBypass, Config: config.NewSetConfig()}).Sets[0],
+	} {
+		if want := (config.SetDSCPConfig{Enabled: true, Value: 25}); set.DSCP != want {
+			t.Errorf("%s: the strategy was tested on the path of DSCP 25, so a set made from it must carry that value, got %+v", name, set.DSCP)
+		}
+	}
+
+	ds.DSCP = nil
+	if set := ds.buildTestConfig(preset).Sets[0]; set.DSCP.Enabled {
+		t.Errorf("a run whose probes carried no set value, for no set or because the firewall could not write it, leaves the result's DSCP off, got %+v", set.DSCP)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/dhcp"
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
@@ -51,6 +52,12 @@ func (p *Pool) EnableTUNSourceResolver(wanIP string) {
 	log.Infof("TUN: source attribution enabled (recovering LAN source from conntrack; uplink %s)", wanIP)
 }
 
+func (p *Pool) SetTUNLocalOnly(localOnly bool) {
+	for _, w := range p.Workers {
+		w.tunLocalOnly.Store(localOnly)
+	}
+}
+
 func (p *Pool) UpdateTUNSourceWAN(wanIP string) {
 	if p.tunSrc == nil || wanIP == "" {
 		return
@@ -81,6 +88,9 @@ func NewPool(cfg *config.Config) *Pool {
 		w.pendingHello = state.pendingHello
 		w.hostHints = state.hostHints
 		w.quicFlows = state.quicFlows
+		w.voiceFlows = state.voiceFlows
+		w.direction = state.direction
+		w.flowDrops = state.flowDrops
 		w.ipHealth = state.ipHealth
 		w.pinHealth = state.pinHealth
 		w.goodIPs = state.goodIPs
@@ -94,6 +104,7 @@ func NewPool(cfg *config.Config) *Pool {
 			w.dnsCopy = pool.dnsCopy
 		}
 		dnsCopyCurrent.Store(pool.dnsCopy)
+		flowDropCurrent.Store(state.flowDrops)
 	}
 	pool.startDNSTCP()
 	pool.publishDNSTCPReady()
@@ -129,6 +140,7 @@ func NewPool(cfg *config.Config) *Pool {
 				pool.state.destState.Cleanup(retest)
 				pool.state.hostHints.Cleanup()
 				pool.state.quicFlows.Cleanup()
+				pool.state.voiceFlows.Cleanup()
 				pool.state.ipHealth.Cleanup(retest)
 				pool.state.goodIPs.Cleanup()
 				if pool.state.pinHealth.due(retest) {
@@ -137,6 +149,7 @@ func NewPool(cfg *config.Config) *Pool {
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
 				pool.publishEscalations()
+				pool.reportQueueDirection(time.Now())
 			case <-pool.stopCleanup:
 				return
 			}
@@ -158,7 +171,32 @@ func (p *Pool) Start() error {
 	if len(p.Workers) > 0 {
 		p.dnsCopy.enable(uint32(p.Workers[0].getConfig().Queue.Mark))
 	}
+	if cfg := p.GetFirstWorkerConfig(); cfg != nil && !cfg.Queue.IsDiscovery && p.state != nil {
+		p.startFlowDropPersistence()
+	}
 	return nil
+}
+
+func (p *Pool) startFlowDropPersistence() {
+	if p.conntrack == nil {
+		p.conntrack = ctnl.NewWorker()
+		p.state.flowDrops.setDeleter(p.conntrack)
+	}
+	if p.dropSets == nil {
+		p.dropSets = p.state.flowDrops.startWriter()
+	}
+}
+
+func (p *Pool) stopFlowDropPersistence() {
+	if p.dropSets != nil {
+		p.state.flowDrops.stopWriter(p.dropSets)
+		p.dropSets = nil
+	}
+	if p.conntrack != nil {
+		p.state.flowDrops.setDeleter(nil)
+		p.conntrack.Stop()
+		p.conntrack = nil
+	}
 }
 
 func (p *Pool) OpenDNSQueryCopy() (uint16, error) {
@@ -277,6 +315,8 @@ func (p *Pool) Stop() {
 	case <-time.After(timeout):
 		log.Errorf("Timeout (%v) waiting for NFQueue workers to stop", timeout)
 	}
+
+	p.stopFlowDropPersistence()
 }
 
 func (w *Worker) getConfig() *config.Config {
@@ -362,7 +402,7 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	if !reuse && p.state != nil && p.state.destState != nil {
 		p.state.destState.PruneEscalations(func(setId string) bool {
 			target := newCfg.GetSetById(setId)
-			return target != nil && target.Enabled
+			return target != nil && target.Enabled && !target.SelectsL7()
 		})
 		if n := p.state.destState.ResetBlocked(); n > 0 {
 			log.Infof("IPBlockDetect: the sets changed, %d address(es) cached as blocked are tested again", n)
@@ -375,6 +415,10 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 
 	p.reconcileDNSTCP(newCfg)
 	p.checkDNSPins(newCfg)
+	if p.state != nil {
+		p.state.direction.noteChange(time.Now())
+		p.state.flowDrops.settingsChanged()
+	}
 
 	return nil
 }
@@ -464,7 +508,7 @@ func (p *Pool) ForwardDNS(ctx context.Context, query []byte, target net.IP, frag
 	w := p.Workers[0]
 	cfg := w.getConfig()
 	return dns.ResolveUpstreamContext(ctx, query, target, dns.ForwardOptions{
-		Sender:   w.sock,
+		Sender:   w.lookupSender(),
 		Fragment: fragment,
 		Mark:     int(cfg.MainInjectedMark()),
 		Timeout:  cfg.DNSQueryTimeout(),

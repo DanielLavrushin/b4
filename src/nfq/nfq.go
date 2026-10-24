@@ -61,38 +61,96 @@ func pfBind(con *netlink.Conn, family uint8) error {
 	return nil
 }
 
+func injectorMark(cfg *config.Config) uint {
+	if cfg.Queue.IsDiscovery || cfg.Queue.Mark == 0 {
+		return cfg.Queue.Mark
+	}
+	return cfg.Queue.Mark | engine.InjectedMarkBit
+}
+
+func selfInjectedBits(queueMark uint32) uint32 {
+	return queueMark | config.PerSetRouteMarkBits | engine.InjectedMarkBit
+}
+
 func (w *Worker) Start() error {
 	cfg := w.getConfig()
 	mark := cfg.Queue.Mark
-	s, err := sock.NewSenderWithMark(int(mark))
+	inject := injectorMark(cfg)
+	s, err := sock.NewSenderWithMark(int(inject))
 	if err != nil {
 		return err
 	}
 	w.sock = s
+	if inject != mark {
+		ls, err := sock.NewSenderWithMark(int(mark))
+		if err != nil {
+			s.Close()
+			return err
+		}
+		w.lookupSock = ls
+	}
 	cs, err := sock.NewSenderWithMark(int(mark) | engine.ClientMark)
 	if err != nil {
 		s.Close()
+		if w.lookupSock != nil {
+			w.lookupSock.Close()
+		}
 		return err
 	}
 	w.clientSock = cs
 
+	q, err := w.bindQueue(mark)
+	if err != nil {
+		return err
+	}
+	w.q = q
+
+	w.wg.Add(1)
+	go w.gc()
+
+	log.Tracef("NFQ bound pid=%d queue=%d", os.Getpid(), w.qnum)
+	return nil
+}
+
+var (
+	queueOpen     = (*Worker).openQueue
+	queueRegister = (*Worker).registerQueue
+	queueClose    = (*nfqueue.Nfqueue).Close
+)
+
+func (w *Worker) bindQueue(mark uint) (*nfqueue.Nfqueue, error) {
+	q, err := queueOpen(w, nfqueue.NfQaCfgFlagUIDGid)
+	if err != nil {
+		return nil, err
+	}
+	if err := queueRegister(w, q, mark); err != nil {
+		_ = queueClose(q)
+		log.Tracef("nfqueue %d: binding with the socket owner of each packet failed, binding without it: %v", w.qnum, err)
+		if q, err = queueOpen(w, 0); err != nil {
+			return nil, err
+		}
+		_ = queueRegister(w, q, mark)
+	}
+	return q, nil
+}
+
+func (w *Worker) openQueue(extraFlags uint32) (*nfqueue.Nfqueue, error) {
 	c := nfqueue.Config{
 		NfQueue:      w.qnum,
 		MaxPacketLen: 0xffff,
 		MaxQueueLen:  4096,
 		Copymode:     nfqueue.NfQnlCopyPacket,
-		Flags:        nfqueue.NfQaCfgFlagFailOpen,
+		Flags:        nfqueue.NfQaCfgFlagFailOpen | extraFlags,
 	}
 	q, err := nfqueue.Open(&c)
 	if err != nil {
 		c.Flags = 0
 		q, err = nfqueue.Open(&c)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		log.Warnf("nfqueue %d: this kernel does not take the fail-open flag, so a backlog of more than %d packets is dropped rather than let through while b4 catches up", w.qnum, c.MaxQueueLen)
 	}
-	w.q = q
 
 	if err := q.Con.SetReadBuffer(nfqReadBufferBytes); err != nil {
 		log.Tracef("nfqueue %d: could not raise the netlink read buffer to %d bytes: %v", w.qnum, nfqReadBufferBytes, err)
@@ -104,26 +162,18 @@ func (w *Worker) Start() error {
 	if err := pfBind(q.Con, syscall.AF_INET6); err != nil {
 		log.Warnf("nfqueue PF_BIND AF_INET6: %v", err)
 	}
+	return q, nil
+}
 
-	w.wg.Add(1)
-	go w.gc()
-
-	w.wg.Add(1)
-	go func() {
-		pid := os.Getpid()
-		log.Tracef("NFQ bound pid=%d queue=%d", pid, w.qnum)
-		defer w.wg.Done()
-		_ = q.RegisterWithErrorFunc(w.ctx,
-			func(a nfqueue.Attribute) int {
-				return w.handlePacket(q, a, mark)
-			},
-			func(e error) int {
-				return w.handleNfqError(e)
-			},
-		)
-	}()
-
-	return nil
+func (w *Worker) registerQueue(q *nfqueue.Nfqueue, mark uint) error {
+	return q.RegisterWithErrorFunc(w.ctx,
+		func(a nfqueue.Attribute) int {
+			return w.handlePacket(q, a, mark)
+		},
+		func(e error) int {
+			return w.handleNfqError(e)
+		},
+	)
 }
 
 func (w *Worker) dropAndInjectQUIC(cfg *config.SetConfig, raw []byte, dst net.IP) {
@@ -134,10 +184,7 @@ func (w *Worker) dropAndInjectQUIC(cfg *config.SetConfig, raw []byte, dst net.IP
 	}
 	if udpCfg.FakeSeqLength > 0 {
 		for i := 0; i < udpCfg.FakeSeqLength; i++ {
-			payload := udpCfg.FakePayloadData
-			if udpCfg.FakePayloadFile == config.FakePayloadAutoQUIC {
-				payload = sock.BuildQUICInitial(udpCfg.FakeLen)
-			}
+			payload := udpFakePayload(udpCfg)
 			fake, ok := sock.BuildFakeUDPFromOriginalV4(raw, udpCfg.FakeLen, cfg.Faking.TTL, payload)
 			if ok {
 				if udpCfg.FakingStrategy == "checksum" {
@@ -523,6 +570,9 @@ func (w *Worker) Stop() {
 	}
 	if w.clientSock != nil && w.clientSock != w.sock {
 		w.clientSock.Close()
+	}
+	if w.lookupSock != nil {
+		w.lookupSock.Close()
 	}
 	if w.sock != nil {
 		w.sock.Close()

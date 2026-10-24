@@ -108,7 +108,7 @@ Some settings stay out of the assistant's reach whatever the switches say, becau
 
 Asking the assistant to undo a change, such as "that made it worse, put it back", restores the configuration from before its last change and applies it at once. Asking again goes one more change back. The history covers only changes made over MCP since b4 started, and edits in the web interface are not part of it.
 
-An undo is refused when the configuration changed after the change being undone: in the web interface, by the watchdog or by another tool. It is also refused when it would turn a watchdog on, or bring back addresses a watchdog checks, while **Allow active probes** is off.
+An undo is refused when the configuration changed after the change being undone: in the web interface, by the watchdog or by another tool. Changes on the **MCP server** card do not count, and an undo leaves that card's settings as they are. It is also refused when it would turn a watchdog on, or bring back addresses a watchdog checks, while **Allow active probes** is off. Once that switch is on and saved, the same undo goes through.
 
 ## What the assistant sees {#what-is-stripped}
 
@@ -124,3 +124,4 @@ A question such as "Is b4 running, and which capture engine is active?" gets an 
 - **A test request gets 405.** The endpoint answers `POST` only, so a `GET` from a browser or a script gets 405. This is normal.
 - **A web page cannot reach the endpoint.** A request from a browser page is accepted only when the page's origin is b4's own address written as an IP address or `localhost`. AI applications send no origin and are not affected. A host name is allowed by adding it to the allowed origins in the [configuration file](../advanced/config.md#settings-without-a-field).
 - **The assistant says it cannot change a setting.** **Allow configuration changes** is off, or the setting is one that MCP never changes.
+- **The assistant lacks a tool after a switch was turned on.** A switch takes effect when the settings are saved, without a restart, but an application that was already connected keeps the list of tools it received when it connected. Reconnecting the application to the MCP server fetches the current list.

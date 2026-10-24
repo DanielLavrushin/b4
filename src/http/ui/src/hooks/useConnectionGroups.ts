@@ -16,11 +16,24 @@ export interface EnrichedGroup extends ConnectionGroup {
   asnId: string | null;
   asnName: string | null;
   deviceName: string;
+  deviceVendor: string;
+  deviceIp: string;
+  deviceLabel: string;
 }
 
 export interface EnrichedDevice extends DeviceSummary {
   deviceName: string;
+  deviceVendor: string;
+  deviceLabel: string;
 }
+
+const NO_VENDORS: Record<string, string> = {};
+
+const labelOf = (name: string, vendor: string, ip: string, mac: string): string => {
+  if (name) return name;
+  if (vendor) return `${vendor} (${ip || mac})`;
+  return ip || mac;
+};
 
 export interface GroupsState {
   groups: EnrichedGroup[];
@@ -43,6 +56,7 @@ export function useConnectionGroups(
   deviceMap: Record<string, string>,
   paused: boolean,
   ipToMac: Record<string, string> = {},
+  vendorMap: Record<string, string> = NO_VENDORS,
 ): GroupsState {
   const workerRef = useRef<Worker | null>(null);
   const lastSentinelRef = useRef<string | null>(null);
@@ -151,19 +165,32 @@ export function useConnectionGroups(
 
   return useMemo<GroupsState>(() => {
     if (!snapshot) return EMPTY_STATE;
+    const ipOf = new Map(snapshot.devices.map((d) => [d.mac, d.ip]));
     const groups: EnrichedGroup[] = snapshot.groups.map((g) => {
       const asn = g.destIp ? asnStorage.findAsnForIp(g.destIp) : null;
+      const deviceName = deviceMap[g.mac] ?? "";
+      const deviceVendor = vendorMap[g.mac] ?? "";
+      const deviceIp = ipOf.get(g.mac) ?? "";
       return {
         ...g,
         asnId: asn?.id ?? null,
         asnName: asn?.name ?? null,
-        deviceName: deviceMap[g.mac] ?? "",
+        deviceName,
+        deviceVendor,
+        deviceIp,
+        deviceLabel: labelOf(deviceName, deviceVendor, deviceIp, g.mac),
       };
     });
-    const devices: EnrichedDevice[] = snapshot.devices.map((d) => ({
-      ...d,
-      deviceName: deviceMap[d.mac] ?? "",
-    }));
+    const devices: EnrichedDevice[] = snapshot.devices.map((d) => {
+      const deviceName = deviceMap[d.mac] ?? "";
+      const deviceVendor = vendorMap[d.mac] ?? "";
+      return {
+        ...d,
+        deviceName,
+        deviceVendor,
+        deviceLabel: labelOf(deviceName, deviceVendor, d.ip, d.mac),
+      };
+    });
     return {
       groups,
       devices,
@@ -171,7 +198,7 @@ export function useConnectionGroups(
       unmatchedCount: snapshot.unmatchedCount,
       ts: snapshot.ts,
     };
-  }, [snapshot, deviceMap]);
+  }, [snapshot, deviceMap, vendorMap]);
 }
 
 export function clearGroupsWorker(worker: Worker | null): void {

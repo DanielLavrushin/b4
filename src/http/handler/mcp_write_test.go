@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -969,6 +970,88 @@ func TestMCPWriteRefusesMovingOrWideningAnExposedPort(t *testing.T) {
 		if text := mcpErrorText(res); !strings.Contains(text, "system.socks5.expose") {
 			t.Fatalf("%s: the refusal must name the switch responsible: %q", tc.path, text)
 		}
+	}
+}
+
+func mcpVoiceCfg(t *testing.T) *config.Config {
+	t.Helper()
+	cfg := writableCfg(t)
+	voice := config.NewSetConfig()
+	voice.Id, voice.Name, voice.Enabled = "set-voice", "voice", true
+	voice.UDP.DPortFilter = "50000-50100"
+	voice.UDP.FilterL7 = []string{config.UDPL7Discord}
+	cfg.Sets = append(cfg.Sets, &voice)
+	return cfg
+}
+
+func TestMCPWriteAcceptsOnlyTheUDPProtocolsB4Matches(t *testing.T) {
+	srv, api := newMCPTestServerAPI(t, mcpVoiceCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	for _, value := range []string{"discrod", "discord,wireguard"} {
+		res := callSetValue(t, session, ctx, "sets[voice].udp.filter_l7", value)
+		if !res.IsError {
+			t.Fatalf("%q names a protocol b4 does not match and must be refused, not saved to match nothing", value)
+		}
+		if text := mcpErrorText(res); !strings.Contains(text, "discord, stun") {
+			t.Errorf("the refusal of %q must list the protocols b4 matches: %q", value, text)
+		}
+	}
+	if got := api.getCfg().Sets[2].UDP.FilterL7; !reflect.DeepEqual(got, []string{config.UDPL7Discord}) {
+		t.Fatalf("a refused write changed the protocols: %v", got)
+	}
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[voice].udp.filter_l7", " STUN, Discord "))
+	if !out.Changed || out.Current != "stun,discord" {
+		t.Fatalf("known protocols in any case must be stored in their canonical form: %+v", out)
+	}
+	if got := api.getCfg().Sets[2].UDP.FilterL7; !reflect.DeepEqual(got, []string{config.UDPL7STUN, config.UDPL7Discord}) {
+		t.Fatalf("live protocols = %v", got)
+	}
+}
+
+func TestMCPListWritablePathsOffersTheUDPProtocols(t *testing.T) {
+	srv := newMCPTestServer(t, mcpVoiceCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_list_writable_paths",
+		Arguments: map[string]any{"prefix": "sets[].udp.filter_l7", "set": "voice"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpListPathsOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(out.Paths) != 1 {
+		t.Fatalf("expected sets[].udp.filter_l7 alone, got %+v", out.Paths)
+	}
+	if p := out.Paths[0]; p.Type != "list" || p.Current != config.UDPL7Discord || !reflect.DeepEqual(p.Options, config.UDPL7Classes) {
+		t.Errorf("the protocol list must offer the protocols b4 matches: %+v", p)
+	}
+}
+
+func TestMCPWriteRejectionNamesTheFieldTheConfigRefuses(t *testing.T) {
+	srv, api := newMCPTestServerAPI(t, mcpVoiceCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	for _, c := range []struct{ path, value, field, reason string }{
+		{"sets[voice].tcp.dport_filter", "443", "sets[2].tcp.dport_filter", "takes no TCP port filter"},
+		{"sets[video].udp.filter_l7", "discord", "sets[0].udp.dport_filter", "must list the UDP ports"},
+	} {
+		res := callSetValue(t, session, ctx, c.path, c.value)
+		if !res.IsError {
+			t.Fatalf("%s=%s must be refused by the config validation", c.path, c.value)
+		}
+		if text := mcpErrorText(res); !strings.Contains(text, c.field+": ") || !strings.Contains(text, c.reason) {
+			t.Errorf("the refusal of %s must name %s and the reason: %q", c.path, c.field, text)
+		}
+	}
+	live := api.getCfg()
+	if live.Sets[2].TCP.DPortFilter != "" || len(live.Sets[0].UDP.FilterL7) != 0 {
+		t.Fatalf("refused writes changed the config: tcp=%q filter_l7=%v", live.Sets[2].TCP.DPortFilter, live.Sets[0].UDP.FilterL7)
 	}
 }
 

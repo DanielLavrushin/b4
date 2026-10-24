@@ -139,12 +139,12 @@ func TestMetricsSummaryUsesTheNewAccessors(t *testing.T) {
 	mux := newMetricsTestMux(t)
 	mc := GetMetricsCollector()
 	mc.ResetCounters()
-	mc.CountConnection("socks")
-	mc.CountConnection("")
+	mc.CountConnection("socks", metrics.Device{})
+	mc.CountConnection("", metrics.Device{})
 	mc.RecordBlockedDNS("ads", "ads.example", "")
 	key := metrics.FlowKey{Proto: 6, DPort: 443, SPort: 50123}
 	binary.BigEndian.PutUint64(key.Addr[:8], uint64(time.Now().UnixNano()))
-	mc.RecordBlockedFlow(key, "ads", "ads.example", "")
+	mc.RecordBlockedFlow(key, "ads", "ads.example", metrics.Device{})
 	mc.RecordRSTDrop()
 
 	rec := serveMetrics(mux, http.MethodGet, "/api/metrics/summary")

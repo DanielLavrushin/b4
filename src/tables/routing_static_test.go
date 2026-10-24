@@ -2,6 +2,7 @@ package tables
 
 import (
 	"errors"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
@@ -452,5 +453,59 @@ func TestRoutingSyncConfig_AFamilyThatWasNeverOnIsNeverTouched(t *testing.T) {
 		if c.set == setV6 {
 			t.Errorf("with IPv6 off from the start the v6 set does not exist, so nothing may be pushed into or deleted from it: %+v", c)
 		}
+	}
+}
+
+func TestRoutingSyncConfigPublishesTheMarksOfInterfaceSets(t *testing.T) {
+	if !hasBinary("ip") {
+		t.Skip("RoutingSyncConfig gives up before it touches a set when the ip binary is missing")
+	}
+	staticResetGlobals(t)
+
+	set := staticTestSet(config.RoutingModeInterface, []string{"203.0.113.9"})
+	cfg := familyTestConfig(true, false)
+	cfg.Sets = []*config.SetConfig{set}
+	var added, deleted []staticCall
+	routeEngine = staticSyncBackend(&added, &deleted)
+
+	RoutingSyncConfig(cfg)
+	if got := RoutedIfaceMarks("b4fam0"); len(got) != 1 || got[0] != 0x7e11 {
+		t.Fatalf("marks for b4fam0 %#x, want the set's 0x7e11: the packet engine tells b4's own routed connections apart by it", got)
+	}
+
+	RoutingClearAll()
+	if got := RoutedIfaceMarks("b4fam0"); len(got) != 0 {
+		t.Fatalf("marks for b4fam0 %#x after every route was cleared, want none", got)
+	}
+	routeEngine = staticSyncBackend(&added, &deleted)
+	RoutingSyncConfig(cfg)
+	if got := RoutedIfaceMarks("b4fam0"); len(got) != 1 {
+		t.Fatalf("marks for b4fam0 %#x after the next sync, want the set's again", got)
+	}
+
+	cfg.Sets = nil
+	RoutingSyncConfig(cfg)
+	if got := RoutedIfaceMarks("b4fam0"); len(got) != 0 {
+		t.Fatalf("marks for b4fam0 %#x after the set was removed, want none", got)
+	}
+}
+
+func TestADNSAnswerThatInstallsASetPublishesItsMark(t *testing.T) {
+	if !hasBinary("ip") {
+		t.Skip("RoutingHandleDNS gives up before it touches a set when the ip binary is missing")
+	}
+	familyResetGlobals(t)
+
+	set := familyTestSet()
+	cfg := queueMarkTestConfig(0x8000)
+	cfg.Sets = []*config.SetConfig{set}
+	routeEngine = &mockRouteBackend{}
+	RoutingHandleDNS(cfg, set, []net.IP{net.ParseIP("198.51.100.9")})
+
+	if _, ok := routeRuleCache[set.Id]; !ok {
+		t.Fatal("the DNS answer did not install the set")
+	}
+	if got := RoutedIfaceMarks("b4fam0"); len(got) != 1 || got[0] != 0x7e10 {
+		t.Fatalf("marks for b4fam0 %#x, want the set's 0x7e10 once a DNS answer installed it", got)
 	}
 }

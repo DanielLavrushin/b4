@@ -9,6 +9,7 @@ import { useDeviceNames } from "@hooks/useDeviceNames";
 import type { BlockedEntry } from "@models/metrics";
 import { useMetricsFrame } from "@/stores/useMetrics";
 import { Ago } from "./Ago";
+import { deviceTrafficLink, macDeviceLabel } from "./deviceLabel";
 import { PanelCard } from "./PanelCard";
 import { ShowMore, visibleRows } from "./ShowMore";
 import { formatSince } from "./format";
@@ -23,18 +24,6 @@ interface BlockedRowProps {
   meta?: string;
   tip?: ReactNode;
   to?: string;
-}
-
-function DeviceTip({ mac, vendor }: { mac: string; vendor: string }) {
-  const { t } = useTranslation();
-  return (
-    <Box sx={{ fontSize: 12, lineHeight: 1.5 }}>
-      <Box sx={{ fontFamily: fonts.mono, fontSize: 11 }}>
-        {t("dashboard.blocked.mac", { value: mac })}
-      </Box>
-      {vendor && <Box>{vendor}</Box>}
-    </Box>
-  );
 }
 
 const BlockedRow = memo(function BlockedRow({ entry, name, meta, tip, to }: BlockedRowProps) {
@@ -189,7 +178,7 @@ function BlockedList({ title, empty, entries, render }: BlockedListProps) {
 function BlockedPanelView() {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
-  const { deviceMap, getDeviceName } = useDeviceNames();
+  const { findDevice } = useDeviceNames();
   const hasFrame = useMetricsFrame(() => true) ?? false;
   const blockedDns = useMetricsFrame((f) => f.totals.blocked_dns) ?? 0;
   const blockedConns = useMetricsFrame((f) => f.totals.blocked_conns) ?? 0;
@@ -247,23 +236,10 @@ function BlockedPanelView() {
           title={t("dashboard.blocked.devices")}
           empty={t("dashboard.blocked.noDevices", { time: since })}
           entries={devices}
-          render={(entry) => {
-            const mac = entry.key;
-            const device = deviceMap[mac];
-            const name = getDeviceName(mac);
-            const vendor =
-              device?.vendor && device.vendor !== "Private" && !name.includes(device.vendor)
-                ? device.vendor
-                : "";
-            const showsMac = name.includes(mac);
-            const meta = device?.ip || (showsMac ? undefined : mac);
-            return {
-              name,
-              meta,
-              tip: showsMac || meta === mac ? undefined : <DeviceTip mac={mac} vendor={vendor} />,
-              to: `/traffic?device=${encodeURIComponent(mac)}`,
-            };
-          }}
+          render={(entry) => ({
+            ...macDeviceLabel(entry.key, findDevice(entry.key)),
+            to: deviceTrafficLink(entry.key),
+          })}
         />
       </Box>
     </PanelCard>

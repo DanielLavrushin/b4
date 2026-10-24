@@ -9,6 +9,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 )
 
 const (
@@ -119,17 +120,20 @@ func dnsTypeName(qtype uint16) string {
 }
 
 func (w *Worker) applyPinnedAnswer(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, pinned []byte) string {
-	action, _ := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
+	action, _ := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned, true)
 	return action
 }
 
-func (w *Worker) applyPinnedAnswerAwait(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, pinned []byte) (string, []<-chan struct{}) {
+func (w *Worker) applyPinnedAnswerAwait(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, pinned []byte, learn bool) (string, []<-chan struct{}) {
 	ips := dns.ParseResponseIPs(pinned)
 	if len(ips) == 0 {
 		return dnsActionPinEmpty, nil
 	}
 	w.storeHostHints(clientIP, set, domain, ips)
-	routeWaits, _ := learnAnswerAwait(cfg, set, ips)
+	var routeWaits []<-chan struct{}
+	if learn {
+		routeWaits, _ = learnAnswerAwait(cfg, set, ips)
+	}
 	log.Infof("DNS pin: answering %s with %s (set: %s)", domain, ips[0], set.Name)
 	return dnsActionPin, routeWaits
 }
@@ -161,10 +165,10 @@ func (w *Worker) handleSynHealth(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return false
 	}
 
-	host := w.hostForDest(cfg, pkt.srcStr, pkt.dstStr, pkt.srcMac)
+	host, hostTLS, hostIP := w.hostForDest(cfg, pkt.srcStr, pkt.dstStr, pkt.srcMac, vc.scope.filter())
 
 	if set.Escalate.Active() && host != "" {
-		if next := w.tryEscalate(cfg, set, host, pkt.srcMac, pkt.dst, escalateReasonDeadIP); next != nil {
+		if next := w.tryEscalate(cfg, set, host, pkt.srcMac, pkt.dst, escalateReasonDeadIP, hostTLS, hostIP, vc.scope); next != nil {
 			log.LogConnection("TCP", set.Name, host, pkt.srcStr, sport, "", pkt.dstStr, dport, pkt.srcMac, "", "escalate->"+next.Name)
 		}
 	}
@@ -186,14 +190,12 @@ func (w *Worker) handleSynHealth(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	return true
 }
 
-func (w *Worker) hostForDest(cfg *config.Config, clientIP, destIP, srcMac string) string {
+func (w *Worker) hostForDest(cfg *config.Config, clientIP, destIP, srcMac string, keep ...sni.SetFilter) (string, uint16, uint8) {
 	if w == nil {
-		return ""
+		return "", 0, 0
 	}
-	if _, host := w.lookupHostHint(cfg, clientIP, destIP, srcMac); host != "" {
-		return host
-	}
-	return ""
+	_, host, tlsVersion, ipVersion := w.lookupHostHint(cfg, clientIP, destIP, srcMac, keep...)
+	return host, tlsVersion, ipVersion
 }
 
 func (w *Worker) recordDestAlive(serverIP, clientIP string, isSynAck bool) {
@@ -222,11 +224,11 @@ func (w *Worker) healingSet(cfg *config.Config, set *config.SetConfig) bool {
 	return ibd.Enabled && ibd.HealDNS
 }
 
-func (w *Worker) filterDNSAnswer(cfg *config.Config, set *config.SetConfig, domain, clientMac string, resp []byte, overTCP bool) ([]byte, string, *config.SetConfig) {
+func (w *Worker) filterDNSAnswer(cfg *config.Config, set *config.SetConfig, domain, clientMac string, resp []byte, overTCP bool, from ...*ingressScope) ([]byte, string, *config.SetConfig) {
 	if w == nil || len(resp) == 0 {
 		return nil, "", nil
 	}
-	if echless, actor := w.stripECHKeys(cfg, set, domain, clientMac, resp, overTCP, false); echless != nil {
+	if echless, actor := w.stripECHKeys(cfg, set, domain, clientMac, resp, overTCP, false, from...); echless != nil {
 		return echless, dnsActionECHStripped, actor
 	}
 

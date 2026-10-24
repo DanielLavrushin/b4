@@ -85,10 +85,11 @@ function SetEditorRoute({
     }
     return map;
   }, [sets, id]);
-  const defaultSet = useMemo(
-    () => createDefaultSet(sets.length),
-    [sets.length],
-  );
+  const defaultSet = useMemo(() => {
+    const created = createDefaultSet(sets.length);
+    created.name = i18n.t("sets.editor.defaultName", { n: sets.length + 1 });
+    return created;
+  }, [sets.length]);
   const set = isNew ? defaultSet : existingSet;
 
   usePageTitleDetail(isNew ? t("sets.editor.newSet") : existingSet?.name);

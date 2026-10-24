@@ -567,12 +567,20 @@ func TestCopiesWithAForeignMarkSharingTheNoDPIBitAreActedOn(t *testing.T) {
 	stubRouteAwait(t)
 	r := newCopyRig(t, nil, copyPinSet())
 
-	for i, mark := range []uint32{0x0ffffaaa, 0x4d616769, config.SelfDialNoDPIBit} {
-		p := copyOf(copyHookOutput, rigWAN, rigOutside, uint16(50200+i), dns.BuildQuery("pin.example.com", uint16(0x300+i), dnsTypeA))
-		p.Mark = mark
+	for i, c := range []struct {
+		hook uint8
+		src  string
+		mark uint32
+	}{
+		{nfHookForward, rigDevice, keeneticHotspotMark},
+		{copyHookOutput, rigWAN, 0x4d616769},
+		{copyHookOutput, rigWAN, config.SelfDialNoDPIBit},
+	} {
+		p := copyOf(c.hook, c.src, rigOutside, uint16(50200+i), dns.BuildQuery("pin.example.com", uint16(0x300+i), dnsTypeA))
+		p.Mark = c.mark
 		r.read(p)
 		if got := r.l.stats.claimsAnswer.Load(); got != uint64(i+1) {
-			t.Fatalf("claims_answer = %d after a copy marked 0x%x: another program's mark that only shares bit 0x%x with b4's own dials must still be acted on", got, mark, config.SelfDialNoDPIBit)
+			t.Fatalf("claims_answer = %d after a copy marked 0x%x: another program's mark that only shares bit 0x%x with b4's own dials must still be acted on", got, c.mark, config.SelfDialNoDPIBit)
 		}
 	}
 
@@ -581,6 +589,43 @@ func TestCopiesWithAForeignMarkSharingTheNoDPIBitAreActedOn(t *testing.T) {
 	r.read(p)
 	if got := r.l.stats.ignored.Load(); got != 1 {
 		t.Fatalf("copies_ignored = %d: b4's own no-DPI dial must stay ignored when another program adds routing bits to its mark", got)
+	}
+}
+
+func TestALocalCopyCarryingEveryQueueMarkBitIsIgnored(t *testing.T) {
+	stubRouteAwait(t)
+	r := newCopyRig(t, nil, copyPinSet())
+	q := uint32(r.cfg.Queue.Mark)
+
+	local := []uint32{q | 0x10000, q | 0x400000, keeneticHotspotMark}
+	for i, mark := range local {
+		p := copyOf(copyHookOutput, rigWAN, rigOutside, uint16(50400+i), dns.BuildQuery("pin.example.com", uint16(0x400+i), dnsTypeA))
+		p.Mark = mark
+		r.read(p)
+		if live := r.l.claims.live.Load(); live != 0 {
+			t.Fatalf("a copy the router sent with mark 0x%x was acted on: a local packet with every queue-mark bit is b4's own, as before the exact queue-mark match", mark)
+		}
+	}
+	if got := r.l.stats.ignored.Load(); got != uint64(len(local)) {
+		t.Fatalf("copies_ignored = %d, want %d", got, len(local))
+	}
+
+	for i, c := range []struct {
+		hook uint8
+		dst  string
+		mark uint32
+	}{
+		{nfHookForward, rigOutside, q | 0x10000},
+		{nfHookForward, rigOutside, keeneticHotspotMark},
+		{copyHookInput, rigRouter, q | 0x10000},
+		{copyHookInput, rigRouter, keeneticHotspotMark},
+	} {
+		p := copyOf(c.hook, rigDevice, c.dst, uint16(50500+i), dns.BuildQuery("pin.example.com", uint16(0x500+i), dnsTypeA))
+		p.Mark = c.mark
+		r.read(p)
+		if got := r.l.stats.claimsAnswer.Load(); got != uint64(i+1) {
+			t.Fatalf("claims_answer = %d after a copy from hook %d marked 0x%x: a device's query has no local socket, so another service's mark must not hide it", got, c.hook, c.mark)
+		}
 	}
 }
 

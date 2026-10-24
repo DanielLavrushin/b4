@@ -1,5 +1,5 @@
 import { Grid } from "@mui/material";
-import { B4SetConfig, MSSClampConfig, QueueConfig } from "@models/config";
+import { B4SetConfig, MSSClampConfig } from "@models/config";
 import {
   B4Slider,
   B4RangeSlider,
@@ -9,18 +9,18 @@ import {
   B4Hint,
 } from "@b4.elements";
 import { B4Switch } from "@common/B4Switch";
-import { useTranslation } from "react-i18next";
+import { portFilterCovers } from "@utils";
+import { Trans, useTranslation } from "react-i18next";
 
 interface TcpGeneralProps {
   config: B4SetConfig;
-  queue: QueueConfig;
   onChange: (
     field: string,
     value: string | number | boolean | number[],
   ) => void;
 }
 
-export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
+export const TcpGeneral = ({ config, onChange }: TcpGeneralProps) => {
   const { t } = useTranslation();
   const dup = config.tcp.duplicate ?? { enabled: false, count: 3 };
   const ibd = {
@@ -46,28 +46,21 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
     (config.targets?.asns?.length ?? 0) > 0;
   const hasMACScope = (config.targets?.source_devices?.length ?? 0) > 0;
   const mssScopeOk = hasIPScope || hasMACScope;
+  const hasDestinationTargets =
+    hasIPScope ||
+    (config.targets?.sni_domains?.length ?? 0) > 0 ||
+    (config.targets?.geosite_categories?.length ?? 0) > 0;
+  const hasPortFilter = (config.tcp.dport_filter ?? "").trim() !== "";
+  const portFilterSkipsHttps =
+    hasDestinationTargets &&
+    hasPortFilter &&
+    !portFilterCovers(config.tcp.dport_filter, 443);
+  const portFilterBlocksL7 =
+    hasPortFilter && (config.udp.filter_l7 ?? []).length > 0;
 
   return (
     <>
       <Grid container spacing={3} sx={{ mt: 1, mb: 3 }}>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Slider
-            label={t("sets.tcp.general.connPacketsLimit")}
-            value={config.tcp.conn_bytes_limit}
-            path="tcp.conn_bytes_limit"
-            onChange={(value: number) =>
-              onChange("tcp.conn_bytes_limit", value)
-            }
-            min={1}
-            max={queue.tcp_conn_bytes_limit}
-            step={1}
-            helperText={t("sets.tcp.general.connPacketsMax", {
-              max: queue.tcp_conn_bytes_limit,
-            })}
-            aiTopic="tcp.conn_bytes_limit"
-            aiContext={{ queue_max: queue.tcp_conn_bytes_limit }}
-          />
-        </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4RangeSlider
             value={[
@@ -82,7 +75,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             min={0}
             max={1000}
             step={10}
-            valueSuffix=" ms"
+            valueSuffix={t("core.units.ms")}
             helperText={t("sets.tcp.general.seg2delayHelper")}
             aiTopic="tcp.seg2delay"
           />
@@ -98,6 +91,16 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
             helperText={t("sets.tcp.general.portFilterHelper")}
             aiTopic="tcp.dport_filter"
           />
+          {portFilterSkipsHttps && (
+            <B4Alert severity="warning" sx={{ mt: 1 }}>
+              <Trans i18nKey="sets.tcp.general.portFilterNoHttps" />
+            </B4Alert>
+          )}
+          {portFilterBlocksL7 && (
+            <B4Alert severity="warning" sx={{ mt: 1 }}>
+              <Trans i18nKey="sets.tcp.general.portFilterL7" />
+            </B4Alert>
+          )}
         </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
@@ -258,7 +261,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
                 min={1000}
                 max={10000}
                 step={500}
-                valueSuffix=" ms"
+                valueSuffix={t("core.units.ms")}
                 helperText={t("sets.tcp.general.ibdTimeoutHelper")}
               />
             </Grid>
@@ -275,7 +278,7 @@ export const TcpGeneral = ({ config, queue, onChange }: TcpGeneralProps) => {
                   min={10}
                   max={600}
                   step={10}
-                  valueSuffix=" s"
+                  valueSuffix={t("core.units.s")}
                   helperText={t("sets.tcp.general.ibdHealTtlHelper")}
                   aiTopic="tcp.ip_block_detect.heal_ttl_sec"
                 />

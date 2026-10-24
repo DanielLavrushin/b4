@@ -10,6 +10,7 @@ var (
 	proxyOpenProvider      atomic.Pointer[func() map[string]int64]
 	setsProvider           atomic.Pointer[func() ([]SetMeta, int)]
 	overloadProvider       atomic.Pointer[func() (uint64, uint64, uint64)]
+	macProvider            atomic.Pointer[func(ip string) string]
 )
 
 func SetPacketCounterProvider(fn func() uint64) {
@@ -68,6 +69,14 @@ func SetOverloadProvider(fn func() (injectSkipped, rawSendDropped, queueOverflow
 	overloadProvider.Store(&fn)
 }
 
+func SetMACProvider(fn func(ip string) string) {
+	if fn == nil {
+		macProvider.Store(nil)
+		return
+	}
+	macProvider.Store(&fn)
+}
+
 func loadPacketCounter() (uint64, bool) {
 	if fn := packetCounterProvider.Load(); fn != nil {
 		return (*fn)(), true
@@ -116,6 +125,13 @@ func loadOverload() [3]uint64 {
 		return [3]uint64{a, b, c}
 	}
 	return [3]uint64{}
+}
+
+func loadMAC(ip string) string {
+	if fn := macProvider.Load(); fn != nil {
+		return (*fn)(ip)
+	}
+	return ""
 }
 
 func loadMTProto() *MTProtoStats {

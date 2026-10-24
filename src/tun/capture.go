@@ -80,6 +80,10 @@ func (r *routeManager) setupPortCapture(srcIP string) error {
 		r.conflicts = r.warnOnSteerConflicts()
 	}
 	r.multiport = iptablesMatchSupported([]string{"-p", "tcp", "-m", "multiport", "--dports", "80,443", "-j", "ACCEPT"})
+	r.ctdirOK = iptablesMatchSupported([]string{"-p", "tcp", "-m", "conntrack", "--ctdir", "ORIGINAL", "-j", "ACCEPT"})
+	if !r.ctdirOK {
+		log.Infof("TUN: xt_conntrack not available; the capture rules select TCP packets by port alone, not by conntrack direction")
+	}
 	r.ensureCaptureChain()
 	r.rebuildCaptureChain()
 	r.ensureCaptureJumps()
@@ -528,20 +532,30 @@ func (r *routeManager) dnsSteerSpecs() [][]string {
 	}
 }
 
+func (r *routeManager) ctdirMatch(dir string) []string {
+	if !r.ctdirOK {
+		return nil
+	}
+	return []string{"-m", "conntrack", "--ctdir", dir}
+}
+
 func (r *routeManager) replySteerSpecs() [][]string {
 	mark := []string{"-j", "MARK", "--set-xmark", r.steerMarkStr()}
+	reply := r.ctdirMatch("REPLY")
 	var specs [][]string
 	if !r.replyCapture {
 		return specs
 	}
 	if r.multiport {
 		for _, chunk := range chunkPorts(r.tcpPorts, 15) {
-			specs = append(specs, append([]string{"-p", "tcp", "-m", "multiport", "--sports", strings.Join(chunk, ","), "--tcp-flags", "RST", "RST"}, mark...))
+			spec := append([]string{"-p", "tcp", "-m", "multiport", "--sports", strings.Join(chunk, ","), "--tcp-flags", "RST", "RST"}, reply...)
+			specs = append(specs, append(spec, mark...))
 		}
 		return specs
 	}
 	for _, p := range r.tcpPorts {
-		specs = append(specs, append([]string{"-p", "tcp", "--sport", p, "--tcp-flags", "RST", "RST"}, mark...))
+		spec := append([]string{"-p", "tcp", "--sport", p, "--tcp-flags", "RST", "RST"}, reply...)
+		specs = append(specs, append(spec, mark...))
 	}
 	return specs
 }
@@ -549,6 +563,7 @@ func (r *routeManager) replySteerSpecs() [][]string {
 func (r *routeManager) steerSpecs() [][]string {
 	steer := r.steerMarkStr()
 	mark := []string{"-j", "MARK", "--set-xmark", steer}
+	original := r.ctdirMatch("ORIGINAL")
 	tcpRange := fmt.Sprintf("0:%d", r.tcpLimit)
 	udpRange := fmt.Sprintf("0:%d", r.udpLimit)
 
@@ -563,6 +578,7 @@ func (r *routeManager) steerSpecs() [][]string {
 	if r.multiport {
 		for _, chunk := range chunkPorts(r.tcpPorts, 15) {
 			spec := append([]string{"-p", "tcp", "-m", "multiport", "--dports", strings.Join(chunk, ",")}, cb(tcpRange)...)
+			spec = append(spec, original...)
 			specs = append(specs, append(spec, mark...))
 		}
 		for _, chunk := range chunkPorts(r.udpPorts, 15) {
@@ -572,6 +588,7 @@ func (r *routeManager) steerSpecs() [][]string {
 	} else {
 		for _, p := range r.tcpPorts {
 			spec := append([]string{"-p", "tcp", "--dport", p}, cb(tcpRange)...)
+			spec = append(spec, original...)
 			specs = append(specs, append(spec, mark...))
 		}
 		for _, p := range r.udpPorts {
@@ -596,16 +613,19 @@ func (r *routeManager) dupSteerSpecs(mark []string) [][]string {
 		}
 	}
 
+	original := r.ctdirMatch("ORIGINAL")
 	var specs [][]string
 	for _, dst := range dests {
 		if r.multiport {
 			for _, chunk := range chunkPorts(r.tcpPorts, 15) {
 				spec := append(append([]string{"-p", "tcp"}, dst...), "-m", "multiport", "--dports", strings.Join(chunk, ","))
+				spec = append(spec, original...)
 				specs = append(specs, append(spec, mark...))
 			}
 		} else {
 			for _, p := range r.tcpPorts {
 				spec := append(append([]string{"-p", "tcp"}, dst...), "--dport", p)
+				spec = append(spec, original...)
 				specs = append(specs, append(spec, mark...))
 			}
 		}

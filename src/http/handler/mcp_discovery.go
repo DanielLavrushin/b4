@@ -16,6 +16,7 @@ import (
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/tables"
 	"github.com/daniellavrushin/b4/utils"
 	"github.com/daniellavrushin/b4/watchdog"
 	"github.com/google/uuid"
@@ -25,6 +26,7 @@ import (
 const (
 	mcpDiscoveryMaxDomains = 5
 	mcpDiscoveryMaxGroups  = 20
+	mcpRulesChangedNote    = "the run was stopped because the firewall rules it depends on changed during it, so its results could come from another network path"
 )
 
 var (
@@ -93,8 +95,12 @@ type mcpSuiteSnapshot struct {
 		Set          *config.SetConfig `json:"set"`
 	} `json:"strategy_groups"`
 	SetId          string                `json:"set_id"`
+	DSCP           *int                  `json:"dscp"`
+	DSCPIPVersion  string                `json:"dscp_ip_version"`
+	DSCPPath       *config.DSCPPath      `json:"dscp_path"`
 	SetVerdict     *discovery.SetVerdict `json:"set_verdict"`
 	StoppedCovered bool                  `json:"stopped_covered"`
+	RulesChanged   bool                  `json:"rules_changed"`
 }
 
 func mcpSuiteProjection(suite *discovery.CheckSuite) (*mcpSuiteSnapshot, error) {
@@ -326,7 +332,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	cfg := api.getCfg()
 	if !cfg.System.WebServer.MCP.AllowActiveProbes {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf(
-			"active probes are disabled: a discovery run is the heaviest traffic b4 can generate, so it needs 'Allow active probes' under Settings -> Integrations -> MCP server")
+			"active probes are disabled: a discovery run is the heaviest traffic b4 can generate, so it needs %s", mcpNeedsSwitch("'Allow active probes'"))
 	}
 	var target *config.SetConfig
 	if ref := strings.TrimSpace(in.Set); ref != "" {
@@ -374,6 +380,7 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		}
 		opts.SetId = target.Id
 		opts.SetStrategy = discovery.SetRunStrategy(target)
+		opts.DSCP = cfg.ProbeDSCP(target)
 		opts.StopWhenCovered = true
 		opts.TLSVersion, opts.IPVersion = discovery.SetRunVersions(target, "", "")
 	}
@@ -410,7 +417,21 @@ func (api *API) mcpDiscoveryStart(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 				"While it runs, the watchdog cannot heal and a firewall refresh will block.",
 			target.Name, strings.Join(urls, ", "), target.Name)
 	}
+	out.Note = mcpWithProbeDSCP(out.Note, suite.DSCP, suite.DSCPIPVersion)
 	return nil, out, nil
+}
+
+func mcpWithProbeDSCP(note string, dscp *int, only string) string {
+	if dscp == nil {
+		return note
+	}
+	if note != "" && !strings.HasSuffix(note, ".") {
+		note += "."
+	}
+	if only != "" {
+		return note + fmt.Sprintf(" The IPv%s probes carry DSCP %d, the set's own value; the other probes carry none, like the set's own traffic of that IP version, so every probe takes the path the set's traffic takes.", only, *dscp)
+	}
+	return note + fmt.Sprintf(" The probes carry DSCP %d, the set's own value, so they take the path the set's traffic takes.", *dscp)
 }
 
 var mcpURLStart = regexp.MustCompile("^[\"'`]*[A-Za-z][A-Za-z0-9+.-]*://")
@@ -595,7 +616,7 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 	switch {
 	case record != nil:
 		out.SetVerdict = mcpSetVerdictView(cfg, record.SetId, &record.Verdict, false)
-		out.Note += " This run was for a set: " + out.SetVerdict.Meaning
+		out.Note = mcpWithProbeDSCP(out.Note+" This run was for a set: "+out.SetVerdict.Meaning, record.DSCP, record.DSCPIPVersion)
 	case len(out.Domains) == 0:
 		out.Note = "no run is in progress and nothing has been discovered yet"
 	case applicable > 0:
@@ -757,6 +778,9 @@ func (api *API) mcpDiscoverySuiteStatus(snap *mcpSuiteSnapshot) (*mcp.CallToolRe
 		}
 	case discovery.CheckStatusCanceled:
 		out.Note = "the run was cancelled; any results below are partial"
+		if snap.RulesChanged {
+			out.Note = mcpRulesChangedNote + ", so none of its results can be applied; start it again"
+		}
 	default:
 		applicable := 0
 		for _, d := range out.Domains {
@@ -782,6 +806,7 @@ func (api *API) mcpDiscoverySuiteStatus(snap *mcpSuiteSnapshot) (*mcp.CallToolRe
 	if discovery.CheckStatus(snap.Status) == discovery.CheckStatusCanceled && out.SetVerdict != nil {
 		out.Note += ". " + out.SetVerdict.Meaning
 	}
+	out.Note = mcpWithProbeDSCP(out.Note, snap.DSCP, snap.DSCPIPVersion)
 	return nil, out, nil
 }
 
@@ -804,8 +829,7 @@ func (api *API) mcpDiscoveryCancel(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 
 func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDiscoveryOut, error) {
 	if !api.getCfg().System.WebServer.MCP.AllowWrites {
-		return nil, mcpDiscoveryOut{}, fmt.Errorf(
-			"configuration writes are disabled: turn on 'Allow configuration changes' under Settings -> Integrations -> MCP server to permit them")
+		return nil, mcpDiscoveryOut{}, errMCPWritesOff
 	}
 	var target *config.SetConfig
 	if ref := strings.TrimSpace(in.Set); ref != "" {
@@ -840,6 +864,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	}
 
 	var chosen *config.SetConfig
+	var dscpPath *config.DSCPPath
 	var preset string
 	var groupDomains []string
 	suiteID := id
@@ -856,12 +881,16 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		switch status {
 		case discovery.CheckStatusComplete:
 		case discovery.CheckStatusCanceled:
+			if snap.RulesChanged {
+				return nil, mcpDiscoveryOut{}, fmt.Errorf("%s, so none of its results can be applied. Start it again", mcpRulesChangedNote)
+			}
 			unconfirmed = true
 		default:
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
 				"that run is %s, so it holds nothing settled to apply. Call action=status, and action=cancel if you want to stop it and keep what it has found", status)
 		}
 		suiteID = snap.Id
+		dscpPath = snap.DSCPPath
 		for _, di := range snap.Domains {
 			mcpRememberCheckURL(checkURLs, di.Domain, di.CheckURL)
 		}
@@ -907,6 +936,9 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
 				"the saved run found no working strategy for %s, so there is nothing to apply. Run discovery for it again", domain)
 		}
+		if entry.RulesChanged {
+			return nil, mcpDiscoveryOut{}, fmt.Errorf("%s, so its result for %s cannot be applied. Run discovery for it again", mcpRulesChangedNote, domain)
+		}
 		unconfirmed = entry.Status == discovery.CheckStatusCanceled || entry.Confirmed == 0
 		chosen = entry.ApplicableSet()
 		if chosen == nil {
@@ -914,6 +946,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 				"the saved result for %s predates b4 recording the set it built, so only the summary survives. Run discovery for it again", domain)
 		}
 		preset = entry.BestPreset
+		dscpPath = entry.DSCPPath
 		groupDomains = chosen.Targets.SNIDomains
 		if len(groupDomains) == 0 {
 			groupDomains = []string{domain}
@@ -982,6 +1015,9 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	newCfg.Sets = append([]*config.SetConfig{&set}, newCfg.Sets...)
 	api.loadTargetsForSetCached(&set)
 
+	if err := mcpDSCPPathRefusal(newCfg, &set, chosen, dscpPath, "Run discovery for it again"); err != nil {
+		return nil, mcpDiscoveryOut{}, err
+	}
 	if err := mcpValidateCandidate(oldCfg, newCfg); err != nil {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("rejected: %w", err)
 	}
@@ -1044,6 +1080,7 @@ type mcpSetRun struct {
 	status         discovery.CheckStatus
 	verdict        *discovery.SetVerdict
 	stoppedCovered bool
+	dscpPath       *config.DSCPPath
 	source         string
 }
 
@@ -1067,6 +1104,7 @@ func (api *API) mcpSetRunFor(id string, explicit bool, target *config.SetConfig)
 					status:         discovery.CheckStatus(strings.ToLower(snap.Status)),
 					verdict:        snap.SetVerdict,
 					stoppedCovered: snap.StoppedCovered,
+					dscpPath:       snap.DSCPPath,
 					source:         "run",
 				}, true, nil
 			}
@@ -1092,7 +1130,20 @@ func (api *API) mcpSetRunFor(id string, explicit bool, target *config.SetConfig)
 		status = discovery.CheckStatusCanceled
 	}
 	verdict := rec.Verdict
-	return mcpSetRun{setID: rec.SetId, suiteID: rec.SuiteId, status: status, verdict: &verdict, source: "history"}, true, nil
+	return mcpSetRun{setID: rec.SetId, suiteID: rec.SuiteId, status: status, verdict: &verdict, dscpPath: rec.DSCPPath, source: "history"}, true, nil
+}
+
+func mcpDSCPPathRefusal(cfg *config.Config, set, tested *config.SetConfig, path *config.DSCPPath, again string) error {
+	change, err := discovery.DSCPPathChanged(cfg, set, tested, path, discoveryDSCPStamp)
+	switch {
+	case errors.Is(err, tables.ErrDiscoveryDSCPPending):
+		return fmt.Errorf("nothing written: %s", errDSCPRulesPending)
+	case err != nil:
+		return fmt.Errorf("nothing written: %w", err)
+	case change != nil:
+		return fmt.Errorf("nothing written: %s. %s", change.Error(), again)
+	}
+	return nil
 }
 
 func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bool) (*mcp.CallToolResult, mcpDiscoveryOut, error) {
@@ -1145,6 +1196,9 @@ func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bo
 	live := newCfg.GetSetById(target.Id)
 	if live == nil {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("set %q disappeared before the write", target.Name)
+	}
+	if err := mcpDSCPPathRefusal(newCfg, live, v.Set, run.dscpPath, "Start the run again"); err != nil {
+		return nil, mcpDiscoveryOut{}, err
 	}
 	live.AdoptStrategy(v.Set)
 	if pins := v.CoveredPins(); len(pins) > 0 {

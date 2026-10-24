@@ -6,6 +6,8 @@ import {
   MenuItem,
   SelectProps,
   FormHelperText,
+  Stack,
+  Typography,
 } from "@mui/material";
 import { colors } from "@design";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
@@ -13,9 +15,16 @@ import { useChangedField, useChangedFields } from "@context/ChangedFieldsContext
 import { useEffect } from "react";
 import { useFieldLabel } from "./dialogLabels";
 
+interface B4SelectOption {
+  value: string | number;
+  label: string;
+  note?: string;
+  disabled?: boolean;
+}
+
 interface B4SelectProps extends Omit<SelectProps<string | number>, "variant"> {
   label?: string;
-  options: { value: string | number; label: string }[];
+  options: B4SelectOption[];
   helperText?: string;
   path?: string;
   aiTopic?: string;
@@ -88,8 +97,38 @@ export const B4Select = ({
         }}
       >
         {options.map((option) => (
-          <MenuItem key={option.value} value={option.value}>
-            {option.label}
+          <MenuItem
+            key={option.value}
+            value={option.value}
+            disabled={option.disabled}
+            sx={
+              option.note
+                ? { whiteSpace: "normal", "&.Mui-disabled": { opacity: 1 } }
+                : undefined
+            }
+          >
+            {option.note ? (
+              <Stack>
+                <Box
+                  component="span"
+                  sx={
+                    option.disabled
+                      ? { color: colors.text.disabled }
+                      : undefined
+                  }
+                >
+                  {option.label}
+                </Box>
+                <Typography
+                  variant="caption"
+                  sx={{ color: colors.text.secondary }}
+                >
+                  {option.note}
+                </Typography>
+              </Stack>
+            ) : (
+              option.label
+            )}
           </MenuItem>
         ))}
       </Select>

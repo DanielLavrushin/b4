@@ -303,7 +303,7 @@ func TestDNSQueryCopyDiagnostics(t *testing.T) {
 }
 
 func TestNFLOGModuleRowsOnlyWhereDNSQueriesAreCopiedOrHeldAfterConntrack(t *testing.T) {
-	base := []string{"xt_NFQUEUE", "nfnetlink_queue", "xt_connbytes", "xt_multiport", "nf_conntrack"}
+	base := []string{"xt_NFQUEUE", "nfnetlink_queue", "xt_connbytes", "xt_conntrack", "xt_multiport", "nf_conntrack", "nf_conntrack_netlink"}
 	withNFLOG := append(slices.Clone(base), "xt_NFLOG", "nfnetlink_log")
 	for _, tc := range []struct {
 		name    string

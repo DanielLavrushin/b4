@@ -41,7 +41,7 @@ The sub-tab sends the set's traffic through a network interface or a SOCKS5 prox
 | **Source Interfaces** | Limits the set to traffic that arrives on the selected interfaces, such as the LAN bridge. See [Which interface is which](../guides/interfaces.md). | None, every interface |
 | **Resolved IP TTL (seconds)** | How long an address learned for the set's domains stays in the set. IP targets stay as long as the set lists them. | `3600` |
 
-Routing matches destination addresses: the set's IP, CIDR, GeoIP and ASN targets, and the addresses b4 learns for its domains. A set with no domain, IP or ASN target routes nothing, and the tab warns about it. [Source Devices](./targets.md#source-devices) only limit whose traffic the set takes: routing everything a device sends also needs **Match any IP address** under **Targets > Bypass IPs**.
+Routing matches destination addresses: the set's IP, CIDR, GeoIP and ASN targets, and the addresses b4 learns for its domains. A set with no domain, IP or ASN target routes nothing, and the tab warns about it. The exception is block routing on a set that [handles only calls](./udp.md#protocol-selection): it blocks the calls the set takes. [Source Devices](./targets.md#source-devices) only limit whose traffic the set takes: routing everything a device sends also needs **Match any IP address** under **Targets > Bypass IPs**.
 
 ### Network interface {#output-interface}
 

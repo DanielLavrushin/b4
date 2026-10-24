@@ -69,14 +69,14 @@ With IPv6 support off, a targeted site that also answers over IPv6 can be reache
 | **Queue Start Number** | The first NFQUEUE number b4 reads. Another value is needed only when another program uses the same numbers. | `537` |
 | **Packet Mark** | The mark on the packets b4 sends itself, such as fakes, so that they pass its processing unchanged. See [Packet marks](../guides/marks.md#the-queue-mark). | `32768` |
 | **Worker Threads** | How many workers process packets in parallel, from 1 to 16. | `4` |
-| **TCP Connection Packets Limit** | How many packets at the start of each TCP connection reach b4, up to 100. A set can lower it, not raise it. | `19` |
-| **UDP Connection Packets Limit** | The same for UDP, up to 30. | `8` |
+| **TCP Connection Packets Limit** | How many packets at the start of each TCP connection reach b4, up to 100. The limit applies to every set. | `19` |
+| **UDP Connection Packets Limit** | The same for UDP, up to 30, for every set. | `8` |
 
 ## Devices {#device-filtering}
 
 The **Device Filtering** card limits DPI bypass to selected devices, or excludes selected devices from it. [Applying b4 to selected devices](../guides/devices.md) explains what the filter covers and how to set it up.
 
-![The Devices sub-tab](/img/core/20261003230200.png)
+![The Devices sub-tab](/img/core/20261023183400.png)
 
 | Field | What it does | Default |
 | --- | --- | --- |
@@ -86,15 +86,17 @@ The **Device Filtering** card limits DPI bypass to selected devices, or excludes
 
 ### Available Devices {#device-table}
 
-While filtering is on, the card lists the devices from the router's ARP table and those added by hand.
+While filtering is on, the card lists the devices from the router's ARP table and those added by hand. A device that has left the network stays in the list as long as b4 keeps a name, a selection or an MSS value for it, or a set uses it as a source device.
 
 | Column | What it shows |
 | --- | --- |
 | Checkbox | Selects the device. |
 | **MAC Address** | The MAC address, or **matched by IP** for a device added by hand. |
-| **IP** | The current address. **manual** marks a device added by hand, **offline** a named device not on the network now. |
-| **Name** | The name set with the edit icon, otherwise the vendor. |
+| **IP** | The current address. **manual** marks a device added by hand, **offline** a device not on the network now. |
+| **Name** | The name set with the edit icon, otherwise the vendor. Saving an empty field removes the name. |
 | **MSS** | An MSS clamp for the device's TCP connections to port 443, from 10 to 1460. Applies whether or not filtering is on. |
+
+An offline device has a **Forget device** icon next to its name, and **Forget offline** above the list forgets several of them at once. Forgetting deletes the name, selection and MSS value b4 keeps for the device and removes it from the [source devices](../sets/targets.md#source-devices) of every set. The change applies when the settings are saved. A forgotten device that connects again appears as a new device.
 
 ### Manual Devices {#manual-devices}
 

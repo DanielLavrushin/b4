@@ -27,6 +27,8 @@ type Engine struct {
 	tunName       string
 	routes        *routeManager
 	limiter       *firstNLimiter
+	conntrack     conntrackDeleter
+	holds         flowHoldCounters
 	sender        *sock.Sender
 	clientSender  *sock.Sender
 	trigger       chan struct{}
@@ -153,14 +155,12 @@ func (e *Engine) Start() error {
 		log.Infof("TUN: reply-direction RST capture enabled (experimental; RST protection / escalation). Validate on a real device")
 	}
 
-	if !cfg.System.Tables.SkipSetup && !e.routes.localOnly {
-		e.pool.EnableTUNSourceResolver(e.routes.currentSrcIP())
-	}
-
 	if e.routes.noConnbytes {
 		e.limiter = newFirstNLimiter(capture)
 		log.Infof("TUN: without xt_connbytes b4 counts packets itself and processes the first %d tcp / %d udp packets of each connection, as the kernel match would", routes.tcpLimit, routes.udpLimit)
 	}
+	e.startFlowHold()
+	e.configureWorkers(e.pool)
 
 	threads := cfg.Queue.Threads
 	if threads < 1 {
@@ -184,6 +184,16 @@ func (e *Engine) Start() error {
 	}
 
 	return nil
+}
+
+type workerPool interface {
+	sourceAttribution
+	SetQueueDirectionExact(v4, v6 bool)
+}
+
+func (e *Engine) configureWorkers(pool workerPool) {
+	e.routes.attributeSources(pool)
+	pool.SetQueueDirectionExact(e.tcpDirectionExact(), false)
 }
 
 func (e *Engine) reconcileLoop() {
@@ -246,17 +256,13 @@ func (e *Engine) readLoop(workerIdx int) {
 		}
 
 		raw := buf[:n]
-		if l := e.limiter; l != nil && !l.admit(raw, time.Now()) {
-			e.forwardPacket(raw)
-			continue
-		}
-		if worker.ProcessPacket(raw) == engine.VerdictAccept {
-			e.forwardPacket(raw)
+		if forward, dir := e.processPacket(worker, raw); forward {
+			e.forwardPacket(raw, dir)
 		}
 	}
 }
 
-func (e *Engine) forwardPacket(raw []byte) {
+func (e *Engine) forwardPacket(raw []byte, dir engine.Direction) {
 	if len(raw) == 0 {
 		return
 	}
@@ -265,7 +271,7 @@ func (e *Engine) forwardPacket(raw []byte) {
 		if len(raw) < 20 {
 			return
 		}
-		if err := e.senderFor(raw).SendIPv4(raw, raw[16:20]); err != nil {
+		if err := e.senderFor(raw, dir).SendIPv4(raw, raw[16:20]); err != nil {
 			e.logForwardError(err, net.IP(raw[12:16]).String(), net.IP(raw[16:20]).String())
 			return
 		}
@@ -278,7 +284,7 @@ func (e *Engine) forwardPacket(raw []byte) {
 	atomic.AddUint64(&e.fwdCount, 1)
 }
 
-func (e *Engine) senderFor(raw []byte) *sock.Sender {
+func (e *Engine) senderFor(raw []byte, dir engine.Direction) *sock.Sender {
 	if e.clientSender == nil || e.routes == nil || !e.routes.clientDirectionRoutable() {
 		return e.sender
 	}
@@ -295,6 +301,12 @@ func (e *Engine) senderFor(raw []byte) *sock.Sender {
 		if sport == 53 && isDNSResponse(raw, ihl) {
 			return e.clientSender
 		}
+		return e.sender
+	}
+	switch dir {
+	case engine.DirReply:
+		return e.clientSender
+	case engine.DirOriginal:
 		return e.sender
 	}
 	if portMatches(sport, e.routes.replyPorts()) {
@@ -361,6 +373,7 @@ func (e *Engine) Stop() {
 		}
 
 		e.wg.Wait()
+		e.stopFlowHold()
 
 		if e.routes != nil {
 			e.routes.teardown()

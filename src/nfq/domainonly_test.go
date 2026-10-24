@@ -369,7 +369,7 @@ func TestAHintedLearnedOrPortSetKeepsItsWorkOnBareACKs(t *testing.T) {
 				case "learned address":
 					w.ProcessPacket(makeV4TCPPacketFromPort(buildClientHello("www.youtube.com", 16, 0xAB), 500, 1111, 0x18))
 				case "dns hint":
-					w.storeHostHint("10.0.0.1", "1.2.3.4", &video, "www.youtube.com", "dns")
+					w.storeHostHint("10.0.0.1", "1.2.3.4", &video, "www.youtube.com", "dns", 0, 0)
 				}
 
 				hello := buildClientHello("i.ytimg.com", 16, 0xAB)
@@ -404,7 +404,7 @@ func TestAConnectionEscalatedToASetWithoutFragmentationKeepsItsWork(t *testing.T
 	escalated.Targets.DomainsToMatch = []string{"escalated.example"}
 	escalated.TCP.DropSACK = true
 	w := newInjectingWorker(t, &images, &video, &escalated)
-	w.storeHostHint("10.0.0.1", "1.2.3.4", &video, "www.youtube.com", "dns")
+	w.storeHostHint("10.0.0.1", "1.2.3.4", &video, "www.youtube.com", "dns", 0, 0)
 	w.destState.SetEscalation("i.ytimg.com", escalated.Id, "test", time.Minute)
 
 	hello := buildClientHello("i.ytimg.com", 16, 0xAB)
@@ -427,7 +427,7 @@ func TestAHintForTheConnectionsOwnSetKeepsItsRowAfterAReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	reloaded := w.getConfig().GetSetById(set.Id)
-	w.storeHostHint("10.0.0.1", "1.2.3.4", reloaded, "i.ytimg.com", "dns")
+	w.storeHostHint("10.0.0.1", "1.2.3.4", reloaded, "i.ytimg.com", "dns", 0, 0)
 
 	ch, _ := log.GetConnectionHub().Subscribe()
 	defer log.GetConnectionHub().Unsubscribe(ch)
@@ -549,7 +549,7 @@ func TestASetThatLeavesDataAloneDoesNotTakeItFromAnotherSet(t *testing.T) {
 		video.Targets.DomainOnly = false
 		video.Targets.DomainsToMatch = []string{"youtube.com"}
 		w := newInjectingWorker(t, &images, &video)
-		w.storeHostHint("10.0.0.1", "1.2.3.4", &video, "www.youtube.com", "dns")
+		w.storeHostHint("10.0.0.1", "1.2.3.4", &video, "www.youtube.com", "dns", 0, 0)
 
 		hello := buildClientHello("i.ytimg.com", 16, 0xAB)
 		w.ProcessPacket(makeV4TCPPacket(hello, 1000))

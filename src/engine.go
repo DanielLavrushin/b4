@@ -142,6 +142,7 @@ func startNFQueueEngine(cfg *config.Config, pool *nfq.Pool, tproxyMgr *tproxy.Ma
 		log.Infof("Skipping tables setup (--skip-tables)")
 	}
 	firewall := firewallName(cfg)
+	nfq.SetRerouteCheckAll(tables.OwnPacketsShielded(firewall))
 	mc.SetEngine(engineInfo(cfg, pool, metrics.EngineStarting, firewall))
 
 	if !skipTables {

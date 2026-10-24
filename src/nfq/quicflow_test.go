@@ -1,13 +1,17 @@
 package nfq
 
 import (
+	"encoding/binary"
+	"fmt"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
+	"github.com/daniellavrushin/b4/quic"
 	"github.com/daniellavrushin/b4/sock"
+	"github.com/daniellavrushin/b4/stun"
 )
 
 func sealQUICInitial(t *testing.T, hdrDCID, keyDCID []byte, pn byte, frames []byte) []byte {
@@ -111,13 +115,13 @@ func TestADomainOnlySetStopsTheRestOfAQUICFlowAfterItsClientHello(t *testing.T) 
 			if v := sendQUIC(w, flow.first, 50001); v != engine.VerdictAccept {
 				t.Fatalf("the first datagram carries no complete ClientHello yet, want accept, got %v", v)
 			}
-			if v := sendQUIC(w, flow.completing, 50001); v != engine.VerdictDrop {
+			if v := sendQUIC(w, flow.completing, 50001); v != engine.VerdictDropFlow {
 				t.Fatalf("the datagram that completes the ClientHello must be stopped, got %v", v)
 			}
-			if v := sendQUIC(w, flow.resend, 50001); v != engine.VerdictDrop {
+			if v := sendQUIC(w, flow.resend, 50001); v != engine.VerdictDropFlow {
 				t.Errorf("the resend under the server's connection ID belongs to the same flow and must be stopped, got %v", v)
 			}
-			if v := sendQUIC(w, flow.oneRTT, 50001); v != engine.VerdictDrop {
+			if v := sendQUIC(w, flow.oneRTT, 50001); v != engine.VerdictDropFlow {
 				t.Errorf("a short-header packet of the same flow must be stopped, got %v", v)
 			}
 			if v := sendQUIC(w, flow.oneRTT, 50002); v != engine.VerdictAccept {
@@ -243,7 +247,7 @@ func TestAnAddressLearnedForAnotherNameDoesNotRestartAStoppedQUICFlow(t *testing
 	flow := newSplitQUICHello(t, []byte{0x80, 1, 2, 3, 4, 5, 6, 7}, []byte{0x81, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
 
 	sendQUIC(w, flow.first, 50201)
-	if v := sendQUIC(w, flow.completing, 50201); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.completing, 50201); v != engine.VerdictDropFlow {
 		t.Fatalf("the blocked name's ClientHello must be stopped, got %v", v)
 	}
 
@@ -252,10 +256,10 @@ func TestAnAddressLearnedForAnotherNameDoesNotRestartAStoppedQUICFlow(t *testing
 		t.Fatalf("a connection to an allowed name on the same address must pass, got %v", v)
 	}
 
-	if v := sendQUIC(w, flow.resend, 50201); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.resend, 50201); v != engine.VerdictDropFlow {
 		t.Errorf("the stopped flow's resend must stay stopped after another set learned the address, got %v", v)
 	}
-	if v := sendQUIC(w, flow.oneRTT, 50201); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.oneRTT, 50201); v != engine.VerdictDropFlow {
 		t.Errorf("a short-header packet of the stopped flow must stay stopped, got %v", v)
 	}
 }
@@ -277,13 +281,13 @@ func TestAnAddressLearnedByACoalescingSetDoesNotHideABlockedName(t *testing.T) {
 
 	flow := newSplitQUICHello(t, []byte{0x91, 1, 2, 3, 4, 5, 6, 7}, []byte{0x92, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
 	sendQUIC(w, flow.first, 50302)
-	if v := sendQUIC(w, flow.completing, 50302); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.completing, 50302); v != engine.VerdictDropFlow {
 		t.Fatalf("the blocked name's ClientHello must be stopped, got %v", v)
 	}
-	if v := sendQUIC(w, flow.resend, 50302); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.resend, 50302); v != engine.VerdictDropFlow {
 		t.Errorf("a flow to a blocked name must stay stopped on an address the coalescing set learned, got %v", v)
 	}
-	if v := sendQUIC(w, flow.oneRTT, 50302); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.oneRTT, 50302); v != engine.VerdictDropFlow {
 		t.Errorf("a short-header packet of the blocked flow must stay stopped, got %v", v)
 	}
 }
@@ -340,7 +344,7 @@ func TestAStaticAddressSetKeepsTheLaterDatagramsOfAQUICFlow(t *testing.T) {
 	flow := newSplitQUICHello(t, []byte{0x5c, 1, 2, 3, 4, 5, 6, 7}, []byte{0x5d, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
 
 	sendQUIC(w, flow.first, 50006)
-	if v := sendQUIC(w, flow.completing, 50006); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.completing, 50006); v != engine.VerdictDropFlow {
 		t.Fatalf("the ClientHello's name picks the drop set, got %v", v)
 	}
 	if v := sendQUIC(w, flow.resend, 50006); v != engine.VerdictAccept {
@@ -354,7 +358,7 @@ func TestAQUICFlowFollowsTheCurrentConfig(t *testing.T) {
 	flow := newSplitQUICHello(t, []byte{0x5e, 1, 2, 3, 4, 5, 6, 7}, []byte{0x5f, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
 
 	sendQUIC(w, flow.first, 50007)
-	if v := sendQUIC(w, flow.completing, 50007); v != engine.VerdictDrop {
+	if v := sendQUIC(w, flow.completing, 50007); v != engine.VerdictDropFlow {
 		t.Fatalf("the ClientHello must be dropped, got %v", v)
 	}
 
@@ -375,15 +379,533 @@ func TestAnIdleQUICFlowIsForgotten(t *testing.T) {
 	c.Store("k", "www.blocked.example", odcid)
 	short := append([]byte{0x41}, odcid...)
 
-	if host := c.Lookup("k", short); host != "www.blocked.example" {
+	if host, _ := c.Lookup("k", short); host != "www.blocked.example" {
 		t.Fatalf("lookup of a fresh flow returned %q", host)
 	}
 	c.flows["k"].lastSeen = time.Now().Add(-quicFlowIdle - time.Second)
-	if host := c.Lookup("k", short); host != "" {
+	if host, _ := c.Lookup("k", short); host != "" {
 		t.Errorf("an idle flow must not name later datagrams, got %q", host)
 	}
 	c.Cleanup()
 	if len(c.flows) != 0 {
 		t.Errorf("cleanup kept %d idle flows", len(c.flows))
+	}
+}
+
+func TestALearnedAddressDoesNotHideABlockedQUICName(t *testing.T) {
+	learning := newDomainOnlyQUICSet(config.ConfigOff)
+	learning.Id = "learning"
+	learning.Name = "Learning"
+	learning.Targets.SNIDomains = []string{"allowed.example"}
+	learning.Targets.DomainOnly = false
+
+	blocked := newDomainOnlyQUICSet(config.UDPModeDrop)
+	w := newQUICFlowWorker(t, &learning, &blocked)
+
+	teach := buildQUICInitialWithSNI(t, []byte{0xA0, 1, 2, 3, 4, 5, 6, 7}, "www.allowed.example")
+	if v := sendQUIC(w, teach, 50401); v != engine.VerdictAccept {
+		t.Fatalf("teaching connection: got %v", v)
+	}
+
+	flow := newSplitQUICHello(t, []byte{0xA1, 1, 2, 3, 4, 5, 6, 7}, []byte{0xA2, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	sendQUIC(w, flow.first, 50402)
+	if v := sendQUIC(w, flow.completing, 50402); v != engine.VerdictDropFlow {
+		t.Errorf("ClientHello of the blocked name: got %v, want the flow stopped", v)
+	}
+	if v := sendQUIC(w, flow.resend, 50402); v != engine.VerdictDropFlow {
+		t.Errorf("resend of the blocked flow: got %v, want the flow stopped", v)
+	}
+}
+
+func TestALearningDropSetLeavesUnrelatedQUICNamesAlone(t *testing.T) {
+	dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+	dropper.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &dropper)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xD2, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 50701); v != engine.VerdictDropFlow {
+		t.Fatalf("own name: got %v, want the flow stopped", v)
+	}
+
+	unrelated := buildQUICInitialWithSNI(t, []byte{0xD3, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+	if v := sendQUIC(w, unrelated, 50702); v != engine.VerdictAccept {
+		t.Errorf("a name no set targets, on the learned address: got %v, want accept", v)
+	}
+}
+
+func TestALearningFakeSetLeavesUnrelatedQUICNamesUntouched(t *testing.T) {
+	faking := newDomainOnlyQUICSet(config.UDPModeFake)
+	faking.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &faking)
+	sent := captureInjected(t, w)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xE1, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 50801); v != engine.VerdictDrop {
+		t.Fatalf("the set's own name must be reinjected behind its fakes, got %v", v)
+	}
+	if got := sent(); len(got) == 0 {
+		t.Fatal("the set's own ClientHello datagram must be sent by b4")
+	}
+
+	unrelated := buildQUICInitialWithSNI(t, []byte{0xE2, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+	if v := sendQUIC(w, unrelated, 50802); v != engine.VerdictAccept {
+		t.Errorf("a name no set targets, on the learned address: got %v, want accept", v)
+	}
+	if got := sent(); len(got) != 0 {
+		t.Errorf("%d packets sent for a name no set targets on the learned address", len(got))
+	}
+}
+
+func TestAPortSetTakesTheQUICALearnedAddressNoLongerClaims(t *testing.T) {
+	learning := newDomainOnlyQUICSet(config.ConfigOff)
+	learning.Targets.DomainOnly = false
+
+	ports := config.NewSetConfig()
+	ports.Id = "ports"
+	ports.Name = "Ports"
+	ports.Enabled = true
+	ports.UDP.DPortFilter = "443"
+	ports.UDP.Mode = config.UDPModeDrop
+	ports.Fragmentation.Strategy = config.ConfigNone
+	ports.Fragmentation.StrategyPool = nil
+
+	w := newQUICFlowWorker(t, &learning, &ports)
+
+	teach := buildQUICInitialWithSNI(t, []byte{0xF1, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, teach, 50811); v != engine.VerdictAccept {
+		t.Fatalf("the learning set leaves its own name alone, got %v", v)
+	}
+
+	unrelated := buildQUICInitialWithSNI(t, []byte{0xF2, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+	if v := sendQUIC(w, unrelated, 50812); v != engine.VerdictDropFlow {
+		t.Errorf("a name no set targets on the learned address belongs to the port set, got %v, want the flow stopped", v)
+	}
+}
+
+func TestCoalesceGivesUpOnAHelloTheServerKeepsIgnoring(t *testing.T) {
+	set := newDomainOnlyQUICSet(config.UDPModeCoalesce)
+	w := newQUICFlowWorker(t, &set)
+	sent := captureInjected(t, w)
+
+	hello := buildQUICInitialWithSNI(t, []byte{0x61, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	for attempt := 1; attempt <= maxCoalescedHellos; attempt++ {
+		if v := sendQUIC(w, hello, 50901); v != engine.VerdictDrop {
+			t.Fatalf("attempt %d must be coalesced, got %v", attempt, v)
+		}
+		if got := sent(); len(got) != 1 {
+			t.Fatalf("attempt %d sent %d packets, want the coalesced datagram", attempt, len(got))
+		}
+	}
+	for _, attempt := range []int{maxCoalescedHellos + 1, maxCoalescedHellos + 2} {
+		if v := sendQUIC(w, hello, 50901); v != engine.VerdictAccept {
+			t.Errorf("attempt %d must go out unchanged so the server sees a plain ClientHello, got %v", attempt, v)
+		}
+		if got := sent(); len(got) != 0 {
+			t.Errorf("attempt %d sent %d packets of its own", attempt, len(got))
+		}
+	}
+
+	later := buildQUICInitialWithSNI(t, []byte{0x62, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, later, 50901); v != engine.VerdictAccept {
+		t.Errorf("a connection opened while the ports are still busy shares their limit, got %v", v)
+	}
+	ageQUICFlow(t, w, 50901, quicFlowShared+time.Second)
+	newer := buildQUICInitialWithSNI(t, []byte{0x63, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, newer, 50901); v != engine.VerdictDrop {
+		t.Errorf("once the ports have gone quiet a new connection gets its own limit, got %v", v)
+	}
+	if v := sendQUIC(w, hello, 50902); v != engine.VerdictDrop {
+		t.Errorf("another flow to the same address keeps its own count, got %v", v)
+	}
+}
+
+func ageQUICFlow(t *testing.T, w *Worker, sport uint16, by time.Duration) {
+	t.Helper()
+	key := fmt.Sprintf(connKeyFormat, quicClient.String(), sport, quicServer.String(), 443)
+	w.quicFlows.mu.Lock()
+	defer w.quicFlows.mu.Unlock()
+	entry := w.quicFlows.flows[key]
+	if entry == nil {
+		t.Fatalf("no flow entry for port %d to age", sport)
+	}
+	entry.lastSeen = entry.lastSeen.Add(-by)
+}
+
+func TestASplitHelloCoalescesOncePerAttempt(t *testing.T) {
+	set := newDomainOnlyQUICSet(config.UDPModeCoalesce)
+	w := newQUICFlowWorker(t, &set)
+	flow := newSplitQUICHello(t, []byte{0x63, 1, 2, 3, 4, 5, 6, 7}, []byte{0x64, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+
+	for attempt := 1; attempt <= maxCoalescedHellos; attempt++ {
+		if v := sendQUIC(w, flow.first, 50911); v != engine.VerdictAccept {
+			t.Fatalf("attempt %d: the datagram that carries no complete ClientHello goes out plain, got %v", attempt, v)
+		}
+		if v := sendQUIC(w, flow.completing, 50911); v != engine.VerdictDrop {
+			t.Fatalf("attempt %d: the datagram that completes the ClientHello must be coalesced, got %v", attempt, v)
+		}
+	}
+	if v := sendQUIC(w, flow.completing, 50911); v != engine.VerdictAccept {
+		t.Errorf("past the limit the ClientHello must reach the server unchanged, got %v", v)
+	}
+}
+
+func TestALearnedAddressDoesNotClaimTheRestOfAnUnrelatedQUICFlow(t *testing.T) {
+	dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+	dropper.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &dropper)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xC1, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 51001); v != engine.VerdictDropFlow {
+		t.Fatalf("the set's own name teaches it the address, got %v", v)
+	}
+
+	unrelated := newSplitQUICHello(t, []byte{0xC2, 1, 2, 3, 4, 5, 6, 7}, []byte{0xC3, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+	if v := sendQUIC(w, unrelated.first, 51002); v != engine.VerdictAccept {
+		t.Fatalf("the first datagram of the unrelated flow carries no readable name, got %v", v)
+	}
+	if v := sendQUIC(w, unrelated.completing, 51002); v != engine.VerdictAccept {
+		t.Fatalf("the unrelated name matches no set, got %v", v)
+	}
+	if v := sendQUIC(w, unrelated.resend, 51002); v != engine.VerdictAccept {
+		t.Errorf("the resend of the unrelated flow: got %v, want accept", v)
+	}
+	if v := sendQUIC(w, unrelated.oneRTT, 51002); v != engine.VerdictAccept {
+		t.Errorf("a short-header packet of the unrelated flow carries no name b4 can read, so the learned address must not claim it either: got %v, want accept", v)
+	}
+}
+
+func TestCoalesceGivesUpForASetMatchedByItsDestination(t *testing.T) {
+	set := config.NewSetConfig()
+	set.Id = "ip-coalesce"
+	set.Name = "IPCoalesce"
+	set.Enabled = true
+	set.Targets.IPs = []string{"1.2.3.4/32"}
+	set.UDP.Mode = config.UDPModeCoalesce
+	set.UDP.FilterQUIC = config.QUICFilterAll
+	set.Fragmentation.Strategy = config.ConfigNone
+	set.Fragmentation.StrategyPool = nil
+
+	w := newQUICFlowWorker(t, &set)
+	hello := buildQUICInitialWithSNI(t, []byte{0xC4, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+
+	for attempt := 1; attempt <= maxCoalescedHellos; attempt++ {
+		if v := sendQUIC(w, hello, 51101); v != engine.VerdictDrop {
+			t.Fatalf("attempt %d of a set matched by address must be coalesced, got %v", attempt, v)
+		}
+	}
+	if v := sendQUIC(w, hello, 51101); v != engine.VerdictAccept {
+		t.Errorf("a set matched by address must stop coalescing a repeated ClientHello too, got %v", v)
+	}
+}
+
+func TestALearnedAddressDoesNotClaimAQUICFlowItCouldNotName(t *testing.T) {
+	dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+	dropper.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &dropper)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xB1, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 52001); v != engine.VerdictDropFlow {
+		t.Fatalf("the set's own name teaches it the address, got %v", v)
+	}
+
+	nameless := append([]byte{0xc3, 0, 0, 0, 1, 8, 0xB2, 2, 3, 4, 5, 6, 7, 8, 0}, make([]byte, 60)...)
+	if v := sendQUIC(w, nameless, 52002); v != engine.VerdictAccept {
+		t.Fatalf("an Initial whose ClientHello b4 cannot read, got %v", v)
+	}
+	oneRTT := append(append([]byte{0x41}, []byte{0xB3, 2, 3, 4, 5, 6, 7, 8}...), make([]byte, 40)...)
+	if v := sendQUIC(w, oneRTT, 52002); v != engine.VerdictAccept {
+		t.Errorf("a short-header packet carries no name either, so the flow whose Initial b4 saw must keep passing: got %v, want accept", v)
+	}
+}
+
+func TestMatchingQUICByDestinationKeepsTheRestOfAKnownFlow(t *testing.T) {
+	faking := newDomainOnlyQUICSet(config.UDPModeFake)
+	faking.Targets.DomainOnly = false
+	faking.UDP.FilterQUIC = config.QUICFilterAll
+	w := newQUICFlowWorker(t, &faking)
+	sent := captureInjected(t, w)
+
+	flow := newSplitQUICHello(t, []byte{0xB4, 1, 2, 3, 4, 5, 6, 7}, []byte{0xB5, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	sendQUIC(w, flow.first, 52101)
+	sent()
+	if v := sendQUIC(w, flow.completing, 52101); v != engine.VerdictDrop {
+		t.Fatalf("the ClientHello of the set's own name must be handled, got %v", v)
+	}
+	sent()
+
+	if v := sendQUIC(w, flow.oneRTT, 52101); v != engine.VerdictDrop {
+		t.Errorf("By SNI or matched destination asks for every QUIC packet to a matched address, short headers included, got %v", v)
+	}
+	if got := sent(); len(got) == 0 {
+		t.Error("no packet was sent for the short-header packet of the known flow")
+	}
+}
+
+func TestAnExpiredFlowEntryDoesNotBlockANewOneOnTheSameTuple(t *testing.T) {
+	dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+	dropper.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &dropper)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xA3, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 53101); v != engine.VerdictDropFlow {
+		t.Fatalf("the set's own name teaches it the address, got %v", v)
+	}
+
+	nameless := append([]byte{0xc3, 0, 0, 0, 1, 8, 0xA4, 2, 3, 4, 5, 6, 7, 8, 0}, make([]byte, 60)...)
+	if v := sendQUIC(w, nameless, 53102); v != engine.VerdictAccept {
+		t.Fatalf("the first nameless Initial must pass, got %v", v)
+	}
+
+	key := fmt.Sprintf(connKeyFormat, quicClient.String(), 53102, quicServer.String(), 443)
+	w.quicFlows.mu.Lock()
+	entry := w.quicFlows.flows[key]
+	if entry == nil {
+		w.quicFlows.mu.Unlock()
+		t.Fatal("the nameless Initial left no entry to expire")
+	}
+	entry.lastSeen = time.Now().Add(-quicFlowIdle - time.Second)
+	w.quicFlows.mu.Unlock()
+
+	if v := sendQUIC(w, nameless, 53102); v != engine.VerdictAccept {
+		t.Fatalf("a nameless Initial on the reused tuple must pass, got %v", v)
+	}
+	oneRTT := append(append([]byte{0x41}, []byte{0xA4, 2, 3, 4, 5, 6, 7, 8}...), make([]byte, 40)...)
+	if v := sendQUIC(w, oneRTT, 53102); v != engine.VerdictAccept {
+		t.Errorf("the short-header packets of the flow that replaced the expired entry must pass: got %v, want accept", v)
+	}
+}
+
+func TestAGreasedShortHeaderOfAnUnrelatedQUICFlowPasses(t *testing.T) {
+	dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+	dropper.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &dropper)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xF5, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 53301); v != engine.VerdictDropFlow {
+		t.Fatalf("the set's own name teaches it the address, got %v", v)
+	}
+
+	unrelated := newSplitQUICHello(t, []byte{0xF6, 1, 2, 3, 4, 5, 6, 7}, []byte{0xF7, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+	sendQUIC(w, unrelated.first, 53302)
+	if v := sendQUIC(w, unrelated.completing, 53302); v != engine.VerdictAccept {
+		t.Fatalf("the unrelated name matches no set, got %v", v)
+	}
+
+	greased := append(append([]byte{0x01}, []byte{0xF7, 1, 2, 3, 4, 5, 6, 7}...), make([]byte, 40)...)
+	greased[1] = 0x5a
+	if v := sendQUIC(w, greased, 53302); v != engine.VerdictAccept {
+		t.Errorf("a short-header packet with the QUIC bit greased away (RFC 9287) belongs to the unrelated flow: got %v, want accept", v)
+	}
+}
+
+func TestOtherProtocolsOnATupleThatCarriedQUICStillFollowTheLearnedAddress(t *testing.T) {
+	wireguard := make([]byte, 148)
+	wireguard[0] = 0x01
+	dtls := append([]byte{0x16, 0xfe, 0xfd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x30}, make([]byte, 48)...)
+	srtp := make([]byte, 60)
+	srtp[0], srtp[1] = 0x80, 0x60
+
+	for _, c := range []struct {
+		name    string
+		payload []byte
+	}{
+		{"WireGuard", wireguard},
+		{"DTLS", dtls},
+		{"SRTP", srtp},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if quic.LooksLikeQUIC(c.payload) {
+				t.Fatalf("%s must not look like a long-header QUIC packet, or this case tests nothing", c.name)
+			}
+			dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+			dropper.Targets.DomainOnly = false
+			dropper.UDP.FilterSTUN = false
+			w := newQUICFlowWorker(t, &dropper)
+
+			own := buildQUICInitialWithSNI(t, []byte{0xF8, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+			if v := sendQUIC(w, own, 53401); v != engine.VerdictDropFlow {
+				t.Fatalf("the set's own name teaches it the address, got %v", v)
+			}
+			nameless := append([]byte{0xc3, 0, 0, 0, 1, 8, 0xF9, 2, 3, 4, 5, 6, 7, 8, 0}, make([]byte, 60)...)
+			if v := sendQUIC(w, nameless, 53402); v != engine.VerdictAccept {
+				t.Fatalf("an Initial b4 cannot name must pass and mark the flow, got %v", v)
+			}
+			if v := sendQUIC(w, c.payload, 53402); v != engine.VerdictDrop {
+				t.Errorf("%s on a tuple that once carried QUIC still follows the learned address: got %v, want drop", c.name, v)
+			}
+		})
+	}
+}
+
+func TestInterleavedQUICConnectionsShareTheCoalesceBudgetOfTheirTuple(t *testing.T) {
+	set := newDomainOnlyQUICSet(config.UDPModeCoalesce)
+	w := newQUICFlowWorker(t, &set)
+
+	first := buildQUICInitialWithSNI(t, []byte{0xE5, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	second := buildQUICInitialWithSNI(t, []byte{0xE6, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+
+	if v := sendQUIC(w, first, 53501); v != engine.VerdictDrop {
+		t.Fatalf("the first connection's ClientHello must be coalesced, got %v", v)
+	}
+	if v := sendQUIC(w, second, 53501); v != engine.VerdictDrop {
+		t.Fatalf("a second connection on the same ports must be coalesced too, got %v", v)
+	}
+	if v := sendQUIC(w, first, 53501); v != engine.VerdictAccept {
+		t.Errorf("connections sharing one tuple must not reset each other's limit, so this repeat goes out unchanged: got %v, want accept", v)
+	}
+}
+
+func TestGreasedShortHeadersThatMimicOtherProtocolsStillBelongToTheirFlow(t *testing.T) {
+	wireguardPrefix := append(append([]byte{0x01}, []byte{0, 0, 0}...), make([]byte, 45)...)
+	dtlsPrefix := append(append([]byte{0x16}, []byte{0xfe, 0x00}...), make([]byte, 46)...)
+
+	for _, c := range []struct {
+		name    string
+		payload []byte
+	}{
+		{"a first byte and connection id that start like WireGuard", wireguardPrefix},
+		{"a first byte and connection id that start like DTLS", dtlsPrefix},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if !mayBelongToAQUICFlow(c.payload, false) {
+				t.Fatalf("%s is taken for another protocol, so a greased QUIC packet would lose its flow", c.name)
+			}
+
+			dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+			dropper.Targets.DomainOnly = false
+			w := newQUICFlowWorker(t, &dropper)
+
+			own := buildQUICInitialWithSNI(t, []byte{0xD5, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+			if v := sendQUIC(w, own, 53601); v != engine.VerdictDropFlow {
+				t.Fatalf("the set's own name teaches it the address, got %v", v)
+			}
+			unrelated := newSplitQUICHello(t, []byte{0xD6, 1, 2, 3, 4, 5, 6, 7}, []byte{0xD7, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+			sendQUIC(w, unrelated.first, 53602)
+			if v := sendQUIC(w, unrelated.completing, 53602); v != engine.VerdictAccept {
+				t.Fatalf("the unrelated name matches no set, got %v", v)
+			}
+			if v := sendQUIC(w, c.payload, 53602); v != engine.VerdictAccept {
+				t.Errorf("a greased packet of the unrelated flow: got %v, want accept", v)
+			}
+		})
+	}
+}
+
+func TestAnInterleavedSplitHelloKeepsTheCoalesceBudgetOfItsTuple(t *testing.T) {
+	set := newDomainOnlyQUICSet(config.UDPModeCoalesce)
+	w := newQUICFlowWorker(t, &set)
+
+	first := buildQUICInitialWithSNI(t, []byte{0xE7, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	other := newSplitQUICHello(t, []byte{0xE8, 1, 2, 3, 4, 5, 6, 7}, []byte{0xE9, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+
+	if v := sendQUIC(w, first, 53701); v != engine.VerdictDrop {
+		t.Fatalf("the first connection's ClientHello must be coalesced, got %v", v)
+	}
+	if v := sendQUIC(w, other.first, 53701); v != engine.VerdictAccept {
+		t.Fatalf("another connection's incomplete ClientHello carries no name, got %v", v)
+	}
+	if v := sendQUIC(w, first, 53701); v != engine.VerdictDrop {
+		t.Fatalf("the first connection's second attempt must be coalesced, got %v", v)
+	}
+	if v := sendQUIC(w, first, 53701); v != engine.VerdictAccept {
+		t.Errorf("an interleaved connection must not reset the limit, so this attempt goes out unchanged: got %v, want accept", v)
+	}
+}
+
+func stunMessage(class uint16, body int) []byte {
+	msg := make([]byte, 20+body)
+	binary.BigEndian.PutUint16(msg[0:2], class)
+	binary.BigEndian.PutUint16(msg[2:4], uint16(body))
+	binary.BigEndian.PutUint32(msg[4:8], 0x2112A442)
+	copy(msg[8:20], "b4-stun-txid")
+	return msg
+}
+
+func TestSTUNRepliesOnACachedQUICTupleKeepFollowingTheLearnedAddress(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		class uint16
+	}{
+		{"a binding success response", 0x0101},
+		{"a binding error response", 0x0111},
+		{"an indication", 0x0011},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			payload := stunMessage(c.class, 8)
+			if stun.IsSTUNMessage(payload) {
+				t.Fatalf("%s must not be taken for a STUN request, or this case tests nothing", c.name)
+			}
+			if mayBelongToAQUICFlow(payload, false) {
+				t.Fatalf("%s is taken for QUIC traffic of a known flow", c.name)
+			}
+
+			dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+			dropper.Targets.DomainOnly = false
+			dropper.UDP.FilterSTUN = false
+			w := newQUICFlowWorker(t, &dropper)
+
+			own := buildQUICInitialWithSNI(t, []byte{0xC8, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+			if v := sendQUIC(w, own, 53801); v != engine.VerdictDropFlow {
+				t.Fatalf("the set's own name teaches it the address, got %v", v)
+			}
+			nameless := append([]byte{0xc3, 0, 0, 0, 1, 8, 0xC9, 2, 3, 4, 5, 6, 7, 8, 0}, make([]byte, 60)...)
+			if v := sendQUIC(w, nameless, 53802); v != engine.VerdictAccept {
+				t.Fatalf("an Initial b4 cannot name must pass and mark the flow, got %v", v)
+			}
+			if v := sendQUIC(w, payload, 53802); v != engine.VerdictDrop {
+				t.Errorf("%s on a tuple that once carried QUIC still follows the learned address: got %v, want drop", c.name, v)
+			}
+		})
+	}
+}
+
+func TestAGreasedLongHeaderOfAnUnrelatedQUICFlowPasses(t *testing.T) {
+	greased := append([]byte{0xa1, 0x00, 0x00, 0x00, 0x01, 8, 0xF7, 1, 2, 3, 4, 5, 6, 7, 0}, make([]byte, 40)...)
+	if quic.LooksLikeQUIC(greased) {
+		t.Fatal("the fixture must have its QUIC bit greased away, or this test proves nothing")
+	}
+	if quic.LooksLikeShortHeader(greased) {
+		t.Fatal("the fixture is a long header, so the short-header door must stay shut")
+	}
+	if !mayBelongToAQUICFlow(greased, false) {
+		t.Fatal("a greased Handshake packet of a known version is taken for another protocol")
+	}
+
+	dropper := newDomainOnlyQUICSet(config.UDPModeDrop)
+	dropper.Targets.DomainOnly = false
+	w := newQUICFlowWorker(t, &dropper)
+
+	own := buildQUICInitialWithSNI(t, []byte{0xF5, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+	if v := sendQUIC(w, own, 53901); v != engine.VerdictDropFlow {
+		t.Fatalf("the set's own name teaches it the address, got %v", v)
+	}
+	unrelated := newSplitQUICHello(t, []byte{0xF6, 1, 2, 3, 4, 5, 6, 7}, []byte{0xF7, 1, 2, 3, 4, 5, 6, 7}, "www.unrelated.test")
+	sendQUIC(w, unrelated.first, 53902)
+	if v := sendQUIC(w, unrelated.completing, 53902); v != engine.VerdictAccept {
+		t.Fatalf("the unrelated name matches no set, got %v", v)
+	}
+	if v := sendQUIC(w, greased, 53902); v != engine.VerdictAccept {
+		t.Errorf("a greased Handshake packet of the unrelated flow: got %v, want accept", v)
+	}
+}
+
+func TestMediaWithTheLongHeaderBitSetIsNotTakenForAQUICFlow(t *testing.T) {
+	rtp := make([]byte, 60)
+	rtp[0], rtp[1] = 0x80, 0x60
+	rtcp := make([]byte, 32)
+	rtcp[0], rtcp[1] = 0x81, 0xc9
+
+	for _, c := range []struct {
+		name    string
+		payload []byte
+	}{
+		{"RTP", rtp},
+		{"RTCP", rtcp},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if mayBelongToAQUICFlow(c.payload, false) {
+				t.Errorf("%s is taken for QUIC traffic of a known flow", c.name)
+			}
+		})
 	}
 }

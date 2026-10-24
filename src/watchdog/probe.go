@@ -3,19 +3,30 @@ package watchdog
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/daniellavrushin/b4/netprobe"
 	"github.com/daniellavrushin/b4/utils"
 )
 
-type ErrPrivateDestination struct{ Addr string }
+const (
+	VerdictRedirect   netprobe.DomainStatus = "REDIRECT"
+	ProbeMaxRedirects                       = 5
+)
+
+type ErrPrivateDestination struct {
+	Addr string
+	Host string
+}
 
 func (e *ErrPrivateDestination) Error() string {
 	return fmt.Sprintf("%s is a private or local address; probing it would reach the network b4 runs on, not the internet", e.Addr)
@@ -25,6 +36,10 @@ type ProbeOptions struct {
 	Mark    uint
 	Timeout time.Duration
 }
+
+type probeStop struct{ result CheckResult }
+
+func (s *probeStop) Error() string { return s.result.Error }
 
 func IsReservedHost(host string) bool {
 	host = strings.TrimSpace(host)
@@ -36,18 +51,30 @@ func IsReservedHost(host string) bool {
 	return false
 }
 
-func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult, error) {
-	host = ExtractDomain(host)
-	if host == "" {
-		return CheckResult{}, fmt.Errorf("no hostname to probe")
+func ValidateProbeHost(host string) error {
+	switch {
+	case host == "":
+		return fmt.Errorf("no hostname to probe")
+	case strings.ContainsAny(host, "/?#@ \t"):
+		return fmt.Errorf("%q is not a bare hostname: pass a domain such as example.com", host)
+	case strings.IndexFunc(host, func(r rune) bool { return r > unicode.MaxASCII }) >= 0:
+		return fmt.Errorf("%q is not written in ASCII: pass its punycode form, the xn-- spelling that DNS uses", host)
 	}
-	if strings.ContainsAny(host, "/?#@ \t") {
-		return CheckResult{}, fmt.Errorf("%q is not a bare hostname", host)
+	return nil
+}
+
+func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult, error) {
+	host = strings.TrimSuffix(ExtractDomain(host), ".")
+	if err := ValidateProbeHost(host); err != nil {
+		return CheckResult{}, err
 	}
 	if addr, err := netip.ParseAddr(host); err == nil && utils.IsReservedAddr(addr) {
-		return CheckResult{}, &ErrPrivateDestination{Addr: host}
+		return CheckResult{}, &ErrPrivateDestination{Addr: host, Host: host}
 	}
+	return probe(ctx, host, "https://"+host+"/", opt, newDialGuard(nil), nil)
+}
 
+func probe(ctx context.Context, host, target string, opt ProbeOptions, guard *dialGuard, roots *x509.CertPool) (CheckResult, error) {
 	timeout := opt.Timeout
 	if timeout <= 0 {
 		timeout = 10 * time.Second
@@ -55,40 +82,40 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	guard := newDialGuard(nil)
 	dialer := guard.dialer(opt.Mark, timeout)
 
-	roots, verify := netprobe.TLSRoots()
+	verify := true
+	if roots == nil {
+		roots, verify = netprobe.TLSRoots()
+	}
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			MinVersion:         tls.VersionTLS12,
 			RootCAs:            roots,
 			InsecureSkipVerify: !verify,
 		},
+		ForceAttemptHTTP2:     true,
 		ResponseHeaderTimeout: timeout,
 		IdleConnTimeout:       timeout,
 		DialContext:           dialer.DialContext,
 	}
 	defer transport.CloseIdleConnections()
 
+	hop := host
 	client := &http.Client{
 		Timeout:   timeout,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 0 && netprobe.IsBlockPageRedirectFrom(via[len(via)-1].URL, req.URL) {
-				return fmt.Errorf("ISP block page (redirect to %s)", req.URL.String())
+			if stop := probeRedirectStop(host, hop, req.URL, via); stop != nil {
+				return stop
 			}
-			if !strings.EqualFold(req.URL.Hostname(), host) {
-				return fmt.Errorf("redirect leaves %s for %s", host, req.URL.Hostname())
-			}
-			if len(via) >= 3 {
-				return fmt.Errorf("too many redirects")
-			}
+			guard.nextHop()
+			hop = strings.TrimSuffix(req.URL.Hostname(), ".")
 			return nil
 		},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+host+"/", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return CheckResult{Error: err.Error(), Verdict: netprobe.DomainError}, nil
 	}
@@ -97,16 +124,24 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
+		var stop *probeStop
+		if errors.As(err, &stop) {
+			return stop.result, nil
+		}
 		if refused := guard.refusal(); refused != nil {
-			return CheckResult{}, refused
+			return CheckResult{}, &ErrPrivateDestination{Addr: refused.Addr, Host: hop}
+		}
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err
 		}
 		status, detail := netprobe.ClassifyTLSError(err)
-		return CheckResult{Error: detail, Verdict: status}, nil
+		return atHop(CheckResult{Error: detail, Verdict: status}, host, hop), nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 451 {
-		return CheckResult{Error: "ISP block page (HTTP 451)", Verdict: netprobe.DomainISPPage}, nil
+		return atHop(CheckResult{Error: "ISP block page (HTTP 451)", Verdict: netprobe.DomainISPPage}, host, hop), nil
 	}
 
 	buf := make([]byte, 16*1024)
@@ -130,7 +165,7 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 		}
 		if readErr != nil {
 			status, _ := netprobe.ClassifyTLSErrorStaged(readErr, netprobe.StageRead, int(read))
-			return CheckResult{Error: fmt.Sprintf("read error after %d bytes: %v", read, readErr), Verdict: status}, nil
+			return atHop(CheckResult{Error: fmt.Sprintf("read error after %d bytes: %v", read, readErr), Verdict: status}, host, hop), nil
 		}
 	}
 
@@ -138,27 +173,74 @@ func ProbeHost(ctx context.Context, host string, opt ProbeOptions) (CheckResult,
 	if d := time.Since(start).Seconds(); d > 0 {
 		speed = float64(read) / d
 	}
-	return classifyProbeBody(ctx.Err(), head, read, speed)
+	res, err := classifyProbeBody(ctx.Err(), head, read, speed, resp.StatusCode)
+	return atHop(res, host, hop), err
 }
 
-func classifyProbeBody(ctxErr error, head []byte, read int64, speed float64) (CheckResult, error) {
+func probeRedirectStop(host, from string, next *url.URL, via []*http.Request) *probeStop {
+	target := next.Hostname()
+	var res CheckResult
+	switch {
+	case len(via) > 0 && netprobe.IsBlockPageRedirectFrom(via[len(via)-1].URL, next):
+		res = CheckResult{Error: fmt.Sprintf("ISP block page (redirect to %s)", next), Verdict: netprobe.DomainISPPage}
+	case target == "":
+		res = CheckResult{Error: fmt.Sprintf("answered with a redirect that names no host (%s)", next), Verdict: VerdictRedirect, Answered: true}
+	case IsReservedHost(target):
+		res = CheckResult{
+			Error:   fmt.Sprintf("redirect to %s, a private or local address: a public site does not send its visitors there, so this is treated as a block page", target),
+			Verdict: netprobe.DomainISPPage,
+		}
+	case !netprobe.SameSite(host, target):
+		msg := fmt.Sprintf("answered with a redirect to %s, a different site, which the probe does not follow", target)
+		if _, err := netip.ParseAddr(target); err == nil {
+			msg = fmt.Sprintf("answered with a redirect to the bare address %s, which the probe does not follow", target)
+		}
+		res = CheckResult{Error: msg, Verdict: VerdictRedirect, RedirectTo: target, Answered: true}
+	case len(via) > ProbeMaxRedirects:
+		return &probeStop{CheckResult{
+			Error:      fmt.Sprintf("still redirecting within the site after %d redirects, last to %s; the probe sends no cookies, and some sites keep redirecting without them", ProbeMaxRedirects, next),
+			Verdict:    VerdictRedirect,
+			RedirectTo: target,
+			Answered:   true,
+		}}
+	default:
+		return nil
+	}
+	return &probeStop{atHop(res, host, from)}
+}
+
+func atHop(res CheckResult, host, hop string) CheckResult {
+	if !res.OK && res.Error != "" && !strings.EqualFold(hop, host) {
+		res.Error = fmt.Sprintf("%s, at %s after a redirect from %s", res.Error, hop, host)
+	}
+	return res
+}
+
+func classifyProbeBody(ctxErr error, head []byte, read int64, speed float64, status int) (CheckResult, error) {
 	if blockErr := netprobe.DetectBlockPageBody(head); blockErr != "" {
-		return CheckResult{Error: blockErr, Verdict: netprobe.DomainISPPage}, nil
+		return CheckResult{Error: blockErr, Verdict: netprobe.DomainISPPage, StatusCode: status}, nil
 	}
 	if ctxErr != nil {
 		if errors.Is(ctxErr, context.Canceled) {
 			return CheckResult{}, fmt.Errorf("the probe was cut short after %d bytes: %w", read, ctxErr)
 		}
-		status, detail := netprobe.ClassifyTLSErrorStaged(ctxErr, netprobe.StageRead, int(read))
+		verdict, detail := netprobe.ClassifyTLSErrorStaged(ctxErr, netprobe.StageRead, int(read))
 		return CheckResult{
-			Error:     fmt.Sprintf("%s after %d bytes", detail, read),
-			Verdict:   status,
-			BytesRead: read,
-			Speed:     speed,
+			Error:      fmt.Sprintf("%s after %d bytes", detail, read),
+			Verdict:    verdict,
+			BytesRead:  read,
+			Speed:      speed,
+			StatusCode: status,
 		}, nil
 	}
 	if read < 1024 {
-		return CheckResult{Error: fmt.Sprintf("insufficient data: %d bytes", read), Verdict: netprobe.DomainError}, nil
+		return CheckResult{
+			Error:      fmt.Sprintf("insufficient data: %d bytes (HTTP %d)", read, status),
+			Verdict:    netprobe.DomainError,
+			BytesRead:  read,
+			StatusCode: status,
+			Answered:   true,
+		}, nil
 	}
-	return CheckResult{OK: true, Speed: speed, BytesRead: read}, nil
+	return CheckResult{OK: true, Speed: speed, BytesRead: read, StatusCode: status, Answered: true}, nil
 }

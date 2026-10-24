@@ -11,6 +11,7 @@ nft add table inet _b4_queue_probe
 nft add chain inet _b4_queue_probe test
 nft add rule inet _b4_queue_probe test counter queue num 537-540 bypass
 nft add rule inet _b4_queue_probe test ct original packets < 20 counter accept
+nft add rule inet _b4_queue_probe test ct direction original counter accept
 nft delete table inet _b4_queue_probe
 exec nft list tables
 exec nft list tables
@@ -21,40 +22,6 @@ exec nft list chain inet b4_mangle prerouting
 exec nft add chain inet b4_mangle prerouting { type filter hook prerouting priority -150 ; policy accept ; }
 exec nft list chain inet b4_mangle output
 exec nft add chain inet b4_mangle output { type filter hook output priority -150 ; policy accept ; }
-exec nft list chain inet b4_mangle postrouting
-exec nft add chain inet b4_mangle postrouting { type filter hook postrouting priority -150 ; policy accept ; }
-exec nft add rule inet b4_mangle postrouting jump b4_chain
-exec nft add rule inet b4_mangle output oifname "lo" return
-exec nft add rule inet b4_mangle output meta mark & 0x20008000 == 0x8000 ct mark set ct mark | 0x8000
-exec nft add rule inet b4_mangle output meta mark & 0x8000 == 0x8000 accept
-exec nft add rule inet b4_mangle output jump b4_chain
-exec nft add rule inet b4_mangle b4_chain meta mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
-exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
-exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 tcp dport 443 ct original packets < 20 counter queue num 537-540 bypass
-exec nft list chain inet b4_mangle raw_prerouting
-exec nft add chain inet b4_mangle raw_prerouting { type filter hook prerouting priority -300 ; policy accept ; }
-exec nft list chain inet b4_mangle raw_output
-exec nft add chain inet b4_mangle raw_output { type filter hook output priority -300 ; policy accept ; }
-exec nft add rule inet b4_mangle raw_output oifname "lo" return
-exec nft add rule inet b4_mangle raw_prerouting meta mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle raw_prerouting meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle raw_output meta mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle raw_output meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle output meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 ct original packets < 20 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 tcp flags & (syn|ack) == (syn|ack) counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 tcp flags & rst == rst counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle b4_chain udp dport 53 return
-exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 udp dport 443 ct original packets < 9 counter queue num 537-540 bypass
-sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
-sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
-sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
-sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
-iptables -w -t filter -L FORWARD -n
-iptables-legacy -w -t filter -L FORWARD -n
 exec nft list chain inet b4_mangle forward
 exec nft list chain inet b4_mangle forward
 exec nft add chain inet b4_mangle forward { type filter hook forward priority -150 ; policy accept ; }
@@ -64,6 +31,43 @@ stdin nft -f -
 exec nft add rule inet b4_mangle output meta nfproto ipv4 ip daddr @b4_mss_3_v4 tcp dport 443 tcp flags syn / syn,rst tcp option maxseg size set 88
 exec nft add rule inet b4_mangle forward meta nfproto ipv4 ip daddr @b4_mss_3_v4 tcp dport 443 tcp flags syn / syn,rst tcp option maxseg size set 88
 exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 ip saddr @b4_mss_3_v4 tcp sport 443 tcp flags syn / syn,rst tcp option maxseg size set 88
+exec nft list chain inet b4_mangle postrouting
+exec nft add chain inet b4_mangle postrouting { type filter hook postrouting priority -150 ; policy accept ; }
+exec nft add rule inet b4_mangle postrouting jump b4_chain
+exec nft add rule inet b4_mangle output oifname "lo" return
+exec nft add rule inet b4_mangle output meta mark & 0x22008000 == 0x8000 ct mark set ct mark | 0x8000
+exec nft add rule inet b4_mangle output meta mark & 0x22008000 == 0x2008000 ct mark set ct mark | 0x2000000
+exec nft add rule inet b4_mangle output meta mark & 0x8000 == 0x8000 accept
+exec nft add rule inet b4_mangle b4_chain meta mark & 0x8cfd8000 == 0x8000 return
+exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
+exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
+exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle prerouting ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return
+exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 tcp dport 443 ct original packets < 20 ct direction original counter queue num 537-540 bypass
+exec nft list chain inet b4_mangle raw_prerouting
+exec nft add chain inet b4_mangle raw_prerouting { type filter hook prerouting priority -300 ; policy accept ; }
+exec nft list chain inet b4_mangle raw_output
+exec nft add chain inet b4_mangle raw_output { type filter hook output priority -300 ; policy accept ; }
+exec nft add rule inet b4_mangle raw_output oifname "lo" return
+exec nft add rule inet b4_mangle raw_prerouting meta mark & 0x8cfd8000 == 0x8000 return
+exec nft add rule inet b4_mangle raw_prerouting meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle raw_output meta mark & 0x8cfd8000 == 0x8000 return
+exec nft add rule inet b4_mangle raw_output meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle output meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 ct original packets < 20 ct direction reply counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 tcp flags & (syn|ack) == (syn|ack) ct direction reply counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 tcp flags & rst == rst ct direction reply counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle b4_chain udp dport 53 return
+exec nft add set inet b4_mangle b4_udp_drop4 { type ipv4_addr . inet_service . ipv4_addr . inet_service ; flags timeout ; timeout 120s ; size 65536 ; }
+exec nft add rule inet b4_mangle b4_chain ip saddr . udp sport . ip daddr . udp dport @b4_udp_drop4 counter drop
+exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 udp dport 443 ct original packets < 9 counter queue num 537-540 bypass
+sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+iptables -w -t filter -L FORWARD -n
+iptables-legacy -w -t filter -L FORWARD -n
 stdin nft -f -
   add table inet b4_dscp
   delete table inet b4_dscp
@@ -105,40 +109,6 @@ exec nft list chain inet b4_mangle prerouting
 exec nft add chain inet b4_mangle prerouting { type filter hook prerouting priority -150 ; policy accept ; }
 exec nft list chain inet b4_mangle output
 exec nft add chain inet b4_mangle output { type filter hook output priority -150 ; policy accept ; }
-exec nft list chain inet b4_mangle postrouting
-exec nft add chain inet b4_mangle postrouting { type filter hook postrouting priority -150 ; policy accept ; }
-exec nft add rule inet b4_mangle postrouting jump b4_chain
-exec nft add rule inet b4_mangle output oifname "lo" return
-exec nft add rule inet b4_mangle output meta mark & 0x20008000 == 0x8000 ct mark set ct mark | 0x8000
-exec nft add rule inet b4_mangle output meta mark & 0x8000 == 0x8000 accept
-exec nft add rule inet b4_mangle output jump b4_chain
-exec nft add rule inet b4_mangle b4_chain meta mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
-exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
-exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 tcp dport 443 ct original packets < 20 counter queue num 537-540 bypass
-exec nft list chain inet b4_mangle raw_prerouting
-exec nft add chain inet b4_mangle raw_prerouting { type filter hook prerouting priority -300 ; policy accept ; }
-exec nft list chain inet b4_mangle raw_output
-exec nft add chain inet b4_mangle raw_output { type filter hook output priority -300 ; policy accept ; }
-exec nft add rule inet b4_mangle raw_output oifname "lo" return
-exec nft add rule inet b4_mangle raw_prerouting meta mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle raw_prerouting meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle raw_output meta mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle raw_output meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle output meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 ct original packets < 20 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 tcp flags & (syn|ack) == (syn|ack) counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 tcp flags & rst == rst counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle b4_chain udp dport 53 return
-exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 udp dport 443 ct original packets < 9 counter queue num 537-540 bypass
-sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
-sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
-sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
-sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
-iptables -w -t filter -L FORWARD -n
-iptables-legacy -w -t filter -L FORWARD -n
 exec nft list chain inet b4_mangle forward
 exec nft list chain inet b4_mangle forward
 exec nft add chain inet b4_mangle forward { type filter hook forward priority -150 ; policy accept ; }
@@ -148,6 +118,43 @@ stdin nft -f -
 exec nft add rule inet b4_mangle output meta nfproto ipv4 ip daddr @b4_mss_3_v4 tcp dport 443 tcp flags syn / syn,rst tcp option maxseg size set 88
 exec nft add rule inet b4_mangle forward meta nfproto ipv4 ip daddr @b4_mss_3_v4 tcp dport 443 tcp flags syn / syn,rst tcp option maxseg size set 88
 exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 ip saddr @b4_mss_3_v4 tcp sport 443 tcp flags syn / syn,rst tcp option maxseg size set 88
+exec nft list chain inet b4_mangle postrouting
+exec nft add chain inet b4_mangle postrouting { type filter hook postrouting priority -150 ; policy accept ; }
+exec nft add rule inet b4_mangle postrouting jump b4_chain
+exec nft add rule inet b4_mangle output oifname "lo" return
+exec nft add rule inet b4_mangle output meta mark & 0x22008000 == 0x8000 ct mark set ct mark | 0x8000
+exec nft add rule inet b4_mangle output meta mark & 0x22008000 == 0x2008000 ct mark set ct mark | 0x2000000
+exec nft add rule inet b4_mangle output meta mark & 0x8000 == 0x8000 accept
+exec nft add rule inet b4_mangle b4_chain meta mark & 0x8cfd8000 == 0x8000 return
+exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
+exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
+exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle prerouting ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return
+exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 tcp dport 443 ct original packets < 20 ct direction original counter queue num 537-540 bypass
+exec nft list chain inet b4_mangle raw_prerouting
+exec nft add chain inet b4_mangle raw_prerouting { type filter hook prerouting priority -300 ; policy accept ; }
+exec nft list chain inet b4_mangle raw_output
+exec nft add chain inet b4_mangle raw_output { type filter hook output priority -300 ; policy accept ; }
+exec nft add rule inet b4_mangle raw_output oifname "lo" return
+exec nft add rule inet b4_mangle raw_prerouting meta mark & 0x8cfd8000 == 0x8000 return
+exec nft add rule inet b4_mangle raw_prerouting meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle raw_output meta mark & 0x8cfd8000 == 0x8000 return
+exec nft add rule inet b4_mangle raw_output meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle output meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 ct original packets < 20 ct direction reply counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 tcp flags & (syn|ack) == (syn|ack) ct direction reply counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 tcp flags & rst == rst ct direction reply counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle b4_chain udp dport 53 return
+exec nft add set inet b4_mangle b4_udp_drop4 { type ipv4_addr . inet_service . ipv4_addr . inet_service ; flags timeout ; timeout 120s ; size 65536 ; }
+exec nft add rule inet b4_mangle b4_chain ip saddr . udp sport . ip daddr . udp dport @b4_udp_drop4 counter drop
+exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 udp dport 443 ct original packets < 9 counter queue num 537-540 bypass
+sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+iptables -w -t filter -L FORWARD -n
+iptables-legacy -w -t filter -L FORWARD -n
 stdin nft -f -
   add table inet b4_dscp
   delete table inet b4_dscp
@@ -175,40 +182,6 @@ exec nft list chain inet b4_mangle prerouting
 exec nft add chain inet b4_mangle prerouting { type filter hook prerouting priority -150 ; policy accept ; }
 exec nft list chain inet b4_mangle output
 exec nft add chain inet b4_mangle output { type filter hook output priority -150 ; policy accept ; }
-exec nft list chain inet b4_mangle postrouting
-exec nft add chain inet b4_mangle postrouting { type filter hook postrouting priority -150 ; policy accept ; }
-exec nft add rule inet b4_mangle postrouting jump b4_chain
-exec nft add rule inet b4_mangle output oifname "lo" return
-exec nft add rule inet b4_mangle output meta mark & 0x20008000 == 0x8000 ct mark set ct mark | 0x8000
-exec nft add rule inet b4_mangle output meta mark & 0x8000 == 0x8000 accept
-exec nft add rule inet b4_mangle output jump b4_chain
-exec nft add rule inet b4_mangle b4_chain meta mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
-exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
-exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 tcp dport 443 ct original packets < 20 counter queue num 537-540 bypass
-exec nft list chain inet b4_mangle raw_prerouting
-exec nft add chain inet b4_mangle raw_prerouting { type filter hook prerouting priority -300 ; policy accept ; }
-exec nft list chain inet b4_mangle raw_output
-exec nft add chain inet b4_mangle raw_output { type filter hook output priority -300 ; policy accept ; }
-exec nft add rule inet b4_mangle raw_output oifname "lo" return
-exec nft add rule inet b4_mangle raw_prerouting meta mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle raw_prerouting meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle raw_output meta mark & 0x8000 == 0x8000 return
-exec nft add rule inet b4_mangle raw_output meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle output meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 ct original packets < 20 counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 tcp flags & (syn|ack) == (syn|ack) counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 tcp flags & rst == rst counter queue num 537-540 bypass
-exec nft add rule inet b4_mangle b4_chain udp dport 53 return
-exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 udp dport 443 ct original packets < 9 counter queue num 537-540 bypass
-sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
-sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
-sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
-sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
-iptables -w -t filter -L FORWARD -n
-iptables-legacy -w -t filter -L FORWARD -n
 exec nft list chain inet b4_mangle forward
 exec nft list chain inet b4_mangle forward
 exec nft add chain inet b4_mangle forward { type filter hook forward priority -150 ; policy accept ; }
@@ -218,6 +191,43 @@ stdin nft -f -
 exec nft add rule inet b4_mangle output meta nfproto ipv4 ip daddr @b4_mss_3_v4 tcp dport 443 tcp flags syn / syn,rst tcp option maxseg size set 88
 exec nft add rule inet b4_mangle forward meta nfproto ipv4 ip daddr @b4_mss_3_v4 tcp dport 443 tcp flags syn / syn,rst tcp option maxseg size set 88
 exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 ip saddr @b4_mss_3_v4 tcp sport 443 tcp flags syn / syn,rst tcp option maxseg size set 88
+exec nft list chain inet b4_mangle postrouting
+exec nft add chain inet b4_mangle postrouting { type filter hook postrouting priority -150 ; policy accept ; }
+exec nft add rule inet b4_mangle postrouting jump b4_chain
+exec nft add rule inet b4_mangle output oifname "lo" return
+exec nft add rule inet b4_mangle output meta mark & 0x22008000 == 0x8000 ct mark set ct mark | 0x8000
+exec nft add rule inet b4_mangle output meta mark & 0x22008000 == 0x2008000 ct mark set ct mark | 0x2000000
+exec nft add rule inet b4_mangle output meta mark & 0x8000 == 0x8000 accept
+exec nft add rule inet b4_mangle b4_chain meta mark & 0x8cfd8000 == 0x8000 return
+exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
+exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
+exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle prerouting ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return
+exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 tcp dport 443 ct original packets < 20 ct direction original counter queue num 537-540 bypass
+exec nft list chain inet b4_mangle raw_prerouting
+exec nft add chain inet b4_mangle raw_prerouting { type filter hook prerouting priority -300 ; policy accept ; }
+exec nft list chain inet b4_mangle raw_output
+exec nft add chain inet b4_mangle raw_output { type filter hook output priority -300 ; policy accept ; }
+exec nft add rule inet b4_mangle raw_output oifname "lo" return
+exec nft add rule inet b4_mangle raw_prerouting meta mark & 0x8cfd8000 == 0x8000 return
+exec nft add rule inet b4_mangle raw_prerouting meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle raw_output meta mark & 0x8cfd8000 == 0x8000 return
+exec nft add rule inet b4_mangle raw_output meta nfproto ipv4 udp dport 53 counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle output meta nfproto ipv4 udp sport 53 udp dport != 53 counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 ct original packets < 20 ct direction reply counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 tcp flags & (syn|ack) == (syn|ack) ct direction reply counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle prerouting meta nfproto ipv4 tcp sport 443 tcp flags & rst == rst ct direction reply counter queue num 537-540 bypass
+exec nft add rule inet b4_mangle b4_chain udp dport 53 return
+exec nft add set inet b4_mangle b4_udp_drop4 { type ipv4_addr . inet_service . ipv4_addr . inet_service ; flags timeout ; timeout 120s ; size 65536 ; }
+exec nft add rule inet b4_mangle b4_chain ip saddr . udp sport . ip daddr . udp dport @b4_udp_drop4 counter drop
+exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 udp dport 443 ct original packets < 9 counter queue num 537-540 bypass
+sh -c sysctl -n net.netfilter.nf_conntrack_checksum 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -w net.netfilter.nf_conntrack_checksum=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_checksum
+sh -c sysctl -n net.netfilter.nf_conntrack_tcp_be_liberal 2>/dev/null || cat /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
+iptables -w -t filter -L FORWARD -n
+iptables-legacy -w -t filter -L FORWARD -n
 stdin nft -f -
   add table inet b4_dscp
   delete table inet b4_dscp

@@ -579,7 +579,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                   min={0}
                   max={1200}
                   step={64}
-                  valueSuffix=" bytes"
+                  valueSuffix={t("core.units.bytes")}
                   helperText={t("sets.faking.synFake.payloadLenHelper")}
                 />
               </Grid>
@@ -592,7 +592,6 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                   min={1}
                   max={100}
                   step={1}
-                  valueSuffix=" ms"
                   helperText={t("sets.faking.synFake.ttlHelper")}
                 />
               </Grid>
@@ -832,7 +831,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               min={5}
               max={config.tcp.incoming?.max || 150}
               step={1}
-              valueSuffix=" KB"
+              valueSuffix={t("core.units.kb")}
               disabled={
                 config.tcp.incoming?.mode === "off" ||
                 config.tcp.incoming?.mode === "fake"
@@ -854,7 +853,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               min={config.tcp.incoming?.min || 5}
               max={50}
               step={1}
-              valueSuffix=" KB"
+              valueSuffix={t("core.units.kb")}
               disabled={
                 config.tcp.incoming?.mode === "off" ||
                 config.tcp.incoming?.mode === "fake"
@@ -933,7 +932,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
                       min={256}
                       max={16384}
                       step={256}
-                      valueSuffix=" bytes"
+                      valueSuffix={t("core.units.bytes")}
                       helperText={t("sets.faking.mutation.paddingSizeHelper")}
                     />
                   </Grid>

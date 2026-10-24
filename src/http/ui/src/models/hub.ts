@@ -105,6 +105,7 @@ export interface HubTargets {
   geoip: string[];
   asns: string[];
   ip_count: number;
+  udp_l7: string[];
 }
 
 export interface HubMatch {

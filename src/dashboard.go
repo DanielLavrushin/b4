@@ -21,6 +21,7 @@ type dashboardSources struct {
 	rules     func() tables.RulesStatus
 	replaced  func() bool
 	overload  func() (uint64, uint64, uint64)
+	mac       func(ip string) string
 }
 
 func wireDashboard(mc *metrics.MetricsCollector, src dashboardSources) {
@@ -43,6 +44,7 @@ func wireDashboard(mc *metrics.MetricsCollector, src dashboardSources) {
 	metrics.SetProxyOpenProvider(src.open)
 	metrics.SetBinaryReplacedProvider(src.replaced)
 	metrics.SetOverloadProvider(src.overload)
+	metrics.SetMACProvider(src.mac)
 }
 
 func engineOverload() (injectSkipped, rawSendDropped, queueOverflow uint64) {

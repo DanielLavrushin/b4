@@ -2,6 +2,10 @@
 
 Releases of the community hub service, published from the `b4hub` repository. The router changelog is `changelog.md` at the repository root.
 
+## [1.5.0] - 2026-10-21
+
+- ADDED: **Sets without targets that handle only calls, which b4 1.88.0 can share, are accepted** - one that also filters TCP ports is refused, and the others are marked as needing b4 1.88.0, as is any set that uses the generated STUN payload. The calls they handle and their UDP ports count like targets for duplicates and versions, but their `udp.filter_stun`, which b4 ignores on such a set, does not. On set cards the console shows their calls, such as `Calls: Discord app, Browsers`, and its search finds them by `discord` or `stun`.
+
 ## [1.4.0] - 2026-10-12
 
 - ADDED: **Sets with the switch that removes ECH keys from DNS answers, which b4 1.87.0 can share, keep it through the hub** - `dns.strip_ech` crosses like the other DNS settings and marks the set as needing b4 1.87.0, where a hub built from an earlier b4 drops it as an unknown field.

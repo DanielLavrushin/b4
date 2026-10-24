@@ -320,7 +320,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
           min={10}
           max={500}
           step={10}
-          valueSuffix=" ms"
+          valueSuffix={t("core.units.ms")}
           helperText={t("sets.tcp.splitting.combo.firstDelayHelper")}
           aiTopic="fragmentation.combo.first_delay_ms"
         />
@@ -341,7 +341,7 @@ export const ComboSettings = ({ config, onChange }: ComboSettingsProps) => {
           min={100}
           max={10000}
           step={100}
-          valueSuffix=" μs"
+          valueSuffix={t("core.units.us")}
           helperText={t("sets.tcp.splitting.combo.jitterMaxHelper")}
           aiTopic="fragmentation.combo.jitter_max_us"
         />

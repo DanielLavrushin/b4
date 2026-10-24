@@ -155,7 +155,25 @@ var (
 	routeOwnedAddrs     = make(map[string]bool)
 	routeStaticApplied  = make(map[string]routeStaticEntries)
 	routeJumpOrderKey   string
+	routeMarksByIface   atomic.Pointer[map[string][]uint32]
 )
+
+func routePublishMarksLocked() {
+	marks := make(map[string][]uint32)
+	for _, st := range routeRuleCache {
+		if st.mode == config.RoutingModeInterface && st.iface != "" && st.mark != 0 {
+			marks[st.iface] = append(marks[st.iface], st.mark)
+		}
+	}
+	routeMarksByIface.Store(&marks)
+}
+
+func RoutedIfaceMarks(iface string) []uint32 {
+	if p := routeMarksByIface.Load(); p != nil {
+		return (*p)[iface]
+	}
+	return nil
+}
 
 func getRouteBackend(cfg *config.Config) routeBackend {
 	if routeEngine != nil {
@@ -209,6 +227,7 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 
 	routeMu.Lock()
 	defer routeMu.Unlock()
+	defer routePublishMarksLocked()
 
 	if stale != nil && stale() {
 		routeAddToInstalledSet(set, ips)
@@ -844,6 +863,7 @@ func RoutingClearAll() {
 	defer routePhaseMu.Unlock()
 	routeMu.Lock()
 	defer routeMu.Unlock()
+	defer routePublishMarksLocked()
 	routeAsyncForgetAll()
 	routeInstallFailedAt.Range(func(setID, _ any) bool {
 		routeInstallFailedAt.Delete(setID)
@@ -1152,6 +1172,7 @@ func routingForceResync(cfg *config.Config) {
 
 	routeMu.Lock()
 	defer routeMu.Unlock()
+	defer routePublishMarksLocked()
 	routeRuleCache = make(map[string]routeState)
 	routeIfaceAuto = make(map[string]routeState)
 	routeLastReResolve = make(map[string]time.Time)
@@ -1333,6 +1354,7 @@ func routingSyncConfig(cfg *config.Config) {
 }
 
 func routingSyncConfigLocked(cfg *config.Config) {
+	defer routePublishMarksLocked()
 	routeAsyncForgetAll()
 	IPTablesLockBudgetReset()
 	routeLoadCTMarkVerdict(cfg)

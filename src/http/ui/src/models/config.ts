@@ -133,6 +133,10 @@ export type UdpFilterQuicMode = "sni" | "all";
 export type UdpFakingStrategy = "none" | "ttl" | "checksum";
 
 export const UDP_FAKE_PAYLOAD_AUTO_QUIC = "@quic_initial";
+export const UDP_FAKE_PAYLOAD_AUTO_STUN = "@stun";
+
+export const UDP_L7_DISCORD = "discord";
+export const UDP_L7_STUN = "stun";
 export const UDP_FAKE_PAYLOAD_PRESET_1 = "@preset:quic1";
 export const UDP_FAKE_PAYLOAD_PRESET_2 = "@preset:quic2";
 
@@ -146,6 +150,7 @@ export interface UdpConfig {
   filter_quic: UdpFilterQuicMode;
   conn_bytes_limit: number;
   filter_stun: boolean;
+  filter_l7?: string[];
   seg2delay: number;
   seg2delay_max: number;
 }

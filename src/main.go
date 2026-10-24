@@ -273,6 +273,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	handler.SetTablesRefreshFunc(refreshTables)
 	handler.SetDiscoveryRuntime(discoveryRT)
 	nfq.DNSTCPReadyFunc = tables.SetDNSTCPListenerReady
+	tables.OwnPacketsShieldFunc = nfq.SetRerouteCheckAll
+	nfq.RouteMarksFunc = tables.RoutedIfaceMarks
 	nfq.RoutingHandleDNSFunc = tables.RoutingHandleDNS
 	nfq.RoutingLearnIPFunc = tables.RoutingLearnIP
 	nfq.RoutingLearnHostFunc = tables.RoutingLearnHost
@@ -339,6 +341,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 	tables.DNSQueryCopyOpenFunc = pool.OpenDNSQueryCopy
 	tables.DNSQueryCopyAliveFunc = pool.DNSQueryCopyAlive
 	tables.DNSQueryCopyPlacedFunc = pool.SetDNSQueryCopyFamilies
+	tables.QueueDirectionExactFunc = pool.SetQueueDirectionExact
+	tables.UDPDropWritersFunc = pool.SetUDPDropWriters
+	nfq.UDPDropFlushFunc = tables.FlushUDPDropSets
 	wireDashboard(mc, dashboardSources{
 		config:    cfgPtr.Load,
 		packets:   pool.PacketsProcessed,
@@ -347,6 +352,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		rules:     tables.RulesMonitorStatus,
 		replaced:  handler.BinaryReplaced,
 		overload:  engineOverload,
+		mac:       pool.Dhcp.GetMACForIP,
 	})
 
 	var tunEngine *b4tun.Engine

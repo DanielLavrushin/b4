@@ -686,13 +686,15 @@ func (set *SetConfig) RoutingHandsOffPackets() bool {
 	if RoutingUsesTProxy(set.RoutingModeOrDefault()) {
 		return true
 	}
-	if !set.RoutesToInterface() {
-		return false
-	}
-	if set.Targets.DomainOnly && len(set.Targets.IpsToMatch) == 0 {
+	if !set.RoutesAddressesToInterface() {
 		return false
 	}
 	return netif.EncapsulatedAndUp(set.Routing.EgressInterface)
+}
+
+func (set *SetConfig) RoutesAddressesToInterface() bool {
+	return set.RoutingDivertsPackets() && set.RoutesToInterface() &&
+		!(set.Targets.DomainOnly && len(set.Targets.IpsToMatch) == 0)
 }
 
 func (set *SetConfig) RoutingIncludesRouterTraffic() bool {
@@ -728,6 +730,22 @@ func (set *SetConfig) RoutingSourceScoped() bool {
 	return false
 }
 
+func (set *SetConfig) BlockRoutingScoped() bool {
+	return set.Routing.Enabled && RoutingIsBlock(set.Routing.Mode) && anyNonBlank(set.Routing.SourceInterfaces)
+}
+
+func (set *SetConfig) ListsSourceInterface(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, s := range set.Routing.SourceInterfaces {
+		if strings.TrimSpace(s) == name {
+			return true
+		}
+	}
+	return false
+}
+
 func (set *SetConfig) MatchesTCPDPort(port uint16) bool {
 	if len(set.TCPPortRanges) == 0 {
 		return true
@@ -742,9 +760,13 @@ func (set *SetConfig) MatchesTCPDPort(port uint16) bool {
 
 func (set *SetConfig) MatchesUDPDPort(port uint16) bool {
 	if len(set.UDPPortRanges) == 0 {
-		return true
+		return !portInRanges(set.UDPL7OnlyPorts, port)
 	}
-	for _, r := range set.UDPPortRanges {
+	return portInRanges(set.UDPPortRanges, port)
+}
+
+func portInRanges(ranges []PortRange, port uint16) bool {
+	for _, r := range ranges {
 		if port >= r.Min && port <= r.Max {
 			return true
 		}
@@ -752,26 +774,77 @@ func (set *SetConfig) MatchesUDPDPort(port uint16) bool {
 	return false
 }
 
-func (cfg *Config) BuildSetPortRanges() {
-	for _, set := range cfg.Sets {
-		set.TCPPortRanges = nil
-		set.UDPPortRanges = nil
+func (set *SetConfig) SelectsL7() bool {
+	return len(set.UDP.FilterL7) > 0
+}
 
-		if set.TCP.DPortFilter != "" {
-			for _, part := range strings.Split(set.TCP.DPortFilter, ",") {
-				if pr, ok := parsePortRangeStr(part); ok {
-					set.TCPPortRanges = append(set.TCPPortRanges, pr)
-				}
-			}
-		}
-		if set.UDP.DPortFilter != "" {
-			for _, part := range strings.Split(set.UDP.DPortFilter, ",") {
-				if pr, ok := parsePortRangeStr(part); ok {
-					set.UDPPortRanges = append(set.UDPPortRanges, pr)
-				}
-			}
+func (set *SetConfig) SelectsL7Class(class string) bool {
+	if class == "" {
+		return false
+	}
+	for _, c := range set.UDP.FilterL7 {
+		if c == class {
+			return true
 		}
 	}
+	return false
+}
+
+func (cfg *Config) BuildSetPortRanges() {
+	var selected, listed []PortRange
+	for _, set := range cfg.Sets {
+		set.TCPPortRanges = ParsePortRanges(set.TCP.DPortFilter)
+		set.UDPPortRanges = ParsePortRanges(set.UDP.DPortFilter)
+		if !set.Enabled {
+			continue
+		}
+		if set.SelectsL7() {
+			selected = append(selected, set.UDPPortRanges...)
+		} else {
+			listed = append(listed, set.UDPPortRanges...)
+		}
+	}
+	l7Only := subtractPortRanges(selected, append(listed, PortRange{Min: 443, Max: 443}))
+	for _, set := range cfg.Sets {
+		set.UDPL7OnlyPorts = nil
+		if !set.SelectsL7() && len(set.UDPPortRanges) == 0 {
+			set.UDPL7OnlyPorts = l7Only
+		}
+	}
+}
+
+func subtractPortRanges(from, minus []PortRange) []PortRange {
+	if len(from) == 0 {
+		return nil
+	}
+	out := append([]PortRange(nil), from...)
+	for _, m := range minus {
+		var next []PortRange
+		for _, r := range out {
+			if m.Max < r.Min || m.Min > r.Max {
+				next = append(next, r)
+				continue
+			}
+			if r.Min < m.Min {
+				next = append(next, PortRange{Min: r.Min, Max: m.Min - 1})
+			}
+			if r.Max > m.Max {
+				next = append(next, PortRange{Min: m.Max + 1, Max: r.Max})
+			}
+		}
+		out = next
+	}
+	return out
+}
+
+func ParsePortRanges(filter string) []PortRange {
+	var out []PortRange
+	for _, part := range strings.Split(filter, ",") {
+		if pr, ok := parsePortRangeStr(part); ok {
+			out = append(out, pr)
+		}
+	}
+	return out
 }
 
 func parsePortRangeStr(part string) (PortRange, bool) {
@@ -803,6 +876,27 @@ func (cfg *Config) IsTCPPort(port uint16) bool {
 		return port == 443
 	}
 	return cfg.tcpPortMap[port]
+}
+
+var ephemeralPortRanges = []PortRange{{Min: 32768, Max: 60999}, {Min: 49152, Max: 65535}}
+
+func (cfg *Config) TCPPortsOverlapEphemeral() (string, bool) {
+	var overlap []string
+	for _, part := range cfg.CollectTCPPorts() {
+		ports, ok := parsePortRangeStr(part)
+		if !ok {
+			continue
+		}
+		for _, eph := range ephemeralPortRanges {
+			if lo, hi := max(ports.Min, eph.Min), min(ports.Max, eph.Max); lo <= hi {
+				overlap = append(overlap, fmt.Sprintf("%d-%d", lo, hi))
+			}
+		}
+	}
+	if len(overlap) == 0 {
+		return "", false
+	}
+	return strings.Join(mergeAndNormalizePorts(overlap), ","), true
 }
 
 func (cfg *Config) CollectDeviceMSSClamps() map[int][]DeviceMatch {
@@ -979,6 +1073,15 @@ func (cfg *Config) AnySetDSCP() bool {
 	return false
 }
 
+func (cfg *Config) AnySetTCPIncoming() bool {
+	for _, set := range cfg.Sets {
+		if set != nil && set.Enabled && set.TCP.Incoming.Mode != "" && set.TCP.Incoming.Mode != ConfigOff {
+			return true
+		}
+	}
+	return false
+}
+
 func (cfg *Config) DSCPRefusal(set *SetConfig) string {
 	if set.Routing.Enabled {
 		switch set.RoutingModeOrDefault() {
@@ -1001,6 +1104,44 @@ func (cfg *Config) DSCPRefusal(set *SetConfig) string {
 		return DSCPRefusedNoAddresses
 	}
 	return ""
+}
+
+type DSCPProbe struct {
+	Value int
+	IPv4  bool
+	IPv6  bool
+}
+
+type DSCPPath struct {
+	IPv4       *int     `json:"ipv4,omitempty"`
+	IPv6       *int     `json:"ipv6,omitempty"`
+	Interfaces []string `json:"interfaces,omitempty"`
+}
+
+func (p *DSCPPath) Value(v6 bool) *int {
+	if p == nil {
+		return nil
+	}
+	v := p.IPv4
+	if v6 {
+		v = p.IPv6
+	}
+	if v == nil {
+		return nil
+	}
+	value := *v
+	return &value
+}
+
+func (cfg *Config) ProbeDSCP(set *SetConfig) *DSCPProbe {
+	if cfg == nil || set == nil || cfg.System.Tables.SkipSetup || set.Targets.DomainOnly {
+		return nil
+	}
+	value, on := set.DSCPStamp()
+	if !on || cfg.DSCPRefusal(set) != "" {
+		return nil
+	}
+	return &DSCPProbe{Value: value, IPv4: set.MatchesIPVersion(4), IPv6: set.MatchesIPVersion(6)}
 }
 
 func (set *SetConfig) DSCPLearnTTL(fromTLS bool) time.Duration {
@@ -1232,7 +1373,7 @@ func (c *Config) LoadCapturePayloads() {
 
 		set.UDP.FakePayloadData = nil
 		switch set.UDP.FakePayloadFile {
-		case "", FakePayloadAutoQUIC:
+		case "", FakePayloadAutoQUIC, FakePayloadAutoSTUN:
 		case FakePayloadPreset1:
 			set.UDP.FakePayloadData = FakeQUIC1
 		case FakePayloadPreset2:
@@ -1336,6 +1477,11 @@ func (c *Config) sanitizeEscalation() {
 			s.Escalate.To = ""
 			continue
 		}
+		if len(NormalizeL7Filter(target.UDP.FilterL7)) > 0 {
+			log.Warnf("Set %q (id=%s): escalate.to %q (id=%s) selects UDP protocols and cannot be an escalation target, clearing", s.Name, s.Id, target.Name, target.Id)
+			s.Escalate.To = ""
+			continue
+		}
 		if !target.Enabled {
 			log.Tracef("Set %q (id=%s): escalate.to %q (id=%s) is disabled, the link is kept but stays idle until it is enabled again", s.Name, s.Id, target.Name, target.Id)
 		}
@@ -1389,6 +1535,9 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 		}
 	}
 	if oldCfg.Queue.TCPConnBytesLimit != newCfg.Queue.TCPConnBytesLimit || oldCfg.Queue.UDPConnBytesLimit != newCfg.Queue.UDPConnBytesLimit {
+		return true
+	}
+	if oldCfg.AnySetTCPIncoming() != newCfg.AnySetTCPIncoming() {
 		return true
 	}
 	if oldCfg.System.DNS.TCPDisabled != newCfg.System.DNS.TCPDisabled || oldCfg.DNSTCPListenPort() != newCfg.DNSTCPListenPort() {

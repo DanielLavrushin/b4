@@ -4,10 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/hubwire"
 	"github.com/daniellavrushin/b4/sni"
 )
 
@@ -40,6 +43,30 @@ func canonicalASN(s string) string {
 	return lowerTrimmed(s)
 }
 
+func udpPorts(projection map[string]interface{}) []string {
+	udp, _ := projection["udp"].(map[string]interface{})
+	ports, _ := udp["dport_filter"].(string)
+	ranges := config.ParsePortRanges(ports)
+	sort.Slice(ranges, func(i, j int) bool { return ranges[i].Min < ranges[j].Min })
+	var merged []config.PortRange
+	for _, r := range ranges {
+		if n := len(merged); n > 0 && int(r.Min) <= int(merged[n-1].Max)+1 {
+			merged[n-1].Max = max(merged[n-1].Max, r.Max)
+			continue
+		}
+		merged = append(merged, r)
+	}
+	out := make([]string, 0, len(merged))
+	for _, r := range merged {
+		if r.Min == r.Max {
+			out = append(out, strconv.Itoa(int(r.Min)))
+		} else {
+			out = append(out, fmt.Sprintf("%d-%d", r.Min, r.Max))
+		}
+	}
+	return out
+}
+
 func TargetsKey(projection map[string]interface{}) string {
 	canon := map[string][]string{
 		"sni_domains": canonicalTargets(TargetList(projection, "sni_domains"), sni.CanonicalDomainEntry),
@@ -49,6 +76,10 @@ func TargetsKey(projection map[string]interface{}) string {
 	}
 	if asns := canonicalTargets(TargetList(projection, "asns"), canonicalASN); len(asns) > 0 {
 		canon["asns"] = asns
+	}
+	if classes := canonicalTargets(hubwire.UDPL7(projection), lowerTrimmed); len(classes) > 0 {
+		canon["udp_l7"] = classes
+		canon["udp_ports"] = udpPorts(projection)
 	}
 	data, _ := json.Marshal(canon)
 	sum := sha256.Sum256(data)
@@ -67,5 +98,6 @@ func TargetEntries(projection map[string]interface{}) map[string]struct{} {
 	add("geosite:", TargetList(projection, "geosite_categories"), lowerTrimmed)
 	add("geoip:", TargetList(projection, "geoip_categories"), lowerTrimmed)
 	add("asn:", TargetList(projection, "asns"), canonicalASN)
+	add("udp_l7:", hubwire.UDPL7(projection), lowerTrimmed)
 	return out
 }

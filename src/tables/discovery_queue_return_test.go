@@ -40,7 +40,7 @@ func TestDiscoverySteeringKeepsItsMarksOutOfTheIptablesQueueChain(t *testing.T) 
 	stubBinaryPresence(t, map[string]bool{backendIPTables: true, backendIP6Tables: true})
 	calls := discoveryRecordRun(t, nil)
 
-	if err := (&discoveryIptBackend{}).apply(0x8001, 0x8002, 541, 1); err != nil {
+	if err := (&discoveryIptBackend{}).apply(0x8001, 0x8002, 541, 1, nil); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	for _, bin := range []string{backendIPTables, backendIP6Tables} {
@@ -67,7 +67,7 @@ func TestDiscoverySteeringKeepsItsMarksOutOfTheIptablesQueueChain(t *testing.T) 
 func TestDiscoverySteeringKeepsItsMarksOutOfTheNftQueueChain(t *testing.T) {
 	calls := discoveryRecordRun(t, nil)
 
-	if err := (&discoveryNftBackend{}).apply(0x8001, 0x8002, 541, 1); err != nil {
+	if err := (&discoveryNftBackend{}).apply(0x8001, 0x8002, 541, 1, nil); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	for _, mark := range []string{"0x8001", "0x8002"} {
@@ -85,7 +85,7 @@ func TestDiscoveryClearTakesOnlyItsReturnsOutOfTheNftQueueChain(t *testing.T) {
 		meta mark 0x00008002 return # handle 31
 		meta mark & 0x00008000 == 0x00008000 return # handle 4
 		meta mark & 0x00027fff == 0x00024bab return # handle 5
-		tcp dport 443 ct original packets < 20 counter packets 0 bytes 0 queue flags bypass to 537-540 # handle 7
+		tcp dport 443 ct original packets < 20 ct direction original counter packets 0 bytes 0 queue flags bypass to 537-540 # handle 7
 	}
 }`
 	calls := discoveryRecordRun(t, map[string]string{

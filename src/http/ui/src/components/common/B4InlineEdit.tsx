@@ -8,6 +8,7 @@ interface B4InlineEditProps {
   onSave: (value: string) => Promise<void> | void;
   onCancel: () => void;
   disabled?: boolean;
+  allowEmpty?: boolean;
   width?: number;
 }
 
@@ -16,13 +17,15 @@ export const B4InlineEdit = ({
   onSave,
   onCancel,
   disabled = false,
+  allowEmpty = false,
   width = 150,
 }: B4InlineEditProps) => {
   const [value, setValue] = useState(initialValue);
   const [saving, setSaving] = useState(false);
+  const blocked = !allowEmpty && !value.trim();
 
   const handleSave = async () => {
-    if (!value.trim()) return;
+    if (blocked) return;
     setSaving(true);
     try {
       await onSave(value.trim());
@@ -51,7 +54,7 @@ export const B4InlineEdit = ({
       <IconButton
         size="small"
         onClick={() => void handleSave()}
-        disabled={saving || !value.trim()}
+        disabled={saving || blocked}
         color="success"
       >
         <CheckIcon fontSize="small" />

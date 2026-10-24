@@ -618,7 +618,7 @@ func iptRawDNSQueuePresent(ipt, markAccept string) bool {
 	return true
 }
 
-func (n *NFTablesManager) addDNSQueryQueueChains(markAccept string) error {
+func (n *NFTablesManager) addDNSQueryQueueChains(ownMask, ownValue string) error {
 	if err := n.createChain(nftRawPreChain, "prerouting", nftRawPriority, "accept"); err != nil {
 		return err
 	}
@@ -629,7 +629,7 @@ func (n *NFTablesManager) addDNSQueryQueueChains(markAccept string) error {
 		return err
 	}
 	for _, chain := range []string{nftRawPreChain, nftRawOutChain} {
-		if err := n.addRule(chain, "meta", "mark", "&", markAccept, "==", markAccept, "return"); err != nil {
+		if err := n.addRule(chain, "meta", "mark", "&", ownMask, "==", ownValue, "return"); err != nil {
 			return err
 		}
 		if err := n.addQueueRule(chain, "udp", "dport", "53", "counter"); err != nil {
@@ -639,8 +639,8 @@ func (n *NFTablesManager) addDNSQueryQueueChains(markAccept string) error {
 	return nil
 }
 
-func (n *NFTablesManager) addDNSQueryRules(markAccept string) (bool, error) {
-	err := n.addDNSQueryQueueChains(markAccept)
+func (n *NFTablesManager) addDNSQueryRules(ownMask, ownValue string) (bool, error) {
+	err := n.addDNSQueryQueueChains(ownMask, ownValue)
 	if err == nil {
 		return true, nil
 	}

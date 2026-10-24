@@ -266,9 +266,10 @@ func (api *API) matchDomainsToSets(domains []string, excludeId string) []SetDoma
 // @Accept json
 // @Produce json
 // @Param id path string true "Set ID"
-// @Param body body object true "Domain object"
+// @Param body body object true "domain or domains, optional pins. Discovery adds tested, the discovered set, and the dscp_path of its run: the set must still carry that strategy, and its traffic the path the run tested"
 // @Success 200 {object} map[string]interface{}
 // @Failure 404 {string} string
+// @Failure 409 {object} APIError "code: similar_set_changed, dscp_path_changed or dscp_rules_pending, when tested is given"
 // @Security BearerAuth
 // @Router /sets/{id}/add-domain [post]
 func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
@@ -280,12 +281,18 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 	setId := r.PathValue("id")
 
 	var req struct {
-		Domain  string              `json:"domain"`
-		Domains []string            `json:"domains"`
-		Pins    map[string][]string `json:"pins"`
+		Domain   string              `json:"domain"`
+		Domains  []string            `json:"domains"`
+		Pins     map[string][]string `json:"pins"`
+		Tested   *config.SetConfig   `json:"tested,omitempty"`
+		DSCPPath *config.DSCPPath    `json:"dscp_path,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, ErrInvalidJSON())
+		return
+	}
+	if !validDSCPPath(req.DSCPPath) {
+		writeAPIError(w, ErrBadRequest(errDSCPPathRange.Error()))
 		return
 	}
 
@@ -306,6 +313,14 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 		set := next.GetSetById(setId)
 		if set == nil {
 			return ErrNotFound("Set not found")
+		}
+		if req.Tested != nil {
+			if !setsHaveSimilarConfig(set, req.Tested) {
+				return errSimilarSetChanged(set.Name)
+			}
+			if err := dscpPathRefusal(next, set, req.Tested, req.DSCPPath); err != nil {
+				return err
+			}
 		}
 		addSNIDomains(set, domains)
 		set.MergePins(req.Pins)

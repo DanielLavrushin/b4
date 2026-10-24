@@ -418,16 +418,18 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 		return fmt.Errorf("send reply: %w", err)
 	}
 
-	s.logConnection("TCP", conn.RemoteAddr().String(), dest, "socks5")
-	if viaSet != "" {
-		mc := metrics.GetMetricsCollector()
-		mc.CountConnection(viaSet)
-		if host, _, err := net.SplitHostPort(dest); err == nil {
-			if addr, err := netip.ParseAddr(host); err == nil {
-				mc.RecordAddress(addr, viaSet)
-			} else {
-				mc.RecordDomain(host, viaSet)
-			}
+	from := metrics.DeviceOf(conn.RemoteAddr())
+	s.logConnection("TCP", conn.RemoteAddr().String(), dest, from.MAC, "socks5")
+	mc := metrics.GetMetricsCollector()
+	host, _, _ := net.SplitHostPort(dest)
+	if viaSet == "" {
+		mc.CountRelayedConnection(from, host)
+	} else {
+		mc.CountConnection(viaSet, from)
+		if addr, err := netip.ParseAddr(host); err == nil {
+			mc.RecordAddress(addr, viaSet)
+		} else if host != "" {
+			mc.RecordDomain(host, viaSet, from)
 		}
 	}
 
@@ -643,7 +645,7 @@ func (s *Server) matchDestinationSet(dest string) (*config.SetConfig, string, *c
 
 // --- Logging and metrics ---
 
-func (s *Server) logConnection(protocol, clientAddr, dest, metadata string) {
+func (s *Server) logConnection(protocol, clientAddr, dest, srcMac, metadata string) {
 	clientHost, clientPortStr, _ := net.SplitHostPort(clientAddr)
 
 	domain := dest
@@ -656,7 +658,7 @@ func (s *Server) logConnection(protocol, clientAddr, dest, metadata string) {
 
 	source := net.JoinHostPort(clientHost, clientPortStr)
 	destination := net.JoinHostPort(destHost, destPortStr)
-	log.LogConnectionStr(protocol, sniTarget, domain, source, ipTarget, destination, "", "", metadata)
+	log.LogConnectionStr(protocol, sniTarget, domain, source, ipTarget, destination, srcMac, "", metadata)
 
 	setName := sniTarget
 	if setName == "" {

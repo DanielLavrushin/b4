@@ -157,10 +157,14 @@ type CheckSuite struct {
 	CurrentPhase           DiscoveryPhase                    `json:"current_phase,omitempty"`
 	Source                 string                            `json:"source,omitempty"`
 	SetId                  string                            `json:"set_id,omitempty"`
+	DSCP                   *int                              `json:"dscp,omitempty"`
+	DSCPIPVersion          string                            `json:"dscp_ip_version,omitempty"`
+	DSCPPath               *config.DSCPPath                  `json:"dscp_path,omitempty"`
 	SetVerdict             *SetVerdict                       `json:"set_verdict,omitempty"`
 	StoppedEarly           bool                              `json:"stopped_early,omitempty"`
 	StoppedPhase           DiscoveryPhase                    `json:"stopped_phase,omitempty"`
 	StoppedCovered         bool                              `json:"stopped_covered,omitempty"`
+	RulesChanged           bool                              `json:"rules_changed,omitempty"`
 	mu                     sync.RWMutex                      `json:"-"`
 	cancel                 chan struct{}                     `json:"-"`
 	finish                 chan struct{}                     `json:"-"`

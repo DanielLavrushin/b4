@@ -25,13 +25,15 @@ func echStripWanted(cfg *config.Config, set *config.SetConfig, qtype uint16) boo
 	return stripsECH(set) || cfg.HasECHStrip()
 }
 
-func (w *Worker) echMatchSet(host, clientMac string, unknownDevice bool) *config.SetConfig {
+func (w *Worker) echMatchSet(host, clientMac string, unknownDevice bool, from ...*ingressScope) *config.SetConfig {
+	scope := scopeFrom(from)
+	matcher, keep := w.matcherIn(scope), scope.filter()
 	var matched bool
 	var set *config.SetConfig
 	if unknownDevice {
-		matched, set = w.getMatcher().MatchSNIForUnknownDevice(host)
+		matched, set = matcher.MatchSNIForUnknownDevice(host, keep)
 	} else {
-		matched, set = w.getMatcher().MatchSNIWithSource(host, clientMac)
+		matched, set = matcher.MatchSNIWithSource(host, clientMac, keep)
 	}
 	if !matched {
 		return nil
@@ -39,7 +41,7 @@ func (w *Worker) echMatchSet(host, clientMac string, unknownDevice bool) *config
 	return set
 }
 
-func (w *Worker) echStripSet(cfg *config.Config, set *config.SetConfig, clientMac string, resp []byte, unknownDevice bool) (*config.SetConfig, string) {
+func (w *Worker) echStripSet(cfg *config.Config, set *config.SetConfig, clientMac string, resp []byte, unknownDevice bool, from ...*ingressScope) (*config.SetConfig, string) {
 	if stripsECH(set) {
 		return set, ""
 	}
@@ -47,19 +49,19 @@ func (w *Worker) echStripSet(cfg *config.Config, set *config.SetConfig, clientMa
 		return nil, ""
 	}
 	for _, cover := range dns.ResponseECHPublicNames(resp) {
-		if coverSet := w.echMatchSet(cover, clientMac, unknownDevice); stripsECH(coverSet) {
+		if coverSet := w.echMatchSet(cover, clientMac, unknownDevice, from...); stripsECH(coverSet) {
 			return coverSet, cover
 		}
 	}
 	return nil, ""
 }
 
-func (w *Worker) stripECHKeys(cfg *config.Config, set *config.SetConfig, domain, clientMac string, resp []byte, overTCP, unknownDevice bool) ([]byte, *config.SetConfig) {
+func (w *Worker) stripECHKeys(cfg *config.Config, set *config.SetConfig, domain, clientMac string, resp []byte, overTCP, unknownDevice bool, from ...*ingressScope) ([]byte, *config.SetConfig) {
 	qtype, ok := dns.QuestionType(resp)
 	if !ok || !echStripWanted(cfg, set, qtype) {
 		return nil, nil
 	}
-	actor, cover := w.echStripSet(cfg, set, clientMac, resp, unknownDevice)
+	actor, cover := w.echStripSet(cfg, set, clientMac, resp, unknownDevice, from...)
 	if actor == nil {
 		return nil, nil
 	}
@@ -108,7 +110,8 @@ func (w *Worker) handleECHOnlyPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.C
 	server := append(net.IP(nil), pkt.src...)
 	clientMac := w.getMacByIp(client.String())
 	unknownDevice := clientMac == ""
-	echless, actor := w.stripECHKeys(cfg, w.echMatchSet(domain, clientMac, unknownDevice), domain, clientMac, payload, false, unknownDevice)
+	scope := w.clientScope(client)
+	echless, actor := w.stripECHKeys(cfg, w.echMatchSet(domain, clientMac, unknownDevice, scope), domain, clientMac, payload, false, unknownDevice, scope)
 	if echless == nil {
 		return vc.accept()
 	}

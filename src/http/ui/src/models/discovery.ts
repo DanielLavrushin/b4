@@ -127,6 +127,12 @@ export interface DiscoveryResult {
   ech_only_block?: boolean;
 }
 
+export interface DSCPPath {
+  ipv4?: number;
+  ipv6?: number;
+  interfaces?: string[];
+}
+
 export interface DiscoverySuite {
   id: string;
   status: DiscoveryStatus;
@@ -145,8 +151,11 @@ export interface DiscoverySuite {
   stopped_phase?: DiscoveryPhase;
   runtime_active?: boolean;
   set_id?: string;
+  dscp?: number;
+  dscp_path?: DSCPPath;
   set_verdict?: SetVerdict;
   stopped_covered?: boolean;
+  rules_changed?: boolean;
 }
 
 export type SetVerdictStatus =
@@ -176,6 +185,8 @@ export interface SetRunRecord {
   start_time: string;
   end_time: string;
   urls?: string[];
+  dscp?: number;
+  dscp_path?: DSCPPath;
   verdict: SetVerdict;
 }
 
@@ -232,10 +243,13 @@ export interface HistoryEntry {
   ech_cover_name?: string;
   ech_only_block?: boolean;
   stopped_early?: boolean;
+  rules_changed?: boolean;
   order?: number;
   applied?: Record<string, AppliedMark>;
   size_bytes?: number;
   set_id?: string;
+  dscp?: number;
+  dscp_path?: DSCPPath;
 }
 
 export interface SimilarSet {

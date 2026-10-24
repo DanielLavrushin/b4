@@ -530,7 +530,7 @@ func TestLegacyHealWritesOverTheCurrentConfigAndRollsBack(t *testing.T) {
 		})
 	}
 
-	h.w.healBatch([]string{"youtube.com"})
+	h.w.healBatch([]string{"youtube.com"}, nil)
 
 	if got := h.set("tr").Fragmentation.Strategy; got != "oob" {
 		t.Errorf("a save that lands just before the legacy heal writes is kept, got %q", got)
@@ -553,7 +553,7 @@ func TestLegacyRollbackSurvivesAnUnrelatedSave(t *testing.T) {
 		h.editGlobal(func(c *config.Config) { c.System.Geo.AutoUpdate.LastRun = "2026-09-24T12:00:00Z" })
 	})
 
-	h.w.healBatch([]string{"youtube.com"})
+	h.w.healBatch([]string{"youtube.com"}, nil)
 
 	if got := h.set("yt").Fragmentation.Strategy; got != "tcp" {
 		t.Errorf("a save to another set and to the geo settings does not stop the rollback, got %q", got)
@@ -575,7 +575,7 @@ func TestLegacyRollbackLeavesASetEditedAfterTheHeal(t *testing.T) {
 		h.edit("yt", func(s *config.SetConfig) { s.TCP.Seg2Delay = 42 })
 	})
 
-	h.w.healBatch([]string{"youtube.com"})
+	h.w.healBatch([]string{"youtube.com"}, nil)
 
 	yt := h.set("yt")
 	if yt.Fragmentation.Strategy != "disorder" || yt.TCP.Seg2Delay != 42 {
@@ -595,7 +595,7 @@ func TestLegacyRollbackUndoesTheDomainsTheHealAdded(t *testing.T) {
 		}
 	})
 
-	h.w.healBatch([]string{"www.youtube.com"})
+	h.w.healBatch([]string{"www.youtube.com"}, nil)
 
 	yt := h.set("yt")
 	if yt.Fragmentation.Strategy != "tcp" {
@@ -629,7 +629,7 @@ func TestLegacyRollbackRemovesTheSetTheHealCreated(t *testing.T) {
 				}
 			})
 
-			h.w.healBatch([]string{"example.com"})
+			h.w.healBatch([]string{"example.com"}, nil)
 
 			created := false
 			for _, set := range h.ptr.Load().Sets {

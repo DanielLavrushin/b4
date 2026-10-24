@@ -6,6 +6,7 @@ type SentRevs struct {
 	Blocked      uint64
 	TopDomains   uint64
 	TopAddresses uint64
+	Devices      uint64
 	Escalations  uint64
 	Events       uint64
 }
@@ -72,6 +73,12 @@ func (m *MetricsCollector) buildFrame(sent *SentRevs) Frame {
 		fr.TopAddresses = m.addr.list(off)
 		if !full {
 			sent.TopAddresses = fr.TopAddresses.Rev
+		}
+	}
+	if full || m.dev.currentRev() > sent.Devices {
+		fr.Devices = m.dev.list(off)
+		if !full {
+			sent.Devices = fr.Devices.Rev
 		}
 	}
 	if full || m.esc.currentRev() > sent.Escalations {

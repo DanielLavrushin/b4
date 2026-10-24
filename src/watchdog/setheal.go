@@ -31,6 +31,7 @@ const (
 	setRunStopped
 	setRunAborted
 	setRunOverBudget
+	setRunRulesChanged
 )
 
 type strategySections struct {
@@ -140,17 +141,24 @@ func (w *Watchdog) healSet(id string) {
 		Source:          discovery.SourceWatchdog,
 		SetId:           set.Id,
 		SetStrategy:     discovery.SetRunStrategy(set),
+		DSCP:            cfg.ProbeDSCP(set),
 		StopWhenCovered: true,
 		TLSVersion:      tlsVersion,
 		IPVersion:       ipVersion,
 	})
-	if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) {
-		log.Infof("[WATCHDOG] set %q: another discovery run holds the runtime, the heal waits", set.Name)
+	if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) || errors.Is(err, discovery.ErrDSCPRulesPending) {
+		reason := ReasonBusy
+		if errors.Is(err, discovery.ErrDSCPRulesPending) {
+			reason = ReasonRulesChanged
+			log.Infof("[WATCHDOG] set %q: b4 is still applying its DSCP rules, the heal waits", set.Name)
+		} else {
+			log.Infof("[WATCHDOG] set %q: another discovery run holds the runtime, the heal waits", set.Name)
+		}
 		w.mu.Lock()
 		if st := w.setStates[id]; st != nil {
 			st.Status = SetStatusHealQueued
-			st.Reason = ReasonBusy
-			w.enqueueHealLocked(id, true)
+			st.Reason = reason
+			w.enqueueHealLocked(id, reason == ReasonBusy)
 		}
 		w.mu.Unlock()
 		return
@@ -161,7 +169,7 @@ func (w *Watchdog) healSet(id string) {
 	}
 	log.Infof("[WATCHDOG] set %q: started a discovery run for %s", set.Name, strings.Join(urls, ", "))
 
-	verdict, outcome := w.awaitSetRun(id, suiteID, key)
+	verdict, dscpPath, outcome := w.awaitSetRun(id, suiteID, key)
 	switch outcome {
 	case setRunStopped:
 		return
@@ -170,6 +178,9 @@ func (w *Watchdog) healSet(id string) {
 		return
 	case setRunOverBudget:
 		w.healFailed(id, ReasonBudget, fmt.Sprintf("the discovery run did not finish within %s", healCancelAfter))
+		return
+	case setRunRulesChanged:
+		w.healFailed(id, ReasonRulesChanged, "the firewall rules the run depends on changed during it, so its results could come from another network path")
 		return
 	}
 
@@ -198,10 +209,10 @@ func (w *Watchdog) healSet(id string) {
 		return
 	}
 
-	w.adoptAndVerify(id, key, expectedRevision, urls, verdict)
+	w.adoptAndVerify(id, key, expectedRevision, urls, verdict, dscpPath)
 }
 
-func (w *Watchdog) awaitSetRun(id, suiteID, key string) (*discovery.SetVerdict, setRunOutcome) {
+func (w *Watchdog) awaitSetRun(id, suiteID, key string) (*discovery.SetVerdict, *config.DSCPPath, setRunOutcome) {
 	start := w.clock()
 	finishRequested := false
 	pollEvery := w.pollEvery
@@ -215,7 +226,7 @@ poll:
 		case <-w.stop:
 			log.Infof("[WATCHDOG] shutting down, canceling the set heal run")
 			w.disc.Cancel(suiteID)
-			return nil, setRunStopped
+			return nil, nil, setRunStopped
 		case <-time.After(pollEvery):
 		}
 
@@ -224,14 +235,14 @@ poll:
 		if !cfg.System.Checker.Watchdog.Enabled || !set.WatchdogActive() || urlKeyOf(set) != key {
 			log.Infof("[WATCHDOG] set heal canceled: the set or the watchdog changed")
 			w.disc.Cancel(suiteID)
-			return nil, setRunAborted
+			return nil, nil, setRunAborted
 		}
 
 		elapsed := w.clock().Sub(start)
 		if elapsed >= healCancelAfter {
 			log.Warnf("[WATCHDOG] set %q: the heal run exceeded %s, canceling it", set.Name, healCancelAfter)
 			w.disc.Cancel(suiteID)
-			return nil, setRunOverBudget
+			return nil, nil, setRunOverBudget
 		}
 		if elapsed >= healFinishAfter && !finishRequested {
 			log.Infof("[WATCHDOG] set %q: the heal run passed %s, stopping the search and confirming what was found", set.Name, healFinishAfter)
@@ -251,17 +262,20 @@ poll:
 	}
 	w.waitDiscoveryIdle(limit)
 	if w.stopping() {
-		return nil, setRunStopped
+		return nil, nil, setRunStopped
 	}
 
 	snap, ok := w.disc.Snapshot(suiteID)
-	if !ok || snap.SetVerdict == nil {
-		return &discovery.SetVerdict{Status: discovery.SetVerdictIncomplete}, setRunDone
+	switch {
+	case ok && snap.RulesChanged:
+		return nil, nil, setRunRulesChanged
+	case !ok || snap.SetVerdict == nil:
+		return &discovery.SetVerdict{Status: discovery.SetVerdictIncomplete}, nil, setRunDone
 	}
-	return snap.SetVerdict, setRunDone
+	return snap.SetVerdict, snap.DSCPPath, setRunDone
 }
 
-func (w *Watchdog) adoptAndVerify(id, key, expectedRevision string, urls []string, verdict *discovery.SetVerdict) {
+func (w *Watchdog) adoptAndVerify(id, key, expectedRevision string, urls []string, verdict *discovery.SetVerdict, dscpPath *config.DSCPPath) {
 	var saved strategySections
 	var written *config.Config
 	err := w.update(func(current *config.Config) (*config.Config, error) {
@@ -271,6 +285,9 @@ func (w *Watchdog) adoptAndVerify(id, key, expectedRevision string, urls []strin
 		}
 		if SetRevision(set) != expectedRevision {
 			return nil, errSetEdited
+		}
+		if err := dscpPathMoved(current, set, verdict.Set, dscpPath); err != nil {
+			return nil, err
 		}
 		fresh := current.Clone()
 		target := fresh.GetSetById(id)
@@ -285,12 +302,16 @@ func (w *Watchdog) adoptAndVerify(id, key, expectedRevision string, urls []strin
 		written = fresh
 		return fresh, nil
 	})
+	var moved *discovery.DSCPPathChange
 	switch {
 	case errors.Is(err, errHealNotWatched):
 		w.healAborted(id, "the set changed or the watchdog was turned off before the result could be written")
 		return
 	case errors.Is(err, errSetEdited):
 		w.healEdited(id)
+		return
+	case errors.Is(err, errDSCPRulesPending), errors.As(err, &moved):
+		w.healFailed(id, ReasonRulesChanged, fmt.Sprintf("nothing was written: %v", err))
 		return
 	case err != nil:
 		w.healFailed(id, ReasonVerifyFailed, fmt.Sprintf("saving the healed strategy failed: %v", err))

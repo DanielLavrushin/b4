@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -32,6 +33,8 @@ var (
 	rulesAppliedBackend string
 	addRulesFn          = addRules
 	clearRulesFn        = clearRules
+
+	OwnPacketsShieldFunc func(shielded bool)
 )
 
 func AddRules(cfg *config.Config) error {
@@ -76,12 +79,14 @@ func addRules(cfg *config.Config) error {
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
+	discoveryDSCPRewritten(cfg)
 	rulesAppliedCfg = cfg
 
 	IPTablesLockBudgetReset()
 
 	backend := detectFirewallBackend(cfg)
 	rulesAppliedBackend = backend
+	publishOwnPacketsShield(backend)
 	log.Tracef("Detected firewall backend: %s", backend)
 
 	if backend == backendNFTables {
@@ -105,6 +110,7 @@ func clearRules(cfg *config.Config) error {
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
+	discoveryDSCPRewritten(nil)
 
 	IPTablesLockBudgetReset()
 
@@ -418,6 +424,46 @@ func getSysctlOrProc(name string) string {
 	return strings.TrimSpace(out)
 }
 
+func publishOwnPacketsShield(backend string) {
+	if OwnPacketsShieldFunc != nil {
+		OwnPacketsShieldFunc(OwnPacketsShielded(backend))
+	}
+}
+
+func OwnPacketsShielded(backend string) bool {
+	switch backend {
+	case backendIPTablesLegacy:
+	case backendIPTables:
+		if xtIsNftVariant(backendIPTables) {
+			return false
+		}
+	default:
+		return false
+	}
+	return !foreignNftTables()
+}
+
+func foreignNftTables() bool {
+	if !hasBinary("nft") {
+		return false
+	}
+	out, err := run("nft", "list", "tables")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) != 3 || f[0] != "table" || strings.HasPrefix(f[2], "b4_") || strings.HasPrefix(f[2], "_b4") {
+			continue
+		}
+		switch f[1] {
+		case "ip", "ip6", "inet":
+			return true
+		}
+	}
+	return false
+}
+
 func detectFirewallBackend(cfg *config.Config) string {
 	if b := cfg.System.Tables.Engine; b != "" {
 		switch strings.ToLower(b) {
@@ -568,4 +614,5 @@ func ReloadKernelModules() {
 	if nflog && DNSQueryCopyKernel() {
 		loadKernelModuleList(dnsCopyLogModule, dnsCopyModule)
 	}
+	ctnl.Retest()
 }

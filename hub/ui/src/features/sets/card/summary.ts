@@ -13,6 +13,7 @@ export interface TargetLists {
   geosite: string[];
   geoip: string[];
   asns: string[];
+  udp_l7: string[];
 }
 
 export const targetSummaryOf = (t: TFunction, lists: TargetLists): string => {
@@ -21,7 +22,7 @@ export const targetSummaryOf = (t: TFunction, lists: TargetLists): string => {
   const domainCount = Math.max(lists.domains_total ?? 0, lists.domains.length);
   const named = [...lists.geosite, ...lists.geoip, ...lists.asns.map((id) => `AS${id}`), ...lists.domains, ...ipList];
   const total = lists.geosite.length + lists.geoip.length + lists.asns.length + domainCount + ipCount;
-  if (total === 0) return t("sets.card.noTargets");
+  if (total === 0) return lists.udp_l7.length > 0 ? `UDP: ${lists.udp_l7.join(", ")}` : t("sets.card.noTargets");
   const ips = t("sets.card.ipCount", { count: ipCount });
   if (named.length === 0) return ips;
   const parts = [total > 1 ? `${named[0]} +${String(total - 1)}` : named[0]];
@@ -46,6 +47,7 @@ const configLists = (config: FacetSetConfig, filters: readonly Term[]): PreviewL
   geosite: config.targets.geosite_categories,
   geoip: config.targets.geoip_categories,
   asns: config.targets.asns ?? [],
+  udp_l7: config.udp?.filter_l7 ?? [],
   filters,
 });
 
@@ -63,6 +65,7 @@ export const targetPreviewLines = (t: TFunction, brief: PreviewLists, config?: F
     lists.geosite.length > 0 ? `geosite: ${preview(t, lists.geosite)}` : "",
     lists.geoip.length > 0 ? `geoip: ${preview(t, lists.geoip)}` : "",
     lists.asns.length > 0 ? `ASN: ${preview(t, lists.asns.map((id) => `AS${id}`))}` : "",
+    lists.udp_l7.length > 0 ? `UDP: ${preview(t, lists.udp_l7)}` : "",
     ...lists.filters.map((f) => filterText(t, f)),
   ].filter(Boolean);
 };

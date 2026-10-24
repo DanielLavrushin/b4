@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -16,6 +17,7 @@ import (
 	"github.com/daniellavrushin/b4/dns/endpoint"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/tables"
 	"github.com/daniellavrushin/b4/utils"
 	"github.com/google/uuid"
 	"golang.org/x/net/publicsuffix"
@@ -196,7 +198,7 @@ func (api *API) handleFinishCheck(w http.ResponseWriter, r *http.Request) {
 // @Success 202 {object} DiscoveryResponse
 // @Failure 400 {object} APIError "reserved_host, no_urls, too_many_urls, bad_dns_server or bad_pin"
 // @Failure 404 {object} APIError "not_found"
-// @Failure 409 {string} string
+// @Failure 409 {object} APIError "dscp_rules_pending while b4 is still applying its DSCP rules; another run in progress answers in plain text"
 // @Security BearerAuth
 // @Router /discovery/start [post]
 func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
@@ -329,15 +331,19 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 	}
 	if runSet != nil {
 		opts.SetStrategy = discovery.SetRunStrategy(runSet)
+		opts.DSCP = api.getCfg().ProbeDSCP(runSet)
 		opts.StopWhenCovered = req.StopWhenCovered
 		opts.TLSVersion, opts.IPVersion = discovery.SetRunVersions(runSet, req.TLSVersion, req.IPVersion)
 	}
 
-	suite, err := api.discoveryRT.StartSuite(api.getCfg(), urls, opts)
+	suite, err := discoveryStartSuite(api.discoveryRT, api.getCfg(), urls, opts)
 	if err != nil {
-		if errors.Is(err, discovery.ErrDiscoveryAlreadyRunning) {
+		switch {
+		case errors.Is(err, discovery.ErrDiscoveryAlreadyRunning):
 			http.Error(w, err.Error(), http.StatusConflict)
-		} else {
+		case errors.Is(err, discovery.ErrDSCPRulesPending):
+			writeAPIError(w, &APIError{Status: http.StatusConflict, Code: "dscp_rules_pending", Message: discovery.ErrDSCPRulesPending.Error()})
+		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -369,8 +375,9 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 // @Tags Discovery
 // @Accept json
 // @Produce json
-// @Param body body config.SetConfig true "Set configuration"
+// @Param body body DiscoveredSetRequest true "The discovered set, and the dscp_path of the run it comes from. A bare set configuration is accepted too"
 // @Success 202 {object} map[string]interface{}
+// @Failure 409 {object} APIError "code: dscp_path_changed when the strategy was tested on another DSCP path than the new set's traffic would take, dscp_rules_pending while b4 is still applying its DSCP rules"
 // @Security BearerAuth
 // @Router /discovery/add [post]
 func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
@@ -381,12 +388,13 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 
 	var set = config.NewSetConfig()
 
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&set); err != nil {
+	path, err := decodeDiscoveredSet(r, &set)
+	if err != nil {
 		log.Errorf("Failed to decode config update: %v", err)
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		writeDecodeError(w, err)
 		return
 	}
+	tested := set
 
 	set.Id = uuid.New().String()
 
@@ -448,12 +456,17 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 	var moved []DomainReassignment
 	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
 		api.reloadTargetsIfGeoMoved(&set, geoBefore, next)
+		if err := dscpPathRefusal(next, &set, &tested, path); err != nil {
+			return err
+		}
 		moved = api.releaseDomainsFromOtherSets(next.Sets, set.Id, set.Targets.SNIDomains)
 		next.Sets = append([]*config.SetConfig{&set}, next.Sets...)
 		return nil
 	})
 	if err != nil {
-		log.Errorf("Failed to save config: %v", err)
+		if !isRefusal(err) {
+			log.Errorf("Failed to save config: %v", err)
+		}
 		writeAPIError(w, err)
 		return
 	}
@@ -477,10 +490,11 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 // @Tags Discovery
 // @Accept json
 // @Produce json
-// @Param body body DiscoveryReplaceRequest true "Target set, discovered strategy, domains and pins. strategy_only adopts only the TCP, fragmentation and faking strategy (and DNS when the discovered one is enabled); keep_targets leaves the set's domains and other sets alone and makes domains optional; probe_urls become the set's discovery URLs"
+// @Param body body DiscoveryReplaceRequest true "Target set, discovered strategy, domains and pins. strategy_only adopts only the TCP, fragmentation and faking strategy (and DNS when the discovered one is enabled); keep_targets leaves the set's domains and other sets alone and makes domains optional; probe_urls become the set's discovery URLs; dscp_path is the dscp_path of the run the strategy comes from: the DSCP value its probes carried over IPv4 and IPv6 and the interfaces b4 wrote DSCP values on"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} APIError
 // @Failure 404 {object} APIError
+// @Failure 409 {object} APIError "code: dscp_path_changed when the strategy was tested on another DSCP path than the set's traffic takes, dscp_rules_pending while b4 is still applying its DSCP rules"
 // @Security BearerAuth
 // @Router /discovery/replace [post]
 func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
@@ -502,6 +516,10 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.SetId == "" || (len(domains) == 0 && !req.KeepTargets) {
 		http.Error(w, "set_id and domains are required", http.StatusBadRequest)
+		return
+	}
+	if !validDSCPPath(req.DSCPPath) {
+		http.Error(w, "dscp_path holds a DSCP value outside 0-63", http.StatusBadRequest)
 		return
 	}
 	config.ApplySetDefaults(&req.Set)
@@ -545,6 +563,9 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 		if len(probeURLs) > 0 {
 			target.Discovery.URLs = slices.Clone(probeURLs)
 		}
+		if err := dscpPathRefusal(next, target, &req.Set, req.DSCPPath); err != nil {
+			return err
+		}
 		name = target.Name
 		return nil
 	})
@@ -579,6 +600,12 @@ func replaceStrategy(dst, strategy *config.SetConfig) {
 	udp := strategy.UDP
 	udp.FakePayloadData = slices.Clone(strategy.UDP.FakePayloadData)
 	udp.DPortFilter = dst.UDP.DPortFilter
+	udp.FilterSTUN = dst.UDP.FilterSTUN
+	udp.FilterL7 = slices.Clone(dst.UDP.FilterL7)
+	if dst.SelectsL7() && (strategy.UDP.FakePayloadFile == "" || strategy.UDP.FakePayloadFile == config.FakePayloadAutoQUIC) {
+		udp.FakePayloadFile = dst.UDP.FakePayloadFile
+		udp.FakePayloadData = slices.Clone(dst.UDP.FakePayloadData)
+	}
 	dst.UDP = udp
 
 	pins, strict, stripECH := dst.DNS.Pins, dst.DNS.Strict, dst.DNS.StripECH || strategy.DNS.StripECH
@@ -587,6 +614,99 @@ func replaceStrategy(dst, strategy *config.SetConfig) {
 
 	dst.Targets.TLSVersion = strategy.Targets.TLSVersion
 	dst.Targets.IPVersion = strategy.Targets.IPVersion
+}
+
+var (
+	discoveryDSCPStamp  = tables.DiscoveryDSCPStamp
+	discoveryStartSuite = (*discovery.Runtime).StartSuite
+)
+
+const errDSCPRulesPending = "b4 is still applying its DSCP rules, which decide the network path of the set's traffic; try again in a moment"
+
+var errDSCPPathRange = errors.New("dscp_path holds a DSCP value outside 0-63")
+
+func decodeDiscoveredSet(r *http.Request, set *config.SetConfig) (*config.DSCPPath, error) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	var req DiscoveredSetRequest
+	raw := body
+	if json.Unmarshal(body, &req) == nil && len(req.Set) > 0 {
+		raw = req.Set
+	}
+	if err := json.Unmarshal(raw, set); err != nil {
+		return nil, err
+	}
+	if !validDSCPPath(req.DSCPPath) {
+		return nil, errDSCPPathRange
+	}
+	return req.DSCPPath, nil
+}
+
+func writeDecodeError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errDSCPPathRange) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Error(w, "Invalid JSON", http.StatusBadRequest)
+}
+
+func errSimilarSetChanged(name string) *APIError {
+	msg := fmt.Sprintf("set %q no longer carries the strategy this result found, so its domains were not added", name)
+	return &APIError{Status: http.StatusConflict, Code: "similar_set_changed", Message: msg,
+		Fields: []FieldError{{Path: "set", Code: "similar_set_changed", Message: msg, Params: map[string]any{"set": name}}}}
+}
+
+func validDSCPPath(path *config.DSCPPath) bool {
+	if path == nil {
+		return true
+	}
+	for _, v := range []*int{path.IPv4, path.IPv6} {
+		if v != nil && (*v < 0 || *v > config.MaxDSCPValue) {
+			return false
+		}
+	}
+	return true
+}
+
+func dscpPathField(c *discovery.DSCPPathChange) FieldError {
+	f := FieldError{Path: "dscp", Code: "dscp_path_changed", Message: c.Error(), Params: map[string]any{"set": c.Set}}
+	switch {
+	case c.Interfaces:
+		f.Code = "dscp_path_interfaces"
+		return f
+	case c.Tested == nil:
+		f.Code = "dscp_path_tested_without"
+	case c.Now == nil:
+		f.Code = "dscp_path_now_without"
+	}
+	if c.Family != "" {
+		f.Code += "_family"
+		f.Params["family"] = c.Family
+	}
+	if c.Tested != nil {
+		f.Params["tested"] = *c.Tested
+	}
+	if c.Now != nil {
+		f.Params["now"] = *c.Now
+	}
+	return f
+}
+
+func dscpPathRefusal(cfg *config.Config, set, tested *config.SetConfig, path *config.DSCPPath) error {
+	change, err := discovery.DSCPPathChanged(cfg, set, tested, path, discoveryDSCPStamp)
+	switch {
+	case errors.Is(err, tables.ErrDiscoveryDSCPPending):
+		return &APIError{Status: http.StatusConflict, Code: "dscp_rules_pending", Message: errDSCPRulesPending,
+			Fields: []FieldError{{Path: "dscp", Code: "dscp_rules_pending", Message: errDSCPRulesPending}}}
+	case err != nil:
+		return err
+	case change != nil:
+		return &APIError{Status: http.StatusConflict, Code: "dscp_path_changed", Message: "Nothing written: " + change.Error() + ". Run Discovery for the set to test a strategy on that path",
+			Fields: []FieldError{dscpPathField(change)}}
+	}
+	return nil
 }
 
 func probeInputHost(raw string) string {
@@ -642,7 +762,7 @@ func appendMissing(list []string, items ...string) []string {
 // @Tags Discovery
 // @Accept json
 // @Produce json
-// @Param body body config.SetConfig true "Set to compare"
+// @Param body body DiscoveredSetRequest true "The discovered set, and the dscp_path of the run it comes from, which leaves out sets whose traffic takes another DSCP path. A bare set configuration is accepted too"
 // @Success 200 {array} object
 // @Security BearerAuth
 // @Router /discovery/similar [post]
@@ -653,8 +773,9 @@ func (api *API) handleFindSimilarSets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var incoming config.SetConfig
-	if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	path, err := decodeDiscoveredSet(r, &incoming)
+	if err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 
@@ -666,17 +787,19 @@ func (api *API) handleFindSimilarSets(w http.ResponseWriter, r *http.Request) {
 
 	var similar []SimilarSet
 
-	for _, set := range api.getCfg().Sets {
-		if !set.Enabled {
+	cfg := api.getCfg()
+	for _, set := range cfg.Sets {
+		if !set.Enabled || !setsHaveSimilarConfig(set, &incoming) {
 			continue
 		}
-		if setsHaveSimilarConfig(set, &incoming) {
-			similar = append(similar, SimilarSet{
-				Id:      set.Id,
-				Name:    set.Name,
-				Domains: set.Targets.SNIDomains,
-			})
+		if change, err := discovery.DSCPPathChanged(cfg, set, &incoming, path, discoveryDSCPStamp); err == nil && change != nil {
+			continue
 		}
+		similar = append(similar, SimilarSet{
+			Id:      set.Id,
+			Name:    set.Name,
+			Domains: set.Targets.SNIDomains,
+		})
 	}
 
 	setJsonHeader(w)
@@ -740,10 +863,14 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 	}
 	shape.Targets.TLSVersion = set.Targets.TLSVersion
 	shape.Targets.IPVersion = set.Targets.IPVersion
+	if set.DSCP.Enabled {
+		shape.DSCP = set.DSCP
+	}
 	shape.TCP.DPortFilter = ""
 	shape.TCP.IPBlockDetect = config.IPBlockDetectConfig{}
 	shape.TCP.RSTProtection = config.RSTProtectionConfig{}
 	shape.UDP.DPortFilter = ""
+	shape.UDP.FilterSTUN = false
 	config.ApplySetDefaults(&shape)
 	shape.Faking.PayloadData = nil
 	shape.UDP.FakePayloadData = nil

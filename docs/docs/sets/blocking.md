@@ -21,6 +21,10 @@ A block set stops the traffic it matches instead of sending it anywhere. It bloc
 5. Pick the **Block action**, see [Block options](#block-options). **Reject (fail fast)** is the usual choice for ads.
 6. Click **Create Set**. Changes apply without a restart.
 
+### Blocking on some interfaces only {#source-interfaces}
+
+**Source Interfaces** in the same **Traffic Routing** section limit the set to traffic that arrives on the selected interfaces, such as the bridge of a guest network. Devices on other interfaces and the router's own connections are then not blocked, and the other sets handle their traffic. [Which interface is which](../guides/interfaces.md) explains the interface names.
+
 ### Ready-made ad blocker
 
 A set with a broad list of ad and tracker domains and the `category-ads-all` category, already in block mode. To use it, create a set, open its **Import/Export** tab, paste the JSON below, click **Import** and save the set. The category needs the GeoSite database.
@@ -65,7 +69,7 @@ A block set stops lookups and connections and does not change pages, so test ite
 
 ## When it does not work
 
-**A device still opens a blocked site.** The device may use encrypted DNS of its own (secure DNS in the browser, Android Private DNS) or a cached address. b4 still stops it by the server name, but not over IPv6 while IPv6 support is off, see [IPv6](#ipv6). Turning encrypted DNS off on the device, or IPv6 support on in b4, closes the gap.
+**A device still opens a blocked site.** The device may use encrypted DNS of its own (secure DNS in the browser, Android Private DNS) or a cached address. b4 still stops it by the server name, but not over IPv6 while IPv6 support is off, see [IPv6](#ipv6). Turning encrypted DNS off on the device, or IPv6 support on in b4, closes the gap. Over QUIC, the block holds for the whole connection only while the row **QUIC drop holds for the whole connection** under **Kernel Capabilities** in [System Info](../settings/system.md#system-info) reads **available**. Where it reads **unavailable**, the row names what the router lacks.
 
 **A device with a VPN of its own is not blocked.** Traffic inside a tunnel the router cannot see is out of b4's reach.
 

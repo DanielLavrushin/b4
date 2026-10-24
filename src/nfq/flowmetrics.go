@@ -32,6 +32,17 @@ func (p *pktInfo) dstAddr() netip.Addr {
 	return netip.AddrFrom16([16]byte(p.addr[16:32]))
 }
 
+func (p *pktInfo) srcAddr() netip.Addr {
+	if p.ver == IPv4 {
+		return netip.AddrFrom4([4]byte(p.addr[0:4]))
+	}
+	return netip.AddrFrom16([16]byte(p.addr[0:16]))
+}
+
+func (p *pktInfo) device() metrics.Device {
+	return metrics.Device{MAC: p.srcMac, Addr: p.srcAddr()}
+}
+
 func setIDOf(set *config.SetConfig) string {
 	if set == nil {
 		return ""
@@ -47,14 +58,14 @@ func observeFlow(cfg *config.Config, pkt *pktInfo, sport, dport uint16, set *con
 	if !countsTraffic(cfg) {
 		return
 	}
-	metrics.GetMetricsCollector().ObserveFlowTo(pkt.flowKey(sport, dport), pkt.dstAddr(), setIDOf(set), host)
+	metrics.GetMetricsCollector().ObserveFlowTo(pkt.flowKey(sport, dport), pkt.dstAddr(), setIDOf(set), host, pkt.device())
 }
 
 func recordBlockedFlow(cfg *config.Config, pkt *pktInfo, sport, dport uint16, set *config.SetConfig, target string) {
 	if !countsTraffic(cfg) {
 		return
 	}
-	metrics.GetMetricsCollector().RecordBlockedFlow(pkt.flowKey(sport, dport), setIDOf(set), target, pkt.srcMac)
+	metrics.GetMetricsCollector().RecordBlockedFlow(pkt.flowKey(sport, dport), setIDOf(set), target, pkt.device())
 }
 
 func recordBlockedDNS(cfg *config.Config, set *config.SetConfig, domain, srcMac string) {

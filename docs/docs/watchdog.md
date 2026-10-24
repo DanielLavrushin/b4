@@ -24,6 +24,8 @@ After **Max Retries** failed checks in a row, the watchdog runs [Discovery for t
 
 A heal writes only a strategy that works on every address, and only the bypass strategy, as [Writing into an existing set](./discovery.md#writing-into-an-existing-set) describes. Then the addresses are checked again, and when one still fails, the set's previous strategy comes back. A heal never touches another set.
 
+A heal of a set with its own [DSCP value](./sets/routing.md#dscp) tests strategies with that value, as [Discovery for the set](./discovery.md#a-run-for-a-set) does. Nothing is written when the set's traffic has moved to another DSCP path by then, as after a change to **Set DSCP** under [Settings > Core > Firewall](./settings/core.md#dscp) or to its interface list.
+
 After every heal, the set waits for the **Healing Cooldown**. After three failed heals in a row, the watchdog gives up on the set. Checks go on, but no heal starts until one of these happens:
 
 - a check finds every address loading;
@@ -62,6 +64,7 @@ The reason under a set's status says why it is in that state or how the last hea
 | Verification failed | The strategy did not pass the live check and was undone. |
 | Edited | The set changed while the search ran, so nothing was written. |
 | Busy | Another Discovery run was in progress. The watchdog tries again later. |
+| Rules changed | b4 was applying or rewriting the firewall rules the search depends on, such as its DSCP rules, so nothing was written. The watchdog tries again later. |
 
 ## Watched sets
 

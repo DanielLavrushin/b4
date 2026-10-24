@@ -111,6 +111,8 @@ The sample shows some of the sections and some of their keys. A real file holds 
 | `udp_conn_bytes_limit` | The same for UDP | `8` |
 | `interfaces` | **Capture Interfaces**, a filter on the interface a packet passes. Empty means all of them | `[]` |
 
+`tcp_conn_bytes_limit` and `udp_conn_bytes_limit` apply to every set. A set's own `tcp.conn_bytes_limit` and `udp.conn_bytes_limit` have no effect, and the web interface has no field for them.
+
 `queue.ipv6` decides whether b4 processes IPv6, not whether the router uses it. Off, the default, b4 processes IPv4 only and writes no IPv6 firewall rules for any set, so a client that reaches a site over IPv6 bypasses the sets. b4 then removes IPv6 addresses from DNS answers for the domains sets match, see [DNS](../dns.md). The exception is NFQUEUE mode while an enabled set has `dns.strip_ech` on. In that mode b4 writes IPv6 rules for DNS answers and DNS over TCP, only to remove their [ECH keys](../dns.md#removing-ech-keys). A change takes full effect after a restart. `--ipv6` sets the same thing for one run.
 
 ## The `sets` section
@@ -121,7 +123,7 @@ Each set is one object in the `sets` array, carrying its whole configuration. It
 - `tcp` - general TCP settings, desync, window, incoming, RST protection
 - `fragmentation` - the fragmentation method and its parameters
 - `faking` - SNI faking, SYN fakes, mutation
-- `udp` - the QUIC filter, the port filter and the UDP action mode
+- `udp` - the QUIC filter, the port filter, the handling of calls and the UDP action mode
 - `dns` - the set's resolver, DoH URL and pins
 - `routing` - routing mode, output interface, upstream proxy or blocking
 - `dscp` - the set's own DSCP value
@@ -138,6 +140,18 @@ The **Import/Export** tab of the set editor shows a set as JSON and takes a past
 | `dscp.value` | The value written into the DSCP field, 0-63. `0` clears the field | `0` |
 
 Each key is stored only while it differs from its default: the switch on with the value `0` is saved as `"dscp": {"enabled": true}`, a value kept with the switch off as `"dscp": {"value": 12}`. While `dscp.enabled` is `true`, a `dscp.value` outside 0-63 is refused, not clamped: the web interface refuses the save, and a file that holds one stops b4 at start. Neither key is writable over MCP or carried in a [shared set](../sets/sharing.md).
+
+### A set's calls: `udp.filter_stun` and `udp.filter_l7` {#set-udp-filter-l7}
+
+**Calls** on a set's UDP tab is stored in two keys, see [Sets for calls](../sets/udp.md#protocol-selection).
+
+| Calls | Stored as |
+| --- | --- |
+| **Pass call setup** | `udp.filter_stun` is `true`, the default |
+| **Handle like other UDP** | `udp.filter_stun` is `false` |
+| **Handle only calls** | `udp.filter_l7` lists the calls of **Which calls**: `["discord", "stun"]` for **Discord app and browsers**, `["discord"]` for **Discord app**, `["stun"]` for **Browsers** |
+
+A non-empty `udp.filter_l7` means **Handle only calls** whatever `udp.filter_stun` holds, and `udp.filter_stun` then has no effect. An empty list is not stored. A set with the list needs a `udp.dport_filter`, no `targets.sni_domains`, `targets.ip`, `targets.geosite_categories`, `targets.geoip_categories` or `targets.asns`, and an empty `tcp.dport_filter`. A set that breaks this is refused: the web interface refuses the save, and a file that holds one stops b4 at start. An `escalate.to` that names a set with the list is cleared, with a warning in the log. An unknown entry stays in the list, matches no traffic and is logged as a warning. **(auto: STUN request)** is `"fake_payload_file": "@stun"` under `udp`. `udp.filter_l7` is writable over MCP, with `discord` and `stun` as its only entries, and is carried in a [shared set](../sets/sharing.md).
 
 ## Settings and their configuration paths {#settings-and-their-configuration-paths}
 
@@ -302,8 +316,10 @@ The AI API key is not part of this file. b4 keeps it in `ai_secrets.json`.
 | TCP > Faking | **Generated Payload** | `faking.payload_file`, a path such as `captures/tls_youtube_com.bin` |
 | UDP | **QUIC Matching** | `udp.filter_quic` |
 | UDP | **Port Filter** | `udp.dport_filter` |
+| UDP | **Calls** | `udp.filter_stun`, `true` for **Pass call setup** and `false` for **Handle like other UDP**. **Handle only calls** is a non-empty `udp.filter_l7`, see [A set's calls](#set-udp-filter-l7) |
+| UDP | **Which calls** | `udp.filter_l7`, `discord` and `stun` for **Discord app and browsers**, `discord` for **Discord app**, `stun` for **Browsers** |
 | UDP | **Action Mode** | `udp.mode` |
-| UDP | **Fake Packet Payload** | `udp.fake_payload_file` |
+| UDP | **Fake Packet Payload** | `udp.fake_payload_file`, `@stun` for **(auto: STUN request)** |
 | DNS & Routing | **Enable DNS Redirect** | `dns.enabled` |
 | DNS & Routing | **DNS Server IP** | `dns.target_dns` |
 | DNS & Routing | **DNS-over-HTTPS URL** | `dns.doh_url` |

@@ -308,7 +308,7 @@ func goldenIsolate(t *testing.T, h *goldenHost) {
 	t.Helper()
 	resetDSCPState(t)
 	stubDNSKernel(t, unaffectedDNSKernel)
-	for _, m := range []*sync.Map{&hasBinaryCache, &iptWaitSupport, &rawQueueProven, &rawFallbackWarned, &copyFallbackWarned, &dnsCopyNoted, &dnsNatPortWarned, &rawQueueUnusable, &dnsCopyUnusable, &dnsCopyErrors} {
+	for _, m := range []*sync.Map{&hasBinaryCache, &iptWaitSupport, &rawQueueProven, &rawFallbackWarned, &copyFallbackWarned, &dnsCopyNoted, &dnsNatPortWarned, &rawQueueUnusable, &dnsCopyUnusable, &dnsCopyErrors, &udpDropWarned} {
 		goldenKeepSyncMap(t, m)
 	}
 	for _, name := range append(slices.Clone(goldenIptBinaries), "ipset", "nft", "ip") {
@@ -373,6 +373,26 @@ func goldenIsolate(t *testing.T, h *goldenHost) {
 		dnsQueryPlacementMu.Lock()
 		dnsQueryPlacements = origPlacement
 		dnsQueryPlacementMu.Unlock()
+	})
+
+	queueDirectionMu.Lock()
+	origV4, origV6, origPortSelected, origDirectionHook := queueDirectionV4, queueDirectionV6, queueRulesPortSelected, QueueDirectionExactFunc
+	queueDirectionV4, queueDirectionV6, queueRulesPortSelected, QueueDirectionExactFunc = false, false, nil, nil
+	queueDirectionMu.Unlock()
+	t.Cleanup(func() {
+		queueDirectionMu.Lock()
+		queueDirectionV4, queueDirectionV6, queueRulesPortSelected, QueueDirectionExactFunc = origV4, origV6, origPortSelected, origDirectionHook
+		queueDirectionMu.Unlock()
+	})
+
+	udpDropMu.Lock()
+	origDrop4, origDrop6, origDropHook, origDropWrite := udpDropPublishedV4, udpDropPublishedV6, UDPDropWritersFunc, nftWriteUDPDrop
+	udpDropPublishedV4, udpDropPublishedV6, UDPDropWritersFunc = false, false, nil
+	udpDropMu.Unlock()
+	t.Cleanup(func() {
+		udpDropMu.Lock()
+		udpDropPublishedV4, udpDropPublishedV6, UDPDropWritersFunc, nftWriteUDPDrop = origDrop4, origDrop6, origDropHook, origDropWrite
+		udpDropMu.Unlock()
 	})
 
 	kmodStateMu.Lock()

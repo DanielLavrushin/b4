@@ -33,6 +33,52 @@ func netnsSendMarkedUDP(t *testing.T, srcPort, dstPort int, mark int) {
 	}
 }
 
+func TestNetnsAnotherServicesMarkWithTheQueueBitIsQueued(t *testing.T) {
+	for _, engine := range []string{backendIPTables, backendNFTables} {
+		t.Run(engine, func(t *testing.T) {
+			netnsRequire(t)
+			if engine == backendNFTables && !hasBinary("nft") {
+				t.Skip("nft is not installed")
+			}
+			netnsDNSQueryLinks(t)
+
+			routeEngine = nil
+			defer func() { routeEngine = nil }()
+
+			cfg := netnsConfig(engine)
+			cfg.Sets = nil
+			if err := AddRules(cfg); err != nil {
+				t.Fatalf("AddRules: %v", err)
+			}
+			defer func() { _ = ClearRules(cfg) }()
+
+			queueMark := int(cfg.Queue.Mark)
+			snapshot, stop := netnsConntrackQueueListener(t, uint16(cfg.Queue.StartNum))
+			netnsSendMarkedUDP(t, 41451, 443, 0x0ffffaaa)
+			netnsSendMarkedUDP(t, 41452, 443, queueMark|0x2bd8)
+			netnsSendMarkedUDP(t, 41453, 443, queueMark|0x20000000)
+			time.Sleep(300 * time.Millisecond)
+			stop()
+
+			hotspot, own := 0, map[int]int{}
+			for _, p := range snapshot() {
+				switch {
+				case p.sport == 41451 && p.dport == 443:
+					hotspot++
+				case (p.sport == 41452 || p.sport == 41453) && p.dport == 443:
+					own[int(p.sport)]++
+				}
+			}
+			if hotspot == 0 {
+				t.Errorf("a datagram marked 0x0ffffaaa, as KeeneticOS marks the devices of its hotspot, never reached the queue; it has the queue mark's bit, but it is not one of b4's own packets")
+			}
+			for sport, n := range own {
+				t.Errorf("source port %d: a datagram b4 sends itself was queued %d time(s)", sport, n)
+			}
+		})
+	}
+}
+
 func TestNetnsPacketsB4InjectsAreNotQueuedAgain(t *testing.T) {
 	for _, engine := range []string{backendIPTables, backendNFTables} {
 		t.Run(engine, func(t *testing.T) {
@@ -55,6 +101,7 @@ func TestNetnsPacketsB4InjectsAreNotQueuedAgain(t *testing.T) {
 			snapshot, stop := netnsConntrackQueueListener(t, uint16(cfg.Queue.StartNum))
 			netnsSendUDP(t, 41443, 443)
 			netnsSendMarkedUDP(t, 41444, 443, int(cfg.Queue.Mark))
+			netnsSendMarkedUDP(t, 41445, 443, int(netnsInjectorMark(cfg.Queue.Mark)))
 			time.Sleep(300 * time.Millisecond)
 			stop()
 
@@ -63,7 +110,7 @@ func TestNetnsPacketsB4InjectsAreNotQueuedAgain(t *testing.T) {
 				switch {
 				case p.sport == 41443 && p.dport == 443:
 					plain++
-				case p.sport == 41444 && p.dport == 443:
+				case (p.sport == 41444 || p.sport == 41445) && p.dport == 443:
 					marked[p.hook]++
 				}
 			}

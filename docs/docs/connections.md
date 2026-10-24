@@ -73,6 +73,7 @@ Labels mark special cases: next to the domain in **Aggregated** mode, and next t
 | `dup` | The packet was duplicated, see [Packet duplication](sets/tcp/general.md#packet-duplication) |
 | `ip` | The destination was found blocked by IP. An outlined label means the address was already in the cache of blocked addresses |
 | `block` | A [block set](sets/blocking.md) blocked the packet |
+| `voice` | A call packet passed through untouched: by a set with **Calls** on **Pass call setup**, or by a [set that handles only calls](sets/udp.md#protocol-selection), as a later packet of a call the set took. The packet such a set takes itself carries no `voice` label and shows that set in the **Set** column |
 | `proxy` | The connection came through b4's [SOCKS5 proxy](settings/core.md#socks5-proxy) |
 | Telegram icon | A connection of b4's [MTProto proxy](telegram/mtproto-proxy.md), with the secret's name |
 | Telegram icon with **Telegram bridge** | A connection relayed by [Telegram over WebSocket](telegram/websocket-bridge.md) |

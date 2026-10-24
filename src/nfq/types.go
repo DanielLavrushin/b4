@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/dhcp"
 	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/sock"
@@ -25,6 +26,8 @@ type Pool struct {
 	tunSrc      *tunSrcResolver
 	dnsTCP      *dnsTCPServer
 	dnsCopy     *dnsCopyListener
+	conntrack   *ctnl.Worker
+	dropSets    *dropSetWriter
 }
 
 type PacketInfo struct {
@@ -51,6 +54,7 @@ type Worker struct {
 	matcher          atomic.Value
 	sock             *sock.Sender
 	clientSock       *sock.Sender
+	lookupSock       *sock.Sender
 	ipToMac          atomic.Value
 	tlsCache         *tlsInfoCache
 	connTracker      *connStateTracker
@@ -58,10 +62,14 @@ type Worker struct {
 	pendingHello     *pendingHelloCache
 	hostHints        *hostHintCache
 	quicFlows        *quicFlowCache
+	voiceFlows       *voiceFlowCache
+	direction        *queueDirectionState
+	flowDrops        *flowDropPersistence
 	ipHealth         *iphealth.Tracker
 	pinHealth        *pinHealth
 	goodIPs          *iphealth.KnownGood
 	srcResolver      *tunSrcResolver
+	tunLocalOnly     atomic.Bool
 	holdStop         chan struct{}
 	holdStopOnce     sync.Once
 	holdsLive        atomic.Int32

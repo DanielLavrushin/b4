@@ -24,6 +24,7 @@ func newResolverWith(t *testing.T, wan, content string) *tunSrcResolver {
 }
 
 func TestTunSrcResolveBasic(t *testing.T) {
+	thisHost(t)
 	line := "ipv4     2 tcp      6 431999 ESTABLISHED src=192.168.1.100 dst=104.18.8.37 sport=49874 dport=443 src=104.18.8.37 dst=94.189.76.227 sport=443 dport=49874 [ASSURED] mark=0 use=1\n"
 	r := newResolverWith(t, "94.189.76.227", line)
 
@@ -34,6 +35,7 @@ func TestTunSrcResolveBasic(t *testing.T) {
 }
 
 func TestTunSrcResolvePortRemap(t *testing.T) {
+	thisHost(t)
 	// SNAT remapped the source port 49874 -> 44092; b4 sees sport=44092.
 	line := "ipv4     2 tcp      6 431999 ESTABLISHED src=192.168.1.50 dst=104.18.8.37 sport=49874 dport=443 src=104.18.8.37 dst=94.189.76.227 sport=443 dport=44092 [ASSURED] use=1\n"
 	r := newResolverWith(t, "94.189.76.227", line)
@@ -64,6 +66,7 @@ func TestTunSrcResolveNoWAN(t *testing.T) {
 }
 
 func TestTunSrcAddressableSeparatesLocalFromUnknown(t *testing.T) {
+	thisHost(t)
 	const wan = "94.189.76.227"
 	lines := "" +
 		"ipv4 2 udp 17 29 src=192.168.1.100 dst=8.8.8.8 sport=45001 dport=53 src=8.8.8.8 dst=" + wan + " sport=53 dport=45001 use=1\n" +
@@ -95,6 +98,7 @@ func TestTunSrcAddressableSeparatesLocalFromUnknown(t *testing.T) {
 }
 
 func TestTunSrcSetWANClearsCache(t *testing.T) {
+	thisHost(t)
 	line := "tcp 6 100 ESTABLISHED src=192.168.1.100 dst=104.18.8.37 sport=49874 dport=443 src=104.18.8.37 dst=94.189.76.227 sport=443 dport=49874 use=1\n"
 	r := newResolverWith(t, "94.189.76.227", line)
 	if _, ok := r.resolve(6, net.ParseIP("94.189.76.227"), 49874, net.ParseIP("104.18.8.37"), 443); !ok {
@@ -106,5 +110,46 @@ func TestTunSrcSetWANClearsCache(t *testing.T) {
 	r.mu.Unlock()
 	if n != 0 {
 		t.Fatalf("setWAN should clear cache, have %d entries", n)
+	}
+}
+
+func TestTunSrcCacheStaysBounded(t *testing.T) {
+	thisHost(t)
+	r := newResolverWith(t, tunTestWAN, "")
+	src, dst := net.ParseIP(tunTestWAN), net.ParseIP("104.18.8.37")
+	for sport := 1; sport <= 3*tunSrcCacheMax; sport++ {
+		r.attribute(17, src, uint16(sport), dst, 443)
+	}
+	r.mu.Lock()
+	n := len(r.cache)
+	r.mu.Unlock()
+	if n > tunSrcCacheMax {
+		t.Fatalf("%d cached tuples after %d distinct ones, want at most %d", n, 3*tunSrcCacheMax, tunSrcCacheMax)
+	}
+}
+
+func TestTunSrcCacheDropsExpiredTuplesBeforeLiveOnes(t *testing.T) {
+	thisHost(t)
+	r := newResolverWith(t, tunTestWAN, snatFlow("192.168.1.100", tunTestWAN, 60000))
+	src, dst := net.ParseIP(tunTestWAN), net.ParseIP("1.2.3.4")
+	if ip, origin := r.attribute(6, src, 60000, dst, 443); origin != tunSrcLAN || ip.String() != "192.168.1.100" {
+		t.Fatalf("attribute = %v, %v; want the LAN client 192.168.1.100", ip, origin)
+	}
+	for sport := 1; sport < tunSrcCacheMax; sport++ {
+		r.attribute(6, src, uint16(sport), net.ParseIP("1.2.3.5"), 443)
+	}
+	r.age(tunSrcNegativeTTL)
+	r.attribute(6, src, 60001, dst, 443)
+	r.mu.Lock()
+	n := len(r.cache)
+	r.mu.Unlock()
+	if n != 2 {
+		t.Fatalf("%d cached tuples once the cache filled, want the expired misses dropped and the live LAN tuple kept next to the new one", n)
+	}
+	if err := os.WriteFile(r.path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ip, origin := r.attribute(6, src, 60000, dst, 443); origin != tunSrcLAN || ip.String() != "192.168.1.100" {
+		t.Fatalf("attribute = %v, %v; a live LAN tuple keeps its attribution for its whole TTL", ip, origin)
 	}
 }

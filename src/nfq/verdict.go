@@ -3,6 +3,7 @@ package nfq
 import (
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/florianl/go-nfqueue"
 )
@@ -16,12 +17,25 @@ type verdictModifier interface {
 }
 
 type verdictCtx struct {
-	id            uint32
-	q             verdictSetter
-	verdict       engine.PacketVerdict
-	copy          *dnsCopyDecision
-	ifaceFiltered bool
-	tunnel        string
+	id             uint32
+	q              verdictSetter
+	verdict        engine.PacketVerdict
+	copy           *dnsCopyDecision
+	ifaceFiltered  bool
+	hook           uint8
+	hooked         bool
+	dir            engine.Direction
+	flowDrop       bool
+	tunnel         string
+	outDev         uint32
+	inDev          uint32
+	localSocket    bool
+	foreignMark    uint32
+	rerouted       string
+	rerouteChecked bool
+	scoped         bool
+	scope          *ingressScope
+	keep           sni.SetFilter
 }
 
 type dnsCopyDecision struct {
@@ -55,6 +69,14 @@ func (vc *verdictCtx) drop() bool {
 		}
 	}
 	return true
+}
+
+func (vc *verdictCtx) dropFlow() {
+	vc.flowDrop = true
+}
+
+func (vc *verdictCtx) dropsFlow() bool {
+	return vc.flowDrop && vc.verdict == engine.VerdictDrop
 }
 
 func (vc *verdictCtx) dropUnanswered() bool {
@@ -121,11 +143,25 @@ func (w *Worker) clientSender() *sock.Sender {
 	return w.sock
 }
 
+func (w *Worker) lookupSender() *sock.Sender {
+	if w.lookupSock != nil {
+		return w.lookupSock
+	}
+	return w.sock
+}
+
 func (w *Worker) ProcessPacket(raw []byte) engine.PacketVerdict {
+	return w.ProcessPacketDir(raw, engine.DirUnknown)
+}
+
+func (w *Worker) ProcessPacketDir(raw []byte, dir engine.Direction) engine.PacketVerdict {
 	if len(raw) == 0 {
 		return engine.VerdictAccept
 	}
-	vc := &verdictCtx{verdict: engine.VerdictAccept}
+	vc := &verdictCtx{verdict: engine.VerdictAccept, dir: dir}
 	w.dispatch(vc, raw)
+	if vc.dropsFlow() {
+		return engine.VerdictDropFlow
+	}
 	return vc.verdict
 }

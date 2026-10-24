@@ -9,6 +9,7 @@ import {
   TelegramIcon,
   DnsIcon,
   WarningIcon,
+  VoiceIcon,
 } from "@b4.icons";
 import { B4Badge } from "@b4.elements";
 
@@ -173,6 +174,7 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
   const isSocks5 = flags === "socks5";
   const isDuplicate = flags === "tcp-dup";
   const isTelegramBridge = flags === "mtproto-ws";
+  const isVoiceExempt = flags === "voice-exempt";
   const isMtproto = flags === "mtproto" || !!flags?.startsWith("mtproto:");
   const mtprotoName = isMtproto
     ? (flags as string).slice("mtproto".length).replace(/^:/, "").trim()
@@ -185,6 +187,7 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
     !isDuplicate &&
     !isMtproto &&
     !isTelegramBridge &&
+    !isVoiceExempt &&
     !dnsVerdict
   )
     return null;
@@ -239,6 +242,15 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
           title={t("connections.flags.duplicate")}
           variant="outlined"
           color="secondary"
+        />
+      )}
+      {isVoiceExempt && (
+        <B4Badge
+          icon={<VoiceIcon />}
+          label="voice"
+          title={t("connections.flags.voiceExempt")}
+          variant="outlined"
+          color="warning"
         />
       )}
       {isBlocked && (

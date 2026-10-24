@@ -29,6 +29,7 @@ func newTunDNSSet() config.SetConfig {
 }
 
 func TestTunDNSRequestKeysOnLANClient(t *testing.T) {
+	thisHost(t)
 	set := newTunDNSSet()
 	set.Routing.Enabled = true
 
@@ -111,6 +112,35 @@ func TestTunDNSLocalRouterQueryStillIntercepted(t *testing.T) {
 	key := dnsRouteKeyRequest(IPv4, net.ParseIP(tunTestWAN), 45100, net.ParseIP("8.8.8.8"), 53, txid, "i.ytimg.com")
 	if _, ok := consumeDNSPendingRoute(key); !ok {
 		t.Fatal("a router-local query is correctly addressed at the WAN address and must still be intercepted")
+	}
+}
+
+func TestTunDNSAnswerReachesTheRouterAddressTheQueryCameFrom(t *testing.T) {
+	const routerLAN = "192.168.1.1"
+	thisHost(t, tunTestWAN, routerLAN)
+	set := newTunDNSSet()
+	set.Routing.Enabled = true
+	set.Routing.Mode = config.RoutingModeBlock
+	set.Routing.BlockAction = config.BlockActionReject
+
+	cfg := config.NewConfig()
+	cfg.Sets = []*config.SetConfig{&set}
+
+	t.Cleanup(stopDNSRouteCleanup)
+
+	w := newTestWorker(t, &cfg)
+	w.srcResolver = newResolverWith(t, tunTestWAN,
+		"ipv4 2 udp 17 29 src="+routerLAN+" dst=8.8.8.8 sport=45011 dport=53 src=8.8.8.8 dst="+tunTestWAN+" sport=53 dport=45011 use=1\n")
+	sent := captureSends(t)
+
+	query := dns.BuildQuery("i.ytimg.com", 0x2223, 1)
+	pkt := makeV4UDPPacket(query, net.ParseIP(tunTestWAN), net.ParseIP("8.8.8.8"), 45011, 53)
+
+	if v := w.ProcessPacket(pkt); v != engine.VerdictDrop {
+		t.Fatalf("a query for a blocked name must be answered by b4, got verdict %v", v)
+	}
+	if dst := net.IP(sent.one(t)[16:20]); dst.String() != routerLAN {
+		t.Fatalf("the sinkhole answer went to %s, want %s, the router address the SNAT rewrote", dst, routerLAN)
 	}
 }
 

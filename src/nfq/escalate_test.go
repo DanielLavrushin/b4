@@ -3,6 +3,7 @@ package nfq
 import (
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,7 +43,7 @@ func TestTryEscalate_SwitchesToTheBackupSet(t *testing.T) {
 	w := newEscalateWorker()
 	cfg, primary, backup := escalatePair(t)
 
-	next := w.tryEscalate(cfg, primary, "ntc.party", "", net.ParseIP("1.2.3.4"), escalateReasonDNS)
+	next := w.tryEscalate(cfg, primary, "ntc.party", "", net.ParseIP("1.2.3.4"), escalateReasonDNS, 0, 0)
 	if next == nil || next.Id != backup.Id {
 		t.Fatalf("expected escalation to %q, got %v", backup.Id, next)
 	}
@@ -56,7 +57,7 @@ func TestTryEscalate_SkipsDisabledTarget(t *testing.T) {
 	cfg, primary, backup := escalatePair(t)
 	backup.Enabled = false
 
-	if next := w.tryEscalate(cfg, primary, "ntc.party", "", nil, escalateReasonDNS); next != nil {
+	if next := w.tryEscalate(cfg, primary, "ntc.party", "", nil, escalateReasonDNS, 0, 0); next != nil {
 		t.Fatalf("a disabled backup must not be escalated to, got %q", next.Name)
 	}
 	if _, _, ok := w.destState.GetEscalation("ntc.party"); ok {
@@ -67,10 +68,10 @@ func TestTryEscalate_SkipsDisabledTarget(t *testing.T) {
 func TestEscalatedSetFor_ClearsWhenTargetDisappears(t *testing.T) {
 	w := newEscalateWorker()
 	cfg, primary, _ := escalatePair(t)
-	w.tryEscalate(cfg, primary, "ntc.party", "", nil, escalateReasonDNS)
+	w.tryEscalate(cfg, primary, "ntc.party", "", nil, escalateReasonDNS, 0, 0)
 
 	cfg.Sets = cfg.Sets[:1]
-	if got := w.escalatedSetFor(cfg, "ntc.party", ""); got != nil {
+	if got := w.escalatedSetFor(cfg, nil, "ntc.party", ""); got != nil {
 		t.Fatalf("expected no set once the target is gone, got %q", got.Name)
 	}
 	if _, _, ok := w.destState.GetEscalation("ntc.party"); ok {
@@ -82,12 +83,12 @@ func TestEscalatedSetFor_HonoursSourceDeviceFilter(t *testing.T) {
 	w := newEscalateWorker()
 	cfg, primary, backup := escalatePair(t)
 	backup.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
-	w.tryEscalate(cfg, primary, "ntc.party", "AA:BB:CC:DD:EE:FF", nil, escalateReasonDNS)
+	w.tryEscalate(cfg, primary, "ntc.party", "AA:BB:CC:DD:EE:FF", nil, escalateReasonDNS, 0, 0)
 
-	if got := w.escalatedSetFor(cfg, "ntc.party", "11:22:33:44:55:66"); got != nil {
+	if got := w.escalatedSetFor(cfg, nil, "ntc.party", "11:22:33:44:55:66"); got != nil {
 		t.Fatalf("a device outside the backup's filter must not be escalated, got %q", got.Name)
 	}
-	if got := w.escalatedSetFor(cfg, "ntc.party", "AA:BB:CC:DD:EE:FF"); got == nil {
+	if got := w.escalatedSetFor(cfg, nil, "ntc.party", "AA:BB:CC:DD:EE:FF"); got == nil {
 		t.Fatal("the device the backup targets must be escalated")
 	}
 }
@@ -97,7 +98,7 @@ func TestTryEscalate_SkipsBackupThatDoesNotTargetTheDevice(t *testing.T) {
 	cfg, primary, backup := escalatePair(t)
 	backup.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
 
-	if next := w.tryEscalate(cfg, primary, "ntc.party", "11:22:33:44:55:66", nil, escalateReasonDNS); next != nil {
+	if next := w.tryEscalate(cfg, primary, "ntc.party", "11:22:33:44:55:66", nil, escalateReasonDNS, 0, 0); next != nil {
 		t.Fatalf("a backup that does not target the device must not take over, got %q", next.Name)
 	}
 	if _, _, ok := w.destState.GetEscalation("ntc.party"); ok {
@@ -111,8 +112,102 @@ func TestTryEscalate_ExcludeFilterStillCoversUnknownDevices(t *testing.T) {
 	backup.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
 	backup.Targets.SourceDevicesExclude = true
 
-	if next := w.tryEscalate(cfg, primary, "ntc.party", "", nil, escalateReasonDNS); next == nil {
+	if next := w.tryEscalate(cfg, primary, "ntc.party", "", nil, escalateReasonDNS, 0, 0); next == nil {
 		t.Fatal("a backup that excludes one device must still serve the rest")
+	}
+}
+
+func TestASetInBlockModeEscalatesOnlyWithItsRoutingOff(t *testing.T) {
+	for _, routing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("routing enabled=%v", routing), func(t *testing.T) {
+			w := newEscalateWorker()
+			cfg, primary, backup := escalatePair(t)
+			primary.Routing.Mode = config.RoutingModeBlock
+			primary.Routing.Enabled = routing
+
+			next := w.tryEscalate(cfg, primary, "ntc.party", "", nil, escalateReasonStall, 0, 0)
+			if routing && next != nil {
+				t.Fatalf("a block set escalated to %q", next.Name)
+			}
+			if !routing && (next == nil || next.Id != backup.Id) {
+				t.Fatalf("a set in block mode with its routing off escalated to %v, want %q like any other set", next, backup.Id)
+			}
+			if _, _, ok := w.destState.GetEscalation("ntc.party"); !ok {
+				w.destState.SetEscalation("ntc.party", backup.Id, escalateReasonStall, time.Hour)
+			}
+			got := w.escalatedSetFor(cfg, primary, "ntc.party", "")
+			if routing && got != nil {
+				t.Fatalf("an escalation replaced the block set with %q", got.Name)
+			}
+			if !routing && (got == nil || got.Id != backup.Id) {
+				t.Fatalf("the escalation for a set in block mode with its routing off gave %v, want %q", got, backup.Id)
+			}
+		})
+	}
+}
+
+func TestABlockSetNeverEscalates(t *testing.T) {
+	idx := scopeIfaces(t)
+	const domain = "www.example.com"
+	for _, c := range []struct {
+		name   string
+		blocks int
+		run    func(r *learnRig)
+	}{
+		{"retransmitted ClientHellos", 4, func(r *learnRig) {
+			for range 4 {
+				r.hello(domain, 13101)
+			}
+		}},
+		{"a DNS failure", 0, func(r *learnRig) {
+			r.set("block").Escalate.DNSThreshold = 1
+			r.answer(dns.BuildBlockResponse(dns.BuildQuery(domain, 0x9d1, dnsTypeA)), 40901)
+		}},
+		{"a SYN to a dead address", 0, func(r *learnRig) {
+			markDead(r.t, r.w, quicServer.String())
+			r.resolvesTo(domain, 0x9d2, 40902)
+			r.syn(13102)
+		}},
+	} {
+		for _, scoped := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/scoped=%v", c.name, scoped), func(t *testing.T) {
+				thisHost(t, scopeRouter)
+				routeByClient(t, map[string]uint32{scopeLAN: idx["br0"], scopeGuest: idx["br-guest"]})
+				r := newLearnRig(t, learnClient{name: "br-guest", ip: scopeGuest, in: idx["br-guest"]})
+				block := r.set("block")
+				block.Escalate.To = "spare"
+				if !scoped {
+					block.Routing.SourceInterfaces = nil
+				}
+				r.w.matcher.Store(buildMatcher(r.w.getConfig()))
+				lines := connectionLines(t)
+				c.run(r)
+				holdsDone(t, r.w)
+				if id, _, ok := r.w.destState.GetEscalation(domain); ok {
+					t.Fatalf("the block set recorded an escalation of %s to %s", domain, id)
+				}
+				route, dscp := r.route.snapshot(), r.dscp.list()
+				routed := len(dscp) != 0
+				for written := range route {
+					routed = routed || strings.HasSuffix(written, " spare")
+				}
+				if routed {
+					t.Fatalf("the block set's escalation wrote the escalation target's kernel sets: routing %v, DSCP %+v", route, dscp)
+				}
+				blocks := 0
+				for _, l := range drainLines(lines) {
+					if strings.Contains(l, "escalate->") {
+						t.Fatalf("a connection of the block set was logged as escalated: %s", l)
+					}
+					if strings.HasSuffix(l, ",block") {
+						blocks++
+					}
+				}
+				if blocks != c.blocks {
+					t.Fatalf("%d connections logged as blocked, want %d", blocks, c.blocks)
+				}
+			})
+		}
 	}
 }
 
@@ -627,5 +722,40 @@ func TestSetChangesForgetAddressesCachedAsBlocked(t *testing.T) {
 	}
 	if ds.IsBlocked("203.0.113.7:443") {
 		t.Fatal("a new strategy can open an address the old one lost, so the cache must be tested again")
+	}
+}
+
+func TestAHostEscalatedToASetThatTurnsToCallsOnlyLosesItsEscalation(t *testing.T) {
+	ds := newDestState()
+	ds.SetEscalation("ntc.party", "b", escalateReasonRST, 0)
+	cfg := config.NewConfig()
+	cfg.Queue.IsDiscovery = true
+	from := config.NewSetConfig()
+	from.Id = "a"
+	to := config.NewSetConfig()
+	to.Id = "b"
+	cfg.Sets = []*config.SetConfig{&from, &to}
+
+	w := &Worker{}
+	w.cfg.Store(&cfg)
+	w.matcher.Store(buildMatcher(&cfg))
+	pool := &Pool{Workers: []*Worker{w}, state: &runtimeState{destState: ds}}
+
+	tuned := cfg.Clone()
+	tuned.Sets[1].Fragmentation.Strategy = "combo"
+	if err := pool.UpdateConfig(tuned); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := ds.GetEscalation("ntc.party"); !ok {
+		t.Fatal("a new strategy on the target set keeps the hosts escalated to it")
+	}
+
+	calls := tuned.Clone()
+	calls.Sets[1].UDP.FilterL7 = []string{config.UDPL7Discord}
+	if err := pool.UpdateConfig(calls); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := ds.GetEscalation("ntc.party"); ok {
+		t.Fatal("a set that handles only calls acts on nothing but the calls it selects, so a host escalated to it must lose that escalation")
 	}
 }

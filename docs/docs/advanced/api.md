@@ -35,7 +35,8 @@ A login token stays valid while it is used at least once every 24 hours, and is 
 | `GET /api/config/download?safe=true` | The safe copy, as **Download safe copy** saves it |
 | `GET /api/system/addresses` | The ports the **Expose to internet** switches opened, their firewall chains and errors, and the [reason](#exposure-reasons) a switch that is on opened nothing |
 | `GET /api/watchdog/status` | The watchdog's state for every watched set and domain, with the [reason codes](#watchdog-reason-codes) |
-| `POST /api/discovery/start` | Starts a Discovery run. A run for a set that routes its traffic is refused with `400` and the code `routed_set` |
+| `POST /api/discovery/start` | Starts a Discovery run. A run for a set that routes its traffic is refused with `400` and the code `routed_set`, and any run while b4 is still applying its DSCP rules with `409` and the code `dscp_rules_pending` |
+| `POST /api/discovery/replace`, `POST /api/discovery/add`, `POST /api/sets/{id}/add-domain` with `tested` | Write a Discovery result into a set, create a set from it, or add its domains to a set. With the run's `dscp_path`, a set whose traffic takes another DSCP path is refused with `409` and the code `dscp_path_changed`, and a write while b4 is still applying its DSCP rules with `dscp_rules_pending` |
 | `POST /api/mcp` | The MCP server, see [below](#mcp-server) |
 
 ### Watchdog reason codes {#watchdog-reason-codes}
@@ -57,6 +58,7 @@ The watchdog reports why a set is in its state, or how its last heal ended, as o
 | `verify_failed` | The strategy written did not pass the live check and was undone |
 | `edited` | The set was changed during the check or the search, so nothing was written |
 | `busy` | Another Discovery run holds the runtime, and the heal waits |
+| `rules_changed` | b4 was applying or rewriting the firewall rules the search depends on, such as its DSCP rules, so nothing was written; the heal is tried again later |
 
 ### Exposure reasons {#exposure-reasons}
 
@@ -77,7 +79,7 @@ A request with an `Origin` header is accepted when that origin is b4's own addre
 
 ### Tools {#mcp-tools}
 
-The server offers tools according to the two permission switches on the **MCP server** card and rebuilds the list when they change, without a restart. A tool that is not permitted is not offered at all, and the server tells the model which permission is off, so the model can say what to turn on.
+The server offers tools according to the two permission switches on the **MCP server** card and rebuilds the list when they change, without a restart. An application that was connected before the change keeps its old list until it reconnects. A tool that is not permitted is not offered at all, and the server tells the model which permission is off, so the model can say what to turn on.
 
 | Permitted | Tools offered |
 | --- | --- |
@@ -140,7 +142,7 @@ With `set`, a set id or exact name, the actions work on that set's own watchdog 
 
 `domains` takes up to five domains or full URLs, separated by commas, as the [Discovery](../discovery.md) input does: a domain is fetched as `https://<domain>/`, a URL as given. A host that only serves files, such as an image or video CDN, can answer `/` with HTTP 400 and leave the run nothing to test. Such a host is probed by the URL of a file it serves. A run also tries the strategies the [community hub](../community/index.md) publishes for the domains, as a run from the Discovery page does when the hub is on.
 
-`action=start` with `set` runs Discovery for that set: on the domains given, or on the set's Discovery addresses, at most five. The set's current strategy is tested first, and the search stops at the first strategy confirmed on every address. `action=status` reports the verdict, and `action=apply` with `set` writes the result into the set, the strategy only and only for the verdict `covered`. The same applies to `action=apply` without `set` when the run it refers to was a run for a set. A set that `action=apply` creates for free-form domains keeps the addresses they were found on as its Discovery addresses. A set with routing enabled is refused.
+`action=start` with `set` runs Discovery for that set: on the domains given, or on the set's Discovery addresses, at most five. The set's current strategy is tested first, and the search stops at the first strategy confirmed on every address. `action=status` reports the verdict, and `action=apply` with `set` writes the result into the set, the strategy only and only for the verdict `covered`. The same applies to `action=apply` without `set` when the run it refers to was a run for a set. A set that `action=apply` creates for free-form domains keeps the addresses they were found on as its Discovery addresses. A set with routing enabled is refused, and so is a result whose probes took another DSCP path than the set's traffic takes now, as on the [Discovery page](../discovery.md#applying).
 
 ### Changing settings {#writable-settings}
 

@@ -194,6 +194,45 @@ func TestSlicesAreEqual(t *testing.T) {
 	}
 }
 
+func TestIsPrivateNet(t *testing.T) {
+	for _, tt := range []struct {
+		cidr string
+		want bool
+	}{
+		{"10.0.0.0/8", true},
+		{"10.1.2.0/24", true},
+		{"10.1.2.3/32", true},
+		{"172.16.0.0/12", true},
+		{"172.20.0.0/16", true},
+		{"172.0.0.0/8", false},
+		{"192.168.0.0/16", true},
+		{"192.168.1.0/24", true},
+		{"192.0.0.0/8", false},
+		{"127.0.0.0/8", true},
+		{"0.0.0.0/0", false},
+		{"0.0.0.0/1", false},
+		{"8.0.0.0/7", false},
+		{"8.8.8.0/24", false},
+		{"::/0", false},
+		{"fc00::/7", true},
+		{"fd00::/8", true},
+		{"fe80::/10", true},
+		{"::1/128", true},
+		{"2001:db8::/32", false},
+	} {
+		_, n, err := net.ParseCIDR(tt.cidr)
+		if err != nil {
+			t.Fatalf("could not parse %q", tt.cidr)
+		}
+		if got := IsPrivateNet(n); got != tt.want {
+			t.Errorf("IsPrivateNet(%s) = %v, want %v", tt.cidr, got, tt.want)
+		}
+	}
+	if IsPrivateNet(nil) {
+		t.Error("IsPrivateNet(nil) = true, want false")
+	}
+}
+
 func TestIsPrivateIP(t *testing.T) {
 	tests := []struct {
 		name     string

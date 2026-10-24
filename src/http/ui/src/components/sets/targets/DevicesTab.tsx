@@ -13,6 +13,7 @@ import { DeviceInfo } from "@b4.devices";
 import { B4DeviceTable } from "@common/B4DeviceTable";
 import { colors } from "@design";
 import { useMemo } from "react";
+import { macKey, offlineDeviceInfo } from "@utils";
 import { useTranslation } from "react-i18next";
 import { useChangedFields } from "@context/ChangedFieldsContext";
 interface DevicesTabProps {
@@ -27,6 +28,21 @@ interface DevicesTabProps {
   onChange: (macs: string[]) => void;
   onExcludeChange: (exclude: boolean) => void;
 }
+
+const withUnlistedSelection = (
+  devices: DeviceInfo[],
+  selected: string[],
+): DeviceInfo[] => {
+  const known = new Set(devices.map((d) => macKey(d.mac)));
+  const unlisted: DeviceInfo[] = [];
+  for (const mac of selected) {
+    const key = macKey(mac);
+    if (known.has(key)) continue;
+    known.add(key);
+    unlisted.push(offlineDeviceInfo(mac));
+  }
+  return unlisted.length > 0 ? [...devices, ...unlisted] : devices;
+};
 
 export const DevicesTab = ({
   selected,
@@ -53,32 +69,48 @@ export const DevicesTab = ({
       return null;
     }
     return {
-      after: new Set(devicesLeaf.after as unknown[]),
-      before: new Set(devicesLeaf.before as unknown[]),
+      after: new Set((devicesLeaf.after as unknown[]).map((m) => macKey(String(m)))),
+      before: new Set((devicesLeaf.before as unknown[]).map((m) => macKey(String(m)))),
     };
   }, [devicesLeaf]);
-  const isDeviceChanged = (mac: string): boolean =>
-    !!leafSets && leafSets.after.has(mac) !== leafSets.before.has(mac);
+  const isDeviceChanged = (mac: string): boolean => {
+    const key = macKey(mac);
+    return !!leafSets && leafSets.after.has(key) !== leafSets.before.has(key);
+  };
 
-  const selectedSet = useMemo(() => new Set(selected), [selected]);
-  const isSelected = (mac: string) => selectedSet.has(mac);
+  const selectedKeys = useMemo(() => new Set(selected.map(macKey)), [selected]);
+  const isSelected = (mac: string) => selectedKeys.has(macKey(mac));
 
   const handleToggle = (mac: string) => {
+    const key = macKey(mac);
     onChange(
-      isSelected(mac) ? selected.filter((m) => m !== mac) : [...selected, mac],
+      selectedKeys.has(key)
+        ? selected.filter((m) => macKey(m) !== key)
+        : [...selected, mac],
     );
   };
 
   const handleBulkToggle = (macs: string[], checked: boolean) => {
-    const macSet = new Set(macs);
-    onChange(
-      checked
-        ? Array.from(new Set([...selected, ...macs]))
-        : selected.filter((m) => !macSet.has(m)),
-    );
+    const keys = new Set(macs.map(macKey));
+    if (!checked) {
+      onChange(selected.filter((m) => !keys.has(macKey(m))));
+      return;
+    }
+    const seen = new Set(selectedKeys);
+    const added = macs.filter((m) => {
+      const key = macKey(m);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    onChange([...selected, ...added]);
   };
 
   const hasMssHints = devices.some((d) => d.mss_clamp);
+  const listed =
+    loading && devices.length === 0
+      ? devices
+      : withUnlistedSelection(devices, selected);
 
   const selectedManual: DeviceInfo[] = [];
   const manualWithoutIp: DeviceInfo[] = [];
@@ -184,15 +216,16 @@ export const DevicesTab = ({
             </Box>
 
             <B4DeviceTable
-              devices={devices}
+              devices={listed}
               loading={loading}
               isSelected={isSelected}
               onToggle={handleToggle}
               isChanged={isDeviceChanged}
               onSelectAll={(checked) =>
-                onChange(checked ? devices.map((d) => d.mac) : [])
+                onChange(checked ? listed.map((d) => d.mac) : [])
               }
               onBulkToggle={handleBulkToggle}
+              showOfflineChip
               extraColumns={
                 hasMssHints
                   ? [

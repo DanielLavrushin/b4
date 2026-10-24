@@ -363,6 +363,11 @@ func (l *dnsCopyListener) ignoresMark(m uint32, cfg *config.Config) bool {
 		config.IsTelegramBridgeMark(m) || config.IsSelfDialSkipMark(m)
 }
 
+func (l *dnsCopyListener) localQueueMarked(p nflog.Packet) bool {
+	q := l.mark.Load()
+	return p.Hook == nfHookLocalOut && q != 0 && p.Mark&q == q
+}
+
 func dnsCopyIface(p nflog.Packet) (uint32, ifaceRole) {
 	if p.Hook == nfHookForward {
 		return p.InDev, ifaceArriving
@@ -386,7 +391,7 @@ func (l *dnsCopyListener) handle(p nflog.Packet) {
 		return
 	}
 	cfg := w.getConfig()
-	if p.Prefix != config.DNSQueryCopyPrefix || l.ignoresMark(p.Mark, cfg) || len(p.Payload) == 0 || !w.ifaceAllowed(dnsCopyIface(p)) {
+	if p.Prefix != config.DNSQueryCopyPrefix || l.ignoresMark(p.Mark, cfg) || l.localQueueMarked(p) || len(p.Payload) == 0 || !w.ifaceAllowed(dnsCopyIface(p)) {
 		l.stats.ignored.Add(1)
 		return
 	}
@@ -403,10 +408,10 @@ func (l *dnsCopyListener) handle(p nflog.Packet) {
 		return
 	}
 	atomic.AddUint64(&w.packetsProcessed, 1)
-	l.decide(pkt, sport, payload)
+	l.decide(pkt, sport, payload, p.InDev, p.Hook)
 }
 
-func (l *dnsCopyListener) decide(pkt *pktInfo, sport uint16, payload []byte) {
+func (l *dnsCopyListener) decide(pkt *pktInfo, sport uint16, payload []byte, inDev uint32, hook uint8) {
 	key, ok := dnsClaimKeyOf(pkt.ver, payload)
 	if !ok {
 		l.stats.ignored.Add(1)
@@ -429,7 +434,7 @@ func (l *dnsCopyListener) decide(pkt *pktInfo, sport uint16, payload []byte) {
 		l.warnKeyFull(key, client, server)
 		return
 	}
-	vc := &verdictCtx{verdict: engine.VerdictAccept, copy: &dnsCopyDecision{claim: c}}
+	vc := &verdictCtx{verdict: engine.VerdictAccept, copy: &dnsCopyDecision{claim: c}, inDev: inDev, hook: hook, hooked: true}
 	l.w.processDnsPacket(vc, pkt, sport, 53, payload)
 	l.finish(vc.copy)
 }

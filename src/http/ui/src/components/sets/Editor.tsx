@@ -50,6 +50,7 @@ import { TargetSettings, TARGET_SUB_TABS } from "./Target";
 import { TcpTabContainer, TCP_SUB_TABS } from "./tcp/TcpTabContainer";
 import { UdpSettings } from "./Udp";
 import { FAKING_ACCORDIONS } from "./tcp/TcpFaking";
+import { CallsSession } from "./udpL7";
 import { useTranslation } from "react-i18next";
 
 const EDITOR_TABS = [
@@ -129,6 +130,7 @@ export const SetEditorPage = ({
   // "revision" is in SET_EDITOR_DIFF_IGNORE (server concurrency token),
   // so post-save refetches don't show phantom dirty state.
   const [editedSet, setEditedSet] = useState<B4SetConfig | null>(initialSet);
+  const [callsSession, setCallsSession] = useState<CallsSession>({});
 
   useEffect(() => {
     if (!requestedTab) return;
@@ -173,6 +175,7 @@ export const SetEditorPage = ({
 
   const handleApplyImport = (importedSet: B4SetConfig) => {
     setEditedSet(importedSet);
+    setCallsSession({});
   };
 
   const handleBack = () => {
@@ -182,6 +185,7 @@ export const SetEditorPage = ({
   const { showSuccess } = useSnackbar();
   const resetDraft = () => {
     setEditedSet(initialSet);
+    setCallsSession({});
     setShowDiscardDialog(false);
     showSuccess(t("core.changesDiscarded"));
   };
@@ -344,7 +348,14 @@ export const SetEditorPage = ({
               )}
             </Stack>
 
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Stack
+              direction="row"
+              spacing={1}
+              justifyContent="flex-end"
+              flexWrap="wrap"
+              useFlexGap
+              sx={{ flex: { xs: "1 1 100%", sm: "0 1 auto" } }}
+            >
               <Button
                 size="small"
                 variant="outlined"
@@ -411,7 +422,6 @@ export const SetEditorPage = ({
           <TcpTabContainer
             initialSub={requestedSub}
             config={editedSet}
-            queue={config.queue}
             onChange={handleChange}
           />
         </B4TabPanel>
@@ -419,7 +429,8 @@ export const SetEditorPage = ({
         <B4TabPanel value={activeTab} index={TAB_INDEX.udp} idPrefix="set-tab" sx={{ pt: 3 }}>
           <UdpSettings
             config={editedSet}
-            queue={config.queue}
+            callsSession={callsSession}
+            onCallsSessionChange={setCallsSession}
             onChange={handleChange}
           />
         </B4TabPanel>

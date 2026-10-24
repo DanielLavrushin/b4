@@ -52,6 +52,7 @@ func TestParseIPHeadersDoesNotAliasBufferV6(t *testing.T) {
 }
 
 func TestParseIPHeadersKeepsWireSourceForReinjection(t *testing.T) {
+	thisHost(t)
 	cfg := config.NewConfig()
 	w := newTestWorker(t, &cfg)
 	w.srcResolver = newResolverWith(t, tunTestWAN,

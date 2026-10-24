@@ -59,6 +59,7 @@ func dscpIptResetRecords(t *testing.T) {
 	reset := func() {
 		dscpIptProbeMu.Lock()
 		clear(dscpIptProbes)
+		clear(dscpIptStampRefused)
 		dscpIptProbeMu.Unlock()
 		dscpIptRecordMu.Lock()
 		clear(dscpIptRecord)

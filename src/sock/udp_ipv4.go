@@ -80,7 +80,7 @@ func BuildFakeUDPFromOriginalV4(orig []byte, fakeLen int, ttl uint8, payload []b
 	out := make([]byte, 20+8+fakeLen)
 	copy(out, orig[:20])
 	out[0] = (out[0] & 0xF0) | 0x05
-	out[8] = ttl
+	out[8] = fakeTTLOrDefault(ttl)
 	id := binary.BigEndian.Uint16(out[4:6])
 	binary.BigEndian.PutUint16(out[4:6], id+1)
 	out[6], out[7] = 0, 0

@@ -226,6 +226,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 	upstream := &dnsTCPUpstream{server: s, ip: origIP, port: origPort, err: origErr}
 	defer upstream.close()
 
+	var scope *ingressScope
 	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
 		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !cfg.HasECHStrip() || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
 			upstream.close()
@@ -236,7 +237,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if resp == nil {
 			return false
 		}
-		if echless, actor := s.worker.stripECHKeys(cfg, set, domain, srcMac, resp, true, srcMac == "" && !cfg.IPFamilyEnabled(v6)); echless != nil {
+		if echless, actor := s.worker.stripECHKeys(cfg, set, domain, srcMac, resp, true, srcMac == "" && !cfg.IPFamilyEnabled(v6), scope); echless != nil {
 			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionECHStripped)
 			resp = echless
 		}
@@ -244,10 +245,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 	}
 
 	for {
-		cfg := s.worker.getConfig()
-		ioTimeout := cfg.DNSTCPIOTimeout()
-
-		_ = client.SetReadDeadline(time.Now().Add(cfg.DNSTCPIdleTimeout()))
+		_ = client.SetReadDeadline(time.Now().Add(s.worker.getConfig().DNSTCPIdleTimeout()))
 		query, err := readDNSTCPMessage(client)
 		if err != nil {
 			return
@@ -255,6 +253,12 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if len(query) < dnsTCPMinQueryLen {
 			return
 		}
+
+		cfg := s.worker.getConfig()
+		ioTimeout := cfg.DNSTCPIOTimeout()
+		matcher := s.worker.getMatcher()
+		scope = clientScopeIn(matcher, clientIP, srcMac).orSnapshot(matcher)
+		keep := scope.filter()
 
 		domain, ok := dns.ParseQueryDomain(query)
 		if !ok {
@@ -266,12 +270,12 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		domain = strings.ToLower(domain)
 
 		if !cfg.IPFamilyEnabled(v6) {
-			if relay(cfg, s.worker.echMatchSet(domain, srcMac, srcMac == ""), domain, query) {
+			if relay(cfg, s.worker.echMatchSet(domain, srcMac, srcMac == "", scope), domain, query) {
 				continue
 			}
 			return
 		}
-		matched, set := s.worker.getMatcher().MatchSNIWithSource(domain, srcMac)
+		matched, set := matcher.MatchSNIWithSource(domain, srcMac, keep)
 		if !matched {
 			log.Tracef("DNS TCP: %s matched no set (src %s), forwarding unchanged", dns.SafeName(domain), srcMac)
 			if relay(cfg, nil, domain, query) {
@@ -280,7 +284,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			return
 		}
 
-		if escSet := s.worker.escalatedSetFor(cfg, domain, srcMac); escSet != nil && escSet != set {
+		if escSet := s.worker.escalatedSetFor(cfg, set, domain, srcMac, keep); escSet != nil && escSet != set {
 			log.Tracef("DNS TCP escalation hit for %s: %s -> %s", dns.SafeName(domain), set.Name, escSet.Name)
 			set = escSet
 		}
@@ -299,7 +303,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		}
 
 		if pinned := s.worker.pinnedAnswer(set, query, domain); pinned != nil {
-			action, routeWaits := s.worker.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
+			action, routeWaits := s.worker.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned, scope.learns(domain))
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, action)
 			s.worker.waitRoutesInline(routeWaits, s.ctx.Done())
 			if writeDNSTCPMessage(client, pinned, ioTimeout) != nil {
@@ -396,10 +400,10 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		}
 
 		qtype, _ := dns.QuestionType(query)
-		if next := s.escalationTarget(cfg, set, domain, srcMac, qtype, resp, servedFallback); next != nil {
-			if alt, aerr := s.answerVia(next, cfg, query, domain, clientIP); aerr == nil && len(alt) > 0 {
+		if next := s.escalationTarget(cfg, set, domain, srcMac, qtype, resp, servedFallback, scope); next != nil {
+			if alt, aerr := s.answerVia(next, cfg, query, domain, clientIP, scope); aerr == nil && len(alt) > 0 {
 				s.logEvent(next, domain, clientIP, origIP, clientPort, srcMac, dnsActionEscalatePrefix+next.Name)
-				s.worker.learnAnswerAddresses(cfg, next, clientIP, domain, dns.ParseResponseIPs(alt), s.ctx.Done())
+				s.worker.learnAnswerAddresses(cfg, next, clientIP, domain, dns.ParseResponseIPs(alt), scope.learns(domain), s.ctx.Done())
 				if writeDNSTCPMessage(client, alt, ioTimeout) != nil {
 					return
 				}
@@ -407,11 +411,11 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			}
 		}
 
-		s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, dns.ParseResponseIPs(resp), s.ctx.Done())
+		s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, dns.ParseResponseIPs(resp), scope.learns(domain), s.ctx.Done())
 
-		if filtered, action, actor := s.worker.filterDNSAnswer(cfg, set, domain, srcMac, resp, true); filtered != nil {
+		if filtered, action, actor := s.worker.filterDNSAnswer(cfg, set, domain, srcMac, resp, true, scope); filtered != nil {
 			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, action)
-			s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, addedAnswerIPs(resp, filtered), s.ctx.Done())
+			s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, addedAnswerIPs(resp, filtered), scope.learns(domain), s.ctx.Done())
 			resp = filtered
 		}
 
@@ -425,11 +429,11 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 	}
 }
 
-func (s *dnsTCPServer) escalationTarget(cfg *config.Config, set *config.SetConfig, domain, srcMac string, qtype uint16, resp []byte, servedFallback bool) *config.SetConfig {
+func (s *dnsTCPServer) escalationTarget(cfg *config.Config, set *config.SetConfig, domain, srcMac string, qtype uint16, resp []byte, servedFallback bool, from ...*ingressScope) *config.SetConfig {
 	if servedFallback {
 		return nil
 	}
-	return s.worker.noteDNSOutcome(cfg, set, domain, srcMac, qtype, resp)
+	return s.worker.noteDNSOutcome(cfg, set, domain, srcMac, qtype, resp, from...)
 }
 
 func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query []byte, targetIP net.IP) ([]byte, error) {
@@ -438,7 +442,7 @@ func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query 
 		return s.worker.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.MainInjectedMark()), query)
 	}
 	return dns.ResolveUpstream(query, targetIP, dns.ForwardOptions{
-		Sender:       s.worker.sock,
+		Sender:       s.worker.lookupSender(),
 		Fragment:     set.DNS.FragmentQuery,
 		Seg2Delay:    config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax),
 		ReverseOrder: set.Fragmentation.ReverseOrder,
@@ -446,9 +450,9 @@ func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query 
 	})
 }
 
-func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, query []byte, domain string, clientIP net.IP) ([]byte, error) {
+func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, query []byte, domain string, clientIP net.IP, from ...*ingressScope) ([]byte, error) {
 	if pinned := s.worker.pinnedAnswer(set, query, domain); pinned != nil {
-		_, routeWaits := s.worker.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned)
+		_, routeWaits := s.worker.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned, scopeFrom(from).learns(domain))
 		s.worker.waitRoutesInline(routeWaits, s.ctx.Done())
 		return pinned, nil
 	}

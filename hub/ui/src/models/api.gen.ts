@@ -560,6 +560,7 @@ export interface TargetsView {
   geosite: string[];
   geoip: string[];
   asns: string[];
+  udp_l7: string[];
   filters: Term[];
 }
 
@@ -1005,6 +1006,7 @@ export interface TargetsBriefView {
   geosite: string[];
   geoip: string[];
   asns: string[];
+  udp_l7: string[];
   filters: Term[];
 }
 

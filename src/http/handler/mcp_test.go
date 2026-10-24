@@ -1626,6 +1626,114 @@ func TestInstructionsNameTheGatedCapabilities(t *testing.T) {
 	}
 }
 
+func TestInstructionsSayTheSwitchesAreInB4(t *testing.T) {
+	for _, caps := range []mcpCapabilities{{}, {Writes: true}, {Probes: true}, {Writes: true, Probes: true}} {
+		instr := mcpCapabilityInstruction(caps)
+		gated := !caps.Writes || !caps.Probes
+		for _, want := range []string{mcpSwitchWhere, "Save Changes", "reconnects that app to this MCP server", "b4 needs no restart"} {
+			if strings.Contains(instr, want) != gated {
+				t.Errorf("%+v: mentions %q = %v, want %v: %q", caps, want, !gated, gated, instr)
+			}
+		}
+		for _, old := range []string{"under Settings", "for this connection", "available to you here"} {
+			if strings.Contains(instr, old) {
+				t.Errorf("%+v: an AI app read %q as pointing at its own settings: %q", caps, old, instr)
+			}
+		}
+	}
+}
+
+func connectMCPServer(t *testing.T, srv *mcp.Server) (*mcp.ClientSession, context.Context) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	t.Cleanup(cancel)
+	clientEnd, serverEnd := mcp.NewInMemoryTransports()
+	served, err := srv.Connect(ctx, serverEnd, nil)
+	if err != nil {
+		t.Fatalf("server connect: %v", err)
+	}
+	t.Cleanup(func() { _ = served.Close() })
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil)
+	session, err := client.Connect(ctx, clientEnd, nil)
+	if err != nil {
+		t.Fatalf("client connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	return session, ctx
+}
+
+func TestMCPGatedRefusalsSayWhereTheSwitchIs(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.Checker.Watchdog.Domains = []string{"rutracker.org"}
+	api := &API{
+		cfgPtr:         testCfgPtr(cfg),
+		geodataManager: geodat.NewGeodataManager(cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath),
+	}
+	session, ctx := connectMCPServer(t, api.newMCPServer(mcpCapabilities{Writes: true, Probes: true}))
+
+	for _, c := range []struct {
+		name  string
+		tool  string
+		args  map[string]any
+		wants []string
+	}{
+		{"fetch a domain", "b4_test_domain_now", map[string]any{"domain": "rutracker.org"}, []string{"Allow active probes"}},
+		{"watch a new host", "b4_watchdog", map[string]any{"action": "add", "domain": "example.com"},
+			[]string{"Allow active probes", "Allow configuration changes"}},
+		{"re-check a watched host", "b4_watchdog", map[string]any{"action": "check", "domain": "rutracker.org"}, []string{"Allow active probes"}},
+		{"stop watching a host", "b4_watchdog", map[string]any{"action": "remove", "domain": "rutracker.org"}, []string{"Allow configuration changes"}},
+		{"watch a set", "b4_watchdog", map[string]any{"action": "enable", "set": "video"},
+			[]string{"Allow active probes", "Allow configuration changes"}},
+		{"stop watching a set", "b4_watchdog", map[string]any{"action": "disable", "set": "video"}, []string{"Allow configuration changes"}},
+		{"set a value", "b4_set_config_value", map[string]any{"path": "sets[video].tcp.seg2delay", "value": "5"}, []string{"Allow configuration changes"}},
+		{"undo", "b4_revert_last_change", map[string]any{}, []string{"Allow configuration changes"}},
+		{"edit targets", "b4_edit_set_targets", map[string]any{"set": "video", "kind": "sni_domains", "add": "example.com"}, []string{"Allow configuration changes"}},
+		{"manage a set", "b4_manage_set", map[string]any{"action": "create", "name": "new"}, []string{"Allow configuration changes"}},
+		{"start discovery", "b4_find_bypass_strategy", map[string]any{"action": "start", "domains": "rutracker.org"}, []string{"Allow active probes"}},
+		{"apply discovery", "b4_find_bypass_strategy", map[string]any{"action": "apply", "domain": "rutracker.org"}, []string{"Allow configuration changes"}},
+	} {
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
+		if err != nil {
+			t.Fatalf("%s: call: %v", c.name, err)
+		}
+		text := mcpErrorText(res)
+		if !res.IsError {
+			t.Errorf("%s: must be refused while the switch is off: %s", c.name, text)
+			continue
+		}
+		for _, want := range append(c.wants, mcpSwitchWhere, "retry the call", "b4 needs no restart") {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s: the refusal must mention %q: %q", c.name, want, text)
+			}
+		}
+		if strings.Contains(text, "under Settings") || strings.Contains(text, "for this connection") {
+			t.Errorf("%s: an AI app read the old wording as its own setting: %q", c.name, text)
+		}
+	}
+}
+
+func TestMCPSwitchPlaceIsSpelledOnce(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		count += strings.Count(string(src), "Integrations -> MCP server")
+	}
+	if count != 1 {
+		t.Errorf("the place of the MCP switches is spelled %d times; keep it in mcpSwitchWhere so every message names b4's own web interface", count)
+	}
+}
+
 func TestGetTopicFindsDiscovery(t *testing.T) {
 	srv := newMCPTestServer(t, mcpTestCfg())
 	session, ctx := connectMCP(t, srv)
@@ -1651,9 +1759,11 @@ func TestStatusReportsGatedCapabilitiesAsData(t *testing.T) {
 		writes, probes bool
 		wants          []string
 	}{
-		{"nothing permitted", false, false, []string{"Allow configuration changes", "Allow active probes", "discovery", "does not exist"}},
-		{"writes only", true, false, []string{"Allow active probes", "discovery"}},
-		{"everything", true, true, []string{"supports everything"}},
+		{"nothing permitted", false, false, []string{"Allow configuration changes", "Allow active probes", "discovery", "does not exist",
+			mcpSwitchWhere, "Save Changes", "reconnects that app to this MCP server"}},
+		{"writes only", true, false, []string{"Allow active probes", "discovery", mcpSwitchWhere, "reconnects that app to this MCP server", "lacks a tool"}},
+		{"probes only", false, true, []string{"Allow configuration changes", mcpSwitchWhere, "lacks a tool"}},
+		{"everything", true, true, []string{"supports everything", "lacks a tool", "ask the user to reconnect the AI app to this MCP server"}},
 	} {
 		cfg := mcpTestCfg()
 		cfg.System.WebServer.MCP.AllowWrites = c.writes
@@ -1676,6 +1786,9 @@ func TestStatusReportsGatedCapabilitiesAsData(t *testing.T) {
 			if !strings.Contains(out.Note, want) {
 				t.Errorf("%s: status note should mention %q, got %q", c.name, want, out.Note)
 			}
+		}
+		if strings.Contains(out.Note, "for this connection") {
+			t.Errorf("%s: 'for this connection' reads like a setting of the AI app: %q", c.name, out.Note)
 		}
 	}
 }

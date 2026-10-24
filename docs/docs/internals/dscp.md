@@ -1,7 +1,7 @@
 ---
 sidebar_position: 50
 title: DSCP rules
-description: How b4 writes a set's own DSCP value, which packets carry it, why a set is refused, and the firewall rules behind it.
+description: How b4 writes a set's own DSCP value, which packets carry it, why a set is refused, the firewall rules behind it, and how Discovery tests with it.
 ---
 
 The fields are described under [DSCP](../sets/routing.md#dscp) on the DNS & Routing tab, and the setup of both routers in [Passing sets to another router](../guides/dscp.md).
@@ -17,7 +17,7 @@ The value goes by destination address alone, whatever the protocol, the port and
 | Static | IP and CIDR targets, GeoIP categories and ASNs | While the set lists them |
 | Learned from DNS | Answers for the set's domains over UDP and TCP: forwarded, pinned or from the set's DNS redirect | **Resolved IP TTL (seconds)** while routing is on, otherwise 1 hour |
 | Learned from escalation | The addresses of a host that [escalation](../sets/escalation.md) hands to the set | As for DNS |
-| Learned from TLS and QUIC | The destination of a connection whose ClientHello or QUIC Initial matches the set by name | 10 minutes |
+| Learned from TLS and QUIC | The destination of a connection whose ClientHello or QUIC Initial matches the set by name, other than a [private address](./matching.md#the-order-of-checks) that no set's **Bypass IPs** list; over QUIC, no private address is learned at all | 10 minutes |
 | b4's own lookups | The first 256 domain entries that are not `regexp:`, GeoSite excluded, when the set starts writing its value or its domains or resolver change, then every half lifetime, at least 5 minutes apart | As for DNS |
 
 A learned address seen again gets a fresh lifetime once less than half of it is left, or at once when b4's lookup finds it. **IP Version Filter** at `4` or `6` leaves out the other family. **Domain-only matching** turns learning off.
@@ -66,3 +66,15 @@ installed with nftables
 ```
 
 `not applied` in place of `applied` means the set's rules are not in place, for example with iptables and no `ipset` command.
+
+## Discovery and the watchdog {#discovery}
+
+A [Discovery](../discovery.md) run for a set with its own value, and a [watchdog](../watchdog.md) heal of such a set, write the value into their probes, so the router in front of b4 routes them as the set's traffic. The value goes into the probes of each IP version in which the set's traffic carries it: one the set's **IP Version Filter** admits and, with iptables, one whose binary can use ipsets. A set with **Domain-only matching** on is tested without its value, which goes only to its IP, GeoIP and ASN targets.
+
+Probes without a set's value carry what other traffic carries: the **Set DSCP** value while it is on, or none, also to the addresses of sets with values of their own. A run for sites, not for a set, takes this path throughout.
+
+b4 records the path a run's probes took: the value in each IP version and the interface list of **Set DSCP**. Before a result goes into a set or creates one, from the Discovery page, over MCP or by the watchdog, b4 compares that record with the path the set's traffic takes at that moment, in the IP versions both the set and the result cover. Another value, a value on one side only, or another interface list refuses the write.
+
+A run stops when b4 rewrites its DSCP rules during it, as after a change to the value or the targets of a set that writes one, or when a firewall rebuild cannot put the run's own rules back. Its results cannot be applied. While b4 is still applying its DSCP rules, a run does not start and nothing is written.
+
+While a set writes its own value, a run gets a chain that writes the DSCP field of its probes after the sets' rules, so its value replaces the one they chose by destination: `B4_DISCOVERY_DSCP` in mangle, jumped to from `POSTROUTING` right after `B4_DSCP`, or `b4_discovery_dscp` in `inet b4_mangle` at postrouting priority 151. It matches only Discovery's two marks, see [Discovery](../guides/marks.md#discovery).

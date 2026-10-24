@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -26,6 +27,19 @@ func markMatches(t *testing.T, spec []string, mark uint64) bool {
 	return false
 }
 
+func connmarkSaveTarget(t *testing.T, spec []string) uint64 {
+	t.Helper()
+	i := slices.Index(spec, "--nfmask")
+	if i < 0 || i+3 >= len(spec) || spec[i+2] != "--ctmask" || spec[i+1] != spec[i+3] {
+		t.Fatalf("CONNMARK rule %q does not save one bit set under the same packet and connection mask", spec)
+	}
+	v, err := strconv.ParseUint(spec[i+1], 0, 32)
+	if err != nil {
+		t.Fatalf("CONNMARK rule %q: %v", spec, err)
+	}
+	return v
+}
+
 func TestTheConnmarkSaveLeavesB4sAnswersToDevicesAlone(t *testing.T) {
 	for _, mark := range []uint{0x8000, 0x400000} {
 		manager := dnsQueryTestManager(t, nil)
@@ -35,37 +49,111 @@ func TestTheConnmarkSaveLeavesB4sAnswersToDevicesAlone(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildManifest: %v", err)
 		}
-		saves := 0
+		own, injected := uint64(mark), uint64(mark|engine.InjectedMarkBit)
+		saves := map[string]map[uint64]int{}
 		for _, r := range m.Rules {
 			if r.Table != "mangle" || r.Chain != "OUTPUT" || !strings.Contains(strings.Join(r.Spec, " "), "CONNMARK") {
 				continue
 			}
-			saves++
-			if !markMatches(t, r.Spec, uint64(mark)) {
-				t.Errorf("mark %#x: %q skips b4's own connections, so the replies to them reach b4's queue", mark, r.Spec)
+			bit := connmarkSaveTarget(t, r.Spec)
+			if saves[r.IPT] == nil {
+				saves[r.IPT] = map[uint64]int{}
 			}
-			if markMatches(t, r.Spec, uint64(mark|engine.ClientMark)) {
-				t.Errorf("mark %#x: %q also saves the mark of b4's answers to devices, so b4 then skips the later lookups the device sends from that socket", mark, r.Spec)
+			saves[r.IPT][bit]++
+			if r.Action != "I" {
+				t.Errorf("mark %#x: %q is appended; it has to sit above the ACCEPT for b4's own packets in mangle OUTPUT", mark, r.Spec)
+			}
+			switch bit {
+			case own:
+				if !markMatches(t, r.Spec, own) {
+					t.Errorf("mark %#x: %q skips b4's own connections, so the replies to them reach b4's queue", mark, r.Spec)
+				}
+				if markMatches(t, r.Spec, injected) {
+					t.Errorf("mark %#x: %q also marks the connections b4 sends fakes or split segments into as b4's own, so the RSTs and SYN-ACKs on them never reach b4", mark, r.Spec)
+				}
+			case engine.InjectedMarkBit:
+				if !markMatches(t, r.Spec, injected) {
+					t.Errorf("mark %#x: %q misses the packets b4 sends into connections it does not own", mark, r.Spec)
+				}
+				if markMatches(t, r.Spec, own) {
+					t.Errorf("mark %#x: %q marks b4's own connections as ones b4 sent into", mark, r.Spec)
+				}
+			default:
+				t.Errorf("mark %#x: %q saves bit %#x, neither the queue mark nor %#x", mark, r.Spec, bit, engine.InjectedMarkBit)
+				continue
+			}
+			for _, toDevice := range []uint64{own | engine.ClientMark, injected | engine.ClientMark} {
+				if markMatches(t, r.Spec, toDevice) {
+					t.Errorf("mark %#x: %q also saves the mark of b4's answers to devices (%#x), so b4 then skips the later lookups the device sends from that socket", mark, r.Spec, toDevice)
+				}
 			}
 		}
-		if saves != 2 {
-			t.Fatalf("mark %#x: %d CONNMARK rules in mangle OUTPUT, want one per binary", mark, saves)
+		for _, ipt := range []string{backendIPTables, backendIP6Tables} {
+			if got := saves[ipt]; len(got) != 2 || got[own] != 1 || got[engine.InjectedMarkBit] != 1 {
+				t.Errorf("mark %#x, %s: CONNMARK rules in mangle OUTPUT by saved bit %v, want one for b4's own connections and one for the connections it sends into", mark, ipt, got)
+			}
 		}
 
 		teardown, err := manager.buildTeardownManifest()
 		if err != nil {
 			t.Fatalf("buildTeardownManifest: %v", err)
 		}
-		legacy := iptMarkAccept(mark)
 		for _, ipt := range []string{backendIPTables, backendIP6Tables} {
-			found := false
-			for _, s := range manifestSpecs(teardown, ipt, "mangle", "OUTPUT") {
-				found = found || strings.HasPrefix(s, "-m mark --mark "+legacy+" -j CONNMARK")
+			specs := manifestSpecs(teardown, ipt, "mangle", "OUTPUT")
+			for _, earlier := range []struct {
+				mask uint
+				what string
+			}{
+				{mark, "before b4 left its answers to devices alone"},
+				{mark | engine.ClientMark, "before b4 told the connections it sends into from its own"},
+			} {
+				want := strings.Join(iptConnmarkSave(mark, earlier.mask, mark), " ")
+				if !slices.Contains(specs, want) {
+					t.Errorf("mark %#x, %s: the teardown leaves %q, the CONNMARK rule of the versions %s, which keeps setting the queue mark on the connections b4 sends into", mark, ipt, want, earlier.what)
+				}
 			}
-			if !found {
-				t.Errorf("mark %#x, %s: the teardown leaves the CONNMARK rule an earlier version installed, which keeps marking the connections of b4's answers", mark, ipt)
+			for _, current := range [][]string{iptOwnConnmarkSave(mark), iptInjectedConnmarkSave(mark)} {
+				if want := strings.Join(current, " "); !slices.Contains(specs, want) {
+					t.Errorf("mark %#x, %s: the teardown misses %q", mark, ipt, want)
+				}
 			}
 		}
+	}
+}
+
+func TestTheOwnPacketReturnLeavesAnotherServicesMarkToTheQueue(t *testing.T) {
+	spec := iptMarkReturn(iptOwnPacketMark(0x8000))
+	for _, c := range []struct {
+		name string
+		mark uint64
+		want bool
+	}{
+		{"the queue mark", 0x8000, true},
+		{"the queue mark with a set's route bits", 0x8000 | 0x2bd8, true},
+		{"a packet toward a device", 0x8000 | engine.ClientMark, true},
+		{"a packet TUN mode writes back", 0x8000 | engine.ReinjectMarkBit, true},
+		{"a packet b4 sends into a client's connection", 0x8000 | engine.InjectedMarkBit, true},
+		{"wg-quick's socket mark", 0xca6c, true},
+		{"a KeeneticOS hotspot mark", 0x0ffffaaa, false},
+		{"the queue mark with bit 16", 0x8000 | 0x10000, false},
+		{"the queue mark with bit 31", 0x80008000, false},
+		{"a MagiTrickle mark", 0x4d616769, false},
+		{"no mark", 0, false},
+	} {
+		if got := markMatches(t, spec, c.mark); got != c.want {
+			t.Errorf("%s (0x%x): returned as b4's own = %v, want %v", c.name, c.mark, got, c.want)
+		}
+	}
+}
+
+func TestAFullMaskOwnPacketMarkIsWrittenTheWayIptablesListsIt(t *testing.T) {
+	own := iptOwnPacketMark(0x73027fff)
+	if own != "0x73027fff" {
+		t.Fatalf("own-packet match %q, want %q: iptables lists a match whose mask is full without the mask", own, "0x73027fff")
+	}
+	listing := "-N B4\n-A B4 -m mark --mark 0x73027fff -j RETURN\n"
+	if !iptListingHasMarkReturn(listing, iptChainName, own) {
+		t.Fatal("the monitor does not find the return as iptables lists it, so it would restore the rules on every check")
 	}
 }
 
@@ -75,8 +163,10 @@ func TestCaptureChainLetsB4sOwnPacketsThroughFirst(t *testing.T) {
 		mark uint
 		want string
 	}{
-		{"default mark", 0, "-m mark --mark 0x8000/0x8000 -j RETURN"},
-		{"configured mark", 0x400000, "-m mark --mark 0x400000/0x400000 -j RETURN"},
+		{"default mark", 0, "-m mark --mark 0x8000/0x8cfd8000 -j RETURN"},
+		{"configured mark", 0x400000, "-m mark --mark 0x400000/0x8cfd8000 -j RETURN"},
+		{"configured mark with a route bit", 0x8001, "-m mark --mark 0x8001/0x8cfd8001 -j RETURN"},
+		{"configured mark holding every bit b4 adds", 0x73027fff, "-m mark --mark 0x73027fff -j RETURN"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			manager := dnsQueryTestManager(t, nil)

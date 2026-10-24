@@ -27,10 +27,10 @@ var (
 func TestTopAddressesCountConnectionsWithoutAName(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
-	m.ObserveFlowTo(flowKey(1), telegramDC, "tg", "")
-	m.ObserveFlowTo(flowKey(1), telegramDC, "tg", "")
-	m.ObserveFlowTo(flowKey(2), telegramDC, "", "")
-	m.ObserveFlowTo(flowKey(3), cdnAddr, "", "")
+	m.ObserveFlowTo(flowKey(1), telegramDC, "tg", "", Device{})
+	m.ObserveFlowTo(flowKey(1), telegramDC, "tg", "", Device{})
+	m.ObserveFlowTo(flowKey(2), telegramDC, "", "", Device{})
+	m.ObserveFlowTo(flowKey(3), cdnAddr, "", "", Device{})
 
 	r.step(time.Second)
 	r.step(time.Second)
@@ -54,9 +54,9 @@ func TestTopAddressesCountConnectionsWithoutAName(t *testing.T) {
 func TestTopAddressesSkipConnectionsThatNameThemselves(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
-	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "")
+	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "", Device{})
 	r.step(time.Second)
-	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "cdn.example")
+	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "cdn.example", Device{})
 	r.stepEach(3*time.Second, time.Second)
 
 	fr := m.Hello()
@@ -73,9 +73,9 @@ func TestTopAddressesSkipConnectionsThatNameThemselves(t *testing.T) {
 		t.Fatalf("an address whose every connection named itself is forgotten, %d left", left)
 	}
 
-	m.ObserveFlowTo(flowKey(2), cdnAddr, "", "")
+	m.ObserveFlowTo(flowKey(2), cdnAddr, "", "", Device{})
 	r.stepEach(4*time.Second, time.Second)
-	m.ObserveFlowTo(flowKey(2), cdnAddr, "", "late.example")
+	m.ObserveFlowTo(flowKey(2), cdnAddr, "", "late.example", Device{})
 	if a, ok := topAddress(m.Hello(), "142.250.74.14"); !ok || a.Count != 1 {
 		t.Fatalf("a name that arrives after the wait leaves the address counted: %+v", a)
 	}
@@ -84,10 +84,10 @@ func TestTopAddressesSkipConnectionsThatNameThemselves(t *testing.T) {
 func TestTopAddressesKeepANewerConnectionWhenAnOldOneNamesItself(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
-	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "")
+	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "", Device{})
 	r.stepEach(64*time.Second, time.Second)
-	m.ObserveFlowTo(flowKey(2), cdnAddr, "", "")
-	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "late.example")
+	m.ObserveFlowTo(flowKey(2), cdnAddr, "", "", Device{})
+	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "late.example", Device{})
 	r.stepEach(3*time.Second, time.Second)
 	if a, ok := topAddress(m.Hello(), "142.250.74.14"); !ok || a.Count != 2 {
 		t.Fatalf("a name that arrives a minute later takes nothing from a newer connection: %+v", a)
@@ -113,8 +113,8 @@ func TestTopAddressesEvictHeldBeforeCounted(t *testing.T) {
 	for i := 0; i < TopAddressesKept-1; i++ {
 		m.RecordAddress(netip.AddrFrom4([4]byte{10, 1, byte(i >> 8), byte(i)}), "")
 	}
-	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "")
-	m.ObserveFlowTo(flowKey(2), telegramDC, "", "")
+	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "", Device{})
+	m.ObserveFlowTo(flowKey(2), telegramDC, "", "", Device{})
 
 	m.addr.mu.Lock()
 	_, held := m.addr.items[cdnAddr]
@@ -154,7 +154,7 @@ func TestTopAddressesResetWithTheCounters(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
 	m.RecordAddress(telegramDC, "tg")
-	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "")
+	m.ObserveFlowTo(flowKey(1), cdnAddr, "", "", Device{})
 	before := m.Hello().TopAddresses
 
 	m.ResetCounters()
@@ -169,7 +169,7 @@ func TestTickCarriesTopAddressesOnlyWhenTheyMoved(t *testing.T) {
 	r := newRig(t, rigStart, 0)
 	m := r.m
 	var sent SentRevs
-	m.ObserveFlowTo(flowKey(1), telegramDC, "", "")
+	m.ObserveFlowTo(flowKey(1), telegramDC, "", "", Device{})
 	for i := 1; i < addrSettleTicks; i++ {
 		r.step(time.Second)
 		if fr := m.Tick(&sent); fr.TopAddresses != nil {

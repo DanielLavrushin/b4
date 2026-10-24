@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -22,13 +23,14 @@ func TestConcurrentRecordersTicksAndFrames(t *testing.T) {
 				k := flowKey(w*100000 + i%5000)
 				switch i % 7 {
 				case 0:
-					m.ObserveFlow(k, "a")
+					m.ObserveFlowTo(k, netip.Addr{}, "a", "video.example", phone)
 				case 1:
-					m.RecordBlockedFlow(k, "ads", "ads.example", "aa:bb:cc:dd:ee:ff")
+					m.RecordBlockedFlow(k, "ads", "ads.example", Device{MAC: "aa:bb:cc:dd:ee:ff"})
 				case 2:
 					m.RecordBlockedDNS("ads", "ads.example", "")
 				case 3:
-					m.CountConnection("a")
+					m.CountConnection("a", Device{Addr: netip.AddrFrom4([4]byte{192, 168, 4, byte(i)})})
+					m.RecordDomain("mail.example", "a", phone)
 				default:
 					m.ObserveFlow(k, "")
 				}
@@ -114,6 +116,14 @@ func BenchmarkObserveFlow(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			m.ObserveFlow(flowKey(i), "video")
+		}
+	})
+	b.Run("new-from-device", func(b *testing.B) {
+		m := newBenchCollector(b)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			m.ObserveFlowTo(flowKey(i), netip.Addr{}, "", "", phone)
 		}
 	})
 	b.Run("new-beyond-cap-warm", func(b *testing.B) {

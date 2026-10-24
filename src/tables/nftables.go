@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,10 +26,13 @@ const (
 )
 
 type NFTablesManager struct {
-	cfg                *config.Config
-	ipVersionFilter    string
-	ctPacketsSupported bool
-	sysctlsApplied     bool
+	cfg                  *config.Config
+	ipVersionFilter      string
+	ctPacketsSupported   bool
+	ctDirectionSupported bool
+	sysctlsApplied       bool
+	dropSetV4            bool
+	dropSetV6            bool
 }
 
 func NewNFTablesManager(cfg *config.Config) *NFTablesManager {
@@ -188,24 +192,35 @@ func (n *NFTablesManager) addQueueRule(chain string, args ...string) error {
 	return n.addFilteredRule(chain, args...)
 }
 
-func queueMatchWithLimit(match []string, limit string, ctPackets bool) []string {
-	args := make([]string, 0, len(match)+6)
-	args = append(args, match...)
+func queueMatchWithLimit(match []string, dir, limit string, ctPackets, ctDirection bool) []string {
 	if ctPackets {
-		args = append(args, "ct", "original", "packets", "<", limit)
+		match = slices.Concat(match, []string{"ct", "original", "packets", "<", limit})
+	}
+	return queueMatchInDirection(match, dir, ctDirection)
+}
+
+func queueMatchInDirection(match []string, dir string, ctDirection bool) []string {
+	args := slices.Clip(match)
+	if ctDirection {
+		args = append(args, "ct", "direction", dir)
 	}
 	return append(args, "counter")
 }
 
-func (n *NFTablesManager) addLimitedQueueRule(chain, limit string, match ...string) error {
-	return n.addQueueRule(chain, queueMatchWithLimit(match, limit, n.ctPacketsSupported)...)
+func (n *NFTablesManager) addLimitedQueueRule(chain, dir, limit string, ctDirection bool, match ...string) error {
+	return n.addQueueRule(chain, queueMatchWithLimit(match, dir, limit, n.ctPacketsSupported, ctDirection)...)
+}
+
+func nftInjectedReplyReturn(mark uint) []string {
+	return []string{"ct", "mark", "&", fmt.Sprintf("0x%x", engine.InjectedMarkBit|mark), "==", fmt.Sprintf("0x%x", engine.InjectedMarkBit),
+		"tcp", "flags", "&", "(syn|rst)", "==", "0", "return"}
 }
 
 func (n *NFTablesManager) checkQueueSupport() error {
 	caps := probeQueueNftCached(n.buildNFQueueAction())
 	if !caps.probed {
 		n.ctPacketsSupported = true
-		log.Tracef("NFTABLES: queue capability probe inconclusive, assuming full support")
+		log.Tracef("NFTABLES: queue capability probe inconclusive, assuming queue and conntrack counter support")
 		return nil
 	}
 
@@ -217,19 +232,27 @@ func (n *NFTablesManager) checkQueueSupport() error {
 	if !caps.ctPackets {
 		log.Warnf("nftables: conntrack packet counters (ct original packets) are unavailable, so every packet on the configured ports is queued instead of only the first few - install kmod-nft-core (kmod-nft-conntrack) to restore the per-connection limit")
 	}
+	n.ctDirectionSupported = caps.ctDirection
+	if !caps.ctDirection {
+		log.Warnf("nftables: the conntrack direction match (ct direction) is unavailable, so the queue rules select TCP packets by port alone and b4 tells a client's packets from a server's replies by their ports - install kmod-nft-core (kmod-nft-conntrack) to have them selected by conntrack direction")
+	}
 	return nil
 }
 
 func (n *NFTablesManager) Apply() error {
 	if err := n.apply(); err != nil {
 		n.clear(n.sysctlsApplied)
+		noteQueueRulesCleared()
 		return err
 	}
+	noteQueueDirectionExact(n.ctDirectionSupported, n.ctDirectionSupported)
+	noteUDPDropSets(n.dropSetV4, n.dropSetV6)
 	return nil
 }
 
 func (n *NFTablesManager) apply() error {
 	cfg := n.cfg
+	withdrawUDPDropSets()
 	if !hasBinary("nft") {
 		return fmt.Errorf("nft binary not found")
 	}
@@ -240,10 +263,11 @@ func (n *NFTablesManager) apply() error {
 	if err := n.checkQueueSupport(); err != nil {
 		return err
 	}
+	narrowQueueDirectionExact(n.ctDirectionSupported, n.ctDirectionSupported)
 
 	// Clear existing table to prevent rule duplication
 	if n.tableExists() {
-		n.Clear()
+		n.clear(true)
 	}
 
 	// Set IP version filter
@@ -272,6 +296,10 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 
+	if err := n.ApplyMSSClamp(); err != nil {
+		return err
+	}
+
 	markValue := cfg.Queue.Mark
 	if markValue == 0 {
 		markValue = 0x8000
@@ -279,7 +307,7 @@ func (n *NFTablesManager) apply() error {
 	markAccept := fmt.Sprintf("0x%x", markValue)
 
 	selectedMACs := cfg.Queue.Devices.SelectedMACs()
-	if cfg.Queue.Devices.Enabled && len(selectedMACs) > 0 {
+	if queueJumpsFromForward(cfg) {
 		if err := n.createChain("forward", "forward", nftBaseChainPriority, "accept"); err != nil {
 			return err
 		}
@@ -318,18 +346,26 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 	if cfg.Queue.Mark != 0 {
-		if err := n.addRule("output", "meta", "mark", "&", fmt.Sprintf("0x%x", markValue|engine.ClientMark), "==", markAccept, "ct", "mark", "set", "ct", "mark", "|", markAccept); err != nil {
+		injected := fmt.Sprintf("0x%x", engine.InjectedMarkBit)
+		markMask := fmt.Sprintf("0x%x", markValue|engine.ClientMark|engine.InjectedMarkBit)
+		if err := n.addRule("output", "meta", "mark", "&", markMask, "==", markAccept, "ct", "mark", "set", "ct", "mark", "|", markAccept); err != nil {
 			log.Warnf("nftables: connmark save unavailable; b4's own marked connections (e.g. MTProto WS bridge upstream) will not be exempted from reply-side processing: %v", err)
+		}
+		if err := n.addRule("output", "meta", "mark", "&", markMask, "==", fmt.Sprintf("0x%x", markValue|engine.InjectedMarkBit), "ct", "mark", "set", "ct", "mark", "|", injected); err != nil {
+			log.Warnf("nftables: the connections b4 sends fakes or split segments into cannot be marked, so the server's packets on them stay queued: %v", err)
 		}
 	}
 	if err := n.addRule("output", "meta", "mark", "&", markAccept, "==", markAccept, "accept"); err != nil {
 		return err
 	}
-	if err := n.addRule("output", "jump", nftChainName); err != nil {
-		return err
+	if queueJumpsFromForward(cfg) {
+		if err := n.addRule("output", "jump", nftChainName); err != nil {
+			return err
+		}
 	}
 
-	if err := n.addRule(nftChainName, "meta", "mark", "&", markAccept, "==", markAccept, "return"); err != nil {
+	ownMask, ownValue := nftOwnPacketMark(cfg.Queue.Mark)
+	if err := n.addRule(nftChainName, "meta", "mark", "&", ownMask, "==", ownValue, "return"); err != nil {
 		return err
 	}
 
@@ -346,6 +382,11 @@ func (n *NFTablesManager) apply() error {
 	if cfg.Queue.Mark != 0 {
 		if err := n.addRule("prerouting", "ct", "mark", "&", markAccept, "==", markAccept, "return"); err != nil {
 			log.Warnf("nftables: connmark reply-side bypass unavailable: %v", err)
+		}
+		if !cfg.AnySetTCPIncoming() {
+			if err := n.addRule("prerouting", nftInjectedReplyReturn(cfg.Queue.Mark)...); err != nil {
+				log.Warnf("nftables: the server's data packets on connections b4 sends fakes or split segments into cannot be kept out of the queue, so b4 is handed them too: %v", err)
+			}
 		}
 	}
 
@@ -365,11 +406,11 @@ func (n *NFTablesManager) apply() error {
 	tcpLimit := fmt.Sprintf("%d", cfg.Queue.TCPConnBytesLimit+1)
 	udpLimit := fmt.Sprintf("%d", cfg.Queue.UDPConnBytesLimit+1)
 
-	if err := n.addLimitedQueueRule(nftChainName, tcpLimit, "tcp", "dport", tcpPortExpr); err != nil {
+	if err := n.addLimitedQueueRule(nftChainName, "original", tcpLimit, n.ctDirectionSupported, "tcp", "dport", tcpPortExpr); err != nil {
 		return err
 	}
 
-	queriesFromRaw, err := n.addDNSQueryRules(markAccept)
+	queriesFromRaw, err := n.addDNSQueryRules(ownMask, ownValue)
 	if err != nil {
 		return err
 	}
@@ -383,15 +424,15 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 
-	if err := n.addLimitedQueueRule("prerouting", tcpLimit, "tcp", "sport", tcpPortExpr); err != nil {
+	if err := n.addLimitedQueueRule("prerouting", "reply", tcpLimit, n.ctDirectionSupported, "tcp", "sport", tcpPortExpr); err != nil {
 		return err
 	}
 
-	if err := n.addQueueRule("prerouting", "tcp", "sport", tcpPortExpr, "tcp", "flags", "&", "(syn|ack)", "==", "(syn|ack)", "counter"); err != nil {
+	if err := n.addQueueRule("prerouting", queueMatchInDirection([]string{"tcp", "sport", tcpPortExpr, "tcp", "flags", "&", "(syn|ack)", "==", "(syn|ack)"}, "reply", n.ctDirectionSupported)...); err != nil {
 		return err
 	}
 
-	if err := n.addQueueRule("prerouting", "tcp", "sport", tcpPortExpr, "tcp", "flags", "&", "rst", "==", "rst", "counter"); err != nil {
+	if err := n.addQueueRule("prerouting", queueMatchInDirection([]string{"tcp", "sport", tcpPortExpr, "tcp", "flags", "&", "rst", "==", "rst"}, "reply", n.ctDirectionSupported)...); err != nil {
 		return err
 	}
 
@@ -407,7 +448,8 @@ func (n *NFTablesManager) apply() error {
 			return err
 		}
 	}
-	if err := n.addLimitedQueueRule(nftChainName, udpLimit, "udp", "dport", udpPortExpr); err != nil {
+	n.dropSetV4, n.dropSetV6 = n.addUDPDropRules()
+	if err := n.addLimitedQueueRule(nftChainName, "original", udpLimit, false, "udp", "dport", udpPortExpr); err != nil {
 		return err
 	}
 
@@ -417,10 +459,6 @@ func (n *NFTablesManager) apply() error {
 	n.sysctlsApplied = true
 
 	if err := n.ApplyMasquerade(); err != nil {
-		return err
-	}
-
-	if err := n.ApplyMSSClamp(); err != nil {
 		return err
 	}
 
@@ -447,7 +485,7 @@ func (n *NFTablesManager) addDuplicateQueueRules(tcpPortExpr string) error {
 		if err := n.addSetElements("b4_dup_v4", dupIPv4); err != nil {
 			return err
 		}
-		args := append([]string{"meta", "nfproto", "ipv4", "ip", "daddr", "@b4_dup_v4", "tcp", "dport", tcpPortExpr, "counter"}, queueAction...)
+		args := append(queueMatchInDirection([]string{"meta", "nfproto", "ipv4", "ip", "daddr", "@b4_dup_v4", "tcp", "dport", tcpPortExpr}, "original", n.ctDirectionSupported), queueAction...)
 		if err := n.addRule(nftChainName, args...); err != nil {
 			return err
 		}
@@ -459,7 +497,7 @@ func (n *NFTablesManager) addDuplicateQueueRules(tcpPortExpr string) error {
 		if err := n.addSetElements("b4_dup_v6", dupIPv6); err != nil {
 			return err
 		}
-		args := append([]string{"meta", "nfproto", "ipv6", "ip6", "daddr", "@b4_dup_v6", "tcp", "dport", tcpPortExpr, "counter"}, queueAction...)
+		args := append(queueMatchInDirection([]string{"meta", "nfproto", "ipv6", "ip6", "daddr", "@b4_dup_v6", "tcp", "dport", tcpPortExpr}, "original", n.ctDirectionSupported), queueAction...)
 		if err := n.addRule(nftChainName, args...); err != nil {
 			return err
 		}
@@ -468,10 +506,12 @@ func (n *NFTablesManager) addDuplicateQueueRules(tcpPortExpr string) error {
 }
 
 func (n *NFTablesManager) Clear() error {
+	noteQueueRulesCleared()
 	return n.clear(true)
 }
 
 func (n *NFTablesManager) clear(revertSysctls bool) error {
+	withdrawUDPDropSets()
 	if !hasBinary("nft") {
 		return nil
 	}

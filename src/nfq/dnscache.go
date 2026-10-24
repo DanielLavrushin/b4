@@ -150,7 +150,7 @@ func (w *Worker) dnsRedirectFallback(cfg *config.Config, set *config.SetConfig, 
 	}
 
 	resp, err := dns.ResolveUpstream(query, originalDst, dns.ForwardOptions{
-		Sender:       w.sock,
+		Sender:       w.lookupSender(),
 		Fragment:     set.DNS.FragmentQuery,
 		Seg2Delay:    delay,
 		ReverseOrder: set.Fragmentation.ReverseOrder,

@@ -27,6 +27,7 @@ type MetricsCollector struct {
 	bl         blockedState
 	dom        domainState
 	addr       addrState
+	dev        deviceState
 	ev         eventState
 	esc        escState
 	st         liveState
