@@ -393,7 +393,7 @@ export function historyAlternates(
   return alternatesOf(
     [entry],
     domains.length > 0 ? domains : [entry.domain],
-    entry.best_preset,
+    historyVerdict(entry) === "found" ? entry.best_preset : NO_BYPASS_PRESET,
     !!entry.dns_result?.is_poisoned,
     echCoverNames([entry]),
     limit,
