@@ -20,7 +20,12 @@ type queueCaps struct {
 	ctDirection bool
 	socketKey   string
 	socketErr   error
+	socketKmod  bool
 	queueErr    error
+}
+
+func (c queueCaps) socketKmodLoadedSince() bool {
+	return c.socketKey == "" && !c.socketKmod && kmodLoaded("nft_socket")
 }
 
 func nfqueueActionExpr(startNum, threads int) string {
@@ -70,6 +75,7 @@ func probeQueueNft(queueAction string) queueCaps {
 		kmodNoteRejected("nft_ct", "nft", out)
 	}
 
+	caps.socketKmod = kmodLoaded("nft_socket")
 	for _, key := range []string{"wildcard", "transparent"} {
 		out, err := run("nft", "add", "rule", "inet", probeTable, "test", "socket", key, "0", "counter", "accept")
 		if err == nil {
@@ -89,16 +95,20 @@ func probeQueueNftCached(queueAction string) queueCaps {
 	queueProbeMu.Lock()
 	cached, ok := queueProbeCache[queueAction]
 	queueProbeMu.Unlock()
-	if ok {
+	if ok && !cached.socketKmodLoadedSince() {
 		return cached
 	}
 
 	caps := probeQueueNft(queueAction)
-	if caps.probed {
-		queueProbeMu.Lock()
-		queueProbeCache[queueAction] = caps
-		queueProbeMu.Unlock()
+	if !caps.probed {
+		if ok {
+			return cached
+		}
+		return caps
 	}
+	queueProbeMu.Lock()
+	queueProbeCache[queueAction] = caps
+	queueProbeMu.Unlock()
 	return caps
 }
 
