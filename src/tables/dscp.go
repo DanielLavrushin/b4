@@ -309,7 +309,23 @@ func iptChainListing(bin, table, chain string) (listing string, present, known b
 	if dscpTransient(out, err) {
 		return "", false, false
 	}
-	return "", false, iptReportsAbsent(out, err)
+	if iptReportsAbsent(out, err) {
+		return "", false, true
+	}
+	whole, err := run(bin, "-w", "-t", table, "-S")
+	if err != nil || iptListsChain(whole, chain) {
+		return "", false, false
+	}
+	return "", false, true
+}
+
+func iptListsChain(listing, chain string) bool {
+	for _, line := range strings.Split(listing, "\n") {
+		if strings.TrimSpace(line) == "-N "+chain {
+			return true
+		}
+	}
+	return false
 }
 
 func iptReportsAbsent(out string, err error) bool {
