@@ -238,12 +238,12 @@ func TestHistoryKeepsAResultOfARunWhoseRulesChangedOutOfReach(t *testing.T) {
 	}
 }
 
-func TestResultSetsCarryTheDSCPValueOfTheSetTheRunWasFor(t *testing.T) {
+func TestResultSetsCarryTheDSCPValueTheRunStamped(t *testing.T) {
+	stamped := 25
 	ds := &DiscoverySuite{
-		CheckSuite: &CheckSuite{Domain: "site.example", Domains: []DomainInput{{Domain: "site.example", CheckURL: "https://site.example/"}}},
+		CheckSuite: &CheckSuite{Domain: "site.example", Domains: []DomainInput{{Domain: "site.example", CheckURL: "https://site.example/"}}, DSCP: &stamped},
 		cfg:        &config.Config{},
 		dnsResults: map[string]*DNSDiscoveryResult{},
-		setDSCP:    &config.DSCPProbe{Value: 25, IPv4: true},
 	}
 	preset := ConfigPreset{Name: "combo-pastseq", Config: config.NewSetConfig()}
 	single := ds.buildTestConfig(preset).Sets[0]
@@ -261,9 +261,9 @@ func TestResultSetsCarryTheDSCPValueOfTheSetTheRunWasFor(t *testing.T) {
 		}
 	}
 
-	ds.setDSCP = nil
+	ds.DSCP = nil
 	if set := ds.buildTestConfig(preset).Sets[0]; set.DSCP.Enabled {
-		t.Errorf("a run for no set value leaves the result's DSCP off, got %+v", set.DSCP)
+		t.Errorf("a run whose probes carried no set value, for no set or because the firewall could not write it, leaves the result's DSCP off, got %+v", set.DSCP)
 	}
 }
 

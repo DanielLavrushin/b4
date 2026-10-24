@@ -217,10 +217,10 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 }
 
 func (ds *DiscoverySuite) resultDSCP() config.SetDSCPConfig {
-	if ds.setDSCP == nil {
+	if ds.DSCP == nil {
 		return config.SetDSCPConfig{}
 	}
-	return config.SetDSCPConfig{Enabled: true, Value: ds.setDSCP.Value}
+	return config.SetDSCPConfig{Enabled: true, Value: *ds.DSCP}
 }
 
 func (ds *DiscoverySuite) scopeSetToDomains(set *config.SetConfig, domains []string) *config.SetConfig {

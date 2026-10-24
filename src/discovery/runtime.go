@@ -215,7 +215,6 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 	suite.SetId = opts.SetId
 	suite.DSCP = runtimeState.DSCP
 	suite.setStrategy = opts.SetStrategy
-	suite.setDSCP = dscp
 	suite.stopWhenCovered = opts.StopWhenCovered
 	suite.dnsServerOverride = opts.DNSServer
 	suite.runPins = opts.Pins

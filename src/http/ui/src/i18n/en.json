@@ -3859,7 +3859,11 @@
     "expose_requires_web_auth": "Exposing SOCKS5 to the internet needs a username and password on the web interface, which SOCKS5 clients can otherwise reach through the proxy",
     "redacted_placeholder": "{{path}} holds the [redacted] placeholder of a safe copy instead of a real value",
     "invalid_egress_ip": "Set \"{{set}}\": \"{{ip}}\" cannot be the egress IP. Enter one IPv4 or IPv6 address that is not a loopback, multicast or unspecified (0.0.0.0, ::) address.",
-    "invalid_egress_gateway": "Set \"{{set}}\": \"{{ip}}\" cannot be the gateway. Enter one IPv4 or IPv6 address without brackets or a /prefix; a %zone is allowed only on an IPv6 address and only when it names this set's output interface. Loopback, multicast and unspecified (0.0.0.0, ::) addresses, 255.255.255.255 and the set's own egress IP are refused."
+    "invalid_egress_gateway": "Set \"{{set}}\": \"{{ip}}\" cannot be the gateway. Enter one IPv4 or IPv6 address without brackets or a /prefix; a %zone is allowed only on an IPv6 address and only when it names this set's output interface. Loopback, multicast and unspecified (0.0.0.0, ::) addresses, 255.255.255.255 and the set's own egress IP are refused.",
+    "dscp_path_changed": "This strategy was tested with DSCP {{tested}}, but the traffic of set \"{{set}}\" now carries DSCP {{now}} and takes another network path. Run Discovery for the set to test a strategy on that path.",
+    "dscp_path_tested_without": "This strategy was tested without a DSCP value, but the traffic of set \"{{set}}\" now carries DSCP {{now}} and takes another network path. Run Discovery for the set to test a strategy on that path.",
+    "dscp_path_now_without": "This strategy was tested with DSCP {{tested}}, but the traffic of set \"{{set}}\" no longer carries a DSCP value and takes another network path. Run Discovery for the set to test a strategy on that path.",
+    "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the set's traffic. Try again in a moment."
   },
   "hub": {
     "title": "Community Hub",

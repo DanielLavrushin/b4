@@ -78,6 +78,27 @@ func discoveryStampFor(cfg *config.Config, dscp *config.DSCPProbe, be discoveryB
 	return stamp, nil
 }
 
+func DiscoveryDSCPStamp(cfg *config.Config, dscp *config.DSCPProbe) (*int, error) {
+	if dscp == nil {
+		return nil, nil
+	}
+	rulesMu.Lock()
+	defer rulesMu.Unlock()
+	if err := discoveryCheckDSCP(dscp); err != nil {
+		return nil, err
+	}
+	be := currentDiscoveryBackend(cfg)
+	if be == nil {
+		return nil, nil
+	}
+	stamp, err := discoveryStampFor(cfg, dscp, be)
+	if err != nil || stamp == nil {
+		return nil, err
+	}
+	value := stamp.value
+	return &value, nil
+}
+
 func getDiscoveryBackend(cfg *config.Config) discoveryBackend {
 	return discoveryBackendFor(detectFirewallBackend(cfg))
 }

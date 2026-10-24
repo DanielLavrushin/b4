@@ -285,6 +285,8 @@ func TestMCPDiscoveryApplyForASetRefusesAResultFromAnotherDSCPPath(t *testing.T)
 	session, ctx := connectMCP(t, srv)
 	mcpResetHistory()
 	t.Cleanup(func() { mcpRememberSuite("") })
+	stamp := stampsTheSetsValue
+	stubDiscoveryDSCPStamp(t, func(dscp *config.DSCPProbe) (*int, error) { return stamp(dscp) })
 
 	onOtherPath := coveredVerdict()
 	onOtherPath.Set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
@@ -298,11 +300,17 @@ func TestMCPDiscoveryApplyForASetRefusesAResultFromAnotherDSCPPath(t *testing.T)
 		Id: "set-run-before-dscp", Status: discovery.CheckStatusComplete, EndTime: time.Now(), SetId: "set-1", SetVerdict: coveredVerdict(),
 	}, cfg.ConfigPath)
 	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "set": "video", "id": "set-run-before-dscp"})
-	if !res.IsError || !strings.Contains(mcpErrorText(res), "now writes DSCP 7") {
-		t.Errorf("a saved run tested without the set's value cannot be written into the set that now writes 7: %q", mcpErrorText(res))
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "now carries DSCP 7") {
+		t.Errorf("a saved run tested without the set's value cannot be written into the set whose traffic now carries 7: %q", mcpErrorText(res))
 	}
 	if live := api.getCfg().GetSetById("set-1"); live.Fragmentation.Strategy == "tls" {
 		t.Fatal("nothing may be written from a run on another path")
+	}
+
+	stamp = stampsNoSetValue
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "set": "video", "id": "set-run-before-dscp"})
+	if res.IsError || api.getCfg().GetSetById("set-1").Fragmentation.Strategy != "tls" {
+		t.Errorf("the set's 7 is out of the firewall's reach, so its traffic leaves without a value like the run's probes did, and the run is written: %q", mcpErrorText(res))
 	}
 
 	onThisPath := coveredVerdict()
@@ -310,9 +318,15 @@ func TestMCPDiscoveryApplyForASetRefusesAResultFromAnotherDSCPPath(t *testing.T)
 	discovery.SaveToHistory(&discovery.CheckSuite{
 		Id: "set-run-on-7", Status: discovery.CheckStatusComplete, EndTime: time.Now(), SetId: "set-1", SetVerdict: onThisPath,
 	}, cfg.ConfigPath)
-	out := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "apply", "set": "video", "id": "set-run-on-7"}))
-	if !out.Changed || api.getCfg().GetSetById("set-1").Fragmentation.Strategy != "tls" {
-		t.Errorf("a run tested on the set's own path is written: %+v", out)
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "set": "video", "id": "set-run-on-7"})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "no longer carries a DSCP value") {
+		t.Errorf("the firewall no longer stamps the set's 7, so its traffic leaves without it and a run on 7 cannot be written: %q", mcpErrorText(res))
+	}
+
+	stamp = stampsTheSetsValue
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "set": "video", "id": "set-run-on-7"})
+	if res.IsError {
+		t.Errorf("a run tested on the set's own path is written: %q", mcpErrorText(res))
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/daniellavrushin/b4/discovery"
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/hub/hubtest"
+	"github.com/daniellavrushin/b4/tables"
 )
 
 func legacyReplaceStrategy(dst, strategy *config.SetConfig) {
@@ -229,6 +230,108 @@ func TestReplaceNeedsDomainsUnlessTargetsAreKept(t *testing.T) {
 	}
 	if rec := replaceWith(t, mux, DiscoveryReplaceRequest{SetId: "missing", Set: discoveredStrategy(), KeepTargets: true}); rec.Code != http.StatusNotFound {
 		t.Errorf("an unknown set is 404, got %d", rec.Code)
+	}
+}
+
+func stubDiscoveryDSCPStamp(t *testing.T, stamp func(dscp *config.DSCPProbe) (*int, error)) {
+	t.Helper()
+	orig := discoveryDSCPStamp
+	t.Cleanup(func() { discoveryDSCPStamp = orig })
+	discoveryDSCPStamp = func(_ *config.Config, dscp *config.DSCPProbe) (*int, error) {
+		return stamp(dscp)
+	}
+}
+
+func stampsTheSetsValue(dscp *config.DSCPProbe) (*int, error) {
+	if dscp == nil {
+		return nil, nil
+	}
+	value := dscp.Value
+	return &value, nil
+}
+
+func stampsNoSetValue(*config.DSCPProbe) (*int, error) {
+	return nil, nil
+}
+
+func strategyTestedOn(dscp int, ipVersion string) config.SetConfig {
+	strategy := discoveredStrategy()
+	strategy.Targets.IPVersion = ipVersion
+	if dscp >= 0 {
+		strategy.DSCP = config.SetDSCPConfig{Enabled: true, Value: dscp}
+	}
+	return strategy
+}
+
+func TestReplaceRefusesAStrategyTestedOnAnotherDSCPPath(t *testing.T) {
+	stampsIPv4Only := func(dscp *config.DSCPProbe) (*int, error) {
+		if dscp == nil || !dscp.IPv4 {
+			return nil, nil
+		}
+		return stampsTheSetsValue(dscp)
+	}
+	for _, tc := range []struct {
+		name            string
+		setDSCP         int
+		stamp           func(*config.DSCPProbe) (*int, error)
+		tested          int
+		ipVersion       string
+		refusal, params string
+	}{
+		{"tested on 25, the set's traffic carries 7", 7, stampsTheSetsValue, 25, "", "dscp_path_changed", "map[now:7 set:meduza tested:25]"},
+		{"tested without a value, the set's traffic carries 7", 7, stampsTheSetsValue, -1, "", "dscp_path_tested_without", "map[now:7 set:meduza]"},
+		{"tested on 25, the set carries no value", -1, stampsTheSetsValue, 25, "", "dscp_path_now_without", "map[set:meduza tested:25]"},
+		{"tested on 7, the firewall no longer stamps the set's value", 7, stampsNoSetValue, 7, "", "dscp_path_now_without", "map[set:meduza tested:7]"},
+		{"tested over IPv4 without a value, the set's 7 reaches IPv4", 7, stampsIPv4Only, -1, "4", "dscp_path_tested_without", "map[now:7 set:meduza]"},
+		{"tested on 7, the set's traffic carries 7", 7, stampsTheSetsValue, 7, "", "", ""},
+		{"tested without a value, the set carries none", -1, stampsTheSetsValue, -1, "", "", ""},
+		{"tested without a value, the firewall cannot stamp the set's 7", 7, stampsNoSetValue, -1, "", "", ""},
+		{"tested over IPv6 without a value, the set's 7 reaches only IPv4", 7, stampsIPv4Only, -1, "6", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stubDiscoveryDSCPStamp(t, tc.stamp)
+			api, mux := replaceFixture(t, func(target *config.SetConfig) {
+				if tc.setDSCP >= 0 {
+					target.DSCP = config.SetDSCPConfig{Enabled: true, Value: tc.setDSCP}
+				}
+			})
+			rec := replaceWith(t, mux, DiscoveryReplaceRequest{SetId: "set-a", Set: strategyTestedOn(tc.tested, tc.ipVersion), StrategyOnly: true, KeepTargets: true})
+			got, _ := replaceSets(api)
+			if tc.refusal == "" {
+				if rec.Code != http.StatusOK || got.Faking.Strategy != "pastseq" {
+					t.Errorf("the strategy was tested on the path the set's traffic takes, so it is written: %d (%s)", rec.Code, rec.Body.String())
+				}
+				return
+			}
+			var body APIError
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode %q: %v", rec.Body.String(), err)
+			}
+			if rec.Code != http.StatusConflict || len(body.Fields) != 1 || body.Fields[0].Code != tc.refusal || fmt.Sprint(body.Fields[0].Params) != tc.params {
+				t.Errorf("want a %s refusal with %s, got %d (%s)", tc.refusal, tc.params, rec.Code, rec.Body.String())
+			}
+			if got.Faking.Strategy == "pastseq" {
+				t.Error("nothing may be written from a test on another network path")
+			}
+		})
+	}
+}
+
+func TestReplaceWaitsWhileTheDSCPRulesAreStillChanging(t *testing.T) {
+	stubDiscoveryDSCPStamp(t, func(*config.DSCPProbe) (*int, error) { return nil, tables.ErrDiscoveryDSCPPending })
+	api, mux := replaceFixture(t, func(target *config.SetConfig) {
+		target.DSCP = config.SetDSCPConfig{Enabled: true, Value: 7}
+	})
+	rec := replaceWith(t, mux, DiscoveryReplaceRequest{SetId: "set-a", Set: strategyTestedOn(7, ""), StrategyOnly: true, KeepTargets: true})
+	var body APIError
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode %q: %v", rec.Body.String(), err)
+	}
+	if rec.Code != http.StatusConflict || len(body.Fields) != 1 || body.Fields[0].Code != "dscp_rules_pending" {
+		t.Errorf("while b4 is still applying its DSCP rules the set's network path is unknown, so the write must wait: %d (%s)", rec.Code, rec.Body.String())
+	}
+	if got, _ := replaceSets(api); got.Faking.Strategy == "pastseq" {
+		t.Error("nothing may be written while the set's network path is unknown")
 	}
 }
 

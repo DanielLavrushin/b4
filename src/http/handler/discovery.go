@@ -16,6 +16,7 @@ import (
 	"github.com/daniellavrushin/b4/dns/endpoint"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/tables"
 	"github.com/daniellavrushin/b4/utils"
 	"github.com/google/uuid"
 	"golang.org/x/net/publicsuffix"
@@ -482,6 +483,7 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} APIError
 // @Failure 404 {object} APIError
+// @Failure 409 {object} APIError "code: dscp_path_changed when the strategy was tested on another DSCP path than the set's traffic takes, dscp_rules_pending while b4 is still applying its DSCP rules"
 // @Security BearerAuth
 // @Router /discovery/replace [post]
 func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
@@ -546,6 +548,9 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 		if len(probeURLs) > 0 {
 			target.Discovery.URLs = slices.Clone(probeURLs)
 		}
+		if err := dscpPathRefusal(next, target, &req.Set); err != nil {
+			return err
+		}
 		name = target.Name
 		return nil
 	})
@@ -594,6 +599,81 @@ func replaceStrategy(dst, strategy *config.SetConfig) {
 
 	dst.Targets.TLSVersion = strategy.Targets.TLSVersion
 	dst.Targets.IPVersion = strategy.Targets.IPVersion
+}
+
+var discoveryDSCPStamp = tables.DiscoveryDSCPStamp
+
+const errDSCPRulesPending = "b4 is still applying its DSCP rules, which decide the network path of the set's traffic; try again in a moment"
+
+type dscpPathChange struct {
+	set         string
+	tested, now *int
+}
+
+func dscpPathChanged(cfg *config.Config, set, tested *config.SetConfig) (*dscpPathChange, error) {
+	probe := cfg.ProbeDSCP(set)
+	if probe != nil {
+		probe.IPv4 = probe.IPv4 && tested.MatchesIPVersion(4)
+		probe.IPv6 = probe.IPv6 && tested.MatchesIPVersion(6)
+		if !probe.IPv4 && !probe.IPv6 {
+			probe = nil
+		}
+	}
+	now, err := discoveryDSCPStamp(cfg, probe)
+	if err != nil {
+		return nil, err
+	}
+	var was *int
+	if tested.DSCP.Enabled {
+		value := tested.DSCP.Value
+		was = &value
+	}
+	if (was == nil && now == nil) || (was != nil && now != nil && *was == *now) {
+		return nil, nil
+	}
+	return &dscpPathChange{set: set.Name, tested: was, now: now}, nil
+}
+
+func (c *dscpPathChange) Error() string {
+	switch {
+	case c.tested == nil:
+		return fmt.Sprintf("the strategy was tested without a DSCP value of the set, but the traffic of set %q now carries DSCP %d, so it takes another network path", c.set, *c.now)
+	case c.now == nil:
+		return fmt.Sprintf("the strategy was tested with DSCP %d, but the traffic of set %q no longer carries a DSCP value of its own, so it takes another network path", *c.tested, c.set)
+	}
+	return fmt.Sprintf("the strategy was tested with DSCP %d, but the traffic of set %q now carries DSCP %d, so it takes another network path", *c.tested, c.set, *c.now)
+}
+
+func (c *dscpPathChange) field() FieldError {
+	f := FieldError{Path: "dscp", Code: "dscp_path_changed", Message: c.Error(), Params: map[string]any{"set": c.set}}
+	switch {
+	case c.tested == nil:
+		f.Code = "dscp_path_tested_without"
+	case c.now == nil:
+		f.Code = "dscp_path_now_without"
+	}
+	if c.tested != nil {
+		f.Params["tested"] = *c.tested
+	}
+	if c.now != nil {
+		f.Params["now"] = *c.now
+	}
+	return f
+}
+
+func dscpPathRefusal(cfg *config.Config, set, tested *config.SetConfig) error {
+	change, err := dscpPathChanged(cfg, set, tested)
+	switch {
+	case errors.Is(err, tables.ErrDiscoveryDSCPPending):
+		return &APIError{Status: http.StatusConflict, Code: "dscp_rules_pending", Message: errDSCPRulesPending,
+			Fields: []FieldError{{Path: "dscp", Code: "dscp_rules_pending", Message: errDSCPRulesPending}}}
+	case err != nil:
+		return err
+	case change != nil:
+		return &APIError{Status: http.StatusConflict, Code: "dscp_path_changed", Message: "Nothing written: " + change.Error() + ". Run Discovery for the set to test a strategy on that path",
+			Fields: []FieldError{change.field()}}
+	}
+	return nil
 }
 
 func probeInputHost(raw string) string {

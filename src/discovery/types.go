@@ -355,7 +355,6 @@ type DiscoverySuite struct {
 	hubPresetsFn   func() []ConfigPreset
 
 	setStrategy     *config.SetConfig
-	setDSCP         *config.DSCPProbe
 	stopWhenCovered bool
 	coverTried      map[string]bool
 	coverChecking   bool
