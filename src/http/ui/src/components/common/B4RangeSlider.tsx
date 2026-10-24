@@ -13,6 +13,7 @@ import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
 import { useChangedField, useChangedFields } from "@context/ChangedFieldsContext";
 import { useEditableNumber } from "./useEditableNumber";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { useFieldLabel } from "./dialogLabels";
 
 interface B4RangeSliderProps extends Omit<SliderProps, "onChange" | "value"> {
@@ -36,6 +37,7 @@ function RangeValueInput({
   editor,
   digits,
   autofocus,
+  pair,
   onPairBlur,
 }: {
   editor: {
@@ -48,6 +50,7 @@ function RangeValueInput({
   };
   digits: number;
   autofocus?: boolean;
+  pair: RefObject<HTMLElement | null>;
   onPairBlur: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -59,11 +62,11 @@ function RangeValueInput({
       size="small"
       value={editor.text}
       inputRef={inputRef}
-      inputMode="numeric"
       onChange={(e) => editor.setText(e.target.value)}
       onBlur={(e) => {
         editor.commitQuiet();
-        if (!(e.relatedTarget instanceof HTMLInputElement)) onPairBlur();
+        const next = e.relatedTarget;
+        if (!(next instanceof Node && pair.current?.contains(next))) onPairBlur();
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
@@ -75,7 +78,7 @@ function RangeValueInput({
         }
       }}
       onFocus={(e) => e.target.select()}
-      slotProps={{ htmlInput: { style: { width: `${Math.max(digits, 2) + 1}ch`, padding: "4px 8px", textAlign: "center" } } }}
+      slotProps={{ htmlInput: { inputMode: "numeric", style: { width: `${Math.max(digits, 2) + 1}ch`, padding: "4px 8px", textAlign: "center" } } }}
       sx={{
         "& .MuiOutlinedInput-root": {
           bgcolor: colors.accent.secondary,
@@ -124,15 +127,20 @@ export const B4RangeSlider = ({
       ? colors.secondary
       : colors.text.primary;
   const isRange = value[0] !== value[1];
-  // Transient drag value stays local: committing per mousemove tick would
-  // rerender the whole settings section at drag frequency.
   const [dragValue, setDragValue] = useState<[number, number] | null>(null);
+  const pendingRef = useRef<[number, number] | null>(null);
+  const pairRef = useRef<HTMLDivElement | null>(null);
   const handleChange = (_event: Event, newValue: number | number[]) => {
-    if (Array.isArray(newValue)) setDragValue([newValue[0], newValue[1]]);
+    if (!Array.isArray(newValue)) return;
+    const next: [number, number] = [newValue[0], newValue[1]];
+    pendingRef.current = next;
+    setDragValue(next);
   };
-  const handleCommit = (_event: unknown, newValue: number | number[]) => {
+  const handleCommit = () => {
+    const next = pendingRef.current;
+    pendingRef.current = null;
     setDragValue(null);
-    if (Array.isArray(newValue)) onChange([newValue[0], newValue[1]]);
+    if (next && (next[0] !== value[0] || next[1] !== value[1])) onChange(next);
   };
   const commitLo = useCallback(
     (next: number) => {
@@ -200,11 +208,12 @@ export const B4RangeSlider = ({
           )}
           {showValue &&
             ((loEditor.editing || hiEditor.editing) && !disabled ? (
-              <Stack direction="row" spacing={0.5} alignItems="center">
+              <Stack ref={pairRef} direction="row" spacing={0.5} alignItems="center">
                 <RangeValueInput
                   editor={loEditor}
                   digits={String(value[0]).length}
                   autofocus
+                  pair={pairRef}
                   onPairBlur={() => {
                     loEditor.close();
                     hiEditor.close();
@@ -216,6 +225,7 @@ export const B4RangeSlider = ({
                 <RangeValueInput
                   editor={hiEditor}
                   digits={String(value[1]).length}
+                  pair={pairRef}
                   onPairBlur={() => {
                     loEditor.close();
                     hiEditor.close();

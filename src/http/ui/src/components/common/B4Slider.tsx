@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Box,
   ButtonBase,
@@ -58,16 +58,18 @@ export const B4Slider = ({
     : changed
       ? colors.secondary
       : colors.text.primary;
-  // Transient drag value stays local: committing per mousemove tick would
-  // rerender the whole settings section at drag frequency.
   const [dragValue, setDragValue] = useState<number | null>(null);
+  const pendingRef = useRef<number | null>(null);
   const handleChange = (_event: Event, newValue: number | number[]) => {
-    setDragValue(Array.isArray(newValue) ? newValue[0] : newValue);
+    const next = Array.isArray(newValue) ? newValue[0] : newValue;
+    pendingRef.current = next;
+    setDragValue(next);
   };
-  const handleCommit = (_event: unknown, newValue: number | number[]) => {
-    const v = Array.isArray(newValue) ? newValue[0] : newValue;
+  const handleCommit = () => {
+    const next = pendingRef.current;
+    pendingRef.current = null;
     setDragValue(null);
-    if (v !== value) onChange(v);
+    if (next !== null && next !== value) onChange(next);
   };
   const editor = useEditableNumber(value, onChange, min, max);
 
@@ -121,7 +123,6 @@ export const B4Slider = ({
                 size="small"
                 value={editor.text}
                 autoFocus
-                inputMode="numeric"
                 onChange={(e) => editor.setText(e.target.value)}
                 onBlur={() => editor.commit()}
                 onKeyDown={(e) => {
@@ -129,7 +130,7 @@ export const B4Slider = ({
                   else if (e.key === "Escape") editor.cancel();
                 }}
                 onFocus={(e) => e.target.select()}
-                slotProps={{ htmlInput: { style: { width: `${Math.max(String(value).length, 2) + 1}ch`, padding: "4px 8px", textAlign: "center" } } }}
+                slotProps={{ htmlInput: { inputMode: "numeric", style: { width: `${Math.max(String(value).length, 2) + 1}ch`, padding: "4px 8px", textAlign: "center" } } }}
                 sx={{
                   "& .MuiOutlinedInput-root": {
                     bgcolor: colors.accent.secondary,
