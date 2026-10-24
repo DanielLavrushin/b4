@@ -25,7 +25,7 @@ import { B4SetConfig } from "@models/config";
 import { colors } from "@design";
 import { useTranslation } from "react-i18next";
 import { setsApi } from "@api/sets";
-import { parsePins, pinsToText } from "@utils";
+import { parsePins, pinsToText, samePins } from "@utils";
 import dns from "@assets/dns.json";
 import doh from "@assets/doh.json";
 
@@ -82,6 +82,10 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
   const [mode, setMode] = useState<ResolverMode>(
     dnsConfig.doh_url ? "doh" : "udp",
   );
+  let storedMode: ResolverMode | null = null;
+  if (dnsConfig.doh_url) storedMode = "doh";
+  else if (dnsConfig.target_dns) storedMode = "udp";
+  if (storedMode && storedMode !== mode) setMode(storedMode);
 
   const handleModeChange = (_: unknown, next: ResolverMode | null) => {
     if (!next || next === mode) return;
@@ -94,6 +98,13 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
   };
 
   const [pinsText, setPinsText] = useState(() => pinsToText(dnsConfig.pins));
+  const [seenPins, setSeenPins] = useState(dnsConfig.pins);
+  if (dnsConfig.pins !== seenPins) {
+    setSeenPins(dnsConfig.pins);
+    if (!samePins(parsePins(pinsText), dnsConfig.pins)) {
+      setPinsText(pinsToText(dnsConfig.pins));
+    }
+  }
   const [uncovered, setUncovered] = useState<string[]>([]);
 
   const handlePinsChange = (text: string) => {
