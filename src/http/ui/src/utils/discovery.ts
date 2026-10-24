@@ -374,6 +374,17 @@ export function alternatesFor(group: FoundGroup, limit = 5): Alternate[] {
   );
 }
 
+export function siteAlternates(dr: DiscoveryResult, limit = 0): Alternate[] {
+  return alternatesOf(
+    [dr],
+    [dr.domain],
+    NO_BYPASS_PRESET,
+    dnsPoisoned([dr]),
+    echCoverNames([dr]),
+    limit,
+  );
+}
+
 export function historyAlternates(
   entry: HistoryEntry,
   domains: string[],
@@ -382,7 +393,7 @@ export function historyAlternates(
   return alternatesOf(
     [entry],
     domains.length > 0 ? domains : [entry.domain],
-    entry.best_preset,
+    historyVerdict(entry) === "found" ? entry.best_preset : NO_BYPASS_PRESET,
     !!entry.dns_result?.is_poisoned,
     echCoverNames([entry]),
     limit,

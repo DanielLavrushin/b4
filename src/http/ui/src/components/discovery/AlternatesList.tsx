@@ -11,6 +11,7 @@ interface AlternatesListProps {
   applied?: Record<string, AppliedMark>;
   busy?: boolean;
   preview?: number;
+  actionLabel?: string;
   onUse: (alt: Alternate) => void;
 }
 
@@ -21,6 +22,7 @@ export const AlternatesList = ({
   applied,
   busy,
   preview = PREVIEW,
+  actionLabel,
   onUse,
 }: AlternatesListProps) => {
   const { t } = useTranslation();
@@ -95,7 +97,7 @@ export const AlternatesList = ({
                   onClick={() => onUse(alt)}
                   sx={{ textTransform: "none", minWidth: 0 }}
                 >
-                  {t("discovery.results.useInstead")}
+                  {actionLabel ?? t("discovery.results.useInstead")}
                 </Button>
               </Box>
             </Box>

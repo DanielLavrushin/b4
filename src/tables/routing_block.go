@@ -62,11 +62,11 @@ func routeEnsureBlockRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		if cfg.Queue.IPv6Enabled {
 			addBlockRuleIpt(true, st.chainPre, st.setV6, st.blockAction, sources, legacy)
 		}
-		ensureBlockJumpIpt("FORWARD", st.chainPre, legacy, gate)
+		ensureBlockJumpIpt("FORWARD", st.chainPre, legacy, false, gate)
 		if sourceScoped {
 			deleteBlockJumpIpt("OUTPUT", st.chainPre, legacy)
 		} else {
-			ensureBlockJumpIpt("OUTPUT", st.chainPre, legacy, routeDeviceGate{})
+			ensureBlockJumpIpt("OUTPUT", st.chainPre, legacy, false, routeDeviceGate{})
 		}
 	}
 	return nil
@@ -150,6 +150,14 @@ func iptBlockCmd(v6, legacy bool) string {
 }
 
 func ensureBlockChainIpt(chain string, legacy bool) error {
+	if err := createBlockChainIpt(chain, legacy); err != nil {
+		return err
+	}
+	flushBlockChainIpt(chain, legacy)
+	return nil
+}
+
+func createBlockChainIpt(chain string, legacy bool) error {
 	ipt4 := iptBlockCmd(false, legacy)
 	for _, v6 := range []bool{false, true} {
 		cmd := iptBlockCmd(v6, legacy)
@@ -163,9 +171,18 @@ func ensureBlockChainIpt(chain string, legacy bool) error {
 			}
 			log.Tracef("routing: %s -N %s in filter failed (non-fatal): %s", cmd, chain, strings.TrimSpace(out))
 		}
-		runLogged("routing: flush block chain "+chain, cmd, "-w", "-t", "filter", "-F", chain)
 	}
 	return nil
+}
+
+func flushBlockChainIpt(chain string, legacy bool) {
+	for _, v6 := range []bool{false, true} {
+		cmd := iptBlockCmd(v6, legacy)
+		if !hasBinary(cmd) {
+			continue
+		}
+		runLogged("routing: flush block chain "+chain, cmd, "-w", "-t", "filter", "-F", chain)
+	}
 }
 
 func flushDeleteBlockChainIpt(chain string, legacy bool) {
@@ -222,14 +239,14 @@ func addBlockRuleIpt(v6 bool, chain, setName, action string, sources []string, l
 	}
 }
 
-func ensureBlockJumpIpt(parent, chain string, legacy bool, gate routeDeviceGate) {
+func ensureBlockJumpIpt(parent, chain string, legacy, insertTop bool, gate routeDeviceGate) {
 	for _, v6 := range []bool{false, true} {
 		cmd := iptBlockCmd(v6, legacy)
 		if !hasBinary(cmd) {
 			continue
 		}
 		iptDeleteJumpsTo(cmd, "filter", parent, chain)
-		iptEmitGatedJump(cmd, "filter", parent, chain, false, gate)
+		iptEmitGatedJump(cmd, "filter", parent, chain, insertTop, gate)
 	}
 }
 
