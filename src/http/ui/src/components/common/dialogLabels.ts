@@ -43,6 +43,7 @@ const LABEL_NS_BY_PREFIX: Record<string, string> = {
 // Set entries in editor tab order, settings entries alphabetically.
 const LABEL_EXCEPTIONS: Record<string, string> = {
   name: "core.setName",
+  enabled: "core.enabled",
   "targets.sni_domains": "sets.targets.manualDomains",
   "targets.ip": "sets.targets.manualIps",
   "targets.asns": "sets.targets.asn.activeTitle",

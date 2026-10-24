@@ -27,7 +27,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { B4Tab, B4TabPanel, B4Tabs, B4TextField } from "@b4.elements";
 
 import { colors } from "@design";
-import { setByPath } from "@utils";
+import { rebaseDraft, setByPath } from "@utils";
 import { ChangedFieldsProvider } from "@context/ChangedFieldsContext";
 import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
 import {
@@ -66,29 +66,14 @@ type EditorTabKey = (typeof EDITOR_TABS)[number]["key"];
 const TAB_INDEX: Record<EditorTabKey, number> = Object.fromEntries(
   EDITOR_TABS.map((tab, index) => [tab.key, index]),
 ) as Record<EditorTabKey, number>;
-const SET_EDITOR_DIFF_IGNORE = new Set([
-  "id",
-  "enabled",
-  "revision",
-  "stats",
-  "hub_state",
-  "hub",
-  "manual_domains",
-  "manual_ips",
-  "geosite_domains",
-  "geoip_ips",
-  "total_domains",
-  "total_ips",
-  "asn_ips",
-  "geosite_category_breakdown",
-  "geoip_category_breakdown",
-  "asn_breakdown",
-  "asn_unresolved",
-]);
+const SET_EDITOR_DIFF_IGNORE = new Set(["id", "revision", "stats", "hub_state"]);
+const SET_EDITOR_DIFF_OPTIONS = { ignoredRootKeys: SET_EDITOR_DIFF_IGNORE };
 const SET_EDITOR_CHANGE_GROUPS: ChangeGroupDef[] = [
   { prefixes: ["name"], labelKey: "core.setName" },
+  { prefixes: ["enabled"], labelKey: "core.enabled" },
   ...EDITOR_TABS.filter((t) => t.prefixes.length > 0)
     .map(({ prefixes, labelKey }) => ({ prefixes: [...prefixes], labelKey })),
+  { prefixes: ["hub"], labelKey: "core.nav.hub" },
 ];
 
 export interface SetEditorPageProps {
@@ -125,11 +110,14 @@ export const SetEditorPage = ({
     const index = EDITOR_TABS.findIndex((t) => t.key === requestedTab);
     return index === -1 ? 0 : index;
   });
-  // Draft resets via key={set.id} in Page.tsx on set switch; no prop-sync
-  // effect here so parent refreshes never wipe the in-progress draft.
-  // "revision" is in SET_EDITOR_DIFF_IGNORE (server concurrency token),
-  // so post-save refetches don't show phantom dirty state.
   const [editedSet, setEditedSet] = useState<B4SetConfig | null>(initialSet);
+  const [baseSet, setBaseSet] = useState(initialSet);
+  if (baseSet !== initialSet) {
+    setBaseSet(initialSet);
+    setEditedSet((prev) =>
+      prev ? rebaseDraft(prev, baseSet, initialSet, SET_EDITOR_DIFF_OPTIONS) : prev,
+    );
+  }
   const [callsSession, setCallsSession] = useState<CallsSession>({});
 
   useEffect(() => {
@@ -154,23 +142,17 @@ export const SetEditorPage = ({
   };
 
   const handleSave = () => {
-    if (editedSet) {
-      const snapshot = editedSet;
-      void (async () => {
-        try {
-          const saved = await onSave(snapshot);
-          // Merge only the concurrency token so edits made during the
-          // request survive; the next save then carries a fresh revision.
-          if (saved && saved.revision !== undefined) {
-            const revision = saved.revision;
-            setEditedSet((prev) => (prev ? { ...prev, revision } : prev));
-          }
-        } catch {
-          // Page reports its own failures; a throw here is unexpected —
-          // leave the draft untouched rather than surfacing noise.
+    if (!editedSet) return;
+    const snapshot = editedSet;
+    Promise.resolve(onSave(snapshot))
+      .then((saved) => {
+        if (saved) {
+          setEditedSet((prev) =>
+            prev ? rebaseDraft(prev, snapshot, saved, SET_EDITOR_DIFF_OPTIONS) : prev,
+          );
         }
-      })();
-    }
+      })
+      .catch(() => {});
   };
 
   const handleApplyImport = (importedSet: B4SetConfig) => {
@@ -237,7 +219,7 @@ export const SetEditorPage = ({
     const map = new Map<string, string>();
     for (const item of config.sets ?? []) {
       const nested = item as unknown as { set?: B4SetConfig };
-      const set = nested.set ?? (item as unknown as B4SetConfig);
+      const set = nested.set ?? item;
       if (set.id) map.set(set.id, set.name || set.id);
     }
     if (editedId) map.set(editedId, editedName || editedId);
@@ -360,7 +342,7 @@ export const SetEditorPage = ({
                 size="small"
                 variant="outlined"
                 onClick={() => setShowDiscardDialog(true)}
-                disabled={saving || (!isNew && !dirty)}
+                disabled={saving || !dirty}
               >
                 {t("core.discard")}
               </Button>
@@ -525,6 +507,7 @@ export const SetEditorPage = ({
         onStay={() => setShowDiscardDialog(false)}
         onLeave={resetDraft}
         title={t("core.discardChanges")}
+        body={t("core.discardConfirm")}
         stayLabel={t("core.cancel")}
         leaveLabel={t("core.discard")}
       />

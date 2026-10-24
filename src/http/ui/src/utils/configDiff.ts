@@ -1,3 +1,5 @@
+import { setByPath } from "./setByPath";
+
 export type ConfigLeafMap = Record<string, unknown>;
 
 export interface ChangedLeaf {
@@ -121,8 +123,8 @@ export const diffConfigLeaves = (
     ) {
       if (!leafEqual(d, b, path)) out.push({ path, before: b, after: d });
     }
-    const dMap = dRec ? (d as Record<string, unknown>) : {};
-    const bMap = bRec ? (b as Record<string, unknown>) : {};
+    const dMap = dRec ? d : {};
+    const bMap = bRec ? b : {};
     const isRoot = path === "";
     for (const key of new Set([...Object.keys(dMap), ...Object.keys(bMap)])) {
       if (options?.ignoredKeys?.has(key)) continue;
@@ -133,4 +135,18 @@ export const diffConfigLeaves = (
   walk(draft, baseline, "");
   out.sort((a, b) => a.path.localeCompare(b.path));
   return out;
+};
+
+export const rebaseDraft = <T extends object>(
+  draft: T,
+  from: T,
+  onto: T,
+  options?: ConfigDiffOptions,
+): T => {
+  if (draft === from) return onto;
+  return diffConfigLeaves(
+    draft as Record<string, unknown>,
+    from as Record<string, unknown>,
+    options,
+  ).reduce((next, leaf) => setByPath(next, leaf.path, leaf.after), onto);
 };

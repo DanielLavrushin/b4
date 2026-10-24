@@ -732,6 +732,7 @@ export function SettingsPage() {
         onStay={() => setShowResetDialog(false)}
         onLeave={resetChanges}
         title={t("core.discardChanges")}
+        body={t("core.discardConfirm")}
         stayLabel={t("core.cancel")}
         leaveLabel={t("core.discard")}
       />
