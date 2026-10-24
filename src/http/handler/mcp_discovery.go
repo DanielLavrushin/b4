@@ -428,6 +428,19 @@ func mcpWithProbeDSCP(note string, dscp *int) string {
 	return note + fmt.Sprintf(" The probes carry DSCP %d, the set's own value, so they take the path the set's traffic takes.", *dscp)
 }
 
+func mcpRunDSCPMoved(cfg *config.Config, live, tested *config.SetConfig) string {
+	now := cfg.ProbeDSCP(live)
+	switch {
+	case tested.DSCP.Enabled && now == nil:
+		return fmt.Sprintf("the run tested this strategy with DSCP %d, but set %q no longer writes a DSCP value of its own, so its traffic takes another network path", tested.DSCP.Value, live.Name)
+	case !tested.DSCP.Enabled && now != nil:
+		return fmt.Sprintf("the run tested this strategy without a DSCP value of the set, but set %q now writes DSCP %d, so its traffic takes another network path", live.Name, now.Value)
+	case now != nil && now.Value != tested.DSCP.Value:
+		return fmt.Sprintf("the run tested this strategy with DSCP %d, but set %q now writes DSCP %d, so its traffic takes another network path", tested.DSCP.Value, live.Name, now.Value)
+	}
+	return ""
+}
+
 var mcpURLStart = regexp.MustCompile("^[\"'`]*[A-Za-z][A-Za-z0-9+.-]*://")
 
 func mcpSplitDomainsInput(raw string) []string {
@@ -1169,6 +1182,9 @@ func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bo
 	live := newCfg.GetSetById(target.Id)
 	if live == nil {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("set %q disappeared before the write", target.Name)
+	}
+	if moved := mcpRunDSCPMoved(newCfg, live, v.Set); moved != "" {
+		return nil, mcpDiscoveryOut{}, fmt.Errorf("nothing written: %s. Start the run again", moved)
 	}
 	live.AdoptStrategy(v.Set)
 	if pins := v.CoveredPins(); len(pins) > 0 {

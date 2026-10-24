@@ -44,7 +44,7 @@ func (b *discoveryIptBackend) takesSetValues(cfg *config.Config, v6 bool) (bool,
 	if v6 {
 		bin = b.ipt6()
 	}
-	if !hasBinary(bin) || !hasBinary("ipset") {
+	if !hasBinary(bin) || !hasBinary("ipset") || !dscpIptStampWorks(bin) {
 		return false, nil
 	}
 	dscpIptProbeMu.Lock()

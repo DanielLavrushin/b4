@@ -276,6 +276,46 @@ func TestMCPDiscoveryApplyWritesACoveredVerdictIntoTheSet(t *testing.T) {
 	}
 }
 
+func TestMCPDiscoveryApplyForASetRefusesAResultFromAnotherDSCPPath(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	cfg.Sets[0].DSCP = config.SetDSCPConfig{Enabled: true, Value: 7}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	mcpResetHistory()
+	t.Cleanup(func() { mcpRememberSuite("") })
+
+	onOtherPath := coveredVerdict()
+	onOtherPath.Set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
+	discovery.RegisterSuite(&discovery.CheckSuite{Id: "set-run-on-25", Status: discovery.CheckStatusComplete, SetId: "set-1", SetVerdict: onOtherPath})
+	res := callDiscovery(t, session, ctx, map[string]any{"action": "apply", "id": "set-run-on-25"})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "DSCP 25") || !strings.Contains(mcpErrorText(res), "DSCP 7") {
+		t.Errorf("the strategy was tested on the path DSCP 25 selects, the set now writes 7, so the write must be refused and say why: %q", mcpErrorText(res))
+	}
+
+	discovery.SaveToHistory(&discovery.CheckSuite{
+		Id: "set-run-before-dscp", Status: discovery.CheckStatusComplete, EndTime: time.Now(), SetId: "set-1", SetVerdict: coveredVerdict(),
+	}, cfg.ConfigPath)
+	res = callDiscovery(t, session, ctx, map[string]any{"action": "apply", "set": "video", "id": "set-run-before-dscp"})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "now writes DSCP 7") {
+		t.Errorf("a saved run tested without the set's value cannot be written into the set that now writes 7: %q", mcpErrorText(res))
+	}
+	if live := api.getCfg().GetSetById("set-1"); live.Fragmentation.Strategy == "tls" {
+		t.Fatal("nothing may be written from a run on another path")
+	}
+
+	onThisPath := coveredVerdict()
+	onThisPath.Set.DSCP = config.SetDSCPConfig{Enabled: true, Value: 7}
+	discovery.SaveToHistory(&discovery.CheckSuite{
+		Id: "set-run-on-7", Status: discovery.CheckStatusComplete, EndTime: time.Now(), SetId: "set-1", SetVerdict: onThisPath,
+	}, cfg.ConfigPath)
+	out := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "apply", "set": "video", "id": "set-run-on-7"}))
+	if !out.Changed || api.getCfg().GetSetById("set-1").Fragmentation.Strategy != "tls" {
+		t.Errorf("a run tested on the set's own path is written: %+v", out)
+	}
+}
+
 func TestMCPDiscoveryApplyForASetFollowsTheVerdict(t *testing.T) {
 	cfg := probeCfg(t)
 	cfg.System.WebServer.MCP.AllowWrites = true

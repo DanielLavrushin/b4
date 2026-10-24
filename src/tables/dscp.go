@@ -252,11 +252,13 @@ func applyDSCPIpt(cfg *config.Config, backend string, value int, ifaces []string
 	for _, bin := range im.teardownBinaries() {
 		permanent, err := im.applyDSCPChain(bin, specs)
 		if err == nil {
+			dscpIptNoteStamp(bin, false)
 			installed = append(installed, bin)
 			wanted = append(wanted, bin)
 			continue
 		}
 		if permanent {
+			dscpIptNoteStamp(bin, true)
 			im.teardownDSCPChain(bin)
 			errs = append(errs, fmt.Errorf("%s, so %s packets go out without the DSCP value: %w", bin, iptFamilyLabel(bin), err))
 			continue

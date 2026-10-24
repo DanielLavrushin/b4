@@ -893,6 +893,29 @@ func TestDiscoveryFollowsAFamilysFallbackUntilItsRulesAreRestored(t *testing.T) 
 	ClearDiscoverySteeringRules(&cfg, 0x8001, 0x8002)
 }
 
+func TestDiscoveryFollowsAFamilyThatRefusedTheDSCPTarget(t *testing.T) {
+	appliedResetGlobals(t)
+	h := dscpIptNewHost(t, backendIPTables, backendIP6Tables)
+	h.mangle.rejectDSCP[backendIP6Tables] = true
+	cfg := dscpIptTestConfig(7, true, nil, dscpPlanTestSet("a", 25, "10.1.2.0/24"))
+	cfg.System.Tables.Engine = backendIPTables
+	_ = applyDSCPFor(cfg, backendIPTables)
+
+	be := &discoveryIptBackend{}
+	if ok, err := be.takesSetValues(cfg, true); ok || err != nil {
+		t.Errorf("ip6tables refused the DSCP target, so the set's IPv6 traffic leaves without any value, and the run's IPv6 probes must too: %t, %v", ok, err)
+	}
+	if ok, err := be.takesSetValues(cfg, false); !ok || err != nil {
+		t.Errorf("IPv4 took the set's rules, so its probes keep the set's value: %t, %v", ok, err)
+	}
+
+	h.mangle.rejectDSCP[backendIP6Tables] = false
+	_ = applyDSCPFor(cfg, backendIPTables)
+	if ok, err := be.takesSetValues(cfg, true); !ok || err != nil {
+		t.Errorf("once ip6tables takes the DSCP rules again, the run's IPv6 probes carry the value again: %t, %v", ok, err)
+	}
+}
+
 func TestDiscoveryTriesTheNftablesSetObjectsBeforeStampingTheirValue(t *testing.T) {
 	appliedResetGlobals(t)
 	resetDSCPState(t)
