@@ -32,6 +32,7 @@ func stubProbes(manager *IPTablesManager, bins ...string) {
 		manager.ctdirSupport[bin] = true
 		manager.multiportSupport[bin] = true
 		manager.connmarkSupport[bin] = true
+		manager.socketSupport[bin] = true
 		manager.rawQueueSupport[bin] = nil
 	}
 }
@@ -42,6 +43,7 @@ func failProbe(manager *IPTablesManager, bin string) {
 	manager.ctdirSupport[bin] = true
 	manager.multiportSupport[bin] = true
 	manager.connmarkSupport[bin] = true
+	manager.socketSupport[bin] = true
 	manager.rawQueueSupport[bin] = nil
 }
 

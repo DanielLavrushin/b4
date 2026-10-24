@@ -308,7 +308,7 @@ func goldenIsolate(t *testing.T, h *goldenHost) {
 	t.Helper()
 	resetDSCPState(t)
 	stubDNSKernel(t, unaffectedDNSKernel)
-	for _, m := range []*sync.Map{&hasBinaryCache, &iptWaitSupport, &rawQueueProven, &rawFallbackWarned, &copyFallbackWarned, &dnsCopyNoted, &dnsNatPortWarned, &rawQueueUnusable, &dnsCopyUnusable, &dnsCopyErrors, &udpDropWarned} {
+	for _, m := range []*sync.Map{&hasBinaryCache, &iptWaitSupport, &rawQueueProven, &rawFallbackWarned, &copyFallbackWarned, &dnsCopyNoted, &dnsNatPortWarned, &rawQueueUnusable, &dnsCopyUnusable, &dnsCopyErrors, &udpDropWarned, &socketMatchProven, &socketMatchUnusable, &socketMatchWarned} {
 		goldenKeepSyncMap(t, m)
 	}
 	for _, name := range append(slices.Clone(goldenIptBinaries), "ipset", "nft", "ip") {

@@ -12,6 +12,7 @@ nft add chain inet _b4_queue_probe test
 nft add rule inet _b4_queue_probe test counter queue num 537-540 bypass
 nft add rule inet _b4_queue_probe test ct original packets < 20 counter accept
 nft add rule inet _b4_queue_probe test ct direction original counter accept
+nft add rule inet _b4_queue_probe test socket wildcard 0 counter accept
 nft delete table inet _b4_queue_probe
 exec nft list tables
 exec nft list tables
@@ -41,7 +42,7 @@ exec nft add rule inet b4_mangle output meta mark & 0x8000 == 0x8000 accept
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x8cfd8000 == 0x8000 return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
-exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 ct direction reply socket wildcard 0 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return
 exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 tcp dport 443 ct original packets < 20 ct direction original counter queue num 537-540 bypass
 exec nft list chain inet b4_mangle raw_prerouting
@@ -132,7 +133,7 @@ exec nft add rule inet b4_mangle output meta mark & 0x8000 == 0x8000 accept
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x8cfd8000 == 0x8000 return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
-exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 ct direction reply socket wildcard 0 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return
 exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 tcp dport 443 ct original packets < 20 ct direction original counter queue num 537-540 bypass
 exec nft list chain inet b4_mangle raw_prerouting
@@ -207,7 +208,7 @@ exec nft add rule inet b4_mangle output meta mark & 0x8000 == 0x8000 accept
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x8cfd8000 == 0x8000 return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
-exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 return
+exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 ct direction reply socket wildcard 0 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return
 exec nft add rule inet b4_mangle b4_chain meta nfproto ipv4 tcp dport 443 ct original packets < 20 ct direction original counter queue num 537-540 bypass
 exec nft list chain inet b4_mangle raw_prerouting

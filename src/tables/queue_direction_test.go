@@ -201,10 +201,11 @@ func TestQueueRulesMatchConntrackDirectionPerBinary(t *testing.T) {
 			}
 			wantPre, wantOut := wantTCPQueueSpecs(manager, multiport, true)
 			directed := append(wantPre, wantOut...)
+			directed = append(directed, strings.Join(iptOwnReplyReturn(iptMarkAccept(manager.cfg.Queue.Mark), true, true), " "))
 			for _, r := range m.Rules {
 				spec := strings.Join(r.Spec, " ")
 				if strings.Contains(spec, "conntrack") && (r.IPT != backendIPTables || !slices.Contains(directed, spec)) {
-					t.Errorf("only the TCP queue rules select by conntrack direction, yet %s %s %s carries it: %q", r.IPT, r.Table, r.Chain, spec)
+					t.Errorf("only the TCP queue rules and the return for the replies to b4's own connections select by conntrack direction, yet %s %s %s carries it: %q", r.IPT, r.Table, r.Chain, spec)
 				}
 			}
 		})

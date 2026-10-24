@@ -214,10 +214,11 @@ func TestNetnsB4SeesTheResetsOfConnectionsItSendsInto(t *testing.T) {
 			incoming       bool
 			rstQueued      bool
 			serverDataSeen bool
+			lateDataSeen   bool
 		}{
-			{"b4's injector", netnsInjectorMark, false, true, false},
-			{"b4's injector with an incoming mode set", netnsInjectorMark, true, true, true},
-			{"the injector mark of earlier versions", func(q uint) uint32 { return uint32(q) }, false, false, false},
+			{"b4's injector", netnsInjectorMark, false, true, false, false},
+			{"b4's injector with an incoming mode set", netnsInjectorMark, true, true, true, true},
+			{"the injector mark of earlier versions", func(q uint) uint32 { return uint32(q) }, false, false, false, true},
 		} {
 			t.Run(engineName+"/"+tc.name, func(t *testing.T) {
 				netnsRequire(t)
@@ -280,7 +281,7 @@ func TestNetnsB4SeesTheResetsOfConnectionsItSendsInto(t *testing.T) {
 				stop()
 
 				queued, dropped := b4.snapshot()
-				rst, serverData := 0, 0
+				rst, serverData, lateData := 0, 0, 0
 				for _, q := range queued {
 					s, ok := netnsParseIPv4(q.pkt)
 					if !ok || s.proto != unix.IPPROTO_TCP || s.sport != netnsSrvPort || s.dport != port {
@@ -292,7 +293,10 @@ func TestNetnsB4SeesTheResetsOfConnectionsItSendsInto(t *testing.T) {
 							t.Errorf("the forged reset was queued at hook %d, want %d", q.hook, netnsHookPrerouting)
 						}
 					}
-					if len(s.payload) > 0 {
+					switch {
+					case len(s.payload) > 0 && s.payload[0] == 'B':
+						lateData++
+					case len(s.payload) > 0:
 						serverData++
 					}
 				}
@@ -303,7 +307,7 @@ func TestNetnsB4SeesTheResetsOfConnectionsItSendsInto(t *testing.T) {
 				case tc.rstQueued && (rst != 1 || len(dropped) != 1):
 					t.Errorf("the forged reset reached the queue %d time(s) and %d reset(s) were dropped; b4 must be handed the resets of a connection it sent packets into, or RST protection never acts on it", rst, len(dropped))
 				case !tc.rstQueued && rst != 0:
-					t.Errorf("the forged reset reached the queue %d time(s); with this injector mark the connection carries the queue mark, which returns every server packet first", rst)
+					t.Errorf("the forged reset reached the queue %d time(s); with this injector mark the connection carries the queue mark, which returns every server packet that reaches the router's socket first", rst)
 				}
 				switch {
 				case tc.rstQueued && lateErr != nil:
@@ -317,7 +321,15 @@ func TestNetnsB4SeesTheResetsOfConnectionsItSendsInto(t *testing.T) {
 				case !tc.serverDataSeen && serverData != 0:
 					t.Errorf("%d data packets of the server reached the queue; without an incoming mode set b4 has no use for them, and queueing them reorders them at the window edge", serverData)
 				}
-				t.Logf("forged reset queued %d time(s), dropped %d, server data packets queued %d, late read error %v", rst, len(dropped), serverData, lateErr)
+				switch {
+				case tc.lateDataSeen && lateData == 0 && tc.incoming:
+					t.Errorf("an incoming mode set needs the server's data, yet its late answer never reached the queue")
+				case tc.lateDataSeen && lateData == 0:
+					t.Errorf("the reset closed the router's socket, so the server's late answer reaches no socket there and must go to the queue rules like a device's; it never reached the queue")
+				case !tc.lateDataSeen && lateData != 0:
+					t.Errorf("%d late data packets of the server reached the queue on a connection that is still open; without an incoming mode set b4 has no use for them", lateData)
+				}
+				t.Logf("forged reset queued %d time(s), dropped %d, server data packets queued %d, late ones %d, late read error %v", rst, len(dropped), serverData, lateData, lateErr)
 			})
 		}
 	}

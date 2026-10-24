@@ -15,11 +15,11 @@ import (
 const (
 	iptOwnSaveRule       = "-m mark --mark 0x8000/0x22008000 -j CONNMARK --save-mark --nfmask 0x8000 --ctmask 0x8000"
 	iptInjectedSaveRule  = "-m mark --mark 0x2008000/0x22008000 -j CONNMARK --save-mark --nfmask 0x2000000 --ctmask 0x2000000"
-	iptOwnReturnRule     = "-m connmark --mark 0x8000/0x8000 -j RETURN"
+	iptOwnReturnRule     = "-m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN"
 	iptInjectedReturn    = "-p tcp -m connmark --mark 0x2000000/0x2008000 --tcp-flags SYN,RST NONE -j RETURN"
 	nftOwnSaveRule       = "meta mark & 0x22008000 == 0x8000 ct mark set ct mark | 0x8000"
 	nftInjectedSaveRule  = "meta mark & 0x22008000 == 0x2008000 ct mark set ct mark | 0x2000000"
-	nftOwnReturnRule     = "ct mark & 0x8000 == 0x8000 return"
+	nftOwnReturnRule     = "ct mark & 0x8000 == 0x8000 ct direction reply socket wildcard 0 return"
 	nftInjectedReturn    = "ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return"
 	nftMarkAcceptRule    = "meta mark & 0x8000 == 0x8000 accept"
 	iptMarkAcceptRuleStr = "-m mark --mark 0x8000/0x8000 -j ACCEPT"
