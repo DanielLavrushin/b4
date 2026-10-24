@@ -45,6 +45,17 @@ export const pinsToText = (pins?: Record<string, string[]>) => {
     .join("\n");
 };
 
+const pinsKey = (pins?: Record<string, string[]>) =>
+  Object.keys(pins ?? {})
+    .sort()
+    .map((domain) => `${domain}=${[...(pins?.[domain] ?? [])].sort().join(",")}`)
+    .join(";");
+
+export const samePins = (
+  a?: Record<string, string[]>,
+  b?: Record<string, string[]>,
+) => pinsKey(a) === pinsKey(b);
+
 export const parsePins = (text: string) => {
   const parsed = Object.create(null) as Record<string, string[]>;
   for (const tokens of pinLines(text)) {

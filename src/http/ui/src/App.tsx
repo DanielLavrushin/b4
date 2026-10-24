@@ -1,5 +1,7 @@
 import {
   AppBar,
+  Button,
+  CircularProgress,
   Box,
   CssBaseline,
   Divider,
@@ -15,14 +17,15 @@ import {
   Typography,
   useMediaQuery,
 } from "@mui/material";
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import {
   Navigate,
-  Route,
-  Routes,
+  Outlet,
   useLocation,
   useNavigate,
+  useRouteError,
 } from "react-router";
+import type { RouteObject } from "react-router";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -51,16 +54,35 @@ import {
   useUnseenDomainsCount,
 } from "./context/B4WsProvider";
 
-import { ConnectionsPage } from "@b4.connections";
 import { DashboardPage } from "@b4.dashboard";
-import { DetectorPage } from "@b4.detector";
-import { DiscoveryPage } from "@b4.discovery";
-import { HubPage, useHubStatus } from "@b4.hub";
-import { LogsPage } from "@b4.logs";
-import { SetsPage } from "@b4.sets";
-import { SettingsPage } from "@b4.settings";
-import { WatchdogPage } from "@b4.watchdog";
+import { B4Alert } from "@b4.elements";
+import { useHubStatus } from "@hooks/useHub";
 import { SnackbarProvider } from "@context/SnackbarProvider";
+
+const ConnectionsPage = lazy(() =>
+  import("@b4.connections").then((m) => ({ default: m.ConnectionsPage })),
+);
+const DetectorPage = lazy(() =>
+  import("@b4.detector").then((m) => ({ default: m.DetectorPage })),
+);
+const DiscoveryPage = lazy(() =>
+  import("@b4.discovery").then((m) => ({ default: m.DiscoveryPage })),
+);
+const HubPage = lazy(() =>
+  import("@b4.hub").then((m) => ({ default: m.HubPage })),
+);
+const LogsPage = lazy(() =>
+  import("@b4.logs").then((m) => ({ default: m.LogsPage })),
+);
+const SetsPage = lazy(() =>
+  import("@b4.sets").then((m) => ({ default: m.SetsPage })),
+);
+const SettingsPage = lazy(() =>
+  import("@b4.settings").then((m) => ({ default: m.SettingsPage })),
+);
+const WatchdogPage = lazy(() =>
+  import("@b4.watchdog").then((m) => ({ default: m.WatchdogPage })),
+);
 
 const DRAWER_WIDTH = 240;
 const HEADER_HEIGHT = 64;
@@ -81,6 +103,58 @@ const navItems: NavItem[] = [
   { path: "/traffic", labelKey: "core.nav.connections", icon: <ConnectionIcon /> },
   { path: "/logs", labelKey: "core.nav.logs", icon: <LogsIcon /> },
   { path: "/settings", labelKey: "core.nav.settings", icon: <CoreIcon /> },
+];
+function PageLoadError() {
+  const { t } = useTranslation();
+  const error = useRouteError();
+  return (
+    <Box sx={{ p: 3 }}>
+      <B4Alert
+        severity="error"
+        noWrapper
+        action={
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => window.location.reload()}
+          >
+            {t("core.reload")}
+          </Button>
+        }
+      >
+        {t("core.pageLoadFailed")}
+        {error instanceof Error && error.message && (
+          <Typography
+            variant="caption"
+            component="div"
+            sx={{ mt: 0.5, opacity: 0.8 }}
+          >
+            {error.message}
+          </Typography>
+        )}
+      </B4Alert>
+    </Box>
+  );
+}
+
+export const appRoutes: RouteObject[] = [
+  {
+    errorElement: <PageLoadError />,
+    children: [
+      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { path: "dashboard", element: <DashboardPage /> },
+      { path: "sets/*", element: <SetsPage /> },
+      { path: "traffic", element: <ConnectionsPage /> },
+      { path: "connections", element: <Navigate to="/traffic" replace /> },
+      { path: "discovery", element: <DiscoveryPage /> },
+      { path: "hub", element: <HubPage /> },
+      { path: "watchdog", element: <WatchdogPage /> },
+      { path: "detector", element: <DetectorPage /> },
+      { path: "logs", element: <LogsPage /> },
+      { path: "settings/*", element: <SettingsPage /> },
+      { path: "*", element: <Navigate to="/dashboard" replace /> },
+    ],
+  },
 ];
 
 function pageTitleKey(pathname: string) {
@@ -289,20 +363,22 @@ export default function App() {
               </Toolbar>
             </AppBar>
 
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/sets/*" element={<SetsPage />} />
-              <Route path="/traffic" element={<ConnectionsPage />} />
-              <Route path="/connections" element={<Navigate to="/traffic" replace />} />
-              <Route path="/discovery" element={<DiscoveryPage />} />
-              <Route path="/hub" element={<HubPage />} />
-              <Route path="/watchdog" element={<WatchdogPage />} />
-              <Route path="/detector" element={<DetectorPage />} />
-              <Route path="/logs" element={<LogsPage />} />
-              <Route path="/settings/*" element={<SettingsPage />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
+            <Suspense
+              fallback={
+                <Box
+                  sx={{
+                    flex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <CircularProgress />
+                </Box>
+              }
+            >
+              <Outlet />
+            </Suspense>
           </Box>
         </Box>
       </SnackbarProvider>

@@ -30,12 +30,16 @@ import {
 interface SetEditorRouteProps {
   config: B4Config & { sets?: SetWithStats[] };
   onRefresh: () => void;
+  onReload: () => void;
+  reloadToken: number;
   onSaved: (set: B4SetConfig) => void;
 }
 
 function SetEditorRoute({
   config,
   onRefresh,
+  onReload,
+  reloadToken,
   onSaved,
 }: Readonly<SetEditorRouteProps>) {
   const { t } = useTranslation();
@@ -43,16 +47,20 @@ function SetEditorRoute({
   const navigate = useNavigate();
   const { showSuccess, showError, showSnackbar } = useSnackbar();
   const { createSet, updateSet, loading: saving } = useSets();
-
+  const allowNavigationRef = useRef(false);
   const isNew = id === "new";
   const setsData = config.sets || [];
-  const sets = setsData.map((s) => ("set" in s ? s.set : s)) as B4SetConfig[];
+  const sets = useMemo(
+    () =>
+      (config.sets ?? []).map((s) => ("set" in s ? s.set : s)) as B4SetConfig[],
+    [config.sets],
+  );
   const setsStats = setsData.map((s) =>
     "stats" in s ? s.stats : null,
   ) as (SetStats | null)[];
 
-  const existingSet = isNew ? null : sets.find((s) => s.id === id);
-
+  const existingIndex = isNew ? -1 : sets.findIndex((s) => s.id === id);
+  const existingSet = existingIndex >= 0 ? sets[existingIndex] : null;
   const otherSetsTargets = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const s of sets) {
@@ -86,30 +94,32 @@ function SetEditorRoute({
 
   usePageTitleDetail(isNew ? t("sets.editor.newSet") : existingSet?.name);
 
-  const stats = existingSet
-    ? (setsStats[sets.findIndex((s) => s.id === existingSet.id)] ?? undefined)
-    : undefined;
+  const stats =
+    existingIndex >= 0 ? (setsStats[existingIndex] ?? undefined) : undefined;
 
-  const handleSave = (editedSet: B4SetConfig) => {
-    void (async () => {
-      const { id: _, ...setWithoutId } = editedSet;
-      const result = isNew
-        ? await createSet(setWithoutId)
-        : await updateSet(editedSet);
+  const handleSave = async (
+    editedSet: B4SetConfig,
+  ): Promise<B4SetConfig | undefined> => {
+    const { id: _, ...setWithoutId } = editedSet;
+    const result = isNew
+      ? await createSet(setWithoutId)
+      : await updateSet(editedSet);
 
-      if (result.success) {
-        showSuccess(isNew ? t("sets.setCreated") : t("sets.setUpdated"));
-        if (!isNew && result.data) onSaved(result.data);
-        onRefresh();
-        if (isNew && result.data) {
-          await navigate(`/sets/${result.data.id}`, { replace: true });
-        }
-      } else if (isStaleWriteError(result.error)) {
-        reportStaleWrite(result.error, showSnackbar, t, onRefresh);
-      } else {
-        reportSaveError(result.error, showError, t);
+    if (result.success) {
+      showSuccess(isNew ? t("sets.setCreated") : t("sets.setUpdated"));
+      if (!isNew && result.data) onSaved(result.data);
+      onRefresh();
+      if (isNew && result.data) {
+        allowNavigationRef.current = true;
+        await navigate(`/sets/${result.data.id}`, { replace: true });
       }
-    })();
+      return result.data ?? undefined;
+    } else if (isStaleWriteError(result.error)) {
+      reportStaleWrite(result.error, showSnackbar, t, onReload);
+    } else {
+      reportSaveError(result.error, showError, t);
+    }
+    return undefined;
   };
 
   if (!set) {
@@ -118,6 +128,7 @@ function SetEditorRoute({
 
   return (
     <SetEditorPage
+      key={isNew ? "new" : `${set.id}:${reloadToken}`}
       settings={config.system}
       set={set}
       config={config}
@@ -127,6 +138,7 @@ function SetEditorRoute({
       saving={saving}
       onSave={handleSave}
       onRefresh={onRefresh}
+      navigationBypassRef={allowNavigationRef}
     />
   );
 }
@@ -138,9 +150,10 @@ export function SetsPage() {
     (B4Config & { sets?: SetWithStats[] }) | null
   >(null);
   const [loading, setLoading] = useState(true);
+  const [editorReload, setEditorReload] = useState(0);
   const initialLoadDone = useRef(false);
 
-  const loadConfig = useCallback(async () => {
+  const loadConfig = useCallback(async (resetEditor = false) => {
     try {
       if (!initialLoadDone.current) setLoading(true);
       const response = await fetch("/api/config");
@@ -149,6 +162,7 @@ export function SetsPage() {
         sets?: SetWithStats[];
       };
       setConfig(data);
+      if (resetEditor) setEditorReload((n) => n + 1);
     } catch {
       showError(i18n.t("core.configLoadError"));
     } finally {
@@ -219,6 +233,10 @@ export function SetsPage() {
                 onRefresh={() => {
                   loadConfig().catch(() => {});
                 }}
+                onReload={() => {
+                  void loadConfig(true);
+                }}
+                reloadToken={editorReload}
                 onSaved={handleSaved}
               />
             }

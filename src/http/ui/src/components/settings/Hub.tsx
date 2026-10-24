@@ -287,14 +287,15 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
       enabled={enabled}
       onToggle={(checked) => onChange("system.hub.enabled", checked)}
       toggleLabel={t("settings.Hub.enabled")}
+      togglePath="system.hub.enabled"
     >
       <B4Alert severity="info">{t("settings.Hub.note")}</B4Alert>
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4TextField
-            label={t("settings.Hub.urls")}
             value={urlsText}
+            path="system.hub.urls"
             onChange={(e) => setUrlsText(e.target.value)}
             onBlur={commitUrls}
             multiline
@@ -305,8 +306,8 @@ export const HubCard = ({ config, onChange }: HubSettingsProps) => {
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
           <B4TextField
-            label={t("settings.Hub.publicKey")}
             value={hub?.public_key ?? ""}
+            path="system.hub.public_key"
             onChange={(e) => onChange("system.hub.public_key", e.target.value)}
             placeholder={t("settings.Hub.publicKeyPlaceholder")}
             helperText={t("settings.Hub.publicKeyHelp")}

@@ -25,7 +25,7 @@ import { B4SetConfig } from "@models/config";
 import { colors } from "@design";
 import { useTranslation } from "react-i18next";
 import { setsApi } from "@api/sets";
-import { parsePins, pinsToText } from "@utils";
+import { parsePins, pinsToText, samePins } from "@utils";
 import dns from "@assets/dns.json";
 import doh from "@assets/doh.json";
 
@@ -82,6 +82,14 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
   const [mode, setMode] = useState<ResolverMode>(
     dnsConfig.doh_url ? "doh" : "udp",
   );
+  const dohUrl = dnsConfig.doh_url ?? "";
+  const targetDns = dnsConfig.target_dns ?? "";
+  const [seenResolver, setSeenResolver] = useState({ dohUrl, targetDns });
+  if (dohUrl !== seenResolver.dohUrl || targetDns !== seenResolver.targetDns) {
+    setSeenResolver({ dohUrl, targetDns });
+    if (dohUrl && !seenResolver.dohUrl) setMode("doh");
+    else if (targetDns && !seenResolver.targetDns && !dohUrl) setMode("udp");
+  }
 
   const handleModeChange = (_: unknown, next: ResolverMode | null) => {
     if (!next || next === mode) return;
@@ -94,6 +102,13 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
   };
 
   const [pinsText, setPinsText] = useState(() => pinsToText(dnsConfig.pins));
+  const [seenPins, setSeenPins] = useState(dnsConfig.pins);
+  if (dnsConfig.pins !== seenPins) {
+    setSeenPins(dnsConfig.pins);
+    if (!samePins(parsePins(pinsText), dnsConfig.pins)) {
+      setPinsText(pinsToText(dnsConfig.pins));
+    }
+  }
   const [uncovered, setUncovered] = useState<string[]>([]);
 
   const handlePinsChange = (text: string) => {
@@ -152,6 +167,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
         <B4Switch
           label={t("sets.dns.enable")}
           checked={dnsConfig.enabled}
+          path="dns.enabled"
           onChange={(checked: boolean) => onChange("dns.enabled", checked)}
           description={t("sets.dns.enableDesc")}
         />
@@ -189,8 +205,8 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
 
           <Grid size={{ xs: 12 }}>
             <B4Switch
-              label={t("sets.dns.strict")}
               checked={dnsConfig.strict || false}
+              path="dns.strict"
               onChange={(checked: boolean) => onChange("dns.strict", checked)}
               description={t("sets.dns.strictDesc")}
             />
@@ -200,8 +216,8 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
             <>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Switch
-                  label={t("sets.dns.fragmentQuery")}
                   checked={dnsConfig.fragment_query || false}
+                  path="dns.fragment_query"
                   onChange={(checked: boolean) =>
                     onChange("dns.fragment_query", checked)
                   }
@@ -212,6 +228,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                 <B4TextField
                   label={t("sets.dns.serverIp")}
                   value={dnsConfig.target_dns}
+                  path="dns.target_dns"
                   onChange={(e) => onChange("dns.target_dns", e.target.value)}
                   placeholder={t("sets.dns.serverIpPlaceholder")}
                   helperText={t("sets.dns.serverIpHelper")}
@@ -350,8 +367,8 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
             <>
               <Grid size={{ xs: 12 }}>
                 <B4TextField
-                  label={t("sets.dns.dohUrl")}
                   value={dnsConfig.doh_url || ""}
+                  path="dns.doh_url"
                   onChange={(e) => onChange("dns.doh_url", e.target.value)}
                   placeholder={t("sets.dns.dohUrlPlaceholder")}
                   helperText={t("sets.dns.dohUrlHelper")}
@@ -565,6 +582,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
         <B4TextField
           label={t("sets.dns.pins")}
           value={pinsText}
+          path="dns.pins"
           onChange={(e) => handlePinsChange(e.target.value)}
           placeholder={t("sets.dns.pinsPlaceholder")}
           multiline

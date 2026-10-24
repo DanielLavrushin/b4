@@ -124,6 +124,7 @@ export const MTProtoSecrets = ({
             <B4TextField
               label={t("settings.MTProto.secretName")}
               value={s.name}
+              path="system.mtproto.secrets"
               onChange={(e) => update(idx, { name: e.target.value })}
               placeholder={t("settings.MTProto.secretNamePlaceholder")}
               size="small"
@@ -133,6 +134,7 @@ export const MTProtoSecrets = ({
               <B4NumberField
                 label={t("settings.MTProto.secretMaxNetworks")}
                 value={s.max_networks ?? 0}
+                path="system.mtproto.secrets"
                 onChange={(n) => update(idx, { max_networks: n })}
                 min={0}
                 max={1000}
@@ -155,6 +157,7 @@ export const MTProtoSecrets = ({
           <B4SecretField
             label={t("settings.MTProto.secret")}
             value={s.secret}
+            path="system.mtproto.secrets"
             onChange={(value) => update(idx, { secret: value })}
             placeholder={t("settings.MTProto.secretValuePlaceholder")}
             onGenerate={() => void generate(idx)}

@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useDeferredValue } from "react";
+import type { ClipboardEvent } from "react";
 import { Button, Stack, Typography } from "@mui/material";
 import { Link } from "react-router";
 import {
@@ -28,6 +29,12 @@ import {
 } from "@utils";
 
 type Obj = Record<string, unknown>;
+
+const SET_ROOT_KEYS = ["name", "tcp", "udp", "targets", "fragmentation", "faking"];
+
+const isWholeSetJson = (value: unknown) =>
+  isHubEnvelope(value) ||
+  (isPlainObject(value) && SET_ROOT_KEYS.some((key) => key in value));
 
 function mergeObjectWithDefaults(partial: Obj, defaults: Obj): Obj {
   const result = { ...defaults };
@@ -98,7 +105,11 @@ export const ImportExportSettings = ({
   onImport,
 }: ImportExportSettingsProps) => {
   const { t } = useTranslation();
-  const [jsonValue, setJsonValue] = useState("");
+  const exportJson = useMemo(() => exportSetJson(config), [config]);
+  const [jsonValue, setJsonValue] = useState(exportJson);
+  const [jsonEdited, setJsonEdited] = useState(false);
+  const [syncedExport, setSyncedExport] = useState(exportJson);
+  const [importedExport, setImportedExport] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState(false);
   const [envelopeImported, setEnvelopeImported] = useState(false);
   const [importWarnings, setImportWarnings] = useState<HubWarning[]>([]);
@@ -106,14 +117,37 @@ export const ImportExportSettings = ({
   const [capturesReady, setCapturesReady] = useState(false);
   const { showSuccess, showError } = useSnackbar();
   const { captures, loadCaptures } = useCaptures();
-  const hasSourceDevices = useMemo(
-    () => (config.targets.source_devices ?? []).length > 0,
-    [config.targets.source_devices],
-  );
+  const hasSourceDevices = (config.targets.source_devices ?? []).length > 0;
+  const deferredJson = useDeferredValue(jsonValue);
+  const jsonParse = useMemo(() => {
+    if (!deferredJson.trim()) return { ok: false as const, error: "" };
+    try {
+      return { ok: true as const, value: JSON.parse(deferredJson) as unknown };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }, [deferredJson]);
+  const clearImportOutcome = () => {
+    setImportSuccess(false);
+    setEnvelopeImported(false);
+    setImportWarnings([]);
+    setImportedPayloadRefs([]);
+  };
 
-  useEffect(() => {
-    setJsonValue(exportSetJson(config));
-  }, [config]);
+  if (exportJson !== syncedExport) {
+    setSyncedExport(exportJson);
+    setImportedExport(null);
+    if (!jsonEdited) setJsonValue(exportJson);
+    if (exportJson !== importedExport) clearImportOutcome();
+  }
+
+  const markImported = (imported: B4SetConfig) => {
+    setJsonEdited(false);
+    setImportedExport(exportSetJson(imported));
+  };
 
   useEffect(() => {
     void loadCaptures().then(() => setCapturesReady(true));
@@ -215,6 +249,7 @@ export const ImportExportSettings = ({
         revision: config.revision,
       };
       onImport(parsed);
+      markImported(parsed);
       await loadCaptures();
       setImportedPayloadRefs(collectPayloadRefs(parsed));
       setImportWarnings([
@@ -232,6 +267,15 @@ export const ImportExportSettings = ({
       setImportWarnings([]);
       setImportedPayloadRefs([]);
       showError(t("sets.importExport.envelopeFailed", { error: detail }));
+    }
+  };
+
+  const handleFormat = () => {
+    try {
+      setJsonValue(JSON.stringify(JSON.parse(jsonValue), null, 2));
+      clearImportOutcome();
+    } catch {
+      showError(t("sets.importExport.invalidJson"));
     }
   };
 
@@ -274,6 +318,7 @@ export const ImportExportSettings = ({
       const link = mergeHubLink(config.hub, configFields.hub);
       parsed.hub = link.hub;
       onImport(parsed);
+      markImported(parsed);
       setImportedPayloadRefs(collectPayloadRefs(parsed));
       setImportWarnings(link.warnings);
       setEnvelopeImported(false);
@@ -286,11 +331,18 @@ export const ImportExportSettings = ({
     }
   };
 
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const pastedText = e.clipboardData.getData("text");
-    if (importJson(pastedText)) {
-      e.preventDefault();
+  const handlePaste = (e: ClipboardEvent) => {
+    let pasted: unknown;
+    try {
+      pasted = JSON.parse(e.clipboardData.getData("text"));
+    } catch {
+      return;
     }
+    if (!isWholeSetJson(pasted)) return;
+    e.preventDefault();
+    setJsonValue(JSON.stringify(pasted, null, 2));
+    setJsonEdited(true);
+    clearImportOutcome();
   };
 
   const handleImport = () => {
@@ -364,15 +416,18 @@ export const ImportExportSettings = ({
           onFocus={(e) => (e.target as HTMLTextAreaElement).select()}
           onChange={(e) => {
             setJsonValue(e.target.value);
-            setImportSuccess(false);
-            setEnvelopeImported(false);
-            setImportWarnings([]);
-            setImportedPayloadRefs([]);
+            setJsonEdited(e.target.value.trim() !== "");
+            clearImportOutcome();
           }}
           onPaste={handlePaste}
           multiline
           rows={10}
-          helperText={t("sets.importExport.jsonHelper")}
+          error={!jsonParse.ok && Boolean(jsonValue.trim() && jsonParse.error)}
+          helperText={
+            !jsonParse.ok && jsonValue.trim() && jsonParse.error
+              ? `${t("sets.importExport.invalidJson")}: ${jsonParse.error}`
+              : t("sets.importExport.jsonHelper")
+          }
         />
         <Stack direction="row" spacing={2} alignItems="center">
           <Button
@@ -382,10 +437,14 @@ export const ImportExportSettings = ({
           >
             {t("sets.importExport.copyJson")}
           </Button>
+          <Button variant="outlined" onClick={handleFormat} disabled={!jsonParse.ok}>
+            {t("sets.importExport.formatJson")}
+          </Button>
           <Button
             variant="outlined"
             startIcon={<DownloadIcon />}
             onClick={handleImport}
+            disabled={!jsonParse.ok}
           >
             {t("sets.importExport.import")}
           </Button>

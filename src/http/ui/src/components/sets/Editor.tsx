@@ -8,8 +8,9 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useSearchParams, type BlockerFunction } from "react-router";
+import { useSnackbar } from "@context/SnackbarProvider";
 
 import {
   DiscoveryIcon,
@@ -26,30 +27,54 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { B4Tab, B4TabPanel, B4Tabs, B4TextField } from "@b4.elements";
 
 import { colors } from "@design";
+import { rebaseDraft, setByPath } from "@utils";
+import { ChangedFieldsProvider } from "@context/ChangedFieldsContext";
+import { useUnsavedChangesGuard } from "@hooks/useUnsavedChangesGuard";
+import {
+  UnsavedChangesDialog,
+  type ChangeGroupDef,
+} from "@common/UnsavedChangesDialog";
+import {
+  useChangeItems,
+  useChangeTracker,
+} from "@common/useChangeDialog";
 import { B4Config, B4SetConfig, SystemConfig } from "@models/config";
 import { dscpEnvironment } from "@utils";
-
 import { DiscoveryTab } from "./DiscoveryTab";
 import { EscalationSettings } from "./Escalation";
 import { ImportExportSettings } from "./ImportExport";
 import { ShareEnvelope } from "./ShareEnvelope";
 import { SetStats } from "./Manager";
-import { RoutingSettings } from "./Routing";
-import { TargetSettings } from "./Target";
-import { TcpTabContainer } from "./tcp/TcpTabContainer";
+import { RoutingSettings, ROUTING_SUB_TABS } from "./Routing";
+import { TargetSettings, TARGET_SUB_TABS } from "./Target";
+import { TcpTabContainer, TCP_SUB_TABS } from "./tcp/TcpTabContainer";
 import { UdpSettings } from "./Udp";
+import { FAKING_ACCORDIONS } from "./tcp/TcpFaking";
 import { CallsSession } from "./udpL7";
 import { useTranslation } from "react-i18next";
 
-const EDITOR_TAB_INDEX: Record<string, number> = {
-  targets: 0,
-  tcp: 1,
-  udp: 2,
-  routing: 3,
-  escalation: 4,
-  discovery: 5,
-  importExport: 6,
-};
+const EDITOR_TABS = [
+  { key: "targets", labelKey: "sets.editor.tabs.targets", icon: <DomainIcon />, prefixes: ["targets"] },
+  { key: "tcp", labelKey: "sets.editor.tabs.tcp", icon: <TcpIcon />, prefixes: ["tcp", "fragmentation", "faking", "mss_clamp"] },
+  { key: "udp", labelKey: "sets.editor.tabs.udp", icon: <UdpIcon />, prefixes: ["udp"] },
+  { key: "routing", labelKey: "sets.editor.tabs.routing", icon: <RoutingIcon />, prefixes: ["routing", "dscp", "dns"] },
+  { key: "escalation", labelKey: "sets.editor.tabs.escalation", icon: <EscalateIcon />, prefixes: ["escalate"] },
+  { key: "discovery", labelKey: "sets.editor.tabs.discovery", icon: <DiscoveryIcon />, prefixes: ["discovery"] },
+  { key: "importExport", labelKey: "sets.editor.tabs.importExport", icon: <ImportExportIcon />, prefixes: [] as string[] },
+] as const;
+type EditorTabKey = (typeof EDITOR_TABS)[number]["key"];
+const TAB_INDEX: Record<EditorTabKey, number> = Object.fromEntries(
+  EDITOR_TABS.map((tab, index) => [tab.key, index]),
+) as Record<EditorTabKey, number>;
+const SET_EDITOR_DIFF_IGNORE = new Set(["id", "revision", "stats", "hub_state"]);
+const SET_EDITOR_DIFF_OPTIONS = { ignoredRootKeys: SET_EDITOR_DIFF_IGNORE };
+const SET_EDITOR_CHANGE_GROUPS: ChangeGroupDef[] = [
+  { prefixes: ["name"], labelKey: "core.setName" },
+  { prefixes: ["enabled"], labelKey: "core.enabled" },
+  ...EDITOR_TABS.filter((t) => t.prefixes.length > 0)
+    .map(({ prefixes, labelKey }) => ({ prefixes: [...prefixes], labelKey })),
+  { prefixes: ["hub"], labelKey: "core.nav.hub" },
+];
 
 export interface SetEditorPageProps {
   settings: SystemConfig;
@@ -59,10 +84,10 @@ export interface SetEditorPageProps {
   otherSetsTargets?: Map<string, string[]>;
   isNew: boolean;
   saving: boolean;
-  onSave: (set: B4SetConfig) => void;
+  onSave: (set: B4SetConfig) => Promise<B4SetConfig | undefined> | void;
   onRefresh?: () => void;
+  navigationBypassRef?: { current: boolean };
 }
-
 export const SetEditorPage = ({
   set: initialSet,
   config,
@@ -73,42 +98,33 @@ export const SetEditorPage = ({
   saving,
   onSave,
   onRefresh,
+  navigationBypassRef,
 }: SetEditorPageProps) => {
-  enum TABS {
-    TARGETS = 0,
-    TCP,
-    UDP,
-    ROUTING,
-    ESCALATION,
-    DISCOVERY,
-    IMPORT_EXPORT,
-  }
-
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const requestedSub = searchParams.get("sub") ?? undefined;
-  const [activeTab, setActiveTab] = useState<TABS>(
-    (EDITOR_TAB_INDEX[requestedTab ?? ""] ?? TABS.TARGETS),
-  );
+  const [activeTab, setActiveTab] = useState<number>(() => {
+    const index = EDITOR_TABS.findIndex((t) => t.key === requestedTab);
+    return index === -1 ? 0 : index;
+  });
   const [editedSet, setEditedSet] = useState<B4SetConfig | null>(initialSet);
+  const [baseSet, setBaseSet] = useState(initialSet);
+  const [saveInFlight, setSaveInFlight] = useState(false);
+  if (!saveInFlight && baseSet !== initialSet) {
+    setBaseSet(initialSet);
+    setEditedSet((prev) =>
+      prev ? rebaseDraft(prev, baseSet, initialSet, SET_EDITOR_DIFF_OPTIONS) : prev,
+    );
+  }
   const [callsSession, setCallsSession] = useState<CallsSession>({});
-
-  const prevSetId = useRef(initialSet.id);
-  useEffect(() => {
-    setEditedSet(initialSet);
-    if (prevSetId.current !== initialSet.id) {
-      setActiveTab(0);
-      setCallsSession({});
-      prevSetId.current = initialSet.id;
-    }
-  }, [initialSet]);
 
   useEffect(() => {
     if (!requestedTab) return;
-    const index = EDITOR_TAB_INDEX[requestedTab];
-    if (index !== undefined) setActiveTab(index);
+    const index = EDITOR_TABS.findIndex((t) => t.key === requestedTab);
+    if (index !== -1) setActiveTab(index);
   }, [requestedTab]);
 
   const handleChange = (
@@ -123,32 +139,23 @@ export const SetEditorPage = ({
       | null
       | undefined,
   ) => {
-    setEditedSet((prev) => {
-      if (!prev) return prev;
-
-      const keys = field.split(".");
-
-      if (keys.length === 1) {
-        return { ...prev, [field]: value };
-      }
-
-      const newConfig = { ...prev };
-      let current: Record<string, unknown> = newConfig;
-
-      for (let i = 0; i < keys.length - 1; i++) {
-        current[keys[i]] = { ...(current[keys[i]] as object) };
-        current = current[keys[i]] as Record<string, unknown>;
-      }
-
-      current[keys.at(-1)!] = value;
-      return newConfig;
-    });
+    setEditedSet((prev) => (prev ? setByPath(prev, field, value) : prev));
   };
 
   const handleSave = () => {
-    if (editedSet) {
-      onSave(editedSet);
-    }
+    if (!editedSet) return;
+    const snapshot = editedSet;
+    setSaveInFlight(true);
+    Promise.resolve(onSave(snapshot))
+      .then((saved) => {
+        setSaveInFlight(false);
+        if (!saved) return;
+        setBaseSet(saved);
+        setEditedSet((prev) =>
+          prev ? rebaseDraft(prev, snapshot, saved, SET_EDITOR_DIFF_OPTIONS) : prev,
+        );
+      })
+      .catch(() => setSaveInFlight(false));
   };
 
   const handleApplyImport = (importedSet: B4SetConfig) => {
@@ -159,19 +166,105 @@ export const SetEditorPage = ({
   const handleBack = () => {
     navigate("/sets")?.catch(() => {});
   };
+  const [showDiscardDialog, setShowDiscardDialog] = useState(false);
+  const { showSuccess } = useSnackbar();
+  const resetDraft = () => {
+    setEditedSet(initialSet);
+    setCallsSession({});
+    setShowDiscardDialog(false);
+    showSuccess(t("core.changesDiscarded"));
+  };
+
+  const draftForDiff = editedSet ?? initialSet;
+  const dscp = useMemo(
+    () => dscpEnvironment(config, initialSet.id),
+    [config, initialSet.id],
+  );
+  const {
+    changedLeaves,
+    providerProps: changeProviderProps,
+  } = useChangeTracker({
+    draft: draftForDiff as unknown as Record<string, unknown>,
+    baseline: initialSet as unknown as Record<string, unknown>,
+    ignoredRootKeys: SET_EDITOR_DIFF_IGNORE,
+    scope: `set:${(editedSet ?? initialSet).id}`,
+  });
+  const dirty = changedLeaves.length > 0;
+  const changedTabs = useMemo(() => {
+    const tabs = new Set<number>();
+    for (const leaf of changedLeaves) {
+      EDITOR_TABS.forEach((tab, index) => {
+        for (const prefix of tab.prefixes) {
+          if (leaf.path === prefix || leaf.path.startsWith(`${prefix}.`)) {
+            tabs.add(index);
+            break;
+          }
+        }
+      });
+    }
+    return tabs;
+  }, [changedLeaves]);
+  const hasUnsavedChanges = dirty;
+  const shouldBlock = useCallback<BlockerFunction>(
+    ({ nextLocation }) => {
+      if (navigationBypassRef?.current) {
+        navigationBypassRef.current = false;
+        return false;
+      }
+      return hasUnsavedChanges && nextLocation.pathname !== location.pathname;
+    },
+    [hasUnsavedChanges, location.pathname, navigationBypassRef],
+  );
+  const blocker = useUnsavedChangesGuard(shouldBlock, hasUnsavedChanges);
+  const editedId = editedSet?.id;
+  const editedName = editedSet?.name;
+  const setNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of config.sets ?? []) {
+      const nested = item as unknown as { set?: B4SetConfig };
+      const set = nested.set ?? item;
+      if (set.id) map.set(set.id, set.name || set.id);
+    }
+    if (editedId) map.set(editedId, editedName || editedId);
+    return map;
+  }, [config.sets, editedId, editedName]);
+  const dialogsOpen = showDiscardDialog || blocker.state === "blocked";
+  const tabSubDefs = useMemo(
+    () => [
+      ...TARGET_SUB_TABS.map((s) => ({ prefixes: s.prefixes, label: t(s.labelKey) })),
+      ...TCP_SUB_TABS.map((s) => ({ prefixes: s.prefixes, label: t(s.labelKey) })),
+      ...ROUTING_SUB_TABS.map((s) => ({ prefixes: s.prefixes, label: t(s.labelKey) })),
+      ...FAKING_ACCORDIONS.map((s) => ({ prefixes: s.prefixes, label: t(s.labelKey) })),
+    ],
+    [t],
+  );
+  const { changeItems, changeGroups } = useChangeItems({
+    changedLeaves,
+    registry: changeProviderProps.registry,
+    valueRegistry: changeProviderProps.valueRegistry,
+    extraValueLabels: [["escalate.to", setNameById]],
+    groups: SET_EDITOR_CHANGE_GROUPS,
+    subDefs: tabSubDefs,
+    dialogsOpen,
+  });
 
   if (!editedSet) return null;
-
-  const dirty = JSON.stringify(editedSet) !== JSON.stringify(initialSet);
-  const dscp = dscpEnvironment(config, editedSet.id);
-
   let saveTooltip: string;
   if (saving) saveTooltip = t("core.saving");
   else if (isNew) saveTooltip = t("sets.editor.createSet");
   else saveTooltip = t("core.save");
-
   return (
-    <>
+    <ChangedFieldsProvider
+      {...changeProviderProps}
+    >
+    <Box
+      sx={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
       {/* Header with tabs */}
       <Paper
         elevation={0}
@@ -209,6 +302,7 @@ export const SetEditorPage = ({
               </Button>
               <B4TextField
                 value={editedSet.name}
+                path="name"
                 onChange={(e) => {
                   handleChange("name", e.target.value);
                 }}
@@ -250,10 +344,10 @@ export const SetEditorPage = ({
               <Button
                 size="small"
                 variant="outlined"
-                onClick={handleBack}
-                disabled={saving}
+                onClick={() => setShowDiscardDialog(true)}
+                disabled={saving || !dirty}
               >
-                {t("core.cancel")}
+                {t("core.discard")}
               </Button>
               <Button
                 size="small"
@@ -262,7 +356,7 @@ export const SetEditorPage = ({
                   saving ? <CircularProgress size={16} /> : <SaveIcon />
                 }
                 onClick={handleSave}
-                disabled={!editedSet.name.trim() || saving}
+                disabled={!editedSet.name.trim() || saving || (!isNew && !dirty)}
                 sx={{ minWidth: 140 }}
               >
                 {saving && t("core.saving")}
@@ -279,62 +373,24 @@ export const SetEditorPage = ({
               setActiveTab(v);
             }}
           >
-            <B4Tab
-              icon={<DomainIcon />}
-              label={t("sets.editor.tabs.targets")}
-              inline
-              index={TABS.TARGETS}
-              idPrefix="set-tab"
-            />
-            <B4Tab
-              icon={<TcpIcon />}
-              label={t("sets.editor.tabs.tcp")}
-              inline
-              index={TABS.TCP}
-              idPrefix="set-tab"
-            />
-            <B4Tab
-              icon={<UdpIcon />}
-              label={t("sets.editor.tabs.udp")}
-              inline
-              index={TABS.UDP}
-              idPrefix="set-tab"
-            />
-            <B4Tab
-              icon={<RoutingIcon />}
-              label={t("sets.editor.tabs.routing")}
-              inline
-              index={TABS.ROUTING}
-              idPrefix="set-tab"
-            />
-            <B4Tab
-              icon={<EscalateIcon />}
-              label={t("sets.editor.tabs.escalation")}
-              inline
-              index={TABS.ESCALATION}
-              idPrefix="set-tab"
-            />
-            <B4Tab
-              icon={<DiscoveryIcon />}
-              label={t("sets.editor.tabs.discovery")}
-              inline
-              index={TABS.DISCOVERY}
-              idPrefix="set-tab"
-            />
-            <B4Tab
-              icon={<ImportExportIcon />}
-              label={t("sets.editor.tabs.importExport")}
-              inline
-              index={TABS.IMPORT_EXPORT}
-              idPrefix="set-tab"
-            />
+            {EDITOR_TABS.map((tab, index) => (
+              <B4Tab
+                key={tab.key}
+                icon={tab.icon}
+                label={t(tab.labelKey)}
+                inline
+                hasChanges={changedTabs.has(index)}
+                index={index}
+                idPrefix="set-tab"
+              />
+            ))}
           </B4Tabs>
         </Box>
       </Paper>
 
       {/* Tab Content */}
-      <Box sx={{ flex: 1, overflow: "auto", pb: 2 }}>
-        <B4TabPanel value={activeTab} index={TABS.TARGETS} idPrefix="set-tab" sx={{ pt: 3 }}>
+      <Box sx={{ flex: 1, overflow: "auto", pb: 2, pr: 1, scrollbarGutter: "stable" }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.targets} idPrefix="set-tab" sx={{ pt: 3 }}>
           <TargetSettings
             initialSub={requestedSub}
             geo={settings.geo}
@@ -347,7 +403,7 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
-        <B4TabPanel value={activeTab} index={TABS.TCP} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.tcp} idPrefix="set-tab" sx={{ pt: 3 }}>
           <TcpTabContainer
             initialSub={requestedSub}
             config={editedSet}
@@ -355,7 +411,7 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
-        <B4TabPanel value={activeTab} index={TABS.UDP} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.udp} idPrefix="set-tab" sx={{ pt: 3 }}>
           <UdpSettings
             config={editedSet}
             callsSession={callsSession}
@@ -364,7 +420,7 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
-        <B4TabPanel value={activeTab} index={TABS.ROUTING} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.routing} idPrefix="set-tab" sx={{ pt: 3 }}>
           <RoutingSettings
             initialSub={requestedSub}
             set={editedSet}
@@ -377,7 +433,7 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
-        <B4TabPanel value={activeTab} index={TABS.ESCALATION} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.escalation} idPrefix="set-tab" sx={{ pt: 3 }}>
           <EscalationSettings
             config={editedSet}
             allSets={config.sets ?? []}
@@ -385,7 +441,7 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
-        <B4TabPanel value={activeTab} index={TABS.DISCOVERY} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.discovery} idPrefix="set-tab" sx={{ pt: 3 }}>
           <DiscoveryTab
             config={editedSet}
             isNew={isNew}
@@ -396,7 +452,7 @@ export const SetEditorPage = ({
           />
         </B4TabPanel>
 
-        <B4TabPanel value={activeTab} index={TABS.IMPORT_EXPORT} idPrefix="set-tab" sx={{ pt: 3 }}>
+        <B4TabPanel value={activeTab} index={TAB_INDEX.importExport} idPrefix="set-tab" sx={{ pt: 3 }}>
           <ImportExportSettings
             config={editedSet}
             deviceFilter={dscp.deviceFilter}
@@ -415,14 +471,15 @@ export const SetEditorPage = ({
         </B4TabPanel>
       </Box>
 
-      <Tooltip title={saveTooltip} placement="left">
-        <span
-          style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1200 }}
-        >
+      {(isNew || dirty) && (
+        <Tooltip title={saveTooltip} placement="left">
+          <span
+            style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1200 }}
+          >
           <Fab
             size="medium"
             onClick={handleSave}
-            disabled={!editedSet.name.trim() || saving}
+            disabled={!editedSet.name.trim() || saving || (!isNew && !dirty)}
             sx={{
               bgcolor: colors.secondary,
               color: colors.background.default,
@@ -436,7 +493,27 @@ export const SetEditorPage = ({
             {saving ? <CircularProgress size={20} /> : <SaveIcon />}
           </Fab>
         </span>
-      </Tooltip>
-    </>
+        </Tooltip>
+      )}
+    </Box>
+      <UnsavedChangesDialog
+        open={blocker.state === "blocked"}
+        groups={changeGroups}
+        total={changeItems.length}
+        onStay={() => blocker.reset?.()}
+        onLeave={() => blocker.proceed?.()}
+      />
+      <UnsavedChangesDialog
+        open={showDiscardDialog}
+        groups={changeGroups}
+        total={changeItems.length}
+        onStay={() => setShowDiscardDialog(false)}
+        onLeave={resetDraft}
+        title={t("core.discardChanges")}
+        body={t("core.discardConfirm")}
+        stayLabel={t("core.cancel")}
+        leaveLabel={t("core.discard")}
+      />
+    </ChangedFieldsProvider>
   );
 };

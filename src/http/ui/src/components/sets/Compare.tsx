@@ -30,6 +30,7 @@ import {
   SetFacet,
   buildSetFacets,
 } from "./facets";
+import { flattenConfigLeaves, isZero, leafEqual } from "@utils";
 
 interface SetCompareProps {
   open: boolean;
@@ -55,8 +56,7 @@ const GROUP_COLORS: Record<GroupKey, string> = {
   tcp: colors.text.secondary,
   udp: colors.text.secondary,
 };
-
-const IGNORE_KEYS = new Set([
+export const SET_COMPARE_IGNORE_KEYS = new Set([
   "id",
   "name",
   "enabled",
@@ -75,6 +75,7 @@ const IGNORE_KEYS = new Set([
   "asn_breakdown",
   "asn_unresolved",
 ]);
+const IGNORE_KEYS = SET_COMPARE_IGNORE_KEYS;
 
 const LIST_FIELDS: {
   path: string;
@@ -150,45 +151,6 @@ const groupOfPath = (path: string): GroupKey | null => {
   }
 };
 
-const flattenObject = (
-  obj: Record<string, unknown>,
-  prefix = "",
-): Record<string, unknown> => {
-  const result: Record<string, unknown> = {};
-  for (const key of Object.keys(obj)) {
-    if (IGNORE_KEYS.has(key)) continue;
-    const path = prefix ? `${prefix}.${key}` : key;
-    const value = obj[key];
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      Object.assign(
-        result,
-        flattenObject(value as Record<string, unknown>, path),
-      );
-    } else {
-      result[path] = value;
-    }
-  }
-  return result;
-};
-
-const isZero = (val: unknown): boolean =>
-  val === undefined ||
-  val === null ||
-  val === "" ||
-  val === 0 ||
-  val === false ||
-  (Array.isArray(val) && val.length === 0);
-
-const leafEqual = (a: unknown, b: unknown): boolean => {
-  if (isZero(a) && isZero(b)) return true;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return false;
-    const sortedA = (a as unknown[]).map((v) => JSON.stringify(v)).sort();
-    const sortedB = (b as unknown[]).map((v) => JSON.stringify(v)).sort();
-    return sortedA.every((v, i) => v === sortedB[i]);
-  }
-  return JSON.stringify(a) === JSON.stringify(b);
-};
 
 const formatLeaf = (val: unknown, t: (key: string) => string): string => {
   if (isZero(val)) return "-";
@@ -260,16 +222,20 @@ const mergeFacetRows = (
 ): CompareRow[] => {
   const rowsA = facetA.active || !activeOnly ? facetA.rows : [];
   const rowsB = facetB.active || !activeOnly ? facetB.rows : [];
+  const byLabelA = new Map(rowsA.map((r) => [r.label, r] as const));
+  const byLabelB = new Map(rowsB.map((r) => [r.label, r] as const));
+  const seen = new Set<string>();
   const labels: string[] = [];
   for (const row of [...rowsA, ...rowsB]) {
-    if (!labels.includes(row.label) && !skip.has(row.label)) {
+    if (!seen.has(row.label) && !skip.has(row.label)) {
+      seen.add(row.label);
       labels.push(row.label);
     }
   }
   const dormant = !facetA.active && !facetB.active;
   return labels.map((label) => {
-    const a = cellOf(rowsA.find((r) => r.label === label));
-    const b = cellOf(rowsB.find((r) => r.label === label));
+    const a = cellOf(byLabelA.get(label));
+    const b = cellOf(byLabelB.get(label));
     return { label, a, b, differs: !dormant && !cellsEqual(a, b) };
   });
 };
@@ -291,8 +257,8 @@ const buildGroups = (
     dscpRefusal: dscpReasonOf(setB),
   });
 
-  const flatA = flattenObject(setA as unknown as Record<string, unknown>);
-  const flatB = flattenObject(setB as unknown as Record<string, unknown>);
+  const flatA = flattenConfigLeaves(setA as unknown as Record<string, unknown>, "", IGNORE_KEYS);
+  const flatB = flattenConfigLeaves(setB as unknown as Record<string, unknown>, "", IGNORE_KEYS);
   const leavesByGroup = new Map<GroupKey, LeafDiff[]>();
   const activeOf = (list: SetFacet[], key: FacetKey) =>
     list.find((f) => f.key === key)?.active ?? false;
@@ -474,15 +440,16 @@ const RowShell = ({
 
 const ListCell = ({
   items,
-  other,
+  otherItems,
   color,
 }: {
   items: string[];
-  other: Set<string>;
+  otherItems: string[];
   color: string;
 }) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
+  const other = useMemo(() => new Set(otherItems), [otherItems]);
   const ordered = useMemo(
     () =>
       [...items].sort((x, y) => Number(other.has(x)) - Number(other.has(y))),
@@ -644,8 +611,8 @@ const GroupBlock = ({
           differs={row.differs}
           color={group.color}
         >
-          <ListCell items={row.a} other={new Set(row.b)} color={group.color} />
-          <ListCell items={row.b} other={new Set(row.a)} color={group.color} />
+          <ListCell items={row.a} otherItems={row.b} color={group.color} />
+          <ListCell items={row.b} otherItems={row.a} color={group.color} />
         </RowShell>
       ))}
 
@@ -755,14 +722,10 @@ export const SetCompare = ({
     );
   }, [setA, setB, sets, statsOf, t, deviceFilter]);
 
-  const fieldCount = useMemo(
-    () =>
-      groups.reduce(
-        (sum, g) =>
-          sum + g.leaves.length + g.lists.filter((l) => l.differs).length,
-        0,
-      ),
-    [groups],
+  const fieldCount = groups.reduce(
+    (sum, g) =>
+      sum + g.leaves.length + g.lists.filter((l) => l.differs).length,
+    0,
   );
   const differingGroups = groups.filter((g) => g.differs);
 

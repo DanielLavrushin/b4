@@ -1,9 +1,12 @@
 import { Box, TextField, TextFieldProps } from "@mui/material";
 import { colors } from "@design";
+import { useChangedField } from "@context/ChangedFieldsContext";
 import { B4AiExplain, aiHoverRevealSx } from "./B4AiExplain";
+import { useFieldLabel } from "./dialogLabels";
 
 export interface B4TextFieldProps extends Omit<TextFieldProps, "variant"> {
   helperText?: React.ReactNode;
+  path?: string;
   aiTopic?: string;
   aiContext?: Record<string, unknown>;
   aiQuestion?: string;
@@ -12,6 +15,7 @@ export interface B4TextFieldProps extends Omit<TextFieldProps, "variant"> {
 
 export const B4TextField = ({
   helperText,
+  path,
   aiTopic,
   aiContext,
   aiQuestion,
@@ -19,9 +23,13 @@ export const B4TextField = ({
   onFocus,
   ...props
 }: B4TextFieldProps) => {
+  const resolvedLabel = useFieldLabel(path, typeof props.label === "string" ? props.label : undefined);
+  const label = props.label ?? resolvedLabel;
+  const changed = useChangedField(path, label);
   const tf = (
     <TextField
       {...props}
+      label={label}
       variant="outlined"
       size="small"
       fullWidth
@@ -34,6 +42,9 @@ export const B4TextField = ({
         "& .MuiOutlinedInput-root": {
           bgcolor: colors.background.dark,
           borderColor: colors.border.medium,
+          ...(changed
+            ? { boxShadow: `inset 3px 0 0 ${colors.secondary}` }
+            : {}),
           "&:hover fieldset": {
             borderColor: colors.border.medium,
           },
@@ -46,6 +57,17 @@ export const B4TextField = ({
           WebkitTextFillColor: colors.text.primary,
           caretColor: colors.text.primary,
         },
+        ...(changed
+          ? {
+              "& .MuiInputLabel-root:not(.Mui-disabled)": {
+                color: colors.secondary,
+              },
+            }
+          : {
+              "& .MuiInputLabel-root.Mui-focused:not(.Mui-disabled)": {
+                color: colors.secondary,
+              },
+            }),
 
         "& .MuiFormHelperText-root": {
           m: 0,
@@ -57,7 +79,7 @@ export const B4TextField = ({
 
   if (!aiTopic) return tf;
 
-  const labelStr = typeof props.label === "string" ? props.label : undefined;
+  const labelStr = typeof props.label === "string" ? props.label : resolvedLabel;
   const docStr = typeof helperText === "string" ? helperText : undefined;
   const valStr =
     typeof props.value === "string" || typeof props.value === "number"

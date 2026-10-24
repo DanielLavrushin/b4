@@ -20,6 +20,7 @@ import {
 import { resolveRoutingMode } from "../facets";
 
 const FIREWALL_SETTINGS = "/settings/general/firewall";
+const firewallLink = <Link component={RouterLink} to={FIREWALL_SETTINGS} />;
 
 interface SetDscpProps {
   config: B4SetConfig;
@@ -59,7 +60,6 @@ export const SetDscp = ({
       (global?.interfaces ?? []).map((i) => i.trim()).filter(Boolean),
     ),
   ];
-  const firewallLink = <Link component={RouterLink} to={FIREWALL_SETTINGS} />;
 
   const handleToggle = (checked: boolean) => {
     onChange("dscp.enabled", checked);
@@ -79,6 +79,7 @@ export const SetDscp = ({
           label={t("sets.routing.dscpEnable")}
           description={t("sets.routing.dscpEnableDesc")}
           checked={dscp.enabled}
+          path="dscp.enabled"
           onChange={handleToggle}
           disabled={blocked && !dscp.enabled}
           aiTopic="dscp.enabled"
@@ -100,8 +101,9 @@ export const SetDscp = ({
       {dscp.enabled && (
         <Grid size={{ xs: 12, md: 6 }}>
           <B4Slider
-            label={t("settings.Feature.dscpValue")}
+            label={t("sets.routing.dscpValue")}
             value={dscp.value}
+            path="dscp.value"
             onChange={(value: number) => onChange("dscp.value", value)}
             min={0}
             max={DSCP_MAX_VALUE}

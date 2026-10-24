@@ -9,6 +9,7 @@ import {
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { colors } from "@design";
 import type { ReactNode } from "react";
+import { useMemo, useState } from "react";
 
 interface B4AccordionProps {
   title: string;
@@ -17,6 +18,7 @@ interface B4AccordionProps {
   defaultExpanded?: boolean;
   expanded?: boolean;
   onChange?: (expanded: boolean) => void;
+  hasChanges?: boolean;
   children: ReactNode;
 }
 
@@ -27,15 +29,29 @@ export const B4Accordion = ({
   defaultExpanded,
   expanded,
   onChange,
+  hasChanges,
   children,
 }: B4AccordionProps) => {
   const isControlled = expanded !== undefined;
-
+  const [settledCollapsed, setSettledCollapsed] = useState(
+    isControlled ? expanded === false : !defaultExpanded,
+  );
+  const handleChange = (_: unknown, next: boolean) => {
+    if (next) setSettledCollapsed(false);
+    onChange?.(next);
+  };
+  const transitionProps = useMemo(
+    () => ({
+      onExited: () => setSettledCollapsed(true),
+    }),
+    [],
+  );
   return (
     <Accordion
       defaultExpanded={isControlled ? undefined : defaultExpanded}
       expanded={isControlled ? expanded : undefined}
-      onChange={onChange ? (_, exp) => onChange(exp) : undefined}
+      onChange={handleChange}
+      TransitionProps={transitionProps}
       disableGutters
       sx={{
         bgcolor: "transparent",
@@ -45,6 +61,9 @@ export const B4Accordion = ({
         "&.Mui-expanded": {
           borderColor: colors.border.medium,
         },
+        ...(hasChanges && settledCollapsed
+          ? { boxShadow: `inset 3px 0 0 ${colors.secondary}` }
+          : {}),
       }}
     >
       <AccordionSummary
