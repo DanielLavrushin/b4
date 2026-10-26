@@ -1101,6 +1101,26 @@ func TestMCPCheckDomainReportsPerDomainCoverage(t *testing.T) {
 	}
 }
 
+func TestMCPCheckDomainCoversALinkWithSeparatorsInItsQuery(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_check_domain",
+		Arguments: map[string]any{"domain": "https://youtube.com/results?search_query=a,b;c|d"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpCheckDomainOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !out.Covered || len(out.Checked) != 1 || out.Checked[0] != "youtube.com" {
+		t.Errorf("a link to a covered site must be checked as its host only, not split at the commas in its query: covered=%v checked=%v", out.Covered, out.Checked)
+	}
+}
+
 func TestMCPCheckDomainReportsTruncation(t *testing.T) {
 	srv := newMCPTestServer(t, mcpTestCfg())
 	session, ctx := connectMCP(t, srv)

@@ -252,7 +252,7 @@ func (api *API) addMCPProbeTools(srv *mcp.Server) {
 
 		var domains []string
 		seen := map[string]bool{}
-		for _, raw := range strings.Split(in.Domain, ",") {
+		for _, raw := range utils.SplitKeepingURLs(in.Domain, func(r rune) bool { return r == ',' }) {
 			host := strings.TrimSuffix(watchdog.ExtractDomain(strings.TrimSpace(raw)), ".")
 			if host == "" || seen[host] {
 				continue

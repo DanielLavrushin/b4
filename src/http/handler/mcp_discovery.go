@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/discovery"
@@ -434,34 +434,10 @@ func mcpWithProbeDSCP(note string, dscp *int, only string) string {
 	return note + fmt.Sprintf(" The probes carry DSCP %d, the set's own value, so they take the path the set's traffic takes.", *dscp)
 }
 
-var mcpURLStart = regexp.MustCompile("^[\"'`]*[A-Za-z][A-Za-z0-9+.-]*://")
-
-func mcpSplitDomainsInput(raw string) []string {
-	var out []string
-	for _, field := range strings.Fields(raw) {
-		inURL := false
-		for _, part := range strings.Split(field, ",") {
-			switch {
-			case mcpURLStart.MatchString(part):
-				out = append(out, part)
-				inURL = true
-			case inURL:
-				out[len(out)-1] += "," + part
-			case part != "":
-				out = append(out, part)
-			}
-		}
-	}
-	for i, entry := range out {
-		out[i] = strings.TrimRight(entry, ",")
-	}
-	return out
-}
-
 func mcpDiscoveryURLs(raw string) ([]string, error) {
 	var urls []string
 	seen := map[string]bool{}
-	for _, entry := range mcpSplitDomainsInput(raw) {
+	for _, entry := range utils.SplitKeepingURLs(raw, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
 		probeURL, host, err := utils.NormalizeProbeURL(entry)
 		switch {
 		case errors.Is(err, utils.ErrProbeURLReservedHost):

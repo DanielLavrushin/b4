@@ -13,6 +13,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/utils"
 	"github.com/daniellavrushin/b4/watchdog"
 	"github.com/google/uuid"
 )
@@ -163,7 +164,7 @@ func checkDomainHost(field string) string {
 // anything, so callers can say so instead of answering for a shorter list than
 // they were given.
 func parseCheckDomains(raw string) ([]string, bool) {
-	fields := strings.FieldsFunc(raw, func(r rune) bool {
+	fields := utils.SplitKeepingURLs(raw, func(r rune) bool {
 		return r == ',' || r == '|' || r == ';' || unicode.IsSpace(r)
 	})
 

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -181,6 +182,29 @@ func TestParseCheckDomains(t *testing.T) {
 
 	if blank, _ := parseCheckDomains("   "); len(blank) != 0 {
 		t.Error("expected no domains for blank input")
+	}
+}
+
+func TestParseCheckDomainsKeepsSeparatorsInsideAURL(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want []string
+	}{
+		{"https://example.com/search?q=one,two", []string{"example.com"}},
+		{"https://example.com/a;b=c;d=e", []string{"example.com"}},
+		{"https://example.com/?x=a|b", []string{"example.com"}},
+		{"https://us,er:p;w@example.com/x,y", []string{"example.com"}},
+		{"https://example.com/search?q=one,,two;three", []string{"example.com"}},
+		{"https://a.com/x,https://b.com/y", []string{"a.com", "b.com"}},
+		{"youtube.com https://example.com/q?a=1,2 ntc.party", []string{"youtube.com", "example.com", "ntc.party"}},
+		{"youtube.com,https://example.com/q?a=1;2", []string{"youtube.com", "example.com"}},
+		{"https://example.com,", []string{"example.com"}},
+		{"a.com, b.com | c.com;d.com", []string{"a.com", "b.com", "c.com", "d.com"}},
+	} {
+		got, _ := parseCheckDomains(tc.in)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("parseCheckDomains(%q) = %v, want %v", tc.in, got, tc.want)
+		}
 	}
 }
 
