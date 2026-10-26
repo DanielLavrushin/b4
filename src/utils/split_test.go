@@ -34,6 +34,12 @@ func TestSplitKeepingURLs(t *testing.T) {
 		{"a space is not a separator here", "a b.com", commaOnly, []string{"a b.com"}},
 		{"comma-only list", "a.com,b.com , c.com", commaOnly, []string{"a.com", "b.com", "c.com"}},
 		{"nothing", "  ,;| ", lenient, nil},
+		{"a bare host right after a URL's host", "https://a.com,b.com", lenient, []string{"https://a.com", "b.com"}},
+		{"a bare host after a URL's host, comma only", "https://a.com,b.com", commaOnly, []string{"https://a.com", "b.com"}},
+		{"a bare host after a host and port", "https://a.com:8443;b.com", lenient, []string{"https://a.com:8443", "b.com"}},
+		{"a bare host after an IPv6 host", "https://[2001:db8::1],b.com", lenient, []string{"https://[2001:db8::1]", "b.com"}},
+		{"a separator in the credentials before an at sign", "https://a.com,b.com@c.com/x", lenient, []string{"https://a.com,b.com@c.com/x"}},
+		{"a closing quote ends a URL", "\"https://a.com/x\",\"b.com\"", commaOrSpace, []string{"\"https://a.com/x\"", "\"b.com\""}},
 	} {
 		if got := SplitKeepingURLs(tc.raw, tc.isSep); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: SplitKeepingURLs(%q) = %q, want %q", tc.name, tc.raw, got, tc.want)

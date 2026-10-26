@@ -139,7 +139,7 @@ const (
 )
 
 func checkDomainHost(field string) string {
-	field = strings.ToLower(strings.TrimSpace(field))
+	field = strings.ToLower(strings.TrimSpace(strings.Trim(strings.TrimSpace(field), "\"'`")))
 	if i := strings.Index(field, "://"); i > 0 && !strings.ContainsAny(field[:i], "/?#:") {
 		u, err := url.Parse(field)
 		if err != nil {

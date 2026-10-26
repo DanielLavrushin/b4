@@ -200,6 +200,9 @@ func TestParseCheckDomainsKeepsSeparatorsInsideAURL(t *testing.T) {
 		{"youtube.com,https://example.com/q?a=1;2", []string{"youtube.com", "example.com"}},
 		{"https://example.com,", []string{"example.com"}},
 		{"a.com, b.com | c.com;d.com", []string{"a.com", "b.com", "c.com", "d.com"}},
+		{"https://a.com,b.com", []string{"a.com", "b.com"}},
+		{"\"https://example.com/a,b\"", []string{"example.com"}},
+		{"'youtube.com'", []string{"youtube.com"}},
 	} {
 		got, _ := parseCheckDomains(tc.in)
 		if !slices.Equal(got, tc.want) {

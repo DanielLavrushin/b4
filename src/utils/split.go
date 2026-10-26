@@ -7,11 +7,13 @@ import (
 	"unicode/utf8"
 )
 
+const listQuotes = "\"'`"
+
 var listURLStart = regexp.MustCompile("^[\"'`]*[A-Za-z][A-Za-z0-9+.-]*://")
 
 func SplitKeepingURLs(raw string, isSep func(rune) bool) []string {
 	var out []string
-	urlAt, start := -1, 0
+	urlAt, urlEnd, start := -1, 0, 0
 	for i := 0; i <= len(raw); {
 		r, size := rune(0), 1
 		if i < len(raw) {
@@ -24,17 +26,16 @@ func SplitKeepingURLs(raw string, isSep func(rune) bool) []string {
 		seg := raw[start:i]
 		part := strings.TrimSpace(seg)
 		lead := len(seg) - len(strings.TrimLeftFunc(seg, unicode.IsSpace))
-		if lead > 0 {
-			urlAt = -1
-		}
 		switch {
 		case listURLStart.MatchString(part):
-			urlAt = start + lead
+			urlAt, urlEnd = start+lead, start+lead+len(part)
 			out = append(out, part)
 		case part == "":
-		case urlAt >= 0:
+		case lead == 0 && urlAt >= 0 && urlContinues(raw[urlAt:urlEnd], raw[start:]):
+			urlEnd = i
 			out[len(out)-1] = raw[urlAt:i]
 		default:
+			urlAt = -1
 			out = append(out, part)
 		}
 		if len(seg) > len(strings.TrimRightFunc(seg, unicode.IsSpace)) || unicode.IsSpace(r) {
@@ -44,4 +45,18 @@ func SplitKeepingURLs(raw string, isSep func(rune) bool) []string {
 		i += size
 	}
 	return out
+}
+
+func urlContinues(soFar, rest string) bool {
+	if q := soFar[0]; strings.IndexByte(listQuotes, q) >= 0 && len(soFar) > 1 && soFar[len(soFar)-1] == q {
+		return false
+	}
+	if strings.ContainsAny(soFar[strings.Index(soFar, "://")+3:], "/?#") {
+		return true
+	}
+	end := strings.IndexFunc(rest, func(r rune) bool { return strings.ContainsRune("/?#", r) || unicode.IsSpace(r) })
+	if end < 0 {
+		end = len(rest)
+	}
+	return strings.Contains(rest[:end], "@")
 }
