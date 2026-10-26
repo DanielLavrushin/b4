@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.88.1] - 2026-10-26
+
+- FIXED: **Copy JSON copied a set as dozens of lines, too long for a chat message** - in 1.88.0 the copy took the formatted text of the Set Configuration JSON box. Copy JSON in Discovery's Apply as a set dialog copied the set formatted too.
+
 ## [1.88.0] - 2026-10-21
 
 - ADDED: **A set can handle only calls, such as Discord voice calls** - the option is Handle only calls in the Calls field on a set's UDP tab, and Which calls can narrow it to the Discord app or to browsers. Such a set has no targets and acts only on the packet that opens each call on its UDP ports, taking the call from any other set. The guide Discord voice calls describes the setup, and such sets also come from the import tool or the Community Hub.
