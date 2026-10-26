@@ -4,7 +4,6 @@ go 1.25.14
 
 require (
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
@@ -17,6 +16,7 @@ require (
 
 require (
 	github.com/florianl/go-nfqueue v1.3.2
+	github.com/google/jsonschema-go v0.4.3
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/josharian/native v1.1.0

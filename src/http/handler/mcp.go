@@ -23,6 +23,8 @@ import (
 	"github.com/daniellavrushin/b4/ai"
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -34,6 +36,7 @@ const (
 	mcpDefaultLines = 100
 	mcpMaxLines     = 500
 	mcpTailReadCap  = 512 << 10
+	mcpMaxBodyBytes = 1 << 20
 
 	mcpMaxTopicHits    = 5
 	mcpTopicExcerptLen = 400
@@ -45,6 +48,14 @@ var mcpUnauthWarnOnce sync.Once
 func boolPtr(b bool) *bool { return &b }
 
 func addTool[In, Out any](srv *mcp.Server, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
+	if t.InputSchema == nil {
+		if s, err := jsonschema.For[In](&jsonschema.ForOptions{}); err == nil && s.Type == "object" {
+			if s.Properties == nil {
+				s.Properties = map[string]*jsonschema.Schema{}
+			}
+			t.InputSchema = s
+		}
+	}
 	mcp.AddTool(srv, t, func(ctx context.Context, req *mcp.CallToolRequest, in In) (res *mcp.CallToolResult, out Out, err error) {
 		started := time.Now()
 		defer func() {
@@ -137,7 +148,7 @@ func (api *API) RegisterMCPApi() {
 	}
 	streamable := mcp.NewStreamableHTTPHandler(
 		pick,
-		&mcp.StreamableHTTPOptions{Stateless: true},
+		&mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: mcpMaxBodyBytes},
 	)
 	api.mux.Handle(mcpEndpoint, api.mcpGate(streamable))
 	api.mux.HandleFunc("/api/mcp/generate-token", api.handleMCPGenerateToken)
@@ -181,12 +192,16 @@ func MCPTokenAccepts(cfg *config.Config, token string) bool {
 	return subtle.ConstantTimeCompare([]byte(want), []byte(token)) == 1
 }
 
-func mcpBearerToken(r *http.Request) string {
-	auth := r.Header.Get("Authorization")
-	if !strings.HasPrefix(auth, "Bearer ") {
-		return ""
+func BearerToken(authorization string) (string, bool) {
+	h := strings.TrimSpace(authorization)
+	scheme, token := h, ""
+	if i := strings.IndexAny(h, " \t"); i >= 0 {
+		scheme, token = h[:i], strings.TrimSpace(h[i+1:])
 	}
-	return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+	if !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+	return token, true
 }
 
 func (api *API) mcpGate(next http.Handler) http.Handler {
@@ -200,14 +215,8 @@ func (api *API) mcpGate(next http.Handler) http.Handler {
 		}
 
 		if cfg.System.WebServer.MCP.Token != "" {
-			if !MCPTokenAccepts(cfg, mcpBearerToken(r)) {
-				reason := "no MCP token was presented"
-				if mcpBearerToken(r) != "" {
-					reason = "the MCP token presented is wrong"
-				}
-				mcpLogRefusal(r, reason)
-				w.Header().Set("WWW-Authenticate", `Bearer realm="b4 MCP"`)
-				writeJsonError(w, http.StatusUnauthorized, "invalid or missing MCP token")
+			if token, _ := BearerToken(r.Header.Get("Authorization")); !MCPTokenAccepts(cfg, token) {
+				MCPRefuseToken(w, r)
 				return
 			}
 		} else if !mcpAuthConfigured(cfg) {
@@ -224,6 +233,21 @@ func (api *API) mcpGate(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r.WithContext(mcpWithCaller(r.Context(), r)))
 	})
+}
+
+func MCPRefuseToken(w http.ResponseWriter, r *http.Request) {
+	auth := r.Header.Get("Authorization")
+	token, bearer := BearerToken(auth)
+	reason := "no MCP token was presented"
+	switch {
+	case token != "":
+		reason = "the MCP token presented is wrong"
+	case !bearer && strings.TrimSpace(auth) != "":
+		reason = "an Authorization header was sent, but its scheme is not Bearer"
+	}
+	mcpLogRefusal(r, reason)
+	w.Header().Set("WWW-Authenticate", `Bearer realm="b4 MCP"`)
+	writeJsonError(w, http.StatusUnauthorized, "invalid or missing MCP token")
 }
 
 func mcpAuthConfigured(cfg *config.Config) bool {
@@ -295,6 +319,7 @@ func (api *API) newMCPServer(caps mcpCapabilities) *mcp.Server {
 			mcpCapabilityInstruction(caps),
 		}, " "),
 	})
+	srv.AddReceivingMiddleware(mcpIgnoreWaitForPrevious)
 
 	api.addMCPTools(srv)
 	api.addMCPPathTools(srv)
@@ -312,6 +337,36 @@ func (api *API) newMCPServer(caps mcpCapabilities) *mcp.Server {
 	api.addMCPResources(srv)
 	api.addMCPPrompts(srv)
 	return srv
+}
+
+const mcpWaitForPrevious = "wait_for_previous"
+
+func mcpIgnoreWaitForPrevious(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if call, ok := req.(*mcp.CallToolRequest); ok && call.Params != nil {
+			call.Params.Arguments = mcpWithoutArgument(call.Params.Arguments, mcpWaitForPrevious)
+		}
+		return next(ctx, method, req)
+	}
+}
+
+func mcpWithoutArgument(raw json.RawMessage, key string) json.RawMessage {
+	if !bytes.Contains(raw, []byte(key)) {
+		return raw
+	}
+	var args map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &args); err != nil {
+		return raw
+	}
+	if _, ok := args[key]; !ok {
+		return raw
+	}
+	delete(args, key)
+	stripped, err := json.Marshal(args)
+	if err != nil {
+		return raw
+	}
+	return stripped
 }
 
 type mcpEmpty struct{}
@@ -484,6 +539,7 @@ type tailResult struct {
 	Scanned   int
 	Truncated bool
 	Exists    bool
+	Partial   bool
 }
 
 func mcpClampLimit(v int) int {
@@ -628,11 +684,19 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:        "b4_check_domain",
 		Title:       "Check domain coverage",
-		Description: "Report which strategy sets already target a domain, how the match was made (exact/wildcard/suffix), whether it came from a manual entry or a geosite category, and whether that set is enabled. Use before adding a domain to avoid duplicates.",
+		Description: "Report which strategy sets already target a domain, how the match was made (relation exact; covered = a parent is listed; regexp; covers = only a subdomain is listed, so the domain itself is not matched), whether it came from a manual entry or a geosite category, and whether that set is enabled. Use before adding a domain to avoid duplicates.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpCheckDomainIn) (*mcp.CallToolResult, mcpCheckDomainOut, error) {
 		domains, truncated := parseCheckDomains(in.Domain)
 		if len(domains) == 0 {
+			if strings.TrimSpace(in.Domain) != "" {
+				shown := fmt.Sprintf("%q", in.Domain)
+				if len(in.Domain) > 80 {
+					shown = fmt.Sprintf("%q… (%d bytes)", mcpTruncate(in.Domain, 80), len(in.Domain))
+				}
+				return nil, mcpCheckDomainOut{}, fmt.Errorf(
+					"no domain name found in %s: pass names or URLs, and a name is at most %d bytes", shown, maxCheckDomainLength)
+			}
 			return nil, mcpCheckDomainOut{}, fmt.Errorf("domain is required")
 		}
 		matches := api.matchDomainsToSets(domains, "")
@@ -642,7 +706,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			byDomain[d] = false
 		}
 		for _, m := range matches {
-			if m.Enabled {
+			if m.Enabled && sni.DomainRelation(m.Relation) != sni.RelationCovers {
 				byDomain[m.Domain] = true
 			}
 		}
@@ -672,6 +736,9 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			out.Note = "every domain checked is matched by at least one enabled set"
 		default:
 			out.Note = "not matched by any enabled set: " + strings.Join(uncovered, ", ")
+		}
+		if narrower := mcpNarrowerOnly(matches, byDomain); narrower != "" {
+			out.Note += ". " + narrower
 		}
 		return nil, out, nil
 	})
@@ -738,9 +805,11 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	})
 
 	addTool(srv, &mcp.Tool{
-		Name:        "b4_recent_connections",
-		Title:       "Recent connections",
-		Description: "Recent connections b4 actually processed, newest last: protocol, matched set, domain, source, destination and TLS version. This is the right tool for any question about a specific domain or site - it shows whether traffic reached b4 and which set matched it, which the error log does not record. Pass the domain in 'contains' to filter. Empty means no matching traffic has been seen since b4 started.",
+		Name:  "b4_recent_connections",
+		Title: "Recent connections",
+		Description: "Recent connections b4 actually processed, newest last, as CSV lines: time,protocol,sni_set,domain,source,ip_set,destination,mac,tls and an optional action. The set that handled the flow is sni_set, or ip_set when it matched by IP. " +
+			"Use it for any question about a specific site: it shows whether traffic reached b4 and which set matched it, which the error log does not record. Pass the domain in 'contains' to filter. " +
+			"Holds only the last 500 events, often under a minute on a busy router, so empty means none in that window.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpRecentConnIn) (*mcp.CallToolResult, mcpRecentConnOut, error) {
 		lines := log.GetConnectionHub().Snapshot()
@@ -767,9 +836,9 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:  "b4_logs_tail",
 		Title: "Tail the b4 log",
-		Description: "Most recent lines from one of b4's logs, newest last. Use after b4_status and b4_diagnostics when something is configured correctly but still not working. " +
-			"file=errors is b4's error log, ERROR level ONLY: empty means no errors were recorded, not that nothing happened. " +
-			"file=update is the installer transcript of the last update started in the web interface, and the only place that output exists: read it when an update left b4 broken. " +
+		Description: "Most recent lines from one of b4's logs, newest last. Use after b4_status and b4_diagnostics when a correct configuration still does not work. " +
+			"file=errors holds b4's errors, startup warnings and stderr output: empty means no errors were recorded, not that nothing happened. " +
+			"file=update is the installer transcript of the last update started in the web interface, kept nowhere else: read it when an update left b4 broken. " +
 			"Neither records per-domain traffic, so never filter by a domain name; use b4_recent_connections for that. The 'note' field explains every result, including an empty one.",
 		Annotations: mcpReadOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpLogsIn) (*mcp.CallToolResult, mcpLogsOut, error) {
@@ -807,12 +876,12 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		case !res.Exists:
 			out.Note = "the log file does not exist yet - b4 has not written anything to it"
 		case res.Scanned == 0 && which == "errors":
-			out.Note = "the error log exists but is empty, which means b4 has recorded no errors. It does not mean nothing happened: warnings and ordinary activity are never written here"
+			out.Note = "the error log exists but is empty, which means b4 has recorded no errors. It does not mean nothing happened: ordinary activity and most warnings are not written here"
 		case res.Scanned == 0:
 			out.Note = "the log file exists but is empty"
 		case filter != "" && res.Matched == 0:
 			out.Note = fmt.Sprintf(
-				"no lines matched %q among the %d most recent lines. This log contains b4's own output, not per-domain traffic - to check whether a domain is being matched, call b4_recent_connections instead.",
+				"no lines matched %q among the %d most recent lines. This log contains b4's own output, not per-domain traffic - to check whether a domain is being matched, call b4_recent_connections instead",
 				filter, res.Scanned)
 		case filter != "" && res.Truncated:
 			out.Note = fmt.Sprintf("%d of the %d most recent lines matched %q; the newest %d are returned", res.Matched, res.Scanned, filter, len(res.Lines))
@@ -827,7 +896,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			out.Note += fmt.Sprintf(". %s had rolled over, so the older %s.1 was read as well", filepath.Base(path), filepath.Base(path))
 		}
 		if which == "errors" && res.Exists && res.Scanned > 0 {
-			out.Note += ". Every line here is an ERROR; b4 never writes warnings or ordinary activity to this file"
+			out.Note += ". Lines tagged [ERROR] are b4 errors; the file also holds start markers, startup warnings and anything written to stderr, such as crash traces and web server messages (a client dropping its connection is not a b4 failure)"
 		}
 		return nil, out, nil
 	})
@@ -840,6 +909,16 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, any, error) {
 		return nil, mcpDiagnosticsOut{Diagnostics: api.buildDiagnostics()}, nil
 	})
+}
+
+func mcpNarrowerOnly(matches []SetDomainMatch, covered map[string]bool) string {
+	var parts []string
+	for _, m := range matches {
+		if m.Enabled && !covered[m.Domain] && sni.DomainRelation(m.Relation) == sni.RelationCovers {
+			parts = append(parts, fmt.Sprintf("Set %q lists only narrower names such as %s, not %s itself", m.SetName, m.Entry, m.Domain))
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 func mcpTruncate(s string, limit int) string {
@@ -1013,10 +1092,10 @@ func (api *API) addMCPPrompts(srv *mcp.Server) {
 			"1. Call b4_status to confirm the daemon is running and which engine is active.",
 			fmt.Sprintf("2. Call b4_check_domain for %q to see whether any enabled set already covers it.", domain),
 			"3. If nothing covers it, say so and propose which existing set it belongs in, or a new one.",
-			"4. If a set does cover it, call b4_get_config for that set and read the relevant b4://topics/ resources before commenting on any setting.",
+			"4. If a set does cover it, call b4_get_set for that set, and b4_get_topic for each setting before commenting on it.",
 			"5. If the bypass looks configured but ineffective, call b4_diagnostics and check the firewall rule groups are actually installed.",
 			"",
-			"Do not guess a setting's unit or default from its name - read the matching b4://topics/ resource.",
+			"Do not guess a setting's unit or default from its name - call b4_get_topic for it.",
 			"State clearly which changes you are recommending and why; do not claim to have applied anything.",
 		}, "\n")
 		return &mcp.GetPromptResult{
@@ -1110,7 +1189,7 @@ func tailLines(path string, limit int, contains string) (tailResult, error) {
 		out = out[len(out)-limit:]
 		truncated = true
 	}
-	return tailResult{Lines: out, Matched: matched, Scanned: scanned, Truncated: truncated, Exists: true}, nil
+	return tailResult{Lines: out, Matched: matched, Scanned: scanned, Truncated: truncated, Exists: true, Partial: offset > 0}, nil
 }
 
 func extractJSONPath(raw []byte, path string) ([]byte, error) {
@@ -1118,10 +1197,11 @@ func extractJSONPath(raw []byte, path string) ([]byte, error) {
 	if err := json.Unmarshal(raw, &cur); err != nil {
 		return nil, err
 	}
-	for _, part := range strings.Split(path, ".") {
+	parts := strings.Split(path, ".")
+	for i, part := range parts {
 		obj, ok := cur.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("section %q: %q is not an object", path, part)
+			return nil, mcpSectionNotObject(path, strings.Join(parts[:i], "."), cur)
 		}
 		next, ok := obj[part]
 		if !ok {
@@ -1130,6 +1210,16 @@ func extractJSONPath(raw []byte, path string) ([]byte, error) {
 		cur = next
 	}
 	return json.Marshal(cur)
+}
+
+func mcpSectionNotObject(path, parent string, value any) error {
+	if _, isArray := value.([]any); !isArray {
+		return fmt.Errorf("section %q: %q is not an object", path, parent)
+	}
+	if parent == "sets" {
+		return fmt.Errorf("section %q: %q is an array, not an object; call b4_get_set with the set's id or name to read one set", path, parent)
+	}
+	return fmt.Errorf("section %q: %q is an array, not an object; ask for %q itself", path, parent, parent)
 }
 
 func mcpLogChoice(cfg *config.Config, want string) (name, path string, err error) {
@@ -1147,7 +1237,7 @@ func tailWithRotation(path string, limit int, contains string) (tailResult, bool
 	if err != nil {
 		return tailResult{}, false, err
 	}
-	if len(res.Lines) >= limit {
+	if len(res.Lines) >= limit || res.Partial {
 		return res, false, nil
 	}
 
@@ -1166,10 +1256,14 @@ func tailWithRotation(path string, limit int, contains string) (tailResult, bool
 
 const mcpRefusalWindow = 30 * time.Second
 
+const mcpRefusalTimeLayout = "2006/01/02 15:04:05"
+
 var mcpRefusals struct {
 	sync.Mutex
-	last       time.Time
-	suppressed int
+	last            time.Time
+	suppressed      int
+	firstSuppressed time.Time
+	lastSuppressed  time.Time
 }
 
 func mcpLogRefusal(r *http.Request, reason string) {
@@ -1178,19 +1272,24 @@ func mcpLogRefusal(r *http.Request, reason string) {
 	mcpRefusals.Lock()
 	defer mcpRefusals.Unlock()
 
-	if !mcpRefusals.last.IsZero() && time.Since(mcpRefusals.last) < mcpRefusalWindow {
+	now := time.Now()
+	if !mcpRefusals.last.IsZero() && now.Sub(mcpRefusals.last) < mcpRefusalWindow {
+		if mcpRefusals.suppressed == 0 {
+			mcpRefusals.firstSuppressed = now
+		}
 		mcpRefusals.suppressed++
+		mcpRefusals.lastSuppressed = now
 		return
 	}
 
-	suppressed := mcpRefusals.suppressed
+	switch n := mcpRefusals.suppressed; {
+	case n == 1:
+		log.Warnf("mcp: 1 more refusal at %s was not listed", mcpRefusals.firstSuppressed.Format(mcpRefusalTimeLayout))
+	case n > 1:
+		log.Warnf("mcp: %d more refusals between %s and %s were not listed", n,
+			mcpRefusals.firstSuppressed.Format(mcpRefusalTimeLayout), mcpRefusals.lastSuppressed.Format(mcpRefusalTimeLayout))
+	}
 	mcpRefusals.suppressed = 0
-	mcpRefusals.last = time.Now()
-
-	if suppressed > 0 {
-		log.Warnf("mcp: refused a request from %s: %s (%d further refusals in the last %s are not listed)",
-			caller, reason, suppressed, mcpRefusalWindow)
-		return
-	}
+	mcpRefusals.last = now
 	log.Warnf("mcp: refused a request from %s: %s", caller, reason)
 }

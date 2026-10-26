@@ -30,6 +30,13 @@ var mcpProbe = &mcp.ToolAnnotations{
 	OpenWorldHint:   boolPtr(true),
 }
 
+var mcpDestructiveProbe = &mcp.ToolAnnotations{
+	ReadOnlyHint:    false,
+	DestructiveHint: boolPtr(true),
+	IdempotentHint:  false,
+	OpenWorldHint:   boolPtr(true),
+}
+
 type mcpProbeIn struct {
 	Domain     string `json:"domain" jsonschema:"Domain to fetch, e.g. rutracker.org. At most 3, comma-separated."`
 	Mode       string `json:"mode,omitempty" jsonschema:"'both' (default) fetches through b4 and again with b4 bypassed; 'through_b4' or 'baseline' does one of them."`
@@ -373,7 +380,7 @@ func (api *API) addMCPWatchdogTools(srv *mcp.Server) {
 			"Without set: the global domain list. With set: that set's own watchdog, which checks its discovery URLs, runs a discovery for the set on repeated failure, writes a confirmed strategy, verifies it and rolls back on failure. " +
 			"status emits no traffic and needs no permission; without set it also lists watched sets. " +
 			"remove and disable need 'Allow configuration changes'; add and enable also need 'Allow active probes'; check needs only 'Allow active probes'.",
-		Annotations: mcpDestructive,
+		Annotations: mcpDestructiveProbe,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpWatchdogIn) (*mcp.CallToolResult, any, error) {
 		res, out, err := api.mcpWatchdog(in)
 		if err != nil {

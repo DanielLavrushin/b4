@@ -54,12 +54,12 @@ func mcpResolveSuiteID(explicit string) string {
 
 type mcpDiscoveryIn struct {
 	Action  string `json:"action" jsonschema:"One of: start, status, cancel, apply."`
-	Domains string `json:"domains,omitempty" jsonschema:"Comma-separated domains or full URLs, at most 5. For action=start. A URL is fetched as given: pass the user's link whole. With set it may be left empty to probe the set's stored discovery URLs."`
+	Domains string `json:"domains,omitempty" jsonschema:"Comma-separated domains or full URLs, at most 5. For action=start. A URL is fetched as given: pass the user's link whole. With set it may be left empty to probe the set's stored discovery URLs, at most 5."`
 	Id      string `json:"id,omitempty" jsonschema:"Suite id from start. If omitted, the run in progress is used, then the last run this server started."`
 	Domain  string `json:"domain,omitempty" jsonschema:"For action=apply without set: which domain's winning strategy to turn into a new set."`
 	Name    string `json:"name,omitempty" jsonschema:"Optional name for the set created by apply without set."`
 	SkipDNS string `json:"skip_dns,omitempty" jsonschema:"'true' to skip the DNS poisoning probe on start."`
-	Set     string `json:"set,omitempty" jsonschema:"Optional existing set, by id or exact name, the run is for. On start: probes domains, or the set's stored discovery URLs when domains is empty (at most 5), tests the set's current strategy first, and stops once one strategy passes every confirmation try on every address. On apply: writes the result into this set instead of creating one, strategy only with its domains untouched, and only when the run's set verdict is covered. Sets with routing enabled are refused."`
+	Set     string `json:"set,omitempty" jsonschema:"Optional existing set, by id or exact name, the run is for, as the tool description explains. Sets with routing enabled are refused."`
 }
 
 type mcpSuiteSnapshot struct {
@@ -307,8 +307,8 @@ func (api *API) addMCPDiscoveryTools(srv *mcp.Server) {
 			"With set (an existing set's id or exact name) the run is for that set: it probes the given domains or the set's stored discovery URLs, tests the set's current strategy first, stops once one strategy passes every confirmation try on every address, and ends with a set verdict " +
 			"(covered, current_works, partial, not_needed, none or incomplete); apply then writes the strategy into that set, leaving its domains alone, and only for the verdict covered. " +
 			"A run takes MINUTES, emits heavy traffic from the router, holds firewall rules, and only one can be in flight - do not poll in a loop, tell the user it is running and check once when they ask. " +
-			"A finished run is written to b4's discovery history, so status and apply keep working for it afterwards, across restarts, addressed by suite_id, by set or just by domain.",
-		Annotations: mcpProbe,
+			"A finished run is written to b4's discovery history, so status and apply keep working for it across restarts, addressed by suite_id, by set or by domain.",
+		Annotations: mcpDestructiveProbe,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDiscoveryOut, error) {
 		action := strings.ToLower(strings.TrimSpace(in.Action))
 		switch action {
@@ -991,9 +991,8 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	set.Id = uuid.New().String()
 	set.Enabled = true
 	if name := strings.TrimSpace(in.Name); name != "" {
-		if mcpNameTaken(newCfg, name) {
-			return nil, mcpDiscoveryOut{}, fmt.Errorf(
-				"a set named %q already exists; pass a different name. Two sets sharing a name make every later reference to it ambiguous", name)
+		if err := mcpSetNameRefusal(newCfg, nil, name); err != nil {
+			return nil, mcpDiscoveryOut{}, err
 		}
 		set.Name = name
 	} else {

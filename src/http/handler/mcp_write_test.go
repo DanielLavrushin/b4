@@ -3,13 +3,19 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"reflect"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/daniellavrushin/b4/ai"
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -330,6 +336,8 @@ func TestMCPDenyTagsArePresent(t *testing.T) {
 		{"system.mtproto.secrets", ""},
 		{"system.mtproto.expose", ""},
 		{"system.mtproto.web_proxy.expose", ""},
+		{"system.mtproto.cfproxy_url", ""},
+		{"system.mtproto.dc_fallback_url", ""},
 		{"system.socks5.expose", ""},
 		// Inside a writable root, but the directory is a filesystem location:
 		// pointing it elsewhere silently stops file logging, which is also what
@@ -1065,5 +1073,529 @@ func TestMCPWriteMayCloseAnExposedPort(t *testing.T) {
 
 	if res := callSetValue(t, session, ctx, "system.socks5.enabled", "false"); res.IsError {
 		t.Fatalf("turning an exposed listener off closes a port and must stay allowed: %+v", res.Content)
+	}
+}
+
+func TestMCPWriteEnablingASetLoadsItsTargets(t *testing.T) {
+	cfg := writableCfg(t)
+	cfg.LoadTargets()
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	if matched, _ := sni.NewSuffixSet(api.getCfg().Sets).MatchSNI("example.org"); matched {
+		t.Fatal("precondition: a set disabled at startup matches nothing")
+	}
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[disabled-set].enabled", "true"))
+	if !out.Changed {
+		t.Fatalf("write did not take: %+v", out)
+	}
+	matched, set := sni.NewSuffixSet(api.getCfg().Sets).MatchSNI("example.org")
+	if !matched || set == nil || set.Id != "set-2" {
+		t.Fatalf("a set enabled over MCP must match its own domain at once, not after a restart: matched=%v", matched)
+	}
+}
+
+func TestMCPSaveRechecksTheWriteSwitchesOnTheConfigItReplaces(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		off  func(*config.MCPConfig)
+	}{
+		{"allow_writes off", func(m *config.MCPConfig) { m.AllowWrites = false }},
+		{"mcp off", func(m *config.MCPConfig) { m.Enabled = false }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, api := newMCPTestServerAPI(t, writableCfg(t))
+			off := api.getCfg().Clone()
+			c.off(&off.System.WebServer.MCP)
+			if err := api.saveAndPushConfig(off); err != nil {
+				t.Fatal(err)
+			}
+
+			oldCfg := api.getCfg()
+			newCfg := oldCfg.Clone()
+			newCfg.Sets[0].TCP.Seg2Delay = 42
+			if err := api.mcpSave(oldCfg, newCfg); !errors.Is(err, errMCPWritesOff) {
+				t.Fatalf("a write that reaches the save after the switch went off must be refused, got %v", err)
+			}
+			if got := api.getCfg().Sets[0].TCP.Seg2Delay; got != 0 {
+				t.Errorf("the refused write landed: seg2delay = %d", got)
+			}
+		})
+	}
+}
+
+func waitForQueuedMCPWrite(t *testing.T, file string) {
+	t.Helper()
+	buf := make([]byte, 1<<20)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		n := runtime.Stack(buf, true)
+		if n == len(buf) {
+			buf = make([]byte, 2*len(buf))
+			continue
+		}
+		for _, g := range strings.Split(string(buf[:n]), "\n\n") {
+			if strings.Contains(g, "sync.(*Mutex).Lock") && strings.Contains(g, file) {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no tool call queued on the MCP write lock in %s", file)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestMCPQueuedWriteIsRefusedOnceWritesAreSwitchedOff(t *testing.T) {
+	tools := []struct {
+		name, file string
+		args       map[string]any
+	}{
+		{"b4_set_config_value", "/http/handler/mcp_write.go:", map[string]any{"path": "sets[video].tcp.seg2delay", "value": "42"}},
+		{"b4_edit_set_targets", "/http/handler/mcp_targets.go:", map[string]any{"set": "video", "kind": "sni_domains", "add": "queued.example"}},
+	}
+	switches := []struct {
+		name string
+		off  func(*config.MCPConfig)
+	}{
+		{"allow_writes off", func(m *config.MCPConfig) { m.AllowWrites = false }},
+		{"mcp off", func(m *config.MCPConfig) { m.Enabled = false }},
+	}
+	for _, tool := range tools {
+		for _, sw := range switches {
+			t.Run(tool.name+" "+sw.name, func(t *testing.T) {
+				srv, api := newMCPTestServerAPI(t, writableCfg(t))
+				session, ctx := connectMCP(t, srv)
+
+				mcpWriteMu.Lock()
+				held := true
+				defer func() {
+					if held {
+						mcpWriteMu.Unlock()
+					}
+				}()
+				type outcome struct {
+					res *mcp.CallToolResult
+					err error
+				}
+				done := make(chan outcome, 1)
+				go func() {
+					res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tool.name, Arguments: tool.args})
+					done <- outcome{res, err}
+				}()
+				waitForQueuedMCPWrite(t, tool.file)
+
+				off := api.getCfg().Clone()
+				sw.off(&off.System.WebServer.MCP)
+				if err := api.saveAndPushConfig(off); err != nil {
+					t.Fatal(err)
+				}
+				held = false
+				mcpWriteMu.Unlock()
+
+				got := <-done
+				if got.err != nil {
+					t.Fatal(got.err)
+				}
+				if !got.res.IsError || !strings.Contains(mcpErrorText(got.res), "Allow configuration changes") {
+					t.Fatalf("the user switched writes off while the call waited for the write lock, so it must not write: %s", mcpErrorText(got.res))
+				}
+				live := api.getCfg().Sets[0]
+				if live.TCP.Seg2Delay != 0 || !reflect.DeepEqual(live.Targets.SNIDomains, []string{"youtube.com"}) {
+					t.Errorf("the refused call changed the set: seg2delay=%d sni_domains=%v", live.TCP.Seg2Delay, live.Targets.SNIDomains)
+				}
+			})
+		}
+	}
+}
+
+func TestMCPWriteAcceptsEverySNIMutationModeThePacketPathImplements(t *testing.T) {
+	srv, api := newMCPTestServerAPI(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	implemented := []string{"off", "duplicate", "grease", "padding", "reorder", "full", "advanced"}
+	for _, mode := range implemented {
+		res := callSetValue(t, session, ctx, "sets[video].faking.sni_mutation.mode", strings.ToUpper(mode))
+		if res.IsError {
+			t.Errorf("%s is implemented by nfq/mutation.go and must be writable: %s", mode, mcpErrorText(res))
+			continue
+		}
+		if got := api.getCfg().Sets[0].Faking.SNIMutation.Mode; got != mode {
+			t.Errorf("mode %s stored as %q", mode, got)
+		}
+	}
+	for _, mode := range []string{"random", "fakeext", "fakesni"} {
+		if res := callSetValue(t, session, ctx, "sets[video].faking.sni_mutation.mode", mode); !res.IsError {
+			t.Errorf("%s leaves the ClientHello unchanged in the packet path and must be refused", mode)
+		}
+	}
+
+	topic := ai.TopicFacts("faking.sni_mutation.mode")
+	for _, mode := range implemented {
+		if !strings.Contains(topic, "'"+mode+"'") {
+			t.Errorf("the faking.sni_mutation.mode topic never describes the mode '%s'", mode)
+		}
+	}
+}
+
+func TestMCPWriteOptionFieldsTakeOnlyTheirOptionsInCanonicalCase(t *testing.T) {
+	srv := newMCPTestServer(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	cases := []struct{ path, value, want, bad string }{
+		{"sets[video].faking.strategy", "PastSeq", "pastseq", "past_seq"},
+		{"sets[video].udp.faking_strategy", "CheckSum", "checksum", "bogus"},
+		{"sets[video].fragmentation.combo.shuffle_mode", "Middle", "middle", "bogus"},
+		{"sets[video].fragmentation.disorder.shuffle_mode", "REVERSE", "reverse", "bogus"},
+		{"sets[video].fragmentation.disorder.shuffle_mode", "Middle", "middle", "edges"},
+		{"sets[video].routing.block_action", "Drop", "drop", "reject-tcp-reset"},
+		{"sets[video].fragmentation.strategy_pool", "TCP, Oob", "tcp,oob", "tcp,bogus"},
+		{"sets[video].faking.tls_mod", "RND, DupSid", "rnd,dupsid", "bogus"},
+	}
+	for _, c := range cases {
+		res := callSetValue(t, session, ctx, c.path, c.value)
+		if res.IsError {
+			t.Errorf("%s=%s refused: %s", c.path, c.value, mcpErrorText(res))
+		} else if got := decodeSetValue(t, res).Current; got != c.want {
+			t.Errorf("%s=%s stored as %q, want the canonical %q", c.path, c.value, got, c.want)
+		}
+		if res := callSetValue(t, session, ctx, c.path, c.bad); !res.IsError {
+			t.Errorf("%s=%s is not a value b4 acts on and must be refused", c.path, c.bad)
+		}
+	}
+
+	cfg := mcpTestCfg()
+	listed := map[string]mcpPathInfo{}
+	for _, p := range mcpWritablePaths(cfg, cfg.Sets[0]) {
+		listed[p.Path] = p
+	}
+	for _, c := range cases {
+		canonical, _, err := parseMCPWritePath(c.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(listed[canonical].Options) == 0 {
+			t.Errorf("b4_list_writable_paths offers no options for %s", canonical)
+		}
+	}
+}
+
+func TestMCPWriteRefusesNumbersOutsideTheUIRange(t *testing.T) {
+	srv, api := newMCPTestServerAPI(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	for _, c := range []struct{ path, value, bounds string }{
+		{"sets[video].faking.sni_seq_length", "1000000000", "1 to 20"},
+		{"sets[video].faking.sni_seq_length", "0", "1 to 20"},
+		{"sets[video].udp.fake_seq_length", "1000000", "1 to 20"},
+		{"sets[video].udp.fake_len", "-100", "32 to 1500"},
+		{"sets[video].tcp.seg2delay", "3600000", "0 to 1000"},
+		{"sets[video].tcp.seg2delay_max", "9223372036854775807", "0 to 1000"},
+		{"sets[video].tcp.desync.count", "-5", "1 to 20"},
+		{"sets[video].faking.sni_mutation.grease_count", "-1", "1 to 10"},
+		{"sets[video].fragmentation.combo.first_delay_ms_max", "5", "10 to 500, or 0"},
+		{"sets[video].fragmentation.seq_overlap_length", "9223372036854775807", "0 to 1460"},
+		{"sets[video].fragmentation.seq_overlap_length", "100000000", "0 to 1460"},
+	} {
+		res := callSetValue(t, session, ctx, c.path, c.value)
+		if !res.IsError {
+			t.Errorf("%s=%s is outside the accepted range and must be refused", c.path, c.value)
+			continue
+		}
+		if text := mcpErrorText(res); !strings.Contains(text, c.bounds) {
+			t.Errorf("the refusal of %s=%s must name the range %q: %s", c.path, c.value, c.bounds, text)
+		}
+	}
+	live := api.getCfg().Sets[0]
+	if live.Faking.SNISeqLength != 0 || live.UDP.FakeSeqLength != 0 || live.TCP.Seg2Delay != 0 || live.TCP.Seg2DelayMax != 0 {
+		t.Fatalf("a refused write changed the set: sni_seq_length=%d fake_seq_length=%d seg2delay=%d-%d",
+			live.Faking.SNISeqLength, live.UDP.FakeSeqLength, live.TCP.Seg2Delay, live.TCP.Seg2DelayMax)
+	}
+
+	for _, c := range []struct{ path, value string }{
+		{"sets[video].faking.sni_seq_length", "20"},
+		{"sets[video].tcp.seg2delay", "1000"},
+		{"sets[video].fragmentation.combo.first_delay_ms_max", "200"},
+		{"sets[video].fragmentation.combo.first_delay_ms_max", "0"},
+		{"sets[video].fragmentation.seq_overlap_length", "681"},
+	} {
+		res := callSetValue(t, session, ctx, c.path, c.value)
+		if res.IsError {
+			t.Errorf("%s=%s is inside the range and must be kept: %s", c.path, c.value, mcpErrorText(res))
+			continue
+		}
+		if got := decodeSetValue(t, res).Current; got != c.value {
+			t.Errorf("%s=%s read back as %q", c.path, c.value, got)
+		}
+	}
+}
+
+func TestMCPRangesNameIntegerSettingsAndAdmitTheirDefaults(t *testing.T) {
+	cfg := config.NewConfig()
+	set := config.NewSetConfig()
+	set.Id, set.Name = "set-1", "video"
+	cfg.Sets = []*config.SetConfig{&set}
+
+	for path, r := range mcpRanges {
+		if !mcpPathAllowed(path) {
+			t.Errorf("%s is outside the writable roots", path)
+			continue
+		}
+		field, err := mcpResolvePath(&cfg, path, "video")
+		if err != nil {
+			t.Errorf("%s names no setting: %v", path, err)
+			continue
+		}
+		switch field.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		default:
+			t.Errorf("%s is a %s, but the range is checked only for signed integers", path, field.Kind())
+			continue
+		}
+		if r.Min > r.Max {
+			t.Errorf("%s has an empty range %d to %d", path, r.Min, r.Max)
+		}
+		def := field.Int()
+		if err := mcpCheckRange(path, strconv.FormatInt(def, 10), def); err != nil {
+			t.Errorf("the default %d of %s must stay writable: %v", def, path, err)
+		}
+	}
+}
+
+func TestMCPWritablePathsListTheRangeOfEachRangedSetting(t *testing.T) {
+	cfg := mcpTestCfg()
+	listed := map[string]mcpPathInfo{}
+	for _, p := range mcpWritablePaths(cfg, cfg.Sets[0]) {
+		listed[p.Path] = p
+	}
+	for path, r := range mcpRanges {
+		p, ok := listed[path]
+		if !ok {
+			t.Errorf("%s is range-checked but b4_list_writable_paths does not list it", path)
+			continue
+		}
+		if len(p.Options) != 1 || p.Options[0] != r.String() {
+			t.Errorf("b4_list_writable_paths must give the accepted range of %s (%s) before a write is refused, got %v", path, r, p.Options)
+		}
+	}
+	if got := listed[mcpSetPathPrefix+".udp.fake_len"].Options; len(got) != 1 || got[0] != "32 to 1500" {
+		t.Errorf("udp.fake_len options = %v, want [32 to 1500]", got)
+	}
+}
+
+func TestMCPWriteSetNameFollowsTheManageSetRules(t *testing.T) {
+	srv, api := newMCPTestServerAPI(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	for _, c := range []struct{ path, value, reason string }{
+		{"sets[set-2].name", "VIDEO", "already exists"},
+		{"sets[video].name", "a,b", "comma"},
+		{"sets[video].name", "   ", "empty"},
+	} {
+		res := callSetValue(t, session, ctx, c.path, c.value)
+		if !res.IsError || !strings.Contains(mcpErrorText(res), c.reason) {
+			t.Errorf("%s=%q must be refused (%s): %s", c.path, c.value, c.reason, mcpErrorText(res))
+		}
+	}
+	if live := api.getCfg(); live.Sets[0].Name != "video" || live.Sets[1].Name != "disabled-set" {
+		t.Fatalf("refused renames changed the names: %q, %q", live.Sets[0].Name, live.Sets[1].Name)
+	}
+
+	if out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].name", "VIDEO")); !out.Changed || out.Current != "VIDEO" {
+		t.Errorf("renaming a set to a case variant of its own name is allowed: %+v", out)
+	}
+	if out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[set-2].name", "  clips  ")); !out.Changed || out.Current != "clips" {
+		t.Errorf("a new name is stored trimmed: %+v", out)
+	}
+}
+
+func TestMCPWriteReportsTheSavedValueNotALaterWritersOne(t *testing.T) {
+	for _, c := range []struct{ name, other string }{
+		{"another value", "7443"},
+		{"the old value", "8443"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := writableCfg(t)
+			cfg.Sets[0].TCP.DPortFilter = "8443"
+			srv, api := newMCPTestServerAPI(t, cfg)
+			session, ctx := connectMCP(t, srv)
+
+			old := tablesRefreshFunc
+			tablesRefreshFunc = func() error {
+				next := api.getCfg().Clone()
+				next.Sets[0].TCP.DPortFilter = c.other
+				return api.saveAndPushConfig(next)
+			}
+			t.Cleanup(func() { tablesRefreshFunc = old })
+
+			out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].tcp.dport_filter", "9443"))
+			if !out.Changed || out.Current != "9443" || strings.Contains(out.Note, "normalised") || strings.Contains(out.Note, "not applied") {
+				t.Fatalf("b4 saved 9443, and another writer's later value must not be reported as b4's: %+v", out)
+			}
+			if len(mcpHistory) != 1 {
+				t.Errorf("the saved change must be undoable, history = %d", len(mcpHistory))
+			}
+		})
+	}
+}
+
+func TestMCPWriteReportsWhatTheSaveChangedElsewhere(t *testing.T) {
+	t.Run("escalation cleared on another set", func(t *testing.T) {
+		cfg := writableCfg(t)
+		target := config.NewSetConfig()
+		target.Id, target.Name, target.Enabled = "set-tgt", "tgt", true
+		target.UDP.DPortFilter = "50000-50100"
+		cfg.Sets = append(cfg.Sets, &target)
+		cfg.Sets[0].Escalate.To = "set-tgt"
+		srv, api := newMCPTestServerAPI(t, cfg)
+		session, ctx := connectMCP(t, srv)
+
+		out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[tgt].udp.filter_l7", "discord"))
+		if !out.Changed {
+			t.Fatalf("write did not take: %+v", out)
+		}
+		if got := api.getCfg().Sets[0].Escalate.To; got != "" {
+			t.Fatalf("precondition: saving clears an escalation to a set that selects UDP protocols, got %q", got)
+		}
+		for _, want := range []string{`escalate.to on set "video"`, `"tgt" now selects UDP protocols`} {
+			if !strings.Contains(out.Note, want) {
+				t.Errorf("the note must say the save also cleared that escalation (%s): %q", want, out.Note)
+			}
+		}
+	})
+
+	t.Run("watchdog switched off", func(t *testing.T) {
+		cfg := writableCfg(t)
+		cfg.Sets[0].Discovery.URLs = []string{"https://www.youtube.com/"}
+		cfg.Sets[0].Discovery.Watchdog = true
+		srv, api := newMCPTestServerAPI(t, cfg)
+		session, ctx := connectMCP(t, srv)
+
+		out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].routing.enabled", "true"))
+		if !out.Changed {
+			t.Fatalf("write did not take: %+v", out)
+		}
+		if api.getCfg().Sets[0].Discovery.Watchdog {
+			t.Fatal("precondition: saving switches the watchdog of a routed set off")
+		}
+		if !strings.Contains(out.Note, `watchdog of set "video"`) || !strings.Contains(out.Note, "routes its traffic") {
+			t.Errorf("the note must say the save also switched the watchdog off, and why: %q", out.Note)
+		}
+	})
+
+	t.Run("nothing else changed", func(t *testing.T) {
+		srv := newMCPTestServer(t, writableCfg(t))
+		session, ctx := connectMCP(t, srv)
+
+		out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].tcp.seg2delay", "10"))
+		if strings.Contains(out.Note, "Saving also") {
+			t.Errorf("a write without side effects must not report one: %q", out.Note)
+		}
+	})
+}
+
+func TestMCPWriteWarnsWhenAPortFilterMakesASetMatchEveryConnection(t *testing.T) {
+	cfg := writableCfg(t)
+	bare := config.NewSetConfig()
+	bare.Id, bare.Name, bare.Enabled = "set-bare", "bare", true
+	cfg.Sets = append(cfg.Sets, &bare)
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[bare].tcp.dport_filter", "443"))
+	if !out.Changed {
+		t.Fatalf("write did not take: %+v", out)
+	}
+	if !strings.Contains(out.Note, "EVERY connection on TCP 443") {
+		t.Errorf("a port filter on a set without destination targets makes it act on every connection on that port, and the note must say so: %q", out.Note)
+	}
+
+	out = decodeSetValue(t, callSetValue(t, session, ctx, "sets[bare].tcp.seg2delay", "10"))
+	if strings.Contains(out.Note, "EVERY connection") {
+		t.Errorf("a write that does not change what the set matches must not repeat the warning: %q", out.Note)
+	}
+
+	out = decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].tcp.dport_filter", "443"))
+	if strings.Contains(out.Note, "EVERY connection") {
+		t.Errorf("a set with destination targets is not widened by a port filter: %q", out.Note)
+	}
+}
+
+func TestMCPWriteRefusesWideningAnUnauthenticatedLoopbackSocks5(t *testing.T) {
+	loopback := func(t *testing.T) *config.Config {
+		cfg := writableCfg(t)
+		s5 := &cfg.System.Socks5
+		s5.Enabled, s5.BindAddress, s5.Port = true, "127.0.0.1", freeTCPPort(t)
+		s5.Username, s5.Password, s5.AllowedSources = "", "", nil
+		return cfg
+	}
+
+	for _, bind := range []string{"0.0.0.0", "192.168.1.1", ""} {
+		srv, api := newMCPTestServerAPI(t, loopback(t))
+		session, ctx := connectMCP(t, srv)
+
+		res := callSetValue(t, session, ctx, "system.socks5.bind_address", bind)
+		if !res.IsError || !strings.Contains(mcpErrorText(res), "without a password") {
+			t.Errorf("moving an unauthenticated SOCKS5 from loopback to %q lets other machines use it and must be refused: %s", bind, mcpErrorText(res))
+		}
+		if got := api.getCfg().System.Socks5.BindAddress; got != "127.0.0.1" {
+			t.Errorf("the refused write moved the server to %q", got)
+		}
+	}
+
+	for _, bind := range []string{"127.0.0.1", "::1"} {
+		before := loopback(t)
+		before.System.Socks5.Enabled = false
+		before.System.Socks5.BindAddress = bind
+		after := before.Clone()
+		after.System.Socks5.Enabled = true
+		if err := mcpValidateCandidate(before, after); err != nil {
+			t.Errorf("an unauthenticated SOCKS5 bound to %s reaches no other machine, so enabling it is allowed: %v", bind, err)
+		}
+	}
+}
+
+func TestMCPWriteRefusesTheTelegramListSources(t *testing.T) {
+	srv, api := newMCPTestServerAPI(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	for _, path := range []string{"system.mtproto.cfproxy_url", "system.mtproto.dc_fallback_url"} {
+		if res := callSetValue(t, session, ctx, path, "http://192.168.1.50:8080/list"); !res.IsError {
+			t.Errorf("%s makes the router fetch any URL on a timer and must be refused over MCP", path)
+		}
+	}
+	mt := api.getCfg().System.MTProto
+	if mt.CFProxyURL != config.TGCFProxyURL || mt.DCFallbackURL != config.TGDCFallbackURL {
+		t.Fatalf("a refused write changed the list sources: %q, %q", mt.CFProxyURL, mt.DCFallbackURL)
+	}
+	for _, info := range mcpWritablePaths(api.getCfg(), api.getCfg().Sets[0]) {
+		if info.Path == "system.mtproto.cfproxy_url" || info.Path == "system.mtproto.dc_fallback_url" {
+			t.Errorf("b4_list_writable_paths offers %s", info.Path)
+		}
+	}
+}
+
+func TestMCPWriteSaysWhenASettingWaitsForARestart(t *testing.T) {
+	srv := newMCPTestServer(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	for _, c := range []struct{ path, value string }{
+		{"system.logging.instaflush", "false"},
+		{"system.logging.syslog", "true"},
+	} {
+		out := decodeSetValue(t, callSetValue(t, session, ctx, c.path, c.value))
+		if !out.Changed || !strings.Contains(out.Note, "after b4 restarts") || strings.Contains(out.Note, "applied live") {
+			t.Errorf("b4 reads %s only at startup, so the note must not call the change live: %+v", c.path, out)
+		}
+	}
+	if out := decodeSetValue(t, callSetValue(t, session, ctx, "system.socks5.udp_timeout", "45")); !strings.Contains(out.Note, "applied live") {
+		t.Errorf("a setting applied live must still say so: %q", out.Note)
+	}
+
+	if rev := decodeRevert(t, session, ctx); !strings.Contains(rev.Note, "applied live") {
+		t.Errorf("undoing a live setting must say it applied live: %q", rev.Note)
+	}
+	if rev := decodeRevert(t, session, ctx); !strings.Contains(rev.Note, "after b4 restarts") || strings.Contains(rev.Note, "applied live") {
+		t.Errorf("undoing %s restores a setting b4 reads only at startup, so the note must not call it live: %q", rev.Path, rev.Note)
 	}
 }

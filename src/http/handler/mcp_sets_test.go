@@ -547,3 +547,87 @@ func TestMCPManageSetRefusesACommaInAName(t *testing.T) {
 		t.Errorf("a refused create must not add a set, got %d from %d", got, before)
 	}
 }
+
+func TestMCPManageSetNoOpMoveAndResetWriteNothing(t *testing.T) {
+	srv, api := newMCPTestServerAPI(t, writableCfg(t))
+	t.Cleanup(mcpResetHistory)
+	session, ctx := connectMCP(t, srv)
+
+	if first := decodeManageSet(t, callManageSet(t, session, ctx, map[string]any{
+		"action": "reset", "set": "video", "confirm_name": "video",
+	})); !first.Changed {
+		t.Fatalf("precondition: the first reset changes the set: %+v", first)
+	}
+	saved, history := api.getCfg(), len(mcpHistory)
+
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"move the first set to first", map[string]any{"action": "move", "set": "video", "position": "first"}, "already at position 1 of 2"},
+		{"move the last set to last", map[string]any{"action": "move", "set": "disabled-set", "position": "last"}, "already at position 2 of 2"},
+		{"move a set before the one it precedes", map[string]any{"action": "move", "set": "video", "position": "before:disabled-set"}, "already at position 1 of 2"},
+		{"move a set after the one it follows", map[string]any{"action": "move", "set": "disabled-set", "position": "after:video"}, "already at position 2 of 2"},
+		{"reset a set already at its defaults", map[string]any{"action": "reset", "set": "video", "confirm_name": "video"}, "already at its default"},
+	} {
+		out := decodeManageSet(t, callManageSet(t, session, ctx, tc.args))
+		if out.Changed {
+			t.Errorf("%s changes nothing, so it must report changed=false: %+v", tc.name, out)
+		}
+		if !strings.Contains(out.Note, tc.want) || !strings.Contains(out.Note, "nothing was written") {
+			t.Errorf("%s: the note should say %q and that nothing was written: %q", tc.name, tc.want, out.Note)
+		}
+		if out.TotalSets != 2 || len(out.Order) != 2 || out.Set == nil {
+			t.Errorf("%s: the result should still report the set and the order: %+v", tc.name, out)
+		}
+	}
+
+	if api.getCfg() != saved {
+		t.Error("a no-op must not save the configuration")
+	}
+	if len(mcpHistory) != history {
+		t.Errorf("a no-op must not take an undo slot: history went from %d to %d", history, len(mcpHistory))
+	}
+	if got := setNames(api.getCfg()); got[0] != "video" || got[1] != "disabled-set" {
+		t.Errorf("order = %v", got)
+	}
+}
+
+func TestMCPManageSetReportsTheSavedSetsNotAConcurrentWritersOnes(t *testing.T) {
+	cfg := writableCfg(t)
+	cfg.Sets[1].Enabled = true
+	cfg.Sets[1].TCP.DPortFilter = "8443"
+	srv, api := newMCPTestServerAPI(t, cfg)
+	t.Cleanup(mcpResetHistory)
+	session, ctx := connectMCP(t, srv)
+
+	refreshes := 0
+	prev := tablesRefreshFunc
+	tablesRefreshFunc = func() error {
+		refreshes++
+		next := api.getCfg().Clone()
+		extra := config.NewSetConfig()
+		extra.Id, extra.Name = "set-9", "added elsewhere"
+		next.Sets = append(next.Sets, &extra)
+		return api.saveAndPushConfig(next)
+	}
+	t.Cleanup(func() { tablesRefreshFunc = prev })
+
+	out := decodeManageSet(t, callManageSet(t, session, ctx, map[string]any{
+		"action": "delete", "set": "disabled-set", "confirm_name": "disabled-set",
+	}))
+	if refreshes != 1 {
+		t.Fatalf("precondition: deleting the set that owns TCP port 8443 refreshes the firewall once, got %d", refreshes)
+	}
+	if !out.Changed || out.TotalSets != 1 || len(out.Order) != 1 || !strings.Contains(out.Note, "1 set(s) configured") {
+		t.Errorf("b4 saved one set, so that is what the result must report: %+v", out)
+	}
+	if len(mcpHistory) != 1 || mcpHistory[0].Current != "1 sets" {
+		currents := make([]string, 0, len(mcpHistory))
+		for _, c := range mcpHistory {
+			currents = append(currents, c.Current)
+		}
+		t.Errorf("the undo list must hold one entry describing the saved configuration, got %q", currents)
+	}
+}

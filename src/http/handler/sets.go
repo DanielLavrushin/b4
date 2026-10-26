@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"unicode"
 
@@ -130,7 +132,31 @@ func (api *API) releaseDomainsFromOtherSets(sets []*config.SetConfig, keepSetId 
 	return moved
 }
 
-const maxCheckDomains = 32
+const (
+	maxCheckDomains      = 32
+	maxCheckDomainLength = 253
+)
+
+func checkDomainHost(field string) string {
+	field = strings.ToLower(strings.TrimSpace(field))
+	if i := strings.Index(field, "://"); i > 0 && !strings.ContainsAny(field[:i], "/?#:") {
+		u, err := url.Parse(field)
+		if err != nil {
+			return ""
+		}
+		return u.Hostname()
+	}
+	if host := strings.Trim(field, "[]"); net.ParseIP(host) != nil {
+		return host
+	}
+	if host, _, err := net.SplitHostPort(field); err == nil && net.ParseIP(host) != nil {
+		return host
+	}
+	if i := strings.IndexAny(field, "/:?#"); i >= 0 {
+		return field[:i]
+	}
+	return field
+}
 
 // parseCheckDomains normalises and de-duplicates the requested domains, capped
 // at maxCheckDomains. The second return value reports whether the cap dropped
@@ -145,8 +171,8 @@ func parseCheckDomains(raw string) ([]string, bool) {
 	domains := make([]string, 0, len(fields))
 	truncated := false
 	for _, field := range fields {
-		domain := sni.NormalizeDomain(field)
-		if domain == "" || seen[domain] {
+		domain := sni.NormalizeDomain(checkDomainHost(field))
+		if domain == "" || len(domain) > maxCheckDomainLength || seen[domain] {
 			continue
 		}
 		seen[domain] = true
@@ -189,6 +215,10 @@ func (api *API) handleCheckDomain(w http.ResponseWriter, r *http.Request) {
 func (api *API) matchDomainsToSets(domains []string, excludeId string) []SetDomainMatch {
 	byDomain := make(map[string][]SetDomainMatch, len(domains))
 	exactRank := sni.RelationExact.Priority()
+	normalized := make([]string, len(domains))
+	for i, domain := range domains {
+		normalized[i] = sni.NormalizeDomain(domain)
+	}
 
 	for _, set := range api.getCfg().Sets {
 		if excludeId != "" && set.Id == excludeId {
@@ -199,11 +229,15 @@ func (api *API) matchDomainsToSets(domains []string, excludeId string) []SetDoma
 		ranks := make(map[string]int, len(domains))
 
 		consider := func(entry, via string) {
-			for _, domain := range domains {
+			value, isRegex := sni.ParseDomainEntry(entry)
+			if value == "" {
+				return
+			}
+			for i, domain := range domains {
 				if ranks[domain] == exactRank {
 					continue
 				}
-				relation, matched := sni.MatchDomainEntry(entry, domain)
+				relation, matched := sni.MatchParsedEntry(value, isRegex, normalized[i])
 				rank := relation.Priority()
 				if rank <= ranks[domain] {
 					continue

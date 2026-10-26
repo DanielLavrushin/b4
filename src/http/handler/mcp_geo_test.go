@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,6 +161,24 @@ func TestMCPGeoListAndPreview(t *testing.T) {
 	}
 }
 
+func TestMCPGeoPreviewServesACategoryHeldInMemoryWithoutTheFile(t *testing.T) {
+	cfg := geoTestCfg(t)
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	if _, err := api.geodataManager.LoadGeositeCategory("youtube"); err != nil {
+		t.Fatalf("load category: %v", err)
+	}
+	if err := os.Remove(cfg.System.Geo.GeoSitePath); err != nil {
+		t.Fatalf("remove geosite file: %v", err)
+	}
+
+	prev := callGeo(t, session, ctx, map[string]any{"action": "preview", "category": "youtube"})
+	if prev.Total != 2 {
+		t.Errorf("b4 still matches traffic with the youtube category it holds in memory, so the preview must answer from it: %+v", prev)
+	}
+}
+
 func TestMCPGeoFindDomain(t *testing.T) {
 	cfg := geoTestCfg(t)
 	cfg.Sets[0].Targets.GeoSiteCategories = []string{"youtube"}
@@ -194,6 +213,124 @@ func TestMCPGeoFindDomain(t *testing.T) {
 	}
 	if !strings.Contains(none.Note, "sni_domains") {
 		t.Errorf("an empty result should point at the alternative: %q", none.Note)
+	}
+}
+
+func TestMCPGeoFindDomainReducesURLsToTheirHost(t *testing.T) {
+	srv := newMCPTestServer(t, geoTestCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	for _, input := range []string{"https://www.youtube.com/watch?v=x", "www.youtube.com:443", "HTTPS://WWW.YouTube.com/"} {
+		out := callGeo(t, session, ctx, map[string]any{"action": "find_domain", "domain": input})
+		if len(out.Matches) != 2 {
+			t.Errorf("%q should be searched as www.youtube.com and found in google and youtube, got %+v", input, out.Matches)
+		}
+		if !strings.Contains(out.Note, "www.youtube.com") || strings.Contains(strings.ToLower(out.Note), "https") {
+			t.Errorf("%q: the note should name the host that was searched, got %q", input, out.Note)
+		}
+	}
+}
+
+func TestMCPGeoFindDomainRefusesNamesLongerThanDNSAllows(t *testing.T) {
+	srv := newMCPTestServer(t, geoTestCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_geo_lookup",
+		Arguments: map[string]any{"action": "find_domain", "domain": strings.Repeat("a", 300) + ".youtube.com"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("a name longer than 253 bytes is no DNS name and must be refused before the database is read: %+v", res.Content)
+	}
+}
+
+func TestMCPGeoLookupsWithoutDatabaseWriteNoErrorLog(t *testing.T) {
+	missing := t.TempDir()
+	for _, tc := range []struct {
+		name           string
+		geosite, geoip string
+	}{
+		{"no path set", "", ""},
+		{"file not there", filepath.Join(missing, "geosite.dat"), filepath.Join(missing, "geoip.dat")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := captureLog(t)
+			cfg := mcpTestCfg()
+			cfg.System.Geo.GeoSitePath = tc.geosite
+			cfg.System.Geo.GeoIpPath = tc.geoip
+			session, ctx := connectMCP(t, newMCPTestServer(t, cfg))
+
+			for _, args := range []map[string]any{
+				{"action": "find_domain", "domain": "youtube.com"},
+				{"action": "lookup_ip", "ip": "104.22.45.1"},
+				{"action": "preview", "category": "google"},
+				{"action": "preview", "kind": "geoip", "category": "cloudflare"},
+			} {
+				res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_geo_lookup", Arguments: args})
+				if err != nil {
+					t.Fatalf("call %v: %v", args, err)
+				}
+				if !res.IsError {
+					t.Errorf("%v without a database must be a tool error, got %+v", args, res.Content)
+				}
+			}
+			if got := buf.String(); strings.Contains(got, "[ERROR]") {
+				t.Errorf("a read-only lookup must not write to the error log, got:\n%s", got)
+			}
+		})
+	}
+}
+
+func writeGeoList(t *testing.T, name string, list proto.Message) string {
+	t.Helper()
+	b, err := proto.Marshal(list)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	return path
+}
+
+func TestMCPGeoReportsTruncationOnlyWhenACategoryWasLeftOut(t *testing.T) {
+	for _, n := range []int{mcpGeoMaxHits - 1, mcpGeoMaxHits, mcpGeoMaxHits + 1} {
+		t.Run(fmt.Sprintf("%d categories", n), func(t *testing.T) {
+			sites := &v2data.GeoSiteList{}
+			ips := &v2data.GeoIPList{}
+			for i := 0; i < n; i++ {
+				code := fmt.Sprintf("C%02d", i)
+				sites.Entry = append(sites.Entry, &v2data.GeoSite{CountryCode: code, Domain: []*v2data.Domain{
+					{Type: v2data.Domain_Domain, Value: "example.com"},
+				}})
+				ips.Entry = append(ips.Entry, &v2data.GeoIP{CountryCode: code, Cidr: []*v2data.CIDR{
+					{Ip: []byte{10, 0, 0, 0}, Prefix: 8},
+				}})
+			}
+			cfg := mcpTestCfg()
+			cfg.System.Geo.GeoSitePath = writeGeoList(t, "geosite.dat", sites)
+			cfg.System.Geo.GeoIpPath = writeGeoList(t, "geoip.dat", ips)
+			session, ctx := connectMCP(t, newMCPTestServer(t, cfg))
+
+			wantTotal := min(n, mcpGeoMaxHits)
+			wantTruncated := n > mcpGeoMaxHits
+			for _, args := range []map[string]any{
+				{"action": "find_domain", "domain": "www.example.com"},
+				{"action": "lookup_ip", "ip": "10.1.2.3"},
+			} {
+				out := callGeo(t, session, ctx, args)
+				if out.Total != wantTotal || len(out.Matches) != wantTotal {
+					t.Errorf("%v: total=%d matches=%d, want %d", args["action"], out.Total, len(out.Matches), wantTotal)
+				}
+				if out.Truncated != wantTruncated || strings.Contains(out.Note, "there are more") != wantTruncated {
+					t.Errorf("%v: truncated=%v note=%q, want truncated=%v", args["action"], out.Truncated, out.Note, wantTruncated)
+				}
+			}
+		})
 	}
 }
 

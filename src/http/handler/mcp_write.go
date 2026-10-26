@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"reflect"
 	"slices"
 	"sort"
@@ -25,6 +26,13 @@ var mcpDestructive = &mcp.ToolAnnotations{
 	ReadOnlyHint:    false,
 	DestructiveHint: boolPtr(true),
 	IdempotentHint:  true,
+	OpenWorldHint:   boolPtr(false),
+}
+
+var mcpDestructiveEachCall = &mcp.ToolAnnotations{
+	ReadOnlyHint:    false,
+	DestructiveHint: boolPtr(true),
+	IdempotentHint:  false,
 	OpenWorldHint:   boolPtr(false),
 }
 
@@ -51,34 +59,95 @@ var mcpWritableRoots = []string{
 	"system.logging",
 }
 
+var mcpFragmentationStrategies = []string{
+	"combo", "hybrid", "tcp", "ip", "tls", "oob", "disorder", "extsplit", "firstbyte", config.ConfigNone,
+}
+
 // mcpEnums lists the accepted values for string fields whose set of options is
 // not enforced by config.Validate. Keyed by canonical path.
 var mcpEnums = map[string][]string{
-	mcpSetPathPrefix + ".fragmentation.strategy": {
-		"combo", "hybrid", "tcp", "ip", "tls", "oob", "disorder", "extsplit", "firstbyte", "none",
-	},
-	mcpSetPathPrefix + ".tcp.win.mode":          {"off", "oscillate", "zero", "random", "escalate"},
-	mcpSetPathPrefix + ".tcp.desync.mode":       {"off", "rst", "fin", "ack", "combo", "full"},
-	mcpSetPathPrefix + ".tcp.incoming.mode":     {"off", "fake", "reset", "fin", "desync"},
-	mcpSetPathPrefix + ".tcp.incoming.strategy": {"badsum", "badseq", "badack", "rand", "all"},
+	mcpSetPathPrefix + ".fragmentation.strategy":              mcpFragmentationStrategies,
+	mcpSetPathPrefix + ".fragmentation.combo.shuffle_mode":    {"middle", "full", "reverse"},
+	mcpSetPathPrefix + ".fragmentation.disorder.shuffle_mode": {"full", "middle", "reverse"},
+	mcpSetPathPrefix + ".tcp.win.mode":                        {"off", "oscillate", "zero", "random", "escalate"},
+	mcpSetPathPrefix + ".tcp.desync.mode":                     {"off", "rst", "fin", "ack", "combo", "full"},
+	mcpSetPathPrefix + ".tcp.incoming.mode":                   {"off", "fake", "reset", "fin", "desync"},
+	mcpSetPathPrefix + ".tcp.incoming.strategy":               {"badsum", "badseq", "badack", "rand", "all"},
+	mcpSetPathPrefix + ".faking.strategy":                     {"ttl", "pastseq", "randseq", "tcp_check", "md5sum", "timestamp"},
 	mcpSetPathPrefix + ".faking.sni_mutation.mode": {
-		"off", "duplicate", "grease", "padding", "reorder", "full",
+		"off", "duplicate", "grease", "padding", "reorder", "full", "advanced",
 	},
 	mcpSetPathPrefix + ".faking.fake_len_mode": {"", "match"},
+	mcpSetPathPrefix + ".udp.faking_strategy":  {"none", "checksum"},
 	mcpSetPathPrefix + ".routing.mode": {
 		config.RoutingModeInterface, config.RoutingModeProxy, config.RoutingModeMTProtoWS, config.RoutingModeBlock,
 	},
 	mcpSetPathPrefix + ".routing.router_traffic": {
 		config.RouterTrafficAuto, config.RouterTrafficInclude, config.RouterTrafficExclude,
 	},
-	mcpSetPathPrefix + ".targets.tls":        {"", "1.2", "1.3"},
-	mcpSetPathPrefix + ".targets.ip_version": {"", "4", "6"},
-	"system.mtproto.upstream_mode":           {"tcp", "ws", "auto"},
+	mcpSetPathPrefix + ".routing.block_action": {config.BlockActionReject, config.BlockActionDrop},
+	mcpSetPathPrefix + ".targets.tls":          {"", "1.2", "1.3"},
+	mcpSetPathPrefix + ".targets.ip_version":   {"", "4", "6"},
+	"system.mtproto.upstream_mode":             {"tcp", "ws", "auto"},
 }
 
 var mcpListEntryEnums = map[string][]string{
 	mcpSetPathPrefix + ".udp.filter_l7": config.UDPL7Classes,
+	mcpSetPathPrefix + ".fragmentation.strategy_pool": slices.DeleteFunc(slices.Clone(mcpFragmentationStrategies), func(s string) bool {
+		return s == config.ConfigNone
+	}),
+	mcpSetPathPrefix + ".faking.tls_mod": {"rnd", "dupsid"},
 }
+
+type mcpRange struct {
+	Min, Max  int64
+	ZeroFixed bool
+}
+
+var mcpRanges = map[string]mcpRange{
+	mcpSetPathPrefix + ".tcp.seg2delay":                                 {Min: 0, Max: 1000},
+	mcpSetPathPrefix + ".tcp.seg2delay_max":                             {Min: 0, Max: 1000},
+	mcpSetPathPrefix + ".tcp.duplicate.count":                           {Min: 1, Max: 10},
+	mcpSetPathPrefix + ".tcp.desync.count":                              {Min: 1, Max: 20},
+	mcpSetPathPrefix + ".tcp.incoming.fake_count":                       {Min: 1, Max: 10},
+	mcpSetPathPrefix + ".udp.fake_seq_length":                           {Min: 1, Max: 20},
+	mcpSetPathPrefix + ".udp.fake_len":                                  {Min: 32, Max: 1500},
+	mcpSetPathPrefix + ".udp.seg2delay":                                 {Min: 0, Max: 1000},
+	mcpSetPathPrefix + ".udp.seg2delay_max":                             {Min: 0, Max: 1000},
+	mcpSetPathPrefix + ".faking.sni_seq_length":                         {Min: 1, Max: 20},
+	mcpSetPathPrefix + ".faking.sni_mutation.grease_count":              {Min: 1, Max: 10},
+	mcpSetPathPrefix + ".faking.sni_mutation.fake_ext_count":            {Min: 1, Max: 15},
+	mcpSetPathPrefix + ".fragmentation.combo.first_delay_ms":            {Min: 10, Max: 500},
+	mcpSetPathPrefix + ".fragmentation.combo.first_delay_ms_max":        {Min: 10, Max: 500, ZeroFixed: true},
+	mcpSetPathPrefix + ".fragmentation.combo.jitter_max_us":             {Min: 100, Max: 10000},
+	mcpSetPathPrefix + ".fragmentation.combo.jitter_max_us_max":         {Min: 100, Max: 10000, ZeroFixed: true},
+	mcpSetPathPrefix + ".fragmentation.combo.fake_per_seg_count":        {Min: 1, Max: 11},
+	mcpSetPathPrefix + ".fragmentation.combo.fake_per_seg_count_max":    {Min: 1, Max: 11, ZeroFixed: true},
+	mcpSetPathPrefix + ".fragmentation.disorder.min_jitter_us":          {Min: 100, Max: 5000},
+	mcpSetPathPrefix + ".fragmentation.disorder.max_jitter_us":          {Min: 500, Max: 10000},
+	mcpSetPathPrefix + ".fragmentation.disorder.fake_per_seg_count":     {Min: 1, Max: 11},
+	mcpSetPathPrefix + ".fragmentation.disorder.fake_per_seg_count_max": {Min: 1, Max: 11, ZeroFixed: true},
+	mcpSetPathPrefix + ".fragmentation.seq_overlap_length":              {Min: 0, Max: 1460},
+}
+
+func (r mcpRange) String() string {
+	if r.ZeroFixed {
+		return fmt.Sprintf("%d to %d, or 0 to turn the random range off", r.Min, r.Max)
+	}
+	return fmt.Sprintf("%d to %d", r.Min, r.Max)
+}
+
+func mcpCheckRange(canonical, raw string, n int64) error {
+	r, ok := mcpRanges[canonical]
+	if !ok || (n >= r.Min && n <= r.Max) || (r.ZeroFixed && n == 0) {
+		return nil
+	}
+	return fmt.Errorf("value %q is out of range for %s: expected %s", raw, canonical, r)
+}
+
+var mcpRestartOnlyPaths = []string{"system.logging.instaflush", "system.logging.syslog"}
+
+const mcpSetNamePath = mcpSetPathPrefix + ".name"
 
 // mcpAlias gives a numeric setting a name a model can write. Order is the
 // order the options are reported in.
@@ -200,6 +269,9 @@ func (e *mcpProbesError) Error() string {
 
 func (api *API) mcpSave(oldCfg, newCfg *config.Config) error {
 	return mcpWithFieldReasons(api.saveAndPushConfigIf(newCfg, func(current *config.Config) error {
+		if live := current.System.WebServer.MCP; !live.Enabled || !live.AllowWrites {
+			return errMCPWritesOff
+		}
 		if current != oldCfg {
 			return errMCPConfigMoved
 		}
@@ -302,6 +374,11 @@ func mcpHasSourceEntries(entries []string) bool {
 		}
 	}
 	return false
+}
+
+func mcpIsLoopbackBind(addr string) bool {
+	ip := net.ParseIP(addr)
+	return ip != nil && ip.IsLoopback()
 }
 
 func mcpPathTouchesTargets(canonical string) bool {
@@ -538,8 +615,14 @@ func mcpAssignValue(v reflect.Value, canonical, raw string) error {
 	case reflect.String:
 		v.SetString(val)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		n, err := strconv.ParseInt(val, 10, v.Type().Bits())
+		n, err := strconv.ParseInt(val, 10, 64)
 		if err != nil {
+			return fmt.Errorf("value %q is not a whole number that fits %s", raw, canonical)
+		}
+		if err := mcpCheckRange(canonical, raw, n); err != nil {
+			return err
+		}
+		if v.OverflowInt(n) {
 			return fmt.Errorf("value %q is not a whole number that fits %s", raw, canonical)
 		}
 		v.SetInt(n)
@@ -624,9 +707,9 @@ func mcpValidateCandidate(oldCfg, newCfg *config.Config) error {
 		{
 			ok: func(c *config.Config) bool {
 				s5 := c.System.Socks5
-				return !s5.Enabled || s5.Username != "" || mcpHasSourceEntries(s5.AllowedSources)
+				return !s5.Enabled || s5.Username != "" || mcpHasSourceEntries(s5.AllowedSources) || mcpIsLoopbackBind(s5.BindAddress)
 			},
-			err: "the SOCKS5 server would accept every client without a password: set a username and password, or an allowed_sources list, in the web interface before enabling it. Both are refused over MCP, so they cannot be set from here",
+			err: "the SOCKS5 server would accept every client that can reach it without a password: set a username and password, or an allowed_sources list, in the web interface first, or keep bind_address on a loopback address such as 127.0.0.1. The credentials and allowed_sources are refused over MCP, so they cannot be set from here",
 		},
 	} {
 		if !rule.ok(newCfg) && rule.ok(oldCfg) {
@@ -644,6 +727,70 @@ func mcpExposureRefusal(oldCfg, newCfg *config.Config) error {
 	return fmt.Errorf("this change would open TCP port %d to the internet, because %s is on. "+
 		"A write that opens a port to the internet is refused over MCP; it can be made in the web interface",
 		added[0].Port, config.ExposeSwitchPath(added[0].Service))
+}
+
+func mcpSetNameRefusal(cfg *config.Config, self *config.SetConfig, name string) error {
+	switch {
+	case name == "":
+		return fmt.Errorf("a set name cannot be empty")
+	case strings.Contains(name, ","):
+		return fmt.Errorf(
+			"a set name cannot contain a comma: b4_manage_set set_enabled takes a comma-separated list, so %q would be split into fragments matching no set", name)
+	}
+	for _, s := range cfg.Sets {
+		if s != self && strings.EqualFold(s.Name, name) {
+			return fmt.Errorf(
+				"a set named %q already exists; pass a different name. Two sets sharing a name make every later reference to it ambiguous", s.Name)
+		}
+	}
+	return nil
+}
+
+func mcpSaveSideEffects(before, saved *config.Config, canonical, writtenID string) string {
+	prior := make(map[string]*config.SetConfig, len(before.Sets))
+	for _, s := range before.Sets {
+		if s != nil && s.Id != "" {
+			prior[s.Id] = s
+		}
+	}
+	var notes []string
+	for _, s := range saved.Sets {
+		if s == nil {
+			continue
+		}
+		old := prior[s.Id]
+		if old == nil {
+			continue
+		}
+		ownLink := s.Id == writtenID && canonical == mcpSetPathPrefix+".escalate.to"
+		if old.Escalate.To != "" && s.Escalate.To == "" && !ownLink {
+			notes = append(notes, fmt.Sprintf("Saving also cleared escalate.to on set %q, which pointed at %s: %s.",
+				s.Name, mcpSetLabel(before, old.Escalate.To), mcpEscalationDropReason(saved, old.Escalate.To)))
+		}
+		if old.Discovery.Watchdog && !s.Discovery.Watchdog {
+			notes = append(notes, fmt.Sprintf("Saving also switched off the watchdog of set %q (%s); it stays off until it is switched on again.",
+				s.Name, config.WatchdogBlockerText(s.WatchdogBlocker())))
+		}
+	}
+	return strings.Join(notes, " ")
+}
+
+func mcpSetLabel(cfg *config.Config, id string) string {
+	if s := cfg.GetSetById(id); s != nil && s.Name != "" {
+		return strconv.Quote(s.Name)
+	}
+	return strconv.Quote(id)
+}
+
+func mcpEscalationDropReason(saved *config.Config, targetID string) string {
+	target := saved.GetSetById(targetID)
+	switch {
+	case target == nil:
+		return "that set no longer exists"
+	case len(config.NormalizeL7Filter(target.UDP.FilterL7)) > 0:
+		return fmt.Sprintf("%q now selects UDP protocols, and a set that does cannot be an escalation target", target.Name)
+	}
+	return "keeping it would have closed an escalation loop"
 }
 
 // mcpWritablePaths walks the writable roots and lists every leaf a caller can
@@ -716,6 +863,9 @@ func mcpCollectPaths(v reflect.Value, prefix string) []mcpPathInfo {
 		}
 		if entries, ok := mcpListEntryEnums[path]; ok {
 			options = entries
+		}
+		if r, ok := mcpRanges[path]; ok {
+			options = []string{r.String()}
 		}
 		out = append(out, mcpPathInfo{
 			Path:    path,
@@ -800,7 +950,7 @@ type mcpRevertOut struct {
 
 func mcpWriteToolDescription() string {
 	var sb strings.Builder
-	sb.WriteString("Change one b4 setting and apply it live. Address a per-set setting as sets[<id or name>].<path>, e.g. sets[video].tcp.seg2delay.\n")
+	sb.WriteString("Change one b4 setting; the note says if it needs a restart. Address a per-set setting as sets[<id or name>].<path>, e.g. sets[video].tcp.seg2delay.\n")
 	sb.WriteString("Call b4_list_writable_paths for the exact paths, types and accepted values rather than guessing, and b4_get_topic for what a setting means before changing it.\n")
 	sb.WriteString("Refused here: every credential, the web server, the capture engine, the firewall backend, the packet marks and port exposure. A set's target lists belong to b4_edit_set_targets; its lifecycle to b4_manage_set.\n")
 	sb.WriteString("A list setting is replaced wholesale. The result reports the value read back after saving, so changed:false means b4 did not keep it. Undo with b4_revert_last_change.")
@@ -884,11 +1034,19 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			return nil, mcpSetValueOut{}, fmt.Errorf("path %q cannot be written", in.Path)
 		}
 
+		var set *config.SetConfig
 		readRef := setRef
-		if set := findSetIn(newCfg, setRef); set != nil && set.Id != "" {
-			readRef = set.Id
+		if strings.HasPrefix(canonical, mcpSetPathPrefix) {
+			if set = findSetIn(newCfg, setRef); set != nil && set.Id != "" {
+				readRef = set.Id
+			}
 		}
 
+		wasEnabled := set != nil && set.Enabled
+		portOnlyBefore := ""
+		if set != nil {
+			portOnlyBefore = mcpPortOnlyNote(set)
+		}
 		previous := mcpFormatCurrent(canonical, field)
 		if err := mcpAssignValue(field, canonical, in.Value); err != nil {
 			return nil, mcpSetValueOut{}, err
@@ -902,14 +1060,20 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			}, nil
 		}
 
+		if canonical == mcpSetNamePath {
+			if err := mcpSetNameRefusal(newCfg, set, requested); err != nil {
+				return nil, mcpSetValueOut{}, err
+			}
+		}
+
 		if err := mcpValidateCandidate(oldCfg, newCfg); err != nil {
 			return nil, mcpSetValueOut{}, fmt.Errorf("rejected: %w", err)
 		}
 
 		var expansion *mcpTargetExpansion
-		if mcpPathTouchesTargets(canonical) {
-			if set := findSetIn(newCfg, readRef); set != nil {
-				report := api.loadTargetsForSetCached(set)
+		if set != nil && ((set.Enabled && !wasEnabled) || mcpPathTouchesTargets(canonical)) {
+			report := api.loadTargetsForSetCached(set)
+			if mcpPathTouchesTargets(canonical) {
 				expansion = mcpExpansionOf(report)
 			}
 		}
@@ -920,6 +1084,12 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			return nil, mcpSetValueOut{}, fmt.Errorf("rejected: %w", err)
 		}
 
+		current := requested
+		if savedField, err := mcpResolvePath(newCfg, canonical, readRef); err == nil {
+			current = mcpFormatCurrent(canonical, savedField)
+		}
+		sideEffects := mcpSaveSideEffects(oldCfg, newCfg, canonical, readRef)
+
 		// Saving pushes the new config to the running subsystems, but two
 		// things sit outside that: settings applied to the process itself
 		// (log level, timezone, geodata paths), and the firewall rules, which
@@ -929,11 +1099,6 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		api.applyRuntimeChanges(newCfg, oldCfg)
 		refreshed := api.PerformSoftRestart(newCfg, oldCfg)
 
-		current := requested
-		if liveField, err := mcpResolvePath(api.getCfg(), canonical, readRef); err == nil {
-			current = mcpFormatCurrent(canonical, liveField)
-		}
-
 		out := mcpSetValueOut{
 			Path: in.Path, Previous: previous, Current: current,
 			Changed: current != previous, Expansion: expansion,
@@ -942,7 +1107,7 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		if current == previous {
 			out.Note = fmt.Sprintf(
 				"not applied: b4 reset %s back to %q while validating the saved configuration, so nothing changed and nothing was recorded for undo. "+
-					"Call b4_list_writable_paths for the accepted form of this setting and read its b4://topics resource before retrying.",
+					"Call b4_list_writable_paths for the accepted form of this setting and b4_get_topic for what it means before retrying.",
 				in.Path, previous)
 			log.Infof("mcp: %s rejected on save, still %s", in.Path, previous)
 			return nil, out, nil
@@ -955,15 +1120,30 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 
 		log.Infof("mcp: %s changed from %s to %s", in.Path, previous, current)
 
-		out.Note = "applied live; no restart required. Undo with b4_revert_last_change"
-		if refreshed {
+		switch {
+		case slices.Contains(mcpRestartOnlyPaths, canonical):
+			out.Note = "saved, but it takes effect only after b4 restarts: b4 reads this setting at startup. Undo with b4_revert_last_change"
+		case refreshed:
 			out.Note = "applied live; firewall rules were refreshed to match. Undo with b4_revert_last_change"
+		default:
+			out.Note = "applied live; no restart required. Undo with b4_revert_last_change"
 		}
 		if current != requested {
 			out.Note = fmt.Sprintf("b4 normalised the value on save: %s is now %q, not the requested %q. ", in.Path, current, requested) + out.Note
 		}
-		if hint := mcpExpansionNote(expansion); hint != "" {
+		portOnly := ""
+		if set != nil {
+			if scope := mcpPortOnlyNote(set); scope != portOnlyBefore {
+				portOnly = scope
+			}
+		}
+		if portOnly != "" {
+			out.Note = out.Note + " " + portOnly + "."
+		} else if hint := mcpExpansionNote(expansion); hint != "" {
 			out.Note = out.Note + " " + hint
+		}
+		if sideEffects != "" {
+			out.Note = out.Note + " " + sideEffects
 		}
 
 		return nil, out, nil
@@ -972,11 +1152,11 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 	addTool(srv, &mcp.Tool{
 		Name:  "b4_revert_last_change",
 		Title: "Undo the last b4 setting change",
-		Description: "Restore the configuration as it stood before the most recent b4_set_config_value call, and apply it live. " +
+		Description: "Restore the configuration as it stood before the most recent change made by a b4 MCP tool; the note says if it needs a restart. " +
 			"Call this as soon as a change turns out to be wrong. Repeating it walks further back, one change at a time. " +
 			"Only changes made through MCP since b4 last started can be undone; edits made in the web interface cannot. " +
 			"The undo is refused when the configuration was changed after that change by anything else (the watchdog, the web interface or another tool), because restoring would overwrite that newer change too.",
-		Annotations: mcpDestructive,
+		Annotations: mcpDestructiveEachCall,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpEmpty) (*mcp.CallToolResult, mcpRevertOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
 			return nil, mcpRevertOut{}, errMCPWritesOff
@@ -1048,16 +1228,31 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 		log.Infof("mcp: reverted %s back to %s", last.Path, last.Previous)
 		mcpNoteWrite(last.Path, "MCP reverted "+last.Path)
 
+		applied := "applied live"
+		if mcpRestartOnlyChanged(oldCfg, last.Snapshot) {
+			applied = "saved, but it takes effect only after b4 restarts: b4 reads this setting at startup"
+		}
 		return nil, mcpRevertOut{
 			Reverted:    true,
 			Path:        last.Path,
 			RestoredTo:  last.Previous,
 			UndoneValue: last.Current,
 			Remaining:   len(mcpHistory),
-			Note: fmt.Sprintf("%s restored to %q, undoing the change to %q; applied live",
-				last.Path, last.Previous, last.Current),
+			Note: fmt.Sprintf("%s restored to %q, undoing the change to %q; %s",
+				last.Path, last.Previous, last.Current, applied),
 		}, nil
 	})
+}
+
+func mcpRestartOnlyChanged(from, to *config.Config) bool {
+	for _, path := range mcpRestartOnlyPaths {
+		a, errA := mcpResolvePath(from, path, "")
+		b, errB := mcpResolvePath(to, path, "")
+		if errA == nil && errB == nil && mcpFormatCurrent(path, a) != mcpFormatCurrent(path, b) {
+			return true
+		}
+	}
+	return false
 }
 
 func mcpStartsProbes(target, current *config.Config) string {

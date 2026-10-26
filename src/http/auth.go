@@ -319,6 +319,10 @@ func authMiddleware(cfgPtr *atomic.Pointer[config.Config], next http.Handler) ht
 			next.ServeHTTP(w, r)
 			return
 		}
+		if mcp := cfgPtr.Load().System.WebServer.MCP; r.URL.Path == handler.MCPEndpoint && mcp.Enabled && mcp.Token != "" {
+			handler.MCPRefuseToken(w, r)
+			return
+		}
 		if token == "" {
 			writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
@@ -343,9 +347,8 @@ func isWebSocketRequest(r *http.Request) bool {
 }
 
 func extractBearerToken(r *http.Request) string {
-	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		return strings.TrimPrefix(auth, "Bearer ")
+	if token, _ := handler.BearerToken(r.Header.Get("Authorization")); token != "" {
+		return token
 	}
 	// Fallback to query parameter only for WebSocket connections
 	if isWebSocketRequest(r) || strings.HasPrefix(r.URL.Path, "/api/ws/") {

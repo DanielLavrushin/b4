@@ -233,6 +233,8 @@ func (api *API) mcpGeoPreview(ctx context.Context, out mcpGeoOut, in mcpGeoIn) (
 	var err error
 	if geoip {
 		entries, total, err = api.geodataManager.PreviewGeoipCategory(ctx, category, limit)
+	} else if path := api.geodataManager.GetGeositePath(); !api.geodataManager.GeositeCategoryCached(category) && geodat.FileStamp(path) == "" {
+		err = fmt.Errorf("geosite database is not available at %q", path)
 	} else {
 		entries, total, err = api.geodataManager.PreviewGeositeCategory(ctx, category, limit)
 	}
@@ -261,9 +263,12 @@ func (api *API) mcpGeoPreview(ctx context.Context, out mcpGeoOut, in mcpGeoIn) (
 }
 
 func (api *API) mcpGeoFindDomain(ctx context.Context, out mcpGeoOut, in mcpGeoIn) (*mcp.CallToolResult, mcpGeoOut, error) {
-	domain := sni.NormalizeDomain(in.Domain)
-	if domain == "" {
+	domain := sni.NormalizeDomain(checkDomainHost(in.Domain))
+	switch {
+	case domain == "":
 		return nil, out, fmt.Errorf("domain is required for action=find_domain")
+	case len(domain) > maxCheckDomainLength:
+		return nil, out, fmt.Errorf("a domain name is at most %d bytes; this one has %d", maxCheckDomainLength, len(domain))
 	}
 
 	inUse := mcpGeoCategoriesInUse(api.getCfg(), false)
@@ -283,15 +288,15 @@ func (api *API) mcpGeoFindDomain(ctx context.Context, out mcpGeoOut, in mcpGeoIn
 			sni.DomainRelation(prev.Relation).Priority() >= relation.Priority() {
 			return nil
 		}
+		if !seen && len(best) >= mcpGeoMaxHits {
+			stopped = true
+			return geodat.ErrStopScan
+		}
 		best[tag] = mcpGeoCategory{
 			Category: tag,
 			Entry:    matched,
 			Relation: string(relation),
 			UsedBy:   inUse[tag],
-		}
-		if !seen && len(best) >= mcpGeoMaxHits {
-			stopped = true
-			return geodat.ErrStopScan
 		}
 		return nil
 	})
@@ -359,16 +364,16 @@ func (api *API) mcpGeoLookupIP(ctx context.Context, out mcpGeoOut, in mcpGeoIn) 
 		if seen[tag] || !prefix.Contains(addr) {
 			return nil
 		}
+		if len(out.Matches) >= mcpGeoMaxHits {
+			stopped = true
+			return geodat.ErrStopScan
+		}
 		seen[tag] = true
 		out.Matches = append(out.Matches, mcpGeoCategory{
 			Category: tag,
 			Entry:    prefix.String(),
 			UsedBy:   inUse[tag],
 		})
-		if len(out.Matches) >= mcpGeoMaxHits {
-			stopped = true
-			return geodat.ErrStopScan
-		}
 		return nil
 	})
 	if err != nil {

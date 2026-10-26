@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,7 @@ import (
 	"github.com/daniellavrushin/b4/geodat"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -674,6 +676,73 @@ func TestMCPTokenEnforcement(t *testing.T) {
 	if got := post("Bearer tok-secret"); got != http.StatusOK {
 		t.Errorf("correct token = %d, want 200", got)
 	}
+	for _, auth := range []string{"bearer tok-secret", "BEARER tok-secret", "Bearer\ttok-secret", "Bearer  tok-secret"} {
+		if got := post(auth); got != http.StatusOK {
+			t.Errorf("Authorization %q = %d, want 200: the auth scheme is case-insensitive (RFC 9110 section 11.1)", auth, got)
+		}
+	}
+	for _, auth := range []string{"Basic tok-secret", "Bearertok-secret", "tok-secret"} {
+		if got := post(auth); got != http.StatusUnauthorized {
+			t.Errorf("Authorization %q = %d, want 401", auth, got)
+		}
+	}
+}
+
+func TestBearerTokenReadsTheSchemeCaseInsensitively(t *testing.T) {
+	for _, c := range []struct {
+		header, token string
+		bearer        bool
+	}{
+		{"Bearer abc", "abc", true},
+		{"bearer abc", "abc", true},
+		{"BEARER abc", "abc", true},
+		{"Bearer\tabc", "abc", true},
+		{"  Bearer   abc  ", "abc", true},
+		{"Bearer my token", "my token", true},
+		{"Bearer", "", true},
+		{"Bearer ", "", true},
+		{"", "", false},
+		{"Basic abc", "", false},
+		{"Bearerabc", "", false},
+		{"abc", "", false},
+	} {
+		token, bearer := BearerToken(c.header)
+		if token != c.token || bearer != c.bearer {
+			t.Errorf("BearerToken(%q) = %q, %v; want %q, %v", c.header, token, bearer, c.token, c.bearer)
+		}
+	}
+}
+
+func TestMCPLogsAnAuthorizationSchemeThatIsNotBearer(t *testing.T) {
+	buf := captureLog(t)
+	resetRefusalThrottle(t)
+
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.Token = "the-real-token"
+	srv, _ := newMCPTestServerAPI(t, cfg)
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+mcpEndpoint, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", res.StatusCode)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "scheme is not Bearer") || strings.Contains(got, "no MCP token was presented") {
+		t.Errorf("a credential sent with another scheme must be logged as such, not as a missing token, got:\n%s", got)
+	}
+	if strings.Contains(got, "dXNlcjpwYXNz") {
+		t.Error("a refusal must never print the presented credential")
+	}
 }
 
 func TestMCPTokenClientSession(t *testing.T) {
@@ -1059,6 +1128,30 @@ func TestMCPCheckDomainReportsTruncation(t *testing.T) {
 	}
 	if !strings.Contains(out.Note, "call again") {
 		t.Errorf("note should tell the model to call again, got %q", out.Note)
+	}
+}
+
+func TestMCPCheckDomainExplainsAnInputWithNoUsableName(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	long := strings.Repeat("a", 300) + ".com"
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_check_domain",
+		Arguments: map[string]any{"domain": long},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	text := mcpErrorText(res)
+	if !res.IsError || !strings.Contains(text, fmt.Sprint(maxCheckDomainLength)) || strings.Contains(text, "domain is required") {
+		t.Errorf("a name too long to be a domain must be refused with the limit named, not as a missing domain: %q", text)
+	}
+	if strings.Contains(text, long) {
+		t.Errorf("the refusal must not echo the whole oversized input back: %d bytes", len(text))
+	}
+	if !strings.Contains(text, fmt.Sprintf("(%d bytes)", len(long))) {
+		t.Errorf("a cut-off quote must say how long the input was, or it reads as a valid name: %q", text)
 	}
 }
 
@@ -1608,6 +1701,96 @@ func TestToolSchemasAreObjectsNotBooleans(t *testing.T) {
 	}
 }
 
+func TestToolInputSchemasAlwaysListProperties(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.WebServer.MCP.AllowActiveProbes = true
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+
+	for _, tool := range tools.Tools {
+		raw, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("%s: marshal input schema: %v", tool.Name, err)
+		}
+		var schema map[string]any
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatalf("%s: decode input schema: %v", tool.Name, err)
+		}
+		if _, ok := schema["properties"].(map[string]any); !ok {
+			t.Errorf("%s publishes the input schema %s without a properties object. LM Studio's OpenAI-compatible "+
+				"server rejects every chat request whose tools include one, so a tool without arguments must still "+
+				"publish \"properties\": {}.", tool.Name, raw)
+		}
+	}
+}
+
+func TestToolDescriptionsFitOpenAILimit(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.WebServer.MCP.AllowActiveProbes = true
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+
+	for _, tool := range tools.Tools {
+		if n := len(tool.Description); n > 1024 {
+			t.Errorf("%s has a %d-byte description. The OpenAI API rejects a function description longer than "+
+				"1024 characters, and AI apps pass MCP descriptions through unchanged.", tool.Name, n)
+		}
+	}
+}
+
+func TestToolAnnotationsMatchWhatRepeatedCallsDo(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.WebServer.MCP.AllowActiveProbes = true
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	byName := map[string]*mcp.ToolAnnotations{}
+	for _, tool := range tools.Tools {
+		byName[tool.Name] = tool.Annotations
+	}
+
+	for _, c := range []struct {
+		name                               string
+		idempotent, destructive, openWorld bool
+		why                                string
+	}{
+		{"b4_revert_last_change", false, true, false, "every call undoes one more change"},
+		{"b4_manage_set", false, true, false, "create and duplicate add another set on every call"},
+		{"b4_watchdog", false, true, true, "check makes the router fetch internet sites, and other actions edit sets"},
+		{"b4_find_bypass_strategy", false, true, true, "apply rewrites sets and takes domains from other sets"},
+		{"b4_test_domain_now", false, false, true, "it fetches internet sites and changes nothing"},
+		{"b4_set_config_value", true, true, false, "writing the same value twice changes nothing more"},
+	} {
+		a := byName[c.name]
+		if a == nil {
+			t.Errorf("%s is not served or has no annotations", c.name)
+			continue
+		}
+		if a.IdempotentHint != c.idempotent || a.DestructiveHint == nil || *a.DestructiveHint != c.destructive ||
+			a.OpenWorldHint == nil || *a.OpenWorldHint != c.openWorld {
+			t.Errorf("%s annotations %+v, want idempotent=%v destructive=%v openWorld=%v: %s",
+				c.name, a, c.idempotent, c.destructive, c.openWorld, c.why)
+		}
+	}
+}
+
 func TestInstructionsNameTheGatedCapabilities(t *testing.T) {
 	cfg := mcpTestCfg()
 	cfg.System.WebServer.MCP.AllowWrites = true
@@ -2040,5 +2223,420 @@ func TestMCPRefusalLoggingIsThrottled(t *testing.T) {
 
 	if n := strings.Count(buf.String(), "mcp: refused a request"); n != 1 {
 		t.Errorf("50 guesses must not write 50 lines, or a brute-force pushes everything else out of the log; got %d", n)
+	}
+}
+
+func TestMCPRefusalSummaryIsItsOwnLineWithItsRealTimes(t *testing.T) {
+	buf := captureLog(t)
+	resetRefusalThrottle(t)
+
+	guess := httptest.NewRequest(http.MethodPost, mcpEndpoint, nil)
+	guess.RemoteAddr = "203.0.113.9:40000"
+	before := time.Now().Truncate(time.Second)
+	for i := 0; i < 4; i++ {
+		mcpLogRefusal(guess, "the MCP token presented is wrong")
+	}
+	after := time.Now()
+
+	mcpRefusals.Lock()
+	mcpRefusals.last = mcpRefusals.last.Add(-5 * time.Hour)
+	mcpRefusals.Unlock()
+
+	page := httptest.NewRequest(http.MethodPost, mcpEndpoint, nil)
+	page.RemoteAddr = "192.168.1.50:50000"
+	mcpLogRefusal(page, "a browser page at http://evil.example tried to reach it")
+
+	got := buf.String()
+	if strings.Contains(got, "in the last") {
+		t.Errorf("refusals suppressed hours ago must not be reported as recent, got:\n%s", got)
+	}
+	span := regexp.MustCompile(`3 more refusals between (\S+ \S+) and (\S+ \S+) were not listed`)
+	summary, current := -1, -1
+	for i, line := range strings.Split(got, "\n") {
+		if span.MatchString(line) {
+			summary = i
+			m := span.FindStringSubmatch(line)
+			first, err1 := time.ParseInLocation(mcpRefusalTimeLayout, m[1], time.Local)
+			last, err2 := time.ParseInLocation(mcpRefusalTimeLayout, m[2], time.Local)
+			if err1 != nil || err2 != nil || first.Before(before) || last.After(after) || last.Before(first) {
+				t.Errorf("the summary must give the times the suppressed refusals happened, between %s and %s: %q", before, after, line)
+			}
+		}
+		if strings.Contains(line, "evil.example") {
+			current = i
+			if strings.Contains(line, "refusals") {
+				t.Errorf("the suppressed count belongs to other callers and must not ride on this caller's line: %q", line)
+			}
+		}
+	}
+	if summary < 0 || current < 0 || summary > current {
+		t.Errorf("the summary must be its own line, logged before the refusal that released it, got:\n%s", got)
+	}
+}
+
+func mcpToolDescription(t *testing.T, session *mcp.ClientSession, ctx context.Context, name string) string {
+	t.Helper()
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	for _, tool := range tools.Tools {
+		if tool.Name == name {
+			return tool.Description
+		}
+	}
+	t.Fatalf("%s is not served", name)
+	return ""
+}
+
+func TestMCPToolCallsIgnoreGeminiWaitForPrevious(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	for _, flag := range []bool{true, false} {
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_status", Arguments: map[string]any{"wait_for_previous": flag}})
+		if err != nil {
+			t.Fatalf("b4_status wait_for_previous=%v: %v", flag, err)
+		}
+		if res.IsError {
+			t.Errorf("Gemini CLI adds wait_for_previous to the calls it sequences, so b4_status must accept it (=%v): %s", flag, mcpErrorText(res))
+		}
+
+		res, err = session.CallTool(ctx, &mcp.CallToolParams{
+			Name:      "b4_check_domain",
+			Arguments: map[string]any{"domain": "youtube.com", "wait_for_previous": flag},
+		})
+		if err != nil {
+			t.Fatalf("b4_check_domain wait_for_previous=%v: %v", flag, err)
+		}
+		if res.IsError {
+			t.Errorf("b4_check_domain must accept wait_for_previous=%v: %s", flag, mcpErrorText(res))
+			continue
+		}
+		var out mcpCheckDomainOut
+		if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if !out.Covered || len(out.Checked) != 1 || out.Checked[0] != "youtube.com" {
+			t.Errorf("dropping wait_for_previous must leave the other arguments intact: %+v", out)
+		}
+	}
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_check_domain",
+		Arguments: map[string]any{"domain": "youtube.com", "wait_for_next": true},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "wait_for_next") {
+		t.Errorf("any other unknown argument must still be refused: %s", mcpErrorText(res))
+	}
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	for _, tool := range tools.Tools {
+		raw, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("%s: marshal input schema: %v", tool.Name, err)
+		}
+		if !strings.Contains(string(raw), `"additionalProperties":false`) || strings.Contains(string(raw), mcpWaitForPrevious) {
+			t.Errorf("%s: the published schema stays closed and never lists wait_for_previous; the server drops it instead: %s", tool.Name, raw)
+		}
+	}
+}
+
+func TestMCPWithoutArgumentLeavesOtherArgumentsUntouched(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{`{"domain":"a.com","wait_for_previous":true}`, `{"domain":"a.com"}`},
+		{`{"wait_for_previous":false}`, `{}`},
+		{`{"query":"wait_for_previous", "limit": 1.50}`, `{"query":"wait_for_previous", "limit": 1.50}`},
+		{`{"nested":{"wait_for_previous":true}}`, `{"nested":{"wait_for_previous":true}}`},
+		{`{"domain": "a.com" }`, `{"domain": "a.com" }`},
+		{`["wait_for_previous"]`, `["wait_for_previous"]`},
+		{`null`, `null`},
+		{``, ``},
+	} {
+		if got := string(mcpWithoutArgument(json.RawMessage(c.in), mcpWaitForPrevious)); got != c.want {
+			t.Errorf("mcpWithoutArgument(%s) = %s, want %s", c.in, got, c.want)
+		}
+	}
+}
+
+func TestMCPCheckDomainDoesNotCountANarrowerEntryAsCoverage(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.Sets = append(cfg.Sets, &config.SetConfig{
+		Id:      "set-3",
+		Name:    "adblock",
+		Enabled: true,
+		Targets: config.TargetsConfig{SNIDomains: []string{"ads.example.net"}},
+	})
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_check_domain",
+		Arguments: map[string]any{"domain": "example.net, ads.example.net, x.ads.example.net"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpCheckDomainOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Covered || out.CoveredByDomain["example.net"] {
+		t.Errorf("a set that lists only ads.example.net does not match example.net, so example.net is not covered: %+v", out)
+	}
+	if !out.CoveredByDomain["ads.example.net"] || !out.CoveredByDomain["x.ads.example.net"] {
+		t.Errorf("the listed name and its subdomains are covered: %+v", out.CoveredByDomain)
+	}
+	kept := false
+	for _, m := range out.Matches {
+		if m.Domain == "example.net" && m.SetName == "adblock" && m.Relation == string(sni.RelationCovers) && m.Entry == "ads.example.net" {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Errorf("the covers row stays in matches as an overlap hint: %+v", out.Matches)
+	}
+	for _, want := range []string{"not matched by any enabled set: example.net", `"adblock"`, "ads.example.net", "not example.net itself"} {
+		if !strings.Contains(out.Note, want) {
+			t.Errorf("note must say %q, got %q", want, out.Note)
+		}
+	}
+}
+
+func TestMCPCheckDomainDescriptionNamesTheRealRelations(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	desc := mcpToolDescription(t, session, ctx, "b4_check_domain")
+	for _, rel := range []sni.DomainRelation{sni.RelationExact, sni.RelationCovered, sni.RelationRegexp, sni.RelationCovers} {
+		if !strings.Contains(desc, string(rel)) {
+			t.Errorf("the description must name the relation %q the tool returns: %q", rel, desc)
+		}
+	}
+	for _, never := range []string{"wildcard", "suffix"} {
+		if strings.Contains(desc, never) {
+			t.Errorf("the tool never returns a %q relation: %q", never, desc)
+		}
+	}
+	if !strings.Contains(desc, "covers = only a subdomain is listed, so the domain itself is not matched") {
+		t.Errorf("covers reads like coverage next to the covered field, so the description must say it is not a match: %q", desc)
+	}
+}
+
+func TestMCPRecentConnectionsDescriptionMatchesTheLineFormat(t *testing.T) {
+	log.LogConnectionStr("UDP", "", "", "10.0.0.7:50000", "columns-voice", "162.159.130.234:50007", "aa:bb:cc:dd:ee:ff", "", "escalate->columns-next")
+
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	desc := mcpToolDescription(t, session, ctx, "b4_recent_connections")
+	const columns = "time,protocol,sni_set,domain,source,ip_set,destination,mac,tls"
+	for _, want := range []string{columns + " and an optional action", "sni_set, or ip_set when it matched by IP", "last 500 events", "empty means none in that window"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("description must say %q: %q", want, desc)
+		}
+	}
+	if strings.Contains(desc, "since b4 started") {
+		t.Errorf("the buffer holds the last events only, not everything since b4 started: %q", desc)
+	}
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_recent_connections", Arguments: map[string]any{"contains": "columns-voice"}})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var out mcpRecentConnOut
+	if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(out.Connections) == 0 {
+		t.Fatal("the logged connection is not returned")
+	}
+	fields := strings.Split(out.Connections[len(out.Connections)-1], ",")
+	names := append(strings.Split(columns, ","), "action")
+	if len(fields) != len(names) {
+		t.Fatalf("line has %d fields, the description names %d: %v", len(fields), len(names), fields)
+	}
+	got := map[string]string{}
+	for i, name := range names {
+		got[name] = fields[i]
+	}
+	if _, err := time.Parse("2006/01/02 15:04:05.000000", got["time"]); err != nil {
+		t.Errorf("time column = %q: %v", got["time"], err)
+	}
+	want := map[string]string{
+		"protocol": "UDP", "sni_set": "", "domain": "", "source": "10.0.0.7:50000", "ip_set": "columns-voice",
+		"destination": "162.159.130.234:50007", "mac": "aa:bb:cc:dd:ee:ff", "tls": "", "action": "escalate->columns-next",
+	}
+	for name, value := range want {
+		if got[name] != value {
+			t.Errorf("column %s = %q, want %q (line %v)", name, got[name], value, fields)
+		}
+	}
+}
+
+func TestMCPLogsTailSaysWhatElseTheErrorLogHolds(t *testing.T) {
+	dir := t.TempDir()
+	cfg := mcpTestCfg()
+	cfg.System.Logging.Directory = dir
+	content := "=== b4 error log opened pid=4242 at 2026-10-26T20:00:00Z ===\n" +
+		"2026/10/26 20:00:00.000001 [INIT] invalid system.memory_limit \"12Q\": bad\n" +
+		"2026/10/26 20:00:01 http2: server: error reading preface from client 10.8.0.2:60286: read: connection reset by peer\n" +
+		"2026/10/26 20:00:02.000001 [ERROR] nftables rule failed\n"
+	if err := os.WriteFile(cfg.System.Logging.ErrorFilePath(), []byte(content), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	desc := mcpToolDescription(t, session, ctx, "b4_logs_tail")
+	if strings.Contains(desc, "ONLY") || !strings.Contains(desc, "startup warnings and stderr output") {
+		t.Errorf("stderr is redirected into errors.log, so the description must not promise ERROR lines only: %q", desc)
+	}
+
+	out := callLogs(t, session, ctx, nil)
+	if len(out.Lines) != 4 {
+		t.Fatalf("lines = %v", out.Lines)
+	}
+	if strings.Contains(out.Note, "Every line here is an ERROR") || strings.Contains(out.Note, "never writes warnings") {
+		t.Errorf("3 of these 4 lines are not b4 errors, so the note must not call every line an ERROR: %q", out.Note)
+	}
+	for _, want := range []string{"[ERROR] are b4 errors", "start markers", "startup warnings", "written to stderr", "crash traces", "is not a b4 failure"} {
+		if !strings.Contains(out.Note, want) {
+			t.Errorf("note must say %q: %q", want, out.Note)
+		}
+	}
+
+	miss := callLogs(t, session, ctx, map[string]any{"contains": "zona.media"})
+	if strings.Contains(miss.Note, "..") {
+		t.Errorf("note joins its parts with a doubled period: %q", miss.Note)
+	}
+}
+
+func TestMCPLogsTailSkipsTheRotatedFileAfterAPartialRead(t *testing.T) {
+	path := t.TempDir() + "/errors.log"
+	if err := os.WriteFile(path+".1", []byte("2026/09/01 10:00:00 [ERROR] OLD nft rule failed\n"), 0o644); err != nil {
+		t.Fatalf("write rotated log: %v", err)
+	}
+	var sb strings.Builder
+	for i := 0; i < 3; i++ {
+		fmt.Fprintf(&sb, "2026/10/01 10:00:0%d [ERROR] MIDDLE nft rule failed\n", i)
+	}
+	for sb.Len() < mcpTailReadCap+64<<10 {
+		fmt.Fprintf(&sb, "2026/10/02 10:00:00 [ERROR] unrelated %s\n", strings.Repeat("x", 200))
+	}
+	sb.WriteString("2026/10/25 10:00:00 [ERROR] TAIL nft rule failed\n")
+	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	res, rolled, err := tailWithRotation(path, 100, "nft")
+	if err != nil {
+		t.Fatalf("tail: %v", err)
+	}
+	if rolled {
+		t.Error("errors.log was read only from its last part, so errors.log.1 is not the continuation of what was read")
+	}
+	for _, l := range res.Lines {
+		if strings.Contains(l, "OLD") {
+			t.Errorf("lines from errors.log.1 skip the unread, newer head of errors.log: %v", res.Lines)
+		}
+	}
+	if len(res.Lines) != 1 || !strings.Contains(res.Lines[0], "TAIL") {
+		t.Errorf("lines = %v, want only the match in the part of errors.log that was read", res.Lines)
+	}
+}
+
+func TestMCPDiagnosePromptPointsAtToolsThatWork(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	got, err := session.GetPrompt(ctx, &mcp.GetPromptParams{
+		Name:      "diagnose_domain",
+		Arguments: map[string]string{"domain": "youtube.com"},
+	})
+	if err != nil {
+		t.Fatalf("get prompt: %v", err)
+	}
+	text := got.Messages[0].Content.(*mcp.TextContent).Text
+	for _, want := range []string{"call b4_get_set for that set", "b4_get_topic for each setting", "call b4_get_topic for it"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("prompt must say %q: %q", want, text)
+		}
+	}
+	for _, gone := range []string{"b4_get_config for that set", "b4://topics/"} {
+		if strings.Contains(text, gone) {
+			t.Errorf("b4_get_config cannot read one set and most clients never show resources, so the prompt must not say %q: %q", gone, text)
+		}
+	}
+}
+
+func TestMCPGetConfigSectionThroughAnArrayNamesTheArray(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	refusal := func(section string) string {
+		t.Helper()
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_get_config", Arguments: map[string]any{"section": section}})
+		if err != nil {
+			t.Fatalf("call %s: %v", section, err)
+		}
+		if !res.IsError {
+			t.Fatalf("section %q must be refused", section)
+		}
+		return mcpErrorText(res)
+	}
+
+	for _, section := range []string{"sets.video", "sets.set-1", "sets.0"} {
+		text := refusal(section)
+		if !strings.Contains(text, `"sets" is an array`) || !strings.Contains(text, "b4_get_set") {
+			t.Errorf("%s: the error must name sets as the array and point to b4_get_set: %q", section, text)
+		}
+		if strings.Contains(text, "is not an object") {
+			t.Errorf("%s: the set reference is not what fails, the sets array is: %q", section, text)
+		}
+	}
+
+	if text := refusal("system.mtproto.secrets.0"); !strings.Contains(text, `"system.mtproto.secrets" is an array`) || strings.Contains(text, "b4_get_set") {
+		t.Errorf("an array outside sets is named without pointing at b4_get_set: %q", text)
+	}
+	if text := refusal("system.socks5.port.value"); !strings.Contains(text, `"system.socks5.port" is not an object`) {
+		t.Errorf("a path through a scalar names the scalar: %q", text)
+	}
+}
+
+func TestMCPRefusesAnOversizedRequestBody(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+
+	post := func(queryLen int) int {
+		t.Helper()
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"b4_get_topic","arguments":{"query":"` +
+			strings.Repeat("a", queryLen) + `"}}}`
+		req, err := http.NewRequest(http.MethodPost, srv.URL+mcpEndpoint, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("post: %v", err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if got := post(900 << 10); got != http.StatusOK {
+		t.Fatalf("a 900 KiB request is far above any real tool call but must still be served, got %d", got)
+	}
+	if got := post(1<<20 + 64<<10); got != http.StatusRequestEntityTooLarge {
+		t.Errorf("a body over 1 MiB = %d, want 413: tool results echo arguments several times over, so a big body costs a router tens of MB", got)
 	}
 }

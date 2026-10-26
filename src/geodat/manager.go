@@ -282,6 +282,13 @@ func (gm *GeodataManager) GetGeoipCategoryCounts(categories []string) (map[strin
 	return counts, nil
 }
 
+func (gm *GeodataManager) GeositeCategoryCached(category string) bool {
+	gm.mu.RLock()
+	defer gm.mu.RUnlock()
+	_, cached := gm.categoryDomains[category]
+	return cached
+}
+
 func (gm *GeodataManager) PreviewGeositeCategory(ctx context.Context, category string, limit int) ([]string, int, error) {
 	gm.mu.RLock()
 	domains, cached := gm.categoryDomains[category]

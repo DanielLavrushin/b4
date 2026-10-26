@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
-
-	"github.com/daniellavrushin/b4/log"
 )
 
 func fileStamp(path string) (string, bool) {
@@ -29,8 +27,8 @@ var ErrStopScan = errStopScan
 
 func (gm *GeodataManager) ScanGeositeEntries(fn func(tag, entry string) error) error {
 	path := gm.GetGeositePath()
-	if !geositeReadable(path) {
-		return log.Errorf("geosite database is not available at %q", path)
+	if _, ok := fileStamp(path); !ok {
+		return fmt.Errorf("geosite database is not available at %q", path)
 	}
 	return streamAllGeoSite(path, func(tag string, kind uint64, value string) error {
 		entry := formatDomainEntry(kind, value)
@@ -43,8 +41,8 @@ func (gm *GeodataManager) ScanGeositeEntries(fn func(tag, entry string) error) e
 
 func (gm *GeodataManager) ScanGeoipPrefixes(fn func(tag string, prefix netip.Prefix) error) error {
 	path := gm.GetGeoipPath()
-	if !geoipReadable(path) {
-		return log.Errorf("geoip database is not available at %q", path)
+	if _, ok := fileStamp(path); !ok {
+		return fmt.Errorf("geoip database is not available at %q", path)
 	}
 	return streamAllGeoIP(path, fn)
 }
@@ -63,8 +61,8 @@ func (gm *GeodataManager) PreviewGeoipCategory(ctx context.Context, category str
 		return preview, len(ips), nil
 	}
 
-	if !geoipReadable(path) {
-		return nil, 0, log.Errorf("geoip database is not available at %q", path)
+	if _, ok := fileStamp(path); !ok {
+		return nil, 0, fmt.Errorf("geoip database is not available at %q", path)
 	}
 
 	preview := []string{}

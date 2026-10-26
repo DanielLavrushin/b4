@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -136,6 +137,27 @@ func mcpSetHasProtectedSecrets(set *config.SetConfig) []string {
 	return held
 }
 
+func mcpSavedSetForm(set *config.SetConfig) map[string]any {
+	full, err := config.SetToMap(set)
+	if err != nil {
+		return nil
+	}
+	sparse, err := config.SparsifySetMap(full)
+	if err != nil {
+		return nil
+	}
+	return sparse
+}
+
+func mcpManageSetUnchanged(out mcpManageSetOut, cfg *config.Config, idx int, note string) mcpManageSetOut {
+	s := cfg.Sets[idx]
+	out.Set = &mcpSetRow{Position: idx + 1, Id: s.Id, Name: s.Name, Enabled: s.Enabled}
+	out.Order = mcpSetRows(cfg)
+	out.TotalSets = len(cfg.Sets)
+	out.Note = note
+	return out
+}
+
 func mcpEscalationsPointingAt(cfg *config.Config, id string) []string {
 	var from []string
 	for _, s := range cfg.Sets {
@@ -154,7 +176,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 			"List position IS match priority and the first enabled match wins; new sets go last unless 'position' says otherwise. " +
 			"delete and reset need confirm_name to equal the set's current name, and are refused on a set holding upstream credentials or DNS pins. " +
 			"Targets belong to b4_edit_set_targets, settings to b4_set_config_value.",
-		Annotations: mcpDestructive,
+		Annotations: mcpDestructiveEachCall,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpManageSetIn) (*mcp.CallToolResult, mcpManageSetOut, error) {
 		if !api.getCfg().System.WebServer.MCP.AllowWrites {
 			return nil, mcpManageSetOut{}, errMCPWritesOff
@@ -251,8 +273,13 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 				return nil, mcpManageSetOut{}, fmt.Errorf("position is required for action=move: first, last, before:<set> or after:<set>")
 			}
 			focusID = newCfg.Sets[idx].Id
-			if _, err := mcpPlaceSet(newCfg, idx, in.Position); err != nil {
+			at, err := mcpPlaceSet(newCfg, idx, in.Position)
+			if err != nil {
 				return nil, mcpManageSetOut{}, err
+			}
+			if at == idx {
+				return nil, mcpManageSetUnchanged(out, newCfg, idx, fmt.Sprintf(
+					"%q is already at position %d of %d; nothing was written", newCfg.Sets[idx].Name, idx+1, len(newCfg.Sets))), nil
 			}
 
 		case "set_enabled":
@@ -325,8 +352,13 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 					dscp.Enabled = false
 					dscpSwitchedOff = true
 				}
+				before := mcpSavedSetForm(target)
 				target.ResetToDefaults()
 				target.Enabled, target.DSCP = wasEnabled, dscp
+				if before != nil && reflect.DeepEqual(before, mcpSavedSetForm(target)) {
+					return nil, mcpManageSetUnchanged(out, newCfg, idx, fmt.Sprintf(
+						"every strategy setting of %q is already at its default; nothing was written", target.Name)), nil
+				}
 				api.loadTargetsForSetCached(target)
 				focusID = target.Id
 			}
@@ -346,13 +378,12 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 		api.applyRuntimeChanges(newCfg, oldCfg)
 		refreshed := api.PerformSoftRestart(newCfg, oldCfg)
 
-		live := api.getCfg()
-		out.TotalSets = len(live.Sets)
-		out.Order = mcpSetRows(live)
+		out.TotalSets = len(newCfg.Sets)
+		out.Order = mcpSetRows(newCfg)
 		out.Changed = true
 
 		if focusID != "" {
-			for i, s := range live.Sets {
+			for i, s := range newCfg.Sets {
 				if s.Id == focusID {
 					out.Set = &mcpSetRow{Position: i + 1, Id: s.Id, Name: s.Name, Enabled: s.Enabled}
 					break
@@ -363,12 +394,12 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 		mcpRecordChange(mcpChange{
 			Path:     "sets",
 			Previous: fmt.Sprintf("%d sets", len(oldCfg.Sets)),
-			Current:  fmt.Sprintf("%d sets", len(live.Sets)),
+			Current:  fmt.Sprintf("%d sets", len(newCfg.Sets)),
 			When:     time.Now(), Snapshot: snapshot,
 		}, oldCfg, newCfg)
-		log.Infof("mcp: sets %s (now %d sets)", action, len(live.Sets))
+		log.Infof("mcp: sets %s (now %d sets)", action, len(newCfg.Sets))
 
-		out.Note = fmt.Sprintf("applied live; %d set(s) configured. Undo with b4_revert_last_change", len(live.Sets))
+		out.Note = fmt.Sprintf("applied live; %d set(s) configured. Undo with b4_revert_last_change", len(newCfg.Sets))
 		if refreshed {
 			out.Note += " (firewall rules were refreshed to match)"
 		}
