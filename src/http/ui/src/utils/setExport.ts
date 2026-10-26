@@ -86,7 +86,7 @@ function resetDisabledFeatures(cfg: Obj, defaults: Obj): void {
   }
 }
 
-export function exportSetJson(config: B4SetConfig): string {
+export function exportSetJson(config: B4SetConfig, space?: number): string {
   const defaults = createDefaultSet(0);
   const alwaysInclude = new Set(["name", "enabled"]);
   const skip = new Set(["id", "stats", "hub_state", "revision"]);
@@ -130,5 +130,5 @@ export function exportSetJson(config: B4SetConfig): string {
   }
   delete result.escalate;
 
-  return JSON.stringify(result, null, 2);
+  return JSON.stringify(result, null, space);
 }
