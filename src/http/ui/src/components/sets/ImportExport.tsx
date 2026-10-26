@@ -74,6 +74,14 @@ function importedDiscovery(
   return discovery;
 }
 
+function compactJson(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text));
+  } catch {
+    return text;
+  }
+}
+
 function payloadBaseName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
@@ -105,7 +113,7 @@ export const ImportExportSettings = ({
   onImport,
 }: ImportExportSettingsProps) => {
   const { t } = useTranslation();
-  const exportJson = useMemo(() => exportSetJson(config), [config]);
+  const exportJson = useMemo(() => exportSetJson(config, 2), [config]);
   const [jsonValue, setJsonValue] = useState(exportJson);
   const [jsonEdited, setJsonEdited] = useState(false);
   const [syncedExport, setSyncedExport] = useState(exportJson);
@@ -146,7 +154,7 @@ export const ImportExportSettings = ({
 
   const markImported = (imported: B4SetConfig) => {
     setJsonEdited(false);
-    setImportedExport(exportSetJson(imported));
+    setImportedExport(exportSetJson(imported, 2));
   };
 
   useEffect(() => {
@@ -350,7 +358,7 @@ export const ImportExportSettings = ({
   };
 
   const handleCopy = async () => {
-    const ok = await copyText(jsonValue);
+    const ok = await copyText(compactJson(jsonValue));
     if (ok) showSuccess(t("sets.importExport.copiedToClipboard"));
     else showError(t("sets.importExport.copyFailed"));
   };
