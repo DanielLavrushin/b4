@@ -13,7 +13,7 @@ var listURLStart = regexp.MustCompile("^[\"'`]*[A-Za-z][A-Za-z0-9+.-]*://")
 
 func SplitKeepingURLs(raw string, isSep func(rune) bool) []string {
 	var out []string
-	urlAt, urlEnd, start := -1, 0, 0
+	urlAt, urlEnd, authEnd, lastAt, start := -1, 0, 0, -1, 0
 	for i := 0; i <= len(raw); {
 		r, size := rune(0), 1
 		if i < len(raw) {
@@ -29,9 +29,10 @@ func SplitKeepingURLs(raw string, isSep func(rune) bool) []string {
 		switch {
 		case listURLStart.MatchString(part):
 			urlAt, urlEnd = start+lead, start+lead+len(part)
+			authEnd, lastAt = urlAuthority(raw, urlAt)
 			out = append(out, part)
 		case part == "":
-		case lead == 0 && urlAt >= 0 && urlContinues(raw[urlAt:urlEnd], raw[start:]):
+		case lead == 0 && urlAt >= 0 && !urlQuoteClosed(raw, urlAt, urlEnd) && (start > authEnd || lastAt >= start):
 			urlEnd = i
 			out[len(out)-1] = raw[urlAt:i]
 		default:
@@ -47,16 +48,20 @@ func SplitKeepingURLs(raw string, isSep func(rune) bool) []string {
 	return out
 }
 
-func urlContinues(soFar, rest string) bool {
-	if q := soFar[0]; strings.IndexByte(listQuotes, q) >= 0 && len(soFar) > 1 && soFar[len(soFar)-1] == q {
-		return false
+func urlAuthority(raw string, urlAt int) (end, lastAt int) {
+	from := urlAt + strings.Index(raw[urlAt:], "://") + 3
+	end = len(raw)
+	if n := strings.IndexFunc(raw[from:], func(r rune) bool { return strings.ContainsRune("/?#", r) || unicode.IsSpace(r) }); n >= 0 {
+		end = from + n
 	}
-	if strings.ContainsAny(soFar[strings.Index(soFar, "://")+3:], "/?#") {
-		return true
+	lastAt = -1
+	if n := strings.LastIndexByte(raw[from:end], '@'); n >= 0 {
+		lastAt = from + n
 	}
-	end := strings.IndexFunc(rest, func(r rune) bool { return strings.ContainsRune("/?#", r) || unicode.IsSpace(r) })
-	if end < 0 {
-		end = len(rest)
-	}
-	return strings.Contains(rest[:end], "@")
+	return end, lastAt
+}
+
+func urlQuoteClosed(raw string, urlAt, urlEnd int) bool {
+	q := raw[urlAt]
+	return strings.IndexByte(listQuotes, q) >= 0 && urlEnd-urlAt > 1 && raw[urlEnd-1] == q
 }

@@ -2,7 +2,9 @@ package utils
 
 import (
 	"slices"
+	"strings"
 	"testing"
+	"time"
 	"unicode"
 )
 
@@ -43,6 +45,26 @@ func TestSplitKeepingURLs(t *testing.T) {
 	} {
 		if got := SplitKeepingURLs(tc.raw, tc.isSep); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: SplitKeepingURLs(%q) = %q, want %q", tc.name, tc.raw, got, tc.want)
+		}
+	}
+}
+
+func TestSplitKeepingURLsStaysLinearOnSeparatorHeavyInput(t *testing.T) {
+	commaOnly := func(r rune) bool { return r == ',' }
+	for name, raw := range map[string]string{
+		"credentials": "https://" + strings.Repeat("u,", 1<<18) + "user@example.com/",
+		"query":       "https://example.com/?" + strings.Repeat("a,", 1<<18),
+		"host part":   "https://" + strings.Repeat("a,", 1<<18),
+	} {
+		done := make(chan int, 1)
+		go func() { done <- len(SplitKeepingURLs(raw, commaOnly)) }()
+		select {
+		case n := <-done:
+			if name != "host part" && n != 1 {
+				t.Errorf("%s: %d items, want the one URL", name, n)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: splitting %d KiB took over 5 s, so each separator rescans the input", name, len(raw)>>10)
 		}
 	}
 }
