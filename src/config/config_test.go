@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"math"
 	"testing"
 )
 
@@ -42,6 +44,54 @@ func TestResolveRange(t *testing.T) {
 		v := ResolveRange(5, 10)
 		if v < 5 || v > 10 {
 			t.Fatalf("ResolveRange(5,10) = %d, out of [5,10]", v)
+		}
+	}
+}
+
+func resolveRangeSafely(min, max int) (got int, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panicked: %v", r)
+		}
+	}()
+	return ResolveRange(min, max), nil
+}
+
+func TestResolveRangeStaysWithinExtremeBounds(t *testing.T) {
+	for _, c := range []struct{ min, max int }{
+		{-10, 10},
+		{math.MaxInt - 1, math.MaxInt},
+		{math.MinInt, math.MinInt + 1},
+		{math.MinInt / 2, math.MaxInt/2 - 1},
+	} {
+		for i := 0; i < 64; i++ {
+			got, err := resolveRangeSafely(c.min, c.max)
+			if err != nil {
+				t.Fatalf("ResolveRange(%d, %d) %v", c.min, c.max, err)
+			}
+			if got < c.min || got > c.max {
+				t.Fatalf("ResolveRange(%d, %d) = %d, outside the range", c.min, c.max, got)
+			}
+		}
+	}
+}
+
+func TestResolveRangeReturnsMinForAReversedOrUnrepresentableSpan(t *testing.T) {
+	for _, c := range []struct{ min, max int }{
+		{math.MaxInt, math.MinInt},
+		{0, math.MaxInt},
+		{-1, math.MaxInt},
+		{math.MinInt, math.MaxInt},
+		{math.MinInt, 0},
+		{math.MinInt, -1},
+	} {
+		got, err := resolveRangeSafely(c.min, c.max)
+		if err != nil {
+			t.Errorf("ResolveRange(%d, %d) %v: a config value must never crash the packet path", c.min, c.max, err)
+			continue
+		}
+		if got != c.min {
+			t.Errorf("ResolveRange(%d, %d) = %d, want the minimum %d", c.min, c.max, got, c.min)
 		}
 	}
 }

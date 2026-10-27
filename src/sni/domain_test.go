@@ -1,6 +1,7 @@
 package sni
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -38,6 +39,45 @@ func TestMatchDomainEntry(t *testing.T) {
 			}
 			if matched != tc.matched {
 				t.Errorf("matched entry = %q, want %q", matched, tc.matched)
+			}
+		})
+	}
+}
+
+func TestMatchDomainEntryLongNamesWithoutAllocating(t *testing.T) {
+	long := strings.Repeat("a", 60) + ".example.com"
+	other := strings.Repeat("b", 60) + ".example.com"
+	tests := []struct {
+		name     string
+		entry    string
+		domain   string
+		relation DomainRelation
+		matched  string
+	}{
+		{"exact", long, long, RelationExact, long},
+		{"exact after normalising", strings.ToUpper(long) + ".", long + ".", RelationExact, long},
+		{"covered", long, "www." + long, RelationCovered, long},
+		{"deep covered", long, "a.b." + long, RelationCovered, long},
+		{"covers", "www." + long, long, RelationCovers, "www." + long},
+		{"leading dot entry covers", "." + long, long, RelationCovers, "." + long},
+		{"entry one byte longer without a dot", "x" + long, long, RelationNone, ""},
+		{"domain one byte longer without a dot", long, "x" + long, RelationNone, ""},
+		{"same length different name", long, other, RelationNone, ""},
+		{"regexp", `regexp:^a+\.example\.com$`, long, RelationRegexp, `regexp:^a+\.example\.com$`},
+		{"regexp no match", `regexp:^b+\.example\.com$`, long, RelationNone, ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			relation, matched := MatchDomainEntry(tc.entry, tc.domain)
+			if relation != tc.relation || matched != tc.matched {
+				t.Fatalf("MatchDomainEntry = (%q, %q), want (%q, %q)", relation, matched, tc.relation, tc.matched)
+			}
+			if strings.HasPrefix(tc.entry, "regexp:") || strings.ToLower(tc.entry) != tc.entry {
+				return
+			}
+			if allocs := testing.AllocsPerRun(20, func() { MatchDomainEntry(tc.entry, tc.domain) }); allocs != 0 {
+				t.Errorf("MatchDomainEntry allocated %.0f times per call; it runs once per entry of every set", allocs)
 			}
 		})
 	}

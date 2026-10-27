@@ -78,6 +78,33 @@ func TestMCPProbeValidatesInputBeforeEmittingTraffic(t *testing.T) {
 	}
 }
 
+func TestMCPProbeKeepsALinkWithCommasInItsQueryWhole(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowActiveProbes = true
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "b4_test_domain_now", Arguments: map[string]any{"domain": "http://127.0.0.1/?a=1,2,3,4"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if text := mcpErrorText(res); !res.IsError || !strings.Contains(text, "127.0.0.1 is a private or local address") {
+		t.Errorf("a link with commas in its query names one host, and that host is the router itself: %s", text)
+	}
+
+	res, err = session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "b4_test_domain_now", Arguments: map[string]any{"domain": "https://a.com,b.com,c.com,d.com"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if text := mcpErrorText(res); !res.IsError || !strings.Contains(text, "at most 3 domains") {
+		t.Errorf("hosts listed after a link's host are separate domains, four of them over the limit: %s", text)
+	}
+}
+
 func TestMCPProbeIsAnnotatedOpenWorld(t *testing.T) {
 	cfg := mcpTestCfg()
 	cfg.System.WebServer.MCP.AllowActiveProbes = true

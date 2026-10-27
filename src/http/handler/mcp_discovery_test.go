@@ -151,6 +151,36 @@ func TestMCPDiscoveryApplyKeepsTheDSCPTheRunTestedWith(t *testing.T) {
 	}
 }
 
+func TestMCPDiscoveryApplyFollowsTheSetNameRules(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	set := config.NewSetConfig()
+	set.Name = "found"
+	set.Targets.SNIDomains = []string{"rutracker.org"}
+	suite := &discovery.CheckSuite{
+		Id: "name-rules-run", Status: discovery.CheckStatusComplete,
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"rutracker.org": {Domain: "rutracker.org", BestPreset: "combo", BestSuccess: true, Confirmed: 3},
+		},
+		StrategyGroups: []discovery.StrategyGroup{{WinnerPreset: "combo", Domains: []string{"rutracker.org"}, Set: &set}},
+	}
+	discovery.RegisterSuite(suite)
+	t.Cleanup(func() { mcpRememberSuite("") })
+
+	before := len(api.getCfg().Sets)
+	res := callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "rutracker.org", "id": suite.Id, "name": "rutracker, backup"})
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "comma") {
+		t.Errorf("a set name with a comma is split by b4_manage_set set_enabled, so apply must refuse it: %s", mcpErrorText(res))
+	}
+	if got := len(api.getCfg().Sets); got != before {
+		t.Errorf("the refused apply created a set: %d sets, want %d", got, before)
+	}
+}
+
 func TestMCPDiscoveryApplyRefusesANewSetOnAnotherDSCPPath(t *testing.T) {
 	cfg := probeCfg(t)
 	cfg.System.WebServer.MCP.AllowWrites = true

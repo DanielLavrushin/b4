@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -202,6 +203,16 @@ func mcpValidPlainDomain(entry string) error {
 	return nil
 }
 
+func mcpASCIIPlainDomain(entry string) error {
+	if _, isRegex := sni.ParseDomainEntry(entry); isRegex {
+		return nil
+	}
+	if strings.IndexFunc(entry, func(r rune) bool { return r > unicode.MaxASCII }) < 0 {
+		return nil
+	}
+	return fmt.Errorf("%q is not written in ASCII: pass its punycode form, the xn-- spelling that SNI and DNS use", entry)
+}
+
 func mcpTargetIsCatchAll(kind, canonical string) bool {
 	switch kind {
 	case mcpTargetKindIPs:
@@ -334,6 +345,9 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 		canonAdds := make([]string, 0, len(adds))
 		for _, raw := range adds {
 			canonical, rewritten, err := api.mcpCanonicalTarget(kind, raw)
+			if err == nil && kind == mcpTargetKindDomains {
+				err = mcpASCIIPlainDomain(canonical)
+			}
 			if err != nil {
 				return nil, mcpEditTargetsOut{}, err
 			}
@@ -445,6 +459,7 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 		if err := api.mcpSave(oldCfg, newCfg); err != nil {
 			return nil, mcpEditTargetsOut{}, fmt.Errorf("rejected: %w", err)
 		}
+		stored := mcpTargetList(&set.Targets, kind)
 		api.applyRuntimeChanges(newCfg, oldCfg)
 		if len(out.Expansion.UnresolvedASNs) > 0 {
 			config.RequestASNRefresh()
@@ -453,11 +468,6 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 
 		path := fmt.Sprintf("sets[%s].targets.%s", set.Name, kind)
 
-		live := findSetIn(api.getCfg(), set.Id)
-		if live == nil {
-			return nil, mcpEditTargetsOut{}, fmt.Errorf("set %q disappeared while saving", set.Name)
-		}
-		stored := mcpTargetList(&live.Targets, kind)
 		currentSummary := mcpSummarizeList(stored)
 		out.EntryCount = len(stored)
 		out.Changed = !slices.Equal(stored, previous) || len(out.MovedFrom) > 0
@@ -487,23 +497,54 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 			}
 			out.Note += ". A domain belongs to one enabled set, so b4 took " + strings.Join(names, ", ")
 		}
-		if !live.Enabled {
-			out.Note += fmt.Sprintf(". Set %q is DISABLED, so nothing here matches any traffic until it is enabled", live.Name)
+		if !set.Enabled {
+			out.Note += fmt.Sprintf(". Set %q is DISABLED, so nothing here matches any traffic until it is enabled", set.Name)
 		}
 		if kind == mcpTargetKindDevices && len(current) > 0 && len(stored) == 0 {
 			out.Note += ". source_devices is now empty, which does NOT mean no devices: an empty list matches EVERY device on the network, so this set just widened from one device to all of them"
 		}
 		if catch := mcpCatchAllAdded(kind, out.Added); len(catch) > 0 {
 			out.Note += fmt.Sprintf(". %s is a catch-all that matches everything", strings.Join(catch, ", "))
-			if live.Routing.Enabled {
-				out.Note += fmt.Sprintf(", and routing is enabled on this set in %q mode - every matched packet now takes that path", live.Routing.Mode)
+			if set.Routing.Enabled {
+				out.Note += fmt.Sprintf(", and routing is enabled on this set in %q mode - every matched packet now takes that path", set.Routing.Mode)
 			}
 		}
-		if hint := mcpExpansionNote(out.Expansion); hint != "" {
+		if scope := mcpPortOnlyNote(set); scope != "" {
+			out.Note += ". " + scope
+		} else if hint := mcpExpansionNote(out.Expansion); hint != "" {
 			out.Note += ". " + hint
 		}
 		return nil, out, nil
 	})
+}
+
+func mcpPortOnlyNote(set *config.SetConfig) string {
+	if set.DeclaresDestinationTargets() {
+		return ""
+	}
+	var ports []string
+	if set.TCP.DPortFilter != "" {
+		ports = append(ports, "TCP "+set.TCP.DPortFilter)
+	}
+	if set.UDP.DPortFilter != "" {
+		ports = append(ports, "UDP "+set.UDP.DPortFilter)
+	}
+	if len(ports) == 0 {
+		return ""
+	}
+	traffic := "EVERY connection on " + strings.Join(ports, " and ") + " that no other set matches"
+	if set.SelectsL7() {
+		traffic = "EVERY " + strings.Join(set.UDP.FilterL7, " or ") + " flow on " + strings.Join(ports, " and ")
+	}
+	devices := "the devices it allows"
+	if len(set.Targets.SourceDevices) == 0 {
+		devices = "every device"
+	}
+	applies := "it applies"
+	if !set.Enabled {
+		applies = "once enabled it applies"
+	}
+	return fmt.Sprintf("The set has no destination targets, so %s to %s, from %s", applies, traffic, devices)
 }
 
 func mcpCatchAllAdded(kind string, added []string) []string {

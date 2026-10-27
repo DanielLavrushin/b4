@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -481,5 +483,189 @@ func TestMCPEditTargetsDetectsAChangePastTheSummaryCutoff(t *testing.T) {
 	}
 	if got := api.getCfg().Sets[0].Targets.SNIDomains; !slices.Equal(got, long) {
 		t.Errorf("undo should restore the list the edit replaced, got %v", got)
+	}
+}
+
+func TestMCPEditTargetsWarnsWhenAPortScopedSetLosesItsLastTarget(t *testing.T) {
+	const otherDevice = "AA:BB:CC:DD:EE:01"
+	for _, tc := range []struct {
+		name    string
+		prepare func(*config.Config)
+		args    map[string]any
+		want    []string
+		reject  []string
+		applies func(*sni.SuffixSet) bool
+	}{
+		{
+			name:    "tcp port filter, last domain removed",
+			prepare: func(c *config.Config) { c.Sets[0].TCP.DPortFilter = "5222" },
+			args:    map[string]any{"set": "video", "kind": "sni_domains", "remove": "youtube.com"},
+			want:    []string{"EVERY connection on TCP 5222", "from every device"},
+			reject:  []string{"matches 0 domains"},
+			applies: func(m *sni.SuffixSet) bool {
+				ok, s := m.MatchTCPPort(5222, otherDevice)
+				return ok && s.Name == "video"
+			},
+		},
+		{
+			name: "udp port filter, last address removed",
+			prepare: func(c *config.Config) {
+				c.Sets[0].Targets = config.TargetsConfig{IPs: []string{"10.0.0.0/8"}}
+				c.Sets[0].UDP.DPortFilter = "50000-65535"
+			},
+			args:   map[string]any{"set": "video", "kind": "ip", "remove": "10.0.0.0/8"},
+			want:   []string{"EVERY connection on UDP 50000-65535"},
+			reject: []string{"matches 0 domains"},
+			applies: func(m *sni.SuffixSet) bool {
+				ok, s := m.MatchUDPPort(50001, otherDevice)
+				return ok && s.Name == "video"
+			},
+		},
+		{
+			name: "device-scoped set",
+			prepare: func(c *config.Config) {
+				c.Sets[0].TCP.DPortFilter = "5222"
+				c.Sets[0].Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
+			},
+			args:   map[string]any{"set": "video", "kind": "sni_domains", "remove": "youtube.com"},
+			want:   []string{"EVERY connection on TCP 5222", "from the devices it allows"},
+			reject: []string{"matches 0 domains", "from every device"},
+		},
+		{
+			name:    "disabled set",
+			prepare: func(c *config.Config) { c.Sets[1].TCP.DPortFilter = "5222" },
+			args:    map[string]any{"set": "disabled-set", "kind": "sni_domains", "remove": "example.org"},
+			want:    []string{"DISABLED", "once enabled it applies to EVERY connection on TCP 5222"},
+			reject:  []string{"matches 0 domains"},
+		},
+		{
+			name:    "no port filter",
+			prepare: func(c *config.Config) {},
+			args:    map[string]any{"set": "video", "kind": "sni_domains", "remove": "youtube.com"},
+			want:    []string{"matches 0 domains and 0 addresses"},
+			reject:  []string{"EVERY connection"},
+		},
+		{
+			name: "a target is left",
+			prepare: func(c *config.Config) {
+				c.Sets[0].TCP.DPortFilter = "5222"
+				c.Sets[0].Targets.SNIDomains = []string{"youtube.com", "example.net"}
+			},
+			args:   map[string]any{"set": "video", "kind": "sni_domains", "remove": "example.net"},
+			want:   []string{"matches 1 domains"},
+			reject: []string{"EVERY connection"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := geoTestCfg(t)
+			cfg.System.WebServer.MCP.AllowWrites = true
+			tc.prepare(cfg)
+			srv, api := newMCPTestServerAPI(t, cfg)
+			session, ctx := connectMCP(t, srv)
+
+			out := decodeEditTargets(t, callEditTargets(t, session, ctx, tc.args))
+			if !out.Changed {
+				t.Fatalf("precondition: the edit should have been applied: %+v", out)
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(out.Note, w) {
+					t.Errorf("note should contain %q: %q", w, out.Note)
+				}
+			}
+			for _, r := range tc.reject {
+				if strings.Contains(out.Note, r) {
+					t.Errorf("note must not contain %q: %q", r, out.Note)
+				}
+			}
+			if tc.applies != nil && !tc.applies(sni.NewSuffixSet(api.getCfg().Sets)) {
+				t.Error("precondition: the matcher should apply a set without destination targets to every connection on its ports")
+			}
+		})
+	}
+}
+
+func TestMCPEditTargetsRefusesNonASCIIDomains(t *testing.T) {
+	cfg := geoTestCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.Sets[0].Targets.SNIDomains = []string{"youtube.com", "bücher.de"}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	for _, bad := range []string{"пример.рф", "*.пример.рф", "example.net, ПРИМЕР.РФ"} {
+		res := callEditTargets(t, session, ctx, map[string]any{
+			"set": "video", "kind": "sni_domains", "add": bad,
+		})
+		if !res.IsError {
+			t.Errorf("%q can never match: SNI carries a non-ASCII name only in its xn-- form", bad)
+			continue
+		}
+		if msg := mcpErrorText(res); !strings.Contains(msg, "xn--") {
+			t.Errorf("the refusal should ask for the xn-- form: %q", msg)
+		}
+	}
+	if got := api.getCfg().Sets[0].Targets.SNIDomains; !slices.Equal(got, []string{"youtube.com", "bücher.de"}) {
+		t.Fatalf("a refused add must leave the list untouched: %v", got)
+	}
+
+	out := decodeEditTargets(t, callEditTargets(t, session, ctx, map[string]any{
+		"set": "video", "kind": "sni_domains", "add": "xn--e1afmkfd.xn--p1ai", "remove": "bücher.de",
+	}))
+	if !slices.Equal(out.Added, []string{"xn--e1afmkfd.xn--p1ai"}) || !slices.Equal(out.Removed, []string{"bücher.de"}) {
+		t.Fatalf("the xn-- form must be accepted, and a non-ASCII entry already stored must stay removable: %+v", out)
+	}
+}
+
+func TestMCPEditTargetsReportsTheSavedListNotAConcurrentWritersOne(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		other func(*config.Config)
+	}{
+		{"another writer saves a different list", func(c *config.Config) {
+			c.Sets[0].Targets.IPs = []string{"9.9.9.9", "8.8.8.8"}
+		}},
+		{"another writer puts the old list back", func(c *config.Config) {
+			c.Sets[0].Targets.IPs = nil
+		}},
+		{"another writer deletes the set", func(c *config.Config) {
+			c.Sets = c.Sets[1:]
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := geoTestCfg(t)
+			cfg.System.WebServer.MCP.AllowWrites = true
+			cfg.Sets[0].TCP.Duplicate.Enabled = true
+			mcpResetHistory()
+			t.Cleanup(mcpResetHistory)
+			srv, api := newMCPTestServerAPI(t, cfg)
+			session, ctx := connectMCP(t, srv)
+
+			refreshes := 0
+			prev := tablesRefreshFunc
+			tablesRefreshFunc = func() error {
+				refreshes++
+				next := api.getCfg().Clone()
+				tc.other(next)
+				return api.saveAndPushConfig(next)
+			}
+			t.Cleanup(func() { tablesRefreshFunc = prev })
+
+			res := callEditTargets(t, session, ctx, map[string]any{
+				"set": "video", "kind": "ip", "add": "1.2.3.4",
+			})
+			if refreshes != 1 {
+				t.Fatalf("precondition: a new address on a duplicating set refreshes the firewall once, got %d", refreshes)
+			}
+			out := decodeEditTargets(t, res)
+			if !out.Changed || out.EntryCount != 1 || !strings.Contains(out.Note, "now holds 1 entries") {
+				t.Errorf("b4 saved the one requested address, so that is what the result must report: %+v", out)
+			}
+			if len(mcpHistory) != 1 || mcpHistory[0].Current != "1.2.3.4" {
+				currents := make([]string, 0, len(mcpHistory))
+				for _, c := range mcpHistory {
+					currents = append(currents, c.Current)
+				}
+				t.Errorf("the undo list must hold one entry recording the saved list, got %q", currents)
+			}
+		})
 	}
 }

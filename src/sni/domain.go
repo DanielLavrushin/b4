@@ -64,13 +64,12 @@ func CanonicalDomainEntry(entry string) string {
 }
 
 func MatchDomainEntry(entry, domain string) (DomainRelation, string) {
-	domain = NormalizeDomain(domain)
-	if domain == "" {
-		return RelationNone, ""
-	}
-
 	value, isRegex := ParseDomainEntry(entry)
-	if value == "" {
+	return MatchParsedEntry(value, isRegex, NormalizeDomain(domain))
+}
+
+func MatchParsedEntry(value string, isRegex bool, domain string) (DomainRelation, string) {
+	if domain == "" || value == "" {
 		return RelationNone, ""
 	}
 
@@ -84,13 +83,17 @@ func MatchDomainEntry(entry, domain string) (DomainRelation, string) {
 	switch {
 	case value == domain:
 		return RelationExact, value
-	case strings.HasSuffix(domain, "."+value):
+	case isSubdomain(domain, value):
 		return RelationCovered, value
-	case strings.HasSuffix(value, "."+domain):
+	case isSubdomain(value, domain):
 		return RelationCovers, value
 	}
 
 	return RelationNone, ""
+}
+
+func isSubdomain(name, parent string) bool {
+	return len(name) > len(parent) && name[len(name)-len(parent)-1] == '.' && strings.HasSuffix(name, parent)
 }
 
 func compileEntryRegex(pattern string) *regexp.Regexp {

@@ -190,6 +190,18 @@ func TestCorsRefusesCrossSiteWritesWithoutCredentials(t *testing.T) {
 		}
 	}
 
+	for _, auth := range []string{"bearer mcp-secret", "BEARER mcp-secret", "Bearer\tmcp-secret"} {
+		req := httptest.NewRequest(http.MethodPost, "http://192.168.1.1:7000"+handler.MCPEndpoint, nil)
+		req.Header.Set("Origin", "http://tool.example")
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("Authorization", auth)
+		rec = httptest.NewRecorder()
+		mcp.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || rec.Header().Get("Access-Control-Allow-Origin") == "" {
+			t.Fatalf("mcp with Authorization %q: got %d granted=%v, want 200 granted, as the MCP gate accepts it", auth, rec.Code, rec.Header().Get("Access-Control-Allow-Origin") != "")
+		}
+	}
+
 	authed := cors(corsCfg("admin"), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	req = httptest.NewRequest(http.MethodPost, "http://192.168.1.1:7000/api/config", nil)
 	req.Header.Set("Origin", "http://tool.example")

@@ -1,11 +1,17 @@
 package geodat
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/netip"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/daniellavrushin/b4/log"
 	"github.com/urlesistiana/v2dat/v2data"
 )
 
@@ -127,6 +133,34 @@ func TestPreviewGeoipCategory(t *testing.T) {
 	}
 	if total != 0 || len(empty) != 0 {
 		t.Errorf("unknown category should be empty, got %d/%v", total, empty)
+	}
+}
+
+func TestScansWithoutDatabaseLeaveLoggingToTheCaller(t *testing.T) {
+	buf := &bytes.Buffer{}
+	previous := log.Level(log.CurLevel.Load())
+	log.Init(io.Discard, log.LevelInfo, true)
+	log.StartCapture(buf)
+	t.Cleanup(func() {
+		log.StopCapture(buf)
+		log.Init(os.Stderr, previous, true)
+	})
+
+	missing := filepath.Join(t.TempDir(), "missing.dat")
+	for _, path := range []string{"", missing} {
+		gm := NewGeodataManager(path, path)
+		if err := gm.ScanGeositeEntries(func(string, string) error { return nil }); err == nil {
+			t.Errorf("geosite scan at %q must report an error", path)
+		}
+		if err := gm.ScanGeoipPrefixes(func(string, netip.Prefix) error { return nil }); err == nil {
+			t.Errorf("geoip scan at %q must report an error", path)
+		}
+		if _, _, err := gm.PreviewGeoipCategory(context.Background(), "ru", 10); err == nil {
+			t.Errorf("geoip preview at %q must report an error", path)
+		}
+	}
+	if got := buf.String(); strings.Contains(got, "[ERROR]") {
+		t.Errorf("an on-demand lookup must return its error, not log it:\n%s", got)
 	}
 }
 

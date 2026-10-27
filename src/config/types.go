@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"path/filepath"
 	"slices"
@@ -479,13 +480,13 @@ type MTProtoConfig struct {
 	WSCustomDomain    string          `json:"ws_custom_domain"`
 	WSEndpointHost    string          `json:"ws_endpoint_host"`
 	WSFrontSNI        string          `json:"ws_front_sni"`
-	CFProxyEnabled    bool            `json:"cfproxy_enabled"` // enable Cloudflare-proxied fallback WS domains (rescues DCs the network blocks)
-	CFProxyURL        string          `json:"cfproxy_url"`     // URL to refresh CF-proxy domain list; empty = built-in default
-	CFWorkerDomain    string          `json:"cfworker_domain"` // user's Cloudflare Worker domain(s) (workers.dev), comma-separated; free per-user WS relay tried before the shared CF pool
+	CFProxyEnabled    bool            `json:"cfproxy_enabled"`        // enable Cloudflare-proxied fallback WS domains (rescues DCs the network blocks)
+	CFProxyURL        string          `json:"cfproxy_url" mcp:"deny"` // URL to refresh CF-proxy domain list; empty = built-in default
+	CFWorkerDomain    string          `json:"cfworker_domain"`        // user's Cloudflare Worker domain(s) (workers.dev), comma-separated; free per-user WS relay tried before the shared CF pool
 	CFWorkerDPI       bool            `json:"cfworker_dpi"`
 
-	DCFallbackEnabled bool   `json:"dc_fallback_enabled"` // fetch the DC IP list from DCFallbackURL when Telegram's official endpoint is blocked
-	DCFallbackURL     string `json:"dc_fallback_url"`     // fallback source for the Telegram DC list; empty = built-in default
+	DCFallbackEnabled bool   `json:"dc_fallback_enabled"`        // fetch the DC IP list from DCFallbackURL when Telegram's official endpoint is blocked
+	DCFallbackURL     string `json:"dc_fallback_url" mcp:"deny"` // fallback source for the Telegram DC list; empty = built-in default
 
 	WebProxy MTProtoWebProxyConfig `json:"web_proxy"`
 
@@ -732,7 +733,11 @@ func ResolveRange(min, max int) int {
 	if max <= min {
 		return min
 	}
-	return min + rand.Intn(max-min+1)
+	span := max - min
+	if span < 0 || span == math.MaxInt {
+		return min
+	}
+	return min + rand.Intn(span+1)
 }
 
 // ResolveSeg2Delay is an alias for ResolveRange for backward compatibility.
