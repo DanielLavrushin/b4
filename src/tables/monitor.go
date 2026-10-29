@@ -253,6 +253,9 @@ func (m *Monitor) checkRules(cfg *config.Config) bool {
 
 func iptListingQueuesTCP(listing, chain string) bool {
 	for _, line := range strings.Split(listing, "\n") {
+		if skipQueueLine(line) {
+			continue
+		}
 		if iptLineHasTokens(line, []string{"-A", chain}) && iptLineHasTokens(line, []string{"-p", "tcp"}) && iptLineHasTokens(line, []string{"-j", "NFQUEUE"}) {
 			return true
 		}
@@ -260,11 +263,25 @@ func iptListingQueuesTCP(listing, chain string) bool {
 	return false
 }
 
+// dupQueueSetPrefix names the destination sets of the duplicate-IPs rules. Those
+// rules queue traffic to a handful of addresses the user asked to duplicate, so
+// their survival says nothing about the capture chain still handing b4 the rest
+// of the ports - counting one of them as the general rule would leave every other
+// destination unqueued and unrepaired.
+const dupQueueSetPrefix = "b4_dup_v"
+
+func skipQueueLine(line string) bool {
+	return strings.Contains(line, dupQueueSetPrefix)
+}
+
 // iptListingQueuesUDP is the UDP counterpart of iptListingQueuesTCP: b4 queues
 // the configured UDP ports in the capture chain, and losing that rule at
 // runtime costs QUIC interception without any visible error.
 func iptListingQueuesUDP(listing, chain string) bool {
 	for _, line := range strings.Split(listing, "\n") {
+		if skipQueueLine(line) {
+			continue
+		}
 		if iptLineHasTokens(line, []string{"-A", chain}) && iptLineHasTokens(line, []string{"-p", "udp"}) && iptLineHasTokens(line, []string{"-j", "NFQUEUE"}) {
 			return true
 		}
@@ -289,6 +306,9 @@ func captureQueueRulesMissing(cfg *config.Config, tcp, udp bool) bool {
 // chain whose UDP queue rule is gone.
 func nftListingQueues(listing, proto string) bool {
 	for _, line := range strings.Split(listing, "\n") {
+		if skipQueueLine(line) {
+			continue
+		}
 		if strings.Contains(line, proto) && strings.Contains(line, "queue") {
 			return true
 		}
