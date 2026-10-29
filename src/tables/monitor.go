@@ -292,8 +292,7 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 
 		if gate := routeDeviceGateFor(cfg); gate.enabled {
-			out, _ := run(ipt, "-w", "-t", "mangle", "-S", "FORWARD")
-			if !iptListingJumpsTo(out, iptForwardChainName) {
+			if _, err := run(ipt, "-w", "-t", "mangle", "-C", "FORWARD", "-j", iptForwardChainName); err != nil {
 				log.Tracef("Monitor: FORWARD->%s rule missing", iptForwardChainName)
 				return false
 			}
@@ -359,9 +358,11 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 			log.Tracef("Monitor: OUTPUT mark accept rule missing")
 			return false
 		}
-		if queueJumpsFromForward(cfg) && !iptListingJumpsTo(out, iptChainName) {
-			log.Tracef("Monitor: OUTPUT->B4 jump rule missing")
-			return false
+		if queueJumpsFromForward(cfg) {
+			if _, err := run(ipt, "-w", "-t", "mangle", "-C", "OUTPUT", "-j", iptChainName); err != nil {
+				log.Tracef("Monitor: OUTPUT->B4 jump rule missing")
+				return false
+			}
 		}
 
 		if cfg.System.Tables.Masquerade.Enabled {

@@ -546,6 +546,9 @@ func routeFillQUICChainIpt(be routeBackend, cfg *config.Config, st routeState, c
 }
 
 func routeCleanupQUICReject(be routeBackend, st routeState) {
+	if !st.quicReject {
+		return
+	}
 	routeDropQUICChain(be, st.chainQUIC, routeNftBlockFwd, "FORWARD")
 	routeDropQUICChain(be, routeQUICOutChain(st), routeNftBlockOut, "OUTPUT")
 }

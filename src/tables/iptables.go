@@ -956,7 +956,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			chains = append(chains, Chain{manager: manager, IPT: ipt, Table: "mangle", Name: iptForwardChainName})
 		}
 		if gate.enabled {
-			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "I",
+			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: "FORWARD", Action: "A",
 				Spec: []string{"-j", iptForwardChainName}})
 			rules = append(rules, manager.forwardGateRules(ipt, gate)...)
 		} else {

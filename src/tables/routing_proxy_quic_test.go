@@ -370,6 +370,44 @@ func TestTurningTheQUICRefusalOffKeepsItUntilTheNewRulesAreIn(t *testing.T) {
 	}
 }
 
+func TestASetThatNeverRefusedQUICLeavesTheQUICChainsAlone(t *testing.T) {
+	bridge := quicTestState(quicTestSet(true, false), false)
+	bridge.mode = config.RoutingModeMTProtoWS
+	for _, engine := range []string{backendNFTables, backendIPTables} {
+		for name, old := range map[string]routeState{
+			"proxy set with UDP through the upstream": quicTestState(quicTestSet(true, false), false),
+			"Telegram over WebSocket":                 bridge,
+		} {
+			t.Run(engine+"/"+name, func(t *testing.T) {
+				emitted := captureProxyRuleArgv(t)
+				stubBinaries(t, backendIPTables, backendIP6Tables)
+
+				cur := old
+				cur.deviceKey = "w:mac=96:AB:60:74:88:DE"
+				routeCleanupForRebuild(quicTestBackend(engine), old, cur)()
+				routeCleanupProxyRule(quicTestBackend(engine), old, false)
+				for _, chain := range []string{old.chainQUIC, old.chainQOut} {
+					if lines := linesNaming(*emitted, chain); len(lines) != 0 {
+						t.Errorf("the set never refused QUIC, so %s never existed, yet its rebuild and its removal ran commands on it; each one failed and logged a warning:\n%s", chain, strings.Join(lines, "\n"))
+					}
+				}
+			})
+		}
+		t.Run(engine+"/a set that refuses QUIC", func(t *testing.T) {
+			emitted := captureProxyRuleArgv(t)
+			stubBinaries(t, backendIPTables, backendIP6Tables)
+
+			st := quicTestState(quicTestSet(false, false), true)
+			routeCleanupProxyRule(quicTestBackend(engine), st, false)
+			for _, chain := range []string{st.chainQUIC, st.chainQOut} {
+				if len(linesNaming(*emitted, chain)) == 0 {
+					t.Errorf("removing a set that refuses QUIC left %s behind", chain)
+				}
+			}
+		})
+	}
+}
+
 func TestLimitingTheSetToSourcesTakesDownOnlyTheRouterQUICChain(t *testing.T) {
 	for _, engine := range []string{backendNFTables, backendIPTables} {
 		t.Run(engine, func(t *testing.T) {
