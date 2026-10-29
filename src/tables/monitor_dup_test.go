@@ -6,10 +6,6 @@ import (
 	"github.com/daniellavrushin/b4/config"
 )
 
-// The duplicate-IPs rules sit in the same capture chain and also end in
-// NFQUEUE, but they only cover the addresses the user asked to duplicate. When
-// the general rule is deleted and one of these survives, the chain still looks
-// healthy to a matcher that counts any TCP queue rule.
 const iptCaptureChainWithDupOnly = `-N B4
 -A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 -A B4 -p tcp -m set --match-set b4_dup_v4 dst -m multiport --dports 443 -m connbytes --connbytes 0:19 --connbytes-mode packets --connbytes-dir original -j NFQUEUE --queue-num 537 --queue-bypass

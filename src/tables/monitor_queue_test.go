@@ -36,9 +36,6 @@ func TestIPTListingQueuesIgnoresOtherChainsAndTargets(t *testing.T) {
 	}
 }
 
-// The capture chain of the nftables backend also holds plain
-// "udp dport 53 return" rules, so the check has to match per line rather than
-// across the whole listing.
 func TestNFTListingQueuesMatchesPerLine(t *testing.T) {
 	const listing = `chain b4_chain {
 		meta mark & 0x8cfd8000 == 0x8000 return
