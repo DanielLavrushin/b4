@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.88.2] - 2026-10-29
+
+- FIXED: **On Keenetic, devices handled by Device Filtering could not open any site, even one in no set** - Keenetic lets a connection out under the router's address only after its own firewall rules have marked it. b4 took the first packets of these connections before those rules ran. The connections then left with the device's local address and got no answer. [#466](https://github.com/DanielLavrushin/b4/issues/466)
+
 ## [1.88.1] - 2026-10-26
 
 - FIXED: **Some AI apps could not work with b4's MCP server** - LM Studio, also through LobeHub, refused every request because five tools without arguments, such as b4_status, lacked a field it requires. With Allow active probes on, apps using OpenAI's API refused every request too, because one tool description was longer than that API accepts. Gemini CLI adds an argument of its own to tool calls, and b4 refused those calls.

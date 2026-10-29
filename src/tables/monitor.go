@@ -292,8 +292,7 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 
 		if gate := routeDeviceGateFor(cfg); gate.enabled {
-			out, _ := run(ipt, "-w", "-t", "mangle", "-S", "FORWARD")
-			if !iptListingJumpsTo(out, iptForwardChainName) {
+			if _, err := run(ipt, "-w", "-t", "mangle", "-C", "FORWARD", "-j", iptForwardChainName); err != nil {
 				log.Tracef("Monitor: FORWARD->%s rule missing", iptForwardChainName)
 				return false
 			}

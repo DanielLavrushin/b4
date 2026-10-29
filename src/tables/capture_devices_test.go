@@ -1,8 +1,10 @@
 package tables
 
 import (
+	"errors"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -67,6 +69,82 @@ func TestTheDeviceGateMatchesDevicesAddedByHandInTheirOwnFamilyOnIptables(t *tes
 				t.Errorf("the monitor finds rules missing right after they were installed, so it rebuilds them on every check")
 			}
 		})
+	}
+}
+
+func TestTheDeviceGateQueuesAfterTheFirmwareForwardRulesOnIptables(t *testing.T) {
+	firmware := []string{"-j NDMMARK --xor-mark 0x4", "-j _NDM_BACKUP_FORWARD"}
+	for _, exclude := range []bool{false, true} {
+		t.Run(map[bool]string{false: "allow", true: "exclude"}[exclude], func(t *testing.T) {
+			h := newGoldenHost(t)
+			goldenIsolate(t, h)
+			rewrite := func() {
+				for _, bin := range []string{backendIPTables, backendIP6Tables} {
+					delete(h.ipt[bin], "mangle")
+					h.iptTable(bin, "mangle").chain("FORWARD").rules = slices.Clone(firmware)
+				}
+			}
+			queuedLast := func(when string) {
+				for _, bin := range []string{backendIPTables, backendIP6Tables} {
+					rules := h.iptTable(bin, "mangle").chain("FORWARD").rules
+					jump := slices.Index(rules, "-j "+iptForwardChainName)
+					for _, rule := range firmware {
+						if at := slices.Index(rules, rule); at < 0 || jump < at {
+							t.Errorf("%s: %s mangle FORWARD holds %q; the jump to %s must follow every firmware rule there, since a packet the queue lets through skips the rest of the chain: on Keenetic it misses NDMMARK, NDMS masquerades only the packets it marked, and the device's connections leave with its private address", when, bin, rules, iptForwardChainName)
+							break
+						}
+					}
+				}
+			}
+			rewrite()
+			cfg := captureDevicesConfig(backendIPTables, exclude, gateMACDevice, gateManualV4)
+			if err := AddRules(cfg); err != nil {
+				t.Fatalf("AddRules: %v", err)
+			}
+			queuedLast("after the start")
+			m := &Monitor{}
+			rewrite()
+			if m.checkRules(cfg) {
+				t.Fatalf("the firmware rewrote mangle without b4's rules, yet the monitor finds nothing missing")
+			}
+			if err := AddRules(cfg); err != nil {
+				t.Fatalf("restore: %v", err)
+			}
+			queuedLast("after the monitor restored the rules")
+			if !m.checkRules(cfg) {
+				t.Errorf("the monitor still finds rules missing after the restore")
+			}
+		})
+	}
+}
+
+func TestTheMonitorFindsTheDeviceGateJumpBelowARuleItsIptablesCannotPrint(t *testing.T) {
+	h := newGoldenHost(t)
+	goldenIsolate(t, h)
+	for _, bin := range []string{backendIPTables, backendIP6Tables} {
+		h.iptTable(bin, "mangle").chain("FORWARD").rules = []string{"-m state --state NEW -j SKIPLOG"}
+	}
+	cfg := captureDevicesConfig(backendIPTables, false, gateMACDevice)
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	inner := run
+	run = func(args ...string) (string, error) {
+		out, err := inner(args...)
+		if err != nil || !slices.Contains(args, "-S") || !slices.Contains(args, "FORWARD") {
+			return out, err
+		}
+		var printed []string
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, "SKIPLOG") {
+				return strings.Join(append(printed, "iptables: Couldn't load target `SKIPLOG':No such file or directory"), "\n"), errors.New("exit status 1")
+			}
+			printed = append(printed, line)
+		}
+		return out, err
+	}
+	if !(&Monitor{}).checkRules(cfg) {
+		t.Errorf("mangle FORWARD holds a rule whose target b4's iptables cannot print, above b4's jump to %s; legacy iptables -S stops at that rule, so a check that reads -S misses the jump and restores the rules on every tick", iptForwardChainName)
 	}
 }
 
