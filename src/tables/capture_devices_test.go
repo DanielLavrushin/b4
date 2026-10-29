@@ -118,33 +118,37 @@ func TestTheDeviceGateQueuesAfterTheFirmwareForwardRulesOnIptables(t *testing.T)
 	}
 }
 
-func TestTheMonitorFindsTheDeviceGateJumpBelowARuleItsIptablesCannotPrint(t *testing.T) {
-	h := newGoldenHost(t)
-	goldenIsolate(t, h)
-	for _, bin := range []string{backendIPTables, backendIP6Tables} {
-		h.iptTable(bin, "mangle").chain("FORWARD").rules = []string{"-m state --state NEW -j SKIPLOG"}
-	}
-	cfg := captureDevicesConfig(backendIPTables, false, gateMACDevice)
-	if err := AddRules(cfg); err != nil {
-		t.Fatalf("AddRules: %v", err)
-	}
-	inner := run
-	run = func(args ...string) (string, error) {
-		out, err := inner(args...)
-		if err != nil || !slices.Contains(args, "-S") || !slices.Contains(args, "FORWARD") {
-			return out, err
-		}
-		var printed []string
-		for _, line := range strings.Split(out, "\n") {
-			if strings.Contains(line, "SKIPLOG") {
-				return strings.Join(append(printed, "iptables: Couldn't load target `SKIPLOG':No such file or directory"), "\n"), errors.New("exit status 1")
+func TestTheMonitorFindsTheDeviceGateJumpsBelowARuleItsIptablesCannotPrint(t *testing.T) {
+	for chain, target := range map[string]string{"FORWARD": iptForwardChainName, "OUTPUT": iptChainName} {
+		t.Run(chain, func(t *testing.T) {
+			h := newGoldenHost(t)
+			goldenIsolate(t, h)
+			for _, bin := range []string{backendIPTables, backendIP6Tables} {
+				h.iptTable(bin, "mangle").chain(chain).rules = []string{"-m state --state NEW -j SKIPLOG"}
 			}
-			printed = append(printed, line)
-		}
-		return out, err
-	}
-	if !(&Monitor{}).checkRules(cfg) {
-		t.Errorf("mangle FORWARD holds a rule whose target b4's iptables cannot print, above b4's jump to %s; legacy iptables -S stops at that rule, so a check that reads -S misses the jump and restores the rules on every tick", iptForwardChainName)
+			cfg := captureDevicesConfig(backendIPTables, false, gateMACDevice)
+			if err := AddRules(cfg); err != nil {
+				t.Fatalf("AddRules: %v", err)
+			}
+			inner := run
+			run = func(args ...string) (string, error) {
+				out, err := inner(args...)
+				if err != nil || !slices.Contains(args, "-S") || !slices.Contains(args, chain) {
+					return out, err
+				}
+				var printed []string
+				for _, line := range strings.Split(out, "\n") {
+					if strings.Contains(line, "SKIPLOG") {
+						return strings.Join(append(printed, "iptables: Couldn't load target `SKIPLOG':No such file or directory"), "\n"), errors.New("exit status 1")
+					}
+					printed = append(printed, line)
+				}
+				return out, err
+			}
+			if !(&Monitor{}).checkRules(cfg) {
+				t.Errorf("mangle %s holds a rule whose target b4's iptables cannot print, above b4's appended jump to %s; legacy iptables -S stops at that rule, so a check that reads -S misses the jump and restores the rules on every tick", chain, target)
+			}
+		})
 	}
 }
 

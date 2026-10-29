@@ -3,6 +3,8 @@
 ## [1.88.2] - 2026-10-29
 
 - FIXED: **On Keenetic, devices handled by Device Filtering could not open any site, even one in no set** - Keenetic lets a connection out under the router's address only after its own firewall rules have marked it. b4 took the first packets of these connections before those rules ran. The connections then left with the device's local address and got no answer. [#466](https://github.com/DanielLavrushin/b4/issues/466)
+- FIXED: **With Device Filtering on, b4 could rebuild its firewall rules every 10 seconds** - a rule from the firmware or another service that b4's own iptables could not read hid one of b4's rules from its checks. b4 took that rule for missing and rebuilt all of them each time. Each rebuild ran dozens of firewall commands, and saving settings waited for it.
+- FIXED: **The log showed four failed routing commands each time the Telegram over WebSocket set was rebuilt or removed** - b4 tried to remove a QUIC rule chain that such a set never has. A proxy set with Route UDP through upstream on gave the same warnings. They appeared on settings saves that rebuild such a set and on every stop of b4.
 
 ## [1.88.1] - 2026-10-26
 
