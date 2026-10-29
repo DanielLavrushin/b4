@@ -260,6 +260,42 @@ func iptListingQueuesTCP(listing, chain string) bool {
 	return false
 }
 
+// iptListingQueuesUDP is the UDP counterpart of iptListingQueuesTCP: b4 queues
+// the configured UDP ports in the capture chain, and losing that rule at
+// runtime costs QUIC interception without any visible error.
+func iptListingQueuesUDP(listing, chain string) bool {
+	for _, line := range strings.Split(listing, "\n") {
+		if iptLineHasTokens(line, []string{"-A", chain}) && iptLineHasTokens(line, []string{"-p", "udp"}) && iptLineHasTokens(line, []string{"-j", "NFQUEUE"}) {
+			return true
+		}
+	}
+	return false
+}
+
+// captureQueueRulesMissing reports whether the capture chain lost the queue
+// rules that hand packets to b4, leaving the chain (and its mark returns)
+// otherwise intact. Such a half-removed chain is what a netfilter rebuild by
+// the firmware leaves behind, and without these rules no strategy runs at all.
+func captureQueueRulesMissing(cfg *config.Config, tcp, udp bool) bool {
+	if !tcp {
+		return true
+	}
+	return len(cfg.CollectUDPPorts()) > 0 && !udp
+}
+
+// nftListingQueues reports whether the listing holds a queue rule for the given
+// protocol. The match is per line: the capture chain also carries plain
+// "udp dport 53 return" rules, so a whole-text search would answer yes for a
+// chain whose UDP queue rule is gone.
+func nftListingQueues(listing, proto string) bool {
+	for _, line := range strings.Split(listing, "\n") {
+		if strings.Contains(line, proto) && strings.Contains(line, "queue") {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 	legacy := m.firewallBackend() == backendIPTablesLegacy
 	ipt4 := backendIPTables
@@ -288,6 +324,12 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 		if !iptListingHasMarkReturn(capture, iptChainName, ownMark) {
 			log.Tracef("Monitor: B4's return for b4's own packets (mark %s) missing", ownMark)
+			return false
+		}
+		tcpQueued := iptListingQueuesTCP(capture, iptChainName)
+		udpQueued := iptListingQueuesUDP(capture, iptChainName)
+		if captureQueueRulesMissing(cfg, tcpQueued, udpQueued) {
+			log.Tracef("Monitor: %s lost its queue rules (tcp=%v, udp=%v), so no strategy runs at all", iptChainName, tcpQueued, udpQueued)
 			return false
 		}
 
@@ -423,6 +465,14 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 
 	if !nft.chainExists(nftChainName) {
 		log.Tracef("Monitor: b4_chain missing")
+		return false
+	}
+
+	captureChain, _ := nft.runNft("list", "chain", "inet", nftTableName, nftChainName)
+	nftTCPQueued := nftListingQueues(captureChain, "tcp")
+	nftUDPQueued := nftListingQueues(captureChain, "udp")
+	if captureQueueRulesMissing(cfg, nftTCPQueued, nftUDPQueued) {
+		log.Tracef("Monitor: %s lost its queue rules (tcp=%v, udp=%v), so no strategy runs at all", nftChainName, nftTCPQueued, nftUDPQueued)
 		return false
 	}
 

@@ -145,7 +145,7 @@ func TestMonitorChecksTheBackendTheRulesWereAppliedWith(t *testing.T) {
 func TestMonitorLeavesTheRebuildToTheRefreshWhileDiscoveryRuns(t *testing.T) {
 	appliedResetGlobals(t)
 	calls := recordRuleCalls(false)
-	present := "-A B4_PREROUTING -p udp --sport 53 -j NFQUEUE -p tcp --dport 53 -j NFQUEUE -m mark 0x8000 -j B4\n-A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN"
+	present := "-A B4_PREROUTING -p udp --sport 53 -j NFQUEUE -p tcp --dport 53 -j NFQUEUE -m mark 0x8000 -j B4\n-A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN\n-A B4 -p tcp -m multiport --dports 443 -j NFQUEUE --queue-num 537 --queue-bypass\n-A B4 -p udp -m multiport --dports 443 -j NFQUEUE --queue-num 537 --queue-bypass"
 	m, applied, published := appliedDuringDiscovery(t, present, nil)
 
 	for i := 0; i < 3; i++ {

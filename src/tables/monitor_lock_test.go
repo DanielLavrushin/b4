@@ -249,6 +249,8 @@ func TestMonitorLeavesAPendingApplyToTheRefresh(t *testing.T) {
 		"-A B4_PREROUTING -p tcp -m multiport --sports 443 -m tcp --tcp-flags SYN,ACK SYN,ACK -j NFQUEUE --queue-num 537 --queue-bypass",
 		"-A OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT",
 		"-A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN",
+		"-A B4 -p tcp -m multiport --dports 443 -j NFQUEUE --queue-num 537 --queue-bypass",
+		"-A B4 -p udp -m multiport --dports 443 -j NFQUEUE --queue-num 537 --queue-bypass",
 	}, "\n")
 	calls := 0
 	run = func(args ...string) (string, error) {
