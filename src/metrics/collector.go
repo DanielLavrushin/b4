@@ -30,6 +30,7 @@ type MetricsCollector struct {
 	dev        deviceState
 	ev         eventState
 	esc        escState
+	bans       banState
 	st         liveState
 	ts         tickState
 }
@@ -40,6 +41,19 @@ type EscalationEntry struct {
 	Hops      int       `json:"hops"`
 	SetAt     time.Time `json:"set_at"`
 	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type BanEntry struct {
+	Key     string `json:"key"`
+	IP      string `json:"ip"`
+	Port    int    `json:"port"`
+	Host    string `json:"host"`
+	Set     string `json:"set"`
+	Strikes int    `json:"strikes"`
+	Repeat  bool   `json:"repeat"`
+	Since   int64  `json:"since"`
+	Until   int64  `json:"until"`
+	Passes  int    `json:"passes"`
 }
 
 type MTProtoStats struct {
@@ -113,6 +127,10 @@ func (m *MetricsCollector) RecordEscalation() {
 
 func (m *MetricsCollector) UpdateEscalations(entries []EscalationEntry) {
 	m.storeEscalations(entries)
+}
+
+func (m *MetricsCollector) UpdateBans(entries []BanEntry) {
+	m.storeBans(entries)
 }
 
 func (m *MetricsCollector) SetEngineFailure(f *EngineFailure) {

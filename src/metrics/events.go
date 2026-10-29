@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"slices"
@@ -33,6 +34,12 @@ type escState struct {
 	mu    sync.Mutex
 	rev   uint64
 	items []EscalationEntry
+}
+
+type banState struct {
+	mu    sync.Mutex
+	rev   uint64
+	items []BanEntry
 }
 
 func (m *MetricsCollector) Event(level, code string, args map[string]string, message string) {
@@ -167,4 +174,35 @@ func (s *escState) list(off int64) *EscalationList {
 		items[i].ExpiresAt = relabelTime(items[i].ExpiresAt, off)
 	}
 	return &EscalationList{Rev: rev, Items: items}
+}
+
+func (m *MetricsCollector) storeBans(entries []BanEntry) {
+	sorted := slices.Clone(entries)
+	slices.SortFunc(sorted, func(a, b BanEntry) int {
+		if c := cmp.Compare(b.Until, a.Until); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Key, b.Key)
+	})
+	s := &m.bans
+	s.mu.Lock()
+	if !slices.Equal(s.items, sorted) {
+		s.items = sorted
+		s.rev++
+	}
+	s.mu.Unlock()
+}
+
+func (s *banState) currentRev() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rev
+}
+
+func (s *banState) list() *BanList {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items := make([]BanEntry, len(s.items))
+	copy(items, s.items)
+	return &BanList{Rev: s.rev, Items: items}
 }

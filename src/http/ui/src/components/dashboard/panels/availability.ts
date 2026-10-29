@@ -6,6 +6,9 @@ import { shallowEqual, useMetricsFrame } from "@/stores/useMetrics";
 export const hasEscalations = (frame: MetricsFrame): boolean =>
   (frame.escalations?.items.length ?? 0) > 0;
 
+export const hasBans = (frame: MetricsFrame): boolean =>
+  (frame.bans?.items.length ?? 0) > 0;
+
 export const hasBlocking = (frame: MetricsFrame): boolean =>
   frame.totals.blocked_dns + frame.totals.blocked_conns > 0 ||
   frame.sets.some((set) => set.kind === "block");
@@ -15,12 +18,14 @@ export const hasMTProto = (frame: MetricsFrame): boolean =>
 
 export interface PanelAvailability {
   escalations: boolean;
+  bans: boolean;
   blocked: boolean;
   telegram: boolean;
 }
 
 const NONE: PanelAvailability = {
   escalations: false,
+  bans: false,
   blocked: false,
   telegram: false,
 };
@@ -30,6 +35,7 @@ export function usePanelAvailability(): PanelAvailability {
   const fromFrame = useMetricsFrame(
     (frame) => ({
       escalations: hasEscalations(frame),
+      bans: hasBans(frame),
       blocked: hasBlocking(frame),
       telegram: hasMTProto(frame),
     }),

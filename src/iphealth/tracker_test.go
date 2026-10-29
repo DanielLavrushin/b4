@@ -1,6 +1,12 @@
 package iphealth
 
 import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"sync"
 	"testing"
@@ -231,5 +237,170 @@ func TestTrackerResponseStillRefreshesLiveEntry(t *testing.T) {
 
 	if syns != 0 || st != stateLive {
 		t.Errorf("syns=%d state=%v, want a reply to reset the SYN counter on a live entry", syns, st)
+	}
+}
+
+const (
+	testProbeConnect   = time.Second
+	testProbeHandshake = 150 * time.Millisecond
+)
+
+func probeAddr(t *testing.T, addr net.Addr) (net.IP, int) {
+	t.Helper()
+	tcp, ok := addr.(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("not a TCP address: %v", addr)
+	}
+	return tcp.IP, tcp.Port
+}
+
+func serveRaw(t *testing.T, ln net.Listener, handle func(net.Conn)) {
+	t.Helper()
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var conns []net.Conn
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			conns = append(conns, c)
+			mu.Unlock()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				handle(c)
+			}()
+		}
+	}()
+	t.Cleanup(func() {
+		ln.Close()
+		mu.Lock()
+		for _, c := range conns {
+			c.Close()
+		}
+		mu.Unlock()
+		wg.Wait()
+	})
+}
+
+func listenLocal(t *testing.T) net.Listener {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	return ln
+}
+
+func TestProbeTLSRepliedWhenTheHandshakeCompletes(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer srv.Close()
+
+	ip, port := probeAddr(t, srv.Listener.Addr())
+	if got := probeTLS(context.Background(), ip, port, 0, testProbeConnect, testProbeHandshake*10); got != TLSReplied {
+		t.Fatalf("a server that completes the handshake: %s, want replied", got)
+	}
+}
+
+func TestProbeTLSRepliedWhenTheServerSendsAnAlert(t *testing.T) {
+	ln := tls.NewListener(listenLocal(t), &tls.Config{
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return nil, errors.New("no certificate for this name")
+		},
+	})
+	serveRaw(t, ln, func(c net.Conn) {
+		_ = c.(*tls.Conn).Handshake()
+		c.Close()
+	})
+
+	ip, port := probeAddr(t, ln.Addr())
+	if got := probeTLS(context.Background(), ip, port, 0, testProbeConnect, testProbeHandshake*10); got != TLSReplied {
+		t.Fatalf("a TLS alert is an answer: %s, want replied", got)
+	}
+}
+
+func TestProbeTLSRepliedWhenTheServerSendsAnythingElse(t *testing.T) {
+	ln := listenLocal(t)
+	serveRaw(t, ln, func(c net.Conn) {
+		_, _ = c.Write([]byte("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n"))
+		c.Close()
+	})
+
+	ip, port := probeAddr(t, ln.Addr())
+	if got := probeTLS(context.Background(), ip, port, 0, testProbeConnect, testProbeHandshake*10); got != TLSReplied {
+		t.Fatalf("bytes that are not TLS are still an answer: %s, want replied", got)
+	}
+}
+
+func TestProbeTLSSilentWhenTheServerNeverWrites(t *testing.T) {
+	ln := listenLocal(t)
+	serveRaw(t, ln, func(c net.Conn) {
+		buf := make([]byte, 4096)
+		for {
+			if _, err := c.Read(buf); err != nil {
+				return
+			}
+		}
+	})
+
+	ip, port := probeAddr(t, ln.Addr())
+	start := time.Now()
+	if got := probeTLS(context.Background(), ip, port, 0, testProbeConnect, testProbeHandshake); got != TLSSilent {
+		t.Fatalf("a connected server that never answers: %s, want silent", got)
+	}
+	if took := time.Since(start); took > time.Duration(len(neutralTLSNames))*testProbeHandshake+time.Second {
+		t.Errorf("the handshake timeout must bound the probe, took %s", took)
+	}
+}
+
+func TestProbeTLSSilentWhenTheServerResetsWithoutAByte(t *testing.T) {
+	ln := listenLocal(t)
+	serveRaw(t, ln, func(c net.Conn) {
+		buf := make([]byte, 4096)
+		_, _ = c.Read(buf)
+		_ = c.(*net.TCPConn).SetLinger(0)
+		c.Close()
+	})
+
+	ip, port := probeAddr(t, ln.Addr())
+	if got := probeTLS(context.Background(), ip, port, 0, testProbeConnect, testProbeHandshake*10); got != TLSSilent {
+		t.Fatalf("a reset after the hello without one server byte: %s, want silent", got)
+	}
+}
+
+func TestProbeTLSUnreachableWhenTheConnectFails(t *testing.T) {
+	ln := listenLocal(t)
+	ip, port := probeAddr(t, ln.Addr())
+	ln.Close()
+
+	if got := probeTLS(context.Background(), ip, port, 0, testProbeConnect, testProbeHandshake); got != TLSUnreachable {
+		t.Fatalf("a closed port: %s, want unreachable", got)
+	}
+	if got := ProbeTLS(context.Background(), nil, 443, 0); got != TLSUnreachable {
+		t.Fatalf("no address: %s, want unreachable", got)
+	}
+}
+
+func TestProbeTLSIsInconclusiveWhenCancelled(t *testing.T) {
+	ln := listenLocal(t)
+	serveRaw(t, ln, func(c net.Conn) {
+		buf := make([]byte, 4096)
+		for {
+			if _, err := c.Read(buf); err != nil {
+				return
+			}
+		}
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	ip, port := probeAddr(t, ln.Addr())
+	if got := probeTLS(ctx, ip, port, 0, testProbeConnect, 10*time.Second); got != TLSUnreachable {
+		t.Fatalf("a probe cut short by shutdown must never read as silent: %s", got)
 	}
 }

@@ -7,6 +7,8 @@ import type {
   ActivityBucket,
   Attention,
   B4Event,
+  BanEntry,
+  BanList,
   BlockedEntry,
   BlockedLists,
   DeviceEntry,
@@ -185,6 +187,23 @@ function escalationList(v: unknown): EscalationList | undefined {
   return { rev: num(v.rev), items };
 }
 
+function banList(v: unknown): BanList | undefined {
+  if (!isObj(v)) return undefined;
+  const items: BanEntry[] = objects(v.items).map((o) => ({
+    key: str(o.key),
+    ip: str(o.ip),
+    port: num(o.port),
+    host: str(o.host),
+    set: str(o.set),
+    strikes: num(o.strikes),
+    repeat: bool(o.repeat),
+    since: num(o.since),
+    until: num(o.until),
+    passes: num(o.passes),
+  }));
+  return { rev: num(v.rev), items };
+}
+
 function event(o: Obj): B4Event {
   const out: B4Event = {
     id: num(o.id),
@@ -308,6 +327,8 @@ export function normalizeFrame(raw: unknown): MetricsFrame | null {
   if (devices) frame.devices = devices;
   const escalations = escalationList(raw.escalations);
   if (escalations) frame.escalations = escalations;
+  const bans = banList(raw.bans);
+  if (bans) frame.bans = bans;
   const events = eventLog(raw.events);
   if (events) frame.events = events;
   const mt = mtproto(raw.mtproto);
@@ -469,6 +490,9 @@ export function mergeFrame(prev: MetricsFrame | null, next: MetricsFrame): Metri
   const escalations = newerList(base.escalations, next.escalations);
   if (escalations) merged.escalations = escalations;
   else delete merged.escalations;
+  const bans = newerList(base.bans, next.bans);
+  if (bans) merged.bans = bans;
+  else delete merged.bans;
   const events = newerList(base.events, next.events);
   if (events) merged.events = events;
   else delete merged.events;

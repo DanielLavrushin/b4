@@ -283,6 +283,8 @@ func (c *Config) Validate() error {
 	if c.System.IPHealth.RetestIntervalSec <= 0 {
 		c.System.IPHealth.RetestIntervalSec = DefaultIPHealthRetestSec
 	}
+	c.System.IPHealth.BanTTLSec = clampBanSec(c.System.IPHealth.BanTTLSec, DefaultIPBanTTLSec, MaxIPBanTTLSec)
+	c.System.IPHealth.RepeatBanTTLSec = clampBanSec(c.System.IPHealth.RepeatBanTTLSec, DefaultIPRepeatBanTTLSec, MaxIPRepeatBanTTLSec)
 
 	for setIdx, set := range c.Sets {
 		ibd := &set.TCP.IPBlockDetect

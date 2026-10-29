@@ -533,7 +533,14 @@
     "IPHealth": {
       "title": "IP Block Detection",
       "retestInterval": "Retest interval (seconds)",
-      "retestIntervalHelper": "How long an address that IP block detection marked unreachable stays marked before it is tested again. The verdict is shared by all sets, and recovery after a block is lifted can take about this long."
+      "retestIntervalHelper": "How long an address that IP block detection marked unreachable stays marked before it is tested again; banned addresses are tested again at the same interval. Verdicts are shared by all sets. After a block is lifted, an unreachable address recovers within about one interval, a banned one after three successful tests in a row.",
+      "rememberBans": "Remember blocked addresses",
+      "rememberBansDesc": "Applies to sets with IP block detection and Cache Blocked IPs on. When such a set catches an address that gives no TLS answer for other site names either, b4 bans it: new connections to the address are reset at once so the client moves on to its next address, and DNS answers for names in any set leave it out. Bans survive restarts and set edits, and the dashboard lists them.",
+      "banTtl": "First ban (hours)",
+      "banTtlHelper": "How long an address stays banned the first time it is caught.",
+      "repeatBanTtl": "Repeat ban (days)",
+      "repeatBanTtlHelper": "How long the ban lasts when an address is caught again within 30 days after its previous ban ended.",
+      "credit": "Ban list and re-test approach inspired by"
     },
     "Dns": {
       "title": "DNS",
@@ -1057,6 +1064,34 @@
       "cleared_one": "Escalations cleared: {{value}} host went back to its original set",
       "cleared_other": "Escalations cleared: {{value}} hosts went back to their original set",
       "clearFailed": "Could not clear the escalations: {{error}}"
+    },
+    "bans": {
+      "title": "Banned addresses",
+      "subtitle": "No TLS answer for any site name: clients use other addresses until the ban ends",
+      "empty": "No banned addresses right now",
+      "set": "set {{set}}",
+      "setHint": "The set whose IP block detection caught this address",
+      "strikes_one": "{{value}} strike",
+      "strikes_other": "{{value}} strikes",
+      "strikesHint": "How many times b4 caught this address and confirmed the block",
+      "repeat": "repeat",
+      "repeatHint": "Caught again within 30 days after its previous ban ended, so the repeat ban duration applies",
+      "left": "{{duration}} left",
+      "expiring": "expiring",
+      "endsAt": "Ban ends at {{time}}, or earlier once the address passes three tests in a row",
+      "unban": "Unban",
+      "unbanLabel": "Unban {{address}}",
+      "unbanned": "{{address}} unbanned",
+      "unbanFailed": "Could not unban {{address}}: {{error}}",
+      "clear": "Clear all",
+      "confirmTitle": "Clear banned addresses",
+      "confirmBody_one": "{{value}} address is unbanned.",
+      "confirmBody_other": "{{value}} addresses are unbanned.",
+      "confirmDetail": "New connections and DNS answers can use these addresses again. b4 also forgets their earlier bans, so an address that is caught again gets the first ban duration.",
+      "cleared_one": "Bans cleared: {{value}} address unbanned",
+      "cleared_other": "Bans cleared: {{value}} addresses unbanned",
+      "clearFailed": "Could not clear the bans: {{error}}",
+      "settings": "Ban settings"
     },
     "customize": {
       "action": "Customize",
@@ -3635,6 +3670,8 @@
       "duplicate": "Duplicated packet",
       "voiceExempt": "Call packet passed through untouched: the set has Calls on Pass call setup, or the packet belongs to a call that a set handling only calls took",
       "ipBlocked": "Blocked by IP",
+      "ipBanned": "Banned address: it gave no TLS answer for any site name, so the connection was reset at once",
+      "ipBannedLabel": "ban",
       "dns": {
         "doh": "DNS resolved over DoH through {{target}}",
         "forward": "DNS resolved by b4 against {{target}}",

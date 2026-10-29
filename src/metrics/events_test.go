@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -215,5 +216,75 @@ func TestEscalationTimesFollowAClockJump(t *testing.T) {
 	}
 	if d := after.ExpiresAt.Sub(after.SetAt); d != time.Hour {
 		t.Fatalf("the ttl is kept: %v", d)
+	}
+}
+
+func TestBanRevMovesOnlyWhenTheContentChanges(t *testing.T) {
+	r := newRig(t, rigStart, 0)
+	a := BanEntry{Key: "74.125.172.167:443", IP: "74.125.172.167", Port: 443, Host: "rr2---sn-ab5l6nr6.googlevideo.com", Set: "1.googlevideo", Strikes: 1, Since: 1793305899000, Until: 1793392299000}
+	b := BanEntry{Key: "64.233.161.198:443", IP: "64.233.161.198", Port: 443, Host: "yt3.ggpht.com", Set: "1.googlevideo", Strikes: 2, Repeat: true, Since: 1793305899000, Until: 1793910699000}
+
+	r.m.UpdateBans([]BanEntry{a, b})
+	list := r.m.Hello().Bans
+	rev := list.Rev
+	if len(list.Items) != 2 || list.Items[0].Key != b.Key {
+		t.Fatalf("items sorted by until, latest first: %+v", list.Items)
+	}
+	r.m.UpdateBans([]BanEntry{b, a})
+	if got := r.m.Hello().Bans.Rev; got != rev {
+		t.Fatalf("the same bans in another order are no change: %d -> %d", rev, got)
+	}
+
+	a.Passes = 1
+	r.m.UpdateBans([]BanEntry{a, b})
+	if got := r.m.Hello().Bans.Rev; got != rev+1 {
+		t.Fatalf("a re-test pass is a change: %d -> %d", rev, got)
+	}
+	r.m.UpdateBans(nil)
+	list = r.m.Hello().Bans
+	if list.Rev != rev+2 || len(list.Items) != 0 || list.Items == nil {
+		t.Fatalf("an empty push clears the list: %+v", list)
+	}
+	r.m.UpdateBans([]BanEntry{})
+	if got := r.m.Hello().Bans.Rev; got != rev+2 {
+		t.Fatalf("empty after empty is no change: %d", got)
+	}
+}
+
+func TestTickCarriesBansOnlyWhenTheirRevMoved(t *testing.T) {
+	r := newRig(t, rigStart, 0)
+	m := r.m
+	var sent SentRevs
+	if fr := m.Tick(&sent); fr.Bans != nil {
+		t.Fatal("nothing banned yet, nothing to send")
+	}
+
+	m.UpdateBans([]BanEntry{{Key: "74.125.172.167:443", IP: "74.125.172.167", Port: 443, Strikes: 1, Since: 1793305899000, Until: 1793392299000}})
+	fr := m.Tick(&sent)
+	if fr.Bans == nil || sent.Bans != fr.Bans.Rev {
+		t.Fatalf("a new list goes out once and its rev is recorded: %+v, sent %+v", fr.Bans, sent)
+	}
+	if fr = m.Tick(&sent); fr.Bans != nil {
+		t.Fatal("an unchanged list is not resent")
+	}
+	if hello := m.Hello(); hello.Bans == nil || len(hello.Bans.Items) != 1 {
+		t.Fatalf("hello always carries the list: %+v", hello.Bans)
+	}
+
+	raw, err := json.Marshal(m.Hello().Bans.Items[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"key", "ip", "port", "host", "set", "strikes", "repeat", "since", "until", "passes"} {
+		if _, ok := fields[k]; !ok {
+			t.Errorf("ban entry JSON lacks %q: %s", k, raw)
+		}
+	}
+	if fields["until"] != float64(1793392299000) {
+		t.Errorf("until must be wall-clock milliseconds, got %v", fields["until"])
 	}
 }

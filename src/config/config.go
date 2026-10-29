@@ -322,6 +322,8 @@ var DefaultConfig = Config{
 
 		IPHealth: IPHealthConfig{
 			RetestIntervalSec: DefaultIPHealthRetestSec,
+			BanTTLSec:         DefaultIPBanTTLSec,
+			RepeatBanTTLSec:   DefaultIPRepeatBanTTLSec,
 		},
 
 		Timezone:    "",

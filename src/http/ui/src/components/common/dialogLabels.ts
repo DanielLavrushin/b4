@@ -72,6 +72,7 @@ const LABEL_EXCEPTIONS: Record<string, string> = {
   "system.checker.watchdog.domains": "settings.Watchdog.domainsConfig",
   "system.dns.keep_ipv6_answers": "settings.Dns.ipv4Fallback",
   "system.dns.tcp_disabled": "settings.Dns.tcpEnable",
+  "system.ip_health.bans_off": "settings.IPHealth.rememberBans",
   "system.logging.directory": "settings.Logging.logDirectory",
   "system.logging.instaflush": "settings.Logging.instantFlush",
   "system.logging.level": "settings.Logging.logLevel",

@@ -301,6 +301,12 @@ func (t *destStateTracker) AddBlocked(dstIPPort string) {
 	t.blocked[dstIPPort] = time.Now()
 }
 
+func (t *destStateTracker) Unblock(dstIPPort string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.blocked, dstIPPort)
+}
+
 func (t *destStateTracker) ResetBlocked() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -595,6 +601,7 @@ type runtimeState struct {
 	ipHealth     *iphealth.Tracker
 	pinHealth    *pinHealth
 	goodIPs      *iphealth.KnownGood
+	bans         *ipBans
 }
 
 func newRuntimeState() *runtimeState {

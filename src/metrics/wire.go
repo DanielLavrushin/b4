@@ -75,6 +75,7 @@ type Frame struct {
 	TopAddresses  *TopList        `json:"top_addresses,omitempty"`
 	Devices       *DeviceList     `json:"devices,omitempty"`
 	Escalations   *EscalationList `json:"escalations,omitempty"`
+	Bans          *BanList        `json:"bans,omitempty"`
 	Events        *EventLog       `json:"events,omitempty"`
 	Attention     Attention       `json:"attention"`
 	MTProto       *MTProtoStats   `json:"mtproto,omitempty"`
@@ -191,6 +192,11 @@ type DeviceList struct {
 type EscalationList struct {
 	Rev   uint64            `json:"rev"`
 	Items []EscalationEntry `json:"items"`
+}
+
+type BanList struct {
+	Rev   uint64     `json:"rev"`
+	Items []BanEntry `json:"items"`
 }
 
 type Event struct {

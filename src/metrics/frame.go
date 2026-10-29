@@ -8,6 +8,7 @@ type SentRevs struct {
 	TopAddresses uint64
 	Devices      uint64
 	Escalations  uint64
+	Bans         uint64
 	Events       uint64
 }
 
@@ -85,6 +86,12 @@ func (m *MetricsCollector) buildFrame(sent *SentRevs) Frame {
 		fr.Escalations = m.esc.list(off)
 		if !full {
 			sent.Escalations = fr.Escalations.Rev
+		}
+	}
+	if full || m.bans.currentRev() > sent.Bans {
+		fr.Bans = m.bans.list()
+		if !full {
+			sent.Bans = fr.Bans.Rev
 		}
 	}
 	if full || m.ev.currentRev() > sent.Events {

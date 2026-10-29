@@ -65,7 +65,7 @@ func (w *Worker) pinnedAnswer(set *config.SetConfig, query []byte, domain string
 		}
 		family = append(family, ip)
 		key := ip.String()
-		if synDetectEnabled(set) && w.ipHealth != nil && w.ipHealth.IsDead(key) {
+		if (synDetectEnabled(set) && w.ipHealth != nil && w.ipHealth.IsDead(key)) || w.bans.bannedIP(ip) {
 			continue
 		}
 		unblocked = append(unblocked, ip)
@@ -81,7 +81,7 @@ func (w *Worker) pinnedAnswer(set *config.SetConfig, query []byte, domain string
 		return nil
 	}
 	if len(unblocked) == 0 {
-		log.Warnf("DNS pin: every pinned address for %s is unreachable, passing the query through (set: %s)", domain, set.Name)
+		log.Warnf("DNS pin: every pinned address for %s is unreachable or banned, passing the query through (set: %s)", domain, set.Name)
 		return nil
 	}
 	if len(live) == 0 {
@@ -149,6 +149,25 @@ func synTrackingEnabled(set *config.SetConfig) bool {
 	return synDetectEnabled(set) || set.Escalate.Active()
 }
 
+func (w *Worker) handleSynBan(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig, sport, dport uint16) bool {
+	if w == nil || cfg == nil || cfg.Queue.IsDiscovery || !banEnforced(set) || !w.bans.banned(pkt.dst, dport) {
+		return false
+	}
+
+	host, _, _ := w.hostForDest(cfg, pkt.srcStr, pkt.dstStr, pkt.srcMac, vc.scope.filter())
+	log.LogConnection("TCP", set.Name, host, pkt.srcStr, sport, "", pkt.dstStr, dport, pkt.srcMac, "", "ipblock-ban")
+
+	observeFlow(cfg, pkt, sport, dport, set, host)
+
+	if pkt.ver == IPv4 {
+		w.sendSynRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
+	} else {
+		w.sendSynRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
+	}
+	vc.drop()
+	return true
+}
+
 func (w *Worker) handleSynHealth(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig, sport, dport uint16) bool {
 	if w == nil || w.ipHealth == nil || cfg == nil || cfg.Queue.IsDiscovery || !synTrackingEnabled(set) {
 		return false
@@ -212,7 +231,11 @@ func (w *Worker) recordDestAlive(serverIP, clientIP string, isSynAck bool) {
 		return
 	}
 	if _, host, ok := w.hostHints.Lookup(clientIP, serverIP); ok && host != "" {
-		w.goodIPs.Remember(host, net.ParseIP(serverIP))
+		ip := net.ParseIP(serverIP)
+		if w.bans.bannedIP(ip) {
+			return
+		}
+		w.goodIPs.Remember(host, ip)
 	}
 }
 
@@ -309,7 +332,12 @@ func (w *Worker) stripIPv6Addresses(cfg *config.Config, set *config.SetConfig, d
 }
 
 func (w *Worker) healDeadAddresses(cfg *config.Config, set *config.SetConfig, domain string, resp []byte, overTCP bool) []byte {
-	if w == nil || w.ipHealth == nil || len(resp) == 0 || !w.healingSet(cfg, set) {
+	if w == nil || len(resp) == 0 || cfg == nil || set == nil || cfg.Queue.IsDiscovery {
+		return nil
+	}
+	healDead := w.ipHealth != nil && w.healingSet(cfg, set)
+	dropBanned := w.bans.any()
+	if !healDead && !dropBanned {
 		return nil
 	}
 
@@ -318,16 +346,29 @@ func (w *Worker) healDeadAddresses(cfg *config.Config, set *config.SetConfig, do
 		maxSize = dns.MaxTCPMessageSize
 	}
 
+	dead := func(ip net.IP) bool { return healDead && w.ipHealth.IsDead(ip.String()) }
+	banned := func(ip net.IP) bool { return dropBanned && w.bans.bannedIP(ip) }
+	sawDead, sawBanned := false, false
+
 	ttlCap := set.TCP.IPBlockDetect.ResolvedHealTTL()
 	out, verdict := dns.FilterAnswerIPs(resp, ttlCap, maxSize, func(ip net.IP) bool {
-		return w.ipHealth.IsDead(ip.String())
+		if dead(ip) {
+			sawDead = true
+			return true
+		}
+		if banned(ip) {
+			sawBanned = true
+			return true
+		}
+		return false
 	})
+	what := healedKind(sawDead, sawBanned)
 
 	switch verdict {
 	case dns.FilterTooLarge:
 		log.Warnf("DNS heal: the curated answer for %s would not fit the response size the client allows, passing the original through (set: %s)", domain, set.Name)
 	case dns.FilterRewritten:
-		log.Infof("DNS heal: dropped unreachable addresses from the answer for %s (set: %s)", domain, set.Name)
+		log.Infof("DNS heal: dropped %s addresses from the answer for %s (set: %s)", what, domain, set.Name)
 		return out
 	case dns.FilterAllDropped:
 		qtype, ok := dns.QuestionType(resp)
@@ -336,17 +377,27 @@ func (w *Worker) healDeadAddresses(cfg *config.Config, set *config.SetConfig, do
 		}
 		live := make([]net.IP, 0, 4)
 		for _, ip := range w.goodIPs.Lookup(domain, qtype == dnsTypeAAAA) {
-			if !w.ipHealth.IsDead(ip.String()) {
+			if !dead(ip) && !w.bans.bannedIP(ip) {
 				live = append(live, ip)
 			}
 		}
 		if len(live) > 0 {
 			if built := dns.BuildAnswerFromIPs(resp, ttlCap, live); built != nil {
-				log.Warnf("DNS heal: every address the answer for %s carries is unreachable, answering with %s instead (set: %s)", domain, live[0], set.Name)
+				log.Warnf("DNS heal: every address the answer for %s carries is %s, answering with %s instead (set: %s)", domain, what, live[0], set.Name)
 				return built
 			}
 		}
-		log.Warnf("DNS heal: every address for %s is unreachable and no reachable one has been seen for it, passing the answer through unchanged (set: %s)", domain, set.Name)
+		log.Warnf("DNS heal: every address for %s is %s and no usable one has been seen for it, passing the answer through unchanged (set: %s)", domain, what, set.Name)
 	}
 	return nil
+}
+
+func healedKind(dead, banned bool) string {
+	switch {
+	case dead && banned:
+		return "unreachable or banned"
+	case banned:
+		return "banned"
+	}
+	return "unreachable"
 }
