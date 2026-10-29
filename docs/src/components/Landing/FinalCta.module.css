@@ -1,0 +1,50 @@
+.section {
+  padding-block: 32px 96px;
+}
+
+.card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  padding: 80px 48px;
+  border: 1px solid var(--l-line);
+  border-radius: 24px;
+  background-color: var(--l-surface);
+  text-align: center;
+}
+
+.title {
+  max-width: 680px;
+}
+
+.text {
+  max-width: 680px;
+  margin-top: 16px;
+}
+
+.actions {
+  --l-command-bg: var(--l-bg);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  max-width: 100%;
+  margin-top: 40px;
+}
+
+@media (max-width: 996px) {
+  .section {
+    padding-block: 16px 64px;
+  }
+
+  .card {
+    padding: 64px 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: 48px 16px;
+  }
+}

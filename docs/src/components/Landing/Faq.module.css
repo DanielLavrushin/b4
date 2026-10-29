@@ -1,0 +1,154 @@
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+  align-items: start;
+  gap: 64px;
+}
+
+.head {
+  position: sticky;
+  top: 112px;
+  display: grid;
+  gap: 16px;
+}
+
+.leadLink {
+  border-radius: 4px;
+  color: var(--l-accent);
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 300ms var(--l-ease);
+}
+
+.leadLink:hover {
+  color: var(--l-text);
+  text-decoration: none;
+}
+
+.leadLink:focus-visible {
+  outline: 2px solid var(--l-accent);
+  outline-offset: 2px;
+}
+
+.list {
+  display: grid;
+  gap: 8px;
+}
+
+.item {
+  border: 1px solid var(--l-line);
+  border-radius: 16px;
+  background-color: var(--l-surface);
+  transition: border-color 300ms var(--l-ease);
+}
+
+.item:hover,
+.item[open] {
+  border-color: var(--l-line-strong);
+}
+
+.question {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  border-radius: 16px;
+  color: var(--l-text);
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+
+.question::-webkit-details-marker {
+  display: none;
+}
+
+.question:focus-visible {
+  outline: 2px solid var(--l-accent);
+  outline-offset: 2px;
+}
+
+.icon {
+  flex: none;
+  color: var(--l-faint);
+  transition:
+    transform 500ms var(--l-ease),
+    color 300ms var(--l-ease);
+}
+
+.item[open] .icon {
+  color: var(--l-accent);
+  transform: rotate(45deg);
+}
+
+.answer {
+  padding: 0 24px 24px;
+  color: var(--l-muted);
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.answer strong {
+  color: var(--l-text);
+  font-weight: 600;
+}
+
+.item[open] .answer {
+  animation: answerIn 500ms var(--l-ease) both;
+}
+
+@keyframes answerIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes answerFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 996px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 40px;
+  }
+
+  .head {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .question {
+    padding: 16px;
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+
+  .answer {
+    padding: 0 16px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item[open] .answer {
+    animation-name: answerFade;
+  }
+
+  .item[open] .icon {
+    transform: none;
+  }
+}

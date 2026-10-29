@@ -1,56 +1,318 @@
 {
-  "home.title": {
-    "message": "Документация"
+  "home.meta.title": {
+    "message": "Обход DPI и маршрутизация трафика для роутеров на Linux"
   },
   "home.meta.description": {
-    "message": "b4 - обход блокировок для Linux"
+    "message": "Сервис b4 для роутеров на Linux меняет вид пакетов выбранных сайтов для DPI провайдера, а при необходимости отправляет их через VPN или прокси."
   },
-  "home.subtitle": {
-    "message": "Обход блокировок на уровне сетевых пакетов для Linux и роутеров"
+  "home.hero.released": {
+    "message": "Выпуск от {date}"
   },
-  "home.description": {
-    "message": "Веб-интерфейс, автоматический подбор конфигурации, поддержка роутеров и серверов"
+  "home.hero.title": {
+    "message": "Обход DPI\nдля роутеров на Linux"
   },
-  "home.cta.start": {
+  "home.hero.subtitle": {
+    "message": "Сервис b4 для Linux меняет то, как пакеты выбранных сайтов выглядят для DPI провайдера, а при необходимости отправляет их через VPN или прокси. На роутере он работает для всех устройств в сети, на телефоны и телевизоры ничего ставить не нужно."
+  },
+  "home.cta.guide": {
+    "message": "Инструкция по установке"
+  },
+  "home.hero.shot.alt": {
+    "message": "Дашборд b4: состояние сервиса, соединения в минуту и сеты, с которыми они совпали"
+  },
+  "home.install.label": {
+    "message": "Команда установки"
+  },
+  "home.install.copy": {
+    "message": "Копировать"
+  },
+  "home.install.copied": {
+    "message": "Скопировано"
+  },
+  "home.install.copiedHint": {
+    "message": "Скопировано. Вставьте команду в SSH-сессию на роутере."
+  },
+  "home.install.failed": {
+    "message": "Не получилось скопировать. Выделите команду и скопируйте вручную."
+  },
+  "home.install.hint": {
+    "message": "Запускать по SSH от root."
+  },
+  "home.dpi.title": {
+    "message": "Как это работает"
+  },
+  "home.dpi.lead": {
+    "message": "Провайдеры, которые блокируют сайты через DPI, читают имя сайта в первых пакетах соединения и сбрасывают или замедляют соединения из своего списка. b4 меняет вид этих первых пакетов: делит их на части, переставляет или отправляет перед ними фейковый. Сайт при этом получает те же данные."
+  },
+  "home.dpi.fake": {
+    "message": "фейк"
+  },
+  "home.dpi.before.label": {
+    "message": "Без b4"
+  },
+  "home.dpi.before.verdict": {
+    "message": "DPI видит имя и сбрасывает соединение"
+  },
+  "home.dpi.after.label": {
+    "message": "С b4"
+  },
+  "home.dpi.after.verdict": {
+    "message": "Имя приходит по частям, сайт получает тот же запрос"
+  },
+  "home.features.title": {
+    "message": "Что умеет b4"
+  },
+  "home.features.lead": {
+    "message": "Всё настраивается через сеты. Сет состоит из списка сайтов и того, что b4 делает с их трафиком."
+  },
+  "home.features.discovery.title": {
+    "message": "Дискавери"
+  },
+  "home.features.discovery.text": {
+    "message": "Дискавери перебирает стратегии b4 прямо на подключении роутера и показывает, с какой из них сайт открывается. Рабочую стратегию можно сохранить как сет. Поиск занимает от 1 до 10 минут."
+  },
+  "home.features.discovery.link": {
+    "message": "Как работает Дискавери"
+  },
+  "home.features.discovery.start": {
     "message": "Начать"
   },
-  "home.cta.github": {
-    "message": "GitHub"
+  "home.features.discovery.confirmed": {
+    "message": "подтверждена 3 из 3"
   },
-  "home.section.heading": {
-    "message": "Документация"
+  "home.features.discovery.none": {
+    "message": "обход не нужен"
   },
-  "home.section.intro.title": {
-    "message": "Введение",
-    "description": "Doc card title: intro"
+  "home.features.devices.title": {
+    "message": "Устройства"
   },
-  "home.section.intro.desc": {
-    "message": "Что такое b4, как работает обход блокировок и что нужно для старта.",
-    "description": "Doc card description: intro"
+  "home.features.devices.text": {
+    "message": "На роутере b4 обрабатывает трафик всех устройств в сети: телефонов, телевизоров, приставок. Сет можно ограничить отдельными устройствами."
   },
-  "home.section.install.title": {
-    "message": "Установка",
-    "description": "Doc card title: install"
+  "home.features.devices.link": {
+    "message": "Выбор устройств"
   },
-  "home.section.install.desc": {
-    "message": "Установка на Linux, OpenWRT, ASUS Merlin, Keenetic, MikroTik и Docker.",
-    "description": "Doc card description: install"
+  "home.features.devices.tv": {
+    "message": "Телевизор в гостиной"
   },
-  "home.section.quickstart.title": {
-    "message": "Быстрый старт",
-    "description": "Doc card title: quickstart"
+  "home.features.devices.console": {
+    "message": "Игровая приставка"
   },
-  "home.section.quickstart.desc": {
-    "message": "От первого запуска до работающего обхода за 5 минут через веб-интерфейс.",
-    "description": "Doc card description: quickstart"
+  "home.features.devices.work": {
+    "message": "Рабочий ноутбук"
   },
-  "home.section.sets.title": {
-    "message": "Сеты",
-    "description": "Doc card title: sets"
+  "home.features.watchdog.title": {
+    "message": "Мониторинг"
   },
-  "home.section.sets.desc": {
-    "message": "Наборы настроек обхода: цели, TCP/UDP стратегии, маршрутизация.",
-    "description": "Doc card description: sets"
+  "home.features.watchdog.text": {
+    "message": "Мониторинг проверяет сайты сета по расписанию. Если они перестают открываться, он запускает Дискавери для сета и переключает его на найденную стратегию, а если не помогло, возвращает прежнюю. По умолчанию выключен."
+  },
+  "home.features.watchdog.link": {
+    "message": "Поддержание работы сетов"
+  },
+  "home.features.watchdog.failed": {
+    "message": "3 проверки подряд не прошли"
+  },
+  "home.features.watchdog.discovery": {
+    "message": "Дискавери для сета YouTube"
+  },
+  "home.features.watchdog.written": {
+    "message": "Записана новая стратегия"
+  },
+  "home.features.watchdog.passed": {
+    "message": "Проверка пройдена"
+  },
+  "home.features.routing.title": {
+    "message": "Маршрутизация и блокировка"
+  },
+  "home.features.routing.text": {
+    "message": "Сайты, заблокированные по IP, можно отправить через VPN-интерфейс роутера или через Xray, sing-box и любой другой SOCKS5-прокси. Сет блокировки убирает рекламу и трекеры во всей сети."
+  },
+  "home.features.routing.link": {
+    "message": "Маршрутизация через VPN и прокси"
+  },
+  "home.features.routing.direct": {
+    "message": "напрямую"
+  },
+  "home.features.routing.vpn": {
+    "message": "Рабочий VPN"
+  },
+  "home.features.routing.ads": {
+    "message": "Реклама и трекеры"
+  },
+  "home.features.routing.blocked": {
+    "message": "заблокировано"
+  },
+  "home.features.kind.bypass": {
+    "message": "Обход"
+  },
+  "home.features.kind.route": {
+    "message": "Маршрут"
+  },
+  "home.features.kind.proxy": {
+    "message": "Прокси"
+  },
+  "home.features.kind.block": {
+    "message": "Блокировка"
+  },
+  "home.features.ui.title": {
+    "message": "Веб-интерфейс"
+  },
+  "home.features.ui.text": {
+    "message": "Дашборд, трафик в реальном времени и логи на порту 7000, на русском или английском. Изменения сетов применяются без перезапуска."
+  },
+  "home.features.ui.link": {
+    "message": "Первые шаги"
+  },
+  "home.features.ui.alt": {
+    "message": "Страница Трафик: соединения устройств и сеты, с которыми они совпали"
+  },
+  "home.tagline": {
+    "message": "Всё, чего нет в сетах,\nработает так же,\nкак до установки b4."
+  },
+  "home.steps.title": {
+    "message": "Начало работы"
+  },
+  "home.steps.install.title": {
+    "message": "Установка"
+  },
+  "home.steps.install.text": {
+    "message": "Выполните команду установки по SSH от root. Она сама определит платформу и архитектуру процессора."
+  },
+  "home.steps.install.link": {
+    "message": "Инструкция по установке"
+  },
+  "home.steps.discover.title": {
+    "message": "Поиск стратегии"
+  },
+  "home.steps.discover.text": {
+    "message": "Откройте веб-интерфейс на порту 7000, перейдите в **Дискавери**, введите сайт, который не открывается, и нажмите **Начать**."
+  },
+  "home.steps.discover.link": {
+    "message": "Первые шаги"
+  },
+  "home.steps.apply.title": {
+    "message": "Применение"
+  },
+  "home.steps.apply.text": {
+    "message": "Нажмите **Применить как сет** у результата. После этого на странице **Трафик** рядом с соединениями сайта появится название сета."
+  },
+  "home.steps.apply.link": {
+    "message": "Сеты"
+  },
+  "home.platforms.title": {
+    "message": "Поддерживаемые платформы"
+  },
+  "home.platforms.lead": {
+    "message": "OpenWrt, ASUS Merlin, Keenetic и другие системы на Linux ставятся одним и тем же скриптом. На MikroTik и в Docker b4 работает в контейнере."
+  },
+  "home.platforms.openwrt": {
+    "message": "19.07 и новее"
+  },
+  "home.platforms.merlin": {
+    "message": "Нужен Entware на USB-накопителе"
+  },
+  "home.platforms.keenetic": {
+    "message": "Нужны Entware и компоненты Netfilter"
+  },
+  "home.platforms.mikrotik": {
+    "message": "RouterOS 7.21.1+, в контейнере"
+  },
+  "home.platforms.docker": {
+    "message": "Только Linux, сеть хоста"
+  },
+  "home.platforms.linux": {
+    "message": "systemd, OpenRC или SysV init"
+  },
+  "home.platforms.archs": {
+    "message": "Сборки для 17 архитектур процессоров"
+  },
+  "home.platforms.requirements": {
+    "message": "Нужны ядро 3.13 или новее, около 64 МБ свободной памяти, 30 МБ на диске и root."
+  },
+  "home.platforms.requirements.link": {
+    "message": "Все требования"
+  },
+  "home.faq.title": {
+    "message": "Частые вопросы"
+  },
+  "home.faq.lead": {
+    "message": "Что-то не работает после установки? Смотрите раздел {link}."
+  },
+  "home.faq.lead.link": {
+    "message": "Решение проблем"
+  },
+  "home.faq.vpn.q": {
+    "message": "Это VPN?"
+  },
+  "home.faq.vpn.a": {
+    "message": "Нет. Трафик по-прежнему идёт к сайту напрямую, b4 меняет только то, как первые пакеты соединения выглядят для DPI провайдера. Если каким-то сайтам нужен VPN, сет маршрутизации отправит их через VPN, который уже работает на роутере."
+  },
+  "home.faq.where.q": {
+    "message": "На чём он работает?"
+  },
+  "home.faq.where.a": {
+    "message": "OpenWrt 19.07+, ASUS Merlin, Keenetic, MikroTik с RouterOS 7.21.1+ (в контейнере), компьютеры и серверы с Linux, Docker на Linux. Есть сборки для 17 архитектур процессоров."
+  },
+  "home.faq.needs.q": {
+    "message": "Что нужно роутеру?"
+  },
+  "home.faq.needs.a": {
+    "message": "Linux с ядром 3.13 или новее и поддержкой NFQUEUE, а если её нет, подойдёт движок TUN. Около 64 МБ свободной памяти, 30 МБ на диске и root."
+  },
+  "home.faq.untouched.q": {
+    "message": "Трогает ли b4 сайты, которых нет в сетах?"
+  },
+  "home.faq.untouched.a": {
+    "message": "Нет. Соединения, которые не подходят ни под один сет, проходят без изменений."
+  },
+  "home.faq.blocked.q": {
+    "message": "Что, если сайт всё равно не открывается?"
+  },
+  "home.faq.blocked.a": {
+    "message": "Если Дискавери показывает **адрес заблокирован**, провайдер блокирует IP-адреса сайта, и изменение пакетов не поможет. Такому сайту нужен сет, который отправит его через VPN или SOCKS5-прокси."
+  },
+  "home.faq.changes.q": {
+    "message": "Что будет, когда провайдер поменяет блокировку?"
+  },
+  "home.faq.changes.a": {
+    "message": "Включите мониторинг. Он проверяет сайты выбранных сетов по расписанию, а когда они перестают открываться, снова запускает Дискавери и переключает сет на новую стратегию."
+  },
+  "home.faq.telegram.q": {
+    "message": "Поможет ли b4 с Telegram?"
+  },
+  "home.faq.telegram.a": {
+    "message": "Да. В b4 есть встроенный MTProto-прокси и мост, который работает с обычными приложениями Telegram."
+  },
+  "home.faq.restart.q": {
+    "message": "Нужен ли перезапуск после изменений?"
+  },
+  "home.faq.restart.a": {
+    "message": "Для сетов нет. Изменения применяются к работающему сервису сразу после сохранения."
+  },
+  "home.faq.ads.q": {
+    "message": "Может ли b4 блокировать рекламу?"
+  },
+  "home.faq.ads.a": {
+    "message": "Да. Сет блокировки убирает рекламу и нежелательные сайты во всей сети."
+  },
+  "home.faq.remove.q": {
+    "message": "Как удалить b4?"
+  },
+  "home.faq.remove.a": {
+    "message": "Запустите установщик с ключом `--remove`. Он остановит b4, уберёт его правила файрвола и маршрутизации, удалит сервис и спросит, удалять ли конфигурацию."
+  },
+  "home.faq.free.q": {
+    "message": "b4 бесплатный?"
+  },
+  "home.faq.free.a": {
+    "message": "Да. Код открыт под лицензией GPLv3 и лежит на GitHub."
+  },
+  "home.final.title": {
+    "message": "Установка"
+  },
+  "home.final.text": {
+    "message": "Одна команда для Linux, OpenWrt, ASUS Merlin и Keenetic. На MikroTik и в Docker b4 работает в контейнере, это тоже описано в инструкции."
   },
   "theme.ErrorPageContent.title": {
     "message": "На странице произошёл сбой.",

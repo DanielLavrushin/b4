@@ -1,6 +1,26 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { themes as prismThemes } from "prism-react-renderer";
-import type { Config } from "@docusaurus/types";
+import type { Config, LoadContext, Plugin } from "@docusaurus/types";
 import type * as Preset from "@docusaurus/preset-classic";
+
+type LatestRelease = { version: string; date: string } | null;
+
+function latestReleasePlugin(context: LoadContext): Plugin<LatestRelease> {
+  const changelog = join(context.siteDir, "..", "changelog.md");
+  return {
+    name: "b4-latest-release",
+    getPathsToWatch: () => [changelog],
+    async loadContent() {
+      const text = await readFile(changelog, "utf8");
+      const match = text.match(/^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})/m);
+      return match ? { version: match[1], date: match[2] } : null;
+    },
+    async contentLoaded({ content, actions }) {
+      actions.setGlobalData(content);
+    },
+  };
+}
 
 const config: Config = {
   title: "B4 - Bye Bye Big Bro",
@@ -30,6 +50,7 @@ const config: Config = {
   ],
 
   plugins: [
+    latestReleasePlugin,
     [
       "@docusaurus/plugin-client-redirects",
       {

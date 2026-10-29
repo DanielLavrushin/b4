@@ -1,0 +1,126 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.card {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  height: 100%;
+  padding: 24px 64px 24px 24px;
+  border: 1px solid var(--l-line);
+  border-radius: 16px;
+  background-color: var(--l-surface);
+  color: var(--l-text);
+  text-decoration: none;
+  transition:
+    border-color 300ms var(--l-ease),
+    background-color 300ms var(--l-ease),
+    transform 500ms var(--l-ease);
+}
+
+.card:hover {
+  border-color: var(--l-line-strong);
+  background-color: var(--l-raised);
+  color: var(--l-text);
+  text-decoration: none;
+  transform: translateY(-2px);
+}
+
+.card:active {
+  transform: translateY(1px);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--l-accent);
+  outline-offset: 2px;
+}
+
+.name {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+}
+
+.detail {
+  color: var(--l-muted);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.arrow {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  color: var(--l-faint);
+  transition:
+    color 300ms var(--l-ease),
+    transform 500ms var(--l-ease);
+}
+
+.card:hover .arrow {
+  color: var(--l-accent);
+  transform: translate(2px, -2px);
+}
+
+.footer {
+  display: grid;
+  gap: 24px;
+  margin-top: 32px;
+}
+
+.archs {
+  display: grid;
+  gap: 12px;
+}
+
+.archTitle {
+  color: var(--l-text);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+}
+
+.archList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.arch {
+  padding: 4px 8px;
+  border: 1px solid var(--l-line);
+  border-radius: 8px;
+  color: var(--l-muted);
+  font-family: var(--l-mono);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.requirements {
+  color: var(--l-muted);
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+@media (max-width: 996px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card:hover,
+  .card:active,
+  .card:hover .arrow {
+    transform: none;
+  }
+}

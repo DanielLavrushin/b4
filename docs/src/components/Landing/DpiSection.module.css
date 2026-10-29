@@ -1,0 +1,258 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.card {
+  display: grid;
+  align-content: start;
+  padding: 8px;
+  border: 1px solid var(--l-line);
+  border-radius: 24px;
+  background-color: var(--l-surface);
+}
+
+.lane {
+  display: flex;
+  align-items: center;
+  min-height: 128px;
+  padding: 24px;
+  border: 1px solid var(--l-line);
+  border-radius: 16px;
+  background-color: var(--l-bg);
+}
+
+.body {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+}
+
+.label {
+  color: var(--l-faint);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+}
+
+.verdict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--l-text);
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+}
+
+.verdict svg {
+  flex: none;
+}
+
+.bad svg {
+  color: var(--l-bad);
+}
+
+.ok svg {
+  color: var(--l-ok);
+}
+
+.node {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--l-line);
+  border-radius: 12px;
+  background-color: var(--l-surface);
+  color: var(--l-muted);
+  font-family: var(--l-mono);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 600;
+}
+
+.dpi {
+  width: 48px;
+  color: var(--l-text);
+}
+
+.hit::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1px solid var(--l-bad);
+  border-radius: inherit;
+  background-color: var(--l-bad-soft);
+}
+
+.b4 {
+  color: var(--l-accent);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 700;
+}
+
+.siteOff {
+  opacity: 0.4;
+}
+
+.siteOn::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1px solid var(--l-ok);
+  border-radius: inherit;
+  background-color: var(--l-ok-soft);
+}
+
+.siteOn svg {
+  color: var(--l-ok);
+}
+
+.wire {
+  flex: 1 1 8px;
+  min-width: 8px;
+  height: 2px;
+  border-radius: 2px;
+  background-color: var(--l-line-strong);
+}
+
+.cut {
+  opacity: 0.3;
+}
+
+.packet {
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid var(--l-line-strong);
+  border-radius: 8px;
+  background-color: var(--l-surface);
+  color: var(--l-text);
+  font-family: var(--l-mono);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.fragments {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+}
+
+.fake {
+  border-style: dashed;
+  background-color: transparent;
+  color: var(--l-faint);
+}
+
+[data-reveal="shown"] .before .whole {
+  animation: packetIn 700ms var(--l-ease) 200ms both;
+}
+
+[data-reveal="shown"] .before .hit::after {
+  animation: glow 500ms var(--l-ease) 800ms both;
+}
+
+[data-reveal="shown"] .before .cut,
+[data-reveal="shown"] .before .siteOff {
+  animation: dim 500ms var(--l-ease) 800ms both;
+}
+
+[data-reveal="shown"] .after .part:nth-child(3) {
+  animation: split1 700ms var(--l-ease) 300ms both;
+}
+
+[data-reveal="shown"] .after .part:nth-child(4) {
+  animation: split2 700ms var(--l-ease) 300ms both;
+}
+
+[data-reveal="shown"] .after .fake {
+  animation: packetIn 700ms var(--l-ease) 700ms both;
+}
+
+[data-reveal="shown"] .after .siteOn::after {
+  animation: glow 500ms var(--l-ease) 1100ms both;
+}
+
+@keyframes packetIn {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes split1 {
+  from {
+    transform: translateX(-4px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes split2 {
+  from {
+    transform: translateX(-8px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes glow {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dim {
+  from {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .lane {
+    padding: 24px 16px;
+  }
+
+  .source,
+  .source + .wire {
+    display: none;
+  }
+
+  .fragments .packet {
+    padding-inline: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal="shown"] .before .whole,
+  [data-reveal="shown"] .after .fake {
+    animation-name: glow;
+  }
+
+  [data-reveal="shown"] .after .part:nth-child(3),
+  [data-reveal="shown"] .after .part:nth-child(4) {
+    animation: none;
+  }
+}
