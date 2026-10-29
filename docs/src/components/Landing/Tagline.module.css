@@ -1,0 +1,58 @@
+.section {
+  padding-block: 96px;
+}
+
+.tagline {
+  max-width: 680px;
+  margin-inline: auto;
+  color: var(--l-text);
+  font-size: 3rem;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.readable {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.line {
+  display: block;
+}
+
+.word {
+  transition: opacity 500ms var(--l-ease);
+}
+
+.tagline[data-armed] .word:not([data-on]) {
+  opacity: 0.3;
+}
+
+@media (max-width: 996px) {
+  .section {
+    padding-block: 64px;
+  }
+
+  .tagline {
+    font-size: 2.25rem;
+    line-height: 2.5rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .tagline {
+    font-size: 1.875rem;
+    line-height: 2.25rem;
+  }
+
+  .line {
+    display: inline;
+  }
+}

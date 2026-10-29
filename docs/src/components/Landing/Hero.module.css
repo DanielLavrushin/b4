@@ -1,0 +1,153 @@
+.hero {
+  padding-top: 64px;
+}
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 4px;
+  border: 1px solid var(--l-line);
+  border-radius: 9999px;
+  background-color: var(--l-surface);
+  color: var(--l-muted);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    border-color 300ms var(--l-ease),
+    color 300ms var(--l-ease);
+}
+
+.pill:hover {
+  border-color: var(--l-line-strong);
+  color: var(--l-text);
+  text-decoration: none;
+}
+
+.pill:hover svg {
+  transform: translateX(4px);
+}
+
+.pill:focus-visible {
+  outline: 2px solid var(--l-accent);
+  outline-offset: 2px;
+}
+
+.pillVersion {
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background-color: var(--l-accent-soft);
+  color: var(--l-accent);
+  font-family: var(--l-mono);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 600;
+}
+
+.title {
+  max-width: 680px;
+  margin-top: 24px;
+  padding-block: 8px;
+  background-image: linear-gradient(90deg, var(--l-heading-from), var(--l-heading-to));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: 3.75rem;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.titleLine {
+  display: block;
+}
+
+.subtitle {
+  max-width: 680px;
+  margin-top: 24px;
+  color: var(--l-muted);
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  max-width: 100%;
+  margin-top: 40px;
+}
+
+.shotWrap {
+  margin-top: 64px;
+}
+
+.shot {
+  padding: 8px;
+  border: 1px solid var(--l-line);
+  border-radius: 24px;
+  background-color: var(--l-surface);
+  box-shadow: var(--l-shadow);
+}
+
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
+}
+
+@media (max-width: 996px) {
+  .hero {
+    padding-top: 48px;
+  }
+
+  .title {
+    font-size: 3rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .title {
+    font-size: 2.25rem;
+    line-height: 2.5rem;
+    letter-spacing: -0.025em;
+  }
+
+  .titleLine {
+    display: inline;
+  }
+
+  .subtitle {
+    font-size: 1.125rem;
+    line-height: 1.75rem;
+  }
+
+  .actions {
+    width: 100%;
+  }
+
+  .shotWrap {
+    margin-top: 48px;
+  }
+
+  .shot {
+    padding: 4px;
+    border-radius: 16px;
+  }
+
+  .shot img {
+    border-radius: 12px;
+  }
+}

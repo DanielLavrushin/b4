@@ -1,0 +1,132 @@
+.wrap {
+  display: contents;
+}
+
+.command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 4px 4px 16px;
+  border: 1px solid var(--l-line);
+  border-radius: 12px;
+  background-color: var(--l-command-bg, var(--l-surface));
+}
+
+.command .text {
+  min-width: 0;
+  padding: 4px 0;
+  overflow-x: auto;
+  border-radius: 0;
+  background: none;
+  color: var(--l-text);
+  font-family: var(--l-mono);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.command .text::-webkit-scrollbar {
+  display: none;
+}
+
+.command .text:focus-visible {
+  outline: 2px solid var(--l-accent);
+  outline-offset: 4px;
+}
+
+.tool {
+  color: var(--l-accent);
+  font-weight: 600;
+}
+
+.flag {
+  color: var(--l-faint);
+}
+
+.url {
+  color: var(--l-text);
+}
+
+.copy {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background-color: var(--l-raised);
+  color: var(--l-text);
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 300ms var(--l-ease),
+    transform 500ms var(--l-ease);
+}
+
+.copy:hover {
+  background-color: var(--l-line);
+}
+
+.copy:active {
+  transform: scale(0.98);
+}
+
+.copy:focus-visible {
+  outline: 2px solid var(--l-accent);
+  outline-offset: 2px;
+}
+
+.icons {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+}
+
+.icons > svg {
+  grid-area: 1 / 1;
+  transition:
+    opacity 300ms var(--l-ease),
+    transform 500ms var(--l-ease);
+}
+
+.iconCheck {
+  color: var(--l-ok);
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.copied .iconCopy {
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.copied .iconCheck {
+  opacity: 1;
+  transform: none;
+}
+
+.hint {
+  flex-basis: 100%;
+  color: var(--l-faint);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-align: center;
+}
+
+.hintError {
+  color: var(--l-bad);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icons > svg,
+  .copy:active {
+    transform: none;
+  }
+}
