@@ -485,6 +485,13 @@ var monitorTCPQueueLines = []string{
 	"-A B4_PREROUTING -p tcp -m multiport --sports 443 -m connbytes --connbytes 0:19 --connbytes-mode packets --connbytes-dir reply -m conntrack --ctdir REPLY -j NFQUEUE --queue-num 537 --queue-bypass",
 }
 
+// monitorCaptureQueueLines is what the capture chain looks like on a healthy
+// install: the mark return plus the TCP and UDP queue rules that hand packets
+// to b4. The monitor treats a chain without them as broken, so fixtures that
+// describe a healthy firewall have to carry them too.
+const monitorCaptureQueueLines = "-A B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes 0:19 --connbytes-mode packets --connbytes-dir original -j NFQUEUE --queue-num 537 --queue-bypass\n" +
+	"-A B4 -p udp -m multiport --dports 443 -m connbytes --connbytes 0:8 --connbytes-mode packets --connbytes-dir original -j NFQUEUE --queue-num 537 --queue-bypass\n"
+
 func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fakeListing {
 	pre := "-N B4_PREROUTING\n-A B4_PREROUTING -m connmark --mark 0x8000/0x8000 -m conntrack --ctdir REPLY -m socket -j RETURN\n" + monitorInjectedReturnLine + "\n-A B4_PREROUTING -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
 	out := "-P OUTPUT ACCEPT\n-A OUTPUT -m mark --mark 0x8000/0x8000 -j ACCEPT\n-A OUTPUT -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass\n"
@@ -497,7 +504,7 @@ func monitorDNSTestListing(placement dnsQueryPlacement, iptables1421 bool) *fake
 	}
 	pre += strings.Join(monitorTCPQueueLines, "\n") + "\n"
 	f := &fakeListing{chains: map[string]string{
-		"mangle B4":            "-N B4\n-A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN\n",
+		"mangle B4":            "-N B4\n-A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN\n" + monitorCaptureQueueLines,
 		"mangle POSTROUTING":   "-P POSTROUTING ACCEPT\n-A POSTROUTING -j B4\n",
 		"mangle PREROUTING":    "-P PREROUTING ACCEPT\n-A PREROUTING -j B4_PREROUTING\n",
 		"mangle B4_PREROUTING": pre,

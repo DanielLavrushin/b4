@@ -253,7 +253,47 @@ func (m *Monitor) checkRules(cfg *config.Config) bool {
 
 func iptListingQueuesTCP(listing, chain string) bool {
 	for _, line := range strings.Split(listing, "\n") {
+		if skipQueueLine(line) {
+			continue
+		}
 		if iptLineHasTokens(line, []string{"-A", chain}) && iptLineHasTokens(line, []string{"-p", "tcp"}) && iptLineHasTokens(line, []string{"-j", "NFQUEUE"}) {
+			return true
+		}
+	}
+	return false
+}
+
+const dupQueueSetPrefix = "b4_dup_v"
+
+func skipQueueLine(line string) bool {
+	return strings.Contains(line, dupQueueSetPrefix)
+}
+
+func iptListingQueuesUDP(listing, chain string) bool {
+	for _, line := range strings.Split(listing, "\n") {
+		if skipQueueLine(line) {
+			continue
+		}
+		if iptLineHasTokens(line, []string{"-A", chain}) && iptLineHasTokens(line, []string{"-p", "udp"}) && iptLineHasTokens(line, []string{"-j", "NFQUEUE"}) {
+			return true
+		}
+	}
+	return false
+}
+
+func captureQueueRulesMissing(cfg *config.Config, tcp, udp bool) bool {
+	if !tcp {
+		return true
+	}
+	return len(cfg.CollectUDPPorts()) > 0 && !udp
+}
+
+func nftListingQueues(listing, proto string) bool {
+	for _, line := range strings.Split(listing, "\n") {
+		if skipQueueLine(line) {
+			continue
+		}
+		if strings.Contains(line, proto) && strings.Contains(line, "queue") {
 			return true
 		}
 	}
@@ -288,6 +328,12 @@ func (m *Monitor) checkIPTablesRules(cfg *config.Config) bool {
 		}
 		if !iptListingHasMarkReturn(capture, iptChainName, ownMark) {
 			log.Tracef("Monitor: B4's return for b4's own packets (mark %s) missing", ownMark)
+			return false
+		}
+		tcpQueued := iptListingQueuesTCP(capture, iptChainName)
+		udpQueued := iptListingQueuesUDP(capture, iptChainName)
+		if captureQueueRulesMissing(cfg, tcpQueued, udpQueued) {
+			log.Tracef("Monitor: %s lost its queue rules (tcp=%v, udp=%v), so no strategy runs at all", iptChainName, tcpQueued, udpQueued)
 			return false
 		}
 
@@ -424,6 +470,14 @@ func (m *Monitor) checkNFTablesRules(cfg *config.Config) bool {
 
 	if !nft.chainExists(nftChainName) {
 		log.Tracef("Monitor: b4_chain missing")
+		return false
+	}
+
+	captureChain, _ := nft.runNft("list", "chain", "inet", nftTableName, nftChainName)
+	nftTCPQueued := nftListingQueues(captureChain, "tcp")
+	nftUDPQueued := nftListingQueues(captureChain, "udp")
+	if captureQueueRulesMissing(cfg, nftTCPQueued, nftUDPQueued) {
+		log.Tracef("Monitor: %s lost its queue rules (tcp=%v, udp=%v), so no strategy runs at all", nftChainName, nftTCPQueued, nftUDPQueued)
 		return false
 	}
 
