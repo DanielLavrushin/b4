@@ -292,7 +292,8 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 	if w.srcResolver != nil && v == IPv4 && (p.proto == 6 || p.proto == 17) && len(raw) >= p.ihl+4 {
 		sport := uint16(raw[p.ihl])<<8 | uint16(raw[p.ihl+1])
 		dport := uint16(raw[p.ihl+2])<<8 | uint16(raw[p.ihl+3])
-		switch lan, origin := w.srcResolver.attribute(p.proto, p.src, sport, p.dst, dport); origin {
+		seen := tunSrcPacket{ttl: raw[8], answer: p.proto == 17 && sport == 53 && dnsAnswerDatagram(raw[p.ihl:])}
+		switch lan, origin := w.srcResolver.attributePacket(seen, p.proto, p.src, sport, p.dst, dport); origin {
 		case tunSrcLAN, tunSrcRouter:
 			if v4 := lan.To4(); v4 != nil {
 				copy(p.addr[0:4], v4)
