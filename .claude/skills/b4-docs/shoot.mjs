@@ -251,15 +251,20 @@ async function main() {
       mobile: false,
     });
 
+    let langScript = null;
     for (const job of spec.jobs) {
       const label = `${job.out}`;
       try {
         const lang = job.lang || spec.lang;
-        await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: "1" }).catch(() => {});
+        if (langScript) {
+          await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: langScript }).catch(() => {});
+          langScript = null;
+        }
         if (lang) {
-          await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+          const added = await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
             source: `try { localStorage.setItem('b4-language', ${JSON.stringify(lang)}); } catch (e) {}`,
           });
+          langScript = added?.identifier ?? null;
         }
 
         const url = /^https?:/.test(job.url) ? job.url : baseUrl + job.url;
