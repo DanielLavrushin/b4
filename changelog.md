@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.89.0] - 2026-10-30
+
+- ADDED: **Connections to an address the provider blocks for all sites on it fail at once instead of hanging** - sets with IP Block Detection and Cache Blocked IPs on ban such an address for 24 hours, or for 7 days when it is caught again. DNS answers that list other addresses leave it out, and the dashboard's Banned addresses panel lists the bans. Bans are on by default, and Remember blocked addresses under Settings, Core, Packet Engine turns them off. The saved ban list with re-tests is inspired by [Ladon](https://github.com/belotserkovtsev/Ladon).
+
 ## [1.88.2] - 2026-10-29
 
 - FIXED: **On Keenetic, devices handled by Device Filtering could not open any site, even one in no set** - Keenetic lets a connection out under the router's address only after its own firewall rules have marked it. b4 took the first packets of these connections before those rules ran. The connections then left with the device's local address and got no answer. [#466](https://github.com/DanielLavrushin/b4/issues/466)

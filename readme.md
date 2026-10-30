@@ -355,7 +355,7 @@ Based on research from:
 - [zapret](https://github.com/bol-van/zapret) - Advanced DPI bypass techniques
 - [byedpi](https://github.com/hufrea/byedpi) - proxy-based DPI bypass
 - [dpi-detector](https://github.com/Runnin4ik/dpi-detector) - DPI/TSPU detection techniques and test target lists (the DPI Detector feature is based on this project)
-- [Ladon](https://github.com/belotserkovtsev/ladon) - reactive Anti-DPI detection engine; its failure-classification approach (telling server-side rejection apart from DPI interference) informed the Watchdog feature
+- [Ladon](https://github.com/belotserkovtsev/ladon) - reactive Anti-DPI detection engine; its failure-classification approach (telling server-side rejection apart from DPI interference) informed the Watchdog feature, and its saved block list with re-tests informed the banned addresses of IP Block Detection
 - [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) - Telegram MTProto-over-WebSocket bridging
 - [ori](https://ntc.party/u/ori/summary) - GoodCheck ideas in Discovery
 
