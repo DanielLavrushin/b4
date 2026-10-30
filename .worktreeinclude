@@ -2,6 +2,5 @@
 .mcp.json
 .claude/settings.json
 .claude/settings.local.json
-.claude/skills/
 src/http/ui/dist/
 .codegraph/codegraph.db
