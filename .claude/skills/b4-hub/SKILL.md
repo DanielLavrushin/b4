@@ -77,7 +77,8 @@ per address, so a test script signs in once and reuses the cookie.
 
 ## Checks and changelog
 
-- `make hub-test` (`go -C hub test ./...`), `pnpm -C hub/ui typecheck`, and `/b4-check`.
+- `make hub-test` (`go -C hub test ./...`), `pnpm -C hub/ui build` (`tsc`, then vite, the
+  build `make hub-build` embeds), and `/b4-check`.
 - Every change under `hub/` gets a bullet in `hub/CHANGELOG.md`: English only, its own semver,
   newest block on top. The b4hub release workflow refuses a version without a block.
 - A change in `src/hubwire`, or one that touches the router's hub client and the hub together,

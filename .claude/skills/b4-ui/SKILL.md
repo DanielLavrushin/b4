@@ -88,7 +88,7 @@ CI runs only the router UI's vite build, and only at release. Before calling a U
 make gen-defaults && pnpm -C src/http/ui exec tsc -p tsconfig.json
 pnpm -C src/http/ui exec oxlint --type-aware --report-unused-disable-directives-severity=warn
 pnpm -C src/http/ui build
-pnpm -C hub/ui typecheck        # when hub/ui or shared/design changed
+pnpm -C hub/ui build            # tsc, then vite; when hub/ui or shared/design changed
 ```
 
 `pnpm lint` in either package runs oxlint with `--fix` and rewrites files; the command above

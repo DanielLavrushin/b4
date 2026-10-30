@@ -242,7 +242,7 @@ if has '^(src/http/ui|shared/design)/|^pnpm-lock\.yaml$|^src/config/'; then
   suite "pnpm -C src/http/ui build"
 fi
 if has '^(hub/ui|shared/design)/|^pnpm-lock\.yaml$'; then
-  suite "pnpm -C hub/ui typecheck"
+  suite "pnpm -C hub/ui build"
   suite "pnpm -C hub/ui exec oxlint --type-aware --report-unused-disable-directives-severity=warn"
 fi
 if has '^docs/'; then
