@@ -186,6 +186,21 @@ func TestTunSrcTakesTheRoutersOwnUDPFlowFromItsSocketTable(t *testing.T) {
 	}
 }
 
+func TestTunSrcKeepsAnUnconnectedRouterUDPPortFromClaimingANonDNSLANFlow(t *testing.T) {
+	thisHost(t)
+	quic := "ipv4 2 udp 17 29 src=192.168.1.50 dst=8.8.8.8 sport=45002 dport=443 src=8.8.8.8 dst=" + tunTestWAN + " sport=443 dport=45002 use=1\n"
+	r := newResolverWith(t, tunTestWAN, quic)
+	r.own = localSockets{udp: writeProcTable(t, "udp", procSocketLine(t, "0.0.0.0", 45002, "0.0.0.0", 0, "07")), ttl: 64}
+	wan := net.ParseIP(tunTestWAN)
+
+	if ip, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 17, wan, 45002, net.ParseIP("8.8.8.8"), 443); origin != tunSrcLAN || ip.String() != "192.168.1.50" {
+		t.Fatalf("LAN QUIC flow sent with TTL 65 on a port an unconnected router socket holds: attribute = %v, %v; want the LAN client from conntrack", ip, origin)
+	}
+	if ip, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 17, wan, 45002, net.ParseIP("1.1.1.1"), 53); origin != tunSrcRouter || ip != nil {
+		t.Fatalf("DNS query from the same router port: attribute = %v, %v; dnsmasq's upstream queries still come from the socket table", ip, origin)
+	}
+}
+
 func TestTunSrcTakesTheRoutersOwnTCPFlowOnlyFromItsExactConnection(t *testing.T) {
 	thisHost(t)
 	opens := countConntrackOpens(t, nil)

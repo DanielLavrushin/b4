@@ -50,7 +50,7 @@ func (s localSockets) holds(ttl uint8, proto uint8, src net.IP, sport uint16, ds
 	case 6:
 		return socketTableHolds(s.tcp, src, sport, dst, dport, false)
 	case 17:
-		return socketTableHolds(s.udp, src, sport, dst, dport, sport >= firstUnprivileged)
+		return socketTableHolds(s.udp, src, sport, dst, dport, sport >= firstUnprivileged && dport == 53)
 	}
 	return false
 }
