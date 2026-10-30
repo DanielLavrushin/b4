@@ -2,8 +2,10 @@ package nfq
 
 import (
 	"bufio"
+	"io"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +22,10 @@ const (
 	tunSrcCacheMax    = 4096
 )
 
+var openConntrack = func(path string) (io.ReadCloser, error) {
+	return os.Open(path)
+}
+
 type tunSrcEntry struct {
 	ip      string
 	addr    net.IP
@@ -30,9 +36,45 @@ type tunSrcEntry struct {
 type tunSrcResolver struct {
 	wanIP atomic.Value
 	path  string
+	own   localSockets
 
 	mu    sync.Mutex
 	cache map[string]tunSrcEntry
+
+	scanMu     sync.Mutex
+	scanQueued *conntrackScan
+	scanActive *conntrackScan
+}
+
+type tunSrcPacket struct {
+	ttl    uint8
+	answer bool
+}
+
+type conntrackKey struct {
+	proto string
+	wan   string
+	sport string
+	dst   string
+	dport string
+}
+
+type conntrackScan struct {
+	want map[conntrackKey]string
+	done chan struct{}
+}
+
+type conntrackRow struct {
+	proto      string
+	origSrc    string
+	origDst    string
+	origDport  string
+	replyDst   string
+	replyDport string
+}
+
+func dnsAnswerDatagram(udp []byte) bool {
+	return len(udp) >= 20 && udp[10]&0x80 != 0
 }
 
 func newTunSrcResolver(wanIP string) *tunSrcResolver {
@@ -99,10 +141,17 @@ func originOf(lan, self string) (net.IP, tunSrcOrigin) {
 }
 
 func (r *tunSrcResolver) attribute(proto uint8, src net.IP, sport uint16, dst net.IP, dport uint16) (net.IP, tunSrcOrigin) {
+	return r.attributePacket(tunSrcPacket{}, proto, src, sport, dst, dport)
+}
+
+func (r *tunSrcResolver) attributePacket(seen tunSrcPacket, proto uint8, src net.IP, sport uint16, dst net.IP, dport uint16) (net.IP, tunSrcOrigin) {
 	wan, _ := r.wanIP.Load().(string)
 	self := src.String()
 	if self != wan && !hostAddress(src) {
 		return nil, tunSrcWire
+	}
+	if seen.answer {
+		return nil, tunSrcUnknown
 	}
 
 	key := cacheKey(proto, self, sport, dport, dst.String())
@@ -116,7 +165,10 @@ func (r *tunSrcResolver) attribute(proto uint8, src net.IP, sport uint16, dst ne
 	r.mu.Unlock()
 
 	dstStr := dst.String()
-	lan := r.lookupConntrack(proto, self, sport, dstStr, dport)
+	lan := self
+	if !r.own.holds(seen.ttl, proto, src, sport, dst, dport) {
+		lan = r.lookupConntrack(proto, self, sport, dstStr, dport)
+	}
 	if lan == dstStr {
 		log.Tracef("TUN source: conntrack named the destination %s as the source of %s:%d, ignoring it", dstStr, dstStr, dport)
 		lan = ""
@@ -184,70 +236,121 @@ func (r *tunSrcResolver) lookupConntrack(proto uint8, wan string, sport uint16, 
 	if pname == "" {
 		return ""
 	}
-	f, err := os.Open(r.path)
+	key := conntrackKey{proto: pname, wan: wan, sport: strconv.Itoa(int(sport)), dst: dst, dport: strconv.Itoa(int(dport))}
+
+	r.scanMu.Lock()
+	scan := r.scanQueued
+	if scan == nil {
+		scan = &conntrackScan{want: map[conntrackKey]string{}, done: make(chan struct{})}
+		r.scanQueued = scan
+	}
+	scan.want[key] = ""
+	for {
+		select {
+		case <-scan.done:
+			lan := scan.want[key]
+			r.scanMu.Unlock()
+			return lan
+		default:
+		}
+		if r.scanActive == nil {
+			r.scanQueued, r.scanActive = nil, scan
+			r.scanMu.Unlock()
+			r.runScan(scan)
+			r.scanMu.Lock()
+			continue
+		}
+		active := r.scanActive.done
+		r.scanMu.Unlock()
+		<-active
+		r.scanMu.Lock()
+	}
+}
+
+func (r *tunSrcResolver) runScan(scan *conntrackScan) {
+	defer func() {
+		r.scanMu.Lock()
+		r.scanActive = nil
+		close(scan.done)
+		r.scanMu.Unlock()
+	}()
+	r.readConntrack(scan.want)
+}
+
+func (r *tunSrcResolver) readConntrack(want map[conntrackKey]string) {
+	f, err := openConntrack(r.path)
 	if err != nil {
-		return ""
+		return
 	}
 	defer f.Close()
 
-	wantSport := strconv.Itoa(int(sport))
-	wantDport := strconv.Itoa(int(dport))
+	needles := make([]string, 0, 1)
+	for k := range want {
+		if needle := "dst=" + k.wan; !slices.Contains(needles, needle) {
+			needles = append(needles, needle)
+		}
+	}
+	left := len(want)
 
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
-	for sc.Scan() {
+	for left > 0 && sc.Scan() {
 		line := sc.Text()
-		if !strings.HasPrefix(line, pname+" ") && !strings.Contains(line, " "+pname+" ") {
+		if !containsAny(line, needles) {
 			continue
 		}
-		if !strings.Contains(line, "dst="+wan) {
+		row, ok := parseConntrackRow(line)
+		if !ok {
 			continue
 		}
-		if lan := matchConntrackLine(line, wan, wantSport, dst, wantDport); lan != "" {
-			return lan
+		k := conntrackKey{proto: row.proto, wan: row.replyDst, sport: row.replyDport, dst: row.origDst, dport: row.origDport}
+		if lan, wanted := want[k]; wanted && lan == "" {
+			want[k] = row.origSrc
+			left--
 		}
 	}
-	return ""
 }
 
-func matchConntrackLine(line, wan, sport, dst, dport string) string {
-	var origSrc, origDst, replyDst string
-	var origDport, replyDport string
+func containsAny(line string, needles []string) bool {
+	for _, n := range needles {
+		if strings.Contains(line, n) {
+			return true
+		}
+	}
+	return false
+}
+
+func parseConntrackRow(line string) (conntrackRow, bool) {
+	var row conntrackRow
 	dstN, dportN := 0, 0
 
 	for _, tok := range strings.Fields(line) {
 		switch {
+		case tok == "tcp" || tok == "udp":
+			if row.proto == "" && row.origSrc == "" {
+				row.proto = tok
+			}
 		case strings.HasPrefix(tok, "src="):
-			if origSrc == "" {
-				origSrc = tok[4:]
+			if row.origSrc == "" {
+				row.origSrc = tok[4:]
 			}
 		case strings.HasPrefix(tok, "dst="):
-			v := tok[4:]
-			if dstN == 0 {
-				origDst = v
-			} else if dstN == 1 {
-				replyDst = v
+			switch dstN {
+			case 0:
+				row.origDst = tok[4:]
+			case 1:
+				row.replyDst = tok[4:]
 			}
 			dstN++
 		case strings.HasPrefix(tok, "dport="):
-			v := tok[6:]
-			if dportN == 0 {
-				origDport = v
-			} else if dportN == 1 {
-				replyDport = v
+			switch dportN {
+			case 0:
+				row.origDport = tok[6:]
+			case 1:
+				row.replyDport = tok[6:]
 			}
 			dportN++
 		}
 	}
-
-	if origDst != dst || origDport != dport {
-		return ""
-	}
-	if replyDst != wan || replyDport != sport {
-		return ""
-	}
-	if origSrc == "" {
-		return ""
-	}
-	return origSrc
+	return row, row.proto != "" && row.origSrc != "" && dstN >= 2 && dportN >= 2
 }
