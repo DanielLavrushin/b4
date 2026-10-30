@@ -168,6 +168,9 @@ The tables list the fields of the web interface with the path that stores each o
 | Packet Engine | **TUN device name** | `queue.tun.device_name` |
 | Packet Engine | **Capture Interfaces** | `queue.interfaces` |
 | Packet Engine | **Retest interval (seconds)** | `system.ip_health.retest_interval_sec` |
+| Packet Engine | **Remember blocked addresses** | `system.ip_health.bans_off`, inverted: the switch on is `false` |
+| Packet Engine | **First ban (hours)** | `system.ip_health.ban_ttl_sec`, in seconds |
+| Packet Engine | **Repeat ban (days)** | `system.ip_health.repeat_ban_ttl_sec`, in seconds |
 | Packet Engine | **Enable IPv4 Support** | `queue.ipv4` |
 | Packet Engine | **Enable IPv6 Support** | `queue.ipv6` |
 | Packet Engine | **Force IPv4 for matched domains** | `system.dns.keep_ipv6_answers`, inverted: the switch on is `false` |

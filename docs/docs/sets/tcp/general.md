@@ -43,9 +43,25 @@ Some server addresses are blocked at the IP level: nothing reaches the server, s
 | **Retransmit Threshold** | How many unanswered repeats of the ClientHello mark the destination blocked. This covers a block that lets the connection open and then swallows the handshake. A low value can mistake a slow server for a block. | `3` |
 | **Detection Timeout** | Also marks the destination blocked when the first attempt has had no answer for this long, in milliseconds. | `3000` |
 | **Healed Answer TTL** | The TTL written into healed DNS answers, in seconds. A short value lets devices pick up a recovered address quickly. | `60` |
-| **Cache Blocked IPs** | Remembers blocked addresses, so new connections to them are reset at once instead of waiting. | On |
+| **Cache Blocked IPs** | Remembers blocked addresses, so new connections to them are reset at once instead of waiting. An address blocked for every site name is [banned](#banned-addresses). | On |
 
 How long an address stays marked is set by **Retest interval (seconds)** under [Settings > Core](../../settings/core.md#ip-block-detection).
+
+### Banned addresses {#banned-addresses}
+
+Some providers block an address for every site name: the connection opens, but no site on that address answers. When a set with **Cache Blocked IPs** on catches an address, b4 checks whether the address answers for other site names. An address that answers none of them is banned. An address that answers them is not banned. Until the **Retest interval (seconds)** runs out, the cache of blocked addresses still resets new connections to it, whatever the site.
+
+While an address is banned:
+
+- New connections to the address and port are reset at once in every set with IP block detection and **Cache Blocked IPs** on. A device can then move on to the site's next address, if the site has one. Connections that leave through a proxy or another interface are not reset.
+- DNS answers for the domains of every set leave it out. When every address of an answer is banned, b4 answers with an address that worked for the domain before. When it knows none, the answer passes unchanged.
+- The [Traffic](../../connections.md) page labels the reset connections `ban`.
+
+A ban lasts 24 hours by default. An address banned again within 30 days after its previous ban ended is banned for 7 days. b4 tests a banned address again at every **Retest interval (seconds)** and lifts the ban early after three successful tests in a row. Bans stay across restarts and set changes.
+
+The [Banned addresses](../../dashboard.md#banned-addresses) panel on the dashboard lists the bans, and **Unban** lifts one at once. The switch and the ban lengths are on the **IP Block Detection** card under [Settings > Core](../../settings/core.md#ip-block-detection).
+
+When the set's [Escalation](../escalation.md) trigger fires first, the host moves to the backup set and its address is not banned.
 
 ## RST Injection Protection
 

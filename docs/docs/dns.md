@@ -133,7 +133,7 @@ Each query shows the set that matched it and a label:
 | `doh <server>`, `forward <address>` | Resolved through the set's DoH or plain DNS server |
 | `pin`, `pin empty` | Answered from the pins, empty when they hold no address of the type asked |
 | `ipv4 only`, `no ech` | IPv6 addresses or the ECH key removed from the answer |
-| `heal`, `heal + ipv4 only` | Unreachable addresses removed or replaced by **Heal DNS answers** |
+| `heal`, `heal + ipv4 only` | Unreachable addresses removed or replaced by **Heal DNS answers**, or [banned addresses](sets/tcp/general.md#banned-addresses) removed or replaced |
 | `sinkhole`, `block` | A block set answered "does not exist" or dropped the query |
 | `fallback-cache`, `fallback-upstream` | The set's resolver did not answer: the last good reply was used, or the device's resolver answered |
 | `servfail` | The set's resolver did not answer and nothing else could, or the set fails closed |

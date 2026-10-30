@@ -27,6 +27,8 @@ A login token stays valid while it is used at least once every 24 hours, and is 
 | `/api/ws/metrics` | WebSocket: a full snapshot, then one update per second, as the dashboard receives them |
 | `POST /api/metrics/reset` | **Reset counters** on the dashboard |
 | `POST /api/escalations/clear` | **Clear** on the dashboard's **Active Escalations** panel: every escalated host goes back to its set |
+| `GET /api/ipbans` | The [banned addresses](../sets/tcp/general.md#banned-addresses) the dashboard's **Banned addresses** panel lists |
+| `POST /api/ipbans/clear` | **Unban** on that panel with `{"key": "<address>:<port>"}`, or **Clear all** without a key |
 | `/api/ws/logs` | WebSocket: the live log the **Logs** page shows |
 | `POST /api/logs/trace/start`, `POST /api/logs/trace/stop` | **Start trace** and **Stop & save** on the **Logs** page |
 | `GET /api/logs/trace/status` | Whether a trace is recording |
