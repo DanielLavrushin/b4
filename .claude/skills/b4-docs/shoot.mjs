@@ -21,14 +21,14 @@ const EXAMPLE = {
   jobs: [
     {
       out: "20260820120000.png",
-      url: "/settings/dns",
+      url: "/settings/general/dns",
       lang: "en",
       actions: [{ waitFor: ".MuiPaper-root" }, { wait: 400 }],
       clip: { selector: ".MuiPaper-root", contains: "DNS", pad: 8 },
     },
     {
       out: "ru/20260820120001.png",
-      url: "/settings/dns",
+      url: "/settings/general/dns",
       lang: "ru",
       actions: [{ waitFor: ".MuiPaper-root" }, { wait: 400 }],
       clip: { selector: ".MuiPaper-root", contains: "DNS", pad: 8 },

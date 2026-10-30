@@ -137,7 +137,7 @@ A job file describes a whole page's assets, so re-shooting both locales is one c
   "jobs": [
     {
       "out": "20260820120000.png",
-      "url": "/settings/dns",
+      "url": "/settings/general/dns",
       "lang": "en",
       "actions": [{ "waitFor": ".MuiPaper-root" }, { "wait": 400 }],
       "clip": { "selector": ".MuiPaper-root", "contains": "DNS over TCP", "pad": 8 }
