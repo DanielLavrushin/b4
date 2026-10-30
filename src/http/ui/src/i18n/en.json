@@ -3138,6 +3138,8 @@
       "payloads": "Captured ClientHello as the fake payload",
       "payloadsHint": "Fake packets carry a captured ClientHello instead of the built-in payloads.",
       "selectPayloads": "Select captured payloads...",
+      "selectAllPayloads": "Select all payloads ({{count}})",
+      "clearAllPayloads": "Clear the payload selection",
       "noPayloads": "None captured yet. Capture one under Payloads in",
       "summaryNoDns": "no DNS check",
       "summaryNoCache": "fresh search",
