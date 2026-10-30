@@ -207,6 +207,11 @@ type echUpstream struct {
 
 func tcpECHUpstream(t *testing.T) *echUpstream {
 	t.Helper()
+	return tcpRelayUpstream(t, net.ParseIP("203.0.113.80"))
+}
+
+func tcpRelayUpstream(t *testing.T, answer ...net.IP) *echUpstream {
+	t.Helper()
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -239,7 +244,7 @@ func tcpECHUpstream(t *testing.T) *echUpstream {
 					}
 					domain, _ := dns.ParseQueryDomain(query)
 					qtype, _ := dns.QuestionType(query)
-					reply := buildDNSResponse(0, domain, []net.IP{net.ParseIP("203.0.113.80")})
+					reply := buildDNSResponse(0, domain, answer)
 					if qtype == dnsTypeHTTPS {
 						reply = httpsAnswerWithECH(domain, qtype, "cloudflare-ech.com")
 					}

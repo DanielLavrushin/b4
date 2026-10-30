@@ -571,6 +571,66 @@ func TestHealDropsBannedAddressesWithoutHealDNS(t *testing.T) {
 	}
 }
 
+func tcpALookups(t *testing.T, w *Worker, names ...string) [][]byte {
+	t.Helper()
+	s := newDNSTCPServer(w, 0)
+	t.Cleanup(s.cancel)
+	clientEnd, serverEnd := net.Pipe()
+	handled := make(chan struct{})
+	go func() {
+		defer close(handled)
+		s.handle(remoteAddrConn{Conn: serverEnd, remote: &net.TCPAddr{IP: net.ParseIP("192.0.2.10"), Port: 40000}})
+	}()
+
+	_ = clientEnd.SetDeadline(time.Now().Add(5 * time.Second))
+	var answers [][]byte
+	for i, name := range names {
+		if err := writeDNSTCPMessage(clientEnd, dns.BuildQuery(name, uint16(200+i), dnsTypeA), time.Second); err != nil {
+			t.Fatal(err)
+		}
+		resp, err := readDNSTCPMessage(clientEnd)
+		if err != nil {
+			t.Fatalf("lookup %d (%s): no answer: %v", i, name, err)
+		}
+		answers = append(answers, resp)
+	}
+	clientEnd.Close()
+	select {
+	case <-handled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the connection handler never returned")
+	}
+	return answers
+}
+
+func TestDNSOverTCPPassthroughDropsBannedAddresses(t *testing.T) {
+	redirect := echTestSet("redirected", false, "example.net")
+	redirect.DNS.Enabled = true
+	redirect.DNS.TargetDNS = "9.9.9.9"
+	for _, tc := range []struct {
+		name  string
+		other *config.SetConfig
+	}{
+		{"interception on for ECH strip", echTestSet("cloudflare-ech", true, "cloudflare-ech.com")},
+		{"interception on for a DNS redirect", redirect},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w, _ := echTestWorker(t, echTestSet("googlevideo", false, "googlevideo.com"), tc.other)
+			w.bans = newTestIPBans(t, nil)
+			banAddress(t, w.bans, "74.125.172.167", 443)
+			tcpRelayUpstream(t, net.ParseIP("74.125.172.167"), net.ParseIP("74.125.172.33"))
+
+			answers := tcpALookups(t, w, bannedHost, "example.org")
+			if got := ipStrings(dns.ParseResponseIPs(answers[0])); got != "74.125.172.33" {
+				t.Fatalf("a matched set's answer over TCP must drop the banned address as UDP does, got %q", got)
+			}
+			if got := ipStrings(dns.ParseResponseIPs(answers[1])); got != "74.125.172.167,74.125.172.33" {
+				t.Errorf("an answer for a name no set matches is relayed unchanged, got %q", got)
+			}
+		})
+	}
+}
+
 func TestHealFallbackNeverHandsOutABannedAddress(t *testing.T) {
 	w := healWorker(t)
 	w.bans = newTestIPBans(t, nil)
