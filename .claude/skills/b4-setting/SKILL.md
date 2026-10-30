@@ -17,8 +17,12 @@ equal to its default (`MarshalSparse`, `src/config/sparse.go`). `GET /api/config
 
 - **The Go zero value should be the intended default.** Otherwise "off" may be impossible to
   express.
-- **A bool cannot default to true.** `ApplyDefaults` (`src/config/defaults.go`) never fills a
-  bool. Invert the meaning (`IPOnly` rather than `UseDomain`) or make it a pointer.
+- **New bools default to false.** Config files and imported sets decode into structs that
+  already hold the defaults (`NewConfig`, `NewSetConfig`), so a true default survives there, as
+  `logging.instaflush` shows. But `ApplyDefaults` (`src/config/defaults.go`) never fills a bool,
+  so a path that decodes into a zero struct and relies on it turns a missing true into false.
+  The convention keeps new settings off that trap: invert the meaning (`IPOnly` rather than
+  `UseDomain`) or make it a pointer.
 - **Sets from elsewhere pass through `ApplySetDefaults`**: Discovery results, the zapret and
   byedpi import, hub imports and shared envelopes. There a zero int, string or float becomes
   the default. A field whose zero is a meaningful value, distinct from its default, changes
