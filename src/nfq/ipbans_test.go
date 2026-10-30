@@ -620,12 +620,16 @@ func TestDNSOverTCPPassthroughDropsBannedAddresses(t *testing.T) {
 			banAddress(t, w.bans, "74.125.172.167", 443)
 			tcpRelayUpstream(t, net.ParseIP("74.125.172.167"), net.ParseIP("74.125.172.33"))
 
-			answers := tcpALookups(t, w, bannedHost, "example.org")
-			if got := ipStrings(dns.ParseResponseIPs(answers[0])); got != "74.125.172.33" {
-				t.Fatalf("a matched set's answer over TCP must drop the banned address as UDP does, got %q", got)
+			answers := tcpALookups(t, w, "example.org", bannedHost, "example.org", bannedHost)
+			for _, i := range []int{1, 3} {
+				if got := ipStrings(dns.ParseResponseIPs(answers[i])); got != "74.125.172.33" {
+					t.Fatalf("answer %d: a matched set's answer over TCP must drop the banned address as UDP does, even after an unmatched query on the same connection, got %q", i, got)
+				}
 			}
-			if got := ipStrings(dns.ParseResponseIPs(answers[1])); got != "74.125.172.167,74.125.172.33" {
-				t.Errorf("an answer for a name no set matches is relayed unchanged, got %q", got)
+			for _, i := range []int{0, 2} {
+				if got := ipStrings(dns.ParseResponseIPs(answers[i])); got != "74.125.172.167,74.125.172.33" {
+					t.Errorf("answer %d: an answer for a name no set matches is relayed unchanged, got %q", i, got)
+				}
 			}
 		})
 	}

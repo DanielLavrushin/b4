@@ -228,8 +228,8 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 
 	var scope *ingressScope
 	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
-		dropBanned := set != nil && s.worker.bans.any()
-		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !(cfg.HasECHStrip() || dropBanned) || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
+		bansActive := s.worker.bans.any()
+		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !(cfg.HasECHStrip() || bansActive) || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
 			upstream.close()
 			s.passthrough(client, origIP, origPort, origErr, query)
 			return false
@@ -242,7 +242,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionECHStripped)
 			resp = echless
 		}
-		if dropBanned {
+		if bansActive && set != nil {
 			if healed := s.worker.healDeadAddresses(cfg, set, domain, resp, true); healed != nil {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionHeal)
 				s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, addedAnswerIPs(resp, healed), scope.learns(domain), s.ctx.Done())
