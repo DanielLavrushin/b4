@@ -27,7 +27,7 @@ const pluralGroups = (keys) => {
   const groups = new Map();
   for (const [base, set] of forms) {
     const bare = all.has(base);
-    if (set.size >= 2 || bare) groups.set(base, { forms: set, bare });
+    if (set.size >= 2 || bare || set.has("one")) groups.set(base, { forms: set, bare });
   }
   return groups;
 };
