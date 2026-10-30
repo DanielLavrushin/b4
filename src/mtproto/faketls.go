@@ -2,16 +2,20 @@ package mtproto
 
 import (
 	"bytes"
+	"crypto/ecdh"
 	"crypto/hmac"
+	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
+	mrand "math/rand"
 	"net"
 	"syscall"
 	"time"
 
+	"golang.org/x/crypto/cryptobyte"
 	"golang.org/x/sys/unix"
 )
 
@@ -23,7 +27,13 @@ const (
 	handshakeServerHello  = 0x02
 	maxTLSRecordPayload   = 16379
 	timestampTolerance    = 120
+	extKeyShare           = 0x0033
+	groupX25519           = 0x001d
+	groupX25519MLKEM768   = 0x11ec
+	x25519KeySize         = 32
 )
+
+var serverHelloDelay = [2]time.Duration{8 * time.Millisecond, 24 * time.Millisecond}
 
 type FakeTLSConn struct {
 	net.Conn
@@ -208,8 +218,12 @@ func AcceptFakeTLSMulti(conn net.Conn, secrets []*Secret) (*FakeTLSConn, *Secret
 			return nil, nil, &FakeTLSVerifyError{Err: verr, Initial: ch.clientHello}
 		}
 
-		sessionID := extractSessionID(ch.body)
-		serverHello := buildServerHello(secret, ch.clientRandom, sessionID)
+		ready := time.Now().Add(helloDelay())
+		serverHello, err := buildServerHello(secret, ch.clientRandom, parseHelloOffer(ch.body))
+		if err != nil {
+			return nil, nil, fmt.Errorf("build ServerHello: %w", err)
+		}
+		time.Sleep(time.Until(ready))
 		if _, err := conn.Write(serverHello); err != nil {
 			return nil, nil, fmt.Errorf("write ServerHello: %w", err)
 		}
@@ -219,11 +233,8 @@ func AcceptFakeTLSMulti(conn net.Conn, secrets []*Secret) (*FakeTLSConn, *Secret
 	return nil, nil, &FakeTLSVerifyError{Err: fmt.Errorf("HMAC verification failed for all secrets"), Initial: ch.clientHello}
 }
 
-func proxyToMaskingDomain(client net.Conn, initial []byte, host string, mark uint) {
-	if host == "" {
-		return
-	}
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
+func markedDialer(timeout time.Duration, mark uint) *net.Dialer {
+	dialer := &net.Dialer{Timeout: timeout}
 	if mark > 0 {
 		dialer.Control = func(network, address string, c syscall.RawConn) error {
 			var sErr error
@@ -235,7 +246,14 @@ func proxyToMaskingDomain(client net.Conn, initial []byte, host string, mark uin
 			return sErr
 		}
 	}
-	upstream, err := dialer.Dial("tcp", net.JoinHostPort(host, "443"))
+	return dialer
+}
+
+func proxyToMaskingDomain(client net.Conn, initial []byte, host string, mark uint) {
+	if host == "" {
+		return
+	}
+	upstream, err := markedDialer(10*time.Second, mark).Dial("tcp", net.JoinHostPort(host, "443"))
 	if err != nil {
 		return
 	}
@@ -260,40 +278,94 @@ func proxyToMaskingDomain(client net.Conn, initial []byte, host string, mark uin
 	<-done
 }
 
-func extractSessionID(helloBody []byte) []byte {
-	if len(helloBody) < 39 {
-		return nil
-	}
-	sessLen := int(helloBody[38])
-	if sessLen == 0 || len(helloBody) < 39+sessLen {
-		return nil
-	}
-	sid := make([]byte, sessLen)
-	copy(sid, helloBody[39:39+sessLen])
-	return sid
+type helloOffer struct {
+	sessionID []byte
+	mlkemKey  []byte
 }
 
-func buildServerHello(secret *Secret, clientRandom, sessionID []byte) []byte {
-	if sessionID == nil {
-		sessionID = make([]byte, 32)
-		rand.Read(sessionID)
+func parseHelloOffer(helloBody []byte) helloOffer {
+	var offer helloOffer
+	s := cryptobyte.String(helloBody)
+	var hsType uint8
+	var ch, sid, suites, comp, exts cryptobyte.String
+	if !s.ReadUint8(&hsType) || hsType != handshakeClientHello || !s.ReadUint24LengthPrefixed(&ch) {
+		return offer
+	}
+	if !ch.Skip(2+32) || !ch.ReadUint8LengthPrefixed(&sid) {
+		return offer
+	}
+	offer.sessionID = append([]byte{}, sid...)
+	if !ch.ReadUint16LengthPrefixed(&suites) || !ch.ReadUint8LengthPrefixed(&comp) || !ch.ReadUint16LengthPrefixed(&exts) {
+		return offer
+	}
+	for !exts.Empty() {
+		var typ uint16
+		var data cryptobyte.String
+		if !exts.ReadUint16(&typ) || !exts.ReadUint16LengthPrefixed(&data) {
+			return offer
+		}
+		if typ != extKeyShare {
+			continue
+		}
+		var shares cryptobyte.String
+		if !data.ReadUint16LengthPrefixed(&shares) {
+			return offer
+		}
+		for !shares.Empty() {
+			var group uint16
+			var key cryptobyte.String
+			if !shares.ReadUint16(&group) || !shares.ReadUint16LengthPrefixed(&key) {
+				return offer
+			}
+			if group == groupX25519MLKEM768 && len(key) == mlkem.EncapsulationKeySize768+x25519KeySize {
+				offer.mlkemKey = append([]byte{}, key[:mlkem.EncapsulationKeySize768]...)
+			}
+		}
+	}
+	return offer
+}
+
+func serverKeyShare(offer helloOffer) (uint16, []byte, error) {
+	key, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		return 0, nil, err
+	}
+	public := key.PublicKey().Bytes()
+	if offer.mlkemKey != nil {
+		if ek, err := mlkem.NewEncapsulationKey768(offer.mlkemKey); err == nil {
+			_, ciphertext := ek.Encapsulate()
+			return groupX25519MLKEM768, append(ciphertext, public...), nil
+		}
+	}
+	return groupX25519, public, nil
+}
+
+func helloDelay() time.Duration {
+	lo, hi := serverHelloDelay[0], serverHelloDelay[1]
+	if hi <= lo {
+		return lo
+	}
+	return lo + time.Duration(mrand.Int63n(int64(hi-lo)+1))
+}
+
+func buildServerHello(secret *Secret, clientRandom []byte, offer helloOffer) ([]byte, error) {
+	group, share, err := serverKeyShare(offer)
+	if err != nil {
+		return nil, err
 	}
 
 	var shBody bytes.Buffer
 	shBody.Write([]byte{0x03, 0x03})
 	shBody.Write(make([]byte, 32))
-	shBody.WriteByte(byte(len(sessionID)))
-	shBody.Write(sessionID)
+	shBody.WriteByte(byte(len(offer.sessionID)))
+	shBody.Write(offer.sessionID)
 	shBody.Write([]byte{0x13, 0x01})
 	shBody.WriteByte(0x00)
 
-	x25519Key := make([]byte, 32)
-	rand.Read(x25519Key)
-
 	var extensions bytes.Buffer
-	keyShareData := make([]byte, 0, 36)
-	keyShareData = append(keyShareData, 0x00, 0x1d, 0x00, 0x20)
-	keyShareData = append(keyShareData, x25519Key...)
+	keyShareData := binary.BigEndian.AppendUint16(nil, group)
+	keyShareData = binary.BigEndian.AppendUint16(keyShareData, uint16(len(share)))
+	keyShareData = append(keyShareData, share...)
 	extensions.Write([]byte{0x00, 0x33})
 	extLen := len(keyShareData)
 	extensions.Write([]byte{byte(extLen >> 8), byte(extLen)})
@@ -334,7 +406,7 @@ func buildServerHello(secret *Secret, clientRandom, sessionID []byte) []byte {
 
 	randomOffset := findServerRandomOffset(fullBytes)
 	if randomOffset < 0 {
-		return fullBytes
+		return fullBytes, nil
 	}
 
 	for i := 0; i < 32; i++ {
@@ -348,7 +420,7 @@ func buildServerHello(secret *Secret, clientRandom, sessionID []byte) []byte {
 
 	copy(fullBytes[randomOffset:randomOffset+32], serverRandom)
 
-	return fullBytes
+	return fullBytes, nil
 }
 
 func findServerRandomOffset(data []byte) int {
