@@ -1,5 +1,6 @@
 out/
 docs/
+!docs/static/swagger.json
 .git/
 .github/
 .idea/
