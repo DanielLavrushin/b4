@@ -62,8 +62,9 @@ fails there silently. Fix portability in the script; never tell users to install
   (`sed -n '/^fetch_file() {/,/^}/p' install.sh`) and source only those. Never source a copy
   trimmed by line count: `install.sh` ends with `main "$@"`, `exit 0` and a blank line, and
   cutting two lines left `main "$@"` in place, which ran a full unattended install. If the whole
-  file must be sourced, delete the call by pattern (`sed '/^main "\$@"$/d'`) and check with grep
-  that it is gone.
+  file must be sourced, cut from the call to the end of the file (`sed '/^main "\$@"$/,$d'`):
+  the call is followed by a top-level `exit 0`, which would end the shell that sources it. Check
+  with grep that no `main "$@"` line is left.
 
 ## Changelog
 
