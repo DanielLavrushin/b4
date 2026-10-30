@@ -41,8 +41,10 @@ Do not reopen these without new evidence:
 - The hub has no public web pages: it serves the console and the router API, and `/`
   redirects to `/admin`.
 
-A router with a custom public key never talks to `hub.b4core.app`: both hub fields must be
-empty to reach the central hub.
+The central hub's addresses leave a router's hub list only when both a custom public key and
+at least one hub URL are set (`Service.BaseURLs` in `src/hub/service.go`). With the key alone
+the central stays in the list, but the router trusts only the configured key, so it accepts
+nothing the central signed.
 
 ## Console rules
 
