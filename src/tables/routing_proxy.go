@@ -960,13 +960,27 @@ func addProxyInputAccept(be routeBackend, mark uint32) {
 				}
 			}
 			runLogged("routing: add input accept (proxy) "+fam+" "+table,
-				fam, "-w", "-t", table, "-I", "INPUT", "1", "-m", "mark", "--mark", markHex, "-j", "ACCEPT")
+				fam, "-w", "-t", table, "-I", "INPUT", proxyInputAcceptSlot(fam, table), "-m", "mark", "--mark", markHex, "-j", "ACCEPT")
 		}
 	}
 }
 
 func proxyInputAcceptTables() []string {
 	return []string{"filter", "mangle"}
+}
+
+func proxyInputAcceptSlot(fam, table string) string {
+	if table != "mangle" {
+		return "1"
+	}
+	slot := 1
+	for _, n := range iptJumpLineNumbers(fam, table, "INPUT", func(target string) bool { return target == iptDNSCopyChainName }) {
+		if n != slot {
+			break
+		}
+		slot++
+	}
+	return strconv.Itoa(slot)
 }
 
 func removeProxyInputAcceptNft(mark uint32) {

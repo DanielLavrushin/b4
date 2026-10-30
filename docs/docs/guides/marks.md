@@ -401,9 +401,13 @@ they still loop through `lo`. XrayUI sets `net.ipv4.conf.all.src_valid_mark` to 
 has a WireGuard outbound, wg-quick and awg-quick when a peer takes the IPv4 default route,
 and Tailscale in its default netfilter mode.
 
-b4 also adds an accept for each proxy mark at the top of the input chain: on iptables
-`-I INPUT 1 -m mark --mark <mark>/<mark> -j ACCEPT`, through ip6tables as well and through
-the `-legacy` variants when they are installed; on nftables
+b4 also adds an accept for each proxy mark to the input chains. On iptables it is
+`-m mark --mark <mark>/<mark> -j ACCEPT` at the top of filter `INPUT` and of mangle `INPUT`,
+through ip6tables as well and through the `-legacy` variants when they are installed. Mangle
+`INPUT` runs before filter `INPUT`, and the accept there keeps a diverted connection from a
+drop lower in that chain, such as the KeeneticOS chain that drops TCP to port 443 on the
+router. When a jump to `B4_DNSCOPY` heads mangle `INPUT`, the accept goes right below it,
+and a DNS query that a proxy set diverts is still copied. On nftables it is
 `meta mark & <mark> == <mark> accept` at the top of `inet fw4 input`, or of
 `inet filter input` when fw4 is absent, and nowhere when neither chain exists. Installing a
 proxy set writes `0` to `net.ipv4.conf.lo.rp_filter` and `2` to
@@ -591,7 +595,9 @@ kernels before 4.3 their IPv6 rules get 16383 and sit below b4's either way.
   take with TPROXY reaches that rule. On KeeneticOS, and on a kernel before 4.18 whose raw
   table cannot queue packets, b4 copies them instead, from the jumps to `B4_DNSCOPY` it
   inserts at the top of mangle `INPUT`, `FORWARD` and `OUTPUT`: NFLOG does not end the chain,
-  and every later rule there, b4's or another service's, sees the query. Another program
+  and every later rule there, b4's or another service's, sees the query. In mangle `INPUT`,
+  b4's accept for a proxy mark sits right below the jump and ends the chain for a query that
+  a proxy set diverts. Another program
   bound to the NFLOG group b4 uses keeps b4 from copying. When b4 can neither queue them from
   the raw table nor copy them, it queues them from `B4_PREROUTING` and mangle `OUTPUT`, and
   they skip the later rules there as well. b4's fakes and split segments carry the queue mark
