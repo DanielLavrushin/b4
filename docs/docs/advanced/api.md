@@ -85,10 +85,10 @@ The server offers tools according to the two permission switches on the **MCP se
 
 | Permitted | Tools offered |
 | --- | --- |
-| Nothing (default) | 13 |
-| **Allow configuration changes** | 17 |
-| **Allow active probes** | 15 |
-| Both | 19 |
+| Nothing (default) | 14 |
+| **Allow configuration changes** | 18 |
+| **Allow active probes** | 16 |
+| Both | 20 |
 
 | Tool | What it does | Needs |
 | --- | --- | --- |
@@ -104,6 +104,7 @@ The server offers tools according to the two permission switches on the **MCP se
 | `b4_get_topic` | The description of a setting, see [Topics](#topics) | - |
 | `b4_list_writable_paths` | Which settings can be changed, with types, current values and accepted values | - |
 | `b4_geo_lookup` | Which GeoSite and GeoIP categories exist, what one holds, and which cover a domain or an address | - |
+| `b4_api_reference` | The REST API's operations, or one of them with its parameters, body and responses, see [below](#b4-api-reference) | - |
 | `b4_watchdog` | The watchdog's verdicts, and its actions, see [below](#b4-watchdog) | Depends on the action |
 | `b4_set_config_value` | Changes one setting and applies it at once, reporting the previous and the new value | Allow configuration changes |
 | `b4_revert_last_change` | Restores the configuration from before the last change made over MCP | Allow configuration changes |
@@ -187,6 +188,21 @@ The descriptions are published twice:
 - the resources `b4://topics/<key>`, with the same text.
 
 Most applications never show resources to the model; LM Studio and the OpenAI-compatible bridges list them for the user. The tool makes the text reachable for the model. A question about a setting without a description returns a note saying so, with the documented settings nearby. The note tells the model to say it is unsure rather than guess the setting's unit, default or meaning from its name.
+
+### `b4_api_reference` {#b4-api-reference}
+
+The tool gives the model the reference that the [API reference](/swagger) page shows, from a copy built into b4 that matches the installed version. It covers what the other tools leave out, and the model makes the API calls itself. The tool only describes the API.
+
+| Arguments | Answer |
+| --- | --- |
+| None | Every operation, by tag |
+| `query` | The operations whose path, summary or description contain every word given |
+| `operation`, as `PUT /api/sets/{id}` | The operation's parameters, request body and responses, with the types they use. A path with a real value, such as `/api/sets/abc123`, names the same operation |
+| `schema` | One type from an earlier answer, with its fields |
+
+A type too large for one answer is listed by name, for a later call with `schema`. An operation that another tool also performs names that tool. A REST write passes b4's own validation, but not the checks and refusals that the MCP tools add.
+
+Apart from `schema`, each answer also explains how to call the API. While a username and a password are set, that is the [login](#authentication), and the model is told to ask the user before using them. The MCP token is refused outside `/api/mcp`.
 
 ### What b4 records {#what-b4-records}
 

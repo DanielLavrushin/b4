@@ -3,6 +3,7 @@
 ## [1.89.0] - 2026-10-30
 
 - ADDED: **Connections to an address the provider blocks for all sites on it fail at once instead of hanging** - sets with IP Block Detection and Cache Blocked IPs on ban such an address for 24 hours, or for 7 days when it is caught again. DNS answers that list other addresses leave it out, and the dashboard's Banned addresses panel lists the bans. Bans are on by default, and Remember blocked addresses under Settings, Core, Packet Engine turns them off. The saved ban list with re-tests is inspired by [Ladon](https://github.com/belotserkovtsev/Ladon).
+- ADDED: **AI apps connected to b4's MCP server can look up b4's REST API** - the b4_api_reference tool describes every operation of that API from a copy built into b4, for tasks the other MCP tools do not cover. With a login set for the web interface, calls to the API need its username and password. The tool tells the AI app to ask the user for them first.
 
 ## [1.88.2] - 2026-10-29
 
