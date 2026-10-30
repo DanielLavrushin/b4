@@ -46,6 +46,8 @@ tspu-docs/
 .mcp.json
 .claude/*
 !.claude/skills/
+.claude/skills/*   
+!.claude/skills/b4-*/ 
 CLAUDE.md
 
 # Local hub service state

@@ -1,6 +1,6 @@
 ---
 name: b4-pr
-description: Work on a b4 pull request - check it out in its own worktree, review a contributor's change against b4's rules and area traps, work through review comments (Copilot's included), and when asked finish it - merge main in, resolve conflicts, push - or take over an abandoned contributor PR. Use when given a PR number or link, or asked to review, check, finish, merge or fix a PR, or to go through its review comments.
+description: Work on a b4 pull request - check it out in its own worktree, review a contributor's change against b4's rules and area traps, and when asked finish it (merge main in, resolve conflicts, push) or take over an abandoned contributor PR. Also holds the b4 rules that decide Fix or Skip on review comments. Use when given a PR number or link to review, check, finish or merge. A round of review comments runs through the copilot-pr-review skill where it is installed; this skill only adds the b4 rules for it.
 argument-hint: "<pr-number>"
 ---
 
@@ -34,27 +34,27 @@ checkout.
 
 ## 3. Review comments
 
-For a GitHub Copilot round, use the `copilot-pr-review` skill when it is installed: it fetches
-the threads and the findings that live only in the review body, and keeps fixes local until a
-single push, because Copilot reviews again on every push. Without it, read
-`gh api repos/<owner>/<repo>/pulls/<n>/comments` and the review bodies.
+A review round runs through the `copilot-pr-review` skill where it is installed. It fetches
+Copilot's threads and the findings that live only in the review body, reports a verdict per
+item and asks before changing anything, then makes one commit per approved fix, pushes once
+and replies to and resolves the threads. Threads from people it lists and leaves alone unless
+asked. Its verdicts follow these b4 rules:
 
-Every comment, from a bot or a person:
-
-1. Reproduce or probe it, with a test or a stress run, before deciding.
-2. If it is real, fix it and add a regression test that fails without the fix.
-3. If it is not, give a short reasoned skip.
-
-b4 specifics:
-
-- A suggestion to add a code comment or docstring is never applied: the repo has no comments.
-  When the behaviour is intentional, the reasoning goes into the reply.
+- Back every verdict with a probe: a test or a stress run that shows whether the failure can
+  happen.
+- A Fix comes with a regression test that fails without it.
+- A suggestion to add a code comment or docstring is a Skip: the repo has no comments. When the
+  behaviour is intentional, the reasoning goes into the reply.
 - A suggestion to add tests gets a recommendation, yes or no with a reason; the maintainer
   decides.
 - Advice against a repo rule (comments, em-dash, both locales, POSIX shell, docs voice) is a
-  skip that names the rule.
+  Skip that names the rule.
 
-End with one table: comment, verdict, action.
+Without that skill, follow the same flow by hand: read
+`gh api repos/<owner>/<repo>/pulls/<n>/comments` and the review bodies, decide every item with
+the rules above, show the verdicts and ask before changing anything, commit the approved fixes
+locally and push once, because Copilot reviews again on every push. After the push, reply to
+each thread with the commit that fixed it or the reason for the skip.
 
 ## 4. Finish a PR (when asked)
 
