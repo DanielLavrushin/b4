@@ -31,7 +31,7 @@ so instead of contorting the code.
 | UI strings | `en.json` and `ru.json` carry the same keys, in `src/http/ui/src/i18n/` and `hub/ui/src/i18n/`. Plurals: English `_one`/`_other` (a bare key stands in for `_other`), Russian `_one`/`_few`/`_many`. |
 | Docs | A page under `docs/docs/` has its mirror under `docs/i18n/ru/docusaurus-plugin-content-docs/current/`. A change to one side only is a NOTE: a correction in one locale applies to the other. |
 | Changelog | `changelog.md` and `changelog_ru.md` change together, with the same top heading and bullet count. `hub/` changes get a `hub/CHANGELOG.md` bullet. |
-| Installer | `install.sh` matches a fresh `make build-installer`, parses under `sh -n` and `busybox sh -n`, and added installer lines use no bashisms, `grep -P`, `\s`, `\d`, `od`, `hexdump` or `xxd`. |
+| Installer | `install.sh` matches a fresh `make build-installer`, parses under `sh -n` and `busybox sh -n`, and added installer lines use no bashisms, `grep -P`, `\s`, `\d`, `od`, `hexdump` or `xxd`. A changed `installer/_build.sh` is not run: it is code from the branch under review, so a NOTE asks to read it first. |
 | Go | `gofmt -l` is empty for changed files; `goleak` is not linked into the b4 binary. |
 | Lockfile | `@mui/material` resolves in one peer context. Two contexts fail the hub's `tsc` and ship two MUI copies in the router UI; `pnpm dedupe` fixes it. |
 

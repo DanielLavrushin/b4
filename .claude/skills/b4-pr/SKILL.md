@@ -21,9 +21,14 @@ checkout.
 
 - Trial-merge first: `git merge-tree --write-tree HEAD origin/main` reports conflicts without
   touching the tree.
-- Run `/b4-check` against the base. A branch cut before the check script existed does not
-  contain it: run the main checkout's copy by its path from inside the PR worktree; it checks
-  the repository it is run in.
+- Run `/b4-check` against the base, always with the main checkout's copy of the script, called
+  by its path from inside the PR worktree: it checks the repository it is run in, and the
+  PR's own copy is code the PR may have changed. The script leaves a changed
+  `installer/_build.sh` unrun.
+- The suites it lists run the PR's code on your machine with your credentials: `go test`, the
+  UI builds, `make test-netns`, and whatever the PR changed in tests, the Makefile or a
+  `package.json` script. Read those parts of the diff first, and run anything doubtful in a
+  disposable VM or container.
 - Read every changed file and load the skill of each area it touches: `/b4-tables`,
   `/b4-setting`, `/b4-ui`, `/b4-mcp`, `/b4-installer`, `/b4-hub`.
 - What contributor PRs most often miss: the Russian side of strings and docs, the second

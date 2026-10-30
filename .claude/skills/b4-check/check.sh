@@ -140,15 +140,19 @@ if has '^src/hubwire/'; then
 fi
 
 if has '^installer/|^install\.sh$'; then
-  mkdir -p "$tmp/build"
-  cp -R installer "$tmp/build/installer"
-  if sh "$tmp/build/installer/_build.sh" > "$tmp/build/log" 2>&1; then
-    if ! cmp -s "$tmp/build/install.sh" install.sh; then
-      fail "install.sh is stale: run make build-installer and commit install.sh"
+  if git diff --quiet "$base" -- installer/_build.sh; then
+    mkdir -p "$tmp/build"
+    cp -R installer "$tmp/build/installer"
+    if sh "$tmp/build/installer/_build.sh" > "$tmp/build/log" 2>&1; then
+      if ! cmp -s "$tmp/build/install.sh" install.sh; then
+        fail "install.sh is stale: run make build-installer and commit install.sh"
+      fi
+    else
+      fail "installer/_build.sh failed:"
+      detail "$tmp/build/log"
     fi
   else
-    fail "installer/_build.sh failed:"
-    detail "$tmp/build/log"
+    note "installer/_build.sh differs from $ref, so it was not run: read it first, then run make build-installer and compare install.sh"
   fi
   if ! sh -n install.sh 2> "$tmp/syntax"; then
     fail "install.sh does not parse:"
