@@ -2,10 +2,12 @@ package tproxy
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +19,7 @@ import (
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/socks5"
 	"golang.org/x/sys/unix"
 )
@@ -34,6 +37,13 @@ const namedDialBudget = 20 * time.Second
 var setLookup dns.LookupFunc = dns.LookupIPs
 
 func setTCPUserTimeout(c net.Conn, d time.Duration) {
+	for {
+		inner, ok := c.(interface{ NetConn() net.Conn })
+		if !ok {
+			break
+		}
+		c = inner.NetConn()
+	}
 	tc, ok := c.(*net.TCPConn)
 	if !ok || d <= 0 {
 		return
@@ -77,6 +87,7 @@ type Listener struct {
 	UDP       bool
 	Bridge    MTProtoBridge
 
+	peers      func() []*Listener
 	set        atomic.Pointer[config.SetConfig]
 	dnsMark    atomic.Int64
 	dnsTimeout atomic.Int64
@@ -85,6 +96,7 @@ type Listener struct {
 	loopWarn   sync.Once
 	relayMu    sync.Mutex
 	relays     map[string]int
+	flights    map[[sha256.Size]byte]int
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -318,6 +330,10 @@ func (l *Listener) acceptLoop(ln net.Listener, family string) {
 }
 
 func (l *Listener) handle(client net.Conn) {
+	l.serve(client, nil)
+}
+
+func (l *Listener) serve(client net.Conn, given *sniffResult) {
 	accepted := time.Now()
 	l.activeConns.Add(1)
 	defer l.activeConns.Add(-1)
@@ -350,6 +366,11 @@ func (l *Listener) handle(client net.Conn) {
 		} else if failover != nil {
 			client = failover
 		}
+		rest, passed := l.passOnToSet(client, origIP, origPort, from)
+		if passed {
+			return
+		}
+		client = rest
 		dest := net.JoinHostPort(origIP.String(), strconv.Itoa(origPort))
 		directFirst, workerFallback := l.Bridge.FailOpenOrder(origIP, origPort)
 		if directFirst {
@@ -380,13 +401,18 @@ func (l *Listener) handle(client net.Conn) {
 	clientAddr, _ := client.RemoteAddr().(*net.TCPAddr)
 
 	if owner, loops := l.upstreamLoop(clientAddr, tcpAddr); loops {
+		var head []byte
+		if given != nil {
+			head = given.prefix
+		}
 		log.LogConnectionStr("TCP", l.SetName, "", src, "", dest, from.MAC, "", "direct")
 		log.Tracef("tproxy: %s -> %s on set %q is the upstream's own connection (%s), sent direct", src, dest, l.SetName, owner)
-		l.relayDirect(client, dest, nil)
+		l.relayDirect(client, dest, head)
 		return
 	}
 
-	target := l.pickTarget(client, clientAddr, origIP)
+	target := l.pickTarget(client, clientAddr, origIP, given)
+	defer l.holdFlight(target.sniffed.prefix)()
 	targetHost := origIP.String()
 	if target.name != "" {
 		targetHost = target.name
@@ -481,21 +507,24 @@ func (t chosenTarget) logDomain() string {
 	return t.learned
 }
 
-func (l *Listener) pickTarget(client net.Conn, clientAddr *net.TCPAddr, origIP net.IP) chosenTarget {
+func (l *Listener) pickTarget(client net.Conn, clientAddr *net.TCPAddr, origIP net.IP, given *sniffResult) chosenTarget {
+	var sniffed sniffResult
+	if given != nil {
+		sniffed = *given
+	}
 	if l.Names == nil {
-		return chosenTarget{}
+		return chosenTarget{sniffed: sniffed}
 	}
 	learned := l.Names.LearnedName(origIP, l.SetID)
 	if !l.UseDomain {
-		return chosenTarget{learned: learned}
+		return chosenTarget{learned: learned, sniffed: sniffed}
 	}
 	var clientIP net.IP
 	if clientAddr != nil {
 		clientIP = clientAddr.IP
 	}
 	names := l.Names.ObservedNames(clientIP, origIP)
-	var sniffed sniffResult
-	if needsSniff(names, learned != "" || l.setListsDomains()) {
+	if given == nil && needsSniff(names, learned != "" || l.setListsDomains()) {
 		sniffed = sniffClient(client, sniffFirstWait, sniffTotalWait, sniffMaxBytes)
 	}
 	name, source := chooseTarget(targetInputs{
@@ -570,6 +599,48 @@ func (l *Listener) relaying(keys []string) bool {
 		}
 	}
 	return false
+}
+
+const (
+	flightMinBytes = 32
+	flightBytes    = 256
+)
+
+func flightKey(first []byte) ([sha256.Size]byte, bool) {
+	if len(first) < flightMinBytes {
+		return [sha256.Size]byte{}, false
+	}
+	return sha256.Sum256(first[:min(len(first), flightBytes)]), true
+}
+
+func (l *Listener) holdFlight(first []byte) func() {
+	key, ok := flightKey(first)
+	if !ok {
+		return func() {}
+	}
+	l.relayMu.Lock()
+	if l.flights == nil {
+		l.flights = make(map[[sha256.Size]byte]int)
+	}
+	l.flights[key]++
+	l.relayMu.Unlock()
+	return func() {
+		l.relayMu.Lock()
+		if l.flights[key]--; l.flights[key] <= 0 {
+			delete(l.flights, key)
+		}
+		l.relayMu.Unlock()
+	}
+}
+
+func (l *Listener) carriesFlight(first []byte) bool {
+	key, ok := flightKey(first)
+	if !ok {
+		return false
+	}
+	l.relayMu.Lock()
+	defer l.relayMu.Unlock()
+	return l.flights[key] > 0
 }
 
 func (l *Listener) relayedForUpstreamHost(client net.IP, keys []string) bool {
@@ -714,6 +785,127 @@ func (l *Listener) resolveHost(ctx context.Context, host string) ([]string, erro
 		}
 	}
 	return addrs, nil
+}
+
+var isRouterClient = routerAddrs.has
+
+func (l *Listener) passOnToSet(client net.Conn, origIP net.IP, origPort int, from metrics.Device) (net.Conn, bool) {
+	matcher, ok := l.Names.(SetMatcher)
+	if !ok || l.peers == nil || l.SetID != config.TelegramBridgeSetID {
+		return client, false
+	}
+	peers := l.peers()
+	if !slices.ContainsFunc(peers, l.takesPassOn) {
+		return client, false
+	}
+	sniffed := sniffClient(client, sniffFirstWait, sniffTotalWait, sniffMaxBytes)
+	rest := &replayConn{Conn: client, pending: sniffed.prefix}
+	clientAddr, _ := client.RemoteAddr().(*net.TCPAddr)
+	if clientAddr == nil {
+		return rest, false
+	}
+	routerLocal := isRouterClient(clientAddr.IP)
+	name := sni.NormalizeDomain(sniffed.host)
+	peer, via := l.passOnPeer(matcher, peers, name, origIP, from.MAC, routerLocal)
+	if peer == nil {
+		return rest, false
+	}
+	if peer.carriesFlight(sniffed.prefix) {
+		log.Debugf("tproxy: set %q keeps %s:%d from %s: it opens with the bytes of a connection set %q is relaying right now, so it is that set's upstream coming back", l.SetName, origIP, origPort, clientAddr.IP, peer.SetName)
+		return rest, false
+	}
+	log.Debugf("tproxy: set %q passes %s:%d on to set %q, which lists its %s", l.SetName, origIP, origPort, peer.SetName, via)
+	peer.serve(client, &sniffed)
+	return nil, true
+}
+
+func (l *Listener) passOnPeer(matcher SetMatcher, peers []*Listener, name string, dst net.IP, srcMAC string, routerLocal bool) (*Listener, string) {
+	applies := func(set *config.SetConfig) bool { return passOnApplies(set, srcMAC, routerLocal) }
+	if name != "" {
+		if peer := l.passOnListener(peers, matcher.SetForHost(name, srcMAC, applies), true); peer != nil {
+			return peer, "name " + name
+		}
+	}
+	set := matcher.SetForAddress(dst, srcMAC, func(set *config.SetConfig) bool {
+		return applies(set) && passOnEligible(set, false)
+	})
+	if peer := l.passOnListener(peers, set, false); peer != nil {
+		return peer, "address " + dst.String()
+	}
+	return nil, ""
+}
+
+func (l *Listener) passOnListener(peers []*Listener, set *config.SetConfig, byName bool) *Listener {
+	if !passOnEligible(set, byName) {
+		return nil
+	}
+	for _, peer := range peers {
+		if peer.SetID == set.Id && l.takesPassOn(peer) {
+			return peer
+		}
+	}
+	return nil
+}
+
+func (l *Listener) takesPassOn(peer *Listener) bool {
+	return peer != nil && peer != l && !peer.MTProtoWS && peer.ctx != nil && peer.ctx.Err() == nil
+}
+
+func passOnApplies(set *config.SetConfig, srcMAC string, routerLocal bool) bool {
+	if set == nil || !set.Routing.Enabled {
+		return true
+	}
+	if routerLocal {
+		return !set.RoutingSourceScoped()
+	}
+	if anyNonBlank(set.Routing.SourceInterfaces) {
+		return false
+	}
+	return srcMAC != "" || !anyNonBlank(set.Targets.SourceDevices)
+}
+
+func anyNonBlank(list []string) bool {
+	for _, s := range list {
+		if strings.TrimSpace(s) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func passOnEligible(set *config.SetConfig, byName bool) bool {
+	if set == nil || !set.Enabled || !set.Routing.Enabled || set.Routing.Mode != config.RoutingModeProxy {
+		return false
+	}
+	if config.IsTelegramBridgeSet(set) {
+		return false
+	}
+	return !byName || !set.Targets.DomainOnly
+}
+
+type replayConn struct {
+	net.Conn
+	pending []byte
+}
+
+func (c *replayConn) Read(p []byte) (int, error) {
+	if len(c.pending) > 0 {
+		n := copy(p, c.pending)
+		c.pending = c.pending[n:]
+		return n, nil
+	}
+	return c.Conn.Read(p)
+}
+
+func (c *replayConn) CloseWrite() error {
+	if cw, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return nil
+}
+
+func (c *replayConn) NetConn() net.Conn {
+	return c.Conn
 }
 
 type heldConn struct {

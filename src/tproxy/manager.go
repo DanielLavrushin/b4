@@ -202,34 +202,8 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 		if _, ok := m.listeners[id]; ok {
 			continue
 		}
-		mark := effectiveMark(cfg, set)
-		port := PortFor(mark)
-		host := set.Routing.Upstream.Host
-		if host == "" {
-			host = "127.0.0.1"
-		}
-		l := &Listener{
-			SetID:   set.Id,
-			SetName: set.Name,
-			Port:    port,
-			Upstream: socks5.ClientConfig{
-				Host:       host,
-				Port:       set.Routing.Upstream.Port,
-				Username:   set.Routing.Upstream.Username,
-				Password:   set.Routing.Upstream.Password,
-				Timeout:    10 * time.Second,
-				BypassMark: bypassMark,
-			},
-			UseDomain: set.Routing.Upstream.UseDomain,
-			UDP:       set.Routing.Upstream.UDP,
-			FailOpen:  set.Routing.Upstream.FailOpen,
-			Names:     m.resolver,
-			MTProtoWS: set.Routing.Mode == config.RoutingModeMTProtoWS,
-			Bridge:    m.mtprotoBridge,
-			guard:     newLoopGuard(host, set.Routing.Upstream.Port),
-		}
-		l.set.Store(set)
-		l.SetDNSOptions(int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout(), cfg.Queue.IPv6Enabled)
+		l := m.newListener(cfg, set, bypassMark)
+		port := l.Port
 		if err := l.Start(m.ctx); err != nil {
 			msg := err.Error()
 			if m.startErr[id] != msg {
@@ -278,6 +252,37 @@ func (m *Manager) running() []*Listener {
 		return *p
 	}
 	return nil
+}
+
+func (m *Manager) newListener(cfg *config.Config, set *config.SetConfig, bypassMark uint32) *Listener {
+	host := set.Routing.Upstream.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	l := &Listener{
+		SetID:   set.Id,
+		SetName: set.Name,
+		Port:    PortFor(effectiveMark(cfg, set)),
+		Upstream: socks5.ClientConfig{
+			Host:       host,
+			Port:       set.Routing.Upstream.Port,
+			Username:   set.Routing.Upstream.Username,
+			Password:   set.Routing.Upstream.Password,
+			Timeout:    10 * time.Second,
+			BypassMark: bypassMark,
+		},
+		UseDomain: set.Routing.Upstream.UseDomain,
+		UDP:       set.Routing.Upstream.UDP,
+		FailOpen:  set.Routing.Upstream.FailOpen,
+		Names:     m.resolver,
+		MTProtoWS: set.Routing.Mode == config.RoutingModeMTProtoWS,
+		Bridge:    m.mtprotoBridge,
+		peers:     m.running,
+		guard:     newLoopGuard(host, set.Routing.Upstream.Port),
+	}
+	l.set.Store(set)
+	l.SetDNSOptions(int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout(), cfg.Queue.IPv6Enabled)
+	return l
 }
 
 func (m *Manager) OpenConnections() map[string]int64 {

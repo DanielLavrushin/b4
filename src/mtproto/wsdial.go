@@ -305,6 +305,8 @@ func (c *wsConn) tryWriteControl(op byte, payload []byte) {
 // only so a test can point a plan at a local listener.
 var wsDialPort = "443"
 
+var wsCurvePreferences = []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384}
+
 // wsDialEndpoints resolves host to the addresses a dial may use, with any
 // address currently cooling moved to the back rather than dropped - a cooling
 // address is still a route, and dropping the last one leaves none.
@@ -510,6 +512,7 @@ func dialWSEndpoint(host, sni, hostHeader, path string, timeout time.Duration, m
 		ServerName:         sni,
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: true,
+		CurvePreferences:   wsCurvePreferences,
 	})
 	_ = tlsConn.SetDeadline(deadline)
 	tlsBegan := time.Now()
