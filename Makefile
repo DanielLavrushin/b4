@@ -34,6 +34,7 @@ swagger:
 	@cd $(SRC_DIR) && go run github.com/swaggo/swag/cmd/swag@v1.16.4 init --generalInfo main.go --output tools/docs --parseDependency
 	@sed -i 's/"version": *"[^"]*"/"version": "$(VERSION)"/' $(SRC_DIR)/tools/docs/swagger.json
 	@cp $(SRC_DIR)/tools/docs/swagger.json ./docs/static/swagger.json
+	@$(MAKE) --no-print-directory apispec
 	@rm -rf $(SRC_DIR)/tools/docs
 	@mkdir -p docs/static/swagger-versions
 	@cp docs/static/swagger.json "docs/static/swagger-versions/v$(VERSION).json"
@@ -45,6 +46,12 @@ swagger:
 	done
 	@echo "]" >> docs/static/swagger-versions/index.json
 	@echo "Swagger spec (v$(VERSION)) copied to docs/static/"
+
+.PHONY: apispec
+apispec:
+	@tmp=$$(mktemp $(SRC_DIR)/http/apispec/.swagger.json.gz.XXXXXX) && \
+	gzip -9 -n -c docs/static/swagger.json > "$$tmp" && chmod 644 "$$tmp" && \
+	mv -f "$$tmp" $(SRC_DIR)/http/apispec/spec/swagger.json.gz || { rm -f "$$tmp"; exit 1; }
 
 # Build for current platform
 .PHONY: build
@@ -110,7 +117,7 @@ android-%:
 
 # Generic build target (internal use)
 .PHONY: build-target
-build-target:
+build-target: apispec
 	@OUT_PATH="$(OUT_DIR)/$(GOOS)-$(TARGET)"
 	@echo "  → $(GOOS)/$(TARGET)"
 	@mkdir -p "$(OUT_DIR)/$(GOOS)-$(TARGET)" "$(OUT_DIR)/assets"

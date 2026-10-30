@@ -82,6 +82,8 @@ The token travels in a header of every request. Over plain HTTP anyone on the ne
 
 By default the assistant only reads. It can report b4's status and counters, show the configuration and the sets, and check which set covers a domain. It can also look up GeoSite and GeoIP categories, read the recent connections, the error log and the update log, and run diagnostics. [API and MCP tools](../advanced/api.md#mcp-tools) lists every tool and the permission it needs.
 
+The assistant can look up b4's REST API too, for tasks its tools do not cover. While the web interface has a username and a password, calls to that API need them. b4 tells the assistant to ask the user for them first. With them, the assistant can do everything the web interface can, whatever the switches below allow.
+
 ## Allowing changes and probes {#changing-settings}
 
 Two switches on the card widen what the assistant may do. Both are off by default, and each works without the other.

@@ -1515,8 +1515,8 @@ func TestToolsListStaysWithinContextBudget(t *testing.T) {
 		writes, probes bool
 		budget         int
 	}{
-		{"default", false, false, 17000},
-		{"writes and probes", true, true, 30000},
+		{"default", false, false, 17911},
+		{"writes and probes", true, true, 30911},
 	} {
 		cfg := mcpTestCfg()
 		cfg.System.WebServer.MCP.AllowWrites = c.writes
