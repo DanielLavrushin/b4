@@ -1,0 +1,188 @@
+name: Test build
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Architectures, space or comma separated (e.g. arm64 mipsle_softfloat), or all"
+        required: false
+        default: "all"
+        type: string
+      version:
+        description: "Version baked into the build (empty = top changelog.md version + commit, e.g. 1.88.3.4c097b1)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  BINARY_NAME: b4
+  ARCHS: "386 amd64 arm64 armv5 armv6 armv7 loong64 mips mipsle mips_softfloat mipsle_softfloat mips64 mips64le ppc64 ppc64le riscv64 s390x"
+
+jobs:
+  build-ui:
+    name: Prepare and build UI
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      archs: ${{ steps.meta.outputs.archs }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Resolve version and architectures
+        id: meta
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_ARCH: ${{ inputs.arch }}
+        run: |
+          set -euo pipefail
+          SHORT=$(git rev-parse --short HEAD)
+
+          VERSION=$(printf '%s' "$INPUT_VERSION" | xargs)
+          VERSION=${VERSION#v}
+          if [ -z "$VERSION" ]; then
+            BASE=$(awk -F'[][]' '/^## \[[0-9]/ { print $2; exit }' changelog.md)
+            if [ -z "$BASE" ]; then
+              echo "::error::No version heading in changelog.md; fill in the version field"
+              exit 1
+            fi
+            VERSION="$BASE.$SHORT"
+          fi
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.-]*$'; then
+            echo "::error::Invalid version: $VERSION (expected e.g. 1.88.3.4c097b1)"
+            exit 1
+          fi
+
+          WANT=$(printf '%s' "$INPUT_ARCH" | tr ',' ' ' | xargs)
+          if [ -z "$WANT" ] || [ "$WANT" = "all" ]; then
+            WANT="$ARCHS"
+          fi
+          for a in $WANT; do
+            case " $ARCHS " in
+              *" $a "*) ;;
+              *) echo "::error::Unknown architecture: $a (available: $ARCHS)"; exit 1 ;;
+            esac
+          done
+          ARCH_JSON=$(printf '%s\n' $WANT | sort -u | jq -Rnc '[inputs]')
+
+          {
+            echo "version=$VERSION"
+            echo "archs=$ARCH_JSON"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Test build $VERSION"
+            echo ""
+            echo "- Branch: \`$GITHUB_REF_NAME\`"
+            echo "- Commit: [\`$SHORT\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)"
+            echo "- Architectures: $(printf '%s' "$ARCH_JSON" | jq -r 'join(", ")')"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.18.2
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: "pnpm"
+          cache-dependency-path: |
+            ./pnpm-lock.yaml
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - name: Generate UI defaults
+        working-directory: src
+        run: go run tools/gendefaults.go
+
+      - name: Build web UI
+        working-directory: src/http/ui
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          pnpm install --frozen-lockfile
+          VITE_APP_VERSION="$VERSION" pnpm build
+
+      - name: Upload UI artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-build
+          path: src/http/ui/dist
+          retention-days: 1
+
+  build-linux:
+    name: Build Linux ${{ matrix.arch }}
+    needs: build-ui
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(needs.build-ui.outputs.archs) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - name: Download UI artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: ui-build
+          path: src/http/ui/dist
+
+      - name: Build using Makefile
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.build-ui.outputs.version }}
+        run: |
+          make linux-${ARCH} VERSION="$VERSION"
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v7
+        with:
+          path: out/assets/${{ env.BINARY_NAME }}-linux-${{ matrix.arch }}.tar.gz
+          archive: false
+          retention-days: 30
+          if-no-files-found: error
+
+  links:
+    name: Download links
+    needs: [build-ui, build-linux]
+    if: ${{ !cancelled() && needs.build-ui.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: List archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build-ui.outputs.version }}
+        run: |
+          set -euo pipefail
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          {
+            echo "### Downloads for $VERSION"
+            echo ""
+            echo "| Archive | Size | GitHub artifact digest | Expires |"
+            echo "| --- | --- | --- | --- |"
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
+              --jq '.artifacts[] | select(.name | endswith(".tar.gz"))' |
+              jq -sr --arg run "$RUN_URL" 'sort_by(.name)[] |
+                "| [\(.name)](\($run)/artifacts/\(.id)) | \((.size_in_bytes / 1048576 * 10 | round) / 10) MiB | `\(.digest // "-")` | \(.expires_at[:10]) |"'
+            echo ""
+            echo "Downloading needs a signed-in GitHub account."
+          } >> "$GITHUB_STEP_SUMMARY"
