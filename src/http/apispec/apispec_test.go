@@ -2,8 +2,13 @@ package apispec
 
 import (
 	"bytes"
+	"compress/gzip"
 	"errors"
+	"fmt"
+	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -306,5 +311,71 @@ func TestEmbeddedSpecMatchesTheDocsCopy(t *testing.T) {
 	}
 	if !bytes.Equal(raw, docs) {
 		t.Fatal("src/http/apispec/spec/swagger.json.gz is older than docs/static/swagger.json: run make apispec")
+	}
+}
+
+func TestMakeApispecSurvivesParallelRuns(t *testing.T) {
+	for _, tool := range []string{"make", "gzip", "mktemp"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("%s is not installed", tool)
+		}
+	}
+	root, err := filepath.Abs("../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "src")
+	pkg := filepath.Join(src, "http", "apispec")
+	if err := os.MkdirAll(filepath.Join(pkg, "spec"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	const parallel = 16
+	errs := make(chan error, parallel)
+	for range parallel {
+		go func() {
+			out, err := exec.Command("make", "-C", root, "--no-print-directory", "apispec", "SRC_DIR="+src).CombinedOutput()
+			if err != nil {
+				err = fmt.Errorf("%w: %s", err, bytes.TrimSpace(out))
+			}
+			errs <- err
+		}()
+	}
+	for range parallel {
+		if err := <-errs; err != nil {
+			t.Errorf("one of %d parallel make apispec runs failed: %v", parallel, err)
+		}
+	}
+
+	packed, err := os.ReadFile(filepath.Join(pkg, "spec", "swagger.json.gz"))
+	if err != nil {
+		t.Fatalf("read the generated spec: %v", err)
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(packed))
+	if err != nil {
+		t.Fatalf("the generated spec is not gzip: %v", err)
+	}
+	raw, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("the generated spec is truncated: %v", err)
+	}
+	docs, err := os.ReadFile(docsSpec)
+	if err != nil {
+		t.Fatalf("read docs/static/swagger.json: %v", err)
+	}
+	if !bytes.Equal(raw, docs) {
+		t.Error("the generated spec is not a copy of docs/static/swagger.json")
+	}
+
+	for _, dir := range []string{pkg, filepath.Join(pkg, "spec")} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			if name := e.Name(); name != "spec" && name != "swagger.json.gz" {
+				t.Errorf("make apispec left %s in %s, where the embed or git would pick it up", name, dir)
+			}
+		}
 	}
 }

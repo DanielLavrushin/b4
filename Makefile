@@ -49,8 +49,9 @@ swagger:
 
 .PHONY: apispec
 apispec:
-	@gzip -9 -n -c docs/static/swagger.json > $(SRC_DIR)/http/apispec/spec/swagger.json.gz.tmp
-	@mv $(SRC_DIR)/http/apispec/spec/swagger.json.gz.tmp $(SRC_DIR)/http/apispec/spec/swagger.json.gz
+	@tmp=$$(mktemp $(SRC_DIR)/http/apispec/.swagger.json.gz.XXXXXX) && \
+	gzip -9 -n -c docs/static/swagger.json > "$$tmp" && chmod 644 "$$tmp" && \
+	mv -f "$$tmp" $(SRC_DIR)/http/apispec/spec/swagger.json.gz || { rm -f "$$tmp"; exit 1; }
 
 # Build for current platform
 .PHONY: build
