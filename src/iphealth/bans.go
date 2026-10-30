@@ -346,16 +346,19 @@ func (r *BanRegistry) RecordCheck(key string, ok bool) bool {
 		return false
 	}
 	if !ok {
-		b.Passes = 0
+		if b.Passes != 0 {
+			b.Passes = 0
+			r.dirty = true
+		}
 		return false
 	}
 	b.Passes++
+	r.dirty = true
 	if b.Passes < banPassesToLift {
 		return false
 	}
 	b.Until = now
 	b.Passes = 0
-	r.dirty = true
 	return true
 }
 
@@ -379,18 +382,18 @@ func (r *BanRegistry) Lift(key string) bool {
 	return b.active(now)
 }
 
-func (r *BanRegistry) Clear() int {
+func (r *BanRegistry) Clear() []Ban {
 	if r == nil {
-		return 0
+		return nil
 	}
 	now := r.now()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	active := 0
+	var active []Ban
 	for _, list := range r.byIP {
 		for _, b := range list {
 			if b.active(now) {
-				active++
+				active = append(active, *b)
 			}
 		}
 	}

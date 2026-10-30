@@ -240,8 +240,7 @@ func (b *ipBans) lift(key string) []iphealth.Ban {
 	}
 	var lifted []iphealth.Ban
 	if key == "" {
-		lifted = b.reg.List()
-		b.reg.Clear()
+		lifted = b.reg.Clear()
 	} else if ip, port, ok := iphealth.ParseBanKey(key); ok && b.reg.Lift(key) {
 		lifted = []iphealth.Ban{{IP: ip.String(), Port: port}}
 	}

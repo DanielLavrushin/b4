@@ -689,8 +689,12 @@ func TestPoolListsAndClearsBans(t *testing.T) {
 	if got := p.GetBans(); len(got) != 1 {
 		t.Fatalf("one ban left, got %+v", got)
 	}
+	p.state.destState.AddBlocked("2a00:1450:4010:c05::c6:443")
 	if n := p.ClearBans(""); n != 1 || len(p.GetBans()) != 0 {
 		t.Fatalf("clearing all removed %d, left %+v", n, p.GetBans())
+	}
+	if p.state.destState.IsBlocked("2a00:1450:4010:c05::c6:443") {
+		t.Error("clearing all also drops every removed address from the short cache")
 	}
 	if n := p.ClearBans(""); n != 0 {
 		t.Errorf("nothing left to clear, got %d", n)

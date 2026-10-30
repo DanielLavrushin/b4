@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -151,6 +152,40 @@ func TestBanLiftsAfterThreeSuccessfulChecksInARow(t *testing.T) {
 	}
 }
 
+func TestBanFailedCheckIsSavedSoARestartDoesNotLiftEarly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), BanFileName)
+	r, clk := newTestBans(path)
+	strike(t, r, "74.125.172.167", 443)
+	key := "74.125.172.167:443"
+	for i := 0; i < banPassesToLift-1; i++ {
+		if r.RecordCheck(key, true) {
+			t.Fatalf("pass %d lifted the ban early", i+1)
+		}
+	}
+	strike(t, r, "64.233.161.198", 443)
+	if err := r.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	if r.RecordCheck(key, false) {
+		t.Fatal("a failed check never lifts")
+	}
+	if err := r.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	loaded := NewBanRegistry(path)
+	loaded.now = clk.now
+	if err := loaded.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.RecordCheck(key, true) {
+		t.Fatal("the failed check reset the passes, so one pass after a restart must not lift the ban")
+	}
+	if !loaded.Banned(net.ParseIP("74.125.172.167"), 443) {
+		t.Fatal("the ban must still be in effect")
+	}
+}
+
 func TestBanManualLiftAndClearForgetHistory(t *testing.T) {
 	r, clk := newTestBans("")
 	strike(t, r, "74.125.172.167", 443)
@@ -176,8 +211,28 @@ func TestBanManualLiftAndClearForgetHistory(t *testing.T) {
 	strike(t, r, "2a00:1450:4010:c05::c6", 443)
 	clk.advance(testFirstBan + time.Second)
 	strike(t, r, "64.233.161.198", 80)
-	if n := r.Clear(); n != 1 || r.Len() != 0 {
-		t.Fatalf("Clear deletes every record and reports the bans in effect: cleared %d, left %d", n, r.Len())
+	removed := r.Clear()
+	if len(removed) != 1 || r.Len() != 0 {
+		t.Fatalf("Clear deletes every record and returns the bans in effect: returned %+v, left %d", removed, r.Len())
+	}
+	if removed[0].Key() != "64.233.161.198:80" {
+		t.Errorf("Clear returns the removed active ban, got %s", removed[0].Key())
+	}
+}
+
+func TestBanClearReturnsEveryBanItRemoves(t *testing.T) {
+	r, _ := newTestBans("")
+	strike(t, r, "74.125.172.167", 443)
+	listed := r.List()
+	strike(t, r, "64.233.161.198", 443)
+	removed := r.Clear()
+	if len(listed) != 1 || len(removed) != 2 {
+		t.Fatalf("listed %d, removed %d", len(listed), len(removed))
+	}
+	keys := []string{removed[0].Key(), removed[1].Key()}
+	slices.Sort(keys)
+	if keys[0] != "64.233.161.198:443" || keys[1] != "74.125.172.167:443" {
+		t.Errorf("a ban added after an earlier List must be in what Clear returns, got %v", keys)
 	}
 }
 
@@ -332,7 +387,7 @@ func TestBanLoadMovesACorruptFileAside(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{\"version\":1,\"bans\":["), 0644); err != nil {
 		t.Fatal(err)
 	}
-	r, _ := newTestBans(path)
+	r, clk := newTestBans(path)
 	if err := r.Load(); err != nil {
 		t.Fatalf("a corrupt file must not fail the start: %v", err)
 	}
@@ -351,6 +406,7 @@ func TestBanLoadMovesACorruptFileAside(t *testing.T) {
 		t.Fatalf("Flush: %v", err)
 	}
 	fresh := NewBanRegistry(path)
+	fresh.now = clk.now
 	if err := fresh.Load(); err != nil || fresh.Len() != 1 {
 		t.Fatalf("a fresh file is written in its place: err %v, bans %d", err, fresh.Len())
 	}
@@ -395,7 +451,7 @@ func TestBanRegistryNilAndEmptyAreSafe(t *testing.T) {
 	if _, _, ok := r.Strike(ip, 443, "", "", time.Hour, time.Hour); ok {
 		t.Error("a nil registry takes no strikes")
 	}
-	if r.Lift("1.2.3.4:443") || r.Clear() != 0 || r.Prune() != 0 || r.RecordCheck("1.2.3.4:443", true) {
+	if r.Lift("1.2.3.4:443") || len(r.Clear()) != 0 || r.Prune() != 0 || r.RecordCheck("1.2.3.4:443", true) {
 		t.Error("a nil registry changes nothing")
 	}
 	if err := r.Load(); err != nil {
