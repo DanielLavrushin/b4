@@ -269,8 +269,7 @@ async function main() {
 
         const url = /^https?:/.test(job.url) ? job.url : baseUrl + job.url;
         const loaded = cdp.once("Page.loadEventFired", job.loadTimeout ?? 30000);
-        await cdp.send("Page.navigate", { url });
-        await loaded;
+        await Promise.all([loaded, cdp.send("Page.navigate", { url })]);
 
         await runActions(cdp, job.actions, verbose);
 
