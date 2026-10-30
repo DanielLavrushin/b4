@@ -246,7 +246,9 @@ ip6tables -w -t filter -L FORWARD -n --line-numbers
 ip6tables -w -t filter -L OUTPUT -n --line-numbers
 ip6tables -w -t filter -L -n
 iptables -w -t filter -nL INPUT --line-numbers
+iptables -w -t mangle -nL INPUT --line-numbers
 ip6tables -w -t filter -nL INPUT --line-numbers
+ip6tables -w -t mangle -nL INPUT --line-numbers
 ipset list -n
 iptables-legacy -w -t mangle -L PREROUTING -n --line-numbers
 iptables-legacy -w -t mangle -L INPUT -n --line-numbers
@@ -279,7 +281,9 @@ ip6tables-legacy -w -t filter -L FORWARD -n --line-numbers
 ip6tables-legacy -w -t filter -L OUTPUT -n --line-numbers
 ip6tables-legacy -w -t filter -L -n
 iptables-legacy -w -t filter -nL INPUT --line-numbers
+iptables-legacy -w -t mangle -nL INPUT --line-numbers
 ip6tables-legacy -w -t filter -nL INPUT --line-numbers
+ip6tables-legacy -w -t mangle -nL INPUT --line-numbers
 ipset list -n
 ip rule show
 ip -6 rule show

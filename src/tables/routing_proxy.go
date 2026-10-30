@@ -950,14 +950,20 @@ func addProxyInputAccept(be routeBackend, mark uint32) {
 		if !hasBinary(fam) {
 			continue
 		}
-		for i := 0; i < 100; i++ {
-			if _, err := run(fam, "-w", "-D", "INPUT", "-m", "mark", "--mark", markHex, "-j", "ACCEPT"); err != nil {
-				break
+		for _, table := range proxyInputAcceptTables() {
+			for i := 0; i < 100; i++ {
+				if _, err := run(fam, "-w", "-t", table, "-D", "INPUT", "-m", "mark", "--mark", markHex, "-j", "ACCEPT"); err != nil {
+					break
+				}
 			}
+			runLogged("routing: add input accept (proxy) "+fam+" "+table,
+				fam, "-w", "-t", table, "-I", "INPUT", "1", "-m", "mark", "--mark", markHex, "-j", "ACCEPT")
 		}
-		runLogged("routing: add input accept (proxy) "+fam,
-			fam, "-w", "-I", "INPUT", "1", "-m", "mark", "--mark", markHex, "-j", "ACCEPT")
 	}
+}
+
+func proxyInputAcceptTables() []string {
+	return []string{"filter", "mangle"}
 }
 
 func removeProxyInputAcceptNft(mark uint32) {
@@ -1005,14 +1011,16 @@ func sweepProxyInputAcceptsNft() {
 }
 
 func sweepProxyInputAcceptsIpt(cmd string) {
-	iptDeleteListedLines(cmd, "filter", "INPUT", func(line string) bool {
-		fields := strings.Fields(line)
-		if len(fields) < 2 || fields[1] != "ACCEPT" || !strings.Contains(line, "mark match") {
-			return false
-		}
-		m, ok := iptMarkFromRule(line)
-		return ok && tproxy.InMarkRange(m)
-	})
+	for _, table := range proxyInputAcceptTables() {
+		iptDeleteListedLines(cmd, table, "INPUT", func(line string) bool {
+			fields := strings.Fields(line)
+			if len(fields) < 2 || fields[1] != "ACCEPT" || !strings.Contains(line, "mark match") {
+				return false
+			}
+			m, ok := iptMarkFromRule(line)
+			return ok && tproxy.InMarkRange(m)
+		})
+	}
 }
 
 func iptMarkFromRule(line string) (uint32, bool) {
@@ -1041,9 +1049,11 @@ func removeProxyInputAccept(be routeBackend, mark uint32) {
 		if !hasBinary(fam) {
 			continue
 		}
-		for i := 0; i < 100; i++ {
-			if _, err := run(fam, "-w", "-D", "INPUT", "-m", "mark", "--mark", markHex, "-j", "ACCEPT"); err != nil {
-				break
+		for _, table := range proxyInputAcceptTables() {
+			for i := 0; i < 100; i++ {
+				if _, err := run(fam, "-w", "-t", table, "-D", "INPUT", "-m", "mark", "--mark", markHex, "-j", "ACCEPT"); err != nil {
+					break
+				}
 			}
 		}
 	}
