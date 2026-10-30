@@ -73,6 +73,11 @@ const (
 	DefaultIPBlockSynThreshold = 3
 	DefaultIPBlockHealTTLSec   = 60
 	DefaultIPHealthRetestSec   = 300
+	DefaultIPBanTTLSec         = 86400
+	DefaultIPRepeatBanTTLSec   = 604800
+	MinIPBanTTLSec             = 600
+	MaxIPBanTTLSec             = 2592000
+	MaxIPRepeatBanTTLSec       = 7776000
 )
 
 const (
@@ -281,7 +286,10 @@ type IPBlockDetectConfig struct {
 }
 
 type IPHealthConfig struct {
-	RetestIntervalSec int `json:"retest_interval_sec"`
+	RetestIntervalSec int  `json:"retest_interval_sec"`
+	BansOff           bool `json:"bans_off"`
+	BanTTLSec         int  `json:"ban_ttl_sec"`
+	RepeatBanTTLSec   int  `json:"repeat_ban_ttl_sec"`
 }
 
 func (c *IPHealthConfig) RetestInterval() time.Duration {
@@ -289,6 +297,38 @@ func (c *IPHealthConfig) RetestInterval() time.Duration {
 		return DefaultIPHealthRetestSec * time.Second
 	}
 	return time.Duration(c.RetestIntervalSec) * time.Second
+}
+
+func (c *IPHealthConfig) BansEnabled() bool {
+	return c == nil || !c.BansOff
+}
+
+func (c *IPHealthConfig) BanTTL() time.Duration {
+	sec := 0
+	if c != nil {
+		sec = c.BanTTLSec
+	}
+	return time.Duration(clampBanSec(sec, DefaultIPBanTTLSec, MaxIPBanTTLSec)) * time.Second
+}
+
+func (c *IPHealthConfig) RepeatBanTTL() time.Duration {
+	sec := 0
+	if c != nil {
+		sec = c.RepeatBanTTLSec
+	}
+	return time.Duration(clampBanSec(sec, DefaultIPRepeatBanTTLSec, MaxIPRepeatBanTTLSec)) * time.Second
+}
+
+func clampBanSec(sec, def, max int) int {
+	switch {
+	case sec <= 0:
+		return def
+	case sec < MinIPBanTTLSec:
+		return MinIPBanTTLSec
+	case sec > max:
+		return max
+	}
+	return sec
 }
 
 func (c *IPBlockDetectConfig) ResolvedSynThreshold() int {

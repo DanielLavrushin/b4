@@ -170,6 +170,7 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
   const { t } = useTranslation();
   const dnsVerdict = parseDnsVerdict(flags);
   const isBlocked = flags?.startsWith("ipblock");
+  const isBanned = flags === "ipblock-ban";
   const isBlackhole = flags === "block";
   const isSocks5 = flags === "socks5";
   const isDuplicate = flags === "tcp-dup";
@@ -256,8 +257,12 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
       {isBlocked && (
         <B4Badge
           icon={<BlockIcon />}
-          label="ip"
-          title={t("connections.flags.ipBlocked")}
+          label={isBanned ? t("connections.flags.ipBannedLabel") : "ip"}
+          title={
+            isBanned
+              ? t("connections.flags.ipBanned")
+              : t("connections.flags.ipBlocked")
+          }
           variant={flags === "ipblock-cached" ? "outlined" : "filled"}
           color="error"
         />

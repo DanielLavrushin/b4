@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import {
   ActivityPanel,
   AddressesPanel,
+  BansPanel,
   BlockedPanel,
   DevicesPanel,
   DomainsPanel,
@@ -76,6 +77,13 @@ export const DASHBOARD_PANELS: readonly PanelDescriptor[] = [
     defaultSpan: 6,
     when: "blocked",
     Component: BlockedPanel,
+  },
+  {
+    id: "bans",
+    titleKey: "dashboard.bans.title",
+    defaultSpan: 6,
+    when: "bans",
+    Component: BansPanel,
   },
   {
     id: "telegram",

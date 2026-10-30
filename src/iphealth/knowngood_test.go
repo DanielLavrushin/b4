@@ -132,3 +132,28 @@ func TestKnownGoodObserveAloneIsUsable(t *testing.T) {
 		t.Fatalf("Lookup returned %d addresses, want both seen in DNS answers even with no handshake", len(got))
 	}
 }
+
+func TestKnownGoodForgetDropsOnlyThatAddress(t *testing.T) {
+	s := NewKnownGood()
+	s.Remember("rr2---sn-ab5l6nr6.googlevideo.com", net.ParseIP("74.125.172.167"))
+	s.Observe("rr2---sn-ab5l6nr6.googlevideo.com", net.ParseIP("74.125.172.168"))
+	s.Remember("other.example", net.ParseIP("74.125.172.167"))
+
+	s.Forget("RR2---sn-ab5l6nr6.googlevideo.com.", net.ParseIP("74.125.172.167"))
+	got := s.Lookup("rr2---sn-ab5l6nr6.googlevideo.com", false)
+	if len(got) != 1 || got[0].String() != "74.125.172.168" {
+		t.Errorf("Lookup after Forget = %v, want only the other address", got)
+	}
+	if got := s.Lookup("other.example", false); len(got) != 1 {
+		t.Errorf("Forget is per host, the address must stay known for other.example, got %v", got)
+	}
+
+	s.Forget("rr2---sn-ab5l6nr6.googlevideo.com", net.ParseIP("74.125.172.168"))
+	if s.Len() != 1 {
+		t.Errorf("Len = %d, want the emptied host removed", s.Len())
+	}
+	s.Forget("", net.ParseIP("1.1.1.1"))
+	s.Forget("missing.example", nil)
+	var nilStore *KnownGood
+	nilStore.Forget("example.com", net.ParseIP("1.1.1.1"))
+}

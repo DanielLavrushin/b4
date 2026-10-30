@@ -7,6 +7,8 @@ export { describeEvent, engineLabel } from "./eventText";
 export type { EventLink, EventLinkKind, EventView } from "./eventText";
 export { EscalationsPanel, clearEscalations } from "./Escalations";
 export type { EscalationsClearResult } from "./Escalations";
+export { BansPanel, clearBans } from "./Bans";
+export type { BansClearResult } from "./Bans";
 export { BlockedPanel } from "./Blocked";
 export { DomainsPanel } from "./Domains";
 export { AddressesPanel } from "./Addresses";
@@ -15,6 +17,7 @@ export { TelegramPanel, bridgeWorking } from "./Telegram";
 export { PanelCard, useStaleSince } from "./PanelCard";
 export { Ago, AGO_TICK_MS, useAgoText } from "./Ago";
 export {
+  hasBans,
   hasBlocking,
   hasEscalations,
   hasMTProto,

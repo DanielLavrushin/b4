@@ -140,6 +140,24 @@ export interface EscalationList {
   items: EscalationEntry[];
 }
 
+export interface BanEntry {
+  key: string;
+  ip: string;
+  port: number;
+  host: string;
+  set: string;
+  strikes: number;
+  repeat: boolean;
+  since: number;
+  until: number;
+  passes: number;
+}
+
+export interface BanList {
+  rev: number;
+  items: BanEntry[];
+}
+
 export interface B4Event {
   id: number;
   t: number;
@@ -224,6 +242,7 @@ export interface MetricsFrame {
   top_addresses?: TopList;
   devices?: DeviceList;
   escalations?: EscalationList;
+  bans?: BanList;
   events?: EventLog;
   attention: Attention;
   mtproto?: MTProtoStats;

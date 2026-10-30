@@ -76,6 +76,29 @@ func (k *KnownGood) record(host string, ip net.IP, verified bool) {
 	k.hosts[host] = entries
 }
 
+func (k *KnownGood) Forget(host string, ip net.IP) {
+	if k == nil || host == "" || ip == nil {
+		return
+	}
+	host = normalizeHost(host)
+
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
+	entries := k.hosts[host]
+	kept := entries[:0]
+	for _, e := range entries {
+		if !e.ip.Equal(ip) {
+			kept = append(kept, e)
+		}
+	}
+	if len(kept) == 0 {
+		delete(k.hosts, host)
+		return
+	}
+	k.hosts[host] = kept
+}
+
 func betterKnownGood(entries []knownGoodIP) func(i, j int) bool {
 	return func(i, j int) bool {
 		if entries[i].verified != entries[j].verified {

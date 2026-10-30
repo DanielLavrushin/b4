@@ -1,6 +1,8 @@
 package iphealth
 
 import (
+	"context"
+	"crypto/tls"
 	"errors"
 	"net"
 	"strconv"
@@ -98,6 +100,84 @@ func DefaultProber(ip string, port uint16, mark int) bool {
 		}
 	}
 	return false
+}
+
+type TLSResult uint8
+
+const (
+	TLSUnreachable TLSResult = iota
+	TLSSilent
+	TLSReplied
+)
+
+const (
+	tlsProbeConnectTimeout   = 4 * time.Second
+	tlsProbeHandshakeTimeout = 5 * time.Second
+)
+
+var neutralTLSNames = []string{"example.com", "vk.com"}
+
+func (r TLSResult) String() string {
+	switch r {
+	case TLSSilent:
+		return "silent"
+	case TLSReplied:
+		return "replied"
+	}
+	return "unreachable"
+}
+
+func ProbeTLS(ctx context.Context, ip net.IP, port int, mark int) TLSResult {
+	return probeTLS(ctx, ip, port, mark, tlsProbeConnectTimeout, tlsProbeHandshakeTimeout)
+}
+
+func probeTLS(ctx context.Context, ip net.IP, port, mark int, connect, handshake time.Duration) TLSResult {
+	if ip == nil || port <= 0 || port > 65535 {
+		return TLSUnreachable
+	}
+	addr := net.JoinHostPort(ip.String(), strconv.Itoa(port))
+	result := TLSUnreachable
+	for _, name := range neutralTLSNames {
+		got := probeTLSName(ctx, addr, name, mark, connect, handshake)
+		if ctx.Err() != nil {
+			return TLSUnreachable
+		}
+		if got == TLSReplied {
+			return TLSReplied
+		}
+		if got == TLSSilent {
+			result = TLSSilent
+		}
+	}
+	return result
+}
+
+func probeTLSName(ctx context.Context, addr, name string, mark int, connect, handshake time.Duration) TLSResult {
+	conn, err := netprobe.Dialer(mark, connect, 0).DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return TLSUnreachable
+	}
+	defer conn.Close()
+
+	counted := &readCounter{Conn: conn}
+	hctx, cancel := context.WithTimeout(ctx, handshake)
+	defer cancel()
+	err = tls.Client(counted, &tls.Config{ServerName: name, InsecureSkipVerify: true}).HandshakeContext(hctx)
+	if err == nil || counted.n > 0 {
+		return TLSReplied
+	}
+	return TLSSilent
+}
+
+type readCounter struct {
+	net.Conn
+	n int
+}
+
+func (c *readCounter) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	c.n += n
+	return n, err
 }
 
 func (t *Tracker) suspendedLocked(now time.Time) bool {

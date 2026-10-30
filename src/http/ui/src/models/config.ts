@@ -571,6 +571,9 @@ export interface DuplicateConfig {
 
 export interface IPHealthConfig {
   retest_interval_sec: number;
+  bans_off?: boolean;
+  ban_ttl_sec?: number;
+  repeat_ban_ttl_sec?: number;
 }
 
 export interface IPBlockDetectConfig {

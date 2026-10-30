@@ -138,3 +138,117 @@ func TestIPHealthSparseRoundtrip(t *testing.T) {
 		t.Errorf("retest_interval_sec = %v, want 900", got)
 	}
 }
+
+func TestIPHealthBanResolvedDefaults(t *testing.T) {
+	var zero IPHealthConfig
+	if !zero.BansEnabled() {
+		t.Error("the zero value must leave bans on: bans_off is the switch")
+	}
+	if got := zero.BanTTL(); got != DefaultIPBanTTLSec*time.Second {
+		t.Errorf("BanTTL = %s, want %ds", got, DefaultIPBanTTLSec)
+	}
+	if got := zero.RepeatBanTTL(); got != DefaultIPRepeatBanTTLSec*time.Second {
+		t.Errorf("RepeatBanTTL = %s, want %ds", got, DefaultIPRepeatBanTTLSec)
+	}
+
+	var nilCfg *IPHealthConfig
+	if !nilCfg.BansEnabled() || nilCfg.BanTTL() != 24*time.Hour || nilCfg.RepeatBanTTL() != 7*24*time.Hour {
+		t.Error("a nil ip_health section resolves to bans on with the default durations")
+	}
+
+	off := IPHealthConfig{BansOff: true}
+	if off.BansEnabled() {
+		t.Error("bans_off must turn bans off")
+	}
+
+	cfg := NewConfig()
+	if cfg.System.IPHealth.BansOff || cfg.System.IPHealth.BanTTLSec != DefaultIPBanTTLSec || cfg.System.IPHealth.RepeatBanTTLSec != DefaultIPRepeatBanTTLSec {
+		t.Errorf("default config ip_health = %+v", cfg.System.IPHealth)
+	}
+}
+
+func TestIPHealthBanValidationFillsAndClamps(t *testing.T) {
+	cases := []struct {
+		first, repeat         int
+		wantFirst, wantRepeat int
+	}{
+		{0, 0, DefaultIPBanTTLSec, DefaultIPRepeatBanTTLSec},
+		{-5, -5, DefaultIPBanTTLSec, DefaultIPRepeatBanTTLSec},
+		{60, 100, MinIPBanTTLSec, MinIPBanTTLSec},
+		{3600, 86400, 3600, 86400},
+		{MaxIPBanTTLSec + 1, MaxIPRepeatBanTTLSec + 1, MaxIPBanTTLSec, MaxIPRepeatBanTTLSec},
+		{MaxIPRepeatBanTTLSec, MaxIPBanTTLSec, MaxIPBanTTLSec, MaxIPBanTTLSec},
+	}
+	for _, c := range cases {
+		raw := IPHealthConfig{BanTTLSec: c.first, RepeatBanTTLSec: c.repeat}
+		if got := raw.BanTTL(); got != time.Duration(c.wantFirst)*time.Second {
+			t.Errorf("BanTTL(%d) = %s, want %ds", c.first, got, c.wantFirst)
+		}
+		if got := raw.RepeatBanTTL(); got != time.Duration(c.wantRepeat)*time.Second {
+			t.Errorf("RepeatBanTTL(%d) = %s, want %ds", c.repeat, got, c.wantRepeat)
+		}
+
+		cfg := NewConfig()
+		cfg.System.IPHealth.BanTTLSec = c.first
+		cfg.System.IPHealth.RepeatBanTTLSec = c.repeat
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate: %v", err)
+		}
+		if got := cfg.System.IPHealth.BanTTLSec; got != c.wantFirst {
+			t.Errorf("validated ban_ttl_sec %d -> %d, want %d", c.first, got, c.wantFirst)
+		}
+		if got := cfg.System.IPHealth.RepeatBanTTLSec; got != c.wantRepeat {
+			t.Errorf("validated repeat_ban_ttl_sec %d -> %d, want %d", c.repeat, got, c.wantRepeat)
+		}
+	}
+}
+
+func TestIPHealthBanSettingsAreSparse(t *testing.T) {
+	cfg := NewConfig()
+	set := NewSetConfig()
+	set.Id = "s1"
+	cfg.Sets = []*SetConfig{&set}
+	cfg.System.IPHealth.BanTTLSec = 0
+	cfg.System.IPHealth.RepeatBanTTLSec = 0
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+
+	ipHealthOf := func() map[string]any {
+		t.Helper()
+		data, err := MarshalSparse(&cfg)
+		if err != nil {
+			t.Fatalf("MarshalSparse: %v", err)
+		}
+		var raw map[string]any
+		if err := json.Unmarshal(data, &raw); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		system, _ := raw["system"].(map[string]any)
+		ipHealth, _ := system["ip_health"].(map[string]any)
+		return ipHealth
+	}
+
+	if got := ipHealthOf(); got != nil {
+		t.Errorf("ip_health = %v, want it left out while every ban setting holds its default", got)
+	}
+
+	cfg.System.IPHealth.BansOff = true
+	cfg.System.IPHealth.BanTTLSec = 3600
+	got := ipHealthOf()
+	if got["bans_off"] != true || got["ban_ttl_sec"] != float64(3600) {
+		t.Errorf("ip_health = %v, want bans_off and ban_ttl_sec written", got)
+	}
+	if _, present := got["repeat_ban_ttl_sec"]; present {
+		t.Errorf("repeat_ban_ttl_sec was written while it holds the default: %v", got)
+	}
+
+	var loaded Config
+	if err := json.Unmarshal([]byte(`{"system":{"ip_health":{"bans_off":true}}}`), &loaded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	ApplyConfigDefaults(&loaded)
+	if loaded.System.IPHealth.BansEnabled() || loaded.System.IPHealth.BanTTLSec != DefaultIPBanTTLSec || loaded.System.IPHealth.RepeatBanTTLSec != DefaultIPRepeatBanTTLSec {
+		t.Errorf("a file that only turns bans off keeps the default durations: %+v", loaded.System.IPHealth)
+	}
+}

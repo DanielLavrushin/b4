@@ -503,6 +503,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if isSyn && !isAck && !routeHandsOff && cfg.IsTCPPort(dport) && matched {
+		if w.handleSynBan(vc, pkt, cfg, set, sport, dport) {
+			return 0
+		}
 		if w.handleSynHealth(vc, pkt, cfg, set, sport, dport) {
 			return 0
 		}
@@ -715,9 +718,17 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		ibd := &set.TCP.IPBlockDetect
 		dstIPPort := fmt.Sprintf("%s:%d", pkt.dstStr, dport)
 
-		if ibd.CacheBlockedIPs && w.destState.IsBlocked(dstIPPort) {
+		cachedReason := ""
+		if ibd.CacheBlockedIPs {
+			if w.bans.banned(pkt.dst, dport) {
+				cachedReason = "ipblock-ban"
+			} else if w.destState.IsBlocked(dstIPPort) {
+				cachedReason = "ipblock-cached"
+			}
+		}
+		if cachedReason != "" {
 			if !cfg.Queue.IsDiscovery {
-				log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "ipblock-cached")
+				log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), cachedReason)
 			}
 			if pkt.ver == IPv4 {
 				w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
@@ -727,7 +738,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 			observeFlow(cfg, pkt, sport, dport, set, host)
 			vc.drop()
-			log.Tracef("IPBlockDetect: dropped packet to %s:%d (cached)", pkt.dstStr, dport)
+			log.Tracef("IPBlockDetect: dropped packet to %s:%d (%s)", pkt.dstStr, dport, cachedReason)
 
 			return 0
 		}
@@ -821,6 +832,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 					}
 					if ibd.CacheBlockedIPs {
 						w.destState.AddBlocked(dstIPPort)
+						w.bans.confirm(cfg, pkt.dst, dport, host, set.Name)
 					}
 					if !cfg.Queue.IsDiscovery {
 						log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "ipblock")

@@ -85,7 +85,7 @@ func (s *AsnStore) load() {
 	}
 	var parsed map[string]*AsnInfo
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		kept, moveErr := moveCorruptAside(s.path)
+		kept, moveErr := MoveCorruptAside(s.path)
 		if moveErr != nil {
 			log.Errorf("The ASN cache %s is not valid JSON (%v) and could not be moved aside (%v); starting with an empty ASN cache", s.path, err, moveErr)
 			return

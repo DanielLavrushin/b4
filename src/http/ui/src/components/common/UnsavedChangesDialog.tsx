@@ -183,6 +183,11 @@ const formatEntry = (entry: unknown): string => {
 const INVERTED_BOOLEAN_PATHS: Record<string, true> = {
   "system.dns.tcp_disabled": true,
   "system.dns.keep_ipv6_answers": true,
+  "system.ip_health.bans_off": true,
+};
+const SCALED_NUMBER_PATHS: Record<string, number> = {
+  "system.ip_health.ban_ttl_sec": 3600,
+  "system.ip_health.repeat_ban_ttl_sec": 86400,
 };
 const formatValue = (
   value: unknown,
@@ -195,6 +200,9 @@ const formatValue = (
     const shown = INVERTED_BOOLEAN_PATHS[path] ? !value : value;
     return shown ? t("core.valueOn") : t("core.valueOff");
   }
+  const scale = SCALED_NUMBER_PATHS[path];
+  if (typeof value === "number" && scale)
+    return String(Math.round((value / scale) * 100) / 100);
   if (Array.isArray(value))
     return value.length === 0 ? EMPTY_VALUE : value.map(formatEntry).join(", ");
   if (typeof value === "string" || typeof value === "number")

@@ -166,7 +166,7 @@ func KeepCorruptCopy(path string) (string, error) {
 	return "", fmt.Errorf("%d copies of %s are already kept", maxCorruptCopies, path)
 }
 
-func moveCorruptAside(path string) (string, error) {
+func MoveCorruptAside(path string) (string, error) {
 	for n := 0; n < maxCorruptCopies; n++ {
 		name := corruptCopyName(path, n)
 		if _, err := os.Lstat(name); err == nil {

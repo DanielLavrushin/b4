@@ -14,6 +14,7 @@ import (
 	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/dhcp"
 	"github.com/daniellavrushin/b4/dns"
+	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/sni"
@@ -77,6 +78,13 @@ func NewPool(cfg *config.Config) *Pool {
 	dhcpMgr := dhcp.NewManager()
 
 	state := newRuntimeState()
+	if !cfg.Queue.IsDiscovery {
+		state.bans = newIPBans(iphealth.NewBanRegistry(iphealth.BanFilePath(cfg.ConfigPath)), state.goodIPs, nil)
+		state.bans.applyConfig(cfg)
+		if err := state.bans.reg.Load(); err != nil {
+			log.Warnf("IP bans: could not read %s, starting with no bans: %v", state.bans.reg.Path(), err)
+		}
+	}
 	ws := make([]*Worker, 0, threads)
 	for i := 0; i < threads; i++ {
 		w := NewWorkerWithQueue(cfg, start+uint16(i))
@@ -94,10 +102,14 @@ func NewPool(cfg *config.Config) *Pool {
 		w.ipHealth = state.ipHealth
 		w.pinHealth = state.pinHealth
 		w.goodIPs = state.goodIPs
+		w.bans = state.bans
 		ws = append(ws, w)
 	}
 
 	pool := &Pool{Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), state: state}
+	if state.bans != nil {
+		state.bans.changed = pool.publishBans
+	}
 	if !cfg.Queue.IsDiscovery {
 		pool.dnsCopy = newDNSCopyListener(ws[0])
 		for _, w := range ws {
@@ -146,9 +158,11 @@ func NewPool(cfg *config.Config) *Pool {
 				if pool.state.pinHealth.due(retest) {
 					pool.checkDNSPins(pool.GetFirstWorkerConfig())
 				}
+				pool.state.bans.tick(pool.GetFirstWorkerConfig())
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
 				pool.publishEscalations()
+				pool.publishBans()
 				pool.reportQueueDirection(time.Now())
 			case <-pool.stopCleanup:
 				return
@@ -289,6 +303,7 @@ func (p *Pool) Stop() {
 	if p.state != nil {
 		p.state.pinHealth.stop()
 		p.state.ipHealth.Stop()
+		p.state.bans.stop()
 	}
 
 	var wg sync.WaitGroup
@@ -399,6 +414,10 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 		p.state.tlsCache.ForgetDecisions(matcher)
 	}
 
+	if p.state != nil {
+		p.state.bans.applyConfig(newCfg)
+	}
+
 	if !reuse && p.state != nil && p.state.destState != nil {
 		p.state.destState.PruneEscalations(func(setId string) bool {
 			target := newCfg.GetSetById(setId)
@@ -444,7 +463,7 @@ func (p *Pool) reconcileDNSTCP(newCfg *config.Config) {
 }
 
 func (p *Pool) GetIPBlockCache() IPBlockCache {
-	return p.state.destState
+	return ipBlockView{dest: p.state.destState, bans: p.state.bans}
 }
 
 func (p *Pool) retestInterval() time.Duration {
