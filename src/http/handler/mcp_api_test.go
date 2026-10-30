@@ -223,6 +223,43 @@ func TestMCPAPIPreferredToolsExistInTheSpecAndTheServer(t *testing.T) {
 	}
 }
 
+func TestEveryMCPToolIsMappedOrHasNoRESTEquivalent(t *testing.T) {
+	noRESTEquivalent := map[string]bool{
+		"b4_status":              true,
+		"b4_get_topic":           true,
+		"b4_list_writable_paths": true,
+		"b4_recent_connections":  true,
+		"b4_logs_tail":           true,
+		"b4_revert_last_change":  true,
+		"b4_test_domain_now":     true,
+		"b4_api_reference":       true,
+	}
+	mapped := map[string]bool{}
+	for _, hint := range mcpAPIPreferredTools {
+		mapped[hint.tool] = true
+	}
+
+	full := mcpTestCfg()
+	full.System.WebServer.MCP.AllowWrites = true
+	full.System.WebServer.MCP.AllowActiveProbes = true
+	session, ctx := connectMCP(t, newMCPTestServer(t, full))
+	served := toolNames(t, session, ctx)
+
+	for name := range served {
+		switch {
+		case mapped[name] && noRESTEquivalent[name]:
+			t.Errorf("%s is in mcpAPIPreferredTools and also listed here as having no REST equivalent", name)
+		case !mapped[name] && !noRESTEquivalent[name]:
+			t.Errorf("%s is a new tool: add the REST operations it performs to mcpAPIPreferredTools, or list it here as having no REST equivalent", name)
+		}
+	}
+	for name := range noRESTEquivalent {
+		if !served[name] {
+			t.Errorf("%s is listed as having no REST equivalent, but b4 does not serve it", name)
+		}
+	}
+}
+
 func TestMCPAPIVersionNoteFlagsAMismatch(t *testing.T) {
 	if note := mcpAPIVersionNote("1.88.0", "1.88.2"); !strings.Contains(note, "built for b4 1.88.0 and this b4 is 1.88.2") {
 		t.Errorf("mismatch note = %q", note)
