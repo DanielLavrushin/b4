@@ -12,6 +12,7 @@ import (
 	"io"
 	mrand "math/rand"
 	"net"
+	"slices"
 	"syscall"
 	"time"
 
@@ -195,7 +196,7 @@ func (ch *clientHelloData) verify(secret *Secret) (matched bool, err error) {
 }
 
 func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
-	c, _, err := AcceptFakeTLSMulti(conn, []*Secret{secret})
+	c, _, err := AcceptFakeTLSMulti(conn, []*Secret{secret}, nil)
 	return c, err
 }
 
@@ -203,7 +204,7 @@ func AcceptFakeTLS(conn net.Conn, secret *Secret) (*FakeTLSConn, error) {
 // The secret is identified purely by the HMAC in the client random, so no
 // bytes are written back until a match is found. On success it returns the
 // matching secret so the caller can attribute the connection.
-func AcceptFakeTLSMulti(conn net.Conn, secrets []*Secret) (*FakeTLSConn, *Secret, error) {
+func AcceptFakeTLSMulti(conn net.Conn, secrets []*Secret, origin func(host string) originProfile) (*FakeTLSConn, *Secret, error) {
 	ch, err := readClientHello(conn)
 	if err != nil {
 		return nil, nil, err
@@ -219,7 +220,11 @@ func AcceptFakeTLSMulti(conn net.Conn, secrets []*Secret) (*FakeTLSConn, *Secret
 		}
 
 		ready := time.Now().Add(helloDelay())
-		serverHello, err := buildServerHello(secret, ch.clientRandom, parseHelloOffer(ch.body))
+		var profile originProfile
+		if origin != nil {
+			profile = origin(secret.Host)
+		}
+		serverHello, err := buildServerHello(secret, ch.clientRandom, parseHelloOffer(ch.body), profile)
 		if err != nil {
 			return nil, nil, fmt.Errorf("build ServerHello: %w", err)
 		}
@@ -280,6 +285,7 @@ func proxyToMaskingDomain(client net.Conn, initial []byte, host string, mark uin
 
 type helloOffer struct {
 	sessionID []byte
+	suites    []uint16
 	mlkemKey  []byte
 }
 
@@ -295,7 +301,17 @@ func parseHelloOffer(helloBody []byte) helloOffer {
 		return offer
 	}
 	offer.sessionID = append([]byte{}, sid...)
-	if !ch.ReadUint16LengthPrefixed(&suites) || !ch.ReadUint8LengthPrefixed(&comp) || !ch.ReadUint16LengthPrefixed(&exts) {
+	if !ch.ReadUint16LengthPrefixed(&suites) {
+		return offer
+	}
+	for !suites.Empty() {
+		var suite uint16
+		if !suites.ReadUint16(&suite) {
+			return offer
+		}
+		offer.suites = append(offer.suites, suite)
+	}
+	if !ch.ReadUint8LengthPrefixed(&comp) || !ch.ReadUint16LengthPrefixed(&exts) {
 		return offer
 	}
 	for !exts.Empty() {
@@ -325,13 +341,13 @@ func parseHelloOffer(helloBody []byte) helloOffer {
 	return offer
 }
 
-func serverKeyShare(offer helloOffer) (uint16, []byte, error) {
+func serverKeyShare(offer helloOffer, originGroup uint16) (uint16, []byte, error) {
 	key, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
 		return 0, nil, err
 	}
 	public := key.PublicKey().Bytes()
-	if offer.mlkemKey != nil {
+	if offer.mlkemKey != nil && originGroup != groupX25519 {
 		if ek, err := mlkem.NewEncapsulationKey768(offer.mlkemKey); err == nil {
 			_, ciphertext := ek.Encapsulate()
 			return groupX25519MLKEM768, append(ciphertext, public...), nil
@@ -348,10 +364,14 @@ func helloDelay() time.Duration {
 	return lo + time.Duration(mrand.Int63n(int64(hi-lo)+1))
 }
 
-func buildServerHello(secret *Secret, clientRandom []byte, offer helloOffer) ([]byte, error) {
-	group, share, err := serverKeyShare(offer)
+func buildServerHello(secret *Secret, clientRandom []byte, offer helloOffer, profile originProfile) ([]byte, error) {
+	group, share, err := serverKeyShare(offer, profile.group)
 	if err != nil {
 		return nil, err
+	}
+	cipher := uint16(0x1301)
+	if profile.cipher != 0 && slices.Contains(offer.suites, profile.cipher) {
+		cipher = profile.cipher
 	}
 
 	var shBody bytes.Buffer
@@ -359,18 +379,24 @@ func buildServerHello(secret *Secret, clientRandom []byte, offer helloOffer) ([]
 	shBody.Write(make([]byte, 32))
 	shBody.WriteByte(byte(len(offer.sessionID)))
 	shBody.Write(offer.sessionID)
-	shBody.Write([]byte{0x13, 0x01})
+	shBody.Write([]byte{byte(cipher >> 8), byte(cipher)})
 	shBody.WriteByte(0x00)
 
-	var extensions bytes.Buffer
 	keyShareData := binary.BigEndian.AppendUint16(nil, group)
 	keyShareData = binary.BigEndian.AppendUint16(keyShareData, uint16(len(share)))
 	keyShareData = append(keyShareData, share...)
-	extensions.Write([]byte{0x00, 0x33})
-	extLen := len(keyShareData)
-	extensions.Write([]byte{byte(extLen >> 8), byte(extLen)})
-	extensions.Write(keyShareData)
-	extensions.Write([]byte{0x00, 0x2b, 0x00, 0x02, 0x03, 0x04})
+	keyShareExt := binary.BigEndian.AppendUint16([]byte{0x00, 0x33}, uint16(len(keyShareData)))
+	keyShareExt = append(keyShareExt, keyShareData...)
+	versionsExt := []byte{0x00, 0x2b, 0x00, 0x02, 0x03, 0x04}
+
+	var extensions bytes.Buffer
+	if profile.versionsFirst {
+		extensions.Write(versionsExt)
+		extensions.Write(keyShareExt)
+	} else {
+		extensions.Write(keyShareExt)
+		extensions.Write(versionsExt)
+	}
 
 	extBytes := extensions.Bytes()
 	shBody.Write([]byte{byte(len(extBytes) >> 8), byte(len(extBytes))})
@@ -387,9 +413,7 @@ func buildServerHello(secret *Secret, clientRandom []byte, offer helloOffer) ([]
 
 	changeCipher := []byte{tlsRecordChangeCipher, 0x03, 0x03, 0x00, 0x01, 0x01}
 
-	var nb [2]byte
-	rand.Read(nb[:])
-	noiseLen := 1900 + int(binary.BigEndian.Uint16(nb[:]))%201
+	noiseLen := profile.appDataLen()
 	noise := make([]byte, noiseLen)
 	rand.Read(noise)
 	var noiseRecord bytes.Buffer

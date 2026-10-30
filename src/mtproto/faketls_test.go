@@ -100,7 +100,7 @@ func TestAcceptFakeTLSMulti_NoMatchReturnsVerifyError(t *testing.T) {
 	}()
 
 	srv.SetDeadline(time.Now().Add(2 * time.Second))
-	_, _, err := AcceptFakeTLSMulti(srv, []*Secret{sec1})
+	_, _, err := AcceptFakeTLSMulti(srv, []*Secret{sec1}, nil)
 	if err == nil {
 		t.Fatalf("expected error when no secret matches")
 	}
@@ -311,6 +311,11 @@ type fakeTLSResult struct {
 
 func runFakeTLSHandshake(t *testing.T, secrets []*Secret, hello []byte) fakeTLSResult {
 	t.Helper()
+	return runFakeTLSHandshakeFor(t, secrets, hello, nil)
+}
+
+func runFakeTLSHandshakeFor(t *testing.T, secrets []*Secret, hello []byte, origin func(string) originProfile) fakeTLSResult {
+	t.Helper()
 	srv, cli := net.Pipe()
 	defer cli.Close()
 	type accepted struct {
@@ -321,7 +326,7 @@ func runFakeTLSHandshake(t *testing.T, secrets []*Secret, hello []byte) fakeTLSR
 	done := make(chan accepted, 1)
 	go func() {
 		_ = srv.SetDeadline(time.Now().Add(5 * time.Second))
-		conn, matched, err := AcceptFakeTLSMulti(srv, secrets)
+		conn, matched, err := AcceptFakeTLSMulti(srv, secrets, origin)
 		_ = srv.Close()
 		done <- accepted{conn: conn, matched: matched, err: err}
 	}()
@@ -585,7 +590,7 @@ func TestTheFakeTLSKeySharesAreFreshRealKeys(t *testing.T) {
 	for name, offer := range offers {
 		seen := map[string]bool{}
 		for range 64 {
-			_, share, err := serverKeyShare(offer)
+			_, share, err := serverKeyShare(offer, 0)
 			if err != nil {
 				t.Fatalf("%s: serverKeyShare: %v", name, err)
 			}

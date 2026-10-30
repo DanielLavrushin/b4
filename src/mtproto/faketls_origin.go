@@ -8,9 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	mrand "math/rand"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/daniellavrushin/b4/log"
 	"golang.org/x/crypto/cryptobyte"
 )
 
@@ -18,12 +22,18 @@ const (
 	tlsRecordAlert      = 0x15
 	originProbeTimeout  = 10 * time.Second
 	originProbeRounds   = 3
+	originRefreshEvery  = 6 * time.Hour
+	maxOriginHosts      = 8
 	minAppDataRecord    = 64
 	maxAppDataRecord    = 16640
 	maxOriginRecordSize = 16384 + 2048
 )
 
 var originProbePort = "443"
+
+var originRetryEvery = 5 * time.Minute
+
+var fallbackAppData = minAppDataRecord + mrand.Intn(97)
 
 var (
 	errOriginNotTLS13 = errors.New("does not speak TLS 1.3")
@@ -254,4 +264,146 @@ func profileOrigin(ctx context.Context, host string, mark uint) (originProfile, 
 
 func clampAppData(n int) int {
 	return min(max(n, minAppDataRecord), maxAppDataRecord)
+}
+
+func (p originProfile) appDataLen() int {
+	lo, hi := p.appData[0], p.appData[1]
+	if lo == 0 {
+		return fallbackAppData
+	}
+	if hi <= lo {
+		return lo
+	}
+	return lo + mrand.Intn(hi-lo+1)
+}
+
+func (p originProfile) String() string {
+	size := strconv.Itoa(p.appData[0])
+	if p.appData[1] != p.appData[0] {
+		size += "-" + strconv.Itoa(p.appData[1])
+	}
+	group := "the key exchange the app offers"
+	switch p.group {
+	case groupX25519:
+		group = "X25519 only"
+	case groupX25519MLKEM768:
+		group = "post-quantum key exchange"
+	}
+	return fmt.Sprintf("%s-byte record, cipher 0x%04x, %s", size, p.cipher, group)
+}
+
+func (s *Server) originFor(host string) originProfile {
+	m := s.origins.Load()
+	if m == nil {
+		return originProfile{}
+	}
+	if p, ok := (*m)[strings.ToLower(host)]; ok {
+		return p
+	}
+	if cfg := s.cfg.Load(); cfg != nil {
+		if p, ok := (*m)[strings.ToLower(cfg.System.MTProto.FakeSNI)]; ok {
+			return p
+		}
+	}
+	return originProfile{}
+}
+
+func (s *Server) originHosts() []string {
+	var hosts []string
+	seen := map[string]bool{}
+	add := func(h string) {
+		h = strings.ToLower(strings.TrimSpace(h))
+		if h == "" || seen[h] || len(hosts) >= maxOriginHosts {
+			return
+		}
+		seen[h] = true
+		hosts = append(hosts, h)
+	}
+	if cfg := s.cfg.Load(); cfg != nil {
+		add(cfg.System.MTProto.FakeSNI)
+	}
+	if ptr := s.secrets.Load(); ptr != nil {
+		for _, sec := range *ptr {
+			add(sec.Host)
+		}
+	}
+	return hosts
+}
+
+func (s *Server) kickOrigins() {
+	select {
+	case s.originKick <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Server) watchOrigins(ctx context.Context) {
+	states := map[string]string{}
+	all := true
+	for {
+		wait := originRefreshEvery
+		if s.profileOrigins(ctx, all, states) {
+			wait = originRetryEvery
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+			all = wait == originRefreshEvery
+		case <-s.originKick:
+			timer.Stop()
+			all = false
+		}
+	}
+}
+
+func (s *Server) profileOrigins(ctx context.Context, all bool, states map[string]string) (retry bool) {
+	var old map[string]originProfile
+	if m := s.origins.Load(); m != nil {
+		old = *m
+	}
+	hosts := s.originHosts()
+	next := make(map[string]originProfile, len(hosts))
+	for _, host := range hosts {
+		if p, ok := old[host]; ok && !all {
+			next[host] = p
+			continue
+		}
+		p, err := profileOrigin(ctx, host, selfDialMark())
+		if ctx.Err() != nil {
+			return false
+		}
+		noteOrigin(states, host, p, err)
+		if err == nil {
+			next[host] = p
+			continue
+		}
+		if prev, ok := old[host]; ok {
+			next[host] = prev
+		}
+		if !errors.Is(err, errOriginNotTLS13) && !errors.Is(err, errOriginRetry) {
+			retry = true
+		}
+	}
+	s.origins.Store(&next)
+	return retry
+}
+
+func noteOrigin(states map[string]string, host string, p originProfile, err error) {
+	state := fmt.Sprintf("MTProto fake TLS follows %s: %s", host, p)
+	logf := log.Infof
+	switch {
+	case errors.Is(err, errOriginNotTLS13), errors.Is(err, errOriginRetry):
+		state = fmt.Sprintf("MTProto fake TLS cannot follow %s, which %v; a fake domain that speaks TLS 1.3 fits better", host, err)
+		logf = log.Warnf
+	case err != nil:
+		state = fmt.Sprintf("MTProto fake TLS could not reach %s to follow its answer: %v", host, err)
+	}
+	if states[host] == state {
+		return
+	}
+	states[host] = state
+	logf("%s", state)
 }
