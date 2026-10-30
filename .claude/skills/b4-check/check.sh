@@ -139,7 +139,7 @@ if has '^src/hubwire/'; then
   note "src/hubwire changed: it crosses router and hub, so changelog.md and hub/CHANGELOG.md each get a bullet"
 fi
 
-if has '^installer/'; then
+if has '^installer/|^install\.sh$'; then
   mkdir -p "$tmp/build"
   cp -R installer "$tmp/build/installer"
   if sh "$tmp/build/installer/_build.sh" > "$tmp/build/log" 2>&1; then
