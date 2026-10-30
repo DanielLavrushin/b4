@@ -325,6 +325,7 @@ func (api *API) newMCPServer(caps mcpCapabilities) *mcp.Server {
 	api.addMCPPathTools(srv)
 	api.addMCPGeoTools(srv)
 	api.addMCPWatchdogTools(srv)
+	api.addMCPAPITools(srv)
 	if caps.Writes {
 		api.addMCPWriteTools(srv)
 		api.addMCPTargetTools(srv)

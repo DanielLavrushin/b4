@@ -36,6 +36,8 @@ RUN cd src && go mod download
 
 COPY src/ ./src/
 COPY --from=ui-builder /app/src/http/ui/dist ./src/http/ui/dist
+COPY docs/static/swagger.json ./docs/static/swagger.json
+RUN gzip -c docs/static/swagger.json > src/http/apispec/spec/swagger.json.gz
 COPY Makefile ./
 
 ARG VERSION=dev

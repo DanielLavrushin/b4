@@ -4,7 +4,7 @@
         "description": "B4 network packet processor REST API",
         "title": "B4 API",
         "contact": {},
-        "version": "1.88.0"
+        "version": "1.89.0"
     },
     "basePath": "/api",
     "paths": {
@@ -3241,6 +3241,87 @@
                 }
             }
         },
+        "/ipbans": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the addresses b4 currently bans: an address and port that a set with IP block detection caught and that did not answer TLS for neutral site names either. key is the address and port, host and set name the connection that triggered the ban, strikes counts the confirmed blocks, repeat is true when the ban uses the repeat duration, since and until are wall-clock milliseconds, passes counts the successful re-tests in a row. The list is empty while system.ip_health.bans_off is set. Sorted by until, latest first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IPBans"
+                ],
+                "summary": "List the banned addresses",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.IPBansResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Method not allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/ipbans/clear": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lifts the ban on one address and port, or on every banned address when key is empty or the body is missing, and forgets the ban history, so a later block of the same address counts as a first ban again. cleared is the number of bans that were in effect.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IPBans"
+                ],
+                "summary": "Unban addresses",
+                "parameters": [
+                    {
+                        "description": "Address and port to unban, such as 74.125.172.167:443 or [2001:db8::1]:443",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.IPBansClearRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.IPBansClearResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid_json or bad_request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
+                        }
+                    },
+                    "405": {
+                        "description": "Method not allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/logs/trace/download": {
             "get": {
                 "security": [
@@ -5969,6 +6050,15 @@
         "config.IPHealthConfig": {
             "type": "object",
             "properties": {
+                "ban_ttl_sec": {
+                    "type": "integer"
+                },
+                "bans_off": {
+                    "type": "boolean"
+                },
+                "repeat_ban_ttl_sec": {
+                    "type": "integer"
+                },
                 "retest_interval_sec": {
                     "type": "integer"
                 }
@@ -9356,6 +9446,36 @@
                 }
             }
         },
+        "handler.IPBansClearRequest": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.IPBansClearResponse": {
+            "type": "object",
+            "properties": {
+                "cleared": {
+                    "type": "integer"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handler.IPBansResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.BanEntry"
+                    }
+                }
+            }
+        },
         "handler.MetricsResetResponse": {
             "type": "object",
             "properties": {
@@ -10242,6 +10362,55 @@
                 }
             }
         },
+        "metrics.BanEntry": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "passes": {
+                    "type": "integer"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "repeat": {
+                    "type": "boolean"
+                },
+                "set": {
+                    "type": "string"
+                },
+                "since": {
+                    "type": "integer"
+                },
+                "strikes": {
+                    "type": "integer"
+                },
+                "until": {
+                    "type": "integer"
+                }
+            }
+        },
+        "metrics.BanList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.BanEntry"
+                    }
+                },
+                "rev": {
+                    "type": "integer"
+                }
+            }
+        },
         "metrics.BlockedEntry": {
             "type": "object",
             "properties": {
@@ -10283,6 +10452,43 @@
                     "type": "integer"
                 },
                 "max": {
+                    "type": "integer"
+                }
+            }
+        },
+        "metrics.DeviceEntry": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "domains": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "last": {
+                    "type": "integer"
+                }
+            }
+        },
+        "metrics.DeviceList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/metrics.DeviceEntry"
+                    }
+                },
+                "rev": {
                     "type": "integer"
                 }
             }
@@ -10410,8 +10616,14 @@
                 "attention": {
                     "$ref": "#/definitions/metrics.Attention"
                 },
+                "bans": {
+                    "$ref": "#/definitions/metrics.BanList"
+                },
                 "blocked": {
                     "$ref": "#/definitions/metrics.BlockedLists"
+                },
+                "devices": {
+                    "$ref": "#/definitions/metrics.DeviceList"
                 },
                 "engine": {
                     "$ref": "#/definitions/metrics.EngineInfo"
