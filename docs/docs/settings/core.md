@@ -44,11 +44,14 @@ When the packet engine fails to start, the web interface keeps working, but traf
 
 ### IP Block Detection {#ip-block-detection}
 
-IP block detection is turned on per set, on the **TCP > General** tab. This card holds its global setting.
+IP block detection is turned on per set, on the **TCP > General** tab. This card holds its global settings.
 
 | Field | What it does | Default |
 | --- | --- | --- |
-| **Retest interval (seconds)** | How long an address marked unreachable stays marked before it is tested again. Recovery after a block is lifted can take this long. The interval also paces the checks of [pinned DNS addresses](../dns.md#pinned-addresses). | `300` |
+| **Retest interval (seconds)** | How long an address marked unreachable stays marked before it is tested again. Recovery after a block is lifted can take this long. The interval also paces the checks of [pinned DNS addresses](../dns.md#pinned-addresses) and of [banned addresses](../sets/tcp/general.md#banned-addresses). | `300` |
+| **Remember blocked addresses** | Bans an address that IP block detection caught and that answers no other site name either. Applies to sets with IP block detection and **Cache Blocked IPs** on, see [Banned addresses](../sets/tcp/general.md#banned-addresses). | On |
+| **First ban (hours)** | How long an address stays banned the first time. | `24` |
+| **Repeat ban (days)** | How long the ban lasts when the address is banned again within 30 days after its previous ban ended. | `7` |
 
 ### IPv4 / IPv6 {#protocols}
 

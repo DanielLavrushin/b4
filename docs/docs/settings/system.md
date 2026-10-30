@@ -95,7 +95,7 @@ The sub-tab saves, restores and resets the configuration.
 
 ### Download Backup {#download-backup}
 
-**Download Backup** saves a `.tar.gz` archive of the configuration directory. Besides the configuration, it holds the history of [Discovery](../discovery.md#history) and of the [DPI Detector](../detector.md#history) and the [payloads](./payloads.md). The GeoSite and GeoIP databases, the vendor list of device filtering and the Community Hub author key stay out. The author key moves to another router with its recovery code, see [Integrations](./integrations.md#community-hub).
+**Download Backup** saves a `.tar.gz` archive of the configuration directory. Besides the configuration, it holds the history of [Discovery](../discovery.md#history) and of the [DPI Detector](../detector.md#history), the [payloads](./payloads.md) and the [banned addresses](../sets/tcp/general.md#banned-addresses). The GeoSite and GeoIP databases, the vendor list of device filtering and the Community Hub author key stay out. The author key moves to another router with its recovery code, see [Integrations](./integrations.md#community-hub).
 
 :::warning The archive holds secrets
 The archive holds the configuration as it is, with the password hash, the tokens and the secrets, and the stored AI API keys. The [safe copy](#safe-copy) is the file for sharing.

@@ -122,6 +122,10 @@ Shown while a [block set](sets/blocking.md) is enabled. **Domains** lists what w
 
 ![Blocked](/img/dashboard/20261009120020.png)
 
+## Banned addresses {#banned-addresses}
+
+Shown while IP block detection has [banned addresses](sets/tcp/general.md#banned-addresses). Each row shows the address, the domain and set it was caught on, how many times it was caught and the time left. **Unban** lifts one ban at once, and **Clear all** lifts every ban.
+
 ## Telegram {#telegram}
 
 Shown while the [MTProto proxy](telegram/mtproto-proxy.md) or [Telegram over WebSocket](telegram/websocket-bridge.md) is on. For the proxy, it shows the connected networks, open connections and traffic of each secret. For the bridge, it shows the relayed sessions and failures, and **not working** when the bridge cannot work. The gear button opens **Settings > Telegram**.
@@ -147,4 +151,4 @@ Shown while the [MTProto proxy](telegram/mtproto-proxy.md) or [Telegram over Web
 
 ![Reset counters](/img/dashboard/20261003220130.png)
 
-It clears **Top domains**, **Top addresses**, the **Blocked** counts, the count of resets dropped by RST protection and the escalation count. It keeps the **Activity** history, **Recent changes**, the uptime, the Telegram figures and the hosts escalated right now. **Clear** on [Active Escalations](#active-escalations) sends those back.
+It clears **Top domains**, **Top addresses**, the **Blocked** counts, the count of resets dropped by RST protection and the escalation count. It keeps the **Activity** history, **Recent changes**, the uptime, the Telegram figures, the banned addresses and the hosts escalated right now. **Clear** on [Active Escalations](#active-escalations) sends those back.
