@@ -3255,6 +3255,8 @@
       "payloads": "Захваченный ClientHello как содержимое фейков",
       "payloadsHint": "Поддельные пакеты несут захваченный ClientHello вместо встроенных payload.",
       "selectPayloads": "Выберите захваченные payload...",
+      "selectAllPayloads": "Выбрать все payloads ({{count}})",
+      "clearAllPayloads": "Снять выбор payloads",
       "noPayloads": "Пока ничего не захвачено. Захват делается в разделе Пэйлоады:",
       "summaryNoDns": "без проверки DNS",
       "summaryNoCache": "поиск с нуля",
