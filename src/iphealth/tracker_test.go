@@ -358,18 +358,28 @@ func TestProbeTLSSilentWhenTheServerNeverWrites(t *testing.T) {
 	}
 }
 
-func TestProbeTLSSilentWhenTheServerResetsWithoutAByte(t *testing.T) {
-	ln := listenLocal(t)
-	serveRaw(t, ln, func(c net.Conn) {
-		buf := make([]byte, 4096)
-		_, _ = c.Read(buf)
-		_ = c.(*net.TCPConn).SetLinger(0)
-		c.Close()
-	})
+func TestProbeTLSRepliedWhenTheServerClosesWithoutAByte(t *testing.T) {
+	for name, reset := range map[string]bool{"close": false, "reset": true} {
+		t.Run(name, func(t *testing.T) {
+			ln := listenLocal(t)
+			serveRaw(t, ln, func(c net.Conn) {
+				buf := make([]byte, 4096)
+				_, _ = c.Read(buf)
+				if reset {
+					_ = c.(*net.TCPConn).SetLinger(0)
+				}
+				c.Close()
+			})
 
-	ip, port := probeAddr(t, ln.Addr())
-	if got := probeTLS(context.Background(), ip, port, 0, testProbeConnect, testProbeHandshake*10); got != TLSSilent {
-		t.Fatalf("a reset after the hello without one server byte: %s, want silent", got)
+			ip, port := probeAddr(t, ln.Addr())
+			start := time.Now()
+			if got := probeTLS(context.Background(), ip, port, 0, testProbeConnect, testProbeHandshake*10); got != TLSReplied {
+				t.Fatalf("a server that ends the connection without a byte is alive, like a front end refusing an unknown name: %s, want replied", got)
+			}
+			if took := time.Since(start); took >= testProbeHandshake*10 {
+				t.Errorf("an active %s must not wait for the handshake timeout, took %s", name, took)
+			}
+		})
 	}
 }
 
