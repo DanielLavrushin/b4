@@ -534,7 +534,7 @@ func TestAFailedRefreshKeepsTheLastProfile(t *testing.T) {
 	s := NewServer(originTestConfig(t, "localhost"))
 	last := originProfile{appData: [2]int{2654, 2655}, cipher: 0x1302, group: groupX25519MLKEM768}
 	s.origins.Store(&map[string]originProfile{"localhost": last})
-	if retry := s.profileOrigins(context.Background(), true, map[string]string{}); !retry {
+	if retry := s.profileOrigins(context.Background(), true, map[string]string{}, map[string]bool{}); !retry {
 		t.Fatalf("an unreachable fake domain did not ask for an early retry")
 	}
 	if got := s.originFor("localhost"); got != last {
@@ -570,4 +570,162 @@ func TestTheServerRetriesAnUnreachableFakeDomainSoon(t *testing.T) {
 	}
 	serveTestOrigin(t, again, &tls.Config{})
 	waitForOrigin(t, s, "localhost")
+}
+
+type switchableOrigin struct {
+	down     atomic.Bool
+	upHits   atomic.Int32
+	downHits atomic.Int32
+}
+
+func serveSwitchableOrigin(t *testing.T, ln net.Listener, down bool) *switchableOrigin {
+	t.Helper()
+	cfg := &tls.Config{Certificates: []tls.Certificate{testOriginCertificate(t)}}
+	o := &switchableOrigin{}
+	o.down.Store(down)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			if o.down.Load() {
+				o.downHits.Add(1)
+				_ = c.Close()
+				continue
+			}
+			o.upHits.Add(1)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer c.Close()
+				_ = c.SetDeadline(time.Now().Add(5 * time.Second))
+				_ = tls.Server(c, cfg).Handshake()
+			}()
+		}
+	}()
+	t.Cleanup(func() {
+		_ = ln.Close()
+		wg.Wait()
+	})
+	return o
+}
+
+func originsOnOnePort(t *testing.T, servedDown, withUnreachable bool) (served, unreachable *switchableOrigin) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	prevPort := originProbePort
+	originProbePort = port
+	t.Cleanup(func() { originProbePort = prevPort })
+	served = serveSwitchableOrigin(t, ln, servedDown)
+	if withUnreachable {
+		other, err := net.Listen("tcp", net.JoinHostPort("127.0.0.2", port))
+		if err != nil {
+			t.Skipf("cannot bind 127.0.0.2:%s: %v", port, err)
+		}
+		unreachable = serveSwitchableOrigin(t, other, true)
+	}
+	return served, unreachable
+}
+
+func withOriginTimers(t *testing.T, retry, refresh time.Duration) {
+	prevRetry, prevRefresh := originRetryEvery, originRefreshEvery
+	originRetryEvery, originRefreshEvery = retry, refresh
+	t.Cleanup(func() { originRetryEvery, originRefreshEvery = prevRetry, prevRefresh })
+}
+
+func TestAFakeDomainWhoseRefreshFailedIsRetriedSoon(t *testing.T) {
+	dropSelfDialMark(t)
+	withOriginTimers(t, 20*time.Millisecond, time.Hour)
+	origin, _ := originsOnOnePort(t, true, false)
+	s := NewServer(originTestConfig(t, "localhost"))
+	last := originProfile{appData: [2]int{2654, 2655}, cipher: 0x1302, group: groupX25519MLKEM768}
+	s.origins.Store(&map[string]originProfile{"localhost": last})
+	stored := s.origins.Load()
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer s.Stop()
+	deadline := time.Now().Add(10 * time.Second)
+	for s.origins.Load() == stored {
+		if time.Now().After(deadline) {
+			t.Fatalf("the first pass never stored its result")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if got := s.originFor("localhost"); got != last {
+		t.Fatalf("a failed refresh replaced the last profile: %+v", got)
+	}
+
+	origin.down.Store(false)
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && (origin.upHits.Load() == 0 || s.originFor("localhost") == last) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if origin.upHits.Load() == 0 {
+		t.Fatalf("the fake domain was not probed again within 5 s after its refresh failed, with retries every %v", originRetryEvery)
+	}
+	if got := s.originFor("localhost"); got == last {
+		t.Fatalf("the profile is still the one from before the failed refresh")
+	}
+}
+
+func TestAnUnreachableSecretDomainDoesNotStopTheFakeDomainsRefresh(t *testing.T) {
+	for _, withUnreachable := range []bool{false, true} {
+		name := "the fake domain alone"
+		if withUnreachable {
+			name = "with an unreachable secret domain"
+		}
+		t.Run(name, func(t *testing.T) {
+			dropSelfDialMark(t)
+			withOriginTimers(t, 20*time.Millisecond, 250*time.Millisecond)
+			served, _ := originsOnOnePort(t, false, withUnreachable)
+			cfg := originTestConfig(t, "localhost")
+			if withUnreachable {
+				cfg = originTestConfig(t, "127.0.0.2")
+			}
+			s := NewServer(cfg)
+			if err := s.Start(); err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			defer s.Stop()
+			waitForOrigin(t, s, "localhost")
+			first := served.upHits.Load()
+			deadline := time.Now().Add(5 * time.Second)
+			for time.Now().Before(deadline) && served.upHits.Load() < first+2*originProbeRounds {
+				time.Sleep(10 * time.Millisecond)
+			}
+			if n := served.upHits.Load() - first; n < 2*originProbeRounds {
+				t.Fatalf("the fake domain was profiled %d more times in 20 refresh periods, want at least 2", n/originProbeRounds)
+			}
+		})
+	}
+}
+
+func TestSecretReloadsDoNotPostponeTheRefresh(t *testing.T) {
+	dropSelfDialMark(t)
+	withOriginTimers(t, 5*time.Minute, 250*time.Millisecond)
+	served, _ := originsOnOnePort(t, false, false)
+	s := NewServer(originTestConfig(t, "localhost"))
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer s.Stop()
+	waitForOrigin(t, s, "localhost")
+	first := served.upHits.Load()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && served.upHits.Load() < first+2*originProbeRounds {
+		s.kickOrigins()
+		time.Sleep(100 * time.Millisecond)
+	}
+	if n := served.upHits.Load() - first; n < 2*originProbeRounds {
+		t.Fatalf("the fake domain was profiled %d more times in 20 refresh periods while secrets kept reloading, want at least 2", n/originProbeRounds)
+	}
 }

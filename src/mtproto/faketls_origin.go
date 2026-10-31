@@ -22,7 +22,6 @@ const (
 	tlsRecordAlert      = 0x15
 	originProbeTimeout  = 10 * time.Second
 	originProbeRounds   = 3
-	originRefreshEvery  = 6 * time.Hour
 	maxOriginHosts      = 8
 	minAppDataRecord    = 64
 	maxAppDataRecord    = 16640
@@ -32,6 +31,8 @@ const (
 var originProbePort = "443"
 
 var originRetryEvery = 5 * time.Minute
+
+var originRefreshEvery = 6 * time.Hour
 
 var fallbackAppData = minAppDataRecord + mrand.Intn(97)
 
@@ -339,11 +340,17 @@ func (s *Server) kickOrigins() {
 
 func (s *Server) watchOrigins(ctx context.Context) {
 	states := map[string]string{}
-	all := true
+	failed := map[string]bool{}
+	var refreshAt time.Time
 	for {
-		wait := originRefreshEvery
-		if s.profileOrigins(ctx, all, states) {
-			wait = originRetryEvery
+		all := !time.Now().Before(refreshAt)
+		if all {
+			refreshAt = time.Now().Add(originRefreshEvery)
+		}
+		retry := s.profileOrigins(ctx, all, states, failed)
+		wait := time.Until(refreshAt)
+		if retry {
+			wait = min(wait, originRetryEvery)
 		}
 		timer := time.NewTimer(wait)
 		select {
@@ -351,15 +358,13 @@ func (s *Server) watchOrigins(ctx context.Context) {
 			timer.Stop()
 			return
 		case <-timer.C:
-			all = wait == originRefreshEvery
 		case <-s.originKick:
 			timer.Stop()
-			all = false
 		}
 	}
 }
 
-func (s *Server) profileOrigins(ctx context.Context, all bool, states map[string]string) (retry bool) {
+func (s *Server) profileOrigins(ctx context.Context, all bool, states map[string]string, failed map[string]bool) (retry bool) {
 	var old map[string]originProfile
 	if m := s.origins.Load(); m != nil {
 		old = *m
@@ -367,7 +372,7 @@ func (s *Server) profileOrigins(ctx context.Context, all bool, states map[string
 	hosts := s.originHosts()
 	next := make(map[string]originProfile, len(hosts))
 	for _, host := range hosts {
-		if p, ok := old[host]; ok && !all {
+		if p, ok := old[host]; ok && !all && !failed[host] {
 			next[host] = p
 			continue
 		}
@@ -376,6 +381,7 @@ func (s *Server) profileOrigins(ctx context.Context, all bool, states map[string
 			return false
 		}
 		noteOrigin(states, host, p, err)
+		delete(failed, host)
 		if err == nil {
 			next[host] = p
 			continue
@@ -384,6 +390,7 @@ func (s *Server) profileOrigins(ctx context.Context, all bool, states map[string
 			next[host] = prev
 		}
 		if !errors.Is(err, errOriginNotTLS13) && !errors.Is(err, errOriginRetry) {
+			failed[host] = true
 			retry = true
 		}
 	}
