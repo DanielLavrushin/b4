@@ -412,7 +412,8 @@ func (l *Listener) serve(client net.Conn, given *sniffResult) {
 	}
 
 	target := l.pickTarget(client, clientAddr, origIP, given)
-	defer l.holdFlight(target.sniffed.prefix)()
+	releaseFlight := l.holdFlight(target.sniffed.prefix)
+	defer releaseFlight()
 	targetHost := origIP.String()
 	if target.name != "" {
 		targetHost = target.name
@@ -483,11 +484,32 @@ func (l *Listener) serve(client net.Conn, given *sniffResult) {
 	setTCPUserTimeout(client, failOpenUserTimeout)
 	setTCPUserTimeout(upstream, failOpenUserTimeout)
 
+	replies := &answeredConn{Conn: upstream, answered: releaseFlight}
 	if namer != nil {
-		pipe(namer.wrap(client), upstream)
+		pipe(namer.wrap(client), replies)
 		return
 	}
-	pipe(client, upstream)
+	pipe(client, replies)
+}
+
+type answeredConn struct {
+	net.Conn
+	answered func()
+}
+
+func (c *answeredConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if n > 0 {
+		c.answered()
+	}
+	return n, err
+}
+
+func (c *answeredConn) CloseWrite() error {
+	if cw, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return nil
 }
 
 type chosenTarget struct {
@@ -624,12 +646,15 @@ func (l *Listener) holdFlight(first []byte) func() {
 	}
 	l.flights[key]++
 	l.relayMu.Unlock()
+	var once sync.Once
 	return func() {
-		l.relayMu.Lock()
-		if l.flights[key]--; l.flights[key] <= 0 {
-			delete(l.flights, key)
-		}
-		l.relayMu.Unlock()
+		once.Do(func() {
+			l.relayMu.Lock()
+			if l.flights[key]--; l.flights[key] <= 0 {
+				delete(l.flights, key)
+			}
+			l.relayMu.Unlock()
+		})
 	}
 }
 

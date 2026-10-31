@@ -894,6 +894,184 @@ func TestALoopThroughTheSetsOwnUpstreamEndsAtItsFirstReturn(t *testing.T) {
 	}
 }
 
+type answeringSocks struct {
+	ln       net.Listener
+	readLen  int
+	answer   []byte
+	payloads chan []byte
+	mu       sync.Mutex
+	conns    []net.Conn
+	wg       sync.WaitGroup
+}
+
+func startAnsweringSocks(t *testing.T, readLen int, answer []byte) *answeringSocks {
+	t.Helper()
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &answeringSocks{ln: ln, readLen: readLen, answer: answer, payloads: make(chan []byte, 8)}
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			s.mu.Lock()
+			s.conns = append(s.conns, c)
+			s.mu.Unlock()
+			s.wg.Add(1)
+			go func() {
+				defer s.wg.Done()
+				defer c.Close()
+				s.serve(c)
+			}()
+		}
+	}()
+	t.Cleanup(func() {
+		ln.Close()
+		s.mu.Lock()
+		for _, c := range s.conns {
+			c.Close()
+		}
+		s.mu.Unlock()
+		s.wg.Wait()
+	})
+	return s
+}
+
+func (s *answeringSocks) port() int { return s.ln.Addr().(*net.TCPAddr).Port }
+
+func (s *answeringSocks) serve(c net.Conn) {
+	head := make([]byte, 2)
+	if _, err := io.ReadFull(c, head); err != nil {
+		return
+	}
+	if _, err := io.ReadFull(c, make([]byte, head[1])); err != nil {
+		return
+	}
+	if _, err := c.Write([]byte{5, 0}); err != nil {
+		return
+	}
+	req := make([]byte, 4)
+	if _, err := io.ReadFull(c, req); err != nil {
+		return
+	}
+	addrLen := map[byte]int{1: 4, 4: 16}[req[3]]
+	if req[3] == 3 {
+		n := make([]byte, 1)
+		if _, err := io.ReadFull(c, n); err != nil {
+			return
+		}
+		addrLen = int(n[0])
+	}
+	if _, err := io.ReadFull(c, make([]byte, addrLen+2)); err != nil {
+		return
+	}
+	if _, err := c.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0}); err != nil {
+		return
+	}
+	payload := make([]byte, s.readLen)
+	n, _ := io.ReadFull(c, payload)
+	s.payloads <- payload[:n]
+	if _, err := c.Write(s.answer); err != nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, c)
+}
+
+func (s *answeringSocks) next(t *testing.T) []byte {
+	t.Helper()
+	select {
+	case p := <-s.payloads:
+		return p
+	case <-time.After(5 * time.Second):
+		t.Fatal("no request reached the set's upstream")
+		return nil
+	}
+}
+
+func asLANDevices(t *testing.T, macs map[string]string) {
+	t.Helper()
+	orig := isRouterClient
+	isRouterClient = func(net.IP) bool { return false }
+	metrics.SetMACProvider(func(ip string) string { return macs[ip] })
+	t.Cleanup(func() {
+		isRouterClient = orig
+		metrics.SetMACProvider(nil)
+	})
+}
+
+func throughFrom(t *testing.T, l *Listener, src string, send []byte) net.Conn {
+	t.Helper()
+	front, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer front.Close()
+	d := net.Dialer{LocalAddr: &net.TCPAddr{IP: net.ParseIP(src)}}
+	client, err := d.Dial("tcp4", front.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := front.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		l.handle(accepted)
+		close(done)
+	}()
+	if _, err := client.Write(send); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		client.Close()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("handle did not return after the client closed")
+		}
+	})
+	return client
+}
+
+func TestTheSameRequestFromAnotherDeviceIsPassedOnOnceTheSetHasAnswered(t *testing.T) {
+	request := []byte("GET /bot123456:AAE-test/getMe HTTP/1.1\r\nHost: api.telegram.org\r\nUser-Agent: curl/8.5.0\r\nAccept: */*\r\n\r\n")
+	answer := []byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+	asLANDevices(t, map[string]string{"127.0.0.2": "02:00:00:00:00:02", "127.0.0.3": "02:00:00:00:00:03"})
+	up := startAnsweringSocks(t, len(request), answer)
+	set := proxySetFor("tg-api", []string{"api.telegram.org"}, nil)
+	peer := peerListener(t, up.port(), set)
+	b, got := workerReading(len(request))
+	bridge, _ := bridgeListener(t, b, []*config.SetConfig{set}, peer)
+
+	first := throughFrom(t, bridge, "127.0.0.2", request)
+	if p := up.next(t); !bytes.Equal(p, request) {
+		t.Fatal("the first device's request reached the set's upstream altered")
+	}
+	_ = first.SetReadDeadline(time.Now().Add(3 * time.Second))
+	reply := make([]byte, len(answer))
+	if _, err := io.ReadFull(first, reply); err != nil || !bytes.Equal(reply, answer) {
+		t.Fatalf("the first device did not get the set's answer: %v", err)
+	}
+
+	throughFrom(t, bridge, "127.0.0.3", request)
+	select {
+	case p := <-up.payloads:
+		if !bytes.Equal(p, request) {
+			t.Fatal("the second device's request reached the set's upstream altered")
+		}
+	case r := <-got:
+		t.Fatalf("the second device's request was taken for the set's upstream coming back, and its %d bytes went to the bridge's fail-open path", len(r.data))
+	case <-time.After(5 * time.Second):
+		t.Fatal("the second device's request went nowhere")
+	}
+}
+
 func TestShortFirstFlightsAreNotTracked(t *testing.T) {
 	l := &Listener{}
 	release := l.holdFlight([]byte("GET "))
