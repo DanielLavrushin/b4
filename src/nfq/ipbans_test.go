@@ -778,3 +778,102 @@ func TestPoolListsAndClearsBans(t *testing.T) {
 		t.Error("a pool without state lists and clears nothing")
 	}
 }
+
+func portUnreachablesTo(sent [][]byte) []string {
+	var to []string
+	for _, p := range sent {
+		if len(p) >= 22 && p[0]>>4 == IPv4 && p[9] == 1 && p[20] == 3 && p[21] == 3 {
+			to = append(to, net.IP(p[16:20]).String())
+		}
+	}
+	return to
+}
+
+func banningQUICSet() config.SetConfig {
+	set := newDomainOnlyQUICSet(config.ConfigOff)
+	set.TCP.IPBlockDetect.Enabled = true
+	set.TCP.IPBlockDetect.CacheBlockedIPs = true
+	return set
+}
+
+func bannedQUICInitial(t *testing.T) []byte {
+	return buildQUICInitialWithSNI(t, []byte{0x61, 1, 2, 3, 4, 5, 6, 7}, "www.blocked.example")
+}
+
+func TestQUICToABannedAddressIsRefusedAtOnce(t *testing.T) {
+	set := banningQUICSet()
+	w := newQUICFlowWorker(t, &set)
+	w.bans = newTestIPBans(t, nil)
+	banAddress(t, w.bans, "1.2.3.4", 443)
+	sent := captureInjected(t, w)
+	ch, _ := log.GetConnectionHub().Subscribe()
+	defer log.GetConnectionHub().Unsubscribe(ch)
+
+	if v := sendQUIC(w, bannedQUICInitial(t), 50001); v != engine.VerdictDropFlow {
+		t.Fatalf("a QUIC Initial to a banned address must be refused and its flow stopped, got %v", v)
+	}
+	if to := portUnreachablesTo(sent()); !slices.Equal(to, []string{"10.0.0.1"}) {
+		t.Fatalf("the device must get one port unreachable, so a client racing QUIC against TCP fails at once, got %v", to)
+	}
+	if reasons := connectionReasons(ch); !slices.Contains(reasons, "ipblock-ban") {
+		t.Errorf("the refused QUIC flow is logged as ipblock-ban, got %v", reasons)
+	}
+}
+
+func TestQUICRefusalLeavesOtherTrafficAlone(t *testing.T) {
+	cases := map[string]func(*config.SetConfig, *Worker){
+		"not banned": func(_ *config.SetConfig, w *Worker) {
+			banAddress(t, w.bans, "5.6.7.8", 443)
+		},
+		"banned on another port": func(_ *config.SetConfig, w *Worker) {
+			banAddress(t, w.bans, "1.2.3.4", 8443)
+		},
+		"without the blocked-address cache": func(s *config.SetConfig, w *Worker) {
+			banAddress(t, w.bans, "1.2.3.4", 443)
+			s.TCP.IPBlockDetect.CacheBlockedIPs = false
+		},
+		"with bans switched off": func(_ *config.SetConfig, w *Worker) {
+			banAddress(t, w.bans, "1.2.3.4", 443)
+			w.bans.enabled.Store(false)
+		},
+		"in a discovery pool": func(_ *config.SetConfig, w *Worker) {
+			banAddress(t, w.bans, "1.2.3.4", 443)
+			w.getConfig().Queue.IsDiscovery = true
+		},
+		"routed through a proxy": func(s *config.SetConfig, w *Worker) {
+			banAddress(t, w.bans, "1.2.3.4", 443)
+			s.Routing.Enabled = true
+			s.Routing.Mode = config.RoutingModeProxy
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			set := banningQUICSet()
+			w := newQUICFlowWorker(t, &set)
+			w.bans = newTestIPBans(t, nil)
+			mutate(&set, w)
+			sent := captureInjected(t, w)
+
+			if v := sendQUIC(w, bannedQUICInitial(t), 50001); v == engine.VerdictDropFlow || v == engine.VerdictDrop {
+				t.Fatalf("the QUIC Initial must not be refused, got %v", v)
+			}
+			if to := portUnreachablesTo(sent()); len(to) != 0 {
+				t.Fatalf("no port unreachable may be sent, got %v", to)
+			}
+		})
+	}
+
+	t.Run("a datagram that is not QUIC", func(t *testing.T) {
+		set := banningAddressSet()
+		set.UDP.DPortFilter = "443"
+		w := newQUICFlowWorker(t, &set)
+		w.bans = newTestIPBans(t, nil)
+		banAddress(t, w.bans, "1.2.3.4", 443)
+		sent := captureInjected(t, w)
+
+		w.ProcessPacket(makeV4UDPPacket([]byte("not a QUIC packet"), quicClient, quicServer, 50002, 443))
+		if to := portUnreachablesTo(sent()); len(to) != 0 {
+			t.Fatalf("only QUIC to a banned address is refused, got port unreachables to %v", to)
+		}
+	})
+}

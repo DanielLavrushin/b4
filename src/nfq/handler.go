@@ -1137,11 +1137,14 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	voiceExempt := anyMatch && isVoiceMedia && !matchedL7 && set != nil && set.UDP.FilterSTUN
 	udpForeignEgress := shouldHandle && !voiceExempt && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
+	bannedQUIC := shouldHandle && !voiceExempt && !udpForeignEgress && (isQUIC || matchedFlow) && !isVoiceMedia && w.refusesBannedQUIC(cfg, set, pkt.dst, dport)
 	udpReason := ""
 	if udpForeignEgress {
 		udpReason = vc.handOffReason()
 	} else if voiceExempt {
 		udpReason = voiceExemptReason
+	} else if bannedQUIC {
+		udpReason = "ipblock-ban"
 	}
 	if !cfg.Queue.IsDiscovery {
 		log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, udpReason)
@@ -1173,6 +1176,10 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return vc.accept()
 	}
 
+	if bannedQUIC {
+		return w.rejectDatagram(vc, pkt, quicFlow)
+	}
+
 	switch set.UDP.Mode {
 	case config.ConfigOff:
 		return vc.accept()
@@ -1185,22 +1192,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return 0
 
 	case "reject":
-		if !vc.drop() {
-			return 0
-		}
-		if pkt.ver == IPv4 {
-			if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
-				_ = w.clientSender().SendIPv4(icmp, pkt.src)
-			}
-		} else {
-			if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
-				_ = w.clientSender().SendIPv6(icmp, pkt.src)
-			}
-		}
-		if quicFlow {
-			vc.dropFlow()
-		}
-		return 0
+		return w.rejectDatagram(vc, pkt, quicFlow)
 
 	case config.UDPModeCoalesce:
 		if !config.RoutingUsesTProxy(set.RoutingModeOrDefault()) && set.RoutingHandsOffPackets() {
@@ -1278,6 +1270,25 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	default:
 		return vc.accept()
 	}
+}
+
+func (w *Worker) rejectDatagram(vc *verdictCtx, pkt *pktInfo, quicFlow bool) int {
+	if !vc.drop() {
+		return 0
+	}
+	if pkt.ver == IPv4 {
+		if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
+			_ = w.clientSender().SendIPv4(icmp, pkt.src)
+		}
+	} else {
+		if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
+			_ = w.clientSender().SendIPv6(icmp, pkt.src)
+		}
+	}
+	if quicFlow {
+		vc.dropFlow()
+	}
+	return 0
 }
 
 func (w *Worker) blockUDP(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig, sport, dport uint16, sniTarget, host, ipTarget, udpTLS string, quicFlow bool) int {

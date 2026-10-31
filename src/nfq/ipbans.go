@@ -98,6 +98,10 @@ func banEnforced(set *config.SetConfig) bool {
 	return set != nil && set.TCP.IPBlockDetect.Enabled && set.TCP.IPBlockDetect.CacheBlockedIPs
 }
 
+func (w *Worker) refusesBannedQUIC(cfg *config.Config, set *config.SetConfig, dst net.IP, dport uint16) bool {
+	return cfg != nil && !cfg.Queue.IsDiscovery && banEnforced(set) && w.bans.banned(dst, dport) && !set.RoutingHandsOffPackets()
+}
+
 func (b *ipBans) confirm(cfg *config.Config, ip net.IP, port uint16, host, setName string) bool {
 	if !b.on() || cfg == nil || ip == nil {
 		return false
