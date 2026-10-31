@@ -877,3 +877,54 @@ func TestQUICRefusalLeavesOtherTrafficAlone(t *testing.T) {
 		}
 	})
 }
+
+func quotedSources(sent [][]byte) []string {
+	var from []string
+	for _, p := range sent {
+		if len(p) >= 52 && p[0]>>4 == IPv4 && p[9] == 1 && p[20] == 3 && p[21] == 3 {
+			quote := p[28:]
+			from = append(from, fmt.Sprintf("%s:%d", net.IP(quote[12:16]), binary.BigEndian.Uint16(quote[20:22])))
+		}
+	}
+	return from
+}
+
+func TestATunRejectQuotesTheDeviceNotTheRouter(t *testing.T) {
+	block := newDomainOnlyQUICSet(config.ConfigOff)
+	block.Routing.Enabled = true
+	block.Routing.Mode = config.RoutingModeBlock
+	block.Routing.BlockAction = config.BlockActionReject
+
+	cases := map[string]struct {
+		set    config.SetConfig
+		banned bool
+	}{
+		"QUIC to a banned address": {set: banningQUICSet(), banned: true},
+		"udp.mode reject":          {set: newDomainOnlyQUICSet(config.UDPModeReject)},
+		"block action reject":      {set: block},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			thisHost(t)
+			w := newQUICFlowWorker(t, &c.set)
+			w.getConfig().Queue.Mode = "tun"
+			w.srcResolver = newResolverWith(t, tunTestWAN,
+				"ipv4 2 udp 17 29 src=192.168.1.50 dst=1.2.3.4 sport=44100 dport=443 [UNREPLIED] src=1.2.3.4 dst="+tunTestWAN+" sport=443 dport=44100 mark=0 use=1\n")
+			w.bans = newTestIPBans(t, nil)
+			if c.banned {
+				banAddress(t, w.bans, "1.2.3.4", 443)
+			}
+			sent := captureInjected(t, w)
+
+			w.ProcessPacket(makeV4UDPPacket(bannedQUICInitial(t), net.ParseIP(tunTestWAN), quicServer, 44100, 443))
+
+			got := sent()
+			if to := portUnreachablesTo(got); !slices.Equal(to, []string{"192.168.1.50"}) {
+				t.Fatalf("the reject goes to the device behind the router, got port unreachables to %v", to)
+			}
+			if from := quotedSources(got); !slices.Equal(from, []string{"192.168.1.50:44100"}) {
+				t.Fatalf("the reject must quote the device's own address, or the device never matches it to its socket, got a quote from %v", from)
+			}
+		})
+	}
+}
