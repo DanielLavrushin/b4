@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"io"
 	"net"
 	"strconv"
 	"sync"
@@ -163,10 +164,15 @@ func probeTLSName(ctx context.Context, addr, name string, mark int, connect, han
 	hctx, cancel := context.WithTimeout(ctx, handshake)
 	defer cancel()
 	err = tls.Client(counted, &tls.Config{ServerName: name, InsecureSkipVerify: true}).HandshakeContext(hctx)
-	if err == nil || counted.n > 0 {
+	switch {
+	case err == nil || counted.n > 0:
+		return TLSReplied
+	case errors.Is(err, context.DeadlineExceeded):
+		return TLSSilent
+	case errors.Is(err, io.EOF), errors.Is(err, syscall.ECONNRESET):
 		return TLSReplied
 	}
-	return TLSSilent
+	return TLSUnreachable
 }
 
 type readCounter struct {
