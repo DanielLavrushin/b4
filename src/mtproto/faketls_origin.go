@@ -58,10 +58,9 @@ type originProfile struct {
 
 func originClientHello(host string, hybrid bool) ([]byte, error) {
 	cfg := &tls.Config{
-		ServerName:         host,
-		MinVersion:         tls.VersionTLS13,
-		NextProtos:         []string{"h2", "http/1.1"},
-		InsecureSkipVerify: true,
+		ServerName: host,
+		MinVersion: tls.VersionTLS13,
+		NextProtos: []string{"h2", "http/1.1"},
 	}
 	if !hybrid {
 		cfg.CurvePreferences = []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384}
