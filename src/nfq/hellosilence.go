@@ -36,6 +36,8 @@ type helloWatch struct {
 	port     uint16
 	client   net.IP
 	cport    uint16
+	wire     net.IP
+	tun      bool
 	ver      uint8
 	ihl      int
 	hdr      []byte
@@ -182,12 +184,18 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 	if flags := pkt.raw[pkt.ihl+13]; flags&0x02 != 0 || flags&0x10 == 0 {
 		return
 	}
+	wire := pkt.raw[12:16]
+	if pkt.ver == IPv6 {
+		wire = pkt.raw[8:24]
+	}
 	w.destState.WatchHello(&helloWatch{
 		key:      connKey,
 		dst:      append(net.IP(nil), pkt.dst...),
 		port:     dport,
 		client:   append(net.IP(nil), pkt.src...),
 		cport:    sport,
+		wire:     append(net.IP(nil), wire...),
+		tun:      cfg.Queue.Mode == "tun",
 		ver:      pkt.ver,
 		ihl:      pkt.ihl,
 		hdr:      append([]byte(nil), pkt.raw[:hdrLen]...),
@@ -222,16 +230,25 @@ func silenceWatchedSet(cfg *config.Config, setID string) bool {
 }
 
 func checkServerSilence(h helloWatch) (serverSilence, error) {
-	client, ok1 := netip.AddrFromSlice(h.client)
+	source := h.client
+	if h.tun {
+		source = h.wire
+	}
+	client, ok1 := netip.AddrFromSlice(source)
 	server, ok2 := netip.AddrFromSlice(h.dst)
 	if !ok1 || !ok2 {
 		return silenceUnknown, nil
 	}
-	tuple, err := ctnl.NewTuple(unix.IPPROTO_TCP, netip.AddrPortFrom(client.Unmap(), h.cport), netip.AddrPortFrom(server.Unmap(), h.port))
+	from, to := netip.AddrPortFrom(client.Unmap(), h.cport), netip.AddrPortFrom(server.Unmap(), h.port)
+	dir := ctnl.Original
+	if h.tun {
+		from, to, dir = to, from, ctnl.Reply
+	}
+	tuple, err := ctnl.NewTuple(unix.IPPROTO_TCP, from, to)
 	if err != nil {
 		return silenceUnknown, nil
 	}
-	flow, found, err := lookupFlow(tuple)
+	flow, found, err := lookupFlow(tuple, dir)
 	switch {
 	case err != nil:
 		return silenceUnknown, err

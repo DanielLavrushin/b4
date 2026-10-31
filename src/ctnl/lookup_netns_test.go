@@ -66,10 +66,14 @@ func TestNetnsLookupReadsAnEntryWithAndWithoutAccounting(t *testing.T) {
 
 	netnsSetAcct(t, true)
 	counted := udp("10.9.2.2:42000", "203.0.113.30:443")
-	netnsCreate(t, counted, udp("203.0.113.30:443", "198.51.100.1:42000"))
-	f, found, err := Lookup(counted)
+	countedReply := udp("203.0.113.30:443", "198.51.100.1:42000")
+	netnsCreate(t, counted, countedReply)
+	f, found, err := Lookup(counted, Original)
 	if err != nil || !found {
 		t.Fatalf("Lookup of an existing entry: found %v, err %v", found, err)
+	}
+	if byReply, found, err := Lookup(countedReply, Reply); err != nil || !found || byReply != f {
+		t.Errorf("the same entry looked up by its reply tuple, the wire tuple after NAT: %+v, found %v, err %v; want %+v", byReply, found, err, f)
 	}
 	if !f.HasCounters || f.ReplyPackets != 0 || f.ReplyBytes != 0 {
 		t.Errorf("an entry made with accounting on carries zero counters, got %+v", f)
@@ -77,21 +81,21 @@ func TestNetnsLookupReadsAnEntryWithAndWithoutAccounting(t *testing.T) {
 
 	established := tcp("10.9.2.2:42001", "203.0.113.30:443")
 	netnsCreateTCP(t, established, tcp("203.0.113.30:443", "198.51.100.1:42001"), TCPEstablished)
-	if f, found, err := Lookup(established); err != nil || !found || !f.HasState || f.TCPState != TCPEstablished {
+	if f, found, err := Lookup(established, Original); err != nil || !found || !f.HasState || f.TCPState != TCPEstablished {
 		t.Errorf("a TCP entry reports its state: %+v, found %v, err %v", f, found, err)
 	}
 
 	netnsSetAcct(t, false)
 	uncounted := udp("10.9.2.2:42002", "203.0.113.30:443")
 	netnsCreate(t, uncounted, udp("203.0.113.30:443", "198.51.100.1:42002"))
-	if f, found, err := Lookup(uncounted); err != nil || !found || f.HasCounters {
+	if f, found, err := Lookup(uncounted, Original); err != nil || !found || f.HasCounters {
 		t.Errorf("an entry made with accounting off has no counters: %+v, found %v, err %v", f, found, err)
 	}
 
-	if _, found, err := Lookup(udp("10.9.2.2:42003", "203.0.113.30:443")); err != nil || found {
+	if _, found, err := Lookup(udp("10.9.2.2:42003", "203.0.113.30:443"), Original); err != nil || found {
 		t.Fatalf("a tuple the table does not hold: found %v, err %v; want false, nil", found, err)
 	}
-	if _, found, err := Lookup(counted); err != nil || !found {
+	if _, found, err := Lookup(counted, Original); err != nil || !found {
 		t.Fatalf("the shared connection keeps working after a miss: found %v, err %v", found, err)
 	}
 }
@@ -154,7 +158,7 @@ func TestNetnsLookupTellsAServerThatAnsweredFromOneThatDidNot(t *testing.T) {
 		t.Helper()
 		local := c.LocalAddr().(*net.TCPAddr).AddrPort()
 		remote := c.RemoteAddr().(*net.TCPAddr).AddrPort()
-		f, found, err := Lookup(mustTuple(t, unix.IPPROTO_TCP, local, remote))
+		f, found, err := Lookup(mustTuple(t, unix.IPPROTO_TCP, local, remote), Original)
 		if err != nil || !found || !f.HasCounters {
 			t.Fatalf("Lookup of the live connection: %+v, found %v, err %v", f, found, err)
 		}

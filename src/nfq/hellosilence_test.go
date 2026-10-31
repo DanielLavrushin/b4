@@ -42,22 +42,27 @@ func silentFlow() flowAnswer {
 	return flowAnswer{found: true, flow: ctnl.Flow{HasState: true, TCPState: ctnl.TCPEstablished, HasCounters: true, OrigPackets: 6, OrigBytes: 900, ReplyPackets: 2, ReplyBytes: 112}}
 }
 
+type askedFlow struct {
+	tuple ctnl.Tuple
+	dir   ctnl.Direction
+}
+
 type silenceRig struct {
 	w       *Worker
 	pool    *Pool
 	probes  chan string
 	sent    func() [][]byte
 	lookups *atomic.Int32
-	tuples  chan ctnl.Tuple
+	tuples  chan askedFlow
 }
 
 func (r *silenceRig) answerLookups(t *testing.T, answer func(ctnl.Tuple) flowAnswer) {
 	t.Helper()
 	orig := lookupFlow
-	lookupFlow = func(tuple ctnl.Tuple) (ctnl.Flow, bool, error) {
+	lookupFlow = func(tuple ctnl.Tuple, dir ctnl.Direction) (ctnl.Flow, bool, error) {
 		r.lookups.Add(1)
 		select {
-		case r.tuples <- tuple:
+		case r.tuples <- askedFlow{tuple, dir}:
 		default:
 		}
 		a := answer(tuple)
@@ -68,7 +73,7 @@ func (r *silenceRig) answerLookups(t *testing.T, answer func(ctnl.Tuple) flowAns
 
 func newSilenceRig(t *testing.T, w *Worker, probe banProber) *silenceRig {
 	t.Helper()
-	r := &silenceRig{w: w, probes: make(chan string, 64), lookups: &atomic.Int32{}, tuples: make(chan ctnl.Tuple, 64)}
+	r := &silenceRig{w: w, probes: make(chan string, 64), lookups: &atomic.Int32{}, tuples: make(chan askedFlow, 64)}
 	w.bans = newTestIPBans(t, func(ctx context.Context, ip net.IP, port, mark int) iphealth.TLSResult {
 		r.probes <- iphealth.BanKey(ip, port)
 		return probe(ctx, ip, port, mark)
@@ -182,8 +187,8 @@ func TestAHelloTheClientGetsNoAnswerToBansTheAddress(t *testing.T) {
 	}
 	select {
 	case got := <-r.tuples:
-		if got != want {
-			t.Errorf("conntrack must be asked for the connection as the client opened it, before NAT: got %s, want %s", got, want)
+		if got.tuple != want || got.dir != ctnl.Original {
+			t.Errorf("conntrack must be asked for the connection as the client opened it, before NAT: got %s (%s), want %s (original)", got.tuple, got.dir, want)
 		}
 	default:
 		t.Error("an open connection must be confirmed with conntrack before the check")
@@ -902,5 +907,54 @@ func TestARetestAfterBansAreSwitchedOffResetsNothing(t *testing.T) {
 
 	if ports := resetsTo(r.sent()); len(ports) != 0 {
 		t.Fatalf("with bans switched off a re-test must not reset anything, got resets to %v", ports)
+	}
+}
+
+func tunHelloFrom(sport uint16) []byte {
+	pkt := clientPacket(sport, silentHelloSeq, 0x18, silentHello())
+	copy(pkt[12:16], net.ParseIP(tunTestWAN).To4())
+	copy(pkt[16:20], net.ParseIP("104.18.8.37").To4())
+	return pkt
+}
+
+func TestATunHelloIsLookedUpByTheReplyTupleOnTheWire(t *testing.T) {
+	cases := map[string]string{
+		"port kept by SNAT":     "ipv4 2 tcp 6 431999 ESTABLISHED src=192.168.1.50 dst=104.18.8.37 sport=44092 dport=443 src=104.18.8.37 dst=" + tunTestWAN + " sport=443 dport=44092 [ASSURED] use=1\n",
+		"port remapped by SNAT": "ipv4 2 tcp 6 431999 ESTABLISHED src=192.168.1.50 dst=104.18.8.37 sport=49874 dport=443 src=104.18.8.37 dst=" + tunTestWAN + " sport=443 dport=44092 [ASSURED] use=1\n",
+		"no source attribution": "",
+	}
+	for name, line := range cases {
+		t.Run(name, func(t *testing.T) {
+			thisHost(t)
+			set := silenceSet()
+			w := newInjectingWorker(t, &set)
+			w.getConfig().Queue.Mode = "tun"
+			if line != "" {
+				w.srcResolver = newResolverWith(t, tunTestWAN, line)
+			}
+			r := newSilenceRig(t, w, answering(iphealth.TLSSilent))
+
+			r.w.ProcessPacket(tunHelloFrom(44092))
+			if !r.w.destState.Watching() {
+				t.Fatal("the TUN connection must be watched")
+			}
+			r.sweepLater()
+
+			want, err := ctnl.NewTuple(6, netip.MustParseAddrPort("104.18.8.37:443"), netip.MustParseAddrPort(tunTestWAN+":44092"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case got := <-r.tuples:
+				if got.tuple != want || got.dir != ctnl.Reply {
+					t.Fatalf("in TUN mode conntrack must be asked by the reply tuple on the wire, after SNAT: got %s (%s), want %s (reply)", got.tuple, got.dir, want)
+				}
+			default:
+				t.Fatal("the open connection must be confirmed with conntrack")
+			}
+			if keys := r.probed(); !slices.Equal(keys, []string{"104.18.8.37:443"}) {
+				t.Fatalf("the silent TUN connection is checked, probed %v", keys)
+			}
+		})
 	}
 }

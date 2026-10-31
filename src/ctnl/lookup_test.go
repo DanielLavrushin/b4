@@ -123,7 +123,7 @@ func TestLookupReturnsTheEntryAndReportsAMissingOne(t *testing.T) {
 		}}, nil
 	})
 
-	got, found, err := Lookup(tuple)
+	got, found, err := Lookup(tuple, Original)
 	if err != nil || !found || got != entry {
 		t.Fatalf("Lookup = %+v, %v, %v; want %+v, true, nil", got, found, err, entry)
 	}
@@ -131,20 +131,36 @@ func TestLookupReturnsTheEntryAndReportsAMissingOne(t *testing.T) {
 	if req.Header.Type != netlink.HeaderType(msgGet) || req.Header.Flags != netlink.Request|netlink.Acknowledge {
 		t.Errorf("the lookup must be a GET asking for an acknowledgement, which ends the kernel's multipart reply, got type %#x flags %v", req.Header.Type, req.Header.Flags)
 	}
-	ad, err := netlink.NewAttributeDecoder(req.Data[4:])
-	if err != nil {
-		t.Fatal(err)
+	tupleAttrs := func(req netlink.Message) []uint16 {
+		t.Helper()
+		ad, err := netlink.NewAttributeDecoder(req.Data[4:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var types []uint16
+		for ad.Next() {
+			types = append(types, ad.Type())
+		}
+		return types
 	}
-	var types []uint16
-	for ad.Next() {
-		types = append(types, ad.Type())
+	if types := tupleAttrs(req); len(types) != 1 || types[0] != attrTupleOrig {
+		t.Errorf("an original lookup carries only the original tuple, got attributes %v", types)
 	}
-	if len(types) != 1 || types[0] != attrTupleOrig {
-		t.Errorf("the lookup carries only the original tuple, got attributes %v", types)
+	if _, found, err := Lookup(tuple.Reverse(), Reply); err != nil || !found {
+		t.Fatalf("a reply lookup: found %v, err %v", found, err)
+	}
+	if types := tupleAttrs(k.requests()[1]); len(types) != 1 || types[0] != attrTupleReply {
+		t.Errorf("a reply lookup carries only the reply tuple, got attributes %v", types)
+	}
+	if _, _, err := Lookup(tuple, Direction(9)); !errors.Is(err, errTupleDirection) {
+		t.Errorf("an unknown direction is refused, got %v", err)
+	}
+	if n := len(k.requests()); n != 2 {
+		t.Errorf("a refused direction never reaches the kernel, %d requests", n)
 	}
 
 	missing = true
-	if _, found, err := Lookup(tuple); err != nil || found {
+	if _, found, err := Lookup(tuple, Original); err != nil || found {
 		t.Fatalf("an entry the kernel does not have: found %v, err %v; want false, nil", found, err)
 	}
 	if n := k.dialCount(); n != 1 {
@@ -158,7 +174,7 @@ func TestLookupIsRefusedWhileConntrackIsUnavailable(t *testing.T) {
 		return nil, nil
 	})
 	probeState.Store(stateUnavailable)
-	if _, found, err := Lookup(lookupTuple(t)); !errors.Is(err, errUnavailable) || found {
+	if _, found, err := Lookup(lookupTuple(t), Original); !errors.Is(err, errUnavailable) || found {
 		t.Fatalf("Lookup while unavailable: found %v, err %v", found, err)
 	}
 	if k.dialCount() != 0 {
@@ -174,11 +190,11 @@ func TestLookupRedialsAfterAFailure(t *testing.T) {
 		}
 		return nltest.Error(int(unix.ENOENT), []netlink.Message{m})
 	})
-	if _, _, err := Lookup(lookupTuple(t)); err == nil {
+	if _, _, err := Lookup(lookupTuple(t), Original); err == nil {
 		t.Fatal("a refused lookup must report its error")
 	}
 	fail = false
-	if _, found, err := Lookup(lookupTuple(t)); err != nil || found {
+	if _, found, err := Lookup(lookupTuple(t), Original); err != nil || found {
 		t.Fatalf("the next lookup: found %v, err %v", found, err)
 	}
 	if n := k.dialCount(); n != 2 {

@@ -41,14 +41,17 @@ var (
 	lookupConn *netlink.Conn
 )
 
-func Lookup(t Tuple) (Flow, bool, error) {
+func Lookup(t Tuple, dir Direction) (Flow, bool, error) {
 	if err := t.check(); err != nil {
 		return Flow{}, false, err
+	}
+	if !dir.valid() {
+		return Flow{}, false, errTupleDirection
 	}
 	if !Available() {
 		return Flow{}, false, errUnavailable
 	}
-	m, err := lookupRequest(t)
+	m, err := lookupRequest(t, dir)
 	if err != nil {
 		return Flow{}, false, err
 	}
@@ -80,9 +83,9 @@ func Lookup(t Tuple) (Flow, bool, error) {
 	return f, true, nil
 }
 
-func lookupRequest(t Tuple) (netlink.Message, error) {
+func lookupRequest(t Tuple, dir Direction) (netlink.Message, error) {
 	ae := netlink.NewAttributeEncoder()
-	encodeTuple(ae, attrTupleOrig, t)
+	encodeTuple(ae, uint16(dir), t)
 	attrs, err := ae.Encode()
 	if err != nil {
 		return netlink.Message{}, err
