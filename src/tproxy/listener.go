@@ -629,10 +629,25 @@ const (
 )
 
 func flightKey(first []byte) ([sha256.Size]byte, bool) {
+	first = flightOpening(first)
 	if len(first) < flightMinBytes {
 		return [sha256.Size]byte{}, false
 	}
 	return sha256.Sum256(first[:min(len(first), flightBytes)]), true
+}
+
+func flightOpening(first []byte) []byte {
+	switch {
+	case isClientHelloRecord(first):
+		if end := tlsRecordHeader + (int(first[3])<<8 | int(first[4])); end <= len(first) {
+			return first[:end]
+		}
+	case sni.LooksLikeHTTPRequest(first):
+		if end := sni.HTTPHeadersLen(first); end > 0 {
+			return first[:end]
+		}
+	}
+	return first
 }
 
 func (l *Listener) holdFlight(first []byte) func() {

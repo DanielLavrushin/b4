@@ -748,7 +748,7 @@ func TestAConnectionOpeningWithBytesASetIsRelayingIsNotPassedBackToIt(t *testing
 	}
 }
 
-func startLoopingSocks(t *testing.T, target string, connects *atomic.Int32) int {
+func startLoopingSocks(t *testing.T, target string, connects *atomic.Int32, split int) int {
 	t.Helper()
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -804,6 +804,25 @@ func startLoopingSocks(t *testing.T, target string, connects *atomic.Int32) int 
 		track(out)
 		defer out.Close()
 		reply(c, 0)
+		if split > 0 {
+			first := make([]byte, 64*1024)
+			n, err := c.Read(first)
+			if err != nil {
+				return
+			}
+			if n > split {
+				if _, err := out.Write(first[:split]); err != nil {
+					return
+				}
+				time.Sleep(100 * time.Millisecond)
+				first = first[split:n]
+			} else {
+				first = first[:n]
+			}
+			if _, err := out.Write(first); err != nil {
+				return
+			}
+		}
 		done := make(chan struct{}, 2)
 		go func() {
 			_, _ = io.Copy(out, c)
@@ -846,11 +865,9 @@ func startLoopingSocks(t *testing.T, target string, connects *atomic.Int32) int 
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
-func TestALoopThroughTheSetsOwnUpstreamEndsAtItsFirstReturn(t *testing.T) {
-	hello := realClientHello(t, "api.telegram.org")
-	set := proxySetFor("lan-upstream", []string{"api.telegram.org"}, nil)
-	b, got := workerReading(len(hello))
-
+func throughLoopingUpstream(t *testing.T, set *config.SetConfig, split int, send []byte) (chan workerRead, *atomic.Int32) {
+	t.Helper()
+	b, got := workerReading(len(send))
 	front, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -860,8 +877,8 @@ func TestALoopThroughTheSetsOwnUpstreamEndsAtItsFirstReturn(t *testing.T) {
 		front.Close()
 		fwg.Wait()
 	})
-	var connects atomic.Int32
-	peer := peerListener(t, startLoopingSocks(t, front.Addr().String(), &connects), set)
+	connects := &atomic.Int32{}
+	peer := peerListener(t, startLoopingSocks(t, front.Addr().String(), connects, split), set)
 	bridge, _ := bridgeListener(t, b, []*config.SetConfig{set}, peer)
 	fwg.Add(1)
 	go func() {
@@ -883,14 +900,47 @@ func TestALoopThroughTheSetsOwnUpstreamEndsAtItsFirstReturn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
-	if _, err := client.Write(hello); err != nil {
+	t.Cleanup(func() { client.Close() })
+	if _, err := client.Write(send); err != nil {
 		t.Fatal(err)
 	}
+	return got, connects
+}
+
+func TestALoopThroughTheSetsOwnUpstreamEndsAtItsFirstReturn(t *testing.T) {
+	hello := realClientHello(t, "api.telegram.org")
+	set := proxySetFor("lan-upstream", []string{"api.telegram.org"}, nil)
+	got, connects := throughLoopingUpstream(t, set, 0, hello)
 	fellBackWith(t, got, hello)
 	time.Sleep(100 * time.Millisecond)
 	if n := connects.Load(); n != 1 {
 		t.Fatalf("the set's upstream got %d CONNECTs, want 1: its own connection was passed back to the set", n)
+	}
+}
+
+func TestALoopIsCaughtWhenTheUpstreamSendsTheBodyInALaterRead(t *testing.T) {
+	head := "POST /bot123456:AAE-test/sendMessage HTTP/1.1\r\nHost: api.telegram.org\r\nContent-Type: application/json\r\nContent-Length: 25\r\n\r\n"
+	request := []byte(head + `{"chat_id":1,"text":"hi"}`)
+	set := proxySetFor("lan-upstream", []string{"api.telegram.org"}, nil)
+	got, connects := throughLoopingUpstream(t, set, len(head), request)
+	fellBackWith(t, got, request)
+	time.Sleep(200 * time.Millisecond)
+	if n := connects.Load(); n != 1 {
+		t.Fatalf("the set's upstream got %d CONNECTs, want 1: its own connection came back with the body in a later read and was passed back to the set", n)
+	}
+}
+
+func TestAnOpeningIsKeyedUpToItsMessageBoundary(t *testing.T) {
+	request := []byte("GET /bot123456:AAE-test/getMe HTTP/1.1\r\nHost: api.telegram.org\r\nAccept: */*\r\n\r\n")
+	for name, first := range map[string][]byte{"a ClientHello": realClientHello(t, "api.telegram.org"), "an HTTP request": request} {
+		whole, ok := flightKey(first)
+		if !ok {
+			t.Fatalf("%s was too short to track", name)
+		}
+		more := append(append([]byte(nil), first...), 0x17, 0x03, 0x03, 0x00, 0x05)
+		if key, _ := flightKey(more); key != whole {
+			t.Errorf("%s got another key once bytes after it were read along", name)
+		}
 	}
 }
 
