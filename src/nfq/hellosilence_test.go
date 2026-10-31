@@ -841,3 +841,66 @@ func TestARetestVerdictSettlesConnectionsWaitingOnTheAddress(t *testing.T) {
 		t.Error("the settled watch must be gone")
 	}
 }
+
+func TestASetThatStopsBanningDuringTheCheckIsNotReset(t *testing.T) {
+	cases := map[string]func(*config.SetConfig, *Worker){
+		"the set drops the blocked-address cache": func(s *config.SetConfig, _ *Worker) {
+			s.TCP.IPBlockDetect.CacheBlockedIPs = false
+		},
+		"the set is turned off": func(s *config.SetConfig, _ *Worker) {
+			s.Enabled = false
+		},
+		"the set is routed through a proxy": func(s *config.SetConfig, _ *Worker) {
+			s.Routing.Enabled = true
+			s.Routing.Mode = config.RoutingModeProxy
+		},
+		"the set is deleted": func(_ *config.SetConfig, w *Worker) {
+			next := *w.getConfig()
+			next.Sets = nil
+			w.cfg.Store(&next)
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			set := silenceSet()
+			release := make(chan struct{})
+			r := newSilenceRig(t, newInjectingWorker(t, &set), func(ctx context.Context, _ net.IP, _, _ int) iphealth.TLSResult {
+				select {
+				case <-release:
+				case <-ctx.Done():
+				}
+				return iphealth.TLSSilent
+			})
+
+			sendHello(t, r.w, 12345, engine.VerdictAccept)
+			r.pool.sweepSilentHellos(time.Now().Add(time.Minute))
+			mutate(&set, r.w)
+			close(release)
+			r.w.bans.wg.Wait()
+
+			if ports := resetsTo(r.sent()); len(ports) != 0 {
+				t.Fatalf("a set that stopped banning while the check ran must not have its connections reset, got resets to %v", ports)
+			}
+			if r.w.destState.Watching() {
+				t.Error("the verdict still settles the watch")
+			}
+		})
+	}
+}
+
+func TestARetestAfterBansAreSwitchedOffResetsNothing(t *testing.T) {
+	set := silenceSet()
+	r := newSilenceWorker(t, &set, iphealth.TLSSilent)
+
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	if due := r.w.destState.DueSilent(time.Now().Add(time.Minute)); len(due) != 1 {
+		t.Fatalf("want one due watch, got %d", len(due))
+	}
+	banAddress(t, r.w.bans, "1.2.3.4", 443)
+	r.w.bans.enabled.Store(false)
+	r.w.bans.settleRetest("1.2.3.4:443", iphealth.TLSSilent)
+
+	if ports := resetsTo(r.sent()); len(ports) != 0 {
+		t.Fatalf("with bans switched off a re-test must not reset anything, got resets to %v", ports)
+	}
+}

@@ -318,8 +318,10 @@ func (w *Worker) settleSilentHellos(ip net.IP, port int, banned bool) {
 	if w == nil || port <= 0 || port > 65535 {
 		return
 	}
+	cfg := w.getConfig()
+	banned = banned && cfg != nil && !cfg.Queue.IsDiscovery && w.bans.on()
 	for _, h := range w.destState.TakeSilent(ip, uint16(port)) {
-		if banned && !h.closed {
+		if banned && !h.closed && silenceWatchedSet(cfg, h.setID) {
 			w.resetSilentHello(h)
 		}
 	}
