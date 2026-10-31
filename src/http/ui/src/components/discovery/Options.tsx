@@ -8,6 +8,7 @@ import {
   ToggleButtonGroup,
   ToggleButton,
   Button,
+  Checkbox,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { Link as RouterLink } from "react-router";
@@ -39,6 +40,7 @@ export const optionsInvalid = (options: DiscoveryOptions) =>
 
 const STORAGE_KEY = "b4_discovery_options";
 const EXPANDED_KEY = "b4_discovery_options_expanded";
+const SELECT_ALL_PAYLOADS = "__b4_select_all_payloads__";
 
 export const defaultOptions: DiscoveryOptions = {
   checkDns: true,
@@ -156,6 +158,15 @@ export const DiscoveryOptionsPanel = ({
   }, [expanded]);
 
   const tlsCaptures = captures.filter((c) => c.protocol === "tls");
+  const allPayloadDomains = tlsCaptures.map((c) => c.domain);
+  const allPayloadsSelected =
+    allPayloadDomains.length > 0 &&
+    options.payloadFiles.length === allPayloadDomains.length;
+  const payloadSelectionLabel = allPayloadsSelected
+    ? t("discovery.options.clearAllPayloads")
+    : t("discovery.options.selectAllPayloads", {
+        count: allPayloadDomains.length,
+      });
   const dnsServerError = dnsEndpointError(options.dnsServer);
   const pinsIssue = pinsProblem(options.pinsText);
   const invalid = optionsInvalid(options);
@@ -402,12 +413,62 @@ export const DiscoveryOptionsPanel = ({
               <>
                 <Autocomplete
                   multiple
+                  disableCloseOnSelect
                   size="small"
-                  options={tlsCaptures.map((c) => c.domain)}
+                  options={[SELECT_ALL_PAYLOADS, ...allPayloadDomains]}
                   value={options.payloadFiles}
-                  onChange={(_, value) =>
-                    onChange({ ...options, payloadFiles: value })
+                  onChange={(_, value) => {
+                    if (value.includes(SELECT_ALL_PAYLOADS)) {
+                      onChange({
+                        ...options,
+                        payloadFiles: allPayloadsSelected ? [] : allPayloadDomains,
+                      });
+                      return;
+                    }
+                    onChange({ ...options, payloadFiles: value });
+                  }}
+                  filterOptions={(list, state) => {
+                    const needle = state.inputValue.trim().toLowerCase();
+                    return list.filter((option) =>
+                      option === SELECT_ALL_PAYLOADS
+                        ? needle === ""
+                        : option.toLowerCase().includes(needle),
+                    );
+                  }}
+                  getOptionLabel={(option) =>
+                    option === SELECT_ALL_PAYLOADS
+                      ? payloadSelectionLabel
+                      : option
                   }
+                  renderOption={(props, option, state) => {
+                    const selectAll = option === SELECT_ALL_PAYLOADS;
+                    return (
+                      <li {...props} key={option}>
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          spacing={1}
+                          sx={{ width: "100%" }}
+                        >
+                          <Checkbox
+                            size="small"
+                            color="secondary"
+                            checked={selectAll ? allPayloadsSelected : state.selected}
+                            sx={{ p: 0.5, pointerEvents: "none" }}
+                          />
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontWeight: selectAll ? 600 : 400,
+                              overflowWrap: "anywhere",
+                            }}
+                          >
+                            {selectAll ? payloadSelectionLabel : option}
+                          </Typography>
+                        </Stack>
+                      </li>
+                    );
+                  }}
                   disabled={disabled}
                   renderInput={(params) => (
                     <B4TextField
