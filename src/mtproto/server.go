@@ -74,6 +74,10 @@ type Server struct {
 	webTickets webTicketStore
 	webSite    webSiteCache
 
+	origins     atomic.Pointer[map[string]originProfile]
+	originKick  chan struct{}
+	originsDone chan struct{}
+
 	mu       sync.Mutex
 	running  bool
 	listener net.Listener
@@ -471,6 +475,7 @@ func NewServer(cfg *config.Config) *Server {
 				return &buf
 			},
 		},
+		originKick: make(chan struct{}, 1),
 	}
 	s.cfg.Store(cfg)
 	return s
@@ -586,6 +591,12 @@ func (s *Server) startLocked() error {
 
 	s.running = true
 	go s.acceptLoop(ln)
+	ctx, done := s.ctx, make(chan struct{})
+	s.originsDone = done
+	go func() {
+		defer close(done)
+		s.watchOrigins(ctx)
+	}()
 	s.startWebListenerLocked(cfg)
 	return nil
 }
@@ -600,6 +611,10 @@ func (s *Server) stopLocked() error {
 	if s.cancel != nil {
 		s.cancel()
 		s.cancel = nil
+	}
+	if s.originsDone != nil {
+		<-s.originsDone
+		s.originsDone = nil
 	}
 	if pool := s.wsPool.Swap(nil); pool != nil {
 		sharedWSPool.CompareAndSwap(pool, nil)
@@ -626,6 +641,7 @@ func (s *Server) reloadSecretsLocked(cfg *config.Config) {
 	s.closeRevokedConns(secrets)
 	s.pruneRefusals(secrets)
 	s.pruneStats(secrets)
+	s.kickOrigins()
 	log.Infof("MTProto secrets reloaded live (%d active) without restart", len(secrets))
 }
 
@@ -775,7 +791,7 @@ func (s *Server) handleConn(raw net.Conn) {
 		return
 	}
 
-	tlsConn, secret, err := AcceptFakeTLSMulti(raw, secrets)
+	tlsConn, secret, err := AcceptFakeTLSMulti(raw, secrets, s.originFor)
 	if err != nil {
 		log.Debugf("%s proxy fake-TLS failed from %s: %v", tag, clientAddr, err)
 		var vErr *FakeTLSVerifyError

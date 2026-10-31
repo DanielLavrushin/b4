@@ -48,6 +48,14 @@ func HTTPHeadersComplete(b []byte) bool {
 	return bytes.Contains(b, httpHeadersEnd)
 }
 
+func HTTPHeadersLen(b []byte) int {
+	i := bytes.Index(b, httpHeadersEnd)
+	if i < 0 {
+		return 0
+	}
+	return i + len(httpHeadersEnd)
+}
+
 func ParseHTTPHost(b []byte) (string, bool) {
 	if !LooksLikeHTTPRequest(b) {
 		return "", false

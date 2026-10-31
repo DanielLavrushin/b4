@@ -52,6 +52,10 @@ func (c *prefixConn) CloseWrite() error {
 	return nil
 }
 
+func (c *prefixConn) NetConn() net.Conn {
+	return c.Conn
+}
+
 type TransparentBridge struct {
 	cfg     atomic.Pointer[config.Config]
 	bufPool sync.Pool

@@ -119,8 +119,8 @@ func TestPoolFallsBackToSharedDomainsWhileTheEdgeIsDown(t *testing.T) {
 			t.Fatalf("a spare slot dials the dead edge: %s", pl.describe())
 		}
 	}
-	if got := onlyNative(plans); len(got) != 2 || got[0].sni != "kws2-1.web.telegram.org" {
-		t.Fatalf("media probe plans %v, want kws2-1 then kws2", got)
+	if got := onlyNative(plans); len(got) != 1 || got[0].sni != "kws2.web.telegram.org" {
+		t.Fatalf("media probe plans %v, want kws2 alone", got)
 	}
 }
 

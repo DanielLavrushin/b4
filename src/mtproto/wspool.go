@@ -979,17 +979,8 @@ func kwsHost(dc int, suffix string) string {
 // RSA-encrypted p_q_inner_data, which the proxy cannot read or correct, so a
 // primary session that lands on kwsN-1 is rejected and the client is told the
 // proxy is misconfigured and switches it off.
-//
-// Both names resolve to the same address, so kwsN-1 was never a route around a
-// blocked kwsN - only a way to fail the session. A media session still falls back
-// to the primary name, because that direction is accepted.
 func nativeEdgePlans(dc, absDC int, dialHost string) []transportPlan {
-	primary := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, ""), dialHost: dialHost, native: true}
-	if dc >= 0 {
-		return []transportPlan{primary}
-	}
-	media := transportPlan{kind: transportWS, dc: dc, sni: kwsHost(absDC, "-1"), dialHost: dialHost, native: true}
-	return []transportPlan{media, primary}
+	return []transportPlan{{kind: transportWS, dc: dc, sni: kwsHost(absDC, ""), dialHost: dialHost, native: true}}
 }
 
 func kwsCustom(dc int, domain string) string {
