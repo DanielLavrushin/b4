@@ -19,15 +19,21 @@ function useQuestions() {
       }),
     },
     {
-      question: translate({ id: "home.faq.where.q", message: "Where does it run?" }),
+      question: translate({
+        id: "home.faq.where.q",
+        message: "Where does it run?",
+      }),
       answer: translate({
         id: "home.faq.where.a",
         message:
-          "OpenWrt 19.07+, ASUS Merlin, Keenetic, MikroTik with RouterOS 7.21.1+ (as a container), Linux computers and servers, and Docker on Linux. There are builds for 17 CPU architectures.",
+          "OpenWrt 18.06+, ASUS Merlin, Keenetic, MikroTik with RouterOS 7.21.1+ (as a container), Linux computers and servers, and Docker on Linux. There are builds for 17 CPU architectures.",
       }),
     },
     {
-      question: translate({ id: "home.faq.needs.q", message: "What does the router need?" }),
+      question: translate({
+        id: "home.faq.needs.q",
+        message: "What does the router need?",
+      }),
       answer: translate({
         id: "home.faq.needs.a",
         message:
@@ -41,11 +47,15 @@ function useQuestions() {
       }),
       answer: translate({
         id: "home.faq.untouched.a",
-        message: "No. Connections that don't match any set pass through unchanged.",
+        message:
+          "No. Connections that don't match any set pass through unchanged.",
       }),
     },
     {
-      question: translate({ id: "home.faq.blocked.q", message: "What if a site still doesn't open?" }),
+      question: translate({
+        id: "home.faq.blocked.q",
+        message: "What if a site still doesn't open?",
+      }),
       answer: translate({
         id: "home.faq.blocked.a",
         message:
@@ -64,7 +74,10 @@ function useQuestions() {
       }),
     },
     {
-      question: translate({ id: "home.faq.telegram.q", message: "Does it help with Telegram?" }),
+      question: translate({
+        id: "home.faq.telegram.q",
+        message: "Does it help with Telegram?",
+      }),
       answer: translate({
         id: "home.faq.telegram.a",
         message:
@@ -72,7 +85,10 @@ function useQuestions() {
       }),
     },
     {
-      question: translate({ id: "home.faq.restart.q", message: "Do changes need a restart?" }),
+      question: translate({
+        id: "home.faq.restart.q",
+        message: "Do changes need a restart?",
+      }),
       answer: translate({
         id: "home.faq.restart.a",
         message:
@@ -80,14 +96,21 @@ function useQuestions() {
       }),
     },
     {
-      question: translate({ id: "home.faq.ads.q", message: "Can it block ads?" }),
+      question: translate({
+        id: "home.faq.ads.q",
+        message: "Can it block ads?",
+      }),
       answer: translate({
         id: "home.faq.ads.a",
-        message: "Yes. A block set blocks ads and unwanted sites for the whole network.",
+        message:
+          "Yes. A block set blocks ads and unwanted sites for the whole network.",
       }),
     },
     {
-      question: translate({ id: "home.faq.remove.q", message: "How do I remove it?" }),
+      question: translate({
+        id: "home.faq.remove.q",
+        message: "How do I remove it?",
+      }),
       answer: translate({
         id: "home.faq.remove.a",
         message:
@@ -98,13 +121,18 @@ function useQuestions() {
       question: translate({ id: "home.faq.free.q", message: "Is it free?" }),
       answer: translate({
         id: "home.faq.free.a",
-        message: "Yes. It's open source under GPLv3, and the code is on GitHub.",
+        message:
+          "Yes. It's open source under GPLv3, and the code is on GitHub.",
       }),
     },
   ];
 }
 
-function FaqSchema({ questions }: { questions: ReturnType<typeof useQuestions> }) {
+function FaqSchema({
+  questions,
+}: {
+  questions: ReturnType<typeof useQuestions>;
+}) {
   const schema = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
@@ -138,7 +166,9 @@ export default function Faq() {
               values={{
                 link: (
                   <Link to="/docs/troubleshooting/" className={styles.leadLink}>
-                    <Translate id="home.faq.lead.link">Troubleshooting</Translate>
+                    <Translate id="home.faq.lead.link">
+                      Troubleshooting
+                    </Translate>
                   </Link>
                 ),
               }}
@@ -152,7 +182,12 @@ export default function Faq() {
             <details key={question} className={styles.item}>
               <summary className={styles.question}>
                 <span>{question}</span>
-                <PlusIcon className={styles.icon} size={20} weight="bold" aria-hidden="true" />
+                <PlusIcon
+                  className={styles.icon}
+                  size={20}
+                  weight="bold"
+                  aria-hidden="true"
+                />
               </summary>
               <p className={styles.answer}>{rich(answer)}</p>
             </details>
