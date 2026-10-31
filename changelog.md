@@ -2,7 +2,8 @@
 
 ## [1.89.1] - 2026-10-31
 
-- FIXED: **Some addresses blocked for every site were never banned, and connections to them still hung for about 30 seconds** - IP Block Detection caught such an address only when a device repeated its first request to the site. Some providers let that request through and drop everything the server sends back. The device then waits for an answer and repeats nothing.
+- FIXED: **Videos and sites still froze on servers the provider blocks for every site** - IP Block Detection banned such an address only when a device repeated its first request to the site. Some providers let that request through and then drop every reply, so nothing is repeated. Apps that try QUIC first also kept waiting on addresses that were already banned.
+- FIXED: **A server that refuses unknown site names could be banned, and the ban never lifted** - b4 checks a suspect address by connecting to it with unrelated site names. A server that closed or reset those connections without a reply counted as blocked, and the re-tests kept the ban in place.
 
 ## [1.89.0] - 2026-10-30
 
