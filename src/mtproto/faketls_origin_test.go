@@ -248,6 +248,19 @@ func record(typ byte, n int) []byte {
 	return append([]byte{typ, 0x03, 0x03, byte(n >> 8), byte(n)}, make([]byte, n)...)
 }
 
+func splitHandshake(rec []byte, at ...int) []byte {
+	msg := rec[5:]
+	var out []byte
+	prev := 0
+	for _, cut := range append(at, len(msg)) {
+		part := msg[prev:cut]
+		out = append(out, tlsRecordHandshake, 0x03, 0x03, byte(len(part)>>8), byte(len(part)))
+		out = append(out, part...)
+		prev = cut
+	}
+	return out
+}
+
 func TestTheProbeReadsTheFirstEncryptedRecordOfTheReply(t *testing.T) {
 	random := make([]byte, 32)
 	random[0] = 1
@@ -269,6 +282,11 @@ func TestTheProbeReadsTheFirstEncryptedRecordOfTheReply(t *testing.T) {
 		{"TLS 1.2 ServerHello before an encrypted record", slices.Concat(craftedServerHello(0xc02f, groupX25519, 32, false, false, random), record(tlsRecordAppData, 900)), originReply{}, errOriginNotTLS13},
 		{"plaintext handshake after the ServerHello", slices.Concat(hybrid, record(tlsRecordHandshake, 900)), originReply{}, errOriginNotTLS13},
 		{"HelloRetryRequest", craftedServerHello(0x1301, uint16(tls.CurveP256), 0, false, true, helloRetryRandom[:]), originReply{}, errOriginRetry},
+		{"ServerHello split across two records", slices.Concat(splitHandshake(hybrid, 600), record(tlsRecordChangeCipher, 1), record(tlsRecordAppData, 2700)),
+			originReply{cipher: 0x1302, group: groupX25519MLKEM768, appData: 2700}, nil},
+		{"ServerHello split inside its header", slices.Concat(splitHandshake(hybrid, 2, 700), record(tlsRecordAppData, 36)),
+			originReply{cipher: 0x1302, group: groupX25519MLKEM768, appData: 36}, nil},
+		{"plaintext handshake after a split ServerHello", slices.Concat(splitHandshake(hybrid, 600), record(tlsRecordHandshake, 900)), originReply{}, errOriginNotTLS13},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

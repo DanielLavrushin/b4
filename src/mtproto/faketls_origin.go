@@ -139,6 +139,7 @@ func probeOrigin(ctx context.Context, host string, mark uint, hybrid bool) (orig
 func readOriginReply(r io.Reader) (originReply, error) {
 	var reply originReply
 	sawHello := false
+	var hello []byte
 	hdr := make([]byte, 5)
 	for {
 		if _, err := io.ReadFull(r, hdr); err != nil {
@@ -169,7 +170,18 @@ func readOriginReply(r io.Reader) (originReply, error) {
 			if _, err := io.ReadFull(r, body); err != nil {
 				return reply, err
 			}
-			parsed, err := parseOriginServerHello(body)
+			hello = append(hello, body...)
+			if len(hello) < 4 {
+				continue
+			}
+			need := 4 + (int(hello[1])<<16 | int(hello[2])<<8 | int(hello[3]))
+			if need > maxOriginRecordSize {
+				return reply, fmt.Errorf("handshake message of %d bytes", need)
+			}
+			if len(hello) < need {
+				continue
+			}
+			parsed, err := parseOriginServerHello(hello)
 			if err != nil {
 				return reply, err
 			}
