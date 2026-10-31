@@ -1,6 +1,7 @@
 package tproxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -96,7 +97,7 @@ type Listener struct {
 	loopWarn   sync.Once
 	relayMu    sync.Mutex
 	relays     map[string]int
-	flights    map[[sha256.Size]byte]int
+	flights    map[[sha256.Size]byte][]*heldFlight
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -628,12 +629,17 @@ const (
 	flightBytes    = 256
 )
 
-func flightKey(first []byte) ([sha256.Size]byte, bool) {
-	first = flightOpening(first)
-	if len(first) < flightMinBytes {
-		return [sha256.Size]byte{}, false
+type heldFlight struct {
+	tail []byte
+}
+
+func flightKey(first []byte) ([sha256.Size]byte, []byte, bool) {
+	opening := flightOpening(first)
+	if len(opening) < flightMinBytes {
+		return [sha256.Size]byte{}, nil, false
 	}
-	return sha256.Sum256(first[:min(len(first), flightBytes)]), true
+	tail := first[len(opening):]
+	return sha256.Sum256(opening[:min(len(opening), flightBytes)]), tail[:min(len(tail), flightBytes)], true
 }
 
 func flightOpening(first []byte) []byte {
@@ -651,22 +657,26 @@ func flightOpening(first []byte) []byte {
 }
 
 func (l *Listener) holdFlight(first []byte) func() {
-	key, ok := flightKey(first)
+	key, tail, ok := flightKey(first)
 	if !ok {
 		return func() {}
 	}
+	held := &heldFlight{tail: bytes.Clone(tail)}
 	l.relayMu.Lock()
 	if l.flights == nil {
-		l.flights = make(map[[sha256.Size]byte]int)
+		l.flights = make(map[[sha256.Size]byte][]*heldFlight)
 	}
-	l.flights[key]++
+	l.flights[key] = append(l.flights[key], held)
 	l.relayMu.Unlock()
 	var once sync.Once
 	return func() {
 		once.Do(func() {
 			l.relayMu.Lock()
-			if l.flights[key]--; l.flights[key] <= 0 {
+			rest := slices.DeleteFunc(l.flights[key], func(h *heldFlight) bool { return h == held })
+			if len(rest) == 0 {
 				delete(l.flights, key)
+			} else {
+				l.flights[key] = rest
 			}
 			l.relayMu.Unlock()
 		})
@@ -674,13 +684,16 @@ func (l *Listener) holdFlight(first []byte) func() {
 }
 
 func (l *Listener) carriesFlight(first []byte) bool {
-	key, ok := flightKey(first)
+	key, tail, ok := flightKey(first)
 	if !ok {
 		return false
 	}
 	l.relayMu.Lock()
 	defer l.relayMu.Unlock()
-	return l.flights[key] > 0
+	return slices.ContainsFunc(l.flights[key], func(h *heldFlight) bool {
+		n := min(len(h.tail), len(tail))
+		return bytes.Equal(h.tail[:n], tail[:n])
+	})
 }
 
 func (l *Listener) relayedForUpstreamHost(client net.IP, keys []string) bool {

@@ -933,14 +933,36 @@ func TestALoopIsCaughtWhenTheUpstreamSendsTheBodyInALaterRead(t *testing.T) {
 func TestAnOpeningIsKeyedUpToItsMessageBoundary(t *testing.T) {
 	request := []byte("GET /bot123456:AAE-test/getMe HTTP/1.1\r\nHost: api.telegram.org\r\nAccept: */*\r\n\r\n")
 	for name, first := range map[string][]byte{"a ClientHello": realClientHello(t, "api.telegram.org"), "an HTTP request": request} {
-		whole, ok := flightKey(first)
+		whole, _, ok := flightKey(first)
 		if !ok {
 			t.Fatalf("%s was too short to track", name)
 		}
 		more := append(append([]byte(nil), first...), 0x17, 0x03, 0x03, 0x00, 0x05)
-		if key, _ := flightKey(more); key != whole {
+		if key, _, _ := flightKey(more); key != whole {
 			t.Errorf("%s got another key once bytes after it were read along", name)
 		}
+	}
+}
+
+func TestRequestsWithTheSameHeadersAreToldApartByTheBodyReadWithThem(t *testing.T) {
+	head := "POST /bot123456:AAE-test/sendMessage HTTP/1.1\r\nHost: api.telegram.org\r\nContent-Type: application/json\r\nContent-Length: 25\r\n\r\n"
+	first := []byte(head + `{"chat_id":1,"text":"hi"}`)
+	other := []byte(head + `{"chat_id":2,"text":"yo"}`)
+	l := &Listener{}
+	release := l.holdFlight(first)
+	defer release()
+	if l.carriesFlight(other) {
+		t.Fatal("a request with the same headers and another body was taken for the held one")
+	}
+	for _, back := range [][]byte{[]byte(head), first[:len(head)+7], first} {
+		if !l.carriesFlight(back) {
+			t.Fatalf("the held request was not recognised when it came back with %d of its body bytes", len(back)-len(head))
+		}
+	}
+	again := l.holdFlight(other)
+	again()
+	if !l.carriesFlight(first) {
+		t.Fatal("releasing another request with the same headers released the held one too")
 	}
 }
 
