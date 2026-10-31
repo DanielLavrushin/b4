@@ -4,6 +4,8 @@
 ![GitHub Downloads](https://img.shields.io/github/downloads/daniellavrushin/b4/total)
 ![Docker Pulls](https://img.shields.io/docker/pulls/lavrushin/b4)
 
+<a href="https://trendshift.io/repositories/22009?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-22009" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/22009/daily?language=Go" alt="DanielLavrushin%2Fb4 | Trendshift" width="250" height="55"/></a> <a href="https://trendshift.io/repositories/22009?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-22009" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/22009/weekly?language=Go" alt="DanielLavrushin%2Fb4 | Trendshift" width="250" height="55"/></a>
+
 [[Documentation](https://docs.b4core.app/)] [[Документация (RU)](https://docs.b4core.app/ru/)] [[Telegram](https://t.me/byebyebigbro)]
 
 B4 (Bye Bye Big Bro) is a Linux service that bypasses DPI-based blocking. It runs on routers, servers and desktops and rewrites packets so DPI equipment cannot classify the connection, while the destination server still gets valid data. Installed on a router, it covers every device on the network with nothing configured on the clients.
