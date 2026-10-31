@@ -369,6 +369,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	addressMatched := st != nil
 
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
+	w.noteClientProgress(connKey, tcp)
 	if cfg.IsTCPPort(dport) && tcp[13]&0x12 == 0x02 {
 		w.tlsCache.DropOtherConnection(connKey, binary.BigEndian.Uint32(tcp[4:8])+1)
 	}
@@ -731,6 +732,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if !cfg.Queue.IsDiscovery {
 				log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), cachedReason)
 			}
+			w.destState.Unwatch(connKey)
 			if pkt.ver == IPv4 {
 				w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
 			} else {
@@ -826,6 +828,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if stallCount >= threshold || (stallCount > 1 && time.Since(stallFirstSeen) > timeout) {
 				if !w.destState.HasRSTSent(connKey) {
 					w.destState.MarkRSTSent(connKey)
+					w.destState.Unwatch(connKey)
 					if pkt.ver == IPv4 {
 						w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
 					} else {
@@ -841,6 +844,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				}
 				vc.drop()
 				return 0
+			}
+			if stallCount == 1 {
+				w.watchHelloSilence(cfg, set, pkt, connKey, host, sport, dport, tlsVersion, stallFirstSeen.Add(timeout))
 			}
 		}
 

@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.89.1] - 2026-10-31
+
+- FIXED: **Some addresses blocked for every site were never banned, and connections to them still hung for about 30 seconds** - IP Block Detection caught such an address only when a device repeated its first request to the site. Some providers let that request through and drop everything the server sends back. The device then waits for an answer and repeats nothing.
+
 ## [1.89.0] - 2026-10-30
 
 - ADDED: **Connections to an address the provider blocks for all sites on it fail at once instead of hanging** - sets with IP Block Detection and Cache Blocked IPs on ban such an address for 24 hours, or for 7 days when it is caught again. DNS answers that list other addresses leave it out, and the dashboard's Banned addresses panel lists the bans. Bans are on by default, and Remember blocked addresses under Settings, Core, Packet Engine turns them off. The saved ban list with re-tests is inspired by [Ladon](https://github.com/belotserkovtsev/Ladon).
