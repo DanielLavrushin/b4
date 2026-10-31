@@ -44,6 +44,7 @@ func (p *Pool) EnableTUNSourceResolver(wanIP string) {
 			f.Close()
 		}
 		p.tunSrc = newTunSrcResolver(wanIP)
+		p.tunSrc.own = procLocalSockets()
 	} else {
 		p.tunSrc.setWAN(wanIP)
 	}
