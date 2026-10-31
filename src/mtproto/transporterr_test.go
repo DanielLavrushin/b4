@@ -280,17 +280,7 @@ func TestNativeEdgePlansNeverOfferMediaToAPrimarySession(t *testing.T) {
 				t.Errorf("DC %d is offered the media name %s", dc, p.sni)
 			}
 		}
-		media := nativeEdgePlans(-dc, dc, telegramWSEdgeIP)
-		if len(media) != 2 {
-			t.Fatalf("DC -%d built %d plan(s), want the media name and the primary one behind it", dc, len(media))
-		}
-		if !strings.HasSuffix(media[0].sni, "-1.web.telegram.org") {
-			t.Errorf("DC -%d must try the media name first, got %s", dc, media[0].sni)
-		}
-		if strings.HasSuffix(media[1].sni, "-1.web.telegram.org") {
-			t.Errorf("DC -%d must fall back to the primary name, got %s", dc, media[1].sni)
-		}
-		for _, p := range append(nativeEdgePlans(dc, dc, telegramWSEdgeIP), media...) {
+		for _, p := range append(nativeEdgePlans(dc, dc, telegramWSEdgeIP), nativeEdgePlans(-dc, dc, telegramWSEdgeIP)...) {
 			if !p.native || p.dialHost != telegramWSEdgeIP {
 				t.Errorf("plan %s lost its native marking or dial host", p.describe())
 			}

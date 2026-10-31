@@ -65,16 +65,26 @@ func TestPlanTransports_PrimaryDCNeverFallsBackToMediaEdge(t *testing.T) {
 	}
 }
 
-func TestPlanTransports_MediaDC_ReversesOrdering(t *testing.T) {
-	cfg := &config.MTProtoConfig{UpstreamMode: "ws"}
-	plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, -4, dialTarget{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	got := wsSNIs(plans)
-	want := []string{"kws4-1.web.telegram.org", "kws4.web.telegram.org"}
-	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("media DC -4 order: got %v want %v", got, want)
+func TestPlanTransports_MediaDCUsesOnlyThePrimaryEdgeName(t *testing.T) {
+	cfg := &config.MTProtoConfig{UpstreamMode: "ws", CFProxyEnabled: true}
+	for _, dc := range []int{2, 4} {
+		plans, err := planTransports(cfg, config.QueueConfig{IPv4Enabled: true}, -dc, dialTarget{})
+		if err != nil {
+			t.Fatalf("DC -%d: unexpected error: %v", dc, err)
+		}
+		var edge []string
+		for _, p := range plans {
+			if p.native {
+				edge = append(edge, p.sni)
+			}
+			if strings.Contains(p.sni, fmt.Sprintf("kws%d-1.", dc)) {
+				t.Errorf("DC -%d offers %s: a media key made there is unknown to kws%d and to the Cloudflare relays, so the client makes a new key each time the route changes", dc, p.sni, dc)
+			}
+		}
+		want := fmt.Sprintf("kws%d.web.telegram.org", dc)
+		if len(edge) != 1 || edge[0] != want {
+			t.Fatalf("DC -%d edge names %v, want only %s", dc, edge, want)
+		}
 	}
 }
 
