@@ -31,6 +31,7 @@ const (
 	PhaseDNS         DiscoveryPhase = "dns_detection"
 	PhaseCached      DiscoveryPhase = "cached"
 	PhaseConfirm     DiscoveryPhase = "confirmation"
+	PhaseHosts       DiscoveryPhase = "page_hosts"
 )
 
 type StrategyFamily string
@@ -165,9 +166,13 @@ type CheckSuite struct {
 	StoppedPhase           DiscoveryPhase                    `json:"stopped_phase,omitempty"`
 	StoppedCovered         bool                              `json:"stopped_covered,omitempty"`
 	RulesChanged           bool                              `json:"rules_changed,omitempty"`
+	HostsTotal             int                               `json:"hosts_total,omitempty"`
+	HostsDone              int                               `json:"hosts_done,omitempty"`
+	HostsSkipped           bool                              `json:"hosts_skipped,omitempty"`
 	mu                     sync.RWMutex                      `json:"-"`
 	cancel                 chan struct{}                     `json:"-"`
 	finish                 chan struct{}                     `json:"-"`
+	hostsStop              chan struct{}                     `json:"-"`
 }
 
 type DomainPresetResult struct {
@@ -207,6 +212,7 @@ type DomainDiscoveryResult struct {
 	ConfirmTries  int                            `json:"confirm_tries,omitempty"`
 	FinalHost     string                         `json:"final_host,omitempty"`
 	DNSResult     *DNSDiscoveryResult            `json:"dns_result,omitempty"`
+	PageHosts     *HostCheck                     `json:"page_hosts,omitempty"`
 	Unresolved    bool                           `json:"unresolved,omitempty"`
 	MissingFamily string                         `json:"missing_family,omitempty"`
 	LinkStatus    int                            `json:"link_status,omitempty"`
@@ -367,6 +373,9 @@ type DiscoverySuite struct {
 	jointConfirmed  map[string]bool
 	jointConfirmFn  func(presetName string, domains []string) (map[string]int, bool)
 	setVerdict      *SetVerdict
+
+	hostProbeFn  func(ctx context.Context, rawURL, origin string, with bool) hostProbe
+	hostConfigFn func(cfg *config.Config) error
 
 	echMu sync.Mutex
 	ech   map[string]echKey

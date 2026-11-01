@@ -39,7 +39,10 @@ const STEPS = [
   "tuning",
   "combining",
   "confirming",
+  "hosts",
 ] as const;
+
+const CONFIRMING_STEP = STEPS.indexOf("confirming");
 
 function activeStep(
   phase: DiscoveryPhase | undefined,
@@ -58,6 +61,8 @@ function activeStep(
       return 4;
     case "confirmation":
       return 5;
+    case "page_hosts":
+      return 6;
     default:
       return 0;
   }
@@ -106,24 +111,38 @@ export const RunPanel = ({
   const found = sites.filter(
     (site) => results[site] && verdictOf(results[site], false) === "found",
   ).length;
+  const inHosts = suite.current_phase === "page_hosts";
+  const visibleSteps =
+    suite.source !== "watchdog" && (found > 0 || inHosts)
+      ? STEPS
+      : STEPS.filter((step) => step !== "hosts");
+  const hostsTotal = suite.hosts_total ?? 0;
+  const hostsDone = Math.min(suite.hosts_done ?? 0, hostsTotal);
   const confirming =
-    !!suite.stopped_early || suite.current_phase === "confirmation";
+    !inHosts &&
+    (!!suite.stopped_early || suite.current_phase === "confirmation");
   const stoppedAt = suite.stopped_early
     ? activeStep(suite.stopped_phase, baselineDone)
     : -1;
   const skippedByStop = (i: number) =>
-    stoppedAt >= 0 && i > stoppedAt && i < STEPS.length - 1;
-  const stopLabel = confirming
-    ? t("discovery.stopNow")
-    : found > 0
-      ? t("discovery.stopConfirm")
-      : t("discovery.stop");
-  const stopBusy = stopping || (finishRequested && !confirming);
-  const note = confirming
-    ? t("discovery.run.noteConfirming")
-    : found > 0
-      ? t("discovery.run.noteFound")
-      : t("discovery.run.note");
+    stoppedAt >= 0 && i > stoppedAt && i < CONFIRMING_STEP;
+  const stopLabel = inHosts
+    ? t("discovery.skipHosts")
+    : confirming
+      ? t("discovery.stopNow")
+      : found > 0
+        ? t("discovery.stopConfirm")
+        : t("discovery.stop");
+  const stopBusy = inHosts
+    ? stopping || !!suite.hosts_skipped
+    : stopping || (finishRequested && !confirming);
+  const note = inHosts
+    ? t("discovery.run.noteHosts")
+    : confirming
+      ? t("discovery.run.noteConfirming")
+      : found > 0
+        ? t("discovery.run.noteFound")
+        : t("discovery.run.note");
   const inStrategies =
     suite.current_phase === "cached" ||
     suite.current_phase === "strategy_detection";
@@ -138,6 +157,20 @@ export const RunPanel = ({
           total: perDomainTotal,
         })
       : "";
+  const hostsProgress =
+    inHosts && hostsTotal > 0
+      ? t("discovery.steps.progress", { done: hostsDone, total: hostsTotal })
+      : "";
+  const barIndeterminate = inHosts
+    ? hostsTotal === 0
+    : !(active <= 2 && suite.total_checks > 0);
+  const barValue = inHosts
+    ? hostsTotal > 0
+      ? (hostsDone / hostsTotal) * 100
+      : 0
+    : suite.total_checks > 0
+      ? (suite.completed_checks / suite.total_checks) * 100
+      : 0;
 
   const describe = (dr: DiscoveryResult | undefined): string => {
     if (!dr) return t("discovery.run.waiting");
@@ -281,7 +314,9 @@ export const RunPanel = ({
         onStop={canStop ? (confirming ? onStop : onFinish) : undefined}
         stopping={stopBusy}
         stopLabel={stopLabel}
-        stoppingLabel={t("discovery.stopping")}
+        stoppingLabel={
+          inHosts ? t("discovery.skippingHosts") : t("discovery.stopping")
+        }
       />
 
       {suite.source === "watchdog" && (
@@ -292,7 +327,7 @@ export const RunPanel = ({
       )}
 
       <B4RunSteps
-        steps={STEPS.map((step, i) => {
+        steps={visibleSteps.map((step, i) => {
           const skipped = (step === "dns" && dnsSkipped) || skippedByStop(i);
           return {
             key: step,
@@ -302,16 +337,15 @@ export const RunPanel = ({
               ? t("discovery.steps.skipped")
               : step === "strategies" && active === 2 && stepProgress
                 ? stepProgress
-                : undefined,
+                : step === "hosts" && hostsProgress
+                  ? hostsProgress
+                  : undefined,
           };
         })}
         active={active}
       />
 
-      <B4RunBar
-        indeterminate={!(active <= 2 && suite.total_checks > 0)}
-        value={suite.total_checks > 0 ? (suite.completed_checks / suite.total_checks) * 100 : 0}
-      />
+      <B4RunBar indeterminate={barIndeterminate} value={barValue} />
 
       {logLine}
 

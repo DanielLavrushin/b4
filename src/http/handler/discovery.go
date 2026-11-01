@@ -388,10 +388,15 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 
 	var set = config.NewSetConfig()
 
-	path, err := decodeDiscoveredSet(r, &set)
+	path, rawHosts, err := decodeDiscoveredSet(r, &set)
 	if err != nil {
 		log.Errorf("Failed to decode config update: %v", err)
 		writeDecodeError(w, err)
+		return
+	}
+	hosts, err := sanitizeExtraHosts(rawHosts)
+	if err != nil {
+		writeAPIError(w, err)
 		return
 	}
 	tested := set
@@ -448,6 +453,7 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 
 	set.Targets.IPs = nil
 	set.Targets.ASNs = nil
+	addSNIDomains(&set, hosts)
 
 	geoBefore := api.getCfg().System.Geo
 	api.loadTargetsForSetCached(&set)
@@ -474,6 +480,7 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 	if api.PerformSoftRestart(newCfg, oldCfg) {
 		log.Infof("Soft restart completed successfully")
 	}
+	logAddedPageHosts(set.Name, hosts)
 
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusAccepted)
@@ -522,6 +529,11 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "dscp_path holds a DSCP value outside 0-63", http.StatusBadRequest)
 		return
 	}
+	hosts, err := sanitizeExtraHosts(req.Hosts)
+	if err != nil {
+		writeAPIError(w, err)
+		return
+	}
 	config.ApplySetDefaults(&req.Set)
 
 	var probeURLs []string
@@ -559,6 +571,10 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 			addSNIDomains(target, domains)
 			moved = api.releaseDomainsFromOtherSets(next.Sets, target.Id, domains)
 		}
+		if len(hosts) > 0 {
+			addSNIDomains(target, hosts)
+			moved = append(moved, api.releaseDomainsFromOtherSets(next.Sets, target.Id, hosts)...)
+		}
 
 		if len(probeURLs) > 0 {
 			target.Discovery.URLs = slices.Clone(probeURLs)
@@ -584,6 +600,7 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Infof("Replaced the strategy of set '%s' with a discovered one", name)
 	}
+	logAddedPageHosts(name, hosts)
 
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -625,23 +642,62 @@ const errDSCPRulesPending = "b4 is still applying its DSCP rules, which decide t
 
 var errDSCPPathRange = errors.New("dscp_path holds a DSCP value outside 0-63")
 
-func decodeDiscoveredSet(r *http.Request, set *config.SetConfig) (*config.DSCPPath, error) {
+func decodeDiscoveredSet(r *http.Request, set *config.SetConfig) (*config.DSCPPath, []string, error) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var req DiscoveredSetRequest
 	raw := body
+	var hosts []string
 	if json.Unmarshal(body, &req) == nil && len(req.Set) > 0 {
 		raw = req.Set
+		hosts = req.Hosts
 	}
 	if err := json.Unmarshal(raw, set); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !validDSCPPath(req.DSCPPath) {
-		return nil, errDSCPPathRange
+		return nil, nil, errDSCPPathRange
 	}
-	return req.DSCPPath, nil
+	return req.DSCPPath, hosts, nil
+}
+
+const maxExtraHosts = 64
+
+func sanitizeExtraHosts(raw []string) ([]string, error) {
+	var hosts []string
+	for _, entry := range raw {
+		host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(entry)), ".")
+		if host == "" {
+			continue
+		}
+		if _, err := netip.ParseAddr(host); err == nil || !strings.Contains(host, ".") || !pinnableName(host) || utils.IsReservedHost(host) {
+			return nil, &APIError{
+				Status:  http.StatusBadRequest,
+				Code:    "bad_host",
+				Message: fmt.Sprintf("%q is not a host name on the internet; a name outside ASCII goes in its xn-- form", entry),
+			}
+		}
+		if slices.Contains(hosts, host) {
+			continue
+		}
+		if len(hosts) == maxExtraHosts {
+			return nil, &APIError{
+				Status:  http.StatusBadRequest,
+				Code:    "too_many_hosts",
+				Message: fmt.Sprintf("At most %d hosts can be added at once", maxExtraHosts),
+			}
+		}
+		hosts = append(hosts, host)
+	}
+	return hosts, nil
+}
+
+func logAddedPageHosts(setName string, hosts []string) {
+	if len(hosts) > 0 {
+		log.Infof("Set '%s': added the page hosts %s", setName, strings.Join(hosts, ", "))
+	}
 }
 
 func writeDecodeError(w http.ResponseWriter, err error) {
@@ -773,7 +829,7 @@ func (api *API) handleFindSimilarSets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var incoming config.SetConfig
-	path, err := decodeDiscoveredSet(r, &incoming)
+	path, _, err := decodeDiscoveredSet(r, &incoming)
 	if err != nil {
 		writeDecodeError(w, err)
 		return

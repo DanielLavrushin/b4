@@ -268,9 +268,10 @@ export function useDiscovery() {
     async (
       config: B4SetConfig,
       dscpPath?: DSCPPath,
+      hosts?: string[],
     ): Promise<ApiResponse<AddPresetResult>> => {
       try {
-        const res = await discoveryApi.addPresetAsSet(config, dscpPath);
+        const res = await discoveryApi.addPresetAsSet(config, dscpPath, hosts);
         return { success: true, data: res };
       } catch (e) {
         return { success: false, error: describeApiError(e) };

@@ -27,6 +27,7 @@ import { HistoryEntry, StrategyFamily } from "@models/discovery";
 import {
   Alternate,
   ApplyTarget,
+  OfferedHost,
   describeStrategy,
   formatBytes,
   formatTimeAgo,
@@ -35,6 +36,7 @@ import {
   historyUnconfirmed,
   historyVerdict,
   ipFamilyLabel,
+  offeredHosts,
   presetLabel,
   unresolvedLabel,
 } from "@utils";
@@ -59,6 +61,7 @@ interface Row {
   domains: string[];
   urls: string[];
   alternates: Alternate[];
+  hosts: OfferedHost[];
 }
 
 const setKey = (entry: HistoryEntry): string | null => {
@@ -91,6 +94,7 @@ export const HistoryTable = ({
     const urlOf = new Map(
       sorted.map((e) => [e.domain, e.url || `https://${e.domain}/`]),
     );
+    const entryOf = new Map(sorted.map((e) => [e.domain, e]));
     const groups = new Map<string, string[]>();
     for (const entry of sorted) {
       const key = setKey(entry);
@@ -107,12 +111,13 @@ export const HistoryTable = ({
         entry.domain,
         ...sharedWith.filter((d) => set?.targets.sni_domains.includes(d)),
       ];
+      const preset = entry.set?.name || entry.best_preset;
       return {
         entry,
         verdict,
         unconfirmed: historyUnconfirmed(entry),
         set,
-        preset: entry.set?.name || entry.best_preset,
+        preset,
         sharedWith,
         domains,
         urls: domains.map((d) => urlOf.get(d) ?? `https://${d}/`),
@@ -120,6 +125,13 @@ export const HistoryTable = ({
           (verdict === "found" || verdict === "works_without_bypass") &&
           !entry.rules_changed
             ? historyAlternates(entry, domains)
+            : [],
+        hosts:
+          verdict === "found" && set
+            ? offeredHosts(
+                domains.map((d) => entryOf.get(d) ?? { domain: d }),
+                preset,
+              )
             : [],
       };
     });
@@ -303,6 +315,19 @@ export const HistoryTable = ({
                 })}
               </Typography>
             )}
+            {row.hosts.length > 0 && (
+              <Tooltip
+                title={row.hosts.map((h) => h.host).join(", ")}
+                placement="top-start"
+              >
+                <Typography
+                  variant="caption"
+                  sx={{ color: colors.text.disabled, width: "fit-content" }}
+                >
+                  {t("discovery.history.hosts", { count: row.hosts.length })}
+                </Typography>
+              </Tooltip>
+            )}
             {row.entry.stopped_early && !row.unconfirmed && (
               <Typography variant="caption" sx={{ color: colors.text.disabled }}>
                 {t("discovery.history.stoppedEarly")}
@@ -382,6 +407,7 @@ export const HistoryTable = ({
           urls: row.urls,
           setId: row.entry.set_id,
           dscpPath: row.entry.dscp_path,
+          hosts: row.hosts,
         }
       : null;
 

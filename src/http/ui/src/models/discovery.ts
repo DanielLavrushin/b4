@@ -33,9 +33,56 @@ export type DiscoveryPhase =
   | "optimization"
   | "dns_detection"
   | "combination"
-  | "confirmation";
+  | "confirmation"
+  | "page_hosts";
 
 export type IPFamily = "ipv4" | "ipv6";
+
+export type HostContext =
+  | "redirect"
+  | "base"
+  | "stylesheet"
+  | "script"
+  | "image"
+  | "media"
+  | "frame"
+  | "css"
+  | "preload"
+  | "icon"
+  | "preconnect"
+  | "inline";
+
+export type HostVerdict =
+  | "needed"
+  | "not_fixed"
+  | "unreachable"
+  | "loads_without"
+  | "unresolved"
+  | "covered"
+  | "untested";
+
+export type PageHostsSkip = "stopped" | "budget" | "page" | "not_html";
+
+export interface PageHost {
+  host: string;
+  source?: string;
+  context?: HostContext;
+  blocking?: boolean;
+  tracker?: boolean;
+  verdict: HostVerdict;
+  service?: string;
+  url?: string;
+  bytes_read?: number;
+  small?: boolean;
+  error?: string;
+}
+
+export interface PageHosts {
+  preset: string;
+  hosts?: PageHost[];
+  skipped?: PageHostsSkip;
+  truncated?: boolean;
+}
 
 export type DiscoveryOutcome =
   | "found"
@@ -118,6 +165,7 @@ export interface DiscoveryResult {
   confirm_tries?: number;
   final_host?: string;
   dns_result?: DNSDiscoveryResult;
+  page_hosts?: PageHosts;
   unresolved?: boolean;
   missing_family?: IPFamily;
   link_status?: number;
@@ -156,6 +204,9 @@ export interface DiscoverySuite {
   set_verdict?: SetVerdict;
   stopped_covered?: boolean;
   rules_changed?: boolean;
+  hosts_total?: number;
+  hosts_done?: number;
+  hosts_skipped?: boolean;
 }
 
 export type SetVerdictStatus =
@@ -228,6 +279,7 @@ export interface HistoryEntry {
   end_time: string;
   results?: Record<string, DomainPresetResult>;
   dns_result?: DNSDiscoveryResult;
+  page_hosts?: PageHosts;
   baseline_speed?: number;
   baseline_works?: boolean;
   confirmed?: number;

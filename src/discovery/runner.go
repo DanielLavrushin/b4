@@ -132,6 +132,9 @@ func cancelCheckSuite(id string, rulesChanged bool) {
 	defer suite.mu.Unlock()
 
 	if suite.Status == CheckStatusPending || suite.Status == CheckStatusRunning {
+		if !rulesChanged && suite.skipHostsLocked() {
+			return
+		}
 		if suite.cancel != nil {
 			select {
 			case <-suite.cancel:
@@ -159,6 +162,9 @@ func FinishCheckSuite(id string) error {
 	defer suite.mu.Unlock()
 
 	if suite.Status != CheckStatusPending && suite.Status != CheckStatusRunning {
+		return nil
+	}
+	if suite.skipHostsLocked() {
 		return nil
 	}
 	if suite.finish == nil || suite.CurrentPhase == PhaseConfirm {

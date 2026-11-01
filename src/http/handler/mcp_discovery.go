@@ -87,6 +87,7 @@ type mcpSuiteSnapshot struct {
 			TransportBlocked bool `json:"transport_blocked"`
 			mcpNameEvidence
 		} `json:"dns_result"`
+		PageHosts *discovery.HostCheck `json:"page_hosts"`
 	} `json:"domain_discovery_results"`
 	StrategyGroups []struct {
 		WinnerPreset string            `json:"winner_preset"`
@@ -101,6 +102,9 @@ type mcpSuiteSnapshot struct {
 	SetVerdict     *discovery.SetVerdict `json:"set_verdict"`
 	StoppedCovered bool                  `json:"stopped_covered"`
 	RulesChanged   bool                  `json:"rules_changed"`
+	HostsTotal     int                   `json:"hosts_total"`
+	HostsDone      int                   `json:"hosts_done"`
+	HostsSkipped   bool                  `json:"hosts_skipped"`
 }
 
 func mcpSuiteProjection(suite *discovery.CheckSuite) (*mcpSuiteSnapshot, error) {
@@ -134,6 +138,9 @@ type mcpDiscoveryDomain struct {
 	linkStatus    int
 	systemOnly    bool
 	evidence      mcpNameEvidence
+	pageHosts     []discovery.HostResult
+	unfixedHosts  []string
+	hostsPreset   string
 }
 
 type mcpNameEvidence struct {
@@ -186,9 +193,9 @@ func mcpDiscoveryVerdict(d mcpDiscoveryDomain, running bool) string {
 	case d.Found && running:
 		return fmt.Sprintf("%s is the best so far, but the run is still testing and this is PROVISIONAL: it has not been confirmed, a better one may still win, and nothing can be applied until the run finishes or is cancelled", d.BestPreset)
 	case d.Found && d.Unconfirmed:
-		return fmt.Sprintf("%s loaded the site at least once, but the run ended before the confirmation pass re-checked it, so it is UNCONFIRMED: apply it if the user accepts that, and verify with b4_test_domain_now", d.BestPreset)
+		return fmt.Sprintf("%s loaded the site at least once, but the run ended before the confirmation pass re-checked it, so it is UNCONFIRMED: apply it if the user accepts that, and verify with b4_test_domain_now", d.BestPreset) + mcpPageHostsVerdict(d)
 	case d.Found:
-		return fmt.Sprintf("a working strategy was found (%s)", d.BestPreset)
+		return fmt.Sprintf("a working strategy was found (%s)", d.BestPreset) + mcpPageHostsVerdict(d)
 	default:
 		return "no strategy tried made it work"
 	}
@@ -238,9 +245,13 @@ func mcpNoteUnresolved(row *mcpDiscoveryDomain, missingFamily string, evidence *
 
 func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mcpDiscoveryDomain {
 	family := map[string]string{}
+	winner := map[string]string{}
 	for _, g := range snap.StrategyGroups {
 		for _, d := range g.Domains {
 			family[sni.NormalizeDomain(d)] = g.Family
+			if g.Set != nil {
+				winner[sni.NormalizeDomain(d)] = g.WinnerPreset
+			}
 		}
 	}
 
@@ -270,6 +281,7 @@ func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mc
 			evidence = &r.DNSResult.mcpNameEvidence
 		}
 		mcpNoteUnresolved(&row, r.MissingFamily, evidence)
+		mcpNotePageHosts(&row, r.PageHosts, winner[sni.NormalizeDomain(name)])
 		row.Unconfirmed = row.Found && r.Unconfirmed && !running
 		row.Provisional = running && row.Found
 		row.Verdict = mcpDiscoveryVerdict(row, running)
@@ -577,6 +589,7 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 			}
 		}
 		mcpNoteUnresolved(&row, e.MissingFamily, evidence)
+		mcpNotePageHosts(&row, e.PageHosts, mcpAppliedPreset(e))
 		row.Unconfirmed = row.Found && (e.Unconfirmed || e.Status == discovery.CheckStatusCanceled)
 		row.Verdict = mcpDiscoveryVerdict(row, false)
 		if row.Found && e.ApplicableSet() != nil {
@@ -600,6 +613,7 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 	default:
 		out.Note += " None of them holds a strategy worth installing, so run discovery again for the domain you care about."
 	}
+	out.Note = mcpWithPageHostsNote(out.Note, out.Domains)
 	return nil, out, nil
 }
 
@@ -726,11 +740,12 @@ func (api *API) mcpDiscoverySuiteStatus(snap *mcpSuiteSnapshot) (*mcp.CallToolRe
 	case discovery.CheckStatusRunning, discovery.CheckStatusPending:
 		running = true
 	}
+	checkingHosts := mcpCheckingPageHosts(snap.Status, snap.CurrentPhase)
 	out := mcpDiscoveryOut{
 		Id:      snap.Id,
 		Status:  snap.Status,
 		Source:  "run",
-		Domains: api.mcpDiscoverySuiteRows(snap, running),
+		Domains: api.mcpDiscoverySuiteRows(snap, running && !checkingHosts),
 	}
 	switch discovery.CheckStatus(snap.Status) {
 	case discovery.CheckStatusRunning, discovery.CheckStatusPending:
@@ -739,12 +754,19 @@ func (api *API) mcpDiscoverySuiteStatus(snap *mcpSuiteSnapshot) (*mcp.CallToolRe
 	if snap.TotalChecks > 0 {
 		out.Progress = fmt.Sprintf("%d/%d checks", snap.CompletedChecks, snap.TotalChecks)
 	}
+	if checkingHosts && snap.HostsTotal > 0 {
+		out.Progress = fmt.Sprintf("%d/%d host checks", snap.HostsDone, snap.HostsTotal)
+	}
 	if snap.SetId != "" {
 		out.SetVerdict = mcpSetVerdictView(api.getCfg(), snap.SetId, snap.SetVerdict, snap.StoppedCovered)
 	}
 
 	switch discovery.CheckStatus(snap.Status) {
 	case discovery.CheckStatusRunning, discovery.CheckStatusPending:
+		if checkingHosts {
+			out.Note = mcpPageHostsRunningNote(snap, out.Domains)
+			break
+		}
 		out.Note = fmt.Sprintf("still running (%s, %s). Any strategy listed is the BEST SO FAR, not a result: it is unconfirmed, a better one may still win, and action=apply is refused until the run ends. "+
 			"If the user wants to stop and keep what has been found, action=cancel ends the run and saves it. Do not poll in a loop: check again only when the user asks.",
 			out.Phase, out.Progress)
@@ -782,6 +804,7 @@ func (api *API) mcpDiscoverySuiteStatus(snap *mcpSuiteSnapshot) (*mcp.CallToolRe
 	if discovery.CheckStatus(snap.Status) == discovery.CheckStatusCanceled && out.SetVerdict != nil {
 		out.Note += ". " + out.SetVerdict.Meaning
 	}
+	out.Note = mcpWithPageHostsNote(out.Note, out.Domains)
 	out.Note = mcpWithProbeDSCP(out.Note, snap.DSCP, snap.DSCPIPVersion)
 	return nil, out, nil
 }
@@ -791,8 +814,13 @@ func (api *API) mcpDiscoveryCancel(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 	if id == "" {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("no discovery run is in progress")
 	}
+	before := mcpSnapshotOf(id)
 	if err := discovery.CancelCheckSuite(id); err != nil {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("could not cancel %q: %w", id, err)
+	}
+	if after := mcpSnapshotOf(id); mcpCancelSkippedPageHosts(before, after) {
+		log.Infof("mcp: discovery run %s skips its page hosts check", id)
+		return nil, mcpDiscoveryOut{Id: id, Status: after.Status, Note: mcpPageHostsSkipNote}, nil
 	}
 	log.Infof("mcp: discovery run %s cancelled", id)
 	return nil, mcpDiscoveryOut{
@@ -817,6 +845,9 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	domain := sni.NormalizeDomain(in.Domain)
 	if api.discoveryRT != nil && api.discoveryRT.IsActive() {
 		if cur, ok := discovery.GetCurrentSuite(); ok && cur != nil {
+			if snap, err := mcpSuiteProjection(cur); err == nil && mcpCheckingPageHosts(snap.Status, snap.CurrentPhase) {
+				return nil, mcpDiscoveryOut{}, errors.New(mcpPageHostsApplyWait)
+			}
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
 				"a discovery run is still going, so there is nothing settled to apply: whatever it has found is the best so far, unconfirmed, and may still be beaten. " +
 					"Call action=status to see how far it has got, or action=cancel to stop it and keep what it has found, which can then be applied")
@@ -843,6 +874,8 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 	var dscpPath *config.DSCPPath
 	var preset string
 	var groupDomains []string
+	var pageHosts []discovery.HostResult
+	var hostsPreset string
 	suiteID := id
 	source := "run"
 	unconfirmed := false
@@ -862,6 +895,9 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 			}
 			unconfirmed = true
 		default:
+			if mcpCheckingPageHosts(string(status), snap.CurrentPhase) {
+				return nil, mcpDiscoveryOut{}, errors.New(mcpPageHostsApplyWait)
+			}
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
 				"that run is %s, so it holds nothing settled to apply. Call action=status, and action=cancel if you want to stop it and keep what it has found", status)
 		}
@@ -893,6 +929,8 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 			}
 			return nil, mcpDiscoveryOut{}, fmt.Errorf("that run holds no applicable strategy for %s", domain)
 		}
+		hostsPreset = preset
+		pageHosts = mcpGroupPageHosts(groupDomains, hostsPreset, func(d string) *discovery.HostCheck { return snap.DomainResults[d].PageHosts })
 	} else {
 		source = "history"
 		hist := discovery.GetHistory(api.getCfg().ConfigPath)
@@ -933,6 +971,13 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		for _, e := range hist.Entries {
 			mcpRememberCheckURL(checkURLs, e.Domain, e.Url)
 		}
+		hostsPreset = mcpAppliedPreset(entry)
+		pageHosts = mcpGroupPageHosts(groupDomains, hostsPreset, func(d string) *discovery.HostCheck {
+			if e, ok := mcpHistoryEntryFor(hist, sni.NormalizeDomain(d)); ok && e.SuiteId == entry.SuiteId {
+				return e.PageHosts
+			}
+			return nil
+		})
 	}
 
 	if existing := api.setCoveringDomainWith(domain, chosen); existing != nil {
@@ -946,6 +991,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		out.Note = fmt.Sprintf(
 			"%s is already covered by set %q, which carries the same strategy. The run grouped %s under one winner, so a single apply created a set for all of them: applying again per domain would only duplicate it",
 			domain, existing.Name, mcpSummarizeList(groupDomains))
+		out.Note += mcpAppliedPageHostsNote(mcpHostsOutside(existing, pageHosts), hostsPreset, existing.Name, len(groupDomains))
 		return nil, out, nil
 	}
 
@@ -1045,6 +1091,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		}
 		out.Note += ". A domain belongs to one enabled set, so b4 took " + strings.Join(names, ", ")
 	}
+	out.Note += mcpAppliedPageHostsNote(mcpHostsOutside(&set, pageHosts), hostsPreset, set.Name, len(groupDomains))
 	out.Note += ". Confirm it with b4_test_domain_now before telling the user it is fixed"
 	return nil, out, nil
 }
@@ -1057,6 +1104,7 @@ type mcpSetRun struct {
 	stoppedCovered bool
 	dscpPath       *config.DSCPPath
 	source         string
+	phase          string
 }
 
 func (api *API) mcpSetRunFor(id string, explicit bool, target *config.SetConfig) (mcpSetRun, bool, error) {
@@ -1081,6 +1129,7 @@ func (api *API) mcpSetRunFor(id string, explicit bool, target *config.SetConfig)
 					stoppedCovered: snap.StoppedCovered,
 					dscpPath:       snap.DSCPPath,
 					source:         "run",
+					phase:          snap.CurrentPhase,
 				}, true, nil
 			}
 		}
@@ -1140,6 +1189,9 @@ func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bo
 	switch run.status {
 	case discovery.CheckStatusComplete, discovery.CheckStatusCanceled:
 	default:
+		if mcpCheckingPageHosts(string(run.status), run.phase) {
+			return nil, mcpDiscoveryOut{}, errors.New(mcpPageHostsApplyWait)
+		}
 		return nil, mcpDiscoveryOut{}, fmt.Errorf(
 			"the run for set %q is %s, so it holds no verdict yet. Call action=status, and action=cancel if you want to stop it", target.Name, run.status)
 	}

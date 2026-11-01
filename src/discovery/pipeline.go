@@ -331,6 +331,7 @@ func (ds *DiscoverySuite) finishRun() {
 			ds.confirmWinners()
 		}
 		ds.resolveSetVerdict()
+		ds.checkPageHosts()
 	}
 	ds.finalize()
 	ds.logDiscoverySummary()
@@ -390,6 +391,7 @@ func (ds *DiscoverySuite) dropApplicableSetsLocked() {
 		if dr == nil {
 			continue
 		}
+		dr.PageHosts = nil
 		for _, r := range dr.Results {
 			if r != nil {
 				r.Set = nil
@@ -461,6 +463,7 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 		default:
 			log.DiscoveryLogf("  ✗ [%s] No working DPI bypass found", di.Domain)
 		}
+		logPageHostsSummary(domainResult.PageHosts)
 	}
 
 	log.DiscoveryLogf("═══════════════════════════════════════")

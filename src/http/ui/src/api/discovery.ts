@@ -46,7 +46,11 @@ export interface ReplaceStrategyOptions {
   keepTargets?: boolean;
   probeUrls?: string[];
   dscpPath?: DSCPPath;
+  hosts?: string[];
 }
+
+const hostsField = (hosts?: string[]) =>
+  hosts && hosts.length > 0 ? hosts : undefined;
 
 export const discoveryApi = {
   start: (check_urls: string[], options: DiscoveryStartOptions) =>
@@ -70,10 +74,15 @@ export const discoveryApi = {
   status: (id: string) => apiGet<DiscoverySuite>(`/api/discovery/status/${id}`),
   cancel: (id: string) => apiDelete(`/api/discovery/cancel/${id}`),
   finish: (id: string) => apiPost(`/api/discovery/finish/${id}`, {}),
-  addPresetAsSet: (preset: B4SetConfig, dscpPath?: DSCPPath) =>
+  addPresetAsSet: (
+    preset: B4SetConfig,
+    dscpPath?: DSCPPath,
+    hosts?: string[],
+  ) =>
     apiPost<AddPresetResult>("/api/discovery/add", {
       set: preset,
       dscp_path: dscpPath,
+      hosts: hostsField(hosts),
     }),
   replaceStrategy: (
     setId: string,
@@ -94,6 +103,7 @@ export const discoveryApi = {
           ? opts.probeUrls
           : undefined,
       dscp_path: opts?.dscpPath,
+      hosts: hostsField(opts?.hosts),
     }),
   suggest: (setId: string) =>
     apiGet<ProbeSuggestions>(
