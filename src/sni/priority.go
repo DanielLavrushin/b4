@@ -2,6 +2,7 @@ package sni
 
 import (
 	"net"
+	"slices"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/yl2chen/cidranger"
@@ -95,7 +96,7 @@ func (s *SuffixSet) KeepsLearned(cfg *config.Config, set *config.SetConfig, ip n
 		var built *config.SetConfig
 		for _, listed := range r.sets {
 			index, agreed := s.agreedIndex(cfg, listed.Id)
-			if !agreed {
+			if !agreed || !sameAddressTargets(cfg.Sets[index], listed) {
 				return true
 			}
 			general := heldForEveryDevice(cfg.Sets[index], version)
@@ -116,6 +117,12 @@ func (s *SuffixSet) KeepsLearned(cfg *config.Config, set *config.SetConfig, ip n
 		return escalatesTo(cfg, cfg.Sets[winner], set.Id)
 	}
 	return true
+}
+
+func sameAddressTargets(a, b *config.SetConfig) bool {
+	return slices.Equal(a.Targets.IPs, b.Targets.IPs) &&
+		slices.Equal(a.Targets.ASNs, b.Targets.ASNs) &&
+		slices.Equal(a.Targets.GeoIpCategories, b.Targets.GeoIpCategories)
 }
 
 const escalationChainHops = 8

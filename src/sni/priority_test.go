@@ -255,6 +255,17 @@ func TestKeepsLearned(t *testing.T) {
 	exactRenamed := addressSet("exact-renamed", false, priorityAddr+"/32")
 	gwScopedSince := onDevices(copyOf(gw), priorityMAC)
 	plain := addressSet("plain", false, priorityRange)
+	ggcListed := addressSet("ggc", true, priorityRange)
+	ggcListed.Targets.IPs = []string{priorityRange}
+	ggcListed.Targets.ASNs = []string{"15169"}
+	ggcListed.Targets.GeoIpCategories = []string{"ru"}
+	ggcMovedIPs := copyOf(ggcListed)
+	ggcMovedIPs.Targets.IPs = []string{"79.133.77.32/27"}
+	ggcMovedIPs.Targets.IpsToMatch = []string{"79.133.77.32/27"}
+	ggcMovedASNs := copyOf(ggcListed)
+	ggcMovedASNs.Targets.ASNs = []string{"13335"}
+	ggcMovedGeoIP := copyOf(ggcListed)
+	ggcMovedGeoIP.Targets.GeoIpCategories = []string{"de"}
 
 	cases := []fixture{
 		{"a set above holds the address for everyone", []*config.SetConfig{ggc, gw}, nil, "gw", addr, false, nil},
@@ -288,6 +299,10 @@ func TestKeepsLearned(t *testing.T) {
 		{"the config's copy of the learning set has source devices", []*config.SetConfig{ggc, gwScopedSince}, nil, "gw", addr, true, gw},
 		{"the matcher's copy of the learning set has source devices", []*config.SetConfig{ggc, gwScopedSince}, []*config.SetConfig{ggc, gw}, "gw", addr, true, nil},
 		{"the first set with the learning set's id decides its device scope", []*config.SetConfig{ggc, gw, gwScopedSince}, nil, "gw", addr, false, nil},
+		{"the holder's IP targets changed since the matcher was built", []*config.SetConfig{ggcListed, gw}, []*config.SetConfig{ggcMovedIPs, gw}, "gw", addr, true, nil},
+		{"the holder's ASN targets changed since the matcher was built", []*config.SetConfig{ggcListed, gw}, []*config.SetConfig{ggcMovedASNs, gw}, "gw", addr, true, nil},
+		{"the holder's GeoIP targets changed since the matcher was built", []*config.SetConfig{ggcListed, gw}, []*config.SetConfig{ggcMovedGeoIP, gw}, "gw", addr, true, nil},
+		{"the holder's address targets are the same in both copies", []*config.SetConfig{ggcListed, gw}, []*config.SetConfig{copyOf(ggcListed), gw}, "gw", addr, false, nil},
 	}
 	for _, c := range cases {
 		ss := NewSuffixSet(c.built)
