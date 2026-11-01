@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.90.0] - 2026-11-01
+
+- ADDED: **A set that lists a provider's own servers, such as its Google Global Cache nodes, can keep the connections to them** - with IP priority on, a connection to one of the set's addresses stays with the set even when a set lower in the list matches its domain. The switch is under Targets, Bypass IPs in the set editor and is off by default. It is meant for servers that carry only this set's sites, not for shared CDN ranges.
+- FIXED: **A duplicated set appeared below its source, then jumped to the top of the list once the list reloaded** - b4 saved the copy as the first set in the list. Ahead of its source, the copy took the connections to the sites both sets list.
+
 ## [1.89.0] - 2026-10-30
 
 - ADDED: **Connections to an address the provider blocks for all sites on it fail at once instead of hanging** - sets with IP Block Detection and Cache Blocked IPs on ban such an address for 24 hours, or for 7 days when it is caught again. DNS answers that list other addresses leave it out, and the dashboard's Banned addresses panel lists the bans. Bans are on by default, and Remember blocked addresses under Settings, Core, Packet Engine turns them off. The saved ban list with re-tests is inspired by [Ladon](https://github.com/belotserkovtsev/Ladon).

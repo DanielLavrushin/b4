@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -362,5 +364,82 @@ func TestHandleCheckDomainMatchesTheHostOfAURL(t *testing.T) {
 		if len(matches) != 1 || matches[0].Domain != "www.example.com" || matches[0].Relation != "covered" {
 			t.Errorf("%q should be checked as www.example.com and found covered, got %+v", input, matches)
 		}
+	}
+}
+
+func TestCreateSetPutsTheNewSetRightAfterTheSetNamedByAfter(t *testing.T) {
+	cases := []struct {
+		name, query string
+		want        []string
+	}{
+		{"after a set in the middle", "?after=b", []string{"a", "b", "new", "c"}},
+		{"after the last set", "?after=c", []string{"a", "b", "c", "new"}},
+		{"after a set that does not exist", "?after=missing", []string{"new", "a", "b", "c"}},
+		{"without the parameter", "", []string{"new", "a", "b", "c"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sets := make([]*config.SetConfig, 0, 3)
+			for _, id := range []string{"a", "b", "c"} {
+				set := config.NewSetConfig()
+				set.Id, set.Name, set.Enabled = id, id, true
+				set.Targets.SNIDomains = []string{id + ".example.org"}
+				sets = append(sets, &set)
+			}
+			api, mux := asnAPI(t, sets...)
+
+			rec := serve(mux, http.MethodPost, "/api/sets"+tc.query, `{"name":"new","enabled":true,"targets":{"sni_domains":["new.example.org"]}}`)
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("POST /api/sets%s = %d %s", tc.query, rec.Code, rec.Body.String())
+			}
+			var got []string
+			for _, set := range api.getCfg().Sets {
+				got = append(got, set.Name)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("order after POST /api/sets%s = %v, want %v", tc.query, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAWebDuplicatePlacedAfterAnIPPrioritySetLeavesTheSourceHolding(t *testing.T) {
+	ggc := config.NewSetConfig()
+	ggc.Id, ggc.Name, ggc.Enabled = "ggc", "YT-GGC-RU", true
+	ggc.Targets.IPs = []string{"37.18.153.136/29"}
+	ggc.Targets.IPPriority = true
+	gw := config.NewSetConfig()
+	gw.Id, gw.Name, gw.Enabled = "gw", "YT-GW-AS15169", true
+	gw.Targets.SNIDomains = []string{"googlevideo.com"}
+	api, mux := asnAPI(t, &ggc, &gw)
+
+	var body map[string]any
+	if err := json.Unmarshal(serve(mux, http.MethodGet, "/api/sets/ggc", "").Body.Bytes(), &body); err != nil {
+		t.Fatalf("GET /api/sets/ggc: %v", err)
+	}
+	delete(body, "id")
+	delete(body, "revision")
+	body["targets"].(map[string]any)["ip_priority"] = false
+	body["name"] = "YT-GGC-RU (copy)"
+	raw, _ := json.Marshal(body)
+	if rec := serve(mux, http.MethodPost, "/api/sets?after=ggc", string(raw)); rec.Code != http.StatusCreated {
+		t.Fatalf("POST /api/sets?after=ggc = %d %s", rec.Code, rec.Body.String())
+	}
+
+	cfg := api.getCfg().Clone()
+	var order []string
+	for _, set := range cfg.Sets {
+		set.Targets.IpsToMatch = set.Targets.IPs
+		set.Targets.DomainsToMatch = set.Targets.SNIDomains
+		order = append(order, set.Name)
+	}
+	if want := []string{"YT-GGC-RU", "YT-GGC-RU (copy)", "YT-GW-AS15169"}; !slices.Equal(order, want) {
+		t.Fatalf("order = %v, want %v", order, want)
+	}
+	m := sni.NewSuffixSet(cfg.Sets)
+	_, addr, prefix := m.MatchIPWithSourceDetail(net.ParseIP("37.18.153.140"), "")
+	_, name := m.MatchSNIWithSource("rr1---sn-nxu-nufl.googlevideo.com", "")
+	if addr == nil || addr.Id != "ggc" || !m.AddressHolds(addr, prefix, name, "") {
+		t.Errorf("the source must stay the address winner and keep holding against the name set, got winner %v", addr)
 	}
 }

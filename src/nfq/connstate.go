@@ -33,6 +33,7 @@ type tlsInfo struct {
 	decidedBy  *sni.SuffixSet
 	decidedMac string
 	set        *config.SetConfig
+	heldBy     string
 }
 
 type tlsInfoCache struct {
@@ -110,6 +111,10 @@ func (c *tlsInfoCache) Decision(connKey string) (tlsInfo, bool) {
 }
 
 func (c *tlsInfoCache) Decide(connKey string, gen uint64, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig) {
+	c.DecideHeld(connKey, gen, matcher, srcMac, set, false)
+}
+
+func (c *tlsInfoCache) DecideHeld(connKey string, gen uint64, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig, held bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -120,6 +125,10 @@ func (c *tlsInfoCache) Decide(connKey string, gen uint64, matcher *sni.SuffixSet
 		info.decidedBy = matcher
 		info.decidedMac = srcMac
 		info.set = set
+		info.heldBy = ""
+		if held && set != nil {
+			info.heldBy = set.Id
+		}
 	}
 }
 

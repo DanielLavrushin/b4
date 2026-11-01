@@ -72,6 +72,7 @@ export const IpsTab = ({
   );
   const catchAll = missingCatchAll.length === 0;
   const partialCatchAll = presentCatchAll.length > 0 && !catchAll;
+  const tlsFiltered = !!config.targets.tls;
 
   const checkDuplicates = (input: string) => {
     const notice = ipEntryNotice(input, !!ipv6);
@@ -101,19 +102,34 @@ export const IpsTab = ({
     <>
       <B4Hint>{t("sets.targets.ipAlert")}</B4Hint>
 
-      <Box sx={{ my: 3, maxWidth: 360 }}>
-        <B4Switch
-          label={t("sets.targets.catchAllIps")}
-          description={t("sets.targets.catchAllIpsDesc", {
-            value: catchAllEntries.join(", "),
-          })}
-          checked={catchAll}
-          path="targets.ip"
-          arrayItem={IPV4_CATCH_ALL}
-          onChange={(checked: boolean) =>
-            onChange("targets.ip", setIpCatchAll(ips, checked, !!ipv6))
-          }
-        />
+      <Box sx={{ my: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>
+        <Box sx={{ maxWidth: 360, flex: 1, minWidth: 260 }}>
+          <B4Switch
+            label={t("sets.targets.catchAllIps")}
+            description={t("sets.targets.catchAllIpsDesc", {
+              value: catchAllEntries.join(", "),
+            })}
+            checked={catchAll}
+            path="targets.ip"
+            arrayItem={IPV4_CATCH_ALL}
+            onChange={(checked: boolean) =>
+              onChange("targets.ip", setIpCatchAll(ips, checked, !!ipv6))
+            }
+          />
+        </Box>
+        {!tlsFiltered && (
+          <Box sx={{ maxWidth: 360, flex: 1, minWidth: 260 }}>
+            <B4Switch
+              description={t("sets.targets.ipPriorityDesc")}
+              checked={config.targets.ip_priority ?? false}
+              path="targets.ip_priority"
+              onChange={(checked: boolean) =>
+                onChange("targets.ip_priority", checked)
+              }
+              aiTopic="targets.ip_priority"
+            />
+          </Box>
+        )}
       </Box>
 
       {partialCatchAll && (

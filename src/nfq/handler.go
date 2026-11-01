@@ -151,7 +151,7 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 		return w.handleECHOnlyPacket(vc, pkt, cfg)
 	}
 
-	matched, st := matcher.MatchIPWithSource(pkt.dst, pkt.srcMac, w.blockScope(vc, pkt, matcher))
+	matched, st, stPrefix := matcher.MatchIPWithSourceDetail(pkt.dst, pkt.srcMac, w.blockScope(vc, pkt, matcher))
 	var set *config.SetConfig
 	if matched {
 		set = st
@@ -160,11 +160,11 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 	switch pkt.proto {
 	case 6:
 		if len(pkt.raw) >= pkt.ihl+TCPHeaderMinLen {
-			return w.handleTCPPacket(vc, pkt, cfg, matcher, matched, set, st)
+			return w.handleTCPPacket(vc, pkt, cfg, matcher, matched, set, st, stPrefix)
 		}
 	case 17:
 		if len(pkt.raw) >= pkt.ihl+UDPHeaderLen {
-			return w.handleUDPPacket(vc, pkt, cfg, matcher, matched, set, st)
+			return w.handleUDPPacket(vc, pkt, cfg, matcher, matched, set, st, stPrefix)
 		}
 	}
 
@@ -310,23 +310,67 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 	return p, true
 }
 
-func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, ipVersion uint8, dport uint16, payload []byte, seq uint32, keep sni.SetFilter) (*config.SetConfig, string) {
+type addressHold struct {
+	set    *config.SetConfig
+	prefix int
+}
+
+func (h addressHold) on() bool {
+	return h.set != nil && h.prefix > 0 && h.set.IPPriorityApplies()
+}
+
+func (h addressHold) contests(name *config.SetConfig) bool {
+	return name != nil && h.on() && name.Id != h.set.Id
+}
+
+func (h addressHold) fits(ipVersion uint8) bool {
+	return h.set.MatchesIPVersion(ipVersion)
+}
+
+func (h addressHold) outranks(matcher *sni.SuffixSet, name *config.SetConfig, srcMac string) bool {
+	return h.contests(name) && matcher.AddressHolds(h.set, h.prefix, name, srcMac)
+}
+
+func (h addressHold) against(matcher *sni.SuffixSet, name *config.SetConfig, srcMac string, ipVersion uint8) bool {
+	return h.outranks(matcher, name, srcMac) && h.fits(ipVersion)
+}
+
+func (h addressHold) keeps(set *config.SetConfig) bool {
+	return set != nil && h.on() && set.Id == h.set.Id
+}
+
+func (h addressHold) yieldsTo(cfg *config.Config, matcher *sni.SuffixSet, escSet *config.SetConfig, srcMac string) bool {
+	return escalationReaches(cfg, h.set, escSet.Id) || !h.outranks(matcher, escSet, srcMac)
+}
+
+func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, ipVersion uint8, dport uint16, payload []byte, seq uint32, keep sni.SetFilter, hold addressHold) (*config.SetConfig, string, bool) {
 	decision, ok := w.tlsCache.Decision(connKey)
 	if !ok || (startsClientHello(payload) && decision.helloSeq-seq > maxPendingHelloRecord) {
-		return nil, ""
+		return nil, "", false
 	}
-	set := decision.set
+	set, held := decision.set, decision.heldBy != ""
 	if decision.decidedBy != matcher || decision.decidedMac != srcMac {
-		set = nil
-		if matched, named := matcher.MatchSNIWithSourceTLS(decision.host, srcMac, decision.tlsVersion, ipVersion, keep); matched && named.MatchesTCPDPort(dport) {
-			set = named
+		stillHeld := decision.heldBy != "" && hold.on() && decision.heldBy == hold.set.Id && hold.set.MatchesIPVersion(ipVersion)
+		set, held = nil, false
+		var named *config.SetConfig
+		if matched, candidate := matcher.MatchSNIWithSourceTLS(decision.host, srcMac, decision.tlsVersion, ipVersion, keep); matched && candidate.MatchesTCPDPort(dport) {
+			named = candidate
 		}
-		w.tlsCache.Decide(connKey, decision.gen, matcher, srcMac, set)
+		switch {
+		case stillHeld && (named == nil || hold.outranks(matcher, named, srcMac)):
+			set, held = hold.set, true
+		case named != nil:
+			set = named
+			if hold.against(matcher, named, srcMac, ipVersion) {
+				set, held = hold.set, true
+			}
+		}
+		w.tlsCache.DecideHeld(connKey, decision.gen, matcher, srcMac, set, held)
 	}
 	if set == nil {
-		return nil, ""
+		return nil, "", false
 	}
-	return set, decision.host
+	return set, decision.host, held && hold.keeps(set)
 }
 
 func fragmentsOrDesyncs(set *config.SetConfig) bool {
@@ -337,7 +381,7 @@ func duplicatesPackets(set *config.SetConfig) bool {
 	return set.TCP.Duplicate.Enabled && set.TCP.Duplicate.Count > 0
 }
 
-func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, matcher *sni.SuffixSet, matched bool, set *config.SetConfig, st *config.SetConfig) int {
+func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, matcher *sni.SuffixSet, matched bool, set *config.SetConfig, st *config.SetConfig, stPrefix int) int {
 	tcp := pkt.raw[pkt.ihl:]
 	if len(tcp) < TCPHeaderMinLen {
 		return vc.accept()
@@ -367,6 +411,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	addressMatched := st != nil
+	hold := addressHold{set: st, prefix: stPrefix}
 
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 	if cfg.IsTCPPort(dport) && tcp[13]&0x12 == 0x02 {
@@ -375,8 +420,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	var connSet *config.SetConfig
 	connHost := ""
+	connHeld := false
 	if cfg.IsTCPPort(dport) && tcp[13]&0x02 == 0 {
-		connSet, connHost = w.connectionSet(matcher, connKey, pkt.srcMac, pkt.ver, dport, payload, binary.BigEndian.Uint32(tcp[4:8]), keep)
+		connSet, connHost, connHeld = w.connectionSet(matcher, connKey, pkt.srcMac, pkt.ver, dport, payload, binary.BigEndian.Uint32(tcp[4:8]), keep, hold)
 	}
 
 	matchedHint := false
@@ -397,14 +443,23 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	matchedLearned := false
 	learnedHost := ""
+	heldLearned := false
+	var learnedRival *config.SetConfig
 	if !matchedHint {
 		if mLearned, learnedSet, learnedDomain := matcher.MatchLearnedIPWithSource(pkt.dst, pkt.srcMac, keep); mLearned {
 			if learnedSet.MatchesTCPDPort(dport) {
-				matched = true
-				set = learnedSet
-				st = learnedSet
-				matchedLearned = true
-				learnedHost = learnedDomain
+				if hold.contests(learnedSet) && (connHeld || hold.outranks(matcher, learnedSet, pkt.srcMac)) {
+					learnedRival = learnedSet
+				}
+				if learnedRival != nil && hold.fits(pkt.ver) {
+					heldLearned = true
+				} else {
+					matched = true
+					set = learnedSet
+					st = learnedSet
+					matchedLearned = true
+					learnedHost = learnedDomain
+				}
 			}
 		}
 	}
@@ -436,11 +491,11 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	if earlyHost == "" {
 		earlyHost = learnedHost
 	}
-	if earlyHost == "" && matchedConn {
+	if connHeld || (earlyHost == "" && matchedConn) {
 		earlyHost = connHost
 	}
 	if matched && earlyHost != "" && cfg.IsTCPPort(dport) {
-		if escSet := w.escalatedSetFor(cfg, set, earlyHost, pkt.srcMac, keep); escSet != nil && escSet != set {
+		if escSet := w.escalatedSetFor(cfg, set, earlyHost, pkt.srcMac, keep); escSet != nil && escSet != set && (!connHeld || !hold.keeps(set) || hold.yieldsTo(cfg, matcher, escSet, pkt.srcMac)) {
 			log.Tracef("escalation hit for %s before the ClientHello: %s -> %s", earlyHost, set.Name, escSet.Name)
 			set = escSet
 			if st != nil {
@@ -555,6 +610,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	var tlsVersion uint16
 	matchedIP := st != nil
 	matchedSNI := false
+	heldHello := false
 	ipTarget := ""
 	sniTarget := ""
 	classifyReason := ""
@@ -614,17 +670,34 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			var decided *config.SetConfig
 			if mSNI, stSNI := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, tlsVersion, pkt.ver, keep); mSNI {
 				if stSNI.MatchesTCPDPort(dport) {
-					decided = stSNI
-					matchedSNI = true
-					matched = true
-					set = stSNI
-					matcher.LearnIPToDomain(pkt.dst, host, stSNI)
-					if vc.scope.learnsTLS(host, tlsVersion, pkt.ver) {
-						registerLearnedRoute(cfg, stSNI, pkt.dst, host)
+					if hold.against(matcher, stSNI, pkt.srcMac, pkt.ver) {
+						log.Tracef("ip priority: %s keeps %s:%d, the ClientHello for %s does not move it to %s", hold.set.Name, pkt.dstStr, dport, host, stSNI.Name)
+						heldHello = true
+					} else {
+						decided = stSNI
+						matchedSNI = true
+						matched = true
+						set = stSNI
+						matcher.LearnIPToDomain(pkt.dst, host, stSNI)
+						if vc.scope.learnsTLS(host, tlsVersion, pkt.ver) {
+							registerLearnedRoute(cfg, stSNI, pkt.dst, host)
+						}
 					}
 				}
 			}
-			w.tlsCache.Decide(connKey, helloGen, matcher, pkt.srcMac, decided)
+			if !matchedSNI && !heldHello && learnedRival != nil && hold.fits(pkt.ver) {
+				heldHello = true
+			}
+			if heldHello {
+				decided = hold.set
+				matched = true
+				set = hold.set
+				st = hold.set
+				matchedIP = true
+				matchedLearned = false
+				learnedHost = ""
+			}
+			w.tlsCache.DecideHeld(connKey, helloGen, matcher, pkt.srcMac, decided, heldHello)
 		}
 
 		if matched && !matchedSNI && set != nil && !set.MatchesTLSVersion(tlsVersion) {
@@ -685,8 +758,10 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		ipTarget = st.Name
 	}
 
+	addressHolds := (heldHello || heldLearned || connHeld) && !matchedSNI
+
 	if matched && host != "" && cfg.IsTCPPort(dport) {
-		if escSet := w.escalatedSetFor(cfg, set, host, pkt.srcMac, keep); escSet != nil {
+		if escSet := w.escalatedSetFor(cfg, set, host, pkt.srcMac, keep); escSet != nil && (!addressHolds || hold.yieldsTo(cfg, matcher, escSet, pkt.srcMac)) {
 			if escSet != set {
 				log.Tracef("escalation hit for %s: %s -> %s", host, set.Name, escSet.Name)
 				set = escSet
@@ -844,7 +919,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			}
 		}
 
-		if !foreignEgress && (set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active()) {
+		if !foreignEgress && (set.TCP.Incoming.Mode != config.ConfigOff || set.TCP.RSTProtection.Enabled || set.Escalate.Active() || addressHolds) {
 			w.connTracker.RegisterOutgoing(connKey, set)
 			if isAck && !isSyn && !isRst && cfg.IsTCPPort(dport) && set.TCP.RSTProtection.Enabled {
 				w.connTracker.MarkEstablished(connKey)
@@ -924,7 +999,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	return vc.accept()
 }
 
-func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, matcher *sni.SuffixSet, matched bool, set *config.SetConfig, st *config.SetConfig) int {
+func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, matcher *sni.SuffixSet, matched bool, set *config.SetConfig, st *config.SetConfig, stPrefix int) int {
 	udp := pkt.raw[pkt.ihl:]
 	if len(udp) < UDPHeaderLen {
 		return vc.accept()
@@ -964,7 +1039,9 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		set = nil
 	}
 
+	var hold addressHold
 	if matchedIP {
+		hold = addressHold{set: st, prefix: stPrefix}
 		ipTarget = st.Name
 	}
 
@@ -1007,25 +1084,32 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	flowKnown := false
+	flowHost := ""
 	if host == "" && (isQUIC || mayBelongToAQUICFlow(payload, isVoiceMedia)) {
-		_, flowKnown = w.quicFlows.Lookup(connKey, payload)
+		flowHost, flowKnown = w.quicFlows.Lookup(connKey, payload)
 	}
 	quicTraffic := isQUIC || flowKnown
 	if host == "" && !quicTraffic {
 		host = learnedHost
 	}
 
+	quicHeld := false
 	if host != "" {
 		if mSNI, sniSet := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, 0x0304, pkt.ver, keep); mSNI {
 			if sniSet.MatchesUDPDPort(dport) {
-				matchedQUIC = true
-				set = sniSet
-				sniTarget = sniSet.Name
-				matcher.LearnIPToDomain(pkt.dst, host, sniSet)
-				if vc.scope.learnsTLS(host, 0x0304, pkt.ver) {
-					registerLearnedRoute(cfg, sniSet, pkt.dst, host)
+				if hold.against(matcher, sniSet, pkt.srcMac, pkt.ver) {
+					log.Tracef("ip priority: %s keeps %s:%d, the QUIC Initial for %s does not move it to %s", hold.set.Name, pkt.dstStr, dport, host, sniSet.Name)
+					quicHeld = true
+				} else {
+					matchedQUIC = true
+					set = sniSet
+					sniTarget = sniSet.Name
+					matcher.LearnIPToDomain(pkt.dst, host, sniSet)
+					if vc.scope.learnsTLS(host, 0x0304, pkt.ver) {
+						registerLearnedRoute(cfg, sniSet, pkt.dst, host)
+					}
+					w.storeHostHint(pkt.srcStr, pkt.dstStr, sniSet, host, "quic", 0x0304, pkt.ver)
 				}
-				w.storeHostHint(pkt.srcStr, pkt.dstStr, sniSet, host, "quic", 0x0304, pkt.ver)
 			}
 		}
 	}
@@ -1077,6 +1161,20 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			sniTarget = flowSet.Name
 			ipTarget = ""
 		}
+	} else if host == "" && flowHost != "" {
+		if flowSet := w.quicFlowYieldedBy(cfg, matcher, hold, flowHost, pkt, dport, keep); flowSet != nil {
+			matchedFlow = true
+			matchedIP = false
+			matchedQUIC = false
+			set = flowSet
+			host = flowHost
+			sniTarget = flowSet.Name
+			ipTarget = ""
+		} else if escSet := w.heldQUICFlowEscalation(cfg, matcher, hold, flowHost, pkt, dport, keep); escSet != nil && hold.keeps(set) {
+			log.Tracef("UDP escalation hit for the held QUIC flow of %s: %s -> %s", flowHost, set.Name, escSet.Name)
+			set = escSet
+			ipTarget = escSet.Name
+		}
 	}
 
 	matchedL7 := false
@@ -1111,8 +1209,10 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		udpTLS = "1.3"
 	}
 
+	addressHolds := quicHeld && hold.keeps(set)
+
 	if shouldHandle && set != nil && host != "" && !matchedFlow && !matchedL7 {
-		if escSet := w.escalatedSetFor(cfg, set, host, pkt.srcMac, keep); escSet != nil {
+		if escSet := w.escalatedSetFor(cfg, set, host, pkt.srcMac, keep); escSet != nil && (!addressHolds || hold.yieldsTo(cfg, matcher, escSet, pkt.srcMac)) {
 			if escSet != set {
 				log.Tracef("UDP escalation hit for %s: %s -> %s", host, set.Name, escSet.Name)
 				set = escSet

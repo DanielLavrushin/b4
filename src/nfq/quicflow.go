@@ -256,6 +256,35 @@ func dropsQUICFlow(set *config.SetConfig) bool {
 	return set.UDP.Mode == config.UDPModeDrop || set.UDP.Mode == config.UDPModeReject
 }
 
+func (w *Worker) quicFlowYieldedBy(cfg *config.Config, matcher *sni.SuffixSet, hold addressHold, host string, pkt *pktInfo, dport uint16, keep sni.SetFilter) *config.SetConfig {
+	if host == "" || !hold.on() || hold.fits(pkt.ver) {
+		return nil
+	}
+	matched, set := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, 0x0304, pkt.ver, keep)
+	if !matched || !set.MatchesUDPDPort(dport) || !hold.outranks(matcher, set, pkt.srcMac) {
+		return nil
+	}
+	if escSet := w.escalatedSetFor(cfg, set, host, pkt.srcMac, keep); escSet != nil {
+		set = escSet
+	}
+	return set
+}
+
+func (w *Worker) heldQUICFlowEscalation(cfg *config.Config, matcher *sni.SuffixSet, hold addressHold, host string, pkt *pktInfo, dport uint16, keep sni.SetFilter) *config.SetConfig {
+	if host == "" || !hold.on() || !hold.fits(pkt.ver) {
+		return nil
+	}
+	matched, named := matcher.MatchSNIWithSourceTLS(host, pkt.srcMac, 0x0304, pkt.ver, keep)
+	if !matched || !named.MatchesUDPDPort(dport) || !hold.outranks(matcher, named, pkt.srcMac) {
+		return nil
+	}
+	escSet := w.escalatedSetFor(cfg, hold.set, host, pkt.srcMac, keep)
+	if escSet == nil || escSet.Id == hold.set.Id || !hold.yieldsTo(cfg, matcher, escSet, pkt.srcMac) {
+		return nil
+	}
+	return escSet
+}
+
 func (w *Worker) quicFlowSet(cfg *config.Config, matcher *sni.SuffixSet, connKey string, pkt *pktInfo, dport uint16, payload []byte, keep sni.SetFilter) (*config.SetConfig, string) {
 	host, _ := w.quicFlows.Lookup(connKey, payload)
 	if host == "" {

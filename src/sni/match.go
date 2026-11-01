@@ -58,6 +58,10 @@ type SuffixSet struct {
 	regexCacheSize int32
 
 	scopesBlock bool
+
+	setIndex      map[string]int
+	scopedSet     map[string]bool
+	anyIPPriority bool
 }
 
 type SetFilter func(*config.SetConfig) bool
@@ -154,6 +158,9 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 		learnedIPCacheLRU:   list.New(),
 		learnedIPCacheLimit: 5000,
 		learnedIPTTL:        10 * time.Minute,
+
+		setIndex:  make(map[string]int, len(sets)),
+		scopedSet: make(map[string]bool, len(sets)),
 	}
 
 	seenRegexes := make(map[setPattern]bool)
@@ -164,6 +171,13 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 	for setOrder, set := range sets {
 		if !set.Enabled {
 			continue
+		}
+		if _, seen := s.setIndex[set.Id]; !seen && set.Id != "" {
+			s.setIndex[set.Id] = setOrder
+			s.scopedSet[set.Id] = len(set.Targets.SourceDevices) > 0
+		}
+		if set.IPPriorityApplies() && len(set.Targets.IpsToMatch) > 0 {
+			s.anyIPPriority = true
 		}
 		if set.BlockRoutingScoped() {
 			s.scopesBlock = true

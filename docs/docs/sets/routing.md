@@ -41,7 +41,7 @@ The sub-tab sends the set's traffic through a network interface or a SOCKS5 prox
 | **Source Interfaces** | Limits the set to traffic that arrives on the selected interfaces, such as the LAN bridge. See [Which interface is which](../guides/interfaces.md). | None, every interface |
 | **Resolved IP TTL (seconds)** | How long an address learned for the set's domains stays in the set. IP targets stay as long as the set lists them. | `3600` |
 
-Routing matches destination addresses: the set's IP, CIDR, GeoIP and ASN targets, and the addresses b4 learns for its domains. A set with no domain, IP or ASN target routes nothing, and the tab warns about it. The exception is block routing on a set that [handles only calls](./udp.md#protocol-selection): it blocks the calls the set takes. [Source Devices](./targets.md#source-devices) only limit whose traffic the set takes: routing everything a device sends also needs **Match any IP address** under **Targets > Bypass IPs**.
+Routing matches destination addresses: the set's IP, CIDR, GeoIP and ASN targets, and the addresses b4 learns for its domains. A set higher in the list with [IP priority](./targets.md#ip-addresses) on can keep its addresses out of what this set learns. A set with no domain, IP or ASN target routes nothing, and the tab warns about it. The exception is block routing on a set that [handles only calls](./udp.md#protocol-selection): it blocks the calls the set takes. [Source Devices](./targets.md#source-devices) only limit whose traffic the set takes: routing everything a device sends also needs **Match any IP address** under **Targets > Bypass IPs**.
 
 ### Network interface {#output-interface}
 
@@ -135,7 +135,7 @@ The value replaces the value of **Set DSCP** under [Settings > Core > Firewall](
 
 ### Which packets carry the value {#dscp-addresses}
 
-The value goes by destination address alone, whatever the protocol and port: the set's IP, CIDR, GeoIP and ASN targets, and the addresses b4 learned for its domains. A CDN address shared by several sites carries the value for all of them. See [Which packets get the value](../internals/dscp.md#dscp-addresses) for overlapping sets.
+The value goes by destination address alone, whatever the protocol and port: the set's IP, CIDR, GeoIP and ASN targets, and the addresses b4 learned for its domains. A set higher in the list with [IP priority](./targets.md#ip-addresses) on can keep its addresses out of what this set learns. A CDN address shared by several sites carries the value for all of them. See [Which packets get the value](../internals/dscp.md#dscp-addresses) for overlapping sets.
 
 ### The first connection {#dscp-first-connection}
 

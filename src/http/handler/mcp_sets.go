@@ -3,12 +3,14 @@ package handler
 import (
 	"context"
 	"fmt"
+	"net"
 	"reflect"
 	"strings"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -158,6 +160,39 @@ func mcpManageSetUnchanged(out mcpManageSetOut, cfg *config.Config, idx int, not
 	return out
 }
 
+func mcpHoldsAgainstANameSet(matcher *sni.SuffixSet, cfg *config.Config, source *config.SetConfig) bool {
+	devices := append([]string{""}, source.Targets.SourceDevices...)
+	for _, s := range cfg.Sets {
+		if !s.Enabled || s.Id == source.Id || len(s.Targets.SNIDomains)+len(s.Targets.GeoSiteCategories) == 0 {
+			continue
+		}
+		for _, mac := range devices {
+			if sni.SetMatchesSource(s, mac) && matcher.AddressHolds(source, 1, s, mac) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func mcpListsHoldableRanges(ips []string) bool {
+	for _, raw := range ips {
+		raw = strings.TrimSpace(raw)
+		if !strings.Contains(raw, "/") {
+			if net.ParseIP(raw) != nil {
+				return true
+			}
+			continue
+		}
+		if _, ipNet, err := net.ParseCIDR(raw); err == nil {
+			if ones, _ := ipNet.Mask.Size(); ones > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func mcpEscalationsPointingAt(cfg *config.Config, id string) []string {
 	var from []string
 	for _, s := range cfg.Sets {
@@ -195,8 +230,8 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 		out := mcpManageSetOut{Action: action}
 
 		var focusID string
-		var routingDropped, dscpSwitchedOff bool
-		var copiedFrom string
+		var routingDropped, dscpSwitchedOff, ipPrioritySwitchedOff, sourceStopsHolding bool
+		var copiedFrom, copiedFromID string
 		var copiedDomains, copiedIPs, copiedASNs int
 
 		switch action {
@@ -221,6 +256,8 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 				fresh.Routing.Upstream.Password = ""
 				fresh.DNS.Pins = nil
 				fresh.Discovery.Watchdog = false
+				ipPrioritySwitchedOff = fresh.IPPriorityApplies()
+				fresh.Targets.IPPriority = false
 				routingDropped = fresh.Routing.Enabled
 				fresh.Routing = config.RoutingConfig{}
 				if src.DSCP.Enabled && oldCfg.DSCPRefusal(src) != "" {
@@ -228,7 +265,7 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 					dscpSwitchedOff = true
 				}
 				api.initializeSetDefaults(&fresh)
-				copiedFrom = src.Name
+				copiedFrom, copiedFromID = src.Name, src.Id
 				copiedDomains = len(fresh.Targets.SNIDomains)
 				copiedIPs = len(fresh.Targets.IPs)
 				copiedASNs = len(fresh.Targets.ASNs)
@@ -258,11 +295,21 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 			api.initializeSetDefaults(&fresh)
 
 			newCfg.Sets = append(newCfg.Sets, &fresh)
-			if _, err := mcpPlaceSet(newCfg, len(newCfg.Sets)-1, in.Position); err != nil {
+			at, err := mcpPlaceSet(newCfg, len(newCfg.Sets)-1, in.Position)
+			if err != nil {
 				return nil, mcpManageSetOut{}, err
 			}
 			api.loadTargetsForSetCached(&fresh)
 			focusID = fresh.Id
+			ipPrioritySwitchedOff = ipPrioritySwitchedOff && mcpListsHoldableRanges(fresh.Targets.IpsToMatch)
+			if ipPrioritySwitchedOff && fresh.Enabled {
+				for i, s := range newCfg.Sets {
+					if s.Id == copiedFromID {
+						sourceStopsHolding = at < i && mcpHoldsAgainstANameSet(api.engineMatcher(), oldCfg, s)
+						break
+					}
+				}
+			}
 
 		case "move":
 			idx := mcpFindSetIndex(newCfg, strings.TrimSpace(in.Set))
@@ -422,6 +469,13 @@ func (api *API) addMCPSetTools(srv *mcp.Server) {
 				}
 				if dscpSwitchedOff {
 					out.Note += fmt.Sprintf(". Its own DSCP value was copied switched off: the value did not apply to %q, and the copy could apply it more widely", copiedFrom)
+				}
+				if ipPrioritySwitchedOff {
+					out.Note += ". targets.ip_priority was copied switched off: with it on, the copy would keep connections to these addresses from the sets below it that match them by name"
+				}
+				if sourceStopsHolding {
+					out.Note += fmt.Sprintf(". Placed above %q, the copy wins these addresses' matches from it, so %q no longer keeps them: their connections go to the sets that match them by name until the copy moves below it",
+						copiedFrom, copiedFrom)
 				}
 			}
 		}

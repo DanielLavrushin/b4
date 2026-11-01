@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -343,6 +344,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	tables.DNSQueryCopyPlacedFunc = pool.SetDNSQueryCopyFamilies
 	tables.QueueDirectionExactFunc = pool.SetQueueDirectionExact
 	tables.UDPDropWritersFunc = pool.SetUDPDropWriters
+	tables.LearnedAddressKeepFunc = learnedAddressKeeper(pool)
 	nfq.UDPDropFlushFunc = tables.FlushUDPDropSets
 	wireDashboard(mc, dashboardSources{
 		config:    cfgPtr.Load,
@@ -696,6 +698,12 @@ const (
 	shutdownHardLimit = 15 * time.Second
 	tunTeardownWait   = 3 * time.Second
 )
+
+func learnedAddressKeeper(pool *nfq.Pool) func(cfg *config.Config, set *config.SetConfig, ip net.IP) bool {
+	return func(cfg *config.Config, set *config.SetConfig, ip net.IP) bool {
+		return pool.GetMatcher().KeepsLearned(cfg, set, ip)
+	}
+}
 
 func exposeListeningOnly(ports []config.ExposedPort, blocked []config.ExposeBlock, listening func(string) bool) ([]config.ExposedPort, []config.ExposeBlock) {
 	var kept []config.ExposedPort
