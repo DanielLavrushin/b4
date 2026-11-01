@@ -1,5 +1,10 @@
 # B4 - Bye Bye Big Bro
 
+## [1.90.0] - 2026-11-01
+
+- FIXED: **Without a login set for the web interface, any website opened on a device in the network could watch b4's live log and the sites each device visits** - b4 sent the live data of the Logs, Traffic, Dashboard and Discovery pages to a page of any site. Browsers do not keep other sites away from this data on their own.
+- CHANGED: **Without a login set for the web interface, b4's live data reaches only pages at the same address and port as b4** - a dashboard on another site, such as a Home Assistant panel, needs a login set for the web interface and must pass its token. A reverse proxy in front of b4 must pass the original Host header and X-Forwarded-Proto, or the Logs and Traffic pages stay empty.
+
 ## [1.89.0] - 2026-10-30
 
 - ADDED: **Connections to an address the provider blocks for all sites on it fail at once instead of hanging** - sets with IP Block Detection and Cache Blocked IPs on ban such an address for 24 hours, or for 7 days when it is caught again. DNS answers that list other addresses leave it out, and the dashboard's Banned addresses panel lists the bans. Bans are on by default, and Remember blocked addresses under Settings, Core, Packet Engine turns them off. The saved ban list with re-tests is inspired by [Ladon](https://github.com/belotserkovtsev/Ladon).
