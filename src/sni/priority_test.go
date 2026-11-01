@@ -266,6 +266,10 @@ func TestKeepsLearned(t *testing.T) {
 	ggcMovedASNs.Targets.ASNs = []string{"13335"}
 	ggcMovedGeoIP := copyOf(ggcListed)
 	ggcMovedGeoIP.Targets.GeoIpCategories = []string{"de"}
+	ggcByASN := addressSet("ggc", true, priorityRange)
+	ggcByASN.Targets.ASNs = []string{"15169"}
+	ggcByASNRefreshed := copyOf(ggcByASN)
+	ggcByASNRefreshed.Targets.IpsToMatch = []string{"79.133.77.32/27"}
 
 	cases := []fixture{
 		{"a set above holds the address for everyone", []*config.SetConfig{ggc, gw}, nil, "gw", addr, false, nil},
@@ -303,6 +307,7 @@ func TestKeepsLearned(t *testing.T) {
 		{"the holder's ASN targets changed since the matcher was built", []*config.SetConfig{ggcListed, gw}, []*config.SetConfig{ggcMovedASNs, gw}, "gw", addr, true, nil},
 		{"the holder's GeoIP targets changed since the matcher was built", []*config.SetConfig{ggcListed, gw}, []*config.SetConfig{ggcMovedGeoIP, gw}, "gw", addr, true, nil},
 		{"the holder's address targets are the same in both copies", []*config.SetConfig{ggcListed, gw}, []*config.SetConfig{copyOf(ggcListed), gw}, "gw", addr, false, nil},
+		{"the holder's ASN prefixes were refreshed since the matcher was built", []*config.SetConfig{ggcByASN, gw}, []*config.SetConfig{ggcByASNRefreshed, gw}, "gw", addr, true, nil},
 	}
 	for _, c := range cases {
 		ss := NewSuffixSet(c.built)

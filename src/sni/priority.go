@@ -120,9 +120,13 @@ func (s *SuffixSet) KeepsLearned(cfg *config.Config, set *config.SetConfig, ip n
 }
 
 func sameAddressTargets(a, b *config.SetConfig) bool {
+	if a == b {
+		return true
+	}
 	return slices.Equal(a.Targets.IPs, b.Targets.IPs) &&
 		slices.Equal(a.Targets.ASNs, b.Targets.ASNs) &&
-		slices.Equal(a.Targets.GeoIpCategories, b.Targets.GeoIpCategories)
+		slices.Equal(a.Targets.GeoIpCategories, b.Targets.GeoIpCategories) &&
+		slices.Equal(a.Targets.IpsToMatch, b.Targets.IpsToMatch)
 }
 
 const escalationChainHops = 8
