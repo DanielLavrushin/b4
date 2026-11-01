@@ -59,6 +59,7 @@ type SuffixSet struct {
 
 	scopesBlock bool
 
+	nameSets      []*config.SetConfig
 	setIndex      map[string]int
 	scopedSet     map[string]bool
 	anyIPPriority bool
@@ -185,6 +186,7 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 		if set.BlockRoutingScoped() {
 			s.scopesBlock = true
 		}
+		named := false
 		for _, entry := range set.Targets.DomainsToMatch {
 			d, isRegex := ParseDomainEntry(entry)
 			if d == "" {
@@ -208,10 +210,12 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 				}
 				if idx >= 0 {
 					s.regexes = append(s.regexes, &regexWithSet{regex: patterns[idx], set: set, pattern: idx})
+					named = true
 				}
 				continue
 			}
 
+			named = true
 			prev, exists := s.sets[d]
 			if !exists {
 				s.sets[d] = set
@@ -220,6 +224,9 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 			} else {
 				s.multiSets[d] = []*config.SetConfig{prev, set}
 			}
+		}
+		if named {
+			s.nameSets = append(s.nameSets, set)
 		}
 
 		for _, ipStr := range set.Targets.IpsToMatch {
@@ -268,6 +275,31 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 
 func (s *SuffixSet) ScopesBlockSets() bool {
 	return s != nil && s.scopesBlock
+}
+
+func (s *SuffixSet) KeepNameSets(keep SetFilter) {
+	if s == nil {
+		return
+	}
+	kept := make([]*config.SetConfig, 0, len(s.nameSets))
+	for _, set := range s.nameSets {
+		if keep.Keeps(set) {
+			kept = append(kept, set)
+		}
+	}
+	s.nameSets = kept
+}
+
+func (s *SuffixSet) NameSetCoversTCPPort(port uint16) bool {
+	if s == nil {
+		return false
+	}
+	for _, set := range s.nameSets {
+		if set.MatchesTCPDPort(port) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SuffixSet) ScopedBlockSetWins(host, srcMAC string, tlsVersion uint16, ipVersion uint8) bool {
