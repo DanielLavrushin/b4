@@ -9,6 +9,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/http/handler"
+	"github.com/gorilla/websocket"
 )
 
 func cors(cfgPtr *atomic.Pointer[config.Config], next http.Handler) http.Handler {
@@ -26,7 +27,7 @@ func cors(cfgPtr *atomic.Pointer[config.Config], next http.Handler) http.Handler
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if foreign && r.Method != http.MethodGet && r.Method != http.MethodHead && strings.HasPrefix(r.URL.Path, "/api/") {
+		if foreign && strings.HasPrefix(r.URL.Path, "/api/") && (websocket.IsWebSocketUpgrade(r) || (r.Method != http.MethodGet && r.Method != http.MethodHead)) {
 			writeAuthJSON(w, http.StatusForbidden, map[string]string{"error": "cross-site requests are refused while the web server has no credentials"})
 			return
 		}

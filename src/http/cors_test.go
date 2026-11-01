@@ -212,3 +212,59 @@ func TestCorsRefusesCrossSiteWritesWithoutCredentials(t *testing.T) {
 		t.Fatalf("with credentials configured the bearer token is the guard and cross-origin clients keep their grant, got %d %q", rec.Code, rec.Header().Get("Access-Control-Allow-Origin"))
 	}
 }
+
+func TestCorsRefusesCrossSiteWebSocketsWithoutCredentials(t *testing.T) {
+	served := 0
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		served++
+		w.WriteHeader(http.StatusOK)
+	})
+	upgrade := func(guarded http.Handler, host, origin, fetchSite, connection string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "http://"+host+"/api/ws/connections", nil)
+		req.Header.Set("Connection", connection)
+		req.Header.Set("Upgrade", "websocket")
+		req.Header.Set("Sec-WebSocket-Version", "13")
+		req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		if fetchSite != "" {
+			req.Header.Set("Sec-Fetch-Site", fetchSite)
+		}
+		rec := httptest.NewRecorder()
+		guarded.ServeHTTP(rec, req)
+		return rec
+	}
+
+	open := cors(corsCfg(""), next)
+	for _, tc := range []struct {
+		name, host, origin, fetchSite, connection string
+		refused                                   bool
+	}{
+		{"a foreign page", "192.168.1.1:7000", "http://evil.example", "", "Upgrade", true},
+		{"a foreign page over https", "192.168.1.1:7000", "https://evil.example", "cross-site", "Upgrade", true},
+		{"a sandboxed frame", "192.168.1.1:7000", "null", "", "Upgrade", true},
+		{"another port on the router", "192.168.1.1:7000", "http://192.168.1.1:5173", "", "Upgrade", true},
+		{"a sibling site", "b4.router.example:7000", "http://addon.router.example:7000", "same-site", "Upgrade", true},
+		{"a foreign page with a comma-list Connection header", "192.168.1.1:7000", "http://evil.example", "", "keep-alive, Upgrade", true},
+		{"the interface itself", "192.168.1.1:7000", "http://192.168.1.1:7000", "", "Upgrade", false},
+		{"an upgrade attested same-origin by Sec-Fetch-Site, which Firefox sends and Chrome does not", "127.0.0.1:17070", "http://localhost:5173", "same-origin", "Upgrade", false},
+		{"an unattested upgrade whose Origin differs from Host, as Chrome sends through a proxy", "127.0.0.1:17070", "http://localhost:5173", "", "Upgrade", true},
+		{"a client that is not a browser", "192.168.1.1:7000", "", "", "Upgrade", false},
+	} {
+		served = 0
+		rec := upgrade(open, tc.host, tc.origin, tc.fetchSite, tc.connection)
+		if refused := rec.Code == http.StatusForbidden && served == 0; refused != tc.refused {
+			t.Errorf("%s: got %d served=%d, want refused=%v", tc.name, rec.Code, served, tc.refused)
+		}
+		if tc.refused && rec.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Errorf("%s: a refused upgrade must not carry a CORS grant", tc.name)
+		}
+	}
+
+	served = 0
+	rec := upgrade(cors(corsCfg("admin"), next), "192.168.1.1:7000", "http://tool.example", "cross-site", "Upgrade")
+	if rec.Code != http.StatusOK || served != 1 {
+		t.Fatalf("with credentials configured the token check guards the stream, so the upgrade must reach it, got %d served=%d", rec.Code, served)
+	}
+}
