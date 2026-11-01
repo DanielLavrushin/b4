@@ -46,6 +46,7 @@ For DNS, IPv4 and IPv6 lookups count separately, and an empty answer to an IPv6 
 
 - **The switch is per site.** It applies to the host name that failed. Other sites on the same server stay on the original set.
 - **The backup takes over the whole site.** Lookups use its pinned addresses, DoH server or forwarding, connections use its bypass strategy, and its routing applies. b4 writes the addresses it knows for the site into that routing.
+- **A set with IP priority keeps its connections.** A connection that a set with [IP priority](./targets.md#ip-addresses) keeps follows an escalation only to a backup on that set's own chain or ranked above that set. Between sets without source devices, a backup below such a set and off its chain never learns that set's addresses for its routing or [DSCP value](./routing.md#dscp). Backups of the sets ranked above such a set are best placed above it or on its chain, when they route traffic or have a DSCP value. A backup placed there also takes the connections such a set keeps when their site escalates to it. [IP priority](../internals/matching.md#ip-priority) has the details.
 - **The failed request is lost, the next one works.** For the DNS trigger, the lookup that trips the switch is already answered by the backup set.
 - **The site comes back** after **Remember switch for**. **Clear** on the dashboard's [Active Escalations](../dashboard.md#active-escalations) panel sends every site back at once and forgets the counted resets and DNS failures. **Reset counters** on the dashboard leaves the switches as they are.
 

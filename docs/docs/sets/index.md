@@ -24,6 +24,8 @@ Guides that start here: [Unblocking a site](../guides/unblock.md), [Adding sites
 
 The handle at the top left of a card drags the set to another position. When several sets could match the same traffic, b4 picks the most specific match, not the first set in the list, and prefers a set limited to source devices. The order decides only between matches that are equally specific. Routing is the exception: the length of the range plays no part there. Sets limited to selected devices or source interfaces come first, and among sets of the same kind the one higher in the list wins.
 
+The order also matters for a set with [IP priority](./targets.md#ip-addresses) on. Connections to its addresses stay with it even when a set lower in the list matches the domain.
+
 [How sets match traffic](../internals/matching.md) describes the full order of checks.
 
 ## Set card
@@ -43,7 +45,7 @@ The menu at the top right of a card holds:
 | Item | What it does |
 | --- | --- |
 | **Edit** | Opens the set in the editor. |
-| **Duplicate** | Creates a copy of the set. |
+| **Duplicate** | Creates a copy of the set right after it. The copy starts with **IP priority** off. |
 | **Compare** | Opens **Compare Sets** with this set and another side by side. **Differences only** hides the fields that match. |
 | **Find a strategy** | Opens [Discovery](../discovery.md) for the set. Not shown for a set that routes its traffic. |
 | **Delete** | Deletes the set after a confirmation. |
@@ -72,6 +74,7 @@ The JSON is for moving a set between one's own routers. It leaves out what only 
 
 - the source devices, and with them the set's own [DSCP value](./routing.md#dscp);
 - the [Escalation](./escalation.md) settings, which point to other sets;
+- the [IP priority](./targets.md#ip-addresses) switch: a set the JSON is imported into keeps its own;
 - the watchdog switch. The [Discovery addresses](./discovery.md) are carried, and the watchdog switch of the set the JSON is imported into stays as it was.
 
 These are set again on the other router. A set can use a payload file that this router does not have. A warning after the import then names the file, and the fake packets use a built-in payload until it is uploaded under **Settings > Payloads**.

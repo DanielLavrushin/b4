@@ -125,12 +125,8 @@ func (n *matchingNames) resolver() *Resolver {
 	return r
 }
 
-func (n *matchingNames) SetForHost(host, srcMAC string, keep sni.SetFilter) *config.SetConfig {
-	return n.resolver().SetForHost(host, srcMAC, keep)
-}
-
-func (n *matchingNames) SetForAddress(dst net.IP, srcMAC string, keep sni.SetFilter) *config.SetConfig {
-	return n.resolver().SetForAddress(dst, srcMAC, keep)
+func (n *matchingNames) PassOnSet(host string, dst net.IP, dport uint16, srcMAC string, applies sni.SetFilter, takes func(set *config.SetConfig, byName bool) bool) (*config.SetConfig, bool) {
+	return n.resolver().PassOnSet(host, dst, dport, srcMAC, applies, takes)
 }
 
 func proxySetFor(id string, domains, ips []string) *config.SetConfig {

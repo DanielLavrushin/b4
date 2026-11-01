@@ -34,6 +34,7 @@ type tlsInfo struct {
 	decidedBy  *sni.SuffixSet
 	decidedMac string
 	set        *config.SetConfig
+	heldBy     string
 }
 
 type tlsInfoCache struct {
@@ -111,6 +112,10 @@ func (c *tlsInfoCache) Decision(connKey string) (tlsInfo, bool) {
 }
 
 func (c *tlsInfoCache) Decide(connKey string, gen uint64, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig) {
+	c.DecideHeld(connKey, gen, matcher, srcMac, set, false)
+}
+
+func (c *tlsInfoCache) DecideHeld(connKey string, gen uint64, matcher *sni.SuffixSet, srcMac string, set *config.SetConfig, held bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -121,6 +126,10 @@ func (c *tlsInfoCache) Decide(connKey string, gen uint64, matcher *sni.SuffixSet
 		info.decidedBy = matcher
 		info.decidedMac = srcMac
 		info.set = set
+		info.heldBy = ""
+		if held && set != nil {
+			info.heldBy = set.Id
+		}
 	}
 }
 
@@ -205,6 +214,7 @@ type destStateTracker struct {
 	dnsFails    map[string]*failEntry
 	watchMu     sync.RWMutex
 	watches     map[string]*helloWatch
+	watchGen    uint64
 	watching    atomic.Int32
 }
 
@@ -265,6 +275,12 @@ func (t *destStateTracker) RecordClientHello(connKey, host string) (int, time.Ti
 	}
 	entry.retransmits++
 	return entry.retransmits, entry.firstSeen
+}
+
+func (t *destStateTracker) ClearClientHellos(connKey string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.conns, connKey)
 }
 
 func (t *destStateTracker) HasRSTSent(connKey string) bool {

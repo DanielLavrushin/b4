@@ -38,6 +38,7 @@ type traceSetTargets struct {
 	SourceDevices   int      `json:"source_devices,omitempty"`
 	SourceExclude   bool     `json:"source_devices_exclude,omitempty"`
 	DomainOnly      bool     `json:"domain_only,omitempty"`
+	IPPriority      bool     `json:"ip_priority,omitempty"`
 	TLSVersion      string   `json:"tls,omitempty"`
 	IPVersion       string   `json:"ip_version,omitempty"`
 }
@@ -140,6 +141,7 @@ func collectTraceSets(cfg *config.Config) []traceSet {
 			Frag:    traceFrag(set.Fragmentation),
 			Faking:  traceFaking(set.Faking),
 		}
+		ts.Targets.IPPriority = set.IPPriorityApplies()
 
 		if set.DNS.Enabled || len(set.DNS.Pins) > 0 || set.DNS.StripECH {
 			ts.DNS = &traceSetDNS{

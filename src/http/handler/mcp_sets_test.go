@@ -3,10 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/sni"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -529,6 +531,154 @@ func TestMCPManageSetDuplicateSwitchesOffARefusedDSCP(t *testing.T) {
 	}
 	if strings.Contains(out.Note, "DSCP") {
 		t.Errorf("nothing about DSCP changed, so the note must not mention it: %q", out.Note)
+	}
+}
+
+func TestMCPManageSetDuplicateStartsWithIPPriorityOff(t *testing.T) {
+	cfg := writableCfg(t)
+	cfg.Sets[0].Targets.IPs = []string{"203.0.113.8/29"}
+	cfg.Sets[0].Targets.IPPriority = true
+	cfg.Sets[1].Targets.IPs = []string{"198.51.100.0/24"}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	t.Cleanup(mcpResetHistory)
+	session, ctx := connectMCP(t, srv)
+
+	byName := func(name string) *config.SetConfig {
+		for _, s := range api.getCfg().Sets {
+			if s.Name == name {
+				return s
+			}
+		}
+		t.Fatalf("no set named %q", name)
+		return nil
+	}
+
+	out := decodeManageSet(t, callManageSet(t, session, ctx, map[string]any{
+		"action": "duplicate", "set": "video", "name": "video copy", "position": "first",
+	}))
+	if byName("video copy").Targets.IPPriority {
+		t.Error("a copy must start with ip_priority off: placed first it would keep the original's addresses from every set below it that matches them by name")
+	}
+	if !byName("video").Targets.IPPriority {
+		t.Error("the original lost its ip_priority")
+	}
+	if !strings.Contains(out.Note, "targets.ip_priority was copied switched off") {
+		t.Errorf("switching the copy's ip_priority off must be reported: %q", out.Note)
+	}
+
+	out = decodeManageSet(t, callManageSet(t, session, ctx, map[string]any{
+		"action": "duplicate", "set": "disabled-set", "name": "plain copy",
+	}))
+	if byName("plain copy").Targets.IPPriority {
+		t.Error("a copy of a set without ip_priority came out with it on")
+	}
+	if strings.Contains(out.Note, "ip_priority") {
+		t.Errorf("the source had ip_priority off, so the note must not mention it: %q", out.Note)
+	}
+}
+
+func TestMCPManageSetDuplicateOfATLSFilteredSetTurnsIPPriorityOffSilently(t *testing.T) {
+	cfg := writableCfg(t)
+	cfg.Sets[0].Targets.IPs = []string{"203.0.113.8/29"}
+	cfg.Sets[0].Targets.IPPriority = true
+	cfg.Sets[0].Targets.TLSVersion = "1.2"
+	srv, api := newMCPTestServerAPI(t, cfg)
+	t.Cleanup(mcpResetHistory)
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeManageSet(t, callManageSet(t, session, ctx, map[string]any{
+		"action": "duplicate", "set": "video", "name": "video copy", "position": "first",
+	}))
+	for _, s := range api.getCfg().Sets {
+		if s.Name == "video copy" && s.Targets.IPPriority {
+			t.Error("a copy must start with ip_priority off")
+		}
+	}
+	if strings.Contains(out.Note, "ip_priority") {
+		t.Errorf("ip_priority has no effect on a set with a TLS version filter, so the copy loses nothing and the note must not mention it: %q", out.Note)
+	}
+}
+
+func TestMCPManageSetDuplicatePlacedAboveAnIPPrioritySetSaysTheSourceStopsKeepingItsAddresses(t *testing.T) {
+	const (
+		lost   = "no longer keeps them"
+		device = "aa:bb:cc:dd:ee:01"
+	)
+	ips := []string{"203.0.113.8/29"}
+	nameSetAbove := func(cfg *config.Config) {
+		gw := &config.SetConfig{Id: "set-gw", Name: "gw", Enabled: true, Targets: config.TargetsConfig{SNIDomains: []string{"googlevideo.com"}}}
+		cfg.Sets[1].Enabled = false
+		cfg.Sets = append([]*config.SetConfig{gw}, cfg.Sets...)
+	}
+	cases := []struct {
+		name, position string
+		ips            []string
+		disabled       bool
+		layout         func(cfg *config.Config)
+		client         string
+		neverHeld      bool
+		wins, says     bool
+	}{
+		{name: "first", position: "first", ips: ips, wins: true, says: true},
+		{name: "right before the source", position: "before:video", ips: ips, wins: true, says: true},
+		{name: "last, the default", ips: ips},
+		{name: "right after the source", position: "after:video", ips: ips},
+		{name: "first, from a source without addresses", position: "first", neverHeld: true},
+		{name: "first, from a source whose only range is /0", position: "first", ips: []string{"0.0.0.0/0"}, neverHeld: true, wins: true},
+		{name: "first, from a source with a /0 range and a narrower one", position: "first", ips: []string{"0.0.0.0/0", "203.0.113.8/29"}, wins: true, says: true},
+		{name: "first, from a disabled source", position: "first", ips: ips, disabled: true},
+		{name: "first, from a source below the only name set", position: "first", ips: ips, layout: nameSetAbove, wins: true},
+		{name: "first, from a source limited to a device below a name set for every device", position: "first", ips: ips, layout: func(cfg *config.Config) {
+			nameSetAbove(cfg)
+			cfg.Sets[1].Targets.SourceDevices = []string{device}
+		}, client: device, wins: true, says: true},
+		{name: "first, from a source above a name set limited to a device", position: "first", ips: ips, layout: func(cfg *config.Config) {
+			cfg.Sets[1].Targets.SourceDevices = []string{device}
+		}, wins: true},
+		{name: "right before the source, below a set without the switch that owns the same range", position: "before:video", ips: ips, layout: func(cfg *config.Config) {
+			upper := &config.SetConfig{Id: "set-upper", Name: "upper", Enabled: true, Targets: config.TargetsConfig{IPs: ips, IpsToMatch: ips}}
+			cfg.Sets = append([]*config.SetConfig{upper}, cfg.Sets...)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := writableCfg(t)
+			cfg.Sets[0].Enabled = !tc.disabled
+			cfg.Sets[0].Targets.IPs = tc.ips
+			cfg.Sets[0].Targets.IpsToMatch = tc.ips
+			cfg.Sets[0].Targets.IPPriority = true
+			cfg.Sets[1].Enabled = true
+			if tc.layout != nil {
+				tc.layout(cfg)
+			}
+			srv, api := newMCPTestServerAPI(t, cfg)
+			t.Cleanup(mcpResetHistory)
+			session, ctx := connectMCP(t, srv)
+
+			args := map[string]any{"action": "duplicate", "set": "video", "name": "video copy"}
+			if tc.position != "" {
+				args["position"] = tc.position
+			}
+			out := decodeManageSet(t, callManageSet(t, session, ctx, args))
+			if got := strings.Contains(out.Note, "targets.ip_priority was copied switched off"); got == tc.neverHeld {
+				t.Errorf("note says the copy's ip_priority was switched off = %v, want %v: a source that lists no range narrower than /0 never held, so its copy loses nothing: %q", got, !tc.neverHeld, out.Note)
+			}
+			if got := strings.Contains(out.Note, lost); got != tc.says {
+				t.Errorf("note says the source stops keeping its addresses = %v, want %v: %q", got, tc.says, out.Note)
+			}
+			if strings.Contains(out.Note, "the copy's switch is turned on") {
+				t.Errorf("the copy's switch would hold these addresses against every set between it and the source, so the note must not offer it as a remedy: %q", out.Note)
+			}
+
+			saved := api.getCfg().Clone()
+			for _, s := range saved.Sets {
+				s.Targets.IpsToMatch = s.Targets.IPs
+			}
+			_, winner, _ := sni.NewSuffixSet(saved.Sets).MatchIPWithSourceDetail(net.ParseIP("203.0.113.9"), tc.client)
+			if copyWins := winner != nil && winner.Name == "video copy"; copyWins != tc.wins {
+				t.Errorf("the copy wins the source's address = %v, want %v", copyWins, tc.wins)
+			}
+		})
 	}
 }
 

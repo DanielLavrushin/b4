@@ -29,6 +29,8 @@ Every rule b4 installs for a set matches the destination address. Source interfa
 | b4's own lookups | The set's domains, resolved when routing is turned on, through the set's resolver when it has one. See [Lookups b4 makes itself](../dns.md#lookups-b4-makes-itself) |
 | TLS and QUIC names | The destination of a connection whose ClientHello or QUIC Initial names a domain of the set, other than a [private address](./matching.md#the-order-of-checks) that no set's **Bypass IPs** list; over QUIC, no private address is learned at all. That connection has already left by the normal route; later ones follow the set. A subdomain matched this way is resolved in full. Not in **Block (blackhole)** mode, which blocks such a connection by its name instead |
 
+A set with [IP priority](./matching.md#ip-priority) keeps its addresses from the sets below it in the list when neither is limited to source devices. Those sets do not learn them from DNS answers, b4's own lookups, TLS and QUIC names or [escalation](../sets/escalation.md). The sets on that set's escalation chain are the exception and learn them. IP, CIDR, GeoIP and ASN targets are never affected.
+
 With the NFQUEUE engine, a forwarded or pinned answer that brings new addresses is held until they are written to the set, at most 250 ms each time b4 sees it, so the connection that follows usually takes the set's route. An answer from the set's DNS redirect goes out after the addresses are written, without the limit. With the TUN engine the answer is not held, and the first connection to a new address can leave before the address is in the set.
 
 ## Network interface mode {#interface-mode}

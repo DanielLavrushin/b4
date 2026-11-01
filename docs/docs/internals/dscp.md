@@ -20,7 +20,7 @@ The value goes by destination address alone, whatever the protocol, the port and
 | Learned from TLS and QUIC | The destination of a connection whose ClientHello or QUIC Initial matches the set by name, other than a [private address](./matching.md#the-order-of-checks) that no set's **Bypass IPs** list; over QUIC, no private address is learned at all | 10 minutes |
 | b4's own lookups | The first 256 domain entries that are not `regexp:`, GeoSite excluded, when the set starts writing its value or its domains or resolver change, then every half lifetime, at least 5 minutes apart | As for DNS |
 
-A learned address seen again gets a fresh lifetime once less than half of it is left, or at once when b4's lookup finds it. **IP Version Filter** at `4` or `6` leaves out the other family. **Domain-only matching** turns learning off.
+A learned address seen again gets a fresh lifetime once less than half of it is left, or at once when b4's lookup finds it. **IP Version Filter** at `4` or `6` leaves out the other family. **Domain-only matching** turns learning off. Sets below a set with [IP priority](./matching.md#ip-priority) do not learn its addresses, unless they are on its escalation chain or either set is limited to source devices. Static addresses are never affected.
 
 Where sets overlap, an address learned for a set wins over every static range; among static ranges the longest prefix wins; with the same prefix or learned address, the set higher in the list wins. Only sets whose value is applied take part.
 
