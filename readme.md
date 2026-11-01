@@ -86,14 +86,14 @@ Docs: [Quickstart](https://docs.b4core.app/docs/quickstart)
 
 ## Supported platforms
 
-| Platform                      | Service control                                              |
-| ----------------------------- | ------------------------------------------------------------ |
-| Generic Linux (systemd)       | `systemctl start\|stop\|restart b4`                          |
+| Platform                      | Service control                                                      |
+| ----------------------------- | -------------------------------------------------------------------- |
+| Generic Linux (systemd)       | `systemctl start\|stop\|restart b4`                                  |
 | Generic Linux (OpenRC / SysV) | `rc-service b4 start`, `/etc/init.d/b4 start\|stop\|restart\|status` |
-| OpenWrt 19.07+                | `/etc/init.d/b4 start\|stop\|restart\|enable`                |
-| Asus Merlin, Keenetic         | `/opt/etc/init.d/S99b4 start\|stop\|restart` (needs Entware) |
-| MikroTik RouterOS 7.21.1+     | via the Docker container                                     |
-| Docker                        | Linux hosts only, see [below](#docker)                       |
+| OpenWrt 18.06+                | `/etc/init.d/b4 start\|stop\|restart\|enable`                        |
+| Asus Merlin, Keenetic         | `/opt/etc/init.d/S99b4 start\|stop\|restart` (needs Entware)         |
+| MikroTik RouterOS 7.21.1+     | via the Docker container                                             |
+| Docker                        | Linux hosts only, see [below](#docker)                               |
 
 Architectures: `amd64`, `386`, `arm64`, `armv5`, `armv6`, `armv7`, `mips`, `mipsle`, `mips_softfloat`, `mipsle_softfloat`, `mips64`, `mips64le`, `loong64`, `ppc64`, `ppc64le`, `riscv64`, `s390x`.
 

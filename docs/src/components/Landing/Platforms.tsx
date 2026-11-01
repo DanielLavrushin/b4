@@ -29,32 +29,50 @@ export default function Platforms() {
   const platforms = [
     {
       name: "OpenWrt",
-      detail: translate({ id: "home.platforms.openwrt", message: "19.07 or newer" }),
+      detail: translate({
+        id: "home.platforms.openwrt",
+        message: "18.06 or newer",
+      }),
       to: "/docs/install/openwrt",
     },
     {
       name: "ASUS Merlin",
-      detail: translate({ id: "home.platforms.merlin", message: "Needs Entware on a USB drive" }),
+      detail: translate({
+        id: "home.platforms.merlin",
+        message: "Needs Entware on a USB drive",
+      }),
       to: "/docs/install/merlin",
     },
     {
       name: "Keenetic",
-      detail: translate({ id: "home.platforms.keenetic", message: "Needs Entware and the Netfilter components" }),
+      detail: translate({
+        id: "home.platforms.keenetic",
+        message: "Needs Entware and the Netfilter components",
+      }),
       to: "/docs/install/keenetic",
     },
     {
       name: "MikroTik",
-      detail: translate({ id: "home.platforms.mikrotik", message: "RouterOS 7.21.1+, as a container" }),
+      detail: translate({
+        id: "home.platforms.mikrotik",
+        message: "RouterOS 7.21.1+, as a container",
+      }),
       to: "/docs/install/mikrotik",
     },
     {
       name: "Docker",
-      detail: translate({ id: "home.platforms.docker", message: "Linux hosts only, host networking" }),
+      detail: translate({
+        id: "home.platforms.docker",
+        message: "Linux hosts only, host networking",
+      }),
       to: "/docs/install/docker",
     },
     {
       name: "Linux",
-      detail: translate({ id: "home.platforms.linux", message: "systemd, OpenRC or SysV init" }),
+      detail: translate({
+        id: "home.platforms.linux",
+        message: "systemd, OpenRC or SysV init",
+      }),
       to: "/docs/install/linux",
     },
   ];
@@ -68,8 +86,9 @@ export default function Platforms() {
           </h2>
           <p className={shared.lead}>
             <Translate id="home.platforms.lead">
-              OpenWrt, ASUS Merlin, Keenetic and other Linux systems use the same install script. On
-              MikroTik and in Docker, b4 runs as a container.
+              OpenWrt, ASUS Merlin, Keenetic and other Linux systems use the
+              same install script. On MikroTik and in Docker, b4 runs as a
+              container.
             </Translate>
           </p>
         </Reveal>
@@ -80,7 +99,12 @@ export default function Platforms() {
               <Link to={platform.to} className={styles.card}>
                 <span className={styles.name}>{platform.name}</span>
                 <span className={styles.detail}>{platform.detail}</span>
-                <ArrowUpRightIcon className={styles.arrow} size={20} weight="bold" aria-hidden="true" />
+                <ArrowUpRightIcon
+                  className={styles.arrow}
+                  size={20}
+                  weight="bold"
+                  aria-hidden="true"
+                />
               </Link>
             </li>
           ))}
@@ -89,7 +113,9 @@ export default function Platforms() {
         <Reveal className={styles.footer}>
           <div className={styles.archs}>
             <p className={styles.archTitle}>
-              <Translate id="home.platforms.archs">Builds for 17 CPU architectures</Translate>
+              <Translate id="home.platforms.archs">
+                Builds for 17 CPU architectures
+              </Translate>
             </p>
             <ul className={styles.archList}>
               {ARCHITECTURES.map((arch) => (
@@ -101,10 +127,13 @@ export default function Platforms() {
           </div>
           <p className={styles.requirements}>
             <Translate id="home.platforms.requirements">
-              Needs kernel 3.13 or newer, about 64 MB of free RAM, 30 MB of disk and root.
+              Needs kernel 3.13 or newer, about 64 MB of free RAM, 30 MB of disk
+              and root.
             </Translate>{" "}
             <Link to="/docs/intro#requirements" className={shared.textLink}>
-              <Translate id="home.platforms.requirements.link">Full requirements</Translate>
+              <Translate id="home.platforms.requirements.link">
+                Full requirements
+              </Translate>
             </Link>
           </p>
         </Reveal>

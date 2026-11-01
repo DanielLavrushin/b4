@@ -6,7 +6,7 @@ description: Installing b4 on a router with OpenWrt.
 
 ## Requirements
 
-- OpenWrt 19.07 or newer.
+- OpenWrt 18.06 or newer.
 - Free space for the binary. Internal storage (the overlay) is often small, and the installer warns when less than 2 MB is free. A USB drive or [extroot](https://openwrt.org/docs/guide-user/additional-software/extroot_configuration) is recommended.
 
 ## Install
@@ -81,10 +81,10 @@ The service keeps running after the SSH session closes, so `screen` or `nohup` i
 
 ## Paths
 
-| What | With `/opt` (extroot or USB) | Without external storage |
-| --- | --- | --- |
-| Binary | `/opt/bin/b4` | `/usr/bin/b4` |
-| Configuration | `/opt/etc/b4/b4.json` | `/etc/b4/b4.json` |
+| What          | With `/opt` (extroot or USB) | Without external storage |
+| ------------- | ---------------------------- | ------------------------ |
+| Binary        | `/opt/bin/b4`                | `/usr/bin/b4`            |
+| Configuration | `/opt/etc/b4/b4.json`        | `/etc/b4/b4.json`        |
 
 ## Web interface
 

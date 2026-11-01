@@ -1,6 +1,7 @@
 package sock
 
 import (
+	"bytes"
 	"encoding/binary"
 	"net"
 	"testing"
@@ -177,6 +178,67 @@ func TestBuildICMPv4Reject_InvalidInput(t *testing.T) {
 	}
 	if BuildICMPv6Reject(make([]byte, 20), make([]byte, 16), make([]byte, 16)) != nil {
 		t.Fatal("expected nil for too-short v6 packet")
+	}
+}
+
+func foldsToAllOnes(b []byte) bool {
+	var sum uint32
+	for i := 0; i+1 < len(b); i += 2 {
+		sum += uint32(binary.BigEndian.Uint16(b[i : i+2]))
+	}
+	if len(b)%2 == 1 {
+		sum += uint32(b[len(b)-1]) << 8
+	}
+	for sum > 0xFFFF {
+		sum = (sum >> 16) + (sum & 0xFFFF)
+	}
+	return uint16(sum) == 0xFFFF
+}
+
+func postSNATDatagram() []byte {
+	p := make([]byte, 28)
+	p[0] = 0x45
+	binary.BigEndian.PutUint16(p[2:4], 28)
+	p[8] = 64
+	p[9] = 17
+	copy(p[12:16], net.IPv4(94, 189, 76, 227).To4())
+	copy(p[16:20], net.IPv4(1, 2, 3, 4).To4())
+	FixIPv4Checksum(p[:20])
+	binary.BigEndian.PutUint16(p[20:22], 44100)
+	binary.BigEndian.PutUint16(p[22:24], 443)
+	binary.BigEndian.PutUint16(p[24:26], 8)
+	binary.BigEndian.PutUint16(p[26:28], 0x1234)
+	return p
+}
+
+func TestBuildICMPv4RejectQuotesTheDeviceItIsSentTo(t *testing.T) {
+	orig := postSNATDatagram()
+	device := net.IPv4(192, 168, 1, 50).To4()
+
+	icmp := BuildICMPv4Reject(orig, device, net.IPv4(1, 2, 3, 4).To4())
+
+	quote := icmp[28:]
+	if !net.IP(quote[12:16]).Equal(device) {
+		t.Fatalf("the quote must name the device the reject is sent to, or its socket never takes it, got %s", net.IP(quote[12:16]))
+	}
+	if !bytes.Equal(quote[16:], orig[16:]) || !bytes.Equal(quote[:10], orig[:10]) {
+		t.Fatal("only the quoted source address and its header checksum may change")
+	}
+	if !foldsToAllOnes(quote[:20]) {
+		t.Fatal("the quoted IP header checksum must match the rewritten source address")
+	}
+	if !foldsToAllOnes(icmp[20:]) {
+		t.Fatal("the ICMP checksum must cover the rewritten quote")
+	}
+}
+
+func TestBuildICMPv4RejectQuotesAPacketFromTheDeviceUnchanged(t *testing.T) {
+	orig := postSNATDatagram()
+
+	icmp := BuildICMPv4Reject(orig, net.IPv4(94, 189, 76, 227).To4(), net.IPv4(1, 2, 3, 4).To4())
+
+	if !bytes.Equal(icmp[28:], orig) {
+		t.Fatal("a packet that already comes from the device is quoted byte for byte")
 	}
 }
 
