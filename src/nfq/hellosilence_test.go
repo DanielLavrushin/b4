@@ -728,6 +728,64 @@ func TestTheBackupSetStillChecksASilentServerItWatches(t *testing.T) {
 	}
 }
 
+func TestTheBackupSetCountsTheStuckConnectionsClientHellosFromOne(t *testing.T) {
+	backup := silenceSet()
+	backup.Id, backup.Name = "backup", "backup"
+	r := escalatingSilenceRig(t, backup)
+
+	escalateByResends(t, r.w, 12345)
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	r.w.bans.wg.Wait()
+
+	if ports := resetsTo(r.sent()); len(ports) != 0 {
+		t.Fatalf("the backup set must try its own strategy on the stuck connection before it resets it, got resets to %v", ports)
+	}
+	if r.w.destState.IsBlocked("1.2.3.4:443") {
+		t.Fatal("the backup set must not cache the address as blocked for the first set's unanswered ClientHellos")
+	}
+	if keys := r.probed(); len(keys) != 0 {
+		t.Fatalf("the backup set must not check the address for a ban before its own threshold, probed %v", keys)
+	}
+
+	sendHello(t, r.w, 12345, engine.VerdictDrop)
+	r.w.bans.wg.Wait()
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
+		t.Fatalf("the backup set's own third unanswered ClientHello must reset the connection, got resets to %v", ports)
+	}
+	if !r.w.destState.IsBlocked("1.2.3.4:443") {
+		t.Fatal("the backup set's own third unanswered ClientHello must cache the address as blocked")
+	}
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("the backup set's own third unanswered ClientHello must check the address for a ban, probed %v", keys)
+	}
+}
+
+func TestAnEscalationChainGivesTheNextSetItsOwnTries(t *testing.T) {
+	spare := plainBackupSet()
+	spare.Id, spare.Name = "spare", "spare"
+	backup := newPassiveSet()
+	backup.Id, backup.Name = "backup", "backup"
+	backup.Targets.DomainsToMatch = []string{"example.org"}
+	backup.TCP.RSTProtection.Enabled = false
+	backup.Escalate.To = spare.Id
+	set := silenceSet()
+	set.Escalate.To = backup.Id
+	r := newSilenceRig(t, newInjectingWorker(t, &set, &backup, &spare), answering(iphealth.TLSSilent))
+
+	escalateByResends(t, r.w, 12345)
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	if id, _, _ := r.w.destState.GetEscalation("i.ytimg.com"); id != "backup" {
+		t.Fatalf("the backup set must try its own strategy on the stuck connection before it escalates further, the host is on %q", id)
+	}
+
+	sendHello(t, r.w, 12345, engine.VerdictDrop)
+	if id, hops, _ := r.w.destState.GetEscalation("i.ytimg.com"); id != "spare" || hops != 2 {
+		t.Fatalf("the backup set's own third unanswered ClientHello must escalate the host to the next set, got %q after %d hops", id, hops)
+	}
+}
+
 func TestTheSilentHelloTriggerCoversIPv6(t *testing.T) {
 	set := banningAddressSet()
 	r := newSilenceRig(t, newDualStackInjectingWorker(t, &set), answering(iphealth.TLSSilent))

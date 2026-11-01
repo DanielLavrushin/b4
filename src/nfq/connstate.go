@@ -267,6 +267,12 @@ func (t *destStateTracker) RecordClientHello(connKey, host string) (int, time.Ti
 	return entry.retransmits, entry.firstSeen
 }
 
+func (t *destStateTracker) ClearClientHellos(connKey string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.conns, connKey)
+}
+
 func (t *destStateTracker) HasRSTSent(connKey string) bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()

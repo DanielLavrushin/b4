@@ -775,6 +775,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	if stallTracked && escalateOnStall(&set.Escalate, stallCount, stallFirstSeen) {
 		if next := w.tryEscalate(cfg, set, host, pkt.srcMac, pkt.dst, escalateReasonStall, hostTLS, hostIP, vc.scope); next != nil {
+			w.destState.ClearClientHellos(connKey)
 			if !cfg.Queue.IsDiscovery {
 				log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), "escalate->"+next.Name)
 			}
