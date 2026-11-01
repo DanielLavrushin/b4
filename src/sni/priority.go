@@ -3,6 +3,7 @@ package sni
 import (
 	"net"
 	"slices"
+	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/yl2chen/cidranger"
@@ -114,9 +115,92 @@ func (s *SuffixSet) KeepsLearned(cfg *config.Config, set *config.SetConfig, ip n
 		if ones == 0 || winner >= nameIndex || !cfg.Sets[winner].IPPriorityApplies() || !built.IPPriorityApplies() {
 			return true
 		}
-		return escalatesTo(cfg, cfg.Sets[winner], set.Id)
+		return escalatesTo(cfg, cfg.Sets[winner], set.Id) || s.changedOwnershipCovers(cfg, ip)
 	}
 	return true
+}
+
+type ownershipAgreement struct {
+	cfg     *config.Config
+	changed cidranger.Ranger
+}
+
+func (s *SuffixSet) changedOwnershipCovers(cfg *config.Config, ip net.IP) bool {
+	a := s.agreement.Load()
+	if a == nil || a.cfg != cfg {
+		a = &ownershipAgreement{cfg: cfg, changed: changedOwnership(s.builtFrom, cfg.Sets)}
+		s.agreement.Store(a)
+	}
+	if a.changed == nil {
+		return false
+	}
+	covering, err := a.changed.ContainingNetworks(ip)
+	return err != nil || len(covering) > 0
+}
+
+func changedOwnership(built, sets []*config.SetConfig) cidranger.Ranger {
+	var changed cidranger.Ranger
+	add := func(set *config.SetConfig) {
+		if set == nil {
+			return
+		}
+		for _, raw := range set.Targets.IpsToMatch {
+			network := parseTargetNetwork(raw)
+			if network == nil {
+				continue
+			}
+			if changed == nil {
+				changed = cidranger.NewPCTrieRanger()
+			}
+			_ = changed.Insert(cidranger.NewBasicRangerEntry(*network))
+		}
+	}
+	for i := 0; i < max(len(built), len(sets)); i++ {
+		var a, b *config.SetConfig
+		if i < len(built) {
+			a = built[i]
+		}
+		if i < len(sets) {
+			b = sets[i]
+		}
+		if a == b || (a != nil && b != nil && a.Id == b.Id && sameOwnershipInputs(a, b)) {
+			continue
+		}
+		add(a)
+		add(b)
+	}
+	return changed
+}
+
+func parseTargetNetwork(raw string) *net.IPNet {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if strings.Contains(raw, "/") {
+		if _, network, err := net.ParseCIDR(raw); err == nil {
+			return network
+		}
+		return nil
+	}
+	ip := net.ParseIP(raw)
+	if ip == nil {
+		return nil
+	}
+	if ip.To4() != nil {
+		return &net.IPNet{IP: ip.To4(), Mask: net.CIDRMask(32, 32)}
+	}
+	return &net.IPNet{IP: ip.To16(), Mask: net.CIDRMask(128, 128)}
+}
+
+func sameOwnershipInputs(a, b *config.SetConfig) bool {
+	return a.Enabled == b.Enabled &&
+		a.IPPriorityApplies() == b.IPPriorityApplies() &&
+		a.Targets.IPVersion == b.Targets.IPVersion &&
+		a.Targets.SourceDevicesExclude == b.Targets.SourceDevicesExclude &&
+		slices.Equal(a.Targets.SourceDevices, b.Targets.SourceDevices) &&
+		a.BlockRoutingScoped() == b.BlockRoutingScoped() &&
+		sameAddressTargets(a, b)
 }
 
 func sameAddressTargets(a, b *config.SetConfig) bool {

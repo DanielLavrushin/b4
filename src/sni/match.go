@@ -62,6 +62,8 @@ type SuffixSet struct {
 	setIndex      map[string]int
 	scopedSet     map[string]bool
 	anyIPPriority bool
+	builtFrom     []*config.SetConfig
+	agreement     atomic.Pointer[ownershipAgreement]
 }
 
 type SetFilter func(*config.SetConfig) bool
@@ -159,6 +161,7 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 		learnedIPCacheLimit: 5000,
 		learnedIPTTL:        10 * time.Minute,
 
+		builtFrom: sets,
 		setIndex:  make(map[string]int, len(sets)),
 		scopedSet: make(map[string]bool, len(sets)),
 	}
@@ -220,28 +223,7 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 		}
 
 		for _, ipStr := range set.Targets.IpsToMatch {
-			ipStr = strings.TrimSpace(ipStr)
-			if ipStr == "" {
-				continue
-			}
-
-			var ipNet *net.IPNet
-			var err error
-
-			if strings.Contains(ipStr, "/") {
-				_, ipNet, err = net.ParseCIDR(ipStr)
-			} else {
-				ip := net.ParseIP(ipStr)
-				if ip != nil {
-					if ip.To4() != nil {
-						_, ipNet, _ = net.ParseCIDR(ipStr + "/32")
-					} else {
-						_, ipNet, _ = net.ParseCIDR(ipStr + "/128")
-					}
-				}
-			}
-
-			if err == nil && ipNet != nil {
+			if ipNet := parseTargetNetwork(ipStr); ipNet != nil {
 				key := ipNet.String()
 				if existing, ok := ipEntries[key]; ok {
 					if existing.sets[len(existing.sets)-1] != set {

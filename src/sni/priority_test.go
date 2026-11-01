@@ -270,6 +270,8 @@ func TestKeepsLearned(t *testing.T) {
 	ggcByASN.Targets.ASNs = []string{"15169"}
 	ggcByASNRefreshed := copyOf(ggcByASN)
 	ggcByASNRefreshed.Targets.IpsToMatch = []string{"79.133.77.32/27"}
+	plainElsewhere := addressSet("plain", false, "79.133.77.32/27")
+	plainGainsTheAddress := addressSet("plain", false, "79.133.77.32/27", priorityAddr+"/32")
 
 	cases := []fixture{
 		{"a set above holds the address for everyone", []*config.SetConfig{ggc, gw}, nil, "gw", addr, false, nil},
@@ -308,6 +310,8 @@ func TestKeepsLearned(t *testing.T) {
 		{"the holder's GeoIP targets changed since the matcher was built", []*config.SetConfig{ggcListed, gw}, []*config.SetConfig{ggcMovedGeoIP, gw}, "gw", addr, true, nil},
 		{"the holder's address targets are the same in both copies", []*config.SetConfig{ggcListed, gw}, []*config.SetConfig{copyOf(ggcListed), gw}, "gw", addr, false, nil},
 		{"the holder's ASN prefixes were refreshed since the matcher was built", []*config.SetConfig{ggcByASN, gw}, []*config.SetConfig{ggcByASNRefreshed, gw}, "gw", addr, true, nil},
+		{"a set that did not cover the address gained a narrower range since the matcher was built", []*config.SetConfig{plainElsewhere, ggc, gw}, []*config.SetConfig{plainGainsTheAddress, ggc, gw}, "gw", addr, true, nil},
+		{"a set that does not cover the address is unchanged in equal copies", []*config.SetConfig{plainElsewhere, ggc, gw}, []*config.SetConfig{copyOf(plainElsewhere), copyOf(ggc), copyOf(gw)}, "gw", addr, false, nil},
 	}
 	for _, c := range cases {
 		ss := NewSuffixSet(c.built)
