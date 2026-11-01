@@ -61,8 +61,16 @@ func (r *Resolver) PassOnSet(host string, dst net.IP, dport uint16, srcMAC strin
 		return nil, false
 	}
 	if host != "" {
-		if named, set := m.MatchSNIWithSource(host, srcMAC, applies); named && !addressHoldsAgainst(m, set, dst, dport, srcMAC, applies) && takes(set, true) {
-			return set, true
+		if named, set := m.MatchSNIWithSource(host, srcMAC, applies); named {
+			if holder := addressHolder(m, set, dst, dport, srcMAC, applies); holder != nil {
+				if passOnEligible(holder, false) && takes(holder, false) {
+					return holder, false
+				}
+				return nil, false
+			}
+			if takes(set, true) {
+				return set, true
+			}
 		}
 	}
 	if dst == nil {
@@ -75,13 +83,16 @@ func (r *Resolver) PassOnSet(host string, dst net.IP, dport uint16, srcMAC strin
 	return nil, false
 }
 
-func addressHoldsAgainst(m *sni.SuffixSet, nameSet *config.SetConfig, dst net.IP, dport uint16, srcMAC string, keep sni.SetFilter) bool {
+func addressHolder(m *sni.SuffixSet, nameSet *config.SetConfig, dst net.IP, dport uint16, srcMAC string, keep sni.SetFilter) *config.SetConfig {
 	if dst == nil {
-		return false
+		return nil
 	}
 	listed, addrSet, prefix := m.MatchIPWithSourceDetail(dst, srcMAC, keep)
-	return listed && m.AddressHolds(addrSet, prefix, nameSet, srcMAC) &&
-		addrSet.MatchesTCPDPort(dport) && addrSet.MatchesIPVersion(ipVersionOf(dst))
+	if listed && m.AddressHolds(addrSet, prefix, nameSet, srcMAC) &&
+		addrSet.MatchesTCPDPort(dport) && addrSet.MatchesIPVersion(ipVersionOf(dst)) {
+		return addrSet
+	}
+	return nil
 }
 
 func ipVersionOf(ip net.IP) uint8 {

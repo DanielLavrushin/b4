@@ -148,6 +148,22 @@ func TestPassOnSetPutsTheAddressFirstOnlyForAViableSetWithIPPriorityRankedAboveT
 			addr.Routing.Enabled = false
 			return []*config.SetConfig{addr, byName}
 		}},
+		{name: "a holder that cannot take the connection keeps it from the name set's wider range", setup: func(addr, byName *config.SetConfig) []*config.SetConfig {
+			addr.Routing.Enabled = false
+			byName.Targets.IpsToMatch = []string{"127.0.0.0/8"}
+			return []*config.SetConfig{addr, byName}
+		}},
+		{name: "the switch off leaves the name set its name match beside its wider range", want: "name", wantByName: true, setup: func(addr, byName *config.SetConfig) []*config.SetConfig {
+			addr.Routing.Enabled = false
+			addr.Targets.IPPriority = false
+			byName.Targets.IpsToMatch = []string{"127.0.0.0/8"}
+			return []*config.SetConfig{addr, byName}
+		}},
+		{name: "without a name a proxy set's wider range takes an address its holder cannot take", host: "web.telegram.org", want: "name", setup: func(addr, byName *config.SetConfig) []*config.SetConfig {
+			addr.Routing.Enabled = false
+			byName.Targets.IpsToMatch = []string{"127.0.0.0/8"}
+			return []*config.SetConfig{addr, byName}
+		}},
 		{name: "a name set limited to the device below the address set", mac: phone, want: "name", wantByName: true, setup: func(addr, byName *config.SetConfig) []*config.SetConfig {
 			byName.Targets.SourceDevices = []string{phone}
 			return []*config.SetConfig{addr, byName}
