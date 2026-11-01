@@ -99,7 +99,7 @@ func banEnforced(set *config.SetConfig) bool {
 }
 
 func (w *Worker) refusesBannedQUIC(cfg *config.Config, set *config.SetConfig, dst net.IP, dport uint16) bool {
-	return cfg != nil && !cfg.Queue.IsDiscovery && banEnforced(set) && w.bans.banned(dst, dport) && !set.RoutingHandsOffPackets()
+	return cfg != nil && !cfg.Queue.IsDiscovery && banEnforced(set) && !routingBlocks(set) && w.bans.banned(dst, dport) && !set.RoutingHandsOffPackets()
 }
 
 func (b *ipBans) confirm(cfg *config.Config, ip net.IP, port uint16, host, setName string) bool {

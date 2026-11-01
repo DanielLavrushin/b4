@@ -17,6 +17,7 @@ import (
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/florianl/go-nfqueue"
 )
 
 const (
@@ -401,7 +402,7 @@ func TestAWaitingConnectionIsResetOnlyByWhoeverTakesItsWatch(t *testing.T) {
 		t.Fatalf("want one due watch, got %d", len(due))
 	}
 	r.w.settleSilentHellos(net.ParseIP("1.2.3.4"), 443, true)
-	if r.w.destState.Unwatch(due[0].key) {
+	if r.w.destState.EndWatch(due[0]) {
 		t.Fatal("a watch the verdict already took must not be claimed again by the sweep")
 	}
 	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
@@ -556,6 +557,297 @@ func TestTheResendTriggerEndsTheWatch(t *testing.T) {
 	}
 	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
 		t.Fatalf("the connection is reset once, by the resend trigger, got resets to %v", ports)
+	}
+}
+
+func escalatingSilenceRig(t *testing.T, backup config.SetConfig) *silenceRig {
+	t.Helper()
+	set := silenceSet()
+	set.Escalate.To = backup.Id
+	return newSilenceRig(t, newInjectingWorker(t, &set, &backup), answering(iphealth.TLSSilent))
+}
+
+func plainBackupSet() config.SetConfig {
+	backup := config.NewSetConfig()
+	backup.Id, backup.Name, backup.Enabled = "backup", "backup", true
+	backup.Targets.DomainsToMatch = []string{"example.org"}
+	return backup
+}
+
+func escalateByResends(t *testing.T, w *Worker, sport uint16) {
+	t.Helper()
+	sendHello(t, w, sport, engine.VerdictAccept)
+	sendHello(t, w, sport, engine.VerdictAccept)
+	sendHello(t, w, sport, engine.VerdictDrop)
+	if w.destState.GetEscalationReason("i.ytimg.com") == "" {
+		t.Fatal("the third copy of the ClientHello must escalate the host")
+	}
+}
+
+func TestAHostThatEscalatesIsNotCheckedForABan(t *testing.T) {
+	r := escalatingSilenceRig(t, plainBackupSet())
+
+	sendHello(t, r.w, 12347, engine.VerdictAccept)
+	escalateByResends(t, r.w, 12345)
+	r.sweepLater()
+
+	if keys := r.probed(); len(keys) != 0 {
+		t.Fatalf("a host that escalated to its backup set must not be checked for a ban, probed %v", keys)
+	}
+	if r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("an escalation that fired first must keep the address from being banned")
+	}
+	if ports := resetsTo(r.sent()); len(ports) != 0 {
+		t.Fatalf("no waiting connection of the escalated host may be reset, got resets to %v", ports)
+	}
+	r.sweepLater()
+	if keys := r.probed(); len(keys) != 0 {
+		t.Fatalf("a later sweep must not check the escalated host either, probed %v", keys)
+	}
+}
+
+func TestAnEscalatedHostsWaitingConnectionsAreResetWhenAnotherCheckBansTheAddress(t *testing.T) {
+	r := escalatingSilenceRig(t, plainBackupSet())
+
+	sendHello(t, r.w, 12347, engine.VerdictAccept)
+	escalateByResends(t, r.w, 12345)
+	r.sweepLater()
+	r.w.bans.confirm(r.w.getConfig(), net.ParseIP("1.2.3.4"), 443, "other.example", "other")
+	r.w.bans.wg.Wait()
+
+	if !r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("the other host's silent check must ban the address")
+	}
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345, 12347}) {
+		t.Fatalf("connections of the escalated host still waiting on the address must be reset once it is banned, got resets to %v", ports)
+	}
+}
+
+func TestAnEscalatedHostsAnsweredConnectionIsNotResetWhenAnotherCheckBansTheAddress(t *testing.T) {
+	r := escalatingSilenceRig(t, plainBackupSet())
+	answered, err := ctnl.NewTuple(6, netip.MustParseAddrPort("10.0.0.1:12347"), netip.MustParseAddrPort("1.2.3.4:443"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.answerLookups(t, func(tuple ctnl.Tuple) flowAnswer {
+		if tuple == answered {
+			return flowAnswer{found: true, flow: ctnl.Flow{HasState: true, TCPState: ctnl.TCPEstablished, HasCounters: true, ReplyPackets: 4, ReplyBytes: 4200}}
+		}
+		return silentFlow()
+	})
+
+	sendHello(t, r.w, 12347, engine.VerdictAccept)
+	escalateByResends(t, r.w, 12345)
+	r.sweepLater()
+	r.w.bans.confirm(r.w.getConfig(), net.ParseIP("1.2.3.4"), 443, "other.example", "other")
+	r.w.bans.wg.Wait()
+
+	if !r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("the other host's silent check must ban the address")
+	}
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
+		t.Fatalf("a connection whose server answered after the queue window must not be reset, only the one still waiting, got resets to %v", ports)
+	}
+}
+
+func TestADeviceTheBackupSetDoesNotServeIsStillChecked(t *testing.T) {
+	backup := plainBackupSet()
+	backup.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+	r := escalatingSilenceRig(t, backup)
+
+	r.w.ipToMac.Store(map[string]string{"10.0.0.1": "aa:bb:cc:dd:ee:ff"})
+	escalateByResends(t, r.w, 12345)
+	r.w.ipToMac.Store(map[string]string{"10.0.0.1": "11:22:33:44:55:66"})
+	sendHello(t, r.w, 12347, engine.VerdictAccept)
+	r.sweepLater()
+
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("a device that stays on the set must still get its silent server checked, probed %v", keys)
+	}
+	if ban := r.w.bans.reg.List(); len(ban) != 1 || ban[0].Set != "YT images" {
+		t.Fatalf("the set the device stays on must ban the address, got %+v", ban)
+	}
+	if ports := resetsTo(r.sent()); !slices.Contains(ports, 12347) {
+		t.Errorf("the device's waiting connection must be reset once the address is banned, got resets to %v", ports)
+	}
+}
+
+func TestAnInterfaceTheBackupSetDoesNotServeIsStillChecked(t *testing.T) {
+	idx := scopeIfaces(t)
+	thisHost(t, scopeRouter)
+	backup := plainBackupSet()
+	scopeToGuest(&backup, config.BlockActionDrop)
+	r := escalatingSilenceRig(t, backup)
+
+	from := func(src string, sport uint16, in uint32) int {
+		raw := silentHelloFrom(sport)
+		copy(raw[12:16], net.ParseIP(src).To4())
+		return queuedFrom(t, r.w, raw, in, nil, nil)
+	}
+	from(scopeGuest, 12345, idx["br-guest"])
+	from(scopeGuest, 12345, idx["br-guest"])
+	if v := from(scopeGuest, 12345, idx["br-guest"]); v != nfqueue.NfDrop {
+		t.Fatalf("the guest's third ClientHello must escalate the host and be dropped, verdict %d", v)
+	}
+	if r.w.destState.GetEscalationReason("i.ytimg.com") == "" {
+		t.Fatal("the guest client must escalate the host to the block set scoped to br-guest")
+	}
+	if v := from(scopeLAN, 12347, idx["br0"]); v != nfqueue.NfAccept {
+		t.Fatalf("a br0 client's ClientHello stays on the set, verdict %d", v)
+	}
+	r.sweepLater()
+
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("a connection from an interface the backup set does not serve must still get its silent server checked, probed %v", keys)
+	}
+	if ban := r.w.bans.reg.List(); len(ban) != 1 || ban[0].Set != "YT images" {
+		t.Fatalf("the set the br0 client stays on must ban the address, got %+v", ban)
+	}
+	if ports := resetsTo(r.sent()); !slices.Contains(ports, 12347) {
+		t.Errorf("the br0 client's waiting connection must be reset once the address is banned, got resets to %v", ports)
+	}
+}
+
+func TestTheBackupSetStillChecksASilentServerItWatches(t *testing.T) {
+	backup := silenceSet()
+	backup.Id, backup.Name = "backup", "backup"
+	r := escalatingSilenceRig(t, backup)
+
+	escalateByResends(t, r.w, 12345)
+	sendHello(t, r.w, 12349, engine.VerdictAccept)
+	r.sweepLater()
+
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("the backup set's own silent ClientHello must still be checked once, probed %v", keys)
+	}
+	if !r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("a silent neutral-name check the backup set started must ban the address")
+	}
+	if ban := r.w.bans.reg.List()[0]; ban.Set != "backup" {
+		t.Errorf("the ban must come from the backup set's watch, got set %q", ban.Set)
+	}
+}
+
+func TestTheBackupSetCountsTheStuckConnectionsClientHellosFromOne(t *testing.T) {
+	backup := silenceSet()
+	backup.Id, backup.Name = "backup", "backup"
+	r := escalatingSilenceRig(t, backup)
+
+	escalateByResends(t, r.w, 12345)
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	r.w.bans.wg.Wait()
+
+	if ports := resetsTo(r.sent()); len(ports) != 0 {
+		t.Fatalf("the backup set must try its own strategy on the stuck connection before it resets it, got resets to %v", ports)
+	}
+	if r.w.destState.IsBlocked("1.2.3.4:443") {
+		t.Fatal("the backup set must not cache the address as blocked for the first set's unanswered ClientHellos")
+	}
+	if keys := r.probed(); len(keys) != 0 {
+		t.Fatalf("the backup set must not check the address for a ban before its own threshold, probed %v", keys)
+	}
+
+	sendHello(t, r.w, 12345, engine.VerdictDrop)
+	r.w.bans.wg.Wait()
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
+		t.Fatalf("the backup set's own third unanswered ClientHello must reset the connection, got resets to %v", ports)
+	}
+	if !r.w.destState.IsBlocked("1.2.3.4:443") {
+		t.Fatal("the backup set's own third unanswered ClientHello must cache the address as blocked")
+	}
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("the backup set's own third unanswered ClientHello must check the address for a ban, probed %v", keys)
+	}
+}
+
+func TestTheBackupSetChecksASilentServerOnTheConnectionItTookOver(t *testing.T) {
+	backup := silenceSet()
+	backup.Id, backup.Name = "backup", "backup"
+	r := escalatingSilenceRig(t, backup)
+
+	escalateByResends(t, r.w, 12345)
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	r.sweepLater()
+
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("the backup set must check a server that stays silent on the connection it took over, probed %v", keys)
+	}
+	if ban := r.w.bans.reg.List(); len(ban) != 1 || ban[0].Set != "backup" {
+		t.Fatalf("the ban must come from the backup set's watch on that connection, got %+v", ban)
+	}
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
+		t.Fatalf("the waiting connection must be reset once the address is banned, got resets to %v", ports)
+	}
+}
+
+func TestAStaleSweepResultLeavesTheBackupSetsNewWatchAlone(t *testing.T) {
+	backup := silenceSet()
+	backup.Id, backup.Name = "backup", "backup"
+	r := escalatingSilenceRig(t, backup)
+	entered, release, swept := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	r.answerLookups(t, func(ctnl.Tuple) flowAnswer {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		return silentFlow()
+	})
+
+	escalateByResends(t, r.w, 12345)
+	go func() {
+		defer close(swept)
+		r.pool.sweepSilentHellos(time.Now().Add(time.Minute))
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		<-swept
+	})
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the sweep never asked conntrack about the escalated connection")
+	}
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	close(release)
+	<-swept
+	r.sweepLater()
+
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("a sweep that looked at the old watch must leave the backup set's new watch to its own check, probed %v", keys)
+	}
+	if ban := r.w.bans.reg.List(); len(ban) != 1 || ban[0].Set != "backup" {
+		t.Fatalf("the ban must come from the backup set's watch, got %+v", ban)
+	}
+}
+
+func TestAnEscalationChainGivesTheNextSetItsOwnTries(t *testing.T) {
+	spare := plainBackupSet()
+	spare.Id, spare.Name = "spare", "spare"
+	backup := newPassiveSet()
+	backup.Id, backup.Name = "backup", "backup"
+	backup.Targets.DomainsToMatch = []string{"example.org"}
+	backup.TCP.RSTProtection.Enabled = false
+	backup.Escalate.To = spare.Id
+	set := silenceSet()
+	set.Escalate.To = backup.Id
+	r := newSilenceRig(t, newInjectingWorker(t, &set, &backup, &spare), answering(iphealth.TLSSilent))
+
+	escalateByResends(t, r.w, 12345)
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	if id, _, _ := r.w.destState.GetEscalation("i.ytimg.com"); id != "backup" {
+		t.Fatalf("the backup set must try its own strategy on the stuck connection before it escalates further, the host is on %q", id)
+	}
+
+	sendHello(t, r.w, 12345, engine.VerdictDrop)
+	if id, hops, _ := r.w.destState.GetEscalation("i.ytimg.com"); id != "spare" || hops != 2 {
+		t.Fatalf("the backup set's own third unanswered ClientHello must escalate the host to the next set, got %q after %d hops", id, hops)
 	}
 }
 
