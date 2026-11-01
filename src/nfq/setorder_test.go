@@ -1615,6 +1615,30 @@ func (h *setOrderHarness) tracked(c *setOrderConn) string {
 	return setOrderNoSet
 }
 
+func TestIPPriorityAHeldConnectionKeepsItsSetWhenItsAddressWasLearnedForTheHoldingSetItself(t *testing.T) {
+	ggc := newSetOrderGGCSetWith(true)
+	ggc.Targets.SNIDomains = []string{"ggc.example"}
+	ggc.Fragmentation.Strategy = config.ConfigNone
+	h := newSetOrderHarness(t, nil, []*config.SetConfig{ggc, newSetOrderGWSet()})
+
+	named := newSetOrderConn(setOrderGGCAddr, 38856, 20000)
+	h.syn(t, named)
+	expectSetOrder(t, "the address set's own site", h.hello(t, named, "www.ggc.example"), setOrderGGCSet, false)
+	if ok, learned, host := h.w.getMatcher().MatchLearnedIP(net.ParseIP(setOrderGGCAddr)); !ok || learned.Id != "yt-ggc-ru" || host != "www.ggc.example" {
+		t.Fatalf("the fixture needs %s learned for %s under www.ggc.example, got %v %v %q", setOrderGGCAddr, setOrderGGCSet, ok, learned, host)
+	}
+
+	held := newSetOrderConn(setOrderGGCAddr, 38854, 1000)
+	h.syn(t, held)
+	expectSetOrder(t, "held", h.hello(t, held, setOrderGGCName), setOrderGGCSet, false)
+	for i := range 2 {
+		expectSetOrder(t, fmt.Sprintf("held data %d", i+1), h.data(t, held), setOrderGGCSet, false)
+	}
+	if got := h.tracked(held); got != setOrderGGCSet {
+		t.Errorf("the held connection is tracked as %q, want %q", got, setOrderGGCSet)
+	}
+}
+
 func (h *setOrderHarness) forgedRST(c *setOrderConn) {
 	rst := makeV4TCPPacketFlags(nil, 777, 0x14)
 	copy(rst[12:16], net.ParseIP(c.dst).To4())

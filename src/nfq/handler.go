@@ -451,7 +451,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				if hold.contests(learnedSet) && (connHeld || hold.outranks(matcher, learnedSet, pkt.srcMac)) {
 					learnedRival = learnedSet
 				}
-				if learnedRival != nil && hold.fits(pkt.ver) {
+				if (learnedRival != nil && hold.fits(pkt.ver)) || (connHeld && hold.keeps(learnedSet)) {
 					heldLearned = true
 				} else {
 					matched = true
