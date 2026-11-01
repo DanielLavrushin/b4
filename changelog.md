@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.89.2] - 2026-11-01
+## [1.90.0] - 2026-11-01
 
 - FIXED: **Escalation did not keep a site's address from being banned** - after a set moved a site to its backup set, it kept checking the site's earlier connections. When their server stayed silent, the set banned the address.
 
