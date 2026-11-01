@@ -559,6 +559,111 @@ func TestTheResendTriggerEndsTheWatch(t *testing.T) {
 	}
 }
 
+func escalatingSilenceRig(t *testing.T, backup config.SetConfig) *silenceRig {
+	t.Helper()
+	set := silenceSet()
+	set.Escalate.To = backup.Id
+	return newSilenceRig(t, newInjectingWorker(t, &set, &backup), answering(iphealth.TLSSilent))
+}
+
+func plainBackupSet() config.SetConfig {
+	backup := config.NewSetConfig()
+	backup.Id, backup.Name, backup.Enabled = "backup", "backup", true
+	backup.Targets.DomainsToMatch = []string{"example.org"}
+	return backup
+}
+
+func escalateByResends(t *testing.T, w *Worker, sport uint16) {
+	t.Helper()
+	sendHello(t, w, sport, engine.VerdictAccept)
+	sendHello(t, w, sport, engine.VerdictAccept)
+	sendHello(t, w, sport, engine.VerdictDrop)
+	if w.destState.GetEscalationReason("i.ytimg.com") == "" {
+		t.Fatal("the third copy of the ClientHello must escalate the host")
+	}
+}
+
+func TestAHostThatEscalatesIsNotCheckedForABan(t *testing.T) {
+	r := escalatingSilenceRig(t, plainBackupSet())
+
+	sendHello(t, r.w, 12347, engine.VerdictAccept)
+	escalateByResends(t, r.w, 12345)
+	r.sweepLater()
+
+	if keys := r.probed(); len(keys) != 0 {
+		t.Fatalf("a host that escalated to its backup set must not be checked for a ban, probed %v", keys)
+	}
+	if r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("an escalation that fired first must keep the address from being banned")
+	}
+	if ports := resetsTo(r.sent()); len(ports) != 0 {
+		t.Fatalf("no waiting connection of the escalated host may be reset, got resets to %v", ports)
+	}
+	r.sweepLater()
+	if keys := r.probed(); len(keys) != 0 {
+		t.Fatalf("a later sweep must not check the escalated host either, probed %v", keys)
+	}
+}
+
+func TestAnEscalatedHostsWaitingConnectionsAreResetWhenAnotherCheckBansTheAddress(t *testing.T) {
+	r := escalatingSilenceRig(t, plainBackupSet())
+
+	sendHello(t, r.w, 12347, engine.VerdictAccept)
+	escalateByResends(t, r.w, 12345)
+	r.sweepLater()
+	r.w.bans.confirm(r.w.getConfig(), net.ParseIP("1.2.3.4"), 443, "other.example", "other")
+	r.w.bans.wg.Wait()
+
+	if !r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("the other host's silent check must ban the address")
+	}
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345, 12347}) {
+		t.Fatalf("connections of the escalated host still waiting on the address must be reset once it is banned, got resets to %v", ports)
+	}
+}
+
+func TestADeviceTheBackupSetDoesNotServeIsStillChecked(t *testing.T) {
+	backup := plainBackupSet()
+	backup.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+	r := escalatingSilenceRig(t, backup)
+
+	r.w.ipToMac.Store(map[string]string{"10.0.0.1": "aa:bb:cc:dd:ee:ff"})
+	escalateByResends(t, r.w, 12345)
+	r.w.ipToMac.Store(map[string]string{"10.0.0.1": "11:22:33:44:55:66"})
+	sendHello(t, r.w, 12347, engine.VerdictAccept)
+	r.sweepLater()
+
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("a device that stays on the set must still get its silent server checked, probed %v", keys)
+	}
+	if ban := r.w.bans.reg.List(); len(ban) != 1 || ban[0].Set != "YT images" {
+		t.Fatalf("the set the device stays on must ban the address, got %+v", ban)
+	}
+	if ports := resetsTo(r.sent()); !slices.Contains(ports, 12347) {
+		t.Errorf("the device's waiting connection must be reset once the address is banned, got resets to %v", ports)
+	}
+}
+
+func TestTheBackupSetStillChecksASilentServerItWatches(t *testing.T) {
+	backup := silenceSet()
+	backup.Id, backup.Name = "backup", "backup"
+	r := escalatingSilenceRig(t, backup)
+
+	escalateByResends(t, r.w, 12345)
+	sendHello(t, r.w, 12349, engine.VerdictAccept)
+	r.sweepLater()
+
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("the backup set's own silent ClientHello must still be checked once, probed %v", keys)
+	}
+	if !r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("a silent neutral-name check the backup set started must ban the address")
+	}
+	if ban := r.w.bans.reg.List()[0]; ban.Set != "backup" {
+		t.Errorf("the ban must come from the backup set's watch, got set %q", ban.Set)
+	}
+}
+
 func TestTheSilentHelloTriggerCoversIPv6(t *testing.T) {
 	set := banningAddressSet()
 	r := newSilenceRig(t, newDualStackInjectingWorker(t, &set), answering(iphealth.TLSSilent))

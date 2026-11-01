@@ -10,6 +10,7 @@ import (
 	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/sni"
 	"golang.org/x/sys/unix"
 )
 
@@ -168,6 +169,15 @@ func (t *destStateTracker) TakeSilent(ip net.IP, port uint16) []helloWatch {
 	return taken
 }
 
+func (t *destStateTracker) escalatedAway(cfg *config.Config, h helloWatch) bool {
+	to, _, ok := t.GetEscalation(h.host)
+	if !ok || to == h.setID {
+		return false
+	}
+	target := cfg.GetSetById(to)
+	return target != nil && target.Enabled && sni.SetMatchesSource(target, h.mac)
+}
+
 func (t *destStateTracker) unwatchLocked(key string) {
 	delete(t.watches, key)
 	t.watching.Store(int32(len(t.watches)))
@@ -292,6 +302,13 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 			continue
 		case w.bans.answeredRecently(h.dst, h.port, now):
 			w.destState.Unwatch(h.key)
+			continue
+		case w.destState.escalatedAway(cfg, h):
+			if h.closed {
+				w.destState.Unwatch(h.key)
+			} else {
+				w.destState.Park(h.key)
+			}
 			continue
 		}
 		if !h.closed {
