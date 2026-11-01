@@ -17,6 +17,7 @@ import (
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/florianl/go-nfqueue"
 )
 
 const (
@@ -668,6 +669,42 @@ func TestADeviceTheBackupSetDoesNotServeIsStillChecked(t *testing.T) {
 	}
 	if ports := resetsTo(r.sent()); !slices.Contains(ports, 12347) {
 		t.Errorf("the device's waiting connection must be reset once the address is banned, got resets to %v", ports)
+	}
+}
+
+func TestAnInterfaceTheBackupSetDoesNotServeIsStillChecked(t *testing.T) {
+	idx := scopeIfaces(t)
+	thisHost(t, scopeRouter)
+	backup := plainBackupSet()
+	scopeToGuest(&backup, config.BlockActionDrop)
+	r := escalatingSilenceRig(t, backup)
+
+	from := func(src string, sport uint16, in uint32) int {
+		raw := silentHelloFrom(sport)
+		copy(raw[12:16], net.ParseIP(src).To4())
+		return queuedFrom(t, r.w, raw, in, nil, nil)
+	}
+	from(scopeGuest, 12345, idx["br-guest"])
+	from(scopeGuest, 12345, idx["br-guest"])
+	if v := from(scopeGuest, 12345, idx["br-guest"]); v != nfqueue.NfDrop {
+		t.Fatalf("the guest's third ClientHello must escalate the host and be dropped, verdict %d", v)
+	}
+	if r.w.destState.GetEscalationReason("i.ytimg.com") == "" {
+		t.Fatal("the guest client must escalate the host to the block set scoped to br-guest")
+	}
+	if v := from(scopeLAN, 12347, idx["br0"]); v != nfqueue.NfAccept {
+		t.Fatalf("a br0 client's ClientHello stays on the set, verdict %d", v)
+	}
+	r.sweepLater()
+
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("a connection from an interface the backup set does not serve must still get its silent server checked, probed %v", keys)
+	}
+	if ban := r.w.bans.reg.List(); len(ban) != 1 || ban[0].Set != "YT images" {
+		t.Fatalf("the set the br0 client stays on must ban the address, got %+v", ban)
+	}
+	if ports := resetsTo(r.sent()); !slices.Contains(ports, 12347) {
+		t.Errorf("the br0 client's waiting connection must be reset once the address is banned, got resets to %v", ports)
 	}
 }
 

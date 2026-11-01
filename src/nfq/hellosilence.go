@@ -47,6 +47,7 @@ type helloWatch struct {
 	setID    string
 	set      string
 	mac      string
+	scope    *ingressScope
 	tls      uint16
 	deadline time.Time
 	probing  bool
@@ -175,7 +176,7 @@ func (t *destStateTracker) escalatedAway(cfg *config.Config, h helloWatch) bool 
 		return false
 	}
 	target := cfg.GetSetById(to)
-	return target != nil && target.Enabled && sni.SetMatchesSource(target, h.mac)
+	return target != nil && target.Enabled && sni.SetMatchesSource(target, h.mac) && (h.scope == nil || h.scope.admits(target))
 }
 
 func (t *destStateTracker) unwatchLocked(key string) {
@@ -183,7 +184,7 @@ func (t *destStateTracker) unwatchLocked(key string) {
 	t.watching.Store(int32(len(t.watches)))
 }
 
-func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pkt *pktInfo, connKey, host string, sport, dport, tlsVersion uint16, deadline time.Time) {
+func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pkt *pktInfo, scope *ingressScope, connKey, host string, sport, dport, tlsVersion uint16, deadline time.Time) {
 	if w == nil || w.destState == nil || cfg == nil || cfg.Queue.IsDiscovery || !banEnforced(set) || !w.bans.on() {
 		return
 	}
@@ -214,6 +215,7 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 		setID:    set.Id,
 		set:      set.Name,
 		mac:      pkt.srcMac,
+		scope:    scope.settled(),
 		tls:      tlsVersion,
 		deadline: deadline,
 	})
