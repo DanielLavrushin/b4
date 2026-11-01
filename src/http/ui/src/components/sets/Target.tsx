@@ -24,7 +24,7 @@ const TARGET_SUB_INDEX: Record<string, number> = {
 };
 export const TARGET_SUB_TABS: { labelKey: string; prefixes: string[] }[] = [
   { labelKey: "sets.targets.tabs.domains", prefixes: ["targets.sni_domains", "targets.domain_only", "targets.tls", "targets.ip_version", "targets.geosite_categories"] },
-  { labelKey: "sets.targets.tabs.ips", prefixes: ["targets.ip", "targets.geoip_categories"] },
+  { labelKey: "sets.targets.tabs.ips", prefixes: ["targets.ip", "targets.ip_priority", "targets.geoip_categories"] },
   { labelKey: "sets.targets.tabs.asns", prefixes: ["targets.asns"] },
   { labelKey: "sets.targets.tabs.sourceDevices", prefixes: ["targets.source_devices", "targets.source_devices_exclude"] },
 ];

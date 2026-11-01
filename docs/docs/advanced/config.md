@@ -130,7 +130,7 @@ Each set is one object in the `sets` array, carrying its whole configuration. It
 - `discovery` - the set's Discovery addresses and its watchdog switch
 - `escalate` - which set to escalate to when this one stops working
 
-The **Import/Export** tab of the set editor shows a set as JSON and takes a pasted one back. The exported JSON leaves out values equal to the defaults and the settings of switched-off features. It also leaves out the set's id, source devices, watchdog switch and escalation settings, and, when the set has source devices, its `dscp`.
+The **Import/Export** tab of the set editor shows a set as JSON and takes a pasted one back. The exported JSON leaves out values equal to the defaults and the settings of switched-off features. It also leaves out the set's id, source devices, `targets.ip_priority`, watchdog switch and escalation settings, and, when the set has source devices, its `dscp`. A JSON imported into a set keeps that set's own `targets.ip_priority`.
 
 ### A set's `dscp` {#set-dscp}
 
@@ -315,6 +315,7 @@ The AI API key is not part of this file. b4 keeps it in `ai_secrets.json`.
 | --- | --- | --- |
 | Targets | **IP Version Filter** | `targets.ip_version` |
 | Targets | **Domain-only matching** | `targets.domain_only` |
+| Targets | **IP priority** | `targets.ip_priority` |
 | TCP > General | **Port Filter** | `tcp.dport_filter` |
 | TCP > Faking | **Generated Payload** | `faking.payload_file`, a path such as `captures/tls_youtube_com.bin` |
 | UDP | **QUIC Matching** | `udp.filter_quic` |

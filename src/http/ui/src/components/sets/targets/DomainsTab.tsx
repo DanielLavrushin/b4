@@ -151,7 +151,7 @@ export const DomainsTab = ({
       <B4Hint>{t("sets.targets.domainAlert")}</B4Hint>
 
       <Box sx={{ my: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>
-        <Box sx={{ maxWidth: 360, flex: 1, minWidth: 260 }}>
+        <Box sx={{ maxWidth: 360, flex: "1 1 260px", minWidth: 0 }}>
           <B4Switch
             label={t("sets.targets.catchAllDomains")}
             description={t("sets.targets.catchAllDomainsDesc", {
@@ -168,7 +168,7 @@ export const DomainsTab = ({
             }
           />
         </Box>
-        <Box sx={{ maxWidth: 360, flex: 1, minWidth: 260 }}>
+        <Box sx={{ maxWidth: 360, flex: "1 1 260px", minWidth: 0 }}>
           <B4Switch
             description={t("sets.targets.domainOnlyDesc")}
             checked={config.targets.domain_only ?? false}

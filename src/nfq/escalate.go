@@ -39,6 +39,24 @@ func (w *Worker) escalatedSetFor(cfg *config.Config, selected *config.SetConfig,
 	return escSet
 }
 
+func escalationReaches(cfg *config.Config, from *config.SetConfig, id string) bool {
+	if cfg == nil || from == nil || id == "" {
+		return false
+	}
+	current := from
+	for hop := 0; hop < MaxEscalationHops && current.Escalate.Active(); hop++ {
+		if current.Escalate.To == id {
+			return true
+		}
+		next := cfg.GetSetById(current.Escalate.To)
+		if next == nil || !next.Enabled {
+			return false
+		}
+		current = next
+	}
+	return false
+}
+
 func (w *Worker) tryEscalate(cfg *config.Config, set *config.SetConfig, host, srcMac string, dst net.IP, reason string, tlsVersion uint16, ipVersion uint8, from ...*ingressScope) *config.SetConfig {
 	if w == nil || w.destState == nil || cfg == nil || set == nil || host == "" || !set.Escalate.Active() || routingBlocks(set) {
 		return nil

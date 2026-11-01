@@ -9,10 +9,13 @@ export function useSets() {
   const [loading, setLoading] = useState(false);
 
   const createSet = useCallback(
-    async (set: Omit<B4SetConfig, "id">): Promise<ApiResponse<B4SetConfig>> => {
+    async (
+      set: Omit<B4SetConfig, "id">,
+      after?: string,
+    ): Promise<ApiResponse<B4SetConfig>> => {
       setLoading(true);
       try {
-        const data = await setsApi.createSet(set);
+        const data = await setsApi.createSet(set, after);
         return { success: true, data };
       } catch (e) {
         return { success: false, error: e };
@@ -87,7 +90,8 @@ export function useSets() {
     async (set: B4SetConfig): Promise<ApiResponse<B4SetConfig>> => {
       const { id: _, revision: _revision, ...rest } = structuredClone(set);
       if (rest.discovery) rest.discovery = { ...rest.discovery, watchdog: false };
-      return createSet({ ...rest, name: `${set.name} (copy)` });
+      rest.targets = { ...rest.targets, ip_priority: false };
+      return createSet({ ...rest, name: `${set.name} (copy)` }, set.id);
     },
     [createSet]
   );

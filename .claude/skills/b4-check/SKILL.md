@@ -27,7 +27,7 @@ so instead of contorting the code.
 | Check | Rule |
 | --- | --- |
 | Em-dash | None in added lines anywhere: code, docs, changelog, strings. Plain hyphen. Older lines that have one are left alone. |
-| Comments | None in added Go, TS/TSX/JS, shell, YAML, Makefile or Dockerfile lines. Names and structure carry the meaning; explanations go in the commit message or the PR. `//go:` directives are code. |
+| Comments | None in added Go, TS/TSX/JS, shell, YAML, Makefile or Dockerfile lines. Names and structure carry the meaning; explanations go in the commit message or the PR. `//go:` directives are code, and so are the swag annotations in Go (`// @Param`, `// @Router` and the rest) that `make swagger` turns into `docs/static/swagger.json`. |
 | UI strings | `en.json` and `ru.json` carry the same keys, in `src/http/ui/src/i18n/` and `hub/ui/src/i18n/`. Plurals: English `_one`/`_other` (a bare key stands in for `_other`), Russian `_one`/`_few`/`_many`. |
 | Docs | A page under `docs/docs/` has its mirror under `docs/i18n/ru/docusaurus-plugin-content-docs/current/`. A change to one side only is a NOTE: a correction in one locale applies to the other. |
 | Changelog | `changelog.md` and `changelog_ru.md` change together, with the same top heading and bullet count. `hub/` changes get a `hub/CHANGELOG.md` bullet. |

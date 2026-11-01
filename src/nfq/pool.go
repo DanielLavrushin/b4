@@ -520,10 +520,11 @@ func (p *Pool) ClearEscalation(host string) {
 }
 
 func (p *Pool) GetMatcher() *sni.SuffixSet {
-	if len(p.Workers) == 0 {
+	if p == nil || len(p.Workers) == 0 {
 		return nil
 	}
-	return p.Workers[0].getMatcher()
+	m, _ := p.Workers[0].matcher.Load().(*sni.SuffixSet)
+	return m
 }
 
 var errNoDNSWorker = errors.New("no worker to send DNS from")

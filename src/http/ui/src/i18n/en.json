@@ -1457,7 +1457,7 @@
       "failedToToggleSets": "Failed to update sets",
       "failedToUpdate": "Failed to update",
       "failedToReorder": "Failed to reorder sets",
-      "orderHint": "When several sets could match the same traffic, b4 picks the most specific match, not the first set in this list: a set restricted to source devices, then the longest matching domain or IP range. Order decides only between matches that are equally specific.",
+      "orderHint": "When several sets could match the same traffic, b4 picks the most specific match, not the first set in this list: a set restricted to source devices, then the longest matching domain or IP range. Order decides only between matches that are equally specific, and for sets with IP priority on: connections to their addresses stay with them even when a set lower in the list matches the domain.",
       "noSets": "No configuration sets",
       "noSetsHint": "Create your first set to start configuring bypass rules",
       "importFromTool": "Import"
@@ -1637,6 +1637,8 @@
       "catchAllChipV4": "Any IPv4",
       "catchAllChipV6": "Any IPv6",
       "catchAllIpNotice": "Matches every IP address. \"{{value}}\" will be added.",
+      "ipPriority": "IP priority",
+      "ipPriorityDesc": "A connection to one of this set's addresses stays with this set even when a set lower in the list matches its domain. Sets limited to source devices still come first, and 0.0.0.0/0 and ::/0 never count. Use it for servers that carry only this set's sites, such as an ISP's own Google Global Cache nodes. Leave it off for shared CDN ranges, which carry many sites.",
       "tabs": {
         "domains": "Bypass Domains",
         "ips": "Bypass IPs",

@@ -60,7 +60,7 @@ For an address:
 
 ## When it does not work
 
-**The connections carry another set's badge.** Another set targets the same site and takes its connections, for example a set limited to the device. When a domain is already in another set, the **Targets** tab names that set. [How sets match traffic](../internals/matching.md) describes how b4 chooses.
+**The connections carry another set's badge.** Another set targets the same site and takes its connections, for example a set limited to the device. A set higher in the list with [IP priority](../sets/targets.md#ip-addresses) on also keeps the connections to the server addresses it lists. When a domain is already in another set, the **Targets** tab names that set. [How sets match traffic](../internals/matching.md) describes how b4 chooses.
 
 **The connections carry no set at all.** The set may be turned off, or the site may load from other domains. The Traffic page shows the names it really uses, and **Domains not in any set** on the dashboard opens it with only the connections no set matched.
 
