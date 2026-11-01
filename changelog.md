@@ -3,6 +3,7 @@
 ## [1.90.0] - 2026-11-01
 
 - FIXED: **Escalation did not keep a site's address from being banned** - after a set moved a site to its backup set, it kept checking the site's earlier connections. When their server stayed silent, the set banned the address.
+- FIXED: **A backup set could give up on a site as soon as Escalation moved the site to it** - the connection that triggered the switch arrived with the first set's unanswered attempts already counted. A backup set with IP Block Detection reset it, and with Cache Blocked IPs on, connections to that address were then reset for several minutes. A backup set with its own Escalation passed the site on to the next set without trying it.
 
 ## [1.89.1] - 2026-10-31
 
