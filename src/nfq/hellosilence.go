@@ -65,7 +65,11 @@ func (t *destStateTracker) WatchHello(h *helloWatch) {
 	}
 	t.watchMu.Lock()
 	defer t.watchMu.Unlock()
-	if _, ok := t.watches[h.key]; ok || len(t.watches) >= maxHelloWatches {
+	if prev, ok := t.watches[h.key]; ok {
+		if prev.setID == h.setID {
+			return
+		}
+	} else if len(t.watches) >= maxHelloWatches {
 		return
 	}
 	if t.watches == nil {

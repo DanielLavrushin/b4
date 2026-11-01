@@ -761,6 +761,26 @@ func TestTheBackupSetCountsTheStuckConnectionsClientHellosFromOne(t *testing.T) 
 	}
 }
 
+func TestTheBackupSetChecksASilentServerOnTheConnectionItTookOver(t *testing.T) {
+	backup := silenceSet()
+	backup.Id, backup.Name = "backup", "backup"
+	r := escalatingSilenceRig(t, backup)
+
+	escalateByResends(t, r.w, 12345)
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	r.sweepLater()
+
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("the backup set must check a server that stays silent on the connection it took over, probed %v", keys)
+	}
+	if ban := r.w.bans.reg.List(); len(ban) != 1 || ban[0].Set != "backup" {
+		t.Fatalf("the ban must come from the backup set's watch on that connection, got %+v", ban)
+	}
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
+		t.Fatalf("the waiting connection must be reset once the address is banned, got resets to %v", ports)
+	}
+}
+
 func TestAnEscalationChainGivesTheNextSetItsOwnTries(t *testing.T) {
 	spare := plainBackupSet()
 	spare.Id, spare.Name = "spare", "spare"
