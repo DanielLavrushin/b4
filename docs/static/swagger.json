@@ -4,7 +4,7 @@
         "description": "B4 network packet processor REST API",
         "title": "B4 API",
         "contact": {},
-        "version": "1.89.0"
+        "version": "1.90.0"
     },
     "basePath": "/api",
     "paths": {
@@ -8681,6 +8681,12 @@
                 },
                 "dscp_path": {
                     "$ref": "#/definitions/config.DSCPPath"
+                },
+                "hosts": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "keep_targets": {
                     "type": "boolean"

@@ -2,6 +2,7 @@
 
 ## [1.90.0] - 2026-11-01
 
+- ADDED: **Discovery offers the other blocked hosts a site's page needs for its styles, scripts and images** - a last step, Page hosts, tests the hosts the page names, first without b4 and then with the strategy found. Hosts that load only with the strategy get checkboxes on the result card, and Apply as a set adds the ticked ones. History keeps them for a later Apply, and b4_find_bypass_strategy names them to AI apps.
 - CHANGED: **Reloading or reopening the Discovery page within 30 minutes of a run's end shows its results again** - this holds for a run started from that page. New search clears them in the browser where it is clicked.
 - CHANGED: **During a Discovery run, a site's row shows a strategy it found as Fastest so far instead of Found** - the result card offers the strategy that loaded the most sites, which can be another one. Among strategies from earlier runs, the card prefers the one that worked most often, so cached-2 goes before cached-10. The card and the history list the same other strategies, up to twelve, fastest first.
 - FIXED: **Discovery gave sets a DNS redirect that the site did not need** - it took the provider's DNS answer for a forged one when a public resolver gave other addresses and no address opened the site without a bypass. Blocked sites that send each region to its own servers got such a redirect. The apply dialog then could not add the site to a set with the same strategy.

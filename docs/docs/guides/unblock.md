@@ -49,6 +49,7 @@ When the set exists but the site still does not open:
 - **Traffic** shows another set in the **Set** column: that set handles the site, and the new strategy has no effect there. Applying the result with **Write the strategy into an existing set** and that set puts the strategy where it applies.
 - The browser can reach the site over QUIC (HTTP/3), which Discovery does not test. **Block QUIC (force TCP)** on the set's [UDP](../sets/udp.md) tab makes the browser use TCP.
 - The browser can connect over another IP version than the run, for example over IPv6 while the run tested IPv4. A new run with **IP version for the probes** set to the browser's version tests the site the way the browser reaches it.
+- The page opens without its styles or images: the other hosts they come from can be blocked too. The result card lists the [page hosts](../discovery.md#page-hosts) that the strategy opens, and **Apply** in the Discovery history offers them again.
 - The site opened before and stopped later: [Keeping sets working](./keep-working.md) shows how the watchdog searches for a new strategy on its own.
 
 The full list of checks, from the quickest to the slowest, is under [A site does not open](../troubleshooting/index.md#a-site-does-not-open).
