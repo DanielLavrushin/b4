@@ -57,6 +57,13 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
         secure: false,
+        configure: (proxy) => {
+          proxy.on("proxyReqWs", (proxyReq, req) => {
+            if (req.headers.origin === `http://${req.headers.host}`) {
+              proxyReq.setHeader("origin", new URL(REMOTE_BACKEND).origin);
+            }
+          });
+        },
       },
     },
   },

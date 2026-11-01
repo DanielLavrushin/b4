@@ -666,7 +666,7 @@ func TestMCPListWritablePaths(t *testing.T) {
 		byPath[p.Path] = p
 	}
 	for _, want := range []string{
-		"sets[].enabled", "sets[].tcp.seg2delay", "sets[].targets.domain_only",
+		"sets[].enabled", "sets[].tcp.seg2delay", "sets[].targets.domain_only", "sets[].targets.ip_priority",
 		"sets[].fragmentation.strategy", "system.mtproto.port", "system.socks5.udp_timeout",
 		"system.mtproto.bridge.enabled",
 	} {
@@ -692,6 +692,65 @@ func TestMCPListWritablePaths(t *testing.T) {
 	}
 	if got := byPath["sets[].fragmentation.strategy_pool"]; got.Type != "list" {
 		t.Errorf("strategy_pool type = %q, want list", got.Type)
+	}
+}
+
+func TestMCPWritesIPPriorityAndRevertsIt(t *testing.T) {
+	srv, api := newMCPTestServerAPI(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].targets.ip_priority", "true"))
+	if !out.Changed || out.Previous != "false" || out.Current != "true" {
+		t.Fatalf("diff = %+v, want false -> true", out)
+	}
+	if set := api.getCfg().GetSetById("set-1"); set == nil || !set.Targets.IPPriority {
+		t.Fatal("the write was reported but targets.ip_priority is not on in the saved configuration")
+	}
+
+	rev := decodeRevert(t, session, ctx)
+	if !rev.Reverted || rev.RestoredTo != "false" {
+		t.Errorf("revert = %+v, want the switch restored to false", rev)
+	}
+	if set := api.getCfg().GetSetById("set-1"); set == nil || set.Targets.IPPriority {
+		t.Error("b4_revert_last_change must turn targets.ip_priority off again")
+	}
+}
+
+func TestMCPWriteSaysWhenTheTLSFilterLeavesIPPriorityWithoutEffect(t *testing.T) {
+	const inert = `targets.ip_priority has no effect on set "video" while its targets.tls is set.`
+	cases := []struct {
+		name, path, value string
+		tls               string
+		priority, says    bool
+	}{
+		{name: "the switch written on a set with a TLS filter", path: "sets[video].targets.ip_priority", value: "true", tls: "1.2", says: true},
+		{name: "a TLS filter written on a set with the switch on", path: "sets[video].targets.tls", value: "1.3", priority: true, says: true},
+		{name: "the switch written on a set without a TLS filter", path: "sets[video].targets.ip_priority", value: "true"},
+		{name: "another write to a set whose switch already has no effect", path: "sets[video].tcp.seg2delay", value: "10", tls: "1.2", priority: true},
+		{name: "the TLS filter cleared on a set with the switch on", path: "sets[video].targets.tls", value: "", tls: "1.2", priority: true},
+		{name: "the switch turned off on a set with a TLS filter", path: "sets[video].targets.ip_priority", value: "false", tls: "1.2", priority: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := writableCfg(t)
+			cfg.Sets[0].Targets.IPs = []string{"203.0.113.8/29"}
+			cfg.Sets[0].Targets.TLSVersion = tc.tls
+			cfg.Sets[0].Targets.IPPriority = tc.priority
+			srv, api := newMCPTestServerAPI(t, cfg)
+			session, ctx := connectMCP(t, srv)
+
+			out := decodeSetValue(t, callSetValue(t, session, ctx, tc.path, tc.value))
+			if !out.Changed {
+				t.Fatalf("write did not take: %+v", out)
+			}
+			set := api.getCfg().GetSetById("set-1")
+			if tc.says && (!set.Targets.IPPriority || set.IPPriorityApplies()) {
+				t.Fatalf("precondition: the switch is stored on without effect, got ip_priority=%v tls=%q", set.Targets.IPPriority, set.Targets.TLSVersion)
+			}
+			if got := strings.Contains(out.Note, inert); got != tc.says {
+				t.Errorf("note says the switch has no effect = %v, want %v: %q", got, tc.says, out.Note)
+			}
+		})
 	}
 }
 

@@ -11,13 +11,17 @@ import (
 	"github.com/daniellavrushin/b4/dns"
 )
 
-func realClientHello(t *testing.T, serverName string) []byte {
+func realClientHello(t *testing.T, serverName string, maxVersion ...uint16) []byte {
 	t.Helper()
+	cfg := &tls.Config{ServerName: serverName, InsecureSkipVerify: true}
+	if len(maxVersion) > 0 {
+		cfg.MaxVersion = maxVersion[0]
+	}
 	c, s := net.Pipe()
 	defer s.Close()
 	go func() {
 		defer c.Close()
-		_ = tls.Client(c, &tls.Config{ServerName: serverName, InsecureSkipVerify: true}).Handshake()
+		_ = tls.Client(c, cfg).Handshake()
 	}()
 	_ = s.SetReadDeadline(time.Now().Add(5 * time.Second))
 	head := make([]byte, tlsRecordHeader)

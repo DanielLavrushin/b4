@@ -306,7 +306,7 @@ func RoutingHandleDNSAwait(cfg *config.Config, set *config.SetConfig, ips []net.
 	if cfg == nil || set == nil || !set.Routing.Enabled || len(ips) == 0 || set.Targets.DomainOnly || routeLacksEgress(set) {
 		return nil
 	}
-	usable := routeAsyncUsable(cfg, ips)
+	usable := keepLearnedIPs(cfg, set, routeAsyncUsable(cfg, ips))
 	if len(usable) == 0 {
 		return nil
 	}
@@ -348,7 +348,7 @@ func RoutingLearnIPAsync(cfg *config.Config, set *config.SetConfig, ip net.IP) {
 	if cfg == nil || set == nil || ip == nil || !set.Routing.Enabled {
 		return
 	}
-	if config.RoutingIsBlock(set.Routing.Mode) {
+	if config.RoutingIsBlock(set.Routing.Mode) || !keepLearned(cfg, set, ip) {
 		return
 	}
 	routeAsyncSeenMu.Lock()
@@ -366,7 +366,7 @@ func RoutingLearnIPAsync(cfg *config.Config, set *config.SetConfig, ip net.IP) {
 	routeAsyncSubmit(
 		func() {
 			defer routeAsyncSettle(setID, fresh, done)
-			RoutingLearnIP(cfg, set, fresh[0])
+			routeLearnIP(cfg, set, fresh[0])
 		},
 		func() { routeAsyncAbandon(setID, fresh, done) },
 	)

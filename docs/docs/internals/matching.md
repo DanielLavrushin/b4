@@ -14,12 +14,15 @@ b4 checks each new TCP connection in the order below. A later step can replace t
 flowchart TD
     A["New connection"] --> B["Steps 1-4: a match by address,\nDNS answer, learned address or port"]
     B --> C{"ClientHello names\na server that\na set targets?"}
-    C -->|"Yes"| D["The set of that name"]
+    C -->|"Yes"| P{"An address match\nwith IP priority ranks\nabove that set?"}
+    P -->|"No"| D["The set of that name"]
+    P -->|"Yes"| HOLD["The set of the\naddress match"]
     C -->|"No"| E{"Match from steps 1-4,\nand its TLS version\nfilter fits?"}
     E -->|"Yes"| F["That set"]
     E -->|"No"| SKIP["No set:\nthe packet passes unchanged"]
     D --> G{"Is the host\nescalated?"}
     F --> G
+    HOLD -->|"only to a backup\non its chain\nor ranked above it"| G
     G -->|"Yes"| H["The backup set"]
     G -->|"No"| OK["Apply the set"]
 
@@ -33,11 +36,11 @@ flowchart TD
 | --- | --- | --- |
 | 1 | The destination address is in a set's IP addresses, GeoIP categories or ASN prefixes | Address match |
 | 2 | No address match, and the same device resolved one of a set's domains to this address in the last two minutes | DNS match |
-| 3 | No DNS match, and the address was learned from a server name match | Learned match. It replaces an address match |
+| 3 | No DNS match, and the address was learned from a server name match | Learned match. It replaces an address match, apart from one that [IP priority](#ip-priority) holds |
 | 4 | Still no match, and a set has a port filter and no destination targets at all | Port match |
-| 5 | The ClientHello names a server that a set targets | Name match. It replaces any match above, and b4 learns the address |
+| 5 | The ClientHello names a server that a set targets | Name match. It replaces any match above, and b4 learns the address. An address match that [IP priority](#ip-priority) holds takes the connection instead, and b4 learns nothing |
 | 6 | A match from steps 1-4 whose [TLS version filter](../sets/targets.md#domains) does not fit the ClientHello | The match is dropped |
-| 7 | The host is escalated to a backup set | The backup set takes over, see [Escalation](../sets/escalation.md) |
+| 7 | The host is escalated to a backup set | The backup set takes over, see [Escalation](../sets/escalation.md). A connection that [IP priority](#ip-priority) holds follows only a backup on its set's escalation chain or ranked above its set |
 
 QUIC is matched by the server name in its Initial packet, which b4 reads whatever the set's **QUIC Matching** setting is. UDP to port 53 is DNS and goes to b4's [DNS handling](../dns.md) instead.
 
@@ -53,7 +56,7 @@ Several sets can target the same domain or address. b4 then picks the most speci
 2. a set without source devices, with fitting version filters;
 3. the same two again, with the version filters ignored.
 
-**Addresses.** Among the sets whose IP addresses, GeoIP categories or ASN prefixes cover the destination, a set limited to source devices that include the sender comes first, then the longest prefix. The list order breaks ties between prefixes of the same length.
+**Addresses.** Among the sets whose IP addresses, GeoIP categories or ASN prefixes cover the destination, a set limited to source devices that include the sender comes first, then the longest prefix. The list order breaks ties between prefixes of the same length. In both cases, a set with **All devices except selected** on counts as limited to every device that is not selected.
 
 [Routing](../sets/routing.md) chooses differently, because firewall rules decide it, see [How routing sets work](./routing.md):
 
@@ -66,11 +69,74 @@ A routing set for one service therefore keeps its traffic away from a routing se
 
 ## Learned addresses and DNS answers
 
-When a server name matches a set, b4 remembers the destination address with the name and the set. A connection to that address then takes the same set before its ClientHello arrives, and so does a connection that carries no server name. The entry lasts 10 minutes after its last use. b4 learns a private address this way only over TCP, to an address a set's **Bypass IPs** list as described above.
+When a server name matches a set, b4 remembers the destination address with the name and the set. A connection to that address then takes the same set before its ClientHello arrives, and so does a connection that carries no server name. The entry lasts 10 minutes after its last use. b4 learns a private address this way only over TCP, to an address a set's **Bypass IPs** list as described above. From a connection that [IP priority](#ip-priority) holds, b4 learns nothing.
 
 When a DNS answer for a set's domain passes through b4, it notes the answered addresses for the device that asked. For two minutes, a connection from that device to one of those addresses takes the set when no address target matches.
 
 A set with **Domain-only matching** on neither learns addresses nor uses DNS answers. It matches its domains by the server name alone.
+
+## IP priority {#ip-priority}
+
+**IP priority** is a switch on the [Bypass IPs](../sets/targets.md#ip-addresses) sub-tab. It keeps a connection to one of the set's addresses with the set, even when a set lower in the list matches the connection by name. A match by name here is the server name in a ClientHello, the name in a QUIC Initial, or an address learned from an earlier connection's server name. The set's addresses are its IP addresses, GeoIP categories and ASN prefixes. The switch applies on save, without a restart.
+
+### When the set holds a connection
+
+The set holds a connection when every condition below is met. Otherwise b4 matches the connection as without the switch.
+
+| Condition | Detail |
+| --- | --- |
+| The set wins the address match | As under [Choosing between sets](#choosing-between-sets): a set limited to source devices that include the sender first, then the longest prefix, then the list order. When a narrower range of a set with the switch off covers the address, that set wins, and nothing is held |
+| Not through a catch-all | `0.0.0.0/0` and `::/0`, which **Match any IP address** adds, never count |
+| The set ranks above the set of the name | A set limited to source devices that include the sender ranks before every set without source devices, wherever it sits in the list. Among sets of the same kind, the one higher in the list ranks first. A set without source devices holds nothing against a set higher in the list, or against one limited to the sender's device |
+| No TLS version filter | On a set whose **TLS Version Filter** is not **Any**, the switch has no effect, and the sub-tab hides it. Over MCP, a write that combines the switch with `targets.tls` is saved, and the answer says the switch has no effect |
+| The filters fit | The port filter on the set's TCP or UDP tab takes the destination port, and its **IP Version Filter** fits the connection |
+
+### One verdict per connection
+
+A held TCP connection goes to the set with every packet, from the SYN on, retransmitted ClientHellos included. A held QUIC flow keeps its Initial and its later datagrams on the set. On the [Traffic](../connections.md) page, a held connection shows its domain and no set matched by domain. A held QUIC flow shows its domain only on the Initial. The set matched by IP is the set that handles it: this set, or the backup it follows.
+
+Packets that carry no name yet are the exception when the address was learned for this set or for a set that ranks above it. The SYN and the first part of a ClientHello split before the server name then take that set, as without the switch. When the learned site is escalated, they take its backup. From the part that carries the name on, the hold applies.
+
+A [block set](../sets/blocking.md) lower in the list that matches the server name does not block a held connection. b4 still blocks the lookups of its names.
+
+### What b4 learns
+
+While the set holds a connection, b4 learns nothing from its server name for the set of the name.
+
+Routing and the sets' own [DSCP values](./dscp.md) go by destination address in the firewall, without a name. A set lower in the list does not learn this set's addresses into its routing or DSCP entries: not from DNS answers, b4's own lookups, server names or escalation. The address match decides as above, among the sets without source devices, and this set's port filter plays no part.
+
+| Set | Learns this set's addresses |
+| --- | --- |
+| A set lower in the list, without source devices | No |
+| A set on this set's escalation chain, from its **Escalate to set** up to the first disabled set | Yes, so that an escalation of this set's sites can route them |
+| A set limited to source devices | Yes |
+| A set higher in the list | Yes |
+
+A set with the switch on does not stop learning when it is limited to source devices, or when it is a block set limited to source interfaces. Static targets, the addresses, ranges, GeoIP categories and ASNs a set lists, are never affected.
+
+Turning the switch on does not remove what sets lower in the list learned before. Those addresses stay in their routing and DSCP entries until their lifetime ends or b4 restarts. The lifetimes are listed in [How a set collects addresses](./routing.md#collecting-addresses) and [Which packets get the value](./dscp.md#dscp-addresses).
+
+### Escalation
+
+[Escalation](../sets/escalation.md) works per site. From the ClientHello on, a held connection follows an escalation of the site it names only to a backup on this set's escalation chain, or to one that ranks above this set. An escalation of that site to any other backup leaves the connection with this set.
+
+When a held connection fails, b4 escalates its site to this set's backup, if the set has one. Connections to that site on other addresses then move to that backup as well. The backup learns the site's addresses into its routing and DSCP entries. These go by address and apply to every connection to those addresses.
+
+Between sets without source devices, a backup below this set and off its chain never learns this set's addresses for its routing or DSCP value. That holds even when the escalation comes from a set that ranks above this set, or from a connection on a port that this set's port filter leaves out. b4 still hands such connections to that backup, without its routing and DSCP value. When the backup has targets of its own and routes through a proxy or a tunnel interface that is up, b4 leaves such TCP connections alone. They then get no strategy at all. Backups of the sets that rank above this set are best placed above it or on its escalation chain, when they route traffic or carry a DSCP value. A backup placed there also takes this set's held connections when their site escalates to it.
+
+### Copies
+
+A [shared set](../sets/sharing.md) never carries the switch, and the JSON of the **Import/Export** tab leaves it out.
+
+| Copy | The switch |
+| --- | --- |
+| **Duplicate** on the **Sets** page | Off. The copy goes right after its source |
+| A duplicate made by an AI assistant over [MCP](../settings/mcp.md) | Off. The answer warns when the copy lands above a source whose switch is in effect |
+| A set from the Community Hub, new or replacing a local set | Off |
+| A shared set pasted on the **Import/Export** tab, into a new or an existing set | Off |
+| A plain JSON pasted on the **Import/Export** tab | The set keeps its own value |
+
+A copy moved above its source wins the address match with the switch off. The source then holds nothing until the copy moves below it again, or until the copy has the switch turned on and holds instead.
 
 ## What happens on a match
 

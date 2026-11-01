@@ -46,7 +46,7 @@ Left out:
 - routing to an interface, a proxy or the Telegram bridge, with the proxy's address and credentials;
 - device filters and escalation;
 - the DNS server address the set redirects to, and IP block detection;
-- the [Discovery addresses](./discovery.md), the watchdog switch and the set's own [DSCP value](./routing.md#dscp);
+- the [Discovery addresses](./discovery.md), the watchdog switch, the [IP priority](./targets.md#ip-addresses) switch and the set's own [DSCP value](./routing.md#dscp);
 - the set's id and its enabled state.
 
 ASNs travel as numbers. The router that imports the set fetches their address ranges itself.
@@ -71,7 +71,7 @@ The import runs on the router and lists every change under **Notes from the impo
 - A pin for a domain the set does not target, or for a private address, is dropped. The remaining pins are listed, to be checked on the **DNS & Routing** tab before saving.
 - A DNS redirect to a DoH resolver outside the known public list is dropped.
 
-Settings a shared set leaves out are removed even when the JSON was edited by hand to include them. A shared set imported into an existing set keeps that set's own DSCP value.
+Settings a shared set leaves out are removed even when the JSON was edited by hand to include them. A shared set imported into an existing set keeps that set's own DSCP value, and turns its **IP priority** switch off.
 
 ## Checking the result
 

@@ -859,7 +859,7 @@ func (l *Listener) passOnToSet(client net.Conn, origIP net.IP, origPort int, fro
 	}
 	routerLocal := isRouterClient(clientAddr.IP)
 	name := sni.NormalizeDomain(sniffed.host)
-	peer, via := l.passOnPeer(matcher, peers, name, origIP, from.MAC, routerLocal)
+	peer, via := l.passOnPeer(matcher, peers, name, origIP, uint16(origPort), from.MAC, routerLocal)
 	if peer == nil {
 		return rest, false
 	}
@@ -872,20 +872,21 @@ func (l *Listener) passOnToSet(client net.Conn, origIP net.IP, origPort int, fro
 	return nil, true
 }
 
-func (l *Listener) passOnPeer(matcher SetMatcher, peers []*Listener, name string, dst net.IP, srcMAC string, routerLocal bool) (*Listener, string) {
+func (l *Listener) passOnPeer(matcher SetMatcher, peers []*Listener, name string, dst net.IP, dport uint16, srcMAC string, routerLocal bool) (*Listener, string) {
 	applies := func(set *config.SetConfig) bool { return passOnApplies(set, srcMAC, routerLocal) }
-	if name != "" {
-		if peer := l.passOnListener(peers, matcher.SetForHost(name, srcMAC, applies), true); peer != nil {
-			return peer, "name " + name
-		}
-	}
-	set := matcher.SetForAddress(dst, srcMAC, func(set *config.SetConfig) bool {
-		return applies(set) && passOnEligible(set, false)
+	var peer *Listener
+	_, viaName := matcher.PassOnSet(name, dst, dport, srcMAC, applies, func(set *config.SetConfig, byName bool) bool {
+		peer = l.passOnListener(peers, set, byName)
+		return peer != nil
 	})
-	if peer := l.passOnListener(peers, set, false); peer != nil {
+	switch {
+	case peer == nil:
+		return nil, ""
+	case viaName:
+		return peer, "name " + name
+	default:
 		return peer, "address " + dst.String()
 	}
-	return nil, ""
 }
 
 func (l *Listener) passOnListener(peers []*Listener, set *config.SetConfig, byName bool) *Listener {

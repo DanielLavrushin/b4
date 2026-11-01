@@ -204,7 +204,7 @@ func getRouteBackend(cfg *config.Config) routeBackend {
 }
 
 func RoutingHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP) {
-	routeHandleDNS(cfg, set, ips, nil)
+	routeHandleDNS(cfg, set, keepLearnedIPs(cfg, set, ips), nil)
 }
 
 func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, stale func() bool) {
@@ -342,10 +342,13 @@ func RoutingLearnIP(cfg *config.Config, set *config.SetConfig, ip net.IP) {
 	if cfg == nil || set == nil || ip == nil || !set.Routing.Enabled {
 		return
 	}
-	if config.RoutingIsBlock(set.Routing.Mode) {
+	if config.RoutingIsBlock(set.Routing.Mode) || !keepLearned(cfg, set, ip) {
 		return
 	}
+	routeLearnIP(cfg, set, ip)
+}
 
+func routeLearnIP(cfg *config.Config, set *config.SetConfig, ip net.IP) {
 	routeMu.Lock()
 	defer routeMu.Unlock()
 
@@ -476,6 +479,7 @@ func routeAddResolvedIPs(cfg *config.Config, set *config.SetConfig, ips []net.IP
 	if cfg == nil || set == nil || len(ips) == 0 {
 		return true
 	}
+	ips = keepLearnedIPs(cfg, set, ips)
 
 	routeMu.Lock()
 	defer routeMu.Unlock()

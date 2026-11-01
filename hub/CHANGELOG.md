@@ -2,6 +2,10 @@
 
 Releases of the community hub service, published from the `b4hub` repository. The router changelog is `changelog.md` at the repository root.
 
+## [1.6.0] - 2026-11-01
+
+- CHANGED: **The console's Check treats IP priority, the set switch that b4 1.90.0 adds, as a private field** - like a set's source devices, `targets.ip_priority` is never shared. When the Full set JSON of the edit dialog turns it on, Check lists it under Stripped fields. A hub built from an earlier b4 drops it with a warning about fields b4 does not know.
+
 ## [1.5.0] - 2026-10-21
 
 - ADDED: **Sets without targets that handle only calls, which b4 1.88.0 can share, are accepted** - one that also filters TCP ports is refused, and the others are marked as needing b4 1.88.0, as is any set that uses the generated STUN payload. The calls they handle and their UDP ports count like targets for duplicates and versions, but their `udp.filter_stun`, which b4 ignores on such a set, does not. On set cards the console shows their calls, such as `Calls: Discord app, Browsers`, and its search finds them by `discord` or `stun`.
