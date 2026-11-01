@@ -1,0 +1,4116 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "B4 network packet processor REST API",
+        "title": "B4 API",
+        "contact": {},
+        "version": "1.48.1"
+    },
+    "basePath": "/api",
+    "paths": {
+        "/asn": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ASN"
+                ],
+                "summary": "Get all ASN entries",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/config.AsnInfo"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ASN"
+                ],
+                "summary": "Create or update ASN entry",
+                "parameters": [
+                    {
+                        "description": "ASN info",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/config.AsnInfo"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/config.AsnInfo"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ASN"
+                ],
+                "summary": "Delete ASN entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ASN ID",
+                        "name": "id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/asn/lookup": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ASN"
+                ],
+                "summary": "Lookup ASN by IP address",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "IP address",
+                        "name": "ip",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/config.AsnInfo"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/check": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Check authentication status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/login": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Login with credentials",
+                "parameters": [
+                    {
+                        "description": "Login credentials (username, password)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/logout": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Logout and invalidate token",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/backup": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/gzip"
+                ],
+                "tags": [
+                    "Backup"
+                ],
+                "summary": "Download configuration backup",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/backup/restore": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Backup"
+                ],
+                "summary": "Restore configuration from backup",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Backup tar.gz file",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/capture/clear": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Capture"
+                ],
+                "summary": "Clear all captures",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/capture/delete": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Capture"
+                ],
+                "summary": "Delete a capture",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Protocol (tls or quic)",
+                        "name": "protocol",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Domain name",
+                        "name": "domain",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/capture/download": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Capture"
+                ],
+                "summary": "Download a capture file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filename",
+                        "name": "file",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/capture/generate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Capture"
+                ],
+                "summary": "Generate capture payload",
+                "parameters": [
+                    {
+                        "description": "Capture request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CaptureRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/capture/list": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Capture"
+                ],
+                "summary": "List all captures",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/capture/probe": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Capture"
+                ],
+                "summary": "Probe domain for capture",
+                "parameters": [
+                    {
+                        "description": "Capture request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CaptureRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/capture/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Capture"
+                ],
+                "summary": "Upload a capture file",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Capture binary file",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Domain name",
+                        "name": "domain",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "tls",
+                        "description": "Protocol (tls or quic)",
+                        "name": "protocol",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/config": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Config"
+                ],
+                "summary": "Get full configuration with statistics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ConfigResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Config"
+                ],
+                "summary": "Update configuration",
+                "parameters": [
+                    {
+                        "description": "Updated configuration",
+                        "name": "config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/config.Config"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ConfigResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/detector/cancel/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Detector"
+                ],
+                "summary": "Cancel detector suite",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Suite ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/detector/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Detector"
+                ],
+                "summary": "Get detector history",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/detector/history/clear": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Detector"
+                ],
+                "summary": "Clear detector history",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/detector/history/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Detector"
+                ],
+                "summary": "Delete detector history entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entry ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/detector/start": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Detector"
+                ],
+                "summary": "Start detection suite",
+                "parameters": [
+                    {
+                        "description": "Detector request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.DetectorRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/handler.DetectorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/detector/status/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Detector"
+                ],
+                "summary": "Get detector status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Suite ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Get all devices",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.DevicesResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/{mac}/vendor": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Get device vendor info",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "MAC address",
+                        "name": "mac",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.VendorInfo"
+                        }
+                    }
+                }
+            }
+        },
+        "/discovery/add": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discovery"
+                ],
+                "summary": "Add discovery preset as a new set",
+                "parameters": [
+                    {
+                        "description": "Set configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/config.SetConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/discovery/cache/clear": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discovery"
+                ],
+                "summary": "Clear discovery cache",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/discovery/cancel/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discovery"
+                ],
+                "summary": "Cancel discovery",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Suite ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/discovery/current": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discovery"
+                ],
+                "summary": "Get current running discovery",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/discovery/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discovery"
+                ],
+                "summary": "Get discovery history",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/discovery/history/clear": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discovery"
+                ],
+                "summary": "Clear discovery history",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/discovery/history/{domain}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discovery"
+                ],
+                "summary": "Delete discovery history entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Domain name",
+                        "name": "domain",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/discovery/similar": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discovery"
+                ],
+                "summary": "Find sets with similar configuration",
+                "parameters": [
+                    {
+                        "description": "Set to compare",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/config.SetConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/discovery/start": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discovery"
+                ],
+                "summary": "Start domain discovery",
+                "parameters": [
+                    {
+                        "description": "Discovery request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.DiscoveryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/handler.DiscoveryResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/discovery/status/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discovery"
+                ],
+                "summary": "Get discovery status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Suite ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/dns": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DNS"
+                ],
+                "summary": "Get public DNS servers by country",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Country code (default: us)",
+                        "name": "country",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.PublicDNSServer"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/geodat/download": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Geodat"
+                ],
+                "summary": "Download geodat files",
+                "parameters": [
+                    {
+                        "description": "Download request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.GeodatDownloadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.GeodatDownloadResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/geodat/info": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Geodat"
+                ],
+                "summary": "Get geodat file info",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "File path",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/geodat/sources": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Geodat"
+                ],
+                "summary": "List available geodat sources",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.GeodatSource"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/geodat/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Geodat"
+                ],
+                "summary": "Upload geodat file",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Geodat file (.dat or .db)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "File type (geosite or geoip)",
+                        "name": "type",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Destination directory path",
+                        "name": "destination_path",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/geoip": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GeoIP"
+                ],
+                "summary": "List geoip categories",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.GeoipResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GeoIP"
+                ],
+                "summary": "Add IP/CIDR blocks to a set",
+                "parameters": [
+                    {
+                        "description": "CIDR blocks to add",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.AddGeoIpRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.AddIpResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/geosite": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Geosite"
+                ],
+                "summary": "List geosite categories",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.GeositeResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/geosite/category": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Geosite"
+                ],
+                "summary": "Preview geosite category domains",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Category tag name",
+                        "name": "tag",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/geosite/domain": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Geosite"
+                ],
+                "summary": "Add domain to a set via geosite",
+                "parameters": [
+                    {
+                        "description": "Domain to add",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.AddDomainRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.AddDomainResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/integration/ipinfo": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Integration"
+                ],
+                "summary": "Query IPInfo API for IP details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "IP address",
+                        "name": "ip",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/integration/ripestat": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Integration"
+                ],
+                "summary": "Query RIPE network info for IP",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "IP address",
+                        "name": "ip",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/integration/ripestat/asn": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Integration"
+                ],
+                "summary": "Query RIPE ASN announced prefixes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ASN number",
+                        "name": "asn",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Get full metrics snapshot",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/reset": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Reset metrics statistics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Get metrics summary",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/mtproto/config": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "MTProto"
+                ],
+                "summary": "Get MTProto configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "MTProto"
+                ],
+                "summary": "Update MTProto configuration",
+                "parameters": [
+                    {
+                        "description": "MTProto configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/config.MTProtoConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/mtproto/generate-secret": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "MTProto"
+                ],
+                "summary": "Generate MTProto secret",
+                "parameters": [
+                    {
+                        "description": "fake_sni field required",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/sets": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "List all sets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/config.SetConfig"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "Create a new set",
+                "parameters": [
+                    {
+                        "description": "Set configuration",
+                        "name": "set",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/config.SetConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/config.SetConfig"
+                        }
+                    }
+                }
+            }
+        },
+        "/sets/batch-delete": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "Batch delete sets",
+                "parameters": [
+                    {
+                        "description": "Set IDs to delete",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/sets/check-domain": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "Check which sets match a domain",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Domain to check",
+                        "name": "domain",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Set ID to exclude",
+                        "name": "exclude",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/sets/reorder": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "Reorder sets",
+                "parameters": [
+                    {
+                        "description": "Ordered set IDs",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/sets/targeted-domains": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "List all targeted domains from enabled sets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/sets/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "Get a set by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Set ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/config.SetConfig"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "Update a set",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Set ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated set configuration",
+                        "name": "set",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/config.SetConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/config.SetConfig"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "Delete a set",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Set ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/sets/{id}/add-domain": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "Add domain to a set",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Set ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Domain object",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/socks5/config": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SOCKS5"
+                ],
+                "summary": "Get SOCKS5 configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SOCKS5"
+                ],
+                "summary": "Update SOCKS5 configuration",
+                "parameters": [
+                    {
+                        "description": "SOCKS5 configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/config.Socks5Config"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/cache": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get cache statistics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/diagnostics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get system diagnostics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.DiagnosticsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/info": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get system information",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SystemInfo"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/restart": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Restart the service",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.RestartResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.RestartResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/update": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Start update process",
+                "parameters": [
+                    {
+                        "description": "Update request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/version": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Get version information",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.VersionInfo"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "config.ApiConfig": {
+            "type": "object",
+            "properties": {
+                "ipinfo_token": {
+                    "type": "string"
+                }
+            }
+        },
+        "config.AsnInfo": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prefixes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "config.ComboFragConfig": {
+            "type": "object",
+            "properties": {
+                "decoy_enabled": {
+                    "type": "boolean"
+                },
+                "extension_split": {
+                    "type": "boolean"
+                },
+                "fake_per_seg_count": {
+                    "description": "Number of fake packets per segment (default 1)",
+                    "type": "integer"
+                },
+                "fake_per_seg_count_max": {
+                    "description": "Max for randomization (0 = use fixed)",
+                    "type": "integer"
+                },
+                "fake_per_segment": {
+                    "type": "boolean"
+                },
+                "first_byte_split": {
+                    "type": "boolean"
+                },
+                "first_delay_ms": {
+                    "type": "integer"
+                },
+                "first_delay_ms_max": {
+                    "type": "integer"
+                },
+                "jitter_max_us": {
+                    "type": "integer"
+                },
+                "jitter_max_us_max": {
+                    "type": "integer"
+                },
+                "shuffle_mode": {
+                    "description": "\"middle\", \"full\", \"reverse\"",
+                    "type": "string"
+                }
+            }
+        },
+        "config.Config": {
+            "type": "object",
+            "properties": {
+                "queue": {
+                    "$ref": "#/definitions/config.QueueConfig"
+                },
+                "sets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.SetConfig"
+                    }
+                },
+                "system": {
+                    "$ref": "#/definitions/config.SystemConfig"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "config.DNSConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "fragment_query": {
+                    "type": "boolean"
+                },
+                "target_dns": {
+                    "type": "string"
+                }
+            }
+        },
+        "config.DesyncConfig": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "description": "Number of desync packets",
+                    "type": "integer"
+                },
+                "mode": {
+                    "description": "\"off\" \"rst\", \"fin\", \"ack\", \"combo\", \"full\"",
+                    "type": "string"
+                },
+                "post_desync": {
+                    "description": "Send fake RST after ClientHello",
+                    "type": "boolean"
+                },
+                "ttl": {
+                    "description": "TTL for desync packets",
+                    "type": "integer"
+                }
+            }
+        },
+        "config.Device": {
+            "type": "object",
+            "properties": {
+                "ip": {
+                    "type": "string"
+                },
+                "is_manual": {
+                    "type": "boolean"
+                },
+                "mac": {
+                    "type": "string"
+                },
+                "mss_clamp": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "selected": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "config.DevicesConfig": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.Device"
+                    }
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "vendor_lookup": {
+                    "type": "boolean"
+                },
+                "wisb": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "config.DiscoveryConfig": {
+            "type": "object",
+            "properties": {
+                "config_propagate_ms": {
+                    "type": "integer"
+                },
+                "discovery_flow_mark": {
+                    "type": "integer"
+                },
+                "discovery_injected_mark": {
+                    "type": "integer"
+                },
+                "discovery_timeout": {
+                    "type": "integer"
+                },
+                "reference_dns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "reference_domain": {
+                    "type": "string"
+                },
+                "validation_tries": {
+                    "type": "integer"
+                },
+                "watchdog": {
+                    "$ref": "#/definitions/config.WatchdogConfig"
+                }
+            }
+        },
+        "config.DisorderFragConfig": {
+            "type": "object",
+            "properties": {
+                "fake_per_seg_count": {
+                    "description": "Number of fake packets per segment (default 1)",
+                    "type": "integer"
+                },
+                "fake_per_seg_count_max": {
+                    "description": "Max for randomization (0 = use fixed)",
+                    "type": "integer"
+                },
+                "fake_per_segment": {
+                    "type": "boolean"
+                },
+                "max_jitter_us": {
+                    "type": "integer"
+                },
+                "min_jitter_us": {
+                    "type": "integer"
+                },
+                "shuffle_mode": {
+                    "description": "\"full\", \"reverse\"",
+                    "type": "string"
+                }
+            }
+        },
+        "config.DuplicateConfig": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "description": "Number of packet copies to send (original is dropped)",
+                    "type": "integer"
+                },
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "config.FakingConfig": {
+            "type": "object",
+            "properties": {
+                "custom_payload": {
+                    "type": "string"
+                },
+                "payload_file": {
+                    "type": "string"
+                },
+                "seq_offset": {
+                    "type": "integer"
+                },
+                "sni": {
+                    "type": "boolean"
+                },
+                "sni_mutation": {
+                    "$ref": "#/definitions/config.SNIMutationConfig"
+                },
+                "sni_seq_length": {
+                    "type": "integer"
+                },
+                "sni_type": {
+                    "type": "integer"
+                },
+                "strategy": {
+                    "type": "string"
+                },
+                "tcp_md5": {
+                    "description": "Enable TCP MD5 option insertion",
+                    "type": "boolean"
+                },
+                "timestamp_decrease": {
+                    "description": "Amount to decrease TCP timestamp option",
+                    "type": "integer"
+                },
+                "tls_mod": {
+                    "description": "e.g. [\"rnd\", \"dupsid\"]",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ttl": {
+                    "type": "integer"
+                }
+            }
+        },
+        "config.FragmentationConfig": {
+            "type": "object",
+            "properties": {
+                "combo": {
+                    "$ref": "#/definitions/config.ComboFragConfig"
+                },
+                "disorder": {
+                    "$ref": "#/definitions/config.DisorderFragConfig"
+                },
+                "middle_sni": {
+                    "type": "boolean"
+                },
+                "oob_char": {
+                    "description": "Character for OOB data",
+                    "type": "integer"
+                },
+                "oob_position": {
+                    "description": "Position for OOB (0=disabled)",
+                    "type": "integer"
+                },
+                "oob_position_max": {
+                    "description": "max for randomization (0 = use fixed)",
+                    "type": "integer"
+                },
+                "reverse_order": {
+                    "type": "boolean"
+                },
+                "seq_overlap_pattern": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sni_position": {
+                    "type": "integer"
+                },
+                "sni_position_max": {
+                    "description": "max for randomization (0 = use fixed)",
+                    "type": "integer"
+                },
+                "strategy": {
+                    "description": "Values: \"tcp\", \"ip\", \"oob\", \"tls\", \"disorder\",  \"extsplit\", \"firstbyte\", \"combo\", \"none\"",
+                    "type": "string"
+                },
+                "strategy_pool": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tlsrec_pos": {
+                    "description": "where to split TLS record",
+                    "type": "integer"
+                },
+                "tlsrec_pos_max": {
+                    "description": "max for randomization (0 = use fixed)",
+                    "type": "integer"
+                }
+            }
+        },
+        "config.GeoDatConfig": {
+            "type": "object",
+            "properties": {
+                "ipdat_path": {
+                    "type": "string"
+                },
+                "ipdat_url": {
+                    "type": "string"
+                },
+                "sitedat_path": {
+                    "type": "string"
+                },
+                "sitedat_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "config.IPBlockDetectConfig": {
+            "type": "object",
+            "properties": {
+                "cache_blocked_ips": {
+                    "type": "boolean"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "retransmit_threshold": {
+                    "type": "integer"
+                },
+                "timeout_ms": {
+                    "type": "integer"
+                }
+            }
+        },
+        "config.IncomingConfig": {
+            "type": "object",
+            "properties": {
+                "fake_count": {
+                    "type": "integer"
+                },
+                "fake_ttl": {
+                    "type": "integer"
+                },
+                "max": {
+                    "description": "threshold max (KB), if 0 or eq MinKB -\u003e uses MinKB",
+                    "type": "integer"
+                },
+                "min": {
+                    "description": "threshold min (KB)",
+                    "type": "integer"
+                },
+                "mode": {
+                    "description": "\"off\", \"fake\", \"reset\", \"fin\", \"desync\"",
+                    "type": "string"
+                },
+                "strategy": {
+                    "description": "\"badsum\", \"badseq\", \"badack\",  \"rand\", \"all\"",
+                    "type": "string"
+                }
+            }
+        },
+        "config.Logging": {
+            "type": "object",
+            "properties": {
+                "error_file": {
+                    "type": "string"
+                },
+                "instaflush": {
+                    "type": "boolean"
+                },
+                "level": {
+                    "$ref": "#/definitions/log.Level"
+                },
+                "syslog": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "config.MSSClampConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "size": {
+                    "description": "MSS value in bytes (e.g., 88)",
+                    "type": "integer"
+                }
+            }
+        },
+        "config.MTProtoConfig": {
+            "type": "object",
+            "properties": {
+                "bind_address": {
+                    "type": "string"
+                },
+                "dc_relay": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "fake_sni": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "secret": {
+                    "type": "string"
+                }
+            }
+        },
+        "config.QueueConfig": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "$ref": "#/definitions/config.DevicesConfig"
+                },
+                "interfaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ipv4": {
+                    "type": "boolean"
+                },
+                "ipv6": {
+                    "type": "boolean"
+                },
+                "mark": {
+                    "description": "Main injected packets mark",
+                    "type": "integer"
+                },
+                "mss_clamp": {
+                    "$ref": "#/definitions/config.MSSClampConfig"
+                },
+                "start_num": {
+                    "type": "integer"
+                },
+                "tcp_conn_bytes_limit": {
+                    "type": "integer"
+                },
+                "threads": {
+                    "type": "integer"
+                },
+                "udp_conn_bytes_limit": {
+                    "type": "integer"
+                }
+            }
+        },
+        "config.RSTProtectionConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "ttl_tolerance": {
+                    "type": "integer"
+                }
+            }
+        },
+        "config.RoutingConfig": {
+            "type": "object",
+            "properties": {
+                "egress_interface": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "fwmark": {
+                    "type": "integer"
+                },
+                "ip_ttl_seconds": {
+                    "type": "integer"
+                },
+                "source_interfaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "table": {
+                    "type": "integer"
+                }
+            }
+        },
+        "config.SNIMutationConfig": {
+            "type": "object",
+            "properties": {
+                "fake_ext_count": {
+                    "type": "integer"
+                },
+                "fake_snis": {
+                    "description": "Additional SNIs to inject",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "grease_count": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "description": "\"off\", \"duplicate\", \"grease\", \"padding\", \"reorder\", \"full\"",
+                    "type": "string"
+                },
+                "padding_size": {
+                    "type": "integer"
+                }
+            }
+        },
+        "config.SetConfig": {
+            "type": "object",
+            "properties": {
+                "dns": {
+                    "$ref": "#/definitions/config.DNSConfig"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "faking": {
+                    "$ref": "#/definitions/config.FakingConfig"
+                },
+                "fragmentation": {
+                    "$ref": "#/definitions/config.FragmentationConfig"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "routing": {
+                    "$ref": "#/definitions/config.RoutingConfig"
+                },
+                "targets": {
+                    "$ref": "#/definitions/config.TargetsConfig"
+                },
+                "tcp": {
+                    "$ref": "#/definitions/config.TCPConfig"
+                },
+                "udp": {
+                    "$ref": "#/definitions/config.UDPConfig"
+                }
+            }
+        },
+        "config.Socks5Config": {
+            "type": "object",
+            "properties": {
+                "bind_address": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "udp_read_timeout": {
+                    "type": "integer"
+                },
+                "udp_timeout": {
+                    "type": "integer"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "config.SystemConfig": {
+            "type": "object",
+            "properties": {
+                "api": {
+                    "$ref": "#/definitions/config.ApiConfig"
+                },
+                "checker": {
+                    "$ref": "#/definitions/config.DiscoveryConfig"
+                },
+                "geo": {
+                    "$ref": "#/definitions/config.GeoDatConfig"
+                },
+                "logging": {
+                    "$ref": "#/definitions/config.Logging"
+                },
+                "mtproto": {
+                    "$ref": "#/definitions/config.MTProtoConfig"
+                },
+                "socks5": {
+                    "$ref": "#/definitions/config.Socks5Config"
+                },
+                "tables": {
+                    "$ref": "#/definitions/config.TablesConfig"
+                },
+                "timezone": {
+                    "type": "string"
+                },
+                "web_server": {
+                    "$ref": "#/definitions/config.WebServerConfig"
+                }
+            }
+        },
+        "config.TCPConfig": {
+            "type": "object",
+            "properties": {
+                "conn_bytes_limit": {
+                    "type": "integer"
+                },
+                "desync": {
+                    "$ref": "#/definitions/config.DesyncConfig"
+                },
+                "dport_filter": {
+                    "description": "comma separated list of ports and port ranges, e.g. \"80,443,5222\"",
+                    "type": "string"
+                },
+                "drop_sack": {
+                    "type": "boolean"
+                },
+                "duplicate": {
+                    "$ref": "#/definitions/config.DuplicateConfig"
+                },
+                "incoming": {
+                    "$ref": "#/definitions/config.IncomingConfig"
+                },
+                "ip_block_detect": {
+                    "$ref": "#/definitions/config.IPBlockDetectConfig"
+                },
+                "rst_protection": {
+                    "$ref": "#/definitions/config.RSTProtectionConfig"
+                },
+                "seg2delay": {
+                    "type": "integer"
+                },
+                "seg2delay_max": {
+                    "type": "integer"
+                },
+                "syn_fake": {
+                    "type": "boolean"
+                },
+                "syn_fake_len": {
+                    "type": "integer"
+                },
+                "syn_ttl": {
+                    "type": "integer"
+                },
+                "win": {
+                    "$ref": "#/definitions/config.WinConfig"
+                }
+            }
+        },
+        "config.TablesConfig": {
+            "type": "object",
+            "properties": {
+                "engine": {
+                    "type": "string"
+                },
+                "masquerade": {
+                    "type": "boolean"
+                },
+                "masquerade_interface": {
+                    "type": "string"
+                },
+                "monitor_interval": {
+                    "type": "integer"
+                },
+                "skip_setup": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "config.TargetsConfig": {
+            "type": "object",
+            "properties": {
+                "geoip_categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "geosite_categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ip": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sni_domains": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "source_devices": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tls": {
+                    "description": "\"1.2\", \"1.3\", or \"\" (match any)",
+                    "type": "string"
+                }
+            }
+        },
+        "config.UDPConfig": {
+            "type": "object",
+            "properties": {
+                "conn_bytes_limit": {
+                    "type": "integer"
+                },
+                "dport_filter": {
+                    "description": "can be a comma separated list of ports and port ranges, e.g. \"80,443,1000-2000\"",
+                    "type": "string"
+                },
+                "fake_len": {
+                    "type": "integer"
+                },
+                "fake_seq_length": {
+                    "type": "integer"
+                },
+                "faking_strategy": {
+                    "type": "string"
+                },
+                "filter_quic": {
+                    "type": "string"
+                },
+                "filter_stun": {
+                    "type": "boolean"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "seg2delay": {
+                    "type": "integer"
+                },
+                "seg2delay_max": {
+                    "type": "integer"
+                }
+            }
+        },
+        "config.WatchdogConfig": {
+            "type": "object",
+            "properties": {
+                "cooldown_sec": {
+                    "type": "integer"
+                },
+                "domains": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "failure_interval": {
+                    "type": "integer"
+                },
+                "interval_sec": {
+                    "type": "integer"
+                },
+                "max_retries": {
+                    "type": "integer"
+                },
+                "timeout_sec": {
+                    "type": "integer"
+                }
+            }
+        },
+        "config.WebServerConfig": {
+            "type": "object",
+            "properties": {
+                "bind_address": {
+                    "type": "string"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "tls_cert": {
+                    "type": "string"
+                },
+                "tls_key": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "config.WinConfig": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "description": "\"off\", \"oscillate\", \"zero\", \"random\", \"escalate\"",
+                    "type": "string"
+                },
+                "values": {
+                    "description": "Custom window values",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "handler.AddDomainRequest": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string"
+                },
+                "set_id": {
+                    "type": "string"
+                },
+                "set_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.AddDomainResponse": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string"
+                },
+                "manual_domains": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "message": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "total_domains": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.AddGeoIpRequest": {
+            "type": "object",
+            "properties": {
+                "cidr": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "set_id": {
+                    "type": "string"
+                },
+                "set_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.AddIpResponse": {
+            "type": "object",
+            "properties": {
+                "manual_cidrs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "message": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "total_cidrs": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.CaptureRequest": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "description": "\"tls\", \"quic\", or \"both\"",
+                    "type": "string"
+                }
+            }
+        },
+        "handler.ConfigResponse": {
+            "type": "object",
+            "properties": {
+                "available_ifaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "message": {
+                    "type": "string"
+                },
+                "queue": {
+                    "$ref": "#/definitions/config.QueueConfig"
+                },
+                "sets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SetWithStats"
+                    }
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "system": {
+                    "$ref": "#/definitions/config.SystemConfig"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handler.DetectorRequest": {
+            "type": "object",
+            "properties": {
+                "tests": {
+                    "description": "\"dns\", \"domains\", \"tcp\"",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handler.DetectorResponse": {
+            "type": "object",
+            "properties": {
+                "estimated_tests": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "tests": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handler.DeviceInfo": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "type": "string"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "is_manual": {
+                    "type": "boolean"
+                },
+                "is_private": {
+                    "type": "boolean"
+                },
+                "mac": {
+                    "type": "string"
+                },
+                "vendor": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.DevicesResponse": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.DeviceInfo"
+                    }
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.DiagB4": {
+            "type": "object",
+            "properties": {
+                "build_date": {
+                    "type": "string"
+                },
+                "commit": {
+                    "type": "string"
+                },
+                "config_path": {
+                    "type": "string"
+                },
+                "memory_mb": {
+                    "type": "string"
+                },
+                "pid": {
+                    "type": "integer"
+                },
+                "running": {
+                    "type": "boolean"
+                },
+                "service_manager": {
+                    "type": "string"
+                },
+                "uptime": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.DiagFirewall": {
+            "type": "object",
+            "properties": {
+                "active_rules": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "backend": {
+                    "type": "string"
+                },
+                "nfqueue_works": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handler.DiagGeodata": {
+            "type": "object",
+            "properties": {
+                "geoip_configured": {
+                    "type": "boolean"
+                },
+                "geoip_path": {
+                    "type": "string"
+                },
+                "geoip_size": {
+                    "type": "string"
+                },
+                "geosite_configured": {
+                    "type": "boolean"
+                },
+                "geosite_path": {
+                    "type": "string"
+                },
+                "geosite_size": {
+                    "type": "string"
+                },
+                "total_domains": {
+                    "type": "integer"
+                },
+                "total_ips": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.DiagInterface": {
+            "type": "object",
+            "properties": {
+                "addrs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "mac": {
+                    "type": "string"
+                },
+                "mtu": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "up": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handler.DiagKernel": {
+            "type": "object",
+            "properties": {
+                "modules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.DiagModule"
+                    }
+                }
+            }
+        },
+        "handler.DiagModule": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.DiagMount": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "writable": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handler.DiagNetwork": {
+            "type": "object",
+            "properties": {
+                "interfaces": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.DiagInterface"
+                    }
+                }
+            }
+        },
+        "handler.DiagPaths": {
+            "type": "object",
+            "properties": {
+                "binary": {
+                    "type": "string"
+                },
+                "config": {
+                    "type": "string"
+                },
+                "data_dir": {
+                    "type": "string"
+                },
+                "error_log": {
+                    "type": "string"
+                },
+                "geoip": {
+                    "type": "string"
+                },
+                "geosite": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.DiagSystem": {
+            "type": "object",
+            "properties": {
+                "arch": {
+                    "type": "string"
+                },
+                "cpu_cores": {
+                    "type": "integer"
+                },
+                "distro": {
+                    "type": "string"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "is_docker": {
+                    "type": "boolean"
+                },
+                "kernel": {
+                    "type": "string"
+                },
+                "mem_avail_mb": {
+                    "type": "integer"
+                },
+                "mem_total_mb": {
+                    "type": "integer"
+                },
+                "os": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.DiagTool": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "type": "string"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.DiagTools": {
+            "type": "object",
+            "properties": {
+                "firewall": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.DiagTool"
+                    }
+                },
+                "optional": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.DiagTool"
+                    }
+                },
+                "required": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.DiagTool"
+                    }
+                }
+            }
+        },
+        "handler.Diagnostics": {
+            "type": "object",
+            "properties": {
+                "b4": {
+                    "$ref": "#/definitions/handler.DiagB4"
+                },
+                "firewall": {
+                    "$ref": "#/definitions/handler.DiagFirewall"
+                },
+                "geodata": {
+                    "$ref": "#/definitions/handler.DiagGeodata"
+                },
+                "kernel": {
+                    "$ref": "#/definitions/handler.DiagKernel"
+                },
+                "network": {
+                    "$ref": "#/definitions/handler.DiagNetwork"
+                },
+                "paths": {
+                    "$ref": "#/definitions/handler.DiagPaths"
+                },
+                "storage": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.DiagMount"
+                    }
+                },
+                "system": {
+                    "$ref": "#/definitions/handler.DiagSystem"
+                },
+                "tools": {
+                    "$ref": "#/definitions/handler.DiagTools"
+                }
+            }
+        },
+        "handler.DiagnosticsResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/handler.Diagnostics"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handler.DiscoveryRequest": {
+            "type": "object",
+            "properties": {
+                "check_url": {
+                    "type": "string"
+                },
+                "check_urls": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "payload_files": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "skip_cache": {
+                    "type": "boolean"
+                },
+                "skip_dns": {
+                    "type": "boolean"
+                },
+                "tls_version": {
+                    "description": "\"auto\", \"tls12\", \"tls13\"",
+                    "type": "string"
+                },
+                "validation_tries": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.DiscoveryResponse": {
+            "type": "object",
+            "properties": {
+                "check_url": {
+                    "type": "string"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "domains": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "estimated_tests": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.GeodatDownloadRequest": {
+            "type": "object",
+            "properties": {
+                "destination_path": {
+                    "type": "string"
+                },
+                "geoip_url": {
+                    "type": "string"
+                },
+                "geosite_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.GeodatDownloadResponse": {
+            "type": "object",
+            "properties": {
+                "geoip_path": {
+                    "type": "string"
+                },
+                "geoip_size": {
+                    "type": "integer"
+                },
+                "geosite_path": {
+                    "type": "string"
+                },
+                "geosite_size": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handler.GeodatSource": {
+            "type": "object",
+            "properties": {
+                "geoip_url": {
+                    "type": "string"
+                },
+                "geosite_url": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.GeoipResponse": {
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handler.GeositeResponse": {
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handler.PublicDNSServer": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string"
+                },
+                "country_id": {
+                    "type": "string"
+                },
+                "dnssec": {
+                    "type": "boolean"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reliability": {
+                    "type": "number"
+                }
+            }
+        },
+        "handler.RestartResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "restart_command": {
+                    "type": "string"
+                },
+                "service_manager": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handler.SetStatistics": {
+            "type": "object",
+            "properties": {
+                "geoip_category_breakdown": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "geoip_ips": {
+                    "type": "integer"
+                },
+                "geosite_category_breakdown": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "geosite_domains": {
+                    "type": "integer"
+                },
+                "manual_domains": {
+                    "type": "integer"
+                },
+                "manual_ips": {
+                    "type": "integer"
+                },
+                "total_domains": {
+                    "type": "integer"
+                },
+                "total_ips": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.SetWithStats": {
+            "type": "object",
+            "properties": {
+                "dns": {
+                    "$ref": "#/definitions/config.DNSConfig"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "faking": {
+                    "$ref": "#/definitions/config.FakingConfig"
+                },
+                "fragmentation": {
+                    "$ref": "#/definitions/config.FragmentationConfig"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "routing": {
+                    "$ref": "#/definitions/config.RoutingConfig"
+                },
+                "stats": {
+                    "$ref": "#/definitions/handler.SetStatistics"
+                },
+                "targets": {
+                    "$ref": "#/definitions/config.TargetsConfig"
+                },
+                "tcp": {
+                    "$ref": "#/definitions/config.TCPConfig"
+                },
+                "udp": {
+                    "$ref": "#/definitions/config.UDPConfig"
+                }
+            }
+        },
+        "handler.SystemInfo": {
+            "type": "object",
+            "properties": {
+                "arch": {
+                    "type": "string"
+                },
+                "can_restart": {
+                    "type": "boolean"
+                },
+                "is_docker": {
+                    "type": "boolean"
+                },
+                "os": {
+                    "type": "string"
+                },
+                "service_manager": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.UpdateRequest": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.UpdateResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "service_manager": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "update_command": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.VendorInfo": {
+            "type": "object",
+            "properties": {
+                "company": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.VersionInfo": {
+            "type": "object",
+            "properties": {
+                "build_date": {
+                    "type": "string"
+                },
+                "commit": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "log.Level": {
+            "type": "integer",
+            "enum": [
+                0,
+                1,
+                2,
+                3
+            ],
+            "x-enum-varnames": [
+                "LevelError",
+                "LevelInfo",
+                "LevelTrace",
+                "LevelDebug"
+            ]
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Enter \"Bearer {token}\" to authorize",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}
