@@ -207,7 +207,7 @@
     "message": "OpenWrt, ASUS Merlin, Keenetic и другие системы на Linux ставятся одним и тем же скриптом. На MikroTik и в Docker b4 работает в контейнере."
   },
   "home.platforms.openwrt": {
-    "message": "19.07 и новее"
+    "message": "18.06 и новее"
   },
   "home.platforms.merlin": {
     "message": "Нужен Entware на USB-накопителе"
@@ -252,7 +252,7 @@
     "message": "На чём он работает?"
   },
   "home.faq.where.a": {
-    "message": "OpenWrt 19.07+, ASUS Merlin, Keenetic, MikroTik с RouterOS 7.21.1+ (в контейнере), компьютеры и серверы с Linux, Docker на Linux. Есть сборки для 17 архитектур процессоров."
+    "message": "OpenWrt 18.06+, ASUS Merlin, Keenetic, MikroTik с RouterOS 7.21.1+ (в контейнере), компьютеры и серверы с Linux, Docker на Linux. Есть сборки для 17 архитектур процессоров."
   },
   "home.faq.needs.q": {
     "message": "Что нужно роутеру?"
