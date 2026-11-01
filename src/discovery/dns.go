@@ -47,6 +47,7 @@ type DNSProber struct {
 	serves      func(context.Context, string) bool
 	connectable func(context.Context, []string) bool
 	gateway     func(context.Context, string) bool
+	bypass      func(context.Context, *DNSDiscoveryResult, []string)
 }
 
 type referenceAnswer struct {
@@ -306,6 +307,7 @@ func pinReferenceWhenNoFix(domain string, result *DNSDiscoveryResult) {
 		return
 	}
 	result.AlternativeIPs = pins
+	result.referencePinned = true
 	log.DiscoveryLogf("  DNS: no DNS server tested answers %s honestly; the addresses %s gave, %v, will be pinned in the set", domain, result.Reference, pins)
 }
 
@@ -465,6 +467,7 @@ func (p *DNSProber) evaluate(ctx context.Context, systemIPs, expectedIPs []strin
 	}
 	terminated := p.probeGateways(ctx, candidates)
 	result.GatewayIPs = terminated
+	answered := len(systemIPs)
 	systemIPs = withoutIPs(systemIPs, terminated)
 	expectedIPs = withoutIPs(expectedIPs, terminated)
 	systemIntercepted := systemAnswered && len(systemIPs) == 0
@@ -512,7 +515,18 @@ func (p *DNSProber) evaluate(ctx context.Context, systemIPs, expectedIPs []strin
 
 	result.IsPoisoned = true
 	result.ExpectedIPs = uniqueIPs(expectedIPs, systemIPs)
-	log.DiscoveryLogf("  ✗ DNS poisoned: system IPs %v don't serve %s and differ from reference %v", systemIPs, p.domain, expectedIPs)
+	switch {
+	case len(systemIPs) == 0 || referenceServes:
+		log.DiscoveryLogf("  ✗ DNS poisoned: system IPs %v don't serve %s and differ from reference %v", systemIPs, p.domain, expectedIPs)
+	case nonPublicAnswer(systemIPs):
+		log.DiscoveryLogf("  ✗ DNS poisoned: the system resolver's answer %v for %s includes a private or reserved address, while the reference gives %v", systemIPs, p.domain, expectedIPs)
+	case len(systemIPs) < answered:
+		log.DiscoveryLogf("  ✗ DNS: the first hop answers part of the system resolver's answer for %s, which no strategy gets past; the rest, %v, differs from reference %v, so the DNS fix stays", p.domain, systemIPs, expectedIPs)
+	default:
+		result.Unverified = true
+		result.systemIPs = append([]string(nil), systemIPs...)
+		log.DiscoveryLogf("  DNS: neither the system addresses %v nor the reference addresses %v of %s complete a TLS handshake without a strategy, and they share no subnet; the DNS fix stays a candidate until the winning strategy is tried on the system addresses", systemIPs, expectedIPs, p.domain)
+	}
 
 	sysResult := DNSProbeResult{
 		Server:     "",
@@ -524,7 +538,11 @@ func (p *DNSProber) evaluate(ctx context.Context, systemIPs, expectedIPs []strin
 	}
 	result.ProbeResults = append(result.ProbeResults, sysResult)
 
-	p.findDNSBypass(ctx, result, expectedIPs)
+	bypass := p.bypass
+	if bypass == nil {
+		bypass = p.findDNSBypass
+	}
+	bypass(ctx, result, expectedIPs)
 	return result
 }
 
