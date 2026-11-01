@@ -960,3 +960,66 @@ func TestMCPDiscoveryAppliesFromHistoryByDomainAlone(t *testing.T) {
 		t.Errorf("expected one new set, got %d from %d", got, before)
 	}
 }
+
+func TestMCPDiscoveryNamesThePresetApplyWouldInstall(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	t.Cleanup(func() { mcpRememberSuite("") })
+
+	offered := config.NewSetConfig()
+	offered.Name = "cached-1-tcpmd5"
+	offered.Targets.SNIDomains = []string{"www.svoboda.org"}
+	fastest := config.NewSetConfig()
+	fastest.Name = "cached-10-fake_sni"
+	build := func(id string) *discovery.CheckSuite {
+		return &discovery.CheckSuite{
+			Id: id, Status: discovery.CheckStatusComplete, EndTime: time.Now(),
+			DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+				"www.svoboda.org": {
+					Domain: "www.svoboda.org", BestPreset: "cached-10-fake_sni", BestSuccess: true, Confirmed: 3, Outcome: discovery.OutcomeFound,
+					Results: map[string]*discovery.DomainPresetResult{
+						"cached-1-tcpmd5":    {PresetName: "cached-1-tcpmd5", Family: discovery.FamilyTCPMD5, Status: discovery.CheckStatusComplete, Set: &offered},
+						"cached-10-fake_sni": {PresetName: "cached-10-fake_sni", Family: discovery.FamilyFakeSNI, Status: discovery.CheckStatusComplete, Set: &fastest},
+					},
+				},
+			},
+			StrategyGroups: []discovery.StrategyGroup{
+				{WinnerPreset: "cached-1-tcpmd5", Family: discovery.FamilyTCPMD5, Domains: []string{"www.svoboda.org"}, Set: &offered},
+			},
+		}
+	}
+	check := func(source string, out mcpDiscoveryOut) {
+		t.Helper()
+		if out.Source != source || len(out.Domains) != 1 {
+			t.Fatalf("%s: want one row from %s, got %+v", source, source, out)
+		}
+		row := out.Domains[0]
+		if row.Preset != "cached-1-tcpmd5" || row.Family != string(discovery.FamilyTCPMD5) || row.BestPreset != "cached-10-fake_sni" {
+			t.Errorf("%s: the row names the preset apply installs with its own family, and the fastest one apart: %+v", source, row)
+		}
+		if !strings.Contains(row.Verdict, "cached-1-tcpmd5") || strings.Contains(row.Verdict, "cached-10-fake_sni") {
+			t.Errorf("%s: the verdict names what apply would install: %q", source, row.Verdict)
+		}
+	}
+
+	live := build("offered-live")
+	discovery.RegisterSuite(live)
+	check("run", decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "status", "id": live.Id})))
+
+	discovery.SaveToHistory(build("offered-saved"), cfg.ConfigPath)
+	check("history", decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "status", "id": "offered-saved"})))
+
+	res := callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "www.svoboda.org", "id": "offered-saved"})
+	if res.IsError {
+		t.Fatalf("apply from history: %s", mcpErrorText(res))
+	}
+	if note := decodeDiscovery(t, res).Note; !strings.Contains(note, "from the cached-1-tcpmd5 strategy") {
+		t.Errorf("the apply note names the preset it installed: %q", note)
+	}
+	if marks := discovery.GetHistory(cfg.ConfigPath).Entries[0].Applied; len(marks) != 1 || marks["cached-1-tcpmd5"].SetId == "" {
+		t.Errorf("History marks the preset apply installed and no other: %v", marks)
+	}
+}

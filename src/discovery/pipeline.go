@@ -124,7 +124,9 @@ func (ds *DiscoverySuite) RunDiscovery() {
 
 			if dnsResult != nil && dnsResult.IsPoisoned {
 				anyDNSPoisoned = true
-				if dnsResult.hasWorkingConfig() {
+				if dnsResult.Unverified {
+					log.DiscoveryLogf("  [%s] DNS not verified: the DNS fix is used while testing and dropped only if the system resolver's addresses load the site with the winning strategy", di.Domain)
+				} else if dnsResult.hasWorkingConfig() {
 					log.DiscoveryLogf("  [%s] DNS poisoned - bypass config found", di.Domain)
 				} else if len(dnsResult.ExpectedIPs) > 0 {
 					log.DiscoveryLogf("  [%s] DNS poisoned, no bypass - using direct IPs", di.Domain)
@@ -330,6 +332,7 @@ func (ds *DiscoverySuite) finishRun() {
 		if stop != coverStopCovered {
 			ds.confirmWinners()
 		}
+		ds.settleUnverifiedDNS()
 		ds.resolveSetVerdict()
 		ds.checkPageHosts()
 	}
@@ -338,7 +341,7 @@ func (ds *DiscoverySuite) finishRun() {
 }
 
 var (
-	suiteRetention   = 30 * time.Second
+	suiteRetention   = 30 * time.Minute
 	rulesInvalidated = tables.DiscoveryRunInvalidated
 )
 
@@ -375,12 +378,8 @@ func (ds *DiscoverySuite) finalize() {
 		SaveToHistory(ds.CheckSuite, ds.cfg.ConfigPath)
 	}
 
-	go func() {
-		time.Sleep(suiteRetention)
-		suitesMu.Lock()
-		delete(activeSuites, ds.Id)
-		suitesMu.Unlock()
-	}()
+	ds.releaseMatchLists()
+	retainFinished(ds.CheckSuite)
 }
 
 func (ds *DiscoverySuite) dropApplicableSetsLocked() {
@@ -436,6 +435,10 @@ func (ds *DiscoverySuite) logDiscoverySummary() {
 			case dnsResult.TransportBlocked:
 				log.DiscoveryLogf("  ⊘ [%s] IP-blocked: TCP connections fail to all known IPs, a proxy or VPN route is needed", di.Domain)
 				continue
+			case dnsResult.Unverified:
+				log.DiscoveryLogf("  ? [%s] DNS not verified: the system resolver's addresses were not checked with a strategy; a set keeps the DNS fix it was tested with", di.Domain)
+			case dnsResult.SystemServesWithStrategy:
+				log.DiscoveryLogf("  ✓ [%s] the system resolver's addresses load the site through the strategy, no DNS fix", di.Domain)
 			case dnsResult.IsPoisoned && dnsResult.BestDoHURL != "":
 				log.DiscoveryLogf("  ⚡ [%s] DNS poisoned, bypassed via %s", di.Domain, dnsResult.BestDoHURL)
 			case dnsResult.IsPoisoned && dnsResult.BestServer != "":

@@ -124,6 +124,7 @@ export interface BackendStrategyGroup {
   domains: string[];
   set?: B4SetConfig;
   median_speed?: number;
+  alternates?: string[];
 }
 
 export interface AltScanSummary {
@@ -150,6 +151,8 @@ export interface DNSDiscoveryResult {
   reference_error?: string;
   pinned?: boolean;
   forgeable_answer?: boolean;
+  unverified?: boolean;
+  system_serves_with_strategy?: boolean;
 }
 
 export interface DiscoveryResult {
@@ -173,6 +176,7 @@ export interface DiscoveryResult {
   unconfirmed?: boolean;
   ech_cover_name?: string;
   ech_only_block?: boolean;
+  alternates?: string[];
 }
 
 export interface DSCPPath {
@@ -302,6 +306,7 @@ export interface HistoryEntry {
   set_id?: string;
   dscp?: number;
   dscp_path?: DSCPPath;
+  alternates?: string[];
 }
 
 export interface SimilarSet {

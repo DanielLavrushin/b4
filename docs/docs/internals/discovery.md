@@ -15,7 +15,7 @@ A [Discovery](../discovery.md) run applies b4's built-in strategy presets one af
 | **Strategies** | The remembered winners, then community sets when that option is on, then the 18 built-in opening presets are applied one at a time, and every site is fetched through each. |
 | **Tuning** | For every technique family that produced a working preset, its parameters are varied on the site that responded best, and the result is checked against all sites. |
 | **Combining** | When two or more families worked, presets that combine them are tried. |
-| **Confirming** | The winner of every site is rebuilt exactly as it would be saved as a set and fetched three more times. A winner that fails any of those fetches gives way to the next candidate. |
+| **Confirming** | The winner of every site is rebuilt exactly as it would be saved as a set and fetched three more times. A winner that fails any of those fetches gives way to the next candidate. A DNS answer the DNS phase left undecided is checked last, see [The DNS check](#the-dns-check). |
 
 During the search, a preset has to pass as many fetches in a row as **Confirm each strategy** says. The confirmation phase is separate and always fetches the winner three times. **Stop and confirm** skips the remaining phases and goes straight to the confirmation, so the result is confirmed but not tuned.
 
@@ -24,6 +24,19 @@ During the search, a preset has to pass as many fetches in a row as **Confirm ea
 **Discovery Timeout** limits one fetch of a site through one of its addresses, from the connection to the end of the read, and each address a fetch tries gets the whole limit. The DNS phase bases its limits on the same value. **Config Propagation Delay** is the pause between switching the run's capture queue to a new preset and the first fetch through it. The confirmation fetches wait the same pause.
 
 Each speed in the results comes from one fetch of at most 100 KB, timed from the start of the request, connection and TLS handshake included. The figures compare strategies on the same site, not the throughput of the connection.
+
+### Which strategy a card offers
+
+A card groups the sites that one strategy loaded. The strategy that loaded the most sites gets one card for all of them, and the remaining sites are grouped the same way. Among strategies that loaded as many sites, the first in this order wins:
+
+1. a result that changes no packets: a DNS fix, an alternative address or removed ECH keys;
+2. a remembered winner, the one that has worked most often in earlier runs first, then community sets and the set's own strategy;
+3. the opening presets, in their built-in order;
+4. tuned presets, then combined ones.
+
+Speed does not decide. During the run, the row of a site shows its fastest strategy as **Fastest so far**, which can differ from the strategy its card offers. The confirmation covers both.
+
+A card lists up to twelve other strategies that loaded every site on it, fastest first, by each strategy's lowest speed across those sites. The history entry of each of its sites stores the same list.
 
 ### One run at a time
 
@@ -47,6 +60,21 @@ A name the set pins is tested through the set's pins, unless the name is given u
 The DNS check compares each site's address from the system resolver with a reference: the trusted DNS server when one is set, otherwise the public resolvers built into b4, DNS over HTTPS first, then plain DNS.
 
 A trusted DNS server is the only reference. Its answers are taken as the correct addresses and its NXDOMAIN as a name that does not exist. Before a run, it is asked about one of the run's names. When no answer comes back or the server refuses, the run stops with an error. An error answer such as SERVFAIL does not stop it. A server that stops answering later leaves the site it was asked about without a DNS comparison.
+
+An address serves the site when it completes a TLS handshake with the site's name, with no strategy. The system resolver's answer is honest when one of its addresses serves the site, or when it shares a network with the reference: the same /24, or the same first 48 bits for IPv6. When the reference's addresses accept connections, the answer is wrong in these cases:
+
+- the system resolver gives no address while the reference does;
+- only a reference address serves the site;
+- the answer holds a private or reserved address;
+- [the first hop](#gateway-interception) in front of this host answers part of its addresses, but not all.
+
+For a site blocked by its name, the addresses accept connections, but none completes the handshake without a strategy, the reference's included. When none of the cases above applies to such an answer, the verdict waits for the end of the run, and the search runs with the DNS fix, as for a wrong answer. During **Confirming**, the first two addresses of the system answer are fetched through the strategy the result offers. It is built as the set would carry it, without the DNS fix, and each address gets up to two tries.
+
+- When every address loads the page, and the certificate of its first answer, before any redirect, is valid for the site, the answer is honest. The set gets no DNS fix, unless another site on the same card needs one. It does not pin the reference's addresses either, and [alternative addresses](#alternative-addresses) stay pinned.
+- When an address fails, the answer is wrong, and the set keeps the DNS fix.
+- When the check cannot run, the set keeps the DNS fix it was tested with. That is the case when the result changes no packets, when the site's link starts with `http://` and so shows no certificate, or when **Stop now** ended the run.
+
+The certificate is verified against the same root certificates as in the [watchdog's checks](#how-the-watchdog-checks-a-set). A router without root certificates checks only the name in it.
 
 When the system resolver gives a site a wrong address, the proposed set gets the first DNS fix that works:
 
@@ -83,9 +111,13 @@ When the fetch without bypass fails with ECH, the same fetch without ECH loads t
 
 The record lookup skips the sets too. When `/etc/resolv.conf` names a local cache, such as dnsmasq on the router, the cache's upstream answers pass through b4. Where a set removes ECH keys for every device, the cache holds answers without the key, and the probes send ordinary ClientHellos, like the browsers behind the router.
 
+## A finished run
+
+A finished run stays in memory for 30 minutes, or until b4 restarts. A later run started the same way replaces it when that later run ends. Runs from the Discovery page, over MCP and by the watchdog each replace only their own kind. When the last run to end was started from the Discovery page, reloading the page or opening it again within that time shows its results, in any browser. **New search** hides them in the browser where it is clicked. A run the watchdog or an MCP client started is not shown again after a reload. Its results are in the history.
+
 ## History storage
 
-The history keeps the last hundred results, one entry per site. An entry stores the set the run built and the sets of the twelve fastest other strategies that worked. Those sets take most of the space: a site with many working strategies costs tens of kilobytes. The history also keeps the last run of each set, for up to 64 sets, and the log of the last run survives a restart.
+The history keeps the last hundred results, one entry per site. An entry stores the set the run built, the set of the site's fastest strategy and the sets of the other strategies its card listed, up to twelve. Those sets take most of the space: a site with many working strategies costs tens of kilobytes. The history also keeps the last run of each set, for up to 64 sets, and the log of the last run survives a restart.
 
 ## How the watchdog checks a set
 

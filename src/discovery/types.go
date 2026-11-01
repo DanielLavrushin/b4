@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"crypto/tls"
 	"strings"
 	"sync"
 	"time"
@@ -123,6 +124,7 @@ type CheckResult struct {
 	lookupHost  string
 	untried     bool
 	finalHTTPS  bool
+	firstTLS    *tls.ConnectionState
 }
 
 type nameLookup int
@@ -197,6 +199,7 @@ type StrategyGroup struct {
 	Domains      []string          `json:"domains"`
 	Set          *config.SetConfig `json:"set,omitempty"`
 	MedianSpeed  float64           `json:"median_speed,omitempty"`
+	Alternates   []string          `json:"alternates,omitempty"`
 }
 
 type DomainDiscoveryResult struct {
@@ -220,6 +223,7 @@ type DomainDiscoveryResult struct {
 	Unconfirmed   bool                           `json:"unconfirmed,omitempty"`
 	ECHCoverName  string                         `json:"ech_cover_name,omitempty"`
 	ECHOnlyBlock  bool                           `json:"ech_only_block,omitempty"`
+	Alternates    []string                       `json:"alternates,omitempty"`
 }
 
 func (dr *DomainDiscoveryResult) refreshOutcome(finished bool) {
@@ -297,9 +301,14 @@ type DNSDiscoveryResult struct {
 	Pinned           bool             `json:"pinned,omitempty"`
 	ForgeableAnswer  bool             `json:"forgeable_answer,omitempty"`
 
+	Unverified               bool `json:"unverified,omitempty"`
+	SystemServesWithStrategy bool `json:"system_serves_with_strategy,omitempty"`
+
 	referenceIPs     []string
 	referenceTrusted bool
 	setPinned        bool
+	systemIPs        []string
+	referencePinned  bool
 }
 
 func (r *DNSDiscoveryResult) noAddress() bool {
@@ -372,6 +381,7 @@ type DiscoverySuite struct {
 	coverStop       coverStopReason
 	jointConfirmed  map[string]bool
 	jointConfirmFn  func(presetName string, domains []string) (map[string]int, bool)
+	dnsSettleFn     func(presetName string, set *config.SetConfig, inputs []DomainInput, addrs map[string][]string) (map[string]bool, bool)
 	setVerdict      *SetVerdict
 
 	hostProbeFn  func(ctx context.Context, rawURL, origin string, with bool) hostProbe

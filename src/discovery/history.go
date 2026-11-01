@@ -64,6 +64,7 @@ type HistoryEntry struct {
 	RulesChanged  bool                           `json:"rules_changed,omitempty"`
 	Order         int                            `json:"order,omitempty"`
 	Applied       map[string]AppliedMark         `json:"applied,omitempty"`
+	Alternates    []string                       `json:"alternates,omitempty"`
 }
 
 func (e HistoryEntry) StorageBytes() int {
@@ -256,7 +257,8 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			Status:        suite.Status,
 			StartTime:     suite.StartTime,
 			EndTime:       suite.EndTime,
-			Results:       trimPresetSets(domainResult.Results, domainResult.BestPreset),
+			Results:       trimPresetSets(domainResult.Results, domainResult.BestPreset, domainResult.Alternates),
+			Alternates:    domainResult.Alternates,
 			DNSResult:     domainResult.DNSResult,
 			BaselineSpeed: domainResult.BaselineSpeed,
 			BaselineWorks: domainResult.BaselineWorks,
@@ -446,12 +448,15 @@ func (ts *CheckSuite) scopedSetFor(domain string) *config.SetConfig {
 	return nil
 }
 
-func trimPresetSets(results map[string]*DomainPresetResult, best string) map[string]*DomainPresetResult {
+func trimPresetSets(results map[string]*DomainPresetResult, best string, alternates []string) map[string]*DomainPresetResult {
 	if len(results) == 0 {
 		return results
 	}
+	if alternates == nil {
+		alternates = fastestAlternates(results, best, maxAlternateSets)
+	}
 	keep := map[string]bool{best: true}
-	for _, name := range fastestAlternates(results, best, maxAlternateSets) {
+	for _, name := range alternates {
 		keep[name] = true
 	}
 	out := make(map[string]*DomainPresetResult, len(results))

@@ -124,7 +124,7 @@ export const HistoryTable = ({
         alternates:
           (verdict === "found" || verdict === "works_without_bypass") &&
           !entry.rules_changed
-            ? historyAlternates(entry, domains)
+            ? historyAlternates(entry, domains, preset)
             : [],
         hosts:
           verdict === "found" && set

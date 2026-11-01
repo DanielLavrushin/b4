@@ -1,5 +1,18 @@
 # B4 - Bye Bye Big Bro
 
+## [1.90.0] - 2026-11-01
+
+- CHANGED: **Reloading or reopening the Discovery page within 30 minutes of a run's end shows its results again** - this holds for a run started from that page. New search clears them in the browser where it is clicked.
+- CHANGED: **During a Discovery run, a site's row shows a strategy it found as Fastest so far instead of Found** - the result card offers the strategy that loaded the most sites, which can be another one. Among strategies from earlier runs, the card prefers the one that worked most often, so cached-2 goes before cached-10. The card and the history list the same other strategies, up to twelve, fastest first.
+- FIXED: **Discovery gave sets a DNS redirect that the site did not need** - it took the provider's DNS answer for a forged one when a public resolver gave other addresses and no address opened the site without a bypass. Blocked sites that send each region to its own servers got such a redirect. The apply dialog then could not add the site to a set with the same strategy.
+- FIXED: **An AI app could report one Discovery strategy and apply another** - b4_find_bypass_strategy named each site's fastest strategy, while applying installed the one the result card offers. When the AI app applied a saved result, the Discovery history marked the fastest strategy as tried.
+
+## [1.89.1] - 2026-10-31
+
+- FIXED: **Videos and sites still froze on servers the provider blocks for every site** - IP Block Detection banned such an address only when a device repeated its first request to the site. Some providers let that request through and then drop every reply, so nothing is repeated. Apps that try QUIC first also kept waiting on addresses that were already banned.
+- FIXED: **A server that refuses unknown site names could be banned, and the ban never lifted** - b4 checks a suspect address by connecting to it with unrelated site names. A server that closed or reset those connections without a reply counted as blocked, and the re-tests kept the ban in place.
+- FIXED: **In TUN mode, rejected QUIC and other UDP connections kept apps waiting instead of failing at once** - this hit sets with Reject as the UDP Action Mode or as the Block action. The refusal b4 sends back named the router's address instead of the device's, so the device ignored it.
+
 ## [1.89.0] - 2026-10-30
 
 - ADDED: **Connections to an address the provider blocks for all sites on it fail at once instead of hanging** - sets with IP Block Detection and Cache Blocked IPs on ban such an address for 24 hours, or for 7 days when it is caught again. DNS answers that list other addresses leave it out, and the dashboard's Banned addresses panel lists the bans. Bans are on by default, and Remember blocked addresses under Settings, Core, Packet Engine turns them off. The saved ban list with re-tests is inspired by [Ladon](https://github.com/belotserkovtsev/Ladon).

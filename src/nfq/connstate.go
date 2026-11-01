@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -202,6 +203,9 @@ type destStateTracker struct {
 	escalations map[string]*escalationEntry
 	rstKills    map[string]*failEntry
 	dnsFails    map[string]*failEntry
+	watchMu     sync.RWMutex
+	watches     map[string]*helloWatch
+	watching    atomic.Int32
 }
 
 type escalationEntry struct {

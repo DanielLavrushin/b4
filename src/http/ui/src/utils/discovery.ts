@@ -17,6 +17,12 @@ export type SiteVerdict = DiscoveryOutcome | "checking";
 export const NO_BYPASS_PRESET = "no-bypass";
 export const SET_CURRENT_PRESET = "set-current";
 export const ECH_STRIP_PRESET = "ech-strip";
+export const PLAIN_FIX_PRESETS = new Set([
+  "alt-address",
+  "dns-redirect",
+  ECH_STRIP_PRESET,
+]);
+export const MAX_ALTERNATES = 12;
 
 type TFn = (key: string, opts?: Record<string, unknown>) => string;
 
@@ -126,6 +132,7 @@ export interface FoundGroup {
   confirmation: Confirmation | null;
   unconfirmed: boolean;
   order: number;
+  alternates?: string[];
 }
 
 export interface SiteEntry {
@@ -255,6 +262,7 @@ export function buildResultEntries(
     preset: string,
     set: B4SetConfig | null,
     family?: StrategyFamily,
+    alternates?: string[],
   ) => {
     const rs = domains.map((d) => results[d]).filter(Boolean);
     const confs = rs.map((dr) => confirmationOf(dr, preset));
@@ -281,6 +289,7 @@ export function buildResultEntries(
       confirmation,
       unconfirmed,
       order: Math.min(...domains.map(rank)),
+      alternates,
     });
     domains.forEach((d) => grouped.add(d));
   };
@@ -290,7 +299,13 @@ export function buildResultEntries(
       .filter((d) => results[d] && verdictOf(results[d], finished) === "found")
       .sort(byRank);
     if (domains.length === 0) continue;
-    pushGroup(domains, g.winner_preset, g.set ? normalizeSet(g.set) : null, g.family);
+    pushGroup(
+      domains,
+      g.winner_preset,
+      g.set ? normalizeSet(g.set) : null,
+      g.family,
+      g.alternates,
+    );
   }
 
   const fallback = new Map<string, string[]>();
@@ -344,12 +359,15 @@ export function alternatesOf(
   keepDns: boolean,
   coverNames: string[],
   limit = 5,
+  listed?: string[],
 ): Alternate[] {
   const first = sources[0];
   if (!first?.results) return [];
   const out: Alternate[] = [];
-  for (const [preset, r] of Object.entries(first.results)) {
-    if (preset === winner || preset === NO_BYPASS_PRESET) continue;
+  const names = listed ?? Object.keys(first.results);
+  for (const preset of names) {
+    const r = first.results[preset];
+    if (!r || preset === winner || preset === NO_BYPASS_PRESET) continue;
     if (r.status !== "complete" || !r.set) continue;
     if (!sources.every((s) => s.results?.[preset]?.status === "complete")) {
       continue;
@@ -361,11 +379,14 @@ export function alternatesOf(
       speed: Math.min(...sources.map((s) => s.results?.[preset]?.speed ?? 0)),
     });
   }
-  out.sort((a, b) => b.speed - a.speed);
+  if (!listed) out.sort((a, b) => b.speed - a.speed);
   return limit > 0 ? out.slice(0, limit) : out;
 }
 
-export function alternatesFor(group: FoundGroup, limit = 5): Alternate[] {
+export function alternatesFor(
+  group: FoundGroup,
+  limit = MAX_ALTERNATES,
+): Alternate[] {
   return alternatesOf(
     group.results,
     group.domains,
@@ -373,10 +394,14 @@ export function alternatesFor(group: FoundGroup, limit = 5): Alternate[] {
     dnsPoisoned(group.results),
     echCoverNames(group.results),
     limit,
+    group.alternates,
   );
 }
 
-export function siteAlternates(dr: DiscoveryResult, limit = 0): Alternate[] {
+export function siteAlternates(
+  dr: DiscoveryResult,
+  limit = MAX_ALTERNATES,
+): Alternate[] {
   return alternatesOf(
     [dr],
     [dr.domain],
@@ -384,22 +409,32 @@ export function siteAlternates(dr: DiscoveryResult, limit = 0): Alternate[] {
     dnsPoisoned([dr]),
     echCoverNames([dr]),
     limit,
+    dr.alternates,
   );
 }
 
 export function historyAlternates(
   entry: HistoryEntry,
   domains: string[],
-  limit = 0,
+  main: string,
+  limit = MAX_ALTERNATES,
 ): Alternate[] {
-  return alternatesOf(
+  const found = historyVerdict(entry) === "found";
+  const scope = domains.length > 0 ? domains : [entry.domain];
+  const all = alternatesOf(
     [entry],
-    domains.length > 0 ? domains : [entry.domain],
-    historyVerdict(entry) === "found" ? entry.best_preset : NO_BYPASS_PRESET,
+    scope,
+    found ? main : NO_BYPASS_PRESET,
     !!entry.dns_result?.is_poisoned,
     echCoverNames([entry]),
-    limit,
+    0,
+    entry.alternates,
   );
+  const offered =
+    entry.alternates || !found || scope.length < 2
+      ? all
+      : all.filter((a) => a.preset !== entry.best_preset);
+  return limit > 0 ? offered.slice(0, limit) : offered;
 }
 
 export function appliedMarks(

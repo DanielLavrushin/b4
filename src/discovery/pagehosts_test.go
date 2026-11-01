@@ -59,7 +59,7 @@ func pageHostsFixture(t *testing.T, sites ...pageSite) (*DiscoverySuite, *fakeHo
 	return ds, f, srv
 }
 
-func (ds *DiscoverySuite) found(preset string, confirmed bool, domains ...string) {
+func (ds *DiscoverySuite) winsWith(preset string, confirmed bool, domains ...string) {
 	for _, d := range domains {
 		ds.put(d, presetNoBypass, CheckStatusFailed, PhaseBaseline, 0)
 		ds.put(d, preset, CheckStatusComplete, PhaseStrategy, 1)
@@ -123,7 +123,7 @@ func TestPageHostsListsTheHostsEachPageLoads(t *testing.T) {
 <body><img src="https://shared.example.net/a.png"><img src="https://img.a.example.com/b.png"></body></html>`},
 		pageSite{domain: "b.example.com", path: "/b", html: `<html><body><img src="https://shared.example.net/b.png"><img src="https://other.example.net/c.png"></body></html>`},
 	)
-	ds.found("combo", true, "a.example.com", "b.example.com")
+	ds.winsWith("combo", true, "a.example.com", "b.example.com")
 	f.without["https://cdn.example.net/app.js"] = []hostProbe{blockedProbe, blockedProbe}
 	f.without["https://shared.example.net/a.png"] = []hostProbe{blockedProbe, blockedProbe}
 	var origins []string
@@ -171,7 +171,7 @@ func TestPageHostsNeedAConfirmedStrategyAndSkipTheWatchdog(t *testing.T) {
 	site := pageSite{domain: "a.example.com", path: "/a", html: `<script src="https://cdn.example.net/app.js"></script>`}
 
 	unconfirmed, f, _ := pageHostsFixture(t, site)
-	unconfirmed.found("combo", false, "a.example.com")
+	unconfirmed.winsWith("combo", false, "a.example.com")
 	unconfirmed.checkPageHosts()
 	if unconfirmed.CurrentPhase != PhaseConfirm || len(f.configs) != 0 || pageHosts(unconfirmed, "a.example.com") != nil {
 		t.Errorf("a winner that was not confirmed is not used: phase %q, configs %d", unconfirmed.CurrentPhase, len(f.configs))
@@ -179,7 +179,7 @@ func TestPageHostsNeedAConfirmedStrategyAndSkipTheWatchdog(t *testing.T) {
 
 	watchdog, f, _ := pageHostsFixture(t, site)
 	watchdog.Source = SourceWatchdog
-	watchdog.found("combo", true, "a.example.com")
+	watchdog.winsWith("combo", true, "a.example.com")
 	watchdog.checkPageHosts()
 	if watchdog.CurrentPhase != PhaseConfirm || len(f.configs) != 0 || pageHosts(watchdog, "a.example.com") != nil {
 		t.Errorf("watchdog runs skip the step: phase %q, configs %d", watchdog.CurrentPhase, len(f.configs))
@@ -205,7 +205,7 @@ func TestPageHostsUseTheGroupWinnerAndTheLiveSet(t *testing.T) {
 	live.Id = "set-a"
 	live.Targets.SNIDomains = []string{"live.example.org"}
 	ds.cfg.Sets = []*config.SetConfig{&live}
-	ds.found("fast-a", true, "a.example.com")
+	ds.winsWith("fast-a", true, "a.example.com")
 	ds.put("b.example.com", "fast-b", CheckStatusComplete, PhaseStrategy, 0)
 	for _, d := range []string{"a.example.com", "b.example.com"} {
 		ds.put(d, "joint", CheckStatusComplete, PhaseStrategy, 5)
@@ -268,9 +268,9 @@ func TestPageHostsCoverOnlyTheDomainsOfFoundGroups(t *testing.T) {
 		pageSite{domain: "b.example.org", path: "/b", html: `<html></html>`},
 		pageSite{domain: "c.example.net", path: "/c", html: `<html></html>`},
 	)
-	ds.found("one", true, "a.example.com")
+	ds.winsWith("one", true, "a.example.com")
 	ds.put("c.example.net", presetNoBypass, CheckStatusFailed, PhaseBaseline, 0)
-	ds.found("two", true, "b.example.org")
+	ds.winsWith("two", true, "b.example.org")
 	f.without["https://cdn.c.example.net/b.png"] = []hostProbe{blockedProbe, blockedProbe}
 
 	ds.checkPageHosts()
@@ -304,7 +304,7 @@ func TestPageHostsCutDuringThePageReadKeepsTheStepReason(t *testing.T) {
 				t.Cleanup(func() { hostRunBudget = previous })
 			}
 			ds, _, _ := pageHostsFixture(t, pageSite{domain: "a.example.com", path: "/a", html: `<script src="https://cdn.example.net/a.js"></script>`})
-			ds.found("combo", true, "a.example.com")
+			ds.winsWith("combo", true, "a.example.com")
 			registered(t, ds)
 			cut := func() {
 				if tc.skip {
@@ -373,7 +373,7 @@ func TestPageHostsReadAtMostThreePagesAtOnce(t *testing.T) {
 	for i := range ds.Domains {
 		ds.Domains[i].CheckURL = slow.URL + "/" + ds.Domains[i].Domain
 	}
-	ds.found("combo", true, domains...)
+	ds.winsWith("combo", true, domains...)
 
 	ds.checkPageHosts()
 
@@ -390,7 +390,7 @@ func TestPageHostsStopAtTheTimeLimit(t *testing.T) {
 	t.Cleanup(func() { hostRunBudget = previous })
 
 	ds, _, _ := pageHostsFixture(t, pageSite{domain: "a.example.com", path: "/a", html: `<script src="https://cdn.example.net/a.js"></script>`})
-	ds.found("combo", true, "a.example.com")
+	ds.winsWith("combo", true, "a.example.com")
 	ds.hostProbeFn = func(ctx context.Context, rawURL, origin string, with bool) hostProbe {
 		select {
 		case <-ctx.Done():
@@ -427,7 +427,7 @@ func TestSkipDuringPageHostsEndsOnlyTheStep(t *testing.T) {
 				pageSite{domain: "a.example.com", path: "/a", html: `<script src="https://cdn.example.net/a.js"></script><img src="https://img.example.net/b.png">`},
 			)
 			ds.SetId = "set-a"
-			ds.found("combo", true, "a.example.com")
+			ds.winsWith("combo", true, "a.example.com")
 			ds.setVerdict = &SetVerdict{Status: SetVerdictCovered, WinnerPreset: "combo", Covered: []string{"a.example.com"}, Set: strategySet("combo"), Confirmed: true}
 			registered(t, ds)
 			stopOnFirstProbe(ds, func() {
@@ -467,7 +467,7 @@ func TestSkipDuringPageHostsEndsOnlyTheStep(t *testing.T) {
 
 func TestPageHostsRunAfterTheUserStoppedTheSearch(t *testing.T) {
 	ds, f, _ := pageHostsFixture(t, pageSite{domain: "a.example.com", path: "/a", html: `<script src="https://cdn.example.net/a.js"></script>`})
-	ds.found("combo", true, "a.example.com")
+	ds.winsWith("combo", true, "a.example.com")
 	f.without["https://cdn.example.net/a.js"] = []hostProbe{blockedProbe, blockedProbe}
 	registered(t, ds)
 	ds.CurrentPhase = PhaseStrategy
@@ -524,7 +524,7 @@ func TestCancelDuringPageHostsKeepsTheFinishedRun(t *testing.T) {
 func TestLostRulesDuringPageHostsStillCancel(t *testing.T) {
 	ds, _, _ := pageHostsFixture(t, pageSite{domain: "a.example.com", path: "/a", html: `<script src="https://cdn.example.net/a.js"></script>`})
 	ds.SetId = "set-a"
-	ds.found("combo", true, "a.example.com")
+	ds.winsWith("combo", true, "a.example.com")
 	ds.setVerdict = &SetVerdict{Status: SetVerdictCovered, WinnerPreset: "combo", Covered: []string{"a.example.com"}, Set: strategySet("combo"), Confirmed: true}
 	registered(t, ds)
 	stopOnFirstProbe(ds, func() { cancelCheckSuite(ds.Id, true) })
@@ -561,7 +561,7 @@ func TestPageHostsNameTheHostARedirectLandsOn(t *testing.T) {
 	defer redirector.Close()
 	ds, _, _ := pageHostsFixture(t, pageSite{domain: "a.example.com", path: "/a", html: ""})
 	ds.Domains[0].CheckURL = redirector.URL + "/a"
-	ds.found("combo", true, "a.example.com")
+	ds.winsWith("combo", true, "a.example.com")
 
 	ds.checkPageHosts()
 
@@ -577,7 +577,7 @@ func TestPageHostsCanBeReadWhileTheStepRuns(t *testing.T) {
 		html.WriteString(fmt.Sprintf(`<img src="https://h%d.example.net/a.png">`, i))
 	}
 	ds, f, _ := pageHostsFixture(t, pageSite{domain: "a.example.com", path: "/a", html: html.String()})
-	ds.found("combo", true, "a.example.com")
+	ds.winsWith("combo", true, "a.example.com")
 	for i := 0; i < 20; i += 2 {
 		f.without[fmt.Sprintf("https://h%d.example.net/a.png", i)] = []hostProbe{blockedProbe, blockedProbe}
 	}
