@@ -4,8 +4,10 @@
 
 - ADDED: **A set that lists a provider's own servers, such as its Google Global Cache nodes, can keep the connections to them** - with IP priority on, a connection to one of the set's addresses stays with the set even when a set lower in the list matches its domain. The switch is under Targets, Bypass IPs in the set editor and is off by default. It is meant for servers that carry only this set's sites, not for shared CDN ranges.
 - FIXED: **A duplicated set appeared below its source, then jumped to the top of the list once the list reloaded** - b4 saved the copy as the first set in the list. Ahead of its source, the copy took the connections to the sites both sets list.
+- FIXED: **Without a login set for the web interface, any website opened on a device in the network could watch b4's live log and the sites each device visits** - b4 sent the live data of the Logs, Traffic, Dashboard and Discovery pages to a page of any site. Browsers do not keep other sites away from this data on their own.
 - FIXED: **Escalation did not keep a site's address from being banned** - after a set moved a site to its backup set, it kept checking the site's earlier connections. When their server stayed silent, the set banned the address.
 - FIXED: **A backup set could give up on a site as soon as Escalation moved the site to it** - the connection that triggered the switch arrived with the first set's unanswered attempts already counted. A backup set with IP Block Detection reset it, and with Cache Blocked IPs on, connections to that address were then reset for several minutes. A backup set with its own Escalation passed the site on to the next set without trying it.
+- CHANGED: **Without a login set for the web interface, b4's live data reaches only pages at the same address and port as b4** - a dashboard on another site, such as a Home Assistant panel, needs a login set for the web interface and must pass its token. A reverse proxy in front of b4 must pass the original Host header and X-Forwarded-Proto, or the Logs and Traffic pages stay empty.
 
 ## [1.89.1] - 2026-10-31
 
