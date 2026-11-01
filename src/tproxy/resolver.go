@@ -17,8 +17,7 @@ type NameSource interface {
 }
 
 type SetMatcher interface {
-	SetForHost(host, srcMAC string, keep sni.SetFilter) *config.SetConfig
-	SetForAddress(dst net.IP, srcMAC string, keep sni.SetFilter) *config.SetConfig
+	PassOnSet(host string, dst net.IP, dport uint16, srcMAC string, applies sni.SetFilter, takes func(set *config.SetConfig, byName bool) bool) (*config.SetConfig, bool)
 }
 
 type Resolver struct {
@@ -56,26 +55,51 @@ func (r *Resolver) SetHasDomain(setID, host string) bool {
 	return r.matcher.Load().SetHasDomain(setID, host)
 }
 
-func (r *Resolver) SetForHost(host, srcMAC string, keep sni.SetFilter) *config.SetConfig {
+func (r *Resolver) PassOnSet(host string, dst net.IP, dport uint16, srcMAC string, applies sni.SetFilter, takes func(set *config.SetConfig, byName bool) bool) (*config.SetConfig, bool) {
 	m := r.matcher.Load()
-	if m == nil || host == "" {
+	if m == nil {
+		return nil, false
+	}
+	if host != "" {
+		if named, set := m.MatchSNIWithSource(host, srcMAC, applies); named {
+			if holder := addressHolder(m, set, dst, dport, srcMAC, applies); holder != nil {
+				if passOnEligible(holder, false) && takes(holder, false) {
+					return holder, false
+				}
+				return nil, false
+			}
+			if takes(set, true) {
+				return set, true
+			}
+		}
+	}
+	if dst == nil {
+		return nil, false
+	}
+	eligible := func(set *config.SetConfig) bool { return applies(set) && passOnEligible(set, false) }
+	if listed, set := m.MatchIPWithSource(dst, srcMAC, eligible); listed && takes(set, false) {
+		return set, false
+	}
+	return nil, false
+}
+
+func addressHolder(m *sni.SuffixSet, nameSet *config.SetConfig, dst net.IP, dport uint16, srcMAC string, keep sni.SetFilter) *config.SetConfig {
+	if dst == nil {
 		return nil
 	}
-	if ok, set := m.MatchSNIWithSource(host, srcMAC, keep); ok {
-		return set
+	listed, addrSet, prefix := m.MatchIPWithSourceDetail(dst, srcMAC, keep)
+	if listed && m.AddressHolds(addrSet, prefix, nameSet, srcMAC) &&
+		addrSet.MatchesTCPDPort(dport) && addrSet.MatchesIPVersion(ipVersionOf(dst)) {
+		return addrSet
 	}
 	return nil
 }
 
-func (r *Resolver) SetForAddress(dst net.IP, srcMAC string, keep sni.SetFilter) *config.SetConfig {
-	m := r.matcher.Load()
-	if m == nil || dst == nil {
-		return nil
+func ipVersionOf(ip net.IP) uint8 {
+	if ip.To4() != nil {
+		return 4
 	}
-	if ok, set := m.MatchIPWithSource(dst, srcMAC, keep); ok {
-		return set
-	}
-	return nil
+	return 6
 }
 
 func (r *Resolver) WantNames(wanted bool) {

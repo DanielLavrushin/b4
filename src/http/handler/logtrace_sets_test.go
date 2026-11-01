@@ -152,6 +152,50 @@ func TestCollectTraceSetsOffModesOmitted(t *testing.T) {
 	}
 }
 
+func TestCollectTraceSetsReportsIPPriority(t *testing.T) {
+	cfg := config.NewConfig()
+	held := config.NewSetConfig()
+	held.Id = "held"
+	held.Enabled = true
+	held.Targets.IPPriority = true
+	plain := config.NewSetConfig()
+	plain.Id = "plain"
+	plain.Enabled = true
+	filtered := config.NewSetConfig()
+	filtered.Id = "filtered"
+	filtered.Enabled = true
+	filtered.Targets.IPPriority = true
+	filtered.Targets.TLSVersion = "1.2"
+	cfg.Sets = []*config.SetConfig{&held, &plain, &filtered}
+
+	data, err := json.Marshal(collectTraceSets(&cfg))
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	var sets []struct {
+		ID      string                     `json:"id"`
+		Targets map[string]json.RawMessage `json:"targets"`
+	}
+	if err := json.Unmarshal(data, &sets); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if len(sets) != 3 || sets[0].ID != "held" || sets[1].ID != "plain" || sets[2].ID != "filtered" {
+		t.Fatalf("unexpected sets in the trace: %s", data)
+	}
+	if got := string(sets[0].Targets["ip_priority"]); got != "true" {
+		t.Errorf("a set with the switch on must show ip_priority true in the trace, got %q", got)
+	}
+	if _, listed := sets[1].Targets["ip_priority"]; listed {
+		t.Error("a set with the switch off must leave ip_priority out of the trace")
+	}
+	if _, listed := sets[2].Targets["ip_priority"]; listed {
+		t.Errorf("a set with a TLS version filter must leave ip_priority out of the trace, the switch has no effect there: %s", data)
+	}
+	if got := string(sets[2].Targets["tls"]); got != `"1.2"` {
+		t.Errorf("the trace must still show the TLS version filter that turns the switch off, got %q", got)
+	}
+}
+
 func TestCollectTraceSetsReportsSetDSCP(t *testing.T) {
 	cfg := config.NewConfig()
 	zero := config.DefaultSetConfig

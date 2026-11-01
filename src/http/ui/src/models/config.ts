@@ -109,6 +109,7 @@ export interface TargetsConfig {
   source_devices?: string[];
   source_devices_exclude?: boolean;
   domain_only?: boolean;
+  ip_priority?: boolean;
   tls?: string;
   ip_version?: string;
 }

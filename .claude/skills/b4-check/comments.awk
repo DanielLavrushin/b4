@@ -6,6 +6,7 @@
 }
 path ~ /\.(go|ts|tsx|js|jsx|mjs|cjs)$/ {
   if (text ~ /^[[:space:]]*\/\/go:/) next
+  if (path ~ /\.go$/ && text ~ /^[[:space:]]*\/\/[[:space:]]*@[A-Za-z]/) next
   if (text ~ /(^|[[:space:]{(])\/[\/*]/) print
   next
 }

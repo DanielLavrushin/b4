@@ -771,6 +771,9 @@ func mcpSaveSideEffects(before, saved *config.Config, canonical, writtenID strin
 			notes = append(notes, fmt.Sprintf("Saving also switched off the watchdog of set %q (%s); it stays off until it is switched on again.",
 				s.Name, config.WatchdogBlockerText(s.WatchdogBlocker())))
 		}
+		if s.Targets.IPPriority && !s.IPPriorityApplies() && (old.IPPriorityApplies() || !old.Targets.IPPriority) {
+			notes = append(notes, fmt.Sprintf("targets.ip_priority has no effect on set %q while its targets.tls is set.", s.Name))
+		}
 	}
 	return strings.Join(notes, " ")
 }

@@ -317,6 +317,10 @@ export const ImportExportSettings = ({
       }
 
       parsed.id = config.id;
+      parsed.targets = {
+        ...parsed.targets,
+        ip_priority: config.targets.ip_priority ?? false,
+      };
       if (config.revision) parsed.revision = config.revision;
       else delete parsed.revision;
       parsed.discovery = importedDiscovery(

@@ -450,6 +450,7 @@ type TargetsConfig struct {
 	SourceDevices        []string `json:"source_devices"`
 	SourceDevicesExclude bool     `json:"source_devices_exclude"`
 	DomainOnly           bool     `json:"domain_only"`
+	IPPriority           bool     `json:"ip_priority"`
 	TLSVersion           string   `json:"tls"`        // "1.2", "1.3", or "" (match any)
 	IPVersion            string   `json:"ip_version"` // "4", "6", or "" (match any)
 	DomainsToMatch       []string `json:"-"`

@@ -115,6 +115,7 @@ export function exportSetJson(config: B4SetConfig, space?: number): string {
 
   if (isPlainObject(result.targets)) {
     delete result.targets.source_devices;
+    delete result.targets.ip_priority;
   }
   if ((config.targets.source_devices ?? []).length > 0) {
     delete result.dscp;

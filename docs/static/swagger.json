@@ -4,7 +4,7 @@
         "description": "B4 network packet processor REST API",
         "title": "B4 API",
         "contact": {},
-        "version": "1.89.0"
+        "version": "1.90.0"
     },
     "basePath": "/api",
     "paths": {
@@ -4100,6 +4100,12 @@
                         "schema": {
                             "$ref": "#/definitions/config.SetConfig"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "ID of the set the new set goes right after; without it, or when no set has that ID, the new set goes first",
+                        "name": "after",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -6706,6 +6712,9 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "ip_priority": {
+                    "type": "boolean"
                 },
                 "ip_version": {
                     "description": "\"4\", \"6\", or \"\" (match any)",
