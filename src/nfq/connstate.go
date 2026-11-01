@@ -135,7 +135,7 @@ func (c *tlsInfoCache) ForgetDecisions(current *sni.SuffixSet) {
 	}
 }
 
-func (c *tlsInfoCache) DropOtherConnection(connKey string, firstSeq uint32) {
+func (c *tlsInfoCache) DropOtherConnection(connKey string, firstSeq uint32) bool {
 	sameConnection := func(info *tlsInfo) bool {
 		return info.helloSeq-firstSeq <= maxPendingHelloRecord
 	}
@@ -145,14 +145,16 @@ func (c *tlsInfoCache) DropOtherConnection(connKey string, firstSeq uint32) {
 	keep := !exists || sameConnection(info)
 	c.mu.RUnlock()
 	if keep {
-		return
+		return false
 	}
 
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if info, exists := c.conns[connKey]; exists && !sameConnection(info) {
 		delete(c.conns, connKey)
+		return true
 	}
-	c.mu.Unlock()
+	return false
 }
 
 func (c *tlsInfoCache) Cleanup() {
@@ -282,6 +284,16 @@ func (t *destStateTracker) MarkRSTSent(connKey string) {
 	if entry, ok := t.conns[connKey]; ok {
 		entry.rstSent = true
 	}
+}
+
+func (t *destStateTracker) ForgetConnection(connKey string) {
+	if t == nil {
+		return
+	}
+	t.Unwatch(connKey)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.conns, connKey)
 }
 
 func (t *destStateTracker) IsBlocked(dstIPPort string) bool {

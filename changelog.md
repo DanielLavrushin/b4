@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.90.0] - 2026-11-01
+
+- FIXED: **With IP Block Detection on, a connection could be cut at its first request when a device reused a port** - a device that opened a new connection to the same server from the same port within two minutes inherited the old connection's state. b4 took the new request for a repeat of the old one. It reset the connection and checked the server for a block.
+
 ## [1.89.1] - 2026-10-31
 
 - FIXED: **Videos and sites still froze on servers the provider blocks for every site** - IP Block Detection banned such an address only when a device repeated its first request to the site. Some providers let that request through and then drop every reply, so nothing is repeated. Apps that try QUIC first also kept waiting on addresses that were already banned.
