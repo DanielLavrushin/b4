@@ -127,5 +127,5 @@ func setUnavailableLocked(reason string) {
 		return
 	}
 	warnedReason = reason
-	log.Warnf("Conntrack netlink is unavailable (%s): b4 cannot delete the conntrack entry of a QUIC connection that a set drops, rejects or blocks, so unless b4's nftables drop set covers the connection, its datagrams after the first ones b4 receives pass through to the server. The nf_conntrack_netlink kernel module provides conntrack netlink (OpenWrt package kmod-nf-conntrack-netlink)", reason)
+	log.Warnf("Conntrack netlink is unavailable (%s): b4 cannot delete the conntrack entry of a QUIC connection that a set drops, rejects or blocks, so unless b4's nftables drop set covers the connection, its datagrams after the first ones b4 receives pass through to the server. It also cannot confirm that a server left a connection's ClientHello unanswered, so IP block detection checks such an address only once the device gives up on the connection. The nf_conntrack_netlink kernel module provides conntrack netlink (OpenWrt package kmod-nf-conntrack-netlink)", reason)
 }

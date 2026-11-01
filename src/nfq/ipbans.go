@@ -18,6 +18,7 @@ const (
 	banProbeParallel  = 4
 	banRetestsPerTick = 8
 	banPendingMax     = 64
+	banAnsweredMax    = 1024
 )
 
 type banProber func(ctx context.Context, ip net.IP, port int, mark int) iphealth.TLSResult
@@ -28,13 +29,16 @@ type ipBans struct {
 	probe       banProber
 	enabled     atomic.Bool
 	flushFailed atomic.Bool
+	answerTTL   atomic.Int64
 	mu          sync.Mutex
 	inflight    map[string]struct{}
+	answered    map[string]time.Time
 	sem         chan struct{}
 	ctx         context.Context
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
 	changed     func()
+	settled     func(ip net.IP, port int, banned bool)
 }
 
 func newIPBans(reg *iphealth.BanRegistry, good *iphealth.KnownGood, probe banProber) *ipBans {
@@ -42,15 +46,18 @@ func newIPBans(reg *iphealth.BanRegistry, good *iphealth.KnownGood, probe banPro
 		probe = iphealth.ProbeTLS
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &ipBans{
+	b := &ipBans{
 		reg:      reg,
 		good:     good,
 		probe:    probe,
 		inflight: make(map[string]struct{}),
+		answered: make(map[string]time.Time),
 		sem:      make(chan struct{}, banProbeParallel),
 		ctx:      ctx,
 		cancel:   cancel,
 	}
+	b.answerTTL.Store(int64(config.DefaultIPHealthRetestSec * time.Second))
+	return b
 }
 
 func (b *ipBans) applyConfig(cfg *config.Config) {
@@ -58,6 +65,9 @@ func (b *ipBans) applyConfig(cfg *config.Config) {
 		return
 	}
 	b.enabled.Store(cfg != nil && !cfg.Queue.IsDiscovery && cfg.System.IPHealth.BansEnabled())
+	if cfg != nil {
+		b.answerTTL.Store(int64(cfg.System.IPHealth.RetestInterval()))
+	}
 }
 
 func (b *ipBans) on() bool {
@@ -88,22 +98,35 @@ func banEnforced(set *config.SetConfig) bool {
 	return set != nil && set.TCP.IPBlockDetect.Enabled && set.TCP.IPBlockDetect.CacheBlockedIPs
 }
 
-func (b *ipBans) confirm(cfg *config.Config, ip net.IP, port uint16, host, setName string) {
+func (w *Worker) refusesBannedQUIC(cfg *config.Config, set *config.SetConfig, dst net.IP, dport uint16) bool {
+	return cfg != nil && !cfg.Queue.IsDiscovery && banEnforced(set) && w.bans.banned(dst, dport) && !set.RoutingHandsOffPackets()
+}
+
+func (b *ipBans) confirm(cfg *config.Config, ip net.IP, port uint16, host, setName string) bool {
 	if !b.on() || cfg == nil || ip == nil {
-		return
+		return false
 	}
 	addr := append(net.IP(nil), ip...)
 	first, repeat := cfg.System.IPHealth.BanTTL(), cfg.System.IPHealth.RepeatBanTTL()
 	key := iphealth.BanKey(addr, int(port))
-	b.run(key, addr, int(port), int(cfg.MainInjectedMark()), func(res iphealth.TLSResult) {
+	if b.run(key, addr, int(port), int(cfg.MainInjectedMark()), func(res iphealth.TLSResult) {
 		b.settleStrike(key, addr, int(port), host, setName, first, repeat, res)
-	})
+	}) {
+		return true
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, busy := b.inflight[key]
+	return busy
 }
 
 func (b *ipBans) settleStrike(key string, ip net.IP, port int, host, setName string, first, repeat time.Duration, res iphealth.TLSResult) {
+	banned := false
+	defer func() { b.settle(ip, port, banned) }()
 	switch res {
 	case iphealth.TLSReplied:
-		log.Infof("IP bans: %s answers TLS for other names, so the block is on the name and the address is not banned (host: %s, set: %s)", key, host, setName)
+		log.Infof("IP bans: %s answers TLS for neutral names, so the address is not banned (host: %s, set: %s)", key, host, setName)
+		b.rememberAnswer(key)
 		return
 	case iphealth.TLSUnreachable:
 		log.Tracef("IP bans: %s did not take a TCP connection from the router, not banning it (host: %s, set: %s)", key, host, setName)
@@ -116,6 +139,7 @@ func (b *ipBans) settleStrike(key string, ip net.IP, port int, host, setName str
 	if !ok {
 		return
 	}
+	banned = true
 	b.good.Forget(host, ip)
 	log.Infof("IP bans: %s does not answer TLS for neutral names either, banned until %s (host: %s, set: %s, repeat: %t)", key, until.Format("2006-01-02 15:04:05"), host, setName, isRepeat)
 	b.notify()
@@ -124,6 +148,48 @@ func (b *ipBans) settleStrike(key string, ip net.IP, port int, host, setName str
 func (b *ipBans) notify() {
 	if b.changed != nil {
 		b.changed()
+	}
+}
+
+func (b *ipBans) settle(ip net.IP, port int, banned bool) {
+	if b.settled != nil {
+		b.settled(ip, port, banned)
+	}
+}
+
+func (b *ipBans) rememberAnswer(key string) {
+	now := time.Now()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.answered) >= banAnsweredMax {
+		b.pruneAnsweredLocked(now)
+		if len(b.answered) >= banAnsweredMax {
+			return
+		}
+	}
+	b.answered[key] = now.Add(time.Duration(b.answerTTL.Load()))
+}
+
+func (b *ipBans) answeredRecently(ip net.IP, port uint16, now time.Time) bool {
+	if b == nil || ip == nil {
+		return false
+	}
+	key := iphealth.BanKey(ip, int(port))
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	until, ok := b.answered[key]
+	if ok && !now.Before(until) {
+		delete(b.answered, key)
+		return false
+	}
+	return ok
+}
+
+func (b *ipBans) pruneAnsweredLocked(now time.Time) {
+	for key, until := range b.answered {
+		if !now.Before(until) {
+			delete(b.answered, key)
+		}
 	}
 }
 
@@ -144,7 +210,11 @@ func (b *ipBans) retest(retest time.Duration, mark int) {
 }
 
 func (b *ipBans) settleRetest(key string, res iphealth.TLSResult) {
-	if b.reg.RecordCheck(key, res == iphealth.TLSReplied) {
+	lifted := b.reg.RecordCheck(key, res == iphealth.TLSReplied)
+	if ip, port, ok := iphealth.ParseBanKey(key); ok {
+		defer b.settle(ip, port, b.reg.Banned(ip, port))
+	}
+	if lifted {
 		log.Infof("IP bans: %s answered TLS for neutral names in several re-tests in a row, the ban is lifted", key)
 		b.notify()
 		return
@@ -195,6 +265,9 @@ func (b *ipBans) tick(cfg *config.Config) {
 		return
 	}
 	b.reg.Prune()
+	b.mu.Lock()
+	b.pruneAnsweredLocked(time.Now())
+	b.mu.Unlock()
 	if cfg != nil {
 		b.retest(cfg.System.IPHealth.RetestInterval(), int(cfg.MainInjectedMark()))
 	}
@@ -298,6 +371,14 @@ func (p *Pool) publishBans() {
 		return
 	}
 	metrics.GetMetricsCollector().UpdateBans(p.GetBans())
+}
+
+func (p *Pool) wireBans() {
+	if p == nil || p.state == nil || p.state.bans == nil || len(p.Workers) == 0 {
+		return
+	}
+	p.state.bans.changed = p.publishBans
+	p.state.bans.settled = p.Workers[0].settleSilentHellos
 }
 
 type ipBlockView struct {

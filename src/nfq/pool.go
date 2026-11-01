@@ -107,10 +107,8 @@ func NewPool(cfg *config.Config) *Pool {
 		ws = append(ws, w)
 	}
 
-	pool := &Pool{Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), state: state}
-	if state.bans != nil {
-		state.bans.changed = pool.publishBans
-	}
+	pool := &Pool{Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), cleanupDone: make(chan struct{}), state: state}
+	pool.wireBans()
 	if !cfg.Queue.IsDiscovery {
 		pool.dnsCopy = newDNSCopyListener(ws[0])
 		for _, w := range ws {
@@ -139,6 +137,7 @@ func NewPool(cfg *config.Config) *Pool {
 	log.Infof("DHCP: initial load %d IP->MAC mappings", len(initialMappings))
 
 	go func() {
+		defer close(pool.cleanupDone)
 		cleanupTicker := time.NewTicker(30 * time.Second)
 		defer cleanupTicker.Stop()
 		escalationTicker := time.NewTicker(2 * time.Second)
@@ -162,6 +161,7 @@ func NewPool(cfg *config.Config) *Pool {
 				pool.state.bans.tick(pool.GetFirstWorkerConfig())
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
+				pool.sweepSilentHellos(time.Now())
 				pool.publishEscalations()
 				pool.publishBans()
 				pool.reportQueueDirection(time.Now())
@@ -302,6 +302,9 @@ func (p *Pool) Stop() {
 		// already closed
 	default:
 		close(p.stopCleanup)
+	}
+	if p.cleanupDone != nil {
+		<-p.cleanupDone
 	}
 
 	if p.state != nil {

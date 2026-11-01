@@ -1,6 +1,7 @@
 package sock
 
 import (
+	"bytes"
 	"encoding/binary"
 )
 
@@ -34,6 +35,10 @@ func BuildICMPv4Reject(originalPacket []byte, clientIP, serverIP []byte) []byte 
 	pkt[ipEnd+1] = 3
 
 	copy(pkt[ipEnd+8:], originalPacket[:quotedLen])
+	if quoted := pkt[ipEnd+8 : ipEnd+8+ihl]; !bytes.Equal(quoted[12:16], clientIP[:4]) {
+		copy(quoted[12:16], clientIP[:4])
+		FixIPv4Checksum(quoted)
+	}
 
 	icmpData := pkt[ipEnd:]
 	var sum uint32

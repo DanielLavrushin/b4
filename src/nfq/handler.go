@@ -370,6 +370,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 	vc.hellos, vc.helloKey = w.pendingHello, connKey
+	w.noteClientProgress(connKey, tcp)
 	if cfg.IsTCPPort(dport) && tcp[13]&0x12 == 0x02 {
 		w.tlsCache.DropOtherConnection(connKey, binary.BigEndian.Uint32(tcp[4:8])+1)
 		w.pendingHello.ForgetHeld(connKey)
@@ -737,6 +738,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if !cfg.Queue.IsDiscovery {
 				log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), cachedReason)
 			}
+			w.destState.Unwatch(connKey)
 			if pkt.ver == IPv4 {
 				w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
 			} else {
@@ -832,6 +834,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			if stallCount >= threshold || (stallCount > 1 && time.Since(stallFirstSeen) > timeout) {
 				if !w.destState.HasRSTSent(connKey) {
 					w.destState.MarkRSTSent(connKey)
+					w.destState.Unwatch(connKey)
 					if pkt.ver == IPv4 {
 						w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
 					} else {
@@ -847,6 +850,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				}
 				vc.drop()
 				return 0
+			}
+			if stallCount == 1 {
+				w.watchHelloSilence(cfg, set, pkt, connKey, host, sport, dport, tlsVersion, stallFirstSeen.Add(timeout))
 			}
 		}
 
@@ -1141,11 +1147,14 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	voiceExempt := anyMatch && isVoiceMedia && !matchedL7 && set != nil && set.UDP.FilterSTUN
 	udpForeignEgress := shouldHandle && !voiceExempt && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
+	bannedQUIC := shouldHandle && !voiceExempt && !udpForeignEgress && (isQUIC || matchedFlow) && !isVoiceMedia && w.refusesBannedQUIC(cfg, set, pkt.dst, dport)
 	udpReason := ""
 	if udpForeignEgress {
 		udpReason = vc.handOffReason()
 	} else if voiceExempt {
 		udpReason = voiceExemptReason
+	} else if bannedQUIC {
+		udpReason = "ipblock-ban"
 	}
 	if !cfg.Queue.IsDiscovery {
 		log.LogConnection("UDP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, udpTLS, udpReason)
@@ -1177,6 +1186,10 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return vc.accept()
 	}
 
+	if bannedQUIC {
+		return w.rejectDatagram(vc, pkt, quicFlow)
+	}
+
 	switch set.UDP.Mode {
 	case config.ConfigOff:
 		return vc.accept()
@@ -1189,22 +1202,7 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		return 0
 
 	case "reject":
-		if !vc.drop() {
-			return 0
-		}
-		if pkt.ver == IPv4 {
-			if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
-				_ = w.clientSender().SendIPv4(icmp, pkt.src)
-			}
-		} else {
-			if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
-				_ = w.clientSender().SendIPv6(icmp, pkt.src)
-			}
-		}
-		if quicFlow {
-			vc.dropFlow()
-		}
-		return 0
+		return w.rejectDatagram(vc, pkt, quicFlow)
 
 	case config.UDPModeCoalesce:
 		if !config.RoutingUsesTProxy(set.RoutingModeOrDefault()) && set.RoutingHandsOffPackets() {
@@ -1282,6 +1280,25 @@ func (w *Worker) handleUDPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	default:
 		return vc.accept()
 	}
+}
+
+func (w *Worker) rejectDatagram(vc *verdictCtx, pkt *pktInfo, quicFlow bool) int {
+	if !vc.drop() {
+		return 0
+	}
+	if pkt.ver == IPv4 {
+		if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
+			_ = w.clientSender().SendIPv4(icmp, pkt.src)
+		}
+	} else {
+		if icmp := sock.BuildICMPv6Reject(pkt.raw, pkt.src.To16(), pkt.dst.To16()); icmp != nil {
+			_ = w.clientSender().SendIPv6(icmp, pkt.src)
+		}
+	}
+	if quicFlow {
+		vc.dropFlow()
+	}
+	return 0
 }
 
 func (w *Worker) blockUDP(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig, sport, dport uint16, sniTarget, host, ipTarget, udpTLS string, quicFlow bool) int {

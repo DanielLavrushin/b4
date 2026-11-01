@@ -1,5 +1,11 @@
 # B4 - Bye Bye Big Bro
 
+## [1.89.1] - 2026-10-31
+
+- FIXED: **Videos and sites still froze on servers the provider blocks for every site** - IP Block Detection banned such an address only when a device repeated its first request to the site. Some providers let that request through and then drop every reply, so nothing is repeated. Apps that try QUIC first also kept waiting on addresses that were already banned.
+- FIXED: **A server that refuses unknown site names could be banned, and the ban never lifted** - b4 checks a suspect address by connecting to it with unrelated site names. A server that closed or reset those connections without a reply counted as blocked, and the re-tests kept the ban in place.
+- FIXED: **In TUN mode, rejected QUIC and other UDP connections kept apps waiting instead of failing at once** - this hit sets with Reject as the UDP Action Mode or as the Block action. The refusal b4 sends back named the router's address instead of the device's, so the device ignored it.
+
 ## [1.89.0] - 2026-10-30
 
 - ADDED: **Connections to an address the provider blocks for all sites on it fail at once instead of hanging** - sets with IP Block Detection and Cache Blocked IPs on ban such an address for 24 hours, or for 7 days when it is caught again. DNS answers that list other addresses leave it out, and the dashboard's Banned addresses panel lists the bans. Bans are on by default, and Remember blocked addresses under Settings, Core, Packet Engine turns them off. The saved ban list with re-tests is inspired by [Ladon](https://github.com/belotserkovtsev/Ladon).

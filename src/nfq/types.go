@@ -22,6 +22,7 @@ type Pool struct {
 	configMu    sync.Mutex
 	Dhcp        *dhcp.Manager
 	stopCleanup chan struct{}
+	cleanupDone chan struct{}
 	state       *runtimeState
 	tunSrc      *tunSrcResolver
 	dnsTCP      *dnsTCPServer
