@@ -16,6 +16,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
+	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
 	"github.com/florianl/go-nfqueue"
@@ -1205,5 +1206,111 @@ func TestTUNNeverHoldsASplitHello(t *testing.T) {
 	}
 	if n := w.pendingHello.holding.Load(); n != 0 {
 		t.Fatalf("%d holds attached without a queue, want none", n)
+	}
+}
+
+func injectingSilenceSet() config.SetConfig {
+	set := newFragmentingYTImagesSet()
+	set.TCP.RSTProtection.Enabled = false
+	set.TCP.IPBlockDetect.Enabled = true
+	set.TCP.IPBlockDetect.CacheBlockedIPs = true
+	return set
+}
+
+func resetSeqs(sent [][]byte) []uint32 {
+	var seqs []uint32
+	for _, p := range sent {
+		if len(p) >= 40 && p[0]>>4 == IPv4 && p[33]&0x04 != 0 {
+			seqs = append(seqs, binary.BigEndian.Uint32(p[24:28]))
+		}
+	}
+	return seqs
+}
+
+func TestAHeldSplitHelloIsWatchedForASilentServerLikeAWholeOne(t *testing.T) {
+	holdHellosFor(t, time.Minute)
+	for _, tc := range []struct {
+		name    string
+		set     func() config.SetConfig
+		replays bool
+	}{
+		{"a set that leaves the hello alone", silenceSet, false},
+		{"a set that injects", injectingSilenceSet, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			set := tc.set()
+			r := newSilenceWorker(t, &set, iphealth.TLSSilent)
+			t.Cleanup(r.w.pendingHello.ReleaseHolds)
+			q := &verdictLog{}
+			full, seg1, seg2 := splitHello("i.ytimg.com")
+
+			queueTo(r.w, q, 1, clientPacket(12345, splitSeq, 0x18, seg1))
+			if got := q.list(); len(got) != 0 {
+				t.Fatalf("segment 1 got %v while it was handled, it must wait for the rest of the record", got)
+			}
+			queueTo(r.w, q, 2, clientPacket(12345, splitSeq+splitCut, 0x18, seg2))
+			if tc.replays {
+				wantVerdicts(t, q.list(), dropOf(2), dropOf(1))
+			} else {
+				wantVerdicts(t, q.list(), acceptOf(1), acceptOf(2))
+			}
+			if !r.w.destState.Watching() {
+				t.Fatal("a split ClientHello whose segment 1 was held must be watched for a silent server like a whole one")
+			}
+
+			r.sweepLater()
+			if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+				t.Fatalf("the address a held split ClientHello got no answer from must be checked with neutral names once, probed %v", keys)
+			}
+			if !r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+				t.Fatal("a silent neutral-name check must ban the address of a held split ClientHello")
+			}
+			sent := r.sent()
+			if tc.replays {
+				coversOnce(t, sentData(sent), splitSeq, full)
+			} else if segs := sentData(sent); len(segs) != 0 {
+				t.Fatalf("%d segments injected for a set that does not inject", len(segs))
+			}
+			if ports := resetsTo(sent); !slices.Equal(ports, []uint16{12345}) {
+				t.Fatalf("the waiting connection must get one reset once the ban is in place, got resets to %v", ports)
+			}
+			if seqs := resetSeqs(sent); !slices.Equal(seqs, []uint32{silentServerAck}) {
+				t.Fatalf("the reset must carry the sequence number the client expects from the server, got %#x want %#x", seqs, silentServerAck)
+			}
+			if r.w.destState.Watching() {
+				t.Error("a settled connection must not stay watched")
+			}
+		})
+	}
+}
+
+func TestAHeldSplitHelloToABannedAddressIsDroppedWithTheHello(t *testing.T) {
+	holdHellosFor(t, time.Minute)
+	set := injectingSilenceSet()
+	r := newSilenceWorker(t, &set, iphealth.TLSSilent)
+	t.Cleanup(r.w.pendingHello.ReleaseHolds)
+	banAddress(t, r.w.bans, "1.2.3.4", 443)
+	q := &verdictLog{}
+	_, seg1, seg2 := splitHello("i.ytimg.com")
+
+	queueTo(r.w, q, 1, clientPacket(12345, splitSeq, 0x18, seg1))
+	if got := q.list(); len(got) != 0 {
+		t.Fatalf("segment 1 got %v while it was handled, it must wait for the rest of the record", got)
+	}
+	queueTo(r.w, q, 2, clientPacket(12345, splitSeq+splitCut, 0x18, seg2))
+	wantVerdicts(t, q.list(), dropOf(1), dropOf(2))
+
+	sent := r.sent()
+	if segs := sentData(sent); len(segs) != 0 {
+		t.Fatalf("%d segments sent toward a banned address", len(segs))
+	}
+	if ports := resetsTo(sent); !slices.Equal(ports, []uint16{12345}) {
+		t.Fatalf("the client must get one reset for a ClientHello to a banned address, got resets to %v", ports)
+	}
+	if r.w.destState.Watching() {
+		t.Error("a ClientHello refused for a ban must not be watched")
+	}
+	if keys := r.probed(); len(keys) != 0 {
+		t.Errorf("an address already banned is not checked again, probed %v", keys)
 	}
 }
