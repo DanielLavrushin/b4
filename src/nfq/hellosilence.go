@@ -33,6 +33,7 @@ const (
 
 type helloWatch struct {
 	key      string
+	gen      uint64
 	dst      net.IP
 	port     uint16
 	client   net.IP
@@ -75,6 +76,8 @@ func (t *destStateTracker) WatchHello(h *helloWatch) {
 	if t.watches == nil {
 		t.watches = make(map[string]*helloWatch)
 	}
+	t.watchGen++
+	h.gen = t.watchGen
 	t.watches[h.key] = h
 	t.watching.Store(int32(len(t.watches)))
 }
@@ -115,23 +118,36 @@ func (t *destStateTracker) Unwatch(key string) bool {
 	return true
 }
 
-func (t *destStateTracker) updateWatch(key string, change func(*helloWatch)) {
+func (t *destStateTracker) EndWatch(h helloWatch) bool {
+	if !t.Watching() {
+		return false
+	}
+	t.watchMu.Lock()
+	defer t.watchMu.Unlock()
+	if cur, ok := t.watches[h.key]; !ok || cur.gen != h.gen {
+		return false
+	}
+	t.unwatchLocked(h.key)
+	return true
+}
+
+func (t *destStateTracker) updateWatch(h helloWatch, change func(*helloWatch)) {
 	if !t.Watching() {
 		return
 	}
 	t.watchMu.Lock()
 	defer t.watchMu.Unlock()
-	if h, ok := t.watches[key]; ok {
-		change(h)
+	if cur, ok := t.watches[h.key]; ok && cur.gen == h.gen {
+		change(cur)
 	}
 }
 
-func (t *destStateTracker) Unprobe(key string) {
-	t.updateWatch(key, func(h *helloWatch) { h.probing = false })
+func (t *destStateTracker) Unprobe(h helloWatch) {
+	t.updateWatch(h, func(w *helloWatch) { w.probing = false })
 }
 
-func (t *destStateTracker) Park(key string) {
-	t.updateWatch(key, func(h *helloWatch) { h.probing, h.parked = false, true })
+func (t *destStateTracker) Park(h helloWatch) {
+	t.updateWatch(h, func(w *helloWatch) { w.probing, w.parked = false, true })
 }
 
 func (t *destStateTracker) DueSilent(now time.Time) []helloWatch {
@@ -299,24 +315,24 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 	for _, h := range due {
 		switch {
 		case !active || !silenceWatchedSet(cfg, h.setID):
-			w.destState.Unwatch(h.key)
+			w.destState.EndWatch(h)
 			continue
 		case w.bans.banned(h.dst, h.port):
-			if w.destState.Unwatch(h.key) && !h.closed {
+			if w.destState.EndWatch(h) && !h.closed {
 				w.resetSilentHello(h)
 			}
 			continue
 		case w.bans.answeredRecently(h.dst, h.port, now):
-			w.destState.Unwatch(h.key)
+			w.destState.EndWatch(h)
 			continue
 		}
 		if !h.closed {
 			if lookupsOff {
-				w.destState.Park(h.key)
+				w.destState.Park(h)
 				continue
 			}
 			if lookups >= maxSilenceLookups {
-				w.destState.Unprobe(h.key)
+				w.destState.Unprobe(h)
 				continue
 			}
 			lookups++
@@ -326,24 +342,24 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 			}
 			switch state {
 			case silenceGone, silenceAnswered:
-				w.destState.Unwatch(h.key)
+				w.destState.EndWatch(h)
 				continue
 			case silenceUnknown:
-				w.destState.Park(h.key)
+				w.destState.Park(h)
 				continue
 			}
 		}
 		if w.destState.escalatedAway(cfg, h) {
 			if h.closed {
-				w.destState.Unwatch(h.key)
+				w.destState.EndWatch(h)
 			} else {
-				w.destState.Park(h.key)
+				w.destState.Park(h)
 			}
 			continue
 		}
 		log.Tracef("IP bans: %s took the ClientHello and sent nothing back, checking it with neutral names (host: %s, set: %s)", iphealth.BanKey(h.dst, int(h.port)), h.host, h.set)
 		if !w.bans.confirm(cfg, h.dst, h.port, h.host, h.set) {
-			w.destState.Unprobe(h.key)
+			w.destState.Unprobe(h)
 		}
 	}
 }

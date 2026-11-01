@@ -402,7 +402,7 @@ func TestAWaitingConnectionIsResetOnlyByWhoeverTakesItsWatch(t *testing.T) {
 		t.Fatalf("want one due watch, got %d", len(due))
 	}
 	r.w.settleSilentHellos(net.ParseIP("1.2.3.4"), 443, true)
-	if r.w.destState.Unwatch(due[0].key) {
+	if r.w.destState.EndWatch(due[0]) {
 		t.Fatal("a watch the verdict already took must not be claimed again by the sweep")
 	}
 	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
@@ -778,6 +778,51 @@ func TestTheBackupSetChecksASilentServerOnTheConnectionItTookOver(t *testing.T) 
 	}
 	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
 		t.Fatalf("the waiting connection must be reset once the address is banned, got resets to %v", ports)
+	}
+}
+
+func TestAStaleSweepResultLeavesTheBackupSetsNewWatchAlone(t *testing.T) {
+	backup := silenceSet()
+	backup.Id, backup.Name = "backup", "backup"
+	r := escalatingSilenceRig(t, backup)
+	entered, release, swept := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	r.answerLookups(t, func(ctnl.Tuple) flowAnswer {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		return silentFlow()
+	})
+
+	escalateByResends(t, r.w, 12345)
+	go func() {
+		defer close(swept)
+		r.pool.sweepSilentHellos(time.Now().Add(time.Minute))
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		<-swept
+	})
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the sweep never asked conntrack about the escalated connection")
+	}
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	close(release)
+	<-swept
+	r.sweepLater()
+
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("a sweep that looked at the old watch must leave the backup set's new watch to its own check, probed %v", keys)
+	}
+	if ban := r.w.bans.reg.List(); len(ban) != 1 || ban[0].Set != "backup" {
+		t.Fatalf("the ban must come from the backup set's watch, got %+v", ban)
 	}
 }
 

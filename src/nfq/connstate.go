@@ -205,6 +205,7 @@ type destStateTracker struct {
 	dnsFails    map[string]*failEntry
 	watchMu     sync.RWMutex
 	watches     map[string]*helloWatch
+	watchGen    uint64
 	watching    atomic.Int32
 }
 
