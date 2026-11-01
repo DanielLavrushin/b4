@@ -303,13 +303,6 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 		case w.bans.answeredRecently(h.dst, h.port, now):
 			w.destState.Unwatch(h.key)
 			continue
-		case w.destState.escalatedAway(cfg, h):
-			if h.closed {
-				w.destState.Unwatch(h.key)
-			} else {
-				w.destState.Park(h.key)
-			}
-			continue
 		}
 		if !h.closed {
 			if lookupsOff {
@@ -333,6 +326,14 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 				w.destState.Park(h.key)
 				continue
 			}
+		}
+		if w.destState.escalatedAway(cfg, h) {
+			if h.closed {
+				w.destState.Unwatch(h.key)
+			} else {
+				w.destState.Park(h.key)
+			}
+			continue
 		}
 		log.Tracef("IP bans: %s took the ClientHello and sent nothing back, checking it with neutral names (host: %s, set: %s)", iphealth.BanKey(h.dst, int(h.port)), h.host, h.set)
 		if !w.bans.confirm(cfg, h.dst, h.port, h.host, h.set) {

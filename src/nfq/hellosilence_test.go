@@ -622,6 +622,33 @@ func TestAnEscalatedHostsWaitingConnectionsAreResetWhenAnotherCheckBansTheAddres
 	}
 }
 
+func TestAnEscalatedHostsAnsweredConnectionIsNotResetWhenAnotherCheckBansTheAddress(t *testing.T) {
+	r := escalatingSilenceRig(t, plainBackupSet())
+	answered, err := ctnl.NewTuple(6, netip.MustParseAddrPort("10.0.0.1:12347"), netip.MustParseAddrPort("1.2.3.4:443"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.answerLookups(t, func(tuple ctnl.Tuple) flowAnswer {
+		if tuple == answered {
+			return flowAnswer{found: true, flow: ctnl.Flow{HasState: true, TCPState: ctnl.TCPEstablished, HasCounters: true, ReplyPackets: 4, ReplyBytes: 4200}}
+		}
+		return silentFlow()
+	})
+
+	sendHello(t, r.w, 12347, engine.VerdictAccept)
+	escalateByResends(t, r.w, 12345)
+	r.sweepLater()
+	r.w.bans.confirm(r.w.getConfig(), net.ParseIP("1.2.3.4"), 443, "other.example", "other")
+	r.w.bans.wg.Wait()
+
+	if !r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("the other host's silent check must ban the address")
+	}
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
+		t.Fatalf("a connection whose server answered after the queue window must not be reset, only the one still waiting, got resets to %v", ports)
+	}
+}
+
 func TestADeviceTheBackupSetDoesNotServeIsStillChecked(t *testing.T) {
 	backup := plainBackupSet()
 	backup.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
