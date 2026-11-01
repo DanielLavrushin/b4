@@ -118,6 +118,7 @@ func mcpSuiteProjection(suite *discovery.CheckSuite) (*mcpSuiteSnapshot, error) 
 type mcpDiscoveryDomain struct {
 	Domain        string  `json:"domain"`
 	BestPreset    string  `json:"best_preset,omitempty"`
+	Preset        string  `json:"preset,omitempty"`
 	Family        string  `json:"family,omitempty"`
 	BestKBPerSec  float64 `json:"best_kb_per_sec,omitempty"`
 	Found         bool    `json:"strategy_found"`
@@ -186,12 +187,29 @@ func mcpDiscoveryVerdict(d mcpDiscoveryDomain, running bool) string {
 	case d.Found && running:
 		return fmt.Sprintf("%s is the best so far, but the run is still testing and this is PROVISIONAL: it has not been confirmed, a better one may still win, and nothing can be applied until the run finishes or is cancelled", d.BestPreset)
 	case d.Found && d.Unconfirmed:
-		return fmt.Sprintf("%s loaded the site at least once, but the run ended before the confirmation pass re-checked it, so it is UNCONFIRMED: apply it if the user accepts that, and verify with b4_test_domain_now", d.BestPreset)
+		return fmt.Sprintf("%s loaded the site at least once, but the run ended before the confirmation pass re-checked it, so it is UNCONFIRMED: apply it if the user accepts that, and verify with b4_test_domain_now", d.offered())
 	case d.Found:
-		return fmt.Sprintf("a working strategy was found (%s)", d.BestPreset)
+		return fmt.Sprintf("a working strategy was found (%s)", d.offered())
 	default:
 		return "no strategy tried made it work"
 	}
+}
+
+func (d mcpDiscoveryDomain) offered() string {
+	if d.Preset != "" {
+		return d.Preset
+	}
+	return d.BestPreset
+}
+
+func mcpOfferedPreset(e discovery.HistoryEntry) (string, string) {
+	if e.Set == nil || e.Set.Name == "" {
+		return e.BestPreset, string(e.BestFamily)
+	}
+	if r := e.Results[e.Set.Name]; r != nil {
+		return e.Set.Name, string(r.Family)
+	}
+	return e.Set.Name, ""
 }
 
 func mcpUnresolvedVerdict(d mcpDiscoveryDomain) string {
@@ -238,9 +256,11 @@ func mcpNoteUnresolved(row *mcpDiscoveryDomain, missingFamily string, evidence *
 
 func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mcpDiscoveryDomain {
 	family := map[string]string{}
+	offered := map[string]string{}
 	for _, g := range snap.StrategyGroups {
 		for _, d := range g.Domains {
 			family[sni.NormalizeDomain(d)] = g.Family
+			offered[sni.NormalizeDomain(d)] = g.WinnerPreset
 		}
 	}
 
@@ -253,6 +273,7 @@ func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mc
 		row := mcpDiscoveryDomain{
 			Domain:        name,
 			BestPreset:    r.BestPreset,
+			Preset:        offered[sni.NormalizeDomain(name)],
 			Family:        family[sni.NormalizeDomain(name)],
 			BestKBPerSec:  r.BestSpeed / 1024,
 			Found:         r.BestSuccess && !r.BaselineWorks,
@@ -566,6 +587,9 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 			Confirmed:     e.Confirmed,
 		}
 		mcpApplyOutcome(&row, e.EffectiveOutcome())
+		if row.Found {
+			row.Preset, row.Family = mcpOfferedPreset(e)
+		}
 		row.linkStatus = e.LinkStatus
 		var evidence *mcpNameEvidence
 		if e.DNSResult != nil {
@@ -921,7 +945,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 			return nil, mcpDiscoveryOut{}, fmt.Errorf(
 				"the saved result for %s predates b4 recording the set it built, so only the summary survives. Run discovery for it again", domain)
 		}
-		preset = entry.BestPreset
+		preset, _ = mcpOfferedPreset(entry)
 		dscpPath = entry.DSCPPath
 		groupDomains = chosen.Targets.SNIDomains
 		if len(groupDomains) == 0 {

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -180,6 +182,16 @@ func (dc *DiscoveryCache) GetCachedPresets() []ConfigPreset {
 	}
 
 	return presets
+}
+
+func cachedIndex(name string) (int, bool) {
+	rest, ok := strings.CutPrefix(name, "cached-")
+	if !ok {
+		return 0, false
+	}
+	digits, _, _ := strings.Cut(rest, "-")
+	n, err := strconv.Atoi(digits)
+	return n, err == nil
 }
 
 func (ds *DiscoverySuite) saveResultsToCache() {

@@ -33,6 +33,11 @@ func presetRanksBefore(a string, aPhase DiscoveryPhase, aPriority int, b string,
 	if aPriority != bPriority {
 		return aPriority < bPriority
 	}
+	if an, ok := cachedIndex(a); ok {
+		if bn, ok := cachedIndex(b); ok && an != bn {
+			return an < bn
+		}
+	}
 	return a < b
 }
 
@@ -149,4 +154,5 @@ func (ds *DiscoverySuite) buildStrategyGroups() {
 	}
 
 	ds.StrategyGroups = groups
+	ds.listAlternatesLocked()
 }
