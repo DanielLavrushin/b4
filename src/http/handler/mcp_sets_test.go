@@ -635,12 +635,17 @@ func TestMCPManageSetDuplicatePlacedAboveAnIPPrioritySetSaysTheSourceStopsKeepin
 		{name: "first, from a source above a name set limited to a device", position: "first", ips: ips, layout: func(cfg *config.Config) {
 			cfg.Sets[1].Targets.SourceDevices = []string{device}
 		}, wins: true},
+		{name: "right before the source, below a set without the switch that owns the same range", position: "before:video", ips: ips, layout: func(cfg *config.Config) {
+			upper := &config.SetConfig{Id: "set-upper", Name: "upper", Enabled: true, Targets: config.TargetsConfig{IPs: ips, IpsToMatch: ips}}
+			cfg.Sets = append([]*config.SetConfig{upper}, cfg.Sets...)
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := writableCfg(t)
 			cfg.Sets[0].Enabled = !tc.disabled
 			cfg.Sets[0].Targets.IPs = tc.ips
+			cfg.Sets[0].Targets.IpsToMatch = tc.ips
 			cfg.Sets[0].Targets.IPPriority = true
 			cfg.Sets[1].Enabled = true
 			if tc.layout != nil {

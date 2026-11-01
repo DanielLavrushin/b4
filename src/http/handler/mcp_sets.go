@@ -162,17 +162,38 @@ func mcpManageSetUnchanged(out mcpManageSetOut, cfg *config.Config, idx int, not
 
 func mcpHoldsAgainstANameSet(matcher *sni.SuffixSet, cfg *config.Config, source *config.SetConfig) bool {
 	devices := append([]string{""}, source.Targets.SourceDevices...)
-	for _, s := range cfg.Sets {
-		if !s.Enabled || s.Id == source.Id || len(s.Targets.SNIDomains)+len(s.Targets.GeoSiteCategories) == 0 {
+	for _, raw := range source.Targets.IpsToMatch {
+		ip := mcpRangeAddress(raw)
+		if ip == nil {
 			continue
 		}
 		for _, mac := range devices {
-			if sni.SetMatchesSource(s, mac) && matcher.AddressHolds(source, 1, s, mac) {
-				return true
+			listed, owner, prefix := matcher.MatchIPWithSourceDetail(ip, mac)
+			if !listed || owner.Id != source.Id || prefix <= 0 {
+				continue
+			}
+			for _, s := range cfg.Sets {
+				if !s.Enabled || s.Id == source.Id || len(s.Targets.SNIDomains)+len(s.Targets.GeoSiteCategories) == 0 {
+					continue
+				}
+				if sni.SetMatchesSource(s, mac) && matcher.AddressHolds(owner, prefix, s, mac) {
+					return true
+				}
 			}
 		}
 	}
 	return false
+}
+
+func mcpRangeAddress(raw string) net.IP {
+	raw = strings.TrimSpace(raw)
+	if !strings.Contains(raw, "/") {
+		return net.ParseIP(raw)
+	}
+	if _, ipNet, err := net.ParseCIDR(raw); err == nil {
+		return ipNet.IP
+	}
+	return nil
 }
 
 func mcpListsHoldableRanges(ips []string) bool {
