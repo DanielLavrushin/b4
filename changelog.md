@@ -1,10 +1,15 @@
 # B4 - Bye Bye Big Bro
 
+## [1.89.2] - 2026-11-01
+
+- FIXED: **Escalation did not keep a site's address from being banned** - after a set moved a site to its backup set, it kept checking the site's earlier connections. When their server stayed silent, the set banned the address.
+
 ## [1.89.1] - 2026-10-31
 
-- FIXED: **Videos and sites still froze on servers the provider blocks for every site** - IP Block Detection banned such an address only when a device repeated its first request to the site. Some providers let that request through and then drop every reply, so nothing is repeated. Apps that try QUIC first also kept waiting on addresses that were already banned.
-- FIXED: **A server that refuses unknown site names could be banned, and the ban never lifted** - b4 checks a suspect address by connecting to it with unrelated site names. A server that closed or reset those connections without a reply counted as blocked, and the re-tests kept the ban in place.
-- FIXED: **In TUN mode, rejected QUIC and other UDP connections kept apps waiting instead of failing at once** - this hit sets with Reject as the UDP Action Mode or as the Block action. The refusal b4 sends back named the router's address instead of the device's, so the device ignored it.
+- ADDED: **Every captured ClientHello can be picked for Discovery in one click** - the list under Captured ClientHello as the fake payload in Discovery's options starts with Select all payloads. Once all are picked, the same entry reads Clear the payload selection. The list also stays open, so several payloads can be picked in one pass. [#475](https://github.com/DanielLavrushin/b4/pull/475), thanks [@asovetov](https://github.com/asovetov)
+- FIXED: **Videos and sites still froze on servers the provider blocks for every site** - IP Block Detection banned such an address only when a device resent its first request on the same connection. Some providers let that request reach the server and then drop the server's answer, so the device never resends it. Apps that try QUIC first also kept waiting on addresses that were already banned.
+- FIXED: **A server that refuses unknown site names could be banned, and re-tests never lifted the ban** - b4 checks a suspect address by connecting to it with unrelated site names. A server that closed or reset those connections without a reply counted as blocked, in the first check and in every re-test.
+- FIXED: **In TUN mode, rejected QUIC and other UDP connections kept apps waiting instead of failing at once** - this hit sets with Block QUIC (force TCP) on, with Reject as the Action Mode on their UDP tab, or with Reject as the Block action. The refusal b4 sends back named the router's address instead of the device's, so the device ignored it.
 
 ## [1.89.0] - 2026-10-30
 
