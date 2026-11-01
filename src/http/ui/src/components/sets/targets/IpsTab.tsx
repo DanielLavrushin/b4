@@ -103,7 +103,7 @@ export const IpsTab = ({
       <B4Hint>{t("sets.targets.ipAlert")}</B4Hint>
 
       <Box sx={{ my: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>
-        <Box sx={{ maxWidth: 360, flex: 1, minWidth: 260 }}>
+        <Box sx={{ maxWidth: 360, flex: "1 1 260px", minWidth: 0 }}>
           <B4Switch
             label={t("sets.targets.catchAllIps")}
             description={t("sets.targets.catchAllIpsDesc", {
@@ -118,7 +118,7 @@ export const IpsTab = ({
           />
         </Box>
         {!tlsFiltered && (
-          <Box sx={{ maxWidth: 360, flex: 1, minWidth: 260 }}>
+          <Box sx={{ maxWidth: 360, flex: "1 1 260px", minWidth: 0 }}>
             <B4Switch
               description={t("sets.targets.ipPriorityDesc")}
               checked={config.targets.ip_priority ?? false}
