@@ -1162,13 +1162,16 @@ func TestASegmentOneTheRouterSendsItselfIsHeldOnlyBriefly(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		vc    verdictCtx
+		own   []string
 		local bool
 	}{
-		{"a packet from a socket on the router", verdictCtx{localSocket: true, hook: nfHookPostRouting, hooked: true}, true},
-		{"a packet in the router's output hook", verdictCtx{hook: nfHookLocalOut, hooked: true}, true},
-		{"a forwarded packet", verdictCtx{hook: nfHookPostRouting, hooked: true, inDev: 2}, false},
+		{"a packet from a socket on the router", verdictCtx{localSocket: true, hook: nfHookPostRouting, hooked: true}, nil, true},
+		{"a packet in the router's output hook", verdictCtx{hook: nfHookLocalOut, hooked: true}, nil, true},
+		{"a packet from the router's address on a queue without socket owners", verdictCtx{hook: nfHookPostRouting, hooked: true}, []string{"10.0.0.1"}, true},
+		{"a forwarded packet", verdictCtx{hook: nfHookPostRouting, hooked: true, inDev: 2}, nil, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			thisHost(t, tc.own...)
 			set := newFragmentingYTImagesSet()
 			w, _ := heldHelloWorker(t, &set)
 			q := &verdictLog{}

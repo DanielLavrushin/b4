@@ -81,7 +81,7 @@ func (w *Worker) helloHoldCandidate(vc *verdictCtx, pkt *pktInfo, matcher *sni.S
 		raw:   append([]byte(nil), pkt.raw...),
 		dst:   append(net.IP(nil), pkt.dst...),
 		ver:   pkt.ver,
-		local: vc.routerOriginated(),
+		local: vc.routerOriginated() || hostAddress(pkt.src),
 	}
 }
 
