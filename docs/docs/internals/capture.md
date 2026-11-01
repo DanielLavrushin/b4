@@ -88,7 +88,7 @@ Devices pick the source ports of their own connections from 32768-60999 (Linux, 
 
 ## Dropped QUIC connections {#dropped-quic-connections}
 
-b4 sees only the first packets of a connection. When a set drops or rejects a QUIC connection, by its UDP action mode or as a block set, b4 keeps the later packets of the connection from passing as well:
+b4 sees only the first packets of a connection. When a set drops or rejects a QUIC connection, by its UDP action mode, as a block set or because the address is [banned](../sets/tcp/general.md#banned-addresses), b4 keeps the later packets of the connection from passing as well:
 
 | Engine | How | Needs |
 | --- | --- | --- |
@@ -111,11 +111,12 @@ The drop set holds a connection by its addresses and ports. A new QUIC connectio
 | NFQUEUE with nftables | `nfnetlink_queue` and `nft_queue`. `nft_ct` for the packet limits and for selecting TCP packets by direction |
 | TUN | `/dev/net/tun` and the `iptables` command or the iptables-nft shim. `xt_connbytes` for capture by port, `xt_conntrack` for selecting TCP packets by direction, `iptable_raw` and `xt_CT` for forwarded traffic |
 | Holding a dropped QUIC connection | `nf_conntrack_netlink`, with iptables and in TUN mode with `xt_connbytes`; with nftables for deleting the conntrack entry and for releasing held connections after a settings change, see [Dropped QUIC connections](#dropped-quic-connections) |
+| Testing a silent server for a ban before the device gives up | `nf_conntrack_netlink` and conntrack accounting. The packet limits of b4's capture rules turn accounting on: `xt_connbytes`, or `ct original packets` with nftables. Without them, accounting needs `net.netfilter.nf_conntrack_acct` set to `1`. When either is missing, b4 tests the address only if the device gives up on the connection within 2 minutes after the **Detection Timeout**, see [Banned addresses](../sets/tcp/general.md#banned-addresses) |
 | DSCP with iptables | The `xt_DSCP` module, on OpenWrt in `kmod-ipt-ipopt` and `iptables-mod-ipopt`. The values of sets also need the `ipset` command and the `xt_set` module |
 | DSCP with nftables | Nothing extra |
 | Interception of DNS over TCP | The `REDIRECT` target in the `nat` table |
 
-The **Kernel Modules** and **Kernel Capabilities** sections of [System Info](../settings/system.md#system-info) show which of these are present, and the packages that provide a missing one.
+The **Kernel Modules** and **Kernel Capabilities** sections of [System Info](../settings/system.md#system-info) show which of these are present, and the packages that provide a missing one. They do not show conntrack accounting, which `sysctl net.netfilter.nf_conntrack_acct` reports.
 
 ## Engine start and retries {#engine-start-and-retries}
 

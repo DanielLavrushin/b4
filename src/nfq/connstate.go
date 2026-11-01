@@ -214,6 +214,7 @@ type destStateTracker struct {
 	dnsFails    map[string]*failEntry
 	watchMu     sync.RWMutex
 	watches     map[string]*helloWatch
+	watchGen    uint64
 	watching    atomic.Int32
 }
 
@@ -274,6 +275,12 @@ func (t *destStateTracker) RecordClientHello(connKey, host string) (int, time.Ti
 	}
 	entry.retransmits++
 	return entry.retransmits, entry.firstSeen
+}
+
+func (t *destStateTracker) ClearClientHellos(connKey string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.conns, connKey)
 }
 
 func (t *destStateTracker) HasRSTSent(connKey string) bool {
