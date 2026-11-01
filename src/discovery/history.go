@@ -41,6 +41,7 @@ type HistoryEntry struct {
 	EndTime       time.Time                      `json:"end_time"`
 	Results       map[string]*DomainPresetResult `json:"results,omitempty"`
 	DNSResult     *DNSDiscoveryResult            `json:"dns_result,omitempty"`
+	PageHosts     *HostCheck                     `json:"page_hosts,omitempty"`
 	BaselineSpeed float64                        `json:"baseline_speed,omitempty"`
 	BaselineWorks bool                           `json:"baseline_works,omitempty"`
 	Confirmed     int                            `json:"confirmed,omitempty"`
@@ -274,6 +275,7 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 			RulesChanged:  suite.RulesChanged,
 			Order:         position + 1,
 		}
+		entry.PageHosts = historyHosts(domainResult.PageHosts)
 
 		// Replace existing entry for the same domain, or append
 		replaced := false

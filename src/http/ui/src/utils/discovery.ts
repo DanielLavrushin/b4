@@ -10,6 +10,7 @@ import {
   IPFamily,
   StrategyFamily,
 } from "@models/discovery";
+import { OfferedHost } from "./pageHosts";
 
 export type SiteVerdict = DiscoveryOutcome | "checking";
 
@@ -105,6 +106,7 @@ export interface ApplyTarget {
   urls: string[];
   setId?: string;
   dscpPath?: DSCPPath;
+  hosts?: OfferedHost[];
 }
 
 export function checkUrlsFor(

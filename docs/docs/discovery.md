@@ -35,11 +35,11 @@ The defaults are the usual choice.
 
 ## A run
 
-**Start** begins a run through six steps: **DNS**, **Without bypass**, **Strategies**, **Tuning**, **Combining** and **Confirming**. A row per site shows what has been found so far, with the quickest strategy yet as **Fastest so far**. The card at the end can offer another strategy, see [Results](#results). **Show log** opens the log. A run takes from one to ten minutes, depending on the network.
+**Start** begins a run through six steps: **DNS**, **Without bypass**, **Strategies**, **Tuning**, **Combining** and **Confirming**. A run that finds a strategy goes on to a seventh step, **Page hosts**, see [Page hosts](#page-hosts). A row per site shows what has been found so far, with the quickest strategy yet as **Fastest so far**. The card at the end can offer another strategy, see [Results](#results). **Show log** opens the log. A run takes from one to ten minutes, depending on the network.
 
 ![A run in progress](/img/discovery/20260905160200.png)
 
-**Stop and confirm** ends the search and confirms what was found, without tuning it. **Stop** ends a run that has found nothing. **Stop now**, during the confirmation, ends the run at once and keeps the results unconfirmed.
+**Stop and confirm** ends the search and confirms what was found, without tuning it. **Stop** ends a run that has found nothing. **Stop now**, during the confirmation, ends the run at once and keeps the results unconfirmed. **Skip host check** ends only the **Page hosts** step.
 
 A run stops when b4 rewrites its DSCP rules during it, for example after a set's new DSCP value is saved. Its results cannot be applied, and the history marks the row **stopped: firewall rules changed during the search, run it again**.
 
@@ -70,7 +70,7 @@ Every site gets one card, under **Results per address** in a run for a set.
 
 | Badge | Meaning and next step |
 | --- | --- |
-| **confirmed 3 of 3**, **not confirmed** | A strategy, a DNS fix, an [alternative address](#alternative-addresses) or removing an [ECH key](#sites-with-an-ech-key) made the site load. The card describes the set it creates. |
+| **confirmed 3 of 3**, **not confirmed** | A strategy, a DNS fix, an [alternative address](#alternative-addresses) or removing an [ECH key](#sites-with-an-ech-key) made the site load. The card describes the set it creates and, for a confirmed strategy, lists the [page hosts](#page-hosts) it can add. |
 | **no bypass needed** | The site loads without b4. |
 | **address blocked** | Connections to every known address fail, so no strategy can help. The site needs a [VPN](./guides/vpn.md) or a [proxy](./guides/proxy.md). |
 | **intercepted by the gateway** | The first hop in front of this host answers the connection itself. b4 has to run on that gateway, or this host has to be excluded from its redirect. When b4 is the router itself, only a proxy helps. |
@@ -82,6 +82,20 @@ Sites that one strategy loaded share one card and one set. The card offers the s
 
 When the last run to end was started from this page, reloading the page or opening it again within 30 minutes of the end shows its results again. **New search** clears them in the browser where it is clicked. The [history](#history) keeps them, also after b4 restarts.
 
+### Page hosts {#page-hosts}
+
+The **Page hosts** step reads the page of each site with a confirmed strategy and tests the other hosts the page takes its stylesheets, scripts, images and other files from. A host that fails without b4 and loads with the strategy is listed on the card with a checkbox. The ticked hosts are added to the set by exact name when the result is applied.
+
+| Host marked | Ticked by default |
+| --- | --- |
+| **stylesheet**, **script**, **image**, **media**, **CSS** or **preload**, with or without **tracker that holds the page until it loads** | Yes |
+| **in page code**, **frame**, **icon**, **preconnect**, **base address** or **redirect** | No |
+| **part of &lt;service&gt;: a set of its own fits better**, whatever its type. A tracker that belongs to a service, such as `googletagmanager.com` or `connect.facebook.net`, gets this note too. | No |
+
+Only the page itself is read. Hosts that its stylesheets and scripts load in turn, or that a script builds while the page runs, are not found. [How Discovery searches](./internals/discovery.md#page-hosts) explains how the hosts are found and tested.
+
+The hosts are tested with the card's strategy only, and **Use instead** opens the dialog without them. In a run for a set, the hosts are on the cards under **Results per address**, and **Apply to &lt;set&gt;** on the verdict writes only the strategy. Watchdog searches skip this step.
+
 ## Applying
 
 **Apply as a set**, **Apply** in the history and **Use instead** open one dialog. It previews the set and offers:
@@ -92,11 +106,13 @@ When the last run to end was started from this page, reloading the page or openi
 
 **Copy JSON** copies the set without creating it, in the **Import/Export** format.
 
+**Page hosts** in the dialog repeats the card's [page hosts](#page-hosts) with their ticks. A host marked **handled by set &lt;set&gt;** is unticked, unless it was ticked by hand on the card. When such a host is ticked, applying moves it out of that set if the set lists it by its exact name, as with a site. Each of the three choices adds the ticked hosts, even when **Add &lt;sites&gt; to this set** is off, and **Copy JSON** includes them.
+
 A result is applied only to a set whose traffic takes the network path the run tested: the DSCP value of the run's probes, written on the same interfaces. A change to the set's DSCP value, to **Set DSCP** or to its interface list after the run can change that path. The error then names the difference, and a new run for the set tests the new path. For a few seconds after such a change is saved, while b4 applies its DSCP rules, applying and starting a run are refused.
 
 ### Writing into an existing set
 
-**Which set to change** lists the run's set and the enabled sets without routing that already match the site. **Another set** picks any other set without routing. Only the bypass strategy is written: TCP, fragmentation, fake packets and, when the result uses them, a DNS redirect, pinned addresses and removing ECH keys. The port filter, RST protection, UDP, targets, routing and escalation stay as they are. **Use these addresses as the set's discovery URLs** also replaces the set's Discovery addresses.
+**Which set to change** lists the run's set and the enabled sets without routing that already match the site. **Another set** picks any other set without routing. Only the bypass strategy is written: TCP, fragmentation, fake packets and, when the result uses them, a DNS redirect, pinned addresses and removing ECH keys. The port filter, RST protection, UDP, routing and escalation stay as they are. **Use these addresses as the set's discovery URLs** also replaces the set's Discovery addresses.
 
 When the set does not match the sites, **Add &lt;sites&gt; to this set** adds them and moves them out of other enabled sets. The dialog warns when another set actually handles a site, since the new strategy has no effect there.
 
@@ -124,7 +140,7 @@ The history keeps the latest result of each site, newest first.
 
 ![Discovery history](/img/discovery/20260905160400.png)
 
-- **Apply** creates the set the run built, without a new run.
+- **Apply** creates the set the run built, without a new run. **+N page hosts** under the strategy counts the [page hosts](#page-hosts) the run offered, and **Apply** offers them again with the default ticks.
 - **Run again** repeats the run for the site, or for the set the row came from.
 - **Remove from history** and **Clear history** remove one row or all of them.
 - A row expands to the other strategies its run's card listed, up to twelve, fastest first, each with **Use instead**.

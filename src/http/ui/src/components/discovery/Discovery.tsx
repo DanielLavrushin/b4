@@ -370,10 +370,10 @@ export const DiscoveryRunner = () => {
     });
   };
 
-  const handleCreate = async (set: B4SetConfig) => {
+  const handleCreate = async (set: B4SetConfig, hosts: string[]) => {
     const applied = applyTarget;
     setApplying(true);
-    const res = await addPresetAsSet(set, applied?.dscpPath);
+    const res = await addPresetAsSet(set, applied?.dscpPath, hosts);
     setApplying(false);
     if (!res.success) {
       showError(
@@ -458,6 +458,7 @@ export const DiscoveryRunner = () => {
       keepTargets: opts.keepTargets,
       probeUrls: opts.probeUrls,
       dscpPath: applied?.dscpPath,
+      hosts: opts.hosts,
     });
     setApplying(false);
     if (!res.success) {
@@ -807,7 +808,7 @@ export const DiscoveryRunner = () => {
         runSetId={applyTarget?.setId ?? null}
         sets={sets}
         onClose={() => setApplyTarget(null)}
-        onCreate={(set) => void handleCreate(set)}
+        onCreate={(set, hosts) => void handleCreate(set, hosts)}
         onAddToExisting={(setId, domains, pins) =>
           void handleAddToExisting(setId, domains, pins)
         }

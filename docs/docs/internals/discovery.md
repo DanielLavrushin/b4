@@ -1,7 +1,7 @@
 ---
 sidebar_position: 50
 title: How Discovery searches
-description: The phases of a Discovery run, the DNS check, alternative addresses and ECH, how the watchdog checks and heals a set, and how the DPI Detector fetches.
+description: The phases of a Discovery run, the DNS check, alternative addresses, ECH and page hosts, how the watchdog checks and heals a set, and how the DPI Detector fetches.
 ---
 
 A [Discovery](../discovery.md) run applies b4's built-in strategy presets one after another on a capture queue of its own, fetches every site through each, and keeps the presets that made the page load. The configured sets keep working during a run: only the run's own fetches go through the strategy under test. The [watchdog](../watchdog.md) heals a set with the same kind of run.
@@ -16,12 +16,13 @@ A [Discovery](../discovery.md) run applies b4's built-in strategy presets one af
 | **Tuning** | For every technique family that produced a working preset, its parameters are varied on the site that responded best, and the result is checked against all sites. |
 | **Combining** | When two or more families worked, presets that combine them are tried. |
 | **Confirming** | The winner of every site is rebuilt exactly as it would be saved as a set and fetched three more times. A winner that fails any of those fetches gives way to the next candidate. A DNS answer the DNS phase left undecided is checked last, see [The DNS check](#the-dns-check). |
+| **Page hosts** | The page of every site whose card offers a confirmed strategy is read through that strategy, and the other hosts the page names are tested without b4 and with it, see [Page hosts](#page-hosts). Watchdog runs skip this phase. |
 
-During the search, a preset has to pass as many fetches in a row as **Confirm each strategy** says. The confirmation phase is separate and always fetches the winner three times. **Stop and confirm** skips the remaining phases and goes straight to the confirmation, so the result is confirmed but not tuned.
+During the search, a preset has to pass as many fetches in a row as **Confirm each strategy** says. The confirmation phase is separate and always fetches the winner three times. **Stop and confirm** skips the remaining phases and goes straight to the confirmation, so the result is confirmed but not tuned. The page hosts phase still follows.
 
 ### Timings and speeds
 
-**Discovery Timeout** limits one fetch of a site through one of its addresses, from the connection to the end of the read, and each address a fetch tries gets the whole limit. The DNS phase bases its limits on the same value. **Config Propagation Delay** is the pause between switching the run's capture queue to a new preset and the first fetch through it. The confirmation fetches wait the same pause.
+**Discovery Timeout** limits one fetch of a site through one of its addresses, from the connection to the end of the read, and each address a fetch tries gets the whole limit. The DNS phase bases its limits on the same value. **Config Propagation Delay** is the pause between switching the run's capture queue to a new preset and the first fetch through it. The confirmation fetches wait the same pause. The page hosts phase uses **Discovery Timeout** for each fetch of a host and three times its value for the read of a page.
 
 Each speed in the results comes from one fetch of at most 100 KB, timed from the start of the request, connection and TLS handshake included. The figures compare strategies on the same site, not the throughput of the connection.
 
@@ -111,13 +112,71 @@ When the fetch without bypass fails with ECH, the same fetch without ECH loads t
 
 The record lookup skips the sets too. When `/etc/resolv.conf` names a local cache, such as dnsmasq on the router, the cache's upstream answers pass through b4. Where a set removes ECH keys for every device, the cache holds answers without the key, and the probes send ordinary ClientHellos, like the browsers behind the router.
 
+## Page hosts {#page-hosts}
+
+The last phase reads the page of each site whose card offers a confirmed strategy and tests the other hosts the page names. The sites of one card are read and tested together, with the card's strategy. Watchdog runs skip the phase.
+
+### Which hosts are found
+
+The page is fetched with a desktop Chrome User-Agent. The request goes through the card's strategy, rebuilt as it would be saved as a set. Its HTML is scanned as it arrives. A host counts when the page names it in one of these places:
+
+| Where the page names the host | Marked as |
+| --- | --- |
+| `<link rel="stylesheet">`, `@import` in a style | **stylesheet** |
+| `<script src>` | **script** |
+| `<img>` with `src`, `srcset`, `data-src` or another lazy-loading attribute, `<source srcset>`, `<input type="image">`, SVG `<image>` and `<use>` | **image** |
+| `<video>` with its `poster`, `<audio>`, `<track>`, `<source src>` | **media** |
+| `url()` in a `style` attribute or a `<style>` block | **CSS** |
+| `<link rel="preload">`, `modulepreload` or `prefetch` | **preload** |
+| the host where the page's redirects end | **redirect** |
+| `<base href>` | **base address** |
+| `<iframe>`, `<frame>`, `<embed>`, `<object>` | **frame** |
+| `<link rel="icon">`, `apple-touch-icon`, `mask-icon` or `manifest` | **icon** |
+| `<link rel="preconnect">` or `dns-prefetch` | **preconnect** |
+| the text of an inline script | **in page code** |
+
+Links in `<a href>`, meta tags, JSON data such as JSON-LD, comments, the content of `<noscript>` and `<iframe>`, IP addresses and local names give no hosts. A built-in list of names that pages use as identifiers, such as `www.w3.org` in XML namespaces, `schema.org` or `ogp.me`, gives no hosts either, wherever the page names them. Another built-in list marks trackers and ad networks. A tracker loaded as a stylesheet or a script without `async` holds the page and is tested like any host. Other trackers are left out.
+
+These hosts are not tested:
+
+- a site the run found a strategy for, and the names under it;
+- a host the card's set already matches through its domains or geo categories;
+- in a run for a set, a host that set's domains already cover.
+
+### How a host is tested
+
+| Pass | Fetches | Outcome |
+| --- | --- | --- |
+| Without b4 | The run's capture queue holds only a disabled set. Each host is fetched at a URL the page names for it, or at `https://<host>/`, and a failed fetch is repeated once. | A host that loads is left out. A name that does not resolve is left out too, unless the card's set redirects DNS. |
+| With the strategy | The hosts that failed are added by name to the card's set, rebuilt as it would be saved, and each is fetched twice. | Both fetches load: the host is offered. A block: listed under **Still blocked with this strategy**. Another failure, such as HTTP 5xx: not shown. |
+
+A fetch fails on:
+
+- a connection error, a reset, a timeout or a TLS error;
+- HTTP 451 or a redirect to a known block page;
+- a block page in the first 4 KB of an HTML answer;
+- a body that stops arriving for 2 seconds.
+
+With the strategy, HTTP 400 counts as a block too. Hosts are fetched over TCP and without ECH, whatever keys they publish.
+
+| Limit | Value |
+| --- | --- |
+| Page read | 2 MB of HTML, three times **Discovery Timeout** |
+| Hosts kept from one page | 256 |
+| Hosts tested per strategy | 40, those the page waits for first and names in page code last |
+| Fetch of a host | 100 KB, **Discovery Timeout** |
+| Hosts fetched at a time | Up to 6, fewer on a router with one or two processor cores |
+| The whole phase | 2 minutes |
+
+When the phase runs out of time or **Skip host check** ends it, the hosts tested so far are kept and the rest stay untested. A ticked host goes into the set's domains as named, never as its parent domain. The set then covers that host and the names under it. The run log lists every host the phase tested with its outcome, and the summary at the end names the hosts each site needs.
+
 ## A finished run
 
 A finished run stays in memory for 30 minutes, or until b4 restarts. A later run started the same way replaces it when that later run ends. Runs from the Discovery page, over MCP and by the watchdog each replace only their own kind. When the last run to end was started from the Discovery page, reloading the page or opening it again within that time shows its results, in any browser. **New search** hides them in the browser where it is clicked. A run the watchdog or an MCP client started is not shown again after a reload. Its results are in the history.
 
 ## History storage
 
-The history keeps the last hundred results, one entry per site. An entry stores the set the run built, the set of the site's fastest strategy and the sets of the other strategies its card listed, up to twelve. Those sets take most of the space: a site with many working strategies costs tens of kilobytes. The history also keeps the last run of each set, for up to 64 sets, and the log of the last run survives a restart.
+The history keeps the last hundred results, one entry per site. An entry stores the set the run built, the set of the site's fastest strategy and the sets of the other strategies its card listed, up to twelve. Those sets take most of the space: a site with many working strategies costs tens of kilobytes. An entry keeps up to 32 page hosts as well: those the run offered and those that stayed blocked with its strategy. The history also keeps the last run of each set, for up to 64 sets, and the log of the last run survives a restart.
 
 ## How the watchdog checks a set
 

@@ -21,11 +21,13 @@ type DiscoveryReplaceRequest struct {
 	KeepTargets  bool                `json:"keep_targets,omitempty"`
 	ProbeURLs    []string            `json:"probe_urls,omitempty"`
 	DSCPPath     *config.DSCPPath    `json:"dscp_path,omitempty"`
+	Hosts        []string            `json:"hosts,omitempty"`
 }
 
 type DiscoveredSetRequest struct {
 	Set      json.RawMessage  `json:"set"`
 	DSCPPath *config.DSCPPath `json:"dscp_path,omitempty"`
+	Hosts    []string         `json:"hosts,omitempty"`
 }
 
 type HistoryAppliedRequest struct {

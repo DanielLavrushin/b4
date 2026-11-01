@@ -8691,6 +8691,12 @@
                 "dscp_path": {
                     "$ref": "#/definitions/config.DSCPPath"
                 },
+                "hosts": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "keep_targets": {
                     "type": "boolean"
                 },
