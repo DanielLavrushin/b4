@@ -149,6 +149,9 @@ func TestWorkerClassifiesTheKernelAnswer(t *testing.T) {
 	if n := strings.Count(logs.String(), "Conntrack netlink is unavailable"); n != 1 {
 		t.Fatalf("the switch-off was warned %d times, want once:\n%s", n, logs.String())
 	}
+	if !strings.Contains(logs.String(), "IP block detection checks such an address only once the device gives up") {
+		t.Errorf("the warning must say what IP block detection loses without conntrack netlink:\n%s", logs.String())
+	}
 	time.Sleep(20 * time.Millisecond)
 	if after := len(deletesSent(k)); after != before {
 		t.Fatalf("%d deletes sent after the switch-off", after-before)

@@ -6,14 +6,14 @@ description: Выбор страницы установки для роутер�
 
 b4 устанавливается на роутеры, компьютеры и серверы с Linux. Для Linux, OpenWrt, ASUS Merlin и Keenetic используется один и тот же скрипт установки, который запускается по SSH. Он сам определяет платформу и архитектуру процессора. На MikroTik и в Docker b4 работает как контейнер.
 
-| Платформа | Страница | Примечания |
-| --- | --- | --- |
-| Любой дистрибутив Linux | [Linux](linux.md) | Ubuntu, Debian, Fedora, Alpine, Arch и другие, с systemd, OpenRC или SysV init |
-| OpenWrt 19.07 или новее | [OpenWrt](openwrt.md) | Рекомендуется USB-накопитель или extroot, так как внутренней памяти мало |
-| Роутеры ASUS с Asuswrt-Merlin | [ASUS Merlin](merlin.md) | Нужен Entware на USB-накопителе |
-| Роутеры Keenetic с OPKG | [Keenetic](keenetic.md) | Нужны Entware и компоненты Netfilter |
-| MikroTik с RouterOS 7.21.1 или новее | [MikroTik](mikrotik.md) | Контейнер на ARM64 или AMD64, внешний накопитель в Ext4. Официальный образ или [образ от сообщества](mikrotik.md#образ-от-сообщества) |
-| Любая система с Docker | [Docker](docker.md) | Сетевой режим host |
+| Платформа                            | Страница                 | Примечания                                                                                                                            |
+| ------------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Любой дистрибутив Linux              | [Linux](linux.md)        | Ubuntu, Debian, Fedora, Alpine, Arch и другие, с systemd, OpenRC или SysV init                                                        |
+| OpenWrt 18.06 или новее              | [OpenWrt](openwrt.md)    | Рекомендуется USB-накопитель или extroot, так как внутренней памяти мало                                                              |
+| Роутеры ASUS с Asuswrt-Merlin        | [ASUS Merlin](merlin.md) | Нужен Entware на USB-накопителе                                                                                                       |
+| Роутеры Keenetic с OPKG              | [Keenetic](keenetic.md)  | Нужны Entware и компоненты Netfilter                                                                                                  |
+| MikroTik с RouterOS 7.21.1 или новее | [MikroTik](mikrotik.md)  | Контейнер на ARM64 или AMD64, внешний накопитель в Ext4. Официальный образ или [образ от сообщества](mikrotik.md#образ-от-сообщества) |
+| Любая система с Docker               | [Docker](docker.md)      | Сетевой режим host                                                                                                                    |
 
 Требования к памяти, ядру и архитектуре перечислены в разделе [Требования](../intro.md#requirements).
 
