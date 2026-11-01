@@ -278,6 +278,9 @@ func (p *Pool) ReleaseHolds() {
 		}(w)
 	}
 	wg.Wait()
+	if p.state != nil {
+		p.state.pendingHello.ReleaseHolds()
+	}
 }
 
 func (p *Pool) Stop() {
@@ -370,6 +373,7 @@ func logDomainOverlaps(sets []*config.SetConfig) {
 func buildMatcher(cfg *config.Config) *sni.SuffixSet {
 	if len(cfg.Sets) > 0 {
 		m := sni.NewSuffixSet(cfg.Sets)
+		m.KeepNameSets(actsOnTCPHello)
 		totalDomains := 0
 		totalIPs := 0
 		for _, set := range cfg.Sets {

@@ -36,6 +36,10 @@ type verdictCtx struct {
 	scoped         bool
 	scope          *ingressScope
 	keep           sni.SetFilter
+	hellos         *pendingHelloCache
+	helloKey       string
+	held           *helloHold
+	own            *helloHold
 }
 
 type dnsCopyDecision struct {
@@ -44,7 +48,33 @@ type dnsCopyDecision struct {
 	waits []<-chan struct{}
 }
 
+func (vc *verdictCtx) takeHeld() *helloHold {
+	h := vc.held
+	vc.held = nil
+	if h == nil && vc.own == nil {
+		h = vc.hellos.TakeHold(vc.helloKey)
+	}
+	return h
+}
+
+func (vc *verdictCtx) settleHeld(verdict int, how string) bool {
+	if vc.own != nil {
+		if !vc.hellos.withdraw(vc.helloKey, vc.own) {
+			return false
+		}
+		vc.own = nil
+		return true
+	}
+	if h := vc.takeHeld(); h != nil {
+		h.settle(verdict, how)
+	}
+	return true
+}
+
 func (vc *verdictCtx) accept() int {
+	if !vc.settleHeld(nfqueue.NfAccept, "released ahead of the next packet") {
+		return 0
+	}
 	vc.verdict = engine.VerdictAccept
 	if vc.q != nil {
 		if err := vc.q.SetVerdict(vc.id, nfqueue.NfAccept); err != nil {
@@ -55,6 +85,9 @@ func (vc *verdictCtx) accept() int {
 }
 
 func (vc *verdictCtx) drop() bool {
+	if !vc.settleHeld(nfqueue.NfDrop, "dropped with the next packet") {
+		return false
+	}
 	vc.verdict = engine.VerdictDrop
 	if vc.copy != nil {
 		if vc.copy.kind != claimDrop {
@@ -91,6 +124,9 @@ func (vc *verdictCtx) dropUnanswered() bool {
 func (vc *verdictCtx) replace(raw []byte) bool {
 	m, ok := vc.q.(verdictModifier)
 	if !ok {
+		return false
+	}
+	if !vc.settleHeld(nfqueue.NfAccept, "released ahead of the next packet") {
 		return false
 	}
 	if err := m.SetVerdictModPacket(vc.id, nfqueue.NfAccept, raw); err != nil {
