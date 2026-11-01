@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -466,6 +467,7 @@ func (api *API) getSet(w http.ResponseWriter, id string) {
 // @Accept json
 // @Produce json
 // @Param set body config.SetConfig true "Set configuration"
+// @Param after query string false "ID of the set the new set goes right after; without it, or when no set has that ID, the new set goes first"
 // @Success 201 {object} config.SetConfig
 // @Security BearerAuth
 // @Router /sets [post]
@@ -475,6 +477,7 @@ func (api *API) createSet(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrInvalidJSON())
 		return
 	}
+	after := r.URL.Query().Get("after")
 
 	set.Id = uuid.New().String()
 	log.Tracef("createSet: routing before defaults: enabled=%v, egress=%s, ttl=%d", set.Routing.Enabled, set.Routing.EgressInterface, set.Routing.IPTTLSeconds)
@@ -486,7 +489,7 @@ func (api *API) createSet(w http.ResponseWriter, r *http.Request) {
 
 	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
 		api.reloadTargetsIfGeoMoved(&set, geoBefore, next)
-		next.Sets = append([]*config.SetConfig{&set}, next.Sets...)
+		next.Sets = insertSetAfter(next.Sets, &set, after)
 		return nil
 	})
 	if err != nil {
@@ -503,6 +506,17 @@ func (api *API) createSet(w http.ResponseWriter, r *http.Request) {
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(set)
+}
+
+func insertSetAfter(sets []*config.SetConfig, set *config.SetConfig, afterID string) []*config.SetConfig {
+	if afterID != "" {
+		for i, s := range sets {
+			if s != nil && s.Id == afterID {
+				return slices.Insert(sets, i+1, set)
+			}
+		}
+	}
+	return append([]*config.SetConfig{set}, sets...)
 }
 
 // @Summary Update a set

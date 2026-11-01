@@ -69,7 +69,7 @@ Choosing **Handle only calls** changes **Fake Packet Payload** from **(zero fill
 | **Reject** | The packet is dropped, and for QUIC so is the rest of its connection. An ICMP port unreachable goes back to the client, which switches to TCP at once. The recommended way to refuse QUIC. |
 | **Coalesce QUIC Initial** | Sends the handshake packet that carries the server name behind a padding packet in the same datagram. Inspection that reads only the first packet of a datagram no longer sees the name. The rest of the connection goes out untouched, and the handshake itself is unchanged. |
 
-When the set blocks its traffic on the [DNS & Routing](./routing.md) tab, the block action applies instead of the action mode.
+When the set blocks its traffic on the [DNS & Routing](./routing.md) tab, the block action applies instead of the action mode. In a set with IP block detection and **Cache Blocked IPs** on, QUIC to a [banned address](./tcp/general.md#banned-addresses) is refused whatever the action mode.
 
 Whether the rest of a dropped QUIC connection is dropped too depends on the router. [System Info](../settings/system.md#system-info) shows it under **Kernel Capabilities** in the row **QUIC drop holds for the whole connection**. Where the row reads **unavailable**, only the first packets of the connection are dropped, and the row shows what the router lacks. [Dropped QUIC connections](../internals/capture.md#dropped-quic-connections) describes the cases.
 

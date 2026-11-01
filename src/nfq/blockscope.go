@@ -68,6 +68,14 @@ func (sc *ingressScope) orSnapshot(matcher *sni.SuffixSet) *ingressScope {
 	return &ingressScope{matcher: matcher}
 }
 
+func (sc *ingressScope) settled() *ingressScope {
+	if sc == nil {
+		return nil
+	}
+	sc.resolve()
+	return &ingressScope{resolved: true, router: sc.router, name: sc.name}
+}
+
 func scopeFrom(from []*ingressScope) *ingressScope {
 	if len(from) == 0 {
 		return nil

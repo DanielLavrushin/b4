@@ -42,7 +42,7 @@ Targets, port filters, pins, the name, routing and device filters are not part o
 
 When the author publishes a new version, the card of an applied set shows **Update to version N**. An edited set on the newest version shows **Reapply**. Both replace the local set with the published version, after a confirmation.
 
-The set keeps its place in the list, its enabled state, its [Discovery addresses](../sets/discovery.md), the watchdog switch and its own [DSCP value](../sets/routing.md#dscp). Every other setting comes from the published version, and local edits are lost.
+The set keeps its place in the list, its enabled state, its [Discovery addresses](../sets/discovery.md), the watchdog switch and its own [DSCP value](../sets/routing.md#dscp). Every other setting comes from the published version, and local edits are lost. The [IP priority](../sets/targets.md#ip-addresses) switch is turned off.
 
 :::warning
 Routing to a proxy or an interface, device filters and escalation are not part of a publication. **Update to version N** and **Reapply** return them to their defaults, so the set has to be routed again afterwards.

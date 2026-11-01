@@ -153,7 +153,7 @@ func DSCPLearn(cfg *config.Config, set *config.SetConfig, ips []net.IP, fromTLS 
 	if cfg == nil || set == nil || len(ips) == 0 || set.Targets.DomainOnly || cfg.Queue.IsDiscovery {
 		return nil
 	}
-	return dscpLearnClaim(set.Id, ips, dscpLearnSourceOf(fromTLS))
+	return dscpLearnClaim(set.Id, keepLearnedIPs(cfg, set, ips), dscpLearnSourceOf(fromTLS))
 }
 
 func DSCPLearnAsync(cfg *config.Config, set *config.SetConfig, ips []net.IP, fromTLS bool) {
@@ -769,7 +769,7 @@ func dscpPreResolveSet(ctx context.Context, run *dscpPreRun, cfg *config.Config,
 		if ctx.Err() != nil {
 			return
 		}
-		ips := dscpPreLookup(ctx, cfg, set, domain)
+		ips := keepLearnedIPs(cfg, set, dscpPreLookup(ctx, cfg, set, domain))
 		if len(ips) == 0 {
 			continue
 		}

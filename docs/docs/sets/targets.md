@@ -29,13 +29,16 @@ The **Bypass Domains** sub-tab holds domain names and GeoSite categories, and th
 
 The **Bypass IPs** sub-tab holds addresses and GeoIP categories.
 
-![The Bypass IPs sub-tab](/img/targets/20260418234851.png)
+![The Bypass IPs sub-tab](/img/targets/20261101084918.png)
 
 | Field | What it does | Default |
 | --- | --- | --- |
 | **Match any IP address** | Adds `0.0.0.0/0`, and `::/0` while IPv6 support is on, which match every address. For DPI bypass, a narrower range in another set is handled by that set, so this set takes only what no other set claims. For routing, a narrower range in another routing set gets no such priority, so the two are best not combined. | Off |
+| **IP priority** | A connection to an address the set lists, by IP, GeoIP category or ASN, stays with this set even when a set lower in the list matches its domain. Shown while **TLS Version Filter** on **Bypass Domains** is **Any**. | Off |
 | **Manual Bypass IPs** | Addresses and CIDR ranges, such as `192.168.1.100` or `10.0.0.0/8`, entered the same way as domains. | Empty |
 | **Bypass GeoIP Categories** | Address ranges from the GeoIP database, by country or by network. Needs the database loaded under **Settings > Geodat Settings**. | Empty |
+
+**IP priority** suits servers that carry only this set's sites, such as the Google Global Cache nodes in a provider's own network. Shared CDN ranges and large networks carry many sites, and the switch is best left off there. With the Google network `AS15169` as a target, for example, the set would also keep `youtube.com` and every other Google service from the sets below it. Sets that rank above this one still take connections by name. A set limited to source devices ranks above every set without them. Among sets of the same kind, the one higher in the list ranks first. **IP priority** does not apply to a connection that matches the set only through **Match any IP address**. [IP priority](../internals/matching.md#ip-priority) describes the exact rules.
 
 ## ASN {#asn}
 

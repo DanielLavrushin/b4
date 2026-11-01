@@ -137,6 +137,7 @@ var Fields = map[string]Field{
 	"targets.source_devices":         {Class: Never},
 	"targets.source_devices_exclude": {Class: Never},
 	"targets.domain_only":            {Class: Crosses},
+	"targets.ip_priority":            {Class: Never},
 	"targets.tls":                    {Class: Crosses},
 	"targets.ip_version":             {Class: Crosses},
 

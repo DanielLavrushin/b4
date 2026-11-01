@@ -630,6 +630,10 @@ func (set *SetConfig) MatchesTLSVersion(tlsVersion uint16) bool {
 	return tlsVersion == 0 || tlsVersion == filterVer
 }
 
+func (set *SetConfig) IPPriorityApplies() bool {
+	return set.Targets.IPPriority && set.Targets.TLSVersion == ""
+}
+
 // MatchesIPVersion checks if the packet's IP version matches this set's filter.
 // Returns true if no filter is configured or if version is 0 (unknown).
 func (set *SetConfig) MatchesIPVersion(version uint8) bool {

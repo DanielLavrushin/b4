@@ -392,6 +392,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   };
 
   const handleDuplicateSet = (set: B4SetConfig) => {
+    if (isTempId(set.id)) return;
     tempIdSeq.current += 1;
     const tempId = `${TEMP_ID_PREFIX}${tempIdSeq.current}`;
     const srcIndex = setsData.findIndex((s) => setItemId(s) === set.id);
