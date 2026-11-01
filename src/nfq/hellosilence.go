@@ -45,6 +45,8 @@ type helloWatch struct {
 	host     string
 	setID    string
 	set      string
+	sniSet   string
+	ipSet    string
 	mac      string
 	tls      uint16
 	deadline time.Time
@@ -173,7 +175,7 @@ func (t *destStateTracker) unwatchLocked(key string) {
 	t.watching.Store(int32(len(t.watches)))
 }
 
-func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pkt *pktInfo, connKey, host string, sport, dport, tlsVersion uint16, deadline time.Time) {
+func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pkt *pktInfo, connKey, host, sniSet, ipSet string, sport, dport, tlsVersion uint16, deadline time.Time) {
 	if w == nil || w.destState == nil || cfg == nil || cfg.Queue.IsDiscovery || !banEnforced(set) || !w.bans.on() {
 		return
 	}
@@ -203,6 +205,8 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 		host:     host,
 		setID:    set.Id,
 		set:      set.Name,
+		sniSet:   sniSet,
+		ipSet:    ipSet,
 		mac:      pkt.srcMac,
 		tls:      tlsVersion,
 		deadline: deadline,
@@ -350,5 +354,5 @@ func (w *Worker) resetSilentHello(h helloWatch) {
 	} else {
 		w.sendRSTToClientV6(h.hdr, h.client, h.dst)
 	}
-	log.LogConnection("TCP", h.set, h.host, h.client.String(), h.cport, "", h.dst.String(), h.port, h.mac, config.TLSVersionString(h.tls), "ipblock-ban")
+	log.LogConnection("TCP", h.sniSet, h.host, h.client.String(), h.cport, h.ipSet, h.dst.String(), h.port, h.mac, config.TLSVersionString(h.tls), "ipblock-ban")
 }

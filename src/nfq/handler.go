@@ -921,7 +921,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				return 0
 			}
 			if stallCount == 1 {
-				w.watchHelloSilence(cfg, set, pkt, connKey, host, sport, dport, tlsVersion, stallFirstSeen.Add(timeout))
+				w.watchHelloSilence(cfg, set, pkt, connKey, host, sniTarget, ipTarget, sport, dport, tlsVersion, stallFirstSeen.Add(timeout))
 			}
 		}
 
