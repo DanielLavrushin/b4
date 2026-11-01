@@ -8,11 +8,13 @@ import (
 	"net"
 	stdhttp "net/http"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/gorilla/websocket"
 )
 
 func startChain(t *testing.T, username string) (string, *stdhttp.Server) {
@@ -158,5 +160,63 @@ func TestServerChainWithCredentialsIsUnchanged(t *testing.T) {
 	resp = browserRequest{method: stdhttp.MethodPost, path: "/api/hub/sync", origin: "http://evil.example", fetchSite: "cross-site"}.send(t, base)
 	if resp.StatusCode != stdhttp.StatusUnauthorized {
 		t.Fatalf("a foreign page without a token is stopped by the token check, got %d", resp.StatusCode)
+	}
+}
+
+var liveStreams = []string{"/api/ws/logs", "/api/ws/metrics", "/api/ws/discovery", "/api/ws/connections"}
+
+func openStream(t *testing.T, base, path, origin, token string) (int, error) {
+	t.Helper()
+	target := "ws" + strings.TrimPrefix(base, "http") + path
+	if token != "" {
+		target += "?token=" + token
+	}
+	header := stdhttp.Header{}
+	if origin != "" {
+		header.Set("Origin", origin)
+	}
+	conn, resp, err := websocket.DefaultDialer.Dial(target, header)
+	if conn != nil {
+		conn.Close()
+	}
+	if resp == nil {
+		return 0, err
+	}
+	return resp.StatusCode, err
+}
+
+func TestServerChainRefusesLiveStreamsToForeignPages(t *testing.T) {
+	base, _ := startChain(t, "")
+
+	for _, path := range liveStreams {
+		if code, err := openStream(t, base, path, "http://evil.example", ""); err == nil || code != stdhttp.StatusForbidden {
+			t.Fatalf("%s: a foreign page must not open the stream, got %d %v", path, code, err)
+		}
+		if code, err := openStream(t, base, path, "null", ""); err == nil || code != stdhttp.StatusForbidden {
+			t.Fatalf("%s: a sandboxed frame must not open the stream, got %d %v", path, code, err)
+		}
+		if _, err := openStream(t, base, path, base, ""); err != nil {
+			t.Fatalf("%s: the interface's own page must open the stream: %v", path, err)
+		}
+		if _, err := openStream(t, base, path, "", ""); err != nil {
+			t.Fatalf("%s: a client that is not a browser must open the stream: %v", path, err)
+		}
+	}
+}
+
+func TestServerChainLiveStreamsWithCredentialsNeedTheToken(t *testing.T) {
+	base, _ := startChain(t, "admin")
+	token, err := issueToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range liveStreams {
+		if _, err := openStream(t, base, path, "http://tool.example", token); err != nil {
+			t.Fatalf("%s: a cross-origin client with a valid token keeps working: %v", path, err)
+		}
+		if code, err := openStream(t, base, path, "http://evil.example", ""); err == nil || code != stdhttp.StatusUnauthorized {
+			t.Fatalf("%s: a foreign page without a token is stopped by the token check, got %d %v", path, code, err)
+		}
 	}
 }

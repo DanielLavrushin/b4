@@ -820,6 +820,29 @@ func TestQUICToABannedAddressIsRefusedAtOnce(t *testing.T) {
 	}
 }
 
+func TestABlockSetDecidesQUICToABannedAddressItself(t *testing.T) {
+	set := banningQUICSet()
+	set.Routing.Enabled = true
+	set.Routing.Mode = config.RoutingModeBlock
+	set.Routing.BlockAction = config.BlockActionDrop
+	w := newQUICFlowWorker(t, &set)
+	w.bans = newTestIPBans(t, nil)
+	banAddress(t, w.bans, "1.2.3.4", 443)
+	sent := captureInjected(t, w)
+	ch, _ := log.GetConnectionHub().Subscribe()
+	defer log.GetConnectionHub().Unsubscribe(ch)
+
+	if v := sendQUIC(w, bannedQUICInitial(t), 50001); v != engine.VerdictDropFlow {
+		t.Fatalf("the block set must drop the QUIC flow, got %v", v)
+	}
+	if to := portUnreachablesTo(sent()); len(to) != 0 {
+		t.Fatalf("the Drop block action sends nothing back, got port unreachables to %v", to)
+	}
+	if reasons := connectionReasons(ch); slices.Contains(reasons, "ipblock-ban") || !slices.Contains(reasons, "block") {
+		t.Errorf("the block action decides the datagram, so it is logged as block and never as ipblock-ban, got %v", reasons)
+	}
+}
+
 func TestQUICRefusalLeavesOtherTrafficAlone(t *testing.T) {
 	cases := map[string]func(*config.SetConfig, *Worker){
 		"not banned": func(_ *config.SetConfig, w *Worker) {
