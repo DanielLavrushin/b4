@@ -321,10 +321,17 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 		transport.DialTLSContext = ds.echDialTLS(transport.DialContext)
 	}
 
+	redirected := false
 	client := &http.Client{
 		Timeout:   timeout,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) == 1 {
+				redirected = true
+				if req.Response != nil {
+					result.firstTLS = req.Response.TLS
+				}
+			}
 			if len(via) > 0 && netprobe.IsBlockPageRedirectFrom(via[len(via)-1].URL, req.URL) {
 				return &blockPageRedirect{target: req.URL.String()}
 			}
@@ -372,6 +379,9 @@ func (ds *DiscoverySuite) fetchUsingIPForDomain(di DomainInput, timeout time.Dur
 	result.StatusCode = resp.StatusCode
 	result.ContentSize = resp.ContentLength
 	result.finalHTTPS = resp.TLS != nil
+	if !redirected {
+		result.firstTLS = resp.TLS
+	}
 
 	// A malformed request is our own doing: the strategy under test corrupted the stream
 	// before the origin parsed it, so the fetch is not evidence that the strategy works.

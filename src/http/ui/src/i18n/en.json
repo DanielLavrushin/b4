@@ -2817,6 +2817,7 @@
       "soFar": "So far",
       "waiting": "Waiting for the first result...",
       "found": "Found {{preset}}: {{description}}",
+      "fastestSoFar": "Fastest so far: {{preset}}. {{description}}",
       "tried_one": "{{count}} tried, none made it load yet.",
       "tried_other": "{{count}} tried, none made it load yet.",
       "loadsWithout": "Loads without b4. Nothing to fix here.",

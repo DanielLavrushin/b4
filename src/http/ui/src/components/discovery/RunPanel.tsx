@@ -20,6 +20,7 @@ import {
 } from "@models/discovery";
 import {
   NO_BYPASS_PRESET,
+  PLAIN_FIX_PRESETS,
   describeStrategy,
   formatDuration,
   ipFamilyLabel,
@@ -145,7 +146,10 @@ export const RunPanel = ({
     switch (verdictOf(dr, false)) {
       case "found": {
         const set = dr.results?.[dr.best_preset]?.set;
-        return t("discovery.run.found", {
+        const key = PLAIN_FIX_PRESETS.has(dr.best_preset)
+          ? "discovery.run.found"
+          : "discovery.run.fastestSoFar";
+        return t(key, {
           preset: presetLabel(dr.best_preset, t),
           description: set ? describeStrategy(set, t) : "",
         });

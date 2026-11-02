@@ -35,7 +35,7 @@ The defaults are the usual choice.
 
 ## A run
 
-**Start** begins a run through six steps: **DNS**, **Without bypass**, **Strategies**, **Tuning**, **Combining** and **Confirming**. A row per site shows what has been found so far, and **Show log** opens the log. A run takes from one to ten minutes, depending on the network.
+**Start** begins a run through six steps: **DNS**, **Without bypass**, **Strategies**, **Tuning**, **Combining** and **Confirming**. A row per site shows what has been found so far, with the quickest strategy yet as **Fastest so far**. The card at the end can offer another strategy, see [Results](#results). **Show log** opens the log. A run takes from one to ten minutes, depending on the network.
 
 ![A run in progress](/img/discovery/20260905160200.png)
 
@@ -78,7 +78,9 @@ Every site gets one card, under **Results per address** in a run for a set.
 | **link answers 400** | The link answers HTTP 400 even without b4. A link to a page or a file the site serves is needed. |
 | **nothing found** | No strategy worked. A new run with **TLS 1.2** or a captured ClientHello sometimes helps. |
 
-Sites that won with the same strategy share one card and one set. **N other strategies worked** lists the other strategies that loaded the site, fastest first, each with **Use instead**. The winner is the fastest on a single fetch, which is a noisy measure: a strategy from the list is as valid a choice.
+Sites that one strategy loaded share one card and one set. The card offers the strategy that loaded the most sites. Speed does not decide, see [Which strategy a card offers](./internals/discovery.md#which-strategy-a-card-offers). **N other strategies worked** lists up to twelve other strategies that loaded every site of the card, fastest first, each with **Use instead**.
+
+When the last run to end was started from this page, reloading the page or opening it again within 30 minutes of the end shows its results again. **New search** clears them in the browser where it is clicked. The [history](#history) keeps them, also after b4 restarts.
 
 ## Applying
 
@@ -125,7 +127,7 @@ The history keeps the latest result of each site, newest first.
 - **Apply** creates the set the run built, without a new run.
 - **Run again** repeats the run for the site, or for the set the row came from.
 - **Remove from history** and **Clear history** remove one row or all of them.
-- A row expands to the other strategies that worked, each with **Use instead**.
+- A row expands to the other strategies its run's card listed, up to twelve, fastest first, each with **Use instead**.
 - **Tried** marks a strategy that has been applied as a set, also after the set is deleted.
 - **via watchdog** and **via MCP** mark runs that the watchdog or an AI assistant over [MCP](./settings/mcp.md) started.
 

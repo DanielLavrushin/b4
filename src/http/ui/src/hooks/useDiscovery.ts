@@ -20,6 +20,23 @@ import i18n from "@/i18n";
 const POLL_MS = 1500;
 const IDLE_POLL_MS = 5000;
 const TERMINAL = new Set(["complete", "failed", "canceled"]);
+const DISMISSED_RUN_KEY = "b4_discovery_dismissed_run";
+
+const dismissedRun = (): string | null => {
+  try {
+    return localStorage.getItem(DISMISSED_RUN_KEY);
+  } catch {
+    return null;
+  }
+};
+
+const dismissRun = (id: string) => {
+  try {
+    localStorage.setItem(DISMISSED_RUN_KEY, id);
+  } catch {
+    return;
+  }
+};
 
 const failureText = (e: unknown): string => {
   if (e instanceof ApiError) {
@@ -47,7 +64,9 @@ const startFailureText = (e: unknown): string => {
   return failureText(e);
 };
 
-export function useDiscovery() {
+export function useDiscovery({
+  restoreLast = true,
+}: { restoreLast?: boolean } = {}) {
   const [running, setRunning] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -59,6 +78,8 @@ export function useDiscovery() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const initRef = useRef(false);
   const seenRunRef = useRef<string | null>(null);
+  const restoredRef = useRef<string | null>(null);
+  const runGenRef = useRef(0);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -75,6 +96,25 @@ export function useDiscovery() {
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
+    const gen = runGenRef.current;
+
+    const restoreFinished = async (id?: string): Promise<boolean> => {
+      if (!id || dismissedRun() === id) return false;
+      try {
+        const data = await discoveryApi.status(id);
+        if (runGenRef.current !== gen || !TERMINAL.has(data.status)) {
+          return false;
+        }
+        if (data.source && data.source !== "web") return false;
+        restoredRef.current = data.id;
+        setSuiteId(data.id);
+        setSuite(data);
+        if (data.runtime_active) setFinishing(true);
+        return true;
+      } catch {
+        return false;
+      }
+    };
 
     const init = async () => {
       try {
@@ -87,7 +127,9 @@ export function useDiscovery() {
           }
         } else {
           seenRunRef.current = current?.last_run ?? null;
-          if (current?.runtime_active) setFinishing(true);
+          const restored =
+            restoreLast && (await restoreFinished(current?.last_run));
+          if (current?.runtime_active && !restored) setFinishing(true);
         }
       } catch {
         setFinishing(false);
@@ -96,7 +138,7 @@ export function useDiscovery() {
     };
 
     void init();
-  }, [loadHistory]);
+  }, [loadHistory, restoreLast]);
 
   useEffect(() => {
     if (!running && !finishing) return;
@@ -138,6 +180,8 @@ export function useDiscovery() {
         setFinishRequested(false);
         setFinishing(false);
         if (e instanceof ApiError && e.status === 404) {
+          setSuite(null);
+          setSuiteId(null);
           void loadHistory();
           return;
         }
@@ -159,8 +203,13 @@ export function useDiscovery() {
         const current = await discoveryApi.current();
         if (!active) return;
         if (isSuite(current)) {
+          const replaceable =
+            !suite ||
+            (TERMINAL.has(suite.status) &&
+              suite.id !== current.id &&
+              suite.id === restoredRef.current);
           if (
-            !suite &&
+            replaceable &&
             (current.status === "running" || current.status === "pending")
           ) {
             setSuiteId(current.id);
@@ -213,6 +262,7 @@ export function useDiscovery() {
       if (normalized.length === 0) {
         return { success: false, error: "No sites given" };
       }
+      runGenRef.current += 1;
       setError(null);
       setSuite(null);
       setSuiteId(null);
@@ -256,13 +306,15 @@ export function useDiscovery() {
   }, [suiteId]);
 
   const resetDiscovery = useCallback(() => {
+    runGenRef.current += 1;
+    if (suiteId) dismissRun(suiteId);
     setSuiteId(null);
     setSuite(null);
     setError(null);
     setStopping(false);
     setFinishRequested(false);
     setRunning(false);
-  }, []);
+  }, [suiteId]);
 
   const addPresetAsSet = useCallback(
     async (

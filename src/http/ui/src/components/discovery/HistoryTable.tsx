@@ -107,19 +107,20 @@ export const HistoryTable = ({
         entry.domain,
         ...sharedWith.filter((d) => set?.targets.sni_domains.includes(d)),
       ];
+      const preset = entry.set?.name || entry.best_preset;
       return {
         entry,
         verdict,
         unconfirmed: historyUnconfirmed(entry),
         set,
-        preset: entry.set?.name || entry.best_preset,
+        preset,
         sharedWith,
         domains,
         urls: domains.map((d) => urlOf.get(d) ?? `https://${d}/`),
         alternates:
           (verdict === "found" || verdict === "works_without_bypass") &&
           !entry.rules_changed
-            ? historyAlternates(entry, domains)
+            ? historyAlternates(entry, domains, preset)
             : [],
       };
     });

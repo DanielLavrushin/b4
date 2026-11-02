@@ -224,6 +224,10 @@ func (ds *DiscoverySuite) resultDSCP() config.SetDSCPConfig {
 }
 
 func (ds *DiscoverySuite) scopeSetToDomains(set *config.SetConfig, domains []string) *config.SetConfig {
+	return ds.scopePresetToDomains("", set, domains)
+}
+
+func (ds *DiscoverySuite) scopePresetToDomains(preset string, set *config.SetConfig, domains []string) *config.SetConfig {
 	if set == nil || len(domains) == 0 {
 		return set
 	}
@@ -234,8 +238,9 @@ func (ds *DiscoverySuite) scopeSetToDomains(set *config.SetConfig, domains []str
 	scoped.Targets.IPs = ds.targetIPsFor(domains)
 	scoped.Targets.IpsToMatch = scoped.Targets.IPs
 	scoped.Targets.ASNs = []string{}
-	scoped.DNS.Pins = ds.pinsFor(domains)
-	if scoped.DNS.Enabled && !ds.anyDNSPoisoned(domains) {
+	pins, elsewhere := ds.settledElsewhere(preset, domains, ds.pinsFor(domains))
+	scoped.DNS.Pins = pins
+	if scoped.DNS.Enabled && !elsewhere && !ds.anyDNSPoisoned(domains) {
 		scoped.DNS = config.DNSConfig{Pins: scoped.DNS.Pins, StripECH: scoped.DNS.StripECH}
 	}
 	if ds.anyAddressBlocked(domains) || len(scoped.DNS.Pins) > 0 {
