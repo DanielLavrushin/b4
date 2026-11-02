@@ -1,7 +1,6 @@
 package nfq
 
 import (
-	"encoding/binary"
 	"net"
 	"slices"
 	"testing"
@@ -43,7 +42,7 @@ func TestANewConnectionOnTheSameTupleIsWatchedWithItsOwnServerSequence(t *testin
 		set  func() config.SetConfig
 	}{
 		{"a set that leaves the hello alone", silenceSet},
-		{"a set that injects", blockDetectingSet},
+		{"a set that injects", injectingSilenceSet},
 	} {
 		for _, server := range []struct {
 			name string
@@ -83,7 +82,7 @@ func TestANewConnectionOnTheSameTupleIsWatchedWithItsOwnServerSequence(t *testin
 				if ports := resetsTo(sent); !slices.Equal(ports, []uint16{12345}) {
 					t.Fatalf("the waiting connection must get one reset, got resets to %v", ports)
 				}
-				if seqs := clientRSTSeqs(sent); !slices.Equal(seqs, []uint32{server.ack}) {
+				if seqs := resetSeqs(sent); !slices.Equal(seqs, []uint32{server.ack}) {
 					t.Fatalf("the reset must carry the sequence number the new connection expects, got %#x want %#x", seqs, server.ack)
 				}
 			})
@@ -138,7 +137,7 @@ func TestARepeatedSynOfTheSameConnectionKeepsItsWatch(t *testing.T) {
 	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
 		t.Fatalf("the connection is still checked, probed %v", keys)
 	}
-	if seqs := clientRSTSeqs(r.sent()); !slices.Equal(seqs, []uint32{silentServerAck}) {
+	if seqs := resetSeqs(r.sent()); !slices.Equal(seqs, []uint32{silentServerAck}) {
 		t.Fatalf("the reset carries the connection's own server sequence number, got %#x", seqs)
 	}
 }
@@ -156,20 +155,58 @@ func TestARetransmittedFastOpenSynStillCountsItsHelloAgain(t *testing.T) {
 	}
 }
 
-func blockDetectingSet() config.SetConfig {
-	set := newFragmentingYTImagesSet()
-	set.TCP.RSTProtection.Enabled = false
-	set.TCP.IPBlockDetect.Enabled = true
-	set.TCP.IPBlockDetect.CacheBlockedIPs = true
-	return set
-}
+func TestANewConnectionOnTheSameTupleHoldsAndWatchesItsSplitHello(t *testing.T) {
+	holdHellosFor(t, time.Minute)
+	for _, server := range []struct {
+		name string
+		ack  uint32
+	}{
+		{"its server starts ahead of the old one", silentServerAck + 0x10000},
+		{"its server starts behind the old one", silentServerAck - 0x10000},
+	} {
+		t.Run(server.name, func(t *testing.T) {
+			set := injectingSilenceSet()
+			r := newSilenceWorker(t, &set, iphealth.TLSSilent)
+			t.Cleanup(r.w.pendingHello.ReleaseHolds)
+			q := &verdictLog{}
+			full, seg1, seg2 := splitHello("i.ytimg.com")
 
-func clientRSTSeqs(sent [][]byte) []uint32 {
-	var seqs []uint32
-	for _, p := range sent {
-		if len(p) >= 40 && p[0]>>4 == IPv4 && p[33]&0x04 != 0 {
-			seqs = append(seqs, binary.BigEndian.Uint32(p[24:28]))
-		}
+			r.w.ProcessPacket(silentHelloFrom(12345))
+			if _, ok := watchedAck(r.w, reusedTuple); !ok {
+				t.Fatal("the first connection's ClientHello must be watched")
+			}
+			queueTo(r.w, q, 1, synWithISN(89999))
+			if r.w.destState.Watching() {
+				t.Error("a SYN that opens a new connection on the tuple must end the old connection's watch")
+			}
+			queueTo(r.w, q, 2, clientPacketAcking(12345, 90000, server.ack, 0x18, seg1))
+			if got := q.list(); len(got) != 1 {
+				t.Fatalf("the new connection's segment 1 got %v while it was handled, it must wait for the rest of the record", got[1:])
+			}
+			queueTo(r.w, q, 3, clientPacketAcking(12345, 90000+splitCut, server.ack, 0x18, seg2))
+			wantVerdicts(t, q.list(), acceptOf(1), dropOf(3), dropOf(2))
+			if ack, ok := watchedAck(r.w, reusedTuple); !ok || ack != server.ack {
+				t.Fatalf("the new connection must be watched with the sequence number its own server sent: watched %v, ack %#x, want %#x", ok, ack, server.ack)
+			}
+			if n := helloCount(r.w, reusedTuple); n != 1 {
+				t.Fatalf("the new connection's split ClientHello is its first, counted %d", n)
+			}
+
+			r.sweepLater()
+			sent := r.sent()
+			var replayed []sentSegment
+			for _, s := range sentData(sent) {
+				if s.seq >= 90000 {
+					replayed = append(replayed, s)
+				}
+			}
+			coversOnce(t, replayed, 90000, full)
+			if ports := resetsTo(sent); !slices.Equal(ports, []uint16{12345}) {
+				t.Fatalf("the waiting connection must get one reset, got resets to %v", ports)
+			}
+			if seqs := resetSeqs(sent); !slices.Equal(seqs, []uint32{server.ack}) {
+				t.Fatalf("the reset must carry the sequence number the new connection expects, got %#x want %#x", seqs, server.ack)
+			}
+		})
 	}
-	return seqs
 }
