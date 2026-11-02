@@ -282,8 +282,10 @@ func (ds *DiscoverySuite) settleDNSResult(domain, preset string, addrs []string,
 	if served {
 		r.IsPoisoned = false
 		r.SystemServesWithStrategy = true
+		r.settledWith = preset
 		r.BestDoHURL, r.BestServer, r.NeedsFragment = "", "", false
 		if r.referencePinned {
+			r.settledPins = r.AlternativeIPs
 			r.AlternativeIPs, r.referencePinned = nil, false
 		}
 		for i := range r.ProbeResults {
@@ -299,4 +301,24 @@ func (ds *DiscoverySuite) settleDNSResult(domain, preset string, addrs []string,
 		return
 	}
 	log.DiscoveryLogf("  ✗ [%s] the system resolver's addresses %v do not load the site even through '%s', the set keeps the DNS fix", domain, addrs, preset)
+}
+
+func (ds *DiscoverySuite) settledElsewhere(preset string, domains []string, pins map[string][]string) (map[string][]string, bool) {
+	elsewhere := false
+	for _, domain := range domains {
+		r := ds.dnsResults[domain]
+		if preset == "" || r == nil || r.settledWith == "" || r.settledWith == preset {
+			continue
+		}
+		elsewhere = true
+		if len(r.settledPins) == 0 {
+			continue
+		}
+		if pins == nil {
+			pins = map[string][]string{}
+		}
+		key := config.NormalizePinDomain(domain)
+		pins[key] = appendUnique(pins[key], r.settledPins...)
+	}
+	return pins, elsewhere
 }

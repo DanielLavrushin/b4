@@ -139,7 +139,7 @@ func (ds *DiscoverySuite) buildStrategyGroups() {
 			}
 		}
 
-		scoped := ds.scopeSetToDomains(info.set, groupDomains)
+		scoped := ds.scopePresetToDomains(winner, info.set, groupDomains)
 		if info.set != nil && info.set.DNS.Enabled && scoped != nil && !scoped.DNS.Enabled {
 			log.DiscoveryLogf("  DNS resolves cleanly for %v, leaving the DNS redirect out of the set", groupDomains)
 		}
