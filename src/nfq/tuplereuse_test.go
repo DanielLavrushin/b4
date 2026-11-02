@@ -145,6 +145,35 @@ func TestASynWithoutPayloadEndsTheOldConnectionEvenWithoutItsNameEntry(t *testin
 	}
 }
 
+func TestAStaleSweepCannotEndOrParkTheNewConnectionsWatch(t *testing.T) {
+	set := silenceSet()
+	r := newSilenceWorker(t, &set, iphealth.TLSSilent)
+
+	r.w.ProcessPacket(silentHelloFrom(12345))
+	r.w.destState.watchMu.RLock()
+	deadline := r.w.destState.watches[reusedTuple].deadline
+	r.w.destState.watchMu.RUnlock()
+	due := r.w.destState.DueSilent(deadline.Add(time.Millisecond))
+	if len(due) != 1 {
+		t.Fatalf("the old connection's watch must be due once its deadline passed, got %d", len(due))
+	}
+
+	r.w.ProcessPacket(synWithISN(89999))
+	r.w.ProcessPacket(clientPacketAcking(12345, 90000, silentServerAck+0x10000, 0x18, silentHello()))
+	if r.w.destState.EndWatch(due[0]) {
+		t.Fatal("a sweep result for the old connection must not end the new connection's watch")
+	}
+	r.w.destState.Park(due[0])
+	r.w.destState.Unprobe(due[0])
+
+	r.w.destState.watchMu.RLock()
+	h, ok := r.w.destState.watches[reusedTuple]
+	r.w.destState.watchMu.RUnlock()
+	if !ok || h.helloAck != silentServerAck+0x10000 || h.parked || h.probing {
+		t.Fatalf("the new connection's watch must stay as its own ClientHello left it: watched %v, %+v", ok, h)
+	}
+}
+
 func TestARetransmittedFastOpenSynStillCountsItsHelloAgain(t *testing.T) {
 	set := newPassiveSet()
 	set.TCP.IPBlockDetect.Enabled = true
