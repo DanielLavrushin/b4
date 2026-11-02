@@ -64,7 +64,9 @@ const startFailureText = (e: unknown): string => {
   return failureText(e);
 };
 
-export function useDiscovery() {
+export function useDiscovery({
+  restoreLast = true,
+}: { restoreLast?: boolean } = {}) {
   const [running, setRunning] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -77,6 +79,7 @@ export function useDiscovery() {
   const initRef = useRef(false);
   const seenRunRef = useRef<string | null>(null);
   const restoredRef = useRef<string | null>(null);
+  const runGenRef = useRef(0);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -93,12 +96,15 @@ export function useDiscovery() {
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
+    const gen = runGenRef.current;
 
     const restoreFinished = async (id?: string): Promise<boolean> => {
       if (!id || dismissedRun() === id) return false;
       try {
         const data = await discoveryApi.status(id);
-        if (!TERMINAL.has(data.status)) return false;
+        if (runGenRef.current !== gen || !TERMINAL.has(data.status)) {
+          return false;
+        }
         if (data.source && data.source !== "web") return false;
         restoredRef.current = data.id;
         setSuiteId(data.id);
@@ -121,7 +127,8 @@ export function useDiscovery() {
           }
         } else {
           seenRunRef.current = current?.last_run ?? null;
-          const restored = await restoreFinished(current?.last_run);
+          const restored =
+            restoreLast && (await restoreFinished(current?.last_run));
           if (current?.runtime_active && !restored) setFinishing(true);
         }
       } catch {
@@ -131,7 +138,7 @@ export function useDiscovery() {
     };
 
     void init();
-  }, [loadHistory]);
+  }, [loadHistory, restoreLast]);
 
   useEffect(() => {
     if (!running && !finishing) return;
@@ -255,6 +262,7 @@ export function useDiscovery() {
       if (normalized.length === 0) {
         return { success: false, error: "No sites given" };
       }
+      runGenRef.current += 1;
       setError(null);
       setSuite(null);
       setSuiteId(null);
@@ -298,6 +306,7 @@ export function useDiscovery() {
   }, [suiteId]);
 
   const resetDiscovery = useCallback(() => {
+    runGenRef.current += 1;
     if (suiteId) dismissRun(suiteId);
     setSuiteId(null);
     setSuite(null);

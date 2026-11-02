@@ -71,17 +71,18 @@ type mcpSuiteSnapshot struct {
 	CompletedChecks int                     `json:"completed_checks"`
 	Domains         []discovery.DomainInput `json:"domains"`
 	DomainResults   map[string]struct {
-		Domain        string  `json:"domain"`
-		Url           string  `json:"url"`
-		BestPreset    string  `json:"best_preset"`
-		BestSpeed     float64 `json:"best_speed"`
-		BestSuccess   bool    `json:"best_success"`
-		BaselineWorks bool    `json:"baseline_works"`
-		Confirmed     int     `json:"confirmed"`
-		Outcome       string  `json:"outcome"`
-		MissingFamily string  `json:"missing_family"`
-		LinkStatus    int     `json:"link_status"`
-		Unconfirmed   bool    `json:"unconfirmed"`
+		Domain        string                     `json:"domain"`
+		Url           string                     `json:"url"`
+		BestPreset    string                     `json:"best_preset"`
+		BestSpeed     float64                    `json:"best_speed"`
+		BestSuccess   bool                       `json:"best_success"`
+		BaselineWorks bool                       `json:"baseline_works"`
+		Confirmed     int                        `json:"confirmed"`
+		Outcome       string                     `json:"outcome"`
+		MissingFamily string                     `json:"missing_family"`
+		LinkStatus    int                        `json:"link_status"`
+		Unconfirmed   bool                       `json:"unconfirmed"`
+		Results       map[string]mcpConfirmation `json:"results"`
 		DNSResult     *struct {
 			IsPoisoned       bool `json:"is_poisoned"`
 			TransportBlocked bool `json:"transport_blocked"`
@@ -105,6 +106,15 @@ type mcpSuiteSnapshot struct {
 	HostsTotal     int                   `json:"hosts_total"`
 	HostsDone      int                   `json:"hosts_done"`
 	HostsSkipped   bool                  `json:"hosts_skipped"`
+}
+
+type mcpConfirmation struct {
+	Confirmed    int `json:"confirmed"`
+	ConfirmTries int `json:"confirm_tries"`
+}
+
+func (c mcpConfirmation) passed() bool {
+	return c.ConfirmTries > 0 && c.Confirmed >= c.ConfirmTries
 }
 
 func mcpSuiteProjection(suite *discovery.CheckSuite) (*mcpSuiteSnapshot, error) {
@@ -303,7 +313,11 @@ func (api *API) mcpDiscoverySuiteRows(snap *mcpSuiteSnapshot, running bool) []mc
 		}
 		mcpNoteUnresolved(&row, r.MissingFamily, evidence)
 		mcpNotePageHosts(&row, r.PageHosts, winner[sni.NormalizeDomain(name)])
-		row.Unconfirmed = row.Found && r.Unconfirmed && !running
+		unconfirmed := r.Unconfirmed
+		if c, ok := r.Results[row.Preset]; ok {
+			row.Confirmed, unconfirmed = c.Confirmed, !c.passed()
+		}
+		row.Unconfirmed = row.Found && !running && (unconfirmed || discovery.CheckStatus(snap.Status) == discovery.CheckStatusCanceled)
 		row.Provisional = running && row.Found
 		row.Verdict = mcpDiscoveryVerdict(row, running)
 		rows = append(rows, row)
@@ -614,7 +628,11 @@ func (api *API) mcpDiscoveryStatus(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpD
 		}
 		mcpNoteUnresolved(&row, e.MissingFamily, evidence)
 		mcpNotePageHosts(&row, e.PageHosts, mcpAppliedPreset(e))
-		row.Unconfirmed = row.Found && (e.Unconfirmed || e.Status == discovery.CheckStatusCanceled)
+		unconfirmed := e.Unconfirmed
+		if p := e.Results[row.Preset]; row.Found && p != nil {
+			row.Confirmed, unconfirmed = p.Confirmed, !(mcpConfirmation{Confirmed: p.Confirmed, ConfirmTries: p.ConfirmTries}).passed()
+		}
+		row.Unconfirmed = row.Found && (unconfirmed || e.Status == discovery.CheckStatusCanceled)
 		row.Verdict = mcpDiscoveryVerdict(row, false)
 		if row.Found && e.ApplicableSet() != nil {
 			applicable++

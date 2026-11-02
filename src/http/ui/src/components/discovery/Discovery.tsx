@@ -65,6 +65,10 @@ export const DiscoveryRunner = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { showSuccess, showError } = useSnackbar();
+  const [handedOver] = useState(() => {
+    const state = location.state as DiscoveryLocationState | null;
+    return !!state?.setId || !!state?.urls?.length;
+  });
   const {
     running,
     finishing,
@@ -84,7 +88,7 @@ export const DiscoveryRunner = () => {
     clearCache,
     clearHistory,
     deleteHistoryDomain,
-  } = useDiscovery();
+  } = useDiscovery({ restoreLast: !handedOver });
   const { logs, connected, clearLogs } = useDiscoveryLogs();
   const { addDomainsToSet } = useSets();
   const { captures, loadCaptures } = useCaptures();

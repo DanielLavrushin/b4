@@ -981,7 +981,7 @@ func TestMCPDiscoveryNamesThePresetApplyWouldInstall(t *testing.T) {
 				"www.svoboda.org": {
 					Domain: "www.svoboda.org", BestPreset: "cached-10-fake_sni", BestSuccess: true, Confirmed: 3, Outcome: discovery.OutcomeFound,
 					Results: map[string]*discovery.DomainPresetResult{
-						"cached-1-tcpmd5":    {PresetName: "cached-1-tcpmd5", Family: discovery.FamilyTCPMD5, Status: discovery.CheckStatusComplete, Set: &offered},
+						"cached-1-tcpmd5":    {PresetName: "cached-1-tcpmd5", Family: discovery.FamilyTCPMD5, Status: discovery.CheckStatusComplete, Confirmed: 3, ConfirmTries: 3, Set: &offered},
 						"cached-10-fake_sni": {PresetName: "cached-10-fake_sni", Family: discovery.FamilyFakeSNI, Status: discovery.CheckStatusComplete, Set: &fastest},
 					},
 				},

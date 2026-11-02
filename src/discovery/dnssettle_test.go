@@ -216,7 +216,7 @@ func TestASettledCandidateLeavesTheReferencePinsOut(t *testing.T) {
 	stub := &settleStub{served: map[string]bool{settleDomain: true}}
 	ds.dnsSettleFn = stub.check
 
-	ds.settleUnverifiedDNS()
+	ds.settleUnverifiedDNS("")
 
 	if !reflect.DeepEqual(stub.calls, []string{"cached-1-tcpmd5"}) || !reflect.DeepEqual(stub.addrs[0][settleDomain], settleSystem) {
 		t.Fatalf("both system addresses are tried with the strategy the card offers: calls %v, addresses %v", stub.calls, stub.addrs)
@@ -251,7 +251,7 @@ func TestASettledCandidateKeepsTheAddressesAnotherRegionGave(t *testing.T) {
 	ds.determineBest()
 	ds.dnsSettleFn = (&settleStub{served: map[string]bool{settleDomain: true}}).check
 
-	ds.settleUnverifiedDNS()
+	ds.settleUnverifiedDNS("")
 
 	if r.IsPoisoned || !reflect.DeepEqual(r.AlternativeIPs, []string{"2.20.1.1"}) {
 		t.Fatalf("an address that passed TLS without a strategy stays pinned: %+v", r)
@@ -276,7 +276,7 @@ func TestAnUnservedCandidateKeepsTheDNSFix(t *testing.T) {
 	ds.determineBest()
 	ds.dnsSettleFn = (&settleStub{served: map[string]bool{settleDomain: false}}).check
 
-	ds.settleUnverifiedDNS()
+	ds.settleUnverifiedDNS("")
 
 	if !r.IsPoisoned || r.Unverified || r.SystemServesWithStrategy || r.BestDoHURL != settleDoH {
 		t.Fatalf("a system address that fails even with the strategy proves the poisoning: %+v", r)
@@ -307,7 +307,7 @@ func TestAnAnswerTheFirstHopPartlyTakesIsNeverSettled(t *testing.T) {
 	if !r.IsPoisoned || r.Unverified || len(r.systemIPs) != 0 || r.BestDoHURL != settleDoH {
 		t.Fatalf("the system resolver also hands out an address the first hop answers, which no strategy gets past, so the poisoning stands with its fix: %+v", r)
 	}
-	ds.settleUnverifiedDNS()
+	ds.settleUnverifiedDNS("")
 	if len(stub.calls) != 0 || !r.IsPoisoned {
 		t.Errorf("nothing is left to settle: tried %v, %+v", stub.calls, r)
 	}
@@ -319,7 +319,7 @@ func TestAnAnswerTheFirstHopPartlyTakesIsNeverSettled(t *testing.T) {
 	if !r.Unverified || !reflect.DeepEqual(r.systemIPs, settleSystem) {
 		t.Fatalf("a reference address the first hop answers says nothing about the system answer, which stays a candidate: %+v %v", r, r.systemIPs)
 	}
-	ds.settleUnverifiedDNS()
+	ds.settleUnverifiedDNS("")
 	if len(stub.addrs) != 1 || !reflect.DeepEqual(stub.addrs[0][settleDomain], settleSystem) || r.IsPoisoned {
 		t.Errorf("both system addresses are tried and serve the site: %v %+v", stub.addrs, r)
 	}
@@ -361,7 +361,7 @@ func TestNothingToSettleWithLeavesTheCandidateAsItIs(t *testing.T) {
 		stub := &settleStub{served: map[string]bool{settleDomain: true}}
 		ds.dnsSettleFn = stub.check
 
-		ds.settleUnverifiedDNS()
+		ds.settleUnverifiedDNS("")
 
 		if len(stub.calls) != 0 {
 			t.Errorf("%s: nothing may be tried, tried %v", tc.name, stub.calls)
@@ -385,7 +385,7 @@ func TestTheSettleTriesTheStrategyTheCardOffers(t *testing.T) {
 	stub := &settleStub{served: map[string]bool{settleDomain: true}}
 	ds.dnsSettleFn = stub.check
 
-	ds.settleUnverifiedDNS()
+	ds.settleUnverifiedDNS("")
 
 	if !reflect.DeepEqual(stub.calls, []string{"cached-1-tcpmd5"}) {
 		t.Fatalf("the group winner is what the card offers, so it is the one tried, got %v", stub.calls)
@@ -405,7 +405,7 @@ func TestTheSettleTriesTheStrategyTheCardOffers(t *testing.T) {
 	stub = &settleStub{served: map[string]bool{settleDomain: true}}
 	set.dnsSettleFn = stub.check
 
-	set.settleUnverifiedDNS()
+	set.settleUnverifiedDNS("")
 
 	if !reflect.DeepEqual(stub.calls, []string{"p-cover"}) {
 		t.Fatalf("in a set run the jointly confirmed cover winner comes first, got %v", stub.calls)
@@ -424,7 +424,7 @@ func TestSitesSettleOnePresetAtATime(t *testing.T) {
 	stub := &settleStub{served: map[string]bool{"a.example": true}}
 	ds.dnsSettleFn = stub.check
 
-	ds.settleUnverifiedDNS()
+	ds.settleUnverifiedDNS("")
 
 	if len(stub.calls) != 1 || len(stub.addrs[0]) != 2 {
 		t.Fatalf("two sites on one winner share one configuration, got %v %v", stub.calls, stub.addrs)
@@ -447,7 +447,7 @@ func TestSitesSettleOnePresetAtATime(t *testing.T) {
 	stub = &settleStub{served: map[string]bool{"a.example": true}}
 	split.dnsSettleFn = stub.check
 
-	split.settleUnverifiedDNS()
+	split.settleUnverifiedDNS("")
 
 	if len(stub.calls) != 2 {
 		t.Fatalf("two winners, two configurations: %v", stub.calls)
@@ -475,7 +475,6 @@ func TestASettledCandidateLetsTheSetsOwnStrategyStand(t *testing.T) {
 		ds.setStrategy = &config.SetConfig{}
 		ds.dnsSettleFn = (&settleStub{served: map[string]bool{settleDomain: served}}).check
 
-		ds.settleUnverifiedDNS()
 		ds.resolveSetVerdict()
 		return ds.setVerdict
 	}
@@ -506,7 +505,6 @@ func TestASetRunWithoutACoverWinnerSettlesWithTheSetsOwnStrategy(t *testing.T) {
 			return map[string]bool{settleDomain: name == "cached-1-tcpmd5" || ownServes}, true
 		}
 
-		ds.settleUnverifiedDNS()
 		ds.resolveSetVerdict()
 		return ds.setVerdict, tried
 	}
@@ -530,7 +528,7 @@ func TestHistoryKeepsTheSettledVerdict(t *testing.T) {
 	ds.found(settleDomain, "cached-1-tcpmd5", 1000)
 	ds.determineBest()
 	ds.dnsSettleFn = (&settleStub{served: map[string]bool{settleDomain: true}}).check
-	ds.settleUnverifiedDNS()
+	ds.settleUnverifiedDNS("")
 	ds.buildStrategyGroups()
 	ds.Status = CheckStatusComplete
 	ds.EndTime = time.Now()
@@ -609,7 +607,7 @@ func TestSettlingRacesNoStatusRead(t *testing.T) {
 		ds.CheckSuite.mu.Lock()
 		r := ds.candidate(settleDomain, nil)
 		ds.CheckSuite.mu.Unlock()
-		ds.settleUnverifiedDNS()
+		ds.settleUnverifiedDNS("")
 		if r.IsPoisoned {
 			t.Errorf("round %d: the candidate was not settled", i)
 			break
