@@ -394,7 +394,7 @@ func (run *hostRun) probeWith(ctx context.Context, t *hostRunTarget, e *hostEntr
 	h := e.shared
 	var p hostProbe
 	for try := 0; try < hostWithTries; try++ {
-		p = ds.hostRequest(ctx, h.url, t.Origin, true)
+		p = ds.hostRequest(ctx, h.url, h.origin, true)
 		if p.aborted || !p.ok {
 			break
 		}

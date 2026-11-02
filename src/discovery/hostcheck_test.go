@@ -30,6 +30,7 @@ type fakeHosts struct {
 	without  map[string][]hostProbe
 	with     map[string][]hostProbe
 	calls    []string
+	origins  []string
 	configs  []*config.Config
 	progress [][2]int
 	ds       *DiscoverySuite
@@ -58,6 +59,7 @@ func (f *fakeHosts) probe(ctx context.Context, rawURL, origin string, with bool)
 		f.progress = append(f.progress, [2]int{f.ds.HostsDone, f.ds.HostsTotal})
 		f.ds.CheckSuite.mu.RUnlock()
 	}
+	f.origins = append(f.origins, origin)
 	if with {
 		f.calls = append(f.calls, "with "+rawURL)
 		return f.next(f.with, rawURL)
@@ -375,6 +377,28 @@ func TestCheckHostsSharesTheWithoutPassAcrossTargets(t *testing.T) {
 	for i := range run.targets {
 		if r := run.results(i); len(r) != 1 || r[0].Verdict != HostNeeded {
 			t.Fatalf("target %d: %+v", i, r)
+		}
+	}
+}
+
+func TestAHostTwoTargetsShareGetsTheSameRefererWithAndWithoutB4(t *testing.T) {
+	ds, f := hostRunFixture(t, "a.example.com", "b.example.org")
+	f.without[sample("shared.example.net")] = []hostProbe{blockedProbe, blockedProbe}
+	run := ds.newHostRun([]*HostTarget{
+		{Preset: "one", Set: strategySet("one"), Domains: []string{"a.example.com"}, Origin: "https://a.example.com/", Candidates: []HostCandidate{cand("shared.example.net", HostContextScript, true)}},
+		{Preset: "two", Set: strategySet("two"), Domains: []string{"b.example.org"}, Origin: "https://b.example.org/", Candidates: []HostCandidate{cand("shared.example.net", HostContextImage, false)}},
+	})
+	ctx := context.Background()
+	run.withoutPass(ctx)
+	run.withPass(ctx, 0)
+	run.withPass(ctx, 1)
+
+	if f.count("with ") != 2*hostWithTries {
+		t.Fatalf("the shared host is tested with each strategy: %v", f.calls)
+	}
+	for _, origin := range f.origins {
+		if origin != "https://a.example.com/" {
+			t.Fatalf("only b4 may differ between the passes, so every request sends the Referer of the pass without b4, got %v", f.origins)
 		}
 	}
 }
