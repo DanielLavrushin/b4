@@ -191,7 +191,7 @@ func (ds *DiscoverySuite) newHostRun(targets []*HostTarget) *hostRun {
 	total := 0
 	for _, t := range targets {
 		if t.base == nil && t.Set != nil {
-			t.base = ds.deployedConfig(t.Set, t.Domains, nil)
+			t.base = ds.deployedConfig(t.Preset, t.Set, t.Domains, nil)
 		}
 		own := coverSet{}
 		if t.base != nil && len(t.base.Sets) > 0 {
@@ -491,8 +491,8 @@ func redirectsDNS(cfg *config.Config) bool {
 	return dns.Enabled && (dns.TargetDNS != "" || dns.DoHURL != "")
 }
 
-func (ds *DiscoverySuite) deployedConfig(stored *config.SetConfig, domains, hosts []string) *config.Config {
-	return withHosts(ds.confirmConfig(stored, domains), hosts)
+func (ds *DiscoverySuite) deployedConfig(preset string, stored *config.SetConfig, domains, hosts []string) *config.Config {
+	return withHosts(ds.confirmPresetConfig(preset, stored, domains), hosts)
 }
 
 func withHosts(base *config.Config, hosts []string) *config.Config {

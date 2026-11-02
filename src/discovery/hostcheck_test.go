@@ -324,7 +324,7 @@ func TestDeployedConfigLeavesTheStoredSetAlone(t *testing.T) {
 	stored.Targets.SNIDomains = backing
 	stored.Targets.DomainsToMatch = backing
 
-	cfg := ds.deployedConfig(stored, nil, []string{"cdn.example.net"})
+	cfg := ds.deployedConfig("combo", stored, nil, []string{"cdn.example.net"})
 
 	if got := cfg.Sets[0].Targets.SNIDomains; !reflect.DeepEqual(got, []string{"news.example.com", "cdn.example.net"}) {
 		t.Fatalf("deployed SNI domains %v", got)
@@ -332,8 +332,25 @@ func TestDeployedConfigLeavesTheStoredSetAlone(t *testing.T) {
 	if extra := backing[:2][1]; extra != "" || len(stored.Targets.SNIDomains) != 1 {
 		t.Fatalf("appending the hosts wrote into the stored set's array: %q, %v", extra, stored.Targets.SNIDomains)
 	}
-	if plain := ds.deployedConfig(stored, []string{"news.example.com"}, nil); !reflect.DeepEqual(plain.Sets[0].Targets.SNIDomains, []string{"news.example.com"}) {
+	if plain := ds.deployedConfig("combo", stored, []string{"news.example.com"}, nil); !reflect.DeepEqual(plain.Sets[0].Targets.SNIDomains, []string{"news.example.com"}) {
 		t.Fatalf("without hosts the deployed shape is the confirmation's, got %v", plain.Sets[0].Targets.SNIDomains)
+	}
+}
+
+func TestACardTheDNSCheckNeverTriedIsDeployedWithItsDNSFix(t *testing.T) {
+	const site = "news.example.com"
+	ds, _ := hostRunFixture(t, site)
+	ds.dnsResults[site] = &DNSDiscoveryResult{IsPoisoned: true, Unverified: true, AlternativeIPs: []string{"198.51.100.7"}, referencePinned: true}
+	ds.settleDNSResult(site, presetSetCurrent, []string{"192.0.2.10"}, true)
+	stored := strategySet("cached-1-tcpmd5")
+	stored.DNS = config.DNSConfig{Enabled: true, DoHURL: "https://1.1.1.1/dns-query"}
+
+	untried := ds.deployedConfig("cached-1-tcpmd5", stored, []string{site}, nil).Sets[0].DNS
+	if !untried.Enabled || !reflect.DeepEqual(untried.Pins[site], []string{"198.51.100.7"}) {
+		t.Errorf("the check went through another strategy, so this card's pages are read with the DNS fix it carries: %+v", untried)
+	}
+	if tried := ds.deployedConfig(presetSetCurrent, stored, []string{site}, nil).Sets[0].DNS; tried.Enabled || len(tried.Pins) != 0 {
+		t.Errorf("the strategy the check went through is deployed without the DNS fix: %+v", tried)
 	}
 }
 

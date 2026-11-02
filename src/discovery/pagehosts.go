@@ -168,7 +168,7 @@ func (ds *DiscoverySuite) pageTargets() []*pageTarget {
 }
 
 func (ds *DiscoverySuite) readTargetPages(ctx context.Context, t *pageTarget) {
-	t.base = ds.deployedConfig(t.Set, t.Domains, nil)
+	t.base = ds.deployedConfig(t.Preset, t.Set, t.Domains, nil)
 	if t.base == nil {
 		log.DiscoveryLogf("Page hosts: could not rebuild '%s' as it would be deployed", t.Preset)
 		return

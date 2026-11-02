@@ -122,7 +122,11 @@ func (ds *DiscoverySuite) storedSetFor(presetName string, domains []string) *con
 }
 
 func (ds *DiscoverySuite) confirmConfig(stored *config.SetConfig, domains []string) *config.Config {
-	scoped := ds.scopeSetToDomains(stored, domains)
+	return ds.confirmPresetConfig("", stored, domains)
+}
+
+func (ds *DiscoverySuite) confirmPresetConfig(preset string, stored *config.SetConfig, domains []string) *config.Config {
+	scoped := ds.scopePresetToDomains(preset, stored, domains)
 	if scoped == nil {
 		return nil
 	}
