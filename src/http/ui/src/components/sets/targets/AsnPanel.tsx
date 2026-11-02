@@ -1,4 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Box,
   Button,
@@ -16,13 +24,7 @@ import {
   InfoIcon,
   RefreshIcon,
 } from "@b4.icons";
-import {
-  B4Alert,
-  B4Badge,
-  B4Hint,
-  B4PlusButton,
-  B4TextField,
-} from "@b4.elements";
+import { B4Alert, B4Badge, B4PlusButton, B4TextField } from "@b4.elements";
 import { colors, radius, typography } from "@design";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "@api/apiClient";
@@ -44,10 +46,11 @@ import { SetStats } from "../Manager";
 import { OtherSetsTargets, asnOverlapKey } from "./overlap";
 import { AsnPrefixesDialog } from "./AsnPrefixesDialog";
 
-interface AsnTabProps {
+interface AsnPanelProps {
   config: B4SetConfig;
   stats?: SetStats;
   otherSetsTargets?: OtherSetsTargets;
+  scrollIntoView?: boolean;
   onChange: (field: string, value: string | string[] | boolean) => void;
 }
 
@@ -59,13 +62,23 @@ interface ResolveFailure {
 
 type RowState = "loading" | "resolved" | "unresolved" | "unknown";
 
-export const AsnTab = ({
+export const AsnPanel = ({
   config,
   stats,
   otherSetsTargets,
+  scrollIntoView,
   onChange,
-}: AsnTabProps) => {
+}: AsnPanelProps) => {
   const { t, i18n } = useTranslation();
+  const headingId = useId();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (!scrollIntoView) return;
+    const heading = headingRef.current;
+    if (!heading) return;
+    heading.scrollIntoView({ block: "start" });
+    heading.focus({ preventScroll: true });
+  }, [scrollIntoView]);
   const { showSuccess, showError } = useSnackbar();
   const asns = useMemo(() => config.targets.asns ?? [], [config.targets.asns]);
   const asnsRef = useRef(asns);
@@ -224,16 +237,26 @@ export const AsnTab = ({
   const previewView = previewId ? (views?.[previewId] ?? null) : null;
 
   return (
-    <>
-      <B4Hint>{t("sets.targets.asn.hint")}</B4Hint>
-
-      <Box sx={{ mt: 3, maxWidth: 640 }}>
+    <Box component="section" aria-labelledby={headingId}>
+      <Box sx={{ maxWidth: 640 }}>
         <Typography
           variant="h6"
-          sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}
+          component="h3"
+          id={headingId}
+          ref={headingRef}
+          tabIndex={-1}
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            mb: 2,
+            scrollMarginTop: 16,
+          }}
         >
           <AsnIcon /> {t("sets.targets.asn.title")}
-          <Tooltip title={t("sets.targets.asn.tooltip")}>
+          <Tooltip
+            title={`${t("sets.targets.asn.tooltip")} ${t("sets.targets.asn.hint")}`}
+          >
             <InfoIcon fontSize="small" color="action" />
           </Tooltip>
         </Typography>
@@ -390,7 +413,7 @@ export const AsnTab = ({
       </Box>
 
       <AsnPrefixesDialog view={previewView} onClose={() => setPreviewId(null)} />
-    </>
+    </Box>
   );
 };
 
@@ -633,6 +656,7 @@ const AsnRow = ({
             <span>
               <IconButton
                 size="small"
+                aria-label={t("sets.targets.asn.refresh")}
                 disabled={refreshing}
                 onClick={() => onRefresh(id)}
                 sx={{ "&:hover": { color: colors.secondary } }}
@@ -645,6 +669,7 @@ const AsnRow = ({
             <span>
               <IconButton
                 size="small"
+                aria-label={t("sets.targets.asn.showPrefixes")}
                 disabled={!view || view.prefixes.length === 0}
                 onClick={() => onPreview(id)}
                 sx={{ "&:hover": { color: colors.secondary } }}
@@ -656,7 +681,7 @@ const AsnRow = ({
           <Tooltip title={t("sets.targets.asn.remove")}>
             <IconButton
               size="small"
-                onClick={() => onRemove(id)}
+              onClick={() => onRemove(id)}
               sx={{ "&:hover": { color: colors.secondary } }}
             >
               <ClearIcon fontSize="small" />

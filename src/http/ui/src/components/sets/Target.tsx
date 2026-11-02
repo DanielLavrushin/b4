@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Box, Stack } from "@mui/material";
-import { AsnIcon, DomainIcon, IpIcon, DeviceIcon } from "@b4.icons";
+import { DomainIcon, IpIcon, DeviceIcon } from "@b4.icons";
 import { B4Section, B4Tabs, B4Tab, B4TabPanel } from "@b4.elements";
 import { B4SetConfig, GeoConfig } from "@models/config";
 import { useDevices } from "@b4.devices";
@@ -11,7 +11,6 @@ import { hasTargets } from "./facets";
 import { SetStats } from "./Manager";
 import { DomainsTab } from "./targets/DomainsTab";
 import { IpsTab } from "./targets/IpsTab";
-import { AsnTab } from "./targets/AsnTab";
 import { DevicesTab } from "./targets/DevicesTab";
 import { OtherSetsTargets } from "./targets/overlap";
 
@@ -19,13 +18,12 @@ export type { OtherSetsTargets };
 const TARGET_SUB_INDEX: Record<string, number> = {
   domains: 0,
   ips: 1,
-  asns: 2,
-  devices: 3,
+  asns: 1,
+  devices: 2,
 };
 export const TARGET_SUB_TABS: { labelKey: string; prefixes: string[] }[] = [
   { labelKey: "sets.targets.tabs.domains", prefixes: ["targets.sni_domains", "targets.domain_only", "targets.tls", "targets.ip_version", "targets.geosite_categories"] },
-  { labelKey: "sets.targets.tabs.ips", prefixes: ["targets.ip", "targets.ip_priority", "targets.geoip_categories"] },
-  { labelKey: "sets.targets.tabs.asns", prefixes: ["targets.asns"] },
+  { labelKey: "sets.targets.tabs.ips", prefixes: ["targets.ip", "targets.ip_priority", "targets.geoip_categories", "targets.asns"] },
   { labelKey: "sets.targets.tabs.sourceDevices", prefixes: ["targets.source_devices", "targets.source_devices_exclude"] },
 ];
 
@@ -43,7 +41,6 @@ interface TargetSettingsProps {
 enum TARGET_TABS {
   DOMAINS = 0,
   IPS,
-  ASNS,
   DEVICES,
 }
 
@@ -62,9 +59,12 @@ export const TargetSettings = ({
     TARGET_SUB_INDEX[initialSub ?? ""] ?? TARGET_TABS.DOMAINS,
   );
 
+  const [scrollToAsn, setScrollToAsn] = useState(initialSub === "asns");
+
   useEffect(() => {
     const index = TARGET_SUB_INDEX[initialSub ?? ""];
     if (index !== undefined) setActiveTab(index);
+    setScrollToAsn(initialSub === "asns");
   }, [initialSub]);
   const {
     devices,
@@ -82,7 +82,6 @@ export const TargetSettings = ({
   }, [loadDevices]);
 
   const selectedSourceDevices: string[] = config.targets.source_devices ?? [];
-  const asnCount = config.targets.asns?.length ?? 0;
   const { changedPaths } = useChangedFields();
   const hasSubChanges = (prefixes: string[]): boolean =>
     prefixes.some((prefix) => {
@@ -101,7 +100,10 @@ export const TargetSettings = ({
         <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 0 }}>
           <B4Tabs
             value={activeTab}
-            onChange={(_, newValue: number) => setActiveTab(newValue)}
+            onChange={(_, newValue: number) => {
+              setActiveTab(newValue);
+              setScrollToAsn(false);
+            }}
           >
             <B4Tab
               icon={<DomainIcon />}
@@ -116,16 +118,6 @@ export const TargetSettings = ({
               hasChanges={hasSubChanges(TARGET_SUB_TABS[1].prefixes)}
             />
             <B4Tab
-              icon={<AsnIcon />}
-              label={
-                asnCount > 0
-                  ? `${t("sets.targets.tabs.asns")} (${asnCount})`
-                  : t("sets.targets.tabs.asns")
-              }
-              inline
-              hasChanges={hasSubChanges(TARGET_SUB_TABS[2].prefixes)}
-            />
-            <B4Tab
               icon={<DeviceIcon />}
               label={
                 selectedSourceDevices.length > 0
@@ -133,7 +125,7 @@ export const TargetSettings = ({
                   : t("sets.targets.tabs.sourceDevices")
               }
               inline
-              hasChanges={hasSubChanges(TARGET_SUB_TABS[3].prefixes)}
+              hasChanges={hasSubChanges(TARGET_SUB_TABS[2].prefixes)}
             />
           </B4Tabs>
         </Box>
@@ -168,19 +160,7 @@ export const TargetSettings = ({
             geoipCategories={geoipCategories}
             geoipLoading={geoipLoading}
             ipv6={ipv6}
-            onChange={onChange}
-          />
-        </B4TabPanel>
-
-        <B4TabPanel
-          value={activeTab}
-          index={TARGET_TABS.ASNS}
-          idPrefix="target-tab"
-        >
-          <AsnTab
-            config={config}
-            stats={stats}
-            otherSetsTargets={otherSetsTargets}
+            scrollToAsn={scrollToAsn}
             onChange={onChange}
           />
         </B4TabPanel>

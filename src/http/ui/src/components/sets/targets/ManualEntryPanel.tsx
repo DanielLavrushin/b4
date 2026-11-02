@@ -88,6 +88,7 @@ export const ManualEntryPanel = ({
           value={input}
           onChange={(e) => handleInput(e.target.value)}
           onKeyDown={(e) => {
+            if (e.key === "Tab" && !input.trim()) return;
             if (e.key === "Enter" || e.key === "Tab" || e.key === ",") {
               e.preventDefault();
               handleAdd();
