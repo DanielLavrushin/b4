@@ -414,9 +414,11 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	hold := addressHold{set: st, prefix: stPrefix}
 
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
+	vc.hellos, vc.helloKey = w.pendingHello, connKey
 	w.noteClientProgress(connKey, tcp)
 	if cfg.IsTCPPort(dport) && tcp[13]&0x12 == 0x02 {
 		w.tlsCache.DropOtherConnection(connKey, binary.BigEndian.Uint32(tcp[4:8])+1)
+		w.pendingHello.ForgetHeld(connKey)
 	}
 
 	var connSet *config.SetConfig
@@ -525,17 +527,19 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			log.LogConnection("TCP", dupSNISet, dupHost, pkt.srcStr, sport, dupIPSet, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(dupTLS), "tcp-dup")
 		}
 
+		held := vc.takeHeld()
 		if !vc.drop() {
+			if held != nil {
+				held.settle(nfqueue.NfAccept, "released, the next packet could not be dropped")
+			}
 			return 0
 		}
 
-		for i := 0; i < set.TCP.Duplicate.Count; i++ {
-			if pkt.ver == IPv4 {
-				_ = w.sock.SendIPv4(pkt.raw, pkt.dst)
-			} else {
-				_ = w.sock.SendIPv6(pkt.raw, pkt.dst)
-			}
+		if held != nil {
+			held.settle(nfqueue.NfDrop, "sent as duplicates through set "+set.Name)
+			w.sendCopies(held.raw, held.dst, held.ver, set.TCP.Duplicate.Count)
 		}
+		w.sendCopies(pkt.raw, pkt.dst, pkt.ver, set.TCP.Duplicate.Count)
 		return 0
 	}
 
@@ -640,14 +644,16 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		if host == "" {
 			seq := binary.BigEndian.Uint32(tcp[4:8])
-			if joined, prefix, ok := w.pendingHello.Feed(connKey, seq, payload); ok {
-				if joinedHost, joinedTLS, _ := sni.ParseTLSClientHelloSNI(joined); joinedHost != "" {
+			fed := w.pendingHello.FeedHold(connKey, seq, payload, w.helloHoldCandidate(vc, pkt, matcher, connKey, tcp, payload, dport, matched))
+			vc.held, vc.own = fed.claimed, fed.held
+			if fed.ok {
+				if joinedHost, joinedTLS, _ := sni.ParseTLSClientHelloSNI(fed.joined); joinedHost != "" {
 					host = joinedHost
 					tlsVersion = joinedTLS
 					classifyReason = "split-hello"
 					w.pendingHello.Drop(connKey)
 					log.Tracef("recovered SNI %q for %s:%d from split ClientHello (%d buffered + %d bytes)",
-						host, pkt.dstStr, dport, prefix, len(payload))
+						host, pkt.dstStr, dport, fed.prefix, len(payload))
 				}
 			}
 		}
@@ -963,7 +969,15 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			return 0
 		}
 
-		if !injectAcquire() {
+		held := vc.takeHeld()
+		slots := 1
+		if held != nil {
+			slots = 2
+		}
+		if !injectAcquireN(slots) {
+			if held != nil {
+				held.settle(nfqueue.NfAccept, "released, the injection backlog is full")
+			}
 			return vc.accept()
 		}
 
@@ -971,10 +985,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		copy(packetCopy, pkt.raw)
 
 		if set.TCP.DropSACK {
-			if pkt.ver == 4 {
-				packetCopy = sock.StripSACKFromTCP(packetCopy)
-			} else {
-				packetCopy = sock.StripSACKFromTCPv6(packetCopy)
+			packetCopy = stripSACK(packetCopy, pkt.ver)
+			if held != nil {
+				held.raw = stripSACK(held.raw, held.ver)
 			}
 		}
 
@@ -983,26 +996,23 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		setCopy := set
 
 		if !vc.drop() {
-			injectRelease()
+			injectReleaseN(slots)
+			if held != nil {
+				held.settle(nfqueue.NfAccept, "released, the next packet could not be dropped")
+			}
 			return 0
 		}
 
-		v := pkt.ver
-		w.wg.Add(1)
-		go func(s *config.SetConfig, pktData []byte, d net.IP) {
-			defer func() {
-				injectRelease()
-				w.wg.Done()
-			}()
-			if v == 4 {
-				w.dropAndInjectTCP(s, pktData, d)
-			} else {
-				w.dropAndInjectTCPv6(s, pktData, d)
-			}
-		}(setCopy, packetCopy, dstCopy)
+		if held != nil {
+			held.settle(nfqueue.NfDrop, "sent through set "+set.Name)
+		}
+		w.injectHeldThen(setCopy, held, packetCopy, dstCopy, pkt.ver)
 		return 0
 	}
 
+	if vc.own != nil {
+		return 0
+	}
 	return vc.accept()
 }
 
