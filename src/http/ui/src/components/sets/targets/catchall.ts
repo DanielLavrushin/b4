@@ -1,3 +1,5 @@
+import * as ipaddr from "ipaddr.js";
+
 export const DOMAIN_CATCH_ALL = "regexp:.*";
 export const IPV4_CATCH_ALL = "0.0.0.0/0";
 export const IPV6_CATCH_ALL = "::/0";
@@ -88,6 +90,23 @@ export const normalizeIpEntry = (raw: string, ipv6: boolean): string[] => {
   if (version === 6) return [IPV6_CATCH_ALL];
 
   return [value];
+};
+
+export const isIpTarget = (entry: string): boolean => {
+  const parts = entry.trim().split("/");
+  if (parts.length > 2) return false;
+  const [address = "", prefix = ""] = parts;
+  const v4 = ipaddr.IPv4.isValidFourPartDecimal(address);
+  const v6 =
+    !v4 &&
+    address.includes(":") &&
+    !address.includes("%") &&
+    ipaddr.IPv6.isValid(address);
+  if (!v4 && !v6) return false;
+  if (parts.length === 1) return true;
+  return (
+    /^(0|[1-9]\d{0,2})$/.test(prefix) && Number(prefix) <= (v4 ? 32 : 128)
+  );
 };
 
 export type CatchAllNotice = { kind: "catchAll"; values: string[] };

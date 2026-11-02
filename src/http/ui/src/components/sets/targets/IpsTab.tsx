@@ -3,6 +3,7 @@ import { Box, Grid } from "@mui/material";
 import { IpIcon } from "@b4.icons";
 import { B4Alert, B4Hint, B4Switch } from "@b4.elements";
 import { B4SetConfig, GeoConfig } from "@models/config";
+import { parseAsnInput } from "@models/asn";
 import { useTranslation } from "react-i18next";
 import { SetStats } from "../Manager";
 import { ManualEntryPanel } from "./ManualEntryPanel";
@@ -17,6 +18,7 @@ import {
   ipCatchAllVersion,
   ipEntryNotice,
   isIpCatchAll,
+  isIpTarget,
   normalizeIpEntry,
   setIpCatchAll,
 } from "./catchall";
@@ -96,6 +98,14 @@ export const IpsTab = ({
       return;
     }
     setDuplicateWarning(findSetOverlaps(input, otherSetsTargets));
+  };
+
+  const ipEntryProblem = (entry: string): string | null => {
+    if (isIpTarget(entry)) return null;
+    const { kind } = parseAsnInput(entry);
+    return kind === "asn" || kind === "reserved"
+      ? t("sets.targets.ipIsAsn", { value: entry })
+      : t("sets.targets.ipInvalid", { value: entry });
   };
 
   const chipLabel = (item: string) => {
@@ -188,6 +198,7 @@ export const IpsTab = ({
             warning={duplicateWarning}
             notice={entryNotice}
             normalize={(raw) => normalizeIpEntry(raw, !!ipv6)}
+            validate={ipEntryProblem}
             highlight={(item) => isIpCatchAll(item) || isIpChanged(item)}
             getItemLabel={chipLabel}
             onItemsChange={(items) => onChange("targets.ip", items)}

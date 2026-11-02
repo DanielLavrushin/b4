@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 interface BulkEditDialogProps {
   open: boolean;
   items: string[];
+  validate?: (entry: string) => string | null;
   onClose: () => void;
   onSave: (items: string[]) => void;
 }
@@ -14,14 +15,18 @@ interface BulkEditDialogProps {
 export const BulkEditDialog = ({
   open,
   items,
+  validate,
   onClose,
   onSave,
 }: BulkEditDialogProps) => {
   const { t } = useTranslation();
   const [text, setText] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (open) setText(items.join("\n"));
+    if (!open) return;
+    setText(items.join("\n"));
+    setError("");
   }, [open, items]);
 
   const handleSave = () => {
@@ -29,6 +34,13 @@ export const BulkEditDialog = ({
       .split(/[\n\r]+/)
       .map((l) => l.trim())
       .filter(Boolean);
+    const problem = validate
+      ? lines.map(validate).find((message) => message)
+      : undefined;
+    if (problem) {
+      setError(problem);
+      return;
+    }
     onSave([...new Set(lines)]);
     onClose();
   };
@@ -56,11 +68,18 @@ export const BulkEditDialog = ({
         minRows={10}
         maxRows={25}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          setError("");
+        }}
         placeholder={t("sets.targets.bulkEditPlaceholder")}
-        helperText={t("sets.targets.bulkEditHelper", {
-          count: text.split(/[\n\r]+/).filter((l) => l.trim()).length,
-        })}
+        error={!!error}
+        helperText={
+          error ||
+          t("sets.targets.bulkEditHelper", {
+            count: text.split(/[\n\r]+/).filter((l) => l.trim()).length,
+          })
+        }
         fullWidth
       />
     </B4Dialog>
