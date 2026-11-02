@@ -239,6 +239,16 @@ export function dnsPoisoned(results: DiscoveryResult[]): boolean {
   return results.some((dr) => !!dr.dns_result?.is_poisoned);
 }
 
+function alternatesKeepDns(
+  results: Pick<DiscoveryResult, "dns_result">[],
+): boolean {
+  return results.some(
+    (dr) =>
+      !!dr.dns_result?.is_poisoned ||
+      !!dr.dns_result?.system_serves_with_strategy,
+  );
+}
+
 export function buildResultEntries(
   suite: DiscoverySuite,
   finished: boolean,
@@ -389,7 +399,7 @@ export function alternatesFor(
     group.results,
     group.domains,
     group.preset,
-    dnsPoisoned(group.results),
+    alternatesKeepDns(group.results),
     echCoverNames(group.results),
     limit,
     group.alternates,
@@ -423,7 +433,7 @@ export function historyAlternates(
     [entry],
     scope,
     found ? main : NO_BYPASS_PRESET,
-    !!entry.dns_result?.is_poisoned || !!entry.set?.dns?.enabled,
+    alternatesKeepDns([entry]) || !!entry.set?.dns?.enabled,
     echCoverNames([entry]),
     0,
     entry.alternates,
