@@ -64,7 +64,9 @@ const startFailureText = (e: unknown): string => {
   return failureText(e);
 };
 
-export function useDiscovery() {
+export function useDiscovery({
+  restoreLast = true,
+}: { restoreLast?: boolean } = {}) {
   const [running, setRunning] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -125,7 +127,8 @@ export function useDiscovery() {
           }
         } else {
           seenRunRef.current = current?.last_run ?? null;
-          const restored = await restoreFinished(current?.last_run);
+          const restored =
+            restoreLast && (await restoreFinished(current?.last_run));
           if (current?.runtime_active && !restored) setFinishing(true);
         }
       } catch {
@@ -135,7 +138,7 @@ export function useDiscovery() {
     };
 
     void init();
-  }, [loadHistory]);
+  }, [loadHistory, restoreLast]);
 
   useEffect(() => {
     if (!running && !finishing) return;
