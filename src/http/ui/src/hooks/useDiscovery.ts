@@ -77,6 +77,7 @@ export function useDiscovery() {
   const initRef = useRef(false);
   const seenRunRef = useRef<string | null>(null);
   const restoredRef = useRef<string | null>(null);
+  const runGenRef = useRef(0);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -93,12 +94,15 @@ export function useDiscovery() {
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
+    const gen = runGenRef.current;
 
     const restoreFinished = async (id?: string): Promise<boolean> => {
       if (!id || dismissedRun() === id) return false;
       try {
         const data = await discoveryApi.status(id);
-        if (!TERMINAL.has(data.status)) return false;
+        if (runGenRef.current !== gen || !TERMINAL.has(data.status)) {
+          return false;
+        }
         if (data.source && data.source !== "web") return false;
         restoredRef.current = data.id;
         setSuiteId(data.id);
@@ -255,6 +259,7 @@ export function useDiscovery() {
       if (normalized.length === 0) {
         return { success: false, error: "No sites given" };
       }
+      runGenRef.current += 1;
       setError(null);
       setSuite(null);
       setSuiteId(null);
@@ -298,6 +303,7 @@ export function useDiscovery() {
   }, [suiteId]);
 
   const resetDiscovery = useCallback(() => {
+    runGenRef.current += 1;
     if (suiteId) dismissRun(suiteId);
     setSuiteId(null);
     setSuite(null);
