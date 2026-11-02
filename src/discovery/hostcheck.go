@@ -98,6 +98,8 @@ type HostCandidate struct {
 	Context  HostContext `json:"context,omitempty"`
 	Blocking bool        `json:"blocking,omitempty"`
 	Tracker  bool        `json:"tracker,omitempty"`
+
+	samples []scannedSample
 }
 
 type HostResult struct {
@@ -155,6 +157,7 @@ const (
 
 type sharedHost struct {
 	host     string
+	samples  []scannedSample
 	urls     []string
 	origin   string
 	outcome  withoutOutcome
@@ -246,16 +249,17 @@ func (ds *DiscoverySuite) newHostRun(targets []*HostTarget) *hostRun {
 }
 
 func (run *hostRun) share(c HostCandidate, origin string) *sharedHost {
-	if h := run.byName[c.Host]; h != nil {
-		return h
+	h := run.byName[c.Host]
+	if h == nil {
+		h = &sharedHost{host: c.Host, origin: origin}
+		run.byName[c.Host] = h
+		run.hosts = append(run.hosts, h)
 	}
-	urls := append([]string(nil), c.URLs...)
-	if len(urls) == 0 {
-		urls = []string{"https://" + c.Host + "/"}
+	h.samples = mergeSamples(h.samples, c.rankedSamples())
+	h.urls = sampleURLs(h.samples)
+	if len(h.urls) == 0 {
+		h.urls = []string{"https://" + c.Host + "/"}
 	}
-	h := &sharedHost{host: c.Host, urls: urls, origin: origin}
-	run.byName[c.Host] = h
-	run.hosts = append(run.hosts, h)
 	return h
 }
 

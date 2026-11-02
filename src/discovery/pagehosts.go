@@ -225,15 +225,12 @@ func (t *pageTarget) addCandidate(c HostCandidate, domain string) {
 		if have.Host != c.Host {
 			continue
 		}
+		have.samples = mergeSamples(have.rankedSamples(), c.rankedSamples())
+		have.URLs = sampleURLs(have.samples)
 		have.Blocking = have.Blocking || c.Blocking
 		have.Tracker = have.Tracker || c.Tracker
 		if hostContextRank(c.Context) < hostContextRank(have.Context) {
 			have.Context = c.Context
-		}
-		for _, u := range c.URLs {
-			if len(have.URLs) < maxHostSamples && !slices.Contains(have.URLs, u) {
-				have.URLs = append(have.URLs, u)
-			}
 		}
 		return
 	}

@@ -379,6 +379,30 @@ func TestCheckHostsSharesTheWithoutPassAcrossTargets(t *testing.T) {
 	}
 }
 
+func TestAHostTwoTargetsShareIsTestedWithTheBestSampleOfEither(t *testing.T) {
+	ds, f := hostRunFixture(t, "a.example.com", "b.example.org")
+	images := []string{"https://cdn.example.net/1.png", "https://cdn.example.net/2.png", "https://cdn.example.net/3.png"}
+	for _, u := range images {
+		f.without[u] = []hostProbe{{ok: true, small: true, bytes: 2048}}
+	}
+	script := "https://cdn.example.net/app.js"
+	f.without[script] = []hostProbe{{failure: hostFailBlocked, err: "stalled after 16384 bytes", bytes: 16384}}
+	run := ds.newHostRun([]*HostTarget{
+		{Preset: "one", Set: strategySet("one"), Domains: []string{"a.example.com"}, Candidates: []HostCandidate{{Host: "cdn.example.net", URLs: images, Context: HostContextImage}}},
+		{Preset: "two", Set: strategySet("two"), Domains: []string{"b.example.org"}, Candidates: []HostCandidate{{Host: "cdn.example.net", URLs: []string{script}, Context: HostContextScript, Blocking: true}}},
+	})
+	ctx := context.Background()
+	run.withoutPass(ctx)
+	run.withPass(ctx, 0)
+	run.withPass(ctx, 1)
+
+	for i := range run.targets {
+		if r := run.results(i); len(r) != 1 || r[0].Verdict != HostNeeded || r[0].URL != script {
+			t.Errorf("target %d: the script the second target names shows the block the first target's small images hide, got %+v", i, r)
+		}
+	}
+}
+
 func TestCheckHostsStopsWhenTheContextEnds(t *testing.T) {
 	defer goleak.VerifyNone(t, leaktest.Options()...)
 	ds, f := hostRunFixture(t, "news.example.com")

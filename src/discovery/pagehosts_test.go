@@ -671,3 +671,21 @@ func TestHistoryKeepsTheHostsToAdd(t *testing.T) {
 		t.Errorf("a page the time limit cut is remembered, got %+v", c)
 	}
 }
+
+func TestAScriptSampleFromALaterPageOutranksThreeImages(t *testing.T) {
+	images := scanHosts(t, `<html><body>
+<img src="https://cdn.example.net/1.png"><img src="https://cdn.example.net/2.png"><img src="https://cdn.example.net/3.png">
+</body></html>`)
+	scripts := scanHosts(t, `<html><head><script src="https://cdn.example.net/app.js"></script></head></html>`)
+	target := &pageTarget{names: map[string][]string{}}
+	target.addCandidate(images["cdn.example.net"], "a.example.com")
+	target.addCandidate(scripts["cdn.example.net"], "b.example.com")
+
+	want := []string{"https://cdn.example.net/app.js", "https://cdn.example.net/1.png", "https://cdn.example.net/2.png"}
+	if len(target.Candidates) != 1 || !reflect.DeepEqual(target.Candidates[0].URLs, want) {
+		t.Fatalf("the second page's script ranks before the first page's images: %+v", target.Candidates)
+	}
+	if target.Candidates[0].Context != HostContextScript {
+		t.Errorf("the host is named by its script, got %q", target.Candidates[0].Context)
+	}
+}

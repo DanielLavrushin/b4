@@ -126,25 +126,57 @@ func (p *pageScan) add(host string, ctx HostContext, blocking bool, sample strin
 }
 
 func (h *scannedHost) addSample(url string, rank int) {
-	for _, s := range h.samples {
-		if s.url == url {
-			return
+	h.samples = withSample(h.samples, scannedSample{url: url, rank: rank})
+}
+
+func withSample(samples []scannedSample, s scannedSample) []scannedSample {
+	for _, have := range samples {
+		if have.url == s.url {
+			return samples
 		}
 	}
-	at := len(h.samples)
-	for i, s := range h.samples {
-		if rank < s.rank {
+	at := len(samples)
+	for i, have := range samples {
+		if s.rank < have.rank {
 			at = i
 			break
 		}
 	}
 	if at >= maxHostSamples {
-		return
+		return samples
 	}
-	h.samples = slices.Insert(h.samples, at, scannedSample{url: url, rank: rank})
-	if len(h.samples) > maxHostSamples {
-		h.samples = h.samples[:maxHostSamples]
+	samples = slices.Insert(samples, at, s)
+	if len(samples) > maxHostSamples {
+		samples = samples[:maxHostSamples]
 	}
+	return samples
+}
+
+func mergeSamples(have, add []scannedSample) []scannedSample {
+	out := slices.Clone(have)
+	for _, s := range add {
+		out = withSample(out, s)
+	}
+	return out
+}
+
+func sampleURLs(samples []scannedSample) []string {
+	var urls []string
+	for _, s := range samples {
+		urls = append(urls, s.url)
+	}
+	return urls
+}
+
+func (c HostCandidate) rankedSamples() []scannedSample {
+	if len(c.samples) > 0 {
+		return c.samples
+	}
+	out := make([]scannedSample, 0, len(c.URLs))
+	for _, u := range c.URLs {
+		out = append(out, scannedSample{url: u, rank: sampleRank(c.Context)})
+	}
+	return out
 }
 
 func (h *scannedHost) context() HostContext {
@@ -181,17 +213,15 @@ func (p *pageScan) candidates() ([]HostCandidate, int) {
 			trackers++
 			continue
 		}
-		c := HostCandidate{
+		out = append(out, HostCandidate{
 			Host:     h.name,
+			URLs:     sampleURLs(h.samples),
 			Source:   HostFromPage,
 			Context:  h.context(),
 			Blocking: h.blocking,
 			Tracker:  tracker,
-		}
-		for _, s := range h.samples {
-			c.URLs = append(c.URLs, s.url)
-		}
-		out = append(out, c)
+			samples:  slices.Clone(h.samples),
+		})
 	}
 	return out, trackers
 }
