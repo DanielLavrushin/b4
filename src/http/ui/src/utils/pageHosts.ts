@@ -147,6 +147,13 @@ const coveringName = (host: string, names: string[]): string | undefined =>
     return host === d || host.endsWith(`.${d}`);
   });
 
+const labelCount = (name: string): number => name.split(".").length;
+
+const outranks = (m: SetDomainMatch, entry?: string): boolean =>
+  !entry ||
+  ((m.relation === "exact" || m.relation === "covered") &&
+    labelCount(m.entry) > labelCount(entry));
+
 export function hostStates(
   hosts: OfferedHost[],
   matches: SetDomainMatch[],
@@ -156,7 +163,15 @@ export function hostStates(
   return hosts.map((h) => {
     const host = h.host.toLowerCase();
     const entry = coveringName(host, names);
-    if (entry) {
+    const own = matches.filter((m) => m.domain.toLowerCase() === host);
+    const handledElsewhere = own.some(
+      (m) =>
+        m.enabled &&
+        m.handles &&
+        m.set_id !== targetSetId &&
+        outranks(m, entry),
+    );
+    if (entry && !handledElsewhere) {
       return {
         ...h,
         disabled: true,
@@ -164,10 +179,6 @@ export function hostStates(
         note: { key: "discovery.hosts.covered", params: { entry } },
       };
     }
-    const own = matches.filter((m) => m.domain.toLowerCase() === host);
-    const handledElsewhere = own.some(
-      (m) => m.enabled && m.handles && m.set_id !== targetSetId,
-    );
     if (
       targetSetId &&
       !handledElsewhere &&
