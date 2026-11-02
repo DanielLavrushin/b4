@@ -18,6 +18,7 @@ interface ManualEntryPanelProps {
   warning?: string;
   notice?: string;
   normalize?: (raw: string) => string[];
+  validate?: (entry: string) => string | null;
   highlight?: (item: string) => boolean;
   getItemLabel?: (item: string) => ReactNode;
   onItemsChange: (items: string[]) => void;
@@ -37,6 +38,7 @@ export const ManualEntryPanel = ({
   warning,
   notice,
   normalize,
+  validate,
   highlight,
   getItemLabel,
   onItemsChange,
@@ -44,21 +46,33 @@ export const ManualEntryPanel = ({
 }: ManualEntryPanelProps) => {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
+  const [invalid, setInvalid] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
 
   const handleInput = (value: string) => {
     setInput(value);
+    setInvalid("");
     onInputChange?.(value);
   };
 
-  const handleAdd = () => {
+  const handleAdd = (): boolean => {
     const value = input.trim();
-    if (!value) return;
+    if (!value) return true;
 
     const existing = new Set(items);
     const next = [...items];
+    const rejected: string[] = [];
+    let problem = "";
     for (const raw of value.split(/[\s,|]+/).filter(Boolean)) {
       const expanded = normalize ? normalize(raw) : [raw.trim()];
+      const error = validate
+        ? expanded.map(validate).find((message) => message)
+        : undefined;
+      if (error) {
+        rejected.push(raw);
+        problem ||= error;
+        continue;
+      }
       for (const item of expanded) {
         if (item && !existing.has(item)) {
           existing.add(item);
@@ -68,7 +82,9 @@ export const ManualEntryPanel = ({
     }
 
     onItemsChange(next);
-    handleInput("");
+    handleInput(rejected.join(" "));
+    setInvalid(problem);
+    return rejected.length === 0;
   };
 
   return (
@@ -88,12 +104,13 @@ export const ManualEntryPanel = ({
           value={input}
           onChange={(e) => handleInput(e.target.value)}
           onKeyDown={(e) => {
+            if (e.key === "Tab" && !input.trim()) return;
             if (e.key === "Enter" || e.key === "Tab" || e.key === ",") {
-              e.preventDefault();
-              handleAdd();
+              if (handleAdd() || e.key !== "Tab") e.preventDefault();
             }
           }}
-          helperText={inputHelper}
+          error={!!invalid}
+          helperText={invalid || inputHelper}
           placeholder={inputPlaceholder}
         />
         <B4PlusButton onClick={handleAdd} disabled={!input.trim()} />
@@ -151,6 +168,7 @@ export const ManualEntryPanel = ({
       <BulkEditDialog
         open={bulkOpen}
         items={items}
+        validate={validate}
         onClose={() => setBulkOpen(false)}
         onSave={onItemsChange}
       />

@@ -3,10 +3,12 @@ import { Box, Grid } from "@mui/material";
 import { IpIcon } from "@b4.icons";
 import { B4Alert, B4Hint, B4Switch } from "@b4.elements";
 import { B4SetConfig, GeoConfig } from "@models/config";
+import { parseAsnInput } from "@models/asn";
 import { useTranslation } from "react-i18next";
 import { SetStats } from "../Manager";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 import { GeoCategoryPanel } from "./GeoCategoryPanel";
+import { AsnPanel } from "./AsnPanel";
 import { OtherSetsTargets, findSetOverlaps } from "./overlap";
 import { useChangedFields } from "@context/ChangedFieldsContext";
 import {
@@ -16,6 +18,7 @@ import {
   ipCatchAllVersion,
   ipEntryNotice,
   isIpCatchAll,
+  isIpTarget,
   normalizeIpEntry,
   setIpCatchAll,
 } from "./catchall";
@@ -28,8 +31,12 @@ interface IpsTabProps {
   geoipCategories: string[];
   geoipLoading: boolean;
   ipv6?: boolean;
+  scrollToAsn?: boolean;
   onChange: (field: string, value: string | string[] | boolean) => void;
 }
+
+const TWO_COLUMNS = "@container (min-width: 760px)";
+const THREE_COLUMNS = "@container (min-width: 1200px)";
 
 const catchAllEntryFor = (entry: string): string =>
   ipCatchAllVersion(entry) === 6 ? IPV6_CATCH_ALL : IPV4_CATCH_ALL;
@@ -42,6 +49,7 @@ export const IpsTab = ({
   geoipCategories,
   geoipLoading,
   ipv6,
+  scrollToAsn,
   onChange,
 }: IpsTabProps) => {
   const { t } = useTranslation();
@@ -73,6 +81,7 @@ export const IpsTab = ({
   const catchAll = missingCatchAll.length === 0;
   const partialCatchAll = presentCatchAll.length > 0 && !catchAll;
   const tlsFiltered = !!config.targets.tls;
+  const hasGeoip = !!geo.ipdat_path && geoipCategories.length > 0;
 
   const checkDuplicates = (input: string) => {
     const notice = ipEntryNotice(input, !!ipv6);
@@ -91,6 +100,14 @@ export const IpsTab = ({
     setDuplicateWarning(findSetOverlaps(input, otherSetsTargets));
   };
 
+  const ipEntryProblem = (entry: string): string | null => {
+    if (isIpTarget(entry)) return null;
+    const { kind } = parseAsnInput(entry);
+    return kind === "asn" || kind === "reserved"
+      ? t("sets.targets.ipIsAsn", { value: entry })
+      : t("sets.targets.ipInvalid", { value: entry });
+  };
+
   const chipLabel = (item: string) => {
     const version = ipCatchAllVersion(item);
     if (version === 4) return t("sets.targets.catchAllChipV4");
@@ -100,7 +117,9 @@ export const IpsTab = ({
 
   return (
     <>
-      <B4Hint>{t("sets.targets.ipAlert")}</B4Hint>
+      <B4Hint>
+        {t("sets.targets.ipAlert")} {t("sets.targets.ipOverlap")}
+      </B4Hint>
 
       <Box sx={{ my: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>
         <Box sx={{ maxWidth: 360, flex: "1 1 260px", minWidth: 0 }}>
@@ -151,8 +170,21 @@ export const IpsTab = ({
         </Grid>
       )}
 
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 6 }}>
+      <Box sx={{ containerType: "inline-size" }}>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr)",
+            columnGap: 3,
+            rowGap: 4,
+            [TWO_COLUMNS]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" },
+            ...(hasGeoip && {
+              [THREE_COLUMNS]: {
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              },
+            }),
+          }}
+        >
           <ManualEntryPanel
             icon={<IpIcon />}
             title={t("sets.targets.manualIps")}
@@ -166,15 +198,14 @@ export const IpsTab = ({
             warning={duplicateWarning}
             notice={entryNotice}
             normalize={(raw) => normalizeIpEntry(raw, !!ipv6)}
+            validate={ipEntryProblem}
             highlight={(item) => isIpCatchAll(item) || isIpChanged(item)}
             getItemLabel={chipLabel}
             onItemsChange={(items) => onChange("targets.ip", items)}
             onInputChange={checkDuplicates}
           />
-        </Grid>
 
-        {geo.ipdat_path && geoipCategories.length > 0 && (
-          <Grid size={{ xs: 12, md: 6 }}>
+          {hasGeoip && (
             <GeoCategoryPanel
               title={t("sets.targets.geoipCategories")}
               tooltip={t("sets.targets.geoipCatTooltip")}
@@ -193,9 +224,28 @@ export const IpsTab = ({
               }
               path="targets.geoip_categories"
             />
-          </Grid>
-        )}
-      </Grid>
+          )}
+
+          <Box
+            sx={
+              hasGeoip
+                ? {
+                    [TWO_COLUMNS]: { gridColumn: "1 / -1" },
+                    [THREE_COLUMNS]: { gridColumn: "auto" },
+                  }
+                : undefined
+            }
+          >
+            <AsnPanel
+              config={config}
+              stats={stats}
+              otherSetsTargets={otherSetsTargets}
+              scrollIntoView={scrollToAsn && !geoipLoading}
+              onChange={onChange}
+            />
+          </Box>
+        </Box>
+      </Box>
     </>
   );
 };
