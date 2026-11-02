@@ -423,7 +423,7 @@ export function historyAlternates(
     [entry],
     scope,
     found ? main : NO_BYPASS_PRESET,
-    !!entry.dns_result?.is_poisoned,
+    !!entry.dns_result?.is_poisoned || !!entry.set?.dns?.enabled,
     echCoverNames([entry]),
     0,
     entry.alternates,
