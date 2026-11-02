@@ -165,8 +165,12 @@ export function hostStates(
       };
     }
     const own = matches.filter((m) => m.domain.toLowerCase() === host);
+    const handledElsewhere = own.some(
+      (m) => m.enabled && m.handles && m.set_id !== targetSetId,
+    );
     if (
       targetSetId &&
+      !handledElsewhere &&
       own.some((m) => m.set_id === targetSetId && COVERING.has(m.relation))
     ) {
       return {
