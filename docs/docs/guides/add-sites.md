@@ -19,7 +19,7 @@ A set acts only on the traffic its targets name. Sites are added on the set's **
 | GeoSite category | A ready-made list of a service's domains, such as `youtube` or `discord`. | **Bypass Domains** |
 | IP address or range | Connections made straight to an address, without a name, such as those of Telegram apps, voice calls or games. | **Bypass IPs** |
 | GeoIP category | The address ranges of a country or a network, from the GeoIP database. | **Bypass IPs** |
-| ASN | Every address range a network announces, kept up to date by b4. A cloud, hosting or CDN network also carries many unrelated sites. | **ASN** |
+| ASN | Every address range a network announces, kept up to date by b4. A cloud, hosting or CDN network also carries many unrelated sites. | **Bypass IPs** |
 
 ## Adding on the Targets tab
 
@@ -27,7 +27,7 @@ A set acts only on the traffic its targets name. Sites are added on the set's **
 2. On the **Targets** tab, open **Bypass Domains**, type a domain into **Add Bypass Domain** and press Enter. Several domains can be pasted at once, separated by commas or new lines.
 3. For a GeoSite category, pick it under **Add Bypass Category**.
 4. For addresses, open **Bypass IPs** and use **Add Bypass IP/CIDR** or **Add Bypass GeoIP Category**.
-5. For a network, open **ASN** and enter its number, such as `AS15169`, or an IP address of the service. For an address, b4 offers the networks that announce it.
+5. For a network, open **Bypass IPs** and, under **Networks (ASN)**, enter its number, such as `AS15169`, or an IP address of the service. For an address, b4 offers the networks that announce it.
 6. Click **Save Changes**.
 
 [Targets](../sets/targets.md) describes every field of the tab.

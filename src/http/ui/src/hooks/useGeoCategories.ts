@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 export function useGeoCategories(endpoint: string, enabled: boolean) {
   const [categories, setCategories] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(enabled);
 
   useEffect(() => {
     if (!enabled) return;

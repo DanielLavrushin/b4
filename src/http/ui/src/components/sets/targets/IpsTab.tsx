@@ -229,7 +229,7 @@ export const IpsTab = ({
               config={config}
               stats={stats}
               otherSetsTargets={otherSetsTargets}
-              scrollIntoView={scrollToAsn}
+              scrollIntoView={scrollToAsn && !geoipLoading}
               onChange={onChange}
             />
           </Box>

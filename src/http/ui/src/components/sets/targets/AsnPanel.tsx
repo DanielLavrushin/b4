@@ -340,33 +340,33 @@ export const AsnPanel = ({
         )}
       </Box>
 
-      <Box sx={{ mt: 3 }}>
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 1,
-            mb: 1,
-            flexWrap: "wrap",
-          }}
-        >
-          <Box>
-            <Typography variant="subtitle2">
-              {t("sets.targets.asn.activeTitle")}
-            </Typography>
-            {!!stats?.asn_ips && (
-              <Typography
-                variant="caption"
-                sx={{ color: colors.text.secondary }}
-              >
-                {t("sets.targets.asn.savedTotal", {
-                  value: stats.asn_ips.toLocaleString(i18n.language),
-                })}
+      {asns.length > 0 && (
+        <Box sx={{ mt: 3 }}>
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 1,
+              mb: 1,
+              flexWrap: "wrap",
+            }}
+          >
+            <Box>
+              <Typography variant="subtitle2">
+                {t("sets.targets.asn.activeTitle")}
               </Typography>
-            )}
-          </Box>
-          {asns.length > 0 && (
+              {!!stats?.asn_ips && (
+                <Typography
+                  variant="caption"
+                  sx={{ color: colors.text.secondary }}
+                >
+                  {t("sets.targets.asn.savedTotal", {
+                    value: stats.asn_ips.toLocaleString(i18n.language),
+                  })}
+                </Typography>
+              )}
+            </Box>
             <Button
               size="small"
               onClick={() => onChange("targets.asns", [])}
@@ -374,25 +374,16 @@ export const AsnPanel = ({
             >
               {t("core.clearAll")}
             </Button>
+          </Box>
+
+          {viewsQuery.isError && (
+            <B4Alert severity="warning" sx={{ mb: 1 }}>
+              {t("sets.targets.asn.loadFailed", {
+                error: localizeApiError(viewsQuery.error),
+              })}
+            </B4Alert>
           )}
-        </Box>
 
-        {viewsQuery.isError && asns.length > 0 && (
-          <B4Alert severity="warning" sx={{ mb: 1 }}>
-            {t("sets.targets.asn.loadFailed", {
-              error: localizeApiError(viewsQuery.error),
-            })}
-          </B4Alert>
-        )}
-
-        {asns.length === 0 ? (
-          <Typography
-            variant="body2"
-            sx={{ color: colors.text.secondary, fontStyle: "italic" }}
-          >
-            {t("sets.targets.asn.empty")}
-          </Typography>
-        ) : (
           <Stack spacing={1}>
             {asns.map((id) => (
               <MemoAsnRow
@@ -409,8 +400,8 @@ export const AsnPanel = ({
               />
             ))}
           </Stack>
-        )}
-      </Box>
+        </Box>
+      )}
 
       <AsnPrefixesDialog view={previewView} onClose={() => setPreviewId(null)} />
     </Box>

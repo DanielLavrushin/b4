@@ -174,4 +174,4 @@ From there an ASN behaves like the same prefixes entered as IP addresses: the DP
 
 ### Size
 
-No size limit is enforced. A large network expands into thousands of prefixes. Each prefix is an element of the firewall sets that routing, packet duplication and the MSS clamp build, and an entry in b4's address matcher. On a small router this costs memory and load time. The **ASN** tab warns above 2,000 prefixes or 16,777,216 IPv4 addresses.
+No size limit is enforced. A large network expands into thousands of prefixes. Each prefix is an element of the firewall sets that routing, packet duplication and the MSS clamp build, and an entry in b4's address matcher. On a small router this costs memory and load time. The **Networks (ASN)** panel on **Bypass IPs** warns above 2,000 prefixes or 16,777,216 IPv4 addresses.
