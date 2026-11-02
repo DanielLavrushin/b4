@@ -124,6 +124,12 @@ func TestAddAsNewSetRefusesHostsThatAreNotHostNames(t *testing.T) {
 		{"a wildcard", []string{"*.example.net"}, "bad_host"},
 		{"a regexp entry", []string{"regexp:.*\\.example\\.net"}, "bad_host"},
 		{"a Unicode name", []string{"пример.рф"}, "bad_host"},
+		{"an mDNS name", []string{"printer.local"}, "bad_host"},
+		{"a LAN name", []string{"router.lan"}, "bad_host"},
+		{"a home network name", []string{"box.home.arpa"}, "bad_host"},
+		{"a name under localhost", []string{"app.localhost"}, "bad_host"},
+		{"an internal name", []string{"api.internal"}, "bad_host"},
+		{"a name under no public top-level domain", []string{"cdn.example.notatld"}, "bad_host"},
 		{"more hosts than one add takes", tooMany, "too_many_hosts"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

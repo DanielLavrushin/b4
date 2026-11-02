@@ -1007,6 +1007,10 @@ func sampleURL(host, port, tail string, inline bool) string {
 
 var localSuffixes = []string{".local", ".lan", ".internal", ".home.arpa", ".localhost"}
 
+func PublicHostName(raw string) (string, bool) {
+	return normalizeHost(raw)
+}
+
 func normalizeHost(raw string) (string, bool) {
 	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(raw)), ".")
 	if host == "" || len(host) > 253 || host == "localhost" {

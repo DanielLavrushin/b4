@@ -672,7 +672,7 @@ func sanitizeExtraHosts(raw []string) ([]string, error) {
 		if host == "" {
 			continue
 		}
-		if _, err := netip.ParseAddr(host); err == nil || !strings.Contains(host, ".") || !pinnableName(host) || utils.IsReservedHost(host) {
+		if _, ok := discovery.PublicHostName(host); !ok {
 			return nil, &APIError{
 				Status:  http.StatusBadRequest,
 				Code:    "bad_host",
