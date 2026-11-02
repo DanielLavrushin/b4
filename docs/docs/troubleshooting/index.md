@@ -80,4 +80,8 @@ Some blocks no strategy passes. Discovery marks them on the site's card:
 
 Such a site needs another way out: [Routing sites through a VPN](../guides/vpn.md) or [Sending sites through a SOCKS5 proxy](../guides/proxy.md). When the gateway intercepts and b4 already runs on the main router, only a proxy helps. The [DPI Detector](../detector.md) shows how the ISP blocks a site.
 
+### 9. The page's other hosts {#page-hosts}
+
+When a page opens without its styles or images, the other hosts it loads them from can be blocked too. The Discovery result card lists the [page hosts](../discovery.md#page-hosts) that the strategy opens, and **Apply** in the Discovery history offers them again.
+
 When every check passes and the site still does not open, [Reporting a problem](./reporting.md) lists what to collect for a bug report.

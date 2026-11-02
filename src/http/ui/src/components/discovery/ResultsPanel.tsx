@@ -32,6 +32,7 @@ import {
   formatDuration,
   formatSpeed,
   ipFamilyLabel,
+  offeredHosts,
   otherIpFamily,
   siteAlternates,
   testedCounts,
@@ -39,6 +40,7 @@ import {
   unresolvedLabel,
 } from "@utils";
 import { AlternatesList } from "./AlternatesList";
+import { CardPageHosts } from "./PageHostsPicker";
 import { StrategySummary } from "./StrategySummary";
 import { SetVerdictCard, VerdictApply } from "./SetVerdictCard";
 
@@ -227,6 +229,8 @@ const FoundCard = ({
   const tries = first ? triesUntilFound(first, group.preset) : 0;
   const echCovers = echCoverNames(group.results).join(", ");
   const echBlocked = group.results.some((dr) => dr.ech_only_block);
+  const [hostPicks, setHostPicks] = useState<Record<string, boolean>>({});
+  const hosts = group.set ? offeredHosts(group.results, group.preset) : [];
 
   let badge = (
     <B4Badge
@@ -401,6 +405,17 @@ const FoundCard = ({
               )}
             </Typography>
           )}
+          <CardPageHosts
+            domains={group.domains}
+            results={group.results}
+            preset={group.preset}
+            hosts={hosts}
+            picks={hostPicks}
+            disabled={applying}
+            onToggle={(host, on) =>
+              setHostPicks((prev) => ({ ...prev, [host]: on }))
+            }
+          />
         </Box>
         <Stack spacing={1} alignItems="flex-end" sx={{ flexShrink: 0 }}>
           <Button
@@ -422,6 +437,7 @@ const FoundCard = ({
                 urls: checkUrlsFor(suite, group.domains),
                 setId: suite.set_id,
                 dscpPath: suite.dscp_path,
+                hosts: hosts.map((h) => ({ ...h, picked: hostPicks[h.host] })),
               })
             }
             sx={{

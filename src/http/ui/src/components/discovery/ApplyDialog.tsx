@@ -29,22 +29,27 @@ import {
   exportSetJson,
   extraTargetNames,
   generateDomainVariants,
+  hostStates,
+  pickedHosts,
   pinsFor,
   probeUrlLabel,
   sanitizeProbeUrls,
   strategySuffix,
   suggestSetName,
 } from "@utils";
+import { PageHostsPicker } from "./PageHostsPicker";
 import { StrategySummary } from "./StrategySummary";
 
 type ApplyMode = "new" | "existing" | "replace";
 
 const COVERING = new Set(["exact", "covered", "regexp"]);
 const OTHER_SET = "__other__";
+const CHECK_DOMAIN_BATCH = 32;
 
 export interface ReplaceOptions {
   keepTargets: boolean;
   probeUrls?: string[];
+  hosts?: string[];
 }
 
 interface ReplaceCandidate {
@@ -67,7 +72,7 @@ interface ApplyDialogProps {
   runSetId?: string | null;
   sets: B4SetConfig[];
   onClose: () => void;
-  onCreate: (set: B4SetConfig) => void;
+  onCreate: (set: B4SetConfig, hosts: string[]) => void;
   onAddToExisting: (
     setId: string,
     domains: string[],
@@ -115,6 +120,10 @@ export const ApplyDialog = ({
   const [matchesFailed, setMatchesFailed] = useState(false);
   const [addDomains, setAddDomains] = useState(true);
   const [urlsChoice, setUrlsChoice] = useState<boolean | null>(null);
+  const [hostPicks, setHostPicks] = useState<Record<string, boolean>>({});
+  const [hostMatches, setHostMatches] = useState<SetDomainMatch[]>([]);
+  const [hostMatchesReady, setHostMatchesReady] = useState(false);
+  const [hostMatchesFailed, setHostMatchesFailed] = useState(false);
 
   useEffect(() => {
     if (!open || !target) return;
@@ -128,6 +137,7 @@ export const ApplyDialog = ({
     setMatches([]);
     setAddDomains(true);
     setUrlsChoice(null);
+    setHostPicks({});
 
     if (target.set.dns?.enabled) return;
 
@@ -185,6 +195,40 @@ export const ApplyDialog = ({
       active = false;
     };
   }, [open, domains, tested]);
+
+  const hostNames = useMemo(
+    () => (target?.hosts ?? []).map((h) => h.host),
+    [target],
+  );
+
+  useEffect(() => {
+    setHostMatches([]);
+    setHostMatchesFailed(false);
+    if (!open || hostNames.length === 0) {
+      setHostMatchesReady(true);
+      return;
+    }
+    setHostMatchesReady(false);
+    const batches: string[][] = [];
+    for (let i = 0; i < hostNames.length; i += CHECK_DOMAIN_BATCH) {
+      batches.push(hostNames.slice(i, i + CHECK_DOMAIN_BATCH));
+    }
+    let active = true;
+    Promise.all(batches.map((batch) => setsApi.checkDomain(batch.join(","))))
+      .then((lists) => {
+        if (!active) return;
+        setHostMatches(lists.flatMap((list) => (Array.isArray(list) ? list : [])));
+        setHostMatchesReady(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setHostMatchesFailed(true);
+        setHostMatchesReady(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, hostNames]);
 
   const setById = useMemo(() => new Map(sets.map((s) => [s.id, s])), [sets]);
 
@@ -308,11 +352,32 @@ export const ApplyDialog = ({
     discovery: { urls: probeUrls },
   };
 
+  const offered = target.hosts ?? [];
+  const hostTargetId =
+    mode === "replace"
+      ? replaceSetId
+      : mode === "existing"
+        ? selectedSetId
+        : null;
+  const addedNames =
+    mode === "replace" ? (keepTargets ? [] : missing) : domains;
+  const hostRows = hostStates(offered, hostMatches, addedNames, hostTargetId);
+  const hostsToAdd = pickedHosts(hostRows, hostPicks);
+  const createHosts =
+    mode === "new"
+      ? hostsToAdd
+      : pickedHosts(hostStates(offered, hostMatches, domains, null), hostPicks);
+  const hostsPending = offered.length > 0 && !hostMatchesReady;
+
   const copyJson = async () => {
+    const names = [...domains];
+    for (const host of createHosts) {
+      if (!names.includes(host)) names.push(host);
+    }
     const ok = await copyText(
       exportSetJson({
         ...newSet,
-        targets: { ...newSet.targets, ip: [], asns: [] },
+        targets: { ...newSet.targets, sni_domains: names, ip: [], asns: [] },
       }),
     );
     if (ok) showSuccess(t("discovery.apply.copied"));
@@ -324,7 +389,7 @@ export const ApplyDialog = ({
       if (selectedSetId) {
         onAddToExisting(
           selectedSetId,
-          domains,
+          [...domains, ...hostsToAdd.filter((h) => !domains.includes(h))],
           pinsFor(target.set, target.domains),
         );
       }
@@ -340,12 +405,13 @@ export const ApplyDialog = ({
           {
             keepTargets,
             probeUrls: useUrls && probeUrls.length > 0 ? probeUrls : undefined,
+            hosts: hostsToAdd,
           },
         );
       }
       return;
     }
-    onCreate(newSet);
+    onCreate(newSet, hostsToAdd);
   };
 
   const choosePick = (next: string) => {
@@ -405,6 +471,7 @@ export const ApplyDialog = ({
             onClick={confirm}
             disabled={
               loading ||
+              hostsPending ||
               (mode === "existing" && !selectedSetId) ||
               (mode === "replace" && (!replaceSetId || !matchesReady))
             }
@@ -713,6 +780,33 @@ export const ApplyDialog = ({
               ))}
             </RadioGroup>
           </Box>
+        )}
+
+        {hostRows.length > 0 && (
+          <PageHostsPicker
+            header={
+              <>
+                <Typography variant="subtitle2" sx={{ color: colors.text.secondary }}>
+                  {t("discovery.hosts.title")}
+                </Typography>
+                <Typography variant="caption" sx={captionSx}>
+                  {t("discovery.hosts.dialogHint")}
+                </Typography>
+                {hostMatchesFailed && (
+                  <Typography variant="caption" sx={captionSx}>
+                    {t("discovery.hosts.checkFailed")}
+                  </Typography>
+                )}
+              </>
+            }
+            states={hostRows}
+            picks={hostPicks}
+            disabled={loading || hostsPending}
+            collapse={false}
+            onToggle={(host, on) =>
+              setHostPicks((prev) => ({ ...prev, [host]: on }))
+            }
+          />
         )}
       </Stack>
     </B4Dialog>

@@ -2798,6 +2798,8 @@
     "stopConfirm": "Stop and confirm",
     "stopNow": "Stop now",
     "stopping": "Stopping...",
+    "skipHosts": "Skip host check",
+    "skippingHosts": "Skipping...",
     "finishing": "The previous run is still releasing its firewall rules. Start becomes available in a moment.",
     "reconnecting": "Reconnecting to the running search...",
     "source": {
@@ -2829,6 +2831,7 @@
       "note": "A found strategy is confirmed before the run ends. Nothing has been found yet, so stopping now ends the run.",
       "noteFound": "Stop ends the search here and confirms what was found. The steps that could have tuned it are skipped.",
       "noteConfirming": "Confirming the strategies found. Stop now ends the run and keeps them unconfirmed.",
+      "noteHosts": "Testing the other hosts each confirmed page loads, without b4 and with its strategy. Skipping ends only this step and keeps the strategies found.",
       "unresolvedNoAddress": "DNS publishes no {{family}} address for this name, so there is nothing to test. Pin the site's address to test it."
     },
     "snake": {
@@ -2851,6 +2854,7 @@
       "tuning": "Tuning",
       "combining": "Combining",
       "confirming": "Confirming",
+      "hosts": "Page hosts",
       "progress": "{{done}} of {{total}}",
       "skipped": "skipped"
     },
@@ -3070,6 +3074,42 @@
       "copied": "Set JSON copied to clipboard",
       "copyFailed": "Failed to copy to clipboard"
     },
+    "hosts": {
+      "title": "Page hosts",
+      "found_one": "The page also loads {{count}} host that is blocked without b4 and opens with this strategy.",
+      "found_other": "The page also loads {{count}} hosts that are blocked without b4 and open with this strategy.",
+      "foundShared_one": "These pages also load {{count}} host that is blocked without b4 and opens with this strategy.",
+      "foundShared_other": "These pages also load {{count}} hosts that are blocked without b4 and open with this strategy.",
+      "hint": "Ticked hosts are added to the set by exact name.",
+      "dialogHint": "Blocked without b4 and opening with this strategy. Ticked hosts are added to the set by exact name.",
+      "checkFailed": "Could not check which sets already handle these hosts.",
+      "notFixed": "Still blocked with this strategy: {{hosts}}",
+      "handled": "handled by set {{set}}",
+      "inSet": "already in this set",
+      "covered": "covered by {{entry}}",
+      "service": "part of {{service}}: a set of its own fits better",
+      "tracker": "tracker that holds the page until it loads",
+      "skipped": {
+        "stopped": "The check of the page's other hosts was skipped before it finished.",
+        "budget": "The check of the page's other hosts reached its time limit before it finished.",
+        "page": "The page's other hosts were not checked: the page could not be read through this strategy.",
+        "not_html": "The page's other hosts were not checked: the link is not a web page."
+      },
+      "context": {
+        "redirect": "redirect",
+        "base": "base address",
+        "stylesheet": "stylesheet",
+        "script": "script",
+        "image": "image",
+        "media": "media",
+        "frame": "frame",
+        "css": "CSS",
+        "preload": "preload",
+        "icon": "icon",
+        "preconnect": "preconnect",
+        "inline": "in page code"
+      }
+    },
     "history": {
       "title": "History",
       "sites_one": "{{count}} site",
@@ -3095,6 +3135,8 @@
       "unresolvedFamily": "No {{family}} address, nothing was tested",
       "nothing": "No strategy made it load",
       "sharedWith": "One set together with {{domains}}",
+      "hosts_one": "+{{count}} page host",
+      "hosts_other": "+{{count}} page hosts",
       "stoppedEarly": "search stopped early, not tuned",
       "rulesChanged": "stopped: firewall rules changed during the search, run it again",
       "lastLog": "Last run log",
