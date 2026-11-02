@@ -2,6 +2,7 @@
 
 ## [1.90.0] - 2026-11-01
 
+- FIXED: **With IP Block Detection on, a connection could be cut at its first request when a device reused a port** - a device that opened a new connection to the same server from the same port within two minutes inherited the old connection's state. b4 took the new request for a repeat of the old one. It reset the connection and checked the server for a block.
 - ADDED: **A set that lists a provider's own servers, such as its Google Global Cache nodes, can keep the connections to them** - with IP priority on, a connection to one of the set's addresses stays with the set even when a set lower in the list matches its domain. The switch is under Targets, Bypass IPs in the set editor and is off by default. It is meant for servers that carry only this set's sites, not for shared CDN ranges.
 - FIXED: **A duplicated set appeared below its source, then jumped to the top of the list once the list reloaded** - b4 saved the copy as the first set in the list. Ahead of its source, the copy took the connections to the sites both sets list.
 - FIXED: **Without a login set for the web interface, any website opened on a device in the network could watch b4's live log and the sites each device visits** - b4 sent the live data of the Logs, Traffic, Dashboard and Discovery pages to a page of any site. Browsers do not keep other sites away from this data on their own.

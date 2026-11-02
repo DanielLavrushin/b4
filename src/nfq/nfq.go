@@ -554,6 +554,7 @@ func (w *Worker) getMacByIp(ip string) string {
 
 func (w *Worker) Stop() {
 	w.releaseHolds()
+	w.pendingHello.ReleaseHolds()
 	if w.cancel != nil {
 		w.cancel()
 	}
