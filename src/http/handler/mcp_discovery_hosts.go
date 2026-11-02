@@ -10,7 +10,6 @@ import (
 )
 
 const (
-	mcpPageHostsListMax   = 12
 	mcpPageHostsApplyWait = "the search is over and the confirmation pass has run, but the run is still testing the other hosts the confirmed pages load, for at most about two minutes, and apply waits for the run to end. " +
 		"Call action=status once it has, or action=cancel to skip that step: the run then ends with every result kept"
 	mcpPageHostsSkipNote = "the search was already over and the confirmation pass had run, so cancel skips only the check of the other hosts the confirmed pages load: " +
@@ -161,10 +160,7 @@ func mcpHostGrammar(n int) (is, load, them string) {
 }
 
 func mcpHostNames(names []string) string {
-	if len(names) <= mcpPageHostsListMax {
-		return strings.Join(names, ", ")
-	}
-	return fmt.Sprintf("%s and %d more", strings.Join(names[:mcpPageHostsListMax], ", "), len(names)-mcpPageHostsListMax)
+	return strings.Join(names, ", ")
 }
 
 func mcpPageHostsAdvice(lead string, hosts []discovery.HostResult, preset, target string) string {

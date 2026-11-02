@@ -118,12 +118,15 @@ func TestMCPDiscoveryPageHostsAdviceAgreesWithItsCount(t *testing.T) {
 		}
 	}
 
-	many := make([]string, 0, mcpPageHostsListMax+3)
-	for i := range mcpPageHostsListMax + 3 {
-		many = append(many, strings.Repeat("a", i+1)+".example.org")
+	var many []discovery.HostResult
+	for i := range 15 {
+		many = append(many, pageHost("h"+strings.Repeat("x", i)+"y.example.org", discovery.HostNeeded, discovery.HostContextScript))
 	}
-	if got := mcpHostNames(many); !strings.HasSuffix(got, "and 3 more") {
-		t.Errorf("a long list must stay bounded: %q", got)
+	advice := mcpPageHostsAdvice("its page also loads", many, "combo", "")
+	for _, h := range many {
+		if !strings.Contains(advice, " "+h.Host+",") && !strings.Contains(advice, " "+h.Host+" ") {
+			t.Errorf("the client is told to add every host, so each is named, %s is missing: %q", h.Host, advice)
+		}
 	}
 }
 
