@@ -29,7 +29,7 @@ func nonPublicAnswer(ips []string) bool {
 	return false
 }
 
-func (ds *DiscoverySuite) settleUnverifiedDNS() {
+func (ds *DiscoverySuite) settleUnverifiedDNS(preferred string) {
 	if ds.canceled() || rulesInvalidated() {
 		return
 	}
@@ -48,7 +48,7 @@ func (ds *DiscoverySuite) settleUnverifiedDNS() {
 	byPreset := map[string][]string{}
 	addrs := map[string][]string{}
 	for _, domain := range pending {
-		name, reason := ds.dnsInstrument(domain)
+		name, reason := ds.dnsInstrument(domain, preferred)
 		if name != "" && !ds.httpsCheck(domain) {
 			name, reason = "", "the check URL is plain HTTP, so no certificate shows whose server an address is"
 		}
@@ -110,7 +110,7 @@ func (ds *DiscoverySuite) logDNSUnsettled(domain, reason string) {
 	log.DiscoveryLogf("  [%s] DNS not verified: %s; the set keeps the DNS fix it was tested with", domain, reason)
 }
 
-func (ds *DiscoverySuite) dnsInstrument(domain string) (string, string) {
+func (ds *DiscoverySuite) dnsInstrument(domain, preferred string) (string, string) {
 	const nothingFound = "no strategy this run found can be tried on the system resolver's addresses"
 	ds.CheckSuite.mu.RLock()
 	defer ds.CheckSuite.mu.RUnlock()
@@ -120,6 +120,9 @@ func (ds *DiscoverySuite) dnsInstrument(domain string) (string, string) {
 		return "", nothingFound
 	}
 	var candidates []string
+	if preferred != "" {
+		candidates = append(candidates, preferred)
+	}
 	if ds.setMode() {
 		domains := ds.runDomains()
 		if ds.coverWinner != "" && ds.jointlyConfirmedLocked(ds.coverWinner, domains) {

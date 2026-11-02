@@ -332,8 +332,11 @@ func (ds *DiscoverySuite) finishRun() {
 		if stop != coverStopCovered {
 			ds.confirmWinners()
 		}
-		ds.settleUnverifiedDNS()
-		ds.resolveSetVerdict()
+		if ds.setMode() {
+			ds.resolveSetVerdict()
+		} else {
+			ds.settleUnverifiedDNS("")
+		}
 	}
 	ds.finalize()
 	ds.logDiscoverySummary()

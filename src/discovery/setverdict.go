@@ -376,6 +376,7 @@ func (ds *DiscoverySuite) resolveSetVerdict() {
 	if ds.canceled() {
 		return
 	}
+	ds.settleUnverifiedDNS(winner)
 
 	ds.buildStrategyGroups()
 	ds.CheckSuite.mu.Lock()
