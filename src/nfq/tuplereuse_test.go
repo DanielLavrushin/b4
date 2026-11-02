@@ -120,25 +120,28 @@ func TestANewConnectionOnTheSameTupleStartsItsOwnResendCount(t *testing.T) {
 	}
 }
 
-func TestARepeatedSynOfTheSameConnectionKeepsItsWatch(t *testing.T) {
+func TestASynWithoutPayloadEndsTheOldConnectionEvenWithoutItsNameEntry(t *testing.T) {
 	set := silenceSet()
 	r := newSilenceWorker(t, &set, iphealth.TLSSilent)
 
 	sendHello(t, r.w, 12345, engine.VerdictAccept)
-	r.w.ProcessPacket(synWithISN(silentHelloSeq - 1))
-	if ack, ok := watchedAck(r.w, reusedTuple); !ok || ack != silentServerAck {
-		t.Fatalf("a SYN that repeats the connection's own opening must leave its watch alone: watched %v, ack %#x", ok, ack)
+	r.w.tlsCache.mu.Lock()
+	delete(r.w.tlsCache.conns, reusedTuple)
+	r.w.tlsCache.mu.Unlock()
+
+	r.w.ProcessPacket(synWithISN(89999))
+	if r.w.destState.Watching() {
+		t.Error("a SYN without payload opens a connection that has sent no ClientHello, so the old connection's watch must end even after its name entry was evicted")
+	}
+	if n := helloCount(r.w, reusedTuple); n != 0 {
+		t.Fatalf("the old connection's ClientHello count must go with it, got %d", n)
+	}
+	r.w.ProcessPacket(clientPacketAcking(12345, 90000, silentServerAck+0x10000, 0x18, silentHello()))
+	if ack, ok := watchedAck(r.w, reusedTuple); !ok || ack != silentServerAck+0x10000 {
+		t.Fatalf("the new connection must be watched with its own server sequence number: watched %v, ack %#x", ok, ack)
 	}
 	if n := helloCount(r.w, reusedTuple); n != 1 {
-		t.Fatalf("a SYN that repeats the connection's own opening must keep its ClientHello count, got %d", n)
-	}
-
-	r.sweepLater()
-	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
-		t.Fatalf("the connection is still checked, probed %v", keys)
-	}
-	if seqs := resetSeqs(r.sent()); !slices.Equal(seqs, []uint32{silentServerAck}) {
-		t.Fatalf("the reset carries the connection's own server sequence number, got %#x", seqs)
+		t.Fatalf("the new connection's ClientHello is its first, counted %d", n)
 	}
 }
 

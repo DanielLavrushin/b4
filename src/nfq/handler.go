@@ -417,7 +417,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	vc.hellos, vc.helloKey = w.pendingHello, connKey
 	w.noteClientProgress(connKey, tcp)
 	if cfg.IsTCPPort(dport) && tcp[13]&0x12 == 0x02 {
-		if w.tlsCache.DropOtherConnection(connKey, binary.BigEndian.Uint32(tcp[4:8])+1) {
+		if w.tlsCache.DropOtherConnection(connKey, binary.BigEndian.Uint32(tcp[4:8])+1) || len(payload) == 0 {
 			w.destState.ForgetConnection(connKey)
 		}
 		w.pendingHello.ForgetHeld(connKey)
