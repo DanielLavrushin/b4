@@ -48,7 +48,7 @@ tspu-docs/
 !.claude/skills/
 .claude/skills/*   
 !.claude/skills/b4-*/ 
-CLAUDE.md
+CLAUDE.local.md
 
 # Local hub service state
 hub/data/
