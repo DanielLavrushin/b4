@@ -309,6 +309,8 @@ type DNSDiscoveryResult struct {
 	setPinned        bool
 	systemIPs        []string
 	referencePinned  bool
+	settledWith      string
+	settledPins      []string
 }
 
 func (r *DNSDiscoveryResult) noAddress() bool {
