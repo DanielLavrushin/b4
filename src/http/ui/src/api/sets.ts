@@ -1,7 +1,7 @@
 import { apiDelete, apiFetch, apiPost, apiPut } from "./apiClient";
 import { B4SetConfig } from "@b4.sets";
 import { DSCPPath } from "@models/discovery";
-import { DomainReassignment, SetDomainMatch } from "@models/sets";
+import { DomainReassignment, SetDomainMatch, SetOverlap } from "@models/sets";
 
 export type { SetDomainMatch } from "@models/sets";
 
@@ -42,6 +42,7 @@ export const setsApi = {
   setEnabledForSets: (ids: string[], enabled: boolean) =>
     apiPost<void>("/api/sets/batch-set-enabled", { ids, enabled }),
   getTargetedDomains: () => apiFetch<string[]>("/api/sets/targeted-domains"),
+  getOverlaps: () => apiFetch<SetOverlap[]>("/api/sets/overlaps"),
   checkDomain: (domain: string) =>
     apiFetch<SetDomainMatch[]>(
       `/api/sets/check-domain?domain=${encodeURIComponent(domain)}`,

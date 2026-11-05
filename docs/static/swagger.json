@@ -2520,6 +2520,51 @@
                 }
             }
         },
+        "/geoip/category": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GeoIP"
+                ],
+                "summary": "Preview geoip category prefixes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Category tag name",
+                        "name": "tag",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Return only entries containing this text",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Entries to return, 100 by default, at most 5000",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CategoryPreviewResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/geosite": {
             "get": {
                 "security": [
@@ -2565,13 +2610,25 @@
                         "name": "tag",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Return only entries containing this text",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Entries to return, 100 by default, at most 5000",
+                        "name": "limit",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/handler.CategoryPreviewResponse"
                         }
                     }
                 }
@@ -4232,6 +4289,33 @@
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/handler.SetDomainMatch"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/sets/overlaps": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sets"
+                ],
+                "summary": "List pairs of enabled sets that target the same domains or categories",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/sni.SetOverlap"
                             }
                         }
                     }
@@ -6701,10 +6785,28 @@
                         "type": "string"
                     }
                 },
+                "geoip_exclude": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
                 "geosite_categories": {
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                },
+                "geosite_exclude": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
                     }
                 },
                 "ip": {
@@ -7634,6 +7736,29 @@
                 "protocol": {
                     "description": "\"tls\", \"quic\", or \"both\"",
                     "type": "string"
+                }
+            }
+        },
+        "handler.CategoryPreviewResponse": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "matched": {
+                    "type": "integer"
+                },
+                "preview": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "preview_count": {
+                    "type": "integer"
+                },
+                "total_domains": {
+                    "type": "integer"
                 }
             }
         },
@@ -11009,6 +11134,98 @@
                 },
                 "leaving": {
                     "type": "integer"
+                }
+            }
+        },
+        "sni.DomainRelation": {
+            "type": "string",
+            "enum": [
+                "",
+                "exact",
+                "covered",
+                "regexp",
+                "covers"
+            ],
+            "x-enum-varnames": [
+                "RelationNone",
+                "RelationExact",
+                "RelationCovered",
+                "RelationRegexp",
+                "RelationCovers"
+            ]
+        },
+        "sni.OverlapEntry": {
+            "type": "object",
+            "properties": {
+                "entry": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "sni.OverlapExample": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/sni.OverlapEntry"
+                    }
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "relation": {
+                    "$ref": "#/definitions/sni.DomainRelation"
+                },
+                "winner_id": {
+                    "type": "string"
+                },
+                "winner_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "sni.SetOverlap": {
+            "type": "object",
+            "properties": {
+                "domains": {
+                    "type": "integer"
+                },
+                "examples": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/sni.OverlapExample"
+                    }
+                },
+                "set_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "set_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "shared_geoip": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "shared_geosite": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

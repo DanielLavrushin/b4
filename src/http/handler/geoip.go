@@ -35,6 +35,24 @@ const maxTargetFieldErrors = 50
 
 func (api *API) RegisterGeoipApi() {
 	api.mux.HandleFunc("/api/geoip", api.handleGeoIp)
+	api.mux.HandleFunc("/api/geoip/category", api.previewGeoipCategory)
+}
+
+// @Summary Preview geoip category prefixes
+// @Tags GeoIP
+// @Produce json
+// @Param tag query string true "Category tag name"
+// @Param q query string false "Return only entries containing this text"
+// @Param limit query int false "Entries to return, 100 by default, at most 5000"
+// @Success 200 {object} CategoryPreviewResponse
+// @Security BearerAuth
+// @Router /geoip/category [get]
+func (a *API) previewGeoipCategory(w http.ResponseWriter, r *http.Request) {
+	if !a.geodataManager.IsGeoipConfigured() {
+		http.Error(w, "GeoIP path not configured", http.StatusBadRequest)
+		return
+	}
+	servePreview(w, r, a.geodataManager.PreviewGeoipCategory)
 }
 
 func (a *API) handleGeoIp(w http.ResponseWriter, r *http.Request) {

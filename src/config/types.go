@@ -455,6 +455,9 @@ type TargetsConfig struct {
 	IPVersion            string   `json:"ip_version"` // "4", "6", or "" (match any)
 	DomainsToMatch       []string `json:"-"`
 	IpsToMatch           []string `json:"-"`
+
+	GeoSiteExclude map[string][]string `json:"geosite_exclude,omitempty"`
+	GeoIpExclude   map[string][]string `json:"geoip_exclude,omitempty"`
 }
 
 type SystemConfig struct {

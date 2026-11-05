@@ -4,6 +4,7 @@ Releases of the community hub service, published from the `b4hub` repository. Th
 
 ## [1.6.0] - 2026-11-01
 
+- ADDED: **Shared sets can carry the entries removed from a GeoSite or GeoIP category, which b4 1.90.0 adds** - `targets.geosite_exclude` and `targets.geoip_exclude` cross to the hub like the categories they belong to. A hub built from an earlier b4 drops them with a warning about fields b4 does not know.
 - CHANGED: **The console's Check treats IP priority, the set switch that b4 1.90.0 adds, as a private field** - like a set's source devices, `targets.ip_priority` is never shared. When the Full set JSON of the edit dialog turns it on, Check lists it under Stripped fields. A hub built from an earlier b4 drops it with a warning about fields b4 does not know.
 
 ## [1.5.0] - 2026-10-21

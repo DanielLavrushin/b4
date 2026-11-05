@@ -41,6 +41,7 @@ import { B4SetConfig } from "@models/config";
 import { HubVoteKind } from "@models/hub";
 import { SetWatchStatus, setWatchBlock, setWatchTone } from "@models/watchdog";
 import { formatAsn } from "@models/asn";
+import { SetOverlapView } from "@models/sets";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "@api/apiClient";
 import { useSnackbar } from "@context/SnackbarProvider";
@@ -89,6 +90,7 @@ interface SetCardProps {
   watchStatus?: SetWatchStatus;
   watchdogOn?: boolean;
   deviceFilter?: boolean;
+  overlaps?: SetOverlapView[];
 }
 
 export const SetCard = ({
@@ -116,6 +118,7 @@ export const SetCard = ({
   watchStatus,
   watchdogOn = true,
   deviceFilter = false,
+  overlaps = [],
 }: SetCardProps) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -478,6 +481,7 @@ export const SetCard = ({
         (escalatedFrom && escalatedFrom.length > 0) ||
         set.hub_state ||
         watched ||
+        overlaps.length > 0 ||
         unresolvedAsns.length > 0) && (
         <Box
           sx={{
@@ -518,6 +522,37 @@ export const SetCard = ({
                 onClick={(e) => {
                   e.stopPropagation();
                   onEdit({ tab: "targets", sub: "asns" });
+                }}
+              />
+            </Tooltip>
+          )}
+          {overlaps.length > 0 && (
+            <Tooltip
+              title={overlaps
+                .map(({ otherName, overlap }) =>
+                  t("sets.card.overlapTooltip", {
+                    set: otherName,
+                    domains: overlap.domains,
+                    categories:
+                      [
+                        ...(overlap.shared_geosite ?? []).map((c) => `geosite ${c}`),
+                        ...(overlap.shared_geoip ?? []).map((c) => `geoip ${c}`),
+                      ].join(", ") || "-",
+                  }),
+                )
+                .join("\n")}
+              slotProps={{ tooltip: { sx: { whiteSpace: "pre-line" } } }}
+            >
+              <B4Badge
+                icon={<WarningIcon sx={{ fontSize: ESCALATION_ICON }} />}
+                label={t("sets.card.overlaps", { count: overlaps.length })}
+                size="small"
+                color="warning"
+                variant="outlined"
+                clickable
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit({ tab: "targets", sub: "domains" });
                 }}
               />
             </Tooltip>

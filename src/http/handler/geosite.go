@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
@@ -139,14 +142,31 @@ func (a *API) getGeositeTags(w http.ResponseWriter) {
 	_ = enc.Encode(response)
 }
 
+const (
+	defaultPreviewLimit = 100
+	maxPreviewLimit     = 5000
+)
+
+type categoryPreviewFunc func(ctx context.Context, category string, limit int) ([]string, int, error)
+
 // @Summary Preview geosite category domains
 // @Tags Geosite
 // @Produce json
 // @Param tag query string true "Category tag name"
-// @Success 200 {object} object
+// @Param q query string false "Return only entries containing this text"
+// @Param limit query int false "Entries to return, 100 by default, at most 5000"
+// @Success 200 {object} CategoryPreviewResponse
 // @Security BearerAuth
 // @Router /geosite/category [get]
 func (a *API) previewGeoCategory(w http.ResponseWriter, r *http.Request) {
+	if !a.geodataManager.IsGeositeConfigured() {
+		http.Error(w, "Geosite path not configured", http.StatusBadRequest)
+		return
+	}
+	servePreview(w, r, a.geodataManager.PreviewGeositeCategory)
+}
+
+func servePreview(w http.ResponseWriter, r *http.Request, preview categoryPreviewFunc) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -158,29 +178,45 @@ func (a *API) previewGeoCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !a.geodataManager.IsGeositeConfigured() {
-		http.Error(w, "Geosite path not configured", http.StatusBadRequest)
-		return
+	limit := defaultPreviewLimit
+	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 {
+		limit = min(n, maxPreviewLimit)
 	}
+	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 
-	const previewLimit = 100
-
-	preview, total, err := a.geodataManager.PreviewGeositeCategory(r.Context(), category, previewLimit)
+	fetch := limit
+	if query != "" {
+		fetch = math.MaxInt
+	}
+	entries, total, err := preview(r.Context(), category, fetch)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load category: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	response := map[string]interface{}{
-		"category":      category,
-		"total_domains": total,
-		"preview_count": len(preview),
-		"preview":       preview,
+	matched := total
+	if query != "" {
+		var found []string
+		for _, entry := range entries {
+			if strings.Contains(strings.ToLower(entry), query) {
+				found = append(found, entry)
+			}
+		}
+		matched = len(found)
+		entries = found[:min(len(found), limit)]
+	}
+	if entries == nil {
+		entries = []string{}
 	}
 
 	setJsonHeader(w)
-	enc := json.NewEncoder(w)
-	_ = enc.Encode(response)
+	_ = json.NewEncoder(w).Encode(CategoryPreviewResponse{
+		Category:     category,
+		TotalDomains: total,
+		Matched:      matched,
+		PreviewCount: len(entries),
+		Preview:      entries,
+	})
 }
 
 func normalizeDomain(domain string) string {

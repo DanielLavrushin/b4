@@ -31,6 +31,7 @@ type SetWithStats struct {
 type CategoryPreviewResponse struct {
 	Category     string   `json:"category"`
 	TotalDomains int      `json:"total_domains"`
+	Matched      int      `json:"matched"`
 	PreviewCount int      `json:"preview_count"`
 	Preview      []string `json:"preview"`
 }
