@@ -5555,6 +5555,9 @@
                 "enabled": {
                     "type": "boolean"
                 },
+                "fakeip": {
+                    "$ref": "#/definitions/config.FakeIPConfig"
+                },
                 "fragment_query": {
                     "type": "boolean"
                 },
@@ -5575,6 +5578,12 @@
                 },
                 "target_dns": {
                     "type": "string"
+                },
+                "upstreams": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -5856,6 +5865,20 @@
                 },
                 "v6": {
                     "type": "boolean"
+                }
+            }
+        },
+        "config.FakeIPConfig": {
+            "type": "object",
+            "properties": {
+                "cidr": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "ttl_sec": {
+                    "type": "integer"
                 }
             }
         },

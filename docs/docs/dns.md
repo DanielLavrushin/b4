@@ -16,7 +16,7 @@ An encrypted forwarder on the router is not a problem, since devices still ask t
 
 ## How a set handles a query
 
-A query name matches a set the way a server name does: a domain covers its subdomains, and a domain listed in one set wins over a `regexp:` entry in another. A [block set](sets/blocking.md) answers first, then the set's [pins](#pinned-addresses), then the [set's resolver](#resolver-types) while **Enable DNS Redirect** is on. Otherwise the query goes to the device's resolver unchanged. b4 can then remove [ECH keys](#removing-ech-keys) and [IPv6 addresses](#the-ipv4-fallback) from the answer, see [the full sequence](internals/dns.md#how-a-set-handles-a-query).
+A query name matches a set the way a server name does: a domain covers its subdomains, and a domain listed in one set wins over a `regexp:` entry in another. A [block set](sets/blocking.md) answers first, then the set's [pins](#pinned-addresses), then [fake DNS](#fake-dns) when it is on, then the [set's resolver](#resolver-types) while **Enable DNS Redirect** is on. Otherwise the query goes to the device's resolver unchanged. b4 can then remove [ECH keys](#removing-ech-keys) and [IPv6 addresses](#the-ipv4-fallback) from the answer, see [the full sequence](internals/dns.md#how-a-set-handles-a-query).
 
 ## Sending a set's domains to another resolver {#resolver-types}
 
@@ -33,6 +33,14 @@ A set's resolver helps when the provider's DNS answers the set's domains with wr
 | **DNS-over-HTTPS** | The provider tampers with plain DNS to other servers too, or the resolver serves only DoH. The queries leave encrypted. |
 
 Queries from the set's own resolver go on unchanged, so a resolver on the local network can serve a set. A resolver on the router itself has one more condition, see [When it does not work](#when-it-does-not-work).
+
+### More than one resolver {#more-than-one-resolver}
+
+**More resolvers** under the resolver takes a list, one address or `https://` URL per line. b4 asks every resolver of the set at once and answers with the first reply that arrives, so one blocked resolver costs only the queries it would have answered anyway. A resolver that failed three times in a row is left out until it answers again, and is retried after a while on its own.
+
+Use it on a connection where a single resolver keeps dying: add a second one that is reachable from the same network. Which one answers does not matter for the set, since each of them resolves the name the same way.
+
+With **Fail closed when the resolver is unreachable** on, every resolver of the list has to be unreachable before the device gets SERVFAIL.
 
 A service that checks the address a connection comes from needs another exit rather than another resolver, see [Routing sites through a VPN](guides/vpn.md).
 
@@ -66,6 +74,23 @@ A pin answers a name with fixed addresses, with no hosts file to edit on every d
 - Pins work with **Enable DNS Redirect** off too, and win over the set's resolver.
 - The pins are the whole address answer: a name pinned to IPv4 addresses only gets no IPv6 addresses.
 - In a set without routing, b4 leaves out pinned addresses that do not answer on TCP port 443, checked at start, on save and at the **Retest interval (seconds)** of [IP Block Detection](settings/core.md#ip-block-detection). When none answers, the pins are used anyway.
+
+## Fake DNS
+
+A name-only set can match a site only after b4 reads its name from the connection, and by then the connection has already left for an address. A host whose addresses change on every lookup, such as a CDN name, can therefore stay out of the set even when the set lists it.
+
+**Answer this set's names from a fake address range** turns that around. b4 answers the set's names itself, with an address from a block nobody uses, and that address leads straight into the set's proxy. The connection is relayed to the name the device asked for, so the real addresses never matter.
+
+- The set must route through a proxy: **Routing** on, **mode** set to **Proxy**, and **Send the domain name** on. b4 needs the name to dial, and a fake address exists only inside b4.
+- The block defaults to `198.18.0.0/15`, the range reserved for benchmarking. Every address of it belongs to b4: it is routed into the set, so devices reach b4 instead of looking for a host that does not exist.
+- IPv6 answers for the set's names are emptied, so a device uses the fake IPv4 address instead of a real IPv6 one.
+- Only DNS that goes to port 53 reaches b4: a device with its own encrypted DNS, see [What b4 sees](#what-b4-intercepts), gets real addresses and stays out of the set.
+
+With fake DNS on, a set needs no resolver at all, and b4 asks nobody about its names. **Answer lifetime, seconds** sets how long a device may keep the answer.
+
+:::warning
+The block must not be in use anywhere on the network: a VPN with the same range, another router's LAN, or a Docker network takes those addresses out of b4's hands.
+:::
 
 ## The IPv4 fallback
 

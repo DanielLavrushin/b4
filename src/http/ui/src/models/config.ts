@@ -527,10 +527,16 @@ export interface DNSConfig {
   enabled: boolean;
   target_dns: string;
   doh_url: string;
+  upstreams?: string[];
   fragment_query: boolean;
   strict: boolean;
   pins?: Record<string, string[]>;
   strip_ech?: boolean;
+  fakeip?: {
+    enabled: boolean;
+    cidr?: string;
+    ttl_sec?: number;
+  };
 }
 
 export type RoutingMode = "interface" | "proxy" | "mtproto-ws" | "block";

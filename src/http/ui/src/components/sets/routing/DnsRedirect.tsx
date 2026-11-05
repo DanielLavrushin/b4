@@ -102,6 +102,26 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
   };
 
   const [pinsText, setPinsText] = useState(() => pinsToText(dnsConfig.pins));
+  const [upstreamsText, setUpstreamsText] = useState(() =>
+    (dnsConfig.upstreams ?? []).join("\n"),
+  );
+  const [seenUpstreams, setSeenUpstreams] = useState(dnsConfig.upstreams);
+  if (dnsConfig.upstreams !== seenUpstreams) {
+    setSeenUpstreams(dnsConfig.upstreams);
+    const next = (dnsConfig.upstreams ?? []).join("\n");
+    if (next !== upstreamsText) setUpstreamsText(next);
+  }
+
+  const handleUpstreamsChange = (text: string) => {
+    setUpstreamsText(text);
+    onChange(
+      "dns.upstreams",
+      text
+        .split(/[\s,;]+/)
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    );
+  };
   const [seenPins, setSeenPins] = useState(dnsConfig.pins);
   if (dnsConfig.pins !== seenPins) {
     setSeenPins(dnsConfig.pins);
@@ -480,6 +500,21 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
             </>
           )}
 
+          <Grid size={{ xs: 12 }}>
+            <B4TextField
+              label={t("sets.dns.upstreams")}
+              value={upstreamsText}
+              path="dns.upstreams"
+              onChange={(e) => handleUpstreamsChange(e.target.value)}
+              placeholder={t("sets.dns.upstreamsPlaceholder")}
+              multiline
+              minRows={2}
+              maxRows={8}
+              helperText={t("sets.dns.upstreamsHelper")}
+              aiTopic="dns.upstreams"
+            />
+          </Grid>
+
           {/* Visual explanation */}
           <Grid size={{ xs: 12 }}>
             <Box
@@ -547,7 +582,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
           </Grid>
 
           {/* Warnings */}
-          {!activeResolver && (
+          {!activeResolver && !dnsConfig.fakeip?.enabled && (
             <B4Alert severity="warning" sx={{ m: 0 }}>
               {mode === "doh"
                 ? t("sets.dns.noDohWarning")
@@ -560,6 +595,48 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
               {t("sets.dns.googleWarning")}
             </B4Alert>
           )}
+        </>
+      )}
+
+      <B4FormHeader label={t("sets.dns.fakeHeader")} />
+
+      <Grid size={{ xs: 12 }}>
+        <B4Switch
+          label={t("sets.dns.fakeEnable")}
+          checked={dnsConfig.fakeip?.enabled || false}
+          onChange={(checked: boolean) =>
+            onChange("dns.fakeip.enabled", checked)
+          }
+          description={t("sets.dns.fakeEnableDesc")}
+          aiTopic="dns.fakeip.enabled"
+        />
+      </Grid>
+
+      {dnsConfig.fakeip?.enabled && (
+        <>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4TextField
+              label={t("sets.dns.fakeCidr")}
+              value={dnsConfig.fakeip?.cidr ?? ""}
+              path="dns.fakeip.cidr"
+              onChange={(e) => onChange("dns.fakeip.cidr", e.target.value)}
+              placeholder="198.18.0.0/15"
+              helperText={t("sets.dns.fakeCidrHelper")}
+              aiTopic="dns.fakeip.cidr"
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4TextField
+              label={t("sets.dns.fakeTtl")}
+              value={String(dnsConfig.fakeip?.ttl_sec ?? 60)}
+              path="dns.fakeip.ttl_sec"
+              onChange={(e) =>
+                onChange("dns.fakeip.ttl_sec", Number(e.target.value) || 0)
+              }
+              helperText={t("sets.dns.fakeTtlHelper")}
+              aiTopic="dns.fakeip.ttl_sec"
+            />
+          </Grid>
         </>
       )}
 

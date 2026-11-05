@@ -320,25 +320,20 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			continue
 		}
 
-		useDoH := set.DNS.DoHURL != ""
-		if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+		if fake := s.worker.fakeIPAnswer(set, query, domain, clientIP); fake != nil {
+			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFake)
+			if writeDNSTCPMessage(client, fake, ioTimeout) != nil {
+				return
+			}
+			continue
+		}
+
+		if !set.DNS.HasUpstream() {
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionPassthrough)
 			if relay(cfg, set, domain, query) {
 				continue
 			}
 			return
-		}
-
-		var targetIP net.IP
-		if !useDoH {
-			targetIP = net.ParseIP(set.DNS.TargetDNS)
-			if targetIP == nil {
-				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionBadTarget)
-				if relay(cfg, set, domain, query) {
-					continue
-				}
-				return
-			}
 		}
 
 		if queryFromTarget(set, clientIP) {
@@ -352,20 +347,32 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 
 		s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsRedirectAction(set))
 
-		source := set.DNS.TargetDNS
-		if set.DNS.DoHURL != "" {
-			source = set.DNS.DoHURL
-		}
-
 		var resp []byte
 		var rerr error
-		if !set.DNS.Strict && dnsSourceUnreachable(source) {
-			rerr = errDNSSourceCoolingDown
-		} else {
-			resp, rerr = s.resolve(set, cfg, query, targetIP)
-			if rerr != nil {
-				noteDNSSourceFailure(source)
+		source := ""
+		asked := 0
+		upstreams := set.DNS.UpstreamList()
+		for _, upstream := range upstreams {
+			if !set.DNS.Strict && dnsSourceUnreachable(upstream) {
+				continue
 			}
+			asked++
+			source = upstream
+			resp, rerr = s.resolveUpstream(set, cfg, query, upstream)
+			if rerr == nil {
+				break
+			}
+			noteDNSSourceFailure(upstream)
+		}
+		switch {
+		case len(upstreams) == 0:
+			rerr = errNoDNSTarget
+		case asked == 0:
+			source = upstreams[0]
+			rerr = errDNSSourceCoolingDown
+		}
+		if source == "" && len(upstreams) > 0 {
+			source = upstreams[0]
 		}
 
 		servedFallback := false
@@ -446,10 +453,30 @@ func (s *dnsTCPServer) escalationTarget(cfg *config.Config, set *config.SetConfi
 
 func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query []byte, targetIP net.IP) ([]byte, error) {
 	defer beginDNSRedirect(query)()
-	if set.DNS.DoHURL != "" {
-		return s.worker.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.MainInjectedMark()), query)
+	var lastErr error
+	upstreams := set.DNS.UpstreamList()
+	for _, upstream := range upstreams {
+		resp, err := s.resolveUpstream(set, cfg, query, upstream)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
 	}
-	return dns.ResolveUpstream(query, targetIP, dns.ForwardOptions{
+	if lastErr == nil {
+		lastErr = errNoDNSTarget
+	}
+	return nil, lastErr
+}
+
+func (s *dnsTCPServer) resolveUpstream(set *config.SetConfig, cfg *config.Config, query []byte, upstream string) ([]byte, error) {
+	if config.IsDoHUpstream(upstream) {
+		return s.worker.resolveDoHRedirect(upstream, int(cfg.MainInjectedMark()), query)
+	}
+	ip := net.ParseIP(upstream)
+	if ip == nil {
+		return nil, errNoDNSTarget
+	}
+	return dns.ResolveUpstream(query, ip, dns.ForwardOptions{
 		Sender:       s.worker.lookupSender(),
 		Fragment:     set.DNS.FragmentQuery,
 		Seg2Delay:    config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax),
@@ -465,8 +492,11 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 		return pinned, nil
 	}
 
-	useDoH := set.DNS.DoHURL != ""
-	if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+	if fake := s.worker.fakeIPAnswer(set, query, domain, clientIP); fake != nil {
+		return fake, nil
+	}
+
+	if !set.DNS.HasUpstream() {
 		return nil, errNoDNSTarget
 	}
 	if queryFromTarget(set, clientIP) {
@@ -474,10 +504,10 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 	}
 
 	var targetIP net.IP
-	if !useDoH {
-		targetIP = net.ParseIP(set.DNS.TargetDNS)
-		if targetIP == nil {
-			return nil, errNoDNSTarget
+	for _, upstream := range set.DNS.UpstreamList() {
+		if ip := net.ParseIP(upstream); ip != nil {
+			targetIP = ip
+			break
 		}
 	}
 	return s.resolve(set, cfg, query, targetIP)

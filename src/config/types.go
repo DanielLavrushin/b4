@@ -795,14 +795,22 @@ func ResolveStrategyPool(pool []string, fallback string) string {
 	return pool[rand.Intn(len(pool))]
 }
 
+type FakeIPConfig struct {
+	Enabled bool   `json:"enabled"`
+	CIDR    string `json:"cidr,omitempty"`
+	TTLSec  int    `json:"ttl_sec,omitempty"`
+}
+
 type DNSConfig struct {
 	Enabled       bool                `json:"enabled"`
 	TargetDNS     string              `json:"target_dns"`
 	DoHURL        string              `json:"doh_url"`
+	Upstreams     []string            `json:"upstreams,omitempty"`
 	FragmentQuery bool                `json:"fragment_query"`
 	Strict        bool                `json:"strict"`
 	Pins          map[string][]string `json:"pins,omitempty"`
 	StripECH      bool                `json:"strip_ech"`
+	FakeIP        FakeIPConfig        `json:"fakeip"`
 }
 
 type DNSSystemConfig struct {

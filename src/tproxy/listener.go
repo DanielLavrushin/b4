@@ -711,19 +711,29 @@ func (l *Listener) SetDNSOptions(mark int, timeout time.Duration, v6 bool) {
 	l.dnsV6.Store(v6)
 }
 
-func (l *Listener) dnsServer() (dns.Server, *config.SetConfig, bool) {
+func (l *Listener) dnsServers() ([]dns.Server, *config.SetConfig, bool) {
 	set := l.set.Load()
 	if set == nil {
-		return dns.Server{}, nil, false
+		return nil, nil, false
 	}
-	srv, ok := dns.SetServer(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL)
-	srv.Mark, srv.Timeout = int(l.dnsMark.Load()), time.Duration(l.dnsTimeout.Load())
-	return srv, set, ok
+	servers, ok := dns.SetServers(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL, set.DNS.Upstreams)
+	for i := range servers {
+		servers[i].Mark = int(l.dnsMark.Load())
+		servers[i].Timeout = time.Duration(l.dnsTimeout.Load())
+	}
+	return servers, set, ok
+}
+
+func dnsBudget(servers []dns.Server) time.Duration {
+	if len(servers) == 0 {
+		return dns.Server{}.Budget()
+	}
+	return servers[0].Budget()
 }
 
 func (l *Listener) DialNamed(host string, port int) (net.Conn, error) {
-	srv, _, _ := l.dnsServer()
-	ctx, cancel := context.WithTimeout(l.ctx, namedDialBudget+2*srv.Budget())
+	servers, _, _ := l.dnsServers()
+	ctx, cancel := context.WithTimeout(l.ctx, namedDialBudget+2*dnsBudget(servers))
 	defer cancel()
 	onion := isOnionName(host)
 	target, err := l.namedTarget(ctx, host)
@@ -818,11 +828,11 @@ func (l *Listener) pinnedAddresses(host string) []string {
 }
 
 func (l *Listener) resolveHost(ctx context.Context, host string) ([]string, error) {
-	srv, set, useSet := l.dnsServer()
-	ctx, cancel := context.WithTimeout(ctx, srv.Budget()+time.Second)
+	servers, set, useSet := l.dnsServers()
+	ctx, cancel := context.WithTimeout(ctx, dnsBudget(servers)+time.Second)
 	defer cancel()
 	strict := set != nil && set.DNS.Strict
-	ips, err := dns.LookupWithFallback(ctx, setLookup, srv, useSet, strict, host, true, l.dnsV6.Load())
+	ips, err := dns.LookupAny(ctx, setLookup, servers, useSet, strict, host, true, l.dnsV6.Load())
 	if err != nil {
 		return nil, err
 	}

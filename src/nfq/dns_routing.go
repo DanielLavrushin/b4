@@ -32,6 +32,9 @@ const dnsNameQueryTTL = 30 * time.Second
 var dnsNameQueries sync.Map
 
 func observeDNSNames(client net.IP, name string, ips []net.IP) {
+	if DNSNames == nil {
+		return
+	}
 	DNSNames.Observe(client, name, ips)
 }
 

@@ -410,6 +410,29 @@ func (c *Config) Validate() error {
 			return v.result()
 		}
 
+		set.DNS.NormalizeUpstreams(func(value string) {
+			log.Warnf("Set '%s': dropping DNS upstream %q, it is neither an address nor an https:// URL", set.Name, value)
+		})
+
+		if err := set.DNS.ValidateFakeIP(); err != nil {
+			v.addf(fmt.Sprintf("sets[%d].dns.fakeip.cidr", setIdx), "invalid_fakeip_cidr", map[string]any{"set": set.Name, "reason": err.Error()}, "set %q: fake DNS block is unusable: %v", set.Name, err)
+			return v.result()
+		}
+
+		if set.DNS.FakeIP.Enabled {
+			if !set.Routing.Enabled || !RoutingUsesTProxy(set.Routing.Mode) {
+				v.addf(fmt.Sprintf("sets[%d].dns.fakeip", setIdx), "fakeip_requires_proxy", map[string]any{"set": set.Name}, "set %q: fake DNS answers an address that only exists inside b4, so the set must route through an upstream proxy; enable routing in proxy mode or turn fake DNS off", set.Name)
+				return v.result()
+			}
+			if !set.Routing.Upstream.UseDomain {
+				v.addf(fmt.Sprintf("sets[%d].dns.fakeip", setIdx), "fakeip_requires_domain_dial", map[string]any{"set": set.Name}, "set %q: fake DNS needs routing.upstream.use_domain, otherwise b4 would dial the fake address itself", set.Name)
+				return v.result()
+			}
+			if set.Targets.DomainOnly && len(set.Targets.SNIDomains) == 0 && len(set.Targets.GeoSiteCategories) == 0 {
+				log.Warnf("Set '%s': fake DNS is on but the set matches nothing by name yet, so no answer will be faked", set.Name)
+			}
+		}
+
 		if len(set.Fragmentation.SeqOverlapPattern) > 0 {
 			set.Fragmentation.SeqOverlapBytes = make([]byte, len(set.Fragmentation.SeqOverlapPattern))
 			for i, s := range set.Fragmentation.SeqOverlapPattern {
