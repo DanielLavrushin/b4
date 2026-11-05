@@ -4,6 +4,20 @@ import { B4Alert } from "@common/B4Alert";
 import { B4Badge } from "@common/B4Badge";
 import { useChangedArrayItem } from "@context/ChangedFieldsContext";
 import { colors } from "@design";
+import { IfaceDetail } from "@models/config";
+
+export type IfaceDetails = Record<string, IfaceDetail>;
+
+export const useIfaceLabel = (details?: IfaceDetails) => {
+  const { t } = useTranslation();
+  return (iface: string): string => {
+    const detail = details?.[iface];
+    const name = detail?.label ? `${detail.label} (${iface})` : iface;
+    return detail?.up === false
+      ? `${name} · ${t("settings.Feature.ifaceDown")}`
+      : name;
+  };
+};
 
 const changedSx = {
   borderColor: colors.secondary,
@@ -23,6 +37,7 @@ export const IfaceBadge = ({
   variant,
   color,
   onClick,
+  down,
 }: {
   path: string;
   iface: string;
@@ -30,6 +45,7 @@ export const IfaceBadge = ({
   variant: "filled" | "outlined";
   color: "error" | "primary";
   onClick?: () => void;
+  down?: boolean;
 }) => {
   const { t } = useTranslation();
   const changed = useChangedArrayItem(
@@ -43,7 +59,7 @@ export const IfaceBadge = ({
       onClick={onClick}
       variant={variant}
       color={color}
-      sx={changed ? changedSx : undefined}
+      sx={{ ...(changed ? changedSx : {}), ...(down ? { opacity: 0.6 } : {}) }}
     />
   );
 };
@@ -55,6 +71,7 @@ export interface InterfaceChipsProps {
   onToggle: (iface: string) => void;
   path: string;
   showMissing?: boolean;
+  details?: IfaceDetails;
 }
 
 export const InterfaceChips = ({
@@ -64,8 +81,10 @@ export const InterfaceChips = ({
   onToggle,
   path,
   showMissing = true,
+  details,
 }: InterfaceChipsProps) => {
   const { t } = useTranslation();
+  const ifaceLabel = useIfaceLabel(details);
   const toggle = (iface: string) =>
     disabled ? undefined : () => onToggle(iface);
 
@@ -91,7 +110,8 @@ export const InterfaceChips = ({
             key={iface}
             path={path}
             iface={iface}
-            label={iface}
+            label={ifaceLabel(iface)}
+            down={details?.[iface]?.up === false}
             onClick={toggle(iface)}
             variant={selected.includes(iface) ? "filled" : "outlined"}
             color="primary"

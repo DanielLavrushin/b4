@@ -133,3 +133,15 @@ func TestParseISCHostnames_NotFound(t *testing.T) {
 		t.Errorf("expected nil for missing file, got %v", result)
 	}
 }
+
+func TestEnrichHostnamesFallsBackToKeenetic(t *testing.T) {
+	orig := keeneticHostnames
+	keeneticHostnames = func() map[string]string {
+		return map[string]string{"FC:B2:14:00:00:01": "MB_PRO_END"}
+	}
+	defer func() { keeneticHostnames = orig }()
+
+	if got := enrichHostnames(); got["FC:B2:14:00:00:01"] != "MB_PRO_END" {
+		t.Fatalf("without lease files the Keenetic names must be used, got %v", got)
+	}
+}

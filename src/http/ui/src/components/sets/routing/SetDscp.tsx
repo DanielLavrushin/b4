@@ -8,6 +8,8 @@ import {
   B4Hint,
   B4Slider,
   B4Switch,
+  IfaceDetails,
+  useIfaceLabel,
 } from "@b4.elements";
 import { B4SetConfig } from "@models/config";
 import {
@@ -26,6 +28,7 @@ interface SetDscpProps {
   config: B4SetConfig;
   env: DscpEnvironment;
   availableIfaces: string[];
+  ifaceDetails?: IfaceDetails;
   encapsulatedIfaces: string[];
   onChange: (field: string, value: number | boolean) => void;
 }
@@ -34,10 +37,12 @@ export const SetDscp = ({
   config,
   env,
   availableIfaces,
+  ifaceDetails,
   encapsulatedIfaces,
   onChange,
 }: SetDscpProps) => {
   const { t } = useTranslation();
+  const ifaceLabel = useIfaceLabel(ifaceDetails);
   const dscp = config.dscp ?? { enabled: false, value: 0 };
   const refusal = dscpRefusal(config, env.deviceFilter);
   const blocked = env.skipSetup || refusal !== null;
@@ -157,7 +162,7 @@ export const SetDscp = ({
               availableIfaces.includes(iface) ? (
                 <B4Badge
                   key={iface}
-                  label={iface}
+                  label={ifaceLabel(iface)}
                   variant="filled"
                   color="primary"
                 />

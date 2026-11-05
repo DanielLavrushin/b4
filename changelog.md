@@ -2,6 +2,8 @@
 
 ## [1.90.0] - 2026-11-01
 
+- ADDED: **On Keenetic, b4 shows the names the router gives its connections and devices** - a WireGuard connection named WARP appears as `WARP (nwg4)` in Capture Interfaces, the NAT Masquerade and DSCP lists, the TUN uplink and the routing fields of a set. A device appears under the name it has in the router's web interface, on the dashboard, the Traffic page and the device list, with its address next to it.
+- FIXED: **Interface lists left out interfaces that were down** - a WireGuard connection that was switched off could not be picked, for example as a set's Output Interface. The lists showed only interfaces that were up at that moment.
 - FIXED: **With IP Block Detection on, a connection could be cut at its first request when a device reused a port** - a device that opened a new connection to the same server from the same port within two minutes inherited the old connection's state. b4 took the new request for a repeat of the old one. It reset the connection and checked the server for a block.
 - ADDED: **A set that lists a provider's own servers, such as its Google Global Cache nodes, can keep the connections to them** - with IP priority on, a connection to one of the set's addresses stays with the set even when a set lower in the list matches its domain. The switch is under Targets, Bypass IPs in the set editor and is off by default. It is meant for servers that carry only this set's sites, not for shared CDN ranges.
 - CHANGED: **ASN targets moved to Targets, Bypass IPs in the set editor** - the separate ASN tab is gone. The Networks (ASN) panel sits next to Manual Bypass IPs and Bypass GeoIP Categories.
