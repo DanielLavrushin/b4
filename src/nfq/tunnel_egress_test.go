@@ -336,6 +336,7 @@ func TestASetRoutedIntoAmneziaWGIsLeftOutOfIPBans(t *testing.T) {
 	if r.w.destState.Watching() {
 		t.Fatal("a connection the set routes into AmneziaWG must not be watched for a silent server")
 	}
+	banAddress(t, r.w.bans, "1.2.3.4", 443)
 	if r.w.refusesBannedQUIC(r.w.getConfig(), &set, net.ParseIP("1.2.3.4"), 443) {
 		t.Fatal("a banned address must not refuse the QUIC of a set routed into AmneziaWG")
 	}
