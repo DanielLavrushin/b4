@@ -419,7 +419,7 @@ func TestNetnsResendsOfASplitHelloResetTheClientOfASilentServer(t *testing.T) {
 	layout()
 }
 
-func netnsHoldAnsweringServerIn(t *testing.T, pid, helloLen, rounds int) {
+func netnsHoldAnsweringServerIn(t *testing.T, pid, helloLen, rounds int, firstAnswerAfter time.Duration) {
 	t.Helper()
 	var ln net.Listener
 	netnsHoldInside(t, pid, func() error {
@@ -442,9 +442,12 @@ func netnsHoldAnsweringServerIn(t *testing.T, pid, helloLen, rounds int) {
 				defer c.Close()
 				_ = c.SetDeadline(time.Now().Add(8 * time.Second))
 				buf := make([]byte, helloLen)
-				for range rounds {
+				for round := range rounds {
 					if _, err := io.ReadFull(c, buf); err != nil {
 						return
+					}
+					if round == 0 {
+						time.Sleep(firstAnswerAfter)
 					}
 					if _, err := c.Write(make([]byte, 300)); err != nil {
 						return
@@ -461,61 +464,74 @@ func netnsHoldAnsweringServerIn(t *testing.T, pid, helloLen, rounds int) {
 }
 
 func TestNetnsAHelloTheSetsOwnStrategyReordersIsNotAStall(t *testing.T) {
-	netnsHoldRequire(t)
-	if _, err := exec.LookPath("tc"); err != nil {
-		t.Skip("tc is not installed")
-	}
-	srv := netnsHoldStartPeer(t)
-	netnsHoldRun(t, "ip", "link", "set", "lo", "up")
-	netnsHoldRun(t, "tc", "qdisc", "replace", "dev", netnsHoldLink, "root", "netem", "delay", "2ms")
-	netnsHoldRun(t, "nsenter", "-t", strconv.Itoa(srv), "-n", "tc", "qdisc", "replace", "dev", netnsHoldPeer, "root", "netem", "delay", "2ms")
-
-	const rounds, conns = 2, 40
-	hello := buildClientHello(netnsStallHost, 700, 0xAB)
-	netnsHoldAnsweringServerIn(t, srv, len(hello), rounds)
-
-	set := netnsStallSet()
-	set.Fragmentation = config.DefaultSetConfig.Fragmentation
-	set.TCP.IPBlockDetect = config.DefaultSetConfig.TCP.IPBlockDetect
-	set.TCP.IPBlockDetect.Enabled = true
-	set.TCP.IPBlockDetect.CacheBlockedIPs = true
-	cfg := config.NewConfig()
-	cfg.Queue.StartNum, cfg.Queue.Threads = netnsHoldQueue, 1
-	cfg.Sets = []*config.SetConfig{&set}
-	mark := fmt.Sprintf("0x%x/0x%x", cfg.Queue.Mark, cfg.Queue.Mark)
-	rule := []string{"-t", "mangle", "OUTPUT", "-o", netnsHoldLink, "-p", "tcp", "--dport", strconv.Itoa(netnsHoldPort), "-m", "mark", "!", "--mark", mark, "-j", "NFQUEUE", "--queue-num", strconv.Itoa(netnsHoldQueue)}
-	netnsHoldRun(t, append([]string{"iptables", "-w", rule[0], rule[1], "-A"}, rule[2:]...)...)
-	t.Cleanup(func() {
-		_ = exec.Command("iptables", append([]string{"-w", rule[0], rule[1], "-D"}, rule[2:]...)...).Run()
-	})
-	w := newTestWorker(t, &cfg)
-	w.qnum = netnsHoldQueue
-	if err := w.Start(); err != nil {
-		t.Fatalf("bind queue %d: %v", netnsHoldQueue, err)
-	}
-	t.Cleanup(w.Stop)
-
-	resets := 0
-	for range conns {
-		conn, err := netnsHoldDial()
-		if err != nil {
-			t.Fatalf("dial %s:%d: %v", netnsHoldServer, netnsHoldPort, err)
-		}
-		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-		var failed error
-		for range rounds {
-			_, _ = conn.Write(hello)
-			if _, failed = io.ReadFull(conn, make([]byte, 300)); failed != nil {
-				break
+	for _, tc := range []struct {
+		name             string
+		domainOnly       bool
+		firstAnswerAfter time.Duration
+	}{
+		{"a server that answers at once", true, 0},
+		{"a slow server, so the second hello comes past the first hello's floor", false, 500 * time.Millisecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			netnsHoldRequire(t)
+			if _, err := exec.LookPath("tc"); err != nil {
+				t.Skip("tc is not installed")
 			}
-		}
-		if errors.Is(failed, syscall.ECONNRESET) {
-			resets++
-		}
-		conn.Close()
-	}
-	if resets != 0 || w.destState.IsBlocked(net.JoinHostPort(netnsHoldServer, strconv.Itoa(netnsHoldPort))) {
-		t.Fatalf("the server answered every ClientHello and the path lost nothing, yet %d of %d connections were reset, address cached: %v", resets, conns, w.destState.IsBlocked(net.JoinHostPort(netnsHoldServer, strconv.Itoa(netnsHoldPort))))
+			srv := netnsHoldStartPeer(t)
+			netnsHoldRun(t, "ip", "link", "set", "lo", "up")
+			netnsHoldRun(t, "tc", "qdisc", "replace", "dev", netnsHoldLink, "root", "netem", "delay", "2ms")
+			netnsHoldRun(t, "nsenter", "-t", strconv.Itoa(srv), "-n", "tc", "qdisc", "replace", "dev", netnsHoldPeer, "root", "netem", "delay", "2ms")
+
+			const rounds, conns = 2, 40
+			hello := buildClientHello(netnsStallHost, 700, 0xAB)
+			netnsHoldAnsweringServerIn(t, srv, len(hello), rounds, tc.firstAnswerAfter)
+
+			set := netnsStallSet()
+			set.Targets.DomainOnly = tc.domainOnly
+			set.Fragmentation = config.DefaultSetConfig.Fragmentation
+			set.TCP.IPBlockDetect = config.DefaultSetConfig.TCP.IPBlockDetect
+			set.TCP.IPBlockDetect.Enabled = true
+			set.TCP.IPBlockDetect.CacheBlockedIPs = true
+			cfg := config.NewConfig()
+			cfg.Queue.StartNum, cfg.Queue.Threads = netnsHoldQueue, 1
+			cfg.Sets = []*config.SetConfig{&set}
+			mark := fmt.Sprintf("0x%x/0x%x", cfg.Queue.Mark, cfg.Queue.Mark)
+			rule := []string{"-t", "mangle", "OUTPUT", "-o", netnsHoldLink, "-p", "tcp", "--dport", strconv.Itoa(netnsHoldPort), "-m", "mark", "!", "--mark", mark, "-j", "NFQUEUE", "--queue-num", strconv.Itoa(netnsHoldQueue)}
+			netnsHoldRun(t, append([]string{"iptables", "-w", rule[0], rule[1], "-A"}, rule[2:]...)...)
+			t.Cleanup(func() {
+				_ = exec.Command("iptables", append([]string{"-w", rule[0], rule[1], "-D"}, rule[2:]...)...).Run()
+			})
+			w := newTestWorker(t, &cfg)
+			w.qnum = netnsHoldQueue
+			if err := w.Start(); err != nil {
+				t.Fatalf("bind queue %d: %v", netnsHoldQueue, err)
+			}
+			t.Cleanup(w.Stop)
+
+			resets := 0
+			for range conns {
+				conn, err := netnsHoldDial()
+				if err != nil {
+					t.Fatalf("dial %s:%d: %v", netnsHoldServer, netnsHoldPort, err)
+				}
+				_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+				var failed error
+				for range rounds {
+					_, _ = conn.Write(hello)
+					if _, failed = io.ReadFull(conn, make([]byte, 300)); failed != nil {
+						break
+					}
+				}
+				if errors.Is(failed, syscall.ECONNRESET) {
+					resets++
+				}
+				conn.Close()
+			}
+			blocked := w.destState.IsBlocked(net.JoinHostPort(netnsHoldServer, strconv.Itoa(netnsHoldPort)))
+			if resets != 0 || blocked {
+				t.Fatalf("the server answered every ClientHello and the path lost nothing, yet %d of %d connections were reset, address cached: %v", resets, conns, blocked)
+			}
+		})
 	}
 }
 

@@ -247,6 +247,58 @@ func TestAResendBeforeAnyRetransmitTimerIsNotAStall(t *testing.T) {
 	}
 }
 
+func TestTheResendFloorOfALaterHelloRunsFromThatHello(t *testing.T) {
+	resendFloor(t, 200*time.Millisecond)
+	set := silenceSet()
+	r := newSilenceWorker(t, &set, iphealth.TLSSilent)
+	full := buildClientHello(splitResendHost, 1400, 0xAB)
+	first := helloSegments(full, splitSeq, splitCut)
+	second := helloSegments(full, splitSeq+uint32(len(full)), splitCut)
+
+	sendSegments(r.w, 12345, first)
+	time.Sleep(220 * time.Millisecond)
+	sendSegments(r.w, 12345, second)
+	if n := helloCount(r.w, reusedTuple); n != 2 {
+		t.Fatalf("each ClientHello counts once on its first pass, got %d", n)
+	}
+
+	resend(t, r.w, 12345, second[0], engine.VerdictAccept)
+	r.w.bans.wg.Wait()
+	if n := helloCount(r.w, reusedTuple); n != 2 {
+		t.Fatalf("a segment 1 of the second ClientHello back this soon came from a fast retransmit, whatever the age of the first, counted %d", n)
+	}
+	if ports := resetsTo(r.sent()); len(ports) != 0 {
+		t.Fatalf("a server that answers must not get its client reset, got resets to %v", ports)
+	}
+	if r.w.destState.IsBlocked("1.2.3.4:443") {
+		t.Fatal("a server that answers must not get its address cached as blocked")
+	}
+
+	time.Sleep(220 * time.Millisecond)
+	resend(t, r.w, 12345, second[0], engine.VerdictDrop)
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
+		t.Fatalf("past that ClientHello's own floor a resend is a copy and reaches the threshold, got resets to %v", ports)
+	}
+}
+
+func TestACopyInsideTheResendFloorDoesNotExtendIt(t *testing.T) {
+	resendFloor(t, 200*time.Millisecond)
+	r := escalatingSilenceRig(t, plainBackupSet())
+	segs := nameInSegmentTwo()
+
+	sendSegments(r.w, 12345, segs)
+	time.Sleep(120 * time.Millisecond)
+	resend(t, r.w, 12345, segs[0], engine.VerdictAccept)
+	if n := helloCount(r.w, reusedTuple); n != 1 {
+		t.Fatalf("a copy inside the floor is not counted, got %d", n)
+	}
+	time.Sleep(120 * time.Millisecond)
+	resend(t, r.w, 12345, segs[0], engine.VerdictAccept)
+	if n := helloCount(r.w, reusedTuple); n != 2 {
+		t.Fatalf("the floor runs from the first pass, not the last copy, counted %d", n)
+	}
+}
+
 func TestTheResendFloorStaysBetweenAFastRetransmitAndTheShortestRetransmitTimer(t *testing.T) {
 	if helloResendFloor < 100*time.Millisecond || helloResendFloor >= 200*time.Millisecond {
 		t.Fatalf("the floor is %s: below 100 ms the fast retransmit a set's own reordering provokes counts as a stall, at 200 ms a real timer's first resend can go uncounted", helloResendFloor)

@@ -614,7 +614,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	host := ""
 	isClientHello := false
-	resentSegment := false
+	resentEarly := false
 	var tlsVersion uint16
 	matchedIP := st != nil
 	matchedSNI := false
@@ -652,10 +652,10 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		host, tlsVersion, _ = sni.ParseTLSClientHelloSNI(payload)
 
 		if host == "" && truncatedClientHello(payload) {
-			if namedHost, namedTLS, resent := w.tlsCache.HelloAt(connKey, helloSeq, clientHelloID(payload)); resent {
-				host = namedHost
-				tlsVersion = namedTLS
-				resentSegment = true
+			if named, resent := w.tlsCache.HelloAt(connKey, helloSeq, clientHelloID(payload)); resent {
+				host = named.host
+				tlsVersion = named.tlsVersion
+				resentEarly = time.Since(named.namedAt) < helloResendFloor
 				classifyReason = "split-hello"
 				log.Tracef("resend of the first segment of the split ClientHello for %q to %s:%d", host, pkt.dstStr, dport)
 			}
@@ -865,8 +865,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	stallFirstSeen := time.Time{}
 	stallTracked := false
 	if matched && isClientHello && strippedSyn == nil && host != "" && cfg.IsTCPPort(dport) && !foreignEgress &&
-		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) &&
-		!(resentSegment && w.destState.ClientHelloWithin(connKey, helloResendFloor)) {
+		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) && !resentEarly {
 		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host)
 		stallTracked = true
 	}
