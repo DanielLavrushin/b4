@@ -14,6 +14,7 @@ var (
 	helloHoldMax       = 100 * time.Millisecond
 	helloHoldLocalMax  = 5 * time.Millisecond
 	helloReplayStagger = time.Millisecond
+	helloResendFloor   = 150 * time.Millisecond
 )
 
 const (
