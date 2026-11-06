@@ -178,6 +178,7 @@ export const NatMasqueradeSettings = ({
             disabled={skipTables}
             onToggle={handleMasqueradeToggle}
             path="system.tables.masquerade.interfaces"
+            details={config.iface_details}
           />
         </Box>
       )}
@@ -275,6 +276,7 @@ export const DscpSettings = ({ config, onChange }: FirewallCardProps) => {
             disabled={skipTables}
             onToggle={handleDscpInterfaceToggle}
             path="system.tables.dscp.interfaces"
+            details={config.iface_details}
           />
         </Box>
       )}

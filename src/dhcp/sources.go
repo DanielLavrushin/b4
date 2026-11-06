@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/daniellavrushin/b4/netif"
+	"github.com/daniellavrushin/b4/tables"
 	"github.com/daniellavrushin/b4/utils"
 )
 
@@ -151,7 +153,18 @@ func enrichHostnames() map[string]string {
 		}
 	}
 
+	if h := keeneticHostnames(); len(h) > 0 {
+		return h
+	}
+
 	return make(map[string]string)
+}
+
+var keeneticHostnames = func() map[string]string {
+	if !tables.KeeneticOS() {
+		return nil
+	}
+	return netif.KeeneticHostNames()
 }
 
 func parseDnsmasqHostnames(path string) map[string]string {

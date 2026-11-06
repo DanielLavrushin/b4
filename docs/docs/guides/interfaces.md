@@ -14,6 +14,8 @@ Three settings take an interface name: the capture filter of the packet engine a
 
 The first two are filters and narrow what b4 does. Only the third sends traffic anywhere. The interface lists of [NAT Masquerade](../settings/core.md#nat-masquerade) and [DSCP](../settings/core.md#dscp), and the **Uplink interface** of the [TUN engine](../settings/core.md#tun-settings), take interface names as well.
 
+These lists show every interface that has an address, the ones that are down included. A down interface is dimmed and marked **down**. On Keenetic each interface also carries the name the router's own web interface gives it, such as `WARP (nwg4)` for a WireGuard connection named WARP, or `Home network (br0)`. Other routers show the system name only.
+
 ## Capture Interfaces
 
 The field is described under [Capture Interfaces](../settings/core.md#network-interfaces). For forwarded traffic the engine compares the interface a packet **leaves** by, because its capture rules run after the kernel has chosen the route. Only the reply direction and DNS are matched on the interface they arrive on.

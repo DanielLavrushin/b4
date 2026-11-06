@@ -11,6 +11,7 @@ import {
   B4Alert,
   B4TextField,
   InterfaceChips,
+  useIfaceLabel,
 } from "@b4.elements";
 import { Box, Typography } from "@mui/material";
 import { EngineFailure, SettingsPropHandlerType } from "@models/settings";
@@ -61,6 +62,7 @@ export const PacketEngineSettings = ({
   engineFailure,
 }: EngineCardProps & { engineFailure: EngineFailure | null }) => {
   const { t } = useTranslation();
+  const ifaceLabel = useIfaceLabel(config.iface_details);
   const { registerLabel } = useChangedFields();
   useEffect(() => {
     registerLabel("queue.interfaces", t("core.interfaces"));
@@ -112,7 +114,7 @@ export const PacketEngineSettings = ({
             .filter((i) => i !== (config.queue.tun?.device_name || "b4tun0"))
             .map((i) => ({
               value: i,
-              label: i,
+              label: ifaceLabel(i),
             })),
         ]}
         helperText={t("settings.Feature.tunOutInterfaceDesc")}
@@ -160,6 +162,7 @@ export const PacketEngineSettings = ({
           onToggle={handleInterfaceToggle}
           path="queue.interfaces"
           showMissing={false}
+          details={config.iface_details}
         />
         {ifaceFilterSeesNothing && (
           <B4Alert severity="warning" sx={{ mt: 2 }}>

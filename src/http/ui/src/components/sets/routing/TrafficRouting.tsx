@@ -7,6 +7,8 @@ import {
   B4NumberField,
   B4Switch,
   B4TextField,
+  IfaceDetails,
+  useIfaceLabel,
 } from "@b4.elements";
 import { B4SetConfig, RouterTraffic, RoutingMode } from "@models/config";
 import { colors } from "@design";
@@ -35,6 +37,7 @@ function isGatewayAddress(value: string): boolean {
 interface TrafficRoutingProps {
   config: B4SetConfig;
   availableIfaces: string[];
+  ifaceDetails?: IfaceDetails;
   tunnelIfaces?: string[];
   encapsulatedIfaces?: string[];
   dscp: DscpEnvironment;
@@ -55,12 +58,14 @@ interface TrafficRoutingProps {
 export const TrafficRouting = ({
   config,
   availableIfaces,
+  ifaceDetails,
   tunnelIfaces = [],
   encapsulatedIfaces = [],
   dscp,
   onChange,
 }: TrafficRoutingProps) => {
   const { t } = useTranslation();
+  const ifaceLabel = useIfaceLabel(ifaceDetails);
   const routing = config.routing;
   const mode: RoutingMode =
     routing.mode === "proxy"
@@ -96,6 +101,12 @@ export const TrafficRouting = ({
   const shouldShowUnavailableSelected = Boolean(
     isInterface && routing.egress_interface && !selectedIfaceAvailable,
   );
+  const egressUnusable =
+    shouldShowUnavailableSelected ||
+    Boolean(
+      isInterface &&
+        ifaceDetails?.[routing.egress_interface]?.up === false,
+    );
 
   const gatewayInvalid =
     Boolean(routing.egress_interface) &&
@@ -401,10 +412,15 @@ export const TrafficRouting = ({
                 return (
                   <B4Badge
                     key={iface}
-                    label={iface}
+                    label={ifaceLabel(iface)}
                     onClick={() => toggleSourceIface(iface)}
                     variant={selected ? "filled" : "outlined"}
                     color={selected ? "secondary" : "primary"}
+                    sx={
+                      ifaceDetails?.[iface]?.up === false
+                        ? { opacity: 0.6 }
+                        : undefined
+                    }
                   />
                 );
               })}
@@ -416,7 +432,7 @@ export const TrafficRouting = ({
               </B4Alert>
             )}
 
-            {shouldShowUnavailableSelected && (
+            {egressUnusable && (
               <B4Alert severity="warning" sx={{ mt: 2 }}>
                 {t("sets.routing.unavailableWarning", {
                   iface: routing.egress_interface,
@@ -446,7 +462,7 @@ export const TrafficRouting = ({
                   onChange("routing.egress_interface", e.target.value)
                 }
                 helperText={
-                  shouldShowUnavailableSelected
+                  egressUnusable
                     ? t("sets.routing.interfaceUnavailable")
                     : t("sets.routing.outputInterfaceHelper")
                 }
@@ -460,7 +476,7 @@ export const TrafficRouting = ({
                 )}
                 {availableIfaces.map((iface) => (
                   <MenuItem key={iface} value={iface}>
-                    {iface}
+                    {ifaceLabel(iface)}
                   </MenuItem>
                 ))}
               </B4TextField>
@@ -711,6 +727,7 @@ export const TrafficRouting = ({
         config={config}
         env={dscp}
         availableIfaces={availableIfaces}
+        ifaceDetails={ifaceDetails}
         encapsulatedIfaces={encapsulatedIfaces}
         onChange={onChange}
       />

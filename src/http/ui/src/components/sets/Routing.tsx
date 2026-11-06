@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { B4Section, B4Tab, B4TabPanel, B4Tabs } from "@b4.elements";
+import {
+  B4Section,
+  B4Tab,
+  B4TabPanel,
+  B4Tabs,
+  IfaceDetails,
+} from "@b4.elements";
 import { DnsIcon, RoutingIcon } from "@b4.icons";
 import { B4SetConfig } from "@models/config";
 import { DscpEnvironment } from "@utils";
@@ -27,6 +33,7 @@ interface RoutingSettingsProps {
   set: B4SetConfig;
   ipv6: boolean;
   availableIfaces: string[];
+  ifaceDetails?: IfaceDetails;
   tunnelIfaces?: string[];
   encapsulatedIfaces?: string[];
   dscp: DscpEnvironment;
@@ -49,6 +56,7 @@ export const RoutingSettings = ({
   set,
   ipv6,
   availableIfaces,
+  ifaceDetails,
   tunnelIfaces,
   encapsulatedIfaces,
   dscp,
@@ -101,6 +109,7 @@ export const RoutingSettings = ({
         <TrafficRouting
           config={set}
           availableIfaces={availableIfaces}
+          ifaceDetails={ifaceDetails}
           tunnelIfaces={tunnelIfaces}
           encapsulatedIfaces={encapsulatedIfaces}
           dscp={dscp}
