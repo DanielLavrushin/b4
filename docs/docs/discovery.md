@@ -91,6 +91,7 @@ The **Page hosts** step reads the page of each site with a confirmed strategy an
 | **stylesheet**, **script**, **image**, **media**, **CSS** or **preload**, with or without **tracker that holds the page until it loads** | Yes |
 | **in page code**, **frame**, **icon**, **preconnect**, **base address** or **redirect** | No |
 | **part of &lt;service&gt;: a set of its own fits better**, whatever its type. A tracker that belongs to a service, such as `googletagmanager.com` or `connect.facebook.net`, gets this note too. | No |
+| **handled by set &lt;set&gt;**, whatever its type. Another enabled set already handles the host. | No |
 
 Only the page itself is read. Hosts that its stylesheets and scripts load in turn, or that a script builds while the page runs, are not found. [How Discovery searches](./internals/discovery.md#page-hosts) explains how the hosts are found and tested.
 
@@ -106,7 +107,7 @@ The hosts are tested with the card's strategy only, and **Use instead** opens th
 
 **Copy JSON** copies the set without creating it, in the **Import/Export** format.
 
-**Page hosts** in the dialog repeats the card's [page hosts](#page-hosts) with their ticks. A host marked **handled by set &lt;set&gt;** is unticked, unless it was ticked by hand on the card. When such a host is ticked, applying moves it out of that set if the set lists it by its exact name, as with a site. Each of the three choices adds the ticked hosts, even when **Add &lt;sites&gt; to this set** is off, and **Copy JSON** includes them.
+**Page hosts** in the dialog repeats the card's [page hosts](#page-hosts) with their ticks. When a host marked **handled by set &lt;set&gt;** is ticked, applying moves it out of that set if the set lists it by its exact name, as with a site. Each of the three choices adds the ticked hosts, even when **Add &lt;sites&gt; to this set** is off, and **Copy JSON** includes them.
 
 A result is applied only to a set whose traffic takes the network path the run tested: the DSCP value of the run's probes, written on the same interfaces. A change to the set's DSCP value, to **Set DSCP** or to its interface list after the run can change that path. The error then names the difference, and a new run for the set tests the new path. For a few seconds after such a change is saved, while b4 applies its DSCP rules, applying and starting a run are refused.
 

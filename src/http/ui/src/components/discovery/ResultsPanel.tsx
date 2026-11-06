@@ -410,6 +410,7 @@ const FoundCard = ({
             results={group.results}
             preset={group.preset}
             hosts={hosts}
+            targetSetId={suite.set_id ?? null}
             picks={hostPicks}
             disabled={applying}
             onToggle={(host, on) =>
