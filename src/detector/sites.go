@@ -669,14 +669,19 @@ func (s *Suite) resolveThroughB4(ctx context.Context, site SiteResult, family st
 	}
 	var q dnsQuerier
 	source := ""
-	switch {
-	case dnsCfg.DoHURL != "":
-		q = &dohQuerier{client: netprobe.HTTPClient(int(s.directMark), dnsQueryTimeout+time.Second), url: dnsCfg.DoHURL}
-		source = "doh"
-	case net.ParseIP(dnsCfg.TargetDNS) != nil:
-		q = &udpQuerier{mark: s.directMark, addr: net.JoinHostPort(dnsCfg.TargetDNS, "53")}
-		source = "target"
-	default:
+	for _, upstream := range dnsCfg.UpstreamList() {
+		if config.IsDoHUpstream(upstream) {
+			q = &dohQuerier{client: netprobe.HTTPClient(int(s.directMark), dnsQueryTimeout+time.Second), url: upstream}
+			source = "doh"
+			break
+		}
+		if ip := net.ParseIP(upstream); ip != nil {
+			q = &udpQuerier{mark: s.directMark, addr: net.JoinHostPort(ip.String(), "53")}
+			source = "target"
+			break
+		}
+	}
+	if q == nil {
 		return nil, ""
 	}
 	defer q.close()

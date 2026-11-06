@@ -160,6 +160,26 @@ func TestAdoptStrategy(t *testing.T) {
 	}
 }
 
+func TestAdoptStrategyKeepsTheSetsOwnResolversAndFakeDNS(t *testing.T) {
+	dst, from := adoptTarget(), adoptStrategy()
+	dst.DNS.Upstreams = []string{"9.9.9.9"}
+	dst.DNS.FakeIP = FakeIPConfig{Enabled: true, CIDR: "198.18.0.0/15", TTLSec: 300}
+	from.DNS.Enabled = true
+	from.DNS.TargetDNS = "1.1.1.1"
+
+	dst.AdoptStrategy(&from)
+
+	if len(dst.DNS.Upstreams) != 1 || dst.DNS.Upstreams[0] != "9.9.9.9" {
+		t.Fatalf("the set lost its resolver list: %v", dst.DNS.Upstreams)
+	}
+	if !dst.DNS.FakeIP.Enabled || dst.DNS.FakeIP.CIDR != "198.18.0.0/15" {
+		t.Fatalf("the set lost fake DNS: %+v", dst.DNS.FakeIP)
+	}
+	if dst.DNS.TargetDNS != "1.1.1.1" {
+		t.Fatalf("the strategy's own resolver did not come along: %q", dst.DNS.TargetDNS)
+	}
+}
+
 func TestAdoptStrategySharesNothingWithTheSource(t *testing.T) {
 	dst, from := adoptTarget(), adoptStrategy()
 	from.TCP.IPBlockDetect.Enabled = true

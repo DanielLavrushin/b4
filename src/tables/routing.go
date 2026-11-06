@@ -451,6 +451,17 @@ func RoutingLearnHost(cfg *config.Config, set *config.SetConfig, host string) {
 	}(&cfgSnapshot, set, host)
 }
 
+func init() {
+	config.SetRoutingLiveProbe(routeSetInstalled)
+}
+
+func routeSetInstalled(setID string) bool {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	_, ok := routeRuleCache[setID]
+	return ok
+}
+
 func routeSameResolveTargets(a, b *config.SetConfig) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -458,7 +469,7 @@ func routeSameResolveTargets(a, b *config.SetConfig) bool {
 	if a.Targets.DomainOnly != b.Targets.DomainOnly || len(a.Targets.SNIDomains) != len(b.Targets.SNIDomains) {
 		return false
 	}
-	if a.DNS.Enabled != b.DNS.Enabled || a.DNS.TargetDNS != b.DNS.TargetDNS || a.DNS.DoHURL != b.DNS.DoHURL || a.DNS.Strict != b.DNS.Strict {
+	if !a.DNS.SameResolver(&b.DNS) {
 		return false
 	}
 	counts := make(map[string]int, len(a.Targets.SNIDomains))
@@ -572,22 +583,38 @@ func routeResolveHost(cfg *config.Config, set *config.SetConfig, host string) []
 }
 
 func routeResolveHostContext(parent context.Context, cfg *config.Config, set *config.SetConfig, host string) []net.IP {
-	var srv dns.Server
+	var servers []dns.Server
 	useSet, strict := false, false
 	if set != nil {
-		srv, useSet = dns.SetServer(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL)
+		servers, useSet = dns.SetServers(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL, set.DNS.Upstreams)
 		strict = set.DNS.Strict
 	}
-	srv.Mark, srv.Timeout = int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout()
-	if useSet && strict && dns.SourceUnreachable(srv.Source) {
-		log.Tracef("Routing: set '%s' skips resolving %s, its resolver %s is cooling down after repeated failures", set.Name, host, dns.SourceLabel(srv.Source))
-		return nil
+	for i := range servers {
+		servers[i].Mark = int(cfg.MainInjectedMark())
+		servers[i].Timeout = cfg.DNSQueryTimeout()
+	}
+	if useSet && strict {
+		healthy := false
+		for _, srv := range servers {
+			if !dns.SourceUnreachable(srv.Source) {
+				healthy = true
+				break
+			}
+		}
+		if !healthy {
+			log.Tracef("Routing: set '%s' skips resolving %s, every resolver it has is cooling down after repeated failures", set.Name, host)
+			return nil
+		}
 	}
 
-	ctx, cancel := context.WithTimeout(parent, srv.Budget()+time.Second)
+	budget := dns.Server{}.Budget()
+	if len(servers) > 0 {
+		budget = servers[0].Budget()
+	}
+	ctx, cancel := context.WithTimeout(parent, budget+time.Second)
 	defer cancel()
 
-	ips, err := dns.LookupWithFallback(ctx, routeSetLookup, srv, useSet, strict, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	ips, err := dns.LookupAny(ctx, routeSetLookup, servers, useSet, strict, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	if err != nil {
 		log.Tracef("Routing: resolve %s failed: %v", host, err)
 		return nil
@@ -820,11 +847,21 @@ func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ip
 }
 
 func routeCollectEntries(set *config.SetConfig) (v4, v6 []string) {
-	if set == nil || len(set.Targets.IpsToMatch) == 0 {
+	if set == nil {
 		return nil, nil
 	}
 
-	seen := make(map[string]struct{}, len(set.Targets.IpsToMatch))
+	seen := make(map[string]struct{}, len(set.Targets.IpsToMatch)+1)
+
+	if network, _, ok := set.DNS.FakeIPNetwork(); ok && config.RoutingUsesTProxy(set.Routing.Mode) {
+		entry := network.String()
+		v4 = append(v4, entry)
+		seen[entry] = struct{}{}
+	}
+
+	if len(set.Targets.IpsToMatch) == 0 {
+		return v4, v6
+	}
 
 	for _, raw := range set.Targets.IpsToMatch {
 		raw = strings.TrimSpace(raw)

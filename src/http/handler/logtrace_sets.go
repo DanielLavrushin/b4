@@ -91,12 +91,21 @@ type traceSetFaking struct {
 }
 
 type traceSetDNS struct {
-	Enabled       bool   `json:"enabled,omitempty"`
-	TargetDNS     string `json:"target_dns,omitempty"`
-	DoHURL        string `json:"doh_url,omitempty"`
-	FragmentQuery bool   `json:"fragment_query,omitempty"`
-	Pins          int    `json:"pins,omitempty"`
-	StripECH      bool   `json:"strip_ech,omitempty"`
+	Enabled       bool            `json:"enabled,omitempty"`
+	TargetDNS     string          `json:"target_dns,omitempty"`
+	DoHURL        string          `json:"doh_url,omitempty"`
+	Upstreams     []string        `json:"upstreams,omitempty"`
+	FragmentQuery bool            `json:"fragment_query,omitempty"`
+	Strict        bool            `json:"strict,omitempty"`
+	Pins          int             `json:"pins,omitempty"`
+	StripECH      bool            `json:"strip_ech,omitempty"`
+	FakeIP        *traceSetFakeIP `json:"fakeip,omitempty"`
+}
+
+type traceSetFakeIP struct {
+	Enabled bool   `json:"enabled"`
+	CIDR    string `json:"cidr,omitempty"`
+	TTLSec  int    `json:"ttl_sec,omitempty"`
 }
 
 type traceSetRouting struct {
@@ -143,15 +152,25 @@ func collectTraceSets(cfg *config.Config) []traceSet {
 		}
 		ts.Targets.IPPriority = set.IPPriorityApplies()
 
-		if set.DNS.Enabled || len(set.DNS.Pins) > 0 || set.DNS.StripECH {
-			ts.DNS = &traceSetDNS{
+		if set.DNS.Enabled || len(set.DNS.Pins) > 0 || set.DNS.StripECH || set.DNS.FakeIP.Enabled {
+			dns := &traceSetDNS{
 				Enabled:       set.DNS.Enabled,
 				TargetDNS:     set.DNS.TargetDNS,
 				DoHURL:        set.DNS.DoHURL,
+				Upstreams:     append([]string(nil), set.DNS.Upstreams...),
 				FragmentQuery: set.DNS.FragmentQuery,
+				Strict:        set.DNS.Strict,
 				Pins:          len(set.DNS.Pins),
 				StripECH:      set.DNS.StripECH,
 			}
+			if set.DNS.FakeIP.Enabled {
+				dns.FakeIP = &traceSetFakeIP{
+					Enabled: true,
+					CIDR:    set.DNS.FakeIP.CIDR,
+					TTLSec:  set.DNS.FakeIP.TTLSec,
+				}
+			}
+			ts.DNS = dns
 		}
 
 		if set.Routing.Enabled {

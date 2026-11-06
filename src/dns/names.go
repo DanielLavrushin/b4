@@ -33,10 +33,11 @@ type NameMatches struct {
 	Own    []string
 	Local  []string
 	Others []string
+	Owner  string
 }
 
 func (m NameMatches) Empty() bool {
-	return len(m.Own) == 0 && len(m.Local) == 0 && len(m.Others) == 0
+	return len(m.Own) == 0 && len(m.Local) == 0 && len(m.Others) == 0 && m.Owner == ""
 }
 
 func (m NameMatches) Has(name string) bool {

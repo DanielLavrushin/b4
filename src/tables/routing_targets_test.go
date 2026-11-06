@@ -110,6 +110,21 @@ func TestSameResolveTargets(t *testing.T) {
 	if routeSameResolveTargets(&a, &f) {
 		t.Fatalf("a duplicated domain replacing another was not treated as a change")
 	}
+	g := a
+	g.DNS = config.DNSConfig{Enabled: true, TargetDNS: "1.1.1.1", Upstreams: []string{"9.9.9.9"}}
+	if routeSameResolveTargets(&a, &g) {
+		t.Fatalf("a resolver that appeared mid-resolution was not treated as a change")
+	}
+	h := g
+	h.DNS.Upstreams = []string{"9.9.9.9", "8.8.8.8"}
+	if routeSameResolveTargets(&g, &h) {
+		t.Fatalf("an added upstream was not treated as a change")
+	}
+	i := g
+	i.DNS.FakeIP = config.FakeIPConfig{Enabled: true, CIDR: "198.18.0.0/15"}
+	if routeSameResolveTargets(&g, &i) {
+		t.Fatalf("fake DNS turning on was not treated as a change")
+	}
 }
 
 func stubRetryState(t *testing.T) {

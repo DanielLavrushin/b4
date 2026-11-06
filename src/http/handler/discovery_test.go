@@ -111,6 +111,22 @@ func TestSimilarSetsNeedTheWholeStrategyToMatch(t *testing.T) {
 		t.Fatal("a DNS redirect changes what the added domain resolves to")
 	}
 
+	upstreamed := base
+	upstreamed.DNS = config.DNSConfig{Enabled: true, Upstreams: []string{"9.9.9.9"}}
+	if setsHaveSimilarConfig(&base, &upstreamed) {
+		t.Fatal("an upstream list changes what the added domain resolves to")
+	}
+	otherUpstreams := upstreamed
+	otherUpstreams.DNS.Upstreams = []string{"8.8.8.8"}
+	if setsHaveSimilarConfig(&upstreamed, &otherUpstreams) {
+		t.Fatal("a different upstream list was treated as the same strategy")
+	}
+	fakeDNS := base
+	fakeDNS.DNS = config.DNSConfig{Enabled: true, FakeIP: config.FakeIPConfig{Enabled: true}}
+	if setsHaveSimilarConfig(&base, &fakeDNS) {
+		t.Fatal("fake DNS changes what the added domain resolves to")
+	}
+
 	tagged := base
 	tagged.DSCP = config.SetDSCPConfig{Enabled: true, Value: 25}
 	if setsHaveSimilarConfig(&base, &tagged) {

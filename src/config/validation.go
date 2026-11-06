@@ -231,6 +231,119 @@ func findSharedTableGatewayClashes(sets []*SetConfig) []sharedTableGatewayClash 
 	return out
 }
 
+type fakeIPBlockClash struct {
+	left, right         int
+	leftName, rightName string
+	cidr                string
+}
+
+type fakeIPBlock struct {
+	index int
+	name  string
+	net   *net.IPNet
+	cidr  string
+}
+
+func localSubnetOverlap(block *net.IPNet) (string, string) {
+	if block == nil {
+		return "", ""
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", ""
+	}
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			subnet, ok := addr.(*net.IPNet)
+			if !ok || subnet.IP.To4() == nil {
+				continue
+			}
+			if block.Contains(subnet.IP) || subnet.Contains(block.IP) {
+				return iface.Name, subnet.String()
+			}
+		}
+	}
+	return "", ""
+}
+
+func findFakeIPBlockClashes(sets []*SetConfig) []fakeIPBlockClash {
+	var blocks []fakeIPBlock
+	for i, set := range sets {
+		if set == nil || !set.Enabled || !set.DNS.FakeIP.Enabled {
+			continue
+		}
+		network, _, ok := set.DNS.FakeIPNetwork()
+		if !ok {
+			continue
+		}
+		blocks = append(blocks, fakeIPBlock{index: i, name: set.Name, net: network, cidr: network.String()})
+	}
+	var out []fakeIPBlockClash
+	for j := 1; j < len(blocks); j++ {
+		for i := 0; i < j; i++ {
+			if !blocks[i].net.Contains(blocks[j].net.IP) && !blocks[j].net.Contains(blocks[i].net.IP) {
+				continue
+			}
+			out = append(out, fakeIPBlockClash{
+				left:      blocks[i].index,
+				right:     blocks[j].index,
+				leftName:  blocks[i].name,
+				rightName: blocks[j].name,
+				cidr:      blocks[j].cidr,
+			})
+		}
+	}
+	return out
+}
+
+type fakeIPTargetClash struct {
+	index      int
+	name       string
+	cidr       string
+	target     string
+	otherIndex int
+	otherName  string
+}
+
+func findFakeIPBlockSwallowsTargets(sets []*SetConfig) []fakeIPTargetClash {
+	var out []fakeIPTargetClash
+	for i, set := range sets {
+		if set == nil || !set.Enabled || !set.DNS.FakeIP.Enabled {
+			continue
+		}
+		block, _, ok := set.DNS.FakeIPNetwork()
+		if !ok {
+			continue
+		}
+		for j, other := range sets {
+			if other == nil || other == set {
+				continue
+			}
+			for _, raw := range other.Targets.IPs {
+				raw = strings.TrimSpace(raw)
+				if raw == "" {
+					continue
+				}
+				addr := net.ParseIP(raw)
+				if addr == nil {
+					if _, network, err := net.ParseCIDR(raw); err == nil && network != nil {
+						addr = network.IP
+					}
+				}
+				if addr == nil || !block.Contains(addr) {
+					continue
+				}
+				out = append(out, fakeIPTargetClash{index: i, name: set.Name, cidr: block.String(), target: raw, otherIndex: j, otherName: other.Name})
+			}
+		}
+	}
+	return out
+}
+
 func (c *Config) Validate() error {
 	v := &validator{}
 	c.System.WebServer.IsEnabled = c.System.WebServer.Port > 0 && c.System.WebServer.Port <= 65535
@@ -410,6 +523,62 @@ func (c *Config) Validate() error {
 			return v.result()
 		}
 
+		for i, raw := range set.DNS.Upstreams {
+			if strings.TrimSpace(raw) == "" {
+				continue
+			}
+			if norm, ok := NormalizeUpstream(raw); !ok {
+				v.addf(fmt.Sprintf("sets[%d].dns.upstreams", setIdx), "invalid_dns_upstream",
+					map[string]any{"set": set.Name, "index": i + 1},
+					"set %q: DNS upstream entry %d is neither an address nor an https:// URL", set.Name, i+1)
+				return v.result()
+			} else if scheme, _, isURL := SplitUpstreamURL(norm); isURL && scheme != "https://" {
+				v.addf(fmt.Sprintf("sets[%d].dns.upstreams", setIdx), "invalid_dns_upstream",
+					map[string]any{"set": set.Name, "index": i + 1},
+					"set %q: DNS upstream entry %d must use https://, a plain http:// query travels unencrypted", set.Name, i+1)
+				return v.result()
+			}
+		}
+		set.DNS.NormalizeUpstreams(func(value string) {
+			label := UpstreamLabel(value)
+			if label == "" {
+				label = "one entry"
+			}
+			log.Warnf("Set '%s': dropping DNS upstream %s, the list is over the limit of %d entries", set.Name, label, MaxDNSUpstreams)
+		})
+
+		if err := set.DNS.ValidateFakeIP(); err != nil {
+			v.addf(fmt.Sprintf("sets[%d].dns.fakeip.cidr", setIdx), "invalid_fakeip_cidr", map[string]any{"set": set.Name, "reason": err.Error()}, "set %q: fake DNS block is unusable: %v", set.Name, err)
+			return v.result()
+		}
+
+		if set.DNS.FakeIP.Enabled {
+			if network, _, ok := set.DNS.FakeIPNetwork(); ok {
+				if iface, subnet := localSubnetOverlap(network); iface != "" {
+					log.Warnf("Set '%s': fake DNS block %s overlaps %s on %s, so devices on that subnet would be routed into the set by address", set.Name, network, subnet, iface)
+				}
+			}
+			if !set.Routing.Enabled || set.RoutingModeOrDefault() != RoutingModeProxy {
+				v.addf(fmt.Sprintf("sets[%d].dns.fakeip", setIdx), "fakeip_requires_proxy", map[string]any{"set": set.Name}, "set %q: fake DNS answers an address that only exists inside b4, so the set must route through an upstream proxy; enable routing in proxy mode or turn fake DNS off", set.Name)
+				return v.result()
+			}
+			if !set.Routing.Upstream.UseDomain {
+				v.addf(fmt.Sprintf("sets[%d].dns.fakeip", setIdx), "fakeip_requires_domain_dial", map[string]any{"set": set.Name}, "set %q: fake DNS needs routing.upstream.use_domain, otherwise b4 would dial the fake address itself", set.Name)
+				return v.result()
+			}
+			if set.Routing.Upstream.UDP {
+				v.addf(fmt.Sprintf("sets[%d].dns.fakeip", setIdx), "fakeip_needs_tcp_upstream", map[string]any{"set": set.Name}, "set %q: with routing.upstream.udp on, b4 hands UDP traffic to the upstream proxy as an address, and a fake address means nothing there; turn routing.upstream.udp off or turn fake DNS off", set.Name)
+				return v.result()
+			}
+			if set.Routing.Upstream.FailOpen {
+				v.addf(fmt.Sprintf("sets[%d].routing.upstream.fail_open", setIdx), "fakeip_refuses_fail_open", map[string]any{"set": set.Name}, "set %q: fail-open dials the original destination, which on a fake set is an address that exists only inside b4; turn fail-open off or turn fake DNS off", set.Name)
+				return v.result()
+			}
+			if set.Targets.DomainOnly && len(set.Targets.SNIDomains) == 0 && len(set.Targets.GeoSiteCategories) == 0 {
+				log.Warnf("Set '%s': fake DNS is on but the set matches nothing by name yet, so no answer will be faked", set.Name)
+			}
+		}
+
 		if len(set.Fragmentation.SeqOverlapPattern) > 0 {
 			set.Fragmentation.SeqOverlapBytes = make([]byte, len(set.Fragmentation.SeqOverlapPattern))
 			for i, s := range set.Fragmentation.SeqOverlapPattern {
@@ -437,7 +606,7 @@ func (c *Config) Validate() error {
 			}
 		}
 
-		if set.Targets.DomainOnly && set.Routing.Enabled &&
+		if set.Targets.DomainOnly && set.Routing.Enabled && !set.DNS.FakeIP.Enabled &&
 			(len(set.Targets.SNIDomains) > 0 || len(set.Targets.GeoSiteCategories) > 0) {
 			log.Warnf("Set '%s' has both domain-only matching and routing enabled: the IPs behind its domains will not be routed (only explicitly listed IP targets are routed)", set.Name)
 		}
@@ -489,6 +658,20 @@ func (c *Config) Validate() error {
 	}
 	for _, clash := range findSharedTableGatewayClashes(c.Sets) {
 		warnEgressGatewayOnce("Sets %s share routing table %d with different routing.egress_gateway values, so their default routes overwrite each other and the last written one wins for all of them; give each its own routing.table", clash.names, clash.table)
+	}
+	for _, clash := range findFakeIPBlockSwallowsTargets(c.Sets) {
+		v.addf(fmt.Sprintf("sets[%d].dns.fakeip.cidr", clash.index), "fakeip_swallows_targets",
+			map[string]any{"set": clash.name, "cidr": clash.cidr, "target": clash.target, "other": clash.otherName},
+			"set %q: fake DNS block %s contains %s, a plain target of set %q; that target would be answered with a fake address and routed by name instead of by address",
+			clash.name, clash.cidr, clash.target, clash.otherName)
+		return v.result()
+	}
+	for _, clash := range findFakeIPBlockClashes(c.Sets) {
+		v.addf(fmt.Sprintf("sets[%d].dns.fakeip.cidr", clash.right), "fakeip_blocks_overlap",
+			map[string]any{"set": clash.rightName, "other": clash.leftName, "cidr": clash.cidr},
+			"set %q: fake DNS block %s overlaps the block of set %q; both ranges land in the same routing ipset, so the firewall sends them to one listener and connections can go to the wrong upstream; give each set its own block",
+			clash.rightName, clash.cidr, clash.leftName)
+		return v.result()
 	}
 
 	c.sanitizeEscalation()

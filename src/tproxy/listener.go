@@ -413,6 +413,10 @@ func (l *Listener) serve(client net.Conn, given *sniffResult) {
 	}
 
 	target := l.pickTarget(client, clientAddr, origIP, given)
+	if l.fakeAddressWithoutName(origIP, target.name) {
+		log.Tracef("tproxy: %s -> %s on set %q is a fake address with no name behind it, closing at once", src, dest, l.SetName)
+		return
+	}
 	releaseFlight := l.holdFlight(target.sniffed.prefix)
 	defer releaseFlight()
 	targetHost := origIP.String()
@@ -563,6 +567,18 @@ func (l *Listener) pickTarget(client net.Conn, clientAddr *net.TCPAddr, origIP n
 	return chosenTarget{name: name, source: source, sniffed: sniffed, learned: learned}
 }
 
+func (l *Listener) fakeAddressWithoutName(ip net.IP, name string) bool {
+	if name != "" || ip == nil {
+		return false
+	}
+	set := l.set.Load()
+	if set == nil || !set.DNS.FakeIP.Enabled {
+		return false
+	}
+	network, _, ok := set.DNS.FakeIPNetwork()
+	return ok && network.Contains(ip)
+}
+
 func (l *Listener) setListsDomains() bool {
 	set := l.set.Load()
 	return set != nil && len(set.Targets.DomainsToMatch) > 0
@@ -711,19 +727,29 @@ func (l *Listener) SetDNSOptions(mark int, timeout time.Duration, v6 bool) {
 	l.dnsV6.Store(v6)
 }
 
-func (l *Listener) dnsServer() (dns.Server, *config.SetConfig, bool) {
+func (l *Listener) dnsServers() ([]dns.Server, *config.SetConfig, bool) {
 	set := l.set.Load()
 	if set == nil {
-		return dns.Server{}, nil, false
+		return nil, nil, false
 	}
-	srv, ok := dns.SetServer(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL)
-	srv.Mark, srv.Timeout = int(l.dnsMark.Load()), time.Duration(l.dnsTimeout.Load())
-	return srv, set, ok
+	servers, ok := dns.SetServers(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL, set.DNS.Upstreams)
+	for i := range servers {
+		servers[i].Mark = int(l.dnsMark.Load())
+		servers[i].Timeout = time.Duration(l.dnsTimeout.Load())
+	}
+	return servers, set, ok
+}
+
+func dnsBudget(servers []dns.Server) time.Duration {
+	if len(servers) == 0 {
+		return dns.Server{}.Budget()
+	}
+	return servers[0].Budget()
 }
 
 func (l *Listener) DialNamed(host string, port int) (net.Conn, error) {
-	srv, _, _ := l.dnsServer()
-	ctx, cancel := context.WithTimeout(l.ctx, namedDialBudget+2*srv.Budget())
+	servers, _, _ := l.dnsServers()
+	ctx, cancel := context.WithTimeout(l.ctx, namedDialBudget+2*dnsBudget(servers))
 	defer cancel()
 	onion := isOnionName(host)
 	target, err := l.namedTarget(ctx, host)
@@ -818,11 +844,11 @@ func (l *Listener) pinnedAddresses(host string) []string {
 }
 
 func (l *Listener) resolveHost(ctx context.Context, host string) ([]string, error) {
-	srv, set, useSet := l.dnsServer()
-	ctx, cancel := context.WithTimeout(ctx, srv.Budget()+time.Second)
+	servers, set, useSet := l.dnsServers()
+	ctx, cancel := context.WithTimeout(ctx, dnsBudget(servers)+time.Second)
 	defer cancel()
 	strict := set != nil && set.DNS.Strict
-	ips, err := dns.LookupWithFallback(ctx, setLookup, srv, useSet, strict, host, true, l.dnsV6.Load())
+	ips, err := dns.LookupAny(ctx, setLookup, servers, useSet, strict, host, true, l.dnsV6.Load())
 	if err != nil {
 		return nil, err
 	}

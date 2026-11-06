@@ -100,6 +100,24 @@ func TestDNSTCPInterceptEnabledNeedsBothFlagAndSet(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsAPlainHTTPUpstream(t *testing.T) {
+	cfg := NewConfig()
+	set := &SetConfig{Id: "s", Name: "s", Enabled: true}
+	set.DNS.Enabled = true
+	set.DNS.Upstreams = []string{"9.9.9.9", "http://doh.example/dns-query"}
+	cfg.Sets = []*SetConfig{set}
+
+	ve := mustValidationErr(t, cfg.Validate())
+	if findField(ve, "sets[0].dns.upstreams", "invalid_dns_upstream") == nil {
+		t.Fatalf("validation = %+v, want invalid_dns_upstream", ve.Fields)
+	}
+
+	set.DNS.Upstreams = []string{"9.9.9.9", "https://doh.example/dns-query"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("an https upstream was refused: %v", err)
+	}
+}
+
 func TestDNSSectionOmittedFromSavedConfigAtDefaults(t *testing.T) {
 	cfg := NewConfig()
 	defaults := NewConfig()
@@ -196,5 +214,52 @@ func TestDNSTCPInterceptEnabledForAnECHStripSet(t *testing.T) {
 	cfg.System.DNS.TCPDisabled = true
 	if cfg.DNSTCPInterceptEnabled() {
 		t.Error("tcp_disabled=true must win over a set that strips ECH")
+	}
+}
+
+func TestDNSTCPInterceptEnabledForAFakeOnlySet(t *testing.T) {
+	cfg := NewConfig()
+	set := &SetConfig{Id: "s", Name: "s", Enabled: true}
+	set.DNS.FakeIP.Enabled = true
+	set.DNS.FakeIP.CIDR = "198.18.0.0/15"
+	cfg.Sets = []*SetConfig{set}
+
+	if set.DNS.Enabled {
+		t.Fatal("the fixture is wrong: dns.enabled must stay off")
+	}
+	if !cfg.HasDNSRedirect() {
+		t.Error("a set that answers fake addresses must count as a DNS redirect")
+	}
+	if !cfg.DNSTCPInterceptEnabled() {
+		t.Error("with DNS over TCP allowed, a fake-only set needs the listener and its redirect")
+	}
+
+	set.DNS.Enabled = true
+	if !cfg.DNSTCPInterceptEnabled() {
+		t.Error("fake answers with the redirect on: interception must stay on")
+	}
+
+	set.Enabled = false
+	if cfg.HasDNSRedirect() || cfg.DNSTCPInterceptEnabled() {
+		t.Error("a disabled set must not turn interception on")
+	}
+}
+
+func TestUpstreamListKeepsTheURLOverThePlainTarget(t *testing.T) {
+	cfg := &DNSConfig{
+		Enabled:   true,
+		DoHURL:    "https://doh.example/dns-query",
+		TargetDNS: "198.51.100.1",
+		Upstreams: []string{"198.51.100.2"},
+	}
+	list := cfg.UpstreamList()
+	if len(list) != 2 || list[0] != "https://doh.example/dns-query" || list[1] != "198.51.100.2" {
+		t.Fatalf("UpstreamList = %v, want the URL and the list only", list)
+	}
+
+	cfg.DoHURL = ""
+	list = cfg.UpstreamList()
+	if len(list) != 2 || list[0] != "198.51.100.1" || list[1] != "198.51.100.2" {
+		t.Fatalf("UpstreamList without a URL = %v, want the plain target and the list", list)
 	}
 }

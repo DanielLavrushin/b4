@@ -320,25 +320,20 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			continue
 		}
 
-		useDoH := set.DNS.DoHURL != ""
-		if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+		if fake := s.worker.fakeIPAnswer(cfg, set, query, domain, clientIP, scope); fake != nil {
+			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFake)
+			if writeDNSTCPMessage(client, fake, ioTimeout) != nil {
+				return
+			}
+			continue
+		}
+
+		if !set.DNS.HasUpstream() {
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionPassthrough)
 			if relay(cfg, set, domain, query) {
 				continue
 			}
 			return
-		}
-
-		var targetIP net.IP
-		if !useDoH {
-			targetIP = net.ParseIP(set.DNS.TargetDNS)
-			if targetIP == nil {
-				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionBadTarget)
-				if relay(cfg, set, domain, query) {
-					continue
-				}
-				return
-			}
 		}
 
 		if queryFromTarget(set, clientIP) {
@@ -352,31 +347,25 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 
 		s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsRedirectAction(set))
 
-		source := set.DNS.TargetDNS
-		if set.DNS.DoHURL != "" {
-			source = set.DNS.DoHURL
-		}
-
 		var resp []byte
-		var rerr error
-		if !set.DNS.Strict && dnsSourceUnreachable(source) {
-			rerr = errDNSSourceCoolingDown
-		} else {
-			resp, rerr = s.resolve(set, cfg, query, targetIP)
-			if rerr != nil {
-				noteDNSSourceFailure(source)
-			}
-		}
+		endRedirect := beginDNSRedirect(query)
+		walk := walkResolvers("DNS TCP", domain, set, func(upstream string) ([]byte, error) {
+			return s.resolveUpstream(set, cfg, query, upstream)
+		})
+		resp, rerr, source := walk.resp, walk.err, walk.source
 
 		servedFallback := false
 
 		switch {
 		case rerr == nil:
-			noteDNSSourceSuccess(source)
+			if !walk.transient {
+				noteDNSSourceSuccess(source)
+			}
 		case set.DNS.Strict:
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionServfail)
 			resp = dns.BuildServfailResponse(query)
 			if len(resp) == 0 {
+				endRedirect()
 				return
 			}
 		default:
@@ -396,6 +385,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionServfail)
 				resp = dns.BuildServfailResponse(query)
 				if len(resp) == 0 {
+					endRedirect()
 					return
 				}
 				break
@@ -408,7 +398,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		}
 
 		qtype, _ := dns.QuestionType(query)
-		if next := s.escalationTarget(cfg, set, domain, srcMac, qtype, resp, servedFallback, scope); next != nil {
+		next := s.escalationTarget(cfg, set, domain, srcMac, qtype, resp, servedFallback, scope)
+		endRedirect()
+		if next != nil {
 			if alt, aerr := s.answerVia(next, cfg, query, domain, clientIP, scope); aerr == nil && len(alt) > 0 {
 				s.logEvent(next, domain, clientIP, origIP, clientPort, srcMac, dnsActionEscalatePrefix+next.Name)
 				s.worker.learnAnswerAddresses(cfg, next, clientIP, domain, dns.ParseResponseIPs(alt), scope.learns(domain), s.ctx.Done())
@@ -444,12 +436,30 @@ func (s *dnsTCPServer) escalationTarget(cfg *config.Config, set *config.SetConfi
 	return s.worker.noteDNSOutcome(cfg, set, domain, srcMac, qtype, resp, from...)
 }
 
-func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query []byte, targetIP net.IP) ([]byte, error) {
+func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query []byte) ([]byte, error) {
 	defer beginDNSRedirect(query)()
-	if set.DNS.DoHURL != "" {
-		return s.worker.resolveDoHRedirect(set.DNS.DoHURL, int(cfg.MainInjectedMark()), query)
+	domain, _ := dns.ParseQueryDomain(query)
+	walk := walkResolvers("DNS TCP", strings.ToLower(domain), set, func(upstream string) ([]byte, error) {
+		return s.resolveUpstream(set, cfg, query, upstream)
+	})
+	if walk.err != nil {
+		return nil, walk.err
 	}
-	return dns.ResolveUpstream(query, targetIP, dns.ForwardOptions{
+	if !walk.transient {
+		noteDNSSourceSuccess(walk.source)
+	}
+	return walk.resp, nil
+}
+
+func (s *dnsTCPServer) resolveUpstream(set *config.SetConfig, cfg *config.Config, query []byte, upstream string) ([]byte, error) {
+	if config.IsDoHUpstream(upstream) {
+		return s.worker.resolveDoHRedirect(upstream, int(cfg.MainInjectedMark()), query)
+	}
+	ip := net.ParseIP(upstream)
+	if ip == nil {
+		return nil, errNoDNSTarget
+	}
+	return dns.ResolveUpstream(query, ip, dns.ForwardOptions{
 		Sender:       s.worker.lookupSender(),
 		Fragment:     set.DNS.FragmentQuery,
 		Seg2Delay:    config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax),
@@ -465,22 +475,18 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 		return pinned, nil
 	}
 
-	useDoH := set.DNS.DoHURL != ""
-	if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+	if fake := s.worker.fakeIPAnswer(cfg, set, query, domain, clientIP, from...); fake != nil {
+		return fake, nil
+	}
+
+	if !set.DNS.HasUpstream() {
 		return nil, errNoDNSTarget
 	}
 	if queryFromTarget(set, clientIP) {
 		return nil, errQueryFromTarget
 	}
 
-	var targetIP net.IP
-	if !useDoH {
-		targetIP = net.ParseIP(set.DNS.TargetDNS)
-		if targetIP == nil {
-			return nil, errNoDNSTarget
-		}
-	}
-	return s.resolve(set, cfg, query, targetIP)
+	return s.resolve(set, cfg, query)
 }
 
 func (s *dnsTCPServer) logEvent(set *config.SetConfig, domain string, clientIP, serverIP net.IP, clientPort int, srcMac, action string) {

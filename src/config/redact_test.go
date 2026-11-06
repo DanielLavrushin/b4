@@ -44,6 +44,7 @@ var sharingPaths = map[string]string{
 	"system.update.mirrors[]":                 "the user's own relays",
 	"system.hub.urls[]":                       "URL that can carry credentials",
 	"sets[].dns.doh_url":                      "personal resolver id in the path or the host",
+	"sets[].dns.upstreams[]":                  "a URL can carry credentials, a plain address is a private LAN resolver",
 	"system.checker.dns_server":               "as an https:// URL, a personal resolver id in the path or the host",
 	"sets[].discovery.urls[]":                 "URL that can carry credentials",
 }
