@@ -169,7 +169,7 @@ func TestMarkDownKeepsTheKindAndDropsTheCarrier(t *testing.T) {
 	}
 }
 
-func TestAmneziaWGCountsAsATunnelOnlyForTheEgressCheck(t *testing.T) {
+func TestAmneziaWGIsEncapsulatedLikeWireGuard(t *testing.T) {
 	root := fakeSysfs(t)
 	mkIface(t, root, "awg0", map[string]string{"uevent": "DEVTYPE=amneziawg\nINTERFACE=awg0\n", "flags": "0x1003\n"})
 	mkIface(t, root, "awg1", map[string]string{"uevent": "DEVTYPE=amneziawg\nINTERFACE=awg1\n", "flags": "0x1002\n"})
@@ -190,12 +190,15 @@ func TestAmneziaWGCountsAsATunnelOnlyForTheEgressCheck(t *testing.T) {
 		{"xray0", true},
 		{"eth0", false},
 	} {
-		if got := TunnelAndUp(c.iface); got != c.want {
-			t.Errorf("TunnelAndUp(%q) = %v, want %v", c.iface, got, c.want)
+		if got := EncapsulatedAndUp(c.iface); got != c.want {
+			t.Errorf("EncapsulatedAndUp(%q) = %v, want %v", c.iface, got, c.want)
 		}
 	}
-	if IsEncapsulated("awg0") || EncapsulatedAndUp("awg0") {
-		t.Error("a set b4 routes into AmneziaWG keeps its strategy, so only the egress check may count it as a tunnel")
+	if !IsEncapsulated("awg0") {
+		t.Error("the kernel module's device carries the packet inside something else, as amneziawg-go's TUN device does")
+	}
+	if got := Describe("awg0"); got != "an AmneziaWG tunnel" {
+		t.Errorf("Describe(awg0) = %q", got)
 	}
 }
 

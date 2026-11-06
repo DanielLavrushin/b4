@@ -5,10 +5,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netif"
 	"github.com/florianl/go-nfqueue"
@@ -298,19 +300,44 @@ func TestASetRoutedIntoATunnelStillEscalatesOnStall(t *testing.T) {
 	}
 }
 
-func TestASetRoutedIntoAmneziaWGKeepsItsStrategy(t *testing.T) {
-	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
-	set := newFragmentingYTImagesSet()
-	set.Targets.DomainOnly = false
-	set.Routing.Enabled = true
-	set.Routing.Mode = config.RoutingModeInterface
+func routedIntoAwgt0(set config.SetConfig) config.SetConfig {
+	set = routedIntoWgt0(set)
 	set.Routing.EgressInterface = "awgt0"
+	return set
+}
+
+func TestASetRoutedIntoAmneziaWGHandsItsPacketsOff(t *testing.T) {
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	set := routedIntoAwgt0(newFragmentingYTImagesSet())
 	w := newInjectingWorker(t, &set)
-	if set.RoutingHandsOffPackets() {
-		t.Fatal("a set routed into AmneziaWG must not count as handing its packets to a tunnel")
+	if !set.RoutingHandsOffPackets() {
+		t.Fatal("a set routed into AmneziaWG must hand its packets to the tunnel, as one routed into WireGuard does")
 	}
-	if got := queuedVerdict(t, w, ytimgHello(), nil, idx["awgt0"], 0); got != nfqueue.NfDrop {
-		t.Fatalf("verdict %d: a set b4 itself routes into AmneziaWG keeps its strategy, as before", got)
+	sent := captureInjected(t, w)
+	ch, _ := log.GetConnectionHub().Subscribe()
+	defer log.GetConnectionHub().Unsubscribe(ch)
+	if got := queuedVerdict(t, w, ytimgHello(), nil, idx["awgt0"], 0); got != nfqueue.NfAccept {
+		t.Fatalf("verdict %d: the ClientHello must enter the tunnel unchanged", got)
+	}
+	if n := len(sent()); n != 0 {
+		t.Fatalf("no strategy runs on a packet the tunnel wraps, %d packets injected", n)
+	}
+	if reasons := connectionReasons(ch); !slices.Contains(reasons, "routed->awgt0") {
+		t.Errorf("the connection must be logged as routed into its tunnel, got %v", reasons)
+	}
+}
+
+func TestASetRoutedIntoAmneziaWGIsLeftOutOfIPBans(t *testing.T) {
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	set := routedIntoAwgt0(silenceSet())
+	r := newSilenceWorker(t, &set, iphealth.TLSSilent)
+
+	queuedVerdict(t, r.w, silentHelloFrom(12345), nil, idx["awgt0"], 0)
+	if r.w.destState.Watching() {
+		t.Fatal("a connection the set routes into AmneziaWG must not be watched for a silent server")
+	}
+	if r.w.refusesBannedQUIC(r.w.getConfig(), &set, net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("a banned address must not refuse the QUIC of a set routed into AmneziaWG")
 	}
 }
 
