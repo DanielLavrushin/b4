@@ -413,6 +413,10 @@ func (l *Listener) serve(client net.Conn, given *sniffResult) {
 	}
 
 	target := l.pickTarget(client, clientAddr, origIP, given)
+	if l.fakeAddressWithoutName(origIP, target.name) {
+		log.Tracef("tproxy: %s -> %s on set %q is a fake address with no name behind it, closing at once", src, dest, l.SetName)
+		return
+	}
 	releaseFlight := l.holdFlight(target.sniffed.prefix)
 	defer releaseFlight()
 	targetHost := origIP.String()
@@ -561,6 +565,18 @@ func (l *Listener) pickTarget(client net.Conn, clientAddr *net.TCPAddr, origIP n
 		log.Tracef("tproxy: set %q names %s as %s (from %s)", l.SetName, origIP, name, source)
 	}
 	return chosenTarget{name: name, source: source, sniffed: sniffed, learned: learned}
+}
+
+func (l *Listener) fakeAddressWithoutName(ip net.IP, name string) bool {
+	if name != "" || ip == nil {
+		return false
+	}
+	set := l.set.Load()
+	if set == nil || !set.DNS.FakeIP.Enabled {
+		return false
+	}
+	network, _, ok := set.DNS.FakeIPNetwork()
+	return ok && network.Contains(ip)
 }
 
 func (l *Listener) setListsDomains() bool {

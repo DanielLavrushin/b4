@@ -244,6 +244,32 @@ type fakeIPBlock struct {
 	cidr  string
 }
 
+func localSubnetOverlap(block *net.IPNet) (string, string) {
+	if block == nil {
+		return "", ""
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", ""
+	}
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			subnet, ok := addr.(*net.IPNet)
+			if !ok || subnet.IP.To4() == nil {
+				continue
+			}
+			if block.Contains(subnet.IP) || subnet.Contains(block.IP) {
+				return iface.Name, subnet.String()
+			}
+		}
+	}
+	return "", ""
+}
+
 func findFakeIPBlockClashes(sets []*SetConfig) []fakeIPBlockClash {
 	var blocks []fakeIPBlock
 	for i, set := range sets {
@@ -527,6 +553,11 @@ func (c *Config) Validate() error {
 		}
 
 		if set.DNS.FakeIP.Enabled {
+			if network, _, ok := set.DNS.FakeIPNetwork(); ok {
+				if iface, subnet := localSubnetOverlap(network); iface != "" {
+					log.Warnf("Set '%s': fake DNS block %s overlaps %s on %s, so devices on that subnet would be routed into the set by address", set.Name, network, subnet, iface)
+				}
+			}
 			if !set.Routing.Enabled || !RoutingUsesTProxy(set.Routing.Mode) {
 				v.addf(fmt.Sprintf("sets[%d].dns.fakeip", setIdx), "fakeip_requires_proxy", map[string]any{"set": set.Name}, "set %q: fake DNS answers an address that only exists inside b4, so the set must route through an upstream proxy; enable routing in proxy mode or turn fake DNS off", set.Name)
 				return v.result()
