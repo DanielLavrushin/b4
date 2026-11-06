@@ -2,6 +2,8 @@
 
 ## [1.90.0] - 2026-11-01
 
+- FIXED: **With IP Block Detection and Cache Blocked IPs on, a set that sends RST or FIN fakes did not check a silent server** - the fakes of TCP Desync Attack and Post-ClientHello RST closed the kernel's record of the connection while the device kept waiting. b4 took the connection for a finished one. It neither checked the address for a ban nor reset the connection.
+- CHANGED: **A set routed into an AmneziaWG interface leaves its packets alone, as a set routed into WireGuard does** - while the interface is up, the set's strategy, its ban resets and its QUIC refusal for banned addresses do not apply. Its connections end with routed->awg0 on the Logs page.
 - FIXED: **With IP Block Detection on, a connection could be cut at its first request when a device reused a port** - a device that opened a new connection to the same server from the same port within two minutes inherited the old connection's state. b4 took the new request for a repeat of the old one. It reset the connection and checked the server for a block.
 - ADDED: **A set that lists a provider's own servers, such as its Google Global Cache nodes, can keep the connections to them** - with IP priority on, a connection to one of the set's addresses stays with the set even when a set lower in the list matches its domain. The switch is under Targets, Bypass IPs in the set editor and is off by default. It is meant for servers that carry only this set's sites, not for shared CDN ranges.
 - CHANGED: **ASN targets moved to Targets, Bypass IPs in the set editor** - the separate ASN tab is gone. The Networks (ASN) panel sits next to Manual Bypass IPs and Bypass GeoIP Categories.
