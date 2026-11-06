@@ -56,6 +56,8 @@ type helloWatch struct {
 	probing  bool
 	parked   bool
 	closed   bool
+
+	fakesCloseEntry bool
 }
 
 func (t *destStateTracker) Watching() bool {
@@ -72,6 +74,7 @@ func (t *destStateTracker) WatchHello(h *helloWatch) {
 		if prev.setID == h.setID {
 			return
 		}
+		h.fakesCloseEntry = h.fakesCloseEntry || prev.fakesCloseEntry
 	} else if len(t.watches) >= maxHelloWatches {
 		return
 	}
@@ -242,7 +245,14 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 		scope:    scope.settled(),
 		tls:      tlsVersion,
 		deadline: deadline,
+
+		fakesCloseEntry: sendsClosingFakes(set),
 	})
+}
+
+func sendsClosingFakes(set *config.SetConfig) bool {
+	desync := &set.TCP.Desync
+	return desync.PostDesync || (desync.Mode != config.ConfigOff && desync.Mode != "ack")
 }
 
 func (w *Worker) noteClientProgress(connKey string, tcp []byte) {
@@ -288,6 +298,8 @@ func checkServerSilence(h helloWatch) (serverSilence, error) {
 	switch {
 	case err != nil:
 		return silenceUnknown, err
+	case !found && h.fakesCloseEntry:
+		return silenceOpen, nil
 	case !found:
 		return silenceGone, nil
 	case !flow.HasCounters:
@@ -300,7 +312,7 @@ func checkServerSilence(h helloWatch) (serverSilence, error) {
 	if flow.ReplyBytes > flow.ReplyPackets*headers {
 		return silenceAnswered, nil
 	}
-	if flow.HasState && flow.TCPState != ctnl.TCPEstablished {
+	if flow.HasState && flow.TCPState != ctnl.TCPEstablished && !h.fakesCloseEntry {
 		return silenceGone, nil
 	}
 	return silenceOpen, nil
