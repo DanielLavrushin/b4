@@ -160,7 +160,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	if ds.skipCache {
 		log.DiscoveryLogf("Skipping cached strategies (user requested)")
 	} else {
-		cachedPresets = ds.discoveryCache.GetCachedPresets()
+		cachedPresets = ds.presetsWithPayloads(ds.discoveryCache.GetCachedPresets())
 	}
 	phase1Presets := GetPhase1Presets()
 	current, hasCurrent := ds.setCurrentPreset()
@@ -217,7 +217,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 
 	if ds.hubPresetsFn != nil {
 		ds.setPhase(PhaseCached)
-		ds.hubPresets = ds.hubPresetsFn()
+		ds.hubPresets = ds.presetsWithPayloads(ds.hubPresetsFn())
 		if ds.setMode() {
 			ds.hubPresets = unscopedPresets(ds.hubPresets)
 		}

@@ -830,6 +830,36 @@ func TestCommunityPresetsKeepDistinctSetsWithTheSameStrategy(t *testing.T) {
 	}
 }
 
+func TestCommunityPresetNamesTheCaptureItInstalled(t *testing.T) {
+	env := newHubEnv(t)
+	shared := hubStrategySet("Shared capture", "a.example")
+	shared.Faking.SNIType = config.FakePayloadCapture
+	shared.Faking.PayloadFile = "captures/tls_community_preset_example.bin"
+	cs, payloads := hubtest.CatalogueSet(t, "capture-1", 1, &shared, func(string) ([]byte, error) { return config.FakeSNI2, nil })
+	for _, p := range payloads {
+		env.hub.AddBlob(p)
+	}
+	env.publish(t, cs)
+
+	presets := env.api.communityPresets([]string{"a.example"}, false)
+	if len(presets) != 1 {
+		t.Fatalf("the shared capture set must be queued, got %d presets", len(presets))
+	}
+	faking := presets[0].Config.Faking
+	if faking.SNIType != config.FakePayloadCapture || strings.HasPrefix(faking.PayloadFile, hubwire.RefPrefix) {
+		t.Fatalf("the preset must name the installed file, got type %d file %q", faking.SNIType, faking.PayloadFile)
+	}
+	t.Cleanup(func() { os.Remove(filepath.Join(filepath.Dir(env.api.getCfg().ConfigPath), faking.PayloadFile)) })
+
+	got, err := env.api.getCfg().ReadCapturePayload(faking.PayloadFile)
+	if err != nil {
+		t.Fatalf("a run loads the fake by the file the preset names: %v", err)
+	}
+	if !bytes.Equal(got, config.FakeSNI2) {
+		t.Errorf("the named file must hold the shared payload, got %d bytes", len(got))
+	}
+}
+
 func TestCommunityPresetsCoverEveryRequestedDomain(t *testing.T) {
 	env := newHubEnv(t)
 	var sets []hubwire.CatalogueSet
