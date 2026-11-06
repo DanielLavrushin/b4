@@ -126,6 +126,26 @@ export const CaptureSettings = () => {
   };
 
   const handleDelete = async (capture: Capture) => {
+    const latest = await loadCaptures();
+    const current = latest.find(
+      (c) => c.protocol === capture.protocol && c.domain === capture.domain,
+    );
+    if (!current) {
+      showError(t("settings.Capture.deleteFailed"));
+      return;
+    }
+    const sets = current.used_by ?? [];
+    if (
+      sets.length > 0 &&
+      !confirm(
+        t("settings.Capture.deleteInUseConfirm", {
+          domain: capture.domain,
+          sets: sets.join(", "),
+        }),
+      )
+    ) {
+      return;
+    }
     try {
       await deleteCapture(capture.protocol, capture.domain);
       showSuccess(
@@ -137,7 +157,17 @@ export const CaptureSettings = () => {
   };
 
   const handleClear = async () => {
-    if (!confirm(t("settings.Capture.clearConfirm"))) return;
+    const latest = await loadCaptures();
+    if (latest.length === 0) {
+      showError(t("settings.Capture.clearFailed"));
+      return;
+    }
+    const sets = [...new Set(latest.flatMap((c) => c.used_by ?? []))];
+    const question =
+      sets.length > 0
+        ? t("settings.Capture.clearInUseConfirm", { sets: sets.join(", ") })
+        : t("settings.Capture.clearConfirm");
+    if (!confirm(question)) return;
     try {
       await clearAll();
       showSuccess(t("settings.Capture.allCleared"));

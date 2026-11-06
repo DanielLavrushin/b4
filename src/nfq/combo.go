@@ -56,7 +56,7 @@ func (w *Worker) sendComboFragments(cfg *config.SetConfig, packet []byte, dst ne
 		return
 	}
 
-	if seqovlLength := cfg.Fragmentation.SeqOverlapLength; seqovlLength > 0 && seqovlLen > 0 {
+	if seqovlLength := cfg.Fragmentation.SeqOverlapLength; seqovlLength > 0 && seqovlLen > 0 && startsMessage(pi.Payload) {
 		first := segments[0]
 		startOff := int(first.Seq - pi.Seq0)
 		payloadLen := len(first.Data) - pi.PayloadStart

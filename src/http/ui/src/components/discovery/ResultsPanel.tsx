@@ -328,7 +328,9 @@ const FoundCard = ({
           >
             {group.results
               .map((dr) => {
-                const c = confirmationOf(dr, group.preset);
+                const c = group.unconfirmed
+                  ? null
+                  : confirmationOf(dr, group.preset);
                 const speed = formatSpeed(dr.results?.[group.preset]?.speed ?? 0);
                 const parts = [dr.domain];
                 if (c) {
@@ -410,6 +412,7 @@ const FoundCard = ({
             results={group.results}
             preset={group.preset}
             hosts={hosts}
+            targetSetId={suite.set_id ?? null}
             picks={hostPicks}
             disabled={applying}
             onToggle={(host, on) =>

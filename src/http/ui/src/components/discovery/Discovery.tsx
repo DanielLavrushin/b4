@@ -23,6 +23,7 @@ import {
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useDiscovery, useDiscoveryLogs } from "@hooks/useDiscovery";
 import { useSets } from "@hooks/useSets";
+import { useHostMatchesInvalidate } from "@hooks/useHostMatches";
 import { useCaptures } from "@b4.capture";
 import { configApi } from "@b4.settings";
 import { discoveryApi } from "@api/discovery";
@@ -112,6 +113,7 @@ export const DiscoveryRunner = () => {
   const domainInputRef = useRef<HTMLInputElement | null>(null);
   const suggestFor = useRef<string | null>(null);
   const restoredSuite = useRef<string | null>(null);
+  const invalidateHostMatches = useHostMatchesInvalidate();
 
   const loadSets = useCallback(async () => {
     try {
@@ -122,7 +124,8 @@ export const DiscoveryRunner = () => {
     } finally {
       setSetsLoaded(true);
     }
-  }, []);
+    void invalidateHostMatches();
+  }, [invalidateHostMatches]);
 
   useEffect(() => {
     void loadSets();
@@ -774,7 +777,7 @@ export const DiscoveryRunner = () => {
           description={`${t("discovery.history.sites", { count: history.length })} · ${t("discovery.history.newestFirst")}`}
           icon={<HistoryIcon />}
           action={
-            <Stack direction="row" spacing={1}>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
               <Button
                 size="small"
                 startIcon={<LogsIcon />}

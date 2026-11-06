@@ -23,19 +23,13 @@ func loadCustomPayloads(cfg *config.Config, payloadFiles []string) []CustomPaylo
 		return result
 	}
 
-	captures := captureManager.ListCaptures()
-	captureMap := make(map[string]*capture.Capture)
-	for _, c := range captures {
-		captureMap[c.Domain] = c
-	}
-
 	for _, name := range payloadFiles {
 		name = strings.ToLower(strings.TrimSpace(name))
 		if name == "" {
 			continue
 		}
 
-		if c, ok := captureMap[name]; ok {
+		if c, ok := captureManager.GetCapture("tls", name); ok {
 			data, err := captureManager.LoadCaptureData(c)
 			if err != nil {
 				log.DiscoveryLogf("Discovery: failed to load capture %s: %v", name, err)
@@ -53,6 +47,33 @@ func loadCustomPayloads(cfg *config.Config, payloadFiles []string) []CustomPaylo
 	}
 
 	return result
+}
+
+func (ds *DiscoverySuite) presetsWithPayloads(presets []ConfigPreset) []ConfigPreset {
+	loaded := make([]ConfigPreset, 0, len(presets))
+	for _, preset := range presets {
+		ds.loadSetPayloads(&preset.Config)
+		if source, missing := unloadedFake(&preset.Config); missing {
+			log.DiscoveryLogf("Skipping '%s': its fake payload %q cannot be loaded, and a test with another one would not test this strategy", preset.Name, source)
+			continue
+		}
+		loaded = append(loaded, preset)
+	}
+	return loaded
+}
+
+func unloadedFake(set *config.SetConfig) (string, bool) {
+	faking := &set.Faking
+	if len(faking.PayloadData) > 0 || !set.SendsFake() {
+		return "", false
+	}
+	switch faking.SNIType {
+	case config.FakePayloadCapture:
+		return faking.PayloadFile, faking.PayloadFile != ""
+	case config.FakePayloadDomain:
+		return faking.PayloadDomain, faking.PayloadDomain != ""
+	}
+	return "", false
 }
 
 func (ds *DiscoverySuite) detectWorkingPayloads(presets []ConfigPreset) {

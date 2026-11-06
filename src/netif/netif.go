@@ -121,12 +121,16 @@ func IsUserspaceTunnel(name string) bool {
 	return lookup(name).kind == KindUserspaceTunnel
 }
 
-func IsEncapsulated(name string) bool {
-	switch lookup(name).kind {
-	case KindUserspaceTunnel, KindWireGuard:
+func encapsulates(kind Kind) bool {
+	switch kind {
+	case KindUserspaceTunnel, KindWireGuard, KindAmneziaWG:
 		return true
 	}
 	return false
+}
+
+func IsEncapsulated(name string) bool {
+	return encapsulates(lookup(name).kind)
 }
 
 func IsUp(name string) bool {
@@ -140,26 +144,7 @@ func IsUp(name string) bool {
 
 func EncapsulatedAndUp(name string) bool {
 	e := lookup(name)
-	if !e.up {
-		return false
-	}
-	switch e.kind {
-	case KindUserspaceTunnel, KindWireGuard:
-		return true
-	}
-	return false
-}
-
-func TunnelAndUp(name string) bool {
-	e := lookup(name)
-	if !e.up {
-		return false
-	}
-	switch e.kind {
-	case KindUserspaceTunnel, KindWireGuard, KindAmneziaWG:
-		return true
-	}
-	return false
+	return e.up && encapsulates(e.kind)
 }
 
 func Describe(name string) string {
@@ -168,6 +153,8 @@ func Describe(name string) string {
 		return "a TUN/TAP device driven by a userspace program"
 	case KindWireGuard:
 		return "a WireGuard tunnel"
+	case KindAmneziaWG:
+		return "an AmneziaWG tunnel"
 	case KindMissing:
 		return "not present on this system"
 	default:

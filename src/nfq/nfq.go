@@ -3,6 +3,7 @@ package nfq
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"sync/atomic"
@@ -113,25 +114,41 @@ func (w *Worker) Start() error {
 }
 
 var (
-	queueOpen     = (*Worker).openQueue
-	queueRegister = (*Worker).registerQueue
-	queueClose    = (*nfqueue.Nfqueue).Close
+	queueOpen      = (*Worker).openQueue
+	queueRegister  = (*Worker).registerQueue
+	queueClose     = (*nfqueue.Nfqueue).Close
+	queueBindPause = 5 * time.Millisecond
 )
 
+const queueBindAttempts = 100
+
 func (w *Worker) bindQueue(mark uint) (*nfqueue.Nfqueue, error) {
-	q, err := queueOpen(w, nfqueue.NfQaCfgFlagUIDGid)
-	if err != nil {
-		return nil, err
-	}
-	if err := queueRegister(w, q, mark); err != nil {
-		_ = queueClose(q)
-		log.Tracef("nfqueue %d: binding with the socket owner of each packet failed, binding without it: %v", w.qnum, err)
-		if q, err = queueOpen(w, 0); err != nil {
+	flags := uint32(nfqueue.NfQaCfgFlagUIDGid)
+	var failure error
+	for attempt := 1; attempt <= queueBindAttempts; attempt++ {
+		q, err := queueOpen(w, flags)
+		if err != nil {
 			return nil, err
 		}
-		_ = queueRegister(w, q, mark)
+		err = queueRegister(w, q, mark)
+		if err == nil {
+			return q, nil
+		}
+		_ = queueClose(q)
+		failure = err
+		if flags != 0 && errors.Is(err, syscall.EOPNOTSUPP) {
+			log.Warnf("nfqueue %d: this kernel does not report the socket owner of a packet, so in POSTROUTING b4 cannot tell the router's own packets apart", w.qnum)
+			flags = 0
+			continue
+		}
+		log.Tracef("nfqueue %d: bind attempt %d of %d failed: %v", w.qnum, attempt, queueBindAttempts, err)
+		select {
+		case <-w.ctx.Done():
+			return nil, fmt.Errorf("nfqueue %d: bind stopped: %w", w.qnum, failure)
+		case <-time.After(queueBindPause):
+		}
 	}
-	return q, nil
+	return nil, fmt.Errorf("nfqueue %d: bind failed after %d attempts: %w", w.qnum, queueBindAttempts, failure)
 }
 
 func (w *Worker) openQueue(extraFlags uint32) (*nfqueue.Nfqueue, error) {

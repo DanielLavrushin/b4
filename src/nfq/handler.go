@@ -614,6 +614,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	host := ""
 	isClientHello := false
+	resentEarly := false
 	var tlsVersion uint16
 	matchedIP := st != nil
 	matchedSNI := false
@@ -642,16 +643,33 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				int(payload[3])<<8|int(payload[4]))
 		}
 
+		helloSeq := binary.BigEndian.Uint32(tcp[4:8])
+		if tcp[13]&0x02 != 0 {
+			helloSeq++
+		}
+		helloRecord := payload
+
 		host, tlsVersion, _ = sni.ParseTLSClientHelloSNI(payload)
 
+		if host == "" && truncatedClientHello(payload) {
+			if named, resent := w.tlsCache.HelloAt(connKey, helloSeq, clientHelloID(payload)); resent {
+				host = named.host
+				tlsVersion = named.tlsVersion
+				resentEarly = time.Since(named.namedAt) < helloResendFloor
+				classifyReason = "split-hello"
+				log.Tracef("resend of the first segment of the split ClientHello for %q to %s:%d", host, pkt.dstStr, dport)
+			}
+		}
+
 		if host == "" {
-			seq := binary.BigEndian.Uint32(tcp[4:8])
-			fed := w.pendingHello.FeedHold(connKey, seq, payload, w.helloHoldCandidate(vc, pkt, matcher, connKey, tcp, payload, dport, matched))
+			fed := w.pendingHello.FeedHold(connKey, helloSeq, payload, w.helloHoldCandidate(vc, pkt, matcher, connKey, tcp, payload, dport, matched))
 			vc.held, vc.own = fed.claimed, fed.held
 			if fed.ok {
 				if joinedHost, joinedTLS, _ := sni.ParseTLSClientHelloSNI(fed.joined); joinedHost != "" {
 					host = joinedHost
 					tlsVersion = joinedTLS
+					helloSeq = fed.start
+					helloRecord = fed.joined
 					classifyReason = "split-hello"
 					w.pendingHello.Drop(connKey)
 					log.Tracef("recovered SNI %q for %s:%d from split ClientHello (%d buffered + %d bytes)",
@@ -664,11 +682,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		var helloGen uint64
 		if host != "" && tlsVersion != 0 {
-			helloSeq := binary.BigEndian.Uint32(tcp[4:8])
-			if tcp[13]&0x02 != 0 {
-				helloSeq++
-			}
-			helloGen = w.tlsCache.Store(connKey, host, tlsVersion, helloSeq)
+			helloGen = w.tlsCache.Store(connKey, host, tlsVersion, helloSeq, clientHelloID(helloRecord))
 		}
 
 		if captureManager := capture.GetManager(cfg); captureManager != nil {
@@ -851,8 +865,8 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	stallFirstSeen := time.Time{}
 	stallTracked := false
 	if matched && isClientHello && strippedSyn == nil && host != "" && cfg.IsTCPPort(dport) && !foreignEgress &&
-		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) {
-		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host)
+		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) && !resentEarly {
+		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host, binary.BigEndian.Uint32(tcp[8:12]))
 		stallTracked = true
 	}
 
