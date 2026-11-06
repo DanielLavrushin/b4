@@ -3969,6 +3969,7 @@
     "expose_open_relay": "Exposing SOCKS5 to the internet needs a username and password or an allowed sources list",
     "doh_url_must_be_https": "Set \"{{set}}\": DNS-over-HTTPS URL must start with https://",
     "invalid_fakeip_cidr": "Set \"{{set}}\": fake DNS block is unusable: {{reason}}",
+    "invalid_dns_upstream": "Set \"{{set}}\": DNS upstream entry {{index}} is neither an address nor an https:// URL. Plain http:// is not accepted, because the query would travel unencrypted.",
     "fakeip_requires_proxy": "Set \"{{set}}\": fake DNS answers an address that only exists inside b4, so the set must route through an upstream proxy. Turn on routing in proxy mode or turn fake DNS off.",
     "fakeip_requires_domain_dial": "Set \"{{set}}\": fake DNS needs the domain dial in routing.upstream, otherwise b4 would connect to the fake address itself.",
     "fakeip_needs_tcp_upstream": "Set \"{{set}}\": fake DNS cannot work with UDP forwarding to the upstream proxy, because a fake address means nothing beyond b4. Turn that off or turn fake DNS off.",

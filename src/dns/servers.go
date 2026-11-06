@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strings"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -15,39 +14,17 @@ func SetServers(enabled bool, target, dohURL string, upstreams []string) ([]Serv
 	if !enabled {
 		return nil, false
 	}
-	servers := make([]Server, 0, 2+len(upstreams))
-	seen := make(map[string]struct{}, 2+len(upstreams))
-	add := func(raw string) {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			return
+	cfg := config.DNSConfig{Enabled: true, TargetDNS: target, DoHURL: dohURL, Upstreams: upstreams}
+	list := cfg.UpstreamList()
+	servers := make([]Server, 0, len(list))
+	for _, raw := range list {
+		if config.IsDoHUpstream(raw) {
+			servers = append(servers, Server{Source: raw, DoHURL: raw})
+			continue
 		}
-		var srv Server
-		if scheme, rest, ok := config.SplitUpstreamURL(raw); ok {
-			if rest == "" {
-				return
-			}
-			srv = Server{Source: scheme + rest, DoHURL: scheme + rest}
-		} else {
-			ip := net.ParseIP(raw)
-			if ip == nil {
-				return
-			}
-			srv = Server{Source: ip.String(), UDP: ip}
+		if ip := net.ParseIP(raw); ip != nil {
+			servers = append(servers, Server{Source: ip.String(), UDP: ip})
 		}
-		key := srv.String()
-		if _, dup := seen[key]; dup {
-			return
-		}
-		seen[key] = struct{}{}
-		servers = append(servers, srv)
-	}
-	add(dohURL)
-	if strings.TrimSpace(dohURL) == "" {
-		add(target)
-	}
-	for _, raw := range upstreams {
-		add(raw)
 	}
 	return servers, len(servers) > 0
 }

@@ -100,6 +100,24 @@ func TestDNSTCPInterceptEnabledNeedsBothFlagAndSet(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsAPlainHTTPUpstream(t *testing.T) {
+	cfg := NewConfig()
+	set := &SetConfig{Id: "s", Name: "s", Enabled: true}
+	set.DNS.Enabled = true
+	set.DNS.Upstreams = []string{"9.9.9.9", "http://doh.example/dns-query"}
+	cfg.Sets = []*SetConfig{set}
+
+	ve := mustValidationErr(t, cfg.Validate())
+	if findField(ve, "sets[0].dns.upstreams", "invalid_dns_upstream") == nil {
+		t.Fatalf("validation = %+v, want invalid_dns_upstream", ve.Fields)
+	}
+
+	set.DNS.Upstreams = []string{"9.9.9.9", "https://doh.example/dns-query"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("an https upstream was refused: %v", err)
+	}
+}
+
 func TestDNSSectionOmittedFromSavedConfigAtDefaults(t *testing.T) {
 	cfg := NewConfig()
 	defaults := NewConfig()

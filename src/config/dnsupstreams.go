@@ -74,7 +74,27 @@ func (c *DNSConfig) UpstreamList() []string {
 	for _, raw := range c.Upstreams {
 		add(raw)
 	}
+	if len(out) > MaxDNSUpstreams {
+		out = out[:MaxDNSUpstreams]
+	}
 	return out
+}
+
+func UpstreamLabel(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if scheme, rest, ok := SplitUpstreamURL(raw); ok {
+		if host := strings.TrimSpace(strings.SplitN(strings.SplitN(rest, "/", 2)[0], "?", 2)[0]); host != "" {
+			if at := strings.LastIndex(host, "@"); at >= 0 {
+				host = host[at+1:]
+			}
+			return scheme + host
+		}
+		return scheme
+	}
+	if ip := net.ParseIP(raw); ip != nil {
+		return ip.String()
+	}
+	return ""
 }
 
 func (c *DNSConfig) HasUpstream() bool {

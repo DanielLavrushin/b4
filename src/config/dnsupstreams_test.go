@@ -35,6 +35,29 @@ func TestUpstreamListIgnoresJunk(t *testing.T) {
 	}
 }
 
+func TestUpstreamListCapsTheEffectiveList(t *testing.T) {
+	c := DNSConfig{Enabled: true, DoHURL: "https://doh.example/dns-query", TargetDNS: "1.1.1.1"}
+	for i := 0; i < MaxDNSUpstreams+4; i++ {
+		c.Upstreams = append(c.Upstreams, "10.0.0."+upstreamItoa(i+1))
+	}
+	if got := len(c.UpstreamList()); got != MaxDNSUpstreams {
+		t.Fatalf("effective list has %d entries, want the cap %d", got, MaxDNSUpstreams)
+	}
+}
+
+func TestUpstreamLabelNeverCarriesCredentials(t *testing.T) {
+	for _, tc := range []struct{ raw, want string }{
+		{"https://user:secret@doh.example:8443/dns-query?x=1", "https://doh.example:8443"},
+		{"http://plain.example/dns-query", "http://plain.example"},
+		{"9.9.9.9", "9.9.9.9"},
+		{"junk", ""},
+	} {
+		if got := UpstreamLabel(tc.raw); got != tc.want {
+			t.Fatalf("UpstreamLabel(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
 func TestNormalizeUpstreamsDropsAndCaps(t *testing.T) {
 	c := DNSConfig{Upstreams: []string{"1.1.1.1", "junk", "1.1.1.1"}}
 	for i := 0; i < MaxDNSUpstreams+3; i++ {

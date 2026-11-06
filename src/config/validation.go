@@ -497,8 +497,28 @@ func (c *Config) Validate() error {
 			return v.result()
 		}
 
+		for i, raw := range set.DNS.Upstreams {
+			if strings.TrimSpace(raw) == "" {
+				continue
+			}
+			if norm, ok := NormalizeUpstream(raw); !ok {
+				v.addf(fmt.Sprintf("sets[%d].dns.upstreams", setIdx), "invalid_dns_upstream",
+					map[string]any{"set": set.Name, "index": i + 1},
+					"set %q: DNS upstream entry %d is neither an address nor an https:// URL", set.Name, i+1)
+				return v.result()
+			} else if scheme, _, isURL := SplitUpstreamURL(norm); isURL && scheme != "https://" {
+				v.addf(fmt.Sprintf("sets[%d].dns.upstreams", setIdx), "invalid_dns_upstream",
+					map[string]any{"set": set.Name, "index": i + 1},
+					"set %q: DNS upstream entry %d must use https://, a plain http:// query travels unencrypted", set.Name, i+1)
+				return v.result()
+			}
+		}
 		set.DNS.NormalizeUpstreams(func(value string) {
-			log.Warnf("Set '%s': dropping DNS upstream %q, it is neither an address nor an https:// URL", set.Name, value)
+			label := UpstreamLabel(value)
+			if label == "" {
+				label = "one entry"
+			}
+			log.Warnf("Set '%s': dropping DNS upstream %s, the list is over the limit of %d entries", set.Name, label, MaxDNSUpstreams)
 		})
 
 		if err := set.DNS.ValidateFakeIP(); err != nil {
