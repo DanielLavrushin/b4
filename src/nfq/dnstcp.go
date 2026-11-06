@@ -320,7 +320,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			continue
 		}
 
-		if fake := s.worker.fakeIPAnswer(set, query, domain, clientIP, scope); fake != nil {
+		if fake := s.worker.fakeIPAnswer(cfg, set, query, domain, clientIP, scope); fake != nil {
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFake)
 			if writeDNSTCPMessage(client, fake, ioTimeout) != nil {
 				return
@@ -475,7 +475,7 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 		return pinned, nil
 	}
 
-	if fake := s.worker.fakeIPAnswer(set, query, domain, clientIP, from...); fake != nil {
+	if fake := s.worker.fakeIPAnswer(cfg, set, query, domain, clientIP, from...); fake != nil {
 		return fake, nil
 	}
 

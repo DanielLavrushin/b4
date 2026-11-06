@@ -43,8 +43,24 @@ func fakeIPAdmits(set *config.SetConfig, clientIP net.IP, from []*ingressScope) 
 	return true
 }
 
-func (w *Worker) fakeIPAnswer(set *config.SetConfig, query []byte, domain string, clientIP net.IP, from ...*ingressScope) []byte {
+func fakeIPRoutingLive(cfg *config.Config, set *config.SetConfig) bool {
+	if cfg == nil {
+		return true
+	}
+	if !cfg.Queue.IPv4Enabled || !set.Routing.Enabled {
+		return false
+	}
+	if cfg.Queue.Mode == "tun" {
+		return true
+	}
+	return config.RoutingLive(set.Id)
+}
+
+func (w *Worker) fakeIPAnswer(cfg *config.Config, set *config.SetConfig, query []byte, domain string, clientIP net.IP, from ...*ingressScope) []byte {
 	if set == nil || len(query) == 0 || domain == "" {
+		return nil
+	}
+	if !fakeIPRoutingLive(cfg, set) {
 		return nil
 	}
 	network, ttl, ok := set.DNS.FakeIPNetwork()

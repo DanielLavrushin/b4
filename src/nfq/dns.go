@@ -409,7 +409,7 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 		return true
 	}
 
-	if fake := w.fakeIPAnswer(set, query, domain, clientIP, scope); fake != nil {
+	if fake := w.fakeIPAnswer(cfg, set, query, domain, clientIP, scope); fake != nil {
 		w.answerClient(direct, query, ipVersion, originalDst, clientIP, clientPort, fake)
 		return true
 	}
@@ -439,7 +439,7 @@ func (w *Worker) answerViaSet(vc *verdictCtx, ipVersion byte, cfg *config.Config
 		return true
 	}
 
-	if fake := w.fakeIPAnswer(set, query, domain, clientIP, scope); fake != nil {
+	if fake := w.fakeIPAnswer(cfg, set, query, domain, clientIP, scope); fake != nil {
 		w.answerClient(true, query, ipVersion, originalDst, clientIP, clientPort, fake)
 		return true
 	}
@@ -565,7 +565,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					return 0
 				}
 
-				if fake := w.fakeIPAnswer(set, payload, domain, clientIP, vc.scope); fake != nil {
+				if fake := w.fakeIPAnswer(cfg, set, payload, domain, clientIP, vc.scope); fake != nil {
 					if !vc.drop() {
 						return 0
 					}

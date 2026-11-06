@@ -451,6 +451,17 @@ func RoutingLearnHost(cfg *config.Config, set *config.SetConfig, host string) {
 	}(&cfgSnapshot, set, host)
 }
 
+func init() {
+	config.SetRoutingLiveProbe(routeSetInstalled)
+}
+
+func routeSetInstalled(setID string) bool {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	_, ok := routeRuleCache[setID]
+	return ok
+}
+
 func routeSameResolveTargets(a, b *config.SetConfig) bool {
 	if a == nil || b == nil {
 		return a == b
