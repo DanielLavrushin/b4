@@ -130,7 +130,11 @@ export const CaptureSettings = () => {
     const current = latest.find(
       (c) => c.protocol === capture.protocol && c.domain === capture.domain,
     );
-    const sets = (current ?? capture).used_by ?? [];
+    if (!current) {
+      showError(t("settings.Capture.deleteFailed"));
+      return;
+    }
+    const sets = current.used_by ?? [];
     if (
       sets.length > 0 &&
       !confirm(
@@ -154,11 +158,11 @@ export const CaptureSettings = () => {
 
   const handleClear = async () => {
     const latest = await loadCaptures();
-    const sets = [
-      ...new Set(
-        (latest.length > 0 ? latest : captures).flatMap((c) => c.used_by ?? []),
-      ),
-    ];
+    if (latest.length === 0) {
+      showError(t("settings.Capture.clearFailed"));
+      return;
+    }
+    const sets = [...new Set(latest.flatMap((c) => c.used_by ?? []))];
     const question =
       sets.length > 0
         ? t("settings.Capture.clearInUseConfirm", { sets: sets.join(", ") })
