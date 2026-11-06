@@ -126,7 +126,8 @@ func TestAMissingFakeSkipsOnlyAPresetThatSendsAFake(t *testing.T) {
 	presets := ds.presetsWithPayloads([]ConfigPreset{
 		gone("no-fake", func(*config.SetConfig) {}),
 		gone("fake-sni", func(set *config.SetConfig) { set.Faking.SNI = true }),
-		gone("syn-fake", func(set *config.SetConfig) { set.TCP.SynFake = true }),
+		gone("syn-fake", func(set *config.SetConfig) { set.TCP.SynFake, set.TCP.SynFakeLen = true, 64 }),
+		gone("empty-syn-fake", func(set *config.SetConfig) { set.TCP.SynFake = true }),
 		gone("decoy", func(set *config.SetConfig) { set.Fragmentation.Combo.DecoyEnabled = true }),
 	})
 
@@ -136,6 +137,9 @@ func TestAMissingFakeSkipsOnlyAPresetThatSendsAFake(t *testing.T) {
 	}
 	if !kept["no-fake"] {
 		t.Error("a strategy that sends no fake is not changed by a capture it names")
+	}
+	if !kept["empty-syn-fake"] {
+		t.Error("a fake SYN of length 0 carries none of the capture's bytes")
 	}
 	for _, name := range []string{"fake-sni", "syn-fake", "decoy"} {
 		if kept[name] {

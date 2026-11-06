@@ -64,7 +64,7 @@ func (ds *DiscoverySuite) presetsWithPayloads(presets []ConfigPreset) []ConfigPr
 
 func unloadedFake(set *config.SetConfig) (string, bool) {
 	faking := &set.Faking
-	if len(faking.PayloadData) > 0 || !sendsFake(set) {
+	if len(faking.PayloadData) > 0 || !set.SendsFake() {
 		return "", false
 	}
 	switch faking.SNIType {
@@ -74,10 +74,6 @@ func unloadedFake(set *config.SetConfig) (string, bool) {
 		return faking.PayloadDomain, faking.PayloadDomain != ""
 	}
 	return "", false
-}
-
-func sendsFake(set *config.SetConfig) bool {
-	return set.Faking.SNI || set.TCP.SynFake || set.Fragmentation.Combo.DecoyEnabled
 }
 
 func (ds *DiscoverySuite) detectWorkingPayloads(presets []ConfigPreset) {

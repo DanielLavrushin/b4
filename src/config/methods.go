@@ -1305,6 +1305,23 @@ func (c *Config) ReadCapturePayload(name string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+func (s *SetConfig) SendsFake() bool {
+	return s.Faking.SNI || (s.TCP.SynFake && s.TCP.SynFakeLen > 0) || s.Fragmentation.Combo.DecoyEnabled
+}
+
+func (s *SetConfig) NamesCapture(file string) bool {
+	file = filepath.Clean(file)
+	return (s.Faking.SNIType == FakePayloadCapture && filepath.Clean(s.Faking.PayloadFile) == file) || filepath.Clean(s.UDP.FakePayloadFile) == file
+}
+
+func (c *Config) MissingCaptureFake(set *SetConfig) (string, bool) {
+	if !set.SendsFake() || set.Faking.SNIType != FakePayloadCapture || set.Faking.PayloadFile == "" {
+		return "", false
+	}
+	data, err := c.ReadCapturePayload(set.Faking.PayloadFile)
+	return set.Faking.PayloadFile, err != nil || len(data) == 0
+}
+
 func (c *Config) LoadCapturePayloads() {
 	capturesDir := ""
 	if c.ConfigPath != "" {
@@ -1327,32 +1344,32 @@ func (c *Config) LoadCapturePayloads() {
 		case FakePayloadCapture:
 			if capturesDir == "" || set.Faking.PayloadFile == "" {
 				set.Faking.PayloadData = nil
-				continue
+				break
 			}
 			capturePath, err := safeCapturePath(capturesDir, set.Faking.PayloadFile)
 			if err != nil {
 				log.Errorf("Rejected capture payload %q: %v", set.Faking.PayloadFile, err)
 				set.Faking.PayloadData = nil
-				continue
+				break
 			}
 			data, err := os.ReadFile(capturePath)
 			if err != nil {
 				log.Errorf("Failed to load capture file %s: %v", set.Faking.PayloadFile, err)
 				set.Faking.PayloadData = nil
-				continue
+				break
 			}
 			set.Faking.PayloadData = data
 			log.Tracef("Loaded capture payload %s (%d bytes)", set.Faking.PayloadFile, len(data))
 		case FakePayloadDomain:
 			if set.Faking.PayloadDomain == "" {
 				set.Faking.PayloadData = nil
-				continue
+				break
 			}
 			data, err := tlsgen.GenerateTLSClientHello(set.Faking.PayloadDomain)
 			if err != nil {
 				log.Errorf("Failed to generate domain payload for %s: %v", set.Faking.PayloadDomain, err)
 				set.Faking.PayloadData = nil
-				continue
+				break
 			}
 			set.Faking.PayloadData = data
 			log.Tracef("Generated domain payload for %s (%d bytes)", set.Faking.PayloadDomain, len(data))
