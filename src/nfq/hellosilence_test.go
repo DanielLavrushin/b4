@@ -1169,23 +1169,8 @@ func TestInTUNModeAFakeClosedEntryIsStillChecked(t *testing.T) {
 	}
 }
 
-func TestABackupSetChecksTheConnectionTheFirstSetsFakesClosed(t *testing.T) {
-	backup := silenceSet()
-	backup.Id, backup.Name = "backup", "backup"
-	set := closingFakesSet("rst", false)
-	set.Escalate.To = backup.Id
-	r := newSilenceRig(t, newInjectingWorker(t, &set, &backup), answering(iphealth.TLSSilent))
-	r.answerLookups(t, func(ctnl.Tuple) flowAnswer { return entryInState(8) })
-
-	for range 3 {
-		r.w.ProcessPacket(silentHelloFrom(12345))
-	}
-	if r.w.destState.GetEscalationReason("i.ytimg.com") == "" {
-		t.Fatal("the third copy of the ClientHello must escalate the host")
-	}
-	sendHello(t, r.w, 12345, engine.VerdictAccept)
-	r.sweepLater()
-
+func expectBackupSetChecksAndResets(t *testing.T, r *silenceRig) {
+	t.Helper()
 	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
 		t.Fatalf("the first set's fakes closed the entry of the connection the backup set took over, so the backup set must still check it, probed %v", keys)
 	}
@@ -1195,6 +1180,104 @@ func TestABackupSetChecksTheConnectionTheFirstSetsFakesClosed(t *testing.T) {
 	if ports := resetsToClients(r.sent()); !slices.Equal(ports, []uint16{12345}) {
 		t.Fatalf("the waiting connection must be reset once the address is banned, got resets to %v", ports)
 	}
+}
+
+func resendUntilEscalatedTo(t *testing.T, r *silenceRig, id string) {
+	t.Helper()
+	for range 3 {
+		r.w.ProcessPacket(silentHelloFrom(12345))
+	}
+	if to, _, _ := r.w.destState.GetEscalation("i.ytimg.com"); to != id {
+		t.Fatalf("the third copy of the ClientHello must move the host to %q, it is on %q", id, to)
+	}
+}
+
+func TestABackupSetChecksTheConnectionTheFirstSetsFakesClosed(t *testing.T) {
+	for name, primary := range map[string]func(*config.SetConfig){
+		"the first set bans":                    func(*config.SetConfig) {},
+		"the first set has no blocked IP cache": func(s *config.SetConfig) { s.TCP.IPBlockDetect.CacheBlockedIPs = false },
+		"the first set has no block detection":  func(s *config.SetConfig) { s.TCP.IPBlockDetect.Enabled = false },
+	} {
+		t.Run(name, func(t *testing.T) {
+			backup := silenceSet()
+			backup.Id, backup.Name = "backup", "backup"
+			set := closingFakesSet("rst", false)
+			set.Escalate.To = backup.Id
+			primary(&set)
+			r := newSilenceRig(t, newInjectingWorker(t, &set, &backup), answering(iphealth.TLSSilent))
+			r.answerLookups(t, func(ctnl.Tuple) flowAnswer { return entryInState(8) })
+
+			resendUntilEscalatedTo(t, r, backup.Id)
+			sendHello(t, r.w, 12345, engine.VerdictAccept)
+			r.sweepLater()
+
+			expectBackupSetChecksAndResets(t, r)
+		})
+	}
+}
+
+func TestABackupSetTwoHopsFromClosingFakesChecksTheConnection(t *testing.T) {
+	backup := silenceSet()
+	backup.Id, backup.Name = "backup", "backup"
+	middle := newPassiveSet()
+	middle.Id, middle.Name = "middle", "middle"
+	middle.Targets.DomainsToMatch = []string{"example.org"}
+	middle.TCP.RSTProtection.Enabled = false
+	middle.Escalate.To = backup.Id
+	set := closingFakesSet("rst", false)
+	set.TCP.IPBlockDetect.CacheBlockedIPs = false
+	set.Escalate.To = middle.Id
+	r := newSilenceRig(t, newInjectingWorker(t, &set, &middle, &backup), answering(iphealth.TLSSilent))
+	r.answerLookups(t, func(ctnl.Tuple) flowAnswer { return entryInState(8) })
+
+	resendUntilEscalatedTo(t, r, middle.Id)
+	resendUntilEscalatedTo(t, r, backup.Id)
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	r.sweepLater()
+
+	expectBackupSetChecksAndResets(t, r)
+}
+
+func TestABackupSetStillReadsTheEntryOfAConnectionNoFakeCouldHaveClosed(t *testing.T) {
+	expectGone := func(t *testing.T, r *silenceRig) {
+		t.Helper()
+		r.sweepLater()
+		if keys := r.probed(); len(keys) != 0 {
+			t.Fatalf("no closing fake touched this connection, so a closed entry means a closed connection, probed %v", keys)
+		}
+		if len(resetsToClients(r.sent())) != 0 || r.w.destState.Watching() {
+			t.Fatal("the watch is dropped without a reset")
+		}
+	}
+	backupAndPrimary := func() (config.SetConfig, config.SetConfig) {
+		backup := silenceSet()
+		backup.Id, backup.Name = "backup", "backup"
+		primary := silenceSet()
+		primary.Id, primary.Name = "primary", "primary"
+		primary.Escalate.To = backup.Id
+		return backup, primary
+	}
+
+	t.Run("the host never escalated", func(t *testing.T) {
+		backup, primary := backupAndPrimary()
+		primary.TCP.Desync = config.DesyncConfig{Mode: "rst", TTL: 3, Count: 1}
+		primary.Targets.DomainsToMatch = []string{"example.org"}
+		r := newSilenceRig(t, newInjectingWorker(t, &primary, &backup), answering(iphealth.TLSSilent))
+		r.answerLookups(t, func(ctnl.Tuple) flowAnswer { return entryInState(8) })
+
+		sendHello(t, r.w, 12345, engine.VerdictAccept)
+		expectGone(t, r)
+	})
+
+	t.Run("the set it left sends no closing fakes", func(t *testing.T) {
+		backup, primary := backupAndPrimary()
+		r := newSilenceRig(t, newInjectingWorker(t, &primary, &backup), answering(iphealth.TLSSilent))
+		r.answerLookups(t, func(ctnl.Tuple) flowAnswer { return entryInState(8) })
+
+		resendUntilEscalatedTo(t, r, backup.Id)
+		sendHello(t, r.w, 12345, engine.VerdictAccept)
+		expectGone(t, r)
+	})
 }
 
 func TestAnEscalatedHostsFakeClosedConnectionIsResetWhenAnotherCheckBansTheAddress(t *testing.T) {

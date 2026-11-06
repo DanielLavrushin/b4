@@ -74,7 +74,6 @@ func (t *destStateTracker) WatchHello(h *helloWatch) {
 		if prev.setID == h.setID {
 			return
 		}
-		h.fakesCloseEntry = h.fakesCloseEntry || prev.fakesCloseEntry
 	} else if len(t.watches) >= maxHelloWatches {
 		return
 	}
@@ -246,13 +245,28 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 		tls:      tlsVersion,
 		deadline: deadline,
 
-		fakesCloseEntry: sendsClosingFakes(set),
+		fakesCloseEntry: w.closingFakesMayHaveHit(cfg, set, host),
 	})
 }
 
 func sendsClosingFakes(set *config.SetConfig) bool {
 	desync := &set.TCP.Desync
 	return desync.PostDesync || (desync.Mode != config.ConfigOff && desync.Mode != "ack")
+}
+
+func (w *Worker) closingFakesMayHaveHit(cfg *config.Config, set *config.SetConfig, host string) bool {
+	if sendsClosingFakes(set) {
+		return true
+	}
+	if to, _, escalated := w.destState.GetEscalation(host); !escalated || to != set.Id {
+		return false
+	}
+	for _, from := range cfg.Sets {
+		if from != nil && sendsClosingFakes(from) && escalationReaches(cfg, from, set.Id) {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *Worker) noteClientProgress(connKey string, tcp []byte) {
