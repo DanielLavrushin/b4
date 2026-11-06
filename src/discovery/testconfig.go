@@ -42,7 +42,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 	testSet.DNS = ds.discoveredDNS
 	testSet.DNS.StripECH = preset.Config.DNS.StripECH
 
-	config.ApplySetDefaults(&testSet)
+	config.ApplySetDefaultsKeepingFakeType(&testSet)
 	testSet.DSCP = ds.resultDSCP()
 
 	if testSet.TCP.Win.Mode == "" {
@@ -137,7 +137,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 	testSet.DNS = ds.discoveredDNS
 	testSet.DNS.StripECH = preset.Config.DNS.StripECH
 
-	config.ApplySetDefaults(&testSet)
+	config.ApplySetDefaultsKeepingFakeType(&testSet)
 	testSet.DSCP = ds.resultDSCP()
 
 	if testSet.TCP.Win.Mode == "" {
