@@ -52,6 +52,18 @@ const POPULAR_DOH = doh as DohEntry[];
 
 type ResolverMode = "udp" | "doh";
 
+const parseUpstreams = (text: string): string[] =>
+  text
+    .split(/[\s,;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+const sameUpstreams = (left: string[], right?: string[]): boolean => {
+  const a = left.filter(Boolean);
+  const b = (right ?? []).filter(Boolean);
+  return a.length === b.length && a.every((entry, i) => entry === b[i]);
+};
+
 interface DnsRedirectProps {
   config: B4SetConfig;
   ipv6: boolean;
@@ -108,19 +120,14 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
   const [seenUpstreams, setSeenUpstreams] = useState(dnsConfig.upstreams);
   if (dnsConfig.upstreams !== seenUpstreams) {
     setSeenUpstreams(dnsConfig.upstreams);
-    const next = (dnsConfig.upstreams ?? []).join("\n");
-    if (next !== upstreamsText) setUpstreamsText(next);
+    if (!sameUpstreams(parseUpstreams(upstreamsText), dnsConfig.upstreams)) {
+      setUpstreamsText((dnsConfig.upstreams ?? []).join("\n"));
+    }
   }
 
   const handleUpstreamsChange = (text: string) => {
     setUpstreamsText(text);
-    onChange(
-      "dns.upstreams",
-      text
-        .split(/[\s,;]+/)
-        .map((entry) => entry.trim())
-        .filter(Boolean),
-    );
+    onChange("dns.upstreams", parseUpstreams(text));
   };
   const [seenPins, setSeenPins] = useState(dnsConfig.pins);
   if (dnsConfig.pins !== seenPins) {

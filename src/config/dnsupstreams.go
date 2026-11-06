@@ -13,9 +13,20 @@ const (
 	MinFakeIPPrefixLen = 24
 )
 
+func SplitUpstreamURL(raw string) (scheme, rest string, ok bool) {
+	raw = strings.TrimSpace(raw)
+	lower := strings.ToLower(raw)
+	for _, candidate := range []string{"https://", "http://"} {
+		if strings.HasPrefix(lower, candidate) {
+			return raw[:len(candidate)], raw[len(candidate):], true
+		}
+	}
+	return "", "", false
+}
+
 func IsDoHUpstream(raw string) bool {
-	raw = strings.ToLower(strings.TrimSpace(raw))
-	return strings.HasPrefix(raw, "https://") || strings.HasPrefix(raw, "http://")
+	_, _, ok := SplitUpstreamURL(raw)
+	return ok
 }
 
 func NormalizeUpstream(raw string) (string, bool) {
@@ -23,11 +34,11 @@ func NormalizeUpstream(raw string) (string, bool) {
 	if raw == "" {
 		return "", false
 	}
-	if IsDoHUpstream(raw) {
-		if strings.TrimSpace(raw[len("https://"):]) == "" {
+	if scheme, rest, ok := SplitUpstreamURL(raw); ok {
+		if strings.TrimSpace(rest) == "" {
 			return "", false
 		}
-		return raw, true
+		return scheme + strings.TrimSpace(rest), true
 	}
 	ip := net.ParseIP(raw)
 	if ip == nil {

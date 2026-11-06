@@ -231,6 +231,49 @@ func findSharedTableGatewayClashes(sets []*SetConfig) []sharedTableGatewayClash 
 	return out
 }
 
+type fakeIPBlockClash struct {
+	left, right         int
+	leftName, rightName string
+	cidr                string
+}
+
+type fakeIPBlock struct {
+	index int
+	name  string
+	net   *net.IPNet
+	cidr  string
+}
+
+func findFakeIPBlockClashes(sets []*SetConfig) []fakeIPBlockClash {
+	var blocks []fakeIPBlock
+	for i, set := range sets {
+		if set == nil || !set.Enabled || !set.DNS.FakeIP.Enabled {
+			continue
+		}
+		network, _, ok := set.DNS.FakeIPNetwork()
+		if !ok {
+			continue
+		}
+		blocks = append(blocks, fakeIPBlock{index: i, name: set.Name, net: network, cidr: network.String()})
+	}
+	var out []fakeIPBlockClash
+	for j := 1; j < len(blocks); j++ {
+		for i := 0; i < j; i++ {
+			if !blocks[i].net.Contains(blocks[j].net.IP) && !blocks[j].net.Contains(blocks[i].net.IP) {
+				continue
+			}
+			out = append(out, fakeIPBlockClash{
+				left:      blocks[i].index,
+				right:     blocks[j].index,
+				leftName:  blocks[i].name,
+				rightName: blocks[j].name,
+				cidr:      blocks[j].cidr,
+			})
+		}
+	}
+	return out
+}
+
 func (c *Config) Validate() error {
 	v := &validator{}
 	c.System.WebServer.IsEnabled = c.System.WebServer.Port > 0 && c.System.WebServer.Port <= 65535
@@ -428,6 +471,10 @@ func (c *Config) Validate() error {
 				v.addf(fmt.Sprintf("sets[%d].dns.fakeip", setIdx), "fakeip_requires_domain_dial", map[string]any{"set": set.Name}, "set %q: fake DNS needs routing.upstream.use_domain, otherwise b4 would dial the fake address itself", set.Name)
 				return v.result()
 			}
+			if set.Routing.Upstream.UDP {
+				v.addf(fmt.Sprintf("sets[%d].dns.fakeip", setIdx), "fakeip_needs_tcp_upstream", map[string]any{"set": set.Name}, "set %q: with routing.upstream.udp on, b4 hands UDP traffic to the upstream proxy as an address, and a fake address means nothing there; turn routing.upstream.udp off or turn fake DNS off", set.Name)
+				return v.result()
+			}
 			if set.Targets.DomainOnly && len(set.Targets.SNIDomains) == 0 && len(set.Targets.GeoSiteCategories) == 0 {
 				log.Warnf("Set '%s': fake DNS is on but the set matches nothing by name yet, so no answer will be faked", set.Name)
 			}
@@ -512,6 +559,13 @@ func (c *Config) Validate() error {
 	}
 	for _, clash := range findSharedTableGatewayClashes(c.Sets) {
 		warnEgressGatewayOnce("Sets %s share routing table %d with different routing.egress_gateway values, so their default routes overwrite each other and the last written one wins for all of them; give each its own routing.table", clash.names, clash.table)
+	}
+	for _, clash := range findFakeIPBlockClashes(c.Sets) {
+		v.addf(fmt.Sprintf("sets[%d].dns.fakeip.cidr", clash.right), "fakeip_blocks_overlap",
+			map[string]any{"set": clash.rightName, "other": clash.leftName, "cidr": clash.cidr},
+			"set %q: fake DNS block %s overlaps the block of set %q; both ranges land in the same routing ipset, so the firewall sends them to one listener and connections can go to the wrong upstream; give each set its own block",
+			clash.rightName, clash.cidr, clash.leftName)
+		return v.result()
 	}
 
 	c.sanitizeEscalation()

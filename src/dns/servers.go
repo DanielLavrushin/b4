@@ -10,9 +10,14 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-func isDoHURL(raw string) bool {
-	raw = strings.ToLower(strings.TrimSpace(raw))
-	return strings.HasPrefix(raw, "https://") || strings.HasPrefix(raw, "http://")
+func dohURLHost(raw string) (string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(raw))
+	for _, scheme := range []string{"https://", "http://"} {
+		if strings.HasPrefix(lower, scheme) {
+			return strings.TrimSpace(strings.TrimSpace(raw)[len(scheme):]), true
+		}
+	}
+	return "", false
 }
 
 func SetServers(enabled bool, target, dohURL string, upstreams []string) ([]Server, bool) {
@@ -27,13 +32,12 @@ func SetServers(enabled bool, target, dohURL string, upstreams []string) ([]Serv
 			return
 		}
 		var srv Server
-		switch {
-		case isDoHURL(raw):
-			if strings.TrimSpace(raw[len("https://"):]) == "" {
+		if host, ok := dohURLHost(raw); ok {
+			if host == "" {
 				return
 			}
 			srv = Server{Source: raw, DoHURL: raw}
-		default:
+		} else {
 			ip := net.ParseIP(raw)
 			if ip == nil {
 				return
@@ -55,6 +59,12 @@ func SetServers(enabled bool, target, dohURL string, upstreams []string) ([]Serv
 	return servers, len(servers) > 0
 }
 
+type lookupResult struct {
+	ips []net.IP
+	err error
+	srv Server
+}
+
 func LookupAny(ctx context.Context, lookup LookupFunc, servers []Server, useSet, strict bool, name string, v4, v6 bool) ([]net.IP, error) {
 	if !useSet || len(servers) == 0 {
 		return lookupRouter(ctx, name, v4, v6)
@@ -71,32 +81,35 @@ func LookupAny(ctx context.Context, lookup LookupFunc, servers []Server, useSet,
 		candidates = servers
 	}
 
-	type result struct {
-		ips []net.IP
-		err error
-		srv Server
-	}
-	ch := make(chan result, len(candidates))
+	ch := make(chan lookupResult, len(candidates))
 	for _, srv := range candidates {
 		srv := srv
 		go func() {
 			sctx, cancel := context.WithTimeout(ctx, srv.Budget())
 			defer cancel()
 			ips, err := lookup(sctx, srv, name, v4, v6)
-			ch <- result{ips: ips, err: err, srv: srv}
+			ch <- lookupResult{ips: ips, err: err, srv: srv}
 		}()
 	}
 
+	var transientErr error
 	var firstErr error
 	var firstErrSrv Server
+	answered := 0
 	for range candidates {
 		r := <-ch
+		answered++
 		switch {
 		case r.err == nil && len(r.ips) > 0:
 			if NoteSourceSuccess(r.srv.Source) {
 				log.Infof("DNS: %s is answering again", SourceLabel(r.srv.Source))
 			}
+			recordLateAnswers(ch, len(candidates)-answered)
 			return r.ips, nil
+		case errors.Is(r.err, ErrTransientAnswer):
+			if transientErr == nil {
+				transientErr = r.err
+			}
 		case errors.Is(r.err, ErrNoAddress):
 			return nil, r.err
 		default:
@@ -112,6 +125,9 @@ func LookupAny(ctx context.Context, lookup LookupFunc, servers []Server, useSet,
 		}
 	}
 
+	if transientErr != nil {
+		return nil, transientErr
+	}
 	if firstErr == nil {
 		firstErr = fmt.Errorf("%s: %w", name, ErrNoAddress)
 	}
@@ -120,6 +136,28 @@ func LookupAny(ctx context.Context, lookup LookupFunc, servers []Server, useSet,
 	}
 	log.Tracef("DNS: %s could not resolve %s (%v), asking the router's resolver", SourceLabel(firstErrSrv.Source), name, firstErr)
 	return lookupRouter(ctx, name, v4, v6)
+}
+
+func recordLateAnswers(ch <-chan lookupResult, pending int) {
+	if pending <= 0 {
+		return
+	}
+	go func() {
+		for i := 0; i < pending; i++ {
+			r := <-ch
+			switch {
+			case r.err == nil && len(r.ips) > 0:
+				if NoteSourceSuccess(r.srv.Source) {
+					log.Infof("DNS: %s is answering again", SourceLabel(r.srv.Source))
+				}
+			case r.err == nil, errors.Is(r.err, ErrNoAddress), errors.Is(r.err, context.Canceled), errors.Is(r.err, context.DeadlineExceeded):
+			default:
+				if NoteSourceFailure(r.srv.Source) {
+					log.Warnf("DNS: %s failed %d times in a row, lookups of sets that allow a fallback skip it for %s", SourceLabel(r.srv.Source), SourceFailuresToTrip, sourceCooldown)
+				}
+			}
+		}
+	}()
 }
 
 func lookupRouter(ctx context.Context, name string, v4, v6 bool) ([]net.IP, error) {

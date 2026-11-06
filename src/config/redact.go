@@ -46,6 +46,7 @@ var placeholderPaths = map[string]bool{
 	"sets[].routing.upstream.username":        true,
 	"sets[].routing.upstream.password":        true,
 	"sets[].dns.doh_url":                      true,
+	"sets[].dns.upstreams[]":                  true,
 	"sets[].discovery.urls[]":                 true,
 }
 
@@ -127,6 +128,9 @@ func (c *Config) RedactForSharing() {
 			continue
 		}
 		set.DNS.DoHURL = maskDoHURL(set.DNS.DoHURL)
+		for i, raw := range set.DNS.Upstreams {
+			set.DNS.Upstreams[i] = maskDoHURL(raw)
+		}
 		set.Discovery.URLs = maskURLs(set.Discovery.URLs)
 	}
 }

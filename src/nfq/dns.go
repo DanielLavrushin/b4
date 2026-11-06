@@ -213,20 +213,45 @@ func (w *Worker) dnsAnswerSource(set *config.SetConfig, client net.IP) (net.IP, 
 
 var hostAddress = utils.IsHostIP
 
-func redirectTarget(set *config.SetConfig) net.IP {
-	if set.DNS.DoHURL != "" {
-		u, err := url.Parse(set.DNS.DoHURL)
-		if err != nil {
-			return nil
+const (
+	rcodeServfail = 2
+	rcodeRefused  = 5
+)
+
+func transientDNSRcode(rcode uint8) bool {
+	return rcode == rcodeServfail || rcode == rcodeRefused
+}
+
+func redirectTargets(set *config.SetConfig) []net.IP {
+	var out []net.IP
+	for _, upstream := range set.DNS.UpstreamList() {
+		if config.IsDoHUpstream(upstream) {
+			u, err := url.Parse(upstream)
+			if err != nil {
+				continue
+			}
+			if ip := net.ParseIP(u.Hostname()); ip != nil {
+				out = append(out, ip)
+			}
+			continue
 		}
-		return net.ParseIP(u.Hostname())
+		if ip := net.ParseIP(upstream); ip != nil {
+			out = append(out, ip)
+		}
 	}
-	return net.ParseIP(set.DNS.TargetDNS)
+	return out
 }
 
 func queryFromTarget(set *config.SetConfig, client net.IP) bool {
-	target := redirectTarget(set)
-	return target != nil && client != nil && target.Equal(client) && !hostAddress(target)
+	if client == nil {
+		return false
+	}
+	for _, target := range redirectTargets(set) {
+		if target.Equal(client) && !hostAddress(target) {
+			return true
+		}
+	}
+	return false
 }
 
 var (
@@ -645,11 +670,12 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 	queryDomain = strings.ToLower(queryDomain)
 
 	var resp []byte
+	var transientResp []byte
 	var err error
 	source := ""
 	upstreams := set.DNS.UpstreamList()
 	asked := 0
-	for _, upstream := range upstreams {
+	for i, upstream := range upstreams {
 		if !set.DNS.Strict && dnsSourceUnreachable(upstream) {
 			continue
 		}
@@ -670,10 +696,18 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 			err = errNoDNSTarget
 		}
 		if err == nil {
+			if rcode, ok := dns.ResponseRcode(resp); ok && transientDNSRcode(rcode) && i < len(upstreams)-1 {
+				transientResp = resp
+				log.Tracef("DNS redirect: upstream %s answered %s with rcode %d, asking the next one (set: %s)", dnsUpstreamLabel(upstream), dns.SafeName(queryDomain), rcode, set.Name)
+				continue
+			}
 			break
 		}
 		noteDNSSourceFailure(upstream)
 		log.Tracef("DNS redirect: upstream %s could not answer %s (%v) (set: %s)", dnsUpstreamLabel(upstream), dns.SafeName(queryDomain), err, set.Name)
+	}
+	if err != nil && transientResp != nil {
+		resp, err = transientResp, nil
 	}
 	switch {
 	case len(upstreams) == 0:

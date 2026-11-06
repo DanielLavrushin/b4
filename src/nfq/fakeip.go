@@ -8,6 +8,8 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
+var fakeIPPool = dns.NewFakeIPPool()
+
 func (w *Worker) fakeIPAnswer(set *config.SetConfig, query []byte, domain string, clientIP net.IP) []byte {
 	if set == nil || len(query) == 0 || domain == "" {
 		return nil
@@ -23,7 +25,7 @@ func (w *Worker) fakeIPAnswer(set *config.SetConfig, query []byte, domain string
 
 	switch qtype {
 	case dnsTypeA:
-		ip := dns.FakeIPAddress(domain, network)
+		ip := fakeIPPool.Address(domain, network)
 		if ip == nil {
 			return nil
 		}

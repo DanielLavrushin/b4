@@ -21,6 +21,14 @@ const (
 
 var ErrNoAddress = errors.New("the resolver has no address for the name")
 
+var ErrTransientAnswer = fmt.Errorf("the resolver answered with a retryable error: %w", ErrNoAddress)
+
+const (
+	rcodeServfail = 2
+	rcodeNotImp   = 4
+	rcodeRefused  = 5
+)
+
 type Server struct {
 	Source  string
 	DoHURL  string
@@ -185,6 +193,9 @@ func (s Server) exchange(ctx context.Context, name string, qtype uint16) ([]net.
 		return nil, fmt.Errorf("%s sent an answer that does not match the query for %s", s, name)
 	}
 	if rcode, _ := ResponseRcode(resp); rcode != 0 && rcode != 3 {
+		if rcode == rcodeServfail || rcode == rcodeNotImp || rcode == rcodeRefused {
+			return nil, fmt.Errorf("%s answered %s with rcode %d: %w", s, name, rcode, ErrTransientAnswer)
+		}
 		return nil, fmt.Errorf("%s answered %s with rcode %d: %w", s, name, rcode, ErrNoAddress)
 	}
 	ips := ParseResponseIPs(resp)

@@ -391,7 +391,7 @@ func (c *Config) HasDNSRedirect() bool {
 		if set == nil || !set.Enabled || !set.DNS.Enabled {
 			continue
 		}
-		if set.DNS.DoHURL != "" || set.DNS.TargetDNS != "" {
+		if set.DNS.HasUpstream() || set.DNS.FakeIP.Enabled {
 			return true
 		}
 	}

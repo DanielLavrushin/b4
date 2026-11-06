@@ -348,11 +348,13 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsRedirectAction(set))
 
 		var resp []byte
+		var transientResp []byte
+		transientSource := ""
 		var rerr error
 		source := ""
 		asked := 0
 		upstreams := set.DNS.UpstreamList()
-		for _, upstream := range upstreams {
+		for i, upstream := range upstreams {
 			if !set.DNS.Strict && dnsSourceUnreachable(upstream) {
 				continue
 			}
@@ -360,6 +362,12 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			source = upstream
 			resp, rerr = s.resolveUpstream(set, cfg, query, upstream)
 			if rerr == nil {
+				if rcode, ok := dns.ResponseRcode(resp); ok && transientDNSRcode(rcode) && i < len(upstreams)-1 {
+					transientResp = resp
+					transientSource = upstream
+					log.Tracef("DNS TCP: upstream %s answered %s with rcode %d, asking the next one (set: %s)", dnsUpstreamLabel(upstream), dns.SafeName(domain), rcode, set.Name)
+					continue
+				}
 				break
 			}
 			noteDNSSourceFailure(upstream)
@@ -370,6 +378,12 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		case asked == 0:
 			source = upstreams[0]
 			rerr = errDNSSourceCoolingDown
+		}
+		if rerr != nil && transientResp != nil {
+			resp, rerr = transientResp, nil
+			if transientSource != "" {
+				source = transientSource
+			}
 		}
 		if source == "" && len(upstreams) > 0 {
 			source = upstreams[0]

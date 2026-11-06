@@ -101,6 +101,50 @@ func TestScrubStripsPrivateFields(t *testing.T) {
 	}
 }
 
+func TestScrubKeepsFakeDnsAndResolverListsLocal(t *testing.T) {
+	set := sampleSet()
+	set.DNS.Upstreams = []string{"192.168.1.53", "https://doh.pub/dns-query"}
+	set.DNS.FakeIP = config.FakeIPConfig{Enabled: true, CIDR: "198.18.0.0/16", TTLSec: 60}
+
+	projection, report, err := Scrub(&set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(projection)
+	text := string(raw)
+	for _, forbidden := range []string{"192.168.1.53", "doh.pub", "fakeip", "198.18.0.0"} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("projection still carries %q: %s", forbidden, text)
+		}
+	}
+	stripped := map[string]bool{}
+	for _, s := range report.Stripped {
+		stripped[s.Path] = true
+	}
+	for _, path := range []string{"dns.upstreams", "dns.fakeip.enabled", "dns.fakeip.cidr", "dns.fakeip.ttl_sec"} {
+		if !stripped[path] {
+			t.Errorf("%q was not reported as stripped (all: %+v)", path, report.Stripped)
+		}
+	}
+
+	body, _ := json.Marshal(projection)
+	var imported config.SetConfig
+	if err := json.Unmarshal(body, &imported); err != nil {
+		t.Fatalf("decode the projection: %v", err)
+	}
+	imported.Id = "11111111-2222-3333-4444-555555555555"
+	cfg := config.NewConfig()
+	cfg.System.Geo.GeoSitePath = validationGeoPath
+	cfg.System.Geo.GeoIpPath = validationGeoPath
+	cfg.Sets = []*config.SetConfig{&imported}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("a set scrubbed on the way out must validate on the way in: %v", err)
+	}
+	if imported.DNS.FakeIP.Enabled || len(imported.DNS.Upstreams) != 0 {
+		t.Fatalf("fake DNS or a resolver list survived the import: %+v", imported.DNS)
+	}
+}
+
 func TestScrubPinPrivateAddress(t *testing.T) {
 	set := config.NewSetConfig()
 	set.Name = "x"

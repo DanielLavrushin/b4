@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -93,9 +94,9 @@ func TestLookupAnyAsksEveryResolverWhenAllAreCooling(t *testing.T) {
 		NoteSourceFailure("198.51.100.1")
 		NoteSourceFailure("198.51.100.2")
 	}
-	called := 0
+	called := atomic.Int32{}
 	lookup := func(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net.IP, error) {
-		called++
+		called.Add(1)
 		return nil, errors.New("blocked")
 	}
 	servers := []Server{
@@ -105,8 +106,8 @@ func TestLookupAnyAsksEveryResolverWhenAllAreCooling(t *testing.T) {
 	if _, err := LookupAny(context.Background(), lookup, servers, true, true, "example.com", true, false); err == nil {
 		t.Fatal("LookupAny succeeded with every resolver failing")
 	}
-	if called != 2 {
-		t.Fatalf("asked %d resolvers, want both", called)
+	if called.Load() != 2 {
+		t.Fatalf("asked %d resolvers, want both", called.Load())
 	}
 }
 
@@ -136,5 +137,137 @@ func TestLookupAnyFallsBackToTheRouterResolver(t *testing.T) {
 	}
 	if len(ips) == 0 || !ips[0].IsLoopback() {
 		t.Fatalf("ips = %v, want the router's answer for localhost", ips)
+	}
+}
+
+func TestSetServersHandlesBareAndPlainURLSchemes(t *testing.T) {
+	servers, ok := SetServers(true, "", "http://", []string{"http://doh.example/dns-query", "https://", "1.1.1.1"})
+	if !ok {
+		t.Fatal("SetServers dropped every resolver")
+	}
+	want := []string{"http://doh.example/dns-query", "1.1.1.1"}
+	if len(servers) != len(want) {
+		t.Fatalf("servers = %v, want %v", servers, want)
+	}
+	for i, raw := range want {
+		if servers[i].String() != raw {
+			t.Fatalf("servers[%d] = %q, want %q", i, servers[i].String(), raw)
+		}
+	}
+}
+
+func TestLookupAnyWaitsForAHealthyAnswerAfterATransientAnswer(t *testing.T) {
+	ResetSourceHealth()
+	t.Cleanup(ResetSourceHealth)
+	lookup := func(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net.IP, error) {
+		if srv.Source == "198.51.100.1" {
+			return nil, ErrTransientAnswer
+		}
+		time.Sleep(40 * time.Millisecond)
+		return []net.IP{net.ParseIP("203.0.113.9")}, nil
+	}
+	servers := []Server{
+		{Source: "198.51.100.1", UDP: net.ParseIP("198.51.100.1")},
+		{Source: "198.51.100.2", UDP: net.ParseIP("198.51.100.2")},
+	}
+	ips, err := LookupAny(context.Background(), lookup, servers, true, false, "example.com", true, false)
+	if err != nil {
+		t.Fatalf("LookupAny: %v", err)
+	}
+	if len(ips) != 1 || !ips[0].Equal(net.ParseIP("203.0.113.9")) {
+		t.Fatalf("ips = %v, want the healthy resolver's answer", ips)
+	}
+	if SourceUnreachable("198.51.100.1") {
+		t.Fatal("a resolver that answered SERVFAIL is broken, not silent, and must not go into cooldown")
+	}
+}
+
+func TestLookupAnyHandsATransientAnswerToTheClientWhenNobodyElseAnswers(t *testing.T) {
+	ResetSourceHealth()
+	t.Cleanup(ResetSourceHealth)
+	lookup := func(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net.IP, error) {
+		if srv.Source == "198.51.100.1" {
+			return nil, ErrTransientAnswer
+		}
+		return nil, errors.New("blocked")
+	}
+	servers := []Server{
+		{Source: "198.51.100.1", UDP: net.ParseIP("198.51.100.1")},
+		{Source: "198.51.100.2", UDP: net.ParseIP("198.51.100.2")},
+	}
+	ips, err := LookupAny(context.Background(), lookup, servers, true, false, "example.com", true, false)
+	if !errors.Is(err, ErrTransientAnswer) || ips != nil {
+		t.Fatalf("LookupAny = %v, %v, want the resolver's own SERVFAIL rather than the router's answer", ips, err)
+	}
+}
+
+func TestLookupAnyStopsOnADefinitiveAnswer(t *testing.T) {
+	ResetSourceHealth()
+	t.Cleanup(ResetSourceHealth)
+	slow := make(chan struct{})
+	t.Cleanup(func() { close(slow) })
+	lookup := func(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net.IP, error) {
+		if srv.Source == "198.51.100.1" {
+			return nil, ErrNoAddress
+		}
+		select {
+		case <-slow:
+		case <-time.After(500 * time.Millisecond):
+		}
+		return []net.IP{net.ParseIP("203.0.113.9")}, nil
+	}
+	servers := []Server{
+		{Source: "198.51.100.1", UDP: net.ParseIP("198.51.100.1")},
+		{Source: "198.51.100.2", UDP: net.ParseIP("198.51.100.2")},
+	}
+	start := time.Now()
+	ips, err := LookupAny(context.Background(), lookup, servers, true, false, "nope.example", true, false)
+	if !errors.Is(err, ErrNoAddress) || ips != nil {
+		t.Fatalf("LookupAny = %v, %v, want ErrNoAddress", ips, err)
+	}
+	if elapsed := time.Since(start); elapsed > 300*time.Millisecond {
+		t.Fatalf("a definitive answer waited %s for the other resolver", elapsed)
+	}
+}
+
+func TestLookupAnyHandsANegativeAnswerToTheClient(t *testing.T) {
+	ResetSourceHealth()
+	t.Cleanup(ResetSourceHealth)
+	lookup := func(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net.IP, error) {
+		time.Sleep(10 * time.Millisecond)
+		return nil, ErrNoAddress
+	}
+	servers := []Server{
+		{Source: "198.51.100.1", UDP: net.ParseIP("198.51.100.1")},
+		{Source: "198.51.100.2", UDP: net.ParseIP("198.51.100.2")},
+	}
+	ips, err := LookupAny(context.Background(), lookup, servers, true, false, "localhost", true, false)
+	if !errors.Is(err, ErrNoAddress) || ips != nil {
+		t.Fatalf("LookupAny = %v, %v, want the resolvers' negative answer instead of the router's", ips, err)
+	}
+}
+
+func TestLookupAnyRecordsAnswersThatArriveAfterTheWinner(t *testing.T) {
+	ResetSourceHealth()
+	t.Cleanup(ResetSourceHealth)
+	lookup := func(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net.IP, error) {
+		if srv.Source == "198.51.100.9" {
+			time.Sleep(30 * time.Millisecond)
+			return nil, errors.New("blocked")
+		}
+		return []net.IP{net.ParseIP("203.0.113.9")}, nil
+	}
+	servers := []Server{
+		{Source: "198.51.100.8", UDP: net.ParseIP("198.51.100.8")},
+		{Source: "198.51.100.9", UDP: net.ParseIP("198.51.100.9")},
+	}
+	for i := 0; i < SourceFailuresToTrip; i++ {
+		if _, err := LookupAny(context.Background(), lookup, servers, true, false, "example.com", true, false); err != nil {
+			t.Fatalf("LookupAny: %v", err)
+		}
+		time.Sleep(120 * time.Millisecond)
+	}
+	if !SourceUnreachable("198.51.100.9") {
+		t.Fatal("a slow resolver that fails on every lookup never reached cooldown because the winner returned first")
 	}
 }
