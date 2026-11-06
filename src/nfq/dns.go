@@ -215,11 +215,62 @@ var hostAddress = utils.IsHostIP
 
 const (
 	rcodeServfail = 2
+	rcodeNotImp   = 4
 	rcodeRefused  = 5
 )
 
 func transientDNSRcode(rcode uint8) bool {
-	return rcode == rcodeServfail || rcode == rcodeRefused
+	return rcode == rcodeServfail || rcode == rcodeNotImp || rcode == rcodeRefused
+}
+
+type upstreamWalk struct {
+	resp      []byte
+	source    string
+	err       error
+	asked     int
+	transient bool
+}
+
+func walkResolvers(label, name string, set *config.SetConfig, ask func(upstream string) ([]byte, error)) upstreamWalk {
+	upstreams := set.DNS.UpstreamList()
+	var out upstreamWalk
+	var transientResp []byte
+	var transientSource string
+	for i, upstream := range upstreams {
+		if !set.DNS.Strict && dnsSourceUnreachable(upstream) {
+			continue
+		}
+		out.asked++
+		out.source = upstream
+		resp, err := ask(upstream)
+		if err == nil {
+			if rcode, ok := dns.ResponseRcode(resp); ok && transientDNSRcode(rcode) && i < len(upstreams)-1 {
+				transientResp = resp
+				transientSource = upstream
+				log.Tracef("%s: upstream %s answered %s with rcode %d, asking the next one (set: %s)", label, dnsUpstreamLabel(upstream), dns.SafeName(name), rcode, set.Name)
+				continue
+			}
+			return upstreamWalk{resp: resp, source: upstream, asked: out.asked}
+		}
+		out.err = err
+		noteDNSSourceFailure(upstream)
+		log.Tracef("%s: upstream %s could not answer %s (%v) (set: %s)", label, dnsUpstreamLabel(upstream), dns.SafeName(name), err, set.Name)
+	}
+	switch {
+	case transientResp != nil:
+		return upstreamWalk{resp: transientResp, source: transientSource, asked: out.asked, transient: true}
+	case len(upstreams) == 0:
+		out.err = errNoDNSTarget
+	case out.asked == 0:
+		out.err = errDNSSourceCoolingDown
+	}
+	if out.source == "" && len(upstreams) > 0 {
+		out.source = upstreams[0]
+	}
+	if out.err == nil {
+		out.err = errNoDNSTarget
+	}
+	return out
 }
 
 func redirectTargets(set *config.SetConfig) []net.IP {
@@ -670,21 +721,12 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 	queryDomain = strings.ToLower(queryDomain)
 
 	var resp []byte
-	var transientResp []byte
-	var err error
-	source := ""
-	upstreams := set.DNS.UpstreamList()
-	asked := 0
-	for i, upstream := range upstreams {
-		if !set.DNS.Strict && dnsSourceUnreachable(upstream) {
-			continue
-		}
-		asked++
-		source = upstream
+	walk := walkResolvers("DNS redirect", queryDomain, set, func(upstream string) ([]byte, error) {
 		if config.IsDoHUpstream(upstream) {
-			resp, err = w.resolveDoHRedirect(upstream, int(cfg.MainInjectedMark()), query)
-		} else if upstreamIP := net.ParseIP(upstream); upstreamIP != nil {
-			resp, err = dns.ResolveUpstream(query, upstreamIP, dns.ForwardOptions{
+			return w.resolveDoHRedirect(upstream, int(cfg.MainInjectedMark()), query)
+		}
+		if upstreamIP := net.ParseIP(upstream); upstreamIP != nil {
+			return dns.ResolveUpstream(query, upstreamIP, dns.ForwardOptions{
 				Sender:       w.lookupSender(),
 				Fragment:     set.DNS.FragmentQuery,
 				Seg2Delay:    delay,
@@ -692,33 +734,10 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 				Mark:         int(cfg.MainInjectedMark()),
 				Timeout:      cfg.DNSQueryTimeout(),
 			})
-		} else {
-			err = errNoDNSTarget
 		}
-		if err == nil {
-			if rcode, ok := dns.ResponseRcode(resp); ok && transientDNSRcode(rcode) && i < len(upstreams)-1 {
-				transientResp = resp
-				log.Tracef("DNS redirect: upstream %s answered %s with rcode %d, asking the next one (set: %s)", dnsUpstreamLabel(upstream), dns.SafeName(queryDomain), rcode, set.Name)
-				continue
-			}
-			break
-		}
-		noteDNSSourceFailure(upstream)
-		log.Tracef("DNS redirect: upstream %s could not answer %s (%v) (set: %s)", dnsUpstreamLabel(upstream), dns.SafeName(queryDomain), err, set.Name)
-	}
-	if err != nil && transientResp != nil {
-		resp, err = transientResp, nil
-	}
-	switch {
-	case len(upstreams) == 0:
-		err = errNoDNSTarget
-	case asked == 0:
-		source = upstreams[0]
-		err = errDNSSourceCoolingDown
-	}
-	if source == "" && len(upstreams) > 0 {
-		source = upstreams[0]
-	}
+		return nil, errNoDNSTarget
+	})
+	resp, err, source := walk.resp, walk.err, walk.source
 
 	servedFallback := false
 	if err != nil {
@@ -738,7 +757,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		logDNSEvent("UDP", set, queryDomain, clientIP, originalDst, clientPort, w.getMacByIp(clientIP.String()), action)
 		resp = fallback
 		servedFallback = true
-	} else {
+	} else if !walk.transient {
 		noteDNSSourceSuccess(source)
 	}
 

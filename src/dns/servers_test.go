@@ -271,3 +271,30 @@ func TestLookupAnyRecordsAnswersThatArriveAfterTheWinner(t *testing.T) {
 		t.Fatal("a slow resolver that fails on every lookup never reached cooldown because the winner returned first")
 	}
 }
+
+func TestASilentResolverIsCountedAfterTheWinnerReturns(t *testing.T) {
+	ResetSourceHealth()
+	t.Cleanup(ResetSourceHealth)
+	silent, _ := startBlackHole(t)
+	silent.Source = "198.51.100.7"
+	silent.Timeout = 80 * time.Millisecond
+	good := Server{Source: "198.51.100.8", UDP: net.ParseIP("198.51.100.8")}
+	lookup := func(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net.IP, error) {
+		if srv.Source == good.Source {
+			return []net.IP{net.ParseIP("203.0.113.9")}, nil
+		}
+		return LookupIPs(ctx, srv, name, v4, v6)
+	}
+	for i := 0; i < SourceFailuresToTrip; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		ips, err := LookupAny(ctx, lookup, []Server{good, silent}, true, true, "example.com", true, false)
+		cancel()
+		if err != nil || len(ips) != 1 {
+			t.Fatalf("lookup %d: %v %v", i, ips, err)
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	if !SourceUnreachable(silent.Source) {
+		t.Fatal("a resolver that stays silent beside a healthy one never reached cooldown after the caller returned")
+	}
+}

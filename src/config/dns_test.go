@@ -198,3 +198,31 @@ func TestDNSTCPInterceptEnabledForAnECHStripSet(t *testing.T) {
 		t.Error("tcp_disabled=true must win over a set that strips ECH")
 	}
 }
+
+func TestDNSTCPInterceptEnabledForAFakeOnlySet(t *testing.T) {
+	cfg := NewConfig()
+	set := &SetConfig{Id: "s", Name: "s", Enabled: true}
+	set.DNS.FakeIP.Enabled = true
+	set.DNS.FakeIP.CIDR = "198.18.0.0/15"
+	cfg.Sets = []*SetConfig{set}
+
+	if set.DNS.Enabled {
+		t.Fatal("the fixture is wrong: dns.enabled must stay off")
+	}
+	if !cfg.HasDNSRedirect() {
+		t.Error("a set that answers fake addresses must count as a DNS redirect")
+	}
+	if !cfg.DNSTCPInterceptEnabled() {
+		t.Error("with DNS over TCP allowed, a fake-only set needs the listener and its redirect")
+	}
+
+	set.DNS.Enabled = true
+	if !cfg.DNSTCPInterceptEnabled() {
+		t.Error("fake answers with the redirect on: interception must stay on")
+	}
+
+	set.Enabled = false
+	if cfg.HasDNSRedirect() || cfg.DNSTCPInterceptEnabled() {
+		t.Error("a disabled set must not turn interception on")
+	}
+}

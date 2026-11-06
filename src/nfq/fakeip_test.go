@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"net"
+	"strconv"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -64,5 +65,35 @@ func TestFakeIPAnswerLeavesOtherTypesAlone(t *testing.T) {
 	}
 	if resp := (&Worker{}).fakeIPAnswer(set, query, "", nil); resp != nil {
 		t.Fatal("a query without a name was answered by fake DNS")
+	}
+}
+
+func TestFakeIPAnswerServesServfailWhenTheBlockIsFull(t *testing.T) {
+	old := fakeIPPool
+	pool := dns.NewFakeIPPool()
+	fakeIPPool = pool
+	t.Cleanup(func() { fakeIPPool = old })
+
+	set := fakeIPSet("198.18.0.0/24")
+	network, _, _ := set.DNS.FakeIPNetwork()
+	for i := 0; i < 254; i++ {
+		if ip := pool.Address("full"+strconv.Itoa(i)+".example", network); ip == nil {
+			t.Fatalf("the block stopped at %d leased names", i)
+		}
+	}
+
+	query := dns.BuildQuery("late.example", 0x1240, dnsTypeA)
+	resp := (&Worker{}).fakeIPAnswer(set, query, "late.example", net.ParseIP("192.168.1.20"))
+	if len(resp) == 0 {
+		t.Fatal("an exhausted block must still send an answer so the client stops waiting")
+	}
+	if rcode, ok := dns.ResponseRcode(resp); !ok || rcode != rcodeServfail {
+		t.Fatalf("rcode = %d (%v), want a SERVFAIL", rcode, ok)
+	}
+	if ips := dns.ParseResponseIPs(resp); len(ips) != 0 {
+		t.Fatalf("an exhausted block still handed out %v", ips)
+	}
+	if owner, ok := pool.Owner(net.ParseIP("198.18.0.1")); ok && owner == "late.example" {
+		t.Fatal("the late name took an address that belongs to another name")
 	}
 }

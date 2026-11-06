@@ -85,7 +85,7 @@ func LookupAny(ctx context.Context, lookup LookupFunc, servers []Server, useSet,
 	for _, srv := range candidates {
 		srv := srv
 		go func() {
-			sctx, cancel := context.WithTimeout(ctx, srv.Budget())
+			sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), srv.timeout())
 			defer cancel()
 			ips, err := lookup(sctx, srv, name, v4, v6)
 			ch <- lookupResult{ips: ips, err: err, srv: srv}
@@ -96,32 +96,34 @@ func LookupAny(ctx context.Context, lookup LookupFunc, servers []Server, useSet,
 	var firstErr error
 	var firstErrSrv Server
 	answered := 0
-	for range candidates {
-		r := <-ch
+	for answered < len(candidates) {
+		var r lookupResult
+		select {
+		case r = <-ch:
+		case <-ctx.Done():
+			recordLateAnswers(ch, len(candidates)-answered)
+			return nil, ctx.Err()
+		}
 		answered++
 		switch {
 		case r.err == nil && len(r.ips) > 0:
-			if NoteSourceSuccess(r.srv.Source) {
-				log.Infof("DNS: %s is answering again", SourceLabel(r.srv.Source))
-			}
+			noteLookupOutcome(r)
 			recordLateAnswers(ch, len(candidates)-answered)
 			return r.ips, nil
 		case errors.Is(r.err, ErrTransientAnswer):
 			if transientErr == nil {
 				transientErr = r.err
 			}
+			noteLookupOutcome(r)
 		case errors.Is(r.err, ErrNoAddress):
+			noteLookupOutcome(r)
+			recordLateAnswers(ch, len(candidates)-answered)
 			return nil, r.err
 		default:
 			if firstErr == nil {
 				firstErr, firstErrSrv = r.err, r.srv
 			}
-			if NoteSourceFailure(r.srv.Source) {
-				log.Warnf("DNS: %s failed %d times in a row, lookups of sets that allow a fallback skip it for %s", SourceLabel(r.srv.Source), SourceFailuresToTrip, sourceCooldown)
-			}
-		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			noteLookupOutcome(r)
 		}
 	}
 
@@ -138,24 +140,27 @@ func LookupAny(ctx context.Context, lookup LookupFunc, servers []Server, useSet,
 	return lookupRouter(ctx, name, v4, v6)
 }
 
+func noteLookupOutcome(r lookupResult) {
+	switch {
+	case r.err == nil && len(r.ips) > 0:
+		if NoteSourceSuccess(r.srv.Source) {
+			log.Infof("DNS: %s is answering again", SourceLabel(r.srv.Source))
+		}
+	case r.err == nil, errors.Is(r.err, ErrNoAddress):
+	default:
+		if NoteSourceFailure(r.srv.Source) {
+			log.Warnf("DNS: %s failed %d times in a row, lookups of sets that allow a fallback skip it for %s", SourceLabel(r.srv.Source), SourceFailuresToTrip, sourceCooldown)
+		}
+	}
+}
+
 func recordLateAnswers(ch <-chan lookupResult, pending int) {
 	if pending <= 0 {
 		return
 	}
 	go func() {
 		for i := 0; i < pending; i++ {
-			r := <-ch
-			switch {
-			case r.err == nil && len(r.ips) > 0:
-				if NoteSourceSuccess(r.srv.Source) {
-					log.Infof("DNS: %s is answering again", SourceLabel(r.srv.Source))
-				}
-			case r.err == nil, errors.Is(r.err, ErrNoAddress), errors.Is(r.err, context.Canceled), errors.Is(r.err, context.DeadlineExceeded):
-			default:
-				if NoteSourceFailure(r.srv.Source) {
-					log.Warnf("DNS: %s failed %d times in a row, lookups of sets that allow a fallback skip it for %s", SourceLabel(r.srv.Source), SourceFailuresToTrip, sourceCooldown)
-				}
-			}
+			noteLookupOutcome(<-ch)
 		}
 	}()
 }

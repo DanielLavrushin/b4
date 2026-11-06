@@ -41,6 +41,15 @@ type fakeIPLease struct {
 	ip      net.IP
 	network string
 	seen    time.Time
+	hold    time.Duration
+}
+
+func (l fakeIPLease) expires(now time.Time) bool {
+	hold := l.hold
+	if hold < FakeIPLeaseTTL {
+		hold = FakeIPLeaseTTL
+	}
+	return now.Sub(l.seen) > hold
 }
 
 type FakeIPPool struct {
@@ -58,7 +67,17 @@ func NewFakeIPPool() *FakeIPPool {
 	}
 }
 
+var defaultFakeIPPool = NewFakeIPPool()
+
+func DefaultFakeIPPool() *FakeIPPool { return defaultFakeIPPool }
+
+func FakeIPOwner(ip net.IP) (string, bool) { return defaultFakeIPPool.Owner(ip) }
+
 func (p *FakeIPPool) Address(name string, network *net.IPNet) net.IP {
+	return p.AddressFor(name, network, 0)
+}
+
+func (p *FakeIPPool) AddressFor(name string, network *net.IPNet, ttl time.Duration) net.IP {
 	if p == nil {
 		return FakeIPAddress(name, network)
 	}
@@ -72,12 +91,16 @@ func (p *FakeIPPool) Address(name string, network *net.IPNet) net.IP {
 	}
 	block := network.String()
 	now := p.now()
+	if ttl < FakeIPLeaseTTL {
+		ttl = FakeIPLeaseTTL
+	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if lease, held := p.byName[name]; held && lease.network == block {
 		lease.seen = now
+		lease.hold = ttl
 		p.byName[name] = lease
 		return lease.ip
 	}
@@ -86,22 +109,43 @@ func (p *FakeIPPool) Address(name string, network *net.IPNet) net.IP {
 	for probe := uint64(0); probe < size-2; probe++ {
 		ip := fakeIPOffset(base, (start+probe)%(size-2)+1)
 		key := ip.String()
-		owner, taken := p.byAddr[key]
-		if taken && owner != name {
-			if lease, held := p.byName[owner]; held && now.Sub(lease.seen) <= FakeIPLeaseTTL {
+		if owner, taken := p.byAddr[key]; taken && owner != name {
+			if lease, held := p.byName[owner]; held && !lease.expires(now) {
 				continue
 			}
 			delete(p.byAddr, key)
 			delete(p.byName, owner)
 		}
-		p.byName[name] = fakeIPLease{ip: ip, network: block, seen: now}
+		if prev, held := p.byName[name]; held {
+			delete(p.byAddr, prev.ip.String())
+		}
+		p.byName[name] = fakeIPLease{ip: ip, network: block, seen: now, hold: ttl}
 		p.byAddr[key] = name
 		if len(p.byName) > FakeIPPoolLimit {
 			p.evictLocked(now)
 		}
 		return ip
 	}
-	return FakeIPAddress(name, network)
+	return nil
+}
+
+func (p *FakeIPPool) Owner(ip net.IP) (string, bool) {
+	if p == nil || ip == nil {
+		return "", false
+	}
+	key := ip.String()
+	now := p.now()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	owner, ok := p.byAddr[key]
+	if !ok {
+		return "", false
+	}
+	lease, held := p.byName[owner]
+	if !held || lease.expires(now) {
+		return "", false
+	}
+	return owner, true
 }
 
 func (p *FakeIPPool) evictLocked(now time.Time) {
@@ -110,7 +154,7 @@ func (p *FakeIPPool) evictLocked(now time.Time) {
 		oldestSeen time.Time
 	)
 	for name, lease := range p.byName {
-		if now.Sub(lease.seen) > FakeIPLeaseTTL {
+		if lease.expires(now) {
 			delete(p.byName, name)
 			delete(p.byAddr, lease.ip.String())
 			continue

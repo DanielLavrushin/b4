@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -271,7 +272,7 @@ func TestSourceBreakerLetsOneProbeThroughAfterTheCooldown(t *testing.T) {
 	}
 }
 
-func TestServfailFromTheSetsResolverIsFinal(t *testing.T) {
+func TestServfailFromTheSetsResolverIsRetried(t *testing.T) {
 	resetHealth(t)
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
@@ -294,12 +295,20 @@ func TestServfailFromTheSetsResolverIsFinal(t *testing.T) {
 		<-done
 	})
 	srv := Server{Source: "servfail", UDP: net.IPv4(127, 0, 0, 1), Port: conn.LocalAddr().(*net.UDPAddr).Port, Timeout: time.Second}
-	ips, err := LookupWithFallback(context.Background(), LookupIPs, srv, true, false, "localhost", true, false)
-	if !errors.Is(err, ErrNoAddress) || len(ips) != 0 {
-		t.Fatalf("got %v %v; a SERVFAIL is the resolver's answer, as the DNS redirect hands it to clients", ips, err)
+	if _, err := LookupWithFallback(context.Background(), LookupIPs, srv, true, true, "localhost", true, false); !errors.Is(err, ErrTransientAnswer) {
+		t.Fatalf("strict lookup of a SERVFAIL = %v, want a retryable failure instead of a definitive no-address", err)
 	}
-	if SourceUnreachable(srv.Source) || NoteSourceSuccess(srv.Source) {
-		t.Fatal("a resolver that answered was counted as failing")
+	for i := 0; i < SourceFailuresToTrip; i++ {
+		_, err := LookupWithFallback(context.Background(), LookupIPs, srv, true, false, "localhost", true, false)
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, ErrNoAddress) {
+			t.Fatalf("a SERVFAIL came back as a definitive negative answer: %v", err)
+		}
+	}
+	if !SourceUnreachable(srv.Source) {
+		t.Fatal("a resolver that only ever answers SERVFAIL never reached cooldown")
 	}
 }
 
@@ -363,5 +372,99 @@ func TestACancelledLookupIsNotCountedAgainstTheResolver(t *testing.T) {
 	}
 	if SourceUnreachable(srv.Source) {
 		t.Fatal("lookups cancelled by their caller put a resolver that never failed into cooldown")
+	}
+}
+
+func startRcodeResolver(t *testing.T, rcode uint8) Server {
+	t.Helper()
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 1500)
+		for {
+			n, from, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				return
+			}
+			resp := BuildServfailResponse(buf[:n])
+			if len(resp) > 3 {
+				resp[3] = resp[3]&0xf0 | rcode&0x0f
+			}
+			_, _ = conn.WriteToUDP(resp, from)
+		}
+	}()
+	t.Cleanup(func() {
+		conn.Close()
+		<-done
+	})
+	return Server{Source: "198.51.100." + strconv.Itoa(100+int(rcode)), UDP: net.IPv4(127, 0, 0, 1), Port: conn.LocalAddr().(*net.UDPAddr).Port, Timeout: time.Second}
+}
+
+func startDelayedAnswerResolver(t *testing.T, delay time.Duration, ip net.IP) Server {
+	t.Helper()
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 1500)
+		for {
+			n, from, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				return
+			}
+			query := append([]byte(nil), buf[:n]...)
+			time.AfterFunc(delay, func() {
+				_, _ = conn.WriteToUDP(BuildAnswerFromIPs(query, 60, []net.IP{ip}), from)
+			})
+		}
+	}()
+	t.Cleanup(func() {
+		conn.Close()
+		<-done
+	})
+	return Server{Source: ip.String() + "/slow", UDP: net.IPv4(127, 0, 0, 1), Port: conn.LocalAddr().(*net.UDPAddr).Port, Timeout: time.Second}
+}
+
+func TestAFastServfailDoesNotEndTheRace(t *testing.T) {
+	resetHealth(t)
+	want := net.IPv4(203, 0, 113, 7)
+	for _, rcode := range []uint8{rcodeServfail, rcodeNotImp, rcodeRefused} {
+		t.Run("rcode "+strconv.Itoa(int(rcode)), func(t *testing.T) {
+			bad := startRcodeResolver(t, rcode)
+			good := startDelayedAnswerResolver(t, 40*time.Millisecond, want)
+			for i := 0; i < 5; i++ {
+				ips, err := LookupAny(context.Background(), LookupIPs, []Server{bad, good}, true, true, "race.example", true, false)
+				if err != nil {
+					t.Fatalf("lookup %d: %v", i, err)
+				}
+				if len(ips) != 1 || !ips[0].Equal(want) {
+					t.Fatalf("lookup %d: got %v, want the healthy resolver's %s", i, ips, want)
+				}
+			}
+		})
+	}
+}
+
+func TestLookupIPsKeepsARetryableRcodeRetryable(t *testing.T) {
+	resetHealth(t)
+	for _, rcode := range []uint8{rcodeServfail, rcodeNotImp, rcodeRefused} {
+		srv := startRcodeResolver(t, rcode)
+		ips, err := LookupIPs(context.Background(), srv, "retry.example", true, false)
+		if len(ips) != 0 {
+			t.Fatalf("rcode %d: got %v, want no addresses", rcode, ips)
+		}
+		if !errors.Is(err, ErrTransientAnswer) {
+			t.Fatalf("rcode %d: err = %v, want a retryable failure", rcode, err)
+		}
+		if errors.Is(err, ErrNoAddress) {
+			t.Fatalf("rcode %d: a retryable answer was reported as a definitive no-address: %v", rcode, err)
+		}
 	}
 }

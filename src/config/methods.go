@@ -388,10 +388,13 @@ func (c *Config) QueuesIPFamily(v6 bool) bool {
 
 func (c *Config) HasDNSRedirect() bool {
 	for _, set := range c.Sets {
-		if set == nil || !set.Enabled || !set.DNS.Enabled {
+		if set == nil || !set.Enabled {
 			continue
 		}
-		if set.DNS.HasUpstream() || set.DNS.FakeIP.Enabled {
+		if set.DNS.FakeIP.Enabled {
+			return true
+		}
+		if set.DNS.Enabled && set.DNS.HasUpstream() {
 			return true
 		}
 	}

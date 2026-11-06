@@ -2,13 +2,25 @@ package nfq
 
 import (
 	"net"
+	"sync"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
 )
 
-var fakeIPPool = dns.NewFakeIPPool()
+var fakeIPPool = dns.DefaultFakeIPPool()
+
+var fakeIPExhausted sync.Map
+
+func logFakeIPExhausted(set *config.SetConfig, network *net.IPNet) {
+	key := set.Id + "|" + network.String()
+	if _, seen := fakeIPExhausted.LoadOrStore(key, struct{}{}); seen {
+		return
+	}
+	log.Warnf("DNS fake: no free address left in %s, so the set's fake answers are SERVFAIL until leases expire (set: %s)", network.String(), set.Name)
+}
 
 func (w *Worker) fakeIPAnswer(set *config.SetConfig, query []byte, domain string, clientIP net.IP) []byte {
 	if set == nil || len(query) == 0 || domain == "" {
@@ -25,9 +37,10 @@ func (w *Worker) fakeIPAnswer(set *config.SetConfig, query []byte, domain string
 
 	switch qtype {
 	case dnsTypeA:
-		ip := fakeIPPool.Address(domain, network)
+		ip := fakeIPPool.AddressFor(domain, network, time.Duration(ttl)*time.Second)
 		if ip == nil {
-			return nil
+			logFakeIPExhausted(set, network)
+			return dns.BuildServfailResponse(query)
 		}
 		resp := dns.BuildAnswerFromIPs(query, uint32(ttl), []net.IP{ip})
 		if resp == nil {

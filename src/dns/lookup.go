@@ -21,7 +21,7 @@ const (
 
 var ErrNoAddress = errors.New("the resolver has no address for the name")
 
-var ErrTransientAnswer = fmt.Errorf("the resolver answered with a retryable error: %w", ErrNoAddress)
+var ErrTransientAnswer = errors.New("the resolver answered with a retryable error")
 
 const (
 	rcodeServfail = 2
