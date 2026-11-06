@@ -89,14 +89,31 @@ export interface Confirmation {
   tries: number;
 }
 
+interface ConfirmationCounts {
+  confirmed?: number;
+  confirm_tries?: number;
+}
+
+interface ConfirmationSource extends ConfirmationCounts {
+  results?: Record<string, ConfirmationCounts>;
+}
+
 export function confirmationOf(
-  dr: DiscoveryResult,
+  source: ConfirmationSource,
   preset: string,
 ): Confirmation | null {
-  const r = dr.results?.[preset];
-  const tries = r?.confirm_tries ?? dr.confirm_tries ?? 0;
+  const counts = source.results?.[preset] ?? source;
+  const tries = counts.confirm_tries ?? 0;
   if (!tries) return null;
-  return { passed: r?.confirmed ?? dr.confirmed ?? 0, tries };
+  return { passed: counts.confirmed ?? 0, tries };
+}
+
+function confirmationPassed(
+  source: ConfirmationSource,
+  preset: string,
+): boolean {
+  const c = confirmationOf(source, preset);
+  return !!c && c.passed >= c.tries;
 }
 
 export interface ApplyTarget {
@@ -283,11 +300,9 @@ export function buildResultEntries(
             tries: confs[0].tries,
           }
         : null;
-    const unconfirmed = rs.some((dr, i) => {
-      if (dr.unconfirmed !== undefined) return dr.unconfirmed;
-      const c = confs[i];
-      return !c || c.passed < c.tries;
-    });
+    const unconfirmed =
+      suite.status === "canceled" ||
+      rs.some((dr) => !confirmationPassed(dr, preset));
     entries.push({
       kind: "found",
       key: `${preset}::${domains.join(",")}`,
@@ -583,11 +598,8 @@ export function historySet(e: HistoryEntry): B4SetConfig | null {
   );
 }
 
-export function historyUnconfirmed(e: HistoryEntry): boolean {
-  if (e.unconfirmed !== undefined) return e.unconfirmed;
-  if (e.status === "canceled") return true;
-  const tries = e.confirm_tries ?? 0;
-  return !tries || (e.confirmed ?? 0) < tries;
+export function historyUnconfirmed(e: HistoryEntry, preset: string): boolean {
+  return e.status === "canceled" || !confirmationPassed(e, preset);
 }
 
 export function formatDuration(
