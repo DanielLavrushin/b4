@@ -99,3 +99,31 @@ func TestFakeIPAnswerLifetimeIsCappedBelowTheNameCache(t *testing.T) {
 		t.Fatalf("FakeIPNetwork ttl = %d (%v), want %d", ttl, ok, MaxFakeIPTTL)
 	}
 }
+
+func TestValidateRejectsAFakeDnsBlockLargerThanSlash8(t *testing.T) {
+	cfg := NewConfig()
+	set := fakeDnsSet("fake1", "128.0.0.0/1")
+	cfg.Sets = []*SetConfig{set}
+
+	ve := mustValidationErr(t, cfg.Validate())
+	if findField(ve, "sets[0].dns.fakeip.cidr", "invalid_fakeip_cidr") == nil {
+		t.Fatalf("validation = %+v, want invalid_fakeip_cidr", ve.Fields)
+	}
+}
+
+func TestValidateRejectsAFakeDnsBlockThatSwallowsAnotherSetsTarget(t *testing.T) {
+	cfg := NewConfig()
+	fake := fakeDnsSet("fake1", "198.18.0.0/16")
+	plain := NewSetConfig()
+	plain.Id = "aaaaaaaa-2222-3333-4444-555555555555"
+	plain.Name = "plain1"
+	plain.Enabled = true
+	plain.Targets.SNIDomains = []string{"other.example"}
+	plain.Targets.IPs = []string{"198.18.7.7"}
+	cfg.Sets = []*SetConfig{fake, &plain}
+
+	ve := mustValidationErr(t, cfg.Validate())
+	if findField(ve, "sets[0].dns.fakeip.cidr", "fakeip_swallows_targets") == nil {
+		t.Fatalf("validation = %+v, want fakeip_swallows_targets", ve.Fields)
+	}
+}

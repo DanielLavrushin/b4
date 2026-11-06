@@ -436,7 +436,7 @@ func (s *dnsTCPServer) escalationTarget(cfg *config.Config, set *config.SetConfi
 	return s.worker.noteDNSOutcome(cfg, set, domain, srcMac, qtype, resp, from...)
 }
 
-func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query []byte, targetIP net.IP) ([]byte, error) {
+func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query []byte) ([]byte, error) {
 	defer beginDNSRedirect(query)()
 	domain, _ := dns.ParseQueryDomain(query)
 	walk := walkResolvers("DNS TCP", strings.ToLower(domain), set, func(upstream string) ([]byte, error) {
@@ -486,14 +486,7 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 		return nil, errQueryFromTarget
 	}
 
-	var targetIP net.IP
-	for _, upstream := range set.DNS.UpstreamList() {
-		if ip := net.ParseIP(upstream); ip != nil {
-			targetIP = ip
-			break
-		}
-	}
-	return s.resolve(set, cfg, query, targetIP)
+	return s.resolve(set, cfg, query)
 }
 
 func (s *dnsTCPServer) logEvent(set *config.SetConfig, domain string, clientIP, serverIP net.IP, clientPort int, srcMac, action string) {

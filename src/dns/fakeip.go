@@ -26,17 +26,6 @@ func FakeIPAddress(name string, network *net.IPNet) net.IP {
 	return fakeIPOffset(base, offset)
 }
 
-func InFakeIPNetwork(ip net.IP, network *net.IPNet) bool {
-	if ip == nil || network == nil {
-		return false
-	}
-	v4 := ip.To4()
-	if v4 == nil {
-		return false
-	}
-	return network.Contains(v4)
-}
-
 type fakeIPLease struct {
 	ip      net.IP
 	network string

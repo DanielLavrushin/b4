@@ -7,18 +7,9 @@ import (
 	"net"
 	"strings"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
-
-func dohURLHost(raw string) (string, bool) {
-	lower := strings.ToLower(strings.TrimSpace(raw))
-	for _, scheme := range []string{"https://", "http://"} {
-		if strings.HasPrefix(lower, scheme) {
-			return strings.TrimSpace(strings.TrimSpace(raw)[len(scheme):]), true
-		}
-	}
-	return "", false
-}
 
 func SetServers(enabled bool, target, dohURL string, upstreams []string) ([]Server, bool) {
 	if !enabled {
@@ -32,11 +23,11 @@ func SetServers(enabled bool, target, dohURL string, upstreams []string) ([]Serv
 			return
 		}
 		var srv Server
-		if host, ok := dohURLHost(raw); ok {
-			if host == "" {
+		if scheme, rest, ok := config.SplitUpstreamURL(raw); ok {
+			if rest == "" {
 				return
 			}
-			srv = Server{Source: raw, DoHURL: raw}
+			srv = Server{Source: scheme + rest, DoHURL: scheme + rest}
 		} else {
 			ip := net.ParseIP(raw)
 			if ip == nil {
@@ -107,29 +98,29 @@ func LookupAny(ctx context.Context, lookup LookupFunc, servers []Server, useSet,
 		select {
 		case r = <-ch:
 		case <-ctx.Done():
-			recordLateAnswers(ch, len(candidates)-answered)
+			recordLateAnswers(ch, len(candidates)-answered, false)
 			return nil, ctx.Err()
 		}
 		answered++
 		switch {
 		case r.err == nil && len(r.ips) > 0:
-			noteLookupOutcome(r)
-			recordLateAnswers(ch, len(candidates)-answered)
+			noteLookupOutcome(r, true)
+			recordLateAnswers(ch, len(candidates)-answered, true)
 			return r.ips, nil
 		case errors.Is(r.err, ErrTransientAnswer):
 			if transientErr == nil {
 				transientErr = r.err
 			}
-			noteLookupOutcome(r)
+			noteLookupOutcome(r, true)
 		case errors.Is(r.err, ErrNoAddress):
-			noteLookupOutcome(r)
-			recordLateAnswers(ch, len(candidates)-answered)
+			noteLookupOutcome(r, true)
+			recordLateAnswers(ch, len(candidates)-answered, true)
 			return nil, r.err
 		default:
 			if firstErr == nil {
 				firstErr, firstErrSrv = r.err, r.srv
 			}
-			noteLookupOutcome(r)
+			noteLookupOutcome(r, true)
 		}
 	}
 
@@ -146,7 +137,7 @@ func LookupAny(ctx context.Context, lookup LookupFunc, servers []Server, useSet,
 	return lookupRouter(ctx, name, v4, v6)
 }
 
-func noteLookupOutcome(r lookupResult) {
+func noteLookupOutcome(r lookupResult, countTimeouts bool) {
 	switch {
 	case r.err == nil && len(r.ips) > 0:
 		if NoteSourceSuccess(r.srv.Source) {
@@ -156,6 +147,7 @@ func noteLookupOutcome(r lookupResult) {
 		if NoteSourceSuccess(r.srv.Source) {
 			log.Infof("DNS: %s is answering again", SourceLabel(r.srv.Source))
 		}
+	case !countTimeouts && (errors.Is(r.err, context.Canceled) || errors.Is(r.err, context.DeadlineExceeded)):
 	default:
 		if NoteSourceFailure(r.srv.Source) {
 			log.Warnf("DNS: %s failed %d times in a row, lookups of sets that allow a fallback skip it for %s", SourceLabel(r.srv.Source), SourceFailuresToTrip, sourceCooldown)
@@ -163,13 +155,13 @@ func noteLookupOutcome(r lookupResult) {
 	}
 }
 
-func recordLateAnswers(ch <-chan lookupResult, pending int) {
+func recordLateAnswers(ch <-chan lookupResult, pending int, countTimeouts bool) {
 	if pending <= 0 {
 		return
 	}
 	go func() {
 		for i := 0; i < pending; i++ {
-			noteLookupOutcome(<-ch)
+			noteLookupOutcome(<-ch, countTimeouts)
 		}
 	}()
 }

@@ -68,21 +68,6 @@ func (f *fakeResolver) server() Server {
 	return Server{UDP: net.IPv4(127, 0, 0, 1), Port: f.conn.LocalAddr().(*net.UDPAddr).Port, Timeout: time.Second}
 }
 
-func TestSetServerFollowsTheSetsDNSSettings(t *testing.T) {
-	if _, ok := SetServer(false, "9.9.9.9", ""); ok {
-		t.Error("a set with DNS off has no server")
-	}
-	if srv, ok := SetServer(true, "9.9.9.9", "https://dns.example/dns-query"); !ok || srv.DoHURL == "" || srv.UDP != nil {
-		t.Errorf("the DoH URL takes precedence over the server address, got %+v", srv)
-	}
-	if srv, ok := SetServer(true, "9.9.9.9", ""); !ok || !srv.UDP.Equal(net.IPv4(9, 9, 9, 9)) {
-		t.Errorf("got %+v", srv)
-	}
-	if _, ok := SetServer(true, "not-an-ip", ""); ok {
-		t.Error("a target that is not an address is not a server")
-	}
-}
-
 func TestLookupIPsAsksTheSetsServerForEachFamily(t *testing.T) {
 	f := startFakeResolver(t, map[uint16][]net.IP{
 		rrTypeA:    {net.IPv4(198, 51, 100, 7)},
@@ -205,7 +190,7 @@ func TestAnEmptyAnswerFromTheSetsResolverIsFinal(t *testing.T) {
 	srv := f.server()
 	srv.Source = "empty"
 
-	ips, err := LookupWithFallback(context.Background(), LookupIPs, srv, true, false, "localhost", true, true)
+	ips, err := LookupAny(context.Background(), LookupIPs, []Server{srv}, true, false, "localhost", true, true)
 	if !errors.Is(err, ErrNoAddress) || len(ips) != 0 {
 		t.Fatalf("got %v %v; an answer with no address must not send the name to the router's resolver", ips, err)
 	}
@@ -218,7 +203,7 @@ func TestAFailingResolverFallsBackInTime(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	ips, err := LookupWithFallback(ctx, LookupIPs, srv, true, false, "localhost", true, true)
+	ips, err := LookupAny(ctx, LookupIPs, []Server{srv}, true, false, "localhost", true, true)
 	if err != nil || len(ips) == 0 {
 		t.Fatalf("a silent set resolver left no time for the router's resolver: %v %v", ips, err)
 	}
@@ -230,7 +215,7 @@ func TestAFailingResolverFallsBackInTime(t *testing.T) {
 func TestStrictNeverFallsBack(t *testing.T) {
 	resetHealth(t)
 	srv, _ := startBlackHole(t)
-	if ips, err := LookupWithFallback(context.Background(), LookupIPs, srv, true, true, "localhost", true, false); err == nil {
+	if ips, err := LookupAny(context.Background(), LookupIPs, []Server{srv}, true, true, "localhost", true, false); err == nil {
 		t.Fatalf("strict fell back to %v", ips)
 	}
 }
@@ -239,7 +224,7 @@ func TestADeadResolverIsSkippedAfterRepeatedFailures(t *testing.T) {
 	resetHealth(t)
 	srv, asked := startBlackHole(t)
 	for i := 0; i < SourceFailuresToTrip+3; i++ {
-		if _, err := LookupWithFallback(context.Background(), LookupIPs, srv, true, false, "localhost", true, false); err != nil {
+		if _, err := LookupAny(context.Background(), LookupIPs, []Server{srv}, true, false, "localhost", true, false); err != nil {
 			t.Fatalf("lookup %d: %v", i, err)
 		}
 	}
@@ -295,11 +280,11 @@ func TestServfailFromTheSetsResolverIsRetried(t *testing.T) {
 		<-done
 	})
 	srv := Server{Source: "servfail", UDP: net.IPv4(127, 0, 0, 1), Port: conn.LocalAddr().(*net.UDPAddr).Port, Timeout: time.Second}
-	if _, err := LookupWithFallback(context.Background(), LookupIPs, srv, true, true, "localhost", true, false); !errors.Is(err, ErrTransientAnswer) {
+	if _, err := LookupAny(context.Background(), LookupIPs, []Server{srv}, true, true, "localhost", true, false); !errors.Is(err, ErrTransientAnswer) {
 		t.Fatalf("strict lookup of a SERVFAIL = %v, want a retryable failure instead of a definitive no-address", err)
 	}
 	for i := 0; i < SourceFailuresToTrip; i++ {
-		_, err := LookupWithFallback(context.Background(), LookupIPs, srv, true, false, "localhost", true, false)
+		_, err := LookupAny(context.Background(), LookupIPs, []Server{srv}, true, false, "localhost", true, false)
 		if err == nil {
 			continue
 		}
@@ -366,7 +351,7 @@ func TestACancelledLookupIsNotCountedAgainstTheResolver(t *testing.T) {
 	for i := 0; i < SourceFailuresToTrip+1; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		time.AfterFunc(20*time.Millisecond, cancel)
-		if _, err := LookupWithFallback(ctx, LookupIPs, srv, true, false, "late.example", true, false); err == nil {
+		if _, err := LookupAny(ctx, LookupIPs, []Server{srv}, true, false, "late.example", true, false); err == nil {
 			t.Fatal("a cancelled lookup returned an answer")
 		}
 	}

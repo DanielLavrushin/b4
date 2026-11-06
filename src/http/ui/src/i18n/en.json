@@ -3970,6 +3970,7 @@
     "fakeip_requires_proxy": "Set \"{{set}}\": fake DNS answers an address that only exists inside b4, so the set must route through an upstream proxy. Turn on routing in proxy mode or turn fake DNS off.",
     "fakeip_requires_domain_dial": "Set \"{{set}}\": fake DNS needs the domain dial in routing.upstream, otherwise b4 would connect to the fake address itself.",
     "fakeip_needs_tcp_upstream": "Set \"{{set}}\": fake DNS cannot work with UDP forwarding to the upstream proxy, because a fake address means nothing beyond b4. Turn that off or turn fake DNS off.",
+    "fakeip_swallows_targets": "Set \"{{set}}\": fake DNS block {{cidr}} contains {{target}}, a plain target of set \"{{other}}\". That target would be answered with a fake address and routed by name instead of by address. Give the fake set a block that avoids the other set's targets.",
     "fakeip_refuses_fail_open": "Set \"{{set}}\": fail-open dials the original destination, which on a fake set is an address that exists only inside b4. Turn fail-open off or turn fake DNS off.",
     "fakeip_blocks_overlap": "Set \"{{set}}\": fake DNS block {{cidr}} overlaps the block of set \"{{other}}\". Both ranges land in the same routing ipset, so their connections can go to the wrong upstream. Give each set its own block.",
     "mark_conflict": "Mark value {{mark}} conflicts with reserved bits",

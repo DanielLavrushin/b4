@@ -274,6 +274,50 @@ func findFakeIPBlockClashes(sets []*SetConfig) []fakeIPBlockClash {
 	return out
 }
 
+type fakeIPTargetClash struct {
+	index      int
+	name       string
+	cidr       string
+	target     string
+	otherIndex int
+	otherName  string
+}
+
+func findFakeIPBlockSwallowsTargets(sets []*SetConfig) []fakeIPTargetClash {
+	var out []fakeIPTargetClash
+	for i, set := range sets {
+		if set == nil || !set.Enabled || !set.DNS.FakeIP.Enabled {
+			continue
+		}
+		block, _, ok := set.DNS.FakeIPNetwork()
+		if !ok {
+			continue
+		}
+		for j, other := range sets {
+			if other == nil || other == set {
+				continue
+			}
+			for _, raw := range other.Targets.IPs {
+				raw = strings.TrimSpace(raw)
+				if raw == "" {
+					continue
+				}
+				addr := net.ParseIP(raw)
+				if addr == nil {
+					if _, network, err := net.ParseCIDR(raw); err == nil && network != nil {
+						addr = network.IP
+					}
+				}
+				if addr == nil || !block.Contains(addr) {
+					continue
+				}
+				out = append(out, fakeIPTargetClash{index: i, name: set.Name, cidr: block.String(), target: raw, otherIndex: j, otherName: other.Name})
+			}
+		}
+	}
+	return out
+}
+
 func (c *Config) Validate() error {
 	v := &validator{}
 	c.System.WebServer.IsEnabled = c.System.WebServer.Port > 0 && c.System.WebServer.Port <= 65535
@@ -563,6 +607,13 @@ func (c *Config) Validate() error {
 	}
 	for _, clash := range findSharedTableGatewayClashes(c.Sets) {
 		warnEgressGatewayOnce("Sets %s share routing table %d with different routing.egress_gateway values, so their default routes overwrite each other and the last written one wins for all of them; give each its own routing.table", clash.names, clash.table)
+	}
+	for _, clash := range findFakeIPBlockSwallowsTargets(c.Sets) {
+		v.addf(fmt.Sprintf("sets[%d].dns.fakeip.cidr", clash.index), "fakeip_swallows_targets",
+			map[string]any{"set": clash.name, "cidr": clash.cidr, "target": clash.target, "other": clash.otherName},
+			"set %q: fake DNS block %s contains %s, a plain target of set %q; that target would be answered with a fake address and routed by name instead of by address",
+			clash.name, clash.cidr, clash.target, clash.otherName)
+		return v.result()
 	}
 	for _, clash := range findFakeIPBlockClashes(c.Sets) {
 		v.addf(fmt.Sprintf("sets[%d].dns.fakeip.cidr", clash.right), "fakeip_blocks_overlap",

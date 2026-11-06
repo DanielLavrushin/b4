@@ -12,6 +12,7 @@ const (
 	MaxDNSUpstreams    = 8
 	MinFakeIPPrefixLen = 24
 	MaxFakeIPTTL       = 1500
+	MinFakeIPBlockOnes = 8
 )
 
 func SplitUpstreamURL(raw string) (scheme, rest string, ok bool) {
@@ -157,6 +158,9 @@ func (c *DNSConfig) ValidateFakeIP() error {
 	}
 	if ones > MinFakeIPPrefixLen {
 		return fmt.Errorf("%q is smaller than a /%d and would run out of addresses", cidr, MinFakeIPPrefixLen)
+	}
+	if ones < MinFakeIPBlockOnes {
+		return fmt.Errorf("%q is larger than a /%d, so most of the internet would be routed into the set", cidr, MinFakeIPBlockOnes)
 	}
 	switch {
 	case network.IP.IsLoopback(), network.IP.IsMulticast(), network.IP.IsUnspecified():
