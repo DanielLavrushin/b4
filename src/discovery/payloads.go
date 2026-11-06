@@ -55,6 +55,37 @@ func loadCustomPayloads(cfg *config.Config, payloadFiles []string) []CustomPaylo
 	return result
 }
 
+func (ds *DiscoverySuite) presetsWithPayloads(presets []ConfigPreset) []ConfigPreset {
+	loaded := make([]ConfigPreset, 0, len(presets))
+	for _, preset := range presets {
+		ds.loadSetPayloads(&preset.Config)
+		if source, missing := unloadedFake(&preset.Config); missing {
+			log.DiscoveryLogf("Skipping '%s': its fake payload %q cannot be loaded, and a test with another one would not test this strategy", preset.Name, source)
+			continue
+		}
+		loaded = append(loaded, preset)
+	}
+	return loaded
+}
+
+func unloadedFake(set *config.SetConfig) (string, bool) {
+	faking := &set.Faking
+	if len(faking.PayloadData) > 0 || !sendsFake(set) {
+		return "", false
+	}
+	switch faking.SNIType {
+	case config.FakePayloadCapture:
+		return faking.PayloadFile, faking.PayloadFile != ""
+	case config.FakePayloadDomain:
+		return faking.PayloadDomain, faking.PayloadDomain != ""
+	}
+	return "", false
+}
+
+func sendsFake(set *config.SetConfig) bool {
+	return set.Faking.SNI || set.TCP.SynFake || set.Fragmentation.Combo.DecoyEnabled
+}
+
 func (ds *DiscoverySuite) detectWorkingPayloads(presets []ConfigPreset) {
 	log.DiscoveryLogf("  Testing payload variants...")
 
