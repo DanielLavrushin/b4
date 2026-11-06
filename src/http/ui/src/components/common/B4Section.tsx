@@ -28,41 +28,62 @@ export const B4Section = ({
       }}
       variant="outlined"
     >
-      <Box sx={{ display: "flex", alignItems: "center", mb: "12px" }}>
-        {icon && (
-          <Box
-            sx={{
-              mr: "16px",
-              p: "12px",
-              borderRadius: `${radiusPx.md}px`,
-              bgcolor: colors.accent.primary,
-              color: colors.primary,
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            {icon}
-          </Box>
-        )}
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography
-            sx={{
-              fontSize: 18,
-              fontWeight: 600,
-              lineHeight: 1.3,
-              color: colors.text.primary,
-            }}
-          >
-            {title}
-          </Typography>
-          {description && (
-            <Typography
-              variant="caption"
-              sx={{ color: colors.text.secondary, display: "block", mt: "2px" }}
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "8px 16px",
+          mb: "12px",
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            flex: "1 1 240px",
+            minWidth: 0,
+          }}
+        >
+          {icon && (
+            <Box
+              sx={{
+                mr: "16px",
+                p: "12px",
+                borderRadius: `${radiusPx.md}px`,
+                bgcolor: colors.accent.primary,
+                color: colors.primary,
+                display: "flex",
+                alignItems: "center",
+              }}
             >
-              {description}
-            </Typography>
+              {icon}
+            </Box>
           )}
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography
+              sx={{
+                fontSize: 18,
+                fontWeight: 600,
+                lineHeight: 1.3,
+                color: colors.text.primary,
+              }}
+            >
+              {title}
+            </Typography>
+            {description && (
+              <Typography
+                variant="caption"
+                sx={{
+                  color: colors.text.secondary,
+                  display: "block",
+                  mt: "2px",
+                }}
+              >
+                {description}
+              </Typography>
+            )}
+          </Box>
         </Box>
         {action}
       </Box>

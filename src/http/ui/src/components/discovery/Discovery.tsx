@@ -777,7 +777,7 @@ export const DiscoveryRunner = () => {
           description={`${t("discovery.history.sites", { count: history.length })} · ${t("discovery.history.newestFirst")}`}
           icon={<HistoryIcon />}
           action={
-            <Stack direction="row" spacing={1}>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
               <Button
                 size="small"
                 startIcon={<LogsIcon />}
