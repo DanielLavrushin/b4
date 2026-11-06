@@ -336,8 +336,32 @@ type telegramReply struct {
 	ErrorCode   int    `json:"error_code"`
 	Description string `json:"description"`
 	Parameters  struct {
-		RetryAfter int `json:"retry_after"`
+		RetryAfter      int   `json:"retry_after"`
+		MigrateToChatID int64 `json:"migrate_to_chat_id"`
 	} `json:"parameters"`
+}
+
+const telegramChannelOffset = 1000000000000
+
+func supergroupChatID(chat string) string {
+	id, err := strconv.ParseInt(strings.TrimSpace(chat), 10, 64)
+	if err != nil || id >= 0 || id <= -telegramChannelOffset {
+		return ""
+	}
+	return strconv.FormatInt(id-telegramChannelOffset, 10)
+}
+
+func chatIDHint(chat string, reply telegramReply) string {
+	if id := reply.Parameters.MigrateToChatID; id != 0 {
+		return "the new chat id is " + strconv.FormatInt(id, 10)
+	}
+	if !strings.Contains(strings.ToLower(reply.Description), "chat not found") {
+		return ""
+	}
+	if candidate := supergroupChatID(chat); candidate != "" {
+		return "a supergroup, forum or channel chat id starts with -100, so try " + candidate
+	}
+	return ""
 }
 
 func (s *Service) sendTelegram(ctx context.Context, t TelegramConfig, text string) error {
@@ -365,6 +389,9 @@ func (s *Service) sendTelegram(ctx context.Context, t TelegramConfig, text strin
 	msg := "telegram: HTTP " + strconv.Itoa(resp.StatusCode)
 	if desc := cleanText(reply.Description, 200); desc != "" {
 		msg += ": " + desc
+	}
+	if hint := chatIDHint(t.ChatID, reply); hint != "" {
+		msg += " (" + hint + ")"
 	}
 	se := &sendError{message: strings.ReplaceAll(msg, t.Token, "***")}
 	if reply.Parameters.RetryAfter > 0 {

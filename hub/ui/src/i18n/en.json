@@ -1419,7 +1419,7 @@
     "discard": "Discard changes",
     "unsaved": "Unsaved changes. A test message uses the saved settings, so it is available after saving.",
     "chat": "Chat id",
-    "chatHint": "A numeric chat id, or @name of a public channel. The bot has to be a member.",
+    "chatHint": "A numeric chat id, or @name of a public channel. A supergroup, a forum and a channel have an id that starts with -100. The bot has to be a member.",
     "token": "Bot token",
     "webhook": "Webhook",
     "url": "URL",
