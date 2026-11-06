@@ -4,7 +4,28 @@ import (
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
+	"go.uber.org/goleak"
 )
+
+func TestADiscoveryPoolThatCannotStartLeavesNothingRunning(t *testing.T) {
+	cfg := config.NewConfig()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("default config should be valid: %v", err)
+	}
+	cfg.ConfigPath = t.TempDir() + "/b4.json"
+	discoveryCfg := discoveryPoolConfig(&cfg, 541, 1, cfg.DiscoveryFlowMark(), cfg.DiscoveryInjectedMark())
+
+	before := goleak.IgnoreCurrent()
+	pool, err := startDiscoveryPool(discoveryCfg)
+	if err == nil {
+		pool.Stop()
+		t.Skip("this process may open raw sockets, so the pool started and there is nothing to check")
+	}
+	if pool != nil {
+		t.Fatal("a pool that failed to start was returned")
+	}
+	goleak.VerifyNone(t, before)
+}
 
 func TestDiscoveryPoolConfigKeepsTheRunsMarks(t *testing.T) {
 	cfg := config.NewConfig()
