@@ -341,15 +341,14 @@ type telegramReply struct {
 	} `json:"parameters"`
 }
 
+const telegramChannelOffset = 1000000000000
+
 func supergroupChatID(chat string) string {
-	digits, negative := strings.CutPrefix(chat, "-")
-	if !negative || digits == "" || strings.HasPrefix(digits, "100") {
+	id, err := strconv.ParseInt(strings.TrimSpace(chat), 10, 64)
+	if err != nil || id >= 0 || id <= -telegramChannelOffset {
 		return ""
 	}
-	if strings.TrimLeft(digits, "0123456789") != "" {
-		return ""
-	}
-	return "-100" + digits
+	return strconv.FormatInt(id-telegramChannelOffset, 10)
 }
 
 func chatIDHint(chat string, reply telegramReply) string {

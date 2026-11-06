@@ -878,7 +878,21 @@ func TestTelegramFailureNamesTheChatIDThatWouldWork(t *testing.T) {
 			want:   "(a supergroup, forum or channel chat id starts with -100, so try -1003456789012)",
 		},
 		{
-			name:   "already prefixed",
+			name:   "nine digit internal id",
+			chat:   "-123456789",
+			status: http.StatusBadRequest,
+			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
+			want:   "so try -1000123456789)",
+		},
+		{
+			name:   "internal id that itself starts with 100",
+			chat:   "-1003456789",
+			status: http.StatusBadRequest,
+			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
+			want:   "so try -1001003456789)",
+		},
+		{
+			name:   "already converted",
 			chat:   testChat,
 			status: http.StatusBadRequest,
 			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
