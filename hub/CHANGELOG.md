@@ -5,6 +5,7 @@ Releases of the community hub service, published from the `b4hub` repository. Th
 ## [1.6.0] - 2026-11-01
 
 - CHANGED: **The console's Check treats IP priority, the set switch that b4 1.90.0 adds, as a private field** - like a set's source devices, `targets.ip_priority` is never shared. When the Full set JSON of the edit dialog turns it on, Check lists it under Stripped fields. A hub built from an earlier b4 drops it with a warning about fields b4 does not know.
+- FIXED: **Telegram notifications repeated `Bad Request: chat not found` with nothing an operator could act on** - a supergroup, a forum and a channel have a chat id that starts with -100, and the id a `t.me/c/` link shows leaves that prefix out. A group that turns into a supergroup gets a new id as well, which Telegram names in its refusal and the hub discarded. The chat id field described neither.
 
 ## [1.5.0] - 2026-10-21
 
