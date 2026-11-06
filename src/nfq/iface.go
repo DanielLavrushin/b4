@@ -109,7 +109,7 @@ func tunnelEgress(a nfqueue.Attribute) string {
 		return ""
 	}
 	name := getIfaceName(idx)
-	if name == "" || !netif.TunnelAndUp(name) || netif.CarriesDefaultRoute(name) {
+	if name == "" || !netif.EncapsulatedAndUp(name) || netif.CarriesDefaultRoute(name) {
 		return ""
 	}
 	return name
