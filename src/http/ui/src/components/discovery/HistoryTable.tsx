@@ -28,6 +28,7 @@ import {
   Alternate,
   ApplyTarget,
   OfferedHost,
+  confirmationOf,
   describeStrategy,
   formatBytes,
   formatTimeAgo,
@@ -115,7 +116,7 @@ export const HistoryTable = ({
       return {
         entry,
         verdict,
-        unconfirmed: historyUnconfirmed(entry),
+        unconfirmed: historyUnconfirmed(entry, preset),
         set,
         preset,
         sharedWith,
@@ -150,15 +151,15 @@ export const HistoryTable = ({
   const badge = (row: Row) => {
     switch (row.verdict) {
       case "found": {
-        const tries = row.entry.confirm_tries ?? 0;
-        if (!row.unconfirmed && tries > 0) {
+        const confirmation = confirmationOf(row.entry, row.preset);
+        if (!row.unconfirmed && confirmation) {
           return (
             <B4Badge
               variant="outlined"
               color="success"
               label={t("discovery.status.confirmed", {
-                passed: row.entry.confirmed ?? 0,
-                tries,
+                passed: confirmation.passed,
+                tries: confirmation.tries,
               })}
             />
           );

@@ -2910,7 +2910,7 @@
       "counts": "{{worked}} of {{tested}} configurations loaded the pages, {{failed}} did not.",
       "foundAfter_one": "found on try {{count}}",
       "foundAfter_other": "found on try {{count}}",
-      "unconfirmedNote": "This run was stopped before the confirmation pass, so the strategy worked at least once but was not re-checked.",
+      "unconfirmedNote": "The confirmation pass did not finish, so the strategy worked at least once but is not confirmed.",
       "stoppedEarlyNote": "The search was stopped before it finished. The strategy passed the confirmation pass, but the steps that could have tuned it were skipped, so a faster one may exist.",
       "noSet": "The run did not keep the set for this strategy. Run it again to apply.",
       "rulesChanged": "The firewall rules this run depends on changed while it ran, so this result could come from another network path. Run it again to apply.",

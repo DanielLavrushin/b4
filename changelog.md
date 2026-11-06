@@ -25,6 +25,8 @@
 - FIXED: **An AI app could report one Discovery strategy and apply another** - b4_find_bypass_strategy named each site's fastest strategy, while applying installed the one the result card offers. When the AI app applied a saved result, the Discovery history marked the fastest strategy as tried.
 - FIXED: **Discovery could report that a set with the Random fake works while the set itself failed** - Discovery never sent random bytes. It tested that fake with the built-in fake, so the watchdog gave up on the failing set. A site tested with the built-in fake could also be offered a set with Random, as if both carried the same strategy.
 - FIXED: **A captured ClientHello picked in Discovery's options could go out as the same site's QUIC capture** - this needed a TLS and a QUIC capture saved for one site. Which of the two a run used could change from run to run. The set made from the result named the QUIC file.
+- FIXED: **Discovery's result card and History could show the confirmation of another strategy** - the card can offer a strategy other than a site's fastest, and both read the fastest one's result. After Stop now, a strategy that was never re-checked could read confirmed 3 of 3. A strategy that passed 3 of 3 read not confirmed when the fastest one had failed.
+- FIXED: **On a narrow screen, the history headers on the Discovery and DPI Detector pages could be unreadable** - the buttons next to the title kept their full width. The text under the title was squeezed into a narrow column and ran under the buttons.
 
 ## [1.89.1] - 2026-10-31
 
