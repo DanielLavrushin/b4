@@ -516,7 +516,8 @@ func TestNetnsAHelloTheSetsOwnStrategyReordersIsNotAStall(t *testing.T) {
 			}
 			t.Cleanup(w.Stop)
 
-			resets := 0
+			resets, completed := 0, 0
+			var otherFailure error
 			for range conns {
 				conn, err := netnsHoldDial()
 				if err != nil {
@@ -525,19 +526,29 @@ func TestNetnsAHelloTheSetsOwnStrategyReordersIsNotAStall(t *testing.T) {
 				_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 				var failed error
 				for range rounds {
-					_, _ = conn.Write(hello)
+					if _, failed = conn.Write(hello); failed != nil {
+						break
+					}
 					if _, failed = io.ReadFull(conn, make([]byte, 300)); failed != nil {
 						break
 					}
 				}
-				if errors.Is(failed, syscall.ECONNRESET) {
+				switch {
+				case failed == nil:
+					completed++
+				case errors.Is(failed, syscall.ECONNRESET):
 					resets++
+				default:
+					otherFailure = failed
 				}
 				conn.Close()
 			}
 			blocked := w.destState.IsBlocked(net.JoinHostPort(netnsHoldServer, strconv.Itoa(netnsHoldPort)))
 			if resets != 0 || blocked {
 				t.Fatalf("the server answered every ClientHello and the path lost nothing, yet %d of %d connections were reset, address cached: %v", resets, conns, blocked)
+			}
+			if completed != conns {
+				t.Fatalf("only %d of %d connections finished both rounds, so this test proves nothing, last failure: %v", completed, conns, otherFailure)
 			}
 		})
 	}
