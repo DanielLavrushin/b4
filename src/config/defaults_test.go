@@ -161,6 +161,19 @@ func TestApplyDefaults_NestedStruct(t *testing.T) {
 	}
 }
 
+func TestApplySetDefaultsKeepingFakeType(t *testing.T) {
+	for _, fakeType := range []int{FakePayloadRandom, FakePayloadDefault1, FakePayloadSTUN} {
+		set := SetConfig{Faking: FakingConfig{SNIType: fakeType}}
+		ApplySetDefaultsKeepingFakeType(&set)
+		if set.Faking.SNIType != fakeType {
+			t.Errorf("fake type %d became %d", fakeType, set.Faking.SNIType)
+		}
+		if set.Faking.SeqOffset != DefaultSetConfig.Faking.SeqOffset {
+			t.Errorf("fake type %d: the other gaps must still get their defaults, got seq offset %d", fakeType, set.Faking.SeqOffset)
+		}
+	}
+}
+
 func TestApplyConfigDefaults_NewConfigIsIdempotent(t *testing.T) {
 	cfg := NewConfig()
 	before := cfg.System.Logging

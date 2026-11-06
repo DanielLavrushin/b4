@@ -94,6 +94,12 @@ func ApplySetDefaults(set *SetConfig) {
 	ApplyDefaults(set, &DefaultSetConfig)
 }
 
+func ApplySetDefaultsKeepingFakeType(set *SetConfig) {
+	fakeType := set.Faking.SNIType
+	ApplySetDefaults(set)
+	set.Faking.SNIType = fakeType
+}
+
 func ApplyConfigDefaults(cfg *Config) {
 	ApplyDefaults(cfg, &DefaultConfig)
 }

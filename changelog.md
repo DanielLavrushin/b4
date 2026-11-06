@@ -18,6 +18,8 @@
 - FIXED: **Discovery gave sets a DNS redirect that the site did not need** - it took the provider's DNS answer for a forged one when a public resolver gave other addresses and no address opened the site without a bypass. Blocked sites that send each region to its own servers got such a redirect. The apply dialog then could not add the site to a set with the same strategy.
 - FIXED: **A strategy remembered from an earlier Discovery run could pass every try, then fail as a set** - when its fake was a captured ClientHello, the run tested it with the built-in fake. The set made from it sent the capture. The DNS and Page hosts results came from the same wrong test. Community sets with a captured fake had the same problem.
 - FIXED: **An AI app could report one Discovery strategy and apply another** - b4_find_bypass_strategy named each site's fastest strategy, while applying installed the one the result card offers. When the AI app applied a saved result, the Discovery history marked the fastest strategy as tried.
+- FIXED: **Discovery could report that a set with the Random fake works while the set itself failed** - Discovery never sent random bytes. It tested that fake with the built-in fake, so the watchdog gave up on the failing set. A site tested with the built-in fake could also be offered a set with Random, as if both carried the same strategy.
+- FIXED: **A captured ClientHello picked in Discovery's options could go out as the same site's QUIC capture** - this needed a TLS and a QUIC capture saved for one site. Which of the two a run used could change from run to run. The set made from the result named the QUIC file.
 
 ## [1.89.1] - 2026-10-31
 
