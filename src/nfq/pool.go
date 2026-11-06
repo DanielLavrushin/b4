@@ -3,6 +3,7 @@ package nfq
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"reflect"
@@ -353,8 +354,8 @@ func (w *Worker) UpdateConfig(newCfg *config.Config) {
 	w.cfg.Store(newCfg)
 }
 
-func logDomainOverlaps(sets []*config.SetConfig) {
-	overlaps := sni.FindDomainOverlaps(sets)
+func logDomainOverlaps(sets []*config.SetConfig, matcher *sni.SuffixSet) {
+	overlaps := sni.FindSetOverlaps(sets, matcher, nil)
 	if len(overlaps) == 0 {
 		return
 	}
@@ -365,12 +366,30 @@ func logDomainOverlaps(sets []*config.SetConfig) {
 		shown = shown[:maxReported]
 	}
 	for _, o := range shown {
-		log.Warnf("Domain %q is targeted by %d enabled sets (%s): b4 applies the first match ('%s') and ignores the others for this domain, unless one of them has a matching source-device filter",
-			o.Entry, len(o.SetNames), strings.Join(o.SetNames, ", "), o.SetNames[0])
+		log.Warnf("Sets '%s' and '%s' overlap: %s. A domain goes to the set with the more specific entry, then to the higher set, unless a source-device filter decides",
+			o.SetNames[0], o.SetNames[1], describeOverlap(o))
 	}
 	if len(overlaps) > len(shown) {
-		log.Warnf("... and %d more domain(s) targeted by several enabled sets", len(overlaps)-len(shown))
+		log.Warnf("... and %d more pair(s) of overlapping enabled sets", len(overlaps)-len(shown))
 	}
+}
+
+func describeOverlap(o sni.SetOverlap) string {
+	var parts []string
+	if len(o.SharedGeosite) > 0 {
+		parts = append(parts, "geosite "+strings.Join(o.SharedGeosite, ", "))
+	}
+	if len(o.SharedGeoip) > 0 {
+		parts = append(parts, "geoip "+strings.Join(o.SharedGeoip, ", "))
+	}
+	if o.Domains > 0 {
+		examples := make([]string, len(o.Examples))
+		for i, e := range o.Examples {
+			examples[i] = e.Domain
+		}
+		parts = append(parts, fmt.Sprintf("%d domain(s), e.g. %s", o.Domains, strings.Join(examples, ", ")))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func buildMatcher(cfg *config.Config) *sni.SuffixSet {
@@ -385,7 +404,7 @@ func buildMatcher(cfg *config.Config) *sni.SuffixSet {
 		}
 		log.Infof("Built matcher with %d domains and %d IPs across %d sets",
 			totalDomains, totalIPs, len(cfg.Sets))
-		logDomainOverlaps(cfg.Sets)
+		logDomainOverlaps(cfg.Sets, m)
 		return m
 	}
 	log.Tracef("Built empty matcher")

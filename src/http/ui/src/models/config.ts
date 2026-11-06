@@ -105,6 +105,8 @@ export interface TargetsConfig {
   ip: string[];
   geosite_categories: string[];
   geoip_categories: string[];
+  geosite_exclude?: Record<string, string[]>;
+  geoip_exclude?: Record<string, string[]>;
   asns: string[];
   source_devices?: string[];
   source_devices_exclude?: boolean;

@@ -283,7 +283,7 @@ func (c *Config) GetTargetsForSetWithCache(set *SetConfig, geositeDomains, geoip
 	if len(set.Targets.GeoSiteCategories) > 0 && c.System.Geo.GeoSitePath != "" {
 		for _, cat := range set.Targets.GeoSiteCategories {
 			if cached, ok := geositeDomains[cat]; ok {
-				domains = append(domains, cached...)
+				domains = set.Targets.AppendGeositeEntries(domains, cat, cached)
 			}
 		}
 	}
@@ -296,7 +296,7 @@ func (c *Config) GetTargetsForSetWithCache(set *SetConfig, geositeDomains, geoip
 	if len(set.Targets.GeoIpCategories) > 0 && c.System.Geo.GeoIpPath != "" {
 		for _, cat := range set.Targets.GeoIpCategories {
 			if cached, ok := geoipIPs[cat]; ok {
-				ips = append(ips, cached...)
+				ips = set.Targets.AppendGeoipEntries(ips, cat, cached)
 			}
 		}
 	}
@@ -429,6 +429,30 @@ func (set *SetConfig) ResetToDefaults() {
 	set.Routing.SourceInterfaces = make([]string, len(defaultSet.Routing.SourceInterfaces))
 	copy(set.Routing.SourceInterfaces, defaultSet.Routing.SourceInterfaces)
 
+}
+
+func (t *TargetsConfig) AppendGeositeEntries(dst []string, category string, entries []string) []string {
+	return appendNotExcluded(dst, entries, t.GeoSiteExclude[category])
+}
+
+func (t *TargetsConfig) AppendGeoipEntries(dst []string, category string, entries []string) []string {
+	return appendNotExcluded(dst, entries, t.GeoIpExclude[category])
+}
+
+func appendNotExcluded(dst, entries, excluded []string) []string {
+	if len(excluded) == 0 {
+		return append(dst, entries...)
+	}
+	skip := make(map[string]bool, len(excluded))
+	for _, e := range excluded {
+		skip[strings.ToLower(strings.TrimSpace(e))] = true
+	}
+	for _, e := range entries {
+		if !skip[strings.ToLower(e)] {
+			dst = append(dst, e)
+		}
+	}
+	return dst
 }
 
 func (t *TargetsConfig) AppendIP(ip []string) error {

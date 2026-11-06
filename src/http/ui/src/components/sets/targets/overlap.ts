@@ -16,3 +16,9 @@ export const findSetOverlaps = (
 };
 
 export const asnOverlapKey = (id: string): string => `AS${id}`;
+
+export const geositeOverlapKey = (tag: string): string =>
+  `geosite:${tag.toLowerCase()}`;
+
+export const geoipOverlapKey = (tag: string): string =>
+  `geoip:${tag.toLowerCase()}`;

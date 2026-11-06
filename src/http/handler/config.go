@@ -297,8 +297,8 @@ func (a *API) setStatistics(set *config.SetConfig) SetStatistics {
 	if len(set.Targets.GeoSiteCategories) > 0 && a.geodataManager.IsGeositeConfigured() {
 		if counts, err := a.geodataManager.GetGeositeCategoryCounts(set.Targets.GeoSiteCategories); err == nil {
 			stats.GeositeCategoryBreakdown = counts
-			for _, count := range counts {
-				stats.GeositeDomains += count
+			for category, count := range counts {
+				stats.GeositeDomains += max(count-len(set.Targets.GeoSiteExclude[category]), 0)
 			}
 		}
 	}
@@ -306,8 +306,8 @@ func (a *API) setStatistics(set *config.SetConfig) SetStatistics {
 	if len(set.Targets.GeoIpCategories) > 0 && a.geodataManager.IsGeoipConfigured() {
 		if counts, err := a.geodataManager.GetGeoipCategoryCounts(set.Targets.GeoIpCategories); err == nil {
 			stats.GeoipCategoryBreakdown = counts
-			for _, count := range counts {
-				stats.GeoipIPs += count
+			for category, count := range counts {
+				stats.GeoipIPs += max(count-len(set.Targets.GeoIpExclude[category]), 0)
 			}
 		}
 	}

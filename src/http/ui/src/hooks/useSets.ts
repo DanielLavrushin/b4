@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { B4SetConfig } from "@models/config";
 import { DSCPPath } from "@models/discovery";
 import { ApiResponse } from "@api/apiClient";
@@ -159,4 +160,13 @@ export function useSets() {
     addDomainsToSet,
     loading,
   };
+}
+
+export function useSetOverlaps(key: string) {
+  return useQuery({
+    queryKey: ["sets", "overlaps", key],
+    queryFn: () => setsApi.getOverlaps(),
+    staleTime: 0,
+    retry: false,
+  });
 }

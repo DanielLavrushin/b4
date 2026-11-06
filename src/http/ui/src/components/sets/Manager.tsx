@@ -54,7 +54,8 @@ import { EditorSection } from "./facets";
 import { FacetCompareBar } from "./SignalRail";
 
 import { colors, radius } from "@design";
-import { useSets } from "@hooks/useSets";
+import { useSetOverlaps, useSets } from "@hooks/useSets";
+import { overlapsForSet } from "@models/sets";
 import { useSetFacetSelection } from "@hooks/useSetFacetSelection";
 import { useWatchdogSetStatuses } from "@hooks/useWatchdog";
 import { B4Config, B4SetConfig } from "@models/config";
@@ -232,6 +233,9 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
   const deviceFilter = deviceFilterSelects(config.queue?.devices);
   const anyWatched = sets.some((s) => !!s.discovery?.watchdog);
   const watchStatuses = useWatchdogSetStatuses(anyWatched && watchdogOn);
+  const { data: overlaps } = useSetOverlaps(
+    sets.map((s) => `${s.id}:${s.enabled ? 1 : 0}`).join(","),
+  );
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -764,6 +768,7 @@ export const SetsManager = ({ config, onRefresh }: SetsManagerProps) => {
                           }}
                           onVoted={onRefresh}
                           watchStatus={watchStatuses.byId.get(set.id)}
+                          overlaps={overlapsForSet(overlaps, set.id)}
                           watchdogOn={watchdogOn}
                           deviceFilter={deviceFilter}
                         />

@@ -3,12 +3,13 @@ import { Box, Grid } from "@mui/material";
 import { DomainIcon } from "@b4.icons";
 import { B4Alert, B4Hint, B4Select, B4Switch } from "@b4.elements";
 import { B4SetConfig, GeoConfig } from "@models/config";
-import { SetDomainMatch } from "@models/sets";
+import { SetDomainMatch, SetOverlapEntry, SetOverlapView } from "@models/sets";
 import { useTranslation } from "react-i18next";
 import { SetStats } from "../Manager";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 import { GeoCategoryPanel } from "./GeoCategoryPanel";
 import { CategoryPreviewDialog } from "./CategoryPreviewDialog";
+import { OtherSetsTargets, geositeOverlapKey } from "./overlap";
 import { useChangedFields } from "@context/ChangedFieldsContext";
 import {
   DOMAIN_CATCH_ALL,
@@ -31,9 +32,14 @@ interface DomainsTabProps {
   stats?: SetStats;
   ipv4?: boolean;
   ipv6?: boolean;
+  otherSetsTargets?: OtherSetsTargets;
+  overlaps?: SetOverlapView[];
   geositeCategories: string[];
   geositeLoading: boolean;
-  onChange: (field: string, value: string | string[] | boolean) => void;
+  onChange: (
+    field: string,
+    value: string | string[] | boolean | Record<string, string[]>,
+  ) => void;
 }
 
 export const DomainsTab = ({
@@ -42,6 +48,8 @@ export const DomainsTab = ({
   stats,
   ipv4,
   ipv6,
+  otherSetsTargets,
+  overlaps,
   geositeCategories,
   geositeLoading,
   onChange,
@@ -53,6 +61,47 @@ export const DomainsTab = ({
   const [entryNotice, setEntryNotice] = useState("");
   const [previewCategory, setPreviewCategory] = useState<string | null>(null);
   const domains = config.targets.sni_domains ?? [];
+  const geositeExclude = config.targets.geosite_exclude ?? {};
+  const describeSide = (domain: string, side: SetOverlapEntry) => {
+    const source = side.source?.startsWith("geosite:")
+      ? t("sets.targets.overlapFromCategory", {
+          category: side.source.slice("geosite:".length),
+        })
+      : t(
+          side.source === "manual"
+            ? "sets.targets.overlapFromManual"
+            : "sets.targets.overlapFromList",
+        );
+    return side.entry === domain
+      ? source
+      : t("sets.targets.overlapUnder", { entry: side.entry, source });
+  };
+  const domainOverlaps = (overlaps ?? [])
+    .filter(({ overlap }) => overlap.domains > 0)
+    .map(({ otherId, otherName, overlap }) => {
+      const own = overlap.set_ids[0] === otherId ? 1 : 0;
+      return {
+        key: otherId,
+        title: t("sets.targets.domainOverlapTitle", {
+          count: overlap.domains,
+          set: otherName,
+        }),
+        items: (overlap.examples ?? []).slice(0, 3).map((e) => {
+          const goes =
+            e.winner_id === config.id
+              ? t("sets.targets.overlapGoesHere")
+              : t("sets.targets.overlapGoesTo", { set: e.winner_name ?? "" });
+          return t("sets.targets.overlapItem", {
+            domain: e.domain,
+            here: describeSide(e.domain, e.entries[own]),
+            set: otherName,
+            there: describeSide(e.domain, e.entries[1 - own]),
+            goes,
+            reason: t(`sets.targets.overlapReason.${e.reason ?? "other"}`),
+          });
+        }),
+      };
+    });
   const catchAll = domains.some(isDomainCatchAll);
   const domainsLeaf = changedValues.get("targets.sni_domains");
   const domainsLeafSets = useMemo(() => {
@@ -266,14 +315,41 @@ export const DomainsTab = ({
                 onChange("targets.geosite_categories", categories)
               }
               onPreview={setPreviewCategory}
+              excluded={geositeExclude}
+              otherSets={(c) => otherSetsTargets?.get(geositeOverlapKey(c)) ?? []}
               path="targets.geosite_categories"
             />
           </Grid>
         )}
       </Grid>
 
+      {domainOverlaps.length > 0 && (
+        <B4Alert severity="warning" sx={{ mt: 2 }}>
+          {domainOverlaps.map(({ key, title, items }) => (
+            <Box key={key} sx={{ mb: 1 }}>
+              {title}
+              <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+                {items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </Box>
+            </Box>
+          ))}
+          {t("sets.targets.overlapRemoveHint")}
+        </B4Alert>
+      )}
+
       <CategoryPreviewDialog
+        kind="geosite"
         category={previewCategory}
+        excluded={previewCategory ? geositeExclude[previewCategory] : undefined}
+        onExcludedChange={(entries) => {
+          if (!previewCategory) return;
+          onChange("targets.geosite_exclude", {
+            ...geositeExclude,
+            [previewCategory]: entries,
+          });
+        }}
         onClose={() => setPreviewCategory(null)}
       />
     </>

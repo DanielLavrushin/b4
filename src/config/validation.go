@@ -450,6 +450,8 @@ func (c *Config) Validate() error {
 		}
 		set.UDP.FilterQUIC = NormalizeQUICFilter(set.UDP.FilterQUIC)
 		set.UDP.Mode = NormalizeUDPMode(set.UDP.Mode)
+		set.Targets.GeoSiteExclude = pruneCategoryExcludes(set.Targets.GeoSiteExclude, set.Targets.GeoSiteCategories)
+		set.Targets.GeoIpExclude = pruneCategoryExcludes(set.Targets.GeoIpExclude, set.Targets.GeoIpCategories)
 
 		if len(set.Targets.GeoSiteCategories) > 0 && c.System.Geo.GeoSitePath == "" {
 			v.add(fmt.Sprintf("sets[%d].targets.geosite_categories", setIdx), "geosite_path_missing", "geosite path must be configured to use geosite categories", nil)
@@ -884,4 +886,25 @@ func WatchdogBlockerText(blocker string) string {
 		return "the set lists no domains or geosite categories, only IP addresses, GeoIP categories or ASNs, and the watchdog confirms which set handles a URL by its host name, so it can never confirm this one"
 	}
 	return blocker
+}
+
+func pruneCategoryExcludes(excludes map[string][]string, categories []string) map[string][]string {
+	var pruned map[string][]string
+	for _, category := range categories {
+		var kept []string
+		for _, entry := range excludes[category] {
+			entry = strings.ToLower(strings.TrimSpace(entry))
+			if entry != "" && !slices.Contains(kept, entry) {
+				kept = append(kept, entry)
+			}
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		if pruned == nil {
+			pruned = make(map[string][]string)
+		}
+		pruned[category] = kept
+	}
+	return pruned
 }

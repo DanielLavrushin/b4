@@ -32,6 +32,7 @@ func (api *API) RegisterSetsApi() {
 	api.mux.HandleFunc("/api/sets", api.handleSets)
 	api.mux.HandleFunc("/api/sets/targeted-domains", api.handleTargetedDomains)
 	api.mux.HandleFunc("/api/sets/check-domain", api.handleCheckDomain)
+	api.mux.HandleFunc("/api/sets/overlaps", api.handleSetOverlaps)
 	api.mux.HandleFunc("/api/sets/{id}", api.handleSetById)
 	api.mux.HandleFunc("/api/sets/reorder", api.handleReorderSets)
 	api.mux.HandleFunc("/api/sets/{id}/add-domain", api.handleSetDomains)
@@ -212,6 +213,47 @@ func (api *API) handleCheckDomain(w http.ResponseWriter, r *http.Request) {
 
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(api.matchDomainsToSets(domains, excludeId))
+}
+
+// @Summary List pairs of enabled sets that target the same domains or categories
+// @Tags Sets
+// @Produce json
+// @Success 200 {array} sni.SetOverlap
+// @Security BearerAuth
+// @Router /sets/overlaps [get]
+func (api *API) handleSetOverlaps(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	setJsonHeader(w)
+	_ = json.NewEncoder(w).Encode(sni.FindSetOverlaps(api.getCfg().Sets, api.engineMatcher(), api.entrySource))
+}
+
+func (api *API) entrySource(set *config.SetConfig, entry string) string {
+	for _, domain := range set.Targets.SNIDomains {
+		if sni.CanonicalDomainEntry(domain) == entry {
+			return "manual"
+		}
+	}
+	if api.geodataManager == nil {
+		return ""
+	}
+	for _, category := range set.Targets.GeoSiteCategories {
+		if !api.geodataManager.GeositeCategoryCached(category) {
+			continue
+		}
+		domains, err := api.geodataManager.LoadGeositeCategory(category)
+		if err != nil {
+			continue
+		}
+		for _, domain := range domains {
+			if sni.CanonicalDomainEntry(domain) == entry {
+				return "geosite:" + category
+			}
+		}
+	}
+	return ""
 }
 
 func (api *API) matchDomainsToSets(domains []string, excludeId string) []SetDomainMatch {
@@ -783,7 +825,7 @@ func (api *API) loadTargetsForSetCached(set *config.SetConfig) targetExpansion {
 			report.EmptyGeoSite = append(report.EmptyGeoSite, cat)
 			continue
 		}
-		domains = append(domains, cached...)
+		domains = set.Targets.AppendGeositeEntries(domains, cat, cached)
 	}
 	domains = append(domains, set.Targets.SNIDomains...)
 	set.Targets.DomainsToMatch = domains
@@ -794,7 +836,7 @@ func (api *API) loadTargetsForSetCached(set *config.SetConfig) targetExpansion {
 			report.EmptyGeoIP = append(report.EmptyGeoIP, cat)
 			continue
 		}
-		ips = append(ips, cached...)
+		ips = set.Targets.AppendGeoipEntries(ips, cat, cached)
 	}
 
 	if len(set.Targets.ASNs) > 0 {

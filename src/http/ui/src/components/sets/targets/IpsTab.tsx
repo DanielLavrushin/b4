@@ -9,7 +9,8 @@ import { SetStats } from "../Manager";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 import { GeoCategoryPanel } from "./GeoCategoryPanel";
 import { AsnPanel } from "./AsnPanel";
-import { OtherSetsTargets, findSetOverlaps } from "./overlap";
+import { OtherSetsTargets, findSetOverlaps, geoipOverlapKey } from "./overlap";
+import { CategoryPreviewDialog } from "./CategoryPreviewDialog";
 import { useChangedFields } from "@context/ChangedFieldsContext";
 import {
   IPV4_CATCH_ALL,
@@ -32,7 +33,10 @@ interface IpsTabProps {
   geoipLoading: boolean;
   ipv6?: boolean;
   scrollToAsn?: boolean;
-  onChange: (field: string, value: string | string[] | boolean) => void;
+  onChange: (
+    field: string,
+    value: string | string[] | boolean | Record<string, string[]>,
+  ) => void;
 }
 
 const TWO_COLUMNS = "@container (min-width: 760px)";
@@ -57,6 +61,8 @@ export const IpsTab = ({
   const [duplicateWarning, setDuplicateWarning] = useState("");
   const [entryNotice, setEntryNotice] = useState("");
   const ips = config.targets.ip ?? [];
+  const geoipExclude = config.targets.geoip_exclude ?? {};
+  const [previewCategory, setPreviewCategory] = useState<string | null>(null);
   const catchAllEntries = ipCatchAllEntries(!!ipv6);
   const presentCatchAll = ips.filter(isIpCatchAll).map(catchAllEntryFor);
   const ipsLeaf = changedValues.get("targets.ip");
@@ -222,6 +228,9 @@ export const IpsTab = ({
               onSelectedChange={(categories) =>
                 onChange("targets.geoip_categories", categories)
               }
+              onPreview={setPreviewCategory}
+              excluded={geoipExclude}
+              otherSets={(c) => otherSetsTargets?.get(geoipOverlapKey(c)) ?? []}
               path="targets.geoip_categories"
             />
           )}
@@ -246,6 +255,20 @@ export const IpsTab = ({
           </Box>
         </Box>
       </Box>
+
+      <CategoryPreviewDialog
+        kind="geoip"
+        category={previewCategory}
+        excluded={previewCategory ? geoipExclude[previewCategory] : undefined}
+        onExcludedChange={(entries) => {
+          if (!previewCategory) return;
+          onChange("targets.geoip_exclude", {
+            ...geoipExclude,
+            [previewCategory]: entries,
+          });
+        }}
+        onClose={() => setPreviewCategory(null)}
+      />
     </>
   );
 };

@@ -18,7 +18,11 @@ import { Navigate, Route, Routes, useNavigate, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { SetEditorPage } from "./Editor";
-import { asnOverlapKey } from "./targets/overlap";
+import {
+  asnOverlapKey,
+  geoipOverlapKey,
+  geositeOverlapKey,
+} from "./targets/overlap";
 import {
   SetStats,
   SetWithStats,
@@ -78,6 +82,16 @@ function SetEditorRoute({
       }
       for (const asn of s.targets.asns ?? []) {
         const key = asnOverlapKey(asn);
+        const existing = map.get(key);
+        if (existing) existing.push(s.name);
+        else map.set(key, [s.name]);
+      }
+      if (!s.enabled) continue;
+      const categoryKeys = [
+        ...s.targets.geosite_categories.map(geositeOverlapKey),
+        ...s.targets.geoip_categories.map(geoipOverlapKey),
+      ];
+      for (const key of categoryKeys) {
         const existing = map.get(key);
         if (existing) existing.push(s.name);
         else map.set(key, [s.name]);

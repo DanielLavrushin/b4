@@ -21,9 +21,19 @@ The **Bypass Domains** sub-tab holds domain names and GeoSite categories, and th
 | **TLS Version Filter** | **Any**, **TLS 1.2** or **TLS 1.3**, compared with the highest version the client offers. For a match by domain it is a preference: among the sets that list the domain, one whose filter fits comes first. For a match by address, a set whose filter does not fit does not take the connection. | **Any** |
 | **IP Version Filter** | **Any**, **IPv4** or **IPv6**, a preference for matches by domain and by address alike: among the matching sets, one whose filter fits comes first. Shown while both IPv4 and IPv6 support are on under [Settings > Core](../settings/core.md#protocols). An ASN target then loads only the prefixes of the chosen family. | **Any** |
 | **Manual Bypass Domains** | Domain names, added with Enter. A domain covers its subdomains, so a leading `*.` is removed. Several domains can be pasted at once, separated by commas or new lines. A `regexp:` entry takes a regular expression. | Empty |
-| **Bypass GeoSite Categories** | Ready-made lists of a service's domains from the GeoSite database, such as `youtube` or `discord`. Needs the database loaded under [Settings > Geodat Settings](../settings/geodata.md). A click on a category shows its domains. | Empty |
+| **Bypass GeoSite Categories** | Ready-made lists of a service's domains from the GeoSite database, such as `youtube` or `discord`. Needs the database loaded under [Settings > Geodat Settings](../settings/geodata.md). A click on a category lists its domains, where single entries can be [removed for this set](#remove-entries). | Empty |
 
 **Edit List** opens all manual entries as text, one per line. When a domain is already in another set, a warning names that set.
+
+When a category is also in another enabled set, a warning under the categories names that set. A second warning counts the domains this set shares with each other set. For a few examples it says where each set takes the domain from, the manual list or a category, and which set gets the domain and why. A domain goes to the set with the more specific entry, then to the set higher in the list. The card of each such set shows **Overlaps N sets**.
+
+### Removing entries from a category {#remove-entries}
+
+A click on a category opens all its entries, with a search field. The block button next to an entry removes it from this set, and the restore button returns it. Removed entries are listed at the top. They apply when the set is saved, and the category then shows as `youtube_edited` with its count reduced.
+
+The category stays linked to the database, so new entries from database updates still reach the set. Only the exact entry is removed: a broader entry such as `googleapis.com`, or the same domain in another category or in the manual list, still matches.
+
+For example, `youtubei.googleapis.com` is the `youtube` entry that the YouTube app uses. When it goes through a VPN tunnel on the router instead of a bypass, it is removed from `youtube` in the bypass set, and the rest of the category stays.
 
 ## IP addresses {#ip-addresses}
 
@@ -36,7 +46,7 @@ The **Bypass IPs** sub-tab holds addresses, GeoIP categories and ASNs.
 | **Match any IP address** | Adds `0.0.0.0/0`, and `::/0` while IPv6 support is on, which match every address. For DPI bypass, a narrower range in another set is handled by that set, so this set takes only what no other set claims. For routing, a narrower range in another routing set gets no such priority, so the two are best not combined. | Off |
 | **IP priority** | A connection to an address the set lists, by IP, GeoIP category or ASN, stays with this set even when a set lower in the list matches its domain. Shown while **TLS Version Filter** on **Bypass Domains** is **Any**. | Off |
 | **Manual Bypass IPs** | Addresses and CIDR ranges, such as `192.168.1.100` or `10.0.0.0/8`, entered the same way as domains. Other text, such as an AS number, is refused. | Empty |
-| **Bypass GeoIP Categories** | Address ranges from the GeoIP database, by country or by network. Needs the database loaded under **Settings > Geodat Settings**. | Empty |
+| **Bypass GeoIP Categories** | Address ranges from the GeoIP database, by country or by network. Needs the database loaded under **Settings > Geodat Settings**. A click on a category lists its ranges, where single ranges can be removed for this set, the same way as [GeoSite entries](#remove-entries). | Empty |
 
 **IP priority** suits servers that carry only this set's sites, such as the Google Global Cache nodes in a provider's own network. Shared CDN ranges and large networks carry many sites, and the switch is best left off there. With the Google network `AS15169` as a target, for example, the set would also keep `youtube.com` and every other Google service from the sets below it. Sets that rank above this one still take connections by name. A set limited to source devices ranks above every set without them. Among sets of the same kind, the one higher in the list ranks first. **IP priority** does not apply to a connection that matches the set only through **Match any IP address**. [IP priority](../internals/matching.md#ip-priority) describes the exact rules.
 

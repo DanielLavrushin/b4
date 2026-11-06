@@ -5,6 +5,8 @@ import { B4Section, B4Tabs, B4Tab, B4TabPanel } from "@b4.elements";
 import { B4SetConfig, GeoConfig } from "@models/config";
 import { useDevices } from "@b4.devices";
 import { useGeoCategories } from "@hooks/useGeoCategories";
+import { useSetOverlaps } from "@hooks/useSets";
+import { overlapsForSet } from "@models/sets";
 import { useTranslation } from "react-i18next";
 import { useChangedFields } from "@context/ChangedFieldsContext";
 import { hasTargets } from "./facets";
@@ -22,8 +24,8 @@ const TARGET_SUB_INDEX: Record<string, number> = {
   devices: 2,
 };
 export const TARGET_SUB_TABS: { labelKey: string; prefixes: string[] }[] = [
-  { labelKey: "sets.targets.tabs.domains", prefixes: ["targets.sni_domains", "targets.domain_only", "targets.tls", "targets.ip_version", "targets.geosite_categories"] },
-  { labelKey: "sets.targets.tabs.ips", prefixes: ["targets.ip", "targets.ip_priority", "targets.geoip_categories", "targets.asns"] },
+  { labelKey: "sets.targets.tabs.domains", prefixes: ["targets.sni_domains", "targets.domain_only", "targets.tls", "targets.ip_version", "targets.geosite_categories", "targets.geosite_exclude"] },
+  { labelKey: "sets.targets.tabs.ips", prefixes: ["targets.ip", "targets.ip_priority", "targets.geoip_categories", "targets.geoip_exclude", "targets.asns"] },
   { labelKey: "sets.targets.tabs.sourceDevices", prefixes: ["targets.source_devices", "targets.source_devices_exclude"] },
 ];
 
@@ -35,7 +37,10 @@ interface TargetSettingsProps {
   otherSetsTargets?: OtherSetsTargets;
   ipv4?: boolean;
   ipv6?: boolean;
-  onChange: (field: string, value: string | string[] | boolean) => void;
+  onChange: (
+    field: string,
+    value: string | string[] | boolean | Record<string, string[]>,
+  ) => void;
 }
 
 enum TARGET_TABS {
@@ -80,6 +85,7 @@ export const TargetSettings = ({
   useEffect(() => {
     loadDevices().catch(() => {});
   }, [loadDevices]);
+  const { data: overlaps } = useSetOverlaps(config.id);
 
   const selectedSourceDevices: string[] = config.targets.source_devices ?? [];
   const { changedPaths } = useChangedFields();
@@ -141,6 +147,8 @@ export const TargetSettings = ({
             stats={stats}
             ipv4={ipv4}
             ipv6={ipv6}
+            otherSetsTargets={otherSetsTargets}
+            overlaps={overlapsForSet(overlaps, config.id)}
             geositeCategories={geositeCategories}
             geositeLoading={geositeLoading}
             onChange={onChange}
