@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"bytes"
 	"encoding/binary"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,7 @@ const (
 	maxPendingHelloEntries = 2048
 	maxPendingHelloBytes   = 1 << 20
 	maxPendingHelloRecord  = 4096
+	maxTLSRecordLen        = 1 << 14
 	pendingHelloTTL        = 2 * time.Second
 	clientHelloRandomAt    = 11
 )
@@ -58,6 +60,18 @@ func startsClientHello(payload []byte) bool {
 		return false
 	}
 	return len(payload) <= 10 || payload[10] <= TLSMaxVersionMinor
+}
+
+func startsClientHelloRecord(payload []byte) bool {
+	if len(payload) < 6 || payload[0] != TLSHandshakeType || payload[1] != TLSVersionMajor || payload[2] > TLSMaxVersionMinor || payload[5] != TLSClientHello {
+		return false
+	}
+	length := int(payload[3])<<8 | int(payload[4])
+	return length > 0 && length <= maxTLSRecordLen
+}
+
+func startsMessage(payload []byte) bool {
+	return startsClientHelloRecord(payload) || looksLikeHTTPRequest(bytes.TrimPrefix(payload, methodEOL))
 }
 
 func truncatedClientHello(payload []byte) bool {
