@@ -29,6 +29,7 @@ type tlsInfo struct {
 	host       string
 	tlsVersion uint16
 	helloSeq   uint32
+	helloID    uint64
 	gen        uint64
 	lastSeen   time.Time
 	decidedBy  *sni.SuffixSet
@@ -46,7 +47,7 @@ type tlsInfoCache struct {
 
 const maxTLSCacheEntries = 20000
 
-func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, helloSeq uint32) uint64 {
+func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, helloSeq uint32, helloID uint64) uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -72,6 +73,7 @@ func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, hel
 		host:       host,
 		tlsVersion: tlsVersion,
 		helloSeq:   helloSeq,
+		helloID:    helloID,
 		gen:        c.gen,
 		lastSeen:   time.Now(),
 	}
@@ -84,6 +86,17 @@ func (c *tlsInfoCache) Lookup(connKey string) (string, uint16, bool) {
 
 	info, exists := c.conns[connKey]
 	if !exists {
+		return "", 0, false
+	}
+	return info.host, info.tlsVersion, true
+}
+
+func (c *tlsInfoCache) HelloAt(connKey string, seq uint32, helloID uint64) (string, uint16, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	info, exists := c.conns[connKey]
+	if !exists || info.helloSeq != seq || info.helloID != helloID {
 		return "", 0, false
 	}
 	return info.host, info.tlsVersion, true
@@ -277,6 +290,14 @@ func (t *destStateTracker) RecordClientHello(connKey, host string) (int, time.Ti
 	}
 	entry.retransmits++
 	return entry.retransmits, entry.firstSeen
+}
+
+func (t *destStateTracker) ClientHelloWithin(connKey string, d time.Duration) bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	entry, exists := t.conns[connKey]
+	return exists && time.Since(entry.firstSeen) < d
 }
 
 func (t *destStateTracker) ClearClientHellos(connKey string) {
