@@ -22,6 +22,7 @@ import { SimilarSet } from "@models/discovery";
 import { SetDomainMatch } from "@models/sets";
 import { discoveryApi } from "@api/discovery";
 import { setsApi } from "@api/sets";
+import { useHostMatches } from "@hooks/useHostMatches";
 import { useSnackbar } from "@context/SnackbarProvider";
 import {
   ApplyTarget,
@@ -44,7 +45,6 @@ type ApplyMode = "new" | "existing" | "replace";
 
 const COVERING = new Set(["exact", "covered", "regexp"]);
 const OTHER_SET = "__other__";
-const CHECK_DOMAIN_BATCH = 32;
 
 export interface ReplaceOptions {
   keepTargets: boolean;
@@ -121,9 +121,11 @@ export const ApplyDialog = ({
   const [addDomains, setAddDomains] = useState(true);
   const [urlsChoice, setUrlsChoice] = useState<boolean | null>(null);
   const [hostPicks, setHostPicks] = useState<Record<string, boolean>>({});
-  const [hostMatches, setHostMatches] = useState<SetDomainMatch[]>([]);
-  const [hostMatchesReady, setHostMatchesReady] = useState(false);
-  const [hostMatchesFailed, setHostMatchesFailed] = useState(false);
+  const {
+    matches: hostMatches,
+    checking: hostsPending,
+    failed: hostMatchesFailed,
+  } = useHostMatches((target?.hosts ?? []).map((h) => h.host), open);
 
   useEffect(() => {
     if (!open || !target) return;
@@ -195,40 +197,6 @@ export const ApplyDialog = ({
       active = false;
     };
   }, [open, domains, tested]);
-
-  const hostNames = useMemo(
-    () => (target?.hosts ?? []).map((h) => h.host),
-    [target],
-  );
-
-  useEffect(() => {
-    setHostMatches([]);
-    setHostMatchesFailed(false);
-    if (!open || hostNames.length === 0) {
-      setHostMatchesReady(true);
-      return;
-    }
-    setHostMatchesReady(false);
-    const batches: string[][] = [];
-    for (let i = 0; i < hostNames.length; i += CHECK_DOMAIN_BATCH) {
-      batches.push(hostNames.slice(i, i + CHECK_DOMAIN_BATCH));
-    }
-    let active = true;
-    Promise.all(batches.map((batch) => setsApi.checkDomain(batch.join(","))))
-      .then((lists) => {
-        if (!active) return;
-        setHostMatches(lists.flatMap((list) => (Array.isArray(list) ? list : [])));
-        setHostMatchesReady(true);
-      })
-      .catch(() => {
-        if (!active) return;
-        setHostMatchesFailed(true);
-        setHostMatchesReady(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [open, hostNames]);
 
   const setById = useMemo(() => new Map(sets.map((s) => [s.id, s])), [sets]);
 
@@ -367,7 +335,6 @@ export const ApplyDialog = ({
     mode === "new"
       ? hostsToAdd
       : pickedHosts(hostStates(offered, hostMatches, domains, null), hostPicks);
-  const hostsPending = offered.length > 0 && !hostMatchesReady;
 
   const copyJson = async () => {
     const names = [...domains];

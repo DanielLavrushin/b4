@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { colors, typography } from "@design";
 import { B4Badge } from "@b4.elements";
 import { DiscoveryResult } from "@models/discovery";
+import { useHostMatches } from "@hooks/useHostMatches";
 import {
   HostState,
   OfferedHost,
@@ -130,6 +131,7 @@ interface CardPageHostsProps {
   results: DiscoveryResult[];
   preset: string;
   hosts: OfferedHost[];
+  targetSetId: string | null;
   picks: Record<string, boolean>;
   disabled?: boolean;
   onToggle: (host: string, on: boolean) => void;
@@ -140,12 +142,14 @@ export const CardPageHosts = ({
   results,
   preset,
   hosts,
+  targetSetId,
   picks,
   disabled,
   onToggle,
 }: CardPageHostsProps) => {
   const { t } = useTranslation();
-  const states = hostStates(hosts, [], [], null);
+  const { matches, loading, failed } = useHostMatches(hosts.map((h) => h.host));
+  const states = hostStates(hosts, matches, [], targetSetId);
   const unfixed = unfixedHosts(results, preset);
   const skips = hostSkips(results, preset);
 
@@ -171,11 +175,16 @@ export const CardPageHosts = ({
             <Typography variant="caption" sx={captionSx}>
               {t("discovery.hosts.hint")}
             </Typography>
+            {failed && (
+              <Typography variant="caption" sx={captionSx}>
+                {t("discovery.hosts.checkFailed")}
+              </Typography>
+            )}
           </>
         }
         states={states}
         picks={picks}
-        disabled={disabled}
+        disabled={disabled || loading}
         onToggle={onToggle}
       />
       {(unfixed.length > 0 || skips.length > 0) && (
