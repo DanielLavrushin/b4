@@ -73,6 +73,18 @@ func TestDNSInterceptionIncludesResolverListsAndFakeDns(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsFakeDnsWithTheMTProtoWSRouting(t *testing.T) {
+	cfg := NewConfig()
+	set := fakeDnsSet("fake1", "198.18.0.0/16")
+	set.Routing.Mode = RoutingModeMTProtoWS
+	cfg.Sets = []*SetConfig{set}
+
+	ve := mustValidationErr(t, cfg.Validate())
+	if findField(ve, "sets[0].dns.fakeip", "fakeip_requires_proxy") == nil {
+		t.Fatalf("validation = %+v, want fakeip_requires_proxy", ve.Fields)
+	}
+}
+
 func TestValidateRejectsFakeDnsWithFailOpen(t *testing.T) {
 	cfg := NewConfig()
 	set := fakeDnsSet("fake1", "198.18.0.0/16")

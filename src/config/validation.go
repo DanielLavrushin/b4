@@ -558,7 +558,7 @@ func (c *Config) Validate() error {
 					log.Warnf("Set '%s': fake DNS block %s overlaps %s on %s, so devices on that subnet would be routed into the set by address", set.Name, network, subnet, iface)
 				}
 			}
-			if !set.Routing.Enabled || !RoutingUsesTProxy(set.Routing.Mode) {
+			if !set.Routing.Enabled || set.RoutingModeOrDefault() != RoutingModeProxy {
 				v.addf(fmt.Sprintf("sets[%d].dns.fakeip", setIdx), "fakeip_requires_proxy", map[string]any{"set": set.Name}, "set %q: fake DNS answers an address that only exists inside b4, so the set must route through an upstream proxy; enable routing in proxy mode or turn fake DNS off", set.Name)
 				return v.result()
 			}
