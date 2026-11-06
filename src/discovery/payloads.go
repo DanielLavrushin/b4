@@ -23,19 +23,13 @@ func loadCustomPayloads(cfg *config.Config, payloadFiles []string) []CustomPaylo
 		return result
 	}
 
-	captures := captureManager.ListCaptures()
-	captureMap := make(map[string]*capture.Capture)
-	for _, c := range captures {
-		captureMap[c.Domain] = c
-	}
-
 	for _, name := range payloadFiles {
 		name = strings.ToLower(strings.TrimSpace(name))
 		if name == "" {
 			continue
 		}
 
-		if c, ok := captureMap[name]; ok {
+		if c, ok := captureManager.GetCapture("tls", name); ok {
 			data, err := captureManager.LoadCaptureData(c)
 			if err != nil {
 				log.DiscoveryLogf("Discovery: failed to load capture %s: %v", name, err)

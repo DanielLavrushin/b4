@@ -457,7 +457,7 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 
 	geoBefore := api.getCfg().System.Geo
 	api.loadTargetsForSetCached(&set)
-	config.ApplySetDefaults(&set)
+	config.ApplySetDefaultsKeepingFakeType(&set)
 
 	var moved []DomainReassignment
 	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
@@ -537,7 +537,7 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, err)
 		return
 	}
-	config.ApplySetDefaults(&req.Set)
+	config.ApplySetDefaultsKeepingFakeType(&req.Set)
 
 	var probeURLs []string
 	if len(req.ProbeURLs) > 0 {
@@ -947,7 +947,7 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 	shape.TCP.RSTProtection = config.RSTProtectionConfig{}
 	shape.UDP.DPortFilter = ""
 	shape.UDP.FilterSTUN = false
-	config.ApplySetDefaults(&shape)
+	config.ApplySetDefaultsKeepingFakeType(&shape)
 	shape.Faking.PayloadData = nil
 	shape.UDP.FakePayloadData = nil
 	return shape

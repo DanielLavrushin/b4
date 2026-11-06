@@ -1560,7 +1560,8 @@ func baselineConfig() config.SetConfig {
 			Strategy: "none",
 		},
 		Faking: config.FakingConfig{
-			SNI: false,
+			SNI:     false,
+			SNIType: config.DefaultSetConfig.Faking.SNIType,
 		},
 	}
 }

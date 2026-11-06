@@ -29,6 +29,8 @@ type tlsInfo struct {
 	host       string
 	tlsVersion uint16
 	helloSeq   uint32
+	helloID    uint64
+	namedAt    time.Time
 	gen        uint64
 	lastSeen   time.Time
 	decidedBy  *sni.SuffixSet
@@ -46,7 +48,7 @@ type tlsInfoCache struct {
 
 const maxTLSCacheEntries = 20000
 
-func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, helloSeq uint32) uint64 {
+func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, helloSeq uint32, helloID uint64) uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -67,13 +69,21 @@ func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, hel
 		}
 	}
 
+	now := time.Now()
+	namedAt := now
+	if prev, exists := c.conns[connKey]; exists && prev.helloSeq == helloSeq && prev.helloID == helloID {
+		namedAt = prev.namedAt
+	}
+
 	c.gen++
 	c.conns[connKey] = &tlsInfo{
 		host:       host,
 		tlsVersion: tlsVersion,
 		helloSeq:   helloSeq,
+		helloID:    helloID,
+		namedAt:    namedAt,
 		gen:        c.gen,
-		lastSeen:   time.Now(),
+		lastSeen:   now,
 	}
 	return c.gen
 }
@@ -87,6 +97,17 @@ func (c *tlsInfoCache) Lookup(connKey string) (string, uint16, bool) {
 		return "", 0, false
 	}
 	return info.host, info.tlsVersion, true
+}
+
+func (c *tlsInfoCache) HelloAt(connKey string, seq uint32, helloID uint64) (tlsInfo, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	info, exists := c.conns[connKey]
+	if !exists || helloID == 0 || info.helloSeq != seq || info.helloID != helloID {
+		return tlsInfo{}, false
+	}
+	return *info, true
 }
 
 func (c *tlsInfoCache) Decision(connKey string) (tlsInfo, bool) {
@@ -200,6 +221,7 @@ type ipBlockEntry struct {
 	retransmits int
 	rstSent     bool
 	host        string
+	ack         uint32
 }
 
 type IPBlockCache interface {
@@ -254,7 +276,7 @@ const MaxEscalationHops = 8
 
 const escalationCapLogInterval = time.Minute
 
-func (t *destStateTracker) RecordClientHello(connKey, host string) (int, time.Time) {
+func (t *destStateTracker) RecordClientHello(connKey, host string, ack uint32) (int, time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -268,10 +290,11 @@ func (t *destStateTracker) RecordClientHello(connKey, host string) (int, time.Ti
 	}
 
 	entry, exists := t.conns[connKey]
-	if !exists {
+	if !exists || entry.ack != ack {
 		entry = &ipBlockEntry{
 			firstSeen: time.Now(),
 			host:      host,
+			ack:       ack,
 		}
 		t.conns[connKey] = entry
 	}

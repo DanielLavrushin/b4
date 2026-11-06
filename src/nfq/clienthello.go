@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"encoding/binary"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,6 +15,7 @@ const (
 	maxPendingHelloBytes   = 1 << 20
 	maxPendingHelloRecord  = 4096
 	pendingHelloTTL        = 2 * time.Second
+	clientHelloRandomAt    = 11
 )
 
 type pendingHello struct {
@@ -38,6 +40,7 @@ type pendingHelloCache struct {
 type feedResult struct {
 	joined  []byte
 	prefix  int
+	start   uint32
 	ok      bool
 	claimed *helloHold
 	held    *helloHold
@@ -66,6 +69,13 @@ func truncatedClientHello(payload []byte) bool {
 		return false
 	}
 	return 5+recLen > len(payload)
+}
+
+func clientHelloID(record []byte) uint64 {
+	if len(record) < clientHelloRandomAt+8 {
+		return 0
+	}
+	return binary.BigEndian.Uint64(record[clientHelloRandomAt:])
 }
 
 func (c *pendingHelloCache) Feed(connKey string, seq uint32, payload []byte) ([]byte, int, bool) {
@@ -131,7 +141,7 @@ func (c *pendingHelloCache) feedLocked(connKey string, seq uint32, payload []byt
 		c.storeLocked(connKey, startSeq, joined, nil)
 	}
 
-	res.joined, res.prefix, res.ok = joined, prefix, true
+	res.joined, res.prefix, res.start, res.ok = joined, prefix, startSeq, true
 	return res, released
 }
 
