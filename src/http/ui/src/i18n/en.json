@@ -2996,6 +2996,8 @@
       "dnsNotNeeded": "not needed, resolved cleanly",
       "dnsDoh": "DNS over HTTPS via {{url}}",
       "dnsServer": "redirected to {{server}}",
+      "dnsUpstreams": "resolved through {{list}}",
+      "dnsFakeIp": "answered from the fake DNS block {{cidr}}",
       "tls": "TLS {{version}}",
       "ipv": "IPv{{version}}",
       "geosite": "geosite {{list}}",

@@ -492,7 +492,7 @@ func redirectsDNS(cfg *config.Config) bool {
 		return false
 	}
 	dns := cfg.Sets[0].DNS
-	return dns.Enabled && (dns.TargetDNS != "" || dns.DoHURL != "")
+	return dns.Enabled && (len(dns.UpstreamList()) > 0 || dns.FakeIP.Enabled)
 }
 
 func (ds *DiscoverySuite) deployedConfig(preset string, stored *config.SetConfig, domains, hosts []string) *config.Config {

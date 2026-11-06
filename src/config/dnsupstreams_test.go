@@ -94,6 +94,127 @@ func TestFakeIPNetworkNeedsTheSwitch(t *testing.T) {
 	}
 }
 
+func TestSameResolverComparesWhatAnswers(t *testing.T) {
+	base := DNSConfig{
+		Enabled:   true,
+		TargetDNS: "1.1.1.1",
+		Upstreams: []string{"9.9.9.9"},
+		Strict:    true,
+	}
+	other := base
+	if !base.SameResolver(&other) {
+		t.Fatal("identical resolver configs were treated as different")
+	}
+
+	loose := base
+	loose.Strict = false
+	if base.SameResolver(&loose) {
+		t.Fatal("a strict change was ignored")
+	}
+
+	fragmented := base
+	fragmented.FragmentQuery = true
+	if base.SameResolver(&fragmented) {
+		t.Fatal("a fragment_query change was ignored")
+	}
+
+	stripped := base
+	stripped.StripECH = true
+	if base.SameResolver(&stripped) {
+		t.Fatal("a strip_ech change was ignored")
+	}
+
+	added := base
+	added.Upstreams = []string{"9.9.9.9", "8.8.8.8"}
+	if base.SameResolver(&added) {
+		t.Fatal("an added upstream was ignored")
+	}
+
+	swapped := base
+	swapped.TargetDNS = "9.9.9.9"
+	swapped.Upstreams = []string{"1.1.1.1"}
+	if base.SameResolver(&swapped) {
+		t.Fatal("a swapped resolver priority was ignored")
+	}
+
+	faked := base
+	faked.FakeIP = FakeIPConfig{Enabled: true, CIDR: "198.18.0.0/15", TTLSec: 300}
+	if base.SameResolver(&faked) {
+		t.Fatal("a fake DNS change was ignored")
+	}
+	longer := faked
+	longer.FakeIP.TTLSec = 900
+	if faked.SameResolver(&longer) {
+		t.Fatal("a fake DNS ttl change was ignored")
+	}
+
+	pinned := base
+	pinned.Pins = map[string][]string{"a.example": {"1.2.3.4"}}
+	if base.SameResolver(&pinned) {
+		t.Fatal("a pin change was ignored")
+	}
+
+	disabled := base
+	disabled.Enabled = false
+	if base.SameResolver(&disabled) {
+		t.Fatal("an enabled change was ignored")
+	}
+
+	var none *DNSConfig
+	if none.SameResolver(nil) != true {
+		t.Fatal("two absent configs were treated as different")
+	}
+	if base.SameResolver(nil) {
+		t.Fatal("an absent config matched a configured one")
+	}
+}
+
+func TestSameResolverIgnoresTheTargetBehindDoH(t *testing.T) {
+	a := DNSConfig{Enabled: true, DoHURL: "https://dns.google/dns-query", TargetDNS: "8.8.8.8"}
+	b := DNSConfig{Enabled: true, DoHURL: "https://dns.google/dns-query", TargetDNS: "1.1.1.1"}
+	if !a.SameResolver(&b) {
+		t.Fatal("a target_dns that the DoH URL overrides was treated as a change")
+	}
+}
+
+func TestSameResolverTreatsTheDefaultFakeIPTTLAsEqual(t *testing.T) {
+	a := DNSConfig{Enabled: true, FakeIP: FakeIPConfig{Enabled: true}}
+	b := DNSConfig{Enabled: true, FakeIP: FakeIPConfig{Enabled: true, TTLSec: DefaultFakeIPTTL}}
+	if !a.SameResolver(&b) {
+		t.Fatal("an unset fake DNS ttl was treated as different from the default")
+	}
+}
+
+func TestResolverKeyTracksEveryInput(t *testing.T) {
+	base := DNSConfig{Enabled: true, TargetDNS: "1.1.1.1", Upstreams: []string{"9.9.9.9"}}
+	if base.ResolverKey() != base.ResolverKey() {
+		t.Fatal("ResolverKey is not stable")
+	}
+	same := base
+	if base.ResolverKey() != same.ResolverKey() {
+		t.Fatal("identical configs produced different keys")
+	}
+	changed := base
+	changed.Strict = true
+	if base.ResolverKey() == changed.ResolverKey() {
+		t.Fatal("a strict change left the key alone")
+	}
+	pinned := base
+	pinned.Pins = map[string][]string{"a.example": {"1.2.3.4"}, "b.example": {"5.6.7.8"}}
+	reordered := base
+	reordered.Pins = map[string][]string{"b.example": {"5.6.7.8"}, "a.example": {"1.2.3.4"}}
+	if pinned.ResolverKey() != reordered.ResolverKey() {
+		t.Fatal("the pin map order changed the key")
+	}
+	if base.ResolverKey() == pinned.ResolverKey() {
+		t.Fatal("pins left the key alone")
+	}
+	var none *DNSConfig
+	if none.ResolverKey() != "" {
+		t.Fatal("an absent config produced a key")
+	}
+}
+
 func upstreamItoa(n int) string {
 	if n == 0 {
 		return "0"

@@ -909,8 +909,11 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 			Enabled:       set.DNS.Enabled,
 			TargetDNS:     set.DNS.TargetDNS,
 			DoHURL:        set.DNS.DoHURL,
+			Upstreams:     append([]string(nil), set.DNS.Upstreams...),
 			FragmentQuery: set.DNS.FragmentQuery,
+			Strict:        set.DNS.Strict,
 			StripECH:      set.DNS.StripECH,
+			FakeIP:        set.DNS.FakeIP,
 		},
 		Routing: config.RoutingConfig{
 			Enabled: set.Routing.Enabled,

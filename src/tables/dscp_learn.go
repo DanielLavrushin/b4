@@ -696,8 +696,7 @@ func dscpPreResolveInterval(member dscpPlanSet) time.Duration {
 }
 
 func dscpPreResolverKey(cfg *config.Config, set *config.SetConfig) string {
-	d := set.DNS
-	return fmt.Sprintf("%t %q %q %t %t %t", d.Enabled, d.TargetDNS, d.DoHURL, d.Strict, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	return fmt.Sprintf("%s %t %t", set.DNS.ResolverKey(), cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 }
 
 func dscpPreResolve(plan *dscpPlan, cfg *config.Config, _ bool) {

@@ -113,12 +113,30 @@ export const StrategySummary = ({
 
   const dns = set.dns;
   const pinned = Object.values(dns?.pins ?? {}).flat();
+  const upstreams = dns?.upstreams ?? [];
   let dnsValue = t("discovery.summary.dnsNotNeeded");
   let dnsMuted: string | undefined;
+  let answeredByResolver = false;
   if (dns?.enabled) {
-    dnsValue = dns.doh_url
-      ? t("discovery.summary.dnsDoh", { url: dns.doh_url })
-      : t("discovery.summary.dnsServer", { server: dns.target_dns });
+    if (dns.doh_url) {
+      dnsValue = t("discovery.summary.dnsDoh", { url: dns.doh_url });
+      answeredByResolver = true;
+    } else if (dns.target_dns) {
+      dnsValue = t("discovery.summary.dnsServer", { server: dns.target_dns });
+      answeredByResolver = true;
+    } else if (upstreams.length > 0) {
+      dnsValue = t("discovery.summary.dnsUpstreams", {
+        list: upstreams.join(", "),
+      });
+      answeredByResolver = true;
+    }
+  }
+  if (dns?.fakeip?.enabled) {
+    const fakeText = t("discovery.summary.dnsFakeIp", {
+      cidr: dns.fakeip.cidr || "198.18.0.0/15",
+    });
+    if (answeredByResolver) dnsMuted = fakeText;
+    else dnsValue = fakeText;
   }
   if (pinned.length > 0) {
     const pinText = t("discovery.summary.dnsPins", {

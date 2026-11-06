@@ -458,7 +458,7 @@ func routeSameResolveTargets(a, b *config.SetConfig) bool {
 	if a.Targets.DomainOnly != b.Targets.DomainOnly || len(a.Targets.SNIDomains) != len(b.Targets.SNIDomains) {
 		return false
 	}
-	if a.DNS.Enabled != b.DNS.Enabled || a.DNS.TargetDNS != b.DNS.TargetDNS || a.DNS.DoHURL != b.DNS.DoHURL || a.DNS.Strict != b.DNS.Strict {
+	if !a.DNS.SameResolver(&b.DNS) {
 		return false
 	}
 	counts := make(map[string]int, len(a.Targets.SNIDomains))

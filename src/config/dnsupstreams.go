@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 )
 
@@ -103,6 +104,87 @@ func (c *DNSConfig) FakeIPNetwork() (*net.IPNet, int, bool) {
 		ttl = MaxFakeIPTTL
 	}
 	return network, ttl, true
+}
+
+func fakeIPKey(f FakeIPConfig) string {
+	if !f.Enabled {
+		return "off"
+	}
+	d := DNSConfig{FakeIP: f}
+	network, ttl, ok := d.FakeIPNetwork()
+	if !ok {
+		return fmt.Sprintf("on %s %d", strings.TrimSpace(f.CIDR), f.TTLSec)
+	}
+	return fmt.Sprintf("on %s %d", network.String(), ttl)
+}
+
+func pinsKey(pins map[string][]string) string {
+	if len(pins) == 0 {
+		return ""
+	}
+	domains := make([]string, 0, len(pins))
+	for domain := range pins {
+		domains = append(domains, domain)
+	}
+	sort.Strings(domains)
+	var b strings.Builder
+	for _, domain := range domains {
+		b.WriteString(domain)
+		b.WriteByte('=')
+		b.WriteString(strings.Join(pins[domain], ","))
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func samePins(a, b map[string][]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for domain, aips := range a {
+		bips, ok := b[domain]
+		if !ok || len(aips) != len(bips) {
+			return false
+		}
+		for i := range aips {
+			if strings.TrimSpace(aips[i]) != strings.TrimSpace(bips[i]) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (c *DNSConfig) SameResolver(o *DNSConfig) bool {
+	if c == nil || o == nil {
+		return c == o
+	}
+	if c.Enabled != o.Enabled || c.Strict != o.Strict ||
+		c.FragmentQuery != o.FragmentQuery || c.StripECH != o.StripECH ||
+		fakeIPKey(c.FakeIP) != fakeIPKey(o.FakeIP) || !samePins(c.Pins, o.Pins) {
+		return false
+	}
+	a, b := c.UpstreamList(), o.UpstreamList()
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !strings.EqualFold(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *DNSConfig) ResolverKey() string {
+	if c == nil {
+		return ""
+	}
+	return fmt.Sprintf("%t|%t|%t|%t|%s|%s|%s",
+		c.Enabled, c.Strict, c.FragmentQuery, c.StripECH,
+		fakeIPKey(c.FakeIP),
+		strings.Join(c.UpstreamList(), "\n"),
+		pinsKey(c.Pins))
 }
 
 func (c *DNSConfig) NormalizeUpstreams(onDrop func(value string)) {

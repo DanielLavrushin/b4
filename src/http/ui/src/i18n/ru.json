@@ -3105,6 +3105,8 @@
       "dnsNotNeeded": "не нужен, адреса разрешаются честно",
       "dnsDoh": "DNS поверх HTTPS через {{url}}",
       "dnsServer": "перенаправление на {{server}}",
+      "dnsUpstreams": "разрешается через {{list}}",
+      "dnsFakeIp": "ответ из блока fake DNS {{cidr}}",
       "tls": "TLS {{version}}",
       "ipv": "IPv{{version}}",
       "geosite": "geosite {{list}}",
