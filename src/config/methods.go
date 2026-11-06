@@ -1344,32 +1344,32 @@ func (c *Config) LoadCapturePayloads() {
 		case FakePayloadCapture:
 			if capturesDir == "" || set.Faking.PayloadFile == "" {
 				set.Faking.PayloadData = nil
-				continue
+				break
 			}
 			capturePath, err := safeCapturePath(capturesDir, set.Faking.PayloadFile)
 			if err != nil {
 				log.Errorf("Rejected capture payload %q: %v", set.Faking.PayloadFile, err)
 				set.Faking.PayloadData = nil
-				continue
+				break
 			}
 			data, err := os.ReadFile(capturePath)
 			if err != nil {
 				log.Errorf("Failed to load capture file %s: %v", set.Faking.PayloadFile, err)
 				set.Faking.PayloadData = nil
-				continue
+				break
 			}
 			set.Faking.PayloadData = data
 			log.Tracef("Loaded capture payload %s (%d bytes)", set.Faking.PayloadFile, len(data))
 		case FakePayloadDomain:
 			if set.Faking.PayloadDomain == "" {
 				set.Faking.PayloadData = nil
-				continue
+				break
 			}
 			data, err := tlsgen.GenerateTLSClientHello(set.Faking.PayloadDomain)
 			if err != nil {
 				log.Errorf("Failed to generate domain payload for %s: %v", set.Faking.PayloadDomain, err)
 				set.Faking.PayloadData = nil
-				continue
+				break
 			}
 			set.Faking.PayloadData = data
 			log.Tracef("Generated domain payload for %s (%d bytes)", set.Faking.PayloadDomain, len(data))
