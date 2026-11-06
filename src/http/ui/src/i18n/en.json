@@ -821,6 +821,8 @@
       "refreshList": "Refresh list",
       "clearAll": "Clear all captures",
       "clearConfirm": "Delete all captured payloads?",
+      "clearInUseConfirm": "Delete all captured payloads? Some are in use by these sets: {{sets}}. A fake that uses a deleted payload falls back to Preset: Google (classic) over TCP and to zeros over UDP.",
+      "deleteInUseConfirm": "Delete {{domain}}? These sets use this payload: {{sets}}. A fake that uses it falls back to Preset: Google (classic) over TCP and to zeros over UDP.",
       "allCleared": "All payloads cleared",
       "clearFailed": "Failed to clear payloads",
       "generateFailed": "Failed to generate payload",
@@ -3984,6 +3986,7 @@
     "dscp_path_now_without_family": "This strategy was tested with DSCP {{tested}} over {{family}}, but the {{family}} traffic of set \"{{set}}\" no longer carries a DSCP value and takes another network path. Run Discovery for the set to test a strategy on that path.",
     "dscp_path_interfaces": "This strategy was tested while b4 wrote DSCP values on other network interfaces, so the traffic of set \"{{set}}\" takes another network path now. Run Discovery for the set to test a strategy on that path.",
     "similar_set_changed": "Set \"{{set}}\" no longer uses the strategy this result found, so its domains were not added. Open the result again to choose a set.",
+    "fake_payload_missing": "This strategy was tested with the fake payload {{file}}, which can no longer be loaded, so the set would send a different fake. Run Discovery again to test a strategy with the payloads there are now.",
     "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the set's traffic. Try again in a moment."
   },
   "hub": {
