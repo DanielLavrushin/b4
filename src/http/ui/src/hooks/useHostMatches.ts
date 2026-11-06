@@ -27,7 +27,7 @@ export function useHostMatches(hosts: string[], enabled = true) {
     refetchOnWindowFocus: false,
   });
   return {
-    matches: query.data ?? [],
+    matches: query.isError ? [] : (query.data ?? []),
     loading: query.isLoading,
     checking: query.isFetching,
     failed: query.isError,
