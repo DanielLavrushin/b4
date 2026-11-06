@@ -12,12 +12,18 @@ func TestUpstreamListMergesEverySource(t *testing.T) {
 		DoHURL:    "https://dns.google/dns-query",
 		Upstreams: []string{"9.9.9.9", "https://doh.pub/dns-query", "1.1.1.1"},
 	}
-	want := []string{"https://dns.google/dns-query", "1.1.1.1", "9.9.9.9", "https://doh.pub/dns-query"}
+	want := []string{"https://dns.google/dns-query", "9.9.9.9", "https://doh.pub/dns-query", "1.1.1.1"}
 	if got := c.UpstreamList(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("UpstreamList = %v, want %v", got, want)
 	}
 	if !c.HasUpstream() {
 		t.Fatal("HasUpstream = false for a configured set")
+	}
+
+	c.DoHURL = ""
+	want = []string{"1.1.1.1", "9.9.9.9", "https://doh.pub/dns-query"}
+	if got := c.UpstreamList(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("UpstreamList without a URL = %v, want %v", got, want)
 	}
 }
 

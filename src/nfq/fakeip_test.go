@@ -97,3 +97,71 @@ func TestFakeIPAnswerServesServfailWhenTheBlockIsFull(t *testing.T) {
 		t.Fatal("the late name took an address that belongs to another name")
 	}
 }
+
+func fakeScope(name, mac string, router bool) *ingressScope {
+	return &ingressScope{name: name, mac: mac, router: router, resolved: true}
+}
+
+func TestFakeIPAnswerSkipsAClientOutsideTheSetsInterfaces(t *testing.T) {
+	set := fakeIPSet("198.18.0.0/15")
+	set.Routing.SourceInterfaces = []string{"lan1"}
+	query := dns.BuildQuery("outside.example", 0x1301, dnsTypeA)
+
+	if resp := (&Worker{}).fakeIPAnswer(set, query, "outside.example", net.ParseIP("192.168.2.30"), fakeScope("lan2", "aa:bb:cc:dd:ee:01", false)); resp != nil {
+		t.Fatalf("a client on lan2 got %v from a set scoped to lan1", dns.ParseResponseIPs(resp))
+	}
+	if resp := (&Worker{}).fakeIPAnswer(set, query, "outside.example", net.ParseIP("192.168.1.30"), fakeScope("lan1", "aa:bb:cc:dd:ee:01", false)); resp == nil {
+		t.Fatal("a client on lan1 got no fake answer")
+	}
+}
+
+func TestFakeIPAnswerSkipsTheRoutersOwnQuery(t *testing.T) {
+	set := fakeIPSet("198.18.0.0/15")
+	query := dns.BuildQuery("routerasked.example", 0x1302, dnsTypeA)
+	if resp := (&Worker{}).fakeIPAnswer(set, query, "routerasked.example", net.ParseIP("192.168.0.1"), fakeScope("", "", true)); resp != nil {
+		t.Fatalf("the router's own query got %v, and no rule would carry that address anywhere", dns.ParseResponseIPs(resp))
+	}
+}
+
+func TestFakeIPAnswerSkipsTheSetsOwnResolver(t *testing.T) {
+	set := fakeIPSet("198.18.0.0/15")
+	set.DNS.TargetDNS = "192.168.1.5"
+	query := dns.BuildQuery("ownresolver.example", 0x1303, dnsTypeA)
+
+	if resp := (&Worker{}).fakeIPAnswer(set, query, "ownresolver.example", net.ParseIP("192.168.1.5"), nil); resp != nil {
+		t.Fatalf("the set's own resolver got %v and could not resolve it anywhere", dns.ParseResponseIPs(resp))
+	}
+	if resp := (&Worker{}).fakeIPAnswer(set, query, "ownresolver.example", net.ParseIP("192.168.1.30"), nil); resp == nil {
+		t.Fatal("a device got no fake answer")
+	}
+}
+
+func TestFakeIPAnswerSkipsADeviceScopedSetForAnUnattributedQuery(t *testing.T) {
+	set := fakeIPSet("198.18.0.0/15")
+	set.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:02"}
+	query := dns.BuildQuery("devicescoped.example", 0x1304, dnsTypeA)
+
+	if resp := (&Worker{}).fakeIPAnswer(set, query, "devicescoped.example", net.ParseIP("192.168.1.30"), &ingressScope{resolved: true}); resp != nil {
+		t.Fatalf("a query with no MAC got %v from a device-scoped set", dns.ParseResponseIPs(resp))
+	}
+	if resp := (&Worker{}).fakeIPAnswer(set, query, "devicescoped.example", net.ParseIP("192.168.1.30"), fakeScope("lan1", "aa:bb:cc:dd:ee:02", false)); resp == nil {
+		t.Fatal("a scoped device got no fake answer")
+	}
+}
+
+func TestFakeIPAnswerEmptiesTheHintTypes(t *testing.T) {
+	set := fakeIPSet("198.18.0.0/15")
+	for _, qtype := range []uint16{dnsTypeHTTPS, dnsTypeSVCB, dnsTypeCNAME, dnsTypeANY} {
+		query := dns.BuildQuery("hints.example", 0x1305, qtype)
+		resp := (&Worker{}).fakeIPAnswer(set, query, "hints.example", net.ParseIP("192.168.1.30"), nil)
+		if len(resp) == 0 {
+			t.Fatalf("type %d reached a real resolver instead of an empty answer", qtype)
+		}
+		if ips := dns.ParseResponseIPs(resp); len(ips) != 0 {
+			t.Fatalf("type %d answered %v, want no addresses", qtype, ips)
+		}
+		if rcode, _ := dns.ResponseRcode(resp); rcode != 0 {
+			t.Fatalf("type %d answered with rcode %d, want NOERROR", qtype, rcode)
+		}
+	}
+}

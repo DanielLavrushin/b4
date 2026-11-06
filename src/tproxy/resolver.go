@@ -37,8 +37,8 @@ func (r *Resolver) Set(m *sni.SuffixSet) {
 
 func (r *Resolver) ObservedNames(client, dst net.IP) dns.NameMatches {
 	m := r.names.Lookup(client, dst)
-	if owner, ok := dns.FakeIPOwner(dst); ok && !m.Has(owner) {
-		m.Own = append([]string{owner}, m.Own...)
+	if owner, ok := dns.FakeIPOwner(dst); ok {
+		m.Owner = owner
 	}
 	return m
 }

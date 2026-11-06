@@ -226,3 +226,22 @@ func TestDNSTCPInterceptEnabledForAFakeOnlySet(t *testing.T) {
 		t.Error("a disabled set must not turn interception on")
 	}
 }
+
+func TestUpstreamListKeepsTheURLOverThePlainTarget(t *testing.T) {
+	cfg := &DNSConfig{
+		Enabled:   true,
+		DoHURL:    "https://doh.example/dns-query",
+		TargetDNS: "198.51.100.1",
+		Upstreams: []string{"198.51.100.2"},
+	}
+	list := cfg.UpstreamList()
+	if len(list) != 2 || list[0] != "https://doh.example/dns-query" || list[1] != "198.51.100.2" {
+		t.Fatalf("UpstreamList = %v, want the URL and the list only", list)
+	}
+
+	cfg.DoHURL = ""
+	list = cfg.UpstreamList()
+	if len(list) != 2 || list[0] != "198.51.100.1" || list[1] != "198.51.100.2" {
+		t.Fatalf("UpstreamList without a URL = %v, want the plain target and the list", list)
+	}
+}

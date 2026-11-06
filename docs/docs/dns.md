@@ -38,7 +38,7 @@ Queries from the set's own resolver go on unchanged, so a resolver on the local 
 
 **More resolvers** under the resolver takes a list, one address or `https://` URL per line. b4 asks every resolver of the set at once and answers with the first reply that arrives, so one blocked resolver costs only the queries it would have answered anyway. A resolver that failed three times in a row is left out until it answers again, and is retried after a while on its own.
 
-Use it on a connection where a single resolver keeps dying: add a second one that is reachable from the same network. Which one answers does not matter for the set, since each of them resolves the name the same way.
+Use it on a connection where a single resolver keeps dying: add a second one that is reachable from the same network. b4 asks them all at once and prefers an encrypted answer over a plain one, because on a network that forges plain DNS only the encrypted answer can be trusted.
 
 With **Fail closed when the resolver is unreachable** on, every resolver of the list has to be unreachable before the device gets SERVFAIL.
 
@@ -82,11 +82,11 @@ A name-only set can match a site only after b4 reads its name from the connectio
 **Answer this set's names from a fake address range** turns that around. b4 answers the set's names itself, with an address from a block nobody uses, and that address leads straight into the set's proxy. The connection is relayed to the name the device asked for, so the real addresses never matter.
 
 - The set must route through a proxy: **Routing** on, **mode** set to **Proxy**, and **Send the domain name** on. b4 needs the name to dial, and a fake address exists only inside b4.
-- The block defaults to `198.18.0.0/15`, the range reserved for benchmarking. Every address of it belongs to b4: it is routed into the set, so devices reach b4 instead of looking for a host that does not exist.
+- The block defaults to `198.18.0.0/15`, the range reserved for benchmarking. Every address of it belongs to b4: it is routed into the set, so devices reach b4 instead of looking for a host that does not exist. The block carries TCP only, so UDP and ICMP to a fake address leave through the WAN: a set that needs them cannot use fake DNS.
 - IPv6 answers for the set's names are emptied, so a device uses the fake IPv4 address instead of a real IPv6 one.
 - Only DNS that goes to port 53 reaches b4: a device with its own encrypted DNS, see [What b4 sees](#what-b4-intercepts), gets real addresses and stays out of the set.
 
-With fake DNS on, a set needs no resolver at all, and b4 asks nobody about its names. **Answer lifetime, seconds** sets how long a device may keep the answer.
+With fake DNS on, a set needs no resolver at all: b4 answers its names itself, so A, AAAA, CNAME, SVCB, HTTPS and ANY never reach a resolver. Types such as MX and TXT still do. **Answer lifetime, seconds** sets how long a device may keep the answer; it is capped at 25 minutes, below the 30 minutes after which b4 forgets the name.
 
 :::warning
 The block must not be in use anywhere on the network: a VPN with the same range, another router's LAN, or a Docker network takes those addresses out of b4's hands.
@@ -162,7 +162,7 @@ Each query shows the set that matched it and a label:
 | `sinkhole`, `block` | A block set answered "does not exist" or dropped the query |
 | `fallback-cache`, `fallback-upstream` | The set's resolver did not answer: the last good reply was used, or the device's resolver answered |
 | `servfail` | The set's resolver did not answer and nothing else could, or the set fails closed |
-| `passthrough`, `bad target`, `from target`, `ipv6 off` | Passed on unchanged: the set has no resolver, **DNS Server IP** is not a valid address, the query came from the set's own resolver, or it came over IPv6 while IPv6 support is off |
+| `passthrough`, `from target`, `ipv6 off` | Passed on unchanged: the set has no resolver, the query came from the set's own resolver, or it came over IPv6 while IPv6 support is off |
 | `escalate <set>` | Lookups for the name kept failing, and the backup set of [Escalation](sets/escalation.md) answered |
 
 The [log](logs.md) records the same decisions, as `dns-doh->`, `dns-pin` and so on. Both show DNS decisions while **Log Level** is **Info**, the default, or more detailed.

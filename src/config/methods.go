@@ -720,6 +720,27 @@ func (set *SetConfig) RoutingIncludesRouterTraffic() bool {
 	return !netif.IsUserspaceTunnel(set.Routing.EgressInterface)
 }
 
+func (set *SetConfig) SourceInterfaceScoped() bool {
+	for _, s := range set.Routing.SourceInterfaces {
+		if strings.TrimSpace(s) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func (set *SetConfig) SourceDeviceScoped() bool {
+	if set.Targets.SourceDevicesExclude {
+		return false
+	}
+	for _, m := range set.Targets.SourceDevices {
+		if strings.TrimSpace(m) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (set *SetConfig) RoutingSourceScoped() bool {
 	for _, s := range set.Routing.SourceInterfaces {
 		if strings.TrimSpace(s) != "" {

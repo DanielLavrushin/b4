@@ -11,6 +11,7 @@ const (
 	DefaultFakeIPTTL   = 60
 	MaxDNSUpstreams    = 8
 	MinFakeIPPrefixLen = 24
+	MaxFakeIPTTL       = 1500
 )
 
 func SplitUpstreamURL(raw string) (scheme, rest string, ok bool) {
@@ -65,7 +66,9 @@ func (c *DNSConfig) UpstreamList() []string {
 		out = append(out, norm)
 	}
 	add(c.DoHURL)
-	add(c.TargetDNS)
+	if strings.TrimSpace(c.DoHURL) == "" {
+		add(c.TargetDNS)
+	}
 	for _, raw := range c.Upstreams {
 		add(raw)
 	}
@@ -94,6 +97,9 @@ func (c *DNSConfig) FakeIPNetwork() (*net.IPNet, int, bool) {
 	ttl := c.FakeIP.TTLSec
 	if ttl <= 0 {
 		ttl = DefaultFakeIPTTL
+	}
+	if ttl > MaxFakeIPTTL {
+		ttl = MaxFakeIPTTL
 	}
 	return network, ttl, true
 }
@@ -161,6 +167,9 @@ func (c *DNSConfig) ValidateFakeIP() error {
 	}
 	if c.FakeIP.TTLSec == 0 {
 		c.FakeIP.TTLSec = DefaultFakeIPTTL
+	}
+	if c.FakeIP.TTLSec > MaxFakeIPTTL {
+		c.FakeIP.TTLSec = MaxFakeIPTTL
 	}
 	c.FakeIP.CIDR = network.String()
 	return nil

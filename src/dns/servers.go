@@ -52,7 +52,9 @@ func SetServers(enabled bool, target, dohURL string, upstreams []string) ([]Serv
 		servers = append(servers, srv)
 	}
 	add(dohURL)
-	add(target)
+	if strings.TrimSpace(dohURL) == "" {
+		add(target)
+	}
 	for _, raw := range upstreams {
 		add(raw)
 	}
@@ -78,6 +80,10 @@ func LookupAny(ctx context.Context, lookup LookupFunc, servers []Server, useSet,
 		candidates = append(candidates, srv)
 	}
 	if len(candidates) == 0 {
+		if !strict {
+			log.Tracef("DNS: every resolver of the set is cooling down, asking the router's resolver for %s", name)
+			return lookupRouter(ctx, name, v4, v6)
+		}
 		candidates = servers
 	}
 
@@ -147,6 +153,9 @@ func noteLookupOutcome(r lookupResult) {
 			log.Infof("DNS: %s is answering again", SourceLabel(r.srv.Source))
 		}
 	case r.err == nil, errors.Is(r.err, ErrNoAddress):
+		if NoteSourceSuccess(r.srv.Source) {
+			log.Infof("DNS: %s is answering again", SourceLabel(r.srv.Source))
+		}
 	default:
 		if NoteSourceFailure(r.srv.Source) {
 			log.Warnf("DNS: %s failed %d times in a row, lookups of sets that allow a fallback skip it for %s", SourceLabel(r.srv.Source), SourceFailuresToTrip, sourceCooldown)

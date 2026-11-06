@@ -237,6 +237,9 @@ type targetInputs struct {
 }
 
 func needsSniff(names dns.NameMatches, setHasDomains bool) bool {
+	if names.Owner != "" {
+		return false
+	}
 	if len(names.Own) == 1 {
 		return false
 	}
@@ -252,6 +255,9 @@ func chooseTarget(in targetInputs) (string, string) {
 }
 
 func pickName(in targetInputs) (string, string) {
+	if in.names.Owner != "" {
+		return in.names.Owner, "fakeip"
+	}
 	if in.sniffed != "" {
 		if in.names.Has(in.sniffed) || (in.inSet != nil && in.inSet(in.sniffed)) {
 			return in.sniffed, "sni"

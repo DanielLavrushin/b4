@@ -60,11 +60,11 @@ func TestAFakeAddressNamesItsSiteForAnyDevice(t *testing.T) {
 		ip   net.IP
 	}{{first, a}, {second, b}} {
 		names := resolver.ObservedNames(stranger, tc.ip)
-		if len(names.Own) == 0 || names.Own[0] != tc.name {
-			t.Fatalf("%s names %v, want %q first", tc.ip, names.Own, tc.name)
+		if names.Owner != tc.name {
+			t.Fatalf("%s names %q, want %q", tc.ip, names.Owner, tc.name)
 		}
 		name, source := pickName(targetInputs{names: names})
-		if name != tc.name || source != "dns" {
+		if name != tc.name || source != "fakeip" {
 			t.Fatalf("dialled %q (%s) for %s, want %q", name, source, tc.ip, tc.name)
 		}
 	}

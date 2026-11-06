@@ -475,6 +475,10 @@ func (c *Config) Validate() error {
 				v.addf(fmt.Sprintf("sets[%d].dns.fakeip", setIdx), "fakeip_needs_tcp_upstream", map[string]any{"set": set.Name}, "set %q: with routing.upstream.udp on, b4 hands UDP traffic to the upstream proxy as an address, and a fake address means nothing there; turn routing.upstream.udp off or turn fake DNS off", set.Name)
 				return v.result()
 			}
+			if set.Routing.Upstream.FailOpen {
+				v.addf(fmt.Sprintf("sets[%d].routing.upstream.fail_open", setIdx), "fakeip_refuses_fail_open", map[string]any{"set": set.Name}, "set %q: fail-open dials the original destination, which on a fake set is an address that exists only inside b4; turn fail-open off or turn fake DNS off", set.Name)
+				return v.result()
+			}
 			if set.Targets.DomainOnly && len(set.Targets.SNIDomains) == 0 && len(set.Targets.GeoSiteCategories) == 0 {
 				log.Warnf("Set '%s': fake DNS is on but the set matches nothing by name yet, so no answer will be faked", set.Name)
 			}

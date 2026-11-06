@@ -14,7 +14,7 @@ func TestSetServersKeepsEveryConfiguredResolver(t *testing.T) {
 	if !ok {
 		t.Fatal("SetServers reported no resolver for a configured set")
 	}
-	want := []string{"https://dns.google/dns-query", "1.1.1.1", "9.9.9.9", "https://doh.pub/dns-query"}
+	want := []string{"https://dns.google/dns-query", "9.9.9.9", "https://doh.pub/dns-query", "1.1.1.1"}
 	if len(servers) != len(want) {
 		t.Fatalf("servers = %v, want %v", servers, want)
 	}
@@ -296,5 +296,26 @@ func TestASilentResolverIsCountedAfterTheWinnerReturns(t *testing.T) {
 	}
 	if !SourceUnreachable(silent.Source) {
 		t.Fatal("a resolver that stays silent beside a healthy one never reached cooldown after the caller returned")
+	}
+}
+
+func TestATrippedOnlyResolverIsNotAskedAgain(t *testing.T) {
+	ResetSourceHealth()
+	t.Cleanup(ResetSourceHealth)
+	silent, asked := startBlackHole(t)
+	silent.Timeout = 300 * time.Millisecond
+	for i := 0; i < SourceFailuresToTrip; i++ {
+		NoteSourceFailure(silent.Source)
+	}
+	start := time.Now()
+	ips, err := LookupAny(context.Background(), LookupIPs, []Server{silent}, true, false, "localhost", true, false)
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("a tripped resolver was waited out: %s", elapsed)
+	}
+	if n := asked(); n != 0 {
+		t.Fatalf("the tripped resolver was asked %d times", n)
+	}
+	if err != nil || len(ips) == 0 {
+		t.Fatalf("the router's resolver did not answer: %v %v", ips, err)
 	}
 }

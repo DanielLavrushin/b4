@@ -22,7 +22,28 @@ func logFakeIPExhausted(set *config.SetConfig, network *net.IPNet) {
 	log.Warnf("DNS fake: no free address left in %s, so the set's fake answers are SERVFAIL until leases expire (set: %s)", network.String(), set.Name)
 }
 
-func (w *Worker) fakeIPAnswer(set *config.SetConfig, query []byte, domain string, clientIP net.IP) []byte {
+func fakeIPAdmits(set *config.SetConfig, clientIP net.IP, from []*ingressScope) bool {
+	if queryFromTarget(set, clientIP) {
+		return false
+	}
+	sc := scopeFrom(from)
+	if sc == nil {
+		return true
+	}
+	sc.resolve()
+	if sc.router || sc.uplink || sc.unattributed {
+		return false
+	}
+	if set.SourceInterfaceScoped() && sc.name != "" && !set.ListsSourceInterface(sc.name) {
+		return false
+	}
+	if set.SourceDeviceScoped() && sc.mac == "" {
+		return false
+	}
+	return true
+}
+
+func (w *Worker) fakeIPAnswer(set *config.SetConfig, query []byte, domain string, clientIP net.IP, from ...*ingressScope) []byte {
 	if set == nil || len(query) == 0 || domain == "" {
 		return nil
 	}
@@ -32,6 +53,9 @@ func (w *Worker) fakeIPAnswer(set *config.SetConfig, query []byte, domain string
 	}
 	qtype, ok := dns.QuestionType(query)
 	if !ok {
+		return nil
+	}
+	if !fakeIPAdmits(set, clientIP, from) {
 		return nil
 	}
 
@@ -49,9 +73,9 @@ func (w *Worker) fakeIPAnswer(set *config.SetConfig, query []byte, domain string
 		observeDNSNames(clientIP, domain, []net.IP{ip})
 		log.Tracef("DNS fake: answering %s with %s from %s (set: %s)", dns.SafeName(domain), ip, network, set.Name)
 		return resp
-	case dnsTypeAAAA:
+	case dnsTypeAAAA, dnsTypeCNAME, dnsTypeSVCB, dnsTypeHTTPS, dnsTypeANY:
 		if empty := dns.BuildEmptyAnswer(query); empty != nil {
-			log.Tracef("DNS fake: answering the AAAA query for %s empty so the client uses the fake A record (set: %s)", dns.SafeName(domain), set.Name)
+			log.Tracef("DNS fake: answering the type %d query for %s empty so no real hint or key reaches the device (set: %s)", qtype, dns.SafeName(domain), set.Name)
 			return empty
 		}
 	}

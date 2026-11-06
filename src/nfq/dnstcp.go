@@ -320,7 +320,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			continue
 		}
 
-		if fake := s.worker.fakeIPAnswer(set, query, domain, clientIP); fake != nil {
+		if fake := s.worker.fakeIPAnswer(set, query, domain, clientIP, scope); fake != nil {
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFake)
 			if writeDNSTCPMessage(client, fake, ioTimeout) != nil {
 				return
@@ -348,6 +348,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsRedirectAction(set))
 
 		var resp []byte
+		endRedirect := beginDNSRedirect(query)
 		walk := walkResolvers("DNS TCP", domain, set, func(upstream string) ([]byte, error) {
 			return s.resolveUpstream(set, cfg, query, upstream)
 		})
@@ -364,6 +365,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionServfail)
 			resp = dns.BuildServfailResponse(query)
 			if len(resp) == 0 {
+				endRedirect()
 				return
 			}
 		default:
@@ -383,6 +385,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionServfail)
 				resp = dns.BuildServfailResponse(query)
 				if len(resp) == 0 {
+					endRedirect()
 					return
 				}
 				break
@@ -395,7 +398,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		}
 
 		qtype, _ := dns.QuestionType(query)
-		if next := s.escalationTarget(cfg, set, domain, srcMac, qtype, resp, servedFallback, scope); next != nil {
+		next := s.escalationTarget(cfg, set, domain, srcMac, qtype, resp, servedFallback, scope)
+		endRedirect()
+		if next != nil {
 			if alt, aerr := s.answerVia(next, cfg, query, domain, clientIP, scope); aerr == nil && len(alt) > 0 {
 				s.logEvent(next, domain, clientIP, origIP, clientPort, srcMac, dnsActionEscalatePrefix+next.Name)
 				s.worker.learnAnswerAddresses(cfg, next, clientIP, domain, dns.ParseResponseIPs(alt), scope.learns(domain), s.ctx.Done())
@@ -470,7 +475,7 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 		return pinned, nil
 	}
 
-	if fake := s.worker.fakeIPAnswer(set, query, domain, clientIP); fake != nil {
+	if fake := s.worker.fakeIPAnswer(set, query, domain, clientIP, from...); fake != nil {
 		return fake, nil
 	}
 

@@ -72,3 +72,30 @@ func TestDNSInterceptionIncludesResolverListsAndFakeDns(t *testing.T) {
 		t.Fatal("fake DNS answers over TCP too, so the TCP DNS listener must be on")
 	}
 }
+
+func TestValidateRejectsFakeDnsWithFailOpen(t *testing.T) {
+	cfg := NewConfig()
+	set := fakeDnsSet("fake1", "198.18.0.0/16")
+	set.Routing.Upstream.FailOpen = true
+	cfg.Sets = []*SetConfig{set}
+
+	ve := mustValidationErr(t, cfg.Validate())
+	if findField(ve, "sets[0].routing.upstream.fail_open", "fakeip_refuses_fail_open") == nil {
+		t.Fatalf("validation = %+v, want fakeip_refuses_fail_open", ve.Fields)
+	}
+}
+
+func TestFakeIPAnswerLifetimeIsCappedBelowTheNameCache(t *testing.T) {
+	set := fakeDnsSet("fake1", "198.18.0.0/16")
+	set.DNS.FakeIP.TTLSec = 86400
+	if err := set.DNS.ValidateFakeIP(); err != nil {
+		t.Fatalf("ValidateFakeIP: %v", err)
+	}
+	if set.DNS.FakeIP.TTLSec != MaxFakeIPTTL {
+		t.Fatalf("ttl_sec = %d after validation, want the cap %d", set.DNS.FakeIP.TTLSec, MaxFakeIPTTL)
+	}
+	_, ttl, ok := set.DNS.FakeIPNetwork()
+	if !ok || ttl != MaxFakeIPTTL {
+		t.Fatalf("FakeIPNetwork ttl = %d (%v), want %d", ttl, ok, MaxFakeIPTTL)
+	}
+}

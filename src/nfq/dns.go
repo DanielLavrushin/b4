@@ -231,43 +231,92 @@ type upstreamWalk struct {
 	transient bool
 }
 
+type walkAnswer struct {
+	resp      []byte
+	source    string
+	err       error
+	doh       bool
+	transient bool
+}
+
 func walkResolvers(label, name string, set *config.SetConfig, ask func(upstream string) ([]byte, error)) upstreamWalk {
 	upstreams := set.DNS.UpstreamList()
-	var out upstreamWalk
-	var transientResp []byte
-	var transientSource string
-	for i, upstream := range upstreams {
-		if !set.DNS.Strict && dnsSourceUnreachable(upstream) {
+	if len(upstreams) == 0 {
+		return upstreamWalk{err: errNoDNSTarget}
+	}
+	targets := make([]string, 0, len(upstreams))
+	for _, upstream := range upstreams {
+		if dnsSourceUnreachable(upstream) {
 			continue
 		}
-		out.asked++
-		out.source = upstream
-		resp, err := ask(upstream)
-		if err == nil {
-			if rcode, ok := dns.ResponseRcode(resp); ok && transientDNSRcode(rcode) && i < len(upstreams)-1 {
-				transientResp = resp
-				transientSource = upstream
-				log.Tracef("%s: upstream %s answered %s with rcode %d, asking the next one (set: %s)", label, dnsUpstreamLabel(upstream), dns.SafeName(name), rcode, set.Name)
-				continue
-			}
-			return upstreamWalk{resp: resp, source: upstream, asked: out.asked}
+		targets = append(targets, upstream)
+	}
+	if len(targets) == 0 {
+		if !set.DNS.Strict {
+			return upstreamWalk{source: upstreams[0], err: errDNSSourceCoolingDown}
 		}
-		out.err = err
-		noteDNSSourceFailure(upstream)
-		log.Tracef("%s: upstream %s could not answer %s (%v) (set: %s)", label, dnsUpstreamLabel(upstream), dns.SafeName(name), err, set.Name)
+		targets = upstreams
 	}
-	switch {
-	case transientResp != nil:
-		return upstreamWalk{resp: transientResp, source: transientSource, asked: out.asked, transient: true}
-	case len(upstreams) == 0:
-		out.err = errNoDNSTarget
-	case out.asked == 0:
-		out.err = errDNSSourceCoolingDown
+
+	ch := make(chan walkAnswer, len(targets))
+	pendingDoH := 0
+	for _, upstream := range targets {
+		doh := config.IsDoHUpstream(upstream)
+		if doh {
+			pendingDoH++
+		}
+		go func(upstream string, doh bool) {
+			resp, err := ask(upstream)
+			answer := walkAnswer{resp: resp, source: upstream, err: err, doh: doh}
+			if err == nil {
+				if rcode, ok := dns.ResponseRcode(resp); ok && transientDNSRcode(rcode) {
+					answer.transient = true
+				}
+			}
+			ch <- answer
+		}(upstream, doh)
 	}
-	if out.source == "" && len(upstreams) > 0 {
-		out.source = upstreams[0]
+
+	var best, transient *walkAnswer
+	var lastErr error
+	for i := 0; i < len(targets); i++ {
+		answer := <-ch
+		if answer.doh {
+			pendingDoH--
+		}
+		switch {
+		case answer.err != nil:
+			lastErr = answer.err
+			noteDNSSourceFailure(answer.source)
+			log.Tracef("%s: upstream %s could not answer %s (%v) (set: %s)", label, dnsUpstreamLabel(answer.source), dns.SafeName(name), answer.err, set.Name)
+		case answer.transient:
+			if transient == nil || (answer.doh && !transient.doh) {
+				held := answer
+				transient = &held
+			}
+			if rcode, _ := dns.ResponseRcode(answer.resp); rcode != 0 {
+				log.Tracef("%s: upstream %s answered %s with rcode %d (set: %s)", label, dnsUpstreamLabel(answer.source), dns.SafeName(name), rcode, set.Name)
+			}
+		default:
+			if best == nil || (answer.doh && !best.doh) {
+				held := answer
+				best = &held
+			}
+		}
+		if best != nil && (best.doh || pendingDoH == 0) {
+			return upstreamWalk{resp: best.resp, source: best.source, asked: len(targets)}
+		}
 	}
-	if out.err == nil {
+	if best != nil {
+		return upstreamWalk{resp: best.resp, source: best.source, asked: len(targets)}
+	}
+	if transient != nil {
+		return upstreamWalk{resp: transient.resp, source: transient.source, asked: len(targets), transient: true}
+	}
+	out := upstreamWalk{asked: len(targets), source: upstreams[0]}
+	if lastErr != nil {
+		out.err = lastErr
+	} else {
 		out.err = errNoDNSTarget
 	}
 	return out
@@ -275,7 +324,7 @@ func walkResolvers(label, name string, set *config.SetConfig, ask func(upstream 
 
 func redirectTargets(set *config.SetConfig) []net.IP {
 	var out []net.IP
-	for _, upstream := range set.DNS.UpstreamList() {
+	for _, upstream := range redirectTargetList(set) {
 		if config.IsDoHUpstream(upstream) {
 			u, err := url.Parse(upstream)
 			if err != nil {
@@ -289,6 +338,21 @@ func redirectTargets(set *config.SetConfig) []net.IP {
 		if ip := net.ParseIP(upstream); ip != nil {
 			out = append(out, ip)
 		}
+	}
+	return out
+}
+
+func redirectTargetList(set *config.SetConfig) []string {
+	if set == nil {
+		return nil
+	}
+	out := make([]string, 0, 2+len(set.DNS.Upstreams))
+	for _, raw := range append([]string{set.DNS.DoHURL, set.DNS.TargetDNS}, set.DNS.Upstreams...) {
+		norm, ok := config.NormalizeUpstream(raw)
+		if !ok {
+			continue
+		}
+		out = append(out, norm)
 	}
 	return out
 }
@@ -345,7 +409,7 @@ func (w *Worker) answerViaSetInline(ipVersion byte, cfg *config.Config, set *con
 		return true
 	}
 
-	if fake := w.fakeIPAnswer(set, query, domain, clientIP); fake != nil {
+	if fake := w.fakeIPAnswer(set, query, domain, clientIP, scope); fake != nil {
 		w.answerClient(direct, query, ipVersion, originalDst, clientIP, clientPort, fake)
 		return true
 	}
@@ -375,7 +439,7 @@ func (w *Worker) answerViaSet(vc *verdictCtx, ipVersion byte, cfg *config.Config
 		return true
 	}
 
-	if fake := w.fakeIPAnswer(set, query, domain, clientIP); fake != nil {
+	if fake := w.fakeIPAnswer(set, query, domain, clientIP, scope); fake != nil {
 		w.answerClient(true, query, ipVersion, originalDst, clientIP, clientPort, fake)
 		return true
 	}
@@ -501,7 +565,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					return 0
 				}
 
-				if fake := w.fakeIPAnswer(set, payload, domain, clientIP); fake != nil {
+				if fake := w.fakeIPAnswer(set, payload, domain, clientIP, vc.scope); fake != nil {
 					if !vc.drop() {
 						return 0
 					}
