@@ -466,11 +466,16 @@ func netnsHoldAnsweringServerIn(t *testing.T, pid, helloLen, rounds int, firstAn
 func TestNetnsAHelloTheSetsOwnStrategyReordersIsNotAStall(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
+		hello            []byte
 		domainOnly       bool
+		oneWay           string
+		firstDelayMs     int
 		firstAnswerAfter time.Duration
 	}{
-		{"a server that answers at once", true, 0},
-		{"a slow server, so the second hello comes past the first hello's floor", false, 500 * time.Millisecond},
+		{"a server that answers at once", buildClientHello(netnsStallHost, 700, 0xAB), true, "2ms", 0, 0},
+		{"a slow server, so the second hello comes past the first hello's floor", buildClientHello(netnsStallHost, 700, 0xAB), false, "2ms", 0, 500 * time.Millisecond},
+		{"a first delay that puts the fast retransmit past the floor", buildClientHello(netnsStallHost, 700, 0xAB), true, "20ms", 120, 0},
+		{"the name in segment 1", setOrderClientHello(buildSNIExtension(netnsStallHost), buildExtension(21, make([]byte, 700)), buildExtension(43, []byte{0x02, 0x03, 0x04})), true, "2ms", 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			netnsHoldRequire(t)
@@ -479,16 +484,19 @@ func TestNetnsAHelloTheSetsOwnStrategyReordersIsNotAStall(t *testing.T) {
 			}
 			srv := netnsHoldStartPeer(t)
 			netnsHoldRun(t, "ip", "link", "set", "lo", "up")
-			netnsHoldRun(t, "tc", "qdisc", "replace", "dev", netnsHoldLink, "root", "netem", "delay", "2ms")
-			netnsHoldRun(t, "nsenter", "-t", strconv.Itoa(srv), "-n", "tc", "qdisc", "replace", "dev", netnsHoldPeer, "root", "netem", "delay", "2ms")
+			netnsHoldRun(t, "tc", "qdisc", "replace", "dev", netnsHoldLink, "root", "netem", "delay", tc.oneWay)
+			netnsHoldRun(t, "nsenter", "-t", strconv.Itoa(srv), "-n", "tc", "qdisc", "replace", "dev", netnsHoldPeer, "root", "netem", "delay", tc.oneWay)
 
 			const rounds, conns = 2, 40
-			hello := buildClientHello(netnsStallHost, 700, 0xAB)
+			hello := tc.hello
 			netnsHoldAnsweringServerIn(t, srv, len(hello), rounds, tc.firstAnswerAfter)
 
 			set := netnsStallSet()
 			set.Targets.DomainOnly = tc.domainOnly
 			set.Fragmentation = config.DefaultSetConfig.Fragmentation
+			if tc.firstDelayMs > 0 {
+				set.Fragmentation.Combo.FirstDelayMs = tc.firstDelayMs
+			}
 			set.TCP.IPBlockDetect = config.DefaultSetConfig.TCP.IPBlockDetect
 			set.TCP.IPBlockDetect.Enabled = true
 			set.TCP.IPBlockDetect.CacheBlockedIPs = true

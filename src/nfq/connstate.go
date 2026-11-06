@@ -104,7 +104,7 @@ func (c *tlsInfoCache) HelloAt(connKey string, seq uint32, helloID uint64) (tlsI
 	defer c.mu.RUnlock()
 
 	info, exists := c.conns[connKey]
-	if !exists || info.helloSeq != seq || info.helloID != helloID {
+	if !exists || helloID == 0 || info.helloSeq != seq || info.helloID != helloID {
 		return tlsInfo{}, false
 	}
 	return *info, true
@@ -221,6 +221,7 @@ type ipBlockEntry struct {
 	retransmits int
 	rstSent     bool
 	host        string
+	ack         uint32
 }
 
 type IPBlockCache interface {
@@ -275,7 +276,7 @@ const MaxEscalationHops = 8
 
 const escalationCapLogInterval = time.Minute
 
-func (t *destStateTracker) RecordClientHello(connKey, host string) (int, time.Time) {
+func (t *destStateTracker) RecordClientHello(connKey, host string, ack uint32) (int, time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -289,10 +290,11 @@ func (t *destStateTracker) RecordClientHello(connKey, host string) (int, time.Ti
 	}
 
 	entry, exists := t.conns[connKey]
-	if !exists {
+	if !exists || entry.ack != ack {
 		entry = &ipBlockEntry{
 			firstSeen: time.Now(),
 			host:      host,
+			ack:       ack,
 		}
 		t.conns[connKey] = entry
 	}

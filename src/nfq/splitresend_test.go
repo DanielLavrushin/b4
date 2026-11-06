@@ -247,6 +247,90 @@ func TestAResendBeforeAnyRetransmitTimerIsNotAStall(t *testing.T) {
 	}
 }
 
+func TestAHelloAfterTheServerAnsweredStartsTheCountOver(t *testing.T) {
+	resendFloor(t, 0)
+	full := buildClientHello(splitResendHost, 1400, 0xAB)
+	nameFirst := setOrderNameFirstHello(splitResendHost)
+	const answered = silentServerAck + 300
+	for _, tc := range []struct {
+		name string
+		send func(w *Worker, seq, ack uint32)
+		copy func(w *Worker, seq, ack uint32) engine.PacketVerdict
+	}{
+		{
+			"the name in segment 2",
+			func(w *Worker, seq, ack uint32) {
+				w.ProcessPacket(clientPacketAcking(12345, seq, ack, 0x18, full[:splitCut]))
+				w.ProcessPacket(clientPacketAcking(12345, seq+splitCut, ack, 0x18, full[splitCut:]))
+			},
+			func(w *Worker, seq, ack uint32) engine.PacketVerdict {
+				return w.ProcessPacket(clientPacketAcking(12345, seq, ack, 0x18, full[:splitCut]))
+			},
+		},
+		{
+			"the name in segment 1",
+			func(w *Worker, seq, ack uint32) {
+				w.ProcessPacket(clientPacketAcking(12345, seq, ack, 0x18, nameFirst[:splitCut]))
+				w.ProcessPacket(clientPacketAcking(12345, seq+splitCut, ack, 0x18, nameFirst[splitCut:]))
+			},
+			func(w *Worker, seq, ack uint32) engine.PacketVerdict {
+				return w.ProcessPacket(clientPacketAcking(12345, seq, ack, 0x18, nameFirst[:splitCut]))
+			},
+		},
+		{
+			"a whole ClientHello",
+			func(w *Worker, seq, ack uint32) {
+				w.ProcessPacket(clientPacketAcking(12345, seq, ack, 0x18, silentHello()))
+			},
+			func(w *Worker, seq, ack uint32) engine.PacketVerdict {
+				return w.ProcessPacket(clientPacketAcking(12345, seq, ack, 0x18, silentHello()))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			set := silenceSet()
+			r := newSilenceWorker(t, &set, iphealth.TLSSilent)
+
+			tc.send(r.w, splitSeq, silentServerAck)
+			tc.copy(r.w, splitSeq, silentServerAck)
+			if n := helloCount(r.w, reusedTuple); n != 2 {
+				t.Fatalf("a copy before the server answered counts, got %d", n)
+			}
+
+			second := splitSeq + uint32(len(full)) + 1000
+			tc.send(r.w, second, answered)
+			if n := helloCount(r.w, reusedTuple); n != 1 {
+				t.Fatalf("a ClientHello that acknowledges the server's answer is the first copy of a new one, counted %d", n)
+			}
+			r.w.bans.wg.Wait()
+			if ports := resetsTo(r.sent()); len(ports) != 0 {
+				t.Fatalf("a server that answered must not get its client reset, got resets to %v", ports)
+			}
+			if r.w.destState.IsBlocked("1.2.3.4:443") {
+				t.Fatal("a server that answered must not get its address cached as blocked")
+			}
+
+			tc.copy(r.w, second, answered)
+			if v := tc.copy(r.w, second, answered); v != engine.VerdictDrop {
+				t.Fatalf("a server that goes silent on the new ClientHello is still caught at its own third copy, verdict %v", v)
+			}
+			if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
+				t.Fatalf("the new ClientHello's own third copy must reset the client once, got resets to %v", ports)
+			}
+		})
+	}
+}
+
+func TestAnUnchangedAckKeepsTheCountWhateverTheSequence(t *testing.T) {
+	r := escalatingSilenceRig(t, plainBackupSet())
+
+	r.w.ProcessPacket(clientPacket(12345, splitSeq, 0x18, silentHello()))
+	r.w.ProcessPacket(clientPacket(12345, splitSeq+10000, 0x18, decoyHello("i.ytimg.com", 16)))
+	if n := helloCount(r.w, reusedTuple); n != 2 {
+		t.Fatalf("with no answer from the server, a ClientHello at another sequence number still counts as before, got %d", n)
+	}
+}
+
 func TestTheResendFloorOfALaterHelloRunsFromThatHello(t *testing.T) {
 	resendFloor(t, 200*time.Millisecond)
 	set := silenceSet()
@@ -439,6 +523,27 @@ func TestASegmentOfARealHelloAfterItsDecoyIsNotADecoyCopy(t *testing.T) {
 	}
 	if got := r.w.pendingHello.Len(); got != 1 {
 		t.Fatalf("segment 1 of another ClientHello must wait for its rest, %d pending", got)
+	}
+}
+
+func TestADecoyWithAZeroRandomDoesNotShadowAShortSegmentOne(t *testing.T) {
+	resendFloor(t, 0)
+	w := newInjectingWorker(t, func() *config.SetConfig {
+		set := newPassiveSet()
+		set.TCP.RSTProtection.Enabled = false
+		set.TCP.IPBlockDetect.Enabled = true
+		return &set
+	}())
+	decoy := buildClientHello("www.iana.org", 16, 0x00)
+	copy(decoy[5+4+2:], make([]byte, 32))
+	full := buildClientHello(splitResendHost, 1400, 0xAB)
+	const cut = 15
+
+	w.ProcessPacket(clientPacket(12345, splitSeq, 0x18, decoy))
+	w.ProcessPacket(clientPacket(12345, splitSeq, 0x18, full[:cut]))
+	w.ProcessPacket(clientPacket(12345, splitSeq+cut, 0x18, full[cut:]))
+	if host, _, _ := w.tlsCache.Lookup(reusedTuple); host != splitResendHost {
+		t.Fatalf("a segment too short to identify is not a copy of a decoy with a zero random, the connection is named %q", host)
 	}
 }
 

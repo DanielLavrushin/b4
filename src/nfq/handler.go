@@ -866,7 +866,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	stallTracked := false
 	if matched && isClientHello && strippedSyn == nil && host != "" && cfg.IsTCPPort(dport) && !foreignEgress &&
 		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) && !resentEarly {
-		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host)
+		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host, binary.BigEndian.Uint32(tcp[8:12]))
 		stallTracked = true
 	}
 

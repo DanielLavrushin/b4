@@ -838,7 +838,7 @@ func TestHeldHelloIsDroppedWhenItsDestinationStallsPastTheThreshold(t *testing.T
 	_, seg1, seg2 := splitHello("i.ytimg.com")
 	key := fmt.Sprintf(connKeyFormat, "10.0.0.1", 12345, "1.2.3.4", 443)
 	for i := 1; i < set.TCP.IPBlockDetect.RetransmitThreshold; i++ {
-		w.destState.RecordClientHello(key, "i.ytimg.com")
+		w.destState.RecordClientHello(key, "i.ytimg.com", 0)
 	}
 
 	queueTo(w, q, 1, makeV4TCPPacket(seg1, splitSeq))
