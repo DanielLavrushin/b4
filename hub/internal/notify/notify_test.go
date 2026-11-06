@@ -863,41 +863,47 @@ func TestRunStopsOnCancelAndNudgeNeverBlocks(t *testing.T) {
 
 func TestTelegramFailureNamesTheChatIDThatWouldWork(t *testing.T) {
 	cases := []struct {
-		name  string
-		chat  string
-		reply string
-		want  string
-		plain bool
+		name   string
+		chat   string
+		status int
+		reply  string
+		want   string
+		plain  bool
 	}{
 		{
-			name:  "bare supergroup id",
-			chat:  "-3798515834",
-			reply: `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
-			want:  "(a supergroup, forum or channel chat id starts with -100, so try -1003798515834)",
+			name:   "bare supergroup id",
+			chat:   "-3456789012",
+			status: http.StatusBadRequest,
+			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
+			want:   "(a supergroup, forum or channel chat id starts with -100, so try -1003456789012)",
 		},
 		{
-			name:  "already prefixed",
-			chat:  testChat,
-			reply: `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
-			plain: true,
+			name:   "already prefixed",
+			chat:   testChat,
+			status: http.StatusBadRequest,
+			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
+			plain:  true,
 		},
 		{
-			name:  "public channel name",
-			chat:  "@b4hub_alerts",
-			reply: `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
-			plain: true,
+			name:   "public channel name",
+			chat:   "@b4hub_alerts",
+			status: http.StatusBadRequest,
+			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
+			plain:  true,
 		},
 		{
-			name:  "another failure",
-			chat:  "-3798515834",
-			reply: `{"ok":false,"error_code":403,"description":"Forbidden: bot was kicked from the group chat"}`,
-			plain: true,
+			name:   "another failure",
+			chat:   "-3456789012",
+			status: http.StatusForbidden,
+			reply:  `{"ok":false,"error_code":403,"description":"Forbidden: bot was kicked from the group chat"}`,
+			plain:  true,
 		},
 		{
-			name:  "upgraded group",
-			chat:  "-3798515834",
-			reply: `{"ok":false,"error_code":400,"description":"Bad Request: group chat was upgraded to a supergroup chat","parameters":{"migrate_to_chat_id":-1003798515834}}`,
-			want:  "(the new chat id is -1003798515834)",
+			name:   "upgraded group",
+			chat:   "-3456789012",
+			status: http.StatusBadRequest,
+			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: group chat was upgraded to a supergroup chat","parameters":{"migrate_to_chat_id":-1003456789012}}`,
+			want:   "(the new chat id is -1003456789012)",
 		},
 	}
 	for _, c := range cases {
@@ -907,7 +913,7 @@ func TestTelegramFailureNamesTheChatIDThatWouldWork(t *testing.T) {
 			u.WebhookEnabled = false
 			u.TelegramChatID = c.chat
 			f.save(t, u)
-			f.tg.respond(http.StatusBadRequest, c.reply, nil)
+			f.tg.respond(c.status, c.reply, nil)
 
 			err := f.svc.Test(context.Background(), ChannelTelegram)
 			if err == nil {
