@@ -270,3 +270,97 @@ func TestNetnsAnOverlapLeavesTheDataAfterTheHelloAlone(t *testing.T) {
 		}
 	}
 }
+
+func netnsOverlapRequest(path string) []byte {
+	return []byte("GET " + path + " HTTP/1.1\r\nHost: " + netnsOverlapHost + "\r\nUser-Agent: b4-netns-overlap\r\nAccept: */*\r\n\r\n")
+}
+
+func netnsOverlapConnect() []byte {
+	return []byte("CONNECT " + netnsOverlapHost + ":443 HTTP/1.1\r\nHost: " + netnsOverlapHost + ":443\r\n\r\n")
+}
+
+func netnsOverlapConverse(t *testing.T, reads <-chan netnsOverlapRead, first, second []byte, pipelined bool) (uint16, bool) {
+	t.Helper()
+	conn, err := netnsHoldDial()
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := conn.Write(first); err != nil {
+		t.Fatalf("write the first message: %v", err)
+	}
+	if !pipelined {
+		if _, err := io.ReadFull(conn, make([]byte, 1)); err != nil {
+			t.Fatalf("the server never answered the first message: %v", err)
+		}
+	}
+	if _, err := conn.Write(second); err != nil {
+		t.Fatalf("write the second message: %v", err)
+	}
+	port := uint16(conn.LocalAddr().(*net.TCPAddr).Port)
+	select {
+	case r := <-reads:
+		return port, r.err == nil && bytes.Equal(r.got, bytes.Join([][]byte{first, second}, nil))
+	case <-time.After(7 * time.Second):
+		t.Fatal("the server reported nothing")
+	}
+	return port, false
+}
+
+func TestNetnsAnOverlapStaysOffALaterMessageOfTheConnection(t *testing.T) {
+	hello := buildClientHello(netnsOverlapHost, 100, 0xAB)
+	for _, c := range []struct {
+		name          string
+		first, second []byte
+		pipelined     bool
+	}{
+		{"an HTTP request pipelined behind the first", netnsOverlapRequest("/one"), netnsOverlapRequest("/two"), true},
+		{"an HTTP request after the answer to the first", netnsOverlapRequest("/one"), netnsOverlapRequest("/two"), false},
+		{"a ClientHello right after CONNECT", netnsOverlapConnect(), hello, true},
+		{"a ClientHello after the CONNECT answer", netnsOverlapConnect(), hello, false},
+	} {
+		for _, overlap := range []int{64, 256} {
+			t.Run(fmt.Sprintf("%s, overlap %d", c.name, overlap), func(t *testing.T) {
+				netnsHoldRequire(t)
+				srv := netnsHoldStartPeer(t)
+				reads := netnsOverlapServerIn(t, srv, len(c.first), len(c.second))
+				wire := netnsHoldCapture(t, srv)
+				set := netnsOverlapSet(overlap, false)
+				netnsOverlapStart(t, srv, &set)
+
+				var ports []uint16
+				wrong := 0
+				for range netnsOverlapConns {
+					port, intact := netnsOverlapConverse(t, reads, c.first, c.second, c.pipelined)
+					ports = append(ports, port)
+					if !intact {
+						wrong++
+					}
+				}
+				time.Sleep(50 * time.Millisecond)
+				if wrong > 0 {
+					t.Errorf("the server read other bytes than the client wrote on %d of %d connections", wrong, netnsOverlapConns)
+				}
+
+				seen := wire()
+				carried := 0
+				for _, port := range ports {
+					start, seqs, ok := netnsOverlapConnWire(seen, port)
+					if !ok {
+						t.Fatalf("nothing of the connection from port %d on the wire", port)
+					}
+					if !seqs[start-uint32(overlap)] {
+						t.Fatal("the connection's first message lost its overlap")
+					}
+					if seqs[start+uint32(len(c.first))-uint32(overlap)] {
+						carried++
+					}
+				}
+				if carried > 0 {
+					t.Errorf("the second message carried an overlap that reaches back over the first on %d of %d connections", carried, netnsOverlapConns)
+				}
+			})
+		}
+	}
+}
