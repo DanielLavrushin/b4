@@ -358,12 +358,16 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 	srcMac := pkt.srcMac
 
 	if dport == 53 {
+		clientPort := sport
+		if pkt.devicePort != 0 {
+			clientPort = pkt.devicePort
+		}
 		domain, ok := dns.ParseQueryDomain(payload)
 		txid, txidOK := dns.ParseTransactionID(payload)
 		if ok {
 			domain = strings.ToLower(domain)
 			if txidOK && DNSNames.Wanted() {
-				noteDNSNameQuery(dnsRouteKeyRequest(ipVersion, pkt.src, sport, pkt.dst, dport, txid, domain))
+				noteDNSNameQuery(dnsRouteKeyRequest(ipVersion, pkt.src, clientPort, pkt.dst, dport, txid, domain))
 			}
 			matcher := w.getMatcher()
 			keep := w.blockScope(vc, pkt, matcher)
@@ -396,7 +400,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					ipv6Disabled := ipVersion == IPv6 && !cfg.Queue.IPv6Enabled
 					if !ipv6Disabled {
 						if resp := dns.BuildBlockResponse(payload); resp != nil {
-							w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, sport, resp)
+							w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, resp)
 							log.Tracef("DNS sinkhole: %s -> NXDOMAIN for %s (set: %s)", dns.SafeName(domain), clientIP, set.Name)
 							logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionSinkhole)
 							recordBlockedDNS(cfg, set, domain, srcMac)
@@ -412,7 +416,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					}
 					action, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned, vc.scope.learns(domain))
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, action)
-					send := func() { w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, sport, pinned) }
+					send := func() { w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, pinned) }
 					if !w.holdForRoutes(vc, routeWaits, domain, send) {
 						send()
 					}
@@ -421,7 +425,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 
 				if txidOK && vc.scope.learns(domain) && set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery {
 					storeDNSPendingRoute(
-						dnsRouteKeyRequest(ipVersion, clientIP, sport, originalDst, dport, txid, domain),
+						dnsRouteKeyRequest(ipVersion, clientIP, clientPort, originalDst, dport, txid, domain),
 						set.Id,
 					)
 				}
@@ -456,7 +460,6 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 
 				query := append([]byte(nil), payload...)
 				ver := ipVersion
-				clientPort := sport
 				delay := config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax)
 
 				target := set.DNS.TargetDNS
