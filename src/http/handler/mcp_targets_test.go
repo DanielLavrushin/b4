@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -455,6 +456,40 @@ func TestMCPEditTargetsCatchAllNamesTheRoutersOwnTraffic(t *testing.T) {
 			}
 			if c.router && !strings.Contains(out.Note, "routing.source_interfaces") {
 				t.Errorf("the note must say how to keep the router's own traffic out: %q", out.Note)
+			}
+		})
+	}
+}
+
+func TestMCPEditTargetsWarnsWhenRemovingTheLastDeviceTakesTheRouter(t *testing.T) {
+	const mac = "AA:BB:CC:DD:EE:FF"
+	for _, c := range []struct {
+		name   string
+		mode   string
+		scope  func(*config.SetConfig)
+		edit   map[string]any
+		router bool
+	}{
+		{"proxy set loses its last device", config.RoutingModeProxy,
+			func(s *config.SetConfig) { s.Targets.SourceDevices = []string{mac} },
+			map[string]any{"remove": mac}, true},
+		{"block set loses its last device", config.RoutingModeBlock,
+			func(s *config.SetConfig) { s.Targets.SourceDevices = []string{mac} },
+			map[string]any{"remove": mac}, true},
+		{"unscoped set gains a device", config.RoutingModeProxy, nil,
+			map[string]any{"add": mac}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := catchAllRoutingCfg(t, c.mode, c.scope)
+			cfg.Sets[0].Targets.IPs = []string{"0.0.0.0/0"}
+			srv := newMCPTestServer(t, cfg)
+			session, ctx := connectMCP(t, srv)
+
+			args := map[string]any{"set": "video", "kind": "source_devices"}
+			maps.Copy(args, c.edit)
+			out := decodeEditTargets(t, callEditTargets(t, session, ctx, args))
+			if got := strings.Contains(out.Note, "router's own"); got != c.router {
+				t.Errorf("note names the router's own traffic = %v, want %v: %q", got, c.router, out.Note)
 			}
 		})
 	}

@@ -553,10 +553,10 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 			out.Note += fmt.Sprintf(". %s is a catch-all that matches everything", strings.Join(catch, ", "))
 			if set.Routing.Enabled {
 				out.Note += fmt.Sprintf(", and routing is enabled on this set in %q mode - every matched packet now takes that path", set.Routing.Mode)
-				if router := mcpRouterTrafficNote(set); kind == mcpTargetKindIPs && router != "" {
-					out.Note += ". " + router
-				}
 			}
+		}
+		if router := mcpCatchAllRoutingNote(set); router != "" && router != mcpCatchAllRoutingNote(oldCfg.GetSetById(set.Id)) {
+			out.Note += ". " + strings.TrimSuffix(router, ".")
 		}
 		if scope := mcpPortOnlyNote(set); scope != "" {
 			out.Note += ". " + scope
