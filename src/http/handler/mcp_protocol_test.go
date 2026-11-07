@@ -3,7 +3,9 @@ package handler
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -93,6 +95,37 @@ func TestMCPLeavesProtocolVersionErrorsOfRequestsAndStatedVersionsToTheSDK(t *te
 	resp, body = mcpStatelessPost(t, url, "notifications/roots/list_changed", "", huge)
 	if resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Fatalf("an oversized notification: status %d, body %q; want go-sdk's 413", resp.StatusCode, body)
+	}
+}
+
+func TestMCPGateKeepsABodyReadErrorForTheSDK(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	host := strings.TrimPrefix(srv.URL, "http://")
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{` + mcpTestMeta + `}}`
+
+	for _, version := range []string{"2025-11-25", mcpTestStatelessVersion} {
+		t.Run(version, func(t *testing.T) {
+			conn, err := net.Dial("tcp", host)
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
+			defer conn.Close()
+			fmt.Fprintf(conn, "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMcp-Protocol-Version: %s\r\nMcp-Method: tools/list\r\nContent-Length: %d\r\n\r\n%s",
+				mcpEndpoint, host, version, len(body)+10, body)
+			if err := conn.(*net.TCPConn).CloseWrite(); err != nil {
+				t.Fatalf("close write: %v", err)
+			}
+			_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+			if err != nil {
+				t.Fatalf("read response: %v", err)
+			}
+			defer resp.Body.Close()
+			raw, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(raw), "failed to read body") {
+				t.Fatalf("a body cut short of its Content-Length: status %d, body %q; want go-sdk's 400", resp.StatusCode, raw)
+			}
+		})
 	}
 }
 

@@ -253,15 +253,23 @@ func mcpBareNotification(r *http.Request) (string, bool) {
 		return "", false
 	}
 	head, err := io.ReadAll(io.LimitReader(r.Body, mcpMaxBodyBytes+1))
+	rest := io.Reader(r.Body)
+	if err != nil {
+		rest = mcpFailedRead{err}
+	}
 	r.Body = struct {
 		io.Reader
 		io.Closer
-	}{io.MultiReader(bytes.NewReader(head), r.Body), r.Body}
+	}{io.MultiReader(bytes.NewReader(head), rest), r.Body}
 	if err != nil || len(head) > mcpMaxBodyBytes {
 		return "", false
 	}
 	return mcpNotificationWithoutVersion(head)
 }
+
+type mcpFailedRead struct{ err error }
+
+func (f mcpFailedRead) Read([]byte) (int, error) { return 0, f.err }
 
 func mcpNotificationWithoutVersion(body []byte) (string, bool) {
 	var msg map[string]json.RawMessage
