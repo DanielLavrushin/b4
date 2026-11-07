@@ -46,6 +46,26 @@ func TestTunSrcResolvePortRemap(t *testing.T) {
 	}
 }
 
+func TestTunSrcKeepsTheDevicesOwnPort(t *testing.T) {
+	thisHost(t)
+	line := "ipv4 2 tcp 6 431999 ESTABLISHED src=192.168.1.50 dst=104.18.8.37 sport=49874 dport=443 src=104.18.8.37 dst=94.189.76.227 sport=443 dport=44092 [ASSURED] use=1\n"
+	r := newResolverWith(t, "94.189.76.227", line)
+	wan, dst := net.ParseIP("94.189.76.227"), net.ParseIP("104.18.8.37")
+
+	if ip, port, origin := r.attributePacket(tunSrcPacket{}, 6, wan, 44092, dst, 443); origin != tunSrcLAN || ip.String() != "192.168.1.50" || port != 49874 {
+		t.Fatalf("want the device 192.168.1.50:49874 from the conntrack row, got %v:%d (origin %d)", ip, port, origin)
+	}
+	if err := os.WriteFile(r.path, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if ip, port, origin := r.attributePacket(tunSrcPacket{}, 6, wan, 44092, dst, 443); origin != tunSrcLAN || ip.String() != "192.168.1.50" || port != 49874 {
+		t.Fatalf("a cached attribution must keep the device's port, got %v:%d (origin %d)", ip, port, origin)
+	}
+	if _, port, origin := r.attributePacket(tunSrcPacket{}, 6, wan, 44093, dst, 443); origin != tunSrcUnknown || port != 0 {
+		t.Fatalf("a flow conntrack does not hold has no device port, got %d (origin %d)", port, origin)
+	}
+}
+
 func TestTunSrcResolveGateAndMiss(t *testing.T) {
 	line := "ipv4 2 tcp 6 100 ESTABLISHED src=192.168.1.100 dst=104.18.8.37 sport=49874 dport=443 src=104.18.8.37 dst=94.189.76.227 sport=443 dport=49874 use=1\n"
 	r := newResolverWith(t, "94.189.76.227", line)
