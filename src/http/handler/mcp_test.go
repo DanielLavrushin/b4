@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1447,6 +1448,40 @@ func TestMCPGetTopicListAndSearch(t *testing.T) {
 	}
 }
 
+func TestMCPTopicSearchMatchesWordsOfADottedKey(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	for query, want := range map[string]string{
+		"logging level":     "system.logging.level",
+		"log level":         "system.logging.level",
+		"allow writes":      "system.web_server.mcp.allow_writes",
+		"source interfaces": "routing.source_interfaces",
+		"source_devices":    "targets.source_devices",
+		"targets.ip":        "targets.ip",
+		"SNI Type":          "faking.sni_type",
+	} {
+		out := callTopic(t, session, ctx, map[string]any{"query": query})
+		if len(out.Topics) == 0 || out.Topics[0].Topic != want {
+			t.Errorf("query %q: first hit must be %s, got %+v", query, want, out.Topics)
+		}
+	}
+
+	for _, query := range []string{"...", " _ . "} {
+		if out := callTopic(t, session, ctx, map[string]any{"query": query}); out.Found || len(out.Topics) != 0 {
+			t.Errorf("query %q has no words and must match nothing: %+v", query, out)
+		}
+	}
+
+	wide := callTopic(t, session, ctx, map[string]any{"query": "mode"})
+	if !wide.Truncated || len(wide.Topics) != mcpMaxTopicHits {
+		t.Fatalf("a word in dozens of topics must fill the cap and report truncation: %+v", wide)
+	}
+	if !strings.Contains(wide.Note, "topic=") {
+		t.Errorf("a truncated search must point at topic= for the full list: %q", wide.Note)
+	}
+}
+
 func TestMCPInstructionsPointAtTheTopicTool(t *testing.T) {
 	srv := newMCPTestServer(t, mcpTestCfg())
 	session, ctx := connectMCP(t, srv)
@@ -2574,8 +2609,81 @@ func TestMCPLogsTailSkipsTheRotatedFileAfterAPartialRead(t *testing.T) {
 }
 
 func TestMCPDiagnosePromptPointsAtToolsThatWork(t *testing.T) {
+	toolRef := regexp.MustCompile(`b4_[a-z_]+`)
+	for _, probes := range []bool{false, true} {
+		cfg := mcpTestCfg()
+		cfg.System.WebServer.MCP.AllowActiveProbes = probes
+		srv := newMCPTestServer(t, cfg)
+		session, ctx := connectMCP(t, srv)
+
+		got, err := session.GetPrompt(ctx, &mcp.GetPromptParams{
+			Name:      "diagnose_domain",
+			Arguments: map[string]string{"domain": "youtube.com"},
+		})
+		if err != nil {
+			t.Fatalf("get prompt: %v", err)
+		}
+		text := got.Messages[0].Content.(*mcp.TextContent).Text
+		for _, want := range []string{
+			"call b4_get_set for that set", "b4_get_topic for each setting", "call b4_get_topic for it",
+			"b4_logs_tail with file=errors", "b4_recent_connections", "stop and say so", "installed version",
+		} {
+			if !strings.Contains(text, want) {
+				t.Errorf("probes %v: prompt must say %q: %q", probes, want, text)
+			}
+		}
+		for _, gone := range []string{"b4_get_config for that set", "b4://topics/"} {
+			if strings.Contains(text, gone) {
+				t.Errorf("b4_get_config cannot read one set and most clients never show resources, so the prompt must not say %q: %q", gone, text)
+			}
+		}
+
+		registered := toolNames(t, session, ctx)
+		for _, name := range toolRef.FindAllString(text, -1) {
+			if !registered[name] {
+				t.Errorf("probes %v: the prompt names %s, which this server does not offer", probes, name)
+			}
+		}
+		if got := strings.Contains(text, "b4_test_domain_now"); got != probes {
+			t.Errorf("probes %v: prompt names b4_test_domain_now = %v", probes, got)
+		}
+		if !probes && (!strings.Contains(text, "Allow active probes") || !strings.Contains(text, mcpSwitchWhere)) {
+			t.Errorf("with probes off the prompt must name the switch and where it is: %q", text)
+		}
+	}
+}
+
+func TestMCPDiagnosePromptReadsTheWholeConnectionWindow(t *testing.T) {
+	hub := log.GetConnectionHub()
+	hub.Broadcast("tcp,,,10.0.0.9:5000,,203.0.113.7:443,,")
+	for i := range mcpDefaultLines {
+		hub.Broadcast(fmt.Sprintf("tcp,video,youtube.com,10.0.0.2:%d,,142.250.1.1:443,,TLS1.3", 6000+i))
+	}
 	srv := newMCPTestServer(t, mcpTestCfg())
 	session, ctx := connectMCP(t, srv)
+
+	recent := func(args map[string]any) mcpRecentConnOut {
+		t.Helper()
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_recent_connections", Arguments: args})
+		if err != nil {
+			t.Fatalf("call: %v", err)
+		}
+		var out mcpRecentConnOut
+		if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return out
+	}
+	seesDevice := func(out mcpRecentConnOut) bool {
+		return slices.ContainsFunc(out.Connections, func(l string) bool { return strings.Contains(l, "10.0.0.9:") })
+	}
+	if out := recent(nil); seesDevice(out) || !out.Truncated {
+		t.Fatalf("the default window must cut off the device's nameless flow and say so: %+v", out)
+	}
+	widest := fmt.Sprintf("limit=%d", mcpMaxLines)
+	if !seesDevice(recent(map[string]any{"limit": mcpMaxLines})) {
+		t.Fatalf("%s must reach the device's nameless flow", widest)
+	}
 
 	got, err := session.GetPrompt(ctx, &mcp.GetPromptParams{
 		Name:      "diagnose_domain",
@@ -2585,15 +2693,13 @@ func TestMCPDiagnosePromptPointsAtToolsThatWork(t *testing.T) {
 		t.Fatalf("get prompt: %v", err)
 	}
 	text := got.Messages[0].Content.(*mcp.TextContent).Text
-	for _, want := range []string{"call b4_get_set for that set", "b4_get_topic for each setting", "call b4_get_topic for it"} {
+	for _, want := range []string{widest, "device's address in contains", "marked truncated", "retry once more"} {
 		if !strings.Contains(text, want) {
-			t.Errorf("prompt must say %q: %q", want, text)
+			t.Errorf("before concluding that a device's traffic never reached b4, the prompt must say %q: %q", want, text)
 		}
 	}
-	for _, gone := range []string{"b4_get_config for that set", "b4://topics/"} {
-		if strings.Contains(text, gone) {
-			t.Errorf("b4_get_config cannot read one set and most clients never show resources, so the prompt must not say %q: %q", gone, text)
-		}
+	if strings.Contains(text, "again without contains,") {
+		t.Errorf("an unfiltered call with the default limit hides older lines, so the prompt must not suggest it: %q", text)
 	}
 }
 

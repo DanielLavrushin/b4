@@ -253,26 +253,10 @@ func (ds *DiscoverySuite) getPayloadName(payloadType int) string {
 			return ds.customPayloads[idx].Name
 		}
 	}
-	switch payloadType {
-	case config.FakePayloadSTUN:
-		return "stun"
-	case config.FakePayloadDefault1:
-		return "google"
-	case config.FakePayloadDefault2:
-		return "duckduckgo"
-	case config.FakePayloadRandom:
-		return "random"
-	case config.FakePayloadZero:
-		return "zero"
-	case config.FakePayloadInverted:
-		return "inverted"
-	case config.FakePayloadDomain:
-		return "domain"
-	case config.FakePayloadCapture:
-		return "capture"
-	default:
-		return "unknown"
+	if payloadType >= 0 && payloadType < len(config.FakePayloadNames) {
+		return config.FakePayloadNames[payloadType]
 	}
+	return "unknown"
 }
 
 func (ds *DiscoverySuite) applyBestPayload(faking *config.FakingConfig) {
