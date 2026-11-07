@@ -416,7 +416,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 	vc.hellos, vc.helloKey = w.pendingHello, connKey
 	w.noteClientProgress(connKey, tcp)
-	if tcp[13]&0x12 == 0x02 && usesSequenceOverlap(cfg) {
+	if tcp[13]&0x12 == 0x02 && w.recordsStreamStarts(cfg) {
 		w.streams.Open(pkt.raw, pkt.ihl, time.Now())
 	}
 	if cfg.IsTCPPort(dport) && tcp[13]&0x12 == 0x02 {

@@ -28,6 +28,11 @@ func newStreamStartCache() *streamStartCache {
 	return &streamStartCache{cur: make(map[streamKey]uint32), prev: make(map[streamKey]uint32), rotated: time.Now()}
 }
 
+type streamGate struct {
+	cfg *config.Config
+	on  bool
+}
+
 func usesSequenceOverlap(cfg *config.Config) bool {
 	for _, set := range cfg.Sets {
 		if set != nil && set.Fragmentation.SeqOverlapLength > 0 && len(set.Fragmentation.SeqOverlapBytes) > 0 {
@@ -35,6 +40,15 @@ func usesSequenceOverlap(cfg *config.Config) bool {
 		}
 	}
 	return false
+}
+
+func (w *Worker) recordsStreamStarts(cfg *config.Config) bool {
+	if g := w.streamsGate.Load(); g != nil && g.cfg == cfg {
+		return g.on
+	}
+	on := usesSequenceOverlap(cfg)
+	w.streamsGate.Store(&streamGate{cfg: cfg, on: on})
+	return on
 }
 
 func streamKeyOf(packet []byte, tcpAt int) (streamKey, bool) {

@@ -59,6 +59,7 @@ type Worker struct {
 	ipToMac          atomic.Value
 	tlsCache         *tlsInfoCache
 	streams          *streamStartCache
+	streamsGate      atomic.Pointer[streamGate]
 	connTracker      *connStateTracker
 	destState        *destStateTracker
 	pendingHello     *pendingHelloCache

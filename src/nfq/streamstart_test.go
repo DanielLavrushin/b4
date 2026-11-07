@@ -124,6 +124,40 @@ func TestASynIsRecordedOnlyWhileASetHasAnOverlap(t *testing.T) {
 	}
 }
 
+func TestTheStreamStartGateFollowsAConfigReload(t *testing.T) {
+	const isn = uint32(80000)
+	setWith := func(overlap int) *config.SetConfig {
+		set := overlapTestSet(overlap, []byte{0x16, 0x03, 0x03, 0x00, 0x00})
+		set.Id, set.Name, set.Enabled = "overlap", "Overlap", true
+		set.Targets.IpsToMatch = []string{"1.2.3.4"}
+		return &set
+	}
+	configWith := func(overlap int) *config.Config {
+		cfg := config.NewConfig()
+		cfg.Sets = []*config.SetConfig{setWith(overlap)}
+		return &cfg
+	}
+	w := newDualStackInjectingWorker(t, setWith(64))
+	for i, step := range []struct {
+		reload *config.Config
+		want   bool
+	}{
+		{nil, true},
+		{configWith(0), false},
+		{configWith(64), true},
+		{configWith(0), false},
+	} {
+		if step.reload != nil {
+			w.UpdateConfig(step.reload)
+		}
+		syn, tcpAt := streamSynFromPort(t, uint16(2000+i), isn)
+		w.ProcessPacket(syn)
+		if got := w.streams.Starts(syn, tcpAt, isn+1); got != step.want {
+			t.Fatalf("step %d: the SYN recorded a stream start %v, want %v for the config installed then", i, got, step.want)
+		}
+	}
+}
+
 func TestOnlyASetWithAnOverlapRecordsStreams(t *testing.T) {
 	cfg := config.NewConfig()
 	plain := config.NewSetConfig()
