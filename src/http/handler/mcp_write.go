@@ -160,6 +160,15 @@ var mcpValueAliases = map[string][]mcpAlias{
 	"system.logging.level": {
 		{"error", "0"}, {"info", "1"}, {"trace", "2"}, {"debug", "3"},
 	},
+	mcpSetPathPrefix + ".faking.sni_type": mcpIndexAliases(config.FakePayloadNames[:]),
+}
+
+func mcpIndexAliases(names []string) []mcpAlias {
+	aliases := make([]mcpAlias, len(names))
+	for i, name := range names {
+		aliases[i] = mcpAlias{name, strconv.Itoa(i)}
+	}
+	return aliases
 }
 
 func mcpAliasNames(canonical string) []string {
@@ -773,6 +782,9 @@ func mcpSaveSideEffects(before, saved *config.Config, canonical, writtenID strin
 		}
 		if s.Targets.IPPriority && !s.IPPriorityApplies() && (old.IPPriorityApplies() || !old.Targets.IPPriority) {
 			notes = append(notes, fmt.Sprintf("targets.ip_priority has no effect on set %q while its targets.tls is set.", s.Name))
+		}
+		if catchAll := mcpCatchAllRoutingNote(s); catchAll != "" && catchAll != mcpCatchAllRoutingNote(old) {
+			notes = append(notes, catchAll)
 		}
 	}
 	return strings.Join(notes, " ")

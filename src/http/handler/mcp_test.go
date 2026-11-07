@@ -1447,6 +1447,40 @@ func TestMCPGetTopicListAndSearch(t *testing.T) {
 	}
 }
 
+func TestMCPTopicSearchMatchesWordsOfADottedKey(t *testing.T) {
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	for query, want := range map[string]string{
+		"logging level":     "system.logging.level",
+		"log level":         "system.logging.level",
+		"allow writes":      "system.web_server.mcp.allow_writes",
+		"source interfaces": "routing.source_interfaces",
+		"source_devices":    "targets.source_devices",
+		"targets.ip":        "targets.ip",
+		"SNI Type":          "faking.sni_type",
+	} {
+		out := callTopic(t, session, ctx, map[string]any{"query": query})
+		if len(out.Topics) == 0 || out.Topics[0].Topic != want {
+			t.Errorf("query %q: first hit must be %s, got %+v", query, want, out.Topics)
+		}
+	}
+
+	for _, query := range []string{"...", " _ . "} {
+		if out := callTopic(t, session, ctx, map[string]any{"query": query}); out.Found || len(out.Topics) != 0 {
+			t.Errorf("query %q has no words and must match nothing: %+v", query, out)
+		}
+	}
+
+	wide := callTopic(t, session, ctx, map[string]any{"query": "mode"})
+	if !wide.Truncated || len(wide.Topics) != mcpMaxTopicHits {
+		t.Fatalf("a word in dozens of topics must fill the cap and report truncation: %+v", wide)
+	}
+	if !strings.Contains(wide.Note, "topic=") {
+		t.Errorf("a truncated search must point at topic= for the full list: %q", wide.Note)
+	}
+}
+
 func TestMCPInstructionsPointAtTheTopicTool(t *testing.T) {
 	srv := newMCPTestServer(t, mcpTestCfg())
 	session, ctx := connectMCP(t, srv)
@@ -2574,25 +2608,46 @@ func TestMCPLogsTailSkipsTheRotatedFileAfterAPartialRead(t *testing.T) {
 }
 
 func TestMCPDiagnosePromptPointsAtToolsThatWork(t *testing.T) {
-	srv := newMCPTestServer(t, mcpTestCfg())
-	session, ctx := connectMCP(t, srv)
+	toolRef := regexp.MustCompile(`b4_[a-z_]+`)
+	for _, probes := range []bool{false, true} {
+		cfg := mcpTestCfg()
+		cfg.System.WebServer.MCP.AllowActiveProbes = probes
+		srv := newMCPTestServer(t, cfg)
+		session, ctx := connectMCP(t, srv)
 
-	got, err := session.GetPrompt(ctx, &mcp.GetPromptParams{
-		Name:      "diagnose_domain",
-		Arguments: map[string]string{"domain": "youtube.com"},
-	})
-	if err != nil {
-		t.Fatalf("get prompt: %v", err)
-	}
-	text := got.Messages[0].Content.(*mcp.TextContent).Text
-	for _, want := range []string{"call b4_get_set for that set", "b4_get_topic for each setting", "call b4_get_topic for it"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("prompt must say %q: %q", want, text)
+		got, err := session.GetPrompt(ctx, &mcp.GetPromptParams{
+			Name:      "diagnose_domain",
+			Arguments: map[string]string{"domain": "youtube.com"},
+		})
+		if err != nil {
+			t.Fatalf("get prompt: %v", err)
 		}
-	}
-	for _, gone := range []string{"b4_get_config for that set", "b4://topics/"} {
-		if strings.Contains(text, gone) {
-			t.Errorf("b4_get_config cannot read one set and most clients never show resources, so the prompt must not say %q: %q", gone, text)
+		text := got.Messages[0].Content.(*mcp.TextContent).Text
+		for _, want := range []string{
+			"call b4_get_set for that set", "b4_get_topic for each setting", "call b4_get_topic for it",
+			"b4_logs_tail with file=errors", "b4_recent_connections", "stop and say so", "installed version",
+		} {
+			if !strings.Contains(text, want) {
+				t.Errorf("probes %v: prompt must say %q: %q", probes, want, text)
+			}
+		}
+		for _, gone := range []string{"b4_get_config for that set", "b4://topics/"} {
+			if strings.Contains(text, gone) {
+				t.Errorf("b4_get_config cannot read one set and most clients never show resources, so the prompt must not say %q: %q", gone, text)
+			}
+		}
+
+		registered := toolNames(t, session, ctx)
+		for _, name := range toolRef.FindAllString(text, -1) {
+			if !registered[name] {
+				t.Errorf("probes %v: the prompt names %s, which this server does not offer", probes, name)
+			}
+		}
+		if got := strings.Contains(text, "b4_test_domain_now"); got != probes {
+			t.Errorf("probes %v: prompt names b4_test_domain_now = %v", probes, got)
+		}
+		if !probes && (!strings.Contains(text, "Allow active probes") || !strings.Contains(text, mcpSwitchWhere)) {
+			t.Errorf("with probes off the prompt must name the switch and where it is: %q", text)
 		}
 	}
 }

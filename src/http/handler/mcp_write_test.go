@@ -7,6 +7,7 @@ import (
 	"net"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -782,6 +783,56 @@ func TestMCPWriteLogLevelByName(t *testing.T) {
 	if got := log.Level(log.CurLevel.Load()); got != log.LevelInfo {
 		t.Errorf("running log level after undo = %v, want %v", got, log.LevelInfo)
 	}
+}
+
+func TestMCPWriteFakePayloadByName(t *testing.T) {
+	cfg := writableCfg(t)
+	cfg.Sets[0].Faking.SNIType = config.FakePayloadDefault1
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].faking.sni_type", "stun"))
+	if out.Current != "stun" || out.Previous != "google" {
+		t.Errorf("previous %q, current %q: want google and stun, the names rather than the stored numbers", out.Previous, out.Current)
+	}
+	if got := api.getCfg().Sets[0].Faking.SNIType; got != config.FakePayloadSTUN {
+		t.Errorf("stored sni_type = %d, want %d", got, config.FakePayloadSTUN)
+	}
+
+	if out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].faking.sni_type", "1")); out.Current != "custom" {
+		t.Errorf("a stored number must still be writable and read back by name: %+v", out)
+	}
+
+	for _, bad := range []string{"9", "-3", "file", "zeros"} {
+		if res := callSetValue(t, session, ctx, "sets[video].faking.sni_type", bad); !res.IsError {
+			t.Errorf("%q is not a fake payload and must be refused", bad)
+		}
+	}
+	if got := api.getCfg().Sets[0].Faking.SNIType; got != config.FakePayloadCustom {
+		t.Errorf("a refused write changed sni_type to %d", got)
+	}
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "b4_list_writable_paths",
+		Arguments: map[string]any{"prefix": "sets[].faking.sni_type"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var paths mcpListPathsOut
+	if err := json.Unmarshal(mustStructured(t, res), &paths); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, p := range paths.Paths {
+		if p.Path != "sets[].faking.sni_type" {
+			continue
+		}
+		if !slices.Equal(p.Options, config.FakePayloadNames[:]) || p.Current != "custom" {
+			t.Errorf("options %v, current %q: want every payload name in stored order and the current one by name", p.Options, p.Current)
+		}
+		return
+	}
+	t.Fatal("sets[].faking.sni_type should be listed as writable")
 }
 
 func TestMCPListWritablePathsShowsLogLevelNames(t *testing.T) {

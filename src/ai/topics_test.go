@@ -1,9 +1,12 @@
 package ai
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 const topicMaxLen = 2800
@@ -59,6 +62,29 @@ func TestDSCPTopicCountsLookupsForTheFirstPacket(t *testing.T) {
 	for _, way := range []string{"DNS answer", "own lookup"} {
 		if !strings.Contains(sentence, way) {
 			t.Errorf("the first-packet sentence leaves out %q, although b4 learns addresses that way before the connection: %q", way, sentence)
+		}
+	}
+}
+
+func TestFakePayloadTopicNamesEveryValue(t *testing.T) {
+	facts := TopicFacts("faking.sni_type")
+	for value, name := range config.FakePayloadNames {
+		if want := fmt.Sprintf("%d '%s'", value, name); !strings.Contains(facts, want) {
+			t.Errorf("faking.sni_type must name stored value %d as %q, the name MCP writes accept: %q", value, want, facts)
+		}
+	}
+}
+
+func TestRoutingTopicsSayWhatHappensToTheRoutersOwnTraffic(t *testing.T) {
+	for key, wants := range map[string][]string{
+		"routing.mode":           {"router's own traffic", "'proxy' or 'mtproto-ws' set always for TCP", "'block' set tests no packet mark"},
+		"routing.router_traffic": {"Proxy and mtproto-ws sets", "block sets every packet"},
+		"targets.ip":             {"connections the router itself opens"},
+	} {
+		for _, want := range wants {
+			if !strings.Contains(TopicFacts(key), want) {
+				t.Errorf("%s must say %q: a catch-all routing set takes the router's own traffic unless it is limited by source", key, want)
+			}
 		}
 	}
 }

@@ -399,6 +399,122 @@ func TestMCPEditTargetsWarnsOnCatchAll(t *testing.T) {
 	}
 }
 
+func catchAllRoutingCfg(t *testing.T, mode string, scope func(*config.SetConfig)) *config.Config {
+	t.Helper()
+	mcpResetHistory()
+	cfg := geoTestCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	set := cfg.Sets[0]
+	set.Routing.Enabled = true
+	set.Routing.Mode = mode
+	set.Routing.Upstream.Host = "127.0.0.1"
+	set.Routing.Upstream.Port = 1080
+	set.Routing.EgressInterface = "wg9"
+	set.Targets.IPs = []string{"10.0.0.0/8"}
+	if scope != nil {
+		scope(set)
+	}
+	return cfg
+}
+
+func TestMCPEditTargetsCatchAllNamesTheRoutersOwnTraffic(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		mode   string
+		scope  func(*config.SetConfig)
+		router bool
+	}{
+		{"unscoped proxy", config.RoutingModeProxy, nil, true},
+		{"unscoped mtproto-ws", config.RoutingModeMTProtoWS, nil, true},
+		{"unscoped block", config.RoutingModeBlock, nil, true},
+		{"interface with router traffic included", config.RoutingModeInterface,
+			func(s *config.SetConfig) { s.Routing.RouterTraffic = config.RouterTrafficInclude }, true},
+		{"interface with router traffic excluded", config.RoutingModeInterface,
+			func(s *config.SetConfig) { s.Routing.RouterTraffic = config.RouterTrafficExclude }, false},
+		{"proxy limited to an ingress interface", config.RoutingModeProxy,
+			func(s *config.SetConfig) { s.Routing.SourceInterfaces = []string{"br0"} }, false},
+		{"proxy limited to an included device", config.RoutingModeProxy,
+			func(s *config.SetConfig) { s.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"} }, false},
+		{"proxy with an excluded device", config.RoutingModeProxy, func(s *config.SetConfig) {
+			s.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:FF"}
+			s.Targets.SourceDevicesExclude = true
+		}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			srv := newMCPTestServer(t, catchAllRoutingCfg(t, c.mode, c.scope))
+			session, ctx := connectMCP(t, srv)
+
+			out := decodeEditTargets(t, callEditTargets(t, session, ctx, map[string]any{
+				"set": "video", "kind": "ip", "add": "0.0.0.0/0",
+			}))
+			if !strings.Contains(out.Note, "routing is enabled") {
+				t.Fatalf("the catch-all on a routing set must still be called out: %q", out.Note)
+			}
+			if got := strings.Contains(out.Note, "router's own"); got != c.router {
+				t.Errorf("note names the router's own traffic = %v, want %v: %q", got, c.router, out.Note)
+			}
+			if c.router && !strings.Contains(out.Note, "routing.source_interfaces") {
+				t.Errorf("the note must say how to keep the router's own traffic out: %q", out.Note)
+			}
+		})
+	}
+}
+
+func TestMCPGetSetNotesCatchAllRoutingSet(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		ips   []string
+		scope func(*config.SetConfig)
+		note  bool
+	}{
+		{"unscoped proxy set holding 0.0.0.0/0", []string{"10.0.0.0/8", "0.0.0.0/0"}, nil, true},
+		{"unscoped proxy set holding ::/0", []string{"::/0"}, nil, true},
+		{"proxy set without a catch-all", []string{"10.0.0.0/8"}, nil, false},
+		{"source-scoped proxy set holding 0.0.0.0/0", []string{"0.0.0.0/0"},
+			func(s *config.SetConfig) { s.Routing.SourceInterfaces = []string{"br0"} }, false},
+		{"catch-all set with routing off", []string{"0.0.0.0/0"},
+			func(s *config.SetConfig) { s.Routing.Enabled = false }, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := catchAllRoutingCfg(t, config.RoutingModeProxy, c.scope)
+			cfg.Sets[0].Targets.IPs = c.ips
+			srv := newMCPTestServer(t, cfg)
+			session, ctx := connectMCP(t, srv)
+
+			res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_get_set", Arguments: map[string]any{"set": "video"}})
+			if err != nil || res.IsError {
+				t.Fatalf("b4_get_set: %v %+v", err, res)
+			}
+			var out mcpGetSetOut
+			if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if got := strings.Contains(out.Note, "router's own"); got != c.note {
+				t.Errorf("note names the router's own traffic = %v, want %v: %q", got, c.note, out.Note)
+			}
+		})
+	}
+}
+
+func TestMCPWriteNotesWhenACatchAllSetStartsTakingTheRouter(t *testing.T) {
+	cfg := catchAllRoutingCfg(t, config.RoutingModeProxy, func(s *config.SetConfig) {
+		s.Routing.Enabled = false
+		s.Targets.IPs = []string{"0.0.0.0/0"}
+	})
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	on := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].routing.enabled", "true"))
+	if !strings.Contains(on.Note, "router's own") || !strings.Contains(on.Note, "routing.source_interfaces") {
+		t.Errorf("turning routing on for a catch-all set must say it now takes the router's own traffic: %q", on.Note)
+	}
+
+	again := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].routing.upstream.fail_open", "true"))
+	if strings.Contains(again.Note, "router's own") {
+		t.Errorf("a write that leaves the set's reach as it was must not repeat the warning: %q", again.Note)
+	}
+}
+
 func TestMCPEditTargetsWarnsWhenDevicesEmptied(t *testing.T) {
 	cfg := geoTestCfg(t)
 	cfg.System.WebServer.MCP.AllowWrites = true

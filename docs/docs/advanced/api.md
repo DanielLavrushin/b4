@@ -115,7 +115,7 @@ The server offers tools according to the two permission switches on the **MCP se
 
 `b4_check_domain` answers whether a domain is configured in a set. `b4_recent_connections` answers whether traffic for it arrived and which set matched. The difference separates a targeting mistake from a routing one.
 
-A ready-made prompt, `diagnose_domain`, comes with the tools. It takes a domain and walks the model through the status, the coverage, the configuration and the firewall rules, in that order. Applications that support prompts list it separately.
+A ready-made prompt, `diagnose_domain`, comes with the tools. It takes a domain and walks the model through the status, the error log, the coverage and the set's configuration. The model then asks the user to open the site again and reads the recent connections. They show whether the site's traffic reached b4 and which set took it. The model also names the installed version and looks for a newer release. With **Allow active probes** on, it offers a test fetch of the site. With the switch off, the prompt names it, and the model asks the user whether the site opens. The firewall rules are read only when the status shows a problem or no other step finds the cause. Applications that support prompts list it separately.
 
 ### `b4_watchdog` {#b4-watchdog}
 
