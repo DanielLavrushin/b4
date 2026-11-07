@@ -20,7 +20,7 @@ func TestBuildICMPv4Reject_Structure(t *testing.T) {
 	clientIP := net.IPv4(10, 0, 0, 1).To4()
 	serverIP := net.IPv4(93, 184, 216, 34).To4()
 
-	icmp := BuildICMPv4Reject(origPacket, clientIP, serverIP)
+	icmp := BuildICMPv4Reject(origPacket, clientIP, 12345, serverIP)
 
 	if icmp[0] != 0x45 {
 		t.Fatalf("expected IPv4 version+IHL 0x45, got 0x%02x", icmp[0])
@@ -64,7 +64,7 @@ func TestBuildICMPv4Reject_Checksum(t *testing.T) {
 	copy(origPacket[12:16], net.IPv4(10, 0, 0, 1).To4())
 	copy(origPacket[16:20], net.IPv4(93, 184, 216, 34).To4())
 
-	icmp := BuildICMPv4Reject(origPacket, net.IPv4(10, 0, 0, 1).To4(), net.IPv4(93, 184, 216, 34).To4())
+	icmp := BuildICMPv4Reject(origPacket, net.IPv4(10, 0, 0, 1).To4(), 0, net.IPv4(93, 184, 216, 34).To4())
 
 	icmpData := icmp[20:]
 	var sum uint32
@@ -162,15 +162,15 @@ func TestBuildICMPv6Reject_Checksum(t *testing.T) {
 }
 
 func TestBuildICMPv4Reject_InvalidInput(t *testing.T) {
-	if BuildICMPv4Reject(nil, net.IPv4(1, 1, 1, 1).To4(), net.IPv4(2, 2, 2, 2).To4()) != nil {
+	if BuildICMPv4Reject(nil, net.IPv4(1, 1, 1, 1).To4(), 0, net.IPv4(2, 2, 2, 2).To4()) != nil {
 		t.Fatal("expected nil for nil packet")
 	}
-	if BuildICMPv4Reject(make([]byte, 10), net.IPv4(1, 1, 1, 1).To4(), net.IPv4(2, 2, 2, 2).To4()) != nil {
+	if BuildICMPv4Reject(make([]byte, 10), net.IPv4(1, 1, 1, 1).To4(), 0, net.IPv4(2, 2, 2, 2).To4()) != nil {
 		t.Fatal("expected nil for too-short packet")
 	}
 	bad := make([]byte, 20)
 	bad[0] = 0x43
-	if BuildICMPv4Reject(bad, net.IPv4(1, 1, 1, 1).To4(), net.IPv4(2, 2, 2, 2).To4()) != nil {
+	if BuildICMPv4Reject(bad, net.IPv4(1, 1, 1, 1).To4(), 0, net.IPv4(2, 2, 2, 2).To4()) != nil {
 		t.Fatal("expected nil for bad IHL")
 	}
 	if BuildICMPv6Reject(nil, make([]byte, 16), make([]byte, 16)) != nil {
@@ -215,14 +215,17 @@ func TestBuildICMPv4RejectQuotesTheDeviceItIsSentTo(t *testing.T) {
 	orig := postSNATDatagram()
 	device := net.IPv4(192, 168, 1, 50).To4()
 
-	icmp := BuildICMPv4Reject(orig, device, net.IPv4(1, 2, 3, 4).To4())
+	icmp := BuildICMPv4Reject(orig, device, 49874, net.IPv4(1, 2, 3, 4).To4())
 
 	quote := icmp[28:]
 	if !net.IP(quote[12:16]).Equal(device) {
 		t.Fatalf("the quote must name the device the reject is sent to, or its socket never takes it, got %s", net.IP(quote[12:16]))
 	}
-	if !bytes.Equal(quote[16:], orig[16:]) || !bytes.Equal(quote[:10], orig[:10]) {
-		t.Fatal("only the quoted source address and its header checksum may change")
+	if port := binary.BigEndian.Uint16(quote[20:22]); port != 49874 {
+		t.Fatalf("the quote must name the device's own port, or a connected socket ignores it, got %d", port)
+	}
+	if !bytes.Equal(quote[22:], orig[22:]) || !bytes.Equal(quote[16:20], orig[16:20]) || !bytes.Equal(quote[:10], orig[:10]) {
+		t.Fatal("only the quoted source address, its header checksum and the source port may change")
 	}
 	if !foldsToAllOnes(quote[:20]) {
 		t.Fatal("the quoted IP header checksum must match the rewritten source address")
@@ -235,7 +238,7 @@ func TestBuildICMPv4RejectQuotesTheDeviceItIsSentTo(t *testing.T) {
 func TestBuildICMPv4RejectQuotesAPacketFromTheDeviceUnchanged(t *testing.T) {
 	orig := postSNATDatagram()
 
-	icmp := BuildICMPv4Reject(orig, net.IPv4(94, 189, 76, 227).To4(), net.IPv4(1, 2, 3, 4).To4())
+	icmp := BuildICMPv4Reject(orig, net.IPv4(94, 189, 76, 227).To4(), 44100, net.IPv4(1, 2, 3, 4).To4())
 
 	if !bytes.Equal(icmp[28:], orig) {
 		t.Fatal("a packet that already comes from the device is quoted byte for byte")
@@ -247,10 +250,26 @@ func TestBuildICMPv4Reject_ShortPacket(t *testing.T) {
 	origPacket[0] = 0x45
 	binary.BigEndian.PutUint16(origPacket[2:4], 20)
 
-	icmp := BuildICMPv4Reject(origPacket, net.IPv4(10, 0, 0, 1).To4(), net.IPv4(1, 1, 1, 1).To4())
+	icmp := BuildICMPv4Reject(origPacket, net.IPv4(10, 0, 0, 1).To4(), 0, net.IPv4(1, 1, 1, 1).To4())
 
 	expectedLen := 20 + 8 + 20
 	if len(icmp) != expectedLen {
 		t.Fatalf("expected length %d for short packet, got %d", expectedLen, len(icmp))
+	}
+}
+
+func TestBuildICMPv4RejectLeavesAQuoteWithoutAPortAlone(t *testing.T) {
+	cases := map[string]func([]byte) []byte{
+		"a quote cut before the source port": func(p []byte) []byte { return p[:21] },
+		"an ICMP packet":                     func(p []byte) []byte { p[9] = 1; return p },
+	}
+	for name, cut := range cases {
+		t.Run(name, func(t *testing.T) {
+			orig := cut(postSNATDatagram())
+			icmp := BuildICMPv4Reject(orig, net.IPv4(94, 189, 76, 227).To4(), 49874, net.IPv4(1, 2, 3, 4).To4())
+			if !bytes.Equal(icmp[28:], orig) {
+				t.Fatal("a quote that holds no source port is quoted byte for byte")
+			}
+		})
 	}
 }
