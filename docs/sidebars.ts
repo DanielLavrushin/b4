@@ -69,6 +69,7 @@ const sidebars: SidebarsConfig = {
         "guides/xray",
         "guides/dscp",
         "settings/mcp",
+        "guides/ai-skills",
         "advanced/update-mirrors",
       ],
     },
