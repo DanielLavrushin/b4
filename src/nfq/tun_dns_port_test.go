@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -69,6 +70,35 @@ func TestATunDNSAnswerGoesToTheDevicesOwnPort(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestATunDNSExchangeLogsTheDevicesOwnPort(t *testing.T) {
+	for snat, devicePort := range map[string]uint16{"port kept by SNAT": tunDNSWirePort, "port remapped by SNAT": 49874} {
+		t.Run(snat, func(t *testing.T) {
+			thisHost(t)
+			lines := connectionLines(t)
+			set := newTunDNSSet()
+			set.DNS.Enabled = true
+			set.DNS.TargetDNS = "127.0.0.1"
+			set.DNS.Strict = true
+			w := tunDNSWorker(t, &set, devicePort)
+			captureSends(t)
+
+			w.ProcessPacket(tunDNSQuery(0x4141))
+			w.wg.Wait()
+
+			logged := drainLines(lines)
+			if len(logged) < 2 {
+				t.Fatalf("want the interception and the SERVFAIL logged, got %v", logged)
+			}
+			want := fmt.Sprintf("%s:%d", tunDevice, devicePort)
+			for _, line := range logged {
+				if f := strings.Split(line, ","); len(f) < 5 || f[4] != want {
+					t.Errorf("every line of the exchange must name the device's own socket %s, got %q", want, line)
+				}
+			}
+		})
 	}
 }
 
