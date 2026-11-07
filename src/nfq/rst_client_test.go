@@ -28,7 +28,7 @@ func TestBuildSynRSTV4AcknowledgesTheSyn(t *testing.T) {
 	server := net.ParseIP("185.199.110.133")
 	syn := buildClientSynV4("192.168.1.100", "185.199.110.133", 51234, 443, 0xAABBCCDD)
 
-	rst := buildSynRSTV4(syn, 20, client, server)
+	rst := buildSynRSTV4(syn, 20, client, 51234, server)
 	if rst == nil {
 		t.Fatal("buildSynRSTV4 returned nothing for a valid SYN")
 	}
@@ -54,7 +54,7 @@ func TestBuildSynRSTV4AcknowledgesTheSyn(t *testing.T) {
 }
 
 func TestBuildSynRSTV4RejectsShortPacket(t *testing.T) {
-	if rst := buildSynRSTV4(make([]byte, 24), 20, net.ParseIP("1.1.1.1"), net.ParseIP("2.2.2.2")); rst != nil {
+	if rst := buildSynRSTV4(make([]byte, 24), 20, net.ParseIP("1.1.1.1"), 12345, net.ParseIP("2.2.2.2")); rst != nil {
 		t.Errorf("expected no reset for a truncated packet")
 	}
 }

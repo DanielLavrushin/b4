@@ -159,11 +159,7 @@ func (w *Worker) handleSynBan(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, 
 
 	observeFlow(cfg, pkt, sport, dport, set, host)
 
-	if pkt.ver == IPv4 {
-		w.sendSynRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
-	} else {
-		w.sendSynRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
-	}
+	w.resetClientSyn(pkt)
 	vc.drop()
 	return true
 }
@@ -200,11 +196,7 @@ func (w *Worker) handleSynHealth(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	observeFlow(cfg, pkt, sport, dport, set, host)
 
-	if pkt.ver == IPv4 {
-		w.sendSynRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
-	} else {
-		w.sendSynRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
-	}
+	w.resetClientSyn(pkt)
 	vc.drop()
 	return true
 }

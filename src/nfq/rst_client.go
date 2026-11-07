@@ -9,13 +9,28 @@ import (
 	"github.com/daniellavrushin/b4/sock"
 )
 
-func (w *Worker) sendRSTToClientV4(raw []byte, ihl int, srcIP, dstIP net.IP) {
+func (w *Worker) resetClient(pkt *pktInfo) {
+	if pkt.ver == IPv4 {
+		w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.clientPort(), pkt.dst)
+	} else {
+		w.sendRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
+	}
+}
+
+func (w *Worker) resetClientSyn(pkt *pktInfo) {
+	if pkt.ver == IPv4 {
+		w.sendSynRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.clientPort(), pkt.dst)
+	} else {
+		w.sendSynRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
+	}
+}
+
+func (w *Worker) sendRSTToClientV4(raw []byte, ihl int, srcIP net.IP, clientPort uint16, dstIP net.IP) {
 	tcp := raw[ihl:]
 	if len(tcp) < 20 {
 		return
 	}
 
-	clientPort := binary.BigEndian.Uint16(tcp[0:2])
 	serverPort := binary.BigEndian.Uint16(tcp[2:4])
 	clientAck := binary.BigEndian.Uint32(tcp[8:12])
 
@@ -43,8 +58,8 @@ func (w *Worker) sendRSTToClientV4(raw []byte, ihl int, srcIP, dstIP net.IP) {
 	}
 }
 
-func (w *Worker) sendSynRSTToClientV4(raw []byte, ihl int, srcIP, dstIP net.IP) {
-	rst := buildSynRSTV4(raw, ihl, srcIP, dstIP)
+func (w *Worker) sendSynRSTToClientV4(raw []byte, ihl int, srcIP net.IP, clientPort uint16, dstIP net.IP) {
+	rst := buildSynRSTV4(raw, ihl, srcIP, clientPort, dstIP)
 	if rst == nil {
 		return
 	}
@@ -53,13 +68,12 @@ func (w *Worker) sendSynRSTToClientV4(raw []byte, ihl int, srcIP, dstIP net.IP) 
 	}
 }
 
-func buildSynRSTV4(raw []byte, ihl int, srcIP, dstIP net.IP) []byte {
+func buildSynRSTV4(raw []byte, ihl int, srcIP net.IP, clientPort uint16, dstIP net.IP) []byte {
 	if len(raw) < ihl+20 {
 		return nil
 	}
 	tcp := raw[ihl:]
 
-	clientPort := binary.BigEndian.Uint16(tcp[0:2])
 	serverPort := binary.BigEndian.Uint16(tcp[2:4])
 	clientSeq := binary.BigEndian.Uint32(tcp[4:8])
 

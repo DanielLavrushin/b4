@@ -132,19 +132,19 @@ func TestTunSrcNeverReadsConntrackForADNSAnswer(t *testing.T) {
 	r := newResolverWith(t, tunTestWAN, matching)
 
 	for _, src := range []string{routerLAN, tunTestWAN} {
-		ip, origin := r.attributePacket(tunSrcPacket{ttl: 64, answer: true}, 17, net.ParseIP(src), 53, net.ParseIP(client), 40001)
+		ip, _, origin := r.attributePacket(tunSrcPacket{ttl: 64, answer: true}, 17, net.ParseIP(src), 53, net.ParseIP(client), 40001)
 		if origin != tunSrcUnknown || ip != nil {
 			t.Fatalf("answer from %s: attribute = %v, %v; an answer the router sends carries no SNAT mapping, so it stays unknown as before", src, ip, origin)
 		}
 	}
-	if ip, origin := r.attributePacket(tunSrcPacket{answer: true}, 17, net.ParseIP("8.8.8.8"), 53, net.ParseIP(client), 40001); origin != tunSrcWire || ip != nil {
+	if ip, _, origin := r.attributePacket(tunSrcPacket{answer: true}, 17, net.ParseIP("8.8.8.8"), 53, net.ParseIP(client), 40001); origin != tunSrcWire || ip != nil {
 		t.Fatalf("answer from a public resolver: attribute = %v, %v; want the wire source", ip, origin)
 	}
 	if n := opens.Load(); n != 0 {
 		t.Fatalf("conntrack read %d times for DNS answers", n)
 	}
 
-	if ip, origin := r.attributePacket(tunSrcPacket{}, 17, net.ParseIP(routerLAN), 53, net.ParseIP(client), 40001); origin != tunSrcLAN || ip.String() != "192.168.1.77" {
+	if ip, _, origin := r.attributePacket(tunSrcPacket{}, 17, net.ParseIP(routerLAN), 53, net.ParseIP(client), 40001); origin != tunSrcLAN || ip.String() != "192.168.1.77" {
 		t.Fatalf("the same tuple outside a DNS answer: attribute = %v, %v; the row must still be found by a read", ip, origin)
 	}
 	if n := opens.Load(); n != 1 {
@@ -165,7 +165,7 @@ func TestTunSrcTakesTheRoutersOwnUDPFlowFromItsSocketTable(t *testing.T) {
 	}
 	wan, upstream := net.ParseIP(tunTestWAN), net.ParseIP("1.1.1.1")
 
-	if ip, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 17, wan, 45002, upstream, 53); origin != tunSrcRouter || ip != nil {
+	if ip, _, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 17, wan, 45002, upstream, 53); origin != tunSrcRouter || ip != nil {
 		t.Fatalf("dnsmasq-style query: attribute = %v, %v; want the router", ip, origin)
 	}
 	if n := opens.Load(); n != 0 {
@@ -175,10 +175,10 @@ func TestTunSrcTakesTheRoutersOwnUDPFlowFromItsSocketTable(t *testing.T) {
 		t.Fatal("a router flow found in the socket table must stay addressable, or set DNS redirect stops answering dnsmasq")
 	}
 
-	if _, origin := r.attributePacket(tunSrcPacket{ttl: 63}, 17, wan, 45002, net.ParseIP("8.8.8.8"), 53); origin != tunSrcUnknown {
+	if _, _, origin := r.attributePacket(tunSrcPacket{ttl: 63}, 17, wan, 45002, net.ParseIP("8.8.8.8"), 53); origin != tunSrcUnknown {
 		t.Fatalf("a forwarded packet (TTL decremented) on the same port: origin %v, want it left to conntrack", origin)
 	}
-	if _, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 17, wan, 123, upstream, 123); origin != tunSrcUnknown {
+	if _, _, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 17, wan, 123, upstream, 123); origin != tunSrcUnknown {
 		t.Fatalf("an unconnected socket on a privileged port: origin %v, want it left to conntrack", origin)
 	}
 	if n := opens.Load(); n != 2 {
@@ -193,10 +193,10 @@ func TestTunSrcKeepsAnUnconnectedRouterUDPPortFromClaimingANonDNSLANFlow(t *test
 	r.own = localSockets{udp: writeProcTable(t, "udp", procSocketLine(t, "0.0.0.0", 45002, "0.0.0.0", 0, "07")), ttl: 64}
 	wan := net.ParseIP(tunTestWAN)
 
-	if ip, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 17, wan, 45002, net.ParseIP("8.8.8.8"), 443); origin != tunSrcLAN || ip.String() != "192.168.1.50" {
+	if ip, _, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 17, wan, 45002, net.ParseIP("8.8.8.8"), 443); origin != tunSrcLAN || ip.String() != "192.168.1.50" {
 		t.Fatalf("LAN QUIC flow sent with TTL 65 on a port an unconnected router socket holds: attribute = %v, %v; want the LAN client from conntrack", ip, origin)
 	}
-	if ip, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 17, wan, 45002, net.ParseIP("1.1.1.1"), 53); origin != tunSrcRouter || ip != nil {
+	if ip, _, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 17, wan, 45002, net.ParseIP("1.1.1.1"), 53); origin != tunSrcRouter || ip != nil {
 		t.Fatalf("DNS query from the same router port: attribute = %v, %v; dnsmasq's upstream queries still come from the socket table", ip, origin)
 	}
 }
@@ -214,13 +214,13 @@ func TestTunSrcTakesTheRoutersOwnTCPFlowOnlyFromItsExactConnection(t *testing.T)
 	}
 	wan, dst := net.ParseIP(tunTestWAN), net.ParseIP("1.2.3.4")
 
-	if ip, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 6, wan, 40100, dst, 443); origin != tunSrcRouter || ip != nil {
+	if ip, _, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 6, wan, 40100, dst, 443); origin != tunSrcRouter || ip != nil {
 		t.Fatalf("the router's own connection: attribute = %v, %v; want the router", ip, origin)
 	}
 	if n := opens.Load(); n != 0 {
 		t.Fatalf("conntrack read %d times for the router's own connection", n)
 	}
-	if ip, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 6, wan, 40300, dst, 443); origin != tunSrcLAN || ip.String() != "192.168.1.50" {
+	if ip, _, origin := r.attributePacket(tunSrcPacket{ttl: 64}, 6, wan, 40300, dst, 443); origin != tunSrcLAN || ip.String() != "192.168.1.50" {
 		t.Fatalf("a LAN flow on the port of a listening socket: attribute = %v, %v; a listener must not claim it", ip, origin)
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 )
 
-func BuildICMPv4Reject(originalPacket []byte, clientIP, serverIP []byte) []byte {
+func BuildICMPv4Reject(originalPacket []byte, clientIP []byte, clientPort uint16, serverIP []byte) []byte {
 	if len(originalPacket) < 20 || len(clientIP) < 4 || len(serverIP) < 4 || originalPacket[0]>>4 != 4 {
 		return nil
 	}
@@ -38,6 +38,9 @@ func BuildICMPv4Reject(originalPacket []byte, clientIP, serverIP []byte) []byte 
 	if quoted := pkt[ipEnd+8 : ipEnd+8+ihl]; !bytes.Equal(quoted[12:16], clientIP[:4]) {
 		copy(quoted[12:16], clientIP[:4])
 		FixIPv4Checksum(quoted)
+	}
+	if proto := originalPacket[9]; (proto == 6 || proto == 17) && quotedLen >= ihl+2 {
+		binary.BigEndian.PutUint16(pkt[ipEnd+8+ihl:], clientPort)
 	}
 
 	icmpData := pkt[ipEnd:]

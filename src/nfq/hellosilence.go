@@ -38,6 +38,7 @@ type helloWatch struct {
 	port     uint16
 	client   net.IP
 	cport    uint16
+	ownPort  uint16
 	wire     net.IP
 	tun      bool
 	ver      uint8
@@ -229,6 +230,7 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 		port:     dport,
 		client:   append(net.IP(nil), pkt.src...),
 		cport:    sport,
+		ownPort:  pkt.clientPort(),
 		wire:     append(net.IP(nil), wire...),
 		tun:      cfg.Queue.Mode == "tun",
 		ver:      pkt.ver,
@@ -416,7 +418,7 @@ func (w *Worker) settleSilentHellos(ip net.IP, port int, banned bool) {
 
 func (w *Worker) resetSilentHello(h helloWatch) {
 	if h.ver == IPv4 {
-		w.sendRSTToClientV4(h.hdr, h.ihl, h.client, h.dst)
+		w.sendRSTToClientV4(h.hdr, h.ihl, h.client, h.ownPort, h.dst)
 	} else {
 		w.sendRSTToClientV6(h.hdr, h.client, h.dst)
 	}

@@ -29,6 +29,7 @@ var openConntrack = func(path string) (io.ReadCloser, error) {
 type tunSrcEntry struct {
 	ip      string
 	addr    net.IP
+	port    uint16
 	origin  tunSrcOrigin
 	expires time.Time
 }
@@ -60,13 +61,19 @@ type conntrackKey struct {
 }
 
 type conntrackScan struct {
-	want map[conntrackKey]string
+	want map[conntrackKey]conntrackSource
 	done chan struct{}
+}
+
+type conntrackSource struct {
+	addr string
+	port uint16
 }
 
 type conntrackRow struct {
 	proto      string
 	origSrc    string
+	origSport  string
 	origDst    string
 	origDport  string
 	replyDst   string
@@ -141,17 +148,18 @@ func originOf(lan, self string) (net.IP, tunSrcOrigin) {
 }
 
 func (r *tunSrcResolver) attribute(proto uint8, src net.IP, sport uint16, dst net.IP, dport uint16) (net.IP, tunSrcOrigin) {
-	return r.attributePacket(tunSrcPacket{}, proto, src, sport, dst, dport)
+	ip, _, origin := r.attributePacket(tunSrcPacket{}, proto, src, sport, dst, dport)
+	return ip, origin
 }
 
-func (r *tunSrcResolver) attributePacket(seen tunSrcPacket, proto uint8, src net.IP, sport uint16, dst net.IP, dport uint16) (net.IP, tunSrcOrigin) {
+func (r *tunSrcResolver) attributePacket(seen tunSrcPacket, proto uint8, src net.IP, sport uint16, dst net.IP, dport uint16) (net.IP, uint16, tunSrcOrigin) {
 	wan, _ := r.wanIP.Load().(string)
 	self := src.String()
 	if self != wan && !hostAddress(src) {
-		return nil, tunSrcWire
+		return nil, 0, tunSrcWire
 	}
 	if seen.answer {
-		return nil, tunSrcUnknown
+		return nil, 0, tunSrcUnknown
 	}
 
 	key := cacheKey(proto, self, sport, dport, dst.String())
@@ -160,31 +168,31 @@ func (r *tunSrcResolver) attributePacket(seen tunSrcPacket, proto uint8, src net
 	r.mu.Lock()
 	if e, ok := r.cache[key]; ok && now.Before(e.expires) {
 		r.mu.Unlock()
-		return e.addr, e.origin
+		return e.addr, e.port, e.origin
 	}
 	r.mu.Unlock()
 
 	dstStr := dst.String()
-	lan := self
+	from := conntrackSource{addr: self, port: sport}
 	if !r.own.holds(seen.ttl, proto, src, sport, dst, dport) {
-		lan = r.lookupConntrack(proto, self, sport, dstStr, dport)
+		from = r.lookupConntrack(proto, self, sport, dstStr, dport)
 	}
-	if lan == dstStr {
+	if from.addr == dstStr {
 		log.Tracef("TUN source: conntrack named the destination %s as the source of %s:%d, ignoring it", dstStr, dstStr, dport)
-		lan = ""
+		from = conntrackSource{}
 	}
 
-	ip, origin := originOf(lan, self)
+	ip, origin := originOf(from.addr, self)
 	ttl := tunSrcCacheTTL
 	if origin != tunSrcLAN {
 		ttl = tunSrcNegativeTTL
 	}
 	r.mu.Lock()
 	r.pruneLocked(now)
-	r.cache[key] = tunSrcEntry{ip: lan, addr: ip, origin: origin, expires: now.Add(ttl)}
+	r.cache[key] = tunSrcEntry{ip: from.addr, addr: ip, port: from.port, origin: origin, expires: now.Add(ttl)}
 	r.mu.Unlock()
 
-	return ip, origin
+	return ip, from.port, origin
 }
 
 func (r *tunSrcResolver) pruneLocked(now time.Time) {
@@ -231,26 +239,26 @@ func protoName(proto uint8) string {
 	}
 }
 
-func (r *tunSrcResolver) lookupConntrack(proto uint8, wan string, sport uint16, dst string, dport uint16) string {
+func (r *tunSrcResolver) lookupConntrack(proto uint8, wan string, sport uint16, dst string, dport uint16) conntrackSource {
 	pname := protoName(proto)
 	if pname == "" {
-		return ""
+		return conntrackSource{}
 	}
 	key := conntrackKey{proto: pname, wan: wan, sport: strconv.Itoa(int(sport)), dst: dst, dport: strconv.Itoa(int(dport))}
 
 	r.scanMu.Lock()
 	scan := r.scanQueued
 	if scan == nil {
-		scan = &conntrackScan{want: map[conntrackKey]string{}, done: make(chan struct{})}
+		scan = &conntrackScan{want: map[conntrackKey]conntrackSource{}, done: make(chan struct{})}
 		r.scanQueued = scan
 	}
-	scan.want[key] = ""
+	scan.want[key] = conntrackSource{}
 	for {
 		select {
 		case <-scan.done:
-			lan := scan.want[key]
+			from := scan.want[key]
 			r.scanMu.Unlock()
-			return lan
+			return from
 		default:
 		}
 		if r.scanActive == nil {
@@ -277,7 +285,7 @@ func (r *tunSrcResolver) runScan(scan *conntrackScan) {
 	r.readConntrack(scan.want)
 }
 
-func (r *tunSrcResolver) readConntrack(want map[conntrackKey]string) {
+func (r *tunSrcResolver) readConntrack(want map[conntrackKey]conntrackSource) {
 	f, err := openConntrack(r.path)
 	if err != nil {
 		return
@@ -304,8 +312,9 @@ func (r *tunSrcResolver) readConntrack(want map[conntrackKey]string) {
 			continue
 		}
 		k := conntrackKey{proto: row.proto, wan: row.replyDst, sport: row.replyDport, dst: row.origDst, dport: row.origDport}
-		if lan, wanted := want[k]; wanted && lan == "" {
-			want[k] = row.origSrc
+		if from, wanted := want[k]; wanted && from.addr == "" {
+			port, _ := strconv.ParseUint(row.origSport, 10, 16)
+			want[k] = conntrackSource{addr: row.origSrc, port: uint16(port)}
 			left--
 		}
 	}
@@ -322,7 +331,7 @@ func containsAny(line string, needles []string) bool {
 
 func parseConntrackRow(line string) (conntrackRow, bool) {
 	var row conntrackRow
-	dstN, dportN := 0, 0
+	dstN, sportN, dportN := 0, 0, 0
 
 	for _, tok := range strings.Fields(line) {
 		switch {
@@ -334,6 +343,11 @@ func parseConntrackRow(line string) (conntrackRow, bool) {
 			if row.origSrc == "" {
 				row.origSrc = tok[4:]
 			}
+		case strings.HasPrefix(tok, "sport="):
+			if sportN == 0 {
+				row.origSport = tok[6:]
+			}
+			sportN++
 		case strings.HasPrefix(tok, "dst="):
 			switch dstN {
 			case 0:
