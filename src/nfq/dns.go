@@ -504,12 +504,16 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 	srcMac := pkt.srcMac
 
 	if dport == 53 {
+		clientPort := sport
+		if pkt.devicePort != 0 {
+			clientPort = pkt.devicePort
+		}
 		domain, ok := dns.ParseQueryDomain(payload)
 		txid, txidOK := dns.ParseTransactionID(payload)
 		if ok {
 			domain = strings.ToLower(domain)
 			if txidOK && DNSNames.Wanted() {
-				noteDNSNameQuery(dnsRouteKeyRequest(ipVersion, pkt.src, sport, pkt.dst, dport, txid, domain))
+				noteDNSNameQuery(dnsRouteKeyRequest(ipVersion, pkt.src, clientPort, pkt.dst, dport, txid, domain))
 			}
 			matcher := w.getMatcher()
 			keep := w.blockScope(vc, pkt, matcher)
@@ -527,14 +531,14 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 
 				if set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) && !cfg.Queue.IsDiscovery &&
 					config.NormalizeBlockAction(set.Routing.BlockAction) == config.BlockActionDrop {
-					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionBlock)
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionBlock)
 					recordBlockedDNS(cfg, set, domain, srcMac)
 					vc.dropUnanswered()
 					return 0
 				}
 
 				if !w.dnsClientAddressable(pkt, sport, dport) {
-					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionNoClient)
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionNoClient)
 					return vc.accept()
 				}
 
@@ -542,9 +546,9 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					ipv6Disabled := ipVersion == IPv6 && !cfg.Queue.IPv6Enabled
 					if !ipv6Disabled {
 						if resp := dns.BuildBlockResponse(payload); resp != nil {
-							w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, sport, resp)
+							w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, resp)
 							log.Tracef("DNS sinkhole: %s -> NXDOMAIN for %s (set: %s)", dns.SafeName(domain), clientIP, set.Name)
-							logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionSinkhole)
+							logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionSinkhole)
 							recordBlockedDNS(cfg, set, domain, srcMac)
 							vc.drop()
 							return 0
@@ -557,8 +561,8 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 						return 0
 					}
 					action, routeWaits := w.applyPinnedAnswerAwait(cfg, set, clientIP, domain, pinned, vc.scope.learns(domain))
-					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, action)
-					send := func() { w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, sport, pinned) }
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, action)
+					send := func() { w.sendDNSResponseToClient(ipVersion, originalDst, clientIP, clientPort, pinned) }
 					if !w.holdForRoutes(vc, routeWaits, domain, send) {
 						send()
 					}
@@ -576,51 +580,48 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 
 				if txidOK && vc.scope.learns(domain) && set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery {
 					storeDNSPendingRoute(
-						dnsRouteKeyRequest(ipVersion, clientIP, sport, originalDst, dport, txid, domain),
+						dnsRouteKeyRequest(ipVersion, clientIP, clientPort, originalDst, dport, txid, domain),
 						set.Id,
 					)
 				}
 
 				if !set.DNS.HasUpstream() {
 					log.Tracef("DNS redirect: %s matched set %s but no redirect target configured, passing through", dns.SafeName(domain), set.Name)
-					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionPassthrough)
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionPassthrough)
 					return vc.accept()
 				}
 
-				targetIP := net.ParseIP(strings.TrimSpace(set.DNS.TargetDNS))
-				if targetIP == nil {
-					for _, upstream := range set.DNS.UpstreamList() {
-						if ip := net.ParseIP(upstream); ip != nil {
-							targetIP = ip
-							break
-						}
+				var targetIP net.IP
+				for _, upstream := range set.DNS.UpstreamList() {
+					if ip := net.ParseIP(upstream); ip != nil {
+						targetIP = ip
+						break
 					}
 				}
 
 				if queryFromTarget(set, clientIP) {
 					log.Tracef("DNS redirect: %s comes from %s, the set's own resolver passing a lookup upstream, forwarding it unchanged (set %s)", dns.SafeName(domain), clientIP, set.Name)
-					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionFromTarget)
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionFromTarget)
 					return vc.accept()
 				}
 
 				if ipVersion == IPv6 && !cfg.Queue.IPv6Enabled {
-					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionIPv6Disabled)
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionIPv6Disabled)
 					return vc.accept()
 				}
 
 				query := append([]byte(nil), payload...)
 				ver := ipVersion
-				clientPort := sport
 				delay := config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax)
 
 				target := strings.Join(set.DNS.UpstreamList(), ", ")
 				log.Tracef("DNS redirect: intercepting %s -> %s (set %s)", dns.SafeName(domain), target, set.Name)
-				logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsRedirectAction(set))
+				logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsRedirectAction(set))
 
 				select {
 				case dnsResolveInflight <- struct{}{}:
 				default:
-					logDNSEvent("UDP", set, domain, clientIP, originalDst, sport, srcMac, dnsActionOverload)
+					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionOverload)
 					return vc.accept()
 				}
 
