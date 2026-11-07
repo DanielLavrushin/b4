@@ -457,6 +457,18 @@ func TestMCPEditTargetsCatchAllNamesTheRoutersOwnTraffic(t *testing.T) {
 			if c.router && !strings.Contains(out.Note, "routing.source_interfaces") {
 				t.Errorf("the note must say how to keep the router's own traffic out: %q", out.Note)
 			}
+			if strings.Contains(out.Note, "apart from b4's own") {
+				t.Errorf("only marked connections are left alone, b4's downloads are not: %q", out.Note)
+			}
+			switch {
+			case !c.router:
+			case c.mode == config.RoutingModeBlock:
+				if !strings.Contains(out.Note, "b4's own included") {
+					t.Errorf("a block set tests no mark and must say it blocks b4's own connections too: %q", out.Note)
+				}
+			case !strings.Contains(out.Note, "0x40000") || !strings.Contains(out.Note, "update and GeoSite/GeoIP downloads"):
+				t.Errorf("the note must name the mark that is left alone and the unmarked downloads that are not: %q", out.Note)
+			}
 		})
 	}
 }

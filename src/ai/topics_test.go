@@ -77,7 +77,7 @@ func TestFakePayloadTopicNamesEveryValue(t *testing.T) {
 
 func TestRoutingTopicsSayWhatHappensToTheRoutersOwnTraffic(t *testing.T) {
 	for key, wants := range map[string][]string{
-		"routing.mode":           {"router's own traffic", "'proxy' or 'mtproto-ws' set always for TCP", "'block' set tests no packet mark"},
+		"routing.mode":           {"router's own traffic", "'proxy' or 'mtproto-ws' set always for TCP", "'block' set tests no packet mark", "bit 0x40000", "update and GeoSite/GeoIP downloads"},
 		"routing.router_traffic": {"Proxy and mtproto-ws sets", "block sets every packet"},
 		"targets.ip":             {"connections the router itself opens"},
 	} {
@@ -86,6 +86,9 @@ func TestRoutingTopicsSayWhatHappensToTheRoutersOwnTraffic(t *testing.T) {
 				t.Errorf("%s must say %q: a catch-all routing set takes the router's own traffic unless it is limited by source", key, want)
 			}
 		}
+	}
+	if strings.Contains(TopicFacts("routing.mode"), "leave b4's own connections alone") {
+		t.Error("routing.mode must not exempt every b4 connection: only marked ones are left alone, and b4's downloads carry no mark")
 	}
 }
 

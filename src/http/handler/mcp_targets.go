@@ -230,6 +230,9 @@ func mcpTargetIsCatchAll(kind, canonical string) bool {
 	return false
 }
 
+const mcpSelfDialExemption = "Of b4's own connections, only those that carry its self-dial mark 0x40000, such as its proxy upstream, Telegram and hub dials, are left alone; " +
+	"its release checks, update and GeoSite/GeoIP downloads and AI provider calls carry no mark and are taken too"
+
 func mcpRouterTrafficNote(set *config.SetConfig) string {
 	if !set.Routing.Enabled || set.RoutingSourceScoped() {
 		return ""
@@ -239,12 +242,13 @@ func mcpRouterTrafficNote(set *config.SetConfig) string {
 	case config.RoutingIsBlock(mode):
 		taken = "Every packet the router itself sends to these addresses is blocked as well, b4's own included, because a block set tests no packet mark"
 	case config.RoutingUsesTProxy(mode):
-		taken = "The router's own TCP connections to these addresses, apart from b4's own, go through the set as well, a DNS over TLS or DNS over HTTPS resolver on the router included"
+		taken = "The router's own TCP connections to these addresses go through the set as well, a DNS over TLS or DNS over HTTPS resolver on the router included"
 		if mode == config.RoutingModeProxy && (!set.Routing.Upstream.UDP || set.BlocksQUIC()) {
 			taken += ", and the router's own QUIC to UDP port 443 there is refused"
 		}
+		taken += ". " + mcpSelfDialExemption
 	case set.RoutingIncludesRouterTraffic():
-		taken = "The router's own connections to these addresses, apart from b4's own, follow the set's route as well, its DNS lookups included (routing.router_traffic)"
+		taken = "The router's own connections to these addresses follow the set's route as well, its DNS lookups included (routing.router_traffic). " + mcpSelfDialExemption
 	default:
 		return ""
 	}
