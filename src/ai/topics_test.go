@@ -77,7 +77,7 @@ func TestFakePayloadTopicNamesEveryValue(t *testing.T) {
 
 func TestRoutingTopicsSayWhatHappensToTheRoutersOwnTraffic(t *testing.T) {
 	for key, wants := range map[string][]string{
-		"routing.mode":           {"router's own traffic", "'proxy' or 'mtproto-ws' set always for TCP", "'block' set tests no packet mark", "bit 0x40000", "update and GeoSite/GeoIP downloads"},
+		"routing.mode":           {"router's own traffic", "'proxy' or 'mtproto-ws' set always for TCP", "'block' set tests no packet mark", "bit 0x40000", "update and GeoSite/GeoIP downloads", "every bit of queue.mark", "QUIC refusal skips only"},
 		"routing.router_traffic": {"Proxy and mtproto-ws sets", "block sets every packet"},
 		"targets.ip":             {"connections the router itself opens"},
 	} {
