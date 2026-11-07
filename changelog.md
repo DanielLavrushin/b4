@@ -1,6 +1,6 @@
 # B4 - Bye Bye Big Bro
 
-## [1.90.0] - 2026-11-01
+## [1.90.0] - 2026-11-07
 
 - FIXED: **With IP Block Detection and Cache Blocked IPs on, a set that sends RST or FIN fakes did not check a silent server** - the fakes of TCP Desync Attack and Post-ClientHello RST closed the kernel's record of the connection while the device kept waiting. b4 took the connection for a finished one. It neither checked the address for a ban nor reset the connection.
 - CHANGED: **A set routed into an AmneziaWG interface leaves its packets alone, as a set routed into WireGuard does** - while the interface is up, the set's strategy, its ban resets and its QUIC refusal for banned addresses do not apply. Its connections end with routed->awg0 on the Logs page.
