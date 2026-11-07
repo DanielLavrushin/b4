@@ -304,6 +304,10 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 		sport := uint16(raw[p.ihl])<<8 | uint16(raw[p.ihl+1])
 		dport := uint16(raw[p.ihl+2])<<8 | uint16(raw[p.ihl+3])
 		seen := tunSrcPacket{ttl: raw[8], answer: p.proto == 17 && sport == 53 && dnsAnswerDatagram(raw[p.ihl:])}
+		if p.proto == 6 && len(raw) >= p.ihl+14 {
+			seen.syn = raw[p.ihl+13]&0x12 == 0x02
+			seen.seq = binary.BigEndian.Uint32(raw[p.ihl+4 : p.ihl+8])
+		}
 		switch lan, port, origin := w.srcResolver.attributePacket(seen, p.proto, p.src, sport, p.dst, dport); origin {
 		case tunSrcLAN, tunSrcRouter:
 			if v4 := lan.To4(); v4 != nil {

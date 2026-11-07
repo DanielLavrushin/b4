@@ -18,6 +18,7 @@ import (
 const (
 	conntrackPath     = "/proc/net/nf_conntrack"
 	tunSrcCacheTTL    = 5 * time.Minute
+	tunSrcUDPCacheTTL = 30 * time.Second
 	tunSrcNegativeTTL = 2 * time.Second
 	tunSrcCacheMax    = 4096
 )
@@ -32,6 +33,8 @@ type tunSrcEntry struct {
 	port    uint16
 	origin  tunSrcOrigin
 	expires time.Time
+	syn     bool
+	isn     uint32
 }
 
 type tunSrcResolver struct {
@@ -50,6 +53,8 @@ type tunSrcResolver struct {
 type tunSrcPacket struct {
 	ttl    uint8
 	answer bool
+	syn    bool
+	seq    uint32
 }
 
 type conntrackKey struct {
@@ -78,6 +83,10 @@ type conntrackRow struct {
 	origDport  string
 	replyDst   string
 	replyDport string
+}
+
+func (p tunSrcPacket) opensAnother(e tunSrcEntry) bool {
+	return p.syn && !(e.syn && e.isn == p.seq)
 }
 
 func dnsAnswerDatagram(udp []byte) bool {
@@ -166,7 +175,7 @@ func (r *tunSrcResolver) attributePacket(seen tunSrcPacket, proto uint8, src net
 	now := time.Now()
 
 	r.mu.Lock()
-	if e, ok := r.cache[key]; ok && now.Before(e.expires) {
+	if e, ok := r.cache[key]; ok && now.Before(e.expires) && !seen.opensAnother(e) {
 		r.mu.Unlock()
 		return e.addr, e.port, e.origin
 	}
@@ -184,12 +193,15 @@ func (r *tunSrcResolver) attributePacket(seen tunSrcPacket, proto uint8, src net
 
 	ip, origin := originOf(from.addr, self)
 	ttl := tunSrcCacheTTL
-	if origin != tunSrcLAN {
+	switch {
+	case origin != tunSrcLAN:
 		ttl = tunSrcNegativeTTL
+	case proto == 17:
+		ttl = tunSrcUDPCacheTTL
 	}
 	r.mu.Lock()
 	r.pruneLocked(now)
-	r.cache[key] = tunSrcEntry{ip: from.addr, addr: ip, port: from.port, origin: origin, expires: now.Add(ttl)}
+	r.cache[key] = tunSrcEntry{ip: from.addr, addr: ip, port: from.port, origin: origin, expires: now.Add(ttl), syn: seen.syn, isn: seen.seq}
 	r.mu.Unlock()
 
 	return ip, from.port, origin
