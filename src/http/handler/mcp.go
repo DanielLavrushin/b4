@@ -1155,8 +1155,11 @@ func (api *API) addMCPPrompts(srv *mcp.Server, caps mcpCapabilities) {
 				"If a set covers it, call b4_get_set for that set, and b4_get_topic for each setting before commenting on it.",
 			fmt.Sprintf("4. Ask the user to open %s again in a new private window, so the browser opens a new connection instead of reusing an old one, "+
 				"then call b4_recent_connections right away with %q in contains: it keeps only the last 500 events. ", domain, domain) +
-				"The domain field comes from the ClientHello, so no line naming the domain means only that b4 saw no ClientHello for it: call b4_recent_connections again without contains, or with the device's address in it. " +
-				"No line from the device at all means its traffic does not reach b4: stop and say so before giving any strategy advice. " +
+				"The domain field comes from the ClientHello, so no line naming the domain means only that b4 saw no ClientHello for it: " +
+				fmt.Sprintf("call b4_recent_connections again with the device's address in contains, or with limit=%d and no filter, since without a limit it returns only the newest %d lines. ", mcpMaxLines, mcpDefaultLines) +
+				"A result marked truncated has lost its older lines, so narrow it by the device's address. " +
+				"No line from the device in a result that is not truncated means b4 saw none of its traffic in that window: ask the user to retry once more and read again right away. " +
+				"If there is still none, its traffic does not reach b4: stop and say so before giving any strategy advice. " +
 				"A line with no set means b4 saw the flow and no set matched it; a line under another set is a targeting finding.",
 			"5. Name the installed version that b4_status reports. If you can read the web, check b4's release notes for a later fix of this symptom; otherwise ask the user whether b4's web interface offers a newer version.",
 			loadStep,

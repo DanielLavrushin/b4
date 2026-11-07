@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -2649,6 +2650,56 @@ func TestMCPDiagnosePromptPointsAtToolsThatWork(t *testing.T) {
 		if !probes && (!strings.Contains(text, "Allow active probes") || !strings.Contains(text, mcpSwitchWhere)) {
 			t.Errorf("with probes off the prompt must name the switch and where it is: %q", text)
 		}
+	}
+}
+
+func TestMCPDiagnosePromptReadsTheWholeConnectionWindow(t *testing.T) {
+	hub := log.GetConnectionHub()
+	hub.Broadcast("tcp,,,10.0.0.9:5000,,203.0.113.7:443,,")
+	for i := range mcpDefaultLines {
+		hub.Broadcast(fmt.Sprintf("tcp,video,youtube.com,10.0.0.2:%d,,142.250.1.1:443,,TLS1.3", 6000+i))
+	}
+	srv := newMCPTestServer(t, mcpTestCfg())
+	session, ctx := connectMCP(t, srv)
+
+	recent := func(args map[string]any) mcpRecentConnOut {
+		t.Helper()
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "b4_recent_connections", Arguments: args})
+		if err != nil {
+			t.Fatalf("call: %v", err)
+		}
+		var out mcpRecentConnOut
+		if err := json.Unmarshal(mustStructured(t, res), &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return out
+	}
+	seesDevice := func(out mcpRecentConnOut) bool {
+		return slices.ContainsFunc(out.Connections, func(l string) bool { return strings.Contains(l, "10.0.0.9:") })
+	}
+	if out := recent(nil); seesDevice(out) || !out.Truncated {
+		t.Fatalf("the default window must cut off the device's nameless flow and say so: %+v", out)
+	}
+	widest := fmt.Sprintf("limit=%d", mcpMaxLines)
+	if !seesDevice(recent(map[string]any{"limit": mcpMaxLines})) {
+		t.Fatalf("%s must reach the device's nameless flow", widest)
+	}
+
+	got, err := session.GetPrompt(ctx, &mcp.GetPromptParams{
+		Name:      "diagnose_domain",
+		Arguments: map[string]string{"domain": "youtube.com"},
+	})
+	if err != nil {
+		t.Fatalf("get prompt: %v", err)
+	}
+	text := got.Messages[0].Content.(*mcp.TextContent).Text
+	for _, want := range []string{widest, "device's address in contains", "marked truncated", "retry once more"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("before concluding that a device's traffic never reached b4, the prompt must say %q: %q", want, text)
+		}
+	}
+	if strings.Contains(text, "again without contains,") {
+		t.Errorf("an unfiltered call with the default limit hides older lines, so the prompt must not suggest it: %q", text)
 	}
 }
 
