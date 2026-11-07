@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -48,6 +49,27 @@ func serverResets(sent [][]byte) []string {
 	}
 	slices.Sort(to)
 	return to
+}
+
+func TestATunResetOnAReusedTupleGoesToTheNewConnection(t *testing.T) {
+	thisHost(t)
+	set := banningAddressSet()
+	w := newInjectingWorker(t, &set)
+	intoTun(t, w, 49874)
+	w.bans = newTestIPBans(t, nil)
+	banAddress(t, w.bans, "1.2.3.4", 443)
+	sent := captureInjected(t, w)
+
+	w.ProcessPacket(onTheTunWire(makeV4TCPPacketFlags(nil, 1000, 0x02)))
+	if err := os.WriteFile(w.srcResolver.path, []byte(tunTCPRow(tunWirePort)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	w.ProcessPacket(onTheTunWire(makeV4TCPPacketFlags(nil, 7000, 0x02)))
+
+	want := []string{fmt.Sprintf("%s:%d", tunDevice, tunWirePort), fmt.Sprintf("%s:%d", tunDevice, 49874)}
+	if got := serverResets(sent()); !slices.Equal(got, want) {
+		t.Fatalf("a new connection on a reused tuple must be reset at its own port, got resets to %v, want %v", got, want)
+	}
 }
 
 func TestATunResetGoesToTheDevicesOwnPort(t *testing.T) {
