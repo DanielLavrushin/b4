@@ -66,7 +66,7 @@ With every split point off, Combo sends the packet in one piece, and the tab sho
 
 ## Sequence Overlap (seqovl) {#sequence-overlap}
 
-Shown for Combo and Disorder. b4 puts fake bytes in front of a real segment and moves its sequence number back by the same amount. DPI reads the fake bytes as the start of the data, and the server discards them. Combo adds them only to a packet that starts a ClientHello or an HTTP request.
+Shown for Combo and Disorder. b4 puts fake bytes in front of a real segment and moves its sequence number back by the same amount. DPI reads the fake bytes as the start of the data, and the server discards them. Combo adds them only to the first data packet of a connection, when that packet starts a ClientHello or an HTTP request. Later requests on the same connection go without them.
 
 | Field | What it does | Default |
 | --- | --- | --- |

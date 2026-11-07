@@ -645,6 +645,7 @@ func recordFailureLocked(entries map[string]*failEntry, host string, threshold i
 
 type runtimeState struct {
 	tlsCache     *tlsInfoCache
+	streams      *streamStartCache
 	connState    *connStateTracker
 	destState    *destStateTracker
 	pendingHello *pendingHelloCache
@@ -662,6 +663,7 @@ type runtimeState struct {
 func newRuntimeState() *runtimeState {
 	return &runtimeState{
 		pendingHello: newPendingHelloCache(),
+		streams:      newStreamStartCache(),
 		hostHints:    newHostHintCache(),
 		quicFlows:    newQUICFlowCache(),
 		voiceFlows:   newVoiceFlowCache(),
