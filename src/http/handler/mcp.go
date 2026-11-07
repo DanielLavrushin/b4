@@ -146,12 +146,16 @@ func (api *API) RegisterMCPApi() {
 		cache[caps] = srv
 		return srv
 	}
-	streamable := mcp.NewStreamableHTTPHandler(
-		pick,
-		&mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: mcpMaxBodyBytes},
-	)
-	api.mux.Handle(mcpEndpoint, api.mcpGate(streamable))
+	api.mux.Handle(mcpEndpoint, api.mcpHandler(pick))
 	api.mux.HandleFunc("/api/mcp/generate-token", api.handleMCPGenerateToken)
+}
+
+func (api *API) mcpHandler(pick func(*http.Request) *mcp.Server) http.Handler {
+	return api.mcpGate(mcp.NewStreamableHTTPHandler(pick, &mcp.StreamableHTTPOptions{
+		Stateless:                    true,
+		MaxRequestBodyBytes:          mcpMaxBodyBytes,
+		PropagateRequestCancellation: true,
+	}))
 }
 
 // @Summary Generate an MCP access token
@@ -231,8 +235,61 @@ func (api *API) mcpGate(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(w, r.WithContext(mcpWithCaller(r.Context(), r)))
+		req := r.WithContext(mcpWithCaller(r.Context(), r))
+		if method, ok := mcpBareNotification(req); ok {
+			log.Debugf("mcp: %q from %s carries no protocol version in _meta; accepted and ignored", method, mcpCaller(req.Context()))
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.Header().Set("X-Accel-Buffering", "no")
+		next.ServeHTTP(w, req)
 	})
+}
+
+const mcpStatelessProtocol = "2026-07-28"
+
+func mcpBareNotification(r *http.Request) (string, bool) {
+	if r.Method != http.MethodPost || r.Body == nil || r.Header.Get("Mcp-Protocol-Version") < mcpStatelessProtocol {
+		return "", false
+	}
+	head, err := io.ReadAll(io.LimitReader(r.Body, mcpMaxBodyBytes+1))
+	rest := io.Reader(r.Body)
+	if err != nil {
+		rest = mcpFailedRead{err}
+	}
+	r.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(head), rest), r.Body}
+	if err != nil || len(head) > mcpMaxBodyBytes {
+		return "", false
+	}
+	return mcpNotificationWithoutVersion(head)
+}
+
+type mcpFailedRead struct{ err error }
+
+func (f mcpFailedRead) Read([]byte) (int, error) { return 0, f.err }
+
+func mcpNotificationWithoutVersion(body []byte) (string, bool) {
+	var msg map[string]json.RawMessage
+	if json.Unmarshal(body, &msg) != nil {
+		return "", false
+	}
+	var method string
+	if _, call := msg["id"]; call || json.Unmarshal(msg["method"], &method) != nil || method == "" {
+		return "", false
+	}
+	var params struct {
+		Meta map[string]json.RawMessage `json:"_meta"`
+	}
+	if raw := msg["params"]; len(raw) > 0 && json.Unmarshal(raw, &params) != nil {
+		return "", false
+	}
+	if _, stated := params.Meta[mcp.MetaKeyProtocolVersion]; stated {
+		return "", false
+	}
+	return method, true
 }
 
 func MCPRefuseToken(w http.ResponseWriter, r *http.Request) {
