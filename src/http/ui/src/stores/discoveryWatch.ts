@@ -12,6 +12,7 @@ type FinishedListener = (suite: DiscoverySuite) => void;
 
 let state: WatchState = { run: null, pageOpen: false };
 let pages = 0;
+const settled = new Set<string>();
 const listeners = new Set<() => void>();
 const finishedListeners = new Set<FinishedListener>();
 
@@ -21,7 +22,8 @@ const update = (next: Partial<WatchState>) => {
 };
 
 export function watchRun(id: string) {
-  if (state.run !== id) update({ run: id });
+  if (settled.has(id) || state.run === id) return;
+  update({ run: id });
 }
 
 export function forgetRun(id: string) {
@@ -34,6 +36,7 @@ export function observeRun(suite: DiscoverySuite) {
     watchRun(suite.id);
     return;
   }
+  settled.add(suite.id);
   if (state.run !== suite.id) return;
   update({ run: null });
   if (suite.status === "canceled") return;
