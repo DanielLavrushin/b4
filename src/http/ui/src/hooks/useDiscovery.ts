@@ -86,6 +86,7 @@ export function useDiscovery({
   const seenRunRef = useRef<string | null>(null);
   const restoredRef = useRef<string | null>(null);
   const runGenRef = useRef(0);
+  const pollErrorRef = useRef<string | null>(null);
 
   useEffect(() => attachDiscoveryPage(), []);
 
@@ -174,6 +175,11 @@ export function useDiscovery({
       }
       try {
         const data = await discoveryApi.status(suiteId);
+        const shownPollError = pollErrorRef.current;
+        if (shownPollError !== null) {
+          pollErrorRef.current = null;
+          setError((current) => (current === shownPollError ? null : current));
+        }
         observeRun(data);
         setSuite(data);
         if (!TERMINAL.has(data.status)) return;
@@ -187,18 +193,20 @@ export function useDiscovery({
           void loadHistory();
         }
       } catch (e) {
-        setRunning(false);
-        setStopping(false);
-        setFinishRequested(false);
-        setFinishing(false);
         if (e instanceof ApiError && e.status === 404) {
+          setRunning(false);
+          setStopping(false);
+          setFinishRequested(false);
+          setFinishing(false);
           forgetRun(suiteId);
           setSuite(null);
           setSuiteId(null);
           void loadHistory();
           return;
         }
-        setError(failureText(e));
+        const message = failureText(e);
+        pollErrorRef.current = message;
+        setError(message);
       }
     };
 
