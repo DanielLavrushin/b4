@@ -104,9 +104,6 @@ func (c *tlsInfoCache) Lookup(connKey string) (string, uint16, bool) {
 }
 
 func (c *tlsInfoCache) MoveHello(connKey string, seq, helloLen uint32) {
-	if helloLen == 0 {
-		return
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

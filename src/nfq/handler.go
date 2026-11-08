@@ -670,7 +670,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		host, tlsVersion, _ = sni.ParseTLSClientHelloSNI(payload)
 		if host == "" {
-			w.tlsCache.MoveHello(connKey, helloSeq, startedHelloLen(payload))
+			if n, starts := startedHello(payload); starts {
+				w.tlsCache.MoveHello(connKey, helloSeq, n)
+			}
 		}
 
 		if host == "" && truncatedClientHello(payload) {

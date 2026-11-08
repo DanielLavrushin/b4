@@ -404,8 +404,50 @@ func TestARetryClientHelloWithItsNameInSegmentTwoKeepsItsFakes(t *testing.T) {
 	}
 }
 
-func twoRecordHello(host string, cut int) ([]byte, int) {
-	single := helloWithEarlySNI(host)
+func TestARetryClientHelloOfUnknownLengthKeepsItsFakes(t *testing.T) {
+	inTwoRecords, recordOne := twoRecordHello(helloWithLateSNI("i.ytimg.com"), 300)
+	for _, c := range []struct {
+		name  string
+		hello []byte
+		cut   int
+	}{
+		{"a first segment too short to carry the length", helloWithEarlySNI("i.ytimg.com"), 7},
+		{"a retry ClientHello spread over two TLS records", inTwoRecords, recordOne},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			set := newFakingSet(true)
+			cfg := config.NewConfig()
+			cfg.Sets = []*config.SetConfig{&set}
+			w := newTestWorker(t, &cfg)
+			sent := captureInjected(t, w)
+			fake := sock.GetPayload(&set.Faking)
+			const base = uint32(1000)
+
+			first := buildClientHello("i.ytimg.com", 16, 0xAB)
+			w.ProcessPacket(makeV4TCPPacket(first, base))
+			if got := fakeHelloSeqs(sent(), fake); !slices.Equal(got, []uint32{base}) {
+				t.Fatalf("the first ClientHello: fake hellos at %v, want one at %d", got, base)
+			}
+
+			at := base + uint32(len(first))
+			for _, seg := range []struct {
+				name    string
+				payload []byte
+				seq     uint32
+			}{
+				{"segment 1 of the retry ClientHello", c.hello[:c.cut], at},
+				{"segment 2", c.hello[c.cut:], at + uint32(c.cut)},
+			} {
+				w.ProcessPacket(makeV4TCPPacket(seg.payload, seg.seq))
+				if got := fakeHelloSeqs(sent(), fake); !slices.Equal(got, []uint32{seg.seq}) {
+					t.Errorf("%s: fake hellos at %v, want one at %d", seg.name, got, seg.seq)
+				}
+			}
+		})
+	}
+}
+
+func twoRecordHello(single []byte, cut int) ([]byte, int) {
 	handshake := single[5:]
 	record := func(part []byte) []byte {
 		rec := []byte{0x16, single[1], single[2], byte(len(part) >> 8), byte(len(part))}
@@ -424,7 +466,7 @@ func TestAClientHelloSplitIntoTwoRecordsKeepsAFakeOnTheSecond(t *testing.T) {
 	fake := sock.GetPayload(&set.Faking)
 	const base = uint32(1000)
 
-	hello, firstRecord := twoRecordHello("i.ytimg.com", 300)
+	hello, firstRecord := twoRecordHello(helloWithEarlySNI("i.ytimg.com"), 300)
 	w.ProcessPacket(makeV4TCPPacket(hello[:firstRecord], base))
 	if got := fakeHelloSeqs(sent(), fake); !slices.Equal(got, []uint32{base}) {
 		t.Fatalf("the first record with the SNI: fake hellos at %v, want one at %d", got, base)
