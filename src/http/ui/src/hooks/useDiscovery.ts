@@ -114,6 +114,7 @@ export function useDiscovery({
           return false;
         }
         if (data.source && data.source !== "web") return false;
+        observeRun(data);
         restoredRef.current = data.id;
         setSuiteId(data.id);
         setSuite(data);
