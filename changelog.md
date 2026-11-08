@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.91.0] - unreleased
+
+- ADDED: **A set can ask more than one DNS resolver** - **More resolvers** on the DNS & Routing tab takes a list of addresses and https:// DoH URLs, up to eight. b4 asks the resolver above first and starts the next one after 300 ms without an answer, so a resolver the provider blocks costs a third of a second instead of the whole query timeout. A SERVFAIL, NOTIMP or REFUSED from one entry moves on to the next at once, and an entry that fails three times in a row is left out for 30 s. A plain answer does not end the wait while a DoH entry is still asking, but waits for it no longer than those 300 ms. A set without the list resolves exactly as before: one resolver, one timeout, its SERVFAIL handed to the device.
+
 ## [1.90.0] - 2026-11-01
 
 - FIXED: **In TUN mode, a device could keep waiting after b4 had cut its connection or answered its DNS query** - when another connection already leaves the router for the same server from the same port, the router moves the new one to another port. b4 sent its reset, refusal or DNS answer for that connection to the new port, which the device does not use. This hit IP Block Detection, sets that block a site, refused UDP connections and DNS answers from a set.

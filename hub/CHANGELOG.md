@@ -2,6 +2,10 @@
 
 Releases of the community hub service, published from the `b4hub` repository. The router changelog is `changelog.md` at the repository root.
 
+## [1.7.0] - unreleased
+
+- CHANGED: **`dns.upstreams`, the extra resolver list b4 1.91.0 adds, is a private field** - like a set's source devices, a set's extra DNS resolvers are never shared. When a set carries them, Check lists the field under Stripped fields, and a hub built from an earlier b4 drops it with a warning about fields b4 does not know.
+
 ## [1.6.0] - 2026-11-06
 
 - CHANGED: **The console's Check treats IP priority, the set switch that b4 1.90.0 adds, as a private field** - like a set's source devices, `targets.ip_priority` is never shared. When the Full set JSON of the edit dialog turns it on, Check lists it under Stripped fields. A hub built from an earlier b4 drops it with a warning about fields b4 does not know.
