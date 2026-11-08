@@ -80,7 +80,8 @@ per address, so a test script signs in once and reuses the cookie.
 - `make hub-test` (`go -C hub test ./...`), `pnpm -C hub/ui build` (`tsc`, then vite, the
   build `make hub-build` embeds), and `/b4-check`.
 - Every change under `hub/` gets a bullet in `hub/CHANGELOG.md`: English only, its own semver,
-  newest block on top. The b4hub release workflow refuses a version without a block.
+  newest block on top, Keep a Changelog sections, no `[Unreleased]`. The b4hub release
+  workflow refuses a version whose block is not the top one.
 - A change in `src/hubwire`, or one that touches the router's hub client and the hub together,
   gets a bullet in each changelog, each written for its reader (`/b4-changelog`).
 - A new `SetConfig` field is classified in `src/hubwire/fields.go`: `Crosses` with `Since` set
