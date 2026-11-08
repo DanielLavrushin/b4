@@ -206,15 +206,12 @@ jobs:
             awk -v h="## [$1]" 'index($0, "## [") == 1 { if (found) exit; if (index($0, h) == 1) found = 1 } found { print }' changelog.md
           }
           BASE=$(printf '%s' "$VERSION" | sed -E 's/-?(alpha|beta|rc|dev).*$//')
-          CHANGELOG=$(block "$VERSION")
-          if [ -z "$CHANGELOG" ] && [ "$BASE" != "$VERSION" ]; then
-            CHANGELOG=$(block "$BASE")
-          fi
+          CHANGELOG=$(block "$BASE")
           if [ -z "$CHANGELOG" ] && [ "$PRERELEASE" = "true" ]; then
             CHANGELOG=$(block "Unreleased")
           fi
           if [ -z "$CHANGELOG" ]; then
-            echo "::error::changelog.md has no '## [$VERSION]' block; rename [Unreleased] to it before releasing"
+            echo "::error::changelog.md has no '## [$BASE]' block; rename [Unreleased] to it before releasing"
             exit 1
           fi
           echo "Using changelog block: $(printf '%s\n' "$CHANGELOG" | head -n 1)"

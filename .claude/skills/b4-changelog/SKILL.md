@@ -285,8 +285,8 @@ In both `changelog.md` and `changelog_ru.md`, in one commit before the release w
 
 The release workflow publishes the `## [x.y.z]` block as the GitHub release text and fails
 a stable release when that block is missing. A prerelease such as `1.91.0rc1` uses
-`## [1.91.0rc1]` if present, else `## [1.91.0]`, else the `[Unreleased]` block, so an rc
-needs no rename.
+`## [1.91.0]` if present, else the `[Unreleased]` block, so an rc needs no rename. A
+prerelease never gets a heading of its own: `## [1.91.0rc1]` fails the pre-merge check.
 
 ## Delegating
 
