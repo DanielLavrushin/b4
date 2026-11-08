@@ -16,6 +16,12 @@ import {
 import { B4SetConfig } from "@models/config";
 import { MAX_PROBE_URLS, wsUrl, describeApiError } from "@utils";
 import i18n from "@/i18n";
+import {
+  forgetRun,
+  observeRun,
+  showOnPage,
+  watchRun,
+} from "@/stores/discoveryWatch";
 
 const POLL_MS = 1500;
 const IDLE_POLL_MS = 5000;
@@ -80,6 +86,17 @@ export function useDiscovery({
   const seenRunRef = useRef<string | null>(null);
   const restoredRef = useRef<string | null>(null);
   const runGenRef = useRef(0);
+  const pollErrorRef = useRef<string | null>(null);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => showOnPage(suiteId), [suiteId]);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -102,10 +119,12 @@ export function useDiscovery({
       if (!id || dismissedRun() === id) return false;
       try {
         const data = await discoveryApi.status(id);
+        if (!mountedRef.current) return false;
         if (runGenRef.current !== gen || !TERMINAL.has(data.status)) {
           return false;
         }
         if (data.source && data.source !== "web") return false;
+        observeRun(data, { shown: true });
         restoredRef.current = data.id;
         setSuiteId(data.id);
         setSuite(data);
@@ -121,6 +140,7 @@ export function useDiscovery({
         const current = await discoveryApi.current();
         if (isSuite(current)) {
           if (current.status === "running" || current.status === "pending") {
+            observeRun(current);
             setSuiteId(current.id);
             setSuite(current);
             setRunning(true);
@@ -142,12 +162,15 @@ export function useDiscovery({
 
   useEffect(() => {
     if (!running && !finishing) return;
+    let active = true;
 
     const tick = async () => {
       if (!suiteId) {
         try {
           const current = await discoveryApi.current();
+          if (!active) return;
           if (isSuite(current)) {
+            observeRun(current);
             setSuiteId(current.id);
             setSuite(current);
             setRunning(true);
@@ -157,12 +180,19 @@ export function useDiscovery({
             void loadHistory();
           }
         } catch {
-          setFinishing(false);
+          if (active) setFinishing(false);
         }
         return;
       }
       try {
         const data = await discoveryApi.status(suiteId);
+        if (!active) return;
+        const shownPollError = pollErrorRef.current;
+        if (shownPollError !== null) {
+          pollErrorRef.current = null;
+          setError((current) => (current === shownPollError ? null : current));
+        }
+        observeRun(data, { shown: true });
         setSuite(data);
         if (!TERMINAL.has(data.status)) return;
         setRunning(false);
@@ -175,23 +205,30 @@ export function useDiscovery({
           void loadHistory();
         }
       } catch (e) {
-        setRunning(false);
-        setStopping(false);
-        setFinishRequested(false);
-        setFinishing(false);
+        if (!active) return;
         if (e instanceof ApiError && e.status === 404) {
+          setRunning(false);
+          setStopping(false);
+          setFinishRequested(false);
+          setFinishing(false);
+          forgetRun(suiteId);
           setSuite(null);
           setSuiteId(null);
           void loadHistory();
           return;
         }
-        setError(failureText(e));
+        const message = failureText(e);
+        pollErrorRef.current = message;
+        setError(message);
       }
     };
 
     void tick();
     const timer = setInterval(() => void tick(), POLL_MS);
-    return () => clearInterval(timer);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, [suiteId, running, finishing, loadHistory]);
 
   useEffect(() => {
@@ -203,15 +240,15 @@ export function useDiscovery({
         const current = await discoveryApi.current();
         if (!active) return;
         if (isSuite(current)) {
+          const live =
+            current.status === "running" || current.status === "pending";
+          if (live) observeRun(current);
           const replaceable =
             !suite ||
             (TERMINAL.has(suite.status) &&
               suite.id !== current.id &&
               suite.id === restoredRef.current);
-          if (
-            replaceable &&
-            (current.status === "running" || current.status === "pending")
-          ) {
+          if (replaceable && live) {
             setSuiteId(current.id);
             setSuite(current);
             setRunning(true);
@@ -271,6 +308,7 @@ export function useDiscovery({
       setRunning(true);
       try {
         const res = await discoveryApi.start(normalized, options);
+        watchRun(res.id);
         setSuiteId(res.id);
         return { success: true };
       } catch (e) {
