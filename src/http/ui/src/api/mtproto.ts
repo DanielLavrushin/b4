@@ -1,4 +1,5 @@
 import { ApiError, apiDelete, apiGet, apiPost, apiUpload } from "./apiClient";
+import { readErrorBody } from "./errorBody";
 import { TelegramBridgeStatus } from "@models/mtproto";
 
 export interface WebProxyPageStatus {
@@ -32,13 +33,12 @@ export const mtprotoApi = {
   downloadWebProxyPage: async () => {
     const r = await fetch(webProxyPageDownloadUrl);
     if (!r.ok) {
-      let body: unknown;
-      try {
-        body = await r.json();
-      } catch {
-        body = await r.text().catch(() => undefined);
-      }
-      throw new ApiError(webProxyPageDownloadUrl, r.status, r.statusText, body);
+      throw new ApiError(
+        webProxyPageDownloadUrl,
+        r.status,
+        r.statusText,
+        await readErrorBody(r),
+      );
     }
     const blob = await r.blob();
     const match = /filename="?([^"]+)"?/.exec(

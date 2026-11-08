@@ -77,7 +77,7 @@ Without the kill switch, the set's traffic leaves through the normal uplink with
 
 ### Upstream SOCKS5 proxy {#upstream-socks5-proxy}
 
-b4 takes over the set's TCP connections and opens each one again through a SOCKS5 proxy, such as Xray or sing-box on the router or on another host. The set's bypass strategy does not apply in this mode.
+b4 takes over the set's TCP connections and opens each one again through a SOCKS5 proxy, such as Xray or sing-box on the router or on another host. The set's bypass strategy does not apply in this mode. The router's own TCP connections to the set's addresses go through the proxy as well. This includes the lookups of a DNS over TLS resolver on the router when its server is in the set. A set limited to a source interface or to included source devices leaves them alone.
 
 | Field | What it does | Default |
 | --- | --- | --- |

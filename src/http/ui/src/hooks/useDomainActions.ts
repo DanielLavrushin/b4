@@ -3,10 +3,12 @@ import { useTranslation } from "react-i18next";
 import { SortDirection } from "@common/SortableTableCell";
 import {
   AsnLabels,
+  describeApiError,
   matchesConnectionFilter,
   parseConnectionFilter,
 } from "@utils";
 import { useSnackbar } from "@context/SnackbarProvider";
+import { apiPut } from "@api/apiClient";
 
 export type SortColumn =
   | "timestamp"
@@ -110,25 +112,16 @@ export function useDomainActions() {
       if (!modalState.selected) return false;
 
       try {
-        const response = await fetch("/api/geosite/domain", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            domain: modalState.selected,
-            set_id: setId,
-            set_name: setName,
-          }),
+        await apiPut("/api/geosite/domain", {
+          domain: modalState.selected,
+          set_id: setId,
+          set_name: setName,
         });
-
-        if (response.ok) {
-          showSuccess(t("connections.addDomain.added", { domain: modalState.selected }));
-          closeModal();
-          return true;
-        }
-        const error = (await response.json()) as { message: string };
-        showError(t("connections.addDomain.failed", { error: error.message }));
+        showSuccess(t("connections.addDomain.added", { domain: modalState.selected }));
+        closeModal();
+        return true;
       } catch (error) {
-        showError(t("connections.addDomain.failed", { error: String(error) }));
+        showError(t("connections.addDomain.failed", { error: describeApiError(error) }));
       }
       return false;
     },

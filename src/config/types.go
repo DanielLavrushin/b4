@@ -172,6 +172,18 @@ const (
 	FakePayloadSTUN
 )
 
+var FakePayloadNames = [FakePayloadSTUN + 1]string{
+	FakePayloadRandom:   "random",
+	FakePayloadCustom:   "custom",
+	FakePayloadDefault1: "google",
+	FakePayloadDefault2: "duckduckgo",
+	FakePayloadCapture:  "capture",
+	FakePayloadZero:     "zero",
+	FakePayloadInverted: "inverted",
+	FakePayloadDomain:   "domain",
+	FakePayloadSTUN:     "stun",
+}
+
 type ApiConfig struct {
 	IPInfoToken string `json:"ipinfo_token"`
 }

@@ -230,6 +230,56 @@ func mcpTargetIsCatchAll(kind, canonical string) bool {
 	return false
 }
 
+const mcpSelfDialExemption = "Of b4's own connections, only those that carry its self-dial mark 0x40000, such as its proxy upstream, Telegram and hub dials, are left alone; " +
+	"its release checks, update and GeoSite/GeoIP downloads and AI provider calls carry no mark and are taken too"
+
+func mcpRouterTrafficNote(set *config.SetConfig) string {
+	if !set.Routing.Enabled || set.RoutingSourceScoped() {
+		return ""
+	}
+	var taken string
+	switch mode := set.Routing.Mode; {
+	case config.RoutingIsBlock(mode):
+		taken = "Every packet the router itself sends to these addresses is blocked as well, b4's own included, because a block set tests no packet mark"
+	case config.RoutingUsesTProxy(mode):
+		taken = "The router's own TCP connections to these addresses go through the set as well, a DNS over TLS or DNS over HTTPS resolver on the router included"
+		if mode == config.RoutingModeProxy && (!set.Routing.Upstream.UDP || set.BlocksQUIC()) {
+			taken += ", and the router's own QUIC to UDP port 443 there is refused"
+		}
+		taken += ". " + mcpSelfDialExemption
+	case set.RoutingIncludesRouterTraffic():
+		taken = "The router's own connections to these addresses follow the set's route as well, its DNS lookups included (routing.router_traffic). " + mcpSelfDialExemption
+	default:
+		return ""
+	}
+	return taken + ". routing.source_interfaces or an included targets.source_devices list keeps the router's own traffic out of the set"
+}
+
+func mcpIPCatchAll(ips []string) string {
+	for _, e := range ips {
+		p, err := netip.ParsePrefix(strings.TrimSpace(e))
+		if err == nil && mcpTargetIsCatchAll(mcpTargetKindIPs, p.Masked().String()) {
+			return e
+		}
+	}
+	return ""
+}
+
+func mcpCatchAllRoutingNote(set *config.SetConfig) string {
+	if set == nil || !set.Enabled {
+		return ""
+	}
+	catch := mcpIPCatchAll(set.Targets.IPs)
+	if catch == "" {
+		return ""
+	}
+	router := mcpRouterTrafficNote(set)
+	if router == "" {
+		return ""
+	}
+	return fmt.Sprintf("Set %q holds the catch-all %s in targets.ip with routing on in %q mode, so it matches every address. %s.", set.Name, catch, set.Routing.Mode, router)
+}
+
 func (api *API) mcpTargetKey(kind, stored string) string {
 	if canonical, _, err := api.mcpCanonicalTarget(kind, stored); err == nil {
 		return strings.ToLower(canonical)
@@ -508,6 +558,9 @@ func (api *API) addMCPTargetTools(srv *mcp.Server) {
 			if set.Routing.Enabled {
 				out.Note += fmt.Sprintf(", and routing is enabled on this set in %q mode - every matched packet now takes that path", set.Routing.Mode)
 			}
+		}
+		if router := mcpCatchAllRoutingNote(set); router != "" && router != mcpCatchAllRoutingNote(oldCfg.GetSetById(set.Id)) {
+			out.Note += ". " + strings.TrimSuffix(router, ".")
 		}
 		if scope := mcpPortOnlyNote(set); scope != "" {
 			out.Note += ". " + scope

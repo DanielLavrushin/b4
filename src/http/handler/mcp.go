@@ -15,9 +15,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/daniellavrushin/b4/ai"
@@ -39,6 +41,7 @@ const (
 	mcpMaxBodyBytes = 1 << 20
 
 	mcpMaxTopicHits    = 5
+	mcpMaxTopicWords   = 8
 	mcpTopicExcerptLen = 400
 	mcpMaxRelated      = 6
 )
@@ -146,12 +149,16 @@ func (api *API) RegisterMCPApi() {
 		cache[caps] = srv
 		return srv
 	}
-	streamable := mcp.NewStreamableHTTPHandler(
-		pick,
-		&mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: mcpMaxBodyBytes},
-	)
-	api.mux.Handle(mcpEndpoint, api.mcpGate(streamable))
+	api.mux.Handle(mcpEndpoint, api.mcpHandler(pick))
 	api.mux.HandleFunc("/api/mcp/generate-token", api.handleMCPGenerateToken)
+}
+
+func (api *API) mcpHandler(pick func(*http.Request) *mcp.Server) http.Handler {
+	return api.mcpGate(mcp.NewStreamableHTTPHandler(pick, &mcp.StreamableHTTPOptions{
+		Stateless:                    true,
+		MaxRequestBodyBytes:          mcpMaxBodyBytes,
+		PropagateRequestCancellation: true,
+	}))
 }
 
 // @Summary Generate an MCP access token
@@ -231,8 +238,61 @@ func (api *API) mcpGate(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(w, r.WithContext(mcpWithCaller(r.Context(), r)))
+		req := r.WithContext(mcpWithCaller(r.Context(), r))
+		if method, ok := mcpBareNotification(req); ok {
+			log.Debugf("mcp: %q from %s carries no protocol version in _meta; accepted and ignored", method, mcpCaller(req.Context()))
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.Header().Set("X-Accel-Buffering", "no")
+		next.ServeHTTP(w, req)
 	})
+}
+
+const mcpStatelessProtocol = "2026-07-28"
+
+func mcpBareNotification(r *http.Request) (string, bool) {
+	if r.Method != http.MethodPost || r.Body == nil || r.Header.Get("Mcp-Protocol-Version") < mcpStatelessProtocol {
+		return "", false
+	}
+	head, err := io.ReadAll(io.LimitReader(r.Body, mcpMaxBodyBytes+1))
+	rest := io.Reader(r.Body)
+	if err != nil {
+		rest = mcpFailedRead{err}
+	}
+	r.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(head), rest), r.Body}
+	if err != nil || len(head) > mcpMaxBodyBytes {
+		return "", false
+	}
+	return mcpNotificationWithoutVersion(head)
+}
+
+type mcpFailedRead struct{ err error }
+
+func (f mcpFailedRead) Read([]byte) (int, error) { return 0, f.err }
+
+func mcpNotificationWithoutVersion(body []byte) (string, bool) {
+	var msg map[string]json.RawMessage
+	if json.Unmarshal(body, &msg) != nil {
+		return "", false
+	}
+	var method string
+	if _, call := msg["id"]; call || json.Unmarshal(msg["method"], &method) != nil || method == "" {
+		return "", false
+	}
+	var params struct {
+		Meta map[string]json.RawMessage `json:"_meta"`
+	}
+	if raw := msg["params"]; len(raw) > 0 && json.Unmarshal(raw, &params) != nil {
+		return "", false
+	}
+	if _, stated := params.Meta[mcp.MetaKeyProtocolVersion]; stated {
+		return "", false
+	}
+	return method, true
 }
 
 func MCPRefuseToken(w http.ResponseWriter, r *http.Request) {
@@ -336,7 +396,7 @@ func (api *API) newMCPServer(caps mcpCapabilities) *mcp.Server {
 		api.addMCPDiscoveryTools(srv)
 	}
 	api.addMCPResources(srv)
-	api.addMCPPrompts(srv)
+	api.addMCPPrompts(srv, caps)
 	return srv
 }
 
@@ -432,13 +492,14 @@ type mcpConfigOut struct {
 }
 
 type mcpGetSetOut struct {
-	Set any `json:"set"`
+	Set  any    `json:"set"`
+	Note string `json:"note,omitempty"`
 }
 
 type mcpTopicIn struct {
 	Topic string `json:"topic,omitempty" jsonschema:"Exact key, e.g. 'faking.tcp_md5'."`
 	Path  string `json:"path,omitempty" jsonschema:"A b4_set_config_value path, e.g. 'sets[video].tcp.win.mode'. The set reference is ignored."`
-	Query string `json:"query,omitempty" jsonschema:"Substring to search for in keys and bodies. At most 5 matches, bodies shortened."`
+	Query string `json:"query,omitempty" jsonschema:"Every word must be in a key or body; key matches first. At most 5, bodies shortened."`
 }
 
 type mcpTopicEntry struct {
@@ -634,15 +695,15 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 		out := mcpTopicOut{Documented: len(keys)}
 
 		if q := strings.TrimSpace(in.Query); q != "" {
-			hits, more := mcpSearchTopics(keys, q)
+			hits, total := mcpSearchTopics(keys, q)
 			out.Topics = hits
 			out.Found = len(hits) > 0
-			out.Truncated = more
+			out.Truncated = total > len(hits)
 			switch {
 			case len(hits) == 0:
-				out.Note = fmt.Sprintf("nothing matches %q. Call with no arguments to see every documented key.", q)
-			case more:
-				out.Note = fmt.Sprintf("the first %d of more matches for %q, bodies shortened. Call again with topic=<key> for the full text.", len(hits), q)
+				out.Note = fmt.Sprintf("nothing matches %q: every word of the query must appear in a key or its body. Call with no arguments to see every documented key.", q)
+			case out.Truncated:
+				out.Note = fmt.Sprintf("the first %d of %d matches for %q, keys that hold every word first, bodies shortened. Add a word to narrow the search, or call with no arguments to list every key and then with topic=<key> for the full text.", len(hits), total, q)
 			default:
 				out.Note = fmt.Sprintf("%d match(es) for %q, bodies shortened. Call again with topic=<key> for the full text.", len(hits), q)
 			}
@@ -800,7 +861,7 @@ func (api *API) addMCPTools(srv *mcp.Server) {
 			if err != nil {
 				return nil, nil, err
 			}
-			return nil, mcpGetSetOut{Set: redacted}, nil
+			return nil, mcpGetSetOut{Set: redacted, Note: mcpCatchAllRoutingNote(s)}, nil
 		}
 		return nil, nil, fmt.Errorf("no set with id or name %q", want)
 	})
@@ -944,19 +1005,61 @@ func mcpTopicKeyFromPath(path string) string {
 	return strings.ToLower(strings.TrimSpace(p))
 }
 
-func mcpSearchTopics(keys []string, query string) ([]mcpTopicEntry, bool) {
-	q := strings.ToLower(query)
-	var hits []mcpTopicEntry
-	more := false
-	for _, k := range keys {
-		facts := ai.TopicFacts(k)
-		if !strings.Contains(k, q) && !strings.Contains(strings.ToLower(facts), q) {
+func mcpTopicWordBreak(r rune) bool {
+	return r == '.' || r == '_' || unicode.IsSpace(r)
+}
+
+func mcpTopicWords(query string) []string {
+	var words []string
+	for w := range strings.FieldsFuncSeq(strings.ToLower(query), mcpTopicWordBreak) {
+		if slices.Contains(words, w) {
 			continue
 		}
-		if len(hits) == mcpMaxTopicHits {
-			more = true
+		words = append(words, w)
+		if len(words) == mcpMaxTopicWords {
 			break
 		}
+	}
+	return words
+}
+
+func mcpTopicTier(key, facts string, words []string) (int, bool) {
+	segments := strings.FieldsFunc(key, mcpTopicWordBreak)
+	lowered := ""
+	tier := 0
+	for _, w := range words {
+		switch {
+		case slices.Contains(segments, w):
+		case strings.Contains(key, w):
+			tier = max(tier, 1)
+		default:
+			if lowered == "" {
+				lowered = strings.ToLower(facts)
+			}
+			if !strings.Contains(lowered, w) {
+				return 0, false
+			}
+			tier = 2
+		}
+	}
+	return tier, true
+}
+
+func mcpSearchTopics(keys []string, query string) ([]mcpTopicEntry, int) {
+	words := mcpTopicWords(query)
+	if len(words) == 0 {
+		return nil, 0
+	}
+	var tiers [3][]string
+	for _, k := range keys {
+		if tier, ok := mcpTopicTier(k, ai.TopicFacts(k), words); ok {
+			tiers[tier] = append(tiers[tier], k)
+		}
+	}
+	ranked := slices.Concat(tiers[:]...)
+	var hits []mcpTopicEntry
+	for _, k := range ranked[:min(len(ranked), mcpMaxTopicHits)] {
+		facts := ai.TopicFacts(k)
 		entry := mcpTopicEntry{Topic: k, Facts: facts}
 		if len(facts) > mcpTopicExcerptLen {
 			entry.Facts = mcpTruncate(facts, mcpTopicExcerptLen) + "…"
@@ -964,7 +1067,7 @@ func mcpSearchTopics(keys []string, query string) ([]mcpTopicEntry, bool) {
 		}
 		hits = append(hits, entry)
 	}
-	return hits, more
+	return hits, len(ranked)
 }
 
 func mcpRelatedTopics(keys []string, want string) []string {
@@ -1068,7 +1171,17 @@ func (api *API) addMCPResources(srv *mcp.Server) {
 	}
 }
 
-func (api *API) addMCPPrompts(srv *mcp.Server) {
+func mcpDiagnoseLoadStep(probes bool) (step, verdict string) {
+	if probes {
+		return "6. To learn whether the site loads through b4, offer b4_test_domain_now and run it only after the user agrees: it sends real traffic from the router.",
+			"Never say the site works unless b4_test_domain_now succeeded through b4 or the user confirms it."
+	}
+	return "6. Whether the site loads cannot be tested from here: fetching it through b4 needs 'Allow active probes', which the user turns on " + mcpSwitchWhere + ". " +
+			mcpSwitchReconnect + ". Until then, ask the user whether the site opens.",
+		"Never say the site works unless the user confirms it."
+}
+
+func (api *API) addMCPPrompts(srv *mcp.Server, caps mcpCapabilities) {
 	srv.AddPrompt(&mcp.Prompt{
 		Name:        "diagnose_domain",
 		Title:       "Diagnose a blocked domain",
@@ -1086,17 +1199,30 @@ func (api *API) addMCPPrompts(srv *mcp.Server) {
 		if strings.TrimSpace(domain) == "" {
 			return nil, fmt.Errorf("domain argument is required")
 		}
+		loadStep, verdict := mcpDiagnoseLoadStep(caps.Probes)
 		text := strings.Join([]string{
 			fmt.Sprintf("The domain %q is not loading correctly through b4. Diagnose it.", domain),
 			"",
 			"Work in this order:",
-			"1. Call b4_status to confirm the daemon is running and which engine is active.",
-			fmt.Sprintf("2. Call b4_check_domain for %q to see whether any enabled set already covers it.", domain),
-			"3. If nothing covers it, say so and propose which existing set it belongs in, or a new one.",
-			"4. If a set does cover it, call b4_get_set for that set, and b4_get_topic for each setting before commenting on it.",
-			"5. If the bypass looks configured but ineffective, call b4_diagnostics and check the firewall rule groups are actually installed.",
+			"1. Call b4_status to confirm b4 is running and its engine started. If the engine did not start, stop and report that before suggesting any strategy change. " +
+				"Call b4_diagnostics only when b4_status shows a problem or the later steps find no cause: it reports the kernel, the firewall backend and the rule groups b4 installed, " +
+				"but it also carries the router's hostname, every interface address and the firewall ruleset, all of which go to your AI provider. If b4's rules are missing, stop and report that.",
+			"2. Call b4_logs_tail with file=errors and no filter: that log has no per-domain lines, so a domain filter would hide every error.",
+			fmt.Sprintf("3. Call b4_check_domain for %q to see whether an enabled set covers it. If nothing covers it, say so and propose which existing set it belongs in, or a new one. ", domain) +
+				"If a set covers it, call b4_get_set for that set, and b4_get_topic for each setting before commenting on it.",
+			fmt.Sprintf("4. Ask the user to open %s again in a new private window, so the browser opens a new connection instead of reusing an old one, "+
+				"then call b4_recent_connections right away with %q in contains: it keeps only the last 500 events. ", domain, domain) +
+				"The domain field comes from the ClientHello, so no line naming the domain means only that b4 saw no ClientHello for it: " +
+				fmt.Sprintf("call b4_recent_connections again with the device's address in contains, or with limit=%d and no filter, since without a limit it returns only the newest %d lines. ", mcpMaxLines, mcpDefaultLines) +
+				"A result marked truncated has lost its older lines, so narrow it by the device's address. " +
+				"No line from the device in a result that is not truncated means b4 saw none of its traffic in that window: ask the user to retry once more and read again right away. " +
+				"If there is still none, its traffic does not reach b4: stop and say so before giving any strategy advice. " +
+				"A line with no set means b4 saw the flow and no set matched it; a line under another set is a targeting finding.",
+			"5. Name the installed version that b4_status reports. If you can read the web, check b4's release notes for a later fix of this symptom; otherwise ask the user whether b4's web interface offers a newer version.",
+			loadStep,
 			"",
 			"Do not guess a setting's unit or default from its name - call b4_get_topic for it.",
+			verdict,
 			"State clearly which changes you are recommending and why; do not claim to have applied anything.",
 		}, "\n")
 		return &mcp.GetPromptResult{

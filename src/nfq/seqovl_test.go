@@ -6,8 +6,10 @@ import (
 	"net"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/engine"
 )
 
 type comboFamily struct {
@@ -49,6 +51,23 @@ func overlapTestSet(overlap int, pattern []byte) config.SetConfig {
 	return set
 }
 
+func comboSyn(t *testing.T, packet func([]byte, uint32) []byte, parse func([]byte) (PacketInfo, bool), isn uint32) ([]byte, int) {
+	t.Helper()
+	syn := packet(nil, isn)
+	pi, ok := parse(syn)
+	if !ok {
+		t.Fatalf("the SYN does not parse: %x", syn)
+	}
+	syn[pi.IPHdrLen+13] = 0x02
+	return syn, pi.IPHdrLen
+}
+
+func openComboStream(t *testing.T, w *Worker, packet func([]byte, uint32) []byte, parse func([]byte) (PacketInfo, bool), start uint32) {
+	t.Helper()
+	syn, tcpAt := comboSyn(t, packet, parse, start-1)
+	w.streams.Open(syn, tcpAt, time.Now())
+}
+
 func TestComboKeepsTheOverlapOnARequestWithMethodEOL(t *testing.T) {
 	const seq, overlap, realTTL = uint32(1_000_000), 64, 64
 	request := []byte("GET / HTTP/1.1\r\nHost: overlap.example.org\r\nUser-Agent: curl/8.5.0-test\r\n\r\n")
@@ -69,6 +88,7 @@ func TestComboKeepsTheOverlapOnARequestWithMethodEOL(t *testing.T) {
 			sent := captureInjected(t, w)
 			set := overlapTestSet(overlap, []byte{0x16, 0x03, 0x03, 0x00, 0x00})
 			set.TCP.HTTPMethodEOL = true
+			openComboStream(t, w, tc.packet, tc.parse, seq)
 			tc.inject(w, &set, tc.packet(request, seq), tc.dst)
 
 			lowest := seq
@@ -121,6 +141,7 @@ func TestComboOverlapsOnlyAPacketThatStartsAMessage(t *testing.T) {
 				w := newTestWorker(t, &cfg)
 				sent := captureInjected(t, w)
 				set := overlapTestSet(overlap, pattern)
+				openComboStream(t, w, family.packet, family.parse, seq)
 				family.combo(w, &set, family.packet(tc.payload, seq), family.dst)
 
 				type piece struct {
@@ -159,6 +180,85 @@ func TestComboOverlapsOnlyAPacketThatStartsAMessage(t *testing.T) {
 				}
 				if !bytes.Equal(joined, want) {
 					t.Fatalf("the pieces rebuild other bytes than the packet held:\n got %x\nwant %x", joined, want)
+				}
+			})
+		}
+	}
+}
+
+func comboRealPieceStarts(t *testing.T, family comboFamily, sent [][]byte, realTTL byte) []uint32 {
+	t.Helper()
+	var starts []uint32
+	for _, p := range sent {
+		pi, ok := family.parse(p)
+		if !ok {
+			t.Fatalf("an injected packet does not parse: %x", p)
+		}
+		if p[family.ttlAt] == realTTL && pi.PayloadLen > 0 {
+			starts = append(starts, pi.Seq0)
+		}
+	}
+	slices.SortFunc(starts, func(a, b uint32) int { return int(int32(a - b)) })
+	return starts
+}
+
+func TestComboOverlapsOnlyTheFirstMessageOfAConnection(t *testing.T) {
+	const isn, overlap, realTTL = uint32(5_000_000), 64, 64
+	pattern := []byte{0x16, 0x03, 0x03, 0x00, 0x00}
+	first := []byte("GET /one HTTP/1.1\r\nHost: overlap.example.org\r\nUser-Agent: curl/8.5.0-test\r\n\r\n")
+	second := []byte("GET /two HTTP/1.1\r\nHost: overlap.example.org\r\nUser-Agent: curl/8.5.0-test\r\n\r\n")
+	hello := buildClientHello("overlap.example.org", 200, 0xAB)
+	for _, family := range comboFamilies() {
+		for _, c := range []struct {
+			name          string
+			first, second []byte
+			syn           bool
+		}{
+			{"a second HTTP request", first, second, true},
+			{"a ClientHello after CONNECT", []byte("CONNECT overlap.example.org:443 HTTP/1.1\r\nHost: overlap.example.org:443\r\n\r\n"), hello, true},
+			{"a connection whose SYN b4 never saw", first, second, false},
+		} {
+			t.Run(c.name+" over "+family.name, func(t *testing.T) {
+				set := overlapTestSet(overlap, pattern)
+				set.Id, set.Name, set.Enabled = "overlap", "Overlap", true
+				set.Targets.IpsToMatch = []string{"1.2.3.4", "2001:db8::2"}
+				w := newDualStackInjectingWorker(t, &set)
+				sent := captureInjected(t, w)
+
+				if c.syn {
+					syn, _ := comboSyn(t, family.packet, family.parse, isn)
+					if v := w.ProcessPacket(syn); v != engine.VerdictAccept {
+						t.Fatalf("the SYN goes out as the client sent it, got %v", v)
+					}
+				}
+				send := func(payload []byte, seq uint32) []uint32 {
+					t.Helper()
+					if v := w.ProcessPacket(family.packet(payload, seq)); v != engine.VerdictDrop {
+						t.Fatalf("combo takes the packet over, got %v", v)
+					}
+					starts := comboRealPieceStarts(t, family, sent(), realTTL)
+					if len(starts) < 2 {
+						t.Fatalf("combo sent %d pieces, so this test proves nothing", len(starts))
+					}
+					return starts
+				}
+
+				start, next := isn+1, isn+1+uint32(len(c.first))
+				firstPieces := send(c.first, start)
+				want := start
+				if c.syn {
+					want = start - overlap
+				}
+				if firstPieces[0] != want {
+					t.Fatalf("the first message starts at %d, want %d", firstPieces[0], want)
+				}
+				if c.syn {
+					if resent := send(c.first, start); resent[0] != start-overlap {
+						t.Fatalf("a resend of the first message starts at %d, want %d: it keeps the overlap", resent[0], start-overlap)
+					}
+				}
+				if secondPieces := send(c.second, next); secondPieces[0] != next {
+					t.Fatalf("the second message starts at %d, before its own %d, over bytes of the first that may still be on their way", secondPieces[0], next)
 				}
 			})
 		}
