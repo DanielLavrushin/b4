@@ -90,6 +90,47 @@ marker filed off, and it goes too.
 The existing file is not uniformly clean. A stray "now" or "теперь" in an older entry is a
 past miss, not a licence to add more.
 
+## Link the fixed issue
+
+When the work comes from a pull request or task with linked GitHub issues, and you know
+which issue a bullet resolves, end that bullet with a link to the issue, after the last
+sentence, separated by a space:
+
+```
+- FIXED: **With the UDP action Coalesce QUIC Initial, sites did not open over QUIC in Chrome** - b4 put the padding packet in front of every packet of a connection's QUIC handshake, not only the one that carries the site name. The servers left those packets unanswered. [#427](https://github.com/DanielLavrushin/b4/issues/427)
+```
+
+- Full URL, `[#N](https://github.com/DanielLavrushin/b4/issues/N)`, never a bare `#N`:
+  the changelog is read outside GitHub, in the release notes and the docs.
+- Several issues behind one bullet: list them all, comma-separated,
+  `[#448](...), [#449](...)`.
+- Two bullets that each fix part of the same issue both carry its link.
+- The Russian bullet carries the same links in the same place.
+- Link only issues the change actually resolves. Find them in the PR's closing keywords
+  (`gh pr view <n> --json closingIssuesReferences`), the task brief or the issue you were
+  given. Do not guess a number, and do not link an issue the change only touches on.
+- An ADDED or CHANGED bullet that answers a feature request links it the same way.
+- No issue, no issue link.
+
+## Credit a contributor's pull request
+
+When the change comes from someone else's pull request, credit its author at the end of the
+bullet: the PR link, `thanks` and the author's GitHub profile, in parentheses. Issue links
+go in the same parentheses after a semicolon:
+
+```
+- FIXED: **Connections that another service on the router had marked, such as those of devices KeeneticOS lists for its hotspot or those MagiTrickle routes, got no strategy from b4's sets** - b4 took those marks for the marks of its own packets, which share a bit with them. ([#422](https://github.com/DanielLavrushin/b4/pull/422), thanks [@asovetov](https://github.com/asovetov); [#276](https://github.com/DanielLavrushin/b4/discussions/276))
+```
+
+- Find the author with `gh pr view <n> --json author`. Use the GitHub login as shown,
+  `[@login](https://github.com/login)`.
+- Russian writes `спасибо` in place of `thanks`; links and logins are identical.
+- A contributor PR that was finished or taken over on our own branch still credits the
+  original author and links their PR.
+- Several contributors on one bullet: `thanks [@a](...), [@b](...)`.
+- The owner's own PRs (DanielLavrushin) get no credit and no PR link: only the issue link,
+  as above.
+
 ## Voice
 
 - Plain language, no marketing. No exclamation, no "seamlessly", no "powerful".
@@ -138,7 +179,10 @@ stacked participle phrases. Split them into short sentences, keeping the English
    applies, saves). Delete that clause.
 4. Write the Russian bullet at the mirrored position in `changelog_ru.md` and scan it the
    same way ("Теперь", работает, загружается, остаётся, показывается).
-5. Verify both files have the same number of bullets under that version heading.
+5. If the change resolves known issues, end both bullets with their links (see "Link the
+   fixed issue"). If it comes from a contributor's PR, add the PR link and the credit (see
+   "Credit a contributor's pull request").
+6. Verify both files have the same number of bullets under that version heading.
 
 If changelog writing is delegated to a subagent, its brief must carry the short-sentence
 rule (one short summary, then one to three short sentences), the FIXED-describes-only-the-problem
