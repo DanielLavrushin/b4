@@ -199,19 +199,11 @@ jobs:
 
       - name: Read Changelog
         id: read_changelog
-        env:
-          PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          block() {
-            awk -v h="## [$1]" 'index($0, "## [") == 1 { if (found) exit; if (index($0, h) == 1) found = 1 } found { print }' changelog.md
-          }
           BASE=$(printf '%s' "$VERSION" | sed -E 's/-?(alpha|beta|rc|dev).*$//')
-          CHANGELOG=$(block "$BASE")
-          if [ -z "$CHANGELOG" ] && [ "$PRERELEASE" = "true" ]; then
-            CHANGELOG=$(block "Unreleased")
-          fi
+          CHANGELOG=$(awk -v h="## [$BASE]" 'index($0, "## [") == 1 { if (found) exit; if (index($0, h) == 1) found = 1 } found { print }' changelog.md)
           if [ -z "$CHANGELOG" ]; then
-            echo "::error::changelog.md has no '## [$BASE]' block; rename [Unreleased] to it before releasing"
+            echo "::error::changelog.md has no '## [$BASE]' block; rename [Unreleased] to it in changelog.md and changelog_ru.md before releasing"
             exit 1
           fi
           echo "Using changelog block: $(printf '%s\n' "$CHANGELOG" | head -n 1)"

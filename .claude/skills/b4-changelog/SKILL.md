@@ -260,6 +260,8 @@ stacked participle phrases. UI names are bold, as in English, with the label exa
 
 1. Read the `[Unreleased]` block of `changelog.md` to match the voice and see what is there.
    If there is no `[Unreleased]` heading, add one above the newest version in both files.
+   During a release candidate cycle, a change that ships in that version goes into its
+   `## [x.y.z]` block instead (see "Cutting a release").
 2. Decide whether the change earns a bullet at all ("What earns a bullet"). If it belongs
    to something already listed, extend that bullet instead of adding one.
 3. Pick the section. Changed is for a deliberate behaviour change that was not itself a
@@ -275,17 +277,25 @@ stacked participle phrases. UI names are bold, as in English, with the label exa
 
 ## Procedure: cutting a release
 
-In both `changelog.md` and `changelog_ru.md`, in one commit before the release workflow runs:
+A release and its release candidates share one block. In both `changelog.md` and
+`changelog_ru.md`, in one commit before the first rc, or before the release when there is
+no rc:
 
-1. Re-read and re-group the `[Unreleased]` block against the targets above.
+1. Re-read and re-group the `[Unreleased]` block against the grouping rules above.
 2. Rename `## [Unreleased]` to `## [x.y.z] - YYYY-MM-DD` and add an empty `## [Unreleased]`
    above it (an empty Unreleased has no sections).
 3. At the bottom, point `[unreleased]` at `compare/vx.y.z...HEAD` and add
    `[x.y.z]: https://github.com/DanielLavrushin/b4/compare/v<previous>...vx.y.z` under it.
 
-The release workflow publishes the `## [x.y.z]` block as the GitHub release text and fails
-a stable release when that block is missing. A prerelease such as `1.91.0rc1` uses
-`## [1.91.0]` if present, else the `[Unreleased]` block, so an rc needs no rename. A
+Between the first rc and the release, a change that ships in x.y.z goes into the
+`## [x.y.z]` block, not into `[Unreleased]`. At the release, set the block's date to the
+release day.
+
+The release workflow publishes the `## [x.y.z]` block as the GitHub release text, for an rc
+(`1.91.0rc1` uses `## [1.91.0]`) as well as for the release, and fails when the block is
+missing. The block has to exist before an rc because the update dialog of every b4 since
+1.79.0 shows a Russian user the `changelog_ru.md` block of the base version: an rc whose
+notes were still under `[Unreleased]` would show the English release text instead. A
 prerelease never gets a heading of its own: `## [1.91.0rc1]` fails the pre-merge check.
 
 ## Delegating
