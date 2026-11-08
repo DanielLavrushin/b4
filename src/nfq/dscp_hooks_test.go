@@ -212,8 +212,8 @@ func dscpNotYet(t *testing.T, ch <-chan []byte, why string) {
 }
 
 func dscpCoolDown(source string) {
-	for range dnsSourceFailuresToTrip {
-		noteDNSSourceFailure(source)
+	for range dns.SourceFailuresToTrip {
+		dns.NoteSourceFailure(source)
 	}
 }
 

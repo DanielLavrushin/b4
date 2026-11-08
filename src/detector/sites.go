@@ -667,30 +667,36 @@ func (s *Suite) resolveThroughB4(ctx context.Context, site SiteResult, family st
 	if want6 {
 		qtype = 28
 	}
-	var q dnsQuerier
-	source := ""
-	switch {
-	case dnsCfg.DoHURL != "":
-		q = &dohQuerier{client: netprobe.HTTPClient(int(s.directMark), dnsQueryTimeout+time.Second), url: dnsCfg.DoHURL}
-		source = "doh"
-	case net.ParseIP(dnsCfg.TargetDNS) != nil:
-		q = &udpQuerier{mark: s.directMark, addr: net.JoinHostPort(dnsCfg.TargetDNS, "53")}
-		source = "target"
-	default:
-		return nil, ""
-	}
-	defer q.close()
-	body, err := q.query(ctx, site.Domain, qtype)
-	ans := parseAnswer(body, err, familyRecord(family))
 	var ips []string
-	for _, ip := range ans.ips {
-		if isFakeRange(ip) || len(ips) == maxAddresses {
+	for _, upstream := range dnsCfg.UpstreamList() {
+		var q dnsQuerier
+		source := ""
+		switch {
+		case config.IsDoHUpstream(upstream):
+			q = &dohQuerier{client: netprobe.HTTPClient(int(s.directMark), dnsQueryTimeout+time.Second), url: upstream}
+			source = "doh"
+		case net.ParseIP(upstream) != nil:
+			q = &udpQuerier{mark: s.directMark, addr: net.JoinHostPort(upstream, "53")}
+			source = "target"
+		default:
 			continue
 		}
-		ips = append(ips, ip)
+		body, err := q.query(ctx, site.Domain, qtype)
+		q.close()
+		ans := parseAnswer(body, err, familyRecord(family))
+		ips = ips[:0]
+		for _, ip := range ans.ips {
+			if isFakeRange(ip) || len(ips) == maxAddresses {
+				continue
+			}
+			ips = append(ips, ip)
+		}
+		if len(ips) > 0 {
+			return ips, source
+		}
+		if ctx.Err() != nil {
+			return nil, ""
+		}
 	}
-	if len(ips) == 0 {
-		return nil, ""
-	}
-	return ips, source
+	return nil, ""
 }

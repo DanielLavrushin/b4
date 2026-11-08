@@ -608,12 +608,16 @@ func sameResolver(live, tested config.DNSConfig) bool {
 	if !live.Enabled {
 		return false
 	}
-	if tested.DoHURL != "" {
-		return strings.EqualFold(strings.TrimSpace(live.DoHURL), strings.TrimSpace(tested.DoHURL))
+	liveList, testedList := live.UpstreamList(), tested.UpstreamList()
+	if len(liveList) != len(testedList) {
+		return false
 	}
-	return live.DoHURL == "" &&
-		strings.TrimSpace(live.TargetDNS) == strings.TrimSpace(tested.TargetDNS) &&
-		(live.FragmentQuery || !tested.FragmentQuery)
+	for i := range liveList {
+		if !strings.EqualFold(liveList[i], testedList[i]) {
+			return false
+		}
+	}
+	return live.FragmentQuery || !tested.FragmentQuery
 }
 
 func sharesAddress(have, want []string) bool {
