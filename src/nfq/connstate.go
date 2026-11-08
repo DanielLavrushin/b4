@@ -106,7 +106,7 @@ func (c *tlsInfoCache) PastHello(connKey string, seq uint32) bool {
 	defer c.mu.RUnlock()
 
 	info, exists := c.conns[connKey]
-	return exists && info.helloLen > 0 && seq-(info.helloSeq+info.helloLen) < 1<<31
+	return exists && info.helloLen > 0 && seq-info.helloSeq >= info.helloLen
 }
 
 func (c *tlsInfoCache) HelloAt(connKey string, seq uint32, helloID uint64) (tlsInfo, bool) {
