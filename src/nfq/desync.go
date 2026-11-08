@@ -42,7 +42,19 @@ func dynamicTTL(packet []byte, isIPv6 bool, configTTL uint8) uint8 {
 
 func corruptTCPChecksum(pkt []byte, ipHdrLen int) {
 	pkt[ipHdrLen+16] ^= 0xFF
-	pkt[ipHdrLen+17] ^= 0xFF
+}
+
+func corruptUDPChecksum(pkt []byte, udpOffset int) {
+	if len(pkt) < udpOffset+8 {
+		return
+	}
+	field := pkt[udpOffset+6 : udpOffset+8]
+	sum := binary.BigEndian.Uint16(field)
+	bad := sum ^ 0xFF00
+	if bad == 0 {
+		bad = sum ^ 0x00FF
+	}
+	binary.BigEndian.PutUint16(field, bad)
 }
 
 func NewDesyncAttacker(cfg *config.TCPConfig) *DesyncAttacker {

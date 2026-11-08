@@ -119,7 +119,7 @@ func (w *Worker) sendCopies(raw []byte, dst net.IP, ver uint8, n int) {
 	}
 }
 
-func (w *Worker) injectHeldThen(set *config.SetConfig, held *helloHold, cur []byte, dst net.IP, ver uint8) {
+func (w *Worker) injectHeldThen(set *config.SetConfig, held *helloHold, cur []byte, dst net.IP, ver uint8, fakes bool) {
 	inject := w.dropAndInjectTCP
 	if ver != IPv4 {
 		inject = w.dropAndInjectTCPv6
@@ -131,7 +131,7 @@ func (w *Worker) injectHeldThen(set *config.SetConfig, held *helloHold, cur []by
 				injectRelease()
 				w.wg.Done()
 			}()
-			inject(set, cur, dst)
+			inject(set, cur, dst, fakes)
 		}()
 		return
 	}
@@ -144,7 +144,7 @@ func (w *Worker) injectHeldThen(set *config.SetConfig, held *helloHold, cur []by
 			w.wg.Done()
 		}()
 		close(started)
-		inject(set, held.raw, held.dst)
+		inject(set, held.raw, held.dst, true)
 	}()
 	go func() {
 		defer func() {
@@ -153,6 +153,6 @@ func (w *Worker) injectHeldThen(set *config.SetConfig, held *helloHold, cur []by
 		}()
 		<-started
 		time.Sleep(stagger)
-		inject(set, cur, dst)
+		inject(set, cur, dst, fakes)
 	}()
 }

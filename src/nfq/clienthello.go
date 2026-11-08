@@ -74,6 +74,15 @@ func startsMessage(payload []byte) bool {
 	return startsClientHelloRecord(payload) || looksLikeHTTPRequest(bytes.TrimPrefix(payload, methodEOL))
 }
 
+func helloRecordLen(payload []byte) uint32 {
+	for i := 0; i+5 < len(payload); i++ {
+		if payload[i] == TLSHandshakeType && payload[i+1] == TLSVersionMajor && payload[i+5] == TLSClientHello {
+			return uint32(i) + 5 + (uint32(payload[i+3])<<8 | uint32(payload[i+4]))
+		}
+	}
+	return 0
+}
+
 func truncatedClientHello(payload []byte) bool {
 	if !startsClientHello(payload) {
 		return false

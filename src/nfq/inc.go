@@ -155,13 +155,13 @@ func (w *Worker) applyCorruption(fake []byte, ihl int, strategy string) {
 		binary.BigEndian.PutUint32(fake[ihl+8:ihl+12], ack+uint32(rand.Intn(100000)+10000))
 		sock.FixIPv4Checksum(fake[:ihl])
 		// Corrupt checksum after fixing
-		fake[ihl+16] ^= byte(rand.Intn(255) + 1)
-		fake[ihl+17] ^= byte(rand.Intn(255) + 1)
+		sock.FixTCPChecksum(fake)
+		sock.CorruptTCPChecksum(fake)
 
 	default: // "badsum"
 		sock.FixIPv4Checksum(fake[:ihl])
-		fake[ihl+16] ^= byte(rand.Intn(255) + 1)
-		fake[ihl+17] ^= byte(rand.Intn(255) + 1)
+		sock.FixTCPChecksum(fake)
+		sock.CorruptTCPChecksum(fake)
 	}
 }
 
@@ -193,12 +193,12 @@ func (w *Worker) applyCorruptionV6(fake []byte, strategy string) {
 		binary.BigEndian.PutUint32(fake[ipv6HdrLen+4:ipv6HdrLen+8], seq+uint32(rand.Intn(100000)+10000))
 		ack := binary.BigEndian.Uint32(fake[ipv6HdrLen+8 : ipv6HdrLen+12])
 		binary.BigEndian.PutUint32(fake[ipv6HdrLen+8:ipv6HdrLen+12], ack+uint32(rand.Intn(100000)+10000))
-		fake[ipv6HdrLen+16] ^= byte(rand.Intn(255) + 1)
-		fake[ipv6HdrLen+17] ^= byte(rand.Intn(255) + 1)
+		sock.FixTCPChecksumV6(fake)
+		sock.CorruptTCPChecksumV6(fake)
 
 	default: // "badsum"
-		fake[ipv6HdrLen+16] ^= byte(rand.Intn(255) + 1)
-		fake[ipv6HdrLen+17] ^= byte(rand.Intn(255) + 1)
+		sock.FixTCPChecksumV6(fake)
+		sock.CorruptTCPChecksumV6(fake)
 	}
 }
 

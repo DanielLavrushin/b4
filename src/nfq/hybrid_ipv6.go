@@ -6,7 +6,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 )
 
-func (w *Worker) sendHybridFragmentsV6(cfg *config.SetConfig, packet []byte, dst net.IP) {
+func (w *Worker) sendHybridFragmentsV6(cfg *config.SetConfig, packet []byte, dst net.IP, fakes bool) {
 	const ipv6HdrLen = 40
 
 	if len(packet) < ipv6HdrLen+20 {
@@ -29,7 +29,7 @@ func (w *Worker) sendHybridFragmentsV6(cfg *config.SetConfig, packet []byte, dst
 	sniStart, sniEnd, hasSNI := locateSNI(payload)
 
 	if extSplit > 5 && hasSNI && sniEnd-sniStart > 6 {
-		w.sendComboFragmentsV6(cfg, packet, dst)
+		w.sendComboFragmentsV6(cfg, packet, dst, fakes)
 	} else if hasSNI && sniEnd-sniStart > 6 {
 		w.sendDisorderFragmentsV6(cfg, packet, dst)
 	} else if extSplit > 5 {

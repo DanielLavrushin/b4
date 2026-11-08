@@ -457,7 +457,7 @@ func TestOnlyASynFromTheSameConnectionKeepsTheName(t *testing.T) {
 		{1001, 1001 + 1<<31, false},
 	}
 	for _, tc := range cases {
-		c.Store(key, "i.ytimg.com", 0x0304, tc.helloSeq, 0)
+		c.Store(key, "i.ytimg.com", 0x0304, tc.helloSeq, 0, 0)
 		c.DropOtherConnection(key, tc.firstSeq)
 		if _, _, found := c.Lookup(key); found != tc.keep {
 			t.Errorf("hello at %d, SYN for %d: keep=%v, want %v", tc.helloSeq, tc.firstSeq, found, tc.keep)
@@ -472,10 +472,10 @@ func TestAStaleDecisionDoesNotLandOnANewConnection(t *testing.T) {
 	oldSet := &config.SetConfig{Id: "old", Name: "Old"}
 	newSet := &config.SetConfig{Id: "new", Name: "New"}
 
-	c.Decide(key, c.Store(key, "old.example", 0x0304, 1001, 0), matcher, "", oldSet)
+	c.Decide(key, c.Store(key, "old.example", 0x0304, 1001, 0, 0), matcher, "", oldSet)
 	stale, _ := c.Decision(key)
 
-	gen := c.Store(key, "new.example", 0x0304, 90001, 0)
+	gen := c.Store(key, "new.example", 0x0304, 90001, 0, 0)
 	c.Decide(key, stale.gen, matcher, "", oldSet)
 	if d, _ := c.Decision(key); d.set != nil {
 		t.Fatalf("a decision for the previous connection must not land on the new entry before its own, got %q", d.set.Name)

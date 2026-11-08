@@ -11,7 +11,7 @@ import (
 	"github.com/daniellavrushin/b4/utils"
 )
 
-func (w *Worker) sendComboFragmentsV6(cfg *config.SetConfig, packet []byte, dst net.IP) {
+func (w *Worker) sendComboFragmentsV6(cfg *config.SetConfig, packet []byte, dst net.IP, fakes bool) {
 	pi, ok := ExtractPacketInfoV6(packet)
 	if !ok || pi.PayloadLen < 20 {
 		_ = w.sock.SendIPv6(packet, dst)
@@ -20,7 +20,7 @@ func (w *Worker) sendComboFragmentsV6(cfg *config.SetConfig, packet []byte, dst 
 
 	combo := &cfg.Fragmentation.Combo
 
-	if combo.DecoyEnabled {
+	if fakes && combo.DecoyEnabled {
 		w.sendDecoyPacketV6(cfg, packet, pi, dst)
 	}
 

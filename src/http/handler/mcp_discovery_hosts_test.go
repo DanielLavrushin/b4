@@ -288,7 +288,7 @@ func TestMCPDiscoveryApplyNamesThePageHostsItLeavesOut(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Their pages also load storage.ghost.io, docs.rferl.org, gdb.rferl.org, static.cloudflareinsights.com, which are blocked without b4",
-		`add them to set "combo" with b4_edit_set_targets (kind sni_domains)`,
+		`add them to set "svoboda.org" with b4_edit_set_targets (kind sni_domains)`,
 		"www.youtube.com (part of youtube",
 	} {
 		if !strings.Contains(applied.Note, want) {
@@ -305,7 +305,7 @@ func TestMCPDiscoveryApplyNamesThePageHostsItLeavesOut(t *testing.T) {
 	}
 
 	again := decodeDiscovery(t, callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "holod.media", "id": suite.Id}))
-	if again.Changed || !strings.Contains(again.Note, `add them to set "combo"`) {
+	if again.Changed || !strings.Contains(again.Note, `add them to set "svoboda.org"`) {
 		t.Errorf("the set already there still lacks the hosts, so the note must name it as the place to add them: %+v", again)
 	}
 }

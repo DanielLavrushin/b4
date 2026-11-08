@@ -701,7 +701,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		var helloGen uint64
 		if host != "" && tlsVersion != 0 {
-			helloGen = w.tlsCache.Store(connKey, host, tlsVersion, helloSeq, clientHelloID(helloRecord))
+			helloGen = w.tlsCache.Store(connKey, host, tlsVersion, helloSeq, clientHelloID(helloRecord), helloRecordLen(helloRecord))
 		}
 
 		if captureManager := capture.GetManager(cfg); captureManager != nil {
@@ -1029,7 +1029,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		if held != nil {
 			held.settle(nfqueue.NfDrop, "sent through set "+set.Name)
 		}
-		w.injectHeldThen(setCopy, held, packetCopy, dstCopy, pkt.ver)
+		w.injectHeldThen(setCopy, held, packetCopy, dstCopy, pkt.ver, !w.tlsCache.PastHello(connKey, binary.BigEndian.Uint32(tcp[4:8])))
 		return 0
 	}
 
