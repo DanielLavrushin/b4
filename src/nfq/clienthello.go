@@ -75,9 +75,14 @@ func startsMessage(payload []byte) bool {
 }
 
 func helloRecordLen(payload []byte) uint32 {
-	for i := 0; i+5 < len(payload); i++ {
+	for i := 0; i+8 < len(payload); i++ {
 		if payload[i] == TLSHandshakeType && payload[i+1] == TLSVersionMajor && payload[i+5] == TLSClientHello {
-			return uint32(i) + 5 + (uint32(payload[i+3])<<8 | uint32(payload[i+4]))
+			recLen := uint32(payload[i+3])<<8 | uint32(payload[i+4])
+			msgLen := uint32(payload[i+6])<<16 | uint32(payload[i+7])<<8 | uint32(payload[i+8])
+			if msgLen+4 > recLen {
+				return 0
+			}
+			return uint32(i) + 5 + recLen
 		}
 	}
 	return 0

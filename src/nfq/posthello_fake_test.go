@@ -348,6 +348,39 @@ func TestASplitSecondClientHelloKeepsAFakeOnItsSecondSegment(t *testing.T) {
 	}
 }
 
+func twoRecordHello(host string, cut int) ([]byte, int) {
+	single := helloWithEarlySNI(host)
+	handshake := single[5:]
+	record := func(part []byte) []byte {
+		rec := []byte{0x16, single[1], single[2], byte(len(part) >> 8), byte(len(part))}
+		return append(rec, part...)
+	}
+	first := record(handshake[:cut])
+	return append(first, record(handshake[cut:])...), len(first)
+}
+
+func TestAClientHelloSplitIntoTwoRecordsKeepsAFakeOnTheSecond(t *testing.T) {
+	set := newFakingSet(true)
+	cfg := config.NewConfig()
+	cfg.Sets = []*config.SetConfig{&set}
+	w := newTestWorker(t, &cfg)
+	sent := captureInjected(t, w)
+	fake := sock.GetPayload(&set.Faking)
+	const base = uint32(1000)
+
+	hello, firstRecord := twoRecordHello("i.ytimg.com", 300)
+	w.ProcessPacket(makeV4TCPPacket(hello[:firstRecord], base))
+	if got := fakeHelloSeqs(sent(), fake); !slices.Equal(got, []uint32{base}) {
+		t.Fatalf("the first record with the SNI: fake hellos at %v, want one at %d", got, base)
+	}
+
+	second := base + uint32(firstRecord)
+	w.ProcessPacket(makeV4TCPPacket(hello[firstRecord:], second))
+	if got := fakeHelloSeqs(sent(), fake); !slices.Equal(got, []uint32{second}) {
+		t.Errorf("the second record of the same ClientHello: fake hellos at %v, want one at %d", got, second)
+	}
+}
+
 func TestAFakeOnlySetLeavesSegmentTwoOfAHelloWithAnEarlySNIAlone(t *testing.T) {
 	set := newFakingSet(false)
 	cfg := config.NewConfig()
