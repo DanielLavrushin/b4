@@ -84,4 +84,8 @@ Such a site needs another way out: [Routing sites through a VPN](../guides/vpn.m
 
 When a page opens without its styles or images, the other hosts it loads them from can be blocked too. The Discovery result card lists the [page hosts](../discovery.md#page-hosts) that the strategy opens, and **Apply** in the Discovery history offers them again.
 
+### 10. The site fails only on some devices {#some-devices-only}
+
+A set with the fake strategy **TCP Timestamp** relies on TCP timestamps, and Windows sends none by default. On a connection without them the fake goes out as with **TCP Check**, and the **Logs** page shows a warning that names the set and the device. When the site stays blocked on that device, `netsh interface tcp set global timestamps=enabled` in an administrator console turns timestamps on. Another fake strategy for the set is the other way. The strategies are described in [Faking](../sets/tcp/faking.md).
+
 When every check passes and the site still does not open, [Reporting a problem](./reporting.md) lists what to collect for a bug report.
