@@ -66,21 +66,6 @@ const H2Typography = forwardRef<
   );
 });
 
-const H3Typography = forwardRef<
-  HTMLHeadingElement,
-  React.ComponentProps<typeof Typography>
->(function H3Typography(props, ref) {
-  return (
-    <Typography
-      component="h3"
-      variant="body2"
-      sx={{ fontWeight: 700 }}
-      ref={ref}
-      {...props}
-    />
-  );
-});
-
 export const UpdateModal = ({
   open,
   onClose,
@@ -361,7 +346,7 @@ export const UpdateModal = ({
               "& a": { color: colors.secondary },
             }}
           >
-            <ReactMarkdown components={{ h2: H2Typography, h3: H3Typography }}>
+            <ReactMarkdown components={{ h2: H2Typography }}>
               {releaseNotes}
             </ReactMarkdown>
           </Box>
