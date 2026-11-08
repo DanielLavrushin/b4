@@ -669,6 +669,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		helloRecord := payload
 
 		host, tlsVersion, _ = sni.ParseTLSClientHelloSNI(payload)
+		if host == "" {
+			w.tlsCache.MoveHello(connKey, helloSeq, startedHelloLen(payload))
+		}
 
 		if host == "" && truncatedClientHello(payload) {
 			if named, resent := w.tlsCache.HelloAt(connKey, helloSeq, clientHelloID(payload)); resent {

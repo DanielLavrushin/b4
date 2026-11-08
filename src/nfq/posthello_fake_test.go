@@ -348,6 +348,62 @@ func TestASplitSecondClientHelloKeepsAFakeOnItsSecondSegment(t *testing.T) {
 	}
 }
 
+func helloWithLateSNI(host string) []byte {
+	return helloWithExtensions(
+		buildExtension(21, bytes.Repeat([]byte{0xAB}, 1000)),
+		buildSNIExtension(host),
+		buildExtension(43, []byte{0x02, 0x03, 0x04}),
+	)
+}
+
+func TestARetryClientHelloWithItsNameInSegmentTwoKeepsItsFakes(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		prefix []byte
+	}{
+		{"right after the first ClientHello", nil},
+		{"behind a change cipher spec record", []byte{0x14, 0x03, 0x03, 0x00, 0x01, 0x01}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			set := newFakingSet(true)
+			cfg := config.NewConfig()
+			cfg.Sets = []*config.SetConfig{&set}
+			w := newTestWorker(t, &cfg)
+			sent := captureInjected(t, w)
+			fake := sock.GetPayload(&set.Faking)
+			const base = uint32(1000)
+			const cut = 600
+
+			first := buildClientHello("i.ytimg.com", 16, 0xAB)
+			w.ProcessPacket(makeV4TCPPacket(first, base))
+			if got := fakeHelloSeqs(sent(), fake); !slices.Equal(got, []uint32{base}) {
+				t.Fatalf("the first ClientHello: fake hellos at %v, want one at %d", got, base)
+			}
+
+			flight := append(append([]byte(nil), c.prefix...), helloWithLateSNI("i.ytimg.com")...)
+			at := base + uint32(len(first))
+			for _, seg := range []struct {
+				name    string
+				payload []byte
+				seq     uint32
+			}{
+				{"segment 1 of the retry ClientHello, without the name", flight[:cut], at},
+				{"segment 2 with the name", flight[cut:], at + cut},
+			} {
+				w.ProcessPacket(makeV4TCPPacket(seg.payload, seg.seq))
+				if got := fakeHelloSeqs(sent(), fake); !slices.Equal(got, []uint32{seg.seq}) {
+					t.Errorf("%s: fake hellos at %v, want one at %d", seg.name, got, seg.seq)
+				}
+			}
+
+			w.ProcessPacket(makeV4TCPPacket(tlsAppData(200), at+uint32(len(flight))))
+			if got := fakeHelloSeqs(sent(), fake); len(got) != 0 {
+				t.Errorf("application data after the retry ClientHello: fake hellos at %v, want none", got)
+			}
+		})
+	}
+}
+
 func twoRecordHello(host string, cut int) ([]byte, int) {
 	single := helloWithEarlySNI(host)
 	handshake := single[5:]

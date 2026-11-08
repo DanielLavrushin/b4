@@ -88,6 +88,20 @@ func helloRecordLen(payload []byte) uint32 {
 	return 0
 }
 
+var changeCipherSpecRecord = []byte{0x14, TLSVersionMajor, 0x03, 0x00, 0x01, 0x01}
+
+func startedHelloLen(payload []byte) uint32 {
+	hello := bytes.TrimPrefix(payload, changeCipherSpecRecord)
+	if !startsClientHelloRecord(hello) {
+		return 0
+	}
+	n := helloRecordLen(hello)
+	if n == 0 {
+		return 0
+	}
+	return uint32(len(payload)-len(hello)) + n
+}
+
 func truncatedClientHello(payload []byte) bool {
 	if !startsClientHello(payload) {
 		return false
