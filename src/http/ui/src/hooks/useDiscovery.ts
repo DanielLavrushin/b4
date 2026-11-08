@@ -153,11 +153,13 @@ export function useDiscovery({
 
   useEffect(() => {
     if (!running && !finishing) return;
+    let active = true;
 
     const tick = async () => {
       if (!suiteId) {
         try {
           const current = await discoveryApi.current();
+          if (!active) return;
           if (isSuite(current)) {
             observeRun(current);
             setSuiteId(current.id);
@@ -169,12 +171,13 @@ export function useDiscovery({
             void loadHistory();
           }
         } catch {
-          setFinishing(false);
+          if (active) setFinishing(false);
         }
         return;
       }
       try {
         const data = await discoveryApi.status(suiteId);
+        if (!active) return;
         const shownPollError = pollErrorRef.current;
         if (shownPollError !== null) {
           pollErrorRef.current = null;
@@ -193,6 +196,7 @@ export function useDiscovery({
           void loadHistory();
         }
       } catch (e) {
+        if (!active) return;
         if (e instanceof ApiError && e.status === 404) {
           setRunning(false);
           setStopping(false);
@@ -212,7 +216,10 @@ export function useDiscovery({
 
     void tick();
     const timer = setInterval(() => void tick(), POLL_MS);
-    return () => clearInterval(timer);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, [suiteId, running, finishing, loadHistory]);
 
   useEffect(() => {
