@@ -16,6 +16,12 @@ import {
 import { B4SetConfig } from "@models/config";
 import { MAX_PROBE_URLS, wsUrl, describeApiError } from "@utils";
 import i18n from "@/i18n";
+import {
+  attachDiscoveryPage,
+  forgetRun,
+  observeRun,
+  watchRun,
+} from "@/stores/discoveryWatch";
 
 const POLL_MS = 1500;
 const IDLE_POLL_MS = 5000;
@@ -81,6 +87,8 @@ export function useDiscovery({
   const restoredRef = useRef<string | null>(null);
   const runGenRef = useRef(0);
 
+  useEffect(() => attachDiscoveryPage(), []);
+
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
@@ -121,6 +129,7 @@ export function useDiscovery({
         const current = await discoveryApi.current();
         if (isSuite(current)) {
           if (current.status === "running" || current.status === "pending") {
+            observeRun(current);
             setSuiteId(current.id);
             setSuite(current);
             setRunning(true);
@@ -148,6 +157,7 @@ export function useDiscovery({
         try {
           const current = await discoveryApi.current();
           if (isSuite(current)) {
+            observeRun(current);
             setSuiteId(current.id);
             setSuite(current);
             setRunning(true);
@@ -163,6 +173,7 @@ export function useDiscovery({
       }
       try {
         const data = await discoveryApi.status(suiteId);
+        observeRun(data);
         setSuite(data);
         if (!TERMINAL.has(data.status)) return;
         setRunning(false);
@@ -180,6 +191,7 @@ export function useDiscovery({
         setFinishRequested(false);
         setFinishing(false);
         if (e instanceof ApiError && e.status === 404) {
+          forgetRun(suiteId);
           setSuite(null);
           setSuiteId(null);
           void loadHistory();
@@ -212,6 +224,7 @@ export function useDiscovery({
             replaceable &&
             (current.status === "running" || current.status === "pending")
           ) {
+            observeRun(current);
             setSuiteId(current.id);
             setSuite(current);
             setRunning(true);
@@ -271,6 +284,7 @@ export function useDiscovery({
       setRunning(true);
       try {
         const res = await discoveryApi.start(normalized, options);
+        watchRun(res.id);
         setSuiteId(res.id);
         return { success: true };
       } catch (e) {

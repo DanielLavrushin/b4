@@ -2764,9 +2764,25 @@
       "openHub": "Open in Community"
     }
   },
+  "notify": {
+    "off": "Notify me",
+    "on": "Notifications on",
+    "blocked": "Notifications blocked",
+    "hintOn": "This browser shows a notification when a task finishes while b4 is in the background. Click to turn it off.",
+    "hintBlocked": "The browser blocks notifications from this page. Allow them in the browser's site settings."
+  },
   "discovery": {
     "title": "Discovery",
     "description": "Finds a bypass strategy for the sites you name and turns it into a set.",
+    "notify": {
+      "hint": "Show a browser notification when Discovery finishes while b4 is in the background",
+      "finished": "Discovery finished",
+      "failed": "Discovery failed",
+      "found_one": "Strategy found for {{found}} of {{count}} site",
+      "found_other": "Strategy found for {{found}} of {{count}} sites",
+      "notFound": "No strategy found",
+      "open": "Open"
+    },
     "dscp": "DSCP {{value}}, as the set's traffic",
     "input": {
       "label": "Site or URL",
