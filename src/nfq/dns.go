@@ -582,7 +582,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					if answersQuery {
 						observeDNSNames(clientIP, domain, added)
 					}
-					w.storeHostHints(clientIP, healSet, domain, added)
+					w.storeHealedHostHints(clientIP, healSet, domain, added)
 					if scope.learns(domain) {
 						waits, _ := learnAnswerAwait(w.getConfig(), healSet, added)
 						routeWaits = joinWaits(routeWaits, waits)
@@ -693,7 +693,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 	clientMac := w.getMacByIp(clientIP.String())
 	if filtered, action, actor := w.filterDNSAnswer(cfg, set, queryDomain, clientMac, resp, false, scope); filtered != nil {
 		logDNSEvent("UDP", actor, queryDomain, clientIP, originalDst, clientPort, clientMac, action)
-		w.learnAnswerAddresses(cfg, set, clientIP, queryDomain, addedAnswerIPs(resp, filtered), scope.learns(queryDomain), nil)
+		w.learnHealedAddresses(cfg, set, clientIP, queryDomain, addedAnswerIPs(resp, filtered), scope.learns(queryDomain), nil)
 		resp = filtered
 	}
 

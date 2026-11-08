@@ -656,6 +656,105 @@ func TestHealFallbackNeverHandsOutABannedAddress(t *testing.T) {
 	}
 }
 
+func TestHealAnswersABannedVideoServerWithASibling(t *testing.T) {
+	const node = "rr1---sn-gvnuxaxjvh-xnal.googlevideo.com"
+	w := healWorker(t, "188.128.43.206")
+	w.bans = newTestIPBans(t, nil)
+	w.goodIPs.Remember("rr2---sn-gvnuxaxjvh-xnal.googlevideo.com", net.ParseIP("188.128.43.205"))
+	w.goodIPs.Remember("rr3---sn-gvnuxaxjvh-xnal.googlevideo.com", net.ParseIP("188.128.43.206"))
+	w.goodIPs.Observe("rr4---sn-gvnuxaxjvh-xnal.googlevideo.com", net.ParseIP("188.128.43.207"))
+	w.goodIPs.Remember("rr1---sn-aj5goc-5x.googlevideo.com", net.ParseIP("74.125.111.129"))
+	w.goodIPs.Remember("rr5---sn-gvnuxaxjvh-xnal.googlevideo.com", net.ParseIP("203.0.113.7"))
+	banAddress(t, w.bans, "188.128.43.204", 443)
+	resp := buildTestAResponse(node, "188.128.43.204")
+
+	healed := w.healDNSResponse(&config.Config{}, healSetWith(true), node, resp, false)
+	if got := ipStrings(dns.ParseResponseIPs(healed)); got != "188.128.43.205" {
+		t.Fatalf("the banned server's name must be answered with its verified, reachable sibling in the same block only, got %q", got)
+	}
+	for _, ttl := range answerTTLs(healed) {
+		if ttl > config.DefaultIPBlockHealTTLSec {
+			t.Errorf("a sibling answer keeps the heal TTL cap, got %d", ttl)
+		}
+	}
+
+	healed = w.healDNSResponse(&config.Config{}, healSetWith(false), node, resp, false)
+	got := dns.ParseResponseIPs(healed)
+	slices.SortFunc(got, func(a, b net.IP) int { return strings.Compare(a.String(), b.String()) })
+	if ips := ipStrings(got); ips != "188.128.43.205,188.128.43.206" {
+		t.Fatalf("a ban alone, without heal_dns, answers with the verified siblings and does not judge reachability, got %q", ips)
+	}
+
+	banAddress(t, w.bans, "188.128.43.205", 443)
+	if healed := w.healDNSResponse(&config.Config{}, healSetWith(true), node, resp, false); healed != nil {
+		t.Errorf("with every verified sibling banned or unreachable the answer passes through unchanged, got %v", dns.ParseResponseIPs(healed))
+	}
+
+	w.goodIPs.Remember("other.example", net.ParseIP("9.9.9.9"))
+	other := buildTestAResponse("www.example.com", "188.128.43.204")
+	if healed := w.healDNSResponse(&config.Config{}, healSetWith(false), "www.example.com", other, false); healed != nil {
+		t.Errorf("a name that is not a video server never gets another name's address, got %v", dns.ParseResponseIPs(healed))
+	}
+}
+
+func TestHealFindsAnOlderSiblingBehindEightBannedOnes(t *testing.T) {
+	const node = "rr1---sn-gvnuxaxjvh-xnal.googlevideo.com"
+	w := healWorker(t)
+	w.bans = newTestIPBans(t, nil)
+	w.goodIPs.Remember("rr2---sn-gvnuxaxjvh-xnal.googlevideo.com", net.ParseIP("188.128.43.2"))
+	time.Sleep(2 * time.Millisecond)
+	for i := 3; i <= 10; i++ {
+		ip := fmt.Sprintf("188.128.43.%d", i)
+		w.goodIPs.Remember(fmt.Sprintf("rr%d---sn-gvnuxaxjvh-xnal.googlevideo.com", i), net.ParseIP(ip))
+		banAddress(t, w.bans, ip, 443)
+	}
+	banAddress(t, w.bans, "188.128.43.204", 443)
+
+	healed := w.healDNSResponse(&config.Config{}, healSetWith(false), node, buildTestAResponse(node, "188.128.43.204"), false)
+	if got := ipStrings(dns.ParseResponseIPs(healed)); got != "188.128.43.2" {
+		t.Fatalf("the older reachable sibling must be found behind eight fresher banned ones, got %q", got)
+	}
+}
+
+func TestASiblingAnswerDoesNotBecomeTheNamesOwnAddress(t *testing.T) {
+	const node = "rr1---sn-gvnuxaxjvh-xnal.googlevideo.com"
+	set := echTestSet("googlevideo", false, "googlevideo.com")
+	set.TCP.IPBlockDetect.Enabled = true
+	set.TCP.IPBlockDetect.HealDNS = true
+	w, _ := echTestWorker(t, set)
+	w.goodIPs = iphealth.NewKnownGood()
+	w.bans = newTestIPBans(t, nil)
+	banAddress(t, w.bans, "188.128.43.204", 443)
+	w.goodIPs.Remember("rr2---sn-gvnuxaxjvh-xnal.googlevideo.com", net.ParseIP("188.128.43.205"))
+	tcpRelayUpstream(t, net.ParseIP("188.128.43.204"))
+
+	if got := ipStrings(dns.ParseResponseIPs(tcpALookups(t, w, node)[0])); got != "188.128.43.205" {
+		t.Fatalf("a DNS-over-TCP answer for the banned server must carry its sibling, got %q", got)
+	}
+
+	w.goodIPs.Forget("rr2---sn-gvnuxaxjvh-xnal.googlevideo.com", net.ParseIP("188.128.43.205"))
+	if got := w.goodIPs.Lookup(node, false); len(got) != 0 {
+		t.Fatalf("an address b4 put into the answer is not evidence for the name, yet it is now listed as %v", got)
+	}
+	if got := ipStrings(dns.ParseResponseIPs(tcpALookups(t, w, node)[0])); got != "188.128.43.204" {
+		t.Errorf("once the sibling is no longer known, the answer passes through unchanged, got %q", got)
+	}
+}
+
+func TestHealPrefersTheNamesOwnKnownGoodAddressOverASibling(t *testing.T) {
+	const node = "rr1---sn-gvnuxaxjvh-xnal.googlevideo.com"
+	w := healWorker(t)
+	w.bans = newTestIPBans(t, nil)
+	w.goodIPs.Remember("rr2---sn-gvnuxaxjvh-xnal.googlevideo.com", net.ParseIP("188.128.43.205"))
+	w.goodIPs.Remember(node, net.ParseIP("188.128.43.209"))
+	banAddress(t, w.bans, "188.128.43.204", 443)
+
+	healed := w.healDNSResponse(&config.Config{}, healSetWith(false), node, buildTestAResponse(node, "188.128.43.204"), false)
+	if got := ipStrings(dns.ParseResponseIPs(healed)); got != "188.128.43.209" {
+		t.Fatalf("a usable address of the name itself wins over a sibling's, got %q", got)
+	}
+}
+
 func TestPinnedAnswerSkipsBannedPins(t *testing.T) {
 	w := healWorker(t)
 	w.bans = newTestIPBans(t, nil)

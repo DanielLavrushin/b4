@@ -63,11 +63,19 @@ func learnAnswerAwait(cfg *config.Config, set *config.SetConfig, ips []net.IP) (
 }
 
 func (w *Worker) learnAnswerAddresses(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, ips []net.IP, learn bool, cancel <-chan struct{}) {
+	w.learnAddresses(cfg, set, clientIP, domain, ips, learn, true, cancel)
+}
+
+func (w *Worker) learnHealedAddresses(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, ips []net.IP, learn bool, cancel <-chan struct{}) {
+	w.learnAddresses(cfg, set, clientIP, domain, ips, learn, false, cancel)
+}
+
+func (w *Worker) learnAddresses(cfg *config.Config, set *config.SetConfig, clientIP net.IP, domain string, ips []net.IP, learn, fromUpstream bool, cancel <-chan struct{}) {
 	if len(ips) == 0 || clientIP == nil {
 		return
 	}
 	observeDNSNames(clientIP, domain, ips)
-	w.storeHostHints(clientIP, set, domain, ips)
+	w.storeHints(clientIP, set, domain, ips, fromUpstream)
 	if learn {
 		w.learnAnswerInline(cfg, set, ips, cancel)
 	}

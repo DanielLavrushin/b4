@@ -8,6 +8,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
+	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
 )
@@ -367,9 +368,11 @@ func (w *Worker) healDeadAddresses(cfg *config.Config, set *config.SetConfig, do
 		if !ok {
 			return nil
 		}
+		want6 := qtype == dnsTypeAAAA
+		usable := func(ip net.IP) bool { return !dead(ip) && !w.bans.bannedIP(ip) }
 		live := make([]net.IP, 0, 4)
-		for _, ip := range w.goodIPs.Lookup(domain, qtype == dnsTypeAAAA) {
-			if !dead(ip) && !w.bans.bannedIP(ip) {
+		for _, ip := range w.goodIPs.Lookup(domain, want6) {
+			if usable(ip) {
 				live = append(live, ip)
 			}
 		}
@@ -379,9 +382,29 @@ func (w *Worker) healDeadAddresses(cfg *config.Config, set *config.SetConfig, do
 				return built
 			}
 		}
+		if built, via := w.siblingAnswer(resp, domain, ttlCap, usable); built != nil {
+			log.Warnf("DNS heal: every address for %s is %s, answering with %s, the address of %s, a server of the same video cluster that answered recently (set: %s)", domain, what, via.IP, via.Host, set.Name)
+			return built
+		}
 		log.Warnf("DNS heal: every address for %s is %s and no usable one has been seen for it, passing the answer through unchanged (set: %s)", domain, what, set.Name)
 	}
 	return nil
+}
+
+func (w *Worker) siblingAnswer(resp []byte, domain string, ttl uint32, usable func(net.IP) bool) ([]byte, iphealth.Sibling) {
+	siblings := w.goodIPs.LookupSiblings(domain, dns.ParseResponseIPs(resp), usable)
+	if len(siblings) == 0 {
+		return nil, iphealth.Sibling{}
+	}
+	picked := make([]net.IP, 0, len(siblings))
+	for _, s := range siblings {
+		picked = append(picked, s.IP)
+	}
+	built := dns.BuildAnswerFromIPs(resp, ttl, picked)
+	if built == nil {
+		return nil, iphealth.Sibling{}
+	}
+	return built, siblings[0]
 }
 
 func healedKind(dead, banned bool) string {

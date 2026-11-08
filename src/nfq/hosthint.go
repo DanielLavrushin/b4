@@ -200,11 +200,19 @@ func (w *Worker) storeHostHint(clientIP, destIP string, set *config.SetConfig, h
 }
 
 func (w *Worker) storeHostHints(clientIP net.IP, set *config.SetConfig, host string, ips []net.IP) {
+	w.storeHints(clientIP, set, host, ips, true)
+}
+
+func (w *Worker) storeHealedHostHints(clientIP net.IP, set *config.SetConfig, host string, ips []net.IP) {
+	w.storeHints(clientIP, set, host, ips, false)
+}
+
+func (w *Worker) storeHints(clientIP net.IP, set *config.SetConfig, host string, ips []net.IP, fromUpstream bool) {
 	if w == nil || clientIP == nil || len(ips) == 0 {
 		return
 	}
 
-	observe := w.goodIPs != nil && host != "" && set != nil &&
+	observe := fromUpstream && w.goodIPs != nil && host != "" && set != nil &&
 		set.TCP.IPBlockDetect.Enabled && set.TCP.IPBlockDetect.HealDNS
 
 	client := clientIP.String()

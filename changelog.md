@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.91.0] - 2026-11-08
+
+- CHANGED: **A YouTube video server with a banned address is answered with another server of its group** - each video server has a name with a single address. A ban left nothing else to answer that name with, so apps kept retrying the banned server. DNS answers for such a name carry the addresses of other servers of the same group whose answers b4 saw within the last day.
+
 ## [1.90.0] - 2026-11-07
 
 - FIXED: **AI apps on the newest MCP protocol, such as Antigravity CLI, lost the connection to b4 before its tools appeared** - such an app sends some notifications without the protocol version, and b4 refused them. The app then closed the connection. Cancelling a running tool from such an app did not stop the tool in b4 either.

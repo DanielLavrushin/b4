@@ -62,7 +62,7 @@ While an address is banned:
 
 - New connections to the address and port are reset at once in every set with IP block detection and **Cache Blocked IPs** on. QUIC to that address and port is refused. A device can then move on to the site's next address, if the site has one.
 - A set that routes through a proxy, or through a TUN, TAP or WireGuard interface that is up, leaves its connections to the address alone. A connection that another service sends into a tunnel is left alone too, see [Packets that leave by another route](../../internals/capture.md#tunnel-egress). A set routed to another interface, such as a second uplink, still resets or refuses its connections.
-- DNS answers for the domains of every set leave it out. When every address of an answer is banned, b4 answers with an address that worked for the domain before. When it knows none, the answer passes unchanged.
+- DNS answers for the domains of every set leave it out. When every address of an answer is banned, b4 answers with an address that worked for the domain before. For a YouTube video server, the address of another server of the same group that answered recently also counts. When it knows none, the answer passes unchanged.
 - The [Traffic](../../connections.md) page labels the connections b4 resets or refuses `ban`.
 
 A ban lasts 24 hours by default. An address banned again within 30 days after its previous ban ended is banned for 7 days. b4 tests a banned address again at every **Retest interval (seconds)** and lifts the ban early after three successful tests in a row. Bans stay across restarts and set changes.

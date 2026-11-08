@@ -245,7 +245,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		if bansActive && set != nil {
 			if healed := s.worker.healDeadAddresses(cfg, set, domain, resp, true); healed != nil {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionHeal)
-				s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, addedAnswerIPs(resp, healed), scope.learns(domain), s.ctx.Done())
+				s.worker.learnHealedAddresses(cfg, set, clientIP, domain, addedAnswerIPs(resp, healed), scope.learns(domain), s.ctx.Done())
 				resp = healed
 			}
 		}
@@ -423,7 +423,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 
 		if filtered, action, actor := s.worker.filterDNSAnswer(cfg, set, domain, srcMac, resp, true, scope); filtered != nil {
 			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, action)
-			s.worker.learnAnswerAddresses(cfg, set, clientIP, domain, addedAnswerIPs(resp, filtered), scope.learns(domain), s.ctx.Done())
+			s.worker.learnHealedAddresses(cfg, set, clientIP, domain, addedAnswerIPs(resp, filtered), scope.learns(domain), s.ctx.Done())
 			resp = filtered
 		}
 
