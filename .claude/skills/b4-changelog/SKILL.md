@@ -1,94 +1,203 @@
 ---
 name: b4-changelog
-description: Write or edit an entry in b4's changelog.md and its Russian mirror changelog_ru.md, or in hub/CHANGELOG.md for the b4hub service. Use whenever a change needs to be recorded for a release, when asked to "add a changelog entry", when cutting a version, when editing existing changelog wording, or after changing anything under hub/.
+description: Write or edit an entry in b4's changelog.md and its Russian mirror changelog_ru.md, or in hub/CHANGELOG.md for the b4hub service, in the Keep a Changelog format. Use whenever a change needs to be recorded for a release, when asked to "add a changelog entry", when cutting a version, when editing existing changelog wording, or after changing anything under hub/.
 ---
 
-# Changelog entry
+# Changelog
 
-b4 keeps two changelogs that must stay in lockstep: `changelog.md` (English) and
-`changelog_ru.md` (Russian). An entry that lands in one and not the other is a bug.
+b4's changelogs follow [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). There
+are three files:
 
-## Shape
+- `changelog.md`: the router service, English.
+- `changelog_ru.md`: its Russian mirror. Both files have the same versions, the same sections
+  and the same number of bullets in each section. An entry that lands in one and not the
+  other is a bug.
+- `hub/CHANGELOG.md`: the b4hub service, English only, its own versions (see "Hub changelog").
+
+## Who reads it
+
+The reader is a b4 user deciding whether to update and wanting to know what they get. They
+see a version's block in the web UI's update dialog, on the GitHub release page and on the
+docs site. They do not read code, commits or PRs. Everything below follows from that.
+
+## Keep a Changelog principles
+
+- Changelogs are for humans, not machines. Never paste a commit log or a PR list.
+- Every released version has a block. The newest is first.
+- Each block carries its release date, `YYYY-MM-DD`.
+- Changes are grouped by type under fixed section headings.
+- Unreleased changes collect at the top under `## [Unreleased]`, so a reader can see what
+  is coming and cutting a release is a rename.
+- Versions are linkable: link references at the bottom of the file.
+- Record only notable changes, but do record all of them: a changelog that hides a change
+  users will notice, such as a removed option or a converted setting, is worse than none.
+  "Notable" is the test, not a count: a release with many real changes has many bullets.
+
+## File shape
 
 ```
-## [1.79.0] - 2026-08-18
+# Changelog
 
-- ADDED: **One-line summary in bold** - the rest of the paragraph, plain prose.
-- FIXED: **One-line summary in bold** - the rest of the paragraph, plain prose.
-- CHANGED: **One-line summary in bold** - the rest of the paragraph, plain prose.
+All notable changes to b4 are recorded in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [Unreleased]
+
+### Fixed
+
+- A set using **Combo** with an **Overlap Length** could break connections soon after they opened, because the overlap was added to later packets too.
+
+## [1.90.0] - 2026-11-07
+
+### Added
+
+- **Discovery** finds the other blocked hosts a site's page needs: the new **Page hosts** step tests them, and **Apply as a set** adds the ticked ones.
+
+[unreleased]: https://github.com/DanielLavrushin/b4/compare/v1.90.0...HEAD
+[1.90.0]: https://github.com/DanielLavrushin/b4/compare/v1.89.1...v1.90.0
 ```
 
-Russian uses `ДОБАВЛЕНО:`, `ИСПРАВЛЕНО:`, `ИЗМЕНЕНО:` in the same order, same bullets,
-same count. Newest version at the top, under the `# B4 - Bye Bye Big Bro` heading.
+Hard format rules. Code reads these files, so they are not style choices:
 
-One bullet per feature or fix. Do not split one change across several bullets, and do not
-bundle unrelated changes into one.
+- A version heading is exactly `## [x.y.z] - YYYY-MM-DD`: no `v`, no other text. The web UI
+  on every installed b4 fetches `changelog_ru.md` from `main` and splits it on
+  `## [version]`; the release workflow and the docs site read the same heading.
+- `## [Unreleased]` is spelled in English in both files, never translated. The pre-merge
+  check compares the top headings of the two files character for character.
+- Section headings are `###`, in this order, each only when it has bullets:
 
-## Collapse a release's worth of work into few bullets
+  | English | Russian | What goes in |
+  | --- | --- | --- |
+  | `### Added` | `### Добавлено` | New features, controls, settings, platforms. |
+  | `### Changed` | `### Изменено` | Deliberate changes to existing behaviour, defaults, UI locations, converted settings. |
+  | `### Deprecated` | `### Устарело` | Something that still works but will be removed. |
+  | `### Removed` | `### Удалено` | A feature, option, tab or platform that is gone. |
+  | `### Fixed` | `### Исправлено` | Defects a user of the last stable release could hit. |
+  | `### Security` | `### Безопасность` | Anything that exposed users or their data, fixed or hardened. |
+
+- No `ADDED:` / `FIXED:` / `ИСПРАВЛЕНО:` prefixes on bullets: the section heading carries
+  the type.
+- One blank line around every heading and a blank line between a heading and its list.
+- Link references live at the very bottom, newest first: `[unreleased]` compares the latest
+  tag with `HEAD`, each version compares the previous tag with its own. A version without a
+  git tag (1.76.3 was never tagged) gets no reference.
+
+## What earns a bullet
+
+Before writing, ask: would a user of the last stable release notice this, or need to do
+something about it? If not, it gets no bullet.
+
+In:
+
+- New features, controls, settings and supported platforms.
+- Behaviour a user will see change: a default, a UI location, a converted value, a removed
+  option.
+- Defects that shipped in a stable release and that a user could hit.
+- Anything with a security impact.
+
+Out:
+
+- Refactors, tests, CI, build scripts, docs-only changes, code style.
+- A fix for something that existed only in an rc or in unreleased work. Check each Fixed
+  bullet against the last stable tag, not the rc tags.
+- Installer-only changes (`installer/`, `install.sh`): `install.sh` is served from `main`,
+  so they reach users when they land. They get no entry and no version bump. They may be
+  mentioned inside a binary release's bullet they shipped with.
+- Performance or memory changes nobody would notice.
+
+**Collapse the small ones.** A narrow fix that few users meet does not get its own
+bullet. Several of them in one area go into one bullet that names them briefly, keeping
+every issue link and credit:
+
+```
+- AI apps connected over **MCP** could lose the connection before the tools appeared (Antigravity CLI), wait a minute behind nginx, or fail to stop a cancelled tool.
+```
+
+## Group by what the user gained
 
 **A feature is one bullet, however many commits, tools or settings it took.** The unit is
-what a user gained, not what was built. Work that took a week of changes across a dozen
-files is still one bullet if a user would describe it in one sentence.
+what a user gained, not what was built. Name the capability once and list what it covers
+inside that bullet.
 
-The failure mode to avoid: shipping a subsystem and writing a bullet per piece of it. Nine
-bullets about one MCP release is nine chances for a reader to give up. Name the capability
-once and list what it covers inside that bullet.
-
-Before writing, group everything in the release by the sentence a user would say. Then:
-
-- Merge every bullet that shares a sentence. A new permission, the tools it unlocks and the
-  UI switch that turns it on are one bullet, not three.
-- A defect found and fixed *while building the feature* belongs inside the feature's bullet,
-  not beside it. It was never shipped broken.
+- Merge every bullet that shares the sentence a user would say. A new permission, the tools
+  it unlocks and the UI switch that turns it on are one bullet, not three.
+- A defect found and fixed *while building the feature* belongs inside the feature's bullet.
+  It was never shipped broken.
 - Split only when a reader is genuinely different: something that changes behaviour for
-  users who never touch the new feature earns its own bullet, because they need to see it
-  and the feature's audience does not.
-- Prefer the fix over the mechanism. Three symptoms of one root cause are one bullet.
+  users who never touch the new feature earns its own bullet.
+- Three symptoms of one root cause are one bullet.
 
-A release with more than about six bullets usually means the grouping was not done. Ten is
-almost always wrong.
+There is no target count. A long block is fine when every bullet is a different notable
+change; it is a problem when several bullets describe one feature or one root cause.
 
-**Re-read the whole block, not the line you just added.** This is where it goes wrong every
-time: entries get written one at a time, in whichever session that piece landed, and each
-reads fine on its own. The count creeps up and nobody sees it until the release is
-unreadable - 1.79.0 drifted on bullet length, one MCP release reached 12 bullets, 1.80.0
-reached 31. After any session that touches the changelog, re-read the entire version block
-and re-group it.
+**Re-read the whole block, not the line you just added.** Entries get written one at a time,
+in whichever session that piece landed, and each reads fine on its own. Bullets about the
+same feature pile up unnoticed: 1.90.0 shipped six bullets for one IP Block Detection
+problem and four for MCP. After any session that touches the changelog, re-read the whole
+`[Unreleased]` block and re-group it. Merging is where errors
+creep in: re-verify every merged bullet against its sources. The 1.83.0 regroup dropped a
+condition, chained a cause onto the wrong symptom, gave a symptom to the wrong subject and
+widened a scope.
 
-When regrouping a release:
+## Writing a bullet
 
-- Check each FIXED bullet against the last stable tag, not the rc tags. A symptom that only
-  existed in an rc (a counter or card added after the tag) was never shipped and goes.
-- Group by reader: several symptoms for the same reader (TUN users, interface-set users)
-  can share one bullet; a different reader gets their own short bullet.
-- Merging is where errors creep in. Re-verify every merged bullet against its sources: the
-  1.83.0 regroup dropped a condition, chained a cause onto the wrong symptom, gave a symptom
-  to the wrong subject and widened a scope.
+A bullet is one plain sentence, in the style of Keep a Changelog's own examples. There is
+no bold summary followed by a paragraph: that form says everything twice.
 
-## The style rule that matters most
+```
+- A set using **Combo** with an **Overlap Length** could break connections soon after they opened, because the overlap was added to later packets too.
+```
 
-**A FIXED bullet describes only the problem.**
+- **One sentence by default.** For Fixed: the symptom the user saw, at most with a short
+  cause. For Added, Changed, Removed: what the user gains or loses, with the UI path or the
+  converted value they need. A second short sentence only when the user must know or do
+  something more (Security bullets, a setting to change after updating). Never three.
+- **Bold the b4 features and UI names** the bullet mentions, the way the docs do: **Discovery**,
+  **Manual Bypass IPs**, **IP Block Detection**, **Escalation**, **MCP**, **Payloads**,
+  **Settings, Core, Devices**. Use the UI's exact label. Bold only those names, never a whole
+  phrase, a symptom or ordinary words.
+- **Backticks only for literal values** a user would type or read: config keys such as
+  `logging.instaflush`, header names such as `X-Forwarded-Proto`, file names, commands.
+- Cut every clause that survives without changing what a user learns: mechanism
+  walkthroughs, what else was tried, boundary caveats. Aim for under 200 characters, links
+  excluded.
 
-The entry is in the list because it was fixed; the tag already says so. The bold summary is
-the symptom the user saw, the paragraph gives its cause, and the bullet stops there. Never
-state the remedy - not as a promise, not as a neutral present-tense sentence, and not as a
-UI path pointing at where some new warning appears. If a FIXED line feels unfinished, that
-is the rule working: delete the last sentence.
+### A Fixed bullet describes only the problem
 
-Only ADDED and CHANGED bullets say what the thing does, because there the change is the
-content: a new control has to be named, a deliberate behaviour change has to be stated.
+The bullet is under Fixed because it was fixed; the heading says so. The sentence is the
+symptom the user saw, with at most its cause, and the bullet stops there. Never state
+the remedy: not as a promise, not as a neutral present-tense sentence, not as a UI path
+pointing at where a new warning appears. If a Fixed bullet feels unfinished, that is the
+rule working: delete the last sentence.
+
+Only Added, Changed, Removed and Deprecated bullets say what the thing does, because there
+the change is the content. A Security bullet names the exposure; when users must act on
+the change (set a login, pass a header through a proxy), a second sentence says what to do.
 
 **Hard ban on promise closers.** Never write "now does X", "now works", "now correctly",
-"is now", and never the Russian "Теперь". Dropping the "now" is not a way round this on a
-FIXED line - "b4 waits for the lock itself" is the same remedy sentence with the temporal
+"is now", and never the Russian "Теперь". Dropping the "now" is not a way round this in a
+Fixed bullet: "b4 waits for the lock itself" is the same remedy sentence with the temporal
 marker filed off, and it goes too.
 
 - Bad: `Test connections now use the version b4 is set to handle.`
 - Bad: `Test connections use the version b4 is set to handle, and the log names it at the start of every run.`
 - Good: `Test connections were made with whatever version the library defaulted to, so a run could pass on a protocol the router never speaks.`
 
-The existing file is not uniformly clean. A stray "now" or "теперь" in an older entry is a
-past miss, not a licence to add more.
+### Voice
+
+- Plain language, no marketing. No exclamation, no "seamlessly", no "powerful".
+- No em-dash anywhere. Plain hyphen with spaces where a dash is needed.
+- Describe behaviour, not code. "a set bound to a manually added source device stopped
+  taking its route" beats "fixed nil deref in buildDeviceMatch".
+- Write for non-technical users. Drop jargon such as RFC numbers, CGNAT, TSPU, SNI, DoH or
+  TLS handshake stages, and describe the effect a user sees. Use the UI's own feature names
+  (**DPI Detector**) and refer to UI locations the way the UI labels them ("under
+  **Settings, Core, Devices**").
+- b4 is a "service", not a "program".
+
+Example of the density to aim for:
+
+- Bad: `- **A set with Domain-only matching on applied only to the start of each connection** - the rest of the connection went out without the set's strategy and showed no set on the Traffic page. Where several sets share an address, those packets could get another set's strategy instead. b4 picked the set for them by address, and a domain-only set does not track addresses.`
+- Good: `- A set with **Domain-only matching** on applied its strategy only to the start of each connection, and the rest showed no set on the **Traffic** page.`
 
 ## Link the fixed issue
 
@@ -97,11 +206,11 @@ which issue a bullet resolves, end that bullet with a link to the issue, after t
 sentence, separated by a space:
 
 ```
-- FIXED: **With the UDP action Coalesce QUIC Initial, sites did not open over QUIC in Chrome** - b4 put the padding packet in front of every packet of a connection's QUIC handshake, not only the one that carries the site name. The servers left those packets unanswered. [#427](https://github.com/DanielLavrushin/b4/issues/427)
+- With the UDP action **Coalesce QUIC Initial**, sites did not open over QUIC in Chrome, because the padding went in front of every handshake packet. [#427](https://github.com/DanielLavrushin/b4/issues/427)
 ```
 
 - Full URL, `[#N](https://github.com/DanielLavrushin/b4/issues/N)`, never a bare `#N`:
-  the changelog is read outside GitHub, in the release notes and the docs.
+  the changelog is read outside GitHub, in the update dialog and the docs.
 - Several issues behind one bullet: list them all, comma-separated,
   `[#448](...), [#449](...)`.
 - Two bullets that each fix part of the same issue both carry its link.
@@ -109,7 +218,7 @@ sentence, separated by a space:
 - Link only issues the change actually resolves. Find them in the PR's closing keywords
   (`gh pr view <n> --json closingIssuesReferences`), the task brief or the issue you were
   given. Do not guess a number, and do not link an issue the change only touches on.
-- An ADDED or CHANGED bullet that answers a feature request links it the same way.
+- An Added or Changed bullet that answers a feature request links it the same way.
 - No issue, no issue link.
 
 ## Credit a contributor's pull request
@@ -119,7 +228,7 @@ bullet: the PR link, `thanks` and the author's GitHub profile, in parentheses. I
 go in the same parentheses after a semicolon:
 
 ```
-- FIXED: **Connections that another service on the router had marked, such as those of devices KeeneticOS lists for its hotspot or those MagiTrickle routes, got no strategy from b4's sets** - b4 took those marks for the marks of its own packets, which share a bit with them. ([#422](https://github.com/DanielLavrushin/b4/pull/422), thanks [@asovetov](https://github.com/asovetov); [#276](https://github.com/DanielLavrushin/b4/discussions/276))
+- Connections that another service on the router had marked, such as those MagiTrickle routes, got no strategy from b4's sets, because b4 took those marks for its own. ([#422](https://github.com/DanielLavrushin/b4/pull/422), thanks [@asovetov](https://github.com/asovetov); [#276](https://github.com/DanielLavrushin/b4/discussions/276))
 ```
 
 - Find the author with `gh pr view <n> --json author`. Use the GitHub login as shown,
@@ -130,80 +239,80 @@ go in the same parentheses after a semicolon:
 - Several contributors on one bullet: `thanks [@a](...), [@b](...)`.
 - The owner's own PRs (DanielLavrushin) get no credit and no PR link: only the issue link,
   as above.
-
-## Voice
-
-- Plain language, no marketing. No exclamation, no "seamlessly", no "powerful".
-- No em-dash anywhere. Plain hyphen, with spaces, as the separator after the bold summary.
-- Describe behaviour, not code. "a set bound to a manually added source device stopped
-  taking its route" beats "fixed nil deref in buildDeviceMatch".
-- Write for non-technical users. Drop jargon such as RFC numbers, CGNAT, TSPU, SNI, DoH or
-  TLS handshake stages, and describe the effect a user sees. Use the UI's own feature name
-  ("DPI Detector").
-- **Keep it short and simple to read.** One bullet is one user story. The bold summary is
-  one short sentence: the symptom the user saw (FIXED) or what the user gains (ADDED,
-  CHANGED). After the hyphen come one to three short sentences: the cause, or for ADDED and
-  CHANGED the detail a user needs (a new control, a converted value, a UI path). One idea
-  per sentence. A reader must get each sentence on the first read: when a sentence needs a
-  colon, a chain of "which", "where", "while", "so", or a second "and", split it. Two or
-  three short sentences beat one long one, but the content stays minimal: draft it, then
-  delete every clause that survives without changing what a user learns (internal mechanism
-  walkthroughs, what else was tried, boundary caveats). Splitting is no licence for a remedy
-  sentence: a FIXED entry still describes only the problem. 1.78.0 and 1.76.x are the target
-  density.
-  - Bad: `- FIXED: **With Domain-only matching on, a set handled only the packet carrying a connection's ClientHello: the Traffic page showed the set on that row alone, and the connection's later packets got neither the set's strategy nor its RST Injection Protection** - b4 chose the set for later packets by their destination address, which a domain-only set never learns, and on an address shared with other sets they went to whichever set had last learned it.`
-  - Good: `- FIXED: **A set with Domain-only matching on applied only to the start of each connection** - the rest of the connection went out without the set's strategy and showed no set on the Traffic page. Where several sets share an address, those packets could get another set's strategy instead. b4 picked the set for them by address, and a domain-only set does not track addresses.`
-- b4 is a "service". Refer to UI locations the way the UI labels them
-  ("under Settings, Core, Devices").
+- Regrouping or shortening never drops a credit or an issue link. A merged bullet carries
+  the links of every bullet it absorbed.
 
 ## Russian
 
-Mirror the English meaning, do not translate word for word. Follow the project's fixed
-choices: a routing set is "сет"; Discovery the feature is "Дискавери", while the act of
-searching stays "поиск"; payloads, strategy family names and technical terms stay in
-English (TLS, SNI, DPI, QUIC, ASN, MTProto, MSS, SOCKS5, NFQUEUE).
+Mirror the English meaning, do not translate word for word. The Russian file has the same
+versions, the same section headings (from the table above) and the same number of bullets in
+each section, in the same order.
 
+Follow the project's fixed choices: a routing set is "сет"; Discovery the feature is
+"Дискавери", while the act of searching stays "поиск"; payloads, strategy family names and
+technical terms stay in English (TLS, SNI, DPI, QUIC, ASN, MTProto, MSS, SOCKS5, NFQUEUE).
 The short-sentence rule holds in Russian too: no chains of «который», «где», «при этом» or
-stacked participle phrases. Split them into short sentences, keeping the English count.
+stacked participle phrases. UI names are bold, as in English, with the label exactly as
+`src/http/ui/src/i18n/ru.json` has it and no «» quotes around it: **Обнаружение блокировки
+по IP**, **Ручные IP обхода**, **Дискавери**.
 
-## Procedure
+## Procedure: adding an entry
 
-1. Read the top ~40 lines of `changelog.md` to match the current voice and the version
-   block you are adding to.
-2. Decide `ADDED` / `FIXED` / `CHANGED`. `CHANGED` is for a deliberate behaviour change
-   that was not itself a defect. An installer-only change (`installer/`, `install.sh`) gets
-   no entry and no version bump: `install.sh` is served from `main`, so the fix reaches
-   users when it lands. It may be mentioned inside a binary release's bullet it shipped with.
-3. Write the English bullet. Before keeping it, scan it for "now" and for a present-tense
-   verb that states the fixed behaviour as a closer (works, loads, stays, shows, stops,
-   applies, saves). Delete that clause.
-4. Write the Russian bullet at the mirrored position in `changelog_ru.md` and scan it the
+1. Read the `[Unreleased]` block of `changelog.md` to match the voice and see what is there.
+   If there is no `[Unreleased]` heading, add one above the newest version in both files.
+2. Decide whether the change earns a bullet at all ("What earns a bullet"). If it belongs
+   to something already listed, extend that bullet instead of adding one.
+3. Pick the section. Changed is for a deliberate behaviour change that was not itself a
+   defect. Security beats Fixed when users or their data were exposed.
+4. Write the English bullet. Scan it for "now" and for a present-tense verb that states the
+   fixed behaviour as a closer (works, loads, stays, shows, stops, applies, saves) and
+   delete that clause.
+5. Add issue links and contributor credit if they apply.
+6. Write the Russian bullet at the mirrored position in `changelog_ru.md` and scan it the
    same way ("Теперь", работает, загружается, остаётся, показывается).
-5. If the change resolves known issues, end both bullets with their links (see "Link the
-   fixed issue"). If it comes from a contributor's PR, add the PR link and the credit (see
-   "Credit a contributor's pull request").
-6. Verify both files have the same number of bullets under that version heading.
+7. Re-read the whole `[Unreleased]` block in both files and re-group if it drifted.
+8. Verify both files have the same sections and bullet counts under `[Unreleased]`.
 
-If changelog writing is delegated to a subagent, its brief must carry the short-sentence
-rule (one short summary, then one to three short sentences), the FIXED-describes-only-the-problem
-rule and the promise-closer ban verbatim. A brief that carried only the closer ban produced
-four-to-six-sentence bullets.
+## Procedure: cutting a release
+
+In both `changelog.md` and `changelog_ru.md`, in one commit before the release workflow runs:
+
+1. Re-read and re-group the `[Unreleased]` block against the targets above.
+2. Rename `## [Unreleased]` to `## [x.y.z] - YYYY-MM-DD` and add an empty `## [Unreleased]`
+   above it (an empty Unreleased has no sections).
+3. At the bottom, point `[unreleased]` at `compare/vx.y.z...HEAD` and add
+   `[x.y.z]: https://github.com/DanielLavrushin/b4/compare/v<previous>...vx.y.z` under it.
+
+The release workflow publishes the `## [x.y.z]` block as the GitHub release text and fails
+a stable release when that block is missing. A prerelease such as `1.91.0rc1` uses
+`## [1.91.0rc1]` if present, else `## [1.91.0]`, else the `[Unreleased]` block, so an rc
+needs no rename.
+
+## Delegating
+
+If changelog writing is delegated to a subagent, its brief must carry verbatim: the
+short-sentence rule, the Fixed-describes-only-the-problem rule, the promise-closer ban, the
+"what earns a bullet" lists, and the rule that no issue link or credit is dropped. A brief
+that carried only the closer ban produced four-to-six-sentence bullets.
 
 ## Hub changelog
 
-The hub service has a changelog of its own, `hub/CHANGELOG.md`, and every change under
-`hub/` (Go code, the console in `hub/ui`, the mirror, the `b4hub` CLI, the store schema)
-or to the deploy bundle in the b4hub repo gets a bullet there in the same session, the way
-router changes get one here. The b4hub release workflow refuses a version that has no
-block in this file, so the bullet is what makes a release possible.
+`hub/CHANGELOG.md` is the b4hub service's changelog, in the same format with these
+differences:
 
-Same shape and same rules as above, with three differences:
-
-- English only. There is no Russian mirror of the hub changelog.
-- Its own version, independent of the b4 version: semver from 1.0.0, newest block on top,
-  `## [x.y.z] - YYYY-MM-DD`. New capabilities bump the minor version, fixes alone the
-  patch. If the top block is already released (its version exists at
-  github.com/DanielLavrushin/b4hub/releases), start a new block above it.
-- A change that crosses both sides, such as the wire format in `src/hubwire` or the
-  router's hub client together with the hub, gets a bullet in each changelog, each written
-  for its reader: router users in `changelog.md`, hub operators in `hub/CHANGELOG.md`.
+- English only. There is no Russian mirror.
+- Its own version, independent of b4: semver from 1.0.0, `## [x.y.z] - YYYY-MM-DD`. New
+  capabilities bump the minor version, fixes alone the patch.
+- **No `[Unreleased]` section.** The release workflow in the b4hub repository takes the top
+  `## [` block and refuses the release unless its heading carries the version being
+  released. Write changes straight into the next version's block. If the top block is
+  already released (its version exists at github.com/DanielLavrushin/b4hub/releases), start
+  a new block above it.
+- Every change under `hub/` (Go code, the console in `hub/ui`, the mirror, the `b4hub` CLI,
+  the store schema) or to the deploy bundle in the b4hub repo gets a bullet in the same
+  session.
+- Link references at the bottom compare the b4hub repository's tags:
+  `[x.y.z]: https://github.com/DanielLavrushin/b4hub/compare/v<previous>...vx.y.z`.
+- A change that crosses both sides, such as the wire format in `src/hubwire` or the router's
+  hub client together with the hub, gets a bullet in each changelog, each written for its
+  reader: router users in `changelog.md`, hub operators in `hub/CHANGELOG.md`.
