@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useEffect } from "react";
+import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { ApiError } from "@api/apiClient";
@@ -49,14 +49,8 @@ function describeRun(suite: DiscoverySuite, t: TFunction): Notice {
 export function DiscoveryNotifier() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
   const notify = useNotify();
-  const { run, pageOpen } = useDiscoveryWatch();
-  const onPage = useRef(false);
-
-  useEffect(() => {
-    onPage.current = pathname.startsWith(DISCOVERY_PATH);
-  }, [pathname]);
+  const { run, pageRun } = useDiscoveryWatch();
 
   useEffect(() => {
     let active = true;
@@ -75,7 +69,7 @@ export function DiscoveryNotifier() {
   }, []);
 
   useEffect(() => {
-    if (!run || pageOpen) return;
+    if (!run || run === pageRun) return;
     let active = true;
     const tick = async () => {
       try {
@@ -91,15 +85,15 @@ export function DiscoveryNotifier() {
       active = false;
       clearInterval(timer);
     };
-  }, [run, pageOpen]);
+  }, [run, pageRun]);
 
   useEffect(
     () =>
-      onRunFinished((suite) => {
+      onRunFinished((suite, shown) => {
         notify({
           ...describeRun(suite, t),
           tag: `b4-discovery-${suite.id}`,
-          inApp: !onPage.current,
+          inApp: !shown,
           action: {
             label: t("discovery.notify.open"),
             onClick: () => {

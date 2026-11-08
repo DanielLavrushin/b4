@@ -5,13 +5,12 @@ const TERMINAL = new Set(["complete", "failed", "canceled"]);
 
 interface WatchState {
   run: string | null;
-  pageOpen: boolean;
+  pageRun: string | null;
 }
 
-type FinishedListener = (suite: DiscoverySuite) => void;
+type FinishedListener = (suite: DiscoverySuite, shown: boolean) => void;
 
-let state: WatchState = { run: null, pageOpen: false };
-let pages = 0;
+let state: WatchState = { run: null, pageRun: null };
 const settled = new Set<string>();
 const listeners = new Set<() => void>();
 const finishedListeners = new Set<FinishedListener>();
@@ -30,7 +29,10 @@ export function forgetRun(id: string) {
   if (state.run === id) update({ run: null });
 }
 
-export function observeRun(suite: DiscoverySuite) {
+export function observeRun(
+  suite: DiscoverySuite,
+  { shown = false }: { shown?: boolean } = {},
+) {
   if (suite.source && suite.source !== "web") return;
   if (!TERMINAL.has(suite.status)) {
     watchRun(suite.id);
@@ -40,15 +42,13 @@ export function observeRun(suite: DiscoverySuite) {
   if (state.run !== suite.id) return;
   update({ run: null });
   if (suite.status === "canceled") return;
-  finishedListeners.forEach((listener) => listener(suite));
+  finishedListeners.forEach((listener) => listener(suite, shown));
 }
 
-export function attachDiscoveryPage(): () => void {
-  pages += 1;
-  update({ pageOpen: true });
+export function showOnPage(id: string | null): () => void {
+  if (state.pageRun !== id) update({ pageRun: id });
   return () => {
-    pages -= 1;
-    update({ pageOpen: pages > 0 });
+    if (id !== null && state.pageRun === id) update({ pageRun: null });
   };
 }
 

@@ -17,9 +17,9 @@ import { B4SetConfig } from "@models/config";
 import { MAX_PROBE_URLS, wsUrl, describeApiError } from "@utils";
 import i18n from "@/i18n";
 import {
-  attachDiscoveryPage,
   forgetRun,
   observeRun,
+  showOnPage,
   watchRun,
 } from "@/stores/discoveryWatch";
 
@@ -88,7 +88,7 @@ export function useDiscovery({
   const runGenRef = useRef(0);
   const pollErrorRef = useRef<string | null>(null);
 
-  useEffect(() => attachDiscoveryPage(), []);
+  useEffect(() => showOnPage(suiteId), [suiteId]);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -115,7 +115,7 @@ export function useDiscovery({
           return false;
         }
         if (data.source && data.source !== "web") return false;
-        observeRun(data);
+        observeRun(data, { shown: true });
         restoredRef.current = data.id;
         setSuiteId(data.id);
         setSuite(data);
@@ -183,7 +183,7 @@ export function useDiscovery({
           pollErrorRef.current = null;
           setError((current) => (current === shownPollError ? null : current));
         }
-        observeRun(data);
+        observeRun(data, { shown: true });
         setSuite(data);
         if (!TERMINAL.has(data.status)) return;
         setRunning(false);
@@ -231,16 +231,15 @@ export function useDiscovery({
         const current = await discoveryApi.current();
         if (!active) return;
         if (isSuite(current)) {
+          const live =
+            current.status === "running" || current.status === "pending";
+          if (live) observeRun(current);
           const replaceable =
             !suite ||
             (TERMINAL.has(suite.status) &&
               suite.id !== current.id &&
               suite.id === restoredRef.current);
-          if (
-            replaceable &&
-            (current.status === "running" || current.status === "pending")
-          ) {
-            observeRun(current);
+          if (replaceable && live) {
             setSuiteId(current.id);
             setSuite(current);
             setRunning(true);
