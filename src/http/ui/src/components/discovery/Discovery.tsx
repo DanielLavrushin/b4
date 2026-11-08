@@ -19,6 +19,7 @@ import {
   B4TextField,
   B4ChipList,
   B4PlusButton,
+  B4NotifyToggle,
 } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useDiscovery, useDiscoveryLogs } from "@hooks/useDiscovery";
@@ -638,6 +639,7 @@ export const DiscoveryRunner = () => {
         title={t("discovery.title")}
         description={t("discovery.description")}
         icon={<DiscoveryIcon />}
+        action={<B4NotifyToggle hint={t("discovery.notify.hint")} />}
       >
         {isReconnecting && (
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
