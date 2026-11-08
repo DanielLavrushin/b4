@@ -4,6 +4,23 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Added
+
+- The log names the set and the device when a **TCP Timestamp** fake goes out without its timestamp, as from a Windows PC by default or toward a server that refuses timestamps. [#554](https://github.com/DanielLavrushin/b4/issues/554)
+- With **Skip IPTables/NFTables Setup** on, the log warns when the router's connection tracking would drop **TCP Check** fakes. [#554](https://github.com/DanielLavrushin/b4/issues/554)
+
+### Changed
+
+- A set that an AI app creates through **MCP** `b4_find_bypass_strategy` is named after the site instead of an internal strategy name such as `cached-5-tcpmd5`. [#559](https://github.com/DanielLavrushin/b4/issues/559)
+
+### Fixed
+
+- With fake strategy **TCP Check**, or **TCP Timestamp** on a device without TCP timestamps such as a Windows PC, some sites on Cloudflare failed with an SSL error, because the server took the fake for the real start of the connection. [#554](https://github.com/DanielLavrushin/b4/issues/554)
+- Fake strategy **MD5 Sum** broke the sites of its set, because the fake went out without the MD5 option. [#555](https://github.com/DanielLavrushin/b4/issues/555)
+- A set with **Fake SNI Packets** on sent its fake again in front of later packets of a connection, and so did the **Decoy Packet** of **Combo**, so a server could close the connection right after it opened. [#556](https://github.com/DanielLavrushin/b4/issues/556)
+- A fake meant to carry a wrong checksum could, in rare cases, carry a valid one and reach the server as data. [#557](https://github.com/DanielLavrushin/b4/issues/557)
+- In the set editor, **Fake TTL** was greyed out while other features used it, **Corruption Strategy** stayed editable where it does nothing, and several faking help texts were wrong. [#558](https://github.com/DanielLavrushin/b4/issues/558)
+
 ## [1.90.0] - 2026-11-07
 
 ### Added
