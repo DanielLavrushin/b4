@@ -127,6 +127,9 @@ func (c *Config) RedactForSharing() {
 			continue
 		}
 		set.DNS.DoHURL = maskDoHURL(set.DNS.DoHURL)
+		for i, upstream := range set.DNS.Upstreams {
+			set.DNS.Upstreams[i] = maskDoHURL(upstream)
+		}
 		set.Discovery.URLs = maskURLs(set.Discovery.URLs)
 	}
 }
