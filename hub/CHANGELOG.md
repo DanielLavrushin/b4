@@ -36,7 +36,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 ### Changed
 
-- Moderation actions return at once, and a background build publishes the catalogue 1.5 to 10 seconds after the last change, with failed builds and a build history on **Overview** and **Catalogue**. `b4hub moderate` covers sets, keys, reports, mirrors, builds and the audit log.
+- Moderation actions return at once, and a background build starts 1.5 seconds after the last change and no later than 10 seconds after the first, with failed builds and a build history on **Overview** and **Catalogue**. `b4hub moderate` covers sets, keys, reports, mirrors, builds and the audit log.
 - A ban is a reversible quarantine: a banned key's sets leave the catalogue and its votes and reports stop counting until the ban is lifted.
 - A mirror answers routers within their wait while the hub is down, and checks, limits and signs what it passes on, with its queue capped by `--queue-limit` (5000 by default, 0 for none). A vote relayed by an approved mirror counts only in the overall score, and its complaint never counts toward the automatic hide.
 
