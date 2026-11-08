@@ -87,6 +87,14 @@ export function useDiscovery({
   const restoredRef = useRef<string | null>(null);
   const runGenRef = useRef(0);
   const pollErrorRef = useRef<string | null>(null);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => showOnPage(suiteId), [suiteId]);
 
@@ -111,6 +119,7 @@ export function useDiscovery({
       if (!id || dismissedRun() === id) return false;
       try {
         const data = await discoveryApi.status(id);
+        if (!mountedRef.current) return false;
         if (runGenRef.current !== gen || !TERMINAL.has(data.status)) {
           return false;
         }
