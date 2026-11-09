@@ -54,6 +54,12 @@ const DNS_VERDICT_STYLES: Record<string, DnsVerdictStyle> = {
     variant: "outlined",
     icon: "dns",
   },
+  "alias-stripped": {
+    label: "no alias",
+    color: "primary",
+    variant: "outlined",
+    icon: "dns",
+  },
   heal: { label: "heal", color: "warning", variant: "outlined", icon: "dns" },
   passthrough: {
     label: "passthrough",

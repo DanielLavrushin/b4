@@ -96,6 +96,7 @@ const (
 	dnsActionHeal             = "dns-heal"
 	dnsActionPin              = "dns-pin"
 	dnsActionPinEmpty         = "dns-pin-empty"
+	dnsActionAliasStripped    = "dns-alias-stripped"
 	dnsActionNoClient         = "dns-no-client"
 	dnsActionOverload         = "dns-overload"
 	dnsActionDoHPrefix        = "dns-doh->"

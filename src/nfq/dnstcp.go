@@ -229,7 +229,8 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 	var scope *ingressScope
 	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
 		bansActive := s.worker.bans.any()
-		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !(cfg.HasECHStrip() || bansActive) || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
+		pinned := set != nil && cfg.IPFamilyEnabled(v6) && len(set.DNS.PinnedAddresses(domain)) > 0
+		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !(cfg.HasECHStrip() || bansActive || pinned) || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
 			upstream.close()
 			s.passthrough(client, origIP, origPort, origErr, query)
 			return false
@@ -237,6 +238,12 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		resp := upstream.exchange(cfg, query)
 		if resp == nil {
 			return false
+		}
+		if pinned {
+			if unaliased, actor := s.worker.unaliasPinnedAnswer(cfg, set, domain, srcMac, resp, scope); unaliased != nil {
+				s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionAliasStripped)
+				resp = unaliased
+			}
 		}
 		if echless, actor := s.worker.stripECHKeys(cfg, set, domain, srcMac, resp, true, srcMac == "" && !cfg.IPFamilyEnabled(v6), scope); echless != nil {
 			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionECHStripped)
