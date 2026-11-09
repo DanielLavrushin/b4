@@ -428,12 +428,16 @@ func (c *Config) Validate() error {
 				return v.result()
 			}
 		}
-		set.DNS.NormalizeUpstreams(func(value string) {
+		listLimit := MaxDNSUpstreams
+		if strings.TrimSpace(set.DNS.DoHURL) != "" || strings.TrimSpace(set.DNS.TargetDNS) != "" {
+			listLimit--
+		}
+		set.DNS.NormalizeUpstreamsLimit(listLimit, func(value string) {
 			label := UpstreamLabel(value)
 			if label == "" {
 				label = "one entry"
 			}
-			log.Warnf("Set '%s': dropping DNS upstream %s, the list is over the limit of %d entries", set.Name, label, MaxDNSUpstreams)
+			log.Warnf("Set '%s': dropping DNS upstream %s, the set already asks %d resolvers in total", set.Name, label, MaxDNSUpstreams)
 		})
 
 		if len(set.Fragmentation.SeqOverlapPattern) > 0 {

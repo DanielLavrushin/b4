@@ -141,7 +141,7 @@ func (c *DNSConfig) SameResolver(o *DNSConfig) bool {
 	if c == nil || o == nil {
 		return c == o
 	}
-	if c.Enabled != o.Enabled || !samePins(c.Pins, o.Pins) {
+	if c.Enabled != o.Enabled || c.Strict != o.Strict || !samePins(c.Pins, o.Pins) {
 		return false
 	}
 	a, b := c.UpstreamList(), o.UpstreamList()
@@ -160,10 +160,14 @@ func (c *DNSConfig) ResolverKey() string {
 	if c == nil {
 		return ""
 	}
-	return fmt.Sprintf("%t|%s|%s", c.Enabled, strings.Join(c.UpstreamList(), "\n"), pinsKey(c.Pins))
+	return fmt.Sprintf("%t|%t|%s|%s", c.Enabled, c.Strict, strings.Join(c.UpstreamList(), "\n"), pinsKey(c.Pins))
 }
 
 func (c *DNSConfig) NormalizeUpstreams(onDrop func(value string)) {
+	c.NormalizeUpstreamsLimit(MaxDNSUpstreams, onDrop)
+}
+
+func (c *DNSConfig) NormalizeUpstreamsLimit(limit int, onDrop func(value string)) {
 	if c == nil || len(c.Upstreams) == 0 {
 		return
 	}
@@ -183,13 +187,16 @@ func (c *DNSConfig) NormalizeUpstreams(onDrop func(value string)) {
 		seen[norm] = struct{}{}
 		out = append(out, norm)
 	}
-	if len(out) > MaxDNSUpstreams {
+	if limit < 0 {
+		limit = 0
+	}
+	if len(out) > limit {
 		if onDrop != nil {
-			for _, raw := range out[MaxDNSUpstreams:] {
+			for _, raw := range out[limit:] {
 				onDrop(raw)
 			}
 		}
-		out = out[:MaxDNSUpstreams]
+		out = out[:limit]
 	}
 	c.Upstreams = out
 }

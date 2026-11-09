@@ -320,25 +320,12 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			continue
 		}
 
-		useDoH := set.DNS.DoHURL != ""
-		if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+		if !set.DNS.HasUpstream() {
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionPassthrough)
 			if relay(cfg, set, domain, query) {
 				continue
 			}
 			return
-		}
-
-		var targetIP net.IP
-		if !useDoH {
-			targetIP = net.ParseIP(set.DNS.TargetDNS)
-			if targetIP == nil {
-				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionBadTarget)
-				if relay(cfg, set, domain, query) {
-					continue
-				}
-				return
-			}
 		}
 
 		if queryFromTarget(set, clientIP) {

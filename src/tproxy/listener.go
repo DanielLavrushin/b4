@@ -725,7 +725,7 @@ func (l *Listener) dnsServers() ([]dns.Server, *config.SetConfig, bool) {
 
 func (l *Listener) DialNamed(host string, port int) (net.Conn, error) {
 	servers, _, _ := l.dnsServers()
-	ctx, cancel := context.WithTimeout(l.ctx, namedDialBudget+2*dns.ServersBudget(servers))
+	ctx, cancel := context.WithTimeout(l.ctx, namedDialBudget+2*dns.ServersBudget(servers, time.Duration(l.dnsTimeout.Load())))
 	defer cancel()
 	onion := isOnionName(host)
 	target, err := l.namedTarget(ctx, host)
@@ -821,7 +821,7 @@ func (l *Listener) pinnedAddresses(host string) []string {
 
 func (l *Listener) resolveHost(ctx context.Context, host string) ([]string, error) {
 	servers, set, useSet := l.dnsServers()
-	ctx, cancel := context.WithTimeout(ctx, dns.ServersBudget(servers)+time.Second)
+	ctx, cancel := context.WithTimeout(ctx, dns.ServersBudget(servers, time.Duration(l.dnsTimeout.Load()))+time.Second)
 	defer cancel()
 	strict := set != nil && set.DNS.Strict
 	ips, err := dns.LookupWithFallback(ctx, setLookup, servers, useSet, strict, host, true, l.dnsV6.Load())

@@ -34,7 +34,7 @@ A set's resolver helps when the provider's DNS answers the set's domains with wr
 
 ### A set with more than one resolver {#more-resolvers}
 
-**More resolvers** on the same tab takes one entry per line: an address or an https:// URL, up to eight. b4 asks the resolver above first. When that one has not answered within 300 ms, it starts the next one, so a blocked resolver costs a third of a second instead of the whole timeout. An answer of SERVFAIL, NOTIMP or REFUSED from one entry moves on to the next at once. A plain answer does not end the wait while a DoH entry is still asking, but it waits for it no longer than those 300 ms. An entry that fails three times in a row is left out for 30 s.
+**More resolvers** on the same tab takes one entry per line: an address or an https:// URL, up to eight in total with the resolver above. b4 asks the resolver above first, then each entry in turn. When one has not answered within 300 ms, the next one starts, so a blocked resolver costs a third of a second instead of the whole timeout. A SERVFAIL, NOTIMP or REFUSED answer moves on at once. The first usable answer ends the lookup, so the order of the list is the order of trust: put the resolver you rely on first. An entry that fails three times in a row is left out for 30 s.
 
 A set without **More resolvers** resolves exactly as before: one resolver, one timeout, and its SERVFAIL reaches the device.
 

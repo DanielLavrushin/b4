@@ -84,7 +84,6 @@ const (
 	dnsActionBlock            = "dns-block"
 	dnsActionSinkhole         = "dns-sinkhole"
 	dnsActionPassthrough      = "dns-passthrough"
-	dnsActionBadTarget        = "dns-bad-target"
 	dnsActionFromTarget       = "dns-from-target"
 	dnsActionIPv6Disabled     = "dns-ipv6-disabled"
 	dnsActionIPv6Stripped     = "dns-ipv6-stripped"
@@ -199,36 +198,49 @@ func (w *Worker) escalateAfterDNS(ipVersion byte, cfg *config.Config, set *confi
 }
 
 func (w *Worker) dnsAnswerSource(set *config.SetConfig, client net.IP) (net.IP, bool) {
-	useDoH := set.DNS.DoHURL != ""
-	if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+	if !set.DNS.HasUpstream() {
 		return nil, false
 	}
 	if queryFromTarget(set, client) {
 		return nil, false
 	}
-	if useDoH {
-		return nil, true
+	for _, upstream := range set.DNS.UpstreamList() {
+		if ip := net.ParseIP(upstream); ip != nil {
+			return ip, true
+		}
 	}
-	targetIP := net.ParseIP(set.DNS.TargetDNS)
-	return targetIP, targetIP != nil
+	return nil, true
 }
 
 var hostAddress = utils.IsHostIP
 
-func redirectTarget(set *config.SetConfig) net.IP {
-	if set.DNS.DoHURL != "" {
-		u, err := url.Parse(set.DNS.DoHURL)
-		if err != nil {
-			return nil
+func redirectTargets(set *config.SetConfig) []net.IP {
+	list := set.DNS.UpstreamList()
+	out := make([]net.IP, 0, len(list))
+	for _, upstream := range list {
+		if u, err := url.Parse(upstream); err == nil && u.Hostname() != "" {
+			if ip := net.ParseIP(u.Hostname()); ip != nil {
+				out = append(out, ip)
+			}
+			continue
 		}
-		return net.ParseIP(u.Hostname())
+		if ip := net.ParseIP(upstream); ip != nil {
+			out = append(out, ip)
+		}
 	}
-	return net.ParseIP(set.DNS.TargetDNS)
+	return out
 }
 
 func queryFromTarget(set *config.SetConfig, client net.IP) bool {
-	target := redirectTarget(set)
-	return target != nil && client != nil && target.Equal(client) && !hostAddress(target)
+	if client == nil {
+		return false
+	}
+	for _, target := range redirectTargets(set) {
+		if target.Equal(client) && !hostAddress(target) {
+			return true
+		}
+	}
+	return false
 }
 
 var (
@@ -428,20 +440,17 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					)
 				}
 
-				useDoH := set.DNS.DoHURL != ""
-
-				if !(set.DNS.Enabled && (set.DNS.TargetDNS != "" || useDoH)) {
+				if !set.DNS.HasUpstream() {
 					log.Tracef("DNS redirect: %s matched set %s but no redirect target configured, passing through", dns.SafeName(domain), set.Name)
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionPassthrough)
 					return vc.accept()
 				}
 
 				var targetIP net.IP
-				if !useDoH {
-					targetIP = net.ParseIP(set.DNS.TargetDNS)
-					if targetIP == nil {
-						logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionBadTarget)
-						return vc.accept()
+				for _, upstream := range set.DNS.UpstreamList() {
+					if ip := net.ParseIP(upstream); ip != nil {
+						targetIP = ip
+						break
 					}
 				}
 
@@ -460,11 +469,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				ver := ipVersion
 				delay := config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax)
 
-				target := set.DNS.TargetDNS
-				if useDoH {
-					target = set.DNS.DoHURL
-				}
-				log.Tracef("DNS redirect: intercepting %s -> %s (set %s)", dns.SafeName(domain), target, set.Name)
+				log.Tracef("DNS redirect: intercepting %s -> %s (set %s)", dns.SafeName(domain), strings.Join(set.DNS.UpstreamList(), ", "), set.Name)
 				logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsRedirectAction(set))
 
 				select {
@@ -646,7 +651,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 	case !useSet:
 		err = errNoDNSTarget
 	default:
-		askCtx, cancelAsk := context.WithTimeout(context.Background(), dns.ServersBudget(servers)+time.Second)
+		askCtx, cancelAsk := context.WithTimeout(context.Background(), dns.ServersBudget(servers, cfg.DNSQueryTimeout())+time.Second)
 		resp, source, err = dns.AskServers(askCtx, servers, set.DNS.Strict, func(sctx context.Context, srv dns.Server) ([]byte, error) {
 			if srv.DoHURL != "" {
 				return w.resolveDoHRedirect(srv.DoHURL, int(cfg.MainInjectedMark()), query)

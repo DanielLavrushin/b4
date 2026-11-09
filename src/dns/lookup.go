@@ -76,6 +76,7 @@ func LookupIPs(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net
 
 	var out []net.IP
 	var failure error
+	var retryable error
 	answered := false
 	for i, r := range results {
 		switch {
@@ -88,8 +89,8 @@ func LookupIPs(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net
 			}
 		case errors.Is(r.err, ErrTransientAnswer):
 			answered = true
-			if failure == nil {
-				failure = r.err
+			if retryable == nil {
+				retryable = r.err
 			}
 		case errors.Is(r.err, ErrNoAddress):
 			answered = true
@@ -102,6 +103,8 @@ func LookupIPs(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net
 		return out, nil
 	case failure != nil:
 		return nil, failure
+	case retryable != nil:
+		return nil, retryable
 	case answered:
 		return nil, fmt.Errorf("%s at %s: %w", name, srv, ErrNoAddress)
 	}

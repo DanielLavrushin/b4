@@ -54,7 +54,7 @@ type ResolverMode = "udp" | "doh";
 
 const parseUpstreams = (text: string): string[] =>
   text
-    .split(/[\s,;]+/)
+    .split(/\s+/)
     .map((entry) => entry.trim())
     .filter(Boolean);
 

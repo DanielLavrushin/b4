@@ -67,7 +67,7 @@ func TestValidateDropsTheEntriesOverTheLimit(t *testing.T) {
 	set := &SetConfig{Id: "dns1", Name: "dns", Enabled: true}
 	set.DNS.Enabled = true
 	set.DNS.TargetDNS = "9.9.9.9"
-	for _, ip := range []string{"1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "9.9.9.9", "208.67.222.222", "208.67.220.220", "77.88.8.8", "77.88.8.1"} {
+	for _, ip := range []string{"1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "94.140.14.14", "208.67.222.222", "208.67.220.220", "77.88.8.8", "77.88.8.1"} {
 		set.DNS.Upstreams = append(set.DNS.Upstreams, ip)
 	}
 	cfg.Sets = []*SetConfig{set}
@@ -75,8 +75,11 @@ func TestValidateDropsTheEntriesOverTheLimit(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("a list over the limit must be trimmed, got %v", err)
 	}
-	if got := len(set.DNS.Upstreams); got != MaxDNSUpstreams {
-		t.Fatalf("kept %d entries, want %d", got, MaxDNSUpstreams)
+	if got := len(set.DNS.Upstreams); got != MaxDNSUpstreams-1 {
+		t.Fatalf("kept %d entries, want %d: the primary counts toward the limit", got, MaxDNSUpstreams-1)
+	}
+	if got := len(set.DNS.UpstreamList()); got != MaxDNSUpstreams {
+		t.Fatalf("the set asks %d resolvers in total, want %d", got, MaxDNSUpstreams)
 	}
 }
 

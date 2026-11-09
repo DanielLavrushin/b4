@@ -418,3 +418,34 @@ func TestAReplyIsNotCountedTwiceWhileARedirectWaitsForIt(t *testing.T) {
 		t.Fatalf("escalation = %q ok=%v, want %q", escId, ok, backup.Id)
 	}
 }
+
+func TestQueryFromAResolverInTheList(t *testing.T) {
+	thisHost(t, "192.0.2.1")
+	ip := net.ParseIP
+	set := redirectSet("", "")
+	set.DNS.Upstreams = []string{"192.0.2.7", "https://192.0.2.8/dns-query"}
+
+	if !queryFromTarget(set, ip("192.0.2.7")) {
+		t.Error("a plain resolver in the list must be recognised as the set's own")
+	}
+	if !queryFromTarget(set, ip("192.0.2.8")) {
+		t.Error("a DoH resolver in the list must be recognised as the set's own")
+	}
+	if queryFromTarget(set, ip("192.0.2.9")) {
+		t.Error("a client of the set's resolvers is not one of them")
+	}
+}
+
+func TestAListOnlySetAnswersThroughItsList(t *testing.T) {
+	set := redirectSet("", "")
+	set.DNS.Upstreams = []string{"https://dns.example/dns-query"}
+	w := redirectWorker(t, false, set)
+	if target, ok := w.dnsAnswerSource(set, net.ParseIP("192.0.2.100")); !ok || target != nil {
+		t.Fatalf("a DoH-only list gave %v %v, want an encrypted answer source", target, ok)
+	}
+
+	set.DNS.Upstreams = []string{"192.0.2.7"}
+	if target, ok := w.dnsAnswerSource(set, net.ParseIP("192.0.2.100")); !ok || !target.Equal(net.ParseIP("192.0.2.7")) {
+		t.Fatalf("a plain entry gave %v %v, want 192.0.2.7", target, ok)
+	}
+}
