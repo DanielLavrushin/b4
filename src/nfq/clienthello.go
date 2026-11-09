@@ -92,7 +92,7 @@ var changeCipherSpecRecord = []byte{0x14, TLSVersionMajor, 0x03, 0x00, 0x01, 0x0
 
 func startedHello(payload []byte) (uint32, bool) {
 	hello := bytes.TrimPrefix(payload, changeCipherSpecRecord)
-	if !startsClientHelloRecord(hello) {
+	if !startsClientHelloRecord(hello) || !startsClientHello(hello) {
 		return 0, false
 	}
 	n := helloRecordLen(hello)

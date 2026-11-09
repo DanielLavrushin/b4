@@ -447,6 +447,52 @@ func TestARetryClientHelloOfUnknownLengthKeepsItsFakes(t *testing.T) {
 	}
 }
 
+func encryptedFinished(lengthByte byte) []byte {
+	rec := tlsAppData(40)
+	rec[0] = TLSHandshakeType
+	rec[5] = TLSClientHello
+	rec[6], rec[7], rec[8] = lengthByte, lengthByte, lengthByte
+	rec[9] = 0xd2
+	return rec
+}
+
+func TestAnEncryptedFinishedRecordDoesNotReopenTheFakes(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		flight []byte
+	}{
+		{"a Finished record whose ciphertext reads as a large length", encryptedFinished(0xff)},
+		{"a Finished record whose ciphertext reads as a zero length", encryptedFinished(0x00)},
+		{"a change cipher spec record and a Finished record", append(append([]byte(nil), changeCipherSpecRecord...), encryptedFinished(0xff)...)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			set := newFakingSet(true)
+			cfg := config.NewConfig()
+			cfg.Sets = []*config.SetConfig{&set}
+			w := newTestWorker(t, &cfg)
+			sent := captureInjected(t, w)
+			fake := sock.GetPayload(&set.Faking)
+			const base = uint32(1000)
+
+			hello := buildClientHello("i.ytimg.com", 16, 0xAB)
+			w.ProcessPacket(makeV4TCPPacket(hello, base))
+			if got := fakeHelloSeqs(sent(), fake); !slices.Equal(got, []uint32{base}) {
+				t.Fatalf("the ClientHello: fake hellos at %v, want one at %d", got, base)
+			}
+
+			at := base + uint32(len(hello))
+			w.ProcessPacket(makeV4TCPPacket(c.flight, at))
+			if got := fakeHelloSeqs(sent(), fake); len(got) != 0 {
+				t.Errorf("an encrypted Finished record whose ciphertext starts with 0x01: fake hellos at %v, want none", got)
+			}
+			w.ProcessPacket(makeV4TCPPacket(tlsAppData(200), at+uint32(len(c.flight))))
+			if got := fakeHelloSeqs(sent(), fake); len(got) != 0 {
+				t.Errorf("application data after it: fake hellos at %v, want none", got)
+			}
+		})
+	}
+}
+
 func twoRecordHello(single []byte, cut int) ([]byte, int) {
 	handshake := single[5:]
 	record := func(part []byte) []byte {
