@@ -45,18 +45,18 @@ The **How the server rejects it** section decides why the server discards the fa
 | **Fake Strategy** | How the fake becomes unusable to the server, see the table below. | **Past Sequence** |
 | **Sequence Offset** | How far the sequence number is moved, for **Random Sequence** and **Past Sequence**. | `10000` |
 | **Timestamp Decrease** | How much the TCP timestamp is decreased, for **TCP Timestamp**. | `600000` |
-| **Fake TTL** | The TTL of the fakes, 1 to 64. It has to reach the DPI and expire before the server. | `7` |
+| **Fake TTL** | The TTL of the fakes, 1 to 64. It has to reach the DPI and expire before the server. **SYN MD5 Signature**, OOB, UDP fakes, the Combo decoy, Overlap Length and **Post-ClientHello RST** use it too, also with **Fake SNI Packets** off. | `7` |
 | **Apply Fake TTL** | Uses **Fake TTL** whatever the strategy. Without it, the TTL applies only with the **TTL** strategy. | Off |
-| **MD5 Signature on Fake** | Puts the TCP MD5 option on the fake, so the server discards it while DPI still reads it. | Off |
+| **MD5 Signature on Fake** | Puts the TCP MD5 option on the fake. DPI still reads it. A server that checks the option discards the fake, and one that does not takes it as data unless the fake strategy stops it. | Off |
 
 | Strategy | Why the server discards the fake |
 | --- | --- |
 | **TTL** | The fake expires on the way and never reaches the server. |
 | **Random Sequence** | Its TCP sequence number is random. |
 | **Past Sequence** | Its sequence number is one the server has already processed. |
-| **TCP Check** | Its TCP checksum is wrong. |
-| **MD5 Sum** | It carries a TCP MD5 option that the server has not configured. |
-| **TCP Timestamp** | Its TCP timestamp is too old. |
+| **TCP Check** | Its TCP checksum is wrong, and it acknowledges data the server never sent. |
+| **MD5 Sum** | It carries a TCP MD5 option. A server that does not check the option takes the fake as data. |
+| **TCP Timestamp** | Its TCP timestamp is too old. On a connection without TCP timestamps, as from Windows by default or to a server that refuses them, the fake goes out as with **TCP Check** instead, and the log shows a warning that names the set and the device. |
 
 The right TTL depends on how many hops away the DPI is. Discovery finds it, and for manual tuning `3` is a starting point.
 
@@ -67,9 +67,9 @@ Fake SYN packets sent during the TCP handshake, before the real connection start
 | Field | What it does | Default |
 | --- | --- | --- |
 | **SYN Fake Packets** | Sends fake SYN packets during the handshake. | Off |
-| **SYN MD5 Signature** | Sends a fake SYN with a TCP MD5 option before the real handshake. | Off |
+| **SYN MD5 Signature** | Sends a fake SYN with a TCP MD5 option before the real handshake, at **Fake TTL** from **Fake SNI Packets**. | Off |
 | **SYN Fake Payload Length** | `0` sends the header only, a larger value adds a fake TLS payload, up to 1200 bytes. | `0` |
-| **SYN Fake TTL** | The TTL of the fake SYNs, 1 to 100. | `7` |
+| **SYN Fake TTL** | The TTL of the fake SYNs of **SYN Fake Packets**, 1 to 100. | `7` |
 
 ## TCP Desync Attack
 
@@ -108,7 +108,7 @@ For DPI that slows a connection down once about 15-20 KB have come from the serv
 | Field | What it does | Default |
 | --- | --- | --- |
 | **Incoming Mode** | **Disabled**. **Fake Packets** sends a broken ACK for every incoming data packet. **Reset Injection**, **FIN Injection** and **Desync Combo** send fake RST, FIN, or RST, FIN and ACK once the incoming data reaches the threshold. | **Disabled** |
-| **Corruption Strategy** | How the fakes are made unusable: **Bad Checksum**, **Bad Sequence**, **Bad ACK**, **Random** for each packet, or **All Corruptions**. | **Bad Checksum** |
+| **Corruption Strategy** | How the fakes of **Fake Packets** are made unusable: **Bad Checksum**, **Bad Sequence**, **Bad ACK**, **Random** for each packet, or **All Corruptions**. The other modes rely on **Fake TTL** alone. | **Bad Checksum** |
 | **Fake TTL** | 1 to 20. | `7` |
 | **Fake Count** | Fake packets per injection, 1 to 10. | `3` |
 | **Threshold Min**, **Threshold Max** | The incoming data, in KB, that triggers an injection. Each connection picks a value between the two. Not used by **Fake Packets**. | `14`, `14` |

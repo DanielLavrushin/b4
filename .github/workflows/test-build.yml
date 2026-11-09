@@ -9,7 +9,7 @@ on:
         default: "all"
         type: string
       version:
-        description: "Version baked into the build (empty = top changelog.md version + commit, e.g. 1.88.3.4c097b1)"
+        description: "Version baked into the build (empty = latest released changelog.md version + commit, e.g. 1.90.0.4c097b1)"
         required: false
         default: ""
         type: string

@@ -86,6 +86,10 @@ b4 tells a TCP packet's direction by its ports with **Skip IPTables/NFTables Set
 
 Devices pick the source ports of their own connections from 32768-60999 (Linux, Android) or 49152-65535 (Windows, macOS, iOS). In this mode, a set's TCP port filter that covers these ports makes b4 pass the connections from them unprocessed. **Recent changes** on the [dashboard](../dashboard.md#recent-changes) then shows **TCP port filters cover the source ports of client connections**, with the ports. A filter below 32768 avoids it.
 
+## Connection tracking with Skip IPTables/NFTables Setup {#skip-setup-conntrack}
+
+Without **Skip IPTables/NFTables Setup**, b4 sets the kernel's TCP connection tracking to accept packets outside the expected window (`net.netfilter.nf_conntrack_tcp_be_liberal` set to `1`) and to skip checksum checks while it runs. With the switch on, both settings stay as they are. In NFQUEUE mode the fakes of **TCP Check**, and of **TCP Timestamp** on connections without TCP timestamps, acknowledge data the server never sent. Strict tracking marks such a fake invalid, so the router's NAT does not translate it, and a rule that drops invalid packets on the output path drops it. The log warns once when a set sends such fakes while `net.netfilter.nf_conntrack_tcp_be_liberal` is `0`.
+
 ## Dropped QUIC connections {#dropped-quic-connections}
 
 b4 sees only the first packets of a connection. When a set drops or rejects a QUIC connection, by its UDP action mode, as a block set or because the address is [banned](../sets/tcp/general.md#banned-addresses), b4 keeps the later packets of the connection from passing as well:

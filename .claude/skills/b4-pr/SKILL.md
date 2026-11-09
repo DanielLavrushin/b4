@@ -89,7 +89,8 @@ When the contributor stopped and `maintainerCanModify` is false, their branch ca
 2. Revert what must go and fix the rest in commits on top, then merge `origin/main`.
 3. Open a new PR titled "<title> (finishes #N)" whose body asks to keep
    `Co-authored-by: <name> <id+login@users.noreply.github.com>` when squashing.
-4. Credit the contributor in the changelog bullet.
+4. Credit the contributor in the changelog bullet (`/b4-changelog`, "Credit a contributor's pull
+   request").
 5. Thank them in a short comment on the old PR, in their language, and close it.
 
 `gh pr edit` fails on gh 2.46 with a "Projects (classic) is being deprecated" error; use

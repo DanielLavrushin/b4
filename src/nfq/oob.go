@@ -99,10 +99,9 @@ func (w *Worker) sendOOBFragments(cfg *config.SetConfig, packet []byte, dst net.
 	// Optionally corrupt checksum based on faking strategy
 	switch cfg.Faking.Strategy {
 	case "tcp_check":
-		fake[ipHdrLen+16] ^= 0xFF
-		fake[ipHdrLen+17] ^= 0xFF
+		corruptTCPChecksum(fake, ipHdrLen)
 	case "md5sum":
-		fake[ipHdrLen+16] ^= 0xFF
+		corruptTCPChecksum(fake, ipHdrLen)
 		fake[10] ^= 0xFF
 	}
 
@@ -231,8 +230,7 @@ func (w *Worker) sendOOBFragmentsV6(cfg *config.SetConfig, packet []byte, dst ne
 
 	switch cfg.Faking.Strategy {
 	case "tcp_check", "md5sum":
-		fake[ipv6HdrLen+16] ^= 0xFF
-		fake[ipv6HdrLen+17] ^= 0xFF
+		corruptTCPChecksum(fake, ipv6HdrLen)
 	}
 
 	// ===== Segment 2: payload[oobPos:] - CLEAN =====

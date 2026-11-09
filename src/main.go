@@ -445,6 +445,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	handler.SetRoutingSyncFunc(func(c *config.Config) {
 		tproxyResolver.Set(pool.GetMatcher())
 		config.WarnIPv6Bypass(c)
+		tables.WarnSkipSetupStrictConntrack(c)
 		if engineDown.Load() {
 			return
 		}
@@ -498,6 +499,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		mtprotoBridge.UpdateConfig(c)
 		mtproto.KickUpstreamRefresh()
 		tproxyResolver.Set(pool.GetMatcher())
+		tables.WarnSkipSetupStrictConntrack(c)
 		if !c.System.Tables.SkipSetup {
 			tproxyMgr.SyncConfig(c)
 			tables.RoutingSyncConfig(c)

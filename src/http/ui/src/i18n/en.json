@@ -1831,7 +1831,7 @@
         "strategyPoolDesc": "Select multiple strategies to randomize per connection. When active, a random strategy is picked from the pool for each new packet. Leave empty to use the selected method above.",
         "strategyPoolActive": "{{count}} strategies in pool — each connection will use a random one",
         "oobHeader": "OOB (Out-of-Band) Strategy",
-        "oobAlert": "Inserts a byte with TCP URG flag. Server ignores it, but stateful DPI gets confused.",
+        "oobAlert": "Sends a one-byte fake with the TCP URG flag at Fake TTL. It goes in the middle of the SNI while Smart SNI Split is on (the default, set under the TCP and IP split strategies), otherwise at Insert Position. DPI that follows the connection reads it as data. It has to expire before the server, which would drop the real byte at that position.",
         "oobPosition": "Insert Position",
         "oobPositionHelper": "Bytes before OOB insertion",
         "oobByte": "OOB Byte:",
@@ -2002,11 +2002,11 @@
         "matchLength": "Match Fake Size",
         "matchLengthDesc": "Build the fake from the real ClientHello with the payload's domain fitted to the real name's length, so both have exactly the same size; a payload that is not a ClientHello is repeated or cut to that size",
         "md5OnFake": "MD5 Signature on Fake",
-        "md5OnFakeDesc": "Put the TCP MD5 option on the fake ClientHello so the server discards it while DPI still reads it",
+        "md5OnFakeDesc": "Put the TCP MD5 option on the fake ClientHello. DPI still reads the fake. A server whose TCP stack checks the option discards it; a server that does not check it takes the fake as data unless the fake strategy stops it",
         "seqOffset": "Sequence Offset",
         "seqOffsetHelper": "TCP sequence number offset for pastseq strategy",
         "timestampDecrease": "Timestamp Decrease",
-        "timestampDecreaseHelper": "Amount to decrease TCP timestamp option (default: 600000)",
+        "timestampDecreaseHelper": "How much to lower the TCP timestamp of the fake (default: 600000), so a server that uses TCP timestamps drops it. On a connection without TCP timestamps, as from Windows by default or to a server that refuses them, the fake goes out with a wrong TCP checksum and a wrong acknowledgment number instead, and the log shows a warning",
         "packetCount": "Fake Packet Count",
         "packetCountHelper": "Number of fake packets to send",
         "tlsModTitle": "Fake Packet TLS Modification",
@@ -2022,11 +2022,11 @@
         "enable": "SYN Fake Packets",
         "enableDesc": "Send fake SYN packets during handshake (aggressive technique)",
         "md5Enable": "SYN MD5 Signature",
-        "md5Desc": "Send fake SYN with TCP MD5 option before real handshake",
+        "md5Desc": "Send a fake SYN with the TCP MD5 option before the real handshake. It uses Fake TTL from Fake SNI Packets, not SYN Fake TTL",
         "payloadLen": "SYN Fake Payload Length",
         "payloadLenHelper": "0 = header only, >0 = add fake TLS payload",
         "ttl": "SYN Fake TTL",
-        "ttlHelper": "TTL value for SYN fake packets (default 3 if unset)"
+        "ttlHelper": "TTL of the fake SYNs sent by SYN Fake Packets (default 7), kept below the real packet's TTL. The SYN MD5 Signature fake uses Fake TTL instead"
       },
       "desync": {
         "title": "TCP Desync Attack",
@@ -2093,12 +2093,13 @@
         "strategyBadack": "Bad ACK",
         "strategyRand": "Random",
         "strategyAll": "All Corruptions",
-        "stratDescBadsum": "Corrupt TCP checksum only - packets dropped by kernel",
-        "stratDescBadseq": "Corrupt sequence number - packets ignored by TCP stack",
-        "stratDescBadack": "Corrupt ACK number - packets ignored by TCP stack",
+        "stratDescBadsum": "Wrong TCP checksum. A server whose stack checks it drops the fake",
+        "stratDescBadseq": "Sequence number 10-110 KB ahead. A server with a large enough receive window still accepts it",
+        "stratDescBadack": "Acknowledges 10-110 KB beyond the server's packet. A server with that much data in flight accepts it",
         "stratDescRand": "Randomly pick corruption method per packet",
-        "stratDescAll": "Apply all corruptions: bad seq + bad ack + bad checksum",
+        "stratDescAll": "Bad sequence, bad ACK and bad checksum in the same packet",
         "enableFirst": "Enable incoming mode first",
+        "fakeModeOnly": "Used only by Fake Packets. Reset Injection, FIN Injection and Desync Combo rely on Fake TTL alone",
         "ttl": "Fake TTL",
         "ttlHelper": "Low TTL ensures fakes expire before reaching server",
         "fakeCount": "Fake Count",
@@ -2773,9 +2774,25 @@
       "openHub": "Open in Community"
     }
   },
+  "notify": {
+    "off": "Notify me",
+    "on": "Notifications on",
+    "blocked": "Notifications blocked",
+    "hintOn": "This browser shows a notification when a task finishes while b4 is in the background. Click to turn it off.",
+    "hintBlocked": "The browser blocks notifications from this page. Allow them in the browser's site settings."
+  },
   "discovery": {
     "title": "Discovery",
     "description": "Finds a bypass strategy for the sites you name and turns it into a set.",
+    "notify": {
+      "hint": "Show a browser notification when Discovery finishes while b4 is in the background",
+      "finished": "Discovery finished",
+      "failed": "Discovery failed",
+      "found_one": "Strategy found for {{found}} of {{count}} site",
+      "found_other": "Strategy found for {{found}} of {{count}} sites",
+      "notFound": "No strategy found",
+      "open": "Open"
+    },
     "dscp": "DSCP {{value}}, as the set's traffic",
     "input": {
       "label": "Site or URL",

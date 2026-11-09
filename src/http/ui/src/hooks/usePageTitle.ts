@@ -3,11 +3,22 @@ import { useEffect, useSyncExternalStore } from "react";
 const APP_NAME = "B4";
 
 let detail = "";
+let attention = "";
 const listeners = new Set<() => void>();
 
 function setDetail(value: string) {
   detail = value;
   listeners.forEach((listener) => listener());
+}
+
+export function setTitleAttention(value: string) {
+  if (attention === value) return;
+  attention = value;
+  listeners.forEach((listener) => listener());
+}
+
+function getAttention() {
+  return attention;
 }
 
 function subscribe(listener: () => void) {
@@ -31,8 +42,11 @@ export function usePageTitleDetail(value: string | undefined) {
 
 export function useDocumentTitle(page: string) {
   const current = useSyncExternalStore(subscribe, getDetail);
+  const notice = useSyncExternalStore(subscribe, getAttention);
 
   useEffect(() => {
-    document.title = [current, page, APP_NAME].filter(Boolean).join(" - ");
-  }, [current, page]);
+    document.title = [notice && `● ${notice}`, current, page, APP_NAME]
+      .filter(Boolean)
+      .join(" - ");
+  }, [notice, current, page]);
 }

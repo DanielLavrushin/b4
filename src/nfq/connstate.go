@@ -29,6 +29,8 @@ type tlsInfo struct {
 	host       string
 	tlsVersion uint16
 	helloSeq   uint32
+	gateSeq    uint32
+	helloLen   uint32
 	helloID    uint64
 	namedAt    time.Time
 	gen        uint64
@@ -48,7 +50,7 @@ type tlsInfoCache struct {
 
 const maxTLSCacheEntries = 20000
 
-func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, helloSeq uint32, helloID uint64) uint64 {
+func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, helloSeq uint32, helloID uint64, helloLen uint32) uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -80,6 +82,8 @@ func (c *tlsInfoCache) Store(connKey string, host string, tlsVersion uint16, hel
 		host:       host,
 		tlsVersion: tlsVersion,
 		helloSeq:   helloSeq,
+		gateSeq:    helloSeq,
+		helloLen:   helloLen,
 		helloID:    helloID,
 		namedAt:    namedAt,
 		gen:        c.gen,
@@ -97,6 +101,25 @@ func (c *tlsInfoCache) Lookup(connKey string) (string, uint16, bool) {
 		return "", 0, false
 	}
 	return info.host, info.tlsVersion, true
+}
+
+func (c *tlsInfoCache) MoveHello(connKey string, seq, helloLen uint32) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	info, exists := c.conns[connKey]
+	if !exists || info.helloLen == 0 || seq-info.gateSeq < info.helloLen {
+		return
+	}
+	info.gateSeq, info.helloLen = seq, helloLen
+}
+
+func (c *tlsInfoCache) PastHello(connKey string, seq uint32) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	info, exists := c.conns[connKey]
+	return exists && info.helloLen > 0 && seq-info.gateSeq >= info.helloLen
 }
 
 func (c *tlsInfoCache) HelloAt(connKey string, seq uint32, helloID uint64) (tlsInfo, bool) {
