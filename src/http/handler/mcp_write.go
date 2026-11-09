@@ -66,6 +66,7 @@ var mcpFragmentationStrategies = []string{
 // mcpEnums lists the accepted values for string fields whose set of options is
 // not enforced by config.Validate. Keyed by canonical path.
 var mcpEnums = map[string][]string{
+	mcpSetPathPrefix + ".tcp.wssize.cutoff":                   {"", "client_hello"},
 	mcpSetPathPrefix + ".fragmentation.strategy":              mcpFragmentationStrategies,
 	mcpSetPathPrefix + ".fragmentation.combo.shuffle_mode":    {"middle", "full", "reverse"},
 	mcpSetPathPrefix + ".fragmentation.disorder.shuffle_mode": {"full", "middle", "reverse"},

@@ -8,6 +8,7 @@ import (
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/sock"
+	"github.com/florianl/go-nfqueue"
 )
 
 var (
@@ -24,18 +25,26 @@ const (
 )
 
 type helloHold struct {
-	id    uint32
-	q     verdictSetter
-	raw   []byte
-	dst   net.IP
-	ver   uint8
-	key   string
-	at    time.Time
-	timer *time.Timer
-	local bool
+	modified bool
+	id       uint32
+	q        verdictSetter
+	raw      []byte
+	dst      net.IP
+	ver      uint8
+	key      string
+	at       time.Time
+	timer    *time.Timer
+	local    bool
 }
 
 func (h *helloHold) verdict(v int) {
+	if h.modified && v == nfqueue.NfAccept {
+		if m, ok := h.q.(verdictModifier); ok {
+			if err := m.SetVerdictModPacket(h.id, v, h.raw); err == nil {
+				return
+			}
+		}
+	}
 	if err := h.q.SetVerdict(h.id, v); err != nil {
 		log.Tracef("failed to set verdict on held packet %d: %v", h.id, err)
 	}
@@ -77,12 +86,13 @@ func (w *Worker) helloHoldCandidate(vc *verdictCtx, pkt *pktInfo, matcher *sni.S
 		return nil
 	}
 	return &helloHold{
-		id:    vc.id,
-		q:     vc.q,
-		raw:   append([]byte(nil), pkt.raw...),
-		dst:   append(net.IP(nil), pkt.dst...),
-		ver:   pkt.ver,
-		local: vc.routerOriginated() || hostAddress(pkt.src),
+		modified: vc.modified != nil,
+		id:       vc.id,
+		q:        vc.q,
+		raw:      append([]byte(nil), pkt.raw...),
+		dst:      append(net.IP(nil), pkt.dst...),
+		ver:      pkt.ver,
+		local:    vc.routerOriginated() || hostAddress(pkt.src),
 	}
 }
 

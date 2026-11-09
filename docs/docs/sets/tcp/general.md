@@ -102,3 +102,26 @@ The MSS is set on the first packet of a connection, before the server name is kn
 A set whose IP, GeoIP and ASN targets resolve to no addresses yet installs no clamp until they do. A device added by hand needs a fixed address to scope a clamp.
 
 `88` is the value suggested for smart TVs on YouTube. Every segment then carries at most 88 bytes, so large downloads are slow, and when a connection works but crawls, a larger value is the next step. To slow down one device's HTTPS without a set, the [per-device MSS](../../settings/core.md#device-table) does the same. A per-set MSS overrides the [per-device and global MSS](../../settings/core.md#global-mss-clamping) for the connections it covers.
+
+## Real TCP window (wssize)
+
+Based on [bolvan / Zapret2](https://github.com/bol-van/zapret2), this option changes real outgoing TCP packets. It starts at SYN. By default it includes the first packet carrying data and then stops for that connection.
+
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Real TCP window (wssize)** | Enables the rewrite. Requires NFQUEUE without routing, bypass or packet duplication in the same set. | Off |
+| **Window** | Advertised Window, from 0 to 65535. Zero advertises a closed receive window. | `0` |
+| **Window Scale** | Maximum existing WS value, from 0 to 14. Missing WS remains absent; smaller original values stay smaller. | `0` |
+| **Stop rewriting** | Ends after the first data packet or the complete original ClientHello. The completing packet is included. | After the first data packet |
+
+**After the original ClientHello** follows the client's message before B4 splits it or sends fakes. It covers a ClientHello sent in several parts. Later packets stop receiving the window value; brief retransmissions of the original message remain covered. Unrecognized, incomplete or over-limit messages end tracking. The existing capture limit must include all required parts.
+
+For the `wsize=1:scale=1` recipe, both numeric fields are `1`. Changes apply on save to new connections. An existing connection does not renegotiate its scale.
+
+The set needs an address match, a previously known domain/address association, or an explicit port-only target before the connection opens. A domain-only target with no known address cannot select the first SYN. Shared addresses can include other domains. Source-device and port filters narrow the selection. Details are in [How sets match traffic](../../internals/matching.md#wssize).
+
+:::warning
+Lowering Window Scale can limit download speed even after rewriting stops. The client continues using its original scale. Successful TLS does not prove that a large transfer or video playback works.
+:::
+
+[Window Manipulation](./faking.md#window-manipulation) remains a separate technique that sends fake ACKs. The Zapret importer still reports its old fake-ACK approximation; it does not enable real wssize automatically.

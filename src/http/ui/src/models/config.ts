@@ -234,6 +234,7 @@ export interface TcpConfig {
   dport_filter: string;
 
   desync: DesyncConfig;
+  wssize?: { enabled: boolean; window: number; scale: number; cutoff?: "" | "client_hello" };
   win: WinConfig;
   incoming: IncomingConfig;
   duplicate?: DuplicateConfig;

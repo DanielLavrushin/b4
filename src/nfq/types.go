@@ -58,6 +58,7 @@ type Worker struct {
 	lookupSock       *sock.Sender
 	ipToMac          atomic.Value
 	tlsCache         *tlsInfoCache
+	wssize           *wsSizeCache
 	streams          *streamStartCache
 	streamsGate      atomic.Pointer[streamGate]
 	connTracker      *connStateTracker

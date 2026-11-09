@@ -189,7 +189,6 @@
       "levelTrace": "Trace",
       "levelDebug": "Debug"
     },
-
     "Service": {
       "title": "Service",
       "timezone": "Time Zone",
@@ -1801,7 +1800,17 @@
         "mssScopeRequired": "Add an IP, GeoIP, ASN or source device target before enabling per-set MSS.",
         "mssAppliesTo": "Scope: IPs {{ips}}  Devices {{macs}}",
         "mssSize": "MSS size (bytes)",
-        "mssSizeHelper": "Typical TSPU workaround for Smart TVs on YouTube: 88"
+        "mssSizeHelper": "Typical TSPU workaround for Smart TVs on YouTube: 88",
+        "wssize": "Real TCP window (wssize)",
+        "wssizeWindow": "Window",
+        "wssizeScale": "Window Scale",
+        "wssizeHelp": "Technique by bolvan / Zapret2 (github.com/bol-van/zapret2). Changes real outgoing TCP windows from connection opening. Requires an early address or explicit port match and NFQUEUE without routing or duplication. Missing WS is not added; scale is never increased. Lowering WS can limit speed after rewriting stops.",
+        "wssizeCutoff": "Stop rewriting",
+        "wssizeCutoffFirst": "After the first data packet",
+        "wssizeCutoffFirstNote": "Zapret2 default behavior",
+        "wssizeCutoffHello": "After the original ClientHello",
+        "wssizeCutoffHelloNote": "Includes all original parts and brief retransmissions",
+        "wssizeCutoffHelp": "The final packet is included. Incomplete, invalid or over-limit messages stop tracking; the scale mismatch remains after cutoff."
       },
       "splitting": {
         "header": "Splitting Strategy",
@@ -2633,7 +2642,7 @@
         "duplicateMapped": "Became packet duplication.",
         "seqOvlMapped": "Became sequence overlap.",
         "seqOvlPatternMapped": "The overlap pattern was read as raw bytes; a TLS 1.2 header is used when it cannot be parsed.",
-        "wsSizeApproximated": "Shrinks the window b4 advertises to the server so it sends smaller segments. b4 has no equivalent, so the closest thing was used: fake ACK packets with a zero window.",
+        "wsSizeApproximated": "Approximate import: uses fake zero-window ACKs. Real wssize is a separate opt-in feature that requires selection before SNI. The importer does not preserve its scale and cutoff arguments.",
         "skipMapped": "The profile is marked skipped, so the set is created disabled.",
         "newProfileAsSet": "Starts a new profile. Each one became a separate set, in the same order.",
         "sniExtMapped": "Splits right before the SNI extension.",
@@ -3987,7 +3996,9 @@
     "dscp_path_interfaces": "This strategy was tested while b4 wrote DSCP values on other network interfaces, so the traffic of set \"{{set}}\" takes another network path now. Run Discovery for the set to test a strategy on that path.",
     "similar_set_changed": "Set \"{{set}}\" no longer uses the strategy this result found, so its domains were not added. Open the result again to choose a set.",
     "fake_payload_missing": "This strategy was tested with the fake payload {{file}}, which can no longer be loaded, so the set would send a different fake. Run Discovery again to test a strategy with the payloads there are now.",
-    "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the set's traffic. Try again in a moment."
+    "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the set's traffic. Try again in a moment.",
+    "wssize_invalid": "Window: 0..65535; Window Scale: 0..14; cutoff: empty or client_hello.",
+    "wssize_unsupported": "wssize requires NFQUEUE without routing, bypass or duplication."
   },
   "hub": {
     "title": "Community Hub",

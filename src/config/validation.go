@@ -287,6 +287,13 @@ func (c *Config) Validate() error {
 	c.System.IPHealth.RepeatBanTTLSec = clampBanSec(c.System.IPHealth.RepeatBanTTLSec, DefaultIPRepeatBanTTLSec, MaxIPRepeatBanTTLSec)
 
 	for setIdx, set := range c.Sets {
+		ws := set.TCP.WSSize
+		if ws.Window < 0 || ws.Window > 65535 || ws.Scale < 0 || ws.Scale > 14 || (ws.Cutoff != "" && ws.Cutoff != "client_hello") {
+			v.addf(fmt.Sprintf("sets[%d].tcp.wssize", setIdx), "wssize_invalid", nil, "Window must be 0..65535, scale 0..14 and cutoff empty or client_hello")
+		}
+		if ws.Enabled && (c.Queue.Mode == "tun" || set.Routing.Enabled || set.TCP.Duplicate.Enabled) {
+			v.addf(fmt.Sprintf("sets[%d].tcp.wssize", setIdx), "wssize_unsupported", nil, "wssize requires NFQUEUE without routing, bypass or duplication")
+		}
 		ibd := &set.TCP.IPBlockDetect
 		if ibd.SynThreshold <= 0 {
 			ibd.SynThreshold = DefaultIPBlockSynThreshold

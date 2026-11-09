@@ -2,6 +2,7 @@ import { Grid } from "@mui/material";
 import { B4SetConfig, MSSClampConfig } from "@models/config";
 import {
   B4Slider,
+  B4Select,
   B4RangeSlider,
   B4TextField,
   B4Alert,
@@ -22,6 +23,7 @@ interface TcpGeneralProps {
 
 export const TcpGeneral = ({ config, onChange }: TcpGeneralProps) => {
   const { t } = useTranslation();
+  const ws = config.tcp.wssize ?? { enabled: false, window: 0, scale: 0, cutoff: "" };
   const dup = config.tcp.duplicate ?? { enabled: false, count: 3 };
   const ibd = {
     enabled: false,
@@ -123,6 +125,37 @@ export const TcpGeneral = ({ config, onChange }: TcpGeneralProps) => {
             aiTopic="tcp.http_methodeol"
           />
         </Grid>
+      </Grid>
+
+      <B4FormHeader label={t("sets.tcp.general.wssize")} />
+      <Grid container spacing={3} mb={3} mt={2}>
+        <Grid size={{ xs: 12 }}>
+          <B4Switch label={t("sets.tcp.general.wssize")} description={t("sets.tcp.general.wssizeHelp")}
+            checked={ws.enabled} path="tcp.wssize.enabled" aiTopic="tcp.wssize.enabled"
+            onChange={(v) => onChange("tcp.wssize.enabled", v)} />
+        </Grid>
+        {ws.enabled && <>
+          <Grid size={{ xs: 12 }}>
+            <B4Select label={t("sets.tcp.general.wssizeCutoff")} value={ws.cutoff ?? ""}
+              path="tcp.wssize.cutoff" aiTopic="tcp.wssize.cutoff"
+              options={[
+                { value: "", label: t("sets.tcp.general.wssizeCutoffFirst"), note: t("sets.tcp.general.wssizeCutoffFirstNote") },
+                { value: "client_hello", label: t("sets.tcp.general.wssizeCutoffHello"), note: t("sets.tcp.general.wssizeCutoffHelloNote") },
+              ]}
+              onChange={(e) => onChange("tcp.wssize.cutoff", e.target.value)} />
+            <B4Hint>{t("sets.tcp.general.wssizeCutoffHelp")}</B4Hint>
+          </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4Slider label={t("sets.tcp.general.wssizeWindow")} value={ws.window}
+              path="tcp.wssize.window" min={0} max={65535} step={1} aiTopic="tcp.wssize.window"
+              onChange={(v: number) => onChange("tcp.wssize.window", v)} />
+          </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4Slider label={t("sets.tcp.general.wssizeScale")} value={ws.scale}
+              path="tcp.wssize.scale" min={0} max={14} step={1} aiTopic="tcp.wssize.scale"
+              onChange={(v: number) => onChange("tcp.wssize.scale", v)} />
+          </Grid>
+        </>}
       </Grid>
 
       {/* Packet Duplication */}

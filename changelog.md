@@ -1,5 +1,9 @@
 # B4 - Bye Bye Big Bro
 
+## [1.91.0] - 2026-11-08
+
+- ADDED: **Real TCP window rewriting** - the opt-in wssize control changes outgoing windows through the first data packet or the complete original ClientHello. Based on [bolvan / Zapret2](https://github.com/bol-van/zapret2). Lowering Window Scale can limit speed after rewriting stops.
+
 ## [1.90.0] - 2026-11-07
 
 - FIXED: **AI apps on the newest MCP protocol, such as Antigravity CLI, lost the connection to b4 before its tools appeared** - such an app sends some notifications without the protocol version, and b4 refused them. The app then closed the connection. Cancelling a running tool from such an app did not stop the tool in b4 either.

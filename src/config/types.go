@@ -267,6 +267,13 @@ type Device struct {
 	IsManual bool   `json:"is_manual,omitempty"`
 }
 
+type WSSizeConfig struct {
+	Cutoff  string `json:"cutoff"`
+	Enabled bool   `json:"enabled"`
+	Window  int    `json:"window"`
+	Scale   int    `json:"scale"`
+}
+
 type TCPConfig struct {
 	ConnBytesLimit int    `json:"conn_bytes_limit"`
 	Seg2Delay      int    `json:"seg2delay"`
@@ -278,6 +285,7 @@ type TCPConfig struct {
 	HTTPMethodEOL  bool   `json:"http_methodeol"`
 	DPortFilter    string `json:"dport_filter"` // comma separated list of ports and port ranges, e.g. "80,443,5222"
 
+	WSSize        WSSizeConfig        `json:"wssize"`
 	Incoming      IncomingConfig      `json:"incoming"`
 	Desync        DesyncConfig        `json:"desync"`
 	Win           WinConfig           `json:"win"`

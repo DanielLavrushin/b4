@@ -350,6 +350,8 @@ Maintained outside this repository:
 
 ## Credits
 
+- [bolvan / Zapret2](https://github.com/bol-van/zapret2) - real outgoing TCP window rewriting (wssize); MIT license in `third_party/zapret2-license.txt`.
+
 Based on research from:
 
 - [youtubeUnblock](https://github.com/Waujito/youtubeUnblock) - C-based DPI bypass

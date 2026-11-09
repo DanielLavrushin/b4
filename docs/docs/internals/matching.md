@@ -175,3 +175,30 @@ From there an ASN behaves like the same prefixes entered as IP addresses: the DP
 ### Size
 
 No size limit is enforced. A large network expands into thousands of prefixes. Each prefix is an element of the firewall sets that routing, packet duplication and the MSS clamp build, and an entry in b4's address matcher. On a small router this costs memory and load time. The **Networks (ASN)** panel on **Bypass IPs** warns above 2,000 prefixes or 16,777,216 IPv4 addresses.
+
+## Early window rewriting {#wssize}
+
+[wssize](../sets/tcp/general.md#real-tcp-window-wssize) binds its set before SNI, using steps 1-4 above. A later SNI decision cannot undo an already changed SYN. Explicit IPs are the most predictable selector. DNS hints and learned addresses require a pre-existing association and can be ambiguous on shared hosting. Unknown domain-only SYNs pass unchanged.
+
+The outgoing SYN opens a bounded shared flow record. SYN retransmissions retain it; a different ISN or a SYN after establishment starts a new record. With the default empty cutoff, the first outgoing data packet is modified before cutoff, including Fast Open data. Subsequent data retransmissions pass unchanged in this mode. FIN/RST observations remove the record; absent closing packets, idle records expire after two minutes. The cache holds at most 20000 records and declines new rewrites when full. Midstream traffic without an opening record is unchanged. Saving configuration invalidates old records when next observed. This state does not reuse sockets or preserve remote DPI state across connections.
+
+With `tcp.wssize.cutoff: "client_hello"`, the boundary comes from the original client sequence stream starting at SYN ISN+1. TLS record headers and the handshake length define the ClientHello extent, including messages spanning several TLS records. A coverage bitmap handles reordered segments, gaps and matching overlaps. Completion requires all preceding bytes; generated B4 fragments and fakes do not count. The packet completing coverage is modified as a whole, including any other data it carries. Later packets pass unchanged. Packets overlapping the completed ClientHello can still receive the rewrite inside the original deadline, without retaining its data buffer.
+
+| ClientHello tracking limit | Value |
+| --- | --- |
+| Absolute deadline from SYN | 5 seconds |
+| Original wire data, including TLS record headers | 64 KiB per flow |
+| Original payload packets and TLS records | 128 each |
+| Shared live data and coverage-buffer budget | 4 MiB |
+
+Malformed/non-TLS input, conflicting overlaps or a size/work/buffer limit ends tracking after modifying the triggering packet. A packet arriving at or after the deadline passes unchanged. Missing headers or holes can remain pending only inside these limits. Buffers are released on completion, fallback, close, replacement/reset or cleanup. The existing cleanup tick also releases idle expired tracking; no new timer or worker is created. The 4 MiB budget covers live tracking buffers, not total Go heap use. This cutoff is a B4 extension, not Zapret2's default or its named `forced_cutoff` option.
+
+Normal IPv4 and IPv6 TCP use NFQUEUE replacement, with recalculated TCP checksums and unchanged packet marks. Existing split/fake strategies consume the rewritten packet. Held ClientHello packets retain the replacement. IPv4 fragments, IPv6 extension-header TCP and truncated packets are excluded. TUN, routing/bypass and duplication combinations are refused during validation. NFQUEUE does not request GSO delivery: the kernel segments GSO packets before queueing. Whole-GSO rewriting is not implemented.
+
+Capture must include SYN and the required outgoing data: the first data packet by default, or all original ClientHello segments in the optional mode. The existing packet-count capture limit is unchanged; sufficiently many retransmissions can exhaust it before data. Offloaded flows that bypass capture cannot be processed. Selected validation flows must bypass flow offload; the feature does not change system offload settings.
+
+The default behavior follows Zapret2 `221d7dff24bfec0cd5ac0a5070b8acef2008af3d`, with default outgoing direction and any-data cutoff. Named `forced_cutoff` payloads, other directions, omitted Window/scale parameters and a persistent translator are outside this version. The importer discards scale/cutoff details, so its fake-ACK approximation is not an exact translation.
+
+[RFC 7323 section 2](https://www.rfc-editor.org/rfc/rfc7323.html#section-2) fixes Window Scale during opening; SYN Window itself is unscaled. Changing scale 7 to 1 leaves a 64-fold interpretation mismatch for later untranslated windows. Cutoff does not repair it. [RFC 9293 section 3.8.6](https://www.rfc-editor.org/rfc/rfc9293.html#section-3.8.6) also constrains advertised windows and their right edge. Successful short TLS exchanges do not certify the entire sequence as compliant.
+
+A persistent translator would need later ACK/window-update capture, negotiation tracking, right-edge ordering and saturation at 65535. The formula `min(65535, window * 2^(original_scale - wire_scale))` cannot represent arbitrarily large original windows. No ACK sequence-space translation is performed. Continuous userspace capture has CPU and queue costs; this feature provides no throughput or circumvention guarantee.

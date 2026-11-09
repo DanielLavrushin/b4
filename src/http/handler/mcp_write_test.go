@@ -193,6 +193,20 @@ func TestMCPWritePerSetPaths(t *testing.T) {
 	}
 }
 
+func TestMCPWSSizeHelloCutoff(t *testing.T) {
+	srv := newMCPTestServer(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+	for _, value := range []string{"client_hello", ""} {
+		out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].tcp.wssize.cutoff", value))
+		if !out.Changed || out.Current != value {
+			t.Fatalf("cutoff write/readback: %+v", out)
+		}
+	}
+	if res := callSetValue(t, session, ctx, "sets[video].tcp.wssize.cutoff", "packet_count"); !res.IsError {
+		t.Fatal("unknown cutoff accepted")
+	}
+}
+
 func TestMCPWriteRejectsNonAllowlistedPaths(t *testing.T) {
 	cfg := mcpTestCfg()
 	cfg.System.WebServer.MCP.AllowWrites = true
@@ -687,6 +701,9 @@ func TestMCPListWritablePaths(t *testing.T) {
 
 	if got := byPath["sets[].fragmentation.strategy"]; len(got.Options) == 0 {
 		t.Error("an enum path should list its accepted values")
+	}
+	if got := byPath["sets[].tcp.wssize.cutoff"]; len(got.Options) != 2 || got.Options[0] != "" || got.Options[1] != "client_hello" {
+		t.Errorf("cutoff must advertise the first-data default and original ClientHello: %+v", got)
 	}
 	if got := byPath["sets[].tcp.seg2delay"]; got.Type != "number" {
 		t.Errorf("seg2delay type = %q, want number", got.Type)

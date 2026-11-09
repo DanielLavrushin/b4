@@ -92,6 +92,7 @@ func NewPool(cfg *config.Config) *Pool {
 		w.matcher.Store(matcher)
 		w.ipToMac.Store(make(map[string]string))
 		w.tlsCache = state.tlsCache
+		w.wssize = state.wssize
 		w.streams = state.streams
 		w.connTracker = state.connState
 		w.destState = state.destState
@@ -150,6 +151,7 @@ func NewPool(cfg *config.Config) *Pool {
 				retest := pool.retestInterval()
 				pool.state.connState.Cleanup()
 				pool.state.tlsCache.Cleanup()
+				pool.state.wssize.cleanup(time.Now())
 				pool.state.streams.Cleanup(time.Now())
 				pool.state.destState.Cleanup(retest)
 				pool.state.hostHints.Cleanup()
