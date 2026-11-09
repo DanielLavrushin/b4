@@ -63,6 +63,8 @@ type UpstreamDialer interface {
 	DialViaSet(setID, host string, port int) (net.Conn, bool, error)
 }
 
+type TCPConnector func(context.Context, string) (net.Conn, error)
+
 // Server is a SOCKS5 proxy server.
 type Server struct {
 	cfg      atomic.Pointer[config.Config]
@@ -81,6 +83,7 @@ type Server struct {
 	acl          atomic.Pointer[sourceACL]
 	ipBlockCache IPBlockCache
 	upstreams    UpstreamDialer
+	connector    TCPConnector
 
 	liveMu     sync.Mutex
 	live       map[net.Conn]struct{}
@@ -105,9 +108,14 @@ func (s *Server) Running() bool {
 
 // NewServer creates a new SOCKS5 server.
 func NewServer(cfg *config.Config) *Server {
+	return NewServerWithConnector(cfg, nil)
+}
+
+func NewServerWithConnector(cfg *config.Config, connector TCPConnector) *Server {
 	s := &Server{
-		connSem: make(chan struct{}, maxConnections),
-		live:    make(map[net.Conn]struct{}),
+		connector: connector,
+		connSem:   make(chan struct{}, maxConnections),
+		live:      make(map[net.Conn]struct{}),
 		bufferPool: sync.Pool{
 			New: func() interface{} {
 				buf := make([]byte, bufferSize)
@@ -387,6 +395,10 @@ func (s *Server) handleRequest(conn net.Conn) error {
 	case cmdConnect:
 		return s.handleConnect(conn, dest)
 	case cmdUDPAssociate:
+		if s.connector != nil {
+			sendReply(conn, repCmdNotSupported, nil)
+			return errors.New("UDP is unavailable with a TCP connector")
+		}
 		return s.handleUDPAssociate(conn, dest)
 	default:
 		sendReply(conn, repCmdNotSupported, nil)
@@ -437,6 +449,18 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 }
 
 func (s *Server) dial(client net.Addr, dest string) (net.Conn, string, error) {
+	if s.connector != nil {
+		s.mu.Lock()
+		ctx := s.ctx
+		s.mu.Unlock()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+		defer cancel()
+		conn, err := s.connector(ctx, dest)
+		return conn, "", err
+	}
 	if set, host, port := s.proxySetFor(client, dest); set != nil {
 		if conn, handled, err := s.upstreams.DialViaSet(set.Id, host, port); handled {
 			return conn, set.Id, err
