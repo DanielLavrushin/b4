@@ -321,7 +321,11 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		}
 
 		if !set.DNS.HasUpstream() {
-			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionPassthrough)
+			if strings.TrimSpace(set.DNS.TargetDNS) != "" || strings.TrimSpace(set.DNS.DoHURL) != "" {
+				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionBadTarget)
+			} else {
+				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionPassthrough)
+			}
 			if relay(cfg, set, domain, query) {
 				continue
 			}
@@ -425,7 +429,7 @@ func (s *dnsTCPServer) escalationTarget(cfg *config.Config, set *config.SetConfi
 
 func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query []byte, servers []dns.Server) ([]byte, error) {
 	defer beginDNSRedirect(query)()
-	resp, _, err := dns.AskServers(s.ctx, servers, set.DNS.Strict, func(sctx context.Context, srv dns.Server) ([]byte, error) {
+	resp, _, err := dns.AskServers(s.ctx, servers, dns.Options{Life: s.ctx, Strict: set.DNS.Strict}, func(sctx context.Context, srv dns.Server) ([]byte, error) {
 		if srv.DoHURL != "" {
 			return s.worker.resolveDoHRedirect(sctx, srv.DoHURL, int(cfg.MainInjectedMark()), query)
 		}

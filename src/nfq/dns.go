@@ -232,6 +232,20 @@ func redirectTargets(set *config.SetConfig) []net.IP {
 	return out
 }
 
+func plainRedirectTargets(set *config.SetConfig) []net.IP {
+	list := set.DNS.UpstreamList()
+	out := make([]net.IP, 0, len(list))
+	for _, upstream := range list {
+		if config.IsDoHUpstream(upstream) {
+			continue
+		}
+		if ip := net.ParseIP(upstream); ip != nil {
+			out = append(out, ip)
+		}
+	}
+	return out
+}
+
 func queryFromTarget(set *config.SetConfig, client net.IP) bool {
 	if client == nil {
 		return false
@@ -661,8 +675,8 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 	case !useSet:
 		err = errNoDNSTarget
 	default:
-		askCtx, cancelAsk := context.WithTimeout(context.Background(), dns.ServersBudget(servers, cfg.DNSQueryTimeout())+time.Second)
-		resp, source, err = dns.AskServers(askCtx, servers, set.DNS.Strict, func(sctx context.Context, srv dns.Server) ([]byte, error) {
+		askCtx, cancelAsk := context.WithTimeout(w.ctx, dns.ServersBudget(servers, cfg.DNSQueryTimeout())+time.Second)
+		resp, source, err = dns.AskServers(askCtx, servers, dns.Options{Life: w.ctx, Strict: set.DNS.Strict}, func(sctx context.Context, srv dns.Server) ([]byte, error) {
 			if srv.DoHURL != "" {
 				return w.resolveDoHRedirect(sctx, srv.DoHURL, int(cfg.MainInjectedMark()), query)
 			}

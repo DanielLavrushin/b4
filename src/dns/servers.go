@@ -119,12 +119,21 @@ func judgeLookup(ips []net.IP, err error) judgement {
 	}
 }
 
-func askInOrder[T any](ctx context.Context, servers []Server, strict bool, headStart time.Duration,
+type Options struct {
+	Life   context.Context
+	Strict bool
+	Quiet  bool
+}
+
+func askInOrder[T any](callCtx, lifeCtx context.Context, servers []Server, opt Options, headStart time.Duration,
 	ask func(context.Context, Server) (T, error), judge func(T, error) judgement) (T, Server, error) {
 
 	var zero T
+	if lifeCtx == nil {
+		lifeCtx = callCtx
+	}
 	candidates := servers
-	if !strict {
+	if !opt.Strict && !opt.Quiet {
 		live := make([]Server, 0, len(servers))
 		for _, srv := range servers {
 			if !SourceUnreachable(srv.Source) {
@@ -140,21 +149,6 @@ func askInOrder[T any](ctx context.Context, servers []Server, strict bool, headS
 		candidates = live
 	}
 
-	if len(candidates) == 1 {
-		srv := candidates[0]
-		sctx, cancel := context.WithTimeout(ctx, srv.timeout())
-		defer cancel()
-		val, err := ask(sctx, srv)
-		if ctx.Err() != nil {
-			return zero, srv, err
-		}
-		noteAnswer(srv, judge(val, err))
-		if err != nil {
-			return zero, srv, err
-		}
-		return val, srv, nil
-	}
-
 	ch := make(chan asked[T], len(candidates))
 
 	started := 0
@@ -165,11 +159,11 @@ func askInOrder[T any](ctx context.Context, servers []Server, strict bool, headS
 		srv := candidates[started]
 		started++
 		go func(srv Server) {
-			sctx, cancel := context.WithTimeout(ctx, srv.timeout())
+			sctx, cancel := context.WithTimeout(lifeCtx, srv.timeout())
 			defer cancel()
 			val, err := ask(sctx, srv)
 			out := asked[T]{val: val, srv: srv, err: err, j: judge(val, err)}
-			if err != nil && ctx.Err() != nil {
+			if err != nil && lifeCtx.Err() != nil {
 				out.cancelled = true
 			}
 			ch <- out
@@ -193,10 +187,12 @@ func askInOrder[T any](ctx context.Context, servers []Server, strict bool, headS
 			if got.cancelled {
 				continue
 			}
-			noteAnswer(got.srv, got.j)
+			if !opt.Quiet {
+				noteAnswer(got.srv, got.j)
+			}
 			switch got.j.class {
 			case answerGood, answerNoData:
-				drainAnswers(ch, started-answered)
+				drainAnswers(ch, started-answered, opt.Quiet)
 				return got.val, got.srv, got.err
 			case answerRetryable:
 				if fallback == nil {
@@ -218,11 +214,15 @@ func askInOrder[T any](ctx context.Context, servers []Server, strict bool, headS
 			} else {
 				timerC = nil
 			}
-		case <-ctx.Done():
-			return zero, Server{}, ctx.Err()
+		case <-callCtx.Done():
+			drainAnswers(ch, started-answered, opt.Quiet)
+			return zero, Server{}, callCtx.Err()
 		}
 	}
 
+	if callCtx.Err() != nil {
+		return zero, Server{}, callCtx.Err()
+	}
 	if failure != nil {
 		return zero, failure.srv, failure.err
 	}
@@ -232,14 +232,14 @@ func askInOrder[T any](ctx context.Context, servers []Server, strict bool, headS
 	return zero, Server{}, ErrNoAddress
 }
 
-func drainAnswers[T any](ch <-chan asked[T], left int) {
+func drainAnswers[T any](ch <-chan asked[T], left int, quiet bool) {
 	if left <= 0 {
 		return
 	}
 	go func() {
 		for i := 0; i < left; i++ {
 			got := <-ch
-			if got.cancelled {
+			if got.cancelled || quiet {
 				continue
 			}
 			noteAnswer(got.srv, got.j)
@@ -271,8 +271,8 @@ func noteAnswer(srv Server, j judgement) {
 	}
 }
 
-func AskServers(ctx context.Context, servers []Server, strict bool, ask func(context.Context, Server) ([]byte, error)) ([]byte, string, error) {
-	resp, srv, err := askInOrder(ctx, servers, strict, HeadStart, ask, judgeResponse)
+func AskServers(ctx context.Context, servers []Server, opt Options, ask func(context.Context, Server) ([]byte, error)) ([]byte, string, error) {
+	resp, srv, err := askInOrder(ctx, opt.Life, servers, opt, HeadStart, ask, judgeResponse)
 	if srv.Source == "" && len(servers) > 0 {
 		srv = servers[0]
 	}
@@ -285,11 +285,11 @@ func AskServers(ctx context.Context, servers []Server, strict bool, ask func(con
 	return resp, srv.Source, nil
 }
 
-func LookupWithFallback(ctx context.Context, lookup LookupFunc, servers []Server, useSet, strict bool, name string, v4, v6 bool) ([]net.IP, error) {
+func LookupWithFallback(ctx context.Context, lookup LookupFunc, servers []Server, opt Options, useSet bool, name string, v4, v6 bool) ([]net.IP, error) {
 	if !useSet || len(servers) == 0 {
 		return LookupRouter(ctx, name, v4, v6)
 	}
-	ips, srv, err := askInOrder(ctx, servers, strict, HeadStart, func(sctx context.Context, srv Server) ([]net.IP, error) {
+	ips, srv, err := askInOrder(ctx, opt.Life, servers, opt, HeadStart, func(sctx context.Context, srv Server) ([]net.IP, error) {
 		return lookup(sctx, srv, name, v4, v6)
 	}, judgeLookup)
 	if err == nil {
@@ -299,7 +299,7 @@ func LookupWithFallback(ctx context.Context, lookup LookupFunc, servers []Server
 		log.Tracef("DNS: every resolver of the set is cooling down, asking the router's resolver for %s", name)
 		return LookupRouter(ctx, name, v4, v6)
 	}
-	if errors.Is(err, ErrNoAddress) || strict {
+	if errors.Is(err, ErrNoAddress) || opt.Strict {
 		return nil, err
 	}
 	if ctx.Err() != nil {

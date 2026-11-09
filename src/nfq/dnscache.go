@@ -126,7 +126,7 @@ func (w *Worker) dnsRedirectFallback(cfg *config.Config, set *config.SetConfig, 
 	if originalDst == nil || originalDst.IsUnspecified() {
 		return nil, ""
 	}
-	for _, target := range redirectTargets(set) {
+	for _, target := range plainRedirectTargets(set) {
 		if target.Equal(originalDst) {
 			return nil, ""
 		}

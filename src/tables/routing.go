@@ -589,7 +589,7 @@ func routeResolveHostContext(parent context.Context, cfg *config.Config, set *co
 	ctx, cancel := context.WithTimeout(parent, dns.ServersBudget(servers, cfg.DNSQueryTimeout())+time.Second)
 	defer cancel()
 
-	ips, err := dns.LookupWithFallback(ctx, routeSetLookup, servers, useSet, strict, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	ips, err := dns.LookupWithFallback(ctx, routeSetLookup, servers, dns.Options{Life: parent, Strict: strict}, useSet, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	if err != nil {
 		log.Tracef("Routing: resolve %s failed: %v", host, err)
 		return nil

@@ -638,6 +638,13 @@ func (s *Suite) tallySites(r *SitesResult) {
 	}
 }
 
+var newDNSQuerier = func(s *Suite, srv dns.Server) dnsQuerier {
+	if srv.DoHURL != "" {
+		return &dohQuerier{client: netprobe.HTTPClient(int(s.directMark), dnsQueryTimeout+time.Second), url: srv.DoHURL}
+	}
+	return &udpQuerier{mark: s.directMark, addr: net.JoinHostPort(srv.UDP.String(), "53")}
+}
+
 func (s *Suite) resolveThroughB4(ctx context.Context, site SiteResult, family string) ([]string, string) {
 	if site.SetId == "" || !site.SetEnabled {
 		return nil, ""
@@ -672,13 +679,8 @@ func (s *Suite) resolveThroughB4(ctx context.Context, site SiteResult, family st
 	if !ok {
 		return nil, ""
 	}
-	body, source, err := dns.AskServers(ctx, servers, dnsCfg.Strict, func(sctx context.Context, srv dns.Server) ([]byte, error) {
-		var q dnsQuerier
-		if srv.DoHURL != "" {
-			q = &dohQuerier{client: netprobe.HTTPClient(int(s.directMark), dnsQueryTimeout+time.Second), url: srv.DoHURL}
-		} else {
-			q = &udpQuerier{mark: s.directMark, addr: net.JoinHostPort(srv.UDP.String(), "53")}
-		}
+	body, source, err := dns.AskServers(ctx, servers, dns.Options{Life: ctx, Strict: dnsCfg.Strict, Quiet: true}, func(sctx context.Context, srv dns.Server) ([]byte, error) {
+		q := newDNSQuerier(s, srv)
 		defer q.close()
 		return q.query(sctx, site.Domain, qtype)
 	})

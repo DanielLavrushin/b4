@@ -449,3 +449,31 @@ func TestAListOnlySetAnswersThroughItsList(t *testing.T) {
 		t.Fatalf("a plain entry gave %v %v, want 192.0.2.7", target, ok)
 	}
 }
+
+func TestAListOnlySetNamesItsFirstResolver(t *testing.T) {
+	set := redirectSet("", "")
+	set.DNS.Upstreams = []string{"https://dns.example/dns-query"}
+	if got, want := dnsRedirectAction(set), dnsActionDoHPrefix+"dns.example"; got != want {
+		t.Fatalf("label = %q, want %q", got, want)
+	}
+
+	set.DNS.Upstreams = []string{"192.0.2.7", "https://dns.example/dns-query"}
+	if got, want := dnsRedirectAction(set), dnsActionForwardPrefix+"192.0.2.7"; got != want {
+		t.Fatalf("label = %q, want %q", got, want)
+	}
+}
+
+func TestTheFallbackSkipsOnlyPlainResolvers(t *testing.T) {
+	set := redirectSet("", "")
+	set.DNS.Upstreams = []string{"192.0.2.7", "https://192.0.2.8/dns-query"}
+
+	plain := plainRedirectTargets(set)
+	if len(plain) != 1 || !plain[0].Equal(net.ParseIP("192.0.2.7")) {
+		t.Fatalf("plain targets = %v, want only the address entry", plain)
+	}
+	w := redirectWorker(t, false, set)
+	cfg := w.getConfig()
+	if resp, _ := w.dnsRedirectFallback(cfg, set, "example.com", dns.BuildAQuery("example.com", 7), net.ParseIP("192.0.2.7"), 0); resp != nil {
+		t.Fatal("the fallback asked a plain resolver that the set itself uses")
+	}
+}

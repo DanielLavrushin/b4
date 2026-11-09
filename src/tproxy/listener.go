@@ -824,7 +824,7 @@ func (l *Listener) resolveHost(ctx context.Context, host string) ([]string, erro
 	ctx, cancel := context.WithTimeout(ctx, dns.ServersBudget(servers, time.Duration(l.dnsTimeout.Load()))+time.Second)
 	defer cancel()
 	strict := set != nil && set.DNS.Strict
-	ips, err := dns.LookupWithFallback(ctx, setLookup, servers, useSet, strict, host, true, l.dnsV6.Load())
+	ips, err := dns.LookupWithFallback(ctx, setLookup, servers, dns.Options{Life: l.ctx, Strict: strict}, useSet, host, true, l.dnsV6.Load())
 	if err != nil {
 		return nil, err
 	}

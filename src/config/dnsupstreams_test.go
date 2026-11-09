@@ -152,3 +152,16 @@ func TestSameRoutingResolverIgnoresPins(t *testing.T) {
 		t.Fatal("strict changes the answer, so it must look like a new resolver")
 	}
 }
+
+func TestACaseOnlyChangeInADoHURLIsANewResolver(t *testing.T) {
+	a := DNSConfig{Enabled: true, DoHURL: "https://dns.example/Dns-Query"}
+	b := DNSConfig{Enabled: true, DoHURL: "https://dns.example/dns-query"}
+	if a.SameResolver(&b) {
+		t.Fatal("a DoH path is case sensitive, so this is a different resolver")
+	}
+
+	c := DNSConfig{Enabled: true, DoHURL: "Https://dns.example/Dns-Query"}
+	if !a.SameResolver(&c) {
+		t.Fatal("the scheme is normalised, so its casing is not a change")
+	}
+}
