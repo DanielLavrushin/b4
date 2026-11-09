@@ -15,6 +15,8 @@ const HeadStart = 300 * time.Millisecond
 
 var ErrAllSourcesCooling = errors.New("every resolver of the set is cooling down")
 
+var ErrShortAnswer = errors.New("the resolver sent a reply too short to be a DNS answer")
+
 func SetServers(enabled bool, target, dohURL string, upstreams []string) ([]Server, bool) {
 	if !enabled {
 		return nil, false
@@ -153,8 +155,6 @@ func askInOrder[T any](ctx context.Context, servers []Server, strict bool, headS
 		return val, srv, nil
 	}
 
-	runCtx, cancelRun := context.WithCancel(ctx)
-	defer cancelRun()
 	ch := make(chan asked[T], len(candidates))
 
 	started := 0
@@ -165,11 +165,11 @@ func askInOrder[T any](ctx context.Context, servers []Server, strict bool, headS
 		srv := candidates[started]
 		started++
 		go func(srv Server) {
-			sctx, cancel := context.WithTimeout(runCtx, srv.timeout())
+			sctx, cancel := context.WithTimeout(ctx, srv.timeout())
 			defer cancel()
 			val, err := ask(sctx, srv)
 			out := asked[T]{val: val, srv: srv, err: err, j: judge(val, err)}
-			if runCtx.Err() != nil && ctx.Err() == nil {
+			if err != nil && ctx.Err() != nil {
 				out.cancelled = true
 			}
 			ch <- out
@@ -196,7 +196,7 @@ func askInOrder[T any](ctx context.Context, servers []Server, strict bool, headS
 			noteAnswer(got.srv, got.j)
 			switch got.j.class {
 			case answerGood, answerNoData:
-				cancelRun()
+				drainAnswers(ch, started-answered)
 				return got.val, got.srv, got.err
 			case answerRetryable:
 				if fallback == nil {
@@ -223,13 +223,28 @@ func askInOrder[T any](ctx context.Context, servers []Server, strict bool, headS
 		}
 	}
 
-	if fallback != nil {
-		return fallback.val, fallback.srv, fallback.err
-	}
 	if failure != nil {
 		return zero, failure.srv, failure.err
 	}
+	if fallback != nil {
+		return fallback.val, fallback.srv, fallback.err
+	}
 	return zero, Server{}, ErrNoAddress
+}
+
+func drainAnswers[T any](ch <-chan asked[T], left int) {
+	if left <= 0 {
+		return
+	}
+	go func() {
+		for i := 0; i < left; i++ {
+			got := <-ch
+			if got.cancelled {
+				continue
+			}
+			noteAnswer(got.srv, got.j)
+		}
+	}()
 }
 
 func armTimer(timer *time.Timer, ch *<-chan time.Time, d time.Duration) {
@@ -260,6 +275,9 @@ func AskServers(ctx context.Context, servers []Server, strict bool, ask func(con
 	resp, srv, err := askInOrder(ctx, servers, strict, HeadStart, ask, judgeResponse)
 	if srv.Source == "" && len(servers) > 0 {
 		srv = servers[0]
+	}
+	if err == nil && len(resp) < 12 {
+		err = ErrShortAnswer
 	}
 	if err != nil {
 		return nil, srv.Source, err

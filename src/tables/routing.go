@@ -458,7 +458,7 @@ func routeSameResolveTargets(a, b *config.SetConfig) bool {
 	if a.Targets.DomainOnly != b.Targets.DomainOnly || len(a.Targets.SNIDomains) != len(b.Targets.SNIDomains) {
 		return false
 	}
-	if !a.DNS.SameResolver(&b.DNS) {
+	if !a.DNS.SameRoutingResolver(&b.DNS) {
 		return false
 	}
 	counts := make(map[string]int, len(a.Targets.SNIDomains))
@@ -539,7 +539,7 @@ func routeQueuedTargetsKept(was, now *config.SetConfig) bool {
 	if was.Targets.DomainOnly != now.Targets.DomainOnly {
 		return false
 	}
-	if !was.DNS.SameResolver(&now.DNS) {
+	if !was.DNS.SameRoutingResolver(&now.DNS) {
 		return false
 	}
 	return routeNamesCovered(was.Targets.SNIDomains, now.Targets.SNIDomains) &&

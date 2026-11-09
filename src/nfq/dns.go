@@ -83,6 +83,7 @@ func parseDNSName(msg []byte, offset int) (string, bool) {
 const (
 	dnsActionBlock            = "dns-block"
 	dnsActionSinkhole         = "dns-sinkhole"
+	dnsActionBadTarget        = "dns-bad-target"
 	dnsActionPassthrough      = "dns-passthrough"
 	dnsActionFromTarget       = "dns-from-target"
 	dnsActionIPv6Disabled     = "dns-ipv6-disabled"
@@ -343,10 +344,14 @@ func dnsUpstreamLabel(rawURL string) string {
 }
 
 func dnsRedirectAction(set *config.SetConfig) string {
-	if set.DNS.DoHURL != "" {
-		return dnsActionDoHPrefix + dnsUpstreamLabel(set.DNS.DoHURL)
+	list := set.DNS.UpstreamList()
+	if len(list) == 0 {
+		return dnsActionForwardPrefix
 	}
-	return dnsActionForwardPrefix + set.DNS.TargetDNS
+	if first := list[0]; config.IsDoHUpstream(first) {
+		return dnsActionDoHPrefix + dnsUpstreamLabel(first)
+	}
+	return dnsActionForwardPrefix + list[0]
 }
 
 func logDNSEvent(proto string, set *config.SetConfig, domain string, clientIP, serverIP net.IP, clientPort uint16, srcMac, action string) {
@@ -441,6 +446,11 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				}
 
 				if !set.DNS.HasUpstream() {
+					if strings.TrimSpace(set.DNS.TargetDNS) != "" || strings.TrimSpace(set.DNS.DoHURL) != "" {
+						log.Tracef("DNS redirect: %s matched set %s, whose redirect target does not parse, passing through", dns.SafeName(domain), set.Name)
+						logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionBadTarget)
+						return vc.accept()
+					}
 					log.Tracef("DNS redirect: %s matched set %s but no redirect target configured, passing through", dns.SafeName(domain), set.Name)
 					logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionPassthrough)
 					return vc.accept()
@@ -654,9 +664,9 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 		askCtx, cancelAsk := context.WithTimeout(context.Background(), dns.ServersBudget(servers, cfg.DNSQueryTimeout())+time.Second)
 		resp, source, err = dns.AskServers(askCtx, servers, set.DNS.Strict, func(sctx context.Context, srv dns.Server) ([]byte, error) {
 			if srv.DoHURL != "" {
-				return w.resolveDoHRedirect(srv.DoHURL, int(cfg.MainInjectedMark()), query)
+				return w.resolveDoHRedirect(sctx, srv.DoHURL, int(cfg.MainInjectedMark()), query)
 			}
-			return dns.ResolveUpstream(query, srv.UDP, dns.ForwardOptions{
+			return dns.ResolveUpstreamContext(sctx, query, srv.UDP, dns.ForwardOptions{
 				Sender:       w.lookupSender(),
 				Fragment:     set.DNS.FragmentQuery,
 				Seg2Delay:    delay,
@@ -670,7 +680,7 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 
 	servedFallback := false
 	if err != nil {
-		fallback, action := w.dnsRedirectFallback(cfg, set, queryDomain, query, originalDst, targetIP, delay)
+		fallback, action := w.dnsRedirectFallback(cfg, set, queryDomain, query, originalDst, delay)
 		if fallback == nil {
 			log.Warnf("DNS redirect: %s could not answer %s (%v) and nothing else could either, the client gets SERVFAIL (set: %s)",
 				dnsUpstreamLabel(source), dns.SafeName(queryDomain), err, set.Name)
@@ -777,9 +787,9 @@ func (w *Worker) sendDNSPacket(ipVersion byte, originalDst, clientIP net.IP, cli
 	}
 }
 
-func (w *Worker) resolveDoHRedirect(serverURL string, mark int, query []byte) ([]byte, error) {
+func (w *Worker) resolveDoHRedirect(ctx context.Context, serverURL string, mark int, query []byte) ([]byte, error) {
 	timeout := w.getConfig().DNSQueryTimeout()
-	ctx, cancel := context.WithTimeout(w.ctx, timeout)
+	dctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return dns.ResolveDoH(ctx, getDoHClient(mark, timeout), serverURL, query)
+	return dns.ResolveDoH(dctx, getDoHClient(mark, timeout), serverURL, query)
 }

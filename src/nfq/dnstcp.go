@@ -427,14 +427,15 @@ func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query 
 	defer beginDNSRedirect(query)()
 	resp, _, err := dns.AskServers(s.ctx, servers, set.DNS.Strict, func(sctx context.Context, srv dns.Server) ([]byte, error) {
 		if srv.DoHURL != "" {
-			return s.worker.resolveDoHRedirect(srv.DoHURL, int(cfg.MainInjectedMark()), query)
+			return s.worker.resolveDoHRedirect(sctx, srv.DoHURL, int(cfg.MainInjectedMark()), query)
 		}
-		return dns.ResolveUpstream(query, srv.UDP, dns.ForwardOptions{
+		return dns.ResolveUpstreamContext(sctx, query, srv.UDP, dns.ForwardOptions{
 			Sender:       s.worker.lookupSender(),
 			Fragment:     set.DNS.FragmentQuery,
 			Seg2Delay:    config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax),
 			ReverseOrder: set.Fragmentation.ReverseOrder,
 			Mark:         int(cfg.MainInjectedMark()),
+			Timeout:      srv.Timeout,
 		})
 	})
 	return resp, err

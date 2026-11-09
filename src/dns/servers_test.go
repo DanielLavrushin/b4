@@ -135,7 +135,7 @@ func TestABlockedResolverCoolsDownAfterThreeFailures(t *testing.T) {
 	resetHealth(t)
 	t.Cleanup(func() { ResetSourceHealth() })
 	blocked := startAnswering(t, func([]byte) []byte { return nil }, nil)
-	blocked.Timeout = 60 * time.Millisecond
+	blocked.Timeout = time.Second
 	blocked.Source = "blocked"
 	backup := startAnswering(t, answeringWith(net.IPv4(203, 0, 113, 26)), nil)
 	backup.Source = "backup"
@@ -145,8 +145,44 @@ func TestABlockedResolverCoolsDownAfterThreeFailures(t *testing.T) {
 			t.Fatalf("lookup %d: %v", i, err)
 		}
 	}
-	if !SourceUnreachable("blocked") {
-		t.Fatalf("a resolver that failed %d times never cooled down", SourceFailuresToTrip)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if SourceUnreachable("blocked") {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("a resolver that timed out after the backup won never cooled down, its timeout is %s", blocked.Timeout)
+}
+
+func TestARealFailureBeatsARetryableAnswer(t *testing.T) {
+	resetHealth(t)
+	silent := startAnswering(t, func([]byte) []byte { return nil }, nil)
+	silent.Timeout = 400 * time.Millisecond
+	silent.Source = "silent"
+	refusing := startAnswering(t, BuildServfailResponse, nil)
+	refusing.Source = "refusing"
+
+	_, err := LookupWithFallback(context.Background(), LookupIPs, []Server{silent, refusing}, true, false, "example.test", true, false)
+	if err == nil {
+		t.Fatal("got no error; one entry timed out and the other refused, the failure must win")
+	}
+	if errors.Is(err, ErrTransientAnswer) {
+		t.Fatalf("got %v; a backup's SERVFAIL must not hide the primary's timeout", err)
+	}
+}
+
+func TestAShortReplyIsNotAnAnswer(t *testing.T) {
+	resetHealth(t)
+	short := func(context.Context, Server) ([]byte, error) { return []byte{1, 2, 3}, nil }
+	for _, servers := range [][]Server{
+		{{Source: "one"}},
+		{{Source: "one"}, {Source: "two"}},
+	} {
+		resp, _, err := AskServers(context.Background(), servers, false, short)
+		if err == nil || len(resp) != 0 {
+			t.Fatalf("servers %d: got %d bytes and %v, want a failure", len(servers), len(resp), err)
+		}
 	}
 }
 
@@ -199,5 +235,26 @@ func TestRepeatedLookupsLeaveNoGoroutines(t *testing.T) {
 		if _, err := LookupWithFallback(context.Background(), LookupIPs, []Server{good, silent}, true, false, "example.test", true, false); err != nil {
 			t.Fatalf("lookup %d: %v", i, err)
 		}
+	}
+}
+
+func TestTheCallbackSeesTheCallersContext(t *testing.T) {
+	resetHealth(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	_, _, err := AskServers(ctx, []Server{{Source: "one", Timeout: 5 * time.Second}}, false,
+		func(sctx context.Context, srv Server) ([]byte, error) {
+			<-sctx.Done()
+			return nil, sctx.Err()
+		})
+	if err == nil {
+		t.Fatal("a cancelled caller must not look like an answer")
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("the cancel took %s to reach the callback, want the caller's own deadline", took)
 	}
 }

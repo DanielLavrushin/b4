@@ -421,7 +421,7 @@ func (c *Config) Validate() error {
 					"set %q: DNS upstream entry %d is neither an address nor an https:// URL", set.Name, i+1)
 				return v.result()
 			}
-			if scheme, _, isURL := SplitUpstreamURL(norm); isURL && scheme != "https://" {
+			if scheme, _, isURL := SplitUpstreamURL(norm); isURL && !strings.EqualFold(scheme, "https://") {
 				v.addf(fmt.Sprintf("sets[%d].dns.upstreams", setIdx), "invalid_dns_upstream",
 					map[string]any{"set": set.Name, "index": i + 1},
 					"set %q: DNS upstream entry %d must use https://, a plain http:// query travels unencrypted", set.Name, i+1)
@@ -429,10 +429,15 @@ func (c *Config) Validate() error {
 			}
 		}
 		listLimit := MaxDNSUpstreams
-		if strings.TrimSpace(set.DNS.DoHURL) != "" || strings.TrimSpace(set.DNS.TargetDNS) != "" {
+		var primary []string
+		if strings.TrimSpace(set.DNS.DoHURL) != "" {
 			listLimit--
+			primary = append(primary, set.DNS.DoHURL)
+		} else if strings.TrimSpace(set.DNS.TargetDNS) != "" {
+			listLimit--
+			primary = append(primary, set.DNS.TargetDNS)
 		}
-		set.DNS.NormalizeUpstreamsLimit(listLimit, func(value string) {
+		set.DNS.NormalizeUpstreamsLimit(listLimit, primary, func(value string) {
 			label := UpstreamLabel(value)
 			if label == "" {
 				label = "one entry"

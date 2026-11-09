@@ -114,7 +114,7 @@ func resetDNSAnswerCache() {
 	dns.ResetSourceHealth()
 }
 
-func (w *Worker) dnsRedirectFallback(cfg *config.Config, set *config.SetConfig, domain string, query []byte, originalDst, failedTarget net.IP, delay int) ([]byte, string) {
+func (w *Worker) dnsRedirectFallback(cfg *config.Config, set *config.SetConfig, domain string, query []byte, originalDst net.IP, delay int) ([]byte, string) {
 	if w == nil || cfg == nil || set == nil || set.DNS.Strict {
 		return nil, ""
 	}
@@ -126,8 +126,10 @@ func (w *Worker) dnsRedirectFallback(cfg *config.Config, set *config.SetConfig, 
 	if originalDst == nil || originalDst.IsUnspecified() {
 		return nil, ""
 	}
-	if failedTarget != nil && failedTarget.Equal(originalDst) {
-		return nil, ""
+	for _, target := range redirectTargets(set) {
+		if target.Equal(originalDst) {
+			return nil, ""
+		}
 	}
 
 	resp, err := dns.ResolveUpstream(query, originalDst, dns.ForwardOptions{

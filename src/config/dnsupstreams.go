@@ -34,7 +34,7 @@ func NormalizeUpstream(raw string) (string, bool) {
 		if strings.TrimSpace(rest) == "" {
 			return "", false
 		}
-		return scheme + strings.TrimSpace(rest), true
+		return strings.ToLower(scheme) + strings.TrimSpace(rest), true
 	}
 	ip := net.ParseIP(raw)
 	if ip == nil {
@@ -100,6 +100,32 @@ func (c *DNSConfig) HasUpstream() bool {
 	return len(c.UpstreamList()) > 0
 }
 
+func (c *DNSConfig) SameRoutingResolver(o *DNSConfig) bool {
+	if c == nil || o == nil {
+		return c == o
+	}
+	return c.Enabled == o.Enabled && c.Strict == o.Strict && sameList(c.UpstreamList(), o.UpstreamList())
+}
+
+func (c *DNSConfig) RoutingResolverKey() string {
+	if c == nil {
+		return ""
+	}
+	return fmt.Sprintf("%t|%t|%s", c.Enabled, c.Strict, strings.Join(c.UpstreamList(), "\n"))
+}
+
+func sameList(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func pinsKey(pins map[string][]string) string {
 	if len(pins) == 0 {
 		return ""
@@ -144,16 +170,7 @@ func (c *DNSConfig) SameResolver(o *DNSConfig) bool {
 	if c.Enabled != o.Enabled || c.Strict != o.Strict || !samePins(c.Pins, o.Pins) {
 		return false
 	}
-	a, b := c.UpstreamList(), o.UpstreamList()
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if !strings.EqualFold(a[i], b[i]) {
-			return false
-		}
-	}
-	return true
+	return sameList(c.UpstreamList(), o.UpstreamList())
 }
 
 func (c *DNSConfig) ResolverKey() string {
@@ -164,14 +181,19 @@ func (c *DNSConfig) ResolverKey() string {
 }
 
 func (c *DNSConfig) NormalizeUpstreams(onDrop func(value string)) {
-	c.NormalizeUpstreamsLimit(MaxDNSUpstreams, onDrop)
+	c.NormalizeUpstreamsLimit(MaxDNSUpstreams, nil, onDrop)
 }
 
-func (c *DNSConfig) NormalizeUpstreamsLimit(limit int, onDrop func(value string)) {
+func (c *DNSConfig) NormalizeUpstreamsLimit(limit int, already []string, onDrop func(value string)) {
 	if c == nil || len(c.Upstreams) == 0 {
 		return
 	}
-	seen := make(map[string]struct{}, len(c.Upstreams))
+	seen := make(map[string]struct{}, len(c.Upstreams)+len(already))
+	for _, raw := range already {
+		if norm, ok := NormalizeUpstream(raw); ok {
+			seen[norm] = struct{}{}
+		}
+	}
 	out := make([]string, 0, len(c.Upstreams))
 	for _, raw := range c.Upstreams {
 		norm, ok := NormalizeUpstream(raw)

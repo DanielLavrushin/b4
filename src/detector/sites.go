@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netprobe"
 )
@@ -667,36 +668,37 @@ func (s *Suite) resolveThroughB4(ctx context.Context, site SiteResult, family st
 	if want6 {
 		qtype = 28
 	}
-	var ips []string
-	for _, upstream := range dnsCfg.UpstreamList() {
+	servers, ok := dns.SetServers(dnsCfg.Enabled, dnsCfg.TargetDNS, dnsCfg.DoHURL, dnsCfg.Upstreams)
+	if !ok {
+		return nil, ""
+	}
+	body, source, err := dns.AskServers(ctx, servers, dnsCfg.Strict, func(sctx context.Context, srv dns.Server) ([]byte, error) {
 		var q dnsQuerier
-		source := ""
-		switch {
-		case config.IsDoHUpstream(upstream):
-			q = &dohQuerier{client: netprobe.HTTPClient(int(s.directMark), dnsQueryTimeout+time.Second), url: upstream}
-			source = "doh"
-		case net.ParseIP(upstream) != nil:
-			q = &udpQuerier{mark: s.directMark, addr: net.JoinHostPort(upstream, "53")}
-			source = "target"
-		default:
+		if srv.DoHURL != "" {
+			q = &dohQuerier{client: netprobe.HTTPClient(int(s.directMark), dnsQueryTimeout+time.Second), url: srv.DoHURL}
+		} else {
+			q = &udpQuerier{mark: s.directMark, addr: net.JoinHostPort(srv.UDP.String(), "53")}
+		}
+		defer q.close()
+		return q.query(sctx, site.Domain, qtype)
+	})
+	if err != nil {
+		return nil, ""
+	}
+	label := "target"
+	if config.IsDoHUpstream(source) {
+		label = "doh"
+	}
+	ans := parseAnswer(body, nil, familyRecord(family))
+	var ips []string
+	for _, ip := range ans.ips {
+		if isFakeRange(ip) || len(ips) == maxAddresses {
 			continue
 		}
-		body, err := q.query(ctx, site.Domain, qtype)
-		q.close()
-		ans := parseAnswer(body, err, familyRecord(family))
-		ips = ips[:0]
-		for _, ip := range ans.ips {
-			if isFakeRange(ip) || len(ips) == maxAddresses {
-				continue
-			}
-			ips = append(ips, ip)
-		}
-		if len(ips) > 0 {
-			return ips, source
-		}
-		if ctx.Err() != nil {
-			return nil, ""
-		}
+		ips = append(ips, ip)
+	}
+	if len(ips) > 0 {
+		return ips, label
 	}
 	return nil, ""
 }

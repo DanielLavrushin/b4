@@ -6,8 +6,7 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
-- A set can ask more than one DNS resolver: **More resolvers** on the DNS & Routing tab takes a list of addresses and https:// DoH URLs, up to eight in total with the resolver above. b4 asks the resolver above first, then each entry in turn, starting the next after 300 ms without an answer and at once on SERVFAIL, NOTIMP or REFUSED. The first usable answer ends the lookup, so the order of the list is the order of trust, and an entry that fails three times in a row is left out for 30 s. [#551](https://github.com/DanielLavrushin/b4/pull/551)
-
+- A set can ask more than one DNS resolver: **More resolvers** on its **DNS & Routing** tab takes up to eight in total, asked in order when one fails or is slow. ([#551](https://github.com/DanielLavrushin/b4/pull/551), thanks [@asovetov](https://github.com/asovetov))
 - The log names the set and the device when a **TCP Timestamp** fake goes out without its timestamp, as from a Windows PC by default or toward a server that refuses timestamps. [#554](https://github.com/DanielLavrushin/b4/issues/554)
 - With **Skip IPTables/NFTables Setup** on, the log warns when the router's connection tracking would drop **TCP Check** fakes. [#554](https://github.com/DanielLavrushin/b4/issues/554)
 - When **Discovery** finishes while b4 is in the background, the tab title marks it, and over HTTPS **Notify me** on the **Discovery** page adds a browser notification with how many sites got a strategy. [#544](https://github.com/DanielLavrushin/b4/issues/544)
