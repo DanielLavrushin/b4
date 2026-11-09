@@ -159,7 +159,7 @@ func TestDropAndInjectTCPv6SurvivesDestinationOptionsHeader(t *testing.T) {
 						}
 					}()
 
-					w.dropAndInjectTCPv6(&set, raw, dst)
+					w.dropAndInjectTCPv6(&set, raw, dst, true)
 				})
 			}
 		}
@@ -198,7 +198,7 @@ func TestDropAndInjectTCPv6KeepsStrategyPathForPlainPacket(t *testing.T) {
 
 	plain := makeV6TCPPacketWithExt(payload, 1000, 0, nil)
 	start := time.Now()
-	w.dropAndInjectTCPv6(&set, plain, dst)
+	w.dropAndInjectTCPv6(&set, plain, dst, true)
 	plainElapsed := time.Since(start)
 
 	if plainElapsed < delayMs*time.Millisecond {
@@ -207,7 +207,7 @@ func TestDropAndInjectTCPv6KeepsStrategyPathForPlainPacket(t *testing.T) {
 
 	withExt := makeV6TCPPacketWithExt(payload, 1000, 60, makeV6ExtHeader(6, 8))
 	start = time.Now()
-	w.dropAndInjectTCPv6(&set, withExt, dst)
+	w.dropAndInjectTCPv6(&set, withExt, dst, true)
 	extElapsed := time.Since(start)
 
 	if extElapsed >= delayMs*time.Millisecond {

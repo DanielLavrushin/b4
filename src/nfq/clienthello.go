@@ -74,6 +74,34 @@ func startsMessage(payload []byte) bool {
 	return startsClientHelloRecord(payload) || looksLikeHTTPRequest(bytes.TrimPrefix(payload, methodEOL))
 }
 
+func helloRecordLen(payload []byte) uint32 {
+	for i := 0; i+8 < len(payload); i++ {
+		if payload[i] == TLSHandshakeType && payload[i+1] == TLSVersionMajor && payload[i+5] == TLSClientHello {
+			recLen := uint32(payload[i+3])<<8 | uint32(payload[i+4])
+			msgLen := uint32(payload[i+6])<<16 | uint32(payload[i+7])<<8 | uint32(payload[i+8])
+			if msgLen+4 > recLen {
+				return 0
+			}
+			return uint32(i) + 5 + recLen
+		}
+	}
+	return 0
+}
+
+var changeCipherSpecRecord = []byte{0x14, TLSVersionMajor, 0x03, 0x00, 0x01, 0x01}
+
+func startedHello(payload []byte) (uint32, bool) {
+	hello := bytes.TrimPrefix(payload, changeCipherSpecRecord)
+	if !startsClientHelloRecord(hello) || !startsClientHello(hello) {
+		return 0, false
+	}
+	n := helloRecordLen(hello)
+	if n == 0 {
+		return 0, true
+	}
+	return uint32(len(payload)-len(hello)) + n, true
+}
+
 func truncatedClientHello(payload []byte) bool {
 	if !startsClientHello(payload) {
 		return false

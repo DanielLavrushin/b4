@@ -194,14 +194,19 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
       .filter(Boolean)
       .join(" + ") || "Disabled";
 
-  // faking.ttl reaches the wire on the fake ClientHello only under the TTL
-  // strategy or with apply_ttl, but the SYN fake paths read it regardless: as the
-  // fallback when tcp.syn_ttl is unset, and always for the MD5 fake SYN.
   const isFakeTtlActive =
-    config.faking.strategy === "ttl" ||
-    !!config.faking.apply_ttl ||
-    !!config.tcp.syn_fake ||
-    !!config.faking.tcp_md5;
+    (config.faking.sni &&
+      (config.faking.strategy === "ttl" || !!config.faking.apply_ttl)) ||
+    !!config.faking.tcp_md5 ||
+    (!!config.tcp.syn_fake && !config.tcp.syn_ttl) ||
+    config.fragmentation.strategy === "oob" ||
+    !!config.fragmentation.strategy_pool?.includes("oob") ||
+    !!config.fragmentation.combo?.decoy_enabled ||
+    (config.fragmentation.seq_overlap_pattern?.length ?? 0) > 0 ||
+    !!config.tcp.desync.post_desync ||
+    config.udp.mode === "fake";
+
+  const incomingMode = config.tcp.incoming?.mode || "off";
 
   const desyncStatus = isDesyncEnabled
     ? desyncModeOptions.find((o) => o.value === config.tcp.desync.mode)
@@ -509,7 +514,7 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               max={64}
               step={1}
               helperText={t("sets.faking.fakeSni.ttlHelper")}
-              disabled={!config.faking.sni || !isFakeTtlActive}
+              disabled={!isFakeTtlActive}
             />
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
@@ -776,13 +781,15 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
               onChange={(e) =>
                 onChange("tcp.incoming.strategy", e.target.value)
               }
-              disabled={config.tcp.incoming?.mode === "off"}
+              disabled={incomingMode !== "fake"}
               helperText={
-                config.tcp.incoming?.mode === "off"
+                incomingMode === "off"
                   ? t("sets.faking.incoming.enableFirst")
-                  : incomingStrategyDescriptions[
-                      config.tcp.incoming?.strategy || "badsum"
-                    ]
+                  : incomingMode === "fake"
+                    ? incomingStrategyDescriptions[
+                        config.tcp.incoming?.strategy || "badsum"
+                      ]
+                    : t("sets.faking.incoming.fakeModeOnly")
               }
               aiTopic="tcp.incoming.strategy"
               aiContext={{
