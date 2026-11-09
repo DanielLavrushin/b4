@@ -1,1345 +1,2083 @@
-# B4 - Bye Bye Big Bro
+# Changelog
 
-## [1.91.0] - unreleased
+All notable changes to b4 are recorded in this file.
 
-- ADDED: **A set can ask more than one DNS resolver** - **More resolvers** on the DNS & Routing tab takes a list of addresses and https:// DoH URLs, up to eight in total with the resolver above. b4 asks the resolver above first, then each entry in turn: the next one starts after 300 ms without an answer, and at once when an entry replies SERVFAIL, NOTIMP or REFUSED. The first usable answer ends the lookup, so the order of the list is the order of trust. An entry that fails three times in a row is left out for 30 s. A set without the list resolves exactly as before: one resolver, one timeout, its SERVFAIL handed to the device.
+## [Unreleased]
+
+### Added
+
+- A set can ask more than one DNS resolver: **More resolvers** on the DNS & Routing tab takes a list of addresses and https:// DoH URLs, up to eight in total with the resolver above. b4 asks the resolver above first, then each entry in turn, starting the next after 300 ms without an answer and at once on SERVFAIL, NOTIMP or REFUSED. The first usable answer ends the lookup, so the order of the list is the order of trust, and an entry that fails three times in a row is left out for 30 s. [#551](https://github.com/DanielLavrushin/b4/pull/551)
+
+- The log names the set and the device when a **TCP Timestamp** fake goes out without its timestamp, as from a Windows PC by default or toward a server that refuses timestamps. [#554](https://github.com/DanielLavrushin/b4/issues/554)
+- With **Skip IPTables/NFTables Setup** on, the log warns when the router's connection tracking would drop **TCP Check** fakes. [#554](https://github.com/DanielLavrushin/b4/issues/554)
+- When **Discovery** finishes while b4 is in the background, the tab title marks it, and over HTTPS **Notify me** on the **Discovery** page adds a browser notification with how many sites got a strategy. [#544](https://github.com/DanielLavrushin/b4/issues/544)
+
+### Changed
+
+- A set that an AI app creates through **MCP** `b4_find_bypass_strategy` is named after the site instead of an internal strategy name such as `cached-5-tcpmd5`. [#559](https://github.com/DanielLavrushin/b4/issues/559)
+
+### Fixed
+
+- With fake strategy **TCP Check**, or **TCP Timestamp** on a device without TCP timestamps such as a Windows PC, some sites on Cloudflare failed with an SSL error, because the server took the fake for the real start of the connection. [#554](https://github.com/DanielLavrushin/b4/issues/554)
+- Fake strategy **MD5 Sum** broke the sites of its set, because the fake went out without the MD5 option. [#555](https://github.com/DanielLavrushin/b4/issues/555)
+- A set with **Fake SNI Packets** on sent its fake again in front of later packets of a connection, and so did the **Decoy Packet** of **Combo**, so a server could close the connection right after it opened. [#556](https://github.com/DanielLavrushin/b4/issues/556)
+- A fake meant to carry a wrong checksum could, in rare cases, carry a valid one and reach the server as data. [#557](https://github.com/DanielLavrushin/b4/issues/557)
+- In the set editor, **Fake TTL** was greyed out while other features used it, **Corruption Strategy** stayed editable where it does nothing, and several faking help texts were wrong. [#558](https://github.com/DanielLavrushin/b4/issues/558)
 
 ## [1.90.0] - 2026-11-07
-- FIXED: **AI apps on the newest MCP protocol, such as Antigravity CLI, lost the connection to b4 before its tools appeared** - such an app sends some notifications without the protocol version, and b4 refused them. The app then closed the connection. Cancelling a running tool from such an app did not stop the tool in b4 either.
-- FIXED: **Behind nginx, an AI app on the newest MCP protocol could wait a minute before b4's tools appeared** - the app first opens a stream for updates from b4 and waits for b4's first message on it. nginx could hold that message until its read timeout, 60 seconds by default, and then closed the stream.
-- FIXED: **Many errors in the web interface showed only a bare status, such as 409 Conflict** - b4 sent the reason as plain text, and the web interface dropped it while reading the reply. This hit starting Discovery or the DPI Detector, editing the Watchdog domain list and clearing DPI Detector history. Adding a domain to a set from the Traffic page or the Dashboard showed a parse error instead of the reason.
-- FIXED: **In TUN mode, a device could keep waiting after b4 had cut its connection or answered its DNS query** - when another connection already leaves the router for the same server from the same port, the router moves the new one to another port. b4 sent its reset, refusal or DNS answer for that connection to the new port, which the device does not use. This hit IP Block Detection, sets that block a site, refused UDP connections and DNS answers from a set.
-- FIXED: **With IP Block Detection and Cache Blocked IPs on, a set that sends RST or FIN fakes did not check a silent server** - the fakes of TCP Desync Attack and Post-ClientHello RST closed the kernel's record of the connection while the device kept waiting. b4 took the connection for a finished one. It neither checked the address for a ban nor reset the connection.
-- CHANGED: **A set routed into an AmneziaWG interface leaves its packets alone, as a set routed into WireGuard does** - while the interface is up, the set's strategy, its ban resets and its QUIC refusal for banned addresses do not apply. Its connections end with routed->awg0 on the Logs page.
-- FIXED: **A set using Combo with an Overlap Length could break connections soon after they opened** - b4 added the overlap to later packets of a connection, not just to its first one. A second request sent before the answer to the first is one example. Its fake bytes covered earlier data that could still be on its way. The site could read them as real data and close the connection.
-- FIXED: **On a busy network, connections could hang after b4 started, while b4 showed as running** - packets that arrived during the start could make b4 fail to open one of its packet queues. b4 then tried again without asking for the owner of each packet, so that queue could no longer tell the router's own packets from the others. When the second try failed as well, nothing read the queue and connections through it hung.
-- FIXED: **With IP Block Detection on, a connection could be cut at its first request when a device reused a port** - a device that opened a new connection to the same server from the same port within two minutes inherited the old connection's state. b4 took the new request for a repeat of the old one. It reset the connection and checked the server for a block.
-- ADDED: **A set that lists a provider's own servers, such as its Google Global Cache nodes, can keep the connections to them** - with IP priority on, a connection to one of the set's addresses stays with the set even when a set lower in the list matches its domain. The switch is under Targets, Bypass IPs in the set editor and is off by default. It is meant for servers that carry only this set's sites, not for shared CDN ranges.
-- CHANGED: **ASN targets moved to Targets, Bypass IPs in the set editor** - the separate ASN tab is gone. The Networks (ASN) panel sits next to Manual Bypass IPs and Bypass GeoIP Categories.
-- FIXED: **Tab did not leave an empty entry field in the set editor** - in fields such as Add Bypass Domain and Add Bypass IP/CIDR, Tab tried to add an entry even when the field was empty. Keyboard focus stayed in the field.
-- FIXED: **Manual Bypass IPs took text that is not an address, such as an AS number** - the set saved such an entry, but it matched no traffic. The entry still counted as a target. A routing set with nothing else showed no warning that it routes nothing.
-- FIXED: **A duplicated set appeared below its source, then jumped to the top of the list once the list reloaded** - b4 saved the copy as the first set in the list. Ahead of its source, the copy took the connections to the sites both sets list.
-- FIXED: **Without a login set for the web interface, any website opened on a device in the network could watch b4's live log and the sites each device visits** - b4 sent the live data of the Logs, Traffic, Dashboard and Discovery pages to a page of any site. Browsers do not keep other sites away from this data on their own.
-- FIXED: **Escalation did not keep a site's address from being banned** - after a set moved a site to its backup set, it kept checking the site's earlier connections. When their server stayed silent, the set banned the address.
-- FIXED: **A backup set could give up on a site as soon as Escalation moved the site to it** - the connection that triggered the switch arrived with the first set's unanswered attempts already counted. A backup set with IP Block Detection reset it, and with Cache Blocked IPs on, connections to that address were then reset for several minutes. A backup set with its own Escalation passed the site on to the next set without trying it.
-- FIXED: **Escalation and IP Block Detection missed a stuck connection when the site's name was in the second packet of its first request** - a browser often sends that request as two packets, and the name can land in either one. With no answer, the device resends only the first packet, and b4 did not count a packet without a name. The connection waited until the browser gave up.
-- FIXED: **A set with IP Block Detection or Escalation and a delay in its strategy, such as Combo, could cut off a working site that asked the browser to repeat its first request** - some servers ask for this as the connection opens. b4 counted the repeated request as an unanswered resend, although the server had answered. The set then reset the connection or moved the site to its backup set. With Cache Blocked IPs on, later connections to that address were reset too.
-- CHANGED: **Without a login set for the web interface, b4's live data reaches only pages at the same address and port as b4** - a dashboard on another site, such as a Home Assistant panel, needs a login set for the web interface and must pass its token. A reverse proxy in front of b4 must pass the original Host header and X-Forwarded-Proto, or the Logs and Traffic pages stay empty.
-- ADDED: **Discovery offers the other blocked hosts a site's page needs for its styles, scripts and images** - a last step, Page hosts, tests the hosts the page names, first without b4 and then with the strategy found. Hosts that load only with the strategy get checkboxes on the result card, and Apply as a set adds the ticked ones. History keeps them for a later Apply, and b4_find_bypass_strategy names them to AI apps.
-- CHANGED: **Reloading or reopening the Discovery page within 30 minutes of a run's end shows its results again** - this holds for a run started from that page. New search clears them in the browser where it is clicked.
-- CHANGED: **During a Discovery run, a site's row shows a strategy it found as Fastest so far instead of Found** - the result card offers the strategy that loaded the most sites, which can be another one. Among strategies from earlier runs, the card prefers the one that worked most often, so cached-2 goes before cached-10. The card and the history list the same other strategies, up to twelve, fastest first.
-- FIXED: **Discovery gave sets a DNS redirect that the site did not need** - it took the provider's DNS answer for a forged one when a public resolver gave other addresses and no address opened the site without a bypass. Blocked sites that send each region to its own servers got such a redirect. The apply dialog then could not add the site to a set with the same strategy.
-- FIXED: **A strategy remembered from an earlier Discovery run could pass every try, then fail as a set** - when its fake was a captured ClientHello, the run tested it with the built-in fake. The set made from it sent the capture. The DNS and Page hosts results came from the same wrong test. Community sets with a captured fake had the same problem.
-- FIXED: **Applying a saved Discovery result could give a set another fake than the one it was tested with** - when the strategy's captured payload had been deleted since the run, the set sent the built-in fake, with no warning.
-- CHANGED: **Deleting a payload that a set uses asks first** - on the Payloads tab, Delete and Clear all captures name those sets and what their fakes fall back to. A payload no set uses is deleted at once, as before.
-- FIXED: **A missing TCP fake payload also took away a set's UDP fake payload** - when b4 could not read the captured payload of a set's TCP fakes, it skipped the set's UDP payload too. UDP fakes went out as zeros, even with their own payload file intact or a QUIC preset chosen.
-- FIXED: **An AI app could report one Discovery strategy and apply another** - b4_find_bypass_strategy named each site's fastest strategy, while applying installed the one the result card offers. When the AI app applied a saved result, the Discovery history marked the fastest strategy as tried.
-- FIXED: **AI apps connected to b4 could misread a setting or miss what it does** - a search of b4's notes on settings in plain words, such as "logging level", found nothing. The notes named a set's fake payload in words, while b4 reports it as a number, and left out STUN. They also did not say that a routing set with Match any IP address on takes the router's own connections too.
-- CHANGED: **The diagnose_domain prompt for AI apps checks whether the site's traffic reaches b4** - it reads b4's error log, has the user open the site again and then reads the recent connections. It names the installed version and, with Allow active probes on, offers a test fetch of the site. It reads the firewall rules only when the status shows a problem or no other step finds the cause.
-- FIXED: **Discovery could report that a set with the Random fake works while the set itself failed** - Discovery never sent random bytes. It tested that fake with the built-in fake, so the watchdog gave up on the failing set. A site tested with the built-in fake could also be offered a set with Random, as if both carried the same strategy.
-- FIXED: **A captured ClientHello picked in Discovery's options could go out as the same site's QUIC capture** - this needed a TLS and a QUIC capture saved for one site. Which of the two a run used could change from run to run. The set made from the result named the QUIC file.
-- FIXED: **Discovery's result card and History could show the confirmation of another strategy** - the card can offer a strategy other than a site's fastest, and both read the fastest one's result. After Stop now, a strategy that was never re-checked could read confirmed 3 of 3. A strategy that passed 3 of 3 read not confirmed when the fastest one had failed.
-- FIXED: **On a narrow screen, the history headers on the Discovery and DPI Detector pages could be unreadable** - the buttons next to the title kept their full width. The text under the title was squeezed into a narrow column and ran under the buttons.
+
+### Added
+
+- **Discovery** finds the other blocked hosts a site's page needs for its styles, scripts and images: the new **Page hosts** step tests them, and **Apply as a set** adds the ticked ones.
+- A set can keep the connections to a provider's own servers, such as its Google Global Cache nodes, even when a lower set matches their domain. The **IP priority** switch for this is under **Targets, Bypass IPs** in the set editor and is off by default.
+
+### Changed
+
+- A set routed into an AmneziaWG interface leaves its packets alone while the interface is up, as a set routed into WireGuard does.
+- The **ASN** tab of the set editor is gone: ASN targets are under **Targets, Bypass IPs**.
+- **Discovery** shows a run's results again when its page is reopened within 30 minutes, and marks a strategy found during a run as the fastest so far.
+- Deleting a payload that a set uses on the **Payloads** tab asks first and names the sets that depend on it.
+- The `diagnose_domain` prompt for AI apps first checks whether the site's traffic reaches b4.
+
+### Fixed
+
+- AI apps on the newest **MCP** protocol, such as Antigravity CLI, lost the connection before b4's tools appeared, and behind nginx they could wait a minute for them.
+- An AI app could report one **Discovery** strategy and apply another, and b4's notes on settings did not turn up when searched in plain words.
+- Many errors in the web interface showed only a bare status, such as 409 Conflict.
+- In TUN mode, a device could keep waiting after b4 had cut its connection or answered its DNS query, because the router had moved the connection to another port.
+- **IP Block Detection** and **Escalation** could cut off working sites: when a device reused a port, when a server asked the browser to repeat its first request, or right after **Escalation** moved a site to its backup set.
+- **IP Block Detection** and **Escalation** missed some stuck connections: with RST or FIN fakes, or when the site name was in the second packet of the first request.
+- A set using **Combo** with an **Overlap Length** could break connections soon after they opened, because the overlap was added to later packets too.
+- On a busy network, connections could hang after b4 started, while b4 showed as running.
+- A **Discovery** strategy could pass every test and then fail as a set, because captured ClientHello and **Random** fakes were tested with the built-in fake, or a site's QUIC capture went out in place of its TLS one.
+- Applying a saved **Discovery** result whose payload had since been deleted gave the set the built-in fake without a warning.
+- **Discovery** added DNS redirects that some sites did not need, and its result card and **History** could show another strategy's confirmation.
+- A missing TCP fake payload also took away a set's UDP fake payload, so UDP fakes went out as zeros.
+- In the set editor, Tab did not leave an empty entry field, and **Manual Bypass IPs** accepted text that is not an address, such as an AS number.
+- A duplicated set was saved at the top of the list, ahead of its source, and took the connections to the sites both list.
+- On a narrow screen, the history headers on the **Discovery** and **DPI Detector** pages could be unreadable.
+
+### Security
+
+- Without a login for the web interface, any website opened on a device in the network could watch b4's live log and the sites each device visits. A dashboard on another site, such as Home Assistant, needs a web interface login and its token, and a reverse proxy must pass the original `Host` header and `X-Forwarded-Proto`.
 
 ## [1.89.1] - 2026-10-31
 
-- ADDED: **Every captured ClientHello can be picked for Discovery in one click** - the list under Captured ClientHello as the fake payload in Discovery's options starts with Select all payloads. Once all are picked, the same entry reads Clear the payload selection. The list also stays open, so several payloads can be picked in one pass. [#475](https://github.com/DanielLavrushin/b4/pull/475), thanks [@asovetov](https://github.com/asovetov)
-- FIXED: **Videos and sites still froze on servers the provider blocks for every site** - IP Block Detection banned such an address only when a device resent its first request on the same connection. Some providers let that request reach the server and then drop the server's answer, so the device never resends it. Apps that try QUIC first also kept waiting on addresses that were already banned.
-- FIXED: **A server that refuses unknown site names could be banned, and re-tests never lifted the ban** - b4 checks a suspect address by connecting to it with unrelated site names. A server that closed or reset those connections without a reply counted as blocked, in the first check and in every re-test.
-- FIXED: **In TUN mode, rejected QUIC and other UDP connections kept apps waiting instead of failing at once** - this hit sets with Block QUIC (force TCP) on, with Reject as the Action Mode on their UDP tab, or with Reject as the Block action. The refusal b4 sends back named the router's address instead of the device's, so the device ignored it.
+### Added
+
+- The **Captured ClientHello as the fake payload** list in **Discovery**'s options starts with **Select all payloads** and stays open, so several payloads can be picked in one pass. ([#475](https://github.com/DanielLavrushin/b4/pull/475), thanks [@asovetov](https://github.com/asovetov))
+
+### Fixed
+
+- Videos and sites still froze on servers the provider blocks for every site, because **IP Block Detection** missed blocks that drop the server's answer, and apps that try QUIC first kept waiting on banned addresses.
+- **IP Block Detection** could ban a server that refuses unknown site names, because b4 tests a suspect address with unrelated names, and re-tests never lifted the ban.
+- In TUN mode, QUIC and other UDP connections that a set rejects through **Block QUIC (force TCP)**, the UDP **Action Mode** or the **Block action** kept apps waiting instead of failing at once.
 
 ## [1.89.0] - 2026-10-30
 
-- ADDED: **Connections to an address the provider blocks for all sites on it fail at once instead of hanging** - sets with IP Block Detection and Cache Blocked IPs on ban such an address for 24 hours, or for 7 days when it is caught again. DNS answers that list other addresses leave it out, and the dashboard's Banned addresses panel lists the bans. Bans are on by default, and Remember blocked addresses under Settings, Core, Packet Engine turns them off. The saved ban list with re-tests is inspired by [Ladon](https://github.com/belotserkovtsev/Ladon).
-- ADDED: **AI apps connected to b4's MCP server can look up b4's REST API** - the b4_api_reference tool describes every operation of that API from a copy built into b4, for tasks the other MCP tools do not cover. With a login set for the web interface, calls to the API need its username and password. The tool tells the AI app to ask the user for them first.
-- CHANGED: **The MTProto proxy's first answer to a Telegram app follows the answer of its Fake SNI Domain** - b4 checks that site from the router every few hours and copies its cipher, its key exchange and the size of the first part of its answer. The answer also carries a real encryption key instead of random bytes and comes after a short pause. A site without TLS 1.3 cannot be followed, and the log warns about it.
-- FIXED: **In TUN mode b4 could keep the router's processor fully busy, and sites stopped opening on every device** - b4 learned which device a connection came from by reading the router's whole list of connections. On some routers one read takes about a quarter of a second, and b4 did one for nearly every new connection. Since 1.88.0 it also did one for every DNS answer the router sends a device.
-- FIXED: **On Keenetic, connections to port 443 through a proxy set or Telegram over WebSocket stalled once they opened** - Telegram, for example, stayed on Updating. Keenetic's firewall drops data that arrives for port 443 on the router itself, apart from its own. These sets hand their connections to b4 on the router, and that rule dropped their data. [#469](https://github.com/DanielLavrushin/b4/pull/469), thanks [@asovetov](https://github.com/asovetov)
-- FIXED: **Sites that need a bypass could stop loading until b4 was restarted** - this happened when the firmware or another service removed the firewall rules that pass traffic to b4 but left the rest of b4's rules. b4 checks its rules regularly, but these were not part of the check and were never put back. [#468](https://github.com/DanielLavrushin/b4/pull/468), thanks [@asovetov](https://github.com/asovetov)
-- FIXED: **With Telegram over WebSocket on, proxy sets never got the Telegram connections the bridge cannot relay itself** - the switch takes every connection to Telegram's addresses ahead of other sets. Such connections, a bot's requests to api.telegram.org for example, went through the Cloudflare Worker or directly, even when a proxy set listed the site or covered Telegram's addresses. Where Telegram's addresses are blocked, they were reset after about 13 seconds.
-- FIXED: **Photos and videos through the MTProto proxy or Telegram over WebSocket sometimes started loading only after 1-3 seconds** - b4 sent each media connection of a Telegram app through Telegram's own WebSocket server or a Cloudflare relay, whichever answered. The two led to different Telegram servers, and the app's key for media worked only on the side that made it. Each switch made the app create a new key, and its other new connections waited for it.
-- FIXED: **On some networks Telegram over WebSocket and the MTProto proxy stopped loading photos, videos and files** - b4 opened each connection through Cloudflare, to the shared domains or a Cloudflare Worker, with a first message too large for one network packet. Since late October some networks drop such connections to Cloudflare. Where Telegram's own servers were reachable, messages still went through, but everything that needs a Cloudflare route timed out.
+### Added
+
+- Sets with **IP Block Detection** and **Cache Blocked IPs** ban an address the provider blocks for every site on it, so connections to it fail at once instead of hanging, and the dashboard's **Banned addresses** panel lists the bans, an approach inspired by [Ladon](https://github.com/belotserkovtsev/Ladon). Bans are on by default, and **Remember blocked addresses** under **Settings, Core, Packet Engine** turns them off.
+- AI apps connected over **MCP** can look up b4's REST API with the `b4_api_reference` tool, for tasks the other tools do not cover, and are told to ask the user for the web interface login when one is set.
+
+### Changed
+
+- The **MTProto Proxy**'s first answer to a Telegram app copies the cipher, key exchange and answer size of the **Fake SNI Domain**, and the log warns when that site has no TLS 1.3.
+
+### Fixed
+
+- In TUN mode, b4 could load the router's processor fully until no device could open sites, because it read the router's whole connection list for almost every new connection and, since 1.88.0, every DNS answer.
+- On Keenetic, connections to port 443 through a proxy set or **Telegram over WebSocket** stalled once they opened, so Telegram, for example, stayed on Updating. ([#469](https://github.com/DanielLavrushin/b4/pull/469), thanks [@asovetov](https://github.com/asovetov))
+- Sites that need a bypass could stop loading until b4 restarted when the firmware or another service removed the firewall rules that pass traffic to b4. ([#468](https://github.com/DanielLavrushin/b4/pull/468), thanks [@asovetov](https://github.com/asovetov))
+- With **Telegram over WebSocket** on, Telegram connections the bridge cannot relay, such as a bot's API requests, skipped the proxy sets that covered them, and where Telegram is blocked they were reset after about 13 seconds.
+- Photos and videos through the **MTProto Proxy** or **Telegram over WebSocket** sometimes started loading only after 1-3 seconds.
+- On some networks, **Telegram over WebSocket** and the **MTProto Proxy** stopped loading photos, videos and files, because those networks began to drop Cloudflare connections that open with a large first message.
 
 ## [1.88.2] - 2026-10-29
 
-- FIXED: **On Keenetic, devices handled by Device Filtering could not open any site, even one in no set** - Keenetic lets a connection out under the router's address only after its own firewall rules have marked it. b4 took the first packets of these connections before those rules ran. The connections then left with the device's local address and got no answer. [#466](https://github.com/DanielLavrushin/b4/issues/466)
-- FIXED: **With Device Filtering on, b4 could rebuild its firewall rules every 10 seconds** - a rule from the firmware or another service that b4's own iptables could not read hid one of b4's rules from its checks. b4 took that rule for missing and rebuilt all of them each time. Each rebuild ran dozens of firewall commands, and saving settings waited for it.
-- FIXED: **The log showed four failed routing commands each time the Telegram over WebSocket set was rebuilt or removed** - b4 tried to remove a QUIC rule chain that such a set never has. A proxy set with Route UDP through upstream on gave the same warnings. They appeared on settings saves that rebuild such a set and on every stop of b4.
+### Fixed
+
+- On Keenetic, devices handled by **Device Filtering** could not open any site, even one in no set, because b4 took their first packets before Keenetic's firewall had marked them. [#466](https://github.com/DanielLavrushin/b4/issues/466)
+- With **Device Filtering** on, a firewall rule from the firmware or another service could make b4 rebuild all its firewall rules every 10 seconds, and settings saves waited for each rebuild.
+- The log showed four failed routing commands whenever the **Telegram over WebSocket** set, or a proxy set with **Route UDP through upstream** on, was rebuilt or removed.
 
 ## [1.88.1] - 2026-10-26
 
-- FIXED: **Some AI apps could not work with b4's MCP server** - LM Studio, also through LobeHub, refused every request because five tools without arguments, such as b4_status, lacked a field it requires. With Allow active probes on, apps using OpenAI's API refused every request too, because one tool description was longer than that API accepts. Gemini CLI adds an argument of its own to tool calls, and b4 refused those calls.
-- FIXED: **b4_check_domain told AI apps that a domain was covered when a set listed only one of its subdomains** - an ad-blocking set that lists ads.youtube.com made youtube.com look covered, so an AI app could decide that nothing needed adding. A link or a host with a port was reported as not covered instead of being checked by its host. A very long name kept the router's processor busy for minutes, in the web interface's domain checks as well.
-- FIXED: **Other MCP tools gave AI apps wrong information** - b4_recent_connections named its columns wrongly and said that an empty answer meant no traffic since b4 started, though it keeps only the last 500 events. b4_logs_tail called every line of the error log an error and could return older lines from the rotated log while skipping newer ones. The setting descriptions that AI apps read through b4_get_topic got some modes wrong, for example they called every SNI mutation mode compatible with real servers.
-- FIXED: **Settings changed through MCP could behave differently from what the AI app was told** - a set switched on with b4_set_config_value matched nothing until b4 restarted. A port filter added to a set without targets, or the removal of its last target, made the set act on every connection on its ports, and the reply did not say so. Out-of-range numbers and unknown option values were saved and reported as applied, and some of these numbers could stop b4.
-- FIXED: **MCP permission checks had gaps** - a write waiting behind another one was still saved after Allow configuration changes was turned off. An AI app could move a SOCKS5 server without a password from 127.0.0.1 to a network address, and could point the addresses b4 fetches its Telegram server lists from at any address, local ones included. The tool hints told AI apps that b4_find_bypass_strategy changes nothing, although its apply action rewrites sets.
-- FIXED: **Copy JSON copied a set as dozens of lines, too long for a chat message** - in 1.88.0 the copy took the formatted text of the Set Configuration JSON box. Copy JSON in Discovery's Apply as a set dialog copied the set formatted too.
+### Fixed
+
+- Some AI apps could not use b4's **MCP** server: LM Studio, also through LobeHub, refused every request, apps using OpenAI's API did too with **Allow active probes** on, and b4 refused Gemini CLI's tool calls.
+- `b4_check_domain` called a domain covered when a set listed only one of its subdomains and did not check links or hosts with a port by their host, and a very long name kept the router's processor busy for minutes, in the web interface too.
+- Other **MCP** tools gave AI apps wrong information: `b4_recent_connections` misnamed its columns, `b4_logs_tail` called every error-log line an error and could skip newer lines, and `b4_get_topic` got some modes wrong.
+- Settings changed through **MCP** could differ from what the AI app was told: a set switched on matched nothing until a restart, a set with a port filter and no targets acted on every connection on its ports, and invalid values were saved, some able to stop b4.
+- **Copy JSON** copied a set as dozens of formatted lines, too long for a chat message, in the set editor since 1.88.0 and in **Discovery**'s **Apply as a set** dialog.
+
+### Security
+
+- **MCP** permission checks had gaps: a queued write was saved after **Allow configuration changes** was turned off, and an AI app could open a SOCKS5 server without a password to the network or point b4's Telegram server-list downloads at any address, local ones included. The tool hints also called `b4_find_bypass_strategy` read-only, although it can rewrite sets.
 
 ## [1.88.0] - 2026-10-21
 
-- ADDED: **A set can handle only calls, such as Discord voice calls** - the option is Handle only calls in the Calls field on a set's UDP tab, and Which calls can narrow it to the Discord app or to browsers. Such a set has no targets and acts only on the packet that opens each call on its UDP ports, taking the call from any other set. The guide Discord voice calls describes the setup, and such sets also come from the import tool or the Community Hub.
-- ADDED: **The dashboard lists devices again, in its Devices panel** - a row shows a device's name and address, how many connections it made and the sites it connects to most. Clicking a device opens its traffic on the Traffic page, its connections through proxy sets and b4's SOCKS5 server included. A device whose MAC address b4 does not know, such as the router itself, is listed by its IP address.
-- ADDED: **Devices that left the network can be forgotten under Settings, Core, Devices** - an offline device has a Forget device icon next to its name, and Forget offline clears them all at once. b4 deletes the name, selection and MSS value it keeps for the device and removes it from the source devices of sets. A device name can also be removed by saving it empty.
-- ADDED: **Settings and the set editor mark unsaved changes and ask before they are lost** - a dot marks each changed field and the tab, section or list item that holds it. Leaving the page with unsaved changes, or Discard Changes, first lists each change with its old and new value. In the set editor, Discard Changes takes the place of Cancel and does not close the editor. [#434](https://github.com/DanielLavrushin/b4/pull/434), thanks [@alle-ox](https://github.com/alle-ox)
-- ADDED: **A slider's value can be typed in** - clicking the number next to a slider opens a box for it. Enter or a click elsewhere applies the value, and Escape cancels. [#434](https://github.com/DanielLavrushin/b4/pull/434), thanks [@alle-ox](https://github.com/alle-ox)
-- ADDED: **For a site that needs no bypass, Discovery lists the strategies that also loaded it, and any of them can be applied as a set** - this helps when a browser still cannot open a site that Discovery's checks load without b4. They appear under N other strategies worked, on the site's result card and in its history row. [#423](https://github.com/DanielLavrushin/b4/issues/423)
-- CHANGED: **Filter STUN Packets on a set's UDP tab became the Calls field** - on became Pass call setup, and off became Handle like other UDP. With Pass call setup, the set lets STUN requests and the Discord app's voice packets through unchanged. The rest of a call, such as browser audio and video, still gets the set's Action Mode.
-- CHANGED: **A set acts on QUIC to an address it learned only when the connection carries a site name the set targets** - it also acted on every QUIC connection to such an address, including connections to other sites that share it, such as a CDN address. On the Traffic page the set appears only on the packets of such a connection that carry the name. QUIC Matching set to By SNI or matched destination, on the set's UDP tab, keeps the old behaviour, and UDP that is not QUIC still follows a learned address. [#437](https://github.com/DanielLavrushin/b4/issues/437)
-- CHANGED: **The Traffic page and the dashboard show a device by its name, or by its IP address when it has none** - the Traffic page used device names only with Enable Device Filtering or Vendor Lookup on. Otherwise it showed most devices by MAC address, and some of a device's connections apart, under its IP address. The MAC address shows on hover and in the Detail pane.
-- CHANGED: **A set's JSON pasted on the Import/Export tab is no longer imported at once** - it appears formatted in the box, and Import applies it. The box shows where a broken JSON fails, and Format JSON tidies text typed by hand. [#434](https://github.com/DanielLavrushin/b4/pull/434), thanks [@alle-ox](https://github.com/alle-ox)
-- CHANGED: **A Device Filtering change takes effect when the settings are saved, with no restart** - the change used to wait for a restart of b4. Before that restart, turning the filter on or off could make b4 process the same connections twice.
-- FIXED: **The Traffic page showed STUN and Discord voice packets as handled by a set that let them through** - with Filter STUN Packets on, a set passed these packets through unchanged, yet their rows looked the same as rows of packets the set had handled.
-- FIXED: **Some set editor help texts described the wrong behaviour** - the TCP Port Filter said port 443 is always included, and the UDP Port Filter said an empty field turns it off. A list limits the set to the ports listed, and an empty field means every port. The UDP Evasion Technique said None sends fakes unchanged and TTL lets them expire, while UDP fakes always use the set's Fake TTL.
-- FIXED: **The Connection Packets Limit sliders on a set's TCP and UDP tabs had no effect** - b4 took the limit for every set from TCP Connection Packets Limit and UDP Connection Packets Limit under Settings, Core, Packet Engine.
-- FIXED: **The import tool lost a port filter or the shared domains without a warning** - a zapret port range with equal or reversed ends, such as `3478-3478`, was dropped when the set was saved. A set whose port filter held only that range acted on every port. Shared domains went unused when every profile had a host list of its own.
-- FIXED: **Site tests reported sites that redirect to their `www.` address, such as youtube.com and wikipedia.org, as failing both with and without b4** - the MCP tool b4_test_domain_now and the Test button of a Community Hub set stopped at any redirect to another host, even one of the same site. If a site sent visitors on to another site, such as twitter.com to x.com, or answered with a nearly empty page, b4_test_domain_now also said the address may be blocked or the site may be down. [#445](https://github.com/DanielLavrushin/b4/issues/445)
-- FIXED: **MCP answers did not tell an AI app which setting to change, or where** - a refused write read only "Configuration is invalid". Messages about Allow active probes and Allow configuration changes did not say that these switches are in b4's web interface. An AI app then sent users to its own settings. [#446](https://github.com/DanielLavrushin/b4/issues/446)
-- FIXED: **An MCP undo that needed Allow active probes stayed refused after the switch was turned on** - b4 counted the switch itself as a newer change to the configuration and refused the undo as outdated.
-- FIXED: **A block set limited to Source Interfaces also blocked other interfaces and the router itself** - only blocking by address followed the list. Blocking by name, in DNS lookups and in connections, applied to every device and to the router's own connections. A block set with an escalation target also stopped blocking a site once a device retried a blocked connection a few times.
-- FIXED: **Block QUIC (force TCP) had no effect on a proxy set with Route UDP through upstream on** - b4 sent all of the set's UDP, QUIC included, to the upstream before the switch could act. Over a slow upstream, such as one behind a TCP-only VPN, videos then loaded slowly. With Route UDP through upstream off, QUIC was refused, but the set's other UDP left directly, including the WebRTC requests that can reveal the real address. [#456](https://github.com/DanielLavrushin/b4/issues/456)
-- FIXED: **On ASUS routers with Asuswrt-Merlin, a proxy set with Route UDP through upstream off did not refuse QUIC** - the router's firewall accepted the devices' traffic before it reached b4's rule. QUIC to the set's addresses left directly, around the upstream.
-- FIXED: **On ASUS routers with AiProtection on, and for the devices KeeneticOS lists for its hotspot, b4 missed the replies of many device connections** - the firmware writes connection marks of its own. When such a mark held every bit of b4's Packet Mark, b4 took the connection for one of its own lookups. It then saw none of the connection's SYN-ACKs, resets or answers from DNS servers outside the router. [#441](https://github.com/DanielLavrushin/b4/issues/441)
-- FIXED: **A proxy set with All devices except selected under Source Devices refused QUIC from the excluded devices too** - the set refuses QUIC when Route UDP through upstream is off, and that refusal ignored the device list.
-- FIXED: **With the UDP action Coalesce QUIC Initial, an app that opens a QUIC connection in a single packet could not connect at all, even to sites the network does not block** - servers such as Cloudflare's and Google's leave a packet that begins with b4's padding packet unanswered, and b4 put the padding packet in front of every repeat the app sent. Browsers were not affected: they open a connection with two packets, and only one of them carries the site name. [#427](https://github.com/DanielLavrushin/b4/issues/427)
-- FIXED: **b4 could stop on a malformed QUIC packet sent to an address a set covers** - the packet's header declared a longer start than the packet carried. b4 read past the end of the packet while preparing the set's fake packets, and this reached every version that sends them.
-- FIXED: **A site a set drops, rejects or blocks over QUIC still opened when another set had learned its address** - on an address shared by several sites, such as a CDN address, b4 took both the set and the site name from what the other set had learned for that address, and never read the name the connection itself carried. [#437](https://github.com/DanielLavrushin/b4/issues/437)
-- FIXED: **In TUN mode, memory use grew with every new connection** - b4 kept a record of where each connection came from and never removed old records.
-- FIXED: **On a phone the set editor's Cancel and Save buttons covered the set name, and long section headers were cut off** - the buttons shared a row with the name field, which cannot shrink below its minimum width. Section headers were held to one line, so a header wider than its card ran past the edge. Russian headers, being longer, hit it first. [#448](https://github.com/DanielLavrushin/b4/issues/448), [#449](https://github.com/DanielLavrushin/b4/issues/449)
-- FIXED: **In the Russian interface the units on sliders and the name of a new set stayed in English** - sliders read `bytes`, `ms` and `sec`, and a new set was named `Set 5`. In both languages the SYN Fake TTL slider showed its value in milliseconds, although the setting counts hops rather than time. [#450](https://github.com/DanielLavrushin/b4/issues/450)
-- FIXED: **Device Filtering ignored the devices added under Manual Devices** - such a device got no DPI bypass when selected, and still got it when excluded. A selection made only of such devices applied DPI bypass to every device. The filter matched devices by MAC address alone, and these devices, such as clients of the router's own VPN server, have no MAC address b4 can see. [#442](https://github.com/DanielLavrushin/b4/issues/442)
-- FIXED: **In TUN mode, Device Filtering kept the selected devices out of RST Injection Protection and Remove ECH keys from DNS answers** - b4 took only the packets these devices sent. Resets and answers from a DNS resolver outside the router come from the server, so they never reached b4.
-- FIXED: **A device without a name vanished from the device lists when it went offline, while b4 kept its selection and MSS value** - this hit the list under Settings, Core, Devices and a set's Source Devices list. Such a device still counted as selected but could not be seen or unselected on its own. In a set's list, a device whose MAC address was stored in lowercase also showed as not selected.
-- FIXED: **Discovery for a set that writes its own DSCP value, and the watchdog's heals of such a set, ran their tests without that value** - the tests carried it only to addresses the set had already learned from other traffic. Where a router in front of b4 picks the internet provider by DSCP, the search ran through another provider than the set's traffic. A heal could then write a strategy found there into the set, and applying a result could move its sites into a set with another DSCP value or none.
-- FIXED: **b4 kept trying to remove a DSCP chain that was already gone when it ran on iptables and legacy iptables tables also existed** - iptables reports a missing chain differently there, and b4 did not read that answer as gone. Its DSCP rules then counted as not applied, and the firewall monitor retried them every few seconds.
+### Added
+
+- A set can handle only calls, such as Discord voice calls, with **Handle only calls** in the **Calls** field on its UDP tab, narrowed by **Which calls** to the Discord app or browsers; such a set has no targets and takes each call on its UDP ports from any other set.
+- The dashboard lists devices again in its **Devices** panel, with each device's name, address, connection count and most visited sites, and clicking a device opens its traffic on the **Traffic** page.
+- Devices that left the network can be forgotten under **Settings, Core, Devices** with **Forget device** or **Forget offline**: b4 deletes their name, selection and MSS value and removes them from the sets' source devices.
+- Settings and the set editor mark unsaved changes with a dot and list each change with its old and new value before they are lost, and in the set editor **Discard Changes** replaces **Cancel** and keeps the editor open. ([#434](https://github.com/DanielLavrushin/b4/pull/434), thanks [@alle-ox](https://github.com/alle-ox))
+- A slider's value can be typed in by clicking the number next to the slider. ([#434](https://github.com/DanielLavrushin/b4/pull/434), thanks [@alle-ox](https://github.com/alle-ox))
+- For a site that needs no bypass, **Discovery** lists the other strategies that also loaded it under **N other strategies worked**, and any of them can be applied as a set, for when a browser still cannot open the site. [#423](https://github.com/DanielLavrushin/b4/issues/423)
+
+### Changed
+
+- **Filter STUN Packets** on a set's UDP tab became the **Calls** field: on became **Pass call setup**, which passes STUN requests and the Discord app's voice packets unchanged, and off became **Handle like other UDP**.
+- A set acts on QUIC to an address it learned only when the connection names a site the set targets, not on other sites that share the address, such as a CDN; **By SNI or matched destination** under **QUIC Matching** keeps the old behaviour. [#437](https://github.com/DanielLavrushin/b4/issues/437)
+- The **Traffic** page and the dashboard show a device by its name, or by its IP address when it has none, where the **Traffic** page showed most devices by MAC address; the MAC address shows on hover.
+- A set's JSON pasted on the **Import/Export** tab is not imported at once: it appears formatted in the box, which shows where broken JSON fails, **Import** applies it and **Format JSON** tidies hand-typed text. ([#434](https://github.com/DanielLavrushin/b4/pull/434), thanks [@alle-ox](https://github.com/alle-ox))
+- A **Device Filtering** change takes effect when the settings are saved, where it used to wait for a restart of b4 and could meanwhile make b4 process the same connections twice.
+
+### Fixed
+
+- The **Traffic** page showed STUN and Discord voice packets that a set with **Filter STUN Packets** on let through unchanged as if the set had handled them.
+- Some set editor help texts were wrong: the TCP **Port Filter** claimed port 443 is always included, the UDP **Port Filter** that an empty field turns it off, and the UDP **Evasion Technique** misdescribed **None** and **TTL**.
+- The **Connection Packets Limit** sliders on a set's TCP and UDP tabs had no effect, because every set took the global limits under **Settings, Core, Packet Engine**.
+- The import tool dropped a zapret port range with equal or reversed ends, such as `3478-3478`, so a set with only that range acted on every port, and it left shared domains unused when every profile had its own host list.
+- `b4_test_domain_now` and the **Test** button of a **Community Hub** set reported sites that redirect to their `www.` address, such as youtube.com, as failing with and without b4. [#445](https://github.com/DanielLavrushin/b4/issues/445)
+- **MCP** answers did not say which setting to change or that **Allow active probes** and **Allow configuration changes** are in b4's web interface, and an undo that needed **Allow active probes** stayed refused after it was turned on. [#446](https://github.com/DanielLavrushin/b4/issues/446)
+- A block set limited to **Source Interfaces** also blocked sites by name for other interfaces and the router itself, and a block set with an escalation target stopped blocking a site once a device retried it a few times.
+- **Block QUIC (force TCP)** had no effect on a proxy set with **Route UDP through upstream** on, so videos loaded slowly over a slow upstream, and with that switch off, other UDP such as WebRTC requests, which can reveal the real address, left directly. [#456](https://github.com/DanielLavrushin/b4/issues/456)
+- A proxy set with **Route UDP through upstream** off let QUIC go around the upstream on ASUS routers with Asuswrt-Merlin, and on any router it refused QUIC also from the devices it excluded with **All devices except selected**.
+- On ASUS routers with AiProtection on, and for the devices KeeneticOS lists for its hotspot, b4 missed the replies of many device connections, because the firmware's connection marks covered b4's **Packet Mark**. [#441](https://github.com/DanielLavrushin/b4/issues/441)
+- With the UDP action **Coalesce QUIC Initial**, apps that open a QUIC connection in a single packet could not connect at all, even to sites the network does not block. [#427](https://github.com/DanielLavrushin/b4/issues/427)
+- b4 could stop on a malformed QUIC packet sent to an address a set covers.
+- A site that a set drops, rejects or blocks over QUIC still opened when another set had learned its address, such as a shared CDN address. [#437](https://github.com/DanielLavrushin/b4/issues/437)
+- In TUN mode, memory use grew with every new connection.
+- On a phone, the set editor's **Cancel** and **Save** buttons covered the set name, and long section headers, Russian ones first, ran past the edge of their card. [#448](https://github.com/DanielLavrushin/b4/issues/448), [#449](https://github.com/DanielLavrushin/b4/issues/449)
+- In the Russian interface, slider units and a new set's name stayed in English, and in both languages the **SYN Fake TTL** slider showed its value in milliseconds, although it counts hops. [#450](https://github.com/DanielLavrushin/b4/issues/450)
+- **Device Filtering** ignored devices added under **Manual Devices**, such as clients of the router's own VPN server: a selected one got no DPI bypass, an excluded one still did, and selecting only such devices bypassed every device. [#442](https://github.com/DanielLavrushin/b4/issues/442)
+- In TUN mode, **Device Filtering** kept the selected devices out of **RST Injection Protection** and **Remove ECH keys from DNS answers**.
+- An unnamed device vanished from the device lists when it went offline, yet stayed selected with its MSS value, and a set's list showed a device with a lowercase MAC address as not selected.
+- **Discovery** and the watchdog's heals for a set with its own DSCP value tested without that value, so where a router in front of b4 picks the provider by DSCP, they searched through another provider, a heal could write the strategy found there into the set, and applying a result could move its sites to a set with another DSCP value or none.
+- With iptables and legacy iptables tables both present, b4 did not see a removed DSCP chain as gone, so the firewall monitor retried its DSCP rules every few seconds.
 
 ## [1.87.0] - 2026-10-17
 
-- ADDED: **A set can remove ECH keys from DNS answers, so a browser opens sites such as those on Cloudflare where the network drops connections that use ECH** - the switch is under DNS & Routing, DNS Redirect, Encrypted ClientHello (ECH) in the set editor, a set that lists cloudflare-ech.com with it on covers every Cloudflare site, and in NFQUEUE mode it also acts on DNS answers that travel over IPv6 while IPv6 support is off. Discovery proposes such a set, which changes no packets, for a site that loads only without ECH.
-- ADDED: **The dashboard warns when a set's TCP port filter makes b4 skip connections** - this happens only where b4 tells a device's packets from a server's replies by port. It does so with Skip IPTables/NFTables Setup on or without the kernel's conntrack match. The warning under Recent changes names the ports that cause it.
-- ADDED: **System Info shows whether the router holds a dropped QUIC connection, in the row QUIC drop holds for the whole connection** - when the router lacks what this needs, the row names it, on OpenWrt the package kmod-nf-conntrack-netlink.
-- ADDED: **A set routed through an interface can send its traffic to a gateway on that interface's network, such as a VPN gateway or another router** - the field is Gateway (optional) under DNS & Routing, Traffic Routing in the set editor. With an IPv4 gateway on an Ethernet port, bridge, VLAN or Wi-Fi interface, IPv4 devices on that network follow the set too. b4 ignores a gateway outside the interface's network or one of the router's own addresses, and logs why. [#401](https://github.com/DanielLavrushin/b4/pull/401), thanks [@alle-ox](https://github.com/alle-ox)
-- CHANGED: **On Keenetic, and on routers with an older kernel where b4 cannot hold DNS queries ahead of the kernel's connection tracking, DNS queries go on to the resolver the device asked, and b4 takes over that resolver's reply for the names a set blocks, pins or sends to its own resolver** - that resolver and the servers it asks still see those names, also for a set with an encrypted resolver. System Info shows the row DNS queries copied, not held (NFLOG).
-- CHANGED: **In NFQUEUE mode, a connection that another service sends through a tunnel, or by another route than b4's own packets, gets no strategy from the set it matches** - this covers WireGuard, AmneziaWG, TUN and TAP interfaces and, with legacy iptables, connections that a service such as MagiTrickle routes elsewhere by their mark. The Logs page marks them `tunnel->wg0` or `reroute->ppp1`, and block sets still block them. Connections through a tunnel that carries the router's own default route keep their strategies.
-- FIXED: **On Keenetic, a device that asked for a name's IPv4 and IPv6 addresses at once, and the router itself, still often lost the second answer after 1.85.1, while System Info showed DNS queries queued before conntrack (raw) as available or the log suggested kmod-ipt-raw, an OpenWrt package** - KeeneticOS runs the raw table, where b4 queued DNS queries from 1.85.1 on, only after the kernel's connection tracking has registered them. [#402](https://github.com/DanielLavrushin/b4/issues/402)
-- FIXED: **On routers with an older kernel, a device occasionally got only one of the two answers it asked for at once, IPv4 or IPv6, for a name in a set with a DNS redirect** - b4 sent both answers at the same moment, and the kernel's connection tracking dropped one of them as a duplicate of the other.
-- FIXED: **On routers with iptables and an older kernel, such as Keenetic, connections through a set with SYN Fake Packets on took about a second longer to open, and with the UDP mode Fake & Fragment most of the fakes were lost, often along with the real first QUIC packet** - since 1.25.0, b4 put the packets it sends itself through its own queue a second time, and the kernel's connection tracking on such a router dropped some of them.
-- FIXED: **A device that sends several DNS lookups from one socket, such as a DNS server on the local network, had its later lookups skip b4 once b4 had answered one of them itself or changed one of its answers, for example by removing the IPv6 addresses** - b4's firewall rules marked the device's connection as one of b4's own when b4 sent the device an answer as a packet of its own.
-- FIXED: **A set with Domain-only matching on applied only to the start of each connection** - the rest of the connection went out without the set's strategy and showed no set on the Traffic page. Where several sets share an address or port, those packets could get another set's strategy instead. b4 picked the set for later packets by address or port, and a domain-only set does not track addresses. [#428](https://github.com/DanielLavrushin/b4/issues/428)
-- FIXED: **A set that drops or rejects QUIC, or blocks a site, did not stop a browser such as Chrome from opening the site over QUIC** - Chrome sends the start of a QUIC connection in two packets, and b4 reads the site name only from the second. A set with Domain-only matching on dropped only that packet. Other sets dropped only the packets b4 sees at the start of a connection, 8 by default, and the later ones reached the server. [#428](https://github.com/DanielLavrushin/b4/issues/428)
-- FIXED: **With the UDP action Coalesce QUIC Initial, sites did not open over QUIC in Chrome** - b4 put the padding packet in front of every packet of a connection's QUIC handshake, not only the one that carries the site name. The servers left those packets unanswered. Once the set had learned the site's address, this hit the first packet of the handshake too. [#427](https://github.com/DanielLavrushin/b4/issues/427)
-- FIXED: **Discovery reported a site, such as one on Cloudflare, as loading without b4 while Chrome could not open it** - its probes never used ECH, which a browser such as Chrome uses for every site that publishes an ECH key and which some networks block.
-- FIXED: **Discovery could propose a packet strategy remembered from an earlier run for a site that only needed its DNS answer corrected** - a remembered strategy that also loaded the site won over the DNS fix.
-- FIXED: **System Info listed tools such as jq, sha256sum and ipset without a version when they were on the USB drive b4 is installed on** - b4 asked a tool for its version only when it sat in a standard system directory such as `/usr/bin` or `/opt/bin`.
-- FIXED: **A `regexp:` entry listed in two sets, such as a set and its copy made with Duplicate, worked only in the set higher in the list, so when one of them was limited by Source devices, some devices got the wrong set or none for the names that entry matches** - b4 kept each pattern only for the first set that listed it.
-- FIXED: **A device added by hand by its IPv6 address, typed in another form such as in capitals or with leading zeros, was not recognised when b4 matched its traffic to a set's domains, so a set that selects it under Source devices skipped it and one with All devices except selected applied to it** - b4 looked packets up by the standard form of their address, while it kept the device's address as typed.
-- FIXED: **Apps that use TCP Fast Open could not open sites through a set with a strategy** - such an app puts the start of its secure connection into the packet that opens the connection. b4 split that packet like ordinary data, and every piece opened the connection again with different numbering. The site kept one of them and could not read the start. [#431](https://github.com/DanielLavrushin/b4/issues/431)
-- FIXED: **Window Mode sent malformed fake packets on connections that use TCP timestamps, which Linux turns on by default** - each fake kept the header length of the original packet but carried only the first part of the header.
-- FIXED: **SYN MD5 Signature could send its fake SYN without a usable MD5 option, such as for an app that uses TCP Fast Open** - when the real SYN's options left no room, the option was left out. When they ended with an end-of-options marker, it went after that marker, where servers stop reading. A server it reached could take the fake for a real SYN.
-- FIXED: **b4 could stop on a malformed TCP packet sent to an address a set covers** - the packet's header claimed to be shorter than any TCP header can be. b4 read past the end of the packet while applying the set's strategy.
-- FIXED: **A set whose TCP port filter covered the ports devices pick for their own connections, such as `1-65535`, made b4 skip some or all TCP connections of every set** - b4 told a device's packets from a server's replies by their ports. A device's packet from a port in the filter looked like a reply. [#429](https://github.com/DanielLavrushin/b4/issues/429)
-- FIXED: **On the router's own connections and on IPv6 connections without address translation, RST Injection Protection, Incoming Response Bypass and the escalation on Forged resets stopped working once b4 had sent fakes or split segments into a connection** - since 1.71.1, b4's firewall rules took such a connection for one of b4's own. The server's packets on it then no longer reached b4.
-- FIXED: **The router's own connections showed up twice on the Traffic page, and IP Block Detection could mark their addresses as blocked after fewer unanswered attempts than its thresholds** - since 1.26.1, with Device Filtering off, b4 handled every packet the router sent twice on its way out.
-- FIXED: **Connections from the internet to a server on the local network behind a port forward failed once a set matched them, such as a set that matches port 443 alone** - since 1.22.0, b4 took them for a device's own connections to the internet and applied the set's strategy toward the server.
-- FIXED: **On nftables, Global MSS Clamping and the MSS Clamping of a set without source devices did not make devices send smaller packets and did not apply to the router's own connections** - since 1.39.1, the clamp came after b4's queue rules, and a packet that went through the queue skipped it.
-- FIXED: **On a router whose firmware overwrites b4's connection mark, such as some ASUS models, a forwarded port gave no answer to connections from an address in a set routed through an interface** - on such a router b4 marks every packet to the set's addresses. It marked the replies to those connections too, and they left through the set's interface.
-- FIXED: **Connections that another service on the router had marked, such as those of devices KeeneticOS lists for its hotspot or those MagiTrickle routes, got no strategy from b4's sets** - b4 took those marks for the marks of its own packets, which share a bit with them. ([#422](https://github.com/DanielLavrushin/b4/pull/422), thanks [@asovetov](https://github.com/asovetov); [#276](https://github.com/DanielLavrushin/b4/discussions/276))
+### Added
+
+- A set can **Remove ECH keys from DNS answers**, under **DNS & Routing, DNS Redirect**, so browsers open sites such as Cloudflare ones where the network drops connections that use ECH, and **Discovery** proposes such a set when a site needs it. With `cloudflare-ech.com` listed, the set covers every Cloudflare site.
+- The dashboard warns under **Recent changes** when a set's TCP port filter makes b4 skip connections, which can happen with **Skip IPTables/NFTables Setup** on or without the kernel's conntrack match.
+- **System Info** shows whether the router can hold a dropped QUIC connection, in the row **QUIC drop holds for the whole connection**, and names what is missing, on OpenWrt the package `kmod-nf-conntrack-netlink`.
+- A set routed through an interface can send its traffic to a gateway on that interface's network, such as a VPN gateway or another router, set in **Gateway (optional)** under **DNS & Routing, Traffic Routing**. ([#401](https://github.com/DanielLavrushin/b4/pull/401), thanks [@alle-ox](https://github.com/alle-ox))
+
+### Changed
+
+- On Keenetic and on routers with an older kernel where b4 cannot hold DNS queries, they reach the resolver the device asked, and b4 replaces its reply for names a set blocks, pins or sends to its own resolver, so that resolver still sees those names, even for a set with an encrypted resolver. **System Info** shows the row **DNS queries copied, not held (NFLOG)** where this applies.
+- In NFQUEUE mode, a connection that another service sends through a WireGuard, AmneziaWG, TUN or TAP tunnel, or with legacy iptables reroutes as MagiTrickle does, gets no strategy from its set and is marked `tunnel->wg0` or `reroute->ppp1` on the **Logs** page. Block sets still block it, and a tunnel that carries the router's default route keeps strategies.
+
+### Fixed
+
+- On Keenetic, a device that asked for a name's IPv4 and IPv6 addresses at once, and the router itself, still often lost the second answer after 1.85.1, though **System Info** showed **DNS queries queued before conntrack (raw)** as available. [#402](https://github.com/DanielLavrushin/b4/issues/402)
+- On routers with an older kernel, a device that asked at once for the IPv4 and IPv6 addresses of a name in a set with a DNS redirect occasionally got only one of the answers.
+- On routers with iptables and an older kernel, such as Keenetic, **SYN Fake Packets** made connections open about a second slower, and the UDP mode **Fake & Fragment** lost most fakes, often with the real first QUIC packet.
+- A device that sends several DNS lookups from one socket, such as a DNS server on the local network, had its later lookups skip b4 once b4 had answered or changed one of them, for example by removing IPv6 addresses.
+- A set with **Domain-only matching** on applied its strategy only to the start of each connection, and the rest showed no set on the **Traffic** page. [#428](https://github.com/DanielLavrushin/b4/issues/428)
+- A set that drops or rejects QUIC, or blocks a site, did not stop a browser such as Chrome from opening the site over QUIC, because Chrome sends the start of a QUIC connection in two packets. [#428](https://github.com/DanielLavrushin/b4/issues/428)
+- With the UDP action **Coalesce QUIC Initial**, sites did not open over QUIC in Chrome, because the padding went in front of every handshake packet. [#427](https://github.com/DanielLavrushin/b4/issues/427)
+- **Discovery** reported some sites, such as Cloudflare ones, as loading without b4 while Chrome could not open them, and could propose a remembered packet strategy for a site that only needed its DNS answer fixed.
+- **System Info** listed tools such as jq, sha256sum and ipset without a version when they were on the USB drive b4 is installed on.
+- A `regexp:` entry listed in two sets, such as a set and its copy made with **Duplicate**, worked only in the higher set, so with one of them limited by source devices, some devices got the wrong set or none.
+- A device added by hand with an IPv6 address typed in another form, such as in capitals or with leading zeros, was not recognised, so a set that selects it under source devices skipped it and one that excludes it applied to it.
+- Apps that use TCP Fast Open could not open sites through a set with a strategy. [#431](https://github.com/DanielLavrushin/b4/issues/431)
+- **Window Mode** sent malformed fake packets on connections that use TCP timestamps, which Linux turns on by default.
+- **SYN MD5 Signature** could send its fake SYN without a usable MD5 option, such as for an app that uses TCP Fast Open, so a server could take the fake for a real SYN.
+- b4 could stop on a malformed TCP packet sent to an address a set covers.
+- A set whose TCP port filter covered the ports devices pick for their own connections, such as `1-65535`, made b4 skip some or all TCP connections of every set. [#429](https://github.com/DanielLavrushin/b4/issues/429)
+- Since 1.71.1, on the router's own connections and on IPv6 connections without address translation, **RST Injection Protection**, **Incoming Response Bypass** and escalation on **Forged resets** stopped working once b4 had sent fakes or split segments.
+- Since 1.26.1, with **Device Filtering** off, the router's own connections showed up twice on the **Traffic** page, and **IP Block Detection** could mark their addresses as blocked after fewer failed attempts than its thresholds.
+- Since 1.22.0, connections from the internet to a local server behind a port forward failed once a set matched them, such as a set that matches port 443 alone.
+- Since 1.39.1, on nftables, **Global MSS Clamping** and the **MSS Clamping** of a set without source devices had no effect on devices or on the router's own connections.
+- On routers whose firmware overwrites b4's connection mark, such as some ASUS models, a forwarded port gave no answer to connections from an address in a set routed through an interface.
+- Connections that another service on the router had marked, such as those of devices KeeneticOS lists for its hotspot or those MagiTrickle routes, got no strategy from b4's sets, because b4 took those marks for its own. ([#422](https://github.com/DanielLavrushin/b4/pull/422), thanks [@asovetov](https://github.com/asovetov); [#276](https://github.com/DanielLavrushin/b4/discussions/276))
 
 ## [1.86.0] - 2026-10-09
 
-- ADDED: **The Discovery page shows a run started through the MCP server or by the watchdog while the page is open, and its history marks such runs** - the run appears within five seconds, the history refreshes when it ends, and its history rows read "via MCP" or "via watchdog" under the time of the run.
-- ADDED: **Copy JSON in Discovery's Apply as a set dialog copies the proposed set without creating it** - in the format of the set editor's Import/Export tab, where it can be imported on another device.
-- ADDED: **System Info shows the version of each tool it lists, such as iptables, nft, ipset, curl and wget, next to the tool's name** - the version is what the tool itself reports, or the BusyBox version for a tool that is part of BusyBox, and Copy JSON and MCP `b4_diagnostics` include it as `version`.
-- ADDED: **A set can write its own DSCP value into the packets sent to the set's addresses, so a router in front of b4 can route or prioritise each set's traffic separately** - the value takes the place of the Set DSCP value for those packets, also while that switch is off, and covers the set's IP, GeoIP and ASN targets and the addresses b4 learns for the set's domains. The switch is under DNS & Routing, Traffic Routing in the set editor, which also shows when a set cannot use it, such as a proxy or block set.
-- ADDED: **The browser tab title names the open page, such as "Traffic - B4", so several b4 tabs can be told apart, where every tab used to read "B4"** - the set editor adds the set's name, as in "YouTube - Sets - B4", and Settings adds its open tab.
-- ADDED: **The Devices panel on the Traffic page sorts by name by default, or by latest activity or packet count through its sort button, where devices used to swap places whenever one of them sent a packet** - by name, devices with a name come first, then devices known only by their MAC address, then sources known only by their IP address, and a selected device stays in the panel after its last packet has fallen out of the period.
-- CHANGED: **A device on the dashboard's Blocked panel shows its IP address under its name, with the MAC address on hover** - the MAC address used to take that line.
-- CHANGED: **The dashboard arranges its panels in rows that always fill the full width, each panel as tall as the tallest one in its row, where panels used to be packed into free spots, which left holes and moved them sideways as lists grew** - in Customize, the border between two panels and the minus and plus buttons move width between neighbours, a panel dropped on another joins its row, one dropped between rows gets a row of its own, and the row button splits or joins rows.
-- FIXED: **Discovery tried every strategy for minutes on a link that gives an error even without b4, such as the bare address of an image host, then reported that nothing worked, as if the site were blocked** - when the site answered "bad request", Discovery blamed a strategy for garbling the request, even on the first try, which uses no strategy.
-- FIXED: **Discovery started through the MCP server did worse than the same run from the Discovery page: a link such as a YouTube image link failed with an error on every attempt, and the community hub's strategies were never tried** - the server cut the link at a comma inside it, took the rest for a second site and lowercased its path, so the site was asked for a page that does not exist, and it left the hub out of the run.
-- FIXED: **On Keenetic, b4 was sometimes not running after a router reboot, with no errors.log, and could also stop when it restarted itself to retry its packet engine** - the hook b4 installs for the router's firewall rebuilds sent its re-check signal to any process named b4, and a b4 that had only just started was ended by that signal. [#404](https://github.com/DanielLavrushin/b4/issues/404)
+### Added
+
+- The **Discovery** page shows a run started through **MCP** or by the watchdog while the page is open, and its history marks such runs **via MCP** or **via watchdog**.
+- **Copy JSON** in **Discovery**'s **Apply as a set** dialog copies the proposed set without creating it, ready to import on another device through the set editor's **Import/Export** tab.
+- **System Info** shows the version of each tool it lists, such as iptables, nft, ipset, curl and wget, and its **Copy JSON** and the **MCP** tool `b4_diagnostics` include it as `version`.
+- A set can write its own DSCP value into the packets sent to its addresses, in place of the **Set DSCP** value, so a router in front of b4 can route each set's traffic separately; the switch is under **DNS & Routing, Traffic Routing**.
+- The browser tab title names the open page, such as `Traffic - B4`, and the open set in the set editor, so several b4 tabs can be told apart.
+- The **Devices** panel on the **Traffic** page sorts by name by default, or by latest activity or packet count with its sort button, where devices used to swap places whenever one of them sent a packet.
+
+### Changed
+
+- A device on the dashboard's **Blocked** panel shows its IP address under its name, with the MAC address on hover.
+- The dashboard arranges its panels in full-width rows, each panel as tall as the tallest in its row, instead of packing them into free spots, and in **Customize** panels can be resized and moved between rows.
+
+### Fixed
+
+- **Discovery** tried every strategy for minutes on a link that gives an error even without b4, such as the bare address of an image host, then reported the site as if it were blocked.
+- **Discovery** started through **MCP** cut a link at a comma inside it and lowercased its path, so a link such as a YouTube image link failed on every attempt, and it never tried the **Community Hub** strategies.
+- On Keenetic, b4 was sometimes not running after a router reboot, with no `errors.log`, and could stop when it restarted itself to retry its packet engine. [#404](https://github.com/DanielLavrushin/b4/issues/404)
 
 ## [1.85.1] - 2026-10-08
 
-- FIXED: **On routers with an older kernel, a device that asked for a name's IPv4 and IPv6 addresses at once often got no answer to the second question, so apps on it, like a video player on a TV, waited and never connected, and the router's own lookups could stall for seconds** - b4 queued each DNS query only after the kernel's connection tracking had registered it, so a second query sent at the same moment from the same socket was dropped as a duplicate of the first while that one waited in b4's queue.
-- CHANGED: **With iptables, other services' firewall rules for DNS queries, such as an Xray TPROXY rule or mwan3 and KVAS marks, also apply to the queries b4 has already seen** - b4 queues the queries from the raw table, ahead of those rules, where before a query released from its queue skipped the later rules of mangle.
+### Changed
+
+- With iptables, other services' firewall rules for DNS queries, such as an Xray TPROXY rule or mwan3 and KVAS marks, also apply to the queries b4 has already seen.
+
+### Fixed
+
+- On routers with an older kernel, a device that asked for a name's IPv4 and IPv6 addresses at once often got no second answer, so apps such as a TV's video player never connected, and the router's own lookups could stall for seconds.
 
 ## [1.85.0] - 2026-10-04
 
-- ADDED: **Discovery takes a trusted DNS server, set under Settings, Discovery or for a single run, written as `9.9.9.9`, `127.0.0.1:53053`, `tcp://`, `tcp+udp://` or an `https://` DNS-over-HTTPS URL, and tests a site through pinned addresses, given for a run under Pinned addresses or taken from the set the run is for** - the server's answers are the reference for the DNS check, a proposed set gets the server as its DNS when a set can use it and keeps the pins, and a site whose name exists but has no address in DNS is reported as such, with a pointer to pinning, rather than as misspelled. The Fallback UDP DNS servers list and the unused Reference domain setting are gone.
-- ADDED: **Download Configuration under Settings, System, Backup saves the running configuration as is, or as a safe copy for sharing when asking for help** - the safe copy replaces passwords, tokens, user names, the host names of the router and its relays and credentials inside URLs with `[redacted]`, and b4 refuses to load or save a configuration that still holds these placeholders.
-- ADDED: **System Info shows how many routing sets are installed and, while installing them fails, the error, when the failure began and when b4 tries again** - the Routing Sets row is under Firewall, and the log warns when no firewall tool on the system can install routing at all.
-- CHANGED: **The settings are regrouped: the Core tab has sub-tabs for Packet Engine, Devices, Firewall, DNS and SOCKS5, and a new System tab after it holds Service with logging, Web Server and Backup, which replaced the Backup tab** - a sub-tab shows a dot while it has unsaved changes and an icon while a change waits for a restart.
-- CHANGED: **The dashboard shows connections per minute in and outside sets, what each set matched in the last hour, and the problems that need attention** - Device Activity and Domains Not In Any Set gave way to links into the Traffic page, the Runtime figures moved to System Info, and Reset Stats became Reset counters, with a Clear button of its own on Active Escalations.
-- CHANGED: **MCP `b4_status` and `b4_metrics` and the metrics API count each connection once, so their fields changed** - `connections_seen`, `current_cps`, `current_pps` and `memory_percent` gave way to per-minute connection counts, `cpu_percent` and `rss_bytes`, `/api/metrics` and `/api/ws/metrics` carry the new dashboard snapshot, and `POST /api/escalations/clear` clears escalations.
-- FIXED: **Dashboard figures misled: Active flows only grew, Throughput counted only the first packets of each connection, Workers always read all active, Uptime started over at Reset Stats, and Domains Not In Any Set stopped taking new domains** - b4 counted every inspected packet as a connection, never recorded a connection ending and evicted each new domain once the list was full.
-- FIXED: **Reset Stats on the dashboard also sent every escalated site back to the set that had failed for it** - the reset cleared b4's escalations along with the counters.
-- FIXED: **Discovery for a domain that does not exist, such as a misspelled one, ran through every strategy for minutes, each test failing with `DNS resolution failed (no such host)`** - the run did not tell a name without any address apart from a site that a strategy might still open.
-- FIXED: **Discovery reported No bypass needed for a site whose resolver gave it a wrong address when no DNS server it tried answered honestly, could propose a DNS redirect that gave a wrong address too, and applying its result could switch off the set's Fail closed when the resolver is unreachable** - the run reached the site through the address DNS over HTTPS gave without carrying that address into the set, took the first DNS-over-HTTPS server with any answer, on a router with a local resolver tested fragmented DNS against that resolver instead of the server, and wrote its own DNS settings, with that switch off, over the set's.
-- FIXED: **After a Discovery run, DNS queries over TCP for sets with a DNS redirect went to the original resolver once b4 next rebuilt its firewall rules, until b4 restarted, and while a run was going the Active Escalations list on the dashboard kept emptying** - Discovery's own packet queue published its state in place of b4's main queue: a DNS-over-TCP listener that was down and an empty escalation list.
-- FIXED: **A set whose DNS redirect pointed at a resolver on another device in the local network made lookups of its names wait out the query timeout whenever that resolver asked its upstream over plain DNS, and with Fail closed when the resolver is unreachable on they ended in SERVFAIL** - b4 sent that resolver's own upstream queries for those names back to it.
-- FIXED: **Switching Time Zone back to Auto kept the previously selected zone in log timestamps until b4 restarted** - b4 reloaded the zone it had set itself instead of the system's.
-- FIXED: **A NAT Masquerade interface that was down or renamed disappeared from the card, which then looked as if masquerading covered every interface while it was limited to the missing one** - the card listed only the interfaces present at the moment and left out saved ones that were not.
-- FIXED: **Set cards gave target counts such as `1 domains` and `1 IPs`, and in Russian the longer labels in the panel a set card opens from its Target, Split, Fake, Route, DNS and Escalate tabs ran into their values or wrapped onto a second line** - the number was always followed by the same word, and the label column had a fixed width that the longer Russian labels did not fit.
-- FIXED: **An update from the web interface failed with `Could not fetch the installer: mkdir /tmp/b4update-...: no such file or directory` when nothing could be created in /tmp, as seen in a MikroTik container after a restart, and with /tmp mounted noexec the web interface reported the update as started while nothing happened** - b4 staged the installer in /tmp and ran it from there, and the installer moved to another directory only when /tmp was short of space.
-- FIXED: **A request to `/api/system/update` with a version such as `--remove` or `--arch=mips` removed b4 or installed a binary for another architecture instead of updating** - b4 passed the requested version to the installer unchecked, and the installer read it as one of its own options.
-- FIXED: **On a kernel that rejects b4's nftables routing table, such as Synology DSM with b4 in Docker, b4 logged a routing error at every start and save and retried it every 10 minutes even when no set used routing** - b4 created the routing table before checking whether any set needed it.
-- FIXED: **In the Docker image, routing sets failed on a host whose nftables does not work even where the kernel supports ipset, the NFQUEUE engine on such a host left out packet duplication and per-set MSS clamping by address, and the TUN engine gave every packet duplication address a capture rule of its own** - the image did not include ipset.
+### Added
+
+- **Discovery** takes a **Trusted DNS server**, under **Settings, Discovery** or for one run, as `9.9.9.9`, `127.0.0.1:53053`, `tcp://`, `tcp+udp://` or an `https://` URL, checks DNS against its answers and gives it to a proposed set as its DNS where the set can use one.
+- **Discovery** tests a site through pinned addresses, given for a run under **Pinned addresses** or taken from the set the run is for, keeps them in a proposed set, and reports a name that has no address in DNS as such instead of as misspelled.
+- **Download Configuration** under **Settings, System, Backup** saves the running configuration as is, or as a safe copy to share when asking for help, with passwords, tokens, user names, host names and credentials in URLs replaced by `[redacted]`. b4 refuses to load or save a configuration that still holds these placeholders.
+- **System Info** shows in its **Routing Sets** row how many routing sets are installed and, while installing them fails, the error and the next retry, and the log warns when no firewall tool can install routing at all.
+
+### Changed
+
+- The settings are regrouped: the **Core** tab has sub-tabs for **Packet Engine**, **Devices**, **Firewall**, **DNS** and **SOCKS5**, and a new **System** tab holds **Service**, **Web Server** and **Backup**, which used to be a tab of its own.
+- The dashboard shows connections per minute in and outside sets, each set's matches in the last hour and the problems that need attention, **Runtime** moved to **System Info**, and **Reset Stats** became **Reset counters**, with a separate **Clear** on **Active Escalations**.
+- **MCP** `b4_status` and `b4_metrics` and the metrics API count each connection once, with per-minute connection counts, `cpu_percent` and `rss_bytes` in place of `connections_seen`, `current_cps`, `current_pps` and `memory_percent`. `/api/metrics` and `/api/ws/metrics` carry the new dashboard snapshot, and `POST /api/escalations/clear` clears escalations.
+
+### Removed
+
+- **Discovery**'s **Fallback UDP DNS servers** list and the unused **Reference domain** setting are gone.
+- The dashboard's **Device Activity** and **Domains Not In Any Set** panels are gone, in favour of links into the **Traffic** page.
+
+### Fixed
+
+- Dashboard figures misled: **Active flows** only grew, **Throughput** counted only the first packets of each connection, **Workers** always read all active, **Uptime** started over at **Reset Stats**, and **Domains Not In Any Set** stopped taking new domains.
+- **Reset Stats** on the dashboard also sent every escalated site back to the set that had failed for it.
+- **Discovery** for a domain that does not exist, such as a misspelled one, ran through every strategy for minutes, each test failing with `DNS resolution failed (no such host)`.
+- **Discovery** could report a site as needing no bypass when its resolver gave a wrong address and no DNS server it tried answered honestly, and could propose a DNS redirect that gave a wrong address too.
+- Applying a **Discovery** result could switch off the set's **Fail closed when the resolver is unreachable**.
+- After a **Discovery** run, DNS queries over TCP for sets with a DNS redirect went to the original resolver from the next firewall rebuild until a restart, and during a run the **Active Escalations** list kept emptying.
+- A set whose DNS redirect pointed at a resolver on another local device made its lookups wait out the timeout, or end in SERVFAIL with **Fail closed when the resolver is unreachable** on, whenever that resolver asked its upstream over plain DNS.
+- Switching **Time Zone** back to **Auto (system default)** kept the previous zone in log timestamps until b4 restarted.
+- A **NAT Masquerade** interface that was down or renamed disappeared from its card, which then looked as if masquerading covered every interface while it was limited to the missing one.
+- Set cards gave target counts such as `1 domains`, and in Russian the longer labels in the panel a set card opens ran into their values or wrapped onto a second line.
+- An update from the web interface failed with `Could not fetch the installer: mkdir /tmp/b4update-...: no such file or directory` when nothing could be created in /tmp, as in a MikroTik container after a restart, and with /tmp mounted noexec it seemed to start while nothing happened.
+- On a kernel that rejects b4's nftables routing table, such as Synology DSM with b4 in Docker, b4 logged a routing error at every start and save and retried every 10 minutes, even when no set used routing.
+- The Docker image lacked ipset, so on a host without working nftables routing sets failed and the NFQUEUE engine left out packet duplication and per-set MSS clamping by address, and the TUN engine gave each packet duplication address a capture rule of its own.
+
+### Security
+
+- A request to `/api/system/update` with a version such as `--remove` or `--arch=mips` removed b4 or installed a binary for another architecture, because b4 passed the version to the installer unchecked.
 
 ## [1.84.0] - 2026-09-30
 
-- ADDED: **Expose to internet switches for the ports of the web interface, the MTProto and SOCKS5 proxies and the Telegram Desktop WEB proxy, off by default** - each opens its port in the firewall and keeps it open through firewall restarts, and the MTProto share dialog can switch its link to the internet address.
-- ADDED: **System Info, the log and the Telegram over WebSocket card name the network bridges that keep the devices behind them out of proxy sets and Telegram over WebSocket** - with `net.bridge.bridge-nf-call-iptables` at 1, which the dockerd package sets on OpenWrt, the kernel loses the handover to b4's listener for connections that enter through a bridge such as `br-lan`, so they hung without a single log line while the router's own connections worked. The Bridge netfilter row under Firewall in System Info names the setting to turn off.
-- ADDED: **Set DSCP writes a DSCP value into the packets the host sends out, off by default** - a router in front of b4 can then recognise b4's traffic by a field in the packet, which b4's internal packet marks never carry off the host. The switch is under Settings, Core, Firewall Features, and the value and the interfaces appear in the DSCP group once it is on.
-- FIXED: **The settings page asked for a restart of b4 after a change to the SOCKS5 proxy, to the web interface's username, password or language, or to the MCP settings, none of which needs one** - it counted every change on the Core tab as needing a restart, and the MCP settings of the Integrations tab as Core ones.
-- FIXED: **Discovery, including the watchdog's runs for a set, lost some of its probe packets and ran several times slower on a site that an enabled set already covered** - b4's packet queue took Discovery's packets again on their way out of the router: on iptables, and on nftables with some mark settings, such as a Packet Mark changed from the web interface.
-- FIXED: **A changed Packet Mark took effect only in part: routing sets kept the old value until the next firewall check or a restart; on iptables the old value's CONNMARK rule stayed even after b4 stopped; and a save from the web interface left Discovery's marks at the old value plus 1 and plus 2** - routing sets were compared without the Packet Mark, a firewall refresh cleared what the new settings would have installed instead of what was installed, and the configuration stored Discovery's derived marks.
-- FIXED: **On iptables, b4 deleted masquerade rules it had not added at every start, stop and firewall refresh: a plain `-j MASQUERADE` in nat POSTROUTING, and `-o <interface> -j MASQUERADE` for each interface listed under NAT Masquerade** - it still removed by their text the rules that versions before 1.71.0 had put there, and identical rules of the router matched.
-- FIXED: **One malformed address, such as `10.0.0.0/99` or a name, in a set with packet duplication kept the NFQUEUE packet engine from starting, and in TUN mode, when a set with packet duplication covered many addresses, such as a GeoIP category or an ASN, the web interface came up a minute or more after start, with a routing set the bypass then stopped for about as long again, and stopping b4 in that time timed out and left its capture rules behind** - b4 handed the set's addresses to ipset or nft unchecked, and one entry the tool rejects fails the whole load; in TUN mode it gave each duplication address a firewall rule of its own and added them one command at a time, ahead of the rules that capture the first packets of every connection, and on iptables-legacy every command rewrites the whole table, so the capture chain took longer to build with every address, at start and again right after it, once the routing sets were in place.
-- FIXED: **In TUN mode on a kernel that lacks some iptables modules: without the raw table or the CT target, such as Synology DSM, connections the device forwarded for others, like Docker containers on a bridge network or LAN clients, failed past the local network while the device's own connections worked; without xt_connbytes, a connection that matched a set got the set's DPI bypass on every packet instead of only its first ones, which slowed traffic through it many times over and wrote a log line per packet** - without b4's NOTRACK rule, the copies of the forwarded packets that b4 sent on went through connection tracking a second time, and the kernel's NAT gave them a new source port, so the replies came back to a port nothing listened on; and b4 left it to the kernel's connbytes match to hand over only the first packets of a connection, and without that match the TUN engine received and processed whole connections.
-- FIXED: **The first connection to an address a routing set learned from a DNS answer could leave outside the set, directly instead of through a proxy set's upstream or the set's interface** - b4 passed the answer on to the device before the addresses in it were in the set, and the device connected in the meantime.
-- FIXED: **Connections that a proxy set sent to its upstream were listed without the site name on the Traffic page and in the log while Send domain name to upstream was off, or when the set listed only addresses and b4 had seen no DNS answer for the address** - b4 read the name from the connection only when it needed one for the upstream.
+### Added
+
+- **Expose to internet** switches, off by default, open the ports of the web interface, the MTProto and SOCKS5 proxies and the Telegram Desktop WEB proxy in the firewall, and the MTProto share dialog can put the internet address in its link.
+- **System Info**, the log and the **Telegram over WebSocket** card name the network bridges, such as `br-lan`, whose devices cannot use proxy sets or **Telegram over WebSocket** while `net.bridge.bridge-nf-call-iptables` is 1, as the dockerd package sets on OpenWrt. The **Bridge netfilter** row in **System Info** names the setting to turn off.
+- **Set DSCP**, off by default, writes a DSCP value into the packets the host sends out, so a router in front of b4 can recognise b4's traffic; the switch is under **Settings, Core, Firewall Features**.
+
+### Fixed
+
+- The settings page asked for a restart of b4 after changes that need none: to the SOCKS5 proxy, to the web interface's username, password or language, or to the **MCP** settings.
+- **Discovery**, including the watchdog's runs, lost some probe packets and ran several times slower on a site an enabled set already covered, on iptables and on nftables with some mark settings, such as a changed **Packet Mark**.
+- A changed **Packet Mark** took effect only in part: routing sets kept the old value until the next firewall check or a restart, on iptables the old CONNMARK rule stayed even after b4 stopped, and a save from the web interface left **Discovery**'s marks at the old value plus 1 and plus 2.
+- On iptables, b4 deleted masquerade rules it had not added at every start, stop and firewall refresh: a plain `-j MASQUERADE` in nat POSTROUTING and `-o <interface> -j MASQUERADE` for each interface listed under **NAT Masquerade**.
+- One malformed address, such as `10.0.0.0/99` or a name, in a set with packet duplication kept the NFQUEUE packet engine from starting.
+- In TUN mode, a set with packet duplication over many addresses, such as a GeoIP category or an ASN, delayed the web interface by a minute or more after start and, with a routing set, paused the bypass about as long again, while stopping b4 in that time timed out and left capture rules behind.
+- In TUN mode on a kernel without the raw table or the CT target, such as Synology DSM, connections the device forwarded for others, such as Docker containers on a bridge network or LAN clients, failed past the local network.
+- In TUN mode on a kernel without `xt_connbytes`, a set applied its DPI bypass to every packet of a connection instead of only its first ones, which slowed traffic through it many times over and wrote a log line per packet.
+- The first connection to an address a routing set learned from a DNS answer could leave outside the set, directly instead of through a proxy set's upstream or the set's interface.
+- Connections a proxy set sent to its upstream showed no site name on the **Traffic** page and in the log while **Send domain name to upstream** was off, or when the set listed only addresses and b4 had seen no DNS answer for the address.
 
 ## [1.83.1] - 2026-09-27
 
-- ADDED: **When the packet engine fails to start, b4 keeps running without it, so the web interface stays reachable** - the dashboard shows the reason, such as a kernel without NFQUEUE support, with a button that switches to the other engine and restarts b4, and b4 retries on its own three times within about two minutes.
-- ADDED: **b4 can be restarted from the web interface without a service manager, for example in Docker, in a MikroTik container or after a manual start** - it restarts itself in place and keeps its process ID, so the container keeps running.
-- FIXED: **b4 exited at startup without showing the reason on the console, some startup errors read `%!w(...)`, and a failure to open the packet queue left proxy sets sending traffic to a listener that was gone** - the last error went only to `errors.log`, which b4 redirects stderr into, the log could not print an error that wrapped another one, and routing rules were removed only after a successful start.
-- FIXED: **On routers where b4 runs from an init script, such as ASUS Merlin and Keenetic, every restart or update from the web interface carried the old b4's packet-sending sockets into the new one, so open sockets piled up with each restart** - the sockets were not marked to close when b4 started another program, so the restart script and the b4 it launched inherited them.
-- FIXED: **With Allow only selected devices on under Device Filtering, connections through b4's SOCKS5 server and others the router opened itself went out directly instead of through proxy sets and Telegram over WebSocket** - the rule that hands a connection to the set's listener accepted only the selected devices, while the router's own connections reach it over the loopback interface, so they hung before 1.83.0 and were left out of these sets since.
-- FIXED: **On iptables, a routing set that Allow only selected devices left with no device, for example because the set excludes them or because they are manually added IPv4 devices while IPv6 is on, kept the devices it had before and made b4 rebuild routing at every firewall check** - the set's old jump was replaced only when the new filter produced a new one, and the check for missing rules expected a jump in every address family.
-- FIXED: **In TUN mode, a site of a proxy set opened through b4's SOCKS5 server timed out unless its exact name was listed in the set, and a `.onion` address never worked through it in any mode** - the SOCKS5 server looked the name up itself and connected directly, leaving it to the firewall rules to catch the address, but b4 learns a set's addresses from the DNS answers it sees, TUN mode never shows it the answers to the router's own lookups, and a `.onion` name has no address to look up.
-- FIXED: **Where iptables is the nf_tables variant, as on Debian, Ubuntu and some OpenWrt builds, connections the router opened itself to a proxy set's addresses went out directly while b4 captured traffic for DPI bypass** - the capture rule handed them to b4's packet queue, and a packet coming back from the queue on these systems no longer takes the route the set's mark asked for.
-- FIXED: **A routing set with a resolver of its own under DNS Redirect could fill with the addresses the router's resolver gave for its domains, fake ones on a network with spoofed DNS, and turning that resolver on did not look the domains up again** - b4 resolved the set's domains, and the names it hands a proxy upstream as addresses, through the router's resolver, which reaches the set's resolver only when b4 intercepts its queries, not when it answers from its cache or uses DNS over TLS or HTTPS of its own.
-- FIXED: **Routing sets let go of addresses they should have kept: on nftables every address learned from DNS once its time to live (an hour by default) ran out after it was first seen, however often DNS returned it again, which cut live connections through proxy sets and let traffic past block sets, and on iptables an address listed in the set by hand an hour after DNS also returned it** - on nftables adding an address that was already in the set again left its first expiry running, and on iptables the learned copy replaced the permanent listed entry with one that expires.
-- FIXED: **With net.ipv4.conf.all.src_valid_mark set to 1, as XrayUI does for a WireGuard outbound and wg-quick does, Telegram over WebSocket and proxy sets passed nothing from LAN and VPN devices, while the MTProto Proxy kept working** - the kernel then checks where a diverted connection came from in the routing table the set's mark selects, and b4's table answers every address with the router itself, so each connection was dropped as having a spoofed source.
+### Added
+
+- When the packet engine fails to start, b4 keeps running so the web interface stays reachable, and the dashboard shows the reason with a button that switches to the other engine; b4 also retries three times within about two minutes.
+- b4 can be restarted from the web interface without a service manager, for example in Docker, in a MikroTik container or after a manual start, and keeps its process ID, so the container keeps running.
+
+### Fixed
+
+- b4 could exit at startup without showing the reason on the console, some startup errors read `%!w(...)`, and when the packet queue failed to open, proxy sets kept sending traffic to a listener that was gone.
+- On routers where b4 runs from an init script, such as ASUS Merlin and Keenetic, every restart or update from the web interface carried the old b4's packet-sending sockets into the new one, so open sockets piled up.
+- With **Device Filtering** limited to selected devices, connections through b4's SOCKS5 server and others the router opened itself went out directly instead of through proxy sets and **Telegram over WebSocket**.
+- On iptables, a routing set that **Device Filtering** limited to selected devices left without any, for example because its only selected devices were manually added IPv4 ones while IPv6 is on, kept its previous devices and made b4 rebuild routing at every firewall check.
+- In TUN mode, a proxy set's site opened through b4's SOCKS5 server timed out unless its exact name was listed in the set, and a `.onion` address never worked through the SOCKS5 server in any mode.
+- Where iptables is the nf_tables variant, as on Debian, Ubuntu and some OpenWrt builds, the router's own connections to a proxy set's addresses went out directly while b4 captured traffic for DPI bypass.
+- A routing set with a resolver of its own under **DNS Redirect** could fill with the addresses the router's resolver gave for its domains, fake ones on a network with spoofed DNS, and turning that resolver on did not look the domains up again.
+- On nftables, routing sets dropped each address learned from DNS when its time to live, an hour by default, ran out after it was first seen, however often DNS returned it, which cut live proxy connections and let traffic past block sets.
+- On iptables, an address listed in a routing set by hand dropped out of it an hour after DNS also returned it.
+- With `net.ipv4.conf.all.src_valid_mark` set to 1, as XrayUI does for a WireGuard outbound and wg-quick does, **Telegram over WebSocket** and proxy sets passed nothing from LAN and VPN devices, while the **MTProto Proxy** kept working.
 
 ## [1.83.0] - 2026-09-26
 
-- ADDED: **Sets can target whole networks by their ASN** - an ASN tab in the set editor takes a number such as `AS15169` or an IP address, and b4 fetches the network's announced prefixes from RIPEstat and refreshes them daily. The Traffic page can add an address's announced prefix or its whole network to a set, the DPI Detector can add a hosting network, MCP `b4_edit_set_targets` takes the kind `asns`, and shared and community sets carry ASNs.
-- FIXED: **A set whose GeoIP or GeoSite file or category was missing acted on every connection to the ports in its port filter, and its MSS clamp on every HTTPS connection from its source devices** - b4 took a set with no expanded domains or addresses for one that matches by port alone, and an MSS clamp with no addresses fell back to the set's devices.
-- FIXED: **A cut-off download of `geosite.dat` or `geoip.dat` stopped b4 from starting until the file was fetched again by hand** - the installer wrote each attempt over the working file and gave up on a 74 MB GeoSite after 600 seconds, the web UI likewise put an error page or a transfer cut off without a length in its place and gave up after 10 minutes, and b4 exited on a file it could not read before its web UI or the re-download of missing files started.
-- CHANGED: **The installer shows the size of each GeoSite and GeoIP source and no longer defaults to one whose file does not fit** - the RUNET Freedom GeoSite is 74 MB, so on a fresh install where it does not fit in the target directory the installer offers the smallest source that does, such as Loyalsoldier at 11 MB, and a reinstall keeps the source already configured.
-- FIXED: **Settings could be lost to a save cut short, for example by a power loss, or to an address added from the Traffic page during another save** - the file was rewritten in place, so after an interrupted save b4 started on the defaults and wrote them over the file at the next one, and the add saved a copy of the configuration taken before the other change.
-- FIXED: **Overlapping packet duplication addresses such as `8.8.0.0/16` and `8.8.8.0/24` stopped the bypass on nftables, and packet duplication and the MSS clamp picked up new addresses late** - nft refused the overlapping ranges and b4 then removed its bypass rules, and a save that turned duplication on or changed its addresses did not refresh the firewall, nor did an add from the Traffic page or a GeoIP file update.
-- FIXED: **Saving settings took seconds with large routing sets on nftables** - every save reloaded a routing set's addresses 128 at a time, one `nft` call each, about 150 calls for 19,000 addresses.
-- FIXED: **The IPInfo token could end up in b4's log, IPInfo and RIPE NCC lookups on the Traffic page could hang, and a failed add there showed a JSON parse error instead of the reason** - a failed IPInfo request logged its URL with the token in it, the lookups had no timeout, and add errors came back as plain text.
-- ADDED: **Telegram over WebSocket can be turned on with a switch under Settings, Telegram, without a set or GeoIP and GeoSite files** - it bridges Telegram for the devices behind b4 and the router itself by Telegram's address ranges, which b4 carries and refreshes daily, and its card shows whether the bridge works and what is missing when it does not. The tab formerly named MTProto Proxy is named Telegram, the switch `system.mtproto.bridge.enabled` can be changed over MCP, sets in the Telegram over WebSocket routing mode work as before, and the Traffic page labels their connections and the bridge's Telegram bridge instead of `-ws`.
-- ADDED: **Two options under Settings, Telegram for networks that block Telegram's WebSocket edge or throttle workers.dev** - Fronting name for Telegram's WS edge (advanced) takes another TLS name, such as `sprinthost.ru` as tg-ws-proxy uses, that b4 tries after a handshake for the `kws*.web.telegram.org` names fails, and b4 closes any handshake that does not end on a telegram.org certificate. Let sets process Worker connections, shown once a Cloudflare Worker domain is set, lets a set with a working strategy for Cloudflare process b4's own connections to the Worker; both are off by default.
-- FIXED: **Telegram through the MTProto proxy and the WebSocket bridge dropped connections and loaded media slowly where Telegram's own servers are blocked or unreliable, and on Android some channels' photos and videos did not load through the bridge, with `-444` warnings in the log** - b4 tried its routes one at a time, waited three seconds on Telegram's edge before trying Cloudflare, retried dead edges every five minutes and kept spare connections for only 20 seconds, and it took an Android session's data centre from the address, which for 149.154.167.255 gave data centre 2 instead of 4.
-- FIXED: **Telegram through the WebSocket bridge kept failing where workers.dev is throttled, a working Cloudflare Worker was cut off and set aside for ten minutes mid-session, and Telegram's Cloudflare routes failed while a set covering Cloudflare was on** - the bridge sent connections it could not decode to the Worker even on ports other than 443, which the Worker cannot reach, and even when its only Worker had been set aside, the stall check took an idle session's next request, or a lone acknowledgement, for a Worker that had stopped answering, and b4's own connections to Cloudflare got the faking and fragmentation of such a set, for example one with the `cloudflare` GeoIP or GeoSite category, which break them on some networks.
-- FIXED: **b4 contacted core.telegram.org, proxy.b4core.app when that failed, and raw.githubusercontent.com on every start, even with every Telegram feature off** - the Telegram data-centre list and the Cloudflare proxy domain list were downloaded whatever the settings.
-- ADDED: **Discovery can find a strategy for an existing set, and the watchdog can keep a set working** - a set keeps up to five addresses on the new Discovery tab of the set editor, and Find a strategy in the set card's menu opens Discovery on them. With Keep this set working with the watchdog on, the watchdog checks those addresses and, when they keep failing, runs Discovery for the set, writes in a strategy that works for every address and puts the old one back if they still fail; the per-domain list keeps working and its entries can be moved into a set, and MCP `b4_find_bypass_strategy` and `b4_watchdog` take a `set`.
-- CHANGED: **Replacing a set's strategy from Discovery changes only what Discovery tested** - the set keeps its UDP settings and routing, and adding the site to a set that does not already cover it, which also takes it out of every other set, is a checkbox that is on by default. Before, only a set that already listed the site could be picked, and the replace always added the site, took it out of every other set and copied UDP and DNS settings that Discovery never tested.
-- FIXED: **A watchdog heal could damage the set it healed, and after any strategy change the sites the old strategy had failed on stayed refused for up to five minutes** - the heal could write a strategy that had not passed confirmation, wiped the set's port filter, RST protection and UDP settings, and was undone by the next save from a Settings or set page opened before it, and IP block detection with Cache Blocked IPs on answered new connections to those sites with b4's own reset until the entry expired.
-- FIXED: **Discovery could pass a strategy that ended on the ISP's block page, probe the router's own network, and wait out the whole timeout on a connection that froze mid-page** - it judged only the page a redirect ended on, only the MCP tool refused a local or private address such as `192.168.1.1` and only when typed as one, and the 2-second stall check ran only after a read finished, while a read waits for data until the timeout ends.
-- FIXED: **The watchdog and the DPI Detector reported blocking that was not there, and the Detector said port 53 queries reached their resolvers when one redirect answered them all** - a same-site redirect such as `/login?reason=session_blocked` matched the block-page markers, a single DNS timeout or error, never retried, showed as Fake DNS for a site and Substituted for a resolver, and the port 53 summary took the absence of hijacked rows as proof that every query reached its resolver, although a redirect to a well-known resolver such as Google is never marked.
-- FIXED: **Proxy sets and Telegram over WebSocket could stop carrying traffic, for example after XrayUI restarted xray** - XrayUI's rule at the top of mangle PREROUTING took the packets of connections b4 had diverted to its listeners, the listener rule refused the router's own connections with Allow only selected devices on under Device Filtering, a listener whose port was taken at start stayed closed until the next save, and a proxy set whose targets included the server of an upstream running on the router or elsewhere in the network looped that upstream's own connections back into it and cut off every device behind the set.
-- FIXED: **Send domain name to upstream changed nothing for most connections, so an upstream such as Tor got only an address and, with SafeSocks on, refused the connection as "giving Tor only an IP address"** - the name came only from a TLS or QUIC hello b4 had seen in its packet processing, which a connection the set diverts never passes.
-- FIXED: **A set with an output interface sent its fake and split packets out the main uplink after some saves on iptables, and could delete every routing rule on the router and replace its default route when routing tables 100 to 249 were all taken** - a save that rebuilt the firewall rules, such as a change of ports, packet limits, NAT Masquerade or an MSS clamp, put b4's rule that lets its own packets through back above the jumps into the sets' chains, and a DNS answer for a set the sync had skipped for lack of a free table installed it anyway with mark 0 and table 0, which `ip rule` and `ip route` read as every rule and the main table.
-- CHANGED: **TUN picks its routing tables itself from the free ones below 100, instead of the fixed tables 9999 and 9998** - busybox `ip` accepts table ids only up to 1023, so TUN did not start on it (`invalid argument '9998' to 'table ID'`), and TUN's cleanup deleted every rule pointing at those tables whoever had added it, flushed a table it had refused as busy and left its own two rules for the main table behind. `queue.tun.route_table` still sets a table by hand, and busybox `ip` older than 1.33 cannot run TUN at all.
-- ADDED: **System Info shows how many of TUN's capture rules are in place and how often b4 restored its rules, with the time of the last restore** - in TUN mode the firewall monitor interval also appears under Settings, Core, Firewall Features, with a 10-second minimum.
-- FIXED: **In TUN mode, a router firewall restart, such as after a port-forward change on Xiaomi, left b4 seeing no traffic and without its other rules until b4 was restarted, some setting changes also waited for a restart, and on iptables 1.8 device filtering dropped LAN devices out of capture for a moment on every check** - the TUN engine checked only that its capture chain existed, the firewall monitor, which also answers `SIGUSR1`, ran only with NFQUEUE, TUN read a set's ports, the packet limits, duplication addresses, the device filter, NAT Masquerade and MSS clamps once at start, and MAC addresses were compared case-sensitively while iptables 1.8 prints them in lowercase.
-- FIXED: **In TUN mode with NAT Masquerade on and no interface selected, or with a router masquerade rule that names no outgoing interface, b4 captured traffic but no site opened** - such a rule gave packets entering the TUN device that device's own address before TUN could give them the uplink's, so no reply came back.
+### Added
+
+- A set can target whole networks by their ASN, such as `AS15169`, on the new **ASN** tab of the set editor or from the **Traffic** page and the **DPI Detector**, and b4 refreshes their address ranges daily.
+- **Telegram over WebSocket** can be turned on with one switch under **Settings, Telegram**, without a set or GeoIP and GeoSite files, and its card shows whether the bridge works and what is missing.
+- Two options under **Settings, Telegram**, both off by default, help where Telegram's WebSocket servers are blocked or workers.dev is slowed down: **Fronting name for Telegram's WS edge (advanced)** and **Let sets process Worker connections**.
+- **Find a strategy** in a set card's menu runs **Discovery** on the addresses kept on the set editor's new **Discovery** tab, and with **Keep this set working with the watchdog** on, the **Watchdog** applies a new strategy when they keep failing.
+- **System Info** shows how many of TUN's capture rules are in place and how often b4 restored its rules, and in TUN mode the firewall monitor interval appears under **Settings, Core, Firewall Features**.
+
+### Changed
+
+- The **MTProto Proxy** settings tab is renamed **Telegram**, and the **Traffic** page labels **Telegram over WebSocket** connections **Telegram bridge** instead of `-ws`.
+- Replacing a set's strategy from **Discovery** works on any set and changes only what **Discovery** tested, keeping the set's UDP settings and routing; adding the site to the set, and out of every other set, is a checkbox, on by default.
+- TUN picks its routing tables from the free ones below 100 instead of 9999 and 9998, which busybox `ip` refused, so TUN did not start there. `queue.tun.route_table` still sets a table by hand, and busybox `ip` older than 1.33 cannot run TUN.
+
+### Fixed
+
+- A set whose GeoIP or GeoSite file or category was missing acted on every connection to the ports in its port filter, and its MSS clamp on every HTTPS connection from its source devices.
+- A cut-off download of `geosite.dat` or `geoip.dat` stopped b4 from starting until the file was fetched again by hand, and the installer could default to a source whose file did not fit on the router.
+- Settings could be lost when a save was cut short, for example by a power loss, or when an address was added from the **Traffic** page during another save.
+- Overlapping packet duplication addresses such as `8.8.0.0/16` and `8.8.8.0/24` stopped the bypass on nftables, and packet duplication and the MSS clamp picked up new addresses late.
+- Saving settings took seconds with large routing sets on nftables.
+- IPInfo and RIPE NCC lookups on the **Traffic** page could hang, and a failed add there showed a JSON parse error instead of the reason.
+- Telegram through the MTProto proxy and the WebSocket bridge dropped connections and loaded media slowly where Telegram's own servers are blocked or unreliable, and on Android some channels' photos and videos did not load through the bridge.
+- Telegram through the WebSocket bridge kept failing where workers.dev is slowed down, a working Cloudflare Worker was cut off mid-session, and Telegram's Cloudflare routes failed while a set covering Cloudflare was on.
+- b4 contacted core.telegram.org (or proxy.b4core.app when that failed) and raw.githubusercontent.com on every start, even with every Telegram feature off.
+- A heal by the **Watchdog** could damage the set it healed, and with **Cache Blocked IPs** on, the sites the old strategy had failed on stayed refused for up to five minutes after any strategy change.
+- **Discovery** could pass a strategy that ended on the ISP's block page, probe the router's own network, and wait out the whole timeout on a connection that froze mid-page.
+- The **Watchdog** and the **DPI Detector** reported blocking that was not there, and the **DPI Detector** said port 53 queries reached their resolvers when one redirect answered them all.
+- Proxy sets and **Telegram over WebSocket** could stop carrying traffic, for example after XrayUI restarted xray, and a proxy set whose targets included the server of an upstream in the network cut off every device behind it.
+- **Send domain name to upstream** changed nothing for most connections, so an upstream such as Tor got only an address and, with SafeSocks on, refused the connection.
+- A set with an output interface sent its fake and split packets out the main uplink after some saves on iptables, and could delete every routing rule on the router and replace its default route when routing tables 100 to 249 were all taken.
+- In TUN mode, a router firewall restart, such as after a port-forward change on Xiaomi, cut b4 off from traffic until b4 was restarted, some setting changes also needed a restart, and on iptables 1.8 device filtering briefly dropped LAN devices from capture.
+- In TUN mode with **NAT Masquerade** on and no interface selected, or with a router masquerade rule that names no outgoing interface, b4 captured traffic but no site opened.
+
+### Security
+
+- The IPInfo token could end up in b4's log when an IPInfo request failed.
 
 ## [1.82.3] - 2026-09-23
 
-- FIXED: **A site with pinned addresses opened in a browser drifted to an address b4 never handed out after about a minute, and the tab ended in a timeout** - only the A and AAAA queries were answered from the pin list, so the browser's parallel HTTPS query brought the site's CNAME back from the resolver, the system cache followed that CNAME on its own once the short pin answer expired, and the pins were not asked for again.
-- FIXED: **A pinned address the router could not reach was handed out first every time, and a browser waited on it for over two minutes before trying the next one** - dead pins were left out only with IP block detection on, which it is not by default, and nothing ever checked whether a pin answered at all.
-- FIXED: **A site outside every set that shares an address with a pinned name went out unprotected for two minutes after each lookup of that name** - the DNS hint stored for the client took precedence over the address learned from earlier traffic, and once the hello's SNI matched no set the match was dropped without falling back to it.
-- ADDED: **Discovery and the DPI Detector recognise a gateway in front of b4's host that terminates TCP itself** - a SYN sent with a hop limit of one can only be answered by the next hop, so an address that answers it is served by a transparent proxy on that gateway (a router with its own redirect, or the ISP's edge when b4 is the router), not by the site. Discovery leaves such addresses out of the search, goes on with addresses from the ECS scan that route normally, and stops with a clear verdict when nothing is left; the Detector reports the site as `GATEWAY` with a note that no packet strategy from this host can change it.
-- FIXED: **Discovery spent a run on two dead ends: an `http://` check address whose port 80 answers everyone with a short error, and a second sweep of fake TTLs after the first had found none** - the origin's `403` with an empty body failed every preset with "insufficient data" whatever the strategy, and the sweep's negative result was not kept between strategy families.
-- ADDED: **Discovery history keeps the strategies that also worked, not only the winner** - a site in the history expands to the alternatives its run found, up to twelve of them, and any of them can be applied from there long after the run is gone. A strategy that was already installed as a set is marked as tried, and every row shows what the site costs in the history file.
-- CHANGED: **Apply as a set starts on replacing the strategy of the set a site is already in, rather than only being able to create another one** - the set keeps its name, its sites and its routing, so trying one strategy after another for the same site no longer leaves a trail of sets identical in everything but their targets. The one offer there was before, adding the site to a set that already carries the same strategy, never appeared at all: the comparison behind it covered the fake packet payload b4 materialises in memory for an enabled set, which a set just built by Discovery does not carry.
+### Added
+
+- **Discovery** and the **DPI Detector** recognise a gateway in front of b4 that answers connections in the site's place: **Discovery** leaves its addresses out, and the **DPI Detector** reports the site as `GATEWAY`.
+- **Discovery** keeps up to twelve other strategies that worked for a site in its **History**, not only the winner, and any of them can be applied from there later.
+
+### Changed
+
+- **Apply as a set** starts on replacing the strategy of the set a site is already in, keeping its name, sites and routing, instead of only creating another set.
+
+### Fixed
+
+- A site with **Pinned addresses** opened in a browser drifted after about a minute to an address b4 never handed out, and the tab ended in a timeout.
+- A pinned address the router could not reach was handed out first every time, and a browser waited on it for over two minutes before trying the next one.
+- A site outside every set that shares an address with a pinned name went out unprotected for two minutes after each lookup of that name.
+- **Discovery** wasted a run on an `http://` check address whose port 80 answers everyone with a short error, and swept fake TTLs a second time after the first sweep had found none.
 
 ## [1.82.2] - 2026-09-19
 
-- FIXED: **Saving a setting that rebuilds the firewall was followed by `Tables rules missing, restoring...`, sometimes a failed restore on the `B4_DNSTCP` chain, and on a slow router the rules were absent or half-built for up to twenty seconds** - the rebuild tears every rule down and puts it back while the tables monitor keeps polling, nothing ordered the two, so a poll that landed inside the teardown started a second restore that fought the rebuild over the same chains.
-- CHANGED: **A rule restore that follows a firewall rewrite announced by the Keenetic hook is logged at the INFO level** - `Tables rules missing after a firewall rewrite, restoring...` replaces the warning in that case, and the warning stays for a restore the poll started on its own, which on Keenetic means the hook is missing and elsewhere means something other than b4 removed the rules.
-- CHANGED: **The hub addresses under Settings, Integrations, Community Hub are chips with the host name only, in the order they are tried** - mirrors learned from the hub are outlined and the address that answered the last sync is marked.
-- CHANGED: **Mirrors learned from the hub are tried after the hub's own address, not before it** - the order is the addresses entered under Hub mirrors, then hub.b4core.app, then the learned mirrors, so an address entered by hand still goes first and a learned mirror serves a router only when the hub does not answer.
-- FIXED: **A failed hub sync was reported as `did not answer the health check` for one address only, whatever the reason** - the cause, a failed lookup, a refused connection, a timeout or the status code, was dropped on the way to the status line, and only the last address tried was named, so a mirror entered by hand could fail first without a trace of it.
-- FIXED: **On a router where the strategy of a set covering the hub addresses stalled b4's own TLS handshake, as a `regexp:.*` catch-all set did, the hub never synced although every other device could open it** - b4's requests to the hub went through its own packet processing like any other traffic, there was no second path when that broke the connection, and nothing showed which set was in the way.
+### Changed
+
+- A rule restore after a firewall rewrite announced by the Keenetic hook is logged at INFO level, and the remaining warning means the hook is missing on Keenetic, or elsewhere that something other than b4 removed the rules.
+- Mirrors learned from the hub are tried after hub.b4core.app instead of before it, and **Settings, Integrations, Community Hub** lists the addresses in the order they are tried and marks the one that answered last.
+
+### Fixed
+
+- Saving a setting that rebuilds the firewall could leave the rules absent or half-built for up to twenty seconds on a slow router, with `Tables rules missing, restoring...` in the log.
+- The hub never synced where a set covering it, such as a `regexp:.*` catch-all, stalled b4's own connection to it, and a failed sync was reported as `did not answer the health check` for one address only, whatever the reason.
 
 ## [1.82.1] - 2026-09-18
 
-- ADDED: **b4 re-checks its firewall rules on `SIGUSR1`, and on Keenetic the installer wires that into the NDMS `netfilter.d` hook directory** - NDMS rebuilds its netfilter tables on a UPnP renewal, a WAN reconnect or a policy change and drops every chain it does not own, so the b4 rules were gone until the tables monitor's next poll, up to ten seconds later, on every rebuild.
-- FIXED: **A rule restore that ran while another program was rewriting the firewall reported `xt_connbytes kernel module is not available` and skipped IPv4, although the module was loaded** - the probe chain was flushed under the probe, and iptables answers a vanished chain with the same words as a missing match.
-- FIXED: **An update could leave a damaged b4 binary behind when the router was rebooted soon after it** - the installer checked the new file and deleted the previous copy before the write had reached the storage, so a reboot that came before the disk caught up left a file of the right size with garbage inside, and b4 crashed on every start.
-- FIXED: **A custom list of five fallback UDP DNS servers under Settings, Discovery was gone after the next restart** - the loaded list was written over the built-in default it was later compared against, so the save took it for the default and left it out of the file.
-- FIXED: **On routers with nftables, a duplication set or a set with MSS clamping that held more than a few thousand addresses stopped b4 with `argument list too long`** - every address in a batch was handed to `nft` as one command-line word, and the kernel refuses a single word past 128 KB before the command starts.
+### Added
+
+- b4 re-checks its firewall rules on `SIGUSR1`, and on Keenetic the installer hooks this into the router's firewall rebuilds, which used to leave b4 without its rules for up to ten seconds.
+
+### Fixed
+
+- A rule restore that ran while another program was rewriting the firewall reported `xt_connbytes kernel module is not available` and skipped IPv4, although the module was loaded.
+- A custom list of five fallback UDP DNS servers under **Settings, Discovery** was lost after the next restart.
+- On nftables, a duplication set or a set with MSS clamping that held more than a few thousand addresses stopped b4 with `argument list too long`.
 
 ## [1.82.0] - 2026-09-17
 
-- ADDED: **Community Hub: a set can be published to hub.b4core.app, and sets other b4 users published can be browsed, applied and rated from a new Community page** - a shared set carries only the strategy, its targets and its payload files, leaves out everything tied to the router, waits for a moderator before it appears, and stays linked once applied so it can be rated, updated or reported, while Discovery tries community sets for a domain before its own presets. It sits behind one switch under Settings, Integrations, off by default, and the `b4hub` service that ships alongside runs a self-hosted hub or a mirror of the central one, with the daily limits per contributor set from its moderation console and trusted keys exempt from them.
-- ADDED: **A QUIC handshake can be sent behind a padding packet inside the same datagram** - the new `coalesce` UDP mode puts a padding-only QUIC Initial ahead of the client's Initial in one datagram, sealed under a different connection ID so the server cannot decrypt it and drops it while a DPI that only reads the first packet stops on it, and leaves the handshake itself unchanged.
-- ADDED: **A plain HTTP request can carry an empty line before its method** - the new `http_methodeol` TCP option prepends the line and trims the `User-Agent` value by two characters so the request keeps its length, and inspection that expects the method first stops finding the `Host` header. It covers port 80 only and needs a `User-Agent` header; before it, a site filtered by its `Host` header had no strategy at all.
-- ADDED: **The Telegram WEB proxy can have a port of its own, and its placeholder page can be replaced** - under Settings, MTProto Proxy, Telegram Desktop WEB proxy, a relay port opens a separate listener with its own certificate that answers the relay hostname as the relay and everything else with the placeholder, for a WAN 443 forward that otherwise landed on the web interface and showed the b4 login page at `https://<public IP>/`. The placeholder can be replaced by uploading a self-contained HTML file in the same card.
-- FIXED: **Discovery could name a winning strategy for a site that stays blocked, and kept searching with a fake it had already proved harmful** - an HTTP 400 and a 157-byte error page both counted as a working fetch, and when every TTL failed the sweep fell back to 7 and measured the TCP-fragmentation and TLS-record families with it.
-- FIXED: **A passphrase-protected TLS key was accepted under Settings, and the web interface silently stayed on plain HTTP** - saving only checked that the two files existed, the failed load at start was a warning that reached neither the error log nor the dashboard, and a certificate file missing at start stopped the service altogether.
-- FIXED: **With no web-server credentials set, any web page a LAN user opened could read and change the router's configuration** - the API answered every browser origin with a cross-origin grant, and nothing else stood between a foreign page and the writable endpoints.
-- CHANGED: **A Discovery run stopped early confirms what it has found instead of leaving it unconfirmed** - Stop and confirm ends the search at the current preset, marks the remaining steps skipped and runs the confirmation pass on the winners so far, and a second press during confirmation ends the run at once. Before, the only stop kept an unconfirmed result, the one kind the confirmation pass exists to catch.
-- CHANGED: **"Match Fake Size" copies the real ClientHello into the fake instead of stretching the payload to its size** - only the domain name is overwritten, fitted to the real name's length, and Discovery tries this shape with an old TCP timestamp or a bad checksum at full TTL. On two Russian networks the filter drops a fake that differs from the real greeting by a single byte of length and passes one of equal length, while the stretched fake repeated the payload's bytes and was no ClientHello at all.
-- CHANGED: **The set comparison dialog is rebuilt around the same Target, Split, Fake, Route, DNS and Escalate rows as the set cards** - both sets are picked and swapped inside the dialog, every differing row carries its setting name, targets are compared by category and domain instead of by count, and a "Differences only" switch hides what matches. The old dialog opened as a narrow column and hid the setting names in truncated chips. [#356](https://github.com/DanielLavrushin/b4/issues/356)
+### Added
+
+- Sets can be shared through the **Community Hub**, off by default under **Settings, Integrations**: published to hub.b4core.app after moderation, then browsed, applied and rated on the new **Community** page, and **Discovery** tries them before its own presets.
+- The new **Coalesce QUIC Initial** UDP mode sends a padding-only QUIC packet ahead of the real handshake in the same datagram, so DPI that reads only the first packet stops on it.
+- The new **Empty line before HTTP method** TCP option puts an empty line before a plain HTTP request, for sites filtered by their `Host` header; it covers port 80 only and needs a `User-Agent` header.
+- The **Telegram Desktop WEB proxy** can have its own **Relay port**, for a forwarded WAN port 443 that otherwise showed the b4 login page, and its placeholder page can be replaced with an uploaded HTML file.
+
+### Changed
+
+- **Stop and confirm** ends a **Discovery** run early and still confirms the strategies found so far, and a second press during confirmation ends the run at once.
+- **Match Fake Size** copies the real ClientHello into the fake with only the domain name replaced, instead of stretching the payload to its size, and **Discovery** tries this shape too.
+- The **Compare Sets** dialog shows the same rows as the set cards, picks and swaps both sets inside it, names every setting that differs and has a **Differences only** switch. [#356](https://github.com/DanielLavrushin/b4/issues/356)
+
+### Fixed
+
+- **Discovery** could name a winning strategy for a site that stayed blocked, and kept searching with a fake it had already proved harmful.
+- A passphrase-protected TLS key was accepted under **Settings** and the web interface silently stayed on plain HTTP, while a certificate file missing at start stopped the service altogether.
+
+### Security
+
+- Without a login for the web interface, any website opened on a device in the network could read and change b4's configuration.
 
 ## [1.81.1] - 2026-09-10
 
-- FIXED: **b4 could be left running after a service restart on OpenWrt, deaf to everything but kill -9, or doubled after an update** - the daemon stopped listening for signals once shutdown began and never enforced its deadline, and the installer trusted a stop it never checked and a pidfile it never verified. [#351](https://github.com/DanielLavrushin/b4/issues/351)
-- FIXED: **A `--quiet` install or update left b4 stopped, and `--platform=` skipped the service setup** - the only start sat behind an interactive prompt, a forced platform never learned the service type, Ctrl-C at a prompt counted as the default answer, and a run without a terminal died at once.
-- FIXED: **The installer fell back to unverified downloads after one warning and wrote the configuration readable by every user** - a single failed certificate check switched every later download, checksum included, to unverified TLS.
-- FIXED: **Every OpenWrt MIPS64 install failed with a download error** - the installer asked for a `mips64_softfloat` build that was never published.
-- FIXED: **`--remove` left a killed b4's firewall rules behind, and a binary installed to a custom directory** - removal relied on the process cleaning up after itself and never looked in the directory chosen at install time.
+### Fixed
+
+- After a service restart on OpenWrt, b4 could be left running and deaf to everything but `kill -9`, or run twice after an update. [#351](https://github.com/DanielLavrushin/b4/issues/351)
 
 ## [1.81.0] - 2026-09-06
 
-- CHANGED: **The DPI Detector page is rebuilt around the sites typed into it, and every site is fetched twice** - once directly and once through b4, so a row says whether the ISP blocks the site, whether b4 fixes it, or whether it is still blocked, with a verdict sentence on top, a button that hands the still-blocked sites to Discovery, and a report to copy into an issue. The old page fetched only through the running engine, so a well-configured b4 hid the very blocking it was meant to show. The check takes any list of domains or URLs, can be filled from the sets, and its four scopes are named by the question they answer: Sites, DNS, Hosting and CDN, Telegram. The DNS check merges the two old ones into one table per provider over UDP, DoH and DoT, judges honesty against encrypted answers and names who really answered a port 53 query; the hosting check groups targets by network with the drop point and any whitelisted SNI that gets through; the Telegram check measures upload as well as download. The target lists are refreshed from the dpi-detector project as of 2026-09-04, several dead sites and addresses are dropped, and a button fetches the current upstream lists without a release.
-- CHANGED: **The Discovery page is rebuilt around the sites typed into it** - results and history list the sites in the order given, with one card and a plain-words verdict per site, and a found strategy is described in a sentence and shown with the same split, fake, target and DNS rows as the Sets page before it is applied. A run shows its phase, the number of configurations tested and the live log line instead of a percentage, Stop keeps what was found and marks it unconfirmed, the options are named by what they do, and the log of the last run stays available after a restart and can be downloaded.
-- ADDED: **Discovery looks for addresses the block does not cover, and can fix a site by DNS alone** - when a site's known addresses are unreachable or refuse the TLS handshake, the run asks a public resolver how clients in some five hundred other regions are answered, checks which of those addresses connect and complete a handshake for the site, and pins the site to them in the set it builds, with dead-address detection switched on so a pin that stops answering is skipped. A site that loads through an honest DNS answer or through such an address is reported as found with a set that changes no packets, where before it read as needing no bypass and got no set at all.
-- FIXED: **Discovery could apply a set that did not match what it had found, and a stopped run left the page stale until it was reloaded** - stopping halted the polling before the run had written its history, an alternate preset carried the geo categories of every other site in the run and the DNS redirect if any of them looked poisoned, the history applied the fastest entry's set to every site of a technique family under the family's name, and a site that was never blocked read as found while the remembered winners were tried ahead of the plain fetch.
-- FIXED: **A proxy set that matched every address cut the device it was bound to off the network, and taking the address back out did not bring it back** - the diversion rules pick a packet by its destination alone, so the device's DNS queries to the router, its DHCP renewals and its visits to the web interface went to the upstream proxy as well, a set without a device filter marked the router's own answers to a matched client for the proxy in turn, and an address removed from a set's targets stayed in the kernel set until the set was disabled or the service restarted. [#322](https://github.com/DanielLavrushin/b4/issues/322)
-- FIXED: **A set routed through an interface sent only the first packet of each connection that way, and every packet after it by the ordinary uplink** - the routing decision is carried on the connection mark, and b4 judges whether a router keeps that mark by looking for its own claim in the connection table, where a connection still in its handshake carries the claim on every router, including the ones whose firmware owns the mark and overwrites it a moment later; the same claim gated the source rewrite into the interface, so that was left out as well.
-- FIXED: **On a router that downloads through wget, an update started from the web interface left grep's usage text in the update log, with the installer's lines stamped hours apart from b4's own** - the installer asks grep whether wget's help lists a timeout option by passing the option's name, which grep took for one of its own, and the two halves of the log took their time from different clocks.
+### Added
+
+- **Discovery** looks for a site's addresses that the block does not cover, among those served to some five hundred other regions, pins the site to them, and can fix a site by DNS alone with a set that changes no packets.
+
+### Changed
+
+- The **DPI Detector** page is rebuilt around the sites typed into it: each is fetched directly and through b4, so a row shows whether the ISP blocks it and whether b4 fixes it, and a button hands still-blocked sites to **Discovery**.
+- The **Discovery** page is rebuilt around the sites typed into it, with one card and a plain verdict per site, the found strategy shown as on the **Sets** page, and the last run's log kept after a restart for download.
+
+### Fixed
+
+- **Discovery** could apply a set that did not match what it had found, and a stopped run left the page stale until it was reloaded.
+- A proxy set that matched every address cut the device it was bound to off the network, and taking the address back out did not bring it back. [#322](https://github.com/DanielLavrushin/b4/issues/322)
+- A set routed through an interface sent only the first packet of each connection that way, and every packet after it by the ordinary uplink.
 
 ## [1.80.4] - 2026-08-31
 
-- FIXED: **Changing anything on a routing set took it apart before putting it back, so for about a second the traffic it matched left by the ordinary uplink** - the policy rule, the route, the prerouting jump, the chain and the addresses learned from DNS all came down before the replacement went in, and a set marks a connection only on its first packet, so a connection opened in that window stayed off the set for as long as it lived.
-- FIXED: **Every setting changed through the MCP server left a whole copy of the configuration behind, so memory climbed by tens of megabytes and stayed there until b4 was restarted** - the undo history keeps the configuration as it stood before each of the last twenty writes, and on a router with a large geosite set each of those copies carried a few megabytes of expanded domain list.
-- FIXED: **A proxy set that resolves its upstream by domain went back to sending bare addresses a few minutes after any settings change, and stayed that way until b4 was restarted** - the transparent proxy kept reading the domain index built at start-up, which the capture engine stops feeding once the configuration is applied again, so the addresses it had learned aged out with nothing to replace them. [#338](https://github.com/DanielLavrushin/b4/issues/338)
+### Fixed
 
-- FIXED: **On Keenetic, the proxy and mtproto-ws routing modes were reported as unavailable after every reboot, although the firmware ships the TPROXY and socket modules for its kernel** - b4 asked `modprobe` to load them, which needs a module index the read-only NDMS firmware does not carry, so the request failed and the check that followed read the modules as absent; the installer's start script has a direct `insmod` fallback, but those four modules were never on its list. [#342](https://github.com/DanielLavrushin/b4/issues/342)
+- Changing anything on a routing set took it down for about a second, and connections opened in that window left by the ordinary uplink for as long as they lived.
+- Every setting changed through the **MCP** server kept a whole copy of the configuration, so memory climbed by tens of megabytes until b4 was restarted.
+- A proxy set that resolves its upstream by domain went back to sending bare addresses a few minutes after any settings change, until b4 was restarted. [#338](https://github.com/DanielLavrushin/b4/issues/338)
+- On Keenetic, the proxy and mtproto-ws routing modes were reported as unavailable after every reboot, although the firmware ships the modules they need. [#342](https://github.com/DanielLavrushin/b4/issues/342)
 
 ## [1.80.3] - 2026-08-30
 
-- FIXED: **A routing table named in `/etc/iproute2/rt_tables` was not recognised as the one a set was using** - `ip` prints such a table by its name rather than its number, which is how ASUS firmware ships tables 100 and 200, so b4 read its own live policy rule as missing and said so on every pass, the TUN engine left its rules behind on that table when it shut down, and b4 looked for those names in one file while `ip` also reads the copy that ships with the package.
-- FIXED: **A set in proxy or mtproto-ws mode stopped diverting anything on port 443, so Telegram sat at "Connecting" while the same set still worked on its other ports** - the per-set prerouting jump moved below the capture engine's own chain in 1.80.0, and NFQUEUE ends the chain, so the reply packets of a diverted connection were taken before the set's socket rule could hand them to its listener; on nftables the two chains carry priorities that settle this, iptables has no priorities and nothing held the order.
-- FIXED: **A set routed through an interface built its address list, its marks and its table but never got the rule that sends the mark to that table, so everything it matched left by the ordinary uplink** - the rule goes in and the shapes older releases wrote are swept after it, one of those shapes carries no mask, which reaches the kernel as a request to match on the mark value alone, so every kernel up to 4.17, which is what Keenetic, Padavan and the older OpenWrt and Merlin builds run, took the rule that had just gone in, and nothing ever read the policy rules back to notice.
-- FIXED: **A domain in a proxy-mode set failed when reached through b4's built-in SOCKS5 server, while the same domain worked for a client passing through** - traffic the router originates is marked by the set's own output chain and comes back through prerouting over the local route, where the guard added in 1.80.0 returns any packet that already carries a routing mark, including the set's own.
-- FIXED: **A set in proxy mode with a hand-set `fwmark` took the router's whole network down** - the interface path checks such a value and assigns its own where it cannot be carried, the proxy path took it as given, and a value with bits outside the range b4 masks on leaves a policy rule the kernel reads as matching every packet that carries no routing mark at all, so all of it went into the set's local delivery table.
+### Fixed
+
+- A routing table named in `/etc/iproute2/rt_tables`, as ASUS firmware names tables 100 and 200, was not recognised as a set's table, so b4 reported its own rule as missing on every pass and TUN left rules behind on shutdown.
+- On iptables, a set in proxy or mtproto-ws mode diverted nothing on port 443, so Telegram sat at "Connecting" while the same set still worked on its other ports.
+- On kernels up to 4.17, as on Keenetic, Padavan and older OpenWrt and Merlin builds, a set routed through an interface never got the rule that sends its traffic to its table, so everything it matched left by the ordinary uplink.
+- A domain in a proxy-mode set failed through b4's built-in SOCKS5 server, while the same domain worked for a client passing through the router.
+- A set in proxy mode with a hand-set `fwmark` took the router's whole network down.
 
 ## [1.80.2] - 2026-08-29
 
-- FIXED: **The interface reported an older version than the binary on disk, with nothing to say why** - the version is stamped in at build time, so a service whose file is replaced without a restart keeps answering with the version it was compiled as while the command line reports the new one, and where the running process cannot read its own path, as in a container without `/proc`, the diagnostics named that path `.` instead of saying it did not know.
-- FIXED: **A set routed to a tunnel or an upstream proxy could take the router down within seconds of the service starting** - the rules pick a packet by its destination alone, so a packet the proxy handed back for that same address was picked again and sent straight back to it, thirty-one turns before its hop count ran out. Where such a set carried the router's own traffic as well, the proxy answered each turn by opening a connection of its own from the same box, on a fresh source port every time, until the memory was gone.
-- FIXED: **A routed set could carry nothing at all, with nothing in the interface saying otherwise** - the kernel's reverse-path check dropped every reply arriving on the set's interface, a set left on interface mode with no interface chosen or on proxy mode with no upstream port was dropped from the pass without a line in the log, turning domain-only matching off never rebuilt the set so its address list stayed empty, the firmware rebuilding its own firewall took b4's jump with it, and on a Broadcom router the firmware hands out the connection mark itself and overwrote the routing decision b4 keeps there.
-- FIXED: **A routed set could send half a connection one way and half the other, or claim what another program was using** - a domain's address is only learned when its lookup is answered, which is a moment after the connection has already started, so the handshake left by the ordinary uplink and the rest went down the set's route; the table number came from the output interface's name with nothing checking `/etc/iproute2/rt_tables` or the rules already pointing at it; each proxy set put its firewall jump ahead of the set before it, so the last in the list claimed addresses two of them targeted; a filter written to match a LAN client can never match a packet the router itself crafts, so a device-bound set's fakes travelled the ordinary uplink; on nftables a proxy set's mark returns sat at the top of a shared hook chain and ended it for every set below; and every rebuild deleted the set's own policy rule before putting the identical one back, so anything marked in that window found nothing pointing at the set's table and took the main one.
-- ADDED: **A kill switch for a set's output interface** - when the interface went away the kernel removed the route b4 had put in the set's table, the mark rule found the table empty, and the lookup fell through to the main table, so the set left through the ordinary uplink with the router's real address while its rules still read as correct.
-- CHANGED: **A set routed into a tunnel no longer has its packets faked, fragmented and desynced** - the work was done on the inner packet, which is wrapped or terminated on the router before anything on the network sees it, so it bought nothing and cost CPU on every connection, and the fake packets were delivered to the tunnel program's own stack one hop away with no room to expire. SYN health checks, dead-IP escalation, IP block detection and TCP duplication stop with it; a set keeps its bypass strategy when it routes to a plain second uplink and when its output interface is present but down.
-- FIXED: **b4's own firewall work could take the whole network with it** - on a router whose iptables has no lock flag the commands run unserialised while the firmware rewrites the same tables on WAN checks and DHCP events, so a command that lost that race left b4 on half a rule set and one start was fine while the next took the network off the air until a reboot; a running but overloaded b4 had its queue filled and the kernel dropped every packet past the four thousandth with nothing to say why; and stopping b4 put back a strict TCP window setting that this firewall drops packets over, so a page loaded its first fifty kilobytes and stopped.
-- FIXED: **Picking network interfaces to monitor could switch the bypass off for the whole network with nothing saying so** - the setting matches the interface a packet leaves by, which a VPN client or a transparent proxy moves without touching the list, so a selection made before that quietly stopped matching and every packet was queued to b4 and then accepted unchanged. A new [Guides](https://docs.b4core.app/docs/guides) section covers the three interface settings and running b4 alongside Xray.
-- FIXED: **On the TUN engine b4 captured the wrong traffic and missed what it needed** - the capture rule sat below the routing rules a transparent proxy, a multi-WAN manager or a VPN script installs, so the network's packets were claimed before b4 saw them while what b4 did capture was the proxy's own upstream connection; a request from the LAN to a device on another bridge was carried into the tunnel and sent to the internet with the uplink's address; and only DNS queries were carried in, never the answers, so nothing learned an address into a routing set, stripped AAAA records or healed a dead address.
-- FIXED: **Telegram kept reporting the MTProto proxy as incorrectly configured and switching it off** - the dialog comes from a single four-byte -444 relayed back from a data center, not from a slow dial, and b4 could send an ordinary session to a data center's media edge, which answers a non-media session with exactly that; the 1.78.0 fix routed around nothing because both names lead to the same address. On a router without IPv6 the bridge also gave up on an edge whose name carries an IPv6 address, because a connection to one on a box with no IPv6 route is refused outright.
-- ADDED: **An MCP server that can act on b4 rather than only describe it** - the AI could read status and change one setting at a time, so anything a user asked for came back as instructions to carry out by hand. It gains per-setting facts, geosite and geoip search, target and set editing, the last update's transcript, and behind a separate **Allow active probes** permission, testing whether a domain loads and running Discovery; every tool call and every turned-away request is logged. `Settings > Integrations`.
-- FIXED: **A Discovery run's result became unreachable the moment the run ended, and the watchdog judged domains on a fetch that skipped the bypass** - only the copy held in memory was consulted and that is dropped 30 seconds after a run finishes, a strategy named while a run was still testing read as settled, stopping a run early threw away what it had found, the history file grew by roughly half a megabyte per domain because every strategy tried was saved with a full copy of the set built to test it, and the watchdog's own checks carried the mark b4 puts on traffic it has already handled.
-- FIXED: **The settings folder was open for any account on the router to write to, and a downloaded backup could hold nothing** - the settings file holds the web interface login and the MCP access token yet was created readable and writable by everyone, the copies kept before each upgrade the same, and restoring followed folder shortcuts left in that folder so an entry in the archive could land anywhere; b4 also skipped every file marked as a program, and on drives prepared from Windows the settings files carry that mark.
-- FIXED: **Importing a zapret or byedpi configuration converted a fraction of what was pasted, and misdescribed what it did convert** - a configuration file was read one line at a time, so multi-line values, variable references and the order its launcher joins them in were all lost.
-- FIXED: **The MTProto settings page asked for a WEB proxy relay hostname while the proxy that serves it was off** - the WEB carrier reuses the MTProto proxy's listener and its secrets, so with that proxy off the card was collecting a hostname for a relay that could not answer, beside a secrets card whose every control was dead, under header chips repeating the switch, the hostname and the transport mode already visible below them.
-- ADDED: **Documentation for the Telegram WEB proxy, which shipped in 1.79.0 with nothing written about it** - its prerequisites cannot be worked out from the interface: the MTProto proxy has to be running, the relay needs a hostname of its own with publicly trusted TLS, and the link Telegram Desktop accepts carries a different form of the secret than the settings show. It joins a [Telegram](https://docs.b4core.app/docs/mtproto) section covering the three modes separately, replacing one page that described two of them and quoted log lines b4 does not write.
-- ADDED: **Update mirrors, and a personal Cloudflare Worker to put in them** - under Settings, Control, the Update mirrors field takes https addresses that the service and the installer try ahead of the built-in ones when GitHub cannot be reached, and b4 hands the list to the installer when an update starts. The documentation carries a Worker script that stands in for GitHub on a free Cloudflare account, so a reader blocked from the release host can mirror through one of their own.
-- ADDED: **Installing an update from a file, for a router that can reach no download source at all** - the update window takes a `b4-linux-<arch>.tar.gz` fetched on another machine, with an optional field for the SHA256 from the release page, which is the one check the automatic path cannot make independently because it reads the archive and its checksum from the same host. The upload is refused unless it holds a b4 built for that router, so the wrong architecture is named rather than installed and rolled back.
-- FIXED: **Installing or updating the service failed where the network blocks GitHub's download hosts, and the update window could come up with no versions listed** - the release archive is handed over by a redirect to a separate GitHub CDN that several providers drop by address, and the fallback proxy passed that redirect back to the router instead of following it, so the router went to the blocked host anyway and waited out a two-minute timeout, while the version list was fetched by the browser against an hourly GitHub limit shared by every user behind the same address.
+### Added
+
+- A set routed through an interface has a **Kill switch**, so its traffic does not leave by the ordinary uplink with the router's real address when the interface goes away.
+- The **MCP** server can act on b4, not only describe it: AI apps can search geosite and geoip, edit sets and their targets and, with **Allow active probes** on, test whether a domain loads and run **Discovery**.
+- The **Update mirrors** field under **Settings, Control** takes https addresses that b4 and the installer try ahead of the built-in ones when GitHub cannot be reached, and the docs carry a Cloudflare Worker script to run one.
+- The update window installs an update from a `b4-linux-<arch>.tar.gz` file fetched on another machine, with an optional SHA256 check, for a router that can reach no download source.
+
+### Changed
+
+- A set routed into a tunnel leaves its packets alone, without fakes, fragmentation, desync, SYN health checks, dead-IP escalation, **IP Block Detection** or TCP duplication; a set routed to a plain second uplink, or whose interface is down, keeps its strategy.
+
+### Fixed
+
+- After the b4 binary was replaced without a restart, the web interface reported the older version with nothing to say why.
+- A set routed to a tunnel or an upstream proxy could take the router down within seconds of the service starting, because its traffic looped back into the proxy.
+- A routed set could carry nothing at all with no sign of it in the interface, for example when no interface or upstream port was chosen, the firmware rebuilt its firewall, or a Broadcom router overwrote b4's routing mark.
+- A routed set could send the start of a connection by the ordinary uplink and the rest by its route, take a routing table another program was using, or take over addresses another proxy set targeted.
+- b4's own firewall work could take down the whole network: its commands raced the firmware where iptables has no lock, an overloaded b4 let the kernel drop packets, and on such routers pages stalled after their first fifty kilobytes once b4 stopped.
+- Picking network interfaces to monitor could switch the bypass off for the whole network without a sign, once a VPN client or a transparent proxy moved the traffic to another interface.
+- On the TUN engine, b4 captured a transparent proxy's own upstream connection instead of the network's traffic, sent LAN requests for a device on another bridge to the internet, and never saw DNS answers, so routing sets learned no addresses.
+- Telegram kept reporting the MTProto proxy as incorrectly configured and switching it off, and on a router without IPv6 the bridge gave up on some of Telegram's servers.
+- A **Discovery** result became unreachable once its run ended, stopping a run early threw away what it had found, the history file grew by about half a megabyte per domain, and the **Watchdog** judged domains on a check that skipped the bypass.
+- A downloaded backup could be empty on drives prepared from Windows, because b4 skipped files marked as programs.
+- Importing a zapret or byedpi configuration converted only a fraction of what was pasted, and misdescribed what it did convert.
+- The MTProto settings page asked for a WEB proxy relay hostname while the MTProto proxy that serves it was off.
+- Installing or updating b4 failed where the network blocks GitHub's download hosts, and the update window could come up with no versions listed.
+
+### Security
+
+- The settings folder, which holds the web interface login and the **MCP** token, was readable and writable by every account on the router, and restoring a backup could write files anywhere.
 
 ## [1.79.0] - 2026-08-18
 
-- ADDED: **A WEB carrier for the MTProto proxy, which Telegram Desktop 7.1.1 reaches over ordinary HTTPS** - a client on a network that blocks MTProxy and fake-TLS outright had no way in, because every transport b4 offered still opened a recognisable MTProto socket from the client. b4 answers a relay hostname with a bridge page the client loads in a hidden WebView, multiplexes the MTProxy stream through a same-origin WebSocket, and hands each logical stream to the same secrets, DC pool and upstream routing as a plain connection; requests without a valid bridge token get an ordinary page. `Settings > MTProto Proxy`.
-- FIXED: **A set's DNS redirect answered SERVFAIL for every domain it covered as soon as its DoH server went unreachable** - the redirect had no fallback of any kind, so a resolver the censor happened to be blocking took the whole set offline while the bypass strategy underneath it was working perfectly well. b4 replays the last good answer or hands the query back to the resolver the client was already using, and a Fail closed switch under `Sets > Routing > DNS Redirect` keeps the old behaviour.
-- FIXED: **Discovery offered a bypass strategy for domains that were never blocked** - nothing in a run was compared against its own no-bypass fetch, so one blocked domain put a strategy on the whole batch, and the improvement percentage measured the site against yandex.ru, the reference domain b4 uses to gauge the line. Each domain is judged against its own unmodified fetch and reported on its own.
-- FIXED: **A Discovery strategy was declared working on one page fetch that may not have succeeded at all** - only HTTP 451 counted as a failure, so a 502 longer than a kilobyte scored as a success, the probe negotiated HTTP/1.1 with no ALPN while every browser asks for HTTP/2, and a redirected page was scored over the address of the domain that redirected it. The winner is fetched three more times in the shape saving it as a set gives it, and one that fails any of those tries gives way to the next candidate.
-- FIXED: **On a router with working IPv6, Discovery stopped after about twenty tests and reported that no bypass was needed** - its test connections were free to use either version of the protocol while b4 acts on IPv4 alone, so the opening test succeeded over a route nothing was interfering with.
-- FIXED: **Discovery built sets around a DNS redirect and geo categories the router had no use for** - the redirect was stamped onto every set of a run as soon as one domain looked poisoned, though the probes never used it themselves, and geosite and geoip categories were carried in whatever was installed, so a result for a CDN domain could not be added at all without a geo database.
-- FIXED: **Restarting or stopping the service from the interface went wrong on systemd** - b4 waited on a systemctl that systemd stops together with the service it is restarting, so every restart left `Restart command failed: signal: terminated` in the error log, and an unfinished browser connection could hold a stop open for the full ten seconds until the kill landed while the firewall cleanup was still running.
-- FIXED: **An update could stop the service loading, or leave a second b4 running outside the service manager** - the updater recognised every init system except systemd, so a unit written by anything other than b4's installer was rebuilt as a SysV init script, and it waited one second for the service to come back before starting b4 by hand, racing the manager's own restart.
-- ADDED: **A source allowlist for the SOCKS5 proxy, holding the IP addresses and CIDR ranges permitted to connect** - the only control over who reached the proxy was a username and password, which Chrome and Chromium cannot send at all, so a LAN client on either browser meant leaving the proxy open to everything that could reach its port. `Settings > SOCKS5 Proxy`.
-- FIXED: **The SOCKS5 proxy served clients it was meant to keep out** - a username without a password, or a password without a username, switched authentication off rather than failing, and the UDP relay took an address written into the associate request over the source of the control connection, so an association could be pointed at another host on the network.
-- FIXED: **Turning the SOCKS5 proxy off left the connections it was already carrying running** - only the listener closed, so established tunnels kept relaying until the client dropped them by itself, and changing the port or the bind address behaved the same way.
-- ADDED: **A Block QUIC switch on a set's UDP tab, and a UDP action that leaves matched packets alone** - pushing a browser off QUIC and back onto TCP took two settings in two places with nothing saying they belonged together, and every action a set could pick altered the traffic, so a set matching QUIC only to learn a site's addresses had to fake and fragment it anyway. `Sets > UDP`.
-- CHANGED: **Two of the three QUIC matching values did the same thing** - one read as turning QUIC matching off and the other as merely parsing, while both matched the set by the server name in the ClientHello. They are one value, By SNI, and stored sets are converted on the first start.
-- FIXED: **An IPv6 packet carrying extension headers could crash b4** - a header claiming more bytes than the packet held sent the read past its end, stopping the service for every device on the router.
-- ADDED: **Force IPv4 for matched domains, which drops the IPv6 records from answers for names a set matched** - b4 processes IPv4 only until IPv6 support is turned on, so a dual-stack site a set targets was reached over IPv6 and bypassed the set entirely. `Settings > Core > DNS`.
-- FIXED: **A DNS answer that b4 rewrote never cleared the failure count for that name** - the answer was judged before the rewrite rather than after, so a site that had recovered was moved to its backup set on the next single failure.
-- ADDED: **An egress IP for a set, which replaces the source address of its traffic** - a set could only be steered by naming an interface or an upstream SOCKS5 proxy, which a router that picks its path by source address cannot use. `Sets > Routing`.
-- FIXED: **A device added by hand was ignored everywhere devices are matched** - such a device has no MAC address on the network, so a set bound to it stopped taking its route, block sets and the all-devices-except-selected option were disarmed, the filter under Settings, Device Filtering sat inert while routing kept applying to every device, and an MSS clamp on it clamped nothing while pulling every other forwarded connection down to the smallest configured size. Such devices are matched by the IP address entered for them.
-- FIXED: **A routing set limited to source devices diverted traffic it was never meant to touch** - the rules on the router's own outgoing traffic carried no device filter, which paired with Match any IP address pulled its whole outbound path into the tunnel, and a set matched only by TCP or UDP port checked the port before any source at all while claiming its traffic was being diverted, which switched off every DPI countermeasure.
-- FIXED: **A routing set with no domain or IP target was built in full and quietly matched nothing** - every routing rule matches a destination address, so a set with none could never match a packet, and nothing above trace level said so.
-- CHANGED: **Three unrelated services shared the API settings tab through a two-column grid and three different ways of showing a credential** - the IPinfo token was a plain field, the AI key a panel of chips and buttons, the MCP token a full-width field printing the secret in clear, and each service's enable switch sat among the fields it governed. The tab is called Integrations and gives every service one card whose header carries its on/off switch, one masked credential field with reveal, copy and generate, and for MCP a client configuration block that copies the endpoint and token as a ready-made JSON snippet.
-- FIXED: **b4 took the router down after a few minutes on a busy line, leaving `runtime: program exceeds 10000-thread limit` in the log** - every matched packet started its own injection task with no ceiling, and those tasks wrote to a raw socket that had no send timeout, so an outgoing interface that stopped draining held one kernel thread per task until the Go runtime refused to create more.
-- ADDED: **The operating system thread count on the dashboard Runtime card** - the card reported goroutines but nothing about OS threads, which is the number the Go runtime stops the service over, so a runaway stayed invisible until the crash. b4 writes a goroutine dump to the log directory once the count passes half the limit.
+### Added
+
+- The MTProto proxy has a WEB carrier under **Settings, MTProto Proxy** that Telegram Desktop 7.1.1 reaches over ordinary HTTPS, for networks that block MTProxy and fake-TLS outright.
+- The SOCKS5 proxy under **Settings, SOCKS5 Proxy** has **Allowed Sources**, a list of IP addresses and CIDR ranges allowed to connect, for clients such as Chrome that cannot send a username and password.
+- A set's **UDP** tab has a **Block QUIC (force TCP)** switch, and a UDP action that leaves matched packets alone, for a set that matches QUIC only to learn a site's addresses.
+- **Force IPv4 for matched domains** under **Settings, Core, DNS** drops the IPv6 records from DNS answers for names a set matches, so a dual-stack site cannot skip the set over IPv6.
+- A set can have an **Egress IP** under **Routing** that replaces the source address of its traffic, for routers that pick their path by source address.
+- The dashboard's **Runtime** card shows the operating system thread count, and b4 writes a goroutine dump to the log directory once it passes half the limit.
+
+### Changed
+
+- A set's DNS redirect falls back to the last good answer or the client's own resolver when its DoH server is unreachable, instead of answering SERVFAIL; **Fail closed when the resolver is unreachable** keeps the old behaviour.
+- The two **QUIC Matching** values that both matched by server name are one value, **By SNI**, and stored sets are converted on the first start.
+- The **API** settings tab is renamed **Integrations** and gives IPinfo, the AI assistant and **MCP** one card each, with its switch in the header, a masked credential field and, for **MCP**, a client configuration to copy.
+
+### Fixed
+
+- **Discovery** offered strategies for domains that were never blocked, and declared a strategy working on a single page fetch that may not have succeeded, such as a 502 error page longer than a kilobyte.
+- On a router with working IPv6, **Discovery** stopped after about twenty tests and reported that no bypass was needed.
+- **Discovery** built sets with a DNS redirect and geo categories they did not need, so a result for a CDN domain could not be added without a geo database.
+- On systemd, restarting the service from the web interface left `Restart command failed: signal: terminated` in the error log, and a stop could hang for ten seconds and kill b4 during its firewall cleanup.
+- An update could leave the service unable to load, or a second b4 running outside the service manager.
+- A malformed IPv6 packet with extension headers could crash b4 and stop the service for every device on the router.
+- A DNS answer that b4 rewrote never cleared the failure count for that name, so a site that had recovered moved to its backup set on the next single failure.
+- A device added by hand, which has no MAC address, was ignored everywhere devices are matched, and an MSS clamp on it clamped every other forwarded connection instead.
+- A routing set limited to source devices diverted traffic it was never meant to touch, such as the router's own outgoing traffic, and one matched only by port lost every DPI countermeasure.
+- A routing set with no domain or IP target was built in full and quietly matched nothing.
+- b4 took the router down after a few minutes on a busy line, leaving `runtime: program exceeds 10000-thread limit` in the log.
+
+### Security
+
+- The SOCKS5 proxy switched authentication off when only a username or only a password was set, its UDP relay could be pointed at another host on the network, and turning it off left open connections running.
 
 ## [1.78.0] - 2026-08-17
 
-- ADDED: **An MCP server at /api/mcp** - b4 spoke no protocol an external AI app could connect to. Read-only tools report status, configuration, strategy sets, domain coverage, recent connections, the log tail, metrics and diagnostics, and a resource per documented setting describes what that setting does. The model runs in the client app; b4 reaches no AI provider and needs no API key. Off by default, and authenticated by its own token, because a web login token is discarded on every restart. A second switch, also off by default, permits writes to any setting inside a set, to the MTProto and SOCKS5 subsystems and to the log level; credentials, the web server, the capture engine, the firewall backend and the packet marks are refused, and the last change can be reverted. [MCP server](https://docs.b4core.app/docs/settings/mcp).
-- FIXED: **Traffic that merely used port 53 was read as a name lookup** - a VPN or proxy tunnel hidden on that port had its encrypted contents taken for a domain name and matched against sets.
-- FIXED: **The server name read out of a QUIC connection was accepted whatever it contained** - any bytes of any length passed for a hostname, unlike the same name read from an ordinary HTTPS connection, which was checked.
-- FIXED: **Telegram reported the MTProto proxy as incorrectly configured and switched it off** - a session was accepted before b4 had reached a data center, and one blocked route was given longer than the client was willing to wait.
-- FIXED: **Data center 203 had no connection ready in advance** - spare connections were kept for two data centers only, so every session on the others started by opening one from scratch.
-- FIXED: **A route that answered nothing was set aside only when it replied with a rate limit** - a route that went silent cost every session after it the same full wait.
-- FIXED: **A name with several addresses was abandoned after the first one went unanswered** - the attempt stalled on that address while another address of the same name answered in under a second.
-- FIXED: **The API reference on the documentation site rejected the b4 username and password** - the credentials were sent to the service unchanged instead of being exchanged for a login token, so the Authorize window accepted a pasted token alone.
-- FIXED: **Turning the SOCKS5 proxy on or off, or moving it to another port, changed nothing until b4 was restarted** - the setting was saved and the save was reported as successful, but the listener was only ever started once at boot, so a proxy switched off in the interface kept accepting connections and one switched on never opened its port.
+### Added
+
+- An **MCP** server at `/api/mcp` lets an AI app read b4's status, configuration, sets, recent connections, log and diagnostics; it is off by default and uses its own token. A second switch, also off by default, lets the app change set, MTProto, SOCKS5 and log level settings, and the last change can be reverted. [MCP server](https://docs.b4core.app/docs/settings/mcp)
+
+### Fixed
+
+- Encrypted traffic on port 53, such as a VPN tunnel, was matched against sets as if it carried a domain name, and a site name read from QUIC traffic was accepted whatever bytes it held.
+- Telegram could report the MTProto proxy as misconfigured and switch it off, because a session was accepted before b4 reached a data center and a blocked route was tried for longer than the client waits.
+- Telegram sessions to data center 203 and others waited for a new connection, because spare connections were kept for only two data centers, and a route that went silent made every later session wait in full.
+- A connection to a name with several addresses stalled on the first address that did not answer, while another address of the same name answered in under a second.
+- The API reference on the documentation site rejected the b4 username and password in its Authorize window and accepted only a pasted login token.
+- Turning the SOCKS5 proxy on or off, or moving it to another port, had no effect until b4 was restarted, although the save was reported as successful.
 
 ## [1.77.0] - 2026-08-15
 
-- ADDED: **A Customize control on the dashboard: panels are reordered by dragging, widened or narrowed by dragging the right edge across a twelve column grid, and hidden with the eye, remembered per browser** - the order and the widths were fixed in the code, so a panel worth keeping an eye on, such as the MTProto proxy and the devices using it, sat below a domain list hundreds of rows long, there was no way to move it up, give it more room or drop a panel that never gets read, and a short panel beside a tall one left everything after it waiting below the taller one.
-- CHANGED: **The dashboard layout is kept in b4's own configuration rather than in the browser** - the order, the hidden panels and the widths were held in browser storage alone, so a layout arranged on one machine was absent from every other one, and a new browser, a private window or a cleared site cache put the dashboard back to its defaults. The browser copy is still written and is read when b4 cannot be reached, so the page keeps its arrangement while the service is restarting.
-- CHANGED: **The runtime, live signal and blackhole panels lay themselves out by their own width rather than the width of the window** - each read the browser's breakpoints, so a panel given less than the full width of the page kept a layout sized for the whole screen and had its contents cut off at the panel edge.
-- FIXED: **The packets b4 makes itself left a router by whichever uplink the main routing table picked, not by the interface the set they belong to is routed through** - fakes, split segments and desync packets are sent by b4 rather than forwarded, so they carried only b4's own mark and the set's routing never applied to them. On a router balancing two WANs the connection opened over one and continued over the other, from a different public address, and the destination reset it; with a set routed through a tunnel those packets, and the server name inside them, went out over the plain uplink instead.
-- CHANGED: **A set's hand-picked firewall mark is refused, and one is assigned instead, when it carries every bit of the mark b4 puts on its own packets** - the two became indistinguishable, and the set's traffic was read as traffic b4 had injected.
-- ADDED: **The enabled sets in the trace header, with domain lists counted rather than listed and proxy credentials left out** - a trace carried the system side of a report and nothing about what b4 was told to match, so a set that misbehaves had to be read without its targets, strategy or routing at hand.
-- FIXED: **A set routed through a proxy leaked two sockets and two pipes for every connection whose far side died without closing** - the count reached the router's open-file limit within about an hour, and b4 stopped working until it was restarted.
-- CHANGED: **A proxied connection carrying no data in either direction is dropped after an hour, and after five minutes once one side has finished sending** - a relay had no time limit at all once the proxy handshake was done.
-- CHANGED: **A set that cannot reach its proxy reports it in the log and in the diagnostics bundle** - the failed connection was recorded at trace level only, so a proxy refusing every attempt left nothing behind at the default log level. Traffic the set matched was accepted, held for the length of the connection timeout and then dropped, with nothing on record to say why.
-- FIXED: **A set whose MSS limit is scoped to IPv4 addresses no longer caps the IPv6 traffic of the devices it names** - the limit was written once per address family, and the family the set holds no addresses for fell back to matching the device alone, so every IPv6 HTTPS connection from that device was capped at the set's value regardless of where it was headed.
-- FIXED: **A site switched to a backup set still had its name looked up by the set that was failing** - the backup's pinned addresses, DoH server and forwarding target were never consulted for it, so a domain that only the backup could resolve stayed unresolvable however the escalation was set up.
-- ADDED: **An unusable name lookup switches the site to the backup set** - NXDOMAIN, SERVFAIL and answers that carry no address count towards the switch, and the backup set answers the lookup that tripped it. Escalation only ever reacted to something that happens after a connection is already open, which a site with no address on record never reaches.
-- ADDED: **A destination that answers no connection attempt switches the site to the backup set** - b4 already spotted the address going unanswered and confirmed it by probing from the router itself, but that finding went nowhere except into cutting the device's attempt short. The most common way a site fails, its address dropped outright, had no path to the backup set.
-- FIXED: **The backup set only took over once a TLS handshake had been read out of the traffic** - a connection that never gets that far, and the opening packet of a connection to a site already switched over, were both handled by the set that was failing, so the backup set's SYN-stage settings never ran.
-- FIXED: **How readily a site switches over was read from IP block detection, a separate feature that is off by default** - unanswered TLS handshakes, forged resets and unusable name lookups each got a control of their own on the Escalation tab. The single one on offer before governed forged resets only, so moving it changed nothing about the trigger that fires most.
-- FIXED: **Turning a backup set off destroyed the link to it** - the link was erased on the next save and the set could not be picked again until it was enabled, so a set switched off for a minute had to be wired back by hand.
-- FIXED: **A set routed through a proxy could not escalate any further** - the chain stopped at the first proxy hop, though it is built to run up to eight.
-- FIXED: **Only the single address a connection was headed for was handed to the backup set's routing** - a site behind several addresses had to fail once per address, and the entry aged out of the firewall while the switch was still in force, which put the traffic back on the failing path without a word.
-- FIXED: **A switch-over ignored which devices the backup set targets** - one device's failure moved every device on the network onto the backup set.
-- CHANGED: **Editing a set drops only the switch-overs that the edit invalidates** - every switch-over in force was discarded on each save, including those for sites the edit did not touch.
-- FIXED: **The chain-length warning repeated for every packet** - once a site had been through all eight hops, each retransmission logged it again.
+### Added
+
+- **Customize** on the dashboard reorders panels by dragging, widens or narrows them on a twelve-column grid and hides them, and the layout is kept in b4's configuration, the same in every browser.
+- **Escalation** also moves a site to its backup set when its name lookup fails or returns no address, or when its address answers no connection attempt, and the backup set answers that lookup.
+- A log trace begins with the enabled sets, with domain lists counted rather than listed and proxy credentials left out.
+
+### Changed
+
+- Unanswered TLS handshakes, forged resets and failed name lookups each have a threshold on the **Escalation** tab, in place of one control for forged resets and a threshold taken from **IP Block Detection**.
+- Editing a set keeps the **Escalation** switch-overs that the edit does not affect, instead of dropping all of them.
+- A firewall mark picked by hand for a set is refused and replaced with an assigned one when it holds every bit of b4's own packet mark, which made the set's traffic look like b4's own packets.
+- A connection through a set's proxy is closed after an hour without data, or five minutes after one side has finished sending, and a proxy the set cannot reach shows up in the log and the diagnostics.
+
+### Fixed
+
+- Fake and split packets that b4 sends itself ignored the set's routing: on two WAN links the site reset the connection, and a set routed through a tunnel sent them, site name included, over the plain uplink.
+- A set routed through a proxy leaked open files for each connection that died without closing, so within about an hour b4 hit the router's limit and stopped working until restarted.
+- A set with an MSS limit for IPv4 addresses also capped every IPv6 HTTPS connection from the devices it names.
+- A site moved to its backup set still used the failing set for its name lookups, the opening packet of each connection and connections that never reached TLS, so the backup set's DNS and SYN settings never applied.
+- **Escalation** gave the backup set's routing only the one address a connection used, which expired while the switch was in force, and one device's failure moved every device to the backup set.
+- Turning a backup set off erased the link to it, a set routed through a proxy could not escalate any further, and the chain-length warning was logged again for every packet.
 
 ## [1.76.3] - 2026-08-14
 
-- FIXED: **Name lookups from devices on the network went unanswered in TUN capture mode** - the answer b4 built was addressed to the router's own uplink instead of to the device that asked, because b4 read the sender out of the packet after the router had already replaced it on the way out. The device was left waiting on a lookup b4 had taken out of the network and answered somewhere nothing was listening.
-- FIXED: **A name lookup b4 could not trace back to a device was destroyed rather than left alone** - the sender was gone from the packet and nothing checked whether it had been recovered before the query was taken out of the network, so the device retried into the same hole for as long as the set stayed enabled.
-- FIXED: **A blocked name, a pinned address and a curated answer never reached the device they were meant for, in TUN capture mode** - all three are delivered as a packet b4 builds itself, and all three carried the router's address as the destination.
-- FIXED: **Every name lookup was recorded against the router rather than against the device that made it** - the source column on the Traffic page read as the uplink address for all of them, and a set narrowed to particular devices had nothing to match a lookup on.
-- CHANGED: **The number of name lookups b4 resolves at once is capped, and the rest go to the device's own resolver untouched** - each intercepted lookup started a five-second resolver of its own with nothing limiting how many could exist at the same time, so one slow or unreachable DoH server turned an ordinary browsing session into thousands of waiting lookups. A set that matches a large geosite category and also redirects DNS put every name on the network through that path.
-- CHANGED: **A lookup the router itself made is remembered for five minutes instead of two seconds** - it was recorded as a failed lookup and re-read from the kernel's connection table, in full, every two seconds for as long as the flow lived.
-- FIXED: **The addresses b4 read out of a packet pointed into the memory the next packet is read into, in TUN capture mode** - a set routed through a proxy or an interface writes those addresses to the firewall from a background thread, and by the time it ran the packet they came from could already have been replaced by an unrelated one.
+### Changed
+
+- b4 resolves only a limited number of DNS queries at once and passes the rest to the device's usual resolver unchanged, as one slow DNS-over-HTTPS server could leave thousands of queries waiting.
+
+### Fixed
+
+- In TUN mode, devices got no reply to DNS queries that a set handled, blocked names, pinned addresses and curated answers included, because b4 read the device's address only after the router had replaced it.
+- Every DNS query was listed under the router's address on the **Traffic** page, and a set limited to certain devices had nothing to match a query on.
+- In TUN mode, a set routed through a proxy or an interface could add another packet's addresses to the firewall.
 
 ## [1.76.2] - 2026-08-12
 
-- FIXED: **Photos, videos and stickers stopped loading in 1.76.0 and 1.76.1** - the data center Telegram serves media from was addressed under another one's name, so every media session was carried somewhere that could not serve it.
-- FIXED: **Two of Telegram's addresses were carried to the wrong data center** - they answer as data center 4, but sit inside a block b4 read as data center 2.
-- FIXED: **Most of Telegram's addresses matched no data center, which left those connections almost no routes to try** - b4 knew five address blocks, and nearly half the connections in a capture from a censored network fell outside all of them.
-- CHANGED: **The address block b4 reads as data center 4 was narrowed to a quarter of its size** - the 768 addresses dropped from it replied to nothing.
-- CHANGED: **A Cloudflare Worker of your own is the last WebSocket route tried rather than the first** - Cloudflare takes a worker back part-way through a session, well after the connection is made, so it passed every check while video failed on it.
-- FIXED: **A route that took a request and returned nothing was handed the next connection anyway** - only a route that went quiet mid-session, with a request still outstanding, was ranked down.
-- CHANGED: **The Cloudflare Worker script in the documentation holds its relay open longer** - Cloudflare could cut off the part carrying data back from Telegram the moment the connection was accepted. Set the worker's compatibility date to `2026-04-07` or later.
-- FIXED: **`tgprobe` never tested the shared Cloudflare pool** - it started from a blank configuration, so every on/off setting in it read as off.
-- CHANGED: **The Cloudflare Worker is asked for a data center address without a port** - data center 203 does not answer on 5222, one of the three ports Telegram serves the same endpoint on, so passing the port on killed media connections. The script in the [Telegram documentation](https://docs.b4core.app/docs/mtproto) is again the tg-ws-proxy script unchanged, and a Worker deployed from either page needs nothing done to it.
+### Changed
+
+- Your own Cloudflare Worker is the last WebSocket route tried instead of the first, because Cloudflare can take a Worker back partway through a session, so it passed every check while video failed.
+- b4 asks a Cloudflare Worker for a data center address without a port, because media from data center 203 failed on port 5222. The Worker script in the [Telegram documentation](https://docs.b4core.app/docs/mtproto) needs a compatibility date of `2026-04-07` or later.
+
+### Fixed
+
+- Telegram photos, videos and stickers stopped loading in 1.76.0 and 1.76.1, because media sessions were sent to a data center that could not serve them.
+- b4 knew too few of Telegram's address blocks, so nearly half the connections matched no data center and had almost no routes to try, and two addresses went to the wrong data center.
+- A route that took a request and returned nothing kept getting new connections, while sessions closed by the client counted against a route and pushed a working Cloudflare Worker below all others.
 
 ## [1.76.1] - 2026-08-11
 
-- FIXED: **Telegram never got past loading, with an empty chat list, in the WebSocket bridge routing mode** - the bridge only ever went through a Cloudflare Worker, never Telegram's own route, the one the MTProto proxy had been taking all along.
-- FIXED: **A Cloudflare Worker that had stopped passing traffic kept being picked for new Telegram connections** - a session on a dead one was held for five minutes before it was given up.
-- FIXED: **The WebSocket bridge sent traffic to a different data center address than the device had asked for** - it kept one address per data center, while Telegram hands out many.
-- FIXED: **Connections b4 opens for itself went out with none of its own bypass applied** - a fail-open connection, made when a destination is already in trouble, was the one it left most exposed.
-- FIXED: **b4 put its routing rules back only once they had disappeared completely** - part of a rule set going missing counted as healthy.
+### Fixed
+
+- In the WebSocket bridge routing mode, Telegram could stay on loading with an empty chat list, because the bridge used only Cloudflare Workers and never Telegram's own route.
+- The WebSocket bridge kept giving new Telegram connections a Cloudflare Worker that had stopped passing traffic, and sent traffic to a different data center address than the device asked for.
+- Connections that b4 opens itself, such as a fail-open connection to a destination already in trouble, went out without any of b4's bypass applied.
+- b4 put its routing rules back only when all of them were gone, and treated a partly missing rule set as healthy.
 
 ## [1.76.0] - 2026-08-10
 
-- FIXED: **Every name lookup took five seconds once a set was routed through a proxy or an interface** - each answer for such a set was written into the firewall from the same thread that reads packets from the kernel, one `ipset` process per address, so nothing was read for as long as those processes took. Packets arriving meanwhile were dropped by the kernel without a word, and a lookup for a name b4 has no interest in crosses that queue several times, so it was the one most likely to lose a packet and wait out the resolver's five-second retry.
-- CHANGED: **The addresses from a DNS answer are written to the firewall in the background, in one batch** - the same addresses were re-added on every answer for the name, at one process per address, which on a router is most of a second of work repeated for traffic that changed nothing.
-- FIXED: **A DNS request sent by the router itself was handed to b4 twice** - the rule that captures it sat in a chain reached from two places, so every such request paid the round trip to b4 and back a second time for no purpose.
-- CHANGED: **A burst of packets no longer overruns b4 while it is busy** - the kernel's hand-off buffer was left at the system default, a few hundred kilobytes shared by every packet in flight.
-- FIXED: **System diagnostics reported jq and other tools as missing when they were installed on a USB drive** - the check never looked outside the router's own folders.
-- ADDED: **Pinned addresses for a domain** - when a CDN keeps answering with an address the firewall drops, no bypass strategy reaches the server at all, and the only remedies were a hosts file on every device or a `dnsmasq` alias on the router, both redone by hand each time the CDN changed its addresses. Written in hosts file order, address first. A pin only applies to names the set already targets, which is easy to get wrong silently, so a pin naming something the set does not match says so and offers to add it. `Sets > DNS`.
-- FIXED: **A curated DNS answer could name the very address b4 was about to reset** - when every address in an answer was unreachable, the replacement was taken from the addresses remembered for that name without checking whether any of them had since been marked unreachable as well, so a device could be handed one and have the connection reset on its first packet.
-- CHANGED: **Every address seen in a DNS answer is remembered, not only the ones that completed a handshake** - a name whose answers carry a single address, as the Meta CDN does, left nothing to fall back to once that address was dropped, because an address could only be remembered by connecting to it and the block is what stops the connection.
-- FIXED: **Telegram messages arrived while photos, videos and stickers did not, in the WebSocket bridge routing mode** - a client marks a connection as a media one by the sign of the data center number it sends in its opening handshake, and b4 took that number from the address the client had dialled instead, which carries no such mark. Every media session was therefore announced to Telegram as an ordinary one and answered by the wrong half of the data center. The address now settles which data center it is, the client's handshake whether it is the media one.
-- FIXED: **A TCP connection was listed under a set whose port filter excludes it** - a set narrowed to a single TCP port, or to one TLS version, still had its name written next to every TCP connection it matched by address, so a set built to take only UDP looked as though it kept taking TCP after being scoped away from it. The connection itself was already left alone; only the name in the table said otherwise.
-- FIXED: **The Traffic page said nothing about what happened to a DNS request** - which resolver answered it, whether the answer came from a pin, had unreachable addresses replaced, was turned into NXDOMAIN or dropped outright, all of that was written into the connection record and then discarded by the interface, which could only draw the five markers it had been taught. The documentation listed the outcomes as visible on that page while the page showed a bare UDP row.
-- ADDED: **A documentation page for DNS** - what b4 does with name lookups was written down only in pieces, beside each setting it belonged to. [DNS](https://docs.b4core.app/docs/dns).
-- FIXED: **Every firewall rule was torn down and rebuilt every few seconds on some systems** - the chain that catches DNS over TCP from the router itself was created with a priority named after a place it cannot sit, so the whole DNS table was rolled back; the rule monitor then found that table missing and restored all of b4's rules from scratch on its next pass, over and over. Each rebuild leaves a moment in which nothing is intercepted at all.
+### Added
+
+- A set can pin addresses for its domains under **Pinned addresses**, written in hosts file order, for a CDN that keeps answering with a blocked address; a pin for a name the set does not match offers to add it.
+
+### Changed
+
+- b4 remembers every address seen in a DNS answer, not only those it connected to; before, a name with a single address, such as Meta's CDN, had nothing to fall back to once that address was blocked.
+
+### Fixed
+
+- Every DNS lookup took five seconds once a set was routed through a proxy or an interface, because b4 stopped reading packets while it wrote each answer's addresses to the firewall.
+- System diagnostics reported jq and other tools as missing when they were installed on a USB drive.
+- A curated DNS answer could hand a device an address that b4 had since marked unreachable, so the connection was reset on its first packet.
+- In the WebSocket bridge routing mode, Telegram messages arrived but photos, videos and stickers did not, because every media session was announced to Telegram as an ordinary one.
+- The **Traffic** page listed a TCP connection under a set whose port filter excludes it, and showed nothing about which resolver answered a DNS request or whether it was pinned, curated or dropped.
+- On some systems, b4's firewall rules were torn down and rebuilt every few seconds, because the chain for the router's own DNS over TCP failed to load, and each rebuild left a moment with nothing intercepted.
 
 ## [1.75.0] - 2026-08-08
 
-- FIXED: **A domain was handled by a different strategy than the one Discovery found for it** - every result was published with all the domains of the run, so two applied results claimed the same domains and set order picked the winner.
-- FIXED: **A set applied from Discovery had no effect until b4 was restarted** - it was saved and listed in the interface while the traffic it named kept going out under the previous settings.
-- ADDED: **A warning when several enabled sets name the same domain** - only one of them handles that domain, chosen by its place in the list rather than by which strategy works.
-- ADDED: **A switch for matching every domain, and one for matching every address** - a set meant to catch everything had to be written by hand as `regexp:.*` or `0.0.0.0/0`, and neither form appears anywhere in the interface. The IPv6 half, `::/0`, was easy to leave out, so a catch-all set passed IPv6 traffic through untouched without saying so. Typing `*`, `any` or `all` into either field adds the same entries, and `*.example.com` is stored as `example.com`, which was taken as written and matched nothing.
-- FIXED: **Two sets listing the same IP range fought over it unpredictably** - only one of them reached the matcher, and it was whichever was stored last rather than the one placed higher in the list. A set restricted to source devices lost the range outright to a general set below it, and the winner could change between restarts. Ranges of equal length are settled by set order, and a device-scoped set is offered the traffic first.
-- FIXED: **`0.0.0.0/0` among a set's IP targets was dropped on the way to the firewall** - `ipset` cannot store a network with a zero prefix size, so on routers using iptables the routing set lost that entry, while per-set MSS clamping and duplication lost every entry alongside it, since those are loaded in one batch that fails whole. The matching engine had accepted the same entry all along, so a set matched traffic while its firewall side stood empty. Both catch-alls are written to the firewall as their two halves.
-- FIXED: **A set routed through a TCP-only upstream proxy left no firewall rules at all on routers using iptables** - each sync of the set failed on the name of its QUIC-refusing chain, one character over the length iptables accepts.
-- FIXED: **DNS sent over TCP skipped the set's DNS server** - only requests over UDP were intercepted, so a device that switched to TCP reached the router's usual resolver instead.
-- ADDED: **A DNS section in Settings** - the port used for DNS over TCP, how long to wait for an answer, an off switch, and a check against ports other services already use.
-- ADDED: **DNS request outcomes in the trace** - a trace named the domain but never whether the request reached the set's DNS server or slipped past it.
-- FIXED: **One refusal from Telegram's WebSocket edge switched off a working Cloudflare Worker** - the refusal was treated as a verdict on every WebSocket route to that data center, including the relay the user runs themselves.
-- FIXED: **A paused Telegram data center address was answered with an instant failure** - Telegram read that as grounds to reconnect immediately, filling the log with hundreds of identical lines a second.
-- ADDED: **A warm spare connection to your Cloudflare Worker** - one ready connection per Worker and data center, in place of the 65-90 ms handshake every new Telegram connection paid for.
-- FIXED: **Traffic to a Cloudflare Worker was cut into one small write per Telegram message** - that framing was only ever required by Telegram's own WebSocket edge.
-- CHANGED: **Several Worker addresses are tried in a random order** - they were tried strictly as written, so the first absorbed all the traffic and all the rate limiting.
-- FIXED: **System diagnostics reported jq, sha256sum and nohup as missing while they were installed** - the check looked in fewer folders than a terminal session does.
-- FIXED: **Flow offloading was reported as a problem even when it had been set up to leave b4 alone** - the check could not tell a fast path that skips b4 entirely from one held back until b4 has seen the start of a connection.
-- CHANGED: **IP block detection also covers a destination that never answers its SYN** - the feature is described for addresses the firewall drops at the IP level, but it counted TLS ClientHello retransmissions, and a ClientHello exists only once a handshake has completed. An address-level block kills the handshake itself, so the single case the description named was the one case the check could not see, and what it did catch was a stateful block after the handshake.
-- ADDED: **The router tests a destination itself before treating it as blocked** - packets going unanswered for one device is equally consistent with a slow server, a brief routing glitch or an uplink outage, so acting on that evidence alone resets connections to a destination nothing was ever wrong with, and an uplink that drops for a minute looks indistinguishable from every destination being blocked at once.
-- FIXED: **A destination marked blocked stayed blocked for as long as anything kept trying it** - each lookup refreshed the entry's timestamp, so the five-minute expiry was never reached while a device kept retrying, and nothing re-tested the address in the meantime. A false positive, or a block that had since been lifted, held for the lifetime of the traffic.
-- ADDED: **An IP Health section in Settings** - whether an address answers depends on the address and the path to it rather than on the set that happened to match it, so the verdict is one shared judgement rather than a per-set one, and how long it lasts had no control of its own.
-- ADDED: **A switch that strips unreachable addresses out of DNS answers** - a CDN answers with several addresses of which the firewall drops only some, so one device hangs on a blocked one while another on the same network loads the site. Pinning a working address by hand in the hosts file or as a `dnsmasq` alias had to be done per address, per domain, and again whenever the CDN changed its addresses.
-- ADDED: **Import from another tool** - a [byedpi](https://github.com/dovecoteescapee/byedpiandroid) or [zapret](https://github.com/bol-van/zapret) configuration had to be rebuilt in b4 by hand, option by option. A pasted command line becomes one set per profile, and every option is reported as carried over, approximated, or without an equivalent in b4. Domains are asked for per set, since such a command line rarely carries the host list itself. `Sets > Import`.
+### Added
+
+- **Import** on the **Sets** page turns a [byedpi](https://github.com/dovecoteescapee/byedpiandroid) or [zapret](https://github.com/bol-van/zapret) command line into one set per profile and reports each option as carried over, approximated or without an equivalent.
+- **Match any domain** and **Match any IP address** make a catch-all set with IPv6 included, typing `*`, `any` or `all` into a target field does the same, and `*.example.com` is saved as `example.com`.
+- A warning appears when several enabled sets name the same domain, since only the one placed higher in the list handles it.
+- A **DNS** section in **Settings** sets the port for DNS over TCP, how long to wait for an answer and an off switch, and warns about ports other services already use.
+- A log trace records whether each DNS request reached the set's DNS server or slipped past it.
+- An **IP Health** section in **Settings** controls how long an address stays marked unreachable, with one verdict shared by all sets.
+- A switch removes unreachable addresses from DNS answers, so a device does not hang on the one blocked address of a CDN while another device loads the site.
+- A ready spare connection to your Cloudflare Worker for each data center saves the 65-90 ms setup that every new Telegram connection paid.
+
+### Changed
+
+- **IP Block Detection** also catches an address that never answers a connection request, and the router tests the address itself before treating it as blocked.
+- Several Cloudflare Worker addresses are tried in random order instead of as written, which sent all traffic and all rate limiting to the first.
+
+### Fixed
+
+- A set applied from **Discovery** had no effect until b4 restarted, and two applied results could claim the same domains, so a domain got another result's strategy.
+- When two sets listed the same IP range, the one stored last took it rather than the one higher in the list, and a set limited to source devices could lose it to a general set below.
+- On routers with iptables, `0.0.0.0/0` in a set's IP targets never reached the firewall and took the set's MSS and duplication entries with it, and a set routed through a TCP-only proxy left no rules at all.
+- DNS queries that a device sent over TCP skipped the set's DNS server and went to the router's usual resolver.
+- One refusal from Telegram's WebSocket servers switched off a working Cloudflare Worker, and a paused data center address was refused at once, so Telegram reconnected in a loop and flooded the log.
+- System diagnostics reported jq, sha256sum and nohup as missing while they were installed, and flagged flow offloading even when it was set up to leave b4 alone.
+- An address marked as blocked stayed blocked for as long as a device kept retrying it and was never tested again, so a false alarm or a lifted block held on.
 
 ## [1.74.2] - 2026-08-02
 
-- FIXED: **b4's own output filled a router's memory** - init scripts from older installers wrote b4's full log to a file kept in RAM on OpenWrt, and updates never replaced those scripts.
-- FIXED: **A restart could leave a second copy of b4 running alongside the first** - the departing process deleted the file that tracks the running service, after its replacement had already claimed it.
-- FIXED: **Log files kept growing while b4 ran** - the error log was checked against its size limit only at startup, the update log was never trimmed, and abandoned trace files were left behind.
-- FIXED: **Turning "Route UDP through upstream" off left the UDP rules in the firewall and took the listener away** - the rule state was keyed on the upstream host, port and username alone, so the switch never rebuilt the firewall side, while the listener was rebuilt without its UDP half. Matched UDP kept being diverted to a port with nothing behind it, so a browser speaking HTTP/3 to a routed site sat through its timeout rather than falling back to TCP, and switching the option off made the site less reachable than leaving it on. Only a restart applied the change.
-- CHANGED: **A set routed through a TCP-only upstream proxy refuses QUIC instead of letting it past** - with "Route UDP through upstream" off, matched UDP was not diverted at all, so any site offering HTTP/3 was reached over QUIC straight out of the router while its TCP traffic went through the proxy. The bypass was silent, and a browser kept preferring it for a month after a single visit, since sites advertise HTTP/3 with a long `alt-svc` lifetime. Matched UDP on port 443 is refused with an ICMP port-unreachable, which browsers read as a signal to fall back to TCP. Turn the option on if the upstream implements UDP ASSOCIATE.
-- CHANGED: **An upstream proxy that cannot relay UDP reported it only at trace level** - matched UDP was dropped without a word, so a set pointed at a TCP-only SOCKS5 with "Route UDP through upstream" left on looked like a broken site rather than a setting to change.
-- FIXED: **Traffic handed to an upstream SOCKS5 proxy went out direct once for every address behind a domain** - a set matches by domain suffix, so `ipinfo.io` covers `website-cdn.assets.ipinfo.io`, while the address pre-resolve only looked up the names written in the set. Every other hostname was learned one address at a time from connections that had already left unrouted, and a site spread across a CDN kept producing them. A hostname that matches a routing set by suffix is resolved in full, and every address it answers with enters the set.
-- FIXED: **The first connection after a redirected DNS answer could escape a routing set** - b4 sent the answer to the client and only then wrote the addresses into the set, and writing them runs the `nft` or `ipset` binary, which takes longer than the client takes to send the packet that follows its DNS answer.
-- ADDED: **A Remove button for each geo database** - a downloaded `geosite.dat` or `geoip.dat` could only be replaced, never taken off the device, and pointing the destination directory somewhere else left the previous copy at the old path, since editing that field alone changes nothing to save. On a router with little free storage that meant two copies of a 51 MB file with no way to reach either from the interface. Remove deletes the file and clears its path and source URL, so the scheduler does not fetch it back, and a download or upload into a different directory deletes the copy b4 wrote at the old location.
-- FIXED: **An update ran out of space on devices with little storage** - it kept a second copy of the installed b4 alongside the new one, and a failed update left that copy behind.
-- ADDED: **An IPv4/IPv6 switch in the DC Relay socat helper** - the generated commands could only reach Telegram over IPv4, so on a VPS whose working route to the data centers is the IPv6 one, the addresses had to be found elsewhere and pasted in by hand every time a host was lost. The switch emits `TCP6:` upstreams, and a DC Relay address written as an IPv6 literal (`[2001:db8::1]:7007`) also flips the listening side to `TCP6-LISTEN`.
+### Added
+
+- A **Remove** button deletes a downloaded `geosite.dat` or `geoip.dat` and clears its path and source URL, and downloading into another directory deletes the copy b4 wrote at the old one.
+- An IPv4/IPv6 switch in the **DC Relay** socat helper produces `TCP6:` commands for a VPS that reaches Telegram's data centers over IPv6, and an IPv6 DC Relay address switches the listening side too.
+
+### Changed
+
+- A set routed through a TCP-only upstream proxy refuses QUIC on port 443 so that the browser falls back to TCP, instead of letting it go out directly past the proxy. Turn on **Route UDP through upstream** if the proxy supports UDP ASSOCIATE.
+
+### Fixed
+
+- b4's logs could fill a router's memory or storage: init scripts from older installers kept the full log in a RAM file on OpenWrt, and the error and update logs and trace files kept growing.
+- A restart could leave a second copy of b4 running alongside the first.
+- Turning **Route UDP through upstream** off had no effect until a restart, and matched UDP kept going to a port with nothing behind it, so HTTP/3 sites waited out a timeout instead of falling back to TCP.
+- An upstream proxy that cannot relay UDP was reported only at trace level, so a set with **Route UDP through upstream** on looked like a broken site rather than a setting to change.
+- Connections meant for a routing set could leave directly: the first one after each redirected DNS answer, and with an upstream SOCKS5 proxy, one for each address of a subdomain the set matches by suffix.
+- An update could run out of space on devices with little storage, and a failed update left a second copy of b4 behind.
 
 ## [1.74.1] - 2026-07-31
 
-- FIXED: **A domain added to the watchdog was listed as Healthy before anything had checked it** - the entry was created green and counted toward the healthy total, so a site the user already knows is blocked read as fine until the first check landed, and with the watchdog switched off it read that way forever. A domain waiting for its first check is marked Queued, and the force-check button is disabled while the watchdog is off, where it did nothing.
-- FIXED: **The watchdog reported a site as healed while it was still unreachable** - a healing run crowned a strategy after one successful fetch, and against a filter that blocks intermittently one of the twenty strategies it tries lands in a gap by chance. That result went straight into the set and the domain was marked healthy, with nothing checking whether ordinary traffic to the site worked afterwards. A healed strategy has to reproduce the fetch several times and survive a re-check through the live engine, or the configuration is put back.
-- FIXED: **A healing run could quietly replace a hand-tuned set** - it overwrote the whole tcp, udp, fragmentation and faking section while logging only the fragmentation strategy name, so a switch between two combo variants read as "combo -> combo" and every other tuned value disappeared without a trace.
-- FIXED: **A fetch that returned nothing counted as a working strategy during discovery** - a response without a declared length was accepted as complete even when zero bytes of the page arrived.
-- FIXED: **The fake packet sent before a blocked greeting did not resemble the greeting it shadowed** - it carried whatever length the fake payload happened to be, in one common case more than twice the real greeting, leaving a filter that reassembles the connection an untouched copy of the real bytes to read. Per-set `fake_len_mode: "match"` sizes it to the greeting.
-- FIXED: **The fake greeting's TTL was ignored unless the faking strategy was set to "ttl"** - a set could carry a TTL value while its fake ClientHello still went out at the full system TTL and reached the far end. The SYN fakes read the same value whatever the strategy is, so the setting looked live while doing nothing on the path that mattered. Per-set `apply_ttl` applies it to the greeting alongside any faking strategy.
-- ADDED: **The TCP MD5 option on the fake greeting itself** - `md5_on_fake` makes the far end discard the fake while a filter in between still reads it. The option only ever went on a separate fake connection opening, and only alongside a fragmentation strategy.
-- CHANGED: **The fake and the real packet no longer share an IP identification number** - one field gave away that both came from the same source.
-- ADDED: **Fake-only discovery strategies** - a low-TTL fake with no fragmentation at all, signed and unsigned, and the same shape across the per-family TTL sweep. Every strategy that carried a fake also split the greeting, and the family sweep is built on a base whose fragmentation strategy is combo, so against a filter that reassembles TCP well enough to see through any split, this shape was out of reach at every phase of discovery.
-- CHANGED: **The TLS split position can follow the domain name** - `middle_sni` on a set using the `tls` fragmentation strategy places the split inside the domain name instead of a fixed offset from the record header.
-- ADDED: **The STUN fake payload ships with b4** - `tls_stun.bin` is built in and picked as "Preset: STUN" under `Fake Payload Type`. It had to be uploaded as a capture file on every device, and a set shared with someone else arrived pointing at a `.bin` they did not have.
+### Added
 
-- ADDED: **Import of a shared set said nothing when the set referenced a payload file the device does not have** - the set pointed at a `.bin` capture that only existed on the machine it came from, the fake packets silently fell back to a built-in payload, and the set behaved differently than for the person who shared it. The import screen names the missing files and links to the Payloads settings.
-- FIXED: **b4 would not start on an OpenWRT router whose kernel has no packet-queue module** - startup ended with a raw firewall error that pointed nowhere near the missing kernel module. [#275](https://github.com/DanielLavrushin/b4/issues/275)
-- FIXED: **The installer reported the router as ready when it could not run b4 at all** - the check passed if any one of three queue modules was present, so a router carrying the wrong one installed cleanly and failed at first start.
-- FIXED: **The diagnostics report showed no queue number, worker count or queue mode** - it read them from config keys b4 has never written, so those lines were skipped on every router.
-- FIXED: **A failed start left part of b4's firewall rules on the router** - when applying the rules stopped partway, the table, chains and hooks created up to that point stayed behind after b4 exited.
-- FIXED: **A kernel without connection packet counters stopped b4 from starting at all** - the whole queue rule was rejected and startup failed, over an optimisation that was never required.
-- CHANGED: **System Info listed the wrong kernel modules on nftables-only routers** - it marked the iptables-era modules as missing and said nothing about the nftables ones b4 depends on there.
-- FIXED: **Telegram on Android could sit at "Connecting" when a set routed it through the built-in Telegram bridge** - the bridge closed connections that stayed silent for five seconds, though Telegram opens them before it has anything to send. [#277](https://github.com/DanielLavrushin/b4/issues/277)
-- FIXED: **The "already exists in other sets" warning missed overlaps that do change routing** - it compared entries character for character while traffic is matched by domain suffix, so `example.com` in another set drew no warning for `www.example.com`. [#273](https://github.com/DanielLavrushin/b4/issues/273)
-- FIXED: **The DC Relay socat helper generated commands that pointed at the wrong Telegram servers** - it built them from Telegram's published proxy list, whose addresses drop the connection right after the handshake.
-- FIXED: **The first request to a domain after an idle spell could hang for twenty seconds or time out, and YouTube on Android could sit for minutes before its interface appeared** - when a client sent a TLS ClientHello too large for one packet, the domain name could land in the second one; b4 read each packet on its own and never joined them, so the set did not match and the connection went out with no bypass strategy at all. Chrome reorders the fields inside that greeting on every connection, which is why the same domain failed on one attempt and loaded on the next. [#279](https://github.com/DanielLavrushin/b4/issues/279) [#280](https://github.com/DanielLavrushin/b4/issues/280)
-- FIXED: **The first connection to an address b4 had just resolved for a client went out without the set that owned the domain** - nothing linked a DNS answer, or a domain seen in a rejected QUIC attempt, to the connection that followed it, so until some connection produced a readable domain name the traffic was treated as unknown. That gap was the one place where a domain b4 had already seen went unrecognised, and on Android YouTube it could leave the app retrying for minutes. The link is remembered per client and destination and is discarded when two domains on one address belong to different sets. [#279](https://github.com/DanielLavrushin/b4/issues/279)
-- FIXED: **One device could decide which set another device's traffic went through** - the domain learned for a shared CDN address was stored once for the whole network and overwritten by whichever device connected last, so on an address serving both YouTube previews and video, one phone's choice was applied to everyone else. Evidence a device produced itself, from its own DNS answers or QUIC attempts, is preferred over the shared record. [#279](https://github.com/DanielLavrushin/b4/issues/279)
-- FIXED: **A plain connection opening handshake was taken apart and re-sent for no reason** - any set with fragmentation or fake-SNI turned on pulled every packet without content out of the kernel and pushed it back through a raw socket, including the opening SYN, although none of those techniques act on a packet that carries no data.
-- FIXED: **A set built from a large geosite category took several times more memory than its domains** - reading a few categories out of a 51 MB file needed around 90 MB, and the matcher and a switched-off SOCKS5 server each kept a spare copy of every domain.
+- New set options shape the fake ClientHello: `fake_len_mode: "match"` sizes it to the real one, `apply_ttl` gives it the set's TTL with any faking strategy, and `md5_on_fake` adds the TCP MD5 option to it.
+- With the `tls` fragmentation strategy, `middle_sni` places the split inside the domain name instead of at a fixed offset.
+- **Discovery** also tries fake-only strategies, a low-TTL fake without any fragmentation, which reach filters that see through every split.
+- The STUN fake payload is built in as **Preset: STUN** under **Fake Payload Type**, in place of a capture file uploaded to every device.
+- Importing a shared set names the payload files it uses that are missing on the device, with a link to **Payloads**.
+
+### Changed
+
+- A fake packet and the real one carry different IP identification numbers, since a shared number gave away that both came from the same source.
+
+### Fixed
+
+- The **Watchdog** showed a newly added domain as healthy before any check, and indefinitely while the watchdog was off.
+- A **Watchdog** healing run could declare a site healed after one lucky fetch, and overwrite a hand-tuned set's TCP, UDP, fragmentation and faking settings while logging only the strategy name.
+- **Discovery** counted a fetch that returned no data as a working strategy.
+- On an OpenWrt router without the packet-queue kernel module, b4 failed to start with a raw firewall error that did not point to the module, and the installer reported such a router as ready. [#275](https://github.com/DanielLavrushin/b4/issues/275)
+- A kernel without connection packet counters stopped b4 from starting, and a failed start left part of b4's firewall rules behind.
+- The diagnostics report left out the queue number, worker count and queue mode, and **System Info** listed the wrong kernel modules on nftables-only routers.
+- Telegram on Android could stay at "Connecting" when a set routed it through the built-in Telegram bridge, because the bridge closed connections that were silent for five seconds. [#277](https://github.com/DanielLavrushin/b4/issues/277)
+- The **Already exists in other sets** warning missed overlaps by domain suffix, such as `example.com` in another set for `www.example.com`. [#273](https://github.com/DanielLavrushin/b4/issues/273)
+- The **DC Relay** socat helper generated commands for Telegram servers that drop the connection right after it opens.
+- A request after an idle spell could hang for twenty seconds and YouTube on Android could take minutes to appear, because b4 missed a site name split across two packets and the connection got no strategy. [#279](https://github.com/DanielLavrushin/b4/issues/279), [#280](https://github.com/DanielLavrushin/b4/issues/280)
+- The first connection to an address b4 had just resolved for a device could miss the set that owns the domain, and one device's traffic on a shared CDN address could decide the set for every other device. [#279](https://github.com/DanielLavrushin/b4/issues/279)
+- A set built from a large geosite category took several times more memory than its domains, about 90 MB to read a few categories from a 51 MB file.
 
 ## [1.73.0] - 2026-07-05
 
-- FIXED: **A phone that dropped off mobile data could leave a Telegram proxy connection stuck** - when a mobile client backgrounded Telegram or lost signal, its connection frequently died without a clean close, yet b4 held the half-dead session and its link out to Telegram open for many minutes, in some cases until the app was reopened, so returning to Telegram could mean waiting on a dead socket instead of a clean reconnect.
-- FIXED: **A stalled link out to Telegram over a WebSocket bridge could wedge a proxy session** - if that link stalled mid-transfer, tearing the session down could itself block for many minutes on the stuck write, holding the client's slot and both connections until a kernel timeout expired.
-- ADDED: **Tunable MTProto connection timeouts** - Settings → MTProto exposes a TCP user timeout and an idle timeout for the proxy, for unusual carrier networks or router kernels where the built-in defaults (about two minutes and five minutes) need adjusting or turning off.
-- ADDED: **API to list active MTProto sessions and clients** - two HTTP endpoints for integrations: GET /api/mtproto/sessions returns one entry per live client connection (client IP and port, the Telegram destination, and when it connected and was last active), and GET /api/mtproto/active-clients groups those by secret (active connection count and the distinct client IPs using each one). The API exposed only a per-secret connection count, with no way to see the client addresses behind it.
+### Added
+
+- The **MTProto Proxy** settings have a TCP user timeout and an idle timeout, for carrier networks or router kernels where the defaults of about two and five minutes need adjusting or turning off.
+- Two API endpoints, `GET /api/mtproto/sessions` and `GET /api/mtproto/active-clients`, list live MTProto client connections and group them by secret with each secret's client addresses.
+
+### Fixed
+
+- An MTProto proxy session could stay stuck for many minutes after a phone lost signal or put Telegram in the background, or when its link to Telegram over the WebSocket bridge stalled.
 
 ## [1.72.0] - 2026-07-02
 
-- ADDED: **A separate MTProto secret for each person** - the MTProto proxy can now hold several named secrets instead of one shared code. Each one can be named (for example, per person), switched on or off on its own, and shared as its own link or QR code, so access can be given or taken away one person at a time.
-- ADDED: **See who is using the MTProto proxy** - the Traffic page now labels each proxy connection with the secret it used, and a new dashboard panel shows active connections, total sessions, and data used for each named secret.
-- ADDED: **A set can now apply to every device except chosen ones** - in a set's Source Devices there is a new switch, "All devices except selected". With it on, the set applies to traffic from all devices except the ticked ones, instead of only to the ticked ones - handy when one device (say, a work laptop) should be left alone.
-- CHANGED: **The set's device list shows each device's MSS value** - if a device has an MSS limit set under Settings → Device Filtering, the set's Source Devices table now shows it next to the device, so there is no need to switch pages to check.
-- ADDED: **Match a set by domain only, without learning its IPs** - a per-set "Domain-only matching" switch under the set's Targets. With it on, b4 decides the set purely from the domain or SNI it can see and does not remember or route the IP addresses behind those domains. It is meant for shared CDN addresses (YouTube, Google): a video domain and an unrelated one such as preview images can share a single IP, so the address b4 learned for the first one pulled the second onto the wrong bypass strategy.
-- FIXED: **Memory use jumped after saving settings** - saving the configuration made b4's memory use climb, even for changes that had nothing to do with the blocked-site lists.
-- FIXED: **A routing set could stop adding new addresses on some routers** - on certain setups (for example b4 in a container on MikroTik) the router rejected freshly discovered addresses, so a set routed through a chosen interface, proxy, or the Telegram bridge slowly stopped working. Those addresses are now stored in a form the router accepts. [#267](https://github.com/DanielLavrushin/b4/issues/267)
-- FIXED: **The log repeated "Tables rules missing, restoring..." every few seconds** - with NAT Masquerade turned on, b4 looked for one of its firewall rules in the wrong place, decided it was missing, and needlessly re-applied all its rules over and over. The rules were in fact fine; b4 now checks the right place and the endless restoring has stopped.
+### Added
+
+- The MTProto proxy holds several named secrets, each switched on or off and shared as its own link or QR code, and the **Traffic** page and a dashboard panel show which secret each connection uses.
+- **All devices except selected** in a set's **Source Devices** applies the set to every device except the ticked ones.
+- **Domain-only matching** in a set's targets picks the set only from the domain it sees and does not learn or route the addresses behind it, for shared CDN addresses such as YouTube's and Google's.
+
+### Changed
+
+- A set's **Source Devices** table shows each device's MSS limit from **Device Filtering**.
+
+### Fixed
+
+- Memory use jumped after saving settings, even for changes unrelated to the blocked-site lists.
+- On some routers, such as b4 in a container on MikroTik, a set routed through an interface, a proxy or the Telegram bridge gradually stopped working, because the router rejected newly found addresses. [#267](https://github.com/DanielLavrushin/b4/issues/267)
+- With **NAT Masquerade** on, the log repeated `Tables rules missing, restoring...` every few seconds, and b4 re-applied all its rules although they were in place.
 
 ## [1.71.1] - 2026-06-29
 
-- ADDED: **System Info now shows the router's kernel capabilities** - a new section reports whether the router supports the underlying features that advanced modes rely on.
-- FIXED: **Telegram bridge could be slow to connect or drop transfers** - in some setups b4 got in the way of its own connection out to Telegram, slowing the first connect and occasionally cutting transfers short; b4 now keeps its own traffic clear.
-- FIXED: **A named device sometimes showed as its address instead of its name** - on the dashboard and Traffic page a device you had named could appear as a plain hardware address while it was off the network (for example connected over VPN); its saved name now stays shown, and named devices remain listed in Device Filtering with an "offline" label.
+### Added
+
+- **System Info** has a **Kernel Capabilities** section that shows whether the router supports the features advanced modes rely on.
+
+### Fixed
+
+- The Telegram bridge could be slow to connect or cut transfers short, because b4 interfered with its own connection to Telegram.
+- A named device that was off the network, for example connected over VPN, showed as its hardware address on the dashboard and the **Traffic** page.
 
 ## [1.71.0] - 2026-06-28
 
-- ADDED: **The Logs page is easier to read** - log lines are now colour-coded by importance, and each type (error, warning, info, and so on) can be shown or hidden with one click.
-- ADDED: **Record a log session and download it to share** - the Logs page now has a "Start trace" button that records everything until "Stop & save", which downloads a single log file to attach when asking for help. The file already includes system details, and recording stops on its own after 15 minutes.
-- ADDED: **NAT Masquerade can now target several interfaces at once** - when NAT Masquerade is turned on (Settings → Feature), you can pick any combination of network interfaces for it to use — for example two out of three — instead of only a single interface or all of them.
-- ADDED: **Runtime panel on the dashboard** - shows b4's memory use over time, with a live chart and a couple of health readings, so a slow climb is easy to keep an eye on.
-- ADDED: **Per-device filtering (whitelist/blacklist) works in TUN mode** - the Device Filtering list under Settings only took effect in NFQUEUE mode; in TUN mode every device's traffic was inspected regardless of the selection, so choosing which devices use the bypass changed nothing there.
-- CHANGED: **Live Signal panel reworked around throughput** - the connections- and packets-per-second readings hovered near zero on a home router and meant little, so they gave way to live throughput, total data handled, targeted share, and active connections.
-- FIXED: **Memory could slowly creep up the longer b4 ran** - a few background jobs (logging, AI chat streaming, Discovery) didn't always tidy up after themselves, so usage grew over long uptime.
-- FIXED: **After stopping b4 in TUN mode, new sites could stop loading while already-open ones kept working** - on an unclean stop (a forced kill, or a shutdown that ran past its time limit) the virtual TUN interface disappeared but its routing rule could be left behind, steering fresh connections and DNS lookups into a path that no longer existed until b4 was started by hand again.
+### Added
+
+- Lines on the **Logs** page are coloured by level, and each level can be shown or hidden with one click.
+- **Start trace** on the **Logs** page records everything until **Stop & save** and downloads one file with system details to attach when asking for help; recording stops by itself after 15 minutes.
+- **NAT Masquerade** can apply to any combination of network interfaces, not only to one or to all of them.
+- A runtime panel on the dashboard charts b4's memory use over time.
+
+### Changed
+
+- The live signal panel on the dashboard shows throughput, total data, the targeted share and active connections in place of connections and packets per second.
+
+### Fixed
+
+- In TUN mode, **Device Filtering** had no effect, and every device's traffic was processed whatever the selection.
+- Memory use could creep up the longer b4 ran, because logging, AI chat streaming and **Discovery** did not always clean up after themselves.
+- After an unclean stop in TUN mode, new sites could stop loading while open ones kept working, because a routing rule for the removed TUN interface stayed behind.
 
 ## [1.70.1] - 2026-06-23
 
-- ADDED: **System diagnostics now show the active engine and the firewall rules b4 has set up** - the diagnostics page tells you whether b4 is running in NFQUEUE or TUN mode (so TUN setups no longer look like a failed firewall), and lists the firewall rules b4 currently maintains, making it easier to see what is in place and share when asking for help.
-- CHANGED: **b4's internal firewall marks moved to a less-contended range** - b4 tags its own packets with a firewall mark (fwmark); the values it used overlapped the range Tailscale and some other router apps use, which could misroute traffic when they ran alongside b4. The internal marks now use high bits that other tools rarely touch.
-- FIXED: **Bypass stopped working for mobile apps (for example the YouTube app on Android) on gateway/container setups with NAT Masquerade** - the fake and fragmented packets b4 sends to defeat DPI were no longer given the gateway's public address, so they never reached the server. This mainly hit QUIC traffic, which phone apps prefer, while ordinary websites over TCP kept working.
-- FIXED: **A set could fail to start when it mixed a country/service list with its own listed addresses** - if an address you added by hand was already covered by a chosen list (for example adding Instagram addresses alongside the Facebook list), b4 saw them as overlapping and refused to start.
-- FIXED: **In TUN mode every device appeared under the router's public address, so traffic could not be told apart by device** - the TUN engine tags packets with the router's WAN address before b4 inspects them, which flattened the connection logs, per-device statistics, and per-device set rules onto that one address and hid the phone, laptop, or TV behind it.
+### Added
+
+- System diagnostics show whether b4 runs in NFQUEUE or TUN mode and list the firewall rules b4 maintains.
+
+### Changed
+
+- b4's own firewall marks moved to high bits, out of the range that Tailscale and some other router apps use, which could misroute traffic when they ran alongside b4.
+
+### Fixed
+
+- On gateway or container setups with **NAT Masquerade**, the bypass stopped working for mobile apps such as YouTube on Android, because b4's fake and split packets did not get the gateway's public address.
+- b4 refused to start when a set mixed a country or service list with addresses added by hand that the list already covered, such as Instagram addresses next to the Facebook list.
+- In TUN mode, every device appeared under the router's public address, so connection logs, per-device statistics and per-device set rules could not tell devices apart.
 
 ## [1.70.0] - 2026-06-21
 
-- ADDED: **New engine for devices without NFQUEUE** - some minimal devices lack the kernel modules b4 normally needs, so it could not run on them. A new mode under Settings → Feature Flags routes traffic through a virtual interface (TUN) instead. It inspects only the first packets of each TLS (port 443) and DNS connection, like the normal engine, rather than carrying every packet, and leaves the device's default route in place; on kernels that cannot count per-connection packets it routes the whole default route through the TUN instead. Strategy discovery (auto-tuning) still needs NFQUEUE, so it cannot run on these devices.
-- ADDED: **TUN uplink can follow the default route automatically** - leave the uplink on Auto (the default) and b4 takes the outbound interface, gateway and source address from the current default route, re-pointing them whenever it changes; pick a specific interface to pin a fixed path instead. Without it the uplink was fixed at startup, so a WAN failover or an L2TP/PPP/VPN tunnel reconnecting after b4 had started left processed traffic going out the old, dead path and bypassing b4 until a manual restart.
-- ADDED: **Sortable columns in the Traffic page's Aggregated view** - clicking a column header sorts the grouped list by that column, ascending or descending, like the Raw feed.
-- CHANGED: **Web UI password is now stored securely** - it is kept only as a hash and is no longer shown on the settings page (leave the field blank to keep it, or type a new one to change it).
-- CHANGED: **Dashboard rebuilt on one consistent design** - it now leads with a live signal panel that puts connection-rate and the key counters together, with every block sharing one panel, row, and header style.
-- FIXED: **A set's encrypted DNS (DoH) redirect failed in some setups** - lookups could time out or come back empty, so pages would not load. This affected gateway and container setups (for example b4 in a container on MikroTik) using NAT masquerade.
-- FIXED: **Routing set stopped updating its addresses on its own** - in some setups (for example b4 in a container on MikroTik) the set's addresses only filled in on restart or when the set was toggled, then expired and were never refreshed. The set now learns addresses live from DNS replies again.
-- FIXED: **Telegram bridge did not recover after an internet outage** - if the connection dropped and came back later, a set using the Telegram bridge kept failing until b4 was restarted by hand.
+### Added
+
+- A TUN engine, chosen in the settings, runs b4 on devices whose kernel lacks the NFQUEUE modules, sending target traffic through a virtual interface whose uplink follows the default route when left on Auto. **Discovery** still needs NFQUEUE and does not run in this mode.
+- Columns in the **Aggregated** view of the **Traffic** page sort by a click on their header.
+
+### Changed
+
+- The dashboard is rebuilt in one consistent style and opens with a live signal panel that combines connection rate with the key counters.
+
+### Fixed
+
+- On gateway and container setups with **NAT Masquerade**, such as b4 in a container on MikroTik, a set's DNS-over-HTTPS redirect could time out or return nothing, so pages did not load.
+- On some setups, such as b4 in a container on MikroTik, a routing set filled in its addresses only on restart or when toggled, and stopped refreshing them once they expired.
+- A set using the Telegram bridge kept failing after an internet outage until b4 was restarted by hand.
+
+### Security
+
+- The web interface password was stored as plain text and shown on the settings page. The field stays empty: leave it blank to keep the password, or type a new one to change it.
 
 ## [1.69.1] - 2026-06-14
 
-- FIXED: **Sets manager felt frozen after enabling, reordering, duplicating, or deleting a set** - the screen only changed once the action had been saved and the whole configuration re-fetched a second or two later, so a click looked like nothing had happened, a dragged set snapped back to its old place before jumping to the new one, and a duplicate appeared out of nowhere after a pause.
-- FIXED: **MTProto proxy stopped connecting to Telegram on networks that block its data-center addresses** - 1.69.0 changed the proxy to reach each Telegram data center at its own address, which many restricted networks drop, so connections timed out and Telegram would not load through the proxy.
+### Fixed
+
+- The **Sets** page seemed frozen after enabling, reordering, duplicating or deleting a set, because the screen changed only after the save and a full reload a second or two later.
+- The MTProto proxy in 1.69.0 stopped connecting to Telegram on networks that block Telegram's data center addresses, so Telegram did not load through it.
 
 ## [1.69.0] - 2026-06-14
 
-- ADDED: **Diagnostics now flag flow offloading** - many routers have a speed feature called `flow offloading` that sends traffic down a fast path which skips b4 entirely, so b4 looks installed and running but nothing is actually bypassed (a common puzzle on OpenWrt). The system diagnostics (Settings system info, and the installer's diagnostics screen) now show whether flow offloading is switched on, so this can be spotted at a glance and turned off.
-- ADDED: **Connection limit for the MTProto proxy** - a new "Max Connections" field in Settings -> MTProto Proxy caps how many client connections the proxy serves at once, with the built-in default raised from `512` to `2048` so a proxy shared by many people has room before it turns connections away.
-- FIXED: **Routing could clash with another router app such as [XrayUI](https://daniellavrushin.github.io/asuswrt-merlin-xrayui/en/install)** - a set sent through a proxy or the Telegram bridge could be handled by that other app instead, so it only worked while the app was installed.
-- FIXED: **Discovery refused web addresses that contain a comma** - some perfectly valid links (for example certain Google image addresses) have a comma in them, which Discovery mistook for a separator between addresses and split the link into broken pieces, so it could not be added.
-- FIXED: **Could not pick individual results once a Discovery search had finished** - while a search was running you could add any of the configurations it turned up, but as soon as it stopped only the single best per group could be applied and the buttons to add the others disappeared. The buttons to add each result stay available after the search ends.
-- FIXED: **Discovery log was lost on page refresh and missing after a search finished** - the log was only streamed live, so refreshing the page wiped everything shown so far and left only the next incoming line, and a finished (especially quick) search often showed no log at all. The log is now kept on the service, so the full run is replayed whenever the page is opened or refreshed and stays readable after the search ends.
+### Added
+
+- System diagnostics, in **System Info** and in the installer, show whether flow offloading is on: this router speed feature, common on OpenWrt, sends traffic past b4 so that nothing is bypassed.
+- **Max Connections** in the **MTProto Proxy** settings caps how many clients the proxy serves at once, and the default limit is 2048 instead of 512.
+
+### Fixed
+
+- A set routed through a proxy or the Telegram bridge could be handled by another router app such as [XrayUI](https://daniellavrushin.github.io/asuswrt-merlin-xrayui/en/install) instead, so it worked only while that app was installed.
+- **Discovery** split a web address containing a comma into broken pieces, lost its log on a page refresh or after a search ended, and offered only the best result per group once a search finished.
 
 ## [1.68.0] - 2026-06-10
 
-- FIXED: **Discovery found nothing on connections that tamper with DNS** - on networks where the provider tampers with DNS (so ordinary name lookups came back wrong or empty), Discovery could not look up its test sites and reported that nothing worked, even when a working setup existed. It looks those sites up over encrypted DNS instead, and saves the result set to use encrypted DNS (DNS-over-HTTPS) for its lookups by default, which holds up where plain DNS is tampered with.
-- FIXED: **Cancelling Discovery could crash b4** - pressing Cancel while a search was testing several sites at once could crash the whole service and force a restart.
-- FIXED: **Stopping b4 could leave its firewall rules on the router** - the cleanup at shutdown could be undone at the last moment, so the rules stayed in place after exit.
-- FIXED: **Routing through another interface broke after that interface changed its address** - when the chosen outgoing interface (for example a VPN or a modem) got a new address, the set's traffic kept using the old one until b4 was restarted.
-- FIXED: **Incomplete cleanup on stop** - stopping b4 (or `--clear-iptables`) left traces behind: adjusted system network settings, stray routing entries when two sets shared one outgoing interface, and a firewall rule that piled up with proxy or bridge routing.
-- FIXED: **Saving settings could leave the running configuration out of step** - changing the SOCKS5 proxy or your sets (adding domains or IPs, creating, editing, reordering, deleting, or bulk-toggling) could save a result that did not match what was actually running.
+### Changed
+
+- A set saved by **Discovery** sends its DNS lookups over DNS-over-HTTPS by default.
+
+### Fixed
+
+- On networks where the provider tampers with DNS, **Discovery** could not look up its test sites and reported that nothing worked, even when a working setup existed.
+- Pressing **Cancel** while **Discovery** was testing several sites at once could crash b4.
+- Stopping b4 could leave its firewall rules in place, and stopping it or running `--clear-iptables` left changed network settings, stray routes from sets sharing an interface and piled-up proxy or bridge rules.
+- When a set's outgoing interface, such as a VPN or a modem, got a new address, the set's traffic kept using the old one until b4 was restarted.
+- Changing the SOCKS5 proxy or a set (adding domains or IPs, creating, editing, reordering, deleting or toggling several) could save a configuration that did not match what was running.
 
 ## [1.67.2] - 2026-06-10
 
-- FIXED: **Web UI update reported success but kept the old version on some setups** - where b4 isn't managed by a normal service (for example running directly in a container), the update replaced the program on disk but never restarted the running copy. It now stops the old copy and relaunches the new one, so the update actually takes effect.
-- FIXED: **Leftover "zombie" update processes piling up** - each update attempt left a finished helper process behind; these are now cleaned up.
-- ADDED: **Update log** - every Web UI update now writes a step-by-step trace to `update.log` in the log folder (default `/var/log/b4`, reset each attempt), making failed updates much easier to diagnose.
-- ADDED: **Localized changelog** - the Web UI now shows the changelog in the selected language.
-- CHANGED: **Logging setting is now a folder, not a single file** - Settings → Service now asks for a log _directory_ (default `/var/log/b4`) instead of a path to `errors.log`, so all of b4's log files (errors, updates, and any added later) live together and can be moved in one place. Existing configs are migrated automatically (your old folder is kept); leave the field empty to turn file logging off.
+### Added
+
+- Every update from the web interface writes a step-by-step trace to `update.log` in the log folder, reset at each attempt.
+- The web interface shows the changelog in the selected language.
+
+### Changed
+
+- The log setting under **Settings, Service** is a folder (default `/var/log/b4`) instead of the path to `errors.log`, and existing configs are converted. An empty field turns file logging off.
+
+### Fixed
+
+- Each web interface update left a finished helper process behind, and where no system service runs b4, such as directly in a container, the update reported success but the old version kept running.
 
 ## [1.67.1] - 2026-06-10
 
-- FIXED: **Connections page slowed down the more network owners you looked up** - looking up the "AS..." label for many addresses made the live list sluggish over time. It now stays responsive no matter how many you add.
-- FIXED: **Slow page failures when a set's encrypted DNS server was briefly unreachable** - lookups used to hang until they timed out; they now fail right away instead of stalling, and never fall back to plain DNS.
-- FIXED: **Cancelling Discovery did not stop it** - pressing Cancel left the search running, so starting another ran two at once with mixed-up, unreliable results. Cancel now stops the search promptly, and a new search waits until the previous one has stopped.
+### Fixed
+
+- The **Traffic** page grew sluggish as more addresses had their AS label looked up.
+- When a set's DNS-over-HTTPS server was briefly unreachable, lookups hung until they timed out, so pages failed slowly.
+- Pressing **Cancel** did not stop **Discovery**, so starting another search ran two at once with mixed-up results.
 
 ## [1.67.0] - 2026-06-08
 
-- ADDED: **Encrypted DNS (DoH) for a set** - a set's DNS tab can now send its name lookups over an encrypted DNS-over-HTTPS connection instead of to a plain DNS server's IP. Some services only work when looked up through a specific resolver (for example `xbox-dns.ru` for sites that say "not available in your country"), and some providers tamper with ordinary DNS - encrypted DNS gets around both. Switch the set between "Plain DNS" and "DNS-over-HTTPS", then pick a server from the built-in list or paste your own address. Only that set's lookups are affected, so the rest of your DNS stays as it is.
-- ADDED: **Target a set to IPv4 or IPv6 only** - a set can now be limited to only IPv4 or only IPv6 traffic, alongside the existing domain, IP, and TLS-version targeting. Some networks handle IPv4 and IPv6 differently, so the settings that work for a site over one can differ over the other. You can now make one set for a site over IPv4 and a separate set for the same site over IPv6, each with its own options. Discovery can also search for a working setup specifically over IPv4 or IPv6 and saves the result limited to that version. The default is "Any" (both), and the choice only appears when both IPv4 and IPv6 are turned on in Settings.
-- FIXED: **Sending a set's traffic to a proxy didn't work while bypass options were on** - when a set was set to route its traffic through an upstream proxy (or the Telegram bridge), b4 still tried to apply its DPI-bypass tricks to that same traffic, which fought with the routing and the connection failed to open. b4 now hands routed traffic straight to the proxy, so routing works even with the bypass options left enabled - and routed connections still show up on the Traffic page.
-- FIXED: **RST protection did nothing on sets that also used SYN-based bypass** - if a set combined "RST protection" with certain TCP bypass techniques, the protection was silently inactive because those connections weren't being tracked, so the site still got reset. RST protection now works in that combination. It also blocks the matching fake reset aimed at the destination server, not only the one aimed at your device.
-- FIXED: **Dummy network interfaces were missing from the interface lists** - a dummy interface (for example `dummy0`) did not appear in Settings, so it could not be picked for monitoring or NAT masquerade. Any dummy interface that is up now shows up in both lists.
-- FIXED: **Telegram desktop kept reconnecting every 30-60 seconds over the Telegram bridge** - a background keep-alive added in 1.66.0 to hold idle connections open actually sent a signal Telegram's servers rejected, so the connection dropped and rebuilt itself about twice a minute (you would see parts of the Telegram window flicker). That keep-alive has been removed, so connections stay healthy on their own again.
-- FIXED: **Monitoring a site could add it to a blocking set and break it** - if you monitored a site (for example `youtube.com`) and also ran a set that blocks or routes traffic - such as an ad-blocking set built from a category like `category-ads-all` - the watchdog could mistake that set for the one that owns your site, because the block list happened to contain a sub-domain of it (for example `ads.youtube.com`). When the site dipped and the watchdog tried to repair it, it added the site to that block/routing set, so the site got blocked instead of restored. The watchdog now only repairs sets that list the site by name, and never touches a set that has Routing turned on, so monitoring can no longer poison a blocking or routing set. Note: if an earlier version already added the monitored site to such a set, remove it there by hand once.
+### Added
+
+- A set's **DNS** tab can send lookups over DNS-over-HTTPS to a built-in or custom server, for services that need a specific resolver such as `xbox-dns.ru` and for providers that tamper with DNS.
+- A set can be limited to IPv4 or IPv6 traffic, so a site can have its own set over each, and **Discovery** can search over one and limit its result to it. The choice appears when both IPv4 and IPv6 are on in **Settings**.
+
+### Changed
+
+- **RST Injection Protection** also drops the fake reset aimed at the server, not only the one aimed at the device.
+
+### Fixed
+
+- A set that routed its traffic to an upstream proxy or the Telegram bridge failed to open connections while its DPI bypass options were on.
+- **RST Injection Protection** did nothing on a set that also used some SYN-based TCP techniques, because those connections were not tracked.
+- Dummy network interfaces, such as `dummy0`, were missing from the interface lists in **Settings**, so they could not be picked for monitoring or NAT masquerade.
+- Telegram Desktop reconnected every 30-60 seconds over the Telegram bridge, because a keep-alive added in 1.66.0 sent a signal that Telegram's servers rejected.
+- **Watchdog** could repair a monitored site by adding it to a blocking or routing set that listed one of its subdomains, so the site got blocked. A site an earlier version added to such a set has to be removed from it by hand.
 
 ## [1.66.0] - 2026-06-07
 
-- ADDED: **Blocking stats on the Dashboard** - when a set uses Block (blackhole) mode and actually blocks something, the Dashboard now shows a "Blackhole" panel with the total number of blocked attempts, the most-blocked domains, and which devices ran into the most blocks. The panel stays hidden until there is something to show, so it never clutters the page when nothing is being blocked. Blocked connections are also tagged with a "block" label on the Traffic page so you can spot them in the live feed.
-- ADDED: **Control over the Telegram server-list backup** - to reach Telegram, b4 fetches Telegram's data center list from Telegram's official address, and falls back to a backup copy hosted by the b4 author only if that is blocked (`lavrush.in`). Settings -> MTProto Proxy now has a "DC list fallback mirror" switch to turn it off or point it at your own copy.
-- FIXED: **Set Routing now respects your device choices** - if you used Settings -> Devices to make b4 work for only some devices (or to exclude some), that choice was ignored by a set's Routing tab. Whatever the set did with the traffic (send it to another network interface or an upstream proxy, run it through the Telegram bridge, or block it) happened for every device regardless. Routing now applies only to the devices you picked. You can also give an individual set its own device list in its settings, so a single set can route, bridge, or block traffic for just specific devices without affecting the rest.
-- FIXED: **The router itself showed up as a wrongly-named device on the Traffic page** - b4 mistook the router's own address for a regular client and listed it as a separate device (sometimes guessed as a phone brand), filing the router's own connections under it. b4 now recognizes its own interfaces and labels that traffic simply as "Router".
-- FIXED: **Discord voice and video calls could drop when blocking UDP** - on a set with UDP set to Drop or Reject, Discord calls could break because b4 did not recognize Discord's call traffic. b4 now lets it through (when "Filter STUN" is on, the default), so calls keep working.
-- FIXED: **b4 would not start on some Asus Merlin routers** - on certain firmware (for example the MerlinWRT) b4 quit right after starting and showed a confusing message about a missing `xt_connbytes` feature, even though the router actually supported it. The real cause was b4 using a newer firewall command option that the router's built-in tool did not understand. b4 now adapts to the router's own tools automatically, so it starts normally with nothing extra to install.- FIXED: **Connections page showed nothing when the device clock was out of sync** - the time filter (30s / 1m / 5m / 15m) and the per-connection activity graph compared the live data against the browser's own clock, so a computer whose clock was off by even ~30 seconds could see an empty list and empty activity bars. Filtering and the activity graph now use the timestamps in the connection data itself, so they work regardless of the device clock or its timezone.
-- FIXED: **A device could still show up twice on the Traffic page** - one device sometimes appeared as two rows, once under its name and once under its bare IP. b4 now recognizes these as the same device and shows it only once.
-- FIXED: **Discovery found no working strategy when site names were entered with quotes** - if you added domains to Discovery wrapped in quotation marks (for example `"discord.com","youtube.com"`, as happens when pasting a copied list), b4 kept the quote marks as part of each name, so every lookup failed and Discovery reported nothing working for any site. Surrounding quotes are now removed automatically. [#241](https://github.com/DanielLavrushin/b4/issues/241)
+### Added
+
+- When a **Block** set blocks something, the **Dashboard** shows a **Blackhole** panel with blocked attempts, top domains and devices, and the **Traffic** page marks those connections `block`.
+- **DC list fallback mirror** under **Settings, MTProto Proxy** turns off or replaces the b4 author's backup copy of Telegram's data center list on `lavrush.in`, used only when Telegram's own address is blocked.
+- A set can have its own device list, so its routing, Telegram bridge or block applies only to those devices.
+
+### Fixed
+
+- A set's **Routing** ignored the devices chosen under **Settings, Devices**, so its interface, proxy, Telegram bridge or block applied to every device.
+- The router itself showed up on the **Traffic** page as a separate device, sometimes named after a phone brand, holding the router's own connections.
+- On a set with UDP on **Drop** or **Reject**, Discord voice and video calls could break, because b4 did not recognize their traffic.
+- On some Asus Merlin firmware b4 quit right after starting with a misleading message about a missing `xt_connbytes`, because it used a firewall command option the router's tool did not understand.
+- The **Traffic** page could show an empty list and empty activity bars when the viewing computer's clock was off by as little as 30 seconds.
+- A device could still appear twice on the **Traffic** page, once under its name and once under its bare IP.
+- **Discovery** found no working strategy for any site when the domains were entered in quotes, such as a pasted `"discord.com","youtube.com"`. [#241](https://github.com/DanielLavrushin/b4/issues/241)
 
 ## [1.65.0] - 2026-06-06
 
-- ADDED: **Block (blackhole) routing mode** - a new "Block" option in a set's Routing tab that blocks all matched traffic (ad/tracker domains, IPs, or a GeoSite category like `category-ads-all`) across the whole network - every LAN device and the router itself - with no output interface needed. It blocks by name and not just by IP, so it keeps working even with encrypted DNS and won't break unrelated sites sharing the same servers. See [Blocking](https://docs.b4core.app/docs/sets/blocking) for setup and details.
-- ADDED: **Upstream SOCKS5 proxy now routes UDP too** - sets that send traffic to an upstream SOCKS5 proxy used to forward only regular (TCP) connections; UDP traffic - such as QUIC (used by YouTube and many Google and video services) and DNS - bypassed the proxy and went out directly. UDP from LAN devices now goes through the upstream proxy as well, so a set can route a device's full traffic through it. The proxy must accept UDP.
-- FIXED: **A device could appear twice on the Traffic page, and hand-added names were missing** - in the Aggregated view's Devices sidebar, one device sometimes showed up as two: once under its name and once under its bare IP address, because some of its connections arrived without a recognizable hardware address. Those connections are now matched back to the right device by its IP, so each device appears once. Devices you add by hand (Settings -> Devices), including ones behind another router, now show their assigned name here too instead of a raw IP.
-- FIXED: **Command-line options like `--skip-tables` got saved into the config and stuck** - starting b4 with an extra command-line option used to write that option into the configuration file, so it kept applying on later starts even when you ran b4 without it. Command-line options now affect only the run you pass them to and are never saved into the config.
+### Added
+
+- The **Block** mode in a set's **Routing** tab blocks the matched domains, IPs or GeoSite categories, such as `category-ads-all`, for every device and the router itself ([Blocking](https://docs.b4core.app/docs/sets/blocking)).
+
+### Changed
+
+- A set routed to an upstream SOCKS5 proxy also sends its UDP traffic from LAN devices, such as QUIC and DNS, through the proxy. The proxy must accept UDP.
+
+### Fixed
+
+- In the **Aggregated** view of the **Traffic** page, a device could appear twice, under its name and its bare IP, and devices added by hand under **Settings, Devices** showed a raw IP instead of their name.
+- Starting b4 with a command-line option such as `--skip-tables` saved it into the config, so it kept applying on later starts without it.
 
 ## [1.64.0] - 2026-06-01
 
-- FIXED: **DNS redirect didn't work** - when a set sent its DNS lookups to a chosen server (the set's DNS tab), names failed to resolve and the internet seemed to hang. Redirected DNS now works as expected.
-- IMPROVED: **MTProto Telegram routing is more reliable, especially for media** - the WebSocket routing (bridge mode) now works on phones as well as desktop, loads media more reliably, and always prefers WebSocket regardless of the proxy server's transport setting. Data centers without a WebSocket edge no longer stall when the shared fallback domains get rate-limited. New "Cloudflare Worker" support adds a free, per-user relay (no domain to buy) for accounts where media, reactions, or stickers still fail to load - see Settings -> MTProto Proxy.
-- FIXED: **Copy buttons did nothing when the Web UI was opened over plain HTTP** - copying commands, set exports, or system info silently failed on installs reached by LAN IP (for example `http://192.168.1.1`), because browsers only allow the modern clipboard API over HTTPS or localhost. The fallback copy path now works in those cases too.
-- FIXED: **Memory and CPU slowly climbed when the watchdog repeatedly repaired a site** - each watchdog repair left behind a background task that never stopped, piling up over days until b4 was killed. [#227](https://github.com/DanielLavrushin/b4/issues/227)
-- FIXED: **Traffic page lumped every connection under "Unknown" in the Aggregated view** - on networks where b4 cannot map a client IP to a MAC address (for example devices behind another router), the Devices sidebar collapsed all traffic into a single "Unknown" device, even though the Raw feed clearly showed different source IPs. Connections without a known MAC are now grouped by their source IP, so each device appears separately.
-- FIXED: **Filter box did nothing in the Traffic page's Aggregated view** - multi-term filters like `!github + !google` were treated as one literal text match, so the view usually showed nothing. The Aggregated view now uses the same filter syntax as the Raw feed: combine terms with `+`, exclude with `!`, and target a column with `field:value`.
-- ADDED: **More checks in the DPI Detector** - the DPI Detector page can now also measure how quickly your DNS servers respond and test whether Telegram works (download speed, plus whether all of Telegram's servers are reachable). The existing checks were made more accurate at telling apart the different ways a provider can block or tamper with a connection, the list of sites and servers it tests was refreshed, and a new "Legend" explains what each result means. The DPI Detector is based on the [dpi-detector](https://github.com/Runnin4ik/dpi-detector) project.
+### Added
+
+- **MTProto Proxy** can use a Cloudflare Worker as a free personal relay, with no domain to buy, for accounts where media, reactions or stickers still fail to load.
+- The **DPI Detector** also measures how fast DNS servers answer and tests Telegram's download speed and servers, with a **Legend** for its results. It is based on [dpi-detector](https://github.com/Runnin4ik/dpi-detector).
+
+### Changed
+
+- Telegram routing over WebSocket in bridge mode works on phones as well as desktop, loads media more reliably and always prefers WebSocket, whatever the proxy's transport setting.
+- The **DPI Detector** tells apart more of the ways a provider blocks or tampers with a connection, and tests a refreshed list of sites and servers.
+
+### Fixed
+
+- When a set sent its DNS lookups to a chosen server on its **DNS** tab, names failed to resolve and the internet seemed to hang.
+- Telegram data centers without a WebSocket edge stalled when the shared fallback domains were rate-limited.
+- Copy buttons did nothing when the web interface was opened over plain HTTP, such as `http://192.168.1.1`, because browsers allow the clipboard only over HTTPS.
+- Memory and CPU use slowly climbed while **Watchdog** repaired a site again and again, until b4 was killed. [#227](https://github.com/DanielLavrushin/b4/issues/227)
+- The **Traffic** page's **Aggregated** view lumped devices without a known MAC address, such as those behind another router, into one Unknown device, and usually showed nothing for a filter such as `!github + !google`, which it read as plain text.
 
 ## [1.63.0] - 2026-05-22
 
-- FIXED: **Geo databases sometimes saved to a broken `b4` folder after install** - in rare cases the installer would record `b4/geosite.dat` instead of a full path like `/etc/b4/geosite.dat`, and the Web UI then refused to download new files. The installer now refuses non-absolute paths, b4 fixes any broken path it finds on startup, and the UI falls back to a safe default if the stored path looks wrong.
-- ADDED: **Quick toggle for all sets** - new switch in the Sets page top bar that turns every set on or off in one click. Useful for temporarily disabling all bypass, or for isolating one set while debugging.
-- ADDED: **"Test direct TCP" button for the MTProto proxy** - new button in Settings → MTProto Proxy next to "Test connection". Probes Telegram directly, bypassing the DC Relay. Use it to tell whether a problem is on your relay/VPS or somewhere between b4 and Telegram.
-- ADDED: **Auto-update for geo databases** - new "Auto-update" section in Settings → Geo Databases. Optional "Refresh on startup" re-downloads both files every time b4 starts (handy when files are kept in `/tmp` and get wiped on reboot). A separate "Schedule" picker (Off / Daily / Weekly / Monthly) runs a background refresh on its own. Missing files are also re-downloaded automatically at startup whenever a source URL is set, even with both options off.
-- ADDED: **Per-set MSS Clamping** - new "MSS Clamping" section in the TCP tab of each set, alongside the existing global and per-device options. Lets you set a custom MSS for the connections in one set - for example, a small MSS for a Smart TV streaming YouTube. The set must target by IP, GeoIP, or source device; SNI domain or GeoSite targets alone are not enough.
-- FIXED: **Direct TCP path used internal Telegram backend addresses instead of public ones** - b4 was reading addresses from Telegram's `getProxyConfig` (a topology file for MTProxy operators) and dialling them directly. Those backends silently dropped the connection after the handshake because clients are not allowed there. b4 now uses the well-known public data center IPs for direct dialling, like real Telegram clients do.
-- FIXED: **MTProto proxy ignored the DC Relay in Auto mode** - when the upstream transport was set to "Auto" and a DC Relay was configured, b4 still went straight over WebSocket and never used the relay. The relay is now tried first in Auto mode whenever one is configured; WebSocket stays as the fallback. The mode description updates to reflect this.
-- FIXED: **MTProto media data center (DC 203) did not work through the DC Relay** - DC 203 traffic was sent to a port that does not exist on any relay setup, so loading media through the relay failed. DC 203 now reuses the DC 2 relay port (matching the existing WebSocket behaviour), and has a built-in default IP for direct TCP as well.
-- FIXED: **Geosite/geoip updates didn't take effect until the next set edit** - after downloading or uploading a new geosite or geoip file from the Web UI, b4 kept matching against the old domain and IP lists. The new file is now applied to all sets immediately.
-- FIXED: **Some sites would not load through the built-in SOCKS5 server** - sites like YouTube failed when accessed via the SOCKS5 proxy while working fine in direct mode.
-- FIXED: **Per-device MSS could be overridden by Global MSS on iptables routers** - when Global MSS and per-device MSS were both enabled, the global value silently won on iptables-based routers (Merlin, OpenWrt without nftables, Keenetic). The more specific value now wins, matching how it has always worked on nftables.
-- IMPROVED: **Watchdog keeps checking while it repairs a broken site** - previously, when b4 detected one site was blocked and started repairing it, the watchdog stopped checking every other site until the repair was done. If a second site broke at the same time, it had to wait its turn. The watchdog now keeps monitoring all sites during a repair, and if several sites break close together they are repaired in one go.
-- IMPROVED: **MTProto connection test now detects upstream drops** - the existing "Test connection" button used to only check that an IP was reachable. It now also completes the MTProto handshake and watches whether Telegram (or your relay) closes the connection right after - the failure mode users actually hit. Results show which stage broke (connect, handshake, or dropped after handshake).
+### Added
+
+- A switch in the top bar of the **Sets** page turns every set on or off at once.
+- **Test direct TCP** under **Settings, MTProto Proxy** checks Telegram directly, bypassing the **DC Relay**, to tell a relay problem from one between b4 and Telegram.
+- **Auto-update** under **Settings, Geo Databases** can download both files on every start and on a daily, weekly or monthly schedule. Missing files are downloaded at startup whenever a source URL is set.
+- A set's **TCP** tab has **MSS Clamping** for the set's connections, such as a small MSS for a smart TV streaming YouTube. The set must target by IP, GeoIP or source device.
+
+### Changed
+
+- **Watchdog** keeps checking every site while it repairs one, and repairs sites that break close together in one go.
+- **Test connection** for the MTProto proxy also completes the MTProto handshake and shows whether connecting failed, the handshake failed, or Telegram or the relay dropped the link right after.
+
+### Fixed
+
+- In rare cases the installer saved the geo database path as `b4/geosite.dat` instead of a full path, and the web interface then refused to download new files.
+- **MTProto Proxy** dialled internal Telegram addresses that dropped direct TCP connections, ignored a configured **DC Relay** in **Auto** mode, and could not load media from data center 203 through the relay.
+- A geosite or geoip file downloaded or uploaded in the web interface took effect only after a set was next edited.
+- Some sites, such as YouTube, failed to load through b4's built-in SOCKS5 server while they worked directly.
+- On iptables routers such as Merlin, Keenetic and OpenWrt without nftables, the global MSS overrode the per-device MSS when both were on.
 
 ## [1.62.1] - 2026-05-11
 
-- ADDED: **Memory limit setting** - new "Memory Limit" field in Settings → Logging. Caps how much memory b4 may use. Leave empty for auto (half of system RAM, the previous default). Useful on routers with little RAM where other services compete for memory. Accepts values like `128MiB`, `256m`, `1g`, or `off` to disable.
-- ADDED: **MTProto proxy works in censored networks** - the built-in Telegram proxy can now reach Telegram over WebSocket, in addition to direct TCP. New "Upstream Transport" section in Settings → MTProto Proxy with three modes: Auto (WebSocket → TCP, the new default), WebSocket only, and Direct TCP. Existing installs are switched to Auto on upgrade, so networks without filtering see no change.
-- ADDED: **Cloudflare fallback for the MTProto proxy** - optional "Cloudflare custom domain" field. If Telegram's own WebSocket endpoint is ever blocked too, pointing a Cloudflare zone at the Telegram data center IPs lets the proxy tunnel through Cloudflare instead.
-- FIXED: **MTProto proxy was incompatible with some Telegram clients** - clients using transport variants other than padded-intermediate were silently dropped during the handshake. All three Telegram transport variants are now accepted, and the client's choice is forwarded to the data center.
-- FIXED: **Upstream SOCKS5 proxy routing did not work on some OpenWrt setups** — traffic skipped the proxy and went straight to the internet on installs missing two required kernel modules. The modules are now installed and loaded automatically, and a clear error is shown if they are still missing. [#221](https://github.com/DanielLavrushin/b4/issues/221)
-- IMPROVED: **Cleaner Import/Export for sets** - the exported JSON of a set now hides settings for features that are turned off, so you only see what actually matters. Easier to read, share and compare.
+### Added
+
+- **Memory Limit** under **Settings, Logging** caps how much memory b4 may use, with values such as `128MiB`, `1g` or `off`. Empty keeps the automatic limit of half the system RAM.
+- **MTProto Proxy** can reach Telegram over WebSocket as well as direct TCP, or through Cloudflare with a custom domain when Telegram's WebSocket endpoint is blocked too.
+
+### Changed
+
+- On upgrade, the MTProto proxy switches to the new **Auto** transport, which tries WebSocket first, then TCP.
+- The JSON in a set's **Import/Export** leaves out the settings of features that are turned off.
+
+### Fixed
+
+- Some Telegram clients could not connect to the MTProto proxy, because it accepted only one of Telegram's three transport variants.
+- On some OpenWrt setups, the traffic of a set routed to an upstream SOCKS5 proxy skipped the proxy and went straight out, because two kernel modules were missing. [#221](https://github.com/DanielLavrushin/b4/issues/221)
 
 ## [1.61.4] - 2026-05-10
 
-- FIXED: **False "another b4 instance is already running" error** - b4 could refuse to start after a crash, after restarting from the Web UI, or when running inside containers (for example on MikroTik), even when no other b4 was actually running. The single-instance check is now reliable in those cases.
+### Fixed
+
+- b4 could refuse to start with a false "another b4 instance is already running" error after a crash, after a restart from the web interface, or inside containers such as on MikroTik.
 
 ## [1.61.3] - 2026-05-09
 
-- ADDED: **Custom payload for UDP fake packets** - new "Fake Packet Payload" picker in the UDP fake settings of each set. Choose a captured `.bin` (uploaded in Settings → Payloads, or auto-captured from live QUIC traffic) to use as the body of fake UDP packets. Empty = zero fill (previous behavior). The Settings → Payloads upload form now has an explicit TLS/QUIC protocol selector.
-- ADDED: **Auto-generated QUIC Initial payload** - new "(auto: QUIC Initial)" option in the UDP Fake Packet Payload picker. b4 generates a fresh randomized QUIC Initial packet for every fake, with random connection IDs each time, so no upload is needed and the bytes can't be fingerprinted by repetition. Recommended packet size for this mode is 1200 bytes. Works with any Faking Strategy (None / TTL / Checksum).
-- ADDED: **Bundled QUIC presets** - two ready-to-try options ("QUIC preset 1" and "QUIC preset 2") in the UDP Fake Packet Payload picker. Pick one if the auto option does not work for your provider; if neither helps, upload your own `.bin`.
-- ADDED: **MTProto relay setup helper** — new "?" button next to the DC Relay field in Settings → MTProto Proxy. Opens a popup with the current Telegram data center list and ready-to-copy commands for the VPS, so nothing has to be calculated or guessed by hand.
-- ADDED: **Single-instance enforcement** — b4 now refuses to start if another b4 process is already running on the same host, exiting with a clear message and the existing PID.
-- ADDED: **Sequence overlap length for fragmentation** - new "Overlap Length" field for Combo and Disorder splitting. b4 prepends the configured number of pattern bytes to one of the real fragments with its TCP sequence number shifted back by the same amount, in addition to (or instead of) the existing fake-packet overlap.
-- ADDED: **AI field explanations (experimental)** - small AI buttons next to some fields open a popup that explains what the field does. Work in progress: only a few fields are covered and answers can be wrong or incomplete. Not recommended to rely on yet.
-- IMPROVED: **Web UI error messages** - when saving a configuration or a set fails, the Web UI now shows a clear reason (for example, a port is already in use).
-- FIXED: **Upstream SOCKS5 routing failed on BusyBox routers** — sets routed through an upstream SOCKS5 proxy were missed by the 1.49.0 fix and still hit the `BusyBox` table-ID limit. Now kept within the safe range too.
-- FIXED: **QUIC blocking sometimes does not work for YouTube on phones** - newer Chrome versions on Android use a QUIC variant b4 didn't recognize, so "block all QUIC" let those packets through and YouTube kept working in the browser. b4 now recognizes any QUIC packet, current or future.
-- FIXED: **Routing fails on MikroTik containers when interface names contain dashes** - interface names with dashes were rejected by `nft`. b4 now quotes interface names in routing rules, so any name works.
-- FIXED: **Interface routing did not work on MikroTik container bridges** - when several container interfaces shared one bridge with a single upstream gateway, the per-set default route was added without a gateway and traffic went nowhere. b4 now reuses the system gateway when it is reachable through the chosen interface.
-- FIXED: **Backup file could not be selected in Safari on macOS** - the file picker greyed out the downloaded `.tar.gz` backup file. Selecting the backup now works in Safari.
-- FIXED: **Voice calls, screen share and gaming could break in UDP fake mode** - b4 was splitting all matched UDP packets, which could disrupt voice, screen share and gaming traffic. Only QUIC packets are split now; the rest pass through untouched.
+### Added
+
+- A set's UDP fakes can carry a payload picked in **Fake Packet Payload**: a captured or uploaded `.bin`, a random QUIC Initial made for each fake, or a bundled QUIC preset. Uploads under **Payloads** are marked TLS or QUIC.
+- A **?** button next to **DC Relay** under **Settings, MTProto Proxy** shows the current Telegram data center list and ready-to-copy commands for the VPS.
+- b4 refuses to start when another b4 process is already running on the same host, and names that process's PID.
+- **Combo** and **Disorder** splitting have an **Overlap Length**: that many pattern bytes go in front of a real fragment, with its sequence number shifted back by the same amount.
+- Small AI buttons next to some fields explain what the field does. This is experimental: few fields are covered and the answers can be wrong.
+
+### Changed
+
+- When saving the configuration or a set fails, the web interface shows the reason, such as a port already in use.
+
+### Fixed
+
+- Routing a set through an upstream SOCKS5 proxy failed on BusyBox routers, because the 1.49.0 fix for routing table numbers had missed it.
+- Blocking all QUIC let through the newer QUIC variant that Chrome on Android uses, so YouTube on phones kept using QUIC.
+- On MikroTik containers, routing failed for interface names with dashes, and interface routing went nowhere when several container interfaces shared one bridge with a single gateway.
+- Safari on macOS greyed out the downloaded `.tar.gz` backup in the restore file picker.
+- In UDP fake mode b4 split every matched UDP packet, which could break voice calls, screen sharing and games.
 
 ## [1.60.1] - 2026-05-02
 
-- ADDED: **Per-set strategy escalation** - each set now has an "Escalation" tab with an "Escalate to" dropdown. Pick another set as the failover target: if the current set keeps failing for a destination, b4 switches that destination to the chosen set on the next connection. Tracking is per-hostname, so a problem with one site does not affect others that happen to share the same server IP. How quickly to escalate and how long to keep the switch are configurable per set (defaults: an hour, then retry). Lets you chain several strategies instead of giving up after the first one fails.
-- ADDED: **Share MTProto proxy connection** - new "Share connection link" button in Settings > MTProto Proxy. Opens a dialog with a `tg://` connection link, a QR code (scan with your phone camera to add the proxy to Telegram), and Copy / Open in Telegram / Share buttons.
-- FIXED: **Service crashed at startup on routers without `ipset`** - "Enable Packet Duplication" could prevent b4 from starting on routers where `ipset` is not installed (some Keenetic / Merlin setups). b4 now logs a warning and keeps running. For full-connection duplication, install ipset (Keenetic / Entware: `opkg install ipset`).
-- FIXED: **"Update" button in Web UI didn't actually update b4** - on some setups clicking "Update" did nothing and the version stayed the same after restart.
-- FIXED: **IPv6 addresses on the Traffic page were cut off** - when adding an IPv6 address from the Traffic page, the address was shown as just `2a01` and the suggested CIDRs included the port number. Adding to a set, IPInfo lookup, and ASN enrichment now work for IPv6 too.
+### Added
+
+- A set's **Escalation** tab picks a set to fall back to: when the set keeps failing for a host, b4 moves that host to the other set on its next connection, for an hour by default.
+- **Share connection link** under **Settings, MTProto Proxy** shows a `tg://` link with a QR code to scan with a phone, and buttons to copy it, open it in Telegram or share it.
+
+### Fixed
+
+- **Enable Packet Duplication** could stop b4 from starting on routers without `ipset`, such as some Keenetic and Merlin setups. Duplicating whole connections needs `ipset` (`opkg install ipset` on Keenetic or Entware).
+- On some setups, **Update** in the web interface did nothing, and the version stayed the same after a restart.
+- Adding an IPv6 address from the **Traffic** page cut it to its first group, such as `2a01`, put the port into the suggested CIDRs and broke its IPInfo and ASN lookups.
 
 ## [1.50.1] - 2026-04-29
 
-- FIXED: **Upstream SOCKS5 routing didn't actually proxy** — when a set was configured to route through a SOCKS5 server (local or remote), traffic was silently going direct instead of through the proxy. Connections from the same machine running B4 now reach the upstream proxy correctly.
-- FIXED: **Duplicate masquerade rule when routing is enabled with IPv6** — on `nftables` setups with both IPv4 and IPv6 enabled, the per-set NAT chain ended up with two byte-identical `masquerade` rules. The rule is now scoped per address family (`meta nfproto ipv4` / `ipv6`), matching the split already used for the mark rules.
-- IMPROVED: **Error log keeps history across restarts** - the error log was wiped on every B4 start, so any trace of a crash was lost as soon as B4 auto-restarted.
-- CHANGED: **"Connections" page renamed to "Traffic"** - clearer name for the page that shows live network activity. Old `/connections` links still work and redirect to the new page.
-- IMPROVED: **Traffic page works at any log level** — previously, raising the log level above `Info` made the Traffic page stop updating. The UI now gets traffic events through a separate channel, so you can keep the log level on `Warn` or `Error` to quiet down system logs without losing the live traffic view. Opening the Traffic page also instantly shows the last few hundred recent events instead of waiting for new traffic.
+### Changed
+
+- The error log keeps its history across restarts instead of being wiped at every start, so a crash leaves a trace.
+- The **Connections** page is renamed **Traffic**, and old `/connections` links redirect to it.
+- The **Traffic** page keeps updating at any log level, such as `Warn` or `Error`, and shows the last few hundred events as soon as it opens.
+
+### Fixed
+
+- A set routed through an upstream SOCKS5 server, local or remote, sent its traffic directly instead of through the proxy.
 
 ## [1.50.0] - 2026-04-27
 
-- IMPROVED: **Refreshed UI** — the whole web UI has been redesigned: cleaner typography, tighter spacing, calmer colour palette, larger and easier-to-read numbers, and better keyboard accessibility throughout.
-- ADDED: **Sequence overlap pattern in Combo fragmentation** — the Combo fragmentation strategy can again be tuned from the UI: choose a preset (TLS handshake, HTTP GET, zeros) or build a custom byte pattern for the overlap step.
-- ADDED: **Upstream SOCKS5 routing** - per-set routing can now forward matched traffic to a SOCKS5 proxy (local or remote) instead of out a network interface. Use this to chain b4 with Xray, sing-box, or any SOCKS5-speaking proxy. Pick "Upstream SOCKS5 proxy" mode in the routing tab and set the host and port.
+### Added
+
+- **Combo** fragmentation's overlap can be tuned in the web interface again, with a preset (TLS handshake, HTTP GET, zeros) or a custom byte pattern.
+- A set's **Routing** tab can forward matched traffic to a local or remote SOCKS5 proxy, such as Xray or sing-box, with the **Upstream SOCKS5 proxy** mode.
+
+### Changed
+
+- The web interface is redesigned, with cleaner type and spacing, calmer colours, larger numbers and better keyboard access.
 
 ## [1.49.1] - 2026-04-20
 
-- FIXED: **Routing stopped working after restarting tun2socks / sing-box** - if the proxy's network interface was recreated, or wasn't ready yet when B4 started, traffic routing silently broke until B4 was restarted too. B4 now detects these changes automatically and restores routing within a second.
-- FIXED: **Connections page - Aggregated view layout** - the set name was shown twice when a set matched both by domain and by IP, and the SOCKS5 "proxy" label could overlap the domain column.
+### Fixed
+
+- Routing broke until b4 was restarted when the proxy's network interface, such as that of tun2socks or sing-box, was recreated or was not ready when b4 started.
+- In the **Aggregated** view of the **Connections** page, the set name showed twice when a set matched by both domain and IP, and the SOCKS5 proxy label could overlap the domain.
 
 ## [1.49.0] - 2026-04-18
 
-- ADDED: **Manual devices** — you can now add IP addresses of devices behind another router that are not visible in the ARP table. Added devices appear in device lists and can be used for per-device filtering and MSS clamping. Find it in Settings → Device Filtering. ([#185](https://github.com/DanielLavrushin/b4/issues/185))
-- ADDED: **Fake payload from domain** — new option in `TCP` fake settings to generate a fake TLS handshake from any domain you type (e.g. `example.com`).
-- REMOVED: **Separate device alias file** — device names are now part of the main config. The old `mac_aliases.json` file is no longer used (aliases are migrated into the config on upgrade).
-- FIXED: **Traffic routing fails on Keenetic routers** — routing table IDs could be generated above `255`, which is not supported on systems using `BusyBox`. Table IDs now stay within the safe range.
-- FIXED: **Fake SYN used the wrong payload** — when `Syn Fake` was enabled, the fake `SYN` packet always used a built-in payload instead of the one selected in the set (custom, captured, or domain-generated).
-- FIXED: **GeoSite routing not working with local DNS proxies** — when the router forwards DNS through a local proxy like `https-dns-proxy`, domains from `GeoSite` categories were not added to routing sets. B4 now intercepts DNS queries earlier so routing works in these setups.
-- FIXED: **Log level "Error" reverted to "Info" after restart** — when the log level was set to `Error` in the UI, it was silently changed back to `Info` on the next start.
-- FIXED: **MTProto images and files not loading** — Telegram uses extra "CDN" data centers (like DC 203) for media that B4 did not know about, so some pictures and files failed to load. B4 now fetches the current Telegram data center list on start (and on demand from Settings → MTProto Proxy → "Refresh Telegram DC list"). ([#190](https://github.com/DanielLavrushin/b4/issues/190))
-- IMPROVED: **Discovery groups domains more consistently** — when one strategy works for all tested domains, they are shown as one group and can be applied together in a single click, instead of being split into separate groups.
-- IMPROVED: **RST protection catches more fake resets** — added extra checks that help tell real resets from injected ones, so fewer connections are killed by DPI.
-- FIXED: **Packet handling on routers with extra firewall marks** — when other services (VPN, QoS, policy routing) set their own marks on packets, B4 did not recognize its own mark. This could cause queued packets to loop and, when traffic routing was enabled, break masquerade on VPN interfaces.
-- ADDED: **Connections page — Aggregated view** — new default view groups packets by device, protocol and domain (or IP when no domain is seen), with an activity chart per group and a side list of devices you can click to filter. The old table is still available under the "Raw feed" tab.
-- ADDED: **Floating save button in set editor** — a save button now stays in the bottom-right corner while editing a set, so you can save without scrolling back to the top.
-- ADDED: **Reset config to defaults is back** — the reset button in Settings → Core Controls has been reworked and returns. Your sets, web server settings, and geo file paths are preserved so the UI stays reachable.
+### Added
+
+- Devices behind another router that are missing from the ARP table can be added by IP under **Settings, Device Filtering**, for per-device filtering and MSS clamping. [#185](https://github.com/DanielLavrushin/b4/issues/185)
+- TCP fake settings can generate a fake TLS handshake from any domain typed in, such as `example.com`.
+- **Refresh Telegram DC list** under **Settings, MTProto Proxy** fetches Telegram's current data center list, which b4 also fetches on every start. [#190](https://github.com/DanielLavrushin/b4/issues/190)
+- The **Connections** page opens in a new **Aggregated** view that groups packets by device, protocol and domain or IP, with an activity chart per group and a device list to filter by. The old table is under **Raw feed**.
+- The set editor has a save button that stays in the bottom-right corner while scrolling.
+- **Reset Config to Defaults** under **Settings, Core Controls** is back, and keeps the sets, the web server settings and the geo file paths.
+
+### Changed
+
+- When one strategy works for every tested domain, **Discovery** shows them as one group that is applied in one click.
+- **RST Injection Protection** uses more checks to tell real resets from injected ones.
+
+### Removed
+
+- The separate `mac_aliases.json` file is gone: device names are stored in the main config, and existing names are moved there on upgrade.
+
+### Fixed
+
+- Traffic routing failed on Keenetic routers, because routing table numbers could go above 255, which BusyBox does not support.
+- With **Syn Fake** on, the fake SYN packet always carried the built-in payload instead of the one picked in the set.
+- When the router forwarded DNS through a local proxy such as `https-dns-proxy`, domains from GeoSite categories were not added to routing sets.
+- The `Error` log level set in the web interface went back to `Info` after a restart.
+- Some Telegram pictures and files did not load through the MTProto proxy, because b4 did not know Telegram's media data centers such as DC 203. [#190](https://github.com/DanielLavrushin/b4/issues/190)
+- When another service, such as a VPN, QoS or policy routing, put its own marks on packets, b4 missed its own mark, so queued packets could loop and masquerade on VPN interfaces broke with routing on.
 
 ## [1.48.1] - 2026-04-05
 
-- ADDED: **UDP Reject mode** — new option for QUIC/UDP handling that sends an ICMP "Port Unreachable" response instead of silently dropping packets. Clients fall back to TCP almost instantly instead of waiting for timeouts.
-- FIXED: **Duplicate devices in device list** — when a device changed its IP address, both old and new IPs appeared as separate entries. Now only the current IP is shown.
+### Added
+
+- A **Reject** option for QUIC and UDP answers matched packets with an ICMP Port Unreachable instead of dropping them, so clients fall back to TCP almost at once.
+
+### Fixed
+
+- A device that changed its IP address appeared twice in the device list, under its old and its new IP.
 
 ## [1.48.0] - 2026-04-05
 
-- ADDED: **Config backup before update** — B4 now automatically saves a copy of your config file before updating (e.g. `b4.json.bak.v1.47.2`), so you can restore it if needed.
-- ADDED: **Backup reminder in update dialog** — a warning in the update dialog reminds you to download a full backup from Settings → Backup before updating.
-- ADDED: **Watchdog** — background service that monitors configured domains and automatically finds a working bypass when DPI starts blocking them. Add domains or URLs to monitor, and watchdog periodically checks connectivity. After consecutive failures, it runs a quick discovery, applies the first working config, and resumes monitoring. Multiple failed domains are healed together in a single discovery run. Domains with the same working strategy are grouped into one set. Configure intervals, retries, and cooldowns in Settings > Discovery. Live status on the new Watchdog page.
-- ADDED: **IP block detection** — B4 can now detect when a destination IP is blocked entirely (not just by domain name). When detected, B4 immediately resets the connection so your device retries faster on a different server instead of waiting for a timeout.
-- ADDED: **RST injection protection** — B4 can now detect and drop fake TCP RST packets injected by DPI systems to kill your connections. Enable per set in TCP settings. Uses three independent checks: TTL fingerprint mismatch, RST arriving before any server response, and multiple RSTs on the same connection.
-- IMPROVED: **Fake strategy settings shown only when relevant** — Sequence Offset now only appears for `Past Sequence` and `Random Sequence` strategies, Timestamp Decrease only for Timestamp strategy. Reduces clutter in the UI.
-- FIXED: **Error when manual IP overlaps with GeoIP** — adding an IP address manually that already exists in a `GeoIP` category within the same set caused a firewall error. Duplicate IPs are now filtered automatically.
-- FIXED: **Traffic routing stops working after ~1 hour** — `GeoIP` addresses and static IPs were added to firewall sets with a `TTL` and silently expired. They are now permanent. DNS-resolved IPs are periodically refreshed before they expire.
+### Added
+
+- Before an update b4 saves a copy of its config file, such as `b4.json.bak.v1.47.2`, and the update dialog suggests downloading a full backup from **Settings, Backup**.
+- **Watchdog** checks listed domains or URLs and, after repeated failures, runs a quick **Discovery** and applies the first working setup. It is configured under **Settings, Discovery** and has its own page.
+- **IP Block Detection** notices when a destination IP is blocked outright and resets the connection, so the device tries another server sooner instead of waiting for a timeout.
+- **RST Injection Protection** in a set's TCP settings drops fake TCP resets injected by DPI, spotted by their TTL, by arriving before any server reply, or by repeating on one connection.
+
+### Changed
+
+- **Sequence Offset** appears only for the **Past Sequence** and **Random Sequence** strategies, and **Timestamp Decrease** only for the Timestamp strategy.
+
+### Fixed
+
+- Adding an IP by hand that a GeoIP category in the same set already held caused a firewall error.
+- Traffic routing stopped working after about an hour, because GeoIP and static IPs were added to the firewall with an expiry.
 
 ## [1.47.2] - 2026-04-01
 
-- IMPROVED: **Discovery tests multiple domains in parallel** — when checking several URLs, discovery now tests all domains at the same time instead of one by one, making it noticeably faster.
+### Changed
+
+- **Discovery** tests several domains at once instead of one by one, which makes it noticeably faster.
 
 ## [1.47.0] - 2026-03-31
 
-- FIXED: **Routing breaks when VPN/WireGuard restarts** — B4 now automatically detects when a network interface changes and refreshes routing rules. Previously, restarting WireGuard (or any VPN) while B4 was running would silently break routing until B4 was restarted.
-- IMPROVED: **Discovery no longer interrupts normal traffic** — discovery now runs on its own isolated flow, so your internet connection stays unaffected while discovery is testing strategies.
-- IMPROVED: **Stopping discovery is now reliable** — cancelling a running discovery now properly cleans up all firewall rules and stops immediately.
-- IMPROVED: **Discovery results grouped by strategy** — when multiple domains share the same bypass strategy, they are shown as one group instead of separate cards. One click applies the config to all domains at once.
-- IMPROVED: **Discovery UI redesigned** — cleaner layout with responsive grid for large screens, simplified logs (button + modal instead of inline panel), and expandable per-domain details during live testing.
-- IMPROVED: **Removed confusing speed numbers from discovery** — raw MB/s values that users mistook for browsing speed are replaced with ranked preset lists and improvement percentages.
-- FIXED: **Discovery history always showed "just now"** — timestamps were not saved correctly, so all history entries appeared as "just now" regardless of when they ran.
-- CHANGED: **Swagger UI moved to documentation site** — the embedded Swagger UI has been removed from the binary to reduce its size (~27MB → ~13MB). API documentation is now available at [docs.b4core.app/swagger](https://docs.b4core.app/swagger) with the ability to connect to a live B4 instance for testing. The `/swagger/` endpoint now redirects to the documentation site.
-- ADDED: **System diagnostics in UI** — new "System Info" button in Settings shows full system diagnostics: OS, kernel, memory, network interfaces, firewall status with NFQUEUE test, kernel modules, installed tools, geodata status, storage, and all B4 paths. Copy as JSON for easy sharing.
-- REMOVED: **Config reset button** — the "Reset to defaults" function has been removed from Settings.
-- CHANGED: **Empty configuration sets allowed** — B4 no longer forces a default empty set to exist. You can now delete all sets, and the Sets page shows a clean empty state with a "Create Set" button.
-- IMPROVED: **Config file is now compact** — only settings you changed are saved to the config file. Default values are no longer written, making the file much shorter and easier to read.
+### Added
+
+- **System Info** in **Settings** shows full system diagnostics, such as the kernel, network interfaces, firewall status with an NFQUEUE test and b4's paths, and copies them as JSON for sharing.
+
+### Changed
+
+- **Discovery** tests on its own isolated path, so the network's normal traffic is not affected while it runs.
+- The **Discovery** page is redesigned: domains that share a strategy form one group applied in one click, logs open in a window, and raw MB/s figures are replaced by ranked presets and improvement percentages.
+- The built-in Swagger UI is gone, which shrinks the binary from about 27 MB to 13 MB: the API docs are at [docs.b4core.app/swagger](https://docs.b4core.app/swagger), and `/swagger/` redirects there.
+- All sets can be deleted, since b4 no longer keeps a default set, and an empty **Sets** page offers **Create Set**.
+- The config file stores only the settings that differ from their defaults, so it is much shorter.
+
+### Removed
+
+- The **Reset to defaults** button is gone from **Settings**.
+
+### Fixed
+
+- Restarting WireGuard or another VPN while b4 was running broke routing until b4 was restarted.
+- Cancelling **Discovery** did not reliably stop it at once or remove all of its firewall rules.
+- **Discovery** history showed every entry as run a moment ago, because timestamps were not saved correctly.
 
 ## [1.46.6] - 2026-03-26
 
-- FIXED: **B4 fails to start with large configs** — configs with many sets and hundreds of thousands of IPs caused an error on restart because all IPs were inlined into a single firewall command.
-- FIXED: **Routing skips IP ranges** — when IP ranges (e.g. `10.0.0.0/24`) were added to a set's target IPs, routing silently ignored them and only routed individual IPs. Now all IP ranges are routed correctly.
-- FIXED: **Update from UI not working** — updating from the web interface appeared successful but the version stayed the same. Now updates from UI work correctly on all devices.
-- FIXED: **Pre-release versions shown as downgrade** — selecting a pre-release version (e.g. `1.46.6rc`) in the update dialog incorrectly showed "Downgrade" instead of "Upgrade".
+### Fixed
+
+- With many sets and hundreds of thousands of IPs, b4 failed to start after a restart, because all the IPs went into a single firewall command.
+- Routing ignored IP ranges, such as `10.0.0.0/24`, in a set's target IPs and routed only single IPs.
+- Updating from the web interface appeared to succeed, but the version stayed the same.
+- The update dialog showed a prerelease version, such as `1.46.6rc`, as a downgrade.
 
 ## [1.46.5] - 2026-03-23
 
-- FIXED: **Domain-based routing not working with local DNS** — on routers running their own DNS (e.g. `dnsmasq` on `OpenWrt`), B4 couldn't learn which IPs belong to routed domains. Now it works correctly regardless of where DNS is handled.
-- FIXED: **Routing stops working after toggling it off and on** — re-enabling routing on a set required waiting for fresh DNS traffic before it would take effect. Now B4 immediately resolves the domains and populates the routing table.
-- FIXED: **Tables monitor not detecting missing DNS routing rule** — the firewall monitor now checks that the OUTPUT chain DNS queue rule is in place, and triggers re-setup if it gets removed.
+### Fixed
+
+- Domain-based routing failed on routers that run their own DNS, such as `dnsmasq` on OpenWrt, and the firewall monitor did not restore b4's DNS rule for routing when it went missing.
+- A set whose routing was turned off and on again did not route until new DNS traffic came in.
 
 ## [1.46.0] - 2026-03-22
 
-- ADDED: **MTProto proxy** — built-in Telegram `MTProto` proxy with fake-TLS obfuscation. Telegram traffic is wrapped in TLS that looks like a normal HTTPS connection. Configure in Settings with a Fake SNI domain and generated secret, then paste the secret into Telegram's proxy settings.
-- ADDED: **DC relay** — when Telegram DCs are blocked by IP, route through an external relay.
-- ADDED: **SOCKS5 first-packet fragmentation** — the SOCKS5 proxy now splits the first data packet for matched connections, improving bypass for non-TLS protocols.
-- IMPROVED: **Non-TLS traffic handling** — learned IP matches now keep fragmentation and desync active even when traffic is not TLS.
+### Added
+
+- A built-in Telegram **MTProto Proxy** disguises Telegram traffic as HTTPS and can go through an external **DC Relay** when Telegram's data centers are blocked by IP. It is set up in **Settings** with a fake SNI domain and a generated secret to paste into Telegram.
+- The SOCKS5 proxy splits the first data packet of matched connections, which helps with protocols other than TLS.
+
+### Changed
+
+- Connections matched by a learned IP keep fragmentation and desync on even when their traffic is not TLS.
 
 ## [1.45.1] - 2026-03-21
 
-- ADDED: **API documentation** — interactive Swagger UI is now available at `/swagger/` to browse and test all REST API endpoints.
+### Added
+
+- An interactive Swagger UI at `/swagger/` lists every REST API endpoint and can test them.
 
 ## [1.45.0] - 2026-03-21
 
-- ADDED: **Traffic routing** — you can now route traffic for matched domains through a specific network interface. When a set matches a domain, B4 resolves its IPs and directs that traffic through the chosen output interface. Configure it in the `Routing` tab when editing a set.
-- ADDED: **Position randomization** — SNI split position, OOB position, and TLS record position now support ranges. Each connection picks a random value within the range, making traffic harder for DPI to fingerprint.
-- ADDED: **Strategy randomization pool** — you can now select multiple splitting strategies and B4 will randomly pick one per connection. Constantly changing how packets are split confuses stateful DPI.
-- ADDED: **Combo/Disorder timing ranges** — First Segment Delay, Jitter Max, and Fakes Per Segment now support ranges. Each connection gets different timing and fake packet counts, preventing DPI from building a consistent traffic fingerprint.
-- IMPROVED: **Fake packets now match real connection fingerprint** — fake desync packets (RST, FIN, ACK) now preserve the original TCP options (timestamps, window scale, SACK) instead of stripping them. This prevents DPI from detecting fakes by comparing TCP header fingerprints.
-- IMPROVED: **Dynamic fake TTL** — fake packet TTL is now clamped to never exceed the real packet's TTL, preventing impossible TTL values that DPI systems use to identify forged packets.
-- IMPROVED: **Dual fake-packet evasion** — fake packets now use both corrupted checksums and dynamic TTL together, making them harder for DPI to accept while ensuring the real server drops them.
-- IMPROVED: **TLS info shown on all packets** — domain name and TLS version now appear in logs for every packet in a connection, not just the first one.
-- IMPROVED: **Managing large domain/IP lists** — added a bulk text editor for domains and IPs, and long lists now collapse with a "+N more" button.
-- FIXED: **Payload handling** — fixed incorrect filenames on upload/download and unnecessary loading errors when sets are disabled.
-- FIXED: **Syslog crashes B4 in Docker** — enabling syslog in a `Docker` container caused B4 to crash-loop because the syslog socket doesn't exist. Now B4 logs a warning and continues without syslog.
-- FIXED: **Time zone not applying on routers** — setting a time zone in `Settings` had no effect on some routers (e.g. `Keenetic`) because the device lacked timezone data.
-- FIXED: **Log level resets to Info on restart** — changing the log verbosity in `Settings` did not persist across service restarts.
-- FIXED: **Invalid TLS certificate crashes B4** — setting a wrong certificate or key path in `Settings` caused B4 to crash on next restart. Now it logs a warning and falls back to `HTTP`.
-- IMPROVED: **ASN data now persists on the router** — enriched ASN information is stored server-side, so it stays consistent across all browsers and devices.
-- ADDED: **Inline ASN enrichment** — you can now enrich destination IPs with ASN data directly from the connections table without opening the Add IP dialog.
+### Added
+
+- A set's **Routing** tab sends the traffic of its matched domains through a chosen network interface, using the IPs b4 resolves for them.
+- The SNI, OOB and TLS record split positions, **First Segment Delay**, **Jitter Max** and **Fakes Per Segment** accept ranges, and several splitting strategies can be selected, so each connection gets a random pick.
+- Domains and IPs can be edited as bulk text, and long lists collapse behind a **+N more** button.
+- ASN details for a destination IP can be looked up straight from the connections table, and they are stored on the router, so every browser and device sees the same.
+
+### Changed
+
+- Fake packets look more like the real connection: RST, FIN and ACK fakes keep the original TCP options, their TTL never exceeds the real packet's, and they combine a bad checksum with that TTL.
+- The log shows the domain and TLS version for every packet of a connection, not only the first.
+
+### Fixed
+
+- Uploaded and downloaded payloads got wrong file names, and disabled sets caused needless payload loading errors.
+- Turning on syslog in a Docker container made b4 crash in a loop, because the syslog socket does not exist there.
+- The time zone set in **Settings** had no effect on some routers, such as Keenetic, that lack time zone data.
+- The log level set in **Settings** went back to Info after a service restart.
+- A wrong certificate or key path in **Settings** made b4 crash on the next restart.
 
 ## [1.44.1] - 2026-03-15
 
-- ADDED: **Time zone setting** — log timestamps now use your system's local time by default instead of UTC. You can also pick a specific time zone in Settings > Logging.
-- FIXED: **Payload download not working** — clicking "Download" on a captured payload in the web UI did nothing. Now downloads work correctly.
-- FIXED: **Uploaded payload filename** — when uploading a payload file, the saved name included the file extension twice (e.g. `tls_payload_bin.bin`). Now it saves correctly (e.g. `tls_payload.bin`).
-- FIXED: **Update from web UI not applying** — clicking "Update" in the web interface would appear to run, but B4 would restart with the same version.
-- FIXED: **DPI bypass not working with TLS version set to "Any"** — when a set's TLS version filter was set to "Any", connections would break after the initial handshake. Selecting a specific version (1.2 or 1.3) worked fine. The issue was that encrypted data packets were being incorrectly processed as if they were new TLS handshakes.
-- FIXED: **B4 crashing on some Xiaomi routers (BE7000, AX3200 and similar)** — B4 would fail to start with a "Could not process rule" error because it incorrectly chose nftables on devices where nftables isn't fully supported. B4 now tests whether nftables actually works before using it, and automatically falls back to iptables-legacy when needed. (issues [#132](https://github.com/DanielLavrushin/b4/issues/132) [#133](https://github.com/DanielLavrushin/b4/issues/133))
-- ADDED: **Firewall engine selector** — a new "Firewall Engine" option in Settings lets you manually choose between `nftables`, `iptables`, or `iptables-legacy` if auto-detection doesn't work for your device.
+### Added
+
+- A specific **Time zone** for the logs can be picked under **Settings, Logging**.
+- **Firewall Engine** in **Settings** picks `nftables`, `iptables` or `iptables-legacy` by hand when automatic detection does not work for a device.
+
+### Changed
+
+- Log timestamps use the system's local time instead of UTC.
+
+### Fixed
+
+- **Download** on a captured payload did nothing, and an uploaded payload was saved with its extension twice, such as `tls_payload_bin.bin`.
+- **Update** in the web interface seemed to run, but b4 restarted with the same version.
+- With a set's TLS version filter on **Any**, connections broke right after they opened, because encrypted data packets were handled as new TLS handshakes.
+- b4 failed to start on some Xiaomi routers, such as the BE7000 and AX3200, with a "Could not process rule" error, because it picked nftables where nftables does not fully work. [#132](https://github.com/DanielLavrushin/b4/issues/132), [#133](https://github.com/DanielLavrushin/b4/issues/133)
 
 ## [1.43.0] - 2026-03-14
 
-- ADDED: **Language selection** — you can now switch the web interface language in Settings. English and Russian are available.
-- FIXED: **Update stuck on "Waiting for service to restart"** — when login protection was enabled, the update process would get stuck polling forever after the service restarted.
-- FIXED: **Excessive logging under heavy traffic** — on busy routers, packet queue overflows could flood the log with repeated error messages, wasting CPU and potentially making the situation worse. These messages are now rate-limited.
-- FIXED: **TLS version not shown for some UDP connections** — QUIC (UDP) connections would sometimes show a blank TLS version in the log and connections table, even though they always use TLS 1.3. Now all QUIC traffic correctly displays its TLS version.
+### Added
+
+- The web interface can be switched between English and Russian in **Settings**.
+
+### Fixed
+
+- With a web interface login set, an update got stuck on "Waiting for service to restart" forever.
+- On busy routers, packet queue overflows flooded the log with repeated errors and wasted CPU.
+- Some QUIC connections showed a blank TLS version in the log and the connections table.
 
 ## [1.42.1] - 2026-03-13
 
-- FIXED: **B4 not capturing traffic on older routers** — on some routers with older kernels (e.g. ASUS RT-AC68U), B4 would start but show no connections. The fix ensures B4 properly registers itself with the system's packet filtering, so traffic is captured without needing any workarounds.
-- FIXED: **Copy JSON not working on Safari/Mac** — the "Copy JSON" button in Import/Export now works reliably on Safari and other browsers that restrict clipboard access.
+### Fixed
+
+- On some routers with older kernels, such as the ASUS RT-AC68U, b4 started but captured no traffic.
+- **Copy JSON** in **Import/Export** did not work in Safari on Mac.
 
 ## [1.42.0] - 2026-03-11
 
-- ADDED: **Backup & Restore** — you can now download a full backup of your B4 configuration and restore it later. Go to Settings > Backup to download a `.tar.gz` file with your config, discovery history, detector history, device aliases, and captured payloads. To restore, just upload a previously downloaded backup and restart B4.
-- ADDED: **Web UI login protection** — you can now set a username and password to protect the B4 web interface. Useful when B4 is installed on a VPS or accessible from the internet. Set it up in Settings > Web Server > Authentication, or during installation. When enabled, a login page appears before you can access the dashboard.
-- ADDED: **TLS version filter** — you can now assign a set to only handle TLS 1.2 or TLS 1.3 traffic. This is useful when the same domain uses different TLS versions on different devices (e.g., a smart TV using TLS 1.2 vs a browser using TLS 1.3) and each needs a different bypass strategy. Set the filter in `Targets > TLS Version Filter`. Leave it on "Any" to match all traffic as before.
-- ADDED: **TLS version in Connections table** — the connections log now shows the detected TLS version (1.2 or 1.3) as a badge next to the domain name, so you can see which version each connection uses.
-- ADDED: **Discovery sets TLS filter automatically** — when you run Discovery with a specific TLS version (TLS 1.2 or TLS 1.3), the resulting set will automatically have the matching TLS filter applied.
-- IMPROVED: **Import/Export now shows a clear success message** — after importing a set configuration, a green banner confirms the import worked and reminds you to save. Previously, the page would silently switch to another tab, which was easy to miss.
+### Added
+
+- **Settings, Backup** downloads a `.tar.gz` with the config, the **Discovery** and detector history, device names and captured payloads, and restores it from an upload followed by a restart of b4.
+- The web interface can be protected with a username and password under **Settings, Web Server, Authentication** or during installation.
+- **TLS Version Filter** under **Targets** limits a set to TLS 1.2 or 1.3 traffic, a **Discovery** run for one version sets it on its result, and the connections log shows each connection's TLS version.
+
+### Changed
+
+- After an import in **Import/Export**, a green banner confirms it and reminds the user to save, instead of the page silently switching to another tab.
 
 ## [1.41.0] - 2026-03-09
 
-- ADDED: **DPI Detector results are now saved** — after running detection tests, your results are saved and shown in a "Previous Results" section. You can expand any past run to see full details, or delete individual entries.
-- ADDED: **DPI Detector remembers your test selection** — the test toggles (DNS, Domains, TCP, SNI) are now remembered between visits.
-- ADDED: **Discovery results are now saved** — when Discovery finishes testing a domain, the results are kept on the server. Refreshing the page or coming back later will show your previous results in a "Previous Results" section at the bottom.
-- ADDED: **Auto-reconnect to running Discovery** — if you refresh the page while Discovery is running, it automatically reconnects and shows progress. No more lost sessions.
-- ADDED: **Use strategies from past results** — you can apply a working strategy from a previous Discovery run without re-testing. Just expand the domain and click "Use This Strategy".
-- ADDED: **Re-test and manage history** — each past result has a "Re-test" button to quickly run Discovery again for that domain. You can also delete individual results or clear all history.
-- ADDED: **Duplicate domain warning** — when adding a domain or IP to a set, B4 now warns you if it already exists in another set (including domains inside GeoSite categories). This helps avoid accidental overlaps between sets.
-- FIXED: **Wrong set assigned to traffic** — in rare cases, traffic could be matched to the wrong set when multiple sets had overlapping IP ranges (e.g., a set with specific IPs and another with broad geo-IP categories like "cloudflare"). The most specific match now always wins. Also, subsequent TCP packets now correctly use the set that was previously identified by domain name, instead of falling back to a less accurate IP-only match.
-- FIXED: **DNS check no longer gives false "poisoned" results** — if your router uses DoH, DNSCrypt, or another encrypted DNS, Discovery would incorrectly report DNS as poisoned (because IPs didn't match exactly). Now it actually checks whether the IPs work, not just whether they match.
-- FIXED: **ISP block pages no longer count as "success"** — previously, if the ISP returned a block page (with valid HTML), Discovery could mistakenly think the bypass worked. Now it detects Russian ISP block pages and correctly marks them as failed.
-- FIXED: **Discovery hangs after detecting DNS poisoning** — when DNS bypass strategies (fragmented queries, alternative servers) got no response, the lookup had no timeout and would wait forever. Now properly times out after 10 seconds per attempt.
-- IMPROVED: **Discovery is much faster** — removed unnecessary DNS lookups on every test, added early exit when a strategy clearly doesn't work, and limited IP fallback retries. Failed presets now take ~5s instead of ~35s.
-- IMPROVED: **IP-blocked domains detected and skipped** — when a domain is completely blocked at the network level (like Instagram in some regions), Discovery now detects this early, shows a "Blocked" badge, and skips the extended search instead of wasting time testing 100+ strategies that can't work.
-- IMPROVED: **Clearer error messages** — instead of raw technical errors like "context deadline exceeded", you now see human-readable messages like "connection timed out" or "connection reset by DPI/firewall".
-- IMPROVED: **Better firewall error messages** — errors now show which rule failed and why, instead of just "exit status x".
+### Added
+
+- **DPI Detector** results are saved under **Previous Results**, where past runs can be expanded or deleted, and the page remembers which tests were selected.
+- **Discovery** keeps its results on the router under **Previous Results**, where a past strategy can be applied without re-testing, a domain re-tested or entries deleted, and a page refresh during a run reconnects to it.
+- Adding a domain or IP to a set warns when another set already has it, including inside GeoSite categories.
+
+### Changed
+
+- A failed **Discovery** preset takes about 5 seconds instead of 35.
+- **Discovery** spots a domain blocked by IP early, marks it **Blocked** and skips the extended search for it.
+- Errors read in plain words, such as "connection timed out" instead of "context deadline exceeded", and firewall errors name the rule that failed and why.
+
+### Fixed
+
+- Traffic could get the wrong set when sets had overlapping IP ranges, and later packets of a connection matched by domain could fall back to a set chosen by IP alone.
+- **Discovery** reported DNS as poisoned on routers using encrypted DNS such as DoH or DNSCrypt, and could count a Russian provider's block page as a working bypass.
+- **Discovery** could hang after detecting DNS poisoning, because its DNS workarounds waited for an answer with no timeout.
 
 ## [1.40.0] - 2026-03-08
 
-- ADDED: **Mass delete sets** — you can now select multiple sets at once and delete them all together. Click the "Select" button in the toolbar, check the sets you want to remove, then click "Delete". Includes "Select All" for quick bulk cleanup.
-- ADDED: **Multidisorder mode** — sends fake overlap packets before every real segment (not just the first one), flooding DPI with garbage data so it can't reassemble your traffic correctly. Enable "Fake Per Segment" in Combo or Disorder fragmentation settings and choose how many fakes to send per segment.
-- ADDED: **New fake payload types** — two new options in Faking settings: "All Zeros" (sends empty-looking data) and "Inverted Original" (sends a flipped copy of the real data). Some networks respond better to these than the default payloads.
-- ADDED: New Discovery presets for multidisorder mode — Discovery can now automatically test these new techniques when searching for the best bypass configuration.
-- ADDED: **Upload GeoIP/GeoSite files** — you can now upload `.dat` files directly from your computer using the "Upload" button in `Settings > Geo Databases`.
-- ADDED: **TCP Port Filter** — B4 no longer only captures TCP port 443. You can now configure custom TCP ports per set (e.g., `80,5222,8000-9000`) in the TCP settings tab, just like UDP. Port 443 is always included. Firewall rules, packet processing, and the monitor all update automatically — no restart needed. Useful for services like Telegram (port 5222), WhatsApp (5222-5223), Signal (4433), XMPP, and others that use non-443 TCP ports.
-- CHANGED: **Main Set removed** — there is no longer a special "main" set. All sets are now equal and independent. Your existing main set will be converted into a regular set automatically.
-- CHANGED: **Connection Bytes Limits moved to Settings** — TCP and UDP connection bytes limits are now in `Settings > Core > Queue Settings` instead of being tied to a specific set.
-- IMPROVED: **Device list sorting** — devices are now sorted alphabetically by name, with selected devices always shown at the top for easier access.
-- FIXED: **Set Import not working on Android** — pasting a set configuration from the clipboard was not possible on Android devices.
-- IMPROVED: **Set Import/Export** — the exported JSON is now much shorter and easier to read. Only settings you actually changed are shown; everything else is left out since it uses defaults. A `b4_version` tag is included so you can tell which B4 version a shared set was made with.
-- IMPROVED: **Simpler import flow** — pasting a set JSON now applies it immediately (no more forgetting to click "Apply"). Added Copy and Paste buttons for quick sharing.
-- IMPROVED: **Lower memory usage** — fixed several memory leaks and added automatic memory management.
-- FIXED: **Network interface not visible on MikroTik** — `veth` interfaces (used by MikroTik containers) were incorrectly hidden. They now show up properly in the interface list.
+### Added
+
+- Several sets can be selected and deleted at once with **Select** in the toolbar, and **Select All** picks every set.
+- With **Fake Per Segment** in the **Combo** or **Disorder** settings, b4 sends the chosen number of fake overlap packets before every real segment, not only the first, and **Discovery** tests this mode too.
+- **Faking** has two new fake payload types: **All Zeros** and **Inverted Original**, a flipped copy of the real data.
+- GeoIP and GeoSite `.dat` files can be uploaded from the computer with **Upload** under **Settings, Geo Databases**.
+- A set can capture TCP ports other than 443, such as `80,5222,8000-9000`, with the **TCP Port Filter** on its TCP tab; port 443 is always included, and no restart is needed.
+
+### Changed
+
+- There is no special main set any more: all sets are equal, and an existing main set becomes a regular set.
+- TCP and UDP connection bytes limits moved from the sets to **Settings, Core, Queue Settings**.
+- The device list is sorted by name, with selected devices at the top.
+- An exported set lists only the settings that differ from the defaults, plus a `b4_version` tag, and pasted set JSON applies at once, with buttons to copy and paste it.
+
+### Fixed
+
+- Pasting a set from the clipboard did not work on Android.
+- b4 had several memory leaks that made its memory use grow.
+- `veth` interfaces, which MikroTik containers use, were missing from the network interface list.
 
 ## [1.39.1] - 2026-03-02
 
-- ADDED: **MSS Clamping** — forces smaller packet sizes at the firewall level so that blocked content (like YouTube on smart TVs) can load correctly. Two options: enable **globally** for all devices in `Settings > Network > Global MSS Clamping`, or set a **per-device** size in the `Settings > Device Filtering` table (MSS column). Changes apply instantly without restarting.
-- ADDED: **DPI Detector** — a new page in the sidebar that checks whether your ISP is tampering with your internet traffic. It runs three quick tests: DNS spoofing, blocked website detection, and connection dropping. Helps you see what your ISP is actually doing before and after enabling B4.
-- ADDED: **NAT Masquerade** — B4 can now set up NAT masquerade automatically when running inside containers (Docker, LXC, MikroTik CHR). No more manual scripts — just enable `NAT Masquerade` in `Settings > Feature Flags > Firewall Features` and optionally pick an output interface. Works with both `iptables` and `nftables`. Rules are monitored and auto-restored if they disappear. Also available via CLI: `--masquerade` and `--masquerade-interface`.
-- FIXED: **Custom payloads ignored during Discovery** — selecting custom payloads no longer silently falls back to built-in ones like duckduckgo. Your custom payloads are now properly used in the discovered configuration.
-- FIXED: **Discovery results not working after adding** — configurations that passed during Discovery could fail when actually applied. The tested config now matches exactly what gets saved.
-- FIXED: **TTL detection not working** — the optimal TTL search was not actually changing the fake packet's TTL, making all attempts look the same. Now correctly finds the minimum working TTL for your network.
-- FIXED: **Custom capture payloads lost when adding from Discovery** — configurations using captured payload files (e.g., from the `Capture feature`) would lose the payload reference after being added, causing the bypass to fail. The payload type also didn't show correctly in the set editor until manually reselected. Both are now fixed.
-- ADDED: **Discovery Cache** — Discovery now remembers which bypass strategies worked before. When you run Discovery for a new domain, it tries previously successful configurations first, so you often get a working result quicker.
-- ADDED: **Multi-Domain Discovery** — you can now test multiple domains in a single Discovery run. Add domains or full URLs one by one (they appear as chips for easy management) and B4 will find the best bypass configuration for each one.
-- IMPROVED: **Smarter Discovery** — reworked strategy testing to use real-world technique combinations instead of testing individual tricks in isolation. If Discovery says a strategy works, it should actually work when you add it.
-- IMPROVED: **Smarter TTL in Discovery** — `Discovery` finds the optimal Fake TTL for Combo configurations automatically by scanning through preset TTL values, and tests all faking strategies (including `timestamp`) to pick the most reliable one.
-- IMPROVED: **Fullscreen Discovery Logs** — added a button to view Discovery logs in a large popup window, making long log lines much easier to read.
-- IMPROVED: **Set editor no longer jumps away after saving** — clicking "Save" now keeps you on the same tab and scroll position instead of going back to the sets list. This can help to speed up testing specific configurations.
-- IMPROVED: **Auto-detect config file** — the `--config` flag is no longer required. When omitted, B4 automatically looks for a config file in `/etc/b4/` and `/opt/etc/b4/`. If no config exists yet, B4 picks the best default location and creates one on first run.
-- IMPROVED: SOCKS5 updates (thanks @remmody [#PR64](https://github.com/DanielLavrushin/b4/pull/64))
-- IMPROVED: **Device Discovery** — now works on all routers. B4 reads the system ARP table instead of DHCP lease files, so devices show up regardless of your router brand (Keenetic, MikroTik, OpenWrt, Asus, etc.). Device hostnames are still picked up from DHCP when available.
-- REMOVED: **Decoy SNI Domains** setting from Combo strategy — the decoy packet now uses the same fake payload configured in your Faking settings instead of a separate list of domain names.
+### Added
+
+- **MSS Clamping** makes packets smaller so blocked content such as YouTube on smart TVs loads, for all devices under **Settings, Network** or per device under **Settings, Device Filtering**.
+- The new **DPI Detector** page checks whether the provider tampers with traffic, with tests for DNS spoofing, blocked websites and dropped connections.
+- **NAT Masquerade** under **Settings, Feature Flags** sets up NAT for b4 in a container such as Docker, LXC or MikroTik CHR, also as `--masquerade` and `--masquerade-interface`.
+- **Discovery** remembers the strategies that worked before and tries them first for a new domain.
+- One **Discovery** run can test several domains or full URLs and finds a configuration for each.
+- A button opens the **Discovery** logs in a large window.
+
+### Changed
+
+- **Discovery** tests real-world combinations of techniques instead of single tricks, finds the **Fake TTL** for **Combo** from preset values and tries every faking strategy, `timestamp` included.
+- Saving in the set editor keeps the current tab and scroll position instead of returning to the sets list.
+- The `--config` flag is optional: b4 looks for its config in `/etc/b4/` and `/opt/etc/b4/` and creates one on first run if there is none.
+- The SOCKS5 proxy received updates. ([#64](https://github.com/DanielLavrushin/b4/pull/64), thanks [@remmody](https://github.com/remmody))
+- Devices are found from the system ARP table instead of DHCP lease files, so they show up on any router; their names still come from DHCP when available.
+
+### Removed
+
+- The **Decoy SNI Domains** setting of **Combo** is gone: the decoy packet uses the fake payload set in **Faking**.
+
+### Fixed
+
+- **Discovery** used built-in payloads such as duckduckgo in place of the selected custom ones, and a configuration added from it lost its captured payload file and showed the wrong payload type.
+- A configuration that passed in **Discovery** could fail once added, because the saved configuration differed from the tested one.
+- The TTL search in **Discovery** did not change the fake packets' TTL, so every attempt was the same.
 
 ## [1.38.0] - 2026-02-27
 
-- CHANGED: **Vendor Lookup is now optional** — the ~6MB device manufacturer database is no longer downloaded at startup. Enable it in `Settings > Device Filtering > Vendor Lookup` if you want to see device brand names.
-- ADDED: **TLS Version selector in Discovery** — you can now choose which TLS version (`Auto` / `TLS 1.2` / `TLS 1.3`) to use when probing.
-- ADDED: **SOCKS5 Proxy** — B4 now includes a built-in SOCKS5 proxy server. Apps like browsers, curl, or torrent clients can route traffic through B4 without any system-wide setup. Enable it in `Settings > Network Configuration > SOCKS5 Server`. Supports optional username/password authentication. ([#48](https://github.com/DanielLavrushin/b4/pull/48), thanks [@remmody](https://github.com/remmody))
-- IMPROVED: **Docker support** — detects Docker environment and shows `docker pull` instructions instead of the update button.
-- FIXED: **Settings page crash (white screen) in container environments** — network interface filtering is now container-aware, showing `veth` and other container interfaces when running inside Docker/MikroTik. ([#44](https://github.com/DanielLavrushin/b4/issues/44), thanks [@kakosmakos](https://github.com/kakosmakos))
-- FIXED: **DNS check incorrectly reporting "DNS poisoned"** when everything is actually fine. The check could time out before even trying the system resolver, producing a false alarm. Also improved handling of CDN domains (YouTube, Google, etc.) where different resolvers return different but equally valid IPs. ([#46](https://github.com/DanielLavrushin/b4/issues/46))
+### Added
+
+- **TLS Version** in **Discovery** chooses the TLS version for probing: `Auto`, `TLS 1.2` or `TLS 1.3`.
+- A built-in SOCKS5 server under **Settings, Network Configuration** lets apps such as browsers, curl or torrent clients send traffic through b4, with an optional login. ([#48](https://github.com/DanielLavrushin/b4/pull/48), thanks [@remmody](https://github.com/remmody))
+
+### Changed
+
+- The device manufacturer database, about 6 MB, is not downloaded at startup any more: turn on **Vendor Lookup** under **Settings, Device Filtering** to see device brands.
+- In Docker, b4 shows `docker pull` instructions in place of the update button.
+
+### Fixed
+
+- The **Settings** page crashed to a white screen in containers such as Docker and MikroTik, because the interface list did not expect container interfaces such as `veth`. ([#44](https://github.com/DanielLavrushin/b4/issues/44), thanks [@kakosmakos](https://github.com/kakosmakos))
+- The DNS check could report "DNS poisoned" when DNS was fine: it timed out before trying the system resolver, and CDN domains such as YouTube got different but valid addresses from different resolvers. [#46](https://github.com/DanielLavrushin/b4/issues/46)
 
 ## [1.37.0] - 2026-02-26
 
-- ADDED: **HTTPS/TLS support** for the web interface ([#40](https://github.com/DanielLavrushin/b4/pull/40), thanks [@Shiperoid](https://github.com/Shiperoid)). Configure in Web UI (`Settings > Network > Web Server`) or in the config JSON. The installer auto-detects router certificates on **OpenWrt** and **Asus Merlin** and offers to enable HTTPS during installation.
-- IMPROVED: **Reset Statistics** button on the dashboard — clears all counters without restarting the service. Replaces the redundant restart button (still available in `Settings > Core Controls`).
-- FIXED: **Geo database download failing with 500 error** on routers with limited storage. Improved disk space handling and error reporting.
+### Added
+
+- The web interface can use HTTPS, set under **Settings, Network, Web Server**, and the installer offers it with the router's own certificate on OpenWrt and Asus Merlin. ([#40](https://github.com/DanielLavrushin/b4/pull/40), thanks [@Shiperoid](https://github.com/Shiperoid))
+
+### Changed
+
+- A **Reset Statistics** button on the dashboard clears all counters without a restart and replaces the restart button, which stays under **Settings, Core Controls**.
+
+### Fixed
+
+- Downloading a geo database failed with error 500 on routers with little free storage.
 
 ## [1.36.0] - 2026-02-16
 
-- IMPROVED: **Connections Table** — moved the streaming/paused control from the top control bar to a floating play/stop button in the bottom-right corner of the table for a cleaner UI.
-- IMPROVED: **Set Editor Redesign** — simplified the tab layout from 7 tabs down to 5. `Fragmentation` and `Faking` tabs are now part of the `TCP` section where they belong, since both techniques operate on TCP traffic.
-  - **TCP** tab now has 3 inner tabs: `General` (connection limits, timing, duplication), `Splitting` (all packet splitting strategies), and `Faking` (all evasion techniques in one place).
-  - `Faking` groups related settings into collapsible sections (Fake SNI, SYN Fake, Desync, Window Manipulation, Incoming Response Bypass, ClientHello Mutation) — each section shows its current status at a glance so you can see what's active without opening it.
-  - `UDP`, `DNS`, `Targets`, and `Import/Export` tabs remain unchanged.
+### Changed
+
+- The play and stop control of the **Connections** table is a floating button in its bottom-right corner instead of a control in the top bar.
+- The set editor has 5 tabs instead of 7: **TCP** holds **General**, **Splitting** and **Faking**, and **Faking** groups its settings in collapsible sections that show their status.
 
 ## [1.35.2] - 2026-02-16
 
-- FIXED: All changes being lost and tabs resetting when creating a new `set`. Any edit (switching tabs, adding categories, changing settings) could be randomly undone.
-- FIXED: Custom TCP window values (add/remove) not being saved when using `Oscillate` or `Random` window modes.
-- FIXED: `Packet Duplication` connections showing incorrect data in the connections table.
+### Fixed
+
+- Edits to a new set could be undone at random, and its tabs reset, while it was being created.
+- Custom TCP window values added or removed in the `Oscillate` or `Random` window modes were not saved.
+- **Packet Duplication** connections showed wrong data in the connections table.
 
 ## [1.35.0] - 2026-02-15
 
-- IMPROVED: **Geo Settings** - `GeoSite` and `GeoIP` databases can now be downloaded independently from different sources. You no longer need both files — pick only what you need. Added [b4geoip](https://github.com/DanielLavrushin/b4geoip) as a built-in source option.
-- ADDED: **Packet Duplication** - bypass ISP throttling that works by randomly dropping packets to specific IP ranges (e.g. Telegram subnets). When enabled, B4 sends multiple copies of each outgoing packet so your connection survives even when the ISP drops some of them. Create a separate set with the target IPs, go to TCP settings, and enable Packet Duplication. Set the copy count (2-5 is usually enough). Note: this replaces all other DPI bypass for that set and uses extra bandwidth.
-- FIXED: Some connections to matched domains intermittently showing as "not matched". This was caused by an internal cache issue and learned IP associations being lost when saving settings or updating geo databases.
+### Added
+
+- **Packet Duplication** sends several copies of each packet, against providers that throttle addresses such as Telegram's by dropping packets. It replaces the set's other DPI bypass and uses more bandwidth.
+
+### Changed
+
+- The `GeoSite` and `GeoIP` databases download separately and from different sources, so either can be used alone, and [b4geoip](https://github.com/DanielLavrushin/b4geoip) is a built-in source.
+
+### Fixed
+
+- Connections to matched domains sometimes showed as not matched, because learned addresses were lost when settings were saved or geo databases updated.
 
 ## [1.34.0] - 2026-02-10
 
-- ADDED: **Randomized Segment 2 Delay** - instead of a fixed delay between TCP/UDP segments, you can now set a min–max range. Each packet picks a random delay within your range, making your traffic look more natural and harder for DPI to fingerprint. If both values are the same, it works exactly like before.
-- ADDED: Redesigned `Dashboard` - the dashboard now shows what actually matters:
-  - **Device Activity** - see which devices on your network are connecting to which domains (e.g., your PlayStation, iPhone, or laptop), with connection counts per domain.
-  - **Domains Not In Any Set** - quickly spot domains that aren't covered by any bypass set yet, with one-click "Add to set" buttons.
-  - **Bypass stats** - at a glance, see total connections, how many are being bypassed, and current throughput.
-  - **Active Sets** overview with clickable chips to jump to set configuration.
-- ADDED: The dashboard now tracks all network traffic, not just bypassed connections. This means device activity and domain lists populate even before you configure any sets.
-- IMPROVED: `Set editor` now opens as a full page instead of a popup window, giving you much more space to work with when configuring your bypass sets.
-- ADDED: `TCP Timestamp` faking strategy - a new way to make fake packets look wrong to the real server (so it ignores them) while still fooling DPI. Instead of using a low TTL or wrong sequence number, B4 sends fake packets with an outdated timestamp. Inspired by the [youtubeUnblock](https://github.com/Waujito/youtubeUnblock) project. Select `TCP Timestamp` in the Faking strategy dropdown to use it.
-- FIXED: UDP/QUIC traffic stopping to match after some time. B4 now keeps server-to-domain associations active as long as traffic is flowing, preventing the "works at first, then stops" issue.
-- IMPROVED: Rewrite TLS `ClientHello` payload generation.
+### Added
+
+- **Segment 2 Delay** takes a min-max range, and each packet waits a random delay within it; equal values keep a fixed delay.
+- The redesigned **Dashboard** shows device activity per domain, domains in no set with **Add to set**, bypass statistics and active sets, and counts all traffic, not only bypassed connections.
+- The **TCP Timestamp** faking strategy sends fakes with an outdated timestamp, so the server ignores them while DPI still reads them, inspired by [youtubeUnblock](https://github.com/Waujito/youtubeUnblock).
+
+### Changed
+
+- The set editor opens as a full page instead of a popup.
+
+### Fixed
+
+- UDP and QUIC traffic stopped matching its set after a while, because b4 dropped the link between a server and its domain even while traffic was flowing.
 
 ## [1.32.0] - 2026-01-19
 
-- ADDED: Validation tries setting in `Discovery` - require multiple successful connections before accepting a configuration as reliable (default: 1, configurable 1-5). Helps filter out unstable bypass methods.
-- IMPROVED: UDP/QUIC filtering now correctly matches packets from domain-specified targets. When you add a domain like `youtube.com`, B4 now tracks which IP addresses belong to that domain and properly handles all UDP traffic to those IPs, not just the initial connection.
-- IMPROVED: Connection logs now show domain names for `QUIC` traffic even when not actively filtering those connections.
-- FIXED: UDP port filtering incorrectly matching unrelated traffic. Previously, specifying port 443 for one service could accidentally match all UDP traffic on port 443, including other services.
+### Added
+
+- **Discovery** can require 1 to 5 successful connections before it accepts a configuration, with the validation tries setting (default 1).
+
+### Changed
+
+- Connection logs show the domain of QUIC traffic that no set handles.
+
+### Fixed
+
+- A set with a domain such as `youtube.com` handled only the first UDP connection to it, not all UDP traffic to that domain's addresses.
+- A UDP port filter such as 443 for one service could match all UDP traffic on that port, including other services.
 
 ## [1.31.2] - 2026-01-16
 
-- FIXED: Custom payload files not working in `Discovery` feature - old configurations with relative paths like `captures/payload.bin` now work correctly.
+### Fixed
+
+- Custom payload files did not work in **Discovery** for older configurations with relative paths such as `captures/payload.bin`.
 
 ## [1.31.0] - 2026-01-11
 
-- ADDED: TCP MD5 option support.
-- ADDED: TCP MD5 preset in Discovery - automatically tests `TCP MD5` bypass strategy during configuration discovery.
-- ADDED: `iptables` multiport module support - improves firewall rule efficiency when filtering multiple ports. The installer now detects and uses the `multiport` extension when available.
-- IMPROVED: Import/Export now automatically migrates old set configurations (pre-v1.29) to the current format when importing.
+### Added
+
+- Support for the TCP MD5 option, which **Discovery** also tests as a strategy.
+
+### Changed
+
+- b4 uses the `iptables` multiport module for rules with several ports when it is available, and the installer detects it.
+- Importing a set made before 1.29 converts it to the current format.
 
 ## [1.30.1] - 2026-01-02
 
-- FIXED: White screen when importing old set configurations (sets saved before v1.29 now automatically convert to current format).
+### Fixed
+
+- Importing a set saved before 1.29 gave a white screen.
 
 ## [1.30.0] - 2026-01-02
 
-- ADDED: Custom payload support in `Discovery` - test bypass strategies using your own captured TLS payloads instead of built-in defaults.
-- FIXED: Crash during `Discovery` when checking status (e.g. clicking "Create Set" or refreshing page while discovery is running. Reported by `Andrew B.`).
+### Added
+
+- **Discovery** can test strategies with captured TLS payloads instead of the built-in ones.
+
+### Fixed
+
+- **Discovery** could crash when its status was checked during a run, for example on **Create Set** or a page refresh (reported by Andrew B.).
 
 ## [1.29.1] - 2026-01-01
 
-- ADDED: Incoming response bypass - defeats TSPU throttling that blocks downloads after ~15KB. I nmost cases - select TCP incoming `fake` for all strategies.
-- FIXED: Discovery progress bar sometimes showing over 100%.
+### Added
+
+- **Incoming Response Bypass** works around throttling that stalls downloads after about 15 KB; the TCP incoming `fake` mode suits most cases.
+
+### Fixed
+
+- The **Discovery** progress bar could go over 100%.
 
 ## [1.28.1] - 2025-12-30
 
-- ADDED: Web server bind address setting - control which network interface the web UI listens on (e.g., `127.0.0.1` for localhost-only access, `0.0.0.0` for all interfaces). Supports `IPv6`.
-- ADDED: Added `Skip DNS` toggle in `Discovery` - useful when you know DNS isn't blocked and want faster results.
-- ADDED: Support for `MIPS` devices with soft float.
-- ADDED: Post-ClientHello RST injection - sends fake connection reset after the initial handshake to confuse DPI systems that track connection state. Enable with `Post-ClientHello RST` toggle in TCP Desync Set settings.
-- IMPROVED: `Discovery` now finds the optimal TTL for a specific network, instead of using a fixed value.
-- IMPROVED: Removed DPI fingerprinting phase from discovery - it was slow and unreliable. Discovery now starts testing bypass strategies immediately, making the process faster.
-- IMPROVED: Shutdown behavior - B4 now waits up to 5 seconds for in-flight packet operations to complete gracefully before terminating.
-- FIXED: DPI bypass not working for LAN devices on routers using `nftables` (e.g., OpenWrt with fw4 firewall).
-- FIXED: TCP `desync` bypass methods (`rst`, `fin`, `ack`, `combo`, `full` modes) were sending malformed packets, causing them to fail or be ignored. Affects both `IPv4` and `IPv6`.
-- FIXED: Restored missing `Packet Mark` setting in Network Configuration - allows customizing the firewall mark used for traffic routing.
-- FIXED: Potential connection hangs caused by packets getting stuck in the processing queue without verdicts being set.
-- FIXED: Memory leak where packet injection operations could continue running after service shutdown, potentially causing crashes or instability during restart.
-- FIXED: Race condition in network interface name caching that could cause incorrect packet filtering decisions on multi-interface systems.
-- FIXED: Fragmented IP packets now bypass B4 processing entirely to prevent incomplete packet inspection and potential protocol violations.
-- REMOVED: Fragmentation strategy `overlap` — functionality merged into `combo`.
-- CHANGED: Fragmentation `combo` now supports decoy packets. When `enabled`, B4 sends a fake `ClientHello` with a whitelisted domain (e.g., ya.ru, vk.com) before sending the real fragmented request. Can be found in Fragmentaiton Tab set settings.
+### Added
+
+- **Bind Address** sets the address the web interface listens on, such as `127.0.0.1` for local access only or `0.0.0.0` for all interfaces, IPv6 included.
+- **Skip DNS** in **Discovery** skips the DNS checks for faster results when DNS is not blocked.
+- Support for MIPS devices with soft float.
+- **Post-ClientHello RST** in the TCP **Desync** settings sends a fake connection reset after the ClientHello, to confuse DPI that tracks connection state.
+
+### Changed
+
+- **Discovery** finds the best TTL for the network instead of using a fixed value.
+- On shutdown, b4 waits up to 5 seconds for packets in progress to finish.
+- Fragmented IP packets pass b4 untouched, since it cannot inspect them in full.
+- **Combo** can send a decoy, a fake ClientHello with an allowed domain such as ya.ru or vk.com, before the real split request; it is on the set's fragmentation tab.
+
+### Removed
+
+- The DPI fingerprinting phase of **Discovery** is gone, as it was slow and unreliable, so testing starts at once.
+- The `overlap` fragmentation strategy is gone; **Combo** covers it.
+
+### Fixed
+
+- DPI bypass did not work for LAN devices on routers with `nftables`, such as OpenWrt.
+- The TCP **Desync** modes `rst`, `fin`, `ack`, `combo` and `full` sent malformed packets over IPv4 and IPv6, so they failed or were ignored.
+- The **Packet Mark** setting was missing from the network settings.
+- Connections could hang when packets got stuck in b4's processing queue.
+- Packet sending could go on after b4 stopped, which could crash it or make it unstable during a restart.
+- On routers with several network interfaces, b4 could make wrong filtering decisions because of a race in its interface name cache.
 
 ## [1.27.2] - 2025-12-27
 
-- FIXED: Adding multiple services with many UDP ports (Discord, WhatsApp, etc.) could cause `iptables` firewall rules to fail, preventing B4 from starting or restarting properly.
+### Fixed
+
+- Adding several services with many UDP ports, such as Discord or WhatsApp, could make the `iptables` rules fail, so b4 did not start or restart.
 
 ## [1.27.1] - 2025-12-27
 
-- FIXED: DNS poisoning detection should correctly compare IP lists from system resolver vs encrypted DNS, even when IPs are returned in different order.
-- FIXED: UDP/QUIC traffic for IP-matched services (like YouTube, Google) could be incorrectly handled when another set had port-based filtering, potentially breaking video streaming.
-- FIXED: A bug when downgrading to a previous version from the web UI would report success but stay on the current version.
+### Fixed
+
+- DNS poisoning detection could report poisoning when the system resolver and encrypted DNS returned the same addresses in a different order.
+- UDP and QUIC traffic of services matched by address, such as YouTube, could be handled wrongly when another set had a port filter, which could break video.
+- Downgrading from the web interface reported success but kept the current version.
 
 ## [1.27.0] - 2025-12-27
 
-- ADDED: `Discovery Logs` panel shows real-time progress during configuration discovery.
-- ADDED: Smart CDN detection for [20+ major services](https://github.com/DanielLavrushin/b4/blob/main/src/discovery/dns.json) (`Instagram`, `Facebook`, `YouTube`, `Twitter/X`, Teleg`r`am, `Discord`, `TikTok`, `Netflix`, `Spotify`, etc). Discovery now uses full IP ranges instead of single DNS results. [View supported services](https://github.com/daniellavrushin/b4/blob/main/src/discovery/dns.json)
-- ADDED: Automatic DNS bypass for CDN services. When geo-blocked IPs are detected, B4 uses fragmented DNS queries to external resolvers to find working servers.
-- IMPROVED: `Discovery` Logs panel now shows more detailed real-time progress during DPI fingerprinting, DNS checks, and strategy testing.
-- IMPROVED: `Discovery` now uses DNS-over-HTTPS (encrypted DNS via `Google`/`Quad9`/`Cloudflare`) to detect when your ISP returns fake IP addresses for blocked sites. When DNS poisoning is detected, B4 connects directly to the real server to continue testing bypass strategies.
-- FIXED: `QUIC` traffic (used by `YouTube`, `Google`, and many modern sites) was ignored when custom UDP ports were configured for any target set. Now UDP port `443` is always monitored regardless of other port settings.
-- FIXED: UDP traffic to specific IPs now correctly uses the set that defines both the IP and port filter together, instead of being handled by a different set that only matches the port.
+### Added
+
+- A **Discovery Logs** panel shows the progress of a run as it happens, through DPI fingerprinting, DNS checks and strategy tests.
+- For [more than 20 major services](https://github.com/DanielLavrushin/b4/blob/main/src/discovery/dns.json) such as Instagram, YouTube, Telegram, Discord and Netflix, **Discovery** tests their full IP ranges instead of a single DNS answer.
+- When it finds geo-blocked addresses for a CDN service, b4 sends split DNS queries to external resolvers to find working servers.
+- **Discovery** detects when the provider returns fake addresses for blocked sites, by checking with encrypted DNS from Google, Quad9 or Cloudflare, and then tests against the real server.
+
+### Fixed
+
+- QUIC traffic, used by YouTube, Google and many other sites, was ignored when any set had custom UDP ports.
+- UDP traffic to an address could go to a set that matched only its port instead of the set that defined both the address and the port.
 
 ## [1.26.3] - 2025-12-26
 
-- FIXED: UDP port ranges (e.g., `50000-50032`) now work correctly on both `iptables` and `nftables` systems. Previously, port ranges could cause startup failures on older devices.
-- IMPROVED: Paste multiple domains at once when adding to `Targets` (separated by spaces, commas, or pipes).
+### Added
+
+- Several domains can be pasted into **Targets** at once, separated by spaces, commas or pipes.
+
+### Fixed
+
+- UDP port ranges such as `50000-50032` could stop b4 from starting on older devices, with `iptables` or `nftables`.
 
 ## [1.26.2] - 2025-12-25
 
-- FIXED: Normalize UDP port filter format by replacing dashes with colons before creating UDP rules in the `iptables`.
-- FIXED: `Discovery` now detects when DPI blocks downloads mid-transfer (e.g., cuts connection after 16KB), potentially preventing false "success" reports.
-- FIXED: `Payload` capture always showing "timeout" even when visiting the target site correctly.
+### Changed
+
+- UDP port ranges written with a dash are converted to the colon form that `iptables` expects.
+
+### Fixed
+
+- **Discovery** missed DPI that cuts a download mid-transfer, for example after 16 KB, and could report a false success.
+- Payload capture always reported a timeout, even when the target site was visited.
 
 ## [1.26.1] - 2025-12-24
 
-- ADDED: **Upload Custom Payloads** - upload your own binary payload files instead of capturing from live traffic (avilable in the `Settings` -> `Capture` tab).
-- ADDED: **Use Captured Payloads** - new `My own Payload file` option in `Faking` settings lets you use previously captured or uploaded payload binaries.
-- ADDED: When adding a configuration from `Discovery`, B4 automatically finds and includes matching geosite categories (e.g., discovering `youtube.com` will also add the `youtube` category with related domains from it).
-- ADDED: Custom UDP port filtering - configure specific ports per set using the UDP port filter option, and B4 will automatically listen only on those ports.
-- ADDED: Live firewall rule updates - changing UDP ports, connection limits, or other core settings in the web UI now takes effect immediately without restarting the service.
-- ADDED: Discovery now accepts full URLs. Paste a complete URL like `https://youtube.com/watch?v=xyz` or `https://cdn.example.com/large-file.js` instead of just a domain name.
-- ADDED: Sequence Overlap Pattern - `seqovl`. Configure a custom byte pattern in `Fragmentation` settings that gets mixed into TCP segments to confuse deep packet inspection systems while your real data reaches the server intact. Works with `disorder` and `combo` strategies.
-- CHANGED: UDP traffic now only listens on port `443` (QUIC) by default instead of all UDP ports, reducing unnecessary packet processing.
-- CHANGED: Device names in Connections tab now only appear when `Device Filtering` is enabled in `Settings`.
-- FIXED: B4 no longer crashes on startup when geodat files (`geosite.dat`/`geoip.dat`) were manually deleted.
-- FIXED: Re-downloading geodat files now properly reloads all domain and IP targets without requiring a service restart.
-- FIXED: `IPv6` bypass settings now work correctly - disabling IPv6 in config actually disables IPv6 packet processing.
+### Added
+
+- Payload files can be uploaded on the **Capture** tab of **Settings**, and **My own Payload file** in **Faking** uses a captured or uploaded payload.
+- Adding a configuration from **Discovery** also adds the matching geosite category, such as `youtube` for `youtube.com`.
+- A set can filter UDP by port, and b4 listens only on those ports.
+- Changes to UDP ports, connection limits and other core settings update the firewall rules without restarting the service.
+- **Discovery** accepts full URLs such as `https://youtube.com/watch?v=xyz`, not only domain names.
+- A sequence overlap pattern (`seqovl`) in **Fragmentation** mixes custom bytes into TCP segments to confuse DPI while the real data reaches the server intact; it works with **Disorder** and **Combo**.
+
+### Changed
+
+- By default b4 handles UDP only on port 443 (QUIC), not on all UDP ports.
+- Device names in the **Connections** tab appear only when **Device Filtering** is on in **Settings**.
+
+### Fixed
+
+- b4 crashed on startup when `geosite.dat` or `geoip.dat` had been deleted by hand.
+- Re-downloading geodat files did not reload the domain and IP targets until the service restarted.
+- Turning IPv6 off in the config did not stop IPv6 packet processing.
 
 ## [1.25.4] - 2025-12-21
 
-- FIXED: installer failing to download on `OpenWRT` devices - improved compatibility with minimal `BusyBox` environments.
-- FIXED: repeated kernel module errors flooding syslog on `OpenWRT` routers.
+### Fixed
+
+- Kernel module errors flooded the system log on OpenWrt routers.
 
 ## [1.25.3] - 2025-12-21
 
-- FIXED: `nftables` forwarded traffic not working on `OpenWRT` - changed hook from `POSTROUTING` to `FORWARD` to capture packets before NAT.
+### Fixed
+
+- Forwarded traffic got no bypass with `nftables` on OpenWrt, because b4 caught the packets after NAT.
 
 ## [1.25.2] - 2025-12-19
 
-- FIXED: add validation for fake SNI bounds and fallback to TCP fragments in `overlap` handling.
-- FIXED: crash on 32-bit ARM devices caused by uint32 to int overflow in `overlap` fragment handling.
+### Changed
+
+- When the fake SNI does not fit, the `overlap` strategy falls back to plain TCP fragments.
+
+### Fixed
+
+- The `overlap` strategy could crash b4 on 32-bit ARM devices.
 
 ## [1.25.0] - 2025-12-19
 
-- REMOVED: `--skip-local-traffic` as it did actually nothing causing connection issues and solving real problem.
-- ADDED: Device names in `Connections` - identify which device (phone, laptop, etc.) is making each connection, with optional per-device filtering (whitelist/blacklist) in `Settings`.
-- ADDED: DHCP Device names:
-  - **Device Names**: See which device (phone, laptop, TV) is making each connection instead of cryptic IP addresses
-  - **Device Filtering**: Choose which devices on your network should use DPI bypass (whitelist or blacklist mode)
-  - **Custom Names**: Give your devices friendly names in `Settings → Devices`
-- ADDED: Advanced `Connections` table filtering:
-  - Combine filters with `+` (e.g., `tcp+youtube`)
-  - Exclude with `!` prefix (e.g., `!google` or `tcp+!udp`)
-  - Field-specific filters: `domain:`, `asn:`, `device:` (e.g., `domain:youtube+!asn:cloudflare`)
+### Added
+
+- The **Connections** table names the device behind each connection, from DHCP or a custom name under **Settings, Devices**, and **Device Filtering** limits DPI bypass to chosen devices or excludes them.
+- Filters in the **Connections** table combine with `+`, exclude with `!` and match one field with `domain:`, `asn:` or `device:`, as in `domain:youtube+!asn:cloudflare`.
+
+### Removed
+
+- The `--skip-local-traffic` option is gone: it caused connection problems and did not solve the problem it was added for.
 
 ## [1.24.0] - 2025-12-17
 
-- ADDED: `--skip-local-traffic` option to exclude router-originated traffic from processing, enabling compatibility with transparent proxies (Xray, Clash, Sing-Box etc.) running on the same device. By default is `on`. Can be found in `Core` settings. Requires service restart when changing.
-- ADDED: Network interface filtering — optionally restrict B4 to specific interfaces (e.g., `eth0`, `tun0`). Empty selection = all interfaces. Configurable via UI without service restart (can be found in `Core` settings).
-- FIXED: ensure only `Panic` errors are logged into errors.log.
+### Added
+
+- `--skip-local-traffic`, on by default under **Core**, leaves the router's own traffic alone so a transparent proxy such as Xray, Clash or Sing-Box on it keeps working; a change needs a restart.
+- b4 can be limited to chosen network interfaces, such as `eth0` or `tun0`, under **Core** without a restart; none selected means all.
+
+### Fixed
+
+- Errors other than crashes were written to `errors.log`.
 
 ## [1.23.1] - 2025-12-16
 
-- FIXED: crash in `overlap` fragmentation strategy when SNI extends beyond payload bounds (index out of range panic).
-- FIXED: `panic` errors not being captured to `errors.log` file.
+### Fixed
+
+- The `overlap` fragmentation strategy crashed b4 when the SNI went past the end of the packet.
+- Crash errors were not written to `errors.log`.
 
 ## [1.23.0] - 2025-12-16
 
-- ADDED: dd error logging functionality with configurable error log file (default is `/var/log/b4/errors.log`) for crash diagnostics.
-- ADDED: `ASN` filtering in `Connections` table - filter by ASN name globally or with `asn:` field filter.
-- IMPROVED: prevent memory leaks in UI.
-- IMPROVED: subordinate sets cannot exceed main set's TCP/UDP `connection byte limits` both iun UI and backend.
+### Added
+
+- An error log for crash diagnostics, `/var/log/b4/errors.log` by default, with a configurable path.
+- The **Connections** table can filter by ASN name, everywhere or with the `asn:` field filter.
+
+### Changed
+
+- A set's TCP and UDP connection byte limits cannot exceed the main set's, in the web interface and in the service.
+
+### Fixed
+
+- The web interface could leak memory.
 
 ## [1.22.1] - 2025-12-09
 
-- FIXED: `Discovery` UI showing "0 of 0 checks" and "NaN%" during DNS detection phase.
-- FIXED: `Discovery` completing too fast causing "Failed to fetch discovery status" error.
-- FIXED: DNS poisoning detection falsely triggering for CDN domains by comparing IP addresses literally instead of testing actual connectivity.
+### Fixed
+
+- **Discovery** showed "0 of 0 checks" and "NaN%" while checking DNS, and a run that finished too fast ended with "Failed to fetch discovery status".
+- DNS poisoning detection falsely triggered for CDN domains, because it compared addresses literally instead of testing whether they connect.
 
 ## [1.22.0] - 2025-12-08
 
-- ADDED: `DNS Redirect` - bypass ISP DNS poisoning by transparently rewriting queries to clean resolvers. Available at set level, allowing per-domain DNS redirect control.
-- ADDED: DNS discovery and configuration management with support for custom DNS servers.
-- ADDED: `Enter` hotkey to start discovery. ([#5](https://github.com/DanielLavrushin/b4/pull/5)).
-- IMPROVED: enhance `Discovery` fragmentation configurations and add new presets for combo and disorder strategies.
-- IMPROVED: backup handling for existing binaries during B4 installation (`installer.sh`).
+### Added
+
+- **DNS Redirect** in a set sends its DNS queries to a clean resolver, to get around DNS poisoning by the provider.
+- **Discovery** checks DNS and manages DNS settings, with support for custom DNS servers.
+- Enter starts **Discovery**. ([#5](https://github.com/DanielLavrushin/b4/pull/5))
+
+### Changed
+
+- **Discovery** has better fragmentation configurations and new presets for **Combo** and **Disorder**.
 
 ## [1.21.1] - 2025-12-07
 
-- ADDED: TCP `SYN Fake TTL` slider option.
-- FIXED: SYN fake packets sent with full TTL when using non-TTL faking strategies (randseq/pastseq), causing fake packets to reach servers and break handshakes.
-- FIXED: Config validation incorrectly comparing set ConnBytesLimit against stale MainSet defaults instead of loaded JSON values.
-- FIXED: UI bug when ui crashes on creating a set with `Overlap` fragmentation option.
+### Added
+
+- A **SYN Fake TTL** slider in the TCP settings.
+
+### Fixed
+
+- With the `randseq` or `pastseq` faking strategies, SYN fakes went out with full TTL, reached the server and broke connections.
+- Config validation compared a set's connection bytes limit with the main set's default instead of its saved value.
+- The web interface crashed when a set was created with **Overlap** fragmentation.
 
 ## [1.21.0] - 2025-12-07
 
-- FIXED: Slow set save operations - improve performance.
-- ADDED: New `FRAG` strategies designed for modern DPI (TSPU):
-  - `Combo` (recommended) - multi-technique: first-byte delay + extension split + SNI split + disorder
-  - `Disorder` - sends real segments out-of-order with timing jitter, no fake packets
-  - `Overlap` - overlapping TCP segments where second overwrites first (RFC 793 behavior)
-  - `Extension Split` - splits TLS ClientHello within extensions array before SNI
-  - `First-Byte Desync` - sends 1 byte, delays, sends rest (exploits DPI timeouts)
-  - `Hybrid` - evasion strategy combining desync, fake SNI, and disorder techniques
+### Added
 
-- IMPROVED: Skip private destination IP packets processing.
+- New fragmentation strategies for modern DPI: **Combo** (recommended), **Disorder**, **Overlap**, **Extension Split**, **First-Byte Desync** and **Hybrid**.
+
+### Changed
+
+- b4 leaves packets to private addresses alone.
+
+### Fixed
+
+- Saving a set was slow.
 
 ## [1.20.3] - 2025-12-03
 
-- FIXED: `Discovery` false positives - now detects mid-transfer DPI blocking (throttling, stalls, resource blocking) instead of trusting initial HTTP 200.
-- ADDED: `Discovery` network baseline - measures reference domain speed first, requires target to achieve 4KB+ downloaded at 30%+ of baseline speed. Configurable reference domain in `Settings` → `Discovery` (default: yandex.ru).
-- ADDED: `Discovery` binary search optimization for `TTL` and fragmentation position parameters - reduces Phase 2 tests from ~50 to ~15 while finding optimal values. Uses fingerprint hints when available.
-- IMPROVED: `Sets` editor save button now shows immediate loading feedback with spinner and disabled state to prevent double-submit during slow saves.
-- IMPROVED: `Sets` manager now supports drag-and-drop reordering instead of up/down arrows.
+### Added
+
+- **Discovery** measures a reference domain first and requires the target to download at least 4 KB at 30% or more of its speed; the reference domain is under **Settings, Discovery**, `yandex.ru` by default.
+
+### Changed
+
+- **Discovery** finds the TTL and split position with a binary search, cutting its second phase from about 50 tests to 15.
+- The save button of the set editor shows a spinner and is disabled while saving, so a set cannot be saved twice.
+- Sets are reordered by drag and drop instead of up and down arrows.
+
+### Fixed
+
+- **Discovery** trusted the first successful response and missed DPI that throttles, stalls or blocks resources mid-transfer.
 
 ## [1.20.1] - 2025-12-03
 
-- FIXED: IPv4 UDP fragmentation using incorrect fragment offset encoding (wrong bit shifts corrupted offset field).
-- FIXED: IPv6 IP-level fragmentation not adjusting split position relative to IP payload, causing incorrect fragment boundaries.
-- FIXED: IP-level fragmentation (IPv4/IPv6) ignoring Smart SNI Split option - now uses middle_sni when enabled.
-- FIXED: QUIC fragmentation (IPv4/IPv6) had inverted ReverseOrder logic - was sending in reverse when disabled and normal when enabled.
-- FIXED: OOB fragmentation strategy was sending OOB byte in real packet that reached server, breaking TLS handshake. Now sends OOB as fake packet with low TTL/hop limit that dies in transit - DPI sees garbage, server receives clean data.
-- FIXED: `Discovery` service testing all presets with single hardcoded fake SNI payload - if user's DPI only responds to alternate payload, most strategies would incorrectly fail.
-- FIXED: OOB seg2 sequence number calculation was incorrect (added +1 for fake byte), causing TCP reassembly failures.
-- ADDED: QUIC SNI-aware fragmentation - fragments now split at the actual SNI position within encrypted QUIC payloads, defeating DPI systems that decrypt QUIC Initial packets to inspect SNI.
-- ADDED: OOB now supports `tcp_check` and `md5sum` faking strategies for checksum corruption fallback when TTL-based faking is unreliable.
-- ADDED: [EXPERIMENTAL] `DPI Fingerprinting` in Discovery - attempts to identify DPI type and blocking method before testing, prioritizing likely-effective strategies based on failure mode analysis. May produce inaccurate results; falls back automatically to full preset scan when fingerprint is inconclusive.
-- ADDED: Multiple built-in fake SNI payloads (`FakeSNI1`: google (default, AKA classic), `FakeSNI2`: duckduckgo) - different DPI systems respond to different payloads.
-- ADDED: Discovery now auto-detects working payload early and applies it to all subsequent tests; if neither works initially, tests both per-strategy and learns dynamically.
-- ADDED: User-selectable fake payload type in Faking settings (Random, Custom, or built-in presets).
-- IMPROVED: `Fragmentation` UI - renamed "Middle SNI" to "Smart SNI Split", added visual packet diagram, moved manual position to collapsible advanced section.
+### Added
+
+- Experimental DPI fingerprinting in **Discovery** tries to identify the DPI type and blocking method and tests the likely strategies first, falling back to the full scan when unsure.
+- **Faking** offers a choice of fake payload: **Random**, **Custom** or a built-in one, `FakeSNI1` (google, the default) or `FakeSNI2` (duckduckgo).
+- **Discovery** tries both built-in fake payloads, since DPI may react to only one, and uses the one that works for the rest of the run.
 
 ## [1.20.0] - 2025-12-03
 
-- FIXED: IPv4 UDP fragmentation using incorrect fragment offset encoding (wrong bit shifts corrupted offset field).
-- FIXED: IPv6 IP-level fragmentation not adjusting split position relative to IP payload, causing incorrect fragment boundaries.
-- FIXED: IP-level fragmentation (IPv4/IPv6) ignoring Smart SNI Split option - now uses middle_sni when enabled.
-- FIXED: QUIC fragmentation (IPv4/IPv6) had inverted ReverseOrder logic - was sending in reverse when disabled and normal when enabled.
-- FIXED: OOB fragmentation strategy was sending OOB byte in real packet that reached server, breaking TLS handshake. Now sends OOB as fake packet with low TTL/hop limit that dies in transit - DPI sees garbage, server receives clean data.
-- FIXED: OOB seg2 sequence number calculation was incorrect (added +1 for fake byte), causing TCP reassembly failures.
-- ADDED: QUIC SNI-aware fragmentation - fragments now split at the actual SNI position within encrypted QUIC payloads, defeating DPI systems that decrypt QUIC Initial packets to inspect SNI.
-- ADDED: OOB now supports `tcp_check` and `md5sum` faking strategies for checksum corruption fallback when TTL-based faking is unreliable.
-- IMPROVED: `Fragmentation` UI - renamed "Middle SNI" to "Smart SNI Split", added visual packet diagram, moved manual position to collapsible advanced section.
+### Added
+
+- QUIC fragmentation splits at the site name inside the encrypted QUIC packet, against DPI that decrypts the first QUIC packet to read it.
+- The OOB strategy supports the `tcp_check` and `md5sum` faking strategies, for when TTL-based faking is unreliable.
+
+### Changed
+
+- In fragmentation settings, "Middle SNI" is renamed **Smart SNI Split**, a packet diagram shows the split, and the manual position is in a collapsible advanced section.
+
+### Fixed
+
+- IP-level fragmentation broke in several ways: IPv4 UDP fragments had a wrong offset, IPv6 fragments split at the wrong place, and **Smart SNI Split** was ignored.
+- QUIC fragmentation sent fragments in reverse order when the reverse option was off, and in normal order when it was on.
+- The OOB strategy broke connections: its extra byte reached the server, and the second segment had a wrong sequence number.
 
 ## [1.19.1] - 2025-12-01
 
-- FIXED: New sets with geosite/geoip categories not matching traffic until service restart.
-- IMPROVED: Discovery service now tests ~150+ configurations.
-- CHANGED: Replace Fragmentation SNI split position Slider field with textbox number field.
+### Changed
+
+- **Discovery** tests more than 150 configurations.
+- The SNI split position in fragmentation is a number field instead of a slider.
+
+### Fixed
+
+- New sets with geosite or geoip categories did not match traffic until the service restarted.
 
 ## [1.19.0] - 2025-11-29
 
-- ADDED: Filter for configuration sets - search by `name`, `SNI` domains, `geosite` categories, or `geoip` categories.
-- ADDED: Compare sets feature - side-by-side diff view showing differences between two configuration sets, grouped by section (TCP, UDP, Fragmentation, Faking, Targets).
-- ADDED: `Discovery` now names new sets after the preset configuration (e.g., `tcp-frag-rev-fake`) instead of the domain.
-- ADDED: `Discovery` detects similar existing sets and offers to add the domain to an existing set instead of creating a new one.
-- ADDED: `Discovery` short-circuits when baseline succeeds - skips optimization phases if no DPI is detected.
-- ADDED: `Discovery` shows results progressively as tests complete - users can see working configurations and apply them without waiting for the full scan to finish.
-- ADDED: Dedicated Sets API endpoints (`/api/sets`) for CRUD operations - create, update, delete, and reorder sets independently.
-- FIXED: Settings tab navigation losing selected tab on page refresh.
-- CHANGED: New configuration sets are now added to the top of the list instead of the bottom.
-- CHANGED: `Discovery` configuration refactoring component.
-- CHANGED: Configuration Sets promoted from Settings submenu to top-level navigation item.
-- CHANGED: Set operations (create, edit, delete, duplicate, reorder, enable/disable) now save immediately via API instead of requiring manual "Save Changes".
+### Added
+
+- Sets can be filtered by name, domain, geosite category or geoip category.
+- Two sets can be compared side by side, with the differences grouped by TCP, UDP, fragmentation, faking and targets.
+- **Discovery** names a new set after its preset, such as `tcp-frag-rev-fake`, and offers to add the domain to a similar existing set instead.
+- **Discovery** shows working configurations as tests finish, so they can be applied before the scan ends, and skips the later phases when no DPI is detected.
+
+### Changed
+
+- New sets are added at the top of the list.
+- **Sets** moved from the **Settings** menu to the main navigation.
+- Creating, editing, deleting, duplicating, reordering and turning sets on or off save at once, without **Save Changes**.
+
+### Fixed
+
+- Refreshing the **Settings** page lost the selected tab.
 
 ## [1.18.5] - 2025-11-27
 
-- FIXED: revert back the Fake SNI payload for improved compatibility.
+### Changed
+
+- The fake SNI payload is back to the earlier one, for better compatibility.
 
 ## [1.18.4] - 2025-11-25
 
-- CHANGED: update set default `desync` mode to 'off'.
-- FIXED: simplify package handling.
+### Changed
+
+- The default **Desync** mode of a set is `off`.
 
 ## [1.18.3] - 2025-11-25
 
-- FIXED: `Domains` table not updating with new packets due to React state reference issue.
-- FIXED: `Domains` table columns layout being cramped with fixed widths.
+### Fixed
+
+- The **Domains** table stopped updating with new packets, and its columns were cramped.
 
 ## [1.18.2] - 2025-11-25
 
-- ADDED: `ClientHello Mutation` support for `IPv6`.
-- FIXED: Discovery presets missing default values for `SNI Mutation`, `TCP Window`, and `Desync` settings.
+### Added
+
+- **ClientHello Mutation** works for IPv6.
+
+### Fixed
+
+- **Discovery** presets lacked default values for the **SNI Mutation**, TCP window and **Desync** settings.
 
 ## [1.18.1] - 2025-11-25
 
-- FIXED: Unable to change `ClientHello Mutation` mode in the Faking settings.
+### Fixed
+
+- The **ClientHello Mutation** mode could not be changed in the **Faking** settings.
 
 ## [1.18.0] - 2025-11-24
 
-- IMPROVED: Overall performance (frontend and backend).
-- ADDED: `TCP Window Manipulation` (`--tcp-win-mode`) - sends fake packets with manipulated TCP window sizes to confuse stateful DPI. Modes: `oscillate` (cycling window values), `zero` (zero-window probe attack), `random` (randomized windows), `escalate` (gradually increasing windows).
-- ADDED: `TCP Desync Attack` (`--tcp-desync-mode`) - injects fake TCP control packets (RST/FIN/ACK) with low TTL and corrupted checksums to desynchronize DPI connection tracking. Modes: `rst`, `fin`, `ack`, `combo`, `full`.
-- ADDED: `SNI Mutation` for ClientHello fingerprint evasion - modifies TLS handshake structure to bypass DPI fingerprinting. Modes: `duplicate` (inject fake SNIs), `grease` (add GREASE extensions), `padding` (add padding extension), `reorder` (shuffle extensions), `full` (all mutations combined), `advanced` (TLS 1.3 features like PSK/key_share).
+### Added
+
+- **TCP Window Manipulation** (`--tcp-win-mode`) sends fakes with altered TCP window sizes to confuse DPI that tracks connections, in the modes `oscillate`, `zero`, `random` and `escalate`.
+- **TCP Desync Attack** (`--tcp-desync-mode`) injects fake RST, FIN or ACK packets with low TTL and broken checksums to throw off DPI connection tracking: `rst`, `fin`, `ack`, `combo` or `full`.
+- **SNI Mutation** changes the structure of the ClientHello to get past DPI fingerprinting, in the modes `duplicate`, `grease`, `padding`, `reorder`, `full` and `advanced`.
 
 ## [1.17.1] - 2025-11-23
 
-- ADDED: `Out-of-Band` (OOB) data handling with configurable position, reverse order, and character (`--frag=oob`).
-- ADDED: `Out-of-Band` (OOB) strategies to `B4Discovery`.
-- ADDED: `TLS Record Splitting` fragmentation strategy (`--frag=tls`) - splits ClientHello into multiple TLS records to bypass DPI expecting single-record handshakes.
-- ADDED: `SACK dropping` (`--tcp-drop-sack`) - strips Selective Acknowledgment options from TCP headers to force full retransmissions and confuse stateful DPI tracking.
-- UPDATED: Fake `SNI` payload now uses TLS 1.3 ClientHello structure with `staticcdn.duckduckgo.com`.
-- IMPROVED: `SNI` fragmentation for long domains (>30 bytes). Now splits 12 bytes before SNI end instead of middle, ensuring domain suffixes like `googlevideo.com` are properly fragmented across packets.
-- IMPROVED: `Matcher` performance with LRU caching for large geosite/geoip categories (70-90% CPU reduction for sets with big data inside).
-- IMPROVED: `Geodat` download workflow - files now immediately available in sets manager without restart, config auto-reloads after download.
-- IMPROVED: Set `Fragmentation` tab refactored.
-- FIXED: Logs level can be switched witout reloading the app.
-- FIXED: Config validation bug where Main Set was compared against itself, causing startup failure with `TCP ConnBytesLimit greater than main set` error.
-- FIXED: update default fake SNI payload to use new format.
-- CHANGED: Renamed `--frag-sni-reverse` to `--frag-reverse` and update related configurations.
+### Added
+
+- The **Out-of-Band** (OOB) strategy (`--frag=oob`), with configurable position, reverse order and character, which **Discovery** also tests.
+- **TLS Record Splitting** (`--frag=tls`) splits the ClientHello into several TLS records, against DPI that expects one.
+- **SACK dropping** (`--tcp-drop-sack`) strips Selective Acknowledgment options from TCP headers to force full retransmissions and confuse DPI that tracks connections.
+
+### Changed
+
+- The fake SNI payload, the default included, uses a TLS 1.3 ClientHello for `staticcdn.duckduckgo.com`.
+- For domains longer than 30 bytes, the SNI split falls 12 bytes before the end of the name, so suffixes such as `googlevideo.com` are split across packets.
+- Sets with large geosite or geoip categories use 70-90% less CPU.
+- Downloaded geodat files are available in the sets manager at once, without a restart.
+- The **Fragmentation** tab of a set is reworked.
+- `--frag-sni-reverse` is renamed `--frag-reverse`.
+
+### Fixed
+
+- Changing the log level needed a reload of the web interface.
+- b4 failed to start with the error `TCP ConnBytesLimit greater than main set`, because config validation compared the main set with itself.
 
 ## [1.16.1] - 2025-11-20
 
-- ADDED: Asynchronous packet injection for TCP and UDP traffic. Verdict is now sent to kernel immediately, with packet manipulation performed in parallel. Eliminates kernel queue blocking that previously caused video streaming hangs and site loading delays.
-- FIXED: Critical performance bottleneck where each QUIC/UDP packet with default configuration (FakeSeqLength: 6) would block the kernel for 6ms minimum. This caused YouTube and other video services to buffer or hang intermittently.
-- FIXED: IPv6 QUIC packet processing incorrectly used TCP delay settings instead of UDP delay settings.
-- FIXED: New configuration sets created from the Domains page were not saving custom names, defaulting to generic "Set 1/2/3" names instead.
-- IMPROVED: Removed unnecessary `1ms` sleep delays when `Seg2Delay` is set to `0`, reducing packet processing latency by up to `6ms` per QUIC packet.
+### Fixed
+
+- YouTube and other video could buffer or hang and sites loaded slowly, because with default settings each QUIC packet held up the kernel queue for at least 6 ms.
+- IPv6 QUIC packets used the TCP delay settings instead of the UDP ones.
+- A set created from the **Domains** page lost its custom name and got a generic one such as "Set 1".
 
 ## [1.16.0] - 2025-11-17
 
-- ADDED: Configuration sets can now be enabled/disabled without deletion.
-- ADDED: Clear button next to the IP/CIDR list in the set configuration.
-- ADDED: Download `GeoSite`/`GeoIP` database files directly from Settings UI with preset sources.
-- IMPROVED: Redesigned `/test` page UX - domains are now managed directly on the test page.
-- IMPROVED: Refactor `Discovery` presets generation logic and add new test strategies.
-- FIXED: Resolved severe performance bottleneck on `/domains` page when adding ASN filters (caused by expensive ASN lookup operations executing on every render).
-- REMOVED: Test domain configuration from `Settings` - domains are now managed exclusively on the Test page.
+### Added
+
+- A set can be turned off without deleting it.
+- A clear button next to a set's IP and CIDR list.
+- `GeoSite` and `GeoIP` files can be downloaded from **Settings**, with preset sources.
+
+### Changed
+
+- Test domains are managed on the redesigned **Test** page instead of in **Settings**.
+- **Discovery** has new test strategies.
+
+### Fixed
+
+- The **Domains** page slowed down badly when ASN filters were added.
 
 ## [1.15.0] - 2025-11-16
 
-- ADDED: SYN fake packet functionality for advanced DPI bypass. Sends fake SYN packets with configurable payload length to confuse DPI systems before the real connection is established. Configure via `--tcp-syn-fake` and `--tcp-syn-fake-len` flags, or through the TCP settings in Web UI.
-- ADDED: IP information enrichment via `IPInfo` API integration. When IPInfo token is configured in Settings → API, click on any destination IP in `/domains` monitoring page to view detailed geolocation, ASN, organization, and network information.
-- ADDED: `RIPE` [Stat integration](https://www.ripe.net/) for network intelligence. View ASN prefix announcements and detailed network information directly from the Web UI. Helps identify IP ranges for precise targeting.
-- ADDED: Configuration set import/export functionality. Share working bypass configurations between devices or users by exporting sets as JSON files. Import proven configurations with one click to quickly replicate successful setups across multiple installations.
-- IMPROVED: Discovery test results now include individual configuration cards per domain instead of single recommended configuration, making it easier to analyze which specific settings work best for each target domain.
+### Added
+
+- Fake SYN packets with a configurable payload length go out before the real connection opens, to confuse DPI; set them with `--tcp-syn-fake` and `--tcp-syn-fake-len` or in the TCP settings.
+- With an IPInfo token under **Settings, API**, clicking a destination address on the **Domains** page shows its location, ASN, organization and network.
+- [RIPE Stat](https://www.ripe.net/) integration shows the prefixes an ASN announces and details about the network, to help target address ranges.
+- Sets can be exported as JSON files and imported on another device.
+
+### Changed
+
+- **Discovery** results show a configuration card for each domain instead of a single recommended configuration.
 
 ## [1.14.0] - 2025-11-13
 
-- ADDED: Select target configuration set when adding domains or IP/CIDR addresses from `/domains` monitoring page. Allows precise control over which configuration set receives the new entry.
-- ADDED: One-click configuration adoption from `Discovery` test results. Apply the best-performing configuration directly to your configuration list without manual copying.
-- CHANGED: Complete overhaul of `Discovery` testing service with improved reliability and performance. Now they should work as expected.
-- FIXED: Memory leaks and overall memory management improvements for better long-term stability.
-- FIXED: Update process through the Web UI.
+### Added
+
+- Adding a domain or an IP or CIDR address from the **Domains** page asks which set it goes to.
+- A **Discovery** result can be added to the sets with one click.
+
+### Changed
+
+- **Discovery** testing is rebuilt to be more reliable and faster.
+
+### Fixed
+
+- b4 leaked memory over time.
+- Updating b4 through the web interface could fail.
 
 ## [1.13.0] - 2025-11-10
 
-- ADDED: Click on destination IP addresses in `/domains` monitoring page to add them to configuration. Modal allows adding either exact IP or CIDR notation for broader site coverage. This does not require to reload or restart B4, works on the fly.
-- ADDED: Toggle switch in `/domains` monitoring page to view all packets or only those with identified SNI/domain. Useful for monitoring and debugging `UDP` traffic.
-- ADDED: Geodat domain/IP counters at configuration sets.
-- ADDED: a new tab under `/test` menu. `Discovery` test results now show individual configuration cards per domain instead of a single recommended configuration, making it easier to see what works best for each specific domain.
-- CHANGED: `UDP` port filtering now uses a single flexible field instead of separate "from" and "to" fields. Supports comma-separated ports and ranges (e.g., `80,443,2000-3000`).
-- CHANGED: Packages count badge in `/domains` menu now only counts packets processed by B4 targets.
-- CHANGED: Replaced `--udp-dport-min` and `--udp-dport-max` flags with single `--udp-dport-filter` flag for flexible port filtering.
-- CHANGED: Refactored UDP/QUIC packet handling and UDP-related UI tab in the set configuration.
-- FIXED: `UDP` entries are now logged even when UDP packets are configured to be ignored in the configuration
-- FIXED: `UI` crash when using filter in /domains monitoring page.
-- FIXED: Manually added domains no longer require service restart when geodat files are not configured.
-- FIXED: Test Suites now correctly report success when DPI is bypassed regardless of `HTTP status code`. Any HTTP response (including non-200 codes) indicates successful DPI circumvention.
+### Added
+
+- Clicking a destination address on the **Domains** page adds the exact IP or its CIDR range to a set, without a reload or restart.
+- A switch on the **Domains** page shows all packets or only those with a known domain, which helps when checking UDP traffic.
+- Sets show how many domains and addresses their geodat categories contain.
+- A new tab on the **Test** page shows a **Discovery** configuration card for each domain instead of a single recommended configuration.
+
+### Changed
+
+- In the reworked UDP tab of a set, port filtering takes one field such as `80,443,2000-3000` instead of from and to, and `--udp-dport-filter` replaces `--udp-dport-min` and `--udp-dport-max`.
+- The packet count badge on the **Domains** menu counts only packets handled by b4's targets.
+
+### Fixed
+
+- UDP entries were not logged when UDP packets were set to be ignored.
+- The web interface crashed when the filter on the **Domains** page was used.
+- Manually added domains needed a service restart when no geodat files were configured.
+- The tests reported failure when a site answered with an HTTP status other than 200, even though DPI was bypassed.
 
 ## [1.12.0] - 2025-11-09
 
-- ADDED: Configuration Sets - fine-grained bypass control for different targets
-  - Create multiple configuration sets, each with independent TCP/UDP/fragmentation/faking settings
-  - Target packets by SNI domain, destination IP/CIDR ranges, or UDP port ranges
-- ADDED: `geoip.dat` support.
+### Added
+
+- Configuration sets give different targets their own TCP, UDP, fragmentation and faking settings, matched by domain, IP or CIDR range, or UDP port range.
+- Support for `geoip.dat`.
 
 ## [1.11.0] - 2025-11-05
 
-- ADDED: DPI Bypass Test feature to verify that circumvention is working. The feature tests configured domains and measures download speeds to ensure B4 is functioning correctly. Visit the `/test` page to run tests and `/settings/checker` to configure test settings (define which domains to test, etc.).
-- ADDED: New feature to reset B4 settings to their defaults. The reset button is located in the `Core` tab on the `Settings` page.
-- CHANGED: Moved `RESTART B4 BUTTON` to the `Core` tab on the Settings page (under the `Core Controls` section).
-- IMPROVED: Enhanced `flowState` struct to track `SNI` detection and processing status.
-- FIXED: Service restart functionality in the UI for different service managers (`Entware`/`OpenWRT`/`systemctl`).
-- FIXED: Pause shortcut (pressing down the `P` key on the domains and logs pages) interfering with search input.
+### Added
+
+- A DPI bypass test on the **Test** page checks the configured domains and measures download speed, with its settings under `/settings/checker`.
+- A button in the **Core** tab of **Settings** resets b4's settings to their defaults.
+
+### Changed
+
+- The restart button moved to the **Core** tab of **Settings**, under **Core Controls**.
+
+### Fixed
+
+- Restarting the service from the web interface did not work with some service managers (Entware, OpenWrt, `systemctl`).
+- The pause shortcut `P` on the domains and logs pages fired while typing in the search field.
 
 ## [1.10.1] - 2025-11-03
 
-- IMPROVED: Intermittent connection failures where blocked sites would randomly fail to load in certain browsers (`Safari`, `Firefox`, `Chrome`). Connections _should_ now be more stable and reliable across all browsers by optimizing packet fragmentation strategy.
+### Fixed
+
+- Blocked sites could fail to load at random in Safari, Firefox and Chrome.
 
 ## [1.10.0] - 2025-11-02
 
-- ADDED: Automatic `iptables`/`nftables` rules restoration. B4 now automatically detects this and restores itself without requiring a manual restart.
-- ADDED: New `--tables-monitor-interval` setting to control how often B4 checks if its rules are still active (default: `10` seconds). Set to `0` to disable automatic monitoring.
+### Added
+
+- b4 restores its `iptables` or `nftables` rules when they disappear, without a manual restart; `--tables-monitor-interval` sets how often it checks (10 seconds by default, `0` turns it off).
 
 ## [1.9.2] - 2025-11-02
 
-- IMPROVED: Increase TTL and buffer limit for flow state management.
-- IMPROVED: enhance SNI character validation.
+### Changed
+
+- b4 keeps connection state for longer and with a larger buffer, and checks the characters of detected domain names more strictly.
 
 ## [1.9.1] - 2025-11-02
 
-- FIXED: Return back missing `geosite path` field to the settings.
+### Fixed
+
+- The geosite path field was missing from the settings.
 
 ## [1.9.0] - 2025-11-02
 
-- ADDED: Hotkeys to the `/domains` and `/logs` page. Press `ctrl+x` or `Delete` keys to clear the entries. Press `p` or `Pause` to pause the stram.
-- ADDED: Parse regex entries from the geosite files.
-- ADDED: Connection bytes limit configuration for TCP and UDP in network settings
-- FIXED: Wrong total number of total domains in the settings.
+### Added
+
+- Hotkeys on the **Domains** and **Logs** pages: `Ctrl+X` or `Delete` clears the entries, and `P` or `Pause` pauses the stream.
+- Regex entries in geosite files are read.
+- TCP and UDP connection bytes limits in the network settings.
+
+### Fixed
+
+- The settings showed a wrong total number of domains.
 
 ## [1.8.0] - 2025-11-01
 
-- ADDED: `nftables` support.
-- CHANGED: `--skip-iptables` and `--clear-iptables` renamed to `--skip-tables` and `--clear-tables`.
-- IMPROVED: TCP flow handling by fragmenting packets after SNI detection.
+### Added
+
+- Support for `nftables`.
+
+### Changed
+
+- `--skip-iptables` and `--clear-iptables` are renamed `--skip-tables` and `--clear-tables`.
+- TCP connections are split into fragments after the domain name (SNI) is found.
 
 ## [1.7.0] - 2025-10-31
 
-- ADDED: 'RESTART SERVICE` Button in the Settings to perform the B4 restart from the Web UI.
-- ADDED: Add `quiet` mode and `geosite` source/destination options to installer script. Use `b4install.sh --help` to get more information.
-- ADDED: Sort Domains by clicking the columns.
-- ADDED: Update a new version from the Web Interface.
-- REMOVED: iptables `OUTPUT` rule.
+### Added
+
+- A **Restart Service** button in **Settings** restarts b4 from the web interface.
+- The **Domains** table sorts by a column when its header is clicked.
+- b4 can update to a new version from the web interface.
+
+### Removed
+
+- The `iptables` rule in the `OUTPUT` chain.
 
 ## [1.6.0] - 2025-10-29
 
-- FIXED: `Dashboard` works again.
-- REMOVED: `--conntrack` and `-gso` flags since they both are not used in the project.
-- IMPROVED: Installation script now handles a geosite file setup.
+### Removed
+
+- The unused `--conntrack` and `-gso` flags.
+
+### Fixed
+
+- The **Dashboard** did not work.
 
 ## [1.5.0] - 2025-10-28
 
-- ADDED: `--clear-iptables` argument to perform a cleanup of iptable rules.
-- ADDED: `IPv6` support.
-- ADDED: `--ipv4` (default is `true`) and `--ipv6` (default is `false`) arguments to control protocol versions.
-- IMPROVED: Handling of geodata domains.
+### Added
+
+- `--clear-iptables` removes b4's iptables rules.
+- IPv6 support, with `--ipv4` (on by default) and `--ipv6` (off by default) to choose the protocol versions.
+
+### Changed
+
+- Domains from geodata files are handled better.
+
+[unreleased]: https://github.com/DanielLavrushin/b4/compare/v1.90.0...HEAD
+[1.90.0]: https://github.com/DanielLavrushin/b4/compare/v1.89.1...v1.90.0
+[1.89.1]: https://github.com/DanielLavrushin/b4/compare/v1.89.0...v1.89.1
+[1.89.0]: https://github.com/DanielLavrushin/b4/compare/v1.88.2...v1.89.0
+[1.88.2]: https://github.com/DanielLavrushin/b4/compare/v1.88.1...v1.88.2
+[1.88.1]: https://github.com/DanielLavrushin/b4/compare/v1.88.0...v1.88.1
+[1.88.0]: https://github.com/DanielLavrushin/b4/compare/v1.87.0...v1.88.0
+[1.87.0]: https://github.com/DanielLavrushin/b4/compare/v1.86.0...v1.87.0
+[1.86.0]: https://github.com/DanielLavrushin/b4/compare/v1.85.1...v1.86.0
+[1.85.1]: https://github.com/DanielLavrushin/b4/compare/v1.85.0...v1.85.1
+[1.85.0]: https://github.com/DanielLavrushin/b4/compare/v1.84.0...v1.85.0
+[1.84.0]: https://github.com/DanielLavrushin/b4/compare/v1.83.1...v1.84.0
+[1.83.1]: https://github.com/DanielLavrushin/b4/compare/v1.83.0...v1.83.1
+[1.83.0]: https://github.com/DanielLavrushin/b4/compare/v1.82.3...v1.83.0
+[1.82.3]: https://github.com/DanielLavrushin/b4/compare/v1.82.2...v1.82.3
+[1.82.2]: https://github.com/DanielLavrushin/b4/compare/v1.82.1...v1.82.2
+[1.82.1]: https://github.com/DanielLavrushin/b4/compare/v1.82.0...v1.82.1
+[1.82.0]: https://github.com/DanielLavrushin/b4/compare/v1.81.1...v1.82.0
+[1.81.1]: https://github.com/DanielLavrushin/b4/compare/v1.81.0...v1.81.1
+[1.81.0]: https://github.com/DanielLavrushin/b4/compare/v1.80.4...v1.81.0
+[1.80.4]: https://github.com/DanielLavrushin/b4/compare/v1.80.3...v1.80.4
+[1.80.3]: https://github.com/DanielLavrushin/b4/compare/v1.80.2...v1.80.3
+[1.80.2]: https://github.com/DanielLavrushin/b4/compare/v1.80.1...v1.80.2
+[1.79.0]: https://github.com/DanielLavrushin/b4/compare/v1.78.0...v1.79.0
+[1.78.0]: https://github.com/DanielLavrushin/b4/compare/v1.77.0...v1.78.0
+[1.77.0]: https://github.com/DanielLavrushin/b4/compare/v1.76.2...v1.77.0
+[1.76.2]: https://github.com/DanielLavrushin/b4/compare/v1.76.1...v1.76.2
+[1.76.1]: https://github.com/DanielLavrushin/b4/compare/v1.76.0...v1.76.1
+[1.76.0]: https://github.com/DanielLavrushin/b4/compare/v1.75.0...v1.76.0
+[1.75.0]: https://github.com/DanielLavrushin/b4/compare/v1.74.2...v1.75.0
+[1.74.2]: https://github.com/DanielLavrushin/b4/compare/v1.74.1...v1.74.2
+[1.74.1]: https://github.com/DanielLavrushin/b4/compare/v1.74.0...v1.74.1
+[1.73.0]: https://github.com/DanielLavrushin/b4/compare/v1.72.0...v1.73.0
+[1.72.0]: https://github.com/DanielLavrushin/b4/compare/v1.71.1...v1.72.0
+[1.71.1]: https://github.com/DanielLavrushin/b4/compare/v1.71.0...v1.71.1
+[1.71.0]: https://github.com/DanielLavrushin/b4/compare/v1.70.1...v1.71.0
+[1.70.1]: https://github.com/DanielLavrushin/b4/compare/v1.70.0...v1.70.1
+[1.70.0]: https://github.com/DanielLavrushin/b4/compare/v1.69.1...v1.70.0
+[1.69.1]: https://github.com/DanielLavrushin/b4/compare/v1.69.0...v1.69.1
+[1.69.0]: https://github.com/DanielLavrushin/b4/compare/v1.68.0...v1.69.0
+[1.68.0]: https://github.com/DanielLavrushin/b4/compare/v1.67.2...v1.68.0
+[1.67.2]: https://github.com/DanielLavrushin/b4/compare/v1.67.1...v1.67.2
+[1.67.1]: https://github.com/DanielLavrushin/b4/compare/v1.67.0...v1.67.1
+[1.67.0]: https://github.com/DanielLavrushin/b4/compare/v1.66.1...v1.67.0
+[1.66.0]: https://github.com/DanielLavrushin/b4/compare/v1.65.0...v1.66.0
+[1.65.0]: https://github.com/DanielLavrushin/b4/compare/v1.64.0...v1.65.0
+[1.64.0]: https://github.com/DanielLavrushin/b4/compare/v1.63.0...v1.64.0
+[1.63.0]: https://github.com/DanielLavrushin/b4/compare/v1.62.1...v1.63.0
+[1.62.1]: https://github.com/DanielLavrushin/b4/compare/v1.62.0...v1.62.1
+[1.61.4]: https://github.com/DanielLavrushin/b4/compare/v1.61.3...v1.61.4
+[1.61.3]: https://github.com/DanielLavrushin/b4/compare/v1.61.2...v1.61.3
+[1.60.1]: https://github.com/DanielLavrushin/b4/compare/v1.60.0...v1.60.1
+[1.50.1]: https://github.com/DanielLavrushin/b4/compare/v1.50.0...v1.50.1
+[1.50.0]: https://github.com/DanielLavrushin/b4/compare/v1.49.1...v1.50.0
+[1.49.1]: https://github.com/DanielLavrushin/b4/compare/v1.49.0...v1.49.1
+[1.49.0]: https://github.com/DanielLavrushin/b4/compare/v1.48.1...v1.49.0
+[1.48.1]: https://github.com/DanielLavrushin/b4/compare/v1.48.0...v1.48.1
+[1.48.0]: https://github.com/DanielLavrushin/b4/compare/v1.47.2...v1.48.0
+[1.47.2]: https://github.com/DanielLavrushin/b4/compare/v1.47.1...v1.47.2
+[1.47.0]: https://github.com/DanielLavrushin/b4/compare/v1.46.6...v1.47.0
+[1.46.6]: https://github.com/DanielLavrushin/b4/compare/v1.46.5...v1.46.6
+[1.46.5]: https://github.com/DanielLavrushin/b4/compare/v1.46.4...v1.46.5
+[1.46.0]: https://github.com/DanielLavrushin/b4/compare/v1.45.1...v1.46.0
+[1.45.1]: https://github.com/DanielLavrushin/b4/compare/v1.45.0...v1.45.1
+[1.45.0]: https://github.com/DanielLavrushin/b4/compare/v1.44.1...v1.45.0
+[1.44.1]: https://github.com/DanielLavrushin/b4/compare/v1.44.0...v1.44.1
+[1.43.0]: https://github.com/DanielLavrushin/b4/compare/v1.42.1...v1.43.0
+[1.42.1]: https://github.com/DanielLavrushin/b4/compare/v1.42.0...v1.42.1
+[1.42.0]: https://github.com/DanielLavrushin/b4/compare/v1.41.0...v1.42.0
+[1.41.0]: https://github.com/DanielLavrushin/b4/compare/v1.40.1...v1.41.0
+[1.40.0]: https://github.com/DanielLavrushin/b4/compare/v1.39.2...v1.40.0
+[1.39.1]: https://github.com/DanielLavrushin/b4/compare/v1.39.0...v1.39.1
+[1.38.0]: https://github.com/DanielLavrushin/b4/compare/v1.37.0...v1.38.0
+[1.37.0]: https://github.com/DanielLavrushin/b4/compare/v1.36.0...v1.37.0
+[1.36.0]: https://github.com/DanielLavrushin/b4/compare/v1.35.2...v1.36.0
+[1.35.2]: https://github.com/DanielLavrushin/b4/compare/v1.35.0...v1.35.2
+[1.35.0]: https://github.com/DanielLavrushin/b4/compare/v1.34.0...v1.35.0
+[1.34.0]: https://github.com/DanielLavrushin/b4/compare/v1.33.2...v1.34.0
+[1.32.0]: https://github.com/DanielLavrushin/b4/compare/v1.31.2...v1.32.0
+[1.31.2]: https://github.com/DanielLavrushin/b4/compare/v1.31.1...v1.31.2
+[1.31.0]: https://github.com/DanielLavrushin/b4/compare/v1.30.1...v1.31.0
+[1.30.1]: https://github.com/DanielLavrushin/b4/compare/v1.30.0...v1.30.1
+[1.30.0]: https://github.com/DanielLavrushin/b4/compare/v1.29.1...v1.30.0
+[1.29.1]: https://github.com/DanielLavrushin/b4/compare/v1.29.0...v1.29.1
+[1.28.1]: https://github.com/DanielLavrushin/b4/compare/v1.28.0...v1.28.1
+[1.27.2]: https://github.com/DanielLavrushin/b4/compare/v1.27.1...v1.27.2
+[1.27.1]: https://github.com/DanielLavrushin/b4/compare/v1.27.0...v1.27.1
+[1.27.0]: https://github.com/DanielLavrushin/b4/compare/v1.26.3...v1.27.0
+[1.26.3]: https://github.com/DanielLavrushin/b4/compare/v1.26.2...v1.26.3
+[1.26.2]: https://github.com/DanielLavrushin/b4/compare/v1.26.1...v1.26.2
+[1.26.1]: https://github.com/DanielLavrushin/b4/compare/v1.26.0...v1.26.1
+[1.25.4]: https://github.com/DanielLavrushin/b4/compare/v1.25.3...v1.25.4
+[1.25.3]: https://github.com/DanielLavrushin/b4/compare/v1.25.2...v1.25.3
+[1.25.2]: https://github.com/DanielLavrushin/b4/compare/v1.25.1...v1.25.2
+[1.25.0]: https://github.com/DanielLavrushin/b4/compare/v1.24.0...v1.25.0
+[1.24.0]: https://github.com/DanielLavrushin/b4/compare/v1.23.1...v1.24.0
+[1.23.1]: https://github.com/DanielLavrushin/b4/compare/v1.23.0...v1.23.1
+[1.23.0]: https://github.com/DanielLavrushin/b4/compare/v1.22.1...v1.23.0
+[1.22.1]: https://github.com/DanielLavrushin/b4/compare/v1.22.0...v1.22.1
+[1.22.0]: https://github.com/DanielLavrushin/b4/compare/v1.21.1...v1.22.0
+[1.21.1]: https://github.com/DanielLavrushin/b4/compare/v1.21.0...v1.21.1
+[1.21.0]: https://github.com/DanielLavrushin/b4/compare/v1.20.3...v1.21.0
+[1.20.3]: https://github.com/DanielLavrushin/b4/compare/v1.20.2...v1.20.3
+[1.20.1]: https://github.com/DanielLavrushin/b4/compare/v1.20.0...v1.20.1
+[1.20.0]: https://github.com/DanielLavrushin/b4/compare/v1.19.1...v1.20.0
+[1.19.1]: https://github.com/DanielLavrushin/b4/compare/v1.19.0...v1.19.1
+[1.19.0]: https://github.com/DanielLavrushin/b4/compare/v1.18.5...v1.19.0
+[1.18.5]: https://github.com/DanielLavrushin/b4/compare/v1.18.4...v1.18.5
+[1.18.4]: https://github.com/DanielLavrushin/b4/compare/v1.18.3...v1.18.4
+[1.18.3]: https://github.com/DanielLavrushin/b4/compare/v1.18.2...v1.18.3
+[1.18.2]: https://github.com/DanielLavrushin/b4/compare/v1.18.1...v1.18.2
+[1.18.1]: https://github.com/DanielLavrushin/b4/compare/v1.18.0...v1.18.1
+[1.18.0]: https://github.com/DanielLavrushin/b4/compare/v1.17.1...v1.18.0
+[1.17.1]: https://github.com/DanielLavrushin/b4/compare/v1.17.0...v1.17.1
+[1.16.1]: https://github.com/DanielLavrushin/b4/compare/v1.16.0...v1.16.1
+[1.16.0]: https://github.com/DanielLavrushin/b4/compare/v1.15.0...v1.16.0
+[1.15.0]: https://github.com/DanielLavrushin/b4/compare/v1.14.0...v1.15.0
+[1.14.0]: https://github.com/DanielLavrushin/b4/compare/v1.13.0...v1.14.0
+[1.13.0]: https://github.com/DanielLavrushin/b4/compare/v1.12.0...v1.13.0
+[1.12.0]: https://github.com/DanielLavrushin/b4/compare/v1.11.1...v1.12.0
+[1.11.0]: https://github.com/DanielLavrushin/b4/compare/v1.10.1...v1.11.0
+[1.10.1]: https://github.com/DanielLavrushin/b4/compare/v1.10.0...v1.10.1
+[1.10.0]: https://github.com/DanielLavrushin/b4/compare/v1.9.2...v1.10.0
+[1.9.2]: https://github.com/DanielLavrushin/b4/compare/v1.9.1...v1.9.2
+[1.9.1]: https://github.com/DanielLavrushin/b4/compare/v1.9.0...v1.9.1
+[1.9.0]: https://github.com/DanielLavrushin/b4/compare/v1.8.0...v1.9.0
+[1.8.0]: https://github.com/DanielLavrushin/b4/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/DanielLavrushin/b4/compare/v1.6.0...v1.7.0
+[1.6.0]: https://github.com/DanielLavrushin/b4/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/DanielLavrushin/b4/compare/v1.4.3...v1.5.0

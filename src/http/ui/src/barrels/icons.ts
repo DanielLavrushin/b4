@@ -112,4 +112,7 @@ export {
   ArrowDownward as ReceivedIcon,
   Settings as SettingsIcon,
   SportsEsports as GameIcon,
+  NotificationsNone as NotifyIcon,
+  NotificationsActive as NotifyOnIcon,
+  NotificationsOff as NotifyOffIcon,
 } from "@mui/icons-material";

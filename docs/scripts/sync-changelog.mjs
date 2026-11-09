@@ -26,7 +26,7 @@ const stripLeadingH1 = (text) =>
 
 for (const { source, dest, title } of targets) {
   const body = stripLeadingH1(await readFile(source, "utf8")).trimStart();
-  const frontMatter = `---\nsidebar_position: 20\ntitle: ${title}\n---\n\n`;
+  const frontMatter = `---\nsidebar_position: 20\ntitle: ${title}\ntoc_max_heading_level: 2\n---\n\n`;
   await mkdir(dirname(dest), { recursive: true });
   await writeFile(dest, frontMatter + body, "utf8");
   console.log(`synced ${source} -> ${dest}`);

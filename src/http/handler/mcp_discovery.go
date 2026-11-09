@@ -1064,9 +1064,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		}
 		set.Name = name
 	} else {
-		if set.Name == "" {
-			set.Name = domain
-		}
+		set.Name = domain
 		base := set.Name
 		for i := 2; mcpNameTaken(newCfg, set.Name); i++ {
 			set.Name = fmt.Sprintf("%s %d", base, i)

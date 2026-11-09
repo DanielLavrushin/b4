@@ -227,21 +227,87 @@ func TestTimestampStrategyLowersTheTimestamp(t *testing.T) {
 	}
 }
 
+func assertUnacceptableFake(t *testing.T, fake, original []byte, ipHdrLen int, checksumValid bool) {
+	t.Helper()
+	if fake == nil {
+		t.Fatal("expected a fake")
+	}
+	ttlAt := 8
+	if ipHdrLen == 40 {
+		ttlAt = 7
+	}
+	if fake[ttlAt] != original[ttlAt] {
+		t.Fatalf("TTL %d, want the original %d", fake[ttlAt], original[ttlAt])
+	}
+	seq := binary.BigEndian.Uint32(fake[ipHdrLen+4 : ipHdrLen+8])
+	if want := binary.BigEndian.Uint32(original[ipHdrLen+4 : ipHdrLen+8]); seq != want {
+		t.Fatalf("seq %d, want the original %d", seq, want)
+	}
+	ack := binary.BigEndian.Uint32(fake[ipHdrLen+8 : ipHdrLen+12])
+	if want := binary.BigEndian.Uint32(original[ipHdrLen+8:ipHdrLen+12]) + 0x60000000; ack != want {
+		t.Fatalf("ack %#x, want %#x: a server must drop the fake for acknowledging data it never sent", ack, want)
+	}
+	if checksumValid {
+		t.Fatal("the fake must also keep a bad checksum")
+	}
+}
+
 func TestTimestampStrategyFallsBackToABadChecksumV6(t *testing.T) {
 	pkt := buildMinimalIPv6TCPPacket(100)
 	cfg := &config.SetConfig{}
 	cfg.Faking.Strategy = "timestamp"
 
 	fake := BuildFakeSNIPacketV6(pkt, cfg)
+	assertUnacceptableFake(t, fake, pkt, 40, TCPChecksumValidV6(fake))
+
+	cfg.Faking.Strategy = "ttl"
+	ttlFake := BuildFakeSNIPacketV6(pkt, cfg)
+	if !TCPChecksumValidV6(ttlFake) {
+		t.Fatal("a ttl fake must keep a valid checksum")
+	}
+	if !bytes.Equal(ttlFake[48:52], pkt[48:52]) {
+		t.Fatal("a ttl fake must keep the original ack")
+	}
+}
+
+func TestTCPCheckStrategyMovesTheAck(t *testing.T) {
+	cfg := &config.SetConfig{}
+	cfg.Faking.Strategy = "tcp_check"
+
+	v4 := buildMinimalIPv4TCPPacket(100)
+	fake := BuildFakeSNIPacketV4(v4, cfg)
+	assertUnacceptableFake(t, fake, v4, 20, tcpChecksumIsValid(fake))
+
+	v6 := buildMinimalIPv6TCPPacket(100)
+	fake6 := BuildFakeSNIPacketV6(v6, cfg)
+	assertUnacceptableFake(t, fake6, v6, 40, TCPChecksumValidV6(fake6))
+}
+
+func TestTimestampStrategyKeepsTheAckWithATimestamp(t *testing.T) {
+	pkt := packetWithTimestamp(100)
+	cfg := &config.SetConfig{}
+	cfg.Faking.Strategy = "timestamp"
+
+	fake := BuildFakeSNIPacketV4(pkt, cfg)
 	if fake == nil {
 		t.Fatal("expected a fake")
 	}
-	if TCPChecksumValidV6(fake) {
-		t.Fatal("without a timestamp option the IPv6 fake must go out with a bad checksum")
+	if !bytes.Equal(fake[28:32], pkt[28:32]) {
+		t.Fatal("a fake with a lowered timestamp must keep the original ack")
 	}
-	cfg.Faking.Strategy = "ttl"
-	if !TCPChecksumValidV6(BuildFakeSNIPacketV6(pkt, cfg)) {
-		t.Fatal("a ttl fake must keep a valid checksum")
+}
+
+func TestFakeAckWrapsAroundWithoutLandingInTheWindow(t *testing.T) {
+	pkt := buildMinimalIPv4TCPPacket(100)
+	binary.BigEndian.PutUint32(pkt[28:32], 0xF0000000)
+	FixTCPChecksum(pkt)
+	cfg := &config.SetConfig{}
+	cfg.Faking.Strategy = "tcp_check"
+
+	fake := BuildFakeSNIPacketV4(pkt, cfg)
+	ack := binary.BigEndian.Uint32(fake[28:32])
+	if lead := ack - 0xF0000000; lead != 0x60000000 {
+		t.Fatalf("ack lead %#x across the wrap, want 0x60000000", lead)
 	}
 }
 
@@ -274,13 +340,5 @@ func TestTimestampStrategyFallsBackToABadChecksum(t *testing.T) {
 	cfg.Faking.Strategy = "timestamp"
 
 	fake := BuildFakeSNIPacketV4(pkt, cfg)
-	if fake == nil {
-		t.Fatal("expected a fake")
-	}
-	if fake[8] != pkt[8] {
-		t.Fatal("TTL must not change on the fallback")
-	}
-	if tcpChecksumIsValid(fake) {
-		t.Fatal("without a timestamp option the fake must go out with a bad checksum, or the server accepts it")
-	}
+	assertUnacceptableFake(t, fake, pkt, 20, tcpChecksumIsValid(fake))
 }

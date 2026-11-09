@@ -32,7 +32,7 @@ equal to its default (`MarshalSparse`, `src/config/sparse.go`). `GET /api/config
   and a greyed control that keeps a stale value does too.
 - **Changing an existing default changes every config that never set the value**, including
   configs whose owner picked the old default on purpose: the sparse file never stored it.
-  That is a CHANGED changelog bullet, not a silent tweak.
+  That is a Changed changelog bullet, not a silent tweak.
 
 Per set or global: per-set strategy and routing options go on `SetConfig`; everything else
 under `Config.System` or `Config.Queue`, all in `src/config/types.go`.
@@ -70,6 +70,6 @@ Adding a field needs no migration and no version bump. Renaming, moving or retyp
 ## 4. Finish
 
 - `go -C src test ./config/ ./hubwire/ ./http/handler/ ./ai/`, then `/b4-check` for the rest.
-- An ADDED changelog bullet in both changelogs (`/b4-changelog`), or CHANGED for a new default.
+- An Added changelog bullet in both changelogs (`/b4-changelog`), or Changed for a new default.
 - The docs page for the setting, both locales, written last once the change is settled
   (`/b4-docs`).

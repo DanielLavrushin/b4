@@ -22,3 +22,4 @@ export * from "@components/common/B4PlusButton";
 export * from "@components/common/B4InlineEdit";
 export * from "@components/common/B4AiExplain";
 export * from "@components/common/B4RunProgress";
+export * from "@components/common/B4NotifyToggle";

@@ -1,45 +1,77 @@
 # b4hub changelog
 
-Releases of the community hub service, published from the `b4hub` repository. The router changelog is `changelog.md` at the repository root.
-
-## [1.7.0] - unreleased
-
-- CHANGED: **`dns.upstreams`, the extra resolver list b4 1.91.0 adds, is a private field** - like a set's source devices, a set's extra DNS resolvers are never shared. When a set carries them, Check lists the field under Stripped fields, and a hub built from an earlier b4 drops it with a warning about fields b4 does not know.
+All notable changes to the b4hub community hub service are recorded in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Releases are published from the `b4hub` repository; the router changelog is `changelog.md` at the repository root.
 
 ## [1.6.0] - 2026-11-06
 
-- CHANGED: **The console's Check treats IP priority, the set switch that b4 1.90.0 adds, as a private field** - like a set's source devices, `targets.ip_priority` is never shared. When the Full set JSON of the edit dialog turns it on, Check lists it under Stripped fields. A hub built from an earlier b4 drops it with a warning about fields b4 does not know.
-- FIXED: **Telegram notifications repeated `Bad Request: chat not found` with nothing an operator could act on** - a supergroup, a forum and a channel have a chat id of `-(1000000000000 + the number a t.me/c/ link shows)`. A group that turns into a supergroup gets a new id as well, which Telegram names in its refusal and the hub discarded. The chat id field described neither.
+### Changed
+
+- The console's **Check** also treats `dns.upstreams`, the extra resolver list b4 1.91.0 adds, as a private field that is never shared, and lists it under **Stripped fields** when a set carries one.
+
+- The console's **Check** treats `targets.ip_priority`, the set switch b4 1.90.0 adds, as a private field that is never shared, and lists it under **Stripped fields** when the **Full set JSON** turns it on.
+
+### Fixed
+
+- Telegram notifications repeated `Bad Request: chat not found`, because the chat id field did not explain the ids of supergroups, forums and channels, and the new id Telegram names after a group becomes a supergroup was discarded.
 
 ## [1.5.0] - 2026-10-21
 
-- ADDED: **Sets without targets that handle only calls, which b4 1.88.0 can share, are accepted** - one that also filters TCP ports is refused, and the others are marked as needing b4 1.88.0, as is any set that uses the generated STUN payload. The calls they handle and their UDP ports count like targets for duplicates and versions, but their `udp.filter_stun`, which b4 ignores on such a set, does not. On set cards the console shows their calls, such as `Calls: Discord app, Browsers`, and its search finds them by `discord` or `stun`.
+### Added
+
+- Sets without targets that handle only calls, which b4 1.88.0 can share, are accepted and marked as needing b4 1.88.0, unless they also filter TCP ports. Set cards show their calls, such as `Calls: Discord app, Browsers`, and search finds them by `discord` or `stun`.
 
 ## [1.4.0] - 2026-10-12
 
-- ADDED: **Sets with the switch that removes ECH keys from DNS answers, which b4 1.87.0 can share, keep it through the hub** - `dns.strip_ech` crosses like the other DNS settings and marks the set as needing b4 1.87.0, where a hub built from an earlier b4 drops it as an unknown field.
+### Added
+
+- Sets with the switch that removes ECH keys from DNS answers, which b4 1.87.0 can share, keep `dns.strip_ech` through the hub and are marked as needing b4 1.87.0.
 
 ## [1.3.0] - 2026-09-27
 
-- CHANGED: **Moderation actions return at once and the catalogue is published by a background build** - a build starts 1.5 seconds after the last change, an automatic hide included, and no later than 10 seconds after the first, a failed build stays on Overview and the Catalogue page with its error until one succeeds, and the Catalogue page keeps a history of what each build changed. Approved mirrors are checked every 10 minutes and once before the first build after a start instead of at every build, and `b4hub moderate`, extended to sets, keys, reports, mirrors, builds and the audit log, leaves a build request that a running hub picks up within about ten seconds.
-- CHANGED: **A ban is a reversible quarantine** - a banned key's sets leave the catalogue and its votes and reports stop counting until the ban is lifted, while before a ban only refused new records and left the key's sets listed and its votes in the scores.
-- ADDED: **Whole-set, bulk and report moderation** - a set can be withdrawn from the catalogue and reinstated as it was, the title and description of a listed version can be changed without a new version, up to 200 versions can be decided at once, every decision states its catalogue effect before it is confirmed, and reports go through an inbox as open, dismissed or handled, with only open reports on a known network from keys neither banned nor tagged test counting toward the automatic hide.
-- ADDED: **A console built for reviewing** - sets shown as cards like the router's, sortable, paged lists with the search in the address, a panel with its own link for every set and key, a key's activity, networks, name, note and a test tag that keeps its votes out of published scores, every vote with its applied weight, filterable by ASN and country, similar sets in the queue, and saved reasons in every decision dialog. The edit dialog of a pending version changes every kind of target and shows each warning beside the field it concerns.
-- ADDED: **Oversight pages** - Statistics counts activity per day, the spread of published scores and where votes come from, the Audit log records every action from the console, the command line and the hub itself, and a Health card on Overview lists what needs attention in place of the geo databases card.
-- ADDED: **Notifications to Telegram or a webhook** - a digest of new sets, reports, automatic hides, failed builds and new mirrors, grouped by a configurable interval, in English or Russian, with a signed JSON body for the webhook and the credentials set in the console or in `B4HUB_TELEGRAM_TOKEN`, `B4HUB_TELEGRAM_CHAT`, `B4HUB_WEBHOOK_URL` and `B4HUB_WEBHOOK_SECRET`.
-- CHANGED: **A mirror answers routers within their wait while the hub is down, and checks, limits and signs what it passes on** - it stops waiting on a hub that failed twice in a row, holds votes and complaints within `--queue-limit` (5000 by default, 0 for none) and daily caps per client network and per key, refuses records that do not verify, loop back to it or exceed 600 an hour from one client network, and sends its queue oldest first at a pace the hub's limits allow. The hub stores a record signed by a mirror approved with that key without a network, so its vote counts only in the overall score and its complaint never toward the automatic hide, and an approved mirror keeps the key it was approved with.
-- ADDED: **A restart after an outage or a database restore cannot publish a catalogue that drops the mirrors, falls behind or replaces the published one from a new database** - approved mirrors stay listed while none of them passes, and a build is refused, with the cause in the build history, when its number is not above the catalogue already published or served by a mirror, or when a database that never published would replace the published catalogue or sign an empty one with a key built into b4; `--new-database` on `serve` and `build` confirms an intended new database.
-- FIXED: **A signed vote or complaint could be counted again under a re-encoded signature** - base64 decoding ignores line breaks and spare bits, so a variant of a record verified under a different record id and passed the duplicate check.
+### Added
+
+- Whole-set, bulk and report moderation: a set can be withdrawn and reinstated, a listed version's title and description edited, up to 200 versions decided at once, and reports go through an inbox as open, dismissed or handled.
+- A console built for reviewing, with sets shown as cards like the router's, sortable paged lists, a linkable panel for every set and key, and a test tag that keeps a key's votes out of published scores.
+- **Statistics**, **Audit log** and a **Health** card on **Overview** show daily activity, the spread of scores, where votes come from, every moderation action and what needs attention.
+- Notifications to Telegram or a webhook with a digest of new sets, reports, automatic hides, failed builds and new mirrors, set up in the console or with `B4HUB_TELEGRAM_TOKEN`, `B4HUB_TELEGRAM_CHAT`, `B4HUB_WEBHOOK_URL` and `B4HUB_WEBHOOK_SECRET`.
+- A restart after an outage or a database restore refuses to publish a catalogue that drops the mirrors, goes backwards or replaces the published one from a new database. `--new-database` on `serve` and `build` confirms an intended new database.
+
+### Changed
+
+- Moderation actions return at once, and a background build starts 1.5 seconds after the last change and no later than 10 seconds after the first, with failed builds and a build history on **Overview** and **Catalogue**. `b4hub moderate` covers sets, keys, reports, mirrors, builds and the audit log.
+- A ban is a reversible quarantine: a banned key's sets leave the catalogue and its votes and reports stop counting until the ban is lifted.
+- A mirror answers routers within their wait while the hub is down, and checks, limits and signs what it passes on, with its queue capped by `--queue-limit` (5000 by default, 0 for none). A vote relayed by an approved mirror counts only in the overall score, and its complaint never counts toward the automatic hide.
+
+### Fixed
+
+- A signed vote or complaint could be counted twice under a re-encoded signature.
 
 ## [1.2.0] - 2026-09-26
 
-- ADDED: **Sets with ASN targets, which b4 1.83.0 can share, are handled as targets throughout the hub** - an ASN counts toward the same-targets duplicate check and the no-targets check, the targets summary, the moderation console and its search show it as `AS15169`, and a set carrying more than 50 ASNs is flagged with `too_many_asns`.
+### Added
+
+- Sets with ASN targets, which b4 1.83.0 can share, count as targets in the duplicate and no-targets checks and show as `AS15169` in the console and its search. A set with more than 50 ASNs is flagged `too_many_asns`.
 
 ## [1.1.0] - 2026-09-19
 
-- ADDED: **The Mirrors page of the console and `b4hub moderate mirrors` show the b4hub version each mirror reported** - the version travels in the announcement, so it refreshes when the mirror starts and once a day after that.
+### Added
+
+- The **Mirrors** page and `b4hub moderate mirrors` show the b4hub version each mirror reported, refreshed when the mirror starts and once a day.
 
 ## [1.0.0] - 2026-09-18
 
-- ADDED: **A pending set can be edited in the moderation console before it is approved** - title, description, the domain list and the full set JSON go through the same checks as a fresh share, the received version is kept for comparison, and the check flags domain entries that can never match (b4 has no wildcard syntax), entries already covered by a shorter one, duplicates and a `www.` entry whose apex is missing, with a one-click tidied list. Until now a submission with a flawed domain list could only be approved as it was or rejected.
-- CHANGED: **b4hub is versioned and released on its own** - tarballs, images and release notes come from the `b4hub` repository, and the binary reports the b4 source tree it was built from. Until now the hub shipped under the b4 version number, so a hub-only change required a router release.
+### Added
+
+- A pending set can be edited in the moderation console before approval, with the same checks as a fresh share and the received version kept for comparison. The domain check flags entries that can never match, entries covered by a shorter one, duplicates and a `www.` entry without its apex, with a one-click tidied list.
+
+### Changed
+
+- b4hub is versioned and released on its own from the `b4hub` repository, and the binary reports the b4 source tree it was built from.
+
+[1.6.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/DanielLavrushin/b4hub/releases/tag/v1.0.0

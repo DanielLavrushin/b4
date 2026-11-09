@@ -18,7 +18,7 @@ type comboFamily struct {
 	packet func([]byte, uint32) []byte
 	parse  func([]byte) (PacketInfo, bool)
 	ttlAt  int
-	combo  func(*Worker, *config.SetConfig, []byte, net.IP)
+	combo  func(*Worker, *config.SetConfig, []byte, net.IP, bool)
 }
 
 func comboFamilies() []comboFamily {
@@ -77,7 +77,7 @@ func TestComboKeepsTheOverlapOnARequestWithMethodEOL(t *testing.T) {
 		packet func([]byte, uint32) []byte
 		parse  func([]byte) (PacketInfo, bool)
 		ttlAt  int
-		inject func(*Worker, *config.SetConfig, []byte, net.IP)
+		inject func(*Worker, *config.SetConfig, []byte, net.IP, bool)
 	}{
 		{"IPv4", net.IPv4(1, 2, 3, 4), makeV4TCPPacket, ExtractPacketInfoV4, 8, (*Worker).dropAndInjectTCP},
 		{"IPv6", net.ParseIP(v6TestDst), makeV6TCPPacket, ExtractPacketInfoV6, 7, (*Worker).dropAndInjectTCPv6},
@@ -89,7 +89,7 @@ func TestComboKeepsTheOverlapOnARequestWithMethodEOL(t *testing.T) {
 			set := overlapTestSet(overlap, []byte{0x16, 0x03, 0x03, 0x00, 0x00})
 			set.TCP.HTTPMethodEOL = true
 			openComboStream(t, w, tc.packet, tc.parse, seq)
-			tc.inject(w, &set, tc.packet(request, seq), tc.dst)
+			tc.inject(w, &set, tc.packet(request, seq), tc.dst, true)
 
 			lowest := seq
 			var joined []byte
@@ -142,7 +142,7 @@ func TestComboOverlapsOnlyAPacketThatStartsAMessage(t *testing.T) {
 				sent := captureInjected(t, w)
 				set := overlapTestSet(overlap, pattern)
 				openComboStream(t, w, family.packet, family.parse, seq)
-				family.combo(w, &set, family.packet(tc.payload, seq), family.dst)
+				family.combo(w, &set, family.packet(tc.payload, seq), family.dst, true)
 
 				type piece struct {
 					seq  uint32

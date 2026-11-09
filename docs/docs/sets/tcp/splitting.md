@@ -26,7 +26,7 @@ The **Splitting** sub-tab decides how b4 splits the first data packet of a conne
 | **TCP Segmentation** | Splits the packet into TCP segments. |
 | **IP Fragmentation** | Splits the IP packet into IP fragments. |
 | **TLS Record Splitting** | Splits the ClientHello into several TLS records inside one TCP packet. |
-| **OOB (Out-of-Band)** | Inserts a byte with the TCP URG flag. The server ignores it, while DPI that follows the connection reads it as data. |
+| **OOB (Out-of-Band)** | Sends a one-byte fake with the TCP URG flag. DPI that follows the connection reads it as data. The fake goes out at **Fake TTL** and has to expire before the server, which would drop the real byte at that position. |
 | **Disabled** | No splitting. Only fake packets are used, if they are on. |
 
 ## TCP Segmentation and IP Fragmentation
@@ -77,7 +77,7 @@ Shown for Combo and Disorder. b4 puts fake bytes in front of a real segment and 
 
 | Field | What it does | Default |
 | --- | --- | --- |
-| **Insert Position** | How many bytes come before the inserted byte, 1 to 50. A range makes each connection pick a random position. | - |
+| **Insert Position** | How many bytes come before the inserted byte, 1 to 50. A range makes each connection pick a random position. While **Smart SNI Split** is on, as it is by default, the byte goes in the middle of the server name instead. | - |
 | **OOB Byte** | The byte sent out of band. | `x` |
 
 ## TLS Record Splitting

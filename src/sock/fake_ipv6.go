@@ -86,6 +86,10 @@ func BuildFakeSNIPacketV6(original []byte, cfg *config.SetConfig) []byte {
 	default:
 	}
 
+	if badsum {
+		moveFakeAck(fake[ipv6HdrLen:])
+	}
+
 	FixTCPChecksumV6(fake)
 
 	if badsum {
