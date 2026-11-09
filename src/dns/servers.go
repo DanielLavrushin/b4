@@ -57,7 +57,7 @@ func AllSourcesCooling(servers []Server) bool {
 		return true
 	}
 	for _, srv := range servers {
-		if !SourceUnreachable(srv.Source) {
+		if !SourceCooling(srv.Source) {
 			return false
 		}
 	}
@@ -136,7 +136,7 @@ func askInOrder[T any](callCtx, lifeCtx context.Context, servers []Server, opt O
 	if !opt.Strict && !opt.Quiet {
 		live := make([]Server, 0, len(servers))
 		for _, srv := range servers {
-			if !SourceUnreachable(srv.Source) {
+			if !SourceCooling(srv.Source) {
 				live = append(live, srv)
 			}
 		}
@@ -153,25 +153,31 @@ func askInOrder[T any](callCtx, lifeCtx context.Context, servers []Server, opt O
 
 	started := 0
 	startNext := func() bool {
-		if started >= len(candidates) {
-			return false
-		}
-		srv := candidates[started]
-		started++
-		go func(srv Server) {
-			sctx, cancel := context.WithTimeout(lifeCtx, srv.timeout())
-			defer cancel()
-			val, err := ask(sctx, srv)
-			out := asked[T]{val: val, srv: srv, err: err, j: judge(val, err)}
-			if err != nil && lifeCtx.Err() != nil {
-				out.cancelled = true
+		for started < len(candidates) {
+			srv := candidates[started]
+			started++
+			if SourceUnreachable(srv.Source) {
+				continue
 			}
-			ch <- out
-		}(srv)
-		return true
+			go func(srv Server) {
+				sctx, cancel := context.WithTimeout(lifeCtx, srv.timeout())
+				defer cancel()
+				val, err := ask(sctx, srv)
+				out := asked[T]{val: val, srv: srv, err: err, j: judge(val, err)}
+				if err != nil && lifeCtx.Err() != nil {
+					out.cancelled = true
+				}
+				ch <- out
+			}(srv)
+			return true
+		}
+		return false
 	}
 
-	startNext()
+	launched := 0
+	if startNext() {
+		launched++
+	}
 	timer := time.NewTimer(headStart)
 	defer timer.Stop()
 	timerC := timer.C
@@ -179,7 +185,11 @@ func askInOrder[T any](callCtx, lifeCtx context.Context, servers []Server, opt O
 	var fallback *asked[T]
 	var failure *asked[T]
 
-	for answered := 0; answered < len(candidates); {
+	answered := 0
+	for {
+		if answered == launched && started >= len(candidates) {
+			break
+		}
 		var got asked[T]
 		select {
 		case got = <-ch:
@@ -192,7 +202,7 @@ func askInOrder[T any](callCtx, lifeCtx context.Context, servers []Server, opt O
 			}
 			switch got.j.class {
 			case answerGood, answerNoData:
-				drainAnswers(ch, started-answered, opt.Quiet)
+				drainAnswers(ch, launched-answered, opt.Quiet)
 				return got.val, got.srv, got.err
 			case answerRetryable:
 				if fallback == nil {
@@ -204,18 +214,20 @@ func askInOrder[T any](callCtx, lifeCtx context.Context, servers []Server, opt O
 				}
 			}
 			if startNext() {
+				launched++
 				armTimer(timer, &timerC, headStart)
 			} else {
 				timerC = nil
 			}
 		case <-timerC:
 			if startNext() {
+				launched++
 				armTimer(timer, &timerC, headStart)
 			} else {
 				timerC = nil
 			}
 		case <-callCtx.Done():
-			drainAnswers(ch, started-answered, opt.Quiet)
+			drainAnswers(ch, launched-answered, opt.Quiet)
 			return zero, Server{}, callCtx.Err()
 		}
 	}

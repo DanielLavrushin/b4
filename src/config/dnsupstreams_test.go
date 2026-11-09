@@ -165,3 +165,19 @@ func TestACaseOnlyChangeInADoHURLIsANewResolver(t *testing.T) {
 		t.Fatal("the scheme is normalised, so its casing is not a change")
 	}
 }
+
+func TestAnInvalidPrimaryDoesNotTakeOneOfTheEight(t *testing.T) {
+	cfg := NewConfig()
+	set := &SetConfig{Id: "dns1", Name: "dns", Enabled: true}
+	set.DNS.Enabled = true
+	set.DNS.TargetDNS = "resolver.local"
+	set.DNS.Upstreams = []string{"1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "94.140.14.14", "208.67.222.222", "208.67.220.220", "77.88.8.8"}
+	cfg.Sets = []*SetConfig{set}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if got := len(set.DNS.UpstreamList()); got != MaxDNSUpstreams {
+		t.Fatalf("the set asks %d resolvers, want %d: a primary that never becomes a resolver takes no slot", got, MaxDNSUpstreams)
+	}
+}

@@ -321,7 +321,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		}
 
 		if !set.DNS.HasUpstream() {
-			if strings.TrimSpace(set.DNS.TargetDNS) != "" || strings.TrimSpace(set.DNS.DoHURL) != "" {
+			if dnsBadTarget(set) {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionBadTarget)
 			} else {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionPassthrough)

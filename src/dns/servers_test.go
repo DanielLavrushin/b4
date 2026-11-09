@@ -292,3 +292,38 @@ func TestACallerThatCancelsRightAfterTheCallStillCoolsTheResolver(t *testing.T) 
 	}
 	t.Fatal("a caller that cancels right after the call left the silent resolver uncooled")
 }
+
+func TestFilteringDoesNotConsumeARecoveryAttempt(t *testing.T) {
+	resetHealth(t)
+	t.Cleanup(func() { ResetSourceHealth() })
+	life := lifeContext(t)
+
+	var primaryOK int32 = 1
+	primary := startAnswering(t, func(q []byte) []byte {
+		if atomic.LoadInt32(&primaryOK) == 0 {
+			return nil
+		}
+		return BuildAnswerFromIPs(q, 60, []net.IP{net.IPv4(203, 0, 113, 30)})
+	}, nil)
+	primary.Timeout = 200 * time.Millisecond
+	primary.Source = "primary"
+	backup := startAnswering(t, answeringWith(net.IPv4(203, 0, 113, 31)), nil)
+	backup.Source = "backup"
+	servers := []Server{primary, backup}
+
+	for i := 0; i < SourceFailuresToTrip; i++ {
+		NoteSourceFailure("backup")
+	}
+	expireCooldown("backup")
+
+	ips, err := LookupWithFallback(context.Background(), LookupIPs, servers, Options{Life: life}, true, "example.test", true, false)
+	if err != nil || len(ips) != 1 || !ips[0].Equal(net.IPv4(203, 0, 113, 30)) {
+		t.Fatalf("first lookup: %v %v, want the primary", ips, err)
+	}
+
+	atomic.StoreInt32(&primaryOK, 0)
+	ips, err = LookupWithFallback(context.Background(), LookupIPs, servers, Options{Life: life}, true, "example.test", true, false)
+	if err != nil || len(ips) != 1 || !ips[0].Equal(net.IPv4(203, 0, 113, 31)) {
+		t.Fatalf("second lookup: %v %v, want the recovered backup: filtering must not spend its recovery attempt", ips, err)
+	}
+}

@@ -430,12 +430,15 @@ func (c *Config) Validate() error {
 		}
 		listLimit := MaxDNSUpstreams
 		var primary []string
-		if strings.TrimSpace(set.DNS.DoHURL) != "" {
-			listLimit--
-			primary = append(primary, set.DNS.DoHURL)
-		} else if strings.TrimSpace(set.DNS.TargetDNS) != "" {
-			listLimit--
-			primary = append(primary, set.DNS.TargetDNS)
+		for _, candidate := range []string{set.DNS.DoHURL, set.DNS.TargetDNS} {
+			if strings.TrimSpace(candidate) == "" {
+				continue
+			}
+			if norm, ok := NormalizeUpstream(candidate); ok {
+				listLimit--
+				primary = append(primary, norm)
+			}
+			break
 		}
 		set.DNS.NormalizeUpstreamsLimit(listLimit, primary, func(value string) {
 			label := UpstreamLabel(value)

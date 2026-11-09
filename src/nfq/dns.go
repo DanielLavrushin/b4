@@ -232,6 +232,13 @@ func redirectTargets(set *config.SetConfig) []net.IP {
 	return out
 }
 
+func dnsBadTarget(set *config.SetConfig) bool {
+	if set == nil || !set.DNS.Enabled || set.DNS.HasUpstream() {
+		return false
+	}
+	return strings.TrimSpace(set.DNS.TargetDNS) != "" || strings.TrimSpace(set.DNS.DoHURL) != ""
+}
+
 func plainRedirectTargets(set *config.SetConfig) []net.IP {
 	list := set.DNS.UpstreamList()
 	out := make([]net.IP, 0, len(list))
@@ -460,7 +467,7 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				}
 
 				if !set.DNS.HasUpstream() {
-					if strings.TrimSpace(set.DNS.TargetDNS) != "" || strings.TrimSpace(set.DNS.DoHURL) != "" {
+					if dnsBadTarget(set) {
 						log.Tracef("DNS redirect: %s matched set %s, whose redirect target does not parse, passing through", dns.SafeName(domain), set.Name)
 						logDNSEvent("UDP", set, domain, clientIP, originalDst, clientPort, srcMac, dnsActionBadTarget)
 						return vc.accept()

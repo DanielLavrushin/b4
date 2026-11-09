@@ -477,3 +477,19 @@ func TestTheFallbackSkipsOnlyPlainResolvers(t *testing.T) {
 		t.Fatal("the fallback asked a plain resolver that the set itself uses")
 	}
 }
+
+func TestABadTargetIsLabelledOnlyWhileTheRedirectIsOn(t *testing.T) {
+	set := redirectSet("resolver.local", "")
+	if !dnsBadTarget(set) {
+		t.Fatal("a non-empty primary that does not parse must keep the dns-bad-target label")
+	}
+	set.DNS.Enabled = false
+	if dnsBadTarget(set) {
+		t.Fatal("a disabled redirect passes through, it is not a bad target")
+	}
+	set.DNS.Enabled = true
+	set.DNS.Upstreams = []string{"1.1.1.1"}
+	if dnsBadTarget(set) {
+		t.Fatal("a set with a usable list is not a bad target")
+	}
+}
