@@ -206,6 +206,55 @@ func TestWithoutPinnedAliasKeepsDelegatedRecordsUnderAPinnedDomain(t *testing.T)
 	}
 }
 
+func TestWithoutPinnedAliasKeepsANAPTRRecordWithItsReplacementName(t *testing.T) {
+	naptr := []byte{0, 10, 0, 100, 1, 'S', 7, 'S', 'I', 'P', '+', 'D', '2', 'U', 0, 0xC0, 0x0C}
+	resp := aliasTestReply(t, "www.instagram.com.", dnsmessage.Type(rrTypeNAPTR), dnsmessage.Header{}, func(b *dnsmessage.Builder) error {
+		if err := b.StartAnswers(); err != nil {
+			return err
+		}
+		if err := cnameRR(b, "www.instagram.com.", "z-p42-instagram.c10r.instagram.com.", 3600); err != nil {
+			return err
+		}
+		return b.UnknownResource(rrHeader("z-p42-instagram.c10r.instagram.com.", dnsmessage.Type(rrTypeNAPTR)), dnsmessage.UnknownResource{Type: dnsmessage.Type(rrTypeNAPTR), Data: naptr})
+	})
+
+	_, an, _ := rewrittenFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0), "www.instagram.com.", dnsmessage.Type(rrTypeNAPTR))
+	want := append(append([]byte(nil), naptr[:15]...), encodeName("www.instagram.com")...)
+	if len(an) != 1 || !bytes.Equal(an[0].Body.(*dnsmessage.UnknownResource).Data, want) {
+		t.Fatalf("answers %+v, want the NAPTR record with its compressed replacement name written out", an)
+	}
+}
+
+func TestWithoutPinnedAliasReadsPastLegacyRecordsItDoesNotKeep(t *testing.T) {
+	rp := append(encodeName("admin.example.net"), encodeName("info.example.net")...)
+	resp := aliasTestReply(t, "www.instagram.com.", dnsmessage.TypeMX, dnsmessage.Header{}, func(b *dnsmessage.Builder) error {
+		if err := b.StartAnswers(); err != nil {
+			return err
+		}
+		if err := cnameRR(b, "www.instagram.com.", "z-p42-instagram.c10r.instagram.com.", 3600); err != nil {
+			return err
+		}
+		if err := b.StartAuthorities(); err != nil {
+			return err
+		}
+		return b.UnknownResource(rrHeader("instagram.com.", dnsmessage.Type(17)), dnsmessage.UnknownResource{Type: dnsmessage.Type(17), Data: rp})
+	})
+	emptyAnswerFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0), "www.instagram.com.", dnsmessage.TypeMX, 0)
+
+	asked := aliasTestReply(t, "www.instagram.com.", dnsmessage.Type(17), dnsmessage.Header{}, func(b *dnsmessage.Builder) error {
+		if err := b.StartAnswers(); err != nil {
+			return err
+		}
+		if err := cnameRR(b, "www.instagram.com.", "z-p42-instagram.c10r.instagram.com.", 3600); err != nil {
+			return err
+		}
+		return b.UnknownResource(rrHeader("z-p42-instagram.c10r.instagram.com.", dnsmessage.Type(17)), dnsmessage.UnknownResource{Type: dnsmessage.Type(17), Data: rp})
+	})
+	if out := WithoutPinnedAlias(asked, pinnedNames("www.instagram.com"), pinTestTTL, 0); out != nil {
+		t.Fatal("a record b4 cannot copy safely was rewritten, its names could point into the old message")
+	}
+}
+
 func TestWithoutPinnedAliasHandlesASignedAnswer(t *testing.T) {
 	resp := aliasTestReply(t, "www.instagram.com.", dnsmessage.TypeMX, dnsmessage.Header{AuthenticData: true}, func(b *dnsmessage.Builder) error {
 		if err := b.StartAnswers(); err != nil {

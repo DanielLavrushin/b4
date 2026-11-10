@@ -25,13 +25,23 @@ func WithoutPinnedAlias(payload []byte, pinned func(name string) bool, ttl uint3
 	questionEnd := offset + 4
 
 	var sections [3][]answerRR
+	unportable := map[int]bool{}
 	offset = questionEnd
 	for s := range sections {
 		count := int(binary.BigEndian.Uint16(payload[6+2*s : 8+2*s]))
 		for range count {
-			rr, next, ok := readPortableRR(payload, offset)
+			rr, next, ok := readRawRR(payload, offset)
 			if !ok || rr.typ == rrTypeTSIG {
 				return nil
+			}
+			if s == 0 && (rr.typ == rrTypeCNAME || rr.typ == rrTypeDNAME || rr.typ == qtype) {
+				if portable, _, ok := readPortableRR(payload, offset); ok {
+					rr = portable
+				} else if rr.typ != qtype || qtype == rrTypeCNAME || qtype == rrTypeDNAME {
+					return nil
+				} else {
+					unportable[len(sections[0])] = true
+				}
 			}
 			offset = next
 			sections[s] = append(sections[s], rr)
@@ -67,9 +77,12 @@ func WithoutPinnedAlias(payload []byte, pinned func(name string) bool, ttl uint3
 	}
 
 	var kept []answerRR
-	for _, rr := range sections[0] {
+	for i, rr := range sections[0] {
 		if rr.typ != qtype || rr.class != qclass || rr.typ == rrTypeCNAME || rr.typ == rrTypeDNAME || !chain[strings.ToLower(rr.name)] {
 			continue
+		}
+		if unportable[i] {
+			return nil
 		}
 		rr.name = qName
 		rr.ttl = min(rr.ttl, ttl)
@@ -107,4 +120,23 @@ func WithoutPinnedAlias(payload []byte, pinned func(name string) bool, ttl uint3
 		return nil
 	}
 	return out
+}
+
+func readRawRR(payload []byte, offset int) (answerRR, int, bool) {
+	name, next, ok := readName(payload, offset)
+	if !ok || next+10 > len(payload) {
+		return answerRR{}, 0, false
+	}
+	start := next + 10
+	end := start + int(binary.BigEndian.Uint16(payload[next+8:next+10]))
+	if end > len(payload) {
+		return answerRR{}, 0, false
+	}
+	return answerRR{
+		name:  name,
+		typ:   binary.BigEndian.Uint16(payload[next : next+2]),
+		class: binary.BigEndian.Uint16(payload[next+2 : next+4]),
+		ttl:   binary.BigEndian.Uint32(payload[next+4 : next+8]),
+		rdata: payload[start:end],
+	}, end, true
 }
