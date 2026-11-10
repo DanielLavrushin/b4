@@ -488,7 +488,14 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 			return nil, errNoDNSTarget
 		}
 	}
-	return s.resolve(set, cfg, query, targetIP)
+	resp, err := s.resolve(set, cfg, query, targetIP)
+	if err != nil || len(resp) == 0 {
+		return resp, err
+	}
+	if filtered, _, _ := s.worker.filterDNSAnswer(cfg, set, domain, s.worker.getMacByIp(clientIP.String()), resp, true, from...); filtered != nil {
+		resp = filtered
+	}
+	return resp, nil
 }
 
 func (s *dnsTCPServer) logEvent(set *config.SetConfig, domain string, clientIP, serverIP net.IP, clientPort int, srcMac, action string) {

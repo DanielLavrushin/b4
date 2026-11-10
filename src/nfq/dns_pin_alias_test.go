@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"net"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -244,6 +245,67 @@ func pinAliasMXQuery() []byte {
 func mxOverTCP(t *testing.T, w *Worker) []byte {
 	t.Helper()
 	return queriesOverTCP(t, w, pinAliasMXQuery())[0]
+}
+
+func pinAliasAReply(t *testing.T, txid uint16) []byte {
+	t.Helper()
+	b := dnsmessage.NewBuilder(nil, dnsmessage.Header{ID: txid, Response: true, RecursionDesired: true, RecursionAvailable: true})
+	b.EnableCompression()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(b.StartQuestions())
+	must(b.Question(dnsmessage.Question{Name: dnsmessage.MustNewName(pinAliasName + "."), Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET}))
+	must(b.StartAnswers())
+	must(b.CNAMEResource(
+		dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName(pinAliasName + "."), Type: dnsmessage.TypeCNAME, Class: dnsmessage.ClassINET, TTL: 2377},
+		dnsmessage.CNAMEResource{CNAME: dnsmessage.MustNewName(pinAliasTarget + ".")},
+	))
+	must(b.AResource(
+		dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName(pinAliasTarget + "."), Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET, TTL: 46},
+		dnsmessage.AResource{A: [4]byte{31, 13, 72, 174}},
+	))
+	msg, err := b.Finish()
+	must(err)
+	return msg
+}
+
+func TestAnEscalatedDNSOverTCPAnswerLosesTheNextSetsPinnedAlias(t *testing.T) {
+	primary := pinAliasSet("primary", false)
+	primary.Escalate.To = "backup"
+	primary.Escalate.DNSThreshold = 1
+	primary.DNS.Enabled = true
+	backup := pinAliasSet("backup", false)
+	backup.DNS.Enabled = true
+	backup.DNS.Pins = map[string][]string{pinAliasName: {"2a03:2880:f20a:e5:face:b00c:0:4420"}}
+	w, _ := echTestWorker(t, primary, backup)
+	aliased := pinAliasAReply(t, 0)
+	var asked atomic.Int32
+	url := dohServerReplying(t, w, func(query []byte) []byte {
+		if asked.Add(1) == 1 {
+			return dns.BuildBlockResponse(query)
+		}
+		out := append([]byte(nil), aliased...)
+		copy(out[:2], query[:2])
+		return out
+	})
+	primary.DNS.DoHURL = url
+	backup.DNS.DoHURL = url
+
+	answer := queriesOverTCP(t, w, dns.BuildQuery(pinAliasName, 0x7070, dnsTypeA))[0]
+
+	if asked.Load() != 2 {
+		t.Fatalf("the resolvers were asked %d times, want the primary's failure and then the backup set's lookup", asked.Load())
+	}
+	if carriesTheAlias(answer) {
+		t.Fatal("the backup set's answer over TCP still carries the alias of the name it pins, a caching resolver follows it past the IPv6 pin")
+	}
+	if got := ipStrings(dns.ParseResponseIPs(answer)); got != "31.13.72.174" {
+		t.Fatalf("addresses %q, want the resolver's IPv4 address kept for a name pinned to IPv6 only", got)
+	}
 }
 
 func TestDNSOverTCPDropsAPinnedNamesAliasAfterAnUnmatchedQuery(t *testing.T) {
