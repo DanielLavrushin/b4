@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 
@@ -126,21 +127,23 @@ func TestAReplyForAnUnpinnedNameKeepsItsAlias(t *testing.T) {
 }
 
 func TestAReplyLosesTheAliasTheEscalatedSetPins(t *testing.T) {
-	primary := pinAliasSet("primary", false)
-	primary.Escalate.To = "backup"
-	backup := pinAliasSet("backup", true)
-	cfg := config.NewConfig()
-	cfg.Sets = []*config.SetConfig{primary, backup}
-	w := passiveDNSWorker(t, &cfg)
-	if !w.destState.SetEscalation(pinAliasName, backup.Id, escalateReasonDNS, time.Minute) {
-		t.Fatal("the escalation was not recorded")
+	for _, escalateTo := range []string{"backup", ""} {
+		primary := pinAliasSet("primary", false)
+		primary.Escalate.To = escalateTo
+		backup := pinAliasSet("backup", true)
+		cfg := config.NewConfig()
+		cfg.Sets = []*config.SetConfig{primary, backup}
+		w := passiveDNSWorker(t, &cfg)
+		if !w.destState.SetEscalation(pinAliasName, backup.Id, escalateReasonDNS, time.Minute) {
+			t.Fatal("the escalation was not recorded")
+		}
+		q := newFakeModQueue()
+		raw := masqueradedReply(pinAliasMXReply(t, 0x5151))
+
+		handleReply(t, w, &verdictCtx{id: 1, q: q}, raw)
+
+		emptyPinAnswer(t, keepsItsPacket(t, q.now(t), raw), "escalate.to "+strconv.Quote(escalateTo)+": the escalated set answers the name from its pins, as on the query path")
 	}
-	q := newFakeModQueue()
-	raw := masqueradedReply(pinAliasMXReply(t, 0x5151))
-
-	handleReply(t, w, &verdictCtx{id: 1, q: q}, raw)
-
-	emptyPinAnswer(t, keepsItsPacket(t, q.now(t), raw), "the escalated set answers the name from its pins")
 }
 
 func TestFilterDNSAnswerDropsAPinnedNamesAlias(t *testing.T) {

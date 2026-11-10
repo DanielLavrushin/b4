@@ -106,10 +106,8 @@ func (w *Worker) unaliasPinnedAnswer(cfg *config.Config, set *config.SetConfig, 
 		return nil, nil
 	}
 	pins := set
-	if set.Escalate.Active() {
-		if esc := w.escalatedSetFor(cfg, set, domain, clientMac, scopeFrom(from).filter()); esc != nil {
-			pins = esc
-		}
+	if esc := w.escalatedSetFor(cfg, set, domain, clientMac, scopeFrom(from).filter()); esc != nil {
+		pins = esc
 	}
 	if len(pins.DNS.Pins) == 0 {
 		return nil, nil
