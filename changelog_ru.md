@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.90.1] - 2026-11-10
+
 ### Добавлено
 
 - Лог называет сет и устройство, когда фейк **TCP Timestamp** уходит без своего timestamp, как с компьютера с Windows по умолчанию или к серверу, который отклоняет timestamp. [#554](https://github.com/DanielLavrushin/b4/issues/554)
