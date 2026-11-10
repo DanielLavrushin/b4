@@ -4,6 +4,8 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+## [1.90.1] - 2026-11-10
+
 ### Added
 
 - The log names the set and the device when a **TCP Timestamp** fake goes out without its timestamp, as from a Windows PC by default or toward a server that refuses timestamps. [#554](https://github.com/DanielLavrushin/b4/issues/554)
