@@ -90,7 +90,6 @@ func WithoutPinnedAlias(payload []byte, pinned func(name string) bool, ttl uint3
 
 	out := make([]byte, 12, len(payload))
 	copy(out, payload[:12])
-	out[2] &^= 0x02
 	out[3] &^= headerFlagAD | 0x0F
 	binary.BigEndian.PutUint16(out[6:8], uint16(len(kept)))
 	binary.BigEndian.PutUint16(out[8:10], 0)

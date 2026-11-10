@@ -64,8 +64,8 @@ func rewrittenFor(t *testing.T, out []byte, qname string, qtype dnsmessage.Type)
 		t.Fatal("the answer still carries the pinned name's alias, a caching resolver keeps it and bypasses the pin")
 	}
 	h, an, ns, ar := parsedMessage(t, out)
-	if !h.Response || h.ID != 0x4321 || h.RCode != dnsmessage.RCodeSuccess || h.Truncated || h.AuthenticData {
-		t.Fatalf("header %+v, want a complete NOERROR response with the reply's id and no AD", h)
+	if !h.Response || h.ID != 0x4321 || h.RCode != dnsmessage.RCodeSuccess || h.AuthenticData {
+		t.Fatalf("header %+v, want a NOERROR response with the reply's id and no AD", h)
 	}
 	if len(ns) != 0 {
 		t.Fatalf("%d authority records, want none", len(ns))
@@ -124,8 +124,8 @@ func TestWithoutPinnedAliasEmptiesAnMXAnswerCarryingTheAlias(t *testing.T) {
 
 	out := WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0)
 
-	if h := emptyAnswerFor(t, out, "www.instagram.com.", dnsmessage.TypeMX, 1); !h.Authoritative {
-		t.Error("the AA bit of the reply was lost")
+	if h := emptyAnswerFor(t, out, "www.instagram.com.", dnsmessage.TypeMX, 1); !h.Authoritative || h.Truncated {
+		t.Errorf("header %+v, want the reply's AA bit kept and no TC on a complete reply", h)
 	}
 	_, _, _, ar := parsedMessage(t, out)
 	opt, ok := ar[0].Body.(*dnsmessage.OPTResource)
@@ -134,8 +134,23 @@ func TestWithoutPinnedAliasEmptiesAnMXAnswerCarryingTheAlias(t *testing.T) {
 	}
 }
 
+func TestWithoutPinnedAliasKeepsTheTruncationOfATruncatedReply(t *testing.T) {
+	for _, qtype := range []dnsmessage.Type{dnsmessage.TypeMX, dnsmessage.TypeTXT} {
+		resp := aliasTestReply(t, "www.instagram.com.", qtype, dnsmessage.Header{Truncated: true}, func(b *dnsmessage.Builder) error {
+			if err := b.StartAnswers(); err != nil {
+				return err
+			}
+			return cnameRR(b, "www.instagram.com.", "z-p42-instagram.c10r.instagram.com.", 3600)
+		})
+
+		if h := emptyAnswerFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0), "www.instagram.com.", qtype, 0); !h.Truncated {
+			t.Errorf("%v: TC cleared on a truncated reply, the client takes the alias-only part for the whole answer instead of asking again over TCP", qtype)
+		}
+	}
+}
+
 func TestWithoutPinnedAliasKeepsTheTargetsTXTUnderTheAskedName(t *testing.T) {
-	resp := aliasTestReply(t, "www.instagram.com.", dnsmessage.TypeTXT, dnsmessage.Header{Truncated: true}, func(b *dnsmessage.Builder) error {
+	resp := aliasTestReply(t, "www.instagram.com.", dnsmessage.TypeTXT, dnsmessage.Header{}, func(b *dnsmessage.Builder) error {
 		if err := b.StartAnswers(); err != nil {
 			return err
 		}
