@@ -3,7 +3,6 @@ package nfq
 import (
 	"context"
 	"encoding/binary"
-	"io"
 	"net"
 	"testing"
 	"time"
@@ -174,12 +173,17 @@ func pinAliasTCPUpstream(t *testing.T, reply []byte) {
 			if err != nil {
 				return
 			}
-			if query, err := readDNSTCPMessage(conn); err == nil {
+			_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+			for {
+				query, err := readDNSTCPMessage(conn)
+				if err != nil {
+					break
+				}
 				out := append([]byte(nil), reply...)
 				copy(out[:2], query[:2])
-				_ = writeDNSTCPMessage(conn, out, time.Second)
-				_ = conn.SetReadDeadline(time.Now().Add(time.Second))
-				_, _ = io.Copy(io.Discard, conn)
+				if writeDNSTCPMessage(conn, out, time.Second) != nil {
+					break
+				}
 			}
 			conn.Close()
 		}
@@ -198,7 +202,7 @@ func pinAliasTCPUpstream(t *testing.T, reply []byte) {
 	t.Cleanup(func() { dnsTCPOriginalDst, dialDNSTCPUpstream = prevDst, prevDial })
 }
 
-func mxOverTCP(t *testing.T, w *Worker) []byte {
+func queriesOverTCP(t *testing.T, w *Worker, queries ...[]byte) [][]byte {
 	t.Helper()
 	s := newDNSTCPServer(w, 0)
 	t.Cleanup(s.cancel)
@@ -210,12 +214,16 @@ func mxOverTCP(t *testing.T, w *Worker) []byte {
 	}()
 
 	_ = clientEnd.SetDeadline(time.Now().Add(5 * time.Second))
-	if err := writeDNSTCPMessage(clientEnd, dns.BuildQuery(pinAliasName, 0x6262, uint16(dnsmessage.TypeMX)), time.Second); err != nil {
-		t.Fatal(err)
-	}
-	resp, err := readDNSTCPMessage(clientEnd)
-	if err != nil {
-		t.Fatalf("no answer over TCP: %v", err)
+	var answers [][]byte
+	for i, query := range queries {
+		if err := writeDNSTCPMessage(clientEnd, query, time.Second); err != nil {
+			t.Fatal(err)
+		}
+		resp, err := readDNSTCPMessage(clientEnd)
+		if err != nil {
+			t.Fatalf("query %d: no answer over TCP: %v", i, err)
+		}
+		answers = append(answers, resp)
 	}
 	clientEnd.Close()
 	select {
@@ -223,7 +231,25 @@ func mxOverTCP(t *testing.T, w *Worker) []byte {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the connection handler never returned")
 	}
-	return resp
+	return answers
+}
+
+func pinAliasMXQuery() []byte {
+	return dns.BuildQuery(pinAliasName, 0x6262, uint16(dnsmessage.TypeMX))
+}
+
+func mxOverTCP(t *testing.T, w *Worker) []byte {
+	t.Helper()
+	return queriesOverTCP(t, w, pinAliasMXQuery())[0]
+}
+
+func TestDNSOverTCPDropsAPinnedNamesAliasAfterAnUnmatchedQuery(t *testing.T) {
+	w, _ := echTestWorker(t, pinAliasSet("instagram", true))
+	pinAliasTCPUpstream(t, pinAliasMXReply(t, 0))
+
+	answers := queriesOverTCP(t, w, dns.BuildQuery("example.org", 0x6161, dnsTypeA), pinAliasMXQuery())
+
+	emptyPinAnswer(t, answers[1], "an MX answer on a connection whose first query no set matched")
 }
 
 func TestDNSOverTCPDropsAPinnedNamesAlias(t *testing.T) {

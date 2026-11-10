@@ -229,8 +229,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 	var scope *ingressScope
 	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
 		bansActive := s.worker.bans.any()
-		pinned := set != nil && cfg.IPFamilyEnabled(v6) && len(set.DNS.PinnedAddresses(domain)) > 0
-		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !(cfg.HasECHStrip() || bansActive || pinned) || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
+		pinsActive := cfg.IPFamilyEnabled(v6) && cfg.HasDNSPins()
+		pinned := pinsActive && set != nil && len(set.DNS.PinnedAddresses(domain)) > 0
+		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !(cfg.HasECHStrip() || bansActive || pinsActive) || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
 			upstream.close()
 			s.passthrough(client, origIP, origPort, origErr, query)
 			return false
