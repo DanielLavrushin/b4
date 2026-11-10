@@ -229,7 +229,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 	var scope *ingressScope
 	relay := func(cfg *config.Config, set *config.SetConfig, domain string, query []byte) bool {
 		bansActive := s.worker.bans.any()
-		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !(cfg.HasECHStrip() || bansActive) || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
+		pinsActive := cfg.IPFamilyEnabled(v6) && cfg.HasDNSPins()
+		pinned := pinsActive && set != nil && len(set.DNS.PinnedAddresses(domain)) > 0
+		if qtype, _ := dns.QuestionType(query); cfg.Queue.IsDiscovery || !(cfg.HasECHStrip() || bansActive || pinsActive) || !standardQuery(query) || qtype == dnsTypeAXFR || qtype == dnsTypeIXFR {
 			upstream.close()
 			s.passthrough(client, origIP, origPort, origErr, query)
 			return false
@@ -237,6 +239,12 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 		resp := upstream.exchange(cfg, query)
 		if resp == nil {
 			return false
+		}
+		if pinned {
+			if unaliased, actor := s.worker.unaliasPinnedAnswer(cfg, set, true, domain, srcMac, resp, true, scope); unaliased != nil {
+				s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionAliasStripped)
+				resp = unaliased
+			}
 		}
 		if echless, actor := s.worker.stripECHKeys(cfg, set, domain, srcMac, resp, true, srcMac == "" && !cfg.IPFamilyEnabled(v6), scope); echless != nil {
 			s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionECHStripped)
@@ -480,7 +488,14 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 			return nil, errNoDNSTarget
 		}
 	}
-	return s.resolve(set, cfg, query, targetIP)
+	resp, err := s.resolve(set, cfg, query, targetIP)
+	if err != nil || len(resp) == 0 {
+		return resp, err
+	}
+	if filtered, _, _ := s.worker.filterDNSAnswer(cfg, set, domain, s.worker.getMacByIp(clientIP.String()), resp, true, from...); filtered != nil {
+		resp = filtered
+	}
+	return resp, nil
 }
 
 func (s *dnsTCPServer) logEvent(set *config.SetConfig, domain string, clientIP, serverIP net.IP, clientPort int, srcMac, action string) {
