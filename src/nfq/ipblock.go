@@ -101,7 +101,7 @@ func (w *Worker) emptyPinnedAnswer(set *config.SetConfig, query []byte, domain s
 	return empty
 }
 
-func (w *Worker) unaliasPinnedAnswer(cfg *config.Config, set *config.SetConfig, domain, clientMac string, resp []byte, from ...*ingressScope) ([]byte, *config.SetConfig) {
+func (w *Worker) unaliasPinnedAnswer(cfg *config.Config, set *config.SetConfig, attributed bool, domain, clientMac string, resp []byte, overTCP bool, from ...*ingressScope) ([]byte, *config.SetConfig) {
 	if set == nil || len(resp) == 0 {
 		return nil, nil
 	}
@@ -112,10 +112,17 @@ func (w *Worker) unaliasPinnedAnswer(cfg *config.Config, set *config.SetConfig, 
 	if len(pins.DNS.Pins) == 0 {
 		return nil, nil
 	}
+	if !attributed && clientMac == "" && len(pins.Targets.SourceDevices) > 0 {
+		return nil, nil
+	}
+	maxSize := 0
+	if overTCP {
+		maxSize = dns.MaxTCPMessageSize
+	}
 	out := dns.WithoutPinnedAlias(resp, func(name string) bool {
 		pin, _ := pins.DNS.PinnedEntry(name)
 		return pin != ""
-	}, config.DefaultDNSPinTTLSec)
+	}, config.DefaultDNSPinTTLSec, maxSize)
 	if out == nil {
 		return nil, nil
 	}
@@ -262,12 +269,16 @@ func (w *Worker) healingSet(cfg *config.Config, set *config.SetConfig) bool {
 }
 
 func (w *Worker) filterDNSAnswer(cfg *config.Config, set *config.SetConfig, domain, clientMac string, resp []byte, overTCP bool, from ...*ingressScope) ([]byte, string, *config.SetConfig) {
+	return w.filterDNSAnswerFor(cfg, set, set, true, domain, clientMac, resp, overTCP, from...)
+}
+
+func (w *Worker) filterDNSAnswerFor(cfg *config.Config, set, pinSet *config.SetConfig, attributed bool, domain, clientMac string, resp []byte, overTCP bool, from ...*ingressScope) ([]byte, string, *config.SetConfig) {
 	if w == nil || len(resp) == 0 {
 		return nil, "", nil
 	}
 	out := resp
 	var unaliasedBy *config.SetConfig
-	if unaliased, actor := w.unaliasPinnedAnswer(cfg, set, domain, clientMac, resp, from...); unaliased != nil {
+	if unaliased, actor := w.unaliasPinnedAnswer(cfg, pinSet, attributed, domain, clientMac, resp, overTCP, from...); unaliased != nil {
 		out = unaliased
 		unaliasedBy = actor
 	} else if echless, actor := w.stripECHKeys(cfg, set, domain, clientMac, resp, overTCP, false, from...); echless != nil {

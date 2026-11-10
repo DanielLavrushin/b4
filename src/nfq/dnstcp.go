@@ -241,7 +241,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			return false
 		}
 		if pinned {
-			if unaliased, actor := s.worker.unaliasPinnedAnswer(cfg, set, domain, srcMac, resp, scope); unaliased != nil {
+			if unaliased, actor := s.worker.unaliasPinnedAnswer(cfg, set, true, domain, srcMac, resp, true, scope); unaliased != nil {
 				s.logEvent(actor, domain, clientIP, origIP, clientPort, srcMac, dnsActionAliasStripped)
 				resp = unaliased
 			}

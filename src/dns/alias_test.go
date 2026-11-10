@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"bytes"
 	"net"
 	"strings"
 	"testing"
@@ -49,15 +50,15 @@ func soaRR(b *dnsmessage.Builder, zone string) error {
 	})
 }
 
-func optRR(b *dnsmessage.Builder, dnssecOK bool) error {
+func optRR(b *dnsmessage.Builder, dnssecOK bool, options ...dnsmessage.Option) error {
 	var h dnsmessage.ResourceHeader
 	if err := h.SetEDNS0(1232, dnsmessage.RCodeSuccess, dnssecOK); err != nil {
 		return err
 	}
-	return b.OPTResource(h, dnsmessage.OPTResource{})
+	return b.OPTResource(h, dnsmessage.OPTResource{Options: options})
 }
 
-func emptyAnswerFor(t *testing.T, out []byte, qname string, qtype dnsmessage.Type) dnsmessage.Header {
+func rewrittenFor(t *testing.T, out []byte, qname string, qtype dnsmessage.Type) (dnsmessage.Header, []dnsmessage.Resource, []dnsmessage.Resource) {
 	t.Helper()
 	if out == nil {
 		t.Fatal("the answer still carries the pinned name's alias, a caching resolver keeps it and bypasses the pin")
@@ -66,8 +67,16 @@ func emptyAnswerFor(t *testing.T, out []byte, qname string, qtype dnsmessage.Typ
 	if !h.Response || h.ID != 0x4321 || h.RCode != dnsmessage.RCodeSuccess || h.Truncated || h.AuthenticData {
 		t.Fatalf("header %+v, want a complete NOERROR response with the reply's id and no AD", h)
 	}
-	if len(an) != 0 || len(ns) != 0 || len(ar) != 0 {
-		t.Fatalf("%d answers, %d authorities and %d additionals, want an empty answer", len(an), len(ns), len(ar))
+	if len(ns) != 0 {
+		t.Fatalf("%d authority records, want none", len(ns))
+	}
+	for _, rr := range an {
+		if rr.Header.Type == dnsmessage.TypeCNAME || rr.Header.Type == dnsmessage.Type(rrTypeDNAME) || rr.Header.Type == dnsmessage.Type(rrTypeRRSIG) {
+			t.Fatalf("answer %v kept, want only records of the asked type", rr.Header)
+		}
+		if rr.Header.Name.String() != qname || rr.Header.Type != qtype {
+			t.Fatalf("answer %v, want records of type %v owned by the asked name %s", rr.Header, qtype, qname)
+		}
 	}
 	var p dnsmessage.Parser
 	if _, err := p.Start(out); err != nil {
@@ -80,10 +89,20 @@ func emptyAnswerFor(t *testing.T, out []byte, qname string, qtype dnsmessage.Typ
 	if q.Name.String() != qname || q.Type != qtype {
 		t.Fatalf("question %s %v, want the reply's %s %v", q.Name, q.Type, qname, qtype)
 	}
+	return h, an, ar
+}
+
+func emptyAnswerFor(t *testing.T, out []byte, qname string, qtype dnsmessage.Type, wantOPT int) dnsmessage.Header {
+	t.Helper()
+	h, an, ar := rewrittenFor(t, out, qname, qtype)
+	if len(an) != 0 || len(ar) != wantOPT {
+		t.Fatalf("%d answers and %d additionals, want an empty answer carrying %d OPT records", len(an), len(ar), wantOPT)
+	}
 	return h
 }
 
 func TestWithoutPinnedAliasEmptiesAnMXAnswerCarryingTheAlias(t *testing.T) {
+	cookie := dnsmessage.Option{Code: 10, Data: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}}
 	resp := aliasTestReply(t, "www.instagram.com.", dnsmessage.TypeMX, dnsmessage.Header{Authoritative: true}, func(b *dnsmessage.Builder) error {
 		if err := b.StartAnswers(); err != nil {
 			return err
@@ -100,17 +119,22 @@ func TestWithoutPinnedAliasEmptiesAnMXAnswerCarryingTheAlias(t *testing.T) {
 		if err := b.StartAdditionals(); err != nil {
 			return err
 		}
-		return optRR(b, false)
+		return optRR(b, false, cookie)
 	})
 
-	out := WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL)
+	out := WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0)
 
-	if h := emptyAnswerFor(t, out, "www.instagram.com.", dnsmessage.TypeMX); !h.Authoritative {
+	if h := emptyAnswerFor(t, out, "www.instagram.com.", dnsmessage.TypeMX, 1); !h.Authoritative {
 		t.Error("the AA bit of the reply was lost")
+	}
+	_, _, _, ar := parsedMessage(t, out)
+	opt, ok := ar[0].Body.(*dnsmessage.OPTResource)
+	if !ok || len(opt.Options) != 1 || opt.Options[0].Code != 10 || !bytes.Equal(opt.Options[0].Data, cookie.Data) || ar[0].Header.Class != 1232 {
+		t.Fatalf("additional %+v, want the reply's OPT record with its cookie: a resolver that holds a server cookie drops an answer without it and asks again over TCP", ar[0])
 	}
 }
 
-func TestWithoutPinnedAliasEmptiesATXTAnswerOfTheAliasTarget(t *testing.T) {
+func TestWithoutPinnedAliasKeepsTheTargetsTXTUnderTheAskedName(t *testing.T) {
 	resp := aliasTestReply(t, "www.instagram.com.", dnsmessage.TypeTXT, dnsmessage.Header{Truncated: true}, func(b *dnsmessage.Builder) error {
 		if err := b.StartAnswers(); err != nil {
 			return err
@@ -121,7 +145,50 @@ func TestWithoutPinnedAliasEmptiesATXTAnswerOfTheAliasTarget(t *testing.T) {
 		return b.TXTResource(rrHeader("z-p42-instagram.c10r.instagram.com.", dnsmessage.TypeTXT), dnsmessage.TXTResource{TXT: []string{"v=spf1 a ~all"}})
 	})
 
-	emptyAnswerFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL), "www.instagram.com.", dnsmessage.TypeTXT)
+	_, an, _ := rewrittenFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0), "www.instagram.com.", dnsmessage.TypeTXT)
+
+	if len(an) != 1 || strings.Join(an[0].Body.(*dnsmessage.TXTResource).TXT, "") != "v=spf1 a ~all" || an[0].Header.TTL != pinTestTTL {
+		t.Fatalf("answers %+v, want the target's TXT record under the asked name with the pin TTL", an)
+	}
+}
+
+func TestWithoutPinnedAliasKeepsDelegatedRecordsUnderAPinnedDomain(t *testing.T) {
+	dmarc := aliasTestReply(t, "_dmarc.apex.test.", dnsmessage.TypeTXT, dnsmessage.Header{}, func(b *dnsmessage.Builder) error {
+		if err := b.StartAnswers(); err != nil {
+			return err
+		}
+		if err := cnameRR(b, "_dmarc.apex.test.", "_dmarc.mail.example.net.", 3600); err != nil {
+			return err
+		}
+		h := rrHeader("_dmarc.mail.example.net.", dnsmessage.TypeTXT)
+		h.TTL = 20
+		return b.TXTResource(h, dnsmessage.TXTResource{TXT: []string{"v=DMARC1; p=none"}})
+	})
+	_, an, _ := rewrittenFor(t, WithoutPinnedAlias(dmarc, pinnedNames("apex.test"), pinTestTTL, 0), "_dmarc.apex.test.", dnsmessage.TypeTXT)
+	if len(an) != 1 || strings.Join(an[0].Body.(*dnsmessage.TXTResource).TXT, "") != "v=DMARC1; p=none" || an[0].Header.TTL != 20 {
+		t.Fatalf("answers %+v, want the delegated DMARC record under the asked name with its own TTL", an)
+	}
+
+	mx := aliasTestReply(t, "sub.apex.test.", dnsmessage.TypeMX, dnsmessage.Header{}, func(b *dnsmessage.Builder) error {
+		if err := b.StartAnswers(); err != nil {
+			return err
+		}
+		if err := cnameRR(b, "sub.apex.test.", "mail.example.net.", 3600); err != nil {
+			return err
+		}
+		if err := b.MXResource(rrHeader("mail.example.net.", dnsmessage.TypeMX), dnsmessage.MXResource{Pref: 10, MX: dnsmessage.MustNewName("mx1.mail.example.net.")}); err != nil {
+			return err
+		}
+		return b.MXResource(rrHeader("mail.example.net.", dnsmessage.TypeMX), dnsmessage.MXResource{Pref: 20, MX: dnsmessage.MustNewName("mx2.mail.example.net.")})
+	})
+	_, an, _ = rewrittenFor(t, WithoutPinnedAlias(mx, pinnedNames("apex.test"), pinTestTTL, 0), "sub.apex.test.", dnsmessage.TypeMX)
+	var got []string
+	for _, rr := range an {
+		got = append(got, rr.Body.(*dnsmessage.MXResource).MX.String())
+	}
+	if strings.Join(got, ",") != "mx1.mail.example.net.,mx2.mail.example.net." {
+		t.Fatalf("exchanges %v, want both of the target's MX records, names intact", got)
+	}
 }
 
 func TestWithoutPinnedAliasHandlesASignedAnswer(t *testing.T) {
@@ -147,7 +214,7 @@ func TestWithoutPinnedAliasHandlesASignedAnswer(t *testing.T) {
 		return optRR(b, true)
 	})
 
-	emptyAnswerFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL), "www.instagram.com.", dnsmessage.TypeMX)
+	emptyAnswerFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0), "www.instagram.com.", dnsmessage.TypeMX, 1)
 }
 
 func TestWithoutPinnedAliasMatchesNamesWhateverTheirCase(t *testing.T) {
@@ -158,7 +225,7 @@ func TestWithoutPinnedAliasMatchesNamesWhateverTheirCase(t *testing.T) {
 		return cnameRR(b, "WWW.INSTAGRAM.COM.", "z-p42-instagram.c10r.instagram.com.", 3600)
 	})
 
-	emptyAnswerFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL), "wWw.InStAgRaM.cOm.", dnsmessage.TypeMX)
+	emptyAnswerFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0), "wWw.InStAgRaM.cOm.", dnsmessage.TypeMX, 0)
 }
 
 func TestWithoutPinnedAliasCatchesADNAMEOfAPinnedName(t *testing.T) {
@@ -170,7 +237,7 @@ func TestWithoutPinnedAliasCatchesADNAMEOfAPinnedName(t *testing.T) {
 		return b.UnknownResource(rrHeader("instagram.com.", dnsmessage.Type(rrTypeDNAME)), dnsmessage.UnknownResource{Type: dnsmessage.Type(rrTypeDNAME), Data: target})
 	})
 
-	emptyAnswerFor(t, WithoutPinnedAlias(resp, pinnedNames("instagram.com"), pinTestTTL), "www.instagram.com.", dnsmessage.TypeTXT)
+	emptyAnswerFor(t, WithoutPinnedAlias(resp, pinnedNames("instagram.com"), pinTestTTL, 0), "www.instagram.com.", dnsmessage.TypeTXT, 0)
 }
 
 func TestWithoutPinnedAliasKeepsTheAddressesUnderTheAskedName(t *testing.T) {
@@ -192,19 +259,50 @@ func TestWithoutPinnedAliasKeepsTheAddressesUnderTheAskedName(t *testing.T) {
 		return optRR(b, false)
 	})
 
-	out := WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL)
-	if out == nil {
-		t.Fatal("an address answer for a pinned name still carries its alias")
-	}
-	h, an, ns, _ := parsedMessage(t, out)
-	if h.AuthenticData || h.RCode != dnsmessage.RCodeSuccess || len(ns) != 0 {
-		t.Fatalf("header %+v with %d authorities, want NOERROR without AD", h, len(ns))
-	}
-	if len(an) != 1 || an[0].Header.Type != dnsmessage.TypeA || an[0].Header.Name.String() != "www.instagram.com." || an[0].Header.TTL != pinTestTTL {
-		t.Fatalf("answers %+v, want one A record owned by the asked name with the pin TTL", an)
+	_, an, ar := rewrittenFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0), "www.instagram.com.", dnsmessage.TypeA)
+	if len(an) != 1 || an[0].Header.TTL != 46 || len(ar) != 1 {
+		t.Fatalf("%d answers (TTL %v) and %d additionals, want one A record keeping the resolver's 46 s and the OPT record", len(an), an, len(ar))
 	}
 	if got := net.IP(an[0].Body.(*dnsmessage.AResource).A[:]).String(); got != "31.13.72.174" {
 		t.Fatalf("address %s, want the resolver's 31.13.72.174", got)
+	}
+}
+
+func TestWithoutPinnedAliasCapsALongTTLAtThePinTTL(t *testing.T) {
+	resp := aliasTestReply(t, "www.instagram.com.", dnsmessage.TypeA, dnsmessage.Header{}, func(b *dnsmessage.Builder) error {
+		if err := b.StartAnswers(); err != nil {
+			return err
+		}
+		if err := cnameRR(b, "www.instagram.com.", "z-p42-instagram.c10r.instagram.com.", 3600); err != nil {
+			return err
+		}
+		h := rrHeader("z-p42-instagram.c10r.instagram.com.", dnsmessage.TypeA)
+		h.TTL = 300
+		return b.AResource(h, dnsmessage.AResource{A: [4]byte{31, 13, 72, 174}})
+	})
+
+	_, an, _ := rewrittenFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0), "www.instagram.com.", dnsmessage.TypeA)
+	if len(an) != 1 || an[0].Header.TTL != pinTestTTL {
+		t.Fatalf("answers %+v, want the address kept with the pin TTL", an)
+	}
+}
+
+func TestWithoutPinnedAliasKeepsAnIPv4MappedAAAA(t *testing.T) {
+	resp := aliasTestReply(t, "www.instagram.com.", dnsmessage.TypeAAAA, dnsmessage.Header{}, func(b *dnsmessage.Builder) error {
+		if err := b.StartAnswers(); err != nil {
+			return err
+		}
+		if err := cnameRR(b, "www.instagram.com.", "z-p42-instagram.c10r.instagram.com.", 3600); err != nil {
+			return err
+		}
+		var mapped [16]byte
+		copy(mapped[:], net.ParseIP("::ffff:31.13.72.174").To16())
+		return b.AAAAResource(rrHeader("z-p42-instagram.c10r.instagram.com.", dnsmessage.TypeAAAA), dnsmessage.AAAAResource{AAAA: mapped})
+	})
+
+	_, an, _ := rewrittenFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0), "www.instagram.com.", dnsmessage.TypeAAAA)
+	if len(an) != 1 || net.IP(an[0].Body.(*dnsmessage.AAAAResource).AAAA[:]).String() != "31.13.72.174" {
+		t.Fatalf("answers %+v, want the IPv4-mapped AAAA record kept", an)
 	}
 }
 
@@ -222,7 +320,7 @@ func TestWithoutPinnedAliasEmptiesAnAliasToANameThatDoesNotExist(t *testing.T) {
 		return soaRR(b, "instagram.com.")
 	})
 
-	emptyAnswerFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL), "www.instagram.com.", dnsmessage.TypeMX)
+	emptyAnswerFor(t, WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0), "www.instagram.com.", dnsmessage.TypeMX, 0)
 }
 
 func TestWithoutPinnedAliasPassesAnAddressAnswerThatCarriesNoAddress(t *testing.T) {
@@ -233,9 +331,37 @@ func TestWithoutPinnedAliasPassesAnAddressAnswerThatCarriesNoAddress(t *testing.
 			}
 			return cnameRR(b, "www.instagram.com.", "edge.cdn.example.net.", 3600)
 		})
-		if out := WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL); out != nil {
+		if out := WithoutPinnedAlias(resp, pinnedNames("www.instagram.com"), pinTestTTL, 0); out != nil {
 			t.Errorf("header %+v: an A answer with the alias and no address was rewritten, a recursive resolver could no longer follow the alias to the site's addresses", h)
 		}
+	}
+}
+
+func TestWithoutPinnedAliasPassesAnAnswerThatWouldOutgrowTheClientsLimit(t *testing.T) {
+	resp := aliasTestReply(t, "www.example.com.", dnsmessage.TypeMX, dnsmessage.Header{}, func(b *dnsmessage.Builder) error {
+		if err := b.StartAnswers(); err != nil {
+			return err
+		}
+		if err := cnameRR(b, "www.example.com.", "a-rather-long-mail-target-name.mail.example.net.", 3600); err != nil {
+			return err
+		}
+		for i := range 20 {
+			exchange := dnsmessage.MustNewName("m" + strings.Repeat("x", i%3) + ".a-rather-long-mail-target-name.mail.example.net.")
+			if err := b.MXResource(rrHeader("a-rather-long-mail-target-name.mail.example.net.", dnsmessage.TypeMX), dnsmessage.MXResource{Pref: uint16(i), MX: exchange}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if len(resp) > 512 {
+		t.Fatalf("the test reply is %d bytes, it must fit a plain UDP answer", len(resp))
+	}
+
+	if out := WithoutPinnedAlias(resp, pinnedNames("www.example.com"), pinTestTTL, 0); out != nil && len(out) > 512 {
+		t.Fatalf("the rewritten answer is %d bytes, past the 512 a client without EDNS takes", len(out))
+	}
+	if out := WithoutPinnedAlias(resp, pinnedNames("www.example.com"), pinTestTTL, MaxTCPMessageSize); out == nil {
+		t.Fatal("over TCP the answer fits and must lose its alias")
 	}
 }
 
@@ -281,11 +407,11 @@ func TestWithoutPinnedAliasLeavesOtherAnswersAlone(t *testing.T) {
 		{"another opcode", notify},
 		{"a truncated message", cut},
 	} {
-		if out := WithoutPinnedAlias(tc.resp, pinnedNames("instagram.com"), pinTestTTL); out != nil {
+		if out := WithoutPinnedAlias(tc.resp, pinnedNames("instagram.com"), pinTestTTL, 0); out != nil {
 			t.Errorf("%s: rewritten, want it passed unchanged", tc.name)
 		}
 	}
-	if out := WithoutPinnedAlias(aliasOf("www.instagram.com."), nil, pinTestTTL); out != nil {
+	if out := WithoutPinnedAlias(aliasOf("www.instagram.com."), nil, pinTestTTL, 0); out != nil {
 		t.Error("rewritten without a pin list")
 	}
 }

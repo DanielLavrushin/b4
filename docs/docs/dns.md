@@ -65,7 +65,7 @@ A pin answers a name with fixed addresses, with no hosts file to edit on every d
 - A pin applies only to a name the set targets. For other names the editor offers **Add to this set's domains**.
 - Pins work with **Enable DNS Redirect** off too, and win over the set's resolver.
 - The pins are the whole address answer: a name pinned to IPv4 addresses only gets no IPv6 addresses.
-- The resolver's answers for a pinned name lose the name's alias (CNAME), whatever record type was asked, so that a resolver on the network does not keep the alias and follow it past the pins.
+- The resolver's answers for a pinned name lose the name's alias (CNAME) and keep the records of the type asked under that name, so that a resolver on the network does not keep the alias and follow it past the pins.
 - In a set without routing, b4 leaves out pinned addresses that do not answer on TCP port 443, checked at start, on save and at the **Retest interval (seconds)** of [IP Block Detection](settings/core.md#ip-block-detection). When none answers, the pins are used anyway.
 
 ## The IPv4 fallback
