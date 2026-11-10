@@ -85,6 +85,29 @@ func TestAReplyToADeviceOfASetLimitedToDevicesLosesTheAlias(t *testing.T) {
 	emptyPinAnswer(t, keepsItsPacket(t, v, raw), "the masqueraded reply to a device of a set limited to devices")
 }
 
+func TestAnAttributedReplyKeepsTheSetItsQueryUsedDespiteAnEscalation(t *testing.T) {
+	primary := pinAliasSet("primary", true)
+	primary.Escalate.To = "backup"
+	backup := pinAliasSet("backup", false)
+	backup.Targets.SourceDevices = []string{pinAliasDeviceMAC}
+	backup.Targets.SourceDevicesExclude = true
+	w := pinAliasDeviceWorker(t, primary, backup)
+	if !w.destState.SetEscalation(pinAliasName, backup.Id, escalateReasonDNS, time.Minute) {
+		t.Fatal("the escalation was not recorded")
+	}
+	theDeviceAsksMX(t, w)
+	q := newFakeModQueue()
+	raw := masqueradedReply(pinAliasMXReply(t, 0x5151))
+
+	handleReply(t, w, &verdictCtx{id: 2, q: q}, raw)
+
+	v := q.now(t)
+	if v.packet == nil {
+		t.Fatal("the reply passed with its alias: the backup set excludes this device, so its query stayed on the pinning primary set, and the reply must follow the query")
+	}
+	emptyPinAnswer(t, keepsItsPacket(t, v, raw), "the reply to a device the backup set excludes")
+}
+
 func TestAnUnattributedReplyIsNotRewrittenForAnUnknownDeviceOfASetWithDevices(t *testing.T) {
 	set := pinAliasSet("instagram", true)
 	set.Targets.SourceDevices = []string{pinAliasDeviceMAC}
