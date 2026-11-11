@@ -10,9 +10,42 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/warmtuple"
 )
 
 type connectorConn struct{ net.Conn }
+
+func TestGeoIPOrdinaryConnectorUsesFrozenBackend(t *testing.T) {
+	cfg := config.NewConfig()
+	warm := config.NewSetConfig()
+	warm.Id = "warm"
+	warm.TCP.WarmTuple.Enabled = true
+	warm.Targets.IPs = []string{"203.0.113.2/32"}
+	warm.Targets.IpsToMatch = []string{"203.0.113.2/32"}
+	warm.Targets.IPPriority = true
+	ordinary := config.NewSetConfig()
+	ordinary.Id = "ordinary"
+	ordinary.Targets.SNIDomains = []string{"ordinary.invalid"}
+	ordinary.Targets.DomainsToMatch = []string{"ordinary.invalid"}
+	cfg.Sets = []*config.SetConfig{&warm, &ordinary}
+	cfg.System.Socks5.WarmTuple.Targets = map[string]string{"ordinary.invalid": "203.0.113.9"}
+	backend, peer := net.Pipe()
+	defer backend.Close()
+	defer peer.Close()
+	s := NewServerWithConnector(&cfg, func(_ context.Context, dest string) (net.Conn, error) {
+		if dest != "203.0.113.9:443" {
+			t.Fatalf("ordinary dial repeated hostname resolution: %s", dest)
+		}
+		return backend, nil
+	})
+	s.ctx = context.Background()
+	s.warmTuple = warmtuple.NewService(&cfg, warmtuple.NewFlows())
+	defer s.warmTuple.Close()
+	c, _, err := s.dial(nil, "ordinary.invalid:443")
+	if err != nil || c != backend {
+		t.Fatal("frozen ordinary destination did not reach connector", err)
+	}
+}
 
 func (c connectorConn) LocalAddr() net.Addr {
 	return &net.TCPAddr{IP: net.IPv4(203, 0, 113, 1), Port: 40000}

@@ -24,7 +24,7 @@ func fixture() Config {
 		Host: "warm.example.org", Target: netip.MustParseAddrPort("203.0.113.2:443"),
 		Source: netip.MustParseAddr("203.0.113.1"), FirstPort: 40000, LastPort: 40000,
 		WarmTimeout: time.Second, ReuseTimeout: time.Second,
-		RetryInterval: 20 * time.Millisecond, PassLifetime: time.Second,
+		RetryInterval: 20 * time.Millisecond, ReconnectDelay: 20 * time.Millisecond, PassLifetime: time.Second,
 	}
 }
 
@@ -72,8 +72,8 @@ func TestSelectionAndValidation(t *testing.T) {
 		func(c *Config) { c.Host = "bad\r\nhost" },
 		func(c *Config) { c.LastPort = c.FirstPort + 32 },
 		func(c *Config) { c.FirstPort = 0 },
-		func(c *Config) { c.PassLifetime = 0 },
-		func(c *Config) { c.ReuseTimeout = 6 * time.Second },
+		func(c *Config) { c.PassLifetime = -time.Second },
+		func(c *Config) { c.ReuseTimeout = 61 * time.Second },
 	} {
 		cfg := fixture()
 		mutate(&cfg)
@@ -94,6 +94,22 @@ func TestSelectionAndValidation(t *testing.T) {
 	}
 	if m.Active() != 0 {
 		t.Fatal("unselected requests leased ports")
+	}
+}
+
+func TestIntegratedPassHasNoFixedLifetime(t *testing.T) {
+	cfg := fixture()
+	cfg.PassLifetime = 0
+	cfg.WarmTimeout = 15 * time.Second
+	cfg.ReuseTimeout = 10 * time.Second
+	m := fakeManager(t, cfg)
+	c, err := m.DialContext(context.Background(), cfg.Host+":443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if c.(*Conn).timer != nil {
+		t.Fatal("ordinary pass has an absolute expiry")
 	}
 }
 

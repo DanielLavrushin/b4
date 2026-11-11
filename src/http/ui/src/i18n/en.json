@@ -3182,6 +3182,7 @@
       "echCover": "Probed with ECH, as browsers do: the ClientHello named {{cover}}"
     },
     "errors": {
+
       "not_found": "The set was not found. It may have been deleted.",
       "no_urls": "The set has no addresses to test. Add one to the list.",
       "too_many_urls": "A search for a set tests at most {{max}} addresses.",
@@ -4015,6 +4016,8 @@
     "similar_set_changed": "Set \"{{set}}\" no longer uses the strategy this result found, so its domains were not added. Open the result again to choose a set.",
     "fake_payload_missing": "This strategy was tested with the fake payload {{file}}, which can no longer be loaded, so the set would send a different fake. Run Discovery again to test a strategy with the payloads there are now.",
     "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the set's traffic. Try again in a moment.",
+    "warm_tuple_invalid": "Invalid warm tuple port range, source, target or timing settings.",
+    "warm_tuple_unsupported": "Warm tuple requires SOCKS5 hostnames, domain or IP/GeoIP targets, and NFQUEUE IPv4 TCP443 with wssize ClientHello cutoff, without routing, duplication, TLS or interface filters.",
     "wssize_invalid": "Window: 0..65535; Window Scale: 0..14; cutoff: empty or client_hello.",
     "wssize_unsupported": "wssize requires NFQUEUE without routing, bypass or duplication."
   },

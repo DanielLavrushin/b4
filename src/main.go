@@ -462,6 +462,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	// Start SOCKS5 server if configured.
 	socks5Server := socks5.NewServer(&cfg)
+	socks5Server.SetWarmTupleFlows(pool.WarmTupleFlows())
 	socks5Server.SetIPBlockCache(pool.GetIPBlockCache())
 	socks5Server.SetUpstreamDialer(tproxyMgr)
 	if err := socks5Server.Start(); err != nil {

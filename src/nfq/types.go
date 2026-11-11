@@ -9,6 +9,7 @@ import (
 	"github.com/daniellavrushin/b4/dhcp"
 	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/sock"
+	"github.com/daniellavrushin/b4/warmtuple"
 	"github.com/florianl/go-nfqueue"
 )
 
@@ -29,6 +30,7 @@ type Pool struct {
 	dnsCopy     *dnsCopyListener
 	conntrack   *ctnl.Worker
 	dropSets    *dropSetWriter
+	warmFlows   *warmtuple.Flows
 }
 
 type PacketInfo struct {
@@ -59,6 +61,7 @@ type Worker struct {
 	ipToMac          atomic.Value
 	tlsCache         *tlsInfoCache
 	wssize           *wsSizeCache
+	warmFlows        *warmtuple.Flows
 	streams          *streamStartCache
 	streamsGate      atomic.Pointer[streamGate]
 	connTracker      *connStateTracker

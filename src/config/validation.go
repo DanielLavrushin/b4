@@ -286,6 +286,7 @@ func (c *Config) Validate() error {
 	c.System.IPHealth.BanTTLSec = clampBanSec(c.System.IPHealth.BanTTLSec, DefaultIPBanTTLSec, MaxIPBanTTLSec)
 	c.System.IPHealth.RepeatBanTTLSec = clampBanSec(c.System.IPHealth.RepeatBanTTLSec, DefaultIPRepeatBanTTLSec, MaxIPRepeatBanTTLSec)
 
+	c.validateWarmTuple(v)
 	for setIdx, set := range c.Sets {
 		ws := set.TCP.WSSize
 		if ws.Window < 0 || ws.Window > 65535 || ws.Scale < 0 || ws.Scale > 14 || (ws.Cutoff != "" && ws.Cutoff != "client_hello") {

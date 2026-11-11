@@ -28,16 +28,18 @@ var (
 )
 
 type Config struct {
-	Host          string
-	Target        netip.AddrPort
-	Source        netip.Addr
-	FirstPort     uint16
-	LastPort      uint16
-	WarmTimeout   time.Duration
-	ReuseTimeout  time.Duration
-	RetryInterval time.Duration
-	PassLifetime  time.Duration
-	RootCAs       *x509.CertPool
+	Host           string
+	Target         netip.AddrPort
+	Source         netip.Addr
+	FirstPort      uint16
+	LastPort       uint16
+	WarmTimeout    time.Duration
+	ReuseTimeout   time.Duration
+	RetryInterval  time.Duration
+	ReconnectDelay time.Duration
+	CompactHello   bool
+	PassLifetime   time.Duration
+	RootCAs        *x509.CertPool
 }
 
 type Manager struct {
@@ -47,6 +49,7 @@ type Manager struct {
 	mu     sync.Mutex
 	closed bool
 	leases map[uint16]*lease
+	next   uint16
 	dial   func(context.Context, uint16, uint32) (net.Conn, error)
 	warm   func(context.Context, net.Conn) error
 }
@@ -77,17 +80,18 @@ func New(cfg Config) (*Manager, error) {
 	if cfg.FirstPort == 0 || cfg.LastPort < cfg.FirstPort || int(cfg.LastPort)-int(cfg.FirstPort) >= 32 {
 		return nil, errors.New("source port range must contain 1 to 32 nonzero ports")
 	}
-	if cfg.WarmTimeout <= 0 || cfg.WarmTimeout > 3*time.Second ||
-		cfg.ReuseTimeout <= 0 || cfg.ReuseTimeout > 5*time.Second ||
+	if cfg.WarmTimeout <= 0 || cfg.WarmTimeout > 60*time.Second ||
+		cfg.ReuseTimeout <= 0 || cfg.ReuseTimeout > 60*time.Second ||
 		cfg.RetryInterval < 20*time.Millisecond || cfg.RetryInterval > 500*time.Millisecond ||
-		cfg.PassLifetime <= 0 || cfg.PassLifetime > 5*time.Minute {
+		cfg.ReconnectDelay < 0 || cfg.ReconnectDelay >= cfg.ReuseTimeout ||
+		cfg.PassLifetime < 0 || cfg.PassLifetime > 24*time.Hour {
 		return nil, errors.New("invalid bounded warm, reuse, retry or pass lifetime")
 	}
 	if cfg.RootCAs != nil {
 		cfg.RootCAs = cfg.RootCAs.Clone()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	m := &Manager{cfg: cfg, ctx: ctx, cancel: cancel, leases: make(map[uint16]*lease)}
+	m := &Manager{cfg: cfg, ctx: ctx, cancel: cancel, leases: make(map[uint16]*lease), next: cfg.FirstPort}
 	m.dial, m.warm = m.dialSocket, m.warmTLS
 	return m, nil
 }
@@ -119,8 +123,13 @@ func (m *Manager) reserve() (*lease, error) {
 	if m.closed {
 		return nil, ErrClosed
 	}
-	for p := int(m.cfg.FirstPort); p <= int(m.cfg.LastPort); p++ {
-		port := uint16(p)
+	for n := 0; n <= int(m.cfg.LastPort)-int(m.cfg.FirstPort); n++ {
+		port := m.next
+		if m.next == m.cfg.LastPort {
+			m.next = m.cfg.FirstPort
+		} else {
+			m.next++
+		}
 		if m.leases[port] == nil {
 			l := &lease{manager: m, port: port}
 			m.leases[port] = l
@@ -203,7 +212,7 @@ func (m *Manager) DialContext(ctx context.Context, dest string) (net.Conn, error
 	started = time.Now()
 	passCtx, passCancel := context.WithTimeout(ctx, m.cfg.ReuseTimeout)
 	defer passCancel()
-	settle := time.NewTimer(m.cfg.RetryInterval)
+	settle := time.NewTimer(m.cfg.ReconnectDelay)
 	select {
 	case <-passCtx.Done():
 		settle.Stop()
@@ -223,7 +232,7 @@ func (m *Manager) DialContext(ctx context.Context, dest string) (net.Conn, error
 		return nil, ctx.Err()
 	}
 	c.mu.Lock()
-	if !c.closed {
+	if !c.closed && m.cfg.PassLifetime > 0 {
 		c.timer = time.AfterFunc(m.cfg.PassLifetime, func() { c.Close() })
 	}
 	c.mu.Unlock()
@@ -301,11 +310,15 @@ func (m *Manager) warmTLS(ctx context.Context, raw net.Conn) error {
 			return err
 		}
 	}
-	c := tls.Client(raw, &tls.Config{
+	tlsConfig := &tls.Config{
 		ServerName: m.cfg.Host, RootCAs: m.cfg.RootCAs,
 		MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13,
 		NextProtos: []string{"http/1.1"},
-	})
+	}
+	if m.cfg.CompactHello {
+		tlsConfig.CurvePreferences = []tls.CurveID{tls.X25519}
+	}
+	c := tls.Client(raw, tlsConfig)
 	defer c.Close()
 	if err := c.HandshakeContext(ctx); err != nil {
 		return err

@@ -18,6 +18,7 @@ import (
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/warmtuple"
 )
 
 func NewWorkerWithQueue(cfg *config.Config, qnum uint16) *Worker {
@@ -79,6 +80,7 @@ func NewPool(cfg *config.Config) *Pool {
 	dhcpMgr := dhcp.NewManager()
 
 	state := newRuntimeState()
+	warmFlows := warmtuple.NewFlows()
 	if !cfg.Queue.IsDiscovery {
 		state.bans = newIPBans(iphealth.NewBanRegistry(iphealth.BanFilePath(cfg.ConfigPath)), state.goodIPs, nil)
 		state.bans.applyConfig(cfg)
@@ -93,6 +95,7 @@ func NewPool(cfg *config.Config) *Pool {
 		w.ipToMac.Store(make(map[string]string))
 		w.tlsCache = state.tlsCache
 		w.wssize = state.wssize
+		w.warmFlows = warmFlows
 		w.streams = state.streams
 		w.connTracker = state.connState
 		w.destState = state.destState
@@ -110,6 +113,7 @@ func NewPool(cfg *config.Config) *Pool {
 	}
 
 	pool := &Pool{Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), cleanupDone: make(chan struct{}), state: state}
+	pool.warmFlows = warmFlows
 	pool.wireBans()
 	if !cfg.Queue.IsDiscovery {
 		pool.dnsCopy = newDNSCopyListener(ws[0])
@@ -378,8 +382,14 @@ func logDomainOverlaps(sets []*config.SetConfig) {
 }
 
 func buildMatcher(cfg *config.Config) *sni.SuffixSet {
+	sets := make([]*config.SetConfig, 0, len(cfg.Sets))
+	for _, set := range cfg.Sets {
+		if !set.TCP.WarmTuple.Enabled {
+			sets = append(sets, set)
+		}
+	}
 	if len(cfg.Sets) > 0 {
-		m := sni.NewSuffixSet(cfg.Sets)
+		m := sni.NewSuffixSet(sets)
 		m.KeepNameSets(actsOnTCPHello)
 		totalDomains := 0
 		totalIPs := 0
@@ -395,6 +405,8 @@ func buildMatcher(cfg *config.Config) *sni.SuffixSet {
 	log.Tracef("Built empty matcher")
 	return sni.NewSuffixSet([]*config.SetConfig{})
 }
+
+func (p *Pool) WarmTupleFlows() *warmtuple.Flows { return p.warmFlows }
 
 func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	p.configMu.Lock()

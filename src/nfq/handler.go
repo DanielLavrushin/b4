@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -158,6 +159,17 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 		return vc.accept()
 	}
 	vc.dir = w.packetDirection(cfg, vc, pkt)
+	if cfg.Queue.Mode != "tun" && pkt.proto == 6 && len(raw) >= pkt.ihl+TCPHeaderMinLen {
+		localIP, lok := netip.AddrFromSlice(pkt.src)
+		remoteIP, rok := netip.AddrFromSlice(pkt.dst)
+		if lok && rok {
+			local := netip.AddrPortFrom(localIP.Unmap(), binary.BigEndian.Uint16(raw[pkt.ihl:]))
+			remote := netip.AddrPortFrom(remoteIP.Unmap(), binary.BigEndian.Uint16(raw[pkt.ihl+2:]))
+			if profile := w.warmFlows.Lookup(local, remote); profile != nil {
+				cfg, matcher = profile.Config, profile.Matcher
+			}
+		}
+	}
 	if !cfg.Queue.IsDiscovery && cfg.Queue.Mode != "tun" && !cfg.IPFamilyEnabled(pkt.ver == IPv6) {
 		return w.handleECHOnlyPacket(vc, pkt, cfg)
 	}

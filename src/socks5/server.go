@@ -19,6 +19,7 @@ import (
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/warmtuple"
 )
 
 // SOCKS5 protocol constants (RFC 1928, RFC 1929)
@@ -84,6 +85,8 @@ type Server struct {
 	ipBlockCache IPBlockCache
 	upstreams    UpstreamDialer
 	connector    TCPConnector
+	warmFlows    *warmtuple.Flows
+	warmTuple    *warmtuple.Service
 
 	liveMu     sync.Mutex
 	live       map[net.Conn]struct{}
@@ -96,6 +99,17 @@ func (s *Server) SetIPBlockCache(cache IPBlockCache) {
 
 func (s *Server) SetUpstreamDialer(d UpstreamDialer) {
 	s.upstreams = d
+}
+
+func (s *Server) SetWarmTupleFlows(flows *warmtuple.Flows) { s.warmFlows = flows }
+
+func (s *Server) WarmTupleStatus() warmtuple.Status {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.warmTuple == nil {
+		return warmtuple.Status{}
+	}
+	return s.warmTuple.Status()
 }
 
 func (s *Server) getCfg() *config.Config {
@@ -143,6 +157,9 @@ func (s *Server) startLocked() error {
 
 	addr := net.JoinHostPort(cfg.System.Socks5.BindAddress, strconv.Itoa(cfg.System.Socks5.Port))
 	s.ctx, s.cancel = context.WithCancel(context.Background())
+	if s.connector == nil {
+		s.warmTuple = warmtuple.NewService(cfg, s.warmFlows)
+	}
 
 	s.refreshACL(cfg)
 	s.openLive()
@@ -156,6 +173,10 @@ func (s *Server) startLocked() error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		s.cancel()
+		if s.warmTuple != nil {
+			s.warmTuple.Close()
+			s.warmTuple = nil
+		}
 		return fmt.Errorf("SOCKS5 TCP listen: %w", err)
 	}
 	s.listener = ln
@@ -190,6 +211,10 @@ func (s *Server) stopLocked() error {
 	}
 
 	s.closeLiveLocked()
+	if s.warmTuple != nil {
+		s.warmTuple.Close()
+		s.warmTuple = nil
+	}
 
 	return err
 }
@@ -449,6 +474,19 @@ func (s *Server) handleConnect(conn net.Conn, dest string) error {
 }
 
 func (s *Server) dial(client net.Addr, dest string) (net.Conn, string, error) {
+	s.mu.Lock()
+	warm, serverContext := s.warmTuple, s.ctx
+	s.mu.Unlock()
+	resolvedDest := dest
+	if warm != nil {
+		conn, set, handled, resolved, err := warm.DialContext(serverContext, dest, metrics.DeviceOf(client).MAC)
+		if handled {
+			return conn, set, err
+		}
+		if resolved != "" {
+			resolvedDest = resolved
+		}
+	}
 	if s.connector != nil {
 		s.mu.Lock()
 		ctx := s.ctx
@@ -458,7 +496,7 @@ func (s *Server) dial(client net.Addr, dest string) (net.Conn, string, error) {
 		}
 		ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 		defer cancel()
-		conn, err := s.connector(ctx, dest)
+		conn, err := s.connector(ctx, resolvedDest)
 		return conn, "", err
 	}
 	if set, host, port := s.proxySetFor(client, dest); set != nil {
@@ -466,7 +504,7 @@ func (s *Server) dial(client net.Addr, dest string) (net.Conn, string, error) {
 			return conn, set.Id, err
 		}
 	}
-	conn, err := net.DialTimeout("tcp", dest, dialTimeout)
+	conn, err := net.DialTimeout("tcp", resolvedDest, dialTimeout)
 	return conn, "", err
 }
 
@@ -591,6 +629,9 @@ func (s *Server) UpdateConfig(newCfg *config.Config) {
 
 	old := s.getCfg()
 	s.cfg.Store(newCfg)
+	if s.warmTuple != nil {
+		s.warmTuple.UpdateConfig(newCfg)
+	}
 
 	if old != nil && socks5NeedsRestart(&old.System.Socks5, &newCfg.System.Socks5) {
 		wasEnabled := old.System.Socks5.Enabled

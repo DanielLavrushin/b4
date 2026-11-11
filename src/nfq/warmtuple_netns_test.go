@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/binary"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -31,7 +33,9 @@ import (
 	"github.com/daniellavrushin/b4/sock"
 	"github.com/daniellavrushin/b4/socks5"
 	"github.com/daniellavrushin/b4/warmtuple"
+	"github.com/urlesistiana/v2dat/v2data"
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/proto"
 )
 
 const warmTestHost = "warm.example.org"
@@ -279,7 +283,7 @@ func warmManager(t *testing.T, roots *x509.CertPool) *warmtuple.Manager {
 	m, err := warmtuple.New(warmtuple.Config{
 		Host: warmTestHost, Target: netip.MustParseAddrPort(netnsHoldServer + ":443"), Source: netip.MustParseAddr(netnsHoldRouter),
 		FirstPort: 40000, LastPort: 40000, WarmTimeout: 3 * time.Second, ReuseTimeout: 5 * time.Second,
-		RetryInterval: 50 * time.Millisecond, PassLifetime: 10 * time.Second, RootCAs: roots,
+		RetryInterval: 50 * time.Millisecond, ReconnectDelay: 50 * time.Millisecond, PassLifetime: 10 * time.Second, RootCAs: roots,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -300,6 +304,18 @@ func TestNetnsWarmTupleB4Command(t *testing.T) {
 	warmTupleExchange(t, binary)
 }
 
+func TestNetnsWarmTupleIntegratedB4API(t *testing.T) {
+	binary := os.Getenv("B4_WARMTUPLE_BINARY")
+	if binary == "" {
+		t.Skip("set B4_WARMTUPLE_BINARY to the built b4 binary")
+	}
+	t.Run("domain", func(t *testing.T) { warmTupleExchange(t, "integrated:"+binary) })
+	t.Run("geoip", func(t *testing.T) {
+		t.Setenv("B4_WARMTUPLE_GEOIP", "1")
+		warmTupleExchange(t, "integrated:"+binary)
+	})
+}
+
 func warmStartCommand(t *testing.T, binary string, cert tls.Certificate, proxyPort int) {
 	t.Helper()
 	dir := t.TempDir()
@@ -316,6 +332,51 @@ func warmStartCommand(t *testing.T, binary string, cert tls.Certificate, proxyPo
 	c := exec.Command(binary, "warm-tuple", "--host", warmTestHost, "--target", netnsHoldServer+":443", "--source", netnsHoldRouter,
 		"--first-port", "40000", "--last-port", "40000", "--queue", strconv.Itoa(netnsHoldQueue),
 		"--listen", "127.0.0.1:"+strconv.Itoa(proxyPort), "--duration", "30s")
+	apiURL := ""
+	if strings.HasPrefix(binary, "integrated:") {
+		reserved, err := net.Listen("tcp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		apiPort := reserved.Addr().(*net.TCPAddr).Port
+		reserved.Close()
+		cfg := warmtuple.QueueConfig(netip.MustParseAddrPort(netnsHoldServer+":443"), netnsHoldQueue)
+		cfg.System.Tables.SkipSetup = true
+		cfg.System.WebServer.Port = apiPort
+		cfg.System.WebServer.BindAddress = "127.0.0.1"
+		cfg.System.Socks5 = config.Socks5Config{Enabled: true, BindAddress: "127.0.0.1", Port: proxyPort}
+		cfg.System.Socks5.WarmTuple = config.Socks5WarmTupleConfig{SourceAddress: netnsHoldRouter, FirstPort: 40000, LastPort: 40000, ReconnectDelayMs: 100,
+			Targets: map[string]string{warmTestHost: netnsHoldServer}}
+		set := cfg.Sets[0]
+		set.TCP.WarmTuple.Enabled = true
+		set.Targets = config.TargetsConfig{SNIDomains: []string{"example.org"}}
+		if os.Getenv("B4_WARMTUPLE_GEOIP") == "1" {
+			geo, err := proto.Marshal(&v2data.GeoIPList{Entry: []*v2data.GeoIP{{CountryCode: "BLOCKED_TLS_RU",
+				Cidr: []*v2data.CIDR{{Ip: net.ParseIP(netnsHoldServer).To4(), Prefix: 32}}}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.System.Geo.GeoIpPath = filepath.Join(dir, "googlevideo.dat")
+			if err := os.WriteFile(cfg.System.Geo.GeoIpPath, geo, 0600); err != nil {
+				t.Fatal(err)
+			}
+			set.Targets = config.TargetsConfig{GeoIpCategories: []string{"BLOCKED_TLS_RU"}, IPPriority: true}
+			ordinary := config.NewSetConfig()
+			ordinary.Id, ordinary.Name = "ordinary", "Ordinary fallback"
+			ordinary.Targets.SNIDomains = []string{"example.org"}
+			cfg.Sets = append(cfg.Sets, &ordinary)
+		}
+		data, err := json.Marshal(&cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "b4.json")
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		c = exec.Command(strings.TrimPrefix(binary, "integrated:"), "--config", path)
+		apiURL = fmt.Sprintf("http://127.0.0.1:%d", apiPort)
+	}
 	c.Env = append(os.Environ(), "SSL_CERT_FILE="+ca, "SSL_CERT_DIR="+dir)
 	c.Stdout, c.Stderr = output, output
 	if err := c.Start(); err != nil {
@@ -341,6 +402,30 @@ func warmStartCommand(t *testing.T, binary string, cert tls.Certificate, proxyPo
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		log, _ := os.ReadFile(logPath)
+		if apiURL != "" {
+			client := http.Client{Timeout: 200 * time.Millisecond}
+			if resp, err := client.Get(apiURL + "/api/config"); err == nil {
+				var cfg map[string]any
+				err = json.NewDecoder(resp.Body).Decode(&cfg)
+				resp.Body.Close()
+				if err == nil && resp.StatusCode == 200 {
+					cfg["system"].(map[string]any)["socks5"].(map[string]any)["warm_tuple"].(map[string]any)["compact_hello"] = true
+					body, _ := json.Marshal(cfg)
+					req, _ := http.NewRequest(http.MethodPut, apiURL+"/api/config", bytes.NewReader(body))
+					req.Header.Set("Content-Type", "application/json")
+					resp, err := client.Do(req)
+					if err != nil {
+						t.Fatal("API apply:", err)
+					}
+					applied, _ := io.ReadAll(resp.Body)
+					resp.Body.Close()
+					if resp.StatusCode != 200 {
+						t.Fatalf("API apply %d: %s", resp.StatusCode, applied)
+					}
+					return
+				}
+			}
+		}
 		if bytes.Contains(log, []byte(`"event":"ready"`)) {
 			return
 		}
@@ -380,7 +465,7 @@ func warmTupleExchange(t *testing.T, executable string) {
 		warmStartCommand(t, executable, cert, proxyPort)
 	}
 	clientCfg := socks5.ClientConfig{Host: "127.0.0.1", Port: proxyPort, Timeout: 9 * time.Second}
-	if c, err := socks5.DialUpstream(context.Background(), clientCfg, "other.example.org", 443); err == nil {
+	if c, err := socks5.DialUpstream(context.Background(), clientCfg, "127.0.0.1", 1); err == nil {
 		c.Close()
 		t.Fatal("unselected request connected")
 	}
@@ -451,6 +536,9 @@ func warmTupleExchange(t *testing.T, executable string) {
 	}
 	if !bytes.Equal(exchanges[1].hello, warmFirstRecord(original.written.Bytes())) || bytes.Equal(exchanges[0].hello, exchanges[1].hello) {
 		t.Fatal("application ClientHello was replaced or warm reused it")
+	}
+	if strings.HasPrefix(executable, "integrated:") && len(exchanges[0].hello) > 600 {
+		t.Fatalf("compact warm Hello too large: %d", len(exchanges[0].hello))
 	}
 	deadline := time.Now().Add(time.Second)
 	active := func() bool {

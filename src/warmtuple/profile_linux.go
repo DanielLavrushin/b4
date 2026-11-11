@@ -23,6 +23,7 @@ func QueueConfig(target netip.AddrPort, queue uint16) config.Config {
 	set.Fragmentation.MiddleSNI = true
 	set.Fragmentation.SeqOverlapLength = 1
 	set.Fragmentation.SeqOverlapBytes = []byte{0}
+	set.Fragmentation.SeqOverlapPattern = []string{"0x00"}
 	set.Fragmentation.Combo.FirstByteSplit = true
 	set.Fragmentation.Combo.ExtensionSplit = false
 	set.Fragmentation.Combo.ShuffleMode = "reverse"

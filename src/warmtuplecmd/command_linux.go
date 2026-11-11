@@ -68,7 +68,7 @@ func (o options) parse() (warmtuple.Config, config.Socks5Config, error) {
 	cfg = warmtuple.Config{
 		Host: o.host, Target: target, Source: source, FirstPort: o.first, LastPort: o.last,
 		WarmTimeout: 3 * time.Second, ReuseTimeout: 5 * time.Second,
-		RetryInterval: 50 * time.Millisecond, PassLifetime: time.Minute,
+		RetryInterval: 50 * time.Millisecond, ReconnectDelay: 50 * time.Millisecond, PassLifetime: time.Minute,
 	}
 	proxy = config.Socks5Config{Enabled: true, BindAddress: listen.Addr().String(), Port: int(listen.Port())}
 	return cfg, proxy, nil
