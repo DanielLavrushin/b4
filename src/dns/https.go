@@ -33,6 +33,7 @@ const (
 	rrTypePTR   = 12
 	rrTypeMX    = 15
 	rrTypeSRV   = 33
+	rrTypeNAPTR = 35
 	rrTypeKX    = 36
 	rrTypeDNAME = 39
 	rrTypeRRSIG = 46
@@ -422,6 +423,19 @@ func portableRData(payload []byte, typ uint16, start, end int) ([]byte, string, 
 		return rdata, "", ok
 	case typ == rrTypeSOA:
 		rdata, ok := expandRData(payload, start, end, 0, 2, 20)
+		return rdata, "", ok
+	case typ == rrTypeNAPTR:
+		pos := start + 4
+		for range 3 {
+			if pos >= end {
+				return nil, "", false
+			}
+			pos += 1 + int(payload[pos])
+		}
+		if pos > end {
+			return nil, "", false
+		}
+		rdata, ok := expandRData(payload, start, end, pos-start, 1, 0)
 		return rdata, "", ok
 	case legacyCompressedType(typ):
 		return nil, "", false

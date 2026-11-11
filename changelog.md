@@ -4,6 +4,8 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+## [1.90.1] - 2026-11-10
+
 ### Added
 
 - **Real TCP window (wssize)**, based on [bolvan / Zapret2](https://github.com/bol-van/zapret2), rewrites outgoing windows through the first data packet or the original ClientHello.
@@ -22,6 +24,7 @@ All notable changes to b4 are recorded in this file.
 - A set with **Fake SNI Packets** on sent its fake again in front of later packets of a connection, and so did the **Decoy Packet** of **Combo**, so a server could close the connection right after it opened. [#556](https://github.com/DanielLavrushin/b4/issues/556)
 - A fake meant to carry a wrong checksum could, in rare cases, carry a valid one and reach the server as data. [#557](https://github.com/DanielLavrushin/b4/issues/557)
 - In the set editor, **Fake TTL** was greyed out while other features used it, **Corruption Strategy** stayed editable where it does nothing, and several faking help texts were wrong. [#558](https://github.com/DanielLavrushin/b4/issues/558)
+- Devices behind a resolver on the network, such as BIND, could bypass a set's **Pinned addresses** once anything had asked that resolver for another record type of the name, `host` included. [#563](https://github.com/DanielLavrushin/b4/issues/563)
 
 ## [1.90.0] - 2026-11-07
 

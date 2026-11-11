@@ -3753,6 +3753,7 @@
         "forward": "DNS resolved by b4 against {{target}}",
         "pin": "DNS answered from a pinned address",
         "pin-empty": "DNS answered empty, the pinned name has no record of the requested type",
+        "alias-stripped": "The pinned name's alias (CNAME) removed from the resolver's answer, so a resolver on the network cannot follow it past the pins",
         "heal": "DNS answer had unreachable addresses replaced by IP block detection",
         "passthrough": "Matched a set with no resolver configured, DNS query forwarded unchanged",
         "ipv6-disabled": "IPv6 DNS query matched a set while IPv6 is off, forwarded unchanged",
