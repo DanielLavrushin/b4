@@ -101,6 +101,37 @@ func (w *Worker) emptyPinnedAnswer(set *config.SetConfig, query []byte, domain s
 	return empty
 }
 
+func (w *Worker) unaliasPinnedAnswer(cfg *config.Config, set *config.SetConfig, attributed bool, domain, clientMac string, resp []byte, overTCP bool, from ...*ingressScope) ([]byte, *config.SetConfig) {
+	if set == nil || len(resp) == 0 {
+		return nil, nil
+	}
+	pins := set
+	if !attributed {
+		if esc := w.escalatedSetFor(cfg, set, domain, clientMac, scopeFrom(from).filter()); esc != nil {
+			pins = esc
+		}
+	}
+	if len(pins.DNS.Pins) == 0 {
+		return nil, nil
+	}
+	if !attributed && clientMac == "" && len(pins.Targets.SourceDevices) > 0 {
+		return nil, nil
+	}
+	maxSize := 0
+	if overTCP {
+		maxSize = dns.MaxTCPMessageSize
+	}
+	out := dns.WithoutPinnedAlias(resp, func(name string) bool {
+		pin, _ := pins.DNS.PinnedEntry(name)
+		return pin != ""
+	}, config.DefaultDNSPinTTLSec, maxSize)
+	if out == nil {
+		return nil, nil
+	}
+	log.Tracef("DNS pin: removed the alias of %s from the resolver's answer, so a resolver on the network cannot cache it and bypass the pin (set: %s)", dns.SafeName(domain), pins.Name)
+	return out, pins
+}
+
 func dnsTypeName(qtype uint16) string {
 	switch qtype {
 	case dnsTypeA:
@@ -240,14 +271,22 @@ func (w *Worker) healingSet(cfg *config.Config, set *config.SetConfig) bool {
 }
 
 func (w *Worker) filterDNSAnswer(cfg *config.Config, set *config.SetConfig, domain, clientMac string, resp []byte, overTCP bool, from ...*ingressScope) ([]byte, string, *config.SetConfig) {
+	return w.filterDNSAnswerFor(cfg, set, set, true, domain, clientMac, resp, overTCP, from...)
+}
+
+func (w *Worker) filterDNSAnswerFor(cfg *config.Config, set, pinSet *config.SetConfig, attributed bool, domain, clientMac string, resp []byte, overTCP bool, from ...*ingressScope) ([]byte, string, *config.SetConfig) {
 	if w == nil || len(resp) == 0 {
 		return nil, "", nil
 	}
-	if echless, actor := w.stripECHKeys(cfg, set, domain, clientMac, resp, overTCP, false, from...); echless != nil {
+	out := resp
+	var unaliasedBy *config.SetConfig
+	if unaliased, actor := w.unaliasPinnedAnswer(cfg, pinSet, attributed, domain, clientMac, resp, overTCP, from...); unaliased != nil {
+		out = unaliased
+		unaliasedBy = actor
+	} else if echless, actor := w.stripECHKeys(cfg, set, domain, clientMac, resp, overTCP, false, from...); echless != nil {
 		return echless, dnsActionECHStripped, actor
 	}
 
-	out := resp
 	healed := false
 	stripped := false
 	if curated := w.healDeadAddresses(cfg, set, domain, out, overTCP); curated != nil {
@@ -266,6 +305,8 @@ func (w *Worker) filterDNSAnswer(cfg *config.Config, set *config.SetConfig, doma
 		return out, dnsActionHeal, set
 	case stripped:
 		return out, dnsActionIPv6Stripped, set
+	case unaliasedBy != nil:
+		return out, dnsActionAliasStripped, unaliasedBy
 	}
 	return nil, "", nil
 }

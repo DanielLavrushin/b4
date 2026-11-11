@@ -96,6 +96,7 @@ const (
 	dnsActionHeal             = "dns-heal"
 	dnsActionPin              = "dns-pin"
 	dnsActionPinEmpty         = "dns-pin-empty"
+	dnsActionAliasStripped    = "dns-alias-stripped"
 	dnsActionNoClient         = "dns-no-client"
 	dnsActionOverload         = "dns-overload"
 	dnsActionDoHPrefix        = "dns-doh->"
@@ -459,6 +460,16 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 					return 0
 				}
 
+				if txidOK && cfg.HasDNSPins() {
+					if qtype, ok := dns.QuestionType(payload); ok {
+						pinSetID := ""
+						if len(set.DNS.PinnedAddresses(domain)) > 0 {
+							pinSetID = set.Id
+						}
+						noteDNSPinSet(dnsPinNoteKey{ver: ipVersion, port: clientPort, txid: txid, qtype: qtype, name: domain}, pinSetID)
+					}
+				}
+
 				if txidOK && vc.scope.learns(domain) && set.Routing.Enabled && !set.Targets.DomainOnly && !cfg.Queue.IsDiscovery {
 					storeDNSPendingRoute(
 						dnsRouteKeyRequest(ipVersion, clientIP, clientPort, originalDst, dport, txid, domain),
@@ -611,7 +622,17 @@ func (w *Worker) processDnsPacket(vc *verdictCtx, pkt *pktInfo, sport uint16, dp
 				}
 			}
 
-			if filtered, action, actor := w.filterDNSAnswer(w.getConfig(), healSet, domain, clientMac, payload, false, scope); filtered != nil {
+			pinSet, attributed := healSet, false
+			if hasType && domain != "" && w.getConfig().HasDNSPins() {
+				if id, hit := takeDNSPinSet(dnsPinNoteKey{ver: ipVersion, port: dport, txid: txid, qtype: qtype, name: domain}); hit {
+					pinSet, attributed = nil, true
+					if asked := w.getConfig().GetSetById(id); id != "" && asked != nil && asked.Enabled {
+						pinSet = asked
+					}
+				}
+			}
+
+			if filtered, action, actor := w.filterDNSAnswerFor(w.getConfig(), healSet, pinSet, attributed, domain, clientMac, payload, false, scope); filtered != nil {
 				if added := addedAnswerIPs(payload, filtered); len(added) > 0 {
 					if answersQuery {
 						observeDNSNames(clientIP, domain, added)

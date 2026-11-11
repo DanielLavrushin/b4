@@ -71,6 +71,7 @@ A pin answers a name with fixed addresses, with no hosts file to edit on every d
 - A pin applies only to a name the set targets. For other names the editor offers **Add to this set's domains**.
 - Pins work with **Enable DNS Redirect** off too, and win over the set's resolver.
 - The pins are the whole address answer: a name pinned to IPv4 addresses only gets no IPv6 addresses.
+- The resolver's answers for a pinned name lose the name's alias (CNAME) and keep the records of the type asked under that name, so that a resolver on the network does not keep the alias and follow it past the pins.
 - In a set without routing, b4 leaves out pinned addresses that do not answer on TCP port 443, checked at start, on save and at the **Retest interval (seconds)** of [IP Block Detection](settings/core.md#ip-block-detection). When none answers, the pins are used anyway.
 
 ## The IPv4 fallback
@@ -138,6 +139,7 @@ Each query shows the set that matched it and a label:
 | --- | --- |
 | `doh <server>`, `forward <address>` | Resolved through the set's DoH or plain DNS server |
 | `pin`, `pin empty` | Answered from the pins, empty when they hold no address of the type asked |
+| `no alias` | The pinned name's alias removed from the resolver's answer |
 | `ipv4 only`, `no ech` | IPv6 addresses or the ECH key removed from the answer |
 | `heal`, `heal + ipv4 only` | Unreachable addresses removed or replaced by **Heal DNS answers**, or [banned addresses](sets/tcp/general.md#banned-addresses) removed or replaced |
 | `sinkhole`, `block` | A block set answered "does not exist" or dropped the query |
@@ -154,6 +156,7 @@ The [log](logs.md) records the same decisions, as `dns-doh->`, `dns-pin` and so 
 | --- | --- |
 | A device's lookups never show on the Traffic page | The device uses encrypted DNS. Turning off secure DNS in its browser, or Android Private DNS, sends its lookups to the router. |
 | The site still goes to the old address | The device keeps an answer it already has until the answer expires. |
+| A pinned site opens on the router, but devices behind a resolver on the network still get the old address | The resolver keeps the name's earlier answer, often an alias valid for up to an hour, until it expires. Clearing that resolver's cache brings in the pins at once. |
 | `servfail`, `fallback-cache` or `fallback-upstream` | The set's resolver is unreachable from this connection. Another resolver, or DoH in place of plain DNS, is the next try. |
 | The set's names resolve slowly or not at all, with the set's resolver on the router | A resolver on the router, and the router's resolver when a resolver on the network uses it upstream, has to reach its own upstream over DoH or DoT, which b4 does not intercept. |
 | A browser still uses ECH, with a resolver on the network that checks DNSSEC, such as BIND or Unbound | The resolver gets the original answer on a path b4 does not see: DoT or DoH to its upstream, an interface left out of **Capture Interfaces**, or TCP while **Intercept DNS over TCP** is off. With **Intercept DNS over TCP** on, plain DNS through a captured interface closes these paths, see [ECH keys](internals/dns.md#ech-keys). |
