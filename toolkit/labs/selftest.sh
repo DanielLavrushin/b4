@@ -2,7 +2,7 @@
 set -u
 
 unset B4_LAB_REPO LAB_BASE LAB_PKG
-LAB="$(cd "$(dirname "$0")" && pwd)/lab"
+LAB_DIR="$(cd "$(dirname "$0")" && pwd)"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/home/instances/fake" "$T/bin" "$T/remote"
@@ -30,11 +30,42 @@ while [ "$#" -gt 0 ]; do
 done
 exit 0
 EOF
+cat > "$T/bin/unshare" <<'EOF'
+#!/bin/sh
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	-*) shift ;;
+	*) break ;;
+	esac
+done
+exec "$@"
+EOF
+cat > "$T/bin/mount" <<EOF
+#!/bin/sh
+echo "mount \$*" >> "$T/guest.log"
+[ "\$1" = --make-rprivate ] && [ -e "$T/mounts-stay-shared" ] && exit 32
+exit 0
+EOF
+cat > "$T/guest.bin" <<EOF
+#!/bin/sh
+echo "ran \$*" >> "$T/guest.log"
+echo PASS
+EOF
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/scp"
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/git"
-chmod +x "$T/bin/ssh" "$T/bin/go" "$T/bin/scp" "$T/bin/git"
+printf '#!/bin/sh\nexit 0\n' > "$T/bin/ip"
+chmod +x "$T/bin/ssh" "$T/bin/go" "$T/bin/unshare" "$T/bin/mount" "$T/bin/scp" "$T/bin/git" "$T/bin/ip" "$T/guest.bin"
+: > "$T/b4.json"
+
+PATH="$T/bin:$PATH"
+B4_LAB_HOME="$T/home"
+export PATH B4_LAB_HOME
 
 failed=0
+
+lab() {
+	sh "$LAB_DIR/lab" "$@"
+}
 
 remote() {
 	side="$1"
@@ -48,7 +79,7 @@ check() {
 	want="$2"
 	text="$3"
 	shift 3
-	PATH="$T/bin:$PATH" B4_LAB_HOME="$T/home" sh "$LAB" "$@" > "$T/out" 2>&1
+	"$@" > "$T/out" 2>&1
 	got=$?
 	if [ "$got" -eq "$want" ] && grep -qF -- "$text" "$T/out"; then
 		echo "ok    $label"
@@ -59,11 +90,28 @@ check() {
 	sed 's/^/      /' "$T/out"
 }
 
+stops() {
+	label="$1"
+	shift
+	: > "$T/guest.log"
+	: > "$T/mounts-stay-shared"
+	sh "$@" > "$T/out" 2>&1
+	got=$?
+	rm -f "$T/mounts-stay-shared"
+	if [ "$got" -ne 0 ] && ! grep -q -e tmpfs -e '^ran' "$T/guest.log"; then
+		echo "ok    $label"
+		return 0
+	fi
+	failed=$((failed + 1))
+	echo "FAIL  $label: exit status $got, want a failure with nothing mounted over /run and the binary not started; the guest saw"
+	sed 's/^/      /' "$T/guest.log"
+}
+
 remote change 0 \
 	'=== RUN   TestNetnsA' \
 	'--- PASS: TestNetnsA (0.10s)' \
 	'PASS'
-check "test: a clean run passes" 0 "1 pass, 0 fail, 0 skip" test fake
+check "test: a clean run passes" 0 "1 pass, 0 fail, 0 skip" lab test fake
 
 remote change 1 \
 	'=== RUN   TestNetnsParent' \
@@ -73,7 +121,7 @@ remote change 1 \
 	'    --- PASS: TestNetnsParent/old (0.00s)' \
 	'    --- FAIL: TestNetnsParent/new (0.00s)' \
 	'FAIL'
-check "test: a failing subtest is listed by its path" 1 "failed: TestNetnsParent/new" test fake
+check "test: a failing subtest is listed by its path" 1 "failed: TestNetnsParent/new" lab test fake
 
 remote base 1 \
 	'=== RUN   TestNetnsParent' \
@@ -91,28 +139,28 @@ remote change 1 \
 	'    --- FAIL: TestNetnsParent/old (0.00s)' \
 	'    --- FAIL: TestNetnsParent/new (0.00s)' \
 	'FAIL'
-check "ab: a new failing subtest under a parent that fails on the base too" 1 "    TestNetnsParent/new" ab fake
+check "ab: a new failing subtest under a parent that fails on the base too" 1 "    TestNetnsParent/new" lab ab fake
 
 cp "$T/remote/change.out" "$T/remote/base.out"
-check "ab: the same failures on both sides" 0 "failing on both: 3" ab fake
+check "ab: the same failures on both sides" 0 "failing on both: 3" lab ab fake
 
 remote change 255 \
 	'=== RUN   TestNetnsA' \
 	'--- PASS: TestNetnsA (0.10s)' \
 	'=== RUN   TestNetnsB'
-check "test: a run cut off after a passing test" 2 "the run did not finish (exit status 255)" test fake
+check "test: a run cut off after a passing test" 2 "the run did not finish (exit status 255)" lab test fake
 
 remote change 2 \
 	'=== RUN   TestNetnsA' \
 	'--- PASS: TestNetnsA (0.10s)' \
 	'=== RUN   TestNetnsB' \
 	'panic: boom'
-check "test: a run that ends in a panic" 2 "the run did not finish (exit status 2)" test fake
+check "test: a run that ends in a panic" 2 "the run did not finish (exit status 2)" lab test fake
 
 remote change 0 \
 	'=== RUN   TestNetnsA' \
 	'--- PASS: TestNetnsA (0.10s)'
-check "test: exit status 0 without the closing PASS line" 2 "the run did not finish (exit status 0)" test fake
+check "test: exit status 0 without the closing PASS line" 2 "the run did not finish (exit status 0)" lab test fake
 
 remote base 0 \
 	'=== RUN   TestNetnsA' \
@@ -122,7 +170,7 @@ remote change 255 \
 	'=== RUN   TestNetnsA' \
 	'--- PASS: TestNetnsA (0.10s)' \
 	'=== RUN   TestNetnsB'
-check "ab: the checkout's run cut off" 2 "the run of this checkout did not finish" ab fake
+check "ab: the checkout's run cut off" 2 "the run of this checkout did not finish" lab ab fake
 
 remote base 255 \
 	'=== RUN   TestNetnsA'
@@ -130,7 +178,16 @@ remote change 0 \
 	'=== RUN   TestNetnsA' \
 	'--- PASS: TestNetnsA (0.10s)' \
 	'PASS'
-check "ab: the base's run cut off" 2 "the run of origin/main did not finish" ab fake
+check "ab: the base's run cut off" 2 "the run of origin/main did not finish" lab ab fake
+
+check "netns-test.sh: starts the test binary after its setup" 0 "PASS" \
+	sh "$LAB_DIR/scripts/netns-test.sh" "$T/guest.bin" TestNetns 1
+stops "netns-test.sh: stops when the mounts cannot be made private" \
+	"$LAB_DIR/scripts/netns-test.sh" "$T/guest.bin" TestNetns 1
+check "b4-netns.sh: starts the binary after its setup" 0 "PASS" \
+	sh "$LAB_DIR/scripts/b4-netns.sh" "$T/guest.bin" "$T/b4.json"
+stops "b4-netns.sh: stops when the mounts cannot be made private" \
+	"$LAB_DIR/scripts/b4-netns.sh" "$T/guest.bin" "$T/b4.json"
 
 [ "$failed" -eq 0 ] || {
 	echo "lab selftest: $failed failed"

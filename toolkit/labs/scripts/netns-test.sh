@@ -5,7 +5,7 @@ COUNT="${3:-1}"
 	echo "usage: netns-test.sh <test binary on the guest> [pattern] [count]" >&2
 	exit 1
 }
-exec unshare -n -m sh -c '
+exec unshare -n -m sh -ec '
 	mount --make-rprivate /
 	mount -t tmpfs tmpfs /run
 	mount -t sysfs sysfs /sys

@@ -5,7 +5,7 @@ CONFIG="${2:-}"
 	exit 1
 }
 shift 2
-exec unshare -n -m sh -c '
+exec unshare -n -m sh -ec '
 	mount --make-rprivate /
 	mount -t tmpfs tmpfs /run
 	mount -t sysfs sysfs /sys
