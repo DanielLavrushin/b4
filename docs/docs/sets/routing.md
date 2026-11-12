@@ -14,17 +14,17 @@ The **DNS & Routing** tab of the set editor decides which resolver answers the s
 
 ## DNS Redirect {#dns-redirect}
 
-The sub-tab sends the DNS queries for the set's domains to a resolver of the set's own. Other domains keep the resolver the device uses.
+The sub-tab sends the DNS queries for the set's domains to the set's own resolvers. Other domains keep the resolver the device uses.
 
-![The DNS Redirect sub-tab in DNS-over-HTTPS mode](/img/dns/20260810210220.png)
+![The DNS Redirect sub-tab with two DoH resolvers and one plain DNS resolver](/img/dns/20261112225840.png)
 
 | Field | What it does | Default |
 | --- | --- | --- |
-| **Enable DNS Redirect** | Sends the queries for the set's domains to the resolver below. | Off |
-| **Resolver type** | **Plain DNS (UDP)** for a resolver's IP address, **DNS-over-HTTPS** for a DoH URL. | **Plain DNS (UDP)** |
-| **Fail closed when the resolver is unreachable** | On, the set's names stop resolving while the resolver is down. Off, b4 answers from the last good reply or from the device's own resolver. | Off |
-| **DNS Server IP**, **DNS-over-HTTPS URL** | The resolver, typed or picked from the recommended list. | Empty |
-| **Fragment DNS Queries** | Splits each query into IP fragments, for DPI that reads names in DNS queries. | Off |
+| **Enable DNS Redirect** | Sends the queries for the set's domains to the resolvers below. | Off |
+| **Fail closed when no resolver is reachable** | On, the set's names stop resolving while none of its resolvers is reachable. Off, b4 answers from the last good reply or from the device's own resolver. | Off |
+| **Resolvers** | The set's resolvers, up to eight: IP addresses for plain DNS and `https://` URLs for DoH. b4 asks them in the order shown, see [A set with more than one resolver](../dns.md#more-resolvers). | Empty |
+| **Fragment DNS Queries** | Splits each query to a resolver given by its IP address into IP fragments, for DPI that reads names in DNS queries. Shown when **Resolvers** holds an IP address. | Off |
+| **Recommended DNS Servers** | Public resolvers to pick from, all of them or only **Plain DNS** or **DNS-over-HTTPS**. A click adds a server to **Resolvers**, and a click on an added server removes it. | **All** |
 | **Remove ECH keys from DNS answers** | Browsers then send an ordinary ClientHello. See [Removing ECH keys](../dns.md#removing-ech-keys). | Off |
 | **Domain and addresses** | Pinned addresses in hosts file order: `157.240.0.174 www.instagram.com`. A pin applies only to names the set targets, also with the redirect off. | Empty |
 

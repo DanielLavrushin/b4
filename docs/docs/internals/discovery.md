@@ -250,7 +250,7 @@ The watchdog's reactive approach is inspired by the [belotserkovtsev/ladon](http
 
 ## How the DPI Detector fetches
 
-The [DPI Detector](../detector.md) fetches every site twice: directly, with b4's processing bypassed, and through b4 with the sets in effect. A check made only through b4 would hide the block it is meant to show. The through-b4 fetch takes its address the way a client of the matching set would: a pinned address first, then the set's DoH or DNS server when it has a DNS redirect, then the system resolver. Up to three addresses are tried on each side, since a site is often blocked on only some of them.
+The [DPI Detector](../detector.md) fetches every site twice: directly, with b4's processing bypassed, and through b4 with the sets in effect. A check made only through b4 would hide the block it is meant to show. The through-b4 fetch takes its address the way a client of the matching set would: a pinned address first, then the set's resolvers in their order when it has a DNS redirect, then the system resolver. Up to three addresses are tried on each side, since a site is often blocked on only some of them.
 
 The direct fetch uses the first three nameservers in `/etc/resolv.conf` of b4's host, or 127.0.0.1 and ::1 when it lists none. On a container install, that is the container's own DNS setting. A name this resolver gives no address for, while DoH does, is asked once more, one name at a time. After three retries in a row time out, the remaining names keep their first answer.
 
