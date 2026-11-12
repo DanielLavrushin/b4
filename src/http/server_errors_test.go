@@ -227,7 +227,7 @@ func TestServerChainKeepsAnEndpointCredentialOutOfTheLog(t *testing.T) {
 	}
 	closed := ln.Addr().String()
 	ln.Close()
-	endpoint := "http://" + closed + "/v1?first=1&api_key=SECRETQUERY"
+	endpoint := "http://" + closed + "/SECRETPATH/v1?first=1&api_key=SECRETQUERY"
 
 	resp, err := http.Get(base + "/api/ai/models?provider=" + ai.ProviderOpenAICompatible + "&endpoint=" + url.QueryEscape(endpoint))
 	if err != nil {
@@ -235,7 +235,7 @@ func TestServerChainKeepsAnEndpointCredentialOutOfTheLog(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusBadGateway || !strings.Contains(string(body), "SECRETQUERY") {
+	if resp.StatusCode != http.StatusBadGateway || !strings.Contains(string(body), "SECRETQUERY") || !strings.Contains(string(body), "SECRETPATH") {
 		t.Fatalf("the provider error must name the endpoint in a 502, got %d %s", resp.StatusCode, body)
 	}
 
@@ -243,11 +243,13 @@ func TestServerChainKeepsAnEndpointCredentialOutOfTheLog(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("the 502 must be logged once, got %q", lines)
 	}
-	if strings.Contains(lines[0], "SECRETQUERY") || strings.Contains(lines[0], "api_key") || strings.Contains(lines[0], "first=1") {
-		t.Errorf("the endpoint's query must stay out of the log: %s", lines[0])
+	for _, secret := range []string{"SECRETPATH", "SECRETQUERY", "api_key", "first=1", "/v1"} {
+		if strings.Contains(lines[0], secret) {
+			t.Errorf("the endpoint's path and query must stay out of the log, found %q: %s", secret, lines[0])
+		}
 	}
-	if want := "http://" + closed + "/v1?[removed]"; !strings.Contains(lines[0], "Web server: GET /api/ai/models answered 502") || !strings.Contains(lines[0], want) {
-		t.Errorf("the line must still name the endpoint as %q: %s", want, lines[0])
+	if want := `\"http://` + closed + `/[redacted]\"`; !strings.Contains(lines[0], "Web server: GET /api/ai/models answered 502") || !strings.Contains(lines[0], want) {
+		t.Errorf("the line must still name the endpoint's host as %s: %s", want, lines[0])
 	}
 }
 
@@ -262,7 +264,7 @@ func TestLogServerErrorsRemovesCredentialsFromURLsInTheBody(t *testing.T) {
 		http.Error(w, "failed to fetch https://user:SECRETPASS@mirror.example.com/geo.dat#access_token=SECRETFRAG then socks5://proxy:SECRETPROXY@10.0.0.1:1080 timed out", http.StatusBadGateway)
 	})
 	mux.HandleFunc("/api/plain", func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "Could not reach https://api.github.com/repos/b4/releases or http://[::1]:7000/mirror", http.StatusBadGateway)
+		http.Error(w, "Could not reach https://api.github.com/repos/SECRETPATH/releases or http://[::1]:7000/ or https://b4.example.com: no route", http.StatusBadGateway)
 	})
 	h := logServerErrors(mux)
 
@@ -274,20 +276,20 @@ func TestLogServerErrorsRemovesCredentialsFromURLsInTheBody(t *testing.T) {
 		t.Fatalf("three routes log three lines, got %q", lines)
 	}
 	for _, line := range lines {
-		for _, secret := range []string{"SECRETQUERY", "SECRETPASS", "SECRETFRAG", "SECRETPROXY", "api_key", "more=", "access_token"} {
+		for _, secret := range []string{"SECRETQUERY", "SECRETPASS", "SECRETFRAG", "SECRETPROXY", "SECRETPATH", "api_key", "more=", "access_token", "geo.dat"} {
 			if strings.Contains(line, secret) {
 				t.Errorf("%q must stay out of the log: %s", secret, line)
 			}
 		}
 	}
-	if want := `{"error":"Get \"https://api.example.com/v1/models?[removed]\": dial tcp: no route to host"}`; !strings.HasSuffix(lines[0], want) {
-		t.Errorf("a query written with JSON escapes must be removed whole, want %s: %s", want, lines[0])
+	if want := `{"error":"Get \"https://api.example.com/[redacted]\": dial tcp: no route to host"}`; !strings.HasSuffix(lines[0], want) {
+		t.Errorf("a path and a query written with JSON escapes must be removed whole, want %s: %s", want, lines[0])
 	}
-	if want := "failed to fetch https://[removed]@mirror.example.com/geo.dat#[removed] then socks5://[removed]@10.0.0.1:1080 timed out"; !strings.HasSuffix(lines[1], want) {
-		t.Errorf("user info and a fragment must be removed, want %s: %s", want, lines[1])
+	if want := "failed to fetch https://[redacted]@mirror.example.com/[redacted] then socks5://[redacted]@10.0.0.1:1080 timed out"; !strings.HasSuffix(lines[1], want) {
+		t.Errorf("user info, a path and a fragment must be removed, want %s: %s", want, lines[1])
 	}
-	if want := "Could not reach https://api.github.com/repos/b4/releases or http://[::1]:7000/mirror"; !strings.HasSuffix(lines[2], want) {
-		t.Errorf("a URL without a query or user info stays as it is, want %s: %s", want, lines[2])
+	if want := "Could not reach https://api.github.com/[redacted] or http://[::1]:7000/ or https://b4.example.com: no route"; !strings.HasSuffix(lines[2], want) {
+		t.Errorf("a URL keeps its scheme and host and a bare root path, want %s: %s", want, lines[2])
 	}
 }
 

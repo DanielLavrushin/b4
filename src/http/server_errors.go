@@ -12,6 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -19,7 +20,6 @@ const (
 	serverErrorWindow     = time.Minute
 	serverErrorExcerptLen = 200
 	serverErrorPathLen    = 200
-	removedURLPart        = "[removed]"
 )
 
 var urlInText = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://(?:\\[^"]|[^\s"\\])+`)
@@ -100,14 +100,14 @@ func (rec *statusRecorder) excerpt() string {
 		}
 		return r
 	}, strings.ToValidUTF8(string(rec.body), ""))
-	text := withoutURLCredentials(strings.Join(strings.Fields(flat), " "))
+	text := urlsCutToHost(strings.Join(strings.Fields(flat), " "))
 	if !rec.clipped && len(text) <= serverErrorExcerptLen {
 		return text
 	}
 	return clipText(text, serverErrorExcerptLen)
 }
 
-func withoutURLCredentials(text string) string {
+func urlsCutToHost(text string) string {
 	return urlInText.ReplaceAllStringFunc(text, func(found string) string {
 		scheme, rest, _ := strings.Cut(found, "://")
 		authority, tail := rest, ""
@@ -115,10 +115,10 @@ func withoutURLCredentials(text string) string {
 			authority, tail = rest[:i], rest[i:]
 		}
 		if i := strings.LastIndexByte(authority, '@'); i >= 0 {
-			authority = removedURLPart + authority[i:]
+			authority = config.RedactedMarker + authority[i:]
 		}
-		if i := strings.IndexAny(tail, "?#"); i >= 0 {
-			tail = tail[:i+1] + removedURLPart
+		if tail != "" && tail != "/" {
+			tail = "/" + config.RedactedMarker
 		}
 		return scheme + "://" + authority + tail
 	})
