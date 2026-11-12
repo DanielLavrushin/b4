@@ -14,6 +14,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
+	"github.com/florianl/go-nfqueue"
 )
 
 func listWorker(t *testing.T) (*Worker, *config.Config, *config.SetConfig) {
@@ -111,6 +112,26 @@ func TestADeviceQueryMovesOnToTheNextResolverOfTheList(t *testing.T) {
 	}
 	if got := asked.Load(); got != 2 {
 		t.Fatalf("the failing resolver was asked %d times by two queries, want 2", got)
+	}
+}
+
+func TestAQueuedQueryThroughAListIsLabelledWithBothResolvers(t *testing.T) {
+	w, _, set := listWorker(t)
+	good := dscpDoHServer(t, w, "203.0.113.38")
+	failing, _ := failingDoH(t)
+	set.DNS.Upstreams = []string{failing, good}
+
+	lines := connectionLines(t)
+	replies := watchReplies(t)
+	q := newFakeQueue()
+	w.processDnsPacket(&verdictCtx{id: 34, q: q}, queryPacket(), 41000, 53, dns.BuildQuery("www.example.com", 34, dnsTypeA))
+	if v := q.now(t); v != nfqueue.NfDrop {
+		t.Fatalf("verdict %d, want the query taken from the queue", v)
+	}
+	onlyAddress(t, oneReply(t, replies), "203.0.113.38")
+	holdsDone(t, w)
+	if got, want := labels(drainLines(lines)), []string{dohLabel(t, failing), dohLabel(t, good)}; len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("connection labels %q, want the first resolver and then the one that answered, %q", got, want)
 	}
 }
 
