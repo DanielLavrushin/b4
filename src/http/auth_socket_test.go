@@ -32,12 +32,15 @@ func newSocketRig(t *testing.T, useTLS bool) *socketRig {
 	rig := &socketRig{returned: make(chan string, 8)}
 	mux := http.NewServeMux()
 	registerAuthEndpoints(mux, cfgPtr)
-	mux.HandleFunc("/api/ws/connections", func(w http.ResponseWriter, r *http.Request) {
-		ws.HandleConnectionsWebSocket(w, r)
-		rig.returned <- r.URL.Query().Get("token")
-	})
+	mux.HandleFunc("/api/ws/connections", ws.HandleConnectionsWebSocket)
 
-	rig.srv = httptest.NewUnstartedServer(authMiddleware(cfgPtr, mux))
+	guarded := authMiddleware(cfgPtr, mux)
+	rig.srv = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		guarded.ServeHTTP(w, r)
+		if isWebSocketRequest(r) {
+			rig.returned <- r.URL.Query().Get("token")
+		}
+	}))
 	rig.srv.Config.ConnContext = authAtAccept(cfgPtr)
 	if useTLS {
 		rig.srv.StartTLS()
@@ -152,6 +155,7 @@ func TestSigningOutClosesTheSocketsOfThatSession(t *testing.T) {
 			if _, resp, err := rig.dial(t, leaving); err == nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
 				t.Fatalf("a revoked token must not open a new socket, err=%v", err)
 			}
+			<-rig.returned
 		})
 	}
 }
