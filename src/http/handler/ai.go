@@ -74,6 +74,7 @@ func (api *API) handleAIModels(w http.ResponseWriter, r *http.Request) {
 
 	models, err := p.ListModels(ctx)
 	if err != nil {
+		keepBodyOutOfLog(w)
 		writeJsonError(w, http.StatusBadGateway, err.Error())
 		return
 	}

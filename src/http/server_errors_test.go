@@ -214,7 +214,7 @@ func TestLogServerErrorsKeepsTheLineShortAndOnOneLine(t *testing.T) {
 	}
 }
 
-func TestServerChainKeepsAnEndpointCredentialOutOfTheLog(t *testing.T) {
+func TestServerChainKeepsTheAIProviderAnswerOutOfTheLog(t *testing.T) {
 	buf := captureServerErrors(t)
 	previous := handler.GetAIManager()
 	handler.SetAIManager(ai.NewManager(config.AIConfig{}, filepath.Join(t.TempDir(), "config.json")))
@@ -227,29 +227,81 @@ func TestServerChainKeepsAnEndpointCredentialOutOfTheLog(t *testing.T) {
 	}
 	closed := ln.Addr().String()
 	ln.Close()
-	endpoint := "http://" + closed + "/SECRETPATH/v1?first=1&api_key=SECRETQUERY"
+	echo := ""
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, echo)
+	}))
+	t.Cleanup(provider.Close)
 
-	resp, err := http.Get(base + "/api/ai/models?provider=" + ai.ProviderOpenAICompatible + "&endpoint=" + url.QueryEscape(endpoint))
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusBadGateway || !strings.Contains(string(body), "SECRETQUERY") || !strings.Contains(string(body), "SECRETPATH") {
-		t.Fatalf("the provider error must name the endpoint in a 502, got %d %s", resp.StatusCode, body)
-	}
+	for _, tc := range []struct {
+		name, endpoint, echo, shown string
+	}{
+		{"a key the provider echoes", provider.URL + "/v1", `{"error":{"message":"Invalid API key: sk-SECRETKEY"}}`, "sk-SECRETKEY"},
+		{"a URL the provider echoes with escaped slashes", provider.URL + "/v1", `{"error":"no route for https:\/\/gateway.example\/SECRETPATH\/v1\/models"}`, "SECRETPATH"},
+		{"an endpoint that does not answer", "http://" + closed + "/SECRETPATH/v1?first=1&api_key=SECRETQUERY", "", "SECRETQUERY"},
+	} {
+		resetServerErrors()
+		before := len(buf.lines())
+		echo = tc.echo
+		resp, err := http.Get(base + "/api/ai/models?provider=" + ai.ProviderOpenAICompatible + "&endpoint=" + url.QueryEscape(tc.endpoint))
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadGateway || !strings.Contains(string(body), tc.shown) {
+			t.Fatalf("%s: the interface must still get the provider's error in a 502, got %d %s", tc.name, resp.StatusCode, body)
+		}
 
-	lines := buf.lines()
-	if len(lines) != 1 {
-		t.Fatalf("the 502 must be logged once, got %q", lines)
-	}
-	for _, secret := range []string{"SECRETPATH", "SECRETQUERY", "api_key", "first=1", "/v1"} {
-		if strings.Contains(lines[0], secret) {
-			t.Errorf("the endpoint's path and query must stay out of the log, found %q: %s", secret, lines[0])
+		lines := buf.lines()
+		if len(lines) != before+1 {
+			t.Fatalf("%s: the 502 must be logged once, got %q", tc.name, lines[before:])
+		}
+		if !strings.HasSuffix(lines[before], "[ERROR] Web server: GET /api/ai/models answered 502") {
+			t.Errorf("%s: the line must name the route and the status and nothing of the provider's answer: %s", tc.name, lines[before])
 		}
 	}
-	if want := `\"http://` + closed + `/[redacted]\"`; !strings.Contains(lines[0], "Web server: GET /api/ai/models answered 502") || !strings.Contains(lines[0], want) {
-		t.Errorf("the line must still name the endpoint's host as %s: %s", want, lines[0])
+}
+
+func TestLogServerErrorsLeavesOutABodyTheHandlerMarked(t *testing.T) {
+	buf := captureServerErrors(t)
+	mark := func(w http.ResponseWriter) {
+		w.(interface{ KeepBodyOutOfLog() }).KeepBodyOutOfLog()
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/marked", func(w http.ResponseWriter, _ *http.Request) {
+		mark(w)
+		http.Error(w, "upstream said SECRETTEXT", http.StatusBadGateway)
+	})
+	mux.HandleFunc("/api/marked/late", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, "upstream said SECRETTEXT")
+		mark(w)
+		_, _ = io.WriteString(w, " and more SECRETTEXT")
+	})
+	mux.HandleFunc("/api/unmarked", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "b4's own text", http.StatusBadGateway)
+	})
+	h := logServerErrors(mux)
+
+	if rec := serveRecorded(t, h, http.MethodGet, "/api/marked"); !strings.Contains(rec.Body.String(), "SECRETTEXT") {
+		t.Fatalf("the client must still get the body, got %q", rec.Body.String())
+	}
+	serveRecorded(t, h, http.MethodGet, "/api/marked/late")
+	serveRecorded(t, h, http.MethodGet, "/api/unmarked")
+	lines := buf.lines()
+	if len(lines) != 3 {
+		t.Fatalf("three routes log three lines, got %q", lines)
+	}
+	for i, want := range []string{
+		"Web server: GET /api/marked answered 502",
+		"Web server: GET /api/marked/late answered 502",
+		"Web server: GET /api/unmarked answered 502: b4's own text",
+	} {
+		if !strings.HasSuffix(lines[i], want) {
+			t.Errorf("want a line ending in %q: %s", want, lines[i])
+		}
 	}
 }
 

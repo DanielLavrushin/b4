@@ -42,10 +42,16 @@ var serverErrors struct {
 
 type statusRecorder struct {
 	http.ResponseWriter
-	status   int
-	body     []byte
-	clipped  bool
-	hijacked bool
+	status      int
+	body        []byte
+	clipped     bool
+	bodyOmitted bool
+	hijacked    bool
+}
+
+func (rec *statusRecorder) KeepBodyOutOfLog() {
+	rec.bodyOmitted = true
+	rec.body = nil
 }
 
 func (rec *statusRecorder) WriteHeader(code int) {
@@ -59,7 +65,7 @@ func (rec *statusRecorder) Write(p []byte) (int, error) {
 	if rec.status == 0 {
 		rec.status = http.StatusOK
 	}
-	if rec.status >= http.StatusInternalServerError {
+	if rec.status >= http.StatusInternalServerError && !rec.bodyOmitted {
 		room := serverErrorExcerptLen + utf8.UTFMax - len(rec.body)
 		if len(p) > room {
 			rec.clipped = true
