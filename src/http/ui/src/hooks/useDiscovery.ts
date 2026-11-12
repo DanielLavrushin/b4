@@ -16,6 +16,7 @@ import {
 import { B4SetConfig } from "@models/config";
 import { MAX_PROBE_URLS, wsUrl, describeApiError } from "@utils";
 import i18n from "@/i18n";
+import { useAuth, verifySession } from "@context/AuthProvider";
 import {
   forgetRun,
   observeRun,
@@ -469,8 +470,10 @@ export function useDiscoveryLogs() {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const logsRef = useRef<string[]>([]);
+  const { hasSession } = useAuth();
 
   useEffect(() => {
+    if (!hasSession) return;
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let isCleaningUp = false;
@@ -479,10 +482,12 @@ export function useDiscoveryLogs() {
       if (isCleaningUp) return;
 
       const url = wsUrl("/api/ws/discovery");
+      let opened = false;
       ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
+        opened = true;
         setConnected(true);
         logsRef.current = [];
         setLogs([]);
@@ -502,6 +507,7 @@ export function useDiscoveryLogs() {
         setConnected(false);
         wsRef.current = null;
         if (!isCleaningUp) {
+          if (!opened) verifySession();
           reconnectTimeout = setTimeout(connect, 3000);
         }
       };
@@ -514,7 +520,7 @@ export function useDiscoveryLogs() {
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (ws) ws.close();
     };
-  }, []);
+  }, [hasSession]);
 
   const clearLogs = useCallback(() => {
     logsRef.current = [];
