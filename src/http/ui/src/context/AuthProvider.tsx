@@ -114,8 +114,8 @@ export function AuthProvider({
     if (!signedIn || sessionLost) return;
     let active = true;
     const probe = () => {
-      void sessionRejected().then((rejected) => {
-        if (rejected && active) setSessionLost(true);
+      void checkSession().then((state) => {
+        if (state === "rejected" && active) setSessionLost(true);
       });
     };
     sessionProbes.add(probe);
@@ -129,8 +129,8 @@ export function AuthProvider({
     if (!sessionLost) return;
     let active = true;
     const unwatch = watchAuthToken(() => {
-      void sessionRejected().then((rejected) => {
-        if (rejected || !active) return;
+      void checkSession().then((state) => {
+        if (state !== "confirmed" || !active) return;
         setToken(getAuthToken());
         setSessionLost(false);
       });
@@ -200,34 +200,39 @@ function watchAuthToken(onChange: () => void): () => void {
   return () => window.removeEventListener("storage", handler);
 }
 
-async function askSessionRejected(): Promise<boolean> {
+type SessionState = "confirmed" | "rejected" | "unknown";
+
+async function askSession(): Promise<SessionState> {
   for (;;) {
     const token = getAuthToken();
-    const rejected = await tokenRejected(token);
-    if (getAuthToken() === token) return rejected;
+    const state = await askToken(token);
+    if (getAuthToken() === token) return state;
   }
 }
 
-async function tokenRejected(token: string | null): Promise<boolean> {
+async function askToken(token: string | null): Promise<SessionState> {
   try {
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
     const r = await fetch("/api/auth/check", { headers, cache: "no-store" });
-    if (!r.ok) return false;
+    if (!r.ok) return "unknown";
     const data = (await r.json()) as {
       auth_required?: boolean;
       authenticated?: boolean;
     };
-    return data.auth_required === true && data.authenticated !== true;
+    if (data.auth_required === false || data.authenticated === true) {
+      return "confirmed";
+    }
+    return data.auth_required === true ? "rejected" : "unknown";
   } catch {
-    return false;
+    return "unknown";
   }
 }
 
-let sessionCheck: Promise<boolean> | null = null;
+let sessionCheck: Promise<SessionState> | null = null;
 
-function sessionRejected(): Promise<boolean> {
-  sessionCheck ??= askSessionRejected().finally(() => {
+function checkSession(): Promise<SessionState> {
+  sessionCheck ??= askSession().finally(() => {
     sessionCheck = null;
   });
   return sessionCheck;
