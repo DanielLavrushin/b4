@@ -201,9 +201,16 @@ function watchAuthToken(onChange: () => void): () => void {
 }
 
 async function askSessionRejected(): Promise<boolean> {
+  for (;;) {
+    const token = getAuthToken();
+    const rejected = await tokenRejected(token);
+    if (getAuthToken() === token) return rejected;
+  }
+}
+
+async function tokenRejected(token: string | null): Promise<boolean> {
   try {
     const headers: Record<string, string> = {};
-    const token = getAuthToken();
     if (token) headers["Authorization"] = `Bearer ${token}`;
     const r = await fetch("/api/auth/check", { headers, cache: "no-store" });
     if (!r.ok) return false;
