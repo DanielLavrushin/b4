@@ -2277,11 +2277,13 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 	prioStr := fmt.Sprintf("%d", prio)
 
 	addRules := func() {
-		if ipv4 {
-			runLogged("routing: add ip rule v4", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
-		}
-		if ipv6 {
-			runLogged("routing: add ip rule v6", "ip", "-6", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
+		for _, fam := range routeFamilyArgs(ipv4, ipv6) {
+			if lines, read := routeRuleLines(fam); read && routeRuleInstalledAt(lines, mark, table, prio) {
+				continue
+			}
+			args := append([]string{"ip"}, fam.flag...)
+			args = append(args, "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
+			runLogged("routing: add ip rule "+fam.name, args...)
 		}
 		routeDelStaleRuleForms(mark, tableStr)
 	}

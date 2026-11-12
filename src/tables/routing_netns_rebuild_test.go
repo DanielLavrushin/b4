@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -318,4 +319,55 @@ func TestNetnsAFailedEditLeavesThePreviousStateWorking(t *testing.T) {
 	if a, b := strings.Count(membersAfter, "203.0.113."), strings.Count(membersBefore, "203.0.113."); a < b {
 		t.Errorf("an edit b4 could not install threw away addresses the set had learned: %d -> %d", b, a)
 	}
+}
+
+func netnsARebuiltInterfaceSetDoesNotStackItsRule(t *testing.T, engine string) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	netnsRequireEngine(t, engine)
+
+	routeEngine = nil
+	defer func() { routeEngine = nil }()
+
+	cfg := netnsConfig(engine)
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	defer func() { _ = ClearRules(cfg) }()
+
+	RoutingSyncConfig(cfg)
+	defer RoutingClearAll()
+
+	for i := 0; i < 3; i++ {
+		RoutingForceResync(cfg)
+		cfg.Sets[0].Routing.KillSwitch = !cfg.Sets[0].Routing.KillSwitch
+		RoutingSyncConfig(cfg)
+		RoutingReinstallForInterface(cfg, netnsSecondary)
+		RoutingReconcilePolicyRules(cfg)
+	}
+
+	routeMu.Lock()
+	_, cached := routeRuleCache[cfg.Sets[0].Id]
+	routeMu.Unlock()
+	if !cached {
+		t.Fatal("the set built no routing state")
+	}
+
+	var found []string
+	for _, line := range strings.Split(netnsRun(t, "ip", "rule", "show"), "\n") {
+		if strings.HasSuffix(routeRuleField(line, "fwmark"), fmt.Sprintf("/0x%x", routeSetMarkMask)) {
+			found = append(found, strings.TrimSpace(line))
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("six rebuilds, three interface reinstalls and three monitor passes left %d rules sending the set's mark to its table, want one. An old kernel takes an identical rule a second time instead of refusing it (3.16 does, 4.9 refuses it), so a rule added without looking first is stacked once more on every rebuild; on a router whose firmware rewrites the firewall every few minutes that is hundreds of rules, each walked for every packet the router routes: %v", len(found), found)
+	}
+}
+
+func TestNetnsARebuiltInterfaceSetDoesNotStackItsRule(t *testing.T) {
+	netnsARebuiltInterfaceSetDoesNotStackItsRule(t, backendIPTables)
+}
+
+func TestNetnsARebuiltInterfaceSetDoesNotStackItsRuleNft(t *testing.T) {
+	netnsARebuiltInterfaceSetDoesNotStackItsRule(t, backendNFTables)
 }
