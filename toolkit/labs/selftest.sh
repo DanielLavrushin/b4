@@ -22,6 +22,7 @@ done
 EOF
 cat > "$T/bin/ssh" <<EOF
 #!/bin/sh
+printf '%s\n' "\$@" > "$T/ssh.args"
 for arg in "\$@"; do command="\$arg"; done
 case "\$command" in
 *change.test*) side=change ;;
@@ -346,6 +347,18 @@ check "push: a source path with a space stays one path" 0 "" \
 	lab push fake "$T/binary with space" /root/lab
 grep -qxF "$T/binary with space" "$T/scp.args" 2>/dev/null ||
 	fail "push: scp did not get the source path as one argument"
+
+spaced="$T/home with space"
+mkdir -p "$spaced/instances/fake" "$spaced/keys"
+cp "$T/home/instances/fake/port" "$T/home/instances/fake/user" "$T/home/instances/fake/guest" \
+	"$T/home/instances/fake/pid" "$spaced/instances/fake/"
+: > "$spaced/keys/id_ed25519"
+check "push: a cache folder with a space in its path still works" 0 "" \
+	env B4_LAB_HOME="$spaced" sh "$LAB_DIR/lab" push fake "$T/b4.json" /root/lab
+grep -qxF "$spaced/keys/id_ed25519" "$T/ssh.args" 2>/dev/null ||
+	fail "push: ssh did not get the key's path as one argument"
+grep -qxF "$spaced/keys/id_ed25519" "$T/scp.args" 2>/dev/null ||
+	fail "push: scp did not get the key's path as one argument"
 
 instance old8
 echo debian8 > "$T/home/instances/old8/guest"

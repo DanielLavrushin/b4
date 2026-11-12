@@ -86,9 +86,7 @@ load_guest() {
 	. "$GUESTS/$1.env"
 }
 
-ssh_opts() {
-	echo "-i $KEY -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=15"
-}
+SSH_OPTS="-o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=15"
 
 running() {
 	inst_pid "$1" >/dev/null || die "$1 is not running (lab up <guest> $1)"
@@ -99,7 +97,7 @@ guest_ssh() {
 	shift
 	running "$name"
 	user="$(cat "$(inst_dir "$name")/user")"
-	ssh $(ssh_opts) -p "$(inst_port "$name")" "$user@127.0.0.1" "$@"
+	ssh -i "$KEY" $SSH_OPTS -p "$(inst_port "$name")" "$user@127.0.0.1" "$@"
 }
 
 ensure_key() {
@@ -292,7 +290,7 @@ cmd_push() {
 	done
 	shift "$count"
 	guest_ssh "$name" "mkdir -p $(quote "$dest")"
-	scp -q $(ssh_opts) -P "$port" "$@" "$user@127.0.0.1:$dest/"
+	scp -q -i "$KEY" $SSH_OPTS -P "$port" "$@" "$user@127.0.0.1:$dest/"
 }
 
 cmd_pull() {
@@ -302,7 +300,7 @@ cmd_pull() {
 	running "$name"
 	user="$(cat "$(inst_dir "$name")/user")"
 	mkdir -p "$3"
-	scp -q $(ssh_opts) -P "$(inst_port "$name")" "$user@127.0.0.1:$2" "$3/"
+	scp -q -i "$KEY" $SSH_OPTS -P "$(inst_port "$name")" "$user@127.0.0.1:$2" "$3/"
 }
 
 cmd_down() {
