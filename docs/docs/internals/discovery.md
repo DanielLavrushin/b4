@@ -37,7 +37,7 @@ A card groups the sites that one strategy loaded. The strategy that loaded the m
 
 Speed does not decide. During the run, the row of a site shows its fastest strategy as **Fastest so far**, which can differ from the strategy its card offers. The confirmation covers both.
 
-A remembered winner is stored with the fake it sent, and the same technique with another fake is remembered separately. A failed run is counted when the winner does not open a blocked site that another strategy opens in the same run. A pass on a blocked site clears the count. After three failed runs in a row the winner is forgotten.
+A strategy is remembered when it opens a site that does not load without one. A pass on a site that loads without a strategy is not stored. A remembered winner is stored with the fake it sent, and the same technique with another fake is remembered separately. A failed run is counted when the winner does not open a blocked site that another strategy opens in the same run. A pass on a blocked site clears the count. After three failed runs in a row the winner is forgotten.
 
 A card lists up to twelve other strategies that loaded every site on it, fastest first, by each strategy's lowest speed across those sites. The history entry of each of its sites stores the same list.
 

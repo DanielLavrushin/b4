@@ -291,6 +291,12 @@ func (ds *DiscoverySuite) saveResultsToCache() {
 
 	savedCount := 0
 	for domain, domainResult := range allResults {
+		if domainResult == nil {
+			continue
+		}
+		if _, byPlainFix := loadedBy(domainResult); byPlainFix {
+			continue
+		}
 		for _, result := range domainResult.Results {
 			if result.Status != CheckStatusComplete {
 				continue

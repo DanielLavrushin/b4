@@ -338,6 +338,42 @@ func TestAPassOnASiteThatLoadsWithoutAStrategyDoesNotClearTheFailedRuns(t *testi
 	}
 }
 
+func TestARemovedStrategyIsNotAddedBackFromASiteThatLoadsWithoutAStrategy(t *testing.T) {
+	ds := cachedSuite(t, []string{"a.example", "b.example"}, comboEntry(207, maxFailedRuns-1))
+	ds.put("a.example", presetNoBypass, CheckStatusFailed, PhaseBaseline, 0)
+	ds.put("a.example", "tcp", CheckStatusComplete, PhaseStrategy, 0)
+	ds.putCached("a.example", ds.cachedPresets[0], CheckStatusFailed)
+	ds.put("b.example", presetNoBypass, CheckStatusComplete, PhaseBaseline, 0)
+	ds.putCached("b.example", ds.cachedPresets[0], CheckStatusComplete)
+
+	ds.saveResultsToCache()
+
+	if entry := entryWithStrategy(ds.discoveryCache.Entries, "combo"); entry != nil {
+		t.Fatalf("the strategy failed its last allowed run on the blocked site, and its pass on a site that loads anyway must not bring it back: %s", tally(entry))
+	}
+	if entry := entryWithStrategy(ds.discoveryCache.Entries, "tcp"); entry == nil {
+		t.Error("the strategy that opened the blocked site must be remembered")
+	}
+}
+
+func TestASiteThatLoadsWithoutAStrategyAddsNothingToTheCache(t *testing.T) {
+	for _, plain := range []string{presetNoBypass, presetAltAddress, presetDNSRedirect, presetECHStrip} {
+		ds := cachedSuite(t, []string{"b.example"})
+		ds.put("b.example", plain, CheckStatusComplete, PhaseBaseline, 0)
+		ds.put("b.example", "tcp", CheckStatusComplete, PhaseStrategy, 0)
+		ds.put("b.example", "combo", CheckStatusComplete, PhaseStrategy, 0)
+
+		ds.saveResultsToCache()
+
+		if n := len(ds.discoveryCache.Entries); n != 0 {
+			t.Errorf("%s: a pass on a site that needs no packet strategy shows nothing about a block, got %d entries", plain, n)
+		}
+		if cacheFileWritten(ds) {
+			t.Errorf("%s: nothing changed, so nothing is written", plain)
+		}
+	}
+}
+
 func TestTheLastFailedRunMakesRoomForTheSimilarStrategyThatPassed(t *testing.T) {
 	ds := cachedSuite(t, []string{"a.example"}, comboEntry(207, maxFailedRuns-1))
 	ds.putCached("a.example", ds.cachedPresets[0], CheckStatusFailed)
