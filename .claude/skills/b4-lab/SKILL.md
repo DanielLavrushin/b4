@@ -46,6 +46,8 @@ toolkit/labs/lab down debian8
   non-test Go file under `src/` taken from `origin/main`, runs both in the guest and lists
   what fails only on one side. A new test that fails only on the base there is the proof a fix
   needs.
+- **Exit status 2 is not a result.** It means a run did not finish (a crash, a lost
+  connection), so the counts are partial and `ab` compared nothing. Read the log it names.
 - **Give it a pattern.** A traffic test run inside the whole suite on these kernels loses a
   few connections with nothing changing, from state earlier tests leave in the namespace. A
   traffic test has to measure a quiet phase first and skip when it is not clean; run it on its

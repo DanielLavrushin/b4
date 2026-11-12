@@ -66,6 +66,9 @@ twice: as they are, and with every changed Go file under `src/` that is not a te
 the base. It runs both and lists what fails only on one side. It exits non-zero when a test
 fails only with the checkout.
 
+A run that does not finish (the test binary crashes, the connection to the guest drops) has
+partial counts. Both commands say so and exit with status 2, and `ab` compares nothing.
+
 ```sh
 toolkit/labs/lab ab debian8 'TestNetnsAPolicyRule|TestNetnsTheStaleSweep'
 LAB_PKG=./nfq/ toolkit/labs/lab test debian9 TestNetnsAnOverlapStaysOff

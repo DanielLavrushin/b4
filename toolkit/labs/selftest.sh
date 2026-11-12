@@ -96,6 +96,42 @@ check "ab: a new failing subtest under a parent that fails on the base too" 1 " 
 cp "$T/remote/change.out" "$T/remote/base.out"
 check "ab: the same failures on both sides" 0 "failing on both: 3" ab fake
 
+remote change 255 \
+	'=== RUN   TestNetnsA' \
+	'--- PASS: TestNetnsA (0.10s)' \
+	'=== RUN   TestNetnsB'
+check "test: a run cut off after a passing test" 2 "the run did not finish (exit status 255)" test fake
+
+remote change 2 \
+	'=== RUN   TestNetnsA' \
+	'--- PASS: TestNetnsA (0.10s)' \
+	'=== RUN   TestNetnsB' \
+	'panic: boom'
+check "test: a run that ends in a panic" 2 "the run did not finish (exit status 2)" test fake
+
+remote change 0 \
+	'=== RUN   TestNetnsA' \
+	'--- PASS: TestNetnsA (0.10s)'
+check "test: exit status 0 without the closing PASS line" 2 "the run did not finish (exit status 0)" test fake
+
+remote base 0 \
+	'=== RUN   TestNetnsA' \
+	'--- PASS: TestNetnsA (0.10s)' \
+	'PASS'
+remote change 255 \
+	'=== RUN   TestNetnsA' \
+	'--- PASS: TestNetnsA (0.10s)' \
+	'=== RUN   TestNetnsB'
+check "ab: the checkout's run cut off" 2 "the run of this checkout did not finish" ab fake
+
+remote base 255 \
+	'=== RUN   TestNetnsA'
+remote change 0 \
+	'=== RUN   TestNetnsA' \
+	'--- PASS: TestNetnsA (0.10s)' \
+	'PASS'
+check "ab: the base's run cut off" 2 "the run of origin/main did not finish" ab fake
+
 [ "$failed" -eq 0 ] || {
 	echo "lab selftest: $failed failed"
 	exit 1

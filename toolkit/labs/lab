@@ -34,7 +34,8 @@ usage: lab <command> [arguments]
 
 test and ab run the netns tests of ./tables/ matching the pattern (default TestNetns).
 LAB_PKG picks another package, LAB_BASE another base than origin/main, and B4_LAB_REPO
-another checkout than the one this script lives in, for example a worktree.
+another checkout than the one this script lives in, for example a worktree. They exit 1
+when a test failed (ab: only with the checkout) and 2 when a run did not finish.
 
 Images and instance disks live in $LAB_HOME
 (set B4_LAB_HOME to move them). LAB_MEM and LAB_CPUS override a guest's defaults.
@@ -324,11 +325,26 @@ test_run() {
 	t_bin="$1"
 	t_log="$3"
 	cmd_push "$t_name" "$t_bin" /root/lab
+	t_status=0
 	guest_ssh "$t_name" "sh -s -- /root/lab/$(basename "$t_bin") '$2' 1" \
-		< "$LAB_DIR/scripts/netns-test.sh" > "$t_log" 2>&1 || true
+		< "$LAB_DIR/scripts/netns-test.sh" > "$t_log" 2>&1 || t_status=$?
+	echo "$t_status" > "$t_log.status"
 	test_results FAIL "$t_log" | sort > "$t_log.fail"
 	printf '%s pass, %s fail, %s skip' "$(test_count PASS "$t_log")" \
 		"$(test_count FAIL "$t_log")" "$(test_count SKIP "$t_log")"
+}
+
+test_finished() {
+	case "$(cat "$1.status")" in
+	0) grep -qx PASS "$1" ;;
+	1) grep -qx FAIL "$1" ;;
+	*) return 1 ;;
+	esac
+}
+
+test_partial() {
+	test_finished "$1" && return 1
+	echo "lab: $2 did not finish (exit status $(cat "$1.status")), so its results are partial; see $1" >&2
 }
 
 test_ran() {
@@ -348,10 +364,13 @@ cmd_test() {
 	}
 	t_sum="$(test_run "$t_work/change.test" "$t_pattern" "$t_change")"
 	rm -rf "$t_work"
-	test_ran "$t_change"
 	echo "$t_name, $t_pattern: $t_sum"
 	sed 's/^/  failed: /' "$t_change.fail"
 	echo "log: $t_change"
+	if test_partial "$t_change" "the run"; then
+		exit 2
+	fi
+	test_ran "$t_change"
 	[ ! -s "$t_change.fail" ]
 }
 
@@ -407,11 +426,22 @@ cmd_ab() {
 	t_sum="$(test_run "$t_work/change.test" "$t_pattern" "$t_change")"
 	t_basesum="$(test_run "$t_work/base.test" "$t_pattern" "$t_baselog")"
 	rm -rf "$t_work"
-	test_ran "$t_change"
-	test_ran "$t_baselog"
 	echo "$t_name, $t_pattern"
 	echo "  this checkout: $t_sum"
 	echo "  $t_base: $t_basesum"
+	t_partial=0
+	if test_partial "$t_change" "the run of this checkout"; then
+		t_partial=1
+	fi
+	if test_partial "$t_baselog" "the run of $t_base"; then
+		t_partial=1
+	fi
+	if [ "$t_partial" -eq 1 ]; then
+		echo "logs: $t_change $t_baselog"
+		exit 2
+	fi
+	test_ran "$t_change"
+	test_ran "$t_baselog"
 	echo "  failing only with this checkout:"
 	comm -23 "$t_change.fail" "$t_baselog.fail" | sed 's/^/    /'
 	echo "  failing only on $t_base:"
