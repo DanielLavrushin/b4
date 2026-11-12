@@ -7,6 +7,8 @@ All notable changes to b4 are recorded in this file.
 ### Fixed
 
 - With the web server's **Bind Address** set to `127.0.0.1` behind a reverse proxy such as nginx, AI apps could not connect over **MCP**: every request was refused with `invalid Host header`, even with a valid token. [#566](https://github.com/DanielLavrushin/b4/issues/566)
+- When another service on the router removed the routing rule of a proxy set or **Telegram over WebSocket**, the set passed no traffic until b4 restarted: devices' connections hung and the router's own went out directly.
+- While b4 rebuilt its routing rules, as after the router's firewall was rewritten or a set's routing was changed, a connection opened at that moment could miss a proxy set: a device's stalled, and the router's own, such as one through b4's SOCKS5 server, went out directly.
 
 ## [1.90.1] - 2026-11-10
 

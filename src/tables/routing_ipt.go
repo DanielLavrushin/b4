@@ -455,14 +455,37 @@ func routeIptJumpArgs(table, baseChain, targetChain string, atTop bool) []string
 
 func (b *routeIptBackend) ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool) {
 	table := iptTable(isMangle)
-	b.deleteJumpRules(baseChain, targetChain, isMangle)
 	args := routeIptJumpArgs(table, baseChain, targetChain, atTop)
 	for _, cmd := range b.iptBoth() {
 		if !hasBinary(cmd) {
 			continue
 		}
-		runLogged("routing: add jump "+baseChain+"->"+targetChain,
-			append([]string{cmd}, args...)...)
+		_, readable := iptJumpLines(cmd, table, baseChain, func(t string) bool { return t == targetChain })
+		if !readable {
+			iptDeleteJumpsTo(cmd, table, baseChain, targetChain)
+		}
+		if !runLogged("routing: add jump "+baseChain+"->"+targetChain, append([]string{cmd}, args...)...) {
+			continue
+		}
+		iptKeepOneJump(cmd, table, baseChain, targetChain, atTop)
+	}
+}
+
+func iptKeepOneJump(cmd, table, parent, target string, keepFirst bool) {
+	for round := 0; round < iptDeleteRounds; round++ {
+		nums := iptJumpLineNumbers(cmd, table, parent, func(t string) bool { return t == target })
+		if len(nums) <= 1 {
+			return
+		}
+		drop := nums[0]
+		if keepFirst {
+			drop = nums[len(nums)-1]
+		}
+		if _, err := run(cmd, "-w", "-t", table, "-D", parent, strconv.Itoa(drop)); err != nil {
+			log.Warnf("routing: %s -t %s -D %s %d failed, so b4 stopped removing superseded jumps to %s rather than cut a rule it never read: %v",
+				cmd, table, parent, drop, target, err)
+			return
+		}
 	}
 }
 
