@@ -128,13 +128,15 @@ export function AuthProvider({
   useEffect(() => {
     if (!sessionLost) return;
     let active = true;
-    const unwatch = watchAuthToken(() => {
+    const recover = () => {
       void checkSession().then((state) => {
         if (state !== "confirmed" || !active) return;
         setToken(getAuthToken());
         setSessionLost(false);
       });
-    });
+    };
+    const unwatch = watchAuthToken(recover);
+    recover();
     return () => {
       active = false;
       unwatch();
