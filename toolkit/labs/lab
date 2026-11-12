@@ -197,6 +197,9 @@ cmd_up() {
 	need sha256sum
 	load_guest "$guest"
 	dir="$(inst_dir "$name")"
+	if [ -f "$dir/guest" ] && [ "$(cat "$dir/guest")" != "$guest" ]; then
+		die "$name was made from the guest $(cat "$dir/guest"), not $guest: start it with 'lab up $(cat "$dir/guest") $name', or destroy it first"
+	fi
 	if ! inst_pid "$name" >/dev/null; then
 		start_guest
 	elif [ -z "$GUEST_PROVISION" ] || [ -f "$dir/provisioned" ]; then

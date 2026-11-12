@@ -328,6 +328,15 @@ check "push: a source path with a space stays one path" 0 "" \
 grep -qxF "$T/binary with space" "$T/scp.args" 2>/dev/null ||
 	fail "push: scp did not get the source path as one argument"
 
+instance old8
+echo debian8 > "$T/home/instances/old8/guest"
+: > "$T/home/instances/old8/disk.qcow2"
+: > "$T/home/instances/old8/provisioned"
+check "up: an instance made from one guest is not started as another" 1 "old8 was made from the guest debian8" \
+	lab up debian9 old8
+[ "$(cat "$T/home/instances/old8/guest")" = debian8 ] ||
+	fail "up: the instance made from debian8 is now labelled $(cat "$T/home/instances/old8/guest")"
+
 mkdir -p "$T/home/victim"
 : > "$T/home/victim/keep"
 check "destroy: a name that leads out of the instance folder is refused" 1 "is not a name" \
