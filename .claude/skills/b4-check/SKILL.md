@@ -49,6 +49,11 @@ wait for each result.
 - `make test-netns` builds the routing and conntrack tests and runs them in an unprivileged
   network namespace (`unshare -Urnm`). Where user namespaces are off, report it as not run
   and why; never as passed.
+- `make test-netns` covers only this machine's kernel. When the diff adds, deletes or reorders
+  ip rules, routes or firewall rules, also run `toolkit/labs/lab ab debian8` and
+  `toolkit/labs/lab ab debian9` with a pattern for the tests it touches (`/b4-lab`: kernels
+  3.16 and 4.9 under QEMU, the checkout against main). The script does not print these; when
+  they were skipped, report them as not run.
 - The oxlint command printed checks only. `pnpm lint` in either UI runs oxlint with `--fix` and
   rewrites files. oxlint prints nothing when clean.
 - `pnpm -C docs build` fails on a broken link or anchor. Only one Docusaurus process at a time
