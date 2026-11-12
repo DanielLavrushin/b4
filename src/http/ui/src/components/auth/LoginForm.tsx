@@ -5,11 +5,7 @@ import { B4Alert } from "@b4.elements";
 import { useAuth } from "@context/AuthProvider";
 import { useTranslation } from "react-i18next";
 
-interface LoginFormProps {
-  onSignedIn?: () => void;
-}
-
-export function LoginForm({ onSignedIn }: Readonly<LoginFormProps>) {
+export function LoginForm() {
   const { t } = useTranslation();
   const { login } = useAuth();
   const [username, setUsername] = useState("");
@@ -24,11 +20,7 @@ export function LoginForm({ onSignedIn }: Readonly<LoginFormProps>) {
 
     const err = await login(username, password);
     setLoading(false);
-    if (err) {
-      setError(err);
-      return;
-    }
-    onSignedIn?.();
+    if (err) setError(err);
   };
 
   return (

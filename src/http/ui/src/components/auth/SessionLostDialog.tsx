@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Box } from "@mui/material";
 import { LockOutlined as LockIcon } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
@@ -11,7 +12,7 @@ const stayOpen = () => {};
 
 const ABOVE_PAGE_BACKDROPS = 10000;
 
-const resumeAfterSignIn = () => {
+const resumeAfterRecovery = () => {
   retryMetrics();
   void apiClient.invalidateQueries();
 };
@@ -19,6 +20,17 @@ const resumeAfterSignIn = () => {
 export function SessionLostDialog() {
   const { t } = useTranslation();
   const { sessionLost } = useAuth();
+  const wasLost = useRef(false);
+
+  useEffect(() => {
+    if (sessionLost) {
+      wasLost.current = true;
+      return;
+    }
+    if (!wasLost.current) return;
+    wasLost.current = false;
+    resumeAfterRecovery();
+  }, [sessionLost]);
 
   return (
     <B4Dialog
@@ -30,7 +42,7 @@ export function SessionLostDialog() {
       sx={{ zIndex: ABOVE_PAGE_BACKDROPS }}
     >
       <Box sx={{ pt: 1, width: { sm: 340 } }}>
-        {sessionLost && <LoginForm onSignedIn={resumeAfterSignIn} />}
+        {sessionLost && <LoginForm />}
       </Box>
     </B4Dialog>
   );
