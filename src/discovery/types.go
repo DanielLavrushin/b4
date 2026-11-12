@@ -369,6 +369,7 @@ type DiscoverySuite struct {
 	setPins           map[string][]string
 
 	discoveryCache *DiscoveryCache
+	cachedPresets  []ConfigPreset
 	plainSets      map[string]*config.SetConfig
 	hubPresets     []ConfigPreset
 	hubPresetsFn   func() []ConfigPreset

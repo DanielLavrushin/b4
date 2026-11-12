@@ -31,11 +31,13 @@ Each speed in the results comes from one fetch of at most 100 KB, timed from the
 A card groups the sites that one strategy loaded. The strategy that loaded the most sites gets one card for all of them, and the remaining sites are grouped the same way. Among strategies that loaded as many sites, the first in this order wins:
 
 1. a result that changes no packets: a DNS fix, an alternative address or removed ECH keys;
-2. a remembered winner, the one that has worked most often in earlier runs first, then community sets and the set's own strategy;
+2. a remembered winner, first the ones without a failed run, among them the one that has worked most often in earlier runs, then community sets and the set's own strategy;
 3. the opening presets, in their built-in order;
 4. tuned presets, then combined ones.
 
 Speed does not decide. During the run, the row of a site shows its fastest strategy as **Fastest so far**, which can differ from the strategy its card offers. The confirmation covers both.
+
+A remembered winner is stored with the fake it sent, and the same technique with another fake is remembered separately. A failed run is counted when the winner does not open a blocked site that another strategy opens in the same run. A pass on a blocked site clears the count. After three failed runs in a row the winner is forgotten.
 
 A card lists up to twelve other strategies that loaded every site on it, fastest first, by each strategy's lowest speed across those sites. The history entry of each of its sites stores the same list.
 

@@ -143,7 +143,7 @@ func (ds *DiscoverySuite) retestEarlyPresets(early []ConfigPreset) {
 		if ds.interrupted() {
 			break
 		}
-		if preset.Config.Faking.SNIType == config.FakePayloadRandom {
+		if _, cached := cachedIndex(preset.Name); !cached && preset.Config.Faking.SNIType == config.FakePayloadRandom {
 			ds.applyBestPayload(&preset.Config.Faking)
 		}
 		ds.storeResultsMulti(preset, ds.testPresetAllDomains(preset))
