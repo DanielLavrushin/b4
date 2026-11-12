@@ -242,6 +242,12 @@ func netnsARebuiltProxySetKeepsTakingItsConnections(t *testing.T, engine string)
 		t.Fatalf("%d packet(s) left by the uplink before any rebuild", n)
 	}
 
+	calm := dev.dialLoop(netnsDevInet, 443, 2*time.Second)
+	t.Logf("%s: with no rebuild running: device %q, %d packet(s) left by the uplink", engine, calm.raw, uplink())
+	if calm.answered == 0 || calm.lost != 0 || calm.broken != 0 || uplink() != 0 {
+		t.Skipf("this namespace loses connections through the set while nothing is being rebuilt (%q, %d packet(s) on the uplink), so it cannot show what a rebuild does to them", calm.raw, uplink())
+	}
+
 	const span = 5 * time.Second
 	deviceDone := make(chan netnsDialTally, 1)
 	go func() { deviceDone <- dev.dialLoop(netnsDevInet, 443, span) }()
@@ -382,17 +388,32 @@ func TestNetnsAProxyRuleTakenAwayIsPutBackLegacy(t *testing.T) {
 	netnsAProxyRuleTakenAwayIsPutBack(t, backendIPTablesLegacy)
 }
 
-func TestNetnsARebuiltProxySetDoesNotStackItsRules(t *testing.T) {
-	_, cfg, st := netnsProxySetUp(t, backendNFTables)
+func netnsARebuiltProxySetDoesNotStackItsRules(t *testing.T, engine string) {
+	_, cfg, st := netnsProxySetUp(t, engine)
 
 	for i := 0; i < 3; i++ {
 		RoutingForceResync(cfg)
+		cfg.Sets[0].Routing.Upstream.UDP = !cfg.Sets[0].Routing.Upstream.UDP
+		RoutingSyncConfig(cfg)
+		RoutingReconcilePolicyRules(cfg)
 	}
 
 	if lines := netnsProxyRuleLines(t, st.mark, st.table); len(lines) != 1 {
-		t.Errorf("three rebuilds left %d rules sending the set's mark to its table, want one: %v", len(lines), lines)
+		t.Errorf("six rebuilds and three monitor passes left %d rules sending the set's mark to its table, want one. An old kernel takes an identical rule a second time instead of refusing it (3.16 does, 4.9 refuses it), so a rule added without looking first is stacked once more on every rebuild: %v", len(lines), lines)
 	}
 	if current, earlier := netnsSourceCheckRuleCounts(t, st.mark); current != 1 || earlier != 0 {
-		t.Errorf("three rebuilds left %d current and %d earlier source-check rules, want 1 and 0", current, earlier)
+		t.Errorf("six rebuilds and three monitor passes left %d current and %d earlier source-check rules, want 1 and 0", current, earlier)
 	}
+}
+
+func TestNetnsARebuiltProxySetDoesNotStackItsRules(t *testing.T) {
+	netnsARebuiltProxySetDoesNotStackItsRules(t, backendIPTables)
+}
+
+func TestNetnsARebuiltProxySetDoesNotStackItsRulesNft(t *testing.T) {
+	netnsARebuiltProxySetDoesNotStackItsRules(t, backendNFTables)
+}
+
+func TestNetnsARebuiltProxySetDoesNotStackItsRulesLegacy(t *testing.T) {
+	netnsARebuiltProxySetDoesNotStackItsRules(t, backendIPTablesLegacy)
 }

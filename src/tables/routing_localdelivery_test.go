@@ -105,7 +105,7 @@ func TestRouteEnsureLocalDelivery_PointsTheSourceCheckAtMainForIPv4(t *testing.T
 
 		_, again := localDeliveryEnsureOver(t, localDeliveryKernel{v4: []string{localDeliverySourceCheck}}, tc.ipv4, tc.ipv6)
 		if localDeliveryCmdIndex(again, addCheck) >= 0 {
-			t.Errorf("ipv4=%v ipv6=%v: the source-check rule was already in the kernel and was added again; a kernel before 4.12 takes the duplicate, so every re-install stacks another copy: %v", tc.ipv4, tc.ipv6, again)
+			t.Errorf("ipv4=%v ipv6=%v: the source-check rule was already in the kernel and was added again; an old kernel takes the duplicate (3.16 does, 4.9 refuses it), so every re-install stacks another copy: %v", tc.ipv4, tc.ipv6, again)
 		}
 		if localDeliveryCmdIndex(again, delCheck) >= 0 {
 			t.Errorf("ipv4=%v ipv6=%v: the source-check rule already in the kernel was deleted during a re-install: %v", tc.ipv4, tc.ipv6, again)
@@ -209,7 +209,7 @@ func TestRouteEnsureLocalDelivery_NeverTakesTheRuleInUseOutOfTheKernel(t *testin
 	}
 	for _, banned := range []string{addRuleV4, addRuleV6} {
 		if localDeliveryHasCmd(cmds, banned) {
-			t.Errorf("a rebuild ran %q although the rule was standing; a kernel before 4.12 takes the duplicate, so every rebuild stacks another copy: %v", banned, cmds)
+			t.Errorf("a rebuild ran %q although the rule was standing; an old kernel takes the duplicate (3.16 does, 4.9 refuses it), so every rebuild stacks another copy: %v", banned, cmds)
 		}
 	}
 
