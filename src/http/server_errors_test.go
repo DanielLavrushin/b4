@@ -293,6 +293,57 @@ func TestLogServerErrorsRemovesCredentialsFromURLsInTheBody(t *testing.T) {
 	}
 }
 
+func TestLogServerErrorsHidesAURLTheCaptureCutShort(t *testing.T) {
+	buf := captureServerErrors(t)
+	lead := strings.Repeat("x", 100) + " failed to fetch "
+	bodies := map[string]string{
+		"/api/password": lead + "https://user:SECRETPASSWORD" + strings.Repeat("0123456789", 12) + "@mirror.example.com/geo.dat",
+		"/api/host":     lead + "https://user:SECRETPASSWORD@" + strings.Repeat("mirror.", 12) + "example.com/geo.dat",
+		"/api/path":     lead + "https://user:SECRETPASSWORD@mirror.example.com/" + strings.Repeat("geo/", 20) + "geo.dat",
+		"/api/whole":    "could not reach https://b4.example.com",
+	}
+	mux := http.NewServeMux()
+	for route, body := range bodies {
+		mux.HandleFunc(route, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = io.WriteString(w, body)
+		})
+		mux.HandleFunc(route+"/split", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+			for len(body) > 0 {
+				n := min(len(body), 7)
+				_, _ = io.WriteString(w, body[:n])
+				body = body[n:]
+			}
+		})
+	}
+	h := logServerErrors(mux)
+
+	for route, want := range map[string]string{
+		"/api/password": "x failed to fetch https://[redacted]...",
+		"/api/host":     "x failed to fetch https://[redacted]...",
+		"/api/path":     "x failed to fetch https://[redacted]@mirror.example.com/[redacted]...",
+		"/api/whole":    ": could not reach https://b4.example.com",
+	} {
+		for _, layout := range []string{"", "/split"} {
+			resetServerErrors()
+			before := len(buf.lines())
+			serveRecorded(t, h, http.MethodGet, route+layout)
+			lines := buf.lines()
+			if len(lines) != before+1 {
+				t.Fatalf("%s%s: one line expected, got %q", route, layout, lines[before:])
+			}
+			line := lines[before]
+			if strings.Contains(line, "SECRETPASSWORD") || strings.Contains(line, "user:") {
+				t.Errorf("%s%s: a login the capture cut short must stay out of the log: %s", route, layout, line)
+			}
+			if !strings.HasSuffix(line, want) {
+				t.Errorf("%s%s: want a line ending in %q: %s", route, layout, want, line)
+			}
+		}
+	}
+}
+
 func TestLogServerErrorsLimitsEachRouteToOneLinePerWindow(t *testing.T) {
 	buf := captureServerErrors(t)
 	h := logServerErrors(serverErrorMux())

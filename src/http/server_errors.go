@@ -100,28 +100,42 @@ func (rec *statusRecorder) excerpt() string {
 		}
 		return r
 	}, strings.ToValidUTF8(string(rec.body), ""))
-	text := urlsCutToHost(strings.Join(strings.Fields(flat), " "))
+	text := urlsCutToHost(strings.Join(strings.Fields(flat), " "), rec.clipped)
 	if !rec.clipped && len(text) <= serverErrorExcerptLen {
 		return text
 	}
 	return clipText(text, serverErrorExcerptLen)
 }
 
-func urlsCutToHost(text string) string {
-	return urlInText.ReplaceAllStringFunc(text, func(found string) string {
-		scheme, rest, _ := strings.Cut(found, "://")
-		authority, tail := rest, ""
-		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
-			authority, tail = rest[:i], rest[i:]
-		}
-		if i := strings.LastIndexByte(authority, '@'); i >= 0 {
-			authority = config.RedactedMarker + authority[i:]
-		}
-		if tail != "" && tail != "/" {
-			tail = "/" + config.RedactedMarker
-		}
-		return scheme + "://" + authority + tail
-	})
+func urlsCutToHost(text string, clipped bool) string {
+	var out strings.Builder
+	done := 0
+	for _, at := range urlInText.FindAllStringIndex(text, -1) {
+		out.WriteString(text[done:at[0]])
+		out.WriteString(urlCutToHost(text[at[0]:at[1]], clipped && at[1] == len(text)))
+		done = at[1]
+	}
+	out.WriteString(text[done:])
+	return out.String()
+}
+
+func urlCutToHost(found string, unfinished bool) string {
+	scheme, rest, _ := strings.Cut(found, "://")
+	i := strings.IndexAny(rest, "/?#")
+	if i < 0 && unfinished {
+		return scheme + "://" + config.RedactedMarker
+	}
+	authority, tail := rest, ""
+	if i >= 0 {
+		authority, tail = rest[:i], rest[i:]
+	}
+	if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+		authority = config.RedactedMarker + authority[at:]
+	}
+	if tail != "" && tail != "/" {
+		tail = "/" + config.RedactedMarker
+	}
+	return scheme + "://" + authority + tail
 }
 
 func clipText(s string, limit int) string {
