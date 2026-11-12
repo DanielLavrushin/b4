@@ -101,7 +101,27 @@ fi
 echo \$! > "\$pidfile"
 echo \$! >> "$T/pids"
 EOF
-for stub in git ip qemu-img sha256sum; do
+cat > "$T/bin/curl" <<'EOF'
+#!/bin/sh
+while [ "$#" -gt 0 ]; do
+	[ "$1" = -o ] && out="$2"
+	shift
+done
+echo part1 > "$out"
+sleep 1
+echo part2 >> "$out"
+EOF
+. "$LAB_DIR/guests/debian9.env"
+cat > "$T/bin/sha256sum" <<EOF
+#!/bin/sh
+if [ "\$(cat "\$1")" = "part1
+part2" ]; then
+	echo "$IMAGE_SHA256  \$1"
+else
+	echo "0000  \$1"
+fi
+EOF
+for stub in git ip qemu-img; do
 	printf '#!/bin/sh\nexit 0\n' > "$T/bin/$stub"
 done
 chmod +x "$T"/bin/* "$T/guest.bin" "$T/idle"
@@ -119,16 +139,16 @@ instance fake
 echo $! > "$T/home/instances/fake/pid"
 echo $! >> "$T/pids"
 
-. "$LAB_DIR/guests/debian9.env"
 mkdir -p "$T/home/keys" "$T/home/images"
 : > "$T/home/keys/id_ed25519"
 : > "$T/home/images/$(basename "$IMAGE_URL")"
-for name in up1 up2 up3; do
+for name in up1 up2 up3 dl1 dl2; do
 	mkdir -p "$T/home/instances/$name"
 	: > "$T/home/instances/$name/disk.qcow2"
 done
-: > "$T/home/instances/up1/provisioned"
-: > "$T/home/instances/up2/provisioned"
+for name in up1 up2 dl1 dl2; do
+	: > "$T/home/instances/$name/provisioned"
+done
 
 PATH="$T/bin:$PATH"
 B4_LAB_HOME="$T/home"
@@ -307,6 +327,28 @@ check "push: a source path with a space stays one path" 0 "" \
 	lab push fake "$T/binary with space" /root/lab
 grep -qxF "$T/binary with space" "$T/scp.args" 2>/dev/null ||
 	fail "push: scp did not get the source path as one argument"
+
+mkdir -p "$T/home/victim"
+: > "$T/home/victim/keep"
+check "destroy: a name that leads out of the instance folder is refused" 1 "is not a name" \
+	lab destroy ../victim
+[ -e "$T/home/victim/keep" ] || fail "destroy: a folder outside the instances was deleted"
+check "up: a guest name that leads out of the guest folder is refused" 1 "is not a name" \
+	lab up ../guests/debian9 elsewhere
+
+rm -f "$T/home/images/$(basename "$IMAGE_URL")"
+lab up debian9 dl1 > "$T/dl1.out" 2>&1 &
+first=$!
+lab up debian9 dl2 > "$T/dl2.out" 2>&1
+second=$?
+wait "$first"
+first=$?
+if [ "$first" -eq 0 ] && [ "$second" -eq 0 ]; then
+	echo "ok    up: two first starts at once each get a whole image"
+else
+	fail "up: two first starts at once ended with exit status $first and $second, want 0 and 0"
+	sed 's/^/      /' "$T/dl1.out" "$T/dl2.out"
+fi
 
 : > "$T/qemu-broken"
 check "up: stops at once when qemu fails for another reason" 1 "qemu did not start up2" \

@@ -42,6 +42,14 @@ Images and instance disks live in $LAB_HOME
 EOF
 }
 
+named() {
+	case "$1" in
+	"" | .* | *[!A-Za-z0-9._-]*)
+		die "'$1' is not a name: letters, digits, dots, dashes and underscores only, and no dot first"
+		;;
+	esac
+}
+
 inst_dir() { echo "$LAB_HOME/instances/$1"; }
 
 inst_pid() {
@@ -102,14 +110,18 @@ fetch_image() {
 	if [ ! -f "$image" ]; then
 		need curl
 		mkdir -p "$LAB_HOME/images"
+		part="$image.part.$$"
 		echo "lab: downloading $(basename "$IMAGE_URL")" >&2
-		curl -fsSL --retry 3 -o "$image.part" "$IMAGE_URL"
-		got="$(sha256sum "$image.part" | cut -d' ' -f1)"
+		curl -fsSL --retry 3 -o "$part" "$IMAGE_URL" || {
+			rm -f "$part"
+			die "could not download $IMAGE_URL"
+		}
+		got="$(sha256sum "$part" | cut -d' ' -f1)"
 		if [ "$got" != "$IMAGE_SHA256" ]; then
-			rm -f "$image.part"
+			rm -f "$part"
 			die "checksum of $(basename "$IMAGE_URL") is $got, expected $IMAGE_SHA256"
 		fi
-		mv "$image.part" "$image"
+		mv "$part" "$image"
 	fi
 	echo "$image"
 }
@@ -177,6 +189,8 @@ cmd_up() {
 	guest="${1:-}"
 	[ -n "$guest" ] || die "usage: lab up <guest> [name]"
 	name="${2:-$guest}"
+	named "$guest"
+	named "$name"
 	need qemu-system-x86_64
 	need qemu-img
 	need ssh
@@ -244,6 +258,7 @@ cmd_run() {
 	name="${1:-}"
 	script="${2:-}"
 	[ -n "$name" ] && [ -f "$script" ] || die "usage: lab run <name> <script> [args]"
+	named "$name"
 	shift 2
 	remote="sh -s --"
 	for a in "$@"; do
@@ -255,6 +270,7 @@ cmd_run() {
 cmd_push() {
 	name="${1:-}"
 	[ "$#" -ge 3 ] || die "usage: lab push <name> <file...> <dir>"
+	named "$name"
 	shift
 	user="$(cat "$(inst_dir "$name")/user")"
 	port="$(inst_port "$name")"
@@ -276,6 +292,7 @@ cmd_push() {
 cmd_pull() {
 	name="${1:-}"
 	[ "$#" -eq 3 ] || die "usage: lab pull <name> <path> <dir>"
+	named "$name"
 	user="$(cat "$(inst_dir "$name")/user")"
 	mkdir -p "$3"
 	scp -q $(ssh_opts) -P "$(inst_port "$name")" "$user@127.0.0.1:$2" "$3/"
@@ -284,6 +301,7 @@ cmd_pull() {
 cmd_down() {
 	name="${1:-}"
 	[ -n "$name" ] || die "usage: lab down <name>"
+	named "$name"
 	if pid="$(inst_pid "$name")"; then
 		guest_ssh "$name" 'poweroff' 2>/dev/null || true
 		tries=0
@@ -303,6 +321,7 @@ cmd_down() {
 cmd_destroy() {
 	name="${1:-}"
 	[ -n "$name" ] || die "usage: lab destroy <name>"
+	named "$name"
 	cmd_down "$name"
 	rm -rf "$(inst_dir "$name")"
 	echo "lab: $name deleted"
@@ -314,6 +333,7 @@ cmd_status() {
 		cmd_list
 		return 0
 	fi
+	named "$name"
 	if inst_pid "$name" >/dev/null; then
 		echo "$name: running, ssh port $(inst_port "$name"), $(guest_ssh "$name" 'uname -sr' 2>/dev/null || echo 'ssh not answering')"
 	else
@@ -323,6 +343,7 @@ cmd_status() {
 
 test_guest() {
 	t_name="$1"
+	named "$t_name"
 	inst_pid "$t_name" >/dev/null || die "$t_name is not running (lab up <guest> $t_name)"
 	load_guest "$(cat "$(inst_dir "$t_name")/guest")"
 	need go
@@ -490,6 +511,7 @@ list) cmd_list ;;
 up) cmd_up "$@" ;;
 ssh)
 	[ "$#" -ge 1 ] || die "usage: lab ssh <name> [command...]"
+	named "$1"
 	guest_ssh "$@"
 	;;
 run) cmd_run "$@" ;;
