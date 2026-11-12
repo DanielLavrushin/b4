@@ -19,6 +19,7 @@ export * from "@components/common/B4FormHeader";
 export * from "@components/common/B4Tabs";
 export * from "@components/common/B4ChipList";
 export * from "@components/common/B4PlusButton";
+export * from "@components/common/B4ResolverInput";
 export * from "@components/common/B4InlineEdit";
 export * from "@components/common/B4AiExplain";
 export * from "@components/common/B4RunProgress";

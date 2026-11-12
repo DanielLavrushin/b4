@@ -7,6 +7,7 @@ import { useFieldLabel } from "./dialogLabels";
 export interface B4TextFieldProps extends Omit<TextFieldProps, "variant"> {
   helperText?: React.ReactNode;
   path?: string;
+  changed?: boolean;
   aiTopic?: string;
   aiContext?: Record<string, unknown>;
   aiQuestion?: string;
@@ -16,6 +17,7 @@ export interface B4TextFieldProps extends Omit<TextFieldProps, "variant"> {
 export const B4TextField = ({
   helperText,
   path,
+  changed: markedChanged,
   aiTopic,
   aiContext,
   aiQuestion,
@@ -25,7 +27,8 @@ export const B4TextField = ({
 }: B4TextFieldProps) => {
   const resolvedLabel = useFieldLabel(path, typeof props.label === "string" ? props.label : undefined);
   const label = props.label ?? resolvedLabel;
-  const changed = useChangedField(path, label);
+  const pathChanged = useChangedField(path, label);
+  const changed = pathChanged || !!markedChanged;
   const tf = (
     <TextField
       {...props}
