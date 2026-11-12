@@ -78,6 +78,12 @@ func writeJsonError(w http.ResponseWriter, status int, message string) {
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
+func keepBodyOutOfLog(w http.ResponseWriter) {
+	if marked, ok := w.(interface{ KeepBodyOutOfLog() }); ok {
+		marked.KeepBodyOutOfLog()
+	}
+}
+
 func SetNFQPool(pool *nfq.Pool) {
 	globalPool = pool
 }

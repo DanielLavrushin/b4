@@ -33,6 +33,9 @@ type errLogFilter struct{ w io.Writer }
 
 func (f errLogFilter) Write(p []byte) (int, error) {
 	s := string(p)
+	if strings.Contains(s, "panic serving") {
+		return f.w.Write(p)
+	}
 	if strings.Contains(s, "TLS handshake error") ||
 		strings.Contains(s, "tls: ") ||
 		strings.Contains(s, "http: URL query contains semicolon") {
@@ -61,7 +64,7 @@ func StartServer(cfgPtr *atomic.Pointer[config.Config], pool *nfq.Pool) (*stdhtt
 
 	handler.RegisterSpa(mux, uiDist)
 
-	var httpHandler stdhttp.Handler = mux
+	httpHandler := logServerErrors(mux)
 	httpHandler = authMiddleware(cfgPtr, httpHandler)
 	httpHandler = cors(cfgPtr, httpHandler)
 	httpHandler = telegramWebProxyVhost(httpHandler)
