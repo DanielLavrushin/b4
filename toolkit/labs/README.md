@@ -56,7 +56,8 @@ that engine run.
 `lab test <name> [pattern]` builds the test binary of `./tables/` from the checkout, copies it
 into the instance and runs the tests matching the pattern (default `TestNetns`) as root in a
 private network and mount namespace, the way `make test-netns` does on the development
-machine. It prints the counts and the failed tests, and exits non-zero when one failed.
+machine. It prints the counts and the failed tests, and exits non-zero when one failed. A
+subtest counts and is listed by its full path, `TestParent/child`.
 
 `lab ab <name> [pattern]` is the one to use on these guests. On a kernel this old some tests
 fail for reasons of their own, about twenty on `debian8` and ten on `debian9`, so a failure

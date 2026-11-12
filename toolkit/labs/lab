@@ -312,19 +312,27 @@ test_build() {
 	fi
 }
 
+test_results() {
+	sed -n "s/^[[:space:]]*--- $1: \([^ ]*\) (.*/\1/p" "$2"
+}
+
+test_count() {
+	test_results "$1" "$2" | grep -c . || true
+}
+
 test_run() {
 	t_bin="$1"
 	t_log="$3"
 	cmd_push "$t_name" "$t_bin" /root/lab
 	guest_ssh "$t_name" "sh -s -- /root/lab/$(basename "$t_bin") '$2' 1" \
 		< "$LAB_DIR/scripts/netns-test.sh" > "$t_log" 2>&1 || true
-	grep '^--- FAIL' "$t_log" | sed 's/^--- FAIL: //; s/ (.*//' | sort > "$t_log.fail" || true
-	printf '%s pass, %s fail, %s skip' "$(grep -c '^--- PASS' "$t_log" || true)" \
-		"$(grep -c '^--- FAIL' "$t_log" || true)" "$(grep -c '^--- SKIP' "$t_log" || true)"
+	test_results FAIL "$t_log" | sort > "$t_log.fail"
+	printf '%s pass, %s fail, %s skip' "$(test_count PASS "$t_log")" \
+		"$(test_count FAIL "$t_log")" "$(test_count SKIP "$t_log")"
 }
 
 test_ran() {
-	grep -q '^--- \(PASS\|FAIL\|SKIP\)' "$1" || die "no test ran; see $1"
+	grep -Eq '^[[:space:]]*--- (PASS|FAIL|SKIP): ' "$1" || die "no test ran; see $1"
 }
 
 cmd_test() {
