@@ -220,3 +220,53 @@ func TestMCPEventStreamsAskProxiesNotToBuffer(t *testing.T) {
 		t.Fatal("the listen stream sent no acknowledgment")
 	}
 }
+
+func TestMCPLoopbackListenerAnswersAProxiedHostOnlyWhenAuthenticated(t *testing.T) {
+	cases := []struct {
+		name       string
+		token      string
+		login      bool
+		host       string
+		wantStatus int
+		wantBody   string
+	}{
+		{"MCP token, proxied host", "proxy-token", false, "b4.example.com", http.StatusOK, `"tools"`},
+		{"MCP token and web login, proxied host", "proxy-token", true, "b4.example.com:443", http.StatusOK, `"tools"`},
+		{"web login, proxied host", "", true, "b4.example.com", http.StatusOK, `"tools"`},
+		{"no authentication, proxied host", "", false, "b4.example.com", http.StatusForbidden, "system.web_server.mcp.token"},
+		{"no authentication, localhost", "", false, "localhost", http.StatusOK, `"tools"`},
+		{"no authentication, IPv6 loopback", "", false, "[::1]:7000", http.StatusOK, `"tools"`},
+		{"no authentication, listener address", "", false, "", http.StatusOK, `"tools"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := mcpTestCfg()
+			cfg.System.WebServer.MCP.Token = tc.token
+			if !tc.login {
+				cfg.System.WebServer.Username = ""
+				cfg.System.WebServer.Password = ""
+			}
+			srv := newMCPTestServer(t, cfg)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			req := mcpStatelessRequest(t, ctx, srv.URL+mcpEndpoint, "tools/list", "",
+				`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{`+mcpTestMeta+`}}`)
+			if tc.host != "" {
+				req.Host = tc.host
+			}
+			if tc.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tc.token)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("post: %v", err)
+			}
+			defer resp.Body.Close()
+			raw, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != tc.wantStatus || !strings.Contains(string(raw), tc.wantBody) {
+				t.Fatalf("Host %q: status %d, body %q; want %d with %q", req.Host, resp.StatusCode, raw, tc.wantStatus, tc.wantBody)
+			}
+		})
+	}
+}
