@@ -4,23 +4,44 @@ set -u
 unset B4_LAB_REPO LAB_BASE LAB_PKG
 LAB_DIR="$(cd "$(dirname "$0")" && pwd)"
 T="$(mktemp -d)"
-trap 'rm -rf "$T"' EXIT
-mkdir -p "$T/home/instances/fake" "$T/bin" "$T/remote"
-echo $$ > "$T/home/instances/fake/pid"
-echo 2222 > "$T/home/instances/fake/port"
-echo root > "$T/home/instances/fake/user"
-echo debian9 > "$T/home/instances/fake/guest"
+: > "$T/pids"
+cleanup() {
+	while read -r pid; do
+		kill "$pid" 2>/dev/null
+	done < "$T/pids"
+	rm -rf "$T"
+}
+trap cleanup EXIT
+mkdir -p "$T/bin" "$T/remote"
 
+cat > "$T/idle" <<'EOF'
+#!/bin/sh
+while :; do
+	sleep 1
+done
+EOF
 cat > "$T/bin/ssh" <<EOF
 #!/bin/sh
 for arg in "\$@"; do command="\$arg"; done
 case "\$command" in
 *change.test*) side=change ;;
 *base.test*) side=base ;;
+"sh -s -- "*) exec sh -c "\$command" ;;
+"sh -s")
+	echo attempt >> "$T/provision.log"
+	[ -e "$T/provision-fails" ] && exit 1
+	exit 0
+	;;
 *) exit 0 ;;
 esac
 cat "$T/remote/\$side.out"
 exit "\$(cat "$T/remote/\$side.status")"
+EOF
+cat > "$T/bin/scp" <<EOF
+#!/bin/sh
+for arg in "\$@"; do
+	printf '%s\n' "\$arg"
+done > "$T/scp.args"
 EOF
 cat > "$T/bin/go" <<'EOF'
 #!/bin/sh
@@ -53,10 +74,12 @@ echo PASS
 EOF
 cat > "$T/bin/qemu-system-x86_64" <<EOF
 #!/bin/sh
+name=""
 pidfile=""
 port=""
 while [ "\$#" -gt 0 ]; do
 	case "\$1" in
+	-name) name="\$2" ;;
 	-pidfile) pidfile="\$2" ;;
 	*hostfwd=*)
 		port="\${1##*127.0.0.1:}"
@@ -74,22 +97,38 @@ if [ ! -e "$T/port-taken" ]; then
 	echo "qemu-system-x86_64: Could not set up host forwarding rule 'tcp:127.0.0.1:\$port-:22'" >&2
 	exit 1
 fi
-echo $$ > "\$pidfile"
+"$T/idle" -name "\$name" -end > /dev/null 2>&1 &
+echo \$! > "\$pidfile"
+echo \$! >> "$T/pids"
 EOF
-for stub in scp git ip qemu-img sha256sum; do
+for stub in git ip qemu-img sha256sum; do
 	printf '#!/bin/sh\nexit 0\n' > "$T/bin/$stub"
 done
-chmod +x "$T"/bin/* "$T/guest.bin"
+chmod +x "$T"/bin/* "$T/guest.bin" "$T/idle"
 : > "$T/b4.json"
 
+instance() {
+	mkdir -p "$T/home/instances/$1"
+	echo 2222 > "$T/home/instances/$1/port"
+	echo root > "$T/home/instances/$1/user"
+	echo debian9 > "$T/home/instances/$1/guest"
+}
+
+instance fake
+"$T/idle" -name b4-lab-fake -end &
+echo $! > "$T/home/instances/fake/pid"
+echo $! >> "$T/pids"
+
 . "$LAB_DIR/guests/debian9.env"
-for name in up1 up2; do
-	mkdir -p "$T/home/keys" "$T/home/images" "$T/home/instances/$name"
-	: > "$T/home/keys/id_ed25519"
-	: > "$T/home/images/$(basename "$IMAGE_URL")"
+mkdir -p "$T/home/keys" "$T/home/images"
+: > "$T/home/keys/id_ed25519"
+: > "$T/home/images/$(basename "$IMAGE_URL")"
+for name in up1 up2 up3; do
+	mkdir -p "$T/home/instances/$name"
 	: > "$T/home/instances/$name/disk.qcow2"
-	: > "$T/home/instances/$name/provisioned"
 done
+: > "$T/home/instances/up1/provisioned"
+: > "$T/home/instances/up2/provisioned"
 
 PATH="$T/bin:$PATH"
 B4_LAB_HOME="$T/home"
@@ -108,6 +147,11 @@ remote() {
 	printf '%s\n' "$@" > "$T/remote/$side.out"
 }
 
+fail() {
+	failed=$((failed + 1))
+	echo "FAIL  $*"
+}
+
 check() {
 	label="$1"
 	want="$2"
@@ -115,12 +159,11 @@ check() {
 	shift 3
 	"$@" > "$T/out" 2>&1
 	got=$?
-	if [ "$got" -eq "$want" ] && grep -qF -- "$text" "$T/out"; then
+	if [ "$got" -eq "$want" ] && { [ -z "$text" ] || grep -qF -- "$text" "$T/out"; }; then
 		echo "ok    $label"
 		return 0
 	fi
-	failed=$((failed + 1))
-	echo "FAIL  $label: exit status $got, want $want and the output to have \"$text\""
+	fail "$label: exit status $got, want $want and the output to have \"$text\""
 	sed 's/^/      /' "$T/out"
 }
 
@@ -229,6 +272,37 @@ if [ "$(cat "$T/home/instances/up1/port" 2>/dev/null)" = "$(cat "$T/port-taken" 
 	failed=$((failed + 1))
 	echo "FAIL  up: the instance's port file names the port that was already taken"
 fi
+
+: > "$T/provision-fails"
+check "up: a failed provisioning fails the start" 1 "provisioning up3" \
+	lab up debian9 up3
+rm -f "$T/provision-fails"
+check "up: provisioning is retried for an instance left running without it" 0 "up3 is up" \
+	lab up debian9 up3
+if [ ! -e "$T/home/instances/up3/provisioned" ] || [ "$(grep -c . "$T/provision.log")" -ne 2 ]; then
+	fail "up: the instance was provisioned $(grep -c . "$T/provision.log") time(s) and is $([ -e "$T/home/instances/up3/provisioned" ] || echo not) marked provisioned, want 2 and marked"
+fi
+
+instance stale
+"$T/idle" &
+stale=$!
+echo "$stale" >> "$T/pids"
+echo "$stale" > "$T/home/instances/stale/pid"
+check "status: a pid that is not this guest's qemu is not a running instance" 0 "stale: stopped" \
+	lab status stale
+check "down: leaves alone a process that only has the pid of a guest that is gone" 0 "stale is not running" \
+	lab down stale
+kill -0 "$stale" 2>/dev/null || fail "down: the process that had the stale pid was killed"
+
+printf '%s\n' 'for a in "$@"; do' '	printf "[%s]\n" "$a"' 'done' > "$T/args.sh"
+check "run: an argument with spaces and shell characters arrives whole" 0 '[two words; $HOME *]' \
+	lab run fake "$T/args.sh" 'two words; $HOME *' plain
+
+: > "$T/binary with space"
+check "push: a source path with a space stays one path" 0 "" \
+	lab push fake "$T/binary with space" /root/lab
+grep -qxF "$T/binary with space" "$T/scp.args" 2>/dev/null ||
+	fail "push: scp did not get the source path as one argument"
 
 : > "$T/qemu-broken"
 check "up: stops at once when qemu fails for another reason" 1 "qemu did not start up2" \
