@@ -52,17 +52,16 @@ const POPULAR_DOH = doh as DohEntry[];
 
 type ResolverMode = "udp" | "doh";
 
-const parseUpstreams = (text: string): string[] =>
-  text
-    .split(/\s+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+const MAX_RESOLVERS = 8;
 
-const sameUpstreams = (left: string[], right?: string[]): boolean => {
-  const a = left.filter(Boolean);
-  const b = (right ?? []).filter(Boolean);
-  return a.length === b.length && a.every((entry, i) => entry === b[i]);
-};
+const ADDRESS_ENTRY = /^[0-9a-f.:]+$/i;
+
+const parseUpstreams = (text: string): string[] =>
+  text.split(/\s+/).filter(Boolean);
+
+const sameUpstreams = (left: string[], right: string[] = []): boolean =>
+  left.length === right.length &&
+  left.every((entry, i) => entry === right[i]);
 
 interface DnsRedirectProps {
   config: B4SetConfig;
@@ -126,8 +125,17 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
 
   const handleUpstreamsChange = (text: string) => {
     setUpstreamsText(text);
-    onChange("dns.upstreams", parseUpstreams(text));
+    const entries = parseUpstreams(text);
+    onChange("dns.upstreams", entries.length > 0 ? entries : undefined);
   };
+
+  const upstreams = dnsConfig.upstreams ?? [];
+  const primary = dohUrl.trim() || targetDns.trim();
+  const backups = new Set(upstreams);
+  backups.delete(primary);
+  const overLimit = backups.size + (primary ? 1 : 0) - MAX_RESOLVERS;
+  const fragmentApplies =
+    mode === "udp" || upstreams.some((entry) => ADDRESS_ENTRY.test(entry));
 
   const [pinsText, setPinsText] = useState(() => pinsToText(dnsConfig.pins));
   const [seenPins, setSeenPins] = useState(dnsConfig.pins);
@@ -186,6 +194,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
   const selectedDoH = POPULAR_DOH.find((d) => d.url === dnsConfig.doh_url);
   const activeResolver =
     mode === "doh" ? dnsConfig.doh_url : dnsConfig.target_dns;
+  const shownResolver = activeResolver || upstreams[0];
 
   return (
     <Grid container spacing={3}>
@@ -240,18 +249,21 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
             />
           </Grid>
 
+          {fragmentApplies && (
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Switch
+                checked={dnsConfig.fragment_query || false}
+                path="dns.fragment_query"
+                onChange={(checked: boolean) =>
+                  onChange("dns.fragment_query", checked)
+                }
+                description={t("sets.dns.fragmentQueryDesc")}
+              />
+            </Grid>
+          )}
+
           {mode === "udp" && (
             <>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <B4Switch
-                  checked={dnsConfig.fragment_query || false}
-                  path="dns.fragment_query"
-                  onChange={(checked: boolean) =>
-                    onChange("dns.fragment_query", checked)
-                  }
-                  description={t("sets.dns.fragmentQueryDesc")}
-                />
-              </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4TextField
                   label={t("sets.dns.serverIp")}
@@ -521,6 +533,11 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
               helperText={t("sets.dns.upstreamsHelper")}
               aiTopic="dns.upstreams"
             />
+            {overLimit > 0 && (
+              <B4Alert severity="warning" sx={{ mt: 2 }}>
+                {t("sets.dns.upstreamsOverLimit", { count: overLimit })}
+              </B4Alert>
+            )}
           </Grid>
 
           {/* Visual explanation */}
@@ -574,10 +591,10 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                 />
                 <Typography variant="caption">→</Typography>
                 <B4Badge
-                  label={activeResolver || t("sets.dns.vizSelectDns")}
+                  label={shownResolver || t("sets.dns.vizSelectDns")}
                   size="small"
                   sx={{
-                    bgcolor: activeResolver
+                    bgcolor: shownResolver
                       ? colors.tertiary
                       : colors.accent.primary,
                   }}
@@ -590,7 +607,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
           </Grid>
 
           {/* Warnings */}
-          {!activeResolver && (dnsConfig.upstreams ?? []).length === 0 && (
+          {!shownResolver && (
             <B4Alert severity="warning" sx={{ m: 0 }}>
               {mode === "doh"
                 ? t("sets.dns.noDohWarning")

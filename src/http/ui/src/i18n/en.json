@@ -189,6 +189,7 @@
       "levelTrace": "Trace",
       "levelDebug": "Debug"
     },
+
     "Service": {
       "title": "Service",
       "timezone": "Time Zone",
@@ -2255,6 +2256,8 @@
       "upstreams": "More resolvers",
       "upstreamsPlaceholder": "1.1.1.1\nhttps://dns.google/dns-query",
       "upstreamsHelper": "One entry per line: an address or an https:// URL. b4 asks the resolver above first, then each entry in turn, moving on after 300 ms without an answer or at once on SERVFAIL, NOTIMP or REFUSED. Up to eight in total.",
+      "upstreamsOverLimit_one": "A set asks eight resolvers at most, the resolver above included. The last entry will be left out when the set is saved.",
+      "upstreamsOverLimit_other": "A set asks eight resolvers at most, the resolver above included. The last {{count}} entries will be left out when the set is saved.",
       "recommendedServers": "Recommended DNS Servers",
       "howItWorks": "HOW IT WORKS",
       "vizApp": "App",

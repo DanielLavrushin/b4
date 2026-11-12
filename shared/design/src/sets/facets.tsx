@@ -90,6 +90,7 @@ export interface FacetSetConfig {
     enabled: boolean;
     target_dns: string;
     doh_url: string;
+    upstreams?: string[];
     fragment_query: boolean;
     pins?: Record<string, string[]>;
   };
@@ -496,21 +497,28 @@ export const routesViaPins = (set: FacetSetConfig) =>
 export const hasDnsFacet = (set: FacetSetConfig) =>
   !!set.dns?.enabled || dnsPinnedDomains(set).length > 0;
 
+const DOH_ENTRY = /^https:\/\//i;
+
 const dnsRows = (
   set: FacetSetConfig,
   t: FacetTranslate,
   hideEmptyServer: boolean,
 ): FacetRow[] => {
   const dns = set.dns;
-  const isDoh = !!dns.doh_url;
+  const primary = dns.doh_url || dns.target_dns;
+  const backups = dns.upstreams ?? [];
+  const server = primary || backups[0];
+  const more = backups.length - (primary ? 0 : 1);
+  const isDoh = primary ? !!dns.doh_url : DOH_ENTRY.test(server ?? "");
   const rows: FacetRow[] = [];
 
   if (dns.enabled) {
     rows.push({ label: t(F("mode")), value: isDoh ? "DoH" : t(F("redirect")) });
-    if (isDoh || dns.target_dns || !hideEmptyServer) {
+    if (server || !hideEmptyServer) {
       rows.push({
         label: t(F("dnsTarget")),
-        value: isDoh ? dns.doh_url : dns.target_dns || "-",
+        value: server || "-",
+        muted: more > 0 ? `+${more}` : undefined,
       });
     }
     rows.push({ label: t(F("fragment")), value: onOff(t, dns.fragment_query) });
