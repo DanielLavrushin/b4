@@ -3,15 +3,9 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { ApiError } from "@api/apiClient";
 import { hubApi } from "@api/hub";
 import { setsApi } from "@api/sets";
-import {
-  HubSet,
-  HubStatus,
-  HubVoteKind,
-  hubGateStatus,
-} from "@models/hub";
+import { HubSet, HubVoteKind } from "@models/hub";
 
 export const hubKeys = {
   all: ["hub"] as const,
@@ -21,24 +15,10 @@ export const hubKeys = {
   set: (id: string) => ["hub", "set", id] as const,
 };
 
-const isHubGate = (e: unknown): e is ApiError =>
-  e instanceof ApiError &&
-  e.status === 409 &&
-  (e.code === "hub_disabled" || e.code === "hub_not_configured");
-
-async function loadStatus(): Promise<HubStatus> {
-  try {
-    return await hubApi.status();
-  } catch (e) {
-    if (isHubGate(e)) return hubGateStatus(e.code !== "hub_disabled");
-    throw e;
-  }
-}
-
 export function useHubStatus(enabled = true) {
   return useQuery({
     queryKey: hubKeys.status,
-    queryFn: loadStatus,
+    queryFn: hubApi.status,
     enabled,
     staleTime: 30 * 1000,
     retry: false,

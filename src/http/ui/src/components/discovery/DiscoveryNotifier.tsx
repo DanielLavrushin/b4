@@ -97,7 +97,9 @@ export function DiscoveryNotifier() {
           action: {
             label: t("discovery.notify.open"),
             onClick: () => {
-              navigate(DISCOVERY_PATH)?.catch(() => {});
+              navigate(DISCOVERY_PATH, {
+                state: { runId: suite.id },
+              })?.catch(() => {});
             },
           },
         });

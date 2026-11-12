@@ -246,9 +246,14 @@ func iptBuiltinParents(table string) []string {
 }
 
 func iptJumpLineNumbers(cmd, table, parent string, match func(target string) bool) []int {
+	nums, _ := iptJumpLines(cmd, table, parent, match)
+	return nums
+}
+
+func iptJumpLines(cmd, table, parent string, match func(target string) bool) ([]int, bool) {
 	out, err := run(cmd, "-w", "-t", table, "-L", parent, "-n", "--line-numbers")
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	var nums []int
 	for _, line := range strings.Split(out, "\n") {
@@ -264,7 +269,7 @@ func iptJumpLineNumbers(cmd, table, parent string, match func(target string) boo
 			nums = append(nums, n)
 		}
 	}
-	return nums
+	return nums, true
 }
 
 const iptDeleteRounds = 64

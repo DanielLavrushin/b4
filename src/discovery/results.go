@@ -100,6 +100,7 @@ func (ds *DiscoverySuite) recordResultsMulti(preset ConfigPreset, results map[st
 			Error:      result.Error,
 			StatusCode: result.StatusCode,
 			Set:        setForResult(result),
+			cutShort:   result.cutShort,
 		}
 
 		if result.Status == CheckStatusComplete && result.FinalHost != "" {

@@ -60,6 +60,7 @@ const URL_SEPARATORS = /\s+|,(?=\s|$)/;
 interface DiscoveryLocationState {
   urls?: string[];
   setId?: string;
+  runId?: string;
 }
 
 export const DiscoveryRunner = () => {
@@ -77,9 +78,12 @@ export const DiscoveryRunner = () => {
     stopping,
     suiteId,
     suite,
+    otherRun,
     error,
     history,
     startDiscovery,
+    openRun,
+    showOtherRun,
     cancelDiscovery,
     finishDiscovery,
     finishRequested,
@@ -367,6 +371,23 @@ export const DiscoveryRunner = () => {
     setsLoaded,
     addUrls,
     pickSet,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    const state = location.state as DiscoveryLocationState | null;
+    if (!state?.runId) return;
+    openRun(state.runId);
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: location.hash },
+      { replace: true, state: null },
+    )?.catch(() => {});
+  }, [
+    location.pathname,
+    location.search,
+    location.hash,
+    location.state,
+    openRun,
     navigate,
   ]);
 
@@ -678,6 +699,33 @@ export const DiscoveryRunner = () => {
             onShowLog={() => setLogOpen(true)}
             onNewSearch={resetDiscovery}
           />
+        )}
+
+        {showResults && otherRun && (
+          <B4Alert
+            severity="info"
+            sx={{
+              flexWrap: { xs: "wrap", sm: "nowrap" },
+              "& .MuiAlert-message": { flex: { xs: "1 1 0", sm: "0 1 auto" } },
+              "& .MuiAlert-action": {
+                width: { xs: "100%", sm: "auto" },
+                justifyContent: "flex-end",
+                pl: { xs: 0, sm: 2 },
+              },
+            }}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                sx={{ whiteSpace: "nowrap" }}
+                onClick={showOtherRun}
+              >
+                {t("discovery.otherRun.show")}
+              </Button>
+            }
+          >
+            {t(`discovery.otherRun.${otherRun.source ?? "web"}`)}
+          </B4Alert>
         )}
 
         {!showRun && !showResults && !isReconnecting && (

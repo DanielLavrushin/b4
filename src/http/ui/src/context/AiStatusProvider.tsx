@@ -8,6 +8,7 @@ import {
   ReactNode,
 } from "react";
 import { aiApi, AIStatus } from "@api/ai";
+import { useAuth } from "./AuthProvider";
 
 interface AiStatusContextType {
   status: AIStatus | null;
@@ -22,6 +23,7 @@ const AiStatusContext = createContext<AiStatusContextType | null>(null);
 export function AiStatusProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [status, setStatus] = useState<AIStatus | null>(null);
   const [loading, setLoading] = useState(false);
+  const { hasSession } = useAuth();
 
   const refresh = useCallback(async (): Promise<AIStatus | null> => {
     try {
@@ -38,8 +40,8 @@ export function AiStatusProvider({ children }: Readonly<{ children: ReactNode }>
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (hasSession) void refresh();
+  }, [hasSession, refresh]);
 
   const value = useMemo<AiStatusContextType>(
     () => ({

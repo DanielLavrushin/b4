@@ -36,6 +36,7 @@ The Go module root is `src/`, not the repo root. `go.mod` is at `src/go.mod`, mo
 | `src/netprobe/`, `src/iphealth/`, `src/stun/` | Reachability probing, per-IP health tracking, STUN.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `installer/`                                  | POSIX shell installer, assembled into the top-level `install.sh`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `docs/`                                       | Docusaurus site, EN under `docs/docs/`, RU mirror under `docs/i18n/ru/docusaurus-plugin-content-docs/current/`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `toolkit/`                                    | Shell helpers for tests on a real router (a deadman timer, a firewall diagnostics collector), and `toolkit/labs/`: the `lab` script and its QEMU guests with old kernels, for tests the development machine's kernel cannot run.                                                                                                                                                                                                                                                                                                                                                                 |
 
 ## Build and test
 
@@ -51,6 +52,8 @@ make deploy-<box> VERSION=1.79.0   # build-ui + build + sftp + restart on a box 
 make test-netns                    # tables routing tests inside an unshared netns. CI never runs it: run it for any src/tables change.
 go -C src test ./...               # CI runs exactly this, with working-directory: src
 go -C src test ./tables/ -run TestX
+toolkit/labs/lab up debian8        # QEMU guest with kernel 3.16 (debian9: 4.9). The first start downloads its image into ~/.cache/b4-lab.
+toolkit/labs/lab ab debian8 TestX  # the netns tests in that guest, this checkout against origin/main. For changes to ip rules, routes or rule order.
 make hub-build HUB_VERSION=1.0.0   # hub-build-ui (pnpm build in hub/ui), then the b4hub binary into out/. HUB_VERSION defaults to dev; the hub has its own version.
 make hub-test                      # go -C hub test ./... (compiles even with an unbuilt console, dist/.gitkeep)
 make hub-run                       # local hub on 0.0.0.0:7100; console at /admin, password from B4HUB_ADMIN_PASSWORD
@@ -178,6 +181,8 @@ private skills can sit next to them as symlinks.
 - `b4-docs`: a documentation page, its Russian mirror, its screenshots (`shoot.mjs`).
 - `b4-setting`: adding or changing a config setting end to end.
 - `b4-tables`: firewall and routing rules in `src/tables`, `src/tproxy`, `src/tun`.
+- `b4-lab`: QEMU guests with old kernels and old iptables (`toolkit/labs`), for a change that
+  has to hold where this machine's kernel cannot show it.
 - `b4-installer`: the POSIX installer and `install.sh`.
 - `b4-ui`: the router UI, the hub console and `shared/design`.
 - `b4-mcp`: b4's MCP tools, budget, client limits and write guards.

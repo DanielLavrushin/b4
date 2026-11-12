@@ -75,6 +75,30 @@ func TestPresentEgressInterfaceStillGetsItsRuleAndKillSwitch(t *testing.T) {
 	}
 }
 
+func TestAnInterfaceSetsStandingRuleIsNotAddedAgain(t *testing.T) {
+	rpFilterHarness(t, map[string]string{"all": "0", "lo": "0"})
+	prevSeen, prevLines := routeIfaceSeen, routeRuleLines
+	routeIfaceSeen = make(map[string]bool)
+	t.Cleanup(func() {
+		routeIfaceSeen = prevSeen
+		routeRuleLines = prevLines
+	})
+	routeRuleLines = func(fam routeFamily) ([]string, bool) {
+		return []string{"0:\tfrom all lookup local", "10169:\tfrom all fwmark 0x4d05/0x27fff lookup 169"}, true
+	}
+
+	emitted := deferredEgressCommands(t, "lo", true)
+
+	if strings.Contains(emitted, "rule add fwmark") {
+		t.Fatalf("the set's rule was standing and a rebuild added it again. An old kernel takes an identical "+
+			"rule a second time instead of refusing it (3.16 does, 4.9 refuses it), so on such a router every rebuild and every return of "+
+			"the interface leaves one more copy, each walked for every packet the router routes:\n%s", emitted)
+	}
+	if strings.Contains(emitted, "rule del fwmark 0x4d05/0x27fff") {
+		t.Fatalf("the rule in use was deleted during a rebuild:\n%s", emitted)
+	}
+}
+
 func TestAVanishedInterfaceKeepsItsKillSwitch(t *testing.T) {
 	prev := routeIfaceSeen
 	routeIfaceSeen = map[string]bool{"b4-gone0": true}
