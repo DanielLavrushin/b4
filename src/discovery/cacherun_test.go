@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -206,6 +207,54 @@ func TestTheDeadEndRetestKeepsTheFakeOfACachedStrategy(t *testing.T) {
 		if !bytes.Equal(payload, config.FakeSTUN) {
 			t.Errorf("fetch %d of the community strategy went out with a %d byte fake, a shared strategy without a fake type still gets the run's best payload", i, len(payload))
 		}
+	}
+}
+
+func TestAFetchStoppedInFlightIsRecordedAsCutShort(t *testing.T) {
+	var ds *DiscoverySuite
+	var stop sync.Once
+	env := newCacheRun(t, func(fake []byte) bool {
+		if bytes.Equal(fake, config.FakeSNI1) {
+			stop.Do(func() { close(ds.finish) })
+			time.Sleep(300 * time.Millisecond)
+		}
+		return false
+	})
+	ds = env.suite()
+	t.Cleanup(ds.ctxCancel)
+	ds.cfg = env.pool.GetFirstWorkerConfig()
+
+	shape := testedShape(t, env.cfg.ConfigPath, "combo-pastseq")
+	refused := ConfigPreset{Name: "cached-1-combo", Family: FamilyCombo, Phase: PhaseCached, Config: shape}
+	stopped := ConfigPreset{Name: "cached-2-combo", Family: FamilyCombo, Phase: PhaseCached, Config: shape}
+	stopped.Config.Faking.SNIType = config.FakePayloadDefault1
+
+	ds.storeResultsMulti(refused, ds.testPresetAllDomains(refused))
+	ds.storeResultsMulti(stopped, ds.testPresetAllDomains(stopped))
+
+	results := ds.domainResults[cacheRunDomain].Results
+	if r := results[refused.Name]; r == nil || r.Status != CheckStatusFailed || r.cutShort {
+		t.Errorf("a fetch the server refused before any stop is a failure of the strategy, got %+v", r)
+	}
+	if r := results[stopped.Name]; r == nil || r.Status != CheckStatusFailed || !r.cutShort {
+		t.Errorf("a fetch that ended because the run was stopped must be told apart from a failure of the strategy, got %+v", r)
+	}
+}
+
+func TestAFetchCutShortByAStopIsNotAFailedRun(t *testing.T) {
+	ds := cachedSuite(t, []string{"a.example"}, comboEntry(207, 0))
+	ds.putCached("a.example", ds.cachedPresets[0], CheckStatusFailed)
+	ds.domainResults["a.example"].Results[ds.cachedPresets[0].Name].cutShort = true
+	ds.put("a.example", presetNoBypass, CheckStatusFailed, PhaseBaseline, 0)
+	ds.put("a.example", presetSetCurrent, CheckStatusComplete, PhaseCached, 0)
+
+	ds.saveResultsToCache()
+
+	if got := ds.discoveryCache.Entries[0].FailedRuns; got != 0 {
+		t.Errorf("the stop ended the fetch, which shows nothing about the strategy: failed runs %d", got)
+	}
+	if cacheFileWritten(ds) {
+		t.Error("nothing changed, so nothing is written")
 	}
 }
 

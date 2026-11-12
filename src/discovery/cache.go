@@ -366,7 +366,7 @@ func cachedOutcome(name string, results map[string]*DomainDiscoveryResult) (pass
 		case CheckStatusComplete:
 			passed = true
 		case CheckStatusFailed:
-			failed = failed || byStrategy
+			failed = failed || (byStrategy && !r.cutShort)
 		}
 	}
 	return passed, failed
