@@ -9,9 +9,20 @@ codename="$(sed -n 's/^VERSION=.*(\(.*\)).*/\1/p' /etc/os-release)"
 
 systemctl stop apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
 
+case "$codename" in
+jessie)
+	apt_source="deb [trusted=yes]"
+	apt_force="--force-yes"
+	;;
+*)
+	apt_source="deb"
+	apt_force=""
+	;;
+esac
+
 printf '%s\n' \
-	"deb [trusted=yes] http://archive.debian.org/debian $codename main" \
-	"deb [trusted=yes] http://archive.debian.org/debian-security $codename/updates main" \
+	"$apt_source http://archive.debian.org/debian $codename main" \
+	"$apt_source http://archive.debian.org/debian-security $codename/updates main" \
 	> /etc/apt/sources.list
 rm -f /etc/apt/sources.list.d/*
 printf 'Acquire::Check-Valid-Until "false";\nAcquire::ForceIPv4 "true";\n' > /etc/apt/apt.conf.d/99b4lab
@@ -25,7 +36,7 @@ until apt-get update -q >/dev/null 2>&1; do
 	}
 	sleep 3
 done
-apt-get install -y -q --force-yes --no-install-recommends ipset jq curl python3 conntrack tcpdump socat >/dev/null
+apt-get install -y -q $apt_force --no-install-recommends ipset jq curl python3 conntrack tcpdump socat >/dev/null
 
 for bin in iptables ip6tables; do
 	[ -e "/usr/sbin/$bin-legacy" ] && continue

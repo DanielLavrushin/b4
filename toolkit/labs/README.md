@@ -139,3 +139,6 @@ GUEST_PROVISION=<name>.provision.sh
 - x86-64 guests only: the script starts `qemu-system-x86_64`.
 - A firmware's own behaviour, such as KeeneticOS rewriting its firewall or Broadcom's flow
   cache, exists only on the real device.
+- The packages `debian8` installs are not verified. Every key its apt trusts has expired, so
+  provisioning turns the signature check off there, and they arrive over plain HTTP: do not
+  provision it on a network you do not trust. `debian9` checks signatures.
