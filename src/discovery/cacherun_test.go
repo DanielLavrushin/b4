@@ -241,6 +241,43 @@ func TestAFetchStoppedInFlightIsRecordedAsCutShort(t *testing.T) {
 	}
 }
 
+func TestACancelDuringTheLastConfirmationFetchDoesNotDemoteTheWinner(t *testing.T) {
+	const winner = "cached-1-combo"
+	var ds *DiscoverySuite
+	var fetches atomic.Int32
+	var cancel sync.Once
+	env := newCacheRun(t, func([]byte) bool {
+		if fetches.Add(1) < confirmTries {
+			return true
+		}
+		cancel.Do(func() { close(ds.cancel) })
+		time.Sleep(300 * time.Millisecond)
+		return false
+	})
+	ds = env.suite()
+	t.Cleanup(ds.ctxCancel)
+	ds.cfg = env.pool.GetFirstWorkerConfig()
+
+	set := testedShape(t, env.cfg.ConfigPath, "combo-pastseq")
+	ds.domainResults[cacheRunDomain].Results[winner] = &DomainPresetResult{
+		PresetName: winner, Family: FamilyCombo, Phase: PhaseCached, Status: CheckStatusComplete, Speed: 1000, Set: &set,
+	}
+	ds.determineBest()
+
+	ds.confirmWinners()
+
+	if got := fetches.Load(); got != confirmTries {
+		t.Fatalf("the cancel must land in confirmation fetch %d, the last one, got %d fetches", confirmTries, got)
+	}
+	r := ds.domainResults[cacheRunDomain].Results[winner]
+	if r.Status != CheckStatusComplete || r.Set == nil {
+		t.Errorf("the cancel ended the last confirmation fetch, which is not a failed try of the strategy: %s %q", r.Status, r.Error)
+	}
+	if r.ConfirmTries != 0 {
+		t.Errorf("a confirmation that was cancelled is left open, got %d of %d", r.Confirmed, r.ConfirmTries)
+	}
+}
+
 func TestAFetchCutShortByAStopIsNotAFailedRun(t *testing.T) {
 	ds := cachedSuite(t, []string{"a.example"}, comboEntry(207, 0))
 	ds.putCached("a.example", ds.cachedPresets[0], CheckStatusFailed)
