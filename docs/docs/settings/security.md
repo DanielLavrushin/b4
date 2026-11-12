@@ -86,9 +86,10 @@ How the rules are placed is described under [Packet capture](../internals/captur
 - The log records every change on a line starting with `Expose:`. It names the ports opened, a switch that is on but opened nothing, and rules put back after a firewall reload.
 - For the MTProto proxy, the **Share MTProto connection** dialog warns when the port is not open.
 
-## When it does not work
+## When it does not work {#troubleshooting}
 
 - **The login is refused after a few attempts.** The address is locked out for 5 minutes.
+- **Behind a reverse proxy, the Logs, Traffic and Dashboard pages show no live data.** Without a login, b4 sends live data only to a page at the address in the request's `Host` header. The proxy keeps the original `Host`, as nginx does with `proxy_set_header Host $host;`, and adds `X-Forwarded-Proto` when it keeps the port in `Host`. With a login set, the address is not checked. The log names a refused page on a line starting with `Web server: refused`.
 - **The password is forgotten.** b4 keeps only its hash. With b4 stopped, removing the web server's username and password from the [configuration file](../advanced/config.md#paths-system) and starting b4 again turns the login off.
 - **The interface still opens over HTTP.** The dashboard shows **Web server TLS is not usable, serving plain HTTP instead** with the reason, such as a moved or replaced file.
 - **The port does not open from outside.** The `Expose:` lines in the log give the reason, and [What the switch cannot open](#expose-limits) lists the causes outside the router.
