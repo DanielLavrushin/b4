@@ -11,6 +11,7 @@ All notable changes to b4 are recorded in this file.
 ### Fixed
 
 - Without a login for the web interface, the **Logs**, **Traffic**, **Dashboard** and **Discovery** pages got no live data behind a reverse proxy that drops the port from the `Host` header, such as nginx with `proxy_set_header Host $host`.
+- With the web server's **Bind Address** set to `127.0.0.1` behind a reverse proxy such as nginx, AI apps could not connect over **MCP**: every request was refused with `invalid Host header`, even with a valid token. [#566](https://github.com/DanielLavrushin/b4/issues/566)
 
 ## [1.90.1] - 2026-11-10
 

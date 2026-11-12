@@ -131,7 +131,7 @@ var mcpReadOnly = &mcp.ToolAnnotations{
 // @Param body body object true "JSON-RPC 2.0 request, e.g. {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}"
 // @Success 200 {string} string "JSON-RPC response as an SSE stream"
 // @Failure 400 {string} string "Accept header missing application/json or text/event-stream"
-// @Failure 403 {object} map[string]string "Origin not allowed (DNS-rebinding protection)"
+// @Failure 403 {object} map[string]string "Origin not allowed, or an outside Host on a loopback listener without a token or login (DNS-rebinding protection)"
 // @Failure 404 {object} map[string]string "MCP server is disabled"
 // @Security BearerAuth
 // @Router /mcp [post]
@@ -158,6 +158,7 @@ func (api *API) mcpHandler(pick func(*http.Request) *mcp.Server) http.Handler {
 		Stateless:                    true,
 		MaxRequestBodyBytes:          mcpMaxBodyBytes,
 		PropagateRequestCancellation: true,
+		DisableLocalhostProtection:   true,
 	}))
 }
 
@@ -221,15 +222,23 @@ func (api *API) mcpGate(next http.Handler) http.Handler {
 			return
 		}
 
+		authenticated := mcpAuthConfigured(cfg)
 		if cfg.System.WebServer.MCP.Token != "" {
 			if token, _ := BearerToken(r.Header.Get("Authorization")); !MCPTokenAccepts(cfg, token) {
 				MCPRefuseToken(w, r)
 				return
 			}
-		} else if !mcpAuthConfigured(cfg) {
+			authenticated = true
+		} else if !authenticated {
 			mcpUnauthWarnOnce.Do(func() {
 				log.Warnf("mcp: serving without authentication - no MCP token is set and web_server.username/password are empty, so anyone who can reach %s can read b4 status, configuration and diagnostics", mcpEndpoint)
 			})
+		}
+
+		if !authenticated && mcpOutsideHostOnLoopback(r) {
+			mcpLogRefusal(r, fmt.Sprintf("it reached a loopback address under the host name %q, which needs an MCP token or a web login (a reverse proxy, or a DNS-rebinding page)", r.Host))
+			writeJsonError(w, http.StatusForbidden, "host not allowed: set system.web_server.mcp.token to reach MCP through a reverse proxy")
+			return
 		}
 
 		if origin := r.Header.Get("Origin"); origin != "" && !mcpOriginAllowed(origin, r.Host, cfg.System.WebServer.MCP.AllowedOrigins) {
@@ -336,6 +345,23 @@ func mcpOriginAllowed(origin, host string, allowed []string) bool {
 	}
 
 	return mcpLiteralHost(oHost)
+}
+
+func mcpOutsideHostOnLoopback(r *http.Request) bool {
+	local, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	return ok && local != nil && mcpLoopbackHost(local.String()) && !mcpLoopbackHost(r.Host)
+}
+
+func mcpLoopbackHost(hostport string) bool {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = strings.Trim(hostport, "[]")
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func mcpLiteralHost(h string) bool {
