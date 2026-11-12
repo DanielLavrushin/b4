@@ -257,12 +257,16 @@ remote change 0 \
 	'PASS'
 check "ab: the base's run cut off" 2 "the run of origin/main did not finish" lab ab fake
 
+: > "$T/guest.log"
 check "netns-test.sh: starts the test binary after its setup" 0 "PASS" \
 	sh "$LAB_DIR/scripts/netns-test.sh" "$T/guest.bin" TestNetns 1
+grep -q "tmpfs /tmp" "$T/guest.log" || fail "netns-test.sh: the run shares the guest's /tmp, where b4 keeps the sysctl values it restores"
 stops "netns-test.sh: stops when the mounts cannot be made private" \
 	"$LAB_DIR/scripts/netns-test.sh" "$T/guest.bin" TestNetns 1
+: > "$T/guest.log"
 check "b4-netns.sh: starts the binary after its setup" 0 "PASS" \
 	sh "$LAB_DIR/scripts/b4-netns.sh" "$T/guest.bin" "$T/b4.json"
+grep -q "tmpfs /tmp" "$T/guest.log" || fail "b4-netns.sh: the run shares the guest's /tmp, where b4 keeps its pid file and the sysctl values it restores"
 stops "b4-netns.sh: stops when the mounts cannot be made private" \
 	"$LAB_DIR/scripts/b4-netns.sh" "$T/guest.bin" "$T/b4.json"
 

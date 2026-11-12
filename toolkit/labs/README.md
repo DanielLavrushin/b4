@@ -101,7 +101,10 @@ toolkit/labs/lab run debian8 toolkit/labs/scripts/b4-netns.sh /root/lab/b4.lab /
 `scripts/b4-netns.sh` starts the binary in a network and mount namespace of its own inside
 the guest and stays in the foreground until b4 exits. It makes the mounts private first: on a
 guest this old `unshare -m` leaves them shared, and a tmpfs on `/run` would replace the
-guest's own. `lab run <name> <script>` pipes any local script into the instance as root, which
+guest's own. The run also gets a `/tmp` of its own: b4 saves the sysctl values it will put back
+in `/tmp/b4_sysctl_snapshot.json`, and two runs in one guest would otherwise restore each
+other's. Keep the binary and its config outside `/tmp` for that reason; `netns-test.sh` does
+the same for a test binary. `lab run <name> <script>` pipes any local script into the instance as root, which
 is the way to drive a longer scenario: interfaces, a proxy set, rules deleted by hand, counts
 read back.
 
