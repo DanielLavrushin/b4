@@ -1,13 +1,21 @@
 package http
 
 import (
+	"context"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/http/handler"
+	"github.com/daniellavrushin/b4/log"
 )
 
 func TestCors(t *testing.T) {
@@ -266,5 +274,142 @@ func TestCorsRefusesCrossSiteWebSocketsWithoutCredentials(t *testing.T) {
 	rec := upgrade(cors(corsCfg("admin"), next), "192.168.1.1:7000", "http://tool.example", "cross-site", "Upgrade")
 	if rec.Code != http.StatusOK || served != 1 {
 		t.Fatalf("with credentials configured the token check guards the stream, so the upgrade must reach it, got %d served=%d", rec.Code, served)
+	}
+}
+
+func corsRequest(t *testing.T, listener, host, method, origin, fetchSite string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(method, "http://"+host+"/api/ws/logs", nil)
+	req.Host = host
+	local, err := net.ResolveTCPAddr("tcp", listener)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, local))
+	if method == http.MethodGet {
+		req.Header.Set("Connection", "Upgrade")
+		req.Header.Set("Upgrade", "websocket")
+		req.Header.Set("Sec-WebSocket-Version", "13")
+		req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	}
+	req.Header.Set("Origin", origin)
+	if fetchSite != "" {
+		req.Header.Set("Sec-Fetch-Site", fetchSite)
+	}
+	return req
+}
+
+func TestCorsAcceptsTheUIBehindAProxyThatDropsThePort(t *testing.T) {
+	served := 0
+	open := cors(corsCfg(""), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		served++
+		w.WriteHeader(http.StatusOK)
+	}))
+	for _, tc := range []struct {
+		name, listener, host, method, origin, fetchSite string
+		refused                                         bool
+	}{
+		{"the interface through nginx with Host $host", "127.0.0.1:7000", "b4.example.com", http.MethodGet, "https://b4.example.com:9743", "", false},
+		{"a settings save through the same proxy over plain http", "127.0.0.1:7000", "b4.example.com", http.MethodPost, "http://b4.example.com:8080", "", false},
+		{"the host name in another case", "127.0.0.1:7000", "b4.example.com", http.MethodGet, "https://B4.Example.COM:9743", "", false},
+		{"an IPv6 host without a port", "[::1]:7000", "[fd00::1]", http.MethodGet, "http://[fd00::1]:9743", "", false},
+		{"a foreign page through the same proxy", "127.0.0.1:7000", "b4.example.com", http.MethodGet, "https://evil.example", "", true},
+		{"a foreign write through the same proxy", "127.0.0.1:7000", "b4.example.com", http.MethodPost, "https://evil.example", "", true},
+		{"a page the browser attests is only same-site", "127.0.0.1:7000", "b4.example.com", http.MethodGet, "https://b4.example.com:8443", "same-site", true},
+		{"a Host that keeps its port is compared with the port", "127.0.0.1:7000", "127.0.0.1:7000", http.MethodGet, "http://127.0.0.1:5173", "", true},
+		{"another port of the router while b4 listens on port 80 itself", "192.168.1.1:80", "192.168.1.1", http.MethodGet, "http://192.168.1.1:5173", "", true},
+		{"another port of the host while b4 listens on port 443 itself", "203.0.113.5:443", "b4.example.com", http.MethodGet, "https://b4.example.com:8443", "", true},
+		{"the interface while b4 listens on port 80 itself", "192.168.1.1:80", "192.168.1.1", http.MethodGet, "http://192.168.1.1", "", false},
+	} {
+		served = 0
+		rec := httptest.NewRecorder()
+		open.ServeHTTP(rec, corsRequest(t, tc.listener, tc.host, tc.method, tc.origin, tc.fetchSite))
+		if refused := rec.Code == http.StatusForbidden && served == 0; refused != tc.refused {
+			t.Errorf("%s: got %d served=%d, want refused=%v", tc.name, rec.Code, served, tc.refused)
+		}
+	}
+}
+
+type corsLogBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (c *corsLogBuffer) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.b.Write(p)
+}
+
+func (c *corsLogBuffer) refusals() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var lines []string
+	for _, line := range strings.Split(c.b.String(), "\n") {
+		if strings.Contains(line, "Web server: refused") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func TestCorsLogsRefusalsWithTheFixAtMostOncePerWindow(t *testing.T) {
+	buf := &corsLogBuffer{}
+	previous := log.Level(log.CurLevel.Load())
+	log.Init(io.Discard, log.LevelInfo, true)
+	log.StartCapture(buf)
+	resetRefusals := func() {
+		crossSiteRefusals.Lock()
+		crossSiteRefusals.last = time.Time{}
+		crossSiteRefusals.suppressed = 0
+		crossSiteRefusals.Unlock()
+	}
+	resetRefusals()
+	t.Cleanup(func() {
+		log.StopCapture(buf)
+		log.Init(os.Stderr, previous, true)
+		resetRefusals()
+	})
+
+	open := cors(corsCfg(""), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	refuse := func() {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		open.ServeHTTP(rec, corsRequest(t, "127.0.0.1:7000", "127.0.0.1:7000", http.MethodGet, "https://b4.example.com:9743", ""))
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("the upgrade must be refused, got %d", rec.Code)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	open.ServeHTTP(rec, corsRequest(t, "127.0.0.1:7000", "127.0.0.1:7000", http.MethodGet, "http://127.0.0.1:7000", ""))
+	if rec.Code != http.StatusOK || len(buf.refusals()) != 0 {
+		t.Fatalf("a served upgrade logs nothing, got %d and %q", rec.Code, buf.refusals())
+	}
+
+	refuse()
+	lines := buf.refusals()
+	if len(lines) != 1 {
+		t.Fatalf("the first refusal must be logged once, got %q", lines)
+	}
+	for _, want := range []string{"[WARN]", "WebSocket", `"/api/ws/logs"`, `"https://b4.example.com:9743"`, `"http://127.0.0.1:7000"`, "Settings > System > Web Server", "Host header with its port", "X-Forwarded-Proto"} {
+		if !strings.Contains(lines[0], want) {
+			t.Errorf("the refusal line must contain %q: %s", want, lines[0])
+		}
+	}
+
+	refuse()
+	refuse()
+	if lines := buf.refusals(); len(lines) != 1 {
+		t.Fatalf("refusals inside the window must not be logged, got %q", lines)
+	}
+
+	crossSiteRefusals.Lock()
+	crossSiteRefusals.last = crossSiteRefusals.last.Add(-crossSiteRefusalWindow - time.Second)
+	crossSiteRefusals.Unlock()
+	refuse()
+	lines = buf.refusals()
+	if len(lines) != 2 || !strings.Contains(lines[1], "(2 more refused since the previous line)") {
+		t.Fatalf("the next window logs again with the count it held back, got %q", lines)
 	}
 }

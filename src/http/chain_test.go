@@ -204,6 +204,32 @@ func TestServerChainRefusesLiveStreamsToForeignPages(t *testing.T) {
 	}
 }
 
+func TestServerChainOpensLiveStreamsBehindAProxyThatDropsThePort(t *testing.T) {
+	base, _ := startChain(t, "")
+	dial := func(path, origin string) (int, error) {
+		header := stdhttp.Header{}
+		header.Set("Host", "b4.example.com")
+		header.Set("Origin", origin)
+		conn, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(base, "http")+path, header)
+		if conn != nil {
+			conn.Close()
+		}
+		if resp == nil {
+			return 0, err
+		}
+		return resp.StatusCode, err
+	}
+
+	for _, path := range liveStreams {
+		if _, err := dial(path, "https://b4.example.com:9743"); err != nil {
+			t.Fatalf("%s: the interface behind nginx with Host $host must open the stream: %v", path, err)
+		}
+		if code, err := dial(path, "https://evil.example"); err == nil || code != stdhttp.StatusForbidden {
+			t.Fatalf("%s: a foreign page behind the same proxy must not open the stream, got %d %v", path, code, err)
+		}
+	}
+}
+
 func TestServerChainLiveStreamsWithCredentialsNeedTheToken(t *testing.T) {
 	base, _ := startChain(t, "admin")
 	token, err := issueToken()

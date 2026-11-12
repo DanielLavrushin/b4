@@ -8,7 +8,7 @@ The web interface works through a REST API that b4 serves on the web server's po
 
 ## Authentication {#authentication}
 
-While a username and a password are set under **Settings > System > Web Server**, every request under `/api/` needs a login token, except those to `/api/auth/` and `/api/version`. Without a username and password, no token is needed. A page at another address or port then gets `403` for requests that change something and for connections under `/api/ws/`. A reverse proxy in front of b4 must pass the original `Host` header and `X-Forwarded-Proto`. Without them, the **Logs** and **Traffic** pages stay empty, and saving settings can fail.
+While a username and a password are set under **Settings > System > Web Server**, every request under `/api/` needs a login token, except those to `/api/auth/` and `/api/version`. Without a username and password, no token is needed. A page at another address or port then gets `403` for requests that change something and for connections under `/api/ws/`, and the log records refusals on lines starting with `Web server: refused`. b4 takes its own address from the `Host` header, and behind a reverse proxy the scheme from `X-Forwarded-Proto`. A `Host` without a port, while b4 listens on a port other than 80 or 443, comes from a proxy that dropped the port, such as nginx with `proxy_set_header Host $host;`, and then only the host name is compared. A proxy that replaces `Host` with b4's own address, such as `127.0.0.1:7000`, can leave the **Logs** and **Traffic** pages empty and make saving settings fail, see [Securing the web interface](../settings/security.md#troubleshooting).
 
 | Step | Request |
 | --- | --- |
