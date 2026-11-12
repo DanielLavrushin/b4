@@ -92,6 +92,7 @@ export function useDiscovery({
   const restoredRef = useRef<string | null>(null);
   const runGenRef = useRef(0);
   const pollErrorRef = useRef<string | null>(null);
+  const pendingStartRef = useRef<object | null>(null);
   const mountedRef = useRef(false);
 
   useEffect(() => {
@@ -116,6 +117,7 @@ export function useDiscovery({
   }, []);
 
   const followRun = useCallback((run: DiscoverySuite) => {
+    pendingStartRef.current = null;
     setOtherRun(null);
     setSuiteId(run.id);
     setSuite(run);
@@ -169,6 +171,7 @@ export function useDiscovery({
           if (stale()) return;
           if (result) {
             observeRun(result, { shown: true });
+            pendingStartRef.current = null;
             restoredRef.current = null;
             setError(null);
             setRunning(false);
@@ -190,6 +193,7 @@ export function useDiscovery({
         if (stale()) return;
         if (last) {
           observeRun(last, { shown: true });
+          pendingStartRef.current = null;
           restoredRef.current = last.id;
           setSuiteId(last.id);
           setSuite(last);
@@ -356,6 +360,8 @@ export function useDiscovery({
         return { success: false, error: "No sites given" };
       }
       runGenRef.current += 1;
+      const request = {};
+      pendingStartRef.current = request;
       setError(null);
       setSuite(null);
       setSuiteId(null);
@@ -366,10 +372,16 @@ export function useDiscovery({
       try {
         const res = await discoveryApi.start(normalized, options);
         watchRun(res.id);
-        setSuiteId(res.id);
+        if (pendingStartRef.current === request) {
+          pendingStartRef.current = null;
+          setSuiteId(res.id);
+        }
         return { success: true };
       } catch (e) {
-        setRunning(false);
+        if (pendingStartRef.current === request) {
+          pendingStartRef.current = null;
+          setRunning(false);
+        }
         const message = startFailureText(e);
         setError(message);
         return { success: false, error: message };
@@ -416,6 +428,7 @@ export function useDiscovery({
       return;
     }
     runGenRef.current += 1;
+    pendingStartRef.current = null;
     setSuiteId(null);
     setSuite(null);
     setError(null);
