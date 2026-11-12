@@ -143,33 +143,200 @@ func TestAnInterfaceThatHasNeverAppearedGetsNoPolicyRule(t *testing.T) {
 	}
 }
 
-func TestAProxySetIsNotGivenAnInterfacePolicyRule(t *testing.T) {
-	prevLines, prevLogged, prevCache, prevGone :=
-		routeRuleLines, runLogged, routeRuleCache, routePolicyRuleGone
+func proxyRuleReconcile(t *testing.T, v4, v6 []string, ipv6 bool) []string {
+	t.Helper()
+
+	prevLines, prevLogged, prevRun, prevCache, prevGone :=
+		routeRuleLines, runLogged, run, routeRuleCache, routePolicyRuleGone
+	prevAdd, prevDel := routeAddSourceCheckRule, routeDelSourceCheckRule
 	t.Cleanup(func() {
 		routeRuleLines = prevLines
 		runLogged = prevLogged
+		run = prevRun
 		routeRuleCache = prevCache
 		routePolicyRuleGone = prevGone
+		routeAddSourceCheckRule = prevAdd
+		routeDelSourceCheckRule = prevDel
+	})
+
+	hasBinaryCache.Store("ip", true)
+
+	routeRuleLines = func(fam routeFamily) ([]string, bool) {
+		if len(fam.flag) > 0 {
+			return v6, true
+		}
+		return v4, true
+	}
+	var cmds []string
+	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
+	run = func(args ...string) (string, error) { cmds = append(cmds, strings.Join(args, " ")); return "", nil }
+	routeAddSourceCheckRule = func(mark uint32) {
+		cmds = append(cmds, "add source-check "+routeSourceCheckMarkRule(mark))
+	}
+	routeDelSourceCheckRule = func(markStrMask string) {
+		cmds = append(cmds, "del source-check "+markStrMask)
+	}
+
+	routeRuleCache = map[string]routeState{
+		"set-a": {mode: config.RoutingModeProxy, mark: 0x239c9, table: proxyLocalDeliveryTable},
+	}
+	routePolicyRuleGone = make(map[string]bool)
+
+	routeReconcilePolicyRules(true, ipv6)
+	return cmds
+}
+
+func TestAProxySetIsNotGivenAnInterfacePolicyRule(t *testing.T) {
+	cmds := proxyRuleReconcile(t, []string{"0:\tfrom all lookup local"}, nil, false)
+
+	for _, cmd := range cmds {
+		if strings.Contains(cmd, "priority 10252") {
+			t.Fatalf("a proxy set carries its traffic to a local listener and installs its rule on its own path at "+
+				"its own priority, so writing an interface rule for it points its mark at a table it does not "+
+				"use: %v", cmds)
+		}
+	}
+}
+
+func TestAProxySetsRuleThatIsNotInTheKernelIsPutBack(t *testing.T) {
+	bare := []string{"0:\tfrom all lookup local", "32766:\tfrom all lookup main"}
+	cmds := proxyRuleReconcile(t, bare, bare, true)
+
+	const (
+		addV4    = "ip rule add fwmark 0x239c9/0x27fff lookup 252 priority 3"
+		addV6    = "ip -6 rule add fwmark 0x239c9/0x27fff lookup 252 priority 3"
+		addCheck = "add source-check 0x239c9/0x1027fff"
+	)
+	for _, want := range []string{addV4, addV6} {
+		if localDeliveryCmdIndex(cmds, want) < 0 {
+			t.Fatalf("a proxy set's chains are watched and restored every monitor pass while the rule that delivers "+
+				"its mark to b4 was never read back. With that rule gone the chains still stand, so the set reads "+
+				"as healthy while a device's connection is dropped and the router's own leaves by the ordinary "+
+				"uplink, until the set is edited or b4 restarts. %q was not run: %v", want, cmds)
+		}
+	}
+	check := localDeliveryCmdIndex(cmds, addCheck)
+	if check < 0 || check > localDeliveryCmdIndex(cmds, addV4) {
+		t.Errorf("whatever cleared the set's rule cleared its source-check rule too, and with "+
+			"net.ipv4.conf.all.src_valid_mark=1 the set drops every device's connection without it; it has to be "+
+			"back before the rule that needs it: %v", cmds)
+	}
+	checks := 0
+	for _, cmd := range cmds {
+		if cmd == addCheck {
+			checks++
+		}
+	}
+	if checks != 1 {
+		t.Errorf("the source-check rule was added %d time(s), want once; IPv6 input has no source validation: %v", checks, cmds)
+	}
+}
+
+func TestAProxySetsRuleAlreadyInTheKernelIsLeftAlone(t *testing.T) {
+	standing := []string{
+		"0:\tfrom all lookup local",
+		"2:\tfrom all fwmark 0x239c9/0x1027fff iif lo lookup main",
+		"3:\tfrom all fwmark 0x239c9/0x27fff lookup 252",
+		"32766:\tfrom all lookup main",
+	}
+	cmds := proxyRuleReconcile(t, standing, standing, true)
+
+	if len(cmds) != 0 {
+		t.Fatalf("the rule was already there, and a monitor pass that touches it every ten seconds either stacks "+
+			"duplicates or opens the very gap it is there to close: %v", cmds)
+	}
+}
+
+func TestAProxySetsRuleThatCannotBeAddedIsRetriedQuietly(t *testing.T) {
+	prevLines, prevLogged, prevRun, prevCache, prevGone :=
+		routeRuleLines, runLogged, run, routeRuleCache, routePolicyRuleGone
+	prevAdd, prevDel := routeAddSourceCheckRule, routeDelSourceCheckRule
+	t.Cleanup(func() {
+		routeRuleLines = prevLines
+		runLogged = prevLogged
+		run = prevRun
+		routeRuleCache = prevCache
+		routePolicyRuleGone = prevGone
+		routeAddSourceCheckRule = prevAdd
+		routeDelSourceCheckRule = prevDel
 	})
 
 	hasBinaryCache.Store("ip", true)
 
 	routeRuleLines = func(fam routeFamily) ([]string, bool) { return []string{"0:\tfrom all lookup local"}, true }
-	var cmds []string
-	runLogged = func(op string, args ...string) bool { cmds = append(cmds, strings.Join(args, " ")); return true }
+	loud, quiet, checks := 0, 0, 0
+	runLogged = func(op string, args ...string) bool { loud++; return false }
+	run = func(args ...string) (string, error) { quiet++; return "", nil }
+	routeAddSourceCheckRule = func(mark uint32) { checks++ }
+	routeDelSourceCheckRule = func(markStrMask string) {}
 
 	routeRuleCache = map[string]routeState{
-		"set-a": {mode: config.RoutingModeProxy, mark: 0x6c53, table: 190, iface: ""},
+		"set-a": {mode: config.RoutingModeProxy, mark: 0x239c9, table: proxyLocalDeliveryTable},
 	}
 	routePolicyRuleGone = make(map[string]bool)
 
-	routeReconcilePolicyRules(true, false)
+	for i := 0; i < 4; i++ {
+		routeReconcilePolicyRules(true, false)
+	}
 
-	if len(cmds) != 0 {
-		t.Fatalf("a proxy set carries its traffic to a local listener and installs its rule on its own path at "+
-			"its own priority, so writing an interface rule for it points its mark at a table it does not "+
-			"use: %v", cmds)
+	if loud != 1 || quiet != 3 {
+		t.Errorf("four monitor passes over a rule this ip command refuses logged %d failure(s) and retried quietly "+
+			"%d time(s), want 1 and 3; a busybox without masked fwmark rules refuses it on every pass, and a "+
+			"warning every ten seconds buries the log", loud, quiet)
+	}
+	if checks != 4 {
+		t.Errorf("the source-check rule was asked for %d time(s) over four passes that never saw it, want one per pass", checks)
+	}
+}
+
+func TestAProxySetsSourceCheckRuleIsWatchedOnItsOwn(t *testing.T) {
+	const (
+		addV4    = "ip rule add fwmark 0x239c9/0x27fff lookup 252 priority 3"
+		addCheck = "add source-check 0x239c9/0x1027fff"
+		live     = "3:\tfrom all fwmark 0x239c9/0x27fff lookup 252"
+	)
+
+	alone := proxyRuleReconcile(t, []string{"0:\tfrom all lookup local", live}, nil, false)
+	if len(alone) != 1 || alone[0] != addCheck {
+		t.Errorf("the set's rule stands and only its source-check rule is gone, so the monitor has to put back that "+
+			"one rule and nothing else; it ran %v", alone)
+	}
+
+	prevLines, prevLogged, prevRun, prevCache, prevGone :=
+		routeRuleLines, runLogged, run, routeRuleCache, routePolicyRuleGone
+	prevAdd, prevDel := routeAddSourceCheckRule, routeDelSourceCheckRule
+	t.Cleanup(func() {
+		routeRuleLines = prevLines
+		runLogged = prevLogged
+		run = prevRun
+		routeRuleCache = prevCache
+		routePolicyRuleGone = prevGone
+		routeAddSourceCheckRule = prevAdd
+		routeDelSourceCheckRule = prevDel
+	})
+
+	hasBinaryCache.Store("ip", true)
+	routeRuleLines = func(fam routeFamily) ([]string, bool) { return []string{"0:\tfrom all lookup local"}, true }
+	var pass []string
+	runLogged = func(op string, args ...string) bool { pass = append(pass, strings.Join(args, " ")); return true }
+	run = func(args ...string) (string, error) { pass = append(pass, strings.Join(args, " ")); return "", nil }
+	routeAddSourceCheckRule = func(mark uint32) { pass = append(pass, "add source-check "+routeSourceCheckMarkRule(mark)) }
+	routeDelSourceCheckRule = func(markStrMask string) {}
+	routeRuleCache = map[string]routeState{
+		"set-a": {mode: config.RoutingModeProxy, mark: 0x239c9, table: proxyLocalDeliveryTable},
+	}
+	routePolicyRuleGone = make(map[string]bool)
+
+	for n := 1; n <= 2; n++ {
+		pass = nil
+		routeReconcilePolicyRules(true, false)
+		check, rule := localDeliveryCmdIndex(pass, addCheck), localDeliveryCmdIndex(pass, addV4)
+		if check < 0 || rule < 0 || check > rule {
+			t.Errorf("pass %d found both rules gone and ran %v, want the source-check rule and then the set's rule. "+
+				"On a router both were taken out a second time before a pass had seen them back, and only the "+
+				"set's rule returned: with net.ipv4.conf.all.src_valid_mark=1 that leaves the set dropping every "+
+				"device's connection while it reads as healthy", n, pass)
+		}
 	}
 }
 

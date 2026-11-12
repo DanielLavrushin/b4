@@ -453,17 +453,67 @@ func routeIptJumpArgs(table, baseChain, targetChain string, atTop bool) []string
 	return []string{"-w", "-t", table, "-A", baseChain, "-j", targetChain}
 }
 
+var iptHoldJumpMatch = []string{"-m", "mark", "--mark", "0x0/0x0"}
+
+func routeIptHoldJumpArgs(table, baseChain, targetChain string, atTop bool) []string {
+	args := []string{"-w", "-t", table, "-A", baseChain}
+	if atTop {
+		args = []string{"-w", "-t", table, "-I", baseChain, "1"}
+	}
+	return append(append(args, iptHoldJumpMatch...), "-j", targetChain)
+}
+
 func (b *routeIptBackend) ensureJumpRule(baseChain, targetChain string, isMangle bool, atTop bool) {
 	table := iptTable(isMangle)
-	b.deleteJumpRules(baseChain, targetChain, isMangle)
-	args := routeIptJumpArgs(table, baseChain, targetChain, atTop)
 	for _, cmd := range b.iptBoth() {
 		if !hasBinary(cmd) {
 			continue
 		}
-		runLogged("routing: add jump "+baseChain+"->"+targetChain,
-			append([]string{cmd}, args...)...)
+		standing, readable := iptJumpLines(cmd, table, baseChain, func(t string) bool { return t == targetChain })
+		switch {
+		case !readable:
+			iptDeleteJumpsTo(cmd, table, baseChain, targetChain)
+			iptAddJump(cmd, table, baseChain, targetChain, atTop)
+		case len(standing) == 0:
+			iptAddJump(cmd, table, baseChain, targetChain, atTop)
+		default:
+			iptSwapJump(cmd, table, baseChain, targetChain, atTop, len(standing))
+		}
 	}
+}
+
+func iptAddJump(cmd, table, parent, target string, atTop bool) bool {
+	return runLogged("routing: add jump "+parent+"->"+target,
+		append([]string{cmd}, routeIptJumpArgs(table, parent, target, atTop)...)...)
+}
+
+func iptDeleteJumpsBySpec(cmd, table, parent, target string, match []string, upTo int) int {
+	args := append(append([]string{cmd, "-w", "-t", table, "-D", parent}, match...), "-j", target)
+	deleted := 0
+	for deleted < upTo {
+		if _, err := run(args...); err != nil {
+			break
+		}
+		deleted++
+	}
+	return deleted
+}
+
+func iptSwapJump(cmd, table, parent, target string, atTop bool, standing int) {
+	held := runLogged("routing: hold jump "+parent+"->"+target,
+		append([]string{cmd}, routeIptHoldJumpArgs(table, parent, target, atTop)...)...)
+	if held {
+		plain := iptDeleteJumpsBySpec(cmd, table, parent, target, nil, standing)
+		if !iptAddJump(cmd, table, parent, target, atTop) {
+			return
+		}
+		holds := 1 + standing - plain
+		if iptDeleteJumpsBySpec(cmd, table, parent, target, iptHoldJumpMatch, holds) == holds {
+			return
+		}
+	}
+	iptDeleteJumpsTo(cmd, table, parent, target)
+	iptAddJump(cmd, table, parent, target, atTop)
 }
 
 func (b *routeIptBackend) jumpPrepends(atTop bool) bool { return atTop }

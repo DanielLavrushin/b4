@@ -46,6 +46,9 @@ func routeAddSourceCheckRuleExec(mark uint32) {
 		return
 	}
 	reason := strings.TrimSpace(out)
+	if strings.Contains(reason, "File exists") {
+		return
+	}
 	if reason == "" {
 		reason = err.Error()
 	}
@@ -69,6 +72,23 @@ func routeDelSourceCheckRuleExec(markStrMask string) {
 
 func routeDelSourceCheckRules(mark uint32) {
 	routeDelSourceCheckRule(routeSourceCheckMarkRule(mark))
+	routeDelSourceCheckRule(routeSetMarkRule(mark))
+}
+
+func routeSourceCheckInstalled(lines []string, mark uint32) bool {
+	want := routeSourceCheckMarkRule(mark)
+	for _, line := range lines {
+		if routeRuleIsSourceCheck(line) && routeRuleField(line, "fwmark") == want {
+			return true
+		}
+	}
+	return false
+}
+
+func routeEnsureSourceCheckRule(mark uint32, lines []string, read bool) {
+	if !read || !routeSourceCheckInstalled(lines, mark) {
+		routeAddSourceCheckRule(mark)
+	}
 	routeDelSourceCheckRule(routeSetMarkRule(mark))
 }
 

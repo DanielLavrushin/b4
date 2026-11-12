@@ -11,14 +11,30 @@ type localDeliveryRuleDel struct {
 	table string
 }
 
+type localDeliveryKernel struct {
+	v4, v6     []string
+	unreadable bool
+}
+
+const (
+	localDeliveryLiveRule    = "3:\tfrom all fwmark 0x20fa/0x27fff lookup 252"
+	localDeliverySourceCheck = "2:\tfrom all fwmark 0x20fa/0x1027fff iif lo lookup main"
+)
+
 func localDeliveryEnsure(t *testing.T, ipv4, ipv6 bool) ([]localDeliveryRuleDel, []string) {
 	t.Helper()
-	logged, delRule, sysctl := runLogged, routeDelRuleLoop, writeSysctl
+	return localDeliveryEnsureOver(t, localDeliveryKernel{}, ipv4, ipv6)
+}
+
+func localDeliveryEnsureOver(t *testing.T, kernel localDeliveryKernel, ipv4, ipv6 bool) ([]localDeliveryRuleDel, []string) {
+	t.Helper()
+	logged, delRule, sysctl, lines := runLogged, routeDelRuleLoop, writeSysctl, routeRuleLines
 	addCheck, delCheck := routeAddSourceCheckRule, routeDelSourceCheckRule
 	t.Cleanup(func() {
 		runLogged = logged
 		routeDelRuleLoop = delRule
 		writeSysctl = sysctl
+		routeRuleLines = lines
 		routeAddSourceCheckRule = addCheck
 		routeDelSourceCheckRule = delCheck
 	})
@@ -26,8 +42,22 @@ func localDeliveryEnsure(t *testing.T, ipv4, ipv6 bool) ([]localDeliveryRuleDel,
 	var dels []localDeliveryRuleDel
 	var cmds []string
 	writeSysctl = func(path, value string) {}
+	routeRuleLines = func(fam routeFamily) ([]string, bool) {
+		if kernel.unreadable {
+			return nil, false
+		}
+		if len(fam.flag) > 0 {
+			return kernel.v6, true
+		}
+		return kernel.v4, true
+	}
 	routeDelRuleLoop = func(v6 bool, mark, table string) {
 		dels = append(dels, localDeliveryRuleDel{ipv6: v6, mark: mark, table: table})
+		fam := "v4"
+		if v6 {
+			fam = "v6"
+		}
+		cmds = append(cmds, "del rule "+fam+" "+mark+" "+table)
 	}
 	runLogged = func(op string, args ...string) bool {
 		cmds = append(cmds, strings.Join(args, " "))
@@ -62,15 +92,23 @@ func TestRouteEnsureLocalDelivery_PointsTheSourceCheckAtMainForIPv4(t *testing.T
 
 	for _, tc := range []struct{ ipv4, ipv6 bool }{{true, true}, {true, false}} {
 		_, cmds := localDeliveryEnsure(t, tc.ipv4, tc.ipv6)
-		added, cleared := localDeliveryCmdIndex(cmds, addCheck), localDeliveryCmdIndex(cmds, delCheck)
+		added := localDeliveryCmdIndex(cmds, addCheck)
 		if added < 0 {
 			t.Fatalf("ipv4=%v ipv6=%v: the source-check rule was never added, so with net.ipv4.conf.all.src_valid_mark=1 every LAN SYN the set diverts is checked against the local-delivery table and dropped as a martian: %v", tc.ipv4, tc.ipv6, cmds)
 		}
-		if cleared < 0 || cleared > added {
-			t.Errorf("ipv4=%v ipv6=%v: the source-check rule is added without clearing the previous one first, so every re-install stacks another copy: %v", tc.ipv4, tc.ipv6, cmds)
+		if localDeliveryCmdIndex(cmds, delCheck) >= 0 {
+			t.Errorf("ipv4=%v ipv6=%v: the source-check rule in use was deleted on the way to installing it; until it is back, src_valid_mark=1 drops every connection the set diverts as a martian: %v", tc.ipv4, tc.ipv6, cmds)
 		}
-		if old := localDeliveryCmdIndex(cmds, delOldCheck); old < 0 || old > added {
-			t.Errorf("ipv4=%v ipv6=%v: a source-check rule an earlier build added with the per-set mask is never removed, and it sends the router's own connections past the set: %v", tc.ipv4, tc.ipv6, cmds)
+		if old := localDeliveryCmdIndex(cmds, delOldCheck); old < 0 || old < added {
+			t.Errorf("ipv4=%v ipv6=%v: a source-check rule an earlier build added with the per-set mask must go, and only once the current one stands; it sends the router's own connections past the set: %v", tc.ipv4, tc.ipv6, cmds)
+		}
+
+		_, again := localDeliveryEnsureOver(t, localDeliveryKernel{v4: []string{localDeliverySourceCheck}}, tc.ipv4, tc.ipv6)
+		if localDeliveryCmdIndex(again, addCheck) >= 0 {
+			t.Errorf("ipv4=%v ipv6=%v: the source-check rule was already in the kernel and was added again; an old kernel takes the duplicate (3.16 does, 4.9 refuses it), so every re-install stacks another copy: %v", tc.ipv4, tc.ipv6, again)
+		}
+		if localDeliveryCmdIndex(again, delCheck) >= 0 {
+			t.Errorf("ipv4=%v ipv6=%v: the source-check rule already in the kernel was deleted during a re-install: %v", tc.ipv4, tc.ipv6, again)
 		}
 	}
 
@@ -107,8 +145,11 @@ func localDeliveryHasCmd(cmds []string, want string) bool {
 	return false
 }
 
-func TestRouteEnsureLocalDelivery_ClearsBothFamiliesWhicheverIsEnabled(t *testing.T) {
-	const tableStr = "252"
+func TestRouteEnsureLocalDelivery_ClearsTheFamilyThatIsTurnedOff(t *testing.T) {
+	const (
+		tableStr = "252"
+		live     = "0x20fa/0x27fff"
+	)
 
 	cases := []struct{ ipv4, ipv6 bool }{
 		{true, true},
@@ -121,15 +162,22 @@ func TestRouteEnsureLocalDelivery_ClearsBothFamiliesWhicheverIsEnabled(t *testin
 			dels, _ := localDeliveryEnsure(t, tc.ipv4, tc.ipv6)
 
 			for _, fam := range []struct {
-				ipv6 bool
-				name string
-			}{{false, "v4"}, {true, "v6"}} {
+				ipv6, enabled bool
+				name          string
+			}{{false, tc.ipv4, "v4"}, {true, tc.ipv6, "v6"}} {
 				marks := localDeliveryDeletedFamily(dels, fam.ipv6)
-				if len(marks) != 3 {
-					t.Fatalf("%s stale rules were cleared %d time(s), want the legacy bare, the legacy self-masked and the shared-mask form; a rule left behind keeps sending traffic to table %s after the family is turned off", fam.name, len(marks), tableStr)
+				seen := map[string]int{}
+				for _, m := range marks {
+					seen[m]++
 				}
-				if marks[0] != "0x20fa/0xffffffff" || marks[1] != "0x20fa/0x20fa" || marks[2] != "0x20fa/0x27fff" {
-					t.Errorf("%s stale rule deletion used marks %v, want the legacy bare, the legacy self-masked and the shared-mask form", fam.name, marks)
+				if seen["0x20fa/0xffffffff"] != 1 || seen["0x20fa/0x20fa"] != 1 {
+					t.Errorf("%s stale rule deletion used marks %v, want the legacy bare and the legacy self-masked shape once each; a rule an older build left behind keeps sending traffic to table %s", fam.name, marks, tableStr)
+				}
+				switch {
+				case fam.enabled && seen[live] != 0:
+					t.Errorf("%s is enabled and the rule in use (%s) was deleted, so until it is added back a packet the set marks finds nothing pointing at table %s: %v", fam.name, live, tableStr, marks)
+				case !fam.enabled && seen[live] != 1:
+					t.Errorf("%s is turned off and its rule (%s) was deleted %d time(s), want once; left behind it keeps sending traffic to table %s after the family is turned off: %v", fam.name, live, seen[live], tableStr, marks)
 				}
 			}
 			for _, d := range dels {
@@ -138,6 +186,63 @@ func TestRouteEnsureLocalDelivery_ClearsBothFamiliesWhicheverIsEnabled(t *testin
 				}
 			}
 		})
+	}
+}
+
+func TestRouteEnsureLocalDelivery_NeverTakesTheRuleInUseOutOfTheKernel(t *testing.T) {
+	const (
+		addRuleV4 = "ip rule add fwmark 0x20fa/0x27fff lookup 252 priority 3"
+		addRuleV6 = "ip -6 rule add fwmark 0x20fa/0x27fff lookup 252 priority 3"
+		delLiveV4 = "del rule v4 0x20fa/0x27fff 252"
+		delLiveV6 = "del rule v6 0x20fa/0x27fff 252"
+	)
+
+	standing := localDeliveryKernel{
+		v4: []string{"0:\tfrom all lookup local", localDeliverySourceCheck, localDeliveryLiveRule, "32766:\tfrom all lookup main"},
+		v6: []string{"0:\tfrom all lookup local", localDeliveryLiveRule, "32766:\tfrom all lookup main"},
+	}
+	_, cmds := localDeliveryEnsureOver(t, standing, true, true)
+	for _, banned := range []string{delLiveV4, delLiveV6} {
+		if localDeliveryHasCmd(cmds, banned) {
+			t.Errorf("a rebuild ran %q on a set whose rule was standing. Deleting it and adding it back leaves a moment with the packet marked and nothing delivering it to b4: a device's connection is dropped and the router's own leaves by the ordinary uplink: %v", banned, cmds)
+		}
+	}
+	for _, banned := range []string{addRuleV4, addRuleV6} {
+		if localDeliveryHasCmd(cmds, banned) {
+			t.Errorf("a rebuild ran %q although the rule was standing; an old kernel takes the duplicate (3.16 does, 4.9 refuses it), so every rebuild stacks another copy: %v", banned, cmds)
+		}
+	}
+
+	_, fresh := localDeliveryEnsure(t, true, true)
+	for _, fam := range []struct{ add, stale string }{
+		{addRuleV4, "del rule v4 0x20fa/0xffffffff 252"},
+		{addRuleV6, "del rule v6 0x20fa/0xffffffff 252"},
+	} {
+		added, swept := localDeliveryCmdIndex(fresh, fam.add), localDeliveryCmdIndex(fresh, fam.stale)
+		if added < 0 {
+			t.Fatalf("the rule is not in the kernel and %q was never run: %v", fam.add, fresh)
+		}
+		if swept < 0 || swept < added {
+			t.Errorf("the shapes older builds used must go only after %q has run, so an upgrade from one of them never leaves the set without a rule: %v", fam.add, fresh)
+		}
+	}
+
+	_, blind := localDeliveryEnsureOver(t, localDeliveryKernel{unreadable: true}, true, true)
+	for _, want := range []string{addRuleV4, addRuleV6, "add source-check 0x20fa/0x1027fff"} {
+		if !localDeliveryHasCmd(blind, want) {
+			t.Errorf("the rules could not be read back and %q was skipped; without a listing b4 cannot know the rule is there, so it has to ask for it: %v", want, blind)
+		}
+	}
+}
+
+func TestRouteEnsureLocalDelivery_ARuleAtAnotherPriorityIsNotTheSetsOwn(t *testing.T) {
+	const addRuleV4 = "ip rule add fwmark 0x20fa/0x27fff lookup 252 priority 3"
+
+	_, cmds := localDeliveryEnsureOver(t, localDeliveryKernel{
+		v4: []string{"100:\tfrom all fwmark 0x20fa/0x27fff lookup 252"},
+	}, true, false)
+	if !localDeliveryHasCmd(cmds, addRuleV4) {
+		t.Errorf("a rule for the set's mark sits at a priority b4 did not choose and b4 took it as its own instead of holding one at priority %d, ahead of every other program's rules: %v", proxyRulePriority, cmds)
 	}
 }
 
