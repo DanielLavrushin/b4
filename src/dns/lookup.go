@@ -46,10 +46,6 @@ func (s Server) timeout() time.Duration {
 	return defaultLookupTimeout
 }
 
-func (s Server) Budget() time.Duration {
-	return 2*s.timeout() + FallbackBudget
-}
-
 func LookupIPs(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net.IP, error) {
 	var qtypes []uint16
 	if v4 {

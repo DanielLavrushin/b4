@@ -11,9 +11,13 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-const HeadStart = 300 * time.Millisecond
+const (
+	HeadStart     = 300 * time.Millisecond
+	askGrace      = time.Second
+	maxSourceAsks = 64
+)
 
-var ErrAllSourcesCooling = errors.New("every resolver of the set is cooling down")
+var ErrSourceCooling = errors.New("the resolver is still unreachable")
 
 var ErrShortAnswer = errors.New("the resolver sent a reply too short to be a DNS answer")
 
@@ -69,139 +73,149 @@ type answerClass int
 const (
 	answerFailed answerClass = iota
 	answerRetryable
-	answerNoData
-	answerGood
+	answerUsable
 )
-
-type judgement struct {
-	class answerClass
-}
 
 type asked[T any] struct {
 	val       T
 	srv       Server
 	err       error
-	j         judgement
+	class     answerClass
 	cancelled bool
 }
 
-func judgeResponse(resp []byte, err error) judgement {
+func judgeResponse(resp []byte, err error) answerClass {
 	if err != nil {
-		return judgement{class: answerFailed}
+		return answerFailed
 	}
 	rcode, ok := ResponseRcode(resp)
-	if !ok {
-		return judgement{class: answerFailed}
+	switch {
+	case !ok:
+		return answerFailed
+	case rcode == RcodeNoError || rcode == RcodeNXDomain:
+		return answerUsable
 	}
-	switch rcode {
-	case 0:
-		if AnswerCount(resp) > 0 {
-			return judgement{class: answerGood}
-		}
-		return judgement{class: answerNoData}
-	case 3:
-		return judgement{class: answerNoData}
-	default:
-		return judgement{class: answerRetryable}
-	}
+	return answerRetryable
 }
 
-func judgeLookup(ips []net.IP, err error) judgement {
+func judgeLookup(_ []net.IP, err error) answerClass {
 	switch {
-	case err == nil && len(ips) > 0:
-		return judgement{class: answerGood}
 	case errors.Is(err, ErrTransientAnswer):
-		return judgement{class: answerRetryable}
+		return answerRetryable
 	case err == nil || errors.Is(err, ErrNoAddress):
-		return judgement{class: answerNoData}
-	default:
-		return judgement{class: answerFailed}
+		return answerUsable
 	}
+	return answerFailed
 }
 
 type Options struct {
 	Life   context.Context
 	Strict bool
 	Quiet  bool
+	Track  func() (done func())
 }
 
-func askInOrder[T any](callCtx, lifeCtx context.Context, servers []Server, opt Options, headStart time.Duration,
-	ask func(context.Context, Server) (T, error), judge func(T, error) judgement) (T, Server, error) {
+func askInOrder[T any](callCtx context.Context, servers []Server, opt Options,
+	ask func(context.Context, Server) (T, error), judge func(T, error) answerClass) (T, Server, error) {
 
 	var zero T
+	if len(servers) == 0 {
+		return zero, Server{}, ErrSourceCooling
+	}
+	lifeCtx := opt.Life
 	if lifeCtx == nil {
 		lifeCtx = callCtx
 	}
-	candidates := servers
-	if !opt.Strict && !opt.Quiet {
-		live := make([]Server, 0, len(servers))
-		for _, srv := range servers {
-			if !SourceCooling(srv.Source) {
-				live = append(live, srv)
-			}
+
+	ch := make(chan asked[T], len(servers))
+	launch := func(srv Server, release func()) {
+		done := func() {}
+		if opt.Track != nil {
+			done = opt.Track()
 		}
-		if len(live) == 0 {
-			if len(servers) > 0 {
-				return zero, servers[0], ErrAllSourcesCooling
+		go func() {
+			defer done()
+			defer release()
+			sctx, cancel := context.WithTimeout(lifeCtx, srv.timeout()+askGrace)
+			defer cancel()
+			val, err := ask(sctx, srv)
+			out := asked[T]{val: val, srv: srv, err: err, class: judge(val, err)}
+			if err != nil && lifeCtx.Err() != nil {
+				out.cancelled = true
 			}
-			return zero, Server{}, ErrAllSourcesCooling
-		}
-		candidates = live
+			ch <- out
+		}()
 	}
 
-	ch := make(chan asked[T], len(candidates))
-
-	started := 0
+	queue, next := servers, 0
+	consult := !opt.Quiet
+	capped := len(servers) > 1
+	var held []Server
+	leftOut, anyLeftOut := servers[0], false
 	startNext := func() bool {
-		for started < len(candidates) {
-			srv := candidates[started]
-			started++
-			if SourceUnreachable(srv.Source) {
-				continue
-			}
-			go func(srv Server) {
-				sctx, cancel := context.WithTimeout(lifeCtx, srv.timeout())
-				defer cancel()
-				val, err := ask(sctx, srv)
-				out := asked[T]{val: val, srv: srv, err: err, j: judge(val, err)}
-				if err != nil && lifeCtx.Err() != nil {
-					out.cancelled = true
+		for {
+			for next < len(queue) {
+				srv := queue[next]
+				next++
+				release, free := func() {}, true
+				if !opt.Quiet {
+					release, free = beginSourceAsk(srv.Source, consult && capped)
 				}
-				ch <- out
-			}(srv)
-			return true
+				if !free || (consult && SourceUnreachable(srv.Source)) {
+					release()
+					switch {
+					case opt.Strict:
+						held = append(held, srv)
+					case !anyLeftOut:
+						leftOut, anyLeftOut = srv, true
+					}
+					continue
+				}
+				launch(srv, release)
+				return true
+			}
+			if len(held) == 0 {
+				return false
+			}
+			queue, next, held, consult = held, 0, nil, false
 		}
-		return false
 	}
 
-	launched := 0
-	if startNext() {
-		launched++
+	if !startNext() {
+		return zero, leftOut, ErrSourceCooling
 	}
-	timer := time.NewTimer(headStart)
+	launched, answered := 1, 0
+	timer := time.NewTimer(HeadStart)
 	defer timer.Stop()
 	timerC := timer.C
+	more := true
+	advance := func() {
+		if more && startNext() {
+			launched++
+			armTimer(timer, &timerC, HeadStart)
+			return
+		}
+		more = false
+		timerC = nil
+	}
 
 	var fallback *asked[T]
 	var failure *asked[T]
 
-	answered := 0
-	for {
-		if answered == launched && started >= len(candidates) {
-			break
-		}
-		var got asked[T]
+	for answered < launched || more {
 		select {
-		case got = <-ch:
+		case got := <-ch:
 			answered++
 			if got.cancelled {
+				more = false
+				timerC = nil
 				continue
 			}
 			if !opt.Quiet {
-				noteAnswer(got.srv, got.j)
+				noteAnswer(got.srv, got.class)
 			}
-			switch got.j.class {
-			case answerGood, answerNoData:
+			switch got.class {
+			case answerUsable:
 				drainAnswers(ch, launched-answered, opt.Quiet)
 				return got.val, got.srv, got.err
 			case answerRetryable:
@@ -213,35 +227,28 @@ func askInOrder[T any](callCtx, lifeCtx context.Context, servers []Server, opt O
 					failure = &got
 				}
 			}
-			if startNext() {
-				launched++
-				armTimer(timer, &timerC, headStart)
-			} else {
-				timerC = nil
-			}
+			advance()
 		case <-timerC:
-			if startNext() {
-				launched++
-				armTimer(timer, &timerC, headStart)
-			} else {
-				timerC = nil
-			}
+			advance()
 		case <-callCtx.Done():
 			drainAnswers(ch, launched-answered, opt.Quiet)
 			return zero, Server{}, callCtx.Err()
 		}
 	}
 
-	if callCtx.Err() != nil {
+	switch {
+	case callCtx.Err() != nil:
 		return zero, Server{}, callCtx.Err()
-	}
-	if failure != nil {
+	case failure != nil:
 		return zero, failure.srv, failure.err
-	}
-	if fallback != nil {
+	case anyLeftOut:
+		return zero, leftOut, ErrSourceCooling
+	case fallback != nil:
 		return fallback.val, fallback.srv, fallback.err
+	case lifeCtx.Err() != nil:
+		return zero, servers[0], lifeCtx.Err()
 	}
-	return zero, Server{}, ErrNoAddress
+	return zero, servers[0], ErrNoAddress
 }
 
 func drainAnswers[T any](ch <-chan asked[T], left int, quiet bool) {
@@ -254,7 +261,7 @@ func drainAnswers[T any](ch <-chan asked[T], left int, quiet bool) {
 			if got.cancelled || quiet {
 				continue
 			}
-			noteAnswer(got.srv, got.j)
+			noteAnswer(got.srv, got.class)
 		}
 	}()
 }
@@ -270,10 +277,10 @@ func armTimer(timer *time.Timer, ch *<-chan time.Time, d time.Duration) {
 	*ch = timer.C
 }
 
-func noteAnswer(srv Server, j judgement) {
-	if j.class == answerFailed {
+func noteAnswer(srv Server, class answerClass) {
+	if class == answerFailed {
 		if NoteSourceFailure(srv.Source) {
-			log.Warnf("DNS: %s failed %d times in a row, lookups of sets that allow a fallback skip it for %s",
+			log.Warnf("DNS: %s failed %d times in a row, lookups leave it out for %s where another resolver of the set or a fallback can answer",
 				SourceLabel(srv.Source), SourceFailuresToTrip, sourceCooldown)
 		}
 		return
@@ -284,7 +291,7 @@ func noteAnswer(srv Server, j judgement) {
 }
 
 func AskServers(ctx context.Context, servers []Server, opt Options, ask func(context.Context, Server) ([]byte, error)) ([]byte, string, error) {
-	resp, srv, err := askInOrder(ctx, opt.Life, servers, opt, HeadStart, ask, judgeResponse)
+	resp, srv, err := askInOrder(ctx, servers, opt, ask, judgeResponse)
 	if srv.Source == "" && len(servers) > 0 {
 		srv = servers[0]
 	}
@@ -301,23 +308,20 @@ func LookupWithFallback(ctx context.Context, lookup LookupFunc, servers []Server
 	if !useSet || len(servers) == 0 {
 		return LookupRouter(ctx, name, v4, v6)
 	}
-	ips, srv, err := askInOrder(ctx, opt.Life, servers, opt, HeadStart, func(sctx context.Context, srv Server) ([]net.IP, error) {
+	ips, srv, err := askInOrder(ctx, servers, opt, func(sctx context.Context, srv Server) ([]net.IP, error) {
 		return lookup(sctx, srv, name, v4, v6)
 	}, judgeLookup)
 	if err == nil {
 		return ips, nil
 	}
-	if errors.Is(err, ErrAllSourcesCooling) {
-		log.Tracef("DNS: every resolver of the set is cooling down, asking the router's resolver for %s", name)
-		return LookupRouter(ctx, name, v4, v6)
-	}
-	if errors.Is(err, ErrNoAddress) || opt.Strict {
+	if errors.Is(err, ErrNoAddress) || opt.Strict || ctx.Err() != nil {
 		return nil, err
 	}
-	if ctx.Err() != nil {
-		return nil, err
+	if errors.Is(err, ErrSourceCooling) {
+		log.Tracef("DNS: %s is cooling down after repeated failures, resolving %s through the router's resolver", SourceLabel(srv.Source), name)
+	} else {
+		log.Tracef("DNS: %s could not resolve %s (%v), asking the router's resolver", SourceLabel(srv.Source), name, err)
 	}
-	log.Tracef("DNS: %s could not resolve %s (%v), asking the router's resolver", SourceLabel(srv.Source), name, err)
 	return LookupRouter(ctx, name, v4, v6)
 }
 

@@ -19,7 +19,29 @@ type sourceState struct {
 var (
 	sourceMu     sync.Mutex
 	sourceHealth = map[string]*sourceState{}
+	sourceAsks   = map[string]int{}
 )
+
+func beginSourceAsk(source string, capped bool) (done func(), ok bool) {
+	if source == "" {
+		return func() {}, true
+	}
+	sourceMu.Lock()
+	defer sourceMu.Unlock()
+	if capped && sourceAsks[source] >= maxSourceAsks {
+		return func() {}, false
+	}
+	sourceAsks[source]++
+	return func() {
+		sourceMu.Lock()
+		defer sourceMu.Unlock()
+		if sourceAsks[source] <= 1 {
+			delete(sourceAsks, source)
+			return
+		}
+		sourceAsks[source]--
+	}, true
+}
 
 func SourceLabel(source string) string {
 	if u, err := url.Parse(source); err == nil && u.Host != "" {
