@@ -63,6 +63,44 @@ func TestCollectTraceSetsReportsPinsWithoutRedirect(t *testing.T) {
 	}
 }
 
+func TestCollectTraceSetsNamesTheResolverList(t *testing.T) {
+	cfg := config.NewConfig()
+	listOnly := config.DefaultSetConfig
+	listOnly.Id = "dddd4444"
+	listOnly.Name = "List only"
+	listOnly.Enabled = true
+	listOnly.DNS = config.DNSConfig{Enabled: true, Upstreams: []string{"9.9.9.9", "https://dns.nextdns.io/abc123", "https://dns.example/dns-query?id=abc123"}}
+	single := config.DefaultSetConfig
+	single.Id = "eeee5555"
+	single.Name = "Single"
+	single.Enabled = true
+	single.DNS = config.DNSConfig{Enabled: true, TargetDNS: "1.1.1.1"}
+	cfg.Sets = []*config.SetConfig{&listOnly, &single}
+
+	data, err := json.Marshal(collectTraceSets(&cfg))
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	var sets []struct {
+		DNS map[string]json.RawMessage `json:"dns"`
+	}
+	if err := json.Unmarshal(data, &sets); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if len(sets) != 2 {
+		t.Fatalf("expected two sets, got %s", data)
+	}
+	if got, want := string(sets[0].DNS["upstreams"]), `["9.9.9.9","https://dns.nextdns.io","https://dns.example"]`; got != want {
+		t.Errorf("the trace must name the resolvers a list-only set asks, got %s want %s", got, want)
+	}
+	if _, listed := sets[1].DNS["upstreams"]; listed {
+		t.Errorf("a set without a list must leave upstreams out of the trace: %s", data)
+	}
+	if strings.Contains(string(data), "abc123") {
+		t.Errorf("a DoH path or query can carry a private profile id and must stay out of the trace: %s", data)
+	}
+}
+
 func TestCollectTraceSets(t *testing.T) {
 	cfg := config.NewConfig()
 	routed := routedTestSet()

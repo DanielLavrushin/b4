@@ -264,6 +264,25 @@ func TestAdoptStrategyKeepsTheTargetsFailClosedChoice(t *testing.T) {
 	}
 }
 
+func TestAdoptStrategyKeepsTheSetsOwnResolverList(t *testing.T) {
+	own := []string{"1.1.1.1", "https://dns.example/dns-query"}
+	target := NewSetConfig()
+	target.DNS = DNSConfig{Enabled: true, TargetDNS: "9.9.9.9", Upstreams: append([]string(nil), own...)}
+	found := NewSetConfig()
+	found.DNS = DNSConfig{Enabled: true, DoHURL: "https://dns.google/dns-query", Upstreams: []string{"203.0.113.9"}}
+
+	target.AdoptStrategy(&found)
+	if !reflect.DeepEqual(target.DNS.Upstreams, own) || target.DNS.DoHURL != "https://dns.google/dns-query" || target.DNS.TargetDNS != "" {
+		t.Fatalf("after adopting a DNS fix: %+v, want the new primary and the set's own list", target.DNS)
+	}
+
+	plain := NewSetConfig()
+	target.AdoptStrategy(&plain)
+	if !reflect.DeepEqual(target.DNS.Upstreams, own) || !target.DNS.Enabled || target.DNS.DoHURL != "https://dns.google/dns-query" {
+		t.Fatalf("after adopting a strategy without DNS: %+v, want the DNS block untouched", target.DNS)
+	}
+}
+
 func TestAdoptStrategyTakesTheECHSwitchWithoutDroppingIt(t *testing.T) {
 	target := NewSetConfig()
 	found := NewSetConfig()

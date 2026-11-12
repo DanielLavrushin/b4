@@ -754,3 +754,28 @@ func TestHostWorkersFollowTheCPUs(t *testing.T) {
 		t.Fatalf("every job runs once, got %v", seen)
 	}
 }
+
+func TestRedirectsDNSCountsEveryKindOfResolver(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		dns  config.DNSConfig
+		want bool
+	}{
+		{"a plain target", config.DNSConfig{Enabled: true, TargetDNS: "9.9.9.9"}, true},
+		{"a DoH URL", config.DNSConfig{Enabled: true, DoHURL: "https://dns.example/dns-query"}, true},
+		{"a list only", config.DNSConfig{Enabled: true, Upstreams: []string{"1.1.1.1"}}, true},
+		{"a list with nothing usable", config.DNSConfig{Enabled: true, Upstreams: []string{"dns.example"}}, false},
+		{"a list with the redirect off", config.DNSConfig{Upstreams: []string{"1.1.1.1"}}, false},
+		{"a target with the redirect off", config.DNSConfig{TargetDNS: "9.9.9.9"}, false},
+		{"no resolver", config.DNSConfig{Enabled: true}, false},
+	} {
+		set := config.NewSetConfig()
+		set.DNS = tc.dns
+		if got := redirectsDNS(&config.Config{Sets: []*config.SetConfig{&set}}); got != tc.want {
+			t.Errorf("%s: redirectsDNS = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	if redirectsDNS(nil) || redirectsDNS(&config.Config{}) {
+		t.Error("a config without a set redirects nothing")
+	}
+}
