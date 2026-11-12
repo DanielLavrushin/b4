@@ -2,6 +2,9 @@ package tables
 
 import (
 	"fmt"
+	"net"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -370,4 +373,164 @@ func TestNetnsARebuiltInterfaceSetDoesNotStackItsRule(t *testing.T) {
 
 func TestNetnsARebuiltInterfaceSetDoesNotStackItsRuleNft(t *testing.T) {
 	netnsARebuiltInterfaceSetDoesNotStackItsRule(t, backendNFTables)
+}
+
+const (
+	netnsIfaceDialGap     = 10 * time.Millisecond
+	netnsIfaceDialTimeout = 40 * time.Millisecond
+)
+
+func netnsCountersIn(t *testing.T, ipt, table, base, chain string, rules ...[]string) func() []int {
+	t.Helper()
+	at := []string{ipt, "-w", "-t", table}
+	remove := func() {
+		for {
+			if _, err := run(append(at, "-D", base, "-j", chain)...); err != nil {
+				break
+			}
+		}
+		_, _ = run(append(at, "-F", chain)...)
+		_, _ = run(append(at, "-X", chain)...)
+	}
+	remove()
+	netnsRun(t, append(at, "-N", chain)...)
+	t.Cleanup(remove)
+	for _, rule := range rules {
+		netnsRun(t, append(append(at, "-A", chain), rule...)...)
+	}
+	netnsRun(t, append(at, "-I", base, "1", "-j", chain)...)
+	return func() []int {
+		out := netnsRun(t, append(at, "-L", chain, "-v", "-x", "-n")...)
+		var counts []int
+		for _, line := range strings.Split(out, "\n") {
+			f := strings.Fields(line)
+			if len(f) == 0 {
+				continue
+			}
+			if n, err := strconv.Atoi(f[0]); err == nil {
+				counts = append(counts, n)
+			}
+		}
+		if len(counts) != len(rules) {
+			t.Fatalf("%s %s lists %d counters, want %d:\n%s", table, chain, len(counts), len(rules), out)
+		}
+		return counts
+	}
+}
+
+func netnsARebuiltInterfaceSetKeepsTheRoutersOwnTraffic(t *testing.T, engine string) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	netnsRequireEngine(t, engine)
+
+	forwarding, err := os.ReadFile(netnsForwardSysctl)
+	if err != nil {
+		t.Skipf("%s is not readable in this namespace: %v", netnsForwardSysctl, err)
+	}
+	if err := os.WriteFile(netnsForwardSysctl, []byte("0"), 0644); err != nil {
+		t.Skipf("cannot turn off forwarding in this namespace: %v", err)
+	}
+	t.Cleanup(func() { _ = os.WriteFile(netnsForwardSysctl, forwarding, 0644) })
+
+	peer := netnsSecondary + "p"
+	netnsRun(t, "ip", "neigh", "replace", netnsTarget, "lladdr", netnsLinkMAC(t, peer), "dev", netnsSecondary, "nud", "permanent")
+	t.Cleanup(func() { _, _ = run("ip", "neigh", "del", netnsTarget, "dev", netnsSecondary) })
+
+	routeEngine = nil
+	cfg := netnsConfig(engine)
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	RoutingSyncConfig(cfg)
+	t.Cleanup(func() {
+		RoutingClearAll()
+		_ = ClearRules(cfg)
+		routeEngine = nil
+	})
+
+	ipt := netnsCounterBinary(engine)
+	sent := netnsCountersIn(t, ipt, "mangle", "POSTROUTING", "b4t_cnt_out",
+		[]string{"-o", netnsPrimary, "-d", netnsTarget, "-p", "tcp"},
+		[]string{"-o", netnsSecondary, "-d", netnsTarget, "-p", "tcp"})
+	seen := netnsCountersIn(t, ipt, "raw", "PREROUTING", "b4t_cnt_in",
+		[]string{"-i", peer, "-s", netnsPrimaryIP, "-d", netnsTarget, "-p", "tcp"},
+		[]string{"-i", peer, "-s", netnsSecondIP, "-d", netnsTarget, "-p", "tcp"})
+
+	addr := net.JoinHostPort(netnsTarget, "443")
+	var dials sync.WaitGroup
+	dialFor := func(span time.Duration) int {
+		started := 0
+		for end := time.Now().Add(span); time.Now().Before(end); {
+			started++
+			dials.Add(1)
+			go func() {
+				defer dials.Done()
+				if conn, err := net.DialTimeout("tcp", addr, netnsIfaceDialTimeout); err == nil {
+					conn.Close()
+				}
+			}()
+			time.Sleep(netnsIfaceDialGap)
+		}
+		dials.Wait()
+		return started
+	}
+
+	calm := dialFor(time.Second)
+	out, in := sent(), seen()
+	t.Logf("%s: with no rebuild running, %d connections: %d packet(s) left by the uplink and %d by the set's interface, where %d kept the uplink's address and %d carried the interface's",
+		engine, calm, out[0], out[1], in[0], in[1])
+	if out[1] == 0 {
+		netnsLogState(t, engine)
+		t.Fatal("the set does not take the router's own connections before any rebuild")
+	}
+	if out[0] != 0 || in[0] != 0 || in[1] == 0 {
+		t.Skipf("this namespace cannot show what a rebuild does to the router's own connections: with nothing being rebuilt %d packet(s) left by the uplink, and of those that left by the set's interface %d kept the uplink's address and %d carried the interface's", out[0], in[0], in[1])
+	}
+
+	stop := make(chan struct{})
+	rebuilt := make(chan int, 1)
+	go func() {
+		n := 0
+		for {
+			select {
+			case <-stop:
+				rebuilt <- n
+				return
+			default:
+			}
+			RoutingForceResync(cfg)
+			cfg.Sets[0].Routing.KillSwitch = !cfg.Sets[0].Routing.KillSwitch
+			RoutingSyncConfig(cfg)
+			n += 2
+		}
+	}()
+	started := dialFor(3 * time.Second)
+	close(stop)
+	rebuilds := <-rebuilt
+
+	after, afterIn := sent(), seen()
+	leaked, routed := after[0], after[1]-out[1]
+	unrewritten, rewritten := afterIn[0], afterIn[1]-in[1]
+	t.Logf("%s: %d rebuilds under %d connections: %d packet(s) left by the uplink and %d by the set's interface, where %d kept the uplink's address and %d carried the interface's",
+		engine, rebuilds, started, leaked, routed, unrewritten, rewritten)
+	if rebuilds < 2 || routed == 0 || rewritten == 0 {
+		t.Fatalf("the test measured nothing: %d rebuilds, %d packet(s) by the set's interface, %d of them seen at its far end", rebuilds, routed, rewritten)
+	}
+	if leaked != 0 || unrewritten != 0 {
+		netnsLogState(t, engine)
+		t.Fatalf("while the set was rebuilt %d time(s) under %d of the router's own connections, %d packet(s) for the address it routes left by the ordinary uplink, and %d left by the set's interface still carrying the uplink's address. A rebuild must never take a set's jump out before its replacement is in: without the jump that marks the router's own traffic a connection opened in that moment leaves unrouted, and without the jump that rewrites the source it leaves by the right interface with an address the far end cannot answer; conntrack then keeps either mistake for the life of the connection",
+			rebuilds, started, leaked, unrewritten)
+	}
+}
+
+func TestNetnsARebuiltInterfaceSetKeepsTheRoutersOwnTraffic(t *testing.T) {
+	netnsARebuiltInterfaceSetKeepsTheRoutersOwnTraffic(t, backendIPTables)
+}
+
+func TestNetnsARebuiltInterfaceSetKeepsTheRoutersOwnTrafficNft(t *testing.T) {
+	netnsARebuiltInterfaceSetKeepsTheRoutersOwnTraffic(t, backendNFTables)
+}
+
+func TestNetnsARebuiltInterfaceSetKeepsTheRoutersOwnTrafficLegacy(t *testing.T) {
+	netnsARebuiltInterfaceSetKeepsTheRoutersOwnTraffic(t, backendIPTablesLegacy)
 }
