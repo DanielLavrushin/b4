@@ -679,7 +679,10 @@ func (s *Suite) resolveThroughB4(ctx context.Context, site SiteResult, family st
 	if !ok {
 		return nil, ""
 	}
-	body, source, err := dns.AskServers(ctx, servers, dns.Options{Life: ctx, Strict: dnsCfg.Strict, Quiet: true}, func(sctx context.Context, srv dns.Server) ([]byte, error) {
+	for i := range servers {
+		servers[i].Timeout = dnsQueryTimeout
+	}
+	body, source, err := dns.AskServers(ctx, servers, dns.Options{Life: ctx, Quiet: true}, func(sctx context.Context, srv dns.Server) ([]byte, error) {
 		q := newDNSQuerier(s, srv)
 		defer q.close()
 		return q.query(sctx, site.Domain, qtype)
