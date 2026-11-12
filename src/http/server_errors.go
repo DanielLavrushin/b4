@@ -117,9 +117,13 @@ func urlsCutToHost(text string, clipped bool) string {
 	var out strings.Builder
 	done := 0
 	for _, at := range urlInText.FindAllStringIndex(text, -1) {
+		unfinished := clipped && strings.TrimRight(text[at[1]:], "\\") == ""
 		out.WriteString(text[done:at[0]])
-		out.WriteString(urlCutToHost(text[at[0]:at[1]], clipped && at[1] == len(text)))
+		out.WriteString(urlCutToHost(text[at[0]:at[1]], unfinished))
 		done = at[1]
+		if unfinished {
+			done = len(text)
+		}
 	}
 	out.WriteString(text[done:])
 	return out.String()

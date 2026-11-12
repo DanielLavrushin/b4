@@ -2,6 +2,7 @@ package http
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/daniellavrushin/b4/ai"
 	"github.com/daniellavrushin/b4/config"
@@ -393,6 +395,39 @@ func TestLogServerErrorsHidesAURLTheCaptureCutShort(t *testing.T) {
 				t.Errorf("%s%s: want a line ending in %q: %s", route, layout, want, line)
 			}
 		}
+	}
+}
+
+func TestLogServerErrorsHidesAURLTheCaptureCutInsideAnEscape(t *testing.T) {
+	buf := captureServerErrors(t)
+	room := serverErrorExcerptLen + utf8.UTFMax
+	encode := func(lead int) []byte {
+		raw, err := json.Marshal(map[string]string{"error": strings.Repeat("x", lead) + " failed to fetch https://user:SECRETPASSWORD0123456789&rest@mirror.example.com/geo.dat"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	body := encode(room - 1 - bytes.IndexByte(encode(0), '\\'))
+	if body[room-1] != '\\' || !bytes.Contains(body[room:], []byte("rest@mirror.example.com")) {
+		t.Fatalf("the capture must end on the backslash of the escaped ampersand, got %q", body[room-8:])
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/escape", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write(body)
+	})
+
+	serveRecorded(t, logServerErrors(mux), http.MethodGet, "/api/escape")
+	lines := buf.lines()
+	if len(lines) != 1 {
+		t.Fatalf("one line expected, got %q", lines)
+	}
+	if strings.Contains(lines[0], "SECRETPASSWORD") || strings.Contains(lines[0], "user:") {
+		t.Errorf("a login cut inside a JSON escape must stay out of the log: %s", lines[0])
+	}
+	if want := "x failed to fetch https://[redacted]..."; !strings.HasSuffix(lines[0], want) {
+		t.Errorf("want a line ending in %q: %s", want, lines[0])
 	}
 }
 
