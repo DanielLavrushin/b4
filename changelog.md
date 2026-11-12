@@ -22,6 +22,7 @@ All notable changes to b4 are recorded in this file.
 - On routers with an old kernel, such as 3.16, a set routed through an interface gained another copy of its routing rule on rebuilds, listed under **System Info**.
 - With **Try strategies that worked before** on, **Discovery** began every run with remembered strategies that no longer worked, because a pass with a different fake was counted for them, and the runs took longer. [#510](https://github.com/DanielLavrushin/b4/issues/510)
 - **Open** in a **Discovery** notification could lead to an empty form or to another search, such as one the watchdog started afterwards, instead of the run it announced. [#552](https://github.com/DanielLavrushin/b4/issues/552)
+- When the web interface or its API answered with a server error, such as a 500, `errors.log` often had no line about it. [#530](https://github.com/DanielLavrushin/b4/issues/530)
 
 ### Security
 
