@@ -20,6 +20,7 @@ All notable changes to b4 are recorded in this file.
 - When another service on the router removed the routing rule of a proxy set or **Telegram over WebSocket**, the set passed no traffic until b4 restarted: devices' connections hung and the router's own went out directly.
 - While b4 rebuilt its routing rules, as after the router's firewall was rewritten or a set's routing was changed, a connection opened at that moment could miss a proxy set: a device's stalled, and the router's own, such as one through b4's SOCKS5 server, went out directly.
 - On routers with an old kernel, such as 3.16, a set routed through an interface gained another copy of its routing rule on rebuilds, listed under **System Info**.
+- With **Try strategies that worked before** on, **Discovery** began every run with remembered strategies that no longer worked, because a pass with a different fake was counted for them, and the runs took longer. [#510](https://github.com/DanielLavrushin/b4/issues/510)
 
 ### Security
 

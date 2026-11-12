@@ -176,6 +176,7 @@ spawn:
 				mu.Unlock()
 			} else {
 				lastResult.Status = CheckStatusFailed
+				lastResult.cutShort = ds.interrupted()
 				if successCount > 0 {
 					lastResult.lookup = lookupOK
 				}

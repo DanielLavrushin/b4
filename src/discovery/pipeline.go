@@ -162,6 +162,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	} else {
 		cachedPresets = ds.presetsWithPayloads(ds.discoveryCache.GetCachedPresets())
 	}
+	ds.cachedPresets = cachedPresets
 	phase1Presets := GetPhase1Presets()
 	current, hasCurrent := ds.setCurrentPreset()
 	currentCount := 0
@@ -207,9 +208,6 @@ func (ds *DiscoverySuite) RunDiscovery() {
 				return
 			}
 
-			if preset.Config.Faking.SNIType == config.FakePayloadRandom {
-				ds.applyBestPayload(&preset.Config.Faking)
-			}
 			results := ds.testPresetAllDomains(preset)
 			ds.storeResultsMulti(preset, results)
 		}
