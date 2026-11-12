@@ -75,7 +75,12 @@ func TestCollectTraceSetsNamesTheResolverList(t *testing.T) {
 	single.Name = "Single"
 	single.Enabled = true
 	single.DNS = config.DNSConfig{Enabled: true, TargetDNS: "1.1.1.1"}
-	cfg.Sets = []*config.SetConfig{&listOnly, &single}
+	personal := config.DefaultSetConfig
+	personal.Id = "ffff6666"
+	personal.Name = "Personal"
+	personal.Enabled = true
+	personal.DNS = config.DNSConfig{Enabled: true, DoHURL: "https://router:hunter2@dns.nextdns.io/abc123?name=home"}
+	cfg.Sets = []*config.SetConfig{&listOnly, &single, &personal}
 
 	data, err := json.Marshal(collectTraceSets(&cfg))
 	if err != nil {
@@ -87,8 +92,16 @@ func TestCollectTraceSetsNamesTheResolverList(t *testing.T) {
 	if err := json.Unmarshal(data, &sets); err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
-	if len(sets) != 2 {
-		t.Fatalf("expected two sets, got %s", data)
+	if len(sets) != 3 {
+		t.Fatalf("expected three sets, got %s", data)
+	}
+	if got, want := string(sets[2].DNS["doh_url"]), `"https://dns.nextdns.io"`; got != want {
+		t.Errorf("the first resolver's URL is in the trace as %s, want its host only: %s", got, want)
+	}
+	for _, private := range []string{"hunter2", "name=home"} {
+		if strings.Contains(string(data), private) {
+			t.Errorf("%q from a resolver's URL is in a trace meant to be attached to an issue: %s", private, data)
+		}
 	}
 	if got, want := string(sets[0].DNS["upstreams"]), `["9.9.9.9","https://dns.nextdns.io","https://dns.example"]`; got != want {
 		t.Errorf("the trace must name the resolvers a list-only set asks, got %s want %s", got, want)

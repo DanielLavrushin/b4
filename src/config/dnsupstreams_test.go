@@ -325,3 +325,28 @@ func TestAnInvalidPrimaryDoesNotTakeOneOfTheEight(t *testing.T) {
 		t.Fatalf("the set asks %d resolvers, want %d: a primary that never becomes a resolver takes no slot", got, MaxDNSUpstreams)
 	}
 }
+
+func TestAURLInTheAddressFieldIsNotAResolver(t *testing.T) {
+	for _, target := range []string{"https://dns.example/dns-query", "http://192.0.2.1/dns-query", "HTTPS://dns.example/dns-query"} {
+		dns := DNSConfig{Enabled: true, TargetDNS: target}
+		if list := dns.UpstreamList(); len(list) != 0 || dns.HasUpstream() {
+			t.Errorf("target_dns %q became the resolver %v; the address field takes an address, a URL there is a bad target as before", target, list)
+		}
+
+		cfg := NewConfig()
+		set := &SetConfig{Id: "dns1", Name: "dns", Enabled: true}
+		set.DNS = DNSConfig{Enabled: true, TargetDNS: target, Upstreams: []string{"1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "94.140.14.14", "208.67.222.222", "208.67.220.220", "77.88.8.8"}}
+		cfg.Sets = []*SetConfig{set}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("validate with target_dns %q: %v", target, err)
+		}
+		if got := len(set.DNS.Upstreams); got != MaxDNSUpstreams {
+			t.Errorf("target_dns %q took a slot: %d of %d list entries kept", target, got, MaxDNSUpstreams)
+		}
+	}
+
+	dns := DNSConfig{Enabled: true, TargetDNS: " 9.9.9.9 "}
+	if list := dns.UpstreamList(); len(list) != 1 || list[0] != "9.9.9.9" {
+		t.Errorf("an address with blanks around it gave %v, want the address", list)
+	}
+}

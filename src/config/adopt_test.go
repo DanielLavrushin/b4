@@ -283,6 +283,27 @@ func TestAdoptStrategyKeepsTheSetsOwnResolverList(t *testing.T) {
 	}
 }
 
+func TestAdoptStrategyDropsAResolverListLeftBehindARedirectThatWasOff(t *testing.T) {
+	found := NewSetConfig()
+	found.DNS = DNSConfig{Enabled: true, DoHURL: "https://dns.google/dns-query"}
+
+	for _, left := range [][]string{{"203.0.113.9"}, {"dns.google"}} {
+		target := NewSetConfig()
+		target.Id, target.Name = "left", "left"
+		target.DNS.Upstreams = left
+
+		target.AdoptStrategy(&found)
+		if len(target.DNS.Upstreams) != 0 {
+			t.Fatalf("a list stored while the redirect was off came back as %v behind the resolver Discovery tested", target.DNS.Upstreams)
+		}
+		cfg := NewConfig()
+		cfg.Sets = []*SetConfig{&target}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("the adopted set no longer saves because of the list %v the user cannot see: %v", left, err)
+		}
+	}
+}
+
 func TestAdoptStrategyTakesTheECHSwitchWithoutDroppingIt(t *testing.T) {
 	target := NewSetConfig()
 	found := NewSetConfig()

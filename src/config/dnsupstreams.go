@@ -78,7 +78,7 @@ func (c *DNSConfig) UpstreamList() []string {
 		out = append(out, norm)
 	}
 	add(c.DoHURL)
-	if strings.TrimSpace(c.DoHURL) == "" {
+	if strings.TrimSpace(c.DoHURL) == "" && !IsDoHUpstream(c.TargetDNS) {
 		add(c.TargetDNS)
 	}
 	for _, raw := range c.Upstreams {
@@ -209,19 +209,8 @@ func normalizeSetUpstreams(v *validator, setIdx int, set *SetConfig) bool {
 			return false
 		}
 	}
-	listLimit := MaxDNSUpstreams
-	var primary []string
-	for _, candidate := range []string{set.DNS.DoHURL, set.DNS.TargetDNS} {
-		if strings.TrimSpace(candidate) == "" {
-			continue
-		}
-		if norm, ok := NormalizeUpstream(candidate); ok {
-			listLimit--
-			primary = append(primary, norm)
-		}
-		break
-	}
-	set.DNS.NormalizeUpstreamsLimit(listLimit, primary, func(value string) {
+	primary := (&DNSConfig{DoHURL: set.DNS.DoHURL, TargetDNS: set.DNS.TargetDNS}).UpstreamList()
+	set.DNS.NormalizeUpstreamsLimit(MaxDNSUpstreams-len(primary), primary, func(value string) {
 		label := UpstreamLabel(value)
 		if label == "" {
 			label = "one entry"

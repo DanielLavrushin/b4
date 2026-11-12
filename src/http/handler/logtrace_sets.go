@@ -148,7 +148,7 @@ func collectTraceSets(cfg *config.Config) []traceSet {
 			ts.DNS = &traceSetDNS{
 				Enabled:       set.DNS.Enabled,
 				TargetDNS:     set.DNS.TargetDNS,
-				DoHURL:        set.DNS.DoHURL,
+				DoHURL:        config.UpstreamLabel(set.DNS.DoHURL),
 				Upstreams:     traceUpstreams(set.DNS.Upstreams),
 				FragmentQuery: set.DNS.FragmentQuery,
 				Pins:          len(set.DNS.Pins),
