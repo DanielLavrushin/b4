@@ -38,6 +38,7 @@ func newTestWorker(t *testing.T, cfg *config.Config) *Worker {
 	w.ipToMac.Store(make(map[string]string))
 	state := newRuntimeState()
 	w.tlsCache = state.tlsCache
+	w.wssize = state.wssize
 	w.streams = state.streams
 	w.connTracker = state.connState
 	w.destState = state.destState

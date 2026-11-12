@@ -4827,7 +4827,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Installs b4 from a b4-linux-\u003carch\u003e.tar.gz uploaded by the reader, for a\nnetwork where no download source can be reached. The archive is checked for\na b4 entry built for this machine before anything is replaced.",
+                "description": "Installs b4 from a b4-linux-<arch>.tar.gz uploaded by the reader, for a\nnetwork where no download source can be reached. The archive is checked for\na b4 entry built for this machine before anything is replaced.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -4841,7 +4841,7 @@
                 "parameters": [
                     {
                         "type": "file",
-                        "description": "b4-linux-\u003carch\u003e.tar.gz release archive",
+                        "description": "b4-linux-<arch>.tar.gz release archive",
                         "name": "file",
                         "in": "formData",
                         "required": true
@@ -5799,23 +5799,23 @@
             "type": "object",
             "properties": {
                 "dns_threshold": {
-                    "description": "0 -\u003e 2",
+                    "description": "0 -> 2",
                     "type": "integer"
                 },
                 "rst_threshold": {
-                    "description": "0 -\u003e 3",
+                    "description": "0 -> 3",
                     "type": "integer"
                 },
                 "rst_window_sec": {
-                    "description": "0 -\u003e 30",
+                    "description": "0 -> 30",
                     "type": "integer"
                 },
                 "stall_threshold": {
-                    "description": "0 -\u003e 3",
+                    "description": "0 -> 3",
                     "type": "integer"
                 },
                 "stall_timeout_ms": {
-                    "description": "0 -\u003e 3000",
+                    "description": "0 -> 3000",
                     "type": "integer"
                 },
                 "to": {
@@ -5823,7 +5823,7 @@
                     "type": "string"
                 },
                 "ttl_sec": {
-                    "description": "0 -\u003e 3600",
+                    "description": "0 -> 3600",
                     "type": "integer"
                 }
             }
@@ -6080,7 +6080,7 @@
                     "type": "integer"
                 },
                 "max": {
-                    "description": "threshold max (KB), if 0 or eq MinKB -\u003e uses MinKB",
+                    "description": "threshold max (KB), if 0 or eq MinKB -> uses MinKB",
                     "type": "integer"
                 },
                 "min": {
@@ -6637,6 +6637,9 @@
                 },
                 "win": {
                     "$ref": "#/definitions/config.WinConfig"
+                },
+                "wssize": {
+                    "$ref": "#/definitions/config.WSSizeConfig"
                 }
             }
         },
@@ -6829,6 +6832,23 @@
                 },
                 "username": {
                     "type": "string"
+                }
+            }
+        },
+        "config.WSSizeConfig": {
+            "type": "object",
+            "properties": {
+                "cutoff": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "window": {
+                    "type": "integer"
                 }
             }
         },

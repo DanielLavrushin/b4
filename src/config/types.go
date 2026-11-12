@@ -267,6 +267,13 @@ type Device struct {
 	IsManual bool   `json:"is_manual,omitempty"`
 }
 
+type WSSizeConfig struct {
+	Cutoff  string `json:"cutoff"`
+	Enabled bool   `json:"enabled"`
+	Window  int    `json:"window"`
+	Scale   int    `json:"scale"`
+}
+
 type TCPConfig struct {
 	ConnBytesLimit int    `json:"conn_bytes_limit"`
 	Seg2Delay      int    `json:"seg2delay"`
@@ -278,12 +285,29 @@ type TCPConfig struct {
 	HTTPMethodEOL  bool   `json:"http_methodeol"`
 	DPortFilter    string `json:"dport_filter"` // comma separated list of ports and port ranges, e.g. "80,443,5222"
 
+	WSSize        WSSizeConfig        `json:"wssize"`
+	WarmTuple     WarmTupleConfig     `json:"warm_tuple" mcp:"deny"`
 	Incoming      IncomingConfig      `json:"incoming"`
 	Desync        DesyncConfig        `json:"desync"`
 	Win           WinConfig           `json:"win"`
 	Duplicate     DuplicateConfig     `json:"duplicate"`
 	IPBlockDetect IPBlockDetectConfig `json:"ip_block_detect"`
 	RSTProtection RSTProtectionConfig `json:"rst_protection"`
+}
+
+type WarmTupleConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+type Socks5WarmTupleConfig struct {
+	SourceAddress    string            `json:"source_address"`
+	FirstPort        int               `json:"first_port"`
+	LastPort         int               `json:"last_port"`
+	WarmTimeoutMs    int               `json:"warm_timeout_ms"`
+	ReuseTimeoutMs   int               `json:"reuse_timeout_ms"`
+	ReconnectDelayMs int               `json:"reconnect_delay_ms"`
+	CompactHello     bool              `json:"compact_hello"`
+	Targets          map[string]string `json:"targets,omitempty"`
 }
 
 type IPBlockDetectConfig struct {
@@ -562,15 +586,16 @@ type MTProtoWebProxyConfig struct {
 }
 
 type Socks5Config struct {
-	Enabled        bool     `json:"enabled"`
-	Port           int      `json:"port"`
-	BindAddress    string   `json:"bind_address"`
-	Expose         bool     `json:"expose" mcp:"deny"`
-	Username       string   `json:"username" mcp:"deny"`
-	Password       string   `json:"password" mcp:"deny"`
-	AllowedSources []string `json:"allowed_sources,omitempty" mcp:"deny"`
-	UDPTimeout     int      `json:"udp_timeout"`
-	UDPReadTimeout int      `json:"udp_read_timeout"`
+	WarmTuple      Socks5WarmTupleConfig `json:"warm_tuple" mcp:"deny"`
+	Enabled        bool                  `json:"enabled"`
+	Port           int                   `json:"port"`
+	BindAddress    string                `json:"bind_address"`
+	Expose         bool                  `json:"expose" mcp:"deny"`
+	Username       string                `json:"username" mcp:"deny"`
+	Password       string                `json:"password" mcp:"deny"`
+	AllowedSources []string              `json:"allowed_sources,omitempty" mcp:"deny"`
+	UDPTimeout     int                   `json:"udp_timeout"`
+	UDPReadTimeout int                   `json:"udp_read_timeout"`
 }
 
 type TablesConfig struct {

@@ -32,6 +32,7 @@ func (api *API) RegisterConfigApi() {
 	api.mux.HandleFunc("/api/config", api.handleConfig)
 	api.mux.HandleFunc("/api/config/reset", api.handleConfigReset)
 	api.mux.HandleFunc("/api/config/download", api.handleConfigDownload)
+	api.mux.HandleFunc("/api/socks5/warm-tuple", api.handleWarmTupleStatus)
 }
 
 // @Summary Download the configuration file

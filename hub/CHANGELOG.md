@@ -2,6 +2,12 @@
 
 All notable changes to the b4hub community hub service are recorded in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Releases are published from the `b4hub` repository; the router changelog is `changelog.md` at the repository root.
 
+## [1.7.0] - 2026-11-09
+
+### Added
+
+- Shared sets retain **Real TCP window (wssize)** settings, including the original ClientHello cutoff, and require b4 1.91.0.
+
 ## [1.6.0] - 2026-11-06
 
 ### Changed
@@ -66,6 +72,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 - b4hub is versioned and released on its own from the `b4hub` repository, and the binary reports the b4 source tree it was built from.
 
+[1.7.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.3.0...v1.4.0

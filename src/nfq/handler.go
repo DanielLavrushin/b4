@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -158,6 +159,17 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 		return vc.accept()
 	}
 	vc.dir = w.packetDirection(cfg, vc, pkt)
+	if cfg.Queue.Mode != "tun" && pkt.proto == 6 && len(raw) >= pkt.ihl+TCPHeaderMinLen {
+		localIP, lok := netip.AddrFromSlice(pkt.src)
+		remoteIP, rok := netip.AddrFromSlice(pkt.dst)
+		if lok && rok {
+			local := netip.AddrPortFrom(localIP.Unmap(), binary.BigEndian.Uint16(raw[pkt.ihl:]))
+			remote := netip.AddrPortFrom(remoteIP.Unmap(), binary.BigEndian.Uint16(raw[pkt.ihl+2:]))
+			if profile := w.warmFlows.Lookup(local, remote); profile != nil {
+				cfg, matcher = profile.Config, profile.Matcher
+			}
+		}
+	}
 	if !cfg.Queue.IsDiscovery && cfg.Queue.Mode != "tun" && !cfg.IPFamilyEnabled(pkt.ver == IPv6) {
 		return w.handleECHOnlyPacket(vc, pkt, cfg)
 	}
@@ -411,6 +423,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	dport := binary.BigEndian.Uint16(tcp[2:4])
 
 	if vc.tcpIncoming(cfg, sport) {
+		w.wssize.closeIncoming(pkt.raw, pkt.ihl)
 		return w.HandleIncoming(vc, pkt.ver, pkt.raw, pkt.ihl, pkt.src, pkt.dstStr, dport, pkt.srcStr, sport, payload)
 	}
 
@@ -532,6 +545,16 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	routeIfaceHandoff := matched && set != nil && !routeTProxy && set.RoutingHandsOffPackets()
 	foreignEgress := matched && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
 	routeHandsOff := routeTProxy || routeIfaceHandoff || foreignEgress
+
+	if cfg.Queue.Mode != "tun" && cfg.IsTCPPort(dport) && !routeHandsOff && !vc.ifaceFiltered {
+		var early *config.SetConfig
+		if matched && !matchedConn && (addressMatched || matchedHint || matchedLearned || matchedPort) {
+			early = set
+		}
+		if w.wssize.rewrite(pkt.raw, pkt.ihl, early, cfg, time.Now()) {
+			vc.modified = pkt.raw
+		}
+	}
 
 	if matched && !routeHandsOff && cfg.IsTCPPort(dport) && duplicatesPackets(set) {
 		log.Tracef("TCP duplicate to %s:%d (%d copies, set: %s)", pkt.dstStr, dport, set.TCP.Duplicate.Count, set.Name)
