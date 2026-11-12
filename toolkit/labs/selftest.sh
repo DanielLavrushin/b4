@@ -51,11 +51,45 @@ cat > "$T/guest.bin" <<EOF
 echo "ran \$*" >> "$T/guest.log"
 echo PASS
 EOF
-printf '#!/bin/sh\nexit 0\n' > "$T/bin/scp"
-printf '#!/bin/sh\nexit 0\n' > "$T/bin/git"
-printf '#!/bin/sh\nexit 0\n' > "$T/bin/ip"
-chmod +x "$T/bin/ssh" "$T/bin/go" "$T/bin/unshare" "$T/bin/mount" "$T/bin/scp" "$T/bin/git" "$T/bin/ip" "$T/guest.bin"
+cat > "$T/bin/qemu-system-x86_64" <<EOF
+#!/bin/sh
+pidfile=""
+port=""
+while [ "\$#" -gt 0 ]; do
+	case "\$1" in
+	-pidfile) pidfile="\$2" ;;
+	*hostfwd=*)
+		port="\${1##*127.0.0.1:}"
+		port="\${port%%-*}"
+		;;
+	esac
+	shift
+done
+if [ -e "$T/qemu-broken" ]; then
+	echo "qemu-system-x86_64: no such machine" >&2
+	exit 1
+fi
+if [ ! -e "$T/port-taken" ]; then
+	echo "\$port" > "$T/port-taken"
+	echo "qemu-system-x86_64: Could not set up host forwarding rule 'tcp:127.0.0.1:\$port-:22'" >&2
+	exit 1
+fi
+echo $$ > "\$pidfile"
+EOF
+for stub in scp git ip qemu-img sha256sum; do
+	printf '#!/bin/sh\nexit 0\n' > "$T/bin/$stub"
+done
+chmod +x "$T"/bin/* "$T/guest.bin"
 : > "$T/b4.json"
+
+. "$LAB_DIR/guests/debian9.env"
+for name in up1 up2; do
+	mkdir -p "$T/home/keys" "$T/home/images" "$T/home/instances/$name"
+	: > "$T/home/keys/id_ed25519"
+	: > "$T/home/images/$(basename "$IMAGE_URL")"
+	: > "$T/home/instances/$name/disk.qcow2"
+	: > "$T/home/instances/$name/provisioned"
+done
 
 PATH="$T/bin:$PATH"
 B4_LAB_HOME="$T/home"
@@ -188,6 +222,17 @@ check "b4-netns.sh: starts the binary after its setup" 0 "PASS" \
 	sh "$LAB_DIR/scripts/b4-netns.sh" "$T/guest.bin" "$T/b4.json"
 stops "b4-netns.sh: stops when the mounts cannot be made private" \
 	"$LAB_DIR/scripts/b4-netns.sh" "$T/guest.bin" "$T/b4.json"
+
+check "up: moves to the next port when another instance took the one it chose" 0 "up1 is up" \
+	lab up debian9 up1
+if [ "$(cat "$T/home/instances/up1/port" 2>/dev/null)" = "$(cat "$T/port-taken" 2>/dev/null)" ]; then
+	failed=$((failed + 1))
+	echo "FAIL  up: the instance's port file names the port that was already taken"
+fi
+
+: > "$T/qemu-broken"
+check "up: stops at once when qemu fails for another reason" 1 "qemu did not start up2" \
+	lab up debian9 up2
 
 [ "$failed" -eq 0 ] || {
 	echo "lab selftest: $failed failed"

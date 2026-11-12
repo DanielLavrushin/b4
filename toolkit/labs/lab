@@ -192,16 +192,25 @@ cmd_up() {
 		make_seed "$dir" "$name"
 	fi
 	port="$(free_port)"
-	echo "$port" > "$dir/port"
 	accel=tcg
 	[ -w /dev/kvm ] && accel=kvm
-	qemu-system-x86_64 -name "b4-lab-$name" -machine "accel=$accel" -cpu max \
+	tries=0
+	until qemu-system-x86_64 -name "b4-lab-$name" -machine "accel=$accel" -cpu max \
 		-smp "${LAB_CPUS:-$GUEST_CPUS}" -m "${LAB_MEM:-$GUEST_MEM}" \
 		-display none -serial "file:$dir/console.log" -pidfile "$dir/pid" -daemonize \
 		-drive "file=$dir/disk.qcow2,if=virtio,format=qcow2" \
 		-drive "file=$dir/seed.iso,media=cdrom,readonly=on" \
 		-netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$port-:22" -device virtio-net-pci,netdev=n0 \
-		-device virtio-rng-pci
+		-device virtio-rng-pci 2> "$dir/qemu.err"; do
+		tries=$((tries + 1))
+		if [ "$tries" -ge 20 ] || ! grep -q 'host forwarding' "$dir/qemu.err"; then
+			cat "$dir/qemu.err" >&2
+			die "qemu did not start $name"
+		fi
+		port=$((port + 1))
+	done
+	cat "$dir/qemu.err" >&2
+	echo "$port" > "$dir/port"
 	echo "lab: $name starting ($accel), waiting for ssh on port $port" >&2
 	tries=0
 	until guest_ssh "$name" true 2>/dev/null; do
