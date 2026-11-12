@@ -34,6 +34,7 @@ case "\$command" in
 	;;
 *) exit 0 ;;
 esac
+[ -e "$T/slow" ] && sleep 1
 cat "$T/remote/\$side.out"
 exit "\$(cat "$T/remote/\$side.status")"
 EOF
@@ -361,22 +362,32 @@ check "ssh: an instance that is not running is not contacted" 1 "old8 is not run
 check "up: a start that never got its seed image makes it" 0 "noseed is up" \
 	lab up debian9 noseed
 
-mkdir -p "$T/home/instances/fake/testing"
-"$T/idle" lab test fake &
-busy=$!
-echo "$busy" >> "$T/pids"
-echo "$busy" > "$T/home/instances/fake/testing/pid"
-check "test: a second run on an instance that is busy with one is refused" 1 "another lab test or ab is running on fake" \
-	lab test fake
-kill "$busy" 2>/dev/null
-wait "$busy" 2>/dev/null
 remote change 0 \
 	'=== RUN   TestNetnsA' \
 	'--- PASS: TestNetnsA (0.10s)' \
 	'PASS'
-check "test: a mark left by a run that is gone does not block the next" 0 "1 pass, 0 fail, 0 skip" \
+: > "$T/slow"
+both=0
+neither=0
+for round in 1 2 3; do
+	lab test fake > "$T/one.out" 2>&1 &
+	one=$!
+	lab test fake > "$T/two.out" 2>&1
+	two=$?
+	wait "$one"
+	one=$?
+	[ "$one" -eq 0 ] && [ "$two" -eq 0 ] && both=$((both + 1))
+	[ "$one" -ne 0 ] && [ "$two" -ne 0 ] && neither=$((neither + 1))
+done
+rm -f "$T/slow"
+if [ "$both" -eq 0 ] && [ "$neither" -eq 0 ] && grep -qF "another lab test or ab is running on fake" "$T/one.out" "$T/two.out"; then
+	echo "ok    test: of two runs started together on one instance, one runs and one is refused"
+else
+	fail "test: two runs started together on one instance: both ran $both time(s) and neither ran $neither time(s) in 3 tries, want 0 and 0"
+	sed 's/^/      /' "$T/one.out" "$T/two.out"
+fi
+check "test: an instance is free again once its run has ended" 0 "1 pass, 0 fail, 0 skip" \
 	lab test fake
-[ ! -e "$T/home/instances/fake/testing" ] || fail "test: the instance is still marked busy after its run"
 
 mkdir -p "$T/home/victim"
 : > "$T/home/victim/keep"

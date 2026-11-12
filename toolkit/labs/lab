@@ -357,20 +357,12 @@ test_guest() {
 	need git
 	[ -f "$LAB_REPO/src/go.mod" ] || die "$LAB_REPO is not a b4 checkout (set B4_LAB_REPO)"
 	mkdir -p "$LAB_HOME/logs"
+	need flock
+	exec 9> "$(inst_dir "$t_name")/test.lock"
+	flock -n 9 || die "another lab test or ab is running on $t_name: wait for it, or start a second instance"
 	t_work="$(mktemp -d)"
-	t_busy="$(inst_dir "$t_name")/testing"
 	trap 'rm -rf "$t_work"' EXIT
 	trap 'exit 130' INT TERM HUP
-	if ! mkdir "$t_busy" 2>/dev/null; then
-		t_owner="$(cat "$t_busy/pid" 2>/dev/null || true)"
-		if [ -n "$t_owner" ] && ps -p "$t_owner" -o args= 2>/dev/null | grep -Eq "lab (test|ab) $t_name( |\$)"; then
-			die "another lab test or ab is running on $t_name (pid $t_owner): wait for it, or start a second instance"
-		fi
-		rm -rf "$t_busy"
-		mkdir "$t_busy" || die "cannot mark $t_name as busy with a test"
-	fi
-	echo $$ > "$t_busy/pid"
-	trap 'rm -rf "$t_work" "$t_busy"' EXIT
 }
 
 test_build() {
