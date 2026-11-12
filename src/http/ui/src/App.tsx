@@ -45,6 +45,7 @@ import { colors, theme } from "@design";
 import { useAuth } from "@context/AuthProvider";
 import { useDocumentTitle } from "@hooks/usePageTitle";
 import { LoginPage } from "@components/auth/LoginPage";
+import { SessionLostDialog } from "@components/auth/SessionLostDialog";
 
 import { Logo } from "@common/Logo";
 import Version from "@components/version/Version";
@@ -199,9 +200,10 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const { resetDomainsBadge } = useStreamControls();
-  const { isAuthenticated, isLoading, authRequired, logout } = useAuth();
+  const { isAuthenticated, isLoading, authRequired, hasSession, logout } =
+    useAuth();
   const { t } = useTranslation();
-  const hubStatus = useHubStatus(!authRequired || isAuthenticated);
+  const hubStatus = useHubStatus(hasSession);
   const hubEnabled = Boolean(hubStatus.data?.enabled);
   const showLogin = authRequired && !isAuthenticated;
   const pageTitle = showLogin
@@ -244,6 +246,7 @@ export default function App() {
       <SnackbarProvider>
         <CssBaseline />
         <DiscoveryNotifier />
+        <SessionLostDialog />
         <Box sx={{ display: "flex", height: "100vh" }}>
           <Drawer
             variant={isCompact ? "temporary" : "persistent"}

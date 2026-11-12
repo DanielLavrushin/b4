@@ -254,6 +254,27 @@ func TestHubImportRejectsOtherFormats(t *testing.T) {
 	expectCode(t, rec, http.StatusBadRequest, "unsupported_format")
 }
 
+func expectHubGateStatus(t *testing.T, rec *httptest.ResponseRecorder, enabled bool) {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a hub that is off or has no key is a state the status reports, expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var st struct {
+		Enabled    *bool             `json:"enabled"`
+		Configured *bool             `json:"configured"`
+		URLs       []string          `json:"urls"`
+		Mirrors    []string          `json:"mirrors"`
+		SetMatches []json.RawMessage `json:"set_matches"`
+	}
+	decodeInto(t, rec, &st)
+	if st.Enabled == nil || *st.Enabled != enabled || st.Configured == nil || *st.Configured {
+		t.Fatalf("expected enabled=%v configured=false, got %s", enabled, rec.Body.String())
+	}
+	if st.URLs == nil || st.Mirrors == nil || st.SetMatches == nil {
+		t.Fatalf("the UI reads urls, mirrors and set_matches as lists, got %s", rec.Body.String())
+	}
+}
+
 func TestHubEndpointsAreGated(t *testing.T) {
 	mux, cfg := hubAPI(t)
 	previous := globalHubService
@@ -263,7 +284,7 @@ func TestHubEndpointsAreGated(t *testing.T) {
 	hubwire.BuiltinHubKeys = nil
 	t.Cleanup(func() { hubwire.BuiltinHubKeys = builtin })
 
-	expectCode(t, getJSON(t, mux, "/api/hub/status"), http.StatusConflict, "hub_disabled")
+	expectHubGateStatus(t, getJSON(t, mux, "/api/hub/status"), false)
 	expectCode(t, postJSON(t, mux, "/api/hub/share", HubShareRequest{SetID: "x"}), http.StatusConflict, "hub_disabled")
 	expectCode(t, getJSON(t, mux, "/api/hub/identity"), http.StatusConflict, "hub_disabled")
 
@@ -272,7 +293,7 @@ func TestHubEndpointsAreGated(t *testing.T) {
 
 	svc := hub.New(func() *config.Config { return cfg }, hub.Options{BuiltinBases: []string{}})
 	SetHubService(svc)
-	expectCode(t, getJSON(t, mux, "/api/hub/status"), http.StatusConflict, "hub_not_configured")
+	expectHubGateStatus(t, getJSON(t, mux, "/api/hub/status"), true)
 	expectCode(t, getJSON(t, mux, "/api/hub/sets?domain=x"), http.StatusConflict, "hub_not_configured")
 	expectCode(t, postJSON(t, mux, "/api/hub/sets/x/vote", HubVoteRequest{Kind: "works"}), http.StatusConflict, "hub_not_configured")
 

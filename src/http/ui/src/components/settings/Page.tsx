@@ -29,6 +29,7 @@ import {
   WarningIcon,
 } from "@b4.icons";
 import { useSnackbar } from "@context/SnackbarProvider";
+import { useAuth } from "@context/AuthProvider";
 import { useAiStatus } from "@context/AiStatusProvider";
 import { useHubInvalidate } from "@hooks/useHub";
 import { usePageTitleDetail } from "@hooks/usePageTitle";
@@ -422,9 +423,12 @@ export function SettingsPage() {
     }
   }, []);
 
+  const { hasSession } = useAuth();
+  const configLoaded = config !== null;
+
   useEffect(() => {
-    loadConfig().catch(() => {});
-  }, [loadConfig]);
+    if (hasSession && !configLoaded) loadConfig().catch(() => {});
+  }, [hasSession, configLoaded, loadConfig]);
 
   const { refresh: refreshAiStatus } = useAiStatus();
   const invalidateHub = useHubInvalidate();

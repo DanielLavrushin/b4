@@ -4,11 +4,25 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Without a login for the web interface, the log warns when b4 refuses a page at another address, and names the address b4 saw and what to change.
+
+### Changed
+
+- When the login session ends while a page is open, for example after b4 restarts, a sign-in window appears over the page and unsaved changes stay in place. [#569](https://github.com/DanielLavrushin/b4/issues/569)
+
 ### Fixed
 
+- Without a login for the web interface, the **Logs**, **Traffic**, **Dashboard** and **Discovery** pages got no live data behind a reverse proxy that drops the port from the `Host` header, such as nginx with `proxy_set_header Host $host`.
 - With the web server's **Bind Address** set to `127.0.0.1` behind a reverse proxy such as nginx, AI apps could not connect over **MCP**: every request was refused with `invalid Host header`, even with a valid token. [#566](https://github.com/DanielLavrushin/b4/issues/566)
+- After signing in, the **Ask AI to explain this setting** buttons were missing until the page was reloaded, and the sign-in page kept calling b4 in the background, which filled the browser console with errors. [#569](https://github.com/DanielLavrushin/b4/issues/569)
 - When another service on the router removed the routing rule of a proxy set or **Telegram over WebSocket**, the set passed no traffic until b4 restarted: devices' connections hung and the router's own went out directly.
 - While b4 rebuilt its routing rules, as after the router's firewall was rewritten or a set's routing was changed, a connection opened at that moment could miss a proxy set: a device's stalled, and the router's own, such as one through b4's SOCKS5 server, went out directly.
+
+### Security
+
+- Signing out did not stop the live logs and traffic already streaming to other tabs or apps of that session: they kept arriving until b4 restarted. [#569](https://github.com/DanielLavrushin/b4/issues/569)
 
 ## [1.90.1] - 2026-11-10
 
