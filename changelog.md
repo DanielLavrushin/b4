@@ -6,6 +6,7 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
+- A set can ask more than one DNS resolver: the **Resolvers** field on its **DNS & Routing** tab holds up to eight, asked in order when one fails or is slow, and replaces the resolver type switch and its two fields. ([#551](https://github.com/DanielLavrushin/b4/pull/551), thanks [@asovetov](https://github.com/asovetov))
 - Without a login for the web interface, the log warns when b4 refuses a page at another address, and names the address b4 saw and what to change.
 
 ### Changed
@@ -31,7 +32,6 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
-- A set can ask more than one DNS resolver: **More resolvers** on its **DNS & Routing** tab takes up to eight in total, asked in order when one fails or is slow. ([#551](https://github.com/DanielLavrushin/b4/pull/551), thanks [@asovetov](https://github.com/asovetov))
 - The log names the set and the device when a **TCP Timestamp** fake goes out without its timestamp, as from a Windows PC by default or toward a server that refuses timestamps. [#554](https://github.com/DanielLavrushin/b4/issues/554)
 - With **Skip IPTables/NFTables Setup** on, the log warns when the router's connection tracking would drop **TCP Check** fakes. [#554](https://github.com/DanielLavrushin/b4/issues/554)
 - When **Discovery** finishes while b4 is in the background, the tab title marks it, and over HTTPS **Notify me** on the **Discovery** page adds a browser notification with how many sites got a strategy. [#544](https://github.com/DanielLavrushin/b4/issues/544)
