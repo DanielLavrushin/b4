@@ -410,43 +410,9 @@ func (c *Config) Validate() error {
 			return v.result()
 		}
 
-		for i, raw := range set.DNS.Upstreams {
-			if strings.TrimSpace(raw) == "" {
-				continue
-			}
-			norm, ok := NormalizeUpstream(raw)
-			if !ok {
-				v.addf(fmt.Sprintf("sets[%d].dns.upstreams", setIdx), "invalid_dns_upstream",
-					map[string]any{"set": set.Name, "index": i + 1},
-					"set %q: DNS upstream entry %d is neither an address nor an https:// URL", set.Name, i+1)
-				return v.result()
-			}
-			if scheme, _, isURL := SplitUpstreamURL(norm); isURL && !strings.EqualFold(scheme, "https://") {
-				v.addf(fmt.Sprintf("sets[%d].dns.upstreams", setIdx), "invalid_dns_upstream",
-					map[string]any{"set": set.Name, "index": i + 1},
-					"set %q: DNS upstream entry %d must use https://, a plain http:// query travels unencrypted", set.Name, i+1)
-				return v.result()
-			}
+		if set.DNS.Enabled && !normalizeSetUpstreams(v, setIdx, set) {
+			return v.result()
 		}
-		listLimit := MaxDNSUpstreams
-		var primary []string
-		for _, candidate := range []string{set.DNS.DoHURL, set.DNS.TargetDNS} {
-			if strings.TrimSpace(candidate) == "" {
-				continue
-			}
-			if norm, ok := NormalizeUpstream(candidate); ok {
-				listLimit--
-				primary = append(primary, norm)
-			}
-			break
-		}
-		set.DNS.NormalizeUpstreamsLimit(listLimit, primary, func(value string) {
-			label := UpstreamLabel(value)
-			if label == "" {
-				label = "one entry"
-			}
-			log.Warnf("Set '%s': dropping DNS upstream %s, the set already asks %d resolvers in total", set.Name, label, MaxDNSUpstreams)
-		})
 
 		if len(set.Fragmentation.SeqOverlapPattern) > 0 {
 			set.Fragmentation.SeqOverlapBytes = make([]byte, len(set.Fragmentation.SeqOverlapPattern))
