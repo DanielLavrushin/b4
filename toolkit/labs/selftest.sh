@@ -103,6 +103,7 @@ if [ ! -e "\$seed" ]; then
 	echo "qemu-system-x86_64: Could not open '\$seed': No such file or directory" >&2
 	exit 1
 fi
+echo "\$name" >> "$T/qemu.starts"
 if [ ! -e "$T/port-taken" ]; then
 	echo "\$port" > "$T/port-taken"
 	echo "qemu-system-x86_64: Could not set up host forwarding rule 'tcp:127.0.0.1:\$port-:22'" >&2
@@ -132,6 +133,16 @@ else
 	echo "0000  \$1"
 fi
 EOF
+cat > "$T/bin/ssh-keygen" <<'EOF'
+#!/bin/sh
+while [ "$#" -gt 0 ]; do
+	[ "$1" = -f ] && key="$2"
+	shift
+done
+sleep 1
+echo "made by $$" > "$key"
+echo "ssh-ed25519 made-by-$$" > "$key.pub"
+EOF
 cat > "$T/bin/xorriso" <<'EOF'
 #!/bin/sh
 while [ "$#" -gt 0 ]; do
@@ -159,7 +170,7 @@ echo $! > "$T/home/instances/fake/pid"
 echo $! >> "$T/pids"
 
 mkdir -p "$T/home/keys" "$T/home/images"
-: > "$T/home/keys/id_ed25519"
+echo selftest > "$T/home/keys/id_ed25519"
 echo "ssh-ed25519 selftest" > "$T/home/keys/id_ed25519.pub"
 : > "$T/home/images/$(basename "$IMAGE_URL")"
 for name in up1 up2 up3 dl1 dl2 noseed; do
@@ -423,6 +434,49 @@ else
 	fail "up: two first starts at once ended with exit status $first and $second, want 0 and 0"
 	sed 's/^/      /' "$T/dl1.out" "$T/dl2.out"
 fi
+
+seeded() {
+	key="$(cat "$1/keys/id_ed25519.pub" 2>/dev/null)"
+	[ -n "$key" ] && grep -qF "$key" "$1/instances/$2/seed/user-data" 2>/dev/null
+}
+
+fresh="$T/fresh"
+mkdir -p "$fresh/images"
+: > "$fresh/images/$(basename "$IMAGE_URL")"
+env B4_LAB_HOME="$fresh" sh "$LAB_DIR/lab" up debian9 first > "$T/one.out" 2>&1 &
+one=$!
+env B4_LAB_HOME="$fresh" sh "$LAB_DIR/lab" up debian9 second > "$T/two.out" 2>&1
+two=$?
+wait "$one"
+one=$?
+if [ "$one" -eq 0 ] && [ "$two" -eq 0 ] && seeded "$fresh" first && seeded "$fresh" second; then
+	echo "ok    up: two very first starts at once end with one key, and both instances carry it"
+else
+	fail "up: two very first starts at once ended with exit status $one and $two, and an instance without the lab's key"
+	sed 's/^/      /' "$T/one.out" "$T/two.out"
+fi
+
+env B4_LAB_HOME="$fresh" sh "$LAB_DIR/lab" up debian9 twin > "$T/one.out" 2>&1 &
+one=$!
+env B4_LAB_HOME="$fresh" sh "$LAB_DIR/lab" up debian9 twin > "$T/two.out" 2>&1
+two=$?
+wait "$one"
+one=$?
+starts="$(grep -c '^b4-lab-twin$' "$T/qemu.starts")"
+if [ "$one" -eq 0 ] && [ "$two" -eq 0 ] && [ "$starts" -eq 1 ]; then
+	echo "ok    up: two starts of the same instance at once start one qemu"
+else
+	fail "up: two starts of the same instance at once ended with exit status $one and $two and started qemu $starts time(s), want 0, 0 and 1"
+	sed 's/^/      /' "$T/one.out" "$T/two.out"
+fi
+
+half="$T/half"
+mkdir -p "$half/images" "$half/keys"
+: > "$half/images/$(basename "$IMAGE_URL")"
+echo half-made > "$half/keys/id_ed25519"
+check "up: a key left half made by an interrupted first start is made again" 0 "third is up" \
+	env B4_LAB_HOME="$half" sh "$LAB_DIR/lab" up debian9 third
+seeded "$half" third || fail "up: the instance was seeded without the lab's key"
 
 : > "$T/qemu-broken"
 check "up: stops at once when qemu fails for another reason" 1 "qemu did not start up2" \

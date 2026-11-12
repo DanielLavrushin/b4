@@ -100,12 +100,22 @@ guest_ssh() {
 	ssh -i "$KEY" $SSH_OPTS -p "$(inst_port "$name")" "$user@127.0.0.1" "$@"
 }
 
+key_ready() {
+	[ -s "$KEY" ] && [ -s "$KEY.pub" ]
+}
+
 ensure_key() {
-	[ -f "$KEY" ] && return 0
+	key_ready && return 0
 	need ssh-keygen
 	mkdir -p "$(dirname "$KEY")"
 	chmod 700 "$(dirname "$KEY")"
-	ssh-keygen -q -t ed25519 -N "" -C "b4-lab" -f "$KEY"
+	(
+		flock 7
+		key_ready && exit 0
+		rm -f "$KEY" "$KEY.pub"
+		ssh-keygen -q -t ed25519 -N "" -C "b4-lab" -f "$KEY"
+	) 7> "$(dirname "$KEY")/lock"
+	key_ready || die "the lab's ssh key could not be made in $(dirname "$KEY")"
 }
 
 fetch_image() {
@@ -141,6 +151,7 @@ make_seed() {
 	dir="$1"
 	name="$2"
 	need xorriso
+	key_ready || die "the lab's ssh key is missing, so $name would get no key to let the lab in"
 	rm -rf "$dir/seed"
 	case "$GUEST_SEED" in
 	nocloud)
@@ -198,8 +209,12 @@ cmd_up() {
 	need qemu-img
 	need ssh
 	need sha256sum
+	need flock
 	load_guest "$guest"
 	dir="$(inst_dir "$name")"
+	mkdir -p "$dir"
+	exec 8> "$dir/up.lock"
+	flock 8
 	if [ -f "$dir/guest" ] && [ "$(cat "$dir/guest")" != "$guest" ]; then
 		die "$name was made from the guest $(cat "$dir/guest"), not $guest: start it with 'lab up $(cat "$dir/guest") $name', or destroy it first"
 	fi
@@ -245,7 +260,7 @@ start_guest() {
 		-drive "file=$dir/disk.qcow2,if=virtio,format=qcow2" \
 		-drive "file=$dir/seed.iso,media=cdrom,readonly=on" \
 		-netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$port-:22" -device virtio-net-pci,netdev=n0 \
-		-device virtio-rng-pci 2> "$dir/qemu.err"; do
+		-device virtio-rng-pci 2> "$dir/qemu.err" 8>&-; do
 		tries=$((tries + 1))
 		if [ "$tries" -ge 20 ] || ! grep -q 'host forwarding' "$dir/qemu.err"; then
 			cat "$dir/qemu.err" >&2

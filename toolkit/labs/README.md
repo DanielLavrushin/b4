@@ -15,8 +15,8 @@ Where each kind of test belongs:
 
 ## Requirements
 
-`qemu-system-x86`, `qemu-utils`, `xorriso`, `openssh-client`, `curl`, and for `lab test` and
-`lab ab` also `go`, `git` and `flock` (util-linux). With access to `/dev/kvm` a guest runs at close to native speed;
+`qemu-system-x86`, `qemu-utils`, `xorriso`, `openssh-client`, `curl`, `flock` (util-linux), and
+for `lab test` and `lab ab` also `go` and `git`. With access to `/dev/kvm` a guest runs at close to native speed;
 without it QEMU falls back to emulation and is much slower.
 
 ## Quick start
