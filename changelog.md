@@ -18,6 +18,7 @@ All notable changes to b4 are recorded in this file.
 - With the web server's **Bind Address** set to `127.0.0.1` behind a reverse proxy such as nginx, AI apps could not connect over **MCP**: every request was refused with `invalid Host header`, even with a valid token. [#566](https://github.com/DanielLavrushin/b4/issues/566)
 - After signing in, the **Ask AI to explain this setting** buttons were missing until the page was reloaded, and the sign-in page kept calling b4 in the background, which filled the browser console with errors. [#569](https://github.com/DanielLavrushin/b4/issues/569)
 - With **Try strategies that worked before** on, **Discovery** began every run with remembered strategies that no longer worked, because a pass with a different fake was counted for them, and the runs took longer. [#510](https://github.com/DanielLavrushin/b4/issues/510)
+- **Open** in a **Discovery** notification could lead to an empty form or to another search, such as one the watchdog started afterwards, instead of the run it announced. [#552](https://github.com/DanielLavrushin/b4/issues/552)
 
 ### Security
 

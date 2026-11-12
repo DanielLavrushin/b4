@@ -2826,6 +2826,12 @@
       "watchdog": "The watchdog started this search to heal a set. It cannot be stopped from here.",
       "mcp": "This search was started through the MCP server."
     },
+    "otherRun": {
+      "web": "Another search is running.",
+      "watchdog": "The watchdog is running a search to heal a set.",
+      "mcp": "A search started through the MCP server is running.",
+      "show": "Show it"
+    },
     "run": {
       "title_one": "Searching for {{count}} site",
       "title_other": "Searching for {{count}} sites",
