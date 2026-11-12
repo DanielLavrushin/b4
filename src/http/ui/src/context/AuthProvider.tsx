@@ -16,6 +16,7 @@ interface AuthContextType {
   isLoading: boolean;
   authRequired: boolean;
   hasSession: boolean;
+  sessionLost: boolean;
   login: (username: string, password: string) => Promise<string | null>;
   logout: () => void;
 }
@@ -31,6 +32,7 @@ export function AuthProvider({
   const [isLoading, setIsLoading] = useState(true);
   const [authRequired, setAuthRequired] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [sessionLost, setSessionLost] = useState(false);
 
   // Check auth status on mount
   useEffect(() => {
@@ -83,6 +85,7 @@ export function AuthProvider({
         localStorage.setItem(TOKEN_KEY, data.token);
         setToken(data.token);
         setIsAuthenticated(true);
+        setSessionLost(false);
         return null;
       } catch {
         return "Invalid username or password";
@@ -102,9 +105,44 @@ export function AuthProvider({
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setIsAuthenticated(false);
+    setSessionLost(false);
   }, []);
 
-  const hasSession = !isLoading && (!authRequired || isAuthenticated);
+  const signedIn = authRequired && isAuthenticated;
+
+  useEffect(() => {
+    if (!signedIn || sessionLost) return;
+    let active = true;
+    const probe = () => {
+      void sessionRejected().then((rejected) => {
+        if (rejected && active) setSessionLost(true);
+      });
+    };
+    sessionProbes.add(probe);
+    return () => {
+      active = false;
+      sessionProbes.delete(probe);
+    };
+  }, [signedIn, sessionLost]);
+
+  useEffect(() => {
+    if (!sessionLost) return;
+    let active = true;
+    const unwatch = watchAuthToken(() => {
+      void sessionRejected().then((rejected) => {
+        if (rejected || !active) return;
+        setToken(getAuthToken());
+        setSessionLost(false);
+      });
+    });
+    return () => {
+      active = false;
+      unwatch();
+    };
+  }, [sessionLost]);
+
+  const hasSession =
+    !isLoading && (!authRequired || (isAuthenticated && !sessionLost));
 
   const value = useMemo(
     () => ({
@@ -113,10 +151,20 @@ export function AuthProvider({
       isLoading,
       authRequired,
       hasSession,
+      sessionLost,
       login,
       logout,
     }),
-    [token, isAuthenticated, isLoading, authRequired, hasSession, login, logout],
+    [
+      token,
+      isAuthenticated,
+      isLoading,
+      authRequired,
+      hasSession,
+      sessionLost,
+      login,
+      logout,
+    ],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;
@@ -134,7 +182,13 @@ export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
-export function watchAuthToken(onChange: () => void): () => void {
+const sessionProbes = new Set<() => void>();
+
+export function verifySession(): void {
+  for (const probe of sessionProbes) probe();
+}
+
+function watchAuthToken(onChange: () => void): () => void {
   let last = getAuthToken();
   const handler = () => {
     const current = getAuthToken();
@@ -165,7 +219,7 @@ async function askSessionRejected(): Promise<boolean> {
 
 let sessionCheck: Promise<boolean> | null = null;
 
-export function sessionRejected(): Promise<boolean> {
+function sessionRejected(): Promise<boolean> {
   sessionCheck ??= askSessionRejected().finally(() => {
     sessionCheck = null;
   });

@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { wsUrl } from "@utils";
-import { sessionRejected, useAuth, watchAuthToken } from "./AuthProvider";
+import { useAuth, verifySession } from "./AuthProvider";
 import { ParsedLog, parseSniLogLine } from "@hooks/useDomainActions";
 
 const MAX_BUFFER_SIZE = 2000;
@@ -243,7 +243,7 @@ export const WebSocketProvider = ({
   children: React.ReactNode;
 }) => {
   const [store] = useState(() => new StreamStore());
-  const { hasSession, authRequired } = useAuth();
+  const { hasSession } = useAuth();
   const [pauseLogs, setPauseLogs] = useState(false);
   const [pauseDomains, setPauseDomains] = useState(false);
   const [showAll, setShowAll] = useState(() => {
@@ -281,24 +281,12 @@ export const WebSocketProvider = ({
       path: string,
       sink: (line: string) => void,
       label: string,
-    ): { close: () => void; resume: () => void } => {
+    ): { close: () => void } => {
       let ws: WebSocket | null = null;
       let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-      let halted = false;
-
-      const reconnect = async (opened: boolean) => {
-        if (!opened && authRequired && (await sessionRejected())) {
-          halted = !isCleaningUp;
-          return;
-        }
-        if (isCleaningUp) return;
-        console.log(`${label} WebSocket disconnected, reconnecting in 3s...`);
-        reconnectTimeout = setTimeout(connect, 3000);
-      };
 
       const connect = () => {
         if (isCleaningUp) return;
-        halted = false;
         let opened = false;
         ws = new WebSocket(wsUrl(path));
         ws.onopen = () => {
@@ -312,7 +300,10 @@ export const WebSocketProvider = ({
         ws.onerror = (error) =>
           console.error(`${label} WebSocket error:`, error);
         ws.onclose = () => {
-          if (!isCleaningUp) void reconnect(opened);
+          if (isCleaningUp) return;
+          if (!opened) verifySession();
+          console.log(`${label} WebSocket disconnected, reconnecting in 3s...`);
+          reconnectTimeout = setTimeout(connect, 3000);
         };
       };
 
@@ -323,9 +314,6 @@ export const WebSocketProvider = ({
           if (reconnectTimeout) clearTimeout(reconnectTimeout);
           if (ws) ws.close();
         },
-        resume: () => {
-          if (halted) connect();
-        },
       };
     };
 
@@ -335,21 +323,16 @@ export const WebSocketProvider = ({
       store.queueConnLine,
       "Connections",
     );
-    const unwatchToken = watchAuthToken(() => {
-      logsStream.resume();
-      connStream.resume();
-    });
     document.addEventListener("visibilitychange", store.publish);
 
     return () => {
       isCleaningUp = true;
       if (batchTimeout) clearTimeout(batchTimeout);
-      unwatchToken();
       document.removeEventListener("visibilitychange", store.publish);
       logsStream.close();
       connStream.close();
     };
-  }, [store, hasSession, authRequired]);
+  }, [store, hasSession]);
 
   const controls = useMemo(
     () => ({

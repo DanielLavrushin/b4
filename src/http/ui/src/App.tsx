@@ -45,6 +45,7 @@ import { colors, theme } from "@design";
 import { useAuth } from "@context/AuthProvider";
 import { useDocumentTitle } from "@hooks/usePageTitle";
 import { LoginPage } from "@components/auth/LoginPage";
+import { SessionLostDialog } from "@components/auth/SessionLostDialog";
 
 import { Logo } from "@common/Logo";
 import Version from "@components/version/Version";
@@ -245,6 +246,7 @@ export default function App() {
       <SnackbarProvider>
         <CssBaseline />
         <DiscoveryNotifier />
+        <SessionLostDialog />
         <Box sx={{ display: "flex", height: "100vh" }}>
           <Drawer
             variant={isCompact ? "temporary" : "persistent"}

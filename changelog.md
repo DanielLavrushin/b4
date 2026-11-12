@@ -4,10 +4,18 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- When the login session ends while a page is open, for example after b4 restarts, a sign-in window appears over the page and unsaved changes stay in place. [#569](https://github.com/DanielLavrushin/b4/issues/569)
+
 ### Fixed
 
 - With the web server's **Bind Address** set to `127.0.0.1` behind a reverse proxy such as nginx, AI apps could not connect over **MCP**: every request was refused with `invalid Host header`, even with a valid token. [#566](https://github.com/DanielLavrushin/b4/issues/566)
-- With a login set, the sign-in page kept calling b4 in the background and filled the browser console with errors, and after signing in the **Ask AI to explain this setting** buttons were missing until the page was reloaded. [#569](https://github.com/DanielLavrushin/b4/issues/569)
+- The browser console filled with errors on the sign-in page, which kept calling b4 in the background, and on every page while the **Community Hub** was off; after signing in, the **Ask AI to explain this setting** buttons were missing until a reload. [#569](https://github.com/DanielLavrushin/b4/issues/569)
+
+### Security
+
+- Signing out did not stop the live logs and traffic already streaming to other tabs or apps of that session: they kept arriving until b4 restarted. [#569](https://github.com/DanielLavrushin/b4/issues/569)
 
 ## [1.90.1] - 2026-11-10
 
