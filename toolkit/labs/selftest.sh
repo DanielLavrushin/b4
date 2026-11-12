@@ -45,11 +45,29 @@ for arg in "\$@"; do
 	printf '%s\n' "\$arg"
 done > "$T/scp.args"
 EOF
-cat > "$T/bin/go" <<'EOF'
+cat > "$T/bin/go" <<EOF
 #!/bin/sh
-while [ "$#" -gt 0 ]; do
-	[ "$1" = -o ] && : > "$2"
+out=""
+kind=plain
+while [ "\$#" -gt 0 ]; do
+	case "\$1" in
+	-o) out="\$2" ;;
+	-overlay)
+		cp "\$2" "$T/overlay.seen"
+		[ -e "$T/overlay-ignored" ] || kind=overlaid
+		;;
+	esac
 	shift
+done
+echo "\$kind" > "\$out"
+EOF
+cat > "$T/bin/git" <<EOF
+#!/bin/sh
+for arg in "\$@"; do
+	case "\$arg" in
+	diff) [ -e "$T/git-changed" ] && printf 'M\tsrc/x.go\n' ;;
+	show) echo "package x" ;;
+	esac
 done
 exit 0
 EOF
@@ -151,7 +169,7 @@ while [ "$#" -gt 0 ]; do
 done
 exit 0
 EOF
-for stub in git ip qemu-img; do
+for stub in ip qemu-img; do
 	printf '#!/bin/sh\nexit 0\n' > "$T/bin/$stub"
 done
 chmod +x "$T"/bin/* "$T/guest.bin" "$T/idle"
@@ -307,6 +325,25 @@ remote change 0 \
 	'--- PASS: TestNetnsA (0.10s)' \
 	'PASS'
 check "ab: the base's run cut off" 2 "the run of origin/main did not finish" lab ab fake
+
+remote base 0 \
+	'=== RUN   TestNetnsA' \
+	'--- PASS: TestNetnsA (0.10s)' \
+	'PASS'
+mkdir -p "$T/repo/src"
+: > "$T/repo/src/go.mod"
+: > "$T/git-changed"
+B4_LAB_REPO=repo
+export B4_LAB_REPO
+cd "$T" || exit 1
+check "ab: a checkout given by a relative path is compared with its base" 0 "failing on both: 0" lab ab fake
+cd "$LAB_DIR" || exit 1
+unset B4_LAB_REPO
+grep -qF "\"$T/repo/src/x.go\"" "$T/overlay.seen" 2>/dev/null ||
+	fail "ab: the base's files were named by a path go does not resolve, so the base build was the checkout's own"
+: > "$T/overlay-ignored"
+check "ab: a base build that came out as the checkout's own is not compared" 2 "nothing to compare" lab ab fake
+rm -f "$T/overlay-ignored" "$T/git-changed"
 
 : > "$T/guest.log"
 check "netns-test.sh: starts the test binary after its setup" 0 "PASS" \

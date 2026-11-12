@@ -369,6 +369,7 @@ test_guest() {
 	need go
 	need git
 	[ -f "$LAB_REPO/src/go.mod" ] || die "$LAB_REPO is not a b4 checkout (set B4_LAB_REPO)"
+	LAB_REPO="$(cd "$LAB_REPO" && pwd)"
 	mkdir -p "$LAB_HOME/logs"
 	need flock
 	exec 9> "$(inst_dir "$t_name")/test.lock"
@@ -496,6 +497,10 @@ cmd_ab() {
 		rm -rf "$t_work"
 		die "the tests of this checkout do not build against the code of $t_base"
 	}
+	if [ -s "$t_work/changed" ] && cmp -s "$t_work/change.test" "$t_work/base.test"; then
+		echo "lab: the build with the files of $t_base is byte for byte the checkout's own, so $t_base was not built and there is nothing to compare" >&2
+		exit 2
+	fi
 	t_sum="$(test_run "$t_work/change.test" "$t_pattern" "$t_change")"
 	t_basesum="$(test_run "$t_work/base.test" "$t_pattern" "$t_baselog")"
 	rm -rf "$t_work"
