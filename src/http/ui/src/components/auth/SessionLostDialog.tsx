@@ -9,6 +9,8 @@ import { LoginForm } from "./LoginForm";
 
 const stayOpen = () => {};
 
+const ABOVE_PAGE_BACKDROPS = 10000;
+
 const resumeAfterSignIn = () => {
   retryMetrics();
   void apiClient.invalidateQueries();
@@ -25,6 +27,7 @@ export function SessionLostDialog() {
       title={t("login.sessionExpired")}
       subtitle={t("login.sessionExpiredHint")}
       icon={<LockIcon />}
+      sx={{ zIndex: ABOVE_PAGE_BACKDROPS }}
     >
       <Box sx={{ pt: 1, width: { sm: 340 } }}>
         {sessionLost && <LoginForm onSignedIn={resumeAfterSignIn} />}
