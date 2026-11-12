@@ -77,6 +77,7 @@ cat > "$T/bin/qemu-system-x86_64" <<EOF
 name=""
 pidfile=""
 port=""
+seed=""
 while [ "\$#" -gt 0 ]; do
 	case "\$1" in
 	-name) name="\$2" ;;
@@ -85,11 +86,19 @@ while [ "\$#" -gt 0 ]; do
 		port="\${1##*127.0.0.1:}"
 		port="\${port%%-*}"
 		;;
+	file=*seed.iso*)
+		seed="\${1#file=}"
+		seed="\${seed%%,*}"
+		;;
 	esac
 	shift
 done
 if [ -e "$T/qemu-broken" ]; then
 	echo "qemu-system-x86_64: no such machine" >&2
+	exit 1
+fi
+if [ ! -e "\$seed" ]; then
+	echo "qemu-system-x86_64: Could not open '\$seed': No such file or directory" >&2
 	exit 1
 fi
 if [ ! -e "$T/port-taken" ]; then
@@ -121,6 +130,14 @@ else
 	echo "0000  \$1"
 fi
 EOF
+cat > "$T/bin/xorriso" <<'EOF'
+#!/bin/sh
+while [ "$#" -gt 0 ]; do
+	[ "$1" = -output ] && : > "$2"
+	shift
+done
+exit 0
+EOF
 for stub in git ip qemu-img; do
 	printf '#!/bin/sh\nexit 0\n' > "$T/bin/$stub"
 done
@@ -141,12 +158,13 @@ echo $! >> "$T/pids"
 
 mkdir -p "$T/home/keys" "$T/home/images"
 : > "$T/home/keys/id_ed25519"
+echo "ssh-ed25519 selftest" > "$T/home/keys/id_ed25519.pub"
 : > "$T/home/images/$(basename "$IMAGE_URL")"
-for name in up1 up2 up3 dl1 dl2; do
+for name in up1 up2 up3 dl1 dl2 noseed; do
 	mkdir -p "$T/home/instances/$name"
 	: > "$T/home/instances/$name/disk.qcow2"
 done
-for name in up1 up2 dl1 dl2; do
+for name in up1 up2 dl1 dl2 noseed; do
 	: > "$T/home/instances/$name/provisioned"
 done
 
@@ -336,6 +354,29 @@ check "up: an instance made from one guest is not started as another" 1 "old8 wa
 	lab up debian9 old8
 [ "$(cat "$T/home/instances/old8/guest")" = debian8 ] ||
 	fail "up: the instance made from debian8 is now labelled $(cat "$T/home/instances/old8/guest")"
+
+check "ssh: an instance that is not running is not contacted" 1 "old8 is not running" \
+	lab ssh old8 true
+
+check "up: a start that never got its seed image makes it" 0 "noseed is up" \
+	lab up debian9 noseed
+
+mkdir -p "$T/home/instances/fake/testing"
+"$T/idle" lab test fake &
+busy=$!
+echo "$busy" >> "$T/pids"
+echo "$busy" > "$T/home/instances/fake/testing/pid"
+check "test: a second run on an instance that is busy with one is refused" 1 "another lab test or ab is running on fake" \
+	lab test fake
+kill "$busy" 2>/dev/null
+wait "$busy" 2>/dev/null
+remote change 0 \
+	'=== RUN   TestNetnsA' \
+	'--- PASS: TestNetnsA (0.10s)' \
+	'PASS'
+check "test: a mark left by a run that is gone does not block the next" 0 "1 pass, 0 fail, 0 skip" \
+	lab test fake
+[ ! -e "$T/home/instances/fake/testing" ] || fail "test: the instance is still marked busy after its run"
 
 mkdir -p "$T/home/victim"
 : > "$T/home/victim/keep"

@@ -90,9 +90,14 @@ ssh_opts() {
 	echo "-i $KEY -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=15"
 }
 
+running() {
+	inst_pid "$1" >/dev/null || die "$1 is not running (lab up <guest> $1)"
+}
+
 guest_ssh() {
 	name="$1"
 	shift
+	running "$name"
 	user="$(cat "$(inst_dir "$name")/user")"
 	ssh $(ssh_opts) -p "$(inst_port "$name")" "$user@127.0.0.1" "$@"
 }
@@ -230,10 +235,8 @@ start_guest() {
 	mkdir -p "$dir"
 	echo "$GUEST_USER" > "$dir/user"
 	echo "$guest" > "$dir/guest"
-	if [ ! -f "$dir/disk.qcow2" ]; then
-		qemu-img create -q -f qcow2 -b "$image" -F qcow2 "$dir/disk.qcow2" "$GUEST_DISK"
-		make_seed "$dir" "$name"
-	fi
+	[ -f "$dir/disk.qcow2" ] || qemu-img create -q -f qcow2 -b "$image" -F qcow2 "$dir/disk.qcow2" "$GUEST_DISK"
+	[ -f "$dir/seed.iso" ] || make_seed "$dir" "$name"
 	port="$(free_port)"
 	accel=tcg
 	[ -w /dev/kvm ] && accel=kvm
@@ -296,6 +299,7 @@ cmd_pull() {
 	name="${1:-}"
 	[ "$#" -eq 3 ] || die "usage: lab pull <name> <path> <dir>"
 	named "$name"
+	running "$name"
 	user="$(cat "$(inst_dir "$name")/user")"
 	mkdir -p "$3"
 	scp -q $(ssh_opts) -P "$(inst_port "$name")" "$user@127.0.0.1:$2" "$3/"
@@ -347,12 +351,26 @@ cmd_status() {
 test_guest() {
 	t_name="$1"
 	named "$t_name"
-	inst_pid "$t_name" >/dev/null || die "$t_name is not running (lab up <guest> $t_name)"
+	running "$t_name"
 	load_guest "$(cat "$(inst_dir "$t_name")/guest")"
 	need go
 	need git
 	[ -f "$LAB_REPO/src/go.mod" ] || die "$LAB_REPO is not a b4 checkout (set B4_LAB_REPO)"
 	mkdir -p "$LAB_HOME/logs"
+	t_work="$(mktemp -d)"
+	t_busy="$(inst_dir "$t_name")/testing"
+	trap 'rm -rf "$t_work"' EXIT
+	trap 'exit 130' INT TERM HUP
+	if ! mkdir "$t_busy" 2>/dev/null; then
+		t_owner="$(cat "$t_busy/pid" 2>/dev/null || true)"
+		if [ -n "$t_owner" ] && ps -p "$t_owner" -o args= 2>/dev/null | grep -Eq "lab (test|ab) $t_name( |\$)"; then
+			die "another lab test or ab is running on $t_name (pid $t_owner): wait for it, or start a second instance"
+		fi
+		rm -rf "$t_busy"
+		mkdir "$t_busy" || die "cannot mark $t_name as busy with a test"
+	fi
+	echo $$ > "$t_busy/pid"
+	trap 'rm -rf "$t_work" "$t_busy"' EXIT
 }
 
 test_build() {
@@ -407,7 +425,6 @@ cmd_test() {
 	[ -n "${1:-}" ] || die "usage: lab test <name> [pattern]"
 	test_guest "$1"
 	t_pattern="${2:-TestNetns}"
-	t_work="$(mktemp -d)"
 	t_change="$LAB_HOME/logs/$t_name-change.log"
 	echo "lab: building ${LAB_PKG:-./tables/} from $LAB_REPO" >&2
 	test_build "$t_work/change.test" || {
@@ -462,7 +479,6 @@ cmd_ab() {
 	test_guest "$1"
 	t_pattern="${2:-TestNetns}"
 	t_base="${LAB_BASE:-origin/main}"
-	t_work="$(mktemp -d)"
 	t_change="$LAB_HOME/logs/$t_name-change.log"
 	t_baselog="$LAB_HOME/logs/$t_name-base.log"
 	ab_overlay "$t_base" "$t_work"

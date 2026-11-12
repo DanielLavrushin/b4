@@ -69,6 +69,10 @@ fails only with the checkout.
 A run that does not finish (the test binary crashes, the connection to the guest drops) has
 partial counts. Both commands say so and exit with status 2, and `ab` compares nothing.
 
+One `test` or `ab` runs on an instance at a time, because they share the instance's logs and
+the binary's place in the guest. A second one is refused: start a second instance for it
+(`lab up debian8 second`).
+
 ```sh
 toolkit/labs/lab ab debian8 'TestNetnsAPolicyRule|TestNetnsTheStaleSweep'
 LAB_PKG=./nfq/ toolkit/labs/lab test debian9 TestNetnsAnOverlapStaysOff
