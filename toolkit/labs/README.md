@@ -131,6 +131,13 @@ GUEST_PROVISION=<name>.provision.sh
 - `GUEST_PROVISION` runs once as root after the first boot. `debian-archive.provision.sh`
   points an end-of-life Debian at `archive.debian.org` and installs what b4's tests use.
 
+## Changing the lab
+
+`sh toolkit/labs/selftest.sh` runs `lab` and the two namespace scripts against stubbed `ssh`,
+`qemu` and `mount`, so it needs no guest and takes a second. It covers what a real run cannot
+show on demand: a run that dies midway, a failing subtest, a setup step that fails, a port
+taken between the check and the start. Run it after any change here; `b4-check` lists it.
+
 ## Limits
 
 - Guests reach the internet through QEMU's user networking: outbound only, TCP and UDP, no
