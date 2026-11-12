@@ -3917,7 +3917,9 @@
     "username": "Имя пользователя",
     "password": "Пароль",
     "signingIn": "Вход...",
-    "signIn": "Войти"
+    "signIn": "Войти",
+    "sessionExpired": "Сессия истекла",
+    "sessionExpiredHint": "Войдите снова, чтобы продолжить с того же места"
   },
   "update": {
     "title": "Управление версиями",

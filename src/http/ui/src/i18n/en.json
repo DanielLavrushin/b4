@@ -3787,7 +3787,9 @@
     "username": "Username",
     "password": "Password",
     "signingIn": "Signing in...",
-    "signIn": "Sign In"
+    "signIn": "Sign In",
+    "sessionExpired": "Session expired",
+    "sessionExpiredHint": "Sign in again to continue where you left off"
   },
   "update": {
     "title": "Version Management",

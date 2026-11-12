@@ -229,21 +229,6 @@ export interface HubTestResponse {
   bypassed: HubProbeResult;
 }
 
-export function hubGateStatus(enabled: boolean): HubStatus {
-  return {
-    enabled,
-    configured: false,
-    key_id: "",
-    last_sync: "",
-    last_error: "",
-    catalogue: null,
-    urls: [],
-    mirrors: [],
-    network: { asn: "", cc: "" },
-    outbox: 0,
-  };
-}
-
 type PlainObject = Record<string, unknown>;
 
 function isPlainObject(v: unknown): v is PlainObject {
