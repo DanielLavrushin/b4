@@ -196,6 +196,9 @@ func (ds *DiscoverySuite) confirmPreset(presetName string, stored *config.SetCon
 		}
 		wg.Wait()
 	}
+	if ds.canceled() {
+		return passes, false
+	}
 
 	for _, di := range inputs {
 		ds.recordConfirmation(di.Domain, presetName, passes[di.Domain])
