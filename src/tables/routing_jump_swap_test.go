@@ -11,17 +11,36 @@ import (
 type jumpSwapChains struct {
 	rules      map[string][]string
 	writes     []string
+	positional []string
 	unreadable bool
+	intruder   bool
+	intrusions int
 	watch      string
 	gaps       []string
+}
+
+const jumpSwapHeld = "~held"
+
+func jumpSwapTarget(rule string) string {
+	return strings.SplitN(rule, "~", 2)[0]
+}
+
+func jumpSwapRule(args []string) string {
+	rule := args[len(args)-1]
+	for _, a := range args {
+		if a == "-m" {
+			return rule + jumpSwapHeld
+		}
+	}
+	return rule
 }
 
 func (c *jumpSwapChains) key(cmd, chain string) string { return cmd + " " + chain }
 
 func (c *jumpSwapChains) note(cmd, chain string, args []string) {
 	c.writes = append(c.writes, strings.Join(args, " "))
-	for _, target := range c.rules[c.key(cmd, chain)] {
-		if target == c.watch {
+	for _, rule := range c.rules[c.key(cmd, chain)] {
+		if jumpSwapTarget(rule) == c.watch {
 			return
 		}
 	}
@@ -29,6 +48,17 @@ func (c *jumpSwapChains) note(cmd, chain string, args []string) {
 }
 
 func (c *jumpSwapChains) apply(args []string) (string, error) {
+	out, err := c.applyOne(args)
+	if c.intruder {
+		for key, rules := range c.rules {
+			c.intrusions++
+			c.rules[key] = append([]string{fmt.Sprintf("XRAY%d", c.intrusions)}, rules...)
+		}
+	}
+	return out, err
+}
+
+func (c *jumpSwapChains) applyOne(args []string) (string, error) {
 	cmd := args[0]
 	for i, a := range args {
 		if i+1 >= len(args) {
@@ -43,18 +73,18 @@ func (c *jumpSwapChains) apply(args []string) (string, error) {
 			}
 			var b strings.Builder
 			b.WriteString("Chain " + chain + " (policy ACCEPT)\nnum  target  prot opt source destination\n")
-			for n, target := range c.rules[key] {
-				b.WriteString(fmt.Sprintf("%d    %s  all  --  0.0.0.0/0  0.0.0.0/0\n", n+1, target))
+			for n, rule := range c.rules[key] {
+				b.WriteString(fmt.Sprintf("%d    %s  all  --  0.0.0.0/0  0.0.0.0/0\n", n+1, jumpSwapTarget(rule)))
 			}
 			return b.String(), nil
 		case "-A":
-			c.rules[key] = append(c.rules[key], args[len(args)-1])
+			c.rules[key] = append(c.rules[key], jumpSwapRule(args))
 			c.note(cmd, chain, args)
 			return "", nil
 		case "-I":
 			at, _ := strconv.Atoi(args[i+2])
 			rules := c.rules[key]
-			c.rules[key] = append(append(append([]string{}, rules[:at-1]...), args[len(args)-1]), rules[at-1:]...)
+			c.rules[key] = append(append(append([]string{}, rules[:at-1]...), jumpSwapRule(args)), rules[at-1:]...)
 			c.note(cmd, chain, args)
 			return "", nil
 		case "-D":
@@ -62,9 +92,10 @@ func (c *jumpSwapChains) apply(args []string) (string, error) {
 			at := -1
 			if n, err := strconv.Atoi(args[i+2]); err == nil {
 				at = n - 1
+				c.positional = append(c.positional, strings.Join(args, " "))
 			} else {
-				for n, target := range rules {
-					if target == args[len(args)-1] {
+				for n, rule := range rules {
+					if rule == jumpSwapRule(args) {
 						at = n
 						break
 					}
@@ -141,7 +172,79 @@ func TestAJumpIsReplacedWithoutEverLeavingItsChain(t *testing.T) {
 				t.Errorf("the jump was standing and %d command(s) left %s without it: %v. Every rebuild of a set took its jump out before putting it back, and whatever the router sent in between skipped the set: its own connection to an address the set routes left by the ordinary uplink, and a connection that should have had its source rewritten kept the wrong one for life",
 					len(c.gaps), tc.base, c.gaps)
 			}
+			if len(c.positional) > 0 {
+				t.Errorf("the swap deleted by line number: %v. A line number is only good until another program writes to the chain, so a jump b4 can name by its own rule is deleted by that rule", c.positional)
+			}
 		})
+	}
+}
+
+func TestAJumpSwapLeavesRulesInsertedMeanwhileAlone(t *testing.T) {
+	const jump = "b4r_set_pre"
+
+	for _, tc := range []struct {
+		name  string
+		atTop bool
+	}{
+		{"lifted to the top", true},
+		{"appended", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := jumpSwapIpt(t, "PREROUTING", []string{"FIRMWARE", jump, "B4"}, jump)
+			c.intruder = true
+
+			(&routeIptBackend{}).ensureJumpRule("PREROUTING", jump, true, tc.atTop)
+
+			for _, cmd := range []string{backendIPTables, backendIP6Tables} {
+				rules := c.rules[c.key(cmd, "PREROUTING")]
+				counts := map[string]int{}
+				for _, rule := range rules {
+					counts[rule]++
+				}
+				if counts["FIRMWARE"] != 1 || counts["B4"] != 1 {
+					t.Errorf("%s PREROUTING is %v after the swap: a rule that was there before it is gone. Another program put a rule at the head of the chain after every command b4 ran, which moves every line number b4 had read, and a delete by line number then removes whatever sits there now: the firmware's own rule, with nothing in the log",
+						cmd, rules)
+				}
+				if counts[jump] != 1 || counts[jump+jumpSwapHeld] != 0 {
+					t.Errorf("%s PREROUTING is %v after the swap, want the set's jump once and nothing held over", cmd, rules)
+				}
+			}
+			if len(c.positional) > 0 {
+				t.Errorf("the swap deleted by line number while another program was writing to the chain: %v", c.positional)
+			}
+			if len(c.gaps) > 0 {
+				t.Errorf("%d command(s) left PREROUTING without the set's jump: %v", len(c.gaps), c.gaps)
+			}
+		})
+	}
+}
+
+func TestAJumpHeldOverFromAnInterruptedSwapIsRemoved(t *testing.T) {
+	const jump = "b4r_set_out"
+	c := jumpSwapIpt(t, "OUTPUT", []string{jump + jumpSwapHeld, "ACCEPT", jump}, jump)
+
+	(&routeIptBackend{}).ensureJumpRule("OUTPUT", jump, true, true)
+
+	for _, cmd := range []string{backendIPTables, backendIP6Tables} {
+		if got := strings.Join(c.rules[c.key(cmd, "OUTPUT")], ","); got != jump+",ACCEPT" {
+			t.Errorf("%s OUTPUT is %s, want %s: b4 stopped between two steps of an earlier swap and left its holding jump in the chain, and the next swap has to take it out with its own", cmd, got, jump+",ACCEPT")
+		}
+	}
+	if len(c.positional) > 0 || len(c.gaps) > 0 {
+		t.Errorf("removing a held jump took %d delete(s) by line number and left %d gap(s), want neither: %v %v", len(c.positional), len(c.gaps), c.positional, c.gaps)
+	}
+}
+
+func TestAJumpOfAnotherFormIsSweptAfterTheSwap(t *testing.T) {
+	const jump = "b4r_set_pre"
+	c := jumpSwapIpt(t, "PREROUTING", []string{jump + "~gated", "ACCEPT", jump}, jump)
+
+	(&routeIptBackend{}).ensureJumpRule("PREROUTING", jump, true, true)
+
+	for _, cmd := range []string{backendIPTables, backendIP6Tables} {
+		if got := strings.Join(c.rules[c.key(cmd, "PREROUTING")], ","); got != jump+",ACCEPT" {
+			t.Errorf("%s PREROUTING is %s, want %s: a jump to the set's chain that carries another match, such as the per-device one a set had before its devices were cleared, is not the rule b4 deletes by name, and it still has to go", cmd, got, jump+",ACCEPT")
+		}
 	}
 }
 
