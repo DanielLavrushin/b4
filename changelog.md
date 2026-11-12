@@ -4,6 +4,10 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- With the web server's **Bind Address** set to `127.0.0.1` behind a reverse proxy such as nginx, AI apps could not connect over **MCP**: every request was refused with `invalid Host header`, even with a valid token. [#566](https://github.com/DanielLavrushin/b4/issues/566)
+
 ## [1.90.1] - 2026-11-10
 
 ### Added
