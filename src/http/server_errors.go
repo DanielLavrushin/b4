@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +19,10 @@ const (
 	serverErrorWindow     = time.Minute
 	serverErrorExcerptLen = 200
 	serverErrorPathLen    = 200
+	removedURLPart        = "[removed]"
 )
+
+var urlInText = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://(?:\\[^"]|[^\s"\\])+`)
 
 type serverErrorRoute struct {
 	method  string
@@ -96,11 +100,28 @@ func (rec *statusRecorder) excerpt() string {
 		}
 		return r
 	}, strings.ToValidUTF8(string(rec.body), ""))
-	text := strings.Join(strings.Fields(flat), " ")
+	text := withoutURLCredentials(strings.Join(strings.Fields(flat), " "))
 	if !rec.clipped && len(text) <= serverErrorExcerptLen {
 		return text
 	}
 	return clipText(text, serverErrorExcerptLen)
+}
+
+func withoutURLCredentials(text string) string {
+	return urlInText.ReplaceAllStringFunc(text, func(found string) string {
+		scheme, rest, _ := strings.Cut(found, "://")
+		authority, tail := rest, ""
+		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+			authority, tail = rest[:i], rest[i:]
+		}
+		if i := strings.LastIndexByte(authority, '@'); i >= 0 {
+			authority = removedURLPart + authority[i:]
+		}
+		if i := strings.IndexAny(tail, "?#"); i >= 0 {
+			tail = tail[:i+1] + removedURLPart
+		}
+		return scheme + "://" + authority + tail
+	})
 }
 
 func clipText(s string, limit int) string {
