@@ -4,6 +4,14 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Without a login for the web interface, the log warns when b4 refuses a page at another address, and names the address b4 saw and what to change.
+
+### Fixed
+
+- Without a login for the web interface, the **Logs**, **Traffic**, **Dashboard** and **Discovery** pages got no live data behind a reverse proxy that drops the port from the `Host` header, such as nginx with `proxy_set_header Host $host`.
+
 ## [1.90.1] - 2026-11-10
 
 ### Added
