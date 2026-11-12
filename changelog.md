@@ -7,6 +7,7 @@ All notable changes to b4 are recorded in this file.
 ### Fixed
 
 - With the web server's **Bind Address** set to `127.0.0.1` behind a reverse proxy such as nginx, AI apps could not connect over **MCP**: every request was refused with `invalid Host header`, even with a valid token. [#566](https://github.com/DanielLavrushin/b4/issues/566)
+- With a login set, the sign-in page kept calling b4 in the background and filled the browser console with errors, and after signing in the **Ask AI to explain this setting** buttons were missing until the page was reloaded. [#569](https://github.com/DanielLavrushin/b4/issues/569)
 
 ## [1.90.1] - 2026-11-10
 

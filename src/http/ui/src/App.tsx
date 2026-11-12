@@ -199,9 +199,10 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const { resetDomainsBadge } = useStreamControls();
-  const { isAuthenticated, isLoading, authRequired, logout } = useAuth();
+  const { isAuthenticated, isLoading, authRequired, hasSession, logout } =
+    useAuth();
   const { t } = useTranslation();
-  const hubStatus = useHubStatus(!authRequired || isAuthenticated);
+  const hubStatus = useHubStatus(hasSession);
   const hubEnabled = Boolean(hubStatus.data?.enabled);
   const showLogin = authRequired && !isAuthenticated;
   const pageTitle = showLogin

@@ -15,6 +15,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   authRequired: boolean;
+  hasSession: boolean;
   login: (username: string, password: string) => Promise<string | null>;
   logout: () => void;
 }
@@ -103,9 +104,19 @@ export function AuthProvider({
     setIsAuthenticated(false);
   }, []);
 
+  const hasSession = !isLoading && (!authRequired || isAuthenticated);
+
   const value = useMemo(
-    () => ({ token, isAuthenticated, isLoading, authRequired, login, logout }),
-    [token, isAuthenticated, isLoading, authRequired, login, logout],
+    () => ({
+      token,
+      isAuthenticated,
+      isLoading,
+      authRequired,
+      hasSession,
+      login,
+      logout,
+    }),
+    [token, isAuthenticated, isLoading, authRequired, hasSession, login, logout],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;
@@ -121,4 +132,42 @@ export function useAuth(): AuthContextType {
 
 export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
+}
+
+export function watchAuthToken(onChange: () => void): () => void {
+  let last = getAuthToken();
+  const handler = () => {
+    const current = getAuthToken();
+    if (current === last) return;
+    last = current;
+    onChange();
+  };
+  window.addEventListener("storage", handler);
+  return () => window.removeEventListener("storage", handler);
+}
+
+async function askSessionRejected(): Promise<boolean> {
+  try {
+    const headers: Record<string, string> = {};
+    const token = getAuthToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const r = await fetch("/api/auth/check", { headers, cache: "no-store" });
+    if (!r.ok) return false;
+    const data = (await r.json()) as {
+      auth_required?: boolean;
+      authenticated?: boolean;
+    };
+    return data.auth_required === true && data.authenticated !== true;
+  } catch {
+    return false;
+  }
+}
+
+let sessionCheck: Promise<boolean> | null = null;
+
+export function sessionRejected(): Promise<boolean> {
+  sessionCheck ??= askSessionRejected().finally(() => {
+    sessionCheck = null;
+  });
+  return sessionCheck;
 }
