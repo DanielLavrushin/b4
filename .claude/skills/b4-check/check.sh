@@ -253,6 +253,9 @@ fi
 if has '^docs/'; then
   suite "pnpm -C docs build"
 fi
+if has '^toolkit/labs/'; then
+  suite "sh toolkit/labs/selftest.sh"
+fi
 if [ "$suites" -eq 0 ]; then
   echo "  nothing beyond the checks above"
 fi

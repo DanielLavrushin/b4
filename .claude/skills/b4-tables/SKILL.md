@@ -105,9 +105,12 @@ b4 shares netfilter with the router's own services; their facts are in `marks.md
   `ipset` binary; without ipset, routing silently uses nft.
 - `runLogged` (`src/tables/common.go`) is a package variable, so a test can capture the exact
   argv; nft coverage uses a stub `nft` binary on PATH.
-- Kernel-version bugs (the unmasked `ip rule del`) cannot show on dev or CI kernels. After a
-  change to emitted chains, watch a real router for a quiet window: a monitor that resyncs
-  every tick shows only there.
+- Kernel-version bugs do not show on dev or CI kernels: the unmasked `ip rule del`, and a
+  second identical `ip rule add`, which Linux 3.16 takes and 4.9 refuses. Run a change to ip
+  rules, routes or rule order in the lab guests (`/b4-lab`): `toolkit/labs/lab ab debian8`
+  and `lab ab debian9` run the netns tests on those kernels, this checkout against main.
+- After a change to emitted chains, watch a real router for a quiet window: a monitor that
+  resyncs every tick shows only there.
 
 ## Docs
 
