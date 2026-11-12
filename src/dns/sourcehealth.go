@@ -22,13 +22,16 @@ var (
 	sourceAsks   = map[string]int{}
 )
 
-func beginSourceAsk(source string, capped bool) (done func(), ok bool) {
+func beginSourceAsk(source string, consult, capped bool) (done func(), ok bool) {
 	if source == "" {
 		return func() {}, true
 	}
 	sourceMu.Lock()
 	defer sourceMu.Unlock()
 	if capped && sourceAsks[source] >= maxSourceAsks {
+		return func() {}, false
+	}
+	if consult && sourceUnreachable(source) {
 		return func() {}, false
 	}
 	sourceAsks[source]++
@@ -66,7 +69,10 @@ func SourceUnreachable(source string) bool {
 	}
 	sourceMu.Lock()
 	defer sourceMu.Unlock()
+	return sourceUnreachable(source)
+}
 
+func sourceUnreachable(source string) bool {
 	state := sourceHealth[source]
 	if state == nil || state.failures < SourceFailuresToTrip {
 		return false

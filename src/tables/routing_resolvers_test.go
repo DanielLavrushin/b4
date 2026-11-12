@@ -77,30 +77,37 @@ func TestPreResolutionMovesOnToTheNextResolverOfTheList(t *testing.T) {
 	}
 }
 
-func TestAStrictSetsPreResolutionSkipsItsCoolingResolverAndProbesItOnce(t *testing.T) {
+func TestAStrictListsPreResolutionLeavesItsCoolingResolverOut(t *testing.T) {
 	cfg := config.NewConfig()
 	cfg.Queue.IPv4Enabled = true
 	set := config.NewSetConfig()
 	set.DNS.Enabled, set.DNS.Strict = true, true
 	set.DNS.TargetDNS = "9.9.9.9"
+	set.DNS.Upstreams = []string{"1.1.1.1"}
 
-	asked := 0
-	stubSetLookup(t, func(dns.Server, string) ([]net.IP, error) {
-		asked++
-		return nil, errors.New("resolver down")
+	asked := map[string]int{}
+	stubSetLookup(t, func(srv dns.Server, _ string) ([]net.IP, error) {
+		asked[srv.Source]++
+		if srv.Source == "9.9.9.9" {
+			return nil, errors.New("resolver down")
+		}
+		return nil, dns.ErrTransientAnswer
 	})
 	for i := 0; i < dns.SourceFailuresToTrip; i++ {
 		dns.NoteSourceFailure("9.9.9.9")
 	}
 
-	for i := 0; i < 5; i++ {
-		routeResolveHost(&cfg, &set, "blocked.example")
+	const domains = 5
+	for i := 0; i < domains; i++ {
+		if ips := routeResolveHost(&cfg, &set, "blocked.example"); len(ips) != 0 {
+			t.Fatalf("got %v from a strict set whose resolvers gave no address", ips)
+		}
 	}
-	if asked != 0 {
-		t.Fatalf("a strict set's pre-resolution asked its cooling resolver %d times, want none: each domain would wait out a timeout", asked)
+	if asked["9.9.9.9"] != 0 {
+		t.Fatalf("pre-resolution asked the cooling resolver for %d of %d domains because the other one answered with an error code: each of those waits out a timeout", asked["9.9.9.9"], domains)
 	}
-	if !dns.AllSourcesCooling([]dns.Server{{Source: "9.9.9.9"}}) {
-		t.Fatal("the resolver is not cooling down any more")
+	if asked["1.1.1.1"] != domains {
+		t.Fatalf("the resolver that answers was asked %d times, want %d", asked["1.1.1.1"], domains)
 	}
 }
 

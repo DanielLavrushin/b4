@@ -188,6 +188,8 @@ func TestARedirectInFlightAtAStopSendsNothing(t *testing.T) {
 	w, cfg, set := listWorker(t)
 	slow, entered, _ := slowDoH(t)
 	set.DNS.DoHURL = slow
+	dns.NoteSourceFailure(slow)
+	dns.NoteSourceFailure(slow)
 	ctx, stop := context.WithCancel(context.Background())
 	t.Cleanup(stop)
 	w.ctx = ctx
@@ -216,6 +218,87 @@ func TestARedirectInFlightAtAStopSendsNothing(t *testing.T) {
 	}
 	if dns.SourceCooling(slow) {
 		t.Fatal("a redirect cut by the stop was counted against the resolver")
+	}
+}
+
+func TestADNSOverTCPRedirectInFlightAtAStopWritesNothing(t *testing.T) {
+	w, _, set := listWorker(t)
+	slow, entered, _ := slowDoH(t)
+	set.DNS.DoHURL = slow
+	dns.NoteSourceFailure(slow)
+	dns.NoteSourceFailure(slow)
+	tcpDNSUpstream(t)
+	lines := connectionLines(t)
+
+	s := newDNSTCPServer(w, 0)
+	clientEnd, serverEnd := net.Pipe()
+	handled := make(chan struct{})
+	go func() {
+		defer close(handled)
+		s.handle(remoteAddrConn{Conn: serverEnd, remote: &net.TCPAddr{IP: net.ParseIP("192.168.1.100"), Port: 40000}})
+	}()
+	answered := make(chan []byte, 1)
+	go func() {
+		if resp, err := readDNSTCPMessage(clientEnd); err == nil {
+			answered <- resp
+		}
+	}()
+	t.Cleanup(func() { clientEnd.Close() })
+	if err := writeDNSTCPMessage(clientEnd, dns.BuildQuery("www.example.com", 30, dnsTypeA), time.Second); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the resolver was never asked")
+	}
+
+	s.cancel()
+	select {
+	case <-handled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the connection's handler did not end with the server")
+	}
+	select {
+	case resp := <-answered:
+		t.Fatalf("a redirect cut by the stop wrote %d bytes to the client", len(resp))
+	case <-time.After(50 * time.Millisecond):
+	}
+	if got := labels(drainLines(lines)); len(got) != 1 || got[0] != dohLabel(t, slow) {
+		t.Fatalf("connection labels %q, want only the redirect's own line: the resolver did not fail", got)
+	}
+	if dns.SourceCooling(slow) {
+		t.Fatal("a redirect cut by the stop was counted as the resolver's third failure")
+	}
+}
+
+func TestAStrictListAsksItsCoolingResolverOnlyWhenTheOtherFails(t *testing.T) {
+	w, cfg, set := listWorker(t)
+	set.DNS.Strict = true
+	good := dscpDoHServer(t, w, "203.0.113.37")
+	failing, asked := failingDoH(t)
+
+	set.DNS.Upstreams = []string{good, failing}
+	dscpCoolDown(good)
+	replies := watchReplies(t)
+	askOverUDP(w, cfg, set, 31)
+	onlyAddress(t, oneReply(t, replies), "203.0.113.37")
+	if got := asked.Load(); got != 1 {
+		t.Fatalf("the resolver that is not cooling was asked %d times, want it asked first", got)
+	}
+
+	dscpCoolDown(good)
+	resp := dscpWithin(t, dscpTCPAsk(t, w, dns.BuildQuery("www.example.com", 32, dnsTypeA)), "the TCP answer never came")
+	onlyAddress(t, resp, "203.0.113.37")
+
+	set.DNS.Upstreams = []string{failing, good}
+	dns.ResetSourceHealth()
+	dscpCoolDown(failing)
+	before := asked.Load()
+	askOverUDP(w, cfg, set, 33)
+	onlyAddress(t, oneReply(t, replies), "203.0.113.37")
+	if got := asked.Load() - before; got != 0 {
+		t.Fatalf("the cooling resolver was asked %d times although the other one answered", got)
 	}
 }
 

@@ -298,7 +298,7 @@ func TestASilentEntryOfAListHoldsABoundedNumberOfAsks(t *testing.T) {
 	alone := []Server{{Source: "silent", Timeout: time.Minute}}
 	done := make(chan struct{})
 	go func() {
-		_, _, _ = AskServers(context.Background(), alone, Options{Life: life}, ask)
+		_, _, _ = AskServers(life, alone, Options{Life: life}, ask)
 		close(done)
 	}()
 	deadline := time.Now().Add(time.Second)
@@ -355,5 +355,129 @@ func TestStartedEntriesAreTrackedUntilTheyReturn(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&open); got != 0 {
 		t.Fatalf("%d entries are still held open after every ask returned", got)
+	}
+}
+
+func TestAStrictListLeavesItsCoolingEntryOutWhileASlowOneAnswers(t *testing.T) {
+	resetHealth(t)
+	life := lifeContext(t)
+	coolDown("dead")
+	good := goodAnswer(net.IPv4(203, 0, 113, 49))
+	var asked int32
+	ask := func(ctx context.Context, srv Server) ([]byte, error) {
+		if srv.Source == "dead" {
+			atomic.AddInt32(&asked, 1)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		select {
+		case <-time.After(HeadStart + 150*time.Millisecond):
+			return good, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	servers := []Server{{Source: "dead", Timeout: time.Minute}, {Source: "slow", Timeout: 5 * time.Second}}
+
+	_, source, err := AskServers(context.Background(), servers, Options{Life: life, Strict: true}, ask)
+	if err != nil || source != "slow" {
+		t.Fatalf("answered by %q with %v, want the slow resolver's answer", source, err)
+	}
+	if got := atomic.LoadInt32(&asked); got != 0 {
+		t.Fatalf("the cooling entry was asked %d times because the other one took longer than the head start; it is asked only when nothing else answered", got)
+	}
+}
+
+func TestAStrictListKeepsTheCapWhenItAsksItsCoolingEntries(t *testing.T) {
+	resetHealth(t)
+	life, stop := context.WithCancel(context.Background())
+	defer stop()
+	coolDown("dead")
+	var started int32
+	ask := func(ctx context.Context, srv Server) ([]byte, error) {
+		if srv.Source == "dead" {
+			atomic.AddInt32(&started, 1)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return nil, errors.New("no reply")
+	}
+	servers := []Server{{Source: "dead", Timeout: time.Minute}, {Source: "failing", Timeout: time.Second}}
+
+	const lookups = maxSourceAsks + 20
+	results := make(chan error, lookups)
+	for i := 0; i < lookups; i++ {
+		go func() {
+			callCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_, _, err := AskServers(callCtx, servers, Options{Life: life, Strict: true}, ask)
+			results <- err
+		}()
+	}
+	refused := 0
+	for i := 0; i < lookups; i++ {
+		if err := <-results; err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			refused++
+		}
+	}
+	if got := atomic.LoadInt32(&started); got != maxSourceAsks {
+		t.Fatalf("%d asks to the cooling entry were started by %d strict lookups, want the cap of %d", got, lookups, maxSourceAsks)
+	}
+	if refused != lookups-maxSourceAsks {
+		t.Fatalf("%d lookups past the cap ended at once, want %d", refused, lookups-maxSourceAsks)
+	}
+	stop()
+	if left := asksLeft("dead", 2*time.Second); left != 0 {
+		t.Fatalf("%d asks are still counted after the service stopped", left)
+	}
+}
+
+func TestABackgroundLookupOfAStrictSetProbesItsCoolingResolverOnce(t *testing.T) {
+	resetHealth(t)
+	servers := []Server{{Source: "only", Timeout: time.Second}}
+	coolDown("only")
+	asked := 0
+	lookup := func() error {
+		_, _, err := AskServers(context.Background(), servers, Options{Strict: true, Background: true},
+			func(context.Context, Server) ([]byte, error) {
+				asked++
+				return nil, errors.New("down")
+			})
+		return err
+	}
+
+	if err := lookup(); !errors.Is(err, ErrSourceCooling) || asked != 0 {
+		t.Fatalf("a background lookup asked a cooling resolver %d times and got %v; pre-resolution leaves it out so that each domain does not wait out a timeout", asked, err)
+	}
+	expireCooldown("only")
+	for i := 0; i < 4; i++ {
+		_ = lookup()
+	}
+	if asked != 1 {
+		t.Fatalf("%d of four background lookups asked the resolver after one cooldown, want the one recovery attempt", asked)
+	}
+}
+
+func TestAStrictLookupOfOneResolverLeavesTheCooldownClockAlone(t *testing.T) {
+	resetHealth(t)
+	servers := []Server{{Source: "only", Timeout: time.Second}}
+	coolDown("only")
+	expireCooldown("only")
+	down := func(context.Context, Server) ([]byte, error) { return nil, errors.New("down") }
+
+	if _, _, err := AskServers(context.Background(), servers, Options{Strict: true}, down); err == nil {
+		t.Fatal("the strict lookup of a dead resolver gave no error")
+	}
+	if SourceCooling("only") {
+		t.Fatal("a strict lookup of a set with one resolver started the cooldown again: it asks every time and must leave the recovery attempt to sets that wait for one")
+	}
+	asked := 0
+	_, _, _ = AskServers(context.Background(), servers, Options{},
+		func(context.Context, Server) ([]byte, error) {
+			asked++
+			return goodAnswer(net.IPv4(203, 0, 113, 50)), nil
+		})
+	if asked != 1 {
+		t.Fatalf("the next lookup of a set without fail closed asked the resolver %d times, want the recovery attempt", asked)
 	}
 }

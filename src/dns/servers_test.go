@@ -366,8 +366,47 @@ func TestLookupsThatLeaveALoserBehindLeaveNoGoroutines(t *testing.T) {
 	}
 }
 
-func TestStartedEntriesRunOnTheServiceLifetime(t *testing.T) {
+func TestACallerThatLeavesEndsItsOnlyResolversQuery(t *testing.T) {
 	resetHealth(t)
+	NoteSourceFailure("only")
+	NoteSourceFailure("only")
+	callCtx, cancelCall := context.WithCancel(context.Background())
+	entered := make(chan struct{})
+	ended := make(chan struct{})
+	returned := make(chan error, 1)
+	go func() {
+		_, _, err := AskServers(callCtx, []Server{{Source: "only", Timeout: 5 * time.Second}}, Options{Life: lifeContext(t)},
+			func(sctx context.Context, _ Server) ([]byte, error) {
+				close(entered)
+				<-sctx.Done()
+				close(ended)
+				return nil, sctx.Err()
+			})
+		returned <- err
+	}()
+
+	<-entered
+	cancelCall()
+	select {
+	case <-ended:
+	case <-time.After(time.Second):
+		t.Fatal("the query to a set's only resolver outlived the caller that left: without a list nothing else is waiting on it")
+	}
+	if err := <-returned; !errors.Is(err, context.Canceled) {
+		t.Fatalf("the caller got %v, want its own cancellation", err)
+	}
+	if left := asksLeft("only", time.Second); left != 0 {
+		t.Fatalf("%d asks are still counted after the query ended", left)
+	}
+	if SourceCooling("only") {
+		t.Fatal("a query the caller cut was counted as the resolver's third failure")
+	}
+}
+
+func TestStartedEntriesOfAListRunOnTheServiceLifetime(t *testing.T) {
+	resetHealth(t)
+	NoteSourceFailure("one")
+	NoteSourceFailure("one")
 	life, stopService := context.WithCancel(context.Background())
 	defer stopService()
 	callCtx, cancelCall := context.WithCancel(context.Background())
@@ -376,11 +415,16 @@ func TestStartedEntriesRunOnTheServiceLifetime(t *testing.T) {
 	ended := make(chan error, 1)
 	returned := make(chan error, 1)
 	go func() {
-		_, _, err := AskServers(callCtx, []Server{{Source: "one", Timeout: 5 * time.Second}}, Options{Life: life},
-			func(sctx context.Context, _ Server) ([]byte, error) {
-				close(entered)
+		servers := []Server{{Source: "one", Timeout: 5 * time.Second}, {Source: "two", Timeout: 5 * time.Second}}
+		_, _, err := AskServers(callCtx, servers, Options{Life: life},
+			func(sctx context.Context, srv Server) ([]byte, error) {
+				if srv.Source == "one" {
+					close(entered)
+				}
 				<-sctx.Done()
-				ended <- sctx.Err()
+				if srv.Source == "one" {
+					ended <- sctx.Err()
+				}
 				return nil, sctx.Err()
 			})
 		returned <- err

@@ -288,7 +288,7 @@ func (w *Worker) askRedirectServers(ctx, life context.Context, set *config.SetCo
 		if srv.DoHURL != "" {
 			return w.resolveDoHRedirect(sctx, srv.DoHURL, srv.Mark, query)
 		}
-		return dns.ResolveUpstreamContext(sctx, query, srv.UDP, dns.ForwardOptions{
+		return dns.ResolveUpstreamContext(life, query, srv.UDP, dns.ForwardOptions{
 			Sender:       w.lookupSender(),
 			Fragment:     set.DNS.FragmentQuery,
 			Seg2Delay:    delay,

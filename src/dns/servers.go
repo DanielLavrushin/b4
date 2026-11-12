@@ -109,10 +109,11 @@ func judgeLookup(_ []net.IP, err error) answerClass {
 }
 
 type Options struct {
-	Life   context.Context
-	Strict bool
-	Quiet  bool
-	Track  func() (done func())
+	Life       context.Context
+	Strict     bool
+	Quiet      bool
+	Background bool
+	Track      func() (done func())
 }
 
 func askInOrder[T any](callCtx context.Context, servers []Server, opt Options,
@@ -123,7 +124,7 @@ func askInOrder[T any](callCtx context.Context, servers []Server, opt Options,
 		return zero, Server{}, ErrSourceCooling
 	}
 	lifeCtx := opt.Life
-	if lifeCtx == nil {
+	if lifeCtx == nil || len(servers) == 1 {
 		lifeCtx = callCtx
 	}
 
@@ -148,23 +149,23 @@ func askInOrder[T any](callCtx context.Context, servers []Server, opt Options,
 	}
 
 	queue, next := servers, 0
-	consult := !opt.Quiet
 	capped := len(servers) > 1
+	lastResort := opt.Strict && !opt.Background
+	consult := !opt.Quiet && (capped || !lastResort)
 	var held []Server
 	leftOut, anyLeftOut := servers[0], false
-	startNext := func() bool {
+	startNext := func(nobodyFailed bool) bool {
 		for {
 			for next < len(queue) {
 				srv := queue[next]
 				next++
 				release, free := func() {}, true
 				if !opt.Quiet {
-					release, free = beginSourceAsk(srv.Source, consult && capped)
+					release, free = beginSourceAsk(srv.Source, consult, capped)
 				}
-				if !free || (consult && SourceUnreachable(srv.Source)) {
-					release()
+				if !free {
 					switch {
-					case opt.Strict:
+					case lastResort && consult:
 						held = append(held, srv)
 					case !anyLeftOut:
 						leftOut, anyLeftOut = srv, true
@@ -174,14 +175,14 @@ func askInOrder[T any](callCtx context.Context, servers []Server, opt Options,
 				launch(srv, release)
 				return true
 			}
-			if len(held) == 0 {
+			if len(held) == 0 || nobodyFailed {
 				return false
 			}
 			queue, next, held, consult = held, 0, nil, false
 		}
 	}
 
-	if !startNext() {
+	if !startNext(false) {
 		return zero, leftOut, ErrSourceCooling
 	}
 	launched, answered := 1, 0
@@ -189,13 +190,13 @@ func askInOrder[T any](callCtx context.Context, servers []Server, opt Options,
 	defer timer.Stop()
 	timerC := timer.C
 	more := true
-	advance := func() {
-		if more && startNext() {
+	advance := func(nobodyFailed bool) {
+		if more && startNext(nobodyFailed) {
 			launched++
 			armTimer(timer, &timerC, HeadStart)
 			return
 		}
-		more = false
+		more = more && len(held) > 0
 		timerC = nil
 	}
 
@@ -227,9 +228,9 @@ func askInOrder[T any](callCtx context.Context, servers []Server, opt Options,
 					failure = &got
 				}
 			}
-			advance()
+			advance(false)
 		case <-timerC:
-			advance()
+			advance(true)
 		case <-callCtx.Done():
 			drainAnswers(ch, launched-answered, opt.Quiet)
 			return zero, Server{}, callCtx.Err()
