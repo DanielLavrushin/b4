@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -211,6 +212,13 @@ func isZeroHexLiteral(s string) bool {
 		}
 	}
 	return true
+}
+
+func decodeHexLiteral(s string) ([]byte, error) {
+	if !isHexLiteral(s) {
+		return nil, errors.New("expected 0x followed by hex digits")
+	}
+	return hex.DecodeString(s[2:])
 }
 
 func isHex(c byte) bool {

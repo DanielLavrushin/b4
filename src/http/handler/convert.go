@@ -3,10 +3,12 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/daniellavrushin/b4/capture"
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/convert"
 	"github.com/daniellavrushin/b4/log"
@@ -140,6 +142,10 @@ func (api *API) handleConvertApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	created := assignSetIDs(res.Sets)
+	if err := api.installConvertPayloads(created); err != nil {
+		writeAPIError(w, err)
+		return
+	}
 	oldCfg := api.getCfg()
 	newCfg := oldCfg.Clone()
 
@@ -171,6 +177,37 @@ func (api *API) handleConvertApply(w http.ResponseWriter, r *http.Request) {
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(ConvertApplyResult{Result: res, MovedFrom: moved})
+}
+
+func (api *API) installConvertPayloads(sets []*config.SetConfig) error {
+	var manager *capture.Manager
+	for _, set := range sets {
+		name, pending := strings.CutPrefix(set.Faking.PayloadFile, convert.PendingPayloadPrefix)
+		if !pending {
+			continue
+		}
+		if manager == nil {
+			manager = capture.GetManager(api.getCfg())
+		}
+		rel, err := manager.SaveImportedPayload("tls", name, set.Faking.PayloadData)
+		if err != nil {
+			log.Errorf("Convert: could not save the fake payload of set %q: %v", set.Name, err)
+			message := fmt.Sprintf("The fake payload of set %q could not be saved to the captures folder: %v", set.Name, err)
+			return &APIError{
+				Status:  http.StatusInternalServerError,
+				Code:    "payload_install_failed",
+				Message: message,
+				Fields: []FieldError{{
+					Path:    "faking.payload_file",
+					Code:    "payload_install_failed",
+					Message: message,
+					Params:  map[string]any{"set": set.Name, "reason": err.Error()},
+				}},
+			}
+		}
+		set.Faking.PayloadFile = rel
+	}
+	return nil
 }
 
 type ConvertApplyResult struct {

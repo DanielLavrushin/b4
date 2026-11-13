@@ -300,6 +300,9 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 		case isZeroHexLiteral(v.Str):
 			prof.Fake.ZeroPayload = true
 		case isHexLiteral(v.Str):
+			if data, err := decodeHexLiteral(v.Str); err == nil && prof.Fake.HexPayload == nil {
+				prof.Fake.HexPayload = data
+			}
 		case v.Str != "" && v.Str != "builtin":
 			prof.Fake.DataInline = v.Str
 		}

@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"bytes"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -702,6 +703,22 @@ func describeSplitMapping(op SplitOp, strategy string, honoursFixed bool, set *c
 	return StatusMapped, "fixedPositionMapped", fields
 }
 
+var importedPayloadFields = []string{"faking.sni_type=capture", "faking.payload_file"}
+
+func useImportedPayload(set *config.SetConfig, tool string, data []byte) {
+	set.Faking.SNIType = config.FakePayloadCapture
+	set.Faking.PayloadFile = PendingPayloadPrefix + tool + "-fake"
+	set.Faking.PayloadData = data
+}
+
+func fakeTypeField(set *config.SetConfig) string {
+	t := set.Faking.SNIType
+	if t >= 0 && t < len(config.FakePayloadNames) {
+		return "faking.sni_type=" + config.FakePayloadNames[t]
+	}
+	return "faking.sni_type=" + strconv.Itoa(t)
+}
+
 func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex, notes *noteSet, defaults SpecDefaults) {
 	if !prof.Fake.Present {
 		set.Faking.SNI = false
@@ -751,11 +768,12 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 	}
 	switch {
 	case prof.Fake.DataInline != "":
-		set.Faking.SNIType = config.FakePayloadCustom
-		set.Faking.CustomPayload = prof.Fake.DataInline
+		useImportedPayload(set, prog.Tool, []byte(prof.Fake.DataInline))
 		if tok, ok := ti.first(prof.Index, "fake_data"); ok {
-			notes.set(tok, StatusMapped, "fakeDataMapped", "faking.sni_type=custom", "faking.custom_payload")
+			notes.set(tok, StatusMapped, "fakeDataMapped", importedPayloadFields...)
 		}
+	case len(prof.Fake.HexPayload) > 0 && sni == "":
+		useImportedPayload(set, prog.Tool, prof.Fake.HexPayload)
 	case prof.Fake.ZeroPayload && sni == "":
 		set.Faking.SNIType = config.FakePayloadZero
 	case sni != "":
@@ -785,6 +803,7 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 			n.Params = map[string]any{"path": prof.Fake.DataRef}
 		}
 	}
+	hexUsed := false
 	ti.each(prof.Index, "fake_tls", func(tok Token) {
 		v := strings.TrimSpace(tok.Value)
 		switch {
@@ -792,11 +811,19 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 			if set.Faking.SNIType == config.FakePayloadZero {
 				notes.set(tok, StatusMapped, "fakeZeroPayload", "faking.sni_type=zero")
 			} else {
-				notes.set(tok, StatusApproximated, "fakeZeroPayloadOverridden",
-					"faking.sni_type="+strconv.Itoa(set.Faking.SNIType))
+				notes.set(tok, StatusApproximated, "fakeZeroPayloadOverridden", fakeTypeField(set))
 			}
 		case isHexLiteral(v):
-			notes.set(tok, StatusUnsupported, "fakeHexPayload")
+			data, err := decodeHexLiteral(v)
+			switch {
+			case err != nil:
+				notes.set(tok, StatusInvalid, "fakeHexInvalid")
+			case !hexUsed && set.Faking.SNIType == config.FakePayloadCapture && bytes.Equal(data, set.Faking.PayloadData):
+				hexUsed = true
+				notes.set(tok, StatusMapped, "fakeDataMapped", importedPayloadFields...)
+			default:
+				notes.set(tok, StatusApproximated, "fakeHexPayloadOverridden", fakeTypeField(set))
+			}
 		case v == "" || strings.HasPrefix(v, "!"):
 			notes.set(tok, StatusMapped, "fakeBuiltinPayload", "faking.sni_type=preset")
 		default:

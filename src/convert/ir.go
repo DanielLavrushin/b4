@@ -125,6 +125,7 @@ type FakeOp struct {
 	MD5Sig       bool     `json:"md5sig"`
 	IPOpt        bool     `json:"ip_opt"`
 	DataInline   string   `json:"data_inline"`
+	HexPayload   []byte   `json:"hex_payload"`
 	ZeroPayload  bool     `json:"zero_payload"`
 	DataRef      string   `json:"data_ref"`
 	SNIs         []string `json:"snis"`
