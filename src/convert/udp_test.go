@@ -279,6 +279,12 @@ func TestZapret_AProfileLeavesUDPToAnEarlierUDPProfileThatTakesItsQUIC(t *testin
 		{"excludesThePort", "--filter-l7=quic --filter-udp=~443 " + list + " --dpi-desync=fake --new " + list + later, false},
 		{"sameExclusions", "--filter-udp=443 " + list + " --hostlist-exclude=/opt/zapret/not.txt --dpi-desync=fake --new " +
 			list + " --hostlist-exclude=/opt/zapret/not.txt" + later, true},
+		{"excludesAnAddressList", "--filter-udp=443 --ipset-exclude=/opt/zapret/not.txt --dpi-desync=fake --new " +
+			"--filter-tcp=80 --hostlist-domains=a.com --dpi-desync=multisplit --new --ipset=/opt/zapret/addr.txt" + later, false},
+		{"automaticHostList", "--filter-udp=443 --hostlist-auto=/opt/zapret/auto.txt --dpi-desync=fake --new " +
+			"--filter-tcp=80 --hostlist-domains=a.com --dpi-desync=multisplit --new --hostlist-domains=example.com" + later, false},
+		{"sameAddressListAndExclusion", "--filter-udp=443 --ipset=/opt/zapret/addr.txt --ipset-exclude=/opt/zapret/not.txt --dpi-desync=fake --new " +
+			"--ipset=/opt/zapret/addr.txt --ipset-exclude=/opt/zapret/not.txt" + later, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

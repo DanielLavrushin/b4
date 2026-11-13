@@ -464,24 +464,44 @@ func noteDroppedSplitPositions(prof *Profile, ti tokenIndex, notes *noteSet) {
 	}
 }
 
-func normalizeZapret(prog *Program, _ []Token, notes *noteSet) {
+func normalizeZapret(prog *Program, tokens []Token, notes *noteSet) {
+	targets := zapretTargetOptions(tokens)
 	var udpProfiles []*Profile
 	for _, prof := range prog.Profiles {
 		normalizeZapretProfile(prof, notes)
-		promoteUDPFake(prof, zapretQUICTaken(udpProfiles, prof))
+		promoteUDPFake(prof, zapretQUICTaken(udpProfiles, prof, targets))
 		if prof.UDPOnly() && !prof.Skip {
 			udpProfiles = append(udpProfiles, prof)
 		}
 	}
 }
 
+var zapretTargetKeys = map[string]bool{
+	"hostlist": true, "hostlist_domains": true, "hostlist_exclude": true, "hostlist_excl_dom": true, "hostlist_auto": true,
+	"ipset": true, "ipset_ip": true, "ipset_exclude": true, "ipset_excl_ip": true,
+}
+
+func zapretTargetOptions(tokens []Token) map[int][]string {
+	options := map[int][]string{}
+	for _, tok := range tokens {
+		if zapretTargetKeys[tok.Key] {
+			options[tok.Profile] = append(options[tok.Profile], tok.Key+"="+strings.TrimSpace(tok.Value))
+		}
+	}
+	for _, list := range options {
+		slices.Sort(list)
+	}
+	return options
+}
+
 const quicPort = 443
 
-func zapretQUICTaken(earlier []*Profile, prof *Profile) bool {
+func zapretQUICTaken(earlier []*Profile, prof *Profile, targets map[int][]string) bool {
 	return slices.ContainsFunc(earlier, func(e *Profile) bool {
 		f := e.Filters
+		own := targets[e.Index]
 		return zapretMatchesQUIC(e) && (f.IPVersion == "" || f.IPVersion == prof.Filters.IPVersion) &&
-			f.coversTargets(prof.Filters)
+			(len(own) == 0 || slices.Equal(own, targets[prof.Index]))
 	})
 }
 
