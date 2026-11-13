@@ -105,7 +105,7 @@ func newWSSizeCache() *wsSizeCache {
 }
 
 func wsSizeTracksHello(ws config.WSSizeConfig) bool {
-	return !ws.StopsAtFirstData()
+	return ws.Window > 0 && !ws.StopsAtFirstData()
 }
 
 func usesWSSize(cfg *config.Config) bool {

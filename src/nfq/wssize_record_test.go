@@ -482,14 +482,49 @@ func TestWSSizeARecordLivesOnThroughPacketsThatNeedNoChange(t *testing.T) {
 			if p.data(0, hello) {
 				t.Fatal("with window 0 the first data packet has nothing to change, but it was reported as rewritten")
 			}
-			f, kept := p.flow()
-			if cutoff == wsFirstData && kept {
-				t.Fatal("the record was kept past the first data packet")
-			}
-			if cutoff == wsHello && (!kept || f.helloEnd != len(hello)) {
-				t.Fatalf("the ClientHello was not followed to its end: %+v kept=%v", f, kept)
+			if _, kept := p.flow(); kept {
+				t.Fatal("with no window to write nothing after the SYN can change, but the record was kept past the first data packet")
 			}
 		})
+	}
+}
+
+func TestWSSizeAScaleOnlyBlockBuffersNoClientHello(t *testing.T) {
+	hello := buildClientHello("scale.example", 2000, 0xab)
+	half := len(hello) / 2
+
+	p := newWSConn(t, wsHello)
+	p.set.TCP.WSSize.Window, p.set.TCP.WSSize.Scale = 0, 6
+	if !p.syn(nil) {
+		t.Fatal("the SYN carries Window Scale 7, above the configured 6, and must be rewritten")
+	}
+	p.ack()
+	if p.data(0, hello[:half]) {
+		t.Fatal("with window 0 the first part of the ClientHello has nothing to change, but it was reported as rewritten")
+	}
+	if _, kept := p.flow(); kept || p.c.helloBytes != 0 {
+		t.Fatalf("a block that only lowers the scale followed the ClientHello: record kept %v, %d buffered bytes", kept, p.c.helloBytes)
+	}
+
+	cfg, windowSet := wsFixture()
+	windowSet.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1, Scale: 1, Cutoff: wsHello}
+	scaleSet := *windowSet
+	scaleSet.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 0, Scale: 6, Cutoff: wsHello}
+	c, now := newWSSizeCache(), time.Now()
+	for port := uint16(1); port <= 2000; port++ {
+		c.rewrite(wsPacket(IPv4, port, 100, 0x02, wsKernelSynOptions, nil), 20, &scaleSet, cfg, now)
+		c.rewrite(wsPacket(IPv4, port, 101, 0x18, nil, hello[:half]), 20, nil, cfg, now)
+	}
+	if c.helloBytes != 0 {
+		t.Fatalf("2000 scale-only connections with an unfinished ClientHello hold %d of the %d shared buffer bytes", c.helloBytes, wsSizeHelloBudget)
+	}
+	c.rewrite(wsPacket(IPv4, 6000, 100, 0x02, wsKernelSynOptions, nil), 20, windowSet, cfg, now)
+	parts := [][]byte{hello[:half], hello[half:]}
+	for i, part := range parts {
+		pkt := wsPacket(IPv4, 6000, 101+uint32(i*half), 0x18, nil, part)
+		if !c.rewrite(pkt, 20, nil, cfg, now) || wsWindow(pkt) != 1 {
+			t.Fatalf("after 2000 scale-only connections, ClientHello packet %d of a set that writes the window left as %s", i+1, wsShow(pkt))
+		}
 	}
 }
 
