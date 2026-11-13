@@ -115,6 +115,22 @@ func TestZapret_AnInvalidHexPayloadIsFlagged(t *testing.T) {
 	}
 }
 
+func TestZapret_AnOddLengthZeroHexPayloadIsInvalidAndUsesNoSlot(t *testing.T) {
+	res := analyze(t, "--dpi-desync=fake --dpi-desync-fake-tls=0x0 --dpi-desync-fake-tls=0x0101")
+	assertPendingPayload(t, res.Sets[0], []byte{0x01, 0x01})
+	if n := noteFor(t, res, "--dpi-desync-fake-tls=0x0"); n.Status != StatusInvalid || n.Reason != "fakeHexInvalid" {
+		t.Fatalf("zapret refuses 0x0, a hex payload needs two digits per byte: got %+v", n)
+	}
+}
+
+func TestZapret_AnOddLengthZeroQUICHexPayloadIsInvalidAndUsesNoSlot(t *testing.T) {
+	res := analyze(t, "--filter-udp=443 --dpi-desync=fake --dpi-desync-fake-quic=0x000 --dpi-desync-fake-quic=0x0d0a")
+	assertPendingUDPPayload(t, res.Sets[0], []byte{0x0d, 0x0a})
+	if n := noteFor(t, res, "--dpi-desync-fake-quic=0x000"); n.Status != StatusInvalid || n.Reason != "fakeHexInvalid" {
+		t.Fatalf("zapret refuses 0x000, a hex payload needs two digits per byte: got %+v", n)
+	}
+}
+
 func assertPendingUDPPayload(t *testing.T, set config.SetConfig, want []byte) {
 	t.Helper()
 	u := set.UDP

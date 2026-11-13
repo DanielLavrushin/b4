@@ -203,7 +203,7 @@ func isHexLiteral(s string) bool {
 }
 
 func isZeroHexLiteral(s string) bool {
-	if !isHexLiteral(s) {
+	if !isHexLiteral(s) || len(s)%2 != 0 {
 		return false
 	}
 	for i := 2; i < len(s); i++ {
