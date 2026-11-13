@@ -861,7 +861,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	}
 
 	if banRetest != nil && isClientHello {
-		banRetest.note(routeHandsOff)
+		banRetest.note(routeHandsOff || (!matched && w.leavesByAnotherRoute(vc, pkt, cfg)))
 	}
 
 	if matched && isClientHello && !routeHandsOff && banRetest == nil && set.TCP.IPBlockDetect.Enabled && host != "" && cfg.IsTCPPort(dport) {

@@ -149,6 +149,36 @@ func TestTheBanRetestNotesAHelloThatLeavesThroughAProxy(t *testing.T) {
 	}
 }
 
+func TestTheBanRetestNotesAnUnmatchedHelloThroughATunnel(t *testing.T) {
+	idx := fakeEgressIfaces(t, egressRoutes(egressUplink))
+	set := newFragmentingYTImagesSet()
+	for name, c := range map[string]struct {
+		out       uint32
+		handedOff bool
+	}{
+		"through another service's tunnel": {idx["wgt0"], true},
+		"through the uplink":               {idx["eth7"], false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := newInjectingWorker(t, &set)
+			w.bans = newTestIPBans(t, nil)
+			banAddress(t, w.bans, "1.2.3.4", 443)
+			thisHost(t, "10.0.0.1")
+
+			flow, done := w.bans.beginHostRetest(net.ParseIP("1.2.3.4"), 443)
+			defer done()
+			flow.sport.Store(12345)
+			queuedVerdict(t, w, makeV4TCPPacket(buildClientHello("unlisted.example", 16, 0xAB), 1000), nil, c.out, 0)
+			if !flow.seen.Load() {
+				t.Fatal("the re-test's ClientHello must be noted as seen although no set takes its name")
+			}
+			if flow.handedOff.Load() != c.handedOff {
+				t.Errorf("handed off = %t, want %t: an answer that came back through a tunnel says nothing about the direct path, whether or not a set takes the name", flow.handedOff.Load(), c.handedOff)
+			}
+		})
+	}
+}
+
 func nameRetestBans(t *testing.T, handled, handedOff bool) (*ipBans, *atomic.Int32) {
 	t.Helper()
 	b := newTestIPBans(t, func(context.Context, net.IP, int, int) iphealth.TLSResult { return iphealth.TLSSilent })
