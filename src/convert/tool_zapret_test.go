@@ -2,7 +2,6 @@ package convert
 
 import (
 	"errors"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -49,6 +48,27 @@ var zapretConfigs = []struct {
 		"tcpAndUDPWithZeroQUIC",
 		"--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake " +
 			"--dpi-desync-fake-quic=0x00000000",
+	},
+	{
+		"noPortFiltersWithQUICFile",
+		"--hostlist-domains=example.com --dpi-desync=fake,multisplit --dpi-desync-repeats=6 " +
+			"--dpi-desync-fake-quic=/opt/zapret/files/fake/quic_initial_www_google_com.bin",
+	},
+	{
+		"tcpAndUDPWithAnyProtocolRepeatsAndTTL",
+		"--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake " +
+			"--dpi-desync-any-protocol --dpi-desync-repeats=11 --dpi-desync-ttl=4",
+	},
+	{
+		"tcpOnlyWithUDPFakeOptions",
+		"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake " +
+			"--dpi-desync-any-protocol=0 --dpi-desync-fake-quic=0x0d0a0bfc",
+	},
+	{
+		"tcpAndUDPThenUDPOnly",
+		"--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake " +
+			"--dpi-desync-fake-quic=/opt/zapret/files/fake/quic.bin --new " +
+			"--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=11 --dpi-desync-ttl=5",
 	},
 }
 
@@ -1011,6 +1031,8 @@ func TestZapret_AnL7ProfileIsEnabledOnlyWhenItFakesUDP(t *testing.T) {
 		{"ipfrag2", "", "desyncModesEmpty", false},
 		{"udplen", "", "desyncModesDropped", false},
 		{"fake,udplen", "", "desyncModesDropped", true},
+		{"fakeknown", "", "desyncModesMapped", true},
+		{"fakedsplit", "", "desyncModesEmpty", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.desync+tt.extra, func(t *testing.T) {
@@ -1152,61 +1174,6 @@ func TestZapret_UDPFakesOutsideAnL7SetKeepTheirMapping(t *testing.T) {
 				t.Fatalf("only a set that selects by protocol sends the STUN fake: %+v", got)
 			}
 			assertSetsSave(t, res)
-		})
-	}
-}
-
-func TestZapret_ATCPAndUDPProfileKeepsItsUDPFakePayload(t *testing.T) {
-	const base = "--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake"
-	tests := []struct {
-		token   string
-		status  Status
-		reason  string
-		payload string
-		data    []byte
-	}{
-		{"--dpi-desync-fake-quic=/opt/zapret/files/fake/quic_initial_www_google_com.bin",
-			StatusApproximated, "fakeQUICApproximated", config.FakePayloadAutoQUIC, nil},
-		{"--dpi-desync-fake-unknown-udp=/opt/zapret/files/fake/udp.bin",
-			StatusApproximated, "fakeUnknownUDPApproximated", config.FakePayloadAutoQUIC, nil},
-		{"--dpi-desync-fake-quic=0x0d0a0bfc", StatusMapped, "fakeDataMapped", "", []byte{0x0d, 0x0a, 0x0b, 0xfc}},
-		{"--dpi-desync-fake-unknown-udp=0x0d0a0bfc", StatusMapped, "fakeDataMapped", "", []byte{0x0d, 0x0a, 0x0b, 0xfc}},
-		{"--dpi-desync-fake-quic=0x00000000", StatusMapped, "fakeZeroPayload", "", nil},
-		{"--dpi-desync-fake-unknown-udp=0x00000000", StatusMapped, "fakeZeroPayload", "", nil},
-	}
-	without := analyze(t, base).Sets[0]
-	for _, tt := range tests {
-		t.Run(tt.token, func(t *testing.T) {
-			res := analyze(t, base+" "+tt.token)
-			if len(res.Sets) != 1 {
-				t.Fatalf("got %d sets", len(res.Sets))
-			}
-			set := res.Sets[0]
-			if tt.data != nil {
-				assertPendingUDPPayload(t, set, tt.data)
-			} else if set.UDP.FakePayloadFile != tt.payload || len(set.UDP.FakePayloadData) > 0 {
-				t.Fatalf("udp.fake_payload_file=%q, %d bytes, want %q", set.UDP.FakePayloadFile, len(set.UDP.FakePayloadData), tt.payload)
-			}
-			if n := noteFor(t, res, tt.token); n.Status != tt.status || n.Reason != tt.reason {
-				t.Fatalf("got %+v", n)
-			}
-			set.UDP.FakePayloadFile, set.UDP.FakePayloadData = without.UDP.FakePayloadFile, without.UDP.FakePayloadData
-			if !reflect.DeepEqual(set, without) {
-				t.Fatalf("the fake payload must change nothing else in the set:\nwith    %+v\nwithout %+v", set.UDP, without.UDP)
-			}
-			assertNoLostOptions(t, res)
-			assertSetsSave(t, res)
-		})
-	}
-}
-
-func TestZapret_AQUICFakeOnATCPOnlyProfileReachesNoUDPPayload(t *testing.T) {
-	for _, token := range []string{"--dpi-desync-fake-quic=q.bin", "--dpi-desync-fake-quic=0x0d0a", "--dpi-desync-fake-quic=0x00000000"} {
-		t.Run(token, func(t *testing.T) {
-			res := analyze(t, "--filter-tcp=443 --dpi-desync=fake "+token)
-			if u := res.Sets[0].UDP; u.FakePayloadFile != "" || len(u.FakePayloadData) > 0 {
-				t.Fatalf("a profile that never matches UDP has no UDP fake: file %q, %d bytes", u.FakePayloadFile, len(u.FakePayloadData))
-			}
 		})
 	}
 }

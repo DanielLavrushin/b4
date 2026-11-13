@@ -2,6 +2,7 @@ package convert
 
 import (
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -437,17 +438,39 @@ func normalizeZapret(prog *Program, _ []Token, notes *noteSet) {
 	}
 }
 
+var zapretTCPOnlyL7 = map[string]bool{"http": true, "tls": true}
+
+func zapretSeesUDP(prof *Profile) bool {
+	f := prof.Filters
+	if len(f.TCPPorts) > 0 && len(f.UDPPorts) == 0 {
+		return false
+	}
+	if len(f.Protos) == 0 {
+		return true
+	}
+	return slices.ContainsFunc(f.Protos, func(p string) bool { return !zapretTCPOnlyL7[p] })
+}
+
+func zapretFakesUDP(prof *Profile) bool {
+	return slices.Contains(prof.DesyncModes, "fake") || slices.Contains(prof.DesyncModes, "fakeknown")
+}
+
 func promoteUDPFake(prof *Profile) {
-	if !prof.UDPOnly() && len(prof.Filters.UDPPorts) == 0 {
+	udpOnly := prof.UDPOnly()
+	fakes := zapretFakesUDP(prof)
+	if !udpOnly && (!fakes || !zapretSeesUDP(prof)) {
+		prof.UDP.ZeroRef = false
 		return
 	}
+	prof.UDP.Present = fakes
+	prof.UDP.Shared = !udpOnly
+	prof.UDP.AnyProtocol = prof.AnyProtocol
+	prof.UDP.Repeats = prof.Fake.Repeats
 	prof.UDP.QUICRef = prof.Fake.QUICRef
 	prof.UDP.QUICData = prof.Fake.QUICData
-	if !prof.UDPOnly() {
+	if !udpOnly {
 		return
 	}
-	prof.UDP.Present = prof.Fake.Present
-	prof.UDP.Repeats = prof.Fake.Repeats
 	prof.UDP.TTL = prof.Fake.TTL
 	prof.UDP.TTLSet = prof.Fake.TTLSet
 	prof.UDP.Ports = append(prof.UDP.Ports, prof.Filters.UDPPorts...)

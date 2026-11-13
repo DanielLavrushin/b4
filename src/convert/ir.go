@@ -138,23 +138,31 @@ type FakeOp struct {
 }
 
 type UDPOp struct {
-	FakeCount int      `json:"fake_count"`
-	Present   bool     `json:"present"`
-	Repeats   int      `json:"repeats"`
-	QUICRef   string   `json:"quic_ref"`
-	QUICData  []byte   `json:"quic_data"`
-	ZeroRef   bool     `json:"zero_ref"`
-	TTL       int      `json:"ttl"`
-	TTLSet    bool     `json:"ttl_set"`
-	Ports     []string `json:"ports"`
+	FakeCount   int      `json:"fake_count"`
+	Present     bool     `json:"present"`
+	Repeats     int      `json:"repeats"`
+	QUICRef     string   `json:"quic_ref"`
+	QUICData    []byte   `json:"quic_data"`
+	ZeroRef     bool     `json:"zero_ref"`
+	TTL         int      `json:"ttl"`
+	TTLSet      bool     `json:"ttl_set"`
+	Ports       []string `json:"ports"`
+	Shared      bool     `json:"shared"`
+	Folded      bool     `json:"folded"`
+	AnyProtocol bool     `json:"any_protocol"`
 }
 
 func (u UDPOp) Empty() bool {
-	return !u.drivesUDP() && u.QUICRef == "" && len(u.QUICData) == 0
+	return u.FakeCount == 0 && !u.Present && u.Repeats == 0 &&
+		u.QUICRef == "" && len(u.QUICData) == 0 && !u.TTLSet && len(u.Ports) == 0
 }
 
-func (u UDPOp) drivesUDP() bool {
-	return u.FakeCount != 0 || u.Present || u.Repeats != 0 || u.TTLSet || len(u.Ports) > 0
+func (u UDPOp) fakes() bool {
+	return u.Present || u.FakeCount > 0
+}
+
+func (u UDPOp) namesPayload() bool {
+	return u.QUICRef != "" || len(u.QUICData) > 0 || u.ZeroRef
 }
 
 type DesyncOp struct {
@@ -221,6 +229,14 @@ func (p *Profile) carriesStrategy() bool {
 		len(p.HTTPMod) > 0 || len(p.DesyncModes) > 0 || p.Desync.Mode != "" ||
 		p.SynFake.Enabled || p.Duplicate > 0 || p.WinSize > 0 || p.SeqOvl.Length > 0 ||
 		p.UDP.Present || p.UDP.FakeCount > 0 || p.UDP.QUICRef != "" || len(p.UDP.QUICData) > 0 || p.UDP.Repeats > 0
+}
+
+func (p *Profile) ownsUDPSide() bool {
+	return p.UDPOnly() || p.UDP.Folded || p.UDP.FakeCount > 0
+}
+
+func (p *Profile) statesUDP() bool {
+	return len(p.Filters.UDPPorts) > 0 || p.UDP.namesPayload()
 }
 
 func (p *Profile) hasOwnTargets() bool {

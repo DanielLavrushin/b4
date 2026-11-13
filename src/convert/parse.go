@@ -422,12 +422,14 @@ func foldUDPProfiles(prog *Program, tokens []Token, notes *noteSet) []Token {
 			carriers = append(carriers, p)
 		}
 	}
-	if len(carriers) != 1 || len(foldable) != 1 {
+	if len(carriers) != 1 || len(foldable) != 1 || carriers[0].statesUDP() {
 		return tokens
 	}
 
 	dst, src := carriers[0], foldable[0]
 	dst.UDP = src.UDP
+	dst.UDP.Shared = false
+	dst.UDP.Folded = true
 	dst.FoldedProtoTokens = append(dst.FoldedProtoTokens, src.ProtoTokens...)
 	dst.FoldedTokens = append(dst.FoldedTokens, src.Tokens...)
 	folded := map[int]bool{src.Index: true}

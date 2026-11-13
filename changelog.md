@@ -16,6 +16,7 @@ All notable changes to b4 are recorded in this file.
 - When the login session ends while a page is open, for example after b4 restarts, a sign-in window appears over the page and unsaved changes stay in place. [#569](https://github.com/DanielLavrushin/b4/issues/569)
 - The device tables under **Settings, Core, Devices** and on a set's **Source Devices** tab show a device's host name ahead of its vendor, and the **Traffic** page shows the address next to a named device. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
 - Fake data written out in an imported zapret or byedpi command line is saved on the **Payloads** tab, and the set uses it as **My own Payload File** or, for UDP, as its **Fake Packet Payload**. [#538](https://github.com/DanielLavrushin/b4/issues/538)
+- The import report says when a set sends b4's default UDP fakes because its zapret or byedpi profile does nothing to UDP.
 
 ### Fixed
 
@@ -31,7 +32,8 @@ All notable changes to b4 are recorded in this file.
 - Interface lists left out interfaces that were down, so a switched-off WireGuard connection could not be picked as a set's **Output Interface**. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
 - A ban from **IP Block Detection** on a server that answers only its own sites, such as a YouTube video server, never ended early, even after the set reached the site again, because the re-tests asked for unrelated names only. [#547](https://github.com/DanielLavrushin/b4/issues/547)
 - A byedpi fake imported from the command line (`-l :...`) came out changed when it held binary data, and its set showed **Fake Payload Type** as a bare `1`. [#538](https://github.com/DanielLavrushin/b4/issues/538)
-- An imported zapret UDP fake (`--dpi-desync-fake-quic`, `--dpi-desync-fake-unknown-udp`) went out as zeros when it was given as hex or its profile filtered both TCP and UDP, and a TLS fake given as hex (`--dpi-desync-fake-tls=0x...`) was left out of the set. [#538](https://github.com/DanielLavrushin/b4/issues/538), [#581](https://github.com/DanielLavrushin/b4/issues/581)
+- An imported zapret UDP fake (`--dpi-desync-fake-quic`, `--dpi-desync-fake-unknown-udp`) went out as zeros when it was given as hex or its profile also handled TCP, and a TLS fake given as hex (`--dpi-desync-fake-tls=0x...`) was left out of the set. [#538](https://github.com/DanielLavrushin/b4/issues/538), [#581](https://github.com/DanielLavrushin/b4/issues/581)
+- In an imported zapret configuration, `--dpi-desync-repeats` did not reach the UDP fakes of a profile that also handled TCP, the `--dpi-desync-ttl` of a UDP profile was not applied, a separate UDP profile replaced the UDP settings of a profile that had its own, and `--dpi-desync-any-protocol` could read as **Not recognized** in the report.
 - Set cards and **Discovery** results named the Google and DuckDuckGo fake payloads `default` and `default2`. [#538](https://github.com/DanielLavrushin/b4/issues/538)
 
 ### Security

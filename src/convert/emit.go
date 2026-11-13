@@ -100,6 +100,8 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) ([]confi
 
 		emitFilters(&set, prof, ti, notes, udpOnly)
 		emitUDP(&set, prog.Tool, prof, ti, notes, udpOnly)
+		emitAnyProtocol(&set, prof, ti, notes, udpOnly)
+		noteDefaultUDPFakes(&set, prof, notes, udpOnly)
 		emitL7Decoy(&set, prof, ti, notes)
 		if !udpOnly {
 			emitSplits(&set, prof, ti, notes, opts)
@@ -316,69 +318,148 @@ func emitL7Decoy(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *not
 
 const udpFoldPrefix = "udpfold:"
 
+func udpKey(prof *Profile, key string) string {
+	if prof.UDP.Folded {
+		return udpFoldPrefix + key
+	}
+	return key
+}
+
 func emitUDP(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, notes *noteSet, udpOnly bool) {
-	if !udpOnly && !prof.UDP.drivesUDP() {
-		if !prof.UDP.Empty() || len(prof.Filters.UDPPorts) > 0 {
-			emitUDPPayload(set, tool, prof, ti, notes)
-			noteFoldedTokens(prof, ti, notes, set)
-		}
+	if !prof.ownsUDPSide() {
+		emitSharedUDP(set, tool, prof, ti, notes)
 		return
 	}
-	set.UDP.Mode = "fake"
-	set.UDP.FilterQUIC = "all"
+	set.UDP.Mode = config.UDPModeFake
+	set.UDP.FilterQUIC = config.QUICFilterAll
 
 	if len(prof.UDP.Ports) > 0 && set.UDP.DPortFilter == "" {
 		set.UDP.DPortFilter = strings.Join(prof.UDP.Ports, ",")
 	}
 	if prof.UDP.FakeCount > 0 {
 		set.UDP.FakeSeqLength = prof.UDP.FakeCount
-		if tok, ok := ti.first(prof.Index, "udp_fake", udpFoldPrefix+"udp_fake"); ok {
+		if tok, ok := ti.first(prof.Index, udpKey(prof, "udp_fake")); ok {
 			notes.set(tok, StatusApproximated, "udpFakeCount", "udp.mode=fake", "udp.fake_seq_length")
 		}
 	}
 	if prof.UDP.Repeats > 0 {
 		set.UDP.FakeSeqLength = prof.UDP.Repeats
-		if tok, ok := ti.first(prof.Index, "repeats", udpFoldPrefix+"repeats"); ok {
+		if tok, ok := ti.first(prof.Index, udpKey(prof, "repeats")); ok {
 			notes.set(tok, StatusMapped, "udpFakeRepeatsMapped", "udp.fake_seq_length")
 		}
 	}
 	emitUDPPayload(set, tool, prof, ti, notes)
-	if prof.AnyProtocol {
-		set.UDP.FilterQUIC = "all"
-		if tok, ok := ti.first(prof.Index, "any_protocol", udpFoldPrefix+"any_protocol"); ok {
-			notes.set(tok, StatusApproximated, "anyProtocolUDP", "udp.filter_quic=all")
-		}
+	if prof.UDP.Folded {
+		noteUDPFakesUnused(prof, ti, notes)
 	}
-	if prof.UDP.TTLSet {
-		if prof.UDP.TTL > 0 {
-			set.UDP.FakingStrategy = "ttl"
-		}
-		if tok, ok := ti.first(prof.Index, "desync_ttl", "ttl", udpFoldPrefix+"desync_ttl"); ok {
-			if prof.UDP.TTL > 0 {
-				notes.set(tok, StatusMapped, "udpFakeTTLMapped", "udp.faking_strategy=ttl")
-			} else {
-				notes.set(tok, StatusMapped, "udpFakeTTLOriginal", "udp.faking_strategy=none")
-			}
-		}
-	}
+	emitUDPFakeTTL(set, prof, ti, notes, udpOnly)
 	noteFoldedTokens(prof, ti, notes, set)
 }
 
+func emitSharedUDP(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, notes *noteSet) {
+	if !prof.UDP.Shared {
+		noteUDPFakesUnused(prof, ti, notes)
+		return
+	}
+	if prof.UDP.Repeats > 0 {
+		set.UDP.FakeSeqLength = prof.UDP.Repeats
+	}
+	emitUDPPayload(set, tool, prof, ti, notes)
+}
+
+func emitUDPFakeTTL(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet, udpOnly bool) {
+	if !prof.UDP.TTLSet {
+		return
+	}
+	tok, ok := ti.first(prof.Index, udpKey(prof, "desync_ttl"), udpKey(prof, "ttl"))
+	switch {
+	case !prof.UDP.fakes():
+		if ok {
+			notes.set(tok, StatusDegenerate, "requiresFake")
+		}
+	case prof.UDP.TTL <= 0:
+		if ok {
+			notes.set(tok, StatusMapped, "udpFakeTTLOriginal", "udp.faking_strategy=none")
+		}
+	case !udpOnly && prof.Fake.Present:
+		if ok {
+			notes.set(tok, StatusApproximated, "udpFakeTTLShared", "faking.ttl")
+		}
+	default:
+		set.Faking.TTL = uint8(clamp(prof.UDP.TTL, 1, 255))
+		if ok {
+			notes.set(tok, StatusMapped, "udpFakeTTLMapped", "faking.ttl="+strconv.Itoa(int(set.Faking.TTL)))
+		}
+	}
+}
+
+func emitAnyProtocol(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet, udpOnly bool) {
+	widen := func(tok Token) {
+		set.UDP.FilterQUIC = config.QUICFilterAll
+		notes.set(tok, StatusApproximated, "anyProtocolUDP", "udp.filter_quic=all")
+	}
+	ti.each(prof.Index, "any_protocol", func(tok Token) {
+		switch {
+		case !prof.AnyProtocol:
+			notes.set(tok, StatusMapped, "anyProtocolOff")
+		case udpOnly || prof.UDP.Shared:
+			widen(tok)
+		default:
+			notes.set(tok, StatusUnsupported, "anyProtocol")
+		}
+	})
+	ti.each(prof.Index, udpFoldPrefix+"any_protocol", func(tok Token) {
+		if prof.UDP.AnyProtocol {
+			widen(tok)
+			return
+		}
+		notes.set(tok, StatusMapped, "anyProtocolOff")
+	})
+}
+
+func noteUDPFakesUnused(prof *Profile, ti tokenIndex, notes *noteSet) {
+	for _, key := range []string{"fake_quic", "fake_unk_udp"} {
+		ti.each(prof.Index, key, func(tok Token) {
+			v := strings.TrimSpace(tok.Value)
+			if _, err := decodeHexLiteral(v); isHexLiteral(v) && err != nil {
+				notes.set(tok, StatusInvalid, "fakeHexInvalid")
+				return
+			}
+			notes.set(tok, StatusDegenerate, "udpFakeUnused")
+		})
+	}
+}
+
+func noteDefaultUDPFakes(set *config.SetConfig, prof *Profile, notes *noteSet, udpOnly bool) {
+	if udpOnly || prof.UDP.fakes() || prof.Skip || set.UDP.Mode != config.UDPModeFake {
+		return
+	}
+	notes.extra = append(notes.extra, Note{
+		Token:     set.Name,
+		Profile:   prof.Index,
+		Status:    StatusApproximated,
+		Reason:    "udpDefaultFakes",
+		Fields:    []string{"udp.mode=" + config.UDPModeFake},
+		Synthetic: true,
+	})
+}
+
 func emitUDPPayload(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, notes *noteSet) {
+	keys := []string{udpKey(prof, "fake_quic"), udpKey(prof, "fake_unk_udp")}
 	if prof.UDP.QUICRef != "" {
 		set.UDP.FakePayloadFile = config.FakePayloadAutoQUIC
-		if tok, ok := ti.first(prof.Index, "fake_quic", udpFoldPrefix+"fake_quic"); ok {
+		if tok, ok := ti.first(prof.Index, keys[0]); ok {
 			notes.set(tok, StatusApproximated, "fakeQUICApproximated",
 				"udp.fake_payload_file="+config.FakePayloadAutoQUIC)
 		}
-		if tok, ok := ti.first(prof.Index, "fake_unk_udp", udpFoldPrefix+"fake_unk_udp"); ok {
+		if tok, ok := ti.first(prof.Index, keys[1]); ok {
 			notes.set(tok, StatusApproximated, "fakeUnknownUDPApproximated",
 				"udp.fake_payload_file="+config.FakePayloadAutoQUIC)
 		}
 	}
 	if prof.UDP.ZeroRef {
 		set.UDP.FakePayloadFile = ""
-		for _, key := range udpFakeKeys {
+		for _, key := range keys {
 			ti.each(prof.Index, key, func(tok Token) {
 				notes.set(tok, StatusMapped, "fakeZeroPayload", "udp.fake_payload_file=")
 			})
@@ -388,7 +469,7 @@ func emitUDPPayload(set *config.SetConfig, tool string, prof *Profile, ti tokenI
 		set.UDP.FakePayloadFile = pendingPayloadFile(tool)
 		set.UDP.FakePayloadData = prof.UDP.QUICData
 	}
-	noteUDPHexFakes(set, prof, ti, notes)
+	noteUDPHexFakes(set, prof, ti, notes, keys)
 }
 
 func noteFoldedTokens(prof *Profile, ti tokenIndex, notes *noteSet, set *config.SetConfig) {
@@ -729,15 +810,13 @@ func useImportedPayload(set *config.SetConfig, tool string, data []byte) {
 	set.Faking.PayloadData = data
 }
 
-var udpFakeKeys = []string{"fake_quic", "fake_unk_udp", udpFoldPrefix + "fake_quic", udpFoldPrefix + "fake_unk_udp"}
-
-func noteUDPHexFakes(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
+func noteUDPHexFakes(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet, keys []string) {
 	chosen := "udp.fake_payload_file"
 	if prof.UDP.ZeroRef {
 		chosen = "udp.fake_payload_file="
 	}
 	dataUsed := false
-	for _, key := range udpFakeKeys {
+	for _, key := range keys {
 		ti.each(prof.Index, key, func(tok Token) {
 			v := strings.TrimSpace(tok.Value)
 			if !isHexLiteral(v) {
@@ -782,7 +861,11 @@ func emitFake(set *config.SetConfig, prog *Program, prof *Profile, ti tokenIndex
 	if prof.Fake.Repeats > 0 {
 		set.Faking.SNISeqLength = prof.Fake.Repeats
 		if tok, ok := ti.first(prof.Index, "repeats"); ok {
-			notes.set(tok, StatusMapped, "fakeRepeatsMapped", "faking.sni_seq_length")
+			fields := []string{"faking.sni_seq_length"}
+			if prof.UDP.Shared {
+				fields = append(fields, "udp.fake_seq_length")
+			}
+			notes.set(tok, StatusMapped, "fakeRepeatsMapped", fields...)
 		}
 	}
 
