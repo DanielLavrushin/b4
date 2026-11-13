@@ -96,7 +96,7 @@ While an address is banned:
 - DNS answers for the domains of every set leave it out. When every address of an answer is banned, b4 answers with an address that worked for the domain before. When it knows none, the answer passes unchanged.
 - The [Traffic](../../connections.md) page labels the connections b4 resets or refuses `ban`.
 
-A ban lasts 24 hours by default. An address banned again within 30 days after its previous ban ended is banned for 7 days. b4 tests a banned address again at every **Retest interval (seconds)** and lifts the ban early after three successful tests in a row. Bans stay across restarts and set changes.
+A ban lasts 24 hours by default. An address banned again within 30 days after its previous ban ended is banned for 7 days. b4 tests a banned address again at every **Retest interval (seconds)**: with the other site names, and with the name of the site the ban was made for, sent through the set that handles that site. Three successful tests in a row lift the ban early. Bans stay across restarts and set changes.
 
 The [Banned addresses](../../dashboard.md#banned-addresses) panel on the dashboard lists the bans, and **Unban** lifts one at once. The switch and the ban lengths are on the **IP Block Detection** card under [Settings > Core](../../settings/core.md#ip-block-detection).
 

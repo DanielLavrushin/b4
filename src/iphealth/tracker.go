@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -112,8 +113,9 @@ const (
 )
 
 const (
-	tlsProbeConnectTimeout   = 4 * time.Second
-	tlsProbeHandshakeTimeout = 5 * time.Second
+	tlsProbeConnectTimeout       = 4 * time.Second
+	tlsProbeHandshakeTimeout     = 5 * time.Second
+	tlsHostProbeHandshakeTimeout = 8 * time.Second
 )
 
 var neutralTLSNames = []string{"example.com", "vk.com"}
@@ -154,18 +156,11 @@ func probeTLS(ctx context.Context, ip net.IP, port, mark int, connect, handshake
 }
 
 func probeTLSName(ctx context.Context, addr, name string, mark int, connect, handshake time.Duration) TLSResult {
-	conn, err := netprobe.Dialer(mark, connect, 0).DialContext(ctx, "tcp", addr)
-	if err != nil {
-		return TLSUnreachable
-	}
-	defer conn.Close()
-
-	counted := &readCounter{Conn: conn}
-	hctx, cancel := context.WithTimeout(ctx, handshake)
-	defer cancel()
-	err = tls.Client(counted, &tls.Config{ServerName: name, InsecureSkipVerify: true}).HandshakeContext(hctx)
+	dialed, read, err := helloAnswer(ctx, addr, name, mark, connect, handshake, nil)
 	switch {
-	case err == nil || counted.n > 0:
+	case !dialed:
+		return TLSUnreachable
+	case err == nil || read > 0:
 		return TLSReplied
 	case errors.Is(err, context.DeadlineExceeded):
 		return TLSSilent
@@ -173,6 +168,82 @@ func probeTLSName(ctx context.Context, addr, name string, mark int, connect, han
 		return TLSReplied
 	}
 	return TLSUnreachable
+}
+
+func ProbeTLSHost(ctx context.Context, ip net.IP, port int, host string, bound func(localPort int)) TLSResult {
+	return probeTLSHost(ctx, ip, port, host, tlsProbeConnectTimeout, tlsHostProbeHandshakeTimeout, bound)
+}
+
+func probeTLSHost(ctx context.Context, ip net.IP, port int, host string, connect, handshake time.Duration, bound func(localPort int)) TLSResult {
+	if ip == nil || port <= 0 || port > 65535 || host == "" {
+		return TLSUnreachable
+	}
+	addr := net.JoinHostPort(ip.String(), strconv.Itoa(port))
+	dialed, read, err := helloAnswer(ctx, addr, host, 0, connect, handshake, bound)
+	switch {
+	case !dialed:
+		return TLSUnreachable
+	case err == nil || read > 0:
+		return TLSReplied
+	}
+	return TLSSilent
+}
+
+func helloAnswer(ctx context.Context, addr, name string, mark int, connect, handshake time.Duration, bound func(localPort int)) (bool, int, error) {
+	dialer := netprobe.Dialer(mark, connect, 0)
+	if bound != nil {
+		dialer.Control = bindThenReport(dialer.Control, bound)
+	}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return false, 0, err
+	}
+	defer conn.Close()
+
+	counted := &readCounter{Conn: conn}
+	hctx, cancel := context.WithTimeout(ctx, handshake)
+	defer cancel()
+	err = tls.Client(counted, &tls.Config{ServerName: name, InsecureSkipVerify: true}).HandshakeContext(hctx)
+	return true, counted.n, err
+}
+
+func bindThenReport(next func(string, string, syscall.RawConn) error, bound func(localPort int)) func(string, string, syscall.RawConn) error {
+	return func(network, address string, c syscall.RawConn) error {
+		if next != nil {
+			if err := next(network, address, c); err != nil {
+				return err
+			}
+		}
+		port := 0
+		var serr error
+		if cerr := c.Control(func(fd uintptr) {
+			var wildcard syscall.Sockaddr = &syscall.SockaddrInet4{}
+			if strings.HasSuffix(network, "6") {
+				wildcard = &syscall.SockaddrInet6{}
+			}
+			if serr = syscall.Bind(int(fd), wildcard); serr != nil {
+				return
+			}
+			local, err := syscall.Getsockname(int(fd))
+			if err != nil {
+				serr = err
+				return
+			}
+			switch a := local.(type) {
+			case *syscall.SockaddrInet4:
+				port = a.Port
+			case *syscall.SockaddrInet6:
+				port = a.Port
+			}
+		}); cerr != nil {
+			return cerr
+		}
+		if serr != nil {
+			return serr
+		}
+		bound(port)
+		return nil
+	}
 }
 
 type readCounter struct {

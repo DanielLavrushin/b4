@@ -1411,7 +1411,7 @@ func TestARetestVerdictSettlesConnectionsWaitingOnTheAddress(t *testing.T) {
 		t.Fatalf("want one due watch, got %d", len(due))
 	}
 	banAddress(t, r.w.bans, "1.2.3.4", 443)
-	r.w.bans.settleRetest("1.2.3.4:443", iphealth.TLSSilent)
+	r.w.bans.settleRetest("1.2.3.4:443", "", iphealth.TLSSilent, false)
 
 	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345}) {
 		t.Fatalf("a re-test that keeps the ban settles the connection waiting on it, got resets to %v", ports)
@@ -1477,7 +1477,7 @@ func TestARetestAfterBansAreSwitchedOffResetsNothing(t *testing.T) {
 	}
 	banAddress(t, r.w.bans, "1.2.3.4", 443)
 	r.w.bans.enabled.Store(false)
-	r.w.bans.settleRetest("1.2.3.4:443", iphealth.TLSSilent)
+	r.w.bans.settleRetest("1.2.3.4:443", "", iphealth.TLSSilent, false)
 
 	if ports := resetsTo(r.sent()); len(ports) != 0 {
 		t.Fatalf("with bans switched off a re-test must not reset anything, got resets to %v", ports)
