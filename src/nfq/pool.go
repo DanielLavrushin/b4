@@ -17,7 +17,9 @@ import (
 	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/metrics"
+	"github.com/daniellavrushin/b4/netif"
 	"github.com/daniellavrushin/b4/sni"
+	"github.com/daniellavrushin/b4/tables"
 )
 
 func NewWorkerWithQueue(cfg *config.Config, qnum uint16) *Worker {
@@ -77,6 +79,9 @@ func NewPool(cfg *config.Config) *Pool {
 	matcher := buildMatcher(cfg)
 
 	dhcpMgr := dhcp.NewManager()
+	if tables.KeeneticOS() {
+		dhcpMgr.SetRouterNames(netif.KeeneticHostNames)
+	}
 
 	state := newRuntimeState()
 	if !cfg.Queue.IsDiscovery {

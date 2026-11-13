@@ -7,12 +7,22 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/daniellavrushin/b4/netif"
-	"github.com/daniellavrushin/b4/tables"
 	"github.com/daniellavrushin/b4/utils"
 )
 
-const arpPath = "/proc/net/arp"
+var (
+	arpPath           = "/proc/net/arp"
+	dnsmasqLeasePaths = []string{
+		"/var/lib/misc/dnsmasq.leases",
+		"/tmp/dhcp.leases",
+		"/var/lib/dnsmasq/dnsmasq.leases",
+		"/tmp/dnsmasq.leases",
+	}
+	iscLeasePaths = []string{
+		"/var/lib/dhcp/dhcpd.leases",
+		"/var/lib/dhcpd/dhcpd.leases",
+	}
+)
 
 var localAddrs = func() (macs map[string]struct{}, ips map[string]struct{}) {
 	macs = make(map[string]struct{})
@@ -128,43 +138,26 @@ func parseARPFile(path string) ([]ARPEntry, error) {
 	return entries, scanner.Err()
 }
 
-// enrichHostnames tries known DHCP lease file paths to extract MAC->hostname mappings.
-// Returns an empty map if no lease files are found. Best-effort only.
-func enrichHostnames() map[string]string {
-	dnsmasqPaths := []string{
-		"/var/lib/misc/dnsmasq.leases",
-		"/tmp/dhcp.leases",
-		"/var/lib/dnsmasq/dnsmasq.leases",
-		"/tmp/dnsmasq.leases",
-	}
-	for _, p := range dnsmasqPaths {
+func enrichHostnames(routerNames func() map[string]string) map[string]string {
+	for _, p := range dnsmasqLeasePaths {
 		if h := parseDnsmasqHostnames(p); len(h) > 0 {
 			return h
 		}
 	}
 
-	iscPaths := []string{
-		"/var/lib/dhcp/dhcpd.leases",
-		"/var/lib/dhcpd/dhcpd.leases",
-	}
-	for _, p := range iscPaths {
+	for _, p := range iscLeasePaths {
 		if h := parseISCHostnames(p); len(h) > 0 {
 			return h
 		}
 	}
 
-	if h := keeneticHostnames(); len(h) > 0 {
-		return h
+	if routerNames != nil {
+		if h := routerNames(); len(h) > 0 {
+			return h
+		}
 	}
 
 	return make(map[string]string)
-}
-
-var keeneticHostnames = func() map[string]string {
-	if !tables.KeeneticOS() {
-		return nil
-	}
-	return netif.KeeneticHostNames()
 }
 
 func parseDnsmasqHostnames(path string) map[string]string {

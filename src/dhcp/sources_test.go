@@ -2,6 +2,7 @@ package dhcp
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -134,14 +135,43 @@ func TestParseISCHostnames_NotFound(t *testing.T) {
 	}
 }
 
-func TestEnrichHostnamesFallsBackToKeenetic(t *testing.T) {
-	orig := keeneticHostnames
-	keeneticHostnames = func() map[string]string {
+func useLeaseFiles(t *testing.T) (dnsmasq string) {
+	t.Helper()
+	savedDnsmasq, savedISC := dnsmasqLeasePaths, iscLeasePaths
+	dir := t.TempDir()
+	dnsmasq = filepath.Join(dir, "dnsmasq.leases")
+	dnsmasqLeasePaths = []string{dnsmasq}
+	iscLeasePaths = []string{filepath.Join(dir, "dhcpd.leases")}
+	t.Cleanup(func() { dnsmasqLeasePaths, iscLeasePaths = savedDnsmasq, savedISC })
+	return dnsmasq
+}
+
+func TestEnrichHostnamesUsesRouterNamesWithoutLeaseFiles(t *testing.T) {
+	useLeaseFiles(t)
+	routerNames := func() map[string]string {
 		return map[string]string{"FC:B2:14:00:00:01": "MB_PRO_END"}
 	}
-	defer func() { keeneticHostnames = orig }()
 
-	if got := enrichHostnames(); got["FC:B2:14:00:00:01"] != "MB_PRO_END" {
-		t.Fatalf("without lease files the Keenetic names must be used, got %v", got)
+	if got := enrichHostnames(routerNames); got["FC:B2:14:00:00:01"] != "MB_PRO_END" {
+		t.Fatalf("without lease files the router's names must be used, got %v", got)
+	}
+	if got := enrichHostnames(nil); got == nil || len(got) != 0 {
+		t.Fatalf("without lease files and without a router source the result must be an empty map, got %v", got)
+	}
+}
+
+func TestEnrichHostnamesPrefersLeaseFiles(t *testing.T) {
+	dnsmasq := useLeaseFiles(t)
+	lease := "1712345678 fc:b2:14:00:00:01 192.168.1.10 lease-name 01:fc:b2:14:00:00:01\n"
+	if err := os.WriteFile(dnsmasq, []byte(lease), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	routerNames := func() map[string]string {
+		t.Error("the router must not be asked while a lease file names devices")
+		return nil
+	}
+
+	if got := enrichHostnames(routerNames); got["FC:B2:14:00:00:01"] != "lease-name" {
+		t.Fatalf("a lease file must win over the router's names, got %v", got)
 	}
 }
