@@ -181,6 +181,28 @@ func TestAnAnswerDuringTheNeutralCheckKeepsTheAddressFromABan(t *testing.T) {
 	}
 }
 
+func TestAnAnswerOnAConnectionOpenedDuringTheCheckKeepsTheAddressFromABan(t *testing.T) {
+	set := silenceSet()
+	release := make(chan struct{})
+	r := newFreshSilenceRig(t, newInjectingWorker(t, &set), silentOnceReleased(release))
+
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	sendHello(t, r.w, 23456, engine.VerdictAccept)
+	r.pool.sweepSilentHellos(time.Now().Add(time.Minute))
+	r.awaitCheck(t)
+	sendHello(t, r.w, 34567, engine.VerdictAccept)
+	r.answerOnlyTo(t, 34567)
+	close(release)
+	r.w.bans.wg.Wait()
+
+	if r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("a connection opened during the neutral-name check and answered before its own deadline must keep the address from a ban")
+	}
+	if ports := resetsTo(r.sent()); len(ports) != 0 {
+		t.Fatalf("without a ban no connection is reset, got resets to %v", ports)
+	}
+}
+
 func TestAConnectionTheClientGivesUpOnIsCountedOnce(t *testing.T) {
 	set := silenceSet()
 	set.TCP.IPBlockDetect.TimeoutMs = 1

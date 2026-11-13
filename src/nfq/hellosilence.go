@@ -62,8 +62,12 @@ type helloWatch struct {
 	fakesCloseEntry bool
 }
 
+func (h *helloWatch) isTo(ip net.IP, port uint16) bool {
+	return h.port == port && h.dst.Equal(ip)
+}
+
 func (h *helloWatch) waitsOn(ip net.IP, port uint16) bool {
-	return (h.probing || h.parked) && h.port == port && h.dst.Equal(ip)
+	return (h.probing || h.parked) && h.isTo(ip, port)
 }
 
 func (t *destStateTracker) Watching() bool {
@@ -209,19 +213,19 @@ func (t *destStateTracker) TakeSilent(ip net.IP, port uint16) []helloWatch {
 	return taken
 }
 
-func (t *destStateTracker) Waiting(ip net.IP, port uint16) []helloWatch {
+func (t *destStateTracker) WatchesTo(ip net.IP, port uint16) []helloWatch {
 	if !t.Watching() {
 		return nil
 	}
 	t.watchMu.RLock()
 	defer t.watchMu.RUnlock()
-	var waiting []helloWatch
+	var watched []helloWatch
 	for _, h := range t.watches {
-		if h.waitsOn(ip, port) {
-			waiting = append(waiting, *h)
+		if h.isTo(ip, port) {
+			watched = append(watched, *h)
 		}
 	}
-	return waiting
+	return watched
 }
 
 func (t *destStateTracker) escalatedAway(cfg *config.Config, h helloWatch) bool {
@@ -473,7 +477,7 @@ func (w *Worker) silentHelloGotAnswer(ip net.IP, port int) bool {
 		return false
 	}
 	lookups := 0
-	for _, h := range w.destState.Waiting(ip, uint16(port)) {
+	for _, h := range w.destState.WatchesTo(ip, uint16(port)) {
 		if h.closed {
 			continue
 		}
