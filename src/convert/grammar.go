@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -198,11 +199,11 @@ func parseCForm(s string) ([]byte, error) {
 }
 
 func isHexLiteral(s string) bool {
-	return len(s) > 2 && (s[:2] == "0x" || s[:2] == "0X")
+	return len(s) >= 2 && (s[:2] == "0x" || s[:2] == "0X")
 }
 
 func isZeroHexLiteral(s string) bool {
-	if !isHexLiteral(s) {
+	if !isHexLiteral(s) || len(s) == 2 || len(s)%2 != 0 {
 		return false
 	}
 	for i := 2; i < len(s); i++ {
@@ -211,6 +212,13 @@ func isZeroHexLiteral(s string) bool {
 		}
 	}
 	return true
+}
+
+func decodeHexLiteral(s string) ([]byte, error) {
+	if !isHexLiteral(s) || len(s) == 2 {
+		return nil, errors.New("expected 0x followed by hex digits")
+	}
+	return hex.DecodeString(s[2:])
 }
 
 func isHex(c byte) bool {

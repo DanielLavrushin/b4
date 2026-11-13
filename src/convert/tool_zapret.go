@@ -444,6 +444,7 @@ func promoteUDPFake(prof *Profile) {
 	prof.UDP.Present = prof.Fake.Present
 	prof.UDP.Repeats = prof.Fake.Repeats
 	prof.UDP.QUICRef = prof.Fake.QUICRef
+	prof.UDP.QUICData = prof.Fake.QUICData
 	prof.UDP.TTL = prof.Fake.TTL
 	prof.UDP.TTLSet = prof.Fake.TTLSet
 	prof.UDP.Ports = append(prof.UDP.Ports, prof.Filters.UDPPorts...)

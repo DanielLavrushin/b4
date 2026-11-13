@@ -9,6 +9,8 @@ import (
 	"github.com/daniellavrushin/b4/config"
 )
 
+const PendingPayloadPrefix = "pending:"
+
 var (
 	ErrNothingToParse  = errors.New("no options found in the supplied text")
 	ErrUnsupportedTool = errors.New("the options look like a tool b4 cannot convert yet")

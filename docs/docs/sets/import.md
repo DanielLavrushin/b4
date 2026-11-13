@@ -50,6 +50,7 @@ A b4 set acts only on its [targets](./targets.md). A byedpi command line usually
 - **Only one set acts on a domain.** Profiles that share a host list and differ only by port become sets that are created disabled and named in the report. Each needs its own domains, or it can be deleted.
 - **A host list file** (`--hostlist=...`, `-H ...`) is named next to the domain field of its set. Its contents are copied from the other machine and pasted there.
 - **A fake payload file** (`--dpi-desync-fake-tls=/opt/.../tls_clienthello.bin`) is replaced by a built-in payload. The original can be uploaded under [Settings > Payloads](../settings/payloads.md). An all-zero hex pattern becomes b4's all-zero payload.
+- **Fake data written out in the command line**, as a hex pattern (`--dpi-desync-fake-tls=0x...`, `--dpi-desync-fake-quic=0x...`) or byedpi text (`-l :...`), is saved byte for byte under [Settings > Payloads](../settings/payloads.md) as a TLS or QUIC payload, and the set's fakes carry it. A zapret profile that also names a fake SNI (`--dpi-desync-fake-tls-mod=sni=...`) gets a ClientHello for that name instead of its TLS pattern.
 
 ## The report {#the-report}
 

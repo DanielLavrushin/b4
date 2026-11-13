@@ -577,12 +577,8 @@ func TestZapret_AllZeroFakePayloadIsAPayloadB4Has(t *testing.T) {
 	}
 }
 
-func TestZapret_ANonZeroHexPayloadHasNoEquivalent(t *testing.T) {
+func TestZapret_ANonZeroHexPayloadIsNotTheAllZeroPayload(t *testing.T) {
 	res := analyze(t, "--dpi-desync=fake --dpi-desync-fake-tls=0x0F0F0F0F")
-	n := noteFor(t, res, "--dpi-desync-fake-tls=0x0F0F0F0F")
-	if n.Status != StatusUnsupported || n.Reason != "fakeHexPayload" {
-		t.Fatalf("got %+v", n)
-	}
 	if res.Sets[0].Faking.SNIType == config.FakePayloadZero {
 		t.Fatal("a non-zero pattern is not the all-zero payload")
 	}
