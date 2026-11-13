@@ -212,11 +212,32 @@ func (w *Worker) storeHostHints(clientIP net.IP, set *config.SetConfig, host str
 		if ip == nil {
 			continue
 		}
-		w.storeHostHint(client, ip.String(), set, host, "dns", 0, 0)
+		w.storeHostHint(client, ip.String(), w.hintSetFor(clientIP, set, host, addressFamily(ip)), host, "dns", 0, 0)
 		if observe {
 			w.goodIPs.Observe(host, ip)
 		}
 	}
+}
+
+func addressFamily(ip net.IP) uint8 {
+	if ip.To4() != nil {
+		return IPv4
+	}
+	return IPv6
+}
+
+func (w *Worker) hintSetFor(clientIP net.IP, set *config.SetConfig, host string, family uint8) *config.SetConfig {
+	if set == nil || host == "" || set.MatchesIPVersion(family) {
+		return set
+	}
+
+	matcher := w.getMatcher()
+	mac := w.getMacByIp(clientIP.String())
+	matched, fitting := matcher.MatchSNIWithSourceTLS(host, mac, 0, family, clientScopeIn(matcher, clientIP, mac).filter())
+	if !matched || !fitting.Enabled || !fitting.MatchesIPVersion(family) {
+		return set
+	}
+	return fitting
 }
 
 func (w *Worker) lookupHostHint(cfg *config.Config, clientIP, destIP, srcMac string, keep ...sni.SetFilter) (*config.SetConfig, string, uint16, uint8) {

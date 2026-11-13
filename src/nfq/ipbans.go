@@ -367,7 +367,7 @@ func (w *Worker) hintBanRetest(ip net.IP, port int, host string) {
 	if cfg == nil || matcher == nil || cfg.Queue.IsDiscovery {
 		return
 	}
-	matched, set := matcher.MatchSNIWithSource(host, "")
+	matched, set := matcher.MatchSNIWithSourceTLS(host, "", 0, addressFamily(ip))
 	if !matched || set == nil || !set.Enabled {
 		return
 	}
