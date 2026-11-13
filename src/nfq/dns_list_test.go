@@ -341,6 +341,79 @@ func TestADNSOverTCPRedirectInFlightAtAStopWritesNothing(t *testing.T) {
 	}
 }
 
+func TestADNSOverTCPFallbackInFlightAtAStopWritesNothing(t *testing.T) {
+	w, _, set := listWorker(t)
+	failing, _ := failingDoH(t)
+	set.DNS.DoHURL = failing
+	t.Cleanup(resetDNSAnswerCache)
+	resetDNSAnswerCache()
+	lines := connectionLines(t)
+
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	asked := make(chan struct{}, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		if _, err := readDNSTCPMessage(conn); err == nil {
+			asked <- struct{}{}
+		}
+		_, _ = io.Copy(io.Discard, conn)
+	}()
+	device := ln.Addr().(*net.TCPAddr)
+	prevDst, prevDial := dnsTCPOriginalDst, dialDNSTCPUpstream
+	dnsTCPOriginalDst = func(net.Conn) (net.IP, int, error) { return device.IP, device.Port, nil }
+	dialDNSTCPUpstream = func(ctx context.Context, _ *config.Config, addr string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", addr)
+	}
+	t.Cleanup(func() { dnsTCPOriginalDst, dialDNSTCPUpstream = prevDst, prevDial })
+
+	s := newDNSTCPServer(w, 0)
+	clientEnd, serverEnd := net.Pipe()
+	handled := make(chan struct{})
+	go func() {
+		defer close(handled)
+		s.handle(remoteAddrConn{Conn: serverEnd, remote: &net.TCPAddr{IP: net.ParseIP("192.168.1.100"), Port: 40001}})
+	}()
+	answered := make(chan []byte, 1)
+	go func() {
+		if resp, err := readDNSTCPMessage(clientEnd); err == nil {
+			answered <- resp
+		}
+	}()
+	t.Cleanup(func() { clientEnd.Close() })
+	if err := writeDNSTCPMessage(clientEnd, dns.BuildQuery("www.example.com", 31, dnsTypeA), time.Second); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-asked:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the device's resolver was never asked over TCP after the set's resolver failed")
+	}
+
+	s.cancel()
+	select {
+	case <-handled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the connection's handler did not end with the server while the device's resolver had not answered")
+	}
+	select {
+	case resp := <-answered:
+		t.Fatalf("a redirect cut by the stop during its fallback wrote %d bytes to the client", len(resp))
+	case <-time.After(50 * time.Millisecond):
+	}
+	if got := labels(drainLines(lines)); len(got) != 1 || got[0] != dohLabel(t, failing) {
+		t.Fatalf("connection labels %q, want only the redirect's own line", got)
+	}
+}
+
 func TestAStrictListAsksItsCoolingResolverOnlyWhenTheOtherFails(t *testing.T) {
 	w, cfg, set := listWorker(t)
 	set.DNS.Strict = true

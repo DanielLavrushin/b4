@@ -382,6 +382,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			}
 
 			forwarded := s.forwardOneQuery(origIP, origPort, origErr, query)
+			if s.ctx.Err() != nil {
+				return
+			}
 			if forwarded == nil {
 				log.Warnf("DNS TCP: the redirect could not answer %s (%v) and neither could %s, the client gets SERVFAIL (set: %s)",
 					dns.SafeName(domain), rerr, origIP, set.Name)
@@ -498,6 +501,8 @@ func (s *dnsTCPServer) forwardOneQuery(origIP net.IP, origPort int, origErr erro
 	if err := upstream.SetReadDeadline(time.Now().Add(ioTimeout)); err != nil {
 		return nil
 	}
+	stop := context.AfterFunc(s.ctx, func() { _ = upstream.SetReadDeadline(time.Unix(1, 0)) })
+	defer stop()
 	resp, err := readDNSTCPMessage(upstream)
 	if err != nil {
 		log.Tracef("DNS TCP: fallback read from %s:%d failed: %v", origIP, origPort, err)
