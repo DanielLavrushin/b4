@@ -469,7 +469,7 @@ func normalizeZapret(prog *Program, _ []Token, notes *noteSet) {
 	for _, prof := range prog.Profiles {
 		normalizeZapretProfile(prof, notes)
 		promoteUDPFake(prof, zapretQUICTaken(udpProfiles, prof))
-		if prof.UDPOnly() {
+		if prof.UDPOnly() && !prof.Skip {
 			udpProfiles = append(udpProfiles, prof)
 		}
 	}
@@ -481,13 +481,13 @@ func zapretQUICTaken(earlier []*Profile, prof *Profile) bool {
 	return slices.ContainsFunc(earlier, func(e *Profile) bool {
 		f := e.Filters
 		return zapretMatchesQUIC(e) && (f.IPVersion == "" || f.IPVersion == prof.Filters.IPVersion) &&
-			(!e.hasOwnTargets() || f.sameTargets(prof.Filters))
+			f.coversTargets(prof.Filters)
 	})
 }
 
 func zapretMatchesQUIC(prof *Profile) bool {
 	f := prof.Filters
-	if len(f.Protos) > 0 && !f.HasProto("quic") {
+	if f.UDPNegated || (len(f.Protos) > 0 && !f.HasProto("quic")) {
 		return false
 	}
 	return len(f.UDPPorts) == 0 || portListHas(f.UDPPorts, quicPort)

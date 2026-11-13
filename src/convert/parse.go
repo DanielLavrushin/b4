@@ -363,6 +363,7 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 	case "filters.udp_ports":
 		prof.Filters.UDPFilter = true
 		if v.Bool {
+			prof.Filters.UDPNegated = true
 			notes.set(tok, StatusUnsupported, "negatedPortFilter")
 			return
 		}

@@ -84,19 +84,20 @@ type Trigger struct {
 }
 
 type Filters struct {
-	Protos    []string `json:"protos"`
-	Hosts     []string `json:"hosts"`
-	HostsRef  string   `json:"hosts_ref"`
-	Excluded  []string `json:"excluded"`
-	IPs       []string `json:"ips"`
-	IPsRef    string   `json:"ips_ref"`
-	PortMin   int      `json:"port_min"`
-	PortMax   int      `json:"port_max"`
-	TCPPorts  []string `json:"tcp_ports"`
-	UDPPorts  []string `json:"udp_ports"`
-	TCPFilter bool     `json:"tcp_filter"`
-	UDPFilter bool     `json:"udp_filter"`
-	IPVersion string   `json:"ip_version"`
+	Protos     []string `json:"protos"`
+	Hosts      []string `json:"hosts"`
+	HostsRef   string   `json:"hosts_ref"`
+	Excluded   []string `json:"excluded"`
+	IPs        []string `json:"ips"`
+	IPsRef     string   `json:"ips_ref"`
+	PortMin    int      `json:"port_min"`
+	PortMax    int      `json:"port_max"`
+	TCPPorts   []string `json:"tcp_ports"`
+	UDPPorts   []string `json:"udp_ports"`
+	TCPFilter  bool     `json:"tcp_filter"`
+	UDPFilter  bool     `json:"udp_filter"`
+	UDPNegated bool     `json:"udp_negated"`
+	IPVersion  string   `json:"ip_version"`
 }
 
 func (f Filters) HasProto(p string) bool {
@@ -108,9 +109,15 @@ func (f Filters) HasProto(p string) bool {
 	return false
 }
 
-func (f Filters) sameTargets(o Filters) bool {
+func (f Filters) coversTargets(o Filters) bool {
+	if len(f.Excluded) > 0 && !sameStrings(f.Excluded, o.Excluded) {
+		return false
+	}
+	if len(f.Hosts) == 0 && f.HostsRef == "" && len(f.IPs) == 0 && f.IPsRef == "" {
+		return true
+	}
 	return f.HostsRef == o.HostsRef && f.IPsRef == o.IPsRef &&
-		sameStrings(f.Hosts, o.Hosts) && sameStrings(f.IPs, o.IPs) && sameStrings(f.Excluded, o.Excluded)
+		sameStrings(f.Hosts, o.Hosts) && sameStrings(f.IPs, o.IPs)
 }
 
 func sameStrings(a, b []string) bool {
