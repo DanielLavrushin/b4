@@ -180,7 +180,7 @@ type SeqOvlOp struct {
 }
 
 func (p *Profile) UDPOnly() bool {
-	if len(p.Filters.UDPPorts) > 0 && len(p.Filters.TCPPorts) == 0 {
+	if p.Filters.UDPFilter && !p.Filters.TCPFilter {
 		return true
 	}
 	if p.Filters.HasProto("quic") || p.Filters.HasProto(config.UDPL7STUN) || p.Filters.HasProto(config.UDPL7Discord) {

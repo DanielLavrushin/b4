@@ -509,3 +509,44 @@ func TestZapret_APortFilterForEveryPortIsStillAFilter(t *testing.T) {
 		t.Fatalf("a profile that filters UDP for every port has a UDP side of its own and takes no fold: got %d sets", len(res.Sets))
 	}
 }
+
+func TestZapret_AProfileIsUDPOnlyByItsFiltersNotByItsPortLists(t *testing.T) {
+	const rest = " --hostlist-domains=example.com --dpi-desync=fake "
+	tests := []struct {
+		name    string
+		filters string
+		tcp     bool
+	}{
+		{"everyTCPPortAndUDPPorts", "--filter-tcp=* --filter-udp=443", true},
+		{"negatedTCPPortAndUDPPorts", "--filter-tcp=~80 --filter-udp=443", true},
+		{"tcpAndUDPPorts", "--filter-tcp=443 --filter-udp=443", true},
+		{"everyUDPPort", "--filter-udp=*", false},
+		{"negatedUDPPort", "--filter-udp=~53", false},
+		{"udpPorts", "--filter-udp=443", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := analyze(t, tt.filters+rest+"--dup=2")
+			set := res.Sets[0]
+			if set.Faking.SNI != tt.tcp || set.TCP.Duplicate.Enabled != tt.tcp {
+				t.Fatalf("nfqws denies TCP only to a profile with a UDP filter and no TCP filter, whatever ports the filters name: "+
+					"faking.sni=%v duplicate=%v, want both %v", set.Faking.SNI, set.TCP.Duplicate.Enabled, tt.tcp)
+			}
+			reason := "tcpOnlyOption"
+			if tt.tcp {
+				reason = "duplicateMapped"
+			}
+			if n := noteFor(t, res, "--dup=2"); n.Reason != reason {
+				t.Fatalf("got %+v, want %s", n, reason)
+			}
+			assertNoLostOptions(t, res)
+			assertSetsSave(t, res)
+
+			res = analyze(t, tt.filters+rest+"--wssize=1:6")
+			if got := res.Sets[0].TCP.WSSize.Enabled; got != tt.tcp {
+				t.Fatalf("tcp.wssize.enabled=%v, want %v", got, tt.tcp)
+			}
+			assertSetsSave(t, res)
+		})
+	}
+}

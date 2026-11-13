@@ -522,7 +522,7 @@ func zapretUDPTaken(earlier []*Profile, prof *Profile, scopes map[int][]string) 
 
 func zapretTakesEveryUDPOnThePort(prof *Profile) bool {
 	f := prof.Filters
-	return !f.UDPNegated && len(f.Protos) == 0 && portListHas(f.UDPPorts, quicPort)
+	return !f.UDPNegated && len(f.Protos) == 0 && (len(f.UDPPorts) == 0 || portListHas(f.UDPPorts, quicPort))
 }
 
 func portListHas(ports []string, port int) bool {
