@@ -276,6 +276,7 @@ type Profile struct {
 	Duplicate   int       `json:"duplicate"`
 	AnyProtocol bool      `json:"any_protocol"`
 	WinSize     int       `json:"win_size"`
+	WinScale    int       `json:"win_scale"`
 	Skip        bool      `json:"skip"`
 
 	DesyncModes    []string `json:"desync_modes"`

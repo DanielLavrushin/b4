@@ -65,6 +65,11 @@ var zapretConfigs = []struct {
 			"--dpi-desync-any-protocol=0 --dpi-desync-fake-quic=0x0d0a0bfc",
 	},
 	{
+		"wssizeWithItsCutoffs",
+		"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake,multisplit " +
+			"--wssize=1:6 --wssize-cutoff=d2 --wssize-forced-cutoff=1",
+	},
+	{
 		"tcpAndUDPThenUDPOnly",
 		"--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake " +
 			"--dpi-desync-fake-quic=/opt/zapret/files/fake/quic.bin --new " +

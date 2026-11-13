@@ -17,6 +17,7 @@ All notable changes to b4 are recorded in this file.
 - The device tables under **Settings, Core, Devices** and on a set's **Source Devices** tab show a device's host name ahead of its vendor, and the **Traffic** page shows the address next to a named device. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
 - Fake data written out in an imported zapret or byedpi command line is saved on the **Payloads** tab, and the set uses it as **My own Payload File** or, for UDP, as its **Fake Packet Payload**. [#538](https://github.com/DanielLavrushin/b4/issues/538)
 - The import report says when a set sends b4's default UDP fakes because its zapret or byedpi profile does nothing to UDP.
+- An imported zapret `--wssize` switches on **Real TCP window (wssize)** with its window and scale, in place of the zero-window fake ACKs of **Window Manipulation**.
 
 ### Fixed
 

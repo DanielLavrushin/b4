@@ -330,7 +330,13 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 	case "profile.duplicate":
 		prof.Duplicate = v.Int
 	case "profile.win_size":
-		prof.WinSize = v.Int
+		prof.WinSize, prof.WinScale, _ = splitWSSize(v.Str)
+	case "profile.wssize_forced_cutoff":
+		if v.Bool {
+			notes.set(tok, StatusMapped, "wsSizeForcedCutoffOn")
+		} else {
+			notes.set(tok, StatusUnsupported, "wsSizeForcedCutoffOff")
+		}
 	case "profile.skip":
 		prof.Skip = true
 	case "profile.seqovl_len":

@@ -280,12 +280,26 @@ func gZapretModList(raw string, _ grammarCtx) (Value, error) {
 }
 
 func gZapretWSize(raw string, _ grammarCtx) (Value, error) {
-	size, _, _ := strings.Cut(raw, ":")
-	n, err := strconv.Atoi(strings.TrimSpace(size))
+	window, _, err := splitWSSize(raw)
 	if err != nil {
-		return Value{}, errors.New("expected <window>[:<scale>]")
+		return Value{}, err
 	}
-	return Value{Int: n, Str: raw}, nil
+	return Value{Int: window, Str: raw}, nil
+}
+
+func splitWSSize(raw string) (window, scale int, err error) {
+	size, factor, scaled := strings.Cut(raw, ":")
+	bad := errors.New("expected <window>[:<scale>]")
+	if window, err = strconv.Atoi(strings.TrimSpace(size)); err != nil || window < 0 {
+		return 0, 0, bad
+	}
+	if !scaled {
+		return window, 0, nil
+	}
+	if scale, err = strconv.Atoi(strings.TrimSpace(factor)); err != nil || scale < 0 {
+		return 0, 0, bad
+	}
+	return window, scale, nil
 }
 
 var zapretDroppedModes = map[string]bool{
@@ -319,12 +333,7 @@ func emitZapretExtras(set *config.SetConfig, prof *Profile, ti tokenIndex, notes
 			notes.set(tok, StatusApproximated, "seqOvlPatternMapped", "fragmentation.seq_overlap_pattern")
 		}
 	}
-	if prof.WinSize > 0 {
-		set.TCP.Win.Mode = "zero"
-		if tok, ok := ti.first(prof.Index, "wssize"); ok {
-			notes.set(tok, StatusApproximated, "wsSizeApproximated", "tcp.win.mode=zero")
-		}
-	}
+	emitWSSize(set, prof, ti, notes)
 	if len(prof.Filters.Excluded) > 0 {
 		if tok, ok := ti.first(prof.Index, "hostlist_excl_dom", "hostlist_exclude"); ok {
 			notes.set(tok, StatusUnsupported, "excludeListUnsupported")
@@ -335,6 +344,30 @@ func emitZapretExtras(set *config.SetConfig, prof *Profile, ti tokenIndex, notes
 		if tok, ok := ti.first(prof.Index, "skip"); ok {
 			notes.set(tok, StatusMapped, "skipMapped", "enabled=false")
 		}
+	}
+}
+
+func emitWSSize(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
+	tok, ok := ti.first(prof.Index, "wssize")
+	if !ok {
+		return
+	}
+	switch {
+	case prof.WinSize <= 0:
+		notes.set(tok, StatusMapped, "wsSizeOff")
+	case prof.Duplicate > 0:
+		notes.set(tok, StatusUnsupported, "wsSizeWithDuplicate")
+	default:
+		ws := &set.TCP.WSSize
+		ws.Enabled = true
+		ws.Window = clamp(prof.WinSize, 1, config.MaxWSSizeWindow)
+		ws.Scale = clamp(prof.WinScale, 0, config.MaxWSSizeScale)
+		fields := []string{"tcp.wssize.enabled=true", "tcp.wssize.window=" + strconv.Itoa(ws.Window)}
+		if ws.Scale == 0 {
+			notes.set(tok, StatusApproximated, "wsSizeApproximated", fields...)
+			return
+		}
+		notes.set(tok, StatusMapped, "wsSizeMapped", append(fields, "tcp.wssize.scale="+strconv.Itoa(ws.Scale))...)
 	}
 }
 
