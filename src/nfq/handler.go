@@ -545,8 +545,19 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
+	var banRetest *hostRetest
+	if cfg.IsTCPPort(dport) {
+		banRetest = w.hostRetest(vc, pkt, sport, dport)
+	}
+
 	if matched && !routeHandsOff && cfg.IsTCPPort(dport) && duplicatesPackets(set) {
 		log.Tracef("TCP duplicate to %s:%d (%d copies, set: %s)", pkt.dstStr, dport, set.TCP.Duplicate.Count, set.Name)
+
+		if banRetest != nil {
+			if named, _, _ := sni.ParseTLSClientHelloSNI(payload); named != "" {
+				banRetest.note(false)
+			}
+		}
 
 		dupHost, dupTLS, _ := w.tlsCache.Lookup(connKey)
 
@@ -594,11 +605,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	if isAck && !isSyn && !isRst && cfg.IsTCPPort(dport) && matched && set != nil && set.TCP.RSTProtection.Enabled {
 		w.connTracker.MarkEstablished(connKey)
-	}
-
-	var banRetest *hostRetest
-	if cfg.IsTCPPort(dport) {
-		banRetest = w.hostRetest(vc, pkt, sport, dport)
 	}
 
 	if isSyn && !isAck && !routeHandsOff && cfg.IsTCPPort(dport) && matched && banRetest == nil {

@@ -102,6 +102,33 @@ func TestTheBanRetestsOwnHelloIsNeitherResetNorWatched(t *testing.T) {
 	}
 }
 
+func TestTheBanRetestNotesAHelloADuplicatingSetSends(t *testing.T) {
+	set := banningAddressSet()
+	set.TCP.Duplicate.Enabled = true
+	set.TCP.Duplicate.Count = 2
+	w := newDualStackInjectingWorker(t, &set)
+	w.bans = newTestIPBans(t, nil)
+	banAddress(t, w.bans, "1.2.3.4", 443)
+	thisHost(t, "10.0.0.1")
+	sent := captureInjected(t, w)
+
+	flow, done := w.bans.beginHostRetest(net.ParseIP("1.2.3.4"), 443)
+	defer done()
+	flow.sport.Store(12345)
+
+	w.ProcessPacket(bareSyn(IPv4))
+	if flow.seen.Load() {
+		t.Fatal("only the ClientHello marks the re-test as seen, not its SYN")
+	}
+	w.ProcessPacket(makeV4TCPPacket(buildClientHello("i.ytimg.com", 16, 0xAB), 1000))
+	if !flow.seen.Load() || flow.handedOff.Load() {
+		t.Errorf("a ClientHello a duplicating set sends out itself must be noted as seen and direct, or a ban under such a set never lifts by its name: seen=%t handedOff=%t", flow.seen.Load(), flow.handedOff.Load())
+	}
+	if n := resetsIn(sent()); n != 0 {
+		t.Errorf("the re-test's connection must not be reset, got %d resets", n)
+	}
+}
+
 func TestTheBanRetestNotesAHelloThatLeavesThroughAProxy(t *testing.T) {
 	set := newPassiveSet()
 	set.TCP.IPBlockDetect.Enabled = true
