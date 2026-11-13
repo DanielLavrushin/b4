@@ -2845,6 +2845,12 @@
       "watchdog": "The watchdog started this search to heal a set. It cannot be stopped from here.",
       "mcp": "This search was started through the MCP server."
     },
+    "otherRun": {
+      "web": "Another search is running.",
+      "watchdog": "The watchdog is running a search to heal a set.",
+      "mcp": "A search started through the MCP server is running.",
+      "show": "Show it"
+    },
     "run": {
       "title_one": "Searching for {{count}} site",
       "title_other": "Searching for {{count}} sites",
@@ -3764,6 +3770,7 @@
         "forward": "DNS resolved by b4 against {{target}}",
         "pin": "DNS answered from a pinned address",
         "pin-empty": "DNS answered empty, the pinned name has no record of the requested type",
+        "alias-stripped": "The pinned name's alias (CNAME) removed from the resolver's answer, so a resolver on the network cannot follow it past the pins",
         "heal": "DNS answer had unreachable addresses replaced by IP block detection",
         "passthrough": "Matched a set with no resolver configured, DNS query forwarded unchanged",
         "ipv6-disabled": "IPv6 DNS query matched a set while IPv6 is off, forwarded unchanged",
@@ -3806,7 +3813,9 @@
     "username": "Username",
     "password": "Password",
     "signingIn": "Signing in...",
-    "signIn": "Sign In"
+    "signIn": "Sign In",
+    "sessionExpired": "Session expired",
+    "sessionExpiredHint": "Sign in again to continue where you left off"
   },
   "update": {
     "title": "Version Management",

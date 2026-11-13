@@ -33,6 +33,13 @@ type netnsDevice struct {
 	mac string
 }
 
+func netnsThreadNetNS() string {
+	if _, err := os.Lstat("/proc/thread-self"); err == nil {
+		return "/proc/thread-self/ns/net"
+	}
+	return fmt.Sprintf("/proc/self/task/%d/ns/net", unix.Gettid())
+}
+
 func netnsStartDevice(t *testing.T) *netnsDevice {
 	t.Helper()
 	for _, bin := range []string{"unshare", "nsenter"} {
@@ -57,7 +64,7 @@ func netnsStartDevice(t *testing.T) *netnsDevice {
 		_, _ = cmd.Process.Wait()
 	})
 
-	self, _ := os.Readlink("/proc/thread-self/ns/net")
+	self, _ := os.Readlink(netnsThreadNetNS())
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		other, err := os.Readlink(fmt.Sprintf("/proc/%d/ns/net", dev.pid))

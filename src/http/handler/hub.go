@@ -214,6 +214,13 @@ type hubStatusResponse struct {
 	SetMatches []SetDomainMatch `json:"set_matches"`
 }
 
+func hubGateStatus(enabled bool) hubStatusResponse {
+	return hubStatusResponse{
+		Status:     hub.Status{Enabled: enabled, URLs: []string{}, Mirrors: []string{}},
+		SetMatches: []SetDomainMatch{},
+	}
+}
+
 func (api *API) hubStatus(svc *hub.Service) hubStatusResponse {
 	st := svc.Status()
 	hosts := make([]string, 0, len(st.URLs))
@@ -275,11 +282,19 @@ func matchAddressesToSets(matcher *sni.SuffixSet, addresses []string) []SetDomai
 // @Tags Hub
 // @Produce json
 // @Success 200 {object} hubStatusResponse
-// @Failure 409 {object} APIError "hub_disabled or hub_not_configured"
+// @Failure 503 {object} APIError "hub_unavailable"
 // @Security BearerAuth
 // @Router /hub/status [get]
 func (api *API) handleHubStatus(w http.ResponseWriter, r *http.Request) {
 	if !hubGetRequest(w, r) {
+		return
+	}
+	if !api.getCfg().System.Hub.Enabled {
+		sendResponse(w, hubGateStatus(false))
+		return
+	}
+	if svc := globalHubService; svc != nil && !svc.Configured() {
+		sendResponse(w, hubGateStatus(true))
 		return
 	}
 	svc, ok := api.hubService(w)

@@ -371,6 +371,15 @@ func (c *Config) HasECHStrip() bool {
 	return false
 }
 
+func (c *Config) HasDNSPins() bool {
+	for _, set := range c.Sets {
+		if set != nil && set.Enabled && len(set.DNS.Pins) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Config) IPFamilyEnabled(v6 bool) bool {
 	if v6 {
 		return c.Queue.IPv6Enabled

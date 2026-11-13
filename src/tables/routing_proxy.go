@@ -700,22 +700,29 @@ func routeEnsureLocalDelivery(mark uint32, table int, ipv4, ipv6 bool) {
 	writeSysctl("/proc/sys/net/ipv4/conf/lo/rp_filter", "0")
 	writeSysctl("/proc/sys/net/ipv4/conf/all/rp_filter", "2")
 
-	routeDelRuleAllForms(mark, tableStr)
-	routeDelSourceCheckRules(mark)
-
 	if ipv4 {
-		routeAddSourceCheckRule(mark)
-		runLogged("routing: add ip rule v4 (proxy)", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
+		lines, read := routeRuleLines(routeFamily{name: "v4"})
+		routeEnsureSourceCheckRule(mark, lines, read)
+		if !read || !routeRuleInstalledAt(lines, mark, table, proxyRulePriority) {
+			runLogged("routing: add ip rule v4 (proxy)", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
+		}
 		runLogged("routing: add local route v4 (proxy)", "ip", "route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
 	} else {
+		routeDelRuleLoop(false, markStrMask, tableStr)
+		routeDelSourceCheckRules(mark)
 		runLogged("routing: delete local route v4 (proxy)", "ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", tableStr)
 	}
 	if ipv6 {
-		runLogged("routing: add ip rule v6 (proxy)", "ip", "-6", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
+		lines, read := routeRuleLines(routeFamily{name: "v6", flag: []string{"-6"}})
+		if !read || !routeRuleInstalledAt(lines, mark, table, proxyRulePriority) {
+			runLogged("routing: add ip rule v6 (proxy)", "ip", "-6", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
+		}
 		runLogged("routing: add local route v6 (proxy)", "ip", "-6", "route", "replace", "local", "::/0", "dev", "lo", "table", tableStr)
 	} else {
+		routeDelRuleLoop(true, markStrMask, tableStr)
 		runLogged("routing: delete local route v6 (proxy)", "ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", tableStr)
 	}
+	routeDelStaleRuleForms(mark, tableStr)
 }
 
 var writeSysctl = writeSysctlExec

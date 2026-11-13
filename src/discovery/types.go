@@ -123,6 +123,7 @@ type CheckResult struct {
 	lookup      nameLookup
 	lookupHost  string
 	untried     bool
+	cutShort    bool
 	finalHTTPS  bool
 	firstTLS    *tls.ConnectionState
 }
@@ -191,6 +192,7 @@ type DomainPresetResult struct {
 	Confirmed    int               `json:"confirmed,omitempty"`
 	ConfirmTries int               `json:"confirm_tries,omitempty"`
 	Set          *config.SetConfig `json:"set,omitempty"`
+	cutShort     bool
 }
 
 type StrategyGroup struct {
@@ -369,6 +371,7 @@ type DiscoverySuite struct {
 	setPins           map[string][]string
 
 	discoveryCache *DiscoveryCache
+	cachedPresets  []ConfigPreset
 	plainSets      map[string]*config.SetConfig
 	hubPresets     []ConfigPreset
 	hubPresetsFn   func() []ConfigPreset
