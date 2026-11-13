@@ -96,32 +96,34 @@ func (t *destStateTracker) WatchHello(h *helloWatch) {
 	t.watching.Store(int32(len(t.watches)))
 }
 
-func (t *destStateTracker) NoteClientPacket(key string, ack uint32, acked, closing bool, now time.Time) (net.IP, uint16, bool) {
+func (t *destStateTracker) NoteClientPacket(key string, ack uint32, acked, closing bool, now time.Time, answeredBy func(dst net.IP, port uint16)) {
 	if !t.Watching() {
-		return nil, 0, false
+		return
 	}
 	t.watchMu.RLock()
 	h, ok := t.watches[key]
 	t.watchMu.RUnlock()
 	answered := ok && acked && int32(ack-h.helloAck) > 0
 	if !answered && !(ok && closing) {
-		return nil, 0, false
+		return
 	}
 	t.watchMu.Lock()
 	defer t.watchMu.Unlock()
 	if t.watches[key] != h {
-		return nil, 0, false
+		return
 	}
 	if answered {
+		if answeredBy != nil {
+			answeredBy(h.dst, h.port)
+		}
 		t.unwatchLocked(key)
-		return h.dst, h.port, true
+		return
 	}
 	if now.Before(h.deadline) {
 		t.unwatchLocked(key)
-		return nil, 0, false
+		return
 	}
 	h.closed = true
-	return nil, 0, false
 }
 
 func (t *destStateTracker) Unwatch(key string) bool {
@@ -322,9 +324,7 @@ func (w *Worker) noteClientProgress(connKey string, tcp []byte) {
 	if !closing && !acked {
 		return
 	}
-	if dst, port, answered := w.destState.NoteClientPacket(connKey, binary.BigEndian.Uint32(tcp[8:12]), acked, closing, time.Now()); answered {
-		w.bans.forgetSilentHellos(dst, port)
-	}
+	w.destState.NoteClientPacket(connKey, binary.BigEndian.Uint32(tcp[8:12]), acked, closing, time.Now(), w.bans.forgetSilentHellos)
 }
 
 func silenceWatchedSet(cfg *config.Config, setID string) bool {

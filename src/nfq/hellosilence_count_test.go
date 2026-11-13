@@ -277,6 +277,29 @@ func TestAConnectionAnsweredDuringItsLookupIsNotCounted(t *testing.T) {
 	}
 }
 
+func TestAnAnsweredConnectionsCountIsClearedWhileItIsStillWatched(t *testing.T) {
+	set := silenceSet()
+	r := newFreshSilenceWorker(t, &set, iphealth.TLSSilent)
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	key := fmt.Sprintf(connKeyFormat, "10.0.0.1", 12345, "1.2.3.4", 443)
+
+	cleared, watchedAtClear := "", false
+	r.w.destState.NoteClientPacket(key, silentServerAck+1400, true, false, time.Now(), func(dst net.IP, port uint16) {
+		cleared = iphealth.BanKey(dst, int(port))
+		watchedAtClear = r.w.destState.Watching()
+	})
+
+	if cleared != "1.2.3.4:443" {
+		t.Fatalf("the answer must clear the count of the connection's address, cleared %q", cleared)
+	}
+	if !watchedAtClear {
+		t.Fatal("the count must be cleared while the answered connection is still watched, so a ban check that ends at that moment finds either the watch or the cleared count")
+	}
+	if r.w.destState.Watching() {
+		t.Fatal("the watch must end with the answer")
+	}
+}
+
 func TestAConnectionTheClientGivesUpOnIsCountedOnce(t *testing.T) {
 	set := silenceSet()
 	set.TCP.IPBlockDetect.TimeoutMs = 1
