@@ -76,6 +76,10 @@ export const TcpFaking = ({ config, onChange }: TcpFakingProps) => {
     { value: 5, label: t("sets.faking.fakeSni.payloadZeros") },
     { value: 6, label: t("sets.faking.fakeSni.payloadInverted") },
     { value: 7, label: t("sets.faking.fakeSni.payloadDomainOption") },
+    ...(config.faking.sni_type === FakingPayloadType.CUSTOM ||
+    config.faking.custom_payload !== ""
+      ? [{ value: 1, label: t("sets.faking.fakeSni.payloadCustom") }]
+      : []),
   ];
 
   const MUTATION_MODES: { value: MutationMode; label: string }[] = [

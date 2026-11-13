@@ -28,6 +28,7 @@ All notable changes to b4 are recorded in this file.
 - **Open** in a **Discovery** notification could lead to an empty form or to another search, such as one the watchdog started afterwards, instead of the run it announced. [#552](https://github.com/DanielLavrushin/b4/issues/552)
 - When the web interface or its API answered with a server error, such as a 500, `errors.log` often had no line about it. [#530](https://github.com/DanielLavrushin/b4/issues/530)
 - Interface lists left out interfaces that were down, so a switched-off WireGuard connection could not be picked as a set's **Output Interface**. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
+- A set imported from a zapret or byedpi command line with inline fake data showed its **Fake Payload Type** as a bare `1`, and the field with that data was labelled as hex, which b4 never decoded. [#538](https://github.com/DanielLavrushin/b4/issues/538)
 
 ### Security
 

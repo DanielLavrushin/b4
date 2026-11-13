@@ -26,6 +26,7 @@ The **Fake Payload Type** field of a set, under **TCP > Faking > Fake SNI Packet
 | **All Zeros** | 1200 zero bytes |
 | **Inverted Original** | The data of the real packet with every bit inverted |
 | **Generated from Domain** | A ClientHello built like the ones on this tab, for the name in the set's **Domain** field |
+| **Custom** | The text in the set's **Custom Payload** field, byte for byte. Listed only for a set that has such text, such as one imported from a zapret or byedpi command line |
 
 While **My own Payload File** has no payload picked or its file cannot be read, and while **Generated from Domain** has no name, the fake carries **Preset: Google (classic)**. The payload type of a [Discovery](../discovery.md) result is the one to start from.
 

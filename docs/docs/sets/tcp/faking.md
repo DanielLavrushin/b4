@@ -35,6 +35,7 @@ The last two are under **Fake Packet TLS Modification**, shown for every payload
 | **All Zeros** | Zero bytes. |
 | **Inverted Original** | The real ClientHello with every bit inverted. |
 | **Generated from Domain** | A ClientHello generated for the domain entered in **Domain**. |
+| **Custom** | The text in **Custom Payload**, byte for byte. Listed only for a set that has such text, such as one imported from a zapret or byedpi command line with inline fake data. |
 
 ### Fake strategy {#fake-strategy}
 
