@@ -148,6 +148,7 @@ var Fields = map[string]Field{
 	"dns.enabled":        {Class: Crosses},
 	"dns.target_dns":     {Class: Never},
 	"dns.doh_url":        {Class: Crosses},
+	"dns.upstreams":      {Class: Never},
 	"dns.fragment_query": {Class: Crosses},
 	"dns.strict":         {Class: Crosses},
 	"dns.pins":           {Class: Crosses},

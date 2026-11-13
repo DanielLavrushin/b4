@@ -7,7 +7,6 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/dns"
-	"github.com/daniellavrushin/b4/log"
 )
 
 const (
@@ -115,25 +114,7 @@ func resetDNSAnswerCache() {
 	dns.ResetSourceHealth()
 }
 
-const dnsSourceFailuresToTrip = dns.SourceFailuresToTrip
-
-func dnsSourceUnreachable(source string) bool {
-	return dns.SourceUnreachable(source)
-}
-
-func noteDNSSourceFailure(source string) {
-	if dns.NoteSourceFailure(source) {
-		log.Warnf("DNS redirect: %s failed %d times in a row, answering from the fallback until it recovers", dnsUpstreamLabel(source), dnsSourceFailuresToTrip)
-	}
-}
-
-func noteDNSSourceSuccess(source string) {
-	if dns.NoteSourceSuccess(source) {
-		log.Infof("DNS redirect: %s is answering again", dnsUpstreamLabel(source))
-	}
-}
-
-func (w *Worker) dnsRedirectFallback(cfg *config.Config, set *config.SetConfig, domain string, query []byte, originalDst, failedTarget net.IP, delay int) ([]byte, string) {
+func (w *Worker) dnsRedirectFallback(cfg *config.Config, set *config.SetConfig, domain string, query []byte, originalDst net.IP, delay int) ([]byte, string) {
 	if w == nil || cfg == nil || set == nil || set.DNS.Strict {
 		return nil, ""
 	}
@@ -145,8 +126,10 @@ func (w *Worker) dnsRedirectFallback(cfg *config.Config, set *config.SetConfig, 
 	if originalDst == nil || originalDst.IsUnspecified() {
 		return nil, ""
 	}
-	if failedTarget != nil && failedTarget.Equal(originalDst) {
-		return nil, ""
+	for _, target := range plainRedirectTargets(set) {
+		if target.Equal(originalDst) {
+			return nil, ""
+		}
 	}
 
 	resp, err := dns.ResolveUpstream(query, originalDst, dns.ForwardOptions{

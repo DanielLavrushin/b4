@@ -52,6 +52,18 @@ const POPULAR_DOH = doh as DohEntry[];
 
 type ResolverMode = "udp" | "doh";
 
+const parseUpstreams = (text: string): string[] =>
+  text
+    .split(/\s+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+const sameUpstreams = (left: string[], right?: string[]): boolean => {
+  const a = left.filter(Boolean);
+  const b = (right ?? []).filter(Boolean);
+  return a.length === b.length && a.every((entry, i) => entry === b[i]);
+};
+
 interface DnsRedirectProps {
   config: B4SetConfig;
   ipv6: boolean;
@@ -99,6 +111,22 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
     } else {
       onChange("dns.target_dns", "");
     }
+  };
+
+  const [upstreamsText, setUpstreamsText] = useState(() =>
+    (dnsConfig.upstreams ?? []).join("\n"),
+  );
+  const [seenUpstreams, setSeenUpstreams] = useState(dnsConfig.upstreams);
+  if (dnsConfig.upstreams !== seenUpstreams) {
+    setSeenUpstreams(dnsConfig.upstreams);
+    if (!sameUpstreams(parseUpstreams(upstreamsText), dnsConfig.upstreams)) {
+      setUpstreamsText((dnsConfig.upstreams ?? []).join("\n"));
+    }
+  }
+
+  const handleUpstreamsChange = (text: string) => {
+    setUpstreamsText(text);
+    onChange("dns.upstreams", parseUpstreams(text));
   };
 
   const [pinsText, setPinsText] = useState(() => pinsToText(dnsConfig.pins));
@@ -480,6 +508,21 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
             </>
           )}
 
+          <Grid size={{ xs: 12 }}>
+            <B4TextField
+              label={t("sets.dns.upstreams")}
+              value={upstreamsText}
+              path="dns.upstreams"
+              onChange={(e) => handleUpstreamsChange(e.target.value)}
+              placeholder={t("sets.dns.upstreamsPlaceholder")}
+              multiline
+              minRows={2}
+              maxRows={8}
+              helperText={t("sets.dns.upstreamsHelper")}
+              aiTopic="dns.upstreams"
+            />
+          </Grid>
+
           {/* Visual explanation */}
           <Grid size={{ xs: 12 }}>
             <Box
@@ -547,7 +590,7 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
           </Grid>
 
           {/* Warnings */}
-          {!activeResolver && (
+          {!activeResolver && (dnsConfig.upstreams ?? []).length === 0 && (
             <B4Alert severity="warning" sx={{ m: 0 }}>
               {mode === "doh"
                 ? t("sets.dns.noDohWarning")

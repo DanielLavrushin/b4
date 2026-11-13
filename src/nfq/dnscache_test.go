@@ -84,20 +84,20 @@ func TestDNSSourceBreakerTripsAfterRepeatedFailures(t *testing.T) {
 
 	const source = "https://1.1.1.1/dns-query"
 
-	for i := 0; i < dnsSourceFailuresToTrip-1; i++ {
-		noteDNSSourceFailure(source)
-		if dnsSourceUnreachable(source) {
-			t.Fatalf("breaker tripped after %d failures, want %d", i+1, dnsSourceFailuresToTrip)
+	for i := 0; i < dns.SourceFailuresToTrip-1; i++ {
+		dns.NoteSourceFailure(source)
+		if dns.SourceUnreachable(source) {
+			t.Fatalf("breaker tripped after %d failures, want %d", i+1, dns.SourceFailuresToTrip)
 		}
 	}
 
-	noteDNSSourceFailure(source)
-	if !dnsSourceUnreachable(source) {
-		t.Fatalf("breaker did not trip after %d failures", dnsSourceFailuresToTrip)
+	dns.NoteSourceFailure(source)
+	if !dns.SourceUnreachable(source) {
+		t.Fatalf("breaker did not trip after %d failures", dns.SourceFailuresToTrip)
 	}
 
-	noteDNSSourceSuccess(source)
-	if dnsSourceUnreachable(source) {
+	dns.NoteSourceSuccess(source)
+	if dns.SourceUnreachable(source) {
 		t.Fatal("breaker stayed tripped after the source answered again")
 	}
 }

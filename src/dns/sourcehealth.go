@@ -28,6 +28,16 @@ func SourceLabel(source string) string {
 	return source
 }
 
+func SourceCooling(source string) bool {
+	if source == "" {
+		return false
+	}
+	sourceMu.Lock()
+	defer sourceMu.Unlock()
+	state := sourceHealth[source]
+	return state != nil && state.failures >= SourceFailuresToTrip && time.Now().Before(state.retryAt)
+}
+
 func SourceUnreachable(source string) bool {
 	if source == "" {
 		return false

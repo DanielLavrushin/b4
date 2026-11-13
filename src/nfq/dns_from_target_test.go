@@ -418,3 +418,78 @@ func TestAReplyIsNotCountedTwiceWhileARedirectWaitsForIt(t *testing.T) {
 		t.Fatalf("escalation = %q ok=%v, want %q", escId, ok, backup.Id)
 	}
 }
+
+func TestQueryFromAResolverInTheList(t *testing.T) {
+	thisHost(t, "192.0.2.1")
+	ip := net.ParseIP
+	set := redirectSet("", "")
+	set.DNS.Upstreams = []string{"192.0.2.7", "https://192.0.2.8/dns-query"}
+
+	if !queryFromTarget(set, ip("192.0.2.7")) {
+		t.Error("a plain resolver in the list must be recognised as the set's own")
+	}
+	if !queryFromTarget(set, ip("192.0.2.8")) {
+		t.Error("a DoH resolver in the list must be recognised as the set's own")
+	}
+	if queryFromTarget(set, ip("192.0.2.9")) {
+		t.Error("a client of the set's resolvers is not one of them")
+	}
+}
+
+func TestAListOnlySetAnswersThroughItsList(t *testing.T) {
+	set := redirectSet("", "")
+	set.DNS.Upstreams = []string{"https://dns.example/dns-query"}
+	w := redirectWorker(t, false, set)
+	if target, ok := w.dnsAnswerSource(set, net.ParseIP("192.0.2.100")); !ok || target != nil {
+		t.Fatalf("a DoH-only list gave %v %v, want an encrypted answer source", target, ok)
+	}
+
+	set.DNS.Upstreams = []string{"192.0.2.7"}
+	if target, ok := w.dnsAnswerSource(set, net.ParseIP("192.0.2.100")); !ok || !target.Equal(net.ParseIP("192.0.2.7")) {
+		t.Fatalf("a plain entry gave %v %v, want 192.0.2.7", target, ok)
+	}
+}
+
+func TestAListOnlySetNamesItsFirstResolver(t *testing.T) {
+	set := redirectSet("", "")
+	set.DNS.Upstreams = []string{"https://dns.example/dns-query"}
+	if got, want := dnsRedirectAction(set), dnsActionDoHPrefix+"dns.example"; got != want {
+		t.Fatalf("label = %q, want %q", got, want)
+	}
+
+	set.DNS.Upstreams = []string{"192.0.2.7", "https://dns.example/dns-query"}
+	if got, want := dnsRedirectAction(set), dnsActionForwardPrefix+"192.0.2.7"; got != want {
+		t.Fatalf("label = %q, want %q", got, want)
+	}
+}
+
+func TestTheFallbackSkipsOnlyPlainResolvers(t *testing.T) {
+	set := redirectSet("", "")
+	set.DNS.Upstreams = []string{"192.0.2.7", "https://192.0.2.8/dns-query"}
+
+	plain := plainRedirectTargets(set)
+	if len(plain) != 1 || !plain[0].Equal(net.ParseIP("192.0.2.7")) {
+		t.Fatalf("plain targets = %v, want only the address entry", plain)
+	}
+	w := redirectWorker(t, false, set)
+	cfg := w.getConfig()
+	if resp, _ := w.dnsRedirectFallback(cfg, set, "example.com", dns.BuildAQuery("example.com", 7), net.ParseIP("192.0.2.7"), 0); resp != nil {
+		t.Fatal("the fallback asked a plain resolver that the set itself uses")
+	}
+}
+
+func TestABadTargetIsLabelledOnlyWhileTheRedirectIsOn(t *testing.T) {
+	set := redirectSet("resolver.local", "")
+	if !dnsBadTarget(set) {
+		t.Fatal("a non-empty primary that does not parse must keep the dns-bad-target label")
+	}
+	set.DNS.Enabled = false
+	if dnsBadTarget(set) {
+		t.Fatal("a disabled redirect passes through, it is not a bad target")
+	}
+	set.DNS.Enabled = true
+	set.DNS.Upstreams = []string{"1.1.1.1"}
+	if dnsBadTarget(set) {
+		t.Fatal("a set with a usable list is not a bad target")
+	}
+}
