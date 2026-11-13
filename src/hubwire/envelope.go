@@ -319,6 +319,11 @@ func Open(env *Envelope, opts OpenOptions) (*Imported, error) {
 	if err != nil {
 		return nil, err
 	}
+	if ws := set.TCP.WSSize.Effective(); !ws.Enabled {
+		deletePath(m, "tcp.wssize")
+	} else if ws.Window <= 0 {
+		deletePath(m, "tcp.wssize.cutoff")
+	}
 	changed := make([]map[string]interface{}, 0)
 	walkLeaves(m, "", func(path string, v interface{}) {
 		nv, ok := lookupPath(normMap, path)

@@ -6,7 +6,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 ### Added
 
-- Shared sets retain **Real TCP window (wssize)** settings, including the original ClientHello cutoff, and require b4 1.91.0.
+- Sets with **Real TCP window (wssize)**, the set option b4 1.91.0 adds, keep `tcp.wssize` through the hub and are marked as needing b4 1.91.0. The console lists the technique with its window, scale and cutoff, and a search for `wssize` finds these sets.
 
 ## [1.6.0] - 2026-11-06
 

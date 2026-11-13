@@ -17,6 +17,7 @@ const (
 	TechIncoming      = "incoming"
 	TechWindow        = "window"
 	TechDuplicate     = "duplicate"
+	TechWSSize        = "wssize"
 	TechRSTProtection = "rst_protection"
 	TechDropSACK      = "drop_sack"
 	TechHTTPMethodEOL = "http_method_eol"
@@ -40,7 +41,7 @@ const (
 )
 
 var techniqueCodes = []string{TechFake, TechSNIMutation, TechTLSMod, TechFrag, TechSynFake, TechDesync, TechIncoming, TechWindow, TechDuplicate,
-	TechRSTProtection, TechDropSACK, TechHTTPMethodEOL, TechSeg2Delay, TechUDP, TechDNS, TechBlock, TechMSSClamp, TechPassthrough}
+	TechWSSize, TechRSTProtection, TechDropSACK, TechHTTPMethodEOL, TechSeg2Delay, TechUDP, TechDNS, TechBlock, TechMSSClamp, TechPassthrough}
 
 var filterCodes = []string{FilterTLSOnly, FilterIPOnly, FilterDomainOnly}
 
@@ -145,6 +146,19 @@ func Techniques(set *config.SetConfig, payloads []hubwire.BlobRef) []Term {
 	}
 	if set.TCP.Duplicate.Enabled {
 		out = append(out, term(TechDuplicate, map[string]interface{}{"count": set.TCP.Duplicate.Count}))
+	}
+	if ws := set.TCP.WSSize.Effective(); ws.Enabled {
+		p := map[string]interface{}{}
+		if ws.Window > 0 {
+			p["window"] = ws.Window
+		}
+		if ws.Scale > 0 {
+			p["scale"] = ws.Scale
+		}
+		if ws.Cutoff != "" {
+			p["cutoff"] = ws.Cutoff
+		}
+		out = append(out, term(TechWSSize, p))
 	}
 	if set.TCP.RSTProtection.Enabled {
 		out = append(out, term(TechRSTProtection, nil))

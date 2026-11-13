@@ -215,7 +215,10 @@
       "mss_clamp_scope_required": "MSS clamping needs an address, GeoIP or ASN target",
       "udp_l7_targets": "A set that handles only calls cannot also have domain, address, ASN or category targets",
       "udp_l7_ports": "A set that handles only calls needs a UDP port filter",
-      "udp_l7_tcp_ports": "A set that handles only calls and has no targets takes no TCP port filter: it would act on every TCP connection on those ports"
+      "udp_l7_tcp_ports": "A set that handles only calls and has no targets takes no TCP port filter: it would act on every TCP connection on those ports",
+      "wssize_unsupported": "Real TCP window (wssize) does not work together with traffic routing or packet duplication in the same set",
+      "wssize_window_range": "The window of Real TCP window (wssize) must be between {{min}} and {{max}}",
+      "wssize_scale_range": "The Window Scale of Real TCP window (wssize) must be between {{min}} and {{max}}"
     },
     "emptyValue": "(empty)",
     "strippedReasons": {
@@ -1103,6 +1106,9 @@
       "quic_preset": "bundled QUIC preset",
       "quic_capture": "attached QUIC capture"
     },
+    "cutoff": {
+      "first_data": "rewriting stops after the first data packet"
+    },
     "fake": {
       "text": "fake ClientHello: {{payloadLabel}}, {{strategy}}",
       "domain": "for {{domain}}",
@@ -1136,6 +1142,12 @@
     },
     "duplicate": {
       "text": "duplicate segments x{{count}}"
+    },
+    "wssize": {
+      "text": "real TCP window (wssize)",
+      "window": "window {{window}}",
+      "scale": "scale {{scale}}",
+      "cutoffLabel": "{{cutoffLabel}}"
     },
     "rst_protection": {
       "text": "RST protection"
