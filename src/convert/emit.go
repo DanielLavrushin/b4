@@ -99,7 +99,7 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) ([]confi
 		udpOnly := prof.UDPOnly()
 
 		emitFilters(&set, prof, ti, notes, udpOnly)
-		emitUDP(&set, prof, ti, notes, udpOnly)
+		emitUDP(&set, prog.Tool, prof, ti, notes, udpOnly)
 		emitL7Decoy(&set, prof, ti, notes)
 		if !udpOnly {
 			emitSplits(&set, prof, ti, notes, opts)
@@ -282,6 +282,7 @@ func emitL7Decoy(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *not
 		return
 	}
 	set.UDP.FakePayloadFile = config.FakePayloadAutoSTUN
+	set.UDP.FakePayloadData = nil
 	field := "udp.fake_payload_file=" + config.FakePayloadAutoSTUN
 
 	named := false
@@ -315,7 +316,7 @@ func emitL7Decoy(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *not
 
 const udpFoldPrefix = "udpfold:"
 
-func emitUDP(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet, udpOnly bool) {
+func emitUDP(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, notes *noteSet, udpOnly bool) {
 	if prof.UDP.Empty() && !udpOnly {
 		return
 	}
@@ -350,12 +351,17 @@ func emitUDP(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet
 	}
 	if prof.UDP.ZeroRef {
 		set.UDP.FakePayloadFile = ""
-		for _, key := range []string{"fake_quic", "fake_unk_udp", udpFoldPrefix + "fake_quic", udpFoldPrefix + "fake_unk_udp"} {
+		for _, key := range udpFakeKeys {
 			ti.each(prof.Index, key, func(tok Token) {
 				notes.set(tok, StatusMapped, "fakeZeroPayload", "udp.fake_payload_file=")
 			})
 		}
 	}
+	if len(prof.UDP.QUICData) > 0 {
+		set.UDP.FakePayloadFile = pendingPayloadFile(tool)
+		set.UDP.FakePayloadData = prof.UDP.QUICData
+	}
+	noteUDPHexFakes(set, prof, ti, notes)
 	if prof.AnyProtocol {
 		set.UDP.FilterQUIC = "all"
 		if tok, ok := ti.first(prof.Index, "any_protocol", udpFoldPrefix+"any_protocol"); ok {
@@ -393,7 +399,7 @@ func noteFoldedTokens(prof *Profile, ti tokenIndex, notes *noteSet, set *config.
 }
 
 func emitUDPFake(prof *Profile, ti tokenIndex, notes *noteSet) {
-	if !prof.UDP.Present && prof.UDP.QUICRef == "" {
+	if !prof.UDP.Present && prof.UDP.QUICRef == "" && len(prof.UDP.QUICData) == 0 {
 		noteFakeOptionsUnused(prof, ti, notes)
 		return
 	}
@@ -705,10 +711,48 @@ func describeSplitMapping(op SplitOp, strategy string, honoursFixed bool, set *c
 
 var importedPayloadFields = []string{"faking.sni_type=capture", "faking.payload_file"}
 
+func pendingPayloadFile(tool string) string {
+	return PendingPayloadPrefix + tool + "-fake"
+}
+
 func useImportedPayload(set *config.SetConfig, tool string, data []byte) {
 	set.Faking.SNIType = config.FakePayloadCapture
-	set.Faking.PayloadFile = PendingPayloadPrefix + tool + "-fake"
+	set.Faking.PayloadFile = pendingPayloadFile(tool)
 	set.Faking.PayloadData = data
+}
+
+var udpFakeKeys = []string{"fake_quic", "fake_unk_udp", udpFoldPrefix + "fake_quic", udpFoldPrefix + "fake_unk_udp"}
+
+func noteUDPHexFakes(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
+	chosen := "udp.fake_payload_file"
+	if prof.UDP.ZeroRef {
+		chosen = "udp.fake_payload_file="
+	}
+	dataUsed := false
+	for _, key := range udpFakeKeys {
+		ti.each(prof.Index, key, func(tok Token) {
+			v := strings.TrimSpace(tok.Value)
+			if !isHexLiteral(v) {
+				return
+			}
+			if isZeroHexLiteral(v) {
+				if !prof.UDP.ZeroRef {
+					notes.set(tok, StatusApproximated, "fakeZeroPayloadOverridden", chosen)
+				}
+				return
+			}
+			data, err := decodeHexLiteral(v)
+			switch {
+			case err != nil:
+				notes.set(tok, StatusInvalid, "fakeHexInvalid")
+			case !dataUsed && len(set.UDP.FakePayloadData) > 0 && bytes.Equal(data, set.UDP.FakePayloadData):
+				dataUsed = true
+				notes.set(tok, StatusMapped, "fakeDataMapped", "udp.fake_payload_file")
+			default:
+				notes.set(tok, StatusApproximated, "fakeHexPayloadOverridden", chosen)
+			}
+		})
+	}
 }
 
 func fakeTypeField(set *config.SetConfig) string {

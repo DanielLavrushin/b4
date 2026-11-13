@@ -289,7 +289,14 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 	case "fake.quic":
 		if isHexLiteral(v.Str) {
 			prof.Fake.QUICRef = ""
-			prof.UDP.ZeroRef = isZeroHexLiteral(v.Str)
+			if prof.UDP.ZeroRef || prof.Fake.QUICData != nil {
+				return
+			}
+			if isZeroHexLiteral(v.Str) {
+				prof.UDP.ZeroRef = true
+			} else if data, err := decodeHexLiteral(v.Str); err == nil {
+				prof.Fake.QUICData = data
+			}
 			return
 		}
 		prof.Fake.QUICRef = orDefault(v.Ref, v.Str)

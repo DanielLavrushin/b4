@@ -65,6 +65,37 @@ func TestConvertApplyKeepsEveryByteOfAnInlineFakeAcrossASave(t *testing.T) {
 	}
 }
 
+func TestConvertApplyKeepsEveryByteOfAHexQUICFakeAcrossASave(t *testing.T) {
+	mux, cfg := convertApplyAPI(t)
+	t.Cleanup(func() { capture.GetManager(cfg).DeleteCapture("quic", "zapret-fake") })
+
+	body := `{"text":"--filter-udp=443 --dpi-desync=fake --dpi-desync-fake-quic=0x0d0a0bfc","domains":["example.com"]}`
+	rec := postConvert(t, mux, "/api/convert/apply", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("apply: %d %s", rec.Code, rec.Body.String())
+	}
+
+	reloaded := config.NewConfig()
+	reloaded.ConfigPath = cfg.ConfigPath
+	if err := reloaded.LoadFromFile(cfg.ConfigPath); err != nil {
+		t.Fatalf("reload the saved config: %v", err)
+	}
+	if len(reloaded.Sets) != 1 {
+		t.Fatalf("saved config holds %d sets, want 1", len(reloaded.Sets))
+	}
+	file := reloaded.Sets[0].UDP.FakePayloadFile
+	if !strings.HasPrefix(file, "captures/quic_") {
+		t.Fatalf("udp.fake_payload_file = %q, want a QUIC payload under captures/", file)
+	}
+	got, err := reloaded.ReadCapturePayload(file)
+	if err != nil {
+		t.Fatalf("read %s: %v", file, err)
+	}
+	if want := []byte{0x0d, 0x0a, 0x0b, 0xfc}; !bytes.Equal(got, want) {
+		t.Fatalf("payload after a save and reload = % x, want % x", got, want)
+	}
+}
+
 func TestConvertAnalyzeSavesNoPayload(t *testing.T) {
 	mux, cfg := convertApplyAPI(t)
 	manager := capture.GetManager(cfg)

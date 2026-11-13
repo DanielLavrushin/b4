@@ -114,3 +114,68 @@ func TestZapret_AnInvalidHexPayloadIsFlagged(t *testing.T) {
 		}
 	}
 }
+
+func assertPendingUDPPayload(t *testing.T, set config.SetConfig, want []byte) {
+	t.Helper()
+	u := set.UDP
+	if !strings.HasPrefix(u.FakePayloadFile, PendingPayloadPrefix) {
+		t.Fatalf("udp.fake_payload_file = %q, want the %q placeholder that apply turns into a file", u.FakePayloadFile, PendingPayloadPrefix)
+	}
+	if !bytes.Equal(u.FakePayloadData, want) {
+		t.Fatalf("udp payload bytes = % x, want % x", u.FakePayloadData, want)
+	}
+}
+
+func TestZapret_AQUICHexPayloadKeepsEveryByte(t *testing.T) {
+	for _, flag := range []string{"--dpi-desync-fake-quic=0x0d0a0bfc", "--dpi-desync-fake-unknown-udp=0x0d0a0bfc"} {
+		res := analyze(t, "--filter-udp=443 --dpi-desync=fake "+flag)
+		assertPendingUDPPayload(t, res.Sets[0], []byte{0x0d, 0x0a, 0x0b, 0xfc})
+		n := noteFor(t, res, flag)
+		if n.Status != StatusMapped || n.Reason != "fakeDataMapped" || !hasField(n, "udp.fake_payload_file") {
+			t.Fatalf("%s: got %+v", flag, n)
+		}
+		assertSetsSave(t, res)
+	}
+}
+
+func TestZapret_AnAllZeroQUICHexPayloadGivenFirstStaysTheFake(t *testing.T) {
+	res := analyze(t, "--filter-udp=443 --dpi-desync=fake --dpi-desync-fake-quic=0x00000000 --dpi-desync-fake-quic=0x0d0a")
+	if u := res.Sets[0].UDP; u.FakePayloadFile != "" || len(u.FakePayloadData) > 0 {
+		t.Fatalf("file %q, %d bytes: the first hex payload is all zeros and must be the fake", u.FakePayloadFile, len(u.FakePayloadData))
+	}
+	if n := noteFor(t, res, "--dpi-desync-fake-quic=0x00000000"); n.Status != StatusMapped || n.Reason != "fakeZeroPayload" {
+		t.Fatalf("the payload in use: got %+v", n)
+	}
+	if n := noteFor(t, res, "--dpi-desync-fake-quic=0x0d0a"); n.Status != StatusApproximated || n.Reason != "fakeHexPayloadOverridden" {
+		t.Fatalf("the payload left out: got %+v", n)
+	}
+}
+
+func TestZapret_AnAllZeroQUICHexPayloadGivenSecondIsLeftOut(t *testing.T) {
+	res := analyze(t, "--filter-udp=443 --dpi-desync=fake --dpi-desync-fake-quic=0x0d0a --dpi-desync-fake-quic=0x00000000")
+	assertPendingUDPPayload(t, res.Sets[0], []byte{0x0d, 0x0a})
+	if n := noteFor(t, res, "--dpi-desync-fake-quic=0x00000000"); n.Status != StatusApproximated || n.Reason != "fakeZeroPayloadOverridden" {
+		t.Fatalf("the payload left out: got %+v", n)
+	}
+}
+
+func TestZapret_AnInvalidQUICHexPayloadIsFlagged(t *testing.T) {
+	res := analyze(t, "--filter-udp=443 --dpi-desync=fake --dpi-desync-fake-quic=0x0d0")
+	if u := res.Sets[0].UDP; strings.HasPrefix(u.FakePayloadFile, PendingPayloadPrefix) || len(u.FakePayloadData) > 0 {
+		t.Fatalf("an undecodable pattern must not become a payload: %q, %d bytes", u.FakePayloadFile, len(u.FakePayloadData))
+	}
+	if n := noteFor(t, res, "--dpi-desync-fake-quic=0x0d0"); n.Status != StatusInvalid || n.Reason != "fakeHexInvalid" {
+		t.Fatalf("got %+v", n)
+	}
+}
+
+func TestZapret_AQUICHexPayloadFollowsAFoldedUDPProfile(t *testing.T) {
+	res := analyze(t, "--filter-tcp=443 --dpi-desync=fake --new --filter-udp=443 --dpi-desync=fake --dpi-desync-fake-quic=0x0d0a0bfc")
+	if len(res.Sets) != 1 {
+		t.Fatalf("the UDP profile should fold into the TCP one, got %d sets", len(res.Sets))
+	}
+	assertPendingUDPPayload(t, res.Sets[0], []byte{0x0d, 0x0a, 0x0b, 0xfc})
+	if n := noteFor(t, res, "--dpi-desync-fake-quic=0x0d0a0bfc"); n.Status != StatusMapped || n.Reason != "fakeDataMapped" {
+		t.Fatalf("got %+v", n)
+	}
+}

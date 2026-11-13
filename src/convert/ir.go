@@ -122,6 +122,7 @@ type FakeOp struct {
 	SeqIncrement int      `json:"seq_increment"`
 	TSIncrement  int      `json:"ts_increment"`
 	QUICRef      string   `json:"quic_ref"`
+	QUICData     []byte   `json:"quic_data"`
 	MD5Sig       bool     `json:"md5sig"`
 	IPOpt        bool     `json:"ip_opt"`
 	DataInline   string   `json:"data_inline"`
@@ -141,6 +142,7 @@ type UDPOp struct {
 	Present   bool     `json:"present"`
 	Repeats   int      `json:"repeats"`
 	QUICRef   string   `json:"quic_ref"`
+	QUICData  []byte   `json:"quic_data"`
 	ZeroRef   bool     `json:"zero_ref"`
 	TTL       int      `json:"ttl"`
 	TTLSet    bool     `json:"ttl_set"`
@@ -149,7 +151,7 @@ type UDPOp struct {
 
 func (u UDPOp) Empty() bool {
 	return u.FakeCount == 0 && !u.Present && u.Repeats == 0 &&
-		u.QUICRef == "" && !u.TTLSet && len(u.Ports) == 0
+		u.QUICRef == "" && len(u.QUICData) == 0 && !u.TTLSet && len(u.Ports) == 0
 }
 
 type DesyncOp struct {
@@ -215,7 +217,7 @@ func (p *Profile) carriesStrategy() bool {
 	return len(p.Splits) > 0 || p.Fake.Present || p.DropSACK || p.OOBSet ||
 		len(p.HTTPMod) > 0 || len(p.DesyncModes) > 0 || p.Desync.Mode != "" ||
 		p.SynFake.Enabled || p.Duplicate > 0 || p.WinSize > 0 || p.SeqOvl.Length > 0 ||
-		p.UDP.Present || p.UDP.FakeCount > 0 || p.UDP.QUICRef != "" || p.UDP.Repeats > 0
+		p.UDP.Present || p.UDP.FakeCount > 0 || p.UDP.QUICRef != "" || len(p.UDP.QUICData) > 0 || p.UDP.Repeats > 0
 }
 
 func (p *Profile) hasOwnTargets() bool {
