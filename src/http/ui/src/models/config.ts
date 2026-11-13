@@ -100,6 +100,11 @@ export interface LoggingConfig {
   directory: string;
 }
 
+export interface IfaceDetail {
+  up: boolean;
+  label?: string;
+}
+
 export interface TargetsConfig {
   sni_domains: string[];
   ip: string[];
@@ -438,6 +443,7 @@ export interface B4Config {
   system: SystemConfig;
   sets: B4SetConfig[];
   available_ifaces: string[];
+  iface_details?: Record<string, IfaceDetail>;
   tunnel_ifaces?: string[];
   encapsulated_ifaces?: string[];
   iface_traffic?: Record<string, IfaceCounts>;

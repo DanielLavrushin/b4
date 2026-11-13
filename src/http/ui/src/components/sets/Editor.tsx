@@ -426,6 +426,7 @@ export const SetEditorPage = ({
             set={editedSet}
             ipv6={config.queue.ipv6}
             availableIfaces={config.available_ifaces ?? []}
+            ifaceDetails={config.iface_details}
             tunnelIfaces={config.tunnel_ifaces ?? []}
             encapsulatedIfaces={config.encapsulated_ifaces ?? []}
             dscp={dscp}

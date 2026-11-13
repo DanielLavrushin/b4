@@ -18,6 +18,7 @@ type Manager struct {
 	macToIP       map[string]string
 	hostnames     map[string]string // MAC → hostname
 	manualDevices []config.Device
+	routerNames   func() map[string]string
 	mu            sync.RWMutex
 	callbacks     []LeaseUpdateCallback
 	ctx           context.Context
@@ -105,6 +106,7 @@ func (m *Manager) Stop() {
 func (m *Manager) refresh() {
 	m.mu.RLock()
 	hasManual := len(m.manualDevices) > 0
+	routerNames := m.routerNames
 	m.mu.RUnlock()
 
 	var entries []ARPEntry
@@ -121,7 +123,7 @@ func (m *Manager) refresh() {
 		return
 	}
 
-	leaseHostnames := enrichHostnames()
+	leaseHostnames := enrichHostnames(routerNames)
 
 	m.mu.Lock()
 	m.ipToMAC = make(map[string]string, len(entries))
@@ -270,6 +272,12 @@ func (m *Manager) GetAllHostnames() map[string]string {
 		result[k] = v
 	}
 	return result
+}
+
+func (m *Manager) SetRouterNames(source func() map[string]string) {
+	m.mu.Lock()
+	m.routerNames = source
+	m.mu.Unlock()
 }
 
 func (m *Manager) SetManualDevices(devices []config.Device) {

@@ -217,6 +217,14 @@ export const DeviceSidebar = memo<Props>(
                     }}
                   >
                     {label}
+                    {d.deviceName && d.ip && !label.includes(d.ip) && (
+                      <Box
+                        component="span"
+                        sx={{ ml: 0.75, color: colors.text.disabled, fontSize: 11, fontFamily: "monospace" }}
+                      >
+                        {d.ip}
+                      </Box>
+                    )}
                   </Typography>
                   <Typography
                     sx={{ color: colors.text.disabled, fontSize: 11, fontFamily: "monospace" }}

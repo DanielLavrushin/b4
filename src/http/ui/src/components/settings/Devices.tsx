@@ -249,13 +249,16 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
       checked,
     );
 
-  const displayName = useCallback(
+  const storedName = useCallback(
     (device: DeviceInfo) =>
       configDevices.find((d) => d.mac.toUpperCase() === device.mac.toUpperCase())
-        ?.name ||
-      device.vendor ||
-      "",
+        ?.name || "",
     [configDevices],
+  );
+  const displayName = useCallback(
+    (device: DeviceInfo) =>
+      storedName(device) || device.hostname || device.vendor || "",
+    [storedName],
   );
 
   const openForget = (list: DeviceInfo[]) =>
@@ -437,7 +440,7 @@ export const DevicesSettings = ({ config, onChange }: DevicesSettingsProps) => {
                   renderNameCell={(device) =>
                     editingMac === device.mac ? (
                       <B4InlineEdit
-                        value={displayName(device)}
+                        value={storedName(device)}
                         allowEmpty
                         onSave={(name) => {
                           updateDevice(device.mac, { name: name || undefined });

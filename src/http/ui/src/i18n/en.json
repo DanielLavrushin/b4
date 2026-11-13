@@ -274,6 +274,7 @@
       "dscpInterfacesDesc": "Write the Set DSCP value and the sets' own values only into packets that leave through these interfaces. None selected = every interface except loopback.",
       "dscpSetsList": "Sets that write their own value, whether or not Set DSCP is on:",
       "missingIface": "unavailable",
+      "ifaceDown": "down",
       "networkInterfaces": "Capture Interfaces",
       "networkInterfacesDesc": "Only inspect packets whose interface is one of these. For forwarded traffic that is the interface the packet leaves by, which a tunnel or a VPN client can change without touching this list. Empty = every interface, which is what almost every setup wants.",
       "interfaceFilterSeesNothing": "Nothing B4 has seen has left by {{selected}}. Traffic is going out {{seen}}, none of it is being inspected, and no set is being applied to it. Clear the selection to watch every interface.",

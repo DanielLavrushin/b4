@@ -24,6 +24,7 @@ import (
 	"github.com/daniellavrushin/b4/mtproto"
 	"github.com/daniellavrushin/b4/netif"
 	"github.com/daniellavrushin/b4/nfq"
+	"github.com/daniellavrushin/b4/tables"
 	"github.com/daniellavrushin/b4/watchdog"
 )
 
@@ -251,14 +252,10 @@ func (a *API) getConfig(w http.ResponseWriter) {
 	}
 
 	//get list of interfaces from system
-	ifaces, err := getSystemInterfaces()
+	ifaces, details, err := getSystemInterfaces(isDockerEnvironment())
 	if err != nil {
 		log.Errorf("Failed to get system interfaces: %v", err)
-		ifaces = []string{}
-	} else if ifaces == nil {
-		ifaces = []string{}
 	}
-	sort.Strings(ifaces)
 
 	tunnels := []string{}
 	encapsulated := []string{}
@@ -276,6 +273,7 @@ func (a *API) getConfig(w http.ResponseWriter) {
 		Revision:            watchdog.ConfigRevision(cfg),
 		Sets:                setsWithStats,
 		AvailableInterfaces: ifaces,
+		IfaceDetails:        details,
 		TunnelInterfaces:    tunnels,
 		EncapsulatedIfaces:  encapsulated,
 		IfaceTraffic:        nfq.IfaceTraffic(),
@@ -319,13 +317,27 @@ func (a *API) setStatistics(set *config.SetConfig) SetStatistics {
 	return stats
 }
 
-func getSystemInterfaces() ([]string, error) {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil, err
+var (
+	systemInterfaces  = net.Interfaces
+	interfaceHasAddrs = func(iface net.Interface) bool {
+		addrs, _ := iface.Addrs()
+		return len(addrs) > 0
 	}
+	interfaceLabels = func() map[string]string {
+		if !tables.KeeneticOS() {
+			return nil
+		}
+		return netif.KeeneticLabels()
+	}
+)
 
-	inDocker := isDockerEnvironment()
+func getSystemInterfaces(inDocker bool) ([]string, map[string]IfaceDetail, error) {
+	ifaceNames := []string{}
+	details := map[string]IfaceDetail{}
+	ifaces, err := systemInterfaces()
+	if err != nil {
+		return ifaceNames, details, err
+	}
 
 	// Known virtual/internal interface prefixes to exclude
 	excludePrefixes := []string{
@@ -338,12 +350,13 @@ func getSystemInterfaces() ([]string, error) {
 		excludePrefixes = append(excludePrefixes, "docker", "virbr")
 	}
 
-	var ifaceNames []string
+	labels := interfaceLabels()
+	keep := func(iface net.Interface) {
+		ifaceNames = append(ifaceNames, iface.Name)
+		details[iface.Name] = IfaceDetail{Up: iface.Flags&net.FlagUp != 0, Label: labels[iface.Name]}
+	}
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		if iface.Flags&net.FlagUp == 0 {
 			continue
 		}
 
@@ -359,24 +372,25 @@ func getSystemInterfaces() ([]string, error) {
 		}
 
 		if inDocker {
-			// In container mode, keep all UP interfaces (no IP requirement)
-			ifaceNames = append(ifaceNames, iface.Name)
+			if iface.Flags&net.FlagUp != 0 || interfaceHasAddrs(iface) {
+				keep(iface)
+			}
 		} else {
 			// On host, require IP or known useful prefix
-			addrs, _ := iface.Addrs()
-			allowedWithoutIP := strings.HasPrefix(iface.Name, "br") ||
+			allowedWithoutIP := iface.Flags&net.FlagUp != 0 && (strings.HasPrefix(iface.Name, "br") ||
 				strings.HasPrefix(iface.Name, "wl") ||
 				strings.HasPrefix(iface.Name, "tun") ||
 				strings.HasPrefix(iface.Name, "tap") ||
-				strings.HasPrefix(iface.Name, "dummy")
+				strings.HasPrefix(iface.Name, "dummy"))
 
-			if len(addrs) > 0 || allowedWithoutIP {
-				ifaceNames = append(ifaceNames, iface.Name)
+			if interfaceHasAddrs(iface) || allowedWithoutIP {
+				keep(iface)
 			}
 		}
 	}
 
-	return ifaceNames, nil
+	sort.Strings(ifaceNames)
+	return ifaceNames, details, nil
 }
 
 // @Summary Update configuration

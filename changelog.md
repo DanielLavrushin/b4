@@ -8,10 +8,12 @@ All notable changes to b4 are recorded in this file.
 
 - A set can ask more than one DNS resolver: the **Resolvers** field on its **DNS & Routing** tab holds up to eight, asked in order when one fails or is slow, and replaces the resolver type switch and its two fields. ([#551](https://github.com/DanielLavrushin/b4/pull/551), thanks [@asovetov](https://github.com/asovetov))
 - Without a login for the web interface, the log warns when b4 refuses a page at another address, and names the address b4 saw and what to change.
+- On Keenetic, interface lists such as **Capture Interfaces** and a set's **Output Interface** show the name the router gives each connection, as in `WARP (nwg4)`, and devices carry the name they have in the router's web interface. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
 
 ### Changed
 
 - When the login session ends while a page is open, for example after b4 restarts, a sign-in window appears over the page and unsaved changes stay in place. [#569](https://github.com/DanielLavrushin/b4/issues/569)
+- The device tables under **Settings, Core, Devices** and on a set's **Source Devices** tab show a device's host name ahead of its vendor, and the **Traffic** page shows the address next to a named device. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
 
 ### Fixed
 
@@ -24,6 +26,7 @@ All notable changes to b4 are recorded in this file.
 - With **Try strategies that worked before** on, **Discovery** began every run with remembered strategies that no longer worked, because a pass with a different fake was counted for them, and the runs took longer. [#510](https://github.com/DanielLavrushin/b4/issues/510)
 - **Open** in a **Discovery** notification could lead to an empty form or to another search, such as one the watchdog started afterwards, instead of the run it announced. [#552](https://github.com/DanielLavrushin/b4/issues/552)
 - When the web interface or its API answered with a server error, such as a 500, `errors.log` often had no line about it. [#530](https://github.com/DanielLavrushin/b4/issues/530)
+- Interface lists left out interfaces that were down, so a switched-off WireGuard connection could not be picked as a set's **Output Interface**. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
 
 ### Security
 

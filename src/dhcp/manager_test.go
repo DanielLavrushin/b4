@@ -2,6 +2,8 @@ package dhcp
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -232,5 +234,35 @@ func TestSourceInfoWithManualDevices(t *testing.T) {
 	name, _ = m.SourceInfo()
 	if name != "arp+manual" {
 		t.Errorf("arp+manual source = %q, want arp+manual", name)
+	}
+}
+
+func TestRefreshNamesDevicesFromTheRouter(t *testing.T) {
+	useLeaseFiles(t)
+	arp := filepath.Join(t.TempDir(), "arp")
+	table := "IP address       HW type     Flags       HW address            Mask     Device\n" +
+		"192.168.0.50     0x1         0x2         fc:b2:14:00:00:01     *        br0\n" +
+		"192.168.0.60     0x1         0x2         00:11:22:00:00:04     *        br0\n"
+	if err := os.WriteFile(arp, []byte(table), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	savedARP, savedLocal := arpPath, localAddrs
+	arpPath = arp
+	localAddrs = func() (map[string]struct{}, map[string]struct{}) {
+		return map[string]struct{}{}, map[string]struct{}{}
+	}
+	t.Cleanup(func() { arpPath, localAddrs = savedARP, savedLocal })
+
+	m := NewManager()
+	m.SetRouterNames(func() map[string]string {
+		return map[string]string{"FC:B2:14:00:00:01": "MB_PRO_END"}
+	})
+	m.refresh()
+
+	if got := m.GetHostnameForMAC("fc:b2:14:00:00:01"); got != "MB_PRO_END" {
+		t.Fatalf("a device the router names must carry that name, got %q", got)
+	}
+	if got := m.GetHostnameForMAC("00:11:22:00:00:04"); got != "" {
+		t.Fatalf("a device the router does not name must stay unnamed, got %q", got)
 	}
 }

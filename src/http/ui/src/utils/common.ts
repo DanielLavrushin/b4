@@ -20,6 +20,10 @@ export function resolveDeviceName(d: DeviceInfo): string {
   return address;
 }
 
+export function deviceTableName(d: DeviceInfo): string {
+  return d.alias || d.hostname || d.vendor || "";
+}
+
 export function macKey(mac: string): string {
   return mac.trim().toUpperCase();
 }
@@ -43,9 +47,9 @@ export function sortDevices(
     const aSelected = isSelected(a.mac);
     const bSelected = isSelected(b.mac);
     if (aSelected !== bSelected) return aSelected ? -1 : 1;
-    const aName = (a.alias || a.vendor || a.hostname || "").toLowerCase();
-    const bName = (b.alias || b.vendor || b.hostname || "").toLowerCase();
-    return aName.localeCompare(bName);
+    return deviceTableName(a)
+      .toLowerCase()
+      .localeCompare(deviceTableName(b).toLowerCase());
   });
 }
 

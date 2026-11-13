@@ -7658,6 +7658,12 @@
                         "type": "string"
                     }
                 },
+                "iface_details": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/handler.IfaceDetail"
+                    }
+                },
                 "iface_traffic": {
                     "type": "object",
                     "additionalProperties": {
@@ -9494,6 +9500,17 @@
                     "items": {
                         "$ref": "#/definitions/metrics.BanEntry"
                     }
+                }
+            }
+        },
+        "handler.IfaceDetail": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "up": {
+                    "type": "boolean"
                 }
             }
         },

@@ -96,7 +96,7 @@ While filtering is on, the card lists the devices from the router's ARP table an
 | Checkbox | Selects the device. |
 | **MAC Address** | The MAC address, or **matched by IP** for a device added by hand. |
 | **IP** | The current address. **manual** marks a device added by hand, **offline** a device not on the network now. |
-| **Name** | The name set with the edit icon, otherwise the vendor. Saving an empty field removes the name. |
+| **Name** | The name set with the edit icon, otherwise the host name from the router's DHCP leases, otherwise the vendor. On Keenetic the host name is the name the device has in the router's own web interface. Saving an empty field removes the name. |
 | **MSS** | An MSS clamp for the device's TCP connections to port 443, from 10 to 1460. Applies whether or not filtering is on. |
 
 An offline device has a **Forget device** icon next to its name, and **Forget offline** above the list forgets several of them at once. Forgetting deletes the name, selection and MSS value b4 keeps for the device and removes it from the [source devices](../sets/targets.md#source-devices) of every set. The change applies when the settings are saved. A forgotten device that connects again appears as a new device.
