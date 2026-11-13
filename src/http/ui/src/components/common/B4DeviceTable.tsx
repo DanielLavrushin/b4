@@ -18,7 +18,7 @@ import { B4Badge, B4TextField } from "@b4.elements";
 import { CloseIcon, SearchIcon } from "@b4.icons";
 import { DeviceInfo } from "@b4.devices";
 import { colors } from "@design";
-import { sortDevices } from "@utils";
+import { deviceTableName, sortDevices } from "@utils";
 import { useTranslation } from "react-i18next";
 
 export interface B4DeviceTableColumn {
@@ -41,9 +41,6 @@ interface B4DeviceTableProps {
   maxHeight?: number;
 }
 
-const defaultName = (device: DeviceInfo) =>
-  device.alias || device.vendor || device.hostname || "";
-
 export const B4DeviceTable = ({
   devices,
   loading,
@@ -53,7 +50,7 @@ export const B4DeviceTable = ({
   onBulkToggle,
   isChanged,
   renderNameCell,
-  getSearchableName = defaultName,
+  getSearchableName = deviceTableName,
   extraColumns = [],
   showOfflineChip = false,
   maxHeight = 350,
@@ -249,7 +246,7 @@ export const B4DeviceTable = ({
                   ) : (
                     <TableCell>
                       <B4Badge
-                        label={defaultName(device) || t("core.unknown")}
+                        label={deviceTableName(device) || t("core.unknown")}
                         color="primary"
                         variant={isSelected(device.mac) ? "filled" : "outlined"}
                       />
