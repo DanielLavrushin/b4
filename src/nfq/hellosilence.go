@@ -476,15 +476,10 @@ func (w *Worker) silentHelloGotAnswer(ip net.IP, port int) bool {
 	if w == nil || w.destState == nil || port <= 0 || port > 65535 {
 		return false
 	}
-	lookups := 0
 	for _, h := range w.destState.WatchesTo(ip, uint16(port)) {
 		if h.closed {
 			continue
 		}
-		if lookups >= maxSilenceLookups {
-			break
-		}
-		lookups++
 		state, err := checkServerSilence(h)
 		if err != nil {
 			break

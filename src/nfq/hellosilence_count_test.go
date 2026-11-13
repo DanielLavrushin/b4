@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -200,6 +201,36 @@ func TestAnAnswerOnAConnectionOpenedDuringTheCheckKeepsTheAddressFromABan(t *tes
 	}
 	if ports := resetsTo(r.sent()); len(ports) != 0 {
 		t.Fatalf("without a ban no connection is reset, got resets to %v", ports)
+	}
+}
+
+func TestTheReadAtTheEndOfTheCheckCoversEveryConnectionToTheAddress(t *testing.T) {
+	set := silenceSet()
+	release := make(chan struct{})
+	r := newFreshSilenceRig(t, newInjectingWorker(t, &set), silentOnceReleased(release))
+
+	conns := maxSilenceLookups + 4
+	for i := 0; i < conns; i++ {
+		sendHello(t, r.w, uint16(20000+i), engine.VerdictAccept)
+	}
+	r.pool.sweepSilentHellos(time.Now().Add(time.Minute))
+	r.awaitCheck(t)
+	r.pool.sweepSilentHellos(time.Now().Add(time.Minute))
+	var reads atomic.Int32
+	r.answerLookups(t, func(ctnl.Tuple) flowAnswer {
+		if reads.Add(1) > maxSilenceLookups {
+			return answeredFlow()
+		}
+		return silentFlow()
+	})
+	close(release)
+	r.w.bans.wg.Wait()
+
+	if r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatalf("with %d connections waiting, the answer on the one read after the first %d must still keep the address from a ban, %d were read", conns, maxSilenceLookups, reads.Load())
+	}
+	if ports := resetsTo(r.sent()); len(ports) != 0 {
+		t.Fatalf("without a ban no connection is reset, the answered one least of all, got resets to %v", ports)
 	}
 }
 
