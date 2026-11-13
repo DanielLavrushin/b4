@@ -5,8 +5,10 @@ import { colors, facets as facetColors, typography } from "@design";
 import { B4SetConfig } from "@models/config";
 import { buildSetFacets } from "@components/sets/facets";
 import {
+  askedResolvers,
   describeStrategy,
   extraTargetNames,
+  isDohResolver,
   normalizeSet,
   presetLabel,
 } from "@utils";
@@ -116,9 +118,10 @@ export const StrategySummary = ({
   let dnsValue = t("discovery.summary.dnsNotNeeded");
   let dnsMuted: string | undefined;
   if (dns?.enabled) {
-    dnsValue = dns.doh_url
-      ? t("discovery.summary.dnsDoh", { url: dns.doh_url })
-      : t("discovery.summary.dnsServer", { server: dns.target_dns });
+    const [resolver = ""] = askedResolvers(dns);
+    dnsValue = isDohResolver(resolver)
+      ? t("discovery.summary.dnsDoh", { url: resolver })
+      : t("discovery.summary.dnsServer", { server: resolver });
   }
   if (pinned.length > 0) {
     const pinText = t("discovery.summary.dnsPins", {

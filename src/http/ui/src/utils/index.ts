@@ -10,6 +10,7 @@ export * from "./errors";
 export * from "./hubLink";
 export * from "./probeUrl";
 export * from "./dnsEndpoint";
+export * from "./resolvers";
 export * from "./configDiff";
 export * from "./pins";
 export * from "./dscp";

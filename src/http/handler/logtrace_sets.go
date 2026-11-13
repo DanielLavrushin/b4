@@ -91,12 +91,13 @@ type traceSetFaking struct {
 }
 
 type traceSetDNS struct {
-	Enabled       bool   `json:"enabled,omitempty"`
-	TargetDNS     string `json:"target_dns,omitempty"`
-	DoHURL        string `json:"doh_url,omitempty"`
-	FragmentQuery bool   `json:"fragment_query,omitempty"`
-	Pins          int    `json:"pins,omitempty"`
-	StripECH      bool   `json:"strip_ech,omitempty"`
+	Enabled       bool     `json:"enabled,omitempty"`
+	TargetDNS     string   `json:"target_dns,omitempty"`
+	DoHURL        string   `json:"doh_url,omitempty"`
+	Upstreams     []string `json:"upstreams,omitempty"`
+	FragmentQuery bool     `json:"fragment_query,omitempty"`
+	Pins          int      `json:"pins,omitempty"`
+	StripECH      bool     `json:"strip_ech,omitempty"`
 }
 
 type traceSetRouting struct {
@@ -147,7 +148,8 @@ func collectTraceSets(cfg *config.Config) []traceSet {
 			ts.DNS = &traceSetDNS{
 				Enabled:       set.DNS.Enabled,
 				TargetDNS:     set.DNS.TargetDNS,
-				DoHURL:        set.DNS.DoHURL,
+				DoHURL:        config.UpstreamLabel(set.DNS.DoHURL),
+				Upstreams:     traceUpstreams(set.DNS.Upstreams),
 				FragmentQuery: set.DNS.FragmentQuery,
 				Pins:          len(set.DNS.Pins),
 				StripECH:      set.DNS.StripECH,
@@ -178,6 +180,16 @@ func collectTraceSets(cfg *config.Config) []traceSet {
 	}
 
 	return sets
+}
+
+func traceUpstreams(entries []string) []string {
+	var labels []string
+	for _, entry := range entries {
+		if label := config.UpstreamLabel(entry); label != "" {
+			labels = append(labels, label)
+		}
+	}
+	return labels
 }
 
 func traceTargets(t config.TargetsConfig) traceSetTargets {

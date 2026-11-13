@@ -3,8 +3,10 @@ package config
 import (
 	"fmt"
 	"net"
-	"sort"
 	"strings"
+
+	"github.com/daniellavrushin/b4/dns/endpoint"
+	"github.com/daniellavrushin/b4/log"
 )
 
 const MaxDNSUpstreams = 8
@@ -31,16 +33,31 @@ func NormalizeUpstream(raw string) (string, bool) {
 		return "", false
 	}
 	if scheme, rest, ok := SplitUpstreamURL(raw); ok {
-		if strings.TrimSpace(rest) == "" {
+		rest = strings.TrimSpace(rest)
+		if rest == "" {
 			return "", false
 		}
-		return strings.ToLower(scheme) + strings.TrimSpace(rest), true
+		return strings.ToLower(scheme) + lowerURLHost(rest), true
 	}
 	ip := net.ParseIP(raw)
 	if ip == nil {
 		return "", false
 	}
 	return ip.String(), true
+}
+
+func lowerURLHost(rest string) string {
+	end := strings.IndexAny(rest, "/?#")
+	if end < 0 {
+		end = len(rest)
+	}
+	start := strings.LastIndexByte(rest[:end], '@') + 1
+	host := rest[start:end]
+	lower := strings.ToLower(host)
+	if lower == host {
+		return rest
+	}
+	return rest[:start] + lower + rest[end:]
 }
 
 func (c *DNSConfig) UpstreamList() []string {
@@ -61,7 +78,7 @@ func (c *DNSConfig) UpstreamList() []string {
 		out = append(out, norm)
 	}
 	add(c.DoHURL)
-	if strings.TrimSpace(c.DoHURL) == "" {
+	if strings.TrimSpace(c.DoHURL) == "" && !IsDoHUpstream(c.TargetDNS) {
 		add(c.TargetDNS)
 	}
 	for _, raw := range c.Upstreams {
@@ -76,8 +93,10 @@ func (c *DNSConfig) UpstreamList() []string {
 func UpstreamLabel(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if scheme, rest, ok := SplitUpstreamURL(raw); ok {
-		host := strings.SplitN(rest, "/", 2)[0]
-		host = strings.SplitN(host, "?", 2)[0]
+		host := rest
+		if end := strings.IndexAny(host, "/?#"); end >= 0 {
+			host = host[:end]
+		}
 		host = strings.TrimSpace(host)
 		if host != "" {
 			if at := strings.LastIndex(host, "@"); at >= 0 {
@@ -126,64 +145,6 @@ func sameList(a, b []string) bool {
 	return true
 }
 
-func pinsKey(pins map[string][]string) string {
-	if len(pins) == 0 {
-		return ""
-	}
-	domains := make([]string, 0, len(pins))
-	for domain := range pins {
-		domains = append(domains, domain)
-	}
-	sort.Strings(domains)
-	var b strings.Builder
-	for _, domain := range domains {
-		b.WriteString(domain)
-		b.WriteByte('=')
-		b.WriteString(strings.Join(pins[domain], ","))
-		b.WriteByte('\n')
-	}
-	return b.String()
-}
-
-func samePins(a, b map[string][]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for domain, aips := range a {
-		bips, ok := b[domain]
-		if !ok || len(aips) != len(bips) {
-			return false
-		}
-		for i := range aips {
-			if strings.TrimSpace(aips[i]) != strings.TrimSpace(bips[i]) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func (c *DNSConfig) SameResolver(o *DNSConfig) bool {
-	if c == nil || o == nil {
-		return c == o
-	}
-	if c.Enabled != o.Enabled || c.Strict != o.Strict || !samePins(c.Pins, o.Pins) {
-		return false
-	}
-	return sameList(c.UpstreamList(), o.UpstreamList())
-}
-
-func (c *DNSConfig) ResolverKey() string {
-	if c == nil {
-		return ""
-	}
-	return fmt.Sprintf("%t|%t|%s|%s", c.Enabled, c.Strict, strings.Join(c.UpstreamList(), "\n"), pinsKey(c.Pins))
-}
-
-func (c *DNSConfig) NormalizeUpstreams(onDrop func(value string)) {
-	c.NormalizeUpstreamsLimit(MaxDNSUpstreams, nil, onDrop)
-}
-
 func (c *DNSConfig) NormalizeUpstreamsLimit(limit int, already []string, onDrop func(value string)) {
 	if c == nil || len(c.Upstreams) == 0 {
 		return
@@ -196,6 +157,9 @@ func (c *DNSConfig) NormalizeUpstreamsLimit(limit int, already []string, onDrop 
 	}
 	out := make([]string, 0, len(c.Upstreams))
 	for _, raw := range c.Upstreams {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
 		norm, ok := NormalizeUpstream(raw)
 		if !ok {
 			if onDrop != nil {
@@ -221,4 +185,39 @@ func (c *DNSConfig) NormalizeUpstreamsLimit(limit int, already []string, onDrop 
 		out = out[:limit]
 	}
 	c.Upstreams = out
+}
+
+func normalizeSetUpstreams(v *validator, setIdx int, set *SetConfig) bool {
+	path := fmt.Sprintf("sets[%d].dns.upstreams", setIdx)
+	for i, raw := range set.DNS.Upstreams {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		params := map[string]any{"set": set.Name, "index": i + 1}
+		norm, ok := NormalizeUpstream(raw)
+		if !ok {
+			v.addf(path, "invalid_dns_upstream", params,
+				"set %q: DNS upstream entry %d is neither an address nor an https:// URL", set.Name, i+1)
+			return false
+		}
+		if scheme, _, isURL := SplitUpstreamURL(norm); isURL && !strings.EqualFold(scheme, "https://") {
+			v.addf(path, "invalid_dns_upstream", params,
+				"set %q: DNS upstream entry %d must use https://, a plain http:// query travels unencrypted", set.Name, i+1)
+			return false
+		}
+		if _, err := endpoint.Parse(norm); err != nil {
+			v.addf(path, "invalid_dns_upstream", params,
+				"set %q: DNS upstream entry %d cannot be a resolver: %v", set.Name, i+1, err)
+			return false
+		}
+	}
+	primary := (&DNSConfig{DoHURL: set.DNS.DoHURL, TargetDNS: set.DNS.TargetDNS}).UpstreamList()
+	set.DNS.NormalizeUpstreamsLimit(MaxDNSUpstreams-len(primary), primary, func(value string) {
+		label := UpstreamLabel(value)
+		if label == "" {
+			label = "one entry"
+		}
+		log.Warnf("Set '%s': dropping DNS upstream %s, the set already asks %d resolvers in total", set.Name, label, MaxDNSUpstreams)
+	})
+	return true
 }

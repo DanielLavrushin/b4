@@ -328,7 +328,8 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			continue
 		}
 
-		if !set.DNS.HasUpstream() {
+		servers := redirectServers(cfg, set)
+		if len(servers) == 0 {
 			if dnsBadTarget(set) {
 				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionBadTarget)
 			} else {
@@ -340,7 +341,7 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			return
 		}
 
-		if queryFromTarget(set, clientIP) {
+		if queryFromTarget(servers, clientIP) {
 			log.Tracef("DNS TCP: %s comes from %s, the set's own resolver passing a lookup upstream, forwarding it unchanged (set %s)", dns.SafeName(domain), clientIP, set.Name)
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionFromTarget)
 			if relay(cfg, set, domain, query) {
@@ -349,21 +350,21 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			return
 		}
 
-		s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsRedirectAction(set))
+		named := namedServer(servers)
+		s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsRedirectAction(named))
 
-		servers, _ := dns.SetServers(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL, set.DNS.Upstreams)
-		for i := range servers {
-			servers[i].Mark, servers[i].Timeout = int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout()
+		resp, source, rerr := s.resolve(set, query, servers)
+		if s.ctx.Err() != nil {
+			return
 		}
-
-		var resp []byte
-		var rerr error
-		resp, rerr = s.resolve(set, cfg, query, servers)
 
 		servedFallback := false
 
 		switch {
 		case rerr == nil:
+			if source != named.Source {
+				s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsRedirectAction(serverNamed(servers, source)))
+			}
 		case set.DNS.Strict:
 			s.logEvent(set, domain, clientIP, origIP, clientPort, srcMac, dnsActionServfail)
 			resp = dns.BuildServfailResponse(query)
@@ -381,6 +382,9 @@ func (s *dnsTCPServer) handle(client net.Conn) {
 			}
 
 			forwarded := s.forwardOneQuery(origIP, origPort, origErr, query)
+			if s.ctx.Err() != nil {
+				return
+			}
 			if forwarded == nil {
 				log.Warnf("DNS TCP: the redirect could not answer %s (%v) and neither could %s, the client gets SERVFAIL (set: %s)",
 					dns.SafeName(domain), rerr, origIP, set.Name)
@@ -435,22 +439,10 @@ func (s *dnsTCPServer) escalationTarget(cfg *config.Config, set *config.SetConfi
 	return s.worker.noteDNSOutcome(cfg, set, domain, srcMac, qtype, resp, from...)
 }
 
-func (s *dnsTCPServer) resolve(set *config.SetConfig, cfg *config.Config, query []byte, servers []dns.Server) ([]byte, error) {
+func (s *dnsTCPServer) resolve(set *config.SetConfig, query []byte, servers []dns.Server) ([]byte, string, error) {
 	defer beginDNSRedirect(query)()
-	resp, _, err := dns.AskServers(s.ctx, servers, dns.Options{Life: s.ctx, Strict: set.DNS.Strict}, func(sctx context.Context, srv dns.Server) ([]byte, error) {
-		if srv.DoHURL != "" {
-			return s.worker.resolveDoHRedirect(sctx, srv.DoHURL, int(cfg.MainInjectedMark()), query)
-		}
-		return dns.ResolveUpstreamContext(sctx, query, srv.UDP, dns.ForwardOptions{
-			Sender:       s.worker.lookupSender(),
-			Fragment:     set.DNS.FragmentQuery,
-			Seg2Delay:    config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax),
-			ReverseOrder: set.Fragmentation.ReverseOrder,
-			Mark:         int(cfg.MainInjectedMark()),
-			Timeout:      srv.Timeout,
-		})
-	})
-	return resp, err
+	delay := config.ResolveSeg2Delay(set.UDP.Seg2Delay, set.UDP.Seg2DelayMax)
+	return s.worker.askRedirectServers(s.ctx, s.ctx, set, servers, query, delay, &s.wg)
 }
 
 func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, query []byte, domain string, clientIP net.IP, from ...*ingressScope) ([]byte, error) {
@@ -460,21 +452,15 @@ func (s *dnsTCPServer) answerVia(set *config.SetConfig, cfg *config.Config, quer
 		return pinned, nil
 	}
 
-	if !set.DNS.HasUpstream() {
+	servers := redirectServers(cfg, set)
+	if len(servers) == 0 {
 		return nil, errNoDNSTarget
 	}
-	if queryFromTarget(set, clientIP) {
+	if queryFromTarget(servers, clientIP) {
 		return nil, errQueryFromTarget
 	}
 
-	servers, ok := dns.SetServers(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL, set.DNS.Upstreams)
-	if !ok {
-		return nil, errNoDNSTarget
-	}
-	for i := range servers {
-		servers[i].Mark, servers[i].Timeout = int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout()
-	}
-	resp, err := s.resolve(set, cfg, query, servers)
+	resp, _, err := s.resolve(set, query, servers)
 	if err != nil || len(resp) == 0 {
 		return resp, err
 	}
@@ -515,6 +501,8 @@ func (s *dnsTCPServer) forwardOneQuery(origIP net.IP, origPort int, origErr erro
 	if err := upstream.SetReadDeadline(time.Now().Add(ioTimeout)); err != nil {
 		return nil
 	}
+	stop := context.AfterFunc(s.ctx, func() { _ = upstream.SetReadDeadline(time.Unix(1, 0)) })
+	defer stop()
 	resp, err := readDNSTCPMessage(upstream)
 	if err != nil {
 		log.Tracef("DNS TCP: fallback read from %s:%d failed: %v", origIP, origPort, err)

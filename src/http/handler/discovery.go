@@ -927,13 +927,7 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 		UDP:           set.UDP,
 		Fragmentation: set.Fragmentation,
 		Faking:        set.Faking,
-		DNS: config.DNSConfig{
-			Enabled:       set.DNS.Enabled,
-			TargetDNS:     set.DNS.TargetDNS,
-			DoHURL:        set.DNS.DoHURL,
-			FragmentQuery: set.DNS.FragmentQuery,
-			StripECH:      set.DNS.StripECH,
-		},
+		DNS:           dnsShape(set.DNS),
 		Routing: config.RoutingConfig{
 			Enabled: set.Routing.Enabled,
 			Mode:    set.Routing.Mode,
@@ -952,6 +946,30 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 	config.ApplySetDefaultsKeepingFakeType(&shape)
 	shape.Faking.PayloadData = nil
 	shape.UDP.FakePayloadData = nil
+	return shape
+}
+
+func dnsShape(dns config.DNSConfig) config.DNSConfig {
+	shape := config.DNSConfig{
+		Enabled:       dns.Enabled,
+		TargetDNS:     dns.TargetDNS,
+		DoHURL:        dns.DoHURL,
+		FragmentQuery: dns.FragmentQuery,
+		StripECH:      dns.StripECH,
+	}
+	if !dns.Enabled || len(dns.Upstreams) == 0 || shape.HasUpstream() {
+		return shape
+	}
+	list := dns.UpstreamList()
+	if len(list) == 0 {
+		return shape
+	}
+	shape.TargetDNS, shape.DoHURL = "", ""
+	if config.IsDoHUpstream(list[0]) {
+		shape.DoHURL = list[0]
+	} else {
+		shape.TargetDNS = list[0]
+	}
 	return shape
 }
 

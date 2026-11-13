@@ -124,7 +124,7 @@ Each set is one object in the `sets` array, carrying its whole configuration. It
 - `fragmentation` - the fragmentation method and its parameters
 - `faking` - SNI faking, SYN fakes, mutation
 - `udp` - the QUIC filter, the port filter, the handling of calls and the UDP action mode
-- `dns` - the set's resolver, DoH URL and pins
+- `dns` - the set's resolvers and pins
 - `routing` - routing mode, output interface, upstream proxy or blocking
 - `dscp` - the set's own DSCP value
 - `discovery` - the set's Discovery addresses and its watchdog switch
@@ -152,6 +152,22 @@ Each key is stored only while it differs from its default: the switch on with th
 | **Handle only calls** | `udp.filter_l7` lists the calls of **Which calls**: `["discord", "stun"]` for **Discord app and browsers**, `["discord"]` for **Discord app**, `["stun"]` for **Browsers** |
 
 A non-empty `udp.filter_l7` means **Handle only calls** whatever `udp.filter_stun` holds, and `udp.filter_stun` then has no effect. An empty list is not stored. A set with the list needs a `udp.dport_filter`, no `targets.sni_domains`, `targets.ip`, `targets.geosite_categories`, `targets.geoip_categories` or `targets.asns`, and an empty `tcp.dport_filter`. A set that breaks this is refused: the web interface refuses the save, and a file that holds one stops b4 at start. An `escalate.to` that names a set with the list is cleared, with a warning in the log. An unknown entry stays in the list, matches no traffic and is logged as a warning. **(auto: STUN request)** is `"fake_payload_file": "@stun"` under `udp`. `udp.filter_l7` is writable over MCP, with `discord` and `stun` as its only entries, and is carried in a [shared set](../sets/sharing.md).
+
+### A set's resolvers: `dns.doh_url`, `dns.target_dns` and `dns.upstreams` {#set-dns-resolvers}
+
+**Resolvers** on a set's **DNS & Routing** tab is stored in three keys, see [A set with more than one resolver](../dns.md#more-resolvers).
+
+| Resolvers | Stored as |
+| --- | --- |
+| The first entry, when it is an `https://` URL | `dns.doh_url` |
+| The first entry, when it is an IP address | `dns.target_dns` |
+| The other entries, in the order of the field | `dns.upstreams`, a list of strings |
+
+b4 asks `dns.doh_url` first when it is filled, otherwise `dns.target_dns`, then the entries of `dns.upstreams` in their order: eight resolvers at most, the first one included. A set with `dns.enabled` and only `dns.upstreams` filled redirects its domains as well. An empty list is not stored.
+
+`dns.target_dns` holds an IP address and nothing else. A host name or a URL there gives the set no resolver, and the set's queries pass on unchanged unless `dns.upstreams` holds a usable entry. An entry of `dns.upstreams` is an IP address without a port or an `https://` URL. While `dns.enabled` is `true`, any other entry is refused, and so are `0.0.0.0` and a URL without a host or with a user name: the web interface refuses the save, and a file that holds one stops b4 at start. With `dns.enabled` off, the list is stored as written and not checked.
+
+While `dns.enabled` is `true`, b4 also drops an entry that repeats the first resolver or an earlier entry, and drops the entries past the eighth resolver with a warning in the log. `dns.upstreams` is writable over MCP as one comma-separated value that replaces the whole list. It is never carried in a [shared set](../sets/sharing.md), and neither is `dns.target_dns`.
 
 ## Settings and their configuration paths {#settings-and-their-configuration-paths}
 
@@ -325,10 +341,9 @@ The AI API key is not part of this file. b4 keeps it in `ai_secrets.json`.
 | UDP | **Action Mode** | `udp.mode` |
 | UDP | **Fake Packet Payload** | `udp.fake_payload_file`, `@stun` for **(auto: STUN request)** |
 | DNS & Routing | **Enable DNS Redirect** | `dns.enabled` |
-| DNS & Routing | **DNS Server IP** | `dns.target_dns` |
-| DNS & Routing | **DNS-over-HTTPS URL** | `dns.doh_url` |
+| DNS & Routing | **Resolvers** | `dns.doh_url` or `dns.target_dns` for the first resolver and `dns.upstreams` for the others, see [A set's resolvers](#set-dns-resolvers) |
 | DNS & Routing | **Fragment DNS Queries** | `dns.fragment_query` |
-| DNS & Routing | **Fail closed when the resolver is unreachable** | `dns.strict` |
+| DNS & Routing | **Fail closed when no resolver is reachable** | `dns.strict` |
 | DNS & Routing | **Remove ECH keys from DNS answers** | `dns.strip_ech` |
 | DNS & Routing | **Pinned addresses** | `dns.pins`, each name mapped to its addresses |
 | DNS & Routing | **Enable per-set DSCP** | `dscp.enabled` |

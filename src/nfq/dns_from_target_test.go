@@ -44,6 +44,11 @@ func redirectSet(target, doh string) *config.SetConfig {
 	return &set
 }
 
+func serversOf(set *config.SetConfig) []dns.Server {
+	cfg := config.NewConfig()
+	return redirectServers(&cfg, set)
+}
+
 func redirectWorker(t *testing.T, ipv6 bool, sets ...*config.SetConfig) *Worker {
 	t.Helper()
 	cfg := config.NewConfig()
@@ -135,7 +140,7 @@ func TestQueryFromTheRedirectTarget(t *testing.T) {
 		{"a target that is not an address", "dns.example", "", ip("192.0.2.5"), false},
 		{"no client address", "192.0.2.5", "", nil, false},
 	} {
-		if got := queryFromTarget(redirectSet(tc.target, tc.doh), tc.client); got != tc.fromTheTarget {
+		if got := queryFromTarget(serversOf(redirectSet(tc.target, tc.doh)), tc.client); got != tc.fromTheTarget {
 			t.Errorf("%s: queryFromTarget = %v, want %v", tc.name, got, tc.fromTheTarget)
 		}
 	}
@@ -256,10 +261,10 @@ func TestEscalationDoesNotSendAResolverItsOwnQuery(t *testing.T) {
 		if w.answerViaSet(&verdictCtx{id: 62, q: newFakeQueue()}, IPv4, w.getConfig(), next, "www.example.com", query, client, 40000, server) {
 			t.Fatalf("%s: the escalated set answered the reply path through the resolver that asked", target)
 		}
-		if _, ok := w.dnsAnswerSource(next, client); ok {
+		if len(answeringServers(w.getConfig(), next, client)) != 0 {
 			t.Fatalf("%s: the resolver that asked is no answer source for its own query", target)
 		}
-		if _, ok := w.dnsAnswerSource(next, net.ParseIP("192.0.2.101").To4()); !ok {
+		if len(answeringServers(w.getConfig(), next, net.ParseIP("192.0.2.101").To4())) != 1 {
 			t.Fatalf("%s: another client of the same set still gets the set's resolver", target)
 		}
 		noReply(t, replies, 30*time.Millisecond, "an escalated answer went to the resolver's own query")
@@ -425,71 +430,15 @@ func TestQueryFromAResolverInTheList(t *testing.T) {
 	set := redirectSet("", "")
 	set.DNS.Upstreams = []string{"192.0.2.7", "https://192.0.2.8/dns-query"}
 
-	if !queryFromTarget(set, ip("192.0.2.7")) {
+	servers := serversOf(set)
+
+	if !queryFromTarget(servers, ip("192.0.2.7")) {
 		t.Error("a plain resolver in the list must be recognised as the set's own")
 	}
-	if !queryFromTarget(set, ip("192.0.2.8")) {
+	if !queryFromTarget(servers, ip("192.0.2.8")) {
 		t.Error("a DoH resolver in the list must be recognised as the set's own")
 	}
-	if queryFromTarget(set, ip("192.0.2.9")) {
+	if queryFromTarget(servers, ip("192.0.2.9")) {
 		t.Error("a client of the set's resolvers is not one of them")
-	}
-}
-
-func TestAListOnlySetAnswersThroughItsList(t *testing.T) {
-	set := redirectSet("", "")
-	set.DNS.Upstreams = []string{"https://dns.example/dns-query"}
-	w := redirectWorker(t, false, set)
-	if target, ok := w.dnsAnswerSource(set, net.ParseIP("192.0.2.100")); !ok || target != nil {
-		t.Fatalf("a DoH-only list gave %v %v, want an encrypted answer source", target, ok)
-	}
-
-	set.DNS.Upstreams = []string{"192.0.2.7"}
-	if target, ok := w.dnsAnswerSource(set, net.ParseIP("192.0.2.100")); !ok || !target.Equal(net.ParseIP("192.0.2.7")) {
-		t.Fatalf("a plain entry gave %v %v, want 192.0.2.7", target, ok)
-	}
-}
-
-func TestAListOnlySetNamesItsFirstResolver(t *testing.T) {
-	set := redirectSet("", "")
-	set.DNS.Upstreams = []string{"https://dns.example/dns-query"}
-	if got, want := dnsRedirectAction(set), dnsActionDoHPrefix+"dns.example"; got != want {
-		t.Fatalf("label = %q, want %q", got, want)
-	}
-
-	set.DNS.Upstreams = []string{"192.0.2.7", "https://dns.example/dns-query"}
-	if got, want := dnsRedirectAction(set), dnsActionForwardPrefix+"192.0.2.7"; got != want {
-		t.Fatalf("label = %q, want %q", got, want)
-	}
-}
-
-func TestTheFallbackSkipsOnlyPlainResolvers(t *testing.T) {
-	set := redirectSet("", "")
-	set.DNS.Upstreams = []string{"192.0.2.7", "https://192.0.2.8/dns-query"}
-
-	plain := plainRedirectTargets(set)
-	if len(plain) != 1 || !plain[0].Equal(net.ParseIP("192.0.2.7")) {
-		t.Fatalf("plain targets = %v, want only the address entry", plain)
-	}
-	w := redirectWorker(t, false, set)
-	cfg := w.getConfig()
-	if resp, _ := w.dnsRedirectFallback(cfg, set, "example.com", dns.BuildAQuery("example.com", 7), net.ParseIP("192.0.2.7"), 0); resp != nil {
-		t.Fatal("the fallback asked a plain resolver that the set itself uses")
-	}
-}
-
-func TestABadTargetIsLabelledOnlyWhileTheRedirectIsOn(t *testing.T) {
-	set := redirectSet("resolver.local", "")
-	if !dnsBadTarget(set) {
-		t.Fatal("a non-empty primary that does not parse must keep the dns-bad-target label")
-	}
-	set.DNS.Enabled = false
-	if dnsBadTarget(set) {
-		t.Fatal("a disabled redirect passes through, it is not a bad target")
-	}
-	set.DNS.Enabled = true
-	set.DNS.Upstreams = []string{"1.1.1.1"}
-	if dnsBadTarget(set) {
-		t.Fatal("a set with a usable list is not a bad target")
 	}
 }

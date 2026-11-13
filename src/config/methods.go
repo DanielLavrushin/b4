@@ -400,10 +400,7 @@ func (c *Config) HasDNSRedirect() bool {
 		if set == nil || !set.Enabled || !set.DNS.Enabled {
 			continue
 		}
-		if set.DNS.HasUpstream() {
-			return true
-		}
-		if strings.TrimSpace(set.DNS.TargetDNS) != "" || strings.TrimSpace(set.DNS.DoHURL) != "" {
+		if set.DNS.DoHURL != "" || set.DNS.TargetDNS != "" || set.DNS.HasUpstream() {
 			return true
 		}
 	}

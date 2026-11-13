@@ -656,8 +656,19 @@ var (
 	dscpPreCtx    context.Context
 	dscpPreCancel context.CancelFunc
 	dscpPreWG     sync.WaitGroup
-	dscpPreLookup = routeResolveHostContext
+	dscpPreLookup = func(ctx context.Context, cfg *config.Config, set *config.SetConfig, host string) []net.IP {
+		return routeResolveHostContext(ctx, dscpPreLife(ctx), cfg, set, host)
+	}
 )
+
+func dscpPreLife(run context.Context) context.Context {
+	dscpPreMu.Lock()
+	defer dscpPreMu.Unlock()
+	if dscpPreCtx == nil {
+		return run
+	}
+	return dscpPreCtx
+}
 
 func dscpPreResolveStart() {
 	dscpPreMu.Lock()

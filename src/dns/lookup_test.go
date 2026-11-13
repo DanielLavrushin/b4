@@ -218,7 +218,7 @@ func TestAnEmptyAnswerFromTheSetsResolverIsFinal(t *testing.T) {
 func TestAFailingResolverFallsBackInTime(t *testing.T) {
 	resetHealth(t)
 	srv, _ := startBlackHole(t)
-	ctx, cancel := context.WithTimeout(context.Background(), srv.Budget())
+	ctx, cancel := context.WithTimeout(context.Background(), ServersBudget([]Server{srv}, srv.Timeout))
 	defer cancel()
 
 	start := time.Now()

@@ -605,12 +605,6 @@ func (ds *DiscoverySuite) setLacksDNSFix(scoped *config.SetConfig) bool {
 }
 
 func primaryResolver(c config.DNSConfig) string {
-	if strings.TrimSpace(c.DoHURL) != "" {
-		return strings.TrimSpace(c.DoHURL)
-	}
-	if strings.TrimSpace(c.TargetDNS) != "" {
-		return strings.TrimSpace(c.TargetDNS)
-	}
 	if list := c.UpstreamList(); len(list) > 0 {
 		return list[0]
 	}

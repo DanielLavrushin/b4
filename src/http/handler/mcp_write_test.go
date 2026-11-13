@@ -668,6 +668,7 @@ func TestMCPListWritablePaths(t *testing.T) {
 	}
 	for _, want := range []string{
 		"sets[].enabled", "sets[].tcp.seg2delay", "sets[].targets.domain_only", "sets[].targets.ip_priority",
+		"sets[].dns.upstreams",
 		"sets[].fragmentation.strategy", "system.mtproto.port", "system.socks5.udp_timeout",
 		"system.mtproto.bridge.enabled",
 	} {
@@ -714,6 +715,34 @@ func TestMCPWritesIPPriorityAndRevertsIt(t *testing.T) {
 	}
 	if set := api.getCfg().GetSetById("set-1"); set == nil || set.Targets.IPPriority {
 		t.Error("b4_revert_last_change must turn targets.ip_priority off again")
+	}
+}
+
+func TestMCPWritesTheResolverListAndReadsBackWhatWasSaved(t *testing.T) {
+	cfg := writableCfg(t)
+	cfg.Sets[0].DNS = config.DNSConfig{Enabled: true, TargetDNS: "9.9.9.9"}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	const path = "sets[video].dns.upstreams"
+	saved := []string{"1.1.1.1", "https://dns.google/dns-query"}
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, path, " ::ffff:1.1.1.1 , HTTPS://DNS.Google/dns-query, 9.9.9.9, 1.1.1.1"))
+	if !out.Changed || out.Previous != "" || out.Current != strings.Join(saved, ",") {
+		t.Fatalf("write = %+v, want the list read back as it was saved: canonical spellings, no repeat of the primary or of an entry", out)
+	}
+	if got := api.getCfg().GetSetById("set-1").DNS.Upstreams; !reflect.DeepEqual(got, saved) {
+		t.Fatalf("saved list = %q, want %q", got, saved)
+	}
+
+	res := callSetValue(t, session, ctx, path, "1.1.1.1, dns.google")
+	if !res.IsError {
+		t.Fatal("a host name is not a resolver entry and must be refused")
+	}
+	if text := mcpErrorText(res); !strings.Contains(text, "sets[0].dns.upstreams: ") || !strings.Contains(text, "entry 2") {
+		t.Errorf("the refusal must name the list and the entry: %q", text)
+	}
+	if got := api.getCfg().GetSetById("set-1").DNS.Upstreams; !reflect.DeepEqual(got, saved) {
+		t.Fatalf("a refused write changed the list: %q", got)
 	}
 }
 

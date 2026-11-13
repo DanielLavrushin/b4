@@ -63,6 +63,82 @@ func TestCollectTraceSetsReportsPinsWithoutRedirect(t *testing.T) {
 	}
 }
 
+func TestCollectTraceSetsNamesTheResolverList(t *testing.T) {
+	cfg := config.NewConfig()
+	listOnly := config.DefaultSetConfig
+	listOnly.Id = "dddd4444"
+	listOnly.Name = "List only"
+	listOnly.Enabled = true
+	listOnly.DNS = config.DNSConfig{Enabled: true, Upstreams: []string{"9.9.9.9", "https://dns.nextdns.io/abc123", "https://dns.example/dns-query?id=abc123"}}
+	single := config.DefaultSetConfig
+	single.Id = "eeee5555"
+	single.Name = "Single"
+	single.Enabled = true
+	single.DNS = config.DNSConfig{Enabled: true, TargetDNS: "1.1.1.1"}
+	personal := config.DefaultSetConfig
+	personal.Id = "ffff6666"
+	personal.Name = "Personal"
+	personal.Enabled = true
+	personal.DNS = config.DNSConfig{Enabled: true, DoHURL: "https://router:hunter2@dns.nextdns.io/abc123?name=home"}
+	cfg.Sets = []*config.SetConfig{&listOnly, &single, &personal}
+
+	data, err := json.Marshal(collectTraceSets(&cfg))
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	var sets []struct {
+		DNS map[string]json.RawMessage `json:"dns"`
+	}
+	if err := json.Unmarshal(data, &sets); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if len(sets) != 3 {
+		t.Fatalf("expected three sets, got %s", data)
+	}
+	if got, want := string(sets[2].DNS["doh_url"]), `"https://dns.nextdns.io"`; got != want {
+		t.Errorf("the first resolver's URL is in the trace as %s, want its host only: %s", got, want)
+	}
+	for _, private := range []string{"hunter2", "name=home"} {
+		if strings.Contains(string(data), private) {
+			t.Errorf("%q from a resolver's URL is in a trace meant to be attached to an issue: %s", private, data)
+		}
+	}
+	if got, want := string(sets[0].DNS["upstreams"]), `["9.9.9.9","https://dns.nextdns.io","https://dns.example"]`; got != want {
+		t.Errorf("the trace must name the resolvers a list-only set asks, got %s want %s", got, want)
+	}
+	if _, listed := sets[1].DNS["upstreams"]; listed {
+		t.Errorf("a set without a list must leave upstreams out of the trace: %s", data)
+	}
+	if strings.Contains(string(data), "abc123") {
+		t.Errorf("a DoH path or query can carry a private profile id and must stay out of the trace: %s", data)
+	}
+}
+
+func TestCollectTraceSetsLeavesAResolverURLFragmentOut(t *testing.T) {
+	cfg := config.NewConfig()
+	set := config.DefaultSetConfig
+	set.Id = "abab7777"
+	set.Name = "Fragment"
+	set.Enabled = true
+	set.DNS = config.DNSConfig{
+		Enabled:   true,
+		DoHURL:    "https://dns.example#private-profile",
+		Upstreams: []string{"https://other.example#secret-token"},
+	}
+	cfg.Sets = []*config.SetConfig{&set}
+
+	got := collectTraceSets(&cfg)
+	if len(got) != 1 || got[0].DNS == nil {
+		t.Fatalf("expected one set with its DNS, got %+v", got)
+	}
+	if want := "https://dns.example"; got[0].DNS.DoHURL != want {
+		t.Errorf("the first resolver is in the trace as %q, want %q", got[0].DNS.DoHURL, want)
+	}
+	if want := []string{"https://other.example"}; len(got[0].DNS.Upstreams) != 1 || got[0].DNS.Upstreams[0] != want[0] {
+		t.Errorf("the list is in the trace as %q, want %q", got[0].DNS.Upstreams, want)
+	}
+}
+
 func TestCollectTraceSets(t *testing.T) {
 	cfg := config.NewConfig()
 	routed := routedTestSet()

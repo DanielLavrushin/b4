@@ -115,6 +115,21 @@ func TestDNSTCPInterceptEnabledForAListOnlySet(t *testing.T) {
 	}
 }
 
+func TestAWhitespaceOnlyTargetStillCountsAsADNSRedirect(t *testing.T) {
+	cfg := NewConfig()
+	set := &SetConfig{Id: "s", Name: "s", Enabled: true}
+	set.DNS.Enabled = true
+	set.DNS.TargetDNS = " "
+	cfg.Sets = []*SetConfig{set}
+
+	if !cfg.HasDNSRedirect() {
+		t.Fatal("a target_dns that is not empty keeps the redirect counted, so the query is logged dns-bad-target")
+	}
+	if !cfg.DNSTCPInterceptEnabled() {
+		t.Fatal("a target_dns that is not empty keeps TCP DNS interception installed")
+	}
+}
+
 func TestDNSSectionOmittedFromSavedConfigAtDefaults(t *testing.T) {
 	cfg := NewConfig()
 	defaults := NewConfig()

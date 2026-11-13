@@ -163,9 +163,9 @@ The sub-tab holds the DNS settings that apply to every set. The resolver itself 
 
 | Field | What it does | Default |
 | --- | --- | --- |
-| **Intercept DNS over TCP** | Sends DNS over TCP to b4 too. Without it, a client that falls back to TCP skips the set's DNS server. | On |
+| **Intercept DNS over TCP** | Sends DNS over TCP to b4 too. Without it, a client that falls back to TCP skips the set's resolvers. | On |
 | **Listener port** | The local port for DNS over TCP. Another value is needed only when another program holds it. | `5453` |
-| **Query timeout** | Seconds to wait for a set's DNS server. | `5` |
+| **Query timeout** | Seconds to wait for each resolver of a set. | `5` |
 | **Idle timeout** | Seconds an idle DNS-over-TCP connection stays open. | `30` |
 | **Read/write timeout** | Seconds for one query or answer on an open connection. | `10` |
 | **Forward timeout** | Seconds to wait for the client's own resolver when no set matched a TCP query. | `5` |
