@@ -258,7 +258,7 @@ func (b *ipBans) countSilentHello(key string, now time.Time) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	run, known := b.silent[key]
-	if known && !now.Before(run.until) {
+	if known && b.silentRunOverLocked(key, run, now) {
 		run.count = 0
 	}
 	if !known && len(b.silent) >= banSilentMax {
@@ -281,10 +281,15 @@ func (b *ipBans) silentHellos(key string, now time.Time) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	run, known := b.silent[key]
-	if !known || !now.Before(run.until) {
+	if !known || b.silentRunOverLocked(key, run, now) {
 		return 0
 	}
 	return run.count
+}
+
+func (b *ipBans) silentRunOverLocked(key string, run silentRun, now time.Time) bool {
+	_, checking := b.inflight[key]
+	return !checking && !now.Before(run.until)
 }
 
 func (b *ipBans) forgetSilentHellos(ip net.IP, port uint16) {
@@ -306,7 +311,7 @@ func (b *ipBans) forgetSilentKey(key string) {
 
 func (b *ipBans) pruneSilentLocked(now time.Time) {
 	for key, run := range b.silent {
-		if _, checking := b.inflight[key]; !checking && !now.Before(run.until) {
+		if b.silentRunOverLocked(key, run, now) {
 			delete(b.silent, key)
 		}
 	}

@@ -373,8 +373,19 @@ func TestACountBeingCheckedLastsUntilTheCheckEnds(t *testing.T) {
 	if !b.stillSilent(key, ip, 443) {
 		t.Fatal("a count whose neutral-name check is running must not expire under it")
 	}
+	later := time.Now()
+	if got := b.silentHellos(key, later); got != 2 {
+		t.Fatalf("a connection counted earlier must still read the count of the running check, got %d", got)
+	}
+	if got := b.countSilentHello(key, later); got != 3 {
+		t.Fatalf("another silent connection during the check adds to its count instead of starting it over, got %d", got)
+	}
+	if !b.stillSilent(key, ip, 443) {
+		t.Fatal("the running check must keep its count when no connection answered")
+	}
 
 	b.release(key)
+	time.Sleep(5 * time.Millisecond)
 	b.tick(nil)
 	if b.stillSilent(key, ip, 443) {
 		t.Fatal("once the check is over an expired count is dropped")
