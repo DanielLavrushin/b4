@@ -372,7 +372,9 @@ func getSystemInterfaces(inDocker bool) ([]string, map[string]IfaceDetail, error
 		}
 
 		if inDocker {
-			keep(iface)
+			if iface.Flags&net.FlagUp != 0 || interfaceHasAddrs(iface) {
+				keep(iface)
+			}
 		} else {
 			// On host, require IP or known useful prefix
 			allowedWithoutIP := iface.Flags&net.FlagUp != 0 && (strings.HasPrefix(iface.Name, "br") ||

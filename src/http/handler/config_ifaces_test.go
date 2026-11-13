@@ -51,19 +51,33 @@ func TestGetSystemInterfacesListsDownInterfacesWithTheirState(t *testing.T) {
 	}
 }
 
-func TestGetSystemInterfacesInDockerKeepsInterfacesWithoutAddress(t *testing.T) {
+func TestGetSystemInterfacesInDockerHidesDownInterfacesWithoutAddress(t *testing.T) {
 	savedList, savedAddrs, savedLabels := systemInterfaces, interfaceHasAddrs, interfaceLabels
 	t.Cleanup(func() {
 		systemInterfaces, interfaceHasAddrs, interfaceLabels = savedList, savedAddrs, savedLabels
 	})
 	systemInterfaces = func() ([]net.Interface, error) {
-		return []net.Interface{{Name: "eth0", Flags: net.FlagUp}, {Name: "eth1"}}, nil
+		return []net.Interface{
+			{Name: "eth0", Flags: net.FlagUp},
+			{Name: "eth1"},
+			{Name: "wg0"},
+			{Name: "docker0", Flags: net.FlagUp},
+		}, nil
 	}
-	interfaceHasAddrs = func(net.Interface) bool { return false }
+	withAddrs := map[string]bool{"wg0": true}
+	interfaceHasAddrs = func(iface net.Interface) bool { return withAddrs[iface.Name] }
 	interfaceLabels = func() map[string]string { return nil }
 
 	names, details, _ := getSystemInterfaces(true)
-	if !reflect.DeepEqual(names, []string{"eth0", "eth1"}) || details["eth1"].Up || !details["eth0"].Up {
-		t.Fatalf("names = %v, details = %v", names, details)
+	if want := []string{"docker0", "eth0", "wg0"}; !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %v, want %v", names, want)
+	}
+	want := map[string]IfaceDetail{
+		"docker0": {Up: true},
+		"eth0":    {Up: true},
+		"wg0":     {Up: false},
+	}
+	if !reflect.DeepEqual(details, want) {
+		t.Fatalf("details = %v, want %v", details, want)
 	}
 }
