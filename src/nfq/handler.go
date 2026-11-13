@@ -545,8 +545,19 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		}
 	}
 
+	var banRetest *hostRetest
+	if cfg.IsTCPPort(dport) {
+		banRetest = w.hostRetest(vc, pkt, sport, dport)
+	}
+
 	if matched && !routeHandsOff && cfg.IsTCPPort(dport) && duplicatesPackets(set) {
 		log.Tracef("TCP duplicate to %s:%d (%d copies, set: %s)", pkt.dstStr, dport, set.TCP.Duplicate.Count, set.Name)
+
+		if banRetest != nil {
+			if named, _, _ := sni.ParseTLSClientHelloSNI(payload); named != "" {
+				banRetest.note(false)
+			}
+		}
 
 		dupHost, dupTLS, _ := w.tlsCache.Lookup(connKey)
 
@@ -596,7 +607,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		w.connTracker.MarkEstablished(connKey)
 	}
 
-	if isSyn && !isAck && !routeHandsOff && cfg.IsTCPPort(dport) && matched {
+	if isSyn && !isAck && !routeHandsOff && cfg.IsTCPPort(dport) && matched && banRetest == nil {
 		if w.handleSynBan(vc, pkt, cfg, set, sport, dport) {
 			return 0
 		}
@@ -849,7 +860,11 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		classifyReason = vc.handOffReason()
 	}
 
-	if matched && isClientHello && !routeHandsOff && set.TCP.IPBlockDetect.Enabled && host != "" && cfg.IsTCPPort(dport) {
+	if banRetest != nil && isClientHello {
+		banRetest.note(routeHandsOff || (!matched && w.leavesByAnotherRoute(vc, pkt, cfg)))
+	}
+
+	if matched && isClientHello && !routeHandsOff && banRetest == nil && set.TCP.IPBlockDetect.Enabled && host != "" && cfg.IsTCPPort(dport) {
 		ibd := &set.TCP.IPBlockDetect
 		dstIPPort := fmt.Sprintf("%s:%d", pkt.dstStr, dport)
 
@@ -896,7 +911,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	stallCount := 0
 	stallFirstSeen := time.Time{}
 	stallTracked := false
-	if matched && isClientHello && strippedSyn == nil && host != "" && cfg.IsTCPPort(dport) && !foreignEgress &&
+	if matched && isClientHello && strippedSyn == nil && host != "" && cfg.IsTCPPort(dport) && !foreignEgress && banRetest == nil &&
 		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) && !resentEarly {
 		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host, binary.BigEndian.Uint32(tcp[8:12]))
 		stallTracked = true

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,10 +25,35 @@ const (
 
 type banProber func(ctx context.Context, ip net.IP, port int, mark int) iphealth.TLSResult
 
+type banHostProber func(ctx context.Context, ip net.IP, port int, host string, bound func(localPort int)) iphealth.TLSResult
+
+type banAddr struct {
+	ip   netip.Addr
+	port uint16
+}
+
+type hostRetest struct {
+	sport     atomic.Uint32
+	seen      atomic.Bool
+	handedOff atomic.Bool
+}
+
+func (t *hostRetest) note(handedOff bool) {
+	t.seen.Store(true)
+	if handedOff {
+		t.handedOff.Store(true)
+	}
+}
+
 type ipBans struct {
 	reg         *iphealth.BanRegistry
 	good        *iphealth.KnownGood
 	probe       banProber
+	hostProbe   banHostProber
+	prepare     func(ip net.IP, port int, host string)
+	retestMu    sync.RWMutex
+	retests     map[banAddr]*hostRetest
+	retesting   atomic.Int32
 	enabled     atomic.Bool
 	flushFailed atomic.Bool
 	answerTTL   atomic.Int64
@@ -109,7 +136,10 @@ func (b *ipBans) confirm(cfg *config.Config, ip net.IP, port uint16, host, setNa
 	addr := append(net.IP(nil), ip...)
 	first, repeat := cfg.System.IPHealth.BanTTL(), cfg.System.IPHealth.RepeatBanTTL()
 	key := iphealth.BanKey(addr, int(port))
-	if b.run(key, addr, int(port), int(cfg.MainInjectedMark()), func(res iphealth.TLSResult) {
+	mark := int(cfg.MainInjectedMark())
+	if b.run(key, func(ctx context.Context) iphealth.TLSResult {
+		return b.probe(ctx, addr, int(port), mark)
+	}, func(res iphealth.TLSResult) {
 		b.settleStrike(key, addr, int(port), host, setName, first, repeat, res)
 	}) {
 		return true
@@ -202,27 +232,172 @@ func (b *ipBans) retest(retest time.Duration, mark int) {
 		if ip == nil {
 			continue
 		}
-		key := ban.Key()
-		b.run(key, ip, ban.Port, mark, func(res iphealth.TLSResult) {
-			b.settleRetest(key, res)
+		key, port := ban.Key(), ban.Port
+		host := ""
+		if b.hostProbe != nil {
+			host = ban.Host
+		}
+		byHost := false
+		b.run(key, func(ctx context.Context) iphealth.TLSResult {
+			res, named := b.retestOnce(ctx, ip, port, mark, host)
+			byHost = named
+			return res
+		}, func(res iphealth.TLSResult) {
+			b.settleRetest(key, host, res, byHost)
 		})
 	}
 }
 
-func (b *ipBans) settleRetest(key string, res iphealth.TLSResult) {
+func (b *ipBans) retestOnce(ctx context.Context, ip net.IP, port, mark int, host string) (iphealth.TLSResult, bool) {
+	if host == "" {
+		return b.probe(ctx, ip, port, mark), false
+	}
+	named := make(chan bool, 1)
+	go func() {
+		named <- b.answersForHost(ctx, ip, port, host)
+	}()
+	res := b.probe(ctx, ip, port, mark)
+	if byHost := <-named; byHost && res != iphealth.TLSReplied {
+		return iphealth.TLSReplied, true
+	}
+	return res, false
+}
+
+func (b *ipBans) answersForHost(ctx context.Context, ip net.IP, port int, host string) bool {
+	flow, done := b.beginHostRetest(ip, port)
+	if flow == nil {
+		return false
+	}
+	defer done()
+	if b.prepare != nil {
+		b.prepare(ip, port, host)
+	}
+	res := b.hostProbe(ctx, ip, port, host, func(localPort int) { flow.sport.Store(uint32(localPort)) })
+	if res != iphealth.TLSReplied {
+		return false
+	}
+	switch {
+	case !flow.seen.Load():
+		log.Tracef("IP bans: %s answered for %s, but the re-test's ClientHello did not pass through b4, so the answer does not count", iphealth.BanKey(ip, port), host)
+		return false
+	case flow.handedOff.Load():
+		log.Tracef("IP bans: %s answered for %s, but the re-test left through a proxy or another route, so the answer does not count", iphealth.BanKey(ip, port), host)
+		return false
+	}
+	return true
+}
+
+func banAddrOf(ip net.IP, port int) (banAddr, bool) {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok || port <= 0 || port > 65535 {
+		return banAddr{}, false
+	}
+	return banAddr{ip: addr.Unmap(), port: uint16(port)}, true
+}
+
+func (b *ipBans) beginHostRetest(ip net.IP, port int) (*hostRetest, func()) {
+	key, ok := banAddrOf(ip, port)
+	if b == nil || !ok {
+		return nil, nil
+	}
+	flow := &hostRetest{}
+	b.retestMu.Lock()
+	if _, busy := b.retests[key]; busy {
+		b.retestMu.Unlock()
+		return nil, nil
+	}
+	if b.retests == nil {
+		b.retests = make(map[banAddr]*hostRetest)
+	}
+	b.retests[key] = flow
+	b.retesting.Add(1)
+	b.retestMu.Unlock()
+	return flow, func() {
+		b.retestMu.Lock()
+		delete(b.retests, key)
+		b.retesting.Add(-1)
+		b.retestMu.Unlock()
+	}
+}
+
+func (b *ipBans) hostRetestTo(ip net.IP, port uint16) *hostRetest {
+	if b == nil || b.retesting.Load() == 0 {
+		return nil
+	}
+	key, ok := banAddrOf(ip, int(port))
+	if !ok {
+		return nil
+	}
+	b.retestMu.RLock()
+	defer b.retestMu.RUnlock()
+	return b.retests[key]
+}
+
+func (w *Worker) hostRetest(vc *verdictCtx, pkt *pktInfo, sport, dport uint16) *hostRetest {
+	if w == nil {
+		return nil
+	}
+	flow := w.bans.hostRetestTo(pkt.dst, dport)
+	if flow == nil || sport == 0 || flow.sport.Load() != uint32(sport) {
+		return nil
+	}
+	if !(vc.routerOriginated() || hostAddress(pkt.src)) {
+		return nil
+	}
+	return flow
+}
+
+var routeSource = func(ip net.IP, port int) net.IP {
+	conn, err := net.Dial("udp", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
+	if err != nil {
+		return nil
+	}
+	defer conn.Close()
+	if local, ok := conn.LocalAddr().(*net.UDPAddr); ok {
+		return local.IP
+	}
+	return nil
+}
+
+func (w *Worker) hintBanRetest(ip net.IP, port int, host string) {
+	if w == nil || ip == nil || host == "" {
+		return
+	}
+	cfg, matcher := w.getConfig(), w.getMatcher()
+	if cfg == nil || matcher == nil || cfg.Queue.IsDiscovery {
+		return
+	}
+	matched, set := matcher.MatchSNIWithSource(host, "")
+	if !matched || set == nil || !set.Enabled {
+		return
+	}
+	local := routeSource(ip, port)
+	if local == nil {
+		return
+	}
+	w.storeHostHint(local.String(), ip.String(), set, host, "ban re-test", 0, 0)
+}
+
+func (b *ipBans) settleRetest(key, host string, res iphealth.TLSResult, byHost bool) {
 	lifted := b.reg.RecordCheck(key, res == iphealth.TLSReplied)
 	if ip, port, ok := iphealth.ParseBanKey(key); ok {
 		defer b.settle(ip, port, b.reg.Banned(ip, port))
 	}
-	if lifted {
+	switch {
+	case lifted && byHost:
+		log.Infof("IP bans: %s answered TLS for %s, the name it was banned for, in several re-tests in a row, the ban is lifted", key, host)
+		b.notify()
+	case lifted:
 		log.Infof("IP bans: %s answered TLS for neutral names in several re-tests in a row, the ban is lifted", key)
 		b.notify()
-		return
+	case byHost:
+		log.Tracef("IP bans: re-test of %s: answered for %s", key, host)
+	default:
+		log.Tracef("IP bans: re-test of %s: %s", key, res)
 	}
-	log.Tracef("IP bans: re-test of %s: %s", key, res)
 }
 
-func (b *ipBans) run(key string, ip net.IP, port, mark int, done func(iphealth.TLSResult)) bool {
+func (b *ipBans) run(key string, probe func(context.Context) iphealth.TLSResult, done func(iphealth.TLSResult)) bool {
 	b.mu.Lock()
 	if b.ctx.Err() != nil {
 		b.mu.Unlock()
@@ -244,7 +419,7 @@ func (b *ipBans) run(key string, ip net.IP, port, mark int, done func(iphealth.T
 		case <-b.ctx.Done():
 			return
 		}
-		res := b.probe(b.ctx, ip, port, mark)
+		res := probe(b.ctx)
 		<-b.sem
 		if b.ctx.Err() != nil {
 			return
@@ -379,6 +554,8 @@ func (p *Pool) wireBans() {
 	}
 	p.state.bans.changed = p.publishBans
 	p.state.bans.settled = p.Workers[0].settleSilentHellos
+	p.state.bans.hostProbe = iphealth.ProbeTLSHost
+	p.state.bans.prepare = p.Workers[0].hintBanRetest
 }
 
 type ipBlockView struct {

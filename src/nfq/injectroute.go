@@ -352,6 +352,13 @@ func (w *Worker) handsOffEgress(vc *verdictCtx, pkt *pktInfo, cfg *config.Config
 	return vc.tunnel != "" || w.reroutedEgress(vc, pkt, cfg) != ""
 }
 
+func (w *Worker) leavesByAnotherRoute(vc *verdictCtx, pkt *pktInfo, cfg *config.Config) bool {
+	if foreignQueueMark(vc, cfg) && w.interfaceSetRoutesElsewhere(vc, pkt, cfg) != "" {
+		return true
+	}
+	return vc.tunnel != "" || w.reroutedEgress(vc, pkt, cfg) != ""
+}
+
 func (vc *verdictCtx) handOffReason() string {
 	if vc.tunnel != "" {
 		return "tunnel->" + vc.tunnel
