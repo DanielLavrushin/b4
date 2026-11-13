@@ -860,3 +860,88 @@ func TestRunStopsOnCancelAndNudgeNeverBlocks(t *testing.T) {
 		t.Fatal("Run must return once the context is cancelled")
 	}
 }
+
+func TestTelegramFailureNamesTheChatIDThatWouldWork(t *testing.T) {
+	cases := []struct {
+		name   string
+		chat   string
+		status int
+		reply  string
+		want   string
+		plain  bool
+	}{
+		{
+			name:   "bare supergroup id",
+			chat:   "-3456789012",
+			status: http.StatusBadRequest,
+			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
+			want:   "(a supergroup, forum or channel chat id starts with -100, so try -1003456789012)",
+		},
+		{
+			name:   "nine digit internal id",
+			chat:   "-123456789",
+			status: http.StatusBadRequest,
+			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
+			want:   "so try -1000123456789)",
+		},
+		{
+			name:   "internal id that itself starts with 100",
+			chat:   "-1003456789",
+			status: http.StatusBadRequest,
+			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
+			want:   "so try -1001003456789)",
+		},
+		{
+			name:   "already converted",
+			chat:   testChat,
+			status: http.StatusBadRequest,
+			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
+			plain:  true,
+		},
+		{
+			name:   "public channel name",
+			chat:   "@b4hub_alerts",
+			status: http.StatusBadRequest,
+			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`,
+			plain:  true,
+		},
+		{
+			name:   "another failure",
+			chat:   "-3456789012",
+			status: http.StatusForbidden,
+			reply:  `{"ok":false,"error_code":403,"description":"Forbidden: bot was kicked from the group chat"}`,
+			plain:  true,
+		},
+		{
+			name:   "upgraded group",
+			chat:   "-3456789012",
+			status: http.StatusBadRequest,
+			reply:  `{"ok":false,"error_code":400,"description":"Bad Request: group chat was upgraded to a supergroup chat","parameters":{"migrate_to_chat_id":-1003456789012}}`,
+			want:   "(the new chat id is -1003456789012)",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFixture(t)
+			u := f.update()
+			u.WebhookEnabled = false
+			u.TelegramChatID = c.chat
+			f.save(t, u)
+			f.tg.respond(c.status, c.reply, nil)
+
+			err := f.svc.Test(context.Background(), ChannelTelegram)
+			if err == nil {
+				t.Fatal("the send must fail")
+			}
+			if c.want != "" && !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("error %q lacks %q", err, c.want)
+			}
+			if c.plain && strings.Contains(err.Error(), "(") {
+				t.Fatalf("error %q must carry no chat id hint", err)
+			}
+			if st := f.status(t); st.Channels[ChannelTelegram].LastError != cleanText(err.Error(), 300) {
+				t.Fatalf("the console status must carry the same message: %q", st.Channels[ChannelTelegram].LastError)
+			}
+		})
+	}
+}

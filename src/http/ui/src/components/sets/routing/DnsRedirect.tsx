@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Box,
   Button,
@@ -17,15 +17,31 @@ import {
   B4Badge,
   B4FormHeader,
   B4Hint,
+  B4ResolverInput,
   B4Switch,
   B4TextField,
 } from "@b4.elements";
-import { DnsIcon, CheckIcon, BlockIcon } from "@b4.icons";
+import { DnsIcon, CheckIcon, BlockIcon, LockIcon } from "@b4.icons";
 import { B4SetConfig } from "@models/config";
-import { colors } from "@design";
+import { colors, fonts } from "@design";
 import { useTranslation } from "react-i18next";
 import { setsApi } from "@api/sets";
-import { parsePins, pinsToText, samePins } from "@utils";
+import { useChangedFields } from "@context/ChangedFieldsContext";
+import {
+  MAX_SET_RESOLVERS,
+  askedResolvers,
+  isResolverAddress,
+  misplacedResolver,
+  parsePins,
+  pinsToText,
+  resolverError,
+  resolverFields,
+  resolverKey,
+  resolverLabel,
+  resolverList,
+  samePins,
+  type ResolverSource,
+} from "@utils";
 import dns from "@assets/dns.json";
 import doh from "@assets/doh.json";
 
@@ -44,13 +60,46 @@ interface DohEntry {
   warn?: boolean;
 }
 
+type ServerKind = "dns" | "doh";
+
+interface RecommendedServer {
+  kind: ServerKind;
+  value: string;
+  name: string;
+  desc: string;
+  ipv6?: boolean;
+  warn?: boolean;
+}
+
 const POPULAR_DNS = (dns as DnsEntry[]).sort((a, b) =>
   a.name.localeCompare(b.name),
 );
 
 const POPULAR_DOH = doh as DohEntry[];
 
-type ResolverMode = "udp" | "doh";
+const RECOMMENDED: RecommendedServer[] = [
+  ...POPULAR_DNS.map(
+    ({ ip, ...server }): RecommendedServer => ({
+      ...server,
+      kind: "dns",
+      value: ip,
+    }),
+  ),
+  ...POPULAR_DOH.map(
+    ({ url, ...server }): RecommendedServer => ({
+      ...server,
+      kind: "doh",
+      value: url,
+    }),
+  ),
+];
+
+const RECOMMENDED_BY_KEY = new Map(
+  RECOMMENDED.map((server) => [resolverKey(server.value), server]),
+);
+
+const recommendedServer = (entry: string) =>
+  RECOMMENDED_BY_KEY.get(resolverKey(entry));
 
 interface DnsRedirectProps {
   config: B4SetConfig;
@@ -79,27 +128,73 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
     strict: false,
   };
 
-  const [mode, setMode] = useState<ResolverMode>(
-    dnsConfig.doh_url ? "doh" : "udp",
-  );
-  const dohUrl = dnsConfig.doh_url ?? "";
-  const targetDns = dnsConfig.target_dns ?? "";
-  const [seenResolver, setSeenResolver] = useState({ dohUrl, targetDns });
-  if (dohUrl !== seenResolver.dohUrl || targetDns !== seenResolver.targetDns) {
-    setSeenResolver({ dohUrl, targetDns });
-    if (dohUrl && !seenResolver.dohUrl) setMode("doh");
-    else if (targetDns && !seenResolver.targetDns && !dohUrl) setMode("udp");
-  }
+  const resolvers = resolverList(dnsConfig);
+  const misplaced = resolverKey(misplacedResolver(dnsConfig));
+  const asked = askedResolvers(dnsConfig);
+  const chosen = new Set(asked.map(resolverKey));
+  const listFull = resolvers.length >= MAX_SET_RESOLVERS;
+  const [serverKind, setServerKind] = useState<ServerKind | "all">("all");
 
-  const handleModeChange = (_: unknown, next: ResolverMode | null) => {
-    if (!next || next === mode) return;
-    setMode(next);
-    if (next === "udp") {
-      onChange("dns.doh_url", "");
-    } else {
-      onChange("dns.target_dns", "");
-    }
+  const { changedValues } = useChangedFields();
+  const savedKeys = useMemo(() => {
+    const saved = (path: string, current: unknown) => {
+      const leaf = changedValues.get(path);
+      return leaf ? leaf.before : current;
+    };
+    const before = {
+      doh_url: saved("dns.doh_url", dnsConfig.doh_url),
+      target_dns: saved("dns.target_dns", dnsConfig.target_dns),
+      upstreams: saved("dns.upstreams", dnsConfig.upstreams),
+    } as ResolverSource;
+    return new Set(resolverList(before).map(resolverKey));
+  }, [
+    changedValues,
+    dnsConfig.doh_url,
+    dnsConfig.target_dns,
+    dnsConfig.upstreams,
+  ]);
+  const isNewResolver = useCallback(
+    (entry: string) => !savedKeys.has(resolverKey(entry)),
+    [savedKeys],
+  );
+
+  const writeResolvers = (next: string[]) => {
+    const fields = resolverFields(next);
+    onChange("dns.doh_url", fields.doh_url);
+    onChange("dns.target_dns", fields.target_dns);
+    onChange("dns.upstreams", fields.upstreams);
   };
+
+  const toggleServer = (value: string) => {
+    const key = resolverKey(value);
+    const others = resolvers.filter((entry) => resolverKey(entry) !== key);
+    writeResolvers(chosen.has(key) ? others : [...others, value]);
+  };
+
+  const resolverProblem = useCallback(
+    (entry: string) => {
+      const problem =
+        resolverError(entry) ??
+        (resolverKey(entry) === misplaced ? "misplaced" : null);
+      return problem ? t(`sets.dns.resolverErrors.${problem}`, { entry }) : null;
+    },
+    [t, misplaced],
+  );
+
+  const chipProblem = (entry: string) =>
+    resolverProblem(entry) ??
+    (chosen.has(resolverKey(entry))
+      ? null
+      : t("core.resolverInput.overLimit", { max: MAX_SET_RESOLVERS }));
+
+  const resolverPaths = useMemo(
+    () => [
+      { path: "dns.doh_url", label: t("sets.dns.dohUrl") },
+      { path: "dns.target_dns", label: t("sets.dns.targetDns") },
+      { path: "dns.upstreams", label: t("sets.dns.upstreams") },
+    ],
+    [t],
+  );
 
   const [pinsText, setPinsText] = useState(() => pinsToText(dnsConfig.pins));
   const [seenPins, setSeenPins] = useState(dnsConfig.pins);
@@ -154,10 +249,23 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
     };
   }, [pinsText, config.id]);
 
-  const selectedServer = POPULAR_DNS.find((d) => d.ip === dnsConfig.target_dns);
-  const selectedDoH = POPULAR_DOH.find((d) => d.url === dnsConfig.doh_url);
-  const activeResolver =
-    mode === "doh" ? dnsConfig.doh_url : dnsConfig.target_dns;
+  const shownServers = RECOMMENDED.filter(
+    (server) =>
+      (ipv6 || !server.ipv6) &&
+      (serverKind === "all" || server.kind === serverKind),
+  );
+  const [shownResolver, ...otherResolvers] = asked;
+
+  const serverIcon = (server: RecommendedServer, selected: boolean) => {
+    if (selected) {
+      return <CheckIcon sx={{ color: colors.secondary, fontSize: 20 }} />;
+    }
+    if (server.warn) {
+      return <BlockIcon sx={{ color: colors.secondary, fontSize: 20 }} />;
+    }
+    const Icon = server.kind === "doh" ? LockIcon : DnsIcon;
+    return <Icon sx={{ color: colors.text.secondary, fontSize: 20 }} />;
+  };
 
   return (
     <Grid container spacing={3}>
@@ -176,34 +284,6 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
       {dnsConfig.enabled && (
         <>
           <Grid size={{ xs: 12 }}>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              component="div"
-              sx={{ mb: 1 }}
-            >
-              {t("sets.dns.modeLabel")}
-            </Typography>
-            <ToggleButtonGroup
-              exclusive
-              size="small"
-              value={mode}
-              onChange={handleModeChange}
-              sx={{
-                "& .MuiToggleButton-root.Mui-selected": {
-                  bgcolor: `${colors.secondary}22`,
-                  color: colors.secondary,
-                  borderColor: colors.secondary,
-                  "&:hover": { bgcolor: `${colors.secondary}33` },
-                },
-              }}
-            >
-              <ToggleButton value="udp">{t("sets.dns.modeUdp")}</ToggleButton>
-              <ToggleButton value="doh">{t("sets.dns.modeDoH")}</ToggleButton>
-            </ToggleButtonGroup>
-          </Grid>
-
-          <Grid size={{ xs: 12 }}>
             <B4Switch
               checked={dnsConfig.strict || false}
               path="dns.strict"
@@ -212,273 +292,156 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
             />
           </Grid>
 
-          {mode === "udp" && (
-            <>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <B4Switch
-                  checked={dnsConfig.fragment_query || false}
-                  path="dns.fragment_query"
-                  onChange={(checked: boolean) =>
-                    onChange("dns.fragment_query", checked)
-                  }
-                  description={t("sets.dns.fragmentQueryDesc")}
-                />
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <B4TextField
-                  label={t("sets.dns.serverIp")}
-                  value={dnsConfig.target_dns}
-                  path="dns.target_dns"
-                  onChange={(e) => onChange("dns.target_dns", e.target.value)}
-                  placeholder={t("sets.dns.serverIpPlaceholder")}
-                  helperText={t("sets.dns.serverIpHelper")}
-                />
-              </Grid>
+          <Grid size={{ xs: 12 }}>
+            <B4ResolverInput
+              label={t("sets.dns.resolvers")}
+              value={resolvers}
+              onChange={writeResolvers}
+              validate={resolverProblem}
+              chipProblem={chipProblem}
+              highlight={isNewResolver}
+              max={MAX_SET_RESOLVERS}
+              paths={resolverPaths}
+              lookup={recommendedServer}
+              placeholder={t("sets.dns.resolversPlaceholder")}
+              helperText={t("sets.dns.resolversHelper")}
+              emptyMessage={t("sets.dns.resolversEmpty")}
+              aiTopic="dns.upstreams"
+            />
+          </Grid>
 
-              <Grid size={{ xs: 12, md: 6 }}>
-                {selectedServer && (
-                  <Box
-                    sx={{
-                      p: 2,
-                      bgcolor: colors.background.paper,
-                      borderRadius: 1,
-                      border: `1px solid ${colors.border.default}`,
-                      height: "100%",
-                    }}
-                  >
-                    <Stack direction="row" alignItems="center" spacing={1}>
-                      <DnsIcon sx={{ color: colors.secondary }} />
-                      <Typography variant="subtitle2">
-                        {selectedServer.name}
-                      </Typography>
-                    </Stack>
-                    <Typography variant="caption" color="text.secondary">
-                      {selectedServer.desc}
-                    </Typography>
-                  </Box>
-                )}
-              </Grid>
+          {asked.some(isResolverAddress) && (
+            <Grid size={{ xs: 12 }}>
+              <B4Switch
+                checked={dnsConfig.fragment_query || false}
+                path="dns.fragment_query"
+                onChange={(checked: boolean) =>
+                  onChange("dns.fragment_query", checked)
+                }
+                description={t("sets.dns.fragmentQueryDesc")}
+              />
+            </Grid>
+          )}
 
-              <Grid size={{ xs: 12 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  {t("sets.dns.recommendedServers")}
-                </Typography>
-                <Box
-                  sx={{
-                    border: `1px solid ${colors.border.default}`,
-                    borderRadius: 1,
-                    bgcolor: colors.background.paper,
-                    maxHeight: 320,
-                    overflow: "auto",
-                  }}
-                >
-                  <List dense disablePadding>
-                    {POPULAR_DNS.filter(
-                      (server) => ipv6 || !server.ipv6,
-                    ).map((server) => (
-                      <ListItemButton
-                        key={server.ip}
-                        selected={dnsConfig.target_dns === server.ip}
-                        onClick={() => onChange("dns.target_dns", server.ip)}
-                        sx={{
-                          borderLeft: server.warn
-                            ? `3px solid ${colors.quaternary}`
-                            : "3px solid transparent",
-                          "&.Mui-selected": {
-                            bgcolor: `${colors.secondary}22`,
-                            borderLeftColor: colors.secondary,
-                            "&:hover": { bgcolor: `${colors.secondary}33` },
-                          },
-                        }}
-                      >
-                        <ListItemIcon sx={{ minWidth: 36 }}>
-                          {(() => {
-                            if (dnsConfig.target_dns === server.ip) {
-                              return (
-                                <CheckIcon
-                                  sx={{ color: colors.secondary, fontSize: 20 }}
-                                />
-                              );
-                            }
-                            if (server.warn) {
-                              return (
-                                <BlockIcon
-                                  sx={{ color: colors.secondary, fontSize: 20 }}
-                                />
-                              );
-                            }
-                            return (
-                              <DnsIcon
-                                sx={{
-                                  color: colors.text.secondary,
-                                  fontSize: 20,
-                                }}
-                              />
-                            );
-                          })()}
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={
-                            <Stack
-                              direction="row"
-                              alignItems="center"
-                              spacing={1}
-                            >
-                              <Typography
-                                variant="body2"
-                                sx={{
-                                  fontFamily: "monospace",
-                                  color: server.warn
-                                    ? colors.secondary
-                                    : "inherit",
-                                }}
-                              >
-                                {server.name}
-                              </Typography>
-                              <Typography
-                                variant="body2"
-                                color="text.secondary"
-                              >
-                                {server.ip}
-                              </Typography>
-                            </Stack>
-                          }
-                          secondary={server.desc}
-                          slotProps={{
-                            secondary: {
-                              variant: "caption",
-                              sx: {
+          <Grid size={{ xs: 12 }} onMouseDown={(e) => e.preventDefault()}>
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
+              flexWrap="wrap"
+              useFlexGap
+              spacing={1}
+              sx={{ mb: 1 }}
+            >
+              <Typography variant="subtitle2">
+                {t("sets.dns.recommendedServers")}
+              </Typography>
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                aria-label={t("sets.dns.recommendedServers")}
+                value={serverKind}
+                onChange={(_, next: ServerKind | "all" | null) => {
+                  if (next) setServerKind(next);
+                }}
+                sx={{
+                  "& .MuiToggleButton-root.Mui-selected": {
+                    bgcolor: `${colors.secondary}22`,
+                    color: colors.secondary,
+                    "&:hover": { bgcolor: `${colors.secondary}33` },
+                  },
+                }}
+              >
+                <ToggleButton value="all">
+                  {t("sets.dns.serversAll")}
+                </ToggleButton>
+                <ToggleButton value="dns">
+                  {t("sets.dns.serversPlain")}
+                </ToggleButton>
+                <ToggleButton value="doh">
+                  {t("sets.dns.serversDoH")}
+                </ToggleButton>
+              </ToggleButtonGroup>
+            </Stack>
+            <Box
+              sx={{
+                border: `1px solid ${colors.border.default}`,
+                borderRadius: 1,
+                bgcolor: colors.background.paper,
+                maxHeight: 320,
+                overflow: "auto",
+              }}
+            >
+              <List dense disablePadding>
+                {shownServers.map((server) => {
+                  const selected = chosen.has(resolverKey(server.value));
+                  return (
+                    <ListItemButton
+                      key={server.value}
+                      selected={selected}
+                      aria-pressed={selected}
+                      disabled={listFull && !selected}
+                      onClick={() => toggleServer(server.value)}
+                      sx={{
+                        borderLeft: server.warn
+                          ? `3px solid ${colors.quaternary}`
+                          : "3px solid transparent",
+                        "&.Mui-selected": {
+                          bgcolor: `${colors.secondary}22`,
+                          borderLeftColor: colors.secondary,
+                          "&:hover": { bgcolor: `${colors.secondary}33` },
+                        },
+                      }}
+                    >
+                      <ListItemIcon sx={{ minWidth: 36 }}>
+                        {serverIcon(server, selected)}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={
+                          <Stack
+                            direction="row"
+                            alignItems="baseline"
+                            flexWrap="wrap"
+                            columnGap={1}
+                          >
+                            <Typography
+                              variant="body2"
+                              sx={{
                                 color: server.warn
                                   ? colors.secondary
-                                  : undefined,
-                              },
+                                  : "inherit",
+                              }}
+                            >
+                              {server.name}
+                            </Typography>
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{
+                                fontFamily: fonts.mono,
+                                wordBreak: "break-all",
+                              }}
+                            >
+                              {server.value}
+                            </Typography>
+                          </Stack>
+                        }
+                        secondary={server.desc}
+                        slotProps={{
+                          secondary: {
+                            variant: "caption",
+                            sx: {
+                              color: server.warn ? colors.secondary : undefined,
                             },
-                          }}
-                        />
-                      </ListItemButton>
-                    ))}
-                  </List>
-                </Box>
-              </Grid>
-            </>
-          )}
-
-          {mode === "doh" && (
-            <>
-              <Grid size={{ xs: 12 }}>
-                <B4TextField
-                  value={dnsConfig.doh_url || ""}
-                  path="dns.doh_url"
-                  onChange={(e) => onChange("dns.doh_url", e.target.value)}
-                  placeholder={t("sets.dns.dohUrlPlaceholder")}
-                  helperText={t("sets.dns.dohUrlHelper")}
-                />
-              </Grid>
-
-              <Grid size={{ xs: 12, md: 6 }}>
-                {selectedDoH && (
-                  <Box
-                    sx={{
-                      p: 2,
-                      bgcolor: colors.background.paper,
-                      borderRadius: 1,
-                      border: `1px solid ${colors.border.default}`,
-                      height: "100%",
-                    }}
-                  >
-                    <Stack direction="row" alignItems="center" spacing={1}>
-                      <DnsIcon sx={{ color: colors.secondary }} />
-                      <Typography variant="subtitle2">
-                        {selectedDoH.name}
-                      </Typography>
-                    </Stack>
-                    <Typography variant="caption" color="text.secondary">
-                      {selectedDoH.desc}
-                    </Typography>
-                  </Box>
-                )}
-              </Grid>
-
-              <Grid size={{ xs: 12 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  {t("sets.dns.recommendedDoH")}
-                </Typography>
-                <Box
-                  sx={{
-                    border: `1px solid ${colors.border.default}`,
-                    borderRadius: 1,
-                    bgcolor: colors.background.paper,
-                    maxHeight: 320,
-                    overflow: "auto",
-                  }}
-                >
-                  <List dense disablePadding>
-                    {POPULAR_DOH.map((server) => (
-                      <ListItemButton
-                        key={server.url}
-                        selected={dnsConfig.doh_url === server.url}
-                        onClick={() => onChange("dns.doh_url", server.url)}
-                        sx={{
-                          borderLeft: "3px solid transparent",
-                          "&.Mui-selected": {
-                            bgcolor: `${colors.secondary}22`,
-                            borderLeftColor: colors.secondary,
-                            "&:hover": { bgcolor: `${colors.secondary}33` },
                           },
                         }}
-                      >
-                        <ListItemIcon sx={{ minWidth: 36 }}>
-                          {dnsConfig.doh_url === server.url ? (
-                            <CheckIcon
-                              sx={{ color: colors.secondary, fontSize: 20 }}
-                            />
-                          ) : (
-                            <DnsIcon
-                              sx={{
-                                color: colors.text.secondary,
-                                fontSize: 20,
-                              }}
-                            />
-                          )}
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={
-                            <Stack
-                              direction="row"
-                              alignItems="center"
-                              spacing={1}
-                            >
-                              <Typography variant="body2">
-                                {server.name}
-                              </Typography>
-                            </Stack>
-                          }
-                          secondary={
-                            <Stack component="span">
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                                sx={{ fontFamily: "monospace" }}
-                              >
-                                {server.url}
-                              </Typography>
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                {server.desc}
-                              </Typography>
-                            </Stack>
-                          }
-                          slotProps={{ secondary: { component: "div" } }}
-                        />
-                      </ListItemButton>
-                    ))}
-                  </List>
-                </Box>
-              </Grid>
-            </>
-          )}
+                      />
+                    </ListItemButton>
+                  );
+                })}
+              </List>
+            </Box>
+          </Grid>
 
           {/* Visual explanation */}
           <Grid size={{ xs: 12 }}>
@@ -531,14 +494,25 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
                 />
                 <Typography variant="caption">→</Typography>
                 <B4Badge
-                  label={activeResolver || t("sets.dns.vizSelectDns")}
+                  label={
+                    shownResolver
+                      ? resolverLabel(shownResolver)
+                      : t("sets.dns.vizSelectDns")
+                  }
                   size="small"
                   sx={{
-                    bgcolor: activeResolver
+                    bgcolor: shownResolver
                       ? colors.tertiary
                       : colors.accent.primary,
                   }}
                 />
+                {otherResolvers.length > 0 && (
+                  <B4Badge
+                    label={`+${otherResolvers.length}`}
+                    size="small"
+                    sx={{ bgcolor: colors.tertiary }}
+                  />
+                )}
                 <Typography variant="caption">
                   {t("sets.dns.vizRealIp")}
                 </Typography>
@@ -546,16 +520,13 @@ export const DnsRedirect = ({ config, ipv6, onChange }: DnsRedirectProps) => {
             </Box>
           </Grid>
 
-          {/* Warnings */}
-          {!activeResolver && (
+          {asked.length === 0 && (
             <B4Alert severity="warning" sx={{ m: 0 }}>
-              {mode === "doh"
-                ? t("sets.dns.noDohWarning")
-                : t("sets.dns.noServerWarning")}
+              {t("sets.dns.noResolverWarning")}
             </B4Alert>
           )}
 
-          {mode === "udp" && dnsConfig.target_dns === "8.8.8.8" && (
+          {chosen.has("8.8.8.8") && (
             <B4Alert severity="warning" sx={{ m: 0 }}>
               {t("sets.dns.googleWarning")}
             </B4Alert>

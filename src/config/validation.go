@@ -410,6 +410,10 @@ func (c *Config) Validate() error {
 			return v.result()
 		}
 
+		if set.DNS.Enabled && !normalizeSetUpstreams(v, setIdx, set) {
+			return v.result()
+		}
+
 		if len(set.Fragmentation.SeqOverlapPattern) > 0 {
 			set.Fragmentation.SeqOverlapBytes = make([]byte, len(set.Fragmentation.SeqOverlapPattern))
 			for i, s := range set.Fragmentation.SeqOverlapPattern {

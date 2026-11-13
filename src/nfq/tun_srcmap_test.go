@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func writeConntrack(t *testing.T, content string) string {
@@ -43,6 +44,73 @@ func TestTunSrcResolvePortRemap(t *testing.T) {
 	got, ok := r.resolve(6, net.ParseIP("94.189.76.227"), 44092, net.ParseIP("104.18.8.37"), 443)
 	if !ok || got.String() != "192.168.1.50" {
 		t.Fatalf("want 192.168.1.50, got %v ok=%v", got, ok)
+	}
+}
+
+func TestTunSrcKeepsTheDevicesOwnPort(t *testing.T) {
+	thisHost(t)
+	line := "ipv4 2 tcp 6 431999 ESTABLISHED src=192.168.1.50 dst=104.18.8.37 sport=49874 dport=443 src=104.18.8.37 dst=94.189.76.227 sport=443 dport=44092 [ASSURED] use=1\n"
+	r := newResolverWith(t, "94.189.76.227", line)
+	wan, dst := net.ParseIP("94.189.76.227"), net.ParseIP("104.18.8.37")
+
+	if ip, port, origin := r.attributePacket(tunSrcPacket{}, 6, wan, 44092, dst, 443); origin != tunSrcLAN || ip.String() != "192.168.1.50" || port != 49874 {
+		t.Fatalf("want the device 192.168.1.50:49874 from the conntrack row, got %v:%d (origin %d)", ip, port, origin)
+	}
+	if err := os.WriteFile(r.path, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if ip, port, origin := r.attributePacket(tunSrcPacket{}, 6, wan, 44092, dst, 443); origin != tunSrcLAN || ip.String() != "192.168.1.50" || port != 49874 {
+		t.Fatalf("a cached attribution must keep the device's port, got %v:%d (origin %d)", ip, port, origin)
+	}
+	if _, port, origin := r.attributePacket(tunSrcPacket{}, 6, wan, 44093, dst, 443); origin != tunSrcUnknown || port != 0 {
+		t.Fatalf("a flow conntrack does not hold has no device port, got %d (origin %d)", port, origin)
+	}
+}
+
+func TestTunSrcANewTCPConnectionOnACachedTupleIsLookedUpAgain(t *testing.T) {
+	thisHost(t)
+	row := func(src, sport string) string {
+		return "ipv4 2 tcp 6 120 SYN_SENT src=" + src + " dst=104.18.8.37 sport=" + sport + " dport=443 [UNREPLIED] src=104.18.8.37 dst=94.189.76.227 sport=443 dport=44092 use=1\n"
+	}
+	r := newResolverWith(t, "94.189.76.227", row("192.168.1.50", "49874"))
+	wan, dst := net.ParseIP("94.189.76.227"), net.ParseIP("104.18.8.37")
+	syn := func(seq uint32) (string, uint16) {
+		ip, port, _ := r.attributePacket(tunSrcPacket{syn: true, seq: seq}, 6, wan, 44092, dst, 443)
+		return ip.String(), port
+	}
+
+	if ip, port := syn(1000); ip != "192.168.1.50" || port != 49874 {
+		t.Fatalf("first connection: got %s:%d", ip, port)
+	}
+	if err := os.WriteFile(r.path, []byte(row("192.168.1.77", "44092")), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if ip, port := syn(1000); ip != "192.168.1.50" || port != 49874 {
+		t.Fatalf("a retransmitted SYN belongs to the cached connection, got %s:%d", ip, port)
+	}
+	if ip, port := syn(5000); ip != "192.168.1.77" || port != 44092 {
+		t.Fatalf("a SYN with a new sequence number opens a new connection on the reused tuple, got %s:%d, want 192.168.1.77:44092", ip, port)
+	}
+	if ip, port, _ := r.attributePacket(tunSrcPacket{}, 6, wan, 44092, dst, 443); ip.String() != "192.168.1.77" || port != 44092 {
+		t.Fatalf("the new connection's later packets keep its attribution, got %v:%d", ip, port)
+	}
+}
+
+func TestTunSrcAUDPAttributionIsCachedNoLongerThanItsFlowLives(t *testing.T) {
+	thisHost(t)
+	line := "ipv4 2 udp 17 29 src=192.168.1.50 dst=104.18.8.37 sport=49874 dport=443 [UNREPLIED] src=104.18.8.37 dst=94.189.76.227 sport=443 dport=44092 mark=0 use=1\n"
+	r := newResolverWith(t, "94.189.76.227", line)
+
+	if _, port, origin := r.attributePacket(tunSrcPacket{}, 17, net.ParseIP("94.189.76.227"), 44092, net.ParseIP("104.18.8.37"), 443); origin != tunSrcLAN || port != 49874 {
+		t.Fatalf("got port %d (origin %d)", port, origin)
+	}
+	after := time.Now()
+	e, ok := r.cache[cacheKey(17, "94.189.76.227", 44092, 443, "104.18.8.37")]
+	if !ok {
+		t.Fatal("the attribution must be cached")
+	}
+	if life := e.expires.Sub(after); life > 30*time.Second {
+		t.Fatalf("a UDP attribution is cached for %v. The kernel drops an idle UDP flow after 30 s, and a new flow can then reuse the tuple", life)
 	}
 }
 

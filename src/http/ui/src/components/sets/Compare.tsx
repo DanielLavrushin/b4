@@ -273,7 +273,7 @@ const buildGroups = (
     }
     const a = flatA[path];
     const b = flatB[path];
-    if (leafEqual(a, b)) continue;
+    if (leafEqual(a, b, path)) continue;
     const group = groupOfPath(path);
     if (!group) continue;
     const list = leavesByGroup.get(group) ?? [];
@@ -295,7 +295,7 @@ const buildGroups = (
       label: t(`sets.compare.lists.${field.label}`),
       a,
       b,
-      differs: !leafEqual(a, b),
+      differs: !leafEqual(a, b, field.path),
     };
   }).filter((row) => row.a.length > 0 || row.b.length > 0);
 

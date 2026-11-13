@@ -38,6 +38,7 @@ type helloWatch struct {
 	port     uint16
 	client   net.IP
 	cport    uint16
+	ownPort  uint16
 	wire     net.IP
 	tun      bool
 	ver      uint8
@@ -56,6 +57,8 @@ type helloWatch struct {
 	probing  bool
 	parked   bool
 	closed   bool
+
+	fakesCloseEntry bool
 }
 
 func (t *destStateTracker) Watching() bool {
@@ -227,6 +230,7 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 		port:     dport,
 		client:   append(net.IP(nil), pkt.src...),
 		cport:    sport,
+		ownPort:  pkt.clientPort(),
 		wire:     append(net.IP(nil), wire...),
 		tun:      cfg.Queue.Mode == "tun",
 		ver:      pkt.ver,
@@ -242,7 +246,29 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 		scope:    scope.settled(),
 		tls:      tlsVersion,
 		deadline: deadline,
+
+		fakesCloseEntry: w.closingFakesMayHaveHit(cfg, set, host),
 	})
+}
+
+func sendsClosingFakes(set *config.SetConfig) bool {
+	desync := &set.TCP.Desync
+	return desync.PostDesync || (desync.Mode != config.ConfigOff && desync.Mode != "ack")
+}
+
+func (w *Worker) closingFakesMayHaveHit(cfg *config.Config, set *config.SetConfig, host string) bool {
+	if sendsClosingFakes(set) {
+		return true
+	}
+	if to, _, escalated := w.destState.GetEscalation(host); !escalated || to != set.Id {
+		return false
+	}
+	for _, from := range cfg.Sets {
+		if from != nil && sendsClosingFakes(from) && escalationReaches(cfg, from, set.Id) {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *Worker) noteClientProgress(connKey string, tcp []byte) {
@@ -288,6 +314,8 @@ func checkServerSilence(h helloWatch) (serverSilence, error) {
 	switch {
 	case err != nil:
 		return silenceUnknown, err
+	case !found && h.fakesCloseEntry:
+		return silenceOpen, nil
 	case !found:
 		return silenceGone, nil
 	case !flow.HasCounters:
@@ -300,7 +328,7 @@ func checkServerSilence(h helloWatch) (serverSilence, error) {
 	if flow.ReplyBytes > flow.ReplyPackets*headers {
 		return silenceAnswered, nil
 	}
-	if flow.HasState && flow.TCPState != ctnl.TCPEstablished {
+	if flow.HasState && flow.TCPState != ctnl.TCPEstablished && !h.fakesCloseEntry {
 		return silenceGone, nil
 	}
 	return silenceOpen, nil
@@ -390,7 +418,7 @@ func (w *Worker) settleSilentHellos(ip net.IP, port int, banned bool) {
 
 func (w *Worker) resetSilentHello(h helloWatch) {
 	if h.ver == IPv4 {
-		w.sendRSTToClientV4(h.hdr, h.ihl, h.client, h.dst)
+		w.sendRSTToClientV4(h.hdr, h.ihl, h.client, h.ownPort, h.dst)
 	} else {
 		w.sendRSTToClientV6(h.hdr, h.client, h.dst)
 	}

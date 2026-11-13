@@ -19,7 +19,32 @@ type sourceState struct {
 var (
 	sourceMu     sync.Mutex
 	sourceHealth = map[string]*sourceState{}
+	sourceAsks   = map[string]int{}
 )
+
+func beginSourceAsk(source string, consult, capped bool) (done func(), ok bool) {
+	if source == "" {
+		return func() {}, true
+	}
+	sourceMu.Lock()
+	defer sourceMu.Unlock()
+	if capped && sourceAsks[source] >= maxSourceAsks {
+		return func() {}, false
+	}
+	if consult && sourceUnreachable(source) {
+		return func() {}, false
+	}
+	sourceAsks[source]++
+	return func() {
+		sourceMu.Lock()
+		defer sourceMu.Unlock()
+		if sourceAsks[source] <= 1 {
+			delete(sourceAsks, source)
+			return
+		}
+		sourceAsks[source]--
+	}, true
+}
 
 func SourceLabel(source string) string {
 	if u, err := url.Parse(source); err == nil && u.Host != "" {
@@ -28,13 +53,26 @@ func SourceLabel(source string) string {
 	return source
 }
 
+func SourceCooling(source string) bool {
+	if source == "" {
+		return false
+	}
+	sourceMu.Lock()
+	defer sourceMu.Unlock()
+	state := sourceHealth[source]
+	return state != nil && state.failures >= SourceFailuresToTrip && time.Now().Before(state.retryAt)
+}
+
 func SourceUnreachable(source string) bool {
 	if source == "" {
 		return false
 	}
 	sourceMu.Lock()
 	defer sourceMu.Unlock()
+	return sourceUnreachable(source)
+}
 
+func sourceUnreachable(source string) bool {
 	state := sourceHealth[source]
 	if state == nil || state.failures < SourceFailuresToTrip {
 		return false

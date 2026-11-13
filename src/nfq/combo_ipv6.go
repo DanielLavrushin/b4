@@ -11,7 +11,7 @@ import (
 	"github.com/daniellavrushin/b4/utils"
 )
 
-func (w *Worker) sendComboFragmentsV6(cfg *config.SetConfig, packet []byte, dst net.IP) {
+func (w *Worker) sendComboFragmentsV6(cfg *config.SetConfig, packet []byte, dst net.IP, fakes bool) {
 	pi, ok := ExtractPacketInfoV6(packet)
 	if !ok || pi.PayloadLen < 20 {
 		_ = w.sock.SendIPv6(packet, dst)
@@ -20,7 +20,7 @@ func (w *Worker) sendComboFragmentsV6(cfg *config.SetConfig, packet []byte, dst 
 
 	combo := &cfg.Fragmentation.Combo
 
-	if combo.DecoyEnabled {
+	if fakes && combo.DecoyEnabled {
 		w.sendDecoyPacketV6(cfg, packet, pi, dst)
 	}
 
@@ -55,7 +55,7 @@ func (w *Worker) sendComboFragmentsV6(cfg *config.SetConfig, packet []byte, dst 
 		return
 	}
 
-	if seqovlLength := cfg.Fragmentation.SeqOverlapLength; seqovlLength > 0 && seqovlLen > 0 {
+	if seqovlLength := cfg.Fragmentation.SeqOverlapLength; seqovlLength > 0 && seqovlLen > 0 && startsMessage(pi.Payload) && w.streams.Starts(packet, pi.IPHdrLen, pi.Seq0) {
 		first := segments[0]
 		startOff := int(first.Seq - pi.Seq0)
 		payloadLen := len(first.Data) - pi.PayloadStart

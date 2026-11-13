@@ -254,6 +254,27 @@ func TestHubImportRejectsOtherFormats(t *testing.T) {
 	expectCode(t, rec, http.StatusBadRequest, "unsupported_format")
 }
 
+func expectHubGateStatus(t *testing.T, rec *httptest.ResponseRecorder, enabled bool) {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a hub that is off or has no key is a state the status reports, expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var st struct {
+		Enabled    *bool             `json:"enabled"`
+		Configured *bool             `json:"configured"`
+		URLs       []string          `json:"urls"`
+		Mirrors    []string          `json:"mirrors"`
+		SetMatches []json.RawMessage `json:"set_matches"`
+	}
+	decodeInto(t, rec, &st)
+	if st.Enabled == nil || *st.Enabled != enabled || st.Configured == nil || *st.Configured {
+		t.Fatalf("expected enabled=%v configured=false, got %s", enabled, rec.Body.String())
+	}
+	if st.URLs == nil || st.Mirrors == nil || st.SetMatches == nil {
+		t.Fatalf("the UI reads urls, mirrors and set_matches as lists, got %s", rec.Body.String())
+	}
+}
+
 func TestHubEndpointsAreGated(t *testing.T) {
 	mux, cfg := hubAPI(t)
 	previous := globalHubService
@@ -263,7 +284,7 @@ func TestHubEndpointsAreGated(t *testing.T) {
 	hubwire.BuiltinHubKeys = nil
 	t.Cleanup(func() { hubwire.BuiltinHubKeys = builtin })
 
-	expectCode(t, getJSON(t, mux, "/api/hub/status"), http.StatusConflict, "hub_disabled")
+	expectHubGateStatus(t, getJSON(t, mux, "/api/hub/status"), false)
 	expectCode(t, postJSON(t, mux, "/api/hub/share", HubShareRequest{SetID: "x"}), http.StatusConflict, "hub_disabled")
 	expectCode(t, getJSON(t, mux, "/api/hub/identity"), http.StatusConflict, "hub_disabled")
 
@@ -272,7 +293,7 @@ func TestHubEndpointsAreGated(t *testing.T) {
 
 	svc := hub.New(func() *config.Config { return cfg }, hub.Options{BuiltinBases: []string{}})
 	SetHubService(svc)
-	expectCode(t, getJSON(t, mux, "/api/hub/status"), http.StatusConflict, "hub_not_configured")
+	expectHubGateStatus(t, getJSON(t, mux, "/api/hub/status"), true)
 	expectCode(t, getJSON(t, mux, "/api/hub/sets?domain=x"), http.StatusConflict, "hub_not_configured")
 	expectCode(t, postJSON(t, mux, "/api/hub/sets/x/vote", HubVoteRequest{Kind: "works"}), http.StatusConflict, "hub_not_configured")
 
@@ -827,6 +848,36 @@ func TestCommunityPresetsKeepDistinctSetsWithTheSameStrategy(t *testing.T) {
 		if p.Domains[0] != want {
 			t.Errorf("%s must be tested for %s only, got %v", p.Description, want, p.Domains)
 		}
+	}
+}
+
+func TestCommunityPresetNamesTheCaptureItInstalled(t *testing.T) {
+	env := newHubEnv(t)
+	shared := hubStrategySet("Shared capture", "a.example")
+	shared.Faking.SNIType = config.FakePayloadCapture
+	shared.Faking.PayloadFile = "captures/tls_community_preset_example.bin"
+	cs, payloads := hubtest.CatalogueSet(t, "capture-1", 1, &shared, func(string) ([]byte, error) { return config.FakeSNI2, nil })
+	for _, p := range payloads {
+		env.hub.AddBlob(p)
+	}
+	env.publish(t, cs)
+
+	presets := env.api.communityPresets([]string{"a.example"}, false)
+	if len(presets) != 1 {
+		t.Fatalf("the shared capture set must be queued, got %d presets", len(presets))
+	}
+	faking := presets[0].Config.Faking
+	if faking.SNIType != config.FakePayloadCapture || strings.HasPrefix(faking.PayloadFile, hubwire.RefPrefix) {
+		t.Fatalf("the preset must name the installed file, got type %d file %q", faking.SNIType, faking.PayloadFile)
+	}
+	t.Cleanup(func() { os.Remove(filepath.Join(filepath.Dir(env.api.getCfg().ConfigPath), faking.PayloadFile)) })
+
+	got, err := env.api.getCfg().ReadCapturePayload(faking.PayloadFile)
+	if err != nil {
+		t.Fatalf("a run loads the fake by the file the preset names: %v", err)
+	}
+	if !bytes.Equal(got, config.FakeSNI2) {
+		t.Errorf("the named file must hold the shared payload, got %d bytes", len(got))
 	}
 }
 

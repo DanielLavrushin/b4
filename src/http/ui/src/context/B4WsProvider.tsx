@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { wsUrl } from "@utils";
+import { useAuth, verifySession } from "./AuthProvider";
 import { ParsedLog, parseSniLogLine } from "@hooks/useDomainActions";
 
 const MAX_BUFFER_SIZE = 2000;
@@ -242,6 +243,7 @@ export const WebSocketProvider = ({
   children: React.ReactNode;
 }) => {
   const [store] = useState(() => new StreamStore());
+  const { hasSession } = useAuth();
   const [pauseLogs, setPauseLogs] = useState(false);
   const [pauseDomains, setPauseDomains] = useState(false);
   const [showAll, setShowAll] = useState(() => {
@@ -264,6 +266,7 @@ export const WebSocketProvider = ({
   // separate streams. The logs stream is level-gated; the connections stream
   // is always-on (cheap fan-out, no listeners = no work).
   useEffect(() => {
+    if (!hasSession) return;
     let isCleaningUp = false;
     let batchTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -284,8 +287,12 @@ export const WebSocketProvider = ({
 
       const connect = () => {
         if (isCleaningUp) return;
+        let opened = false;
         ws = new WebSocket(wsUrl(path));
-        ws.onopen = () => console.log(`${label} WebSocket connected`);
+        ws.onopen = () => {
+          opened = true;
+          console.log(`${label} WebSocket connected`);
+        };
         ws.onmessage = (ev) => {
           sink(String(ev.data));
           scheduleBatch();
@@ -293,10 +300,10 @@ export const WebSocketProvider = ({
         ws.onerror = (error) =>
           console.error(`${label} WebSocket error:`, error);
         ws.onclose = () => {
-          if (!isCleaningUp) {
-            console.log(`${label} WebSocket disconnected, reconnecting in 3s...`);
-            reconnectTimeout = setTimeout(connect, 3000);
-          }
+          if (isCleaningUp) return;
+          if (!opened) verifySession();
+          console.log(`${label} WebSocket disconnected, reconnecting in 3s...`);
+          reconnectTimeout = setTimeout(connect, 3000);
         };
       };
 
@@ -325,7 +332,7 @@ export const WebSocketProvider = ({
       logsStream.close();
       connStream.close();
     };
-  }, [store]);
+  }, [store, hasSession]);
 
   const controls = useMemo(
     () => ({

@@ -1016,10 +1016,56 @@ func TestMCPDiscoveryNamesThePresetApplyWouldInstall(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("apply from history: %s", mcpErrorText(res))
 	}
-	if note := decodeDiscovery(t, res).Note; !strings.Contains(note, "from the cached-1-tcpmd5 strategy") {
+	applied := decodeDiscovery(t, res)
+	if note := applied.Note; !strings.Contains(note, "from the cached-1-tcpmd5 strategy") {
 		t.Errorf("the apply note names the preset it installed: %q", note)
+	}
+	if applied.Applied == nil || applied.Applied.Name != "www.svoboda.org" {
+		t.Errorf("a set applied without a name is named after its site, not the preset: %+v", applied.Applied)
 	}
 	if marks := discovery.GetHistory(cfg.ConfigPath).Entries[0].Applied; len(marks) != 1 || marks["cached-1-tcpmd5"].SetId == "" {
 		t.Errorf("History marks the preset apply installed and no other: %v", marks)
+	}
+}
+
+func TestMCPDiscoveryApplyKeepsTheDomainNameUnique(t *testing.T) {
+	cfg := probeCfg(t)
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.ConfigPath = filepath.Join(t.TempDir(), "config.json")
+	taken := config.NewSetConfig()
+	taken.Id, taken.Name, taken.Enabled = "taken", "WWW.Svoboda.org", true
+	taken.Targets.SNIDomains = []string{"example.org"}
+	cfg.Sets = append(cfg.Sets, &taken)
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	t.Cleanup(func() { mcpRememberSuite("") })
+
+	winner := config.NewSetConfig()
+	winner.Name = "cached-1-tcpmd5"
+	winner.Targets.SNIDomains = []string{"www.svoboda.org"}
+	discovery.SaveToHistory(&discovery.CheckSuite{
+		Id: "domain-named", Status: discovery.CheckStatusComplete, EndTime: time.Now(),
+		DomainDiscoveryResults: map[string]*discovery.DomainDiscoveryResult{
+			"www.svoboda.org": {Domain: "www.svoboda.org", BestPreset: "cached-1-tcpmd5", BestSuccess: true, Confirmed: 3, Outcome: discovery.OutcomeFound},
+		},
+		StrategyGroups: []discovery.StrategyGroup{
+			{WinnerPreset: "cached-1-tcpmd5", Family: discovery.FamilyTCPMD5, Domains: []string{"www.svoboda.org"}, Set: &winner},
+		},
+	}, cfg.ConfigPath)
+
+	res := callDiscovery(t, session, ctx, map[string]any{"action": "apply", "domain": "www.svoboda.org", "id": "domain-named"})
+	if res.IsError {
+		t.Fatalf("apply from history: %s", mcpErrorText(res))
+	}
+	applied := decodeDiscovery(t, res)
+	if applied.Applied == nil || applied.Applied.Name != "www.svoboda.org 2" {
+		t.Fatalf("a domain name another set already holds gets a number, compared without case: %+v", applied.Applied)
+	}
+	var names []string
+	for _, s := range api.getCfg().Sets {
+		names = append(names, s.Name)
+	}
+	if !slices.Contains(names, "WWW.Svoboda.org") || !strings.Contains(applied.Note, `"www.svoboda.org 2"`) {
+		t.Errorf("the other set keeps its name and the note names the new one: %v, %q", names, applied.Note)
 	}
 }

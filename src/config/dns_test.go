@@ -100,6 +100,36 @@ func TestDNSTCPInterceptEnabledNeedsBothFlagAndSet(t *testing.T) {
 	}
 }
 
+func TestDNSTCPInterceptEnabledForAListOnlySet(t *testing.T) {
+	cfg := NewConfig()
+	set := &SetConfig{Id: "s", Name: "s", Enabled: true}
+	set.DNS.Enabled = true
+	set.DNS.Upstreams = []string{"1.1.1.1", "https://example.invalid/dns-query"}
+	cfg.Sets = []*SetConfig{set}
+
+	if !cfg.HasDNSRedirect() {
+		t.Fatal("a set that asks a list of resolvers and nothing else must still redirect DNS")
+	}
+	if !cfg.DNSTCPInterceptEnabled() {
+		t.Fatal("a list-only set must install TCP DNS interception")
+	}
+}
+
+func TestAWhitespaceOnlyTargetStillCountsAsADNSRedirect(t *testing.T) {
+	cfg := NewConfig()
+	set := &SetConfig{Id: "s", Name: "s", Enabled: true}
+	set.DNS.Enabled = true
+	set.DNS.TargetDNS = " "
+	cfg.Sets = []*SetConfig{set}
+
+	if !cfg.HasDNSRedirect() {
+		t.Fatal("a target_dns that is not empty keeps the redirect counted, so the query is logged dns-bad-target")
+	}
+	if !cfg.DNSTCPInterceptEnabled() {
+		t.Fatal("a target_dns that is not empty keeps TCP DNS interception installed")
+	}
+}
+
 func TestDNSSectionOmittedFromSavedConfigAtDefaults(t *testing.T) {
 	cfg := NewConfig()
 	defaults := NewConfig()

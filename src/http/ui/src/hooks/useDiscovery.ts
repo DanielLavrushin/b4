@@ -16,11 +16,21 @@ import {
 import { B4SetConfig } from "@models/config";
 import { MAX_PROBE_URLS, wsUrl, describeApiError } from "@utils";
 import i18n from "@/i18n";
+import { useAuth, verifySession } from "@context/AuthProvider";
+import {
+  forgetRun,
+  observeRun,
+  showOnPage,
+  watchRun,
+} from "@/stores/discoveryWatch";
 
 const POLL_MS = 1500;
 const IDLE_POLL_MS = 5000;
 const TERMINAL = new Set(["complete", "failed", "canceled"]);
 const DISMISSED_RUN_KEY = "b4_discovery_dismissed_run";
+
+const isLive = (run: DiscoverySuite): boolean =>
+  run.status === "running" || run.status === "pending";
 
 const dismissedRun = (): string | null => {
   try {
@@ -73,6 +83,7 @@ export function useDiscovery({
   const [finishRequested, setFinishRequested] = useState(false);
   const [suiteId, setSuiteId] = useState<string | null>(null);
   const [suite, setSuite] = useState<DiscoverySuite | null>(null);
+  const [otherRun, setOtherRun] = useState<DiscoverySuite | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -80,6 +91,18 @@ export function useDiscovery({
   const seenRunRef = useRef<string | null>(null);
   const restoredRef = useRef<string | null>(null);
   const runGenRef = useRef(0);
+  const pollErrorRef = useRef<string | null>(null);
+  const pendingStartRef = useRef<object | null>(null);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => showOnPage(suiteId), [suiteId]);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -93,76 +116,154 @@ export function useDiscovery({
     }
   }, []);
 
+  const followRun = useCallback((run: DiscoverySuite) => {
+    pendingStartRef.current = null;
+    setOtherRun(null);
+    setSuiteId(run.id);
+    setSuite(run);
+    setRunning(true);
+    setFinishing(false);
+  }, []);
+
+  const meetLiveRun = useCallback(
+    (live: DiscoverySuite, shown: string | null) => {
+      observeRun(live);
+      if (shown === live.id) return;
+      if (!shown || shown === restoredRef.current) {
+        followRun(live);
+        return;
+      }
+      setOtherRun((known) => (known?.id === live.id ? known : live));
+    },
+    [followRun],
+  );
+
+  const load = useCallback(
+    async (asked: string | null, blank: boolean, restore: boolean) => {
+      const gen = runGenRef.current;
+      const stale = () => !mountedRef.current || runGenRef.current !== gen;
+
+      const finished = async (
+        id: string | null | undefined,
+        wanted: boolean,
+      ): Promise<DiscoverySuite | null> => {
+        if (!id || (!wanted && dismissedRun() === id)) return null;
+        try {
+          const data = await discoveryApi.status(id);
+          if (!TERMINAL.has(data.status)) return null;
+          if (data.source && data.source !== "web") return null;
+          return data;
+        } catch {
+          return null;
+        }
+      };
+
+      try {
+        const current = await discoveryApi.current();
+        if (stale()) return;
+        const live = isSuite(current) && isLive(current) ? current : null;
+        const idle = isSuite(current) ? null : current;
+        if (live) observeRun(live);
+        if (idle) seenRunRef.current = idle.last_run ?? null;
+
+        if (asked && asked !== live?.id) {
+          const result = await finished(asked, true);
+          if (stale()) return;
+          if (result) {
+            observeRun(result, { shown: true });
+            pendingStartRef.current = null;
+            restoredRef.current = null;
+            setError(null);
+            setRunning(false);
+            setStopping(false);
+            setFinishRequested(false);
+            setSuiteId(result.id);
+            setSuite(result);
+            setOtherRun(live);
+            setFinishing(!!idle?.runtime_active);
+            return;
+          }
+        }
+        if (!blank) return;
+        if (live) {
+          followRun(live);
+          return;
+        }
+        const last = restore ? await finished(idle?.last_run, false) : null;
+        if (stale()) return;
+        if (last) {
+          observeRun(last, { shown: true });
+          pendingStartRef.current = null;
+          restoredRef.current = last.id;
+          setSuiteId(last.id);
+          setSuite(last);
+        }
+        if (last ? last.runtime_active : idle?.runtime_active) {
+          setFinishing(true);
+        }
+      } catch {
+        if (blank && !stale()) setFinishing(false);
+      }
+    },
+    [followRun],
+  );
+
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
-    const gen = runGenRef.current;
-
-    const restoreFinished = async (id?: string): Promise<boolean> => {
-      if (!id || dismissedRun() === id) return false;
-      try {
-        const data = await discoveryApi.status(id);
-        if (runGenRef.current !== gen || !TERMINAL.has(data.status)) {
-          return false;
-        }
-        if (data.source && data.source !== "web") return false;
-        restoredRef.current = data.id;
-        setSuiteId(data.id);
-        setSuite(data);
-        if (data.runtime_active) setFinishing(true);
-        return true;
-      } catch {
-        return false;
-      }
-    };
 
     const init = async () => {
-      try {
-        const current = await discoveryApi.current();
-        if (isSuite(current)) {
-          if (current.status === "running" || current.status === "pending") {
-            setSuiteId(current.id);
-            setSuite(current);
-            setRunning(true);
-          }
-        } else {
-          seenRunRef.current = current?.last_run ?? null;
-          const restored =
-            restoreLast && (await restoreFinished(current?.last_run));
-          if (current?.runtime_active && !restored) setFinishing(true);
-        }
-      } catch {
-        setFinishing(false);
-      }
+      await load(null, true, restoreLast);
       await loadHistory();
     };
 
     void init();
-  }, [loadHistory, restoreLast]);
+  }, [load, loadHistory, restoreLast]);
+
+  const openRun = useCallback(
+    (id: string) => {
+      runGenRef.current += 1;
+      void load(id, !suiteId && !running, restoreLast);
+    },
+    [load, suiteId, running, restoreLast],
+  );
 
   useEffect(() => {
     if (!running && !finishing) return;
+    let active = true;
+
+    const awaitRuntime = async () => {
+      try {
+        const current = await discoveryApi.current();
+        if (!active) return;
+        if (isSuite(current) && isLive(current)) {
+          meetLiveRun(current, suiteId);
+          setFinishing(false);
+          if (!running) void loadHistory();
+        } else if (!current?.runtime_active) {
+          setOtherRun(null);
+          setFinishing(false);
+          void loadHistory();
+        }
+      } catch {
+        if (active) setFinishing(false);
+      }
+    };
 
     const tick = async () => {
-      if (!suiteId) {
-        try {
-          const current = await discoveryApi.current();
-          if (isSuite(current)) {
-            setSuiteId(current.id);
-            setSuite(current);
-            setRunning(true);
-            setFinishing(false);
-          } else if (!current?.runtime_active) {
-            setFinishing(false);
-            void loadHistory();
-          }
-        } catch {
-          setFinishing(false);
-        }
+      if (!suiteId || !running) {
+        await awaitRuntime();
         return;
       }
       try {
         const data = await discoveryApi.status(suiteId);
+        if (!active) return;
+        const shownPollError = pollErrorRef.current;
+        if (shownPollError !== null) {
+          pollErrorRef.current = null;
+          setError((current) => (current === shownPollError ? null : current));
+        }
+        observeRun(data, { shown: true });
         setSuite(data);
         if (!TERMINAL.has(data.status)) return;
         setRunning(false);
@@ -175,24 +276,31 @@ export function useDiscovery({
           void loadHistory();
         }
       } catch (e) {
-        setRunning(false);
-        setStopping(false);
-        setFinishRequested(false);
-        setFinishing(false);
+        if (!active) return;
         if (e instanceof ApiError && e.status === 404) {
+          setRunning(false);
+          setStopping(false);
+          setFinishRequested(false);
+          setFinishing(false);
+          forgetRun(suiteId);
           setSuite(null);
           setSuiteId(null);
           void loadHistory();
           return;
         }
-        setError(failureText(e));
+        const message = failureText(e);
+        pollErrorRef.current = message;
+        setError(message);
       }
     };
 
     void tick();
     const timer = setInterval(() => void tick(), POLL_MS);
-    return () => clearInterval(timer);
-  }, [suiteId, running, finishing, loadHistory]);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [suiteId, running, finishing, meetLiveRun, loadHistory]);
 
   useEffect(() => {
     if (running || finishing) return;
@@ -203,25 +311,14 @@ export function useDiscovery({
         const current = await discoveryApi.current();
         if (!active) return;
         if (isSuite(current)) {
-          const replaceable =
-            !suite ||
-            (TERMINAL.has(suite.status) &&
-              suite.id !== current.id &&
-              suite.id === restoredRef.current);
-          if (
-            replaceable &&
-            (current.status === "running" || current.status === "pending")
-          ) {
-            setSuiteId(current.id);
-            setSuite(current);
-            setRunning(true);
-          }
+          if (isLive(current)) meetLiveRun(current, suiteId);
+          else setOtherRun(null);
           return;
         }
+        setOtherRun(null);
         const last = current?.last_run;
         if (current?.runtime_active) {
           if (last) seenRunRef.current = last;
-          setSuiteId(null);
           setFinishing(true);
           return;
         }
@@ -244,7 +341,7 @@ export function useDiscovery({
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [running, finishing, suite, suiteId, loadHistory]);
+  }, [running, finishing, suiteId, meetLiveRun, loadHistory]);
 
   const startDiscovery = useCallback(
     async (
@@ -263,18 +360,28 @@ export function useDiscovery({
         return { success: false, error: "No sites given" };
       }
       runGenRef.current += 1;
+      const request = {};
+      pendingStartRef.current = request;
       setError(null);
       setSuite(null);
       setSuiteId(null);
+      setOtherRun(null);
       setStopping(false);
       setFinishRequested(false);
       setRunning(true);
       try {
         const res = await discoveryApi.start(normalized, options);
-        setSuiteId(res.id);
+        watchRun(res.id);
+        if (pendingStartRef.current === request) {
+          pendingStartRef.current = null;
+          setSuiteId(res.id);
+        }
         return { success: true };
       } catch (e) {
-        setRunning(false);
+        if (pendingStartRef.current === request) {
+          pendingStartRef.current = null;
+          setRunning(false);
+        }
         const message = startFailureText(e);
         setError(message);
         return { success: false, error: message };
@@ -305,16 +412,30 @@ export function useDiscovery({
     }
   }, [suiteId]);
 
-  const resetDiscovery = useCallback(() => {
+  const showOtherRun = useCallback(() => {
+    if (!otherRun) return;
     runGenRef.current += 1;
+    setError(null);
+    setStopping(false);
+    setFinishRequested(false);
+    followRun(otherRun);
+  }, [otherRun, followRun]);
+
+  const resetDiscovery = useCallback(() => {
     if (suiteId) dismissRun(suiteId);
+    if (otherRun) {
+      showOtherRun();
+      return;
+    }
+    runGenRef.current += 1;
+    pendingStartRef.current = null;
     setSuiteId(null);
     setSuite(null);
     setError(null);
     setStopping(false);
     setFinishRequested(false);
     setRunning(false);
-  }, [suiteId]);
+  }, [suiteId, otherRun, showOtherRun]);
 
   const addPresetAsSet = useCallback(
     async (
@@ -407,10 +528,13 @@ export function useDiscovery({
     finishRequested,
     suiteId,
     suite,
+    otherRun,
     error,
     history,
     historyLoading,
     startDiscovery,
+    openRun,
+    showOtherRun,
     cancelDiscovery,
     finishDiscovery,
     resetDiscovery,
@@ -431,8 +555,10 @@ export function useDiscoveryLogs() {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const logsRef = useRef<string[]>([]);
+  const { hasSession } = useAuth();
 
   useEffect(() => {
+    if (!hasSession) return;
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let isCleaningUp = false;
@@ -441,10 +567,12 @@ export function useDiscoveryLogs() {
       if (isCleaningUp) return;
 
       const url = wsUrl("/api/ws/discovery");
+      let opened = false;
       ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
+        opened = true;
         setConnected(true);
         logsRef.current = [];
         setLogs([]);
@@ -464,6 +592,7 @@ export function useDiscoveryLogs() {
         setConnected(false);
         wsRef.current = null;
         if (!isCleaningUp) {
+          if (!opened) verifySession();
           reconnectTimeout = setTimeout(connect, 3000);
         }
       };
@@ -476,7 +605,7 @@ export function useDiscoveryLogs() {
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (ws) ws.close();
     };
-  }, []);
+  }, [hasSession]);
 
   const clearLogs = useCallback(() => {
     logsRef.current = [];

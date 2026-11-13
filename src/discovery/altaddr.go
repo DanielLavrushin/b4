@@ -64,7 +64,7 @@ func plainFixPreset(name string, family StrategyFamily) ConfigPreset {
 			Fragmentation: config.FragmentationConfig{
 				Strategy: config.ConfigNone,
 			},
-			Faking: config.FakingConfig{SNI: false},
+			Faking: config.FakingConfig{SNI: false, SNIType: config.DefaultSetConfig.Faking.SNIType},
 			DNS:    config.DNSConfig{StripECH: family == FamilyECHStrip},
 		},
 	}

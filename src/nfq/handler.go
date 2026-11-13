@@ -36,6 +36,17 @@ type pktInfo struct {
 	ihl    int
 
 	srcUnattributed bool
+	devicePort      uint16
+}
+
+func (p *pktInfo) clientPort() uint16 {
+	if p.devicePort != 0 {
+		return p.devicePort
+	}
+	if len(p.raw) < p.ihl+2 {
+		return 0
+	}
+	return binary.BigEndian.Uint16(p.raw[p.ihl : p.ihl+2])
 }
 
 func selfInjectedMark(m, queueMark uint32, cfg *config.Config) bool {
@@ -293,11 +304,16 @@ func (w *Worker) parseIPHeaders(raw []byte) (*pktInfo, bool) {
 		sport := uint16(raw[p.ihl])<<8 | uint16(raw[p.ihl+1])
 		dport := uint16(raw[p.ihl+2])<<8 | uint16(raw[p.ihl+3])
 		seen := tunSrcPacket{ttl: raw[8], answer: p.proto == 17 && sport == 53 && dnsAnswerDatagram(raw[p.ihl:])}
-		switch lan, origin := w.srcResolver.attributePacket(seen, p.proto, p.src, sport, p.dst, dport); origin {
+		if p.proto == 6 && len(raw) >= p.ihl+14 {
+			seen.syn = raw[p.ihl+13]&0x12 == 0x02
+			seen.seq = binary.BigEndian.Uint32(raw[p.ihl+4 : p.ihl+8])
+		}
+		switch lan, port, origin := w.srcResolver.attributePacket(seen, p.proto, p.src, sport, p.dst, dport); origin {
 		case tunSrcLAN, tunSrcRouter:
 			if v4 := lan.To4(); v4 != nil {
 				copy(p.addr[0:4], v4)
 			}
+			p.devicePort = port
 		case tunSrcUnknown:
 			p.srcUnattributed = true
 		}
@@ -416,6 +432,9 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
 	vc.hellos, vc.helloKey = w.pendingHello, connKey
 	w.noteClientProgress(connKey, tcp)
+	if tcp[13]&0x12 == 0x02 && w.recordsStreamStarts(cfg) {
+		w.streams.Open(pkt.raw, pkt.ihl, time.Now())
+	}
 	if cfg.IsTCPPort(dport) && tcp[13]&0x12 == 0x02 {
 		if w.tlsCache.DropOtherConnection(connKey, binary.BigEndian.Uint32(tcp[4:8])+1) || len(payload) == 0 {
 			w.destState.ForgetConnection(connKey)
@@ -614,6 +633,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 	host := ""
 	isClientHello := false
+	resentEarly := false
 	var tlsVersion uint16
 	matchedIP := st != nil
 	matchedSNI := false
@@ -642,16 +662,38 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				int(payload[3])<<8|int(payload[4]))
 		}
 
+		helloSeq := binary.BigEndian.Uint32(tcp[4:8])
+		if tcp[13]&0x02 != 0 {
+			helloSeq++
+		}
+		helloRecord := payload
+
 		host, tlsVersion, _ = sni.ParseTLSClientHelloSNI(payload)
+		if host == "" {
+			if n, starts := startedHello(payload); starts {
+				w.tlsCache.MoveHello(connKey, helloSeq, n)
+			}
+		}
+
+		if host == "" && truncatedClientHello(payload) {
+			if named, resent := w.tlsCache.HelloAt(connKey, helloSeq, clientHelloID(payload)); resent {
+				host = named.host
+				tlsVersion = named.tlsVersion
+				resentEarly = time.Since(named.namedAt) < helloResendFloor
+				classifyReason = "split-hello"
+				log.Tracef("resend of the first segment of the split ClientHello for %q to %s:%d", host, pkt.dstStr, dport)
+			}
+		}
 
 		if host == "" {
-			seq := binary.BigEndian.Uint32(tcp[4:8])
-			fed := w.pendingHello.FeedHold(connKey, seq, payload, w.helloHoldCandidate(vc, pkt, matcher, connKey, tcp, payload, dport, matched))
+			fed := w.pendingHello.FeedHold(connKey, helloSeq, payload, w.helloHoldCandidate(vc, pkt, matcher, connKey, tcp, payload, dport, matched))
 			vc.held, vc.own = fed.claimed, fed.held
 			if fed.ok {
 				if joinedHost, joinedTLS, _ := sni.ParseTLSClientHelloSNI(fed.joined); joinedHost != "" {
 					host = joinedHost
 					tlsVersion = joinedTLS
+					helloSeq = fed.start
+					helloRecord = fed.joined
 					classifyReason = "split-hello"
 					w.pendingHello.Drop(connKey)
 					log.Tracef("recovered SNI %q for %s:%d from split ClientHello (%d buffered + %d bytes)",
@@ -664,11 +706,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 
 		var helloGen uint64
 		if host != "" && tlsVersion != 0 {
-			helloSeq := binary.BigEndian.Uint32(tcp[4:8])
-			if tcp[13]&0x02 != 0 {
-				helloSeq++
-			}
-			helloGen = w.tlsCache.Store(connKey, host, tlsVersion, helloSeq)
+			helloGen = w.tlsCache.Store(connKey, host, tlsVersion, helloSeq, clientHelloID(helloRecord), helloRecordLen(helloRecord))
 		}
 
 		if captureManager := capture.GetManager(cfg); captureManager != nil {
@@ -816,11 +854,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				log.LogConnection("TCP", sniTarget, host, pkt.srcStr, sport, ipTarget, pkt.dstStr, dport, pkt.srcMac, config.TLSVersionString(tlsVersion), cachedReason)
 			}
 			w.destState.Unwatch(connKey)
-			if pkt.ver == IPv4 {
-				w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
-			} else {
-				w.sendRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
-			}
+			w.resetClient(pkt)
 
 			observeFlow(cfg, pkt, sport, dport, set, host)
 			vc.drop()
@@ -851,8 +885,8 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	stallFirstSeen := time.Time{}
 	stallTracked := false
 	if matched && isClientHello && strippedSyn == nil && host != "" && cfg.IsTCPPort(dport) && !foreignEgress &&
-		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) {
-		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host)
+		(set.TCP.IPBlockDetect.Enabled || set.Escalate.Active()) && !resentEarly {
+		stallCount, stallFirstSeen = w.destState.RecordClientHello(connKey, host, binary.BigEndian.Uint32(tcp[8:12]))
 		stallTracked = true
 	}
 
@@ -870,11 +904,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	if matched && set != nil && set.Routing.Enabled && config.RoutingIsBlock(set.Routing.Mode) {
 		if matchedSNI || (matchedIP && !matchedLearned) {
 			if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
-				if pkt.ver == IPv4 {
-					w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
-				} else {
-					w.sendRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
-				}
+				w.resetClient(pkt)
 				log.Tracef("BLACKHOLE: sent RST to %s:%d (set: %s)", pkt.dstStr, dport, set.Name)
 			}
 			if !cfg.Queue.IsDiscovery {
@@ -913,11 +943,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				if !w.destState.HasRSTSent(connKey) {
 					w.destState.MarkRSTSent(connKey)
 					w.destState.Unwatch(connKey)
-					if pkt.ver == IPv4 {
-						w.sendRSTToClientV4(pkt.raw, pkt.ihl, pkt.src, pkt.dst)
-					} else {
-						w.sendRSTToClientV6(pkt.raw, pkt.src, pkt.dst)
-					}
+					w.resetClient(pkt)
 					if ibd.CacheBlockedIPs {
 						w.destState.AddBlocked(dstIPPort)
 						w.bans.confirm(cfg, pkt.dst, dport, host, set.Name)
@@ -1008,7 +1034,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		if held != nil {
 			held.settle(nfqueue.NfDrop, "sent through set "+set.Name)
 		}
-		w.injectHeldThen(setCopy, held, packetCopy, dstCopy, pkt.ver)
+		w.injectHeldThen(setCopy, held, packetCopy, dstCopy, pkt.ver, !w.tlsCache.PastHello(connKey, binary.BigEndian.Uint32(tcp[4:8])))
 		return 0
 	}
 
@@ -1390,7 +1416,7 @@ func (w *Worker) rejectDatagram(vc *verdictCtx, pkt *pktInfo, quicFlow bool) int
 		return 0
 	}
 	if pkt.ver == IPv4 {
-		if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
+		if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.clientPort(), pkt.dst.To4()); icmp != nil {
 			_ = w.clientSender().SendIPv4(icmp, pkt.src)
 		}
 	} else {
@@ -1407,7 +1433,7 @@ func (w *Worker) rejectDatagram(vc *verdictCtx, pkt *pktInfo, quicFlow bool) int
 func (w *Worker) blockUDP(vc *verdictCtx, pkt *pktInfo, cfg *config.Config, set *config.SetConfig, sport, dport uint16, sniTarget, host, ipTarget, udpTLS string, quicFlow bool) int {
 	if config.NormalizeBlockAction(set.Routing.BlockAction) != config.BlockActionDrop {
 		if pkt.ver == IPv4 {
-			if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.dst.To4()); icmp != nil {
+			if icmp := sock.BuildICMPv4Reject(pkt.raw, pkt.src.To4(), pkt.clientPort(), pkt.dst.To4()); icmp != nil {
 				_ = w.clientSender().SendIPv4(icmp, pkt.src)
 			}
 		} else {

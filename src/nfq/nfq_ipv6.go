@@ -30,11 +30,7 @@ func (w *Worker) dropAndInjectQUICV6(cfg *config.SetConfig, raw []byte, dst net.
 			fake, ok := sock.BuildFakeUDPFromOriginalV6(raw, cfg.UDP.FakeLen, cfg.Faking.TTL, payload)
 			if ok {
 				if cfg.UDP.FakingStrategy == "checksum" {
-					ipv6HdrLen := 40
-					if len(fake) >= ipv6HdrLen+8 {
-						fake[ipv6HdrLen+6] ^= 0xFF
-						fake[ipv6HdrLen+7] ^= 0xFF
-					}
+					corruptUDPChecksum(fake, IPv6HeaderLen)
 				}
 				_ = w.sock.SendIPv6(fake, dst)
 				if seg2d > 0 {
@@ -69,7 +65,7 @@ func (w *Worker) dropAndInjectQUICV6(cfg *config.SetConfig, raw []byte, dst net.
 }
 
 // dropAndInjectTCPv6 handles TCP packet manipulation for IPv6
-func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.IP) {
+func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.IP, fakes bool) {
 	if !hasPlainIPv6Header(raw, ipProtoTCP) {
 		log.Tracef("TCP v6: passing %s through untouched, the TCP header is not at the fixed IPv6 offset", dst.String())
 		_ = w.sock.SendIPv6(raw, dst)
@@ -106,7 +102,7 @@ func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.I
 		w.ManipulateWindowIPv6(cfg, raw, dst)
 	}
 
-	if cfg.Faking.SNI && cfg.Faking.SNISeqLength > 0 {
+	if fakes && cfg.Faking.SNI && cfg.Faking.SNISeqLength > 0 {
 		w.sendFakeSNISequencev6(cfg, raw, dst)
 	}
 
@@ -128,13 +124,13 @@ func (w *Worker) dropAndInjectTCPv6(cfg *config.SetConfig, raw []byte, dst net.I
 	case "firstbyte":
 		w.sendFirstByteDesyncV6(cfg, raw, dst)
 	case "combo":
-		w.sendComboFragmentsV6(cfg, raw, dst)
+		w.sendComboFragmentsV6(cfg, raw, dst, fakes)
 	case "hybrid":
-		w.sendHybridFragmentsV6(cfg, raw, dst)
+		w.sendHybridFragmentsV6(cfg, raw, dst, fakes)
 	case "none":
 		_ = w.sock.SendIPv6(raw, dst)
 	default:
-		w.sendComboFragmentsV6(cfg, raw, dst)
+		w.sendComboFragmentsV6(cfg, raw, dst, fakes)
 	}
 
 	if cfg.TCP.Desync.PostDesync {
@@ -355,8 +351,15 @@ func (w *Worker) sendFakeSNISequencev6(cfg *config.SetConfig, original []byte, d
 		return
 	}
 	badsum := !sock.TCPChecksumValidV6(fake)
-	if faking.MD5OnFake {
+	if badsum && faking.Strategy == "timestamp" {
+		w.warnTimestampFallback(cfg, original, 40, net.IP(original[8:24]), dst)
+	}
+	if faking.MD5OnFake || faking.Strategy == "md5sum" {
 		withMD5, ok := sock.AddTCPMD5Option(fake, true)
+		if !ok && faking.Strategy == "md5sum" {
+			log.Tracef("Fake SNI v6 to %s: no room for the TCP MD5 option, MD5 Sum fake not sent", dst.String())
+			return
+		}
 		if !ok {
 			log.Tracef("Fake SNI v6 to %s: no room for the TCP MD5 option, sending it without", dst.String())
 		}

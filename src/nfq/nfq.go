@@ -3,6 +3,7 @@ package nfq
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"sync/atomic"
@@ -113,25 +114,41 @@ func (w *Worker) Start() error {
 }
 
 var (
-	queueOpen     = (*Worker).openQueue
-	queueRegister = (*Worker).registerQueue
-	queueClose    = (*nfqueue.Nfqueue).Close
+	queueOpen      = (*Worker).openQueue
+	queueRegister  = (*Worker).registerQueue
+	queueClose     = (*nfqueue.Nfqueue).Close
+	queueBindPause = 5 * time.Millisecond
 )
 
+const queueBindAttempts = 100
+
 func (w *Worker) bindQueue(mark uint) (*nfqueue.Nfqueue, error) {
-	q, err := queueOpen(w, nfqueue.NfQaCfgFlagUIDGid)
-	if err != nil {
-		return nil, err
-	}
-	if err := queueRegister(w, q, mark); err != nil {
-		_ = queueClose(q)
-		log.Tracef("nfqueue %d: binding with the socket owner of each packet failed, binding without it: %v", w.qnum, err)
-		if q, err = queueOpen(w, 0); err != nil {
+	flags := uint32(nfqueue.NfQaCfgFlagUIDGid)
+	var failure error
+	for attempt := 1; attempt <= queueBindAttempts; attempt++ {
+		q, err := queueOpen(w, flags)
+		if err != nil {
 			return nil, err
 		}
-		_ = queueRegister(w, q, mark)
+		err = queueRegister(w, q, mark)
+		if err == nil {
+			return q, nil
+		}
+		_ = queueClose(q)
+		failure = err
+		if flags != 0 && errors.Is(err, syscall.EOPNOTSUPP) {
+			log.Warnf("nfqueue %d: this kernel does not report the socket owner of a packet, so in POSTROUTING b4 cannot tell the router's own packets apart", w.qnum)
+			flags = 0
+			continue
+		}
+		log.Tracef("nfqueue %d: bind attempt %d of %d failed: %v", w.qnum, attempt, queueBindAttempts, err)
+		select {
+		case <-w.ctx.Done():
+			return nil, fmt.Errorf("nfqueue %d: bind stopped: %w", w.qnum, failure)
+		case <-time.After(queueBindPause):
+		}
 	}
-	return q, nil
+	return nil, fmt.Errorf("nfqueue %d: bind failed after %d attempts: %w", w.qnum, queueBindAttempts, failure)
 }
 
 func (w *Worker) openQueue(extraFlags uint32) (*nfqueue.Nfqueue, error) {
@@ -188,11 +205,7 @@ func (w *Worker) dropAndInjectQUIC(cfg *config.SetConfig, raw []byte, dst net.IP
 			fake, ok := sock.BuildFakeUDPFromOriginalV4(raw, udpCfg.FakeLen, cfg.Faking.TTL, payload)
 			if ok {
 				if udpCfg.FakingStrategy == "checksum" {
-					ipHdrLen := int((fake[0] & 0x0F) * 4)
-					if len(fake) >= ipHdrLen+8 {
-						fake[ipHdrLen+6] ^= 0xFF
-						fake[ipHdrLen+7] ^= 0xFF
-					}
+					corruptUDPChecksum(fake, int((fake[0]&0x0F)*4))
 				}
 				log.Tracef("Sending fake UDP packet %d/%d to %s", i+1, udpCfg.FakeSeqLength, dst.String())
 				_ = w.sock.SendIPv4(fake, dst)
@@ -229,7 +242,7 @@ func (w *Worker) dropAndInjectQUIC(cfg *config.SetConfig, raw []byte, dst net.IP
 	w.SendTwoSegmentsV4(frags[0], frags[1], dst, seg2d, cfg.Fragmentation.ReverseOrder)
 }
 
-func (w *Worker) dropAndInjectTCP(cfg *config.SetConfig, raw []byte, dst net.IP) {
+func (w *Worker) dropAndInjectTCP(cfg *config.SetConfig, raw []byte, dst net.IP, fakes bool) {
 
 	if len(raw) < 40 {
 		_ = w.sock.SendIPv4(raw, dst)
@@ -261,7 +274,7 @@ func (w *Worker) dropAndInjectTCP(cfg *config.SetConfig, raw []byte, dst net.IP)
 		w.ManipulateWindowIPv4(cfg, raw, dst)
 	}
 
-	if cfg.Faking.SNI && cfg.Faking.SNISeqLength > 0 {
+	if fakes && cfg.Faking.SNI && cfg.Faking.SNISeqLength > 0 {
 		w.sendFakeSNISequence(cfg, raw, dst)
 	}
 
@@ -284,13 +297,13 @@ func (w *Worker) dropAndInjectTCP(cfg *config.SetConfig, raw []byte, dst net.IP)
 	case "firstbyte":
 		w.sendFirstByteDesync(cfg, raw, dst)
 	case "combo":
-		w.sendComboFragments(cfg, raw, dst)
+		w.sendComboFragments(cfg, raw, dst, fakes)
 	case "hybrid":
-		w.sendHybridFragments(cfg, raw, dst)
+		w.sendHybridFragments(cfg, raw, dst, fakes)
 	case config.ConfigNone:
 		_ = w.sock.SendIPv4(raw, dst)
 	default:
-		w.sendComboFragments(cfg, raw, dst)
+		w.sendComboFragments(cfg, raw, dst, fakes)
 	}
 
 	if cfg.TCP.Desync.PostDesync {
@@ -490,8 +503,15 @@ func (w *Worker) sendFakeSNISequence(cfg *config.SetConfig, original []byte, dst
 		return
 	}
 	badsum := !sock.TCPChecksumValid(fake)
-	if fk.MD5OnFake {
+	if badsum && fk.Strategy == "timestamp" {
+		w.warnTimestampFallback(cfg, original, int(original[0]&0x0F)*4, net.IP(original[12:16]), dst)
+	}
+	if fk.MD5OnFake || fk.Strategy == "md5sum" {
 		withMD5, ok := sock.AddTCPMD5Option(fake, false)
+		if !ok && fk.Strategy == "md5sum" {
+			log.Tracef("Fake SNI to %s: no room for the TCP MD5 option, MD5 Sum fake not sent", dst.String())
+			return
+		}
 		if !ok {
 			log.Tracef("Fake SNI to %s: no room for the TCP MD5 option, sending it without", dst.String())
 		}

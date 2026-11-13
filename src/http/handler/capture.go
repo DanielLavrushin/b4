@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/daniellavrushin/b4/capture"
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
 )
 
@@ -193,9 +194,23 @@ func (api *API) handleListCaptures(w http.ResponseWriter, r *http.Request) {
 	if captures == nil {
 		captures = make([]*capture.Capture, 0)
 	}
+	cfg := api.getCfg()
+	for _, c := range captures {
+		c.UsedBy = setsNamingCapture(cfg, c.Filepath)
+	}
 
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(captures)
+}
+
+func setsNamingCapture(cfg *config.Config, file string) []string {
+	var names []string
+	for _, set := range cfg.Sets {
+		if set != nil && set.NamesCapture(file) {
+			names = append(names, set.Name)
+		}
+	}
+	return names
 }
 
 // @Summary Delete a capture

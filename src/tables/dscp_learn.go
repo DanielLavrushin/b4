@@ -656,8 +656,19 @@ var (
 	dscpPreCtx    context.Context
 	dscpPreCancel context.CancelFunc
 	dscpPreWG     sync.WaitGroup
-	dscpPreLookup = routeResolveHostContext
+	dscpPreLookup = func(ctx context.Context, cfg *config.Config, set *config.SetConfig, host string) []net.IP {
+		return routeResolveHostContext(ctx, dscpPreLife(ctx), cfg, set, host)
+	}
 )
+
+func dscpPreLife(run context.Context) context.Context {
+	dscpPreMu.Lock()
+	defer dscpPreMu.Unlock()
+	if dscpPreCtx == nil {
+		return run
+	}
+	return dscpPreCtx
+}
 
 func dscpPreResolveStart() {
 	dscpPreMu.Lock()
@@ -696,8 +707,7 @@ func dscpPreResolveInterval(member dscpPlanSet) time.Duration {
 }
 
 func dscpPreResolverKey(cfg *config.Config, set *config.SetConfig) string {
-	d := set.DNS
-	return fmt.Sprintf("%t %q %q %t %t %t", d.Enabled, d.TargetDNS, d.DoHURL, d.Strict, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	return fmt.Sprintf("%s %t %t", set.DNS.RoutingResolverKey(), cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 }
 
 func dscpPreResolve(plan *dscpPlan, cfg *config.Config, _ bool) {

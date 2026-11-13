@@ -1,5 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
-import { getAuthToken } from "@context/AuthProvider";
+import { getAuthToken, verifySession } from "@context/AuthProvider";
+import { readErrorBody } from "./errorBody";
 
 type ContentType = "json" | "text";
 
@@ -14,17 +15,21 @@ globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
   } else {
     url = input.url;
   }
-  if (url.startsWith("/api/")) {
-    const token = getAuthToken();
-    if (token) {
-      const headers = new Headers(init?.headers);
-      if (!headers.has("Authorization")) {
-        headers.set("Authorization", `Bearer ${token}`);
-      }
-      init = { ...init, headers };
+  if (!url.startsWith("/api/")) return originalFetch(input, init);
+  const token = getAuthToken();
+  if (token) {
+    const headers = new Headers(init?.headers);
+    if (!headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`);
     }
+    init = { ...init, headers };
   }
-  return originalFetch(input, init);
+  return originalFetch(input, init).then((response) => {
+    if (response.status === 401 && !url.startsWith("/api/auth/")) {
+      verifySession();
+    }
+    return response;
+  });
 };
 
 export const apiClient = new QueryClient({
@@ -115,13 +120,7 @@ export async function apiFetch<T>(
   const r = await fetch(url, fetchOptions);
 
   if (!r.ok) {
-    let body: unknown;
-    try {
-      body = await r.json();
-    } catch {
-      body = await r.text().catch(() => undefined);
-    }
-    throw new ApiError(url, r.status, r.statusText, body);
+    throw new ApiError(url, r.status, r.statusText, await readErrorBody(r));
   }
 
   if (expect === "json") {
@@ -187,13 +186,7 @@ export async function apiUpload<T>(
   });
 
   if (!r.ok) {
-    let body: unknown;
-    try {
-      body = await r.json();
-    } catch {
-      body = await r.text().catch(() => undefined);
-    }
-    throw new ApiError(url, r.status, r.statusText, body);
+    throw new ApiError(url, r.status, r.statusText, await readErrorBody(r));
   }
 
   return r.json() as Promise<T>;

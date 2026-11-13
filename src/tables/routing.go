@@ -458,7 +458,7 @@ func routeSameResolveTargets(a, b *config.SetConfig) bool {
 	if a.Targets.DomainOnly != b.Targets.DomainOnly || len(a.Targets.SNIDomains) != len(b.Targets.SNIDomains) {
 		return false
 	}
-	if a.DNS.Enabled != b.DNS.Enabled || a.DNS.TargetDNS != b.DNS.TargetDNS || a.DNS.DoHURL != b.DNS.DoHURL || a.DNS.Strict != b.DNS.Strict {
+	if !a.DNS.SameRoutingResolver(&b.DNS) {
 		return false
 	}
 	counts := make(map[string]int, len(a.Targets.SNIDomains))
@@ -539,7 +539,7 @@ func routeQueuedTargetsKept(was, now *config.SetConfig) bool {
 	if was.Targets.DomainOnly != now.Targets.DomainOnly {
 		return false
 	}
-	if was.DNS.Enabled != now.DNS.Enabled || was.DNS.TargetDNS != now.DNS.TargetDNS || was.DNS.DoHURL != now.DNS.DoHURL || was.DNS.Strict != now.DNS.Strict {
+	if !was.DNS.SameRoutingResolver(&now.DNS) {
 		return false
 	}
 	return routeNamesCovered(was.Targets.SNIDomains, now.Targets.SNIDomains) &&
@@ -568,26 +568,32 @@ var DNSNames *dns.NameCache
 var routeSetLookup dns.LookupFunc = dns.LookupIPs
 
 func routeResolveHost(cfg *config.Config, set *config.SetConfig, host string) []net.IP {
-	return routeResolveHostContext(context.Background(), cfg, set, host)
+	return routeResolveHostContext(context.Background(), context.Background(), cfg, set, host)
 }
 
-func routeResolveHostContext(parent context.Context, cfg *config.Config, set *config.SetConfig, host string) []net.IP {
-	var srv dns.Server
+func routeResolveHostContext(parent, life context.Context, cfg *config.Config, set *config.SetConfig, host string) []net.IP {
+	var servers []dns.Server
 	useSet, strict := false, false
 	if set != nil {
-		srv, useSet = dns.SetServer(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL)
+		servers, useSet = dns.SetServers(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL, set.DNS.Upstreams)
 		strict = set.DNS.Strict
 	}
-	srv.Mark, srv.Timeout = int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout()
-	if useSet && strict && dns.SourceUnreachable(srv.Source) {
-		log.Tracef("Routing: set '%s' skips resolving %s, its resolver %s is cooling down after repeated failures", set.Name, host, dns.SourceLabel(srv.Source))
+	for i := range servers {
+		servers[i].Mark, servers[i].Timeout = int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout()
+	}
+	if useSet && strict && dns.AllSourcesCooling(servers) {
+		if len(servers) == 1 {
+			log.Tracef("Routing: set '%s' skips resolving %s, its resolver %s is cooling down after repeated failures", set.Name, host, dns.SourceLabel(servers[0].Source))
+		} else {
+			log.Tracef("Routing: set '%s' skips resolving %s, every resolver of the set is cooling down after repeated failures", set.Name, host)
+		}
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(parent, srv.Budget()+time.Second)
+	ctx, cancel := context.WithTimeout(parent, dns.ServersBudget(servers, cfg.DNSQueryTimeout())+time.Second)
 	defer cancel()
 
-	ips, err := dns.LookupWithFallback(ctx, routeSetLookup, srv, useSet, strict, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	ips, err := dns.LookupWithFallback(ctx, routeSetLookup, servers, dns.Options{Life: life, Strict: strict, Background: true}, useSet, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	if err != nil {
 		log.Tracef("Routing: resolve %s failed: %v", host, err)
 		return nil
@@ -2277,11 +2283,13 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 	prioStr := fmt.Sprintf("%d", prio)
 
 	addRules := func() {
-		if ipv4 {
-			runLogged("routing: add ip rule v4", "ip", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
-		}
-		if ipv6 {
-			runLogged("routing: add ip rule v6", "ip", "-6", "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
+		for _, fam := range routeFamilyArgs(ipv4, ipv6) {
+			if lines, read := routeRuleLines(fam); read && routeRuleInstalledAt(lines, mark, table, prio) {
+				continue
+			}
+			args := append([]string{"ip"}, fam.flag...)
+			args = append(args, "rule", "add", "fwmark", markStrMask, "lookup", tableStr, "priority", prioStr)
+			runLogged("routing: add ip rule "+fam.name, args...)
 		}
 		routeDelStaleRuleForms(mark, tableStr)
 	}
@@ -2457,6 +2465,10 @@ func routeRuleLinesExec(fam routeFamily) ([]string, bool) {
 }
 
 func routePolicyRuleInstalled(lines []string, mark uint32, table int) bool {
+	return routeRuleInstalledAt(lines, mark, table, routePolicyRuleBase+table)
+}
+
+func routeRuleInstalledAt(lines []string, mark uint32, table, prio int) bool {
 	want := routeSetMarkRule(mark)
 	tableStr := fmt.Sprintf("%d", table)
 	for _, line := range lines {
@@ -2466,7 +2478,7 @@ func routePolicyRuleInstalled(lines []string, mark uint32, table int) bool {
 		if !RouteLookupMatchesTable(routeRuleField(line, "lookup"), tableStr) {
 			continue
 		}
-		if prio, ok := routeRulePriority(line); ok && prio == routePolicyRuleBase+table {
+		if got, ok := routeRulePriority(line); ok && got == prio {
 			return true
 		}
 	}
@@ -2476,20 +2488,27 @@ func routePolicyRuleInstalled(lines []string, mark uint32, table int) bool {
 type routePolicyRuleKey struct {
 	mark  uint32
 	table int
+	prio  int
 }
+
+func (k routePolicyRuleKey) proxy() bool { return k.prio == proxyRulePriority }
 
 var routePolicyRuleGone = make(map[string]bool)
 
 func routePolicyRulesWanted() map[routePolicyRuleKey]struct{} {
 	wanted := make(map[routePolicyRuleKey]struct{})
 	for _, st := range routeRuleCache {
-		if config.RoutingUsesTProxy(st.mode) || st.iface == "" || st.table <= 0 {
+		if st.mark == 0 || st.table <= 0 {
 			continue
 		}
-		if !routeIfaceWasSeen(st.iface) {
+		if config.RoutingUsesTProxy(st.mode) {
+			wanted[routePolicyRuleKey{mark: st.mark, table: st.table, prio: proxyRulePriority}] = struct{}{}
 			continue
 		}
-		wanted[routePolicyRuleKey{mark: st.mark, table: st.table}] = struct{}{}
+		if st.iface == "" || !routeIfaceWasSeen(st.iface) {
+			continue
+		}
+		wanted[routePolicyRuleKey{mark: st.mark, table: st.table, prio: routePolicyRuleBase + st.table}] = struct{}{}
 	}
 	return wanted
 }
@@ -2514,7 +2533,20 @@ func routeReconcilePolicyRules(ipv4, ipv6 bool) {
 			if !ok {
 				continue
 			}
-			if routePolicyRuleInstalled(lines, key.mark, key.table) {
+			if key.proxy() && len(fam.flag) == 0 {
+				check := fam.name + "|" + routeSourceCheckMarkRule(key.mark) + "|main"
+				live[check] = true
+				if routeSourceCheckInstalled(lines, key.mark) {
+					delete(routePolicyRuleGone, check)
+				} else {
+					if !routePolicyRuleGone[check] {
+						routePolicyRuleGone[check] = true
+						log.Infof("Routing: the rule that sends the source check for mark %s to the main table is not there, putting it back", routeSourceCheckMarkRule(key.mark))
+					}
+					routeAddSourceCheckRule(key.mark)
+				}
+			}
+			if routeRuleInstalledAt(lines, key.mark, key.table, key.prio) {
 				if routePolicyRuleGone[seen] {
 					delete(routePolicyRuleGone, seen)
 					log.Infof("Routing: the %s rule sending mark %s to table %s is back", fam.name, markStrMask, tableStr)
@@ -2524,11 +2556,15 @@ func routeReconcilePolicyRules(ipv4, ipv6 bool) {
 			first := !routePolicyRuleGone[seen]
 			if first {
 				routePolicyRuleGone[seen] = true
-				log.Warnf("Routing: no %s rule sends mark %s to table %s, so every address the sets on that table match is marked, finds nothing pointing at their table and leaves by the ordinary uplink; putting the rule back", fam.name, markStrMask, tableStr)
+				if key.proxy() {
+					log.Warnf("Routing: no %s rule sends mark %s to table %s, so nothing the transparent-proxy set on that mark diverts reaches b4: a device's connection is dropped and the router's own leaves by the ordinary uplink; putting the rule back", fam.name, markStrMask, tableStr)
+				} else {
+					log.Warnf("Routing: no %s rule sends mark %s to table %s, so every address the sets on that table match is marked, finds nothing pointing at their table and leaves by the ordinary uplink; putting the rule back", fam.name, markStrMask, tableStr)
+				}
 			}
 			args := append([]string{"ip"}, fam.flag...)
 			args = append(args, "rule", "add", "fwmark", markStrMask, "lookup", tableStr,
-				"priority", fmt.Sprintf("%d", routePolicyRuleBase+key.table))
+				"priority", fmt.Sprintf("%d", key.prio))
 			if first {
 				runLogged("routing: restore ip rule "+fam.name, args...)
 				continue

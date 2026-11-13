@@ -117,6 +117,25 @@ func TestReplaceStrategyMatchesTheLegacyCopy(t *testing.T) {
 	}
 }
 
+func TestReplaceStrategyKeepsTheSetsResolverList(t *testing.T) {
+	own := []string{"1.1.1.1", "https://dns.example/dns-query"}
+	dst := config.NewSetConfig()
+	dst.DNS = config.DNSConfig{Enabled: true, TargetDNS: "9.9.9.9", Upstreams: append([]string(nil), own...)}
+	strategy := config.NewSetConfig()
+	strategy.DNS = config.DNSConfig{Enabled: true, DoHURL: "https://dns.google/dns-query", Upstreams: []string{"203.0.113.9"}}
+
+	replaceStrategy(&dst, &strategy)
+	if !reflect.DeepEqual(dst.DNS.Upstreams, own) || dst.DNS.DoHURL != "https://dns.google/dns-query" || dst.DNS.TargetDNS != "" {
+		t.Fatalf("after a replace with a DNS fix: %+v, want the new primary and the set's own list", dst.DNS)
+	}
+
+	plain := config.NewSetConfig()
+	replaceStrategy(&dst, &plain)
+	if !reflect.DeepEqual(dst.DNS.Upstreams, own) || dst.DNS.Enabled {
+		t.Fatalf("after a replace without DNS: %+v, want the redirect off and the list kept", dst.DNS)
+	}
+}
+
 func replaceWith(t *testing.T, mux *http.ServeMux, req DiscoveryReplaceRequest) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(req)

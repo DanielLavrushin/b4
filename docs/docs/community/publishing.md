@@ -23,7 +23,7 @@ A set that works can be published to the Community Hub. Other b4 users find it o
 
 ## Preparing {#preparing}
 
-**Prepare shared set** shows what is sent. **Check before sharing** lists what deserves a second look, such as domains that look private to this network or pins everyone importing the set will use. **Left out of the shared set** lists every dropped setting with the reason. Routing to a proxy or an interface, device filters, escalation and the DNS server address are always dropped, see [What leaves the router](../sets/sharing.md#what-leaves-the-router). The JSON below, with **Copy** and **Download**, hands the set over [directly](../sets/sharing.md).
+**Prepare shared set** shows what is sent. **Check before sharing** lists what deserves a second look, such as domains that look private to this network or pins everyone importing the set will use. **Left out of the shared set** lists every dropped setting with the reason. Routing to a proxy or an interface, device filters, escalation and every resolver of the set except a DoH URL in first place are always dropped, see [What leaves the router](../sets/sharing.md#what-leaves-the-router). The JSON below, with **Copy** and **Download**, hands the set over [directly](../sets/sharing.md).
 
 The hub refuses a set without targets, except one that [handles only calls](../sets/udp.md#protocol-selection). Such a set is published with its **Which calls** choice and its UDP ports.
 

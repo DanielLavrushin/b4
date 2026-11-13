@@ -27,6 +27,7 @@ const (
 
 var (
 	activeTokens   = make(map[string]time.Time)
+	tokenSockets   = make(map[string]map[net.Conn]struct{})
 	activeTokensMu sync.Mutex
 )
 
@@ -39,7 +40,7 @@ func issueToken() (string, error) {
 	now := time.Now()
 	activeTokensMu.Lock()
 	for t, exp := range activeTokens {
-		if now.After(exp) {
+		if now.After(exp) && len(tokenSockets[t]) == 0 {
 			delete(activeTokens, t)
 		}
 	}
@@ -59,7 +60,7 @@ func validateToken(tok string) bool {
 	if !ok {
 		return false
 	}
-	if now.After(exp) {
+	if now.After(exp) && len(tokenSockets[tok]) == 0 {
 		delete(activeTokens, tok)
 		return false
 	}
@@ -73,7 +74,35 @@ func revokeToken(tok string) {
 	}
 	activeTokensMu.Lock()
 	delete(activeTokens, tok)
+	sockets := tokenSockets[tok]
+	delete(tokenSockets, tok)
 	activeTokensMu.Unlock()
+	for conn := range sockets {
+		conn.Close()
+	}
+}
+
+func trackSocket(tok string, conn net.Conn) (func(), bool) {
+	activeTokensMu.Lock()
+	defer activeTokensMu.Unlock()
+	if _, live := activeTokens[tok]; !live {
+		return nil, false
+	}
+	if tokenSockets[tok] == nil {
+		tokenSockets[tok] = make(map[net.Conn]struct{})
+	}
+	tokenSockets[tok][conn] = struct{}{}
+	return func() {
+		activeTokensMu.Lock()
+		defer activeTokensMu.Unlock()
+		delete(tokenSockets[tok], conn)
+		if len(tokenSockets[tok]) == 0 {
+			delete(tokenSockets, tok)
+		}
+		if _, live := activeTokens[tok]; live {
+			activeTokens[tok] = time.Now().Add(tokenTTL)
+		}
+	}, true
 }
 
 type loginAttempt struct {
@@ -255,6 +284,8 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 
 type authAtAcceptKey struct{}
 
+type acceptedConnKey struct{}
+
 var (
 	loginDropGrace = 2 * time.Minute
 	loginDroppedAt atomic.Int64
@@ -270,9 +301,10 @@ func loginDroppedWithin(window time.Duration) bool {
 }
 
 func authAtAccept(cfgPtr *atomic.Pointer[config.Config]) func(context.Context, net.Conn) context.Context {
-	return func(ctx context.Context, _ net.Conn) context.Context {
+	return func(ctx context.Context, conn net.Conn) context.Context {
 		required := authEnabled(cfgPtr.Load()) || loginDroppedWithin(loginDropGrace)
-		return context.WithValue(ctx, authAtAcceptKey{}, required)
+		ctx = context.WithValue(ctx, authAtAcceptKey{}, required)
+		return context.WithValue(ctx, acceptedConnKey{}, conn)
 	}
 }
 
@@ -331,6 +363,15 @@ func authMiddleware(cfgPtr *atomic.Pointer[config.Config], next http.Handler) ht
 		if !validateToken(token) {
 			writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 			return
+		}
+
+		if conn, ok := r.Context().Value(acceptedConnKey{}).(net.Conn); ok && isWebSocketRequest(r) {
+			release, live := trackSocket(token, conn)
+			if !live {
+				writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
+				return
+			}
+			defer release()
 		}
 
 		next.ServeHTTP(w, r)

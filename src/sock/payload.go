@@ -2,6 +2,7 @@ package sock
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
@@ -53,6 +54,15 @@ func CorruptTCPChecksum(packet []byte) {
 
 func CorruptTCPChecksumV6(packet []byte) {
 	packet[40+16] ^= 0xFF
+}
+
+const fakeAckLead uint32 = 0x60000000
+
+func moveFakeAck(tcp []byte) {
+	if len(tcp) < 12 {
+		return
+	}
+	binary.BigEndian.PutUint32(tcp[8:12], binary.BigEndian.Uint32(tcp[8:12])+fakeAckLead)
 }
 
 func fixTLSRecordLength(payload []byte) {

@@ -112,8 +112,8 @@ func (m *Runtime) Start(cfg *config.Config, dscp *config.DSCPProbe) (*StartResul
 
 	discoveryCfg := discoveryPoolConfig(cfg, discoveryStart, discoveryThreads, flowMark, injectedMark)
 
-	pool := nfq.NewPool(discoveryCfg)
-	if err := pool.Start(); err != nil {
+	pool, err := startDiscoveryPool(discoveryCfg)
+	if err != nil {
 		tables.ClearDiscoverySteeringRules(cfg, flowMark, injectedMark)
 		return nil, fmt.Errorf("failed to start discovery pool: %w", err)
 	}
@@ -128,6 +128,15 @@ func (m *Runtime) Start(cfg *config.Config, dscp *config.DSCPProbe) (*StartResul
 		DSCP:     stamped,
 		Path:     path,
 	}, nil
+}
+
+func startDiscoveryPool(cfg *config.Config) (*nfq.Pool, error) {
+	pool := nfq.NewPool(cfg)
+	if err := pool.Start(); err != nil {
+		pool.Stop()
+		return nil, err
+	}
+	return pool, nil
 }
 
 func (m *Runtime) rulesLost(state *runtimeState, err error) {

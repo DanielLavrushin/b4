@@ -16,7 +16,7 @@ An encrypted forwarder on the router is not a problem, since devices still ask t
 
 ## How a set handles a query
 
-A query name matches a set the way a server name does: a domain covers its subdomains, and a domain listed in one set wins over a `regexp:` entry in another. A [block set](sets/blocking.md) answers first, then the set's [pins](#pinned-addresses), then the [set's resolver](#resolver-types) while **Enable DNS Redirect** is on. Otherwise the query goes to the device's resolver unchanged. b4 can then remove [ECH keys](#removing-ech-keys) and [IPv6 addresses](#the-ipv4-fallback) from the answer, see [the full sequence](internals/dns.md#how-a-set-handles-a-query).
+A query name matches a set the way a server name does: a domain covers its subdomains, and a domain listed in one set wins over a `regexp:` entry in another. A [block set](sets/blocking.md) answers first, then the set's [pins](#pinned-addresses), then the [set's resolvers](#resolver-types) while **Enable DNS Redirect** is on. Otherwise the query goes to the device's resolver unchanged. b4 can then remove [ECH keys](#removing-ech-keys) and [IPv6 addresses](#the-ipv4-fallback) from the answer, see [the full sequence](internals/dns.md#how-a-set-handles-a-query).
 
 ## Sending a set's domains to another resolver {#resolver-types}
 
@@ -24,30 +24,38 @@ A set's resolver helps when the provider's DNS answers the set's domains with wr
 
 1. Open **Sets** and open the set.
 2. On the **DNS & Routing** tab, under **DNS Redirect**, turn on **Enable DNS Redirect**.
-3. Under **Resolver type**, choose **Plain DNS (UDP)** and a **DNS Server IP**, or **DNS-over-HTTPS** and a **DNS-over-HTTPS URL**, typed in or picked from the recommended list.
+3. In **Resolvers**, enter the resolver's IP address or its `https://` URL, or pick a server under **Recommended DNS Servers**.
 4. Click **Save Changes**.
 
-| Resolver type | When it fits |
+| Entry | When it fits |
 | --- | --- |
-| **Plain DNS (UDP)** | Plain DNS to other servers arrives intact. **Fragment DNS Queries** splits each query into IP fragments, for DPI that reads the names in DNS queries. |
-| **DNS-over-HTTPS** | The provider tampers with plain DNS to other servers too, or the resolver serves only DoH. The queries leave encrypted. |
+| An IP address | b4 asks the resolver over plain DNS. It fits when plain DNS to other servers arrives intact. **Fragment DNS Queries** splits each query to such a resolver into IP fragments, for DPI that reads the names in DNS queries. |
+| An `https://` URL | b4 asks the resolver over DNS over HTTPS (DoH), and the queries leave encrypted. It fits when the provider tampers with plain DNS to other servers too, or the resolver serves only DoH. A URL entered without a path gets `/dns-query` added. |
 
-Queries from the set's own resolver go on unchanged, so a resolver on the local network can serve a set. A resolver on the router itself has one more condition, see [When it does not work](#when-it-does-not-work).
+Queries that come from the address of one of the set's resolvers go on unchanged, so a resolver on the local network can serve a set. A resolver on the router itself has one more condition, see [When it does not work](#when-it-does-not-work).
 
 A service that checks the address a connection comes from needs another exit rather than another resolver, see [Routing sites through a VPN](guides/vpn.md).
 
+### A set with more than one resolver {#more-resolvers}
+
+A set can ask more than one resolver, for the case when one of them does not answer. **Resolvers** holds every resolver of the set, up to eight. Each entry is an IP address or an `https://` URL.
+
+b4 asks the resolvers in the order of the field. It moves on to the next one when a resolver has not answered within 300 ms, and at once when a resolver answers with an error. The first answer without an error ends the lookup, also when it says that the name does not exist or carries no address. A later resolver never corrects the answer of an earlier one. The most trusted resolver belongs first.
+
+Dragging an entry changes the order. A click on a server under **Recommended DNS Servers** adds it at the end, and a click on a server that is already in the field removes it. The details of the order are in [How b4 handles DNS](internals/dns.md#resolver-order).
+
 ### Lookups b4 makes itself {#lookups-b4-makes-itself}
 
-When b4 looks up a set's names itself, for routing, a [DSCP value](sets/routing.md#dscp) or a proxy upstream, it uses the set's resolver while **Enable DNS Redirect** is on, and the router's resolver otherwise, see [How b4 handles DNS](internals/dns.md#lookups-b4-makes-itself).
+When b4 looks up a set's names itself, for routing, a [DSCP value](sets/routing.md#dscp) or a proxy upstream, it asks the set's resolvers in the same order while **Enable DNS Redirect** is on, and the router's resolver otherwise, see [How b4 handles DNS](internals/dns.md#lookups-b4-makes-itself).
 
-## When the resolver fails {#when-the-resolver-fails}
+## When no resolver answers {#when-the-resolver-fails}
 
-When the set's resolver does not answer, b4 answers from the last good reply it holds for the name, or else asks the resolver the device was addressing. **Query timeout** under [Settings > Core > DNS](settings/core.md#dns) sets how long b4 waits.
+When no resolver of the set answers, b4 answers from the last good reply it holds for the name, or else asks the resolver the device was addressing. **Query timeout** under [Settings > Core > DNS](settings/core.md#dns) sets how long b4 waits for each resolver.
 
-**Fail closed when the resolver is unreachable** turns the fallback off. The device then gets an error (SERVFAIL), and the set's names resolve through its resolver or not at all.
+**Fail closed when no resolver is reachable** turns the fallback off. The device then gets an error (SERVFAIL), and the set's names resolve through its resolvers or not at all.
 
 :::warning
-With fail closed on, an unreachable resolver stops every name of the set from resolving, even while the bypass strategy works. On a censored connection, the DoH server itself can get blocked.
+With fail closed on, every name of the set stops resolving while none of its resolvers is reachable, even while the bypass strategy works. On a censored connection, a DoH server itself can get blocked.
 :::
 
 ## Pinned addresses
@@ -63,8 +71,9 @@ A pin answers a name with fixed addresses, with no hosts file to edit on every d
 
 - A pin covers each name and its subdomains. The longest matching entry wins.
 - A pin applies only to a name the set targets. For other names the editor offers **Add to this set's domains**.
-- Pins work with **Enable DNS Redirect** off too, and win over the set's resolver.
+- Pins work with **Enable DNS Redirect** off too, and win over the set's resolvers.
 - The pins are the whole address answer: a name pinned to IPv4 addresses only gets no IPv6 addresses.
+- The resolver's answers for a pinned name lose the name's alias (CNAME) and keep the records of the type asked under that name, so that a resolver on the network does not keep the alias and follow it past the pins.
 - In a set without routing, b4 leaves out pinned addresses that do not answer on TCP port 443, checked at start, on save and at the **Retest interval (seconds)** of [IP Block Detection](settings/core.md#ip-block-detection). When none answers, the pins are used anyway.
 
 ## The IPv4 fallback
@@ -94,7 +103,7 @@ A set that targets every name sends the DNS of the whole network and of the rout
 
 1. Open **Sets** and click **Create Set**.
 2. On the **Import/Export** tab, paste the configuration below into **Set Configuration JSON** and click **Import**.
-3. To use another resolver, change **DNS-over-HTTPS URL** on the **DNS & Routing** tab.
+3. To use another resolver, replace the entry in **Resolvers** on the **DNS & Routing** tab.
 4. Click **Create Set**.
 
 ```json
@@ -130,14 +139,15 @@ Each query shows the set that matched it and a label:
 
 | Label | Meaning |
 | --- | --- |
-| `doh <server>`, `forward <address>` | Resolved through the set's DoH or plain DNS server |
+| `doh <server>`, `forward <address>` | Sent to the set's resolvers. The label names the first of them that b4 is not [leaving out](internals/dns.md#resolver-failures) after repeated failures. When another resolver answered, a second line names it |
 | `pin`, `pin empty` | Answered from the pins, empty when they hold no address of the type asked |
+| `no alias` | The pinned name's alias removed from the resolver's answer |
 | `ipv4 only`, `no ech` | IPv6 addresses or the ECH key removed from the answer |
 | `heal`, `heal + ipv4 only` | Unreachable addresses removed or replaced by **Heal DNS answers**, or [banned addresses](sets/tcp/general.md#banned-addresses) removed or replaced |
 | `sinkhole`, `block` | A block set answered "does not exist" or dropped the query |
-| `fallback-cache`, `fallback-upstream` | The set's resolver did not answer: the last good reply was used, or the device's resolver answered |
-| `servfail` | The set's resolver did not answer and nothing else could, or the set fails closed |
-| `passthrough`, `bad target`, `from target`, `ipv6 off` | Passed on unchanged: the set has no resolver, **DNS Server IP** is not a valid address, the query came from the set's own resolver, or it came over IPv6 while IPv6 support is off |
+| `fallback-cache`, `fallback-upstream` | No resolver of the set answered: the last good reply was used, or the device's resolver answered |
+| `servfail` | No resolver of the set answered and nothing else could, or the set fails closed |
+| `passthrough`, `bad target`, `from target`, `ipv6 off` | Passed on unchanged: the set has no resolver, its first resolver is not a valid address or URL and it has no other, the query came from one of the set's own resolvers, or it came over IPv6 while IPv6 support is off |
 | `escalate <set>` | Lookups for the name kept failing, and the backup set of [Escalation](sets/escalation.md) answered |
 
 The [log](logs.md) records the same decisions, as `dns-doh->`, `dns-pin` and so on. Both show DNS decisions while **Log Level** is **Info**, the default, or more detailed.
@@ -148,8 +158,9 @@ The [log](logs.md) records the same decisions, as `dns-doh->`, `dns-pin` and so 
 | --- | --- |
 | A device's lookups never show on the Traffic page | The device uses encrypted DNS. Turning off secure DNS in its browser, or Android Private DNS, sends its lookups to the router. |
 | The site still goes to the old address | The device keeps an answer it already has until the answer expires. |
-| `servfail`, `fallback-cache` or `fallback-upstream` | The set's resolver is unreachable from this connection. Another resolver, or DoH in place of plain DNS, is the next try. |
-| The set's names resolve slowly or not at all, with the set's resolver on the router | A resolver on the router, and the router's resolver when a resolver on the network uses it upstream, has to reach its own upstream over DoH or DoT, which b4 does not intercept. |
+| A pinned site opens on the router, but devices behind a resolver on the network still get the old address | The resolver keeps the name's earlier answer, often an alias valid for up to an hour, until it expires. Clearing that resolver's cache brings in the pins at once. |
+| `servfail`, `fallback-cache` or `fallback-upstream` | None of the set's resolvers is reachable from this connection. Another resolver, or DoH in place of plain DNS, is the next try. |
+| The set's names resolve slowly or not at all, with a resolver on the router among the set's resolvers | A resolver on the router, at any place in **Resolvers**, and the router's resolver when a resolver on the network uses it upstream, has to reach its own upstream over DoH or DoT, which b4 does not intercept. The router's own resolver does not need a place in **Resolvers**: a set without **Fail closed when no resolver is reachable** falls back to the resolver the device asked. |
 | A browser still uses ECH, with a resolver on the network that checks DNSSEC, such as BIND or Unbound | The resolver gets the original answer on a path b4 does not see: DoT or DoH to its upstream, an interface left out of **Capture Interfaces**, or TCP while **Intercept DNS over TCP** is off. With **Intercept DNS over TCP** on, plain DNS through a captured interface closes these paths, see [ECH keys](internals/dns.md#ech-keys). |
 
 ### On KeeneticOS and older kernels {#copied-requests}

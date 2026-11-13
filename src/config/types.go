@@ -172,6 +172,18 @@ const (
 	FakePayloadSTUN
 )
 
+var FakePayloadNames = [FakePayloadSTUN + 1]string{
+	FakePayloadRandom:   "random",
+	FakePayloadCustom:   "custom",
+	FakePayloadDefault1: "google",
+	FakePayloadDefault2: "duckduckgo",
+	FakePayloadCapture:  "capture",
+	FakePayloadZero:     "zero",
+	FakePayloadInverted: "inverted",
+	FakePayloadDomain:   "domain",
+	FakePayloadSTUN:     "stun",
+}
+
 type ApiConfig struct {
 	IPInfoToken string `json:"ipinfo_token"`
 }
@@ -799,6 +811,7 @@ type DNSConfig struct {
 	Enabled       bool                `json:"enabled"`
 	TargetDNS     string              `json:"target_dns"`
 	DoHURL        string              `json:"doh_url"`
+	Upstreams     []string            `json:"upstreams,omitempty"`
 	FragmentQuery bool                `json:"fragment_query"`
 	Strict        bool                `json:"strict"`
 	Pins          map[string][]string `json:"pins,omitempty"`

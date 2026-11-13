@@ -200,8 +200,13 @@ jobs:
       - name: Read Changelog
         id: read_changelog
         run: |
-          echo "Extracting latest changelog entry..."
-          CHANGELOG=$(awk '/^## \[/{if (found++) exit} found {print}' changelog.md)
+          BASE=$(printf '%s' "$VERSION" | sed -E 's/-?(alpha|beta|rc|dev).*$//')
+          CHANGELOG=$(awk -v h="## [$BASE]" 'index($0, "## [") == 1 { if (found) exit; if (index($0, h) == 1) found = 1 } found { print }' changelog.md)
+          if [ -z "$CHANGELOG" ]; then
+            echo "::error::changelog.md has no '## [$BASE]' block; rename [Unreleased] to it in changelog.md and changelog_ru.md before releasing"
+            exit 1
+          fi
+          echo "Using changelog block: $(printf '%s\n' "$CHANGELOG" | head -n 1)"
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT

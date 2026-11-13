@@ -377,7 +377,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Param body body DiscoveredSetRequest true "The discovered set, and the dscp_path of the run it comes from. A bare set configuration is accepted too"
 // @Success 202 {object} map[string]interface{}
-// @Failure 409 {object} APIError "code: dscp_path_changed when the strategy was tested on another DSCP path than the new set's traffic would take, dscp_rules_pending while b4 is still applying its DSCP rules"
+// @Failure 409 {object} APIError "code: dscp_path_changed when the strategy was tested on another DSCP path than the new set's traffic would take, dscp_rules_pending while b4 is still applying its DSCP rules, fake_payload_missing when the capture the strategy's fake names can no longer be loaded"
 // @Security BearerAuth
 // @Router /discovery/add [post]
 func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
@@ -457,11 +457,14 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 
 	geoBefore := api.getCfg().System.Geo
 	api.loadTargetsForSetCached(&set)
-	config.ApplySetDefaults(&set)
+	config.ApplySetDefaultsKeepingFakeType(&set)
 
 	var moved []DomainReassignment
 	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
 		api.reloadTargetsIfGeoMoved(&set, geoBefore, next)
+		if err := fakePayloadRefusal(next, &set); err != nil {
+			return err
+		}
 		if err := dscpPathRefusal(next, &set, &tested, path); err != nil {
 			return err
 		}
@@ -501,7 +504,7 @@ func (api *API) handleAddPresetAsSet(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} APIError
 // @Failure 404 {object} APIError
-// @Failure 409 {object} APIError "code: dscp_path_changed when the strategy was tested on another DSCP path than the set's traffic takes, dscp_rules_pending while b4 is still applying its DSCP rules"
+// @Failure 409 {object} APIError "code: dscp_path_changed when the strategy was tested on another DSCP path than the set's traffic takes, dscp_rules_pending while b4 is still applying its DSCP rules, fake_payload_missing when the capture the strategy's fake names can no longer be loaded"
 // @Security BearerAuth
 // @Router /discovery/replace [post]
 func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
@@ -534,7 +537,7 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, err)
 		return
 	}
-	config.ApplySetDefaults(&req.Set)
+	config.ApplySetDefaultsKeepingFakeType(&req.Set)
 
 	var probeURLs []string
 	if len(req.ProbeURLs) > 0 {
@@ -553,6 +556,9 @@ func (api *API) handleReplaceStrategy(w http.ResponseWriter, r *http.Request) {
 		}
 		if target == nil {
 			return ErrNotFound("Set not found")
+		}
+		if err := fakePayloadRefusal(next, &req.Set); err != nil {
+			return err
 		}
 
 		if req.StrategyOnly {
@@ -626,8 +632,10 @@ func replaceStrategy(dst, strategy *config.SetConfig) {
 	dst.UDP = udp
 
 	pins, strict, stripECH := dst.DNS.Pins, dst.DNS.Strict, dst.DNS.StripECH || strategy.DNS.StripECH
+	upstreams := dst.DNS.Upstreams
 	dst.DNS = strategy.DNS
 	dst.DNS.Pins, dst.DNS.Strict, dst.DNS.StripECH = pins, strict, stripECH
+	dst.DNS.Upstreams = upstreams
 
 	dst.Targets.TLSVersion = strategy.Targets.TLSVersion
 	dst.Targets.IPVersion = strategy.Targets.IPVersion
@@ -712,6 +720,20 @@ func errSimilarSetChanged(name string) *APIError {
 	msg := fmt.Sprintf("set %q no longer carries the strategy this result found, so its domains were not added", name)
 	return &APIError{Status: http.StatusConflict, Code: "similar_set_changed", Message: msg,
 		Fields: []FieldError{{Path: "set", Code: "similar_set_changed", Message: msg, Params: map[string]any{"set": name}}}}
+}
+
+func fakePayloadMissingText(file string) string {
+	return fmt.Sprintf("this strategy was tested with the fake payload %s, which can no longer be loaded, so the set would send a different fake. Run Discovery again to test a strategy with the payloads there are now", file)
+}
+
+func fakePayloadRefusal(cfg *config.Config, tested *config.SetConfig) error {
+	file, missing := cfg.MissingCaptureFake(tested)
+	if !missing {
+		return nil
+	}
+	msg := fakePayloadMissingText(file)
+	return &APIError{Status: http.StatusConflict, Code: "fake_payload_missing", Message: "Nothing written: " + msg,
+		Fields: []FieldError{{Path: "faking.payload_file", Code: "fake_payload_missing", Message: msg, Params: map[string]any{"file": file}}}}
 }
 
 func validDSCPPath(path *config.DSCPPath) bool {
@@ -905,13 +927,7 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 		UDP:           set.UDP,
 		Fragmentation: set.Fragmentation,
 		Faking:        set.Faking,
-		DNS: config.DNSConfig{
-			Enabled:       set.DNS.Enabled,
-			TargetDNS:     set.DNS.TargetDNS,
-			DoHURL:        set.DNS.DoHURL,
-			FragmentQuery: set.DNS.FragmentQuery,
-			StripECH:      set.DNS.StripECH,
-		},
+		DNS:           dnsShape(set.DNS),
 		Routing: config.RoutingConfig{
 			Enabled: set.Routing.Enabled,
 			Mode:    set.Routing.Mode,
@@ -927,9 +943,33 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 	shape.TCP.RSTProtection = config.RSTProtectionConfig{}
 	shape.UDP.DPortFilter = ""
 	shape.UDP.FilterSTUN = false
-	config.ApplySetDefaults(&shape)
+	config.ApplySetDefaultsKeepingFakeType(&shape)
 	shape.Faking.PayloadData = nil
 	shape.UDP.FakePayloadData = nil
+	return shape
+}
+
+func dnsShape(dns config.DNSConfig) config.DNSConfig {
+	shape := config.DNSConfig{
+		Enabled:       dns.Enabled,
+		TargetDNS:     dns.TargetDNS,
+		DoHURL:        dns.DoHURL,
+		FragmentQuery: dns.FragmentQuery,
+		StripECH:      dns.StripECH,
+	}
+	if !dns.Enabled || len(dns.Upstreams) == 0 || shape.HasUpstream() {
+		return shape
+	}
+	list := dns.UpstreamList()
+	if len(list) == 0 {
+		return shape
+	}
+	shape.TargetDNS, shape.DoHURL = "", ""
+	if config.IsDoHUpstream(list[0]) {
+		shape.DoHURL = list[0]
+	} else {
+		shape.TargetDNS = list[0]
+	}
 	return shape
 }
 

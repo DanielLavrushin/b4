@@ -927,27 +927,29 @@ func TestATunRejectQuotesTheDeviceNotTheRouter(t *testing.T) {
 		"block action reject":      {set: block},
 	}
 	for name, c := range cases {
-		t.Run(name, func(t *testing.T) {
-			thisHost(t)
-			w := newQUICFlowWorker(t, &c.set)
-			w.getConfig().Queue.Mode = "tun"
-			w.srcResolver = newResolverWith(t, tunTestWAN,
-				"ipv4 2 udp 17 29 src=192.168.1.50 dst=1.2.3.4 sport=44100 dport=443 [UNREPLIED] src=1.2.3.4 dst="+tunTestWAN+" sport=443 dport=44100 mark=0 use=1\n")
-			w.bans = newTestIPBans(t, nil)
-			if c.banned {
-				banAddress(t, w.bans, "1.2.3.4", 443)
-			}
-			sent := captureInjected(t, w)
+		for snat, devicePort := range map[string]int{"port kept by SNAT": 44100, "port remapped by SNAT": 49874} {
+			t.Run(name+"/"+snat, func(t *testing.T) {
+				thisHost(t)
+				w := newQUICFlowWorker(t, &c.set)
+				w.getConfig().Queue.Mode = "tun"
+				w.srcResolver = newResolverWith(t, tunTestWAN, fmt.Sprintf(
+					"ipv4 2 udp 17 29 src=192.168.1.50 dst=1.2.3.4 sport=%d dport=443 [UNREPLIED] src=1.2.3.4 dst=%s sport=443 dport=44100 mark=0 use=1\n", devicePort, tunTestWAN))
+				w.bans = newTestIPBans(t, nil)
+				if c.banned {
+					banAddress(t, w.bans, "1.2.3.4", 443)
+				}
+				sent := captureInjected(t, w)
 
-			w.ProcessPacket(makeV4UDPPacket(bannedQUICInitial(t), net.ParseIP(tunTestWAN), quicServer, 44100, 443))
+				w.ProcessPacket(makeV4UDPPacket(bannedQUICInitial(t), net.ParseIP(tunTestWAN), quicServer, 44100, 443))
 
-			got := sent()
-			if to := portUnreachablesTo(got); !slices.Equal(to, []string{"192.168.1.50"}) {
-				t.Fatalf("the reject goes to the device behind the router, got port unreachables to %v", to)
-			}
-			if from := quotedSources(got); !slices.Equal(from, []string{"192.168.1.50:44100"}) {
-				t.Fatalf("the reject must quote the device's own address, or the device never matches it to its socket, got a quote from %v", from)
-			}
-		})
+				got := sent()
+				if to := portUnreachablesTo(got); !slices.Equal(to, []string{"192.168.1.50"}) {
+					t.Fatalf("the reject goes to the device behind the router, got port unreachables to %v", to)
+				}
+				if from, want := quotedSources(got), fmt.Sprintf("192.168.1.50:%d", devicePort); !slices.Equal(from, []string{want}) {
+					t.Fatalf("the reject must quote the device's own address and port, or the device never matches it to its socket, got a quote from %v, want %s", from, want)
+				}
+			})
+		}
 	}
 }

@@ -11,7 +11,7 @@ b4 intercepts DNS on port 53 and answers the names its sets target. The options 
 | Transport | How it reaches b4 | When |
 | --- | --- | --- |
 | UDP port 53 | Queue rules in `PREROUTING` and `OUTPUT`: requests (`dport 53`) from the raw table, ahead of conntrack (priority -300 on nftables), and replies (`sport 53`) from the mangle table. The exceptions are under [Requests and conntrack](#requests-and-conntrack) | Always, while b4 is running |
-| TCP port 53 | A `nat` `REDIRECT` to a local listener, **Listener port** 5453 by default. TCP to a link-local IPv6 address (`fe80::/10`) is left alone | While an enabled set has a DNS server, a DoH URL or **Remove ECH keys from DNS answers** on, and **Intercept DNS over TCP** is on |
+| TCP port 53 | A `nat` `REDIRECT` to a local listener, **Listener port** 5453 by default. TCP to a link-local IPv6 address (`fe80::/10`) is left alone | While an enabled set has **Enable DNS Redirect** on with at least one resolver, or **Remove ECH keys from DNS answers** on, and **Intercept DNS over TCP** is on |
 
 Both cover traffic forwarded from the network and the queries the router makes for itself. The queries b4 sends on a client's behalf, and its lookups through a set's resolver, carry the [queue mark](../guides/marks.md#the-queue-mark). The rules skip packets that carry it, so such a query never re-enters the queue. Lookups b4 makes through the router's own resolver carry no mark.
 
@@ -27,7 +27,7 @@ flowchart TB
     R --> M
     M -->|"No"| U["Client's resolver,<br/>unchanged"]
     M -->|"Yes"| S["Set's DNS handling"]
-    S --> P["Set's resolver:<br/>plain DNS or DoH"]
+    S --> P["Set's resolvers:<br/>plain DNS or DoH"]
 
     style C fill:#4a9eff,color:#fff,stroke:none
     style Q fill:#e91e63,color:#fff,stroke:none
@@ -64,36 +64,79 @@ For a matched query, b4 works through these steps in order:
 
 1. **Blocking.** In a [block set](../sets/blocking.md), the query is answered with NXDOMAIN or dropped, according to the block action.
 2. **Pinned addresses.** If the name has a pin, b4 answers from the pin and stops, whether or not the redirect is enabled.
-3. **Resolver.** If the redirect is enabled and a resolver is configured, b4 resolves the name itself and answers the client directly. Otherwise the query is forwarded unchanged.
-4. **The answer.** Addresses from the answer are remembered for the client, and written into the set's IP set when [routing](../sets/routing.md) is on. An answer, forwarded or pinned, that brings addresses b4 has not written to the set recently is held until b4 has updated the set, at most 250 ms each time b4 sees the answer, so the connection that follows usually takes the set's route. With the TUN engine the answer is not held. Before the answer reaches the device, b4 can rewrite it: it removes [ECH keys](#ech-keys), removes IPv6 addresses for [the IPv4 fallback](../dns.md#the-ipv4-fallback), and removes or replaces unreachable addresses when the set's IP block detection has **Heal DNS answers** on. [Banned addresses](../sets/tcp/general.md#banned-addresses) are removed or replaced whatever the set's settings. An answer whose addresses are all banned passes unchanged when b4 knows no other address that worked for the domain.
+3. **Resolvers.** If the redirect is enabled and the set has at least one resolver, b4 resolves the name itself through [the set's resolvers](#the-sets-resolver) and answers the client directly. Otherwise the query is forwarded unchanged.
+4. **The answer.** Addresses from the answer are remembered for the client, and written into the set's IP set when [routing](../sets/routing.md) is on. An answer, forwarded or pinned, that brings addresses b4 has not written to the set recently is held until b4 has updated the set, at most 250 ms each time b4 sees the answer, so the connection that follows usually takes the set's route. With the TUN engine the answer is not held. Before the answer reaches the device, b4 can rewrite it: it removes [ECH keys](#ech-keys), removes the alias of a [pinned](#pins) name, removes IPv6 addresses for [the IPv4 fallback](../dns.md#the-ipv4-fallback), and removes or replaces unreachable addresses when the set's IP block detection has **Heal DNS answers** on. [Banned addresses](../sets/tcp/general.md#banned-addresses) are removed or replaced whatever the set's settings. An answer whose addresses are all banned passes unchanged when b4 knows no other address that worked for the domain.
 
 With [copied requests](#copied-requests), each answer in these steps takes the place of the resolver's reply, and a dropped query is a dropped reply.
 
-### The set's resolver {#the-sets-resolver}
+### The set's resolvers {#the-sets-resolver}
 
-With a plain DNS server, b4 sends the query to that IP itself, as IP fragments when **Fragment DNS Queries** is on. With a DoH URL, it sends the query as an HTTPS request, POST first and GET if the server rejects POST. When both are filled, the DoH URL is used.
+A set's resolvers are the entries of **Resolvers**, at most eight, in the order of the field. To an IP address, b4 sends the query itself over plain DNS, as IP fragments when **Fragment DNS Queries** is on. To an `https://` URL, it sends the query as an HTTPS request, POST first and GET if the server rejects POST, and never fragments it. The [configuration file](../advanced/config.md#set-dns-resolvers) keeps the first resolver apart from the others.
 
 At most 64 UDP queries are resolved through the sets' resolvers at a time. A further query goes on to the client's resolver unchanged and is logged as `dns-overload`.
 
-A resolver that times out or errors does not end the lookup. b4 answers from the last good reply it holds for that name, and when it holds none, it puts the query to the resolver the client was addressing. Three failures in a row take the configured resolver out of the path for 30 seconds, so a resolver that has gone away costs one timeout rather than one per query. With **Fail closed when the resolver is unreachable** on, the client gets SERVFAIL instead, and b4 does not fall back.
+#### The order of asking {#resolver-order}
 
-### Queries from the set's resolver {#queries-from-the-sets-resolver}
+b4 asks the first resolver, then moves down the list:
 
-A query that comes from the address of the set's own resolver is forwarded unchanged rather than handed back to it, unless b4 blocks the query or answers it from a pin. So a resolver elsewhere on the network can ask its upstream over plain DNS through the router. Any other query from that address is forwarded unchanged as well, including those of containers or VPN clients behind NAT on the resolver's host. A DoH URL is compared the same way when it names its server by IP address.
+| What happens | What b4 does |
+| --- | --- |
+| The resolver asked last has not answered within 300 ms | Asks the next resolver and keeps waiting for the earlier ones |
+| A resolver answers with an error code: any code other than "no error" and "no such name", such as SERVFAIL, REFUSED or NOTIMP | Asks the next resolver at once |
+| A resolver fails: no reply within **Query timeout**, a connection error, an HTTP error from a DoH server or a reply too short to be a DNS message | Asks the next resolver at once |
+| A resolver answers "no error" or "no such name" | Ends the lookup with that answer, also when it carries no address |
 
-Only the address the set names is compared: a query the resolver sends from another of its addresses, such as an IPv4 query from a resolver the set names by its IPv6 address, is still handed back to it. The comparison is not made for a resolver on the router itself, so that the router's own lookups go to it. Such a resolver, and the router's resolver whenever a resolver on the network uses it as its upstream, has to reach its own upstream over a transport b4 does not intercept, such as DNS over HTTPS or TLS.
+A later resolver never corrects the answer of an earlier one. A resolver that was asked keeps its query until **Query timeout** runs out, also after another resolver has answered, and a query left without a reply counts as a failure. DNS over TCP that b4 intercepts asks the same resolvers in the same order.
+
+When no resolver answered "no error" or "no such name", the result depends on the other answers:
+
+| The resolvers that were asked | The client gets |
+| --- | --- |
+| Each answered with an error code, and none was [left out](#resolver-failures) | The first of those answers |
+| At least one failed or was left out | The fallback described [below](#resolver-fallback), or SERVFAIL with fail closed on |
+
+#### A resolver that keeps failing {#resolver-failures}
+
+Three failures in a row leave a resolver out of the lookups for 30 seconds. An answer with an error code is not a failure. After the 30 seconds one lookup tries the resolver again, and an answer clears the count. b4 logs `DNS: ... failed 3 times in a row` as a warning when it starts leaving a resolver out, and `DNS: ... is answering again` when the resolver is back.
+
+The count belongs to the resolver, not to the set. Sets that name the same resolver share it, and so do the queries of devices and the [lookups b4 makes itself](#lookups-b4-makes-itself). The lookups of the [DPI Detector](../detector.md) do not count and ignore the 30 seconds.
+
+A lookup of a set with more than one resolver also leaves out a resolver that has 64 queries without a reply at that moment.
+
+#### When no resolver answers {#resolver-fallback}
+
+**Fail closed when no resolver is reachable** decides what a lookup does with a left-out resolver and what the client gets when the lookup fails:
+
+| Fail closed | A left-out resolver | A failed lookup |
+| --- | --- | --- |
+| Off | Skipped. When every resolver of the set is left out, the fallback answers at once | b4 answers from the last good reply it holds for the name. When it holds none, it asks the resolver the client was addressing, and answers SERVFAIL when that fails too |
+| On | Skipped while another resolver of the set answers. After another resolver has failed or answered with an error code, b4 asks the left-out resolvers too, and only then answers SERVFAIL. When every resolver of the set is left out, b4 asks them at once. A set with one resolver asks it on every query | The client gets SERVFAIL |
+
+For a query over UDP, b4 does not ask the resolver the client was addressing when it is one of the set's own plain DNS resolvers. Over TCP it asks that resolver, over TCP.
+
+### Queries from a set's resolver {#queries-from-the-sets-resolver}
+
+A query that comes from the address of any of the set's resolvers is forwarded unchanged rather than handed back to them, unless b4 blocks the query or answers it from a pin. So a resolver elsewhere on the network can ask its upstream over plain DNS through the router. Any other query from that address is forwarded unchanged as well, including those of containers or VPN clients behind NAT on the resolver's host. A DoH URL is compared the same way when it names its server by IP address.
+
+Only the addresses the set names are compared: a query a resolver sends from another of its addresses, such as an IPv4 query from a resolver the set names by its IPv6 address, still goes to the set's resolvers. The comparison is not made for a resolver on the router itself, so that the set also answers the router's own lookups. Such a resolver, and the router's resolver whenever a resolver on the network uses it as its upstream, has to reach its own upstream over a transport b4 does not intercept, such as DNS over HTTPS or TLS. This holds for every entry of **Resolvers**, whatever its place.
 
 ### Pins {#pins}
 
 - The pin list is the whole address answer for the name. A and AAAA queries are answered with the pinned addresses of the matching family. An AAAA query for a name pinned to IPv4 only, and the CNAME, SVCB, HTTPS and ANY queries, get an empty answer rather than the resolver's, which would carry the site's CNAME past the pins.
 - An A query for a name pinned to IPv6 only still goes to the resolver, and so do the other record types, MX, TXT or SRV among them.
+- An answer from the resolver for a pinned name loses every alias (CNAME or DNAME) owned by a pinned name. A resolver on the network caches an alias from the answer to any record type, and once the pinned answer expired it would follow the alias to the site's own addresses.
+  - The records of the type asked that the alias led to stay in the answer, under the name asked, with the shorter of their own TTL and the pin TTL. The answer keeps its EDNS record, DNS cookie included.
+  - An answer whose alias leads to no record of the type asked becomes empty, except an A or AAAA answer, which then passes unchanged so that a resolver can still follow the alias. A resolver that resolves names itself rather than forwarding them, and gets only an alias into another zone, therefore gets an empty answer for record types other than A and AAAA.
+  - Answers without such an alias, such as the MX records of a pinned domain or an SRV record under it, pass unchanged, and so do answers for other names whose alias chain runs through a pinned name.
+  - b4 takes the set from the device's request, so a device the pinning set leaves out, or that has a set of its own without pins, keeps its answers. An answer b4 cannot match to its request is left alone when the pinning set lists source devices.
+  - This covers forwarded replies, the set's own resolvers and DNS over TCP while it is intercepted, but not TUN mode while b4 sees no replies. While any enabled set has pins, intercepted DNS over TCP is relayed one message at a time, as with ECH key removal or banned addresses, so its **Idle timeout** and **Read/write timeout** apply to each connection.
 - Pinned answers have a 60 second TTL.
 - In a set without routing, b4 connects to every pin on TCP port 443 when it starts, when a set is saved and at the **Retest interval (seconds)** of IP block detection, and leaves out of the answer the addresses that do not answer. The pins of a set with routing are not checked, since the check connects straight from the router while the set's connections leave through its route.
 - When every pin of a family fails the check, the pins are answered anyway, so a pinned host that does not listen on port 443 keeps its pin. When every pin of the family is marked unreachable by the set's IP block detection or is [banned](../sets/tcp/general.md#banned-addresses), the query goes to the resolver instead. Otherwise a banned pin is left out of the answer.
 
 ### ECH keys {#ech-keys}
 
-**Remove ECH keys from DNS answers** acts on HTTPS and SVCB answers: forwarded ones, answers from the set's own resolver and DNS over TCP.
+**Remove ECH keys from DNS answers** acts on HTTPS and SVCB answers: forwarded ones, answers from the set's own resolvers and DNS over TCP.
 
 - Only the `ech` parameter goes, together with its entry in `mandatory`, and `mandatory` itself when nothing is left in it. The ALPN list, the address hints and the TTL stay as they were.
 - The RRSIG records over the changed records are dropped and the AD flag is cleared, since the changed records no longer match their signatures.
@@ -106,9 +149,11 @@ When the resolver reaches one of the zone's servers on a path b4 does not proces
 
 ## Lookups b4 makes itself {#lookups-b4-makes-itself}
 
-b4 also resolves some of a set's names on its own behalf. It pre-resolves the domains of a set with [routing](../sets/routing.md) on. For a set that writes its own [DSCP value](../sets/routing.md#dscp-addresses), it looks up the first 256 entries of the domain list that are not `regexp:` entries. For a set in proxy mode, it looks a name up when a client of b4's SOCKS5 proxy asks for it with **Send domain name to upstream** off, when the upstream refuses the name, and when the connection falls back to direct. With the redirect enabled and a resolver configured, these lookups go to that resolver, not to the router's own. A change to the resolver settings resolves the domains of a set with routing, or with its own DSCP value, again.
+b4 also resolves some of a set's names on its own behalf. It pre-resolves the domains of a set with [routing](../sets/routing.md) on. For a set that writes its own [DSCP value](../sets/routing.md#dscp-addresses), it looks up the first 256 entries of the domain list that are not `regexp:` entries. For a set in proxy mode, it looks a name up when a client of b4's SOCKS5 proxy asks for it with **Send domain name to upstream** off, when the upstream refuses the name, and when the connection falls back to direct. With the redirect enabled and at least one resolver, these lookups ask the set's resolvers in [the same order](#resolver-order), not the router's own. A change to the resolver settings resolves the domains of a set with routing, or with its own DSCP value, again.
 
-An answer from the set's resolver is final whatever it says: a name that does not exist, no address, SERVFAIL or REFUSED. A resolver that does not answer in time or cannot be reached is followed by the router's resolver, and with **Fail closed when the resolver is unreachable** on, the lookup fails instead. These lookups share the redirect's count of failures: after three in a row the resolver is skipped for 30 seconds, the lookups go straight to the router's resolver, and a set with fail closed on does not pre-resolve its domains in that time. The last good reply is not used for them, and plain DNS is sent unfragmented.
+The first answer that says "no error" or "no such name" is final, also when it carries no address. An answer with an error code, such as SERVFAIL or REFUSED, hands the lookup to the next resolver. It is final when each resolver that was asked answered that way and none was left out. When a resolver failed or was left out and no resolver gave a final answer, the router's resolver is asked next, where a device's query would go to the device's resolver. With **Fail closed when no resolver is reachable** on, the lookup fails instead.
+
+These lookups share the redirect's [count of failures](#resolver-failures). A lookup for the proxy treats a left-out resolver the way a device's query does. Pre-resolution for routing and for a DSCP value skips a left-out resolver with fail closed on as well, and a set with fail closed on does not pre-resolve its domains while every one of its resolvers is left out. The last good reply is not used for these lookups, and plain DNS is sent unfragmented.
 
 ## Copied requests {#copied-requests}
 
@@ -119,8 +164,8 @@ Where the [table above](#requests-and-conntrack) says so, b4 holds no DNS reques
 | Blocks the name with the **Reject (fail fast)** action | Replaced with NXDOMAIN |
 | Blocks the name with the **Drop (silent blackhole)** action | Dropped |
 | Pins the name | Replaced with the pinned answer |
-| Resolves the name through the set's resolver | Held until b4 has its answer, from that resolver or from a fallback, then replaced with it. A reply held for twice the query timeout plus 2 seconds passes unchanged |
-| Forwards the name unchanged, or does not match it | Handled like any other reply, the removal of ECH keys included |
+| Resolves the name through the set's resolvers | Held until b4 has its answer, from one of them or from a fallback, then replaced with it. A reply held for twice the query timeout plus 2 seconds passes unchanged |
+| Forwards the name unchanged, or does not match it | Handled like any other reply, the removal of ECH keys and of a pinned name's alias included |
 
 When the device asked a resolver on the router itself, b4 also sends its answer on its own once 20 ms have passed without a reply and the answer is ready. A reply that comes later is still replaced with the same answer, and the device then receives it twice.
 

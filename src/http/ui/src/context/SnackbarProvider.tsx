@@ -3,7 +3,7 @@ import { createContext, use, useEffect, useMemo, useRef, useState, useCallback, 
 import { Button, Snackbar } from "@mui/material";
 import { B4Alert } from "@b4.elements";
 
-type Severity = "error" | "warning" | "info" | "success";
+export type Severity = "error" | "warning" | "info" | "success";
 
 export interface SnackbarAction {
   label: string;

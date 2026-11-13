@@ -33,6 +33,10 @@ func fakeIfaces(t *testing.T, kinds map[string]string) {
 			if err := os.WriteFile(filepath.Join(dir, "uevent"), []byte("DEVTYPE=wireguard\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
+		case "amneziawg":
+			if err := os.WriteFile(filepath.Join(dir, "uevent"), []byte("DEVTYPE=amneziawg\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 }
@@ -107,10 +111,10 @@ func TestRoutingIncludesRouterTraffic(t *testing.T) {
 }
 
 func TestRoutingHandsOffPackets(t *testing.T) {
-	fakeIfaces(t, map[string]string{"xray0": "tun", "wg0": "wireguard", "eth1": "plain"})
+	fakeIfaces(t, map[string]string{"xray0": "tun", "wg0": "wireguard", "awg0": "amneziawg", "eth1": "plain"})
 
 	t.Run("a tunnel egress takes the packet as it stands", func(t *testing.T) {
-		for _, iface := range []string{"xray0", "wg0"} {
+		for _, iface := range []string{"xray0", "wg0", "awg0"} {
 			if !routedSet(iface).RoutingHandsOffPackets() {
 				t.Errorf("%s swallows the packet, so the segment b4 would mangle is one no censor ever sees", iface)
 			}

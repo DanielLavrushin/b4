@@ -190,7 +190,7 @@ A day is the UTC day and an hour the clock hour. The counters live in memory and
 
 ### Notifications {#notifications}
 
-The hub sends a digest of new events to a Telegram chat, a webhook, or both. Telegram needs a bot token and a chat id: a number, or `@name` of a public channel, with the bot a member of the chat. A webhook needs a URL, `https://` or plain `http://` to a loopback or private address, and an optional signing secret.
+The hub sends a digest of new events to a Telegram chat, a webhook, or both. Telegram needs a bot token and a chat id: a number, or `@name` of a public channel, with the bot a member of the chat. A supergroup, a forum and a channel have a chat id of `-(1000000000000 + n)`, where `n` is the number in a `t.me/c/` link, so such an id starts with `-100`. A webhook needs a URL, `https://` or plain `http://` to a loopback or private address, and an optional signing secret.
 
 `B4HUB_TELEGRAM_TOKEN`, `B4HUB_TELEGRAM_CHAT`, `B4HUB_WEBHOOK_URL` and `B4HUB_WEBHOOK_SECRET` in the service environment override the console, which then shows the field read-only. Values entered in the console are stored encrypted with a key derived from `secret`.
 

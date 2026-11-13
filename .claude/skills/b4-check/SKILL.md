@@ -30,7 +30,7 @@ so instead of contorting the code.
 | Comments | None in added Go, TS/TSX/JS, shell, YAML, Makefile or Dockerfile lines. Names and structure carry the meaning; explanations go in the commit message or the PR. `//go:` directives are code, and so are the swag annotations in Go (`// @Param`, `// @Router` and the rest) that `make swagger` turns into `docs/static/swagger.json`. |
 | UI strings | `en.json` and `ru.json` carry the same keys, in `src/http/ui/src/i18n/` and `hub/ui/src/i18n/`. Plurals: English `_one`/`_other` (a bare key stands in for `_other`), Russian `_one`/`_few`/`_many`. |
 | Docs | A page under `docs/docs/` has its mirror under `docs/i18n/ru/docusaurus-plugin-content-docs/current/`. A change to one side only is a NOTE: a correction in one locale applies to the other. |
-| Changelog | `changelog.md` and `changelog_ru.md` change together, with the same top heading and bullet count. `hub/` changes get a `hub/CHANGELOG.md` bullet. |
+| Changelog | `changelog.md` and `changelog_ru.md` change together, follow the Keep a Changelog shape (version headings, `###` sections in order, no `FIXED:` prefixes), and have the same versions, sections and bullet counts. `hub/CHANGELOG.md` follows the same shape without `[Unreleased]`. `hub/` changes get a `hub/CHANGELOG.md` bullet. |
 | Installer | `install.sh` matches a fresh `make build-installer`, parses under `sh -n` and `busybox sh -n`, and added installer lines use no bashisms, `grep -P`, `\s`, `\d`, `od`, `hexdump` or `xxd`. A changed `installer/_build.sh` is not run: it is code from the branch under review, so a NOTE asks to read it first. |
 | Go | `gofmt -l` is empty for changed files; `goleak` is not linked into the b4 binary. |
 | Lockfile | `@mui/material` resolves in one peer context. Two contexts fail the hub's `tsc` and ship two MUI copies in the router UI; `pnpm dedupe` fixes it. |
@@ -49,6 +49,11 @@ wait for each result.
 - `make test-netns` builds the routing and conntrack tests and runs them in an unprivileged
   network namespace (`unshare -Urnm`). Where user namespaces are off, report it as not run
   and why; never as passed.
+- `make test-netns` covers only this machine's kernel. When the diff adds, deletes or reorders
+  ip rules, routes or firewall rules, also run `toolkit/labs/lab ab debian8` and
+  `toolkit/labs/lab ab debian9` with a pattern for the tests it touches (`/b4-lab`: kernels
+  3.16 and 4.9 under QEMU, the checkout against main). The script does not print these; when
+  they were skipped, report them as not run.
 - The oxlint command printed checks only. `pnpm lint` in either UI runs oxlint with `--fix` and
   rewrites files. oxlint prints nothing when clean.
 - `pnpm -C docs build` fails on a broken link or anchor. Only one Docusaurus process at a time

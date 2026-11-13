@@ -44,6 +44,11 @@ func redirectSet(target, doh string) *config.SetConfig {
 	return &set
 }
 
+func serversOf(set *config.SetConfig) []dns.Server {
+	cfg := config.NewConfig()
+	return redirectServers(&cfg, set)
+}
+
 func redirectWorker(t *testing.T, ipv6 bool, sets ...*config.SetConfig) *Worker {
 	t.Helper()
 	cfg := config.NewConfig()
@@ -135,7 +140,7 @@ func TestQueryFromTheRedirectTarget(t *testing.T) {
 		{"a target that is not an address", "dns.example", "", ip("192.0.2.5"), false},
 		{"no client address", "192.0.2.5", "", nil, false},
 	} {
-		if got := queryFromTarget(redirectSet(tc.target, tc.doh), tc.client); got != tc.fromTheTarget {
+		if got := queryFromTarget(serversOf(redirectSet(tc.target, tc.doh)), tc.client); got != tc.fromTheTarget {
 			t.Errorf("%s: queryFromTarget = %v, want %v", tc.name, got, tc.fromTheTarget)
 		}
 	}
@@ -256,10 +261,10 @@ func TestEscalationDoesNotSendAResolverItsOwnQuery(t *testing.T) {
 		if w.answerViaSet(&verdictCtx{id: 62, q: newFakeQueue()}, IPv4, w.getConfig(), next, "www.example.com", query, client, 40000, server) {
 			t.Fatalf("%s: the escalated set answered the reply path through the resolver that asked", target)
 		}
-		if _, ok := w.dnsAnswerSource(next, client); ok {
+		if len(answeringServers(w.getConfig(), next, client)) != 0 {
 			t.Fatalf("%s: the resolver that asked is no answer source for its own query", target)
 		}
-		if _, ok := w.dnsAnswerSource(next, net.ParseIP("192.0.2.101").To4()); !ok {
+		if len(answeringServers(w.getConfig(), next, net.ParseIP("192.0.2.101").To4())) != 1 {
 			t.Fatalf("%s: another client of the same set still gets the set's resolver", target)
 		}
 		noReply(t, replies, 30*time.Millisecond, "an escalated answer went to the resolver's own query")
@@ -416,5 +421,24 @@ func TestAReplyIsNotCountedTwiceWhileARedirectWaitsForIt(t *testing.T) {
 	}
 	if escId, _, ok := w.destState.GetEscalation("youtube.com"); !ok || escId != backup.Id {
 		t.Fatalf("escalation = %q ok=%v, want %q", escId, ok, backup.Id)
+	}
+}
+
+func TestQueryFromAResolverInTheList(t *testing.T) {
+	thisHost(t, "192.0.2.1")
+	ip := net.ParseIP
+	set := redirectSet("", "")
+	set.DNS.Upstreams = []string{"192.0.2.7", "https://192.0.2.8/dns-query"}
+
+	servers := serversOf(set)
+
+	if !queryFromTarget(servers, ip("192.0.2.7")) {
+		t.Error("a plain resolver in the list must be recognised as the set's own")
+	}
+	if !queryFromTarget(servers, ip("192.0.2.8")) {
+		t.Error("a DoH resolver in the list must be recognised as the set's own")
+	}
+	if queryFromTarget(servers, ip("192.0.2.9")) {
+		t.Error("a client of the set's resolvers is not one of them")
 	}
 }

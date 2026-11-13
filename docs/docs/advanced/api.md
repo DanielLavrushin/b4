@@ -8,7 +8,7 @@ The web interface works through a REST API that b4 serves on the web server's po
 
 ## Authentication {#authentication}
 
-While a username and a password are set under **Settings > System > Web Server**, every request under `/api/` needs a login token, except those to `/api/auth/` and `/api/version`. Without a username and password, no token is needed. A page at another address or port then gets `403` for requests that change something and for connections under `/api/ws/`. A reverse proxy in front of b4 must pass the original `Host` header and `X-Forwarded-Proto`. Without them, the **Logs** and **Traffic** pages stay empty, and saving settings can fail.
+While a username and a password are set under **Settings > System > Web Server**, every request under `/api/` needs a login token, except those to `/api/auth/` and `/api/version`. Without a username and password, no token is needed. A page at another address or port then gets `403` for requests that change something and for connections under `/api/ws/`, and the log records refusals on lines starting with `Web server: refused`. b4 takes its own address from the `Host` header, and behind a reverse proxy the scheme from `X-Forwarded-Proto`. A `Host` without a port, while b4 listens on a port other than 80 or 443, comes from a proxy that dropped the port, such as nginx with `proxy_set_header Host $host;`, and then only the host name is compared. A proxy that replaces `Host` with b4's own address, such as `127.0.0.1:7000`, can leave the **Logs** and **Traffic** pages empty and make saving settings fail, see [Securing the web interface](../settings/security.md#troubleshooting).
 
 | Step | Request |
 | --- | --- |
@@ -115,7 +115,7 @@ The server offers tools according to the two permission switches on the **MCP se
 
 `b4_check_domain` answers whether a domain is configured in a set. `b4_recent_connections` answers whether traffic for it arrived and which set matched. The difference separates a targeting mistake from a routing one.
 
-A ready-made prompt, `diagnose_domain`, comes with the tools. It takes a domain and walks the model through the status, the coverage, the configuration and the firewall rules, in that order. Applications that support prompts list it separately.
+A ready-made prompt, `diagnose_domain`, comes with the tools. It takes a domain and walks the model through the status, the error log, the coverage and the set's configuration. The model then asks the user to open the site again and reads the recent connections. They show whether the site's traffic reached b4 and which set took it. The model also names the installed version and looks for a newer release. With **Allow active probes** on, it offers a test fetch of the site. With the switch off, the prompt names it, and the model asks the user whether the site opens. The firewall rules are read only when the status shows a problem or no other step finds the cause. Applications that support prompts list it separately.
 
 ### `b4_watchdog` {#b4-watchdog}
 

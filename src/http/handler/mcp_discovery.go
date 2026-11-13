@@ -1022,6 +1022,10 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		})
 	}
 
+	if err := mcpFakePayloadRefusal(api.getCfg(), chosen); err != nil {
+		return nil, mcpDiscoveryOut{}, err
+	}
+
 	if existing := api.setCoveringDomainWith(domain, chosen); existing != nil {
 		out := mcpDiscoveryOut{Id: suiteID, Source: source}
 		for i, s := range api.getCfg().Sets {
@@ -1060,9 +1064,7 @@ func (api *API) mcpDiscoveryApply(in mcpDiscoveryIn) (*mcp.CallToolResult, mcpDi
 		}
 		set.Name = name
 	} else {
-		if set.Name == "" {
-			set.Name = domain
-		}
+		set.Name = domain
 		base := set.Name
 		for i := 2; mcpNameTaken(newCfg, set.Name); i++ {
 			set.Name = fmt.Sprintf("%s %d", base, i)
@@ -1212,6 +1214,13 @@ func mcpDSCPPathRefusal(cfg *config.Config, set, tested *config.SetConfig, path 
 	return nil
 }
 
+func mcpFakePayloadRefusal(cfg *config.Config, tested *config.SetConfig) error {
+	if file, missing := cfg.MissingCaptureFake(tested); missing {
+		return fmt.Errorf("nothing written: %s", fakePayloadMissingText(file))
+	}
+	return nil
+}
+
 func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bool) (*mcp.CallToolResult, mcpDiscoveryOut, error) {
 	cfg := api.getCfg()
 	if !found {
@@ -1255,6 +1264,9 @@ func (api *API) mcpApplySetRun(target *config.SetConfig, run mcpSetRun, found bo
 	}
 	if v.Set == nil {
 		return nil, mcpDiscoveryOut{}, fmt.Errorf("the verdict for set %q names '%s' but carries no strategy to write; start the run again", target.Name, v.WinnerPreset)
+	}
+	if err := mcpFakePayloadRefusal(cfg, v.Set); err != nil {
+		return nil, mcpDiscoveryOut{}, err
 	}
 
 	mcpWriteMu.Lock()

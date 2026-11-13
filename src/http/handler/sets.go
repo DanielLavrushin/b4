@@ -305,7 +305,7 @@ func (api *API) matchDomainsToSets(domains []string, excludeId string) []SetDoma
 // @Param body body object true "domain or domains, optional pins. Discovery adds tested, the discovered set, and the dscp_path of its run: the set must still carry that strategy, and its traffic the path the run tested"
 // @Success 200 {object} map[string]interface{}
 // @Failure 404 {string} string
-// @Failure 409 {object} APIError "code: similar_set_changed, dscp_path_changed or dscp_rules_pending, when tested is given"
+// @Failure 409 {object} APIError "code: similar_set_changed, fake_payload_missing, dscp_path_changed or dscp_rules_pending, when tested is given"
 // @Security BearerAuth
 // @Router /sets/{id}/add-domain [post]
 func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
@@ -353,6 +353,9 @@ func (api *API) handleSetDomains(w http.ResponseWriter, r *http.Request) {
 		if req.Tested != nil {
 			if !setsHaveSimilarConfig(set, req.Tested) {
 				return errSimilarSetChanged(set.Name)
+			}
+			if err := fakePayloadRefusal(next, req.Tested); err != nil {
+				return err
 			}
 			if err := dscpPathRefusal(next, set, req.Tested, req.DSCPPath); err != nil {
 				return err

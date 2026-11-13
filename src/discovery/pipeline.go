@@ -160,8 +160,9 @@ func (ds *DiscoverySuite) RunDiscovery() {
 	if ds.skipCache {
 		log.DiscoveryLogf("Skipping cached strategies (user requested)")
 	} else {
-		cachedPresets = ds.discoveryCache.GetCachedPresets()
+		cachedPresets = ds.presetsWithPayloads(ds.discoveryCache.GetCachedPresets())
 	}
+	ds.cachedPresets = cachedPresets
 	phase1Presets := GetPhase1Presets()
 	current, hasCurrent := ds.setCurrentPreset()
 	currentCount := 0
@@ -207,9 +208,6 @@ func (ds *DiscoverySuite) RunDiscovery() {
 				return
 			}
 
-			if preset.Config.Faking.SNIType == config.FakePayloadRandom {
-				ds.applyBestPayload(&preset.Config.Faking)
-			}
 			results := ds.testPresetAllDomains(preset)
 			ds.storeResultsMulti(preset, results)
 		}
@@ -217,7 +215,7 @@ func (ds *DiscoverySuite) RunDiscovery() {
 
 	if ds.hubPresetsFn != nil {
 		ds.setPhase(PhaseCached)
-		ds.hubPresets = ds.hubPresetsFn()
+		ds.hubPresets = ds.presetsWithPayloads(ds.hubPresetsFn())
 		if ds.setMode() {
 			ds.hubPresets = unscopedPresets(ds.hubPresets)
 		}

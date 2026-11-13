@@ -10,8 +10,6 @@ import (
 	"net/http"
 	"sync"
 	"time"
-
-	"github.com/daniellavrushin/b4/log"
 )
 
 const (
@@ -20,6 +18,8 @@ const (
 )
 
 var ErrNoAddress = errors.New("the resolver has no address for the name")
+
+var ErrTransientAnswer = fmt.Errorf("the resolver answered with a retryable error: %w", ErrNoAddress)
 
 type Server struct {
 	Source  string
@@ -31,19 +31,6 @@ type Server struct {
 }
 
 type LookupFunc func(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net.IP, error)
-
-func SetServer(enabled bool, target, dohURL string) (Server, bool) {
-	if !enabled {
-		return Server{}, false
-	}
-	if dohURL != "" {
-		return Server{Source: dohURL, DoHURL: dohURL}, true
-	}
-	if ip := net.ParseIP(target); ip != nil {
-		return Server{Source: target, UDP: ip}, true
-	}
-	return Server{}, false
-}
 
 func (s Server) String() string {
 	if s.DoHURL != "" {
@@ -57,52 +44,6 @@ func (s Server) timeout() time.Duration {
 		return s.Timeout
 	}
 	return defaultLookupTimeout
-}
-
-func (s Server) Budget() time.Duration {
-	return 2*s.timeout() + FallbackBudget
-}
-
-func LookupWithFallback(ctx context.Context, lookup LookupFunc, srv Server, useSet, strict bool, name string, v4, v6 bool) ([]net.IP, error) {
-	if useSet {
-		if !strict && SourceUnreachable(srv.Source) {
-			log.Tracef("DNS: %s is cooling down after repeated failures, resolving %s through the router's resolver", SourceLabel(srv.Source), name)
-		} else {
-			sctx, cancel := context.WithTimeout(ctx, srv.timeout())
-			ips, err := lookup(sctx, srv, name, v4, v6)
-			cancel()
-			if err == nil || errors.Is(err, ErrNoAddress) {
-				if NoteSourceSuccess(srv.Source) {
-					log.Infof("DNS: %s is answering again", SourceLabel(srv.Source))
-				}
-				return ips, err
-			}
-			if ctx.Err() != nil {
-				return nil, err
-			}
-			if NoteSourceFailure(srv.Source) {
-				log.Warnf("DNS: %s failed %d times in a row, lookups of sets that allow a fallback skip it for %s", SourceLabel(srv.Source), SourceFailuresToTrip, sourceCooldown)
-			}
-			if strict {
-				return nil, err
-			}
-			log.Tracef("DNS: %s could not resolve %s (%v), asking the router's resolver", SourceLabel(srv.Source), name, err)
-		}
-	}
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	ips := make([]net.IP, 0, len(addrs))
-	for _, a := range addrs {
-		if (a.IP.To4() != nil && v4) || (a.IP.To4() == nil && v6) {
-			ips = append(ips, a.IP)
-		}
-	}
-	if len(ips) == 0 {
-		return nil, fmt.Errorf("%s: %w", name, ErrNoAddress)
-	}
-	return ips, nil
 }
 
 func LookupIPs(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net.IP, error) {
@@ -131,6 +72,7 @@ func LookupIPs(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net
 
 	var out []net.IP
 	var failure error
+	var retryable error
 	answered := false
 	for i, r := range results {
 		switch {
@@ -140,6 +82,11 @@ func LookupIPs(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net
 				if (ip.To4() != nil) == (qtypes[i] == rrTypeA) {
 					out = append(out, ip)
 				}
+			}
+		case errors.Is(r.err, ErrTransientAnswer):
+			answered = true
+			if retryable == nil {
+				retryable = r.err
 			}
 		case errors.Is(r.err, ErrNoAddress):
 			answered = true
@@ -152,6 +99,8 @@ func LookupIPs(ctx context.Context, srv Server, name string, v4, v6 bool) ([]net
 		return out, nil
 	case failure != nil:
 		return nil, failure
+	case retryable != nil:
+		return nil, retryable
 	case answered:
 		return nil, fmt.Errorf("%s at %s: %w", name, srv, ErrNoAddress)
 	}
@@ -185,7 +134,7 @@ func (s Server) exchange(ctx context.Context, name string, qtype uint16) ([]net.
 		return nil, fmt.Errorf("%s sent an answer that does not match the query for %s", s, name)
 	}
 	if rcode, _ := ResponseRcode(resp); rcode != 0 && rcode != 3 {
-		return nil, fmt.Errorf("%s answered %s with rcode %d: %w", s, name, rcode, ErrNoAddress)
+		return nil, fmt.Errorf("%s answered %s with rcode %d: %w", s, name, rcode, ErrTransientAnswer)
 	}
 	ips := ParseResponseIPs(resp)
 	if len(ips) == 0 {

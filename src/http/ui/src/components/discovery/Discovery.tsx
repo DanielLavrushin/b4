@@ -19,10 +19,12 @@ import {
   B4TextField,
   B4ChipList,
   B4PlusButton,
+  B4NotifyToggle,
 } from "@b4.elements";
 import { useSnackbar } from "@context/SnackbarProvider";
 import { useDiscovery, useDiscoveryLogs } from "@hooks/useDiscovery";
 import { useSets } from "@hooks/useSets";
+import { useHostMatchesInvalidate } from "@hooks/useHostMatches";
 import { useCaptures } from "@b4.capture";
 import { configApi } from "@b4.settings";
 import { discoveryApi } from "@api/discovery";
@@ -58,6 +60,7 @@ const URL_SEPARATORS = /\s+|,(?=\s|$)/;
 interface DiscoveryLocationState {
   urls?: string[];
   setId?: string;
+  runId?: string;
 }
 
 export const DiscoveryRunner = () => {
@@ -75,9 +78,12 @@ export const DiscoveryRunner = () => {
     stopping,
     suiteId,
     suite,
+    otherRun,
     error,
     history,
     startDiscovery,
+    openRun,
+    showOtherRun,
     cancelDiscovery,
     finishDiscovery,
     finishRequested,
@@ -112,6 +118,7 @@ export const DiscoveryRunner = () => {
   const domainInputRef = useRef<HTMLInputElement | null>(null);
   const suggestFor = useRef<string | null>(null);
   const restoredSuite = useRef<string | null>(null);
+  const invalidateHostMatches = useHostMatchesInvalidate();
 
   const loadSets = useCallback(async () => {
     try {
@@ -122,7 +129,8 @@ export const DiscoveryRunner = () => {
     } finally {
       setSetsLoaded(true);
     }
-  }, []);
+    void invalidateHostMatches();
+  }, [invalidateHostMatches]);
 
   useEffect(() => {
     void loadSets();
@@ -363,6 +371,23 @@ export const DiscoveryRunner = () => {
     setsLoaded,
     addUrls,
     pickSet,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    const state = location.state as DiscoveryLocationState | null;
+    if (!state?.runId) return;
+    openRun(state.runId);
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: location.hash },
+      { replace: true, state: null },
+    )?.catch(() => {});
+  }, [
+    location.pathname,
+    location.search,
+    location.hash,
+    location.state,
+    openRun,
     navigate,
   ]);
 
@@ -635,6 +660,7 @@ export const DiscoveryRunner = () => {
         title={t("discovery.title")}
         description={t("discovery.description")}
         icon={<DiscoveryIcon />}
+        action={<B4NotifyToggle hint={t("discovery.notify.hint")} />}
       >
         {isReconnecting && (
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -673,6 +699,33 @@ export const DiscoveryRunner = () => {
             onShowLog={() => setLogOpen(true)}
             onNewSearch={resetDiscovery}
           />
+        )}
+
+        {showResults && otherRun && (
+          <B4Alert
+            severity="info"
+            sx={{
+              flexWrap: { xs: "wrap", sm: "nowrap" },
+              "& .MuiAlert-message": { flex: { xs: "1 1 0", sm: "0 1 auto" } },
+              "& .MuiAlert-action": {
+                width: { xs: "100%", sm: "auto" },
+                justifyContent: "flex-end",
+                pl: { xs: 0, sm: 2 },
+              },
+            }}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                sx={{ whiteSpace: "nowrap" }}
+                onClick={showOtherRun}
+              >
+                {t("discovery.otherRun.show")}
+              </Button>
+            }
+          >
+            {t(`discovery.otherRun.${otherRun.source ?? "web"}`)}
+          </B4Alert>
         )}
 
         {!showRun && !showResults && !isReconnecting && (
@@ -774,7 +827,7 @@ export const DiscoveryRunner = () => {
           description={`${t("discovery.history.sites", { count: history.length })} · ${t("discovery.history.newestFirst")}`}
           icon={<HistoryIcon />}
           action={
-            <Stack direction="row" spacing={1}>
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
               <Button
                 size="small"
                 startIcon={<LogsIcon />}

@@ -15,6 +15,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   authRequired: boolean;
+  hasSession: boolean;
+  sessionLost: boolean;
   login: (username: string, password: string) => Promise<string | null>;
   logout: () => void;
 }
@@ -30,6 +32,7 @@ export function AuthProvider({
   const [isLoading, setIsLoading] = useState(true);
   const [authRequired, setAuthRequired] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [sessionLost, setSessionLost] = useState(false);
 
   // Check auth status on mount
   useEffect(() => {
@@ -82,6 +85,7 @@ export function AuthProvider({
         localStorage.setItem(TOKEN_KEY, data.token);
         setToken(data.token);
         setIsAuthenticated(true);
+        setSessionLost(false);
         return null;
       } catch {
         return "Invalid username or password";
@@ -101,11 +105,68 @@ export function AuthProvider({
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setIsAuthenticated(false);
+    setSessionLost(false);
   }, []);
 
+  const signedIn = authRequired && isAuthenticated;
+
+  useEffect(() => {
+    if (!signedIn || sessionLost) return;
+    let active = true;
+    const probe = () => {
+      void checkSession().then((state) => {
+        if (state === "rejected" && active) setSessionLost(true);
+      });
+    };
+    sessionProbes.add(probe);
+    return () => {
+      active = false;
+      sessionProbes.delete(probe);
+    };
+  }, [signedIn, sessionLost]);
+
+  useEffect(() => {
+    if (!sessionLost) return;
+    let active = true;
+    const recover = () => {
+      void checkSession().then((state) => {
+        if (state !== "confirmed" || !active) return;
+        setToken(getAuthToken());
+        setSessionLost(false);
+      });
+    };
+    const unwatch = watchAuthToken(recover);
+    recover();
+    return () => {
+      active = false;
+      unwatch();
+    };
+  }, [sessionLost]);
+
+  const hasSession =
+    !isLoading && (!authRequired || (isAuthenticated && !sessionLost));
+
   const value = useMemo(
-    () => ({ token, isAuthenticated, isLoading, authRequired, login, logout }),
-    [token, isAuthenticated, isLoading, authRequired, login, logout],
+    () => ({
+      token,
+      isAuthenticated,
+      isLoading,
+      authRequired,
+      hasSession,
+      sessionLost,
+      login,
+      logout,
+    }),
+    [
+      token,
+      isAuthenticated,
+      isLoading,
+      authRequired,
+      hasSession,
+      sessionLost,
+      login,
+      logout,
+    ],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;
@@ -121,4 +182,60 @@ export function useAuth(): AuthContextType {
 
 export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
+}
+
+const sessionProbes = new Set<() => void>();
+
+export function verifySession(): void {
+  for (const probe of sessionProbes) probe();
+}
+
+function watchAuthToken(onChange: () => void): () => void {
+  let last = getAuthToken();
+  const handler = () => {
+    const current = getAuthToken();
+    if (current === last) return;
+    last = current;
+    onChange();
+  };
+  window.addEventListener("storage", handler);
+  return () => window.removeEventListener("storage", handler);
+}
+
+type SessionState = "confirmed" | "rejected" | "unknown";
+
+async function askSession(): Promise<SessionState> {
+  for (;;) {
+    const token = getAuthToken();
+    const state = await askToken(token);
+    if (getAuthToken() === token) return state;
+  }
+}
+
+async function askToken(token: string | null): Promise<SessionState> {
+  try {
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const r = await fetch("/api/auth/check", { headers, cache: "no-store" });
+    if (!r.ok) return "unknown";
+    const data = (await r.json()) as {
+      auth_required?: boolean;
+      authenticated?: boolean;
+    };
+    if (data.auth_required === false || data.authenticated === true) {
+      return "confirmed";
+    }
+    return data.auth_required === true ? "rejected" : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+let sessionCheck: Promise<SessionState> | null = null;
+
+function checkSession(): Promise<SessionState> {
+  sessionCheck ??= askSession().finally(() => {
+    sessionCheck = null;
+  });
+  return sessionCheck;
 }

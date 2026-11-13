@@ -1,0 +1,559 @@
+#!/bin/sh
+set -eu
+
+LAB_DIR="$(cd "$(dirname "$0")" && pwd)"
+LAB_HOME="${B4_LAB_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/b4-lab}"
+LAB_REPO="${B4_LAB_REPO:-$(cd "$LAB_DIR/../.." && pwd)}"
+GUESTS="$LAB_DIR/guests"
+KEY="$LAB_HOME/keys/id_ed25519"
+
+die() {
+	echo "lab: $*" >&2
+	exit 1
+}
+
+need() {
+	command -v "$1" >/dev/null 2>&1 || die "$1 is not installed (see toolkit/labs/README.md)"
+}
+
+usage() {
+	cat <<EOF
+usage: lab <command> [arguments]
+
+  list                         guests that can be started, and instances that exist
+  up <guest> [name]            start an instance of a guest (name defaults to the guest's)
+  ssh <name> [command...]      open a shell in the instance, or run one command
+  run <name> <script> [args]   run a local shell script inside the instance as root
+  push <name> <file...> <dir>  copy local files into the instance
+  pull <name> <path> <dir>     copy a file out of the instance
+  down <name>                  stop the instance and keep its disk
+  destroy <name>               stop the instance and delete its disk
+  status [name]                what is running, on which port
+  test <name> [pattern]        build a test binary from the checkout, run it in the instance
+  ab <name> [pattern]          the same for the checkout and for its base, then compare
+
+test and ab run the netns tests of ./tables/ matching the pattern (default TestNetns).
+LAB_PKG picks another package, LAB_BASE another base than origin/main, and B4_LAB_REPO
+another checkout than the one this script lives in, for example a worktree. They exit 1
+when a test failed (ab: only with the checkout) and 2 when a run did not finish.
+
+Images and instance disks live in $LAB_HOME
+(set B4_LAB_HOME to move them). LAB_MEM and LAB_CPUS override a guest's defaults.
+EOF
+}
+
+named() {
+	case "$1" in
+	"" | .* | *[!A-Za-z0-9._-]*)
+		die "'$1' is not a name: letters, digits, dots, dashes and underscores only, and no dot first"
+		;;
+	esac
+}
+
+inst_dir() { echo "$LAB_HOME/instances/$1"; }
+
+inst_pid() {
+	pidfile="$(inst_dir "$1")/pid"
+	[ -f "$pidfile" ] || return 1
+	pid="$(cat "$pidfile")"
+	kill -0 "$pid" 2>/dev/null || return 1
+	ps -p "$pid" -o args= 2>/dev/null | grep -qF -- "-name b4-lab-$1 " || return 1
+	echo "$pid"
+}
+
+quote() {
+	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+inst_port() {
+	portfile="$(inst_dir "$1")/port"
+	[ -f "$portfile" ] || die "no instance named $1 (lab list)"
+	cat "$portfile"
+}
+
+load_guest() {
+	[ -f "$GUESTS/$1.env" ] || die "no guest named $1 (lab list)"
+	GUEST_SUMMARY=""
+	IMAGE_URL=""
+	IMAGE_SHA256=""
+	GUEST_MEM=1024
+	GUEST_CPUS=2
+	GUEST_DISK=8G
+	GUEST_USER=root
+	GUEST_SEED=nocloud
+	GUEST_GOARCH=amd64
+	GUEST_PROVISION=""
+	. "$GUESTS/$1.env"
+}
+
+SSH_OPTS="-o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=15"
+
+running() {
+	inst_pid "$1" >/dev/null || die "$1 is not running (lab up <guest> $1)"
+}
+
+guest_ssh() {
+	name="$1"
+	shift
+	running "$name"
+	user="$(cat "$(inst_dir "$name")/user")"
+	ssh -i "$KEY" $SSH_OPTS -p "$(inst_port "$name")" "$user@127.0.0.1" "$@"
+}
+
+key_ready() {
+	[ -s "$KEY" ] && [ -s "$KEY.pub" ]
+}
+
+ensure_key() {
+	key_ready && return 0
+	need ssh-keygen
+	mkdir -p "$(dirname "$KEY")"
+	chmod 700 "$(dirname "$KEY")"
+	(
+		flock 7
+		key_ready && exit 0
+		rm -f "$KEY" "$KEY.pub"
+		ssh-keygen -q -t ed25519 -N "" -C "b4-lab" -f "$KEY"
+	) 7> "$(dirname "$KEY")/lock"
+	key_ready || die "the lab's ssh key could not be made in $(dirname "$KEY")"
+}
+
+fetch_image() {
+	image="$LAB_HOME/images/$(basename "$IMAGE_URL")"
+	if [ ! -f "$image" ]; then
+		need curl
+		mkdir -p "$LAB_HOME/images"
+		part="$image.part.$$"
+		echo "lab: downloading $(basename "$IMAGE_URL")" >&2
+		curl -fsSL --retry 3 -o "$part" "$IMAGE_URL" || {
+			rm -f "$part"
+			die "could not download $IMAGE_URL"
+		}
+		got="$(sha256sum "$part" | cut -d' ' -f1)"
+		if [ "$got" != "$IMAGE_SHA256" ]; then
+			rm -f "$part"
+			die "checksum of $(basename "$IMAGE_URL") is $got, expected $IMAGE_SHA256"
+		fi
+		mv "$part" "$image"
+	fi
+	echo "$image"
+}
+
+free_port() {
+	port=22220
+	while ss -ltn 2>/dev/null | grep -q "[:.]$port "; do
+		port=$((port + 1))
+	done
+	echo "$port"
+}
+
+make_seed() {
+	dir="$1"
+	name="$2"
+	need xorriso
+	key_ready || die "the lab's ssh key is missing, so $name would get no key to let the lab in"
+	rm -rf "$dir/seed"
+	case "$GUEST_SEED" in
+	nocloud)
+		label=cidata
+		data="$dir/seed/user-data"
+		mkdir -p "$dir/seed"
+		printf 'instance-id: b4-lab-%s\nlocal-hostname: %s\n' "$name" "$name" > "$dir/seed/meta-data"
+		;;
+	configdrive)
+		label=config-2
+		data="$dir/seed/openstack/latest/user_data"
+		mkdir -p "$dir/seed/openstack/latest"
+		printf '{"uuid": "b4-lab-%s", "hostname": "%s", "public_keys": {"b4-lab": "%s"}}\n' \
+			"$name" "$name" "$(cat "$KEY.pub")" > "$dir/seed/openstack/latest/meta_data.json"
+		;;
+	*) die "guest seed '$GUEST_SEED' is neither nocloud nor configdrive" ;;
+	esac
+	{
+		printf '%s\n' '#cloud-config'
+		printf 'disable_root: false\nssh_pwauth: false\nssh_authorized_keys:\n  - %s\n' "$(cat "$KEY.pub")"
+	} > "$data"
+	xorriso -as mkisofs -quiet -output "$dir/seed.iso" -volid "$label" -joliet -rock "$dir/seed" 2>/dev/null
+}
+
+cmd_list() {
+	echo "guests:"
+	for f in "$GUESTS"/*.env; do
+		[ -f "$f" ] || continue
+		g="$(basename "$f" .env)"
+		load_guest "$g"
+		printf '  %-12s %s\n' "$g" "$GUEST_SUMMARY"
+	done
+	echo "instances:"
+	found=0
+	for d in "$LAB_HOME"/instances/*/; do
+		[ -d "$d" ] || continue
+		found=1
+		n="$(basename "$d")"
+		if inst_pid "$n" >/dev/null; then
+			printf '  %-12s running, ssh port %s\n' "$n" "$(cat "$d/port")"
+		else
+			printf '  %-12s stopped\n' "$n"
+		fi
+	done
+	[ "$found" = 1 ] || echo "  none"
+}
+
+cmd_up() {
+	guest="${1:-}"
+	[ -n "$guest" ] || die "usage: lab up <guest> [name]"
+	name="${2:-$guest}"
+	named "$guest"
+	named "$name"
+	need qemu-system-x86_64
+	need qemu-img
+	need ssh
+	need sha256sum
+	need flock
+	load_guest "$guest"
+	dir="$(inst_dir "$name")"
+	mkdir -p "$dir"
+	exec 8> "$dir/up.lock"
+	flock 8
+	if [ -f "$dir/guest" ] && [ "$(cat "$dir/guest")" != "$guest" ]; then
+		die "$name was made from the guest $(cat "$dir/guest"), not $guest: start it with 'lab up $(cat "$dir/guest") $name', or destroy it first"
+	fi
+	if ! inst_pid "$name" >/dev/null; then
+		start_guest
+	elif [ -z "$GUEST_PROVISION" ] || [ -f "$dir/provisioned" ]; then
+		echo "lab: $name is already running, ssh port $(inst_port "$name")"
+		return 0
+	else
+		echo "lab: $name is running but was never provisioned, ssh port $(inst_port "$name")" >&2
+	fi
+	port="$(inst_port "$name")"
+	tries=0
+	until guest_ssh "$name" true 2>/dev/null; do
+		tries=$((tries + 1))
+		[ "$tries" -lt 90 ] || die "$name did not answer ssh in time; see $dir/console.log"
+		inst_pid "$name" >/dev/null || die "$name exited; see $dir/console.log"
+		sleep 2
+	done
+	if [ -n "$GUEST_PROVISION" ] && [ ! -f "$dir/provisioned" ]; then
+		echo "lab: provisioning $name" >&2
+		guest_ssh "$name" 'sh -s' < "$GUESTS/$GUEST_PROVISION"
+		touch "$dir/provisioned"
+	fi
+	echo "lab: $name is up: $(guest_ssh "$name" 'uname -sr'), ssh port $port"
+}
+
+start_guest() {
+	ensure_key
+	image="$(fetch_image)"
+	mkdir -p "$dir"
+	echo "$GUEST_USER" > "$dir/user"
+	echo "$guest" > "$dir/guest"
+	[ -f "$dir/disk.qcow2" ] || qemu-img create -q -f qcow2 -b "$image" -F qcow2 "$dir/disk.qcow2" "$GUEST_DISK"
+	[ -f "$dir/seed.iso" ] || make_seed "$dir" "$name"
+	port="$(free_port)"
+	accel=tcg
+	[ -w /dev/kvm ] && accel=kvm
+	tries=0
+	until qemu-system-x86_64 -name "b4-lab-$name" -machine "accel=$accel" -cpu max \
+		-smp "${LAB_CPUS:-$GUEST_CPUS}" -m "${LAB_MEM:-$GUEST_MEM}" \
+		-display none -serial "file:$dir/console.log" -pidfile "$dir/pid" -daemonize \
+		-drive "file=$dir/disk.qcow2,if=virtio,format=qcow2" \
+		-drive "file=$dir/seed.iso,media=cdrom,readonly=on" \
+		-netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$port-:22" -device virtio-net-pci,netdev=n0 \
+		-device virtio-rng-pci 2> "$dir/qemu.err" 8>&-; do
+		tries=$((tries + 1))
+		if [ "$tries" -ge 20 ] || ! grep -q 'host forwarding' "$dir/qemu.err"; then
+			cat "$dir/qemu.err" >&2
+			die "qemu did not start $name"
+		fi
+		port=$((port + 1))
+	done
+	cat "$dir/qemu.err" >&2
+	echo "$port" > "$dir/port"
+	echo "lab: $name starting ($accel), waiting for ssh on port $port" >&2
+}
+
+cmd_run() {
+	name="${1:-}"
+	script="${2:-}"
+	[ -n "$name" ] && [ -f "$script" ] || die "usage: lab run <name> <script> [args]"
+	named "$name"
+	shift 2
+	remote="sh -s --"
+	for a in "$@"; do
+		remote="$remote $(quote "$a")"
+	done
+	guest_ssh "$name" "$remote" < "$script"
+}
+
+cmd_push() {
+	name="${1:-}"
+	[ "$#" -ge 3 ] || die "usage: lab push <name> <file...> <dir>"
+	named "$name"
+	shift
+	user="$(cat "$(inst_dir "$name")/user")"
+	port="$(inst_port "$name")"
+	count=$#
+	i=1
+	for a in "$@"; do
+		if [ "$i" -lt "$count" ]; then
+			set -- "$@" "$a"
+		else
+			dest="$a"
+		fi
+		i=$((i + 1))
+	done
+	shift "$count"
+	guest_ssh "$name" "mkdir -p $(quote "$dest")"
+	scp -q -i "$KEY" $SSH_OPTS -P "$port" "$@" "$user@127.0.0.1:$dest/"
+}
+
+cmd_pull() {
+	name="${1:-}"
+	[ "$#" -eq 3 ] || die "usage: lab pull <name> <path> <dir>"
+	named "$name"
+	running "$name"
+	user="$(cat "$(inst_dir "$name")/user")"
+	mkdir -p "$3"
+	scp -q -i "$KEY" $SSH_OPTS -P "$(inst_port "$name")" "$user@127.0.0.1:$2" "$3/"
+}
+
+cmd_down() {
+	name="${1:-}"
+	[ -n "$name" ] || die "usage: lab down <name>"
+	named "$name"
+	if pid="$(inst_pid "$name")"; then
+		guest_ssh "$name" 'poweroff' 2>/dev/null || true
+		tries=0
+		while inst_pid "$name" >/dev/null && [ "$tries" -lt 20 ]; do
+			sleep 1
+			tries=$((tries + 1))
+		done
+		if pid="$(inst_pid "$name")"; then
+			kill "$pid" 2>/dev/null || true
+		fi
+		echo "lab: $name stopped"
+	else
+		echo "lab: $name is not running"
+	fi
+}
+
+cmd_destroy() {
+	name="${1:-}"
+	[ -n "$name" ] || die "usage: lab destroy <name>"
+	named "$name"
+	cmd_down "$name"
+	rm -rf "$(inst_dir "$name")"
+	echo "lab: $name deleted"
+}
+
+cmd_status() {
+	name="${1:-}"
+	if [ -z "$name" ]; then
+		cmd_list
+		return 0
+	fi
+	named "$name"
+	if inst_pid "$name" >/dev/null; then
+		echo "$name: running, ssh port $(inst_port "$name"), $(guest_ssh "$name" 'uname -sr' 2>/dev/null || echo 'ssh not answering')"
+	else
+		echo "$name: stopped"
+	fi
+}
+
+test_guest() {
+	t_name="$1"
+	named "$t_name"
+	running "$t_name"
+	load_guest "$(cat "$(inst_dir "$t_name")/guest")"
+	need go
+	need git
+	[ -f "$LAB_REPO/src/go.mod" ] || die "$LAB_REPO is not a b4 checkout (set B4_LAB_REPO)"
+	LAB_REPO="$(cd "$LAB_REPO" && pwd)"
+	mkdir -p "$LAB_HOME/logs"
+	need flock
+	exec 9> "$(inst_dir "$t_name")/test.lock"
+	flock -n 9 || die "another lab test or ab is running on $t_name: wait for it, or start a second instance"
+	t_work="$(mktemp -d)"
+	trap 'rm -rf "$t_work"' EXIT
+	trap 'exit 130' INT TERM HUP
+}
+
+test_build() {
+	if [ -n "${2:-}" ]; then
+		GOOS=linux GOARCH="$GUEST_GOARCH" CGO_ENABLED=0 go -C "$LAB_REPO/src" test -c -ldflags='-s -w' \
+			-overlay "$2" -o "$1" "${LAB_PKG:-./tables/}"
+	else
+		GOOS=linux GOARCH="$GUEST_GOARCH" CGO_ENABLED=0 go -C "$LAB_REPO/src" test -c -ldflags='-s -w' \
+			-o "$1" "${LAB_PKG:-./tables/}"
+	fi
+}
+
+test_results() {
+	sed -n "s/^[[:space:]]*--- $1: \([^ ]*\) (.*/\1/p" "$2"
+}
+
+test_count() {
+	test_results "$1" "$2" | grep -c . || true
+}
+
+test_run() {
+	t_bin="$1"
+	t_log="$3"
+	cmd_push "$t_name" "$t_bin" /root/lab
+	t_status=0
+	guest_ssh "$t_name" "sh -s -- $(quote "/root/lab/$(basename "$t_bin")") $(quote "$2") 1" \
+		< "$LAB_DIR/scripts/netns-test.sh" > "$t_log" 2>&1 || t_status=$?
+	echo "$t_status" > "$t_log.status"
+	test_results FAIL "$t_log" | sort > "$t_log.fail"
+	printf '%s pass, %s fail, %s skip' "$(test_count PASS "$t_log")" \
+		"$(test_count FAIL "$t_log")" "$(test_count SKIP "$t_log")"
+}
+
+test_finished() {
+	case "$(cat "$1.status")" in
+	0) grep -qx PASS "$1" ;;
+	1) grep -qx FAIL "$1" ;;
+	*) return 1 ;;
+	esac
+}
+
+test_partial() {
+	test_finished "$1" && return 1
+	echo "lab: $2 did not finish (exit status $(cat "$1.status")), so its results are partial; see $1" >&2
+}
+
+test_ran() {
+	grep -Eq '^[[:space:]]*--- (PASS|FAIL|SKIP): ' "$1" || die "no test ran; see $1"
+}
+
+cmd_test() {
+	[ -n "${1:-}" ] || die "usage: lab test <name> [pattern]"
+	test_guest "$1"
+	t_pattern="${2:-TestNetns}"
+	t_change="$LAB_HOME/logs/$t_name-change.log"
+	echo "lab: building ${LAB_PKG:-./tables/} from $LAB_REPO" >&2
+	test_build "$t_work/change.test" || {
+		rm -rf "$t_work"
+		die "the test binary did not build"
+	}
+	t_sum="$(test_run "$t_work/change.test" "$t_pattern" "$t_change")"
+	rm -rf "$t_work"
+	echo "$t_name, $t_pattern: $t_sum"
+	sed 's/^/  failed: /' "$t_change.fail"
+	echo "log: $t_change"
+	if test_partial "$t_change" "the run"; then
+		exit 2
+	fi
+	test_ran "$t_change"
+	[ ! -s "$t_change.fail" ]
+}
+
+ab_overlay() {
+	git -C "$LAB_REPO" rev-parse --verify -q "$1" >/dev/null || die "no such base in $LAB_REPO: $1"
+	mkdir -p "$2/base"
+	{
+		git -C "$LAB_REPO" diff --no-renames --name-status "$1" -- src
+		git -C "$LAB_REPO" ls-files --others --exclude-standard -- src | sed "s/^/A$(printf '\t')/"
+	} | {
+		printf '{"Replace":{'
+		sep=""
+		n=0
+		while IFS="$(printf '\t')" read -r status path; do
+			case "$path" in
+			*_test.go) continue ;;
+			*.go) ;;
+			*) continue ;;
+			esac
+			n=$((n + 1))
+			if [ "$status" = A ]; then
+				printf '%s"%s/%s":""' "$sep" "$LAB_REPO" "$path"
+			else
+				git -C "$LAB_REPO" show "$1:$path" > "$2/base/$n.go"
+				printf '%s"%s/%s":"%s/base/%s.go"' "$sep" "$LAB_REPO" "$path" "$2" "$n"
+			fi
+			sep=","
+			echo "$path" >> "$2/changed"
+		done
+		printf '}}\n'
+	} > "$2/overlay.json"
+	touch "$2/changed"
+}
+
+cmd_ab() {
+	[ -n "${1:-}" ] || die "usage: lab ab <name> [pattern]"
+	test_guest "$1"
+	t_pattern="${2:-TestNetns}"
+	t_base="${LAB_BASE:-origin/main}"
+	t_change="$LAB_HOME/logs/$t_name-change.log"
+	t_baselog="$LAB_HOME/logs/$t_name-base.log"
+	ab_overlay "$t_base" "$t_work"
+	echo "lab: building ${LAB_PKG:-./tables/} from $LAB_REPO, and with $(grep -c . "$t_work/changed" || true) changed file(s) taken from $t_base" >&2
+	test_build "$t_work/change.test" || {
+		rm -rf "$t_work"
+		die "the test binary did not build"
+	}
+	test_build "$t_work/base.test" "$t_work/overlay.json" || {
+		rm -rf "$t_work"
+		die "the tests of this checkout do not build against the code of $t_base"
+	}
+	if [ -s "$t_work/changed" ] && cmp -s "$t_work/change.test" "$t_work/base.test"; then
+		echo "lab: the build with the files of $t_base is byte for byte the checkout's own, so $t_base was not built and there is nothing to compare" >&2
+		exit 2
+	fi
+	t_sum="$(test_run "$t_work/change.test" "$t_pattern" "$t_change")"
+	t_basesum="$(test_run "$t_work/base.test" "$t_pattern" "$t_baselog")"
+	rm -rf "$t_work"
+	echo "$t_name, $t_pattern"
+	echo "  this checkout: $t_sum"
+	echo "  $t_base: $t_basesum"
+	t_partial=0
+	if test_partial "$t_change" "the run of this checkout"; then
+		t_partial=1
+	fi
+	if test_partial "$t_baselog" "the run of $t_base"; then
+		t_partial=1
+	fi
+	if [ "$t_partial" -eq 1 ]; then
+		echo "logs: $t_change $t_baselog"
+		exit 2
+	fi
+	test_ran "$t_change"
+	test_ran "$t_baselog"
+	echo "  failing only with this checkout:"
+	comm -23 "$t_change.fail" "$t_baselog.fail" | sed 's/^/    /'
+	echo "  failing only on $t_base:"
+	comm -13 "$t_change.fail" "$t_baselog.fail" | sed 's/^/    /'
+	echo "  failing on both: $(comm -12 "$t_change.fail" "$t_baselog.fail" | grep -c . || true)"
+	echo "logs: $t_change $t_baselog"
+	[ -z "$(comm -23 "$t_change.fail" "$t_baselog.fail")" ]
+}
+
+command="${1:-}"
+[ -n "$command" ] || {
+	usage
+	exit 1
+}
+shift
+case "$command" in
+list) cmd_list ;;
+up) cmd_up "$@" ;;
+ssh)
+	[ "$#" -ge 1 ] || die "usage: lab ssh <name> [command...]"
+	named "$1"
+	guest_ssh "$@"
+	;;
+run) cmd_run "$@" ;;
+push) cmd_push "$@" ;;
+pull) cmd_pull "$@" ;;
+down) cmd_down "$@" ;;
+destroy) cmd_destroy "$@" ;;
+status) cmd_status "$@" ;;
+test) cmd_test "$@" ;;
+ab) cmd_ab "$@" ;;
+help | -h | --help) usage ;;
+*)
+	usage >&2
+	exit 1
+	;;
+esac

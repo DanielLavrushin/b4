@@ -1,4 +1,5 @@
 import { useSnackbar } from "@context/SnackbarProvider";
+import { useAuth } from "@context/AuthProvider";
 import { colors } from "@design";
 import { usePageTitleDetail } from "@hooks/usePageTitle";
 import { useSets } from "@hooks/useSets";
@@ -173,9 +174,12 @@ export function SetsPage() {
     }
   }, [showError]);
 
+  const { hasSession } = useAuth();
+  const configLoaded = config !== null;
+
   useEffect(() => {
-    loadConfig().catch(() => {});
-  }, [loadConfig]);
+    if (hasSession && !configLoaded) loadConfig().catch(() => {});
+  }, [hasSession, configLoaded, loadConfig]);
 
   const handleSaved = useCallback((saved: B4SetConfig) => {
     setConfig((prev) => {

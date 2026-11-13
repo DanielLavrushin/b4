@@ -31,11 +31,13 @@ Each speed in the results comes from one fetch of at most 100 KB, timed from the
 A card groups the sites that one strategy loaded. The strategy that loaded the most sites gets one card for all of them, and the remaining sites are grouped the same way. Among strategies that loaded as many sites, the first in this order wins:
 
 1. a result that changes no packets: a DNS fix, an alternative address or removed ECH keys;
-2. a remembered winner, the one that has worked most often in earlier runs first, then community sets and the set's own strategy;
+2. a remembered winner, first the ones without a failed run, among them the one that has worked most often in earlier runs, then community sets and the set's own strategy;
 3. the opening presets, in their built-in order;
 4. tuned presets, then combined ones.
 
 Speed does not decide. During the run, the row of a site shows its fastest strategy as **Fastest so far**, which can differ from the strategy its card offers. The confirmation covers both.
+
+A strategy is remembered when it opens a site that does not load without one. A pass on a site that loads without a strategy is not stored. A remembered winner is stored with the fake it sent, and the same technique with another fake is remembered separately. A failed run is counted when the winner does not open a blocked site that another strategy opens in the same run. A pass on a blocked site clears the count. After three failed runs in a row the winner is forgotten.
 
 A card lists up to twelve other strategies that loaded every site on it, fastest first, by each strategy's lowest speed across those sites. The history entry of each of its sites stores the same list.
 
@@ -248,7 +250,7 @@ The watchdog's reactive approach is inspired by the [belotserkovtsev/ladon](http
 
 ## How the DPI Detector fetches
 
-The [DPI Detector](../detector.md) fetches every site twice: directly, with b4's processing bypassed, and through b4 with the sets in effect. A check made only through b4 would hide the block it is meant to show. The through-b4 fetch takes its address the way a client of the matching set would: a pinned address first, then the set's DoH or DNS server when it has a DNS redirect, then the system resolver. Up to three addresses are tried on each side, since a site is often blocked on only some of them.
+The [DPI Detector](../detector.md) fetches every site twice: directly, with b4's processing bypassed, and through b4 with the sets in effect. A check made only through b4 would hide the block it is meant to show. The through-b4 fetch takes its address the way a client of the matching set would: a pinned address first, then the set's resolvers in their order when it has a DNS redirect, then the system resolver. Up to three addresses are tried on each side, since a site is often blocked on only some of them.
 
 The direct fetch uses the first three nameservers in `/etc/resolv.conf` of b4's host, or 127.0.0.1 and ::1 when it lists none. On a container install, that is the container's own DNS setting. A name this resolver gives no address for, while DoH does, is asked once more, one name at a time. After three retries in a row time out, the remaining names keep their first answer.
 

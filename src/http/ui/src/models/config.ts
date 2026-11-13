@@ -533,6 +533,7 @@ export interface DNSConfig {
   enabled: boolean;
   target_dns: string;
   doh_url: string;
+  upstreams?: string[];
   fragment_query: boolean;
   strict: boolean;
   pins?: Record<string, string[]>;

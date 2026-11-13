@@ -30,9 +30,12 @@ func (s *SetConfig) AdoptStrategy(from *SetConfig) {
 
 	stripECH := s.DNS.StripECH || from.DNS.StripECH
 	if from.DNS.Enabled {
-		pins, strict := s.DNS.Pins, s.DNS.Strict
+		pins, strict, upstreams := s.DNS.Pins, s.DNS.Strict, s.DNS.Upstreams
+		if !s.DNS.Enabled {
+			upstreams = nil
+		}
 		s.DNS = from.DNS
-		s.DNS.Pins, s.DNS.Strict = pins, strict
+		s.DNS.Pins, s.DNS.Strict, s.DNS.Upstreams = pins, strict, upstreams
 	}
 	s.DNS.StripECH = stripECH
 }

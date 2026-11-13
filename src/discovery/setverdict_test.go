@@ -760,3 +760,47 @@ func TestAPlainFixNeverWinsTheSet(t *testing.T) {
 		t.Fatalf("verdict = %+v: a partial verdict always names what is missing", v)
 	}
 }
+
+func TestSameResolverComparesTheResolverTheSetAsksFirst(t *testing.T) {
+	const doh = "https://dns.example/dns-query"
+	const target = "9.9.9.9"
+	testedDoH := config.DNSConfig{Enabled: true, DoHURL: doh}
+	testedTarget := config.DNSConfig{Enabled: true, TargetDNS: target}
+	testedFragment := config.DNSConfig{Enabled: true, TargetDNS: target, FragmentQuery: true}
+
+	for _, tc := range []struct {
+		name   string
+		live   config.DNSConfig
+		tested config.DNSConfig
+		want   bool
+	}{
+		{"doh: the same doh", config.DNSConfig{Enabled: true, DoHURL: doh}, testedDoH, true},
+		{"doh: another doh", config.DNSConfig{Enabled: true, DoHURL: "https://other.example/dns-query"}, testedDoH, false},
+		{"doh: the same doh with spaces and upper case", config.DNSConfig{Enabled: true, DoHURL: " HTTPS://DNS.example/dns-query "}, testedDoH, true},
+		{"doh: a target only", config.DNSConfig{Enabled: true, TargetDNS: target}, testedDoH, false},
+		{"doh: the doh and a target it shadows", config.DNSConfig{Enabled: true, DoHURL: doh, TargetDNS: "1.1.1.1"}, testedDoH, true},
+		{"doh: a list that starts with the doh", config.DNSConfig{Enabled: true, Upstreams: []string{doh, "1.1.1.1"}}, testedDoH, true},
+		{"doh: a list that starts with the doh in upper case", config.DNSConfig{Enabled: true, Upstreams: []string{"HTTPS://DNS.Example/dns-query"}}, testedDoH, true},
+		{"doh: a list with the doh second", config.DNSConfig{Enabled: true, Upstreams: []string{"1.1.1.1", doh}}, testedDoH, false},
+		{"doh: the doh with a list behind it", config.DNSConfig{Enabled: true, DoHURL: doh, Upstreams: []string{"1.1.1.1"}}, testedDoH, true},
+		{"doh: a target with the doh behind it", config.DNSConfig{Enabled: true, TargetDNS: "1.1.1.1", Upstreams: []string{doh}}, testedDoH, false},
+		{"doh: the redirect is off", config.DNSConfig{DoHURL: doh}, testedDoH, false},
+		{"target: the same target", config.DNSConfig{Enabled: true, TargetDNS: target}, testedTarget, true},
+		{"target: the same target with spaces", config.DNSConfig{Enabled: true, TargetDNS: " 9.9.9.9 "}, testedTarget, true},
+		{"target: a doh only", config.DNSConfig{Enabled: true, DoHURL: doh}, testedTarget, false},
+		{"target: a doh that shadows the target", config.DNSConfig{Enabled: true, DoHURL: doh, TargetDNS: target}, testedTarget, false},
+		{"target: a list that starts with the target", config.DNSConfig{Enabled: true, Upstreams: []string{target}}, testedTarget, true},
+		{"target: a list with the target second", config.DNSConfig{Enabled: true, Upstreams: []string{doh, target}}, testedTarget, false},
+		{"target: the target with a list behind it", config.DNSConfig{Enabled: true, TargetDNS: target, Upstreams: []string{"1.1.1.1"}}, testedTarget, true},
+		{"target: an unusable primary and a list that starts with the target", config.DNSConfig{Enabled: true, TargetDNS: "dns.google", Upstreams: []string{target}}, testedTarget, true},
+		{"target: the redirect is off", config.DNSConfig{Upstreams: []string{target}}, testedTarget, false},
+		{"fragment: the target without fragmenting", config.DNSConfig{Enabled: true, TargetDNS: target}, testedFragment, false},
+		{"fragment: the target with fragmenting", config.DNSConfig{Enabled: true, TargetDNS: target, FragmentQuery: true}, testedFragment, true},
+		{"fragment: a list that starts with the target, with fragmenting", config.DNSConfig{Enabled: true, Upstreams: []string{target}, FragmentQuery: true}, testedFragment, true},
+		{"fragment: a list that starts with the target, without fragmenting", config.DNSConfig{Enabled: true, Upstreams: []string{target}}, testedFragment, false},
+	} {
+		if got := sameResolver(tc.live, tc.tested); got != tc.want {
+			t.Errorf("%s: sameResolver = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

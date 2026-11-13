@@ -550,9 +550,18 @@ func (b *routeNftBackend) ensureJumpRule(baseChain, targetChain string, _ bool, 
 	if atTop && base == routeNftPostroute && b.ensureEarlyPostrouteChain() {
 		base = routeNftPostrouteEarly
 	}
-	b.deleteJumpRules(baseChain, targetChain, true)
-	runLogged("routing: add jump "+base+"->"+targetChain,
-		"nft", "add", "rule", "inet", routeNftTable, base, "jump", targetChain)
+	standing := nftJumpHandles(routeNftTable, base, targetChain)
+	if !runLogged("routing: add jump "+base+"->"+targetChain,
+		"nft", "add", "rule", "inet", routeNftTable, base, "jump", targetChain) {
+		return
+	}
+	nftDropJumpHandles(routeNftTable, base, standing)
+	switch base {
+	case routeNftPostroute:
+		b.deleteJumpRulesFrom(routeNftPostrouteEarly, targetChain)
+	case routeNftPostrouteEarly:
+		b.deleteJumpRulesFrom(routeNftPostroute, targetChain)
+	}
 }
 
 func (b *routeNftBackend) jumpPrepends(bool) bool { return false }

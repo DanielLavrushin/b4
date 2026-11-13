@@ -1,8 +1,10 @@
 package discovery
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -288,5 +290,247 @@ func TestSaveEmptyConfigPath(t *testing.T) {
 	// Should be a no-op, not an error
 	if err := dc.Save(""); err != nil {
 		t.Errorf("Save with empty path should return nil, got %v", err)
+	}
+}
+
+func tally(entry *CacheEntry) string {
+	if entry == nil {
+		return "no entry"
+	}
+	return fmt.Sprintf("count %d, failed runs %d, speed %.0f, origin %q", entry.SuccessCount, entry.FailedRuns, entry.Speed, entry.OriginDomain)
+}
+
+func shapeWithFake(sniType int, file, domain string) config.SetConfig {
+	sc := makeTestConfig("combo", 5, true)
+	sc.Faking.SNIType = sniType
+	sc.Faking.PayloadFile = file
+	sc.Faking.PayloadDomain = domain
+	return sc
+}
+
+func TestAPassWithAnotherFakeIsNotCountedForTheEntryOfTheSameShape(t *testing.T) {
+	capture := shapeWithFake(config.FakePayloadCapture, "captures/tls_capture_example.bin", "")
+	dc := &DiscoveryCache{Entries: []CacheEntry{{
+		Config:       stripTargets(capture),
+		Family:       FamilyCombo,
+		SuccessCount: 207,
+		Speed:        1000,
+		OriginDomain: "first.example",
+	}}}
+
+	dc.AddEntry(shapeWithFake(config.FakePayloadSTUN, "", ""), FamilyCombo, 5000, "second.example")
+
+	if len(dc.Entries) != 2 {
+		t.Fatalf("a strategy that sends another fake is another strategy, got %d entries, the first with %s, fake type %d and file %q",
+			len(dc.Entries), tally(&dc.Entries[0]), dc.Entries[0].Config.Faking.SNIType, dc.Entries[0].Config.Faking.PayloadFile)
+	}
+	kept := dc.Entries[0]
+	if kept.SuccessCount != 207 || kept.Speed != 1000 || kept.OriginDomain != "first.example" {
+		t.Errorf("the capture entry did not pass, so nothing of it may change: count %d, speed %.0f, origin %q", kept.SuccessCount, kept.Speed, kept.OriginDomain)
+	}
+	if kept.Config.Faking.SNIType != config.FakePayloadCapture || kept.Config.Faking.PayloadFile != "captures/tls_capture_example.bin" {
+		t.Errorf("the capture entry must keep its own fake, got type %d file %q", kept.Config.Faking.SNIType, kept.Config.Faking.PayloadFile)
+	}
+	added := dc.Entries[1]
+	if added.Config.Faking.SNIType != config.FakePayloadSTUN || added.SuccessCount != 1 || added.Speed != 5000 || added.OriginDomain != "second.example" {
+		t.Errorf("the fake that passed must be stored with its own count, got type %d count %d speed %.0f origin %q",
+			added.Config.Faking.SNIType, added.SuccessCount, added.Speed, added.OriginDomain)
+	}
+}
+
+func TestConfigsAreSimilarComparesTheFakeThatIsSent(t *testing.T) {
+	capture := shapeWithFake(config.FakePayloadCapture, "captures/tls_a_example.bin", "")
+	custom := shapeWithFake(config.FakePayloadCustom, "", "")
+	custom.Faking.CustomPayload = "abc"
+	otherCustom := custom
+	otherCustom.Faking.CustomPayload = "abd"
+	staleNames := shapeWithFake(config.FakePayloadSTUN, "captures/tls_a_example.bin", "old.example")
+
+	for _, tc := range []struct {
+		name string
+		a, b config.SetConfig
+		want bool
+	}{
+		{"the same capture", capture, shapeWithFake(config.FakePayloadCapture, "captures/tls_a_example.bin", ""), true},
+		{"another capture file", capture, shapeWithFake(config.FakePayloadCapture, "captures/tls_b_example.bin", ""), false},
+		{"a capture against a built-in fake", capture, shapeWithFake(config.FakePayloadSTUN, "", ""), false},
+		{"two built-in fakes", shapeWithFake(config.FakePayloadDefault1, "", ""), shapeWithFake(config.FakePayloadDefault2, "", ""), false},
+		{"random against the default fake", shapeWithFake(config.FakePayloadRandom, "", ""), shapeWithFake(config.FakePayloadDefault1, "", ""), false},
+		{"the same generated domain", shapeWithFake(config.FakePayloadDomain, "", "a.example"), shapeWithFake(config.FakePayloadDomain, "", "a.example"), true},
+		{"another generated domain", shapeWithFake(config.FakePayloadDomain, "", "a.example"), shapeWithFake(config.FakePayloadDomain, "", "b.example"), false},
+		{"the same custom payload", custom, custom, true},
+		{"another custom payload", custom, otherCustom, false},
+		{"a file and a domain the fake type does not read", shapeWithFake(config.FakePayloadSTUN, "", ""), staleNames, true},
+	} {
+		if got := configsAreSimilar(&tc.a, &tc.b); got != tc.want {
+			t.Errorf("%s: similar = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestConfigsAreSimilarIgnoresAFakeThatIsNeverSent(t *testing.T) {
+	a := shapeWithFake(config.FakePayloadCapture, "captures/tls_a_example.bin", "")
+	b := shapeWithFake(config.FakePayloadSTUN, "", "")
+	a.Faking.SNI, b.Faking.SNI = false, false
+
+	if !configsAreSimilar(&a, &b) {
+		t.Error("neither strategy sends a fake, so the fake they name changes nothing on the wire")
+	}
+
+	b.TCP.SynFake, b.TCP.SynFakeLen = true, 64
+	if configsAreSimilar(&a, &b) {
+		t.Error("a strategy that sends a fake SYN is not the one that sends no fake at all")
+	}
+}
+
+func TestConfigsAreSimilarComparesTheDesyncMode(t *testing.T) {
+	a := makeTestConfig("combo", 5, true)
+	b := makeTestConfig("combo", 5, true)
+	b.TCP.Desync.Mode = "rst"
+	if configsAreSimilar(&a, &b) {
+		t.Error("a strategy with desync packets is not the one without them")
+	}
+
+	b.TCP.Desync.Mode = config.ConfigOff
+	if !configsAreSimilar(&a, &b) {
+		t.Error("an unset desync mode is off, the way a test config stores it")
+	}
+}
+
+func TestAFailedRunPutsACachedStrategyBehindTheOnesThatDidNotFail(t *testing.T) {
+	failing := makeTestConfig("combo", 5, true)
+	healthy := makeTestConfig("tcp", 7, true)
+	dc := &DiscoveryCache{Entries: []CacheEntry{
+		{Config: stripTargets(failing), Family: FamilyCombo, SuccessCount: 321, Speed: 9000},
+		{Config: stripTargets(healthy), Family: FamilyTCPFrag, SuccessCount: 1, Speed: 100},
+	}}
+
+	if runs, removed := dc.MarkFailed(&failing); runs != 1 || removed {
+		t.Fatalf("the first failed run is counted and the entry stays, got runs %d removed %v", runs, removed)
+	}
+
+	presets := dc.GetCachedPresets()
+	if len(presets) != 2 || presets[0].Family != FamilyTCPFrag || presets[1].Family != FamilyCombo {
+		t.Fatalf("a count earned earlier must not keep a strategy that just failed in front, got %s first", presets[0].Name)
+	}
+}
+
+func TestThreeFailedRunsInARowRemoveACachedStrategy(t *testing.T) {
+	failing := makeTestConfig("combo", 5, true)
+	healthy := makeTestConfig("tcp", 7, true)
+	dc := &DiscoveryCache{Entries: []CacheEntry{
+		{Config: stripTargets(failing), Family: FamilyCombo, SuccessCount: 321},
+		{Config: stripTargets(healthy), Family: FamilyTCPFrag, SuccessCount: 1},
+	}}
+
+	for run := 1; run < maxFailedRuns; run++ {
+		if runs, removed := dc.MarkFailed(&failing); runs != run || removed {
+			t.Fatalf("run %d: got runs %d removed %v", run, runs, removed)
+		}
+	}
+	if runs, removed := dc.MarkFailed(&failing); runs != maxFailedRuns || !removed {
+		t.Fatalf("the failed run number %d removes the entry, got runs %d removed %v", maxFailedRuns, runs, removed)
+	}
+	if len(dc.Entries) != 1 || dc.Entries[0].Family != FamilyTCPFrag {
+		t.Fatalf("only the failing strategy leaves, got %d entries", len(dc.Entries))
+	}
+	if runs, removed := dc.MarkFailed(&failing); runs != 0 || removed {
+		t.Errorf("a strategy the cache does not hold has nothing to count, got runs %d removed %v", runs, removed)
+	}
+}
+
+func TestAPassOfItsOwnTestClearsTheFailedRuns(t *testing.T) {
+	sc := makeTestConfig("combo", 5, true)
+	dc := &DiscoveryCache{Entries: []CacheEntry{{Config: stripTargets(sc), Family: FamilyCombo, SuccessCount: 4}}}
+
+	if dc.MarkPassed(&sc) {
+		t.Error("an entry without failed runs has nothing to clear")
+	}
+	dc.MarkFailed(&sc)
+	dc.MarkFailed(&sc)
+	if !dc.MarkPassed(&sc) {
+		t.Fatal("a pass after failed runs changes the entry")
+	}
+	if dc.Entries[0].FailedRuns != 0 {
+		t.Fatalf("the failed runs must be in a row to count, got %d", dc.Entries[0].FailedRuns)
+	}
+	if runs, removed := dc.MarkFailed(&sc); runs != 1 || removed {
+		t.Errorf("the count starts again after a pass, got runs %d removed %v", runs, removed)
+	}
+}
+
+func TestAnEntryWithFailedRunsGainsNothingFromAnotherStrategysPass(t *testing.T) {
+	stored := makeTestConfig("combo", 5, true)
+	stored.Fragmentation.SNIPosition = 1
+	dc := &DiscoveryCache{Entries: []CacheEntry{{
+		Config: stripTargets(stored), Family: FamilyCombo, SuccessCount: 207, Speed: 1000, OriginDomain: "first.example",
+	}}}
+	dc.MarkFailed(&stored)
+
+	variant := stored
+	variant.Fragmentation.SNIPosition = 5
+	dc.AddEntry(variant, FamilyCombo, 5000, "second.example")
+
+	if len(dc.Entries) != 1 {
+		t.Fatalf("a similar strategy does not get an entry next to the one that stands for its shape, got %d", len(dc.Entries))
+	}
+	entry := dc.Entries[0]
+	if entry.SuccessCount != 207 || entry.Speed != 1000 || entry.OriginDomain != "first.example" || entry.FailedRuns != 1 {
+		t.Errorf("an entry that failed its own test must not gain from a pass of another strategy: %s", tally(&entry))
+	}
+
+	dc.MarkPassed(&stored)
+	dc.AddEntry(variant, FamilyCombo, 5000, "second.example")
+	if got := dc.Entries[0].SuccessCount; got != 208 {
+		t.Errorf("without failed runs a similar pass counts as before, got %d", got)
+	}
+}
+
+func TestAFullCacheEvictsAStrategyWithFailedRunsFirst(t *testing.T) {
+	dc := &DiscoveryCache{}
+	for i := 0; i < maxCacheEntries; i++ {
+		sc := makeTestConfig("combo", uint8(i+1), true)
+		dc.Entries = append(dc.Entries, CacheEntry{Config: stripTargets(sc), Family: FamilyCombo, SuccessCount: 2, LastSuccess: time.Now()})
+	}
+	dc.Entries[10].SuccessCount = 321
+	dc.Entries[10].FailedRuns = 1
+	failingTTL := dc.Entries[10].Config.Faking.TTL
+
+	dc.AddEntry(makeTestConfig("tcp", 7, true), FamilyTCPFrag, 1000, "new.example")
+
+	if len(dc.Entries) != maxCacheEntries {
+		t.Fatalf("the cache holds %d entries at most, got %d", maxCacheEntries, len(dc.Entries))
+	}
+	for _, entry := range dc.Entries {
+		if entry.Config.Fragmentation.Strategy == "combo" && entry.Config.Faking.TTL == failingTTL {
+			t.Fatal("the entry that failed its last run must leave before one that did not, whatever its count")
+		}
+	}
+	if last := dc.Entries[len(dc.Entries)-1]; last.Config.Fragmentation.Strategy != "tcp" {
+		t.Errorf("the new strategy must stay, got %q last", last.Config.Fragmentation.Strategy)
+	}
+}
+
+func TestACacheWrittenBeforeFailedRunsWereCountedLoadsWithItsCounts(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "b4.json")
+	cachePath := filepath.Join(filepath.Dir(configPath), discoveryCacheFile)
+	old := `{"entries":[{"config":{"fragmentation":{"strategy":"combo"},"faking":{"sni":true,"ttl":5,"sni_type":4,"payload_file":"captures/tls_a_example.bin"}},"family":"combo","success_count":321,"last_success":"2026-11-06T10:00:00Z","origin_domain":"a.example","speed":1000}]}`
+	if err := os.WriteFile(cachePath, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dc := LoadDiscoveryCache(configPath)
+	if len(dc.Entries) != 1 || dc.Entries[0].SuccessCount != 321 || dc.Entries[0].FailedRuns != 0 {
+		t.Fatalf("an existing cache keeps its entries and counts, got %d entries", len(dc.Entries))
+	}
+	if err := dc.Save(configPath); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "failed_runs") {
+		t.Error("an entry without failed runs is written the way older builds wrote it")
 	}
 }

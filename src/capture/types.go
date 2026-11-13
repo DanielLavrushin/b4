@@ -36,4 +36,5 @@ type Capture struct {
 	Size      int       `json:"size"`
 	Filepath  string    `json:"filepath"`
 	HexData   string    `json:"hex_data"`
+	UsedBy    []string  `json:"used_by,omitempty"`
 }

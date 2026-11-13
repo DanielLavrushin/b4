@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/dns"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/netprobe"
 )
@@ -637,6 +638,13 @@ func (s *Suite) tallySites(r *SitesResult) {
 	}
 }
 
+var newDNSQuerier = func(s *Suite, srv dns.Server) dnsQuerier {
+	if srv.DoHURL != "" {
+		return &dohQuerier{client: netprobe.HTTPClient(int(s.directMark), dnsQueryTimeout+time.Second), url: srv.DoHURL}
+	}
+	return &udpQuerier{mark: s.directMark, addr: net.JoinHostPort(srv.UDP.String(), "53")}
+}
+
 func (s *Suite) resolveThroughB4(ctx context.Context, site SiteResult, family string) ([]string, string) {
 	if site.SetId == "" || !site.SetEnabled {
 		return nil, ""
@@ -667,21 +675,26 @@ func (s *Suite) resolveThroughB4(ctx context.Context, site SiteResult, family st
 	if want6 {
 		qtype = 28
 	}
-	var q dnsQuerier
-	source := ""
-	switch {
-	case dnsCfg.DoHURL != "":
-		q = &dohQuerier{client: netprobe.HTTPClient(int(s.directMark), dnsQueryTimeout+time.Second), url: dnsCfg.DoHURL}
-		source = "doh"
-	case net.ParseIP(dnsCfg.TargetDNS) != nil:
-		q = &udpQuerier{mark: s.directMark, addr: net.JoinHostPort(dnsCfg.TargetDNS, "53")}
-		source = "target"
-	default:
+	servers, ok := dns.SetServers(dnsCfg.Enabled, dnsCfg.TargetDNS, dnsCfg.DoHURL, dnsCfg.Upstreams)
+	if !ok {
 		return nil, ""
 	}
-	defer q.close()
-	body, err := q.query(ctx, site.Domain, qtype)
-	ans := parseAnswer(body, err, familyRecord(family))
+	for i := range servers {
+		servers[i].Timeout = dnsQueryTimeout
+	}
+	body, source, err := dns.AskServers(ctx, servers, dns.Options{Life: ctx, Quiet: true}, func(sctx context.Context, srv dns.Server) ([]byte, error) {
+		q := newDNSQuerier(s, srv)
+		defer q.close()
+		return q.query(sctx, site.Domain, qtype)
+	})
+	if err != nil {
+		return nil, ""
+	}
+	label := "target"
+	if config.IsDoHUpstream(source) {
+		label = "doh"
+	}
+	ans := parseAnswer(body, nil, familyRecord(family))
 	var ips []string
 	for _, ip := range ans.ips {
 		if isFakeRange(ip) || len(ips) == maxAddresses {
@@ -689,8 +702,8 @@ func (s *Suite) resolveThroughB4(ctx context.Context, site SiteResult, family st
 		}
 		ips = append(ips, ip)
 	}
-	if len(ips) == 0 {
-		return nil, ""
+	if len(ips) > 0 {
+		return ips, label
 	}
-	return ips, source
+	return nil, ""
 }

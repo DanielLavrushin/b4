@@ -177,6 +177,28 @@ func TestRouteAddSourceCheckRule_WarnsOnceAndOnlyWhenSrcValidMarkIsOn(t *testing
 	}
 }
 
+func TestRouteAddSourceCheckRule_ARuleAlreadyThereIsNotARejection(t *testing.T) {
+	buf := captureTablesLog(t)
+	origRun, origOn := run, routeSrcValidMarkOn
+	warned := routeSourceCheckWarned.Load()
+	t.Cleanup(func() {
+		run = origRun
+		routeSrcValidMarkOn = origOn
+		routeSourceCheckWarned.Store(warned)
+	})
+	routeSourceCheckWarned.Store(false)
+	routeSrcValidMarkOn = func() bool { return true }
+	run = func(args ...string) (string, error) {
+		return "RTNETLINK answers: File exists", errors.New("exit status 2")
+	}
+
+	routeAddSourceCheckRuleExec(config.TelegramBridgeMark)
+
+	if routeSourceCheckWarned.Load() || strings.Contains(buf.String(), "src_valid_mark") {
+		t.Fatalf("the kernel answered that the source-check rule is already there, which is what b4 wanted, and b4 reported that this iproute2 cannot add it: %s", buf.String())
+	}
+}
+
 func TestRouteDelSourceCheckRule_RemovesEveryCopy(t *testing.T) {
 	origRun := run
 	t.Cleanup(func() { run = origRun })

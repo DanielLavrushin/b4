@@ -115,18 +115,23 @@ if [ "$changelog_en" != "$changelog_ru" ]; then
   fail "changelog.md and changelog_ru.md change together"
 fi
 if [ "$changelog_en" = 1 ] || [ "$changelog_ru" = 1 ]; then
-  top_bullets() {
-    awk '/^## \[/ { n++; next } n == 1 && /^- / { c++ } n > 1 { exit } END { print c + 0 }' "$1"
-  }
-  heading_en=$(grep -m 1 '^## \[' changelog.md)
-  heading_ru=$(grep -m 1 '^## \[' changelog_ru.md)
-  if [ "$heading_en" != "$heading_ru" ]; then
-    fail "top changelog headings differ: \"$heading_en\" and \"$heading_ru\""
+  awk -v mode=lint -f "$skill_dir/changelog.awk" changelog.md changelog_ru.md > "$tmp/changelog_lint"
+  if [ -s "$tmp/changelog_lint" ]; then
+    fail "changelog format (Keep a Changelog, /b4-changelog):"
+    detail "$tmp/changelog_lint"
   fi
-  bullets_en=$(top_bullets changelog.md)
-  bullets_ru=$(top_bullets changelog_ru.md)
-  if [ "$bullets_en" != "$bullets_ru" ]; then
-    fail "top changelog block has $bullets_en bullets in changelog.md and $bullets_ru in changelog_ru.md"
+  awk -v mode=shape -f "$skill_dir/changelog.awk" changelog.md > "$tmp/shape_en"
+  awk -v mode=shape -f "$skill_dir/changelog.awk" changelog_ru.md > "$tmp/shape_ru"
+  if ! diff "$tmp/shape_en" "$tmp/shape_ru" > "$tmp/shape_diff"; then
+    fail "changelog.md and changelog_ru.md differ in versions, sections or bullet counts (< en, > ru):"
+    detail "$tmp/shape_diff"
+  fi
+fi
+if has '^hub/CHANGELOG\.md$'; then
+  awk -v mode=lint -v hub=1 -f "$skill_dir/changelog.awk" hub/CHANGELOG.md > "$tmp/hub_changelog_lint"
+  if [ -s "$tmp/hub_changelog_lint" ]; then
+    fail "hub/CHANGELOG.md format (Keep a Changelog, no [Unreleased]):"
+    detail "$tmp/hub_changelog_lint"
   fi
 fi
 if grep -E '^src/' "$tmp/changed" | grep -Evq '_test\.go$' && [ "$changelog_en" = 0 ]; then
@@ -247,6 +252,9 @@ if has '^(hub/ui|shared/design)/|^pnpm-lock\.yaml$'; then
 fi
 if has '^docs/'; then
   suite "pnpm -C docs build"
+fi
+if has '^toolkit/labs/'; then
+  suite "sh toolkit/labs/selftest.sh"
 fi
 if [ "$suites" -eq 0 ]; then
   echo "  nothing beyond the checks above"

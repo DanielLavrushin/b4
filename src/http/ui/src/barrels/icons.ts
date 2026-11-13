@@ -57,6 +57,7 @@ export {
   Error as ErrorIcon,
   Category as CategoryIcon,
   DragIndicator as DragIcon,
+  Lock as LockIcon,
   NewReleases as NewReleaseIcon,
   LooksOne as Step1Icon,
   LooksTwo as Step2Icon,
@@ -112,4 +113,7 @@ export {
   ArrowDownward as ReceivedIcon,
   Settings as SettingsIcon,
   SportsEsports as GameIcon,
+  NotificationsNone as NotifyIcon,
+  NotificationsActive as NotifyOnIcon,
+  NotificationsOff as NotifyOffIcon,
 } from "@mui/icons-material";
