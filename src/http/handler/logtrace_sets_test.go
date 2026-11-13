@@ -132,11 +132,19 @@ func TestCollectTraceSetsOffModesOmitted(t *testing.T) {
 	set := config.DefaultSetConfig
 	set.Id = "cccc3333"
 	set.Enabled = true
+	set.TCP.WSSize = config.WSSizeConfig{Window: 1, Scale: 6}
 	cfg.Sets = []*config.SetConfig{&set}
 
 	got := collectTraceSets(&cfg)[0]
 	if got.TCP.Desync != "" || got.TCP.Win != "" || got.TCP.Incoming != "" {
 		t.Errorf("expected off modes to be dropped, got %+v", got.TCP)
+	}
+	tcp, err := json.Marshal(got.TCP)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if strings.Contains(string(tcp), "wssize") {
+		t.Errorf("expected a switched-off wssize block to be dropped, got %s", tcp)
 	}
 	if got.Faking.SNIMutation != "" {
 		t.Errorf("expected off sni mutation to be dropped, got %q", got.Faking.SNIMutation)
@@ -149,6 +157,61 @@ func TestCollectTraceSetsOffModesOmitted(t *testing.T) {
 	}
 	if got.DNS != nil || got.Routing != nil || got.Escalate != nil {
 		t.Errorf("expected disabled features to be omitted: %+v", got)
+	}
+}
+
+func TestCollectTraceSetsReportsWSSize(t *testing.T) {
+	cfg := config.NewConfig()
+	numbers := config.NewSetConfig()
+	numbers.Id = "numbers"
+	numbers.Enabled = true
+	numbers.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1, Scale: 6}
+	cutoff := config.NewSetConfig()
+	cutoff.Id = "cutoff"
+	cutoff.Enabled = true
+	cutoff.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1024, Scale: 2, Cutoff: "first_data"}
+	bare := config.NewSetConfig()
+	bare.Id = "bare"
+	bare.Enabled = true
+	bare.TCP.WSSize = config.WSSizeConfig{Enabled: true}
+	window := config.NewSetConfig()
+	window.Id = "window"
+	window.Enabled = true
+	window.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1024}
+	scale := config.NewSetConfig()
+	scale.Id = "scale"
+	scale.Enabled = true
+	scale.TCP.WSSize = config.WSSizeConfig{Enabled: true, Scale: 6}
+	cfg.Sets = []*config.SetConfig{&numbers, &cutoff, &bare, &window, &scale}
+
+	data, err := json.Marshal(collectTraceSets(&cfg))
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	var sets []struct {
+		ID  string                     `json:"id"`
+		TCP map[string]json.RawMessage `json:"tcp"`
+	}
+	if err := json.Unmarshal(data, &sets); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if len(sets) != 5 || sets[0].ID != "numbers" || sets[1].ID != "cutoff" || sets[2].ID != "bare" || sets[3].ID != "window" || sets[4].ID != "scale" {
+		t.Fatalf("unexpected sets in the trace: %s", data)
+	}
+	if got := string(sets[0].TCP["wssize"]); got != `"1:6"` {
+		t.Errorf("a set with wssize switched on must show it as window:scale in the trace, got %q", got)
+	}
+	if got := string(sets[1].TCP["wssize"]); got != `"1024:2:first_data"` {
+		t.Errorf("a cutoff other than the default must follow the numbers, got %q", got)
+	}
+	if got := string(sets[2].TCP["wssize"]); got != `"-:-"` {
+		t.Errorf("a switched-on block that leaves the window and the scale unchanged must show as -:-, got %q", got)
+	}
+	if got := string(sets[3].TCP["wssize"]); got != `"1024:-"` {
+		t.Errorf("a scale of 0 means unchanged and must show as a hyphen, got %q", got)
+	}
+	if got := string(sets[4].TCP["wssize"]); got != `"-:6"` {
+		t.Errorf("a window of 0 means unchanged and must show as a hyphen, got %q", got)
 	}
 }
 

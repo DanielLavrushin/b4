@@ -51,6 +51,7 @@ type traceSetTCP struct {
 	DropSACK       bool   `json:"drop_sack,omitempty"`
 	Desync         string `json:"desync,omitempty"`
 	Win            string `json:"win,omitempty"`
+	WSSize         string `json:"wssize,omitempty"`
 	Incoming       string `json:"incoming,omitempty"`
 	Duplicate      int    `json:"duplicate,omitempty"`
 	IPBlockDetect  bool   `json:"ip_block_detect,omitempty"`
@@ -216,6 +217,7 @@ func traceTCP(c config.TCPConfig) traceSetTCP {
 		DropSACK:       c.DropSACK,
 		Desync:         traceActiveMode(c.Desync.Mode),
 		Win:            traceActiveMode(c.Win.Mode),
+		WSSize:         c.WSSize.Summary(),
 		Incoming:       traceActiveMode(c.Incoming.Mode),
 		IPBlockDetect:  c.IPBlockDetect.Enabled,
 		RSTProtection:  c.RSTProtection.Enabled,

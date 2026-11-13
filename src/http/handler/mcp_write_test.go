@@ -193,17 +193,67 @@ func TestMCPWritePerSetPaths(t *testing.T) {
 	}
 }
 
-func TestMCPWSSizeHelloCutoff(t *testing.T) {
+func TestMCPWSSizeCutoff(t *testing.T) {
 	srv := newMCPTestServer(t, writableCfg(t))
 	session, ctx := connectMCP(t, srv)
-	for _, value := range []string{"client_hello", ""} {
+	for _, value := range []string{"first_data", ""} {
 		out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].tcp.wssize.cutoff", value))
 		if !out.Changed || out.Current != value {
 			t.Fatalf("cutoff write/readback: %+v", out)
 		}
 	}
-	if res := callSetValue(t, session, ctx, "sets[video].tcp.wssize.cutoff", "packet_count"); !res.IsError {
-		t.Fatal("unknown cutoff accepted")
+	for _, value := range []string{"packet_count", "client_hello"} {
+		if res := callSetValue(t, session, ctx, "sets[video].tcp.wssize.cutoff", value); !res.IsError {
+			t.Fatalf("cutoff %q is not a value b4 keeps and must be refused", value)
+		}
+	}
+}
+
+func TestMCPWriteSaysWhenWSSizeChangesNoPacket(t *testing.T) {
+	const tun = `tcp.wssize has no effect on set "video" while the packet engine is TUN`
+	const idle = `tcp.wssize changes no packet on set "video" until`
+	cases := []struct {
+		name, mode, path, value string
+		before                  config.WSSizeConfig
+		setOff                  bool
+		saysTun, saysIdle       bool
+	}{
+		{name: "the last number cleared on the TUN engine", mode: "tun", path: "sets[video].tcp.wssize.window", value: "0", before: config.WSSizeConfig{Enabled: true, Window: 1}},
+		{name: "the switch written with no numbers on a disabled set", path: "sets[video].tcp.wssize.enabled", value: "true", setOff: true, saysIdle: true},
+		{name: "the switch written on the TUN engine on a disabled set", mode: "tun", path: "sets[video].tcp.wssize.enabled", value: "true", setOff: true, saysTun: true},
+		{name: "the switch written with no numbers", path: "sets[video].tcp.wssize.enabled", value: "true", saysIdle: true},
+		{name: "the switch written over numbers that were already there", path: "sets[video].tcp.wssize.enabled", value: "true", before: config.WSSizeConfig{Window: 1}},
+		{name: "the last number cleared on a block that is on", path: "sets[video].tcp.wssize.window", value: "0", before: config.WSSizeConfig{Enabled: true, Window: 1}, saysIdle: true},
+		{name: "a number written on a block that changed nothing", path: "sets[video].tcp.wssize.scale", value: "6", before: config.WSSizeConfig{Enabled: true}},
+		{name: "another write to a set whose block changes nothing", path: "sets[video].tcp.seg2delay", value: "10", before: config.WSSizeConfig{Enabled: true}},
+		{name: "the switch written on the TUN engine", mode: "tun", path: "sets[video].tcp.wssize.enabled", value: "true", before: config.WSSizeConfig{Window: 1}, saysTun: true},
+		{name: "the switch written on the TUN engine with no numbers", mode: "tun", path: "sets[video].tcp.wssize.enabled", value: "true", saysTun: true},
+		{name: "a number written on the TUN engine to a block that is on", mode: "tun", path: "sets[video].tcp.wssize.scale", value: "6", before: config.WSSizeConfig{Enabled: true, Window: 1}},
+		{name: "the switch turned off on the TUN engine", mode: "tun", path: "sets[video].tcp.wssize.enabled", value: "false", before: config.WSSizeConfig{Enabled: true, Window: 1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := writableCfg(t)
+			cfg.Queue.Mode = tc.mode
+			cfg.Sets[0].Enabled = !tc.setOff
+			cfg.Sets[0].TCP.WSSize = tc.before
+			srv := newMCPTestServer(t, cfg)
+			session, ctx := connectMCP(t, srv)
+
+			out := decodeSetValue(t, callSetValue(t, session, ctx, tc.path, tc.value))
+			if !out.Changed {
+				t.Fatalf("write did not take: %+v", out)
+			}
+			if (tc.saysTun || tc.saysIdle) && !strings.Contains(out.Note, "b4_revert_last_change. tcp.wssize") {
+				t.Errorf("the wssize note must start a sentence of its own: %q", out.Note)
+			}
+			if got := strings.Contains(out.Note, tun); got != tc.saysTun {
+				t.Errorf("note says the TUN engine ignores the block = %v, want %v: %q", got, tc.saysTun, out.Note)
+			}
+			if got := strings.Contains(out.Note, idle); got != tc.saysIdle {
+				t.Errorf("note says the block changes no packet = %v, want %v: %q", got, tc.saysIdle, out.Note)
+			}
+		})
 	}
 }
 
@@ -702,8 +752,16 @@ func TestMCPListWritablePaths(t *testing.T) {
 	if got := byPath["sets[].fragmentation.strategy"]; len(got.Options) == 0 {
 		t.Error("an enum path should list its accepted values")
 	}
-	if got := byPath["sets[].tcp.wssize.cutoff"]; len(got.Options) != 2 || got.Options[0] != "" || got.Options[1] != "client_hello" {
-		t.Errorf("cutoff must advertise the first-data default and original ClientHello: %+v", got)
+	if got := byPath["sets[].tcp.wssize.cutoff"]; len(got.Options) != 2 || got.Options[0] != "" || got.Options[1] != "first_data" {
+		t.Errorf("cutoff must list the empty default and first_data: %+v", got)
+	}
+	for path, bounds := range map[string]string{
+		"sets[].tcp.wssize.window": "0 to 65535",
+		"sets[].tcp.wssize.scale":  "0 to 14",
+	} {
+		if got := byPath[path]; got.Type != "number" || len(got.Options) != 1 || got.Options[0] != bounds {
+			t.Errorf("%s must be listed as a number with the range %q before a write is refused: %+v", path, bounds, got)
+		}
 	}
 	if got := byPath["sets[].tcp.seg2delay"]; got.Type != "number" {
 		t.Errorf("seg2delay type = %q, want number", got.Type)
@@ -1419,6 +1477,10 @@ func TestMCPWriteRefusesNumbersOutsideTheUIRange(t *testing.T) {
 		{"sets[video].tcp.seg2delay", "3600000", "0 to 1000"},
 		{"sets[video].tcp.seg2delay_max", "9223372036854775807", "0 to 1000"},
 		{"sets[video].tcp.desync.count", "-5", "1 to 20"},
+		{"sets[video].tcp.wssize.window", "65536", "0 to 65535"},
+		{"sets[video].tcp.wssize.window", "-1", "0 to 65535"},
+		{"sets[video].tcp.wssize.scale", "15", "0 to 14"},
+		{"sets[video].tcp.wssize.scale", "-1", "0 to 14"},
 		{"sets[video].faking.sni_mutation.grease_count", "-1", "1 to 10"},
 		{"sets[video].fragmentation.combo.first_delay_ms_max", "5", "10 to 500, or 0"},
 		{"sets[video].fragmentation.seq_overlap_length", "9223372036854775807", "0 to 1460"},
@@ -1438,10 +1500,15 @@ func TestMCPWriteRefusesNumbersOutsideTheUIRange(t *testing.T) {
 		t.Fatalf("a refused write changed the set: sni_seq_length=%d fake_seq_length=%d seg2delay=%d-%d",
 			live.Faking.SNISeqLength, live.UDP.FakeSeqLength, live.TCP.Seg2Delay, live.TCP.Seg2DelayMax)
 	}
+	if live.TCP.WSSize.Window != 0 || live.TCP.WSSize.Scale != 0 {
+		t.Fatalf("a refused write changed the wssize numbers of a switched-off block: %+v", live.TCP.WSSize)
+	}
 
 	for _, c := range []struct{ path, value string }{
 		{"sets[video].faking.sni_seq_length", "20"},
 		{"sets[video].tcp.seg2delay", "1000"},
+		{"sets[video].tcp.wssize.window", "65535"},
+		{"sets[video].tcp.wssize.scale", "14"},
 		{"sets[video].fragmentation.combo.first_delay_ms_max", "200"},
 		{"sets[video].fragmentation.combo.first_delay_ms_max", "0"},
 		{"sets[video].fragmentation.seq_overlap_length", "681"},
