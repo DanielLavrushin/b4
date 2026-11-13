@@ -15,6 +15,7 @@ All notable changes to b4 are recorded in this file.
 
 - When the login session ends while a page is open, for example after b4 restarts, a sign-in window appears over the page and unsaved changes stay in place. [#569](https://github.com/DanielLavrushin/b4/issues/569)
 - The device tables under **Settings, Core, Devices** and on a set's **Source Devices** tab show a device's host name ahead of its vendor, and the **Traffic** page shows the address next to a named device. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
+- Fake data written out in an imported zapret or byedpi command line is saved on the **Payloads** tab, and the set uses it as **My own Payload File** or, for UDP, as its **Fake Packet Payload**. [#538](https://github.com/DanielLavrushin/b4/issues/538)
 
 ### Fixed
 
@@ -28,6 +29,8 @@ All notable changes to b4 are recorded in this file.
 - **Open** in a **Discovery** notification could lead to an empty form or to another search, such as one the watchdog started afterwards, instead of the run it announced. [#552](https://github.com/DanielLavrushin/b4/issues/552)
 - When the web interface or its API answered with a server error, such as a 500, `errors.log` often had no line about it. [#530](https://github.com/DanielLavrushin/b4/issues/530)
 - Interface lists left out interfaces that were down, so a switched-off WireGuard connection could not be picked as a set's **Output Interface**. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
+- A byedpi fake imported from the command line (`-l :...`) came out changed when it held binary data, and its set showed **Fake Payload Type** as a bare `1`, while a zapret fake given as hex was left out of the set (`--dpi-desync-fake-tls=0x...`) or went out as zeros (`--dpi-desync-fake-quic=0x...`). [#538](https://github.com/DanielLavrushin/b4/issues/538)
+- Set cards and **Discovery** results named the Google and DuckDuckGo fake payloads `default` and `default2`. [#538](https://github.com/DanielLavrushin/b4/issues/538)
 
 ### Security
 

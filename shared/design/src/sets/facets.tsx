@@ -185,8 +185,8 @@ export const STRATEGY_LABELS: Record<string, string> = {
 const PAYLOAD_LABELS: Record<number, string> = {
   0: "random",
   1: "custom",
-  2: "default",
-  3: "default2",
+  2: "google",
+  3: "duckduckgo",
   4: "capture",
   5: "zero",
   6: "inverted",
