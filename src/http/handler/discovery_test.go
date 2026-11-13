@@ -157,6 +157,41 @@ func TestSimilarSetsNeedTheWholeStrategyToMatch(t *testing.T) {
 	}
 }
 
+func TestSimilarSetsCompareTheResolverASetAsksFirst(t *testing.T) {
+	const doh = "https://dns.example/dns-query"
+	const target = "9.9.9.9"
+	withDNS := func(dns config.DNSConfig) *config.SetConfig {
+		set := config.NewSetConfig()
+		set.DNS = dns
+		return &set
+	}
+	foundDoH := withDNS(config.DNSConfig{Enabled: true, DoHURL: doh})
+	foundTarget := withDNS(config.DNSConfig{Enabled: true, TargetDNS: target})
+	foundNoDNS := withDNS(config.DNSConfig{})
+
+	for _, tc := range []struct {
+		name  string
+		live  config.DNSConfig
+		found *config.SetConfig
+		want  bool
+	}{
+		{"a list that starts with the found target", config.DNSConfig{Enabled: true, Upstreams: []string{target}}, foundTarget, true},
+		{"a list that starts with the found DoH URL", config.DNSConfig{Enabled: true, Upstreams: []string{doh, target}}, foundDoH, true},
+		{"the found DoH URL with a list behind it", config.DNSConfig{Enabled: true, DoHURL: doh, Upstreams: []string{target}}, foundDoH, true},
+		{"the found target with a list behind it", config.DNSConfig{Enabled: true, TargetDNS: target, Upstreams: []string{"1.1.1.1"}}, foundTarget, true},
+		{"an unusable primary and a list that starts with the found target", config.DNSConfig{Enabled: true, TargetDNS: "dns.google", Upstreams: []string{target}}, foundTarget, true},
+		{"a list with the found target second", config.DNSConfig{Enabled: true, Upstreams: []string{"1.1.1.1", target}}, foundTarget, false},
+		{"a list that starts with a DoH URL, a target found", config.DNSConfig{Enabled: true, Upstreams: []string{doh, target}}, foundTarget, false},
+		{"another primary with the found target behind it", config.DNSConfig{Enabled: true, TargetDNS: "1.1.1.1", Upstreams: []string{target}}, foundTarget, false},
+		{"a list, no DNS fix found", config.DNSConfig{Enabled: true, Upstreams: []string{target}}, foundNoDNS, false},
+		{"a list behind a redirect that is off, no DNS fix found", config.DNSConfig{Upstreams: []string{target}}, foundNoDNS, true},
+	} {
+		if got := setsHaveSimilarConfig(withDNS(tc.live), tc.found); got != tc.want {
+			t.Errorf("%s: similar = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestHistoryOffersTheAlternativesAndRemembersWhatWasTried(t *testing.T) {
 	cfg := config.NewConfig()
 	cfg.ConfigPath = filepath.Join(t.TempDir(), "b4.json")

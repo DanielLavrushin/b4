@@ -102,7 +102,7 @@ func TestAHealedAnswerWaitsForTheAddressItWasGiven(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				w.resolveDNSRedirect(IPv4, set, cfg, query, net.ParseIP(rigDevice).To4(), 40000, net.ParseIP(rigRouter).To4(), nil, 0, false)
+				w.resolveDNSRedirect(IPv4, set, cfg, query, net.ParseIP(rigDevice).To4(), 40000, net.ParseIP(rigRouter).To4(), redirectServers(cfg, set), "", 0, false)
 			}()
 			t.Cleanup(func() { <-done })
 			return func(d time.Duration) ([]byte, bool) { return receive(replies.sent, d) }

@@ -260,20 +260,28 @@ export const FacetDrawer = ({ facet, onEdit, t }: FacetDrawerProps) => {
               <Tooltip
                 title={`${row.value}${row.muted ? ` ${row.muted}` : ""}`}
               >
-                <Typography
-                  noWrap
-                  sx={{ ...valueStyle, color: colors.text.primary }}
-                >
-                  {row.value}
+                <Box sx={{ display: "flex", alignItems: "baseline", minWidth: 0 }}>
+                  <Typography
+                    noWrap
+                    sx={{ ...valueStyle, color: colors.text.primary, minWidth: 0 }}
+                  >
+                    {row.value}
+                  </Typography>
                   {row.muted && (
-                    <Box
-                      component="span"
-                      sx={{ color: colors.text.disabled, ml: spacing.xs }}
+                    <Typography
+                      noWrap
+                      sx={{
+                        ...valueStyle,
+                        color: colors.text.disabled,
+                        ml: spacing.xs,
+                        flexShrink: 0,
+                        maxWidth: "50%",
+                      }}
                     >
                       {row.muted}
-                    </Box>
+                    </Typography>
                   )}
-                </Typography>
+                </Box>
               </Tooltip>
             </Fragment>
           ))}

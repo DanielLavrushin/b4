@@ -568,10 +568,10 @@ var DNSNames *dns.NameCache
 var routeSetLookup dns.LookupFunc = dns.LookupIPs
 
 func routeResolveHost(cfg *config.Config, set *config.SetConfig, host string) []net.IP {
-	return routeResolveHostContext(context.Background(), cfg, set, host)
+	return routeResolveHostContext(context.Background(), context.Background(), cfg, set, host)
 }
 
-func routeResolveHostContext(parent context.Context, cfg *config.Config, set *config.SetConfig, host string) []net.IP {
+func routeResolveHostContext(parent, life context.Context, cfg *config.Config, set *config.SetConfig, host string) []net.IP {
 	var servers []dns.Server
 	useSet, strict := false, false
 	if set != nil {
@@ -582,14 +582,18 @@ func routeResolveHostContext(parent context.Context, cfg *config.Config, set *co
 		servers[i].Mark, servers[i].Timeout = int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout()
 	}
 	if useSet && strict && dns.AllSourcesCooling(servers) {
-		log.Tracef("Routing: set '%s' skips resolving %s, every resolver of the set is cooling down after repeated failures", set.Name, host)
+		if len(servers) == 1 {
+			log.Tracef("Routing: set '%s' skips resolving %s, its resolver %s is cooling down after repeated failures", set.Name, host, dns.SourceLabel(servers[0].Source))
+		} else {
+			log.Tracef("Routing: set '%s' skips resolving %s, every resolver of the set is cooling down after repeated failures", set.Name, host)
+		}
 		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(parent, dns.ServersBudget(servers, cfg.DNSQueryTimeout())+time.Second)
 	defer cancel()
 
-	ips, err := dns.LookupWithFallback(ctx, routeSetLookup, servers, dns.Options{Life: parent, Strict: strict}, useSet, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	ips, err := dns.LookupWithFallback(ctx, routeSetLookup, servers, dns.Options{Life: life, Strict: strict, Background: true}, useSet, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	if err != nil {
 		log.Tracef("Routing: resolve %s failed: %v", host, err)
 		return nil

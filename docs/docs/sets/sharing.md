@@ -37,7 +37,7 @@ Carried:
 
 - the TCP, UDP, fragmentation and fake packet settings, with port filters;
 - the targets: domains, addresses, geosite and geoip category names, ASNs, the TLS and IP version filters;
-- the DNS redirect, with its DoH URL and pins for the set's own domains;
+- the DNS redirect, with its first resolver when that is a DoH URL, and pins for the set's own domains;
 - the MSS clamp;
 - block mode, since a block set carries nothing private.
 
@@ -45,7 +45,7 @@ Left out:
 
 - routing to an interface, a proxy or the Telegram bridge, with the proxy's address and credentials;
 - device filters and escalation;
-- the DNS server address the set redirects to, and IP block detection;
+- every resolver of the set except a DoH URL in first place, and IP block detection;
 - the [Discovery addresses](./discovery.md), the watchdog switch, the [IP priority](./targets.md#ip-addresses) switch and the set's own [DSCP value](./routing.md#dscp);
 - the set's id and its enabled state.
 

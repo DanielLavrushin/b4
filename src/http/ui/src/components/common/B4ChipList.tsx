@@ -18,7 +18,7 @@ interface B4ChipListProps<T> {
   highlight?: (item: T) => boolean;
 }
 
-const chipSx = (accented: boolean, clickable: boolean) => ({
+export const chipSx = (accented: boolean, clickable: boolean) => ({
   bgcolor: accented ? colors.accent.secondary : colors.accent.primary,
   color: accented ? colors.state.warning : colors.secondary,
   fontWeight: accented ? 600 : undefined,

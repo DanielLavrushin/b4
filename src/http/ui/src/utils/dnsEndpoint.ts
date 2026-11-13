@@ -6,6 +6,7 @@ const SCHEME = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/(.*)$/;
 const IPV4_PORT = /^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d+))?$/;
 const BRACKETED = /^\[([^\]]+)\](?::(\d+))?$/;
 const HOST_PORT = /^[A-Za-z0-9.-]+(?::\d+)?$/;
+const IPV4_COMPATIBLE = /^::(?=\d+\.)/;
 
 function validPort(port?: string): boolean {
   if (port === undefined) return true;
@@ -30,6 +31,18 @@ function unspecifiedV6(s: string): boolean {
     (addr.isIPv4MappedAddress() &&
       addr.toIPv4Address().toString() === "0.0.0.0")
   );
+}
+
+export function ipAddressUnspecified(s: string): boolean {
+  return s.includes(":") ? unspecifiedV6(s) : s === "0.0.0.0";
+}
+
+export function ipAddressCanonical(s: string): string {
+  if (!s.includes(":")) return s;
+  const addr = ipaddr.IPv6.parse(s.replace(IPV4_COMPATIBLE, "0:0:0:0:0:0:"));
+  return addr.isIPv4MappedAddress()
+    ? addr.toIPv4Address().toString()
+    : addr.toString();
 }
 
 function plain(raw: string): DnsEndpointError | null {

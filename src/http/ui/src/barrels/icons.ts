@@ -57,6 +57,7 @@ export {
   Error as ErrorIcon,
   Category as CategoryIcon,
   DragIndicator as DragIcon,
+  Lock as LockIcon,
   NewReleases as NewReleaseIcon,
   LooksOne as Step1Icon,
   LooksTwo as Step2Icon,

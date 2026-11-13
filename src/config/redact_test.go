@@ -701,6 +701,46 @@ func TestLoadWithMigrationKeepsTheWebUIOffWhenItRefusesAFile(t *testing.T) {
 	}
 }
 
+func TestTheSafeCopyMasksAResolverListEntryByItsKind(t *testing.T) {
+	cfg := NewConfig()
+	set := NewSetConfig()
+	set.Id, set.Name, set.Enabled = "dns1", "dns", true
+	set.DNS = DNSConfig{Enabled: true, TargetDNS: "9.9.9.9", Upstreams: []string{
+		"192.168.1.53",
+		"https://dns.nextdns.io/abc123",
+		"https://dns.ivanov.ru/dns-query",
+		"https://dns.google/dns-query",
+	}}
+	typed := append([]string(nil), set.DNS.Upstreams...)
+	cfg.Sets = []*SetConfig{&set}
+
+	safe, err := cfg.RedactedCopy()
+	if err != nil {
+		t.Fatalf("RedactedCopy: %v", err)
+	}
+	want := []string{
+		"192.168.1.53",
+		"https://dns.nextdns.io/" + RedactedMarker,
+		"https://" + RedactedMarker + "/dns-query",
+		"https://dns.google/dns-query",
+	}
+	if got := safe.Sets[0].DNS.Upstreams; !reflect.DeepEqual(got, want) {
+		t.Errorf("safe copy list = %q, want %q: an address and a public resolver stay readable, a personal id and a private host do not", got, want)
+	}
+	if !reflect.DeepEqual(cfg.Sets[0].DNS.Upstreams, typed) {
+		t.Errorf("the safe copy changed the live config: %q", cfg.Sets[0].DNS.Upstreams)
+	}
+	var placeholders []string
+	for _, path := range safe.RedactedValuePaths() {
+		if strings.HasPrefix(path, "sets[0].dns.upstreams") {
+			placeholders = append(placeholders, path)
+		}
+	}
+	if wantPaths := []string{"sets[0].dns.upstreams[1]", "sets[0].dns.upstreams[2]"}; !reflect.DeepEqual(placeholders, wantPaths) {
+		t.Errorf("placeholders in the list = %v, want %v", placeholders, wantPaths)
+	}
+}
+
 func TestRedactedCopyLeavesTheOriginalAlone(t *testing.T) {
 	cfg := NewConfig()
 	cfg.System.Socks5.Password = "socks-pw"

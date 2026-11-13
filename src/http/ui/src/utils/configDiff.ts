@@ -62,6 +62,7 @@ export const ORDERED_ARRAY_PATHS: Record<string, true> = {
   "tcp.win.values": true,
   "fragmentation.seq_overlap_pattern": true,
   "faking.sni_mutation.fake_snis": true,
+  "dns.upstreams": true,
 };
 export const leafEqual = (
   a: unknown,

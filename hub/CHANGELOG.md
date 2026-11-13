@@ -2,7 +2,7 @@
 
 All notable changes to the b4hub community hub service are recorded in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Releases are published from the `b4hub` repository; the router changelog is `changelog.md` at the repository root.
 
-## [1.7.0] - 2026-11-10
+## [1.7.0] - 2026-11-13
 
 ### Added
 
@@ -10,7 +10,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 ### Changed
 
-- The console's **Check** treats `dns.upstreams`, the extra resolver list b4 1.91.0 adds, as a private field that is never shared, and lists it under **Stripped fields** when a set carries one.
+- The console's **Check** treats `dns.upstreams`, the resolver list b4 1.91.0 adds, as a private field that is never shared, and lists it under **Stripped fields** when the **Full set JSON** carries one.
 
 ## [1.6.0] - 2026-11-06
 

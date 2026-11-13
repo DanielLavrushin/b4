@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -46,6 +47,8 @@ func answeringWith(ip net.IP) func([]byte) []byte {
 	return func(query []byte) []byte { return BuildAnswerFromIPs(query, 60, []net.IP{ip}) }
 }
 
+func silent([]byte) []byte { return nil }
+
 func startDoH(t *testing.T, ip net.IP, delay time.Duration, counter *int32) Server {
 	t.Helper()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -74,16 +77,36 @@ func lifeContext(t *testing.T) context.Context {
 	return ctx
 }
 
+func coolDown(source string) {
+	for i := 0; i < SourceFailuresToTrip; i++ {
+		NoteSourceFailure(source)
+	}
+}
+
+func asksInFlight(source string) int {
+	sourceMu.Lock()
+	defer sourceMu.Unlock()
+	return sourceAsks[source]
+}
+
+func goodAnswer(ip net.IP) []byte {
+	return BuildAnswerFromIPs(BuildQuery("example.test", 7, rrTypeA), 60, []net.IP{ip})
+}
+
 func TestTheSecondResolverIsAskedAfterTheHeadStart(t *testing.T) {
 	resetHealth(t)
-	first := startAnswering(t, func([]byte) []byte { return nil }, nil)
+	first := startAnswering(t, silent, nil)
 	first.Timeout = 3 * time.Second
 	first.Source = "first"
-	second := startAnswering(t, answeringWith(net.IPv4(203, 0, 113, 20)), nil)
+	start := time.Now()
+	var secondAskedAt atomic.Int64
+	second := startAnswering(t, func(q []byte) []byte {
+		secondAskedAt.CompareAndSwap(0, int64(time.Since(start)))
+		return BuildAnswerFromIPs(q, 60, []net.IP{net.IPv4(203, 0, 113, 20)})
+	}, nil)
 	second.Source = "second"
 
-	start := time.Now()
-	ips, err := LookupWithFallback(context.Background(), LookupIPs, []Server{first, second}, Options{Life: lifeContext(t), Strict: false}, true, "example.test", true, false)
+	ips, err := LookupWithFallback(context.Background(), LookupIPs, []Server{first, second}, Options{Life: lifeContext(t)}, true, "example.test", true, false)
 	took := time.Since(start)
 
 	if err != nil || len(ips) != 1 || !ips[0].Equal(net.IPv4(203, 0, 113, 20)) {
@@ -92,27 +115,35 @@ func TestTheSecondResolverIsAskedAfterTheHeadStart(t *testing.T) {
 	if took >= first.Timeout {
 		t.Fatalf("the lookup took %s; a silent resolver must cost the head start, not its whole timeout of %s", took, first.Timeout)
 	}
+	if at := time.Duration(secondAskedAt.Load()); at < HeadStart-20*time.Millisecond {
+		t.Fatalf("the second resolver was asked after %s, before the head start of %s ran out: the list is asked in order, not raced", at, HeadStart)
+	}
 }
 
 func TestAServfailMovesOnAtOnce(t *testing.T) {
 	resetHealth(t)
-	first := startAnswering(t, BuildServfailResponse, nil)
+	var asked int32
+	first := startAnswering(t, BuildServfailResponse, &asked)
 	first.Source = "servfail"
 	second := startAnswering(t, answeringWith(net.IPv4(203, 0, 113, 21)), nil)
 	second.Source = "good"
 
-	start := time.Now()
-	ips, err := LookupWithFallback(context.Background(), LookupIPs, []Server{first, second}, Options{Life: lifeContext(t), Strict: false}, true, "example.test", true, false)
-	took := time.Since(start)
-
-	if err != nil || len(ips) != 1 || !ips[0].Equal(net.IPv4(203, 0, 113, 21)) {
-		t.Fatalf("got %v %v, want the answer of the resolver after the SERVFAIL", ips, err)
+	for i := 1; i <= SourceFailuresToTrip+1; i++ {
+		start := time.Now()
+		ips, err := LookupWithFallback(context.Background(), LookupIPs, []Server{first, second}, Options{Life: lifeContext(t)}, true, "example.test", true, false)
+		took := time.Since(start)
+		if err != nil || len(ips) != 1 || !ips[0].Equal(net.IPv4(203, 0, 113, 21)) {
+			t.Fatalf("lookup %d: got %v %v, want the answer of the resolver after the SERVFAIL", i, ips, err)
+		}
+		if took >= HeadStart {
+			t.Fatalf("lookup %d took %s after a SERVFAIL; the next resolver must be asked at once", i, took)
+		}
 	}
-	if took >= HeadStart {
-		t.Fatalf("the lookup took %s after a SERVFAIL; the next resolver must be asked at once", took)
+	if SourceCooling("servfail") {
+		t.Fatal("a resolver that answered SERVFAIL every time is cooling down: an rcode answer is not a failure")
 	}
-	if SourceUnreachable("servfail") {
-		t.Fatal("a resolver that answered SERVFAIL was counted as unreachable")
+	if got := atomic.LoadInt32(&asked); got != SourceFailuresToTrip+1 {
+		t.Fatalf("the SERVFAIL resolver was asked %d times in %d lookups, want every time", got, SourceFailuresToTrip+1)
 	}
 }
 
@@ -124,7 +155,7 @@ func TestTheFirstUsableAnswerEndsTheLookup(t *testing.T) {
 	slow := startDoH(t, net.IPv4(203, 0, 113, 23), 50*time.Millisecond, &asked)
 
 	start := time.Now()
-	ips, err := LookupWithFallback(context.Background(), LookupIPs, []Server{plain, slow}, Options{Life: lifeContext(t), Strict: false}, true, "example.test", true, false)
+	ips, err := LookupWithFallback(context.Background(), LookupIPs, []Server{plain, slow}, Options{Life: lifeContext(t)}, true, "example.test", true, false)
 	took := time.Since(start)
 
 	if err != nil || len(ips) != 1 || !ips[0].Equal(net.IPv4(203, 0, 113, 22)) {
@@ -133,49 +164,106 @@ func TestTheFirstUsableAnswerEndsTheLookup(t *testing.T) {
 	if took >= HeadStart {
 		t.Fatalf("the lookup took %s; the first usable answer must end it", took)
 	}
+	time.Sleep(HeadStart + 100*time.Millisecond)
 	if got := atomic.LoadInt32(&asked); got != 0 {
 		t.Fatalf("the second resolver was asked %d times after a usable answer, want 0", got)
 	}
 }
 
+func TestANegativeAnswerEndsTheLookupToo(t *testing.T) {
+	resetHealth(t)
+	first := startAnswering(t, BuildEmptyAnswer, nil)
+	first.Source = "empty"
+	var asked int32
+	second := startAnswering(t, answeringWith(net.IPv4(203, 0, 113, 24)), &asked)
+	second.Source = "positive"
+
+	ips, err := LookupWithFallback(context.Background(), LookupIPs, []Server{first, second}, Options{Life: lifeContext(t)}, true, "example.test", true, false)
+	if !errors.Is(err, ErrNoAddress) || errors.Is(err, ErrTransientAnswer) || len(ips) != 0 {
+		t.Fatalf("got %v %v, want the first resolver's empty answer reported as no address", ips, err)
+	}
+	time.Sleep(HeadStart + 100*time.Millisecond)
+	if got := atomic.LoadInt32(&asked); got != 0 {
+		t.Fatalf("the next resolver was asked %d times after a negative answer, want 0: a later entry never corrects an earlier one", got)
+	}
+}
+
 func TestABlockedResolverCoolsDownAfterThreeFailures(t *testing.T) {
 	resetHealth(t)
-	t.Cleanup(func() { ResetSourceHealth() })
-	blocked := startAnswering(t, func([]byte) []byte { return nil }, nil)
+	var asked int32
+	blocked := startAnswering(t, silent, &asked)
 	blocked.Timeout = time.Second
 	blocked.Source = "blocked"
 	backup := startAnswering(t, answeringWith(net.IPv4(203, 0, 113, 26)), nil)
 	backup.Source = "backup"
+	servers := []Server{blocked, backup}
 
 	for i := 1; i <= SourceFailuresToTrip; i++ {
-		if _, err := LookupWithFallback(context.Background(), LookupIPs, []Server{blocked, backup}, Options{Life: lifeContext(t), Strict: false}, true, "example.test", true, false); err != nil {
+		if _, err := LookupWithFallback(context.Background(), LookupIPs, servers, Options{Life: lifeContext(t)}, true, "example.test", true, false); err != nil {
 			t.Fatalf("lookup %d: %v", i, err)
 		}
 	}
 	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if SourceUnreachable("blocked") {
-			return
+	for !SourceCooling("blocked") {
+		if time.Now().After(deadline) {
+			t.Fatalf("a resolver that timed out after the backup won never cooled down, its timeout is %s", blocked.Timeout)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("a resolver that timed out after the backup won never cooled down, its timeout is %s", blocked.Timeout)
+
+	start := time.Now()
+	if _, err := LookupWithFallback(context.Background(), LookupIPs, servers, Options{Life: lifeContext(t)}, true, "example.test", true, false); err != nil {
+		t.Fatalf("lookup after the cooldown began: %v", err)
+	}
+	if took := time.Since(start); took >= HeadStart {
+		t.Fatalf("the lookup took %s with the blocked resolver cooling down, want no head start for it", took)
+	}
+	if got := atomic.LoadInt32(&asked); got != SourceFailuresToTrip {
+		t.Fatalf("the blocked resolver was asked %d times, want %d: it is left out while it cools down", got, SourceFailuresToTrip)
+	}
 }
 
 func TestARealFailureBeatsARetryableAnswer(t *testing.T) {
 	resetHealth(t)
-	silent := startAnswering(t, func([]byte) []byte { return nil }, nil)
-	silent.Timeout = 400 * time.Millisecond
-	silent.Source = "silent"
+	silentSrv := startAnswering(t, silent, nil)
+	silentSrv.Timeout = 400 * time.Millisecond
+	silentSrv.Source = "silent"
 	refusing := startAnswering(t, BuildServfailResponse, nil)
 	refusing.Source = "refusing"
 
-	_, err := LookupWithFallback(context.Background(), LookupIPs, []Server{silent, refusing}, Options{Life: lifeContext(t), Strict: false}, true, "example.test", true, false)
+	_, err := LookupWithFallback(context.Background(), LookupIPs, []Server{silentSrv, refusing}, Options{Life: lifeContext(t), Strict: true}, true, "example.test", true, false)
 	if err == nil {
 		t.Fatal("got no error; one entry timed out and the other refused, the failure must win")
 	}
 	if errors.Is(err, ErrTransientAnswer) {
 		t.Fatalf("got %v; a backup's SERVFAIL must not hide the primary's timeout", err)
+	}
+}
+
+func TestARefusingBackupDoesNotHideACoolingPrimary(t *testing.T) {
+	resetHealth(t)
+	servfail := BuildServfailResponse(BuildQuery("example.test", 7, rrTypeA))
+	servers := []Server{{Source: "dead", Timeout: time.Second}, {Source: "refusing", Timeout: time.Second}}
+	ask := func(_ context.Context, srv Server) ([]byte, error) {
+		if srv.Source == "dead" {
+			return nil, errors.New("no reply")
+		}
+		return servfail, nil
+	}
+
+	for i := 1; i <= SourceFailuresToTrip+2; i++ {
+		resp, _, err := AskServers(context.Background(), servers, Options{Life: lifeContext(t)}, ask)
+		if err == nil {
+			t.Fatalf("lookup %d handed over the backup's SERVFAIL (%d bytes) with no error: once the dead primary cools down the fallback must still run", i, len(resp))
+		}
+	}
+	if !SourceCooling("dead") {
+		t.Fatal("the dead primary never cooled down, so the test did not reach the lookups it is about")
+	}
+
+	resp, source, err := AskServers(context.Background(), servers, Options{Life: lifeContext(t), Strict: true}, ask)
+	if err == nil {
+		t.Fatalf("a strict set got %d bytes from %q with no error, want the primary's failure", len(resp), source)
 	}
 }
 
@@ -191,28 +279,43 @@ func TestAShortReplyIsNotAnAnswer(t *testing.T) {
 			t.Fatalf("servers %d: got %d bytes and %v, want a failure", len(servers), len(resp), err)
 		}
 	}
-}
 
-func TestAMultiResolverEmptyAnswerIsNodata(t *testing.T) {
-	resetHealth(t)
-	first := startAnswering(t, BuildEmptyAnswer, nil)
-	first.Source = "empty"
-	second := startAnswering(t, BuildEmptyAnswer, nil)
-	second.Source = "empty2"
-
-	ips, err := LookupWithFallback(context.Background(), LookupIPs, []Server{first, second}, Options{Life: lifeContext(t), Strict: false}, true, "example.test", true, false)
-	if !errors.Is(err, ErrNoAddress) || len(ips) != 0 {
-		t.Fatalf("got %v %v, want an empty answer reported as no address", ips, err)
+	ResetSourceHealth()
+	good := goodAnswer(net.IPv4(203, 0, 113, 29))
+	resp, source, err := AskServers(context.Background(), []Server{{Source: "short"}, {Source: "good"}}, Options{},
+		func(_ context.Context, srv Server) ([]byte, error) {
+			if srv.Source == "short" {
+				return []byte{1, 2, 3}, nil
+			}
+			return good, nil
+		})
+	if err != nil || source != "good" || len(resp) != len(good) {
+		t.Fatalf("got %d bytes from %q and %v, want the next resolver's answer after a short reply", len(resp), source, err)
+	}
+	sourceMu.Lock()
+	state := sourceHealth["short"]
+	sourceMu.Unlock()
+	if state == nil || state.failures != 1 {
+		t.Fatalf("the short reply was recorded as %+v, want one failure", state)
 	}
 }
 
-func TestABudgetWithoutAListKeepsMainsValue(t *testing.T) {
-	if got, want := ServersBudget(nil, 5*time.Second), 2*5*time.Second+FallbackBudget; got != want {
-		t.Fatalf("budget without a list is %s, want main's %s", got, want)
-	}
-	two := []Server{{Timeout: 5 * time.Second}, {Timeout: 5 * time.Second}}
-	if got, want := ServersBudget(two, 5*time.Second), 2*5*time.Second+FallbackBudget+HeadStart; got != want {
-		t.Fatalf("budget with two resolvers is %s, want %s", got, want)
+func TestBudgets(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		servers []Server
+		def     time.Duration
+		want    time.Duration
+	}{
+		{"no set, as on main", nil, 5 * time.Second, 2*5*time.Second + FallbackBudget},
+		{"no set and no timeout given", nil, 0, 2*defaultLookupTimeout + FallbackBudget},
+		{"one resolver, as on main", []Server{{Timeout: 2 * time.Second}}, 2 * time.Second, 2*2*time.Second + FallbackBudget},
+		{"two resolvers add one head start", []Server{{Timeout: 5 * time.Second}, {Timeout: 5 * time.Second}}, 5 * time.Second, 2*5*time.Second + FallbackBudget + HeadStart},
+		{"eight resolvers add seven", make([]Server, 8), 5 * time.Second, 2*5*time.Second + FallbackBudget + 7*HeadStart},
+	} {
+		if got := ServersBudget(tc.servers, tc.def); got != tc.want {
+			t.Errorf("%s: budget is %s, want %s", tc.name, got, tc.want)
+		}
 	}
 }
 
@@ -222,7 +325,7 @@ func TestOneResolverIsAskedExactlyOnce(t *testing.T) {
 	srv := startAnswering(t, answeringWith(net.IPv4(203, 0, 113, 25)), &asked)
 	srv.Source = "only"
 
-	if _, err := LookupWithFallback(context.Background(), LookupIPs, []Server{srv}, Options{Life: lifeContext(t), Strict: false}, true, "example.test", true, false); err != nil {
+	if _, err := LookupWithFallback(context.Background(), LookupIPs, []Server{srv}, Options{Life: lifeContext(t)}, true, "example.test", true, false); err != nil {
 		t.Fatalf("lookup: %v", err)
 	}
 	if got := atomic.LoadInt32(&asked); got != 1 {
@@ -230,100 +333,189 @@ func TestOneResolverIsAskedExactlyOnce(t *testing.T) {
 	}
 }
 
-func TestRepeatedLookupsLeaveNoGoroutines(t *testing.T) {
+func TestLookupsThatLeaveALoserBehindLeaveNoGoroutines(t *testing.T) {
 	resetHealth(t)
+	var started int32
+	slow := startAnswering(t, silent, &started)
+	slow.Timeout = 500 * time.Millisecond
+	slow.Source = "slow"
 	good := startAnswering(t, answeringWith(net.IPv4(203, 0, 113, 27)), nil)
 	good.Source = "fast"
-	silent := startAnswering(t, func([]byte) []byte { return nil }, nil)
-	silent.Timeout = time.Second
-	silent.Source = "silent"
+	life := lifeContext(t)
 
-	for i := 0; i < 50; i++ {
-		if _, err := LookupWithFallback(context.Background(), LookupIPs, []Server{good, silent}, Options{Life: lifeContext(t), Strict: false}, true, "example.test", true, false); err != nil {
-			t.Fatalf("lookup %d: %v", i, err)
+	const lookups = 20
+	var wg sync.WaitGroup
+	errs := make(chan error, lookups)
+	for i := 0; i < lookups; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := LookupWithFallback(context.Background(), LookupIPs, []Server{slow, good}, Options{Life: life}, true, "example.test", true, false)
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("lookup: %v", err)
 		}
+	}
+	if got := atomic.LoadInt32(&started); got != lookups {
+		t.Fatalf("the slow resolver was asked %d times, want %d: every lookup must leave a loser behind for the leak guard to judge", got, lookups)
 	}
 }
 
-func TestTheCallbackSeesTheCallersContext(t *testing.T) {
+func TestACallerThatLeavesEndsItsOnlyResolversQuery(t *testing.T) {
 	resetHealth(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	NoteSourceFailure("only")
+	NoteSourceFailure("only")
+	callCtx, cancelCall := context.WithCancel(context.Background())
+	entered := make(chan struct{})
+	ended := make(chan struct{})
+	returned := make(chan error, 1)
 	go func() {
-		time.Sleep(50 * time.Millisecond)
-		cancel()
+		_, _, err := AskServers(callCtx, []Server{{Source: "only", Timeout: 5 * time.Second}}, Options{Life: lifeContext(t)},
+			func(sctx context.Context, _ Server) ([]byte, error) {
+				close(entered)
+				<-sctx.Done()
+				close(ended)
+				return nil, sctx.Err()
+			})
+		returned <- err
 	}()
-	start := time.Now()
-	_, _, err := AskServers(ctx, []Server{{Source: "one", Timeout: 5 * time.Second}}, Options{Life: ctx},
-		func(sctx context.Context, srv Server) ([]byte, error) {
-			<-sctx.Done()
-			return nil, sctx.Err()
-		})
-	if err == nil {
-		t.Fatal("a cancelled caller must not look like an answer")
+
+	<-entered
+	cancelCall()
+	select {
+	case <-ended:
+	case <-time.After(time.Second):
+		t.Fatal("the query to a set's only resolver outlived the caller that left: without a list nothing else is waiting on it")
 	}
-	if took := time.Since(start); took > time.Second {
-		t.Fatalf("the cancel took %s to reach the callback, want the caller's own deadline", took)
+	if err := <-returned; !errors.Is(err, context.Canceled) {
+		t.Fatalf("the caller got %v, want its own cancellation", err)
 	}
+	if left := asksLeft("only", time.Second); left != 0 {
+		t.Fatalf("%d asks are still counted after the query ended", left)
+	}
+	if SourceCooling("only") {
+		t.Fatal("a query the caller cut was counted as the resolver's third failure")
+	}
+}
+
+func TestStartedEntriesOfAListRunOnTheServiceLifetime(t *testing.T) {
+	resetHealth(t)
+	NoteSourceFailure("one")
+	NoteSourceFailure("one")
+	life, stopService := context.WithCancel(context.Background())
+	defer stopService()
+	callCtx, cancelCall := context.WithCancel(context.Background())
+
+	entered := make(chan struct{})
+	ended := make(chan error, 1)
+	returned := make(chan error, 1)
+	go func() {
+		servers := []Server{{Source: "one", Timeout: 5 * time.Second}, {Source: "two", Timeout: 5 * time.Second}}
+		_, _, err := AskServers(callCtx, servers, Options{Life: life},
+			func(sctx context.Context, srv Server) ([]byte, error) {
+				if srv.Source == "one" {
+					close(entered)
+				}
+				<-sctx.Done()
+				if srv.Source == "one" {
+					ended <- sctx.Err()
+				}
+				return nil, sctx.Err()
+			})
+		returned <- err
+	}()
+
+	<-entered
+	cancelCall()
+	select {
+	case err := <-returned:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("the caller got %v, want its own cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the caller's cancellation did not end its wait")
+	}
+	select {
+	case err := <-ended:
+		t.Fatalf("the started entry ended with %v when the caller left; it must run on the service lifetime", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	stopService()
+	select {
+	case <-ended:
+	case <-time.After(time.Second):
+		t.Fatal("the started entry outlived the service")
+	}
+	if SourceCooling("one") || asksLeft("one", time.Second) != 0 {
+		t.Fatal("an entry the service cancelled was counted against the resolver or left in flight")
+	}
+}
+
+func asksLeft(source string, wait time.Duration) int {
+	deadline := time.Now().Add(wait)
+	for asksInFlight(source) != 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	return asksInFlight(source)
 }
 
 func TestACallerThatCancelsRightAfterTheCallStillCoolsTheResolver(t *testing.T) {
 	resetHealth(t)
-	t.Cleanup(func() { ResetSourceHealth() })
 	life := lifeContext(t)
-	silent := startAnswering(t, func([]byte) []byte { return nil }, nil)
-	silent.Timeout = time.Second
-	silent.Source = "silent"
+	silentSrv := startAnswering(t, silent, nil)
+	silentSrv.Timeout = time.Second
+	silentSrv.Source = "silent"
 	backup := startAnswering(t, answeringWith(net.IPv4(203, 0, 113, 28)), nil)
 	backup.Source = "backup"
 
 	for i := 0; i < SourceFailuresToTrip; i++ {
-		callCtx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
-		if _, err := LookupWithFallback(callCtx, LookupIPs, []Server{silent, backup}, Options{Life: life}, true, "example.test", true, false); err != nil {
+		callCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_, err := LookupWithFallback(callCtx, LookupIPs, []Server{silentSrv, backup}, Options{Life: life}, true, "example.test", true, false)
+		cancel()
+		if err != nil {
 			t.Fatalf("lookup %d: %v", i, err)
 		}
-		cancel()
 	}
 	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if SourceUnreachable("silent") {
-			return
+	for !SourceCooling("silent") {
+		if time.Now().After(deadline) {
+			t.Fatal("a caller that cancels right after the call left the silent resolver uncooled")
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatal("a caller that cancels right after the call left the silent resolver uncooled")
 }
 
-func TestFilteringDoesNotConsumeARecoveryAttempt(t *testing.T) {
+func TestAnEntryThatIsNotAskedKeepsItsRecoveryAttempt(t *testing.T) {
 	resetHealth(t)
-	t.Cleanup(func() { ResetSourceHealth() })
 	life := lifeContext(t)
-
-	var primaryOK int32 = 1
-	primary := startAnswering(t, func(q []byte) []byte {
-		if atomic.LoadInt32(&primaryOK) == 0 {
-			return nil
+	servers := []Server{{Source: "primary", Timeout: time.Second}, {Source: "backup", Timeout: time.Second}}
+	fromPrimary, fromBackup := goodAnswer(net.IPv4(203, 0, 113, 30)), goodAnswer(net.IPv4(203, 0, 113, 31))
+	primaryUp := true
+	ask := func(_ context.Context, srv Server) ([]byte, error) {
+		switch {
+		case srv.Source == "backup":
+			return fromBackup, nil
+		case primaryUp:
+			return fromPrimary, nil
 		}
-		return BuildAnswerFromIPs(q, 60, []net.IP{net.IPv4(203, 0, 113, 30)})
-	}, nil)
-	primary.Timeout = 200 * time.Millisecond
-	primary.Source = "primary"
-	backup := startAnswering(t, answeringWith(net.IPv4(203, 0, 113, 31)), nil)
-	backup.Source = "backup"
-	servers := []Server{primary, backup}
-
-	for i := 0; i < SourceFailuresToTrip; i++ {
-		NoteSourceFailure("backup")
+		return nil, errors.New("no reply")
 	}
+
+	coolDown("backup")
 	expireCooldown("backup")
 
-	ips, err := LookupWithFallback(context.Background(), LookupIPs, servers, Options{Life: life}, true, "example.test", true, false)
-	if err != nil || len(ips) != 1 || !ips[0].Equal(net.IPv4(203, 0, 113, 30)) {
-		t.Fatalf("first lookup: %v %v, want the primary", ips, err)
+	if _, source, err := AskServers(context.Background(), servers, Options{Life: life}, ask); err != nil || source != "primary" {
+		t.Fatalf("first lookup: answered by %q with %v, want the primary", source, err)
 	}
 
-	atomic.StoreInt32(&primaryOK, 0)
-	ips, err = LookupWithFallback(context.Background(), LookupIPs, servers, Options{Life: life}, true, "example.test", true, false)
-	if err != nil || len(ips) != 1 || !ips[0].Equal(net.IPv4(203, 0, 113, 31)) {
-		t.Fatalf("second lookup: %v %v, want the recovered backup: filtering must not spend its recovery attempt", ips, err)
+	primaryUp = false
+	if _, source, err := AskServers(context.Background(), servers, Options{Life: life}, ask); err != nil || source != "backup" {
+		t.Fatalf("second lookup: answered by %q with %v, want the recovered backup: a lookup that never asked it must not spend its recovery attempt", source, err)
 	}
 }
