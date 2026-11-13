@@ -46,6 +46,7 @@ const FEATURE_OFF_RULES: Array<{
   { path: ["tcp", "rst_protection"], toggle: "enabled", offValue: false },
   { path: ["tcp", "desync"], toggle: "mode", offValue: "off" },
   { path: ["tcp", "win"], toggle: "mode", offValue: "off" },
+  { path: ["tcp", "wssize"], toggle: "enabled", offValue: false },
   { path: ["tcp", "incoming"], toggle: "mode", offValue: "off" },
   { path: ["fragmentation"], toggle: "strategy", offValue: "none" },
   { path: ["dns"], toggle: "enabled", offValue: false, keep: ["pins"] },
@@ -73,6 +74,22 @@ function setObjPath(root: Obj, path: string[], value: Obj): void {
   if (lastKey !== undefined) node[lastKey] = value;
 }
 
+function resetInertWSSize(cfg: Obj, defaults: Obj): void {
+  const path = ["tcp", "wssize"];
+  const node = resolveObjPath(cfg, path);
+  const def = resolveObjPath(defaults, path);
+  if (!node || !def || node.enabled !== true) return;
+  const window = typeof node.window === "number" ? node.window : 0;
+  const scale = typeof node.scale === "number" ? node.scale : 0;
+  if (window <= 0 && scale <= 0) {
+    setObjPath(cfg, path, { ...def });
+    return;
+  }
+  if (window <= 0 || node.cutoff !== "first_data") {
+    setObjPath(cfg, path, { ...node, cutoff: def.cutoff });
+  }
+}
+
 function resetDisabledFeatures(cfg: Obj, defaults: Obj): void {
   for (const rule of FEATURE_OFF_RULES) {
     const node = resolveObjPath(cfg, rule.path);
@@ -96,6 +113,7 @@ export function exportSetJson(config: B4SetConfig, space?: number): string {
   >;
   const defaultsObj = defaults as unknown as Record<string, unknown>;
   resetDisabledFeatures(configObj, defaultsObj);
+  resetInertWSSize(configObj, defaultsObj);
 
   const result: Record<string, unknown> = {
     b4_version: import.meta.env.VITE_APP_VERSION || "dev",

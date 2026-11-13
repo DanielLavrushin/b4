@@ -189,6 +189,7 @@
       "levelTrace": "Trace",
       "levelDebug": "Debug"
     },
+
     "Service": {
       "title": "Service",
       "timezone": "Time Zone",
@@ -1802,15 +1803,24 @@
         "mssSize": "MSS size (bytes)",
         "mssSizeHelper": "Typical TSPU workaround for Smart TVs on YouTube: 88",
         "wssize": "Real TCP window (wssize)",
+        "wssizeEnable": "Rewrite the real TCP window",
+        "wssizeEnableDesc": "Advertise a small TCP window in the first packets of a connection",
+        "wssizeAlert": "Advertises a small TCP window in a connection's own first packets, so the server sends the start of its reply in small pieces. It applies only to connections the set takes on their first packet: by an IP, GeoIP or ASN target, by an address b4 already learned for one of the set's domains, or when the set matches by port alone. A lowered Window Scale stays for the whole connection and slows it down.",
+        "wssizeCredit": "Based on wssize from",
         "wssizeWindow": "Window",
+        "wssizeWindowHelper": "Value written into the window field of the packets, 0 to 65535. After the first packet the server multiplies it by 2 to the power of the Window Scale it received. 0 leaves the window unchanged.",
         "wssizeScale": "Window Scale",
-        "wssizeHelp": "Technique by bolvan / Zapret2 (github.com/bol-van/zapret2). Changes real outgoing TCP windows from connection opening. Requires an early address or explicit port match and NFQUEUE without routing or duplication. Missing WS is not added; scale is never increased. Lowering WS can limit speed after rewriting stops.",
+        "wssizeScaleHelper": "Lowers the Window Scale option of the first packet to this value and never raises it. 0 leaves it unchanged.",
         "wssizeCutoff": "Stop rewriting",
+        "wssizeCutoffHello": "After the ClientHello",
+        "wssizeCutoffHelloNote": "Every packet of the ClientHello carries the window",
         "wssizeCutoffFirst": "After the first data packet",
-        "wssizeCutoffFirstNote": "Zapret2 default behavior",
-        "wssizeCutoffHello": "After the original ClientHello",
-        "wssizeCutoffHelloNote": "Includes all original parts and brief retransmissions",
-        "wssizeCutoffHelp": "The final packet is included. Incomplete, invalid or over-limit messages stop tracking; the scale mismatch remains after cutoff."
+        "wssizeCutoffFirstNote": "As zapret2 does: a ClientHello sent in several packets carries the window only in the first one",
+        "wssizeCutoffHelper": "The last packet before the stop is still rewritten. For traffic that is not TLS, rewriting stops after the first data packet in both modes.",
+        "wssizeConflict": "Does not work together with traffic routing or packet duplication in the same set.",
+        "wssizeTun": "The TUN engine does not apply this option; it works with the NFQUEUE engine only.",
+        "wssizeDomainOnly": "Domain-only matching is on, so the rewrite applies only to the IP, GeoIP and ASN targets the set lists, and it lists none. The rewrite starts on the first packet, before the domain name is visible.",
+        "wssizeIdle": "Nothing is rewritten until Window or Window Scale is set."
       },
       "splitting": {
         "header": "Splitting Strategy",
@@ -2643,7 +2653,7 @@
         "duplicateMapped": "Became packet duplication.",
         "seqOvlMapped": "Became sequence overlap.",
         "seqOvlPatternMapped": "The overlap pattern was read as raw bytes; a TLS 1.2 header is used when it cannot be parsed.",
-        "wsSizeApproximated": "Approximate import: uses fake zero-window ACKs. Real wssize is a separate opt-in feature that requires selection before SNI. The importer does not preserve its scale and cutoff arguments.",
+        "wsSizeApproximated": "Became fake ACK packets with a zero window; the window and scale values were dropped. b4's own option is Real TCP window (wssize) under TCP, General in the set editor, and the import does not switch it on.",
         "skipMapped": "The profile is marked skipped, so the set is created disabled.",
         "newProfileAsSet": "Starts a new profile. Each one became a separate set, in the same order.",
         "sniExtMapped": "Splits right before the SNI extension.",
@@ -3043,6 +3053,7 @@
         "desync": "desyncs the connection",
         "incoming": "injects incoming fakes",
         "window": "plays with the TCP window",
+        "wssize": "rewrites the real TCP window",
         "delay": "delays the second segment",
         "md5": "signs the fakes with TCP MD5",
         "dns": "redirects DNS",
@@ -4014,8 +4025,9 @@
     "similar_set_changed": "Set \"{{set}}\" no longer uses the strategy this result found, so its domains were not added. Open the result again to choose a set.",
     "fake_payload_missing": "This strategy was tested with the fake payload {{file}}, which can no longer be loaded, so the set would send a different fake. Run Discovery again to test a strategy with the payloads there are now.",
     "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the set's traffic. Try again in a moment.",
-    "wssize_invalid": "Window: 0..65535; Window Scale: 0..14; cutoff: empty or client_hello.",
-    "wssize_unsupported": "wssize requires NFQUEUE without routing, bypass or duplication."
+    "wssize_unsupported": "Set \"{{set}}\": Real TCP window (wssize) does not work together with traffic routing or packet duplication in the same set.",
+    "wssize_window_range": "Set \"{{set}}\": Window under Real TCP window (wssize) must be between {{min}} and {{max}}.",
+    "wssize_scale_range": "Set \"{{set}}\": Window Scale under Real TCP window (wssize) must be between {{min}} and {{max}}."
   },
   "hub": {
     "title": "Community Hub",

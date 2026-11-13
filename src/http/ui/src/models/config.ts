@@ -234,7 +234,7 @@ export interface TcpConfig {
   dport_filter: string;
 
   desync: DesyncConfig;
-  wssize?: { enabled: boolean; window: number; scale: number; cutoff?: "" | "client_hello" };
+  wssize?: WSSizeConfig;
   win: WinConfig;
   incoming: IncomingConfig;
   duplicate?: DuplicateConfig;
@@ -569,6 +569,13 @@ export interface RoutingConfig {
 export interface DuplicateConfig {
   enabled: boolean;
   count: number;
+}
+
+export interface WSSizeConfig {
+  enabled: boolean;
+  window: number;
+  scale: number;
+  cutoff?: "" | "first_data";
 }
 
 export interface IPHealthConfig {

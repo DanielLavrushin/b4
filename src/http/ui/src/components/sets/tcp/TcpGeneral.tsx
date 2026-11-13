@@ -1,10 +1,12 @@
-import { Grid } from "@mui/material";
-import { B4SetConfig, MSSClampConfig } from "@models/config";
+import { Grid, Link, Stack } from "@mui/material";
+import { B4SetConfig, MSSClampConfig, WSSizeConfig } from "@models/config";
+import { OpenInNewIcon } from "@b4.icons";
 import {
   B4Slider,
   B4Select,
   B4RangeSlider,
   B4TextField,
+  B4NumberField,
   B4Alert,
   B4FormHeader,
   B4Hint,
@@ -15,16 +17,35 @@ import { Trans, useTranslation } from "react-i18next";
 
 interface TcpGeneralProps {
   config: B4SetConfig;
+  tunEngine?: boolean;
   onChange: (
     field: string,
     value: string | number | boolean | number[],
   ) => void;
 }
 
-export const TcpGeneral = ({ config, onChange }: TcpGeneralProps) => {
+export const TcpGeneral = ({
+  config,
+  tunEngine = false,
+  onChange,
+}: TcpGeneralProps) => {
   const { t } = useTranslation();
-  const ws = config.tcp.wssize ?? { enabled: false, window: 0, scale: 0, cutoff: "" };
+  const ws: WSSizeConfig = {
+    enabled: false,
+    window: 0,
+    scale: 0,
+    cutoff: "",
+    ...config.tcp.wssize,
+  };
   const dup = config.tcp.duplicate ?? { enabled: false, count: 3 };
+  const wsConflict = (config.routing?.enabled ?? false) || dup.enabled;
+  const wsTun = ws.enabled && !wsConflict && tunEngine;
+  const wsIdle =
+    ws.enabled &&
+    !wsConflict &&
+    !tunEngine &&
+    ws.window === 0 &&
+    ws.scale === 0;
   const ibd = {
     enabled: false,
     retransmit_threshold: 3,
@@ -52,6 +73,13 @@ export const TcpGeneral = ({ config, onChange }: TcpGeneralProps) => {
     hasIPScope ||
     (config.targets?.sni_domains?.length ?? 0) > 0 ||
     (config.targets?.geosite_categories?.length ?? 0) > 0;
+  const wsDomainOnly =
+    ws.enabled &&
+    !wsConflict &&
+    !wsTun &&
+    (config.targets?.domain_only ?? false) &&
+    hasDestinationTargets &&
+    !hasIPScope;
   const hasPortFilter = (config.tcp.dport_filter ?? "").trim() !== "";
   const portFilterSkipsHttps =
     hasDestinationTargets &&
@@ -129,33 +157,118 @@ export const TcpGeneral = ({ config, onChange }: TcpGeneralProps) => {
 
       <B4FormHeader label={t("sets.tcp.general.wssize")} />
       <Grid container spacing={3} mb={3} mt={2}>
-        <Grid size={{ xs: 12 }}>
-          <B4Switch label={t("sets.tcp.general.wssize")} description={t("sets.tcp.general.wssizeHelp")}
-            checked={ws.enabled} path="tcp.wssize.enabled" aiTopic="tcp.wssize.enabled"
-            onChange={(v) => onChange("tcp.wssize.enabled", v)} />
+        <Grid size={{ xs: 12, md: 4 }}>
+          <B4Switch
+            label={t("sets.tcp.general.wssizeEnable")}
+            description={t("sets.tcp.general.wssizeEnableDesc")}
+            checked={ws.enabled}
+            path="tcp.wssize.enabled"
+            onChange={(checked) => onChange("tcp.wssize.enabled", checked)}
+            disabled={wsConflict && !ws.enabled}
+            aiTopic="tcp.wssize.enabled"
+            aiContext={{
+              window: ws.window,
+              scale: ws.scale,
+              cutoff: ws.cutoff ?? "",
+            }}
+          />
         </Grid>
-        {ws.enabled && <>
-          <Grid size={{ xs: 12 }}>
-            <B4Select label={t("sets.tcp.general.wssizeCutoff")} value={ws.cutoff ?? ""}
-              path="tcp.wssize.cutoff" aiTopic="tcp.wssize.cutoff"
-              options={[
-                { value: "", label: t("sets.tcp.general.wssizeCutoffFirst"), note: t("sets.tcp.general.wssizeCutoffFirstNote") },
-                { value: "client_hello", label: t("sets.tcp.general.wssizeCutoffHello"), note: t("sets.tcp.general.wssizeCutoffHelloNote") },
-              ]}
-              onChange={(e) => onChange("tcp.wssize.cutoff", e.target.value)} />
-            <B4Hint>{t("sets.tcp.general.wssizeCutoffHelp")}</B4Hint>
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4Slider label={t("sets.tcp.general.wssizeWindow")} value={ws.window}
-              path="tcp.wssize.window" min={0} max={65535} step={1} aiTopic="tcp.wssize.window"
-              onChange={(v: number) => onChange("tcp.wssize.window", v)} />
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <B4Slider label={t("sets.tcp.general.wssizeScale")} value={ws.scale}
-              path="tcp.wssize.scale" min={0} max={14} step={1} aiTopic="tcp.wssize.scale"
-              onChange={(v: number) => onChange("tcp.wssize.scale", v)} />
-          </Grid>
-        </>}
+        <Grid size={{ xs: 12, md: 8 }}>
+          <B4Hint sx={{ my: 1 }}>
+            {t("sets.tcp.general.wssizeAlert")}{" "}
+            {t("sets.tcp.general.wssizeCredit")}{" "}
+            <Link
+              href="https://github.com/bol-van/zapret2"
+              target="_blank"
+              rel="noreferrer"
+              sx={{ display: "inline-flex", alignItems: "center", gap: 0.25 }}
+            >
+              zapret2
+              <OpenInNewIcon sx={{ fontSize: 12 }} />
+            </Link>
+          </B4Hint>
+          {(wsConflict || wsTun || wsDomainOnly || wsIdle) && (
+            <Stack spacing={1}>
+              {wsConflict && (
+                <B4Alert noWrapper severity="warning">
+                  {t("sets.tcp.general.wssizeConflict")}
+                </B4Alert>
+              )}
+              {wsTun && (
+                <B4Alert noWrapper severity="warning">
+                  {t("sets.tcp.general.wssizeTun")}
+                </B4Alert>
+              )}
+              {wsDomainOnly && (
+                <B4Alert noWrapper severity="warning">
+                  {t("sets.tcp.general.wssizeDomainOnly")}
+                </B4Alert>
+              )}
+              {wsIdle && (
+                <B4Alert noWrapper severity="info">
+                  {t("sets.tcp.general.wssizeIdle")}
+                </B4Alert>
+              )}
+            </Stack>
+          )}
+        </Grid>
+        {ws.enabled && (
+          <>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4NumberField
+                label={t("sets.tcp.general.wssizeWindow")}
+                value={ws.window}
+                path="tcp.wssize.window"
+                onChange={(value) => onChange("tcp.wssize.window", value)}
+                min={0}
+                max={65535}
+                helperText={t("sets.tcp.general.wssizeWindowHelper")}
+                aiTopic="tcp.wssize.window"
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Slider
+                label={t("sets.tcp.general.wssizeScale")}
+                value={ws.scale}
+                path="tcp.wssize.scale"
+                onChange={(value: number) =>
+                  onChange("tcp.wssize.scale", value)
+                }
+                min={0}
+                max={14}
+                step={1}
+                helperText={t("sets.tcp.general.wssizeScaleHelper")}
+                aiTopic="tcp.wssize.scale"
+              />
+            </Grid>
+            {ws.window > 0 && (
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Select
+                  label={t("sets.tcp.general.wssizeCutoff")}
+                  value={ws.cutoff ?? ""}
+                  path="tcp.wssize.cutoff"
+                  options={[
+                    {
+                      value: "",
+                      label: t("sets.tcp.general.wssizeCutoffHello"),
+                      note: t("sets.tcp.general.wssizeCutoffHelloNote"),
+                    },
+                    {
+                      value: "first_data",
+                      label: t("sets.tcp.general.wssizeCutoffFirst"),
+                      note: t("sets.tcp.general.wssizeCutoffFirstNote"),
+                    },
+                  ]}
+                  onChange={(e) =>
+                    onChange("tcp.wssize.cutoff", e.target.value)
+                  }
+                  helperText={t("sets.tcp.general.wssizeCutoffHelper")}
+                  aiTopic="tcp.wssize.cutoff"
+                />
+              </Grid>
+            )}
+          </>
+        )}
       </Grid>
 
       {/* Packet Duplication */}
