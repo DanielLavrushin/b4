@@ -432,17 +432,19 @@ func noteDroppedSplitPositions(prof *Profile, ti tokenIndex, notes *noteSet) {
 }
 
 func normalizeZapret(prog *Program, _ []Token, notes *noteSet) {
+	udpTaken := false
 	for _, prof := range prog.Profiles {
 		normalizeZapretProfile(prof, notes)
-		promoteUDPFake(prof)
+		promoteUDPFake(prof, udpTaken)
+		udpTaken = udpTaken || prof.UDPOnly()
 	}
 }
 
 var zapretTCPOnlyL7 = map[string]bool{"http": true, "tls": true}
 
-func zapretSeesUDP(prof *Profile) bool {
+func zapretSeesUDP(prof *Profile, udpTaken bool) bool {
 	f := prof.Filters
-	if len(f.TCPPorts) > 0 && len(f.UDPPorts) == 0 {
+	if len(f.UDPPorts) == 0 && (len(f.TCPPorts) > 0 || udpTaken) {
 		return false
 	}
 	if len(f.Protos) == 0 {
@@ -455,10 +457,10 @@ func zapretFakesUDP(prof *Profile) bool {
 	return slices.Contains(prof.DesyncModes, "fake") || slices.Contains(prof.DesyncModes, "fakeknown")
 }
 
-func promoteUDPFake(prof *Profile) {
+func promoteUDPFake(prof *Profile, udpTaken bool) {
 	udpOnly := prof.UDPOnly()
 	fakes := zapretFakesUDP(prof)
-	if !udpOnly && (!fakes || !zapretSeesUDP(prof)) {
+	if !udpOnly && (!fakes || !zapretSeesUDP(prof, udpTaken)) {
 		prof.UDP.ZeroRef = false
 		return
 	}

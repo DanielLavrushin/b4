@@ -101,7 +101,7 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) ([]confi
 		emitFilters(&set, prof, ti, notes, udpOnly)
 		emitUDP(&set, prog.Tool, prof, ti, notes, udpOnly)
 		emitAnyProtocol(&set, prof, ti, notes, udpOnly)
-		noteDefaultUDPFakes(&set, prof, notes, udpOnly)
+		noteDefaultUDPFakes(&set, prof, notes)
 		emitL7Decoy(&set, prof, ti, notes)
 		if !udpOnly {
 			emitSplits(&set, prof, ti, notes, opts)
@@ -336,6 +336,23 @@ func emitUDP(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, n
 	if len(prof.UDP.Ports) > 0 && set.UDP.DPortFilter == "" {
 		set.UDP.DPortFilter = strings.Join(prof.UDP.Ports, ",")
 	}
+	if prof.UDP.Folded {
+		noteUDPFakesUnused(prof, ti, notes, udpPayloadKeys...)
+	}
+	if prof.UDP.fakes() {
+		emitOwnUDPFakes(set, tool, prof, ti, notes, udpOnly)
+	} else {
+		noteUDPFakesUnused(prof, ti, notes, udpKey(prof, udpPayloadKeys[0]), udpKey(prof, udpPayloadKeys[1]))
+		for _, key := range []string{"repeats", "desync_ttl", "ttl"} {
+			ti.each(prof.Index, udpKey(prof, key), func(tok Token) {
+				notes.set(tok, StatusDegenerate, "requiresFake")
+			})
+		}
+	}
+	noteFoldedTokens(prof, ti, notes, set)
+}
+
+func emitOwnUDPFakes(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, notes *noteSet, udpOnly bool) {
 	if prof.UDP.FakeCount > 0 {
 		set.UDP.FakeSeqLength = prof.UDP.FakeCount
 		if tok, ok := ti.first(prof.Index, udpKey(prof, "udp_fake")); ok {
@@ -349,16 +366,12 @@ func emitUDP(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, n
 		}
 	}
 	emitUDPPayload(set, tool, prof, ti, notes)
-	if prof.UDP.Folded {
-		noteUDPFakesUnused(prof, ti, notes)
-	}
 	emitUDPFakeTTL(set, prof, ti, notes, udpOnly)
-	noteFoldedTokens(prof, ti, notes, set)
 }
 
 func emitSharedUDP(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, notes *noteSet) {
 	if !prof.UDP.Shared {
-		noteUDPFakesUnused(prof, ti, notes)
+		noteUDPFakesUnused(prof, ti, notes, udpPayloadKeys...)
 		return
 	}
 	if prof.UDP.Repeats > 0 {
@@ -373,10 +386,6 @@ func emitUDPFakeTTL(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *
 	}
 	tok, ok := ti.first(prof.Index, udpKey(prof, "desync_ttl"), udpKey(prof, "ttl"))
 	switch {
-	case !prof.UDP.fakes():
-		if ok {
-			notes.set(tok, StatusDegenerate, "requiresFake")
-		}
 	case prof.UDP.TTL <= 0:
 		if ok {
 			notes.set(tok, StatusMapped, "udpFakeTTLOriginal", "udp.faking_strategy=none")
@@ -417,8 +426,10 @@ func emitAnyProtocol(set *config.SetConfig, prof *Profile, ti tokenIndex, notes 
 	})
 }
 
-func noteUDPFakesUnused(prof *Profile, ti tokenIndex, notes *noteSet) {
-	for _, key := range []string{"fake_quic", "fake_unk_udp"} {
+var udpPayloadKeys = []string{"fake_quic", "fake_unk_udp"}
+
+func noteUDPFakesUnused(prof *Profile, ti tokenIndex, notes *noteSet, keys ...string) {
+	for _, key := range keys {
 		ti.each(prof.Index, key, func(tok Token) {
 			v := strings.TrimSpace(tok.Value)
 			if _, err := decodeHexLiteral(v); isHexLiteral(v) && err != nil {
@@ -430,8 +441,8 @@ func noteUDPFakesUnused(prof *Profile, ti tokenIndex, notes *noteSet) {
 	}
 }
 
-func noteDefaultUDPFakes(set *config.SetConfig, prof *Profile, notes *noteSet, udpOnly bool) {
-	if udpOnly || prof.UDP.fakes() || prof.Skip || set.UDP.Mode != config.UDPModeFake {
+func noteDefaultUDPFakes(set *config.SetConfig, prof *Profile, notes *noteSet) {
+	if prof.UDP.fakes() || prof.Skip || prof.scopedByL7() || set.UDP.Mode != config.UDPModeFake {
 		return
 	}
 	notes.extra = append(notes.extra, Note{
@@ -445,7 +456,7 @@ func noteDefaultUDPFakes(set *config.SetConfig, prof *Profile, notes *noteSet, u
 }
 
 func emitUDPPayload(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, notes *noteSet) {
-	keys := []string{udpKey(prof, "fake_quic"), udpKey(prof, "fake_unk_udp")}
+	keys := []string{udpKey(prof, udpPayloadKeys[0]), udpKey(prof, udpPayloadKeys[1])}
 	if prof.UDP.QUICRef != "" {
 		set.UDP.FakePayloadFile = config.FakePayloadAutoQUIC
 		if tok, ok := ti.first(prof.Index, keys[0]); ok {

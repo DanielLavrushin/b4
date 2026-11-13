@@ -219,12 +219,74 @@ func TestZapret_TheFakeTTLOfAUDPProfileBecomesTheSetsFakeTTL(t *testing.T) {
 		t.Fatalf("the note must name the field that holds the TTL: %+v", n)
 	}
 
-	res := analyze(t, "--filter-udp=443 --dpi-desync=udplen --dpi-desync-fake-quic=q.bin --dpi-desync-ttl=4")
-	if got := res.Sets[0].Faking.TTL; got != config.DefaultSetConfig.Faking.TTL {
-		t.Fatalf("faking.ttl=%d: zapret sends no fake in this mode, so its TTL is not this set's", got)
+}
+
+func TestZapret_AUDPProfileWithoutAFakeModeLeavesTheSetsUDPSideAlone(t *testing.T) {
+	defaults := config.DefaultSetConfig
+	for _, desync := range []string{"udplen", "multisplit", "fakedsplit"} {
+		t.Run(desync, func(t *testing.T) {
+			res := analyze(t, "--filter-udp=443 --dpi-desync="+desync+
+				" --dpi-desync-fake-quic=q.bin --dpi-desync-repeats=4 --dpi-desync-ttl=4")
+			set := res.Sets[0]
+			if set.UDP.FakeSeqLength != defaults.UDP.FakeSeqLength || set.UDP.FakePayloadFile != "" || set.Faking.TTL != defaults.Faking.TTL {
+				t.Fatalf("zapret sends no UDP fake in this mode, so its fake options are not this set's: fake_seq_length=%d file=%q faking.ttl=%d",
+					set.UDP.FakeSeqLength, set.UDP.FakePayloadFile, set.Faking.TTL)
+			}
+			want := []struct {
+				token  string
+				reason string
+			}{
+				{"--dpi-desync-fake-quic=q.bin", "udpFakeUnused"},
+				{"--dpi-desync-repeats=4", "requiresFake"},
+				{"--dpi-desync-ttl=4", "requiresFake"},
+			}
+			for _, w := range want {
+				if n := noteFor(t, res, w.token); n.Status != StatusDegenerate || n.Reason != w.reason {
+					t.Errorf("%s: got %s/%s, want %s", w.token, n.Status, n.Reason, w.reason)
+				}
+			}
+			if got := reasonNotes(res, "udpDefaultFakes"); len(got) != 1 {
+				t.Fatalf("the set still sends the UDP fakes of a new b4 set, and must say so: %+v", got)
+			}
+			assertSetsSave(t, res)
+		})
 	}
-	if n := noteFor(t, res, "--dpi-desync-ttl=4"); n.Status != StatusDegenerate || n.Reason != "requiresFake" {
+}
+
+func TestZapret_AProfileAfterAUDPProfileLeavesUDPToIt(t *testing.T) {
+	res := analyze(t, "--filter-udp=443 --hostlist-domains=quic.example.com --dpi-desync=fake --dpi-desync-repeats=11 --new "+
+		"--hostlist-domains=example.com --dpi-desync=fake,multisplit --dpi-desync-repeats=2 --dpi-desync-fake-quic=q.bin")
+	if len(res.Sets) != 2 {
+		t.Fatalf("got %d sets", len(res.Sets))
+	}
+	later := res.Sets[1]
+	if later.Faking.SNISeqLength != 2 || later.UDP.FakeSeqLength != config.DefaultSetConfig.UDP.FakeSeqLength || later.UDP.FakePayloadFile != "" {
+		t.Fatalf("nfqws gives UDP to the first profile that matches, so the options of the later profile stay on TCP: "+
+			"faking.sni_seq_length=%d udp.fake_seq_length=%d file=%q", later.Faking.SNISeqLength, later.UDP.FakeSeqLength, later.UDP.FakePayloadFile)
+	}
+	if n := noteFor(t, res, "--dpi-desync-repeats=2"); hasField(n, "udp.fake_seq_length") {
 		t.Fatalf("got %+v", n)
+	}
+	if n := noteFor(t, res, "--dpi-desync-fake-quic=q.bin"); n.Status != StatusDegenerate || n.Reason != "udpFakeUnused" {
+		t.Fatalf("got %+v", n)
+	}
+	assertNoLostOptions(t, res)
+	assertSetsSave(t, res)
+
+	keenetic := analyze(t, loadFixture(t, "nfqws-keenetic.conf"))
+	checked := 0
+	for i, set := range keenetic.Sets {
+		if set.Fragmentation.Strategy == config.ConfigNone || set.TCP.DPortFilter != "" {
+			continue
+		}
+		checked++
+		if set.UDP.FakeSeqLength != config.DefaultSetConfig.UDP.FakeSeqLength {
+			t.Fatalf("set %d: the launcher puts its QUIC profiles ahead of NFQWS_ARGS, so the repeats of NFQWS_ARGS stay on TCP: udp.fake_seq_length=%d",
+				i, set.UDP.FakeSeqLength)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("the fixture no longer holds a TCP profile without port filters")
 	}
 }
 
@@ -234,6 +296,7 @@ func TestConvert_ASetThatFakesUDPOnlyByDefaultSaysSo(t *testing.T) {
 		"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake",
 		"--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=multisplit",
 		"--hostlist-domains=example.com --dpi-desync=multisplit",
+		"--filter-udp=443 --dpi-desync=multisplit",
 		"-s1+s",
 	}
 	for _, line := range said {
@@ -260,7 +323,7 @@ func TestConvert_ASetThatFakesUDPOnlyByDefaultSaysSo(t *testing.T) {
 		"--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake",
 		"--hostlist-domains=example.com --dpi-desync=fake",
 		"--filter-udp=443 --dpi-desync=fake",
-		"--filter-udp=443 --dpi-desync=multisplit",
+		"--filter-udp=50000-50100 --filter-l7=discord,stun --dpi-desync=multisplit",
 		"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=multisplit --new --filter-udp=443 --dpi-desync=fake",
 		"--skip --hostlist-domains=example.com --dpi-desync=multisplit",
 		"-Ku -a1",
@@ -270,7 +333,7 @@ func TestConvert_ASetThatFakesUDPOnlyByDefaultSaysSo(t *testing.T) {
 		t.Run("silent/"+line, func(t *testing.T) {
 			res := analyze(t, line)
 			if got := reasonNotes(res, "udpDefaultFakes"); len(got) != 0 {
-				t.Fatalf("the profile fakes UDP itself, is a UDP profile or is skipped: %+v", got)
+				t.Fatalf("the profile fakes UDP itself, is skipped, or its set is created disabled for sending no fake: %+v", got)
 			}
 		})
 	}
