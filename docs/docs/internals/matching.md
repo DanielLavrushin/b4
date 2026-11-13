@@ -140,7 +140,7 @@ A copy moved above its source wins the address match with the switch off. The so
 
 ## What happens on a match
 
-For a TCP connection that a set takes, b4 holds the packet and sends a modified version instead, with the techniques the set's [TCP](../sets/tcp/index.md) tab turns on: SACK removal, ClientHello mutation, desync packets, window manipulation, fake packets and splitting. [Packet duplication](../sets/tcp/general.md#packet-duplication) replaces all of them for a connection the set takes before its ClientHello, by address, DNS answer, learned address or port. For UDP, the set's [action mode](../sets/udp.md#how-to-handle-matched-traffic) decides. A set that routes through a proxy, or through a tunnel interface that is up, leaves the packets alone. A packet that no set takes passes unchanged.
+For a TCP connection that a set takes, b4 holds the packet and sends a modified version instead, with the techniques the set's [TCP](../sets/tcp/index.md) tab turns on: SACK removal, ClientHello mutation, desync packets, window manipulation, fake packets and splitting. [Packet duplication](../sets/tcp/general.md#packet-duplication) replaces all of them for a connection the set takes before its ClientHello, by address, DNS answer, learned address or port. The [real TCP window rewrite](#wssize) starts earlier, at the SYN. For UDP, the set's [action mode](../sets/udp.md#how-to-handle-matched-traffic) decides. A set that routes through a proxy, or through a tunnel interface that is up, leaves the packets alone. A packet that no set takes passes unchanged.
 
 ## ASN targets {#asn-targets}
 
@@ -175,3 +175,9 @@ From there an ASN behaves like the same prefixes entered as IP addresses: the DP
 ### Size
 
 No size limit is enforced. A large network expands into thousands of prefixes. Each prefix is an element of the firewall sets that routing, packet duplication and the MSS clamp build, and an entry in b4's address matcher. On a small router this costs memory and load time. The **Networks (ASN)** panel on **Bypass IPs** warns above 2,000 prefixes or 16,777,216 IPv4 addresses.
+
+## Early window rewriting {#wssize}
+
+[Real TCP window (wssize)](../sets/tcp/general.md#wssize) changes a connection from its first packet, so its set is the one that steps 1-4 above give for the SYN. When the host of a DNS or learned match is escalated, that is its backup set, as in step 7. A name match in step 5 comes too late to start the rewrite, and the first connection to a domain whose address b4 has not seen passes unchanged.
+
+A connection that started with one set's rewrite keeps it up to the stop, also when step 5 moves the connection to another set or step 6 drops the match. The set's **TLS Version Filter** plays no part in the rewrite. [Real TCP window rewriting](./wssize.md) describes the packets and the limits.

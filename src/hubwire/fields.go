@@ -50,8 +50,12 @@ var Fields = map[string]Field{
 	"tcp.desync.count":       {Class: Crosses},
 	"tcp.desync.post_desync": {Class: Crosses},
 
-	"tcp.win.mode":   {Class: Crosses},
-	"tcp.win.values": {Class: Crosses},
+	"tcp.wssize.cutoff":  {Class: Crosses, Since: "1.91.0"},
+	"tcp.wssize.enabled": {Class: Crosses, Since: "1.91.0"},
+	"tcp.wssize.window":  {Class: Crosses, Since: "1.91.0"},
+	"tcp.wssize.scale":   {Class: Crosses, Since: "1.91.0"},
+	"tcp.win.mode":       {Class: Crosses},
+	"tcp.win.values":     {Class: Crosses},
 
 	"tcp.duplicate.enabled": {Class: Crosses},
 	"tcp.duplicate.count":   {Class: Crosses},

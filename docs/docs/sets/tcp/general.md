@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 title: General
-description: The General sub-tab of a set's TCP tab, with the segment delay, port filter, packet duplication, IP block detection, RST injection protection and MSS clamping.
+description: The General sub-tab of a set's TCP tab, with the segment delay, port filter, real TCP window, packet duplication, IP block detection, RST injection protection and MSS clamping.
 ---
 
 The **General** sub-tab of the [TCP](./index.md) tab holds the settings that apply whatever splitting or faking method the set uses.
@@ -16,6 +16,37 @@ The **General** sub-tab of the [TCP](./index.md) tab holds the settings that app
 | **Port Filter** | The TCP ports the set acts on, such as `443` or `80,5222,8000-9000`, and a list without `443` leaves HTTPS out. Empty means every port b4 captures: 443 and the ports any set lists. | Empty |
 | **Drop SACK Options** | Removes the Selective Acknowledgment option from TCP headers. Some DPI uses it to put fragments back in order. | Off |
 | **Empty line before HTTP method** | For plain HTTP on port 80: puts an empty line before the request and shortens the User-Agent by two characters to keep the length. Inspection that expects the method at the start of the request no longer finds the Host header. Needs a User-Agent header, and suits nginx servers. | Off |
+
+## Real TCP window (wssize) {#wssize}
+
+Makes the set's connections advertise a small TCP window in their first packets, so the server sends the start of its reply in small pieces. Unlike [Window Manipulation](./faking.md#window-manipulation), which adds fake packets, this option changes the connection's own packets. It is based on wssize from [zapret2](https://github.com/bol-van/zapret2).
+
+![The Real TCP window (wssize) section](/img/general/20261113180000.png)
+
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Rewrite the real TCP window** | Turns the rewrite on. Nothing changes until **Window** or **Window Scale** is set. | Off |
+| **Window** | The value written into the window field of the packets, 1 to 65535. `0` leaves the window unchanged. | `0` |
+| **Window Scale** | Lowers the Window Scale option in the first packet of a connection to this value, 1 to 14, and never raises it. `0` leaves the option unchanged. | `0` |
+| **Stop rewriting** | Shown once **Window** is set. **After the ClientHello** writes the window into every packet of the ClientHello. **After the first data packet** stops at the first packet with data, as zapret2 does. | **After the ClientHello** |
+
+After the first packet, the server multiplies **Window** by 2 to the power of the Window Scale it received. With **Window** `1` and **Window Scale** `1`, the first piece of the server's reply is 2 bytes long. With **Window** `1` and a scale left at 7, it is 128 bytes long. The device's packets after the stop carry its own window again.
+
+The rewrite starts with the first packet of a connection, before the server name is known. It applies only when the set already takes the connection at that point.
+
+| The set targets | The rewrite applies to |
+| --- | --- |
+| IP addresses, GeoIP categories or ASNs | Every connection to those addresses |
+| Domains | Connections to an address b4 already knows for the domain, from a DNS answer that passed through b4 or from an earlier connection to the site |
+| A port filter and nothing else | Every connection to those ports |
+
+The first connection to a domain whose address b4 has not seen yet passes unchanged. With **Domain-only matching** on, the rewrite never applies to the set's domains. The set's **TLS Version Filter** does not limit the rewrite, which starts before the ClientHello shows the TLS version. [Real TCP window rewriting](../../internals/wssize.md) has the details.
+
+The option does not work in a set that also uses [routing](../routing.md) or [Packet Duplication](#packet-duplication). The editor shows a notice, and an enabled set that combines the option with either of them is not saved. With **TUN interface** as the [packet engine](../../settings/core.md#ingestion-mode), the option does nothing.
+
+:::warning
+A lowered **Window Scale** stays for the whole connection and keeps its downloads slow. **Window** alone slows nothing down once the rewrite has stopped.
+:::
 
 ## Packet Duplication {#packet-duplication}
 

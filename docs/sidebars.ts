@@ -141,6 +141,7 @@ const sidebars: SidebarsConfig = {
       link: { type: "generated-index", slug: "/internals" },
       items: [
         "internals/matching",
+        "internals/wssize",
         "internals/capture",
         "internals/dns",
         "internals/routing",

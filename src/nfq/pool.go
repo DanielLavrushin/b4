@@ -97,6 +97,7 @@ func NewPool(cfg *config.Config) *Pool {
 		w.matcher.Store(matcher)
 		w.ipToMac.Store(make(map[string]string))
 		w.tlsCache = state.tlsCache
+		w.wssize = state.wssize
 		w.streams = state.streams
 		w.connTracker = state.connState
 		w.destState = state.destState
@@ -155,6 +156,7 @@ func NewPool(cfg *config.Config) *Pool {
 				retest := pool.retestInterval()
 				pool.state.connState.Cleanup()
 				pool.state.tlsCache.Cleanup()
+				pool.state.wssize.cleanup(time.Now())
 				pool.state.streams.Cleanup(time.Now())
 				pool.state.destState.Cleanup(retest)
 				pool.state.hostHints.Cleanup()
@@ -168,6 +170,7 @@ func NewPool(cfg *config.Config) *Pool {
 				pool.state.bans.tick(pool.GetFirstWorkerConfig())
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
+				pool.state.wssize.cleanup(time.Now())
 				pool.sweepSilentHellos(time.Now())
 				pool.publishEscalations()
 				pool.publishBans()
@@ -423,6 +426,10 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	for _, w := range p.Workers {
 		w.cfg.Store(newCfg)
 		w.matcher.Store(matcher)
+	}
+
+	if p.state != nil {
+		p.state.wssize.reset()
 	}
 
 	if !reuse && p.state != nil && p.state.tlsCache != nil {

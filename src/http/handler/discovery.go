@@ -939,6 +939,7 @@ func strategyShape(set *config.SetConfig) config.SetConfig {
 		shape.DSCP = set.DSCP
 	}
 	shape.TCP.DPortFilter = ""
+	shape.TCP.WSSize = shape.TCP.WSSize.Effective()
 	shape.TCP.IPBlockDetect = config.IPBlockDetectConfig{}
 	shape.TCP.RSTProtection = config.RSTProtectionConfig{}
 	shape.UDP.DPortFilter = ""

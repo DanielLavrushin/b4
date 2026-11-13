@@ -42,6 +42,7 @@ const LABEL_EXCEPTIONS: Record<string, string> = {
   "targets.asns": "sets.targets.asn.activeTitle",
   "targets.source_devices": "core.devices.devicesTitle",
   "faking.tls_mod": "sets.faking.fakeSni.tlsModTitle",
+  "tcp.wssize.enabled": "sets.tcp.general.wssizeEnable",
   "hub.id": "sets.share.linkId",
   "hub.version": "sets.share.linkVersion",
   "hub.hash": "hub.details.fingerprint",

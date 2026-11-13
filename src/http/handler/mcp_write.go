@@ -66,6 +66,7 @@ var mcpFragmentationStrategies = []string{
 // mcpEnums lists the accepted values for string fields whose set of options is
 // not enforced by config.Validate. Keyed by canonical path.
 var mcpEnums = map[string][]string{
+	mcpSetPathPrefix + ".tcp.wssize.cutoff":                   {"", config.WSSizeCutoffFirstData},
 	mcpSetPathPrefix + ".fragmentation.strategy":              mcpFragmentationStrategies,
 	mcpSetPathPrefix + ".fragmentation.combo.shuffle_mode":    {"middle", "full", "reverse"},
 	mcpSetPathPrefix + ".fragmentation.disorder.shuffle_mode": {"full", "middle", "reverse"},
@@ -110,6 +111,8 @@ var mcpRanges = map[string]mcpRange{
 	mcpSetPathPrefix + ".tcp.duplicate.count":                           {Min: 1, Max: 10},
 	mcpSetPathPrefix + ".tcp.desync.count":                              {Min: 1, Max: 20},
 	mcpSetPathPrefix + ".tcp.incoming.fake_count":                       {Min: 1, Max: 10},
+	mcpSetPathPrefix + ".tcp.wssize.window":                             {Min: 0, Max: config.MaxWSSizeWindow},
+	mcpSetPathPrefix + ".tcp.wssize.scale":                              {Min: 0, Max: config.MaxWSSizeScale},
 	mcpSetPathPrefix + ".udp.fake_seq_length":                           {Min: 1, Max: 20},
 	mcpSetPathPrefix + ".udp.fake_len":                                  {Min: 32, Max: 1500},
 	mcpSetPathPrefix + ".udp.seg2delay":                                 {Min: 0, Max: 1000},
@@ -783,6 +786,16 @@ func mcpSaveSideEffects(before, saved *config.Config, canonical, writtenID strin
 		if s.Targets.IPPriority && !s.IPPriorityApplies() && (old.IPPriorityApplies() || !old.Targets.IPPriority) {
 			notes = append(notes, fmt.Sprintf("targets.ip_priority has no effect on set %q while its targets.tls is set.", s.Name))
 		}
+		if ws, was := s.TCP.WSSize, old.TCP.WSSize; ws.Enabled {
+			switch {
+			case saved.Queue.Mode == "tun":
+				if !was.Enabled {
+					notes = append(notes, fmt.Sprintf("tcp.wssize has no effect on set %q while the packet engine is TUN: only the NFQUEUE engine applies it.", s.Name))
+				}
+			case !ws.Rewrites() && (!was.Enabled || was.Rewrites()):
+				notes = append(notes, fmt.Sprintf("tcp.wssize changes no packet on set %q until tcp.wssize.window or tcp.wssize.scale is above 0.", s.Name))
+			}
+		}
 		if catchAll := mcpCatchAllRoutingNote(s); catchAll != "" && catchAll != mcpCatchAllRoutingNote(old) {
 			notes = append(notes, catchAll)
 		}
@@ -1158,6 +1171,9 @@ func (api *API) addMCPWriteTools(srv *mcp.Server) {
 			out.Note = out.Note + " " + hint
 		}
 		if sideEffects != "" {
+			if !strings.HasSuffix(out.Note, ".") {
+				out.Note += "."
+			}
 			out.Note = out.Note + " " + sideEffects
 		}
 

@@ -287,6 +287,31 @@ func (c *Config) Validate() error {
 	c.System.IPHealth.RepeatBanTTLSec = clampBanSec(c.System.IPHealth.RepeatBanTTLSec, DefaultIPRepeatBanTTLSec, MaxIPRepeatBanTTLSec)
 
 	for setIdx, set := range c.Sets {
+		ws := &set.TCP.WSSize
+		ws.Cutoff = NormalizeWSSizeCutoff(ws.Cutoff)
+		if ws.Enabled {
+			if ws.Window < 0 || ws.Window > MaxWSSizeWindow {
+				v.addf(fmt.Sprintf("sets[%d].tcp.wssize.window", setIdx), "out_of_range",
+					map[string]any{"set": set.Name, "value": ws.Window, "min": 0, "max": MaxWSSizeWindow},
+					"set %q: tcp.wssize.window %d is outside 0-%d", set.Name, ws.Window, MaxWSSizeWindow)
+				return v.result()
+			}
+			if ws.Scale < 0 || ws.Scale > MaxWSSizeScale {
+				v.addf(fmt.Sprintf("sets[%d].tcp.wssize.scale", setIdx), "out_of_range",
+					map[string]any{"set": set.Name, "value": ws.Scale, "min": 0, "max": MaxWSSizeScale},
+					"set %q: tcp.wssize.scale %d is outside 0-%d", set.Name, ws.Scale, MaxWSSizeScale)
+				return v.result()
+			}
+			if set.Enabled && (set.Routing.Enabled || set.TCP.Duplicate.Enabled) {
+				v.addf(fmt.Sprintf("sets[%d].tcp.wssize", setIdx), "wssize_unsupported",
+					map[string]any{"set": set.Name},
+					"set %q: tcp.wssize does not work together with routing or packet duplication in the same set", set.Name)
+				return v.result()
+			}
+			if set.Enabled && c.Queue.Mode == "tun" {
+				warnEgressGatewayOnce("Set '%s': tcp.wssize is applied by the NFQUEUE engine only and does nothing while the engine is TUN", set.Name)
+			}
+		}
 		ibd := &set.TCP.IPBlockDetect
 		if ibd.SynThreshold <= 0 {
 			ibd.SynThreshold = DefaultIPBlockSynThreshold

@@ -6643,6 +6643,9 @@
                 },
                 "win": {
                     "$ref": "#/definitions/config.WinConfig"
+                },
+                "wssize": {
+                    "$ref": "#/definitions/config.WSSizeConfig"
                 }
             }
         },
@@ -6835,6 +6838,23 @@
                 },
                 "username": {
                     "type": "string"
+                }
+            }
+        },
+        "config.WSSizeConfig": {
+            "type": "object",
+            "properties": {
+                "cutoff": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "window": {
+                    "type": "integer"
                 }
             }
         },

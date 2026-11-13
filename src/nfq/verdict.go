@@ -17,6 +17,7 @@ type verdictModifier interface {
 }
 
 type verdictCtx struct {
+	modified       []byte
 	id             uint32
 	q              verdictSetter
 	verdict        engine.PacketVerdict
@@ -72,6 +73,9 @@ func (vc *verdictCtx) settleHeld(verdict int, how string) bool {
 }
 
 func (vc *verdictCtx) accept() int {
+	if vc.modified != nil && vc.replace(vc.modified) {
+		return 0
+	}
 	if !vc.settleHeld(nfqueue.NfAccept, "released ahead of the next packet") {
 		return 0
 	}

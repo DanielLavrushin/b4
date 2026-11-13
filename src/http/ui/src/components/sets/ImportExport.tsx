@@ -205,6 +205,11 @@ export const ImportExportSettings = ({
           strategy: "badsum",
         };
       }
+
+      const wssize = tcp.wssize as Record<string, unknown> | undefined;
+      if (wssize && wssize.cutoff !== "first_data") {
+        wssize.cutoff = "";
+      }
     }
 
     const frag = set.fragmentation as Record<string, unknown> | undefined;

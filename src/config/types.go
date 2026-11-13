@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -267,6 +268,62 @@ type Device struct {
 	IsManual bool   `json:"is_manual,omitempty"`
 }
 
+const (
+	WSSizeCutoffFirstData = "first_data"
+	MaxWSSizeWindow       = 65535
+	MaxWSSizeScale        = 14
+)
+
+type WSSizeConfig struct {
+	Cutoff  string `json:"cutoff"`
+	Enabled bool   `json:"enabled"`
+	Window  int    `json:"window"`
+	Scale   int    `json:"scale"`
+}
+
+func NormalizeWSSizeCutoff(cutoff string) string {
+	if cutoff == WSSizeCutoffFirstData {
+		return WSSizeCutoffFirstData
+	}
+	return ""
+}
+
+func (w WSSizeConfig) Rewrites() bool {
+	return w.Enabled && (w.Window > 0 || w.Scale > 0)
+}
+
+func (w WSSizeConfig) StopsAtFirstData() bool {
+	return w.Cutoff == WSSizeCutoffFirstData
+}
+
+func (w WSSizeConfig) Effective() WSSizeConfig {
+	if !w.Rewrites() {
+		return WSSizeConfig{}
+	}
+	w.Cutoff = NormalizeWSSizeCutoff(w.Cutoff)
+	if w.Window <= 0 {
+		w.Cutoff = ""
+	}
+	return w
+}
+
+func (w WSSizeConfig) Summary() string {
+	if !w.Enabled {
+		return ""
+	}
+	number := func(n int) string {
+		if n == 0 {
+			return "-"
+		}
+		return strconv.Itoa(n)
+	}
+	summary := number(w.Window) + ":" + number(w.Scale)
+	if w.Cutoff != "" {
+		summary += ":" + w.Cutoff
+	}
+	return summary
+}
+
 type TCPConfig struct {
 	ConnBytesLimit int    `json:"conn_bytes_limit"`
 	Seg2Delay      int    `json:"seg2delay"`
@@ -278,6 +335,7 @@ type TCPConfig struct {
 	HTTPMethodEOL  bool   `json:"http_methodeol"`
 	DPortFilter    string `json:"dport_filter"` // comma separated list of ports and port ranges, e.g. "80,443,5222"
 
+	WSSize        WSSizeConfig        `json:"wssize"`
 	Incoming      IncomingConfig      `json:"incoming"`
 	Desync        DesyncConfig        `json:"desync"`
 	Win           WinConfig           `json:"win"`

@@ -92,7 +92,7 @@ Fake TCP control packets with broken checksums and a low TTL. They confuse DPI t
 
 ## Window Manipulation
 
-Fake ACK packets with changed TCP window sizes, sent with a low TTL before the real packet.
+Fake ACK packets with changed TCP window sizes, sent with a low TTL before the real packet. The window of the connection's own packets is a separate option, [Real TCP window (wssize)](./general.md#wssize).
 
 | Field | What it does | Default |
 | --- | --- | --- |

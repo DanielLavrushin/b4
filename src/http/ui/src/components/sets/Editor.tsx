@@ -407,6 +407,7 @@ export const SetEditorPage = ({
           <TcpTabContainer
             initialSub={requestedSub}
             config={editedSet}
+            tunEngine={config.queue.mode === "tun"}
             onChange={handleChange}
           />
         </B4TabPanel>

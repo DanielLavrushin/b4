@@ -59,6 +59,7 @@ var disabledBlockRules = []blockRule{
 	{path: "tcp.rst_protection", toggle: "enabled", off: false},
 	{path: "tcp.desync", toggle: "mode", off: "off"},
 	{path: "tcp.win", toggle: "mode", off: "off"},
+	{path: "tcp.wssize", toggle: "enabled", off: false},
 	{path: "tcp.incoming", toggle: "mode", off: "off"},
 	{path: "fragmentation", toggle: "strategy", off: "none"},
 	{path: "dns", toggle: "enabled", off: false, keep: []string{"pins"}},
@@ -411,6 +412,7 @@ func Scrub(set *config.SetConfig) (map[string]interface{}, *Report, error) {
 	r := &Report{}
 	clone := *set
 	config.ApplySetDefaults(&clone)
+	clone.TCP.WSSize = clone.TCP.WSSize.Effective()
 	clone.UDP.FilterL7 = sortedL7(clone.UDP.FilterL7)
 	if len(clone.UDP.FilterL7) > 0 {
 		clone.UDP.FilterSTUN = config.DefaultSetConfig.UDP.FilterSTUN

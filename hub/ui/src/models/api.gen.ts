@@ -26,7 +26,7 @@ export type SimilarRelation = "same_targets" | "same_strategy" | "shared_targets
 
 export type AttentionCode = "low_score" | "stale" | "reports" | "weak";
 
-export type TechniqueCode = "fake" | "sni_mutation" | "tls_mod" | "frag" | "syn_fake" | "desync" | "incoming" | "window" | "duplicate" | "rst_protection" | "drop_sack" | "http_method_eol" | "seg2_delay" | "udp" | "dns" | "block" | "mss_clamp" | "passthrough";
+export type TechniqueCode = "fake" | "sni_mutation" | "tls_mod" | "frag" | "syn_fake" | "desync" | "incoming" | "window" | "duplicate" | "wssize" | "rst_protection" | "drop_sack" | "http_method_eol" | "seg2_delay" | "udp" | "dns" | "block" | "mss_clamp" | "passthrough";
 
 export type FilterCode = "tls_only" | "ip_only" | "domain_only";
 

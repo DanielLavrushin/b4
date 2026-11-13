@@ -158,7 +158,7 @@ Docs: [Geo data](https://docs.b4core.app/docs/settings/geodata)
 | `firstbyte`       | first byte, wait, then the rest                              |
 | `none`            | no fragmentation, for faking- or desync-only sets            |
 
-On top of the split: fake ClientHello injection, TCP desync, window manipulation, fake SYN, TCP-MD5, SACK stripping, ClientHello mutation, sequence overlap, packet duplication and MSS clamping.
+On top of the split: fake ClientHello injection, TCP desync, window manipulation, real TCP window rewriting (wssize), fake SYN, TCP-MD5, SACK stripping, ClientHello mutation, sequence overlap, packet duplication and MSS clamping.
 
 Matched UDP and QUIC is either fragmented and faked like TCP, dropped, or rejected with an ICMP unreachable so the browser falls back to TCP straight away. QUIC Initial packets are decrypted to read the SNI. STUN and Discord voice packets are left alone by default.
 
@@ -355,6 +355,7 @@ Based on research from:
 - [youtubeUnblock](https://github.com/Waujito/youtubeUnblock) - C-based DPI bypass
 - [GoodbyeDPI](https://github.com/ValdikSS/GoodbyeDPI) - Windows DPI circumvention
 - [zapret](https://github.com/bol-van/zapret) - Advanced DPI bypass techniques
+- [zapret2](https://github.com/bol-van/zapret2) - the wssize technique behind a set's real TCP window option
 - [byedpi](https://github.com/hufrea/byedpi) - proxy-based DPI bypass
 - [dpi-detector](https://github.com/Runnin4ik/dpi-detector) - DPI/TSPU detection techniques and test target lists (the DPI Detector feature is based on this project)
 - [Ladon](https://github.com/belotserkovtsev/ladon) - reactive Anti-DPI detection engine; its failure-classification approach (telling server-side rejection apart from DPI interference) informed the Watchdog feature, and its saved block list with re-tests informed the banned addresses of IP Block Detection

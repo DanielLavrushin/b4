@@ -92,6 +92,30 @@ func TestSimilarSetsNeedTheWholeStrategyToMatch(t *testing.T) {
 		t.Fatal("the split position is part of the strategy")
 	}
 
+	for name, ws := range map[string]config.WSSizeConfig{
+		"numbers left behind with the switch off":  {Window: 1, Scale: 6, Cutoff: config.WSSizeCutoffFirstData},
+		"the switch on with nothing to rewrite":    {Enabled: true},
+		"a cutoff left behind with nothing to cut": {Enabled: true, Cutoff: config.WSSizeCutoffFirstData},
+	} {
+		inert := base
+		inert.TCP.WSSize = ws
+		if !setsHaveSimilarConfig(&base, &inert) {
+			t.Fatalf("wssize with %s changes no packet and is not part of the strategy", name)
+		}
+	}
+	windowed := base
+	windowed.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1}
+	if setsHaveSimilarConfig(&base, &windowed) {
+		t.Fatal("a set that rewrites the real TCP window is a different strategy")
+	}
+	scaled := base
+	scaled.TCP.WSSize = config.WSSizeConfig{Enabled: true, Scale: 6}
+	scaledFirstData := scaled
+	scaledFirstData.TCP.WSSize.Cutoff = config.WSSizeCutoffFirstData
+	if setsHaveSimilarConfig(&base, &scaled) || !setsHaveSimilarConfig(&scaled, &scaledFirstData) {
+		t.Fatal("a lowered Window Scale is part of the strategy, and without a window the cutoff is not")
+	}
+
 	tls13 := base
 	tls13.Targets.TLSVersion = "1.3"
 	if setsHaveSimilarConfig(&base, &tls13) {

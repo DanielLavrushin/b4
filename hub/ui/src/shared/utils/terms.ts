@@ -13,6 +13,11 @@ const extras: Record<string, [string, string][]> = {
     ["reverse", "technique.frag.reverse"],
   ],
   desync: [["count", "technique.desync.count"]],
+  wssize: [
+    ["window", "technique.wssize.window"],
+    ["scale", "technique.wssize.scale"],
+    ["cutoffLabel", "technique.wssize.cutoffLabel"],
+  ],
   dns: [
     ["host", "technique.dns.host"],
     ["strict", "technique.dns.strict"],
@@ -27,6 +32,9 @@ const params = (t: TFunction, term: Term): Record<string, unknown> => {
   const p: Record<string, unknown> = { ...(term.params ?? {}) };
   if (typeof p.payload === "string") {
     p.payloadLabel = t(`technique.payload.${p.payload}`, { defaultValue: p.payload });
+  }
+  if (typeof p.cutoff === "string") {
+    p.cutoffLabel = t(`technique.cutoff.${p.cutoff}`, { defaultValue: p.cutoff });
   }
   return p;
 };

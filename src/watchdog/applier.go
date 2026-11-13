@@ -244,8 +244,16 @@ func describeSetChanges(old, next *config.SetConfig) []string {
 	add("tcp.seg2delay", old.TCP.Seg2Delay, next.TCP.Seg2Delay)
 	add("tcp.conn_bytes_limit", old.TCP.ConnBytesLimit, next.TCP.ConnBytesLimit)
 	add("tcp.desync.mode", old.TCP.Desync.Mode, next.TCP.Desync.Mode)
+	add("tcp.wssize", wssizeLabel(old.TCP.WSSize), wssizeLabel(next.TCP.WSSize))
 
 	return changes
+}
+
+func wssizeLabel(ws config.WSSizeConfig) string {
+	if summary := ws.Summary(); summary != "" {
+		return summary
+	}
+	return config.ConfigOff
 }
 
 func normalizeDomain(s string) string {

@@ -6,6 +6,7 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
+- A set can advertise a small TCP window in a connection's first packets, so the server sends the start of its reply in small pieces: **Real TCP window (wssize)** under **TCP, General** in the set editor, based on wssize from [zapret2](https://github.com/bol-van/zapret2). ([#561](https://github.com/DanielLavrushin/b4/pull/561), thanks [@SoloIl](https://github.com/SoloIl))
 - A set can ask more than one DNS resolver: the **Resolvers** field on its **DNS & Routing** tab holds up to eight, asked in order when one fails or is slow, and replaces the resolver type switch and its two fields. ([#551](https://github.com/DanielLavrushin/b4/pull/551), thanks [@asovetov](https://github.com/asovetov))
 - Without a login for the web interface, the log warns when b4 refuses a page at another address, and names the address b4 saw and what to change.
 - On Keenetic, interface lists such as **Capture Interfaces** and a set's **Output Interface** show the name the router gives each connection, as in `WARP (nwg4)`, and devices carry the name they have in the router's web interface. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
