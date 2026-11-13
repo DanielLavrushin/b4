@@ -55,49 +55,60 @@ func (c *wsSizeCache) growHello(f *wsSizeFlow, need int) bool {
 	return true
 }
 
-func (c *wsSizeCache) rewriteHello(f *wsSizeFlow, payload []byte, seq uint32, syn bool, now time.Time) bool {
-	if !now.Before(f.helloDeadline) {
+func (c *wsSizeCache) rewriteHello(f *wsSizeFlow, payload []byte, seq uint32, syn bool, now time.Time) (bool, wsSizeEnd) {
+	if !f.helloDeadline.IsZero() && !now.Before(f.helloDeadline) {
+		why := wsSizeEndDeadline
+		if f.cutoff {
+			why = wsSizeOngoing
+		}
 		c.releaseHello(f)
 		f.cutoff, f.helloEnd = true, 0
-		return false
+		return false, why
 	}
 	if syn {
 		seq++
 	}
 	offset := int(int32(seq - (f.isn + 1)))
 	if f.cutoff {
-		return len(payload) > 0 && f.helloEnd > 0 && offset < f.helloEnd && offset+len(payload) > 0
+		inside := offset >= 0
+		if len(payload) > 0 {
+			inside = offset+len(payload) > 0
+		}
+		return f.helloEnd > 0 && inside && offset < f.helloEnd, wsSizeOngoing
 	}
 	if len(payload) == 0 {
-		return true
+		return true, wsSizeOngoing
+	}
+	if f.helloDeadline.IsZero() {
+		f.helloDeadline = now.Add(wsSizeHelloTimeout)
 	}
 	f.helloPackets++
-	fallback := func() bool {
+	fallback := func(why wsSizeEnd) (bool, wsSizeEnd) {
 		f.cutoff = true
 		c.releaseHello(f)
-		return true
+		return true, why
 	}
 	if f.helloPackets > wsSizeHelloPackets {
-		return fallback()
+		return fallback(wsSizeEndTooMany)
 	}
 	if offset < 0 {
 		if offset <= -len(payload) {
-			return true
+			return true, wsSizeOngoing
 		}
 		payload, offset = payload[-offset:], 0
 	}
 	if offset >= wsSizeHelloMax || len(payload) > wsSizeHelloMax-offset {
-		return fallback()
+		return fallback(wsSizeEndTooLong)
 	}
 	if !c.growHello(f, offset+len(payload)) {
-		return fallback()
+		return fallback(wsSizeEndBudget)
 	}
 	h := f.hello
 	for i, b := range payload {
 		at := offset + i
 		bit := byte(1 << (at % 8))
 		if h.seen[at/8]&bit != 0 && h.data[at] != b {
-			return fallback()
+			return fallback(wsSizeEndConflict)
 		}
 		h.data[at] = b
 		h.seen[at/8] |= bit
@@ -107,13 +118,14 @@ func (c *wsSizeCache) rewriteHello(f *wsSizeFlow, payload []byte, seq uint32, sy
 	}
 	end, valid := wsSizeClientHelloEnd(h.data[:h.next])
 	if !valid {
-		return fallback()
+		return fallback(wsSizeEndNotHello)
 	}
 	if end > 0 {
 		f.cutoff, f.helloEnd = true, end
 		c.releaseHello(f)
+		return true, wsSizeEndHello
 	}
-	return true
+	return true, wsSizeOngoing
 }
 
 func wsSizeClientHelloEnd(data []byte) (int, bool) {

@@ -411,7 +411,6 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	dport := binary.BigEndian.Uint16(tcp[2:4])
 
 	if vc.tcpIncoming(cfg, sport) {
-		w.wssize.closeIncoming(pkt.raw, pkt.ihl)
 		return w.HandleIncoming(vc, pkt.ver, pkt.raw, pkt.ihl, pkt.src, pkt.dstStr, dport, pkt.srcStr, sport, payload)
 	}
 
@@ -534,13 +533,15 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	foreignEgress := matched && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
 	routeHandsOff := routeTProxy || routeIfaceHandoff || foreignEgress
 
-	if cfg.Queue.Mode != "tun" && cfg.IsTCPPort(dport) && !routeHandsOff && !vc.ifaceFiltered {
-		var early *config.SetConfig
-		if matched && !matchedConn && (addressMatched || matchedHint || matchedLearned || matchedPort) {
-			early = set
-		}
-		if w.wssize.rewrite(pkt.raw, pkt.ihl, early, cfg, time.Now()) {
-			vc.modified = pkt.raw
+	if w.rewritesWindow(cfg) && cfg.IsTCPPort(dport) && !routeHandsOff && !vc.ifaceFiltered {
+		if _, replaces := vc.q.(verdictModifier); replaces {
+			var early *config.SetConfig
+			if matched && !matchedConn && (addressMatched || matchedHint || matchedLearned || matchedPort) {
+				early = set
+			}
+			if w.wssize.rewrite(pkt.raw, pkt.ihl, early, cfg, time.Now()) {
+				vc.modified = pkt.raw
+			}
 		}
 	}
 

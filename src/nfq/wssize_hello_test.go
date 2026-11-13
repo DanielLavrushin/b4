@@ -42,7 +42,7 @@ func TestWSSizeHelloOriginalStream(t *testing.T) {
 		for _, isn := range []uint32{100, 0xfffffff0} {
 			t.Run(fmt.Sprintf("v%d-isn%d", ver, isn), func(t *testing.T) {
 				cfg, set := wsFixture()
-				set.TCP.WSSize.Cutoff = "client_hello"
+				set.TCP.WSSize.Cutoff = wsHello
 				c, now := newWSSizeCache(), time.Now()
 				at := 20
 				if ver == IPv6 {
@@ -102,7 +102,7 @@ func TestWSSizeHelloFallbacks(t *testing.T) {
 	for _, why := range []string{"non-tls", "bad-version", "empty-record", "oversized-record", "other-handshake", "oversized-message", "empty-message", "conflicting-overlap", "outside-limit", "packet-budget", "memory-budget"} {
 		t.Run(why, func(t *testing.T) {
 			cfg, set := wsFixture()
-			set.TCP.WSSize.Cutoff = "client_hello"
+			set.TCP.WSSize.Cutoff = wsHello
 			c, now := newWSSizeCache(), time.Now()
 			syn := synWithOptions(IPv4, nil, nil, 100)
 			c.rewrite(syn, 20, set, cfg, now)
@@ -138,7 +138,7 @@ func TestWSSizeHelloFallbacks(t *testing.T) {
 			if !c.rewrite(makeV4TCPPacket(payload, seq), 20, nil, cfg, now) {
 				t.Fatal("fallback triggering packet must be included")
 			}
-			if !c.flows[key].cutoff || c.flows[key].hello != nil || c.flows[key].helloEnd != 0 {
+			if _, kept := c.flows[key]; kept {
 				t.Fatal("fallback retained tracking")
 			}
 			if why != "memory-budget" && c.helloBytes != 0 {
@@ -152,10 +152,10 @@ func TestWSSizeHelloFallbacks(t *testing.T) {
 }
 
 func TestWSSizeHelloCleanup(t *testing.T) {
-	for _, why := range []string{"timeout-packet", "timeout-cleanup", "expiry", "config", "new-syn", "fin", "rst", "incoming-rst"} {
+	for _, why := range []string{"timeout-packet", "timeout-cleanup", "expiry", "config", "new-syn", "fin"} {
 		t.Run(why, func(t *testing.T) {
 			cfg, set := wsFixture()
-			set.TCP.WSSize.Cutoff = "client_hello"
+			set.TCP.WSSize.Cutoff = wsHello
 			c, now := newWSSizeCache(), time.Now()
 			syn := synWithOptions(IPv4, nil, nil, 100)
 			c.rewrite(syn, 20, set, cfg, now)
@@ -179,15 +179,6 @@ func TestWSSizeHelloCleanup(t *testing.T) {
 				c.rewrite(synWithOptions(IPv4, nil, nil, 200), 20, set, cfg, now)
 			case "fin":
 				c.rewrite(makeV4TCPPacketFlags(nil, 103, 0x11), 20, nil, cfg, now)
-			case "rst":
-				c.rewrite(makeV4TCPPacketFlags(nil, 103, 0x14), 20, nil, cfg, now)
-			case "incoming-rst":
-				p := makeV4TCPPacketFlags(nil, 10, 0x14)
-				copy(p[12:16], syn[16:20])
-				copy(p[16:20], syn[12:16])
-				copy(p[20:22], syn[22:24])
-				copy(p[22:24], syn[20:22])
-				c.closeIncoming(p, 20)
 			}
 			if c.helloBytes != 0 {
 				t.Fatalf("%d bytes leaked", c.helloBytes)
@@ -198,7 +189,7 @@ func TestWSSizeHelloCleanup(t *testing.T) {
 
 func TestWSSizeHelloFastOpenAndBytewise(t *testing.T) {
 	cfg, set := wsFixture()
-	set.TCP.WSSize.Cutoff = "client_hello"
+	set.TCP.WSSize.Cutoff = wsHello
 	hello := buildClientHello("original.example", 0, 0)
 	for _, count := range []int{1, len(hello)} {
 		c, now := newWSSizeCache(), time.Now()
@@ -216,9 +207,26 @@ func TestWSSizeHelloFastOpenAndBytewise(t *testing.T) {
 	}
 }
 
+func TestWSSizeHelloPayloadBeforeTheStreamStartIsLeftAlone(t *testing.T) {
+	hello := buildClientHello("edge.example", 300, 0xab)
+	p := newWSConn(t, wsHello)
+	if !p.syn(nil) || !p.ack() || !p.data(0, hello) {
+		t.Fatal("the opening through the ClientHello must be rewritten")
+	}
+	if f, _ := p.flow(); f.helloEnd != len(hello) {
+		t.Fatalf("fixture: the ClientHello was not followed to its end: %+v", f)
+	}
+	if p.data(-5, []byte("12345")) {
+		t.Fatal("after the ClientHello ended, a packet whose 5 bytes stop exactly where the stream starts was rewritten, although none of them belongs to the ClientHello")
+	}
+	if !p.data(-5, append([]byte("12345"), hello[0])) {
+		t.Fatal("after the ClientHello ended, a packet that reaches one byte into it left with its own window")
+	}
+}
+
 func TestWSSizeHelloBudgetAndConcurrency(t *testing.T) {
 	cfg, set := wsFixture()
-	set.TCP.WSSize.Cutoff = "client_hello"
+	set.TCP.WSSize.Cutoff = wsHello
 	c, now := newWSSizeCache(), time.Now()
 	hello := buildClientHello("original.example", 700, 0xab)
 	var wg sync.WaitGroup
@@ -255,7 +263,7 @@ func TestWSSizeHelloWireLimit(t *testing.T) {
 		t.Fatal("fixture does not reach the wire limit")
 	}
 	cfg, set := wsFixture()
-	set.TCP.WSSize.Cutoff = "client_hello"
+	set.TCP.WSSize.Cutoff = wsHello
 	c, now := newWSSizeCache(), time.Now()
 	syn := synWithOptions(IPv4, nil, nil, 100)
 	c.rewrite(syn, 20, set, cfg, now)

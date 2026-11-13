@@ -165,6 +165,7 @@ func NewPool(cfg *config.Config) *Pool {
 				pool.state.bans.tick(pool.GetFirstWorkerConfig())
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
+				pool.state.wssize.cleanup(time.Now())
 				pool.sweepSilentHellos(time.Now())
 				pool.publishEscalations()
 				pool.publishBans()
@@ -420,6 +421,10 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	for _, w := range p.Workers {
 		w.cfg.Store(newCfg)
 		w.matcher.Store(matcher)
+	}
+
+	if p.state != nil {
+		p.state.wssize.reset()
 	}
 
 	if !reuse && p.state != nil && p.state.tlsCache != nil {
