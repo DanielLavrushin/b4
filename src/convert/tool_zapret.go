@@ -444,7 +444,7 @@ var zapretTCPOnlyL7 = map[string]bool{"http": true, "tls": true}
 
 func zapretSeesUDP(prof *Profile, udpTaken bool) bool {
 	f := prof.Filters
-	if len(f.UDPPorts) == 0 && (len(f.TCPPorts) > 0 || udpTaken) {
+	if !f.UDPFilter && (f.TCPFilter || udpTaken) {
 		return false
 	}
 	if len(f.Protos) == 0 {

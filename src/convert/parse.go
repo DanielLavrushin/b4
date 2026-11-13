@@ -344,6 +344,7 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 	case "filters.l7":
 		prof.Filters.Protos = append(prof.Filters.Protos, v.List...)
 	case "filters.tcp_ports":
+		prof.Filters.TCPFilter = true
 		if v.Bool {
 			notes.set(tok, StatusUnsupported, "negatedPortFilter")
 			return
@@ -354,6 +355,7 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 		}
 		prof.Filters.TCPPorts = append(prof.Filters.TCPPorts, v.List...)
 	case "filters.udp_ports":
+		prof.Filters.UDPFilter = true
 		if v.Bool {
 			notes.set(tok, StatusUnsupported, "negatedPortFilter")
 			return

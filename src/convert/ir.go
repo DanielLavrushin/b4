@@ -94,6 +94,8 @@ type Filters struct {
 	PortMax   int      `json:"port_max"`
 	TCPPorts  []string `json:"tcp_ports"`
 	UDPPorts  []string `json:"udp_ports"`
+	TCPFilter bool     `json:"tcp_filter"`
+	UDPFilter bool     `json:"udp_filter"`
 	IPVersion string   `json:"ip_version"`
 }
 
@@ -236,7 +238,7 @@ func (p *Profile) ownsUDPSide() bool {
 }
 
 func (p *Profile) statesUDP() bool {
-	return len(p.Filters.UDPPorts) > 0 || p.UDP.namesPayload()
+	return p.Filters.UDPFilter || p.UDP.namesPayload()
 }
 
 func (p *Profile) hasOwnTargets() bool {

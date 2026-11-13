@@ -415,3 +415,40 @@ func TestZapret_AFoldedUDPProfileNamesItsOwnOptions(t *testing.T) {
 	assertNoLostOptions(t, res)
 	assertSetsSave(t, res)
 }
+
+func TestZapret_APortFilterForEveryPortIsStillAFilter(t *testing.T) {
+	const token = "--dpi-desync-fake-quic=q.bin"
+	tests := []struct {
+		name    string
+		filters string
+		payload string
+		udp     int
+		reason  string
+	}{
+		{"everyUDPPort", "--filter-tcp=443 --filter-udp=*", config.FakePayloadAutoQUIC, 8, "fakeQUICApproximated"},
+		{"everyTCPPort", "--filter-tcp=*", "", config.DefaultSetConfig.UDP.FakeSeqLength, "udpFakeUnused"},
+		{"negatedTCPPort", "--filter-tcp=~80", "", config.DefaultSetConfig.UDP.FakeSeqLength, "udpFakeUnused"},
+		{"negatedUDPPort", "--filter-tcp=443 --filter-udp=~53", config.FakePayloadAutoQUIC, 8, "fakeQUICApproximated"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := analyze(t, tt.filters+" --hostlist-domains=example.com --dpi-desync=fake --dpi-desync-repeats=8 "+token)
+			udp := res.Sets[0].UDP
+			if udp.FakePayloadFile != tt.payload || udp.FakeSeqLength != tt.udp {
+				t.Fatalf("nfqws denies UDP to a profile with a TCP filter and no UDP filter, whatever ports they name: "+
+					"file %q fake_seq_length %d, want %q and %d", udp.FakePayloadFile, udp.FakeSeqLength, tt.payload, tt.udp)
+			}
+			if n := noteFor(t, res, token); n.Reason != tt.reason {
+				t.Fatalf("got %+v, want %s", n, tt.reason)
+			}
+			assertNoLostOptions(t, res)
+			assertSetsSave(t, res)
+		})
+	}
+
+	res := analyze(t, "--filter-tcp=443 --filter-udp=* --hostlist-domains=example.com --dpi-desync=multisplit --new "+
+		"--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=11")
+	if len(res.Sets) != 2 {
+		t.Fatalf("a profile that filters UDP for every port has a UDP side of its own and takes no fold: got %d sets", len(res.Sets))
+	}
+}
