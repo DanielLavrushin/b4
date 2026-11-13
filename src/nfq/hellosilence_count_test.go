@@ -364,6 +364,46 @@ func TestAResendCheckStillBansOnTheNeutralNamesAlone(t *testing.T) {
 	}
 }
 
+func TestAResendThatJoinsDuringTheFinalReadStillBans(t *testing.T) {
+	b := newTestIPBans(t, answering(iphealth.TLSSilent))
+	cfg := config.NewConfig()
+	ip, key := net.ParseIP("1.2.3.4"), "1.2.3.4:443"
+	now := time.Now()
+	b.countSilentHello(key, now)
+	b.countSilentHello(key, now)
+	reading, answer := make(chan struct{}), make(chan struct{})
+	b.gotAnswer = func(net.IP, int) bool {
+		close(reading)
+		<-answer
+		return true
+	}
+	t.Cleanup(func() {
+		select {
+		case <-answer:
+		default:
+			close(answer)
+		}
+	})
+
+	if !b.confirmSilence(&cfg, ip, 443, bannedHost, bannedSet) {
+		t.Fatal("the check for the silent connections must start")
+	}
+	select {
+	case <-reading:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the check never reached its last read of conntrack, so this test proves nothing")
+	}
+	if !b.confirm(&cfg, ip, 443, bannedHost, bannedSet) {
+		t.Fatal("the resend trigger must join the check that is running")
+	}
+	close(answer)
+	b.wg.Wait()
+
+	if !b.reg.Banned(ip, 443) {
+		t.Fatal("a resend trigger that joins while the check reads conntrack for the last time must still get its ban on the neutral names alone")
+	}
+}
+
 func TestSilentCountsAreBounded(t *testing.T) {
 	b := newTestIPBans(t, nil)
 	now := time.Now()

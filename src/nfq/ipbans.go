@@ -188,7 +188,7 @@ func (b *ipBans) settleStrike(key string, ip net.IP, port int, host, setName str
 	if !b.on() {
 		return
 	}
-	if b.startedBySilence(key) && !b.stillSilent(key, ip, port) {
+	if b.sparedByAnAnswer(key, ip, port) {
 		log.Infof("IP bans: %s answered a device while it was checked with neutral names, so the address is not banned (host: %s, set: %s)", key, host, setName)
 		return
 	}
@@ -322,6 +322,10 @@ func (b *ipBans) startedBySilence(key string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.inflight[key]
+}
+
+func (b *ipBans) sparedByAnAnswer(key string, ip net.IP, port int) bool {
+	return b.startedBySilence(key) && !b.stillSilent(key, ip, port) && b.startedBySilence(key)
 }
 
 func (b *ipBans) stillSilent(key string, ip net.IP, port int) bool {
