@@ -604,15 +604,27 @@ func (ds *DiscoverySuite) setLacksDNSFix(scoped *config.SetConfig) bool {
 	return false
 }
 
+func primaryResolver(c config.DNSConfig) string {
+	if strings.TrimSpace(c.DoHURL) != "" {
+		return strings.TrimSpace(c.DoHURL)
+	}
+	if strings.TrimSpace(c.TargetDNS) != "" {
+		return strings.TrimSpace(c.TargetDNS)
+	}
+	if list := c.UpstreamList(); len(list) > 0 {
+		return list[0]
+	}
+	return ""
+}
+
 func sameResolver(live, tested config.DNSConfig) bool {
 	if !live.Enabled {
 		return false
 	}
 	if tested.DoHURL != "" {
-		return strings.EqualFold(strings.TrimSpace(live.DoHURL), strings.TrimSpace(tested.DoHURL))
+		return strings.EqualFold(primaryResolver(live), strings.TrimSpace(tested.DoHURL))
 	}
-	return live.DoHURL == "" &&
-		strings.TrimSpace(live.TargetDNS) == strings.TrimSpace(tested.TargetDNS) &&
+	return strings.EqualFold(primaryResolver(live), strings.TrimSpace(tested.TargetDNS)) &&
 		(live.FragmentQuery || !tested.FragmentQuery)
 }
 

@@ -4,7 +4,7 @@
         "description": "B4 network packet processor REST API",
         "title": "B4 API",
         "contact": {},
-        "version": "1.90.0"
+        "version": "1.91.0"
     },
     "basePath": "/api",
     "paths": {
@@ -1618,7 +1618,7 @@
                         }
                     },
                     "409": {
-                        "description": "code: dscp_path_changed when the strategy was tested on another DSCP path than the new set's traffic would take, dscp_rules_pending while b4 is still applying its DSCP rules",
+                        "description": "code: dscp_path_changed when the strategy was tested on another DSCP path than the new set's traffic would take, dscp_rules_pending while b4 is still applying its DSCP rules, fake_payload_missing when the capture the strategy's fake names can no longer be loaded",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -1967,7 +1967,7 @@
                         }
                     },
                     "409": {
-                        "description": "code: dscp_path_changed when the strategy was tested on another DSCP path than the set's traffic takes, dscp_rules_pending while b4 is still applying its DSCP rules",
+                        "description": "code: dscp_path_changed when the strategy was tested on another DSCP path than the set's traffic takes, dscp_rules_pending while b4 is still applying its DSCP rules, fake_payload_missing when the capture the strategy's fake names can no longer be loaded",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -4487,7 +4487,7 @@
                         }
                     },
                     "409": {
-                        "description": "code: similar_set_changed, dscp_path_changed or dscp_rules_pending, when tested is given",
+                        "description": "code: similar_set_changed, fake_payload_missing, dscp_path_changed or dscp_rules_pending, when tested is given",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -5575,6 +5575,12 @@
                 },
                 "target_dns": {
                     "type": "string"
+                },
+                "upstreams": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

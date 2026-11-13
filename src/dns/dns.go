@@ -96,6 +96,13 @@ const (
 	RcodeRefused  uint8 = 5
 )
 
+func AnswerCount(payload []byte) int {
+	if len(payload) < 12 {
+		return 0
+	}
+	return int(binary.BigEndian.Uint16(payload[6:8]))
+}
+
 func ResponseRcode(payload []byte) (uint8, bool) {
 	if len(payload) < 12 {
 		return 0, false

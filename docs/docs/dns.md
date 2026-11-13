@@ -32,6 +32,12 @@ A set's resolver helps when the provider's DNS answers the set's domains with wr
 | **Plain DNS (UDP)** | Plain DNS to other servers arrives intact. **Fragment DNS Queries** splits each query into IP fragments, for DPI that reads the names in DNS queries. |
 | **DNS-over-HTTPS** | The provider tampers with plain DNS to other servers too, or the resolver serves only DoH. The queries leave encrypted. |
 
+### A set with more than one resolver {#more-resolvers}
+
+**More resolvers** on the same tab takes one entry per line: an address or an https:// URL, up to eight in total with the resolver above. b4 asks the resolver above first, then each entry in turn. When one has not answered within 300 ms, the next one starts, so a blocked resolver costs a third of a second instead of the whole timeout. A SERVFAIL, NOTIMP or REFUSED answer moves on at once. The first usable answer ends the lookup, so the order of the list is the order of trust: put the resolver you rely on first. An entry that fails three times in a row is left out for 30 s.
+
+A set without **More resolvers** resolves exactly as before: one resolver, one timeout, and its SERVFAIL reaches the device.
+
 Queries from the set's own resolver go on unchanged, so a resolver on the local network can serve a set. A resolver on the router itself has one more condition, see [When it does not work](#when-it-does-not-work).
 
 A service that checks the address a connection comes from needs another exit rather than another resolver, see [Routing sites through a VPN](guides/vpn.md).

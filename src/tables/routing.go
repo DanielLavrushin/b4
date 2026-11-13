@@ -458,7 +458,7 @@ func routeSameResolveTargets(a, b *config.SetConfig) bool {
 	if a.Targets.DomainOnly != b.Targets.DomainOnly || len(a.Targets.SNIDomains) != len(b.Targets.SNIDomains) {
 		return false
 	}
-	if a.DNS.Enabled != b.DNS.Enabled || a.DNS.TargetDNS != b.DNS.TargetDNS || a.DNS.DoHURL != b.DNS.DoHURL || a.DNS.Strict != b.DNS.Strict {
+	if !a.DNS.SameRoutingResolver(&b.DNS) {
 		return false
 	}
 	counts := make(map[string]int, len(a.Targets.SNIDomains))
@@ -539,7 +539,7 @@ func routeQueuedTargetsKept(was, now *config.SetConfig) bool {
 	if was.Targets.DomainOnly != now.Targets.DomainOnly {
 		return false
 	}
-	if was.DNS.Enabled != now.DNS.Enabled || was.DNS.TargetDNS != now.DNS.TargetDNS || was.DNS.DoHURL != now.DNS.DoHURL || was.DNS.Strict != now.DNS.Strict {
+	if !was.DNS.SameRoutingResolver(&now.DNS) {
 		return false
 	}
 	return routeNamesCovered(was.Targets.SNIDomains, now.Targets.SNIDomains) &&
@@ -572,22 +572,24 @@ func routeResolveHost(cfg *config.Config, set *config.SetConfig, host string) []
 }
 
 func routeResolveHostContext(parent context.Context, cfg *config.Config, set *config.SetConfig, host string) []net.IP {
-	var srv dns.Server
+	var servers []dns.Server
 	useSet, strict := false, false
 	if set != nil {
-		srv, useSet = dns.SetServer(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL)
+		servers, useSet = dns.SetServers(set.DNS.Enabled, set.DNS.TargetDNS, set.DNS.DoHURL, set.DNS.Upstreams)
 		strict = set.DNS.Strict
 	}
-	srv.Mark, srv.Timeout = int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout()
-	if useSet && strict && dns.SourceUnreachable(srv.Source) {
-		log.Tracef("Routing: set '%s' skips resolving %s, its resolver %s is cooling down after repeated failures", set.Name, host, dns.SourceLabel(srv.Source))
+	for i := range servers {
+		servers[i].Mark, servers[i].Timeout = int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout()
+	}
+	if useSet && strict && dns.AllSourcesCooling(servers) {
+		log.Tracef("Routing: set '%s' skips resolving %s, every resolver of the set is cooling down after repeated failures", set.Name, host)
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(parent, srv.Budget()+time.Second)
+	ctx, cancel := context.WithTimeout(parent, dns.ServersBudget(servers, cfg.DNSQueryTimeout())+time.Second)
 	defer cancel()
 
-	ips, err := dns.LookupWithFallback(ctx, routeSetLookup, srv, useSet, strict, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	ips, err := dns.LookupWithFallback(ctx, routeSetLookup, servers, dns.Options{Life: parent, Strict: strict}, useSet, host, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
 	if err != nil {
 		log.Tracef("Routing: resolve %s failed: %v", host, err)
 		return nil

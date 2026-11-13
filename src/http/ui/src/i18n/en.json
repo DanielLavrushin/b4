@@ -189,7 +189,6 @@
       "levelTrace": "Trace",
       "levelDebug": "Debug"
     },
-
     "Service": {
       "title": "Service",
       "timezone": "Time Zone",
@@ -2253,6 +2252,9 @@
       "dohUrl": "DNS-over-HTTPS URL",
       "dohUrlPlaceholder": "e.g., https://xbox-dns.ru/dns-query",
       "dohUrlHelper": "Resolve matched domains over encrypted DoH. Takes precedence over the DNS server IP above. Useful for resolvers that only serve DoH or whose plain DNS is spoofed by your ISP.",
+      "upstreams": "More resolvers",
+      "upstreamsPlaceholder": "1.1.1.1\nhttps://dns.google/dns-query",
+      "upstreamsHelper": "One entry per line: an address or an https:// URL. b4 asks the resolver above first, then each entry in turn, moving on after 300 ms without an answer or at once on SERVFAIL, NOTIMP or REFUSED. Up to eight in total.",
       "recommendedServers": "Recommended DNS Servers",
       "howItWorks": "HOW IT WORKS",
       "vizApp": "App",
@@ -3984,6 +3986,7 @@
     "expose_requires_auth": "Exposing the web interface to the internet needs a username and password",
     "expose_open_relay": "Exposing SOCKS5 to the internet needs a username and password or an allowed sources list",
     "doh_url_must_be_https": "Set \"{{set}}\": DNS-over-HTTPS URL must start with https://",
+    "invalid_dns_upstream": "Set \"{{set}}\": DNS resolver entry {{index}} is neither an address nor an https:// URL",
     "mark_conflict": "Mark value {{mark}} conflicts with reserved bits",
     "payload_install_failed": "The {{protocol}} payload for {{domain}} could not be saved to the captures folder: {{reason}}",
     "config_changed": "The configuration was changed on the router after this page loaded, for example by the watchdog. Reload to see the current state; unsaved changes on this page are lost.",

@@ -632,8 +632,10 @@ func replaceStrategy(dst, strategy *config.SetConfig) {
 	dst.UDP = udp
 
 	pins, strict, stripECH := dst.DNS.Pins, dst.DNS.Strict, dst.DNS.StripECH || strategy.DNS.StripECH
+	upstreams := dst.DNS.Upstreams
 	dst.DNS = strategy.DNS
 	dst.DNS.Pins, dst.DNS.Strict, dst.DNS.StripECH = pins, strict, stripECH
+	dst.DNS.Upstreams = upstreams
 
 	dst.Targets.TLSVersion = strategy.Targets.TLSVersion
 	dst.Targets.IPVersion = strategy.Targets.IPVersion
