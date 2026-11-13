@@ -39,7 +39,7 @@ byedpi and zapret split a configuration into profiles, and each profile becomes 
 - **zapret** starts a profile with `--new`, an alternative chosen by its own filters. These sets are independent.
 - A byedpi profile limited to UDP, without filters of its own, joins the set that handles the rest of the traffic, since one b4 set covers both protocols.
 - A set whose profile does nothing to UDP still sends the fake UDP packets of a new b4 set. Its report row says so. With **Action Mode** set to **Off** on the [UDP](./udp.md#how-to-handle-matched-traffic) tab, the set leaves UDP unchanged.
-- zapret's `--wssize` turns on [Real TCP window (wssize)](./tcp/general.md#wssize) with the same window and scale. In a profile that also has `--dup`, only the packet duplication is carried over.
+- zapret's `--wssize` turns on [Real TCP window (wssize)](./tcp/general.md#wssize) with the same window and scale. In a profile that also has `--dup`, the window is not carried over.
 
 A configuration file is read the way its launch script reads it, so the sets follow the profiles the source machine runs. Commented-out alternatives, variables of another daemon such as tpws, and host list placeholders such as `<HOSTLIST>` are reported, not converted. An alternative is imported by uncommenting it and analyzing again.
 
