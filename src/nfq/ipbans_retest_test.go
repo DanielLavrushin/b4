@@ -10,6 +10,8 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/iphealth"
+	"github.com/daniellavrushin/b4/sock"
+	"github.com/florianl/go-nfqueue"
 )
 
 func TestTheBanRetestsOwnSynPassesTheBan(t *testing.T) {
@@ -289,5 +291,48 @@ func TestTheBanRetestHintsTheSetForItsOwnConnection(t *testing.T) {
 	w.hintBanRetest(net.ParseIP("1.2.3.5"), 443, "no-set.example")
 	if hinted, _, _, _ := w.lookupHostHint(w.getConfig(), "10.0.0.1", "1.2.3.5", ""); hinted != nil {
 		t.Errorf("a name no set takes gets no hint, got %v", hinted)
+	}
+}
+
+func TestTheBanRetestHintsASetTheRoutersOwnSynTakes(t *testing.T) {
+	for _, c := range []struct {
+		name                     string
+		dpiVersion, blockVersion string
+		blockFirst               bool
+	}{
+		{"an IPv4 block set for br-guest below an IPv6 set", "6", "4", false},
+		{"a block set for br-guest listed first", "", "", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			scopeIfaces(t)
+			thisHost(t, scopeRouter)
+			dpi := familySet("dpi", c.dpiVersion)
+			dpi.TCP.RSTProtection.Enabled = false
+			dpi.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1, Scale: 1, Cutoff: wsFirstData}
+			block := scopeToGuest(familySet("block", c.blockVersion), config.BlockActionDrop)
+			sets := []*config.SetConfig{dpi, block}
+			if c.blockFirst {
+				sets = []*config.SetConfig{block, dpi}
+			}
+			w := familyWorker(t, sets...)
+			prev := routeSource
+			routeSource = func(net.IP, int) net.IP { return net.ParseIP(scopeRouter) }
+			t.Cleanup(func() { routeSource = prev })
+
+			w.hintBanRetest(net.ParseIP(familyV4Addr), 443, familyName)
+
+			syn := wsPacket(IPv4, 12345, 100, 0x02, wsKernelSynOptions, nil)
+			copy(syn[12:16], net.ParseIP(scopeRouter).To4())
+			sock.FixIPv4Checksum(syn[:20])
+			sock.FixTCPChecksum(syn)
+			q := &wsQueue{}
+			id := uint32(1)
+			w.handleQueued(&verdictCtx{id: id, q: q}, nfqueue.Attribute{PacketID: &id, Payload: &syn, Hook: hookAt(nfHookLocalOut)}, uint(w.getConfig().Queue.Mark))
+			got := q.take()
+			if len(got) != 1 || got[0].packet == nil || wsWindow(got[0].packet) != 1 {
+				hinted, _, _ := w.hostHints.Lookup(scopeRouter, familyV4Addr)
+				t.Fatalf("the router's SYN left without the window of set dpi: the re-test hinted set %q, verdicts %+v", hinted, got)
+			}
+		})
 	}
 }

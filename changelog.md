@@ -32,6 +32,7 @@ All notable changes to b4 are recorded in this file.
 - A ban from **IP Block Detection** on a server that answers only its own sites, such as a YouTube video server, never ended early, even after the set reached the site again, because the re-tests asked for unrelated names only. [#547](https://github.com/DanielLavrushin/b4/issues/547)
 - A byedpi fake imported from the command line (`-l :...`) came out changed when it held binary data, and its set showed **Fake Payload Type** as a bare `1`, while a zapret fake given as hex was left out of the set (`--dpi-desync-fake-tls=0x...`) or went out as zeros (`--dpi-desync-fake-quic=0x...`). [#538](https://github.com/DanielLavrushin/b4/issues/538)
 - Set cards and **Discovery** results named the Google and DuckDuckGo fake payloads `default` and `default2`. [#538](https://github.com/DanielLavrushin/b4/issues/538)
+- With one domain in two sets, one limited to IPv4 and one to IPv6 by the **IP Version Filter**, the first packet of a connection could get the set for the other IP version when that set was higher in the list. [#582](https://github.com/DanielLavrushin/b4/issues/582)
 
 ### Security
 
