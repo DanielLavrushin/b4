@@ -465,26 +465,27 @@ func noteDroppedSplitPositions(prof *Profile, ti tokenIndex, notes *noteSet) {
 }
 
 func normalizeZapret(prog *Program, tokens []Token, notes *noteSet) {
-	targets := zapretTargetOptions(tokens)
+	scopes := zapretScopeOptions(tokens)
 	var udpProfiles []*Profile
 	for _, prof := range prog.Profiles {
 		normalizeZapretProfile(prof, notes)
-		promoteUDPFake(prof, zapretQUICTaken(udpProfiles, prof, targets))
+		promoteUDPFake(prof, zapretUDPTaken(udpProfiles, prof, scopes))
 		if prof.UDPOnly() && !prof.Skip {
 			udpProfiles = append(udpProfiles, prof)
 		}
 	}
 }
 
-var zapretTargetKeys = map[string]bool{
+var zapretScopeKeys = map[string]bool{
 	"hostlist": true, "hostlist_domains": true, "hostlist_exclude": true, "hostlist_excl_dom": true, "hostlist_auto": true,
 	"ipset": true, "ipset_ip": true, "ipset_exclude": true, "ipset_excl_ip": true,
+	"filter_ssid": true,
 }
 
-func zapretTargetOptions(tokens []Token) map[int][]string {
+func zapretScopeOptions(tokens []Token) map[int][]string {
 	options := map[int][]string{}
 	for _, tok := range tokens {
-		if zapretTargetKeys[tok.Key] {
+		if zapretScopeKeys[tok.Key] {
 			options[tok.Profile] = append(options[tok.Profile], tok.Key+"="+strings.TrimSpace(tok.Value))
 		}
 	}
@@ -496,21 +497,18 @@ func zapretTargetOptions(tokens []Token) map[int][]string {
 
 const quicPort = 443
 
-func zapretQUICTaken(earlier []*Profile, prof *Profile, targets map[int][]string) bool {
+func zapretUDPTaken(earlier []*Profile, prof *Profile, scopes map[int][]string) bool {
 	return slices.ContainsFunc(earlier, func(e *Profile) bool {
 		f := e.Filters
-		own := targets[e.Index]
-		return zapretMatchesQUIC(e) && (f.IPVersion == "" || f.IPVersion == prof.Filters.IPVersion) &&
-			(len(own) == 0 || slices.Equal(own, targets[prof.Index]))
+		own := scopes[e.Index]
+		return zapretTakesEveryUDPOnThePort(e) && (f.IPVersion == "" || f.IPVersion == prof.Filters.IPVersion) &&
+			(len(own) == 0 || slices.Equal(own, scopes[prof.Index]))
 	})
 }
 
-func zapretMatchesQUIC(prof *Profile) bool {
+func zapretTakesEveryUDPOnThePort(prof *Profile) bool {
 	f := prof.Filters
-	if f.UDPNegated || (len(f.Protos) > 0 && !f.HasProto("quic")) {
-		return false
-	}
-	return len(f.UDPPorts) == 0 || portListHas(f.UDPPorts, quicPort)
+	return !f.UDPNegated && len(f.Protos) == 0 && portListHas(f.UDPPorts, quicPort)
 }
 
 func portListHas(ports []string, port int) bool {
@@ -535,9 +533,9 @@ func portListHas(ports []string, port int) bool {
 
 var zapretTCPOnlyL7 = map[string]bool{"http": true, "tls": true}
 
-func zapretSeesUDP(prof *Profile, quicTaken bool) bool {
+func zapretSeesUDP(prof *Profile, udpTaken bool) bool {
 	f := prof.Filters
-	if !f.UDPFilter && (f.TCPFilter || quicTaken) {
+	if !f.UDPFilter && (f.TCPFilter || udpTaken) {
 		return false
 	}
 	if len(f.Protos) == 0 {
@@ -550,10 +548,10 @@ func zapretFakesUDP(prof *Profile) bool {
 	return slices.Contains(prof.DesyncModes, "fake") || slices.Contains(prof.DesyncModes, "fakeknown")
 }
 
-func promoteUDPFake(prof *Profile, quicTaken bool) {
+func promoteUDPFake(prof *Profile, udpTaken bool) {
 	udpOnly := prof.UDPOnly()
 	fakes := zapretFakesUDP(prof)
-	if !udpOnly && (!fakes || !zapretSeesUDP(prof, quicTaken)) {
+	if !udpOnly && (!fakes || !zapretSeesUDP(prof, udpTaken)) {
 		return
 	}
 	prof.UDP.Present = fakes

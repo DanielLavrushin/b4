@@ -254,7 +254,7 @@ func TestZapret_AUDPProfileWithoutAFakeModeLeavesTheSetsUDPSideAlone(t *testing.
 	}
 }
 
-func TestZapret_AProfileLeavesUDPToAnEarlierUDPProfileThatTakesItsQUIC(t *testing.T) {
+func TestZapret_AProfileLeavesUDPToAnEarlierUDPProfileThatTakesAllOfIt(t *testing.T) {
 	const list = "--hostlist=/opt/zapret/list.txt"
 	const later = " --dpi-desync=fake,multisplit --dpi-desync-repeats=2 --dpi-desync-fake-quic=q.bin"
 	tests := []struct {
@@ -285,6 +285,9 @@ func TestZapret_AProfileLeavesUDPToAnEarlierUDPProfileThatTakesItsQUIC(t *testin
 			"--filter-tcp=80 --hostlist-domains=a.com --dpi-desync=multisplit --new --hostlist-domains=example.com" + later, false},
 		{"sameAddressListAndExclusion", "--filter-udp=443 --ipset=/opt/zapret/addr.txt --ipset-exclude=/opt/zapret/not.txt --dpi-desync=fake --new " +
 			"--ipset=/opt/zapret/addr.txt --ipset-exclude=/opt/zapret/not.txt" + later, true},
+		{"oneNetworkOnly", "--filter-udp=443 --filter-ssid=home " + list + " --dpi-desync=fake --new " + list + later, false},
+		{"sameNetwork", "--filter-udp=443 --filter-ssid=home " + list + " --dpi-desync=fake --new --filter-ssid=home " + list + later, true},
+		{"quicOnly", "--filter-udp=443 --filter-l7=quic " + list + " --dpi-desync=fake --new " + list + later, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -299,7 +302,7 @@ func TestZapret_AProfileLeavesUDPToAnEarlierUDPProfileThatTakesItsQUIC(t *testin
 			}
 			if set.UDP.FakeSeqLength != wantCount || set.UDP.FakePayloadFile != wantFile {
 				t.Fatalf("nfqws gives a packet to the first profile that matches it, so this one keeps its UDP fake options "+
-					"unless an earlier UDP profile takes QUIC for the same targets: fake_seq_length=%d file=%q, want %d and %q",
+					"unless an earlier UDP profile takes every UDP packet on port 443 in the same scope: fake_seq_length=%d file=%q, want %d and %q",
 					set.UDP.FakeSeqLength, set.UDP.FakePayloadFile, wantCount, wantFile)
 			}
 			if n := noteFor(t, res, "--dpi-desync-repeats=2"); hasField(n, "udp.fake_seq_length") == tt.taken {
