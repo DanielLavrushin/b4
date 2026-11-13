@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 title: General
-description: The General sub-tab of a set's TCP tab, with the segment delay, port filter, packet duplication, IP block detection, RST injection protection and MSS clamping.
+description: The General sub-tab of a set's TCP tab, with the segment delay, port filter, real TCP window, packet duplication, IP block detection, RST injection protection and MSS clamping.
 ---
 
 The **General** sub-tab of the [TCP](./index.md) tab holds the settings that apply whatever splitting or faking method the set uses.
@@ -16,6 +16,37 @@ The **General** sub-tab of the [TCP](./index.md) tab holds the settings that app
 | **Port Filter** | The TCP ports the set acts on, such as `443` or `80,5222,8000-9000`, and a list without `443` leaves HTTPS out. Empty means every port b4 captures: 443 and the ports any set lists. | Empty |
 | **Drop SACK Options** | Removes the Selective Acknowledgment option from TCP headers. Some DPI uses it to put fragments back in order. | Off |
 | **Empty line before HTTP method** | For plain HTTP on port 80: puts an empty line before the request and shortens the User-Agent by two characters to keep the length. Inspection that expects the method at the start of the request no longer finds the Host header. Needs a User-Agent header, and suits nginx servers. | Off |
+
+## Real TCP window (wssize) {#wssize}
+
+Makes the set's connections advertise a small TCP window in their first packets, so the server sends the start of its reply in small pieces. Unlike [Window Manipulation](./faking.md#window-manipulation), which adds fake packets, this option changes the connection's own packets. It is based on wssize from [zapret2](https://github.com/bol-van/zapret2).
+
+![The Real TCP window (wssize) section](/img/general/20261113180000.png)
+
+| Field | What it does | Default |
+| --- | --- | --- |
+| **Rewrite the real TCP window** | Turns the rewrite on. Nothing changes until **Window** or **Window Scale** is set. | Off |
+| **Window** | The value written into the window field of the packets, 1 to 65535. `0` leaves the window unchanged. | `0` |
+| **Window Scale** | Lowers the Window Scale option in the first packet of a connection to this value, 1 to 14, and never raises it. `0` leaves the option unchanged. | `0` |
+| **Stop rewriting** | Shown once **Window** is set. **After the ClientHello** writes the window into every packet of the ClientHello. **After the first data packet** stops at the first packet with data, as zapret2 does. | **After the ClientHello** |
+
+After the first packet, the server multiplies **Window** by 2 to the power of the Window Scale it received. With **Window** `1` and **Window Scale** `1`, the first piece of the server's reply is 2 bytes long. With **Window** `1` and a scale left at 7, it is 128 bytes long. The device's packets after the stop carry its own window again.
+
+The rewrite starts with the first packet of a connection, before the server name is known. It applies only when the set already takes the connection at that point.
+
+| The set targets | The rewrite applies to |
+| --- | --- |
+| IP addresses, GeoIP categories or ASNs | Every connection to those addresses |
+| Domains | Connections to an address b4 already knows for the domain, from a DNS answer that passed through b4 or from an earlier connection to the site |
+| A port filter and nothing else | Every connection to those ports |
+
+The first connection to a domain whose address b4 has not seen yet passes unchanged. With **Domain-only matching** on, the rewrite never applies to the set's domains. The set's **TLS Version Filter** does not limit the rewrite, which starts before the ClientHello shows the TLS version. [Real TCP window rewriting](../../internals/wssize.md) has the details.
+
+The option does not work in a set that also uses [routing](../routing.md) or [Packet Duplication](#packet-duplication). The editor shows a notice, and an enabled set that combines the option with either of them is not saved. With **TUN interface** as the [packet engine](../../settings/core.md#ingestion-mode), the option does nothing.
+
+:::warning
+A lowered **Window Scale** stays for the whole connection and keeps its downloads slow. **Window** alone slows nothing down once the rewrite has stopped.
+:::
 
 ## Packet Duplication {#packet-duplication}
 
@@ -102,26 +133,3 @@ The MSS is set on the first packet of a connection, before the server name is kn
 A set whose IP, GeoIP and ASN targets resolve to no addresses yet installs no clamp until they do. A device added by hand needs a fixed address to scope a clamp.
 
 `88` is the value suggested for smart TVs on YouTube. Every segment then carries at most 88 bytes, so large downloads are slow, and when a connection works but crawls, a larger value is the next step. To slow down one device's HTTPS without a set, the [per-device MSS](../../settings/core.md#device-table) does the same. A per-set MSS overrides the [per-device and global MSS](../../settings/core.md#global-mss-clamping) for the connections it covers.
-
-## Real TCP window (wssize)
-
-Based on [bolvan / Zapret2](https://github.com/bol-van/zapret2), this option changes real outgoing TCP packets. It starts at SYN. By default it includes the first packet carrying data and then stops for that connection.
-
-| Field | What it does | Default |
-| --- | --- | --- |
-| **Real TCP window (wssize)** | Enables the rewrite. Requires NFQUEUE without routing, bypass or packet duplication in the same set. | Off |
-| **Window** | Advertised Window, from 0 to 65535. Zero advertises a closed receive window. | `0` |
-| **Window Scale** | Maximum existing WS value, from 0 to 14. Missing WS remains absent; smaller original values stay smaller. | `0` |
-| **Stop rewriting** | Ends after the first data packet or the complete original ClientHello. The completing packet is included. | After the first data packet |
-
-**After the original ClientHello** follows the client's message before B4 splits it or sends fakes. It covers a ClientHello sent in several parts. Later packets stop receiving the window value; brief retransmissions of the original message remain covered. Unrecognized, incomplete or over-limit messages end tracking. The existing capture limit must include all required parts.
-
-For the `wsize=1:scale=1` recipe, both numeric fields are `1`. Changes apply on save to new connections. An existing connection does not renegotiate its scale.
-
-The set needs an address match, a previously known domain/address association, or an explicit port-only target before the connection opens. A domain-only target with no known address cannot select the first SYN. Shared addresses can include other domains. Source-device and port filters narrow the selection. Details are in [How sets match traffic](../../internals/matching.md#wssize).
-
-:::warning
-Lowering Window Scale can limit download speed even after rewriting stops. The client continues using its original scale. Successful TLS does not prove that a large transfer or video playback works.
-:::
-
-[Window Manipulation](./faking.md#window-manipulation) remains a separate technique that sends fake ACKs. The Zapret importer still reports its old fake-ACK approximation; it does not enable real wssize automatically.

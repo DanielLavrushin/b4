@@ -4,7 +4,7 @@ title: Importing from zapret or byedpi
 description: Turning a zapret or byedpi command line or configuration file into b4 sets.
 ---
 
-b4 reads a byedpi or zapret command line, or a whole configuration file, and turns it into sets. b4 is an independent implementation that shares no code, configuration format or option names with either tool, so the import is a translation: some options land exactly, some approximately, and some have no counterpart. The report lists what became of each option.
+b4 reads a byedpi or zapret command line, or a whole configuration file, and turns it into sets. b4 is an independent implementation, not a fork of either tool, so the import is a translation: some options land exactly, some approximately, and some have no counterpart. The report lists what became of each option.
 
 This is not the **Import/Export** tab of the set editor, which moves a b4 set between b4 installations, see [Sets](./index.md#import-and-export).
 

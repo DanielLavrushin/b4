@@ -120,7 +120,7 @@ The sample shows some of the sections and some of their keys. A real file holds 
 Each set is one object in the `sets` array, carrying its whole configuration. Its keys follow the tabs of the set editor:
 
 - `targets` - domains, IPs, GeoSite and GeoIP categories, ASNs, source devices
-- `tcp` - general TCP settings, desync, window, incoming, RST protection
+- `tcp` - general TCP settings, the real TCP window, desync, window, incoming, RST protection
 - `fragmentation` - the fragmentation method and its parameters
 - `faking` - SNI faking, SYN fakes, mutation
 - `udp` - the QUIC filter, the port filter, the handling of calls and the UDP action mode
@@ -140,6 +140,17 @@ The **Import/Export** tab of the set editor shows a set as JSON and takes a past
 | `dscp.value` | The value written into the DSCP field, 0-63. `0` clears the field | `0` |
 
 Each key is stored only while it differs from its default: the switch on with the value `0` is saved as `"dscp": {"enabled": true}`, a value kept with the switch off as `"dscp": {"value": 12}`. While `dscp.enabled` is `true`, a `dscp.value` outside 0-63 is refused, not clamped: the web interface refuses the save, and a file that holds one stops b4 at start. Neither key is writable over MCP or carried in a [shared set](../sets/sharing.md).
+
+### A set's `tcp.wssize` {#set-wssize}
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `tcp.wssize.enabled` | **Rewrite the real TCP window**, see [Real TCP window (wssize)](../sets/tcp/general.md#wssize) | `false` |
+| `tcp.wssize.window` | The value written into the window field, 0-65535. `0` leaves the window unchanged | `0` |
+| `tcp.wssize.scale` | The upper limit for the Window Scale option of the SYN, 0-14. `0` leaves the option unchanged | `0` |
+| `tcp.wssize.cutoff` | Where the rewrite stops: empty for **After the ClientHello**, `first_data` for **After the first data packet**. Any other value is read as empty | empty |
+
+While `tcp.wssize.enabled` is `true`, a number outside its range is refused, and so is an enabled set that also has `routing.enabled` or `tcp.duplicate.enabled`: the web interface refuses the save, and a file that holds one stops b4 at start. The switch on with both numbers `0` is saved as `"wssize": {"enabled": true}` and changes no packet. The keys are writable over MCP. A [shared set](../sets/sharing.md) carries them only while one of the numbers is above `0`.
 
 ### A set's calls: `udp.filter_stun` and `udp.filter_l7` {#set-udp-filter-l7}
 
@@ -317,6 +328,10 @@ The AI API key is not part of this file. b4 keeps it in `ai_secrets.json`.
 | Targets | **Domain-only matching** | `targets.domain_only` |
 | Targets | **IP priority** | `targets.ip_priority` |
 | TCP > General | **Port Filter** | `tcp.dport_filter` |
+| TCP > General | **Rewrite the real TCP window** | `tcp.wssize.enabled` |
+| TCP > General | **Window** | `tcp.wssize.window` |
+| TCP > General | **Window Scale** | `tcp.wssize.scale` |
+| TCP > General | **Stop rewriting** | `tcp.wssize.cutoff`, empty for **After the ClientHello** and `first_data` for **After the first data packet** |
 | TCP > Faking | **Generated Payload** | `faking.payload_file`, a path such as `captures/tls_youtube_com.bin` |
 | UDP | **QUIC Matching** | `udp.filter_quic` |
 | UDP | **Port Filter** | `udp.dport_filter` |
