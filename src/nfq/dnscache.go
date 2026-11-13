@@ -114,7 +114,7 @@ func resetDNSAnswerCache() {
 	dns.ResetSourceHealth()
 }
 
-var askOriginalResolver = dns.ResolveUpstream
+var askOriginalResolver = dns.ResolveUpstreamContext
 
 func (w *Worker) dnsRedirectFallback(cfg *config.Config, set *config.SetConfig, servers []dns.Server, domain string, query []byte, originalDst net.IP, delay int) ([]byte, string) {
 	if w == nil || cfg == nil || set == nil || set.DNS.Strict {
@@ -134,7 +134,7 @@ func (w *Worker) dnsRedirectFallback(cfg *config.Config, set *config.SetConfig, 
 		}
 	}
 
-	resp, err := askOriginalResolver(query, originalDst, dns.ForwardOptions{
+	resp, err := askOriginalResolver(w.ctx, query, originalDst, dns.ForwardOptions{
 		Sender:       w.lookupSender(),
 		Fragment:     set.DNS.FragmentQuery,
 		Seg2Delay:    delay,

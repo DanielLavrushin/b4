@@ -725,6 +725,9 @@ func (w *Worker) resolveDNSRedirect(ipVersion byte, set *config.SetConfig, cfg *
 	servedFallback := false
 	if err != nil {
 		fallback, action := w.dnsRedirectFallback(cfg, set, servers, queryDomain, query, originalDst, delay)
+		if w.ctx.Err() != nil {
+			return
+		}
 		if fallback == nil {
 			log.Warnf("DNS redirect: %s could not answer %s (%v) and nothing else could either, the client gets SERVFAIL (set: %s)",
 				dnsUpstreamLabel(source), dns.SafeName(queryDomain), err, set.Name)

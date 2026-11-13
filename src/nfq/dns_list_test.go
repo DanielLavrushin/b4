@@ -242,6 +242,54 @@ func TestARedirectInFlightAtAStopSendsNothing(t *testing.T) {
 	}
 }
 
+func TestAFallbackInFlightAtAStopSendsNothing(t *testing.T) {
+	for _, answers := range []bool{true, false} {
+		w, cfg, set := listWorker(t)
+		failing, _ := failingDoH(t)
+		set.DNS.DoHURL = failing
+		t.Cleanup(resetDNSAnswerCache)
+		resetDNSAnswerCache()
+
+		entered := make(chan struct{}, 1)
+		prev := askOriginalResolver
+		t.Cleanup(func() { askOriginalResolver = prev })
+		askOriginalResolver = func(ctx context.Context, query []byte, _ net.IP, _ dns.ForwardOptions) ([]byte, error) {
+			entered <- struct{}{}
+			<-ctx.Done()
+			if answers {
+				return dns.BuildAnswerFromIPs(query, 60, []net.IP{net.ParseIP("203.0.113.41")}), nil
+			}
+			return nil, ctx.Err()
+		}
+		ctx, stop := context.WithCancel(context.Background())
+		t.Cleanup(stop)
+		w.ctx = ctx
+
+		replies := watchReplies(t)
+		lines := connectionLines(t)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			askOverUDP(w, cfg, set, 30)
+		}()
+		select {
+		case <-entered:
+		case <-time.After(3 * time.Second):
+			t.Fatal("the device's resolver was never asked after the set's resolver failed")
+		}
+		stop()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("fallback answers=%v: the redirect did not end with the worker while it asked the device's resolver", answers)
+		}
+		noReply(t, replies, 50*time.Millisecond, "a redirect cut by the stop during its fallback answered the device")
+		if got := labels(drainLines(lines)); len(got) != 0 {
+			t.Fatalf("fallback answers=%v: a redirect cut by the stop during its fallback logged %q, want nothing", answers, got)
+		}
+	}
+}
+
 func TestADNSOverTCPRedirectInFlightAtAStopWritesNothing(t *testing.T) {
 	w, _, set := listWorker(t)
 	slow, entered, _ := slowDoH(t)
@@ -376,7 +424,7 @@ func TestTheFallbackAsksTheDevicesResolverUnlessTheSetAsksItOverPlainDNS(t *test
 	var asked []string
 	prev := askOriginalResolver
 	t.Cleanup(func() { askOriginalResolver = prev })
-	askOriginalResolver = func(query []byte, target net.IP, _ dns.ForwardOptions) ([]byte, error) {
+	askOriginalResolver = func(_ context.Context, query []byte, target net.IP, _ dns.ForwardOptions) ([]byte, error) {
 		asked = append(asked, target.String())
 		return dns.BuildAnswerFromIPs(query, 60, []net.IP{net.ParseIP("203.0.113.36")}), nil
 	}
