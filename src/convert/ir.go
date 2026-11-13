@@ -108,6 +108,18 @@ func (f Filters) HasProto(p string) bool {
 	return false
 }
 
+func (f Filters) sameTargets(o Filters) bool {
+	return f.HostsRef == o.HostsRef && f.IPsRef == o.IPsRef &&
+		sameStrings(f.Hosts, o.Hosts) && sameStrings(f.IPs, o.IPs) && sameStrings(f.Excluded, o.Excluded)
+}
+
+func sameStrings(a, b []string) bool {
+	x, y := slices.Clone(a), slices.Clone(b)
+	slices.Sort(x)
+	slices.Sort(y)
+	return slices.Equal(x, y)
+}
+
 func (f Filters) Empty() bool {
 	return len(f.Protos) == 0 && len(f.Hosts) == 0 && f.HostsRef == "" &&
 		len(f.IPs) == 0 && f.IPsRef == "" && f.PortMin == 0 &&

@@ -253,25 +253,50 @@ func TestZapret_AUDPProfileWithoutAFakeModeLeavesTheSetsUDPSideAlone(t *testing.
 	}
 }
 
-func TestZapret_AProfileAfterAUDPProfileLeavesUDPToIt(t *testing.T) {
-	res := analyze(t, "--filter-udp=443 --hostlist-domains=quic.example.com --dpi-desync=fake --dpi-desync-repeats=11 --new "+
-		"--hostlist-domains=example.com --dpi-desync=fake,multisplit --dpi-desync-repeats=2 --dpi-desync-fake-quic=q.bin")
-	if len(res.Sets) != 2 {
-		t.Fatalf("got %d sets", len(res.Sets))
+func TestZapret_AProfileLeavesUDPToAnEarlierUDPProfileThatTakesItsQUIC(t *testing.T) {
+	const list = "--hostlist=/opt/zapret/list.txt"
+	const later = " --dpi-desync=fake,multisplit --dpi-desync-repeats=2 --dpi-desync-fake-quic=q.bin"
+	tests := []struct {
+		name  string
+		line  string
+		taken bool
+	}{
+		{"sameHostList", "--filter-udp=443 " + list + " --dpi-desync=fake --dpi-desync-repeats=11 --new " + list + later, true},
+		{"sameHostListInAPortRange", "--filter-udp=400-500 " + list + " --dpi-desync=fake --new " + list + later, true},
+		{"noTargetsAtAll", "--filter-udp=443 --dpi-desync=fake --new --filter-tcp=80 --hostlist-domains=a.com --dpi-desync=multisplit --new " +
+			"--hostlist-domains=example.com" + later, true},
+		{"otherHosts", "--filter-udp=443 --hostlist-domains=quic.example.com --dpi-desync=fake --dpi-desync-repeats=11 --new " +
+			"--hostlist-domains=example.com" + later, false},
+		{"otherHostList", "--filter-udp=443 --hostlist=/opt/zapret/quic.txt --dpi-desync=fake --new " + list + later, false},
+		{"otherPorts", "--filter-udp=50000-50100 " + list + " --dpi-desync=fake --new " + list + later, false},
+		{"callsOnly", "--filter-udp=443,3478 --filter-l7=discord,stun --dpi-desync=fake --new " + list + later, false},
 	}
-	later := res.Sets[1]
-	if later.Faking.SNISeqLength != 2 || later.UDP.FakeSeqLength != config.DefaultSetConfig.UDP.FakeSeqLength || later.UDP.FakePayloadFile != "" {
-		t.Fatalf("nfqws gives UDP to the first profile that matches, so the options of the later profile stay on TCP: "+
-			"faking.sni_seq_length=%d udp.fake_seq_length=%d file=%q", later.Faking.SNISeqLength, later.UDP.FakeSeqLength, later.UDP.FakePayloadFile)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := analyze(t, tt.line)
+			set := res.Sets[len(res.Sets)-1]
+			if set.Faking.SNISeqLength != 2 {
+				t.Fatalf("the last set is not the profile under test: %+v", set.Faking)
+			}
+			wantCount, wantFile, wantReason := 2, config.FakePayloadAutoQUIC, "fakeQUICApproximated"
+			if tt.taken {
+				wantCount, wantFile, wantReason = config.DefaultSetConfig.UDP.FakeSeqLength, "", "udpFakeUnused"
+			}
+			if set.UDP.FakeSeqLength != wantCount || set.UDP.FakePayloadFile != wantFile {
+				t.Fatalf("nfqws gives a packet to the first profile that matches it, so this one keeps its UDP fake options "+
+					"unless an earlier UDP profile takes QUIC for the same targets: fake_seq_length=%d file=%q, want %d and %q",
+					set.UDP.FakeSeqLength, set.UDP.FakePayloadFile, wantCount, wantFile)
+			}
+			if n := noteFor(t, res, "--dpi-desync-repeats=2"); hasField(n, "udp.fake_seq_length") == tt.taken {
+				t.Fatalf("got %+v", n)
+			}
+			if n := noteFor(t, res, "--dpi-desync-fake-quic=q.bin"); n.Reason != wantReason {
+				t.Fatalf("got %+v, want %s", n, wantReason)
+			}
+			assertNoLostOptions(t, res)
+			assertSetsSave(t, res)
+		})
 	}
-	if n := noteFor(t, res, "--dpi-desync-repeats=2"); hasField(n, "udp.fake_seq_length") {
-		t.Fatalf("got %+v", n)
-	}
-	if n := noteFor(t, res, "--dpi-desync-fake-quic=q.bin"); n.Status != StatusDegenerate || n.Reason != "udpFakeUnused" {
-		t.Fatalf("got %+v", n)
-	}
-	assertNoLostOptions(t, res)
-	assertSetsSave(t, res)
 
 	keenetic := analyze(t, loadFixture(t, "nfqws-keenetic.conf"))
 	checked := 0
