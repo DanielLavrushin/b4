@@ -131,6 +131,28 @@ func TestZapret_AnOddLengthZeroQUICHexPayloadIsInvalidAndUsesNoSlot(t *testing.T
 	}
 }
 
+func TestZapret_AnEmptyHexPayloadIsInvalidAndLeavesTheFakeSNI(t *testing.T) {
+	res := analyze(t, "--dpi-desync=fake --dpi-desync-fake-tls=0x --dpi-desync-fake-tls-mod=sni=www.google.com")
+	f := res.Sets[0].Faking
+	if f.SNIType != config.FakePayloadDomain || f.PayloadDomain != "www.google.com" || len(f.PayloadData) > 0 {
+		t.Fatalf("sni_type %d, payload_domain %q, %d bytes: an empty 0x carries no payload and must not displace the fake SNI",
+			f.SNIType, f.PayloadDomain, len(f.PayloadData))
+	}
+	if n := noteFor(t, res, "--dpi-desync-fake-tls=0x"); n.Status != StatusInvalid || n.Reason != "fakeHexInvalid" {
+		t.Fatalf("zapret refuses an empty hex string: got %+v", n)
+	}
+}
+
+func TestZapret_AnEmptyQUICHexPayloadIsInvalid(t *testing.T) {
+	res := analyze(t, "--filter-udp=443 --dpi-desync=fake --dpi-desync-fake-quic=0x")
+	if u := res.Sets[0].UDP; u.FakePayloadFile != "" || len(u.FakePayloadData) > 0 {
+		t.Fatalf("file %q, %d bytes: an empty 0x is no payload and no reference to one", u.FakePayloadFile, len(u.FakePayloadData))
+	}
+	if n := noteFor(t, res, "--dpi-desync-fake-quic=0x"); n.Status != StatusInvalid || n.Reason != "fakeHexInvalid" {
+		t.Fatalf("zapret refuses an empty hex string: got %+v", n)
+	}
+}
+
 func assertPendingUDPPayload(t *testing.T, set config.SetConfig, want []byte) {
 	t.Helper()
 	u := set.UDP
