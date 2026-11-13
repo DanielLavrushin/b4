@@ -169,6 +169,16 @@ func TestADNSHintStillRecordsNoVersions(t *testing.T) {
 	}
 }
 
+func TestADNSAnswerAgreesWithTheHintOfAQUICInitial(t *testing.T) {
+	v6, v4 := familySet("v6", "6"), familySet("v4", "4")
+	w := familyWorker(t, v6, v4)
+	familyAnswer(w, dnsTypeA, familyV4Addr)
+	w.storeHostHint(familyDevice, familyV4Addr, v4, familyName, "quic", 0x0304, IPv4)
+	if got := familyHint(w, familyV4Addr); got != "v4" {
+		t.Fatalf("the hint for %s names set %q, want v4: two hints that name different sets cancel each other", familyV4Addr, got)
+	}
+}
+
 func TestAHintGoesToAScopedBlockSetOnlyFromItsInterface(t *testing.T) {
 	idx := scopeIfaces(t)
 	for _, c := range []struct {
