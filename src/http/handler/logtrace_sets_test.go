@@ -114,6 +114,31 @@ func TestCollectTraceSetsNamesTheResolverList(t *testing.T) {
 	}
 }
 
+func TestCollectTraceSetsLeavesAResolverURLFragmentOut(t *testing.T) {
+	cfg := config.NewConfig()
+	set := config.DefaultSetConfig
+	set.Id = "abab7777"
+	set.Name = "Fragment"
+	set.Enabled = true
+	set.DNS = config.DNSConfig{
+		Enabled:   true,
+		DoHURL:    "https://dns.example#private-profile",
+		Upstreams: []string{"https://other.example#secret-token"},
+	}
+	cfg.Sets = []*config.SetConfig{&set}
+
+	got := collectTraceSets(&cfg)
+	if len(got) != 1 || got[0].DNS == nil {
+		t.Fatalf("expected one set with its DNS, got %+v", got)
+	}
+	if want := "https://dns.example"; got[0].DNS.DoHURL != want {
+		t.Errorf("the first resolver is in the trace as %q, want %q", got[0].DNS.DoHURL, want)
+	}
+	if want := []string{"https://other.example"}; len(got[0].DNS.Upstreams) != 1 || got[0].DNS.Upstreams[0] != want[0] {
+		t.Errorf("the list is in the trace as %q, want %q", got[0].DNS.Upstreams, want)
+	}
+}
+
 func TestCollectTraceSets(t *testing.T) {
 	cfg := config.NewConfig()
 	routed := routedTestSet()

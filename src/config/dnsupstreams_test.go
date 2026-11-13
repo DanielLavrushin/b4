@@ -172,6 +172,23 @@ func TestNormalizeUpstreamLowersTheHostAndNothingElse(t *testing.T) {
 	}
 }
 
+func TestUpstreamLabelKeepsOnlySchemeAndHost(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"https://dns.example/dns-query", "https://dns.example"},
+		{"https://dns.example?id=abc", "https://dns.example"},
+		{"https://dns.example#private-profile", "https://dns.example"},
+		{"https://dns.example:8443#private-profile", "https://dns.example:8443"},
+		{"https://user:secret@dns.example#tag", "https://dns.example"},
+		{"https://dns.example/a@b#c", "https://dns.example"},
+		{"https://#only-a-fragment", "https://"},
+		{"2001:DB8::1", "2001:db8::1"},
+	} {
+		if got := UpstreamLabel(tc.in); got != tc.want {
+			t.Errorf("UpstreamLabel(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestOneDoHServerInAnotherHostCaseIsOneResolver(t *testing.T) {
 	cfg := NewConfig()
 	set := &SetConfig{Id: "dns1", Name: "dns", Enabled: true}

@@ -93,8 +93,10 @@ func (c *DNSConfig) UpstreamList() []string {
 func UpstreamLabel(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if scheme, rest, ok := SplitUpstreamURL(raw); ok {
-		host := strings.SplitN(rest, "/", 2)[0]
-		host = strings.SplitN(host, "?", 2)[0]
+		host := rest
+		if end := strings.IndexAny(host, "/?#"); end >= 0 {
+			host = host[:end]
+		}
 		host = strings.TrimSpace(host)
 		if host != "" {
 			if at := strings.LastIndex(host, "@"); at >= 0 {
