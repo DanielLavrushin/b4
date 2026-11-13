@@ -3,6 +3,7 @@ package convert
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -364,19 +365,26 @@ func TestConvert_ASetThatFakesUDPOnlyByDefaultSaysSo(t *testing.T) {
 	}
 }
 
-func TestZapret_AProfileThatStatesItsUDPSideTakesNoFold(t *testing.T) {
+func TestZapret_AProfileThatHandlesUDPItselfTakesNoFold(t *testing.T) {
 	const udp = " --new --filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=11"
+	const noFilters = "--hostlist-domains=example.com --dpi-desync=fake"
 	udpDefault := config.DefaultSetConfig.UDP.FakeSeqLength
 	separate := []struct {
 		name    string
 		line    string
 		payload string
+		count   int
+		quic    string
 	}{
 		{"udpPortsAndPayload", "--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake " +
-			"--dpi-desync-fake-quic=/opt/zapret/quic.bin" + udp, config.FakePayloadAutoQUIC},
-		{"udpPortsOnly", "--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=multisplit" + udp, ""},
-		{"payloadWithoutPortFilters", "--hostlist-domains=example.com --dpi-desync=fake " +
-			"--dpi-desync-fake-quic=/opt/zapret/quic.bin" + udp, config.FakePayloadAutoQUIC},
+			"--dpi-desync-fake-quic=/opt/zapret/quic.bin" + udp, config.FakePayloadAutoQUIC, udpDefault, config.QUICFilterSNI},
+		{"udpPortsOnly", "--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=multisplit" + udp,
+			"", udpDefault, config.QUICFilterSNI},
+		{"payloadWithoutPortFilters", noFilters + " --dpi-desync-fake-quic=/opt/zapret/quic.bin" + udp,
+			config.FakePayloadAutoQUIC, udpDefault, config.QUICFilterSNI},
+		{"repeatsWithoutPortFilters", noFilters + " --dpi-desync-repeats=3" + udp, "", 3, config.QUICFilterSNI},
+		{"anyProtocolWithoutPortFilters", noFilters + " --dpi-desync-any-protocol" + udp, "", udpDefault, config.QUICFilterAll},
+		{"fakeModeAloneWithoutPortFilters", noFilters + ",multisplit" + udp, "", udpDefault, config.QUICFilterSNI},
 	}
 	for _, tt := range separate {
 		t.Run(tt.name, func(t *testing.T) {
@@ -386,8 +394,9 @@ func TestZapret_AProfileThatStatesItsUDPSideTakesNoFold(t *testing.T) {
 					len(res.Sets))
 			}
 			first, second := res.Sets[0], res.Sets[1]
-			if first.UDP.FakePayloadFile != tt.payload || first.UDP.FakeSeqLength != udpDefault {
-				t.Fatalf("the first profile lost its own UDP side: file %q, fake_seq_length %d", first.UDP.FakePayloadFile, first.UDP.FakeSeqLength)
+			if first.UDP.FakePayloadFile != tt.payload || first.UDP.FakeSeqLength != tt.count || first.UDP.FilterQUIC != tt.quic {
+				t.Fatalf("the first profile lost its own UDP side: file %q, fake_seq_length %d, filter_quic %q, want %q, %d and %q",
+					first.UDP.FakePayloadFile, first.UDP.FakeSeqLength, first.UDP.FilterQUIC, tt.payload, tt.count, tt.quic)
 			}
 			if second.UDP.FakeSeqLength != 11 || second.UDP.FakePayloadFile != "" {
 				t.Fatalf("the UDP profile keeps its own settings: file %q, fake_seq_length %d", second.UDP.FakePayloadFile, second.UDP.FakeSeqLength)
@@ -403,13 +412,19 @@ func TestZapret_AProfileThatStatesItsUDPSideTakesNoFold(t *testing.T) {
 		t.Fatalf("each profile keeps its own UDP ports: %d sets", len(res.Sets))
 	}
 
-	for _, carrier := range []string{
-		"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake",
-		"--hostlist-domains=example.com --dpi-desync=fake,multisplit",
-	} {
-		res := analyze(t, carrier+udp)
+	if n := noteFor(t, analyze(t, noFilters+" --dpi-desync-any-protocol"+udp), "--dpi-desync-any-protocol"); n.Reason != "anyProtocolUDP" {
+		t.Fatalf("the option still widens the UDP side of its own profile: %+v", n)
+	}
+
+	folded := []string{
+		"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake" + udp,
+		"--hostlist-domains=example.com --dpi-desync=multisplit" + udp,
+		strings.TrimPrefix(udp, " --new ") + " --new " + noFilters + ",multisplit --dpi-desync-repeats=3",
+	}
+	for _, line := range folded {
+		res := analyze(t, line)
 		if len(res.Sets) != 1 || res.Sets[0].UDP.FakeSeqLength != 11 {
-			t.Fatalf("a profile that states nothing about UDP still takes the fold: %q gave %d sets", carrier, len(res.Sets))
+			t.Fatalf("a profile that does not fake UDP itself still takes the fold: %q gave %d sets", line, len(res.Sets))
 		}
 	}
 }

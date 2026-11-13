@@ -175,10 +175,6 @@ func (u UDPOp) fakes() bool {
 	return u.Present || u.FakeCount > 0
 }
 
-func (u UDPOp) namesPayload() bool {
-	return u.QUICRef != "" || len(u.QUICData) > 0 || u.ZeroRef
-}
-
 type DesyncOp struct {
 	Mode    string `json:"mode"`
 	Repeats int    `json:"repeats"`
@@ -249,8 +245,8 @@ func (p *Profile) ownsUDPSide() bool {
 	return p.UDPOnly() || p.UDP.Folded || p.UDP.FakeCount > 0
 }
 
-func (p *Profile) statesUDP() bool {
-	return p.Filters.UDPFilter || p.UDP.namesPayload()
+func (p *Profile) handlesUDPItself() bool {
+	return p.Filters.UDPFilter || p.UDP.Shared
 }
 
 func (p *Profile) hasOwnTargets() bool {

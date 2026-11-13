@@ -499,7 +499,6 @@ func promoteUDPFake(prof *Profile, quicTaken bool) {
 	udpOnly := prof.UDPOnly()
 	fakes := zapretFakesUDP(prof)
 	if !udpOnly && (!fakes || !zapretSeesUDP(prof, quicTaken)) {
-		prof.UDP.ZeroRef = false
 		return
 	}
 	prof.UDP.Present = fakes

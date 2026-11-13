@@ -424,7 +424,7 @@ func foldUDPProfiles(prog *Program, tokens []Token, notes *noteSet) []Token {
 			carriers = append(carriers, p)
 		}
 	}
-	if len(carriers) != 1 || len(foldable) != 1 || carriers[0].statesUDP() {
+	if len(carriers) != 1 || len(foldable) != 1 || carriers[0].handlesUDPItself() {
 		return tokens
 	}
 
