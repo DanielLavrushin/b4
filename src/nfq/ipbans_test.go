@@ -43,6 +43,12 @@ func banAddress(t *testing.T, b *ipBans, ip string, port int) {
 	}
 }
 
+func silentOnceBefore(b *ipBans, servers ...string) {
+	for _, server := range servers {
+		b.countSilentHello(server, time.Now())
+	}
+}
+
 func banningAddressSet() config.SetConfig {
 	set := newStaticAddressSet(false)
 	set.Targets.IpsToMatch = []string{"1.2.3.4", "2001:db8::2"}

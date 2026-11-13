@@ -42,6 +42,7 @@ func newSilentHelloRig(t *testing.T, sets ...*config.SetConfig) *silentHelloRig 
 	})
 	r.pool = &Pool{Workers: []*Worker{h.w}, state: &runtimeState{bans: h.w.bans, destState: h.w.destState}}
 	r.pool.wireBans()
+	silentOnceBefore(h.w.bans, net.JoinHostPort(setOrderGGCAddr, "443"))
 	orig := lookupFlow
 	lookupFlow = func(ctnl.Tuple, ctnl.Direction) (ctnl.Flow, bool, error) {
 		a := silentFlow()

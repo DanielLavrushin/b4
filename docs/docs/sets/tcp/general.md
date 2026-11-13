@@ -72,7 +72,7 @@ Some server addresses are blocked at the IP level: nothing reaches the server, s
 | **Detect unanswered SYNs** | Catches blocks at the address level, where the connection never opens. | On |
 | **SYN Threshold** | How many unanswered connection attempts before the router tests the address itself. Nothing happens until that test fails too. | `3` |
 | **Retransmit Threshold** | How many unanswered copies of the ClientHello, the first one included, mark the destination blocked. This covers a block that lets the connection open and then swallows the handshake. A low value can mistake a slow server for a block. | `3` |
-| **Detection Timeout** | How long, in milliseconds, before a repeated and still unanswered SYN or ClientHello counts as reaching its threshold. With **Cache Blocked IPs** on, a server that sends nothing back for this long after the ClientHello gets its address checked for a [ban](#banned-addresses). | `3000` |
+| **Detection Timeout** | How long, in milliseconds, before a repeated and still unanswered SYN or ClientHello counts as reaching its threshold. With **Cache Blocked IPs** on, a server that sends nothing back for this long after the ClientHello on two connections in a row gets its address checked for a [ban](#banned-addresses). | `3000` |
 | **Healed Answer TTL** | The TTL written into healed DNS answers, in seconds. A short value lets devices pick up a recovered address quickly. | `60` |
 | **Cache Blocked IPs** | Remembers blocked addresses, so new connections to them are reset at once instead of waiting. An address blocked for every site name is [banned](#banned-addresses). | On |
 
@@ -83,11 +83,11 @@ How long an address stays marked is set by **Retest interval (seconds)** under [
 Some providers block an address for every site name: the connection opens, but no site on that address answers. In a set with **Cache Blocked IPs** on, b4 tests whether an address answers for other site names when:
 
 - IP block detection marks the address blocked (see **Retransmit Threshold** and **Detection Timeout**);
-- the server sends nothing back for the **Detection Timeout** after a device's ClientHello.
+- the server sends nothing back for the **Detection Timeout** after the ClientHello on two connections in a row. A connection the server answers starts the count over, and so does a pause longer than the **Retest interval (seconds)**.
 
-An address that answers none of those names is banned. A connection still waiting on it is then reset. An address that answers them, even with a refusal, is not banned. An address that IP block detection marked blocked stays in the cache of blocked addresses all the same. Until the **Retest interval (seconds)** runs out, new connections to it are reset, whatever the site.
+An address that answers none of those names is banned. A connection still waiting on it is then reset. An address that answers them, even with a refusal, is not banned, and neither is one that answers a waiting connection before the test ends. An address that IP block detection marked blocked stays in the cache of blocked addresses all the same. Until the **Retest interval (seconds)** runs out, new connections to it are reset, whatever the site.
 
-On some routers b4 cannot see whether a server has answered while the connection is open. There it tests a silent server only after the device gives up on the connection, see [Kernel requirements](../../internals/capture.md#kernel-requirements).
+On some routers b4 cannot see whether a server has answered while the connection is open. There a silent connection counts only after the device gives up on it, see [Kernel requirements](../../internals/capture.md#kernel-requirements).
 
 While an address is banned:
 

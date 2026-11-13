@@ -116,6 +116,7 @@ func netnsStartFakedHello(t *testing.T, desync config.DesyncConfig, answer int, 
 	})
 	pool := &Pool{Workers: []*Worker{w}, state: &runtimeState{bans: w.bans, destState: w.destState}}
 	pool.wireBans()
+	silentOnceBefore(w.bans, net.JoinHostPort(netnsHoldServer, strconv.Itoa(netnsHoldPort)))
 	if err := w.Start(); err != nil {
 		t.Fatalf("bind queue %d: %v", netnsHoldQueue, err)
 	}
