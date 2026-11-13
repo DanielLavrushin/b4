@@ -319,6 +319,40 @@ func TestAConnectionTheClientGivesUpOnIsCountedOnce(t *testing.T) {
 	}
 }
 
+func TestAConnectionCountedBeforeItsHostEscalatesIsNotCountedAgainByTheBackupSet(t *testing.T) {
+	backup := silenceSet()
+	backup.Id, backup.Name = "backup", "backup"
+	set := silenceSet()
+	set.Escalate.To = backup.Id
+	r := newFreshSilenceRig(t, newInjectingWorker(t, &set, &backup), answering(iphealth.TLSSilent))
+
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	r.sweepLater()
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	sendHello(t, r.w, 12345, engine.VerdictDrop)
+	if to, _, _ := r.w.destState.GetEscalation("i.ytimg.com"); to != backup.Id {
+		t.Fatalf("the third copy of the ClientHello must move the host to the backup set, or this test proves nothing: it is on %q", to)
+	}
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	r.sweepLater()
+
+	if keys := r.probed(); len(keys) != 0 {
+		t.Fatalf("the watch the backup set puts on a connection the first set already counted must not count it again, probed %v", keys)
+	}
+	if r.w.bans.reg.Len() != 0 {
+		t.Fatal("one connection must not ban the address, in whichever sets it was watched")
+	}
+
+	sendHello(t, r.w, 23456, engine.VerdictAccept)
+	r.sweepLater()
+	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
+		t.Fatalf("a second connection the backup set finds silent completes the count, probed %v", keys)
+	}
+	if ports := resetsTo(r.sent()); !slices.Equal(ports, []uint16{12345, 23456}) {
+		t.Fatalf("the ban resets both waiting connections, got resets to %v", ports)
+	}
+}
+
 func TestTheCountStartsOverAfterTheRetestInterval(t *testing.T) {
 	set := silenceSet()
 	r := newFreshSilenceWorker(t, &set, iphealth.TLSSilent)

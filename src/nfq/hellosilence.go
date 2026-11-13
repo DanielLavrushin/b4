@@ -84,6 +84,7 @@ func (t *destStateTracker) WatchHello(h *helloWatch) {
 		if prev.setID == h.setID {
 			return
 		}
+		h.counted = prev.counted
 	} else if len(t.watches) >= maxHelloWatches {
 		return
 	}
