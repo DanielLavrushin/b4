@@ -298,9 +298,11 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 		case v.Ref != "":
 			prof.Fake.DataRef = v.Ref
 		case isZeroHexLiteral(v.Str):
-			prof.Fake.ZeroPayload = true
+			if prof.Fake.HexPayload == nil {
+				prof.Fake.ZeroPayload = true
+			}
 		case isHexLiteral(v.Str):
-			if data, err := decodeHexLiteral(v.Str); err == nil && prof.Fake.HexPayload == nil {
+			if data, err := decodeHexLiteral(v.Str); err == nil && prof.Fake.HexPayload == nil && !prof.Fake.ZeroPayload {
 				prof.Fake.HexPayload = data
 			}
 		case v.Str != "" && v.Str != "builtin":

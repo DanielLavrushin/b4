@@ -81,6 +81,28 @@ func TestZapret_OnlyTheFirstHexPayloadIsUsed(t *testing.T) {
 	}
 }
 
+func TestZapret_AnAllZeroHexPayloadGivenFirstStaysTheFake(t *testing.T) {
+	res := analyze(t, "--dpi-desync=fake --dpi-desync-fake-tls=0x0000 --dpi-desync-fake-tls=0x0101")
+	f := res.Sets[0].Faking
+	if f.SNIType != config.FakePayloadZero || len(f.PayloadData) > 0 || f.PayloadFile != "" {
+		t.Fatalf("sni_type %d, file %q, %d bytes: the first hex payload is all zeros and must be the fake", f.SNIType, f.PayloadFile, len(f.PayloadData))
+	}
+	if n := noteFor(t, res, "--dpi-desync-fake-tls=0x0000"); n.Status != StatusMapped || n.Reason != "fakeZeroPayload" {
+		t.Fatalf("the payload in use: got %+v", n)
+	}
+	if n := noteFor(t, res, "--dpi-desync-fake-tls=0x0101"); n.Status != StatusApproximated || n.Reason != "fakeHexPayloadOverridden" {
+		t.Fatalf("the payload left out: got %+v", n)
+	}
+}
+
+func TestZapret_AnAllZeroHexPayloadGivenSecondIsLeftOut(t *testing.T) {
+	res := analyze(t, "--dpi-desync=fake --dpi-desync-fake-tls=0x0101 --dpi-desync-fake-tls=0x0000")
+	assertPendingPayload(t, res.Sets[0], []byte{0x01, 0x01})
+	if n := noteFor(t, res, "--dpi-desync-fake-tls=0x0000"); n.Status != StatusApproximated || n.Reason != "fakeZeroPayloadOverridden" {
+		t.Fatalf("the payload left out: got %+v", n)
+	}
+}
+
 func TestZapret_AnInvalidHexPayloadIsFlagged(t *testing.T) {
 	for _, value := range []string{"0x0F0", "0x0G"} {
 		res := analyze(t, "--dpi-desync=fake --dpi-desync-fake-tls="+value)
