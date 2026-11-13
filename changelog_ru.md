@@ -30,6 +30,7 @@
 - Когда веб-интерфейс или его API отвечал ошибкой сервера, например 500, в `errors.log` часто не регистрировалось никакой информации об ошибке. [#530](https://github.com/DanielLavrushin/b4/issues/530)
 - В списках интерфейсов не было выключенных интерфейсов, поэтому выключенное подключение WireGuard нельзя было выбрать как **Выходной интерфейс** сета. ([#501](https://github.com/DanielLavrushin/b4/pull/501), спасибо [@niklzz](https://github.com/niklzz))
 - Фейк byedpi, импортированный из командной строки (`-l :...`), искажался, если содержал двоичные данные, а его сет показывал **Тип фейкового payload** как `1`. Фейк zapret, заданный в hex (`--dpi-desync-fake-tls=0x...`), в сет не попадал. [#538](https://github.com/DanielLavrushin/b4/issues/538)
+- Карточки сетов и результаты **Дискавери** называли фейковые payload Google и DuckDuckGo `default` и `default2`. [#538](https://github.com/DanielLavrushin/b4/issues/538)
 
 ### Безопасность
 

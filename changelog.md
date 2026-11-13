@@ -30,6 +30,7 @@ All notable changes to b4 are recorded in this file.
 - When the web interface or its API answered with a server error, such as a 500, `errors.log` often had no line about it. [#530](https://github.com/DanielLavrushin/b4/issues/530)
 - Interface lists left out interfaces that were down, so a switched-off WireGuard connection could not be picked as a set's **Output Interface**. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
 - A byedpi fake imported from the command line (`-l :...`) came out changed when it held binary data, and its set showed **Fake Payload Type** as a bare `1`, while a zapret fake given as hex (`--dpi-desync-fake-tls=0x...`) was left out of the set. [#538](https://github.com/DanielLavrushin/b4/issues/538)
+- Set cards and **Discovery** results named the Google and DuckDuckGo fake payloads `default` and `default2`. [#538](https://github.com/DanielLavrushin/b4/issues/538)
 
 ### Security
 
