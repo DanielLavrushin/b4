@@ -271,6 +271,8 @@ func TestZapret_AProfileLeavesUDPToAnEarlierUDPProfileThatTakesItsQUIC(t *testin
 		{"otherHostList", "--filter-udp=443 --hostlist=/opt/zapret/quic.txt --dpi-desync=fake --new " + list + later, false},
 		{"otherPorts", "--filter-udp=50000-50100 " + list + " --dpi-desync=fake --new " + list + later, false},
 		{"callsOnly", "--filter-udp=443,3478 --filter-l7=discord,stun --dpi-desync=fake --new " + list + later, false},
+		{"oneIPVersionOnly", "--filter-udp=443 --filter-l3=ipv6 " + list + " --dpi-desync=fake --new " + list + later, false},
+		{"sameIPVersion", "--filter-udp=443 --filter-l3=ipv6 " + list + " --dpi-desync=fake --new --filter-l3=ipv6 " + list + later, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

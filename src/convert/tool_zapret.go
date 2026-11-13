@@ -479,7 +479,9 @@ const quicPort = 443
 
 func zapretQUICTaken(earlier []*Profile, prof *Profile) bool {
 	return slices.ContainsFunc(earlier, func(e *Profile) bool {
-		return zapretMatchesQUIC(e) && (!e.hasOwnTargets() || e.Filters.sameTargets(prof.Filters))
+		f := e.Filters
+		return zapretMatchesQUIC(e) && (f.IPVersion == "" || f.IPVersion == prof.Filters.IPVersion) &&
+			(!e.hasOwnTargets() || f.sameTargets(prof.Filters))
 	})
 }
 
