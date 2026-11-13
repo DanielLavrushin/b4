@@ -2698,6 +2698,7 @@
         "fakeHexInvalid": "Not a valid hex payload: after 0x it needs an even number of hex digits. The fake carries another payload.",
         "fakeHexPayloadOverridden": "Another option in this profile supplies the fake payload, so this hex payload was not used.",
         "tcpOnlyFakeOption": "Only affects TCP fakes, and this profile handles UDP.",
+        "tcpOnlyOption": "Only affects TCP, and this profile handles only UDP, so zapret never applies it.",
         "udpFakeUnused": "Only affects fake UDP packets, and this profile sends none.",
         "udpDefaultFakes": "The source profile does nothing to UDP, but this set still sends b4's default fake UDP packets, as every new set does. To leave UDP alone, choose Off in Action Mode on the UDP tab.",
         "negatedPortFilter": "b4 port filters list the ports to act on and cannot express a negation.",

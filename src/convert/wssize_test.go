@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/daniellavrushin/b4/config"
@@ -95,5 +96,42 @@ func TestZapret_WSSizeOffAndItsCutoffOptions(t *testing.T) {
 			assertNoLostOptions(t, res)
 			assertSetsSave(t, res)
 		})
+	}
+}
+
+func TestZapret_AUDPProfileCarriesNoTCPOptions(t *testing.T) {
+	defaults := config.DefaultSetConfig
+	profiles := []struct{ name, line string }{
+		{"udpPorts", "--filter-udp=443 --hostlist-domains=example.com"},
+		{"callsOnly", "--filter-udp=50000-50100 --filter-l7=discord,stun"},
+	}
+	options := []string{"--wssize=1:6", "--dup=2", "--dpi-desync-split-seqovl=4"}
+	for _, p := range profiles {
+		t.Run(p.name, func(t *testing.T) {
+			res := analyze(t, p.line+" --dpi-desync=fake,rst "+strings.Join(options, " "))
+			set := res.Sets[0]
+			if !set.Enabled {
+				t.Fatal("the set must be enabled, or the options below would do nothing whatever the import wrote")
+			}
+			if set.TCP.WSSize.Enabled || set.TCP.Duplicate.Enabled || set.TCP.Desync.Mode != defaults.TCP.Desync.Mode ||
+				set.Fragmentation.SeqOverlapLength != defaults.Fragmentation.SeqOverlapLength {
+				t.Fatalf("nfqws denies TCP to a profile that filters only UDP, and a b4 set is not limited to one protocol: "+
+					"wssize=%+v duplicate=%v desync=%q seq_overlap_length=%d", set.TCP.WSSize, set.TCP.Duplicate.Enabled,
+					set.TCP.Desync.Mode, set.Fragmentation.SeqOverlapLength)
+			}
+			for _, token := range options {
+				if n := noteFor(t, res, token); n.Status != StatusDegenerate || n.Reason != "tcpOnlyOption" {
+					t.Errorf("%s: got %s/%s", token, n.Status, n.Reason)
+				}
+			}
+			assertNoLostOptions(t, res)
+			assertSetsSave(t, res)
+		})
+	}
+
+	res := analyze(t, "--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=multisplit --new "+
+		"--filter-udp=443 --dpi-desync=fake --wssize=1:6")
+	if len(res.Sets) != 1 || res.Sets[0].TCP.WSSize.Enabled {
+		t.Fatalf("a UDP profile folded into a TCP set brings no TCP window with it: %d sets, wssize=%+v", len(res.Sets), res.Sets[0].TCP.WSSize)
 	}
 }

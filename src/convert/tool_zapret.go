@@ -306,7 +306,32 @@ var zapretDroppedModes = map[string]bool{
 	"udplen": true, "tamper": true, "hopbyhop": true, "destopt": true,
 }
 
+var zapretTCPOnlyKeys = []string{"dup", "seqovl", "seqovl_pat", "wssize"}
+
 func emitZapretExtras(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
+	if prof.UDPOnly() {
+		for _, key := range zapretTCPOnlyKeys {
+			ti.each(prof.Index, key, func(tok Token) {
+				notes.set(tok, StatusDegenerate, "tcpOnlyOption")
+			})
+		}
+	} else {
+		emitZapretTCPExtras(set, prof, ti, notes)
+	}
+	if len(prof.Filters.Excluded) > 0 {
+		if tok, ok := ti.first(prof.Index, "hostlist_excl_dom", "hostlist_exclude"); ok {
+			notes.set(tok, StatusUnsupported, "excludeListUnsupported")
+		}
+	}
+	if prof.Skip {
+		set.Enabled = false
+		if tok, ok := ti.first(prof.Index, "skip"); ok {
+			notes.set(tok, StatusMapped, "skipMapped", "enabled=false")
+		}
+	}
+}
+
+func emitZapretTCPExtras(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
 	if prof.Desync.Mode != "" {
 		set.TCP.Desync.Mode = prof.Desync.Mode
 	}
@@ -334,17 +359,6 @@ func emitZapretExtras(set *config.SetConfig, prof *Profile, ti tokenIndex, notes
 		}
 	}
 	emitWSSize(set, prof, ti, notes)
-	if len(prof.Filters.Excluded) > 0 {
-		if tok, ok := ti.first(prof.Index, "hostlist_excl_dom", "hostlist_exclude"); ok {
-			notes.set(tok, StatusUnsupported, "excludeListUnsupported")
-		}
-	}
-	if prof.Skip {
-		set.Enabled = false
-		if tok, ok := ti.first(prof.Index, "skip"); ok {
-			notes.set(tok, StatusMapped, "skipMapped", "enabled=false")
-		}
-	}
 }
 
 func emitWSSize(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
