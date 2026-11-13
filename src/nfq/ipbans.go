@@ -482,12 +482,13 @@ func (w *Worker) hintBanRetest(ip net.IP, port int, host string) {
 	if cfg == nil || matcher == nil || cfg.Queue.IsDiscovery {
 		return
 	}
-	matched, set := matcher.MatchSNIWithSource(host, "")
-	if !matched || set == nil || !set.Enabled {
-		return
-	}
 	local := routeSource(ip, port)
 	if local == nil {
+		return
+	}
+	mac := w.getMacByIp(local.String())
+	matched, set := matcher.MatchSNIWithSourceTLS(host, mac, 0, addressFamily(ip), clientScopeIn(matcher, local, mac).filter())
+	if !matched || set == nil || !set.Enabled {
 		return
 	}
 	w.storeHostHint(local.String(), ip.String(), set, host, "ban re-test", 0, 0)

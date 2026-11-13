@@ -71,7 +71,7 @@ A routing set for one service therefore keeps its traffic away from a routing se
 
 When a server name matches a set, b4 remembers the destination address with the name and the set. A connection to that address then takes the same set before its ClientHello arrives, and so does a connection that carries no server name. The entry lasts 10 minutes after its last use. b4 learns a private address this way only over TCP, to an address a set's **Bypass IPs** list as described above. From a connection that [IP priority](#ip-priority) holds, b4 learns nothing.
 
-When a DNS answer for a set's domain passes through b4, it notes the answered addresses for the device that asked. For two minutes, a connection from that device to one of those addresses takes the set when no address target matches.
+When a DNS answer for a set's domain passes through b4, it notes the answered addresses for the device that asked. For two minutes, a connection from that device to one of those addresses takes the set when no address target matches. When several sets list the domain, each address goes to the set that [Choosing between sets](#choosing-between-sets) picks for the IP version of that address.
 
 A set with **Domain-only matching** on neither learns addresses nor uses DNS answers. It matches its domains by the server name alone.
 
