@@ -234,6 +234,49 @@ func TestTheReadAtTheEndOfTheCheckCoversEveryConnectionToTheAddress(t *testing.T
 	}
 }
 
+func TestAConnectionAnsweredDuringItsLookupIsNotCounted(t *testing.T) {
+	set := silenceSet()
+	r := newFreshSilenceWorker(t, &set, iphealth.TLSSilent)
+	entered, release, swept := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var reads atomic.Int32
+	r.answerLookups(t, func(ctnl.Tuple) flowAnswer {
+		if reads.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		return silentFlow()
+	})
+
+	sendHello(t, r.w, 12345, engine.VerdictAccept)
+	go func() {
+		defer close(swept)
+		r.pool.sweepSilentHellos(time.Now().Add(time.Minute))
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		<-swept
+	})
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the sweep never asked conntrack about the connection, so this test proves nothing")
+	}
+	r.w.ProcessPacket(clientPacketAcking(12345, afterHello(), silentServerAck+1400, 0x10, nil))
+	close(release)
+	<-swept
+	r.w.bans.wg.Wait()
+
+	sendHello(t, r.w, 23456, engine.VerdictAccept)
+	r.sweepLater()
+	if keys := r.probed(); len(keys) != 0 {
+		t.Fatalf("a connection the client acknowledged while the sweep was reading conntrack was answered, so the next silent one is the first, probed %v", keys)
+	}
+}
+
 func TestAConnectionTheClientGivesUpOnIsCountedOnce(t *testing.T) {
 	set := silenceSet()
 	set.TCP.IPBlockDetect.TimeoutMs = 1

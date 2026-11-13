@@ -169,8 +169,18 @@ func (t *destStateTracker) Park(h helloWatch) {
 	t.updateWatch(h, func(w *helloWatch) { w.probing, w.parked = false, true })
 }
 
-func (t *destStateTracker) Counted(h helloWatch) {
-	t.updateWatch(h, func(w *helloWatch) { w.counted = true })
+func (t *destStateTracker) CountOnce(h helloWatch, count func() int) (int, bool) {
+	if !t.Watching() {
+		return 0, false
+	}
+	t.watchMu.Lock()
+	defer t.watchMu.Unlock()
+	cur, ok := t.watches[h.key]
+	if !ok || cur.gen != h.gen {
+		return 0, false
+	}
+	cur.counted = true
+	return count(), true
 }
 
 func (t *destStateTracker) DueSilent(now time.Time) []helloWatch {
@@ -433,8 +443,11 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 		if h.counted {
 			silent = w.bans.silentHellos(key, now)
 		} else {
-			silent = w.bans.countSilentHello(key, now)
-			w.destState.Counted(h)
+			watched := false
+			silent, watched = w.destState.CountOnce(h, func() int { return w.bans.countSilentHello(key, now) })
+			if !watched {
+				continue
+			}
 		}
 		if silent < silentHellosToBan {
 			log.Tracef("IP bans: %s took the ClientHello and sent nothing back, unanswered connection %d of the %d in a row that get the address checked with neutral names (host: %s, set: %s)", key, silent, silentHellosToBan, h.host, h.set)
