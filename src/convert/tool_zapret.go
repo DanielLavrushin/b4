@@ -438,13 +438,16 @@ func normalizeZapret(prog *Program, _ []Token, notes *noteSet) {
 }
 
 func promoteUDPFake(prof *Profile) {
+	if !prof.UDPOnly() && len(prof.Filters.UDPPorts) == 0 {
+		return
+	}
+	prof.UDP.QUICRef = prof.Fake.QUICRef
+	prof.UDP.QUICData = prof.Fake.QUICData
 	if !prof.UDPOnly() {
 		return
 	}
 	prof.UDP.Present = prof.Fake.Present
 	prof.UDP.Repeats = prof.Fake.Repeats
-	prof.UDP.QUICRef = prof.Fake.QUICRef
-	prof.UDP.QUICData = prof.Fake.QUICData
 	prof.UDP.TTL = prof.Fake.TTL
 	prof.UDP.TTLSet = prof.Fake.TTLSet
 	prof.UDP.Ports = append(prof.UDP.Ports, prof.Filters.UDPPorts...)

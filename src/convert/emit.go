@@ -317,7 +317,11 @@ func emitL7Decoy(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *not
 const udpFoldPrefix = "udpfold:"
 
 func emitUDP(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, notes *noteSet, udpOnly bool) {
-	if prof.UDP.Empty() && !udpOnly {
+	if !udpOnly && !prof.UDP.drivesUDP() {
+		if !prof.UDP.Empty() || len(prof.Filters.UDPPorts) > 0 {
+			emitUDPPayload(set, tool, prof, ti, notes)
+			noteFoldedTokens(prof, ti, notes, set)
+		}
 		return
 	}
 	set.UDP.Mode = "fake"
@@ -338,6 +342,29 @@ func emitUDP(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, n
 			notes.set(tok, StatusMapped, "udpFakeRepeatsMapped", "udp.fake_seq_length")
 		}
 	}
+	emitUDPPayload(set, tool, prof, ti, notes)
+	if prof.AnyProtocol {
+		set.UDP.FilterQUIC = "all"
+		if tok, ok := ti.first(prof.Index, "any_protocol", udpFoldPrefix+"any_protocol"); ok {
+			notes.set(tok, StatusApproximated, "anyProtocolUDP", "udp.filter_quic=all")
+		}
+	}
+	if prof.UDP.TTLSet {
+		if prof.UDP.TTL > 0 {
+			set.UDP.FakingStrategy = "ttl"
+		}
+		if tok, ok := ti.first(prof.Index, "desync_ttl", "ttl", udpFoldPrefix+"desync_ttl"); ok {
+			if prof.UDP.TTL > 0 {
+				notes.set(tok, StatusMapped, "udpFakeTTLMapped", "udp.faking_strategy=ttl")
+			} else {
+				notes.set(tok, StatusMapped, "udpFakeTTLOriginal", "udp.faking_strategy=none")
+			}
+		}
+	}
+	noteFoldedTokens(prof, ti, notes, set)
+}
+
+func emitUDPPayload(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, notes *noteSet) {
 	if prof.UDP.QUICRef != "" {
 		set.UDP.FakePayloadFile = config.FakePayloadAutoQUIC
 		if tok, ok := ti.first(prof.Index, "fake_quic", udpFoldPrefix+"fake_quic"); ok {
@@ -362,25 +389,6 @@ func emitUDP(set *config.SetConfig, tool string, prof *Profile, ti tokenIndex, n
 		set.UDP.FakePayloadData = prof.UDP.QUICData
 	}
 	noteUDPHexFakes(set, prof, ti, notes)
-	if prof.AnyProtocol {
-		set.UDP.FilterQUIC = "all"
-		if tok, ok := ti.first(prof.Index, "any_protocol", udpFoldPrefix+"any_protocol"); ok {
-			notes.set(tok, StatusApproximated, "anyProtocolUDP", "udp.filter_quic=all")
-		}
-	}
-	if prof.UDP.TTLSet {
-		if prof.UDP.TTL > 0 {
-			set.UDP.FakingStrategy = "ttl"
-		}
-		if tok, ok := ti.first(prof.Index, "desync_ttl", "ttl", udpFoldPrefix+"desync_ttl"); ok {
-			if prof.UDP.TTL > 0 {
-				notes.set(tok, StatusMapped, "udpFakeTTLMapped", "udp.faking_strategy=ttl")
-			} else {
-				notes.set(tok, StatusMapped, "udpFakeTTLOriginal", "udp.faking_strategy=none")
-			}
-		}
-	}
-	noteFoldedTokens(prof, ti, notes, set)
 }
 
 func noteFoldedTokens(prof *Profile, ti tokenIndex, notes *noteSet, set *config.SetConfig) {

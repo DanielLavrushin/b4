@@ -150,8 +150,11 @@ type UDPOp struct {
 }
 
 func (u UDPOp) Empty() bool {
-	return u.FakeCount == 0 && !u.Present && u.Repeats == 0 &&
-		u.QUICRef == "" && len(u.QUICData) == 0 && !u.TTLSet && len(u.Ports) == 0
+	return !u.drivesUDP() && u.QUICRef == "" && len(u.QUICData) == 0
+}
+
+func (u UDPOp) drivesUDP() bool {
+	return u.FakeCount != 0 || u.Present || u.Repeats != 0 || u.TTLSet || len(u.Ports) > 0
 }
 
 type DesyncOp struct {

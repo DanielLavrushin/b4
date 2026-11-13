@@ -31,6 +31,7 @@
 - В списках интерфейсов не было выключенных интерфейсов, поэтому выключенное подключение WireGuard нельзя было выбрать как **Выходной интерфейс** сета. ([#501](https://github.com/DanielLavrushin/b4/pull/501), спасибо [@niklzz](https://github.com/niklzz))
 - Бан от **Обнаружения блокировки по IP** на сервере, который отвечает только на свои сайты, например на видеосервере YouTube, никогда не снимался досрочно, даже когда сет снова доставал до сайта, потому что перепроверки спрашивали только посторонние имена. [#547](https://github.com/DanielLavrushin/b4/issues/547)
 - Фейк byedpi, импортированный из командной строки (`-l :...`), искажался, если содержал двоичные данные, а его сет показывал **Тип фейкового payload** как `1`. Фейк zapret, заданный в hex, в сет не попадал (`--dpi-desync-fake-tls=0x...`) или уходил нулями (`--dpi-desync-fake-quic=0x...`). [#538](https://github.com/DanielLavrushin/b4/issues/538)
+- Импортированный профиль zapret, который фильтрует и TCP, и UDP, терял свой `--dpi-desync-fake-quic` или `--dpi-desync-fake-unknown-udp`, и его сет отправлял UDP-фейки из нулей. [#581](https://github.com/DanielLavrushin/b4/issues/581)
 - Карточки сетов и результаты **Дискавери** называли фейковые payload Google и DuckDuckGo `default` и `default2`. [#538](https://github.com/DanielLavrushin/b4/issues/538)
 
 ### Безопасность
