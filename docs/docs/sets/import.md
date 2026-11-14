@@ -81,6 +81,10 @@ These do not carry over:
 
 The new sets appear on the **Sets** page ahead of the existing ones. The result is a starting point, not a verified configuration: the provider, the route and the blocking differ between the source machine and this one. A [Discovery](../discovery.md) run on the imported domains confirms whether the strategy works here, and finds a better one when it does not.
 
+## Importing through an AI assistant
+
+An AI assistant connected over [MCP](../settings/mcp.md) converts the same text when **Allow configuration changes** is on. It gets the report before anything is saved, creates the sets on request, and undoes the import when asked. [API and MCP tools](../advanced/api.md#b4-import-strategy) describes its tool.
+
 ## When it does not work
 
 **No set carries a strategy.** The report says that none of the options that do the bypass were recognized. This happens with a variant of the tool with a different option syntax. Such a configuration is worth sending to the [b4 issue tracker](https://github.com/DanielLavrushin/b4/issues).
