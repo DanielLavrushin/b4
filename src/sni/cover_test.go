@@ -243,3 +243,23 @@ func TestCoverSinceReportsOnlyWhatChanged(t *testing.T) {
 		t.Errorf("a set that was not idle before must be reported as idle now")
 	}
 }
+
+func TestCoverSinceSkipsASetThatWasAlreadyIdle(t *testing.T) {
+	older := coverSet("community", coverTargets{geosite: []string{"social"}})
+	newer := coverSet("community", coverTargets{geosite: []string{"social", "instagram", "youtube"}})
+
+	inside := coverSet("inside", coverTargets{geosite: []string{"social", "instagram"}})
+	before, after := CoverageOf(older).Of(inside), CoverageOf(newer).Of(inside)
+	if !before.Idle || !after.Idle {
+		t.Fatalf("the set must handle nothing under either version: before %+v, after %+v", before, after)
+	}
+	if got := after.Since(before); !got.Empty() {
+		t.Errorf("a set that handled nothing before the update lost nothing to it, got %+v", got)
+	}
+
+	wider := coverSet("wider", coverTargets{geosite: []string{"social", "youtube"}})
+	expectCover(t, CoverageOf(newer).Of(wider).Since(CoverageOf(older).Of(wider)), []string{"youtube"}, nil, nil, true)
+
+	still := coverSet("still", coverTargets{geosite: []string{"social", "youtube"}, domains: []string{"example.org"}})
+	expectCover(t, CoverageOf(newer).Of(still).Since(CoverageOf(older).Of(still)), []string{"youtube"}, nil, nil, false)
+}

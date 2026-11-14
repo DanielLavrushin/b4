@@ -18,11 +18,14 @@ func (c Cover) Empty() bool {
 }
 
 func (c Cover) Since(before Cover) Cover {
+	if before.Idle {
+		return Cover{}
+	}
 	return Cover{
 		GeoSite: outside(c.GeoSite, keySet(before.GeoSite, categoryKey), categoryKey),
 		GeoIP:   outside(c.GeoIP, keySet(before.GeoIP, categoryKey), categoryKey),
 		ASNs:    outside(c.ASNs, keySet(before.ASNs, asnKey), asnKey),
-		Idle:    c.Idle && !before.Idle,
+		Idle:    c.Idle,
 	}
 }
 
