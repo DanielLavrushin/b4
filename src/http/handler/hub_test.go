@@ -762,6 +762,47 @@ func TestHubApplyReplaceRemovesTheEarlierCopyInTheSameSave(t *testing.T) {
 	}
 }
 
+func TestHubApplyReplaceComparesWithTheCopyOnlyBelowIt(t *testing.T) {
+	apply := func(t *testing.T, copyOnTop bool) HubApplyResponse {
+		env := newHubEnv(t)
+		shared := hubStrategySet("Video", "youtube.com", "example.org")
+		cs, _ := hubtest.CatalogueSet(t, "set-video", 1, &shared, nil)
+		env.publish(t, cs)
+
+		local := hubStrategySet("Only video", "youtube.com")
+		local.Id = "local-1"
+		middle := hubStrategySet("Middle", "example.org")
+		middle.Id = "local-2"
+		earlier := hubStrategySet("Video", "youtube.com", "example.org")
+		earlier.Id = "copy-1"
+		earlier.Hub = &config.HubOrigin{ID: "set-video", Version: 1}
+
+		order := []*config.SetConfig{&local, &middle, &earlier}
+		if copyOnTop {
+			order = []*config.SetConfig{&earlier, &local, &middle}
+		}
+		env.update(func(cfg *config.Config) {
+			cfg.Sets = order
+			for _, set := range cfg.Sets {
+				env.api.loadTargetsForSetCached(set)
+			}
+		})
+		resp := hubApplyOK(t, env, "set-video", map[string]interface{}{"replace": "local-1", "discard": "copy-1"})
+		if len(resp.Moved) != 1 || resp.Moved[0].SetId != "local-2" {
+			t.Fatalf("example.org must move out of the set below the replaced one: %+v", resp.Moved)
+		}
+		return resp
+	}
+
+	below := apply(t, false)
+	if len(below.Covered) != 1 || below.Covered[0].SetId != "local-2" || !below.Covered[0].Idle {
+		t.Errorf("a copy that stood below the set took nothing from it, so losing its last domain to the replaced set is news: %+v", below.Covered)
+	}
+	if onTop := apply(t, true); len(onTop.Covered) != 0 {
+		t.Errorf("a copy that stood above the set already handled its domain, so the replace reports nothing: %+v", onTop.Covered)
+	}
+}
+
 type hubBlobGate struct {
 	next    http.RoundTripper
 	armed   atomic.Bool

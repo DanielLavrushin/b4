@@ -480,7 +480,6 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 	config.ApplySetDefaults(&set)
 
 	replaced := false
-	former := ""
 	moved := []DomainReassignment{}
 	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
 		if refusal := hubDiscardRefusal(next, replace, discard, cs.ID); refusal != nil {
@@ -504,10 +503,8 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 			next.Sets[index] = &set
 			replaced = true
 		}
-		former = set.Id
 		if discard != "" {
 			next.Sets = slices.DeleteFunc(next.Sets, func(s *config.SetConfig) bool { return s != nil && s.Id == discard })
-			former = discard
 		}
 		if released := api.releaseDomainsFromOtherSets(next.Sets, set.Id, set.Targets.SNIDomains); released != nil {
 			moved = released
@@ -524,7 +521,7 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, err)
 		return
 	}
-	covered := setsCoveredBy(oldCfg.Sets, newCfg.Sets, set.Id, former)
+	covered := setsCoveredBy(oldCfg.Sets, newCfg.Sets, set.Id, set.Id, discard)
 	if len(asnWarnings) > 0 {
 		config.RequestASNRefresh()
 	}

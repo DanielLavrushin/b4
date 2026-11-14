@@ -143,25 +143,45 @@ type CoveredSet struct {
 	Idle    bool     `json:"idle"`
 }
 
-func setsCoveredBy(before, after []*config.SetConfig, ownerId, formerId string) []CoveredSet {
+type formerOwner struct {
+	coverage *sni.Coverage
+	place    int
+}
+
+func setsCoveredBy(before, after []*config.SetConfig, ownerId string, formerIds ...string) []CoveredSet {
 	covered := []CoveredSet{}
 	index := slices.IndexFunc(after, func(set *config.SetConfig) bool { return set != nil && set.Id == ownerId })
 	if index < 0 {
 		return covered
 	}
 	previous := make(map[string]*config.SetConfig, len(before))
-	for _, set := range before {
+	place := make(map[string]int, len(before))
+	for i, set := range before {
 		if set != nil {
 			previous[set.Id] = set
+			place[set.Id] = i
+		}
+	}
+	var formers []formerOwner
+	for _, id := range formerIds {
+		if set := previous[id]; id != "" && set != nil {
+			formers = append(formers, formerOwner{coverage: sni.CoverageOf(set), place: place[id]})
 		}
 	}
 	owner := after[index]
-	now, was := sni.CoverageOf(owner), sni.CoverageOf(previous[formerId])
+	now, alone := sni.CoverageOf(owner), sni.CoverageOf(nil)
 	for _, set := range after[index+1:] {
 		if set == nil {
 			continue
 		}
-		cover := now.Of(set).Since(was.Of(previous[set.Id]))
+		earlier := previous[set.Id]
+		was := alone.Of(earlier)
+		for _, former := range formers {
+			if earlier != nil && former.place < place[set.Id] {
+				was = was.Join(former.coverage.Of(earlier))
+			}
+		}
+		cover := now.Of(set).Since(was)
 		if cover.Empty() {
 			continue
 		}

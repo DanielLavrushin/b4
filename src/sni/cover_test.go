@@ -341,6 +341,16 @@ func TestCoverSinceReportsOnlyWhatChanged(t *testing.T) {
 	}
 }
 
+func TestCoverJoinAddsUpWhatTwoOwnersTook(t *testing.T) {
+	first := Cover{GeoSite: []string{"meta"}, ASNs: []string{"AS32934"}}
+	second := Cover{GeoSite: []string{"Meta", "instagram"}, GeoIP: []string{"facebook"}, ASNs: []string{"32934", "15169"}, Idle: true}
+	expectCover(t, first.Join(second), []string{"meta", "instagram"}, []string{"facebook"}, []string{"AS32934", "15169"}, true)
+	expectCover(t, first.Join(Cover{}), []string{"meta"}, nil, []string{"AS32934"}, false)
+	if len(first.GeoSite) != 1 || len(second.GeoSite) != 2 {
+		t.Errorf("joining must not change its operands: %+v %+v", first, second)
+	}
+}
+
 func TestCoverSinceSkipsASetThatWasAlreadyIdle(t *testing.T) {
 	older := coverSet("community", coverTargets{geosite: []string{"social"}})
 	newer := coverSet("community", coverTargets{geosite: []string{"social", "instagram", "youtube"}})

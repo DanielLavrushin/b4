@@ -20,6 +20,15 @@ func (c Cover) Empty() bool {
 	return len(c.GeoSite) == 0 && len(c.GeoIP) == 0 && len(c.ASNs) == 0 && !c.Idle
 }
 
+func (c Cover) Join(other Cover) Cover {
+	return Cover{
+		GeoSite: append(slices.Clone(c.GeoSite), outside(other.GeoSite, keySet(c.GeoSite, categoryKey), categoryKey)...),
+		GeoIP:   append(slices.Clone(c.GeoIP), outside(other.GeoIP, keySet(c.GeoIP, categoryKey), categoryKey)...),
+		ASNs:    append(slices.Clone(c.ASNs), outside(other.ASNs, keySet(c.ASNs, asnKey), asnKey)...),
+		Idle:    c.Idle || other.Idle,
+	}
+}
+
 func (c Cover) Since(before Cover) Cover {
 	if before.Idle {
 		return Cover{}
