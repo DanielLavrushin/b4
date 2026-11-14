@@ -40,6 +40,7 @@ type netnsWireSegment struct {
 	window       uint16
 	flags        byte
 	scale        int
+	ttl          byte
 }
 
 func netnsHoldRequire(t *testing.T) {
@@ -159,7 +160,7 @@ func netnsHoldParse(pkt []byte) (netnsWireSegment, bool) {
 	}
 	s.sport, s.dport = binary.BigEndian.Uint16(tcp[0:2]), binary.BigEndian.Uint16(tcp[2:4])
 	s.seq, s.payload = binary.BigEndian.Uint32(tcp[4:8]), len(tcp)-off
-	s.window, s.flags, s.scale = binary.BigEndian.Uint16(tcp[14:16]), tcp[13], -1
+	s.window, s.flags, s.scale, s.ttl = binary.BigEndian.Uint16(tcp[14:16]), tcp[13], -1, pkt[8]
 	for i := 20; i < off; {
 		if tcp[i] == 0 {
 			break

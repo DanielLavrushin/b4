@@ -10,6 +10,7 @@ All notable changes to b4 are recorded in this file.
 - A set can ask more than one DNS resolver: the **Resolvers** field on its **DNS & Routing** tab holds up to eight, asked in order when one fails or is slow, and replaces the resolver type switch and its two fields. ([#551](https://github.com/DanielLavrushin/b4/pull/551), thanks [@asovetov](https://github.com/asovetov))
 - Without a login for the web interface, the log warns when b4 refuses a page at another address, and names the address b4 saw and what to change.
 - On Keenetic, interface lists such as **Capture Interfaces** and a set's **Output Interface** show the name the router gives each connection, as in `WARP (nwg4)`, and devices carry the name they have in the router's web interface. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
+- **Disorder** has a **Split Position** in the set editor: with **SNI-Based Splitting** off it cuts the packet once at that byte, which gives an **Overlap Length** shorter than the position room to be sent. [#591](https://github.com/DanielLavrushin/b4/issues/591)
 
 ### Changed
 
@@ -40,6 +41,7 @@ All notable changes to b4 are recorded in this file.
 - Set cards and **Discovery** results named the Google and DuckDuckGo fake payloads `default` and `default2`. [#538](https://github.com/DanielLavrushin/b4/issues/538)
 - With one domain in two sets, one limited to IPv4 and one to IPv6 by the **IP Version Filter**, the first packet of a connection could get the set for the other IP version when that set was higher in the list. [#582](https://github.com/DanielLavrushin/b4/issues/582)
 - **Discovery** tested every strategy that has an **Overlap Pattern**, such as `combo-seqovl64`, without that pattern, while the set saved from such a strategy sent it. [#542](https://github.com/DanielLavrushin/b4/issues/542)
+- A **Disorder** set with an **Overlap Length** never sent the overlap while **SNI-Based Splitting** was off, so the **Discovery** strategies `disorder-seqovl128-pos256` and `disorder-seqovl256-pos512` tested plain Disorder. [#591](https://github.com/DanielLavrushin/b4/issues/591)
 
 ### Security
 

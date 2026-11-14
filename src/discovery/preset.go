@@ -954,7 +954,6 @@ func GetPhase2Presets(family StrategyFamily) []ConfigPreset {
 		}
 
 		// Sequence overlap length variations (prepends pattern bytes to second segment, shifts seq back)
-		// SNIPosition is set explicitly large enough that the second segment starts past seqovlLength.
 		seqovlDisorder := []struct {
 			length int
 			pos    int
@@ -971,13 +970,13 @@ func GetPhase2Presets(family StrategyFamily) []ConfigPreset {
 				Config: withTCP(withFragmentation(base, config.FragmentationConfig{
 					Strategy:          "disorder",
 					ReverseOrder:      true,
-					SNIPosition:       v.pos,
 					SeqOverlapPattern: []string{"0x16", "0x03", "0x03", "0x00", "0x00"},
 					SeqOverlapLength:  v.length,
 					Disorder: config.DisorderFragConfig{
-						ShuffleMode: "full",
-						MinJitterUs: 500,
-						MaxJitterUs: 2100,
+						ShuffleMode:   "full",
+						MinJitterUs:   500,
+						MaxJitterUs:   2100,
+						SplitPosition: v.pos,
 					},
 				}), config.TCPConfig{
 					ConnBytesLimit: 19,

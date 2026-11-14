@@ -75,3 +75,45 @@ func TestTestConfigsCarryTheSeqOverlapBytesOfTheirPreset(t *testing.T) {
 		t.Fatal("no preset carries a sequence-overlap pattern")
 	}
 }
+
+func TestTestConfigsKeepTheCutsOfAPresetWithAnOverlapLength(t *testing.T) {
+	ds := setRunFixture(t, "a.example")
+	ds.Domain = "a.example"
+	ds.cfg = &config.Config{ConfigPath: filepath.Join(t.TempDir(), "b4.json")}
+
+	type cuts struct {
+		strategy             string
+		middleSNI            bool
+		overlap              int
+		firstByte, extension bool
+		disorderPosition     int
+	}
+	cutsOf := func(f config.FragmentationConfig) cuts {
+		return cuts{
+			f.Strategy, f.MiddleSNI, f.SeqOverlapLength,
+			f.Combo.FirstByteSplit, f.Combo.ExtensionSplit, f.Disorder.SplitPosition,
+		}
+	}
+
+	checked := map[string]int{}
+	for _, preset := range allDiscoveryPresets() {
+		if preset.Config.Fragmentation.SeqOverlapLength <= 0 {
+			continue
+		}
+		checked[preset.Config.Fragmentation.Strategy]++
+		want := cutsOf(preset.Config.Fragmentation)
+		for kind, cfg := range map[string]*config.Config{
+			"single": ds.buildTestConfig(preset),
+			"multi":  ds.buildTestConfigMulti(preset),
+		} {
+			if got := cutsOf(cfg.Sets[0].Fragmentation); got != want {
+				t.Errorf("%s %s: the test set must cut where the preset says, got %+v, want %+v", preset.Name, kind, got, want)
+			}
+		}
+	}
+	for _, strategy := range []string{"combo", "disorder"} {
+		if checked[strategy] == 0 {
+			t.Errorf("no %s preset sets an overlap length", strategy)
+		}
+	}
+}

@@ -23,6 +23,7 @@ export interface FacetSetConfig {
   fragmentation: {
     strategy: string;
     reverse_order: boolean;
+    middle_sni?: boolean;
     sni_position: number;
     sni_position_max: number;
     oob_position: number;
@@ -40,6 +41,7 @@ export interface FacetSetConfig {
       shuffle_mode: string;
       min_jitter_us: number;
       max_jitter_us: number;
+      split_position?: number;
     };
   };
   faking: {
@@ -331,6 +333,10 @@ const splitRows = (set: FacetSetConfig, t: FacetTranslate): FacetRow[] => {
       label: t(F("jitter")),
       value: `${range(frag.disorder.min_jitter_us, frag.disorder.max_jitter_us)} µs`,
     });
+    const splitPosition = frag.disorder.split_position ?? 0;
+    if (splitPosition > 0 && !frag.middle_sni) {
+      rows.push({ label: t(F("splitPos")), value: String(splitPosition) });
+    }
   } else if (frag.strategy === "oob") {
     rows.push({
       label: t(F("oobPos")),

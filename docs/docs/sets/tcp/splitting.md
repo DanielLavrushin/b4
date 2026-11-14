@@ -61,12 +61,15 @@ With every split point off, Combo sends the packet in one piece, and the tab sho
 | --- | --- | --- |
 | **SNI-Based Splitting** | Splits around the server name. | On |
 | **Shuffle Mode** | **Full Shuffle** or **Reverse Order**. | **Full Shuffle** |
+| **Split Position** | Shown while **SNI-Based Splitting** is off. Cuts the packet once at this many bytes from its start, into two segments. `0` keeps Disorder's own cuts: after the first byte, in the middle and at three quarters. | `0` |
 | **Min Jitter**, **Max Jitter** | The random delay between segments, in µs. Used while **Segment 2 Delay** is 0. **Max Jitter** has to be greater than **Min Jitter**. | `1000`, `3000` |
 | **Fake Per Segment** | As in Combo. | Off |
 
 ## Sequence Overlap (seqovl) {#sequence-overlap}
 
 Shown for Combo and Disorder. b4 puts fake bytes in front of a real segment and moves its sequence number back by the same amount. DPI reads the fake bytes as the start of the data, and the server discards them. Combo adds them only to the first data packet of a connection, when that packet starts a ClientHello or an HTTP request. Later requests on the same connection go without them.
+
+Disorder adds them to the second segment of every packet it splits, and only when that segment starts further into the packet than **Overlap Length**. With **SNI-Based Splitting** on, the second segment starts at the server name. With it off, it starts at **Split Position**, so the position has to be greater than the overlap length. Some servers, among them services hosted on Windows, keep the bytes that arrived first: when Disorder sends the second segment ahead of the first, such a server reads the fake bytes and the connection fails.
 
 | Field | What it does | Default |
 | --- | --- | --- |

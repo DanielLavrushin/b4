@@ -528,6 +528,7 @@ export interface DisorderFragConfig {
   fake_per_segment: boolean;
   fake_per_seg_count: number;
   fake_per_seg_count_max: number;
+  split_position: number;
 }
 
 export interface DNSConfig {

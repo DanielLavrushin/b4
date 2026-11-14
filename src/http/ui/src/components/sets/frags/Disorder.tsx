@@ -8,6 +8,7 @@ import {
   B4Select,
   B4FormHeader,
   B4Hint,
+  B4NumberField,
 } from "@b4.elements";
 import { colors } from "@design";
 import { useTranslation } from "react-i18next";
@@ -29,6 +30,11 @@ export const DisorderSettings = ({
   const disorder = config.fragmentation.disorder;
   const middleSni = config.fragmentation.middle_sni;
   const seqPattern = config.fragmentation.seq_overlap_pattern || [];
+  const overlapLength = config.fragmentation.seq_overlap_length || 0;
+  const splitPosition = disorder.split_position || 0;
+  const singleCut = !middleSni && splitPosition > 0;
+  const segmentsInOrder = singleCut ? ["①", "②"] : ["①", "②", "③", "④"];
+  const segmentsShuffled = singleCut ? ["②", "①"] : ["③", "①", "④", "②"];
 
   const shuffleModeOptions: { label: string; value: DisorderShuffleMode }[] = [
     { label: t("sets.tcp.splitting.disorder.shuffleFull"), value: "full" },
@@ -71,6 +77,28 @@ export const DisorderSettings = ({
         />
       </Grid>
 
+      {!middleSni && (
+        <Grid size={{ xs: 12, md: 6 }}>
+          <B4NumberField
+            label={t("sets.tcp.splitting.disorder.splitPos")}
+            value={splitPosition}
+            path="fragmentation.disorder.split_position"
+            onChange={(value) =>
+              onChange("fragmentation.disorder.split_position", value)
+            }
+            min={0}
+            max={1460}
+            placeholder="0"
+            helperText={t("sets.tcp.splitting.disorder.splitPosHelper")}
+            aiTopic="fragmentation.disorder.split_position"
+            aiContext={{
+              middle_sni: middleSni,
+              seq_overlap_length: overlapLength,
+            }}
+          />
+        </Grid>
+      )}
+
       {/* Visual */}
       <Grid size={{ xs: 12 }}>
         <Box
@@ -91,7 +119,7 @@ export const DisorderSettings = ({
           </Typography>
           <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
             <Box sx={{ display: "flex", gap: 0.5, fontFamily: "monospace" }}>
-              {["①", "②", "③", "④"].map((n) => (
+              {segmentsInOrder.map((n) => (
                 <Box
                   key={n}
                   sx={{
@@ -109,8 +137,8 @@ export const DisorderSettings = ({
             <Typography sx={{ mx: 2 }}>→</Typography>
             <Box sx={{ display: "flex", gap: 0.5, fontFamily: "monospace" }}>
               {(disorder.shuffle_mode === "reverse"
-                ? ["④", "③", "②", "①"]
-                : ["③", "①", "④", "②"]
+                ? [...segmentsInOrder].reverse()
+                : segmentsShuffled
               ).map((n) => (
                 <Box
                   key={n}
@@ -244,11 +272,21 @@ export const DisorderSettings = ({
         onChange={(value) =>
           onChange("fragmentation.seq_overlap_pattern", value)
         }
-        length={config.fragmentation.seq_overlap_length || 0}
+        length={overlapLength}
         onLengthChange={(value) =>
           onChange("fragmentation.seq_overlap_length", value)
         }
       />
+
+      {overlapLength > 0 && middleSni && (
+        <B4Hint>{t("sets.tcp.splitting.disorder.overlapSniHint")}</B4Hint>
+      )}
+
+      {overlapLength > 0 && !middleSni && splitPosition <= overlapLength && (
+        <B4Alert severity="warning">
+          {t("sets.tcp.splitting.disorder.overlapNoRoomWarning")}
+        </B4Alert>
+      )}
     </>
   );
 };
