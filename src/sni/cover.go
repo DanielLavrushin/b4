@@ -54,7 +54,7 @@ type Coverage struct {
 var noCoverage = &Coverage{}
 
 func CoverageOf(owner *config.SetConfig) *Coverage {
-	if owner == nil || !owner.Enabled || len(owner.Targets.SourceDevices) > 0 {
+	if owner == nil || !owner.Enabled || len(owner.Targets.SourceDevices) > 0 || owner.BlockRoutingScoped() {
 		return &Coverage{}
 	}
 	return &Coverage{

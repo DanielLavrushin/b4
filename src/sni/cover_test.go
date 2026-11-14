@@ -305,6 +305,34 @@ func TestCoverLeavesSetsTheOwnerCannotOutrank(t *testing.T) {
 	}
 }
 
+func TestCoverTakesNothingForABlockSetScopedToInterfaces(t *testing.T) {
+	targets := coverTargets{geosite: []string{"instagram"}}
+	scoped := coverSet("community", targets)
+	scoped.Routing = config.RoutingConfig{Enabled: true, Mode: config.RoutingModeBlock, SourceInterfaces: []string{"br1"}}
+	local := coverSet("local", targets)
+	if !scoped.BlockRoutingScoped() {
+		t.Fatal("the fixture must be a block set scoped to source interfaces")
+	}
+
+	before := CoverageOf(scoped).Of(local)
+	if !before.Empty() {
+		t.Errorf("a block set scoped to interfaces leaves the other interfaces to the sets below, got %+v", before)
+	}
+	matcher := NewSuffixSet([]*config.SetConfig{scoped, local})
+	elsewhere := SetFilter(func(set *config.SetConfig) bool { return set.Id != scoped.Id })
+	if _, set := matcher.MatchSNIWithSource("instagram.com", "", elsewhere); set == nil || set.Id != local.Id {
+		t.Errorf("a connection from another interface must match the set below, got %v", set)
+	}
+
+	reapplied := coverSet("community", targets)
+	reapplied.Routing = config.RoutingConfig{Enabled: true, Mode: config.RoutingModeBlock}
+	expectCover(t, CoverageOf(reapplied).Of(local).Since(before), []string{"instagram"}, nil, nil, true)
+
+	routed := coverSet("community", targets)
+	routed.Routing = config.RoutingConfig{Enabled: true, Mode: config.RoutingModeInterface, SourceInterfaces: []string{"br1"}}
+	expectCover(t, CoverageOf(routed).Of(local), []string{"instagram"}, nil, nil, true)
+}
+
 func TestCoverKeepsSetsThatMatchWithoutDestinations(t *testing.T) {
 	owner := coverSet("community", coverTargets{geosite: []string{"instagram"}})
 	coverage := CoverageOf(owner)
