@@ -201,7 +201,7 @@ func Analyze(input string, opts Options) (*Result, error) {
 	res.Notes = notes.list()
 	res.Applicable = anyProfileCarriesStrategy(prog)
 	res.Plan = buildPlan(prog, sets)
-	res.Warnings = buildWarnings(spec, argv, prog, sets, inferred, srcRep, sharedUnused)
+	res.Warnings = buildWarnings(spec, argv, prog, sets, res.Notes, inferred, srcRep, sharedUnused)
 	res.Fidelity = score(res.Notes)
 	return res, nil
 }
@@ -263,7 +263,17 @@ func collectUnresolved(prog *Program) []Unresolved {
 
 const minToolConfidence = 0.35
 
-func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetConfig, inferred bool, src sourceReport, sharedUnused bool) []Warning {
+func profilesNoted(notes []Note, reason string) map[int]bool {
+	out := map[int]bool{}
+	for _, n := range notes {
+		if n.Reason == reason {
+			out[n.Profile] = true
+		}
+	}
+	return out
+}
+
+func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetConfig, notes []Note, inferred bool, src sourceReport, sharedUnused bool) []Warning {
 	out := []Warning{}
 	if inferred {
 		if amb := ambiguousFlags(spec, argv); len(amb) > 0 {
@@ -294,13 +304,13 @@ func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetCo
 			"count": n, "vars": strings.Join(names, ", "),
 		}})
 	}
-	enabled := 0
+	targeted := 0
 	for _, s := range sets {
-		if s.Enabled && (len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0 || s.SelectsL7()) {
-			enabled++
+		if len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0 || s.SelectsL7() {
+			targeted++
 		}
 	}
-	if enabled == 0 && slices.ContainsFunc(prog.Profiles, func(p *Profile) bool { return !p.scopedByL7() }) {
+	if targeted == 0 && slices.ContainsFunc(prog.Profiles, func(p *Profile) bool { return !p.scopedByL7() }) {
 		out = append(out, Warning{Code: "needsTargets", Params: map[string]any{
 			"sets": len(sets), "tool": spec.Label,
 		}})
@@ -315,12 +325,12 @@ func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetCo
 	if !anyProfileCarriesStrategy(prog) {
 		out = append(out, Warning{Code: "nothingRecognized", Params: map[string]any{"tool": spec.Label}})
 	}
-	if shadowed := countShadowed(sets); shadowed > 0 {
+	if shadowed := len(profilesNoted(notes, "shadowedByEarlierSet")); shadowed > 0 {
 		out = append(out, Warning{Code: "shadowedSets", Params: map[string]any{
 			"count": shadowed, "tool": spec.Label,
 		}})
 	}
-	if catchAll := countCatchAll(prog, sets); catchAll > 0 && enabled > 0 {
+	if catchAll := countCatchAll(prog, sets); catchAll > 0 && targeted > 0 {
 		out = append(out, Warning{Code: "catchAllProfile", Params: map[string]any{
 			"count": catchAll, "tool": spec.Label,
 		}})
@@ -384,16 +394,6 @@ func sortedKeys(m map[string]int) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func countShadowed(sets []config.SetConfig) int {
-	n := 0
-	for _, s := range sets {
-		if !s.Enabled && len(s.Targets.SNIDomains) > 0 {
-			n++
-		}
-	}
-	return n
 }
 
 var unscoredReasons = map[string]bool{
