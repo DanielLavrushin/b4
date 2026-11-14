@@ -54,6 +54,7 @@ type HubSetsResponse struct {
 
 type HubApplyRequest struct {
 	Replace string `json:"replace,omitempty"`
+	Discard string `json:"discard,omitempty"`
 }
 
 type HubApplyResponse struct {

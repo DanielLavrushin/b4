@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -380,13 +381,14 @@ func (api *API) handleHubSetByID(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Apply a hub set
-// @Description Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others; with a replace id the new set takes that local set's id, position and enabled flag instead. The reply lists the domains moved out of other sets and, in covered, the enabled sets further down whose geosite, geoip or ASN targets the applied set now matches first; idle marks one left matching nothing.
+// @Description Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others; with a replace id the new set takes that local set's id, position and enabled flag instead. A discard id next to replace names an earlier local copy of this hub set, removed in the same save. The reply lists the domains moved out of other sets and, in covered, the enabled sets further down whose geosite, geoip or ASN targets the applied set now matches first; idle marks one left matching nothing.
 // @Tags Hub
 // @Accept json
 // @Produce json
 // @Param id path string true "Hub set id"
-// @Param body body HubApplyRequest false "Local set to replace"
+// @Param body body HubApplyRequest false "Local set to replace, and a copy to remove with it"
 // @Success 202 {object} HubApplyResponse
+// @Failure 400 {object} APIError "discard without replace, or naming a set not applied from this hub set"
 // @Failure 404 {object} APIError
 // @Failure 502 {object} APIError "hub_unreachable or payload_missing"
 // @Security BearerAuth
@@ -405,6 +407,7 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	replace := strings.TrimSpace(req.Replace)
+	discard := strings.TrimSpace(req.Discard)
 	if replace != "" && hubSetByLocalID(api.getCfg(), replace) == nil {
 		writeAPIError(w, ErrNotFound("Set not found"))
 		return
@@ -415,6 +418,10 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cs := res.Set
+	if refusal := hubDiscardRefusal(api.getCfg(), replace, discard, cs.ID); refusal != nil {
+		writeAPIError(w, refusal)
+		return
+	}
 	env := cs.ToEnvelope()
 	for _, ref := range cs.Payloads {
 		data, err := svc.FetchBlob(r.Context(), ref)
@@ -498,6 +505,16 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	former := set.Id
+	if discard != "" {
+		before := len(newCfg.Sets)
+		newCfg.Sets = slices.DeleteFunc(newCfg.Sets, func(s *config.SetConfig) bool { return s != nil && s.Id == discard })
+		if len(newCfg.Sets) == before {
+			writeAPIError(w, ErrNotFound("Set not found"))
+			return
+		}
+		former = discard
+	}
 	moved := api.releaseDomainsFromOtherSets(newCfg.Sets, set.Id, set.Targets.SNIDomains)
 	if moved == nil {
 		moved = []DomainReassignment{}
@@ -511,14 +528,16 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, err)
 		return
 	}
-	covered := setsCoveredBy(oldCfg.Sets, newCfg.Sets, set.Id)
+	covered := setsCoveredBy(oldCfg.Sets, newCfg.Sets, set.Id, former)
 	if len(asnWarnings) > 0 {
 		config.RequestASNRefresh()
 	}
 	if api.PerformSoftRestart(newCfg, oldCfg) {
 		log.Infof("Soft restart completed successfully")
 	}
-	if replaced {
+	if discard != "" {
+		log.Infof("Hub: replaced set '%s' with %s v%d and removed the copy %s applied before it", set.Name, cs.ID, cs.Version, discard)
+	} else if replaced {
 		log.Infof("Hub: replaced set '%s' with %s v%d", set.Name, cs.ID, cs.Version)
 	} else {
 		log.Infof("Hub: applied set %s v%d as '%s'", cs.ID, cs.Version, set.Name)
@@ -527,6 +546,23 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(HubApplyResponse{ID: set.Id, Name: set.Name, Moved: moved, Covered: covered, Warnings: warnings, Payloads: installed})
+}
+
+func hubDiscardRefusal(cfg *config.Config, replace, discard, hubID string) *APIError {
+	if discard == "" {
+		return nil
+	}
+	if replace == "" || discard == replace {
+		return ErrBadRequest("discard needs a replace id that names another set")
+	}
+	copied := hubSetByLocalID(cfg, discard)
+	if copied == nil {
+		return ErrNotFound("Set not found")
+	}
+	if copied.Hub == nil || copied.Hub.ID != hubID {
+		return ErrBadRequest("discard must name a set applied from this hub set")
+	}
+	return nil
 }
 
 // @Summary Vote on an applied hub set

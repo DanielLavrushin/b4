@@ -214,13 +214,11 @@ export const HubBrowser = () => {
     if (!report) return;
     const { set, localId } = report;
     try {
-      await undo.mutateAsync(localId);
-    } catch (e) {
-      showError(t("hub.apply.undoFailed", { error: describeApiError(e) }));
-      return;
-    }
-    try {
-      const res = await apply.mutateAsync({ set, replace: covered.set_id });
+      const res = await apply.mutateAsync({
+        set,
+        replace: covered.set_id,
+        discard: localId,
+      });
       announce(
         set,
         res,
@@ -228,7 +226,6 @@ export const HubBrowser = () => {
         false,
       );
     } catch (e) {
-      setReport(null);
       showError(applyFailure(e));
     }
   };

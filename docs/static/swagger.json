@@ -2870,7 +2870,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others; with a replace id the new set takes that local set's id, position and enabled flag instead. The reply lists the domains moved out of other sets and, in covered, the enabled sets further down whose geosite, geoip or ASN targets the applied set now matches first; idle marks one left matching nothing.",
+                "description": "Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others; with a replace id the new set takes that local set's id, position and enabled flag instead. A discard id next to replace names an earlier local copy of this hub set, removed in the same save. The reply lists the domains moved out of other sets and, in covered, the enabled sets further down whose geosite, geoip or ASN targets the applied set now matches first; idle marks one left matching nothing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2890,7 +2890,7 @@
                         "required": true
                     },
                     {
-                        "description": "Local set to replace",
+                        "description": "Local set to replace, and a copy to remove with it",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -2903,6 +2903,12 @@
                         "description": "Accepted",
                         "schema": {
                             "$ref": "#/definitions/handler.HubApplyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "discard without replace, or naming a set not applied from this hub set",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIError"
                         }
                     },
                     "404": {
@@ -9150,6 +9156,9 @@
         "handler.HubApplyRequest": {
             "type": "object",
             "properties": {
+                "discard": {
+                    "type": "string"
+                },
                 "replace": {
                     "type": "string"
                 }

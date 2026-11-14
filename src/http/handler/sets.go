@@ -143,7 +143,7 @@ type CoveredSet struct {
 	Idle    bool     `json:"idle"`
 }
 
-func setsCoveredBy(before, after []*config.SetConfig, ownerId string) []CoveredSet {
+func setsCoveredBy(before, after []*config.SetConfig, ownerId, formerId string) []CoveredSet {
 	covered := []CoveredSet{}
 	index := slices.IndexFunc(after, func(set *config.SetConfig) bool { return set != nil && set.Id == ownerId })
 	if index < 0 {
@@ -156,7 +156,7 @@ func setsCoveredBy(before, after []*config.SetConfig, ownerId string) []CoveredS
 		}
 	}
 	owner := after[index]
-	now, was := sni.CoverageOf(owner), sni.CoverageOf(previous[ownerId])
+	now, was := sni.CoverageOf(owner), sni.CoverageOf(previous[formerId])
 	for _, set := range after[index+1:] {
 		if set == nil {
 			continue

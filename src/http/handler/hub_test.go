@@ -675,6 +675,83 @@ func TestHubApplyReportsASetLeftWithoutTargets(t *testing.T) {
 	}
 }
 
+func TestHubApplyReplaceRemovesTheEarlierCopyInTheSameSave(t *testing.T) {
+	env := newHubEnv(t)
+	shared := hubStrategySet("Shared video", "youtube.com")
+	shared.Faking.SNIType = config.FakePayloadCapture
+	shared.Faking.PayloadFile = "captures/tls_www_google_com.bin"
+	cs, payloads := hubtest.CatalogueSet(t, "yt-3", 1, &shared, func(string) ([]byte, error) { return config.FakeSNI1, nil })
+	for _, p := range payloads {
+		env.hub.AddBlob(p)
+	}
+	env.publish(t, cs)
+
+	local := hubStrategySet("Only video", "youtube.com")
+	local.Id = "local-1"
+	other := hubStrategySet("Other", "example.org")
+	other.Id = "local-2"
+	env.update(func(cfg *config.Config) {
+		cfg.Sets = []*config.SetConfig{&local, &other}
+		for _, set := range cfg.Sets {
+			env.api.loadTargetsForSetCached(set)
+		}
+	})
+
+	first := hubApplyOK(t, env, "yt-3", map[string]interface{}{})
+	if len(first.Covered) != 1 || first.Covered[0].SetId != "local-1" || !first.Covered[0].Idle {
+		t.Fatalf("the local set lost its only domain to the copy: %+v", first.Covered)
+	}
+	owner := func() string {
+		_, set := sni.NewSuffixSet(env.api.getCfg().Sets).MatchSNI("youtube.com")
+		if set == nil {
+			return ""
+		}
+		return set.Id
+	}
+	replace := map[string]interface{}{"replace": "local-1", "discard": first.ID}
+
+	env.hub.SetDown(true)
+	expectCode(t, postJSON(t, env.mux, "/api/hub/sets/yt-3/apply", replace), http.StatusBadGateway, "hub_unreachable")
+	if cfg := env.api.getCfg(); len(cfg.Sets) != 3 || cfg.Sets[0].Id != first.ID {
+		t.Fatalf("a replace that fails must leave the copy where it was: %+v", cfg.Sets)
+	}
+	if got := owner(); got != first.ID {
+		t.Fatalf("after a failed replace the copy must still handle youtube.com, got %q", got)
+	}
+	env.hub.SetDown(false)
+
+	for name, body := range map[string]map[string]interface{}{
+		"without replace":      {"discard": first.ID},
+		"the replaced set":     {"replace": "local-1", "discard": "local-1"},
+		"not a copy of yt-3":   {"replace": "local-1", "discard": "local-2"},
+		"a set that is gone":   {"replace": "local-1", "discard": "missing"},
+		"replace that is gone": {"replace": "missing", "discard": first.ID},
+	} {
+		rec := postJSON(t, env.mux, "/api/hub/sets/yt-3/apply", body)
+		if rec.Code != http.StatusBadRequest && rec.Code != http.StatusNotFound {
+			t.Errorf("discard %s: expected a refusal, got %d (%s)", name, rec.Code, rec.Body.String())
+		}
+		if len(env.api.getCfg().Sets) != 3 {
+			t.Fatalf("discard %s: a refused request must change nothing: %+v", name, env.api.getCfg().Sets)
+		}
+	}
+
+	done := hubApplyOK(t, env, "yt-3", replace)
+	cfg := env.api.getCfg()
+	if len(cfg.Sets) != 2 || cfg.Sets[0].Id != "local-1" || cfg.Sets[1].Id != "local-2" || done.ID != "local-1" {
+		t.Fatalf("the hub set must stand where the local set stood and the copy must be gone: %+v", cfg.Sets)
+	}
+	if cfg.Sets[0].Hub == nil || cfg.Sets[0].Hub.ID != "yt-3" || env.localSet(first.ID) != nil {
+		t.Errorf("the replaced set must carry the hub stamp, and the copy must not survive: %+v", cfg.Sets[0].Hub)
+	}
+	if len(done.Moved) != 0 || len(done.Covered) != 0 {
+		t.Errorf("the copy already handled these targets, so nothing is news: moved %+v covered %+v", done.Moved, done.Covered)
+	}
+	if got := owner(); got != "local-1" {
+		t.Errorf("youtube.com must be handled by the replaced set, got %q", got)
+	}
+}
+
 func hubDSCPOffWarning(ws []hubwire.Warning) (hubwire.Warning, bool) {
 	for _, w := range ws {
 		if w.Code == "dscp_off" {
