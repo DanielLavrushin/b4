@@ -453,6 +453,52 @@ func TestMCPImportStrategyPreviewSaysWhyApplyWouldBeRefused(t *testing.T) {
 	}
 }
 
+func TestMCPImportStrategySendsAnUnresolvedPayloadFileToPayloads(t *testing.T) {
+	srv := newMCPTestServer(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	const (
+		listRoute    = "b4_edit_set_targets"
+		payloadRoute = "Settings -> Payloads"
+	)
+	for _, c := range []struct {
+		name, text      string
+		kinds           []string
+		lists, payloads bool
+	}{
+		{"a zapret fake file",
+			"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake --dpi-desync-fake-tls=/opt/zapret/files/fake/tls_clienthello.bin",
+			[]string{"payload"}, false, true},
+		{"a byedpi fake file", "-H:example.com -f-1 --fake-data=/tmp/fake.bin", []string{"payload"}, false, true},
+		{"a host list and a fake file",
+			"--filter-tcp=443 --hostlist=/opt/zapret/hosts.txt --dpi-desync=fake --dpi-desync-fake-tls=/opt/zapret/files/fake/tls_clienthello.bin",
+			[]string{"hostlist", "payload"}, true, true},
+		{"list files only", importSample(t, importKeeneticCfg), []string{"ipset", "hostlist"}, true, false},
+	} {
+		out := decodeImport(t, callImport(t, session, ctx, map[string]any{"text": c.text}))
+		var kinds []string
+		for _, f := range out.UnresolvedFiles {
+			kinds = append(kinds, f.Kind)
+		}
+		if strings.Join(kinds, ",") != strings.Join(c.kinds, ",") {
+			t.Errorf("%s: unresolved kinds = %v, want %v", c.name, kinds, c.kinds)
+			continue
+		}
+		if !strings.Contains(out.Note, "b4 cannot read the files in unresolved_files") {
+			t.Errorf("%s: the note must say b4 cannot read the files: %q", c.name, out.Note)
+		}
+		if got := strings.Contains(out.Note, "hostlist and ipset files") && strings.Contains(out.Note, listRoute); got != c.lists {
+			t.Errorf("%s: the note sends list files to %s = %v, want %v: %q", c.name, listRoute, got, c.lists, out.Note)
+		}
+		if got := strings.Contains(out.Note, payloadRoute); got != c.payloads {
+			t.Errorf("%s: the note sends a payload file to %s = %v, want %v: %q", c.name, payloadRoute, got, c.payloads, out.Note)
+		}
+		if !c.lists && strings.Contains(out.Note, listRoute) {
+			t.Errorf("%s: %s takes targets and cannot install a payload file, so the note must not name it: %q", c.name, listRoute, out.Note)
+		}
+	}
+}
+
 func TestMCPImportStrategyRefusesAWildcardHost(t *testing.T) {
 	t.Cleanup(mcpResetHistory)
 	srv, api := newMCPTestServerAPI(t, writableCfg(t))

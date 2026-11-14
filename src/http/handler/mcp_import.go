@@ -20,6 +20,7 @@ import (
 
 const (
 	mcpImportTool         = "b4_import_strategy"
+	mcpImportPayloadFile  = "payload"
 	mcpImportOptionWidth  = 96
 	mcpImportOptionsShown = 6
 	mcpImportDomainsShown = 5
@@ -505,9 +506,23 @@ func mcpImportFollowUp(out mcpImportOut, label string, applied bool) string {
 		fmt.Fprintf(&note, " %s: %d of the %d set(s). A disabled set matches nothing, and the warnings and the rows of approximated say why it is disabled. "+
 			"Give such a set its targets with b4_edit_set_targets, then enable it with b4_manage_set action=set_enabled.", lead, disabled, len(out.Sets))
 	}
-	if len(out.UnresolvedFiles) > 0 {
-		fmt.Fprintf(&note, " b4 cannot read the files in unresolved_files: they are on the machine that ran %s. "+
-			"Ask the user for their contents and add those to the sets named there with b4_edit_set_targets.", label)
+	lists, payloads := 0, 0
+	for _, f := range out.UnresolvedFiles {
+		if f.Kind == mcpImportPayloadFile {
+			payloads++
+		} else {
+			lists++
+		}
+	}
+	if lists+payloads > 0 {
+		fmt.Fprintf(&note, " b4 cannot read the files in unresolved_files: they are on the machine that ran %s.", label)
+	}
+	if lists > 0 {
+		note.WriteString(" Ask the user for the contents of the hostlist and ipset files and add those to the sets named there with b4_edit_set_targets.")
+	}
+	if payloads > 0 {
+		note.WriteString(" A file of kind payload holds the bytes of a fake packet, not a list: its set uses a built-in payload instead. " +
+			"Only the user can bring the original in, by uploading it under Settings -> Payloads in b4's web interface and choosing it in the set.")
 	}
 	note.WriteString(" This is a best-effort translation, not an exact copy, and it does not test whether any site loads.")
 	return note.String()
@@ -518,7 +533,7 @@ func (api *API) addMCPImportTools(srv *mcp.Server) {
 		Name:  mcpImportTool,
 		Title: "Import a zapret or byedpi strategy",
 		Description: "Turns a zapret (nfqws, winws) or byedpi command line or config file into b4 sets; use it instead of translating their options yourself. " +
-			"Without apply it writes nothing and previews: the sets, each option that did not convert and why, and the list files b4 cannot read. " +
+			"Without apply it writes nothing and previews: the sets, each option that did not convert and why, and the files b4 cannot read. " +
 			"apply='true' creates the sets above the existing ones and takes their domains from other enabled sets; each such call adds another copy.",
 		Annotations: mcpDestructiveEachCall,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpImportIn) (*mcp.CallToolResult, any, error) {
