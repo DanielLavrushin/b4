@@ -1798,7 +1798,7 @@
         "ibdThresholdHelper": "How many unanswered copies of the ClientHello, the first one included, before declaring the destination blocked. Applies after the handshake completed, so it covers a stateful block rather than an address-level one.",
         "ibdThresholdWarn": "At 1 the first ClientHello of every connection counts as unanswered, so every connection of the set is reset.",
         "ibdTimeout": "Detection Timeout",
-        "ibdTimeoutHelper": "A SYN or ClientHello repeated after this long without an answer counts as reaching its threshold. With Cache Blocked IPs on, a server that sends nothing back for this long after the ClientHello gets its address checked for a ban.",
+        "ibdTimeoutHelper": "A SYN or ClientHello repeated after this long without an answer counts as reaching its threshold. With Cache Blocked IPs on, a server that sends nothing back for this long after the ClientHello on two connections in a row gets its address checked for a ban.",
         "ibdHealTtl": "Healed Answer TTL",
         "ibdHealTtlHelper": "TTL written into curated DNS answers. Keep it short so a device picks up a recovered address quickly instead of caching the curated answer for hours.",
         "ibdCache": "Cache Blocked IPs",

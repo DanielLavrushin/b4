@@ -21,6 +21,8 @@ const (
 	banRetestsPerTick = 8
 	banPendingMax     = 64
 	banAnsweredMax    = 1024
+	banSilentMax      = 1024
+	silentHellosToBan = 2
 )
 
 type banProber func(ctx context.Context, ip net.IP, port int, mark int) iphealth.TLSResult
@@ -30,6 +32,11 @@ type banHostProber func(ctx context.Context, ip net.IP, port int, host string, b
 type banAddr struct {
 	ip   netip.Addr
 	port uint16
+}
+
+type silentRun struct {
+	count int
+	until time.Time
 }
 
 type hostRetest struct {
@@ -58,14 +65,17 @@ type ipBans struct {
 	flushFailed atomic.Bool
 	answerTTL   atomic.Int64
 	mu          sync.Mutex
-	inflight    map[string]struct{}
+	inflight    map[string]bool
 	answered    map[string]time.Time
+	silent      map[string]silentRun
+	silentAddrs atomic.Int32
 	sem         chan struct{}
 	ctx         context.Context
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
 	changed     func()
 	settled     func(ip net.IP, port int, banned bool)
+	gotAnswer   func(ip net.IP, port int) bool
 }
 
 func newIPBans(reg *iphealth.BanRegistry, good *iphealth.KnownGood, probe banProber) *ipBans {
@@ -77,8 +87,9 @@ func newIPBans(reg *iphealth.BanRegistry, good *iphealth.KnownGood, probe banPro
 		reg:      reg,
 		good:     good,
 		probe:    probe,
-		inflight: make(map[string]struct{}),
+		inflight: make(map[string]bool),
 		answered: make(map[string]time.Time),
+		silent:   make(map[string]silentRun),
 		sem:      make(chan struct{}, banProbeParallel),
 		ctx:      ctx,
 		cancel:   cancel,
@@ -130,6 +141,14 @@ func (w *Worker) refusesBannedQUIC(cfg *config.Config, set *config.SetConfig, ds
 }
 
 func (b *ipBans) confirm(cfg *config.Config, ip net.IP, port uint16, host, setName string) bool {
+	return b.check(cfg, ip, port, host, setName, false)
+}
+
+func (b *ipBans) confirmSilence(cfg *config.Config, ip net.IP, port uint16, host, setName string) bool {
+	return b.check(cfg, ip, port, host, setName, true)
+}
+
+func (b *ipBans) check(cfg *config.Config, ip net.IP, port uint16, host, setName string, bySilence bool) bool {
 	if !b.on() || cfg == nil || ip == nil {
 		return false
 	}
@@ -137,7 +156,7 @@ func (b *ipBans) confirm(cfg *config.Config, ip net.IP, port uint16, host, setNa
 	first, repeat := cfg.System.IPHealth.BanTTL(), cfg.System.IPHealth.RepeatBanTTL()
 	key := iphealth.BanKey(addr, int(port))
 	mark := int(cfg.MainInjectedMark())
-	if b.run(key, func(ctx context.Context) iphealth.TLSResult {
+	if b.run(key, bySilence, func(ctx context.Context) iphealth.TLSResult {
 		return b.probe(ctx, addr, int(port), mark)
 	}, func(res iphealth.TLSResult) {
 		b.settleStrike(key, addr, int(port), host, setName, first, repeat, res)
@@ -147,6 +166,9 @@ func (b *ipBans) confirm(cfg *config.Config, ip net.IP, port uint16, host, setNa
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	_, busy := b.inflight[key]
+	if busy && !bySilence {
+		b.inflight[key] = false
+	}
 	return busy
 }
 
@@ -157,6 +179,7 @@ func (b *ipBans) settleStrike(key string, ip net.IP, port int, host, setName str
 	case iphealth.TLSReplied:
 		log.Infof("IP bans: %s answers TLS for neutral names, so the address is not banned (host: %s, set: %s)", key, host, setName)
 		b.rememberAnswer(key)
+		b.forgetSilentKey(key)
 		return
 	case iphealth.TLSUnreachable:
 		log.Tracef("IP bans: %s did not take a TCP connection from the router, not banning it (host: %s, set: %s)", key, host, setName)
@@ -165,11 +188,16 @@ func (b *ipBans) settleStrike(key string, ip net.IP, port int, host, setName str
 	if !b.on() {
 		return
 	}
+	if b.sparedByAnAnswer(key, ip, port) {
+		log.Infof("IP bans: %s answered a device while it was checked with neutral names, so the address is not banned (host: %s, set: %s)", key, host, setName)
+		return
+	}
 	until, isRepeat, ok := b.reg.Strike(ip, port, host, setName, first, repeat)
 	if !ok {
 		return
 	}
 	banned = true
+	b.forgetSilentKey(key)
 	b.good.Forget(host, ip)
 	log.Infof("IP bans: %s does not answer TLS for neutral names either, banned until %s (host: %s, set: %s, repeat: %t)", key, until.Format("2006-01-02 15:04:05"), host, setName, isRepeat)
 	b.notify()
@@ -223,6 +251,93 @@ func (b *ipBans) pruneAnsweredLocked(now time.Time) {
 	}
 }
 
+func (b *ipBans) countSilentHello(key string, now time.Time) int {
+	if b == nil {
+		return 0
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	run, known := b.silent[key]
+	if known && b.silentRunOverLocked(key, run, now) {
+		run.count = 0
+	}
+	if !known && len(b.silent) >= banSilentMax {
+		b.pruneSilentLocked(now)
+		if len(b.silent) >= banSilentMax {
+			return 0
+		}
+	}
+	run.count++
+	run.until = now.Add(time.Duration(b.answerTTL.Load()))
+	b.silent[key] = run
+	b.silentAddrs.Store(int32(len(b.silent)))
+	return run.count
+}
+
+func (b *ipBans) silentHellos(key string, now time.Time) int {
+	if b == nil || b.silentAddrs.Load() == 0 {
+		return 0
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	run, known := b.silent[key]
+	if !known || b.silentRunOverLocked(key, run, now) {
+		return 0
+	}
+	return run.count
+}
+
+func (b *ipBans) silentRunOverLocked(key string, run silentRun, now time.Time) bool {
+	_, checking := b.inflight[key]
+	return !checking && !now.Before(run.until)
+}
+
+func (b *ipBans) forgetSilentHellos(ip net.IP, port uint16) {
+	if b == nil || ip == nil || b.silentAddrs.Load() == 0 {
+		return
+	}
+	b.forgetSilentKey(iphealth.BanKey(ip, int(port)))
+}
+
+func (b *ipBans) forgetSilentKey(key string) {
+	if b.silentAddrs.Load() == 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.silent, key)
+	b.silentAddrs.Store(int32(len(b.silent)))
+}
+
+func (b *ipBans) pruneSilentLocked(now time.Time) {
+	for key, run := range b.silent {
+		if b.silentRunOverLocked(key, run, now) {
+			delete(b.silent, key)
+		}
+	}
+	b.silentAddrs.Store(int32(len(b.silent)))
+}
+
+func (b *ipBans) startedBySilence(key string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.inflight[key]
+}
+
+func (b *ipBans) sparedByAnAnswer(key string, ip net.IP, port int) bool {
+	return b.startedBySilence(key) && !b.stillSilent(key, ip, port) && b.startedBySilence(key)
+}
+
+func (b *ipBans) stillSilent(key string, ip net.IP, port int) bool {
+	if b.gotAnswer != nil && b.gotAnswer(ip, port) {
+		b.forgetSilentKey(key)
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.silent[key].count >= silentHellosToBan
+}
+
 func (b *ipBans) retest(retest time.Duration, mark int) {
 	if !b.any() {
 		return
@@ -238,7 +353,7 @@ func (b *ipBans) retest(retest time.Duration, mark int) {
 			host = ban.Host
 		}
 		byHost := false
-		b.run(key, func(ctx context.Context) iphealth.TLSResult {
+		b.run(key, false, func(ctx context.Context) iphealth.TLSResult {
 			res, named := b.retestOnce(ctx, ip, port, mark, host)
 			byHost = named
 			return res
@@ -398,7 +513,7 @@ func (b *ipBans) settleRetest(key, host string, res iphealth.TLSResult, byHost b
 	}
 }
 
-func (b *ipBans) run(key string, probe func(context.Context) iphealth.TLSResult, done func(iphealth.TLSResult)) bool {
+func (b *ipBans) run(key string, bySilence bool, probe func(context.Context) iphealth.TLSResult, done func(iphealth.TLSResult)) bool {
 	b.mu.Lock()
 	if b.ctx.Err() != nil {
 		b.mu.Unlock()
@@ -408,7 +523,7 @@ func (b *ipBans) run(key string, probe func(context.Context) iphealth.TLSResult,
 		b.mu.Unlock()
 		return false
 	}
-	b.inflight[key] = struct{}{}
+	b.inflight[key] = bySilence
 	b.wg.Add(1)
 	b.mu.Unlock()
 
@@ -441,8 +556,10 @@ func (b *ipBans) tick(cfg *config.Config) {
 		return
 	}
 	b.reg.Prune()
+	now := time.Now()
 	b.mu.Lock()
-	b.pruneAnsweredLocked(time.Now())
+	b.pruneAnsweredLocked(now)
+	b.pruneSilentLocked(now)
 	b.mu.Unlock()
 	if cfg != nil {
 		b.retest(cfg.System.IPHealth.RetestInterval(), int(cfg.MainInjectedMark()))
@@ -555,6 +672,7 @@ func (p *Pool) wireBans() {
 	}
 	p.state.bans.changed = p.publishBans
 	p.state.bans.settled = p.Workers[0].settleSilentHellos
+	p.state.bans.gotAnswer = p.Workers[0].silentHelloGotAnswer
 	p.state.bans.hostProbe = iphealth.ProbeTLSHost
 	p.state.bans.prepare = p.Workers[0].hintBanRetest
 }

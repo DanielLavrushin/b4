@@ -72,7 +72,16 @@ func (r *silenceRig) answerLookups(t *testing.T, answer func(ctnl.Tuple) flowAns
 	t.Cleanup(func() { lookupFlow = orig })
 }
 
+var silenceRigServers = []string{"1.2.3.4:443", "[2001:db8::2]:443", "104.18.8.37:443"}
+
 func newSilenceRig(t *testing.T, w *Worker, probe banProber) *silenceRig {
+	t.Helper()
+	r := newFreshSilenceRig(t, w, probe)
+	silentOnceBefore(w.bans, silenceRigServers...)
+	return r
+}
+
+func newFreshSilenceRig(t *testing.T, w *Worker, probe banProber) *silenceRig {
 	t.Helper()
 	r := &silenceRig{w: w, probes: make(chan string, 64), lookups: &atomic.Int32{}, tuples: make(chan askedFlow, 64)}
 	w.bans = newTestIPBans(t, func(ctx context.Context, ip net.IP, port, mark int) iphealth.TLSResult {
@@ -93,6 +102,11 @@ func answering(res iphealth.TLSResult) banProber {
 func newSilenceWorker(t *testing.T, set *config.SetConfig, res iphealth.TLSResult) *silenceRig {
 	t.Helper()
 	return newSilenceRig(t, newInjectingWorker(t, set), answering(res))
+}
+
+func newFreshSilenceWorker(t *testing.T, set *config.SetConfig, res iphealth.TLSResult) *silenceRig {
+	t.Helper()
+	return newFreshSilenceRig(t, newInjectingWorker(t, set), answering(res))
 }
 
 func (r *silenceRig) sweep(at time.Time) {
@@ -165,7 +179,7 @@ func resetsTo(sent [][]byte) []uint16 {
 	return ports
 }
 
-func TestAHelloTheClientGetsNoAnswerToBansTheAddress(t *testing.T) {
+func TestASecondHelloInARowTheClientGetsNoAnswerToBansTheAddress(t *testing.T) {
 	set := silenceSet()
 	r := newSilenceWorker(t, &set, iphealth.TLSSilent)
 
@@ -180,7 +194,7 @@ func TestAHelloTheClientGetsNoAnswerToBansTheAddress(t *testing.T) {
 	r.sweepLater()
 
 	if keys := r.probed(); !slices.Equal(keys, []string{"1.2.3.4:443"}) {
-		t.Fatalf("a ClientHello the client never got past must be checked with neutral names once, probed %v", keys)
+		t.Fatalf("a ClientHello the client never got past, the second in a row to the address, must be checked with neutral names once, probed %v", keys)
 	}
 	want, err := ctnl.NewTuple(6, netip.MustParseAddrPort("10.0.0.1:12345"), netip.MustParseAddrPort("1.2.3.4:443"))
 	if err != nil {
@@ -410,7 +424,7 @@ func TestAWaitingConnectionIsResetOnlyByWhoeverTakesItsWatch(t *testing.T) {
 	}
 }
 
-func TestAClientThatMovesOnDuringTheCheckIsNotReset(t *testing.T) {
+func TestAClientThatMovesOnDuringTheCheckKeepsTheAddressFromABan(t *testing.T) {
 	set := silenceSet()
 	release := make(chan struct{})
 	r := newSilenceRig(t, newInjectingWorker(t, &set), func(ctx context.Context, _ net.IP, _, _ int) iphealth.TLSResult {
@@ -423,12 +437,13 @@ func TestAClientThatMovesOnDuringTheCheckIsNotReset(t *testing.T) {
 
 	sendHello(t, r.w, 12345, engine.VerdictAccept)
 	r.pool.sweepSilentHellos(time.Now().Add(time.Minute))
+	r.awaitCheck(t)
 	r.w.ProcessPacket(clientFinishedFrom(12345))
 	close(release)
 	r.w.bans.wg.Wait()
 
-	if !r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
-		t.Fatal("the silent check still bans the address")
+	if r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+		t.Fatal("a server that answered the waiting connection while the neutral names were checked must not be banned")
 	}
 	if ports := resetsTo(r.sent()); len(ports) != 0 {
 		t.Fatalf("a connection that got its answer while the check ran must not be reset, got resets to %v", ports)
@@ -442,7 +457,7 @@ func TestARefusedCheckIsRetriedOnTheNextSweep(t *testing.T) {
 	sendHello(t, r.w, 12345, engine.VerdictAccept)
 	r.w.bans.mu.Lock()
 	for i := 0; i < banPendingMax; i++ {
-		r.w.bans.inflight["busy-"+strconv.Itoa(i)] = struct{}{}
+		r.w.bans.inflight["busy-"+strconv.Itoa(i)] = false
 	}
 	r.w.bans.mu.Unlock()
 	r.sweepLater()

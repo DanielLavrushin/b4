@@ -57,8 +57,17 @@ type helloWatch struct {
 	probing  bool
 	parked   bool
 	closed   bool
+	counted  bool
 
 	fakesCloseEntry bool
+}
+
+func (h *helloWatch) isTo(ip net.IP, port uint16) bool {
+	return h.port == port && h.dst.Equal(ip)
+}
+
+func (h *helloWatch) waitsOn(ip net.IP, port uint16) bool {
+	return (h.probing || h.parked) && h.isTo(ip, port)
 }
 
 func (t *destStateTracker) Watching() bool {
@@ -75,6 +84,7 @@ func (t *destStateTracker) WatchHello(h *helloWatch) {
 		if prev.setID == h.setID {
 			return
 		}
+		h.counted = prev.counted
 	} else if len(t.watches) >= maxHelloWatches {
 		return
 	}
@@ -87,7 +97,7 @@ func (t *destStateTracker) WatchHello(h *helloWatch) {
 	t.watching.Store(int32(len(t.watches)))
 }
 
-func (t *destStateTracker) NoteClientPacket(key string, ack uint32, acked, closing bool, now time.Time) {
+func (t *destStateTracker) NoteClientPacket(key string, ack uint32, acked, closing bool, now time.Time, answeredBy func(dst net.IP, port uint16)) {
 	if !t.Watching() {
 		return
 	}
@@ -103,7 +113,14 @@ func (t *destStateTracker) NoteClientPacket(key string, ack uint32, acked, closi
 	if t.watches[key] != h {
 		return
 	}
-	if answered || now.Before(h.deadline) {
+	if answered {
+		if answeredBy != nil {
+			answeredBy(h.dst, h.port)
+		}
+		t.unwatchLocked(key)
+		return
+	}
+	if now.Before(h.deadline) {
 		t.unwatchLocked(key)
 		return
 	}
@@ -155,6 +172,20 @@ func (t *destStateTracker) Park(h helloWatch) {
 	t.updateWatch(h, func(w *helloWatch) { w.probing, w.parked = false, true })
 }
 
+func (t *destStateTracker) CountOnce(h helloWatch, count func() int) (int, bool) {
+	if !t.Watching() {
+		return 0, false
+	}
+	t.watchMu.Lock()
+	defer t.watchMu.Unlock()
+	cur, ok := t.watches[h.key]
+	if !ok || cur.gen != h.gen {
+		return 0, false
+	}
+	cur.counted = true
+	return count(), true
+}
+
 func (t *destStateTracker) DueSilent(now time.Time) []helloWatch {
 	if !t.Watching() {
 		return nil
@@ -187,12 +218,27 @@ func (t *destStateTracker) TakeSilent(ip net.IP, port uint16) []helloWatch {
 	defer t.watchMu.Unlock()
 	var taken []helloWatch
 	for key, h := range t.watches {
-		if (h.probing || h.parked) && h.port == port && h.dst.Equal(ip) {
+		if h.waitsOn(ip, port) {
 			taken = append(taken, *h)
 			t.unwatchLocked(key)
 		}
 	}
 	return taken
+}
+
+func (t *destStateTracker) WatchesTo(ip net.IP, port uint16) []helloWatch {
+	if !t.Watching() {
+		return nil
+	}
+	t.watchMu.RLock()
+	defer t.watchMu.RUnlock()
+	var watched []helloWatch
+	for _, h := range t.watches {
+		if h.isTo(ip, port) {
+			watched = append(watched, *h)
+		}
+	}
+	return watched
 }
 
 func (t *destStateTracker) escalatedAway(cfg *config.Config, h helloWatch) bool {
@@ -279,7 +325,7 @@ func (w *Worker) noteClientProgress(connKey string, tcp []byte) {
 	if !closing && !acked {
 		return
 	}
-	w.destState.NoteClientPacket(connKey, binary.BigEndian.Uint32(tcp[8:12]), acked, closing, time.Now())
+	w.destState.NoteClientPacket(connKey, binary.BigEndian.Uint32(tcp[8:12]), acked, closing, time.Now(), w.bans.forgetSilentHellos)
 }
 
 func silenceWatchedSet(cfg *config.Config, setID string) bool {
@@ -344,6 +390,8 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 	}
 	active := cfg != nil && !cfg.Queue.IsDiscovery && w.bans.on()
 	lookups, lookupsOff := 0, false
+	var answered map[string]bool
+	var silent []helloWatch
 	for _, h := range due {
 		switch {
 		case !active || !silenceWatchedSet(cfg, h.setID):
@@ -373,7 +421,15 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 				lookupsOff = true
 			}
 			switch state {
-			case silenceGone, silenceAnswered:
+			case silenceAnswered:
+				if answered == nil {
+					answered = make(map[string]bool)
+				}
+				answered[iphealth.BanKey(h.dst, int(h.port))] = true
+				w.bans.forgetSilentHellos(h.dst, h.port)
+				w.destState.EndWatch(h)
+				continue
+			case silenceGone:
 				w.destState.EndWatch(h)
 				continue
 			case silenceUnknown:
@@ -389,10 +445,45 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 			}
 			continue
 		}
-		log.Tracef("IP bans: %s took the ClientHello and sent nothing back, checking it with neutral names (host: %s, set: %s)", iphealth.BanKey(h.dst, int(h.port)), h.host, h.set)
-		if !w.bans.confirm(cfg, h.dst, h.port, h.host, h.set) {
-			w.destState.Unprobe(h)
+		silent = append(silent, h)
+	}
+	for _, h := range silent {
+		key := iphealth.BanKey(h.dst, int(h.port))
+		w.countSilentConnection(cfg, h, key, now, answered[key])
+	}
+}
+
+func (w *Worker) countSilentConnection(cfg *config.Config, h helloWatch, key string, now time.Time, answeredInThisSweep bool) {
+	silent := 0
+	switch {
+	case answeredInThisSweep:
+		if _, watched := w.destState.CountOnce(h, func() int { return 0 }); !watched {
+			return
 		}
+		log.Tracef("IP bans: %s took the ClientHello and sent nothing back, but answered another connection that came due with it, so this one is not counted (host: %s, set: %s)", key, h.host, h.set)
+	case h.counted:
+		silent = w.bans.silentHellos(key, now)
+	default:
+		watched := false
+		silent, watched = w.destState.CountOnce(h, func() int { return w.bans.countSilentHello(key, now) })
+		if !watched {
+			return
+		}
+		if silent < silentHellosToBan {
+			log.Tracef("IP bans: %s took the ClientHello and sent nothing back, unanswered connection %d of the %d in a row that get the address checked with neutral names (host: %s, set: %s)", key, silent, silentHellosToBan, h.host, h.set)
+		}
+	}
+	if silent < silentHellosToBan {
+		if h.closed {
+			w.destState.EndWatch(h)
+		} else {
+			w.destState.Park(h)
+		}
+		return
+	}
+	log.Tracef("IP bans: %s took the ClientHello and sent nothing back on %d connections in a row, checking it with neutral names (host: %s, set: %s)", key, silent, h.host, h.set)
+	if !w.bans.confirmSilence(cfg, h.dst, h.port, h.host, h.set) {
+		w.destState.Unprobe(h)
 	}
 }
 
@@ -414,6 +505,26 @@ func (w *Worker) settleSilentHellos(ip net.IP, port int, banned bool) {
 			w.resetSilentHello(h)
 		}
 	}
+}
+
+func (w *Worker) silentHelloGotAnswer(ip net.IP, port int) bool {
+	if w == nil || w.destState == nil || port <= 0 || port > 65535 {
+		return false
+	}
+	for _, h := range w.destState.WatchesTo(ip, uint16(port)) {
+		if h.closed {
+			continue
+		}
+		state, err := checkServerSilence(h)
+		if err != nil {
+			break
+		}
+		if state == silenceAnswered {
+			w.destState.EndWatch(h)
+			return true
+		}
+	}
+	return false
 }
 
 func (w *Worker) resetSilentHello(h helloWatch) {
