@@ -100,7 +100,7 @@ func emit(prog *Program, tokens []Token, notes *noteSet, opts emitOpts) ([]confi
 
 		emitFilters(&set, prof, ti, notes, udpOnly)
 		emitUDP(&set, prog.Tool, prof, ti, notes, udpOnly)
-		emitAnyProtocol(&set, prof, ti, notes, udpOnly)
+		noteAnyProtocol(prof, ti, notes, udpOnly)
 		noteDefaultUDPFakes(&set, prof, notes)
 		emitL7Decoy(&set, prof, ti, notes)
 		if !udpOnly {
@@ -402,24 +402,20 @@ func emitUDPFakeTTL(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *
 	}
 }
 
-func emitAnyProtocol(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet, udpOnly bool) {
-	widen := func(tok Token) {
-		set.UDP.FilterQUIC = config.QUICFilterAll
-		notes.set(tok, StatusApproximated, "anyProtocolUDP", "udp.filter_quic=all")
-	}
+func noteAnyProtocol(prof *Profile, ti tokenIndex, notes *noteSet, udpOnly bool) {
 	ti.each(prof.Index, "any_protocol", func(tok Token) {
 		switch {
 		case !prof.AnyProtocol:
 			notes.set(tok, StatusMapped, "anyProtocolOff")
 		case udpOnly || prof.UDP.Shared:
-			widen(tok)
+			notes.set(tok, StatusApproximated, "anyProtocolUDP")
 		default:
 			notes.set(tok, StatusUnsupported, "anyProtocol")
 		}
 	})
 	ti.each(prof.Index, udpFoldPrefix+"any_protocol", func(tok Token) {
 		if prof.UDP.AnyProtocol {
-			widen(tok)
+			notes.set(tok, StatusApproximated, "anyProtocolUDP")
 			return
 		}
 		notes.set(tok, StatusMapped, "anyProtocolOff")

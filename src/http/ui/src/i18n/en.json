@@ -2731,7 +2731,7 @@
         "fakeZeroPayload": "Became b4's all-zero fake payload.",
         "fakeZeroPayloadOverridden": "b4 has an all-zero fake payload, but another option in this profile supplies the payload instead, so that one was used.",
         "fakeUnknownUDPApproximated": "Became the UDP fake payload. b4 carries one payload per set and generates a fresh QUIC Initial per packet instead of replaying a captured one.",
-        "anyProtocolUDP": "b4's UDP fakes are not limited to QUIC to begin with: other UDP the set matches gets them too, call packets aside. Only QUIC Matching was widened, to By SNI or matched destination, which also counts QUIC with no readable server name. b4 has no counterpart on the TCP side, where it acts on TLS.",
+        "anyProtocolUDP": "b4's UDP fakes are not limited to QUIC to begin with: other UDP the set matches gets them too, call packets aside. So there is nothing to switch on. b4 has no counterpart on the TCP side, where it acts on TLS.",
         "anyProtocolOff": "A value of 0 leaves the option off, which is the default, so there is nothing to carry over.",
         "detachedOptionValue": "{{option}} takes its value written with =, so this word is not read as its value. nfqws ignores it in the same way.",
         "zapret2Lua": "zapret2 keeps its bypass strategies in Lua scripts rather than in options, and b4 cannot read them.",

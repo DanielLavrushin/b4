@@ -106,9 +106,9 @@ func TestZapret_AnyProtocolOnAProfileThatCoversTCP(t *testing.T) {
 		quic   string
 	}{
 		{"fakesUDPOnItsPorts", both + "--dpi-desync=fake --dpi-desync-any-protocol",
-			"--dpi-desync-any-protocol", StatusApproximated, "anyProtocolUDP", config.QUICFilterAll},
+			"--dpi-desync-any-protocol", StatusApproximated, "anyProtocolUDP", config.QUICFilterSNI},
 		{"fakesUDPWithoutPortFilters", "--hostlist-domains=example.com --dpi-desync=fake --dpi-desync-any-protocol=1",
-			"--dpi-desync-any-protocol=1", StatusApproximated, "anyProtocolUDP", config.QUICFilterAll},
+			"--dpi-desync-any-protocol=1", StatusApproximated, "anyProtocolUDP", config.QUICFilterSNI},
 		{"neverAppliesToUDP", "--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake --dpi-desync-any-protocol",
 			"--dpi-desync-any-protocol", StatusUnsupported, "anyProtocol", config.QUICFilterSNI},
 		{"sendsNoUDPFake", both + "--dpi-desync=multisplit --dpi-desync-any-protocol",
@@ -140,6 +140,30 @@ func TestZapret_AnyProtocolOnAProfileThatCoversTCP(t *testing.T) {
 		"--filter-udp=443 --dpi-desync=fake")
 	if n := noteFor(t, res, "--dpi-desync-any-protocol"); n.Status != StatusUnsupported || n.Reason != "anyProtocol" {
 		t.Fatalf("the option stands on the TCP profile, and the folded UDP profile did not ask for it: %+v", n)
+	}
+}
+
+func TestZapret_AnyProtocolChangesNothingInASetThatFakesUDP(t *testing.T) {
+	const token = "--dpi-desync-any-protocol"
+	profiles := []struct{ name, line string }{
+		{"udpOnly", "--filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake"},
+		{"foldedUDPProfile", "--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=multisplit --new --filter-udp=443 --dpi-desync=fake"},
+		{"tcpAndUDPPorts", "--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake"},
+	}
+	for _, p := range profiles {
+		t.Run(p.name, func(t *testing.T) {
+			without := analyze(t, p.line).Sets
+			res := analyze(t, p.line+" "+token)
+			if !reflect.DeepEqual(res.Sets, without) {
+				t.Fatalf("b4's UDP fakes already go to other UDP the set matches, so the option has nothing to switch on:\nwith    %+v\nwithout %+v",
+					res.Sets[0].UDP, without[0].UDP)
+			}
+			n := noteFor(t, res, token)
+			if n.Status != StatusApproximated || n.Reason != "anyProtocolUDP" || len(n.Fields) != 0 {
+				t.Fatalf("the row must not name a field the option did not set: %+v", n)
+			}
+			assertNoLostOptions(t, res)
+		})
 	}
 }
 
@@ -400,7 +424,7 @@ func TestZapret_AProfileThatHandlesUDPItselfTakesNoFold(t *testing.T) {
 		{"payloadWithoutPortFilters", noFilters + " --dpi-desync-fake-quic=/opt/zapret/quic.bin" + udp,
 			config.FakePayloadAutoQUIC, udpDefault, config.QUICFilterSNI},
 		{"repeatsWithoutPortFilters", noFilters + " --dpi-desync-repeats=3" + udp, "", 3, config.QUICFilterSNI},
-		{"anyProtocolWithoutPortFilters", noFilters + " --dpi-desync-any-protocol" + udp, "", udpDefault, config.QUICFilterAll},
+		{"anyProtocolWithoutPortFilters", noFilters + " --dpi-desync-any-protocol" + udp, "", udpDefault, config.QUICFilterSNI},
 		{"fakeModeAloneWithoutPortFilters", noFilters + ",multisplit" + udp, "", udpDefault, config.QUICFilterSNI},
 	}
 	for _, tt := range separate {
