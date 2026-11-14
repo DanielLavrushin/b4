@@ -35,7 +35,10 @@ All notable changes to b4 are recorded in this file.
 - A byedpi fake imported from the command line (`-l :...`) came out changed when it held binary data, and its set showed **Fake Payload Type** as a bare `1`. [#538](https://github.com/DanielLavrushin/b4/issues/538)
 - An imported zapret UDP fake (`--dpi-desync-fake-quic`, `--dpi-desync-fake-unknown-udp`) went out as zeros when it was given as hex or its profile also handled TCP, and a TLS fake given as hex (`--dpi-desync-fake-tls=0x...`) was left out of the set. [#538](https://github.com/DanielLavrushin/b4/issues/538), [#581](https://github.com/DanielLavrushin/b4/issues/581)
 - In an imported zapret configuration, `--dpi-desync-repeats` did not reach the UDP fakes of a profile that also handled TCP, the `--dpi-desync-ttl` of a UDP profile was not applied, a separate UDP profile replaced the UDP settings of a profile that had its own, a profile that filters only UDP could switch on TCP options such as **Packet Duplication**, and `--dpi-desync-any-protocol` could read as **Not recognized** in the report.
+- **IP Block Detection** could ban an address for a day or a week after one connection that its server answered late, such as a YouTube video server, although that connection then loaded. [#580](https://github.com/DanielLavrushin/b4/issues/580)
+- A byedpi fake imported from the command line (`-l :...`) came out changed when it held binary data, and its set showed **Fake Payload Type** as a bare `1`, while a zapret fake given as hex was left out of the set (`--dpi-desync-fake-tls=0x...`) or went out as zeros (`--dpi-desync-fake-quic=0x...`). [#538](https://github.com/DanielLavrushin/b4/issues/538)
 - Set cards and **Discovery** results named the Google and DuckDuckGo fake payloads `default` and `default2`. [#538](https://github.com/DanielLavrushin/b4/issues/538)
+- With one domain in two sets, one limited to IPv4 and one to IPv6 by the **IP Version Filter**, the first packet of a connection could get the set for the other IP version when that set was higher in the list. [#582](https://github.com/DanielLavrushin/b4/issues/582)
 
 ### Security
 
