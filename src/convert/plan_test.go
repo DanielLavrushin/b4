@@ -141,3 +141,38 @@ func TestResult_RenameSetsReachesEveryPlaceThatNamesASet(t *testing.T) {
 		}
 	}
 }
+
+func TestResult_RenameSetsReachesTheEscalationLinkOfAFallback(t *testing.T) {
+	res, err := Analyze("-H:example.com -s1+s -As -d0+sm", Options{Tool: "byedpi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := func() string {
+		for _, n := range res.Notes {
+			for _, f := range n.Fields {
+				if strings.Contains(f, "escalate.to=") {
+					return f
+				}
+			}
+		}
+		return ""
+	}
+	if got := link(); got != "sets[0].escalate.to=byedpi #2" {
+		t.Fatalf("precondition: the fallback's note names the set the first one escalates to, got %q", got)
+	}
+
+	res.RenameSets([]string{"first", "second"})
+	if got := link(); got != "sets[0].escalate.to=second" {
+		t.Errorf("the escalation link must name the fallback by its new name, got %q", got)
+	}
+	for _, n := range res.Notes {
+		for _, f := range n.Fields {
+			if strings.Contains(f, "byedpi #") {
+				t.Errorf("a settings entry still carries an old set name: %q", f)
+			}
+		}
+		if strings.Contains(n.English(), "byedpi #") || (n.Synthetic && strings.Contains(n.Token, "byedpi #")) {
+			t.Errorf("a note still carries an old set name: token %q, text %q", n.Token, n.English())
+		}
+	}
+}

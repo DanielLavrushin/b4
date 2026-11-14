@@ -429,6 +429,49 @@ func TestMCPImportStrategyNamesTheShadowingSetAsItIsSaved(t *testing.T) {
 	}
 }
 
+func TestMCPImportStrategyNamesTheFallbackOfARepeatedImportAsItIsSaved(t *testing.T) {
+	t.Cleanup(mcpResetHistory)
+	srv, api := newMCPTestServerAPI(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	text := "-H:example.com -s1+s -As -d0+sm"
+	link := func(out mcpImportOut) string {
+		for _, row := range out.Approximated {
+			for _, setting := range row.Settings {
+				if strings.Contains(setting, "escalate.to=") {
+					return setting
+				}
+			}
+		}
+		return ""
+	}
+
+	first := decodeImport(t, callImport(t, session, ctx, map[string]any{"text": text, "apply": "true"}))
+	if len(first.Sets) != 2 || first.Sets[1].Role != "fallback" || link(first) != "sets[0].escalate.to="+first.Sets[1].Name {
+		t.Fatalf("precondition: the line gives an entry set and a fallback, linked in the report: %+v, link %q", first.Sets, link(first))
+	}
+
+	for _, args := range []map[string]any{{"text": text}, {"text": text, "apply": "true"}} {
+		out := decodeImport(t, callImport(t, session, ctx, args))
+		fallback := out.Sets[1]
+		if fallback.Name == first.Sets[1].Name {
+			t.Fatalf("precondition: a second import gets names of its own, got %q again", fallback.Name)
+		}
+		if got := link(out); got != "sets[0].escalate.to="+fallback.Name {
+			t.Errorf("apply=%v: the fallback of this import is %q, and the report links to %q", args["apply"], fallback.Name, got)
+		}
+		if fallback.FallbackFor != out.Sets[0].Name {
+			t.Errorf("apply=%v: fallback_for = %q, want this import's entry set %q", args["apply"], fallback.FallbackFor, out.Sets[0].Name)
+		}
+	}
+
+	live := api.getCfg()
+	if live.Sets[0].Escalate.To != live.Sets[1].Id || live.Sets[1].Name != first.Sets[1].Name+" 2" {
+		t.Errorf("the second import's entry set must escalate to its own fallback: to=%q, fallback %q (%s)",
+			live.Sets[0].Escalate.To, live.Sets[1].Name, live.Sets[1].Id)
+	}
+}
+
 func TestMCPImportStrategyRefusals(t *testing.T) {
 	t.Cleanup(mcpResetHistory)
 	srv, api := newMCPTestServerAPI(t, writableCfg(t))

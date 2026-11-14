@@ -116,6 +116,15 @@ func (r *Result) RenameSets(names []string) {
 		if name, ok := renamed[n.Token]; ok && n.Synthetic {
 			n.Token = name
 		}
+		for j, field := range n.Fields {
+			key, value, found := strings.Cut(field, "=")
+			name, ok := renamed[value]
+			if !found || !ok || !strings.HasSuffix(key, "escalate.to") {
+				continue
+			}
+			n.Fields = slices.Clone(n.Fields)
+			n.Fields[j] = key + "=" + name
+		}
 		other, ok := n.Params["other"].(string)
 		if !ok {
 			continue
