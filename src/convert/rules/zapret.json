@@ -645,7 +645,7 @@
       "scope": "profile",
       "grammar": "zapret.startcutoff",
       "target": "profile.unsupported",
-      "note": "packetWindowUnsupported"
+      "note": "wsSizeCutoffUnsupported"
     },
     {
       "key": "wssize_forced",
@@ -653,8 +653,7 @@
       "arg": "required",
       "scope": "profile",
       "grammar": "bool01",
-      "target": "_.na",
-      "note": "engineDetail"
+      "target": "profile.wssize_forced_cutoff"
     },
     {
       "key": "orig_ttl",

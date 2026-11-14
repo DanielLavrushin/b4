@@ -2,6 +2,7 @@ package convert
 
 import (
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -279,19 +280,58 @@ func gZapretModList(raw string, _ grammarCtx) (Value, error) {
 }
 
 func gZapretWSize(raw string, _ grammarCtx) (Value, error) {
-	size, _, _ := strings.Cut(raw, ":")
-	n, err := strconv.Atoi(strings.TrimSpace(size))
+	window, _, err := splitWSSize(raw)
 	if err != nil {
-		return Value{}, errors.New("expected <window>[:<scale>]")
+		return Value{}, err
 	}
-	return Value{Int: n, Str: raw}, nil
+	return Value{Int: window, Str: raw}, nil
+}
+
+func splitWSSize(raw string) (window, scale int, err error) {
+	size, factor, scaled := strings.Cut(raw, ":")
+	bad := errors.New("expected <window>[:<scale>]")
+	if window, err = strconv.Atoi(strings.TrimSpace(size)); err != nil || window < 0 {
+		return 0, 0, bad
+	}
+	if !scaled {
+		return window, 0, nil
+	}
+	if scale, err = strconv.Atoi(strings.TrimSpace(factor)); err != nil || scale < 0 {
+		return 0, 0, bad
+	}
+	return window, scale, nil
 }
 
 var zapretDroppedModes = map[string]bool{
 	"udplen": true, "tamper": true, "hopbyhop": true, "destopt": true,
 }
 
+var zapretTCPOnlyKeys = []string{"dup", "seqovl", "seqovl_pat", "wssize"}
+
 func emitZapretExtras(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
+	if prof.UDPOnly() {
+		for _, key := range zapretTCPOnlyKeys {
+			ti.each(prof.Index, key, func(tok Token) {
+				notes.set(tok, StatusDegenerate, "tcpOnlyOption")
+			})
+		}
+	} else {
+		emitZapretTCPExtras(set, prof, ti, notes)
+	}
+	if len(prof.Filters.Excluded) > 0 {
+		if tok, ok := ti.first(prof.Index, "hostlist_excl_dom", "hostlist_exclude"); ok {
+			notes.set(tok, StatusUnsupported, "excludeListUnsupported")
+		}
+	}
+	if prof.Skip {
+		set.Enabled = false
+		if tok, ok := ti.first(prof.Index, "skip"); ok {
+			notes.set(tok, StatusMapped, "skipMapped", "enabled=false")
+		}
+	}
+}
+
+func emitZapretTCPExtras(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
 	if prof.Desync.Mode != "" {
 		set.TCP.Desync.Mode = prof.Desync.Mode
 	}
@@ -318,22 +358,30 @@ func emitZapretExtras(set *config.SetConfig, prof *Profile, ti tokenIndex, notes
 			notes.set(tok, StatusApproximated, "seqOvlPatternMapped", "fragmentation.seq_overlap_pattern")
 		}
 	}
-	if prof.WinSize > 0 {
-		set.TCP.Win.Mode = "zero"
-		if tok, ok := ti.first(prof.Index, "wssize"); ok {
-			notes.set(tok, StatusApproximated, "wsSizeApproximated", "tcp.win.mode=zero")
-		}
+	emitWSSize(set, prof, ti, notes)
+}
+
+func emitWSSize(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *noteSet) {
+	tok, ok := ti.first(prof.Index, "wssize")
+	if !ok {
+		return
 	}
-	if len(prof.Filters.Excluded) > 0 {
-		if tok, ok := ti.first(prof.Index, "hostlist_excl_dom", "hostlist_exclude"); ok {
-			notes.set(tok, StatusUnsupported, "excludeListUnsupported")
+	switch {
+	case prof.WinSize <= 0:
+		notes.set(tok, StatusMapped, "wsSizeOff")
+	case prof.Duplicate > 0:
+		notes.set(tok, StatusUnsupported, "wsSizeWithDuplicate")
+	default:
+		ws := &set.TCP.WSSize
+		ws.Enabled = true
+		ws.Window = clamp(prof.WinSize, 1, config.MaxWSSizeWindow)
+		ws.Scale = clamp(prof.WinScale, 0, config.MaxWSSizeScale)
+		fields := []string{"tcp.wssize.enabled=true", "tcp.wssize.window=" + strconv.Itoa(ws.Window)}
+		if ws.Scale == 0 {
+			notes.set(tok, StatusApproximated, "wsSizeApproximated", fields...)
+			return
 		}
-	}
-	if prof.Skip {
-		set.Enabled = false
-		if tok, ok := ti.first(prof.Index, "skip"); ok {
-			notes.set(tok, StatusMapped, "skipMapped", "enabled=false")
-		}
+		notes.set(tok, StatusMapped, "wsSizeMapped", append(fields, "tcp.wssize.scale="+strconv.Itoa(ws.Scale))...)
 	}
 }
 
@@ -430,21 +478,105 @@ func noteDroppedSplitPositions(prof *Profile, ti tokenIndex, notes *noteSet) {
 	}
 }
 
-func normalizeZapret(prog *Program, _ []Token, notes *noteSet) {
+func normalizeZapret(prog *Program, tokens []Token, notes *noteSet) {
+	scopes := zapretScopeOptions(tokens)
+	var udpProfiles []*Profile
 	for _, prof := range prog.Profiles {
 		normalizeZapretProfile(prof, notes)
-		promoteUDPFake(prof)
+		promoteUDPFake(prof, zapretUDPTaken(udpProfiles, prof, scopes))
+		if prof.UDPOnly() && !prof.Skip {
+			udpProfiles = append(udpProfiles, prof)
+		}
 	}
 }
 
-func promoteUDPFake(prof *Profile) {
-	if !prof.UDPOnly() {
+var zapretScopeKeys = map[string]bool{
+	"hostlist": true, "hostlist_domains": true, "hostlist_exclude": true, "hostlist_excl_dom": true, "hostlist_auto": true,
+	"ipset": true, "ipset_ip": true, "ipset_exclude": true, "ipset_excl_ip": true,
+	"filter_ssid": true,
+}
+
+func zapretScopeOptions(tokens []Token) map[int][]string {
+	options := map[int][]string{}
+	for _, tok := range tokens {
+		if zapretScopeKeys[tok.Key] {
+			options[tok.Profile] = append(options[tok.Profile], tok.Key+"="+strings.TrimSpace(tok.Value))
+		}
+	}
+	for _, list := range options {
+		slices.Sort(list)
+	}
+	return options
+}
+
+const quicPort = 443
+
+func zapretUDPTaken(earlier []*Profile, prof *Profile, scopes map[int][]string) bool {
+	return slices.ContainsFunc(earlier, func(e *Profile) bool {
+		f := e.Filters
+		own := scopes[e.Index]
+		return zapretTakesEveryUDPOnThePort(e) && (f.IPVersion == "" || f.IPVersion == prof.Filters.IPVersion) &&
+			(len(own) == 0 || slices.Equal(own, scopes[prof.Index]))
+	})
+}
+
+func zapretTakesEveryUDPOnThePort(prof *Profile) bool {
+	f := prof.Filters
+	return !f.UDPNegated && len(f.Protos) == 0 && (len(f.UDPPorts) == 0 || portListHas(f.UDPPorts, quicPort))
+}
+
+func portListHas(ports []string, port int) bool {
+	for _, p := range ports {
+		lo, hi, isRange := strings.Cut(p, "-")
+		first, err := strconv.Atoi(lo)
+		if err != nil {
+			continue
+		}
+		last := first
+		if isRange {
+			if last, err = strconv.Atoi(hi); err != nil {
+				continue
+			}
+		}
+		if port >= first && port <= last {
+			return true
+		}
+	}
+	return false
+}
+
+var zapretTCPOnlyL7 = map[string]bool{"http": true, "tls": true}
+
+func zapretSeesUDP(prof *Profile, udpTaken bool) bool {
+	f := prof.Filters
+	if !f.UDPFilter && (f.TCPFilter || udpTaken) {
+		return false
+	}
+	if len(f.Protos) == 0 {
+		return true
+	}
+	return slices.ContainsFunc(f.Protos, func(p string) bool { return !zapretTCPOnlyL7[p] })
+}
+
+func zapretFakesUDP(prof *Profile) bool {
+	return slices.Contains(prof.DesyncModes, "fake") || slices.Contains(prof.DesyncModes, "fakeknown")
+}
+
+func promoteUDPFake(prof *Profile, udpTaken bool) {
+	udpOnly := prof.UDPOnly()
+	fakes := zapretFakesUDP(prof)
+	if !udpOnly && (!fakes || !zapretSeesUDP(prof, udpTaken)) {
 		return
 	}
-	prof.UDP.Present = prof.Fake.Present
+	prof.UDP.Present = fakes
+	prof.UDP.Shared = !udpOnly
+	prof.UDP.AnyProtocol = prof.AnyProtocol
 	prof.UDP.Repeats = prof.Fake.Repeats
 	prof.UDP.QUICRef = prof.Fake.QUICRef
 	prof.UDP.QUICData = prof.Fake.QUICData
+	if !udpOnly {
+		return
+	}
 	prof.UDP.TTL = prof.Fake.TTL
 	prof.UDP.TTLSet = prof.Fake.TTLSet
 	prof.UDP.Ports = append(prof.UDP.Ports, prof.Filters.UDPPorts...)

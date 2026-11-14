@@ -84,17 +84,20 @@ type Trigger struct {
 }
 
 type Filters struct {
-	Protos    []string `json:"protos"`
-	Hosts     []string `json:"hosts"`
-	HostsRef  string   `json:"hosts_ref"`
-	Excluded  []string `json:"excluded"`
-	IPs       []string `json:"ips"`
-	IPsRef    string   `json:"ips_ref"`
-	PortMin   int      `json:"port_min"`
-	PortMax   int      `json:"port_max"`
-	TCPPorts  []string `json:"tcp_ports"`
-	UDPPorts  []string `json:"udp_ports"`
-	IPVersion string   `json:"ip_version"`
+	Protos     []string `json:"protos"`
+	Hosts      []string `json:"hosts"`
+	HostsRef   string   `json:"hosts_ref"`
+	Excluded   []string `json:"excluded"`
+	IPs        []string `json:"ips"`
+	IPsRef     string   `json:"ips_ref"`
+	PortMin    int      `json:"port_min"`
+	PortMax    int      `json:"port_max"`
+	TCPPorts   []string `json:"tcp_ports"`
+	UDPPorts   []string `json:"udp_ports"`
+	TCPFilter  bool     `json:"tcp_filter"`
+	UDPFilter  bool     `json:"udp_filter"`
+	UDPNegated bool     `json:"udp_negated"`
+	IPVersion  string   `json:"ip_version"`
 }
 
 func (f Filters) HasProto(p string) bool {
@@ -138,20 +141,27 @@ type FakeOp struct {
 }
 
 type UDPOp struct {
-	FakeCount int      `json:"fake_count"`
-	Present   bool     `json:"present"`
-	Repeats   int      `json:"repeats"`
-	QUICRef   string   `json:"quic_ref"`
-	QUICData  []byte   `json:"quic_data"`
-	ZeroRef   bool     `json:"zero_ref"`
-	TTL       int      `json:"ttl"`
-	TTLSet    bool     `json:"ttl_set"`
-	Ports     []string `json:"ports"`
+	FakeCount   int      `json:"fake_count"`
+	Present     bool     `json:"present"`
+	Repeats     int      `json:"repeats"`
+	QUICRef     string   `json:"quic_ref"`
+	QUICData    []byte   `json:"quic_data"`
+	ZeroRef     bool     `json:"zero_ref"`
+	TTL         int      `json:"ttl"`
+	TTLSet      bool     `json:"ttl_set"`
+	Ports       []string `json:"ports"`
+	Shared      bool     `json:"shared"`
+	Folded      bool     `json:"folded"`
+	AnyProtocol bool     `json:"any_protocol"`
 }
 
 func (u UDPOp) Empty() bool {
 	return u.FakeCount == 0 && !u.Present && u.Repeats == 0 &&
 		u.QUICRef == "" && len(u.QUICData) == 0 && !u.TTLSet && len(u.Ports) == 0
+}
+
+func (u UDPOp) fakes() bool {
+	return u.Present || u.FakeCount > 0
 }
 
 type DesyncOp struct {
@@ -170,7 +180,7 @@ type SeqOvlOp struct {
 }
 
 func (p *Profile) UDPOnly() bool {
-	if len(p.Filters.UDPPorts) > 0 && len(p.Filters.TCPPorts) == 0 {
+	if p.Filters.UDPFilter && !p.Filters.TCPFilter {
 		return true
 	}
 	if p.Filters.HasProto("quic") || p.Filters.HasProto(config.UDPL7STUN) || p.Filters.HasProto(config.UDPL7Discord) {
@@ -220,6 +230,14 @@ func (p *Profile) carriesStrategy() bool {
 		p.UDP.Present || p.UDP.FakeCount > 0 || p.UDP.QUICRef != "" || len(p.UDP.QUICData) > 0 || p.UDP.Repeats > 0
 }
 
+func (p *Profile) ownsUDPSide() bool {
+	return p.UDPOnly() || p.UDP.Folded || p.UDP.FakeCount > 0
+}
+
+func (p *Profile) handlesUDPItself() bool {
+	return p.Filters.UDPFilter || p.UDP.Shared
+}
+
 func (p *Profile) hasOwnTargets() bool {
 	return len(p.Filters.Hosts) > 0 || p.Filters.HostsRef != "" ||
 		len(p.Filters.IPs) > 0 || p.Filters.IPsRef != ""
@@ -247,6 +265,7 @@ type Profile struct {
 	Duplicate   int       `json:"duplicate"`
 	AnyProtocol bool      `json:"any_protocol"`
 	WinSize     int       `json:"win_size"`
+	WinScale    int       `json:"win_scale"`
 	Skip        bool      `json:"skip"`
 
 	DesyncModes    []string `json:"desync_modes"`
