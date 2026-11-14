@@ -836,6 +836,7 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 				Spec: []string{"-m", "mark", "--mark", telegramBridgeMarkMatch(), "-j", "RETURN"}},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
 				Spec: []string{"-m", "mark", "--mark", selfDialNoDPIMarkMatch(), "-j", "RETURN"}},
+			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: iptLocalDeliveryReturn()},
 		)
 		for _, mark := range captureProxySetMarks(cfg) {
 			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",

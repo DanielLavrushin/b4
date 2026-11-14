@@ -390,6 +390,10 @@ func (n *NFTablesManager) apply() error {
 		return err
 	}
 
+	if err := n.addRule(nftChainName, nftLocalDeliveryReturn()...); err != nil {
+		return err
+	}
+
 	if cfg.Queue.Mark != 0 {
 		if err := n.addRule("prerouting", nftOwnReplyReturn(markAccept, n.ctDirectionSupported, n.socketKey)...); err != nil {
 			log.Warnf("nftables: the return for the replies to b4's own lookups and probes is unavailable, so they reach its queue rules like those of a device: %v", err)
