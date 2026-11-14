@@ -231,16 +231,19 @@ export const HubBrowser = () => {
   };
 
   const handleCoveredUndo = async () => {
-    if (!report || !(await undoApply(report.localId))) return;
-    setReport(null);
-    if (report.disabled.length === 0) return;
-    try {
-      await enable.mutateAsync({ ids: report.disabled, enabled: true });
-    } catch (e) {
-      showError(
-        t("hub.apply.covered.enableFailed", { error: describeApiError(e) }),
-      );
+    if (!report) return;
+    if (report.disabled.length > 0) {
+      try {
+        await enable.mutateAsync({ ids: report.disabled, enabled: true });
+      } catch (e) {
+        showError(
+          t("hub.apply.covered.enableFailed", { error: describeApiError(e) }),
+        );
+        return;
+      }
+      setReport((current) => current && { ...current, disabled: [] });
     }
+    if (await undoApply(report.localId)) setReport(null);
   };
 
   const handleVote = async (set: HubSet, kind: HubVoteKind) => {
