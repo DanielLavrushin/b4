@@ -300,6 +300,26 @@ func TestAnAnsweredConnectionsCountIsClearedWhileItIsStillWatched(t *testing.T) 
 	}
 }
 
+func TestAnAnsweredConnectionClearsTheCountOfItsWholeSweep(t *testing.T) {
+	const runs = 20
+	for run := 0; run < runs; run++ {
+		set := silenceSet()
+		r := newFreshSilenceWorker(t, &set, iphealth.TLSSilent)
+		r.answerOnlyTo(t, 30000)
+		for port := uint16(30000); port <= 30010; port++ {
+			sendHello(t, r.w, port, engine.VerdictAccept)
+		}
+		r.sweepLater()
+
+		if r.w.bans.reg.Banned(net.ParseIP("1.2.3.4"), 443) {
+			t.Fatalf("run %d of %d: ten silent connections and one answered one came due in the same sweep, and the address was banned; the answer must clear the count whatever the order they are handled in", run+1, runs)
+		}
+		if ports := resetsTo(r.sent()); len(ports) != 0 {
+			t.Fatalf("run %d of %d: without a ban no connection is reset, got resets to %v", run+1, runs, ports)
+		}
+	}
+}
+
 func TestAConnectionTheClientGivesUpOnIsCountedOnce(t *testing.T) {
 	set := silenceSet()
 	set.TCP.IPBlockDetect.TimeoutMs = 1

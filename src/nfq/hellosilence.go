@@ -390,6 +390,8 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 	}
 	active := cfg != nil && !cfg.Queue.IsDiscovery && w.bans.on()
 	lookups, lookupsOff := 0, false
+	var answered map[string]bool
+	var silent []helloWatch
 	for _, h := range due {
 		switch {
 		case !active || !silenceWatchedSet(cfg, h.setID):
@@ -420,6 +422,10 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 			}
 			switch state {
 			case silenceAnswered:
+				if answered == nil {
+					answered = make(map[string]bool)
+				}
+				answered[iphealth.BanKey(h.dst, int(h.port))] = true
 				w.bans.forgetSilentHellos(h.dst, h.port)
 				w.destState.EndWatch(h)
 				continue
@@ -439,30 +445,45 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 			}
 			continue
 		}
+		silent = append(silent, h)
+	}
+	for _, h := range silent {
 		key := iphealth.BanKey(h.dst, int(h.port))
-		silent := 0
-		if h.counted {
-			silent = w.bans.silentHellos(key, now)
-		} else {
-			watched := false
-			silent, watched = w.destState.CountOnce(h, func() int { return w.bans.countSilentHello(key, now) })
-			if !watched {
-				continue
-			}
+		w.countSilentConnection(cfg, h, key, now, answered[key])
+	}
+}
+
+func (w *Worker) countSilentConnection(cfg *config.Config, h helloWatch, key string, now time.Time, answeredInThisSweep bool) {
+	silent := 0
+	switch {
+	case answeredInThisSweep:
+		if _, watched := w.destState.CountOnce(h, func() int { return 0 }); !watched {
+			return
+		}
+		log.Tracef("IP bans: %s took the ClientHello and sent nothing back, but answered another connection that came due with it, so this one is not counted (host: %s, set: %s)", key, h.host, h.set)
+	case h.counted:
+		silent = w.bans.silentHellos(key, now)
+	default:
+		watched := false
+		silent, watched = w.destState.CountOnce(h, func() int { return w.bans.countSilentHello(key, now) })
+		if !watched {
+			return
 		}
 		if silent < silentHellosToBan {
 			log.Tracef("IP bans: %s took the ClientHello and sent nothing back, unanswered connection %d of the %d in a row that get the address checked with neutral names (host: %s, set: %s)", key, silent, silentHellosToBan, h.host, h.set)
-			if h.closed {
-				w.destState.EndWatch(h)
-			} else {
-				w.destState.Park(h)
-			}
-			continue
 		}
-		log.Tracef("IP bans: %s took the ClientHello and sent nothing back on %d connections in a row, checking it with neutral names (host: %s, set: %s)", key, silent, h.host, h.set)
-		if !w.bans.confirmSilence(cfg, h.dst, h.port, h.host, h.set) {
-			w.destState.Unprobe(h)
+	}
+	if silent < silentHellosToBan {
+		if h.closed {
+			w.destState.EndWatch(h)
+		} else {
+			w.destState.Park(h)
 		}
+		return
+	}
+	log.Tracef("IP bans: %s took the ClientHello and sent nothing back on %d connections in a row, checking it with neutral names (host: %s, set: %s)", key, silent, h.host, h.set)
+	if !w.bans.confirmSilence(cfg, h.dst, h.port, h.host, h.set) {
+		w.destState.Unprobe(h)
 	}
 }
 
