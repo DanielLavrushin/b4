@@ -459,23 +459,29 @@ func TestMCPImportStrategyGivesTargetAdviceOnlyToSetsThatLackTargets(t *testing.
 	session, ctx := connectMCP(t, srv)
 
 	const (
-		readTheRows  = "say why it is disabled and what it needs before it is enabled, which is not always targets"
+		readTheRows  = "Its row says why in disabled_because"
 		targetAdvice = "lack only targets: add them with b4_edit_set_targets"
 	)
 	for _, c := range []struct {
 		name, text   string
 		needsTargets []bool
+		because      []string
 	}{
-		{"a call profile without UDP ports", "--filter-l7=discord,stun --dpi-desync=fake --dpi-desync-repeats=6", []bool{false}},
-		{"a set without a strategy", "--filter-tcp=443 --hostlist-domains=example.com --hostcase", []bool{false}},
+		{"a call profile without UDP ports", "--filter-l7=discord,stun --dpi-desync=fake --dpi-desync-repeats=6", []bool{false},
+			[]string{"udp.dport_filter"}},
+		{"a set without a strategy", "--filter-tcp=443 --hostlist-domains=example.com --hostcase", []bool{false},
+			[]string{"carries no bypass option"}},
 		{"a set shadowed by an earlier one",
 			"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake --new --filter-tcp=80 --hostlist-domains=example.com --dpi-desync=multisplit",
-			[]bool{false, false}},
-		{"a skipped profile", "--filter-tcp=443 --dpi-desync=fake,multisplit --skip", []bool{false}},
-		{"a set that lacks only targets", "--filter-tcp=443 --dpi-desync=fake,multisplit", []bool{true}},
+			[]bool{false, false}, []string{"", "already claims example.com"}},
+		{"a skipped profile", "--filter-tcp=443 --dpi-desync=fake,multisplit --skip", []bool{false}, []string{"marked skipped"}},
+		{"a skipped profile that has a domain", "--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake --skip", []bool{false},
+			[]string{"marked skipped"}},
+		{"a set that lacks only targets", "--filter-tcp=443 --dpi-desync=fake,multisplit", []bool{true},
+			[]string{"no domains or addresses"}},
 		{"one of each",
 			"--filter-tcp=443 --dpi-desync=fake,multisplit --new --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-repeats=6",
-			[]bool{true, false}},
+			[]bool{true, false}, []string{"no domains or addresses", "udp.dport_filter"}},
 	} {
 		out := decodeImport(t, callImport(t, session, ctx, map[string]any{"text": c.text, "tool": "zapret"}))
 		if len(out.Sets) != len(c.needsTargets) {
@@ -493,6 +499,16 @@ func TestMCPImportStrategyGivesTargetAdviceOnlyToSetsThatLackTargets(t *testing.
 			}
 			if c.needsTargets[i] {
 				lacking++
+			}
+			if (s.DisabledWhy == "") != s.Enabled || !strings.Contains(s.DisabledWhy, c.because[i]) {
+				t.Errorf("%s: set %d enabled=%v has disabled_because %q, want it to say %q", c.name, s.Position, s.Enabled, s.DisabledWhy, c.because[i])
+			}
+		}
+		for _, w := range out.Warnings {
+			for i, s := range out.Sets {
+				if s.DomainCount > 0 && !c.needsTargets[i] && strings.Contains(w, "has domains or IPs") {
+					t.Errorf("%s: set %d has %d domain(s), and a warning says no set has any: %q", c.name, s.Position, s.DomainCount, w)
+				}
 			}
 		}
 		if disabled == 0 {

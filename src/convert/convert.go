@@ -68,8 +68,18 @@ type SetPlan struct {
 	Strategy       string   `json:"strategy"`
 	Faking         bool     `json:"faking"`
 	Enabled        bool     `json:"enabled"`
-	NeedsTargets   bool     `json:"-"`
+	DisabledFor    string   `json:"-"`
 }
+
+const (
+	DisabledSkipped       = "skipped"
+	DisabledShadowed      = "shadowed"
+	DisabledNotUnderstood = "not_understood"
+	DisabledNoStrategy    = "no_strategy"
+	DisabledNeedsPorts    = "needs_ports"
+	DisabledNeedsTargets  = "needs_targets"
+	DisabledUnreached     = "unreached"
+)
 
 type Result struct {
 	Tool            string             `json:"tool"`
@@ -200,13 +210,49 @@ func Analyze(input string, opts Options) (*Result, error) {
 	flagUnrecognisedProfiles(prog, sets, notes)
 	res.Notes = notes.list()
 	res.Applicable = anyProfileCarriesStrategy(prog)
-	res.Plan = buildPlan(prog, sets)
+	res.Plan = buildPlan(prog, sets, res.Notes)
 	res.Warnings = buildWarnings(spec, argv, prog, sets, res.Notes, inferred, srcRep, sharedUnused)
 	res.Fidelity = score(res.Notes)
 	return res, nil
 }
 
-func buildPlan(prog *Program, sets []config.SetConfig) []SetPlan {
+func profilesNoted(notes []Note, reason string) map[int]bool {
+	out := map[int]bool{}
+	for _, n := range notes {
+		if n.Reason == reason {
+			out[n.Profile] = true
+		}
+	}
+	return out
+}
+
+func disabledFor(prof *Profile, s *config.SetConfig, acceptsTargets, shadowed, notUnderstood bool) string {
+	carries := prof.carriesStrategy()
+	if s.SelectsL7() {
+		carries = prof.UDP.Present
+	}
+	switch {
+	case s.Enabled:
+		return ""
+	case shadowed:
+		return DisabledShadowed
+	case prof.Skip:
+		return DisabledSkipped
+	case notUnderstood:
+		return DisabledNotUnderstood
+	case !carries:
+		return DisabledNoStrategy
+	case prof.scopedByL7():
+		return DisabledNeedsPorts
+	case acceptsTargets:
+		return DisabledNeedsTargets
+	}
+	return DisabledUnreached
+}
+
+func buildPlan(prog *Program, sets []config.SetConfig, notes []Note) []SetPlan {
+	shadowed := profilesNoted(notes, "shadowedByEarlierSet")
+	notUnderstood := profilesNoted(notes, "profileNotUnderstood")
 	fallbackFor := make(map[string]int, len(sets))
 	for i, s := range sets {
 		if s.Escalate.To != "" {
@@ -226,7 +272,6 @@ func buildPlan(prog *Program, sets []config.SetConfig) []SetPlan {
 		}
 		prof := prog.Profiles[i]
 		acceptsTargets := entry && !prof.scopedByL7()
-		hasTargets := len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0
 		plan = append(plan, SetPlan{
 			Profile:        i,
 			Name:           s.Name,
@@ -239,7 +284,7 @@ func buildPlan(prog *Program, sets []config.SetConfig) []SetPlan {
 			Strategy:       s.Fragmentation.Strategy,
 			Faking:         s.Faking.SNI,
 			Enabled:        s.Enabled,
-			NeedsTargets:   !s.Enabled && acceptsTargets && !hasTargets && prof.carriesStrategy() && !prof.Skip,
+			DisabledFor:    disabledFor(prof, &s, acceptsTargets, shadowed[i], notUnderstood[i]),
 		})
 	}
 	return plan
@@ -262,16 +307,6 @@ func collectUnresolved(prog *Program) []Unresolved {
 }
 
 const minToolConfidence = 0.35
-
-func profilesNoted(notes []Note, reason string) map[int]bool {
-	out := map[int]bool{}
-	for _, n := range notes {
-		if n.Reason == reason {
-			out[n.Profile] = true
-		}
-	}
-	return out
-}
 
 func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetConfig, notes []Note, inferred bool, src sourceReport, sharedUnused bool) []Warning {
 	out := []Warning{}

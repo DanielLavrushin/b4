@@ -55,6 +55,7 @@ type mcpImportSet struct {
 	Role           string   `json:"role"`
 	FallbackFor    string   `json:"fallback_for,omitempty"`
 	Enabled        bool     `json:"enabled"`
+	DisabledWhy    string   `json:"disabled_because,omitempty"`
 	Strategy       string   `json:"strategy"`
 	Faking         bool     `json:"faking"`
 	UDPMode        string   `json:"udp_mode"`
@@ -418,7 +419,8 @@ func mcpImportSets(res *convert.Result, sets []*config.SetConfig, withIDs bool) 
 			plan := res.Plan[i]
 			row.Role = plan.Role
 			row.AcceptsTargets = plan.AcceptsTargets
-			row.NeedsTargets = plan.NeedsTargets
+			row.NeedsTargets = plan.DisabledFor == convert.DisabledNeedsTargets
+			row.DisabledWhy = res.DisabledEnglish(i)
 			if plan.FallbackFor >= 0 && plan.FallbackFor < len(sets) {
 				row.FallbackFor = sets[plan.FallbackFor].Name
 			}
@@ -509,7 +511,7 @@ func mcpImportFollowUp(out mcpImportOut, label string, applied bool) string {
 			lead = "Created DISABLED"
 		}
 		fmt.Fprintf(&note, " %s: %d of the %d set(s). A disabled set matches nothing. "+
-			"The warnings and the rows of not_converted and approximated that list a set's position say why it is disabled and what it needs before it is enabled, which is not always targets.",
+			"Its row says why in disabled_because: read that before enabling the set, because targets are not always what it lacks.",
 			lead, disabled, len(out.Sets))
 	}
 	if needTargets > 0 {

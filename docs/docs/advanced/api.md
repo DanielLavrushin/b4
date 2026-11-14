@@ -156,7 +156,7 @@ A run also tests the other hosts each confirmed page loads, as the [page hosts](
 
 Without `apply`, the tool writes nothing. Its answer lists:
 
-- the sets the text converts into, with their order, strategy, ports, target counts and whether each is created enabled. A disabled set that lacks only targets is marked `needs_targets`, and the rows about any other disabled set say what it needs;
+- the sets the text converts into, with their order, strategy, ports, target counts and whether each is created enabled. A disabled set carries the reason in `disabled_because`, and one that lacks only targets is also marked `needs_targets`;
 - the options that did not convert, and those converted approximately, with the reason for each;
 - the host list, address list and fake payload files of the source machine, which b4 cannot read. A set whose fake payload file is missing uses a built-in payload, and the original is uploaded under [Settings > Payloads](../settings/payloads.md);
 - the import's warnings;

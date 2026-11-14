@@ -216,3 +216,35 @@ func (n Note) English() string {
 func (w Warning) English() string {
 	return englishText(warningEnglish, w.Code, w.Params)
 }
+
+var disabledNote = map[string]string{
+	DisabledSkipped:       "skipMapped",
+	DisabledShadowed:      "shadowedByEarlierSet",
+	DisabledNotUnderstood: "profileNotUnderstood",
+	DisabledNeedsPorts:    "l7FilterNeedsPorts",
+}
+
+var disabledEnglish = map[string]string{
+	DisabledSkipped:       "The profile is marked skipped in the source, so the set is created disabled.",
+	DisabledShadowed:      "An earlier set of this import already claims one of its domains. b4 picks one set per destination, so this set would never run until it has domains of its own.",
+	DisabledNotUnderstood: "Options in its profile were not recognized, and nothing else in it produced a strategy, so the set would claim domains while doing nothing.",
+	DisabledNoStrategy:    "Its profile carries no bypass option that b4 could convert, so the set would pass traffic through unchanged.",
+	DisabledNeedsPorts:    "It handles only calls, and its profile lists no UDP ports. b4 sees UDP only on port 443 and on the ports sets list, so the set needs udp.dport_filter and udp.filter_l7 before it is enabled.",
+	DisabledNeedsTargets:  "It has no domains or addresses. Nothing else keeps it disabled.",
+	DisabledUnreached:     "It is a fallback that no other set escalates to, and a fallback takes no targets of its own.",
+}
+
+func (r *Result) DisabledEnglish(profile int) string {
+	if profile < 0 || profile >= len(r.Plan) {
+		return ""
+	}
+	why := r.Plan[profile].DisabledFor
+	if reason, ok := disabledNote[why]; ok {
+		for _, n := range r.Notes {
+			if n.Profile == profile && n.Reason == reason {
+				return n.English()
+			}
+		}
+	}
+	return disabledEnglish[why]
+}
