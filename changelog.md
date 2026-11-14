@@ -39,6 +39,7 @@ All notable changes to b4 are recorded in this file.
 - A byedpi fake imported from the command line (`-l :...`) came out changed when it held binary data, and its set showed **Fake Payload Type** as a bare `1`, while a zapret fake given as hex was left out of the set (`--dpi-desync-fake-tls=0x...`) or went out as zeros (`--dpi-desync-fake-quic=0x...`). [#538](https://github.com/DanielLavrushin/b4/issues/538)
 - Set cards and **Discovery** results named the Google and DuckDuckGo fake payloads `default` and `default2`. [#538](https://github.com/DanielLavrushin/b4/issues/538)
 - With one domain in two sets, one limited to IPv4 and one to IPv6 by the **IP Version Filter**, the first packet of a connection could get the set for the other IP version when that set was higher in the list. [#582](https://github.com/DanielLavrushin/b4/issues/582)
+- **Discovery** tested every strategy that has an **Overlap Pattern**, such as `combo-seqovl64`, without that pattern, while the set saved from such a strategy sent it. [#542](https://github.com/DanielLavrushin/b4/issues/542)
 
 ### Security
 
