@@ -1,6 +1,6 @@
 import { B4SetConfig, HubState, HubVote } from "./config";
 import { createDefaultSet } from "./defaults";
-import { DomainReassignment, SetDomainMatch } from "./sets";
+import { CoveredSet, DomainReassignment, SetDomainMatch } from "./sets";
 
 export interface HubPayload {
   sha256: string;
@@ -190,6 +190,7 @@ export interface HubApplyResponse {
   id: string;
   name: string;
   moved: DomainReassignment[];
+  covered: CoveredSet[];
   warnings: HubWarning[];
   payloads: HubInstalledPayload[];
 }

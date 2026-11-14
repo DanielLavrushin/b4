@@ -1,0 +1,245 @@
+package sni
+
+import (
+	"net"
+	"slices"
+	"strings"
+
+	"github.com/daniellavrushin/b4/config"
+	"github.com/yl2chen/cidranger"
+)
+
+type Cover struct {
+	GeoSite []string
+	GeoIP   []string
+	ASNs    []string
+	Idle    bool
+}
+
+func (c Cover) Empty() bool {
+	return len(c.GeoSite) == 0 && len(c.GeoIP) == 0 && len(c.ASNs) == 0 && !c.Idle
+}
+
+func (c Cover) Join(other Cover) Cover {
+	return Cover{
+		GeoSite: append(slices.Clone(c.GeoSite), outside(other.GeoSite, keySet(c.GeoSite, categoryKey), categoryKey)...),
+		GeoIP:   append(slices.Clone(c.GeoIP), outside(other.GeoIP, keySet(c.GeoIP, categoryKey), categoryKey)...),
+		ASNs:    append(slices.Clone(c.ASNs), outside(other.ASNs, keySet(c.ASNs, asnKey), asnKey)...),
+		Idle:    c.Idle || other.Idle,
+	}
+}
+
+func (c Cover) Since(before Cover) Cover {
+	if before.Idle {
+		return Cover{}
+	}
+	return Cover{
+		GeoSite: outside(c.GeoSite, keySet(before.GeoSite, categoryKey), categoryKey),
+		GeoIP:   outside(c.GeoIP, keySet(before.GeoIP, categoryKey), categoryKey),
+		ASNs:    outside(c.ASNs, keySet(before.ASNs, asnKey), asnKey),
+		Idle:    c.Idle,
+	}
+}
+
+type Coverage struct {
+	owner    *config.SetConfig
+	geosite  map[string]bool
+	geoip    map[string]bool
+	asns     map[string]bool
+	domains  map[string]bool
+	networks map[string]bool
+	ranges   cidranger.Ranger
+}
+
+var noCoverage = &Coverage{}
+
+func CoverageOf(owner *config.SetConfig) *Coverage {
+	if owner == nil || !owner.Enabled || len(owner.Targets.SourceDevices) > 0 || owner.BlockRoutingScoped() {
+		return &Coverage{}
+	}
+	return &Coverage{
+		owner:   owner,
+		geosite: keySet(owner.Targets.GeoSiteCategories, categoryKey),
+		geoip:   keySet(owner.Targets.GeoIpCategories, categoryKey),
+		asns:    keySet(owner.Targets.ASNs, asnKey),
+	}
+}
+
+func (c *Coverage) Of(set *config.SetConfig) Cover {
+	var out Cover
+	if set == nil || !set.Enabled {
+		return out
+	}
+	taken := noCoverage
+	if c.takesFrom(set) {
+		taken = c
+		out.GeoSite = inside(set.Targets.GeoSiteCategories, c.geosite, categoryKey)
+		out.GeoIP = inside(set.Targets.GeoIpCategories, c.geoip, categoryKey)
+		out.ASNs = inside(set.Targets.ASNs, c.asns, asnKey)
+	}
+	out.Idle = !taken.leaves(set)
+	return out
+}
+
+func (c *Coverage) takesFrom(set *config.SetConfig) bool {
+	if c == nil || c.owner == nil || set.Id == c.owner.Id || len(set.Targets.SourceDevices) > 0 {
+		return false
+	}
+	own, other := &c.owner.Targets, &set.Targets
+	return filterIncludes(own.TLSVersion, other.TLSVersion) && filterIncludes(own.IPVersion, other.IPVersion)
+}
+
+func filterIncludes(owner, other string) bool {
+	return owner == "" || owner == other
+}
+
+func actsByAddress(set *config.SetConfig) bool {
+	if !set.HasIPOrDomainTargets() {
+		return false
+	}
+	if _, stamps := set.DSCPStamp(); stamps || set.Routing.Enabled {
+		return true
+	}
+	return set.MSSClamp.Enabled && set.MSSClamp.Size > 0 && len(set.Targets.IpsToMatch) > 0
+}
+
+func (c *Coverage) leaves(set *config.SetConfig) bool {
+	if set.SelectsL7() || actsByAddress(set) {
+		return true
+	}
+	t := &set.Targets
+	if anyOutside(t.ASNs, c.asns, asnKey) ||
+		anyOutside(t.DomainsToMatch, c.domainKeys(), CanonicalDomainEntry) ||
+		c.keepsNetwork(t.IpsToMatch) {
+		return true
+	}
+	if set.DeclaresDestinationTargets() {
+		return false
+	}
+	return strings.TrimSpace(set.TCP.DPortFilter) != "" || strings.TrimSpace(set.UDP.DPortFilter) != ""
+}
+
+func (c *Coverage) domainKeys() map[string]bool {
+	if c.owner != nil && c.domains == nil {
+		c.domains = keySet(c.owner.Targets.DomainsToMatch, CanonicalDomainEntry)
+	}
+	return c.domains
+}
+
+func (c *Coverage) networkKeys() map[string]bool {
+	if c.owner != nil && c.networks == nil {
+		c.networks = keySet(c.owner.Targets.IpsToMatch, networkKey)
+	}
+	return c.networks
+}
+
+func (c *Coverage) networkRanges() cidranger.Ranger {
+	if c.owner != nil && c.ranges == nil {
+		c.ranges = cidranger.NewPCTrieRanger()
+		for _, entry := range c.owner.Targets.IpsToMatch {
+			if network := parseTargetNetwork(entry); network != nil {
+				_ = c.ranges.Insert(cidranger.NewBasicRangerEntry(*network))
+			}
+		}
+	}
+	return c.ranges
+}
+
+func (c *Coverage) keepsNetwork(entries []string) bool {
+	for _, entry := range entries {
+		if network := parseTargetNetwork(entry); network != nil && !c.exhausts(network) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Coverage) exhausts(network *net.IPNet) bool {
+	if c.networkKeys()[network.String()] {
+		return true
+	}
+	ones, bits := network.Mask.Size()
+	if ones >= bits || !c.listsWithin(network) {
+		return false
+	}
+	low, high := halves(network, ones, bits)
+	return c.exhausts(low) && c.exhausts(high)
+}
+
+func (c *Coverage) listsWithin(network *net.IPNet) bool {
+	ranges := c.networkRanges()
+	if ranges == nil {
+		return false
+	}
+	listed, err := ranges.CoveredNetworks(*network)
+	return err == nil && len(listed) > 0
+}
+
+func halves(network *net.IPNet, ones, bits int) (*net.IPNet, *net.IPNet) {
+	mask := net.CIDRMask(ones+1, bits)
+	low := &net.IPNet{IP: slices.Clone(network.IP), Mask: mask}
+	high := &net.IPNet{IP: slices.Clone(network.IP), Mask: mask}
+	high.IP[ones/8] |= 0x80 >> (ones % 8)
+	return low, high
+}
+
+func categoryKey(raw string) string {
+	return strings.ToLower(strings.TrimSpace(raw))
+}
+
+func asnKey(raw string) string {
+	id, ok := config.NormalizeASN(raw)
+	if !ok {
+		return ""
+	}
+	return id
+}
+
+func networkKey(raw string) string {
+	network := parseTargetNetwork(raw)
+	if network == nil {
+		return ""
+	}
+	return network.String()
+}
+
+func keySet(entries []string, key func(string) string) map[string]bool {
+	keys := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if k := key(entry); k != "" {
+			keys[k] = true
+		}
+	}
+	return keys
+}
+
+func anyOutside(entries []string, keys map[string]bool, key func(string) string) bool {
+	for _, entry := range entries {
+		if k := key(entry); k != "" && !keys[k] {
+			return true
+		}
+	}
+	return false
+}
+
+func inside(entries []string, keys map[string]bool, key func(string) string) []string {
+	return pick(entries, keys, key, true)
+}
+
+func outside(entries []string, keys map[string]bool, key func(string) string) []string {
+	return pick(entries, keys, key, false)
+}
+
+func pick(entries []string, keys map[string]bool, key func(string) string, listed bool) []string {
+	var out []string
+	seen := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		k := key(entry)
+		if k == "" || seen[k] || keys[k] != listed {
+			continue
+		}
+		seen[k] = true
+		out = append(out, strings.TrimSpace(entry))
+	}
+	return out
+}

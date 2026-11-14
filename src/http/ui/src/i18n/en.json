@@ -4183,7 +4183,21 @@
       "updated": "Set {{name}} updated to version {{version}}.",
       "confirmTitle": "Replace the local set",
       "confirmReplace": "Replaces the strategy and targets of set {{name}} with version {{version}}. Edits made to that set on this router are lost.",
-      "replace": "Replace"
+      "replace": "Replace",
+      "covered": {
+        "title": "Other sets affected",
+        "intro": "The applied set {{name}} is higher in the list, so it now handles these targets instead of the sets below.",
+        "idle": "Handles nothing now: every target it lists is also in the applied set.",
+        "partial": "Still in use: for its other targets, or for routing, MSS clamping, DSCP or escalation.",
+        "switchedOff": "Disabled.",
+        "disable": "Disable",
+        "choices": "Replace puts the applied set in the place of the chosen set and removes the copy added at the top of the list. Disable keeps both sets and switches the chosen one off.",
+        "choiceDisable": "Disable switches the chosen set off and keeps its settings.",
+        "disabled": "Set {{name}} disabled.",
+        "disableFailed": "Could not disable the set: {{error}}",
+        "enableFailed": "Could not enable the disabled sets again: {{error}}",
+        "replaced": "Set {{name}} replaced with the community set."
+      }
     },
     "vote": {
       "sent": "Report sent. Thank you.",

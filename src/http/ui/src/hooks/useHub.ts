@@ -74,8 +74,15 @@ export function useHubSync() {
 export function useHubApply() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ set, replace }: { set: HubSet; replace?: string }) =>
-      hubApi.apply(set.id, replace),
+    mutationFn: ({
+      set,
+      replace,
+      discard,
+    }: {
+      set: HubSet;
+      replace?: string;
+      discard?: string;
+    }) => hubApi.apply(set.id, replace, discard),
     onSettled: () => {
       void client.invalidateQueries({ queryKey: ["hub", "sets"] });
       void client.invalidateQueries({ queryKey: ["hub", "set"] });
@@ -91,6 +98,13 @@ export function useHubUndoApply() {
       void client.invalidateQueries({ queryKey: ["hub", "sets"] });
       void client.invalidateQueries({ queryKey: ["hub", "set"] });
     },
+  });
+}
+
+export function useLocalSetsEnabled() {
+  return useMutation({
+    mutationFn: ({ ids, enabled }: { ids: string[]; enabled: boolean }) =>
+      setsApi.setEnabledForSets(ids, enabled),
   });
 }
 
