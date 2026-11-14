@@ -82,13 +82,9 @@ func (c *Coverage) leaves(set *config.SetConfig) bool {
 		return true
 	}
 	t := &set.Targets
-	if len(outside(t.GeoSiteCategories, c.geosite, categoryKey)) > 0 ||
-		len(outside(t.GeoIpCategories, c.geoip, categoryKey)) > 0 ||
-		len(outside(t.ASNs, c.asns, asnKey)) > 0 {
-		return true
-	}
-	if len(outside(t.SNIDomains, c.domainKeys(), CanonicalDomainEntry)) > 0 ||
-		len(outside(t.IPs, c.networkKeys(), networkKey)) > 0 {
+	if anyOutside(t.ASNs, c.asns, asnKey) ||
+		anyOutside(t.DomainsToMatch, c.domainKeys(), CanonicalDomainEntry) ||
+		anyOutside(t.IpsToMatch, c.networkKeys(), networkKey) {
 		return true
 	}
 	if set.DeclaresDestinationTargets() {
@@ -139,6 +135,15 @@ func keySet(entries []string, key func(string) string) map[string]bool {
 		}
 	}
 	return keys
+}
+
+func anyOutside(entries []string, keys map[string]bool, key func(string) string) bool {
+	for _, entry := range entries {
+		if k := key(entry); k != "" && !keys[k] {
+			return true
+		}
+	}
+	return false
 }
 
 func inside(entries []string, keys map[string]bool, key func(string) string) []string {

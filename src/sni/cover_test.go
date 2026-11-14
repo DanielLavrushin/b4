@@ -11,11 +11,13 @@ import (
 var coverGeoSite = map[string][]string{
 	"meta":      {"facebook.com", "fbcdn.net", "regexp:^ig-[a-z]+\\.example$"},
 	"instagram": {"instagram.com", "cdninstagram.com"},
+	"social":    {"facebook.com", "instagram.com", "cdninstagram.com"},
 	"youtube":   {"youtube.com", "ytimg.com"},
 }
 
 var coverGeoIP = map[string][]string{
 	"facebook": {"157.240.0.0/16", "2a03:2880::/32"},
+	"meta-net": {"157.240.0.0/16", "2a03:2880::/32", "31.13.24.0/21"},
 	"google":   {"142.250.0.0/15"},
 }
 
@@ -118,6 +120,41 @@ func TestCoverCountsManualEntriesTheOwnerExpandsTo(t *testing.T) {
 	}
 	if _, set := matcher.MatchIPWithSource(net.ParseIP("157.240.1.9"), ""); set == nil || set.Id != subnet.Id {
 		t.Errorf("a more specific network must stay with the set that lists it, got %v", set)
+	}
+}
+
+func TestCoverReadsIdlenessFromExpandedTargets(t *testing.T) {
+	owner := coverSet("community", coverTargets{geosite: []string{"social"}, geoip: []string{"meta-net"}})
+	coverage := CoverageOf(owner)
+
+	inside := coverSet("inside", coverTargets{geosite: []string{"social", "instagram"}, geoip: []string{"meta-net", "facebook"}})
+	expectCover(t, coverage.Of(inside), []string{"social"}, []string{"meta-net"}, nil, true)
+
+	partly := coverSet("partly", coverTargets{geosite: []string{"social", "meta"}})
+	expectCover(t, coverage.Of(partly), []string{"social"}, nil, nil, false)
+
+	pending := coverSet("pending", coverTargets{geosite: []string{"social"}, asns: []string{"13335"}})
+	if len(pending.Targets.IpsToMatch) != 0 {
+		t.Fatalf("the fixture must leave AS13335 without prefixes, got %v", pending.Targets.IpsToMatch)
+	}
+	expectCover(t, coverage.Of(pending), []string{"social"}, nil, nil, false)
+
+	absent := coverSet("absent", coverTargets{geosite: []string{"social", "no-such-category"}})
+	expectCover(t, coverage.Of(absent), []string{"social"}, nil, nil, true)
+
+	matcher := NewSuffixSet([]*config.SetConfig{owner, inside, partly})
+	for _, host := range inside.Targets.DomainsToMatch {
+		if _, set := matcher.MatchSNIWithSource(host, ""); set == nil || set.Id != owner.Id {
+			t.Errorf("%s: a category whose entries all sit in the owner's must match the owner, got %v", host, set)
+		}
+	}
+	for _, addr := range []string{"157.240.1.1", "2a03:2880::1"} {
+		if _, set := matcher.MatchIPWithSource(net.ParseIP(addr), ""); set == nil || set.Id != owner.Id {
+			t.Errorf("%s: must match the owner, got %v", addr, set)
+		}
+	}
+	if _, set := matcher.MatchSNIWithSource("static.fbcdn.net", ""); set == nil || set.Id != partly.Id {
+		t.Errorf("a name outside the owner's categories must stay with the set that lists it, got %v", set)
 	}
 }
 
