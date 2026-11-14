@@ -330,7 +330,13 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 	case "profile.duplicate":
 		prof.Duplicate = v.Int
 	case "profile.win_size":
-		prof.WinSize = v.Int
+		prof.WinSize, prof.WinScale, _ = splitWSSize(v.Str)
+	case "profile.wssize_forced_cutoff":
+		if v.Bool {
+			notes.set(tok, StatusMapped, "wsSizeForcedCutoffOn")
+		} else {
+			notes.set(tok, StatusUnsupported, "wsSizeForcedCutoffOff")
+		}
 	case "profile.skip":
 		prof.Skip = true
 	case "profile.seqovl_len":
@@ -344,6 +350,7 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 	case "filters.l7":
 		prof.Filters.Protos = append(prof.Filters.Protos, v.List...)
 	case "filters.tcp_ports":
+		prof.Filters.TCPFilter = true
 		if v.Bool {
 			notes.set(tok, StatusUnsupported, "negatedPortFilter")
 			return
@@ -354,7 +361,9 @@ func applyTargetValue(prog *Program, prof *Profile, tok Token, v Value, notes *n
 		}
 		prof.Filters.TCPPorts = append(prof.Filters.TCPPorts, v.List...)
 	case "filters.udp_ports":
+		prof.Filters.UDPFilter = true
 		if v.Bool {
+			prof.Filters.UDPNegated = true
 			notes.set(tok, StatusUnsupported, "negatedPortFilter")
 			return
 		}
@@ -422,12 +431,14 @@ func foldUDPProfiles(prog *Program, tokens []Token, notes *noteSet) []Token {
 			carriers = append(carriers, p)
 		}
 	}
-	if len(carriers) != 1 || len(foldable) != 1 {
+	if len(carriers) != 1 || len(foldable) != 1 || carriers[0].handlesUDPItself() {
 		return tokens
 	}
 
 	dst, src := carriers[0], foldable[0]
 	dst.UDP = src.UDP
+	dst.UDP.Shared = false
+	dst.UDP.Folded = true
 	dst.FoldedProtoTokens = append(dst.FoldedProtoTokens, src.ProtoTokens...)
 	dst.FoldedTokens = append(dst.FoldedTokens, src.Tokens...)
 	folded := map[int]bool{src.Index: true}

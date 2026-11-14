@@ -34,6 +34,47 @@ var zapretConfigs = []struct {
 		"--dpi-desync=split2 --dpi-desync-split-pos=sniext --wssize=1:6 --hostcase " +
 			"--new --skip --dpi-desync=rst",
 	},
+	{
+		"tcpAndUDPWithQUICFile",
+		"--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake " +
+			"--dpi-desync-fake-quic=/opt/zapret/files/fake/quic_initial_www_google_com.bin",
+	},
+	{
+		"tcpAndUDPWithQUICHex",
+		"--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake " +
+			"--dpi-desync-fake-quic=0x0d0a0bfc",
+	},
+	{
+		"tcpAndUDPWithZeroQUIC",
+		"--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake " +
+			"--dpi-desync-fake-quic=0x00000000",
+	},
+	{
+		"noPortFiltersWithQUICFile",
+		"--hostlist-domains=example.com --dpi-desync=fake,multisplit --dpi-desync-repeats=6 " +
+			"--dpi-desync-fake-quic=/opt/zapret/files/fake/quic_initial_www_google_com.bin",
+	},
+	{
+		"tcpAndUDPWithAnyProtocolRepeatsAndTTL",
+		"--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake " +
+			"--dpi-desync-any-protocol --dpi-desync-repeats=11 --dpi-desync-ttl=4",
+	},
+	{
+		"tcpOnlyWithUDPFakeOptions",
+		"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake " +
+			"--dpi-desync-any-protocol=0 --dpi-desync-fake-quic=0x0d0a0bfc",
+	},
+	{
+		"wssizeWithItsCutoffs",
+		"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake,multisplit " +
+			"--wssize=1:6 --wssize-cutoff=d2 --wssize-forced-cutoff=1",
+	},
+	{
+		"tcpAndUDPThenUDPOnly",
+		"--filter-tcp=443 --filter-udp=443 --hostlist-domains=example.com --dpi-desync=fake " +
+			"--dpi-desync-fake-quic=/opt/zapret/files/fake/quic.bin --new " +
+			"--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=11 --dpi-desync-ttl=5",
+	},
 }
 
 func TestZapretCorpus_EveryRecognizedOptionIsReported(t *testing.T) {
@@ -995,6 +1036,8 @@ func TestZapret_AnL7ProfileIsEnabledOnlyWhenItFakesUDP(t *testing.T) {
 		{"ipfrag2", "", "desyncModesEmpty", false},
 		{"udplen", "", "desyncModesDropped", false},
 		{"fake,udplen", "", "desyncModesDropped", true},
+		{"fakeknown", "", "desyncModesMapped", true},
+		{"fakedsplit", "", "desyncModesEmpty", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.desync+tt.extra, func(t *testing.T) {
