@@ -1,6 +1,8 @@
 package sni
 
 import (
+	"fmt"
+	"math/rand"
 	"net"
 	"slices"
 	"testing"
@@ -155,6 +157,101 @@ func TestCoverReadsIdlenessFromExpandedTargets(t *testing.T) {
 	}
 	if _, set := matcher.MatchSNIWithSource("static.fbcdn.net", ""); set == nil || set.Id != partly.Id {
 		t.Errorf("a name outside the owner's categories must stay with the set that lists it, got %v", set)
+	}
+}
+
+func TestCoverCountsANetworkTiledBySmallerPrefixes(t *testing.T) {
+	owner := coverSet("community", coverTargets{ips: []string{
+		"203.0.113.0/25", "203.0.113.128/26", "203.0.113.192/27", "203.0.113.224/27", "203.0.113.200/30",
+		"198.51.100.0/25", "198.51.100.128/26", "198.51.100.192/27", "198.51.100.224/28",
+		"2001:db8::/33", "2001:db8:8000::/33",
+		"10.0.0.0/8",
+		"192.0.2.0/25",
+	}})
+	coverage := CoverageOf(owner)
+
+	tiled := coverSet("tiled", coverTargets{ips: []string{"203.0.113.0/24", "2001:db8::/32", "203.0.113.128/25"}})
+	expectCover(t, coverage.Of(tiled), nil, nil, nil, true)
+
+	holed := coverSet("holed", coverTargets{ips: []string{"198.51.100.0/24"}})
+	narrower := coverSet("narrower", coverTargets{ips: []string{"10.1.0.0/16"}})
+	single := coverSet("single", coverTargets{ips: []string{"192.0.2.7"}})
+	for _, set := range []*config.SetConfig{holed, narrower, single} {
+		if got := coverage.Of(set); !got.Empty() {
+			t.Errorf("%s: keeps addresses of its own, so it must report nothing, got %+v", set.Name, got)
+		}
+	}
+	if got := CoverageOf(nil).Of(tiled); !got.Empty() {
+		t.Errorf("without an owner nothing is taken, got %+v", got)
+	}
+
+	matcher := NewSuffixSet([]*config.SetConfig{owner, tiled, holed, narrower, single})
+	owned := func(addr string) string {
+		_, set := matcher.MatchIPWithSource(net.ParseIP(addr), "")
+		if set == nil {
+			return ""
+		}
+		return set.Id
+	}
+	for _, addr := range []string{"203.0.113.0", "203.0.113.127", "203.0.113.130", "203.0.113.201", "203.0.113.255", "2001:db8::1", "2001:db8:ffff::1"} {
+		if got := owned(addr); got != owner.Id {
+			t.Errorf("%s lies in a smaller prefix of the owner, so it must match the owner, got %q", addr, got)
+		}
+	}
+	for addr, want := range map[string]string{
+		"198.51.100.1":   owner.Id,
+		"198.51.100.250": holed.Id,
+		"10.1.2.3":       narrower.Id,
+		"192.0.2.7":      single.Id,
+	} {
+		if got := owned(addr); got != want {
+			t.Errorf("%s must match %q, got %q", addr, want, got)
+		}
+	}
+}
+
+func TestCoverAgreesWithTheMatcherOnRandomPrefixes(t *testing.T) {
+	random := rand.New(rand.NewSource(564))
+	prefix := func() (string, uint32, int) {
+		ones := 24 + random.Intn(7)
+		base := uint32(198)<<24 | uint32(18)<<16 | uint32(random.Intn(256))
+		base &^= 1<<(32-ones) - 1
+		return fmt.Sprintf("198.18.0.%d/%d", base&0xff, ones), base, 1 << (32 - ones)
+	}
+
+	idle, live := 0, 0
+	for trial := 0; trial < 2000; trial++ {
+		var listed []string
+		for i := random.Intn(10); i > 0; i-- {
+			entry, _, _ := prefix()
+			listed = append(listed, entry)
+		}
+		entry, base, size := prefix()
+		owner := coverSet("community", coverTargets{ips: listed})
+		local := coverSet("local", coverTargets{ips: []string{entry}})
+
+		matcher := NewSuffixSet([]*config.SetConfig{owner, local})
+		kept := 0
+		for i := 0; i < size; i++ {
+			addr := base + uint32(i)
+			_, set := matcher.MatchIPWithSource(net.IPv4(byte(addr>>24), byte(addr>>16), byte(addr>>8), byte(addr)), "")
+			if set != nil && set.Id == local.Id {
+				kept++
+			}
+		}
+
+		got := CoverageOf(owner).Of(local).Idle
+		if got != (kept == 0) {
+			t.Fatalf("owner %v, local %s: the matcher leaves the local set %d of %d addresses, idle reported as %v", listed, entry, kept, size, got)
+		}
+		if got {
+			idle++
+		} else {
+			live++
+		}
+	}
+	if idle < 50 || live < 50 {
+		t.Fatalf("the trials must cover both outcomes, got %d idle and %d live", idle, live)
 	}
 }
 

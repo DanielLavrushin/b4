@@ -1,9 +1,12 @@
 package sni
 
 import (
+	"net"
+	"slices"
 	"strings"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/yl2chen/cidranger"
 )
 
 type Cover struct {
@@ -36,6 +39,7 @@ type Coverage struct {
 	asns     map[string]bool
 	domains  map[string]bool
 	networks map[string]bool
+	ranges   cidranger.Ranger
 }
 
 var noCoverage = &Coverage{}
@@ -87,7 +91,7 @@ func (c *Coverage) leaves(set *config.SetConfig) bool {
 	t := &set.Targets
 	if anyOutside(t.ASNs, c.asns, asnKey) ||
 		anyOutside(t.DomainsToMatch, c.domainKeys(), CanonicalDomainEntry) ||
-		anyOutside(t.IpsToMatch, c.networkKeys(), networkKey) {
+		c.keepsNetwork(t.IpsToMatch) {
 		return true
 	}
 	if set.DeclaresDestinationTargets() {
@@ -108,6 +112,56 @@ func (c *Coverage) networkKeys() map[string]bool {
 		c.networks = keySet(c.owner.Targets.IpsToMatch, networkKey)
 	}
 	return c.networks
+}
+
+func (c *Coverage) networkRanges() cidranger.Ranger {
+	if c.owner != nil && c.ranges == nil {
+		c.ranges = cidranger.NewPCTrieRanger()
+		for _, entry := range c.owner.Targets.IpsToMatch {
+			if network := parseTargetNetwork(entry); network != nil {
+				_ = c.ranges.Insert(cidranger.NewBasicRangerEntry(*network))
+			}
+		}
+	}
+	return c.ranges
+}
+
+func (c *Coverage) keepsNetwork(entries []string) bool {
+	for _, entry := range entries {
+		if network := parseTargetNetwork(entry); network != nil && !c.exhausts(network) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Coverage) exhausts(network *net.IPNet) bool {
+	if c.networkKeys()[network.String()] {
+		return true
+	}
+	ones, bits := network.Mask.Size()
+	if ones >= bits || !c.listsWithin(network) {
+		return false
+	}
+	low, high := halves(network, ones, bits)
+	return c.exhausts(low) && c.exhausts(high)
+}
+
+func (c *Coverage) listsWithin(network *net.IPNet) bool {
+	ranges := c.networkRanges()
+	if ranges == nil {
+		return false
+	}
+	listed, err := ranges.CoveredNetworks(*network)
+	return err == nil && len(listed) > 0
+}
+
+func halves(network *net.IPNet, ones, bits int) (*net.IPNet, *net.IPNet) {
+	mask := net.CIDRMask(ones+1, bits)
+	low := &net.IPNet{IP: slices.Clone(network.IP), Mask: mask}
+	high := &net.IPNet{IP: slices.Clone(network.IP), Mask: mask}
+	high.IP[ones/8] |= 0x80 >> (ones % 8)
+	return low, high
 }
 
 func categoryKey(raw string) string {
