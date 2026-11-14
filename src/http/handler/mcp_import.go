@@ -270,6 +270,10 @@ func (api *API) mcpImportRefusal(cfg *config.Config, res *convert.Result) error 
 			if err != nil {
 				return fmt.Errorf("the set %q would list a domain b4 cannot match: %w. Remove it from the text and import again", set.Name, err)
 			}
+			if sni.CanonicalDomainEntry(entry) != canonical {
+				return fmt.Errorf("the set %q would list %q, which b4 matches as written, so it would match nothing: b4 matches the subdomains of a domain itself. "+
+					"Write it as %s in the text and import again", set.Name, entry, canonical)
+			}
 		}
 		for _, entry := range set.Targets.IPs {
 			if _, _, err := api.mcpCanonicalTarget(mcpTargetKindIPs, entry); err != nil {

@@ -453,6 +453,47 @@ func TestMCPImportStrategyPreviewSaysWhyApplyWouldBeRefused(t *testing.T) {
 	}
 }
 
+func TestMCPImportStrategyRefusesAWildcardHost(t *testing.T) {
+	t.Cleanup(mcpResetHistory)
+	srv, api := newMCPTestServerAPI(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+	before := api.getCfg()
+
+	text := "--filter-tcp=443 --hostlist-domains=*.youtube.com --dpi-desync=fake"
+	wants := []string{`"*.youtube.com"`, "would match nothing", "Write it as youtube.com"}
+
+	preview := decodeImport(t, callImport(t, session, ctx, map[string]any{"text": text}))
+	if preview.CanApply {
+		t.Errorf("b4 matches *.youtube.com as written, so a set listing it matches nothing: the preview must not offer to apply it")
+	}
+	for _, want := range wants {
+		if !strings.Contains(preview.Blocked, want) {
+			t.Errorf("blocked lacks %q: %q", want, preview.Blocked)
+		}
+	}
+
+	res := callImport(t, session, ctx, map[string]any{"text": text, "apply": "true"})
+	if !res.IsError {
+		t.Fatalf("an apply with a wildcard host must be refused, got %s", mustStructured(t, res))
+	}
+	for _, want := range wants {
+		if !strings.Contains(mcpErrorText(res), want) {
+			t.Errorf("the refusal lacks %q: %s", want, mcpErrorText(res))
+		}
+	}
+	if api.getCfg() != before {
+		t.Fatal("the refused import changed the configuration")
+	}
+
+	plain := decodeImport(t, callImport(t, session, ctx, map[string]any{
+		"text": "--filter-tcp=443 --hostlist-domains=YouTube.com. --dpi-desync=fake",
+	}))
+	if !plain.CanApply || len(plain.WouldMoveFrom) != 1 {
+		t.Errorf("a host that only differs in case or a trailing dot is matched as the same domain and must import: can_apply=%v blocked=%q would_move_from=%+v",
+			plain.CanApply, plain.Blocked, plain.WouldMoveFrom)
+	}
+}
+
 func TestMCPImportStrategyKeepsToTheSetLimit(t *testing.T) {
 	t.Cleanup(mcpResetHistory)
 	cfg := writableCfg(t)
