@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.91.0] - 2026-11-14
+
 ### Добавлено
 
 - Сет может объявлять маленькое TCP-окно в первых пакетах соединения, чтобы сервер отправлял начало ответа небольшими частями: **Окно реальных TCP-пакетов (wssize)** в редакторе сета, в разделе **TCP, Основные**, по методу wssize из [zapret2](https://github.com/bol-van/zapret2). ([#561](https://github.com/DanielLavrushin/b4/pull/561), спасибо [@SoloIl](https://github.com/SoloIl))

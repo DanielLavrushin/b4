@@ -4,6 +4,8 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+## [1.91.0] - 2026-11-14
+
 ### Added
 
 - A set can advertise a small TCP window in a connection's first packets, so the server sends the start of its reply in small pieces: **Real TCP window (wssize)** under **TCP, General** in the set editor, based on wssize from [zapret2](https://github.com/bol-van/zapret2). ([#561](https://github.com/DanielLavrushin/b4/pull/561), thanks [@SoloIl](https://github.com/SoloIl))
