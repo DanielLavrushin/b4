@@ -93,7 +93,7 @@ Two switches on the card widen what the assistant may do. Both are off by defaul
 
 | Switch | What the assistant may do |
 | --- | --- |
-| **Allow configuration changes** | Change the settings inside sets, the MTProto and SOCKS5 settings and the logging settings. Create, move, enable and delete sets, edit their targets, and undo its own changes |
+| **Allow configuration changes** | Change the settings inside sets, the MTProto and SOCKS5 settings and the logging settings. Create, move, enable and delete sets, edit their targets, turn a zapret or byedpi command line into sets as the [import](../sets/import.md) does, and undo its own changes |
 | **Allow active probes** | Make the router fetch a domain to see whether it loads, and run [Discovery](../discovery.md) to find a working strategy. Private and local addresses are refused |
 
 A change goes through the same checks as a save in the web interface and applies at once. It appears under **Recent changes** on the [dashboard](../dashboard.md#recent-changes) as **AI agent changed a setting**.

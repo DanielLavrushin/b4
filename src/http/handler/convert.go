@@ -135,33 +135,18 @@ func (api *API) handleConvertApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !res.Applicable {
-		writeAPIError(w, ErrBadRequest(
-			"None of the options that do the bypass were recognized, so the sets would carry no strategy. "+
-				"Analyze the configuration to see which options were not understood"))
+		writeAPIError(w, ErrBadRequest(convertNothingApplicable+
+			"Analyze the configuration to see which options were not understood"))
 		return
 	}
 
-	created := assignSetIDs(res.Sets)
-	if err := api.installConvertPayloads(created); err != nil {
+	oldCfg := api.getCfg()
+	newCfg := oldCfg.Clone()
+	created, moved, err := api.stageConvertedSets(newCfg, res.Sets)
+	if err != nil {
 		writeAPIError(w, err)
 		return
 	}
-	oldCfg := api.getCfg()
-	newCfg := oldCfg.Clone()
-
-	for _, set := range created {
-		config.ApplySetDefaults(set)
-		api.initializeSetDefaults(set)
-		api.loadTargetsForSetCached(set)
-	}
-	uniqueSetNames(created, newCfg.Sets)
-
-	domains := releasableDomains(created)
-	var moved []DomainReassignment
-	if len(domains) > 0 {
-		moved = api.releaseDomainsFromOtherSets(newCfg.Sets, "", domains)
-	}
-	newCfg.Sets = append(created, newCfg.Sets...)
 
 	if err := api.saveAndPushConfig(newCfg); err != nil {
 		log.Errorf("Failed to save config after converting %s command line: %v", res.Tool, err)
@@ -177,6 +162,28 @@ func (api *API) handleConvertApply(w http.ResponseWriter, r *http.Request) {
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(ConvertApplyResult{Result: res, MovedFrom: moved})
+}
+
+const convertNothingApplicable = "None of the options that do the bypass were recognized, so the sets would carry no strategy. "
+
+func (api *API) stageConvertedSets(cfg *config.Config, sets []config.SetConfig) ([]*config.SetConfig, []DomainReassignment, error) {
+	created := assignSetIDs(sets)
+	if err := api.installConvertPayloads(created); err != nil {
+		return nil, nil, err
+	}
+	for _, set := range created {
+		config.ApplySetDefaults(set)
+		api.initializeSetDefaults(set)
+		api.loadTargetsForSetCached(set)
+	}
+	uniqueSetNames(created, cfg.Sets)
+
+	var moved []DomainReassignment
+	if domains := releasableDomains(created); len(domains) > 0 {
+		moved = api.releaseDomainsFromOtherSets(cfg.Sets, "", domains)
+	}
+	cfg.Sets = append(created, cfg.Sets...)
+	return created, moved, nil
 }
 
 func (api *API) installConvertPayloads(sets []*config.SetConfig) error {
