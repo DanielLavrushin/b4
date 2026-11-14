@@ -23,3 +23,29 @@ func TestSeqOverlapTopicSaysOnlyTheConnectionsFirstPacketGetsIt(t *testing.T) {
 		}
 	}
 }
+
+func TestTopicsSayWhereDisorderCutsForItsOverlap(t *testing.T) {
+	overlap := TopicFacts("fragmentation.seq_overlap_length")
+	for _, says := range []string{
+		"with it off, at fragmentation.disorder.split_position when that is set",
+		"otherwise at byte 1, which never leaves room",
+		"on every packet it splits",
+	} {
+		if !strings.Contains(overlap, says) {
+			t.Errorf("the overlap length topic no longer says %q: %s", says, overlap)
+		}
+	}
+	position := TopicFacts("fragmentation.disorder.split_position")
+	for _, says := range []string{
+		"Default 0, which keeps disorder's own three cuts",
+		"Used only while SNI-based splitting (fragmentation.middle_sni) is off",
+		"the position has to be greater than the overlap length",
+	} {
+		if !strings.Contains(position, says) {
+			t.Errorf("the split position topic no longer says %q: %s", says, position)
+		}
+	}
+	if says := "has no effect under combo, disorder"; !strings.Contains(TopicFacts("fragmentation.sni_position"), says) {
+		t.Errorf("disorder has its own split position and never reads sni_position, the topic no longer says %q", says)
+	}
+}

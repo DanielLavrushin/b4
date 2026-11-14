@@ -286,6 +286,7 @@
         "shuffle": "Shuffle",
         "delay": "Delay",
         "jitter": "Jitter",
+        "splitPos": "Split pos",
         "sniPos": "SNI pos",
         "oobPos": "OOB pos",
         "oobChar": "OOB char",

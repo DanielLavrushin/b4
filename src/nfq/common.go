@@ -129,6 +129,17 @@ func GetSNISplitPoints(payload []byte, payloadLen int, middleSNI bool, sniPositi
 	return splits
 }
 
+func disorderSplitPoints(frag *config.FragmentationConfig, payload []byte, payloadLen int) []int {
+	position := 0
+	if !frag.MiddleSNI {
+		position = frag.Disorder.SplitPosition
+	}
+	if splits := GetSNISplitPoints(payload, payloadLen, frag.MiddleSNI, position); len(splits) > 0 {
+		return splits
+	}
+	return []int{1, payloadLen / 2, payloadLen * 3 / 4}
+}
+
 func (w *Worker) SendTwoSegmentsV4(seg1, seg2 []byte, dst net.IP, delay int, reverse bool) {
 	if reverse {
 		log.Tracef("Sending two segments in reverse order to %s", dst.String())

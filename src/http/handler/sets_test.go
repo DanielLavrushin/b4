@@ -403,6 +403,28 @@ func TestCreateSetPutsTheNewSetRightAfterTheSetNamedByAfter(t *testing.T) {
 	}
 }
 
+func TestASetSavedOverRESTKeepsTheDisorderSplitPositionInRange(t *testing.T) {
+	for _, c := range []struct{ sent, want int }{
+		{-1, 0},
+		{512, 512},
+		{1461, config.MaxDisorderSplitPosition},
+	} {
+		api, mux := asnAPI(t)
+		body := fmt.Sprintf(`{"name":"split","enabled":true,"targets":{"sni_domains":["split.example.org"]},"fragmentation":{"strategy":"disorder","disorder":{"split_position":%d}}}`, c.sent)
+		rec := serve(mux, http.MethodPost, "/api/sets", body)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("POST /api/sets with split_position %d = %d %s", c.sent, rec.Code, rec.Body.String())
+		}
+		sets := api.getCfg().Sets
+		if len(sets) != 1 {
+			t.Fatalf("the set was not stored: %d sets", len(sets))
+		}
+		if got := sets[0].Fragmentation.Disorder.SplitPosition; got != c.want {
+			t.Errorf("split_position %d sent over REST is stored as %d, want %d", c.sent, got, c.want)
+		}
+	}
+}
+
 func TestAWebDuplicatePlacedAfterAnIPPrioritySetLeavesTheSourceHolding(t *testing.T) {
 	ggc := config.NewSetConfig()
 	ggc.Id, ggc.Name, ggc.Enabled = "ggc", "YT-GGC-RU", true

@@ -274,6 +274,8 @@ const (
 	MaxWSSizeScale        = 14
 )
 
+const MaxDisorderSplitPosition = 1460
+
 type WSSizeConfig struct {
 	Cutoff  string `json:"cutoff"`
 	Enabled bool   `json:"enabled"`
@@ -836,6 +838,7 @@ type DisorderFragConfig struct {
 	FakePerSegment     bool   `json:"fake_per_segment"`
 	FakePerSegCount    int    `json:"fake_per_seg_count"`     // Number of fake packets per segment (default 1)
 	FakePerSegCountMax int    `json:"fake_per_seg_count_max"` // Max for randomization (0 = use fixed)
+	SplitPosition      int    `json:"split_position"`
 }
 
 // ResolveRange returns a random value between min and max (inclusive).

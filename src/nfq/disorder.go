@@ -17,12 +17,7 @@ func (w *Worker) sendDisorderFragments(cfg *config.SetConfig, packet []byte, dst
 		return
 	}
 
-	splits := GetSNISplitPoints(pi.Payload, pi.PayloadLen, cfg.Fragmentation.MiddleSNI, 0)
-	if len(splits) == 0 {
-		splits = []int{1, pi.PayloadLen / 2, pi.PayloadLen * 3 / 4}
-	}
-
-	validSplits := BuildValidSplits(splits, pi.PayloadLen)
+	validSplits := BuildValidSplits(disorderSplitPoints(&cfg.Fragmentation, pi.Payload, pi.PayloadLen), pi.PayloadLen)
 
 	seqovlPattern := cfg.Fragmentation.SeqOverlapBytes
 	seqovlLen := len(seqovlPattern)

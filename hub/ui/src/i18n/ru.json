@@ -286,6 +286,7 @@
         "shuffle": "Перемешивание",
         "delay": "Задержка",
         "jitter": "Джиттер",
+        "splitPos": "Позиция разделения",
         "sniPos": "Позиция SNI",
         "oobPos": "Позиция OOB",
         "oobChar": "Символ OOB",
