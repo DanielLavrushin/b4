@@ -1,0 +1,178 @@
+package convert
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestPlan_SaysWhyASetIsDisabled(t *testing.T) {
+	for _, c := range []struct {
+		name, line string
+		want       []string
+	}{
+		{"a profile with a strategy and no host list", "--filter-tcp=443 --dpi-desync=fake,multisplit", []string{DisabledNeedsTargets}},
+		{"a profile with its own domains", "--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake", []string{""}},
+		{"a host list in a file", "--filter-tcp=443 --hostlist=/opt/zapret/hosts.txt --dpi-desync=fake", []string{DisabledNeedsTargets}},
+		{"a call profile without UDP ports", "--filter-l7=discord,stun --dpi-desync=fake --dpi-desync-repeats=6", []string{DisabledNeedsPorts}},
+		{"a call profile with UDP ports", "--filter-udp=50000-50100 --filter-l7=discord,stun --dpi-desync=fake", []string{""}},
+		{"a profile without a strategy", "--filter-tcp=443 --hostcase", []string{DisabledNoStrategy}},
+		{"a profile without a strategy that has a domain", "--filter-tcp=443 --hostlist-domains=example.com --hostcase", []string{DisabledNoStrategy}},
+		{"a skipped profile", "--filter-tcp=443 --dpi-desync=fake,multisplit --skip", []string{DisabledSkipped}},
+		{"a skipped profile that has a domain", "--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake --skip", []string{DisabledSkipped}},
+		{"a set shadowed by an earlier one",
+			"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake --new --filter-tcp=80 --hostlist-domains=example.com --dpi-desync=multisplit",
+			[]string{"", DisabledShadowed}},
+	} {
+		res, err := Analyze(c.line, Options{Tool: "zapret"})
+		if err != nil {
+			t.Errorf("%s: Analyze(%q): %v", c.name, c.line, err)
+			continue
+		}
+		if len(res.Plan) != len(c.want) {
+			t.Errorf("%s: %d sets, want %d", c.name, len(res.Plan), len(c.want))
+			continue
+		}
+		for i, plan := range res.Plan {
+			if plan.DisabledFor != c.want[i] {
+				t.Errorf("%s: set %d DisabledFor = %q, want %q (enabled=%v accepts_targets=%v domains=%v)",
+					c.name, i+1, plan.DisabledFor, c.want[i], plan.Enabled, plan.AcceptsTargets, plan.Domains)
+			}
+			if (plan.DisabledFor == "") != plan.Enabled {
+				t.Errorf("%s: set %d enabled=%v with DisabledFor %q: every disabled set, and no enabled one, has a reason", c.name, i+1, plan.Enabled, plan.DisabledFor)
+			}
+			if text := res.DisabledEnglish(i); (text == "") != plan.Enabled || strings.Contains(text, "{{") {
+				t.Errorf("%s: set %d enabled=%v has the reason text %q", c.name, i+1, plan.Enabled, text)
+			}
+		}
+	}
+}
+
+func TestPlan_GivenDomainsEnableASetThatNeededTargets(t *testing.T) {
+	const line = "--filter-tcp=443 --dpi-desync=fake,multisplit"
+	bare, err := Analyze(line, Options{Tool: "zapret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bare.Plan[0].DisabledFor != DisabledNeedsTargets || bare.Plan[0].Enabled {
+		t.Fatalf("precondition: without domains the set is disabled for lack of targets: %+v", bare.Plan[0])
+	}
+	given, err := Analyze(line, Options{Tool: "zapret", Domains: []string{"example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !given.Plan[0].Enabled || given.Plan[0].DisabledFor != "" {
+		t.Errorf("a set that lacked only targets must come out enabled once it has a domain: %+v", given.Plan[0])
+	}
+}
+
+func TestPlan_DisabledReasonStaysOutOfTheJSON(t *testing.T) {
+	res, err := Analyze("--filter-tcp=443 --dpi-desync=fake,multisplit", Options{Tool: "zapret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(res.Plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lower := strings.ToLower(string(raw)); strings.Contains(lower, "needs") || strings.Contains(lower, "disabled") {
+		t.Errorf("the plan in the REST answer must not gain a field: %s", raw)
+	}
+}
+
+func TestPlan_EveryDisabledSetOfTheSamplesHasAReason(t *testing.T) {
+	samples, err := filepath.Glob("testdata/*")
+	if err != nil || len(samples) == 0 {
+		t.Fatalf("no samples: %v", err)
+	}
+	disabled := 0
+	for _, path := range samples {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		res, err := Analyze(string(raw), Options{})
+		if err != nil {
+			continue
+		}
+		for i, plan := range res.Plan {
+			text := res.DisabledEnglish(i)
+			if plan.Enabled != (plan.DisabledFor == "") || plan.Enabled != (text == "") {
+				t.Errorf("%s: set %d enabled=%v, DisabledFor %q, text %q", path, i+1, plan.Enabled, plan.DisabledFor, text)
+			}
+			if !plan.Enabled {
+				disabled++
+			}
+		}
+	}
+	if disabled == 0 {
+		t.Fatal("the samples hold no disabled set, so this test checks nothing")
+	}
+}
+
+func TestResult_RenameSetsReachesEveryPlaceThatNamesASet(t *testing.T) {
+	const line = "--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake --new --filter-tcp=80 --hostlist-domains=example.com --dpi-desync=multisplit"
+	res, err := Analyze(line, Options{Tool: "zapret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := res.DisabledEnglish(1)
+	if !strings.Contains(before, "zapret #1 already claims example.com") {
+		t.Fatalf("precondition: the second set is shadowed by the first: %q", before)
+	}
+
+	res.RenameSets([]string{"only one"})
+	if res.Sets[0].Name != "zapret #1" || res.DisabledEnglish(1) != before {
+		t.Fatalf("a list of another length must change nothing: %q, %q", res.Sets[0].Name, res.DisabledEnglish(1))
+	}
+
+	res.RenameSets([]string{"first", "second"})
+	if res.Sets[0].Name != "first" || res.Sets[1].Name != "second" || res.Plan[0].Name != "first" || res.Plan[1].Name != "second" {
+		t.Errorf("sets and plan after the rename: %q %q, %q %q", res.Sets[0].Name, res.Sets[1].Name, res.Plan[0].Name, res.Plan[1].Name)
+	}
+	if got := res.DisabledEnglish(1); !strings.Contains(got, "first already claims example.com") {
+		t.Errorf("the reason must name the shadowing set by its new name: %q", got)
+	}
+	for _, n := range res.Notes {
+		if text := n.English(); strings.Contains(text, "zapret #") || (n.Synthetic && strings.Contains(n.Token, "zapret #")) {
+			t.Errorf("a note still carries an old set name: token %q, text %q", n.Token, text)
+		}
+	}
+}
+
+func TestResult_RenameSetsReachesTheEscalationLinkOfAFallback(t *testing.T) {
+	res, err := Analyze("-H:example.com -s1+s -As -d0+sm", Options{Tool: "byedpi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := func() string {
+		for _, n := range res.Notes {
+			for _, f := range n.Fields {
+				if strings.Contains(f, "escalate.to=") {
+					return f
+				}
+			}
+		}
+		return ""
+	}
+	if got := link(); got != "sets[0].escalate.to=byedpi #2" {
+		t.Fatalf("precondition: the fallback's note names the set the first one escalates to, got %q", got)
+	}
+
+	res.RenameSets([]string{"first", "second"})
+	if got := link(); got != "sets[0].escalate.to=second" {
+		t.Errorf("the escalation link must name the fallback by its new name, got %q", got)
+	}
+	for _, n := range res.Notes {
+		for _, f := range n.Fields {
+			if strings.Contains(f, "byedpi #") {
+				t.Errorf("a settings entry still carries an old set name: %q", f)
+			}
+		}
+		if strings.Contains(n.English(), "byedpi #") || (n.Synthetic && strings.Contains(n.Token, "byedpi #")) {
+			t.Errorf("a note still carries an old set name: token %q, text %q", n.Token, n.English())
+		}
+	}
+}

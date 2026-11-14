@@ -68,6 +68,8 @@ var mcpAPIPreferredTools = map[string]mcpAPIHint{
 	"DELETE /api/watchdog/domains/{domain}": {tool: "b4_watchdog"},
 	"PUT /api/watchdog/sets/{id}":           {tool: "b4_watchdog"},
 	"POST /api/watchdog/sets/{id}/check":    {tool: "b4_watchdog"},
+	"POST /api/convert/analyze":             {tool: mcpImportTool, scope: "without apply"},
+	"POST /api/convert/apply":               {tool: mcpImportTool, scope: "apply='true'"},
 }
 
 type mcpAPIIn struct {
@@ -193,7 +195,7 @@ func mcpAPIIndex(ops []apispec.Operation) map[string][]string {
 
 func mcpAPIToolNeeds(tool string) string {
 	switch tool {
-	case "b4_set_config_value", "b4_manage_set", "b4_edit_set_targets":
+	case "b4_set_config_value", "b4_manage_set", "b4_edit_set_targets", mcpImportTool:
 		return mcpAPIWritesSwitch
 	case "b4_find_bypass_strategy":
 		return mcpAPIProbesSwitch

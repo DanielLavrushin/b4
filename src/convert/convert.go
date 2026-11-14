@@ -2,6 +2,7 @@ package convert
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -68,7 +69,18 @@ type SetPlan struct {
 	Strategy       string   `json:"strategy"`
 	Faking         bool     `json:"faking"`
 	Enabled        bool     `json:"enabled"`
+	DisabledFor    string   `json:"-"`
 }
+
+const (
+	DisabledSkipped       = "skipped"
+	DisabledShadowed      = "shadowed"
+	DisabledNotUnderstood = "not_understood"
+	DisabledNoStrategy    = "no_strategy"
+	DisabledNeedsPorts    = "needs_ports"
+	DisabledNeedsTargets  = "needs_targets"
+	DisabledUnreached     = "unreached"
+)
 
 type Result struct {
 	Tool            string             `json:"tool"`
@@ -85,6 +97,44 @@ type Result struct {
 	Fidelity        Fidelity           `json:"fidelity"`
 	Plan            []SetPlan          `json:"plan"`
 	Applicable      bool               `json:"applicable"`
+}
+
+func (r *Result) RenameSets(names []string) {
+	if len(names) != len(r.Sets) {
+		return
+	}
+	renamed := make(map[string]string, len(names))
+	for i, name := range names {
+		renamed[r.Sets[i].Name] = name
+		r.Sets[i].Name = name
+		if i < len(r.Plan) {
+			r.Plan[i].Name = name
+		}
+	}
+	for i := range r.Notes {
+		n := &r.Notes[i]
+		if name, ok := renamed[n.Token]; ok && n.Synthetic {
+			n.Token = name
+		}
+		for j, field := range n.Fields {
+			key, value, found := strings.Cut(field, "=")
+			name, ok := renamed[value]
+			if !found || !ok || !strings.HasSuffix(key, "escalate.to") {
+				continue
+			}
+			n.Fields = slices.Clone(n.Fields)
+			n.Fields[j] = key + "=" + name
+		}
+		other, ok := n.Params["other"].(string)
+		if !ok {
+			continue
+		}
+		if name, ok := renamed[other]; ok {
+			params := maps.Clone(n.Params)
+			params["other"] = name
+			n.Params = params
+		}
+	}
 }
 
 func anyProfileCarriesStrategy(prog *Program) bool {
@@ -199,13 +249,49 @@ func Analyze(input string, opts Options) (*Result, error) {
 	flagUnrecognisedProfiles(prog, sets, notes)
 	res.Notes = notes.list()
 	res.Applicable = anyProfileCarriesStrategy(prog)
-	res.Plan = buildPlan(prog, sets)
-	res.Warnings = buildWarnings(spec, argv, prog, sets, inferred, srcRep, sharedUnused)
+	res.Plan = buildPlan(prog, sets, res.Notes)
+	res.Warnings = buildWarnings(spec, argv, prog, sets, res.Notes, inferred, srcRep, sharedUnused)
 	res.Fidelity = score(res.Notes)
 	return res, nil
 }
 
-func buildPlan(prog *Program, sets []config.SetConfig) []SetPlan {
+func profilesNoted(notes []Note, reason string) map[int]bool {
+	out := map[int]bool{}
+	for _, n := range notes {
+		if n.Reason == reason {
+			out[n.Profile] = true
+		}
+	}
+	return out
+}
+
+func disabledFor(prof *Profile, s *config.SetConfig, acceptsTargets, shadowed, notUnderstood bool) string {
+	carries := prof.carriesStrategy()
+	if s.SelectsL7() {
+		carries = prof.UDP.Present
+	}
+	switch {
+	case s.Enabled:
+		return ""
+	case shadowed:
+		return DisabledShadowed
+	case prof.Skip:
+		return DisabledSkipped
+	case notUnderstood:
+		return DisabledNotUnderstood
+	case !carries:
+		return DisabledNoStrategy
+	case prof.scopedByL7():
+		return DisabledNeedsPorts
+	case acceptsTargets:
+		return DisabledNeedsTargets
+	}
+	return DisabledUnreached
+}
+
+func buildPlan(prog *Program, sets []config.SetConfig, notes []Note) []SetPlan {
+	shadowed := profilesNoted(notes, "shadowedByEarlierSet")
+	notUnderstood := profilesNoted(notes, "profileNotUnderstood")
 	fallbackFor := make(map[string]int, len(sets))
 	for i, s := range sets {
 		if s.Escalate.To != "" {
@@ -223,18 +309,21 @@ func buildPlan(prog *Program, sets []config.SetConfig) []SetPlan {
 				from = idx
 			}
 		}
+		prof := prog.Profiles[i]
+		acceptsTargets := entry && !prof.scopedByL7()
 		plan = append(plan, SetPlan{
 			Profile:        i,
 			Name:           s.Name,
 			Role:           role,
 			FallbackFor:    from,
-			AcceptsTargets: entry && !prog.Profiles[i].scopedByL7(),
+			AcceptsTargets: acceptsTargets,
 			Domains:        append([]string{}, s.Targets.SNIDomains...),
 			IPs:            append([]string{}, s.Targets.IPs...),
 			FilterL7:       append([]string{}, s.UDP.FilterL7...),
 			Strategy:       s.Fragmentation.Strategy,
 			Faking:         s.Faking.SNI,
 			Enabled:        s.Enabled,
+			DisabledFor:    disabledFor(prof, &s, acceptsTargets, shadowed[i], notUnderstood[i]),
 		})
 	}
 	return plan
@@ -258,7 +347,7 @@ func collectUnresolved(prog *Program) []Unresolved {
 
 const minToolConfidence = 0.35
 
-func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetConfig, inferred bool, src sourceReport, sharedUnused bool) []Warning {
+func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetConfig, notes []Note, inferred bool, src sourceReport, sharedUnused bool) []Warning {
 	out := []Warning{}
 	if inferred {
 		if amb := ambiguousFlags(spec, argv); len(amb) > 0 {
@@ -289,13 +378,13 @@ func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetCo
 			"count": n, "vars": strings.Join(names, ", "),
 		}})
 	}
-	enabled := 0
+	targeted := 0
 	for _, s := range sets {
-		if s.Enabled && (len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0 || s.SelectsL7()) {
-			enabled++
+		if len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0 || s.SelectsL7() {
+			targeted++
 		}
 	}
-	if enabled == 0 && slices.ContainsFunc(prog.Profiles, func(p *Profile) bool { return !p.scopedByL7() }) {
+	if targeted == 0 && slices.ContainsFunc(prog.Profiles, func(p *Profile) bool { return !p.scopedByL7() }) {
 		out = append(out, Warning{Code: "needsTargets", Params: map[string]any{
 			"sets": len(sets), "tool": spec.Label,
 		}})
@@ -310,12 +399,12 @@ func buildWarnings(spec *Spec, argv []string, prog *Program, sets []config.SetCo
 	if !anyProfileCarriesStrategy(prog) {
 		out = append(out, Warning{Code: "nothingRecognized", Params: map[string]any{"tool": spec.Label}})
 	}
-	if shadowed := countShadowed(sets); shadowed > 0 {
+	if shadowed := len(profilesNoted(notes, "shadowedByEarlierSet")); shadowed > 0 {
 		out = append(out, Warning{Code: "shadowedSets", Params: map[string]any{
 			"count": shadowed, "tool": spec.Label,
 		}})
 	}
-	if catchAll := countCatchAll(prog, sets); catchAll > 0 && enabled > 0 {
+	if catchAll := countCatchAll(prog, sets); catchAll > 0 && targeted > 0 {
 		out = append(out, Warning{Code: "catchAllProfile", Params: map[string]any{
 			"count": catchAll, "tool": spec.Label,
 		}})
@@ -379,16 +468,6 @@ func sortedKeys(m map[string]int) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func countShadowed(sets []config.SetConfig) int {
-	n := 0
-	for _, s := range sets {
-		if !s.Enabled && len(s.Targets.SNIDomains) > 0 {
-			n++
-		}
-	}
-	return n
 }
 
 var unscoredReasons = map[string]bool{

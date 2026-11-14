@@ -416,6 +416,7 @@ func (api *API) newMCPServer(caps mcpCapabilities) *mcp.Server {
 		api.addMCPWriteTools(srv)
 		api.addMCPTargetTools(srv)
 		api.addMCPSetTools(srv)
+		api.addMCPImportTools(srv)
 	}
 	if caps.Probes {
 		api.addMCPProbeTools(srv)
@@ -1134,12 +1135,14 @@ const mcpProbesOffInstruction = "'Allow active probes' is switched off in b4, so
 	"If the user asks for either, say b4 supports it and that the user can allow it by turning on 'Allow active probes' " + mcpSwitchWhere +
 	" - do not conclude the feature does not exist."
 
-const mcpWritesOffInstruction = "If the user wants you to make changes yourself, that switch is " + mcpSwitchWhere + "."
+const mcpWritesOffInstruction = "If the user wants you to make changes yourself, that switch is " + mcpSwitchWhere + ". " +
+	"It also adds " + mcpImportTool + ", which converts a zapret or byedpi command line or config file into sets; " +
+	"while it is off the user can convert one in b4's web interface (Sets -> Import), so do not translate such options into settings yourself."
 
 func mcpCapabilityNote(writes, probes bool) string {
 	var off []string
 	if !writes {
-		off = append(off, "changing any setting ('Allow configuration changes')")
+		off = append(off, "changing any setting, and converting a zapret or byedpi command line into sets ('Allow configuration changes')")
 	}
 	if !probes {
 		off = append(off, "testing whether a domain loads, and running a discovery search for a working bypass strategy ('Allow active probes')")

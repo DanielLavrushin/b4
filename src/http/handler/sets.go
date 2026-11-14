@@ -87,13 +87,49 @@ type DomainReassignment struct {
 	SetId   string `json:"set_id"`
 }
 
-func (api *API) releaseDomainsFromOtherSets(sets []*config.SetConfig, keepSetId string, domains []string) []DomainReassignment {
+func canonicalDomainSet(domains []string) map[string]bool {
 	claimed := make(map[string]bool, len(domains))
 	for _, domain := range domains {
 		if canonical := sni.CanonicalDomainEntry(domain); canonical != "" {
 			claimed[canonical] = true
 		}
 	}
+	return claimed
+}
+
+func splitClaimedDomains(set *config.SetConfig, claimed map[string]bool) (kept, removed []string) {
+	kept = make([]string, 0, len(set.Targets.SNIDomains))
+	for _, entry := range set.Targets.SNIDomains {
+		canonical := sni.CanonicalDomainEntry(entry)
+		if canonical != "" && claimed[canonical] {
+			removed = append(removed, canonical)
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	return kept, removed
+}
+
+func domainsHeldByEnabledSets(sets []*config.SetConfig, domains []string) []DomainReassignment {
+	claimed := canonicalDomainSet(domains)
+	if len(claimed) == 0 {
+		return nil
+	}
+	var held []DomainReassignment
+	for _, set := range sets {
+		if set == nil || !set.Enabled {
+			continue
+		}
+		_, removed := splitClaimedDomains(set, claimed)
+		for _, domain := range removed {
+			held = append(held, DomainReassignment{Domain: domain, SetName: set.Name, SetId: set.Id})
+		}
+	}
+	return held
+}
+
+func (api *API) releaseDomainsFromOtherSets(sets []*config.SetConfig, keepSetId string, domains []string) []DomainReassignment {
+	claimed := canonicalDomainSet(domains)
 	if len(claimed) == 0 {
 		return nil
 	}
@@ -104,16 +140,7 @@ func (api *API) releaseDomainsFromOtherSets(sets []*config.SetConfig, keepSetId 
 			continue
 		}
 
-		kept := make([]string, 0, len(set.Targets.SNIDomains))
-		var removed []string
-		for _, entry := range set.Targets.SNIDomains {
-			canonical := sni.CanonicalDomainEntry(entry)
-			if canonical != "" && claimed[canonical] {
-				removed = append(removed, canonical)
-				continue
-			}
-			kept = append(kept, entry)
-		}
+		kept, removed := splitClaimedDomains(set, claimed)
 		if len(removed) == 0 {
 			continue
 		}
