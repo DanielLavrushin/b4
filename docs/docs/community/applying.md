@@ -45,7 +45,7 @@ A set that has other targets keeps handling them. A set whose every target is al
 
 **Close** keeps the sets as they are. **Undo** deletes the applied set and enables the sets disabled in this window again.
 
-A set limited to [source devices](../sets/targets.md#source-devices) keeps the traffic of its devices and is not listed.
+A set limited to [source devices](../sets/targets.md#source-devices) keeps the traffic of its devices and is not listed. A set that another enabled set uses as its [escalation](../sets/escalation.md) backup still handles that set's sites, and the window offers no action for it.
 
 ## Applied and edited {#applied-and-edited}
 

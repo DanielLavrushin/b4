@@ -143,6 +143,16 @@ type CoveredSet struct {
 	Idle    bool     `json:"idle"`
 }
 
+func escalationBackups(sets []*config.SetConfig) map[string]bool {
+	backups := make(map[string]bool)
+	for _, set := range sets {
+		if set != nil && set.Enabled && set.Escalate.Active() && set.Escalate.To != set.Id {
+			backups[set.Escalate.To] = true
+		}
+	}
+	return backups
+}
+
 type formerOwner struct {
 	coverage *sni.Coverage
 	place    int
@@ -170,6 +180,7 @@ func setsCoveredBy(before, after []*config.SetConfig, ownerId string, formerIds 
 	}
 	owner := after[index]
 	now, alone := sni.CoverageOf(owner), sni.CoverageOf(nil)
+	backups, formerBackups := escalationBackups(after), escalationBackups(before)
 	for _, set := range after[index+1:] {
 		if set == nil {
 			continue
@@ -181,7 +192,10 @@ func setsCoveredBy(before, after []*config.SetConfig, ownerId string, formerIds 
 				was = was.Join(former.coverage.Of(earlier))
 			}
 		}
-		cover := now.Of(set).Since(was)
+		taken := now.Of(set)
+		was.Idle = was.Idle && !formerBackups[set.Id]
+		taken.Idle = taken.Idle && !backups[set.Id]
+		cover := taken.Since(was)
 		if cover.Empty() {
 			continue
 		}

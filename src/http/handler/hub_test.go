@@ -762,6 +762,41 @@ func TestHubApplyReplaceRemovesTheEarlierCopyInTheSameSave(t *testing.T) {
 	}
 }
 
+func TestHubApplyDoesNotCallAnEscalationBackupIdle(t *testing.T) {
+	apply := func(t *testing.T, primaryEnabled bool) HubApplyResponse {
+		env := newHubEnv(t)
+		shared := hubStrategySet("Video", "youtube.com")
+		cs, _ := hubtest.CatalogueSet(t, "set-video", 1, &shared, nil)
+		env.publish(t, cs)
+
+		primary := hubStrategySet("Primary", "example.org")
+		primary.Id = "local-primary"
+		primary.Enabled = primaryEnabled
+		primary.Escalate.To = "local-backup"
+		backup := hubStrategySet("Backup", "youtube.com")
+		backup.Id = "local-backup"
+		env.update(func(cfg *config.Config) {
+			cfg.Sets = []*config.SetConfig{&primary, &backup}
+			for _, set := range cfg.Sets {
+				env.api.loadTargetsForSetCached(set)
+			}
+		})
+		resp := hubApplyOK(t, env, "set-video", map[string]interface{}{})
+		if len(resp.Moved) != 1 || resp.Moved[0].SetId != "local-backup" {
+			t.Fatalf("youtube.com must move out of the backup: %+v", resp.Moved)
+		}
+		return resp
+	}
+
+	if linked := apply(t, true); len(linked.Covered) != 0 {
+		t.Errorf("an enabled set escalates to the backup, so it still handles connections and must not be offered for Disable: %+v", linked.Covered)
+	}
+	unlinked := apply(t, false)
+	if len(unlinked.Covered) != 1 || unlinked.Covered[0].SetId != "local-backup" || !unlinked.Covered[0].Idle {
+		t.Errorf("with the escalating set disabled nothing reaches the backup, so it is idle: %+v", unlinked.Covered)
+	}
+}
+
 func TestHubApplyReplaceComparesWithTheCopyOnlyBelowIt(t *testing.T) {
 	apply := func(t *testing.T, copyOnTop bool) HubApplyResponse {
 		env := newHubEnv(t)
