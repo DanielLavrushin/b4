@@ -134,6 +134,55 @@ func (api *API) releaseDomainsFromOtherSets(sets []*config.SetConfig, keepSetId 
 	return moved
 }
 
+type CoveredSet struct {
+	SetId   string   `json:"set_id"`
+	SetName string   `json:"set_name"`
+	GeoSite []string `json:"geosite"`
+	GeoIP   []string `json:"geoip"`
+	ASNs    []string `json:"asns"`
+	Idle    bool     `json:"idle"`
+}
+
+func setsCoveredBy(before, after []*config.SetConfig, ownerId string) []CoveredSet {
+	covered := []CoveredSet{}
+	index := slices.IndexFunc(after, func(set *config.SetConfig) bool { return set != nil && set.Id == ownerId })
+	if index < 0 {
+		return covered
+	}
+	previous := make(map[string]*config.SetConfig, len(before))
+	for _, set := range before {
+		if set != nil {
+			previous[set.Id] = set
+		}
+	}
+	owner := after[index]
+	now, was := sni.CoverageOf(owner), sni.CoverageOf(previous[ownerId])
+	for _, set := range after[index+1:] {
+		if set == nil {
+			continue
+		}
+		cover := now.Of(set).Since(was.Of(previous[set.Id]))
+		if cover.Empty() {
+			continue
+		}
+		covered = append(covered, CoveredSet{
+			SetId:   set.Id,
+			SetName: set.Name,
+			GeoSite: append([]string{}, cover.GeoSite...),
+			GeoIP:   append([]string{}, cover.GeoIP...),
+			ASNs:    append([]string{}, cover.ASNs...),
+			Idle:    cover.Idle,
+		})
+		if len(cover.GeoSite)+len(cover.GeoIP)+len(cover.ASNs) > 0 {
+			log.Infof("Set '%s': set '%s' is earlier in the list and now matches its geosite %v, geoip %v, ASNs %v", set.Name, owner.Name, cover.GeoSite, cover.GeoIP, cover.ASNs)
+		}
+		if cover.Idle {
+			log.Warnf("Set '%s' no longer matches any connection: set '%s' is earlier in the list and lists every target it has", set.Name, owner.Name)
+		}
+	}
+	return covered
+}
+
 const (
 	maxCheckDomains      = 32
 	maxCheckDomainLength = 253

@@ -94,6 +94,13 @@ export function useHubUndoApply() {
   });
 }
 
+export function useLocalSetsEnabled() {
+  return useMutation({
+    mutationFn: ({ ids, enabled }: { ids: string[]; enabled: boolean }) =>
+      setsApi.setEnabledForSets(ids, enabled),
+  });
+}
+
 export function useHubVote() {
   const client = useQueryClient();
   return useMutation({

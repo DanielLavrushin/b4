@@ -60,6 +60,7 @@ type HubApplyResponse struct {
 	ID       string                `json:"id"`
 	Name     string                `json:"name"`
 	Moved    []DomainReassignment  `json:"moved"`
+	Covered  []CoveredSet          `json:"covered"`
 	Warnings []hubwire.Warning     `json:"warnings"`
 	Payloads []HubInstalledPayload `json:"payloads"`
 }

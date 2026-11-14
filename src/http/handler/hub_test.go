@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -530,6 +531,148 @@ func TestHubApplyCreatesSetWithPayloadAndStamp(t *testing.T) {
 	}
 	expectCode(t, getJSON(t, env.mux, "/api/hub/sets/missing"), http.StatusNotFound, "not_found")
 	expectCode(t, postJSON(t, env.mux, "/api/hub/sets/missing/apply", map[string]interface{}{}), http.StatusNotFound, "not_found")
+}
+
+func hubCoveredByID(covered []CoveredSet) map[string]CoveredSet {
+	byID := make(map[string]CoveredSet, len(covered))
+	for _, c := range covered {
+		byID[c.SetId] = c
+	}
+	return byID
+}
+
+func hubApplyOK(t *testing.T, env *hubEnv, id string, body map[string]interface{}) HubApplyResponse {
+	t.Helper()
+	rec := postJSON(t, env.mux, "/api/hub/sets/"+id+"/apply", body)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var resp HubApplyResponse
+	decodeInto(t, rec, &resp)
+	return resp
+}
+
+func TestHubApplyReportsTheSetsWhoseCategoriesItTakes(t *testing.T) {
+	env := newHubEnv(t)
+	geosite, geoip := writeTestGeoSite(t), writeTestGeoIP(t)
+	env.api.geodataManager = geodat.NewGeodataManager(geosite, geoip)
+
+	shared := hubStrategySet("video")
+	shared.Targets.GeoSiteCategories = []string{"youtube", "netflix"}
+	shared.Targets.GeoIpCategories = []string{"cloudflare"}
+	cs, _ := hubtest.CatalogueSet(t, "vid-1", 1, &shared, nil)
+	wider := hubStrategySet("video")
+	wider.Targets.GeoSiteCategories = []string{"youtube", "netflix", "google"}
+	wider.Targets.GeoIpCategories = []string{"cloudflare"}
+	next, _ := hubtest.CatalogueSet(t, "vid-1", 2, &wider, nil)
+	env.publish(t, cs)
+
+	same := hubStrategySet("video")
+	same.Id = "local-same"
+	same.Targets.GeoSiteCategories = []string{"YouTube", "netflix"}
+	same.Targets.GeoIpCategories = []string{"cloudflare"}
+	mixed := hubStrategySet("mixed", "example.org")
+	mixed.Id = "local-mixed"
+	mixed.Targets.GeoSiteCategories = []string{"netflix", "google"}
+	scoped := hubStrategySet("tablet")
+	scoped.Id = "local-scoped"
+	scoped.Targets.GeoSiteCategories = []string{"youtube"}
+	scoped.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+	off := hubStrategySet("off")
+	off.Id = "local-off"
+	off.Enabled = false
+	off.Targets.GeoSiteCategories = []string{"youtube"}
+	apart := hubStrategySet("apart", "example.net")
+	apart.Id = "local-apart"
+	env.update(func(cfg *config.Config) {
+		cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath = geosite, geoip
+		cfg.Sets = []*config.SetConfig{&same, &mixed, &scoped, &off, &apart}
+		for _, set := range cfg.Sets {
+			env.api.loadTargetsForSetCached(set)
+		}
+	})
+
+	resp := hubApplyOK(t, env, "vid-1", map[string]interface{}{})
+	if len(resp.Moved) != 0 {
+		t.Errorf("no domain is listed twice, so nothing moves: %+v", resp.Moved)
+	}
+	covered := hubCoveredByID(resp.Covered)
+	if len(resp.Covered) != 2 {
+		t.Fatalf("exactly the two sets that lose categories must be reported: %+v", resp.Covered)
+	}
+	if got := covered["local-same"]; got.SetName != "video" || !slices.Equal(got.GeoSite, []string{"YouTube", "netflix"}) || !slices.Equal(got.GeoIP, []string{"cloudflare"}) || len(got.ASNs) != 0 || !got.Idle {
+		t.Errorf("the set with the same categories lost all of them and matches nothing: %+v", got)
+	}
+	if got := covered["local-mixed"]; !slices.Equal(got.GeoSite, []string{"netflix"}) || len(got.GeoIP) != 0 || got.Idle {
+		t.Errorf("the set that keeps a category and a domain of its own lost only netflix: %+v", got)
+	}
+	if raw, _ := json.Marshal(covered["local-mixed"]); !strings.Contains(string(raw), `"geoip":[],"asns":[]`) {
+		t.Errorf("empty lists must be arrays in the reply, not null: %s", raw)
+	}
+
+	cfg := env.api.getCfg()
+	if cfg.Sets[0].Id != resp.ID || cfg.Sets[1].Id != "local-same" || !cfg.Sets[1].Enabled {
+		t.Fatalf("the applied set goes in front and the local sets stay as they were: %+v", cfg.Sets)
+	}
+	matcher := sni.NewSuffixSet(cfg.Sets)
+	if _, owner := matcher.MatchSNIWithSource("www.youtube.com", ""); owner == nil || owner.Id != resp.ID {
+		t.Errorf("the category must match the applied set, which is what the reply claims: %v", owner)
+	}
+	if _, owner := matcher.MatchSNIWithSource("www.youtube.com", "aa:bb:cc:dd:ee:ff"); owner == nil || owner.Id != "local-scoped" {
+		t.Errorf("a set bound to a device keeps its traffic, so it must not be reported: %v", owner)
+	}
+
+	if again := hubApplyOK(t, env, "vid-1", map[string]interface{}{"replace": resp.ID}); len(again.Covered) != 0 {
+		t.Errorf("replacing a set with the same targets takes nothing new: %+v", again.Covered)
+	}
+
+	env.hub.Publish(t, &hubwire.Catalogue{Epoch: 1, Seq: 2, Sets: []hubwire.CatalogueSet{next}}, time.Now().Add(time.Hour))
+	if _, err := env.svc.Sync(context.Background()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	updated := hubApplyOK(t, env, "vid-1", map[string]interface{}{"replace": resp.ID})
+	if len(updated.Covered) != 1 || updated.Covered[0].SetId != "local-mixed" || !slices.Equal(updated.Covered[0].GeoSite, []string{"google"}) || updated.Covered[0].Idle {
+		t.Errorf("the new version adds google, so only that category is news: %+v", updated.Covered)
+	}
+}
+
+func TestHubApplyReportsASetLeftWithoutTargets(t *testing.T) {
+	env := newHubEnv(t)
+	shared := hubStrategySet("Shared video", "youtube.com", "googlevideo.com")
+	cs, _ := hubtest.CatalogueSet(t, "yt-2", 1, &shared, nil)
+	env.publish(t, cs)
+
+	emptied := hubStrategySet("Only video", "youtube.com")
+	emptied.Id = "local-emptied"
+	kept := hubStrategySet("Video and more", "googlevideo.com", "example.org")
+	kept.Id = "local-kept"
+	blank := hubStrategySet("Blank")
+	blank.Id = "local-blank"
+	below := hubStrategySet("Below", "youtube.com")
+	below.Id = "local-below"
+	env.update(func(cfg *config.Config) {
+		cfg.Sets = []*config.SetConfig{&emptied, &kept, &blank}
+		for _, set := range cfg.Sets {
+			env.api.loadTargetsForSetCached(set)
+		}
+	})
+
+	resp := hubApplyOK(t, env, "yt-2", map[string]interface{}{})
+	if len(resp.Moved) != 2 {
+		t.Fatalf("both listed domains must move: %+v", resp.Moved)
+	}
+	if len(resp.Covered) != 1 || resp.Covered[0].SetId != "local-emptied" || !resp.Covered[0].Idle || len(resp.Covered[0].GeoSite) != 0 {
+		t.Errorf("only the set that lost its last domain is left matching nothing: %+v", resp.Covered)
+	}
+
+	env.update(func(cfg *config.Config) {
+		env.api.loadTargetsForSetCached(&below)
+		cfg.Sets = append([]*config.SetConfig{&below}, cfg.Sets...)
+	})
+	above := hubApplyOK(t, env, "yt-2", map[string]interface{}{"replace": resp.ID})
+	if len(above.Covered) != 0 {
+		t.Errorf("a set above the replaced one is not covered by it: %+v", above.Covered)
+	}
 }
 
 func hubDSCPOffWarning(ws []hubwire.Warning) (hubwire.Warning, bool) {

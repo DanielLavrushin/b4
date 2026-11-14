@@ -16,6 +16,7 @@ All notable changes to b4 are recorded in this file.
 - When the login session ends while a page is open, for example after b4 restarts, a sign-in window appears over the page and unsaved changes stay in place. [#569](https://github.com/DanielLavrushin/b4/issues/569)
 - The device tables under **Settings, Core, Devices** and on a set's **Source Devices** tab show a device's host name ahead of its vendor, and the **Traffic** page shows the address next to a named device. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
 - Fake data written out in an imported zapret or byedpi command line is saved on the **Payloads** tab, and the set uses it as **My own Payload File** or, for UDP, as its **Fake Packet Payload**. [#538](https://github.com/DanielLavrushin/b4/issues/538)
+- Applying a set on the **Community** page lists the enabled sets below it whose geosite, geoip or ASN targets it takes over, and offers **Disable** or **Replace** for a set left handling nothing. [#564](https://github.com/DanielLavrushin/b4/issues/564)
 
 ### Fixed
 

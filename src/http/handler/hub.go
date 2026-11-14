@@ -380,7 +380,7 @@ func (api *API) handleHubSetByID(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Apply a hub set
-// @Description Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others; with a replace id the new set takes that local set's id, position and enabled flag instead.
+// @Description Fetches the set's payloads from the hub, opens the envelope and creates a local set from it in front of the others; with a replace id the new set takes that local set's id, position and enabled flag instead. The reply lists the domains moved out of other sets and, in covered, the enabled sets further down whose geosite, geoip or ASN targets the applied set now matches first; idle marks one left matching nothing.
 // @Tags Hub
 // @Accept json
 // @Produce json
@@ -511,6 +511,7 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, err)
 		return
 	}
+	covered := setsCoveredBy(oldCfg.Sets, newCfg.Sets, set.Id)
 	if len(asnWarnings) > 0 {
 		config.RequestASNRefresh()
 	}
@@ -525,7 +526,7 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 
 	setJsonHeader(w)
 	w.WriteHeader(http.StatusAccepted)
-	_ = json.NewEncoder(w).Encode(HubApplyResponse{ID: set.Id, Name: set.Name, Moved: moved, Warnings: warnings, Payloads: installed})
+	_ = json.NewEncoder(w).Encode(HubApplyResponse{ID: set.Id, Name: set.Name, Moved: moved, Covered: covered, Warnings: warnings, Payloads: installed})
 }
 
 // @Summary Vote on an applied hub set
