@@ -274,6 +274,8 @@ const (
 	MaxWSSizeScale        = 14
 )
 
+const MaxDisorderSplitPosition = 1460
+
 type WSSizeConfig struct {
 	Cutoff  string `json:"cutoff"`
 	Enabled bool   `json:"enabled"`
