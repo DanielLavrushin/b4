@@ -36,7 +36,7 @@ description: Turning a published set into a local set, keeping it up to date and
 
 Between sets that list the same target, the one higher in the list handles it, see [Set order](../sets/index.md#set-order). The applied set is first, so it handles every geosite category, geoip category and ASN it shares with an enabled set below it. The **Other sets affected** window opens after applying and names each such set with the targets it lost.
 
-A set that has other targets keeps handling them. A set whose every target is also in the applied set handles nothing, and the window offers two actions for it:
+A set that has other targets keeps handling them. A set whose every target is also in the applied set, and that is not in use in another way, handles nothing, and the window offers two actions for it:
 
 | Action | Result |
 | --- | --- |
@@ -45,7 +45,7 @@ A set that has other targets keeps handling them. A set whose every target is al
 
 **Close** keeps the sets as they are. **Undo** deletes the applied set and enables the sets disabled in this window again.
 
-A set limited to [source devices](../sets/targets.md#source-devices) keeps the traffic of its devices and is not listed. A set that another enabled set uses as its [escalation](../sets/escalation.md) backup still handles that set's sites, and the window offers no action for it.
+A set limited to [source devices](../sets/targets.md#source-devices) keeps the traffic of its devices and is not listed. A set that another enabled set uses as its [escalation](../sets/escalation.md) backup stays in use. A set that [routes](../sets/routing.md) its addresses, clamps their MSS or writes a [DSCP value](../sets/routing.md#dscp) stays in use as well: these work by address. The window offers no action for such sets.
 
 ## Applied and edited {#applied-and-edited}
 

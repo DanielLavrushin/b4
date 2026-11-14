@@ -93,8 +93,18 @@ func filterIncludes(owner, other string) bool {
 	return owner == "" || owner == other
 }
 
+func actsByAddress(set *config.SetConfig) bool {
+	if !set.HasIPOrDomainTargets() {
+		return false
+	}
+	if _, stamps := set.DSCPStamp(); stamps || set.Routing.Enabled {
+		return true
+	}
+	return set.MSSClamp.Enabled && set.MSSClamp.Size > 0 && len(set.Targets.IpsToMatch) > 0
+}
+
 func (c *Coverage) leaves(set *config.SetConfig) bool {
-	if set.SelectsL7() {
+	if set.SelectsL7() || actsByAddress(set) {
 		return true
 	}
 	t := &set.Targets

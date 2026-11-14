@@ -333,6 +333,52 @@ func TestCoverTakesNothingForABlockSetScopedToInterfaces(t *testing.T) {
 	expectCover(t, CoverageOf(routed).Of(local), []string{"instagram"}, nil, nil, true)
 }
 
+func TestCoverKeepsSetsThatActByAddress(t *testing.T) {
+	targets := coverTargets{geosite: []string{"instagram"}, geoip: []string{"facebook"}}
+	owner := coverSet("community", targets)
+	coverage := CoverageOf(owner)
+
+	routed := coverSet("routed", targets)
+	routed.Routing = config.RoutingConfig{Enabled: true, Mode: config.RoutingModeInterface, EgressInterface: "wg0"}
+	blocked := coverSet("blocked", targets)
+	blocked.Routing = config.RoutingConfig{Enabled: true, Mode: config.RoutingModeBlock}
+	clamped := coverSet("clamped", targets)
+	clamped.MSSClamp.Enabled = true
+	clamped.MSSClamp.Size = 1200
+	marked := coverSet("marked", targets)
+	marked.DSCP = config.SetDSCPConfig{Enabled: true, Value: 31}
+	for _, set := range []*config.SetConfig{routed, blocked, clamped, marked} {
+		expectCover(t, coverage.Of(set), []string{"instagram"}, []string{"facebook"}, nil, false)
+	}
+
+	cfg := &config.Config{Sets: []*config.SetConfig{owner, routed, blocked, clamped, marked}}
+	if routing := cfg.RoutingSets(); !slices.Contains(routing, routed) || !slices.Contains(routing, blocked) {
+		t.Errorf("routing goes by address, so both sets must still be planned below the owner: %v", routing)
+	}
+	if clamps := cfg.CollectSetMSSClamps(); len(clamps) != 1 || clamps[0].SetID != clamped.Id {
+		t.Errorf("the clamp goes by address, so it must still be collected below the owner: %+v", clamps)
+	}
+
+	plain := coverSet("plain", targets)
+	clampOff := coverSet("clamp off", targets)
+	clampOff.MSSClamp.Size = 1200
+	markOff := coverSet("mark off", targets)
+	markOff.DSCP = config.SetDSCPConfig{Value: 31}
+	for _, set := range []*config.SetConfig{plain, clampOff, markOff} {
+		expectCover(t, coverage.Of(set), []string{"instagram"}, []string{"facebook"}, nil, true)
+	}
+
+	emptied := coverSet("emptied", coverTargets{})
+	emptied.Routing = config.RoutingConfig{Enabled: true, Mode: config.RoutingModeInterface, EgressInterface: "wg0"}
+	if got := coverage.Of(emptied); !got.Idle {
+		t.Errorf("a routed set with no addresses or domains left routes nothing, got %+v", got)
+	}
+	names := coverSet("names", coverTargets{geosite: []string{"instagram"}})
+	names.MSSClamp.Enabled = true
+	names.MSSClamp.Size = 1200
+	expectCover(t, coverage.Of(names), []string{"instagram"}, nil, nil, true)
+}
+
 func TestCoverKeepsSetsThatMatchWithoutDestinations(t *testing.T) {
 	owner := coverSet("community", coverTargets{geosite: []string{"instagram"}})
 	coverage := CoverageOf(owner)

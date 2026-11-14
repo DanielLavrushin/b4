@@ -4188,7 +4188,7 @@
         "title": "Other sets affected",
         "intro": "The applied set {{name}} is higher in the list, so it now handles these targets instead of the sets below.",
         "idle": "Handles nothing now: every target it lists is also in the applied set.",
-        "partial": "Still handles its other targets.",
+        "partial": "Still in use: for its other targets, or for routing, MSS clamping, DSCP or escalation.",
         "switchedOff": "Disabled.",
         "disable": "Disable",
         "choices": "Replace puts the applied set in the place of the chosen set and removes the copy added at the top of the list. Disable keeps both sets and switches the chosen one off.",
