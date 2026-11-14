@@ -1314,6 +1314,17 @@ func (c *Config) ReadCapturePayload(name string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+func (f *FragmentationConfig) FillSeqOverlapBytes() {
+	if len(f.SeqOverlapPattern) == 0 {
+		return
+	}
+	f.SeqOverlapBytes = make([]byte, len(f.SeqOverlapPattern))
+	for i, s := range f.SeqOverlapPattern {
+		b, _ := strconv.ParseUint(strings.TrimPrefix(s, "0x"), 16, 8)
+		f.SeqOverlapBytes[i] = byte(b)
+	}
+}
+
 func (s *SetConfig) SendsFake() bool {
 	return s.Faking.SNI || (s.TCP.SynFake && s.TCP.SynFakeLen > 0) || s.Fragmentation.Combo.DecoyEnabled
 }

@@ -39,6 +39,7 @@ All notable changes to b4 are recorded in this file.
 - **IP Block Detection** could ban an address for a day or a week after one connection that its server answered late, such as a YouTube video server, although that connection then loaded. [#580](https://github.com/DanielLavrushin/b4/issues/580)
 - Set cards and **Discovery** results named the Google and DuckDuckGo fake payloads `default` and `default2`. [#538](https://github.com/DanielLavrushin/b4/issues/538)
 - With one domain in two sets, one limited to IPv4 and one to IPv6 by the **IP Version Filter**, the first packet of a connection could get the set for the other IP version when that set was higher in the list. [#582](https://github.com/DanielLavrushin/b4/issues/582)
+- **Discovery** tested every strategy that has an **Overlap Pattern**, such as `combo-seqovl64`, without that pattern, while the set saved from such a strategy sent it. [#542](https://github.com/DanielLavrushin/b4/issues/542)
 
 ### Security
 
