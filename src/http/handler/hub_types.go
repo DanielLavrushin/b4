@@ -54,12 +54,14 @@ type HubSetsResponse struct {
 
 type HubApplyRequest struct {
 	Replace string `json:"replace,omitempty"`
+	Discard string `json:"discard,omitempty"`
 }
 
 type HubApplyResponse struct {
 	ID       string                `json:"id"`
 	Name     string                `json:"name"`
 	Moved    []DomainReassignment  `json:"moved"`
+	Covered  []CoveredSet          `json:"covered"`
 	Warnings []hubwire.Warning     `json:"warnings"`
 	Payloads []HubInstalledPayload `json:"payloads"`
 }

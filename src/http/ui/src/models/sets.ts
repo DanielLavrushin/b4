@@ -14,3 +14,12 @@ export interface DomainReassignment {
   set_name: string;
   set_id: string;
 }
+
+export interface CoveredSet {
+  set_id: string;
+  set_name: string;
+  geosite: string[];
+  geoip: string[];
+  asns: string[];
+  idle: boolean;
+}

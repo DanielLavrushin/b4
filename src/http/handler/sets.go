@@ -161,6 +161,89 @@ func (api *API) releaseDomainsFromOtherSets(sets []*config.SetConfig, keepSetId 
 	return moved
 }
 
+type CoveredSet struct {
+	SetId   string   `json:"set_id"`
+	SetName string   `json:"set_name"`
+	GeoSite []string `json:"geosite"`
+	GeoIP   []string `json:"geoip"`
+	ASNs    []string `json:"asns"`
+	Idle    bool     `json:"idle"`
+}
+
+func escalationBackups(sets []*config.SetConfig) map[string]bool {
+	backups := make(map[string]bool)
+	for _, set := range sets {
+		if set != nil && set.Enabled && set.Escalate.Active() && set.Escalate.To != set.Id {
+			backups[set.Escalate.To] = true
+		}
+	}
+	return backups
+}
+
+type formerOwner struct {
+	coverage *sni.Coverage
+	place    int
+}
+
+func setsCoveredBy(before, after []*config.SetConfig, ownerId string, formerIds ...string) []CoveredSet {
+	covered := []CoveredSet{}
+	index := slices.IndexFunc(after, func(set *config.SetConfig) bool { return set != nil && set.Id == ownerId })
+	if index < 0 {
+		return covered
+	}
+	previous := make(map[string]*config.SetConfig, len(before))
+	place := make(map[string]int, len(before))
+	for i, set := range before {
+		if set != nil {
+			previous[set.Id] = set
+			place[set.Id] = i
+		}
+	}
+	var formers []formerOwner
+	for _, id := range formerIds {
+		if set := previous[id]; id != "" && set != nil {
+			formers = append(formers, formerOwner{coverage: sni.CoverageOf(set), place: place[id]})
+		}
+	}
+	owner := after[index]
+	now, alone := sni.CoverageOf(owner), sni.CoverageOf(nil)
+	backups, formerBackups := escalationBackups(after), escalationBackups(before)
+	for _, set := range after[index+1:] {
+		if set == nil {
+			continue
+		}
+		earlier := previous[set.Id]
+		was := alone.Of(earlier)
+		for _, former := range formers {
+			if earlier != nil && former.place < place[set.Id] {
+				was = was.Join(former.coverage.Of(earlier))
+			}
+		}
+		taken := now.Of(set)
+		was.Idle = was.Idle && !formerBackups[set.Id]
+		taken.Idle = taken.Idle && !backups[set.Id]
+		cover := taken.Since(was)
+		if cover.Empty() {
+			continue
+		}
+		covered = append(covered, CoveredSet{
+			SetId:   set.Id,
+			SetName: set.Name,
+			GeoSite: append([]string{}, cover.GeoSite...),
+			GeoIP:   append([]string{}, cover.GeoIP...),
+			ASNs:    append([]string{}, cover.ASNs...),
+			Idle:    cover.Idle,
+		})
+		if len(cover.GeoSite)+len(cover.GeoIP)+len(cover.ASNs) > 0 {
+			log.Infof("Set '%s': set '%s' is earlier in the list and now matches its geosite %v, geoip %v, ASNs %v", set.Name, owner.Name, cover.GeoSite, cover.GeoIP, cover.ASNs)
+		}
+		if cover.Idle {
+			log.Warnf("Set '%s' no longer matches any connection: set '%s' is earlier in the list and lists every target it has", set.Name, owner.Name)
+		}
+	}
+	return covered
+}
+
 const (
 	maxCheckDomains      = 32
 	maxCheckDomainLength = 253

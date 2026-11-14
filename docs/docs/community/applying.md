@@ -14,9 +14,10 @@ description: Turning a published set into a local set, keeping it up to date and
 ## Setup
 
 1. Click **Apply** on the set's card, or in **Details**.
-2. Read the message that follows. It names everything applying changed, such as domains moved out of other sets.
-3. Click **Open set** to review the new set in the editor, or **Undo** to delete it.
-4. Open the sites the set covers. When one does not open, run the [test](#testing-an-applied-set).
+2. Read the message that follows. It names the domains moved out of other sets.
+3. When the **Other sets affected** window opens, decide what happens to the sets it lists, see [Other sets affected](#other-sets-affected).
+4. Click **Open set** to review the new set in the editor, or **Undo** to delete it.
+5. Open the sites the set covers. When one does not open, run the [test](#testing-an-applied-set).
 
 ## What applying does {#what-applying-does}
 
@@ -25,10 +26,26 @@ description: Turning a published set into a local set, keeping it up to date and
 - Geosite and geoip categories missing from this router's databases are named. Without a database, the categories are removed. A set left with no targets is refused, unless it [handles only calls](../sets/udp.md#protocol-selection).
 - The set is created enabled, at the top of the **Sets** page, named after the published title.
 - Domains the set lists are removed from every other enabled set that listed them.
+- Geosite categories, geoip categories and ASNs stay in the other sets that list them. The new set is first in the list and handles those targets, see [Other sets affected](#other-sets-affected).
 
 :::warning
-**Undo** deletes the new set and nothing else. Domains removed from other sets stay removed.
+**Undo** deletes the new set. Domains removed from other sets stay removed.
 :::
+
+## Other sets affected {#other-sets-affected}
+
+Between sets that list the same target, the one higher in the list handles it, see [Set order](../sets/index.md#set-order). The applied set is first, so it handles every geosite category, geoip category and ASN it shares with an enabled set below it. The **Other sets affected** window opens after applying and names each such set with the targets it lost.
+
+A set that has other targets keeps handling them. A set whose every target is also in the applied set, and that is not in use in another way, handles nothing, and the window offers two actions for it:
+
+| Action | Result |
+| --- | --- |
+| **Disable** | Both sets stay. The local set is switched off and keeps its settings. |
+| **Replace** | The applied set takes the local set's place in the list, as in [Updating and reapplying](#updating-and-reapplying). The copy added at the top is deleted. |
+
+**Close** keeps the sets as they are. **Undo** deletes the applied set and enables the sets disabled in this window again.
+
+A set limited to [source devices](../sets/targets.md#source-devices) keeps the traffic of its devices and is not listed. A set that another enabled set uses as its [escalation](../sets/escalation.md) backup stays in use. A set that [routes](../sets/routing.md) its addresses, clamps their MSS or writes a [DSCP value](../sets/routing.md#dscp) stays in use as well: these work by address. The window offers no action for such sets.
 
 ## Applied and edited {#applied-and-edited}
 
@@ -47,6 +64,8 @@ The set keeps its place in the list, its enabled state, its [Discovery addresses
 :::warning
 Routing to a proxy or an interface, device filters and escalation are not part of a publication. **Update to version N** and **Reapply** return them to their defaults, so the set has to be routed again afterwards.
 :::
+
+When the published version lists targets the local set did not have, the [Other sets affected](#other-sets-affected) window opens for the sets below it, with **Disable** as its only action.
 
 A router keeps running the version it applied until **Update to version N** is clicked. The score on the card belongs to the newest version.
 

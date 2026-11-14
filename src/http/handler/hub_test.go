@@ -10,8 +10,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -80,13 +82,22 @@ type hubEnv struct {
 
 func newHubEnv(t *testing.T) *hubEnv {
 	t.Helper()
+	return newHubEnvVia(t, nil)
+}
+
+func newHubEnvVia(t *testing.T, wrap func(http.RoundTripper) http.RoundTripper) *hubEnv {
+	t.Helper()
 	f := hubtest.New(t)
 	cfg := f.Config(t, hubTestConfigPath(t))
 	api := &API{cfgPtr: testCfgPtr(cfg), geodataManager: geodat.NewGeodataManager("", "")}
 	mux := http.NewServeMux()
 	api.mux = mux
 	api.RegisterHubApi()
-	svc := hub.New(api.getCfg, hub.Options{Version: "1.83.0", HTTPClient: f.Client(), BuiltinBases: []string{}})
+	client := *f.Client()
+	if wrap != nil {
+		client.Transport = wrap(client.Transport)
+	}
+	svc := hub.New(api.getCfg, hub.Options{Version: "1.83.0", HTTPClient: &client, BuiltinBases: []string{}})
 	previous := globalHubService
 	SetHubService(svc)
 	t.Cleanup(func() { SetHubService(previous) })
@@ -530,6 +541,380 @@ func TestHubApplyCreatesSetWithPayloadAndStamp(t *testing.T) {
 	}
 	expectCode(t, getJSON(t, env.mux, "/api/hub/sets/missing"), http.StatusNotFound, "not_found")
 	expectCode(t, postJSON(t, env.mux, "/api/hub/sets/missing/apply", map[string]interface{}{}), http.StatusNotFound, "not_found")
+}
+
+func hubCoveredByID(covered []CoveredSet) map[string]CoveredSet {
+	byID := make(map[string]CoveredSet, len(covered))
+	for _, c := range covered {
+		byID[c.SetId] = c
+	}
+	return byID
+}
+
+func hubApplyOK(t *testing.T, env *hubEnv, id string, body map[string]interface{}) HubApplyResponse {
+	t.Helper()
+	rec := postJSON(t, env.mux, "/api/hub/sets/"+id+"/apply", body)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var resp HubApplyResponse
+	decodeInto(t, rec, &resp)
+	return resp
+}
+
+func TestHubApplyReportsTheSetsWhoseCategoriesItTakes(t *testing.T) {
+	env := newHubEnv(t)
+	geosite, geoip := writeTestGeoSite(t), writeTestGeoIP(t)
+	env.api.geodataManager = geodat.NewGeodataManager(geosite, geoip)
+
+	shared := hubStrategySet("video")
+	shared.Targets.GeoSiteCategories = []string{"youtube", "netflix"}
+	shared.Targets.GeoIpCategories = []string{"cloudflare"}
+	cs, _ := hubtest.CatalogueSet(t, "vid-1", 1, &shared, nil)
+	wider := hubStrategySet("video")
+	wider.Targets.GeoSiteCategories = []string{"youtube", "netflix", "google"}
+	wider.Targets.GeoIpCategories = []string{"cloudflare"}
+	next, _ := hubtest.CatalogueSet(t, "vid-1", 2, &wider, nil)
+	env.publish(t, cs)
+
+	same := hubStrategySet("video")
+	same.Id = "local-same"
+	same.Targets.GeoSiteCategories = []string{"YouTube", "netflix"}
+	same.Targets.GeoIpCategories = []string{"cloudflare"}
+	mixed := hubStrategySet("mixed", "example.org")
+	mixed.Id = "local-mixed"
+	mixed.Targets.GeoSiteCategories = []string{"netflix", "google"}
+	scoped := hubStrategySet("tablet")
+	scoped.Id = "local-scoped"
+	scoped.Targets.GeoSiteCategories = []string{"youtube"}
+	scoped.Targets.SourceDevices = []string{"aa:bb:cc:dd:ee:ff"}
+	off := hubStrategySet("off")
+	off.Id = "local-off"
+	off.Enabled = false
+	off.Targets.GeoSiteCategories = []string{"youtube"}
+	apart := hubStrategySet("apart", "example.net")
+	apart.Id = "local-apart"
+	env.update(func(cfg *config.Config) {
+		cfg.System.Geo.GeoSitePath, cfg.System.Geo.GeoIpPath = geosite, geoip
+		cfg.Sets = []*config.SetConfig{&same, &mixed, &scoped, &off, &apart}
+		for _, set := range cfg.Sets {
+			env.api.loadTargetsForSetCached(set)
+		}
+	})
+
+	resp := hubApplyOK(t, env, "vid-1", map[string]interface{}{})
+	if len(resp.Moved) != 0 {
+		t.Errorf("no domain is listed twice, so nothing moves: %+v", resp.Moved)
+	}
+	covered := hubCoveredByID(resp.Covered)
+	if len(resp.Covered) != 2 {
+		t.Fatalf("exactly the two sets that lose categories must be reported: %+v", resp.Covered)
+	}
+	if got := covered["local-same"]; got.SetName != "video" || !slices.Equal(got.GeoSite, []string{"YouTube", "netflix"}) || !slices.Equal(got.GeoIP, []string{"cloudflare"}) || len(got.ASNs) != 0 || !got.Idle {
+		t.Errorf("the set with the same categories lost all of them and matches nothing: %+v", got)
+	}
+	if got := covered["local-mixed"]; !slices.Equal(got.GeoSite, []string{"netflix"}) || len(got.GeoIP) != 0 || got.Idle {
+		t.Errorf("the set that keeps a category and a domain of its own lost only netflix: %+v", got)
+	}
+	if raw, _ := json.Marshal(covered["local-mixed"]); !strings.Contains(string(raw), `"geoip":[],"asns":[]`) {
+		t.Errorf("empty lists must be arrays in the reply, not null: %s", raw)
+	}
+
+	cfg := env.api.getCfg()
+	if cfg.Sets[0].Id != resp.ID || cfg.Sets[1].Id != "local-same" || !cfg.Sets[1].Enabled {
+		t.Fatalf("the applied set goes in front and the local sets stay as they were: %+v", cfg.Sets)
+	}
+	matcher := sni.NewSuffixSet(cfg.Sets)
+	if _, owner := matcher.MatchSNIWithSource("www.youtube.com", ""); owner == nil || owner.Id != resp.ID {
+		t.Errorf("the category must match the applied set, which is what the reply claims: %v", owner)
+	}
+	if _, owner := matcher.MatchSNIWithSource("www.youtube.com", "aa:bb:cc:dd:ee:ff"); owner == nil || owner.Id != "local-scoped" {
+		t.Errorf("a set bound to a device keeps its traffic, so it must not be reported: %v", owner)
+	}
+
+	if again := hubApplyOK(t, env, "vid-1", map[string]interface{}{"replace": resp.ID}); len(again.Covered) != 0 {
+		t.Errorf("replacing a set with the same targets takes nothing new: %+v", again.Covered)
+	}
+
+	env.hub.Publish(t, &hubwire.Catalogue{Epoch: 1, Seq: 2, Sets: []hubwire.CatalogueSet{next}}, time.Now().Add(time.Hour))
+	if _, err := env.svc.Sync(context.Background()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	updated := hubApplyOK(t, env, "vid-1", map[string]interface{}{"replace": resp.ID})
+	if len(updated.Covered) != 1 || updated.Covered[0].SetId != "local-mixed" || !slices.Equal(updated.Covered[0].GeoSite, []string{"google"}) || updated.Covered[0].Idle {
+		t.Errorf("the new version adds google, so only that category is news: %+v", updated.Covered)
+	}
+}
+
+func TestHubApplyReportsASetLeftWithoutTargets(t *testing.T) {
+	env := newHubEnv(t)
+	shared := hubStrategySet("Shared video", "youtube.com", "googlevideo.com")
+	cs, _ := hubtest.CatalogueSet(t, "yt-2", 1, &shared, nil)
+	env.publish(t, cs)
+
+	emptied := hubStrategySet("Only video", "youtube.com")
+	emptied.Id = "local-emptied"
+	kept := hubStrategySet("Video and more", "googlevideo.com", "example.org")
+	kept.Id = "local-kept"
+	blank := hubStrategySet("Blank")
+	blank.Id = "local-blank"
+	below := hubStrategySet("Below", "youtube.com")
+	below.Id = "local-below"
+	env.update(func(cfg *config.Config) {
+		cfg.Sets = []*config.SetConfig{&emptied, &kept, &blank}
+		for _, set := range cfg.Sets {
+			env.api.loadTargetsForSetCached(set)
+		}
+	})
+
+	resp := hubApplyOK(t, env, "yt-2", map[string]interface{}{})
+	if len(resp.Moved) != 2 {
+		t.Fatalf("both listed domains must move: %+v", resp.Moved)
+	}
+	if len(resp.Covered) != 1 || resp.Covered[0].SetId != "local-emptied" || !resp.Covered[0].Idle || len(resp.Covered[0].GeoSite) != 0 {
+		t.Errorf("only the set that lost its last domain is left matching nothing: %+v", resp.Covered)
+	}
+
+	env.update(func(cfg *config.Config) {
+		env.api.loadTargetsForSetCached(&below)
+		cfg.Sets = append([]*config.SetConfig{&below}, cfg.Sets...)
+	})
+	above := hubApplyOK(t, env, "yt-2", map[string]interface{}{"replace": resp.ID})
+	if len(above.Covered) != 0 {
+		t.Errorf("a set above the replaced one is not covered by it: %+v", above.Covered)
+	}
+}
+
+func TestHubApplyReplaceRemovesTheEarlierCopyInTheSameSave(t *testing.T) {
+	env := newHubEnv(t)
+	shared := hubStrategySet("Shared video", "youtube.com")
+	shared.Faking.SNIType = config.FakePayloadCapture
+	shared.Faking.PayloadFile = "captures/tls_www_google_com.bin"
+	cs, payloads := hubtest.CatalogueSet(t, "yt-3", 1, &shared, func(string) ([]byte, error) { return config.FakeSNI1, nil })
+	for _, p := range payloads {
+		env.hub.AddBlob(p)
+	}
+	env.publish(t, cs)
+
+	local := hubStrategySet("Only video", "youtube.com")
+	local.Id = "local-1"
+	other := hubStrategySet("Other", "example.org")
+	other.Id = "local-2"
+	env.update(func(cfg *config.Config) {
+		cfg.Sets = []*config.SetConfig{&local, &other}
+		for _, set := range cfg.Sets {
+			env.api.loadTargetsForSetCached(set)
+		}
+	})
+
+	first := hubApplyOK(t, env, "yt-3", map[string]interface{}{})
+	if len(first.Covered) != 1 || first.Covered[0].SetId != "local-1" || !first.Covered[0].Idle {
+		t.Fatalf("the local set lost its only domain to the copy: %+v", first.Covered)
+	}
+	owner := func() string {
+		_, set := sni.NewSuffixSet(env.api.getCfg().Sets).MatchSNI("youtube.com")
+		if set == nil {
+			return ""
+		}
+		return set.Id
+	}
+	replace := map[string]interface{}{"replace": "local-1", "discard": first.ID}
+
+	env.hub.SetDown(true)
+	expectCode(t, postJSON(t, env.mux, "/api/hub/sets/yt-3/apply", replace), http.StatusBadGateway, "hub_unreachable")
+	if cfg := env.api.getCfg(); len(cfg.Sets) != 3 || cfg.Sets[0].Id != first.ID {
+		t.Fatalf("a replace that fails must leave the copy where it was: %+v", cfg.Sets)
+	}
+	if got := owner(); got != first.ID {
+		t.Fatalf("after a failed replace the copy must still handle youtube.com, got %q", got)
+	}
+	env.hub.SetDown(false)
+
+	for name, body := range map[string]map[string]interface{}{
+		"without replace":      {"discard": first.ID},
+		"the replaced set":     {"replace": "local-1", "discard": "local-1"},
+		"not a copy of yt-3":   {"replace": "local-1", "discard": "local-2"},
+		"a set that is gone":   {"replace": "local-1", "discard": "missing"},
+		"replace that is gone": {"replace": "missing", "discard": first.ID},
+	} {
+		rec := postJSON(t, env.mux, "/api/hub/sets/yt-3/apply", body)
+		if rec.Code != http.StatusBadRequest && rec.Code != http.StatusNotFound {
+			t.Errorf("discard %s: expected a refusal, got %d (%s)", name, rec.Code, rec.Body.String())
+		}
+		if len(env.api.getCfg().Sets) != 3 {
+			t.Fatalf("discard %s: a refused request must change nothing: %+v", name, env.api.getCfg().Sets)
+		}
+	}
+
+	done := hubApplyOK(t, env, "yt-3", replace)
+	cfg := env.api.getCfg()
+	if len(cfg.Sets) != 2 || cfg.Sets[0].Id != "local-1" || cfg.Sets[1].Id != "local-2" || done.ID != "local-1" {
+		t.Fatalf("the hub set must stand where the local set stood and the copy must be gone: %+v", cfg.Sets)
+	}
+	if cfg.Sets[0].Hub == nil || cfg.Sets[0].Hub.ID != "yt-3" || env.localSet(first.ID) != nil {
+		t.Errorf("the replaced set must carry the hub stamp, and the copy must not survive: %+v", cfg.Sets[0].Hub)
+	}
+	if len(done.Moved) != 0 || len(done.Covered) != 0 {
+		t.Errorf("the copy already handled these targets, so nothing is news: moved %+v covered %+v", done.Moved, done.Covered)
+	}
+	if got := owner(); got != "local-1" {
+		t.Errorf("youtube.com must be handled by the replaced set, got %q", got)
+	}
+}
+
+func TestHubApplyDoesNotCallAnEscalationBackupIdle(t *testing.T) {
+	apply := func(t *testing.T, primaryEnabled bool) HubApplyResponse {
+		env := newHubEnv(t)
+		shared := hubStrategySet("Video", "youtube.com")
+		cs, _ := hubtest.CatalogueSet(t, "set-video", 1, &shared, nil)
+		env.publish(t, cs)
+
+		primary := hubStrategySet("Primary", "example.org")
+		primary.Id = "local-primary"
+		primary.Enabled = primaryEnabled
+		primary.Escalate.To = "local-backup"
+		backup := hubStrategySet("Backup", "youtube.com")
+		backup.Id = "local-backup"
+		env.update(func(cfg *config.Config) {
+			cfg.Sets = []*config.SetConfig{&primary, &backup}
+			for _, set := range cfg.Sets {
+				env.api.loadTargetsForSetCached(set)
+			}
+		})
+		resp := hubApplyOK(t, env, "set-video", map[string]interface{}{})
+		if len(resp.Moved) != 1 || resp.Moved[0].SetId != "local-backup" {
+			t.Fatalf("youtube.com must move out of the backup: %+v", resp.Moved)
+		}
+		return resp
+	}
+
+	if linked := apply(t, true); len(linked.Covered) != 0 {
+		t.Errorf("an enabled set escalates to the backup, so it still handles connections and must not be offered for Disable: %+v", linked.Covered)
+	}
+	unlinked := apply(t, false)
+	if len(unlinked.Covered) != 1 || unlinked.Covered[0].SetId != "local-backup" || !unlinked.Covered[0].Idle {
+		t.Errorf("with the escalating set disabled nothing reaches the backup, so it is idle: %+v", unlinked.Covered)
+	}
+}
+
+func TestHubApplyReplaceComparesWithTheCopyOnlyBelowIt(t *testing.T) {
+	apply := func(t *testing.T, copyOnTop bool) HubApplyResponse {
+		env := newHubEnv(t)
+		shared := hubStrategySet("Video", "youtube.com", "example.org")
+		cs, _ := hubtest.CatalogueSet(t, "set-video", 1, &shared, nil)
+		env.publish(t, cs)
+
+		local := hubStrategySet("Only video", "youtube.com")
+		local.Id = "local-1"
+		middle := hubStrategySet("Middle", "example.org")
+		middle.Id = "local-2"
+		earlier := hubStrategySet("Video", "youtube.com", "example.org")
+		earlier.Id = "copy-1"
+		earlier.Hub = &config.HubOrigin{ID: "set-video", Version: 1}
+
+		order := []*config.SetConfig{&local, &middle, &earlier}
+		if copyOnTop {
+			order = []*config.SetConfig{&earlier, &local, &middle}
+		}
+		env.update(func(cfg *config.Config) {
+			cfg.Sets = order
+			for _, set := range cfg.Sets {
+				env.api.loadTargetsForSetCached(set)
+			}
+		})
+		resp := hubApplyOK(t, env, "set-video", map[string]interface{}{"replace": "local-1", "discard": "copy-1"})
+		if len(resp.Moved) != 1 || resp.Moved[0].SetId != "local-2" {
+			t.Fatalf("example.org must move out of the set below the replaced one: %+v", resp.Moved)
+		}
+		return resp
+	}
+
+	below := apply(t, false)
+	if len(below.Covered) != 1 || below.Covered[0].SetId != "local-2" || !below.Covered[0].Idle {
+		t.Errorf("a copy that stood below the set took nothing from it, so losing its last domain to the replaced set is news: %+v", below.Covered)
+	}
+	if onTop := apply(t, true); len(onTop.Covered) != 0 {
+		t.Errorf("a copy that stood above the set already handled its domain, so the replace reports nothing: %+v", onTop.Covered)
+	}
+}
+
+type hubBlobGate struct {
+	next    http.RoundTripper
+	armed   atomic.Bool
+	entered chan struct{}
+	release chan struct{}
+	reached sync.Once
+	opened  sync.Once
+}
+
+func (g *hubBlobGate) RoundTrip(r *http.Request) (*http.Response, error) {
+	if g.armed.Load() && strings.Contains(r.URL.Path, hubwire.PathBlob) {
+		g.reached.Do(func() { close(g.entered) })
+		<-g.release
+	}
+	return g.next.RoundTrip(r)
+}
+
+func (g *hubBlobGate) open() {
+	g.opened.Do(func() { close(g.release) })
+}
+
+func TestHubApplyRefusesADiscardWhoseCopyWasReplacedMeanwhile(t *testing.T) {
+	gate := &hubBlobGate{entered: make(chan struct{}), release: make(chan struct{})}
+	t.Cleanup(gate.open)
+	env := newHubEnvVia(t, func(next http.RoundTripper) http.RoundTripper {
+		gate.next = next
+		return gate
+	})
+
+	video := hubStrategySet("Video", "youtube.com")
+	video.Faking.SNIType = config.FakePayloadCapture
+	video.Faking.PayloadFile = "captures/tls_www_google_com.bin"
+	csVideo, payloads := hubtest.CatalogueSet(t, "set-video", 1, &video, func(string) ([]byte, error) { return config.FakeSNI1, nil })
+	for _, p := range payloads {
+		env.hub.AddBlob(p)
+	}
+	other := hubStrategySet("Other", "example.net")
+	csOther, _ := hubtest.CatalogueSet(t, "set-other", 1, &other, nil)
+	env.publish(t, csVideo, csOther)
+
+	local := hubStrategySet("Only video", "youtube.com")
+	local.Id = "local-1"
+	env.update(func(cfg *config.Config) {
+		cfg.Sets = []*config.SetConfig{&local}
+		env.api.loadTargetsForSetCached(cfg.Sets[0])
+	})
+	first := hubApplyOK(t, env, "set-video", map[string]interface{}{})
+
+	gate.armed.Store(true)
+	paused := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		raw, _ := json.Marshal(map[string]interface{}{"replace": "local-1", "discard": first.ID})
+		rec := httptest.NewRecorder()
+		env.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/hub/sets/set-video/apply", bytes.NewReader(raw)))
+		paused <- rec
+	}()
+	select {
+	case <-gate.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the replace never reached the payload fetch")
+	}
+	gate.armed.Store(false)
+
+	hubApplyOK(t, env, "set-other", map[string]interface{}{"replace": first.ID})
+	gate.open()
+
+	expectCode(t, <-paused, http.StatusBadRequest, "bad_request")
+	cfg := env.api.getCfg()
+	if len(cfg.Sets) != 2 {
+		t.Fatalf("a refused replace must leave both sets: %+v", cfg.Sets)
+	}
+	if kept := env.localSet(first.ID); kept == nil || kept.Hub == nil || kept.Hub.ID != "set-other" {
+		t.Errorf("the set that took another hub set meanwhile is no copy of set-video and must stay: %+v", kept)
+	}
+	if kept := env.localSet("local-1"); kept == nil || kept.Hub != nil {
+		t.Errorf("the local set must not be replaced by a refused request: %+v", kept)
+	}
 }
 
 func hubDSCPOffWarning(ws []hubwire.Warning) (hubwire.Warning, bool) {
