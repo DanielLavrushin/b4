@@ -5792,6 +5792,9 @@
                 "shuffle_mode": {
                     "description": "\"full\", \"reverse\"",
                     "type": "string"
+                },
+                "split_position": {
+                    "type": "integer"
                 }
             }
         },

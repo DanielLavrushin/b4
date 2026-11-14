@@ -69,7 +69,7 @@ var mcpEnums = map[string][]string{
 	mcpSetPathPrefix + ".tcp.wssize.cutoff":                   {"", config.WSSizeCutoffFirstData},
 	mcpSetPathPrefix + ".fragmentation.strategy":              mcpFragmentationStrategies,
 	mcpSetPathPrefix + ".fragmentation.combo.shuffle_mode":    {"middle", "full", "reverse"},
-	mcpSetPathPrefix + ".fragmentation.disorder.shuffle_mode": {"full", "middle", "reverse"},
+	mcpSetPathPrefix + ".fragmentation.disorder.shuffle_mode": {"full", "middle", "reverse", "none"},
 	mcpSetPathPrefix + ".tcp.win.mode":                        {"off", "oscillate", "zero", "random", "escalate"},
 	mcpSetPathPrefix + ".tcp.desync.mode":                     {"off", "rst", "fin", "ack", "combo", "full"},
 	mcpSetPathPrefix + ".tcp.incoming.mode":                   {"off", "fake", "reset", "fin", "desync"},
@@ -130,6 +130,7 @@ var mcpRanges = map[string]mcpRange{
 	mcpSetPathPrefix + ".fragmentation.disorder.max_jitter_us":          {Min: 500, Max: 10000},
 	mcpSetPathPrefix + ".fragmentation.disorder.fake_per_seg_count":     {Min: 1, Max: 11},
 	mcpSetPathPrefix + ".fragmentation.disorder.fake_per_seg_count_max": {Min: 1, Max: 11, ZeroFixed: true},
+	mcpSetPathPrefix + ".fragmentation.disorder.split_position":         {Min: 0, Max: config.MaxDisorderSplitPosition},
 	mcpSetPathPrefix + ".fragmentation.seq_overlap_length":              {Min: 0, Max: 1460},
 }
 

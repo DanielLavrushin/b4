@@ -129,6 +129,43 @@ func GetSNISplitPoints(payload []byte, payloadLen int, middleSNI bool, sniPositi
 	return splits
 }
 
+func keepOverlapBehind(segments []Segment, first, overlapped uint32) {
+	firstAt, overlappedAt := -1, -1
+	for i, s := range segments {
+		switch s.Seq {
+		case first:
+			firstAt = i
+		case overlapped:
+			overlappedAt = i
+		}
+	}
+	if firstAt >= 0 && overlappedAt >= 0 && overlappedAt < firstAt {
+		segments[firstAt], segments[overlappedAt] = segments[overlappedAt], segments[firstAt]
+	}
+}
+
+func orderDisorderSegments(segments []Segment, mode string, first, secondStart uint32, r *rand.Rand) {
+	overlapped, overlaps := uint32(0), false
+	if len(segments) >= 2 && segments[1].Seq != secondStart {
+		overlapped, overlaps = segments[1].Seq, true
+	}
+	ShuffleSegments(segments, mode, r)
+	if overlaps && mode != "reverse" {
+		keepOverlapBehind(segments, first, overlapped)
+	}
+}
+
+func disorderSplitPoints(frag *config.FragmentationConfig, payload []byte, payloadLen int) []int {
+	position := 0
+	if !frag.MiddleSNI {
+		position = frag.Disorder.SplitPosition
+	}
+	if splits := GetSNISplitPoints(payload, payloadLen, frag.MiddleSNI, position); len(splits) > 0 {
+		return splits
+	}
+	return []int{1, payloadLen / 2, payloadLen * 3 / 4}
+}
+
 func (w *Worker) SendTwoSegmentsV4(seg1, seg2 []byte, dst net.IP, delay int, reverse bool) {
 	if reverse {
 		log.Tracef("Sending two segments in reverse order to %s", dst.String())

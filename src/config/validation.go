@@ -439,6 +439,7 @@ func (c *Config) Validate() error {
 		}
 
 		set.Fragmentation.FillSeqOverlapBytes()
+		set.Fragmentation.Disorder.SplitPosition = min(max(set.Fragmentation.Disorder.SplitPosition, 0), MaxDisorderSplitPosition)
 
 		if len(set.Targets.ASNs) > 0 {
 			if !normalizeSetASNs(v, setIdx, set) {

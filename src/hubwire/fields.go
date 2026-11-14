@@ -110,6 +110,7 @@ var Fields = map[string]Field{
 	"fragmentation.disorder.fake_per_segment":       {Class: Crosses},
 	"fragmentation.disorder.fake_per_seg_count":     {Class: Crosses},
 	"fragmentation.disorder.fake_per_seg_count_max": {Class: Crosses},
+	"fragmentation.disorder.split_position":         {Class: Crosses, Since: "1.91.0"},
 
 	"faking.sni":                {Class: Crosses},
 	"faking.ttl":                {Class: Crosses},

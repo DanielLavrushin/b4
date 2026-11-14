@@ -17,12 +17,7 @@ func (w *Worker) sendDisorderFragments(cfg *config.SetConfig, packet []byte, dst
 		return
 	}
 
-	splits := GetSNISplitPoints(pi.Payload, pi.PayloadLen, cfg.Fragmentation.MiddleSNI, 0)
-	if len(splits) == 0 {
-		splits = []int{1, pi.PayloadLen / 2, pi.PayloadLen * 3 / 4}
-	}
-
-	validSplits := BuildValidSplits(splits, pi.PayloadLen)
+	validSplits := BuildValidSplits(disorderSplitPoints(&cfg.Fragmentation, pi.Payload, pi.PayloadLen), pi.PayloadLen)
 
 	seqovlPattern := cfg.Fragmentation.SeqOverlapBytes
 	seqovlLen := len(seqovlPattern)
@@ -61,7 +56,7 @@ func (w *Worker) sendDisorderFragments(cfg *config.SetConfig, packet []byte, dst
 	}
 
 	r := utils.NewRand()
-	ShuffleSegments(segments, cfg.Fragmentation.Disorder.ShuffleMode, r)
+	orderDisorderSegments(segments, disorder.ShuffleMode, pi.Seq0, pi.Seq0+uint32(validSplits[1]), r)
 	SetMaxSeqPSH(segments, pi.IPHdrLen, sock.FixTCPChecksum)
 
 	minJitter, maxJitter := GetDisorderJitter(disorder)

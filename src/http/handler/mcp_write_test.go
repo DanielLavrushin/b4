@@ -1462,6 +1462,7 @@ func TestMCPWriteOptionFieldsTakeOnlyTheirOptionsInCanonicalCase(t *testing.T) {
 		{"sets[video].fragmentation.combo.shuffle_mode", "Middle", "middle", "bogus"},
 		{"sets[video].fragmentation.disorder.shuffle_mode", "REVERSE", "reverse", "bogus"},
 		{"sets[video].fragmentation.disorder.shuffle_mode", "Middle", "middle", "edges"},
+		{"sets[video].fragmentation.disorder.shuffle_mode", "None", "none", "in_order"},
 		{"sets[video].routing.block_action", "Drop", "drop", "reject-tcp-reset"},
 		{"sets[video].fragmentation.strategy_pool", "TCP, Oob", "tcp,oob", "tcp,bogus"},
 		{"sets[video].faking.tls_mod", "RND, DupSid", "rnd,dupsid", "bogus"},
@@ -1514,6 +1515,8 @@ func TestMCPWriteRefusesNumbersOutsideTheUIRange(t *testing.T) {
 		{"sets[video].fragmentation.combo.first_delay_ms_max", "5", "10 to 500, or 0"},
 		{"sets[video].fragmentation.seq_overlap_length", "9223372036854775807", "0 to 1460"},
 		{"sets[video].fragmentation.seq_overlap_length", "100000000", "0 to 1460"},
+		{"sets[video].fragmentation.disorder.split_position", "-1", "0 to 1460"},
+		{"sets[video].fragmentation.disorder.split_position", "1461", "0 to 1460"},
 	} {
 		res := callSetValue(t, session, ctx, c.path, c.value)
 		if !res.IsError {
@@ -1541,6 +1544,7 @@ func TestMCPWriteRefusesNumbersOutsideTheUIRange(t *testing.T) {
 		{"sets[video].fragmentation.combo.first_delay_ms_max", "200"},
 		{"sets[video].fragmentation.combo.first_delay_ms_max", "0"},
 		{"sets[video].fragmentation.seq_overlap_length", "681"},
+		{"sets[video].fragmentation.disorder.split_position", "512"},
 	} {
 		res := callSetValue(t, session, ctx, c.path, c.value)
 		if res.IsError {
