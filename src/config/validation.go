@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -439,14 +438,7 @@ func (c *Config) Validate() error {
 			return v.result()
 		}
 
-		if len(set.Fragmentation.SeqOverlapPattern) > 0 {
-			set.Fragmentation.SeqOverlapBytes = make([]byte, len(set.Fragmentation.SeqOverlapPattern))
-			for i, s := range set.Fragmentation.SeqOverlapPattern {
-				s = strings.TrimPrefix(s, "0x")
-				b, _ := strconv.ParseUint(s, 16, 8)
-				set.Fragmentation.SeqOverlapBytes[i] = byte(b)
-			}
-		}
+		set.Fragmentation.FillSeqOverlapBytes()
 
 		if len(set.Targets.ASNs) > 0 {
 			if !normalizeSetASNs(v, setIdx, set) {

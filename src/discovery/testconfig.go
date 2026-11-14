@@ -43,6 +43,7 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 	testSet.DNS.StripECH = preset.Config.DNS.StripECH
 
 	config.ApplySetDefaultsKeepingFakeType(&testSet)
+	testSet.Fragmentation.FillSeqOverlapBytes()
 	testSet.DSCP = ds.resultDSCP()
 
 	if testSet.TCP.Win.Mode == "" {
@@ -138,6 +139,7 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 	testSet.DNS.StripECH = preset.Config.DNS.StripECH
 
 	config.ApplySetDefaultsKeepingFakeType(&testSet)
+	testSet.Fragmentation.FillSeqOverlapBytes()
 	testSet.DSCP = ds.resultDSCP()
 
 	if testSet.TCP.Win.Mode == "" {
