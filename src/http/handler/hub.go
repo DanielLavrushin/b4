@@ -479,52 +479,48 @@ func (api *API) handleHubApply(w http.ResponseWriter, r *http.Request) {
 	api.loadTargetsForSetCached(&set)
 	config.ApplySetDefaults(&set)
 
-	oldCfg := api.getCfg()
-	newCfg := oldCfg.Clone()
 	replaced := false
-	if replace != "" {
-		for i, existing := range newCfg.Sets {
-			if existing == nil || existing.Id != replace {
-				continue
+	former := ""
+	moved := []DomainReassignment{}
+	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
+		if refusal := hubDiscardRefusal(next, replace, discard, cs.ID); refusal != nil {
+			return refusal
+		}
+		if replace != "" {
+			index := slices.IndexFunc(next.Sets, func(s *config.SetConfig) bool { return s != nil && s.Id == replace })
+			if index < 0 {
+				return ErrNotFound("Set not found")
 			}
+			existing := next.Sets[index]
 			set.Id = existing.Id
 			set.Enabled = existing.Enabled
 			set.Discovery = existing.Discovery
 			set.DSCP = existing.DSCP
-			if reason := oldCfg.DSCPRefusal(existing); existing.DSCP.Enabled && reason != "" {
+			if reason := next.DSCPRefusal(existing); existing.DSCP.Enabled && reason != "" {
 				set.DSCP.Enabled = false
 				warnings = append(warnings, hubwire.Warning{Code: "dscp_off", Params: map[string]interface{}{"value": existing.DSCP.Value}})
 				log.Infof("Hub: set '%s' kept its own DSCP value %d switched off, because the value did not apply to the set before the replace (%s) and the hub version could apply it more widely", existing.Name, existing.DSCP.Value, reason)
 			}
-			newCfg.Sets[i] = &set
+			next.Sets[index] = &set
 			replaced = true
-			break
+		}
+		former = set.Id
+		if discard != "" {
+			next.Sets = slices.DeleteFunc(next.Sets, func(s *config.SetConfig) bool { return s != nil && s.Id == discard })
+			former = discard
+		}
+		if released := api.releaseDomainsFromOtherSets(next.Sets, set.Id, set.Targets.SNIDomains); released != nil {
+			moved = released
 		}
 		if !replaced {
-			writeAPIError(w, ErrNotFound("Set not found"))
-			return
+			next.Sets = append([]*config.SetConfig{&set}, next.Sets...)
 		}
-	}
-	former := set.Id
-	if discard != "" {
-		before := len(newCfg.Sets)
-		newCfg.Sets = slices.DeleteFunc(newCfg.Sets, func(s *config.SetConfig) bool { return s != nil && s.Id == discard })
-		if len(newCfg.Sets) == before {
-			writeAPIError(w, ErrNotFound("Set not found"))
-			return
+		return nil
+	})
+	if err != nil {
+		if !isRefusal(err) {
+			log.Errorf("Hub apply: failed to save config: %v", err)
 		}
-		former = discard
-	}
-	moved := api.releaseDomainsFromOtherSets(newCfg.Sets, set.Id, set.Targets.SNIDomains)
-	if moved == nil {
-		moved = []DomainReassignment{}
-	}
-	if !replaced {
-		newCfg.Sets = append([]*config.SetConfig{&set}, newCfg.Sets...)
-	}
-
-	if err := api.saveAndPushConfig(newCfg); err != nil {
-		log.Errorf("Hub apply: failed to save config: %v", err)
 		writeAPIError(w, err)
 		return
 	}

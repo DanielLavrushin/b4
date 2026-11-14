@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -81,13 +82,22 @@ type hubEnv struct {
 
 func newHubEnv(t *testing.T) *hubEnv {
 	t.Helper()
+	return newHubEnvVia(t, nil)
+}
+
+func newHubEnvVia(t *testing.T, wrap func(http.RoundTripper) http.RoundTripper) *hubEnv {
+	t.Helper()
 	f := hubtest.New(t)
 	cfg := f.Config(t, hubTestConfigPath(t))
 	api := &API{cfgPtr: testCfgPtr(cfg), geodataManager: geodat.NewGeodataManager("", "")}
 	mux := http.NewServeMux()
 	api.mux = mux
 	api.RegisterHubApi()
-	svc := hub.New(api.getCfg, hub.Options{Version: "1.83.0", HTTPClient: f.Client(), BuiltinBases: []string{}})
+	client := *f.Client()
+	if wrap != nil {
+		client.Transport = wrap(client.Transport)
+	}
+	svc := hub.New(api.getCfg, hub.Options{Version: "1.83.0", HTTPClient: &client, BuiltinBases: []string{}})
 	previous := globalHubService
 	SetHubService(svc)
 	t.Cleanup(func() { SetHubService(previous) })
@@ -749,6 +759,85 @@ func TestHubApplyReplaceRemovesTheEarlierCopyInTheSameSave(t *testing.T) {
 	}
 	if got := owner(); got != "local-1" {
 		t.Errorf("youtube.com must be handled by the replaced set, got %q", got)
+	}
+}
+
+type hubBlobGate struct {
+	next    http.RoundTripper
+	armed   atomic.Bool
+	entered chan struct{}
+	release chan struct{}
+	reached sync.Once
+	opened  sync.Once
+}
+
+func (g *hubBlobGate) RoundTrip(r *http.Request) (*http.Response, error) {
+	if g.armed.Load() && strings.Contains(r.URL.Path, hubwire.PathBlob) {
+		g.reached.Do(func() { close(g.entered) })
+		<-g.release
+	}
+	return g.next.RoundTrip(r)
+}
+
+func (g *hubBlobGate) open() {
+	g.opened.Do(func() { close(g.release) })
+}
+
+func TestHubApplyRefusesADiscardWhoseCopyWasReplacedMeanwhile(t *testing.T) {
+	gate := &hubBlobGate{entered: make(chan struct{}), release: make(chan struct{})}
+	t.Cleanup(gate.open)
+	env := newHubEnvVia(t, func(next http.RoundTripper) http.RoundTripper {
+		gate.next = next
+		return gate
+	})
+
+	video := hubStrategySet("Video", "youtube.com")
+	video.Faking.SNIType = config.FakePayloadCapture
+	video.Faking.PayloadFile = "captures/tls_www_google_com.bin"
+	csVideo, payloads := hubtest.CatalogueSet(t, "set-video", 1, &video, func(string) ([]byte, error) { return config.FakeSNI1, nil })
+	for _, p := range payloads {
+		env.hub.AddBlob(p)
+	}
+	other := hubStrategySet("Other", "example.net")
+	csOther, _ := hubtest.CatalogueSet(t, "set-other", 1, &other, nil)
+	env.publish(t, csVideo, csOther)
+
+	local := hubStrategySet("Only video", "youtube.com")
+	local.Id = "local-1"
+	env.update(func(cfg *config.Config) {
+		cfg.Sets = []*config.SetConfig{&local}
+		env.api.loadTargetsForSetCached(cfg.Sets[0])
+	})
+	first := hubApplyOK(t, env, "set-video", map[string]interface{}{})
+
+	gate.armed.Store(true)
+	paused := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		raw, _ := json.Marshal(map[string]interface{}{"replace": "local-1", "discard": first.ID})
+		rec := httptest.NewRecorder()
+		env.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/hub/sets/set-video/apply", bytes.NewReader(raw)))
+		paused <- rec
+	}()
+	select {
+	case <-gate.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the replace never reached the payload fetch")
+	}
+	gate.armed.Store(false)
+
+	hubApplyOK(t, env, "set-other", map[string]interface{}{"replace": first.ID})
+	gate.open()
+
+	expectCode(t, <-paused, http.StatusBadRequest, "bad_request")
+	cfg := env.api.getCfg()
+	if len(cfg.Sets) != 2 {
+		t.Fatalf("a refused replace must leave both sets: %+v", cfg.Sets)
+	}
+	if kept := env.localSet(first.ID); kept == nil || kept.Hub == nil || kept.Hub.ID != "set-other" {
+		t.Errorf("the set that took another hub set meanwhile is no copy of set-video and must stay: %+v", kept)
+	}
+	if kept := env.localSet("local-1"); kept == nil || kept.Hub != nil {
+		t.Errorf("the local set must not be replaced by a refused request: %+v", kept)
 	}
 }
 
