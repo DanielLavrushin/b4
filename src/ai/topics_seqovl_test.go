@@ -67,9 +67,14 @@ func TestTopicsSayTheOverlapFollowsTheBytesItOverlapsExceptInReverse(t *testing.
 	for _, says := range []string{
 		"'none' sends them in natural order",
 		"every mode except reverse keeps the overlapped segment behind the first segment",
+		"as long as no segment carries a sequence overlap",
+		"a server that keeps the first copy it received reads the pattern",
 	} {
 		if !strings.Contains(shuffle, says) {
 			t.Errorf("the shuffle mode topic no longer says %q: %s", says, shuffle)
 		}
+	}
+	if gone := "ensure correct reassembly at the destination regardless of emit order."; strings.Contains(shuffle, gone) {
+		t.Errorf("an overlap sent in reverse is not put together correctly by every server, the shuffle mode topic still says %q", gone)
 	}
 }
