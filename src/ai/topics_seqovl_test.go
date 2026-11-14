@@ -49,3 +49,27 @@ func TestTopicsSayWhereDisorderCutsForItsOverlap(t *testing.T) {
 		t.Errorf("disorder has its own split position and never reads sni_position, the topic no longer says %q", says)
 	}
 }
+
+func TestTopicsSayTheOverlapFollowsTheBytesItOverlapsExceptInReverse(t *testing.T) {
+	overlap := TopicFacts("fragmentation.seq_overlap_length")
+	for _, says := range []string{
+		"after the first one, whose bytes it overlaps, in every shuffle mode except reverse",
+		"In reverse it leaves first",
+	} {
+		if !strings.Contains(overlap, says) {
+			t.Errorf("the overlap length topic no longer says %q: %s", says, overlap)
+		}
+	}
+	if gone := "Disorder can send the second segment ahead of the first"; strings.Contains(overlap, gone) {
+		t.Errorf("only reverse order sends the overlapped segment first, the topic still says %q", gone)
+	}
+	shuffle := TopicFacts("fragmentation.disorder.shuffle_mode")
+	for _, says := range []string{
+		"'none' sends them in natural order",
+		"every mode except reverse keeps the overlapped segment behind the first segment",
+	} {
+		if !strings.Contains(shuffle, says) {
+			t.Errorf("the shuffle mode topic no longer says %q: %s", says, shuffle)
+		}
+	}
+}

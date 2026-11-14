@@ -6,7 +6,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 ### Added
 
-- Sets with a Disorder **Split Position**, the set option b4 1.91.0 adds, keep `fragmentation.disorder.split_position` through the hub and are marked as needing b4 1.91.0. Set cards show the position.
+- Sets with a Disorder **Split Position** or the **In Order** shuffle mode, the set options b4 1.91.0 adds, keep them through the hub and are marked as needing b4 1.91.0. Set cards show the position.
 
 ### Fixed
 

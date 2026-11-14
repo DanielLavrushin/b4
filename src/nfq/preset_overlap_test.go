@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -99,6 +100,9 @@ func TestEveryDiscoveryPresetWithAnOverlapLengthSendsItsOverlap(t *testing.T) {
 				if p.Offset == at && len(p.Data) > length {
 					got = &p
 				}
+			}
+			if frag.Strategy == "disorder" && slices.Index(starts, at) < slices.Index(starts, 0) {
+				t.Errorf("%s, IPv6 %v: the pieces left in the order %v, the overlap ahead of the first segment whose bytes it overlaps", preset.Name, ipv6, starts)
 			}
 			if got == nil {
 				t.Errorf("%s, IPv6 %v: no piece starts at %d, %d bytes before byte %d of the ClientHello; the pieces start at %v", preset.Name, ipv6, at, length, at+length, starts)

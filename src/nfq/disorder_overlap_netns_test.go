@@ -44,7 +44,7 @@ func TestNetnsADisorderOverlapLeavesTheServersBytesAlone(t *testing.T) {
 		return append([]byte{0x17, 0x03, 0x03, byte(length >> 8), byte(length)}, bytes.Repeat([]byte{fill}, length)...)
 	}
 	for _, v := range []struct{ overlap, position int }{{128, 256}, {256, 512}} {
-		for _, shuffle := range []string{"reverse", "full"} {
+		for _, shuffle := range []string{"reverse", "full", "none"} {
 			for _, layout := range []struct {
 				name string
 				pad  int

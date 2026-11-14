@@ -87,11 +87,16 @@ func TestTestConfigsKeepTheCutsOfAPresetWithAnOverlapLength(t *testing.T) {
 		overlap              int
 		firstByte, extension bool
 		disorderPosition     int
+		disorderOrder        string
 	}
 	cutsOf := func(f config.FragmentationConfig) cuts {
+		order := ""
+		if f.Strategy == "disorder" {
+			order = f.Disorder.ShuffleMode
+		}
 		return cuts{
 			f.Strategy, f.MiddleSNI, f.SeqOverlapLength,
-			f.Combo.FirstByteSplit, f.Combo.ExtensionSplit, f.Disorder.SplitPosition,
+			f.Combo.FirstByteSplit, f.Combo.ExtensionSplit, f.Disorder.SplitPosition, order,
 		}
 	}
 

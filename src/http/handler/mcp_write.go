@@ -69,7 +69,7 @@ var mcpEnums = map[string][]string{
 	mcpSetPathPrefix + ".tcp.wssize.cutoff":                   {"", config.WSSizeCutoffFirstData},
 	mcpSetPathPrefix + ".fragmentation.strategy":              mcpFragmentationStrategies,
 	mcpSetPathPrefix + ".fragmentation.combo.shuffle_mode":    {"middle", "full", "reverse"},
-	mcpSetPathPrefix + ".fragmentation.disorder.shuffle_mode": {"full", "middle", "reverse"},
+	mcpSetPathPrefix + ".fragmentation.disorder.shuffle_mode": {"full", "middle", "reverse", "none"},
 	mcpSetPathPrefix + ".tcp.win.mode":                        {"off", "oscillate", "zero", "random", "escalate"},
 	mcpSetPathPrefix + ".tcp.desync.mode":                     {"off", "rst", "fin", "ack", "combo", "full"},
 	mcpSetPathPrefix + ".tcp.incoming.mode":                   {"off", "fake", "reset", "fin", "desync"},

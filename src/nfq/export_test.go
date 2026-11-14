@@ -23,7 +23,7 @@ func InjectedRealPieces(t *testing.T, set *config.SetConfig, ipv6 bool, payload 
 	openComboStream(t, w, family.packet, family.parse, disorderTestSeq)
 	family.inject(w, set, family.packet(payload, disorderTestSeq), family.dst, true)
 	var pieces []InjectedPiece
-	for _, p := range realPieces(t, family, sent()) {
+	for _, p := range realPiecesAsSent(t, family, sent()) {
 		pieces = append(pieces, InjectedPiece{Offset: p.offset, Data: p.data})
 	}
 	return pieces

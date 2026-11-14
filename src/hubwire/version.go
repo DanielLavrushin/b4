@@ -57,7 +57,8 @@ func CompareVersions(a, b string) int {
 }
 
 var valueSince = map[string]map[string]string{
-	"udp.fake_payload_file": {config.FakePayloadAutoSTUN: "1.88.0"},
+	"udp.fake_payload_file":               {config.FakePayloadAutoSTUN: "1.88.0"},
+	"fragmentation.disorder.shuffle_mode": {"none": "1.91.0"},
 }
 
 func MinVersion(projection map[string]interface{}) string {

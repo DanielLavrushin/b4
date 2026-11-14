@@ -36,7 +36,7 @@ type sentPiece struct {
 	data   []byte
 }
 
-func realPieces(t *testing.T, family injectFamily, sent [][]byte) []sentPiece {
+func realPiecesAsSent(t *testing.T, family injectFamily, sent [][]byte) []sentPiece {
 	t.Helper()
 	var pieces []sentPiece
 	for _, p := range sent {
@@ -48,6 +48,12 @@ func realPieces(t *testing.T, family injectFamily, sent [][]byte) []sentPiece {
 			pieces = append(pieces, sentPiece{int(int32(pi.Seq0 - disorderTestSeq)), bytes.Clone(pi.Payload)})
 		}
 	}
+	return pieces
+}
+
+func realPieces(t *testing.T, family injectFamily, sent [][]byte) []sentPiece {
+	t.Helper()
+	pieces := realPiecesAsSent(t, family, sent)
 	slices.SortFunc(pieces, func(a, b sentPiece) int { return a.offset - b.offset })
 	return pieces
 }
@@ -81,6 +87,15 @@ func disorderPieces(t *testing.T, family injectFamily, set *config.SetConfig, pa
 	sent := captureInjected(t, w)
 	family.disorder(w, set, family.packet(payload, disorderTestSeq), family.dst)
 	return realPieces(t, family, sent())
+}
+
+func disorderSendOrder(t *testing.T, family injectFamily, set *config.SetConfig, payload []byte) []int {
+	t.Helper()
+	cfg := config.NewConfig()
+	w := newTestWorker(t, &cfg)
+	sent := captureInjected(t, w)
+	family.disorder(w, set, family.packet(payload, disorderTestSeq), family.dst)
+	return pieceOffsets(realPiecesAsSent(t, family, sent()))
 }
 
 func repeatedPattern(pattern []byte, length int) []byte {
@@ -184,6 +199,98 @@ func TestDisorderKeepsItsOwnCutsWithoutASplitPosition(t *testing.T) {
 				}
 				if !bytes.Equal(rebuiltFrom(pieces), c.payload) {
 					t.Fatal("the pieces rebuild other bytes than the packet held")
+				}
+			})
+		}
+	}
+}
+
+func TestDisorderNeverSendsTheOverlapAheadOfTheBytesItOverlaps(t *testing.T) {
+	const overlap = 128
+	hello := buildClientHello("overlap.example.org", 600, 0xAB)
+	nameStart, _, ok := locateSNI(hello)
+	if !ok || nameStart <= overlap {
+		t.Fatalf("the ClientHello's name starts at %d (found %v), want it past the overlap", nameStart, ok)
+	}
+	for _, layout := range []struct {
+		name       string
+		overlapped int
+		change     func(*config.SetConfig)
+	}{
+		{"one cut at the split position", 256 - overlap, func(*config.SetConfig) {}},
+		{"SNI-based splitting", nameStart - overlap, func(s *config.SetConfig) { s.Fragmentation.MiddleSNI = true }},
+	} {
+		for _, mode := range []string{"full", "middle", "none", "edges"} {
+			for _, family := range injectFamilies() {
+				t.Run(layout.name+", "+mode+" over "+family.name, func(t *testing.T) {
+					set := disorderOverlapSet(overlap, 256)
+					set.Fragmentation.Disorder.ShuffleMode = mode
+					layout.change(&set)
+					for range 24 {
+						order := disorderSendOrder(t, family, &set, hello)
+						first, behind := slices.Index(order, 0), slices.Index(order, layout.overlapped)
+						if first < 0 || behind < 0 {
+							t.Fatalf("the pieces left in the order %v, with no piece at 0 or no overlap at %d, so this test proves nothing", order, layout.overlapped)
+						}
+						if behind < first {
+							t.Fatalf("the pieces left in the order %v: the overlap at %d went out before the first segment, whose bytes it overlaps", order, layout.overlapped)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestDisorderInReverseOrderSendsTheOverlapFirst(t *testing.T) {
+	hello := buildClientHello("overlap.example.org", 600, 0xAB)
+	for _, family := range injectFamilies() {
+		t.Run(family.name, func(t *testing.T) {
+			set := disorderOverlapSet(128, 256)
+			set.Fragmentation.Disorder.ShuffleMode = "reverse"
+			if got, want := disorderSendOrder(t, family, &set, hello), []int{128, 0}; !slices.Equal(got, want) {
+				t.Fatalf("the pieces left in the order %v, want %v: reverse order stays as the set asks", got, want)
+			}
+		})
+	}
+}
+
+func TestDisorderFullShuffleStillShufflesAroundAnOverlap(t *testing.T) {
+	hello := buildClientHello("overlap.example.org", 600, 0xAB)
+	for _, family := range injectFamilies() {
+		t.Run(family.name, func(t *testing.T) {
+			set := disorderOverlapSet(128, 0)
+			set.Fragmentation.MiddleSNI = true
+			seen := map[string]bool{}
+			for range 40 {
+				seen[fmt.Sprint(disorderSendOrder(t, family, &set, hello))] = true
+			}
+			if len(seen) < 2 {
+				t.Fatalf("40 packets left in one order only, %v: the shuffle is gone", seen)
+			}
+		})
+	}
+}
+
+func TestDisorderInOrderSendsEverySegmentInSequence(t *testing.T) {
+	hello := buildClientHello("overlap.example.org", 600, 0xAB)
+	for _, c := range []struct {
+		name              string
+		overlap, position int
+		want              []int
+	}{
+		{"its own cuts", 0, 0, []int{0, 1, len(hello) / 2, len(hello) * 3 / 4}},
+		{"one cut", 0, 256, []int{0, 256}},
+		{"one cut and an overlap", 128, 256, []int{0, 128}},
+	} {
+		for _, family := range injectFamilies() {
+			t.Run(c.name+" over "+family.name, func(t *testing.T) {
+				set := disorderOverlapSet(c.overlap, c.position)
+				set.Fragmentation.Disorder.ShuffleMode = "none"
+				for range 6 {
+					if got := disorderSendOrder(t, family, &set, hello); !slices.Equal(got, c.want) {
+						t.Fatalf("the pieces left in the order %v, want %v", got, c.want)
+					}
 				}
 			})
 		}

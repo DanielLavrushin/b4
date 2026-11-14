@@ -57,7 +57,7 @@ func (w *Worker) sendDisorderFragmentsV6(cfg *config.SetConfig, packet []byte, d
 	}
 
 	r := utils.NewRand()
-	ShuffleSegments(segments, disorder.ShuffleMode, r)
+	orderDisorderSegments(segments, disorder.ShuffleMode, pi.Seq0, pi.Seq0+uint32(validSplits[1]), r)
 	SetMaxSeqPSH(segments, pi.IPHdrLen, sock.FixTCPChecksumV6)
 
 	minJitter, maxJitter := GetDisorderJitter(disorder)

@@ -520,7 +520,7 @@ export interface ComboFragConfig {
   fake_per_seg_count_max: number;
 }
 
-export type DisorderShuffleMode = "full" | "reverse";
+export type DisorderShuffleMode = "full" | "reverse" | "none";
 export interface DisorderFragConfig {
   shuffle_mode: DisorderShuffleMode;
   min_jitter_us: number;

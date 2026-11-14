@@ -11,7 +11,7 @@ All notable changes to b4 are recorded in this file.
 - Without a login for the web interface, the log warns when b4 refuses a page at another address, and names the address b4 saw and what to change.
 - On Keenetic, interface lists such as **Capture Interfaces** and a set's **Output Interface** show the name the router gives each connection, as in `WARP (nwg4)`, and devices carry the name they have in the router's web interface. ([#501](https://github.com/DanielLavrushin/b4/pull/501), thanks [@niklzz](https://github.com/niklzz))
 - With **Allow configuration changes** on, an AI app connected over **MCP** can turn a zapret or byedpi command line or configuration file into sets, as **Import** on the **Sets** page does, and shows what did not convert before it creates them. [#540](https://github.com/DanielLavrushin/b4/issues/540)
-- **Disorder** has a **Split Position** in the set editor: with **SNI-Based Splitting** off it cuts the packet once at that byte, which gives an **Overlap Length** shorter than the position room to be sent. [#591](https://github.com/DanielLavrushin/b4/issues/591)
+- **Disorder** has a **Split Position** and an **In Order** shuffle mode in the set editor: with **SNI-Based Splitting** off, one cut at that byte gives an **Overlap Length** shorter than the position room to be sent, and **In Order** sends the segments as they lie in the packet. [#591](https://github.com/DanielLavrushin/b4/issues/591)
 
 ### Changed
 
@@ -43,6 +43,7 @@ All notable changes to b4 are recorded in this file.
 - With one domain in two sets, one limited to IPv4 and one to IPv6 by the **IP Version Filter**, the first packet of a connection could get the set for the other IP version when that set was higher in the list. [#582](https://github.com/DanielLavrushin/b4/issues/582)
 - **Discovery** tested every strategy that has an **Overlap Pattern**, such as `combo-seqovl64`, without that pattern, while the set saved from such a strategy sent it. [#542](https://github.com/DanielLavrushin/b4/issues/542)
 - A **Disorder** set with an **Overlap Length** never sent the overlap while **SNI-Based Splitting** was off, so the **Discovery** strategies `disorder-seqovl128-pos256` and `disorder-seqovl256-pos512` tested plain Disorder. [#591](https://github.com/DanielLavrushin/b4/issues/591)
+- With **Full Shuffle**, a **Disorder** set with an **Overlap Length** could send the overlapped segment before the bytes it overlaps, and servers that keep the first copy they receive, such as those hosted on Windows, reset the connection.
 
 ### Security
 

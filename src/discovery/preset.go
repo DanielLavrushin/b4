@@ -973,7 +973,7 @@ func GetPhase2Presets(family StrategyFamily) []ConfigPreset {
 					SeqOverlapPattern: []string{"0x16", "0x03", "0x03", "0x00", "0x00"},
 					SeqOverlapLength:  v.length,
 					Disorder: config.DisorderFragConfig{
-						ShuffleMode:   "full",
+						ShuffleMode:   "none",
 						MinJitterUs:   500,
 						MaxJitterUs:   2100,
 						SplitPosition: v.pos,

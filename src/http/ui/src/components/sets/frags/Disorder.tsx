@@ -35,12 +35,34 @@ export const DisorderSettings = ({
   const singleCut = !middleSni && splitPosition > 0;
   const segmentsInOrder = singleCut ? ["①", "②"] : ["①", "②", "③", "④"];
   const segmentsShuffled = singleCut ? ["②", "①"] : ["③", "①", "④", "②"];
+  const reversed = disorder.shuffle_mode === "reverse";
+  const overlapFits =
+    overlapLength > 0 &&
+    seqPattern.length > 0 &&
+    (middleSni || splitPosition > overlapLength);
+  const overlapKeepsOrder = singleCut && overlapFits && !reversed;
+  const sentInOrder = disorder.shuffle_mode === "none" || overlapKeepsOrder;
+  let sendOrder = segmentsShuffled;
+  let orderCaption = t("sets.tcp.splitting.disorder.segRandomOrder");
+  if (reversed) {
+    sendOrder = [...segmentsInOrder].reverse();
+    orderCaption = t("sets.tcp.splitting.disorder.segReverseOrder");
+  } else if (sentInOrder) {
+    sendOrder = segmentsInOrder;
+    orderCaption = overlapKeepsOrder
+      ? t("sets.tcp.splitting.disorder.segOverlapOrder")
+      : t("sets.tcp.splitting.disorder.segInOrder");
+  }
 
   const shuffleModeOptions: { label: string; value: DisorderShuffleMode }[] = [
     { label: t("sets.tcp.splitting.disorder.shuffleFull"), value: "full" },
     {
       label: t("sets.tcp.splitting.disorder.shuffleReverse"),
       value: "reverse",
+    },
+    {
+      label: t("sets.tcp.splitting.disorder.shuffleInOrder"),
+      value: "none",
     },
   ];
 
@@ -136,10 +158,7 @@ export const DisorderSettings = ({
             </Box>
             <Typography sx={{ mx: 2 }}>→</Typography>
             <Box sx={{ display: "flex", gap: 0.5, fontFamily: "monospace" }}>
-              {(disorder.shuffle_mode === "reverse"
-                ? [...segmentsInOrder].reverse()
-                : segmentsShuffled
-              ).map((n) => (
+              {sendOrder.map((n) => (
                 <Box
                   key={n}
                   sx={{
@@ -160,9 +179,7 @@ export const DisorderSettings = ({
             color="text.secondary"
             sx={{ mt: 1, display: "block" }}
           >
-            {disorder.shuffle_mode === "full"
-              ? t("sets.tcp.splitting.disorder.segRandomOrder")
-              : t("sets.tcp.splitting.disorder.segReverseOrder")}
+            {orderCaption}
           </Typography>
         </Box>
       </Grid>
@@ -285,6 +302,12 @@ export const DisorderSettings = ({
       {overlapLength > 0 && !middleSni && splitPosition <= overlapLength && (
         <B4Alert severity="warning">
           {t("sets.tcp.splitting.disorder.overlapNoRoomWarning")}
+        </B4Alert>
+      )}
+
+      {overlapFits && reversed && (
+        <B4Alert severity="warning">
+          {t("sets.tcp.splitting.disorder.overlapReverseWarning")}
         </B4Alert>
       )}
     </>

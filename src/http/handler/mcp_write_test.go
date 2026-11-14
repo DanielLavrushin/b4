@@ -1462,6 +1462,7 @@ func TestMCPWriteOptionFieldsTakeOnlyTheirOptionsInCanonicalCase(t *testing.T) {
 		{"sets[video].fragmentation.combo.shuffle_mode", "Middle", "middle", "bogus"},
 		{"sets[video].fragmentation.disorder.shuffle_mode", "REVERSE", "reverse", "bogus"},
 		{"sets[video].fragmentation.disorder.shuffle_mode", "Middle", "middle", "edges"},
+		{"sets[video].fragmentation.disorder.shuffle_mode", "None", "none", "in_order"},
 		{"sets[video].routing.block_action", "Drop", "drop", "reject-tcp-reset"},
 		{"sets[video].fragmentation.strategy_pool", "TCP, Oob", "tcp,oob", "tcp,bogus"},
 		{"sets[video].faking.tls_mod", "RND, DupSid", "rnd,dupsid", "bogus"},
