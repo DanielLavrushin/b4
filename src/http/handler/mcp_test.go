@@ -1551,7 +1551,7 @@ func TestToolsListStaysWithinContextBudget(t *testing.T) {
 		budget         int
 	}{
 		{"default", false, false, 17911},
-		{"writes and probes", true, true, 30911},
+		{"writes and probes", true, true, 32116},
 	} {
 		cfg := mcpTestCfg()
 		cfg.System.WebServer.MCP.AllowWrites = c.writes
@@ -1828,6 +1828,7 @@ func TestToolAnnotationsMatchWhatRepeatedCallsDo(t *testing.T) {
 	}{
 		{"b4_revert_last_change", false, true, false, "every call undoes one more change"},
 		{"b4_manage_set", false, true, false, "create and duplicate add another set on every call"},
+		{mcpImportTool, false, true, false, "every apply adds another copy of the sets and takes domains from other sets"},
 		{"b4_watchdog", false, true, true, "check makes the router fetch internet sites, and other actions edit sets"},
 		{"b4_find_bypass_strategy", false, true, true, "apply rewrites sets and takes domains from other sets"},
 		{"b4_test_domain_now", false, false, true, "it fetches internet sites and changes nothing"},

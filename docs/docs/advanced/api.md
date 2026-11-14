@@ -86,9 +86,9 @@ The server offers tools according to the two permission switches on the **MCP se
 | Permitted | Tools offered |
 | --- | --- |
 | Nothing (default) | 14 |
-| **Allow configuration changes** | 18 |
+| **Allow configuration changes** | 19 |
 | **Allow active probes** | 16 |
-| Both | 20 |
+| Both | 21 |
 
 | Tool | What it does | Needs |
 | --- | --- | --- |
@@ -110,6 +110,7 @@ The server offers tools according to the two permission switches on the **MCP se
 | `b4_revert_last_change` | Restores the configuration from before the last change made over MCP | Allow configuration changes |
 | `b4_edit_set_targets` | Adds or removes domains, addresses, geo categories, ASNs or source devices of one set | Allow configuration changes |
 | `b4_manage_set` | Creates, duplicates, moves, enables, deletes or resets a set | Allow configuration changes |
+| `b4_import_strategy` | Converts a zapret or byedpi command line or configuration file into sets, see [below](#b4-import-strategy) | Allow configuration changes |
 | `b4_test_domain_now` | Fetches a domain through b4 and again with b4 bypassed, and says which of the two works | Allow active probes |
 | `b4_find_bypass_strategy` | Runs Discovery for a domain, a URL or a set, and applies the result | Allow active probes to start a run, Allow configuration changes to apply it |
 
@@ -148,6 +149,29 @@ With `set`, a set id or exact name, the actions work on that set's own watchdog 
 `action=start` with `set` runs Discovery for that set: on the domains given, or on the set's Discovery addresses, at most five. The set's current strategy is tested first, and the search stops at the first strategy confirmed on every address. `action=status` reports the verdict, and `action=apply` with `set` writes the result into the set, the strategy only and only for the verdict `covered`. The same applies to `action=apply` without `set` when the run it refers to was a run for a set. A set that `action=apply` creates for free-form domains keeps the addresses they were found on as its Discovery addresses. A set with routing enabled is refused, and so is a result whose probes took another DSCP path than the set's traffic takes now, as on the [Discovery page](../discovery.md#applying).
 
 A run also tests the other hosts each confirmed page loads, as the [page hosts](../discovery.md#page-hosts) step on the Discovery page does. For a found domain, `action=status` names the hosts that fail without b4 and load with its strategy, and those that stay blocked with it. `action=apply` does not add them. `b4_edit_set_targets` with `kind` `sni_domains` does. While that step runs, `action=apply` is refused until the run ends, and `action=cancel` ends only the step: the run completes with every result kept.
+
+### `b4_import_strategy` {#b4-import-strategy}
+
+`text` takes what **Import** on the **Sets** page takes: a zapret (`nfqws`, `winws`) or byedpi command line, or a whole configuration file, see [Importing from zapret or byedpi](../sets/import.md). `tool` and `version` replace the detected source tool and its version. `domains` gives the domains of the first set whose profile has no host list.
+
+Without `apply`, the tool writes nothing. Its answer lists:
+
+- the sets the text converts into, with their order, strategy, ports, target counts and whether each is created enabled;
+- the options that did not convert, and those converted approximately, with the reason for each;
+- the host list and address list files of the source machine, which b4 cannot read;
+- the import's warnings;
+- the domains the import would take from the enabled sets that hold them.
+
+The answer does not carry the sets' full configuration: `b4_get_set` reads a created set.
+
+With `apply=true`, the sets are created ahead of the existing ones, as **Create N sets** creates them, and their domains leave the other enabled sets. A repeated call creates another copy of the sets. `b4_revert_last_change` removes the created sets and returns the domains. Fake data written out in the text is saved as a payload file, and an undo leaves that file in place.
+
+An import is refused in these cases:
+
+- none of the options that do the bypass was recognized;
+- the configuration would hold more than 200 sets;
+- a converted value is outside the range the MCP server accepts for that setting, as for `b4_set_config_value`;
+- a domain or an address in the text is not one b4 can match.
 
 ### Changing settings {#writable-settings}
 
