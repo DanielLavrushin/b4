@@ -389,6 +389,46 @@ func TestMCPImportStrategyRepeatedApplyAddsAnotherCopy(t *testing.T) {
 	}
 }
 
+func TestMCPImportStrategyNamesTheShadowingSetAsItIsSaved(t *testing.T) {
+	t.Cleanup(mcpResetHistory)
+	srv, api := newMCPTestServerAPI(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	text := "--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake --new --filter-tcp=80 --hostlist-domains=example.com --dpi-desync=multisplit"
+	first := decodeImport(t, callImport(t, session, ctx, map[string]any{"text": text, "apply": "true"}))
+	if len(first.Sets) != 2 || first.Sets[1].Enabled {
+		t.Fatalf("precondition: the second profile shares example.com and comes out disabled: %+v", first.Sets)
+	}
+
+	for _, args := range []map[string]any{{"text": text}, {"text": text, "apply": "true"}} {
+		out := decodeImport(t, callImport(t, session, ctx, args))
+		owner, shadowed := out.Sets[0], out.Sets[1]
+		if owner.Name == first.Sets[0].Name {
+			t.Fatalf("precondition: a second import of the text gets names of its own, got %q again", owner.Name)
+		}
+		want := owner.Name + " already claims example.com"
+		if !strings.Contains(shadowed.DisabledWhy, want) {
+			t.Errorf("apply=%v: %q is shadowed by %q of this import, but disabled_because names another set: %q",
+				args["apply"], shadowed.Name, owner.Name, shadowed.DisabledWhy)
+		}
+		named := false
+		for _, row := range out.NotConverted {
+			named = named || strings.Contains(row.Why, want)
+			if strings.Contains(row.Why, first.Sets[0].Name+" already claims") {
+				t.Errorf("apply=%v: a row names the set of the earlier import as the one that shadows: %q", args["apply"], row.Why)
+			}
+		}
+		if !named {
+			t.Errorf("apply=%v: no row of not_converted names %q as the set that shadows: %+v", args["apply"], owner.Name, out.NotConverted)
+		}
+	}
+
+	live := api.getCfg()
+	if live.Sets[0].Name != first.Sets[0].Name+" 2" || live.Sets[1].Name != first.Sets[1].Name+" 2" {
+		t.Errorf("the second import must be saved under the names its answer gave: %v", setNames(live))
+	}
+}
+
 func TestMCPImportStrategyRefusals(t *testing.T) {
 	t.Cleanup(mcpResetHistory)
 	srv, api := newMCPTestServerAPI(t, writableCfg(t))

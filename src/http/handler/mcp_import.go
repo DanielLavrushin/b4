@@ -292,6 +292,20 @@ func (api *API) mcpImportRefusal(cfg *config.Config, res *convert.Result) error 
 	return nil
 }
 
+func mcpImportUseFinalNames(res *convert.Result, cfg *config.Config) {
+	named := make([]*config.SetConfig, len(res.Sets))
+	for i := range res.Sets {
+		set := res.Sets[i]
+		named[i] = &set
+	}
+	uniqueSetNames(named, cfg.Sets)
+	names := make([]string, len(named))
+	for i, set := range named {
+		names[i] = set.Name
+	}
+	res.RenameSets(names)
+}
+
 func mcpImportOptionText(token string) string {
 	token = strings.Join(strings.Fields(token), " ")
 	if len(token) <= mcpImportOptionWidth {
@@ -576,11 +590,11 @@ func (api *API) addMCPImportTools(srv *mcp.Server) {
 				in.Version, res.ToolLabel, strings.Join(mcpImportVersions(res.Tool), ", "))
 		}
 
-		out := mcpImportReport(res)
 		if !apply {
 			cfg := api.getCfg()
+			mcpImportUseFinalNames(res, cfg)
+			out := mcpImportReport(res)
 			staged := assignSetIDs(res.Sets)
-			uniqueSetNames(staged, cfg.Sets)
 			out.Sets = mcpImportSets(res, staged, false)
 			out.TotalSets = len(cfg.Sets)
 			out.WouldMoveFrom = mcpImportMoves(domainsHeldByEnabledSets(cfg.Sets, releasableDomains(staged)))
@@ -608,9 +622,11 @@ func (api *API) addMCPImportTools(srv *mcp.Server) {
 		defer mcpWriteMu.Unlock()
 
 		oldCfg := api.getCfg()
+		mcpImportUseFinalNames(res, oldCfg)
 		if err := api.mcpImportRefusal(oldCfg, res); err != nil {
 			return nil, nil, err
 		}
+		out := mcpImportReport(res)
 		payloads := mcpImportPendingPayloads(res.Sets)
 
 		newCfg := oldCfg.Clone()

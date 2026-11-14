@@ -2,6 +2,7 @@ package convert
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -96,6 +97,35 @@ type Result struct {
 	Fidelity        Fidelity           `json:"fidelity"`
 	Plan            []SetPlan          `json:"plan"`
 	Applicable      bool               `json:"applicable"`
+}
+
+func (r *Result) RenameSets(names []string) {
+	if len(names) != len(r.Sets) {
+		return
+	}
+	renamed := make(map[string]string, len(names))
+	for i, name := range names {
+		renamed[r.Sets[i].Name] = name
+		r.Sets[i].Name = name
+		if i < len(r.Plan) {
+			r.Plan[i].Name = name
+		}
+	}
+	for i := range r.Notes {
+		n := &r.Notes[i]
+		if name, ok := renamed[n.Token]; ok && n.Synthetic {
+			n.Token = name
+		}
+		other, ok := n.Params["other"].(string)
+		if !ok {
+			continue
+		}
+		if name, ok := renamed[other]; ok {
+			params := maps.Clone(n.Params)
+			params["other"] = name
+			n.Params = params
+		}
+	}
 }
 
 func anyProfileCarriesStrategy(prog *Program) bool {

@@ -111,3 +111,33 @@ func TestPlan_EveryDisabledSetOfTheSamplesHasAReason(t *testing.T) {
 		t.Fatal("the samples hold no disabled set, so this test checks nothing")
 	}
 }
+
+func TestResult_RenameSetsReachesEveryPlaceThatNamesASet(t *testing.T) {
+	const line = "--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake --new --filter-tcp=80 --hostlist-domains=example.com --dpi-desync=multisplit"
+	res, err := Analyze(line, Options{Tool: "zapret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := res.DisabledEnglish(1)
+	if !strings.Contains(before, "zapret #1 already claims example.com") {
+		t.Fatalf("precondition: the second set is shadowed by the first: %q", before)
+	}
+
+	res.RenameSets([]string{"only one"})
+	if res.Sets[0].Name != "zapret #1" || res.DisabledEnglish(1) != before {
+		t.Fatalf("a list of another length must change nothing: %q, %q", res.Sets[0].Name, res.DisabledEnglish(1))
+	}
+
+	res.RenameSets([]string{"first", "second"})
+	if res.Sets[0].Name != "first" || res.Sets[1].Name != "second" || res.Plan[0].Name != "first" || res.Plan[1].Name != "second" {
+		t.Errorf("sets and plan after the rename: %q %q, %q %q", res.Sets[0].Name, res.Sets[1].Name, res.Plan[0].Name, res.Plan[1].Name)
+	}
+	if got := res.DisabledEnglish(1); !strings.Contains(got, "first already claims example.com") {
+		t.Errorf("the reason must name the shadowing set by its new name: %q", got)
+	}
+	for _, n := range res.Notes {
+		if text := n.English(); strings.Contains(text, "zapret #") || (n.Synthetic && strings.Contains(n.Token, "zapret #")) {
+			t.Errorf("a note still carries an old set name: token %q, text %q", n.Token, text)
+		}
+	}
+}
