@@ -61,6 +61,7 @@ type mcpImportSet struct {
 	TCPPorts       string   `json:"tcp_ports,omitempty"`
 	UDPPorts       string   `json:"udp_ports,omitempty"`
 	AcceptsTargets bool     `json:"accepts_targets"`
+	NeedsTargets   bool     `json:"needs_targets,omitempty"`
 	DomainCount    int      `json:"domain_count"`
 	Domains        []string `json:"domains,omitempty"`
 	IPCount        int      `json:"ip_count"`
@@ -417,6 +418,7 @@ func mcpImportSets(res *convert.Result, sets []*config.SetConfig, withIDs bool) 
 			plan := res.Plan[i]
 			row.Role = plan.Role
 			row.AcceptsTargets = plan.AcceptsTargets
+			row.NeedsTargets = plan.NeedsTargets
 			if plan.FallbackFor >= 0 && plan.FallbackFor < len(sets) {
 				row.FallbackFor = sets[plan.FallbackFor].Name
 			}
@@ -492,10 +494,13 @@ func mcpImportTrim(out *mcpImportOut) string {
 
 func mcpImportFollowUp(out mcpImportOut, label string, applied bool) string {
 	var note strings.Builder
-	disabled := 0
+	disabled, needTargets := 0, 0
 	for _, s := range out.Sets {
 		if !s.Enabled {
 			disabled++
+		}
+		if s.NeedsTargets {
+			needTargets++
 		}
 	}
 	if disabled > 0 {
@@ -503,8 +508,12 @@ func mcpImportFollowUp(out mcpImportOut, label string, applied bool) string {
 		if applied {
 			lead = "Created DISABLED"
 		}
-		fmt.Fprintf(&note, " %s: %d of the %d set(s). A disabled set matches nothing, and the warnings and the rows of approximated say why it is disabled. "+
-			"Give such a set its targets with b4_edit_set_targets, then enable it with b4_manage_set action=set_enabled.", lead, disabled, len(out.Sets))
+		fmt.Fprintf(&note, " %s: %d of the %d set(s). A disabled set matches nothing. "+
+			"The warnings and the rows of not_converted and approximated that list a set's position say why it is disabled and what it needs before it is enabled, which is not always targets.",
+			lead, disabled, len(out.Sets))
+	}
+	if needTargets > 0 {
+		fmt.Fprintf(&note, " Sets marked needs_targets (%d) lack only targets: add them with b4_edit_set_targets, then enable the set with b4_manage_set action=set_enabled.", needTargets)
 	}
 	lists, payloads := 0, 0
 	for _, f := range out.UnresolvedFiles {

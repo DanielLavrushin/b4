@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -449,6 +450,65 @@ func TestMCPImportStrategyPreviewSaysWhyApplyWouldBeRefused(t *testing.T) {
 		}
 		if !strings.Contains(out.Note, "apply would be refused") {
 			t.Errorf("%q: the note must say apply would be refused: %q", c.text, out.Note)
+		}
+	}
+}
+
+func TestMCPImportStrategyGivesTargetAdviceOnlyToSetsThatLackTargets(t *testing.T) {
+	srv := newMCPTestServer(t, writableCfg(t))
+	session, ctx := connectMCP(t, srv)
+
+	const (
+		readTheRows  = "say why it is disabled and what it needs before it is enabled, which is not always targets"
+		targetAdvice = "lack only targets: add them with b4_edit_set_targets"
+	)
+	for _, c := range []struct {
+		name, text   string
+		needsTargets []bool
+	}{
+		{"a call profile without UDP ports", "--filter-l7=discord,stun --dpi-desync=fake --dpi-desync-repeats=6", []bool{false}},
+		{"a set without a strategy", "--filter-tcp=443 --hostlist-domains=example.com --hostcase", []bool{false}},
+		{"a set shadowed by an earlier one",
+			"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake --new --filter-tcp=80 --hostlist-domains=example.com --dpi-desync=multisplit",
+			[]bool{false, false}},
+		{"a skipped profile", "--filter-tcp=443 --dpi-desync=fake,multisplit --skip", []bool{false}},
+		{"a set that lacks only targets", "--filter-tcp=443 --dpi-desync=fake,multisplit", []bool{true}},
+		{"one of each",
+			"--filter-tcp=443 --dpi-desync=fake,multisplit --new --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-repeats=6",
+			[]bool{true, false}},
+	} {
+		out := decodeImport(t, callImport(t, session, ctx, map[string]any{"text": c.text, "tool": "zapret"}))
+		if len(out.Sets) != len(c.needsTargets) {
+			t.Errorf("%s: %d sets, want %d", c.name, len(out.Sets), len(c.needsTargets))
+			continue
+		}
+		disabled, lacking := 0, 0
+		for i, s := range out.Sets {
+			if s.NeedsTargets != c.needsTargets[i] {
+				t.Errorf("%s: set %d needs_targets = %v, want %v (enabled=%v accepts_targets=%v domains=%d)",
+					c.name, s.Position, s.NeedsTargets, c.needsTargets[i], s.Enabled, s.AcceptsTargets, s.DomainCount)
+			}
+			if !s.Enabled {
+				disabled++
+			}
+			if c.needsTargets[i] {
+				lacking++
+			}
+		}
+		if disabled == 0 {
+			t.Errorf("%s: the case needs a disabled set", c.name)
+		}
+		if !strings.Contains(out.Note, readTheRows) {
+			t.Errorf("%s: the note must send the model to the rows that name a disabled set: %q", c.name, out.Note)
+		}
+		if got := strings.Contains(out.Note, targetAdvice); got != (lacking > 0) {
+			t.Errorf("%s: target advice in the note = %v, want %v: %q", c.name, got, lacking > 0, out.Note)
+		}
+		if lacking == 0 && strings.Contains(out.Note, "b4_edit_set_targets") {
+			t.Errorf("%s: no set here is disabled for lack of targets, so the note must not offer to add targets: %q", c.name, out.Note)
+		}
+		if lacking > 0 && !strings.Contains(out.Note, fmt.Sprintf("needs_targets (%d)", lacking)) {
+			t.Errorf("%s: the note must count the sets that lack only targets (%d): %q", c.name, lacking, out.Note)
 		}
 	}
 }

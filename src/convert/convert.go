@@ -68,6 +68,7 @@ type SetPlan struct {
 	Strategy       string   `json:"strategy"`
 	Faking         bool     `json:"faking"`
 	Enabled        bool     `json:"enabled"`
+	NeedsTargets   bool     `json:"-"`
 }
 
 type Result struct {
@@ -223,18 +224,22 @@ func buildPlan(prog *Program, sets []config.SetConfig) []SetPlan {
 				from = idx
 			}
 		}
+		prof := prog.Profiles[i]
+		acceptsTargets := entry && !prof.scopedByL7()
+		hasTargets := len(s.Targets.SNIDomains) > 0 || len(s.Targets.IPs) > 0
 		plan = append(plan, SetPlan{
 			Profile:        i,
 			Name:           s.Name,
 			Role:           role,
 			FallbackFor:    from,
-			AcceptsTargets: entry && !prog.Profiles[i].scopedByL7(),
+			AcceptsTargets: acceptsTargets,
 			Domains:        append([]string{}, s.Targets.SNIDomains...),
 			IPs:            append([]string{}, s.Targets.IPs...),
 			FilterL7:       append([]string{}, s.UDP.FilterL7...),
 			Strategy:       s.Fragmentation.Strategy,
 			Faking:         s.Faking.SNI,
 			Enabled:        s.Enabled,
+			NeedsTargets:   !s.Enabled && acceptsTargets && !hasTargets && prof.carriesStrategy() && !prof.Skip,
 		})
 	}
 	return plan
