@@ -81,6 +81,8 @@ type routeManager struct {
 	clientBypassOK     atomic.Bool
 	clientBypassAdded  bool
 	reinjectLocalAdded bool
+	localGuardAdded    bool
+	localGuardWarned   bool
 	localNets          []string
 	localNetsWanted    []string
 	localRetries       int

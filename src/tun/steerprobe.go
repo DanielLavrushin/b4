@@ -23,6 +23,9 @@ func (r *routeManager) pickCapturePriority() int {
 		if !ok || prio <= capturePrioFloor || prio >= defaultCapturePrio {
 			continue
 		}
+		if markMatches(ruleFieldValue(line, "fwmark"), defaultSteerMark) {
+			continue
+		}
 		if lowest == 0 || prio < lowest {
 			lowest = prio
 		}

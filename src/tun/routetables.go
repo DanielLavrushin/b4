@@ -234,6 +234,10 @@ func isStaleTunRule(line string, owned map[string]bool, queueMark uint) bool {
 	if fw == "" || lookup == "" || !ruleMatchesAllTraffic(strings.Fields(line)) {
 		return false
 	}
+	if isLocalLookup(lookup) {
+		prio, ok := rulePriority(line)
+		return ok && isLocalGuardPriority(prio) && markMatches(fw, engine.TunSteerMark)
+	}
 	if owned[lookup] {
 		return isTunRuleMark(fw) || isLegacyTunRuleMark(fw, queueMark)
 	}

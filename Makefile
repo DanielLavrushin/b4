@@ -148,7 +148,7 @@ run: build
 test-netns:
 	@echo "Building the tables test binary..."
 	@go -C $(SRC_DIR) test -c -o ../$(OUT_DIR)/tables.test ./tables/
-	@tables=0; ctnl=0; nfq=0; \
+	@tables=0; ctnl=0; nfq=0; tun=0; \
 	echo "Running the routing tests in a private network namespace..."; \
 	unshare -Urnm sh -c 'mount -t sysfs sysfs /sys 2>/dev/null || echo "warning: could not remount /sys; interface-kind tests will skip" >&2; B4_NETNS_TEST=1 exec $(OUT_DIR)/tables.test -test.run TestNetns -test.v' || tables=$$?; \
 	echo "Building the conntrack netlink test binary..."; \
@@ -165,8 +165,15 @@ test-netns:
 	else \
 		nfq=1; \
 	fi; \
-	echo "test-netns: tables netns tests exit $$tables, conntrack netlink netns tests exit $$ctnl, queue engine netns tests exit $$nfq"; \
-	[ "$$tables" -eq 0 ] && [ "$$ctnl" -eq 0 ] && [ "$$nfq" -eq 0 ]
+	echo "Building the TUN engine test binary..."; \
+	if go -C $(SRC_DIR) test -c -o ../$(OUT_DIR)/tun.test ./tun/; then \
+		echo "Running the TUN routing tests in a private network namespace..."; \
+		unshare -Urnm sh -c 'B4_NETNS_TEST=1 exec $(OUT_DIR)/tun.test -test.run TestNetns -test.v' || tun=$$?; \
+	else \
+		tun=1; \
+	fi; \
+	echo "test-netns: tables netns tests exit $$tables, conntrack netlink netns tests exit $$ctnl, queue engine netns tests exit $$nfq, TUN netns tests exit $$tun"; \
+	[ "$$tables" -eq 0 ] && [ "$$ctnl" -eq 0 ] && [ "$$nfq" -eq 0 ] && [ "$$tun" -eq 0 ]
 
 .PHONY: install
 install: build
