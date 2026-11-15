@@ -230,8 +230,8 @@ func TestWSSizeStripScaleCrossesAndNeedsItsRelease(t *testing.T) {
 	if stripped.Fingerprint == lowered.Fingerprint {
 		t.Error("removing the Window Scale option must change the strategy fingerprint against lowering it")
 	}
-	if stripped.MinB4 != "1.92.0" || lowered.MinB4 != "1.91.0" {
-		t.Errorf("min_b4 is %s with strip_scale and %s without, want 1.92.0 and 1.91.0", stripped.MinB4, lowered.MinB4)
+	if stripped.MinB4 != "1.91.1" || lowered.MinB4 != "1.91.0" {
+		t.Errorf("min_b4 is %s with strip_scale and %s without, want 1.91.1 and 1.91.0", stripped.MinB4, lowered.MinB4)
 	}
 	older, err := Open(stripped, OpenOptions{B4Version: "1.91.0"})
 	if err != nil {
@@ -240,7 +240,7 @@ func TestWSSizeStripScaleCrossesAndNeedsItsRelease(t *testing.T) {
 	if _, ok := warningCodes(older.Warnings)["version_too_old"]; !ok {
 		t.Error("a b4 older than the option was not warned about a set that removes the Window Scale option")
 	}
-	imported, err := Open(stripped, OpenOptions{B4Version: "1.92.0"})
+	imported, err := Open(stripped, OpenOptions{B4Version: "1.91.1"})
 	if err != nil {
 		t.Fatal(err)
 	}

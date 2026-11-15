@@ -6,7 +6,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 ### Added
 
-- Sets whose **Real TCP window (wssize)** removes the Window Scale option, the choice b4 1.92.0 adds, keep `tcp.wssize.strip_scale` through the hub and are marked as needing b4 1.92.0. The console lists it with the technique.
+- Sets whose **Real TCP window (wssize)** removes the Window Scale option, the choice b4 1.91.1 adds, keep `tcp.wssize.strip_scale` through the hub and are marked as needing b4 1.91.1. The console lists it with the technique.
 
 ## [1.8.0] - 2026-11-14
 

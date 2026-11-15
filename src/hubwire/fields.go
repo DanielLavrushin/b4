@@ -54,7 +54,7 @@ var Fields = map[string]Field{
 	"tcp.wssize.enabled":     {Class: Crosses, Since: "1.91.0"},
 	"tcp.wssize.window":      {Class: Crosses, Since: "1.91.0"},
 	"tcp.wssize.scale":       {Class: Crosses, Since: "1.91.0"},
-	"tcp.wssize.strip_scale": {Class: Crosses, Since: "1.92.0"},
+	"tcp.wssize.strip_scale": {Class: Crosses, Since: "1.91.1"},
 	"tcp.win.mode":           {Class: Crosses},
 	"tcp.win.values":         {Class: Crosses},
 
