@@ -308,6 +308,7 @@ type Rule struct {
 	Spec      []string
 	Action    string
 	BelowDSCP bool
+	Position  int
 }
 
 func (r Rule) Apply() error {
@@ -318,8 +319,11 @@ func (r Rule) Apply() error {
 	var slot []string
 	if strings.ToUpper(r.Action) == "I" {
 		op = "-I"
-		if r.BelowDSCP {
+		switch {
+		case r.BelowDSCP:
 			slot = dscpCaptureSlot(r.IPT)
+		case r.Position > 1:
+			slot = []string{strconv.Itoa(r.Position)}
 		}
 	}
 	args := append([]string{r.IPT, "-w", "-t", r.Table, op, r.Chain}, slot...)
@@ -832,11 +836,12 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 
 		rules = append(rules,
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "I", Spec: iptMarkReturn(ownPacket)},
+			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "I", Position: iptLocalDeliveryPosition,
+				Spec: iptLocalDeliveryReturn()},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
 				Spec: []string{"-m", "mark", "--mark", telegramBridgeMarkMatch(), "-j", "RETURN"}},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
 				Spec: []string{"-m", "mark", "--mark", selfDialNoDPIMarkMatch(), "-j", "RETURN"}},
-			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A", Spec: iptLocalDeliveryReturn()},
 		)
 		for _, mark := range captureProxySetMarks(cfg) {
 			rules = append(rules, Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",

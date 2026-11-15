@@ -3,33 +3,41 @@ package tables
 import (
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
+
+type netnsProxyCaptureCase struct {
+	name     string
+	late     bool
+	restored bool
+}
 
 func TestNetnsARouterDialToAProxySetStaysOutOfTheQueue(t *testing.T) {
 	netnsRequire(t)
 	netnsSetupLinks(t)
 
 	for _, engine := range []string{backendIPTables, backendNFTables} {
-		for _, c := range []struct {
-			name string
-			late bool
-		}{
-			{"set enabled at start", false},
-			{"set enabled after start", true},
-		} {
+		cases := []netnsProxyCaptureCase{
+			{name: "set enabled at start"},
+			{name: "set enabled after start", late: true},
+		}
+		if engine == backendIPTables {
+			cases = append(cases, netnsProxyCaptureCase{name: "set enabled after start, return deleted and restored", late: true, restored: true})
+		}
+		for _, c := range cases {
 			t.Run(engine+", "+c.name, func(t *testing.T) {
 				if engine == backendNFTables && !hasBinary("nft") {
 					t.Skip("nft is not installed")
 				}
-				netnsRouterDialStaysOutOfTheQueue(t, engine, c.late)
+				netnsRouterDialStaysOutOfTheQueue(t, engine, c)
 			})
 		}
 	}
 }
 
-func netnsRouterDialStaysOutOfTheQueue(t *testing.T, engine string, late bool) {
+func netnsRouterDialStaysOutOfTheQueue(t *testing.T, engine string, c netnsProxyCaptureCase) {
 	t.Helper()
 	routeEngine = nil
 	defer func() { routeEngine = nil }()
@@ -37,7 +45,7 @@ func netnsRouterDialStaysOutOfTheQueue(t *testing.T, engine string, late bool) {
 	cfg := netnsProxyMixConfig()
 	cfg.System.Tables.Engine = engine
 	capture := cfg
-	if late {
+	if c.late {
 		capture = netnsConfig(engine)
 	}
 	if err := AddRules(capture); err != nil {
@@ -47,6 +55,13 @@ func netnsRouterDialStaysOutOfTheQueue(t *testing.T, engine string, late bool) {
 
 	RoutingSyncConfig(cfg)
 	defer RoutingClearAll()
+
+	if c.restored {
+		netnsRun(t, append([]string{backendIPTables, "-w", "-t", "mangle", "-D", iptChainName}, strings.Fields(iptLocalDeliveryReturnRule)...)...)
+		if err := AddRules(capture); err != nil {
+			t.Fatalf("AddRules after the return was deleted: %v", err)
+		}
+	}
 
 	st, ok := routeRuleCache["netns-proxy-set"]
 	if !ok {

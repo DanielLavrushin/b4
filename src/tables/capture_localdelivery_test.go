@@ -42,6 +42,54 @@ func TestIPTablesKeepsALocalDeliveryToASetsListenerOutOfTheQueue(t *testing.T) {
 	}
 }
 
+func TestARestoredLocalDeliveryReturnLandsAboveTheQueueRules(t *testing.T) {
+	queues := func(r string) bool { return goldenIptTarget(r) == "NFQUEUE" }
+	for _, c := range []struct {
+		name  string
+		gone  func(rule, own string) bool
+		exact bool
+	}{
+		{"the return alone", func(r, own string) bool { return r == iptLocalDeliveryReturnRule }, true},
+		{"the return and the one for b4's own packets", func(r, own string) bool { return r == iptLocalDeliveryReturnRule || r == own }, true},
+		{"every return ahead of the queue rules", func(r, own string) bool {
+			return goldenIptTarget(r) == "RETURN" && !strings.Contains(r, "--dport 53")
+		}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newGoldenHost(t)
+			goldenIsolate(t, h)
+			cfg := sendIntoTestConfig(backendIPTables, false)
+			if err := AddRules(cfg); err != nil {
+				t.Fatalf("AddRules: %v", err)
+			}
+			chain := func() *goldenIptChain { return h.iptTable(backendIPTables, "mangle").chain(iptChainName) }
+			fresh := slices.Clone(chain().rules)
+			own := fresh[0]
+			requireLocalDeliveryReturnAboveTheQueue(t, iptChainName, fresh, iptLocalDeliveryReturnRule, queues)
+
+			chain().rules = slices.DeleteFunc(chain().rules, func(r string) bool { return c.gone(r, own) })
+			if slices.Contains(chain().rules, iptLocalDeliveryReturnRule) || !slices.ContainsFunc(chain().rules, queues) {
+				t.Fatalf("the deletion left %q, want the return gone and the queue rules in place", chain().rules)
+			}
+			if err := AddRules(cfg); err != nil {
+				t.Fatalf("AddRules after the deletion: %v", err)
+			}
+
+			got := chain().rules
+			requireLocalDeliveryReturnAboveTheQueue(t, iptChainName, got, iptLocalDeliveryReturnRule, queues)
+			if got[0] != own {
+				t.Errorf("after the restore %s starts with %q, want the return for b4's own packets %q", iptChainName, got[0], own)
+			}
+			if c.exact && !slices.Equal(got, fresh) {
+				t.Errorf("after the restore %s = %q, want the chain of a fresh start %q", iptChainName, got, fresh)
+			}
+			if !(&Monitor{}).checkRules(cfg) {
+				t.Errorf("the monitor still finds rules missing after they were put back, so it restores them on every check")
+			}
+		})
+	}
+}
+
 func TestNFTablesKeepsALocalDeliveryToASetsListenerOutOfTheQueue(t *testing.T) {
 	for _, l := range captureLayouts {
 		t.Run(l.name, func(t *testing.T) {

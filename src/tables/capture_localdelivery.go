@@ -2,7 +2,10 @@ package tables
 
 import "fmt"
 
-const captureLoopbackDevice = "lo"
+const (
+	captureLoopbackDevice    = "lo"
+	iptLocalDeliveryPosition = 2
+)
 
 func iptLocalDeliveryReturn() []string {
 	return []string{"-o", captureLoopbackDevice, "-m", "mark", "!", "--mark", fmt.Sprintf("0x0/0x%x", routeSetMarkMask), "-j", "RETURN"}
