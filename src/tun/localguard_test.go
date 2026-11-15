@@ -158,6 +158,30 @@ func TestAFailedLocalGuardIsRetriedAtEveryReconcile(t *testing.T) {
 	}
 }
 
+func TestOnlyAnUnnarrowedRuleWithTheSteerMaskCountsAsTheLocalGuard(t *testing.T) {
+	cases := []struct {
+		name  string
+		guard string
+		added bool
+	}{
+		{"narrowed by an input interface", "9:\tfrom all iif eth1 fwmark 0x40000000/0x40000000 lookup local\n", true},
+		{"narrowed by a source", "9:\tfrom 10.0.0.0/8 fwmark 0x40000000/0x40000000 lookup local\n", true},
+		{"the steer value without its mask", "9:\tfrom all fwmark 0x40000000 lookup local\n", true},
+		{"b4's own guard", "9:\tfrom all fwmark 0x40000000/0x40000000 lookup local\n", false},
+		{"b4's own guard as busybox prints it", "9:\tfrom all fwmark 0x40000000/0x40000000 lookup local \n", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := stubRules(t, c.guard+rosRules)
+			r := reconcilingManager(false)
+			r.ensureLocalGuard()
+			if got := f.index(guardAdd) >= 0; got != c.added {
+				t.Errorf("with %q at the guard priority, guard added = %v, want %v: only a rule for every packet with the steer mark and mask keeps all answers for this device out of b4tun0", strings.TrimSpace(c.guard), got, c.added)
+			}
+		})
+	}
+}
+
 func TestTeardownRemovesTheLocalGuardByItsMarkOnly(t *testing.T) {
 	for _, captureAdded := range []bool{true, false} {
 		f := stubRules(t, rosRules)

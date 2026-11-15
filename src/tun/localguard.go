@@ -41,13 +41,13 @@ func localGuardNeeded(ruleShow string, capturePrio int) bool {
 	return !ok || prio >= capturePrio
 }
 
-func localGuardPresent(ruleShow string, prio int) bool {
+func localGuardPresent(ruleShow, steer string, prio int) bool {
 	for _, line := range strings.Split(ruleShow, "\n") {
 		p, ok := rulePriority(line)
 		if !ok || p != prio || !isLocalLookup(ruleFieldValue(line, "lookup")) {
 			continue
 		}
-		if markMatches(ruleFieldValue(line, "fwmark"), defaultSteerMark) {
+		if ruleFieldValue(line, "fwmark") == steer && ruleMatchesAllTraffic(strings.Fields(line)) {
 			return true
 		}
 	}
@@ -82,7 +82,7 @@ func (r *routeManager) syncLocalGuard(ruleShow string) {
 		return
 	}
 	prio := r.capturePrio - 1
-	if localGuardPresent(ruleShow, prio) {
+	if localGuardPresent(ruleShow, r.steerMarkStr(), prio) {
 		r.localGuardAdded = true
 		return
 	}

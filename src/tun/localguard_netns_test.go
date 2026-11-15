@@ -130,7 +130,11 @@ func TestNetnsSteeredPacketsForThisDeviceStayLocal(t *testing.T) {
 				t.Errorf("a steered packet to another host on a connected network is routed as %q, want it in b4cap0: DNS answers to LAN devices and queries to a resolver on the LAN must still be captured", onLink)
 			}
 
-			rules := steerRules(netnsIP(t, "rule", "show"))
+			show := netnsIP(t, "rule", "show")
+			if tc.guard && !localGuardPresent(show, r.steerMarkStr(), r.capturePrio-1) {
+				t.Errorf("b4 does not recognise the guard it added in this ip rule output, so every reconcile would try to add it again:\n%s", show)
+			}
+			rules := steerRules(show)
 			var guards []string
 			for _, line := range rules {
 				if strings.HasSuffix(line, "lookup local") {
@@ -146,7 +150,7 @@ func TestNetnsSteeredPacketsForThisDeviceStayLocal(t *testing.T) {
 
 			r.teardownPortCapture()
 			torn = true
-			show := netnsIP(t, "rule", "show")
+			show = netnsIP(t, "rule", "show")
 			if left := steerRules(show); len(left) != 0 {
 				t.Errorf("after teardown these rules with the steer mark are left: %q", left)
 			}
