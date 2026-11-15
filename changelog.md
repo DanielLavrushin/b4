@@ -4,6 +4,10 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- A connection the router opened itself, such as one through b4's SOCKS5 server, to an address of a proxy set stalled or was reset when another set listed its site and had a bypass strategy; on iptables only when the proxy set was enabled after b4 started. [#597](https://github.com/DanielLavrushin/b4/issues/597)
+
 ## [1.91.0] - 2026-11-14
 
 ### Added
