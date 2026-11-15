@@ -155,6 +155,9 @@ func Techniques(set *config.SetConfig, payloads []hubwire.BlobRef) []Term {
 		if ws.Scale > 0 {
 			p["scale"] = ws.Scale
 		}
+		if ws.StripScale {
+			p["strip_scale"] = true
+		}
 		if ws.Cutoff != "" {
 			p["cutoff"] = ws.Cutoff
 		}

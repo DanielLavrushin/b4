@@ -150,7 +150,10 @@ func wsSizeFieldText(name string, before, after int) string {
 
 func wsSizeTraceOpened(key streamKey, set string, before, after wsSizeFields) {
 	scale := "no Window Scale option"
-	if before.scale >= 0 {
+	switch {
+	case before.scale >= 0 && after.scale < 0:
+		scale = fmt.Sprintf("scale %d removed", before.scale)
+	case before.scale >= 0:
 		scale = wsSizeFieldText("scale", before.scale, after.scale)
 	}
 	log.Tracef("WSSize: opened for %s -> %s (set: %s): %s, %s", key.client, key.server, set, wsSizeFieldText("window", int(before.window), int(after.window)), scale)
@@ -357,7 +360,10 @@ func wsSizeScaleAt(tcp []byte, hlen int) int {
 func wsSizeApply(raw []byte, at, hlen int, ws config.WSSizeConfig) (wsSizeFields, wsSizeFields) {
 	tcp := raw[at:]
 	before := wsSizeFields{window: binary.BigEndian.Uint16(tcp[14:16]), scale: -1}
-	scaleAt := wsSizeScaleAt(tcp, hlen)
+	scaleAt := 0
+	if tcp[13]&0x02 != 0 {
+		scaleAt = wsSizeScaleAt(tcp, hlen)
+	}
 	if scaleAt > 0 {
 		before.scale = int(tcp[scaleAt])
 	}
@@ -365,14 +371,23 @@ func wsSizeApply(raw []byte, at, hlen int, ws config.WSSizeConfig) (wsSizeFields
 	if ws.Window > 0 {
 		after.window = uint16(ws.Window)
 	}
-	if ws.Scale > 0 && before.scale > ws.Scale {
+	switch {
+	case ws.StripScale:
+		after.scale = -1
+	case ws.Scale > 0 && before.scale > ws.Scale:
 		after.scale = ws.Scale
 	}
 	if after == before {
 		return before, after
 	}
 	binary.BigEndian.PutUint16(tcp[14:16], after.window)
-	if after.scale != before.scale {
+	switch {
+	case after.scale == before.scale:
+	case after.scale < 0:
+		for ; scaleAt > 0; scaleAt = wsSizeScaleAt(tcp, hlen) {
+			tcp[scaleAt-2], tcp[scaleAt-1], tcp[scaleAt] = 1, 1, 1
+		}
+	default:
 		tcp[scaleAt] = byte(after.scale)
 	}
 	if raw[0]>>4 == 4 {

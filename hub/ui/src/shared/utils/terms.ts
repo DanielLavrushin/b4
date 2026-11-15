@@ -16,6 +16,7 @@ const extras: Record<string, [string, string][]> = {
   wssize: [
     ["window", "technique.wssize.window"],
     ["scale", "technique.wssize.scale"],
+    ["strip_scale", "technique.wssize.stripScale"],
     ["cutoffLabel", "technique.wssize.cutoffLabel"],
   ],
   dns: [

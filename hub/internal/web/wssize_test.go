@@ -64,6 +64,18 @@ func TestWSSizeIsDescribedAsATechnique(t *testing.T) {
 		t.Errorf("with no window to write the cutoff changes no packet and must not be a parameter: %+v", Techniques(&scaleOnly, nil))
 	}
 
+	stripped := setWithoutTechniques()
+	stripped.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1, Scale: 6, StripScale: true}
+	if ws := termOf(Techniques(&stripped, nil), wssizeTerm); ws == nil || !reflect.DeepEqual(ws.Params, map[string]interface{}{"window": 1, "strip_scale": true}) {
+		t.Errorf("a set that removes the Window Scale option must say so and must not list the scale it overrides: %+v", Techniques(&stripped, nil))
+	}
+
+	stripOnly := setWithoutTechniques()
+	stripOnly.TCP.WSSize = config.WSSizeConfig{Enabled: true, StripScale: true}
+	if ws := termOf(Techniques(&stripOnly, nil), wssizeTerm); ws == nil || !reflect.DeepEqual(ws.Params, map[string]interface{}{"strip_scale": true}) {
+		t.Errorf("removing the Window Scale option alone changes the SYN and must be listed: %+v", Techniques(&stripOnly, nil))
+	}
+
 	stale := setWithoutTechniques()
 	stale.TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1, Cutoff: "client_hello"}
 	if ws := termOf(Techniques(&stale, nil), wssizeTerm); ws == nil || !reflect.DeepEqual(ws.Params, map[string]interface{}{"window": 1}) {

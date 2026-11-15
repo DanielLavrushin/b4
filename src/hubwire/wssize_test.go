@@ -220,3 +220,47 @@ func TestWSSizeCutoffCrossesAndChangesFingerprint(t *testing.T) {
 		t.Fatal("older router was not warned about the cutoff")
 	}
 }
+
+func TestWSSizeStripScaleCrossesAndNeedsItsRelease(t *testing.T) {
+	lowered := buildWSSizeSet(t, config.WSSizeConfig{Enabled: true, Window: 1, Scale: 1})
+	stripped := buildWSSizeSet(t, config.WSSizeConfig{Enabled: true, Window: 1, StripScale: true})
+	if v, ok := lookupPath(stripped.Set, "tcp.wssize.strip_scale"); !ok || v != true {
+		t.Fatalf("tcp.wssize.strip_scale must cross: tcp=%v", stripped.Set["tcp"])
+	}
+	if stripped.Fingerprint == lowered.Fingerprint {
+		t.Error("removing the Window Scale option must change the strategy fingerprint against lowering it")
+	}
+	if stripped.MinB4 != "1.92.0" || lowered.MinB4 != "1.91.0" {
+		t.Errorf("min_b4 is %s with strip_scale and %s without, want 1.92.0 and 1.91.0", stripped.MinB4, lowered.MinB4)
+	}
+	older, err := Open(stripped, OpenOptions{B4Version: "1.91.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := warningCodes(older.Warnings)["version_too_old"]; !ok {
+		t.Error("a b4 older than the option was not warned about a set that removes the Window Scale option")
+	}
+	imported, err := Open(stripped, OpenOptions{B4Version: "1.92.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := warningCodes(imported.Warnings)["version_too_old"]; ok {
+		t.Error("the release that adds the option was warned about it")
+	}
+	if got := imported.Set.TCP.WSSize; !got.StripScale || got.Scale != 0 || got.Window != 1 || !got.Enabled {
+		t.Errorf("the block arrived as %+v", got)
+	}
+
+	both := buildWSSizeSet(t, config.WSSizeConfig{Enabled: true, Window: 1, Scale: 6, StripScale: true})
+	if _, ok := lookupPath(both.Set, "tcp.wssize.scale"); ok {
+		t.Errorf("a scale that strip_scale overrides must not cross: tcp=%v", both.Set["tcp"])
+	}
+	if both.Fingerprint != stripped.Fingerprint {
+		t.Error("a scale that strip_scale overrides must not change the strategy fingerprint")
+	}
+
+	only := buildWSSizeSet(t, config.WSSizeConfig{Enabled: true, StripScale: true})
+	if v, ok := lookupPath(only.Set, "tcp.wssize.strip_scale"); !ok || v != true {
+		t.Errorf("strip_scale without a window still changes the SYN and must cross: tcp=%v", only.Set["tcp"])
+	}
+}

@@ -17,6 +17,8 @@ func TestWSSizeTopicsSayWhatZeroAndTheCutoffMean(t *testing.T) {
 			"wssize_unsupported",
 			"targets.tls (the TLS version filter) does not limit the rewrite",
 			"A Discovery run does not",
+			"or, with tcp.wssize.strip_scale, removed",
+			"switches tcp.wssize.strip_scale on",
 		},
 		"tcp.wssize.window": {
 			"0 means LEAVE THE WINDOW UNCHANGED",
@@ -28,6 +30,15 @@ func TestWSSizeTopicsSayWhatZeroAndTheCutoffMean(t *testing.T) {
 			"0 means LEAVE THE OPTION UNCHANGED",
 			"b4 only lowers",
 			"WHOLE connection",
+			"removes the option instead of lowering it",
+		},
+		"tcp.wssize.strip_scale": {
+			"removes the Window Scale option from the SYN",
+			"become NOPs",
+			"its window field is still written when tcp.wssize.window is above 0",
+			"65535 bytes per round trip",
+			"It takes the place of tcp.wssize.scale",
+			"a config save sets it back to 0",
 		},
 		"tcp.wssize.cutoff": {
 			"'' (empty, the default): after the TLS ClientHello ends",
@@ -44,7 +55,7 @@ func TestWSSizeTopicsSayWhatZeroAndTheCutoffMean(t *testing.T) {
 				t.Errorf("%s no longer says %q: %s", key, phrase, facts)
 			}
 		}
-		for _, gone := range []string{"meaningful zero", "bypass", "B4 ", "through first outgoing data packet inclusive by default", "5 seconds from SYN", "each config swap Discovery makes", "2 bytes at a time", "the range is checked only then"} {
+		for _, gone := range []string{"meaningful zero", "bypass", "B4 ", "through first outgoing data packet inclusive by default", "5 seconds from SYN", "each config swap Discovery makes", "2 bytes at a time", "the range is checked only then", "leaves the scale alone"} {
 			if strings.Contains(facts, gone) {
 				t.Errorf("%s still says %q, which the code no longer does: %s", key, gone, facts)
 			}

@@ -378,7 +378,8 @@ func emitWSSize(set *config.SetConfig, prof *Profile, ti tokenIndex, notes *note
 		ws.Scale = clamp(prof.WinScale, 0, config.MaxWSSizeScale)
 		fields := []string{"tcp.wssize.enabled=true", "tcp.wssize.window=" + strconv.Itoa(ws.Window)}
 		if ws.Scale == 0 {
-			notes.set(tok, StatusApproximated, "wsSizeApproximated", fields...)
+			ws.StripScale = true
+			notes.set(tok, StatusApproximated, "wsSizeApproximated", append(fields, "tcp.wssize.strip_scale=true")...)
 			return
 		}
 		notes.set(tok, StatusMapped, "wsSizeMapped", append(fields, "tcp.wssize.scale="+strconv.Itoa(ws.Scale))...)

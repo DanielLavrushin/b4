@@ -288,6 +288,9 @@ func (c *Config) Validate() error {
 	for setIdx, set := range c.Sets {
 		ws := &set.TCP.WSSize
 		ws.Cutoff = NormalizeWSSizeCutoff(ws.Cutoff)
+		if ws.StripScale {
+			ws.Scale = 0
+		}
 		if ws.Enabled {
 			if ws.Window < 0 || ws.Window > MaxWSSizeWindow {
 				v.addf(fmt.Sprintf("sets[%d].tcp.wssize.window", setIdx), "out_of_range",

@@ -148,9 +148,10 @@ Each key is stored only while it differs from its default: the switch on with th
 | `tcp.wssize.enabled` | **Rewrite the real TCP window**, see [Real TCP window (wssize)](../sets/tcp/general.md#wssize) | `false` |
 | `tcp.wssize.window` | The value written into the window field, 0-65535. `0` leaves the window unchanged | `0` |
 | `tcp.wssize.scale` | The upper limit for the Window Scale option of the SYN, 0-14. `0` leaves the option unchanged | `0` |
+| `tcp.wssize.strip_scale` | `true` removes the Window Scale option from the SYN, **Remove the option** in the editor. `tcp.wssize.scale` is then not used and is reset to `0` on save | `false` |
 | `tcp.wssize.cutoff` | Where the rewrite stops: empty for **After the ClientHello**, `first_data` for **After the first data packet**. Any other value is read as empty | empty |
 
-While `tcp.wssize.enabled` is `true`, a number outside its range is refused, and so is an enabled set that also has `routing.enabled` or `tcp.duplicate.enabled`: the web interface refuses the save, and a file that holds one stops b4 at start. The switch on with both numbers `0` is saved as `"wssize": {"enabled": true}` and changes no packet. The keys are writable over MCP. A [shared set](../sets/sharing.md) carries them only while one of the numbers is above `0`.
+While `tcp.wssize.enabled` is `true`, a number outside its range is refused, and so is an enabled set that also has `routing.enabled` or `tcp.duplicate.enabled`: the web interface refuses the save, and a file that holds one stops b4 at start. The switch on with both numbers `0` and `strip_scale` off is saved as `"wssize": {"enabled": true}` and changes no packet. The keys are writable over MCP. A [shared set](../sets/sharing.md) carries them only while one of the numbers is above `0` or `strip_scale` is `true`.
 
 ### A set's calls: `udp.filter_stun` and `udp.filter_l7` {#set-udp-filter-l7}
 
@@ -346,6 +347,7 @@ The AI API key is not part of this file. b4 keeps it in `ai_secrets.json`.
 | TCP > General | **Port Filter** | `tcp.dport_filter` |
 | TCP > General | **Rewrite the real TCP window** | `tcp.wssize.enabled` |
 | TCP > General | **Window** | `tcp.wssize.window` |
+| TCP > General | **Window Scale option** | **Leave unchanged**: `tcp.wssize.scale` `0` and `tcp.wssize.strip_scale` `false`. **Lower to a value**: `tcp.wssize.scale` above `0`. **Remove the option**: `tcp.wssize.strip_scale` `true` |
 | TCP > General | **Window Scale** | `tcp.wssize.scale` |
 | TCP > General | **Stop rewriting** | `tcp.wssize.cutoff`, empty for **After the ClientHello** and `first_data` for **After the first data packet** |
 | TCP > Faking | **Generated Payload** | `faking.payload_file`, a path such as `captures/tls_youtube_com.bin` |

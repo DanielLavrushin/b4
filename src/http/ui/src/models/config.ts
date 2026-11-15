@@ -584,6 +584,7 @@ export interface WSSizeConfig {
   window: number;
   scale: number;
   cutoff?: "" | "first_data";
+  strip_scale?: boolean;
 }
 
 export interface IPHealthConfig {

@@ -4,7 +4,7 @@ title: Real TCP window rewriting
 description: Which packets the Real TCP window (wssize) option of a set rewrites, where the rewrite stops, how long b4 follows a connection, and where the option does not apply.
 ---
 
-[Real TCP window (wssize)](../sets/tcp/general.md#wssize) writes a small TCP window into the first packets of a connection and can lower the Window Scale option of its SYN. b4 follows each connection it rewrites from the SYN to the point where the rewrite stops. Which set a connection gets at its SYN is described in [How sets match traffic](./matching.md#wssize).
+[Real TCP window (wssize)](../sets/tcp/general.md#wssize) writes a small TCP window into the first packets of a connection and can lower or remove the Window Scale option of its SYN. b4 follows each connection it rewrites from the SYN to the point where the rewrite stops. Which set a connection gets at its SYN is described in [How sets match traffic](./matching.md#wssize).
 
 At the **Trace** log level, the [Logs](../logs.md) page shows `WSSize: opened for ...` when b4 starts to follow a connection, with the window and the Window Scale before and after, and `WSSize: ended for ...` with the reason when a packet or the 5-second limit stops the rewrite. No `ended` line follows when the connection goes idle or the configuration is saved.
 
@@ -12,7 +12,7 @@ At the **Trace** log level, the [Logs](../logs.md) page shows `WSSize: opened fo
 
 | Packet of the connection | What changes |
 | --- | --- |
-| The SYN and its retransmissions | The window field, when **Window** is not `0`. The Window Scale option, when **Window Scale** is not `0` and the option holds a larger value |
+| The SYN and its retransmissions | The window field, when **Window** is not `0`. The Window Scale option: lowered with **Lower to a value** when it holds a larger value, removed with **Remove the option** |
 | Packets without data before the stop | The window field |
 | Packets with data up to the stop, the last one included | The window field |
 | Packets after the stop | Nothing |
@@ -61,3 +61,15 @@ b4 sees only the first packets of a connection, 19 by default (**TCP Connection 
 ## A lowered Window Scale lasts
 
 TCP fixes the Window Scale in the SYN. The device keeps writing its windows for its own scale, the server reads them with the lowered one, and b4 does not rescale later packets. With a scale of 7 lowered to 1, the server sees every later window as 1/64 of what the device meant, until the connection closes. **Window** alone has no such effect: packets after the stop carry the device's own window.
+
+## Without the Window Scale option {#strip-scale}
+
+With **Remove the option**, b4 overwrites the option in the SYN with padding of the same length, in every copy of the SYN. A server that receives a SYN without the option offers no window scaling in its answer, and the device then turns scaling off as well. Both ends read every window as a plain number of bytes for the whole connection.
+
+| | Lowered Window Scale | Option removed |
+| --- | --- | --- |
+| The server reads **Window** as | **Window** times 2 to the power of the lowered scale | **Window** bytes |
+| The device's windows after the stop | Read with the lowered scale, too small | Read as sent |
+| Packets rewritten after the stop | None | None |
+
+A connection without window scaling carries at most 65,535 bytes per round trip in each direction, uploads included, until it closes. A connection whose SYN b4 did not rewrite keeps its window scaling.

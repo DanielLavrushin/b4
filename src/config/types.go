@@ -277,10 +277,11 @@ const (
 const MaxDisorderSplitPosition = 1460
 
 type WSSizeConfig struct {
-	Cutoff  string `json:"cutoff"`
-	Enabled bool   `json:"enabled"`
-	Window  int    `json:"window"`
-	Scale   int    `json:"scale"`
+	Cutoff     string `json:"cutoff"`
+	Enabled    bool   `json:"enabled"`
+	Window     int    `json:"window"`
+	Scale      int    `json:"scale"`
+	StripScale bool   `json:"strip_scale"`
 }
 
 func NormalizeWSSizeCutoff(cutoff string) string {
@@ -291,7 +292,7 @@ func NormalizeWSSizeCutoff(cutoff string) string {
 }
 
 func (w WSSizeConfig) Rewrites() bool {
-	return w.Enabled && (w.Window > 0 || w.Scale > 0)
+	return w.Enabled && (w.Window > 0 || w.Scale > 0 || w.StripScale)
 }
 
 func (w WSSizeConfig) StopsAtFirstData() bool {
@@ -306,6 +307,9 @@ func (w WSSizeConfig) Effective() WSSizeConfig {
 	if w.Window <= 0 {
 		w.Cutoff = ""
 	}
+	if w.StripScale {
+		w.Scale = 0
+	}
 	return w
 }
 
@@ -319,7 +323,11 @@ func (w WSSizeConfig) Summary() string {
 		}
 		return strconv.Itoa(n)
 	}
-	summary := number(w.Window) + ":" + number(w.Scale)
+	scale := number(w.Scale)
+	if w.StripScale {
+		scale = "none"
+	}
+	summary := number(w.Window) + ":" + scale
 	if w.Cutoff != "" {
 		summary += ":" + w.Cutoff
 	}

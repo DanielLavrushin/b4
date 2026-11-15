@@ -145,6 +145,9 @@ func wsWindowWanted(ws config.WSSizeConfig, original []byte) int {
 }
 
 func wsScaleWanted(ws config.WSSizeConfig, original []byte) int {
+	if ws.StripScale {
+		return -1
+	}
 	had := wsScale(original)
 	if ws.Scale > 0 && had > ws.Scale {
 		return ws.Scale

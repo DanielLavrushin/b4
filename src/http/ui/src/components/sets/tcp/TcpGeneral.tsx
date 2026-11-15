@@ -24,6 +24,11 @@ interface TcpGeneralProps {
   ) => void;
 }
 
+function wssizeScaleMode(ws: WSSizeConfig): "keep" | "lower" | "strip" {
+  if (ws.strip_scale) return "strip";
+  return ws.scale > 0 ? "lower" : "keep";
+}
+
 export const TcpGeneral = ({
   config,
   tunEngine = false,
@@ -35,17 +40,23 @@ export const TcpGeneral = ({
     window: 0,
     scale: 0,
     cutoff: "",
+    strip_scale: false,
     ...config.tcp.wssize,
   };
   const dup = config.tcp.duplicate ?? { enabled: false, count: 3 };
   const wsConflict = (config.routing?.enabled ?? false) || dup.enabled;
   const wsTun = ws.enabled && !wsConflict && tunEngine;
+  const wsScaleMode = wssizeScaleMode(ws);
+  const setWsScaleMode = (mode: string) => {
+    onChange("tcp.wssize.strip_scale", mode === "strip");
+    onChange("tcp.wssize.scale", mode === "lower" ? Math.max(ws.scale, 1) : 0);
+  };
   const wsIdle =
     ws.enabled &&
     !wsConflict &&
     !tunEngine &&
     ws.window === 0 &&
-    ws.scale === 0;
+    wsScaleMode === "keep";
   const ibd = {
     enabled: false,
     retransmit_threshold: 3,
@@ -169,6 +180,7 @@ export const TcpGeneral = ({
             aiContext={{
               window: ws.window,
               scale: ws.scale,
+              strip_scale: ws.strip_scale ?? false,
               cutoff: ws.cutoff ?? "",
             }}
           />
@@ -227,20 +239,55 @@ export const TcpGeneral = ({
               />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <B4Slider
-                label={t("sets.tcp.general.wssizeScale")}
-                value={ws.scale}
-                path="tcp.wssize.scale"
-                onChange={(value: number) =>
-                  onChange("tcp.wssize.scale", value)
-                }
-                min={0}
-                max={14}
-                step={1}
-                helperText={t("sets.tcp.general.wssizeScaleHelper")}
-                aiTopic="tcp.wssize.scale"
+              <B4Select
+                label={t("sets.tcp.general.wssizeScaleMode")}
+                value={wsScaleMode}
+                path="tcp.wssize.strip_scale"
+                options={[
+                  {
+                    value: "keep",
+                    label: t("sets.tcp.general.wssizeScaleKeep"),
+                    note: t("sets.tcp.general.wssizeScaleKeepNote"),
+                  },
+                  {
+                    value: "lower",
+                    label: t("sets.tcp.general.wssizeScaleLower"),
+                    note: t("sets.tcp.general.wssizeScaleLowerNote"),
+                  },
+                  {
+                    value: "strip",
+                    label: t("sets.tcp.general.wssizeScaleStrip"),
+                    note: t("sets.tcp.general.wssizeScaleStripNote"),
+                  },
+                ]}
+                onChange={(e) => setWsScaleMode(String(e.target.value))}
+                helperText={t("sets.tcp.general.wssizeScaleModeHelper")}
+                changeLabel={t("sets.tcp.general.wssizeStripScale")}
+                aiTopic="tcp.wssize.strip_scale"
+                aiContext={{
+                  strip_scale: ws.strip_scale ?? false,
+                  scale: ws.scale,
+                  window: ws.window,
+                }}
               />
             </Grid>
+            {wsScaleMode === "lower" && (
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4Slider
+                  label={t("sets.tcp.general.wssizeScale")}
+                  value={ws.scale}
+                  path="tcp.wssize.scale"
+                  onChange={(value: number) =>
+                    onChange("tcp.wssize.scale", value)
+                  }
+                  min={1}
+                  max={14}
+                  step={1}
+                  helperText={t("sets.tcp.general.wssizeScaleHelper")}
+                  aiTopic="tcp.wssize.scale"
+                />
+              </Grid>
+            )}
             {ws.window > 0 && (
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Select

@@ -32,6 +32,9 @@ func TestZapret_WSSizeBecomesTheRealTCPWindow(t *testing.T) {
 				t.Fatalf("tcp.wssize=%+v, want it on with window %d, scale %d and the cutoff after the ClientHello, where zapret stops too",
 					tcp.WSSize, tt.window, tt.scale)
 			}
+			if strips := tt.scale == 0; tcp.WSSize.StripScale != strips {
+				t.Fatalf("tcp.wssize.strip_scale=%v: zapret's scale 0 makes the server read the window as a byte count, which b4 gets by removing the option and by nothing else", tcp.WSSize.StripScale)
+			}
 			if tcp.Win.Mode != config.DefaultSetConfig.TCP.Win.Mode {
 				t.Fatalf("tcp.win.mode=%q: fake ACKs with a zero window stood in for the option before b4 had it", tcp.Win.Mode)
 			}
@@ -41,6 +44,9 @@ func TestZapret_WSSizeBecomesTheRealTCPWindow(t *testing.T) {
 			}
 			if got := hasField(n, "tcp.wssize.scale"); got != (tt.scale > 0) {
 				t.Fatalf("the note names the scale only when b4 lowers it: %+v", n)
+			}
+			if got := hasField(n, "tcp.wssize.strip_scale"); got != (tt.scale == 0) {
+				t.Fatalf("the note names strip_scale only when b4 removes the option: %+v", n)
 			}
 			assertNoLostOptions(t, res)
 			assertSetsSave(t, res)

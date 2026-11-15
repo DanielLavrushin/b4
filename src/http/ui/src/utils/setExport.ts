@@ -81,10 +81,12 @@ function resetInertWSSize(cfg: Obj, defaults: Obj): void {
   if (!node || !def || node.enabled !== true) return;
   const window = typeof node.window === "number" ? node.window : 0;
   const scale = typeof node.scale === "number" ? node.scale : 0;
-  if (window <= 0 && scale <= 0) {
+  const strip = node.strip_scale === true;
+  if (window <= 0 && scale <= 0 && !strip) {
     setObjPath(cfg, path, { ...def });
     return;
   }
+  if (strip && scale !== 0) node.scale = 0;
   if (window <= 0 || node.cutoff !== "first_data") {
     setObjPath(cfg, path, { ...node, cutoff: def.cutoff });
   }

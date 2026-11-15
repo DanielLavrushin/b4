@@ -4,6 +4,14 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Real TCP window (wssize)** can remove the Window Scale option instead of lowering it: downloads on the connection then run at up to 64 KB per round trip instead of staying slow. **Window Scale option**, **Remove the option** under **TCP, General** in the set editor.
+
+### Changed
+
+- An imported zapret `--wssize` without a scale, or with scale `0`, sets **Window Scale option** to **Remove the option** in place of leaving the scale unchanged.
+
 ### Fixed
 
 - A connection the router opened itself, such as one through b4's SOCKS5 server, to an address of a proxy set stalled or was reset when another set listed its site and had a bypass strategy; on iptables only when the proxy set was enabled after b4 started. [#597](https://github.com/DanielLavrushin/b4/issues/597)

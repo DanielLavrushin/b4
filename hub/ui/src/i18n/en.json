@@ -1148,6 +1148,7 @@
       "text": "real TCP window (wssize)",
       "window": "window {{window}}",
       "scale": "scale {{scale}}",
+      "stripScale": "Window Scale option removed",
       "cutoffLabel": "{{cutoffLabel}}"
     },
     "rst_protection": {

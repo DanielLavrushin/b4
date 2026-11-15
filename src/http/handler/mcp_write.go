@@ -794,8 +794,11 @@ func mcpSaveSideEffects(before, saved *config.Config, canonical, writtenID strin
 					notes = append(notes, fmt.Sprintf("tcp.wssize has no effect on set %q while the packet engine is TUN: only the NFQUEUE engine applies it.", s.Name))
 				}
 			case !ws.Rewrites() && (!was.Enabled || was.Rewrites()):
-				notes = append(notes, fmt.Sprintf("tcp.wssize changes no packet on set %q until tcp.wssize.window or tcp.wssize.scale is above 0.", s.Name))
+				notes = append(notes, fmt.Sprintf("tcp.wssize changes no packet on set %q until tcp.wssize.window or tcp.wssize.scale is above 0 or tcp.wssize.strip_scale is on.", s.Name))
 			}
+		}
+		if ws, was := s.TCP.WSSize, old.TCP.WSSize; ws.StripScale && !was.StripScale && was.Scale > 0 {
+			notes = append(notes, fmt.Sprintf("Saving also reset tcp.wssize.scale on set %q from %d to 0: tcp.wssize.strip_scale takes its place.", s.Name, was.Scale))
 		}
 		if catchAll := mcpCatchAllRoutingNote(s); catchAll != "" && catchAll != mcpCatchAllRoutingNote(old) {
 			notes = append(notes, catchAll)
