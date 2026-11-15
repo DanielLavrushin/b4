@@ -474,6 +474,7 @@ In TUN mode (`queue.mode: "tun"`) packets reach b4 through a TUN device, `b4tun0
 | --- | --- |
 | Capture | Chain `B4_TUN`, jumped from mangle `OUTPUT` and `PREROUTING` (from `PREROUTING` through `B4_TUN_GATE` when [device filtering](../settings/core.md#device-filtering) selects devices), or only from `OUTPUT` while b4 captures only the router's own connections (see [Packet engine](../settings/core.md#packet-engine)): sets `0x40000000/0x40000000` on UDP DNS queries and answers, on the first packets of connections to the capture ports (on every packet of them where `xt_connbytes` is missing; TCP only in the direction of the connection's first packet where `xt_conntrack` is available), on every TCP packet to the capture ports of a set's packet duplication addresses (only in the direction of the connection's first packet where `xt_conntrack` is available), and on TCP resets from the capture ports, only in the reply direction where `xt_conntrack` is available, while a set has **RST Injection Protection** on or an escalation target |
 | Rule | `fwmark 0x40000000/0x40000000 lookup <table>` at priority 10, or one less than the lowest rule another service has at 5-9, but not below 4 |
+| Router's own addresses | `fwmark 0x40000000/0x40000000 lookup local` at one less than the capture rule, added only when no rule looks up the `local` table for every packet ahead of the capture rule, as in RouterOS containers (seen on RouterOS 7.24), where that rule sits at 200. Packets for the router's own addresses, such as the answers to its own DNS queries, are then delivered on the router instead of entering `b4tun0` |
 | Table | `default dev b4tun0`; chosen from 96 down to 61, skipping 77 and tables in use, or next to `queue.tun.route_table` |
 | Packets b4 writes back | Socket mark queue mark + `0x10000000`, not tracked by conntrack (`raw OUTPUT ... -j CT --notrack`) unless `system.tables.skip_setup` is on or the kernel has no raw table or no `CT` target. When `system.tables.skip_setup` is off and b4 cannot install this rule, the one for packets toward a device or the SNAT into `b4tun0`, it captures only the router's own connections |
 | Packets toward a device | Socket mark `0x20000000`, not tracked by conntrack under the same conditions |
@@ -532,6 +533,7 @@ rest of these chains; on iptables that includes every rule below them in mangle
 | --- | --- | --- | --- |
 | 2 | `fwmark <mark>/0x1027fff iif lo` | `main` | Proxy sets and Telegram over WebSocket, IPv4 |
 | 3 | `fwmark <mark>/0x27fff` | 252; 251, 250, 300-399 | Proxy sets and Telegram over WebSocket |
+| 3-9 | `fwmark 0x40000000/0x40000000` | `local` | TUN mode with port capture, IPv4, when no rule looks up `local` for every packet ahead of the capture rule |
 | 4-10 | `fwmark 0x40000000/0x40000000` | 96 down to 61, or next to `queue.tun.route_table` | TUN mode with port capture, IPv4 |
 | 88, 89 | `fwmark 0x20000000/0x20000000` | `main` without its default route, then the uplink table: 97 down to 62, or `queue.tun.route_table` | TUN mode on the whole default route, IPv4 |
 | 99, 100 | `fwmark 0x10000000/0x10000000` | The same | TUN mode on the whole default route, IPv4 |

@@ -116,6 +116,7 @@ func (r *routeManager) setupCaptureTable() error {
 			break
 		}
 	}
+	r.ensureLocalGuard()
 	if _, err := run("ip", "rule", "add", "fwmark", steer, "lookup", tableStr, "priority", strconv.Itoa(r.capturePrio)); err != nil {
 		return routingError("ip rule add (capture steer; needs kernel policy routing)", r.captureTable, err)
 	}
@@ -667,6 +668,7 @@ func (r *routeManager) ensurePortCapture() {
 	tableStr := strconv.Itoa(r.captureTable)
 	steer := r.steerMarkStr()
 
+	r.ensureLocalGuard()
 	if !r.steerRulePresent(steer, tableStr) {
 		if _, err := run("ip", "rule", "add", "fwmark", steer, "lookup", tableStr, "priority", strconv.Itoa(r.capturePrio)); err == nil {
 			log.Infof("TUN: reconcile restored capture steer rule (mark %s -> table %s)", steer, tableStr)
@@ -751,6 +753,9 @@ func (r *routeManager) steerRulePresent(steer, tableStr string) bool {
 
 func (r *routeManager) teardownPortCapture() {
 	if !r.captureRulesAdded {
+		if r.localGuardAdded {
+			r.removeLocalGuard()
+		}
 		return
 	}
 	tableStr := strconv.Itoa(r.captureTable)
@@ -774,6 +779,9 @@ func (r *routeManager) teardownPortCapture() {
 		if _, err := run("ip", "rule", "del", "fwmark", steer, "lookup", tableStr); err != nil {
 			break
 		}
+	}
+	if r.localGuardAdded {
+		r.removeLocalGuard()
 	}
 	if _, err := run("ip", "route", "flush", "table", tableStr); err != nil {
 		log.Tracef("TUN: capture table %s flush: %v", tableStr, err)
