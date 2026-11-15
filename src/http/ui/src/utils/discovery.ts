@@ -535,7 +535,7 @@ export function describeStrategy(set: B4SetConfig, t: TFn): string {
   if (isOn(tcp?.incoming?.mode)) parts.push(S("extras.incoming"));
   if (isOn(tcp?.win?.mode)) parts.push(S("extras.window"));
   const ws = tcp?.wssize;
-  if (ws?.enabled && (ws.window > 0 || ws.scale > 0)) {
+  if (ws?.enabled && (ws.window > 0 || ws.scale > 0 || ws.strip_scale)) {
     parts.push(S("extras.wssize"));
   }
   if ((tcp?.seg2delay ?? 0) > 0) parts.push(S("extras.delay"));

@@ -257,6 +257,59 @@ func TestMCPWriteSaysWhenWSSizeChangesNoPacket(t *testing.T) {
 	}
 }
 
+func TestMCPWriteSaysWhatStripScaleDoesToTheBlock(t *testing.T) {
+	const idle = `tcp.wssize changes no packet on set "video" until tcp.wssize.window or tcp.wssize.scale is above 0 or tcp.wssize.strip_scale is on.`
+	const reset = `Saving also reset tcp.wssize.scale on set "video" from 6 to 0: tcp.wssize.strip_scale takes its place.`
+	cases := []struct {
+		name, value         string
+		before, after       config.WSSizeConfig
+		saysIdle, saysReset bool
+	}{
+		{name: "switched on over a block that changed nothing", value: "true",
+			before: config.WSSizeConfig{Enabled: true}, after: config.WSSizeConfig{Enabled: true, StripScale: true}},
+		{name: "switched on over a lowered scale", value: "true",
+			before: config.WSSizeConfig{Enabled: true, Window: 1, Scale: 6}, after: config.WSSizeConfig{Enabled: true, Window: 1, StripScale: true}, saysReset: true},
+		{name: "switched off as the block's last effect", value: "false",
+			before: config.WSSizeConfig{Enabled: true, StripScale: true}, after: config.WSSizeConfig{Enabled: true}, saysIdle: true},
+		{name: "switched off next to a window", value: "false",
+			before: config.WSSizeConfig{Enabled: true, Window: 1, StripScale: true}, after: config.WSSizeConfig{Enabled: true, Window: 1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := writableCfg(t)
+			cfg.Sets[0].TCP.WSSize = tc.before
+			srv, api := newMCPTestServerAPI(t, cfg)
+			session, ctx := connectMCP(t, srv)
+
+			out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].tcp.wssize.strip_scale", tc.value))
+			if !out.Changed {
+				t.Fatalf("write did not take: %+v", out)
+			}
+			if got := api.getCfg().Sets[0].TCP.WSSize; got != tc.after {
+				t.Fatalf("the block is saved as %+v, want %+v", got, tc.after)
+			}
+			if got := strings.Contains(out.Note, idle); got != tc.saysIdle {
+				t.Errorf("note says the block changes no packet = %v, want %v: %q", got, tc.saysIdle, out.Note)
+			}
+			if got := strings.Contains(out.Note, reset); got != tc.saysReset {
+				t.Errorf("note says the scale was reset = %v, want %v: %q", got, tc.saysReset, out.Note)
+			}
+		})
+	}
+
+	cfg := writableCfg(t)
+	cfg.Sets[0].TCP.WSSize = config.WSSizeConfig{Enabled: true, Window: 1, StripScale: true}
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[video].tcp.wssize.scale", "6"))
+	if out.Changed {
+		t.Fatalf("a scale written next to strip_scale was reported as applied: %+v", out)
+	}
+	if got := api.getCfg().Sets[0].TCP.WSSize; got.Scale != 0 || !got.StripScale {
+		t.Fatalf("the block is saved as %+v, want the scale left at 0", got)
+	}
+}
+
 func TestMCPWriteRejectsNonAllowlistedPaths(t *testing.T) {
 	cfg := mcpTestCfg()
 	cfg.System.WebServer.MCP.AllowWrites = true

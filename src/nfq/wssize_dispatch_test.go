@@ -276,18 +276,18 @@ func TestWSSizeIdleConfigNeverTakesTheCacheLock(t *testing.T) {
 }
 
 func TestWSSizeEitherNumberSwitchesTheRewriteOn(t *testing.T) {
-	for _, numbers := range []config.WSSizeConfig{{Window: 512, Scale: 0}, {Window: 0, Scale: 6}} {
+	for _, numbers := range []config.WSSizeConfig{{Window: 512, Scale: 0}, {Window: 0, Scale: 6}, {StripScale: true}, {Window: 1, StripScale: true}} {
 		w, _, _ := wsWorker(t, func(s *config.SetConfig) {
-			s.TCP.WSSize.Window, s.TCP.WSSize.Scale = numbers.Window, numbers.Scale
+			s.TCP.WSSize.Window, s.TCP.WSSize.Scale, s.TCP.WSSize.StripScale = numbers.Window, numbers.Scale, numbers.StripScale
 		})
 		syn := wsPacket(IPv4, 12345, 100, 0x02, wsKernelSynOptions, nil)
 		original := append([]byte(nil), syn...)
 		v := wsDispatch(t, w, &wsQueue{}, 1, syn)
 		if v.packet == nil {
-			t.Fatalf("with window %d and scale %d the SYN left with a plain accept, so nothing was rewritten", numbers.Window, numbers.Scale)
+			t.Fatalf("with %+v the SYN left with a plain accept, so nothing was rewritten", numbers)
 		}
 		if wsWindow(v.packet) != wsWindowWanted(numbers, original) || wsScale(v.packet) != wsScaleWanted(numbers, original) || !wsChecksumsValid(v.packet) {
-			t.Fatalf("with window %d and scale %d the SYN left as %s", numbers.Window, numbers.Scale, wsShow(v.packet))
+			t.Fatalf("with %+v the SYN left as %s", numbers, wsShow(v.packet))
 		}
 	}
 }

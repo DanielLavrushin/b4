@@ -21,16 +21,23 @@ The **General** sub-tab of the [TCP](./index.md) tab holds the settings that app
 
 Makes the set's connections advertise a small TCP window in their first packets, so the server sends the start of its reply in small pieces. Unlike [Window Manipulation](./faking.md#window-manipulation), which adds fake packets, this option changes the connection's own packets. It is based on wssize from [zapret2](https://github.com/bol-van/zapret2).
 
-![The Real TCP window (wssize) section](/img/general/20261113180000.png)
+![The Real TCP window (wssize) section](/img/general/20261115160000.png)
 
 | Field | What it does | Default |
 | --- | --- | --- |
-| **Rewrite the real TCP window** | Turns the rewrite on. Nothing changes until **Window** or **Window Scale** is set. | Off |
+| **Rewrite the real TCP window** | Turns the rewrite on. Nothing changes until **Window** is set or **Window Scale option** is changed. | Off |
 | **Window** | The value written into the window field of the packets, 1 to 65535. `0` leaves the window unchanged. | `0` |
-| **Window Scale** | Lowers the Window Scale option in the first packet of a connection to this value, 1 to 14, and never raises it. `0` leaves the option unchanged. | `0` |
+| **Window Scale option** | What happens to the Window Scale option in the first packet of a connection, see the table below. | **Leave unchanged** |
+| **Window Scale** | Shown with **Lower to a value**. Lowers the option to this value, 1 to 14, and never raises it. | `1` |
 | **Stop rewriting** | Shown once **Window** is set. **After the ClientHello** writes the window into every packet of the ClientHello. **After the first data packet** stops at the first packet with data, as zapret2 does. | **After the ClientHello** |
 
-After the first packet, the server multiplies **Window** by 2 to the power of the Window Scale it received. With **Window** `1` and **Window Scale** `1`, the first piece of the server's reply is 2 bytes long. With **Window** `1` and a scale left at 7, it is 128 bytes long. The device's packets after the stop carry its own window again.
+After the first packet, the server multiplies **Window** by 2 to the power of the Window Scale it received. Without the option it reads **Window** as written. The device's packets after the stop carry its own window again.
+
+| Window Scale option | First piece of the server's reply with **Window** `1` | After the stop |
+| --- | --- | --- |
+| **Leave unchanged** | 128 bytes with a device scale of 7 | The connection runs as usual. |
+| **Lower to a value** | 2 bytes with **Window Scale** `1` | The server reads every later window too small, and downloads on the connection stay slow until it closes. |
+| **Remove the option** | 1 byte | The connection runs without window scaling: the server reads later windows as the device sent them, and each direction carries at most 64 KB per round trip to the server and back, about 1.3 MB/s at 50 ms. |
 
 The rewrite starts with the first packet of a connection, before the server name is known. It applies only when the set already takes the connection at that point.
 
@@ -45,7 +52,7 @@ The first connection to a domain whose address b4 has not seen yet passes unchan
 The option does not work in a set that also uses [routing](../routing.md) or [Packet Duplication](#packet-duplication). The editor shows a notice, and an enabled set that combines the option with either of them is not saved. With **TUN interface** as the [packet engine](../../settings/core.md#ingestion-mode), the option does nothing.
 
 :::warning
-A lowered **Window Scale** stays for the whole connection and keeps its downloads slow. **Window** alone slows nothing down once the rewrite has stopped.
+A lowered **Window Scale** stays for the whole connection and keeps its downloads slow. **Remove the option** limits the connection to 64 KB per round trip, uploads included. **Window** alone slows nothing down once the rewrite has stopped.
 :::
 
 ## Packet Duplication {#packet-duplication}

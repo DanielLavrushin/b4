@@ -27,6 +27,7 @@ interface B4SelectProps extends Omit<SelectProps<string | number>, "variant"> {
   options: B4SelectOption[];
   helperText?: string;
   path?: string;
+  changeLabel?: string;
   aiTopic?: string;
   aiContext?: Record<string, unknown>;
   aiQuestion?: string;
@@ -37,24 +38,25 @@ export const B4Select = ({
   options,
   helperText,
   path,
+  changeLabel,
   aiTopic,
   aiContext,
   aiQuestion,
   ...props
 }: B4SelectProps) => {
   const resolvedLabel = useFieldLabel(path, label);
-  const changed = useChangedField(path, resolvedLabel);
+  const changed = useChangedField(path, changeLabel ?? resolvedLabel);
   const { registerValueLabels, scopeVersion } = useChangedFields();
   const optionLabels = JSON.stringify(
     options.map((o) => [String(o.value), o.label]),
   );
   useEffect(() => {
-    if (!path) return;
+    if (!path || changeLabel !== undefined) return;
     registerValueLabels(
       path,
       new Map(JSON.parse(optionLabels) as [string, string][]),
     );
-  }, [path, optionLabels, registerValueLabels, scopeVersion]);
+  }, [path, changeLabel, optionLabels, registerValueLabels, scopeVersion]);
   const fc = (
     <FormControl fullWidth size="small">
       <InputLabel
