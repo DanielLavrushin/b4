@@ -1,9 +1,13 @@
 package tables
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/tproxy"
 )
 
 const (
@@ -102,6 +106,45 @@ func TestNFTablesKeepsALocalDeliveryToASetsListenerOutOfTheQueue(t *testing.T) {
 			table := nftEmittedTable(h.take())
 			requireLocalDeliveryReturnAboveTheQueue(t, nftChainName, table.chains[nftChainName], nftLocalDeliveryReturnRule,
 				func(r string) bool { return strings.Contains(r, " queue ") })
+			serveNftListings(t, table)
+			if !(&Monitor{}).checkRules(cfg) {
+				t.Errorf("the monitor finds rules missing right after they were installed")
+			}
+		})
+	}
+}
+
+func TestNFTablesSkipsEveryProxySetsMarkInTheCaptureChain(t *testing.T) {
+	for _, l := range captureLayouts {
+		t.Run(l.name, func(t *testing.T) {
+			h := newGoldenHost(t)
+			goldenIsolate(t, h)
+			cfg := captureLayoutConfig(backendNFTables, l)
+			proxy := config.NewSetConfig()
+			proxy.Id, proxy.Name, proxy.Enabled = "p", "p", true
+			proxy.Routing.Enabled, proxy.Routing.Mode = true, config.RoutingModeProxy
+			pinned := config.NewSetConfig()
+			pinned.Id, pinned.Name, pinned.Enabled = "q", "q", true
+			pinned.Routing.Enabled, pinned.Routing.Mode, pinned.Routing.FWMark = true, config.RoutingModeProxy, 0x123
+			cfg.Sets = append(cfg.Sets, &proxy, &pinned)
+			if err := AddRules(cfg); err != nil {
+				t.Fatalf("AddRules: %v", err)
+			}
+			table := nftEmittedTable(h.take())
+			rules := table.chains[nftChainName]
+			firstQueue := slices.IndexFunc(rules, func(r string) bool { return strings.Contains(r, " queue ") })
+			if firstQueue < 0 {
+				t.Fatalf("%s holds no queue rule, so this check proves nothing: %q", nftChainName, rules)
+			}
+			for _, mark := range []uint32{tproxy.MarkForConfig(cfg, &proxy), 0x123} {
+				want := fmt.Sprintf("meta mark & 0x27fff == 0x%x return", mark)
+				switch at := slices.Index(rules, want); {
+				case at < 0:
+					t.Errorf("%s lacks %q: with a device filter the router's own packets reach it from the output hook, where a packet a proxy set marked still has the uplink as its output interface, so only the set's mark keeps it out of the queue: %q", nftChainName, want, rules)
+				case at > firstQueue:
+					t.Errorf("%s holds %q at %d, below the queue rule at %d: %q", nftChainName, want, at, firstQueue, rules)
+				}
+			}
 			serveNftListings(t, table)
 			if !(&Monitor{}).checkRules(cfg) {
 				t.Errorf("the monitor finds rules missing right after they were installed")

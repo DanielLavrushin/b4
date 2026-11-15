@@ -6,12 +6,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/daniellavrushin/b4/config"
 )
 
 type netnsProxyCaptureCase struct {
 	name     string
 	late     bool
 	restored bool
+	devices  bool
 }
 
 func TestNetnsARouterDialToAProxySetStaysOutOfTheQueue(t *testing.T) {
@@ -26,6 +29,7 @@ func TestNetnsARouterDialToAProxySetStaysOutOfTheQueue(t *testing.T) {
 		if engine == backendIPTables {
 			cases = append(cases, netnsProxyCaptureCase{name: "set enabled after start, return deleted and restored", late: true, restored: true})
 		}
+		cases = append(cases, netnsProxyCaptureCase{name: "device filter, set enabled at start", devices: true})
 		for _, c := range cases {
 			t.Run(engine+", "+c.name, func(t *testing.T) {
 				if engine == backendNFTables && !hasBinary("nft") {
@@ -47,6 +51,12 @@ func netnsRouterDialStaysOutOfTheQueue(t *testing.T, engine string, c netnsProxy
 	capture := cfg
 	if c.late {
 		capture = netnsConfig(engine)
+	}
+	if c.devices {
+		for _, each := range []*config.Config{cfg, capture} {
+			each.Queue.Devices.Enabled = true
+			each.Queue.Devices.Devices = []config.Device{{MAC: "02:B4:00:00:00:99", Selected: true}}
+		}
 	}
 	if err := AddRules(capture); err != nil {
 		t.Fatalf("AddRules: %v", err)

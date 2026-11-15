@@ -393,6 +393,11 @@ func (n *NFTablesManager) apply() error {
 	if err := n.addRule(nftChainName, nftLocalDeliveryReturn()...); err != nil {
 		return err
 	}
+	for _, mark := range captureProxySetMarks(cfg) {
+		if err := n.addRule(nftChainName, nftSetMarkReturn(mark)...); err != nil {
+			return err
+		}
+	}
 
 	if cfg.Queue.Mark != 0 {
 		if err := n.addRule("prerouting", nftOwnReplyReturn(markAccept, n.ctDirectionSupported, n.socketKey)...); err != nil {
