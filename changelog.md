@@ -4,6 +4,8 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+## [1.91.1] - 2026-11-15
+
 ### Added
 
 - **Real TCP window (wssize)** can remove the Window Scale option instead of lowering it: downloads on the connection then run at up to 64 KB per round trip instead of staying slow. **Window Scale option**, **Remove the option** under **TCP, General** in the set editor.
