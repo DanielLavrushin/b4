@@ -4,8 +4,13 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- UDP through an upstream proxy is limited to as many sessions as the router's open-file limit leaves room for: above it, new UDP sessions are dropped until old ones close.
+
 ### Fixed
 
+- With **Route UDP through upstream** on, UDP already flowing through the proxy, such as a call, froze while a new connection waited for a proxy that did not answer.
 - On routers that use iptables, **Port Filter** lists with eight or more port ranges across the sets kept b4's capture rules from installing.
 
 ## [1.91.1] - 2026-11-15

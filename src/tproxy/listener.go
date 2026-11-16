@@ -105,11 +105,15 @@ type Listener struct {
 	lnV6   net.Listener
 	v6Err  string
 
-	udpV4       *net.UDPConn
-	udpV6       *net.UDPConn
-	udpMu       sync.Mutex
-	udpSessions map[string]*udpSession
-	udpFailWarn sync.Once
+	udpV4        *net.UDPConn
+	udpV6        *net.UDPConn
+	udpMu        sync.Mutex
+	udpSessions  map[string]*udpSession
+	udpSetups    int
+	udpFailWarn  sync.Once
+	udpDownUntil atomic.Int64
+	udpRefused   atomic.Int64
+	udpRefusedAt atomic.Int64
 
 	activeConns atomic.Int64
 
