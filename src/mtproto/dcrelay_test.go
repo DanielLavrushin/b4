@@ -392,6 +392,62 @@ func TestClientThatLeavesBeforeAnAnswerIsDueKeepsTheLead(t *testing.T) {
 	}
 }
 
+func muteUpstream(dc net.Conn) {
+	buf := make([]byte, 512)
+	for {
+		if _, err := dc.Read(buf); err != nil {
+			return
+		}
+	}
+}
+
+func TestClientThatLeavesRightAfterADelayedFirstRequestKeepsTheLead(t *testing.T) {
+	withFastStall(t)
+	withCleanRelayState(t)
+	const addr = "203.0.113.7:7008"
+	relayLeadNote(addr)
+	clientA, clientB := net.Pipe()
+	dcA, dcB := net.Pipe()
+	defer dcA.Close()
+
+	go muteUpstream(dcA)
+	go func() {
+		time.Sleep(relayAnswerDue + 100*time.Millisecond)
+		_, _ = clientA.Write([]byte("a first request after an idle start"))
+		time.Sleep(20 * time.Millisecond)
+		_ = clientA.Close()
+	}()
+
+	relayConns(clientB, dcB, relayHooks(t, addr))
+	if !relayLeads(addr) {
+		t.Fatal("the idle time before the first request was counted as time the relay had to answer it")
+	}
+}
+
+func TestClientRetryingIntoAMuteRelayStillCostsItTheLead(t *testing.T) {
+	withFastStall(t)
+	withCleanRelayState(t)
+	const addr = "203.0.113.7:7008"
+	relayLeadNote(addr)
+	clientA, clientB := net.Pipe()
+	dcA, dcB := net.Pipe()
+	defer dcA.Close()
+
+	go muteUpstream(dcA)
+	go func() {
+		_, _ = clientA.Write([]byte("a request nobody answers"))
+		time.Sleep(relayAnswerDue - 30*time.Millisecond)
+		_, _ = clientA.Write([]byte("the retry nobody answers either"))
+		time.Sleep(80 * time.Millisecond)
+		_ = clientA.Close()
+	}()
+
+	relayConns(clientB, dcB, relayHooks(t, addr))
+	if relayLeads(addr) {
+		t.Fatal("a retry moved the clock forward, so a relay that stayed mute past the time an answer was due kept its lead")
+	}
+}
+
 func TestStallReporterLeavesTheRelayAlone(t *testing.T) {
 	if stallReporter(relayedInfo("203.0.113.7:7008", true)) != nil {
 		t.Fatal("a relay session gained the stall watchdog, which also cuts the proxy's relay sessions")

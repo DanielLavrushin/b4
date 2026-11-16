@@ -984,6 +984,7 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 	var upBytes, downBytes atomic.Int64
 	var lastDown atomic.Int64
 	var upSinceDown atomic.Int64
+	var firstUp atomic.Int64
 	var secondUp atomic.Int64
 	var lastUp atomic.Int64
 	var upWrites atomic.Int64
@@ -995,6 +996,7 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 		lastUp.Store(now)
 		if upSinceDown.Add(int64(n)) == int64(n) {
 			upWrites.Store(0)
+			firstUp.Store(now)
 		}
 		if upWrites.Load() == 1 {
 			secondUp.Store(now)
@@ -1200,7 +1202,7 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 	if neverAnswered || wentQuiet {
 		reportStall()
 	}
-	if o.onUnanswered != nil && down == 0 && up > 0 && (neverAnswered || time.Since(start) >= answerDue) {
+	if o.onUnanswered != nil && down == 0 && up > 0 && (neverAnswered || time.Since(time.Unix(0, firstUp.Load())) >= answerDue) {
 		o.onUnanswered()
 	}
 	stale := ""
