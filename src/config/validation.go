@@ -791,6 +791,14 @@ func (c *Config) checkPortCollisions(v *validator) {
 				"ws_front_sni must be a host name (got %q)", f)
 		}
 	}
+	if h := strings.TrimSpace(c.System.MTProto.PublicHost); h != "" && !validPublicHost(h) {
+		v.addf("system.mtproto.public_host", "invalid_host",
+			map[string]any{"value": h},
+			"public_host must be a host name or IP address without scheme, port or path (got %q)", h)
+	}
+	if p := c.System.MTProto.PublicPort; p != 0 && (p < 1 || p > 65535) {
+		v.add("system.mtproto.public_port", "out_of_range", "port must be between 1 and 65535", portRangeParams)
+	}
 	if c.System.MTProto.Enabled {
 		if c.System.MTProto.Port < 1 || c.System.MTProto.Port > 65535 {
 			v.add("system.mtproto.port", "out_of_range", "port must be between 1 and 65535", portRangeParams)
@@ -909,4 +917,21 @@ func WatchdogBlockerText(blocker string) string {
 		return "the set lists no domains or geosite categories, only IP addresses, GeoIP categories or ASNs, and the watchdog confirms which set handles a URL by its host name, so it can never confirm this one"
 	}
 	return blocker
+}
+
+func validPublicHost(h string) bool {
+	if net.ParseIP(h) != nil {
+		return true
+	}
+	if len(h) > 253 || strings.HasPrefix(h, ".") || strings.HasSuffix(h, ".") || strings.Contains(h, "..") {
+		return false
+	}
+	for _, r := range h {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '.', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }

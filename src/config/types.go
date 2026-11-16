@@ -590,6 +590,8 @@ type MTProtoConfig struct {
 	Port              int             `json:"port"`
 	BindAddress       string          `json:"bind_address"`
 	Expose            bool            `json:"expose" mcp:"deny"`
+	PublicHost        string          `json:"public_host"`
+	PublicPort        int             `json:"public_port"`
 	MaxConnections    int             `json:"max_connections"` // max concurrent client connections; 0 = default (2048)
 	TCPUserTimeoutSec int             `json:"tcp_user_timeout_sec"`
 	IdleTimeoutSec    int             `json:"idle_timeout_sec"`

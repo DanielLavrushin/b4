@@ -196,6 +196,8 @@ export const SETTINGS_DIALOG_SUB_DEFS: DialogSubDef[] = [
           "system.mtproto.bind_address",
           "system.mtproto.port",
           "system.mtproto.expose",
+          "system.mtproto.public_host",
+          "system.mtproto.public_port",
           "system.mtproto.fake_sni",
           "system.mtproto.max_connections",
           "system.mtproto.tcp_user_timeout_sec",

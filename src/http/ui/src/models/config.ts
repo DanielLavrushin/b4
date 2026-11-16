@@ -351,6 +351,8 @@ export interface MTProtoConfig {
   port: number;
   bind_address: string;
   expose?: boolean;
+  public_host?: string;
+  public_port?: number;
   max_connections: number;
   tcp_user_timeout_sec: number;
   idle_timeout_sec: number;

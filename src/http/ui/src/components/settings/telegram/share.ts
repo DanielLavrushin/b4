@@ -1,6 +1,7 @@
 import type { TFunction } from "i18next";
 import type { AlertColor } from "@mui/material";
 import { SystemAddresses } from "@models/settings";
+import { stripPort } from "@utils";
 
 export interface ShareTarget {
   name: string;
@@ -35,6 +36,31 @@ export const webSecretForm = (secret: string) =>
 
 export const isAnyAddress = (addr: string) =>
   !addr || addr === "0.0.0.0" || addr === "::";
+
+export const isLoopbackAddress = (addr: string) =>
+  addr === "localhost" || addr === "::1" || addr.startsWith("127.");
+
+export const parsePort = (text: string | undefined): number | undefined => {
+  const digits = (text ?? "").trim();
+  if (!/^\d{1,5}$/.test(digits)) return undefined;
+  const n = Number(digits);
+  return n >= 1 && n <= 65535 ? n : undefined;
+};
+
+export interface Endpoint {
+  host: string;
+  port?: number;
+}
+
+export const parseEndpoint = (value: string): Endpoint => {
+  const v = value.trim();
+  const host = stripPort(v);
+  const bracketed = /^\[[^\]]*\]:(\d+)$/.exec(v);
+  if (bracketed) return { host, port: parsePort(bracketed[1]) };
+  const parts = v.split(":");
+  if (parts.length === 2) return { host, port: parsePort(parts[1]) };
+  return { host };
+};
 
 export const internetCandidates = (
   addrs: SystemAddresses | undefined,

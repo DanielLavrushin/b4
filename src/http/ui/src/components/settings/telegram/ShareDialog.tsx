@@ -22,7 +22,7 @@ import {
   B4TextField,
 } from "@b4.elements";
 import { B4Config, MTProtoConfig } from "@models/config";
-import { describeApiError, stripPort } from "@utils";
+import { describeApiError } from "@utils";
 import { useSystemAddresses } from "@hooks/useSystemAddresses";
 import {
   type HostCandidate,
@@ -31,13 +31,18 @@ import {
   type ShareTarget,
   internetCandidates,
   isAnyAddress,
+  isLoopbackAddress,
+  parseEndpoint,
+  parsePort,
   shareNotes,
   webSecretForm,
 } from "./share";
 
-interface TypedHosts {
+interface TypedState {
   target: ShareTarget | null;
+  scope?: ShareScope;
   hosts: Partial<Record<ShareScope, string>>;
+  ports: Partial<Record<ShareScope, string>>;
 }
 
 interface ShareDialogProps {
@@ -62,17 +67,37 @@ export const ShareDialog = ({
   const webEnabled = (webProxy?.enabled ?? false) && webHost.length > 0;
   const bindAddress = running?.bind_address || "";
   const bindSpecific = !isAnyAddress(bindAddress);
+  const bindLoopback = isLoopbackAddress(bindAddress);
+  const publicHost = (mtproto?.public_host ?? "").trim();
+  const publicPort = mtproto?.public_port ?? 0;
+  const hasPublicHost = publicHost.length > 0;
+
+  const [typed, setTyped] = useState<TypedState>({
+    target: null,
+    hosts: {},
+    ports: {},
+  });
+  const current: TypedState =
+    target === null || typed.target === target
+      ? typed
+      : { target, hosts: {}, ports: {} };
+
+  const defaultScope: ShareScope =
+    hasPublicHost || bindLoopback ? "internet" : "local";
+  const scope = current.scope ?? defaultScope;
+  const internet = scope === "internet";
+  const usingPublic = internet && hasPublicHost;
+  const listenerPortUsed = !(internet && publicPort > 0);
   const unsaved =
     savedMtproto !== undefined &&
-    ((mtproto?.port ?? 3128) !== (savedMtproto.port ?? 3128) ||
-      (mtproto?.bind_address || "") !== (savedMtproto.bind_address || "") ||
-      (mtproto?.expose ?? false) !== (savedMtproto.expose ?? false));
+    ((listenerPortUsed &&
+      (mtproto?.port ?? 3128) !== (savedMtproto.port ?? 3128)) ||
+      (!usingPublic &&
+        ((mtproto?.bind_address || "") !==
+          (savedMtproto.bind_address || "") ||
+          (mtproto?.expose ?? false) !== (savedMtproto.expose ?? false))));
 
-  const [scope, setScope] = useState<ShareScope>("local");
-  const [typed, setTyped] = useState<TypedHosts>({ target: null, hosts: {} });
-
-  const internet = scope === "internet";
-  const lookup = target !== null && internet;
+  const lookup = target !== null && internet && !hasPublicHost;
   const addresses = useSystemAddresses(lookup, false);
   const addrs = addresses.data;
   const wan4 = addrs?.wan_v4;
@@ -99,7 +124,11 @@ export const ShareDialog = ({
   const publicWan6 = wan6?.scope === "public" ? wan6.ip : "";
   const behindCgnat = wan4?.scope === "cgnat";
   let autoInternet: string;
-  if (bindBehindNat) {
+  if (hasPublicHost) {
+    autoInternet = publicHost;
+  } else if (bindLoopback) {
+    autoInternet = "";
+  } else if (bindBehindNat) {
     autoInternet = probeSettled ? publicV4 || bindAddress : "";
   } else if (bindSpecific) {
     autoInternet = bindAddress;
@@ -112,14 +141,35 @@ export const ShareDialog = ({
   const autoLocal = bindSpecific ? bindAddress : globalThis.location.hostname;
   const autoHost = internet ? autoInternet : autoLocal;
 
-  const typedHosts: TypedHosts["hosts"] =
-    target === null || typed.target === target ? typed.hosts : {};
-  const host = typedHosts[scope] ?? autoHost;
+  const autoPort = internet && publicPort > 0 ? publicPort : port;
+  const host = current.hosts[scope] ?? autoHost;
+  const portText = current.ports[scope] ?? String(autoPort);
   const setHost = (value: string | undefined) =>
-    setTyped({ target, hosts: { ...typedHosts, [scope]: value } });
+    setTyped({
+      ...current,
+      target,
+      hosts: { ...current.hosts, [scope]: value },
+    });
+  const setPortText = (value: string) =>
+    setTyped({
+      ...current,
+      target,
+      ports: { ...current.ports, [scope]: value },
+    });
 
-  const linkHost = stripPort(host.trim());
+  const endpoint = parseEndpoint(host);
+  const linkHost = endpoint.host;
+  const linkPort = endpoint.port ?? parsePort(portText);
   const hostIsV6 = linkHost.includes(":");
+  const splitTypedPort = () => {
+    if (endpoint.port === undefined) return;
+    setTyped({
+      ...current,
+      target,
+      hosts: { ...current.hosts, [scope]: endpoint.host },
+      ports: { ...current.ports, [scope]: String(endpoint.port) },
+    });
+  };
   let candidates: HostCandidate[] = [];
   if (internet && bindBehindNat) {
     candidates = internetCandidates(
@@ -147,7 +197,7 @@ export const ShareDialog = ({
         ]
       : [];
   const stoppedNote: ShareNote[] =
-    !proxyRunning && !internet
+    !proxyRunning && !(internet && !hasPublicHost)
       ? [
           {
             id: "stopped",
@@ -156,9 +206,36 @@ export const ShareDialog = ({
           },
         ]
       : [];
+  const publicNote: ShareNote[] =
+    usingPublic && linkHost === publicHost
+      ? [
+          {
+            id: "public",
+            severity: "info",
+            text: t("settings.MTProto.sharePublicAddress", { port }),
+          },
+        ]
+      : [];
+  const loopbackNote: ShareNote[] =
+    !internet && bindLoopback
+      ? [
+          {
+            id: "loopback",
+            severity: "info",
+            text: t(
+              hasPublicHost
+                ? "settings.MTProto.shareLoopbackPublic"
+                : "settings.MTProto.shareLoopbackLocal",
+              { bind: bindAddress },
+            ),
+          },
+        ]
+      : [];
   const notes = unsavedNote.concat(
     stoppedNote,
-    internet
+    publicNote,
+    loopbackNote,
+    internet && !hasPublicHost
       ? shareNotes(t, {
           addrs,
           addrError: addresses.isError
@@ -172,14 +249,15 @@ export const ShareDialog = ({
         })
       : [],
   );
-  const detecting = internet && (addresses.isLoading || probe.isLoading);
+  const detecting =
+    internet && !hasPublicHost && (addresses.isLoading || probe.isLoading);
 
   const secret = target?.secret ?? "";
 
   const directLink = useMemo(() => {
-    if (!linkHost || !secret) return "";
-    return `tg://proxy?server=${encodeURIComponent(linkHost)}&port=${port}&secret=${encodeURIComponent(secret)}`;
-  }, [linkHost, port, secret]);
+    if (!linkHost || !linkPort || !secret) return "";
+    return `tg://proxy?server=${encodeURIComponent(linkHost)}&port=${linkPort}&secret=${encodeURIComponent(secret)}`;
+  }, [linkHost, linkPort, secret]);
 
   const webLink = useMemo(() => {
     if (!webEnabled || secret.trim().length < 34) return "";
@@ -246,7 +324,9 @@ export const ShareDialog = ({
           exclusive
           size="small"
           value={scope}
-          onChange={(_, v: ShareScope | null) => v && setScope(v)}
+          onChange={(_, v: ShareScope | null) =>
+            v && setTyped({ ...current, target, scope: v })
+          }
           sx={{ alignSelf: "flex-start" }}
         >
           <ToggleButton value="local">
@@ -257,17 +337,41 @@ export const ShareDialog = ({
           </ToggleButton>
         </ToggleButtonGroup>
 
-        <B4TextField
-          label={t("settings.MTProto.shareHost")}
-          value={host}
-          onChange={(e) => setHost(e.target.value)}
-          helperText={t(
-            internet
-              ? "settings.MTProto.shareHostHelpInternet"
-              : "settings.MTProto.shareHostHelp",
-          )}
-          autoFocus
-        />
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, sm: 8 }}>
+            <B4TextField
+              label={t("settings.MTProto.shareHost")}
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+              onBlur={splitTypedPort}
+              helperText={t(
+                usingPublic && linkHost === publicHost
+                  ? "settings.MTProto.shareHostHelpPublic"
+                  : internet
+                    ? "settings.MTProto.shareHostHelpInternet"
+                    : "settings.MTProto.shareHostHelp",
+              )}
+              autoFocus
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <B4TextField
+              label={t("settings.MTProto.sharePort")}
+              value={endpoint.port === undefined ? portText : String(endpoint.port)}
+              onChange={(e) =>
+                setPortText(e.target.value.replaceAll(/\D/g, "").slice(0, 5))
+              }
+              disabled={endpoint.port !== undefined}
+              inputMode="numeric"
+              error={linkPort === undefined}
+              helperText={
+                linkPort === undefined
+                  ? t("settings.MTProto.sharePortInvalid")
+                  : undefined
+              }
+            />
+          </Grid>
+        </Grid>
 
         {candidates.length > 0 && (
           <Box>
