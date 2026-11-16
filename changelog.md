@@ -12,6 +12,10 @@ All notable changes to b4 are recorded in this file.
 
 - The share dialog of an **MTProto Proxy** secret has a **Port** field, applies a port typed as `host:port`, and opens on **Internet** when the proxy listens only on a loopback address.
 
+### Fixed
+
+- With **Device Filtering** on, a connection the router opened itself, such as one through b4's SOCKS5 server, to an address of a proxy set enabled after b4 started could stall or be reset until b4 restarted. [#599](https://github.com/DanielLavrushin/b4/issues/599)
+
 ## [1.91.1] - 2026-11-15
 
 ### Added
