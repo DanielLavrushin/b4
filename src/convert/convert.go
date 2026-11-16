@@ -428,7 +428,7 @@ func countCatchAll(prog *Program, sets []config.SetConfig) int {
 			break
 		}
 		p := prog.Profiles[i]
-		if !p.IsEntry() || p.hasOwnTargets() || p.scopedByL7() {
+		if !p.IsEntry() || p.Skip || p.hasOwnTargets() || p.scopedByL7() {
 			continue
 		}
 		if len(sets[i].Targets.SNIDomains) == 0 && len(sets[i].Targets.IPs) == 0 {

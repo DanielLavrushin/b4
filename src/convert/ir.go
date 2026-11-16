@@ -179,15 +179,26 @@ type SeqOvlOp struct {
 	Pattern string `json:"pattern"`
 }
 
+var udpOnlyL7Classes = []string{"quic", config.UDPL7STUN, config.UDPL7Discord, "wireguard", "dht"}
+
 func (p *Profile) UDPOnly() bool {
 	if p.Filters.UDPFilter && !p.Filters.TCPFilter {
 		return true
 	}
-	if p.Filters.HasProto("quic") || p.Filters.HasProto(config.UDPL7STUN) || p.Filters.HasProto(config.UDPL7Discord) {
+	if slices.ContainsFunc(udpOnlyL7Classes, p.Filters.HasProto) {
 		return !p.Filters.HasProto("tls") && !p.Filters.HasProto("http") && !p.Filters.HasProto("unknown")
 	}
 	return len(p.Filters.Protos) > 0 && p.Filters.HasProto("udp") &&
 		!p.Filters.HasProto("tls") && !p.Filters.HasProto("http")
+}
+
+func (p *Profile) l7ExcludesQUIC() bool {
+	return len(p.Filters.Protos) > 0 && !p.Filters.HasProto("quic") && !p.Filters.HasProto("udp")
+}
+
+func (p *Profile) canFold() bool {
+	return p.UDPOnly() && !p.hasOwnTargets() && !p.wantsL7() &&
+		(len(p.Filters.UDPPorts) > 0 || !p.l7ExcludesQUIC())
 }
 
 func (p *Profile) l7Classes() (selected, dropped []string) {

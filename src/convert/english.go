@@ -174,7 +174,7 @@ var warningEnglish = map[string]string{
 	"setsWithoutStrategy":   "{{count}} set(s) carry no bypass options at all, so they pass traffic through unchanged.",
 	"unusedVars":            "{{vars}} carry options but are not variables {{tool}} reads, so they were left out of the conversion. Rename them or import their contents on their own if they should be converted.",
 	"catchAllProfile":       "{{count}} profile(s) have no host list of their own. In {{tool}} such a profile handles everything the others did not match; a b4 set with no targets matches nothing by domain or address, so it is created disabled. A set with a port filter is the exception: it would act on every connection on those ports.",
-	"sharedDomainsUnused":   "None of the sets took the shared domains: each one has its own host list, address list or domains, is meant to handle only calls, or is reached only through escalation. Add the domains to the targets of the set that should handle them.",
+	"sharedDomainsUnused":   "None of the sets took the shared domains: each one has its own host list, address list or domains, is meant to handle only calls, is skipped, or is reached only through escalation. Add the domains to the targets of the set that should handle them.",
 	"sharedDomainsNoSet":    "None of the converted sets takes domains: each is meant to handle only calls or is reached only through escalation, so the shared domains were not used.",
 }
 
