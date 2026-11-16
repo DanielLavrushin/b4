@@ -623,6 +623,80 @@ func TestRaceKeepsDirectTCPBehindARelayThatWentEarly(t *testing.T) {
 	}
 }
 
+func relayDialledAt(r *dialRace) func() time.Duration {
+	var mu sync.Mutex
+	var at time.Duration
+	begin := time.Now()
+	started := r.started
+	r.started = func(p transportPlan) {
+		if p.relay {
+			mu.Lock()
+			at = time.Since(begin)
+			mu.Unlock()
+		}
+		started(p)
+	}
+	return func() time.Duration {
+		mu.Lock()
+		defer mu.Unlock()
+		return at
+	}
+}
+
+func TestRaceDialsAnOverdueRelayAheadOfFurtherWorkers(t *testing.T) {
+	routes := map[string]fakeRoute{
+		"cf1":         {hang: true},
+		"cf2":         {hang: true},
+		"cf3":         {hang: true},
+		testRelayAddr: {delay: 5 * time.Millisecond},
+	}
+	plans := []transportPlan{cfPlan("cf1"), cfPlan("cf2"), cfPlan("cf3")}
+	for _, w := range []string{"w1", "w2", "w3", "w4"} {
+		routes[w] = fakeRoute{delay: 80 * time.Millisecond, err: errFake503}
+		plans = append(plans, workerPlan(w))
+	}
+	plans = append(plans, relayPlan(testRelayAddr))
+	h := newRaceHarness(routes)
+	r := h.race(time.Now().Add(3*time.Second), 150*time.Millisecond, 3)
+	r.workerAfter = 100 * time.Millisecond
+	r.relayAfter = 250 * time.Millisecond
+	r.timeoutFor = func(transportPlan) time.Duration { return time.Second }
+	dialled := relayDialledAt(r)
+	t.Cleanup(h.waitIdle)
+	out := r.run(plans)
+	if out.winner == nil || !out.winner.plan.relay {
+		t.Fatalf("winner %+v, want the relay", out.winner)
+	}
+	if at := dialled(); at > r.relayAfter+70*time.Millisecond {
+		t.Fatalf("the relay was dialled at %v, its turn was at %v: start order %v", at, r.relayAfter, h.startedNames())
+	}
+}
+
+func TestRaceDoesNotHoldAnOverdueRelayForTheStagger(t *testing.T) {
+	h := newRaceHarness(map[string]fakeRoute{
+		"cf1":         {hang: true},
+		"cf2":         {hang: true},
+		"cf3":         {hang: true},
+		testRelayAddr: {delay: 5 * time.Millisecond},
+	})
+	r := h.race(time.Now().Add(3*time.Second), 300*time.Millisecond, 3)
+	r.relayAfter = 500 * time.Millisecond
+	r.timeoutFor = func(transportPlan) time.Duration { return time.Second }
+	dialled := relayDialledAt(r)
+	t.Cleanup(h.waitIdle)
+	out := r.run([]transportPlan{cfPlan("cf1"), cfPlan("cf2"), cfPlan("cf3"), relayPlan(testRelayAddr)})
+	if out.winner == nil || !out.winner.plan.relay {
+		t.Fatalf("winner %+v, want the relay", out.winner)
+	}
+	at := dialled()
+	if at < r.relayAfter {
+		t.Fatalf("the relay was dialled at %v, ahead of its turn at %v", at, r.relayAfter)
+	}
+	if at > r.relayAfter+60*time.Millisecond {
+		t.Fatalf("the relay was dialled at %v, its turn was at %v: the stagger of the tier ahead held it back", at, r.relayAfter)
+	}
+}
+
 func TestRaceWithoutARelayTurnKeepsTheRelayInItsTier(t *testing.T) {
 	h := newRaceHarness(map[string]fakeRoute{
 		"cf1":         {hang: true},

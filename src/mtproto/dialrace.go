@@ -146,6 +146,15 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 		}
 		return inFlight < r.maxInFlight || (it.group != current() && inFlight <= r.maxInFlight)
 	}
+	relayDue := func() int {
+		now := time.Now()
+		for i, it := range pending {
+			if relayEarly(it) && !now.Before(relayAt()) {
+				return i
+			}
+		}
+		return -1
+	}
 	earlyWake := func() time.Duration {
 		wake := time.Duration(-1)
 		for _, it := range pending {
@@ -158,7 +167,7 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 			default:
 				continue
 			}
-			if wake < 0 || d < wake {
+			if d > 0 && (wake < 0 || d < wake) {
 				wake = d
 			}
 		}
@@ -214,7 +223,8 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 	}
 	tryStart := func() {
 		now := time.Now()
-		if now.Before(nextStart) || !startable() {
+		due := relayDue()
+		if due < 0 && (now.Before(nextStart) || !startable()) {
 			return
 		}
 		remaining := r.deadline.Sub(now)
@@ -226,8 +236,11 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 			pending = nil
 			return
 		}
-		pick := -1
+		pick := due
 		for i, it := range pending {
+			if due >= 0 {
+				break
+			}
 			if !canStart(it) {
 				continue
 			}
@@ -255,15 +268,18 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 	for inFlight > 0 {
 		var wake <-chan time.Time
 		var timer *time.Timer
+		wait := time.Duration(-1)
 		if startable() {
-			d := time.Until(nextStart)
-			if d < 0 {
-				d = 0
+			wait = time.Until(nextStart)
+			if wait < 0 {
+				wait = 0
 			}
-			timer = time.NewTimer(d)
-			wake = timer.C
-		} else if d := earlyWake(); d > 0 {
-			timer = time.NewTimer(d)
+		}
+		if d := earlyWake(); d > 0 && (wait < 0 || d < wait) {
+			wait = d
+		}
+		if wait >= 0 {
+			timer = time.NewTimer(wait)
 			wake = timer.C
 		}
 		select {
