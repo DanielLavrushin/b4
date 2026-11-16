@@ -13,27 +13,21 @@
   border-bottom: 1px solid var(--l-line);
 }
 
-.heading {
-  font-size: var(--l-t-title);
-  line-height: 1.2;
-  letter-spacing: -0.015em;
-}
-
 .trigger {
   display: flex;
   align-items: center;
   gap: var(--l-s-3);
-  width: 100%;
   min-height: 52px;
   padding: var(--l-s-3) 0;
-  border: 0;
-  background: none;
   color: var(--l-muted);
-  font: inherit;
   font-weight: 600;
-  text-align: left;
+  list-style: none;
   cursor: pointer;
   transition: color 220ms var(--l-ease);
+}
+
+.trigger::-webkit-details-marker {
+  display: none;
 }
 
 .trigger:hover {
@@ -50,20 +44,24 @@
   transition: none;
 }
 
-.trigger:disabled,
-.trigger[aria-disabled="true"] {
-  opacity: 0.55;
-  cursor: not-allowed;
+.item[open] .trigger {
+  color: var(--l-text);
 }
 
-.itemOpen .trigger {
-  color: var(--l-text);
+.heading {
+  font-size: var(--l-t-title);
+  line-height: 1.2;
+  letter-spacing: -0.015em;
 }
 
 .plus {
   flex: none;
   margin-left: auto;
   color: var(--l-faint);
+}
+
+.item[open] .plus {
+  display: none;
 }
 
 .marker {
@@ -75,7 +73,7 @@
   transition: background-color 220ms var(--l-ease);
 }
 
-.itemOpen .marker {
+.item[open] .marker {
   background-color: var(--l-accent);
 }
 
@@ -85,10 +83,6 @@
   gap: var(--l-s-3);
   max-width: 44ch;
   padding: 0 0 var(--l-s-5) calc(8px + var(--l-s-3));
-}
-
-.body[hidden] {
-  display: none;
 }
 
 .text {
@@ -109,19 +103,15 @@
   margin: 0;
   border-radius: var(--l-r-card);
   background-color: var(--l-field);
-  opacity: 0;
   visibility: hidden;
-  transition:
-    opacity 220ms var(--l-ease),
-    visibility 0s linear 220ms;
 }
 
-.figureOpen {
-  opacity: 1;
+.layout:has(.item[data-feature="discovery"][open]) .figure[data-feature="discovery"],
+.layout:has(.item[data-feature="devices"][open]) .figure[data-feature="devices"],
+.layout:has(.item[data-feature="watchdog"][open]) .figure[data-feature="watchdog"],
+.layout:has(.item[data-feature="routing"][open]) .figure[data-feature="routing"],
+.layout:has(.item[data-feature="ui"][open]) .figure[data-feature="ui"] {
   visibility: visible;
-  transition:
-    opacity 220ms var(--l-ease),
-    visibility 0s;
 }
 
 .figure img,
@@ -164,11 +154,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .figure,
-  .figureOpen {
-    transition: none;
-  }
-
   .trigger,
   .marker {
     transition: none;

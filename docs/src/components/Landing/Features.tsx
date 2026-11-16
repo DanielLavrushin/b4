@@ -1,6 +1,4 @@
-import { useState } from "react";
-import type { CSSProperties } from "react";
-import clsx from "clsx";
+import type { CSSProperties, MouseEvent } from "react";
 import Link from "@docusaurus/Link";
 import Translate, { translate } from "@docusaurus/Translate";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
@@ -106,7 +104,7 @@ function useFeatures(): Feature[] {
         message: "The Sets panel of the dashboard: each set marked Bypass, Proxy, Block or Route",
       }),
       position: "left top",
-      aspect: "780 / 320",
+      aspect: "auto",
     },
     {
       id: "ui",
@@ -130,9 +128,13 @@ function useFeatures(): Feature[] {
   ];
 }
 
+function keepOpen(event: MouseEvent<HTMLElement>) {
+  const details = event.currentTarget.parentElement as HTMLDetailsElement | null;
+  if (details?.open) event.preventDefault();
+}
+
 export default function Features() {
   const features = useFeatures();
-  const [active, setActive] = useState(0);
 
   return (
     <section className={shared.sectionL} aria-labelledby="features-title">
@@ -151,61 +153,62 @@ export default function Features() {
 
         <div className={styles.layout}>
           <div className={styles.list}>
-            {features.map((feature, index) => {
-              const open = index === active;
-              return (
-                <div key={feature.id} className={clsx(styles.item, open && styles.itemOpen)}>
-                  <h3 className={styles.heading}>
-                    <button
-                      type="button"
-                      id={`feature-${feature.id}-trigger`}
-                      className={styles.trigger}
-                      aria-expanded={open}
-                      aria-controls={`feature-${feature.id}-body`}
-                      onClick={() => setActive(index)}
-                    >
-                      <span className={styles.marker} aria-hidden="true" />
-                      {feature.title}
-                      {!open && (
-                        <PlusIcon className={styles.plus} size={20} weight="bold" aria-hidden="true" />
-                      )}
-                    </button>
-                  </h3>
-                  <div
-                    id={`feature-${feature.id}-body`}
-                    role="region"
-                    aria-labelledby={`feature-${feature.id}-trigger`}
-                    className={styles.body}
-                    hidden={!open}
+            {features.map((feature, index) => (
+              <details
+                key={feature.id}
+                name="features"
+                className={styles.item}
+                data-feature={feature.id}
+                open={index === 0}
+              >
+                <summary
+                  id={`feature-${feature.id}-trigger`}
+                  className={styles.trigger}
+                  onClick={keepOpen}
+                >
+                  <span className={styles.marker} aria-hidden="true" />
+                  <h3 className={styles.heading}>{feature.title}</h3>
+                  <PlusIcon className={styles.plus} size={20} weight="bold" aria-hidden="true" />
+                </summary>
+                <div id={`feature-${feature.id}-body`} className={styles.body}>
+                  <p className={styles.text}>{feature.text}</p>
+                  <Link to={feature.to} className={shared.textLink}>
+                    {feature.link}
+                  </Link>
+                  <figure
+                    className={styles.inlineFigure}
+                    style={
+                      {
+                        "--shot-position": feature.position,
+                        ...(feature.aspect && { "--shot-aspect": feature.aspect }),
+                      } as CSSProperties
+                    }
                   >
-                    <p className={styles.text}>{feature.text}</p>
-                    <Link to={feature.to} className={shared.textLink}>
-                      {feature.link}
-                    </Link>
-                    <figure
-                      className={styles.inlineFigure}
-                      style={{ "--shot-position": feature.position, ...(feature.aspect && { "--shot-aspect": feature.aspect }) } as CSSProperties}
-                    >
-                      <img
-                        src={feature.image}
-                        width={feature.width}
-                        height={feature.height}
-                        loading="lazy"
-                        alt={feature.alt}
-                      />
-                    </figure>
-                  </div>
+                    <img
+                      src={feature.image}
+                      width={feature.width}
+                      height={feature.height}
+                      loading="lazy"
+                      alt={feature.alt}
+                    />
+                  </figure>
                 </div>
-              );
-            })}
+              </details>
+            ))}
           </div>
 
           <div className={styles.stage}>
-            {features.map((feature, index) => (
+            {features.map((feature) => (
               <figure
                 key={feature.id}
-                className={clsx(styles.figure, index === active && styles.figureOpen)}
-                style={{ "--shot-position": feature.position, ...(feature.aspect && { "--shot-aspect": feature.aspect }) } as CSSProperties}
+                className={styles.figure}
+                data-feature={feature.id}
+                style={
+                  {
+                    "--shot-position": feature.position,
+                    ...(feature.aspect && { "--shot-aspect": feature.aspect }),
+                  } as CSSProperties
+                }
               >
                 <img
                   src={feature.image}
