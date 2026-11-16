@@ -16,6 +16,7 @@ All notable changes to b4 are recorded in this file.
 
 ### Fixed
 
+- With **Device Filtering** on, a connection the router opened itself, such as one through b4's SOCKS5 server, to an address of a proxy set enabled after b4 started could stall or be reset until b4 restarted. [#599](https://github.com/DanielLavrushin/b4/issues/599)
 - In an imported zapret configuration, a skipped profile (`--skip`) took the **Shared domains**, passed its UDP settings to a set that stayed on, or pulled a working UDP profile into a disabled set, and a profile with `--filter-l7=wireguard` or `dht` got TCP settings such as **Packet Duplication**. [#586](https://github.com/DanielLavrushin/b4/issues/586), [#587](https://github.com/DanielLavrushin/b4/issues/587)
 
 ## [1.91.1] - 2026-11-15

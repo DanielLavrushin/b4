@@ -393,6 +393,9 @@ func (n *NFTablesManager) apply() error {
 	if err := n.addRule(nftChainName, nftLocalDeliveryReturn()...); err != nil {
 		return err
 	}
+	if err := n.addRule(nftChainName, nftRouterOwnProxyReturn()...); err != nil {
+		return err
+	}
 	for _, mark := range captureProxySetMarks(cfg) {
 		if err := n.addRule(nftChainName, nftSetMarkReturn(mark)...); err != nil {
 			return err
