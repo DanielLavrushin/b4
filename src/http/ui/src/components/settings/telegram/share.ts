@@ -1,6 +1,8 @@
 import type { TFunction } from "i18next";
 import type { AlertColor } from "@mui/material";
 import { SystemAddresses } from "@models/settings";
+import * as ipaddr from "ipaddr.js";
+import { ipAddressCanonical, ipAddressValid, stripPort } from "@utils";
 
 export interface ShareTarget {
   name: string;
@@ -35,6 +37,43 @@ export const webSecretForm = (secret: string) =>
 
 export const isAnyAddress = (addr: string) =>
   !addr || addr === "0.0.0.0" || addr === "::";
+
+export const isLoopbackAddress = (addr: string) =>
+  addr === "localhost" ||
+  (ipAddressValid(addr) &&
+    ipaddr.parse(ipAddressCanonical(addr)).range() === "loopback");
+
+export const parsePort = (text: string | undefined): number | undefined => {
+  const digits = (text ?? "").trim();
+  if (!/^\d{1,5}$/.test(digits)) return undefined;
+  const n = Number(digits);
+  return n >= 1 && n <= 65535 ? n : undefined;
+};
+
+export interface Endpoint {
+  host: string;
+  port?: number;
+  invalidPort?: boolean;
+}
+
+const withPort = (host: string, text: string): Endpoint => {
+  const port = parsePort(text);
+  return port === undefined ? { host, invalidPort: true } : { host, port };
+};
+
+export const parseEndpoint = (value: string): Endpoint => {
+  const v = value.trim();
+  const host = stripPort(v);
+  const bracketed = /^\[[^\]]*\](.*)$/.exec(v);
+  if (bracketed) {
+    const rest = bracketed[1];
+    if (rest === "") return { host };
+    return withPort(host, rest.startsWith(":") ? rest.slice(1) : "");
+  }
+  const parts = v.split(":");
+  if (parts.length === 2) return withPort(host, parts[1]);
+  return { host };
+};
 
 export const internetCandidates = (
   addrs: SystemAddresses | undefined,
@@ -84,13 +123,15 @@ export const shareNotes = (
   const exposed = (exposure.ports ?? []).some(
     (p) => p.service === "mtproto" && p.port === port,
   );
-  const blockExplained = !exposure.skip_setup && block !== undefined;
+  const loopback = isLoopbackAddress(bindAddress);
+  const blockExplained =
+    !exposure.skip_setup && (block !== undefined || loopback);
 
   if (!proxyRunning) {
     add("stopped", "info", t("settings.MTProto.shareNotSaved"));
   } else if (exposure.skip_setup) {
     add("skip", "warning", t("settings.MTProto.shareSkipSetup", { port }));
-  } else if (block?.reason === "loopback") {
+  } else if (loopback || block?.reason === "loopback") {
     add("blocked", "error", t("settings.MTProto.shareBlockedLoopback"));
   } else if (block?.reason === "not_listening") {
     add(

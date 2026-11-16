@@ -36,6 +36,7 @@ var sharingPaths = map[string]string{
 	"system.mtproto.ws_custom_domain":         "the user's own relay domain",
 	"system.mtproto.cfworker_domain":          "the user's own Cloudflare Worker",
 	"system.mtproto.web_proxy.hostname":       "the user's own server",
+	"system.mtproto.public_host":              "the user's own server",
 	"system.mtproto.cfproxy_url":              "a custom source is the user's own host",
 	"system.mtproto.dc_fallback_url":          "a custom source is the user's own host",
 	"system.ai.endpoint":                      "URL that can carry credentials",

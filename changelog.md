@@ -4,6 +4,14 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Public address** and **Public port** under **Settings, Telegram** set the address in the share links of **MTProto Proxy** secrets for a proxy behind a reverse proxy or a port forward, in place of the bind address and the listener port.
+
+### Changed
+
+- The share dialog of an **MTProto Proxy** secret has a **Port** field, applies a port typed as `host:port`, and opens on **Internet** when the proxy listens only on a loopback address.
+
 ## [1.91.1] - 2026-11-15
 
 ### Added

@@ -20,6 +20,7 @@ export const ProxyCard = ({ config, onChange }: ProxyCardProps) => {
   const { t } = useTranslation();
   const mtproto = config.system.mtproto;
   const enabled = mtproto?.enabled ?? false;
+  const publicPort = mtproto?.public_port ?? 0;
 
   return (
     <B4IntegrationCard
@@ -49,6 +50,34 @@ export const ProxyCard = ({ config, onChange }: ProxyCardProps) => {
               onChange("system.mtproto.fake_sni", e.target.value)
             }
             helperText={t("settings.MTProto.fakeSNIHelp")}
+          />
+        </Grid>
+        <Grid size={{ xs: 12, md: 8 }}>
+          <B4TextField
+            value={mtproto?.public_host || ""}
+            path="system.mtproto.public_host"
+            onChange={(e) =>
+              onChange("system.mtproto.public_host", e.target.value)
+            }
+            placeholder="proxy.example.org"
+            helperText={t("settings.MTProto.publicHostHelp")}
+            aiTopic="system.mtproto.public_host"
+            selectOnFocus
+          />
+        </Grid>
+        <Grid size={{ xs: 12, md: 4 }}>
+          <B4TextField
+            value={publicPort > 0 ? String(publicPort) : ""}
+            path="system.mtproto.public_port"
+            onChange={(e) => {
+              const digits = e.target.value.replaceAll(/\D/g, "");
+              const n = digits ? Math.min(Number(digits), 65535) : 0;
+              if (n !== publicPort) onChange("system.mtproto.public_port", n);
+            }}
+            placeholder={String(mtproto?.port || 3128)}
+            inputMode="numeric"
+            helperText={t("settings.MTProto.publicPortHelp")}
+            aiTopic="system.mtproto.public_port"
           />
         </Grid>
       </Grid>
