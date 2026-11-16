@@ -388,10 +388,11 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	legacy := isLegacyIptBackend(be)
 
 	udp := set.Routing.Upstream.UDP
+	byAddress := st.udpPorts == ""
 
 	switch be.name() {
 	case backendNFTables:
-		if cfg.Queue.IPv4Enabled {
+		if byAddress && cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleNft(st.chainPre, false, st.setV4, st.mark)
 			addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp")
 			if st.quicReject {
@@ -401,7 +402,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 				addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "udp")
 			}
 		}
-		if cfg.Queue.IPv6Enabled {
+		if byAddress && cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleNft(st.chainPre, true, st.setV6, st.mark)
 			addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp")
 			if st.quicReject {
@@ -411,12 +412,12 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 				addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "udp")
 			}
 		}
-		if !sourceScoped {
+		if byAddress && !sourceScoped {
 			addProxyOutputMarkRulesNft(cfg, st)
 		}
 	default:
 		proxyIptPreflight(legacy)
-		if cfg.Queue.IPv4Enabled {
+		if byAddress && cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleIpt(false, st.chainPre, st.setV4, st.mark, legacy)
 			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp")
 			if st.quicReject {
@@ -429,7 +430,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 				addProxyOutputMarkRuleIpt(false, st.chainOut, st.setV4, st.mark, legacy)
 			}
 		}
-		if cfg.Queue.IPv6Enabled {
+		if byAddress && cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleIpt(true, st.chainPre, st.setV6, st.mark, legacy)
 			addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp")
 			if st.quicReject {

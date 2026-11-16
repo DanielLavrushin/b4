@@ -96,6 +96,11 @@ func TestAPortRoutedSetTakesItsUDPByPortInTheOriginalDirection(t *testing.T) {
 					t.Errorf("the rule must hand the datagram to the transparent listener: %s", rule)
 				}
 			}
+			for _, line := range pre {
+				if strings.Contains(line, st.setV4) || strings.Contains(line, st.setV6) {
+					t.Errorf("a port-routed set has no destination target, so a rule that matches its address sets can only take addresses left over from when it had domains: %s", line)
+				}
+			}
 			guardAt := indexOfLine(pre, func(l string) bool {
 				return strings.Contains(l, "fib daddr type") || strings.Contains(l, "--dst-type")
 			})

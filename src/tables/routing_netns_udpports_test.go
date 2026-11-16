@@ -585,3 +585,73 @@ func TestNetnsAPortRoutedSetBesideAnAddressSet(t *testing.T) {
 func TestNetnsAPortRoutedSetBesideAnAddressSetNft(t *testing.T) {
 	netnsAPortRoutedSetBesideAnAddressSet(t, backendNFTables)
 }
+
+func netnsASetThatTurnsPortOnlyDropsItsLearnedAddresses(t *testing.T, engine string) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	if engine == backendNFTables && !hasBinary("nft") {
+		t.Skip("nft is not installed")
+	}
+	client, inet, _ := quicNsRig(t)
+
+	cfg := udpPortsNsConfig(engine, udpPortsNsScopeIface, "")
+	set := cfg.Sets[0]
+	set.Targets.SNIDomains = []string{"learned.test"}
+	set.Targets.DomainsToMatch = []string{"learned.test"}
+	udpPortsNsInstall(t, cfg)
+
+	st, ok := routeRuleCache[udpPortsNsSetID]
+	if !ok {
+		t.Fatal("the domain set built no rules")
+	}
+	port, _ := portFromState(st)
+	s := &netnsSockets{tcp: map[string][]string{}, udp: map[string][]string{}}
+	netnsServeTCP(t, netnsMarkedTransparentListener(t, port, 0), "tproxy", "tproxy:", s)
+	netnsServeUDP(t, netnsTransparentUDP(t, port), "tproxy", s, true)
+	udpPortsNsServeTCPEcho(t, inet, quicNsMatched, 8080)
+	quicNsServeEcho(t, inet, quicNsMatched, udpPortsNsOutRange)
+
+	RoutingHandleDNS(cfg, set, []net.IP{net.ParseIP(quicNsMatched)})
+	learned := ""
+	for attempt := 0; attempt < 20 && learned != "reply=tproxy:t1"; attempt++ {
+		if attempt > 0 {
+			time.Sleep(100 * time.Millisecond)
+		}
+		learned = quicNsTCP(client, quicNsMatched, 8080, "t1")
+	}
+	if learned != "reply=tproxy:t1" {
+		netnsLogState(t, engine)
+		t.Fatalf("with the domain listed, TCP to its learned address: %s; it must go to the upstream before the test can show the address being dropped", learned)
+	}
+
+	set.Targets.SNIDomains = nil
+	set.Targets.DomainsToMatch = nil
+	RoutingSyncConfig(cfg)
+	if got := routeRuleCache[udpPortsNsSetID].udpPorts; got == "" {
+		t.Fatal("without its last domain the set must route by UDP port")
+	}
+
+	if got := quicNsTCP(client, quicNsMatched, 8080, "t2"); got != "reply=echo:t2" {
+		netnsLogState(t, engine)
+		t.Errorf("TCP to an address the set learned for a domain it no longer lists: %s; a port-routed set takes no TCP", got)
+	}
+	if got := udpPortsNsExchange(client, 0, quicNsMatched, udpPortsNsOutRange, "u2"); got != "reply=echo:u2" || quicNsDiverted(s, "tproxy", "u2") {
+		netnsLogState(t, engine)
+		t.Errorf("UDP to that address on a port the set does not list: %s (diverted: %v); only the listed ports are routed", got, quicNsDiverted(s, "tproxy", "u2"))
+	}
+	got := udpPortsNsExchange(client, 0, quicNsMatched, udpPortsNsInRange, "u3")
+	if !s.got("udp", "tproxy", "u3@"+net.JoinHostPort(quicNsMatched, strconv.Itoa(udpPortsNsInRange))) {
+		t.Errorf("UDP to a listed port (%s) must still reach the upstream", got)
+	}
+	if !RoutingRulesPresent(cfg) {
+		t.Error("the monitor finds the rules of a set that turned port-only incomplete, so it would rebuild them on every tick")
+	}
+}
+
+func TestNetnsASetThatTurnsPortOnlyDropsItsLearnedAddresses(t *testing.T) {
+	netnsASetThatTurnsPortOnlyDropsItsLearnedAddresses(t, backendIPTables)
+}
+
+func TestNetnsASetThatTurnsPortOnlyDropsItsLearnedAddressesNft(t *testing.T) {
+	netnsASetThatTurnsPortOnlyDropsItsLearnedAddresses(t, backendNFTables)
+}
