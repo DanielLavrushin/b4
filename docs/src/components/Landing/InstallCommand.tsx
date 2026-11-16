@@ -55,7 +55,18 @@ export default function InstallCommand({ className }: { className?: string }) {
           aria-label={translate({ id: "home.install.label", message: "Install command" })}
         >
           <span className={styles.tool}>curl</span> <span className={styles.flag}>-fsSL</span>{" "}
-          <span className={styles.url}>{INSTALL_URL}</span> <span className={styles.flag}>|</span>{" "}
+          <span className={styles.url}>
+            https://
+            <wbr />
+            {INSTALL_URL.slice("https://".length).split("/").map((part, index, parts) => (
+              <span key={index}>
+                {part}
+                {index < parts.length - 1 && "/"}
+                <wbr />
+              </span>
+            ))}
+          </span>{" "}
+          <span className={styles.flag}>|</span>{" "}
           <span className={styles.tool}>sh</span>
         </code>
         <button
@@ -63,10 +74,11 @@ export default function InstallCommand({ className }: { className?: string }) {
           className={clsx(styles.copy, copied && styles.copied)}
           onClick={copy}
         >
-          <span className={styles.icons} aria-hidden="true">
-            <CopyIcon className={styles.iconCopy} size={16} weight="bold" />
-            <CheckIcon className={styles.iconCheck} size={16} weight="bold" />
-          </span>
+          {copied ? (
+            <CheckIcon size={16} weight="bold" aria-hidden="true" />
+          ) : (
+            <CopyIcon size={16} weight="bold" aria-hidden="true" />
+          )}
           {copied
             ? translate({ id: "home.install.copied", message: "Copied" })
             : translate({ id: "home.install.copy", message: "Copy" })}

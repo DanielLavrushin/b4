@@ -9,7 +9,6 @@ import Features from "@site/src/components/Landing/Features";
 import FinalCta from "@site/src/components/Landing/FinalCta";
 import Hero from "@site/src/components/Landing/Hero";
 import Platforms from "@site/src/components/Landing/Platforms";
-import Steps from "@site/src/components/Landing/Steps";
 import Tagline from "@site/src/components/Landing/Tagline";
 import shared from "@site/src/components/Landing/landing.module.css";
 import useScreenshot from "@site/src/components/Landing/useScreenshot";
@@ -38,7 +37,6 @@ export default function Home() {
         <DpiSection />
         <Features />
         <Tagline />
-        <Steps />
         <Platforms />
         <Faq />
         <FinalCta />
