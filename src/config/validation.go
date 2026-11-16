@@ -926,6 +926,11 @@ func validPublicHost(h string) bool {
 	if len(h) > 253 || strings.HasPrefix(h, ".") || strings.HasSuffix(h, ".") || strings.Contains(h, "..") {
 		return false
 	}
+	for label := range strings.SplitSeq(h, ".") {
+		if len(label) > 63 {
+			return false
+		}
+	}
 	for _, r := range h {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '.', r == '_':
