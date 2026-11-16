@@ -796,14 +796,19 @@ export const DiscoveryRunner = () => {
             <B4TextField
               label={t("discovery.note.label")}
               value={note}
-              onChange={(e) => setNote(e.target.value.replace(/\s+/g, " "))}
+              onChange={(e) =>
+                setNote(
+                  Array.from(e.target.value.replace(/\s+/g, " "))
+                    .slice(0, MAX_DISCOVERY_NOTE)
+                    .join(""),
+                )
+              }
               placeholder={t("discovery.note.placeholder")}
               disabled={busy}
               helperText={t("discovery.note.helper", {
-                count: note.length,
+                count: Array.from(note).length,
                 max: MAX_DISCOVERY_NOTE,
               })}
-              slotProps={{ htmlInput: { maxLength: MAX_DISCOVERY_NOTE } }}
             />
             {pickedSet && (
               <SetUrlHints
