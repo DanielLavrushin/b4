@@ -55,6 +55,7 @@ type StartSuiteOptions struct {
 	HubPresets      func() []ConfigPreset
 	DNSServer       string
 	Pins            map[string][]string
+	Note            string
 }
 
 type Runtime struct {
@@ -239,6 +240,7 @@ func (m *Runtime) StartSuite(cfg *config.Config, urls []string, opts StartSuiteO
 		suite.Source = SourceWeb
 	}
 	suite.SetId = opts.SetId
+	suite.Note = opts.Note
 	suite.recordStamp(dscp, runtimeState.DSCP, runtimeState.Path)
 	suite.setStrategy = opts.SetStrategy
 	suite.stopWhenCovered = opts.StopWhenCovered

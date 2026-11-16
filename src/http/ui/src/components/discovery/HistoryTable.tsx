@@ -42,13 +42,15 @@ import {
   unresolvedLabel,
 } from "@utils";
 import { AlternatesList } from "./AlternatesList";
+import { ProbeAddresses } from "./ProbeAddresses";
+import { RunNote } from "./RunNote";
 
 interface HistoryTableProps {
   entries: HistoryEntry[];
   sets?: B4SetConfig[];
   busy: boolean;
   onApply: (target: ApplyTarget) => void;
-  onRerun: (url: string, setId?: string) => void;
+  onRerun: (url: string, setId?: string, note?: string) => void;
   onRemove: (domain: string) => void;
 }
 
@@ -465,6 +467,17 @@ export const HistoryTable = ({
                         />
                       </Tooltip>
                     )}
+                    <RunNote
+                      note={row.entry.note}
+                      dense
+                      sx={{ mt: 0.5, maxWidth: 240, fontWeight: 400 }}
+                    />
+                    <Box sx={{ maxWidth: 240, fontWeight: 400 }}>
+                      <ProbeAddresses
+                        addresses={row.entry.addresses}
+                        site={row.entry.domain}
+                      />
+                    </Box>
                   </TableCell>
                   <TableCell sx={{ whiteSpace: "nowrap" }}>
                     {badge(row)}
@@ -534,6 +547,7 @@ export const HistoryTable = ({
                               onRerun(
                                 row.entry.url || row.entry.domain,
                                 row.entry.set_id,
+                                row.entry.note,
                               )
                             }
                             sx={{ color: colors.text.secondary }}

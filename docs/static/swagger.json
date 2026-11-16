@@ -2059,7 +2059,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "With set_id the run is for that set: the URLs come from check_urls, or from the set's discovery.urls when none are given, and are normalised; at most 5 are accepted. The set's current strategy is tested first, an empty or auto tls_version and ip_version follow the set's targets, and the finished run carries set_verdict. stop_when_covered ends the search as soon as one strategy passes every confirmation try on every address.",
+                "description": "With set_id the run is for that set: the URLs come from check_urls, or from the set's discovery.urls when none are given, and are normalised; at most 5 are accepted. The set's current strategy is tested first, an empty or auto tls_version and ip_version follow the set's targets, and the finished run carries set_verdict. stop_when_covered ends the search as soon as one strategy passes every confirmation try on every address. note, up to 200 characters on one line, is kept with the run, its history entries and the set's last run record.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2089,7 +2089,7 @@
                         }
                     },
                     "400": {
-                        "description": "reserved_host, no_urls, too_many_urls, bad_dns_server or bad_pin",
+                        "description": "reserved_host, no_urls, too_many_urls, bad_dns_server, bad_pin or note_too_long",
                         "schema": {
                             "$ref": "#/definitions/handler.APIError"
                         }
@@ -6230,6 +6230,12 @@
                 "port": {
                     "type": "integer"
                 },
+                "public_host": {
+                    "type": "string"
+                },
+                "public_port": {
+                    "type": "integer"
+                },
                 "secrets": {
                     "type": "array",
                     "items": {
@@ -7225,6 +7231,9 @@
                     "$ref": "#/definitions/config.DSCPPath"
                 },
                 "end_time": {
+                    "type": "string"
+                },
+                "note": {
                     "type": "string"
                 },
                 "set_id": {
@@ -8819,6 +8828,9 @@
                 },
                 "ip_version": {
                     "description": "\"auto\", \"ipv4\", \"ipv6\"",
+                    "type": "string"
+                },
+                "note": {
                     "type": "string"
                 },
                 "payload_files": {

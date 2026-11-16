@@ -65,4 +65,4 @@ A heal can change the set while the editor is open on an older copy. Saving that
 
 ## Last search
 
-**Last search for this set** shows the most recent Discovery run for the set: its verdict, when it ended, the strategy it found, and which addresses it covered. **Open in Discovery** opens Discovery with the set picked.
+**Last search for this set** shows the most recent Discovery run for the set: its verdict, when it ended, its [note](../discovery.md#input), the strategy it found, and which addresses it covered. **Open in Discovery** opens Discovery with the set picked.

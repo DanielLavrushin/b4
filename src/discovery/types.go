@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"crypto/tls"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -120,6 +121,8 @@ type CheckResult struct {
 	FinalHost   string            `json:"final_host,omitempty"`
 	UsedIP      string            `json:"used_ip,omitempty"`
 	Set         *config.SetConfig `json:"set"`
+	triedIPs    []string
+	loadedIPs   []string
 	lookup      nameLookup
 	lookupHost  string
 	untried     bool
@@ -160,6 +163,7 @@ type CheckSuite struct {
 	CurrentDomain          string                            `json:"current_domain,omitempty"`
 	CurrentPhase           DiscoveryPhase                    `json:"current_phase,omitempty"`
 	Source                 string                            `json:"source,omitempty"`
+	Note                   string                            `json:"note,omitempty"`
 	SetId                  string                            `json:"set_id,omitempty"`
 	DSCP                   *int                              `json:"dscp,omitempty"`
 	DSCPIPVersion          string                            `json:"dscp_ip_version,omitempty"`
@@ -226,6 +230,38 @@ type DomainDiscoveryResult struct {
 	ECHCoverName  string                         `json:"ech_cover_name,omitempty"`
 	ECHOnlyBlock  bool                           `json:"ech_only_block,omitempty"`
 	Alternates    []string                       `json:"alternates,omitempty"`
+	Addresses     []ProbeAddress                 `json:"addresses,omitempty"`
+}
+
+type ProbeAddress struct {
+	IP     string `json:"ip"`
+	Loaded bool   `json:"loaded,omitempty"`
+}
+
+func (dr *DomainDiscoveryResult) noteAddresses(result CheckResult) {
+	if result.untried {
+		return
+	}
+	for _, ip := range append(slices.Clone(result.triedIPs), result.UsedIP) {
+		if ip == "" {
+			continue
+		}
+		loaded := (ip == result.UsedIP && result.Status == CheckStatusComplete) || slices.Contains(result.loadedIPs, ip)
+		i := slices.IndexFunc(dr.Addresses, func(a ProbeAddress) bool { return a.IP == ip })
+		if i < 0 {
+			dr.Addresses = append(dr.Addresses, ProbeAddress{IP: ip, Loaded: loaded})
+			continue
+		}
+		dr.Addresses[i].Loaded = dr.Addresses[i].Loaded || loaded
+	}
+}
+
+func (r *CheckResult) carryAddresses(prev CheckResult) {
+	r.triedIPs = append(append(slices.Clone(prev.triedIPs), prev.UsedIP), r.triedIPs...)
+	r.loadedIPs = slices.Clone(prev.loadedIPs)
+	if prev.Status == CheckStatusComplete && prev.UsedIP != "" {
+		r.loadedIPs = append(r.loadedIPs, prev.UsedIP)
+	}
 }
 
 func (dr *DomainDiscoveryResult) refreshOutcome(finished bool) {

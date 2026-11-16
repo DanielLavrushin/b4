@@ -37,6 +37,7 @@ func (ds *DiscoverySuite) recordResult(preset ConfigPreset, result CheckResult) 
 		StatusCode: result.StatusCode,
 		Set:        setForResult(result),
 	}
+	domainResult.noteAddresses(result)
 
 	if result.Status == CheckStatusComplete && result.FinalHost != "" {
 		domainResult.FinalHost = result.FinalHost
@@ -102,6 +103,7 @@ func (ds *DiscoverySuite) recordResultsMulti(preset ConfigPreset, results map[st
 			Set:        setForResult(result),
 			cutShort:   result.cutShort,
 		}
+		domainResult.noteAddresses(result)
 
 		if result.Status == CheckStatusComplete && result.FinalHost != "" {
 			domainResult.FinalHost = result.FinalHost
