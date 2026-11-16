@@ -1,7 +1,8 @@
 import type { TFunction } from "i18next";
 import type { AlertColor } from "@mui/material";
 import { SystemAddresses } from "@models/settings";
-import { stripPort } from "@utils";
+import * as ipaddr from "ipaddr.js";
+import { ipAddressCanonical, ipAddressValid, stripPort } from "@utils";
 
 export interface ShareTarget {
   name: string;
@@ -38,7 +39,9 @@ export const isAnyAddress = (addr: string) =>
   !addr || addr === "0.0.0.0" || addr === "::";
 
 export const isLoopbackAddress = (addr: string) =>
-  addr === "localhost" || addr === "::1" || addr.startsWith("127.");
+  addr === "localhost" ||
+  (ipAddressValid(addr) &&
+    ipaddr.parse(ipAddressCanonical(addr)).range() === "loopback");
 
 export const parsePort = (text: string | undefined): number | undefined => {
   const digits = (text ?? "").trim();
