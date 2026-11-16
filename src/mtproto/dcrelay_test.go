@@ -271,6 +271,34 @@ func TestRelayLeadIsEarnedOnlyFromBehindAndOnlyOnTheRelay(t *testing.T) {
 	}
 }
 
+func TestOverlappingFallbackSessionsDoNotRenewTheLead(t *testing.T) {
+	withCleanRelayState(t)
+	const addr = "203.0.113.7:7008"
+	first := relayAnswered(relayedInfo(addr, true))
+	second := relayAnswered(relayedInfo(addr, true))
+	first()
+
+	until := time.Now().Add(10 * time.Second)
+	relayLeadMu.Lock()
+	relayLeadUntil[addr] = until
+	relayLeadMu.Unlock()
+	second()
+	relayLeadMu.Lock()
+	got := relayLeadUntil[addr]
+	relayLeadMu.Unlock()
+	if !got.Equal(until) {
+		t.Fatalf("a second session that fell back before the lead began moved its end by %v, so the WebSocket routes are retried later than every %v", got.Sub(until).Round(time.Second), relayLeadFor)
+	}
+
+	relayLeadMu.Lock()
+	relayLeadUntil[addr] = time.Now().Add(-time.Second)
+	relayLeadMu.Unlock()
+	second()
+	if !relayLeads(addr) {
+		t.Fatal("a lead that had lapsed could not be earned again")
+	}
+}
+
 func relayHooks(t *testing.T, addr string) relayOpts {
 	t.Helper()
 	info := relayedInfo(addr, true)

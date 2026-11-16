@@ -58,12 +58,13 @@ func relayLeadNote(addr string) {
 	now := time.Now()
 	relayLeadMu.Lock()
 	until, had := relayLeadUntil[addr]
-	had = had && now.Before(until)
+	if had && now.Before(until) {
+		relayLeadMu.Unlock()
+		return
+	}
 	relayLeadUntil[addr] = now.Add(relayLeadFor)
 	relayLeadMu.Unlock()
-	if !had {
-		log.Infof("%s relay %s answered a session no other route carried; trying it first for %s", tg(""), addr, relayLeadFor)
-	}
+	log.Infof("%s relay %s answered a session no other route carried; trying it first for %s", tg(""), addr, relayLeadFor)
 }
 
 func relayLeadClear(addr string) {
