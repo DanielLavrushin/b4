@@ -243,9 +243,7 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 	}
 
 	cfg := b.cfg.Load()
-	mtCfg := cfg.System.MTProto
-	mtCfg.UpstreamMode = "auto"
-	mtCfg.DCRelay = ""
+	mtCfg := bridgeUpstream(cfg)
 
 	target := dialTarget{ip: origIP.String(), port: origPort}
 	dcConn, info, err := dialObfuscatedDC(&mtCfg, cfg.Queue, dc, res.ProtoTag, &dialPools{ws: b.getWSPool(), worker: b.getPool()}, id, target)
@@ -272,10 +270,18 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 		bufPool:        &b.bufPool,
 		idle:           mtprotoIdleTimeout(cfg),
 		onStall:        stallReporter(info),
+		onAnswer:       relayAnswered(info),
+		onUnanswered:   relayUnanswered(info),
 		scan:           newDCFrameScanner(res.ProtoTag),
 		onTransportErr: choice.errHandler(info, label, origIP),
 	})
 	return true, nil
+}
+
+func bridgeUpstream(cfg *config.Config) config.MTProtoConfig {
+	mt := cfg.System.MTProto
+	mt.UpstreamMode = "auto"
+	return mt
 }
 
 // stallReporter marks the Worker that carried a relay as unhealthy when that

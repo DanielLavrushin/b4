@@ -94,7 +94,14 @@ export const MTProtoUpstreamCard = ({
   const mtproto = config.system.mtproto;
   const mode = mtproto?.upstream_mode || "auto";
   const dcRelay = mtproto?.dc_relay || "";
-  const showDcRelay = !!dcRelay || mode === "tcp" || mode === "auto";
+  const bridgeInUse =
+    (mtproto?.bridge?.enabled ?? false) ||
+    config.sets.some(
+      (s) =>
+        s.enabled && s.routing?.enabled && s.routing.mode === "mtproto-ws",
+    );
+  const showDcRelay =
+    !!dcRelay || mode === "tcp" || mode === "auto" || bridgeInUse;
 
   const relayInfo = useMemo(() => {
     if (!dcRelay) return null;

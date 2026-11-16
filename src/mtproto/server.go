@@ -924,6 +924,9 @@ func demoteRejectedRoute(dial dialInfo, clientDC int) {
 		wsRecordFailure(clientDC, false)
 	case p.kind == transportTCP && p.addr != "":
 		tcpRecordFailure(p.addr)
+		if p.relay {
+			relayLeadClear(p.addr)
+		}
 	}
 }
 
@@ -966,6 +969,8 @@ type relayOpts struct {
 	// way back. It returns true when the error is b4's own fault and must not
 	// reach the client, in which case the relay is cut instead.
 	onTransportErr func(int32) bool
+	onAnswer       func()
+	onUnanswered   func()
 }
 
 func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
@@ -979,6 +984,7 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 	var upBytes, downBytes atomic.Int64
 	var lastDown atomic.Int64
 	var upSinceDown atomic.Int64
+	var firstUp atomic.Int64
 	var secondUp atomic.Int64
 	var lastUp atomic.Int64
 	var upWrites atomic.Int64
@@ -990,16 +996,21 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 		lastUp.Store(now)
 		if upSinceDown.Add(int64(n)) == int64(n) {
 			upWrites.Store(0)
+			firstUp.Store(now)
 		}
 		if upWrites.Load() == 1 {
 			secondUp.Store(now)
 		}
 		upWrites.Add(1)
 	}
+	var answered atomic.Bool
 	noteDown := func() {
 		lastDown.Store(time.Now().UnixNano())
 		upSinceDown.Store(0)
 		upWrites.Store(0)
+		if !answered.Swap(true) && o.onAnswer != nil {
+			o.onAnswer()
+		}
 	}
 	stalled := func() bool {
 		if upSinceDown.Load() == 0 || upWrites.Load() < 2 {
@@ -1190,6 +1201,9 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 	wentQuiet := stalled() || (first.dir == "client->DC" && gaveUp())
 	if neverAnswered || wentQuiet {
 		reportStall()
+	}
+	if o.onUnanswered != nil && !answered.Load() && up > 0 && (first.dir == "DC->client" || time.Since(time.Unix(0, firstUp.Load())) >= answerDue) {
+		o.onUnanswered()
 	}
 	stale := ""
 	if staleUpstream {
