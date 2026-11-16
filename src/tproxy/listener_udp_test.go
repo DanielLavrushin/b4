@@ -381,3 +381,43 @@ func TestTwoProxySetsNeverOpenMoreUDPSessionsThanTheSharedLimit(t *testing.T) {
 		other.stopUDP()
 	}
 }
+
+type stuckUDPRelay struct {
+	*fakeUDPRelay
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (r *stuckUDPRelay) Write([]byte) (int, error) {
+	r.once.Do(func() { close(r.entered) })
+	<-r.done
+	return 0, net.ErrClosed
+}
+
+func TestAStuckFirstWriteHoldsNeitherTheNextDatagramNorTheStop(t *testing.T) {
+	rig := newUDPTestRig(t, 100)
+	relay := &stuckUDPRelay{fakeUDPRelay: newFakeUDPRelay(), entered: make(chan struct{})}
+	defer relay.Close()
+	udpDialUpstream = func(context.Context, socks5.ClientConfig, *net.UDPAddr) (udpRelay, error) {
+		return relay, nil
+	}
+	client, dst := udpTestAddr("10.0.0.5", 40000), udpTestAddr("203.0.113.2", 50001)
+
+	rig.send(t, client, dst, "a")
+	<-relay.entered
+	rig.send(t, client, dst, "b")
+
+	stopped := make(chan struct{})
+	go func() {
+		rig.l.stopUDP()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stopping the listener waited for a queued datagram stuck in the relay's write; closing the session must end that write")
+	}
+	if !relay.closed() {
+		t.Error("the relay of the stopped session stayed open")
+	}
+}

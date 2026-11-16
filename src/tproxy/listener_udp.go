@@ -150,18 +150,24 @@ func (s *udpSession) send(payload []byte) error {
 
 func (s *udpSession) open(relay udpRelay, reply udpReply, release func()) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed {
+		s.mu.Unlock()
 		return false
 	}
 	s.relay, s.reply, s.release = relay, reply, release
-	for _, payload := range s.queue {
-		if _, err := relay.Write(payload); err != nil {
-			break
+	for len(s.queue) > 0 && !s.closed {
+		queued := s.queue
+		s.queue = nil
+		s.mu.Unlock()
+		for _, payload := range queued {
+			if _, err := relay.Write(payload); err != nil {
+				break
+			}
 		}
+		s.mu.Lock()
 	}
-	s.queue = nil
 	s.ready = true
+	s.mu.Unlock()
 	return true
 }
 
