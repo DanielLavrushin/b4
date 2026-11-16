@@ -26,7 +26,7 @@ function useFeatures(): Feature[] {
   const discovery = useScreenshot("/img/discovery/20260905160200.png");
   const devices = useScreenshot("/img/targets/20261023183500.png");
   const watchdog = useScreenshot("/img/discovery/20261004190000.png");
-  const routing = useScreenshot("/img/dashboard/20261009120050.png");
+  const routing = useScreenshot("/img/dashboard/20261003220040.png");
   const traffic = useScreenshot("/img/connections/20260923214001.png");
 
   return [
@@ -99,13 +99,14 @@ function useFeatures(): Feature[] {
       link: translate({ id: "home.features.routing.link", message: "VPN and proxy routing" }),
       to: "/docs/sets/routing",
       image: routing,
-      width: 1168,
-      height: 859,
+      width: 780,
+      height: 320,
       alt: translate({
         id: "home.features.routing.alt",
         message: "The Sets panel of the dashboard: each set marked Bypass, Proxy, Block or Route",
       }),
-      position: "left bottom",
+      position: "left top",
+      aspect: "780 / 320",
     },
     {
       id: "ui",
