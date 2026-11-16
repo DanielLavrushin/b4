@@ -969,6 +969,36 @@ func TestStartDiscoveryChecksTheTrustedServerAndPins(t *testing.T) {
 	}
 }
 
+func TestStartDiscoveryKeepsTheNoteAndRefusesALongOne(t *testing.T) {
+	api, mux := discoveryAPI(t)
+	api.discoveryRT = discovery.NewRuntime()
+	prev := discoveryStartSuite
+	t.Cleanup(func() { discoveryStartSuite = prev })
+	var got discovery.StartSuiteOptions
+	started := 0
+	discoveryStartSuite = func(_ *discovery.Runtime, _ *config.Config, _ []string, opts discovery.StartSuiteOptions) (*discovery.DiscoverySuite, error) {
+		got = opts
+		started++
+		return nil, discovery.ErrDiscoveryAlreadyRunning
+	}
+	start := func(note string) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]any{"check_url": "youtube.com", "note": note})
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/discovery/start", strings.NewReader(string(body))))
+		return rec
+	}
+
+	start("  YouTube cache\nAS12389  ")
+	if got.Note != "YouTube cache AS12389" {
+		t.Errorf("the run must get the note trimmed and on one line, got %q", got.Note)
+	}
+
+	expectCode(t, start(strings.Repeat("я", discovery.MaxNoteRunes+1)), http.StatusBadRequest, "note_too_long")
+	if started != 1 {
+		t.Errorf("an over-long note must refuse the run before it starts, started %d times", started)
+	}
+}
+
 func TestStartDiscoveryWhileDSCPRulesArePending(t *testing.T) {
 	api, mux := discoveryAPI(t)
 	api.discoveryRT = discovery.NewRuntime()
