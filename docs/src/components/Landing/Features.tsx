@@ -128,9 +128,16 @@ function useFeatures(): Feature[] {
   ];
 }
 
-function keepOpen(event: MouseEvent<HTMLElement>) {
+function select(event: MouseEvent<HTMLElement>) {
   const details = event.currentTarget.parentElement as HTMLDetailsElement | null;
-  if (details?.open) event.preventDefault();
+  if (!details) return;
+  if (details.open) {
+    event.preventDefault();
+    return;
+  }
+  details.parentElement?.querySelectorAll<HTMLDetailsElement>("details[open]").forEach((other) => {
+    other.open = false;
+  });
 }
 
 export default function Features() {
@@ -164,7 +171,7 @@ export default function Features() {
                 <summary
                   id={`feature-${feature.id}-trigger`}
                   className={styles.trigger}
-                  onClick={keepOpen}
+                  onClick={select}
                 >
                   <span className={styles.marker} aria-hidden="true" />
                   <h3 className={styles.heading}>{feature.title}</h3>
