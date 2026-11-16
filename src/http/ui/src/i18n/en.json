@@ -402,6 +402,7 @@
       "shareHostHelpPublic": "The public address from the proxy settings. A value typed here applies to this link only.",
       "sharePort": "Port",
       "sharePortInvalid": "A port from 1 to 65535",
+      "shareHostPortInvalid": "Only a port from 1 to 65535 can follow the colon.",
       "sharePublicAddress": "The link uses the public address from the proxy settings. b4 does not check that it reaches this proxy: whatever publishes it (a reverse proxy, a port forward, a DNS record) has to pass the connection on to the listener on TCP {{port}}.",
       "shareLoopbackLocal": "The proxy listens on {{bind}}, so only this host itself can connect with this link. To publish it through a reverse proxy or a port forward, enter that address under Public address in the proxy settings.",
       "shareLoopbackPublic": "The proxy listens on {{bind}}, so only this host itself can connect with this link. Other devices use the link on the Internet tab, which has the public address.",
@@ -491,6 +492,7 @@
       "shareWebFooter": "Carries the padded secret form Telegram Desktop accepts for WEB entries.",
       "shareBlockedNotListening": "The proxy is not listening on TCP {{port}}, for example because another program holds the port, so b4 does not open it to the internet.",
       "shareUnsaved": "Unsaved changes to the port, bind address or Expose to internet apply after saving; this link uses TCP {{port}}, the port the proxy is running on.",
+      "shareUnsavedRunning": "Unsaved changes to the port, bind address or Expose to internet apply after saving; until then the proxy keeps running on TCP {{port}}.",
       "shareNotSaved": "This proxy or this secret is not saved yet, so the running proxy does not accept the link. Save the settings and open this dialog again."
     },
     "TelegramBridge": {

@@ -50,15 +50,25 @@ export const parsePort = (text: string | undefined): number | undefined => {
 export interface Endpoint {
   host: string;
   port?: number;
+  invalidPort?: boolean;
 }
+
+const withPort = (host: string, text: string): Endpoint => {
+  const port = parsePort(text);
+  return port === undefined ? { host, invalidPort: true } : { host, port };
+};
 
 export const parseEndpoint = (value: string): Endpoint => {
   const v = value.trim();
   const host = stripPort(v);
-  const bracketed = /^\[[^\]]*\]:(\d+)$/.exec(v);
-  if (bracketed) return { host, port: parsePort(bracketed[1]) };
+  const bracketed = /^\[[^\]]*\](.*)$/.exec(v);
+  if (bracketed) {
+    const rest = bracketed[1];
+    if (rest === "") return { host };
+    return withPort(host, rest.startsWith(":") ? rest.slice(1) : "");
+  }
   const parts = v.split(":");
-  if (parts.length === 2) return { host, port: parsePort(parts[1]) };
+  if (parts.length === 2) return withPort(host, parts[1]);
   return { host };
 };
 
@@ -110,13 +120,15 @@ export const shareNotes = (
   const exposed = (exposure.ports ?? []).some(
     (p) => p.service === "mtproto" && p.port === port,
   );
-  const blockExplained = !exposure.skip_setup && block !== undefined;
+  const loopback = isLoopbackAddress(bindAddress);
+  const blockExplained =
+    !exposure.skip_setup && (block !== undefined || loopback);
 
   if (!proxyRunning) {
     add("stopped", "info", t("settings.MTProto.shareNotSaved"));
   } else if (exposure.skip_setup) {
     add("skip", "warning", t("settings.MTProto.shareSkipSetup", { port }));
-  } else if (block?.reason === "loopback") {
+  } else if (loopback || block?.reason === "loopback") {
     add("blocked", "error", t("settings.MTProto.shareBlockedLoopback"));
   } else if (block?.reason === "not_listening") {
     add(

@@ -159,7 +159,12 @@ export const ShareDialog = ({
 
   const endpoint = parseEndpoint(host);
   const linkHost = endpoint.host;
-  const linkPort = endpoint.port ?? parsePort(portText);
+  const hostHasPort =
+    endpoint.port !== undefined || endpoint.invalidPort === true;
+  const linkPort = endpoint.invalidPort
+    ? undefined
+    : (endpoint.port ?? parsePort(portText));
+  const portFieldInvalid = !hostHasPort && linkPort === undefined;
   const hostIsV6 = linkHost.includes(":");
   const splitTypedPort = () => {
     if (endpoint.port === undefined) return;
@@ -192,7 +197,12 @@ export const ShareDialog = ({
           {
             id: "unsaved",
             severity: "info",
-            text: t("settings.MTProto.shareUnsaved", { port }),
+            text: t(
+              linkPort === port
+                ? "settings.MTProto.shareUnsaved"
+                : "settings.MTProto.shareUnsavedRunning",
+              { port },
+            ),
           },
         ]
       : [];
@@ -344,12 +354,15 @@ export const ShareDialog = ({
               value={host}
               onChange={(e) => setHost(e.target.value)}
               onBlur={splitTypedPort}
+              error={endpoint.invalidPort === true}
               helperText={t(
-                usingPublic && linkHost === publicHost
-                  ? "settings.MTProto.shareHostHelpPublic"
-                  : internet
-                    ? "settings.MTProto.shareHostHelpInternet"
-                    : "settings.MTProto.shareHostHelp",
+                endpoint.invalidPort
+                  ? "settings.MTProto.shareHostPortInvalid"
+                  : usingPublic && linkHost === publicHost
+                    ? "settings.MTProto.shareHostHelpPublic"
+                    : internet
+                      ? "settings.MTProto.shareHostHelpInternet"
+                      : "settings.MTProto.shareHostHelp",
               )}
               autoFocus
             />
@@ -357,15 +370,21 @@ export const ShareDialog = ({
           <Grid size={{ xs: 12, sm: 4 }}>
             <B4TextField
               label={t("settings.MTProto.sharePort")}
-              value={endpoint.port === undefined ? portText : String(endpoint.port)}
+              value={
+                endpoint.port !== undefined
+                  ? String(endpoint.port)
+                  : hostHasPort
+                    ? ""
+                    : portText
+              }
               onChange={(e) =>
                 setPortText(e.target.value.replaceAll(/\D/g, "").slice(0, 5))
               }
-              disabled={endpoint.port !== undefined}
+              disabled={hostHasPort}
               inputMode="numeric"
-              error={linkPort === undefined}
+              error={portFieldInvalid}
               helperText={
-                linkPort === undefined
+                portFieldInvalid
                   ? t("settings.MTProto.sharePortInvalid")
                   : undefined
               }
