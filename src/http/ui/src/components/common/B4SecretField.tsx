@@ -181,4 +181,3 @@ export const B4SecretField = ({
   );
 };
 
-export default B4SecretField;

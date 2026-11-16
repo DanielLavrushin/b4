@@ -117,4 +117,3 @@ export const B4IntegrationCard = ({
   );
 };
 
-export default B4IntegrationCard;

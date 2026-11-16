@@ -21,7 +21,7 @@ function numberFormat(
   return format;
 }
 
-function dateFormat(
+export function dateFormat(
   locale: string,
   key: string,
   options: Intl.DateTimeFormatOptions,

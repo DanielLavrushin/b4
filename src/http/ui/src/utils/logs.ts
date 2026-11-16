@@ -1,5 +1,3 @@
-import { ParsedLog } from "@b4.logs";
-
 export const SORT_STORAGE_KEY = "b4_domains_sort";
 export const AGG_SORT_STORAGE_KEY = "b4_connections_agg_sort";
 
@@ -36,41 +34,6 @@ export function saveSortState(
   } catch (e) {
     console.error("Failed to save sort state:", e);
   }
-}
-
-export function parseSniLogLine(line: string): ParsedLog | null {
-  const tokens = line.trim().trim().split(",");
-  if (tokens.length < 7) {
-    return null;
-  }
-
-  const [
-    timestamp,
-    protocol,
-    hostSet,
-    domain,
-    source,
-    ipSet,
-    destination,
-    sourceAlias,
-    tls,
-    flags,
-  ] = tokens;
-
-  return {
-    timestamp: timestamp.replaceAll(" [INFO]", "").trim().split(".")[0],
-    protocol: protocol as "TCP" | "UDP",
-    hostSet,
-    domain,
-    source,
-    ipSet,
-    destination,
-    sourceAlias: sourceAlias ?? "",
-    deviceName: "",
-    tls: tls ?? "",
-    flags: flags ?? "",
-    raw: line,
-  };
 }
 
 export function generateDomainVariants(domain: string): string[] {
@@ -122,33 +85,3 @@ function generateIpv6Variants(ip: string): string[] {
   return [`${ip}/128`, `${ip}/64`, `${ip}/48`, `${ip}/32`];
 }
 
-export const STORAGE_KEY = "b4_domains_lines";
-export const MAX_STORED_LINES = 1000;
-
-export function loadPersistedLines(): string[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored) as unknown;
-      return Array.isArray(parsed) ? (parsed as string[]) : [];
-    }
-  } catch (e) {
-    console.error("Failed to load persisted domains:", e);
-  }
-  return [];
-}
-
-export function persistLogLines(lines: string[]): void {
-  try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(lines.slice(-MAX_STORED_LINES)),
-    );
-  } catch (e) {
-    console.error("Failed to persist domains:", e);
-  }
-}
-
-export function clearLogPersistedLines(): void {
-  localStorage.removeItem(STORAGE_KEY);
-}

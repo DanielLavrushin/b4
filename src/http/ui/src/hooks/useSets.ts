@@ -2,8 +2,7 @@ import { useState, useCallback } from "react";
 import { B4SetConfig } from "@models/config";
 import { DSCPPath } from "@models/discovery";
 import { ApiResponse } from "@api/apiClient";
-import { setsApi } from "@b4.sets";
-import { AddDomainsResult } from "@api/sets";
+import { AddDomainsResult, setsApi } from "@api/sets";
 
 export function useSets() {
   const [loading, setLoading] = useState(false);

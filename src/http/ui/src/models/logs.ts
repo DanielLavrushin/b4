@@ -13,17 +13,3 @@ export interface ParsedLog {
   raw: string;
 }
 
-export type SortColumn =
-  | "timestamp"
-  | "set"
-  | "protocol"
-  | "domain"
-  | "source"
-  | "destination";
-
-export interface DomainModalState {
-  open: boolean;
-  domain: string;
-  variants: string[];
-  selected: string;
-}

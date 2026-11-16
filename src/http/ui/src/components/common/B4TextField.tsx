@@ -111,4 +111,3 @@ export const B4TextField = ({
   );
 };
 
-export default B4TextField;

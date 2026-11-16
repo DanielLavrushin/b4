@@ -120,4 +120,3 @@ export const IPHealthSettings = ({
   );
 };
 
-export default IPHealthSettings;

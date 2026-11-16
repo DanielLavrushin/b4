@@ -1,28 +1,7 @@
-import { formatClock, splitDuration } from "../../common/charts/format";
+import { dateFormat, formatClock, splitDuration } from "../../common/charts/format";
 import type { DurationPart } from "../../common/charts/format";
 
 export const JUST_NOW_MS = 10_000;
-
-const FALLBACK_LOCALE = "en";
-const dateFormats = new Map<string, Intl.DateTimeFormat>();
-
-function dateFormat(
-  locale: string,
-  key: string,
-  options: Intl.DateTimeFormatOptions,
-): Intl.DateTimeFormat {
-  const cacheKey = `${locale}|${key}`;
-  let format = dateFormats.get(cacheKey);
-  if (!format) {
-    try {
-      format = new Intl.DateTimeFormat(locale, options);
-    } catch {
-      format = new Intl.DateTimeFormat(FALLBACK_LOCALE, options);
-    }
-    dateFormats.set(cacheKey, format);
-  }
-  return format;
-}
 
 export function validTime(ms: number | undefined | null): ms is number {
   return typeof ms === "number" && Number.isFinite(ms) && ms > 0;

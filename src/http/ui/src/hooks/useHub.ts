@@ -10,7 +10,6 @@ import { HubSet, HubVoteKind } from "@models/hub";
 export const hubKeys = {
   all: ["hub"] as const,
   status: ["hub", "status"] as const,
-  identity: ["hub", "identity"] as const,
   sets: (domain: string) => ["hub", "sets", domain] as const,
   set: (id: string) => ["hub", "set", id] as const,
 };
@@ -41,15 +40,6 @@ export function useHubSet(id: string | null) {
     queryKey: hubKeys.set(id ?? ""),
     queryFn: () => hubApi.set(id ?? ""),
     enabled: Boolean(id),
-    retry: false,
-  });
-}
-
-export function useHubIdentity(enabled = true) {
-  return useQuery({
-    queryKey: hubKeys.identity,
-    queryFn: hubApi.identity,
-    enabled,
     retry: false,
   });
 }

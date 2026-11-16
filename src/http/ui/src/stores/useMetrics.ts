@@ -12,7 +12,6 @@ import {
 
 export type {
   MetricsLink,
-  MetricsLinkState,
   MetricsSnapshot,
 } from "./metricsStore";
 
@@ -131,29 +130,6 @@ export function useMetricsFrame<T>(
 
 export function useMetricsLink(): MetricsLink {
   return useMetrics((snapshot) => snapshot.link);
-}
-
-export function useMetricsStale(): boolean {
-  return useMetrics((snapshot) => snapshot.stale);
-}
-
-export interface MetricsStatus {
-  link: MetricsLink;
-  stale: boolean;
-  hasFrame: boolean;
-  receivedAt: number;
-}
-
-export function useMetricsStatus(): MetricsStatus {
-  return useMetrics(
-    (snapshot): MetricsStatus => ({
-      link: snapshot.link,
-      stale: snapshot.stale,
-      hasFrame: snapshot.frame !== null,
-      receivedAt: snapshot.receivedAt,
-    }),
-    shallowEqual,
-  );
 }
 
 export function shallowEqual<T>(a: T, b: T): boolean {

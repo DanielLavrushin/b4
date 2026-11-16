@@ -340,4 +340,3 @@ export const B4RangeSlider = ({
   );
 };
 
-export default B4RangeSlider;

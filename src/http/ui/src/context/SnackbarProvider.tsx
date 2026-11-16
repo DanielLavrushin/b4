@@ -1,7 +1,7 @@
 // src/http/ui/src/context/SnackbarContext.tsx
 import { createContext, use, useEffect, useMemo, useRef, useState, useCallback, ReactNode } from "react";
 import { Button, Snackbar } from "@mui/material";
-import { B4Alert } from "@b4.elements";
+import { B4Alert } from "@common/B4Alert";
 
 export type Severity = "error" | "warning" | "info" | "success";
 

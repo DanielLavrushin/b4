@@ -123,13 +123,6 @@ export interface HubApplied {
   voted_at?: string;
 }
 
-export type HubFlag =
-  | "needs_payload"
-  | "block"
-  | "has_pins"
-  | "blanket"
-  | "catch_all";
-
 export interface HubSet {
   id: string;
   version: number;
@@ -211,11 +204,6 @@ export interface HubShareResponse {
   hub_id: string;
   version: number;
   status: string;
-}
-
-export interface HubIdentity {
-  key_id: string;
-  created_at: string;
 }
 
 export interface HubProbeResult {

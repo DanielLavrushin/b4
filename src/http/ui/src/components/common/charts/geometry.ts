@@ -362,11 +362,6 @@ export function sparkCoords(input: SparkInput): SparkCoord[] | null {
   return coords.length >= 2 ? coords : null;
 }
 
-export function sparkPoints(input: SparkInput): string | null {
-  const coords = sparkCoords(input);
-  return coords ? coords.map((c) => `${c.x},${c.y}`).join(" ") : null;
-}
-
 export function nearestCoord(coords: readonly SparkCoord[], x: number): number {
   let best = 0;
   let bestDistance = Number.POSITIVE_INFINITY;
