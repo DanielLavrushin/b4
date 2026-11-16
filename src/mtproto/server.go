@@ -1008,7 +1008,7 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 		lastDown.Store(time.Now().UnixNano())
 		upSinceDown.Store(0)
 		upWrites.Store(0)
-		if o.onAnswer != nil && !answered.Swap(true) {
+		if !answered.Swap(true) && o.onAnswer != nil {
 			o.onAnswer()
 		}
 	}
@@ -1202,7 +1202,7 @@ func relayConns(client, dc io.ReadWriteCloser, o relayOpts) (int64, int64) {
 	if neverAnswered || wentQuiet {
 		reportStall()
 	}
-	if o.onUnanswered != nil && down == 0 && up > 0 && (neverAnswered || time.Since(time.Unix(0, firstUp.Load())) >= answerDue) {
+	if o.onUnanswered != nil && !answered.Load() && up > 0 && (first.dir == "DC->client" || time.Since(time.Unix(0, firstUp.Load())) >= answerDue) {
 		o.onUnanswered()
 	}
 	stale := ""

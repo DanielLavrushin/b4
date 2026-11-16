@@ -1,8 +1,10 @@
 package mtproto
 
 import (
+	"io"
 	"net"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -473,6 +475,54 @@ func TestClientRetryingIntoAMuteRelayStillCostsItTheLead(t *testing.T) {
 	relayConns(clientB, dcB, relayHooks(t, addr))
 	if relayLeads(addr) {
 		t.Fatal("a retry moved the clock forward, so a relay that stayed mute past the time an answer was due kept its lead")
+	}
+}
+
+type deafClient struct {
+	once    sync.Once
+	request []byte
+	closed  chan struct{}
+}
+
+func (c *deafClient) Read(p []byte) (int, error) {
+	if c.request != nil {
+		n := copy(p, c.request)
+		c.request = nil
+		return n, nil
+	}
+	<-c.closed
+	return 0, io.EOF
+}
+
+func (c *deafClient) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+func (c *deafClient) Close() error {
+	c.once.Do(func() { close(c.closed) })
+	return nil
+}
+
+func TestAnswerTheClientCouldNotTakeDoesNotCostTheRelayItsLead(t *testing.T) {
+	withCleanRelayState(t)
+	const addr = "203.0.113.7:7008"
+	for _, leading := range []bool{true, false} {
+		relayResetState()
+		if leading {
+			relayLeadNote(addr)
+		}
+		client := &deafClient{request: []byte("a request"), closed: make(chan struct{})}
+		dcA, dcB := net.Pipe()
+		go func() {
+			buf := make([]byte, 512)
+			_, _ = dcA.Read(buf)
+			_, _ = dcA.Write([]byte("an answer the client can no longer take"))
+			_, _ = dcA.Read(buf)
+		}()
+
+		relayConns(client, dcB, relayHooks(t, addr))
+		_ = dcA.Close()
+		if !relayLeads(addr) {
+			t.Fatalf("leading before=%v: the relay answered, the client was gone, and the relay lost its lead", leading)
+		}
 	}
 }
 
