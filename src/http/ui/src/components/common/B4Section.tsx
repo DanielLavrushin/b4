@@ -95,4 +95,3 @@ export const B4Section = ({
   );
 };
 
-export default B4Section;

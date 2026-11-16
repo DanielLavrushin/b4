@@ -227,4 +227,3 @@ export const B4AiExplain = ({
   );
 };
 
-export default B4AiExplain;

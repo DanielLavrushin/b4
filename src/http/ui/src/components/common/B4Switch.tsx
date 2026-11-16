@@ -134,4 +134,3 @@ export const B4Switch = ({
   );
 };
 
-export default B4Switch;

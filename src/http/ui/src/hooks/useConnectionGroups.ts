@@ -201,8 +201,3 @@ export function useConnectionGroups(
   }, [snapshot, deviceMap, vendorMap]);
 }
 
-export function clearGroupsWorker(worker: Worker | null): void {
-  if (!worker) return;
-  const msg: AggregatorInput = { type: "clear" };
-  worker.postMessage(msg);
-}

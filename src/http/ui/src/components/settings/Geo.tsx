@@ -30,13 +30,13 @@ import {
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { colors } from "@design";
+import { geodatApi } from "@api/settings";
 import {
-  geodatApi,
   GeodatFileType,
   GeodatSource,
   GeoFileInfo,
   SettingsPropHandlerType,
-} from "@b4.settings";
+} from "@models/settings";
 
 const CUSTOM_SOURCE = "__custom__";
 

@@ -41,7 +41,6 @@ export const setsApi = {
     apiPost<void>("/api/sets/batch-delete", { ids }),
   setEnabledForSets: (ids: string[], enabled: boolean) =>
     apiPost<void>("/api/sets/batch-set-enabled", { ids, enabled }),
-  getTargetedDomains: () => apiFetch<string[]>("/api/sets/targeted-domains"),
   checkDomain: (domain: string) =>
     apiFetch<SetDomainMatch[]>(
       `/api/sets/check-domain?domain=${encodeURIComponent(domain)}`,

@@ -8,8 +8,6 @@ export type MetricsLink =
   | { state: "polling"; since: number }
   | { state: "auth"; since: number };
 
-export type MetricsLinkState = MetricsLink["state"];
-
 export interface MetricsSnapshot {
   frame: MetricsFrame | null;
   receivedAt: number;

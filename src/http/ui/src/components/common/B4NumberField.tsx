@@ -66,4 +66,3 @@ export const B4NumberField = ({
   );
 };
 
-export default B4NumberField;

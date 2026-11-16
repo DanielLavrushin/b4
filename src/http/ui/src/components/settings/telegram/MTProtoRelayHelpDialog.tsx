@@ -336,4 +336,3 @@ export const MTProtoRelayHelpDialog = ({
   );
 };
 
-export default MTProtoRelayHelpDialog;

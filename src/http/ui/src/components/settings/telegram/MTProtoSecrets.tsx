@@ -196,4 +196,3 @@ export const MTProtoSecrets = ({
   );
 };
 
-export default MTProtoSecrets;

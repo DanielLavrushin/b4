@@ -4,7 +4,6 @@ import type {
   DNSProbeStatus,
   FetchStatus,
   HostingStatus,
-  SiteOutcome,
   TelegramVerdict,
 } from "@models/detector";
 import { useTranslation } from "react-i18next";
@@ -34,27 +33,6 @@ export function fetchStatusColor(status?: FetchStatus): BadgeColor {
   if (status === "SERVER_ERROR" || status === "MTLS" || status === "DNS_FAIL") return "warning";
   if (BLOCKED_STATUSES.includes(status)) return "error";
   return "default";
-}
-
-export function outcomeColor(outcome: SiteOutcome): BadgeColor {
-  switch (outcome) {
-    case "ok":
-      return "success";
-    case "fixed":
-      return "success";
-    case "still_blocked":
-    case "blocked":
-      return "error";
-    case "broken_by_b4":
-      return "error";
-    case "server":
-    case "dns":
-      return "warning";
-    case "pending":
-      return "info";
-    default:
-      return "default";
-  }
 }
 
 export function hostingColor(status: HostingStatus): BadgeColor {

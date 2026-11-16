@@ -115,16 +115,3 @@ export interface SystemAddresses {
   exposure: ExposureStatus;
 }
 
-export interface RestartResponse {
-  success: boolean;
-  message: string;
-  service_manager: string;
-  restart_command?: string;
-}
-
-export interface UpdateResponse {
-  success: boolean;
-  message: string;
-  service_manager: string;
-  update_command?: string;
-}

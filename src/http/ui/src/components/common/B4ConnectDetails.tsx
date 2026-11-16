@@ -94,4 +94,3 @@ export const B4ConnectDetails = ({
   );
 };
 
-export default B4ConnectDetails;

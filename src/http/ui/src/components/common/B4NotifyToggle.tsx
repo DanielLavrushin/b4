@@ -44,4 +44,3 @@ export const B4NotifyToggle = ({ hint }: B4NotifyToggleProps) => {
   );
 };
 
-export default B4NotifyToggle;

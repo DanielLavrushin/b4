@@ -170,4 +170,3 @@ export const B4Select = ({
   );
 };
 
-export default B4Select;

@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
-import { DeviceInfo, devicesApi } from "@b4.devices";
+import { devicesApi } from "@api/devices";
+import { DeviceInfo } from "@models/devices";
 
 export function useDevices() {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);

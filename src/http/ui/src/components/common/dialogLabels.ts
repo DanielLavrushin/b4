@@ -136,24 +136,6 @@ export function useFieldLabel(path: string | undefined, label: string | undefine
   const key = labelKeyForPath(path);
   return key === undefined ? undefined : t(key);
 }
-export const SET_VALUE_LABEL_KEYS: Record<string, Record<string, string>> = {
-  "fragmentation.strategy_pool": {
-    combo: "sets.tcp.splitting.strategyCombo",
-    hybrid: "sets.tcp.splitting.strategyHybrid",
-    disorder: "sets.tcp.splitting.strategyDisorder",
-    extsplit: "sets.tcp.splitting.strategyExtSplit",
-    firstbyte: "sets.tcp.splitting.strategyFirstByte",
-    tcp: "sets.tcp.splitting.strategyTcp",
-    ip: "sets.tcp.splitting.strategyIp",
-    tls: "sets.tcp.splitting.strategyTls",
-    oob: "sets.tcp.splitting.strategyOob",
-    none: "sets.tcp.splitting.strategyNone",
-  },
-  "faking.tls_mod": {
-    rnd: "sets.faking.fakeSni.randomizeTlsRandom",
-    dupsid: "sets.faking.fakeSni.dupSessionId",
-  },
-};
 
 export const humanizeSegment = (segment: string): string =>
   segment.replaceAll("_", " ");

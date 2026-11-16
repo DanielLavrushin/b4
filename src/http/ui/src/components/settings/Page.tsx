@@ -52,7 +52,8 @@ import {
 } from "./sections";
 
 import { B4Alert, B4Tab, B4Tabs } from "@b4.elements";
-import { configApi, SettingsPropHandlerType } from "@b4.settings";
+import { configApi } from "@api/settings";
+import { SettingsPropHandlerType } from "@models/settings";
 import {
   isStaleWriteError,
   reportSaveError,

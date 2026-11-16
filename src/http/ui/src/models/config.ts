@@ -119,21 +119,6 @@ export interface TargetsConfig {
   ip_version?: string;
 }
 
-export interface DomainStatisticsConfig {
-  manual_domains: number;
-  geosite_domains: number;
-  total_domains: number;
-  category_breakdown?: Record<string, number>;
-  geosite_available: boolean;
-}
-
-export interface CategoryPreviewConfig {
-  category: string;
-  total_domains: number;
-  preview_count: number;
-  preview: string[];
-}
-
 export type UdpMode = "off" | "fake" | "drop" | "reject" | "coalesce";
 export type UdpFilterQuicMode = "sni" | "all";
 export type UdpFakingStrategy = "none" | "ttl" | "checksum";

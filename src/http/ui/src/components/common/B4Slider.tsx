@@ -244,4 +244,3 @@ export const B4Slider = ({
   );
 };
 
-export default B4Slider;

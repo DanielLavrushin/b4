@@ -4,7 +4,6 @@ import {
   HubApplyResponse,
   HubEnvelope,
   HubEnvelopeResponse,
-  HubIdentity,
   HubImportResponse,
   HubReportResponse,
   HubSet,
@@ -61,7 +60,6 @@ export const hubApi = {
       set_id: setId,
       ...(description ? { description } : {}),
     }),
-  identity: () => apiGet<HubIdentity>("/api/hub/identity"),
   recoveryCode: () =>
     apiPost<{ code: string }>("/api/hub/identity/recovery", {}),
   restoreIdentity: (code: string) =>

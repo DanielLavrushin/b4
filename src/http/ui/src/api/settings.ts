@@ -6,10 +6,8 @@ import {
   GeodatFileType,
   GeodatRemoveResult,
   GeodatSource,
-  RestartResponse,
   SystemAddresses,
   SystemInfo,
-  UpdateResponse,
 } from "@b4.settings";
 
 // Config API
@@ -56,8 +54,4 @@ export const systemApi = {
     apiGet<SystemAddresses>(
       probePublic ? "/api/system/addresses?public=1" : "/api/system/addresses",
     ),
-  restart: () => apiPost<RestartResponse>("/api/system/restart"),
-  update: (version?: string) =>
-    apiPost<UpdateResponse>("/api/system/update", { version }),
-  version: () => apiGet<unknown>("/api/version"),
 };
