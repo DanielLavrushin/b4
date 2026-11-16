@@ -22,6 +22,11 @@ export default function FinalCta() {
               </Link>
               <InstallCommand />
             </div>
+            <p className={styles.note}>
+              <Translate id="home.final.text">
+                MikroTik and Docker run b4 as a container, and the guide covers both.
+              </Translate>
+            </p>
             <ReleaseLink />
           </div>
           <Steps />

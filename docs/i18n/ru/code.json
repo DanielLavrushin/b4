@@ -263,6 +263,9 @@
   "home.faq.free.a": {
     "message": "Да. Код открыт под лицензией GPLv3 и лежит на GitHub."
   },
+  "home.final.text": {
+    "message": "На MikroTik и в Docker b4 работает в контейнере, это тоже описано в инструкции."
+  },
   "theme.ErrorPageContent.title": {
     "message": "На странице произошёл сбой.",
     "description": "The title of the fallback page when the page crashed"
