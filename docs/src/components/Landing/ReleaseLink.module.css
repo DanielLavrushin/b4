@@ -1,0 +1,43 @@
+.release {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--l-s-2);
+  width: fit-content;
+  border-radius: 4px;
+  color: var(--l-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  text-decoration: underline;
+  text-decoration-color: var(--l-line-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  transition: color 220ms var(--l-ease);
+}
+
+.release:hover {
+  color: var(--l-text);
+  text-decoration-color: currentColor;
+}
+
+.release:focus-visible {
+  outline: 2px solid var(--l-focus);
+  outline-offset: 2px;
+  transition: none;
+}
+
+.release:active {
+  opacity: 0.85;
+}
+
+.version {
+  color: var(--l-accent);
+  font-family: var(--l-mono);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .release {
+    transition: none;
+  }
+}

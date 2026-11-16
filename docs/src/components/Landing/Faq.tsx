@@ -3,7 +3,6 @@ import Head from "@docusaurus/Head";
 import Link from "@docusaurus/Link";
 import Translate, { translate } from "@docusaurus/Translate";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
-import Reveal from "./Reveal";
 import { plain, rich } from "./text";
 import shared from "./landing.module.css";
 import styles from "./Faq.module.css";
@@ -15,7 +14,7 @@ function useQuestions() {
       answer: translate({
         id: "home.faq.vpn.a",
         message:
-          "No. Traffic still goes straight to the site. b4 only changes how the first packets of each connection look to the provider's DPI. If some sites need a VPN, a route set can send them through one that's already running on the router.",
+          "No. Traffic still goes straight to the site. b4 only changes how the first packets of each connection look to the provider’s DPI. If some sites need a VPN, a route set can send them through one that’s already running on the router.",
       }),
     },
     {
@@ -43,23 +42,23 @@ function useQuestions() {
     {
       question: translate({
         id: "home.faq.untouched.q",
-        message: "Does b4 touch sites that aren't in a set?",
+        message: "Does b4 touch sites that aren’t in a set?",
       }),
       answer: translate({
         id: "home.faq.untouched.a",
         message:
-          "No. Connections that don't match any set pass through unchanged.",
+          "No. Connections that don’t match any set pass through unchanged.",
       }),
     },
     {
       question: translate({
         id: "home.faq.blocked.q",
-        message: "What if a site still doesn't open?",
+        message: "What if a site still doesn’t open?",
       }),
       answer: translate({
         id: "home.faq.blocked.a",
         message:
-          "If Discovery reports **address blocked**, the provider blocks the site's IP addresses and changing packets won't help. Such a site needs a set that sends it through a VPN or a SOCKS5 proxy.",
+          "If Discovery reports **address blocked**, the provider blocks the site’s IP addresses and changing packets won’t help. Such a site needs a set that sends it through a VPN or a SOCKS5 proxy.",
       }),
     },
     {
@@ -92,7 +91,7 @@ function useQuestions() {
       answer: translate({
         id: "home.faq.restart.a",
         message:
-          "Changes to sets don't. They apply to the running service as soon as they're saved.",
+          "Changes to sets don’t. They apply to the running service as soon as they’re saved.",
       }),
     },
     {
@@ -122,7 +121,7 @@ function useQuestions() {
       answer: translate({
         id: "home.faq.free.a",
         message:
-          "Yes. It's open source under GPLv3, and the code is on GitHub.",
+          "Yes. It’s open source under GPLv3, and the code is on GitHub.",
       }),
     },
   ];
@@ -153,10 +152,10 @@ export default function Faq() {
   const questions = useQuestions();
 
   return (
-    <section className={shared.section} aria-labelledby="faq-title">
+    <section className={shared.sectionL} aria-labelledby="faq-title">
       <FaqSchema questions={questions} />
       <div className={clsx(shared.container, styles.grid)}>
-        <Reveal as="header" className={styles.head}>
+        <header className={styles.head}>
           <h2 id="faq-title" className={shared.h2}>
             <Translate id="home.faq.title">Common questions</Translate>
           </h2>
@@ -176,8 +175,8 @@ export default function Faq() {
               {"Something not working after install? See {link}."}
             </Translate>
           </p>
-        </Reveal>
-        <Reveal className={styles.list}>
+        </header>
+        <div className={styles.list}>
           {questions.map(({ question, answer }) => (
             <details key={question} className={styles.item}>
               <summary className={styles.question}>
@@ -192,7 +191,7 @@ export default function Faq() {
               <p className={styles.answer}>{rich(answer)}</p>
             </details>
           ))}
-        </Reveal>
+        </div>
       </div>
     </section>
   );

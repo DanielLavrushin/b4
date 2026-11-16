@@ -12,7 +12,7 @@
     "message": "Обход DPI\nдля роутеров на Linux"
   },
   "home.hero.subtitle": {
-    "message": "Сервис b4 для Linux меняет то, как пакеты выбранных сайтов выглядят для DPI провайдера, а при необходимости отправляет их через VPN или прокси. На роутере он работает для всех устройств в сети, на телефоны и телевизоры ничего ставить не нужно."
+    "message": "Сервис b4 меняет то, как пакеты выбранных сайтов выглядят для DPI провайдера."
   },
   "home.cta.guide": {
     "message": "Инструкция по установке"
@@ -42,7 +42,7 @@
     "message": "Как это работает"
   },
   "home.dpi.lead": {
-    "message": "Провайдеры, которые блокируют сайты через DPI, читают имя сайта в первых пакетах соединения и сбрасывают или замедляют соединения из своего списка. b4 меняет вид этих первых пакетов: делит их на части, переставляет или отправляет перед ними фейковый. Сайт при этом получает те же данные."
+    "message": "Провайдеры, которые блокируют сайты через DPI, читают имя сайта в первых пакетах соединения и сбрасывают или замедляют соединения из своего списка. b4 меняет вид этих первых пакетов: делит их на части, переставляет или отправляет перед ними фейковый."
   },
   "home.dpi.fake": {
     "message": "фейк"
@@ -74,14 +74,8 @@
   "home.features.discovery.link": {
     "message": "Как работает Дискавери"
   },
-  "home.features.discovery.start": {
-    "message": "Начать"
-  },
-  "home.features.discovery.confirmed": {
-    "message": "подтверждена 3 из 3"
-  },
-  "home.features.discovery.none": {
-    "message": "обход не нужен"
+  "home.features.discovery.alt": {
+    "message": "Страница Дискавери во время поиска: этапы поиска и сайты, проверенные к этому моменту"
   },
   "home.features.devices.title": {
     "message": "Устройства"
@@ -92,14 +86,8 @@
   "home.features.devices.link": {
     "message": "Выбор устройств"
   },
-  "home.features.devices.tv": {
-    "message": "Телевизор в гостиной"
-  },
-  "home.features.devices.console": {
-    "message": "Игровая приставка"
-  },
-  "home.features.devices.work": {
-    "message": "Рабочий ноутбук"
+  "home.features.devices.alt": {
+    "message": "Вкладка «Устройства-источники» сета: устройства, к которым применяется сет"
   },
   "home.features.watchdog.title": {
     "message": "Мониторинг"
@@ -110,17 +98,8 @@
   "home.features.watchdog.link": {
     "message": "Поддержание работы сетов"
   },
-  "home.features.watchdog.failed": {
-    "message": "3 проверки подряд не прошли"
-  },
-  "home.features.watchdog.discovery": {
-    "message": "Дискавери для сета YouTube"
-  },
-  "home.features.watchdog.written": {
-    "message": "Записана новая стратегия"
-  },
-  "home.features.watchdog.passed": {
-    "message": "Проверка пройдена"
+  "home.features.watchdog.alt": {
+    "message": "Раздел Мониторинг в настройках с переключателем, который включает проверку сайтов"
   },
   "home.features.routing.title": {
     "message": "Маршрутизация и блокировка"
@@ -131,29 +110,8 @@
   "home.features.routing.link": {
     "message": "Маршрутизация через VPN и прокси"
   },
-  "home.features.routing.direct": {
-    "message": "напрямую"
-  },
-  "home.features.routing.vpn": {
-    "message": "Рабочий VPN"
-  },
-  "home.features.routing.ads": {
-    "message": "Реклама и трекеры"
-  },
-  "home.features.routing.blocked": {
-    "message": "заблокировано"
-  },
-  "home.features.kind.bypass": {
-    "message": "Обход"
-  },
-  "home.features.kind.route": {
-    "message": "Маршрут"
-  },
-  "home.features.kind.proxy": {
-    "message": "Прокси"
-  },
-  "home.features.kind.block": {
-    "message": "Блокировка"
+  "home.features.routing.alt": {
+    "message": "Панель Сеты на дашборде: каждый сет с пометкой Обход, Прокси, Блокировка или Маршрут"
   },
   "home.features.ui.title": {
     "message": "Веб-интерфейс"
@@ -178,9 +136,6 @@
   },
   "home.steps.install.text": {
     "message": "Выполните команду установки по SSH от root. Она сама определит платформу и архитектуру процессора."
-  },
-  "home.steps.install.link": {
-    "message": "Инструкция по установке"
   },
   "home.steps.discover.title": {
     "message": "Поиск стратегии"
@@ -308,11 +263,8 @@
   "home.faq.free.a": {
     "message": "Да. Код открыт под лицензией GPLv3 и лежит на GitHub."
   },
-  "home.final.title": {
-    "message": "Установка"
-  },
   "home.final.text": {
-    "message": "Одна команда для Linux, OpenWrt, ASUS Merlin и Keenetic. На MikroTik и в Docker b4 работает в контейнере, это тоже описано в инструкции."
+    "message": "На MikroTik и в Docker b4 работает в контейнере, это тоже описано в инструкции."
   },
   "theme.ErrorPageContent.title": {
     "message": "На странице произошёл сбой.",

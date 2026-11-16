@@ -1,39 +1,36 @@
 .wrap {
-  display: contents;
+  display: grid;
+  gap: var(--l-s-2);
+  width: 100%;
+  min-width: 0;
 }
 
 .command {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
-  max-width: 100%;
-  padding: 4px 4px 4px 16px;
-  border: 1px solid var(--l-line);
-  border-radius: 12px;
-  background-color: var(--l-command-bg, var(--l-surface));
+  gap: var(--l-s-3);
+  padding: var(--l-s-3) var(--l-s-3) var(--l-s-3) var(--l-s-4);
+  border: 1px solid var(--l-line-strong);
+  border-radius: var(--l-r-card);
+  background-color: var(--l-raised);
 }
 
-.command .text {
+.text {
+  display: block;
   min-width: 0;
-  padding: 4px 0;
-  overflow-x: auto;
-  border-radius: 0;
+  padding: 0;
+  border-radius: 4px;
   background: none;
   color: var(--l-text);
   font-family: var(--l-mono);
   font-size: 0.875rem;
-  line-height: 1.25rem;
-  white-space: nowrap;
-  scrollbar-width: none;
+  line-height: 1.6;
+  overflow-wrap: break-word;
 }
 
-.command .text::-webkit-scrollbar {
-  display: none;
-}
-
-.command .text:focus-visible {
-  outline: 2px solid var(--l-accent);
+.text:focus-visible {
+  outline: 2px solid var(--l-focus);
   outline-offset: 4px;
 }
 
@@ -52,22 +49,24 @@
 
 .copy {
   display: inline-flex;
-  flex: none;
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border: 0;
-  border-radius: 8px;
-  background-color: var(--l-raised);
+  gap: var(--l-s-2);
+  min-height: 44px;
+  padding: 0 var(--l-s-4);
+  border: 1px solid var(--l-line-strong);
+  border-radius: var(--l-r-inner);
+  background-color: transparent;
   color: var(--l-text);
-  font-family: inherit;
+  font-family: var(--l-font);
   font-size: 0.875rem;
-  line-height: 1.25rem;
+  line-height: 1;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition:
-    background-color 300ms var(--l-ease),
-    transform 500ms var(--l-ease);
+    background-color 220ms var(--l-ease),
+    color 220ms var(--l-ease),
+    transform 120ms var(--l-ease);
 }
 
 .copy:hover {
@@ -75,58 +74,53 @@
 }
 
 .copy:active {
-  transform: scale(0.98);
+  transform: translateY(1px);
 }
 
 .copy:focus-visible {
-  outline: 2px solid var(--l-accent);
+  outline: 2px solid var(--l-focus);
   outline-offset: 2px;
+  transition: none;
 }
 
-.icons {
-  display: inline-grid;
-  width: 16px;
-  height: 16px;
-}
-
-.icons > svg {
-  grid-area: 1 / 1;
-  transition:
-    opacity 300ms var(--l-ease),
-    transform 500ms var(--l-ease);
-}
-
-.iconCheck {
-  color: var(--l-ok);
-  opacity: 0;
-  transform: scale(0.6);
-}
-
-.copied .iconCopy {
-  opacity: 0;
-  transform: scale(0.6);
-}
-
-.copied .iconCheck {
-  opacity: 1;
+.copy:disabled,
+.copy[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
   transform: none;
 }
 
+.copied {
+  border-color: var(--l-ok);
+  color: var(--l-ok);
+}
+
 .hint {
-  flex-basis: 100%;
+  min-height: 1lh;
   color: var(--l-faint);
   font-size: 0.875rem;
-  line-height: 1.25rem;
-  text-align: center;
+  line-height: 1.5;
 }
 
 .hintError {
   color: var(--l-bad);
 }
 
+@media (max-width: 640px) {
+  .command {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--l-s-4);
+  }
+
+  .copy {
+    justify-self: start;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .icons > svg,
+  .copy,
   .copy:active {
+    transition: background-color 220ms linear;
     transform: none;
   }
 }

@@ -1,53 +1,47 @@
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.card {
-  display: grid;
-  align-content: start;
-  padding: 8px;
-  border: 1px solid var(--l-line);
-  border-radius: 24px;
+.panel {
+  border-radius: var(--l-r-plate);
   background-color: var(--l-surface);
 }
 
-.lane {
-  display: flex;
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
   align-items: center;
-  min-height: 128px;
-  padding: 24px;
-  border: 1px solid var(--l-line);
-  border-radius: 16px;
-  background-color: var(--l-bg);
+  gap: var(--l-s-5) var(--l-col);
+  padding: var(--l-s-6);
 }
 
-.body {
+.row + .row {
+  border-top: 1px solid var(--l-line);
+}
+
+.copy {
   display: grid;
-  gap: 8px;
-  padding: 16px;
+  gap: var(--l-s-3);
 }
 
 .label {
-  color: var(--l-faint);
+  color: var(--l-muted);
   font-size: 0.875rem;
-  line-height: 1.25rem;
+  line-height: 1.5;
   font-weight: 600;
 }
 
 .verdict {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--l-s-3);
   color: var(--l-text);
-  font-size: 1.125rem;
-  line-height: 1.75rem;
+  font-size: var(--l-t-title);
+  line-height: 1.25;
+  letter-spacing: -0.015em;
   font-weight: 600;
 }
 
 .verdict svg {
   flex: none;
+  margin-top: 0.1em;
 }
 
 .bad svg {
@@ -58,201 +52,136 @@
   color: var(--l-ok);
 }
 
+.lane {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
 .node {
-  position: relative;
-  display: inline-grid;
+  display: grid;
   flex: none;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--l-line);
-  border-radius: 12px;
-  background-color: var(--l-surface);
-  color: var(--l-muted);
-  font-family: var(--l-mono);
-  font-size: 0.75rem;
-  line-height: 1rem;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--l-line-strong);
+  border-radius: var(--l-r-card);
+  background-color: var(--l-bg);
+  color: var(--l-text);
+  font-size: 0.9375rem;
+  line-height: 1;
   font-weight: 600;
 }
 
-.dpi {
-  width: 48px;
-  color: var(--l-text);
-}
-
-.hit::after {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border: 1px solid var(--l-bad);
-  border-radius: inherit;
-  background-color: var(--l-bad-soft);
-}
-
 .b4 {
-  color: var(--l-accent);
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  font-weight: 700;
+  border-color: transparent;
+  background-color: var(--l-cta);
+  color: var(--l-cta-text);
+}
+
+.dpi {
+  border-width: 2px;
+}
+
+.hit {
+  border-color: var(--l-bad);
+  color: var(--l-bad);
 }
 
 .siteOff {
-  opacity: 0.4;
+  color: var(--l-faint);
 }
 
-.siteOn::after {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border: 1px solid var(--l-ok);
-  border-radius: inherit;
-  background-color: var(--l-ok-soft);
-}
-
-.siteOn svg {
+.siteOn {
+  border-color: var(--l-ok);
   color: var(--l-ok);
 }
 
 .wire {
-  flex: 1 1 8px;
+  flex: 1 1 24px;
   min-width: 8px;
-  height: 2px;
-  border-radius: 2px;
-  background-color: var(--l-line-strong);
+  height: 0;
+  border-top: 2px dashed var(--l-line-strong);
 }
 
 .cut {
-  opacity: 0.3;
+  border-top-color: var(--l-bad);
+  border-top-style: dotted;
+}
+
+.fragments {
+  display: flex;
+  flex: none;
+  gap: var(--l-s-1);
 }
 
 .packet {
   flex: none;
-  padding: 4px 8px;
+  padding: var(--l-s-2) var(--l-s-3);
   border: 1px solid var(--l-line-strong);
-  border-radius: 8px;
-  background-color: var(--l-surface);
+  border-radius: var(--l-r-inner);
+  background-color: var(--l-bg);
   color: var(--l-text);
   font-family: var(--l-mono);
-  font-size: 0.75rem;
-  line-height: 1rem;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.fragments {
-  display: inline-flex;
-  flex: none;
-  gap: 4px;
+  font-size: 0.875rem;
+  line-height: 1;
 }
 
 .fake {
   border-style: dashed;
-  background-color: transparent;
-  color: var(--l-faint);
+  color: var(--l-muted);
 }
 
-[data-reveal="shown"] .before .whole {
-  animation: packetIn 700ms var(--l-ease) 200ms both;
-}
-
-[data-reveal="shown"] .before .hit::after {
-  animation: glow 500ms var(--l-ease) 800ms both;
-}
-
-[data-reveal="shown"] .before .cut,
-[data-reveal="shown"] .before .siteOff {
-  animation: dim 500ms var(--l-ease) 800ms both;
-}
-
-[data-reveal="shown"] .after .part:nth-child(3) {
-  animation: split1 700ms var(--l-ease) 300ms both;
-}
-
-[data-reveal="shown"] .after .part:nth-child(4) {
-  animation: split2 700ms var(--l-ease) 300ms both;
-}
-
-[data-reveal="shown"] .after .fake {
-  animation: packetIn 700ms var(--l-ease) 700ms both;
-}
-
-[data-reveal="shown"] .after .siteOn::after {
-  animation: glow 500ms var(--l-ease) 1100ms both;
-}
-
-@keyframes packetIn {
-  from {
-    opacity: 0;
-    transform: translateX(-24px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes split1 {
-  from {
-    transform: translateX(-4px);
-  }
-  to {
-    transform: none;
-  }
-}
-
-@keyframes split2 {
-  from {
-    transform: translateX(-8px);
-  }
-  to {
-    transform: none;
-  }
-}
-
-@keyframes glow {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes dim {
-  from {
-    opacity: 1;
-  }
-}
-
-@media (max-width: 900px) {
-  .grid {
+@media (max-width: 996px) {
+  .row {
     grid-template-columns: minmax(0, 1fr);
+    padding: var(--l-s-5);
   }
 }
 
-@media (max-width: 480px) {
-  .lane {
-    padding: 24px 16px;
+@media (max-width: 640px) {
+  .row {
+    padding: var(--l-s-4);
   }
 
-  .source,
-  .source + .wire {
-    display: none;
+  .row > * {
+    min-width: 0;
   }
 
-  .fragments .packet {
-    padding-inline: 4px;
+  .node {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--l-r-inner);
+    font-size: 0.8125rem;
+  }
+
+  .packet {
+    padding: var(--l-s-1) var(--l-s-2);
+    font-size: 0.75rem;
+  }
+
+  .fragments {
+    gap: 2px;
+  }
+
+  .wire {
+    flex-basis: 6px;
+    min-width: 6px;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  [data-reveal="shown"] .before .whole,
-  [data-reveal="shown"] .after .fake {
-    animation-name: glow;
+@media (max-width: 400px) {
+  .node {
+    width: 32px;
+    height: 32px;
   }
 
-  [data-reveal="shown"] .after .part:nth-child(3),
-  [data-reveal="shown"] .after .part:nth-child(4) {
-    animation: none;
+  .packet {
+    padding: var(--l-s-1);
+    font-size: 0.6875rem;
+  }
+
+  .fragments {
+    gap: 1px;
   }
 }
