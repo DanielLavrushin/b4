@@ -127,6 +127,11 @@ type udpSession struct {
 	queue   [][]byte
 	ready   bool
 	closed  bool
+	slot    sync.Once
+}
+
+func (s *udpSession) freeSlot() {
+	s.slot.Do(func() { udpSessionsOpen.Add(-1) })
 }
 
 func (s *udpSession) send(payload []byte) error {
@@ -181,15 +186,15 @@ func (s *udpSession) close() {
 	relay, reply, release := s.relay, s.reply, s.release
 	s.queue = nil
 	s.mu.Unlock()
-	if relay != nil {
-		relay.Close()
+	if relay == nil {
+		return
 	}
-	if reply != nil {
-		reply.Close()
-	}
+	relay.Close()
+	reply.Close()
 	if release != nil {
 		release()
 	}
+	s.freeSlot()
 }
 
 func (l *Listener) startUDP(addr4, addr6 string) {
@@ -226,7 +231,6 @@ func (l *Listener) stopUDP() {
 	l.udpSessions = make(map[string]*udpSession)
 	l.udpMu.Unlock()
 	for _, s := range sessions {
-		udpSessionsOpen.Add(-1)
 		s.close()
 	}
 }
@@ -340,6 +344,7 @@ func (l *Listener) setupUDPSession(key string, sess *udpSession, src, dst *net.U
 		})
 		log.Tracef("tproxy: UDP session setup failed for %s on set %q: %v", dst, l.SetName, err)
 		l.closeUDPSession(key, sess)
+		sess.freeSlot()
 		return
 	}
 	if !sess.open(relay, reply, release) {
@@ -348,6 +353,7 @@ func (l *Listener) setupUDPSession(key string, sess *udpSession, src, dst *net.U
 		if release != nil {
 			release()
 		}
+		sess.freeSlot()
 		return
 	}
 
@@ -441,9 +447,6 @@ func (l *Listener) closeUDPSession(key string, sess *udpSession) {
 		delete(l.udpSessions, key)
 	}
 	l.udpMu.Unlock()
-	if ok && cur == sess {
-		udpSessionsOpen.Add(-1)
-	}
 	sess.close()
 }
 

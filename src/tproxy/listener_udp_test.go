@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -344,21 +345,38 @@ func TestTheUDPSessionLimitFollowsTheOpenFileAllowance(t *testing.T) {
 	}
 }
 
-func TestTwoProxySetsNeverOpenMoreUDPSessionsThanTheSharedLimit(t *testing.T) {
-	rig := newUDPTestRig(t, 1)
-	other := &Listener{
+func udpSettle(t *testing.T, want int64) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for udpSessionsOpen.Load() != want {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d UDP session slots are still counted, want %d", udpSessionsOpen.Load(), want)
+		}
+		runtime.Gosched()
+	}
+}
+
+func udpTestPeer(t *testing.T) *Listener {
+	t.Helper()
+	peer := &Listener{
 		SetID:    "udp-test-other",
 		SetName:  "udp-test-other",
 		Upstream: socks5.ClientConfig{Host: "192.0.2.1", Port: 1080},
 		guard:    newLoopGuard("192.0.2.1", 1080),
 	}
-	other.ctx, other.cancel = context.WithCancel(context.Background())
-	other.udpSessions = make(map[string]*udpSession)
-	defer func() {
-		other.cancel()
-		other.stopUDP()
-		udpWaitSetups(t, other)
-	}()
+	peer.ctx, peer.cancel = context.WithCancel(context.Background())
+	peer.udpSessions = make(map[string]*udpSession)
+	t.Cleanup(func() {
+		peer.cancel()
+		peer.stopUDP()
+		udpWaitSetups(t, peer)
+	})
+	return peer
+}
+
+func TestTwoProxySetsNeverOpenMoreUDPSessionsThanTheSharedLimit(t *testing.T) {
+	rig := newUDPTestRig(t, 1)
+	other := udpTestPeer(t)
 
 	before := udpSessionsOpen.Load()
 	for round := 0; round < 20000; round++ {
@@ -379,6 +397,7 @@ func TestTwoProxySetsNeverOpenMoreUDPSessionsThanTheSharedLimit(t *testing.T) {
 		}
 		rig.l.stopUDP()
 		other.stopUDP()
+		udpSettle(t, before)
 	}
 }
 
@@ -420,4 +439,46 @@ func TestAStuckFirstWriteHoldsNeitherTheNextDatagramNorTheStop(t *testing.T) {
 	if !relay.closed() {
 		t.Error("the relay of the stopped session stayed open")
 	}
+}
+
+func TestAStoppedListenerKeepsTheSlotOfASetupStillHoldingItsSockets(t *testing.T) {
+	rig := newUDPTestRig(t, 1)
+	next := udpTestPeer(t)
+	gate := make(chan struct{})
+	rig.dial = func(_ context.Context, dst *net.UDPAddr) error {
+		if dst.Port == 50001 {
+			<-gate
+		}
+		return nil
+	}
+	client := udpTestAddr("10.0.0.5", 40000)
+	stalled, fresh := udpTestAddr("203.0.113.2", 50001), udpTestAddr("203.0.113.3", 50002)
+	before := udpSessionsOpen.Load()
+
+	rig.send(t, client, stalled, "a")
+	udpWaitFor(t, "the upstream dial to start", func() bool { return rig.upstream.Load() == 1 })
+	rig.l.cancel()
+	rig.l.stopUDP()
+
+	if open := udpSessionsOpen.Load() - before; open != 1 {
+		t.Fatalf("%d slots are counted after the listener stopped, want 1: its setup still holds a reply socket and a handshake, and a restarted listener would open its sessions on top of them", open)
+	}
+	next.dispatchUDP(client, fresh, []byte("b"), false)
+	time.Sleep(50 * time.Millisecond)
+	if rig.relay(fresh) != nil || rig.upstream.Load() != 1 {
+		t.Fatalf("the listener that replaced the stopped one opened a session while the old setup still held the only slot (upstream dials: %d)", rig.upstream.Load())
+	}
+
+	close(gate)
+	udpWaitFor(t, "the stalled setup to close its sockets and give the slot back", func() bool { return udpSessionsOpen.Load() == before })
+	rig.mu.Lock()
+	for _, reply := range rig.replies {
+		if !reply.shut.Load() {
+			t.Error("the slot came back while a reply socket of the stopped listener was still open")
+		}
+	}
+	rig.mu.Unlock()
+
+	next.dispatchUDP(client, fresh, []byte("c"), false)
+	rig.wrote(t, fresh, "c")
 }
