@@ -838,6 +838,8 @@ func (manager *IPTablesManager) buildManifestFor(ipts []string, teardown bool) M
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "I", Spec: iptMarkReturn(ownPacket)},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "I", Position: iptLocalDeliveryPosition,
 				Spec: iptLocalDeliveryReturn()},
+			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "I", Position: iptRouterOwnProxyPosition,
+				Spec: iptRouterOwnProxyReturn()},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",
 				Spec: []string{"-m", "mark", "--mark", telegramBridgeMarkMatch(), "-j", "RETURN"}},
 			Rule{manager: manager, IPT: ipt, Table: "mangle", Chain: chainName, Action: "A",

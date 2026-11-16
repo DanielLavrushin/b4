@@ -49,6 +49,8 @@ type HistoryEntry struct {
 	FinalHost     string                         `json:"final_host,omitempty"`
 	SuiteId       string                         `json:"suite_id,omitempty"`
 	Source        string                         `json:"source,omitempty"`
+	Note          string                         `json:"note,omitempty"`
+	Addresses     []ProbeAddress                 `json:"addresses,omitempty"`
 	SetId         string                         `json:"set_id,omitempty"`
 	DSCP          *int                           `json:"dscp,omitempty"`
 	DSCPIPVersion string                         `json:"dscp_ip_version,omitempty"`
@@ -124,6 +126,7 @@ type SetRunRecord struct {
 	StartTime      time.Time        `json:"start_time"`
 	EndTime        time.Time        `json:"end_time"`
 	URLs           []string         `json:"urls"`
+	Note           string           `json:"note,omitempty"`
 	DSCP           *int             `json:"dscp,omitempty"`
 	DSCPIPVersion  string           `json:"dscp_ip_version,omitempty"`
 	DSCPPath       *config.DSCPPath `json:"dscp_path,omitempty"`
@@ -243,6 +246,8 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 		entry := HistoryEntry{
 			SuiteId:       suite.Id,
 			Source:        suite.Source,
+			Note:          suite.Note,
+			Addresses:     domainResult.Addresses,
 			SetId:         suite.SetId,
 			DSCP:          suite.DSCP,
 			DSCPIPVersion: suite.DSCPIPVersion,
@@ -282,6 +287,7 @@ func (dh *DiscoveryHistory) AddFromSuite(suite *CheckSuite) {
 		for i, existing := range dh.Entries {
 			if existing.Domain == domainResult.Domain {
 				entry.Applied = existing.Applied
+				entry.Note = keptNote(suite, entry.Note, existing.Note)
 				dh.Entries[i] = entry
 				replaced = true
 				break
@@ -320,6 +326,7 @@ func (dh *DiscoveryHistory) recordSetRun(suite *CheckSuite) {
 		StartTime:      suite.StartTime,
 		EndTime:        suite.EndTime,
 		URLs:           urls,
+		Note:           keptNote(suite, suite.Note, dh.SetRuns[suite.SetId].Note),
 		DSCP:           suite.DSCP,
 		DSCPIPVersion:  suite.DSCPIPVersion,
 		DSCPPath:       suite.DSCPPath,

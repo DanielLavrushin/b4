@@ -29,7 +29,10 @@ func TestNetnsARouterDialToAProxySetStaysOutOfTheQueue(t *testing.T) {
 		if engine == backendIPTables {
 			cases = append(cases, netnsProxyCaptureCase{name: "set enabled after start, return deleted and restored", late: true, restored: true})
 		}
-		cases = append(cases, netnsProxyCaptureCase{name: "device filter, set enabled at start", devices: true})
+		cases = append(cases,
+			netnsProxyCaptureCase{name: "device filter, set enabled at start", devices: true},
+			netnsProxyCaptureCase{name: "device filter, set enabled after start", devices: true, late: true},
+		)
 		for _, c := range cases {
 			t.Run(engine+", "+c.name, func(t *testing.T) {
 				if engine == backendNFTables && !hasBinary("nft") {
@@ -70,6 +73,17 @@ func netnsRouterDialStaysOutOfTheQueue(t *testing.T, engine string, c netnsProxy
 		netnsRun(t, append([]string{backendIPTables, "-w", "-t", "mangle", "-D", iptChainName}, strings.Fields(iptLocalDeliveryReturnRule)...)...)
 		if err := AddRules(capture); err != nil {
 			t.Fatalf("AddRules after the return was deleted: %v", err)
+		}
+	}
+
+	if engine == backendIPTables {
+		if err := AddRules(capture); err != nil {
+			t.Fatalf("AddRules a second time: %v", err)
+		}
+		listing := netnsRun(t, backendIPTables, "-w", "-t", "mangle", "-S", iptChainName)
+		routerOwn := strings.Join(iptRouterOwnProxyReturn(), " ")
+		if n := strings.Count(listing, routerOwn); n != 1 {
+			t.Errorf("%s holds %d copies of %q after AddRules ran again, want 1: iptables -C does not find the rule, so every restore adds another copy:\n%s", iptChainName, n, routerOwn, listing)
 		}
 	}
 

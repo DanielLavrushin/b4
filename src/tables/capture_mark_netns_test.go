@@ -7,6 +7,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/tproxy"
 )
 
 func netnsSendMarkedUDP(t *testing.T, srcPort, dstPort int, mark int) {
@@ -74,6 +77,63 @@ func TestNetnsAnotherServicesMarkWithTheQueueBitIsQueued(t *testing.T) {
 			}
 			for sport, n := range own {
 				t.Errorf("source port %d: a datagram b4 sends itself was queued %d time(s)", sport, n)
+			}
+		})
+	}
+}
+
+func TestNetnsOnlyARouterOwnProxyMarkSkipsTheQueueByBit24(t *testing.T) {
+	for _, engine := range []string{backendIPTables, backendNFTables} {
+		t.Run(engine, func(t *testing.T) {
+			netnsRequire(t)
+			if engine == backendNFTables && !hasBinary("nft") {
+				t.Skip("nft is not installed")
+			}
+			netnsDNSQueryLinks(t)
+
+			routeEngine = nil
+			defer func() { routeEngine = nil }()
+
+			cfg := netnsConfig(engine)
+			cfg.Sets = nil
+			if err := AddRules(cfg); err != nil {
+				t.Fatalf("AddRules: %v", err)
+			}
+			defer func() { _ = ClearRules(cfg) }()
+
+			proxied := int(tproxy.MarkForSet("p", 0) | config.RouterOwnProxyMarkBit)
+			probes := []struct {
+				sport  int
+				mark   int
+				what   string
+				queued bool
+			}{
+				{41461, proxied, "a router's own packet a proxy set marked", false},
+				{41462, 0x0ffffaaa, "a KeeneticOS hotspot mark", true},
+				{41463, 0x4d616769, "a MagiTrickle mark", true},
+				{41464, int(config.RouterOwnProxyMarkBit), "bit 0x1000000 with no set mark", true},
+				{41465, proxied | 0x80000, "a proxy set's mark with bit 0x1000000 and another service's bit", true},
+			}
+			snapshot, stop := netnsConntrackQueueListener(t, uint16(cfg.Queue.StartNum))
+			for _, p := range probes {
+				netnsSendMarkedUDP(t, p.sport, 443, p.mark)
+			}
+			time.Sleep(300 * time.Millisecond)
+			stop()
+
+			seen := map[int]int{}
+			for _, p := range snapshot() {
+				if p.dport == 443 {
+					seen[int(p.sport)]++
+				}
+			}
+			for _, p := range probes {
+				switch n := seen[p.sport]; {
+				case p.queued && n == 0:
+					t.Errorf("%s (0x%x) never reached the queue; the return for the router's own proxied packets takes only a mark made of a set mark and bit 0x1000000", p.what, p.mark)
+				case !p.queued && n > 0:
+					t.Errorf("%s (0x%x) was queued %d time(s); it is on its way to the set's listener, and in the queue a server name another set lists gets that set's strategy", p.what, p.mark, n)
+				}
 			}
 		})
 	}

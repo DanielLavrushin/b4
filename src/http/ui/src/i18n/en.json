@@ -353,7 +353,7 @@
       "cfWorkerDpi": "Let sets process Worker connections",
       "cfWorkerDpiHelp": "Off by default: b4 skips DPI processing on its own connections to the Worker, so a set that covers Cloudflare cannot break the relay. Turn it on when the ISP throttles workers.dev and a set with a working Cloudflare strategy should apply to the Worker connections too. Cloudflare-proxied domains keep skipping DPI either way.",
       "dcRelay": "DC Relay",
-      "dcRelayHelp": "External relay address (host:port) to reach Telegram DCs when blocked by IP",
+      "dcRelayHelp": "External relay address (host:port) to reach Telegram DCs when blocked by IP. Telegram over WebSocket tries it after its WebSocket routes.",
       "dcRelayHelpButton": "Show socat commands for relay setup",
       "dcRelayHelpTitle": "DC Relay socat setup",
       "dcRelayHelpIntro": "Run these commands on your VPS to forward each Telegram DC to the relay port B4 uses. They point at the public data-center addresses B4 dials over direct TCP. The media DC 203 reuses the DC 2 port, so it needs no command of its own.",
@@ -429,7 +429,7 @@
       "shareTestHint": "Test the link from mobile data, not from the same Wi-Fi: many routers do not loop a connection to their own public address back to the LAN.",
       "shareOpen": "Open in Telegram",
       "upstreamTitle": "Telegram upstream (shared)",
-      "upstreamDesc": "How b4 reaches Telegram data centers, both for the proxy server and for Telegram over WebSocket (the switch above and the routing mode in sets), so it applies even when the proxy server is off. The bridge always uses Auto and ignores DC Relay; the transport mode and DC Relay below apply to the proxy server only.",
+      "upstreamDesc": "How b4 reaches Telegram data centers, both for the proxy server and for Telegram over WebSocket (the switch above and the routing mode in sets), so it applies even when the proxy server is off. The bridge always uses Auto: the WebSocket routes first, then the DC Relay when one is set, then direct TCP. The transport mode below applies to the proxy server only.",
       "bridgeWait": "Bridge Handshake Wait (sec)",
       "bridgeWaitHelp": "How long the 'Telegram over WebSocket' bridge waits for a client's first handshake byte before dropping the connection. Telegram opens connections to a data center before it has anything to send, and a client that gets closed too early counts it as a failure and keeps rotating data centers (default: 180, -1 to wait indefinitely).",
       "upstreamMode": "Transport mode",
@@ -461,7 +461,7 @@
       "testStage_dial": "connect failed",
       "testStage_handshake": "handshake failed",
       "testStage_hold": "dropped after handshake",
-      "upstreamAutoRelayDesc": "DC Relay is configured: relay TCP is tried first, WebSocket as fallback.",
+      "upstreamAutoRelayDesc": "DC Relay is configured: the proxy server tries relay TCP first, WebSocket as fallback.",
       "advanced": "Advanced",
       "webProxyNoHost": "No hostname set",
       "webProxyPort": "Relay port",
@@ -2862,6 +2862,19 @@
       "empty": "No sites added yet",
       "refused": "Not added: {{items}}. Only http and https addresses of public hosts can be tested."
     },
+    "note": {
+      "label": "Note",
+      "placeholder": "What this search is for, e.g. the YouTube cache node of my ISP",
+      "helper": "Optional. Kept with the results and in the history. {{count}}/{{max}}"
+    },
+    "addresses": {
+      "loaded": "{{site}} loaded from this address",
+      "notLoaded": "No probe loaded {{site}} from this address",
+      "lookUp": "Look up ASN",
+      "lookingUp": "looking up ASN...",
+      "lookupFailed": "ASN lookup failed",
+      "noAsn": "no ASN"
+    },
     "set": {
       "label": "Find a strategy for a set",
       "none": "No set: test any sites",
@@ -3257,7 +3270,8 @@
       "routed_set": "The set routes its traffic to an interface or proxy, so there is no bypass strategy to search for.",
       "bad_dns_server": "The trusted DNS server given for this run is not valid. It takes an IP address with an optional port, udp://, tcp://, tcp+udp:// or an https:// URL.",
       "bad_pin": "A pinned address was refused. Each line takes a public IP address, then the names it serves.",
-      "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the probes. Start the search again in a moment."
+      "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the probes. Start the search again in a moment.",
+      "note_too_long": "The note is longer than {{maxNote}} characters."
     },
     "options": {
       "title": "Options",

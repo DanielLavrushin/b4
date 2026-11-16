@@ -43,6 +43,7 @@ exec nft add rule inet b4_mangle b4_chain meta mark & 0x8cfd8000 == 0x8000 retur
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
 exec nft add rule inet b4_mangle b4_chain oifname "lo" meta mark & 0x27fff != 0x0 return
+exec nft add rule inet b4_mangle b4_chain meta mark & 0xfffd8000 == 0x1000000 meta mark & 0x27fff != 0x0 return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x23445 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 ct direction reply socket wildcard 0 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return
@@ -132,6 +133,7 @@ exec nft add rule inet b4_mangle b4_chain meta mark & 0x8cfd8000 == 0x8000 retur
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
 exec nft add rule inet b4_mangle b4_chain oifname "lo" meta mark & 0x27fff != 0x0 return
+exec nft add rule inet b4_mangle b4_chain meta mark & 0xfffd8000 == 0x1000000 meta mark & 0x27fff != 0x0 return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x23445 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 ct direction reply socket wildcard 0 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return
@@ -207,6 +209,7 @@ exec nft add rule inet b4_mangle b4_chain meta mark & 0x8cfd8000 == 0x8000 retur
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x24bab return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x8efd8000 == 0x240000 return
 exec nft add rule inet b4_mangle b4_chain oifname "lo" meta mark & 0x27fff != 0x0 return
+exec nft add rule inet b4_mangle b4_chain meta mark & 0xfffd8000 == 0x1000000 meta mark & 0x27fff != 0x0 return
 exec nft add rule inet b4_mangle b4_chain meta mark & 0x27fff == 0x23445 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x8000 == 0x8000 ct direction reply socket wildcard 0 return
 exec nft add rule inet b4_mangle prerouting ct mark & 0x2008000 == 0x2000000 tcp flags & (syn|rst) == 0 return

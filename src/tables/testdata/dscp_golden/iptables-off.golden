@@ -87,6 +87,7 @@ ip6tables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --con
 ip6tables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+ip6tables -w -t mangle -D B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -115,6 +116,7 @@ iptables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --conn
 iptables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -220,6 +222,8 @@ iptables -w -t mangle -C B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t mangle -I B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t mangle -C B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -I B4 2 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
+iptables -w -t mangle -C B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
+iptables -w -t mangle -I B4 3 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -C B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -A B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -C B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
@@ -379,6 +383,7 @@ ip6tables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --con
 ip6tables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+ip6tables -w -t mangle -D B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -418,6 +423,8 @@ iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
@@ -533,6 +540,8 @@ iptables -w -t mangle -C B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t mangle -I B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t mangle -C B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -I B4 2 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
+iptables -w -t mangle -C B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
+iptables -w -t mangle -I B4 3 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -C B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -A B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -C B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
@@ -690,6 +699,7 @@ ip6tables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --con
 ip6tables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+ip6tables -w -t mangle -D B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -729,6 +739,8 @@ iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
@@ -844,6 +856,8 @@ iptables -w -t mangle -C B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t mangle -I B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 iptables -w -t mangle -C B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -I B4 2 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
+iptables -w -t mangle -C B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
+iptables -w -t mangle -I B4 3 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -C B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -A B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -C B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
@@ -1001,6 +1015,7 @@ ip6tables -w -t mangle -D B4 -p tcp -m multiport --dports 443 -m connbytes --con
 ip6tables -w -t mangle -D B4 -m mark --mark 0x23445/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+ip6tables -w -t mangle -D B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 ip6tables -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
 ip6tables -w -t mangle -D B4_PREROUTING -p udp --sport 53 -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -1040,6 +1055,8 @@ iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x240000/0x8efd8000 -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x24bab/0x27fff -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
+iptables -w -t mangle -D B4 -m mark --mark 0x1000000/0xfffd8000 -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -o lo -m mark ! --mark 0x0/0x27fff -j RETURN
 iptables -w -t mangle -D B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN

@@ -30,6 +30,8 @@ import {
   verdictOf,
 } from "@utils";
 import { Snake, SnakeButton } from "./Snake";
+import { ProbeAddresses } from "./ProbeAddresses";
+import { RunNote } from "./RunNote";
 
 const SNAKE_NUDGE_AFTER_MS = 12_000;
 
@@ -323,6 +325,8 @@ export const RunPanel = ({
         }
       />
 
+      <RunNote note={suite.note} />
+
       {suite.source === "watchdog" && (
         <B4Alert severity="info">{t("discovery.source.watchdog")}</B4Alert>
       )}
@@ -372,7 +376,10 @@ export const RunPanel = ({
                   key={site}
                   sx={{ "&:last-child td": { border: 0 } }}
                 >
-                  <TableCell sx={{ fontWeight: 600 }}>{site}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>
+                    {site}
+                    <ProbeAddresses addresses={dr?.addresses} site={site} />
+                  </TableCell>
                   <TableCell sx={{ color: colors.text.secondary }}>
                     {describe(dr)}
                   </TableCell>
