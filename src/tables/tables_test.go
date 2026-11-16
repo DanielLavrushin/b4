@@ -448,6 +448,23 @@ func TestChunkPorts(t *testing.T) {
 			t.Errorf("chunk should be empty, got %d", len(chunks[0]))
 		}
 	})
+
+	t.Run("a range takes two multiport slots", func(t *testing.T) {
+		ports := []string{"443", "1000:1010", "2000:2010", "3000:3010", "4000:4010", "5000:5010", "6000:6010", "7000:7010", "8000:8010"}
+		chunks := chunkPorts(ports, 15)
+		if len(chunks) != 2 || len(chunks[0]) != 8 || len(chunks[1]) != 1 {
+			t.Fatalf("chunks = %v: one port and seven ranges fill the 15 slots xt_multiport takes, so the eighth range needs a second rule", chunks)
+		}
+		for _, chunk := range chunks {
+			slots := 0
+			for _, port := range chunk {
+				slots += multiportSlots(port)
+			}
+			if slots > 15 {
+				t.Errorf("chunk %v uses %d slots; iptables refuses the rule with 'too many ports specified'", chunk, slots)
+			}
+		}
+	})
 }
 
 func TestRouteSanitizeSetID(t *testing.T) {

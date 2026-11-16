@@ -4,6 +4,10 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- On routers that use iptables, **Port Filter** lists with eight or more port ranges across the sets kept b4's capture rules from installing.
+
 ## [1.91.1] - 2026-11-15
 
 ### Added
