@@ -24,7 +24,7 @@ const lookupLabel = (lookup: AsnLookup | undefined): string | null => {
 export const ProbeAddresses = ({ addresses, site }: ProbeAddressesProps) => {
   const { t } = useTranslation();
   const labels = useSyncExternalStore(asnStorage.subscribe, asnStorage.getLabels);
-  const [lookUp, setLookUp] = useState(false);
+  const [allowed, setAllowed] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
     void asnStorage.init();
@@ -38,7 +38,7 @@ export const ProbeAddresses = ({ addresses, site }: ProbeAddressesProps) => {
     queries: unknown.map((ip) => ({
       queryKey: ["asn-lookup", ip],
       queryFn: () => asnApi.lookup(ip),
-      enabled: lookUp,
+      enabled: allowed.has(ip),
       retry: false,
       staleTime: LOOKUP_STALE_MS,
       refetchOnWindowFocus: false,
@@ -58,7 +58,7 @@ export const ProbeAddresses = ({ addresses, site }: ProbeAddressesProps) => {
     if (q.data) return lookupLabel(q.data) || t("discovery.addresses.noAsn");
     return null;
   };
-  const pending = unknown.some((ip) => !looked.get(ip)?.data);
+  const waiting = unknown.filter((ip) => !allowed.has(ip) && !looked.get(ip)?.data);
 
   return (
     <Box
@@ -127,10 +127,10 @@ export const ProbeAddresses = ({ addresses, site }: ProbeAddressesProps) => {
           </Tooltip>
         );
       })}
-      {pending && !lookUp && (
+      {waiting.length > 0 && (
         <Button
           size="small"
-          onClick={() => setLookUp(true)}
+          onClick={() => setAllowed((prev) => new Set([...prev, ...waiting]))}
           sx={{
             textTransform: "none",
             color: colors.text.secondary,
