@@ -248,7 +248,7 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 			}
 		}
 
-		if set.UDP.DPortFilter != "" {
+		if set.UDP.DPortFilter != "" && !set.RoutesUDPByPort() {
 			for _, part := range strings.Split(set.UDP.DPortFilter, ",") {
 				if pr, ok := parsePortRange(part, set); ok {
 					if set.SelectsL7() {

@@ -513,7 +513,7 @@ func (cfg *Config) CollectUDPPorts() []string {
 	portSet["443"] = true
 
 	for _, set := range cfg.Sets {
-		if !set.Enabled || set.UDP.DPortFilter == "" {
+		if !set.Enabled || set.UDP.DPortFilter == "" || set.RoutesUDPByPort() {
 			continue
 		}
 		for _, p := range strings.Split(set.UDP.DPortFilter, ",") {
@@ -807,6 +807,41 @@ func (set *SetConfig) BlocksQUIC() bool {
 	return set.UDP.Mode == UDPModeReject && set.UDP.FilterQUIC == QUICFilterAll
 }
 
+const DNSPort = 53
+
+func (set *SetConfig) routedUDPPorts() []string {
+	ranges := subtractPortRanges(ParsePortRanges(set.UDP.DPortFilter), []PortRange{{Min: DNSPort, Max: DNSPort}})
+	parts := make([]string, 0, len(ranges))
+	for _, r := range ranges {
+		if r.Min == r.Max {
+			parts = append(parts, strconv.Itoa(int(r.Min)))
+			continue
+		}
+		parts = append(parts, strconv.Itoa(int(r.Min))+"-"+strconv.Itoa(int(r.Max)))
+	}
+	return mergeAndNormalizePorts(parts)
+}
+
+func (set *SetConfig) WantsUDPPortRouting() bool {
+	return set.Routing.Enabled &&
+		set.RoutingModeOrDefault() == RoutingModeProxy &&
+		set.Routing.Upstream.UDP &&
+		!set.DeclaresDestinationTargets() &&
+		!set.SelectsL7() &&
+		len(set.routedUDPPorts()) > 0
+}
+
+func (set *SetConfig) RoutesUDPByPort() bool {
+	return set.WantsUDPPortRouting() && set.RoutingSourceScoped()
+}
+
+func (set *SetConfig) RoutedUDPPortSpec() string {
+	if !set.RoutesUDPByPort() {
+		return ""
+	}
+	return strings.Join(set.routedUDPPorts(), ",")
+}
+
 func (cfg *Config) BuildSetPortRanges() {
 	var selected, listed []PortRange
 	for _, set := range cfg.Sets {
@@ -817,7 +852,7 @@ func (cfg *Config) BuildSetPortRanges() {
 		}
 		if set.SelectsL7() {
 			selected = append(selected, set.UDPPortRanges...)
-		} else {
+		} else if !set.RoutesUDPByPort() {
 			listed = append(listed, set.UDPPortRanges...)
 		}
 	}

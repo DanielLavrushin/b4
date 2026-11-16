@@ -155,7 +155,7 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 	routingSets := cfg.RoutingSets()
 	desired := make(map[string]*config.SetConfig, len(routingSets))
 	for _, set := range routingSets {
-		if set == nil || !set.Enabled || !set.RoutingDivertsPackets() {
+		if set == nil || !set.Enabled || !(set.RoutingDivertsPackets() || set.RoutesUDPByPort()) {
 			continue
 		}
 		if !config.RoutingUsesTProxy(set.Routing.Mode) {

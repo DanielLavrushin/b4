@@ -17,6 +17,7 @@ import { Trans, useTranslation } from "react-i18next";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import * as ipaddr from "ipaddr.js";
 import { hasTargets } from "../facets";
+import { udpPortRouting } from "./portRouting";
 import { SetDscp } from "./SetDscp";
 
 const gatewayZone = /^[^\s%/[\]]+$/;
@@ -36,6 +37,7 @@ function isGatewayAddress(value: string): boolean {
 
 interface TrafficRoutingProps {
   config: B4SetConfig;
+  ipv6: boolean;
   availableIfaces: string[];
   ifaceDetails?: IfaceDetails;
   tunnelIfaces?: string[];
@@ -57,6 +59,7 @@ interface TrafficRoutingProps {
 
 export const TrafficRouting = ({
   config,
+  ipv6,
   availableIfaces,
   ifaceDetails,
   tunnelIfaces = [],
@@ -92,8 +95,12 @@ export const TrafficRouting = ({
   const sourceDeviceCount = config.targets.source_devices?.length ?? 0;
   const selectsL7 = (config.udp.filter_l7?.length ?? 0) > 0;
   const blocksByProtocol = isBlock && selectsL7;
+  const portRouting = udpPortRouting(config);
   const showNoDestinationWarning =
-    routing.enabled && !hasDestination && !blocksByProtocol;
+    routing.enabled &&
+    !hasDestination &&
+    !blocksByProtocol &&
+    !portRouting.wanted;
 
   const selectedIfaceAvailable = availableIfaces.includes(
     routing.egress_interface,
@@ -205,6 +212,24 @@ export const TrafficRouting = ({
                 {sourceDeviceCount > 0
                   ? t("sets.routing.noDestinationWithDevices")
                   : t("sets.routing.noDestination")}
+                {isProxy && ` ${t("sets.routing.noDestinationPortHint")}`}
+              </B4Alert>
+            </Grid>
+          )}
+          {portRouting.active && (
+            <Grid size={{ xs: 12 }}>
+              <B4Alert severity="info">
+                {t("sets.routing.portRouted", { ports: portRouting.ports })}
+                {!ipv6 && ` ${t("sets.routing.portRoutedIpv6Off")}`}
+              </B4Alert>
+            </Grid>
+          )}
+          {portRouting.wanted && !portRouting.scoped && (
+            <Grid size={{ xs: 12 }}>
+              <B4Alert severity="warning">
+                {t("sets.routing.portRoutingNeedsScope", {
+                  ports: portRouting.ports,
+                })}
               </B4Alert>
             </Grid>
           )}

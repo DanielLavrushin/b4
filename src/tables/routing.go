@@ -61,6 +61,7 @@ type routeState struct {
 	gwPeersV4   []string
 	tproxyPort  int
 	upstreamKey string
+	udpPorts    string
 	sourcesKey  string
 	deviceKey   string
 	blockAction string
@@ -635,7 +636,8 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 		st.table = proxyTable()
 		st.tproxyPort = port
 		st.upstreamKey = fmt.Sprintf("%s:%d|%s|udp=%t", set.Routing.Upstream.Host, set.Routing.Upstream.Port, set.Routing.Upstream.Username, set.Routing.Upstream.UDP)
-		st.quicReject = mode == config.RoutingModeProxy && (!set.Routing.Upstream.UDP || set.BlocksQUIC())
+		st.udpPorts = set.RoutedUDPPortSpec()
+		st.quicReject = mode == config.RoutingModeProxy && st.udpPorts == "" && (!set.Routing.Upstream.UDP || set.BlocksQUIC())
 	} else {
 		mark, table := routeResolveIDs(cfg, set)
 		st.mark = mark
@@ -670,6 +672,7 @@ func routeStateSameConfig(a, b routeState) bool {
 		a.egressIP == b.egressIP &&
 		a.tproxyPort == b.tproxyPort &&
 		a.upstreamKey == b.upstreamKey &&
+		a.udpPorts == b.udpPorts &&
 		a.blockAction == b.blockAction &&
 		a.quicReject == b.quicReject &&
 		a.sourcesKey == b.sourcesKey &&
@@ -1445,7 +1448,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			routeWarnIncomplete(set, "routing mode is 'proxy' but the upstream port is not set")
 			continue
 		}
-		if len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 {
+		if len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 && !set.RoutesUDPByPort() {
 			routeWarnNoDestination(set)
 			continue
 		}

@@ -325,6 +325,9 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	if st.table <= 0 {
 		return fmt.Errorf("no free routing table for transparent proxying")
 	}
+	if st.udpPorts != "" && len(sources) == 0 && !routeSetDeviceGate(cfg, set).isWhitelist() {
+		return fmt.Errorf("the set routes UDP by port, yet no source interface and no source device limits it; without one its rule would take replies and connections that come in from the uplink, so nothing is installed")
+	}
 	if be.name() == backendNFTables {
 		proxyNftPreflight()
 		deleteNftRulesContaining(routeNftOutput, "@"+st.setV4)
@@ -441,6 +444,10 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		}
 	}
 
+	if err := addProxyUDPPortRules(be, cfg, st, port, sources); err != nil {
+		return err
+	}
+
 	if routeWantsOutputJump(st) {
 		be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
 	} else {
@@ -451,6 +458,10 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 
 	if sourceScoped {
 		log.Infof("Routing [%s]: set '%s' is limited to source devices or interfaces, so traffic the router itself originates keeps using the normal route", be.name(), set.Name)
+	}
+	if st.udpPorts != "" {
+		log.Infof("Routing [%s]: set '%s' has no destination target and routes by UDP port: the UDP its source devices or interfaces send to ports %s goes through the upstream whatever the address, %s",
+			be.name(), set.Name, st.udpPorts, proxyUDPPortFamilies(cfg))
 	}
 
 	if st.quicReject {

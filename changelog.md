@@ -4,6 +4,10 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Added
+
+- A set with **Upstream SOCKS5 proxy** routing and no targets can send UDP through the proxy by port alone: list the ports in **Port Filter** on its **UDP** tab, turn on **Route UDP through upstream** and choose **Source Interfaces** or source devices. A set already set up this way starts routing after the update.
+
 ### Changed
 
 - UDP through an upstream proxy is limited to as many sessions as the router's open-file limit leaves room for: above it, new UDP sessions are dropped until old ones close.
