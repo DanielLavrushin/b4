@@ -32,6 +32,7 @@ var placeholderPaths = map[string]bool{
 	"system.mtproto.cfproxy_url":              true,
 	"system.mtproto.dc_fallback_url":          true,
 	"system.mtproto.web_proxy.hostname":       true,
+	"system.mtproto.public_host":              true,
 	"system.mtproto.web_proxy.tls_cert":       true,
 	"system.mtproto.web_proxy.tls_key":        true,
 	"system.api.ipinfo_token":                 true,
@@ -112,6 +113,7 @@ func (c *Config) RedactForSharing() {
 	mt.WSCustomDomain = maskValue(mt.WSCustomDomain)
 	mt.CFWorkerDomain = maskValue(mt.CFWorkerDomain)
 	mt.WebProxy.Hostname = maskValue(mt.WebProxy.Hostname)
+	mt.PublicHost = maskValue(mt.PublicHost)
 	mt.CFProxyURL = maskCustomValue(mt.CFProxyURL, TGCFProxyURL)
 	mt.DCFallbackURL = maskCustomValue(mt.DCFallbackURL, TGDCFallbackURL)
 

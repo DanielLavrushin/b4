@@ -830,6 +830,108 @@ func TestZapret_L7ClassesB4CannotSelectAreReported(t *testing.T) {
 	}
 }
 
+func TestZapret_AnL7FilterOfUDPClassesLeavesTCPAlone(t *testing.T) {
+	const rest = " --ipset-ip=203.0.113.7 --dpi-desync=fake --dup=2"
+	tests := []struct {
+		name     string
+		filters  string
+		tcp      bool
+		tcpPorts string
+		udpPorts string
+	}{
+		{"wireguard", "--filter-l7=wireguard", false, "", ""},
+		{"dht", "--filter-l7=dht", false, "", ""},
+		{"wireguardWithBothPortFilters", "--filter-tcp=443 --filter-udp=51820 --filter-l7=wireguard", false, "443", "51820"},
+		{"dhtWithBothPortFilters", "--filter-tcp=443 --filter-udp=6881 --filter-l7=dht", false, "443", "6881"},
+		{"quicWithBothPortFilters", "--filter-tcp=443 --filter-udp=443 --filter-l7=quic", false, "443", "443"},
+		{"wireguardWithUDPPorts", "--filter-udp=51820 --filter-l7=wireguard", false, "", "51820"},
+		{"discord", "--filter-l7=discord", false, "", ""},
+		{"quic", "--filter-l7=quic", false, "", ""},
+		{"wireguardAndTLS", "--filter-l7=wireguard,tls", true, "443", ""},
+		{"dhtAndHTTP", "--filter-l7=dht,http", true, "80", ""},
+		{"wireguardAndUnknown", "--filter-l7=wireguard,unknown", true, "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := analyze(t, tt.filters+rest)
+			if len(res.Sets) != 1 {
+				t.Fatalf("got %d sets", len(res.Sets))
+			}
+			set := res.Sets[0]
+			if set.Faking.SNI != tt.tcp || set.TCP.Duplicate.Enabled != tt.tcp {
+				t.Fatalf("nfqws detects wireguard, dht, quic, stun and discord only in UDP, so a filter of those classes alone "+
+					"matches no TCP packet: faking.sni=%v duplicate=%v, want both %v", set.Faking.SNI, set.TCP.Duplicate.Enabled, tt.tcp)
+			}
+			if !set.Enabled || set.UDP.Mode != config.UDPModeFake || !slices.Equal(set.Targets.IPs, []string{"203.0.113.7"}) {
+				t.Fatalf("enabled=%v udp.mode=%q ips=%v", set.Enabled, set.UDP.Mode, set.Targets.IPs)
+			}
+			if set.TCP.DPortFilter != tt.tcpPorts || set.UDP.DPortFilter != tt.udpPorts {
+				t.Fatalf("tcp.dport_filter=%q udp.dport_filter=%q, want %q and %q",
+					set.TCP.DPortFilter, set.UDP.DPortFilter, tt.tcpPorts, tt.udpPorts)
+			}
+			reason := "tcpOnlyOption"
+			if tt.tcp {
+				reason = "duplicateMapped"
+			}
+			if n := noteFor(t, res, "--dup=2"); n.Reason != reason {
+				t.Fatalf("got %+v, want %s", n, reason)
+			}
+			assertNoLostOptions(t, res)
+			assertSetsSave(t, res)
+		})
+	}
+}
+
+func TestZapret_APortlessL7ProfileThatMissesQUICIsNotFoldedIntoTheTCPSet(t *testing.T) {
+	const tcp = "--filter-tcp=443 --hostlist-domains=a.com --dpi-desync=multisplit --new "
+	const udp = " --dpi-desync=fake --dpi-desync-repeats=11"
+	udpDefault := config.DefaultSetConfig.UDP.FakeSeqLength
+	tests := []struct {
+		name string
+		line string
+		want []foldedSet
+	}{
+		{"wireguard", tcp + "--filter-l7=wireguard" + udp, []foldedSet{
+			{true, "", "", udpDefault},
+			{false, DisabledNeedsTargets, "", 11},
+		}},
+		{"dht", tcp + "--filter-l7=dht" + udp, []foldedSet{
+			{true, "", "", udpDefault},
+			{false, DisabledNeedsTargets, "", 11},
+		}},
+		{"wireguardWithUDPPorts", tcp + "--filter-udp=51820 --filter-l7=wireguard" + udp, []foldedSet{
+			{true, "", "51820", 11},
+		}},
+		{"quic", tcp + "--filter-l7=quic" + udp, []foldedSet{
+			{true, "", "", 11},
+		}},
+		{"quicAndWireguard", tcp + "--filter-l7=quic,wireguard" + udp, []foldedSet{
+			{true, "", "", 11},
+		}},
+		{"wireguardBesideAPlainUDPProfile",
+			"--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=8 --new --filter-l7=wireguard --dpi-desync=fake --new " +
+				"--filter-tcp=443 --hostlist-domains=a.com --dpi-desync=multisplit", []foldedSet{
+				{false, DisabledNeedsTargets, "", udpDefault},
+				{true, "", "443", 8},
+			}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := analyze(t, tt.line)
+			assertFoldedSets(t, res, tt.want)
+			for _, set := range res.Sets {
+				if set.Enabled {
+					continue
+				}
+				if set.Faking.SNI || set.Fragmentation.Strategy != config.ConfigNone {
+					t.Fatalf("the UDP profile carries no TCP strategy: faking.sni=%v fragmentation=%q",
+						set.Faking.SNI, set.Fragmentation.Strategy)
+				}
+			}
+		})
+	}
+}
+
 func TestZapret_AnL7ProfileWithItsOwnHostsKeepsThem(t *testing.T) {
 	res := analyze(t, "--filter-udp=50000-50100 --filter-l7=discord --hostlist-domains=discord.gg --dpi-desync=fake")
 	set := res.Sets[0]

@@ -574,3 +574,152 @@ func TestZapret_AProfileIsUDPOnlyByItsFiltersNotByItsPortLists(t *testing.T) {
 		})
 	}
 }
+
+type foldedSet struct {
+	enabled     bool
+	disabledFor string
+	udpPorts    string
+	fakes       int
+}
+
+func assertFoldedSets(t *testing.T, res *Result, want []foldedSet) {
+	t.Helper()
+	if len(res.Sets) != len(want) {
+		t.Fatalf("got %d sets, want %d", len(res.Sets), len(want))
+	}
+	for i, w := range want {
+		set, plan := res.Sets[i], res.Plan[i]
+		if set.Enabled != w.enabled || plan.DisabledFor != w.disabledFor ||
+			set.UDP.DPortFilter != w.udpPorts || set.UDP.FakeSeqLength != w.fakes {
+			t.Errorf("set %d: enabled=%v disabled_for=%q udp.dport_filter=%q udp.fake_seq_length=%d, want %v %q %q %d",
+				i, set.Enabled, plan.DisabledFor, set.UDP.DPortFilter, set.UDP.FakeSeqLength,
+				w.enabled, w.disabledFor, w.udpPorts, w.fakes)
+		}
+	}
+	for _, n := range res.Notes {
+		if n.Profile < 0 || n.Profile >= len(res.Sets) {
+			t.Errorf("note %q points at profile %d of %d", n.Token, n.Profile, len(res.Sets))
+		}
+	}
+	assertNoLostOptions(t, res)
+	assertSetsSave(t, res)
+}
+
+func TestZapret_ASkippedProfileTakesNoPartInTheUDPFold(t *testing.T) {
+	const udp = "--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=11"
+	const tcp = "--filter-tcp=443 --hostlist-domains=a.com --dpi-desync=fake"
+	udpDefault := config.DefaultSetConfig.UDP.FakeSeqLength
+	tests := []struct {
+		name string
+		line string
+		want []foldedSet
+	}{
+		{"skippedUDPProfile", "--skip " + udp + " --new " + tcp, []foldedSet{
+			{false, DisabledSkipped, "443", 11},
+			{true, "", "", udpDefault},
+		}},
+		{"skippedTCPProfile", udp + " --new --skip " + tcp, []foldedSet{
+			{false, DisabledNeedsTargets, "443", 11},
+			{false, DisabledSkipped, "", udpDefault},
+		}},
+		{"skippedTCPProfileWithoutAUDPProfile",
+			"--filter-tcp=443 --hostlist-domains=a.com --dpi-desync=multisplit --new --skip " +
+				"--filter-tcp=80 --hostlist-domains=b.com --dpi-desync=fake", []foldedSet{
+				{true, "", "", udpDefault},
+				{false, DisabledSkipped, "", udpDefault},
+			}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := analyze(t, tt.line)
+			assertFoldedSets(t, res, tt.want)
+			if n := noteFor(t, res, "--skip"); n.Reason != "skipMapped" {
+				t.Fatalf("nfqws ignores a skipped profile, so its set is the disabled one: got %+v", n)
+			}
+			for _, n := range res.Notes {
+				if n.Reason == "udpFoldedIntoSet" {
+					t.Fatalf("nothing folds across a skipped profile: %+v", n)
+				}
+			}
+		})
+	}
+}
+
+func TestZapret_ASkippedProfileLeavesTheFoldToTheOthers(t *testing.T) {
+	const tcp = "--filter-tcp=443 --hostlist-domains=a.com --dpi-desync=multisplit"
+	udpDefault := config.DefaultSetConfig.UDP.FakeSeqLength
+	tests := []struct {
+		name string
+		line string
+		want []foldedSet
+	}{
+		{"skippedUDPProfileBesideALiveOne",
+			tcp + " --new --skip --filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=11 " +
+				"--new --filter-udp=3478 --dpi-desync=fake --dpi-desync-repeats=2", []foldedSet{
+				{true, "", "3478", 2},
+				{false, DisabledSkipped, "443", 11},
+			}},
+		{"skippedTCPProfileBesideALiveOne",
+			"--skip --filter-tcp=80 --hostlist-domains=b.com --dpi-desync=fake --new " + tcp +
+				" --new --filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=11", []foldedSet{
+				{false, DisabledSkipped, "", udpDefault},
+				{true, "", "443", 11},
+			}},
+		{"skippedWireGuardProfile",
+			tcp + " --new --skip --filter-udp=51820 --filter-l7=wireguard --dpi-desync=fake --dpi-desync-repeats=11", []foldedSet{
+				{true, "", "", udpDefault},
+				{false, DisabledSkipped, "51820", 11},
+			}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertFoldedSets(t, analyze(t, tt.line), tt.want)
+		})
+	}
+}
+
+func TestZapret_PastedDomainsPassOverASkippedProfile(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+	}{
+		{"skippedUDPProfile", "--skip --filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=11 --new " +
+			"--filter-tcp=443 --dpi-desync=fake"},
+		{"skippedTCPProfile", "--skip --filter-tcp=80 --dpi-desync=fake --new " +
+			"--filter-tcp=443 --dpi-desync=multisplit"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := Analyze(tt.line, Options{Tool: "zapret", Domains: []string{"a.com"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Sets) != 2 {
+				t.Fatalf("got %d sets", len(res.Sets))
+			}
+			skipped, live := res.Sets[0], res.Sets[1]
+			if len(skipped.Targets.SNIDomains) != 0 || res.Plan[0].DisabledFor != DisabledSkipped {
+				t.Fatalf("nfqws never uses a skipped profile, so it takes no shared domains: domains=%v disabled_for=%q",
+					skipped.Targets.SNIDomains, res.Plan[0].DisabledFor)
+			}
+			if !live.Enabled || !slices.Equal(live.Targets.SNIDomains, []string{"a.com"}) {
+				t.Fatalf("the shared domains belong to the profile in use: enabled=%v domains=%v",
+					live.Enabled, live.Targets.SNIDomains)
+			}
+			if hasWarning(res, "sharedDomainsUnused") {
+				t.Fatalf("got %+v", res.Warnings)
+			}
+			assertNoLostOptions(t, res)
+			assertSetsSave(t, res)
+		})
+	}
+
+	res, err := Analyze("--skip --filter-tcp=443 --dpi-desync=fake", Options{Tool: "zapret", Domains: []string{"a.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Sets[0].Targets.SNIDomains) != 0 || !hasWarning(res, "sharedDomainsUnused") {
+		t.Fatalf("with every profile skipped the shared domains are left unused and the report says so: domains=%v warnings=%+v",
+			res.Sets[0].Targets.SNIDomains, res.Warnings)
+	}
+}
