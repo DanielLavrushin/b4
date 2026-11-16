@@ -124,6 +124,7 @@ func newUDPTestRig(t *testing.T, limit int64) *udpTestRig {
 	t.Cleanup(func() {
 		l.cancel()
 		l.stopUDP()
+		udpWaitSetups(t, l)
 		udpOpenReply, udpDialUpstream, udpDialDirect = openReply, dialUpstream, dialDirect
 		udpSessionLimit.Store(0)
 		udpWaitFor(t, "every UDP session to leave the shared count", func() bool { return udpSessionsOpen.Load() == before })
@@ -140,6 +141,15 @@ func udpWaitFor(t *testing.T, what string, cond func() bool) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+func udpWaitSetups(t *testing.T, l *Listener) {
+	t.Helper()
+	udpWaitFor(t, "the UDP session setups in flight to finish", func() bool {
+		l.udpMu.Lock()
+		defer l.udpMu.Unlock()
+		return l.udpSetups == 0
+	})
 }
 
 func udpTestAddr(ip string, port int) *net.UDPAddr {
@@ -331,5 +341,43 @@ func TestTheUDPSessionLimitFollowsTheOpenFileAllowance(t *testing.T) {
 		if got := udpSessionLimitFor(openFiles); got != want {
 			t.Errorf("with %d open files allowed the session limit is %d, want %d", openFiles, got, want)
 		}
+	}
+}
+
+func TestTwoProxySetsNeverOpenMoreUDPSessionsThanTheSharedLimit(t *testing.T) {
+	rig := newUDPTestRig(t, 1)
+	other := &Listener{
+		SetID:    "udp-test-other",
+		SetName:  "udp-test-other",
+		Upstream: socks5.ClientConfig{Host: "192.0.2.1", Port: 1080},
+		guard:    newLoopGuard("192.0.2.1", 1080),
+	}
+	other.ctx, other.cancel = context.WithCancel(context.Background())
+	other.udpSessions = make(map[string]*udpSession)
+	defer func() {
+		other.cancel()
+		other.stopUDP()
+		udpWaitSetups(t, other)
+	}()
+
+	before := udpSessionsOpen.Load()
+	for round := 0; round < 20000; round++ {
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for n, l := range []*Listener{rig.l, other} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				l.dispatchUDP(udpTestAddr("10.0.0.5", 20000+round), udpTestAddr("203.0.113.1", 50000+n), []byte("x"), false)
+			}()
+		}
+		close(start)
+		wg.Wait()
+		if open := udpSessionsOpen.Load() - before; open > 1 {
+			t.Fatalf("round %d: %d UDP sessions are open across two proxy sets that share a limit of 1; each set checked the limit before the other had counted its session", round, open)
+		}
+		rig.l.stopUDP()
+		other.stopUDP()
 	}
 }

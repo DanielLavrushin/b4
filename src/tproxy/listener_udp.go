@@ -54,6 +54,19 @@ func udpSessionCap() int64 {
 	return udpSessionLimit.Load()
 }
 
+func udpReserveSession() bool {
+	limit := udpSessionCap()
+	for {
+		open := udpSessionsOpen.Load()
+		if open >= limit {
+			return false
+		}
+		if udpSessionsOpen.CompareAndSwap(open, open+1) {
+			return true
+		}
+	}
+}
+
 type udpRelay interface {
 	Write(p []byte) (int, error)
 	Read(p []byte) (int, error)
@@ -250,7 +263,11 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 			l.udpMu.Unlock()
 			return
 		}
-		if reason := l.udpRefusesNewLocked(now); reason != "" {
+		reason := l.udpRefusesNewLocked(now)
+		if reason == "" && !udpReserveSession() {
+			reason = udpRefusedLimit
+		}
+		if reason != "" {
 			l.udpMu.Unlock()
 			l.noteUDPRefused(now, reason, dst)
 			return
@@ -259,7 +276,6 @@ func (l *Listener) dispatchUDP(src, dst *net.UDPAddr, payload []byte, v6 bool) {
 		sess.last.Store(now.UnixNano())
 		l.udpSessions[key] = sess
 		l.udpSetups++
-		udpSessionsOpen.Add(1)
 		l.udpMu.Unlock()
 		go l.setupUDPSession(key, sess, src, dst, v6)
 		return
@@ -281,8 +297,6 @@ const (
 
 func (l *Listener) udpRefusesNewLocked(now time.Time) string {
 	switch {
-	case udpSessionsOpen.Load() >= udpSessionCap():
-		return udpRefusedLimit
 	case l.udpSetups >= udpMaxSetups:
 		return udpRefusedSetups
 	case !l.FailOpen && now.UnixNano() < l.udpDownUntil.Load():
