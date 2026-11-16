@@ -223,6 +223,7 @@ type transportPlan struct {
 	wsPath   string
 	isWorker bool
 	native   bool
+	relay    bool
 	frontSNI string
 }
 
@@ -343,20 +344,32 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 		mode = "tcp"
 	}
 
-	hasRelay := strings.TrimSpace(cfg.DCRelay) != ""
-	relayFirst := mode == "auto" && hasRelay
+	bridged := target.valid()
+	relayTo := relayAddrFor(cfg, dc, target)
+	hasRelay := relayTo != ""
+	relayFirst := mode == "auto" && hasRelay && !bridged
+	relayLeading := mode == "auto" && hasRelay && bridged && relayLeads(relayTo)
 
 	var plans []transportPlan
 	var deferred []transportPlan
 
-	appendTCP := func(ignoreCooldown bool) {
+	appendRelay := func(ignoreCooldown bool) {
+		if !hasRelay || (!ignoreCooldown && tcpAddrInCooldown(relayTo)) {
+			return
+		}
+		plans = append(plans, transportPlan{kind: transportTCP, addr: relayTo, relay: true})
+	}
+	appendDirect := func(ignoreCooldown bool) {
+		if hasRelay && !bridged {
+			return
+		}
 		var addrs []string
 		var primary string
-		if target.valid() && !hasRelay {
+		if bridged {
 			primary = target.dcAddr()
 			addrs = append(addrs, primary)
 		}
-		resolved, err := ResolveDCAll(dc, queueCfg.IPv6Enabled, strings.TrimSpace(cfg.DCRelay))
+		resolved, err := ResolveDCAll(dc, queueCfg.IPv6Enabled, "")
 		if err == nil {
 			for _, a := range resolved {
 				if a != primary {
@@ -371,9 +384,16 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 			plans = append(plans, transportPlan{kind: transportTCP, addr: a})
 		}
 	}
+	appendTCP := func(ignoreCooldown bool) {
+		appendRelay(ignoreCooldown)
+		appendDirect(ignoreCooldown)
+	}
 
 	if mode == "tcp" || relayFirst {
 		appendTCP(false)
+	}
+	if relayLeading {
+		appendRelay(false)
 	}
 
 	wsMode := mode == "ws" || mode == "auto"
@@ -439,7 +459,10 @@ func planTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc i
 	}
 
 	if mode == "auto" && !relayFirst {
-		appendTCP(false)
+		if !relayLeading {
+			appendRelay(false)
+		}
+		appendDirect(false)
 	}
 
 	// Last resort: every candidate is cooling off. Erroring out here fails the
@@ -480,7 +503,8 @@ type dialInfo struct {
 	// logged as "ws-pool" and nothing else, so an upstream that rejected the
 	// session could not be told apart from one that carried it, and nothing could
 	// rank that route down afterwards.
-	plan transportPlan
+	plan       transportPlan
+	fromBehind bool
 }
 
 // dialPools bundles the warm-connection pools a dial may draw from. Both the
@@ -570,6 +594,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 		minAttempt:  wsDialMinAttempt,
 		deadline:    deadline,
 		workerAfter: dialRaceWorkerAfter,
+		relayAfter:  dialRaceRelayAfter,
 		earlyOK:     func(p transportPlan) bool { return !workerInCooldown(p.sni) },
 		timeoutFor: func(p transportPlan) time.Duration {
 			if p.kind != transportWS {
@@ -637,6 +662,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 			}
 			if !p.isWorker {
 				wsp.noteSuccess(dc)
+				relayLeadClear(relayAddrFor(cfg, dc, target))
 			}
 			if p.isWorker {
 				workerPool.warm(p)
@@ -654,7 +680,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 		} else {
 			log.Infof("%s DC %d connected via %s in %dms", tag, dc, p.describe(), time.Since(dialStart).Milliseconds())
 		}
-		return obfConn, dialInfo{transport: p.describe(), isWorker: p.isWorker, worker: workerNameOf(p), plan: p}, nil
+		return obfConn, dialInfo{transport: p.describe(), isWorker: p.isWorker, worker: workerNameOf(p), plan: p, fromBehind: w.group > 0}, nil
 	}
 
 	if out.nativeTried > 0 {
@@ -675,6 +701,9 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 func recordDialFailure(dc int, a raceAttempt) {
 	timedOut := isDialTimeout(a.err)
 	if a.plan.kind != transportWS {
+		if a.plan.relay {
+			relayLeadClear(a.plan.addr)
+		}
 		if timedOut {
 			tcpRecordFailure(a.plan.addr)
 		}

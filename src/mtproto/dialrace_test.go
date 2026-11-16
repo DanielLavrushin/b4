@@ -55,7 +55,7 @@ func (h *raceHarness) race(deadline time.Time, stagger time.Duration, maxInFligh
 		dial:        h.dial,
 		started: func(p transportPlan) {
 			h.mu.Lock()
-			h.started = append(h.started, p.sni)
+			h.started = append(h.started, h.name(p))
 			h.mu.Unlock()
 		},
 		failed: func(a raceAttempt) {
@@ -68,9 +68,18 @@ func (h *raceHarness) race(deadline time.Time, stagger time.Duration, maxInFligh
 	}
 }
 
+func (h *raceHarness) name(p transportPlan) string {
+	if p.sni == "" {
+		if _, ok := h.routes[p.addr]; ok {
+			return p.addr
+		}
+	}
+	return p.sni
+}
+
 func (h *raceHarness) dial(p transportPlan, timeout time.Duration, fresh bool) (net.Conn, bool, error) {
 	h.mu.Lock()
-	r := h.routes[p.sni]
+	r := h.routes[h.name(p)]
 	h.inFlight++
 	if h.inFlight > h.peak {
 		h.peak = h.inFlight
@@ -528,5 +537,105 @@ func TestRaceStartsOneEarlyWorkerAtATime(t *testing.T) {
 	}
 	if workersBeforeCF4 != 1 {
 		t.Fatalf("start order %v: %d Workers jumped ahead of the shared domains, want one", h.startedNames(), workersBeforeCF4)
+	}
+}
+
+func relayPlan(addr string) transportPlan {
+	return transportPlan{kind: transportTCP, dc: 2, addr: addr, relay: true}
+}
+
+const (
+	testRelayAddr  = "203.0.113.7:7008"
+	testDirectAddr = "149.154.167.51:443"
+)
+
+func TestRaceGivesTheRelayATurnWhileEveryRouteAheadHangs(t *testing.T) {
+	h := newRaceHarness(map[string]fakeRoute{
+		"cf1":          {hang: true},
+		"cf2":          {hang: true},
+		"cf3":          {hang: true},
+		"cf4":          {hang: true},
+		"worker":       {hang: true},
+		testRelayAddr:  {delay: 5 * time.Millisecond},
+		testDirectAddr: {hang: true},
+	})
+	r := h.race(time.Now().Add(3*time.Second), 20*time.Millisecond, 3)
+	r.workerAfter = 100 * time.Millisecond
+	r.relayAfter = 250 * time.Millisecond
+	r.timeoutFor = func(transportPlan) time.Duration { return time.Second }
+	t.Cleanup(h.waitIdle)
+	start := time.Now()
+	out := r.run([]transportPlan{
+		cfPlan("cf1"), cfPlan("cf2"), cfPlan("cf3"), cfPlan("cf4"),
+		workerPlan("worker"),
+		relayPlan(testRelayAddr), tcpPlan(testDirectAddr),
+	})
+	elapsed := time.Since(start)
+	if out.winner == nil || !out.winner.plan.relay {
+		t.Fatalf("winner %+v, want the relay once the routes ahead of it had their head start", out.winner)
+	}
+	if elapsed < 250*time.Millisecond {
+		t.Fatalf("the relay won after %v, before its turn", elapsed)
+	}
+	if elapsed > 700*time.Millisecond {
+		t.Fatalf("the relay waited %v behind hanging routes", elapsed)
+	}
+	for _, n := range h.startedNames() {
+		if n == testDirectAddr {
+			t.Fatal("direct TCP was dialled while the tiers ahead of it were still in flight")
+		}
+	}
+}
+
+func TestRaceHoldsTheRelayBackUntilItsTurn(t *testing.T) {
+	h := newRaceHarness(map[string]fakeRoute{
+		"cf1":         {delay: 150 * time.Millisecond},
+		testRelayAddr: {delay: 5 * time.Millisecond},
+	})
+	r := h.race(time.Now().Add(3*time.Second), 20*time.Millisecond, 3)
+	r.relayAfter = 400 * time.Millisecond
+	out := r.run([]transportPlan{cfPlan("cf1"), relayPlan(testRelayAddr)})
+	if out.winner == nil || out.winner.plan.sni != "cf1" {
+		t.Fatalf("winner %+v, want the WebSocket route that answered before the relay's turn", out.winner)
+	}
+	if got := h.startedNames(); len(got) != 1 {
+		t.Fatalf("started %v, the relay was dialled ahead of its turn", got)
+	}
+}
+
+func TestRaceKeepsDirectTCPBehindARelayThatWentEarly(t *testing.T) {
+	h := newRaceHarness(map[string]fakeRoute{
+		"cf1":          {hang: true},
+		testRelayAddr:  {delay: 5 * time.Millisecond, err: errors.New("connect: connection refused")},
+		testDirectAddr: {delay: 5 * time.Millisecond},
+	})
+	r := h.race(time.Now().Add(3*time.Second), 20*time.Millisecond, 3)
+	r.relayAfter = 100 * time.Millisecond
+	r.timeoutFor = func(transportPlan) time.Duration { return 400 * time.Millisecond }
+	start := time.Now()
+	out := r.run([]transportPlan{cfPlan("cf1"), relayPlan(testRelayAddr), tcpPlan(testDirectAddr)})
+	elapsed := time.Since(start)
+	if out.winner == nil || out.winner.plan.addr != testDirectAddr {
+		t.Fatalf("winner %+v, want direct TCP after the tier ahead of it was spent", out.winner)
+	}
+	if elapsed < 400*time.Millisecond {
+		t.Fatalf("direct TCP won after %v: only the relay may go ahead of its tier", elapsed)
+	}
+}
+
+func TestRaceWithoutARelayTurnKeepsTheRelayInItsTier(t *testing.T) {
+	h := newRaceHarness(map[string]fakeRoute{
+		"cf1":         {hang: true},
+		testRelayAddr: {delay: 5 * time.Millisecond},
+	})
+	r := h.race(time.Now().Add(3*time.Second), 20*time.Millisecond, 3)
+	r.timeoutFor = func(transportPlan) time.Duration { return 300 * time.Millisecond }
+	start := time.Now()
+	out := r.run([]transportPlan{cfPlan("cf1"), relayPlan(testRelayAddr)})
+	if out.winner == nil || !out.winner.plan.relay {
+		t.Fatalf("winner %+v, want the relay", out.winner)
+	}
+	if elapsed := time.Since(start); elapsed < 300*time.Millisecond {
+		t.Fatalf("the relay won after %v with no early turn configured", elapsed)
 	}
 }

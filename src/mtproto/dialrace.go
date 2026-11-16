@@ -10,6 +10,7 @@ const (
 	dialRaceStagger     = 500 * time.Millisecond
 	dialRaceMaxInFlight = 3
 	dialRaceWorkerAfter = 1500 * time.Millisecond
+	dialRaceRelayAfter  = 2000 * time.Millisecond
 )
 
 type raceAttempt struct {
@@ -29,6 +30,7 @@ type dialRace struct {
 	minAttempt  time.Duration
 	deadline    time.Time
 	workerAfter time.Duration
+	relayAfter  time.Duration
 	earlyOK     func(p transportPlan) bool
 	timeoutFor  func(p transportPlan) time.Duration
 	dial        func(p transportPlan, timeout time.Duration, fresh bool) (net.Conn, bool, error)
@@ -87,6 +89,7 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 	nativeDead := false
 	earlyInFlight := 0
 	var nextStart time.Time
+	var began time.Time
 
 	hasFallback := false
 	for _, p := range plans {
@@ -115,8 +118,21 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 	earlyAt := func() time.Time {
 		return groupBegan[current()].Add(r.workerAfter)
 	}
+	relayEarly := func(it raceItem) bool {
+		return r.relayAfter > 0 && it.plan.relay && it.group != current() && !began.IsZero()
+	}
+	relayAt := func() time.Time {
+		return began.Add(r.relayAfter)
+	}
+	ahead := func(it raceItem) bool {
+		now := time.Now()
+		if relayEarly(it) && !now.Before(relayAt()) {
+			return true
+		}
+		return workerEarly(it) && !now.Before(earlyAt())
+	}
 	eligible := func(it raceItem) bool {
-		if it.group != current() && !(workerEarly(it) && !time.Now().Before(earlyAt())) {
+		if it.group != current() && !ahead(it) {
 			return false
 		}
 		return !it.plan.native || (!nativeBusy && !nativeDead)
@@ -125,15 +141,28 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 		if !eligible(it) {
 			return false
 		}
+		if it.plan.relay && it.group != current() {
+			return true
+		}
 		return inFlight < r.maxInFlight || (it.group != current() && inFlight <= r.maxInFlight)
 	}
 	earlyWake := func() time.Duration {
+		wake := time.Duration(-1)
 		for _, it := range pending {
-			if workerEarly(it) {
-				return time.Until(earlyAt())
+			var d time.Duration
+			switch {
+			case relayEarly(it):
+				d = time.Until(relayAt())
+			case workerEarly(it):
+				d = time.Until(earlyAt())
+			default:
+				continue
+			}
+			if wake < 0 || d < wake {
+				wake = d
 			}
 		}
-		return -1
+		return wake
 	}
 	prune := func() {
 		if !nativeDead {
@@ -160,9 +189,12 @@ func (r *dialRace) run(plans []transportPlan) raceOutcome {
 	}
 	launch := func(it raceItem, timeout time.Duration) {
 		fresh := it.fresh
-		early := it.group != current()
+		early := it.group != current() && !it.plan.relay
 		if early {
 			earlyInFlight++
+		}
+		if began.IsZero() {
+			began = time.Now()
 		}
 		if _, ok := groupBegan[it.group]; !ok {
 			groupBegan[it.group] = time.Now()
