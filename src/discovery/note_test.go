@@ -1,12 +1,14 @@
 package discovery
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -78,6 +80,45 @@ func TestAFetchReportsTheAddressesItFellBackFrom(t *testing.T) {
 	dr.noteAddresses(res)
 	if want := []ProbeAddress{{IP: "127.0.0.3"}, {IP: "127.0.0.1", Loaded: true}}; !reflect.DeepEqual(dr.Addresses, want) {
 		t.Errorf("addresses = %+v, want %+v", dr.Addresses, want)
+	}
+}
+
+func TestAnAddressThatLoadedOnAnEarlierTryStaysLoaded(t *testing.T) {
+	for _, multi := range []bool{false, true} {
+		ds := presetRunSuite(t, 2, "flaky.example")
+		var served atomic.Int32
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if served.Add(1) > 1 {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			_, _ = w.Write([]byte("<html><body>" + strings.Repeat("x", 2048) + "</body></html>"))
+		}))
+		t.Cleanup(srv.Close)
+		_, port, _ := net.SplitHostPort(srv.Listener.Addr().String())
+		ds.Domains[0].CheckURL = "https://flaky.example:" + port + "/"
+		ds.Domain, ds.CheckURL = ds.Domains[0].Domain, ds.Domains[0].CheckURL
+		ds.dnsResults["flaky.example"] = &DNSDiscoveryResult{ExpectedIPs: []string{"127.0.0.1"}}
+
+		preset := ConfigPreset{Name: "flaky-strategy"}
+		if multi {
+			results := ds.testPresetAllDomains(preset)
+			if results["flaky.example"].Status != CheckStatusFailed {
+				t.Fatalf("rig: the second try must fail, got %+v", results["flaky.example"])
+			}
+			ds.recordResultsMulti(preset, results)
+		} else {
+			result := ds.testPresetInternal(preset)
+			if result.Status != CheckStatusFailed {
+				t.Fatalf("rig: the second try must fail, got %+v", result)
+			}
+			ds.recordResult(preset, result)
+		}
+
+		got := ds.domainResults["flaky.example"].Addresses
+		if want := []ProbeAddress{{IP: "127.0.0.1", Loaded: true}}; !reflect.DeepEqual(got, want) {
+			t.Errorf("multi=%v: the first try loaded the site from 127.0.0.1 before the second failed, got %+v", multi, got)
+		}
 	}
 }
 

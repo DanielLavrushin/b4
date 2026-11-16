@@ -122,6 +122,7 @@ type CheckResult struct {
 	UsedIP      string            `json:"used_ip,omitempty"`
 	Set         *config.SetConfig `json:"set"`
 	triedIPs    []string
+	loadedIPs   []string
 	lookup      nameLookup
 	lookupHost  string
 	untried     bool
@@ -245,13 +246,21 @@ func (dr *DomainDiscoveryResult) noteAddresses(result CheckResult) {
 		if ip == "" {
 			continue
 		}
-		loaded := ip == result.UsedIP && result.Status == CheckStatusComplete
+		loaded := (ip == result.UsedIP && result.Status == CheckStatusComplete) || slices.Contains(result.loadedIPs, ip)
 		i := slices.IndexFunc(dr.Addresses, func(a ProbeAddress) bool { return a.IP == ip })
 		if i < 0 {
 			dr.Addresses = append(dr.Addresses, ProbeAddress{IP: ip, Loaded: loaded})
 			continue
 		}
 		dr.Addresses[i].Loaded = dr.Addresses[i].Loaded || loaded
+	}
+}
+
+func (r *CheckResult) carryAddresses(prev CheckResult) {
+	r.triedIPs = append(append(slices.Clone(prev.triedIPs), prev.UsedIP), r.triedIPs...)
+	r.loadedIPs = slices.Clone(prev.loadedIPs)
+	if prev.Status == CheckStatusComplete && prev.UsedIP != "" {
+		r.loadedIPs = append(r.loadedIPs, prev.UsedIP)
 	}
 }
 
