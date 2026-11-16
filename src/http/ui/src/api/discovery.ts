@@ -39,6 +39,7 @@ export interface DiscoveryStartOptions {
   stopWhenCovered?: boolean;
   dnsServer?: string;
   pins?: Record<string, string[]>;
+  note?: string;
 }
 
 export interface ReplaceStrategyOptions {
@@ -70,6 +71,7 @@ export const discoveryApi = {
         options.pins && Object.keys(options.pins).length > 0
           ? options.pins
           : undefined,
+      note: options.note?.trim() || undefined,
     }),
   status: (id: string) => apiGet<DiscoverySuite>(`/api/discovery/status/${id}`),
   cancel: (id: string) => apiDelete(`/api/discovery/cancel/${id}`),

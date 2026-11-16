@@ -250,6 +250,7 @@ func (ds *DiscoverySuite) recordECHStrip(domain string, result CheckResult) {
 	if dr == nil {
 		return
 	}
+	dr.noteAddresses(result)
 	dr.ECHOnlyBlock = true
 	if _, exists := dr.Results[presetECHStrip]; exists {
 		return

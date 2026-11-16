@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 import {
   Box,
   Button,
@@ -17,7 +17,11 @@ import {
 import { colors } from "@design";
 import { B4Alert, B4Badge, B4ResultCard } from "@b4.elements";
 import { B4SetConfig } from "@models/config";
-import { DiscoverySuite, HistoryEntry } from "@models/discovery";
+import {
+  DiscoverySuite,
+  HistoryEntry,
+  ProbeAddress,
+} from "@models/discovery";
 import {
   ApplyTarget,
   ECH_STRIP_PRESET,
@@ -41,6 +45,8 @@ import {
 } from "@utils";
 import { AlternatesList } from "./AlternatesList";
 import { CardPageHosts } from "./PageHostsPicker";
+import { ProbeAddresses } from "./ProbeAddresses";
+import { RunNote } from "./RunNote";
 import { StrategySummary } from "./StrategySummary";
 import { SetVerdictCard, VerdictApply } from "./SetVerdictCard";
 
@@ -103,10 +109,11 @@ export const ResultsPanel = ({
         useFlexGap
         spacing={2}
       >
-        <Box>
+        <Box sx={{ minWidth: 0, flex: "1 1 280px" }}>
           <Typography sx={{ fontSize: 18, fontWeight: 600 }}>
             {headline}
           </Typography>
+          <RunNote note={suite.note} sx={{ my: 0.5 }} />
           {setName && (
             <Typography variant="body2" sx={{ color: colors.text.secondary }}>
               {t("discovery.results.forSet", { name: setName })}
@@ -231,6 +238,7 @@ const FoundCard = ({
   const echBlocked = group.results.some((dr) => dr.ech_only_block);
   const [hostPicks, setHostPicks] = useState<Record<string, boolean>>({});
   const hosts = group.set ? offeredHosts(group.results, group.preset) : [];
+  const probed = group.results.some((dr) => !!dr.addresses?.length);
 
   let badge = (
     <B4Badge
@@ -291,7 +299,19 @@ const FoundCard = ({
       status="ok"
       title={group.domains.join(", ")}
       subtitle={
-        group.domains.length > 1 ? t("discovery.results.shareOne") : undefined
+        group.domains.length > 1 || probed ? (
+          <>
+            {group.domains.length > 1 && t("discovery.results.shareOne")}
+            {group.results.map((dr) => (
+              <SiteAddresses
+                key={dr.domain}
+                site={dr.domain}
+                addresses={dr.addresses}
+                named={group.results.length > 1}
+              />
+            ))}
+          </>
+        ) : undefined
       }
       badge={badge}
       expanded={expanded}
@@ -472,6 +492,39 @@ const FoundCard = ({
   );
 };
 
+interface SiteAddressesProps {
+  site: string;
+  addresses?: ProbeAddress[];
+  named?: boolean;
+}
+
+const SiteAddresses = ({ site, addresses, named }: SiteAddressesProps) => {
+  if (!addresses?.length) return null;
+  return (
+    <Box sx={{ mt: 0.5, minWidth: 0 }}>
+      {named && (
+        <Typography
+          variant="caption"
+          sx={{ color: colors.text.secondary, display: "block" }}
+        >
+          {site}
+        </Typography>
+      )}
+      <ProbeAddresses addresses={addresses} site={site} />
+    </Box>
+  );
+};
+
+const withAddresses = (text: ReactNode, entry: SiteEntry): ReactNode =>
+  entry.result.addresses?.length ? (
+    <>
+      {text}
+      <SiteAddresses site={entry.domain} addresses={entry.result.addresses} />
+    </>
+  ) : (
+    text
+  );
+
 interface NoBypassCardProps {
   entry: SiteEntry;
   suite: DiscoverySuite;
@@ -500,7 +553,7 @@ const NoBypassCard = ({
       <B4ResultCard
         status="neutral"
         title={entry.domain}
-        subtitle={t("discovery.results.worksWithout")}
+        subtitle={withAddresses(t("discovery.results.worksWithout"), entry)}
         badge={badge}
       />
     );
@@ -510,7 +563,10 @@ const NoBypassCard = ({
     <B4ResultCard
       status="neutral"
       title={entry.domain}
-      subtitle={t("discovery.results.worksWithoutAlternates")}
+      subtitle={withAddresses(
+        t("discovery.results.worksWithoutAlternates"),
+        entry,
+      )}
       badge={badge}
       expanded={expanded}
       details={
@@ -575,7 +631,7 @@ const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
         <B4ResultCard
           status="error"
           title={entry.domain}
-          subtitle={t("discovery.results.addressBlocked")}
+          subtitle={withAddresses(t("discovery.results.addressBlocked"), entry)}
           badge={
             <B4Badge
               variant="outlined"
@@ -662,14 +718,17 @@ const SiteCard = ({ entry, onShowLog }: SiteCardProps) => {
         <B4ResultCard
           status="warning"
           title={entry.domain}
-          subtitle={[
-            t("discovery.results.nothingFound", { count: counts.tested }),
-            echCover && t("discovery.ech.probesNote", { cover: echCover }),
-            entry.result.ech_only_block &&
-              t("discovery.ech.onlyBlockUnconfirmed"),
-          ]
-            .filter(Boolean)
-            .join(" ")}
+          subtitle={withAddresses(
+            [
+              t("discovery.results.nothingFound", { count: counts.tested }),
+              echCover && t("discovery.ech.probesNote", { cover: echCover }),
+              entry.result.ech_only_block &&
+                t("discovery.ech.onlyBlockUnconfirmed"),
+            ]
+              .filter(Boolean)
+              .join(" "),
+            entry,
+          )}
           badge={
             <>
               {entry.result.ech_only_block && (

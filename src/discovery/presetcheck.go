@@ -47,6 +47,7 @@ func (ds *DiscoverySuite) testPresetInternal(preset ConfigPreset) CheckResult {
 		if len(testConfig.Sets) > 0 {
 			result.Set = testConfig.Sets[0]
 		}
+		result.carryAddresses(lastResult)
 		lastResult = result
 
 		if result.Status != CheckStatusComplete {
@@ -157,6 +158,7 @@ spawn:
 				if len(testConfig.Sets) > 0 {
 					result.Set = testConfig.Sets[0]
 				}
+				result.carryAddresses(lastResult)
 				lastResult = result
 
 				if result.Status != CheckStatusComplete {

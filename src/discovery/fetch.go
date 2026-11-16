@@ -127,8 +127,9 @@ func (ds *DiscoverySuite) fetchForDomain(di DomainInput, timeout time.Duration) 
 	}
 
 	var last CheckResult
-	for _, ip := range allIPs {
+	for i, ip := range allIPs {
 		last = ds.fetchUsingIPForDomain(di, timeout, ip)
+		last.triedIPs = allIPs[:i]
 		if last.Status == CheckStatusComplete {
 			log.Tracef("Success with IP %s for %s", ip, di.Domain)
 			return last

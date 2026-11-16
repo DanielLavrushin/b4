@@ -448,6 +448,18 @@ export const DiscoveryTab = ({
                     </Tooltip>
                   )}
                 </Box>
+                {lastRun?.note && (
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: colors.text.secondary,
+                      fontStyle: "italic",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    {lastRun.note}
+                  </Typography>
+                )}
                 {verdict.winner_preset && (
                   <Typography variant="body2">
                     {t("sets.discovery.lastRunWinner", {
