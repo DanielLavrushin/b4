@@ -425,7 +425,8 @@ func foldUDPProfiles(prog *Program, tokens []Token, notes *noteSet) []Token {
 	var carriers, foldable []*Profile
 	for _, p := range prog.Profiles {
 		switch {
-		case p.UDPOnly() && !p.hasOwnTargets() && !p.wantsL7():
+		case p.Skip:
+		case p.canFold():
 			foldable = append(foldable, p)
 		case p.IsEntry() && !p.UDPOnly():
 			carriers = append(carriers, p)

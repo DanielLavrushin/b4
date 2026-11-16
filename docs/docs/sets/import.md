@@ -24,7 +24,7 @@ This is not the **Import/Export** tab of the set editor, which moves a b4 set be
 3. Leave **Source tool** and **Version** on **Detect automatically**. When the report says **Version guessed** and the result looks wrong, pick the version by hand: byedpi changed the meaning of several options between 0.13 and 0.15.
 4. Click **Analyze**. Nothing is saved yet.
 5. Read the report, see [The report](#the-report).
-6. Enter the domains, see [Domains](#domains). **Shared domains** go to the first set that takes targets and has no host list of its own, and each set has its own **Domains (optional)** field. The report warns when no set takes the shared domains.
+6. Enter the domains, see [Domains](#domains). **Shared domains** go to the first set that takes targets, has no host list of its own and does not come from a skipped profile (`--skip`), and each set has its own **Domains (optional)** field. The report warns when no set takes the shared domains.
 7. Click **Create N sets**.
 
 :::warning Importing moves domains away from existing sets
