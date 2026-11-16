@@ -375,6 +375,9 @@ func TestECHOnlyBlockProposesTheStripSet(t *testing.T) {
 	if ds.needsBypass("site.example") {
 		t.Fatal("the site still counts as needing a packet strategy")
 	}
+	if !slices.ContainsFunc(dr.Addresses, func(a ProbeAddress) bool { return a.IP == "127.0.0.1" && a.Loaded }) {
+		t.Fatalf("the site loaded from 127.0.0.1 once the hello carried no ECH, got addresses %+v", dr.Addresses)
+	}
 	r := dr.Results[presetECHStrip]
 	if r.Family != FamilyECHStrip || r.Phase != PhaseBaseline || r.Set == nil {
 		t.Fatalf("result %+v", r)

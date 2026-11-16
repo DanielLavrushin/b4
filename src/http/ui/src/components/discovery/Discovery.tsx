@@ -11,7 +11,7 @@ import {
 } from "@b4.icons";
 import { colors } from "@design";
 import { B4SetConfig } from "@models/config";
-import { ProbeSuggestion } from "@models/discovery";
+import { MAX_DISCOVERY_NOTE, ProbeSuggestion } from "@models/discovery";
 import { DomainReassignment, SetDomainMatch } from "@models/sets";
 import {
   B4Alert,
@@ -105,6 +105,7 @@ export const DiscoveryRunner = () => {
   const [settingsDnsServer, setSettingsDnsServer] = useState("");
   const [checkUrls, setCheckUrls] = useState<string[]>([]);
   const [urlInput, setUrlInput] = useState("");
+  const [note, setNote] = useState("");
   const [logOpen, setLogOpen] = useState(false);
   const [applyTarget, setApplyTarget] = useState<ApplyTarget | null>(null);
   const [applying, setApplying] = useState(false);
@@ -175,7 +176,7 @@ export const DiscoveryRunner = () => {
   );
 
   const start = useCallback(
-    (urls: string[], setId?: string | null) => {
+    (urls: string[], setId?: string | null, runNote?: string) => {
       void startDiscovery(urls, {
         skipDNS: !options.checkDns,
         skipCache: !options.useCache,
@@ -188,6 +189,7 @@ export const DiscoveryRunner = () => {
         stopWhenCovered: setId ? options.stopWhenCovered : undefined,
         dnsServer: options.checkDns ? options.dnsServer : undefined,
         pins: parsePins(options.pinsText),
+        note: runNote,
       });
     },
     [startDiscovery, options, effectiveIpVersion, communityEnabled],
@@ -596,7 +598,7 @@ export const DiscoveryRunner = () => {
     }
   };
 
-  const handleRerun = (url: string, setId?: string) => {
+  const handleRerun = (url: string, setId?: string, rerunNote?: string) => {
     const known = setId
       ? sets.find((s) => s.id === setId && !s.routing?.enabled)
       : undefined;
@@ -611,8 +613,9 @@ export const DiscoveryRunner = () => {
       setSuggestionsLoaded(false);
     }
     setCheckUrls(urls);
+    setNote(rerunNote ?? "");
     resetDiscovery();
-    start(urls, runSet);
+    start(urls, runSet, rerunNote);
   };
 
   const handleRemoveHistory = (domain: string) => {
@@ -765,7 +768,7 @@ export const DiscoveryRunner = () => {
               <Button
                 startIcon={<StartIcon />}
                 variant="contained"
-                onClick={() => start(checkUrls, pickedSet?.id)}
+                onClick={() => start(checkUrls, pickedSet?.id, note)}
                 disabled={
                   checkUrls.length === 0 ||
                   busy ||
@@ -789,6 +792,23 @@ export const DiscoveryRunner = () => {
               onDelete={removeUrl}
               emptyMessage={t("discovery.input.empty")}
               showEmpty
+            />
+            <B4TextField
+              label={t("discovery.note.label")}
+              value={note}
+              onChange={(e) =>
+                setNote(
+                  Array.from(e.target.value.replace(/\s+/g, " "))
+                    .slice(0, MAX_DISCOVERY_NOTE)
+                    .join(""),
+                )
+              }
+              placeholder={t("discovery.note.placeholder")}
+              disabled={busy}
+              helperText={t("discovery.note.helper", {
+                count: Array.from(note).length,
+                max: MAX_DISCOVERY_NOTE,
+              })}
             />
             {pickedSet && (
               <SetUrlHints

@@ -190,13 +190,13 @@ func (api *API) handleFinishCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Start domain discovery
-// @Description With set_id the run is for that set: the URLs come from check_urls, or from the set's discovery.urls when none are given, and are normalised; at most 5 are accepted. The set's current strategy is tested first, an empty or auto tls_version and ip_version follow the set's targets, and the finished run carries set_verdict. stop_when_covered ends the search as soon as one strategy passes every confirmation try on every address.
+// @Description With set_id the run is for that set: the URLs come from check_urls, or from the set's discovery.urls when none are given, and are normalised; at most 5 are accepted. The set's current strategy is tested first, an empty or auto tls_version and ip_version follow the set's targets, and the finished run carries set_verdict. stop_when_covered ends the search as soon as one strategy passes every confirmation try on every address. note, up to 200 characters on one line, is kept with the run, its history entries and the set's last run record.
 // @Tags Discovery
 // @Accept json
 // @Produce json
 // @Param body body DiscoveryRequest true "Discovery request"
 // @Success 202 {object} DiscoveryResponse
-// @Failure 400 {object} APIError "reserved_host, no_urls, too_many_urls, bad_dns_server or bad_pin"
+// @Failure 400 {object} APIError "reserved_host, no_urls, too_many_urls, bad_dns_server, bad_pin or note_too_long"
 // @Failure 404 {object} APIError "not_found"
 // @Failure 409 {object} APIError "dscp_rules_pending while b4 is still applying its DSCP rules; another run in progress answers in plain text"
 // @Security BearerAuth
@@ -304,6 +304,15 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	note, ok := discovery.NormalizeNote(req.Note)
+	if !ok {
+		writeAPIError(w, &APIError{
+			Status:  http.StatusBadRequest,
+			Code:    "note_too_long",
+			Message: fmt.Sprintf("The note is longer than %d characters", discovery.MaxNoteRunes),
+		})
+		return
+	}
 
 	// Use ValidationTries from request, or default to 1 if not provided
 	validationTries := req.ValidationTries
@@ -328,6 +337,7 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 		HubPresets:      func() []discovery.ConfigPreset { return api.communityPresets(urls, req.SkipCommunity) },
 		DNSServer:       req.DNSServer,
 		Pins:            pins,
+		Note:            note,
 	}
 	if runSet != nil {
 		opts.SetStrategy = discovery.SetRunStrategy(runSet)

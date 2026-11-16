@@ -50,6 +50,7 @@ type DiscoveryRequest struct {
 	StopWhenCovered bool                `json:"stop_when_covered,omitempty"`
 	DNSServer       string              `json:"dns_server,omitempty"`
 	Pins            map[string][]string `json:"pins,omitempty"`
+	Note            string              `json:"note,omitempty"`
 }
 
 type DiscoveryResponse struct {

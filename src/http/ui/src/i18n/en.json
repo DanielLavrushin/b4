@@ -2856,6 +2856,19 @@
       "empty": "No sites added yet",
       "refused": "Not added: {{items}}. Only http and https addresses of public hosts can be tested."
     },
+    "note": {
+      "label": "Note",
+      "placeholder": "What this search is for, e.g. the YouTube cache node of my ISP",
+      "helper": "Optional. Kept with the results and in the history. {{count}}/{{max}}"
+    },
+    "addresses": {
+      "loaded": "{{site}} loaded from this address",
+      "notLoaded": "No probe loaded {{site}} from this address",
+      "lookUp": "Look up ASN",
+      "lookingUp": "looking up ASN...",
+      "lookupFailed": "ASN lookup failed",
+      "noAsn": "no ASN"
+    },
     "set": {
       "label": "Find a strategy for a set",
       "none": "No set: test any sites",
@@ -3251,7 +3264,8 @@
       "routed_set": "The set routes its traffic to an interface or proxy, so there is no bypass strategy to search for.",
       "bad_dns_server": "The trusted DNS server given for this run is not valid. It takes an IP address with an optional port, udp://, tcp://, tcp+udp:// or an https:// URL.",
       "bad_pin": "A pinned address was refused. Each line takes a public IP address, then the names it serves.",
-      "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the probes. Start the search again in a moment."
+      "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the probes. Start the search again in a moment.",
+      "note_too_long": "The note is longer than {{maxNote}} characters."
     },
     "options": {
       "title": "Options",

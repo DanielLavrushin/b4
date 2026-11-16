@@ -8,13 +8,15 @@ Discovery searches for a bypass strategy for the sites named in its field, or fo
 
 [Unblocking a site](./guides/unblock.md) walks through a first run, and [Keeping sets working](./guides/keep-working.md) shows how the watchdog runs Discovery on its own. [How Discovery searches](./internals/discovery.md) explains a run in detail.
 
-![Discovery input and options](/img/discovery/20261003230100.png)
+![Discovery input and options](/img/discovery/20261116120000.png)
 
 ## Input
 
 **Site or URL** takes domains or full URLs, separated by commas or new lines. A domain is fetched as `https://<domain>/`, a URL as given. Local and private addresses are refused.
 
 **Find a strategy for a set** runs Discovery for one set instead and fills the field with the set's [Discovery addresses](./sets/discovery.md#discovery-addresses), or with suggestions. A run for a set tests at most five addresses. A set that routes its traffic to a proxy or an interface cannot be picked. When another set handles an address in the field, a warning names that set. **Find a strategy** in a set card's menu, or on the set editor's **Discovery** tab, opens this page with the set picked.
+
+**Note** takes an optional line of up to 200 characters on why the search runs, such as the network or the address it is about. The note is shown during the run, on the results and in the [history](#history).
 
 ### Options
 
@@ -35,9 +37,9 @@ The defaults are the usual choice.
 
 ## A run
 
-**Start** begins a run through six steps: **DNS**, **Without bypass**, **Strategies**, **Tuning**, **Combining** and **Confirming**. A run that finds a strategy goes on to a seventh step, **Page hosts**, see [Page hosts](#page-hosts). A row per site shows what has been found so far, with the quickest strategy yet as **Fastest so far**. The card at the end can offer another strategy, see [Results](#results). **Show log** opens the log. A run takes from one to ten minutes, depending on the network.
+**Start** begins a run through six steps: **DNS**, **Without bypass**, **Strategies**, **Tuning**, **Combining** and **Confirming**. A run that finds a strategy goes on to a seventh step, **Page hosts**, see [Page hosts](#page-hosts). A row per site shows what has been found so far, with the quickest strategy yet as **Fastest so far**, and the [probed addresses](#probed-addresses). The card at the end can offer another strategy, see [Results](#results). **Show log** opens the log. A run takes from one to ten minutes, depending on the network.
 
-![A run in progress](/img/discovery/20260905160200.png)
+![A run in progress](/img/discovery/20261116120100.png)
 
 **Stop and confirm** ends the search and confirms what was found, without tuning it. **Stop** ends a run that has found nothing. **Stop now**, during the confirmation, ends the run at once and keeps the results unconfirmed. **Skip host check** ends only the **Page hosts** step.
 
@@ -66,7 +68,7 @@ The set's [Discovery tab](./sets/discovery.md#last-search) shows the last run fo
 
 Every site gets one card, under **Results per address** in a run for a set.
 
-![Results of a run](/img/discovery/20260905160300.png)
+![Results of a run](/img/discovery/20261116120200.png)
 
 | Badge | Meaning and next step |
 | --- | --- |
@@ -81,6 +83,12 @@ Every site gets one card, under **Results per address** in a run for a set.
 Sites that one strategy loaded share one card and one set. The card offers the strategy that loaded the most sites. Speed does not decide, see [Which strategy a card offers](./internals/discovery.md#which-strategy-a-card-offers). **N other strategies worked** lists up to twelve other strategies that loaded every site of the card, fastest first, each with **Use instead**.
 
 When the last run to end was started from this page, reloading the page or opening it again within 30 minutes of the end shows its results again. **New search** clears them in the browser where it is clicked. The [history](#history) keeps them, also after b4 restarts.
+
+### Probed addresses {#probed-addresses}
+
+Under each site, the card lists the addresses the probes connected to. A check mark follows each address the site loaded from. A search with **Check DNS for tampering** off lists no addresses.
+
+Next to an address stands the network that announces it, such as **AS15169 GOOGLE**, when a set's [ASN targets](./sets/targets.md#asn) already cover the address. **Look up ASN** asks [RIPEstat](https://stat.ripe.net/) for the networks of the other addresses.
 
 ### Page hosts {#page-hosts}
 
@@ -137,12 +145,12 @@ When the network drops ClientHellos with ECH and the site loads without it, the 
 
 ## History
 
-The history keeps the latest result of each site, newest first.
+The history keeps the latest result of each site, newest first. Under the site, a row shows the run's note and its [probed addresses](#probed-addresses). A later search of the site from this page replaces the note, while a search by the watchdog or over MCP keeps it.
 
-![Discovery history](/img/discovery/20260905160400.png)
+![Discovery history](/img/discovery/20261116120300.png)
 
 - **Apply** creates the set the run built, without a new run. **+N page hosts** under the strategy counts the [page hosts](#page-hosts) the run offered, and **Apply** offers them again with the default ticks.
-- **Run again** repeats the run for the site, or for the set the row came from.
+- **Run again** repeats the run for the site, or for the set the row came from, with the same note.
 - **Remove from history** and **Clear history** remove one row or all of them.
 - A row expands to the other strategies its run's card listed, up to twelve, fastest first, each with **Use instead**.
 - **Tried** marks a strategy that has been applied as a set, also after the set is deleted.

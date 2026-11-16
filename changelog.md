@@ -7,6 +7,7 @@ All notable changes to b4 are recorded in this file.
 ### Added
 
 - **Public address** and **Public port** under **Settings, Telegram** set the address in the share links of **MTProto Proxy** secrets for a proxy behind a reverse proxy or a port forward, in place of the bind address and the listener port.
+- **Discovery** has a **Note** field for why a search was run, kept with its results and in the history, and shows the addresses each site was probed at, which ones it loaded from, and their ASN on request.
 - **Telegram over WebSocket** falls back to the **DC Relay** set under **Telegram upstream (shared)** when its WebSocket routes and the Cloudflare Worker do not answer within two seconds. [#497](https://github.com/DanielLavrushin/b4/issues/497)
 
 ### Changed

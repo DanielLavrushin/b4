@@ -11,6 +11,7 @@ import {
   DSCPPath,
   DiscoverySuite,
   HistoryEntry,
+  MAX_DISCOVERY_NOTE,
   isSuite,
 } from "@models/discovery";
 import { B4SetConfig } from "@models/config";
@@ -65,11 +66,15 @@ const START_ERROR_CODES = new Set([
   "bad_dns_server",
   "bad_pin",
   "dscp_rules_pending",
+  "note_too_long",
 ]);
 
 const startFailureText = (e: unknown): string => {
   if (e instanceof ApiError && e.code && START_ERROR_CODES.has(e.code)) {
-    return i18n.t(`discovery.errors.${e.code}`, { max: MAX_PROBE_URLS });
+    return i18n.t(`discovery.errors.${e.code}`, {
+      max: MAX_PROBE_URLS,
+      maxNote: MAX_DISCOVERY_NOTE,
+    });
   }
   return failureText(e);
 };

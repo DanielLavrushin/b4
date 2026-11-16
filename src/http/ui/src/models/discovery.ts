@@ -177,7 +177,15 @@ export interface DiscoveryResult {
   ech_cover_name?: string;
   ech_only_block?: boolean;
   alternates?: string[];
+  addresses?: ProbeAddress[];
 }
+
+export interface ProbeAddress {
+  ip: string;
+  loaded?: boolean;
+}
+
+export const MAX_DISCOVERY_NOTE = 200;
 
 export interface DSCPPath {
   ipv4?: number;
@@ -199,6 +207,7 @@ export interface DiscoverySuite {
   domain_discovery_results?: Record<string, DiscoveryResult>;
   strategy_groups?: BackendStrategyGroup[];
   source?: DiscoverySource;
+  note?: string;
   stopped_early?: boolean;
   stopped_phase?: DiscoveryPhase;
   runtime_active?: boolean;
@@ -240,6 +249,7 @@ export interface SetRunRecord {
   start_time: string;
   end_time: string;
   urls?: string[];
+  note?: string;
   dscp?: number;
   dscp_path?: DSCPPath;
   verdict: SetVerdict;
@@ -291,6 +301,8 @@ export interface HistoryEntry {
   final_host?: string;
   suite_id?: string;
   source?: DiscoverySource;
+  note?: string;
+  addresses?: ProbeAddress[];
   set?: B4SetConfig;
   outcome?: DiscoveryOutcome;
   missing_family?: IPFamily;
