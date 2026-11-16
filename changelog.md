@@ -12,6 +12,10 @@ All notable changes to b4 are recorded in this file.
 
 - The share dialog of an **MTProto Proxy** secret has a **Port** field, applies a port typed as `host:port`, and opens on **Internet** when the proxy listens only on a loopback address.
 
+### Fixed
+
+- In an imported zapret configuration, a skipped profile (`--skip`) took the **Shared domains**, passed its UDP settings to a set that stayed on, or pulled a working UDP profile into a disabled set, and a profile with `--filter-l7=wireguard` or `dht` got TCP settings such as **Packet Duplication**. [#586](https://github.com/DanielLavrushin/b4/issues/586), [#587](https://github.com/DanielLavrushin/b4/issues/587)
+
 ## [1.91.1] - 2026-11-15
 
 ### Added

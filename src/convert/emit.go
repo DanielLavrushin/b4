@@ -44,7 +44,7 @@ func (o emitOpts) domainsFor(prof *Profile, sharedGiven *bool) []string {
 	if custom, ok := o.ProfileDomains[prof.Index]; ok {
 		return custom
 	}
-	if prof.hasOwnTargets() || *sharedGiven || len(o.Domains) == 0 {
+	if prof.Skip || prof.hasOwnTargets() || *sharedGiven || len(o.Domains) == 0 {
 		return nil
 	}
 	*sharedGiven = true

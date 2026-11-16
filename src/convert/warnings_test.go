@@ -17,6 +17,12 @@ func TestWarnings_ADisabledSetWithDomainsIsNotCalledTargetlessOrShadowed(t *test
 		{"a skipped profile with a domain, then a profile without a host list", skipped + " --new --filter-tcp=80 --dpi-desync=multisplit",
 			[]string{"catchAllProfile"}, []string{"needsTargets", "shadowedSets"}},
 		{"no host list anywhere", "--filter-tcp=443 --dpi-desync=fake", []string{"needsTargets"}, []string{"catchAllProfile", "shadowedSets"}},
+		{"a skipped UDP profile without a host list, then a profile with one",
+			"--skip --filter-udp=443 --dpi-desync=fake --new --filter-tcp=443 --hostlist-domains=example.com --dpi-desync=fake",
+			nil, []string{"catchAllProfile", "needsTargets"}},
+		{"a profile with a host list, then a skipped one without",
+			"--filter-tcp=443 --hostlist-domains=example.com --dpi-desync=multisplit --new --skip --dpi-desync=rst",
+			nil, []string{"catchAllProfile", "needsTargets"}},
 		{"a set shadowed by an earlier one", shadowed, []string{"shadowedSets"}, []string{"needsTargets"}},
 	} {
 		res, err := Analyze(c.line, Options{Tool: "zapret"})
