@@ -397,9 +397,12 @@ func loadSysctlSnapshot() map[string]string {
 	return m
 }
 
-func saveSysctlSnapshot(m map[string]string) {
-	b, _ := json.Marshal(m)
-	_ = os.WriteFile(sysctlSnapshotPath(), b, 0600)
+func saveSysctlSnapshot(m map[string]string) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(sysctlSnapshotPath(), b, 0600)
 }
 
 func (ipt *IPTablesManager) buildNFQSpec(queueStart, threads int) []string {
@@ -415,7 +418,10 @@ func (s SysctlSetting) Apply() {
 	snap := loadSysctlSnapshot()
 	if _, ok := snap[s.Name]; !ok {
 		snap[s.Name] = getSysctl(s.Name)
-		saveSysctlSnapshot(snap)
+		if err := saveSysctlSnapshot(snap); err != nil {
+			log.Errorf("TABLES: leaving %s at %q rather than setting it to %s: its current value could not be saved to %s (%v), so b4 could not put it back on exit", s.Name, snap[s.Name], s.Desired, sysctlSnapshotPath(), err)
+			return
+		}
 	}
 	setSysctl(s.Name, s.Desired)
 	if s.Name == conntrackLiberalSysctl {
@@ -432,7 +438,9 @@ func (s SysctlSetting) RevertBack() {
 	if v, ok := snap[s.Name]; ok && v != "" {
 		setSysctl(s.Name, v)
 		delete(snap, s.Name)
-		saveSysctlSnapshot(snap)
+		if err := saveSysctlSnapshot(snap); err != nil {
+			log.Warnf("TABLES: restored %s to %s but could not update %s: %v", s.Name, v, sysctlSnapshotPath(), err)
+		}
 	}
 }
 

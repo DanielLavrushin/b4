@@ -511,6 +511,44 @@ func TestAClearWithNoSavedSysctlLeavesIt(t *testing.T) {
 	}
 }
 
+func TestApplyLeavesTheSysctlAloneWhenItsValueCannotBeSaved(t *testing.T) {
+	forgetConntrackStrictWarning()
+	t.Cleanup(forgetConntrackStrictWarning)
+
+	prevSnap := sysctlSnapPath
+	sysctlSnapPath = filepath.Join(t.TempDir(), "missing", "sysctl.json")
+	t.Cleanup(func() { sysctlSnapPath = prevSnap })
+
+	cur := map[string]string{
+		"net.netfilter.nf_conntrack_checksum": "1",
+		conntrackLiberalSysctl:                "0",
+	}
+	var wrote []string
+	prevGet, prevSet := getSysctl, setSysctl
+	getSysctl = func(name string) string { return cur[name] }
+	setSysctl = func(name, val string) {
+		cur[name] = val
+		wrote = append(wrote, name+"="+val)
+	}
+	t.Cleanup(func() {
+		getSysctl = prevGet
+		setSysctl = prevSet
+	})
+
+	for _, s := range b4SysctlSettings() {
+		s.Apply()
+	}
+	if len(wrote) != 0 {
+		t.Fatalf("Apply wrote %v although the original values could not be saved, so RevertBack could never put them back", wrote)
+	}
+	for _, s := range b4SysctlSettings() {
+		s.RevertBack()
+	}
+	if len(wrote) != 0 {
+		t.Fatalf("RevertBack wrote %v with nothing saved", wrote)
+	}
+}
+
 func TestDetectFirewallBackend_ConfigOverride(t *testing.T) {
 	t.Run("force nftables", func(t *testing.T) {
 		cfg := config.NewConfig()
