@@ -4,6 +4,8 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+## [1.92.0] - 2026-11-17
+
 ### Added
 
 - **Public address** and **Public port** under **Settings, Telegram** set the address in the share links of **MTProto Proxy** secrets for a proxy behind a reverse proxy or a port forward, in place of the bind address and the listener port.
