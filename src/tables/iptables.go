@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -362,7 +363,20 @@ type SysctlSetting struct {
 	Revert  string
 }
 
-var sysctlSnapPath = "/tmp/b4_sysctl_snapshot.json"
+const defaultSysctlSnapPath = "/tmp/b4_sysctl_snapshot.json"
+
+var sysctlSnapPath = defaultSysctlSnapPath
+
+func sysctlSnapshotPath() string {
+	if sysctlSnapPath != defaultSysctlSnapPath {
+		return sysctlSnapPath
+	}
+	var st syscall.Stat_t
+	if err := syscall.Stat("/proc/self/ns/net", &st); err != nil || st.Ino == 0 {
+		return defaultSysctlSnapPath
+	}
+	return fmt.Sprintf("/tmp/b4_sysctl_snapshot.%d.json", uint64(st.Ino))
+}
 
 func b4SysctlSettings() []SysctlSetting {
 	return []SysctlSetting{
@@ -372,7 +386,7 @@ func b4SysctlSettings() []SysctlSetting {
 }
 
 func loadSysctlSnapshot() map[string]string {
-	b, err := os.ReadFile(sysctlSnapPath)
+	b, err := os.ReadFile(sysctlSnapshotPath())
 	if err != nil {
 		return map[string]string{}
 	}
@@ -385,7 +399,7 @@ func loadSysctlSnapshot() map[string]string {
 
 func saveSysctlSnapshot(m map[string]string) {
 	b, _ := json.Marshal(m)
-	_ = os.WriteFile(sysctlSnapPath, b, 0600)
+	_ = os.WriteFile(sysctlSnapshotPath(), b, 0600)
 }
 
 func (ipt *IPTablesManager) buildNFQSpec(queueStart, threads int) []string {
@@ -400,7 +414,7 @@ func (ipt *IPTablesManager) buildNFQSpec(queueStart, threads int) []string {
 func (s SysctlSetting) Apply() {
 	snap := loadSysctlSnapshot()
 	if _, ok := snap[s.Name]; !ok {
-		snap[s.Name] = getSysctlOrProc(s.Name)
+		snap[s.Name] = getSysctl(s.Name)
 		saveSysctlSnapshot(snap)
 	}
 	setSysctl(s.Name, s.Desired)
@@ -419,9 +433,7 @@ func (s SysctlSetting) RevertBack() {
 		setSysctl(s.Name, v)
 		delete(snap, s.Name)
 		saveSysctlSnapshot(snap)
-		return
 	}
-	setSysctl(s.Name, s.Revert)
 }
 
 type IPSet struct {

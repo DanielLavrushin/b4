@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -68,19 +69,33 @@ func TestTheRelaxedSettingIsKeptWhenPuttingItBackWouldBreakForwarding(t *testing
 	forgetConntrackStrictWarning()
 	t.Cleanup(forgetConntrackStrictWarning)
 
+	prevSnap := sysctlSnapPath
+	sysctlSnapPath = filepath.Join(t.TempDir(), "sysctl.json")
+	t.Cleanup(func() { sysctlSnapPath = prevSnap })
+
 	var wrote []string
 	prev := setSysctl
 	setSysctl = func(name, val string) { wrote = append(wrote, name+"="+val) }
 	t.Cleanup(func() { setSysctl = prev })
 
+	saveSysctlSnapshot(map[string]string{
+		conntrackLiberalSysctl:                "0",
+		"net.netfilter.nf_conntrack_checksum": "1",
+	})
+
 	liberal := SysctlSetting{Name: conntrackLiberalSysctl, Desired: "1", Revert: "0"}
 
 	conntrackStrictBites = false
 	liberal.RevertBack()
-	if len(wrote) == 0 {
-		t.Fatal("on a router that forwards fine either way b4 must put the original value back rather than " +
-			"leave a global kernel setting changed behind it")
+	if len(wrote) != 1 || wrote[0] != conntrackLiberalSysctl+"=0" {
+		t.Fatalf("on a router that forwards fine either way b4 must put the original value back rather than "+
+			"leave a global kernel setting changed behind it, got %v", wrote)
 	}
+
+	saveSysctlSnapshot(map[string]string{
+		conntrackLiberalSysctl:                "0",
+		"net.netfilter.nf_conntrack_checksum": "1",
+	})
 
 	wrote = nil
 	conntrackStrictBites = true
@@ -93,7 +108,7 @@ func TestTheRelaxedSettingIsKeptWhenPuttingItBackWouldBreakForwarding(t *testing
 	wrote = nil
 	other := SysctlSetting{Name: "net.netfilter.nf_conntrack_checksum", Desired: "0", Revert: "1"}
 	other.RevertBack()
-	if len(wrote) == 0 {
-		t.Fatal("only the window-tracking setting is held back; every other sysctl b4 touched is still restored")
+	if len(wrote) != 1 || wrote[0] != "net.netfilter.nf_conntrack_checksum=1" {
+		t.Fatalf("only the window-tracking setting is held back; every other sysctl b4 touched is still restored, got %v", wrote)
 	}
 }

@@ -3,13 +3,27 @@ package tables
 import (
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 )
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "b4-tables-sysctl-")
+	if err != nil {
+		panic(err)
+	}
+	sysctlSnapPath = filepath.Join(dir, "sysctl.json")
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
+}
 
 func testCfgPtr(cfg *config.Config) *atomic.Pointer[config.Config] {
 	p := &atomic.Pointer[config.Config]{}
@@ -334,6 +348,106 @@ func TestLoadSysctlSnapshot_NoFile(t *testing.T) {
 	}
 	if len(snap) != 0 {
 		t.Error("should return empty map for non-existent file")
+	}
+}
+
+func TestSysctlSnapshotFileFollowsTheNetworkNamespace(t *testing.T) {
+	prev := sysctlSnapPath
+	sysctlSnapPath = defaultSysctlSnapPath
+	t.Cleanup(func() { sysctlSnapPath = prev })
+
+	var st syscall.Stat_t
+	if err := syscall.Stat("/proc/self/ns/net", &st); err != nil || st.Ino == 0 {
+		if got := sysctlSnapshotPath(); got != defaultSysctlSnapPath {
+			t.Fatalf("sysctlSnapshotPath() without /proc/self/ns/net = %q, want %q", got, defaultSysctlSnapPath)
+		}
+		t.Skipf("/proc/self/ns/net unavailable: %v", err)
+	}
+	got := sysctlSnapshotPath()
+	if got == defaultSysctlSnapPath {
+		t.Fatalf("resolved snapshot path is still %q; two network namespaces sharing /tmp overwrite each other's saved sysctls", got)
+	}
+	want := fmt.Sprintf("/tmp/b4_sysctl_snapshot.%d.json", uint64(st.Ino))
+	if got != want {
+		t.Fatalf("sysctlSnapshotPath() = %q, want %q", got, want)
+	}
+}
+
+func TestAClearWithNoSavedSysctlLeavesIt(t *testing.T) {
+	forgetConntrackStrictWarning()
+	t.Cleanup(forgetConntrackStrictWarning)
+
+	prevSnap := sysctlSnapPath
+	sysctlSnapPath = filepath.Join(t.TempDir(), "sysctl.json")
+	t.Cleanup(func() { sysctlSnapPath = prevSnap })
+
+	cur := map[string]string{
+		"net.netfilter.nf_conntrack_checksum": "0",
+		conntrackLiberalSysctl:                "1",
+	}
+	var wrote []string
+	prevGet, prevSet := getSysctl, setSysctl
+	getSysctl = func(name string) string { return cur[name] }
+	setSysctl = func(name, val string) {
+		cur[name] = val
+		wrote = append(wrote, name+"="+val)
+	}
+	t.Cleanup(func() {
+		getSysctl = prevGet
+		setSysctl = prevSet
+	})
+
+	settings := b4SysctlSettings()
+	for _, s := range settings {
+		s.RevertBack()
+	}
+	if len(wrote) != 0 {
+		t.Fatalf("RevertBack with no saved entry wrote %v, overwriting the router's own sysctls before Apply recorded them", wrote)
+	}
+
+	for _, s := range settings {
+		s.Apply()
+	}
+	snap := loadSysctlSnapshot()
+	if snap["net.netfilter.nf_conntrack_checksum"] != "0" || snap[conntrackLiberalSysctl] != "1" {
+		t.Fatalf("snapshot after Apply = %v, want checksum=0 and liberal=1", snap)
+	}
+
+	cur["net.netfilter.nf_conntrack_checksum"] = "1"
+	wrote = nil
+	settings[0].Apply()
+	if got := loadSysctlSnapshot()["net.netfilter.nf_conntrack_checksum"]; got != "0" {
+		t.Fatalf("re-Apply overwrote saved checksum entry with %q", got)
+	}
+	if len(wrote) != 1 || wrote[0] != "net.netfilter.nf_conntrack_checksum=0" {
+		t.Fatalf("re-Apply wrote %v, want [net.netfilter.nf_conntrack_checksum=0]", wrote)
+	}
+
+	wrote = nil
+	for _, s := range settings {
+		s.RevertBack()
+	}
+	want := "net.netfilter.nf_conntrack_checksum=0," + conntrackLiberalSysctl + "=1"
+	if got := strings.Join(wrote, ","); got != want {
+		t.Fatalf("RevertBack wrote %q, want %q", got, want)
+	}
+	if left := loadSysctlSnapshot(); len(left) != 0 {
+		t.Fatalf("snapshot still holds %v after RevertBack", left)
+	}
+
+	wrote = nil
+	for _, s := range settings {
+		s.RevertBack()
+	}
+	if len(wrote) != 0 {
+		t.Fatalf("second RevertBack wrote %v after saved entries were removed", wrote)
+	}
+
+	saveSysctlSnapshot(map[string]string{"net.netfilter.nf_conntrack_checksum": ""})
+	wrote = nil
+	settings[0].RevertBack()
+	if len(wrote) != 0 {
+		t.Fatalf("RevertBack with an empty saved entry wrote %v", wrote)
 	}
 }
 

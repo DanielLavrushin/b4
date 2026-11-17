@@ -4230,6 +4230,11 @@ action_remove() {
 
     rm -f /var/run/b4.pid /run/b4.pid /opt/var/run/b4.pid /tmp/b4.pid 2>/dev/null || true
     rm -f /var/run/b4-tun.state /run/b4-tun.state /tmp/b4_sysctl_snapshot.json 2>/dev/null || true
+    for _snap in /tmp/b4_sysctl_snapshot.*.json; do
+        if [ -f "$_snap" ]; then
+            rm -f "$_snap" 2>/dev/null || true
+        fi
+    done
     rm -f /var/log/b4.log /opt/var/log/b4.log /tmp/log/b4.log 2>/dev/null || true
     rm -rf /var/log/b4 2>/dev/null || true
 

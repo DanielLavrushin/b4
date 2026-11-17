@@ -144,8 +144,6 @@ ip6tables -w -t nat -D OUTPUT -p tcp --dport 53 -j B4_DNSTCP
 ip6tables -w -t nat -S B4_DNSTCP
 ipset destroy b4_mss_3_v4
 ipset list -name
-sh -c sysctl -w net.netfilter.nf_conntrack_checksum=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_checksum
-sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
 iptables -w -t mangle -S B4_DSCP
 ip6tables -w -t mangle -S B4_DSCP
 == AddRules -> ok
