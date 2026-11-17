@@ -606,6 +606,25 @@ func stubPortProbe(t *testing.T) *[]string {
 	return probed
 }
 
+func TestMCPWriteRefusesEnablingMTProtoOnATakenPort(t *testing.T) {
+	cfg := mcpTestCfg()
+	cfg.System.WebServer.MCP.AllowWrites = true
+	cfg.System.MTProto.Enabled = false
+	cfg.System.MTProto.BindAddress = "127.0.0.1"
+	cfg.System.MTProto.Port = heldLoopbackPort(t)
+
+	srv, api := newMCPTestServerAPI(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	res := callSetValue(t, session, ctx, "system.mtproto.enabled", "true")
+	if !res.IsError || !strings.Contains(mcpErrorText(res), "already in use") {
+		t.Fatalf("a port another listener holds must refuse the write: %s", mcpErrorText(res))
+	}
+	if api.getCfg().System.MTProto.Enabled {
+		t.Fatal("the refused write enabled MTProto")
+	}
+}
+
 func freeTCPPort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
