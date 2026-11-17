@@ -580,16 +580,30 @@ func TestMCPWriteAllowsEnablingMTProtoWithFakeSNI(t *testing.T) {
 	cfg.System.MTProto.Enabled = false
 	cfg.System.MTProto.Secrets = nil
 	cfg.System.MTProto.FakeSNI = "www.google.com"
-	cfg.System.MTProto.BindAddress = "127.0.0.1"
-	cfg.System.MTProto.Port = freeTCPPort(t)
+	probed := stubPortProbe(t)
 
 	srv := newMCPTestServer(t, cfg)
 	session, ctx := connectMCP(t, srv)
 
 	res := callSetValue(t, session, ctx, "system.mtproto.enabled", "true")
 	if res.IsError {
-		t.Fatalf("a fake SNI satisfies the precondition: %+v", res.Content)
+		t.Fatalf("a fake SNI satisfies the precondition: %s", mcpErrorText(res))
 	}
+	if !slices.Contains(*probed, "system.mtproto.port") {
+		t.Fatalf("enabling MTProto must check that its port is free, probed %v", *probed)
+	}
+}
+
+func stubPortProbe(t *testing.T) *[]string {
+	t.Helper()
+	prev := probePort
+	t.Cleanup(func() { probePort = prev })
+	probed := &[]string{}
+	probePort = func(path, _ string, _ int) *FieldError {
+		*probed = append(*probed, path)
+		return nil
+	}
+	return probed
 }
 
 func freeTCPPort(t *testing.T) int {

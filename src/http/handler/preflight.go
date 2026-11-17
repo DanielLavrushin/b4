@@ -65,7 +65,7 @@ func preflightConfig(newCfg, oldCfg *config.Config) []FieldError {
 	return fields
 }
 
-func probePort(path, bindAddr string, port int) *FieldError {
+var probePort = func(path, bindAddr string, port int) *FieldError {
 	if bindAddr == "" {
 		bindAddr = "0.0.0.0"
 	}
