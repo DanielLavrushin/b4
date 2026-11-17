@@ -75,5 +75,5 @@ A device that has left the network for good is removed from this set by clearing
 Devices found in the router's ARP table are matched by their MAC address. A device added by hand has no MAC address on the network, so it is matched by the IP address entered for it. Such a device needs a fixed or reserved address, and it cannot be matched when a router between it and b4 replaces its source address. Without a working ARP table, the tab says so, and filtering by source device does not work.
 
 :::warning Source devices do not select traffic on their own
-Source devices decide whose traffic the set applies to, not which traffic. A routing set whose only target is a source device routes nothing. To route everything from a device, **Match any IP address** is turned on in the **Bypass IPs** sub-tab. Traffic the router itself sends never comes from a source device, so such a set leaves it alone.
+Source devices decide whose traffic the set applies to, not which traffic. A routing set whose only target is a source device routes nothing. To route everything from a device, **Match any IP address** is turned on in the **Bypass IPs** sub-tab. A set in **Upstream SOCKS5 proxy** mode can also route the device's [UDP by port](./routing.md#udp-by-port). Traffic the router itself sends never comes from a source device, so such a set leaves it alone.
 :::

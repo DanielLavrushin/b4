@@ -21,7 +21,7 @@ On a set sent through an [Upstream SOCKS5 proxy](./routing.md#upstream-socks5-pr
 | Field | What it does | Default |
 | --- | --- | --- |
 | **QUIC Matching** | **By SNI** matches QUIC whose ClientHello carries a server name the set targets, which is also how b4 learns the addresses of those domains. **By SNI or matched destination** also matches any QUIC packet to a destination the set already matches by IP or port, with no server name needed. | **By SNI** |
-| **Port Filter** | UDP ports to match, such as `5000-6000,8000`, for VoIP, games and other UDP applications. It also limits the rest of the set: a set with `8443` here does not act on UDP port 443. Empty matches any port, except the ports that only a [set for calls](#protocol-selection) lists. | Empty |
+| **Port Filter** | UDP ports to match, such as `5000-6000,8000`, for VoIP, games and other UDP applications. It also limits the rest of the set: a set with `8443` here does not act on UDP port 443. Empty matches any port, except the ports that only a [set for calls](#protocol-selection) lists. On a set that routes [UDP by port](./routing.md#udp-by-port), these are the ports that go through the proxy. | Empty |
 | **Calls** | How the set treats calls, see the table below. | **Pass call setup** |
 | **Which calls** | Shown with **Handle only calls**: the calls the set takes, see [Sets for calls](#protocol-selection). | **Discord app and browsers** |
 
@@ -32,6 +32,8 @@ On a set sent through an [Upstream SOCKS5 proxy](./routing.md#upstream-socks5-pr
 | **Handle like other UDP** | STUN requests and the Discord app's voice packets get the set's action like the rest of its UDP. With **Drop** or **Reject**, the set blocks calls too. |
 
 With **By SNI** and no domains or GeoSite categories on the [Targets](./targets.md) tab, no QUIC ClientHello can match, and the tab shows a warning. UDP to port 53 is DNS and goes to b4's [DNS handling](../dns.md) instead.
+
+A set that routes [UDP by port](./routing.md#udp-by-port) through an upstream proxy shows only **Port Filter** on this tab: the other settings do not apply to UDP that goes through the proxy. A [set for calls](#protocol-selection) does not route by port.
 
 ### Sets for calls {#protocol-selection}
 
@@ -53,7 +55,7 @@ A set for calls has three requirements. When it breaks one, b4 refuses to save i
 
 While **Handle only calls** is chosen, the tab hides **Blocking QUIC** and **QUIC Matching**. With **Action Mode** on **Drop** or **Reject**, or with **Block (blackhole)** routing on the [DNS & Routing](./routing.md) tab, the set blocks the packet that opens each call, and a warning says so. The **IP Version Filter** on the [Targets](./targets.md) tab limits such a set as well.
 
-Choosing **Handle only calls** changes **Fake Packet Payload** from **(zero fill)** or **(auto: QUIC Initial)** to **(auto: STUN request)**, and any other payload stays. On some networks zero-filled fakes cut Discord calls short. Leaving **Handle only calls** in the same edit restores the previous payload. When a set without targets leaves **Handle only calls** and keeps its UDP **Port Filter**, it acts on all UDP on those ports, and a hint on the tab says so. [Discord voice calls](../guides/discord-voice.md) sets up such a set step by step.
+Choosing **Handle only calls** changes **Fake Packet Payload** from **(zero fill)** or **(auto: QUIC Initial)** to **(auto: STUN request)**, and any other payload stays. On some networks zero-filled fakes cut Discord calls short. Leaving **Handle only calls** in the same edit restores the previous payload. When a set without targets leaves **Handle only calls** and keeps its UDP **Port Filter**, it acts on all UDP on those ports, and a hint on the tab says so. A set that routes [UDP by port](./routing.md#udp-by-port) sends that UDP through the proxy instead. [Discord voice calls](../guides/discord-voice.md) sets up such a set step by step.
 
 ## How to Handle Matched Traffic
 

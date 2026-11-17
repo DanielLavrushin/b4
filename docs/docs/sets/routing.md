@@ -41,7 +41,7 @@ The sub-tab sends the set's traffic through a network interface or a SOCKS5 prox
 | **Source Interfaces** | Limits the set to traffic that arrives on the selected interfaces, such as the LAN bridge. See [Which interface is which](../guides/interfaces.md). | None, every interface |
 | **Resolved IP TTL (seconds)** | How long an address learned for the set's domains stays in the set. IP targets stay as long as the set lists them. | `3600` |
 
-Routing matches destination addresses: the set's IP, CIDR, GeoIP and ASN targets, and the addresses b4 learns for its domains. A set higher in the list with [IP priority](./targets.md#ip-addresses) on can keep its addresses out of what this set learns. A set with no domain, IP or ASN target routes nothing, and the tab warns about it. The exception is block routing on a set that [handles only calls](./udp.md#protocol-selection): it blocks the calls the set takes. [Source Devices](./targets.md#source-devices) only limit whose traffic the set takes: routing everything a device sends also needs **Match any IP address** under **Targets > Bypass IPs**.
+Routing matches destination addresses: the set's IP, CIDR, GeoIP and ASN targets, and the addresses b4 learns for its domains. A set higher in the list with [IP priority](./targets.md#ip-addresses) on can keep its addresses out of what this set learns. A set with no domain, IP or ASN target routes nothing, and the tab warns about it. Block routing on a set that [handles only calls](./udp.md#protocol-selection) is an exception: it blocks the calls the set takes. A set in **Upstream SOCKS5 proxy** mode is another: it can route [UDP by port](#udp-by-port). [Source Devices](./targets.md#source-devices) only limit whose traffic the set takes: routing everything a device sends also needs **Match any IP address** under **Targets > Bypass IPs**.
 
 ### Network interface {#output-interface}
 
@@ -85,8 +85,29 @@ b4 takes over the set's TCP connections and opens each one again through a SOCKS
 | **Upstream SOCKS5 port** | The proxy's port, commonly `1080`. | `0` |
 | **Username (optional)**, **Password (optional)** | For a proxy that requires authentication. | Empty |
 | **Send domain name to upstream** | Sends the proxy the host name instead of the address when b4 can tie a name to the connection. Names pinned in the set always go as addresses. TCP only. | On |
-| **Route UDP through upstream** | Sends the set's UDP through the proxy too. Off, or with **Block QUIC (force TCP)** on the [UDP](./udp.md#blocking-quic) tab, b4 refuses the set's QUIC, and browsers fall back to TCP. | Off |
+| **Route UDP through upstream** | Sends the set's UDP through the proxy too. Off, or with **Block QUIC (force TCP)** on the [UDP](./udp.md#blocking-quic) tab, b4 refuses the set's QUIC, and browsers fall back to TCP. A set without targets needs it to route [UDP by port](#udp-by-port). | Off |
 | **Fall back to direct on upstream failure** | Connects directly while the proxy cannot be reached. | Off |
+
+#### UDP by port {#udp-by-port}
+
+A set in this mode with no domain, IP, GeoSite, GeoIP or ASN target can send UDP through the proxy by destination port alone, whatever the address. It suits games, calls and other applications whose servers have no fixed addresses. The set routes by port when all of this holds:
+
+- **Route UDP through upstream** is on.
+- **Port Filter** on the [UDP](./udp.md#what-udp-traffic-to-match) tab lists the ports.
+- **Calls** on that tab is not set to **Handle only calls**.
+- **Source Interfaces** names an interface, such as the LAN bridge, or the set has included [source devices](./targets.md#source-devices).
+
+The tab then names the ports the set routes. Without a source interface or an included source device, b4 installs no rule, and a warning on the tab says what to select. A rule that matched by port alone would also take replies and connections that come in from the internet.
+
+| Traffic | What happens |
+| --- | --- |
+| UDP that the selected interfaces or devices send to the listed ports | Goes through the proxy |
+| UDP to port 53 | Stays with b4's [DNS handling](../dns.md), also when the port is listed |
+| TCP | Not routed |
+| The router's own UDP | Not taken |
+| IPv6 UDP to the listed ports while **Enable IPv6 Support** is off under [Settings > Core](../settings/core.md#protocols) | Leaves directly |
+
+The other settings of the **UDP** tab do not apply to such a set, and the tab hides them. [Routing UDP by port](../guides/proxy.md#udp-by-port) sets one up step by step.
 
 #### Requirements
 
@@ -94,11 +115,11 @@ This mode, the **Telegram over WebSocket (built-in)** mode and the Telegram over
 
 #### Verifying that it works
 
-A connection the set sends through the proxy ends with `[proxy]` on the **Logs** page. Without that line the connection was not diverted, usually because its address is not in the set. See [Checking the result](../guides/proxy.md#checking-the-result).
+A connection the set sends through the proxy ends with `[proxy]` on the **Logs** page, and so does UDP the set routes by port. Without that line the connection was not diverted, usually because its address is not in the set. See [Checking the result](../guides/proxy.md#checking-the-result).
 
 #### When the upstream itself is down
 
-While the proxy does not answer, every connection to the set's addresses hangs and fails, on every TCP port, including other sites on a shared CDN address. The dashboard shows **Set X: proxy ... unreachable** and **upstream down**. See [When the upstream is down](../guides/proxy.md#when-the-upstream-is-down).
+While the proxy does not answer, every connection to the set's addresses hangs and fails, on every TCP port, including other sites on a shared CDN address. UDP the set sends through the proxy is dropped, or leaves directly with **Fall back to direct on upstream failure** on. The dashboard shows **Set X: proxy ... unreachable** and **upstream down**. See [When the upstream is down](../guides/proxy.md#when-the-upstream-is-down).
 
 #### Connections through the built-in SOCKS5 proxy
 
