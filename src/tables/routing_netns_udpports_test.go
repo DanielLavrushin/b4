@@ -1,13 +1,18 @@
 package tables
 
 import (
+	"bytes"
 	"net"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/socks5"
 	"github.com/daniellavrushin/b4/tproxy"
 )
@@ -139,18 +144,34 @@ func udpPortsNsServeWhoami(t *testing.T, n *gwNode, network, host string, port i
 	})
 }
 
+func udpPortsNsIptables(engine string) string {
+	if engine == backendIPTablesLegacy {
+		return backendIPTablesLegacy
+	}
+	return backendIPTables
+}
+
+func udpPortsNsChain(t *testing.T, engine, chain string) string {
+	t.Helper()
+	if engine == backendNFTables {
+		return netnsRun(t, "nft", "list", "chain", "inet", routeNftTable, chain)
+	}
+	return netnsRun(t, udpPortsNsIptables(engine), "-w", "-t", "mangle", "-S", chain)
+}
+
 func udpPortsNsDropPortRule(t *testing.T, engine, chain string) {
 	t.Helper()
 	if engine == backendNFTables {
 		deleteNftRulesContaining(chain, "udp dport")
 		return
 	}
-	for _, line := range strings.Split(netnsRun(t, "iptables", "-w", "-t", "mangle", "-S", chain), "\n") {
+	ipt := udpPortsNsIptables(engine)
+	for _, line := range strings.Split(netnsRun(t, ipt, "-w", "-t", "mangle", "-S", chain), "\n") {
 		if !strings.Contains(line, "TPROXY") || !strings.Contains(line, "--ctdir") {
 			continue
 		}
 		spec := strings.Fields(strings.Replace(line, "-A ", "-D ", 1))
-		netnsRun(t, append([]string{"iptables", "-w", "-t", "mangle"}, spec...)...)
+		netnsRun(t, append([]string{ipt, "-w", "-t", "mangle"}, spec...)...)
 	}
 }
 
@@ -169,9 +190,7 @@ func udpPortsNsInstall(t *testing.T, cfg *config.Config) {
 func netnsUDPPortOnlyProxySet(t *testing.T, engine, scope string) {
 	netnsRequire(t)
 	netnsSetupLinks(t)
-	if engine == backendNFTables && !hasBinary("nft") {
-		t.Skip("nft is not installed")
-	}
+	netnsRequireEngine(t, engine)
 	client, inet, mac := quicNsRig(t)
 	peerPort := udpPortsNsPeerSp
 	clientPort := udpPortsNsClientSp
@@ -205,7 +224,7 @@ func netnsUDPPortOnlyProxySet(t *testing.T, engine, scope string) {
 	quicNsServeEcho(t, client, quicNsClient, udpPortsNsClientSv)
 	quicNsServeEcho(t, client, quicNsClient, udpPortsNsOutRange)
 
-	t.Logf("%s chain:\n%s", st.chainPre, netnsPreChain(t, engine, st.chainPre))
+	t.Logf("%s chain:\n%s", st.chainPre, udpPortsNsChain(t, engine, st.chainPre))
 
 	in1 := net.JoinHostPort(quicNsMatched, strconv.Itoa(udpPortsNsInRange))
 	in2 := net.JoinHostPort(quicNsUnmatched, strconv.Itoa(udpPortsNsInRange2))
@@ -260,7 +279,7 @@ func netnsUDPPortOnlyProxySet(t *testing.T, engine, scope string) {
 	if engine == backendNFTables {
 		err = addProxyUDPPortRuleNft(st.chainPre, false, st.udpPorts, st.mark, port, sources, false)
 	} else {
-		err = addProxyUDPPortRuleIpt(false, st.chainPre, st.udpPorts, st.mark, port, sources, false, false)
+		err = addProxyUDPPortRuleIpt(false, st.chainPre, st.udpPorts, st.mark, port, sources, engine == backendIPTablesLegacy, false)
 	}
 	if err != nil {
 		t.Fatalf("install the rule without the direction match: %v", err)
@@ -291,6 +310,10 @@ func TestNetnsUDPPortOnlyProxySetNft(t *testing.T) {
 	netnsUDPPortOnlyProxySet(t, backendNFTables, udpPortsNsScopeIface)
 }
 
+func TestNetnsUDPPortOnlyProxySetLegacy(t *testing.T) {
+	netnsUDPPortOnlyProxySet(t, backendIPTablesLegacy, udpPortsNsScopeIface)
+}
+
 func TestNetnsUDPPortOnlyProxySetByDevice(t *testing.T) {
 	netnsUDPPortOnlyProxySet(t, backendIPTables, udpPortsNsScopeDevice)
 }
@@ -299,12 +322,14 @@ func TestNetnsUDPPortOnlyProxySetByDeviceNft(t *testing.T) {
 	netnsUDPPortOnlyProxySet(t, backendNFTables, udpPortsNsScopeDevice)
 }
 
+func TestNetnsUDPPortOnlyProxySetByDeviceLegacy(t *testing.T) {
+	netnsUDPPortOnlyProxySet(t, backendIPTablesLegacy, udpPortsNsScopeDevice)
+}
+
 func netnsUDPPortOnlySetWithoutScopeInstallsNothing(t *testing.T, engine string) {
 	netnsRequire(t)
 	netnsSetupLinks(t)
-	if engine == backendNFTables && !hasBinary("nft") {
-		t.Skip("nft is not installed")
-	}
+	netnsRequireEngine(t, engine)
 	client, inet, _ := quicNsRig(t)
 	cfg := udpPortsNsConfig(engine, udpPortsNsScopeNone, "")
 	udpPortsNsInstall(t, cfg)
@@ -324,6 +349,10 @@ func TestNetnsUDPPortOnlySetWithoutScopeInstallsNothing(t *testing.T) {
 
 func TestNetnsUDPPortOnlySetWithoutScopeInstallsNothingNft(t *testing.T) {
 	netnsUDPPortOnlySetWithoutScopeInstallsNothing(t, backendNFTables)
+}
+
+func TestNetnsUDPPortOnlySetWithoutScopeInstallsNothingLegacy(t *testing.T) {
+	netnsUDPPortOnlySetWithoutScopeInstallsNothing(t, backendIPTablesLegacy)
 }
 
 func udpPortsNsUpstreamServer(t *testing.T) {
@@ -374,9 +403,7 @@ func udpPortsNsEnableIPv6(t *testing.T, client, inet *gwNode) {
 func netnsUDPPortOnlySetRelaysThroughSOCKS5(t *testing.T, engine string) {
 	netnsRequire(t)
 	netnsSetupLinks(t)
-	if engine == backendNFTables && !hasBinary("nft") {
-		t.Skip("nft is not installed")
-	}
+	netnsRequireEngine(t, engine)
 	client, inet, _ := quicNsRig(t)
 	udpPortsNsEnableIPv6(t, client, inet)
 
@@ -385,7 +412,7 @@ func netnsUDPPortOnlySetRelaysThroughSOCKS5(t *testing.T, engine string) {
 	udpPortsNsUpstreamServer(t)
 	udpPortsNsInstall(t, cfg)
 	udpPortsNsListener(t, cfg)
-	t.Logf("%s chain:\n%s", routeRuleCache[udpPortsNsSetID].chainPre, netnsPreChain(t, engine, routeRuleCache[udpPortsNsSetID].chainPre))
+	t.Logf("%s chain:\n%s", routeRuleCache[udpPortsNsSetID].chainPre, udpPortsNsChain(t, engine, routeRuleCache[udpPortsNsSetID].chainPre))
 
 	udpPortsNsServeWhoami(t, inet, "udp4", quicNsMatched, udpPortsNsInRange)
 	udpPortsNsServeWhoami(t, inet, "udp4", quicNsUnmatched, udpPortsNsInRange2)
@@ -424,12 +451,14 @@ func TestNetnsUDPPortOnlySetRelaysThroughSOCKS5Nft(t *testing.T) {
 	netnsUDPPortOnlySetRelaysThroughSOCKS5(t, backendNFTables)
 }
 
+func TestNetnsUDPPortOnlySetRelaysThroughSOCKS5Legacy(t *testing.T) {
+	netnsUDPPortOnlySetRelaysThroughSOCKS5(t, backendIPTablesLegacy)
+}
+
 func netnsAStalledUpstreamKeepsEstablishedUDPFlowing(t *testing.T, engine string) {
 	netnsRequire(t)
 	netnsSetupLinks(t)
-	if engine == backendNFTables && !hasBinary("nft") {
-		t.Skip("nft is not installed")
-	}
+	netnsRequireEngine(t, engine)
 	client, inet, _ := quicNsRig(t)
 
 	cfg := udpPortsNsConfig(engine, udpPortsNsScopeIface, "")
@@ -467,8 +496,9 @@ func netnsAStalledUpstreamKeepsEstablishedUDPFlowing(t *testing.T, engine string
 	}
 
 	stall := []string{"INPUT", "-i", "lo", "-p", "tcp", "--dport", strconv.Itoa(udpPortsNsUpstream), "--syn", "-j", "DROP"}
-	netnsRun(t, append([]string{"iptables", "-w", "-t", "filter", "-I"}, stall...)...)
-	t.Cleanup(func() { _, _ = run(append([]string{"iptables", "-w", "-t", "filter", "-D"}, stall...)...) })
+	ipt := udpPortsNsIptables(engine)
+	netnsRun(t, append([]string{ipt, "-w", "-t", "filter", "-I"}, stall...)...)
+	t.Cleanup(func() { _, _ = run(append([]string{ipt, "-w", "-t", "filter", "-D"}, stall...)...) })
 
 	done := make(chan struct{})
 	go func() {
@@ -501,12 +531,14 @@ func TestNetnsAStalledUpstreamKeepsEstablishedUDPFlowingNft(t *testing.T) {
 	netnsAStalledUpstreamKeepsEstablishedUDPFlowing(t, backendNFTables)
 }
 
+func TestNetnsAStalledUpstreamKeepsEstablishedUDPFlowingLegacy(t *testing.T) {
+	netnsAStalledUpstreamKeepsEstablishedUDPFlowing(t, backendIPTablesLegacy)
+}
+
 func netnsAPortRoutedSetBesideAnAddressSet(t *testing.T, engine string) {
 	netnsRequire(t)
 	netnsSetupLinks(t)
-	if engine == backendNFTables && !hasBinary("nft") {
-		t.Skip("nft is not installed")
-	}
+	netnsRequireEngine(t, engine)
 	client, _, _ := quicNsRig(t)
 
 	for _, tc := range []struct {
@@ -586,12 +618,14 @@ func TestNetnsAPortRoutedSetBesideAnAddressSetNft(t *testing.T) {
 	netnsAPortRoutedSetBesideAnAddressSet(t, backendNFTables)
 }
 
+func TestNetnsAPortRoutedSetBesideAnAddressSetLegacy(t *testing.T) {
+	netnsAPortRoutedSetBesideAnAddressSet(t, backendIPTablesLegacy)
+}
+
 func netnsASetThatTurnsPortOnlyDropsItsLearnedAddresses(t *testing.T, engine string) {
 	netnsRequire(t)
 	netnsSetupLinks(t)
-	if engine == backendNFTables && !hasBinary("nft") {
-		t.Skip("nft is not installed")
-	}
+	netnsRequireEngine(t, engine)
 	client, inet, _ := quicNsRig(t)
 
 	cfg := udpPortsNsConfig(engine, udpPortsNsScopeIface, "")
@@ -654,4 +688,130 @@ func TestNetnsASetThatTurnsPortOnlyDropsItsLearnedAddresses(t *testing.T) {
 
 func TestNetnsASetThatTurnsPortOnlyDropsItsLearnedAddressesNft(t *testing.T) {
 	netnsASetThatTurnsPortOnlyDropsItsLearnedAddresses(t, backendNFTables)
+}
+
+func TestNetnsASetThatTurnsPortOnlyDropsItsLearnedAddressesLegacy(t *testing.T) {
+	netnsASetThatTurnsPortOnlyDropsItsLearnedAddresses(t, backendIPTablesLegacy)
+}
+
+func TestNetnsUDPPortsUpstreamHelper(t *testing.T) {
+	bind := os.Getenv("B4_UDPPORTS_UPSTREAM")
+	if bind == "" {
+		t.Skip("helper: a SOCKS5 upstream that runs inside a LAN host's namespace")
+	}
+	host, portText, err := net.SplitHostPort(bind)
+	if err != nil {
+		t.Fatalf("B4_UDPPORTS_UPSTREAM: %v", err)
+	}
+	port, _ := strconv.Atoi(portText)
+	log.Init(os.Stderr, log.LevelInfo, true)
+	upCfg := config.NewConfig()
+	upCfg.System.Socks5.Enabled = true
+	upCfg.System.Socks5.BindAddress = host
+	upCfg.System.Socks5.Port = port
+	upstream := socks5.NewServer(&upCfg)
+	if err := upstream.Start(); err != nil {
+		t.Fatalf("SOCKS5 upstream: %v", err)
+	}
+	defer func() { _ = upstream.Stop() }()
+	_, _ = os.Stdin.Read(make([]byte, 1))
+}
+
+type udpPortsNsLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *udpPortsNsLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *udpPortsNsLog) count(needle string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Count(l.buf.String(), needle)
+}
+
+func udpPortsNsUpstreamOnNode(t *testing.T, n *gwNode, host string) func() int {
+	t.Helper()
+	bind := net.JoinHostPort(host, strconv.Itoa(udpPortsNsUpstream))
+	cmd := exec.Command("nsenter", "-t", strconv.Itoa(n.pid), "-n", os.Args[0], "-test.run", "^TestNetnsUDPPortsUpstreamHelper$")
+	cmd.Env = append(os.Environ(), "B4_UDPPORTS_UPSTREAM="+bind)
+	out := &udpPortsNsLog{}
+	cmd.Stderr = out
+	sessions := func() int { return out.count("SOCKS5 UDP ASSOCIATE from") }
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("upstream helper: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("upstream helper: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		conn, err := net.DialTimeout("tcp4", bind, 300*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return sessions
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the SOCKS5 upstream on the LAN host never listened on %s: %v", bind, err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func netnsAPortRoutedSetSendsALANUpstreamsOwnUDPDirect(t *testing.T, engine string) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	netnsRequireEngine(t, engine)
+	client, inet, _ := quicNsRig(t)
+	upstreamHost, _ := quicNsAttachClient(t, quicNsLAN2, quicNsLAN2Peer, quicNsLAN2Rtr, quicNsClient2)
+	relayed := udpPortsNsUpstreamOnNode(t, upstreamHost, quicNsClient2)
+
+	cfg := udpPortsNsConfig(engine, udpPortsNsScopeIface, "")
+	set := cfg.Sets[0]
+	set.Routing.Upstream.Host = quicNsClient2
+	set.Routing.SourceInterfaces = []string{quicNsLAN, quicNsLAN2}
+	udpPortsNsInstall(t, cfg)
+	udpPortsNsListener(t, cfg)
+
+	udpPortsNsServeWhoami(t, inet, "udp4", quicNsMatched, udpPortsNsInRange)
+	udpPortsNsServeWhoami(t, inet, "udp4", quicNsUnmatched, udpPortsNsInRange2)
+	udpPortsNsServeWhoami(t, inet, "udp4", quicNsMatched, udpPortsNsOutRange)
+
+	viaRouter := "reply=from=" + quicNsWANRouter + " "
+	if got := udpPortsNsExchange(client, 0, quicNsUnmatched, udpPortsNsInRange2, "call"); got != viaRouter+"call" {
+		netnsLogState(t, engine)
+		t.Errorf("a client's UDP through an upstream on a LAN host: %s; the upstream's own datagram for it comes back through the router and must leave from there", got)
+	}
+	if got := udpPortsNsExchange(upstreamHost, 0, quicNsMatched, udpPortsNsInRange, "transport"); got != viaRouter+"transport" {
+		netnsLogState(t, engine)
+		t.Errorf("UDP the upstream's own host sends to a listed port at an address no client uses: %s; it must leave from the router", got)
+	}
+	if n := relayed(); n != 1 {
+		t.Errorf("the upstream opened %d UDP sessions, want 1, the client's: UDP from the upstream's own host must leave from the router at once, not travel through the upstream first", n)
+	}
+	if got := udpPortsNsExchange(upstreamHost, 0, quicNsMatched, udpPortsNsOutRange, "other"); got != "reply=from="+quicNsClient2+" other" {
+		t.Errorf("UDP the upstream's own host sends to a port the set does not list: %s; it must pass untouched", got)
+	}
+}
+
+func TestNetnsAPortRoutedSetSendsALANUpstreamsOwnUDPDirect(t *testing.T) {
+	netnsAPortRoutedSetSendsALANUpstreamsOwnUDPDirect(t, backendIPTables)
+}
+
+func TestNetnsAPortRoutedSetSendsALANUpstreamsOwnUDPDirectNft(t *testing.T) {
+	netnsAPortRoutedSetSendsALANUpstreamsOwnUDPDirect(t, backendNFTables)
+}
+
+func TestNetnsAPortRoutedSetSendsALANUpstreamsOwnUDPDirectLegacy(t *testing.T) {
+	netnsAPortRoutedSetSendsALANUpstreamsOwnUDPDirect(t, backendIPTablesLegacy)
 }
