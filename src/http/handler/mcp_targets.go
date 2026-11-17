@@ -575,29 +575,37 @@ func mcpPortOnlyNote(set *config.SetConfig) string {
 	if set.DeclaresDestinationTargets() {
 		return ""
 	}
+	routed := set.RoutedUDPPortSpec()
 	var ports []string
 	if set.TCP.DPortFilter != "" {
 		ports = append(ports, "TCP "+set.TCP.DPortFilter)
 	}
-	if set.UDP.DPortFilter != "" {
+	if set.UDP.DPortFilter != "" && routed == "" {
 		ports = append(ports, "UDP "+set.UDP.DPortFilter)
 	}
-	if len(ports) == 0 {
+	if len(ports) == 0 && routed == "" {
 		return ""
 	}
-	traffic := "EVERY connection on " + strings.Join(ports, " and ") + " that no other set matches"
-	if set.SelectsL7() {
-		traffic = "EVERY " + strings.Join(set.UDP.FilterL7, " or ") + " flow on " + strings.Join(ports, " and ")
-	}
-	devices := "the devices it allows"
-	if len(set.Targets.SourceDevices) == 0 {
-		devices = "every device"
-	}
-	applies := "it applies"
+	when := "it"
 	if !set.Enabled {
-		applies = "once enabled it applies"
+		when = "once enabled it"
 	}
-	return fmt.Sprintf("The set has no destination targets, so %s to %s, from %s", applies, traffic, devices)
+	var effects []string
+	if len(ports) > 0 {
+		traffic := "EVERY connection on " + strings.Join(ports, " and ") + " that no other set matches"
+		if set.SelectsL7() {
+			traffic = "EVERY " + strings.Join(set.UDP.FilterL7, " or ") + " flow on " + strings.Join(ports, " and ")
+		}
+		devices := "the devices it allows"
+		if len(set.Targets.SourceDevices) == 0 {
+			devices = "every device"
+		}
+		effects = append(effects, fmt.Sprintf("%s applies to %s, from %s", when, traffic, devices))
+	}
+	if routed != "" {
+		effects = append(effects, fmt.Sprintf("%s routes by UDP port: UDP that its source interfaces or source devices send to ports %s goes through the upstream proxy whatever the address; it routes no TCP, and its udp.mode applies to none of that UDP", when, routed))
+	}
+	return "The set has no destination targets, so " + strings.Join(effects, ", and ")
 }
 
 func mcpCatchAllAdded(kind string, added []string) []string {
