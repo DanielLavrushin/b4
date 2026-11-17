@@ -153,11 +153,11 @@ func (s *udpSession) send(payload []byte) error {
 	return err
 }
 
-func (s *udpSession) open(relay udpRelay, reply udpReply, release func()) bool {
+func (s *udpSession) open(relay udpRelay, reply udpReply, release func()) (bool, error) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		return false
+		return false, nil
 	}
 	s.relay, s.reply, s.release = relay, reply, release
 	for len(s.queue) > 0 && !s.closed {
@@ -166,14 +166,14 @@ func (s *udpSession) open(relay udpRelay, reply udpReply, release func()) bool {
 		s.mu.Unlock()
 		for _, payload := range queued {
 			if _, err := relay.Write(payload); err != nil {
-				break
+				return true, err
 			}
 		}
 		s.mu.Lock()
 	}
 	s.ready = true
 	s.mu.Unlock()
-	return true
+	return true, nil
 }
 
 func (s *udpSession) close() {
@@ -347,13 +347,19 @@ func (l *Listener) setupUDPSession(key string, sess *udpSession, src, dst *net.U
 		sess.freeSlot()
 		return
 	}
-	if !sess.open(relay, reply, release) {
+	attached, err := sess.open(relay, reply, release)
+	if !attached {
 		relay.Close()
 		reply.Close()
 		if release != nil {
 			release()
 		}
 		sess.freeSlot()
+		return
+	}
+	if err != nil {
+		log.Tracef("tproxy: UDP relay write failed for %s on set %q: %v", dst, l.SetName, err)
+		l.closeUDPSession(key, sess)
 		return
 	}
 

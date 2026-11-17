@@ -442,6 +442,56 @@ func TestAStuckFirstWriteHoldsNeitherTheNextDatagramNorTheStop(t *testing.T) {
 	}
 }
 
+type refusingUDPRelay struct {
+	*fakeUDPRelay
+	refuses string
+}
+
+func (r *refusingUDPRelay) Write(p []byte) (int, error) {
+	if string(p) == r.refuses {
+		return 0, errors.New("connection refused")
+	}
+	return r.fakeUDPRelay.Write(p)
+}
+
+func TestAQueuedDatagramTheRelayRefusesClosesTheSessionAtOnce(t *testing.T) {
+	rig := newUDPTestRig(t, 100)
+	broken := &refusingUDPRelay{fakeUDPRelay: newFakeUDPRelay(), refuses: "b"}
+	defer broken.Close()
+	gate := make(chan struct{})
+	var dials atomic.Int64
+	udpDialUpstream = func(ctx context.Context, _ socks5.ClientConfig, dst *net.UDPAddr) (udpRelay, error) {
+		if dials.Add(1) > 1 {
+			return rig.keep(dst), nil
+		}
+		select {
+		case <-gate:
+			return broken, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	client, dst := udpTestAddr("10.0.0.5", 40000), udpTestAddr("203.0.113.2", 50001)
+	before := udpSessionsOpen.Load()
+
+	rig.send(t, client, dst, "a")
+	rig.send(t, client, dst, "b")
+	rig.send(t, client, dst, "c")
+	close(gate)
+
+	udpWaitFor(t, "the session to close the relay that refused a queued datagram: a write that fails on an open session closes it, and one that fails while the queue is sent must not leave the session open with its sockets and its slot", broken.closed)
+	udpWaitFor(t, "the closed session to give its slot back", func() bool { return udpSessionsOpen.Load() == before })
+	if got := broken.got(); !slices.Equal(got, []string{"a"}) {
+		t.Errorf("the refusing relay carried %v, want only the datagram sent before the refusal", got)
+	}
+
+	rig.send(t, client, dst, "d")
+	rig.wrote(t, dst, "d")
+	if n := dials.Load(); n != 2 {
+		t.Errorf("the upstream was dialed %d times, want 2: the next datagram of the flow opens a new session", n)
+	}
+}
+
 func TestAStoppedListenerKeepsTheSlotOfASetupStillHoldingItsSockets(t *testing.T) {
 	rig := newUDPTestRig(t, 1)
 	next := udpTestPeer(t)
