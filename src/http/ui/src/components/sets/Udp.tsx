@@ -158,9 +158,11 @@ export const UdpSettings = ({
     config.udp.mode === "drop" ||
     config.udp.mode === "reject" ||
     (!!config.routing?.enabled && config.routing.mode === "block");
+  const portRouted = udpPortRouting(config).active;
   const showLeftHint =
     !!callsSession.left &&
     !onlyCalls &&
+    !portRouted &&
     !hasDestinationTargets &&
     hasUdpPortFilter;
 
@@ -274,8 +276,6 @@ export const UdpSettings = ({
       ),
     [captures],
   );
-
-  const portRouted = udpPortRouting(config).active;
 
   const showSniWarning =
     !onlyCalls &&
