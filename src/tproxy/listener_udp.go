@@ -379,9 +379,14 @@ func (l *Listener) openUDPSession(src, dst *net.UDPAddr, v6 bool) (udpRelay, udp
 	return relay, reply, action, release, nil
 }
 
+func (l *Listener) routesUDPByPort() bool {
+	set := l.set.Load()
+	return set != nil && set.RoutesUDPByPort()
+}
+
 func (l *Listener) openUDPRelay(src, dst *net.UDPAddr) (udpRelay, string, func(), error) {
 	keys := relayKeys("udp", dst.Port, dst.IP.String())
-	if l.guard.fromUpstreamHost(src.IP) && (l.coversEverything() || l.relaying(keys)) {
+	if l.guard.fromUpstreamHost(src.IP) && (l.coversEverything() || l.routesUDPByPort() || l.relaying(keys)) {
 		l.warnUpstreamLoop("host " + src.IP.String())
 		direct, err := udpDialDirect(l.ctx, dst, l.Upstream.BypassMark)
 		if err != nil {

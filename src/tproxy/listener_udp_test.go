@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/socks5"
 )
 
@@ -481,4 +482,37 @@ func TestAStoppedListenerKeepsTheSlotOfASetupStillHoldingItsSockets(t *testing.T
 
 	next.dispatchUDP(client, fresh, []byte("c"), false)
 	rig.wrote(t, fresh, "c")
+}
+
+func TestAPortRoutedSetSendsItsUpstreamHostsOwnUDPDirect(t *testing.T) {
+	rig := newUDPTestRig(t, 100)
+	set := config.NewSetConfig()
+	set.Id = rig.l.SetID
+	set.Enabled = true
+	set.Routing.Enabled = true
+	set.Routing.Mode = config.RoutingModeProxy
+	set.Routing.Upstream.Host = rig.l.Upstream.Host
+	set.Routing.Upstream.Port = rig.l.Upstream.Port
+	set.Routing.Upstream.UDP = true
+	set.Routing.SourceInterfaces = []string{"br0"}
+	set.UDP.DPortFilter = "50000-50100"
+	if !set.RoutesUDPByPort() {
+		t.Fatal("the fixture must be a set that routes UDP by port")
+	}
+	rig.l.set.Store(&set)
+
+	upstreamHost := udpTestAddr(rig.l.Upstream.Host, 41000)
+	tunnel := udpTestAddr("198.51.100.9", 50050)
+	rig.send(t, upstreamHost, tunnel, "transport")
+	rig.wrote(t, tunnel, "transport")
+	if up, direct := rig.upstream.Load(), rig.direct.Load(); up != 0 || direct != 1 {
+		t.Fatalf("UDP the upstream's own host sends to a listed port went to the upstream %d times and direct %d times; the set covers every address on its ports, so handing it back to the upstream feeds a tunnel its own transport", up, direct)
+	}
+
+	client, call := udpTestAddr("10.0.0.5", 40000), udpTestAddr("203.0.113.1", 50060)
+	rig.send(t, client, call, "call")
+	rig.wrote(t, call, "call")
+	if up, direct := rig.upstream.Load(), rig.direct.Load(); up != 1 || direct != 1 {
+		t.Errorf("an ordinary client's UDP to a listed port: upstream dials %d, direct dials %d; it must still go through the upstream", up, direct)
+	}
 }
