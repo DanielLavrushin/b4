@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -371,6 +372,65 @@ func TestSysctlSnapshotFileFollowsTheNetworkNamespace(t *testing.T) {
 	if got != want {
 		t.Fatalf("sysctlSnapshotPath() = %q, want %q", got, want)
 	}
+}
+
+func TestUninstallKeepsAnotherNamespacesSysctlSnapshot(t *testing.T) {
+	script, err := filepath.Abs("../../installer/actions/remove.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+
+	run := func(t *testing.T, stubNetns string) (own, foreign string) {
+		dir := t.TempDir()
+		ino := "4026531992"
+		prelude := ""
+		if stubNetns == "" {
+			var st syscall.Stat_t
+			if err := syscall.Stat("/proc/self/ns/net", &st); err != nil || st.Ino == 0 {
+				t.Skipf("/proc/self/ns/net unavailable: %v", err)
+			}
+			ino = fmt.Sprint(uint64(st.Ino))
+		} else {
+			prelude = "readlink() { echo '" + stubNetns + "'; }; "
+		}
+		own = filepath.Join(dir, "b4_sysctl_snapshot."+ino+".json")
+		foreign = filepath.Join(dir, "b4_sysctl_snapshot.1.json")
+		legacy := filepath.Join(dir, "b4_sysctl_snapshot.json")
+		for _, p := range []string{own, foreign, legacy} {
+			if err := os.WriteFile(p, []byte("{}"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cmd := exec.Command("sh", "-c", prelude+`. "$1" && _remove_sysctl_snapshot "$2"`, "sh", script, dir)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("_remove_sysctl_snapshot: %v\n%s", err, out)
+		}
+		if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+			t.Errorf("legacy snapshot %s was left behind", legacy)
+		}
+		return own, foreign
+	}
+
+	check := func(t *testing.T, own, foreign string) {
+		if _, err := os.Stat(own); !os.IsNotExist(err) {
+			t.Errorf("this namespace's snapshot %s was left behind", own)
+		}
+		if _, err := os.Stat(foreign); err != nil {
+			t.Errorf("another namespace's snapshot %s was removed; that b4 can no longer restore its sysctls: %v", foreign, err)
+		}
+	}
+
+	t.Run("stubbed netns", func(t *testing.T) {
+		own, foreign := run(t, "net:[4026531992]")
+		check(t, own, foreign)
+	})
+	t.Run("real netns", func(t *testing.T) {
+		own, foreign := run(t, "")
+		check(t, own, foreign)
+	})
 }
 
 func TestAClearWithNoSavedSysctlLeavesIt(t *testing.T) {
