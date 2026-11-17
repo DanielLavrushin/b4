@@ -1460,17 +1460,26 @@ func (ipt *IPTablesManager) clearB4JumpRules() {
 	}
 }
 
+func multiportSlots(port string) int {
+	if strings.ContainsAny(port, ":-") {
+		return 2
+	}
+	return 1
+}
+
 func chunkPorts(ports []string, maxSize int) [][]string {
-	if len(ports) <= maxSize {
+	if len(ports) == 0 {
 		return [][]string{ports}
 	}
 	var chunks [][]string
-	for i := 0; i < len(ports); i += maxSize {
-		end := i + maxSize
-		if end > len(ports) {
-			end = len(ports)
+	start, used := 0, 0
+	for i, port := range ports {
+		cost := multiportSlots(port)
+		if used+cost > maxSize && i > start {
+			chunks = append(chunks, ports[start:i])
+			start, used = i, 0
 		}
-		chunks = append(chunks, ports[i:end])
+		used += cost
 	}
-	return chunks
+	return append(chunks, ports[start:])
 }

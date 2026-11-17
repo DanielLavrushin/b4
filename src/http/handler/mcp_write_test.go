@@ -1801,6 +1801,37 @@ func TestMCPWriteWarnsWhenAPortFilterMakesASetMatchEveryConnection(t *testing.T)
 	}
 }
 
+func TestMCPWriteSaysAPortFilterOnAPortRoutedSetGoesThroughTheUpstream(t *testing.T) {
+	cfg := writableCfg(t)
+	routed := config.NewSetConfig()
+	routed.Id, routed.Name, routed.Enabled = "set-routed", "routed", true
+	routed.Routing.Enabled = true
+	routed.Routing.Mode = config.RoutingModeProxy
+	routed.Routing.Upstream.Host = "127.0.0.1"
+	routed.Routing.Upstream.Port = 1080
+	routed.Routing.Upstream.UDP = true
+	routed.Routing.SourceInterfaces = []string{"br0"}
+	cfg.Sets = append(cfg.Sets, &routed)
+	srv := newMCPTestServer(t, cfg)
+	session, ctx := connectMCP(t, srv)
+
+	out := decodeSetValue(t, callSetValue(t, session, ctx, "sets[routed].udp.dport_filter", "50000-50100"))
+	if !out.Changed {
+		t.Fatalf("write did not take: %+v", out)
+	}
+	if strings.Contains(out.Note, "EVERY connection") {
+		t.Errorf("a set that routes UDP by port is never matched by those ports in the packet queue, so the note must not say it applies to every connection on them: %q", out.Note)
+	}
+	if !strings.Contains(out.Note, "routes by UDP port") || !strings.Contains(out.Note, "ports 50000-50100 goes through the upstream proxy") {
+		t.Errorf("the note must say the ports now go through the upstream: %q", out.Note)
+	}
+
+	out = decodeSetValue(t, callSetValue(t, session, ctx, "sets[routed].tcp.dport_filter", "5222"))
+	if !strings.Contains(out.Note, "EVERY connection on TCP 5222") || strings.Contains(out.Note, "UDP 50000-50100 that no other set matches") {
+		t.Errorf("a TCP port filter on that set is still matched by port, and its UDP ports are still routed: %q", out.Note)
+	}
+}
+
 func TestMCPWriteRefusesWideningAnUnauthenticatedLoopbackSocks5(t *testing.T) {
 	loopback := func(t *testing.T) *config.Config {
 		cfg := writableCfg(t)

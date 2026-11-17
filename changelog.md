@@ -4,20 +4,26 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+## [1.92.0] - 2026-11-17
+
 ### Added
 
 - **Public address** and **Public port** under **Settings, Telegram** set the address in the share links of **MTProto Proxy** secrets for a proxy behind a reverse proxy or a port forward, in place of the bind address and the listener port.
+- A set with **Upstream SOCKS5 proxy** routing and no targets can send UDP through the proxy by port alone: list the ports in **Port Filter** on its **UDP** tab, turn on **Route UDP through upstream** and choose **Source Interfaces** or source devices. A set already set up this way starts routing after the update.
 - **Discovery** has a **Note** field for why a search was run, kept with its results and in the history, and shows the addresses each site was probed at, which ones it loaded from, and their ASN on request.
 - **Telegram over WebSocket** falls back to the **DC Relay** set under **Telegram upstream (shared)** when its WebSocket routes and the Cloudflare Worker do not answer within two seconds. [#497](https://github.com/DanielLavrushin/b4/issues/497)
 
 ### Changed
 
 - The share dialog of an **MTProto Proxy** secret has a **Port** field, applies a port typed as `host:port`, and opens on **Internet** when the proxy listens only on a loopback address.
+- UDP through an upstream proxy is limited to as many sessions as the router's open-file limit leaves room for: above it, new UDP sessions are dropped until old ones close.
 
 ### Fixed
 
 - With **Device Filtering** on, a connection the router opened itself, such as one through b4's SOCKS5 server, to an address of a proxy set enabled after b4 started could stall or be reset until b4 restarted. [#599](https://github.com/DanielLavrushin/b4/issues/599)
 - In an imported zapret configuration, a skipped profile (`--skip`) took the **Shared domains**, passed its UDP settings to a set that stayed on, or pulled a working UDP profile into a disabled set, and a profile with `--filter-l7=wireguard` or `dht` got TCP settings such as **Packet Duplication**. [#586](https://github.com/DanielLavrushin/b4/issues/586), [#587](https://github.com/DanielLavrushin/b4/issues/587)
+- With **Route UDP through upstream** on, UDP already flowing through the proxy, such as a call, froze while a new connection waited for a proxy that did not answer.
+- On routers that use iptables, **Port Filter** lists with eight or more port ranges across the sets kept b4's capture rules from installing.
 
 ## [1.91.1] - 2026-11-15
 

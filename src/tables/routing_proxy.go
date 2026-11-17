@@ -325,6 +325,9 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	if st.table <= 0 {
 		return fmt.Errorf("no free routing table for transparent proxying")
 	}
+	if st.udpPorts != "" && len(sources) == 0 && !routeSetDeviceGate(cfg, set).isWhitelist() {
+		return fmt.Errorf("the set routes UDP by port, yet no source interface and no source device limits it; without one its rule would take replies and connections that come in from the uplink, so nothing is installed")
+	}
 	if be.name() == backendNFTables {
 		proxyNftPreflight()
 		deleteNftRulesContaining(routeNftOutput, "@"+st.setV4)
@@ -385,10 +388,11 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	legacy := isLegacyIptBackend(be)
 
 	udp := set.Routing.Upstream.UDP
+	byAddress := st.udpPorts == ""
 
 	switch be.name() {
 	case backendNFTables:
-		if cfg.Queue.IPv4Enabled {
+		if byAddress && cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleNft(st.chainPre, false, st.setV4, st.mark)
 			addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "tcp")
 			if st.quicReject {
@@ -398,7 +402,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 				addProxyTProxyRuleNft(st.chainPre, false, st.setV4, st.mark, port, sources, "udp")
 			}
 		}
-		if cfg.Queue.IPv6Enabled {
+		if byAddress && cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleNft(st.chainPre, true, st.setV6, st.mark)
 			addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "tcp")
 			if st.quicReject {
@@ -408,12 +412,12 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 				addProxyTProxyRuleNft(st.chainPre, true, st.setV6, st.mark, port, sources, "udp")
 			}
 		}
-		if !sourceScoped {
+		if byAddress && !sourceScoped {
 			addProxyOutputMarkRulesNft(cfg, st)
 		}
 	default:
 		proxyIptPreflight(legacy)
-		if cfg.Queue.IPv4Enabled {
+		if byAddress && cfg.Queue.IPv4Enabled {
 			addProxyDivertRuleIpt(false, st.chainPre, st.setV4, st.mark, legacy)
 			addProxyTProxyRuleIpt(false, st.chainPre, st.setV4, st.mark, port, sources, legacy, "tcp")
 			if st.quicReject {
@@ -426,7 +430,7 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 				addProxyOutputMarkRuleIpt(false, st.chainOut, st.setV4, st.mark, legacy)
 			}
 		}
-		if cfg.Queue.IPv6Enabled {
+		if byAddress && cfg.Queue.IPv6Enabled {
 			addProxyDivertRuleIpt(true, st.chainPre, st.setV6, st.mark, legacy)
 			addProxyTProxyRuleIpt(true, st.chainPre, st.setV6, st.mark, port, sources, legacy, "tcp")
 			if st.quicReject {
@@ -441,6 +445,10 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 		}
 	}
 
+	if err := addProxyUDPPortRules(be, cfg, st, port, sources); err != nil {
+		return err
+	}
+
 	if routeWantsOutputJump(st) {
 		be.ensureJumpRule("OUTPUT", st.chainOut, true, true)
 	} else {
@@ -451,6 +459,10 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 
 	if sourceScoped {
 		log.Infof("Routing [%s]: set '%s' is limited to source devices or interfaces, so traffic the router itself originates keeps using the normal route", be.name(), set.Name)
+	}
+	if st.udpPorts != "" {
+		log.Infof("Routing [%s]: set '%s' has no destination target and routes by UDP port: the UDP its source devices or interfaces send to ports %s goes through the upstream whatever the address, %s",
+			be.name(), set.Name, st.udpPorts, proxyUDPPortFamilies(cfg))
 	}
 
 	if st.quicReject {

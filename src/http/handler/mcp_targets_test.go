@@ -695,6 +695,22 @@ func TestMCPEditTargetsWarnsWhenAPortScopedSetLosesItsLastTarget(t *testing.T) {
 			reject: []string{"matches 0 domains", "from every device"},
 		},
 		{
+			name: "set that routes UDP by port",
+			prepare: func(c *config.Config) {
+				s := c.Sets[0]
+				s.Targets = config.TargetsConfig{IPs: []string{"10.0.0.0/8"}, SourceDevices: []string{"AA:BB:CC:DD:EE:FF"}}
+				s.UDP.DPortFilter = "50000-50100"
+				s.Routing.Enabled = true
+				s.Routing.Mode = config.RoutingModeProxy
+				s.Routing.Upstream.Host = "127.0.0.1"
+				s.Routing.Upstream.Port = 1080
+				s.Routing.Upstream.UDP = true
+			},
+			args:   map[string]any{"set": "video", "kind": "ip", "remove": "10.0.0.0/8"},
+			want:   []string{"routes by UDP port", "ports 50000-50100 goes through the upstream proxy"},
+			reject: []string{"EVERY connection", "matches 0 domains"},
+		},
+		{
 			name:    "disabled set",
 			prepare: func(c *config.Config) { c.Sets[1].TCP.DPortFilter = "5222" },
 			args:    map[string]any{"set": "disabled-set", "kind": "sni_domains", "remove": "example.org"},

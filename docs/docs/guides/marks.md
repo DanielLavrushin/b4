@@ -386,6 +386,13 @@ refusal rejects it; on iptables that accept also skips every later rule in mangl
 [sets routed through an interface](#sets-routed-through-an-interface). iptables writes the
 mark under the mask `0x1027fff`; nftables writes the whole mark.
 
+A set that routes [UDP by port](../sets/routing.md#udp-by-port) has no destinations. After
+the same returns, its `b4r_<set>_pre` hands UDP to the set's ports to TPROXY with the set's
+mark, only in a connection's original direction, and for a set limited to source interfaces
+only when the packet arrives on them. The chain takes no TCP, and the set has no QUIC
+refusal. b4 installs the rule only for a set limited to source interfaces or to included
+source devices.
+
 The router's own connections reach a proxy set by a loop, unless the set is limited to
 source devices or source interfaces. `b4r_<set>_out` marks their TCP packets in the original
 direction with the set's mark plus bit `0x1000000`, the priority 3 rule sends them to `lo`,

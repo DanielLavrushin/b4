@@ -43,6 +43,25 @@ A set in **Upstream SOCKS5 proxy** mode hands the connections of its sites to a 
 
 Without a `[proxy]` line the connection was not diverted, usually because its address was not in the set. A single address is the clearer test, since a full web page loads parts from other hosts.
 
+## Routing UDP by port {#udp-by-port}
+
+A set without sites can send UDP through the proxy by destination port alone, for games, calls and other applications whose servers have no fixed addresses. The proxy has to carry UDP, see [Requirements](#requirements).
+
+1. Click **Create Set** and leave the **Targets** tab without domains, IP addresses, GeoSite and GeoIP categories and ASNs.
+2. On the **UDP** tab, enter the ports in **Port Filter**, such as `50000-50100`.
+3. Open **DNS & Routing**, then **Traffic Routing**, and fill in the proxy as in steps 3 to 6 of [Setup](#setup).
+4. Turn on **Route UDP through upstream**.
+5. Select the LAN bridge in **Source Interfaces**, or add the devices under **Targets > Source Devices**.
+6. Click **Create Set**.
+
+The **Traffic Routing** sub-tab then names the ports the set routes. UDP the set takes ends with `[proxy]` on the **Logs** page:
+
+```text
+UDP 192.168.1.37:48769 → 203.0.113.20:50004 sni-set=Games mac=02:1A:2B:3C:4D:5E [proxy]
+```
+
+The set leaves TCP, port 53 and the router's own UDP alone. See [UDP by port](../sets/routing.md#udp-by-port).
+
 ## Falling back to direct
 
 **Fall back to direct on upstream failure** connects directly while the proxy cannot be reached. The sites keep opening, without the proxy, and the provider sees where the connections go. Off, the default, suits whitelist-based blocking, where a direct connection cannot work anyway, and setups where a failure has to be visible.
@@ -64,4 +83,4 @@ The cause is on the proxy's side: it is not running, it listens on another port,
 - **UDP or QUIC does not work.** With **Route UDP through upstream** on and a proxy without UDP support, the set's UDP is dropped, and the log names the set. Tor's SOCKS port has no UDP support either. Off, b4 refuses the set's QUIC, and browsers use TCP through the proxy.
 - **Video is slow through the proxy.** With **Route UDP through upstream** on, QUIC goes through the proxy too, and a proxy that carries UDP slowly, such as one behind a TCP-only VPN, slows video down. **Block QUIC (force TCP)** on the set's [UDP](../sets/udp.md#blocking-quic) tab makes browsers use TCP. The set's other UDP, such as WebRTC, still goes through the proxy. With the option off, QUIC is refused as well, but the set's other UDP leaves directly, and WebRTC can show the router's public address.
 - **Some connections bypass the proxy over IPv6.** While **Enable IPv6 Support** is off, b4 handles only IPv4, and the dashboard shows **IPv6 traffic skips all sets**.
-- **The proxy runs on another device and the set covers its server.** b4 recognises the proxy's own connections on the router by its process. On another device it recognises them only for a set that targets `0.0.0.0/0` or `::/0`, or while a connection to the same destination is relayed through the proxy. Excluding that device under **Targets > Source Devices** keeps its traffic out of the set.
+- **The proxy runs on another device and the set covers its server.** b4 recognises the proxy's own connections on the router by its process. On another device it recognises them only for a set that targets `0.0.0.0/0` or `::/0` or routes UDP by port, or while a connection to the same destination is relayed through the proxy. Excluding that device under **Targets > Source Devices** keeps its traffic out of the set.

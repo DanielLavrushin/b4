@@ -107,6 +107,7 @@ export const RoutingSettings = ({
 
       <B4TabPanel value={activeTab} index={ROUTING_TABS.ROUTING} idPrefix="routing-tab">
         <TrafficRouting
+          ipv6={ipv6}
           config={set}
           availableIfaces={availableIfaces}
           ifaceDetails={ifaceDetails}

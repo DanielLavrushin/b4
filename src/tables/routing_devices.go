@@ -633,11 +633,16 @@ var routeNoDestinationWarned sync.Map
 
 func routeWarnNoDestination(set *config.SetConfig) {
 	scope := "no domain or IP target"
+	effect := "so there is no destination to steer and no rule is installed"
 	advice := "add a destination, or turn on 'Match any IP address' under Targets to send everything from those devices"
 	switch {
 	case set.DeclaresDestinationTargets():
 		scope = "targets that resolve to no domain or address yet (an ASN whose prefixes are not fetched yet, a GeoIP or GeoSite category missing from its file, or IPs all filtered out by the IP version)"
 		advice = "its rules are installed once they resolve"
+	case set.WantsUDPPortRouting():
+		scope = "UDP ports to send through the upstream but no source interface and no included source device"
+		effect = "so no rule is installed"
+		advice = "choose Source Interfaces, such as the LAN bridge, or source devices: a rule that matches by port alone would otherwise also take replies and connections that come in from the uplink"
 	case routeSetIsSourceScoped(set):
 		scope = "source devices selected but no domain or IP target"
 	}
@@ -645,7 +650,7 @@ func routeWarnNoDestination(set *config.SetConfig) {
 		return
 	}
 	routeNoDestinationWarned.Store(set.Id, scope)
-	log.Warnf("Routing: set '%s' has %s, so there is no destination to steer and no rule is installed; %s", set.Name, scope, advice)
+	log.Warnf("Routing: set '%s' has %s, %s; %s", set.Name, scope, effect, advice)
 }
 
 func routeForgetNoDestinationWarning(setID string) {

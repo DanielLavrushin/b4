@@ -22,6 +22,7 @@ import {
   UDP_FAKE_PAYLOAD_PRESET_2,
 } from "@models/config";
 import { useCaptures } from "@b4.capture";
+import { udpPortRouting } from "./routing/portRouting";
 import { useTranslation, Trans } from "react-i18next";
 import {
   CallsSession,
@@ -157,9 +158,11 @@ export const UdpSettings = ({
     config.udp.mode === "drop" ||
     config.udp.mode === "reject" ||
     (!!config.routing?.enabled && config.routing.mode === "block");
+  const portRouted = udpPortRouting(config).active;
   const showLeftHint =
     !!callsSession.left &&
     !onlyCalls &&
+    !portRouted &&
     !hasDestinationTargets &&
     hasUdpPortFilter;
 
@@ -276,6 +279,7 @@ export const UdpSettings = ({
 
   const showSniWarning =
     !onlyCalls &&
+    !portRouted &&
     !isPassthrough &&
     config.udp.filter_quic === "sni" &&
     !hasDomainsConfigured &&
@@ -288,7 +292,10 @@ export const UdpSettings = ({
       icon={<DnsIcon />}
     >
       <Grid container spacing={3}>
-        {!onlyCalls && (
+        {portRouted && (
+          <B4Alert severity="info">{t("sets.udp.portRoutedInfo")}</B4Alert>
+        )}
+        {!onlyCalls && !portRouted && (
           <>
             <B4FormHeader label={t("sets.udp.blockHeader")} />
 
@@ -312,7 +319,7 @@ export const UdpSettings = ({
 
         <B4FormHeader label={t("sets.udp.trafficHeader")} />
 
-        {!onlyCalls && (
+        {!onlyCalls && !portRouted && (
           <Grid size={{ xs: 12, md: 6 }}>
             <B4Select
               label={t("sets.udp.quicFilter")}
@@ -338,7 +345,9 @@ export const UdpSettings = ({
             helperText={t(
               onlyCalls
                 ? "sets.udp.portFilterCallsHelper"
-                : "sets.udp.portFilterHelper",
+                : portRouted
+                  ? "sets.udp.portFilterRoutedHelper"
+                  : "sets.udp.portFilterHelper",
             )}
           />
         </Grid>
@@ -349,15 +358,19 @@ export const UdpSettings = ({
           />
         )}
 
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Select
-            label={t("sets.udp.calls")}
-            value={calls}
-            options={UDP_CALLS}
-            onChange={(e) => changeCalls(String(e.target.value))}
-            helperText={UDP_CALLS.find((o) => o.value === calls)?.description}
-          />
-        </Grid>
+        {!portRouted && (
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4Select
+              label={t("sets.udp.calls")}
+              value={calls}
+              options={UDP_CALLS}
+              onChange={(e) => changeCalls(String(e.target.value))}
+              helperText={
+                UDP_CALLS.find((o) => o.value === calls)?.description
+              }
+            />
+          </Grid>
+        )}
         <Grid
           size={{ xs: 12, md: 6 }}
           sx={{ display: { xs: onlyCalls ? "block" : "none", md: "block" } }}
@@ -428,153 +441,157 @@ export const UdpSettings = ({
           </B4Alert>
         )}
 
-        <B4FormHeader label={t("sets.udp.actionHeader")} />
-
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Select
-            label={t("sets.udp.actionMode")}
-            value={config.udp.mode}
-            options={UDP_MODES}
-            path="udp.mode"
-            onChange={(e) => onChange("udp.mode", e.target.value)}
-            helperText={
-              UDP_MODES.find((o) => o.value === config.udp.mode)?.description
-            }
-          />
-        </Grid>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4Hint>
-            {(() => {
-              const infoKeys: Record<UdpMode, string> = {
-                off: "sets.udp.offModeInfo",
-                fake: "sets.udp.fakeModeInfo",
-                reject: "sets.udp.rejectModeInfo",
-                drop: "sets.udp.dropModeInfo",
-                coalesce: "sets.udp.coalesceModeInfo",
-              };
-              return (
-                <Trans i18nKey={infoKeys[config.udp.mode] || infoKeys.fake} />
-              );
-            })()}
-          </B4Hint>
-        </Grid>
-
-        {isPassthrough && (
-          <B4Alert>
-            <Trans i18nKey="sets.udp.noProcessingWarning" />
-          </B4Alert>
-        )}
-
-        {showFakeSettings && (
+        {!portRouted && (
           <>
-            <B4FormHeader label={t("sets.udp.fakeHeader")} />
-
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Slider
-                label={t("sets.udp.fakeCount")}
-                value={config.udp.fake_seq_length}
-                path="udp.fake_seq_length"
-                onChange={(value) => onChange("udp.fake_seq_length", value)}
-                min={1}
-                max={20}
-                step={1}
-                helperText={t("sets.udp.fakeCountHelper")}
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Slider
-                label={t("sets.udp.fakeSize")}
-                value={config.udp.fake_len}
-                path="udp.fake_len"
-                onChange={(value) => onChange("udp.fake_len", value)}
-                min={32}
-                max={1500}
-                step={8}
-                valueSuffix={t("core.units.bytes")}
-                helperText={t("sets.udp.fakeSizeHelper")}
-              />
-            </Grid>
+            <B4FormHeader label={t("sets.udp.actionHeader")} />
 
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Select
-                value={config.udp.fake_payload_file ?? ""}
-                path="udp.fake_payload_file"
-                options={[
-                  {
-                    value: "",
-                    label: t("sets.udp.fakePayloadFileNone"),
-                  },
-                  {
-                    value: UDP_FAKE_PAYLOAD_AUTO_QUIC,
-                    label: t("sets.udp.fakePayloadFileAutoQuicOption"),
-                  },
-                  {
-                    value: UDP_FAKE_PAYLOAD_AUTO_STUN,
-                    label: t("sets.udp.fakePayloadFileAutoStunOption"),
-                  },
-                  {
-                    value: UDP_FAKE_PAYLOAD_PRESET_1,
-                    label: t("sets.udp.fakePayloadFilePreset1"),
-                  },
-                  {
-                    value: UDP_FAKE_PAYLOAD_PRESET_2,
-                    label: t("sets.udp.fakePayloadFilePreset2"),
-                  },
-                  ...sortedCaptures.map((c) => ({
-                    value: c.filepath,
-                    label: `[${c.protocol}] ${c.domain} (${c.size} bytes)`,
-                  })),
-                ]}
-                onChange={(e) =>
-                  onChange("udp.fake_payload_file", e.target.value)
+                label={t("sets.udp.actionMode")}
+                value={config.udp.mode}
+                options={UDP_MODES}
+                path="udp.mode"
+                onChange={(e) => onChange("udp.mode", e.target.value)}
+                helperText={
+                  UDP_MODES.find((o) => o.value === config.udp.mode)?.description
                 }
-                helperText={t(payloadFileHelperKey)}
               />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
               <B4Hint>
-                <Link to="/settings/payloads">
-                  {t("sets.udp.fakePayloadManage")}
-                </Link>
+                {(() => {
+                  const infoKeys: Record<UdpMode, string> = {
+                    off: "sets.udp.offModeInfo",
+                    fake: "sets.udp.fakeModeInfo",
+                    reject: "sets.udp.rejectModeInfo",
+                    drop: "sets.udp.dropModeInfo",
+                    coalesce: "sets.udp.coalesceModeInfo",
+                  };
+                  return (
+                    <Trans i18nKey={infoKeys[config.udp.mode] || infoKeys.fake} />
+                  );
+                })()}
               </B4Hint>
             </Grid>
 
-            <B4FormHeader label={t("sets.udp.evasionHeader")} />
+            {isPassthrough && (
+              <B4Alert>
+                <Trans i18nKey="sets.udp.noProcessingWarning" />
+              </B4Alert>
+            )}
 
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Select
-                label={t("sets.udp.evasionTechnique")}
-                value={config.udp.faking_strategy}
-                options={UDP_FAKING_STRATEGIES}
-                path="udp.faking_strategy"
-                onChange={(e) =>
-                  onChange("udp.faking_strategy", e.target.value)
-                }
-                helperText={
-                  UDP_FAKING_STRATEGIES.find(
-                    (o) => o.value === config.udp.faking_strategy,
-                  )?.description
-                }
-              />
-            </Grid>
+            {showFakeSettings && (
+              <>
+                <B4FormHeader label={t("sets.udp.fakeHeader")} />
 
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4RangeSlider
-                path="udp.seg2delay"
-                value={[
-                  config.udp.seg2delay,
-                  config.udp.seg2delay_max || config.udp.seg2delay,
-                ]}
-                onChange={(value: [number, number]) => {
-                  onChange("udp.seg2delay", value[0]);
-                  onChange("udp.seg2delay_max", value[1]);
-                }}
-                min={0}
-                max={1000}
-                step={10}
-                valueSuffix={t("core.units.ms")}
-                helperText={t("sets.udp.seg2delayHelper")}
-              />
-            </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <B4Slider
+                    label={t("sets.udp.fakeCount")}
+                    value={config.udp.fake_seq_length}
+                    path="udp.fake_seq_length"
+                    onChange={(value) => onChange("udp.fake_seq_length", value)}
+                    min={1}
+                    max={20}
+                    step={1}
+                    helperText={t("sets.udp.fakeCountHelper")}
+                  />
+                </Grid>
+
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <B4Slider
+                    label={t("sets.udp.fakeSize")}
+                    value={config.udp.fake_len}
+                    path="udp.fake_len"
+                    onChange={(value) => onChange("udp.fake_len", value)}
+                    min={32}
+                    max={1500}
+                    step={8}
+                    valueSuffix={t("core.units.bytes")}
+                    helperText={t("sets.udp.fakeSizeHelper")}
+                  />
+                </Grid>
+
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <B4Select
+                    value={config.udp.fake_payload_file ?? ""}
+                    path="udp.fake_payload_file"
+                    options={[
+                      {
+                        value: "",
+                        label: t("sets.udp.fakePayloadFileNone"),
+                      },
+                      {
+                        value: UDP_FAKE_PAYLOAD_AUTO_QUIC,
+                        label: t("sets.udp.fakePayloadFileAutoQuicOption"),
+                      },
+                      {
+                        value: UDP_FAKE_PAYLOAD_AUTO_STUN,
+                        label: t("sets.udp.fakePayloadFileAutoStunOption"),
+                      },
+                      {
+                        value: UDP_FAKE_PAYLOAD_PRESET_1,
+                        label: t("sets.udp.fakePayloadFilePreset1"),
+                      },
+                      {
+                        value: UDP_FAKE_PAYLOAD_PRESET_2,
+                        label: t("sets.udp.fakePayloadFilePreset2"),
+                      },
+                      ...sortedCaptures.map((c) => ({
+                        value: c.filepath,
+                        label: `[${c.protocol}] ${c.domain} (${c.size} bytes)`,
+                      })),
+                    ]}
+                    onChange={(e) =>
+                      onChange("udp.fake_payload_file", e.target.value)
+                    }
+                    helperText={t(payloadFileHelperKey)}
+                  />
+                  <B4Hint>
+                    <Link to="/settings/payloads">
+                      {t("sets.udp.fakePayloadManage")}
+                    </Link>
+                  </B4Hint>
+                </Grid>
+
+                <B4FormHeader label={t("sets.udp.evasionHeader")} />
+
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <B4Select
+                    label={t("sets.udp.evasionTechnique")}
+                    value={config.udp.faking_strategy}
+                    options={UDP_FAKING_STRATEGIES}
+                    path="udp.faking_strategy"
+                    onChange={(e) =>
+                      onChange("udp.faking_strategy", e.target.value)
+                    }
+                    helperText={
+                      UDP_FAKING_STRATEGIES.find(
+                        (o) => o.value === config.udp.faking_strategy,
+                      )?.description
+                    }
+                  />
+                </Grid>
+
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <B4RangeSlider
+                    path="udp.seg2delay"
+                    value={[
+                      config.udp.seg2delay,
+                      config.udp.seg2delay_max || config.udp.seg2delay,
+                    ]}
+                    onChange={(value: [number, number]) => {
+                      onChange("udp.seg2delay", value[0]);
+                      onChange("udp.seg2delay_max", value[1]);
+                    }}
+                    min={0}
+                    max={1000}
+                    step={10}
+                    valueSuffix={t("core.units.ms")}
+                    helperText={t("sets.udp.seg2delayHelper")}
+                  />
+                </Grid>
+              </>
+            )}
           </>
         )}
       </Grid>
