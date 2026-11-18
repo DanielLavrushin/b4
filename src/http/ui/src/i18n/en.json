@@ -1853,6 +1853,11 @@
         "wssizeTun": "The TUN engine does not apply this option; it works with the NFQUEUE engine only.",
         "wssizeDomainOnly": "Domain-only matching is on, so the rewrite applies only to the IP, GeoIP and ASN targets the set lists, and it lists none. The rewrite starts on the first packet, before the domain name is visible.",
         "wssizeIdle": "Nothing is rewritten until Window is set or the Window Scale option is changed.",
+        "wssizeReuse": "Reuse WSSIZE connection",
+        "wssizeReuseDesc": "Warm a server tuple, then relay client TLS unchanged. TCP/443, NFQUEUE and IP/GeoIP/ASN targets only; no domain or TLS filters. Requires TLS SNI and a server with /generate_204. Not used by Discovery or shared through Hub.",
+        "wssizeReuseAge": "Warm validity (seconds)",
+        "wssizeReuseAgeDesc": "Default 300. Rewarm before reusing a free tuple after this age. Active connections are never interrupted.",
+        "wssizeReuseAlert": "The small window and this set's TCP strategy apply only to the warm connection. Client TLS uses a new connection with its normal Window Scale; b4 chooses the backend source port. Requires TPROXY; QUIC is not relayed.",
         "ibdAction": "Detected IP action",
         "ibdBlock": "Block detected IPs",
         "ibdBlockNote": "Refuse detected blocked destinations using the existing block detection rules.",
@@ -4113,6 +4118,7 @@
     "wssize_unsupported": "Set \"{{set}}\": Real TCP window (wssize) does not work together with traffic routing or packet duplication in the same set.",
     "wssize_window_range": "Set \"{{set}}\": Window under Real TCP window (wssize) must be between {{min}} and {{max}}.",
     "wssize_scale_range": "Set \"{{set}}\": Window Scale under Real TCP window (wssize) must be between {{min}} and {{max}}.",
+    "wssize_reuse_unsupported": "WSSIZE reuse needs NFQUEUE, firewall setup, a nonzero real window and IP/GeoIP/ASN targets on TCP/443, without domain/TLS filters, routing, duplication or escalation.",
     "invalid_enum": "Select one of the supported values."
   },
   "hub": {

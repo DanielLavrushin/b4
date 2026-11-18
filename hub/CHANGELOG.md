@@ -2,11 +2,13 @@
 
 All notable changes to the b4hub community hub service are recorded in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Releases are published from the `b4hub` repository; the router changelog is `changelog.md` at the repository root.
 
-## [1.9.1] - 2026-11-16
+## [1.9.1] - 2026-11-15
 
 ### Changed
 
 - The console classifies **Use collected IPs** as a local router setting that is never shared through the hub.
+
+- WSSIZE connection reuse settings stay local to the router and do not cross the hub.
 
 ## [1.9.0] - 2026-11-15
 
@@ -98,6 +100,7 @@ All notable changes to the b4hub community hub service are recorded in this file
 
 - b4hub is versioned and released on its own from the `b4hub` repository, and the binary reports the b4 source tree it was built from.
 
+[1.9.1]: https://github.com/DanielLavrushin/b4hub/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.6.0...v1.7.0
@@ -108,5 +111,3 @@ All notable changes to the b4hub community hub service are recorded in this file
 [1.2.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/DanielLavrushin/b4hub/releases/tag/v1.0.0
-
-[1.9.1]: https://github.com/DanielLavrushin/b4hub/compare/v1.9.0...v1.9.1

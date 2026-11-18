@@ -259,6 +259,14 @@ func (b *routeIptBackend) addClaimedBypassRule(chain string, own uint32) {
 }
 
 func (b *routeIptBackend) addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool {
+	return b.addRouterTrafficGuardForPort(chain, v6, setName, mark, 0)
+}
+
+func (b *routeIptBackend) addRouterTrafficGuardForPort(chain string, v6 bool, setName string, mark uint32, port int) bool {
+	var ports []int
+	if port > 0 {
+		ports = []int{port}
+	}
 	cmd := b.iptFor(v6)
 	if !hasBinary(cmd) {
 		return false
@@ -272,6 +280,10 @@ func (b *routeIptBackend) addRouterTrafficGuard(chain string, v6 bool, setName s
 		"--hashlimit-burst", fmt.Sprintf("%d", routeRouterTrafficRate*2),
 		"--hashlimit-name", name,
 		"-j", "RETURN"}
+
+	if len(ports) > 0 {
+		args = append(args[:6], append(append([]string{"-p", "tcp"}, proxyIptPorts(ports)...), args[6:]...)...)
+	}
 
 	if _, err := run(args...); err == nil {
 		return true

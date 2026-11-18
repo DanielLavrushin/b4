@@ -710,6 +710,7 @@ func (c *Config) Validate() error {
 	c.LoadCapturePayloads()
 	c.BuildTCPPortMap()
 	c.BuildSetPortRanges()
+	c.validateWSReuse(v)
 
 	return v.result()
 }

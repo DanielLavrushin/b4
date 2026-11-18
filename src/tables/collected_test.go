@@ -60,6 +60,27 @@ func TestCollectedKernelUnionAndEmpty(t *testing.T) {
 	}
 }
 
+func TestCollectedReuseGuardScopesPort443BeforeProtocolOptions(t *testing.T) {
+	old := run
+	t.Cleanup(func() { run = old })
+	var calls []string
+	run = func(args ...string) (string, error) { calls = append(calls, strings.Join(args, " ")); return "", nil }
+	cfg := familyTestConfig(true, false)
+	set := staticTestSet(config.RoutingModeWSReuse, nil)
+	set.Targets.UseCollectedIPs = true
+	st := routeState{mode: config.RoutingModeWSReuse, mark: 0x7133, ipv4: true, setV4: "b4r_collect_v4", chainPre: "b4r_collect_pre"}
+	if err := routeCollectedGuard(&routeIptBackend{}, cfg, set, st, st.chainPre, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range calls {
+		port := strings.Index(call, "--dport 443")
+		proto := strings.Index(call, "-p tcp")
+		if port < 0 || proto < 0 || proto > port || strings.Count(call, "-p tcp") != 1 {
+			t.Fatalf("unscoped or invalid reuse rule: %s", call)
+		}
+	}
+}
+
 func TestCollectedGuardMonitorDetectsMissingProtection(t *testing.T) {
 	staticResetGlobals(t)
 	cfg := familyTestConfig(true, false)

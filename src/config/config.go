@@ -39,6 +39,7 @@ var DefaultSetConfig = SetConfig{
 	},
 
 	TCP: TCPConfig{
+		WSSizeReuse:    WSSizeReuseConfig{MaxAgeSeconds: 300},
 		ConnBytesLimit: 19,
 		Seg2Delay:      0,
 		SynFake:        false,

@@ -647,8 +647,10 @@ func replaceStrategy(dst, strategy *config.SetConfig) {
 	dst.DNS.Pins, dst.DNS.Strict, dst.DNS.StripECH = pins, strict, stripECH
 	dst.DNS.Upstreams = upstreams
 
-	dst.Targets.TLSVersion = strategy.Targets.TLSVersion
-	dst.Targets.IPVersion = strategy.Targets.IPVersion
+	if !dst.ReusesWSSize() {
+		dst.Targets.TLSVersion = strategy.Targets.TLSVersion
+		dst.Targets.IPVersion = strategy.Targets.IPVersion
+	}
 }
 
 var (

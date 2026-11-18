@@ -78,6 +78,7 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 				}
 				base = append(base, field, "daddr", "@"+family.name+"c")
 				if proxy {
+					base = append(base, proxyNftPorts(proxyModePorts(st.mode))...)
 					args := append(append([]string{}, base...), "meta", "l4proto", "tcp", "tcp", "flags", "&", "(syn|ack)", "==", "syn", "ct", "state", "new", "ct", "mark", "set", "ct", "mark", "&", fmt.Sprintf("0x%x", ^routeSetMarkMask), "or", fmt.Sprintf("0x%x", st.mark))
 					if err := emit(args); err != nil {
 						return err
@@ -109,7 +110,15 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 				}
 				base = append(base, "-m", "set", "--match-set", family.name+"c", "dst")
 				if proxy {
-					args := append(append([]string{}, base...), "-p", "tcp", "--syn", "-m", "conntrack", "--ctstate", "NEW", "-j", "CONNMARK", "--set-xmark", fmt.Sprintf("0x%x/0x%x", st.mark, routeSetMarkMask))
+					if ports := proxyModePorts(st.mode); len(ports) > 0 {
+						base = append(base, "-p", "tcp")
+						base = append(base, proxyIptPorts(ports)...)
+					}
+					tagBase := append([]string{}, base...)
+					if len(proxyModePorts(st.mode)) == 0 {
+						tagBase = append(tagBase, "-p", "tcp")
+					}
+					args := append(tagBase, "--syn", "-m", "conntrack", "--ctstate", "NEW", "-j", "CONNMARK", "--set-xmark", fmt.Sprintf("0x%x/0x%x", st.mark, routeSetMarkMask))
 					if err := emit(args); err != nil {
 						return err
 					}

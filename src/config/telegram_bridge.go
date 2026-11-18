@@ -185,11 +185,11 @@ func (c *Config) TelegramBridgeSet() *SetConfig {
 
 func (c *Config) RoutingSets() []*SetConfig {
 	if !c.TelegramBridgeEnabled() {
-		return c.Sets
+		return c.reuseRoutingSets(c.Sets)
 	}
 	out := make([]*SetConfig, 0, len(c.Sets)+1)
 	out = append(out, c.TelegramBridgeSet())
-	return append(out, c.Sets...)
+	return c.reuseRoutingSets(append(out, c.Sets...))
 }
 
 func IsTelegramBridgeMark(mark uint32) bool {

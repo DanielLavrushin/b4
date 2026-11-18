@@ -20,6 +20,7 @@ import (
 	"github.com/daniellavrushin/b4/netif"
 	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/tables"
+	"github.com/daniellavrushin/b4/warmtuple"
 )
 
 func NewWorkerWithQueue(cfg *config.Config, qnum uint16) *Worker {
@@ -84,6 +85,7 @@ func NewPool(cfg *config.Config) *Pool {
 	}
 
 	state := newRuntimeState()
+	warmFlows := warmtuple.NewFlows()
 	if !cfg.Queue.IsDiscovery {
 		state.bans = newIPBans(iphealth.NewBanRegistry(iphealth.BanFilePath(cfg.ConfigPath)), state.goodIPs, nil)
 		state.bans.applyConfig(cfg)
@@ -95,6 +97,7 @@ func NewPool(cfg *config.Config) *Pool {
 	for i := 0; i < threads; i++ {
 		w := NewWorkerWithQueue(cfg, start+uint16(i))
 		w.matcher.Store(matcher)
+		w.warmFlows = warmFlows
 		w.ipToMac.Store(make(map[string]string))
 		w.tlsCache = state.tlsCache
 		w.wssize = state.wssize
@@ -114,7 +117,7 @@ func NewPool(cfg *config.Config) *Pool {
 		ws = append(ws, w)
 	}
 
-	pool := &Pool{Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), cleanupDone: make(chan struct{}), state: state}
+	pool := &Pool{warmFlows: warmFlows, Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), cleanupDone: make(chan struct{}), state: state}
 	pool.collectedBase = cfg
 	metrics.GetMetricsCollector().UpdateCollectedIPs(nil)
 	pool.collectedCtx, pool.collectedCancel = context.WithCancel(context.Background())
@@ -589,3 +592,5 @@ func (w *Worker) GetCacheStats() map[string]interface{} {
 	matcher := w.getMatcher()
 	return matcher.GetCacheStats()
 }
+
+func (p *Pool) WarmTupleFlows() *warmtuple.Flows { return p.warmFlows }

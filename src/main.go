@@ -376,6 +376,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 		return ctx.Err()
 	}, tproxyResolver.Set)
+	tproxyMgr.SetWarmTupleFlows(pool.WarmTupleFlows())
 	tables.DNSQueryCopyOpenFunc = pool.OpenDNSQueryCopy
 	tables.DNSQueryCopyAliveFunc = pool.DNSQueryCopyAlive
 	tables.DNSQueryCopyPlacedFunc = pool.SetDNSQueryCopyFamilies

@@ -43,6 +43,7 @@ export const TcpGeneral = ({
     strip_scale: false,
     ...config.tcp.wssize,
   };
+  const reuse = config.tcp.wssize_reuse ?? { enabled: false, max_age_seconds: 300 };
   const dup = config.tcp.duplicate ?? { enabled: false, count: 3 };
   const wsConflict = (config.routing?.enabled ?? false) || dup.enabled;
   const wsTun = ws.enabled && !wsConflict && tunEngine;
@@ -176,7 +177,7 @@ export const TcpGeneral = ({
             description={t("sets.tcp.general.wssizeEnableDesc")}
             checked={ws.enabled}
             path="tcp.wssize.enabled"
-            onChange={(checked) => onChange("tcp.wssize.enabled", checked)}
+            onChange={(checked) => { onChange("tcp.wssize.enabled", checked); if (!checked) onChange("tcp.wssize_reuse.enabled", false); }}
             disabled={wsConflict && !ws.enabled}
             aiTopic="tcp.wssize.enabled"
             aiContext={{
@@ -189,7 +190,7 @@ export const TcpGeneral = ({
         </Grid>
         <Grid size={{ xs: 12, md: 8 }}>
           <B4Hint sx={{ my: 1 }}>
-            {t("sets.tcp.general.wssizeAlert")}{" "}
+            {t(reuse.enabled ? "sets.tcp.general.wssizeReuseAlert" : "sets.tcp.general.wssizeAlert")}{" "}
             {t("sets.tcp.general.wssizeCredit")}{" "}
             <Link
               href="https://github.com/bol-van/zapret2"
@@ -313,6 +314,30 @@ export const TcpGeneral = ({
                   }
                   helperText={t("sets.tcp.general.wssizeCutoffHelper")}
                   aiTopic="tcp.wssize.cutoff"
+                />
+              </Grid>
+            )}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Switch
+                label={t("sets.tcp.general.wssizeReuse")}
+                description={t("sets.tcp.general.wssizeReuseDesc")}
+                checked={reuse.enabled}
+                path="tcp.wssize_reuse.enabled"
+                onChange={(checked) => onChange("tcp.wssize_reuse.enabled", checked)}
+                aiTopic="tcp.wssize_reuse.enabled"
+              />
+            </Grid>
+            {reuse.enabled && (
+              <Grid size={{ xs: 12, md: 6 }}>
+                <B4NumberField
+                  label={t("sets.tcp.general.wssizeReuseAge")}
+                  helperText={t("sets.tcp.general.wssizeReuseAgeDesc")}
+                  value={reuse.max_age_seconds}
+                  min={1}
+                  max={86400}
+                  path="tcp.wssize_reuse.max_age_seconds"
+                  onChange={(value) => onChange("tcp.wssize_reuse.max_age_seconds", value)}
+                  aiTopic="tcp.wssize_reuse.max_age_seconds"
                 />
               </Grid>
             )}

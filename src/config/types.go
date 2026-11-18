@@ -38,6 +38,7 @@ const (
 	RoutingModeProxy     = "proxy"
 	RoutingModeMTProtoWS = "mtproto-ws"
 	RoutingModeBlock     = "block"
+	RoutingModeWSReuse   = "wssize-reuse"
 )
 
 const (
@@ -92,7 +93,7 @@ const (
 const DNSQueryCopyPrefix = "b4dns"
 
 func RoutingUsesTProxy(mode string) bool {
-	return mode == RoutingModeProxy || mode == RoutingModeMTProtoWS
+	return mode == RoutingModeProxy || mode == RoutingModeMTProtoWS || mode == RoutingModeWSReuse
 }
 
 func RoutingIsBlock(mode string) bool {
@@ -276,6 +277,11 @@ const (
 
 const MaxDisorderSplitPosition = 1460
 
+type WSSizeReuseConfig struct {
+	Enabled       bool `json:"enabled"`
+	MaxAgeSeconds int  `json:"max_age_seconds"`
+}
+
 type WSSizeConfig struct {
 	Cutoff     string `json:"cutoff"`
 	Enabled    bool   `json:"enabled"`
@@ -345,6 +351,7 @@ type TCPConfig struct {
 	HTTPMethodEOL  bool   `json:"http_methodeol"`
 	DPortFilter    string `json:"dport_filter"` // comma separated list of ports and port ranges, e.g. "80,443,5222"
 
+	WSSizeReuse   WSSizeReuseConfig   `json:"wssize_reuse" mcp:"deny"`
 	WSSize        WSSizeConfig        `json:"wssize"`
 	Incoming      IncomingConfig      `json:"incoming"`
 	Desync        DesyncConfig        `json:"desync"`

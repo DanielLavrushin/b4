@@ -425,18 +425,28 @@ func (b *routeNftBackend) addClaimedBypassRule(chain string, own uint32) {
 }
 
 func (b *routeNftBackend) addRouterTrafficGuard(chain string, v6 bool, setName string, mark uint32) bool {
+	return b.addRouterTrafficGuardForPort(chain, v6, setName, mark, 0)
+}
+
+func (b *routeNftBackend) addRouterTrafficGuardForPort(chain string, v6 bool, setName string, mark uint32, port int) bool {
+	var ports []int
+	if port > 0 {
+		ports = []int{port}
+	}
 	family := "ip"
 	if v6 {
 		family = "ip6"
 	}
 	added := true
 	for _, sn := range []string{setName, routeNftDynSet(setName)} {
-		if _, err := run("nft", "add", "rule", "inet", routeNftTable, chain,
+		args := append([]string{"nft", "add", "rule", "inet", routeNftTable, chain}, proxyNftPorts(ports)...)
+		args = append(args,
 			"ct", "state", "new",
 			family, "daddr", "@"+sn,
 			"limit", "rate", "over", fmt.Sprintf("%d/second", routeRouterTrafficRate),
 			"burst", fmt.Sprintf("%d", routeRouterTrafficRate*2), "packets",
-			"counter", "return"); err != nil {
+			"counter", "return")
+		if _, err := run(args...); err != nil {
 			log.Tracef("routing: %s takes no router-traffic rate guard on @%s (%v); a routing loop through this set would not be capped", chain, sn, err)
 			added = false
 		}

@@ -30,6 +30,12 @@ Makes the set's connections advertise a small TCP window in their first packets,
 | **Window Scale option** | What happens to the Window Scale option in the first packet of a connection, see the table below. | **Leave unchanged** |
 | **Window Scale** | Shown with **Lower to a value**. Lowers the option to this value, 1 to 14, and never raises it. | `1` |
 | **Stop rewriting** | Shown once **Window** is set. **After the ClientHello** writes the window into every packet of the ClientHello. **After the first data packet** stops at the first packet with data, as zapret2 does. | **After the ClientHello** |
+| **Reuse WSSIZE connection** | Warms a server tuple, then relays client TLS over a new connection with its normal window. | Off |
+| **Warm validity (seconds)** | Maximum warm age before reusing a free tuple. Active connections are not interrupted. | `300` |
+
+Reuse requires NFQUEUE, TPROXY, an IP/GeoIP/ASN target on TCP/443 and a server that returns a verified TLS 1.3 response from `/generate_204`. Domain and TLS filters, routing, duplication and escalation cannot be combined with reuse. The set's TCP strategy applies only to the warm connection. QUIC is not relayed. Reuse settings stay local to the router and are excluded from Discovery and Hub.
+
+Changes to the collected pool preserve compatible pending and idle warmed connections. Removing an address stops pending warms for that address when the set no longer targets it. Active relays continue.
 
 After the first packet, the server multiplies **Window** by 2 to the power of the Window Scale it received. Without the option it reads **Window** as written. The device's packets after the stop carry its own window again.
 

@@ -359,6 +359,8 @@ On a test box the two sets on `wg0` got:
 
 ## Proxy sets and Telegram over WebSocket
 
+**Reuse WSSIZE connection** uses the same per-set TPROXY marks and listener allocation, restricted to TCP/443. Warm sockets carry `0x40000`; pass sockets carry `0x240000` to skip both routing and DPI modification. No additional mark bits or policy-rule priorities are reserved.
+
 Sets in the *Upstream SOCKS5 proxy* and *Telegram over WebSocket* routing modes, and the
 [Telegram over WebSocket](../telegram/websocket-bridge.md) switch, divert connections to
 transparent listeners of b4 with TPROXY. Each has a mark, and the mark gives the listener

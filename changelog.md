@@ -8,6 +8,8 @@ All notable changes to b4 are recorded in this file.
 
 - **Collect detected IPs** adds stalled TLS destinations only after the server acknowledges the complete ClientHello, feeds a shared pool for **Use collected IPs**, marks **Traffic** with **Collect IP**, and lists candidates in **Collected IPs** on the dashboard with removal controls.
 
+- **Reuse WSSIZE connection** warms server connections and preserves compatible warm state when collected targets change; based on [zapret2](https://github.com/bol-van/zapret2).
+
 ## [1.92.0] - 2026-11-17
 
 ### Added

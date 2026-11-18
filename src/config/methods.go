@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -1623,6 +1624,9 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 		return true
 	}
 	if !oldCfg.System.Tables.DSCP.Equal(newCfg.System.Tables.DSCP) {
+		return true
+	}
+	if !reflect.DeepEqual(wsReuseRoutingShape(oldCfg), wsReuseRoutingShape(newCfg)) {
 		return true
 	}
 	if !sameDuplicateIPs(oldCfg, newCfg) {

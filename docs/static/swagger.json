@@ -6751,6 +6751,9 @@
                 },
                 "wssize": {
                     "$ref": "#/definitions/config.WSSizeConfig"
+                },
+                "wssize_reuse": {
+                    "$ref": "#/definitions/config.WSSizeReuseConfig"
                 }
             }
         },
@@ -6965,6 +6968,17 @@
                     "type": "boolean"
                 },
                 "window": {
+                    "type": "integer"
+                }
+            }
+        },
+        "config.WSSizeReuseConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "max_age_seconds": {
                     "type": "integer"
                 }
             }

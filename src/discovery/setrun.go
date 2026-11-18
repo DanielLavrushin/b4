@@ -13,6 +13,7 @@ func SetRunStrategy(set *config.SetConfig) *config.SetConfig {
 	if strategy.TCP.IPBlockDetect.Action == "collect" {
 		strategy.TCP.IPBlockDetect = config.DefaultSetConfig.TCP.IPBlockDetect
 	}
+	strategy.TCP.WSSizeReuse = config.DefaultSetConfig.TCP.WSSizeReuse
 	strategy.TCP.Win.Values = slices.Clone(set.TCP.Win.Values)
 	strategy.UDP = set.UDP
 	strategy.UDP.FakePayloadData = slices.Clone(set.UDP.FakePayloadData)

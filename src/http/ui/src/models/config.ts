@@ -226,6 +226,7 @@ export interface TcpConfig {
 
   desync: DesyncConfig;
   wssize?: WSSizeConfig;
+  wssize_reuse?: { enabled: boolean; max_age_seconds: number };
   win: WinConfig;
   incoming: IncomingConfig;
   duplicate?: DuplicateConfig;

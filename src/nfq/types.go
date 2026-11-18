@@ -12,6 +12,7 @@ import (
 	"github.com/daniellavrushin/b4/dhcp"
 	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/sock"
+	"github.com/daniellavrushin/b4/warmtuple"
 	"github.com/florianl/go-nfqueue"
 )
 
@@ -21,6 +22,7 @@ type Segment struct {
 }
 
 type Pool struct {
+	warmFlows          *warmtuple.Flows
 	collectedBase      *config.Config
 	collected          map[netip.Addr]collectedCandidate
 	collectedMu        sync.RWMutex
@@ -56,6 +58,7 @@ type PacketInfo struct {
 
 type Worker struct {
 	pool             *Pool
+	warmFlows        *warmtuple.Flows
 	packetsProcessed uint64
 	lastOverflowLog  int64
 	lastFakeSendLog  int64

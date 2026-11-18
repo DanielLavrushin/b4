@@ -13,7 +13,7 @@ const TCP_SUB_INDEX: Record<string, number> = {
   faking: 2,
 };
 export const TCP_SUB_TABS: { labelKey: string; prefixes: string[] }[] = [
-  { labelKey: "sets.tcp.tabs.general", prefixes: ["tcp.conn_bytes_limit", "tcp.dport_filter", "tcp.drop_sack", "tcp.http_methodeol", "tcp.duplicate", "tcp.ip_block_detect", "tcp.rst_protection", "tcp.seg2delay", "tcp.seg2delay_max", "tcp.wssize", "mss_clamp"] },
+  { labelKey: "sets.tcp.tabs.general", prefixes: ["tcp.conn_bytes_limit", "tcp.dport_filter", "tcp.drop_sack", "tcp.http_methodeol", "tcp.duplicate", "tcp.ip_block_detect", "tcp.rst_protection", "tcp.seg2delay", "tcp.seg2delay_max", "tcp.wssize", "tcp.wssize_reuse", "mss_clamp"] },
   { labelKey: "sets.tcp.tabs.splitting", prefixes: ["fragmentation"] },
   { labelKey: "sets.tcp.tabs.faking", prefixes: ["faking", "tcp.syn_fake", "tcp.syn_fake_len", "tcp.syn_ttl", "tcp.desync", "tcp.win", "tcp.incoming"] },
 ];
