@@ -49,6 +49,16 @@ func (p *Pool) collectedRelevantLocked(cfg *config.Config) bool {
 	return len(p.collectedPublished) > 0
 }
 
+func (p *Pool) StopCollected() {
+	if p == nil || p.collectedCancel == nil {
+		return
+	}
+	p.collectedCancel()
+	p.configMu.Lock()
+	p.collectedDirty = false
+	p.configMu.Unlock()
+}
+
 func eligibleCollectedIP(ip net.IP) (netip.Addr, bool) {
 	addr, ok := netip.AddrFromSlice(ip)
 	addr = addr.Unmap()
@@ -157,6 +167,9 @@ func (p *Pool) publishCollectedViewLocked(requireConsumer bool) bool {
 	}
 	if err := installErr; err != nil {
 		log.Warnf("Collected IPs: interception not ready: %v", err)
+		if p.collectedCtx.Err() != nil {
+			return false
+		}
 		rollback, done := context.WithTimeout(p.collectedCtx, 5*time.Second)
 		defer done()
 		if err := p.collectedInstall(rollback, p.CollectedConfig(cfg)); err != nil {

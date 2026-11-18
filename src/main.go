@@ -442,6 +442,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if shutdownHandled {
 			return
 		}
+		pool.StopCollected()
 		stopExposureWatch()
 		tables.ClearExposure()
 		tables.StopDSCPSync()
@@ -725,6 +726,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 	stopExposureWatch()
 	cidrCancel()
 	asnCancel()
+	pool.StopCollected()
 	tproxyMgr.Stop()
 
 	// Perform graceful shutdown with timeout

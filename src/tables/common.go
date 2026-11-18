@@ -65,7 +65,9 @@ func ClearAppliedRules(fallback *config.Config) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
 	dscpSyncClosed.Store(true)
-	return clearRulesFn(appliedOr(fallback))
+	err := clearRulesFn(appliedOr(fallback))
+	rulesAppliedCfg = nil
+	return err
 }
 
 func appliedOr(cfg *config.Config) *config.Config {
