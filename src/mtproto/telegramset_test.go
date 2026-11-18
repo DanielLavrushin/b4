@@ -422,3 +422,32 @@ func TestTheBridgeRebuildsItsWebSocketPoolWhenTheTelegramSetsRouteChanges(t *tes
 		t.Fatal("the pool kept connections opened over the uplink after the set started routing through an interface; its base mark did not change, so the route has to be part of the pool's key")
 	}
 }
+
+func TestAnExplicitRouteMarkOrTableChangeRebuildsTheTelegramPools(t *testing.T) {
+	routed := routedTelegramConfig(config.RoutingModeInterface)
+	routed.Sets[0].Routing.FWMark, routed.Sets[0].Routing.Table = 0x2a, 120
+	for name, change := range map[string]func(*config.RoutingConfig){
+		"mark":  func(r *config.RoutingConfig) { r.FWMark = 0x2b },
+		"table": func(r *config.RoutingConfig) { r.Table = 121 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			next := routedTelegramConfig(config.RoutingModeInterface)
+			next.Sets[0].Routing.FWMark, next.Sets[0].Routing.Table = 0x2a, 120
+			change(&next.Sets[0].Routing)
+			if !mtprotoNeedsRestart(routed, next) {
+				t.Fatalf("the proxy kept its pools after the set's %s changed, so pre-opened connections stay on the old route", name)
+			}
+
+			b := NewTransparentBridge(routed)
+			t.Cleanup(func() {
+				b.Close()
+				setTelegramSet(nil)
+			})
+			before := b.getWSPool()
+			b.UpdateConfig(next)
+			if after := b.getWSPool(); after == before {
+				t.Fatalf("the bridge kept its WebSocket pool after the set's %s changed", name)
+			}
+		})
+	}
+}

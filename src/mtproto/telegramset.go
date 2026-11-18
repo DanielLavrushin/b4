@@ -128,8 +128,8 @@ func telegramSetKey(cfg *config.Config) string {
 		return ""
 	}
 	r := set.Routing
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%t|%s|%d|%t|%t", set.Id, set.TelegramRouteMode(), r.EgressInterface, r.EgressIP, r.EgressGateway, r.KillSwitch,
-		r.Upstream.Host, r.Upstream.Port, r.Upstream.UseDomain, r.Upstream.FailOpen)
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%t|%d|%d|%s|%d|%t|%t", set.Id, set.TelegramRouteMode(), r.EgressInterface, r.EgressIP, r.EgressGateway, r.KillSwitch,
+		r.FWMark, r.Table, r.Upstream.Host, r.Upstream.Port, r.Upstream.UseDomain, r.Upstream.FailOpen)
 }
 
 func telegramSetChanged(old, next *config.Config) bool {
