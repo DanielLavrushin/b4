@@ -4,8 +4,13 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Added
+
+- After an **Update** or **Upload** on the **Geo Databases** page, the card lists the sets with categories that match nothing in the new file, and the set editor marks a category absent from the file in red with the reason on hover. [#620](https://github.com/DanielLavrushin/b4/issues/620)
+
 ### Fixed
 
+- After an **Update**, **Upload** or **Remove** on the **Geo Databases** page, the page went blank for a moment and the result message never showed, and an uploaded file left the card's **Source** field empty. [#620](https://github.com/DanielLavrushin/b4/issues/620)
 - After b4 stopped, a router with its own connection-tracking settings, such as OpenWrt, was left with the kernel defaults instead, and in rare cases with b4's settings. ([#613](https://github.com/DanielLavrushin/b4/pull/613), thanks [@mvanhorn](https://github.com/mvanhorn); [#575](https://github.com/DanielLavrushin/b4/issues/575))
 - **Test connection** under **Telegram upstream (shared)** checked its routes one after another, so with **CF proxy fallback** on a run took about a minute and showed nothing until it ended. [#616](https://github.com/DanielLavrushin/b4/issues/616)
 

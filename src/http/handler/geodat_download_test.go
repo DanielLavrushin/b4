@@ -211,7 +211,7 @@ func TestRefreshGeodatRefusesAConcurrentDownload(t *testing.T) {
 	geodatDownloadMu.Lock()
 	defer geodatDownloadMu.Unlock()
 	api := &API{}
-	if _, _, _, err := api.RefreshGeodat(context.Background(), t.TempDir(), "http://127.0.0.1:1/geosite.dat", ""); !errors.Is(err, geodat.ErrBusy) {
+	if _, _, _, _, err := api.RefreshGeodat(context.Background(), t.TempDir(), "http://127.0.0.1:1/geosite.dat", ""); !errors.Is(err, geodat.ErrBusy) {
 		t.Fatalf("want ErrBusy, got %v", err)
 	}
 }
@@ -319,7 +319,7 @@ func TestUploadInterruptsARunningDownloadAndWins(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, _, _, err := api.RefreshGeodat(context.Background(), dir, srv.URL+"/geosite.dat", "")
+		_, _, _, _, err := api.RefreshGeodat(context.Background(), dir, srv.URL+"/geosite.dat", "")
 		done <- err
 	}()
 	<-started
@@ -375,7 +375,7 @@ func TestRefreshGeodatDoesNotCommitAfterCancel(t *testing.T) {
 	}))
 	defer ip.Close()
 
-	_, _, _, err := api.RefreshGeodat(ctx, dir, site.URL+"/geosite.dat", ip.URL+"/geoip.dat")
+	_, _, _, _, err := api.RefreshGeodat(ctx, dir, site.URL+"/geosite.dat", ip.URL+"/geoip.dat")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("want context.Canceled, got %v", err)
 	}

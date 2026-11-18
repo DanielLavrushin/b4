@@ -34,11 +34,21 @@ import { geodatApi } from "@api/settings";
 import {
   GeodatFileType,
   GeodatSource,
+  GeodatUnmatchedSet,
   GeoFileInfo,
   SettingsPropHandlerType,
 } from "@models/settings";
 
 const CUSTOM_SOURCE = "__custom__";
+const LOCAL_SOURCE = "__local__";
+
+type GeoCategoriesKey = "geosite_categories" | "geoip_categories";
+
+const unmatchedOf = (
+  list: GeodatUnmatchedSet[] | null | undefined,
+  key: GeoCategoriesKey,
+): GeodatUnmatchedSet[] =>
+  (list ?? []).filter((set) => (set[key]?.length ?? 0) > 0);
 
 interface GeoFileCardProps {
   title: string;
@@ -55,6 +65,7 @@ interface GeoFileCardProps {
   uploading: boolean;
   removing: boolean;
   status: string;
+  unmatched: GeodatUnmatchedSet[];
   onDownload: () => void;
   onUpload: (file: File) => void;
   onRemove: () => void;
@@ -75,12 +86,15 @@ const GeoFileCard = ({
   uploading,
   removing,
   status,
+  unmatched,
   onDownload,
   onUpload,
   onRemove,
 }: GeoFileCardProps) => {
   const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const categoriesKey: GeoCategoriesKey =
+    sourceUrlKey === "geosite_url" ? "geosite_categories" : "geoip_categories";
   const formatFileSize = (bytes?: number): string => {
     if (!bytes) return t("core.unknown");
     const mb = bytes / (1024 * 1024);
@@ -195,6 +209,11 @@ const GeoFileCard = ({
               {source.name}
             </MenuItem>
           ))}
+          {selectedSource === LOCAL_SOURCE && (
+            <MenuItem value={LOCAL_SOURCE} disabled>
+              {t("settings.Geo.sourceLocal")}
+            </MenuItem>
+          )}
           <MenuItem value={CUSTOM_SOURCE}>
             <em>{t("settings.Geo.customUrl")}</em>
           </MenuItem>
@@ -232,6 +251,7 @@ const GeoFileCard = ({
               uploading ||
               removing ||
               (selectedSource === CUSTOM_SOURCE && !customURL) ||
+              selectedSource === LOCAL_SOURCE ||
               !selectedSource
             }
           >
@@ -294,6 +314,26 @@ const GeoFileCard = ({
             </Typography>
           )}
         </Box>
+
+        {unmatched.length > 0 && (
+          <B4Alert severity="warning">
+            <Typography variant="body2">
+              {t("settings.Geo.unmatchedSetsWarning", {
+                count: unmatched.length,
+              })}
+            </Typography>
+            {unmatched.map((set) => (
+              <Typography
+                key={set.set_id}
+                variant="caption"
+                color="text.secondary"
+                component="div"
+              >
+                {set.set_name}: {(set[categoriesKey] ?? []).join(", ")}
+              </Typography>
+            ))}
+          </B4Alert>
+        )}
       </Stack>
     </Box>
   );
@@ -324,6 +364,9 @@ export const GeoSettings = ({
   const [geositeUploading, setGeositeUploading] = useState(false);
   const [geositeRemoving, setGeositeRemoving] = useState(false);
   const [geositeStatus, setGeositeStatus] = useState<string>("");
+  const [geositeUnmatched, setGeositeUnmatched] = useState<
+    GeodatUnmatchedSet[]
+  >([]);
 
   // GeoIP state
   const [geoipInfo, setGeoipInfo] = useState<GeoFileInfo>({ exists: false });
@@ -333,6 +376,9 @@ export const GeoSettings = ({
   const [geoipUploading, setGeoipUploading] = useState(false);
   const [geoipRemoving, setGeoipRemoving] = useState(false);
   const [geoipStatus, setGeoipStatus] = useState<string>("");
+  const [geoipUnmatched, setGeoipUnmatched] = useState<GeodatUnmatchedSet[]>(
+    [],
+  );
 
   const [removeTarget, setRemoveTarget] = useState<GeodatFileType | null>(null);
 
@@ -381,7 +427,9 @@ export const GeoSettings = ({
   const loadSources = async () => {
     try {
       const data = await geodatApi.sources();
-      setSources(data);
+      setSources((prev) =>
+        JSON.stringify(prev) === JSON.stringify(data) ? prev : data,
+      );
     } catch (error) {
       console.error("Failed to load geodat sources:", error);
     }
@@ -389,7 +437,7 @@ export const GeoSettings = ({
 
   // Match dropdown selection to the URL stored in config
   useEffect(() => {
-    if (geositeSources.length === 0 || geositeSource) return;
+    if (geositeSources.length === 0) return;
     const configUrl = config.system.geo.sitedat_url;
     if (configUrl) {
       const match = geositeSources.find((s) => s.geosite_url === configUrl);
@@ -399,18 +447,19 @@ export const GeoSettings = ({
         setGeositeSource(CUSTOM_SOURCE);
         setGeositeCustomURL(configUrl);
       }
-    } else if (!config.system.geo.sitedat_path) {
+    } else if (config.system.geo.sitedat_path) {
+      setGeositeSource(LOCAL_SOURCE);
+    } else {
       setGeositeSource(geositeSources[0].name);
     }
   }, [
     geositeSources,
-    geositeSource,
     config.system.geo.sitedat_url,
     config.system.geo.sitedat_path,
   ]);
 
   useEffect(() => {
-    if (geoipSources.length === 0 || geoipSource) return;
+    if (geoipSources.length === 0) return;
     const configUrl = config.system.geo.ipdat_url;
     if (configUrl) {
       const match = geoipSources.find((s) => s.geoip_url === configUrl);
@@ -420,12 +469,13 @@ export const GeoSettings = ({
         setGeoipSource(CUSTOM_SOURCE);
         setGeoipCustomURL(configUrl);
       }
-    } else if (!config.system.geo.ipdat_path) {
+    } else if (config.system.geo.ipdat_path) {
+      setGeoipSource(LOCAL_SOURCE);
+    } else {
       setGeoipSource(geoipSources[0].name);
     }
   }, [
     geoipSources,
-    geoipSource,
     config.system.geo.ipdat_url,
     config.system.geo.ipdat_path,
   ]);
@@ -458,11 +508,15 @@ export const GeoSettings = ({
     }
 
     setGeositeDownloading(true);
+    setGeositeUnmatched([]);
     setGeositeStatus(t("settings.Geo.downloadingGeosite"));
 
     try {
-      await geodatApi.download(destPath, url);
+      const result = await geodatApi.download(destPath, url);
       setGeositeStatus(t("settings.Geo.downloadSuccess"));
+      setGeositeUnmatched(
+        unmatchedOf(result.unmatched, "geosite_categories"),
+      );
       loadConfig();
       void checkFileStatus();
       setTimeout(() => setGeositeStatus(""), 5000);
@@ -487,11 +541,13 @@ export const GeoSettings = ({
     }
 
     setGeoipDownloading(true);
+    setGeoipUnmatched([]);
     setGeoipStatus(t("settings.Geo.downloadingGeoip"));
 
     try {
-      await geodatApi.download(destPath, undefined, url);
+      const result = await geodatApi.download(destPath, undefined, url);
       setGeoipStatus(t("settings.Geo.downloadSuccess"));
+      setGeoipUnmatched(unmatchedOf(result.unmatched, "geoip_categories"));
       loadConfig();
       void checkFileStatus();
       setTimeout(() => setGeoipStatus(""), 5000);
@@ -517,12 +573,12 @@ export const GeoSettings = ({
       const result = await geodatApi.remove(type);
       if (type === "geosite") {
         setGeositeInfo({ exists: false });
-        setGeositeSource("");
         setGeositeCustomURL("");
+        setGeositeUnmatched([]);
       } else {
         setGeoipInfo({ exists: false });
-        setGeoipSource("");
         setGeoipCustomURL("");
+        setGeoipUnmatched([]);
       }
       let statusKey = "settings.Geo.removeCleared";
       if (result.removed.length > 0) statusKey = "settings.Geo.removeSuccess";
@@ -542,11 +598,15 @@ export const GeoSettings = ({
 
   const handleGeositeUpload = async (file: File) => {
     setGeositeUploading(true);
+    setGeositeUnmatched([]);
     setGeositeStatus(t("settings.Geo.uploadingGeosite"));
     try {
-      await geodatApi.upload(file, "geosite", destPath);
+      const result = await geodatApi.upload(file, "geosite", destPath);
       setGeositeStatus(t("settings.Geo.uploadSuccess"));
-      setGeositeSource("");
+      handleGeositeSourceChange(LOCAL_SOURCE);
+      setGeositeUnmatched(
+        unmatchedOf(result.unmatched, "geosite_categories"),
+      );
       loadConfig();
       void checkFileStatus();
       setTimeout(() => setGeositeStatus(""), 5000);
@@ -561,11 +621,13 @@ export const GeoSettings = ({
 
   const handleGeoipUpload = async (file: File) => {
     setGeoipUploading(true);
+    setGeoipUnmatched([]);
     setGeoipStatus(t("settings.Geo.uploadingGeoip"));
     try {
-      await geodatApi.upload(file, "geoip", destPath);
+      const result = await geodatApi.upload(file, "geoip", destPath);
       setGeoipStatus(t("settings.Geo.uploadSuccess"));
-      setGeoipSource("");
+      handleGeoipSourceChange(LOCAL_SOURCE);
+      setGeoipUnmatched(unmatchedOf(result.unmatched, "geoip_categories"));
       loadConfig();
       void checkFileStatus();
       setTimeout(() => setGeoipStatus(""), 5000);
@@ -685,6 +747,7 @@ export const GeoSettings = ({
               uploading={geositeUploading}
               removing={geositeRemoving}
               status={geositeStatus}
+              unmatched={geositeUnmatched}
               onDownload={() => void handleGeositeDownload()}
               onUpload={(file) => void handleGeositeUpload(file)}
               onRemove={() => setRemoveTarget("geosite")}
@@ -706,6 +769,7 @@ export const GeoSettings = ({
               uploading={geoipUploading}
               removing={geoipRemoving}
               status={geoipStatus}
+              unmatched={geoipUnmatched}
               onDownload={() => void handleGeoipDownload()}
               onUpload={(file) => void handleGeoipUpload(file)}
               onRemove={() => setRemoveTarget("geoip")}
