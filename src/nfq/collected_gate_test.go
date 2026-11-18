@@ -117,3 +117,43 @@ func TestCollectedConfigKeepsOneViewPerPublishedPool(t *testing.T) {
 		t.Fatal("the published address is missing from the view")
 	}
 }
+
+func TestAnUnchangedCollectedReconcileKeepsTheMatcher(t *testing.T) {
+	passive := newPassiveSet()
+	consumer := collectedConsumerSet()
+	w := newInjectingWorker(t, &passive, &consumer)
+	calls := 0
+	p := collectedTestPool(t, w, func(context.Context, *config.Config) error {
+		calls++
+		return nil
+	})
+	p.configMu.Lock()
+	p.collected = map[netip.Addr]collectedCandidate{netip.MustParseAddr("203.0.113.7"): {setID: "producer", at: time.Now()}}
+	published := p.publishCollectedViewLocked(true)
+	p.configMu.Unlock()
+	if !published {
+		t.Fatal("setup: the first publish failed")
+	}
+	w.ProcessPacket(silentHelloFrom(42000))
+	key := "10.0.0.1:42000->1.2.3.4:443"
+	if d, ok := w.tlsCache.Decision(key); !ok || d.decidedBy == nil {
+		t.Fatal("setup: the ClientHello left no decision to pin")
+	}
+	n := *p.collectedBase
+	next := &n
+	next.System.Logging.Instaflush = !next.System.Logging.Instaflush
+	before := w.getMatcher()
+	if err := p.UpdateConfig(next); err != nil {
+		t.Fatal(err)
+	}
+	m := w.getMatcher()
+	if m != before {
+		t.Fatal("setup: UpdateConfig rebuilt the matcher, so the save did not keep the sets")
+	}
+	installs := calls
+	p.reconcileCollected()
+	d, _ := w.tlsCache.Decision(key)
+	if calls != installs+1 || w.getMatcher() != m || d.collectedPinned {
+		t.Fatalf("installer calls %d->%d, matcher kept=%v, decision pinned=%v", installs, calls, w.getMatcher() == m, d.collectedPinned)
+	}
+}

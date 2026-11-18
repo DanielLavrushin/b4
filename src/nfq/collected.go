@@ -163,7 +163,15 @@ func (p *Pool) publishCollectedViewLocked(requireConsumer bool) bool {
 	if requireConsumer && !consumers {
 		return false
 	}
-	view := cfg.WithCollectedIPs(ips)
+	p.collectedMu.RLock()
+	unchanged := slices.Equal(ips, p.collectedPublished)
+	p.collectedMu.RUnlock()
+	var view *config.Config
+	if unchanged {
+		view = p.CollectedConfig(cfg)
+	} else {
+		view = cfg.WithCollectedIPs(ips)
+	}
 	ctx, cancel := context.WithTimeout(p.collectedCtx, 5*time.Second)
 	defer cancel()
 	installErr := p.collectedInstall(ctx, view)
@@ -172,7 +180,7 @@ func (p *Pool) publishCollectedViewLocked(requireConsumer bool) bool {
 	}
 	if err := installErr; err != nil {
 		log.Warnf("Collected IPs: interception not ready: %v", err)
-		if p.collectedCtx.Err() != nil {
+		if unchanged || p.collectedCtx.Err() != nil {
 			return false
 		}
 		rollback, done := context.WithTimeout(p.collectedCtx, 5*time.Second)
@@ -181,6 +189,9 @@ func (p *Pool) publishCollectedViewLocked(requireConsumer bool) bool {
 			log.Warnf("Collected IPs: rollback incomplete: %v", err)
 		}
 		return false
+	}
+	if unchanged && len(p.Workers) > 0 && p.Workers[0].getConfig() == view {
+		return true
 	}
 	matcher := buildMatcher(view)
 	if len(p.Workers) > 0 {
@@ -193,7 +204,7 @@ func (p *Pool) publishCollectedViewLocked(requireConsumer bool) bool {
 		w.matcher.Store(matcher)
 	}
 	p.collectedMu.Lock()
-	if !slices.Equal(ips, p.collectedPublished) {
+	if !unchanged {
 		p.collectedPublished = ips
 		p.collectedPubGen++
 	}
