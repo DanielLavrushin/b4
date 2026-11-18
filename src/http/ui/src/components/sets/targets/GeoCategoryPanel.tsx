@@ -25,7 +25,7 @@ interface GeoCategoryPanelProps {
 }
 
 const tagOf = (category: string, stripAttrs: boolean) =>
-  (stripAttrs ? category.split("@")[0] : category).trim().toLowerCase();
+  (stripAttrs ? category.split("@")[0] : category).toLowerCase();
 
 const CategoryLabel = ({
   category,
