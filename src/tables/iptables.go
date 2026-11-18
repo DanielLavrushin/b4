@@ -429,10 +429,27 @@ func (ipt *IPTablesManager) buildNFQSpec(queueStart, threads int) []string {
 	return []string{"-j", "NFQUEUE", "--queue-num", strconv.Itoa(queueStart), "--queue-bypass"}
 }
 
+func isSysctlNumber(v string) bool {
+	if v == "" {
+		return false
+	}
+	for _, c := range v {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func (s SysctlSetting) Apply() {
 	snap := loadSysctlSnapshot()
-	if _, ok := snap[s.Name]; !ok {
-		snap[s.Name] = getSysctl(s.Name)
+	if !isSysctlNumber(snap[s.Name]) {
+		cur := getSysctl(s.Name)
+		if !isSysctlNumber(cur) {
+			log.Infof("TABLES: leaving %s alone for now: reading it gave %q rather than a number, so b4 would have nothing to put back on exit. b4 tries again on its next rules pass", s.Name, cur)
+			return
+		}
+		snap[s.Name] = cur
 		if err := saveSysctlSnapshot(snap); err != nil {
 			log.Errorf("TABLES: leaving %s at %q rather than setting it to %s: its current value could not be saved to %s (%v), so b4 could not put it back on exit", s.Name, snap[s.Name], s.Desired, sysctlSnapshotPath(), err)
 			return
@@ -450,12 +467,18 @@ func (s SysctlSetting) RevertBack() {
 		return
 	}
 	snap := loadSysctlSnapshot()
-	if v, ok := snap[s.Name]; ok && v != "" {
+	v, ok := snap[s.Name]
+	if !ok {
+		return
+	}
+	if isSysctlNumber(v) {
 		setSysctl(s.Name, v)
-		delete(snap, s.Name)
-		if err := saveSysctlSnapshot(snap); err != nil {
-			log.Warnf("TABLES: restored %s to %s but could not update %s: %v", s.Name, v, sysctlSnapshotPath(), err)
-		}
+	} else {
+		log.Warnf("TABLES: not putting %s back: the value saved for it in %s is %q, not a number", s.Name, sysctlSnapshotPath(), v)
+	}
+	delete(snap, s.Name)
+	if err := saveSysctlSnapshot(snap); err != nil {
+		log.Warnf("TABLES: could not remove %s from %s: %v", s.Name, sysctlSnapshotPath(), err)
 	}
 }
 

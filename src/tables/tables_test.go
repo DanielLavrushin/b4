@@ -576,6 +576,86 @@ func TestApplyLeavesTheSysctlAloneWhenItsValueCannotBeSaved(t *testing.T) {
 	}
 }
 
+const unreadableChecksum = "cat: can't open '/proc/sys/net/netfilter/nf_conntrack_checksum': No such file or directory"
+
+func stubSysctls(t *testing.T, reads ...string) *[]string {
+	t.Helper()
+	forgetConntrackStrictWarning()
+	t.Cleanup(forgetConntrackStrictWarning)
+
+	prevSnap := sysctlSnapPath
+	sysctlSnapPath = filepath.Join(t.TempDir(), "sysctl.json")
+	t.Cleanup(func() { sysctlSnapPath = prevSnap })
+
+	wrote := &[]string{}
+	n := 0
+	prevGet, prevSet := getSysctl, setSysctl
+	getSysctl = func(name string) string {
+		v := reads[min(n, len(reads)-1)]
+		n++
+		return v
+	}
+	setSysctl = func(name, val string) { *wrote = append(*wrote, name+"="+val) }
+	t.Cleanup(func() {
+		getSysctl = prevGet
+		setSysctl = prevSet
+	})
+	return wrote
+}
+
+func TestApplySavesOnlyANumberAndReadsAgainOnTheNextPass(t *testing.T) {
+	const name = "net.netfilter.nf_conntrack_checksum"
+	for _, failed := range []string{"", unreadableChecksum} {
+		t.Run(fmt.Sprintf("%q", failed), func(t *testing.T) {
+			wrote := stubSysctls(t, failed, "1")
+			s := SysctlSetting{Name: name, Desired: "0"}
+
+			s.Apply()
+			if len(*wrote) != 0 {
+				t.Fatalf("Apply wrote %v although reading %s gave %q, so there was nothing to put back", *wrote, name, failed)
+			}
+			if v, ok := loadSysctlSnapshot()[name]; ok {
+				t.Fatalf("Apply saved %q for %s; a saved entry stops the next pass from reading it again", v, name)
+			}
+
+			s.Apply()
+			if got := loadSysctlSnapshot()[name]; got != "1" {
+				t.Fatalf("the next Apply saved %q, want the value it read, 1", got)
+			}
+			s.RevertBack()
+			if got := strings.Join(*wrote, ","); got != name+"=0,"+name+"=1" {
+				t.Fatalf("Apply, Apply, RevertBack wrote %q, want b4's 0 and then the original 1", got)
+			}
+		})
+	}
+}
+
+func TestRevertBackWritesOnlyASavedNumber(t *testing.T) {
+	const name = "net.netfilter.nf_conntrack_checksum"
+	for _, saved := range []string{"", unreadableChecksum, "1 "} {
+		t.Run(fmt.Sprintf("%q", saved), func(t *testing.T) {
+			wrote := stubSysctls(t, "1")
+			if err := saveSysctlSnapshot(map[string]string{name: saved}); err != nil {
+				t.Fatal(err)
+			}
+			s := SysctlSetting{Name: name, Desired: "0"}
+
+			s.RevertBack()
+			if len(*wrote) != 0 {
+				t.Fatalf("RevertBack wrote %v from the saved value %q", *wrote, saved)
+			}
+			if _, ok := loadSysctlSnapshot()[name]; ok {
+				t.Fatalf("RevertBack kept the saved value %q, so Apply would never read the real one", saved)
+			}
+
+			s.Apply()
+			if got := loadSysctlSnapshot()[name]; got != "1" {
+				t.Fatalf("Apply after a dropped entry saved %q, want the value it read, 1", got)
+			}
+		})
+	}
+}
+
 func TestDetectFirewallBackend_ConfigOverride(t *testing.T) {
 	t.Run("force nftables", func(t *testing.T) {
 		cfg := config.NewConfig()
