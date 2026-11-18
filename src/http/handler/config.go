@@ -651,10 +651,6 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 		globalSocks5Server.UpdateConfig(newCfg)
 	}
 
-	if globalMTProtoServer != nil {
-		globalMTProtoServer.UpdateConfig(newCfg)
-	}
-
 	if globalMTProtoBridge != nil {
 		globalMTProtoBridge.UpdateConfig(newCfg)
 	}
@@ -690,6 +686,9 @@ func (a *API) pushConfigLocked(newCfg *config.Config) error {
 	}
 	if routingSyncFunc != nil {
 		routingSyncFunc(newCfg)
+	}
+	if globalMTProtoServer != nil {
+		globalMTProtoServer.UpdateConfig(newCfg)
 	}
 	if exposureSyncFunc != nil {
 		exposureSyncFunc(newCfg)

@@ -500,7 +500,6 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 		cfgPtr.Store(c)
 		socks5Server.UpdateConfig(c)
-		mtprotoServer.UpdateConfig(c)
 		mtprotoBridge.UpdateConfig(c)
 		mtproto.KickUpstreamRefresh()
 		tproxyResolver.Set(pool.GetMatcher())
@@ -510,6 +509,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			tables.RoutingSyncConfig(c)
 			tables.SyncDSCP(c)
 		}
+		mtprotoServer.UpdateConfig(c)
 		aiManager.Update(c.System.AI)
 		if _, err := config.ApplyMemoryLimit(c.System.MemoryLimit); err != nil {
 			log.Errorf("invalid system.memory_limit %q: %v", c.System.MemoryLimit, err)
