@@ -35,10 +35,19 @@ The **Bypass IPs** sub-tab holds addresses, GeoIP categories and ASNs.
 | --- | --- | --- |
 | **Match any IP address** | Adds `0.0.0.0/0`, and `::/0` while IPv6 support is on, which match every address. For DPI bypass, a narrower range in another set is handled by that set, so this set takes only what no other set claims. For routing, a narrower range in another routing set gets no such priority, so the two are best not combined. | Off |
 | **IP priority** | A connection to an address the set lists, by IP, GeoIP category or ASN, stays with this set even when a set lower in the list matches its domain. Shown while **TLS Version Filter** on **Bypass Domains** is **Any**. | Off |
+| **Use collected IPs** | Adds candidates from the shared detected-IP pool to this set's IP targets. | Off |
 | **Manual Bypass IPs** | Addresses and CIDR ranges, such as `192.168.1.100` or `10.0.0.0/8`, entered the same way as domains. Other text, such as an AS number, is refused. | Empty |
 | **Bypass GeoIP Categories** | Address ranges from the GeoIP database, by country or by network. Needs the database loaded under **Settings > Geodat Settings**. | Empty |
 
 **IP priority** suits servers that carry only this set's sites, such as the Google Global Cache nodes in a provider's own network. Shared CDN ranges and large networks carry many sites, and the switch is best left off there. With the Google network `AS15169` as a target, for example, the set would also keep `youtube.com` and every other Google service from the sets below it. Sets that rank above this one still take connections by name. A set limited to source devices ranks above every set without them. Among sets of the same kind, the one higher in the list ranks first. **IP priority** does not apply to a connection that matches the set only through **Match any IP address**. [IP priority](../internals/matching.md#ip-priority) describes the exact rules.
+
+### Collected IPs {#collected-ips}
+
+Sets with [Collect detected IPs](./tcp/general.md#ip-block-detection) feed one shared pool. **Use collected IPs** adds that pool alongside manual IPs, GeoIP and ASN targets. There is no producer selection. An empty pool adds no destinations.
+
+Collected addresses are candidates, not confirmed successful bypasses. The consumer uses its own strategy. Source devices, source interfaces, address family, ports, set order and **IP priority** still decide which set handles a connection. Existing active connections keep their owner when an address is collected.
+
+The pool stays through settings changes and clears when b4 restarts. Addresses can also be removed from [Collected IPs](../dashboard.md#collected-ips) on the dashboard. Exported sets contain the switch, never the collected addresses. A failed later connection does not remove an address. Collection does not itself ban an address, filter DNS, reject QUIC or refuse SOCKS connections. Each consumer's own settings still apply. [Capture requirements](../internals/capture.md#collected-ips) describe the limits.
 
 ### ASN {#asn}
 

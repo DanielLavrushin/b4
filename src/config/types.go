@@ -355,14 +355,15 @@ type TCPConfig struct {
 }
 
 type IPBlockDetectConfig struct {
-	Enabled             bool `json:"enabled"`
-	RetransmitThreshold int  `json:"retransmit_threshold"`
-	TimeoutMs           int  `json:"timeout_ms"`
-	CacheBlockedIPs     bool `json:"cache_blocked_ips"`
-	SynDetect           bool `json:"syn_detect"`
-	SynThreshold        int  `json:"syn_threshold"`
-	HealDNS             bool `json:"heal_dns"`
-	HealTTLSec          int  `json:"heal_ttl_sec"`
+	Action              string `json:"action"`
+	Enabled             bool   `json:"enabled"`
+	RetransmitThreshold int    `json:"retransmit_threshold"`
+	TimeoutMs           int    `json:"timeout_ms"`
+	CacheBlockedIPs     bool   `json:"cache_blocked_ips"`
+	SynDetect           bool   `json:"syn_detect"`
+	SynThreshold        int    `json:"syn_threshold"`
+	HealDNS             bool   `json:"heal_dns"`
+	HealTTLSec          int    `json:"heal_ttl_sec"`
 }
 
 type IPHealthConfig struct {
@@ -522,6 +523,8 @@ type SNIMutationConfig struct {
 }
 
 type TargetsConfig struct {
+	UseCollectedIPs      bool     `json:"use_collected_ips"`
+	CollectedIPs         []string `json:"-"`
 	SNIDomains           []string `json:"sni_domains"`
 	IPs                  []string `json:"ip"`
 	GeoSiteCategories    []string `json:"geosite_categories"`

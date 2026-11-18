@@ -3,6 +3,7 @@ package ctnl
 import (
 	"encoding/binary"
 	"errors"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -27,13 +28,15 @@ const (
 var errUnavailable = errors.New("conntrack netlink is unavailable")
 
 type Flow struct {
-	TCPState     uint8
-	HasState     bool
-	OrigPackets  uint64
-	OrigBytes    uint64
-	ReplyPackets uint64
-	ReplyBytes   uint64
-	HasCounters  bool
+	ReplyDestination netip.AddrPort
+	ID               uint32
+	TCPState         uint8
+	HasState         bool
+	OrigPackets      uint64
+	OrigBytes        uint64
+	ReplyPackets     uint64
+	ReplyBytes       uint64
+	HasCounters      bool
 }
 
 var (
@@ -105,6 +108,40 @@ func parseFlow(b []byte) (Flow, error) {
 	var f Flow
 	for ad.Next() {
 		switch ad.Type() {
+		case attrTupleReply:
+			var addr netip.Addr
+			var port uint16
+			ad.Nested(func(tuple *netlink.AttributeDecoder) error {
+				for tuple.Next() {
+					switch tuple.Type() {
+					case attrTupleIP:
+						tuple.Nested(func(ip *netlink.AttributeDecoder) error {
+							for ip.Next() {
+								if ip.Type() == attrIPv4Dst || ip.Type() == attrIPv6Dst {
+									addr, _ = netip.AddrFromSlice(ip.Bytes())
+								}
+							}
+							return nil
+						})
+					case attrTupleProto:
+						tuple.Nested(func(proto *netlink.AttributeDecoder) error {
+							proto.ByteOrder = binary.BigEndian
+							for proto.Next() {
+								if proto.Type() == attrProtoDstPort {
+									port = proto.Uint16()
+								}
+							}
+							return nil
+						})
+					}
+				}
+				return nil
+			})
+			if addr.IsValid() && port != 0 {
+				f.ReplyDestination = netip.AddrPortFrom(addr.Unmap(), port)
+			}
+		case 12:
+			f.ID = ad.Uint32()
 		case attrProtoInfo:
 			ad.Nested(func(info *netlink.AttributeDecoder) error {
 				for info.Next() {

@@ -75,6 +75,7 @@ var DefaultSetConfig = SetConfig{
 		},
 
 		IPBlockDetect: IPBlockDetectConfig{
+			Action:              "block",
 			Enabled:             false,
 			RetransmitThreshold: 3,
 			TimeoutMs:           3000,

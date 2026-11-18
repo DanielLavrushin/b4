@@ -115,6 +115,12 @@ func NewPool(cfg *config.Config) *Pool {
 	}
 
 	pool := &Pool{Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), cleanupDone: make(chan struct{}), state: state}
+	pool.collectedBase = cfg
+	metrics.GetMetricsCollector().UpdateCollectedIPs(nil)
+	pool.collectedCtx, pool.collectedCancel = context.WithCancel(context.Background())
+	for _, w := range ws {
+		w.pool = pool
+	}
 	pool.wireBans()
 	if !cfg.Queue.IsDiscovery {
 		pool.dnsCopy = newDNSCopyListener(ws[0])
@@ -149,9 +155,16 @@ func NewPool(cfg *config.Config) *Pool {
 		defer cleanupTicker.Stop()
 		escalationTicker := time.NewTicker(2 * time.Second)
 		defer escalationTicker.Stop()
+		collectedTimer := time.NewTimer(time.Hour)
+		defer collectedTimer.Stop()
+		collectedWake := pool.state.destState.CollectedWake()
 		pool.checkDNSPins(pool.GetFirstWorkerConfig())
 		for {
+			collectedDue := pool.state.destState.resetCollectedTimer(collectedTimer)
 			select {
+			case <-collectedWake:
+			case <-collectedDue:
+				pool.sweepCollectedHellos(time.Now())
 			case <-cleanupTicker.C:
 				retest := pool.retestInterval()
 				pool.state.connState.Cleanup()
@@ -171,7 +184,9 @@ func NewPool(cfg *config.Config) *Pool {
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
 				pool.state.wssize.cleanup(time.Now())
+				pool.reconcileCollected()
 				pool.sweepSilentHellos(time.Now())
+				pool.state.destState.cleanupCollectedHistory()
 				pool.publishEscalations()
 				pool.publishBans()
 				pool.reportQueueDirection(time.Now())
@@ -294,6 +309,9 @@ func (p *Pool) ReleaseHolds() {
 }
 
 func (p *Pool) Stop() {
+	if p.collectedCancel != nil {
+		p.collectedCancel()
+	}
 	p.dnsCopy.disable()
 	p.ReleaseHolds()
 	p.dnsCopy.close()
@@ -405,6 +423,9 @@ func buildMatcher(cfg *config.Config) *sni.SuffixSet {
 func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
+	p.collectedBase = newCfg
+	p.collectedDirty = true
+	newCfg = p.CollectedConfig(newCfg)
 
 	var oldMatcher *sni.SuffixSet
 	reuse := false

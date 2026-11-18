@@ -4,6 +4,7 @@ import {
   TcpIcon,
   UdpIcon,
   BlockIcon,
+  CollectIcon,
   ProxyIcon,
   DuplicateIcon,
   TelegramIcon,
@@ -175,7 +176,8 @@ const DnsBadge = ({ verdict }: { verdict: DnsVerdict }) => {
 export const FlagBadges = ({ flags }: FlagBadgesProps) => {
   const { t } = useTranslation();
   const dnsVerdict = parseDnsVerdict(flags);
-  const isBlocked = flags?.startsWith("ipblock");
+  const isCollected = flags === "ipblock-collected";
+  const isBlocked = flags?.startsWith("ipblock") && !isCollected;
   const isBanned = flags === "ipblock-ban";
   const isBlackhole = flags === "block";
   const isSocks5 = flags === "socks5";
@@ -188,6 +190,7 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
     : "";
 
   if (
+    !isCollected &&
     !isBlocked &&
     !isBlackhole &&
     !isSocks5 &&
@@ -258,6 +261,21 @@ export const FlagBadges = ({ flags }: FlagBadgesProps) => {
           title={t("connections.flags.voiceExempt")}
           variant="outlined"
           color="warning"
+        />
+      )}
+      {isCollected && (
+        <B4Badge
+          icon={<CollectIcon />}
+          label={t("connections.flags.ipCollectedLabel")}
+          title={t("connections.flags.ipCollected")}
+          variant="outlined"
+          color="secondary"
+          sx={{
+            backgroundColor: "transparent",
+            borderColor: "secondary.dark",
+            color: "text.primary",
+            "& .MuiChip-icon": { color: "inherit" },
+          }}
         />
       )}
       {isBlocked && (

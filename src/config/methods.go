@@ -659,7 +659,7 @@ func (set *SetConfig) MatchesIPVersion(version uint8) bool {
 }
 
 func (set *SetConfig) HasIPOrDomainTargets() bool {
-	return len(set.Targets.IpsToMatch) > 0 || len(set.Targets.DomainsToMatch) > 0
+	return len(set.TargetIPs()) > 0 || len(set.Targets.DomainsToMatch) > 0
 }
 
 func (set *SetConfig) DeclaresDestinationTargets() bool {
@@ -667,12 +667,12 @@ func (set *SetConfig) DeclaresDestinationTargets() bool {
 		return true
 	}
 	t := &set.Targets
-	return len(t.SNIDomains) > 0 || len(t.IPs) > 0 || len(t.GeoSiteCategories) > 0 || len(t.GeoIpCategories) > 0 || len(t.ASNs) > 0
+	return t.UseCollectedIPs || len(t.SNIDomains) > 0 || len(t.IPs) > 0 || len(t.GeoSiteCategories) > 0 || len(t.GeoIpCategories) > 0 || len(t.ASNs) > 0
 }
 
 func (set *SetConfig) DeclaresIPTargets() bool {
 	t := &set.Targets
-	return len(t.IpsToMatch) > 0 || len(t.IPs) > 0 || len(t.GeoIpCategories) > 0 || len(t.ASNs) > 0
+	return t.UseCollectedIPs || len(t.IpsToMatch) > 0 || len(t.IPs) > 0 || len(t.GeoIpCategories) > 0 || len(t.ASNs) > 0
 }
 
 func (set *SetConfig) RoutingDivertsPackets() bool {
@@ -707,7 +707,7 @@ func (set *SetConfig) RoutingHandsOffPackets() bool {
 
 func (set *SetConfig) RoutesAddressesToInterface() bool {
 	return set.RoutingDivertsPackets() && set.RoutesToInterface() &&
-		!(set.Targets.DomainOnly && len(set.Targets.IpsToMatch) == 0)
+		!(set.Targets.DomainOnly && len(set.TargetIPs()) == 0)
 }
 
 func (set *SetConfig) RoutingIncludesRouterTraffic() bool {
@@ -985,7 +985,7 @@ func (cfg *Config) CollectSetMSSClamps() []SetMSSClampEntry {
 		entry := SetMSSClampEntry{SetID: set.Id, SetIdx: i, Size: set.MSSClamp.Size}
 		seen4 := make(map[string]struct{})
 		seen6 := make(map[string]struct{})
-		for _, ipStr := range set.Targets.IpsToMatch {
+		for _, ipStr := range set.TargetIPs() {
 			ipStr = strings.TrimSpace(ipStr)
 			if ipStr == "" {
 				continue
@@ -1108,6 +1108,9 @@ func (cfg *Config) AnySetDSCP() bool {
 
 func (cfg *Config) AnySetTCPIncoming() bool {
 	for _, set := range cfg.Sets {
+		if set != nil && set.Enabled && set.TCP.IPBlockDetect.Collects() {
+			return true
+		}
 		if set != nil && set.Enabled && set.TCP.Incoming.Mode != "" && set.TCP.Incoming.Mode != ConfigOff {
 			return true
 		}
@@ -1249,7 +1252,7 @@ func (cfg *Config) CollectDuplicateIPs() (ipv4 []string, ipv6 []string) {
 		if !set.Enabled || !set.TCP.Duplicate.Enabled {
 			continue
 		}
-		for _, raw := range set.Targets.IpsToMatch {
+		for _, raw := range set.TargetIPs() {
 			ipStr, ok := canonicalIPTarget(raw)
 			if !ok {
 				continue

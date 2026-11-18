@@ -79,6 +79,7 @@ func addRules(cfg *config.Config) error {
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
+	applyCollectedAccounting(cfg)
 	discoveryDSCPRewritten(cfg)
 	rulesAppliedCfg = cfg
 
@@ -107,6 +108,7 @@ func addRules(cfg *config.Config) error {
 }
 
 func clearRules(cfg *config.Config) error {
+	defer revertCollectedAccounting()
 	if cfg.System.Tables.SkipSetup {
 		return nil
 	}
@@ -615,4 +617,19 @@ func ReloadKernelModules() {
 		loadKernelModuleList(dnsCopyLogModule, dnsCopyModule)
 	}
 	ctnl.Retest()
+}
+
+func RefreshCollectedRules(cfg *config.Config) error {
+	rulesMu.Lock()
+	defer rulesMu.Unlock()
+	if rulesAppliedCfg != nil && !config.FirewallRefreshNeeded(rulesAppliedCfg, cfg) {
+		return nil
+	}
+	dscpKeepOnRefresh = true
+	err := clearRulesFn(appliedOr(cfg))
+	dscpKeepOnRefresh = false
+	if err != nil {
+		return err
+	}
+	return addRulesFn(cfg)
 }

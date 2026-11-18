@@ -196,7 +196,6 @@
       "levelTrace": "Trace",
       "levelDebug": "Debug"
     },
-
     "Service": {
       "title": "Service",
       "timezone": "Time Zone",
@@ -1087,6 +1086,21 @@
       "cleared_other": "Escalations cleared: {{value}} hosts went back to their original set",
       "clearFailed": "Could not clear the escalations: {{error}}"
     },
+    "collected": {
+      "title": "Collected IPs",
+      "subtitle": "Addresses added by Collect detected IPs. A new detection can add a removed address again.",
+      "empty": "No collected IPs.",
+      "set": "Detected by {{set}}",
+      "clear": "Clear pool",
+      "remove": "Remove",
+      "removeLabel": "Remove {{address}} from the collected pool",
+      "removeHint": "Removes this address from the collected pool. A new detection can add it again.",
+      "removed": "{{address}} removed from the collected pool.",
+      "cleared": "Collected pool cleared.",
+      "removeFailed": "Could not update the collected pool: {{error}}",
+      "confirmTitle": "Clear collected IPs?",
+      "confirmBody": "Remove all addresses from the collected pool? New detections can add them again."
+    },
     "bans": {
       "title": "Banned addresses",
       "subtitle": "No answer for any site name: clients use other addresses until the ban ends",
@@ -1747,7 +1761,9 @@
       "manualDeviceInfo": "Manually added devices have no MAC address on the network, so they are matched by the IP address you entered. Give such a device a fixed or reserved address, and note that it cannot be matched at all when an intermediate router replaces the source address of its traffic.",
       "manualDeviceNoIp": "These manually added devices have no IP address, so they cannot be matched: {{names}}. If they are the only devices selected, the set matches nothing; with \"all devices except selected\" enabled, it applies to every device instead.",
       "deviceNoDestination": "Source devices narrow who this set applies to; they do not select traffic on their own. With routing on and no domain, IP or ASN target, this set steers nothing. To send everything from these devices, turn on \"Match any IP address\" on the IP addresses tab.",
-      "catchAllIpsPartial": "This set holds {{present}}, but not {{missing}}. Turn the switch on to cover every address, or add the missing entry below."
+      "catchAllIpsPartial": "This set holds {{present}}, but not {{missing}}. Turn the switch on to cover every address, or add the missing entry below.",
+      "useCollectedIps": "Use collected IPs",
+      "useCollectedIpsDesc": "Adds candidates from the shared detected-IP pool to this set’s IP targets. The pool is cleared when b4 restarts."
     },
     "tcp": {
       "sectionTitle": "TCP Configuration",
@@ -1836,7 +1852,13 @@
         "wssizeConflict": "Does not work together with traffic routing or packet duplication in the same set.",
         "wssizeTun": "The TUN engine does not apply this option; it works with the NFQUEUE engine only.",
         "wssizeDomainOnly": "Domain-only matching is on, so the rewrite applies only to the IP, GeoIP and ASN targets the set lists, and it lists none. The rewrite starts on the first packet, before the domain name is visible.",
-        "wssizeIdle": "Nothing is rewritten until Window is set or the Window Scale option is changed."
+        "wssizeIdle": "Nothing is rewritten until Window is set or the Window Scale option is changed.",
+        "ibdAction": "Detected IP action",
+        "ibdBlock": "Block detected IPs",
+        "ibdBlockNote": "Refuse detected blocked destinations using the existing block detection rules.",
+        "ibdCollect": "Collect detected IPs",
+        "ibdCollectNote": "Collect candidates after TCP connects but TLS stalls. A ready consumer can handle the next connection. Candidates are not verified bypasses.",
+        "ibdCollectTimeoutHelper": "How long an established TCP connection can remain silent after its ClientHello before its destination becomes a candidate."
       },
       "splitting": {
         "header": "Splitting Strategy",
@@ -3815,6 +3837,8 @@
       "duplicate": "Duplicated packet",
       "voiceExempt": "Call packet passed through untouched: the set has Calls on Pass call setup, or the packet belongs to a call that a set handling only calls took",
       "ipBlocked": "Blocked by IP",
+      "ipCollectedLabel": "Collect IP",
+      "ipCollected": "IP added to the shared collection pool for later connections",
       "ipBanned": "Banned address: it did not answer any site name, so b4 reset the connection or, for QUIC, refused it",
       "ipBannedLabel": "ban",
       "dns": {
@@ -4088,7 +4112,8 @@
     "dscp_rules_pending": "b4 is still applying its DSCP rules, which decide the network path of the set's traffic. Try again in a moment.",
     "wssize_unsupported": "Set \"{{set}}\": Real TCP window (wssize) does not work together with traffic routing or packet duplication in the same set.",
     "wssize_window_range": "Set \"{{set}}\": Window under Real TCP window (wssize) must be between {{min}} and {{max}}.",
-    "wssize_scale_range": "Set \"{{set}}\": Window Scale under Real TCP window (wssize) must be between {{min}} and {{max}}."
+    "wssize_scale_range": "Set \"{{set}}\": Window Scale under Real TCP window (wssize) must be between {{min}} and {{max}}.",
+    "invalid_enum": "Select one of the supported values."
   },
   "hub": {
     "title": "Community Hub",

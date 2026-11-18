@@ -393,6 +393,8 @@ only when the packet arrives on them. The chain takes no TCP, and the set has no
 refusal. b4 installs the rule only for a set limited to source interfaces or to included
 source devices.
 
+For a proxy set using collected targets, a new TCP SYN to a collected address records the set mark in conntrack under `0x27fff`. Owned later packets restore that mark; established connections without it return before diversion. Collected-address guards run before the destination TPROXY rules, after the source-device gate and local/self-traffic guards. Source-interface restrictions still apply. Interface consumers use their existing conntrack owner. Block consumers apply collected membership only to new connections. No additional mark bit is allocated.
+
 The router's own connections reach a proxy set by a loop, unless the set is limited to
 source devices or source interfaces. `b4r_<set>_out` marks their TCP packets in the original
 direction with the set's mark plus bit `0x1000000`, the priority 3 rule sends them to `lo`,

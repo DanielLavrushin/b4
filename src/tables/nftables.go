@@ -209,7 +209,15 @@ func queueMatchInDirection(match []string, dir string, ctDirection bool) []strin
 }
 
 func (n *NFTablesManager) addLimitedQueueRule(chain, dir, limit string, ctDirection bool, match ...string) error {
-	return n.addQueueRule(chain, queueMatchWithLimit(match, dir, limit, n.ctPacketsSupported, ctDirection)...)
+	return n.addQueueRule(chain, n.limitedQueueMatch(dir, limit, ctDirection, match...)...)
+}
+
+func (n *NFTablesManager) limitedQueueMatch(dir, limit string, ctDirection bool, match ...string) []string {
+	args := queueMatchWithLimit(match, dir, limit, n.ctPacketsSupported, ctDirection)
+	if dir == "reply" && n.ctPacketsSupported && collectedReplyObservation(n.cfg) {
+		args[len(match)+1] = "reply"
+	}
+	return args
 }
 
 func nftInjectedReplyReturn(mark uint) []string {

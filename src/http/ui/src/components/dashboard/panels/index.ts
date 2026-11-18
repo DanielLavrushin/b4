@@ -7,6 +7,7 @@ export { describeEvent, engineLabel } from "./eventText";
 export type { EventLink, EventLinkKind, EventView } from "./eventText";
 export { EscalationsPanel, clearEscalations } from "./Escalations";
 export type { EscalationsClearResult } from "./Escalations";
+export { CollectedPanel, clearCollected } from "./Collected";
 export { BansPanel, clearBans } from "./Bans";
 export type { BansClearResult } from "./Bans";
 export { BlockedPanel } from "./Blocked";

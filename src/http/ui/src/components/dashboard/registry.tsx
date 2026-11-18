@@ -3,6 +3,7 @@ import {
   ActivityPanel,
   AddressesPanel,
   BansPanel,
+  CollectedPanel,
   BlockedPanel,
   DevicesPanel,
   DomainsPanel,
@@ -84,6 +85,13 @@ export const DASHBOARD_PANELS: readonly PanelDescriptor[] = [
     defaultSpan: 6,
     when: "bans",
     Component: BansPanel,
+  },
+  {
+    id: "collected",
+    titleKey: "dashboard.collected.title",
+    defaultSpan: 6,
+    when: "collected",
+    Component: CollectedPanel,
   },
   {
     id: "telegram",

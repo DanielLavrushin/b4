@@ -29,15 +29,16 @@ type portRange struct {
 }
 
 type SuffixSet struct {
-	sets          map[string]*config.SetConfig
-	multiSets     map[string][]*config.SetConfig
-	regexes       []*regexWithSet
-	regexPatterns int
-	regexCache    sync.Map
-	ipRanger      cidranger.Ranger
-	udpPortRanges []portRange
-	udpL7Ranges   []portRange
-	tcpPortRanges []portRange
+	connectionPolicy *byte
+	sets             map[string]*config.SetConfig
+	multiSets        map[string][]*config.SetConfig
+	regexes          []*regexWithSet
+	regexPatterns    int
+	regexCache       sync.Map
+	ipRanger         cidranger.Ranger
+	udpPortRanges    []portRange
+	udpL7Ranges      []portRange
+	tcpPortRanges    []portRange
 
 	ipCache      map[string]*cacheEntry
 	ipCacheLRU   *list.List
@@ -144,10 +145,11 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 	}
 
 	s := &SuffixSet{
-		sets:      make(map[string]*config.SetConfig, totalDomains),
-		multiSets: make(map[string][]*config.SetConfig),
-		regexes:   make([]*regexWithSet, 0),
-		ipRanger:  cidranger.NewPCTrieRanger(),
+		connectionPolicy: new(byte),
+		sets:             make(map[string]*config.SetConfig, totalDomains),
+		multiSets:        make(map[string][]*config.SetConfig),
+		regexes:          make([]*regexWithSet, 0),
+		ipRanger:         cidranger.NewPCTrieRanger(),
 
 		ipCache:      make(map[string]*cacheEntry),
 		ipCacheLRU:   list.New(),
@@ -180,7 +182,7 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 			s.setIndex[set.Id] = setOrder
 			s.scopedSet[set.Id] = len(set.Targets.SourceDevices) > 0
 		}
-		if set.IPPriorityApplies() && len(set.Targets.IpsToMatch) > 0 {
+		if set.IPPriorityApplies() && len(set.TargetIPs()) > 0 {
 			s.anyIPPriority = true
 		}
 		if set.BlockRoutingScoped() {
@@ -229,7 +231,7 @@ func NewSuffixSet(sets []*config.SetConfig) *SuffixSet {
 			s.nameSets = append(s.nameSets, set)
 		}
 
-		for _, ipStr := range set.Targets.IpsToMatch {
+		for _, ipStr := range set.TargetIPs() {
 			if ipNet := parseTargetNetwork(ipStr); ipNet != nil {
 				key := ipNet.String()
 				if existing, ok := ipEntries[key]; ok {
@@ -1134,4 +1136,14 @@ func selectSetBySourceAndTLS(candidates []*config.SetConfig, srcMAC string, tlsV
 	}
 
 	return false, nil
+}
+
+func (s *SuffixSet) KeepConnectionPolicy(previous *SuffixSet) {
+	if previous != nil {
+		s.connectionPolicy = previous.connectionPolicy
+	}
+}
+
+func (s *SuffixSet) SameConnectionPolicy(previous *SuffixSet) bool {
+	return s != nil && previous != nil && s.connectionPolicy != nil && s.connectionPolicy == previous.connectionPolicy
 }

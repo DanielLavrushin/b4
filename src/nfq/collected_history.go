@@ -1,0 +1,69 @@
+package nfq
+
+import (
+	"container/list"
+	"github.com/daniellavrushin/b4/ctnl"
+)
+
+type collectedHistory struct {
+	flows map[string]*list.Element
+	order list.List
+}
+
+func (t *destStateTracker) rememberCollectedLocked(h *helloWatch) bool {
+	if !h.collect || h.flowID == 0 {
+		return true
+	}
+	record := &helloWatch{key: h.key, flowID: h.flowID, client: h.client, dst: h.dst, wire: h.wire, cport: h.cport, port: h.port, tun: h.tun}
+	if previous := t.collectHistory.flows[h.key]; previous != nil {
+		if previous.Value.(*helloWatch).flowID == h.flowID {
+			return false
+		}
+		previous.Value = record
+		t.collectHistory.order.MoveToBack(previous)
+		return true
+	}
+	if len(t.collectHistory.flows) >= maxHelloWatches {
+		return false
+	}
+	if t.collectHistory.flows == nil {
+		t.collectHistory.flows = make(map[string]*list.Element)
+	}
+	t.collectHistory.flows[h.key] = t.collectHistory.order.PushBack(record)
+	return true
+}
+
+func (t *destStateTracker) cleanupCollectedHistory() {
+	type pending struct {
+		original *helloWatch
+		watch    helloWatch
+	}
+	t.watchMu.Lock()
+	limit := min(t.collectHistory.order.Len(), maxSilenceLookups)
+	batch := make([]pending, 0, limit)
+	for range limit {
+		entry := t.collectHistory.order.Front()
+		t.collectHistory.order.MoveToBack(entry)
+		h := entry.Value.(*helloWatch)
+		if t.watches[h.key] == nil {
+			batch = append(batch, pending{h, *h})
+		}
+	}
+	t.watchMu.Unlock()
+	for _, item := range batch {
+		flow, found, err := helloFlow(item.watch)
+		if err != nil {
+			return
+		}
+		if found && (flow.ID == 0 || flow.ID == item.watch.flowID && (!flow.HasState || flow.TCPState == ctnl.TCPEstablished)) {
+			continue
+		}
+		t.watchMu.Lock()
+		entry := t.collectHistory.flows[item.watch.key]
+		if entry != nil && entry.Value == item.original && t.watches[item.watch.key] == nil {
+			t.collectHistory.order.Remove(entry)
+			delete(t.collectHistory.flows, item.watch.key)
+		}
+		t.watchMu.Unlock()
+	}
+}

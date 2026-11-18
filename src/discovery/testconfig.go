@@ -35,6 +35,9 @@ func (ds *DiscoverySuite) buildTestConfig(preset ConfigPreset) *config.Config {
 	testSet := config.NewSetConfig()
 	testSet.Name = preset.Name
 	testSet.TCP = preset.Config.TCP
+	if testSet.TCP.IPBlockDetect.Action == "collect" {
+		testSet.TCP.IPBlockDetect = config.DefaultSetConfig.TCP.IPBlockDetect
+	}
 	testSet.UDP = preset.Config.UDP
 	testSet.Fragmentation = preset.Config.Fragmentation
 	testSet.Faking = preset.Config.Faking
@@ -131,6 +134,9 @@ func (ds *DiscoverySuite) buildTestConfigMulti(preset ConfigPreset) *config.Conf
 	testSet := config.NewSetConfig()
 	testSet.Name = preset.Name
 	testSet.TCP = preset.Config.TCP
+	if testSet.TCP.IPBlockDetect.Action == "collect" {
+		testSet.TCP.IPBlockDetect = config.DefaultSetConfig.TCP.IPBlockDetect
+	}
 	testSet.UDP = preset.Config.UDP
 	testSet.Fragmentation = preset.Config.Fragmentation
 	testSet.Faking = preset.Config.Faking

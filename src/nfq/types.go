@@ -2,6 +2,9 @@ package nfq
 
 import (
 	"context"
+	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/sni"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 
@@ -18,17 +21,26 @@ type Segment struct {
 }
 
 type Pool struct {
-	Workers     []*Worker
-	configMu    sync.Mutex
-	Dhcp        *dhcp.Manager
-	stopCleanup chan struct{}
-	cleanupDone chan struct{}
-	state       *runtimeState
-	tunSrc      *tunSrcResolver
-	dnsTCP      *dnsTCPServer
-	dnsCopy     *dnsCopyListener
-	conntrack   *ctnl.Worker
-	dropSets    *dropSetWriter
+	collectedBase      *config.Config
+	collected          map[netip.Addr]collectedCandidate
+	collectedMu        sync.RWMutex
+	collectedPublished []string
+	collectedInstall   func(context.Context, *config.Config) error
+	collectedChanged   func(*sni.SuffixSet)
+	collectedCtx       context.Context
+	collectedCancel    context.CancelFunc
+	collectedDirty     bool
+	Workers            []*Worker
+	configMu           sync.Mutex
+	Dhcp               *dhcp.Manager
+	stopCleanup        chan struct{}
+	cleanupDone        chan struct{}
+	state              *runtimeState
+	tunSrc             *tunSrcResolver
+	dnsTCP             *dnsTCPServer
+	dnsCopy            *dnsCopyListener
+	conntrack          *ctnl.Worker
+	dropSets           *dropSetWriter
 }
 
 type PacketInfo struct {
@@ -43,6 +55,7 @@ type PacketInfo struct {
 }
 
 type Worker struct {
+	pool             *Pool
 	packetsProcessed uint64
 	lastOverflowLog  int64
 	lastFakeSendLog  int64

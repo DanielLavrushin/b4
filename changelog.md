@@ -4,6 +4,10 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Collect detected IPs** adds stalled TLS destinations only after the server acknowledges the complete ClientHello, feeds a shared pool for **Use collected IPs**, marks **Traffic** with **Collect IP**, and lists candidates in **Collected IPs** on the dashboard with removal controls.
+
 ## [1.92.0] - 2026-11-17
 
 ### Added

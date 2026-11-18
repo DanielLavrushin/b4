@@ -2,6 +2,12 @@
 
 All notable changes to the b4hub community hub service are recorded in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Releases are published from the `b4hub` repository; the router changelog is `changelog.md` at the repository root.
 
+## [1.9.1] - 2026-11-16
+
+### Changed
+
+- The console classifies **Use collected IPs** as a local router setting that is never shared through the hub.
+
 ## [1.9.0] - 2026-11-15
 
 ### Added
@@ -102,3 +108,5 @@ All notable changes to the b4hub community hub service are recorded in this file
 [1.2.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/DanielLavrushin/b4hub/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/DanielLavrushin/b4hub/releases/tag/v1.0.0
+
+[1.9.1]: https://github.com/DanielLavrushin/b4hub/compare/v1.9.0...v1.9.1

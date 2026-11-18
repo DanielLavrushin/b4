@@ -67,7 +67,7 @@ func DSCPStatus(cfg *config.Config) DSCPState {
 func dscpStaticCount(set *config.SetConfig) int {
 	member := dscpPlanSet{v4: set.MatchesIPVersion(4), v6: set.MatchesIPVersion(6)}
 	count := 0
-	for _, raw := range set.Targets.IpsToMatch {
+	for _, raw := range set.TargetIPs() {
 		if prefix, ok := dscpParseTarget(raw); ok && member.matchesFamily(prefix.Addr()) {
 			count++
 		}

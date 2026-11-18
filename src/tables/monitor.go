@@ -12,14 +12,15 @@ import (
 )
 
 type Monitor struct {
-	cfgPtr   *atomic.Pointer[config.Config]
-	stop     chan struct{}
-	wg       sync.WaitGroup
-	interval time.Duration
-	backend  string
-	tun      bool
-	tunLost  tunRuleParts
-	lost     bool
+	configView func(*config.Config) *config.Config
+	cfgPtr     *atomic.Pointer[config.Config]
+	stop       chan struct{}
+	wg         sync.WaitGroup
+	interval   time.Duration
+	backend    string
+	tun        bool
+	tunLost    tunRuleParts
+	lost       bool
 
 	started      bool
 	pendingApply *config.Config
@@ -50,7 +51,7 @@ const (
 	monitorStartDelay = 5 * time.Second
 )
 
-func NewMonitor(cfgPtr *atomic.Pointer[config.Config]) *Monitor {
+func NewMonitor(cfgPtr *atomic.Pointer[config.Config], view ...func(*config.Config) *config.Config) *Monitor {
 	cfg := cfgPtr.Load()
 	tun := cfg.Queue.Mode == "tun"
 	interval := time.Duration(cfg.System.Tables.MonitorInterval) * time.Second
@@ -74,6 +75,9 @@ func NewMonitor(cfgPtr *atomic.Pointer[config.Config]) *Monitor {
 		egressIPHere: make(map[string]bool),
 		linkWatcher:  newLinkWatcher(cfgPtr),
 	}
+	if len(view) > 0 {
+		m.configView = view[0]
+	}
 	m.tickFn = m.tick
 	return m
 }
@@ -89,7 +93,7 @@ func (m *Monitor) Start() {
 	if m.started {
 		return
 	}
-	cfg := m.cfgPtr.Load()
+	cfg := m.config()
 	if cfg.System.Tables.SkipSetup || (cfg.System.Tables.MonitorInterval <= 0 && !m.tun) {
 		log.Infof("Tables monitor disabled")
 		return
@@ -142,7 +146,7 @@ func (m *Monitor) monitorLoop() {
 	ticker := time.NewTicker(m.interval)
 	defer ticker.Stop()
 
-	m.snapshotRoutingIfaces(m.cfgPtr.Load())
+	m.snapshotRoutingIfaces(m.config())
 
 	for {
 		select {
@@ -185,7 +189,7 @@ func (m *Monitor) tick(requested bool) bool {
 	defer noteRulesChecked()
 	m.lost = false
 	_, restored := m.ensureRulesLocked(requested)
-	if ensureDSCPLocked(m.cfgPtr.Load(), requested) {
+	if ensureDSCPLocked(m.config(), requested) {
 		m.lost = true
 		restored = true
 	}
@@ -205,7 +209,7 @@ func (m *Monitor) reconcileRouting(restored bool) bool {
 	}
 	cfg := routingSyncedConfig()
 	if cfg == nil {
-		cfg = m.cfgPtr.Load()
+		cfg = m.config()
 	}
 
 	if m.routingIfacesChanged(cfg) {
@@ -597,7 +601,7 @@ func (m *Monitor) ensureRules(requested bool) (*config.Config, bool) {
 }
 
 func (m *Monitor) ensureRulesLocked(requested bool) (*config.Config, bool) {
-	cfg := m.cfgPtr.Load()
+	cfg := m.config()
 	if m.checkRules(cfg) {
 		m.pendingApply = nil
 		m.recheckOwnPacketsShield()
@@ -667,7 +671,7 @@ func (m *Monitor) ForceRestore() error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
 	m.tunLost = tunRuleParts{masq: true, mss: true}
-	err := m.restoreRules(m.cfgPtr.Load())
+	err := m.restoreRules(m.config())
 	if m.tun {
 		reapplyDSCPLocked()
 	}
@@ -742,4 +746,12 @@ func (m *Monitor) routingIfacesChanged(cfg *config.Config) bool {
 		return true
 	}
 	return false
+}
+
+func (m *Monitor) config() *config.Config {
+	cfg := m.cfgPtr.Load()
+	if m.configView != nil {
+		return m.configView(cfg)
+	}
+	return cfg
 }

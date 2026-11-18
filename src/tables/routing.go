@@ -47,6 +47,7 @@ var routeNftBasePriorityStr = strconv.Itoa(routeNftBasePriority)
 const SelfDialMark = config.SelfDialMark
 
 type routeState struct {
+	collected   bool
 	setID       string
 	domainOnly  bool
 	mode        string
@@ -614,6 +615,7 @@ func buildRouteState(cfg *config.Config, set *config.SetConfig) routeState {
 	chainPre, chainOut, chainSNAT := routeBuildChainNames(set.Id)
 
 	st := routeState{
+		collected:  set.Targets.UseCollectedIPs,
 		setID:      set.Id,
 		domainOnly: set.Targets.DomainOnly,
 		mode:       mode,
@@ -662,7 +664,7 @@ func routeStateEqual(a, b routeState) bool {
 }
 
 func routeStateSameConfig(a, b routeState) bool {
-	return a.mode == b.mode &&
+	return a.collected == b.collected && a.mode == b.mode &&
 		a.domainOnly == b.domainOnly &&
 		a.mark == b.mark &&
 		a.bypass == b.bypass &&
@@ -705,6 +707,12 @@ func routeDropSets(be routeBackend, st routeState, keepSets bool) {
 		return
 	}
 	delete(routeStaticApplied, st.setID)
+	for _, name := range []string{st.setV4 + "c", st.setV6 + "c"} {
+		if be.hasIPSet(name) {
+			be.flushIPSet(name)
+			be.destroyIPSet(name)
+		}
+	}
 	if st.ipv4 || be.hasIPSet(st.setV4) {
 		be.flushIPSet(st.setV4)
 		be.destroyIPSet(st.setV4)
@@ -829,13 +837,13 @@ func routeAddIPsToSets(be routeBackend, st routeState, ttl int, ips []net.IP, ip
 }
 
 func routeCollectEntries(set *config.SetConfig) (v4, v6 []string) {
-	if set == nil || len(set.Targets.IpsToMatch) == 0 {
+	if set == nil || len(set.TargetIPs()) == 0 {
 		return nil, nil
 	}
 
-	seen := make(map[string]struct{}, len(set.Targets.IpsToMatch))
+	seen := make(map[string]struct{}, len(set.TargetIPs()))
 
-	for _, raw := range set.Targets.IpsToMatch {
+	for _, raw := range set.TargetIPs() {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
@@ -974,6 +982,10 @@ func RoutingRulesPresent(cfg *config.Config) bool {
 	be := getRouteBackend(cfg)
 	if be == nil {
 		return true
+	}
+
+	if !routeCollectedGuardsPresent(be, cfg) {
+		return false
 	}
 
 	switch eng := be.(type) {
@@ -1448,7 +1460,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			routeWarnIncomplete(set, "routing mode is 'proxy' but the upstream port is not set")
 			continue
 		}
-		if len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 && !set.RoutesUDPByPort() {
+		if len(set.TargetIPs()) == 0 && len(set.Targets.DomainsToMatch) == 0 && !set.RoutesUDPByPort() {
 			routeWarnNoDestination(set)
 			continue
 		}
@@ -1494,6 +1506,11 @@ func routingSyncConfigLocked(cfg *config.Config) {
 		if !config.RoutingIsBlock(cur.mode) && (cur.mark == 0 || cur.table <= 0) {
 			routeNoteInstallFailed(set.Id)
 			routeWarnIncomplete(set, "b4 could not take a routing table of its own for it")
+			continue
+		}
+		if err := routePrepareCollected(be, cfg, set, cur); err != nil {
+			failed = true
+			setErrs[set.Id] = RoutingSetError{ID: set.Id, Set: set.Name, Error: err.Error()}
 			continue
 		}
 		sources := routeNormalizedSources(set.Routing.SourceInterfaces)
@@ -1764,6 +1781,9 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 	}
 
 	routeAddMarkRestoreRules(be, st.chainPre, sources, st.mark, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	if err := routeCollectedGuard(be, cfg, set, st, st.chainPre, sources); err != nil {
+		return err
+	}
 	if cfg.Queue.IPv4Enabled {
 		routeAddMarkRules(be, st.chainPre, false, st.setV4, st.mark, sources, true)
 		routeAddMarkFallbackRules(be, st.chainPre, false, st.setV4, st.mark, sources)
@@ -1773,6 +1793,9 @@ func routeEnsureRule(be routeBackend, cfg *config.Config, set *config.SetConfig,
 		routeAddMarkFallbackRules(be, st.chainPre, true, st.setV6, st.mark, sources)
 	}
 
+	if err := routeCollectedGuard(be, cfg, set, st, st.chainOut, nil); err != nil {
+		return err
+	}
 	routeAddOutChainRules(be, cfg, st, gate)
 	routeEnsureChainJumps(be, st, gate)
 

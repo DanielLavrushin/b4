@@ -76,6 +76,7 @@ type Frame struct {
 	Devices       *DeviceList     `json:"devices,omitempty"`
 	Escalations   *EscalationList `json:"escalations,omitempty"`
 	Bans          *BanList        `json:"bans,omitempty"`
+	Collected     *CollectedList  `json:"collected,omitempty"`
 	Events        *EventLog       `json:"events,omitempty"`
 	Attention     Attention       `json:"attention"`
 	MTProto       *MTProtoStats   `json:"mtproto,omitempty"`

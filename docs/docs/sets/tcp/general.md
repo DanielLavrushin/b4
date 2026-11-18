@@ -70,11 +70,27 @@ The [Traffic](../../connections.md) page labels duplicated packets `dup`.
 
 ## IP Block Detection
 
-Some server addresses are blocked at the IP level: nothing reaches the server, so no bypass strategy helps. A CDN often answers DNS with several addresses of which only some are blocked, and the site then works or hangs depending on the address a device picked. The detection finds such addresses, and the [Traffic](../../connections.md) page labels their connections `ip`. The other fields appear once it is on.
+Detects destinations that do not answer. **Detected IP action** selects what happens to them.
 
 | Field | What it does | Default |
 | --- | --- | --- |
-| **Enable IP Block Detection** | Detects destinations that never answer and acts on them. | Off |
+| **Enable IP Block Detection** | Turns detection on for this set. | Off |
+| **Detected IP action** | **Block detected IPs** refuses detected blocked destinations. **Collect detected IPs** adds stalled TLS destinations to the [shared target pool](../targets.md#collected-ips). | **Block detected IPs** |
+
+With **Collect detected IPs**, TCP must connect and the server must acknowledge the complete ClientHello without sending TLS data before **Detection Timeout** expires. The destination becomes a candidate, without a separate verification connection. TCP connection failures are not collected. Collection works with the NFQUEUE packet engine for devices behind the router.
+
+The wait is scheduled from the ClientHello deadline, independently of the periodic Block checks. Server data or client acknowledgement of server data cancels collection. Reply observation is bounded by the configured TCP packet limit; missing packets or inconsistent conntrack accounting leave the result unknown and do not produce a candidate. A candidate interrupted by progress during publication is withdrawn before resetting the client.
+
+A TCP connection is observed only once for collection, even if a late ClientHello arrives after the server has answered. A new conntrack connection to the same address can be observed separately. The bounded history retains up to 4096 connections and removes records only after conntrack confirms that the connection ended or was replaced. If the history is full, new observations are skipped. **Traffic** marks collection with an outlined **Collect IP** badge; the red IP badge belongs to blocking.
+
+Once an eligible set with **Use collected IPs** is ready, b4 resets the connection if it is still stalled. A later connection can use that set's strategy from its first packet. Without a ready consumer, the stalled connection is left alone. The collecting set needs no WSSIZE setting.
+
+### Block detected IPs
+
+A CDN can return several addresses of which only some are blocked. **Block detected IPs** finds those addresses and labels their connections `ip` on the [Traffic](../../connections.md) page. The following fields apply to this action; **Detection Timeout** also sets the wait for Collect.
+
+| Field | What it does | Default |
+| --- | --- | --- |
 | **Heal DNS answers** | Also removes unreachable addresses from DNS answers. When every address is unreachable, the last one that worked for the domain is answered instead. | Off |
 | **Detect unanswered SYNs** | Catches blocks at the address level, where the connection never opens. | On |
 | **SYN Threshold** | How many unanswered connection attempts before the router tests the address itself. Nothing happens until that test fails too. | `3` |
@@ -98,7 +114,7 @@ On some routers b4 cannot see whether a server has answered while the connection
 
 While an address is banned:
 
-- New connections to the address and port are reset at once in every set with IP block detection and **Cache Blocked IPs** on. QUIC to that address and port is refused. A device can then move on to the site's next address, if the site has one.
+- New connections to the address and port are reset at once in every set with **Block detected IPs** and **Cache Blocked IPs** on. QUIC to that address and port is refused. A device can then move on to the site's next address, if the site has one.
 - A set that routes through a proxy, or through a TUN, TAP or WireGuard interface that is up, leaves its connections to the address alone. A connection that another service sends into a tunnel is left alone too, see [Packets that leave by another route](../../internals/capture.md#tunnel-egress). A set routed to another interface, such as a second uplink, still resets or refuses its connections.
 - DNS answers for the domains of every set leave it out. When every address of an answer is banned, b4 answers with an address that worked for the domain before. When it knows none, the answer passes unchanged.
 - The [Traffic](../../connections.md) page labels the connections b4 resets or refuses `ban`.

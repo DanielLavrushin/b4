@@ -233,8 +233,25 @@ func runB4(cmd *cobra.Command, args []string) error {
 		return out
 	})
 	var engineDown atomic.Bool
+	var collectedView atomic.Value
+	collectedView.Store((func(*config.Config) *config.Config)(func(c *config.Config) *config.Config { return c }))
+	runtimeConfig := func(c *config.Config) *config.Config {
+		return collectedView.Load().(func(*config.Config) *config.Config)(c)
+	}
+	waitTables := func(ctx context.Context) error {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for discoveryRT.IsActive() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+			}
+		}
+		return ctx.Err()
+	}
 	refreshTables := func() error {
-		c := cfgPtr.Load()
+		c := runtimeConfig(cfgPtr.Load())
 		if c.System.Tables.SkipSetup {
 			return nil
 		}
@@ -242,32 +259,25 @@ func runB4(cmd *cobra.Command, args []string) error {
 			log.Infof("Firewall refresh skipped: the packet engine is not running, so the change applies when b4 restarts")
 			return nil
 		}
-		defer func() { tables.SyncDSCP(cfgPtr.Load()) }()
+		defer func() { tables.SyncDSCP(runtimeConfig(cfgPtr.Load())) }()
 		if tunEngineRef.Load() != nil {
 			firewallErr := tables.RefreshTUNFirewall(c)
-			tproxyMgr.SyncConfig(c)
-			tables.RoutingSyncConfig(c)
+			tproxyMgr.SyncConfig(runtimeConfig(c))
+			tables.RoutingSyncConfig(runtimeConfig(c))
 			return firewallErr
 		}
-		if discoveryRT.IsActive() {
-			log.Warnf("Tables refresh requested while discovery is active, waiting for discovery to finish...")
-			deadline := time.After(5 * time.Minute)
-			ticker := time.NewTicker(1 * time.Second)
-			defer ticker.Stop()
-			for discoveryRT.IsActive() {
-				select {
-				case <-deadline:
-					return fmt.Errorf("tables refresh timed out: discovery did not finish within 5 minutes")
-				case <-ticker.C:
-				}
-			}
+		waitCtx, cancelWait := context.WithTimeout(appCtx, 5*time.Minute)
+		defer cancelWait()
+		if err := waitTables(waitCtx); err != nil {
+			return err
 		}
+
 		if err := tables.RefreshRules(c); err != nil {
 			return err
 		}
 		nfq.ResetIfaceTraffic()
-		tproxyMgr.SyncConfig(c)
-		tables.RoutingSyncConfig(c)
+		tproxyMgr.SyncConfig(runtimeConfig(c))
+		tables.RoutingSyncConfig(runtimeConfig(c))
 		setEngineFirewall(metrics.GetMetricsCollector(), tables.DetectBackend(c))
 		return nil
 	}
@@ -339,6 +349,33 @@ func runB4(cmd *cobra.Command, args []string) error {
 	engineAttempt = loadEngineAttempt()
 
 	pool := nfq.NewPool(&cfg)
+	collectedView.Store((func(*config.Config) *config.Config)(pool.CollectedConfig))
+	pool.SetCollectedTargetsInstaller(func(ctx context.Context, c *config.Config) error {
+		if engineDown.Load() || c.System.Tables.SkipSetup {
+			return fmt.Errorf("packet interception unavailable")
+		}
+		if err := waitTables(ctx); err != nil {
+			return err
+		}
+		if err := tables.RefreshCollectedRules(c); err != nil {
+			return err
+		}
+		tproxyMgr.SyncConfig(c)
+		tables.RoutingSyncConfig(c)
+		tables.SyncDSCP(c)
+		if err := tables.CollectedTargetsReady(c); err != nil {
+			return err
+		}
+		for _, set := range c.RoutingSets() {
+			if set.Enabled && set.Routing.Enabled && set.Targets.UseCollectedIPs && config.RoutingUsesTProxy(set.Routing.Mode) {
+				status := tproxyMgr.ListenerStatus(set.Id, 0)
+				if c.QueuesIPFamily(false) && set.MatchesIPVersion(4) && !status.V4 || c.QueuesIPFamily(true) && set.MatchesIPVersion(6) && !status.V6 {
+					return fmt.Errorf("consumer listener %q unavailable", set.Name)
+				}
+			}
+		}
+		return ctx.Err()
+	}, tproxyResolver.Set)
 	tables.DNSQueryCopyOpenFunc = pool.OpenDNSQueryCopy
 	tables.DNSQueryCopyAliveFunc = pool.DNSQueryCopyAlive
 	tables.DNSQueryCopyPlacedFunc = pool.SetDNSQueryCopyFamilies
@@ -389,13 +426,13 @@ func runB4(cmd *cobra.Command, args []string) error {
 	}
 
 	if !engineDown.Load() && !cfg.System.Tables.SkipSetup && (isTUN || cfg.System.Tables.MonitorInterval > 0) {
-		tablesMonitor = tables.NewMonitor(&cfgPtr)
+		tablesMonitor = tables.NewMonitor(&cfgPtr, runtimeConfig)
 		tablesMonitor.Start()
 		tablesMonitorRef.Store(tablesMonitor)
 	}
 	if !engineDown.Load() {
 		tables.StartDSCPSync()
-		tables.SyncDSCP(cfgPtr.Load())
+		tables.SyncDSCP(runtimeConfig(cfgPtr.Load()))
 	}
 
 	stopExposureWatch := func() {}
@@ -439,7 +476,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if c.System.Tables.SkipSetup || engineDown.Load() || !c.TelegramBridgeEnabled() {
 			return
 		}
-		tables.RoutingSyncConfig(c)
+		tables.RoutingSyncConfig(runtimeConfig(c))
 	})
 
 	handler.SetRoutingSyncFunc(func(c *config.Config) {
@@ -449,9 +486,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if engineDown.Load() {
 			return
 		}
-		tproxyMgr.SyncConfig(c)
-		tables.RoutingSyncConfig(c)
-		tables.SyncDSCP(c)
+		tproxyMgr.SyncConfig(runtimeConfig(c))
+		tables.RoutingSyncConfig(runtimeConfig(c))
+		tables.SyncDSCP(runtimeConfig(c))
 	})
 
 	handler.SetTUNEngine(tunEngine)
@@ -501,9 +538,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 		tproxyResolver.Set(pool.GetMatcher())
 		tables.WarnSkipSetupStrictConntrack(c)
 		if !c.System.Tables.SkipSetup {
-			tproxyMgr.SyncConfig(c)
-			tables.RoutingSyncConfig(c)
-			tables.SyncDSCP(c)
+			tproxyMgr.SyncConfig(runtimeConfig(c))
+			tables.RoutingSyncConfig(runtimeConfig(c))
+			tables.SyncDSCP(runtimeConfig(c))
 		}
 		aiManager.Update(c.System.AI)
 		if _, err := config.ApplyMemoryLimit(c.System.MemoryLimit); err != nil {
@@ -615,9 +652,9 @@ func runB4(cmd *cobra.Command, args []string) error {
 			socks5Server.UpdateConfig(c)
 			tproxyResolver.Set(pool.GetMatcher())
 			if !c.System.Tables.SkipSetup && !engineDown.Load() {
-				tproxyMgr.SyncConfig(c)
-				tables.RoutingSyncConfig(c)
-				tables.SyncDSCP(c)
+				tproxyMgr.SyncConfig(runtimeConfig(c))
+				tables.RoutingSyncConfig(runtimeConfig(c))
+				tables.SyncDSCP(runtimeConfig(c))
 			}
 			return nil
 		})

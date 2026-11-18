@@ -378,8 +378,14 @@ func routeEnsureProxyRule(be routeBackend, cfg *config.Config, set *config.SetCo
 	be.addClaimedBypassRule(st.chainPre, st.mark)
 	routeAddBlacklistGate(be, "mangle", st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled, gate)
 	routeAddLocalDestinationGuard(be, st.chainPre, cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled)
+	if err := routeCollectedGuard(be, cfg, set, st, st.chainPre, sources); err != nil {
+		return err
+	}
 	if !sourceScoped {
 		routeSelfDialBypass(be, cfg, st.chainOut)
+		if err := routeCollectedGuard(be, cfg, set, st, st.chainOut, nil); err != nil {
+			return err
+		}
 		be.addClaimedBypassRule(st.chainOut, 0)
 		routeAddProxyRouterTrafficGuard(be, cfg, st)
 	}

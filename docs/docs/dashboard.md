@@ -126,6 +126,10 @@ Shown while a [block set](sets/blocking.md) is enabled. **Domains** lists what w
 
 Shown while IP block detection has [banned addresses](sets/tcp/general.md#banned-addresses). Each row shows the address, the domain and set it was caught on, how many times it was caught and the time left. **Unban** lifts one ban at once, and **Clear all** lifts every ban.
 
+## Collected IPs {#collected-ips}
+
+The panel appears while the [collected pool](sets/targets.md#collected-ips) contains addresses. Each row shows the IP, the domain and the collecting set. **Remove** deletes one address; **Clear pool** removes all addresses after confirmation. A new detection can add a removed address again. Manual IP, GeoIP and ASN targets remain unchanged.
+
 ## Telegram {#telegram}
 
 Shown while the [MTProto proxy](telegram/mtproto-proxy.md) or [Telegram over WebSocket](telegram/websocket-bridge.md) is on. For the proxy, it shows the connected networks, open connections and traffic of each secret. For the bridge, it shows the relayed sessions and failures, and **not working** when the bridge cannot work. The gear button opens **Settings > Telegram**.

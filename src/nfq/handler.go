@@ -365,7 +365,7 @@ func (w *Worker) connectionSet(matcher *sni.SuffixSet, connKey, srcMac string, i
 		return nil, "", false
 	}
 	set, held := decision.set, decision.heldBy != ""
-	if decision.decidedBy != matcher || decision.decidedMac != srcMac {
+	if !matcher.SameConnectionPolicy(decision.decidedBy) || decision.decidedMac != srcMac {
 		stillHeld := decision.heldBy != "" && hold.on() && decision.heldBy == hold.set.Id && hold.set.MatchesIPVersion(ipVersion)
 		set, held = nil, false
 		var named *config.SetConfig
@@ -430,6 +430,22 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	hold := addressHold{set: st, prefix: stPrefix}
 
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
+	if tcp[13]&0x02 == 0 {
+		if decision, ok := w.tlsCache.Decision(connKey); ok && decision.collectedPinned && matcher.SameConnectionPolicy(decision.decidedBy) && decision.decidedMac == pkt.srcMac {
+			previousKeep := keep
+			keep = func(candidate *config.SetConfig) bool {
+				return decision.set != nil && candidate.Id == decision.set.Id && previousKeep.Keeps(candidate)
+			}
+			matched, set, stPrefix = matcher.MatchIPWithSourceDetail(pkt.dst, pkt.srcMac, keep)
+			st = set
+			if matched && !set.MatchesTCPDPort(dport) {
+				matched, set, st = false, nil, nil
+			}
+			hold = addressHold{set: st, prefix: stPrefix}
+			addressMatched = st != nil
+		}
+	}
+
 	vc.hellos, vc.helloKey = w.pendingHello, connKey
 	w.noteClientProgress(connKey, tcp)
 	if tcp[13]&0x12 == 0x02 && w.recordsStreamStarts(cfg) {
@@ -869,7 +885,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		dstIPPort := fmt.Sprintf("%s:%d", pkt.dstStr, dport)
 
 		cachedReason := ""
-		if ibd.CacheBlockedIPs {
+		if ibd.CacheBlockedIPs && !ibd.Collects() {
 			if w.bans.banned(pkt.dst, dport) {
 				cachedReason = "ipblock-ban"
 			} else if w.destState.IsBlocked(dstIPPort) {
@@ -966,12 +982,12 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				timeout = 3000 * time.Millisecond
 			}
 
-			if stallCount >= threshold || (stallCount > 1 && time.Since(stallFirstSeen) > timeout) {
+			if !ibd.Collects() && (stallCount >= threshold || (stallCount > 1 && time.Since(stallFirstSeen) > timeout)) {
 				if !w.destState.HasRSTSent(connKey) {
 					w.destState.MarkRSTSent(connKey)
 					w.destState.Unwatch(connKey)
 					w.resetClient(pkt)
-					if ibd.CacheBlockedIPs {
+					if ibd.CacheBlockedIPs && !ibd.Collects() {
 						w.destState.AddBlocked(dstIPPort)
 						w.bans.confirm(cfg, pkt.dst, dport, host, set.Name)
 					}
@@ -983,7 +999,11 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 				return 0
 			}
 			if stallCount == 1 {
-				w.watchHelloSilence(cfg, set, pkt, vc.scope, connKey, host, sniTarget, ipTarget, sport, dport, tlsVersion, stallFirstSeen.Add(timeout))
+				scope := vc.scope
+				if ibd.Collects() && scope == nil {
+					scope = newIngressScope(matcher, pkt.src, pkt.srcMac, vc.inDev, vc.routerOriginated())
+				}
+				w.watchHelloSilence(cfg, set, pkt, scope, connKey, host, sniTarget, ipTarget, sport, dport, tlsVersion, stallFirstSeen.Add(timeout))
 			}
 		}
 

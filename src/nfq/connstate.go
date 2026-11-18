@@ -26,19 +26,20 @@ type connInfo struct {
 }
 
 type tlsInfo struct {
-	host       string
-	tlsVersion uint16
-	helloSeq   uint32
-	gateSeq    uint32
-	helloLen   uint32
-	helloID    uint64
-	namedAt    time.Time
-	gen        uint64
-	lastSeen   time.Time
-	decidedBy  *sni.SuffixSet
-	decidedMac string
-	set        *config.SetConfig
-	heldBy     string
+	collectedPinned bool
+	host            string
+	tlsVersion      uint16
+	helloSeq        uint32
+	gateSeq         uint32
+	helloLen        uint32
+	helloID         uint64
+	namedAt         time.Time
+	gen             uint64
+	lastSeen        time.Time
+	decidedBy       *sni.SuffixSet
+	decidedMac      string
+	set             *config.SetConfig
+	heldBy          string
 }
 
 type tlsInfoCache struct {
@@ -163,7 +164,7 @@ func (c *tlsInfoCache) DecideHeld(connKey string, gen uint64, matcher *sni.Suffi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.current != nil && c.current != matcher {
+	if c.current != nil && !c.current.SameConnectionPolicy(matcher) {
 		return
 	}
 	if info, exists := c.conns[connKey]; exists && info.gen == gen {
@@ -184,6 +185,7 @@ func (c *tlsInfoCache) ForgetDecisions(current *sni.SuffixSet) {
 	c.current = current
 	for _, info := range c.conns {
 		info.decidedBy = nil
+		info.collectedPinned = false
 		info.set = nil
 	}
 }
@@ -253,16 +255,20 @@ type IPBlockCache interface {
 }
 
 type destStateTracker struct {
-	mu          sync.RWMutex
-	conns       map[string]*ipBlockEntry
-	blocked     map[string]time.Time
-	escalations map[string]*escalationEntry
-	rstKills    map[string]*failEntry
-	dnsFails    map[string]*failEntry
-	watchMu     sync.RWMutex
-	watches     map[string]*helloWatch
-	watchGen    uint64
-	watching    atomic.Int32
+	mu               sync.RWMutex
+	conns            map[string]*ipBlockEntry
+	blocked          map[string]time.Time
+	escalations      map[string]*escalationEntry
+	rstKills         map[string]*failEntry
+	dnsFails         map[string]*failEntry
+	watchMu          sync.RWMutex
+	watches          map[string]*helloWatch
+	replyWatches     map[string]*helloWatch
+	watchGen         uint64
+	collectHistory   collectedHistory
+	collectDeadlines collectedDeadlineHeap
+	collectWake      chan struct{}
+	watching         atomic.Int32
 }
 
 type escalationEntry struct {
@@ -933,4 +939,16 @@ func (t *connStateTracker) Cleanup() {
 		}
 	}
 	t.pruneEarlySynAcksLocked(now)
+}
+
+func (c *tlsInfoCache) PublishCollected(matcher *sni.SuffixSet) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.current = matcher
+	for _, info := range c.conns {
+		if info.decidedBy != nil && matcher.SameConnectionPolicy(info.decidedBy) {
+			info.decidedBy = matcher
+			info.collectedPinned = true
+		}
+	}
 }

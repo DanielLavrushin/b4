@@ -107,6 +107,16 @@ A settings change applies to the held connections too. b4 decides each of them a
 
 The drop set holds a connection by its addresses and ports. A new QUIC connection that a device opens from the same port to the same server address and port within those 2 minutes is dropped as well, whatever name it carries.
 
+## Collected IP targets {#collected-ips}
+
+[Collection](../sets/targets.md#collected-ips) reuses IP Block Detection's ClientHello silence watch. It requires NFQUEUE, an established TCP conntrack entry, its identity and packet counters. A captured server ACK must cover the complete original ClientHello record, without acknowledging bytes beyond the observed original client data. Missing or partial ACKs and unknown ClientHello boundaries leave the result unknown. This check uses the existing detection deadline; it does not open another connection or extend the wait. SYN failures do not produce TLS-stall candidates. Server data or connection closure cancels the watch. Before resetting a stalled client, b4 checks the same session and unchanged server progress again.
+
+While Collect is enabled, b4 requests `net.netfilter.nf_conntrack_acct=1` through its sysctl snapshot/restore lifecycle. Missing conntrack evidence prevents collection. TUN, Discovery, router-originated clients and B4-generated connections do not produce candidates. A set consuming the pool does not collect from its own attempts.
+
+The pool holds at most 1024 unique public destination addresses in process memory. It survives soft applies and clears at process exit. Runtime addresses are excluded from configuration JSON. There is no expiration, background retest or removal after a failed consumer attempt.
+
+Publication stages kernel destination membership and required listeners before the early matcher. No enabled eligible consumer means no reset. An installation error leaves early membership unchanged, attempts to restore prior kernel membership and withholds the reset. A failed rollback is logged; it does not trigger a reset. Existing routing and proxy ownership guards leave established unowned connections alone. [Marks and chain order](../guides/marks.md) describe their conntrack ownership.
+
 ## Kernel requirements {#kernel-requirements}
 
 | Feature | Needs |

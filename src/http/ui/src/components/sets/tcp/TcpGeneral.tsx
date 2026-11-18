@@ -58,6 +58,7 @@ export const TcpGeneral = ({
     ws.window === 0 &&
     wsScaleMode === "keep";
   const ibd = {
+    action: "block",
     enabled: false,
     retransmit_threshold: 3,
     timeout_ms: 3000,
@@ -75,6 +76,7 @@ export const TcpGeneral = ({
   };
   const mss: MSSClampConfig = config.mss_clamp ?? { enabled: false, size: 88 };
   const hasIPScope =
+    !!config.targets.use_collected_ips ||
     (config.targets?.ip?.length ?? 0) > 0 ||
     (config.targets?.geoip_categories?.length ?? 0) > 0 ||
     (config.targets?.asns?.length ?? 0) > 0;
@@ -374,10 +376,25 @@ export const TcpGeneral = ({
           />
         </Grid>
         <Grid size={{ xs: 12, md: 8 }}>
-          <B4Hint sx={{ my: 1 }}>{t("sets.tcp.general.ibdAlert")}</B4Hint>
+          <B4Hint sx={{ my: 1 }}>{t(ibd.action === "collect" ? "sets.tcp.general.ibdCollectNote" : "sets.tcp.general.ibdAlert")}</B4Hint>
         </Grid>
         {ibd.enabled && (
           <>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Select
+                label={t("sets.tcp.general.ibdAction")}
+                value={ibd.action}
+                path="tcp.ip_block_detect.action"
+                onChange={(event) => onChange("tcp.ip_block_detect.action", event.target.value)}
+                options={[
+                  { value: "block", label: t("sets.tcp.general.ibdBlock"), note: t("sets.tcp.general.ibdBlockNote") },
+                  { value: "collect", label: t("sets.tcp.general.ibdCollect"), note: t("sets.tcp.general.ibdCollectNote") },
+                ]}
+                aiTopic="tcp.ip_block_detect.action"
+              />
+            </Grid>
+            {ibd.action !== "collect" && <>
+
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Switch
                 label={t("sets.tcp.general.ibdHealDns")}
@@ -443,21 +460,7 @@ export const TcpGeneral = ({
               )}
             </Grid>
 
-            <Grid size={{ xs: 12, md: 6 }}>
-              <B4Slider
-                label={t("sets.tcp.general.ibdTimeout")}
-              value={ibd.timeout_ms}
-              path="tcp.ip_block_detect.timeout_ms"
-              onChange={(value: number) =>
-                  onChange("tcp.ip_block_detect.timeout_ms", value)
-                }
-                min={1000}
-                max={10000}
-                step={500}
-                valueSuffix={t("core.units.ms")}
-                helperText={t("sets.tcp.general.ibdTimeoutHelper")}
-              />
-            </Grid>
+
 
             {ibd.heal_dns && (
               <Grid size={{ xs: 12, md: 6 }}>
@@ -487,6 +490,22 @@ export const TcpGeneral = ({
                 onChange={(checked) =>
                   onChange("tcp.ip_block_detect.cache_blocked_ips", checked)
                 }
+              />
+            </Grid>
+            </>}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <B4Slider
+                label={t("sets.tcp.general.ibdTimeout")}
+              value={ibd.timeout_ms}
+              path="tcp.ip_block_detect.timeout_ms"
+              onChange={(value: number) =>
+                  onChange("tcp.ip_block_detect.timeout_ms", value)
+                }
+                min={1000}
+                max={10000}
+                step={500}
+                valueSuffix={t("core.units.ms")}
+                helperText={t(ibd.action === "collect" ? "sets.tcp.general.ibdCollectTimeoutHelper" : "sets.tcp.general.ibdTimeoutHelper")}
               />
             </Grid>
           </>
