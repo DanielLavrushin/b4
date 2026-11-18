@@ -326,6 +326,62 @@ func TestTheDownloadsBehindAnIPv4OnlyInterfaceSetNeverDialIPv6(t *testing.T) {
 	}
 }
 
+func TestAnIPv6OnlyInterfaceTelegramSetNeverDialsIPv4(t *testing.T) {
+	prev := dialIPv6Probe
+	dialIPv6Probe = func() bool { return false }
+	t.Cleanup(func() { dialIPv6Probe = prev })
+	useTelegramSet(t, routedTelegramConfig(config.RoutingModeInterface))
+	v4, v6 := net.ParseIP("149.154.167.51"), net.ParseIP("2001:67c:4e8:f004::a")
+
+	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv6: true}, nil)
+	if got := dialNetwork(); got != "tcp6" || dialFamilyAllows(v4) || !dialFamilyAllows(v6) {
+		t.Fatalf("a set routing IPv6 only dials over %q, so IPv4 dials leave by the main table outside the set's route and kill switch", got)
+	}
+	tr, ok := telegramHTTPClient(200 * time.Millisecond).Transport.(*http.Transport)
+	if !ok || tr.DialContext == nil {
+		t.Fatal("the download client has no dial hook")
+	}
+	_, err := tr.DialContext(context.Background(), "tcp", "192.0.2.1:443")
+	var addrErr *net.AddrError
+	if !errors.As(err, &addrErr) {
+		t.Fatalf("a download behind a set routing IPv6 only dialled an IPv4 address: %v", err)
+	}
+
+	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true, IPv6: true}, nil)
+	if got := dialNetwork(); got != "tcp4" || !dialFamilyAllows(v4) {
+		t.Fatalf("a set routing both families dials over %q on a router without IPv6, want tcp4", got)
+	}
+}
+
+func TestAQueueFamilyChangeRebuildsThePoolsOfAnInterfaceTelegramSet(t *testing.T) {
+	families := func(mode string, v4, v6 bool) *config.Config {
+		cfg := routedTelegramConfig(mode)
+		if mode == "" {
+			cfg = telegramSetTestConfig(true)
+		}
+		cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled = v4, v6
+		return cfg
+	}
+	routed, next := families(config.RoutingModeInterface, true, true), families(config.RoutingModeInterface, false, true)
+	if !mtprotoNeedsRestart(routed, next) {
+		t.Fatal("the proxy kept its pools after IPv4 left the set's route, so pre-opened IPv4 connections leave by the main table")
+	}
+	if mtprotoNeedsRestart(families("", true, true), families("", false, true)) {
+		t.Fatal("a Telegram set without routing restarted the proxy on a queue family change it does not depend on")
+	}
+
+	b := NewTransparentBridge(routed)
+	t.Cleanup(func() {
+		b.Close()
+		setTelegramSet(nil)
+	})
+	before := b.getWSPool()
+	b.UpdateConfig(next)
+	if after := b.getWSPool(); after == before {
+		t.Fatal("the bridge kept its WebSocket pool after IPv4 left the set's route")
+	}
+}
+
 func TestAMissingRouteLeavesTheTelegramConnectionsAsTheyWereWithoutASet(t *testing.T) {
 	for _, mode := range []string{config.RoutingModeInterface, config.RoutingModeProxy} {
 		t.Run(mode, func(t *testing.T) {

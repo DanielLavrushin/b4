@@ -12,23 +12,32 @@ func dialIPv6Usable() bool {
 	return dialIPv6Probe()
 }
 
-func dialIPv6Allowed() bool {
-	if p := currentTelegramPath(); p.kind == telegramPathInterface && !p.ipv6 {
-		return false
+func dialFamilies() (v4, v6 bool) {
+	if p := currentTelegramPath(); p.kind == telegramPathInterface {
+		switch {
+		case !p.ipv6:
+			return true, false
+		case !p.ipv4:
+			return false, true
+		}
 	}
-	return dialIPv6Usable()
+	return true, dialIPv6Usable()
 }
 
 func dialNetwork() string {
-	if dialIPv6Allowed() {
+	switch v4, v6 := dialFamilies(); {
+	case !v4:
+		return "tcp6"
+	case v6:
 		return "tcp"
 	}
 	return "tcp4"
 }
 
 func dialFamilyAllows(ip net.IP) bool {
-	if dialIPv6Allowed() {
-		return true
+	v4, v6 := dialFamilies()
+	if ip.To4() != nil {
+		return v4
 	}
-	return ip.To4() != nil
+	return v6
 }

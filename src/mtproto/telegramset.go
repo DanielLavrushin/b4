@@ -52,6 +52,7 @@ const (
 type telegramPath struct {
 	kind  telegramPathKind
 	mark  uint32
+	ipv4  bool
 	ipv6  bool
 	setID string
 }
@@ -128,8 +129,13 @@ func telegramSetKey(cfg *config.Config) string {
 		return ""
 	}
 	r := set.Routing
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%t|%d|%d|%s|%d|%t|%t", set.Id, set.TelegramRouteMode(), r.EgressInterface, r.EgressIP, r.EgressGateway, r.KillSwitch,
-		r.FWMark, r.Table, r.Upstream.Host, r.Upstream.Port, r.Upstream.UseDomain, r.Upstream.FailOpen)
+	mode := set.TelegramRouteMode()
+	v4, v6 := true, true
+	if mode == config.RoutingModeInterface {
+		v4, v6 = cfg.Queue.IPv4Enabled, cfg.Queue.IPv6Enabled
+	}
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%t|%d|%d|%s|%d|%t|%t|%t|%t", set.Id, mode, r.EgressInterface, r.EgressIP, r.EgressGateway, r.KillSwitch,
+		r.FWMark, r.Table, r.Upstream.Host, r.Upstream.Port, r.Upstream.UseDomain, r.Upstream.FailOpen, v4, v6)
 }
 
 func telegramSetChanged(old, next *config.Config) bool {
@@ -150,7 +156,7 @@ func currentTelegramPath() telegramPath {
 		if hooks != nil && hooks.routeOf != nil {
 			if r, ok := hooks.routeOf(sel.id); ok && r.Mode == config.RoutingModeInterface && r.Mark != 0 {
 				noteTelegramRoute(sel, true)
-				return telegramPath{kind: telegramPathInterface, mark: r.Mark, ipv6: r.IPv6, setID: sel.id}
+				return telegramPath{kind: telegramPathInterface, mark: r.Mark, ipv4: r.IPv4, ipv6: r.IPv6, setID: sel.id}
 			}
 		}
 	case config.RoutingModeProxy:

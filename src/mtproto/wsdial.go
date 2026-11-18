@@ -320,10 +320,10 @@ func wsDialEndpoints(ctx context.Context, host, sni string) []string {
 	}
 	fresh := make([]string, 0, len(addrs))
 	cooling := make([]string, 0, len(addrs))
-	skippedV6 := 0
+	skipped := 0
 	for _, a := range addrs {
 		if !dialFamilyAllows(a.IP) {
-			skippedV6++
+			skipped++
 			continue
 		}
 		s := a.IP.String()
@@ -334,7 +334,7 @@ func wsDialEndpoints(ctx context.Context, host, sni string) []string {
 		fresh = append(fresh, s)
 	}
 	if len(fresh) == 0 && len(cooling) == 0 {
-		log.Tracef("[tg-ws] %s resolves to %d IPv6 address(es) and this router has no IPv6 route, so there is nothing to dial", host, skippedV6)
+		log.Tracef("[tg-ws] %s resolves to %d address(es), none in an address family this router dials Telegram over, so there is nothing to dial", host, skipped)
 		return nil
 	}
 	return append(fresh, cooling...)
@@ -418,7 +418,7 @@ func dialWSAs(host, sni, hostHeader, path string, timeout time.Duration, mark ui
 	}
 
 	if len(eps) == 0 {
-		return nil, fmt.Errorf("tcp dial %s: no usable address (IPv6 is off and the name has no IPv4 address)", host)
+		return nil, fmt.Errorf("tcp dial %s: no usable address (the name has no address in a family this router dials Telegram over)", host)
 	}
 	attempts := len(eps)
 	if attempts > wsDialMaxEndpoints {
