@@ -796,7 +796,7 @@
       "removeDialogConfirm": "Delete this file from disk?",
       "removeDialogEffect": "The path and source URL are cleared, so the database stays off until you download or upload it again. Auto-update will not bring it back.",
       "removeDialogSetsWarning": "{{count}} set(s) use categories from this database and will match nothing until it is restored:",
-      "unmatchedSetsWarning": "{{count}} set(s) use categories this file does not hold. They match nothing by those categories:",
+      "unmatchedSetsWarning": "{{count}} set(s) use categories that match nothing in this file:",
       "autoUpdate": "Auto-update",
       "autoUpdateOnStartup": "Refresh on startup",
       "autoUpdateOnStartupDesc": "Re-download both files when b4 starts. Missing or damaged files (e.g. when stored in /tmp) are always re-downloaded if a source URL is set.",

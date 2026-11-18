@@ -329,10 +329,10 @@ func (api *API) saveGeoConfig(update func(geo *geodat.GeoDatConfig), replaced ge
 	}
 	for _, miss := range unmatched {
 		if len(miss.GeoSite) > 0 {
-			log.Warnf("Set '%s': geosite categories %v are not in %s and match nothing", miss.SetName, miss.GeoSite, newCfg.System.Geo.GeoSitePath)
+			log.Warnf("Set '%s': geosite categories %v match nothing in %s", miss.SetName, miss.GeoSite, newCfg.System.Geo.GeoSitePath)
 		}
 		if len(miss.GeoIP) > 0 {
-			log.Warnf("Set '%s': geoip categories %v are not in %s and match nothing", miss.SetName, miss.GeoIP, newCfg.System.Geo.GeoIpPath)
+			log.Warnf("Set '%s': geoip categories %v match nothing in %s", miss.SetName, miss.GeoIP, newCfg.System.Geo.GeoIpPath)
 		}
 	}
 	if api.PerformSoftRestart(newCfg, oldCfg) {

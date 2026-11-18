@@ -6,7 +6,9 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -115,5 +117,37 @@ func TestGeodatDownloadListsTheCategoriesTheNewFileLacks(t *testing.T) {
 	want := []GeodatUnmatched{{SetID: "cdn", SetName: "Set cdn", GeoIP: []string{"cloudflare"}}}
 	if !reflect.DeepEqual(reply.Unmatched, want) {
 		t.Fatalf("the download reply names the category the new file lacks: %+v", reply.Unmatched)
+	}
+}
+
+func TestGeodatUploadListsAPresentCategoryWithNoEntries(t *testing.T) {
+	api := geoAPI(t)
+	list := &v2data.GeoIPList{Entry: []*v2data.GeoIP{
+		{CountryCode: "CLOUDFLARE", Cidr: []*v2data.CIDR{{Ip: []byte{10, 0, 0, 0}, Prefix: 16}}},
+		{CountryCode: "AMAZON"},
+	}}
+	body, err := proto.Marshal(list)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	var reply struct {
+		Unmatched []GeodatUnmatched `json:"unmatched"`
+	}
+	rec := uploadGeodat(t, api, "geoip", dir, body)
+	if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil {
+		t.Fatal(err)
+	}
+	tags, err := api.geodataManager.ListCategories(filepath.Join(dir, "geoip.dat"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(tags, "amazon") {
+		t.Fatalf("the uploaded file's inventory lists the tag with no entries: %v", tags)
+	}
+	want := []GeodatUnmatched{{SetID: "cdn", SetName: "Set cdn", GeoIP: []string{"amazon"}}}
+	if !reflect.DeepEqual(reply.Unmatched, want) {
+		t.Fatalf("a tag present in the file with no entries matches nothing and is listed: %+v", reply.Unmatched)
 	}
 }

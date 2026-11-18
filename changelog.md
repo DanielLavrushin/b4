@@ -6,7 +6,7 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
-- After an **Update** or **Upload** on the **Geo Databases** page, the card lists the sets with categories the new file does not hold, and the set editor marks such a category in red with the reason on hover. [#620](https://github.com/DanielLavrushin/b4/issues/620)
+- After an **Update** or **Upload** on the **Geo Databases** page, the card lists the sets with categories that match nothing in the new file, and the set editor marks a category absent from the file in red with the reason on hover. [#620](https://github.com/DanielLavrushin/b4/issues/620)
 
 ### Fixed
 
