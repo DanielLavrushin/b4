@@ -2,8 +2,6 @@
 exec nft list tables
 exec nft list tables
 exec nft list tables
-sh -c sysctl -w net.netfilter.nf_conntrack_checksum=1 || echo 1 > /proc/sys/net/netfilter/nf_conntrack_checksum
-sh -c sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=0 || echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal
 nft list tables
 == AddRules -> ok
 nft delete table inet _b4_queue_probe

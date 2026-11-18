@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -359,20 +360,48 @@ func (c Chain) Remove() {
 type SysctlSetting struct {
 	Name    string
 	Desired string
-	Revert  string
 }
 
-var sysctlSnapPath = "/tmp/b4_sysctl_snapshot.json"
+const defaultSysctlSnapPath = "/tmp/b4_sysctl_snapshot.json"
+
+var sysctlSnapPath = defaultSysctlSnapPath
+
+var readNetnsLink = func() (string, error) {
+	return os.Readlink("/proc/self/ns/net")
+}
+
+func sysctlSnapshotPath() string {
+	if sysctlSnapPath != defaultSysctlSnapPath {
+		return sysctlSnapPath
+	}
+	link, err := readNetnsLink()
+	if err != nil {
+		return defaultSysctlSnapPath
+	}
+	id, ok := strings.CutPrefix(link, "net:[")
+	if !ok {
+		return defaultSysctlSnapPath
+	}
+	id, ok = strings.CutSuffix(id, "]")
+	if !ok {
+		return defaultSysctlSnapPath
+	}
+	ino, err := strconv.ParseUint(id, 10, 64)
+	if err != nil || ino == 0 {
+		return defaultSysctlSnapPath
+	}
+	return fmt.Sprintf("/tmp/b4_sysctl_snapshot.%d.json", ino)
+}
 
 func b4SysctlSettings() []SysctlSetting {
 	return []SysctlSetting{
-		{Name: "net.netfilter.nf_conntrack_checksum", Desired: "0", Revert: "1"},
-		{Name: "net.netfilter.nf_conntrack_tcp_be_liberal", Desired: "1", Revert: "0"},
+		{Name: "net.netfilter.nf_conntrack_checksum", Desired: "0"},
+		{Name: "net.netfilter.nf_conntrack_tcp_be_liberal", Desired: "1"},
 	}
 }
 
 func loadSysctlSnapshot() map[string]string {
-	b, err := os.ReadFile(sysctlSnapPath)
+	b, err := os.ReadFile(sysctlSnapshotPath())
 	if err != nil {
 		return map[string]string{}
 	}
@@ -383,9 +412,25 @@ func loadSysctlSnapshot() map[string]string {
 	return m
 }
 
-func saveSysctlSnapshot(m map[string]string) {
-	b, _ := json.Marshal(m)
-	_ = os.WriteFile(sysctlSnapPath, b, 0600)
+func saveSysctlSnapshot(m map[string]string) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	path := sysctlSnapshotPath()
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	_, werr := f.Write(b)
+	cerr := f.Close()
+	if err = errors.Join(werr, cerr); err == nil {
+		err = os.Rename(f.Name(), path)
+	}
+	if err != nil {
+		_ = os.Remove(f.Name())
+	}
+	return err
 }
 
 func (ipt *IPTablesManager) buildNFQSpec(queueStart, threads int) []string {
@@ -397,11 +442,31 @@ func (ipt *IPTablesManager) buildNFQSpec(queueStart, threads int) []string {
 	return []string{"-j", "NFQUEUE", "--queue-num", strconv.Itoa(queueStart), "--queue-bypass"}
 }
 
+func isSysctlNumber(v string) bool {
+	if v == "" {
+		return false
+	}
+	for _, c := range v {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func (s SysctlSetting) Apply() {
 	snap := loadSysctlSnapshot()
-	if _, ok := snap[s.Name]; !ok {
-		snap[s.Name] = getSysctlOrProc(s.Name)
-		saveSysctlSnapshot(snap)
+	if !isSysctlNumber(snap[s.Name]) {
+		cur := getSysctl(s.Name)
+		if !isSysctlNumber(cur) {
+			log.Infof("TABLES: leaving %s alone for now: reading it gave %q rather than a number, so b4 would have nothing to put back on exit. b4 tries again on its next rules pass", s.Name, cur)
+			return
+		}
+		snap[s.Name] = cur
+		if err := saveSysctlSnapshot(snap); err != nil {
+			log.Errorf("TABLES: leaving %s at %q rather than setting it to %s: its current value could not be saved to %s (%v), so b4 could not put it back on exit", s.Name, snap[s.Name], s.Desired, sysctlSnapshotPath(), err)
+			return
+		}
 	}
 	setSysctl(s.Name, s.Desired)
 	if s.Name == conntrackLiberalSysctl {
@@ -415,13 +480,19 @@ func (s SysctlSetting) RevertBack() {
 		return
 	}
 	snap := loadSysctlSnapshot()
-	if v, ok := snap[s.Name]; ok && v != "" {
-		setSysctl(s.Name, v)
-		delete(snap, s.Name)
-		saveSysctlSnapshot(snap)
+	v, ok := snap[s.Name]
+	if !ok {
 		return
 	}
-	setSysctl(s.Name, s.Revert)
+	if isSysctlNumber(v) {
+		setSysctl(s.Name, v)
+	} else {
+		log.Warnf("TABLES: not putting %s back: the value saved for it in %s is %q, not a number", s.Name, sysctlSnapshotPath(), v)
+	}
+	delete(snap, s.Name)
+	if err := saveSysctlSnapshot(snap); err != nil {
+		log.Warnf("TABLES: could not remove %s from %s: %v", s.Name, sysctlSnapshotPath(), err)
+	}
 }
 
 type IPSet struct {
