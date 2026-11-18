@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -515,6 +516,39 @@ func TestPoolSparesDialledBeforeTheTelegramRouteWasInPlaceAreNotHandedOut(t *tes
 				t.Fatal("the Worker pool dropped a spare dialled on the set's route")
 			}
 		})
+	}
+}
+
+type wsStubSetDialer struct{ addr string }
+
+func (d wsStubSetDialer) CanDialViaSet(string) bool { return true }
+
+func (d wsStubSetDialer) DialViaSetBy(_, _ string, _ int, by time.Time) (net.Conn, bool, error) {
+	conn, err := net.DialTimeout("tcp", d.addr, time.Until(by))
+	return conn, true, err
+}
+
+func TestAPooledConnKeepsTheMarkItWasDialledWith(t *testing.T) {
+	addr, stop := startTestWSServer(t, func(r io.Reader, _ io.Writer) { _, _ = io.Copy(io.Discard, r) })
+	t.Cleanup(stop)
+	useTelegramSet(t, routedTelegramConfig(config.RoutingModeProxy))
+	useTelegramRouting(t, nil, wsStubSetDialer{addr: addr})
+
+	p := newWSPool(MTProtoUpstream{}, selfDialMark(), 1)
+	t.Cleanup(p.close)
+	cf := transportPlan{kind: transportWS, dc: 203, sni: "kws203.example.invalid", cfBase: "example.invalid"}
+	pc, err := p.dialOnce(203, cf, 3*time.Second)
+	if err != nil {
+		t.Fatalf("the spare could not be dialled through the set: %v", err)
+	}
+	if want := planDialMark(cf, p.mark); want == 0 || pc.conn.mark != want {
+		t.Fatalf("the spare recorded mark 0x%x, want 0x%x, the mark it was dialled with", pc.conn.mark, want)
+	}
+	if !p.offer(203, pc.conn, cf) {
+		t.Fatal("the pool refused the spare")
+	}
+	if got := p.get(203); got == nil || got.conn != pc.conn {
+		t.Fatal("a spare dialled on the set's route was dropped at checkout, so every session would dial cold")
 	}
 }
 
