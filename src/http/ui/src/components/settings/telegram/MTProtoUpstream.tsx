@@ -1,9 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Box,
   Button,
-  Chip,
   CircularProgress,
   Grid,
   IconButton,
@@ -11,9 +10,6 @@ import {
   Stack,
   Tooltip,
 } from "@mui/material";
-import CheckIcon from "@mui/icons-material/Check";
-import CloseIcon from "@mui/icons-material/Close";
-import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import NetworkPingIcon from "@mui/icons-material/NetworkPing";
@@ -29,16 +25,9 @@ import {
 } from "@b4.elements";
 import { B4Config } from "@models/config";
 import { SettingsPropHandlerType } from "@models/settings";
+import { mtprotoApi } from "@api/mtproto";
 import { MTProtoRelayHelpDialog } from "./MTProtoRelayHelpDialog";
-
-type WsProbeResult = {
-  transport: string;
-  ok: boolean;
-  stage?: string;
-  latency_ms?: number;
-  hold_ms?: number;
-  error?: string;
-};
+import { MTProtoProbeResults, type ProbeRow } from "./MTProtoProbeResults";
 
 type RefreshResult =
   | {
@@ -71,6 +60,13 @@ const normalizeHost = (raw: string) =>
 const normalizeWorkerDomains = (raw: string) =>
   raw.split(",").map(normalizeHost).filter(Boolean).join(", ");
 
+const updateProbeRow = (
+  rows: ProbeRow[] | null,
+  index: number,
+  change: Partial<ProbeRow>,
+) =>
+  rows?.map((row, i) => (i === index ? { ...row, ...change } : row)) ?? rows;
+
 interface MTProtoUpstreamCardProps {
   config: B4Config;
   onChange: (field: string, value: SettingsPropHandlerType) => void;
@@ -89,8 +85,12 @@ export const MTProtoUpstreamCard = ({
   const [wsTesting, setWsTesting] = useState<null | "configured" | "direct">(
     null,
   );
-  const [wsResults, setWsResults] = useState<WsProbeResult[] | null>(null);
+  const [probeRows, setProbeRows] = useState<ProbeRow[] | null>(null);
+  const [probeInterrupted, setProbeInterrupted] = useState(false);
   const [wsTestError, setWsTestError] = useState<string | null>(null);
+  const probeAbort = useRef<AbortController | null>(null);
+
+  useEffect(() => () => probeAbort.current?.abort(), []);
 
   const mtproto = config.system.mtproto;
   const mode = mtproto?.upstream_mode || "auto";
@@ -164,14 +164,16 @@ export const MTProtoUpstreamCard = ({
     which: "configured" | "direct",
     overrides: Record<string, unknown>,
   ) => {
+    probeAbort.current?.abort();
+    const controller = new AbortController();
+    probeAbort.current = controller;
     setWsTesting(which);
-    setWsResults(null);
+    setProbeRows(null);
+    setProbeInterrupted(false);
     setWsTestError(null);
     try {
-      const res = await fetch("/api/mtproto/test-ws", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const finished = await mtprotoApi.probeTransports(
+        {
           upstream_mode: mtproto?.upstream_mode || "auto",
           ws_custom_domain: mtproto?.ws_custom_domain || "",
           ws_endpoint_host: mtproto?.ws_endpoint_host || "",
@@ -179,22 +181,34 @@ export const MTProtoUpstreamCard = ({
           cfproxy_enabled: mtproto?.cfproxy_enabled ?? true,
           dc: 2,
           ...overrides,
-        }),
-      });
-      const data = (await res.json()) as {
-        success: boolean;
-        results?: WsProbeResult[];
-        error?: string;
-      };
-      if (data.success && data.results) {
-        setWsResults(data.results);
-      } else {
-        setWsTestError(data.error || "unknown error");
+        },
+        {
+          onPlan: (routes) =>
+            setProbeRows(
+              routes.map((transport) => ({ transport, status: "queued" })),
+            ),
+          onStart: (index) =>
+            setProbeRows((rows) =>
+              updateProbeRow(rows, index, { status: "testing" }),
+            ),
+          onResult: (index, result) =>
+            setProbeRows((rows) =>
+              updateProbeRow(rows, index, { status: "done", result }),
+            ),
+        },
+        controller.signal,
+      );
+      if (!finished && !controller.signal.aborted) {
+        setProbeInterrupted(true);
       }
     } catch (e) {
-      setWsTestError(String(e));
+      if (!controller.signal.aborted) {
+        setWsTestError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
-      setWsTesting(null);
+      if (!controller.signal.aborted) {
+        setWsTesting(null);
+      }
     }
   };
 
@@ -466,59 +480,13 @@ export const MTProtoUpstreamCard = ({
           </Tooltip>
         </Stack>
         {wsTestError && <B4Alert severity="error">{wsTestError}</B4Alert>}
-        {wsResults && (
-          <Stack spacing={0.5}>
-            {wsResults.map((r) => {
-              const untested = !r.ok && r.stage === "untested";
-              let label: string;
-              if (untested) {
-                label = `${r.transport} · ${t("settings.MTProto.testStage_untested")}`;
-              } else if (r.ok) {
-                const parts = [`${r.latency_ms} ms`];
-                if (r.hold_ms != null) {
-                  parts.push(
-                    t("settings.MTProto.testHeldMs", { ms: r.hold_ms }),
-                  );
-                }
-                label = `${r.transport} · ${parts.join(", ")}`;
-              } else {
-                const stageLabel = r.stage
-                  ? t(`settings.MTProto.testStage_${r.stage}`, {
-                      defaultValue: r.stage,
-                    })
-                  : "";
-                label = stageLabel
-                  ? `${r.transport} · [${stageLabel}] ${r.error}`
-                  : `${r.transport} · ${r.error}`;
-              }
-              return (
-                <Chip
-                  key={r.transport}
-                  size="small"
-                  icon={
-                    r.ok ? (
-                      <CheckIcon fontSize="small" />
-                    ) : untested ? (
-                      <HourglassEmptyIcon fontSize="small" />
-                    ) : (
-                      <CloseIcon fontSize="small" />
-                    )
-                  }
-                  color={r.ok ? "success" : "default"}
-                  variant={r.ok ? "filled" : "outlined"}
-                  label={label}
-                  sx={{
-                    justifyContent: "flex-start",
-                    maxWidth: "100%",
-                    "& .MuiChip-label": {
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    },
-                  }}
-                />
-              );
-            })}
-          </Stack>
+        {probeInterrupted && (
+          <B4Alert severity="warning">
+            {t("settings.MTProto.testInterrupted")}
+          </B4Alert>
+        )}
+        {probeRows && (
+          <MTProtoProbeResults rows={probeRows} running={wsTesting !== null} />
         )}
       </Box>
 

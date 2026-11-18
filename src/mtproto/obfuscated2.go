@@ -1,6 +1,7 @@
 package mtproto
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -786,37 +787,89 @@ const (
 	probeStageUntested = "untested"
 )
 
-func ProbeTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int) ([]TransportProbeResult, error) {
+type TransportProbe struct {
+	plans []transportPlan
+	dc    int
+}
+
+type TransportProbeObserver struct {
+	Started  func(index int)
+	Finished func(index int, result TransportProbeResult)
+}
+
+func PlanTransportProbe(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int) (*TransportProbe, error) {
 	plans, err := planTransports(cfg, queueCfg, dc, dialTarget{})
 	if err != nil {
 		return nil, err
 	}
-	probe := func(p transportPlan) TransportProbeResult {
-		return probeOne(p, planDialMark(p, selfDialMark()), dc)
-	}
-	return probePlans(plans, dialRaceMaxInFlight, time.Now().Add(probeRunBudget), probe), nil
+	return &TransportProbe{plans: plans, dc: dc}, nil
 }
 
-func probePlans(plans []transportPlan, inFlight int, deadline time.Time, probe func(transportPlan) TransportProbeResult) []TransportProbeResult {
+func (t *TransportProbe) Routes() []string {
+	routes := make([]string, len(t.plans))
+	for i, p := range t.plans {
+		routes[i] = p.describe()
+	}
+	return routes
+}
+
+func (t *TransportProbe) Run(ctx context.Context, obs TransportProbeObserver) []TransportProbeResult {
+	ctx, cancel := context.WithTimeout(ctx, probeRunBudget)
+	defer cancel()
+	probe := func(p transportPlan) TransportProbeResult {
+		return probeOne(p, planDialMark(p, selfDialMark()), t.dc)
+	}
+	return probePlans(ctx, t.plans, dialRaceMaxInFlight, probe, obs)
+}
+
+func probePlans(ctx context.Context, plans []transportPlan, inFlight int, probe func(transportPlan) TransportProbeResult, obs TransportProbeObserver) []TransportProbeResult {
 	out := make([]TransportProbeResult, len(plans))
+	var mu sync.Mutex
+	started := func(i int) {
+		mu.Lock()
+		defer mu.Unlock()
+		if obs.Started != nil {
+			obs.Started(i)
+		}
+	}
+	finished := func(i int, r TransportProbeResult) {
+		mu.Lock()
+		defer mu.Unlock()
+		out[i] = r
+		if obs.Finished != nil {
+			obs.Finished(i, r)
+		}
+	}
 	slots := make(chan struct{}, max(inFlight, 1))
 	var wg sync.WaitGroup
 	for i, p := range plans {
-		slots <- struct{}{}
-		if !time.Now().Before(deadline) {
-			<-slots
+		if !acquireProbeSlot(ctx, slots) {
 			for j := i; j < len(plans); j++ {
-				out[j] = TransportProbeResult{Transport: plans[j].describe(), Stage: probeStageUntested}
+				finished(j, TransportProbeResult{Transport: plans[j].describe(), Stage: probeStageUntested})
 			}
 			break
 		}
+		started(i)
 		wg.Go(func() {
 			defer func() { <-slots }()
-			out[i] = probe(p)
+			finished(i, probe(p))
 		})
 	}
 	wg.Wait()
 	return out
+}
+
+func acquireProbeSlot(ctx context.Context, slots chan struct{}) bool {
+	select {
+	case slots <- struct{}{}:
+		if ctx.Err() == nil {
+			return true
+		}
+		<-slots
+		return false
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func probeOne(p transportPlan, mark uint, dc int) TransportProbeResult {
