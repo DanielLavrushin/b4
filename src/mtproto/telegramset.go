@@ -2,7 +2,6 @@ package mtproto
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -246,7 +245,13 @@ func dialTelegramVia(mark uint, addr string, timeout time.Duration) (net.Conn, b
 	return dialViaWithin(hooks.via, p.setID, host, port, timeout)
 }
 
-var errTelegramViaTimeout = errors.New("timed out")
+type telegramViaTimeout struct{}
+
+func (telegramViaTimeout) Error() string   { return "timed out" }
+func (telegramViaTimeout) Timeout() bool   { return true }
+func (telegramViaTimeout) Temporary() bool { return true }
+
+var errTelegramViaTimeout error = telegramViaTimeout{}
 
 func dialViaWithin(via TelegramSetDialer, setID, host string, port int, timeout time.Duration) (net.Conn, bool, error) {
 	type result struct {

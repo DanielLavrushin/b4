@@ -480,6 +480,30 @@ func TestADialThroughTheProxySetIsBoundByTheRaceDeadline(t *testing.T) {
 	}
 }
 
+func TestADialThatTimesOutThroughTheProxySetCoolsItsRouteLikeADirectOne(t *testing.T) {
+	tcpResetState()
+	wsResetState()
+	t.Cleanup(tcpResetState)
+	t.Cleanup(wsResetState)
+	via := &fakeSetDialer{listens: true, block: make(chan struct{})}
+	t.Cleanup(func() { close(via.block) })
+	_, _, err := dialViaWithin(via, "tg", "149.154.167.51", 443, 20*time.Millisecond)
+	ws := fmt.Errorf("tcp dial %s: %w", "149.154.167.220", err)
+	if !isDialTimeout(err) || !isDialTimeout(ws) {
+		t.Fatalf("a dial through the set that ran out of time is not taken for a timeout: %v", err)
+	}
+
+	addr := "149.154.167.51:443"
+	recordDialFailure(2, raceAttempt{plan: transportPlan{kind: transportTCP, addr: addr}, err: err, timeout: tcpDialTimeout})
+	if !tcpAddrInCooldown(addr) {
+		t.Error("a TCP route that timed out through the set was not cooled, so the next session spends its budget on it again")
+	}
+	recordDialFailure(4, raceAttempt{plan: transportPlan{kind: transportWS, native: true, dialHost: "149.154.167.220"}, err: ws, timeout: wsDialTimeout})
+	if !wsCooldownActive(4) {
+		t.Error("Telegram's edge timed out through the set but was not stepped over on the next session")
+	}
+}
+
 func TestChangingTheTelegramSetRouteRestartsTheProxy(t *testing.T) {
 	plain := telegramSetTestConfig(true)
 	routed := routedTelegramConfig(config.RoutingModeInterface)
