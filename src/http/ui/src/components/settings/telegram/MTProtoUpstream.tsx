@@ -112,6 +112,8 @@ export const MTProtoUpstreamCard = ({
   const showWorkerDpi =
     (mtproto?.cfworker_domain || "").trim() !== "" &&
     !telegramSetRoutes(config);
+  const hasEdgeOverride =
+    !!mtproto?.ws_endpoint_host || !!mtproto?.ws_front_sni;
   const showDcRelay =
     !!dcRelay || mode === "tcp" || mode === "auto" || bridgeInUse;
 
@@ -345,7 +347,7 @@ export const MTProtoUpstreamCard = ({
             />
           </Grid>
         )}
-        <Grid size={{ xs: 12, md: 6 }}>
+        <Grid size={{ xs: 12 }}>
           <B4TextField
             value={mtproto?.ws_custom_domain || ""}
             path="system.mtproto.ws_custom_domain"
@@ -360,42 +362,6 @@ export const MTProtoUpstreamCard = ({
             }}
             placeholder="your-domain.com"
             helperText={t("settings.MTProto.wsCustomDomainHelp")}
-            selectOnFocus
-          />
-        </Grid>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4TextField
-            value={mtproto?.ws_endpoint_host || ""}
-            path="system.mtproto.ws_endpoint_host"
-            onChange={(e) =>
-              onChange("system.mtproto.ws_endpoint_host", e.target.value)
-            }
-            onBlur={(e) => {
-              const cleaned = normalizeHost(e.target.value);
-              if (cleaned !== e.target.value) {
-                onChange("system.mtproto.ws_endpoint_host", cleaned);
-              }
-            }}
-            placeholder="149.154.167.220"
-            helperText={t("settings.MTProto.wsEndpointHostHelp")}
-            selectOnFocus
-          />
-        </Grid>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <B4TextField
-            value={mtproto?.ws_front_sni || ""}
-            path="system.mtproto.ws_front_sni"
-            onChange={(e) =>
-              onChange("system.mtproto.ws_front_sni", e.target.value)
-            }
-            onBlur={(e) => {
-              const cleaned = normalizeHost(e.target.value);
-              if (cleaned !== e.target.value) {
-                onChange("system.mtproto.ws_front_sni", cleaned);
-              }
-            }}
-            placeholder="sprinthost.ru"
-            helperText={t("settings.MTProto.wsFrontSniHelp")}
             selectOnFocus
           />
         </Grid>
@@ -456,6 +422,50 @@ export const MTProtoUpstreamCard = ({
             helperText={t("settings.MTProto.bridgeWaitHelp")}
           />
         </Stack>
+      </B4Accordion>
+
+      <B4Accordion
+        title={t("settings.MTProto.advanced")}
+        defaultExpanded={hasEdgeOverride}
+      >
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4TextField
+              value={mtproto?.ws_endpoint_host || ""}
+              path="system.mtproto.ws_endpoint_host"
+              onChange={(e) =>
+                onChange("system.mtproto.ws_endpoint_host", e.target.value)
+              }
+              onBlur={(e) => {
+                const cleaned = normalizeHost(e.target.value);
+                if (cleaned !== e.target.value) {
+                  onChange("system.mtproto.ws_endpoint_host", cleaned);
+                }
+              }}
+              placeholder="149.154.167.220"
+              helperText={t("settings.MTProto.wsEndpointHostHelp")}
+              selectOnFocus
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <B4TextField
+              value={mtproto?.ws_front_sni || ""}
+              path="system.mtproto.ws_front_sni"
+              onChange={(e) =>
+                onChange("system.mtproto.ws_front_sni", e.target.value)
+              }
+              onBlur={(e) => {
+                const cleaned = normalizeHost(e.target.value);
+                if (cleaned !== e.target.value) {
+                  onChange("system.mtproto.ws_front_sni", cleaned);
+                }
+              }}
+              placeholder="sprinthost.ru"
+              helperText={t("settings.MTProto.wsFrontSniHelp")}
+              selectOnFocus
+            />
+          </Grid>
+        </Grid>
       </B4Accordion>
 
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
