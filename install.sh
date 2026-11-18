@@ -4229,7 +4229,8 @@ action_remove() {
     _remove_config_dirs
 
     rm -f /var/run/b4.pid /run/b4.pid /opt/var/run/b4.pid /tmp/b4.pid 2>/dev/null || true
-    rm -f /var/run/b4-tun.state /run/b4-tun.state /tmp/b4_sysctl_snapshot.json 2>/dev/null || true
+    rm -f /var/run/b4-tun.state /run/b4-tun.state 2>/dev/null || true
+    _remove_sysctl_snapshot /tmp
     rm -f /var/log/b4.log /opt/var/log/b4.log /tmp/log/b4.log 2>/dev/null || true
     rm -rf /var/log/b4 2>/dev/null || true
 
@@ -4240,6 +4241,18 @@ action_remove() {
         log_warn "Nothing to remove: no b4 binary or service was found"
     fi
     echo ""
+}
+
+_remove_sysctl_snapshot() {
+    _rss_dir="${1:-/tmp}"
+    rm -f "${_rss_dir}/b4_sysctl_snapshot.json" 2>/dev/null || true
+    _rss_ns=$(readlink /proc/self/ns/net 2>/dev/null) || return 0
+    _rss_ino=${_rss_ns#net:\[}
+    _rss_ino=${_rss_ino%\]}
+    case "$_rss_ino" in
+    '' | *[!0-9]*) return 0 ;;
+    esac
+    rm -f "${_rss_dir}/b4_sysctl_snapshot.${_rss_ino}.json" 2>/dev/null || true
 }
 
 _remove_netfilter_state() {
