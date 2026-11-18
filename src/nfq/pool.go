@@ -188,7 +188,7 @@ func NewPool(cfg *config.Config) *Pool {
 			case <-escalationTicker.C:
 				pool.state.pendingHello.Cleanup()
 				pool.state.wssize.cleanup(time.Now())
-				pool.reconcileCollected()
+				pool.reconcileCollected(time.Now())
 				pool.sweepSilentHellos(time.Now())
 				pool.state.destState.cleanupCollectedHistory()
 				pool.publishEscalations()
@@ -429,6 +429,7 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	defer p.configMu.Unlock()
 	p.collectedBase = newCfg
 	p.collectedDirty = p.collectedRelevantLocked(newCfg)
+	p.collectedRetryWait, p.collectedRetryAt = 0, time.Time{}
 	newCfg = p.CollectedConfig(newCfg)
 
 	var oldMatcher *sni.SuffixSet

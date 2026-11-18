@@ -16,7 +16,11 @@ import (
 	"github.com/daniellavrushin/b4/utils"
 )
 
-const maxCollectedIPs = 1024
+const (
+	maxCollectedIPs     = 1024
+	collectedRetryFirst = 10 * time.Second
+	collectedRetryMax   = 5 * time.Minute
+)
 
 type collectedCandidate struct {
 	setID string
@@ -216,7 +220,7 @@ func (p *Pool) publishCollectedViewLocked(requireConsumer bool) bool {
 	return true
 }
 
-func (p *Pool) collectedDueLocked() bool {
+func (p *Pool) collectedDueLocked(now time.Time) bool {
 	if !p.collectedDirty {
 		return false
 	}
@@ -224,15 +228,15 @@ func (p *Pool) collectedDueLocked() bool {
 		p.collectedDirty = false
 		return false
 	}
-	return true
+	return !now.Before(p.collectedRetryAt)
 }
 
-func (p *Pool) reconcileCollected() {
+func (p *Pool) reconcileCollected(now time.Time) {
 	if p == nil || p.collectedCtx == nil || p.collectedCtx.Err() != nil {
 		return
 	}
 	p.configMu.Lock()
-	due := p.collectedDueLocked()
+	due := p.collectedDueLocked(now)
 	p.configMu.Unlock()
 	if !due {
 		return
@@ -241,13 +245,17 @@ func (p *Pool) reconcileCollected() {
 	defer unlock()
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
-	if !p.collectedDueLocked() {
+	if !p.collectedDueLocked(now) {
+		return
+	}
+	if !p.publishCollectedViewLocked(false) {
+		p.collectedRetryWait = min(max(2*p.collectedRetryWait, collectedRetryFirst), collectedRetryMax)
+		p.collectedRetryAt = now.Add(p.collectedRetryWait)
 		return
 	}
 	p.collectedDirty = false
-	if p.publishCollectedViewLocked(false) {
-		p.updateCollectedMetricsLocked()
-	}
+	p.collectedRetryWait, p.collectedRetryAt = 0, time.Time{}
+	p.updateCollectedMetricsLocked()
 }
 
 func collectedFlow(h helloWatch) (ctnl.Flow, bool) {

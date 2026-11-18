@@ -408,6 +408,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 
 	engineName := engineLabel(engineMode(&cfg))
 	if engineErr != nil {
+		pool.StopCollected()
 		tproxyMgr.Stop()
 		tables.RoutingClearAll()
 		if cfg.System.WebServer.Port == 0 {

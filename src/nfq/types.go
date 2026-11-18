@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/dhcp"
@@ -33,6 +34,8 @@ type Pool struct {
 	collectedCancel    context.CancelFunc
 	collectedDirty     bool
 	collectedEngineTUN bool
+	collectedRetryAt   time.Time
+	collectedRetryWait time.Duration
 	collectedPubGen    uint64
 	collectedViewBase  *config.Config
 	collectedViewGen   uint64

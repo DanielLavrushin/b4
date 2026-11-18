@@ -32,7 +32,7 @@ func TestStopCollectedWaitsForTheInstallInFlight(t *testing.T) {
 	p.configMu.Unlock()
 	reconciled := make(chan struct{})
 	go func() {
-		p.reconcileCollected()
+		p.reconcileCollected(time.Now())
 		close(reconciled)
 	}()
 	<-entered
@@ -58,7 +58,7 @@ func TestStopCollectedWaitsForTheInstallInFlight(t *testing.T) {
 	p.configMu.Lock()
 	p.collectedDirty = true
 	p.configMu.Unlock()
-	p.reconcileCollected()
+	p.reconcileCollected(time.Now().Add(time.Hour))
 	if calls != 1 {
 		t.Fatalf("the collected installer ran after StopCollected: calls=%d", calls)
 	}
