@@ -759,7 +759,7 @@ func (l *Listener) DialNamedBy(host string, port int, by time.Time) (net.Conn, e
 	}
 	release := l.holdRelay(relayKeys("tcp", port, host, target))
 	upstream, err := l.dialUpstreamWithin(upCtx, target, port)
-	if err != nil && target == host && !onion && socks5.IsConnectRejected(err) {
+	if err != nil && target == host && !onion && net.ParseIP(host) == nil && socks5.IsConnectRejected(err) {
 		if addrs, rerr := l.resolveHost(ctx, host); rerr == nil {
 			log.Tracef("tproxy: upstream refused %s:%d on set %q (%v), retrying with %s", host, port, l.SetName, err, addrs[0])
 			target = addrs[0]
@@ -819,7 +819,7 @@ func isOnionName(host string) bool {
 }
 
 func (l *Listener) namedTarget(ctx context.Context, host string) (string, error) {
-	if isOnionName(host) || (l.UseDomain && len(l.pinnedAddresses(host)) == 0) {
+	if net.ParseIP(host) != nil || isOnionName(host) || (l.UseDomain && len(l.pinnedAddresses(host)) == 0) {
 		return host, nil
 	}
 	addrs, err := l.namedAddresses(ctx, host)

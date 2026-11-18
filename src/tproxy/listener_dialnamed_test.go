@@ -239,6 +239,34 @@ func withSetDNS(t *testing.T, l *Listener, strict bool, answer func(host string)
 	return &used
 }
 
+func TestDialNamedSendsAnAddressToTheUpstreamWithoutAskingTheSetsDNS(t *testing.T) {
+	for _, tc := range []struct {
+		addr string
+		atyp byte
+	}{{"149.154.167.51", 1}, {"2001:67c:4e8:f004::a", 4}} {
+		t.Run(tc.addr, func(t *testing.T) {
+			up := startMockSocks(t, 0, func(byte) byte { return 0 })
+			l := newTestListener(t, up.port(), fakeNames{})
+			l.UseDomain = false
+			used := withSetDNS(t, l, true, func(host string) ([]net.IP, error) {
+				return nil, dns.ErrNoAddress
+			})
+
+			conn, err := l.DialNamed(tc.addr, 443)
+			if err != nil {
+				t.Fatalf("an address failed before the upstream was asked, so fail_open could not help either: %v", err)
+			}
+			conn.Close()
+			if r := up.next(t); r.atyp != tc.atyp || r.host != tc.addr {
+				t.Fatalf("upstream got atyp %d host %q, want the address itself", r.atyp, r.host)
+			}
+			if len(*used) != 0 {
+				t.Fatalf("the set's DNS was asked to resolve an address: %+v", *used)
+			}
+		})
+	}
+}
+
 func TestDialNamedResolvesThroughTheSetsDNSServer(t *testing.T) {
 	up := startMockSocks(t, 0, func(byte) byte { return 0 })
 	l := newTestListener(t, up.port(), fakeNames{})
