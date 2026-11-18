@@ -239,16 +239,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 		return collectedView.Load().(func(*config.Config) *config.Config)(c)
 	}
 	waitTables := func(ctx context.Context) error {
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-		for discoveryRT.IsActive() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-ticker.C:
-			}
-		}
-		return ctx.Err()
+		return waitDiscoveryIdle(ctx, discoveryRT.IsActive)
 	}
 	refreshTables := func() error {
 		c := runtimeConfig(cfgPtr.Load())
@@ -266,9 +257,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			tables.RoutingSyncConfig(c)
 			return firewallErr
 		}
-		waitCtx, cancelWait := context.WithTimeout(appCtx, 5*time.Minute)
-		defer cancelWait()
-		if err := waitTables(waitCtx); err != nil {
+		if err := waitDiscoveryBeforeRefresh(appCtx, discoveryRT.IsActive); err != nil {
 			return err
 		}
 
@@ -1116,6 +1105,34 @@ func printConfigDefaults(cmd *cobra.Command) {
 		}
 	}
 	log.Infof("  %s", line)
+}
+
+var discoveryRefreshWait = 5 * time.Minute
+
+func waitDiscoveryIdle(ctx context.Context, active func() bool) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for active() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	return ctx.Err()
+}
+
+func waitDiscoveryBeforeRefresh(parent context.Context, active func() bool) error {
+	if active() {
+		log.Warnf("Tables refresh requested while discovery is active, waiting for discovery to finish...")
+	}
+	ctx, cancel := context.WithTimeout(parent, discoveryRefreshWait)
+	defer cancel()
+	err := waitDiscoveryIdle(ctx, active)
+	if errors.Is(err, context.DeadlineExceeded) && parent.Err() == nil {
+		return fmt.Errorf("tables refresh timed out: discovery did not finish within 5 minutes")
+	}
+	return err
 }
 
 func collectedInstallRefusal(c *config.Config, engineDown, tun bool) error {
