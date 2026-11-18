@@ -352,26 +352,53 @@ func TestLoadSysctlSnapshot_NoFile(t *testing.T) {
 	}
 }
 
-func TestSysctlSnapshotFileFollowsTheNetworkNamespace(t *testing.T) {
+func snapshotFileOfThisNamespace(t *testing.T) string {
+	t.Helper()
 	prev := sysctlSnapPath
 	sysctlSnapPath = defaultSysctlSnapPath
-	t.Cleanup(func() { sysctlSnapPath = prev })
+	defer func() { sysctlSnapPath = prev }()
+	return sysctlSnapshotPath()
+}
 
-	var st syscall.Stat_t
-	if err := syscall.Stat("/proc/self/ns/net", &st); err != nil || st.Ino == 0 {
-		if got := sysctlSnapshotPath(); got != defaultSysctlSnapPath {
-			t.Fatalf("sysctlSnapshotPath() without /proc/self/ns/net = %q, want %q", got, defaultSysctlSnapPath)
+func TestSysctlSnapshotFileFollowsTheNetworkNamespace(t *testing.T) {
+	prevLink := readNetnsLink
+	t.Cleanup(func() { readNetnsLink = prevLink })
+
+	cases := []struct {
+		name string
+		link string
+		err  error
+		want string
+	}{
+		{name: "namespace link", link: "net:[4026531992]", want: "/tmp/b4_sysctl_snapshot.4026531992.json"},
+		{name: "another namespace", link: "net:[4026532451]", want: "/tmp/b4_sysctl_snapshot.4026532451.json"},
+		{name: "a kernel before 3.8 has no namespace link", err: syscall.EINVAL, want: defaultSysctlSnapPath},
+		{name: "a kernel without network namespaces", err: syscall.ENOENT, want: defaultSysctlSnapPath},
+		{name: "not a network namespace", link: "mnt:[4026531841]", want: defaultSysctlSnapPath},
+		{name: "no closing bracket", link: "net:[4026531992", want: defaultSysctlSnapPath},
+		{name: "not a number", link: "net:[abc]", want: defaultSysctlSnapPath},
+		{name: "zero", link: "net:[0]", want: defaultSysctlSnapPath},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			readNetnsLink = func() (string, error) { return c.link, c.err }
+			if got := snapshotFileOfThisNamespace(t); got != c.want {
+				t.Fatalf("snapshot file for link %q (err %v) = %q, want %q", c.link, c.err, got, c.want)
+			}
+		})
+	}
+
+	t.Run("this process", func(t *testing.T) {
+		readNetnsLink = prevLink
+		link, err := os.Readlink("/proc/self/ns/net")
+		if err != nil {
+			t.Skipf("no network namespace link here: %v", err)
 		}
-		t.Skipf("/proc/self/ns/net unavailable: %v", err)
-	}
-	got := sysctlSnapshotPath()
-	if got == defaultSysctlSnapPath {
-		t.Fatalf("resolved snapshot path is still %q; two network namespaces sharing /tmp overwrite each other's saved sysctls", got)
-	}
-	want := fmt.Sprintf("/tmp/b4_sysctl_snapshot.%d.json", uint64(st.Ino))
-	if got != want {
-		t.Fatalf("sysctlSnapshotPath() = %q, want %q", got, want)
-	}
+		got := snapshotFileOfThisNamespace(t)
+		if got == defaultSysctlSnapPath {
+			t.Fatalf("snapshot file is still %q with namespace link %q; two network namespaces sharing /tmp overwrite each other's saved sysctls", got, link)
+		}
+	})
 }
 
 func TestUninstallKeepsAnotherNamespacesSysctlSnapshot(t *testing.T) {
@@ -388,11 +415,11 @@ func TestUninstallKeepsAnotherNamespacesSysctlSnapshot(t *testing.T) {
 		ino := "4026531992"
 		prelude := ""
 		if stubNetns == "" {
-			var st syscall.Stat_t
-			if err := syscall.Stat("/proc/self/ns/net", &st); err != nil || st.Ino == 0 {
-				t.Skipf("/proc/self/ns/net unavailable: %v", err)
+			path := snapshotFileOfThisNamespace(t)
+			if path == defaultSysctlSnapPath {
+				t.Skip("no network namespace link here")
 			}
-			ino = fmt.Sprint(uint64(st.Ino))
+			ino = strings.TrimSuffix(strings.TrimPrefix(filepath.Base(path), "b4_sysctl_snapshot."), ".json")
 		} else {
 			prelude = "readlink() { echo '" + stubNetns + "'; }; "
 		}

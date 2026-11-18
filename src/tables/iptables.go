@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -367,15 +366,31 @@ const defaultSysctlSnapPath = "/tmp/b4_sysctl_snapshot.json"
 
 var sysctlSnapPath = defaultSysctlSnapPath
 
+var readNetnsLink = func() (string, error) {
+	return os.Readlink("/proc/self/ns/net")
+}
+
 func sysctlSnapshotPath() string {
 	if sysctlSnapPath != defaultSysctlSnapPath {
 		return sysctlSnapPath
 	}
-	var st syscall.Stat_t
-	if err := syscall.Stat("/proc/self/ns/net", &st); err != nil || st.Ino == 0 {
+	link, err := readNetnsLink()
+	if err != nil {
 		return defaultSysctlSnapPath
 	}
-	return fmt.Sprintf("/tmp/b4_sysctl_snapshot.%d.json", uint64(st.Ino))
+	id, ok := strings.CutPrefix(link, "net:[")
+	if !ok {
+		return defaultSysctlSnapPath
+	}
+	id, ok = strings.CutSuffix(id, "]")
+	if !ok {
+		return defaultSysctlSnapPath
+	}
+	ino, err := strconv.ParseUint(id, 10, 64)
+	if err != nil || ino == 0 {
+		return defaultSysctlSnapPath
+	}
+	return fmt.Sprintf("/tmp/b4_sysctl_snapshot.%d.json", ino)
 }
 
 func b4SysctlSettings() []SysctlSetting {
