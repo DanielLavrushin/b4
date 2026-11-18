@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/sni"
@@ -17,6 +18,7 @@ type FlowProfile struct {
 type flowKey struct{ local, remote netip.AddrPort }
 
 type Flows struct {
+	n       atomic.Int32
 	mu      sync.RWMutex
 	entries map[flowKey]*FlowProfile
 }
@@ -43,13 +45,21 @@ func (f *Flows) Register(local, remote netip.AddrPort, cfg *config.Config, set *
 		return nil, errors.New("warm flow is already registered or registry is full")
 	}
 	f.entries[key] = p
+	f.n.Add(1)
 	f.mu.Unlock()
 	var once sync.Once
-	return func() { once.Do(func() { f.mu.Lock(); delete(f.entries, key); f.mu.Unlock() }) }, nil
+	return func() {
+		once.Do(func() {
+			f.mu.Lock()
+			delete(f.entries, key)
+			f.n.Add(-1)
+			f.mu.Unlock()
+		})
+	}, nil
 }
 
 func (f *Flows) Lookup(local, remote netip.AddrPort) *FlowProfile {
-	if f == nil {
+	if f == nil || f.n.Load() == 0 {
 		return nil
 	}
 	f.mu.RLock()
@@ -59,7 +69,8 @@ func (f *Flows) Lookup(local, remote netip.AddrPort) *FlowProfile {
 }
 
 func (f *Flows) Active() int {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-	return len(f.entries)
+	if f == nil {
+		return 0
+	}
+	return int(f.n.Load())
 }

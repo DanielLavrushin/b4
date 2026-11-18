@@ -159,7 +159,7 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 		return vc.accept()
 	}
 	vc.dir = w.packetDirection(cfg, vc, pkt)
-	if cfg.Queue.Mode != "tun" && pkt.proto == 6 && len(raw) >= pkt.ihl+TCPHeaderMinLen {
+	if cfg.Queue.Mode != "tun" && pkt.proto == 6 && w.warmFlows.Active() > 0 && len(raw) >= pkt.ihl+TCPHeaderMinLen {
 		localIP, lok := netip.AddrFromSlice(pkt.src)
 		remoteIP, rok := netip.AddrFromSlice(pkt.dst)
 		if lok && rok {
