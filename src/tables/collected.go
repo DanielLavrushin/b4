@@ -168,7 +168,7 @@ func CollectedTargetsReady(cfg *config.Config) error {
 	return nil
 }
 
-var collectedAccounting = SysctlSetting{Name: "net.netfilter.nf_conntrack_acct", Desired: "1", Revert: "0"}
+var collectedAccounting = SysctlSetting{Name: "net.netfilter.nf_conntrack_acct", Desired: "1"}
 
 func applyCollectedAccounting(cfg *config.Config) {
 	for _, set := range cfg.Sets {
