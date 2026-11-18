@@ -17,10 +17,15 @@ interface GeoCategoryPanelProps {
   loading: boolean;
   selected: string[];
   breakdown?: Record<string, number>;
+  missingText?: string;
+  stripAttrs?: boolean;
   onSelectedChange: (categories: string[]) => void;
   onPreview?: (category: string) => void;
   path?: string;
 }
+
+const tagOf = (category: string, stripAttrs: boolean) =>
+  (stripAttrs ? category.split("@")[0] : category).trim().toLowerCase();
 
 const CategoryLabel = ({
   category,
@@ -59,12 +64,19 @@ export const GeoCategoryPanel = ({
   loading,
   selected,
   breakdown,
+  missingText,
+  stripAttrs = false,
   onSelectedChange,
   onPreview,
   path,
 }: GeoCategoryPanelProps) => {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
+  const isMissing = (category: string): boolean =>
+    !!missingText &&
+    !loading &&
+    options.length > 0 &&
+    !options.includes(tagOf(category, stripAttrs));
   const { changedValues, registerLabel } = useChangedFields();
   const leaf = path ? changedValues.get(path) : undefined;
   const leafSets = useMemo(() => {
@@ -136,12 +148,21 @@ export const GeoCategoryPanel = ({
         <B4ChipList
           items={selected}
           getKey={(c) => c}
-          getLabel={(c) => (
-            <CategoryLabel category={c} count={breakdown?.[c]} />
-          )}
+          getLabel={(c) =>
+            isMissing(c) ? (
+              <Tooltip title={missingText} describeChild>
+                <Box component="span" sx={{ display: "inline-flex" }}>
+                  <CategoryLabel category={c} count={breakdown?.[c]} />
+                </Box>
+              </Tooltip>
+            ) : (
+              <CategoryLabel category={c} count={breakdown?.[c]} />
+            )
+          }
           onDelete={(c) => onSelectedChange(selected.filter((s) => s !== c))}
           onClick={onPreview}
           highlight={path ? (c) => has(c) : undefined}
+          error={isMissing}
         />
       </Box>
     </Box>

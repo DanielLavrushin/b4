@@ -24,6 +24,13 @@ export interface GeoFileInfo {
   last_modified?: string;
 }
 
+export interface GeodatUnmatchedSet {
+  set_id: string;
+  set_name: string;
+  geosite_categories?: string[];
+  geoip_categories?: string[];
+}
+
 export interface GeodatDownloadResult {
   success: boolean;
   message: string;
@@ -32,6 +39,16 @@ export interface GeodatDownloadResult {
   geosite_size: number;
   geoip_size: number;
   removed?: string[];
+  unmatched?: GeodatUnmatchedSet[] | null;
+}
+
+export interface GeodatUploadResult {
+  success: boolean;
+  message: string;
+  path: string;
+  size: number;
+  removed?: string;
+  unmatched?: GeodatUnmatchedSet[] | null;
 }
 
 export type GeodatFileType = "geosite" | "geoip";

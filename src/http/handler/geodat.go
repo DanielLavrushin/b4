@@ -25,13 +25,26 @@ type GeodatDownloadRequest struct {
 }
 
 type GeodatDownloadResponse struct {
-	Success     bool     `json:"success"`
-	Message     string   `json:"message"`
-	GeositePath string   `json:"geosite_path"`
-	GeoipPath   string   `json:"geoip_path"`
-	GeositeSize int64    `json:"geosite_size"`
-	GeoipSize   int64    `json:"geoip_size"`
-	Removed     []string `json:"removed,omitempty"`
+	Success     bool              `json:"success"`
+	Message     string            `json:"message"`
+	GeositePath string            `json:"geosite_path"`
+	GeoipPath   string            `json:"geoip_path"`
+	GeositeSize int64             `json:"geosite_size"`
+	GeoipSize   int64             `json:"geoip_size"`
+	Removed     []string          `json:"removed,omitempty"`
+	Unmatched   []GeodatUnmatched `json:"unmatched,omitempty"`
+}
+
+type GeodatUnmatched struct {
+	SetID   string   `json:"set_id"`
+	SetName string   `json:"set_name"`
+	GeoSite []string `json:"geosite_categories,omitempty"`
+	GeoIP   []string `json:"geoip_categories,omitempty"`
+}
+
+type geodatReplaced struct {
+	site bool
+	ip   bool
 }
 
 type GeodatRemoveRequest struct {
@@ -119,7 +132,7 @@ func (api *API) handleGeodatDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	geositeSize, geoipSize, removed, err := api.RefreshGeodat(geodatDownloadsCtx, req.DestinationPath, req.GeositeURL, req.GeoipURL)
+	geositeSize, geoipSize, removed, unmatched, err := api.RefreshGeodat(geodatDownloadsCtx, req.DestinationPath, req.GeositeURL, req.GeoipURL)
 	if err != nil {
 		log.Errorf("geodat download: %v", err)
 		writeJsonError(w, http.StatusInternalServerError, err.Error())
@@ -148,6 +161,7 @@ func (api *API) handleGeodatDownload(w http.ResponseWriter, r *http.Request) {
 		GeositeSize: geositeSize,
 		GeoipSize:   geoipSize,
 		Removed:     removed,
+		Unmatched:   unmatched,
 	}
 
 	setJsonHeader(w)
@@ -187,9 +201,9 @@ func verifyGeodat(kind geodat.Kind) func(string) error {
 	}
 }
 
-func (api *API) RefreshGeodat(ctx context.Context, destPath, geositeURL, geoipURL string) (int64, int64, []string, error) {
+func (api *API) RefreshGeodat(ctx context.Context, destPath, geositeURL, geoipURL string) (int64, int64, []string, []GeodatUnmatched, error) {
 	if !geodatDownloadMu.TryLock() {
-		return 0, 0, nil, geodat.ErrBusy
+		return 0, 0, nil, nil, geodat.ErrBusy
 	}
 	defer geodatDownloadMu.Unlock()
 
@@ -205,7 +219,7 @@ func (api *API) RefreshGeodat(ctx context.Context, destPath, geositeURL, geoipUR
 	}()
 
 	if err := os.MkdirAll(destPath, 0755); err != nil {
-		return 0, 0, nil, fmt.Errorf("failed to create directory %s: %v", destPath, err)
+		return 0, 0, nil, nil, fmt.Errorf("failed to create directory %s: %v", destPath, err)
 	}
 
 	var geositeSize, geoipSize int64
@@ -235,10 +249,10 @@ func (api *API) RefreshGeodat(ctx context.Context, destPath, geositeURL, geoipUR
 	}
 
 	if err := ctx.Err(); err != nil {
-		return geositeSize, geoipSize, nil, errors.Join(append(errs, err)...)
+		return geositeSize, geoipSize, nil, nil, errors.Join(append(errs, err)...)
 	}
 	if newGeoSitePath == "" && newGeoIpPath == "" {
-		return 0, 0, nil, errors.Join(errs...)
+		return 0, 0, nil, nil, errors.Join(errs...)
 	}
 
 	removed := []string{}
@@ -254,7 +268,7 @@ func (api *API) RefreshGeodat(ctx context.Context, destPath, geositeURL, geoipUR
 		}
 	}
 
-	err := api.saveGeoConfig(func(geo *geodat.GeoDatConfig) {
+	unmatched, err := api.saveGeoConfig(func(geo *geodat.GeoDatConfig) {
 		if newGeoSitePath != "" {
 			geo.GeoSitePath = newGeoSitePath
 			geo.GeoSiteURL = geositeURL
@@ -263,15 +277,15 @@ func (api *API) RefreshGeodat(ctx context.Context, destPath, geositeURL, geoipUR
 			geo.GeoIpPath = newGeoIpPath
 			geo.GeoIpURL = geoipURL
 		}
-	})
+	}, geodatReplaced{site: newGeoSitePath != "", ip: newGeoIpPath != ""})
 	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to save configuration: %w", err))
 	}
 
-	return geositeSize, geoipSize, removed, errors.Join(errs...)
+	return geositeSize, geoipSize, removed, unmatched, errors.Join(errs...)
 }
 
-func (api *API) saveGeoConfig(update func(geo *geodat.GeoDatConfig)) error {
+func (api *API) saveGeoConfig(update func(geo *geodat.GeoDatConfig), replaced geodatReplaced) ([]GeodatUnmatched, error) {
 	geoSaveMu.Lock()
 	defer geoSaveMu.Unlock()
 	geo := api.getCfg().System.Geo
@@ -287,11 +301,23 @@ func (api *API) saveGeoConfig(update func(geo *geodat.GeoDatConfig)) error {
 		}
 	}
 
+	var unmatched []GeodatUnmatched
 	oldCfg, newCfg, err := api.editConfig(func(next *config.Config) error {
 		update(&next.System.Geo)
+		unmatched = nil
 		for _, set := range next.Sets {
 			log.Infof("Reloading geo targets for set: %s", set.Name)
-			api.loadTargetsForSetCached(set)
+			report := api.loadTargetsForSetCached(set)
+			miss := GeodatUnmatched{SetID: set.Id, SetName: set.Name}
+			if replaced.site && next.System.Geo.GeoSitePath != "" {
+				miss.GeoSite = report.EmptyGeoSite
+			}
+			if replaced.ip && next.System.Geo.GeoIpPath != "" {
+				miss.GeoIP = report.EmptyGeoIP
+			}
+			if len(miss.GeoSite) > 0 || len(miss.GeoIP) > 0 {
+				unmatched = append(unmatched, miss)
+			}
 		}
 		return nil
 	})
@@ -299,12 +325,20 @@ func (api *API) saveGeoConfig(update func(geo *geodat.GeoDatConfig)) error {
 		live := api.getCfg().System.Geo
 		api.geodataManager.UpdatePaths(live.GeoSitePath, live.GeoIpPath)
 		api.geodataManager.ClearCache()
-		return err
+		return nil, err
+	}
+	for _, miss := range unmatched {
+		if len(miss.GeoSite) > 0 {
+			log.Warnf("Set '%s': geosite categories %v are not in %s and match nothing", miss.SetName, miss.GeoSite, newCfg.System.Geo.GeoSitePath)
+		}
+		if len(miss.GeoIP) > 0 {
+			log.Warnf("Set '%s': geoip categories %v are not in %s and match nothing", miss.SetName, miss.GeoIP, newCfg.System.Geo.GeoIpPath)
+		}
 	}
 	if api.PerformSoftRestart(newCfg, oldCfg) {
 		log.Infof("Soft restart completed successfully")
 	}
-	return nil
+	return unmatched, nil
 }
 
 var geoSaveMu sync.Mutex
@@ -476,7 +510,7 @@ func (api *API) handleGeodatUpload(w http.ResponseWriter, r *http.Request) {
 		removed = removeRelocatedGeodat(api.getCfg().System.Geo.GeoIpPath, destFile, "geoip.dat")
 	}
 
-	err = api.saveGeoConfig(func(geo *geodat.GeoDatConfig) {
+	unmatched, err := api.saveGeoConfig(func(geo *geodat.GeoDatConfig) {
 		if fileType == "geosite" {
 			geo.GeoSitePath = destFile
 			geo.GeoSiteURL = ""
@@ -484,7 +518,7 @@ func (api *API) handleGeodatUpload(w http.ResponseWriter, r *http.Request) {
 			geo.GeoIpPath = destFile
 			geo.GeoIpURL = ""
 		}
-	})
+	}, geodatReplaced{site: fileType == "geosite", ip: fileType == "geoip"})
 	if err != nil {
 		msg := fmt.Sprintf("Failed to save configuration: %v", err)
 		log.Errorf("geodat upload: %s", msg)
@@ -501,11 +535,12 @@ func (api *API) handleGeodatUpload(w http.ResponseWriter, r *http.Request) {
 
 	setJsonHeader(w)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"message": message,
-		"path":    destFile,
-		"size":    size,
-		"removed": removed,
+		"success":   true,
+		"message":   message,
+		"path":      destFile,
+		"size":      size,
+		"removed":   removed,
+		"unmatched": unmatched,
 	})
 }
 
@@ -576,7 +611,7 @@ func (api *API) handleGeodatRemove(w http.ResponseWriter, r *http.Request) {
 		cleared = append(cleared, "geoip")
 	}
 
-	err := api.saveGeoConfig(func(geo *geodat.GeoDatConfig) {
+	_, err := api.saveGeoConfig(func(geo *geodat.GeoDatConfig) {
 		if req.Type == "geosite" || req.Type == "both" {
 			geo.GeoSitePath = ""
 			geo.GeoSiteURL = ""
@@ -585,7 +620,7 @@ func (api *API) handleGeodatRemove(w http.ResponseWriter, r *http.Request) {
 			geo.GeoIpPath = ""
 			geo.GeoIpURL = ""
 		}
-	})
+	}, geodatReplaced{})
 	if err != nil {
 		msg := fmt.Sprintf("Failed to save configuration: %v", err)
 		log.Errorf("geodat remove: %s", msg)
