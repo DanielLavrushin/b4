@@ -3896,11 +3896,13 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "Tests every route to the data centre, three at a time, and answers with all results once the run ends.\nWith Accept: text/event-stream the answer is a Server-Sent Events stream instead: \"plan\" with the routes in order,\n\"start\" and \"result\" for each route by its index as it happens, then \"done\".",
                 "consumes": [
                     "application/json"
                 ],
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "text/event-stream"
                 ],
                 "tags": [
                     "MTProto"

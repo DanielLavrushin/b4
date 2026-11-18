@@ -12,6 +12,7 @@ All notable changes to b4 are recorded in this file.
 ### Fixed
 
 - After b4 stopped, a router with its own connection-tracking settings, such as OpenWrt, was left with the kernel defaults instead, and in rare cases with b4's settings. ([#613](https://github.com/DanielLavrushin/b4/pull/613), thanks [@mvanhorn](https://github.com/mvanhorn); [#575](https://github.com/DanielLavrushin/b4/issues/575))
+- **Test connection** under **Telegram upstream (shared)** checked its routes one after another, so with **CF proxy fallback** on a run took about a minute and showed nothing until it ended. [#616](https://github.com/DanielLavrushin/b4/issues/616)
 
 ## [1.92.0] - 2026-11-17
 
