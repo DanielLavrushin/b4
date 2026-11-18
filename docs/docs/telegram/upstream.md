@@ -77,6 +77,11 @@ the set's route is not in place, for example right after a change. When the rout
 the set's own settings decide: the **Kill switch** of an interface set, **Fall back to direct on
 upstream failure** of a proxy set. The connections to the fake SNI website stay outside the set.
 
+With **Telegram over WebSocket** on, the connections that a proxy set's upstream running on
+the router opens to Telegram itself would loop back into that upstream. The bridge sends them
+out directly instead and logs a warning. The upstream stays out of the bridge when it marks its
+own traffic, see [Next to other services](../guides/marks.md#next-to-other-services).
+
 ### Custom WebSocket domain
 
 A domain that relays WebSocket traffic to Telegram, for a self-hosted relay next to the shared CF proxy pool. b4 adds `kws1.`, `kws2.` and so on for each data centre, so the names have to resolve for every data centre in use.

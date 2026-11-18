@@ -192,6 +192,7 @@ func (m *Manager) syncLocked(cfg *config.Config, retried bool) {
 			continue
 		}
 		l.set.Store(set)
+		l.ownDials.Store(cfg.IsTelegramUpstreamSet(set))
 		l.SetDNSOptions(int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout(), cfg.Queue.IPv6Enabled)
 	}
 
@@ -285,6 +286,7 @@ func (m *Manager) newListener(cfg *config.Config, set *config.SetConfig, bypassM
 		guard:     newLoopGuard(host, set.Routing.Upstream.Port),
 	}
 	l.set.Store(set)
+	l.ownDials.Store(cfg.IsTelegramUpstreamSet(set))
 	l.SetDNSOptions(int(cfg.MainInjectedMark()), cfg.DNSQueryTimeout(), cfg.Queue.IPv6Enabled)
 	return l
 }

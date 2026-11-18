@@ -95,6 +95,8 @@ type Listener struct {
 	dnsV6      atomic.Bool
 	guard      *loopGuard
 	loopWarn   sync.Once
+	ownDials   atomic.Bool
+	ownWarn    sync.Once
 	relayMu    sync.Mutex
 	relays     map[string]int
 	flights    map[[sha256.Size]byte][]*heldFlight
@@ -359,9 +361,13 @@ func (l *Listener) serve(client net.Conn, given *sniffResult) {
 		if r := client.RemoteAddr(); r != nil {
 			src = r.String()
 		}
-		log.LogConnectionStr("TCP", l.SetName, "", src, "",
-			net.JoinHostPort(origIP.String(), fmt.Sprintf("%d", origPort)),
-			from.MAC, "", "mtproto-ws")
+		dest := net.JoinHostPort(origIP.String(), strconv.Itoa(origPort))
+		if peer := l.ownDialUpstream(client, tcpAddr); peer != nil {
+			log.LogConnectionStr("TCP", l.SetName, "", src, "", dest, from.MAC, "", "direct")
+			peer.relayDirect(client, dest, nil)
+			return
+		}
+		log.LogConnectionStr("TCP", l.SetName, "", src, "", dest, from.MAC, "", "mtproto-ws")
 		if l.Bridge == nil {
 			l.failOpenDirect(client, origIP, origPort)
 			return
@@ -376,7 +382,6 @@ func (l *Listener) serve(client net.Conn, given *sniffResult) {
 			return
 		}
 		client = rest
-		dest := net.JoinHostPort(origIP.String(), strconv.Itoa(origPort))
 		directFirst, workerFallback := l.Bridge.FailOpenOrder(origIP, origPort)
 		if directFirst {
 			timeout := failOpenDirectTimeout
@@ -1013,6 +1018,30 @@ func (l *Listener) upstreamLoop(client, dst *net.TCPAddr) (string, bool) {
 	owner := fmt.Sprintf("%s, pid %d", name, pid)
 	l.warnUpstreamLoop(owner)
 	return owner, true
+}
+
+func (l *Listener) ownDialUpstream(client net.Conn, dst *net.TCPAddr) *Listener {
+	clientAddr, _ := client.RemoteAddr().(*net.TCPAddr)
+	if clientAddr == nil || dst == nil || l.peers == nil {
+		return nil
+	}
+	for _, peer := range l.peers() {
+		if peer == l || peer.MTProtoWS || !peer.ownDials.Load() || peer.guard == nil {
+			continue
+		}
+		name, pid, ok := peer.guard.fromUpstreamProcess(clientAddr, dst)
+		if !ok {
+			continue
+		}
+		owner := fmt.Sprintf("%s, pid %d", name, pid)
+		l.ownWarn.Do(func() {
+			log.Warnf("tproxy: Telegram over WebSocket catches the connections to Telegram of %s (%s), the upstream of the Telegram set %q; b4 sends them direct, otherwise they would loop back into that upstream. To avoid the extra hop, have the upstream mark its outbound traffic with bits under 0x27fff (in Xray, sockopt.mark 255), or choose a Telegram set routed through an interface",
+				peer.upstreamAddr(), owner, peer.SetName)
+		})
+		log.Tracef("tproxy: %s -> %s on set %q is the connection of %s, the upstream of the Telegram set %q, sent direct", clientAddr, dst, l.SetName, owner, peer.SetName)
+		return peer
+	}
+	return nil
 }
 
 func (l *Listener) warnUpstreamLoop(owner string) {
