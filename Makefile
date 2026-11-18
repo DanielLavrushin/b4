@@ -158,10 +158,13 @@ test-netns:
 	else \
 		ctnl=1; \
 	fi; \
-	echo "Building the queue engine test binary..."; \
-	if go -C $(SRC_DIR) test -c -o ../$(OUT_DIR)/nfq.test ./nfq/; then \
+	echo "Building the queue engine test binary and the b4 binary its transparent relay tests run..."; \
+	mkdir -p $(OUT_DIR); \
+	printf '<!doctype html><title>b4 netns test build</title>\n' > $(OUT_DIR)/netns-ui.html; \
+	printf '{"Replace":{"%s":"%s"}}\n' "$(abspath $(SRC_DIR))/http/ui/dist/index.html" "$(abspath $(OUT_DIR))/netns-ui.html" > $(OUT_DIR)/netns-ui.json; \
+	if go -C $(SRC_DIR) test -c -o ../$(OUT_DIR)/nfq.test ./nfq/ && go -C $(SRC_DIR) build -overlay $(abspath $(OUT_DIR))/netns-ui.json -o ../$(OUT_DIR)/b4-netns .; then \
 		echo "Running the queue engine tests in a private network namespace..."; \
-		unshare -Urnm sh -c 'B4_NETNS_TEST=1 exec $(OUT_DIR)/nfq.test -test.run TestNetns -test.v' || nfq=$$?; \
+		unshare -Urnm sh -c 'B4_NETNS_TEST=1 B4_WSREUSE_BINARY=$(abspath $(OUT_DIR))/b4-netns exec $(OUT_DIR)/nfq.test -test.run TestNetns -test.v' || nfq=$$?; \
 	else \
 		nfq=1; \
 	fi; \

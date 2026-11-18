@@ -268,11 +268,24 @@ func warmWire(t *testing.T, pid int) func() []netnsWireSegment {
 	return collect
 }
 
-func TestNetnsWSReuseTransparentBinary(t *testing.T) {
+func wsReuseBinary(t *testing.T, unset string) string {
+	t.Helper()
 	binary := os.Getenv("B4_WSREUSE_BINARY")
 	if binary == "" {
-		t.Skip("set B4_WSREUSE_BINARY to the candidate b4 binary")
+		t.Skip(unset)
 	}
+	info, err := os.Stat(binary)
+	if err != nil {
+		t.Fatalf("B4_WSREUSE_BINARY: %v", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
+		t.Fatalf("B4_WSREUSE_BINARY=%s is not an executable file", binary)
+	}
+	return binary
+}
+
+func TestNetnsWSReuseTransparentBinary(t *testing.T) {
+	binary := wsReuseBinary(t, "set B4_WSREUSE_BINARY to the candidate b4 binary")
 	for _, family := range []string{"IPv4", "IPv6"} {
 		for _, backend := range []string{"iptables", "nftables"} {
 			for _, version := range []uint16{tls.VersionTLS12, tls.VersionTLS13} {
@@ -286,6 +299,9 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 	collectMode := len(collecting) > 0 && collecting[0]
 	t.Helper()
 	netnsHoldRequire(t)
+	if _, err := exec.LookPath("ethtool"); err != nil {
+		t.Skip("ethtool is not installed")
+	}
 	serverPID := netnsHoldStartPeer(t)
 	target, outsideIP, network, prefix := netnsHoldServer, "203.0.113.3", "tcp4", uint32(32)
 	clientPID := netnsWSStartLANClient(t)
@@ -755,10 +771,7 @@ func nextReuseRecord(t *testing.T, records <-chan warmTestRead) warmTestRead {
 }
 
 func TestNetnsCollectedWSReuseTransparentBinary(t *testing.T) {
-	binary := os.Getenv("B4_WSREUSE_BINARY")
-	if binary == "" {
-		t.Skip("set B4_WSREUSE_BINARY to the collected-IP candidate")
-	}
+	binary := wsReuseBinary(t, "set B4_WSREUSE_BINARY to the collected-IP candidate")
 	for _, family := range []string{"IPv4", "IPv6"} {
 		for _, backend := range []string{"iptables", "nftables"} {
 			t.Run(family+"/"+backend, func(t *testing.T) {
