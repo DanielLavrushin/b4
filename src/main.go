@@ -262,8 +262,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 		defer func() { tables.SyncDSCP(runtimeConfig(cfgPtr.Load())) }()
 		if tunEngineRef.Load() != nil {
 			firewallErr := tables.RefreshTUNFirewall(c)
-			tproxyMgr.SyncConfig(runtimeConfig(c))
-			tables.RoutingSyncConfig(runtimeConfig(c))
+			tproxyMgr.SyncConfig(c)
+			tables.RoutingSyncConfig(c)
 			return firewallErr
 		}
 		waitCtx, cancelWait := context.WithTimeout(appCtx, 5*time.Minute)
@@ -276,8 +276,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		nfq.ResetIfaceTraffic()
-		tproxyMgr.SyncConfig(runtimeConfig(c))
-		tables.RoutingSyncConfig(runtimeConfig(c))
+		tproxyMgr.SyncConfig(c)
+		tables.RoutingSyncConfig(c)
 		setEngineFirewall(metrics.GetMetricsCollector(), tables.DetectBackend(c))
 		return nil
 	}

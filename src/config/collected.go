@@ -24,7 +24,19 @@ func (c *Config) CollectedIPsInUse() bool {
 	return false
 }
 
+func (c *Config) collectedViewNeeded() bool {
+	for _, set := range c.Sets {
+		if len(set.Targets.CollectedIPs) > 0 || set.Enabled && set.Targets.UseCollectedIPs && !c.Queue.IsDiscovery {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Config) WithCollectedIPs(ips []string) *Config {
+	if !c.collectedViewNeeded() {
+		return c
+	}
 	view := *c
 	view.Sets = make([]*SetConfig, len(c.Sets))
 	for i, set := range c.Sets {

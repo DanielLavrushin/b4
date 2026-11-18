@@ -33,6 +33,10 @@ type Pool struct {
 	collectedCancel    context.CancelFunc
 	collectedDirty     bool
 	collectedEngineTUN bool
+	collectedPubGen    uint64
+	collectedViewBase  *config.Config
+	collectedViewGen   uint64
+	collectedView      *config.Config
 	Workers            []*Worker
 	configMu           sync.Mutex
 	Dhcp               *dhcp.Manager

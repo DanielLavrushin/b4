@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"net"
 	"net/netip"
+	"slices"
 	"sort"
 	"time"
 
@@ -31,10 +32,14 @@ func (p *Pool) SetCollectedTargetsInstaller(install func(context.Context, *confi
 }
 
 func (p *Pool) CollectedConfig(cfg *config.Config) *config.Config {
-	p.collectedMu.RLock()
-	ips := p.collectedPublished
-	p.collectedMu.RUnlock()
-	return cfg.WithCollectedIPs(ips)
+	p.collectedMu.Lock()
+	defer p.collectedMu.Unlock()
+	if p.collectedView != nil && p.collectedViewGen == p.collectedPubGen && (cfg == p.collectedViewBase || cfg == p.collectedView) {
+		return p.collectedView
+	}
+	view := cfg.WithCollectedIPs(p.collectedPublished)
+	p.collectedViewBase, p.collectedViewGen, p.collectedView = cfg, p.collectedPubGen, view
+	return view
 }
 
 func (p *Pool) collectedRelevantLocked(cfg *config.Config) bool {
@@ -188,7 +193,11 @@ func (p *Pool) publishCollectedViewLocked(requireConsumer bool) bool {
 		w.matcher.Store(matcher)
 	}
 	p.collectedMu.Lock()
-	p.collectedPublished = ips
+	if !slices.Equal(ips, p.collectedPublished) {
+		p.collectedPublished = ips
+		p.collectedPubGen++
+	}
+	p.collectedViewBase, p.collectedViewGen, p.collectedView = cfg, p.collectedPubGen, view
 	p.collectedMu.Unlock()
 	if p.collectedChanged != nil {
 		p.collectedChanged(matcher)

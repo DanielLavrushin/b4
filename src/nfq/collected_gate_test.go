@@ -2,7 +2,9 @@ package nfq
 
 import (
 	"context"
+	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 )
@@ -85,5 +87,33 @@ func TestATUNEngineNeverReconcilesCollected(t *testing.T) {
 	p.reconcileCollected()
 	if calls != 0 || w.getMatcher() != before {
 		t.Fatalf("a TUN engine reconciled collected IPs after a save to nfqueue: installer calls=%d, matcher kept=%v", calls, w.getMatcher() == before)
+	}
+}
+
+func TestCollectedConfigKeepsOneViewPerPublishedPool(t *testing.T) {
+	set := collectedConsumerSet()
+	w := newInjectingWorker(t, &set)
+	var seen *config.Config
+	p := collectedTestPool(t, w, func(_ context.Context, c *config.Config) error {
+		seen = c
+		return nil
+	})
+	base := w.getConfig()
+	v1 := p.CollectedConfig(base)
+	if p.CollectedConfig(base) != v1 || p.CollectedConfig(v1) != v1 {
+		t.Fatal("a repeat call, or the view passed back, gave a new pointer")
+	}
+	p.configMu.Lock()
+	p.collected = map[netip.Addr]collectedCandidate{netip.MustParseAddr("203.0.113.7"): {setID: "producer", at: time.Now()}}
+	ok := p.publishCollectedViewLocked(true)
+	p.configMu.Unlock()
+	if !ok || seen == nil || seen == v1 {
+		t.Fatalf("publish ok=%v, a new view installed=%v", ok, seen != nil && seen != v1)
+	}
+	if p.CollectedConfig(base) != seen || w.getConfig() != seen {
+		t.Fatal("the installed view, the workers' view and the monitor's view differ")
+	}
+	if len(seen.Sets[0].Targets.CollectedIPs) != 1 {
+		t.Fatal("the published address is missing from the view")
 	}
 }
