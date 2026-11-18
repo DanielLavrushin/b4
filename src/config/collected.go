@@ -15,6 +15,10 @@ func (s *SetConfig) TargetIPs() []string {
 	return append(ips, s.Targets.CollectedIPs...)
 }
 
+func (s *SetConfig) HasTargetIPs() bool {
+	return len(s.Targets.IpsToMatch) > 0 || s.Targets.UseCollectedIPs && len(s.Targets.CollectedIPs) > 0
+}
+
 func (c *Config) CollectedIPsInUse() bool {
 	for _, set := range c.Sets {
 		if set != nil && set.Enabled && (set.TCP.IPBlockDetect.Collects() || set.Targets.UseCollectedIPs) {

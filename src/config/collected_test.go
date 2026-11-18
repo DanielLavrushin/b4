@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"testing"
 )
 
@@ -108,5 +109,33 @@ func TestCollectedTimeoutBounds(t *testing.T) {
 		if err := cfg.Validate(); err == nil {
 			t.Fatalf("unsafe timeout accepted: %d", timeout)
 		}
+	}
+}
+
+func TestTargetChecksAllocateNothingWithAFullPool(t *testing.T) {
+	set := NewSetConfig()
+	set.Enabled = true
+	set.Targets.UseCollectedIPs = true
+	set.Targets.DomainOnly = true
+	set.Targets.IpsToMatch = []string{"198.51.100.1"}
+	for i := 0; i < 1024; i++ {
+		set.Targets.CollectedIPs = append(set.Targets.CollectedIPs, fmt.Sprintf("203.0.%d.%d", i/256, i%256))
+	}
+	set.Routing.Enabled = true
+	set.Routing.Mode = RoutingModeInterface
+	set.Routing.EgressInterface = "wg0"
+	if !set.HasIPOrDomainTargets() || !set.RoutesAddressesToInterface() {
+		t.Fatal("a set with static and collected addresses lost its address targets")
+	}
+	if n := testing.AllocsPerRun(100, func() { _ = set.HasIPOrDomainTargets(); _ = set.RoutesAddressesToInterface() }); n != 0 {
+		t.Fatalf("target checks allocated %v times per call", n)
+	}
+	set.Targets.IpsToMatch = nil
+	if !set.RoutesAddressesToInterface() {
+		t.Fatal("collected addresses alone no longer route a domain-only set")
+	}
+	set.Targets.UseCollectedIPs = false
+	if set.HasIPOrDomainTargets() || set.RoutesAddressesToInterface() {
+		t.Fatal("collected addresses a set does not use counted as its targets")
 	}
 }

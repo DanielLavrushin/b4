@@ -660,7 +660,7 @@ func (set *SetConfig) MatchesIPVersion(version uint8) bool {
 }
 
 func (set *SetConfig) HasIPOrDomainTargets() bool {
-	return len(set.TargetIPs()) > 0 || len(set.Targets.DomainsToMatch) > 0
+	return set.HasTargetIPs() || len(set.Targets.DomainsToMatch) > 0
 }
 
 func (set *SetConfig) DeclaresDestinationTargets() bool {
@@ -708,7 +708,7 @@ func (set *SetConfig) RoutingHandsOffPackets() bool {
 
 func (set *SetConfig) RoutesAddressesToInterface() bool {
 	return set.RoutingDivertsPackets() && set.RoutesToInterface() &&
-		!(set.Targets.DomainOnly && len(set.TargetIPs()) == 0)
+		!(set.Targets.DomainOnly && !set.HasTargetIPs())
 }
 
 func (set *SetConfig) RoutingIncludesRouterTraffic() bool {
