@@ -15,10 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
-
-	"golang.org/x/sys/unix"
 
 	"github.com/daniellavrushin/b4/log"
 )
@@ -413,9 +410,12 @@ func dialWSAs(host, sni, hostHeader, path string, timeout time.Duration, mark ui
 	if resolveWindow > wsResolveMaxWait {
 		resolveWindow = wsResolveMaxWait
 	}
-	rctx, rcancel := context.WithTimeout(context.Background(), resolveWindow)
-	eps := wsDialEndpoints(rctx, host, sni)
-	rcancel()
+	eps := []string{host}
+	if !telegramViaProxy(mark) {
+		rctx, rcancel := context.WithTimeout(context.Background(), resolveWindow)
+		eps = wsDialEndpoints(rctx, host, sni)
+		rcancel()
+	}
 
 	if len(eps) == 0 {
 		return nil, fmt.Errorf("tcp dial %s: no usable address (IPv6 is off and the name has no IPv4 address)", host)
@@ -480,19 +480,9 @@ func isConnectStage(err error) bool {
 // budget it was drawn from is already spent.
 func dialWSEndpoint(host, sni, hostHeader, path string, timeout time.Duration, mark uint) (net.Conn, error) {
 	deadline := time.Now().Add(timeout)
-	dialer := &net.Dialer{Deadline: deadline}
-	if mark > 0 {
-		dialer.Control = func(network, address string, c syscall.RawConn) error {
-			var sErr error
-			if err := c.Control(func(fd uintptr) {
-				sErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, unix.SO_MARK, int(mark))
-			}); err != nil {
-				return err
-			}
-			return sErr
-		}
-	}
-	raw, err := dialer.Dial(dialNetwork(), net.JoinHostPort(host, wsDialPort))
+	dctx, dcancel := context.WithDeadline(context.Background(), deadline)
+	raw, err := dialTelegramTCP(dctx, dialNetwork(), net.JoinHostPort(host, wsDialPort), mark, timeout)
+	dcancel()
 	if err != nil {
 		return nil, fmt.Errorf("tcp dial %s: %w", host, err)
 	}

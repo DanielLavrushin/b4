@@ -37,7 +37,7 @@ func gwStartNode(t *testing.T) *gwNode {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
 	})
-	self, _ := os.Readlink("/proc/thread-self/ns/net")
+	self, _ := os.Readlink(netnsThreadNetNS())
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		other, err := os.Readlink(fmt.Sprintf("/proc/%d/ns/net", cmd.Process.Pid))
@@ -74,7 +74,7 @@ func (n *gwNode) inside(fn func() error) error {
 	done := make(chan error, 1)
 	go func() {
 		runtime.LockOSThread()
-		home, err := os.Open("/proc/thread-self/ns/net")
+		home, err := os.Open(netnsThreadNetNS())
 		if err != nil {
 			done <- err
 			return

@@ -16,12 +16,10 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -245,7 +243,7 @@ func (p transportPlan) tlsName() string {
 // CAP_NET_ADMIN, and without it every dial fails on the setsockopt instead of
 // on the route under test.
 var selfDialMark = func() uint {
-	if telegramSetDial.Load() {
+	if telegramSel.Load() != nil {
 		return uint(config.TelegramSetDialMark)
 	}
 	return uint(config.SelfDialMark)
@@ -258,20 +256,26 @@ func setWorkerFollowsSets(cfg *config.Config) {
 }
 
 func relayDialMark(base uint) uint {
-	if base == 0 || base&uint(config.TelegramSetBit) != 0 {
+	base, final := resolveTelegramMark(base)
+	if final || base == 0 {
 		return base
 	}
 	return base | uint(config.SelfDialNoDPIBit)
 }
 
 func workerDialMark(base uint) uint {
-	if workerFollowsSets.Load() {
+	base, final := resolveTelegramMark(base)
+	if final || workerFollowsSets.Load() {
 		return base
 	}
 	return relayDialMark(base)
 }
 
 func planDialMark(p transportPlan, base uint) uint {
+	base, final := resolveTelegramMark(base)
+	if final {
+		return base
+	}
 	switch {
 	case p.isWorker:
 		return workerDialMark(base)
@@ -623,7 +627,7 @@ func dialObfuscatedDC(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc
 				c, err := dialOneWS(p, planDialMark(p, selfDialMark()), timeout)
 				return c, false, err
 			}
-			c, err := dialOneTCP(p, selfDialMark(), timeout)
+			c, err := dialOneTCP(p, planDialMark(p, selfDialMark()), timeout)
 			return c, false, err
 		},
 		started: func(p transportPlan) {
@@ -807,11 +811,8 @@ func PlanTransportProbe(cfg *config.Config, dc int) (*TransportProbe, error) {
 	if err != nil {
 		return nil, err
 	}
-	probe := &TransportProbe{plans: plans, dc: dc, mark: dialMarkFor(cfg)}
-	if set := cfg.TelegramUpstreamSet(); set != nil && probe.mark&uint(config.TelegramSetBit) != 0 {
-		probe.telegram = set.Name
-	}
-	return probe, nil
+	mark := dialMarkFor(cfg)
+	return &TransportProbe{plans: plans, dc: dc, mark: mark, telegram: appliedTelegramSet(mark)}, nil
 }
 
 func (t *TransportProbe) TelegramSet() string {
@@ -941,19 +942,7 @@ func dialOne(p transportPlan, mark uint) (net.Conn, error) {
 }
 
 func dialOneTCP(p transportPlan, mark uint, timeout time.Duration) (net.Conn, error) {
-	dialer := net.Dialer{Timeout: timeout}
-	if mark > 0 {
-		dialer.Control = func(network, address string, c syscall.RawConn) error {
-			var sErr error
-			if err := c.Control(func(fd uintptr) {
-				sErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, unix.SO_MARK, int(mark))
-			}); err != nil {
-				return err
-			}
-			return sErr
-		}
-	}
-	conn, err := dialer.Dial(dialNetwork(), p.addr)
+	conn, err := dialTelegramTCP(context.Background(), dialNetwork(), p.addr, mark, timeout)
 	if err != nil {
 		return nil, err
 	}

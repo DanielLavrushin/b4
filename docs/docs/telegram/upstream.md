@@ -50,22 +50,31 @@ The log lines that identify each case are under [Telegram problems](./troublesho
 
 ### Telegram set
 
-**Telegram set** names the set whose strategy applies to b4's own connections to Telegram: the
+**Telegram set** names the set that handles b4's own connections to Telegram: the
 connections of the MTProto proxy and of Telegram over WebSocket on every route, the CF proxy
 pool, a custom WebSocket domain and Cloudflare Workers included, the connection test on this
 card, and the downloads of Telegram's address lists. No other set handles these connections,
 whatever it targets. With **No set**, the default, they are processed as
 [DPI processing](./websocket-bridge.md#dpi-processing) describes.
 
+A set without routing applies its strategy to these connections. A set routed through an
+interface carries them on that interface's route, and a proxy set through its upstream; neither
+applies its strategy to them. With **Send domain name to upstream** on, the default, the upstream
+gets the host names; otherwise, and for a name pinned in the set, it gets the address the set's
+DNS settings give. The route is installed
+for the chosen set even when it has no targets of its own. **Test connection** uses the set
+once the choice is saved.
+
 **Create a Telegram set** adds an enabled set named Telegram, with no targets and routing off,
 and selects it. Both are saved with **Save Changes**. The set's strategy is edited on the
 **Sets** page like any set's.
 
-The set applies while it is enabled and b4 runs in NFQUEUE mode. A block set or a Telegram over
-WebSocket set cannot be chosen. When the chosen set is missing or disabled, or b4 runs in TUN
-mode, the card says why and the connections go as they would without a set. The set's routing
-does not carry these connections, and the connections to the fake SNI website stay outside the
-set.
+The set applies while it is enabled, its routing is complete and b4 runs in NFQUEUE mode. A
+block set or a Telegram over WebSocket set cannot be chosen. When one of these does not hold,
+the card says why and the connections go as they would without a set. They do the same while
+the set's route is not in place, for example right after a change. When the route fails later,
+the set's own settings decide: the **Kill switch** of an interface set, **Fall back to direct on
+upstream failure** of a proxy set. The connections to the fake SNI website stay outside the set.
 
 ### Custom WebSocket domain
 

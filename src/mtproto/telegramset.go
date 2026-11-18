@@ -1,22 +1,86 @@
 package mtproto
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/netprobe"
 )
+
+type TelegramRoute struct {
+	Mode string
+	Mark uint32
+	IPv4 bool
+	IPv6 bool
+}
+
+type TelegramSetDialer interface {
+	CanDialViaSet(setID string) bool
+	DialViaSet(setID, host string, port int) (net.Conn, bool, error)
+}
+
+type telegramRouting struct {
+	routeOf func(setID string) (TelegramRoute, bool)
+	via     TelegramSetDialer
+}
+
+type telegramSelection struct {
+	id   string
+	name string
+	mode string
+	key  string
+}
+
+type telegramPathKind int
+
+const (
+	telegramPathNone telegramPathKind = iota
+	telegramPathStrategy
+	telegramPathInterface
+	telegramPathProxy
+)
+
+type telegramPath struct {
+	kind  telegramPathKind
+	mark  uint32
+	ipv6  bool
+	setID string
+}
+
+const telegramRouteGrace = 20 * time.Second
 
 var (
-	telegramSetDial atomic.Bool
+	telegramSel     atomic.Pointer[telegramSelection]
+	telegramHooks   atomic.Pointer[telegramRouting]
 	telegramSetMu   sync.Mutex
 	telegramSetNote string
+	telegramMissing struct {
+		sync.Mutex
+		key    string
+		since  time.Time
+		warned bool
+	}
 )
 
+func SetTelegramRouting(routeOf func(setID string) (TelegramRoute, bool), via TelegramSetDialer) {
+	telegramHooks.Store(&telegramRouting{routeOf: routeOf, via: via})
+}
+
 func setTelegramSet(cfg *config.Config) {
-	telegramSetDial.Store(cfg.TelegramUpstreamSet() != nil)
+	if set := cfg.TelegramUpstreamSet(); set != nil {
+		telegramSel.Store(&telegramSelection{id: set.Id, name: set.Name, mode: set.TelegramRouteMode(), key: telegramSetKey(cfg)})
+	} else {
+		telegramSel.Store(nil)
+	}
 	noteTelegramSet(telegramSetProblem(cfg))
 }
 
@@ -36,6 +100,8 @@ func telegramSetProblem(cfg *config.Config) string {
 		return "the set " + set.Name + " chosen for b4's own Telegram connections is disabled"
 	case !config.CarriesTelegram(set):
 		return "the set " + set.Name + " chosen for b4's own Telegram connections blocks its traffic or routes it through Telegram over WebSocket"
+	case set.RoutingIncomplete():
+		return "the routing of the set " + set.Name + " chosen for b4's own Telegram connections is incomplete"
 	case cfg.Queue.Mode == "tun":
 		return "the set " + set.Name + " chosen for b4's own Telegram connections does not apply in TUN mode"
 	case cfg.TelegramSetMarkConflict():
@@ -56,18 +122,187 @@ func noteTelegramSet(problem string) {
 	}
 }
 
+func telegramSetKey(cfg *config.Config) string {
+	set := cfg.TelegramUpstreamSet()
+	if set == nil {
+		return ""
+	}
+	r := set.Routing
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%t|%s|%d|%t|%t", set.Id, set.TelegramRouteMode(), r.EgressInterface, r.EgressIP, r.EgressGateway, r.KillSwitch,
+		r.Upstream.Host, r.Upstream.Port, r.Upstream.UseDomain, r.Upstream.FailOpen)
+}
+
 func telegramSetChanged(old, next *config.Config) bool {
-	return (old.TelegramUpstreamSet() == nil) != (next.TelegramUpstreamSet() == nil)
+	return telegramSetKey(old) != telegramSetKey(next)
+}
+
+func currentTelegramPath() telegramPath {
+	sel := telegramSel.Load()
+	if sel == nil {
+		return telegramPath{}
+	}
+	if sel.mode == "" {
+		return telegramPath{kind: telegramPathStrategy, setID: sel.id}
+	}
+	hooks := telegramHooks.Load()
+	switch sel.mode {
+	case config.RoutingModeInterface:
+		if hooks != nil && hooks.routeOf != nil {
+			if r, ok := hooks.routeOf(sel.id); ok && r.Mode == config.RoutingModeInterface && r.Mark != 0 {
+				noteTelegramRoute(sel, true)
+				return telegramPath{kind: telegramPathInterface, mark: r.Mark, ipv6: r.IPv6, setID: sel.id}
+			}
+		}
+	case config.RoutingModeProxy:
+		if hooks != nil && hooks.via != nil && hooks.via.CanDialViaSet(sel.id) {
+			noteTelegramRoute(sel, true)
+			return telegramPath{kind: telegramPathProxy, setID: sel.id}
+		}
+	}
+	noteTelegramRoute(sel, false)
+	return telegramPath{}
+}
+
+func noteTelegramRoute(sel *telegramSelection, found bool) {
+	m := &telegramMissing
+	m.Lock()
+	defer m.Unlock()
+	if found {
+		if m.key == sel.key && m.warned {
+			log.Infof("%s the route of the set %s is in place again, so b4's own Telegram connections follow it", tg(""), sel.name)
+		}
+		m.key, m.warned = "", false
+		return
+	}
+	now := time.Now()
+	if m.key != sel.key {
+		m.key, m.since, m.warned = sel.key, now, false
+		return
+	}
+	if m.warned || now.Sub(m.since) < telegramRouteGrace {
+		return
+	}
+	m.warned = true
+	log.Warnf("%s the set %s chosen for b4's own Telegram connections routes through %s, but that route is not in place, so those connections go as they would without a set", tg(""), sel.name, sel.mode)
+}
+
+func resolveTelegramMark(base uint) (uint, bool) {
+	if base&uint(config.TelegramSetBit) == 0 {
+		return base, false
+	}
+	switch p := currentTelegramPath(); p.kind {
+	case telegramPathStrategy, telegramPathProxy:
+		return base, true
+	case telegramPathInterface:
+		return uint(config.SelfDialRelayMark | p.mark), true
+	}
+	return base &^ uint(config.TelegramSetBit), false
 }
 
 func dialMarkFor(cfg *config.Config) uint {
 	base := coverDialMark()
-	if base != 0 && cfg.TelegramUpstreamSet() != nil {
-		return base | uint(config.TelegramSetBit)
+	sel := telegramSel.Load()
+	if base == 0 || sel == nil || cfg == nil || cfg.System.MTProto.UpstreamSet != sel.id {
+		return base
 	}
-	return base
+	return base | uint(config.TelegramSetBit)
+}
+
+func appliedTelegramSet(mark uint) string {
+	sel := telegramSel.Load()
+	if sel == nil || mark&uint(config.TelegramSetBit) == 0 || currentTelegramPath().kind == telegramPathNone {
+		return ""
+	}
+	return sel.name
 }
 
 func coverDialMark() uint {
 	return selfDialMark() &^ uint(config.TelegramSetBit)
+}
+
+func dialTelegramVia(mark uint, addr string, timeout time.Duration) (net.Conn, bool, error) {
+	if mark&uint(config.TelegramSetBit) == 0 {
+		return nil, false, nil
+	}
+	p := currentTelegramPath()
+	hooks := telegramHooks.Load()
+	if p.kind != telegramPathProxy || hooks == nil || hooks.via == nil {
+		return nil, false, nil
+	}
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, true, err
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, true, fmt.Errorf("port of %s: %w", addr, err)
+	}
+	return dialViaWithin(hooks.via, p.setID, host, port, timeout)
+}
+
+var errTelegramViaTimeout = errors.New("timed out")
+
+func dialViaWithin(via TelegramSetDialer, setID, host string, port int, timeout time.Duration) (net.Conn, bool, error) {
+	type result struct {
+		conn    net.Conn
+		handled bool
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		conn, handled, err := via.DialViaSet(setID, host, port)
+		done <- result{conn, handled, err}
+	}()
+	timer := time.NewTimer(max(timeout, time.Millisecond))
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		return r.conn, r.handled, r.err
+	case <-timer.C:
+		go func() {
+			if r := <-done; r.conn != nil {
+				_ = r.conn.Close()
+			}
+		}()
+		return nil, true, fmt.Errorf("dial %s through set %s: %w", net.JoinHostPort(host, strconv.Itoa(port)), setID, errTelegramViaTimeout)
+	}
+}
+
+func dialTelegramTCP(ctx context.Context, network, addr string, mark uint, timeout time.Duration) (net.Conn, error) {
+	if conn, handled, err := dialTelegramVia(mark, addr, timeout); handled {
+		return conn, err
+	}
+	if mark&uint(config.TelegramSetBit) != 0 && currentTelegramPath().kind != telegramPathStrategy {
+		mark &^= uint(config.TelegramSetBit)
+	}
+	dialer := net.Dialer{Timeout: timeout, Control: netprobe.MarkControl(int(mark))}
+	return dialer.DialContext(ctx, network, addr)
+}
+
+func telegramViaProxy(mark uint) bool {
+	return mark&uint(config.TelegramSetBit) != 0 && currentTelegramPath().kind == telegramPathProxy
+}
+
+func telegramHTTPClient(timeout time.Duration) *http.Client {
+	mark, _ := resolveTelegramMark(selfDialMark())
+	return netprobe.HTTPClientDial(func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return dialTelegramTCP(ctx, network, addr, mark, timeout)
+	}, timeout)
+}
+
+func DialTelegramDirect(ctx context.Context, dest string) (net.Conn, bool, error) {
+	base := selfDialMark()
+	if base&uint(config.TelegramSetBit) == 0 {
+		return nil, false, nil
+	}
+	mark, final := resolveTelegramMark(base)
+	if !final {
+		return nil, false, nil
+	}
+	timeout := tcpDialTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = time.Until(deadline)
+	}
+	conn, err := dialTelegramTCP(ctx, dialNetwork(), dest, mark, timeout)
+	return conn, true, err
 }

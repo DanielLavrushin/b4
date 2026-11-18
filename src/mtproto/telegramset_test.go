@@ -1,7 +1,13 @@
 package mtproto
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/daniellavrushin/b4/config"
 )
@@ -138,40 +144,281 @@ func TestTelegramSetProblemNamesWhatIsMissing(t *testing.T) {
 	}
 }
 
-func TestTheConnectionTestUsesTheSetChoiceItIsGiven(t *testing.T) {
+func TestTheConnectionTestAppliesOnlyTheSavedTelegramSet(t *testing.T) {
 	setTelegramSet(nil)
-	chosen, err := PlanTransportProbe(telegramSetTestConfig(true), 2)
+	draft, err := PlanTransportProbe(telegramSetTestConfig(true), 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if chosen.mark != uint(config.TelegramSetDialMark) {
-		t.Fatalf("probe mark 0x%x, want 0x%x: the test checks the set chosen on the page before it is saved", chosen.mark, config.TelegramSetDialMark)
-	}
-	if got := chosen.TelegramSet(); got != "Telegram" {
-		t.Fatalf("probe reports set %q, want %q so the page can say which set the test used", got, "Telegram")
+	if draft.mark != uint(config.SelfDialMark) || draft.TelegramSet() != "" {
+		t.Fatalf("probe mark 0x%x set %q for a choice that is not saved, want no set: the packet engine and the routes follow the saved config only", draft.mark, draft.TelegramSet())
 	}
 
 	useTelegramSet(t, telegramSetTestConfig(true))
-	none := telegramSetTestConfig(true)
-	none.System.MTProto.UpstreamSet = ""
-	unchosen, err := PlanTransportProbe(none, 2)
+	saved, err := PlanTransportProbe(telegramSetTestConfig(true), 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unchosen.mark != uint(config.SelfDialMark) {
-		t.Fatalf("probe mark 0x%x, want 0x%x: clearing the choice on the page tests the path without a set, whatever is saved", unchosen.mark, config.SelfDialMark)
-	}
-	if got := unchosen.TelegramSet(); got != "" {
-		t.Fatalf("probe reports set %q for a test without one", got)
+	if saved.mark != uint(config.TelegramSetDialMark) || saved.TelegramSet() != "Telegram" {
+		t.Fatalf("probe mark 0x%x set %q for the saved choice, want 0x%x and Telegram", saved.mark, saved.TelegramSet(), config.TelegramSetDialMark)
 	}
 
-	unsaved := telegramSetTestConfig(true)
-	unsaved.System.MTProto.UpstreamSet = "created-on-the-page"
-	draft, err := PlanTransportProbe(unsaved, 2)
+	cleared := telegramSetTestConfig(true)
+	cleared.System.MTProto.UpstreamSet = ""
+	none, err := PlanTransportProbe(cleared, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if draft.TelegramSet() != "" || draft.mark != uint(config.SelfDialMark) {
-		t.Fatalf("probe for a set the server does not know yet reports %q with mark 0x%x, want no set: the page has to be told the test ran without it", draft.TelegramSet(), draft.mark)
+	if none.mark != uint(config.SelfDialMark) || none.TelegramSet() != "" {
+		t.Fatalf("probe mark 0x%x set %q with the choice cleared on the page, want the path without a set", none.mark, none.TelegramSet())
+	}
+}
+
+type fakeSetDialer struct {
+	mu      sync.Mutex
+	listens bool
+	block   chan struct{}
+	asked   []string
+	served  []net.Conn
+}
+
+func (f *fakeSetDialer) CanDialViaSet(string) bool { return f.listens }
+
+func (f *fakeSetDialer) DialViaSet(setID, host string, port int) (net.Conn, bool, error) {
+	f.mu.Lock()
+	f.asked = append(f.asked, fmt.Sprintf("%s %s:%d", setID, host, port))
+	block := f.block
+	f.mu.Unlock()
+	if block != nil {
+		<-block
+	}
+	client, server := net.Pipe()
+	f.mu.Lock()
+	f.served = append(f.served, server)
+	f.mu.Unlock()
+	return client, true, nil
+}
+
+func (f *fakeSetDialer) dials() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.asked...)
+}
+
+func routedTelegramConfig(mode string) *config.Config {
+	cfg := telegramSetTestConfig(true)
+	set := cfg.Sets[0]
+	set.Routing.Enabled, set.Routing.Mode = true, mode
+	set.Routing.EgressInterface = "wg0"
+	set.Routing.Upstream.Host, set.Routing.Upstream.Port = "127.0.0.1", 1080
+	return cfg
+}
+
+func useTelegramRouting(t *testing.T, route *TelegramRoute, via TelegramSetDialer) {
+	t.Helper()
+	routeOf := func(string) (TelegramRoute, bool) {
+		if route == nil {
+			return TelegramRoute{}, false
+		}
+		return *route, true
+	}
+	SetTelegramRouting(routeOf, via)
+	t.Cleanup(func() { telegramHooks.Store(nil) })
+}
+
+func TestAnInterfaceTelegramSetCarriesEveryRouteOnItsMarkWithoutDPI(t *testing.T) {
+	useTelegramSet(t, routedTelegramConfig(config.RoutingModeInterface))
+	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true}, nil)
+
+	want := uint(config.SelfDialRelayMark | 0x2a)
+	for name, p := range everyRouteKind() {
+		if got := planDialMark(p, selfDialMark()); got != want {
+			t.Errorf("%s dials with 0x%x, want 0x%x: the set's route mark picks its table, and the no-DPI bit keeps reinjected packets off the main route", name, got, want)
+		}
+	}
+	if got, _ := resolveTelegramMark(selfDialMark()); got != want {
+		t.Errorf("downloads and direct dials resolve to 0x%x, want 0x%x", got, want)
+	}
+	if got := coverDialMark(); got != uint(config.SelfDialMark) {
+		t.Errorf("the cover path dials with 0x%x, want 0x%x outside the set's route", got, config.SelfDialMark)
+	}
+}
+
+func TestAnInterfaceTelegramSetKeepsIPv6OffWhenItsRouteHasNone(t *testing.T) {
+	prev := dialIPv6Probe
+	dialIPv6Probe = func() bool { return true }
+	t.Cleanup(func() { dialIPv6Probe = prev })
+	useTelegramSet(t, routedTelegramConfig(config.RoutingModeInterface))
+
+	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true}, nil)
+	if dialNetwork() != "tcp4" || dialFamilyAllows(net.ParseIP("2001:67c:4e8:f004::a")) {
+		t.Fatal("a set routing IPv4 only must keep IPv6 dials off, or they leave by the main table outside the set's route")
+	}
+	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true, IPv6: true}, nil)
+	if dialNetwork() != "tcp" || !dialFamilyAllows(net.ParseIP("2001:67c:4e8:f004::a")) {
+		t.Fatal("a set routing IPv6 too must allow IPv6 dials")
+	}
+}
+
+func TestAMissingRouteLeavesTheTelegramConnectionsAsTheyWereWithoutASet(t *testing.T) {
+	for _, mode := range []string{config.RoutingModeInterface, config.RoutingModeProxy} {
+		t.Run(mode, func(t *testing.T) {
+			useTelegramSet(t, routedTelegramConfig(mode))
+			useTelegramRouting(t, nil, &fakeSetDialer{})
+			want := map[string]uint{
+				"direct TCP":         uint(config.SelfDialMark),
+				"DC relay":           uint(config.SelfDialMark),
+				"Telegram's WS edge": uint(config.SelfDialMark),
+				"CF reserve":         uint(config.SelfDialRelayMark),
+				"custom WS domain":   uint(config.SelfDialRelayMark),
+				"Worker":             uint(config.SelfDialRelayMark),
+			}
+			for name, p := range everyRouteKind() {
+				if got := planDialMark(p, selfDialMark()); got != want[name] {
+					t.Errorf("%s dials with 0x%x, want 0x%x while the set's route is not in place", name, got, want[name])
+				}
+			}
+			if conn, handled, _ := DialTelegramDirect(context.Background(), "149.154.167.51:443"); handled || conn != nil {
+				t.Error("the bridge's direct dial must fall back to its own mark while the route is missing")
+			}
+		})
+	}
+}
+
+func TestAProxyTelegramSetDialsThroughItsUpstream(t *testing.T) {
+	useTelegramSet(t, routedTelegramConfig(config.RoutingModeProxy))
+	via := &fakeSetDialer{listens: true}
+	useTelegramRouting(t, nil, via)
+
+	base := selfDialMark()
+	for name, p := range everyRouteKind() {
+		if got := planDialMark(p, base); got != uint(config.TelegramSetDialMark) {
+			t.Errorf("%s plans mark 0x%x, want 0x%x so the raw dial takes the set's upstream", name, got, config.TelegramSetDialMark)
+		}
+	}
+	if !telegramViaProxy(base) {
+		t.Fatal("a WebSocket dial must leave name resolution to the proxy set")
+	}
+
+	conn, err := dialOneTCP(transportPlan{kind: transportTCP, addr: "149.154.167.51:443"}, planDialMark(transportPlan{kind: transportTCP}, base), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
+	direct, handled, err := DialTelegramDirect(context.Background(), "149.154.175.50:443")
+	if err != nil || !handled {
+		t.Fatalf("the bridge's direct dial: handled %v, %v, want it through the set", handled, err)
+	}
+	_ = direct.Close()
+	cli := telegramHTTPClient(time.Second)
+	_, _ = cli.Get("http://core.telegram.org/getProxyConfig")
+
+	got := via.dials()
+	want := []string{"tg 149.154.167.51:443", "tg 149.154.175.50:443", "tg core.telegram.org:80"}
+	if len(got) != len(want) {
+		t.Fatalf("dials through the set %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("dial %d through the set: %s, want %s", i, got[i], want[i])
+		}
+	}
+}
+
+func TestADialThroughTheProxySetIsBoundByTheRaceDeadline(t *testing.T) {
+	via := &fakeSetDialer{listens: true, block: make(chan struct{})}
+	start := time.Now()
+	conn, handled, err := dialViaWithin(via, "tg", "149.154.167.51", 443, 50*time.Millisecond)
+	if !handled || conn != nil || !errors.Is(err, errTelegramViaTimeout) {
+		t.Fatalf("got %v, %v, %v, want a timeout handled by the set", conn, handled, err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("the dial took %v past a 50 ms deadline", took)
+	}
+	close(via.block)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		via.mu.Lock()
+		served := len(via.served)
+		via.mu.Unlock()
+		if served == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the late dial never finished")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	via.mu.Lock()
+	server := via.served[0]
+	via.mu.Unlock()
+	_ = server.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := server.Read(make([]byte, 1)); err == nil {
+		t.Fatal("the connection that arrived after the deadline must be closed, not leaked")
+	}
+}
+
+func TestChangingTheTelegramSetRouteRestartsTheProxy(t *testing.T) {
+	plain := telegramSetTestConfig(true)
+	routed := routedTelegramConfig(config.RoutingModeInterface)
+	if !mtprotoNeedsRestart(plain, routed) {
+		t.Fatal("pre-opened connections went out on the old path, so turning the set's routing on must rebuild the pools")
+	}
+	other := routedTelegramConfig(config.RoutingModeInterface)
+	other.Sets[0].Routing.EgressInterface = "wg1"
+	if !mtprotoNeedsRestart(routed, other) {
+		t.Fatal("a new output interface is a new path")
+	}
+}
+
+func TestAMissingRouteIsReportedOnlyAfterTheGrace(t *testing.T) {
+	sel := &telegramSelection{id: "tg", name: "Telegram", mode: config.RoutingModeInterface, key: "k"}
+	telegramMissing.Lock()
+	telegramMissing.key, telegramMissing.warned = "", false
+	telegramMissing.Unlock()
+	t.Cleanup(func() {
+		telegramMissing.Lock()
+		telegramMissing.key, telegramMissing.warned = "", false
+		telegramMissing.Unlock()
+	})
+
+	noteTelegramRoute(sel, false)
+	noteTelegramRoute(sel, false)
+	telegramMissing.Lock()
+	warned := telegramMissing.warned
+	telegramMissing.since = time.Now().Add(-telegramRouteGrace - time.Second)
+	telegramMissing.Unlock()
+	if warned {
+		t.Fatal("a route missing right after a save is still being installed and must not be reported")
+	}
+	noteTelegramRoute(sel, false)
+	telegramMissing.Lock()
+	warned = telegramMissing.warned
+	telegramMissing.Unlock()
+	if !warned {
+		t.Fatal("a route still missing after the grace must be reported")
+	}
+	noteTelegramRoute(sel, true)
+	telegramMissing.Lock()
+	warned = telegramMissing.warned
+	telegramMissing.Unlock()
+	if warned {
+		t.Fatal("a route in place again must clear the report")
+	}
+}
+
+func TestTheBridgeRebuildsItsWebSocketPoolWhenTheTelegramSetsRouteChanges(t *testing.T) {
+	strategy := telegramSetTestConfig(true)
+	b := NewTransparentBridge(strategy)
+	t.Cleanup(func() {
+		b.Close()
+		setTelegramSet(nil)
+	})
+
+	before := b.getWSPool()
+	routed := routedTelegramConfig(config.RoutingModeInterface)
+	b.UpdateConfig(routed)
+	if after := b.getWSPool(); after == before {
+		t.Fatal("the pool kept connections opened over the uplink after the set started routing through an interface; its base mark did not change, so the route has to be part of the pool's key")
 	}
 }

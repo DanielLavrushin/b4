@@ -28,7 +28,18 @@ func TestTelegramUpstreamSetIsUsableOnlyWhenItCanApply(t *testing.T) {
 		{"a Telegram over WebSocket mode left over on a set with routing off", func(c *Config) {
 			c.Sets[0].Routing.Mode = RoutingModeMTProtoWS
 		}, true},
-		{"an interface set", func(c *Config) { c.Sets[0].Routing.Enabled, c.Sets[0].Routing.Mode = true, "interface" }, true},
+		{"an interface set", func(c *Config) {
+			c.Sets[0].Routing.Enabled, c.Sets[0].Routing.Mode, c.Sets[0].Routing.EgressInterface = true, RoutingModeInterface, "wg0"
+		}, true},
+		{"an interface set with no interface chosen", func(c *Config) {
+			c.Sets[0].Routing.Enabled, c.Sets[0].Routing.Mode = true, RoutingModeInterface
+		}, false},
+		{"a proxy set", func(c *Config) {
+			c.Sets[0].Routing.Enabled, c.Sets[0].Routing.Mode, c.Sets[0].Routing.Upstream.Port = true, RoutingModeProxy, 1080
+		}, true},
+		{"a proxy set with no upstream port", func(c *Config) {
+			c.Sets[0].Routing.Enabled, c.Sets[0].Routing.Mode = true, RoutingModeProxy
+		}, false},
 		{"TUN mode, whose engine never sees socket marks", func(c *Config) { c.Queue.Mode = "tun" }, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {

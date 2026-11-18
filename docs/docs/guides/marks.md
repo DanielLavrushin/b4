@@ -89,7 +89,7 @@ them on the packets they take. Bit 16 is left free for XrayUI's `0x10000`.
 | The DPI Detector's checks, except its fetches through b4 and its lookups through the system resolver; health probes of pinned DNS answers and of unreachable addresses; the public address lookup; the fetches that bypass b4 in the MCP tool `b4_test_domain_now` and in the test of an applied Community Hub set | The queue mark |
 | Transparent listeners of proxy sets and every connection they open, to the upstream or, with **Fall back to direct on upstream failure**, directly; TCP connections of b4's SOCKS5 server to a domain name a proxy set targets, which go through the set's upstream; connections of the MTProto proxy and Telegram over WebSocket to Telegram and the address lists they download; the MTProto proxy's forward to its fake SNI domain; Community Hub, ipinfo and RIPEstat requests | `0x40000`. When a Community Hub sync cannot connect, b4 retries it with the queue mark; if that retry connects, later Hub requests keep the queue mark until a sync cannot connect with it and a retry with `0x40000` can |
 | Connections through Cloudflare-proxied domains or a custom WebSocket domain, and to a Cloudflare Worker | `0x240000`; `0x40000` for the Worker when **Let sets process Worker connections** is on |
-| Connections of the MTProto proxy and Telegram over WebSocket to Telegram on every route, their connection test, the address and domain lists they download, and the direct connections of a Telegram over WebSocket set, while a **Telegram set** is chosen and b4 runs in NFQUEUE mode | `0x4040000` |
+| Connections of the MTProto proxy and Telegram over WebSocket to Telegram on every route, their connection test, the address and domain lists they download, and the direct connections of a Telegram over WebSocket set, while a **Telegram set** is chosen and b4 runs in NFQUEUE mode | `0x4040000` for a set without routing; `0x240000` with the set's route mark for a set routed through an interface; none of their own for a proxy set, whose listener opens them through the upstream |
 | Discovery probes and their name lookups; the packets Discovery sends | The flow mark; the injected mark, with `0x20000000` added on packets sent back toward the probes. By default the queue mark plus 1 and plus 2, and `0x20008002` toward the probes |
 | Watchdog checks; the fetches through b4 of the DPI Detector, `b4_test_domain_now` and the Hub set test; connections b4's SOCKS5 server opens to other destinations; every other lookup through the system resolver, including the names of the other connections above and a set's domains when the set has no resolver of its own, or when the lookup through its resolvers fails and **Fail closed when no resolver is reachable** is off; GeoIP and GeoSite downloads, update checks and downloads, the device vendor database, AI assistant requests | None |
 
@@ -464,10 +464,14 @@ Telegram over WebSocket put `0x4040000`, `0x40000` with bit `0x4000000`, on all 
 connections to Telegram instead, the Cloudflare routes and Workers included, and on the
 address and domain lists they download. Packet processing gives a packet with both bits the
 chosen set's strategy, whatever the set targets, and no other set takes it except a set the
-chosen set escalates to. The forward to the fake SNI domain keeps `0x40000`. The routing
-chains still return on `0x40000`, so the chosen set's own routing does not carry these
-connections. In TUN mode b4 reads packets without their mark and does not use `0x4040000`;
-see [Telegram upstream](../telegram/upstream.md).
+chosen set escalates to. The forward to the fake SNI domain keeps `0x40000`. That is for a
+chosen set without routing. For a set routed through an interface, these connections carry
+`0x240000` with the set's route mark under `0x27fff` instead: packet processing skips them,
+the routing chains return on `0x40000`, and the set's `ip rule` takes them to its table. b4
+installs that rule and table for the chosen set even when it has no targets. For a proxy
+set, b4 hands them to the set's listener, which opens them through the upstream as it does for
+the SOCKS5 server. In TUN mode b4 reads packets without their mark and does not use
+`0x4040000`; see [Telegram upstream](../telegram/upstream.md).
 
 Lookups and probes carrying the queue mark skip packet processing, and proxy sets leave
 them alone. The DPI Detector's direct mode uses the queue mark to measure the network

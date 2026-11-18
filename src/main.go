@@ -189,6 +189,11 @@ func runB4(cmd *cobra.Command, args []string) error {
 	tproxyResolver := tproxy.NewResolver(dnsNames)
 	tproxyMgr := tproxy.NewManager(tproxyResolver)
 
+	mtproto.SetTelegramRouting(func(setID string) (mtproto.TelegramRoute, bool) {
+		r, ok := tables.RoutingSetRoute(setID)
+		return mtproto.TelegramRoute{Mode: r.Mode, Mark: r.Mark, IPv4: r.IPv4, IPv6: r.IPv6}, ok
+	}, tproxyMgr)
+	tproxy.SetTelegramDial(mtproto.DialTelegramDirect)
 	mtprotoBridge := mtproto.NewTransparentBridge(&cfg)
 	tproxyMgr.SetMTProtoBridge(mtprotoBridge)
 	tproxyMgr.SetTelegramBridgeHook(func(v4, v6, retried bool) {

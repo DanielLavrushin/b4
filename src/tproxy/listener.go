@@ -90,7 +90,6 @@ type Listener struct {
 
 	peers      func() []*Listener
 	set        atomic.Pointer[config.SetConfig]
-	directMark atomic.Uint32
 	dnsMark    atomic.Int64
 	dnsTimeout atomic.Int64
 	dnsV6      atomic.Bool
@@ -1041,17 +1040,33 @@ func (l *Listener) relayDirect(client net.Conn, dest string, prefix []byte) {
 	l.relayDirectCounted(client, dest, prefix, 10*time.Second)
 }
 
-func (l *Listener) directDialMark() uint32 {
-	if m := l.directMark.Load(); m != 0 {
-		return m
+type TelegramDial func(ctx context.Context, dest string) (net.Conn, bool, error)
+
+var telegramDial atomic.Pointer[TelegramDial]
+
+func SetTelegramDial(dial TelegramDial) {
+	if dial == nil {
+		telegramDial.Store(nil)
+		return
 	}
-	return l.Upstream.BypassMark
+	telegramDial.Store(&dial)
+}
+
+func (l *Listener) dialDirectRelay(ctx context.Context, dest string, timeout time.Duration) (net.Conn, error) {
+	if l.MTProtoWS {
+		if dial := telegramDial.Load(); dial != nil {
+			if conn, handled, err := (*dial)(ctx, dest); handled {
+				return conn, err
+			}
+		}
+	}
+	dialer := markedDialer(timeout, l.Upstream.BypassMark)
+	return dialer.DialContext(ctx, "tcp", dest)
 }
 
 func (l *Listener) relayDirectCounted(client net.Conn, dest string, prefix []byte, timeout time.Duration) (bool, int64) {
-	dialer := markedDialer(timeout, l.directDialMark())
 	ctx, cancel := context.WithTimeout(l.ctx, timeout)
-	direct, err := dialer.DialContext(ctx, "tcp", dest)
+	direct, err := l.dialDirectRelay(ctx, dest, timeout)
 	cancel()
 	if err != nil {
 		log.Tracef("tproxy: direct dial to %s on set %q failed: %v", dest, l.SetName, err)

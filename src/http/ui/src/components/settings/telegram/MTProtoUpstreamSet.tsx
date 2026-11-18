@@ -8,7 +8,10 @@ import { SettingsPropHandlerType } from "@models/settings";
 
 type TelegramSetProblem =
   | { kind: "missing" }
-  | { kind: "disabled" | "unusable" | "tun" | "mark"; name: string };
+  | {
+      kind: "disabled" | "unusable" | "incomplete" | "tun" | "mark";
+      name: string;
+    };
 
 const TELEGRAM_SET_MARK = 0x4040000;
 const DEFAULT_QUEUE_MARK = 0x8000;
@@ -27,6 +30,14 @@ const telegramSetMarkConflict = (config: B4Config) => {
   );
 };
 
+const routingIncomplete = (set: B4SetConfig) => {
+  if (!set.routing?.enabled) return false;
+  const mode = set.routing.mode || "interface";
+  if (mode === "interface") return !set.routing.egress_interface;
+  if (mode === "proxy") return !(set.routing.upstream?.port > 0);
+  return false;
+};
+
 const carriesTelegram = (set: B4SetConfig) =>
   !set.routing?.enabled ||
   (set.routing.mode !== "mtproto-ws" && set.routing.mode !== "block");
@@ -40,6 +51,7 @@ export const telegramSetProblem = (
   if (!set) return { kind: "missing" };
   if (!set.enabled) return { kind: "disabled", name: set.name };
   if (!carriesTelegram(set)) return { kind: "unusable", name: set.name };
+  if (routingIncomplete(set)) return { kind: "incomplete", name: set.name };
   if (config.queue.mode === "tun") return { kind: "tun", name: set.name };
   if (telegramSetMarkConflict(config)) return { kind: "mark", name: set.name };
   return null;
@@ -101,6 +113,11 @@ export const MTProtoUpstreamSet = ({
       break;
     case "unusable":
       problemText = t("settings.MTProto.upstreamSetUnusable", {
+        name: problem.name,
+      });
+      break;
+    case "incomplete":
+      problemText = t("settings.MTProto.upstreamSetIncomplete", {
         name: problem.name,
       });
       break;

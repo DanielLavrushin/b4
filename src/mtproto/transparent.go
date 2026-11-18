@@ -72,6 +72,7 @@ type TransparentBridge struct {
 	wsPool     *wsPool
 	wsPoolFor  MTProtoUpstream
 	wsPoolMark uint
+	wsPoolTG   string
 }
 
 func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
@@ -140,13 +141,13 @@ func (b *TransparentBridge) getWSPool() *wsPool {
 	want := MTProtoUpstream{WSEndpointHost: mt.WSEndpointHost, WSCustomDomain: mt.WSCustomDomain, CFProxyEnabled: mt.CFProxyEnabled, FrontSNI: wsFrontName(mt.WSFrontSNI)}
 	b.mu.Lock()
 	var stale *wsPool
-	mark := selfDialMark()
-	if shared != nil || (b.wsPool != nil && (b.wsPoolFor != want || b.wsPoolMark != mark)) {
+	mark, tgKey := selfDialMark(), telegramSetKey(b.cfg.Load())
+	if shared != nil || (b.wsPool != nil && (b.wsPoolFor != want || b.wsPoolMark != mark || b.wsPoolTG != tgKey)) {
 		stale, b.wsPool = b.wsPool, nil
 	}
 	if shared == nil && b.wsPool == nil {
 		b.wsPool = newWSPool(want, mark, wsPoolDefaultSize)
-		b.wsPoolFor, b.wsPoolMark = want, mark
+		b.wsPoolFor, b.wsPoolMark, b.wsPoolTG = want, mark, tgKey
 	}
 	own := b.wsPool
 	b.mu.Unlock()

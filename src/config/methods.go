@@ -323,10 +323,35 @@ func (c *Config) TelegramUpstreamSet() *SetConfig {
 		return nil
 	}
 	set := c.GetSetById(c.System.MTProto.UpstreamSet)
-	if set == nil || !set.Enabled || !CarriesTelegram(set) {
+	if set == nil || !set.Enabled || !CarriesTelegram(set) || set.RoutingIncomplete() {
 		return nil
 	}
 	return set
+}
+
+func (c *Config) IsTelegramUpstreamSet(set *SetConfig) bool {
+	chosen := c.TelegramUpstreamSet()
+	return chosen != nil && set != nil && chosen.Id == set.Id
+}
+
+func (set *SetConfig) RoutingIncomplete() bool {
+	if set == nil || !set.Routing.Enabled {
+		return false
+	}
+	switch set.RoutingModeOrDefault() {
+	case RoutingModeInterface:
+		return set.Routing.EgressInterface == ""
+	case RoutingModeProxy:
+		return set.Routing.Upstream.Port < 1
+	}
+	return false
+}
+
+func (set *SetConfig) TelegramRouteMode() string {
+	if set == nil || !set.Routing.Enabled {
+		return ""
+	}
+	return set.RoutingModeOrDefault()
 }
 
 func (c *Config) TelegramSetMarkConflict() bool {

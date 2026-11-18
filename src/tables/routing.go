@@ -158,16 +158,36 @@ var (
 	routeStaticApplied  = make(map[string]routeStaticEntries)
 	routeJumpOrderKey   string
 	routeMarksByIface   atomic.Pointer[map[string][]uint32]
+	routeSetRoutes      atomic.Pointer[map[string]SetRoute]
 )
+
+type SetRoute struct {
+	Mode string
+	Mark uint32
+	IPv4 bool
+	IPv6 bool
+}
 
 func routePublishMarksLocked() {
 	marks := make(map[string][]uint32)
-	for _, st := range routeRuleCache {
+	routes := make(map[string]SetRoute, len(routeRuleCache))
+	for id, st := range routeRuleCache {
 		if st.mode == config.RoutingModeInterface && st.iface != "" && st.mark != 0 {
 			marks[st.iface] = append(marks[st.iface], st.mark)
 		}
+		routes[id] = SetRoute{Mode: st.mode, Mark: st.mark, IPv4: st.ipv4, IPv6: st.ipv6}
 	}
 	routeMarksByIface.Store(&marks)
+	routeSetRoutes.Store(&routes)
+}
+
+func RoutingSetRoute(setID string) (SetRoute, bool) {
+	p := routeSetRoutes.Load()
+	if p == nil {
+		return SetRoute{}, false
+	}
+	route, ok := (*p)[setID]
+	return route, ok
 }
 
 func RoutedIfaceMarks(iface string) []uint32 {
@@ -1448,7 +1468,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			routeWarnIncomplete(set, "routing mode is 'proxy' but the upstream port is not set")
 			continue
 		}
-		if len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 && !set.RoutesUDPByPort() {
+		if len(set.Targets.IpsToMatch) == 0 && len(set.Targets.DomainsToMatch) == 0 && !set.RoutesUDPByPort() && !cfg.IsTelegramUpstreamSet(set) {
 			routeWarnNoDestination(set)
 			continue
 		}
