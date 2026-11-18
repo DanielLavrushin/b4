@@ -427,7 +427,9 @@ export const GeoSettings = ({
   const loadSources = async () => {
     try {
       const data = await geodatApi.sources();
-      setSources(data);
+      setSources((prev) =>
+        JSON.stringify(prev) === JSON.stringify(data) ? prev : data,
+      );
     } catch (error) {
       console.error("Failed to load geodat sources:", error);
     }
