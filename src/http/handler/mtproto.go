@@ -175,9 +175,12 @@ func (api *API) handleMTProtoActiveClients(w http.ResponseWriter, r *http.Reques
 }
 
 // @Summary Probe MTProto upstream transports
+// @Description Tests every route to the data centre, three at a time, and answers with all results once the run ends.
+// @Description With Accept: text/event-stream the answer is a Server-Sent Events stream instead: "plan" with the routes in order,
+// @Description "start" and "result" for each route by its index as it happens, then "done".
 // @Tags MTProto
 // @Accept json
-// @Produce json
+// @Produce json,text/event-stream
 // @Param body body object false "optional overrides: upstream_mode, ws_custom_domain, ws_endpoint_host, cfworker_domain, cfproxy_enabled, dc_relay, dc"
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
@@ -236,16 +239,44 @@ func (api *API) handleMTProtoTestWS(w http.ResponseWriter, r *http.Request) {
 		dc = 2
 	}
 
-	results, err := mtproto.ProbeTransports(&probeCfg, cfg.Queue, dc)
+	probe, err := mtproto.PlanTransportProbe(&probeCfg, cfg.Queue, dc)
 	if err != nil {
 		writeJsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	sendResponse(w, map[string]interface{}{
-		"success": true,
-		"dc":      dc,
-		"results": results,
+	if !strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+		sendResponse(w, map[string]interface{}{
+			"success": true,
+			"dc":      dc,
+			"results": probe.Run(r.Context(), mtproto.TransportProbeObserver{}),
+		})
+		return
+	}
+	streamTransportProbe(w, r, probe, dc)
+}
+
+type transportProbeEvent struct {
+	Index int `json:"index"`
+	mtproto.TransportProbeResult
+}
+
+func streamTransportProbe(w http.ResponseWriter, r *http.Request, probe *mtproto.TransportProbe, dc int) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher, _ := w.(http.Flusher)
+
+	writeSSE(w, flusher, "plan", map[string]any{"dc": dc, "routes": probe.Routes()})
+	probe.Run(r.Context(), mtproto.TransportProbeObserver{
+		Started: func(i int) {
+			writeSSE(w, flusher, "start", map[string]int{"index": i})
+		},
+		Finished: func(i int, res mtproto.TransportProbeResult) {
+			writeSSE(w, flusher, "result", transportProbeEvent{Index: i, TransportProbeResult: res})
+		},
 	})
+	writeSSE(w, flusher, "done", map[string]any{})
 }
 
 // @Summary Refresh MTProto DCs
