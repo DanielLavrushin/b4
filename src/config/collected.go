@@ -15,6 +15,15 @@ func (s *SetConfig) TargetIPs() []string {
 	return append(ips, s.Targets.CollectedIPs...)
 }
 
+func (c *Config) CollectedIPsInUse() bool {
+	for _, set := range c.Sets {
+		if set != nil && set.Enabled && (set.TCP.IPBlockDetect.Collects() || set.Targets.UseCollectedIPs) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Config) WithCollectedIPs(ips []string) *Config {
 	view := *c
 	view.Sets = make([]*SetConfig, len(c.Sets))

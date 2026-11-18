@@ -119,6 +119,7 @@ func NewPool(cfg *config.Config) *Pool {
 
 	pool := &Pool{warmFlows: warmFlows, Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), cleanupDone: make(chan struct{}), state: state}
 	pool.collectedBase = cfg
+	pool.collectedEngineTUN = cfg.Queue.Mode == "tun"
 	metrics.GetMetricsCollector().UpdateCollectedIPs(nil)
 	pool.collectedCtx, pool.collectedCancel = context.WithCancel(context.Background())
 	for _, w := range ws {
@@ -427,7 +428,7 @@ func (p *Pool) UpdateConfig(newCfg *config.Config) error {
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
 	p.collectedBase = newCfg
-	p.collectedDirty = true
+	p.collectedDirty = p.collectedRelevantLocked(newCfg)
 	newCfg = p.CollectedConfig(newCfg)
 
 	var oldMatcher *sni.SuffixSet

@@ -32,6 +32,7 @@ type Pool struct {
 	collectedCtx       context.Context
 	collectedCancel    context.CancelFunc
 	collectedDirty     bool
+	collectedEngineTUN bool
 	Workers            []*Worker
 	configMu           sync.Mutex
 	Dhcp               *dhcp.Manager

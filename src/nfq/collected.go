@@ -37,6 +37,18 @@ func (p *Pool) CollectedConfig(cfg *config.Config) *config.Config {
 	return cfg.WithCollectedIPs(ips)
 }
 
+func (p *Pool) collectedRelevantLocked(cfg *config.Config) bool {
+	if cfg == nil || p.collectedEngineTUN || cfg.Queue.IsDiscovery || cfg.Queue.Mode == "tun" || cfg.System.Tables.SkipSetup {
+		return false
+	}
+	if len(p.collected) > 0 || cfg.CollectedIPsInUse() {
+		return true
+	}
+	p.collectedMu.RLock()
+	defer p.collectedMu.RUnlock()
+	return len(p.collectedPublished) > 0
+}
+
 func eligibleCollectedIP(ip net.IP) (netip.Addr, bool) {
 	addr, ok := netip.AddrFromSlice(ip)
 	addr = addr.Unmap()
@@ -121,7 +133,7 @@ func (p *Pool) publishCollectedLocked() bool {
 
 func (p *Pool) publishCollectedViewLocked(requireConsumer bool) bool {
 	cfg := p.collectedBase
-	if cfg == nil || p.collectedInstall == nil || p.collectedCtx.Err() != nil {
+	if cfg == nil || p.collectedInstall == nil || p.collectedCtx.Err() != nil || p.collectedEngineTUN || cfg.Queue.IsDiscovery || cfg.Queue.Mode == "tun" || cfg.System.Tables.SkipSetup {
 		return false
 	}
 	ips := make([]string, 0, len(p.collected))
@@ -171,15 +183,32 @@ func (p *Pool) publishCollectedViewLocked(requireConsumer bool) bool {
 	return true
 }
 
+func (p *Pool) collectedDueLocked() bool {
+	if !p.collectedDirty {
+		return false
+	}
+	if !p.collectedRelevantLocked(p.collectedBase) {
+		p.collectedDirty = false
+		return false
+	}
+	return true
+}
+
 func (p *Pool) reconcileCollected() {
 	if p == nil || p.collectedCtx == nil || p.collectedCtx.Err() != nil {
+		return
+	}
+	p.configMu.Lock()
+	due := p.collectedDueLocked()
+	p.configMu.Unlock()
+	if !due {
 		return
 	}
 	unlock := config.LockWrites()
 	defer unlock()
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
-	if !p.collectedDirty {
+	if !p.collectedDueLocked() {
 		return
 	}
 	p.collectedDirty = false
