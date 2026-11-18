@@ -572,6 +572,47 @@ func TestApplyLeavesTheSysctlAloneWhenItsValueCannotBeSaved(t *testing.T) {
 	}
 }
 
+func TestASnapshotWriteThatFailsPartwayKeepsTheSavedValues(t *testing.T) {
+	const child = "B4_TEST_SNAPSHOT_FSIZE_CHILD"
+	const checksum = "net.netfilter.nf_conntrack_checksum"
+	if path := os.Getenv(child); path != "" {
+		sysctlSnapPath = path
+		cur := map[string]string{checksum: "1", conntrackLiberalSysctl: "0"}
+		getSysctl = func(name string) string { return cur[name] }
+		setSysctl = func(name, val string) {}
+		settings := b4SysctlSettings()
+		settings[0].Apply()
+		if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{Cur: 60, Max: 60}); err != nil {
+			t.Fatal(err)
+		}
+		settings[1].Apply()
+		return
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sysctl.json")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestASnapshotWriteThatFailsPartwayKeepsTheSavedValues$")
+	cmd.Env = append(os.Environ(), child+"="+path)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("child with a 60-byte file size limit: %v\n%s", err, out)
+	}
+
+	prevSnap := sysctlSnapPath
+	sysctlSnapPath = path
+	t.Cleanup(func() { sysctlSnapPath = prevSnap })
+	if got := loadSysctlSnapshot()[checksum]; got != "1" {
+		b, _ := os.ReadFile(path)
+		t.Fatalf("a second save that failed partway left %q; the saved %s is gone, so b4 cannot put it back on exit", b, checksum)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("the failed save left %v in the snapshot's directory, want only sysctl.json", names)
+	}
+}
+
 const unreadableChecksum = "cat: can't open '/proc/sys/net/netfilter/nf_conntrack_checksum': No such file or directory"
 
 func stubSysctls(t *testing.T, reads ...string) *[]string {

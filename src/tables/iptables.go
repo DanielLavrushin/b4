@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -416,7 +417,20 @@ func saveSysctlSnapshot(m map[string]string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(sysctlSnapshotPath(), b, 0600)
+	path := sysctlSnapshotPath()
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	_, werr := f.Write(b)
+	cerr := f.Close()
+	if err = errors.Join(werr, cerr); err == nil {
+		err = os.Rename(f.Name(), path)
+	}
+	if err != nil {
+		_ = os.Remove(f.Name())
+	}
+	return err
 }
 
 func (ipt *IPTablesManager) buildNFQSpec(queueStart, threads int) []string {
