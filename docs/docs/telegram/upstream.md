@@ -88,11 +88,11 @@ A domain that relays WebSocket traffic to Telegram, for a self-hosted relay next
 
 ### Telegram WS edge IP
 
-Telegram's own WebSocket edge is reached at one address, `149.154.167.220`, for every data centre it serves. **Telegram WS edge IP (advanced)** replaces that address for a network where the default one does not answer. It takes a host or an IP address without a port. The custom WebSocket domain is not affected.
+Telegram's own WebSocket edge is reached at one address, `149.154.167.220`, for every data centre it serves. **Telegram WS edge IP**, under **Advanced** on the card, replaces that address for a network where the default one does not answer. It takes a host or an IP address without a port. The custom WebSocket domain is not affected.
 
 ### Fronting name for the WS edge
 
-Where DPI drops the handshake for the names of Telegram's edge while the edge's address stays reachable, b4 can present another name in the TLS handshake. **Fronting name for Telegram's WS edge (advanced)** sets that name, such as `sprinthost.ru`, the one tg-ws-proxy uses. The field is empty, and fronting off, by default. b4 tries the name only after a handshake under Telegram's own names went unanswered, and keeps a connection only when it ends on a `telegram.org` certificate.
+Where DPI drops the handshake for the names of Telegram's edge while the edge's address stays reachable, b4 can present another name in the TLS handshake. **Fronting name for Telegram's WS edge**, under **Advanced**, sets that name, such as `sprinthost.ru`, the one tg-ws-proxy uses. The field is empty, and fronting off, by default. b4 tries the name only after a handshake under Telegram's own names went unanswered, and keeps a connection only when it ends on a `telegram.org` certificate.
 
 Fronting does not help when the network blocks the edge's address outright, or when its DPI forwards the connection by the name it sees.
 
