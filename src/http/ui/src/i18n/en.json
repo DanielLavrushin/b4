@@ -468,7 +468,7 @@
       "testRowQueued": "waiting",
       "testSummary": "Working routes: {{ok}} of {{total}}",
       "testSummaryLeft": "{{n}} left to test",
-      "testSummaryUntested": "not tested in time: {{n}}",
+      "testSummaryUntested": "not tested: {{n}}",
       "testResultsLabel": "Route test results",
       "testInterrupted": "The test stopped before every route was checked. Run it again.",
       "upstreamAutoRelayDesc": "DC Relay is configured: the proxy server tries relay TCP first, WebSocket as fallback.",
