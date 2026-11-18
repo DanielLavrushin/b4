@@ -359,7 +359,6 @@ func (c Chain) Remove() {
 type SysctlSetting struct {
 	Name    string
 	Desired string
-	Revert  string
 }
 
 const defaultSysctlSnapPath = "/tmp/b4_sysctl_snapshot.json"
@@ -395,8 +394,8 @@ func sysctlSnapshotPath() string {
 
 func b4SysctlSettings() []SysctlSetting {
 	return []SysctlSetting{
-		{Name: "net.netfilter.nf_conntrack_checksum", Desired: "0", Revert: "1"},
-		{Name: "net.netfilter.nf_conntrack_tcp_be_liberal", Desired: "1", Revert: "0"},
+		{Name: "net.netfilter.nf_conntrack_checksum", Desired: "0"},
+		{Name: "net.netfilter.nf_conntrack_tcp_be_liberal", Desired: "1"},
 	}
 }
 

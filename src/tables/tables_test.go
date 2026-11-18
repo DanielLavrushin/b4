@@ -205,7 +205,6 @@ func TestSysctlSetting(t *testing.T) {
 	s := SysctlSetting{
 		Name:    "net.test.setting",
 		Desired: "1",
-		Revert:  "0",
 	}
 
 	if s.Name != "net.test.setting" {
@@ -213,9 +212,6 @@ func TestSysctlSetting(t *testing.T) {
 	}
 	if s.Desired != "1" {
 		t.Error("Desired not set")
-	}
-	if s.Revert != "0" {
-		t.Error("Revert not set")
 	}
 }
 

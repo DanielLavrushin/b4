@@ -83,7 +83,7 @@ func TestTheRelaxedSettingIsKeptWhenPuttingItBackWouldBreakForwarding(t *testing
 		"net.netfilter.nf_conntrack_checksum": "1",
 	})
 
-	liberal := SysctlSetting{Name: conntrackLiberalSysctl, Desired: "1", Revert: "0"}
+	liberal := SysctlSetting{Name: conntrackLiberalSysctl, Desired: "1"}
 
 	conntrackStrictBites = false
 	liberal.RevertBack()
@@ -106,7 +106,7 @@ func TestTheRelaxedSettingIsKeptWhenPuttingItBackWouldBreakForwarding(t *testing
 	}
 
 	wrote = nil
-	other := SysctlSetting{Name: "net.netfilter.nf_conntrack_checksum", Desired: "0", Revert: "1"}
+	other := SysctlSetting{Name: "net.netfilter.nf_conntrack_checksum", Desired: "0"}
 	other.RevertBack()
 	if len(wrote) != 1 || wrote[0] != "net.netfilter.nf_conntrack_checksum=1" {
 		t.Fatalf("only the window-tracking setting is held back; every other sysctl b4 touched is still restored, got %v", wrote)
