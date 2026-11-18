@@ -88,6 +88,10 @@ func (t *destStateTracker) Watching() bool {
 	return t != nil && t.watching.Load() > 0
 }
 
+func (t *destStateTracker) CollectWatching() bool {
+	return t != nil && t.collectWatching.Load() > 0
+}
+
 func (t *destStateTracker) WatchHello(h *helloWatch) {
 	if t == nil || h == nil {
 		return
@@ -105,6 +109,9 @@ func (t *destStateTracker) WatchHello(h *helloWatch) {
 			return
 		}
 		h.counted = prev.counted
+		if prev.collect {
+			t.collectWatching.Add(-1)
+		}
 		t.removeCollectedDeadlineLocked(prev)
 		if t.replyWatches[prev.replyKey] == prev {
 			delete(t.replyWatches, prev.replyKey)
@@ -119,6 +126,9 @@ func (t *destStateTracker) WatchHello(h *helloWatch) {
 	h.gen = t.watchGen
 	h.collectIndex = -1
 	t.watches[h.key] = h
+	if h.collect {
+		t.collectWatching.Add(1)
+	}
 	if h.collect && h.replyKey != "" {
 		if t.replyWatches == nil {
 			t.replyWatches = make(map[string]*helloWatch)
@@ -285,6 +295,9 @@ func (t *destStateTracker) escalatedAway(cfg *config.Config, h helloWatch) bool 
 func (t *destStateTracker) unwatchLocked(key string) {
 	if h := t.watches[key]; h != nil {
 		t.removeCollectedDeadlineLocked(h)
+		if h.collect {
+			t.collectWatching.Add(-1)
+		}
 	}
 	if h := t.watches[key]; h != nil && t.replyWatches[h.replyKey] == h {
 		delete(t.replyWatches, h.replyKey)
@@ -390,7 +403,9 @@ func (w *Worker) noteClientProgress(connKey string, tcp []byte) {
 	if w == nil || !w.destState.Watching() {
 		return
 	}
-	w.destState.NoteCollectedClientPacket(connKey, tcp)
+	if w.destState.CollectWatching() {
+		w.destState.NoteCollectedClientPacket(connKey, tcp)
+	}
 	closing, acked := tcp[13]&0x05 != 0, tcp[13]&0x10 != 0
 	if !closing && !acked {
 		return

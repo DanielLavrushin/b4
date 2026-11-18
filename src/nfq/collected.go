@@ -340,7 +340,7 @@ func collectedSourceAllowed(set *config.SetConfig, scope *ingressScope) bool {
 }
 
 func (t *destStateTracker) NoteCollectedServerPacket(key string, tcp []byte, payloadLen, packetLen int) {
-	if !t.Watching() || len(tcp) < TCPHeaderMinLen {
+	if !t.CollectWatching() || len(tcp) < TCPHeaderMinLen {
 		return
 	}
 	t.watchMu.Lock()
@@ -369,7 +369,7 @@ func (t *destStateTracker) NoteCollectedServerPacket(key string, tcp []byte, pay
 }
 
 func (t *destStateTracker) NoteCollectedClientPacket(key string, tcp []byte) {
-	if len(tcp) < TCPHeaderMinLen || tcp[13]&0x02 != 0 {
+	if !t.CollectWatching() || len(tcp) < TCPHeaderMinLen || tcp[13]&0x02 != 0 {
 		return
 	}
 	headerLen := int(tcp[12]>>4) * 4

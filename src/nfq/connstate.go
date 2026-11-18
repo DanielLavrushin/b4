@@ -47,6 +47,7 @@ type tlsInfoCache struct {
 	conns   map[string]*tlsInfo
 	current *sni.SuffixSet
 	gen     uint64
+	pinned  atomic.Bool
 }
 
 const maxTLSCacheEntries = 20000
@@ -183,6 +184,7 @@ func (c *tlsInfoCache) ForgetDecisions(current *sni.SuffixSet) {
 	defer c.mu.Unlock()
 
 	c.current = current
+	c.pinned.Store(false)
 	for _, info := range c.conns {
 		info.decidedBy = nil
 		info.collectedPinned = false
@@ -269,6 +271,7 @@ type destStateTracker struct {
 	collectDeadlines collectedDeadlineHeap
 	collectWake      chan struct{}
 	watching         atomic.Int32
+	collectWatching  atomic.Int32
 }
 
 type escalationEntry struct {
@@ -949,6 +952,11 @@ func (c *tlsInfoCache) PublishCollected(matcher *sni.SuffixSet) {
 		if info.decidedBy != nil && matcher.SameConnectionPolicy(info.decidedBy) {
 			info.decidedBy = matcher
 			info.collectedPinned = true
+			c.pinned.Store(true)
 		}
 	}
+}
+
+func (c *tlsInfoCache) HasPinned() bool {
+	return c != nil && c.pinned.Load()
 }

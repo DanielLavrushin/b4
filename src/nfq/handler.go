@@ -445,7 +445,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	hold := addressHold{set: st, prefix: stPrefix}
 
 	connKey := fmt.Sprintf(connKeyFormat, pkt.srcStr, sport, pkt.dstStr, dport)
-	if tcp[13]&0x02 == 0 {
+	if tcp[13]&0x02 == 0 && w.tlsCache.HasPinned() {
 		if decision, ok := w.tlsCache.Decision(connKey); ok && decision.collectedPinned && matcher.SameConnectionPolicy(decision.decidedBy) && decision.decidedMac == pkt.srcMac {
 			previousKeep := keep
 			keep = func(candidate *config.SetConfig) bool {
