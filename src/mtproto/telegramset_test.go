@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -257,6 +258,32 @@ func TestAnInterfaceTelegramSetKeepsIPv6OffWhenItsRouteHasNone(t *testing.T) {
 	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true, IPv6: true}, nil)
 	if dialNetwork() != "tcp" || !dialFamilyAllows(net.ParseIP("2001:67c:4e8:f004::a")) {
 		t.Fatal("a set routing IPv6 too must allow IPv6 dials")
+	}
+}
+
+func TestTheDownloadsBehindAnIPv4OnlyInterfaceSetNeverDialIPv6(t *testing.T) {
+	prev := dialIPv6Probe
+	dialIPv6Probe = func() bool { return true }
+	t.Cleanup(func() { dialIPv6Probe = prev })
+	useTelegramSet(t, routedTelegramConfig(config.RoutingModeInterface))
+
+	refused := func() bool {
+		tr, ok := telegramHTTPClient(200 * time.Millisecond).Transport.(*http.Transport)
+		if !ok || tr.DialContext == nil {
+			t.Fatal("the download client has no dial hook")
+		}
+		_, err := tr.DialContext(context.Background(), "tcp", "[2001:db8::1]:443")
+		var addrErr *net.AddrError
+		return errors.As(err, &addrErr)
+	}
+
+	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true}, nil)
+	if !refused() {
+		t.Fatal("a download dialled an IPv6 address behind a set that routes IPv4 only, so it would leave by the main table outside the set's route and kill switch")
+	}
+	useTelegramRouting(t, &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true, IPv6: true}, nil)
+	if refused() {
+		t.Fatal("a set routing IPv6 too must let the downloads dial IPv6")
 	}
 }
 
