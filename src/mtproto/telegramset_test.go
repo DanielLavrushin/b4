@@ -219,14 +219,16 @@ type fakeSetDialer struct {
 	listens bool
 	block   chan struct{}
 	asked   []string
+	by      []time.Time
 	served  []net.Conn
 }
 
 func (f *fakeSetDialer) CanDialViaSet(string) bool { return f.listens }
 
-func (f *fakeSetDialer) DialViaSet(setID, host string, port int) (net.Conn, bool, error) {
+func (f *fakeSetDialer) DialViaSetBy(setID, host string, port int, by time.Time) (net.Conn, bool, error) {
 	f.mu.Lock()
 	f.asked = append(f.asked, fmt.Sprintf("%s %s:%d", setID, host, port))
+	f.by = append(f.by, by)
 	block := f.block
 	f.mu.Unlock()
 	if block != nil {
@@ -546,6 +548,21 @@ func TestADialThroughTheProxySetIsBoundByTheRaceDeadline(t *testing.T) {
 	_ = server.SetReadDeadline(time.Now().Add(time.Second))
 	if _, err := server.Read(make([]byte, 1)); err == nil {
 		t.Fatal("the connection that arrived after the deadline must be closed, not leaked")
+	}
+}
+
+func TestADialThroughTheProxySetHandsTheSetItsDeadline(t *testing.T) {
+	via := &fakeSetDialer{listens: true}
+	start := time.Now()
+	conn, handled, err := dialViaWithin(via, "tg", "149.154.167.51", 443, 3*time.Second)
+	if err != nil || !handled {
+		t.Fatalf("got %v, %v", handled, err)
+	}
+	_ = conn.Close()
+	via.mu.Lock()
+	defer via.mu.Unlock()
+	if len(via.by) != 1 || via.by[0].Before(start.Add(3*time.Second)) || via.by[0].After(time.Now().Add(3*time.Second)) {
+		t.Fatalf("the set was given the deadline %v, want the dial's own 3 s so fail_open can fall back inside it", via.by)
 	}
 }
 

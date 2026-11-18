@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -384,5 +385,63 @@ func TestDialNamedHoldsTheRetriedAddressForTheLoopGuard(t *testing.T) {
 	conn.Close()
 	if l.relaying(addrKeys) || l.relaying(relayKeys("tcp", 443, "localhost")) {
 		t.Fatal("the relay keys outlived the connection")
+	}
+}
+
+func TestDialNamedByFailsOpenInsideTheDeadlineWhenTheUpstreamStalls(t *testing.T) {
+	stall, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var held []net.Conn
+	t.Cleanup(func() {
+		stall.Close()
+		mu.Lock()
+		for _, c := range held {
+			c.Close()
+		}
+		mu.Unlock()
+	})
+	go func() {
+		for {
+			c, err := stall.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			held = append(held, c)
+			mu.Unlock()
+		}
+	}()
+	direct, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer direct.Close()
+	go func() {
+		c, err := direct.Accept()
+		if err != nil {
+			return
+		}
+		_, _ = c.Write([]byte("direct"))
+		c.Close()
+	}()
+
+	l := newTestListener(t, stall.Addr().(*net.TCPAddr).Port, fakeNames{})
+	l.Upstream.Timeout = 5 * time.Second
+	l.FailOpen = true
+	start := time.Now()
+	conn, err := l.DialNamedBy("127.0.0.1", direct.Addr().(*net.TCPAddr).Port, start.Add(600*time.Millisecond))
+	took := time.Since(start)
+	if err != nil {
+		t.Fatalf("an upstream that never answers the greeting left no time to fail open: %v after %v", err, took)
+	}
+	defer conn.Close()
+	if took > time.Second {
+		t.Fatalf("the fail-open dial took %v past a 600 ms deadline", took)
+	}
+	if got, _ := io.ReadAll(conn); string(got) != "direct" {
+		t.Fatalf("fail-open reached %q, want the direct server", got)
 	}
 }

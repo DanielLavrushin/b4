@@ -325,3 +325,41 @@ func TestAHandOffThatComesBackToThisServerIsNotHandedOffAgain(t *testing.T) {
 		t.Fatalf("reached %q after %d hand-offs; a request that arrives from b4's own upstream dial must not be handed off again", got, calls)
 	}
 }
+
+func TestDialUpstreamStopsTheHandshakeAtTheContextDeadline(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var held []net.Conn
+	t.Cleanup(func() {
+		ln.Close()
+		mu.Lock()
+		for _, c := range held {
+			c.Close()
+		}
+		mu.Unlock()
+	})
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			held = append(held, c)
+			mu.Unlock()
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err = DialUpstream(ctx, ClientConfig{Host: "127.0.0.1", Port: ln.Addr().(*net.TCPAddr).Port, Timeout: 5 * time.Second}, "149.154.167.51", 443)
+	if err == nil {
+		t.Fatal("a silent upstream completed the handshake")
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("the handshake ran %v past a 300 ms context deadline", took)
+	}
+}

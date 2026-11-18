@@ -24,7 +24,7 @@ type TelegramRoute struct {
 
 type TelegramSetDialer interface {
 	CanDialViaSet(setID string) bool
-	DialViaSet(setID, host string, port int) (net.Conn, bool, error)
+	DialViaSetBy(setID, host string, port int, by time.Time) (net.Conn, bool, error)
 }
 
 type telegramRouting struct {
@@ -259,12 +259,14 @@ func dialViaWithin(via TelegramSetDialer, setID, host string, port int, timeout 
 		handled bool
 		err     error
 	}
+	timeout = max(timeout, time.Millisecond)
+	by := time.Now().Add(timeout)
 	done := make(chan result, 1)
 	go func() {
-		conn, handled, err := via.DialViaSet(setID, host, port)
+		conn, handled, err := via.DialViaSetBy(setID, host, port, by)
 		done <- result{conn, handled, err}
 	}()
-	timer := time.NewTimer(max(timeout, time.Millisecond))
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case r := <-done:

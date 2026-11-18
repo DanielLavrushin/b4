@@ -338,13 +338,17 @@ func (m *Manager) CanDialViaSet(setID string) bool {
 }
 
 func (m *Manager) DialViaSet(setID, host string, port int) (net.Conn, bool, error) {
+	return m.DialViaSetBy(setID, host, port, time.Time{})
+}
+
+func (m *Manager) DialViaSetBy(setID, host string, port int, by time.Time) (net.Conn, bool, error) {
 	m.mu.Lock()
 	l, ok := m.listeners[setID]
 	m.mu.Unlock()
 	if !ok || l.MTProtoWS {
 		return nil, false, nil
 	}
-	conn, err := l.DialNamed(host, port)
+	conn, err := l.DialNamedBy(host, port, by)
 	return conn, true, err
 }
 

@@ -35,6 +35,8 @@ const failOpenUserTimeout = 120 * time.Second
 
 const namedDialBudget = 20 * time.Second
 
+const failOpenDirectReserve = time.Second
+
 var setLookup dns.LookupFunc = dns.LookupIPs
 
 func setTCPUserTimeout(c net.Conn, d time.Duration) {
@@ -733,16 +735,30 @@ func (l *Listener) dnsServers() ([]dns.Server, *config.SetConfig, bool) {
 }
 
 func (l *Listener) DialNamed(host string, port int) (net.Conn, error) {
+	return l.DialNamedBy(host, port, time.Time{})
+}
+
+func (l *Listener) DialNamedBy(host string, port int, by time.Time) (net.Conn, error) {
 	servers, _, _ := l.dnsServers()
 	ctx, cancel := context.WithTimeout(l.ctx, namedDialBudget+2*dns.ServersBudget(servers, time.Duration(l.dnsTimeout.Load())))
 	defer cancel()
 	onion := isOnionName(host)
+	upCtx := ctx
+	if !by.IsZero() {
+		ctx, cancel = context.WithDeadline(ctx, by)
+		defer cancel()
+		upCtx = ctx
+		if l.FailOpen && !onion {
+			upCtx, cancel = context.WithDeadline(ctx, by.Add(-min(failOpenDirectReserve, time.Until(by)/3)))
+			defer cancel()
+		}
+	}
 	target, err := l.namedTarget(ctx, host)
 	if err != nil {
 		return nil, err
 	}
 	release := l.holdRelay(relayKeys("tcp", port, host, target))
-	upstream, err := l.dialUpstreamWithin(ctx, target, port)
+	upstream, err := l.dialUpstreamWithin(upCtx, target, port)
 	if err != nil && target == host && !onion && socks5.IsConnectRejected(err) {
 		if addrs, rerr := l.resolveHost(ctx, host); rerr == nil {
 			log.Tracef("tproxy: upstream refused %s:%d on set %q (%v), retrying with %s", host, port, l.SetName, err, addrs[0])
@@ -752,7 +768,7 @@ func (l *Listener) DialNamed(host string, port int) (net.Conn, error) {
 				addrRelease()
 				nameRelease()
 			}
-			upstream, err = l.dialUpstreamWithin(ctx, target, port)
+			upstream, err = l.dialUpstreamWithin(upCtx, target, port)
 		}
 	}
 	switch {
