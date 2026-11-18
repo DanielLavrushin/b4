@@ -2,7 +2,9 @@ package nfq
 
 import (
 	"encoding/binary"
+	"math"
 	"net"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -41,14 +43,26 @@ func TestIncomingCollectHookAllocatesNothingWithoutACollectWatch(t *testing.T) {
 	raw := collectedReply(42000, silentServerAck, 0x10, nil)
 	src := net.IP(raw[12:16])
 	call := func() { w.HandleIncoming(&verdictCtx{}, IPv4, raw, 20, src, "10.0.0.1", 42000, "1.2.3.4", 443, nil) }
-	with := testing.AllocsPerRun(200, call)
+	with := allocsPerCall(2000, call)
 	saved := w.destState
 	w.destState = nil
-	without := testing.AllocsPerRun(200, call)
+	without := allocsPerCall(2000, call)
 	w.destState = saved
-	if with != without {
-		t.Fatalf("an incoming packet allocated %v times with the tracker and %v without it", with, without)
+	if math.Abs(with-without) >= 0.5 {
+		t.Fatalf("an incoming packet allocated %.2f times with the tracker and %.2f without it", with, without)
 	}
+}
+
+func allocsPerCall(runs int, f func()) float64 {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	f()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for range runs {
+		f()
+	}
+	runtime.ReadMemStats(&after)
+	return float64(after.Mallocs-before.Mallocs) / float64(runs)
 }
 
 func TestUnpinnedPacketsSkipThePinnedDecisionLookup(t *testing.T) {
