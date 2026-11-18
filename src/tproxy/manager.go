@@ -2,7 +2,9 @@ package tproxy
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"net/netip"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -398,4 +400,39 @@ func (m *Manager) SetWarmTupleFlows(flows *warmtuple.Flows) {
 	for _, l := range m.listeners {
 		l.Warm = m.warm
 	}
+}
+
+func (m *Manager) CollectedConsumersReady(c *config.Config) error {
+	if c == nil {
+		return nil
+	}
+	for _, set := range c.RoutingSets() {
+		if set == nil || !set.Enabled || !set.Targets.UseCollectedIPs || !config.RoutingUsesTProxy(set.Routing.Mode) || !(set.RoutingDivertsPackets() || set.RoutesUDPByPort()) {
+			continue
+		}
+		v4, v6 := collectedFamilies(set.Targets.CollectedIPs)
+		if !v4 && !v6 {
+			continue
+		}
+		status := m.ListenerStatus(set.Id, 0)
+		if v4 && !status.V4 || v6 && !status.V6 {
+			return fmt.Errorf("consumer listener %q unavailable", set.Name)
+		}
+	}
+	return nil
+}
+
+func collectedFamilies(ips []string) (v4, v6 bool) {
+	for _, raw := range ips {
+		addr, err := netip.ParseAddr(raw)
+		if err != nil {
+			continue
+		}
+		if addr.Unmap().Is4() {
+			v4 = true
+		} else {
+			v6 = true
+		}
+	}
+	return v4, v6
 }

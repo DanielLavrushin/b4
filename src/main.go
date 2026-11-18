@@ -355,13 +355,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 		if err := tables.CollectedTargetsReady(c); err != nil {
 			return err
 		}
-		for _, set := range c.RoutingSets() {
-			if set.Enabled && set.Routing.Enabled && set.Targets.UseCollectedIPs && config.RoutingUsesTProxy(set.Routing.Mode) {
-				status := tproxyMgr.ListenerStatus(set.Id, 0)
-				if c.QueuesIPFamily(false) && set.MatchesIPVersion(4) && !status.V4 || c.QueuesIPFamily(true) && set.MatchesIPVersion(6) && !status.V6 {
-					return fmt.Errorf("consumer listener %q unavailable", set.Name)
-				}
-			}
+		if err := tproxyMgr.CollectedConsumersReady(c); err != nil {
+			return err
 		}
 		return ctx.Err()
 	}, tproxyResolver.Set)
