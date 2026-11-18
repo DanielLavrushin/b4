@@ -48,13 +48,15 @@ func (l *Listener) serveWSReuse(client net.Conn, ip net.IP, port int, given *sni
 	warmCtx, stopWatch := watchWarmClient(l.ctx, client)
 	backend, err := l.Warm.Dial(warmCtx, set, owner, sniffed.host, netip.AddrPortFrom(target.Unmap(), uint16(port)))
 	stopWatch()
+	listening := stop()
 	if err != nil {
 		log.Warnf("WSSIZE reuse [%s]: %s: %v", l.SetName, sniffed.host, err)
 		return
 	}
 	defer backend.Close()
-	stopBackend := context.AfterFunc(l.ctx, func() { _ = backend.Close() })
-	defer stopBackend()
+	if !listening {
+		return
+	}
 	from := metrics.DeviceOf(client.RemoteAddr())
 	log.LogConnectionStr("TCP", set.Name, sniffed.host, client.RemoteAddr().String(), "", backend.RemoteAddr().String(), from.MAC, config.TLSVersionString(sniffed.tlsVersion), "wssize-reuse")
 	if err := writePrefix(backend, sniffed.prefix); err != nil {

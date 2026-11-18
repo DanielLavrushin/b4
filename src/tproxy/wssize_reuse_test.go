@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -216,5 +217,83 @@ func TestWarmClientPollErrorsDoNotCancel(t *testing.T) {
 	case <-ctx.Done():
 	case <-time.After(time.Second):
 		t.Fatal("closed client not cancelled")
+	}
+}
+
+func TestWSReuseRelaySurvivesListenerStop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	backend, server := net.Pipe()
+	defer server.Close()
+	set := config.NewSetConfig()
+	set.Enabled = true
+	set.TCP.WSSizeReuse.Enabled = true
+	l := &Listener{ctx: ctx, Warm: reuseTestDialer{dial: func(context.Context, *config.SetConfig, string, string, netip.AddrPort) (net.Conn, error) {
+		return backend, nil
+	}}}
+	l.set.Store(&set)
+	a, b := net.Pipe()
+	defer a.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		l.serveWSReuse(reuseTestClient{b}, net.ParseIP("203.0.113.2"), 443, &sniffResult{host: "video.example.org", tlsVersion: 0x0304, prefix: []byte("hello")})
+	}()
+	buf := make([]byte, 5)
+	server.SetDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.ReadFull(server, buf); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	time.Sleep(100 * time.Millisecond)
+	a.SetDeadline(time.Now().Add(time.Second))
+	go server.Write([]byte("reply"))
+	if _, err := io.ReadFull(a, buf); err != nil {
+		t.Fatalf("the listener stop cut a relayed connection: %v", err)
+	}
+	if string(buf) != "reply" {
+		t.Fatalf("client read %q, want the server's reply", buf)
+	}
+	a.Close()
+	server.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("the relay did not end with the client")
+	}
+}
+
+func TestWSReuseListenerStopAbortsPendingWarm(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	entered, cancelled := make(chan struct{}), make(chan struct{})
+	set := config.NewSetConfig()
+	set.Enabled = true
+	set.TCP.WSSizeReuse.Enabled = true
+	l := &Listener{ctx: ctx, Warm: reuseTestDialer{dial: func(ctx context.Context, _ *config.SetConfig, _, _ string, _ netip.AddrPort) (net.Conn, error) {
+		close(entered)
+		<-ctx.Done()
+		<-cancelled
+		return nil, ctx.Err()
+	}}}
+	l.set.Store(&set)
+	a, b := net.Pipe()
+	defer a.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		l.serveWSReuse(reuseTestClient{b}, net.ParseIP("203.0.113.2"), 443, &sniffResult{host: "video.example.org", tlsVersion: 0x0304, prefix: []byte("hello")})
+	}()
+	<-entered
+	cancel()
+	close(cancelled)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("a listener stop left the warm running")
+	}
+	a.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := a.Read(make([]byte, 1)); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("the client was left open after the listener stop aborted its warm: %v", err)
 	}
 }
