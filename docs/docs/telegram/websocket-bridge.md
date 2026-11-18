@@ -78,7 +78,7 @@ Connections from devices reach the bridge untouched: no faking, fragmentation or
 | Cloudflare-proxied domains, a custom WebSocket domain | None. No set applies its DPI settings |
 | A Cloudflare Worker | None, unless **Let sets process Worker connections** is on |
 
-A set that covers Cloudflare for other sites therefore leaves these routes alone, apart from the Worker while that switch is on. With a [Telegram set](./upstream.md#telegram-set) chosen, all of these routes take that set's strategy instead, and no other set applies its DPI settings to them. A set in the **Telegram over WebSocket (built-in)** mode, unless it is limited by an included source-device list, leaves the bridge's connections to its targets unmodified.
+A set that covers Cloudflare for other sites therefore leaves these routes alone, apart from the Worker while that switch is on. With a [Telegram set](./upstream.md#telegram-set) chosen, these routes take that set's strategy instead, the Worker only while that switch is on, and no other set applies its DPI settings to them. A set in the **Telegram over WebSocket (built-in)** mode, unless it is limited by an included source-device list, leaves the bridge's connections to its targets unmodified.
 
 ### Connections the bridge passes on
 

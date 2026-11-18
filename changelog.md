@@ -6,7 +6,7 @@ All notable changes to b4 are recorded in this file.
 
 ### Added
 
-- A **Telegram set** under **Telegram upstream (shared)** takes all of b4's own connections to Telegram, the CF proxy domains and Workers included: its strategy, or its interface or proxy route; **Create a Telegram set** adds one. [#615](https://github.com/DanielLavrushin/b4/issues/615)
+- A **Telegram set** under **Telegram upstream (shared)** takes b4's own connections to Telegram, the CF proxy domains included: its strategy, or its interface or proxy route; **Create a Telegram set** adds one. [#615](https://github.com/DanielLavrushin/b4/issues/615)
 
 ### Fixed
 

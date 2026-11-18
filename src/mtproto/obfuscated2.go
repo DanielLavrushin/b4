@@ -264,6 +264,9 @@ func relayDialMark(base uint) uint {
 }
 
 func workerDialMark(base uint) uint {
+	if base&uint(config.TelegramSetBit) != 0 && !workerFollowsSets.Load() && currentTelegramPath().kind == telegramPathStrategy {
+		return base&^uint(config.TelegramSetBit) | uint(config.SelfDialNoDPIBit)
+	}
 	base, final := resolveTelegramMark(base)
 	if final || workerFollowsSets.Load() {
 		return base
@@ -272,14 +275,14 @@ func workerDialMark(base uint) uint {
 }
 
 func planDialMark(p transportPlan, base uint) uint {
+	if p.isWorker {
+		return workerDialMark(base)
+	}
 	base, final := resolveTelegramMark(base)
 	if final {
 		return base
 	}
-	switch {
-	case p.isWorker:
-		return workerDialMark(base)
-	case p.cfBase != "":
+	if p.cfBase != "" {
 		return relayDialMark(base)
 	}
 	return base

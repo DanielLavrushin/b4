@@ -61,6 +61,13 @@ export const telegramSetUsable = (config: B4Config) =>
   (config.system.mtproto?.upstream_set ?? "") !== "" &&
   telegramSetProblem(config) === null;
 
+export const telegramSetRoutes = (config: B4Config) =>
+  telegramSetUsable(config) &&
+  config.sets.some(
+    (s) =>
+      s.id === config.system.mtproto?.upstream_set && !!s.routing?.enabled,
+  );
+
 interface MTProtoUpstreamSetProps {
   config: B4Config;
   onChange: (field: string, value: SettingsPropHandlerType) => void;

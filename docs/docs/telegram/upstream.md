@@ -57,7 +57,8 @@ card, and the downloads of Telegram's address lists. No other set handles these 
 whatever it targets. With **No set**, the default, they are processed as
 [DPI processing](./websocket-bridge.md#dpi-processing) describes.
 
-A set without routing applies its strategy to these connections. A set routed through an
+A set without routing applies its strategy to these connections, and to the Worker
+connections only while **Let sets process Worker connections** is on. A set routed through an
 interface carries them on that interface's route, and a proxy set through its upstream; neither
 applies its strategy to them. With **Send domain name to upstream** on, the default, the upstream
 gets the host names; otherwise, and for a name pinned in the set, it gets the address the set's

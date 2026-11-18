@@ -28,7 +28,11 @@ import { SettingsPropHandlerType } from "@models/settings";
 import { mtprotoApi } from "@api/mtproto";
 import { MTProtoRelayHelpDialog } from "./MTProtoRelayHelpDialog";
 import { MTProtoProbeResults, type ProbeRow } from "./MTProtoProbeResults";
-import { MTProtoUpstreamSet, telegramSetUsable } from "./MTProtoUpstreamSet";
+import {
+  MTProtoUpstreamSet,
+  telegramSetRoutes,
+  telegramSetUsable,
+} from "./MTProtoUpstreamSet";
 
 type RefreshResult =
   | {
@@ -107,7 +111,7 @@ export const MTProtoUpstreamCard = ({
     );
   const showWorkerDpi =
     (mtproto?.cfworker_domain || "").trim() !== "" &&
-    !telegramSetUsable(config);
+    !telegramSetRoutes(config);
   const showDcRelay =
     !!dcRelay || mode === "tcp" || mode === "auto" || bridgeInUse;
 
