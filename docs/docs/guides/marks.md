@@ -50,6 +50,7 @@ rule without a mask, such as nftables `meta mark set 0x00021546` or iptables
 | 15 by default | `0x8000` by default | The queue mark: packets b4 sends from its raw sockets, except those toward a device in TUN mode, the DNS queries it sends for clients and for its sets, and its probes that bypass its own processing | **Packet Mark** under **Settings, Core, Packet Engine**, `0x8000` (32768) by default |
 | 18 | `0x40000` | Connections b4 opens to the upstream of a proxy set, to Telegram, the Community Hub, ipinfo and RIPEstat, and its transparent listeners; see [socket marks](#socket-marks) | Fixed |
 | 21 | `0x200000` | b4's own connections whose outgoing packets packet processing leaves alone; b4 recognizes them by the whole of `0x240000`, not by this bit | Fixed, carried together with bit 18 as `0x240000` |
+| 26 | `0x4000000` | b4's own connections to Telegram while a **Telegram set** is chosen; see [connections b4 opens itself](#connections-b4-opens-itself) | Fixed, carried together with bit 18 as `0x4040000` |
 | 24 | `0x1000000` | A proxy set's TCP packet that the router sent itself | Fixed, added to the set's mark |
 | 25 | `0x2000000` | NFQUEUE mode: the packets b4 sends into a connection from its raw sockets, such as fakes, split segments and re-sent SYNs; see [connections b4 sends packets into](#connections-b4-sends-packets-into) | Fixed, added to the queue mark |
 | 28 | `0x10000000` | TUN mode: packets b4 writes back | Fixed, added to the queue mark |
@@ -58,7 +59,7 @@ rule without a mask, such as nftables `meta mark set 0x00021546` or iptables
 | all | `0xffffffff` | Discovery, only while a run is active | By default the queue mark plus 1 and plus 2, `0x8001` and `0x8002`; `system.checker.discovery_flow_mark` and `system.checker.discovery_injected_mark` replace them |
 
 With the default queue mark and outside a Discovery run, b4 puts no other bit on a packet:
-bits 16, 19, 20, 22, 23, 26, 27 and 31 stay free. Its firewall rules read them only in
+bits 16, 19, 20, 22, 23, 27 and 31 stay free. Its firewall rules read them only in
 three matches. With `0x240000/0x8efd8000`, b4 recognizes its own `0x240000` connections.
 With `0x8000/0x8cfd8000`, the queue chains and the rules that queue or copy DNS queries
 recognize b4's own packets (see [The queue mark](#the-queue-mark)). With
@@ -88,6 +89,7 @@ them on the packets they take. Bit 16 is left free for XrayUI's `0x10000`.
 | The DPI Detector's checks, except its fetches through b4 and its lookups through the system resolver; health probes of pinned DNS answers and of unreachable addresses; the public address lookup; the fetches that bypass b4 in the MCP tool `b4_test_domain_now` and in the test of an applied Community Hub set | The queue mark |
 | Transparent listeners of proxy sets and every connection they open, to the upstream or, with **Fall back to direct on upstream failure**, directly; TCP connections of b4's SOCKS5 server to a domain name a proxy set targets, which go through the set's upstream; connections of the MTProto proxy and Telegram over WebSocket to Telegram and the address lists they download; the MTProto proxy's forward to its fake SNI domain; Community Hub, ipinfo and RIPEstat requests | `0x40000`. When a Community Hub sync cannot connect, b4 retries it with the queue mark; if that retry connects, later Hub requests keep the queue mark until a sync cannot connect with it and a retry with `0x40000` can |
 | Connections through Cloudflare-proxied domains or a custom WebSocket domain, and to a Cloudflare Worker | `0x240000`; `0x40000` for the Worker when **Let sets process Worker connections** is on |
+| Connections of the MTProto proxy and Telegram over WebSocket to Telegram on every route, their connection test, the address and domain lists they download, and the direct connections of a Telegram over WebSocket set, while a **Telegram set** is chosen and b4 runs in NFQUEUE mode | `0x4040000` |
 | Discovery probes and their name lookups; the packets Discovery sends | The flow mark; the injected mark, with `0x20000000` added on packets sent back toward the probes. By default the queue mark plus 1 and plus 2, and `0x20008002` toward the probes |
 | Watchdog checks; the fetches through b4 of the DPI Detector, `b4_test_domain_now` and the Hub set test; connections b4's SOCKS5 server opens to other destinations; every other lookup through the system resolver, including the names of the other connections above and a set's domains when the set has no resolver of its own, or when the lookup through its resolvers fails and **Fail closed when no resolver is reachable** is off; GeoIP and GeoSite downloads, update checks and downloads, the device vendor database, AI assistant requests | None |
 
@@ -456,6 +458,16 @@ processing. The MTProto proxy and Telegram over WebSocket put `0x240000` on thei
 Cloudflare-proxied domains or a custom WebSocket domain, and to a Cloudflare Worker unless
 **Let sets process Worker connections** is on; see
 [DPI processing](../telegram/websocket-bridge.md#dpi-processing).
+
+While a set is chosen under **Telegram set** on the Telegram page, the MTProto proxy and
+Telegram over WebSocket put `0x4040000`, `0x40000` with bit `0x4000000`, on all their
+connections to Telegram instead, the Cloudflare routes and Workers included, and on the
+address and domain lists they download. Packet processing gives a packet with both bits the
+chosen set's strategy, whatever the set targets, and no other set takes it except a set the
+chosen set escalates to. The forward to the fake SNI domain keeps `0x40000`. The routing
+chains still return on `0x40000`, so the chosen set's own routing does not carry these
+connections. In TUN mode b4 reads packets without their mark and does not use `0x4040000`;
+see [Telegram upstream](../telegram/upstream.md).
 
 Lookups and probes carrying the queue mark skip packet processing, and proxy sets leave
 them alone. The DPI Detector's direct mode uses the queue mark to measure the network

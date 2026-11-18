@@ -66,11 +66,12 @@ type TransparentBridge struct {
 	dropped     atomic.Uint64
 	lastRelayed atomic.Int64
 
-	mu        sync.Mutex
-	pool      *cfWorkerPool
-	poolInit  bool
-	wsPool    *wsPool
-	wsPoolFor MTProtoUpstream
+	mu         sync.Mutex
+	pool       *cfWorkerPool
+	poolInit   bool
+	wsPool     *wsPool
+	wsPoolFor  MTProtoUpstream
+	wsPoolMark uint
 }
 
 func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
@@ -82,15 +83,18 @@ func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
 	}
 	b.cfg.Store(cfg)
 	setWorkerFollowsSets(cfg)
+	setTelegramSet(cfg)
 	return b
 }
 
 func (b *TransparentBridge) UpdateConfig(newCfg *config.Config) {
 	old := b.cfg.Swap(newCfg)
 	setWorkerFollowsSets(newCfg)
+	setTelegramSet(newCfg)
 	if old != nil &&
 		old.System.MTProto.CFWorkerDomain == newCfg.System.MTProto.CFWorkerDomain &&
-		old.Queue.Mark == newCfg.Queue.Mark {
+		old.Queue.Mark == newCfg.Queue.Mark &&
+		!telegramSetChanged(old, newCfg) {
 		return
 	}
 	b.mu.Lock()
@@ -136,12 +140,13 @@ func (b *TransparentBridge) getWSPool() *wsPool {
 	want := MTProtoUpstream{WSEndpointHost: mt.WSEndpointHost, WSCustomDomain: mt.WSCustomDomain, CFProxyEnabled: mt.CFProxyEnabled, FrontSNI: wsFrontName(mt.WSFrontSNI)}
 	b.mu.Lock()
 	var stale *wsPool
-	if shared != nil || (b.wsPool != nil && b.wsPoolFor != want) {
+	mark := selfDialMark()
+	if shared != nil || (b.wsPool != nil && (b.wsPoolFor != want || b.wsPoolMark != mark)) {
 		stale, b.wsPool = b.wsPool, nil
 	}
 	if shared == nil && b.wsPool == nil {
-		b.wsPool = newWSPool(want, selfDialMark(), wsPoolDefaultSize)
-		b.wsPoolFor = want
+		b.wsPool = newWSPool(want, mark, wsPoolDefaultSize)
+		b.wsPoolFor, b.wsPoolMark = want, mark
 	}
 	own := b.wsPool
 	b.mu.Unlock()

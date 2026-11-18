@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Добавлено
+
+- **Сет для Telegram** в разделе **Транспорт к Telegram (общий)** применяет стратегию одного сета ко всем собственным соединениям b4 с Telegram, включая домены CF-резерва и Cloudflare Worker; **Создать сет для Telegram** добавляет такой сет. [#615](https://github.com/DanielLavrushin/b4/issues/615)
+
 ### Исправлено
 
 - После остановки b4 роутер с собственными настройками отслеживания соединений, например OpenWrt, получал вместо них значения ядра по умолчанию, а в редких случаях оставался с настройками b4. ([#613](https://github.com/DanielLavrushin/b4/pull/613), спасибо [@mvanhorn](https://github.com/mvanhorn); [#575](https://github.com/DanielLavrushin/b4/issues/575))

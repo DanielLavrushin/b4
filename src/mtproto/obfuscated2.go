@@ -245,6 +245,9 @@ func (p transportPlan) tlsName() string {
 // CAP_NET_ADMIN, and without it every dial fails on the setsockopt instead of
 // on the route under test.
 var selfDialMark = func() uint {
+	if telegramSetDial.Load() {
+		return uint(config.TelegramSetDialMark)
+	}
 	return uint(config.SelfDialMark)
 }
 
@@ -255,8 +258,8 @@ func setWorkerFollowsSets(cfg *config.Config) {
 }
 
 func relayDialMark(base uint) uint {
-	if base == 0 {
-		return 0
+	if base == 0 || base&uint(config.TelegramSetBit) != 0 {
+		return base
 	}
 	return base | uint(config.SelfDialNoDPIBit)
 }
@@ -788,8 +791,10 @@ const (
 )
 
 type TransportProbe struct {
-	plans []transportPlan
-	dc    int
+	plans    []transportPlan
+	dc       int
+	mark     uint
+	telegram string
 }
 
 type TransportProbeObserver struct {
@@ -797,12 +802,20 @@ type TransportProbeObserver struct {
 	Finished func(index int, result TransportProbeResult)
 }
 
-func PlanTransportProbe(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int) (*TransportProbe, error) {
-	plans, err := planTransports(cfg, queueCfg, dc, dialTarget{})
+func PlanTransportProbe(cfg *config.Config, dc int) (*TransportProbe, error) {
+	plans, err := planTransports(&cfg.System.MTProto, cfg.Queue, dc, dialTarget{})
 	if err != nil {
 		return nil, err
 	}
-	return &TransportProbe{plans: plans, dc: dc}, nil
+	probe := &TransportProbe{plans: plans, dc: dc, mark: dialMarkFor(cfg)}
+	if set := cfg.TelegramUpstreamSet(); set != nil && probe.mark&uint(config.TelegramSetBit) != 0 {
+		probe.telegram = set.Name
+	}
+	return probe, nil
+}
+
+func (t *TransportProbe) TelegramSet() string {
+	return t.telegram
 }
 
 func (t *TransportProbe) Routes() []string {
@@ -817,7 +830,7 @@ func (t *TransportProbe) Run(ctx context.Context, obs TransportProbeObserver) []
 	ctx, cancel := context.WithTimeout(ctx, probeRunBudget)
 	defer cancel()
 	probe := func(p transportPlan) TransportProbeResult {
-		return probeOne(p, planDialMark(p, selfDialMark()), t.dc)
+		return probeOne(p, planDialMark(p, t.mark), t.dc)
 	}
 	return probePlans(ctx, t.plans, dialRaceMaxInFlight, probe, obs)
 }

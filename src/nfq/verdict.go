@@ -1,6 +1,7 @@
 package nfq
 
 import (
+	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
@@ -37,6 +38,7 @@ type verdictCtx struct {
 	scoped         bool
 	scope          *ingressScope
 	keep           sni.SetFilter
+	telegramSet    *config.SetConfig
 	hellos         *pendingHelloCache
 	helloKey       string
 	held           *helloHold

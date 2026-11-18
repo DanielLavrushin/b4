@@ -4,6 +4,10 @@ All notable changes to b4 are recorded in this file.
 
 ## [Unreleased]
 
+### Added
+
+- A **Telegram set** under **Telegram upstream (shared)** applies one set's strategy to all of b4's own connections to Telegram, the CF proxy domains and Workers included; **Create a Telegram set** adds one. [#615](https://github.com/DanielLavrushin/b4/issues/615)
+
 ### Fixed
 
 - After b4 stopped, a router with its own connection-tracking settings, such as OpenWrt, was left with the kernel defaults instead, and in rare cases with b4's settings. ([#613](https://github.com/DanielLavrushin/b4/pull/613), thanks [@mvanhorn](https://github.com/mvanhorn); [#575](https://github.com/DanielLavrushin/b4/issues/575))

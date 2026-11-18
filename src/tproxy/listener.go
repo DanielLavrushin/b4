@@ -90,6 +90,7 @@ type Listener struct {
 
 	peers      func() []*Listener
 	set        atomic.Pointer[config.SetConfig]
+	directMark atomic.Uint32
 	dnsMark    atomic.Int64
 	dnsTimeout atomic.Int64
 	dnsV6      atomic.Bool
@@ -1040,8 +1041,15 @@ func (l *Listener) relayDirect(client net.Conn, dest string, prefix []byte) {
 	l.relayDirectCounted(client, dest, prefix, 10*time.Second)
 }
 
+func (l *Listener) directDialMark() uint32 {
+	if m := l.directMark.Load(); m != 0 {
+		return m
+	}
+	return l.Upstream.BypassMark
+}
+
 func (l *Listener) relayDirectCounted(client net.Conn, dest string, prefix []byte, timeout time.Duration) (bool, int64) {
-	dialer := markedDialer(timeout, l.Upstream.BypassMark)
+	dialer := markedDialer(timeout, l.directDialMark())
 	ctx, cancel := context.WithTimeout(l.ctx, timeout)
 	direct, err := dialer.DialContext(ctx, "tcp", dest)
 	cancel()

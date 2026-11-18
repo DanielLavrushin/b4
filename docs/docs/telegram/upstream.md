@@ -42,10 +42,30 @@ Telegram over WebSocket always uses **Auto (WebSocket → TCP)** and never the D
 | The handshake with Telegram's own edge is dropped for its names, while its address is reachable | A [fronting name](#fronting-name-for-the-ws-edge) |
 | Telegram's own edge does not answer at its default address | Another address in [Telegram WS edge IP](#telegram-ws-edge-ip) |
 | Direct TCP and the WebSocket routes are all blocked | A [DC Relay](./dc-relay.md) |
+| The CF proxy domains are blocked, while a set's strategy gets other sites through | A [Telegram set](#telegram-set) with that strategy |
 
 The log lines that identify each case are under [Telegram problems](./troubleshooting.md).
 
 ## Other settings on the card
+
+### Telegram set
+
+**Telegram set** names the set whose strategy applies to b4's own connections to Telegram: the
+connections of the MTProto proxy and of Telegram over WebSocket on every route, the CF proxy
+pool, a custom WebSocket domain and Cloudflare Workers included, the connection test on this
+card, and the downloads of Telegram's address lists. No other set handles these connections,
+whatever it targets. With **No set**, the default, they are processed as
+[DPI processing](./websocket-bridge.md#dpi-processing) describes.
+
+**Create a Telegram set** adds an enabled set named Telegram, with no targets and routing off,
+and selects it. Both are saved with **Save Changes**. The set's strategy is edited on the
+**Sets** page like any set's.
+
+The set applies while it is enabled and b4 runs in NFQUEUE mode. A block set or a Telegram over
+WebSocket set cannot be chosen. When the chosen set is missing or disabled, or b4 runs in TUN
+mode, the card says why and the connections go as they would without a set. The set's routing
+does not carry these connections, and the connections to the fake SNI website stay outside the
+set.
 
 ### Custom WebSocket domain
 

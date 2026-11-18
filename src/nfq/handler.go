@@ -116,6 +116,9 @@ func (w *Worker) handleQueued(vc *verdictCtx, a nfqueue.Attribute, mark uint) in
 	if a.Mark != nil && (config.IsTelegramBridgeMark(*a.Mark) || config.IsSelfDialSkipMark(*a.Mark)) {
 		return vc.accept()
 	}
+	if a.Mark != nil && config.IsTelegramSetMark(*a.Mark) {
+		vc.telegramSet = w.getConfig().TelegramUpstreamSet()
+	}
 
 	if !w.matchesInterface(a) {
 		if !w.dnsCopyMayClaim(*a.Payload) {
@@ -162,7 +165,7 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 		return w.handleECHOnlyPacket(vc, pkt, cfg)
 	}
 
-	matched, st, stPrefix := matcher.MatchIPWithSourceDetail(pkt.dst, pkt.srcMac, w.blockScope(vc, pkt, matcher))
+	matched, st, stPrefix := w.addressSet(vc, pkt, matcher)
 	var set *config.SetConfig
 	if matched {
 		set = st
@@ -180,6 +183,16 @@ func (w *Worker) dispatch(vc *verdictCtx, raw []byte) int {
 	}
 
 	return vc.accept()
+}
+
+const telegramSetPrefix = 128
+
+func (w *Worker) addressSet(vc *verdictCtx, pkt *pktInfo, matcher *sni.SuffixSet) (bool, *config.SetConfig, int) {
+	keep := w.blockScope(vc, pkt, matcher)
+	if vc.telegramSet != nil {
+		return true, vc.telegramSet, telegramSetPrefix
+	}
+	return matcher.MatchIPWithSourceDetail(pkt.dst, pkt.srcMac, keep)
 }
 
 const maxInjectInflight = 512

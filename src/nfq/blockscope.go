@@ -151,8 +151,17 @@ func (w *Worker) packetScope(vc *verdictCtx, pkt *pktInfo, matcher *sni.SuffixSe
 			vc.scope.uplink = pkt.srcUnattributed
 			vc.keep = vc.scope.admits
 		}
+		if vc.telegramSet != nil {
+			vc.keep = telegramSetScope(w.getConfig(), vc.telegramSet)
+		}
 	}
 	return vc.scope
+}
+
+func telegramSetScope(cfg *config.Config, telegram *config.SetConfig) sni.SetFilter {
+	return func(set *config.SetConfig) bool {
+		return set != nil && (set.Id == telegram.Id || escalationReaches(cfg, telegram, set.Id))
+	}
 }
 
 func (w *Worker) blockScope(vc *verdictCtx, pkt *pktInfo, matcher *sni.SuffixSet) sni.SetFilter {
