@@ -31,7 +31,7 @@ Telegram over WebSocket always uses **Auto (WebSocket → TCP)** and never the D
 
 ## Checking the result
 
-- **Test connection** tries each configured route to data centre 2 and lists the result of each, with its latency or the stage where it failed.
+- **Test connection** tries each configured route to data centre 2 and lists the result of each, with its latency or the stage where it failed. Routes the test runs out of time for are listed as not tested.
 - **Test direct TCP** tries data centre 2 over direct TCP without the DC Relay. Comparing the two separates a problem of a route from a problem of Telegram.
 
 ## When it does not work

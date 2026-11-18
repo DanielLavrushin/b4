@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
+import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import NetworkPingIcon from "@mui/icons-material/NetworkPing";
@@ -468,8 +469,11 @@ export const MTProtoUpstreamCard = ({
         {wsResults && (
           <Stack spacing={0.5}>
             {wsResults.map((r) => {
+              const untested = !r.ok && r.stage === "untested";
               let label: string;
-              if (r.ok) {
+              if (untested) {
+                label = `${r.transport} · ${t("settings.MTProto.testStage_untested")}`;
+              } else if (r.ok) {
                 const parts = [`${r.latency_ms} ms`];
                 if (r.hold_ms != null) {
                   parts.push(
@@ -494,6 +498,8 @@ export const MTProtoUpstreamCard = ({
                   icon={
                     r.ok ? (
                       <CheckIcon fontSize="small" />
+                    ) : untested ? (
+                      <HourglassEmptyIcon fontSize="small" />
                     ) : (
                       <CloseIcon fontSize="small" />
                     )

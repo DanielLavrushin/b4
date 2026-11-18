@@ -461,6 +461,7 @@
       "testStage_dial": "connect failed",
       "testStage_handshake": "handshake failed",
       "testStage_hold": "dropped after handshake",
+      "testStage_untested": "not tested: the test ran out of time",
       "upstreamAutoRelayDesc": "DC Relay is configured: the proxy server tries relay TCP first, WebSocket as fallback.",
       "advanced": "Advanced",
       "webProxyNoHost": "No hostname set",

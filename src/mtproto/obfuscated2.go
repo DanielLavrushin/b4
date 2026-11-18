@@ -13,6 +13,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -779,18 +780,43 @@ type TransportProbeResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
-const probeHoldDuration = 2 * time.Second
+const (
+	probeHoldDuration  = 2 * time.Second
+	probeRunBudget     = 30 * time.Second
+	probeStageUntested = "untested"
+)
 
 func ProbeTransports(cfg *config.MTProtoConfig, queueCfg config.QueueConfig, dc int) ([]TransportProbeResult, error) {
 	plans, err := planTransports(cfg, queueCfg, dc, dialTarget{})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]TransportProbeResult, len(plans))
-	for i, p := range plans {
-		out[i] = probeOne(p, planDialMark(p, selfDialMark()), dc)
+	probe := func(p transportPlan) TransportProbeResult {
+		return probeOne(p, planDialMark(p, selfDialMark()), dc)
 	}
-	return out, nil
+	return probePlans(plans, dialRaceMaxInFlight, time.Now().Add(probeRunBudget), probe), nil
+}
+
+func probePlans(plans []transportPlan, inFlight int, deadline time.Time, probe func(transportPlan) TransportProbeResult) []TransportProbeResult {
+	out := make([]TransportProbeResult, len(plans))
+	slots := make(chan struct{}, max(inFlight, 1))
+	var wg sync.WaitGroup
+	for i, p := range plans {
+		slots <- struct{}{}
+		if !time.Now().Before(deadline) {
+			<-slots
+			for j := i; j < len(plans); j++ {
+				out[j] = TransportProbeResult{Transport: plans[j].describe(), Stage: probeStageUntested}
+			}
+			break
+		}
+		wg.Go(func() {
+			defer func() { <-slots }()
+			out[i] = probe(p)
+		})
+	}
+	wg.Wait()
+	return out
 }
 
 func probeOne(p transportPlan, mark uint, dc int) TransportProbeResult {

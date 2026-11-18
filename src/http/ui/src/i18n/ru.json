@@ -466,6 +466,7 @@
       "testStage_dial": "соединение не установлено",
       "testStage_handshake": "сбой рукопожатия",
       "testStage_hold": "соединение сброшено после рукопожатия",
+      "testStage_untested": "не проверено: время теста вышло",
       "upstreamAutoRelayDesc": "DC Relay настроен: прокси-сервер сначала пробует реле по TCP, WebSocket - как резерв.",
       "advanced": "Дополнительно",
       "webProxyNoHost": "Хост не задан",
