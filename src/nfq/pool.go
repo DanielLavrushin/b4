@@ -120,7 +120,9 @@ func NewPool(cfg *config.Config) *Pool {
 	pool := &Pool{warmFlows: warmFlows, Workers: ws, Dhcp: dhcpMgr, stopCleanup: make(chan struct{}), cleanupDone: make(chan struct{}), state: state}
 	pool.collectedBase = cfg
 	pool.collectedEngineTUN = cfg.Queue.Mode == "tun"
-	metrics.GetMetricsCollector().UpdateCollectedIPs(nil)
+	if !cfg.Queue.IsDiscovery {
+		metrics.GetMetricsCollector().UpdateCollectedIPs(nil)
+	}
 	pool.collectedCtx, pool.collectedCancel = context.WithCancel(context.Background())
 	for _, w := range ws {
 		w.pool = pool
