@@ -680,6 +680,27 @@ func (s *Server) UpdateConfig(newCfg *config.Config) {
 		log.Infof("MTProto proxy stopped (disabled in configuration)")
 		s.closeRevokedConns(nil)
 	}
+	if old != nil && telegramSetChanged(old, newCfg) {
+		s.closeAllConns()
+		closeBridgeSessions()
+	}
+}
+
+func (s *Server) closeAllConns() {
+	var all []net.Conn
+	s.connsMu.Lock()
+	for _, set := range s.conns {
+		for c := range set.conns {
+			all = append(all, c)
+		}
+	}
+	s.connsMu.Unlock()
+	for _, c := range all {
+		_ = c.Close()
+	}
+	if len(all) > 0 {
+		log.Infof("MTProto: closed %d active connection(s) so they reconnect on the new path of b4's own Telegram connections", len(all))
+	}
 }
 
 func mtprotoNeedsRestart(old, newCfg *config.Config) bool {

@@ -746,6 +746,58 @@ func TestTheBridgeRebuildsItsWebSocketPoolWhenTheTelegramSetsRouteChanges(t *tes
 	}
 }
 
+func TestAChangeOfTheTelegramSetClosesTheOpenTelegramSessions(t *testing.T) {
+	gen, err := GenerateSecret("a.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyConfig := func(chosen bool, fakeSNI string) *config.Config {
+		cfg := routedTelegramConfig(config.RoutingModeInterface)
+		if !chosen {
+			cfg.System.MTProto.UpstreamSet = ""
+		}
+		cfg.System.MTProto.Enabled = true
+		cfg.System.MTProto.BindAddress = "127.0.0.1"
+		cfg.System.MTProto.Port = 0
+		cfg.System.MTProto.UpstreamMode = "tcp"
+		cfg.System.MTProto.FakeSNI = fakeSNI
+		cfg.System.MTProto.Secrets = []config.MTProtoSecret{{ID: "a", Name: "Max", Secret: gen.Hex(), Enabled: true}}
+		return cfg
+	}
+	without := proxyConfig(false, "a.example.com")
+	srv := NewServer(without)
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	bridge := NewTransparentBridge(without)
+	t.Cleanup(func() {
+		_ = srv.Stop()
+		bridge.Close()
+		setTelegramSet(nil)
+	})
+	open := func() (*closeRecordConn, *closeRecordConn, *closeRecordConn) {
+		session := &closeRecordConn{}
+		srv.trackConn((*srv.secrets.Load())[0], session)
+		client, dc := &closeRecordConn{}, &closeRecordConn{}
+		bridge.trackSession(client, dc)
+		return session, client, dc
+	}
+
+	session, client, dc := open()
+	srv.UpdateConfig(proxyConfig(false, "b.example.com"))
+	if session.closed.Load() || client.closed.Load() || dc.closed.Load() {
+		t.Fatal("a restart that leaves the Telegram set alone must not drop the open sessions")
+	}
+
+	srv.UpdateConfig(proxyConfig(true, "b.example.com"))
+	if !session.closed.Load() {
+		t.Error("a proxy session opened before the Telegram set was chosen stayed open, so it keeps the old path until the client reconnects")
+	}
+	if !client.closed.Load() || !dc.closed.Load() {
+		t.Error("a Telegram over WebSocket session opened before the Telegram set was chosen stayed open on the old path")
+	}
+}
+
 func TestAnExplicitRouteMarkOrTableChangeRebuildsTheTelegramPools(t *testing.T) {
 	routed := routedTelegramConfig(config.RoutingModeInterface)
 	routed.Sets[0].Routing.FWMark, routed.Sets[0].Routing.Table = 0x2a, 120

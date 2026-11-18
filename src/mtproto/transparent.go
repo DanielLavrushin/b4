@@ -73,6 +73,55 @@ type TransparentBridge struct {
 	wsPoolFor  MTProtoUpstream
 	wsPoolMark uint
 	wsPoolTG   string
+
+	sessMu   sync.Mutex
+	sessions map[*bridgeSession]struct{}
+}
+
+type bridgeSession struct {
+	client net.Conn
+	dc     net.Conn
+}
+
+var liveBridge atomic.Pointer[TransparentBridge]
+
+func (b *TransparentBridge) trackSession(client, dc net.Conn) func() {
+	s := &bridgeSession{client: client, dc: dc}
+	b.sessMu.Lock()
+	if b.sessions == nil {
+		b.sessions = make(map[*bridgeSession]struct{})
+	}
+	b.sessions[s] = struct{}{}
+	b.sessMu.Unlock()
+	return func() {
+		b.sessMu.Lock()
+		delete(b.sessions, s)
+		b.sessMu.Unlock()
+	}
+}
+
+func (b *TransparentBridge) closeSessions() int {
+	b.sessMu.Lock()
+	all := make([]*bridgeSession, 0, len(b.sessions))
+	for s := range b.sessions {
+		all = append(all, s)
+	}
+	b.sessMu.Unlock()
+	for _, s := range all {
+		_ = s.dc.Close()
+		_ = s.client.Close()
+	}
+	return len(all)
+}
+
+func closeBridgeSessions() {
+	b := liveBridge.Load()
+	if b == nil {
+		return
+	}
+	if n := b.closeSessions(); n > 0 {
+		log.Infof("%s closed %d Telegram over WebSocket session(s) so they reconnect on the new path of b4's own Telegram connections", tg(""), n)
+	}
 }
 
 func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
@@ -85,6 +134,7 @@ func NewTransparentBridge(cfg *config.Config) *TransparentBridge {
 	b.cfg.Store(cfg)
 	setWorkerFollowsSets(cfg)
 	setTelegramSet(cfg)
+	liveBridge.Store(b)
 	return b
 }
 
@@ -263,6 +313,8 @@ func (b *TransparentBridge) Handle(client net.Conn, origIP net.IP, origPort int)
 		return true, nil
 	}
 	defer dcConn.Close()
+	untrack := b.trackSession(client, dcConn)
+	defer untrack()
 	b.relayed.Add(1)
 	b.lastRelayed.Store(time.Now().UnixNano())
 
