@@ -59,7 +59,7 @@ export interface FacetSetConfig {
     tls_mod?: string[];
   };
   targets: {
- use_collected_ips?: boolean;
+    use_collected_ips?: boolean;
     sni_domains: string[];
     ip: string[];
     geosite_categories: string[];

@@ -177,7 +177,10 @@ export const TcpGeneral = ({
             description={t("sets.tcp.general.wssizeEnableDesc")}
             checked={ws.enabled}
             path="tcp.wssize.enabled"
-            onChange={(checked) => { onChange("tcp.wssize.enabled", checked); if (!checked) onChange("tcp.wssize_reuse.enabled", false); }}
+            onChange={(checked) => {
+              onChange("tcp.wssize.enabled", checked);
+              if (!checked) onChange("tcp.wssize_reuse.enabled", false);
+            }}
             disabled={wsConflict && !ws.enabled}
             aiTopic="tcp.wssize.enabled"
             aiContext={{
@@ -418,8 +421,8 @@ export const TcpGeneral = ({
                 aiTopic="tcp.ip_block_detect.action"
               />
             </Grid>
-            {ibd.action !== "collect" && <>
-
+            {ibd.action !== "collect" && (
+              <>
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Switch
                 label={t("sets.tcp.general.ibdHealDns")}
@@ -485,8 +488,6 @@ export const TcpGeneral = ({
               )}
             </Grid>
 
-
-
             {ibd.heal_dns && (
               <Grid size={{ xs: 12, md: 6 }}>
                 <B4Slider
@@ -517,13 +518,14 @@ export const TcpGeneral = ({
                 }
               />
             </Grid>
-            </>}
+              </>
+            )}
             <Grid size={{ xs: 12, md: 6 }}>
               <B4Slider
                 label={t("sets.tcp.general.ibdTimeout")}
-              value={ibd.timeout_ms}
-              path="tcp.ip_block_detect.timeout_ms"
-              onChange={(value: number) =>
+                value={ibd.timeout_ms}
+                path="tcp.ip_block_detect.timeout_ms"
+                onChange={(value: number) =>
                   onChange("tcp.ip_block_detect.timeout_ms", value)
                 }
                 min={1000}

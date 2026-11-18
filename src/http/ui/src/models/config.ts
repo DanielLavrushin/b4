@@ -106,7 +106,7 @@ export interface IfaceDetail {
 }
 
 export interface TargetsConfig {
- use_collected_ips?: boolean;
+  use_collected_ips?: boolean;
   sni_domains: string[];
   ip: string[];
   geosite_categories: string[];
@@ -584,7 +584,7 @@ export interface IPHealthConfig {
 }
 
 export interface IPBlockDetectConfig {
- action?: "block" | "collect";
+  action?: "block" | "collect";
   enabled: boolean;
   retransmit_threshold: number;
   timeout_ms: number;
