@@ -622,7 +622,7 @@ func ReloadKernelModules() {
 func RefreshCollectedRules(cfg *config.Config) error {
 	rulesMu.Lock()
 	defer rulesMu.Unlock()
-	if rulesAppliedCfg != nil && !config.FirewallRefreshNeeded(rulesAppliedCfg, cfg) {
+	if rulesAppliedCfg == nil || !config.FirewallRefreshNeeded(rulesAppliedCfg, cfg) {
 		return nil
 	}
 	dscpKeepOnRefresh = true

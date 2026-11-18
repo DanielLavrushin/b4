@@ -351,8 +351,8 @@ func runB4(cmd *cobra.Command, args []string) error {
 	pool := nfq.NewPool(&cfg)
 	collectedView.Store((func(*config.Config) *config.Config)(pool.CollectedConfig))
 	pool.SetCollectedTargetsInstaller(func(ctx context.Context, c *config.Config) error {
-		if engineDown.Load() || c.System.Tables.SkipSetup {
-			return fmt.Errorf("packet interception unavailable")
+		if err := collectedInstallRefusal(c, engineDown.Load(), isTUN || tunEngineRef.Load() != nil); err != nil {
+			return err
 		}
 		if err := waitTables(ctx); err != nil {
 			return err
@@ -1113,4 +1113,11 @@ func printConfigDefaults(cmd *cobra.Command) {
 		}
 	}
 	log.Infof("  %s", line)
+}
+
+func collectedInstallRefusal(c *config.Config, engineDown, tun bool) error {
+	if engineDown || tun || c.System.Tables.SkipSetup {
+		return fmt.Errorf("packet interception unavailable")
+	}
+	return nil
 }
