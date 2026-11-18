@@ -44,6 +44,8 @@ type RefreshResult =
       direct_v6?: Record<string, string>;
     };
 
+const PROBE_DC = 2;
+
 const upstreamDescSuffix = (mode: string) => {
   if (mode === "tcp") return "Tcp";
   if (mode === "ws") return "Ws";
@@ -179,7 +181,7 @@ export const MTProtoUpstreamCard = ({
           ws_endpoint_host: mtproto?.ws_endpoint_host || "",
           cfworker_domain: mtproto?.cfworker_domain || "",
           cfproxy_enabled: mtproto?.cfproxy_enabled ?? true,
-          dc: 2,
+          dc: PROBE_DC,
           ...overrides,
         },
         {
@@ -486,7 +488,11 @@ export const MTProtoUpstreamCard = ({
           </B4Alert>
         )}
         {probeRows && (
-          <MTProtoProbeResults rows={probeRows} running={wsTesting !== null} />
+          <MTProtoProbeResults
+            dc={PROBE_DC}
+            rows={probeRows}
+            running={wsTesting !== null}
+          />
         )}
       </Box>
 

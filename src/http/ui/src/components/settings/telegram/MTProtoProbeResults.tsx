@@ -1,18 +1,21 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Box,
-  CircularProgress,
-  LinearProgress,
-  Stack,
-  Typography,
-} from "@mui/material";
+import { Box, CircularProgress } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CancelIcon from "@mui/icons-material/Cancel";
 import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
-import { fonts } from "@design";
+import NetworkPingIcon from "@mui/icons-material/NetworkPing";
+import { colors, fonts } from "@design";
+import { B4RunBar } from "@b4.elements";
 import type { TransportProbeResult } from "@api/mtproto";
+import { PanelCard } from "@components/dashboard/panels/PanelCard";
+import {
+  PANEL_PAD_X,
+  listSx,
+  numeric,
+  rowSx,
+} from "@components/dashboard/panels/styles";
 
 export type ProbeRow = {
   transport: string;
@@ -43,13 +46,26 @@ const breakableRoute = (route: string) =>
     ),
   );
 
-const iconBoxSx = {
-  inlineSize: 20,
-  blockSize: 20,
+const LINE = "18px";
+
+const iconSx = {
+  inlineSize: LINE,
+  blockSize: LINE,
   flex: "none",
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
+  "& svg": { fontSize: 16 },
+} as const;
+
+const NARROW = "@container (max-width: 480px)";
+
+const wordSx = {
+  flexShrink: 0,
+  fontSize: 12,
+  lineHeight: LINE,
+  whiteSpace: "nowrap",
+  textAlign: "right",
 } as const;
 
 interface ProbeRowItemProps {
@@ -61,64 +77,93 @@ const ProbeRowItem = ({ row, state }: ProbeRowItemProps) => {
   const { t } = useTranslation();
   const result = row.result;
 
-  let icon;
-  let label: string;
-  let labelColor = "text.disabled";
+  let icon: ReactNode;
+  let right: ReactNode;
+  let stage = "";
   switch (state) {
     case "ok":
       icon = (
         <CheckCircleIcon
-          fontSize="small"
-          color="success"
           titleAccess={t("settings.MTProto.testRowOk")}
+          sx={{ color: colors.state.success }}
         />
       );
-      label = t("settings.MTProto.testLatencyMs", {
-        ms: result?.latency_ms ?? 0,
-      });
-      labelColor = "text.secondary";
+      right = (
+        <Box
+          component="span"
+          sx={{
+            ...numeric,
+            flexShrink: 0,
+            fontSize: 13,
+            fontWeight: 700,
+            lineHeight: LINE,
+            whiteSpace: "nowrap",
+            color: colors.text.primary,
+          }}
+        >
+          {t("settings.MTProto.testLatencyMs", { ms: result?.latency_ms ?? 0 })}
+        </Box>
+      );
       break;
     case "failed":
       icon = (
         <CancelIcon
-          fontSize="small"
-          color="error"
           titleAccess={t("settings.MTProto.testRowFailed")}
+          sx={{ color: colors.state.error }}
         />
       );
-      label = result?.stage
+      stage = result?.stage
         ? t(`settings.MTProto.testStage_${result.stage}`, {
             defaultValue: result.stage,
           })
         : t("settings.MTProto.testRowFailed");
-      labelColor = "error.main";
+      right = (
+        <Box
+          component="span"
+          sx={{
+            ...wordSx,
+            flexShrink: 1,
+            maxInlineSize: "45%",
+            whiteSpace: "normal",
+            color: colors.state.error,
+            [NARROW]: { display: "none" },
+          }}
+        >
+          {stage}
+        </Box>
+      );
       break;
     case "testing":
       icon = (
         <CircularProgress
-          size={16}
-          thickness={4.5}
+          size={14}
+          thickness={5}
+          disableShrink
           aria-hidden
-          sx={{ color: "text.secondary" }}
+          sx={{ color: colors.secondary }}
         />
       );
-      label = t("settings.MTProto.testRowTesting");
-      labelColor = "text.secondary";
+      right = (
+        <Box component="span" sx={{ ...wordSx, color: colors.secondary }}>
+          {t("settings.MTProto.testRowTesting")}
+        </Box>
+      );
       break;
     case "queued":
-      icon = (
-        <RadioButtonUncheckedIcon
-          fontSize="small"
-          sx={{ color: "text.disabled" }}
-        />
+      icon = <RadioButtonUncheckedIcon sx={{ color: colors.text.disabled }} />;
+      right = (
+        <Box component="span" sx={{ ...wordSx, color: colors.text.disabled }}>
+          {t("settings.MTProto.testRowQueued")}
+        </Box>
       );
-      label = t("settings.MTProto.testRowQueued");
       break;
     default:
-      icon = (
-        <HourglassEmptyIcon fontSize="small" sx={{ color: "text.disabled" }} />
+      icon = <HourglassEmptyIcon sx={{ color: colors.text.disabled }} />;
+      right = (
+        <Box component="span" sx={{ ...wordSx, color: colors.text.disabled }}>
+          {t("settings.MTProto.testStage_untested")}
+        </Box>
       );
-      label = t("settings.MTProto.testStage_untested");
   }
 
   const detail = state === "failed" ? result?.error : undefined;
@@ -126,61 +171,67 @@ const ProbeRowItem = ({ row, state }: ProbeRowItemProps) => {
   return (
     <Box
       component="li"
-      sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}
+      sx={{ ...rowSx, display: "flex", alignItems: "flex-start", gap: "12px" }}
     >
-      <Box sx={iconBoxSx}>{icon}</Box>
-      <Box sx={{ flex: "1 1 0", minInlineSize: 0 }}>
-        <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
-          <Typography
-            variant="body2"
-            sx={{
-              flex: "1 1 auto",
-              minInlineSize: 0,
-              fontFamily: fonts.mono,
-              fontSize: { xs: "0.75rem", sm: "0.875rem" },
-              overflowWrap: "anywhere",
-            }}
-          >
-            {breakableRoute(row.transport)}
-          </Typography>
-          <Typography
-            variant="body2"
-            sx={{
-              flex: state === "failed" ? "0 1 auto" : "none",
-              maxInlineSize: state === "failed" ? "45%" : "none",
-              whiteSpace: state === "failed" ? "normal" : "nowrap",
-              textAlign: "end",
-              color: labelColor,
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {label}
-          </Typography>
+      <Box sx={iconSx}>{icon}</Box>
+      <Box sx={{ flex: "1 1 auto", minInlineSize: 0 }}>
+        <Box
+          component="span"
+          sx={{
+            display: "block",
+            fontFamily: fonts.mono,
+            fontSize: 12,
+            lineHeight: LINE,
+            color: colors.text.primary,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {breakableRoute(row.transport)}
         </Box>
-        {detail && (
-          <Typography
-            variant="caption"
-            component="p"
+        {stage && (
+          <Box
+            component="span"
             sx={{
-              color: "text.secondary",
-              fontFamily: fonts.mono,
+              display: "none",
+              mt: "2px",
+              fontSize: 12,
+              lineHeight: 1.4,
+              color: colors.state.error,
+              [NARROW]: { display: "block" },
+            }}
+          >
+            {stage}
+          </Box>
+        )}
+        {detail && (
+          <Box
+            component="span"
+            sx={{
+              display: "block",
+              mt: "2px",
+              fontSize: 12,
+              lineHeight: 1.4,
+              color: colors.text.secondary,
               overflowWrap: "anywhere",
             }}
           >
             {detail}
-          </Typography>
+          </Box>
         )}
       </Box>
+      {right}
     </Box>
   );
 };
 
 interface MTProtoProbeResultsProps {
+  dc: number;
   rows: ProbeRow[];
   running: boolean;
 }
 
 export const MTProtoProbeResults = ({
+  dc,
   rows,
   running,
 }: MTProtoProbeResultsProps) => {
@@ -197,51 +248,36 @@ export const MTProtoProbeResults = ({
   } else if (untested > 0) {
     suffix = t("settings.MTProto.testSummaryUntested", { n: untested });
   }
+  const summary = t("settings.MTProto.testSummary", { ok, total });
 
   return (
-    <Stack spacing={1}>
-      <Box
-        role="status"
-        sx={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "baseline",
-          columnGap: 1,
-        }}
-      >
-        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-          {t("settings.MTProto.testSummary", { ok, total })}
-        </Typography>
-        {suffix && (
-          <Typography variant="body2" sx={{ color: "text.secondary" }}>
-            {`· ${suffix}`}
-          </Typography>
-        )}
-      </Box>
+    <PanelCard
+      title={t("settings.MTProto.testResultsTitle", { dc })}
+      subtitle={
+        <Box component="span" role="status">
+          {suffix ? `${summary} · ${suffix}` : summary}
+        </Box>
+      }
+      icon={<NetworkPingIcon />}
+      live={false}
+    >
       {running && (
-        <LinearProgress
-          variant="determinate"
-          value={total ? ((total - left) / total) * 100 : 0}
-          aria-label={t("settings.MTProto.testResultsLabel")}
-          sx={{ blockSize: 4, borderRadius: 2 }}
-        />
+        <Box sx={{ px: PANEL_PAD_X, pb: "12px" }}>
+          <B4RunBar
+            value={total ? ((total - left) / total) * 100 : 0}
+            label={t("settings.MTProto.testResultsLabel")}
+          />
+        </Box>
       )}
       <Box
         component="ul"
         aria-label={t("settings.MTProto.testResultsLabel")}
-        sx={{
-          listStyle: "none",
-          m: 0,
-          p: 0,
-          display: "flex",
-          flexDirection: "column",
-          gap: 0.75,
-        }}
+        sx={listSx}
       >
         {rows.map((row, i) => (
           <ProbeRowItem key={i} row={row} state={states[i]} />
         ))}
       </Box>
-    </Stack>
+    </PanelCard>
   );
 };

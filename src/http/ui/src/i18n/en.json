@@ -469,6 +469,7 @@
       "testSummary": "Working routes: {{ok}} of {{total}}",
       "testSummaryLeft": "{{n}} left to test",
       "testSummaryUntested": "not tested: {{n}}",
+      "testResultsTitle": "Routes to DC {{dc}}",
       "testResultsLabel": "Route test results",
       "testInterrupted": "The test stopped before every route was checked. Run it again.",
       "upstreamAutoRelayDesc": "DC Relay is configured: the proxy server tries relay TCP first, WebSocket as fallback.",

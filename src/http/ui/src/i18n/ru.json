@@ -474,6 +474,7 @@
       "testSummary": "Рабочих маршрутов: {{ok}} из {{total}}",
       "testSummaryLeft": "осталось проверить: {{n}}",
       "testSummaryUntested": "не проверено: {{n}}",
+      "testResultsTitle": "Маршруты к DC {{dc}}",
       "testResultsLabel": "Результаты проверки маршрутов",
       "testInterrupted": "Проверка прервалась, не все маршруты проверены. Запустите её ещё раз.",
       "upstreamAutoRelayDesc": "DC Relay настроен: прокси-сервер сначала пробует реле по TCP, WebSocket - как резерв.",
