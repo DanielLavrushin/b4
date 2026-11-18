@@ -60,6 +60,37 @@ func TestAbsentEgressInterfaceClearsAStaleBlackhole(t *testing.T) {
 	}
 }
 
+func TestARouteWhoseInterfaceNeverAppearedIsPublishedWithoutItsRule(t *testing.T) {
+	familyResetGlobals(t)
+	rpFilterHarness(t, map[string]string{"all": "0", "lo": "0"})
+	prevSeen, prevRoutes := routeIfaceSeen, routeSetRoutes.Load()
+	routeIfaceSeen = make(map[string]bool)
+	t.Cleanup(func() {
+		routeIfaceSeen = prevSeen
+		routeSetRoutes.Store(prevRoutes)
+	})
+	publish := func(iface string) SetRoute {
+		t.Helper()
+		deferredEgressCommands(t, iface, true)
+		st := loopTestState(iface, false)
+		st.setID = "deferred"
+		routeRuleCache["deferred"] = st
+		routePublishMarksLocked()
+		r, ok := RoutingSetRoute("deferred")
+		if !ok {
+			t.Fatal("the set's route was not published")
+		}
+		return r
+	}
+
+	if r := publish("b4-no-such-iface0"); !r.RuleMissing {
+		t.Fatal("a set whose interface never appeared has no ip rule, yet its route was published as installed, so b4's own Telegram dials took its mark and left by the uplink with no warning")
+	}
+	if r := publish("lo"); r.RuleMissing {
+		t.Fatal("once the interface exists and its rule is added, the route must be published as installed again")
+	}
+}
+
 func TestPresentEgressInterfaceStillGetsItsRuleAndKillSwitch(t *testing.T) {
 	rpFilterHarness(t, map[string]string{"all": "0", "lo": "0"})
 	prevSeen := routeIfaceSeen

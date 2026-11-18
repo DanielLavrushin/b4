@@ -386,10 +386,17 @@ func TestAQueueFamilyChangeRebuildsThePoolsOfAnInterfaceTelegramSet(t *testing.T
 }
 
 func TestAMissingRouteLeavesTheTelegramConnectionsAsTheyWereWithoutASet(t *testing.T) {
-	for _, mode := range []string{config.RoutingModeInterface, config.RoutingModeProxy} {
-		t.Run(mode, func(t *testing.T) {
-			useTelegramSet(t, routedTelegramConfig(mode))
-			useTelegramRouting(t, nil, &fakeSetDialer{})
+	for _, tc := range []struct {
+		name, mode string
+		route      *TelegramRoute
+	}{
+		{name: config.RoutingModeInterface, mode: config.RoutingModeInterface},
+		{name: config.RoutingModeProxy, mode: config.RoutingModeProxy},
+		{name: "interface without its rule", mode: config.RoutingModeInterface, route: &TelegramRoute{Mode: config.RoutingModeInterface, Mark: 0x2a, IPv4: true, RuleMissing: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			useTelegramSet(t, routedTelegramConfig(tc.mode))
+			useTelegramRouting(t, tc.route, &fakeSetDialer{})
 			want := map[string]uint{
 				"direct TCP":         uint(config.SelfDialMark),
 				"DC relay":           uint(config.SelfDialMark),

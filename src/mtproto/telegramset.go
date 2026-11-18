@@ -16,10 +16,11 @@ import (
 )
 
 type TelegramRoute struct {
-	Mode string
-	Mark uint32
-	IPv4 bool
-	IPv6 bool
+	Mode        string
+	Mark        uint32
+	IPv4        bool
+	IPv6        bool
+	RuleMissing bool
 }
 
 type TelegramSetDialer interface {
@@ -153,7 +154,7 @@ func currentTelegramPath() telegramPath {
 	switch sel.mode {
 	case config.RoutingModeInterface:
 		if hooks != nil && hooks.routeOf != nil {
-			if r, ok := hooks.routeOf(sel.id); ok && r.Mode == config.RoutingModeInterface && r.Mark != 0 {
+			if r, ok := hooks.routeOf(sel.id); ok && r.Mode == config.RoutingModeInterface && r.Mark != 0 && !r.RuleMissing {
 				noteTelegramRoute(sel, true)
 				return telegramPath{kind: telegramPathInterface, mark: r.Mark, ipv4: r.IPv4, ipv6: r.IPv6, setID: sel.id}
 			}

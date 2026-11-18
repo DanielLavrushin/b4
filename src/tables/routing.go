@@ -162,10 +162,11 @@ var (
 )
 
 type SetRoute struct {
-	Mode string
-	Mark uint32
-	IPv4 bool
-	IPv6 bool
+	Mode        string
+	Mark        uint32
+	IPv4        bool
+	IPv6        bool
+	RuleMissing bool
 }
 
 func routePublishMarksLocked() {
@@ -175,7 +176,7 @@ func routePublishMarksLocked() {
 		if st.mode == config.RoutingModeInterface && st.iface != "" && st.mark != 0 {
 			marks[st.iface] = append(marks[st.iface], st.mark)
 		}
-		routes[id] = SetRoute{Mode: st.mode, Mark: st.mark, IPv4: st.ipv4, IPv6: st.ipv6}
+		routes[id] = SetRoute{Mode: st.mode, Mark: st.mark, IPv4: st.ipv4, IPv6: st.ipv6, RuleMissing: routeRuleless[id]}
 	}
 	routeMarksByIface.Store(&marks)
 	routeSetRoutes.Store(&routes)
@@ -938,6 +939,7 @@ func RoutingClearAll() {
 	routeForgetRtTableNames()
 	routeForgetRPFilterState()
 	routeIfaceSeen = make(map[string]bool)
+	routeRuleless = make(map[string]bool)
 	routeForgetCTMarkVerdict()
 	routeLastReResolve = make(map[string]time.Time)
 	routeLearnLast = make(map[string]time.Time)
@@ -1214,6 +1216,7 @@ func routingForceResync(cfg *config.Config) {
 	defer routeMu.Unlock()
 	defer routePublishMarksLocked()
 	routeRuleCache = make(map[string]routeState)
+	routeRuleless = make(map[string]bool)
 	routeIfaceAuto = make(map[string]routeState)
 	routeLastReResolve = make(map[string]time.Time)
 	routeLearnLast = make(map[string]time.Time)
@@ -2306,6 +2309,7 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 	prioStr := fmt.Sprintf("%d", prio)
 
 	addRules := func() {
+		delete(routeRuleless, st.setID)
 		for _, fam := range routeFamilyArgs(ipv4, ipv6) {
 			if lines, read := routeRuleLines(fam); read && routeRuleInstalledAt(lines, mark, table, prio) {
 				continue
@@ -2319,6 +2323,7 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 
 	if _, err := net.InterfaceByName(iface); err != nil {
 		if !routeIfaceWasSeen(iface) {
+			routeRuleless[st.setID] = true
 			routeDelRuleAllForms(mark, tableStr)
 			routeApplyKillSwitch(st, false, ipv4, ipv6)
 			log.Warnf("Routing: set '%s' routes to %s, which has never appeared on this router (%v), so b4 installs no rule for it. A blackhole ends a route lookup instead of falling through, and arming one for an interface that was never there would drop every address the set matches", st.setID, iface, err)
@@ -2353,6 +2358,8 @@ func routeEnsurePolicyRouting(st routeState, ipv4, ipv6 bool) {
 }
 
 var routeIfaceSeen = make(map[string]bool)
+
+var routeRuleless = make(map[string]bool)
 
 func routeIfaceMarkSeen(iface string) {
 	if iface != "" {
