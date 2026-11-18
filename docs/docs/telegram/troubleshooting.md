@@ -115,7 +115,7 @@ The line under the **Bridge status** box appears once a counter is above zero.
 
 | Counter | Counts | What to do |
 | --- | --- | --- |
-| **Passed on undecoded** | Connections that were not MTProto, such as HTTPS to Telegram's web hosts, and sessions b4 could not map to a data centre. They go on to the Cloudflare Worker or directly. | Nothing: a growing count is not a fault in itself. |
+| **Passed on undecoded** | Connections that were not MTProto, such as HTTPS to Telegram's web hosts, and sessions b4 could not map to a data centre. They go on to the Cloudflare Worker, or directly, which with a Telegram set chosen means through that set. | Nothing: a growing count is not a fault in itself. |
 | **data center dial failures** | Sessions for which no route to Telegram connected. The log shows `bridge dial DC <n> failed`. | The causes under [Dialling fails](#dialling-fails), apart from the DC Relay, which the bridge does not use. |
 | **closed without a handshake** | Connections that closed, or stayed silent for the whole **Bridge Handshake Wait (sec)**, before sending anything. | Nothing: Telegram opens connections before it needs them. A shorter wait produces more. |
 

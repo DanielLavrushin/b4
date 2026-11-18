@@ -126,5 +126,6 @@ The section opens on its own when either field is set.
 The tab applies on **Save Changes**, without restarting the service.
 
 - A change to **Enable MTProto Proxy**, **Bind Address**, **Port**, **Fake SNI Domain**, **Transport mode**, **Custom WebSocket domain**, the WS edge IP, the fronting name or a CF proxy setting restarts the MTProto proxy.
+- A change to the **Telegram set** or its route also closes the open sessions of the MTProto proxy and of Telegram over WebSocket, and the clients reconnect on the new path.
 - Secrets apply without a restart. A secret switched off or removed loses its open connections.
 - The WEB proxy's switch and hostname apply from the next request. A new relay port or certificate restarts only the relay's listener.

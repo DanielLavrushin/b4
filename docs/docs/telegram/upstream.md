@@ -53,18 +53,22 @@ The log lines that identify each case are under [Telegram problems](./troublesho
 **Telegram set** names the set that handles b4's own connections to Telegram: the
 connections of the MTProto proxy and of Telegram over WebSocket on every route, the CF proxy
 pool, a custom WebSocket domain and Cloudflare Workers included, the connection test on this
-card, and the downloads of Telegram's address lists. No other set handles these connections,
+card, the connections Telegram over WebSocket passes on, and the downloads of Telegram's address
+lists. No other set handles these connections,
 whatever it targets. With **No set**, the default, they are processed as
 [DPI processing](./websocket-bridge.md#dpi-processing) describes.
 
-A set without routing applies its strategy to these connections, and to the Worker
-connections only while **Let sets process Worker connections** is on. A set routed through an
+A set without routing applies its strategy to these connections on the ports b4 processes, 443
+and those in the sets' TCP port filters, so a DC Relay on other ports gets no strategy. It
+applies to the Worker connections only while **Let sets process Worker connections** is on. A set routed through an
 interface carries them on that interface's route, and a proxy set through its upstream; neither
 applies its strategy to them. With **Send domain name to upstream** on, the default, the upstream
 gets the host names; otherwise, and for a name pinned in the set, it gets the address the set's
 DNS settings give. The route is installed
 for the chosen set even when it has no targets of its own. **Test connection** uses the set
-once the choice is saved.
+once the choice is saved. Saving a change to the Telegram set or its route closes the open
+sessions of the MTProto proxy and of Telegram over WebSocket, and the clients reconnect on the
+new path.
 
 **Create a Telegram set** adds an enabled set named Telegram, with no targets and routing off,
 and selects it. Both are saved with **Save Changes**. The set's strategy is edited on the

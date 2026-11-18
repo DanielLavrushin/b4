@@ -50,9 +50,9 @@ rule without a mask, such as nftables `meta mark set 0x00021546` or iptables
 | 15 by default | `0x8000` by default | The queue mark: packets b4 sends from its raw sockets, except those toward a device in TUN mode, the DNS queries it sends for clients and for its sets, and its probes that bypass its own processing | **Packet Mark** under **Settings, Core, Packet Engine**, `0x8000` (32768) by default |
 | 18 | `0x40000` | Connections b4 opens to the upstream of a proxy set, to Telegram, the Community Hub, ipinfo and RIPEstat, and its transparent listeners; see [socket marks](#socket-marks) | Fixed |
 | 21 | `0x200000` | b4's own connections whose outgoing packets packet processing leaves alone; b4 recognizes them by the whole of `0x240000`, not by this bit | Fixed, carried together with bit 18 as `0x240000` |
-| 26 | `0x4000000` | b4's own connections to Telegram while a **Telegram set** is chosen; see [connections b4 opens itself](#connections-b4-opens-itself) | Fixed, carried together with bit 18 as `0x4040000` |
 | 24 | `0x1000000` | A proxy set's TCP packet that the router sent itself | Fixed, added to the set's mark |
 | 25 | `0x2000000` | NFQUEUE mode: the packets b4 sends into a connection from its raw sockets, such as fakes, split segments and re-sent SYNs; see [connections b4 sends packets into](#connections-b4-sends-packets-into) | Fixed, added to the queue mark |
+| 26 | `0x4000000` | b4's own connections to Telegram while a **Telegram set** is chosen; see [connections b4 opens itself](#connections-b4-opens-itself) | Fixed, carried together with bit 18 as `0x4040000` |
 | 28 | `0x10000000` | TUN mode: packets b4 writes back | Fixed, added to the queue mark |
 | 29 | `0x20000000` | Packets b4 sends toward a device on the network | Fixed; added to the queue mark in NFQUEUE mode, and to Discovery's injected mark on the packets a Discovery run sends back toward its probes |
 | 30 | `0x40000000` | TUN mode: packets steered into `b4tun0`; unused when the default route itself points at `b4tun0` | Fixed |
