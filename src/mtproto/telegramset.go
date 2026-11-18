@@ -225,7 +225,7 @@ func coverDialMark() uint {
 	return selfDialMark() &^ uint(config.TelegramSetBit)
 }
 
-func dialTelegramVia(mark uint, addr string, timeout time.Duration) (net.Conn, bool, error) {
+func dialTelegramVia(ctx context.Context, mark uint, addr string, timeout time.Duration) (net.Conn, bool, error) {
 	if mark&uint(config.TelegramSetBit) == 0 {
 		return nil, false, nil
 	}
@@ -242,7 +242,7 @@ func dialTelegramVia(mark uint, addr string, timeout time.Duration) (net.Conn, b
 	if err != nil {
 		return nil, true, fmt.Errorf("port of %s: %w", addr, err)
 	}
-	return dialViaWithin(hooks.via, p.setID, host, port, timeout)
+	return dialViaWithin(ctx, hooks.via, p.setID, host, port, timeout)
 }
 
 type telegramViaTimeout struct{}
@@ -253,36 +253,43 @@ func (telegramViaTimeout) Temporary() bool { return true }
 
 var errTelegramViaTimeout error = telegramViaTimeout{}
 
-func dialViaWithin(via TelegramSetDialer, setID, host string, port int, timeout time.Duration) (net.Conn, bool, error) {
+func dialViaWithin(ctx context.Context, via TelegramSetDialer, setID, host string, port int, timeout time.Duration) (net.Conn, bool, error) {
 	type result struct {
 		conn    net.Conn
 		handled bool
 		err     error
 	}
-	timeout = max(timeout, time.Millisecond)
-	by := time.Now().Add(timeout)
+	by := time.Now().Add(max(timeout, time.Millisecond))
+	if d, ok := ctx.Deadline(); ok && d.Before(by) {
+		by = d
+	}
 	done := make(chan result, 1)
 	go func() {
 		conn, handled, err := via.DialViaSetBy(setID, host, port, by)
 		done <- result{conn, handled, err}
 	}()
-	timer := time.NewTimer(timeout)
+	timer := time.NewTimer(max(time.Until(by), time.Millisecond))
 	defer timer.Stop()
-	select {
-	case r := <-done:
-		return r.conn, r.handled, r.err
-	case <-timer.C:
+	abandon := func(cause error) (net.Conn, bool, error) {
 		go func() {
 			if r := <-done; r.conn != nil {
 				_ = r.conn.Close()
 			}
 		}()
-		return nil, true, fmt.Errorf("dial %s through set %s: %w", net.JoinHostPort(host, strconv.Itoa(port)), setID, errTelegramViaTimeout)
+		return nil, true, fmt.Errorf("dial %s through set %s: %w", net.JoinHostPort(host, strconv.Itoa(port)), setID, cause)
+	}
+	select {
+	case r := <-done:
+		return r.conn, r.handled, r.err
+	case <-timer.C:
+		return abandon(errTelegramViaTimeout)
+	case <-ctx.Done():
+		return abandon(ctx.Err())
 	}
 }
 
 func dialTelegramTCP(ctx context.Context, network, addr string, mark uint, timeout time.Duration) (net.Conn, error) {
-	if conn, handled, err := dialTelegramVia(mark, addr, timeout); handled {
+	if conn, handled, err := dialTelegramVia(ctx, mark, addr, timeout); handled {
 		return conn, err
 	}
 	if mark&uint(config.TelegramSetBit) != 0 && currentTelegramPath().kind != telegramPathStrategy {

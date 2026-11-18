@@ -555,7 +555,7 @@ func TestAPooledConnKeepsTheMarkItWasDialledWith(t *testing.T) {
 func TestADialThroughTheProxySetIsBoundByTheRaceDeadline(t *testing.T) {
 	via := &fakeSetDialer{listens: true, block: make(chan struct{})}
 	start := time.Now()
-	conn, handled, err := dialViaWithin(via, "tg", "149.154.167.51", 443, 50*time.Millisecond)
+	conn, handled, err := dialViaWithin(context.Background(), via, "tg", "149.154.167.51", 443, 50*time.Millisecond)
 	if !handled || conn != nil || !errors.Is(err, errTelegramViaTimeout) {
 		t.Fatalf("got %v, %v, %v, want a timeout handled by the set", conn, handled, err)
 	}
@@ -588,7 +588,7 @@ func TestADialThroughTheProxySetIsBoundByTheRaceDeadline(t *testing.T) {
 func TestADialThroughTheProxySetHandsTheSetItsDeadline(t *testing.T) {
 	via := &fakeSetDialer{listens: true}
 	start := time.Now()
-	conn, handled, err := dialViaWithin(via, "tg", "149.154.167.51", 443, 3*time.Second)
+	conn, handled, err := dialViaWithin(context.Background(), via, "tg", "149.154.167.51", 443, 3*time.Second)
 	if err != nil || !handled {
 		t.Fatalf("got %v, %v", handled, err)
 	}
@@ -600,6 +600,56 @@ func TestADialThroughTheProxySetHandsTheSetItsDeadline(t *testing.T) {
 	}
 }
 
+func TestADialThroughTheProxySetStopsWhenItsCallerGivesUp(t *testing.T) {
+	via := &fakeSetDialer{listens: true, block: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	conn, handled, err := dialViaWithin(ctx, via, "tg", "149.154.167.51", 443, 5*time.Second)
+	if !handled || conn != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v, %v, %v, want the set's dial abandoned with the caller", conn, handled, err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("the dial ran %v after its caller gave up at 50 ms", took)
+	}
+	close(via.block)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		via.mu.Lock()
+		n := len(via.served)
+		via.mu.Unlock()
+		if n == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the abandoned dial never finished")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	via.mu.Lock()
+	server := via.served[0]
+	via.mu.Unlock()
+	_ = server.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := server.Read(make([]byte, 1)); err == nil {
+		t.Fatal("the connection that arrived after the caller gave up must be closed, not leaked")
+	}
+
+	short, cancelShort := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancelShort()
+	want, _ := short.Deadline()
+	quick := &fakeSetDialer{listens: true}
+	conn, _, err = dialViaWithin(short, quick, "tg", "149.154.167.51", 443, 3*time.Second)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	_ = conn.Close()
+	quick.mu.Lock()
+	defer quick.mu.Unlock()
+	if len(quick.by) != 1 || !quick.by[0].Equal(want) {
+		t.Fatalf("the set was given the deadline %v, want the caller's earlier %v", quick.by, want)
+	}
+}
+
 func TestADialThatTimesOutThroughTheProxySetCoolsItsRouteLikeADirectOne(t *testing.T) {
 	tcpResetState()
 	wsResetState()
@@ -607,7 +657,7 @@ func TestADialThatTimesOutThroughTheProxySetCoolsItsRouteLikeADirectOne(t *testi
 	t.Cleanup(wsResetState)
 	via := &fakeSetDialer{listens: true, block: make(chan struct{})}
 	t.Cleanup(func() { close(via.block) })
-	_, _, err := dialViaWithin(via, "tg", "149.154.167.51", 443, 20*time.Millisecond)
+	_, _, err := dialViaWithin(context.Background(), via, "tg", "149.154.167.51", 443, 20*time.Millisecond)
 	ws := fmt.Errorf("tcp dial %s: %w", "149.154.167.220", err)
 	if !isDialTimeout(err) || !isDialTimeout(ws) {
 		t.Fatalf("a dial through the set that ran out of time is not taken for a timeout: %v", err)
