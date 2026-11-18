@@ -447,6 +447,75 @@ func TestAProxyTelegramSetDialsThroughItsUpstream(t *testing.T) {
 	}
 }
 
+func putTelegramRoute(t *testing.T, mode string, inPlace bool) {
+	t.Helper()
+	switch {
+	case !inPlace:
+		useTelegramRouting(t, nil, &fakeSetDialer{})
+	case mode == config.RoutingModeInterface:
+		useTelegramRouting(t, &TelegramRoute{Mode: mode, Mark: 0x2a, IPv4: true}, nil)
+	default:
+		useTelegramRouting(t, nil, &fakeSetDialer{listens: true})
+	}
+}
+
+func TestPoolSparesDialledBeforeTheTelegramRouteWasInPlaceAreNotHandedOut(t *testing.T) {
+	for _, mode := range []string{config.RoutingModeInterface, config.RoutingModeProxy} {
+		t.Run(mode, func(t *testing.T) {
+			wsResetState()
+			t.Cleanup(wsResetState)
+			port := blackholeListener(t)
+			useTelegramSet(t, routedTelegramConfig(mode))
+			putTelegramRoute(t, mode, false)
+
+			ws := newWSPool(MTProtoUpstream{}, selfDialMark(), wsPoolDefaultSize)
+			t.Cleanup(ws.close)
+			workers := newCFWorkerPool(selfDialMark())
+			t.Cleanup(workers.close)
+			cf := transportPlan{kind: transportWS, dc: 203, sni: "kws203.example.invalid", cfBase: "example.invalid"}
+			worker := transportPlan{kind: transportWS, dc: 2, sni: "w.example.workers.dev", dialHost: "w.example.workers.dev", isWorker: true}
+			park := func(c *wsConn) {
+				workers.mu.Lock()
+				workers.idle[planWorkerKey(worker)] = []cfWorkerEntry{{conn: c, created: time.Now()}}
+				workers.mu.Unlock()
+			}
+
+			offRoute := idleWSConn(t, port)
+			offRoute.mark = planDialMark(cf, ws.mark)
+			if !ws.offer(203, offRoute, cf) {
+				t.Fatal("the pool refused a spare")
+			}
+			offRouteWorker := idleWSConn(t, port)
+			offRouteWorker.mark = workerDialMark(workers.mark)
+			park(offRouteWorker)
+
+			putTelegramRoute(t, mode, true)
+
+			if got := ws.get(203); got != nil {
+				t.Fatal("the WebSocket pool handed out a spare dialled before the set's route was in place")
+			}
+			if got := workers.get(worker); got != nil {
+				t.Fatal("the Worker pool handed out a spare dialled before the set's route was in place")
+			}
+
+			onRoute := idleWSConn(t, port)
+			onRoute.mark = planDialMark(cf, ws.mark)
+			if !ws.offer(203, onRoute, cf) {
+				t.Fatal("the pool refused a spare dialled on the set's route")
+			}
+			if got := ws.get(203); got == nil || got.conn != onRoute {
+				t.Fatal("the WebSocket pool dropped a spare dialled on the set's route")
+			}
+			onRouteWorker := idleWSConn(t, port)
+			onRouteWorker.mark = workerDialMark(workers.mark)
+			park(onRouteWorker)
+			if got := workers.get(worker); got != onRouteWorker {
+				t.Fatal("the Worker pool dropped a spare dialled on the set's route")
+			}
+		})
+	}
+}
+
 func TestADialThroughTheProxySetIsBoundByTheRaceDeadline(t *testing.T) {
 	via := &fakeSetDialer{listens: true, block: make(chan struct{})}
 	start := time.Now()

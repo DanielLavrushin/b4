@@ -54,6 +54,7 @@ type wsConn struct {
 	rxBuf  []byte
 	wMu    sync.Mutex
 	closed atomic.Bool
+	mark   uint
 }
 
 func (c *wsConn) Read(p []byte) (int, error) {
@@ -561,5 +562,5 @@ func dialWSEndpoint(host, sni, hostHeader, path string, timeout time.Duration, m
 	resp.Body.Close()
 
 	_ = tlsConn.SetDeadline(time.Time{})
-	return &wsConn{tls: tlsConn, br: br}, nil
+	return &wsConn{tls: tlsConn, br: br, mark: mark}, nil
 }

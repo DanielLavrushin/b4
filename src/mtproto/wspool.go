@@ -663,7 +663,7 @@ func (p *wsPool) get(dc int) *wsPoolConn {
 		if !ok {
 			break
 		}
-		if e.conn.closed.Load() || now.Sub(e.created) > p.maxAge || !e.conn.alive() {
+		if e.conn.closed.Load() || now.Sub(e.created) > p.maxAge || e.conn.mark != planDialMark(e.plan, p.mark) || !e.conn.alive() {
 			go func(c *wsConn) { _ = c.Close() }(e.conn)
 			dropped++
 			continue
