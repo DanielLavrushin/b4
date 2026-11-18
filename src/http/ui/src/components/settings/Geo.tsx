@@ -601,6 +601,7 @@ export const GeoSettings = ({
     try {
       const result = await geodatApi.upload(file, "geosite", destPath);
       setGeositeStatus(t("settings.Geo.uploadSuccess"));
+      handleGeositeSourceChange(LOCAL_SOURCE);
       setGeositeUnmatched(
         unmatchedOf(result.unmatched, "geosite_categories"),
       );
@@ -623,6 +624,7 @@ export const GeoSettings = ({
     try {
       const result = await geodatApi.upload(file, "geoip", destPath);
       setGeoipStatus(t("settings.Geo.uploadSuccess"));
+      handleGeoipSourceChange(LOCAL_SOURCE);
       setGeoipUnmatched(unmatchedOf(result.unmatched, "geoip_categories"));
       loadConfig();
       void checkFileStatus();
