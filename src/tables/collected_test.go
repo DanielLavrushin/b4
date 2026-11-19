@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/daniellavrushin/b4/config"
+	"net"
 	"slices"
 	"strings"
 	"testing"
@@ -641,6 +642,70 @@ func TestACollectedConsumerInstallsWithoutConnmark(t *testing.T) {
 	routeMu.Unlock()
 	if !present {
 		t.Error("the monitor finds a collected guard missing that the emitter never installs without connmark, so it rebuilds the routing on every tick")
+	}
+}
+
+func TestADNSAnswerInstallsACollectedConsumerLikeTheSync(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		connmark bool
+	}{
+		{"guard set not yet created", true},
+		{"no connmark on this firewall", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			staticResetGlobals(t)
+			localGuardReset(t)
+			emitted := captureProxyRuleArgv(t)
+			stubBinaries(t, backendIPTables, "ip", "ipset")
+			origStdin := runStdin
+			t.Cleanup(func() { runStdin = origStdin })
+			t.Cleanup(func() {
+				routeMu.Lock()
+				routeClearSyncRetry()
+				routeSyncOutcome = routeSyncReport{}
+				routeMu.Unlock()
+			})
+			created := map[string]bool{}
+			var restored []string
+			runStdin = func(stdin string, args ...string) error {
+				restored = append(restored, strings.Split(strings.TrimSpace(stdin), "\n")...)
+				return nil
+			}
+			run = refuseDeletes(func(args ...string) (string, error) {
+				*emitted = append(*emitted, strings.Join(args, " "))
+				if len(args) > 2 && args[0] == "ipset" && args[1] == "create" {
+					created[args[2]] = true
+				}
+				if !c.connmark && (slices.Contains(args, "connmark") || slices.Contains(args, "CONNMARK")) {
+					return "iptables v1.8.7 (legacy): Couldn't load match `connmark':No such file or directory", errors.New("exit status 2")
+				}
+				if i := slices.Index(args, "--match-set"); i >= 0 && i+1 < len(args) && strings.HasSuffix(args[i+1], "c") && !created[args[i+1]] {
+					return fmt.Sprintf("iptables v1.8.7 (legacy): Set %s doesn't exist.", args[i+1]), errors.New("exit status 2")
+				}
+				return "", nil
+			})
+
+			proxy := collectedConnmarkTestSet("dnscollect", config.RoutingModeProxy, "203.0.113.9")
+			cfg := familyTestConfig(true, false)
+			cfg.Sets = []*config.SetConfig{proxy}
+			view := cfg.WithCollectedIPs([]string{"198.51.100.1"})
+			routeEngine = &routeIptBackend{}
+			guard, _ := routeBuildSetNames(proxy.Id)
+			guard += "c"
+
+			RoutingHandleDNS(view, view.Sets[0], []net.IP{net.ParseIP("203.0.113.20")})
+
+			routeMu.Lock()
+			_, installed := routeRuleCache[proxy.Id]
+			routeMu.Unlock()
+			if !installed {
+				t.Fatalf("a DNS answer for a collected consumer that no sync installed yet failed to install it, while a sync installs the same set:\n%s", strings.Join(*emitted, "\n"))
+			}
+			if !slices.Contains(restored, "add "+guard+" 198.51.100.1 timeout 0") {
+				t.Errorf("the DNS install left the guard set %s without the collected address, ipset restore got %q", guard, restored)
+			}
+		})
 	}
 }
 

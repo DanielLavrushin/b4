@@ -317,6 +317,50 @@ func TestNetnsACollectedConsumerSurvivesARoutingModeChangeNft(t *testing.T) {
 	netnsACollectedConsumerSurvivesARoutingModeChange(t, backendNFTables)
 }
 
+func netnsADNSAnswerInstallsACollectedConsumer(t *testing.T, engine string) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	netnsRequireEngine(t, engine)
+	netnsTurnOnForwarding(t)
+	forgetInstallFailures(t)
+	dev := netnsStartDevice(t)
+
+	routeEngine = nil
+	base := netnsLocalGuardConfig(engine, "", []string{netnsDevOther})
+	base.Sets[0].Targets.UseCollectedIPs = true
+	if err := AddRules(base); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	t.Cleanup(func() {
+		RoutingClearAll()
+		_ = ClearRules(base)
+		routeEngine = nil
+	})
+	view := base.WithCollectedIPs([]string{netnsDevInet})
+	RoutingHandleDNS(view, view.Sets[0], []net.IP{net.ParseIP(netnsCollectedNext)})
+	routeMu.Lock()
+	st, ok := routeRuleCache[view.Sets[0].Id]
+	routeMu.Unlock()
+	if !ok {
+		netnsLogState(t, engine)
+		t.Fatal("a DNS answer for a collected consumer that no sync had installed yet did not install it, so the set routes nothing until the next sync")
+	}
+	if !RoutingRulesPresent(view) {
+		t.Error("after the DNS install the monitor finds the consumer's rules missing")
+	}
+	port, _ := portFromState(st)
+	go netnsServeEcho(netnsMarkedTransparentListener(t, port, SelfDialMark))
+	netnsCollectedIsProxied(t, dev, netnsDevInet, "after a DNS answer installed the consumer")
+}
+
+func TestNetnsADNSAnswerInstallsACollectedConsumer(t *testing.T) {
+	netnsADNSAnswerInstallsACollectedConsumer(t, backendIPTables)
+}
+
+func TestNetnsADNSAnswerInstallsACollectedConsumerNft(t *testing.T) {
+	netnsADNSAnswerInstallsACollectedConsumer(t, backendNFTables)
+}
+
 func netnsASourceScopedCollectedConsumerIsNotRestoredEveryTick(t *testing.T, engine string) {
 	netnsRequire(t)
 	netnsSetupLinks(t)

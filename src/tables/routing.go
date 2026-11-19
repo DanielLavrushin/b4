@@ -292,13 +292,16 @@ func routeHandleDNS(cfg *config.Config, set *config.SetConfig, ips []net.IP, sta
 	}
 
 	if _, ok := routeRuleCache[set.Id]; !ok {
-		var err error
-		if config.RoutingIsBlock(cur.mode) {
-			err = routeEnsureBlockRule(be, cfg, set, cur, sources)
-		} else if config.RoutingUsesTProxy(cur.mode) {
-			err = routeEnsureProxyRule(be, cfg, set, cur, sources)
-		} else {
-			err = routeEnsureRule(be, cfg, set, cur, sources)
+		routeProbeCollectedConnmark(be, map[string]*config.SetConfig{set.Id: set})
+		err := routePrepareCollected(be, cfg, set, cur)
+		if err == nil {
+			if config.RoutingIsBlock(cur.mode) {
+				err = routeEnsureBlockRule(be, cfg, set, cur, sources)
+			} else if config.RoutingUsesTProxy(cur.mode) {
+				err = routeEnsureProxyRule(be, cfg, set, cur, sources)
+			} else {
+				err = routeEnsureRule(be, cfg, set, cur, sources)
+			}
 		}
 		if err != nil {
 			if hadPrevious {
