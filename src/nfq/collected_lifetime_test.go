@@ -340,3 +340,26 @@ func TestCollectedPoolStringsStateTheExpiry(t *testing.T) {
 		}
 	}
 }
+
+func TestCollectedPoolStringsSayWhichAnswersDropAnAddress(t *testing.T) {
+	for locale, phrase := range map[string]string{"en": "a connection that IP block detection watches", "ru": "на соединение, которое отслеживает обнаружение блокировки по IP"} {
+		raw, err := os.ReadFile("../http/ui/src/i18n/" + locale + ".json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc map[string]any
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range []string{"sets.targets.useCollectedIpsDesc", "dashboard.collected.subtitle"} {
+			var node any = doc
+			for _, part := range strings.Split(path, ".") {
+				node, _ = node.(map[string]any)[part]
+			}
+			text, _ := node.(string)
+			if !strings.Contains(text, phrase) {
+				t.Errorf("%s %s must say that only an answer on a connection IP Block Detection watches drops an address, got %q", locale, path, text)
+			}
+		}
+	}
+}
