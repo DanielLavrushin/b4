@@ -39,6 +39,8 @@ type Pool struct {
 	collectedEngineTUN bool
 	collectedRetryAt   time.Time
 	collectedRetryWait time.Duration
+	collectedRefused   uint64
+	collectedFullNoted bool
 	collectedPubGen    uint64
 	collectedViewBase  *config.Config
 	collectedViewGen   uint64

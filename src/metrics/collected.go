@@ -16,14 +16,26 @@ type CollectedEntry struct {
 }
 
 type CollectedList struct {
-	Rev   uint64           `json:"rev"`
-	Items []CollectedEntry `json:"items"`
+	Rev     uint64           `json:"rev"`
+	Items   []CollectedEntry `json:"items"`
+	Refused uint64           `json:"refused"`
 }
 
 type collectedState struct {
-	mu    sync.Mutex
-	rev   uint64
-	items []CollectedEntry
+	mu      sync.Mutex
+	rev     uint64
+	items   []CollectedEntry
+	refused uint64
+}
+
+func (m *MetricsCollector) UpdateCollectedRefused(refused uint64) {
+	s := &m.collected
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.refused != refused {
+		s.refused = refused
+		s.rev++
+	}
 }
 
 func (m *MetricsCollector) UpdateCollectedIPs(entries []CollectedEntry) {
@@ -54,5 +66,5 @@ func (s *collectedState) list() *CollectedList {
 	defer s.mu.Unlock()
 	items := make([]CollectedEntry, len(s.items))
 	copy(items, s.items)
-	return &CollectedList{Rev: s.rev, Items: items}
+	return &CollectedList{Rev: s.rev, Items: items, Refused: s.refused}
 }

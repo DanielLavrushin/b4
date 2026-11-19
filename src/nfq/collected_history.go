@@ -2,7 +2,9 @@ package nfq
 
 import (
 	"container/list"
+
 	"github.com/daniellavrushin/b4/ctnl"
+	"github.com/daniellavrushin/b4/log"
 )
 
 type collectedHistory struct {
@@ -24,8 +26,13 @@ func (t *destStateTracker) rememberCollectedLocked(h *helloWatch) bool {
 		return true
 	}
 	if len(t.collectHistory.flows) >= maxHelloWatches {
+		if !t.historyFullNoted {
+			t.historyFullNoted = true
+			log.Warnf("Collected IPs: %d connections of Collect sets are remembered, the maximum; new connections of Collect sets are not watched until older ones close", maxHelloWatches)
+		}
 		return false
 	}
+	t.historyFullNoted = false
 	if t.collectHistory.flows == nil {
 		t.collectHistory.flows = make(map[string]*list.Element)
 	}

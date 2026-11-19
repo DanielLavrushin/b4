@@ -38,3 +38,20 @@ func TestCollectedMetricsRevisionAndIndependentSnapshots(t *testing.T) {
 		t.Fatal("clear not transmitted")
 	}
 }
+
+func TestCollectedRefusalsBumpTheRevision(t *testing.T) {
+	m := &MetricsCollector{}
+	m.UpdateCollectedRefused(2)
+	sent := &SentRevs{}
+	if tick := m.Tick(sent); tick.Collected == nil || tick.Collected.Refused != 2 {
+		t.Fatalf("a refusal count must reach the next frame, got %+v", tick.Collected)
+	}
+	m.UpdateCollectedRefused(2)
+	if tick := m.Tick(sent); tick.Collected != nil {
+		t.Fatal("an unchanged refusal count sent the list again")
+	}
+	m.UpdateCollectedRefused(3)
+	if tick := m.Tick(sent); tick.Collected == nil || tick.Collected.Refused != 3 {
+		t.Fatal("a new refusal did not reach the frame")
+	}
+}

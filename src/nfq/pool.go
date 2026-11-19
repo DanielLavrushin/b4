@@ -122,6 +122,7 @@ func NewPool(cfg *config.Config) *Pool {
 	pool.collectedEngineTUN = cfg.Queue.Mode == "tun"
 	if !cfg.Queue.IsDiscovery {
 		metrics.GetMetricsCollector().UpdateCollectedIPs(nil)
+		metrics.GetMetricsCollector().UpdateCollectedRefused(0)
 	}
 	pool.collectedCtx, pool.collectedCancel = context.WithCancel(context.Background())
 	for _, w := range ws {

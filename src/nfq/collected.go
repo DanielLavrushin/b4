@@ -16,6 +16,7 @@ import (
 	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/log"
+	"github.com/daniellavrushin/b4/metrics"
 	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/tables"
 	"github.com/daniellavrushin/b4/utils"
@@ -344,6 +345,7 @@ func (p *Pool) sortCollected(w *Worker, completed []helloWatch) (fresh, again []
 				again = append(again, h)
 			}
 		case !pooled && len(p.collected) >= maxCollectedIPs:
+			p.refuseCollectedLocked()
 			w.destState.EndWatch(h)
 		default:
 			fresh = append(fresh, h)
@@ -426,6 +428,7 @@ func (p *Pool) addCollectedLocked(w *Worker, completed []helloWatch, now time.Ti
 		}
 		_, existed := p.collected[addr]
 		if !existed && len(p.collected) >= maxCollectedIPs {
+			p.refuseCollectedLocked()
 			w.destState.EndWatch(h)
 			continue
 		}
@@ -438,11 +441,22 @@ func (p *Pool) addCollectedLocked(w *Worker, completed []helloWatch, now time.Ti
 			}
 			p.collected[addr] = collectedCandidate{setID: h.setID, host: h.host, port: h.port, at: now}
 			p.collectedEpoch.Add(1)
+			p.collectedFullNoted = false
 		}
 		batch = append(batch, collectedEntry{watch: h, addr: addr, added: !existed})
 	}
 	p.mirrorPooledLocked(w.destState)
 	return batch
+}
+
+func (p *Pool) refuseCollectedLocked() {
+	p.collectedRefused++
+	metrics.GetMetricsCollector().UpdateCollectedRefused(p.collectedRefused)
+	if p.collectedFullNoted {
+		return
+	}
+	p.collectedFullNoted = true
+	log.Warnf("Collected IPs: the pool holds %d addresses, the maximum; new addresses are not collected until some expire or are removed", maxCollectedIPs)
 }
 
 func (p *Pool) dropCollectedLocked(w *Worker, batch []collectedEntry) {
@@ -884,8 +898,15 @@ func (t *destStateTracker) countCollectRunLocked(key string, counted bool, now t
 			}
 		}
 		if len(t.collectRuns) >= maxCollectedRuns {
+			if !t.runsFullNoted {
+				t.runsFullNoted = true
+				log.Warnf("Collected IPs: silent connections to %d addresses are being counted, the maximum; silent connections to other addresses are not counted until some counts end", maxCollectedRuns)
+			}
 			return 0, false
 		}
+	}
+	if !known {
+		t.runsFullNoted = false
 	}
 	if t.collectRuns == nil {
 		t.collectRuns = make(map[string]collectRun)
