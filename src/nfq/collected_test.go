@@ -207,7 +207,7 @@ func TestCollectedBoundsAndAddressEligibility(t *testing.T) {
 	w, p, sent := collectedRig(t, func(context.Context, *config.Config) error { installs++; return nil })
 	p.collected = make(map[netip.Addr]collectedCandidate)
 	for i := 0; i < maxCollectedIPs; i++ {
-		p.collected[netip.AddrFrom4([4]byte{8, 1, byte(i >> 8), byte(i)})] = collectedCandidate{}
+		p.collected[netip.AddrFrom4([4]byte{8, 1, byte(i >> 8), byte(i)})] = collectedCandidate{at: time.Now()}
 	}
 	w.ProcessPacket(silentHelloFrom(42000))
 	if !w.destState.Watching() {

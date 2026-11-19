@@ -12,6 +12,7 @@ type CollectedEntry struct {
 	Host  string `json:"host"`
 	Set   string `json:"set"`
 	Since int64  `json:"since"`
+	Until int64  `json:"until"`
 }
 
 type CollectedList struct {

@@ -270,6 +270,8 @@ type destStateTracker struct {
 	collectHistory   collectedHistory
 	collectDeadlines collectedDeadlineHeap
 	collectRuns      map[string]collectRun
+	collectPooled    map[string]bool
+	collectAnswered  map[string]bool
 	collectWake      chan struct{}
 	watching         atomic.Int32
 	collectWatching  atomic.Int32

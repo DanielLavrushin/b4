@@ -36,6 +36,11 @@ type collectedCandidate struct {
 	at        time.Time
 	published uint64
 	lateNoted bool
+	drop      bool
+}
+
+func (c collectedCandidate) until() time.Time {
+	return c.at.Add(config.CollectedIPTTL)
 }
 
 type collectRun struct {
@@ -156,15 +161,16 @@ func (p *Pool) collectedPass(now time.Time) {
 }
 
 func (p *Pool) applyCollected(w *Worker, completed []helloWatch, now time.Time) {
+	removed := p.expireCollected(w, now)
 	fresh, again := p.sortCollected(w, completed)
 	owned, prepared := p.ownCollected(w, fresh)
 	p.configMu.Lock()
-	batch := p.addCollectedLocked(w, owned)
-	due := len(batch) > 0 || p.collectedDueLocked(now)
+	batch := p.addCollectedLocked(w, owned, now)
+	due := len(batch) > 0 || len(removed) > 0 || p.collectedDueLocked(now)
 	before := p.publishedCollected()
 	p.configMu.Unlock()
 	if due {
-		p.publishCompleted(w, batch, before, prepared, now)
+		p.publishCompleted(w, batch, removed, before, prepared, now)
 	}
 	if len(again) > 0 {
 		settler := p.newCollectedSettler()
@@ -173,7 +179,90 @@ func (p *Pool) applyCollected(w *Worker, completed []helloWatch, now time.Time) 
 	}
 }
 
-func (p *Pool) publishCompleted(w *Worker, batch []collectedEntry, before []string, prepared *collectedPrepared, now time.Time) {
+func (p *Pool) expireCollected(w *Worker, now time.Time) map[netip.Addr]collectedCandidate {
+	answered := w.destState.takeCollectAnswered()
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
+	for addr, candidate := range p.collected {
+		if !candidate.drop && answered[iphealth.BanKey(net.IP(addr.AsSlice()), int(candidate.port))] {
+			candidate.drop = true
+			p.collected[addr] = candidate
+		}
+	}
+	if now.Before(p.collectedRetryAt) {
+		return nil
+	}
+	var gone []netip.Addr
+	for addr, candidate := range p.collected {
+		if candidate.drop || !now.Before(candidate.until()) {
+			gone = append(gone, addr)
+		}
+	}
+	return p.removeCollectedLocked(w.destState, gone)
+}
+
+func (p *Pool) collectedTracker() *destStateTracker {
+	if len(p.Workers) > 0 && p.Workers[0].destState != nil {
+		return p.Workers[0].destState
+	}
+	if p.state != nil {
+		return p.state.destState
+	}
+	return nil
+}
+
+func (p *Pool) removeCollectedLocked(t *destStateTracker, addrs []netip.Addr) map[netip.Addr]collectedCandidate {
+	removed := make(map[netip.Addr]collectedCandidate, len(addrs))
+	for _, addr := range addrs {
+		if candidate, pooled := p.collected[addr]; pooled {
+			removed[addr] = candidate
+			delete(p.collected, addr)
+		}
+	}
+	if len(removed) == 0 {
+		return nil
+	}
+	p.collectedEpoch.Add(1)
+	p.mirrorPooledLocked(t)
+	return removed
+}
+
+func (p *Pool) restoreCollectedLocked(removed map[netip.Addr]collectedCandidate, drop bool) {
+	if len(removed) == 0 {
+		return
+	}
+	for addr, candidate := range removed {
+		if _, back := p.collected[addr]; !back {
+			if p.collected == nil {
+				p.collected = make(map[netip.Addr]collectedCandidate)
+			}
+			candidate.drop = candidate.drop || drop
+			p.collected[addr] = candidate
+		}
+	}
+	p.collectedEpoch.Add(1)
+	p.mirrorPooledLocked(p.collectedTracker())
+}
+
+func (p *Pool) mirrorPooledLocked(t *destStateTracker) {
+	if t == nil {
+		return
+	}
+	pooled := make(map[string]bool, len(p.collected))
+	for addr, candidate := range p.collected {
+		pooled[iphealth.BanKey(net.IP(addr.AsSlice()), int(candidate.port))] = true
+	}
+	t.watchMu.Lock()
+	defer t.watchMu.Unlock()
+	t.collectPooled = pooled
+	for key := range t.collectAnswered {
+		if !pooled[key] {
+			delete(t.collectAnswered, key)
+		}
+	}
+}
+
+func (p *Pool) publishCompleted(w *Worker, batch []collectedEntry, removed map[netip.Addr]collectedCandidate, before []string, prepared *collectedPrepared, now time.Time) {
 	result := p.publishCollectedWith(false, prepared)
 	p.configMu.Lock()
 	var targets []collectedTarget
@@ -184,12 +273,17 @@ func (p *Pool) publishCompleted(w *Worker, batch []collectedEntry, before []stri
 		p.collectedDirty = true
 	case collectedFailed:
 		p.dropCollectedLocked(w, batch)
+		p.restoreCollectedLocked(removed, true)
+		p.collectedDirty = p.collectedDirty || len(removed) > 0
 		if p.collectedDirty {
 			p.collectedRetryWait = min(max(2*p.collectedRetryWait, collectedRetryFirst), collectedRetryMax)
 			p.collectedRetryAt = now.Add(p.collectedRetryWait)
 		}
 	}
 	p.configMu.Unlock()
+	if result.outcome != collectedFailed {
+		w.destState.forgetCollected(removed)
+	}
 	if result.needsRollback() {
 		p.rollbackCollected()
 	}
@@ -319,7 +413,7 @@ func (p *Pool) ownCollected(w *Worker, fresh []helloWatch) ([]helloWatch, *colle
 	return owned, prepared
 }
 
-func (p *Pool) addCollectedLocked(w *Worker, completed []helloWatch) []collectedEntry {
+func (p *Pool) addCollectedLocked(w *Worker, completed []helloWatch, now time.Time) []collectedEntry {
 	if len(completed) == 0 {
 		return nil
 	}
@@ -342,11 +436,12 @@ func (p *Pool) addCollectedLocked(w *Worker, completed []helloWatch) []collected
 			if p.collected == nil {
 				p.collected = make(map[netip.Addr]collectedCandidate)
 			}
-			p.collected[addr] = collectedCandidate{setID: h.setID, host: h.host, port: h.port, at: time.Now()}
+			p.collected[addr] = collectedCandidate{setID: h.setID, host: h.host, port: h.port, at: now}
 			p.collectedEpoch.Add(1)
 		}
 		batch = append(batch, collectedEntry{watch: h, addr: addr, added: !existed})
 	}
+	p.mirrorPooledLocked(w.destState)
 	return batch
 }
 
@@ -358,6 +453,7 @@ func (p *Pool) dropCollectedLocked(w *Worker, batch []collectedEntry) {
 		}
 		w.destState.EndWatch(e.watch)
 	}
+	p.mirrorPooledLocked(w.destState)
 }
 
 func (p *Pool) publishedCollected() []string {
@@ -511,6 +607,7 @@ func (p *Pool) takeBackCollected(gone []netip.Addr) {
 		delete(p.collected, addr)
 	}
 	p.collectedEpoch.Add(1)
+	p.mirrorPooledLocked(p.collectedTracker())
 	p.configMu.Unlock()
 	result := p.publishCollected(false)
 	if result.outcome == collectedApplied {
@@ -726,8 +823,49 @@ func readCollectedFlow(h helloWatch) (ctnl.Flow, serverSilence, bool) {
 }
 
 func (t *destStateTracker) forgetCollectRunLocked(h *helloWatch) {
-	if !h.consumer && len(t.collectRuns) > 0 {
-		delete(t.collectRuns, iphealth.BanKey(h.dst, int(h.port)))
+	if h.consumer {
+		return
+	}
+	key := iphealth.BanKey(h.dst, int(h.port))
+	if len(t.collectRuns) > 0 {
+		delete(t.collectRuns, key)
+	}
+	if t.collectPooled[key] && !t.collectAnswered[key] && len(t.collectAnswered) < maxCollectedIPs {
+		if t.collectAnswered == nil {
+			t.collectAnswered = make(map[string]bool)
+		}
+		t.collectAnswered[key] = true
+	}
+}
+
+func (t *destStateTracker) takeCollectAnswered() map[string]bool {
+	if t == nil {
+		return nil
+	}
+	t.watchMu.Lock()
+	defer t.watchMu.Unlock()
+	answered := t.collectAnswered
+	t.collectAnswered = nil
+	return answered
+}
+
+func (t *destStateTracker) forgetCollected(removed map[netip.Addr]collectedCandidate) {
+	if t == nil {
+		return
+	}
+	t.watchMu.Lock()
+	defer t.watchMu.Unlock()
+	for key, h := range t.watches {
+		if addr, ok := netip.AddrFromSlice(h.dst); ok && h.collect {
+			if _, gone := removed[addr.Unmap()]; gone {
+				t.unwatchLocked(key)
+			}
+		}
+	}
+	for addr, candidate := range removed {
+		key := iphealth.BanKey(net.IP(addr.AsSlice()), int(candidate.port))
+		delete(t.collectRuns, key)
+		delete(t.collectAnswered, key)
 	}
 }
 

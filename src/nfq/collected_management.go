@@ -18,7 +18,7 @@ func (p *Pool) collectedEntriesLocked() []metrics.CollectedEntry {
 				name = set.Name
 			}
 		}
-		items = append(items, metrics.CollectedEntry{IP: ip.String(), Host: candidate.host, Set: name, Since: candidate.at.UnixMilli()})
+		items = append(items, metrics.CollectedEntry{IP: ip.String(), Host: candidate.host, Set: name, Since: candidate.at.UnixMilli(), Until: candidate.until().UnixMilli()})
 	}
 	slices.SortFunc(items, func(a, b metrics.CollectedEntry) int {
 		if a.Since > b.Since {
@@ -61,28 +61,21 @@ func (p *Pool) ClearCollectedIPs(raw string) (int, error) {
 	p.collectedApplyMu.Lock()
 	defer p.collectedApplyMu.Unlock()
 	p.configMu.Lock()
-	removed := make(map[netip.Addr]collectedCandidate)
-	for ip, candidate := range p.collected {
+	var gone []netip.Addr
+	for ip := range p.collected {
 		if !address.IsValid() || ip == address {
-			removed[ip] = candidate
-			delete(p.collected, ip)
+			gone = append(gone, ip)
 		}
 	}
+	removed := p.removeCollectedLocked(p.collectedTracker(), gone)
+	p.configMu.Unlock()
 	if len(removed) == 0 {
-		p.configMu.Unlock()
 		return 0, nil
 	}
-	p.collectedEpoch.Add(1)
-	p.configMu.Unlock()
 	result := p.publishCollected(false)
 	if result.outcome != collectedApplied {
 		p.configMu.Lock()
-		for ip, candidate := range removed {
-			if _, back := p.collected[ip]; !back {
-				p.collected[ip] = candidate
-			}
-		}
-		p.collectedEpoch.Add(1)
+		p.restoreCollectedLocked(removed, false)
 		p.collectedDirty = true
 		p.configMu.Unlock()
 		if result.needsRollback() {
@@ -90,20 +83,9 @@ func (p *Pool) ClearCollectedIPs(raw string) (int, error) {
 		}
 		return 0, errors.New("collected target removal could not be applied")
 	}
+	p.collectedTracker().forgetCollected(removed)
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
-	if p.state != nil && p.state.destState != nil {
-		t := p.state.destState
-		t.watchMu.Lock()
-		for key, h := range t.watches {
-			if addr, ok := netip.AddrFromSlice(h.dst); ok && h.collect {
-				if _, exists := removed[addr.Unmap()]; exists {
-					t.unwatchLocked(key)
-				}
-			}
-		}
-		t.watchMu.Unlock()
-	}
 	p.updateCollectedMetricsLocked()
 	return len(removed), nil
 }

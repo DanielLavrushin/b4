@@ -1099,18 +1099,18 @@
     },
     "collected": {
       "title": "Collected IPs",
-      "subtitle": "Addresses added by Collect detected IPs. A new detection can add a removed address again.",
+      "subtitle": "Addresses added by Collect detected IPs. Each one leaves the pool 6 hours after it was collected, or earlier if its server answers a set that does not use collected IPs. Two new silent connections in a row can add it again.",
       "empty": "No collected IPs.",
       "set": "Detected by {{set}}",
       "clear": "Clear pool",
       "remove": "Remove",
       "removeLabel": "Remove {{address}} from the collected pool",
-      "removeHint": "Removes this address from the collected pool. A new detection can add it again.",
+      "removeHint": "Removes this address from the collected pool now. Two new silent connections in a row can add it again.",
       "removed": "{{address}} removed from the collected pool.",
       "cleared": "Collected pool cleared.",
       "removeFailed": "Could not update the collected pool: {{error}}",
       "confirmTitle": "Clear collected IPs?",
-      "confirmBody": "Remove all addresses from the collected pool? New detections can add them again."
+      "confirmBody": "Remove all addresses from the collected pool now? Each one otherwise leaves 6 hours after it was collected, and two new silent connections in a row can add it again."
     },
     "bans": {
       "title": "Banned addresses",
@@ -1774,7 +1774,7 @@
       "deviceNoDestination": "Source devices narrow who this set applies to; they do not select traffic on their own. With routing on and no domain, IP or ASN target, this set steers nothing. To send everything from these devices, turn on \"Match any IP address\" on the IP addresses tab.",
       "catchAllIpsPartial": "This set holds {{present}}, but not {{missing}}. Turn the switch on to cover every address, or add the missing entry below.",
       "useCollectedIps": "Use collected IPs",
-      "useCollectedIpsDesc": "Adds candidates from the shared detected-IP pool to this set’s IP targets. The pool is cleared when b4 restarts."
+      "useCollectedIpsDesc": "Adds candidates from the shared detected-IP pool to this set’s IP targets. An address stays in the pool for 6 hours after it was collected, or less if its server answers a set that does not use collected IPs. The pool is cleared when b4 restarts."
     },
     "tcp": {
       "sectionTitle": "TCP Configuration",

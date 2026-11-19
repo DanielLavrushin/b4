@@ -1,6 +1,11 @@
 package config
 
-import "net/netip"
+import (
+	"net/netip"
+	"time"
+)
+
+const CollectedIPTTL = 6 * time.Hour
 
 func (c *IPBlockDetectConfig) Collects() bool {
 	return c.Enabled && c.Action == "collect"
