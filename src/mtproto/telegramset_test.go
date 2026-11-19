@@ -657,6 +657,23 @@ func TestADialThroughTheProxySetStopsWhenItsCallerGivesUp(t *testing.T) {
 	}
 }
 
+func TestATelegramDialThroughTheProxySetHonoursItsCallersContext(t *testing.T) {
+	useTelegramSet(t, routedTelegramConfig(config.RoutingModeProxy))
+	via := &fakeSetDialer{listens: true, block: make(chan struct{})}
+	t.Cleanup(func() { close(via.block) })
+	useTelegramRouting(t, nil, via)
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	_, err := dialTelegramTCP(ctx, "tcp", "149.154.167.51:443", uint(config.TelegramSetDialMark), 5*time.Second)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v, want the dial ended with its caller", err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("the dial through the set ran %v after its caller gave up at 50 ms", took)
+	}
+}
+
 func TestADialThatTimesOutThroughTheProxySetCoolsItsRouteLikeADirectOne(t *testing.T) {
 	tcpResetState()
 	wsResetState()

@@ -88,6 +88,24 @@ func TestDialNamedRetriesWithTheAddressWhenTheNameIsRefused(t *testing.T) {
 	}
 }
 
+func TestDialNamedDoesNotRetryAnAddressTheUpstreamRefused(t *testing.T) {
+	up := startMockSocks(t, 0, func(byte) byte { return 4 })
+	l := newTestListener(t, up.port(), fakeNames{})
+
+	_, err := l.DialNamed("149.154.167.51", 443)
+	if !socks5.IsConnectRejected(err) {
+		t.Fatalf("DialNamed: %v, want the upstream's refusal", err)
+	}
+	if r := up.next(t); r.atyp != 1 || r.host != "149.154.167.51" {
+		t.Fatalf("CONNECT: atyp %d host %q", r.atyp, r.host)
+	}
+	select {
+	case r := <-up.reqs:
+		t.Fatalf("a refused address was resolved and asked again as %q; the retry is for a refused name only", r.host)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
 func TestDialNamedFailsOpenToADirectConnection(t *testing.T) {
 	dead, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
