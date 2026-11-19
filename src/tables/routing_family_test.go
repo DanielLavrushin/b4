@@ -39,6 +39,9 @@ func familyResetGlobals(t *testing.T) {
 	t.Helper()
 	engine, cache, auto, refreshed := routeEngine, routeRuleCache, routeIfaceAuto, routeRefreshedAt
 	collected := routeCollectedApplied
+	routeCollectedConnmarkMu.Lock()
+	connmark := routeCollectedConnmarkProbed
+	routeCollectedConnmarkMu.Unlock()
 	logged, delRule := runLogged, routeDelRuleLoop
 	addCheck, delCheck := routeAddSourceCheckRule, routeDelSourceCheckRule
 	hostIfaces, linkType := routeHostIfaces, routeLinkType
@@ -56,6 +59,10 @@ func familyResetGlobals(t *testing.T) {
 		routeIfaceAuto = auto
 		routeRefreshedAt = refreshed
 		routeCollectedApplied = collected
+		routeForgetCollectedConnmark()
+		routeCollectedConnmarkMu.Lock()
+		routeCollectedConnmarkProbed = connmark
+		routeCollectedConnmarkMu.Unlock()
 		runLogged = logged
 		routeDelRuleLoop = delRule
 		routeAddSourceCheckRule = addCheck
@@ -75,6 +82,7 @@ func familyResetGlobals(t *testing.T) {
 	routeIfaceAuto = make(map[string]routeState)
 	routeRefreshedAt = make(map[string]time.Time)
 	routeCollectedApplied = make(map[string]map[string][]string)
+	routeForgetCollectedConnmark()
 	runLogged = func(op string, args ...string) bool { return true }
 	routeDelRuleLoop = func(ipv6 bool, mark, table string) {}
 	routeAddSourceCheckRule = func(mark uint32) {}

@@ -2,10 +2,14 @@ package tables
 
 import (
 	"fmt"
+	"maps"
 	"net/netip"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/log"
 )
 
 var routeCollectedApplied = make(map[string]map[string][]string)
@@ -104,8 +108,71 @@ type routeCollectedGuardChain struct {
 	sources []string
 }
 
+var (
+	routeCollectedConnmarkMu     sync.Mutex
+	routeCollectedConnmarkProbed = make(map[bool][]string)
+	routeCollectedConnmarkWarned sync.Map
+)
+
+func routeProbeCollectedConnmark(be routeBackend, sets map[string]*config.SetConfig) {
+	ipt, ok := be.(*routeIptBackend)
+	if !ok {
+		return
+	}
+	for _, id := range slices.Sorted(maps.Keys(sets)) {
+		set := sets[id]
+		if !set.Targets.UseCollectedIPs || config.RoutingIsBlock(set.Routing.Mode) {
+			continue
+		}
+		missing := routeCollectedConnmarkMissing(ipt.legacy)
+		if len(missing) == 0 {
+			return
+		}
+		if _, warned := routeCollectedConnmarkWarned.LoadOrStore(id, true); !warned {
+			log.Warnf("Routing: set '%s' uses collected IPs, but this firewall has no connmark match or CONNMARK target (%s), so b4 cannot leave the connections already open to an address on their old route when the address is collected: they move to the set's route as well. %s",
+				set.Name, strings.Join(missing, ", "), kmodMissingHint(missing))
+		}
+	}
+}
+
+func routeCollectedConnmarkMissing(legacy bool) []string {
+	routeCollectedConnmarkMu.Lock()
+	defer routeCollectedConnmarkMu.Unlock()
+	if missing, ok := routeCollectedConnmarkProbed[legacy]; ok {
+		return missing
+	}
+	missing, probed := connmarkMissingIpt(legacy)
+	if probed {
+		routeCollectedConnmarkProbed[legacy] = missing
+	}
+	return missing
+}
+
+func routeCollectedConnmarkUsable(legacy bool) bool {
+	routeCollectedConnmarkMu.Lock()
+	defer routeCollectedConnmarkMu.Unlock()
+	return len(routeCollectedConnmarkProbed[legacy]) == 0
+}
+
+func routeForgetCollectedConnmarkWarning(setID string) {
+	routeCollectedConnmarkWarned.Delete(setID)
+}
+
+func routeForgetCollectedConnmark() {
+	routeCollectedConnmarkMu.Lock()
+	routeCollectedConnmarkProbed = make(map[bool][]string)
+	routeCollectedConnmarkMu.Unlock()
+	routeCollectedConnmarkWarned.Range(func(id, _ any) bool {
+		routeCollectedConnmarkWarned.Delete(id)
+		return true
+	})
+}
+
 func routeCollectedGuardChains(be routeBackend, st routeState) []routeCollectedGuardChain {
 	if !st.collected {
+		return nil
+	}
+	if ipt, ok := be.(*routeIptBackend); ok && !config.RoutingIsBlock(st.mode) && !routeCollectedConnmarkUsable(ipt.legacy) {
 		return nil
 	}
 	pre := routeCollectedGuardChain{chain: st.chainPre, sources: st.sources}

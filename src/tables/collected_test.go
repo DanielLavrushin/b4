@@ -462,6 +462,84 @@ func TestCollectedGuardCheckMatchesWhatASourceScopedConsumerGets(t *testing.T) {
 	}
 }
 
+func collectedConnmarkTestSet(id, mode, ip string) *config.SetConfig {
+	set := staticTestSet(mode, []string{ip})
+	set.Id = id
+	set.Name = id
+	set.Targets.UseCollectedIPs = true
+	return set
+}
+
+func TestACollectedConsumerInstallsWithoutConnmark(t *testing.T) {
+	staticResetGlobals(t)
+	localGuardReset(t)
+	emitted := captureProxyRuleArgv(t)
+	stubBinaries(t, backendIPTables, "ip", "ipset")
+	t.Cleanup(func() {
+		routeMu.Lock()
+		routeClearSyncRetry()
+		routeSyncOutcome = routeSyncReport{}
+		routeMu.Unlock()
+	})
+	run = refuseDeletes(func(args ...string) (string, error) {
+		*emitted = append(*emitted, strings.Join(args, " "))
+		if slices.Contains(args, "connmark") || slices.Contains(args, "CONNMARK") {
+			return "iptables v1.8.7 (legacy): Couldn't load match `connmark':No such file or directory", errors.New("exit status 2")
+		}
+		return "", nil
+	})
+
+	proxy := collectedConnmarkTestSet("nocmproxy", config.RoutingModeProxy, "203.0.113.9")
+	block := collectedConnmarkTestSet("nocmblock", config.RoutingModeBlock, "203.0.113.10")
+	cfg := familyTestConfig(true, false)
+	cfg.Sets = []*config.SetConfig{proxy, block}
+	cfg = cfg.WithCollectedIPs([]string{"198.51.100.1"})
+	be := &routeIptBackend{}
+	routeEngine = be
+
+	RoutingSyncConfig(cfg)
+	RoutingSyncConfig(cfg)
+
+	if errs := RoutingStatus().SetErrors; len(errs) > 0 {
+		t.Fatalf("on a router without the connmark match the collected consumers did not install: %+v", errs)
+	}
+	proxyV4, _ := routeBuildSetNames(proxy.Id)
+	blockV4, _ := routeBuildSetNames(block.Id)
+	blockPre, _, _ := routeBuildChainNames(block.Id)
+	var tproxy, blockReturn bool
+	probes := 0
+	for _, line := range *emitted {
+		isRule := strings.Contains(line, " -A ") || strings.Contains(line, " -I ")
+		if isRule && strings.Contains(line, "--match-set "+proxyV4+" dst") && strings.Contains(line, "-j TPROXY") {
+			tproxy = true
+		}
+		if isRule && strings.Contains(line, proxyV4+"c") {
+			t.Errorf("the proxy consumer got a collected guard rule on a firewall without connmark: %s", line)
+		}
+		if strings.Contains(line, "-t filter -A "+blockPre+" ") && strings.Contains(line, "--match-set "+blockV4+"c dst") && strings.HasSuffix(line, "! --ctstate NEW -j RETURN") {
+			blockReturn = true
+		}
+		if strings.Contains(line, " -N B4_CONNMARK_PROBE") {
+			probes++
+		}
+	}
+	if !tproxy {
+		t.Errorf("no TPROXY rule for %s was emitted:\n%s", proxyV4, strings.Join(*emitted, "\n"))
+	}
+	if !blockReturn {
+		t.Errorf("the block consumer lost its collected guard, which needs no connmark:\n%s", strings.Join(*emitted, "\n"))
+	}
+	if probes != 1 {
+		t.Errorf("the connmark support was probed %d times over two syncs, want once", probes)
+	}
+	routeMu.Lock()
+	present := routeCollectedGuardsPresent(be, cfg)
+	routeMu.Unlock()
+	if !present {
+		t.Error("the monitor finds a collected guard missing that the emitter never installs without connmark, so it rebuilds the routing on every tick")
+	}
+}
+
 func TestCollectedGuardSkipsAFamilyWithoutItsIptablesBinary(t *testing.T) {
 	staticResetGlobals(t)
 	for name, present := range map[string]bool{backendIPTables: true, backendIP6Tables: false, "ipset": true} {

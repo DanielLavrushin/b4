@@ -937,6 +937,7 @@ func RoutingClearAll() {
 	routeOwnedAddrs = make(map[string]bool)
 	routeStaticApplied = make(map[string]routeStaticEntries)
 	routeCollectedApplied = make(map[string]map[string][]string)
+	routeForgetCollectedConnmark()
 	routeEgressLoopWarned = sync.Map{}
 	routeGatewayWarned = sync.Map{}
 	routeLocalGuardForgetLists()
@@ -1479,6 +1480,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			routeNoteInstalled(setID)
 			routeForgetSetLearnState(setID)
 			routeForgetEgressLoopWarning(setID)
+			routeForgetCollectedConnmarkWarning(setID)
 			routeForgetGatewayWarning(setID)
 			for host := range routeLearnedHosts[setID] {
 				delete(routeHostResolvedAt, setID+"|"+host)
@@ -1486,6 +1488,7 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			delete(routeLearnedHosts, setID)
 		}
 	}
+	routeProbeCollectedConnmark(be, desired)
 
 	var newRoutingSets []*config.SetConfig
 	var retargetedSets []*config.SetConfig
