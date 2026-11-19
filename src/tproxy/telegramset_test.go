@@ -243,3 +243,29 @@ func TestTheBridgeSendsTheConnectionsOfTheTelegramSetsUpstreamDirect(t *testing.
 		})
 	}
 }
+
+func TestTheTelegramSetsListenerCheckNeverWaitsForTheManagersLock(t *testing.T) {
+	m := NewManager(nil)
+	defer m.Stop()
+	m.mu.Lock()
+	m.listeners["tg"] = &Listener{SetID: "tg"}
+	m.listeners[config.TelegramBridgeSetID] = &Listener{SetID: config.TelegramBridgeSetID, MTProtoWS: true}
+	m.publishLocked()
+
+	type answer struct{ proxy, bridge, missing bool }
+	got := make(chan answer, 1)
+	go func() {
+		got <- answer{m.CanDialViaSet("tg"), m.CanDialViaSet(config.TelegramBridgeSetID), m.CanDialViaSet("gone")}
+	}()
+	select {
+	case a := <-got:
+		m.mu.Unlock()
+		if !a.proxy || a.bridge || a.missing {
+			t.Fatalf("listener check: proxy set %v, bridge %v, set without a listener %v; want true, false, false", a.proxy, a.bridge, a.missing)
+		}
+	case <-time.After(time.Second):
+		m.mu.Unlock()
+		<-got
+		t.Fatal("the Telegram set's listener check waited for the manager's lock, which a config sync or Stop holds, so a Telegram dial could wait past its deadline")
+	}
+}

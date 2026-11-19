@@ -331,10 +331,12 @@ func (m *Manager) Stop() {
 }
 
 func (m *Manager) CanDialViaSet(setID string) bool {
-	m.mu.Lock()
-	l, ok := m.listeners[setID]
-	m.mu.Unlock()
-	return ok && !l.MTProtoWS
+	for _, l := range m.running() {
+		if l.SetID == setID {
+			return !l.MTProtoWS
+		}
+	}
+	return false
 }
 
 func (m *Manager) DialViaSet(setID, host string, port int) (net.Conn, bool, error) {
