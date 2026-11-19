@@ -394,6 +394,7 @@ func getSystemInterfaces(inDocker bool) ([]string, map[string]IfaceDetail, error
 }
 
 // @Summary Update configuration
+// @Description A field a set in "sets" leaves out takes its set default.
 // @Tags Config
 // @Accept json
 // @Produce json
@@ -427,7 +428,7 @@ func (a *API) updateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var newConfig config.Config
-	if err := json.Unmarshal(body, &newConfig); err != nil {
+	if err := newConfig.DecodeWithSetDefaults(body); err != nil {
 		log.Errorf("Failed to decode config update: %v", err)
 		writeAPIError(w, ErrInvalidJSON())
 		return
