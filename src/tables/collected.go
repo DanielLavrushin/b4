@@ -297,6 +297,10 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 	return nil
 }
 
+func routeCollectedGuardLine(line string) bool {
+	return strings.Contains(line, "_v4c dst") || strings.Contains(line, "_v6c dst")
+}
+
 func CollectedTargetsReady(cfg *config.Config) error {
 	routeMu.Lock()
 	defer routeMu.Unlock()
