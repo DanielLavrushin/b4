@@ -305,8 +305,8 @@ func telegramViaProxy(mark uint) bool {
 }
 
 func telegramHTTPClient(timeout time.Duration) *http.Client {
-	mark, _ := resolveTelegramMark(selfDialMark())
 	return netprobe.HTTPClientDial(func(ctx context.Context, network, addr string) (net.Conn, error) {
+		mark, _ := resolveTelegramMark(selfDialMark())
 		if network == "tcp" {
 			network = dialNetwork()
 		}

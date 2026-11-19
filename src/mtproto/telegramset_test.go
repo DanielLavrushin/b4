@@ -329,6 +329,39 @@ func TestTheDownloadsBehindAnIPv4OnlyInterfaceSetNeverDialIPv6(t *testing.T) {
 	}
 }
 
+func TestTheDownloadsTakeATelegramRouteThatAppearsBetweenTheirDials(t *testing.T) {
+	prev := dialIPv6Probe
+	dialIPv6Probe = func() bool { return false }
+	t.Cleanup(func() { dialIPv6Probe = prev })
+	useTelegramSet(t, routedTelegramConfig(config.RoutingModeProxy))
+	useTelegramRouting(t, nil, &fakeSetDialer{})
+
+	l, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	_ = l.Close()
+
+	tr, ok := telegramHTTPClient(200 * time.Millisecond).Transport.(*http.Transport)
+	if !ok || tr.DialContext == nil {
+		t.Fatal("the download client has no dial hook")
+	}
+	if conn, err := tr.DialContext(context.Background(), "tcp", addr); err == nil {
+		_ = conn.Close()
+	}
+
+	via := &fakeSetDialer{listens: true}
+	useTelegramRouting(t, nil, via)
+	conn, err := tr.DialContext(context.Background(), "tcp", addr)
+	if err == nil {
+		_ = conn.Close()
+	}
+	if got := via.dials(); len(got) != 1 || got[0] != "tg "+addr {
+		t.Fatalf("dials through the set %v, want [tg %s]: a download client made before the set's route was in place kept dialling outside it, like the DC list's fallback after the primary URL", got, addr)
+	}
+}
+
 func TestAnIPv6OnlyInterfaceTelegramSetNeverDialsIPv4(t *testing.T) {
 	prev := dialIPv6Probe
 	dialIPv6Probe = func() bool { return false }
