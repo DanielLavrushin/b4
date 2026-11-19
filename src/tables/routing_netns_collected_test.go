@@ -1,6 +1,8 @@
 package tables
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -8,10 +10,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -368,4 +372,149 @@ func TestNetnsASourceScopedCollectedConsumerIsNotRestoredEveryTick(t *testing.T)
 
 func TestNetnsASourceScopedCollectedConsumerIsNotRestoredEveryTickNft(t *testing.T) {
 	netnsASourceScopedCollectedConsumerIsNotRestoredEveryTick(t, backendNFTables)
+}
+
+func netnsMarkedTransparentListener6(t *testing.T, port int, mark uint32) net.Listener {
+	t.Helper()
+	lc := net.ListenConfig{
+		Control: func(network, address string, c syscall.RawConn) error {
+			var ctlErr error
+			if err := c.Control(func(fd uintptr) {
+				for _, opt := range []struct{ level, name, value int }{
+					{unix.SOL_IPV6, unix.IPV6_TRANSPARENT, 1},
+					{unix.IPPROTO_IPV6, unix.IPV6_V6ONLY, 1},
+					{unix.SOL_SOCKET, unix.SO_MARK, int(mark)},
+				} {
+					if ctlErr = unix.SetsockoptInt(int(fd), opt.level, opt.name, opt.value); ctlErr != nil {
+						return
+					}
+				}
+			}); err != nil {
+				return err
+			}
+			return ctlErr
+		},
+	}
+	ln, err := lc.Listen(context.Background(), "tcp6", fmt.Sprintf("[::]:%d", port))
+	if err != nil {
+		t.Fatalf("transparent listen on [::]:%d: %v", port, err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	return ln
+}
+
+func netnsEchoOnceAndHold(ln net.Listener, held chan<- net.Conn) {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		go func(c net.Conn) {
+			buf := make([]byte, 256)
+			_ = c.SetDeadline(time.Now().Add(5 * time.Second))
+			n, err := c.Read(buf)
+			if err == nil {
+				_, err = c.Write([]byte("tproxy:" + string(buf[:n])))
+			}
+			if err != nil {
+				_ = c.Close()
+				return
+			}
+			held <- c
+		}(conn)
+	}
+}
+
+func netnsCloseWithoutAPacket(t *testing.T, conn net.Conn) {
+	t.Helper()
+	raw, err := conn.(*net.TCPConn).SyscallConn()
+	if err != nil {
+		t.Fatalf("the proxy socket: %v", err)
+	}
+	var optErr error
+	if err := raw.Control(func(fd uintptr) { optErr = unix.SetsockoptInt(int(fd), unix.SOL_TCP, unix.TCP_REPAIR, 1) }); err != nil || optErr != nil {
+		t.Fatalf("cannot put the proxy socket in repair mode, which closes it without sending a packet: %v %v", err, optErr)
+	}
+	_ = conn.Close()
+}
+
+func netnsAHeldCollectedConnectionStillGetsTheKernelsReset(t *testing.T, engine string) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	netnsRequireEngine(t, engine)
+	client, inet, _ := quicNsRig(t)
+	udpPortsNsEnableIPv6(t, client, inet)
+
+	routeEngine = nil
+	base := netnsLocalGuardConfig(engine, "", []string{netnsDevOther})
+	base.Queue.IPv6Enabled = true
+	base.Sets[0].Targets.UseCollectedIPs = true
+	if err := AddRules(base); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	t.Cleanup(func() {
+		RoutingClearAll()
+		_ = ClearRules(base)
+		routeEngine = nil
+	})
+	RoutingSyncConfig(base.WithCollectedIPs([]string{udpPortsNsInet6}))
+	routeMu.Lock()
+	st, ok := routeRuleCache[base.Sets[0].Id]
+	routeMu.Unlock()
+	if !ok {
+		t.Fatal("the collected proxy set built no rules")
+	}
+	port, _ := portFromState(st)
+	held := make(chan net.Conn, 1)
+	go netnsEchoOnceAndHold(netnsMarkedTransparentListener6(t, port, SelfDialMark), held)
+
+	var conn net.Conn
+	if err := client.inside(func() (err error) {
+		conn, err = net.DialTimeout("tcp6", net.JoinHostPort(udpPortsNsInet6, "443"), 3*time.Second)
+		return err
+	}); err != nil {
+		t.Fatalf("dial the collected address %s: %v", udpPortsNsInet6, err)
+	}
+	defer conn.Close()
+	buf := make([]byte, 256)
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	_, err := conn.Write([]byte("m0"))
+	n := 0
+	if err == nil {
+		n, err = conn.Read(buf)
+	}
+	if err != nil || string(buf[:n]) != "tproxy:m0" {
+		t.Fatalf("a connection to the collected address %s got %q (%v), want it proxied", udpPortsNsInet6, buf[:n], err)
+	}
+	select {
+	case proxied := <-held:
+		netnsCloseWithoutAPacket(t, proxied)
+	case <-time.After(3 * time.Second):
+		t.Fatal("the proxy never took the connection")
+	}
+	RoutingSyncConfig(base.WithCollectedIPs(nil))
+
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	if _, err = conn.Write([]byte("m1")); err == nil {
+		_, err = conn.Read(buf)
+	}
+	if !errors.Is(err, syscall.ECONNRESET) {
+		netnsLogState(t, engine)
+		if engine == backendNFTables {
+			out, _ := run("nft", "list", "chain", "inet", routeNftTable, st.chainOut)
+			t.Logf("%s:\n%s", st.chainOut, out)
+		} else {
+			out, _ := run(backendIP6Tables, "-w", "-t", "mangle", "-L", st.chainOut, "-v", "-x", "-n")
+			t.Logf("%s:\n%s", st.chainOut, out)
+		}
+		t.Errorf("a device that writes into a connection whose proxy socket is gone and whose address left the pool got %v, want the kernel's reset; the reset travels in the reply direction and must reach the device, not be marked for the proxy and looped back into the router", err)
+	}
+}
+
+func TestNetnsAHeldCollectedConnectionStillGetsTheKernelsReset(t *testing.T) {
+	netnsAHeldCollectedConnectionStillGetsTheKernelsReset(t, backendIPTables)
+}
+
+func TestNetnsAHeldCollectedConnectionStillGetsTheKernelsResetNft(t *testing.T) {
+	netnsAHeldCollectedConnectionStillGetsTheKernelsReset(t, backendNFTables)
 }

@@ -276,6 +276,46 @@ func TestCollectedGuardRestoresHeldConnectionsWithoutTheGuardSet(t *testing.T) {
 	}
 }
 
+func TestCollectedGuardRestoresOnlyTheOriginalDirection(t *testing.T) {
+	old := run
+	t.Cleanup(func() { run = old })
+	stubBinaries(t, backendIPTables, backendIP6Tables)
+	for _, backend := range []routeBackend{&routeNftBackend{}, &routeIptBackend{}} {
+		for _, mode := range []string{config.RoutingModeProxy, config.RoutingModeWSReuse} {
+			t.Run(backend.name()+"/"+mode, func(t *testing.T) {
+				cfg := familyTestConfig(true, true)
+				set := staticTestSet(mode, nil)
+				set.Targets.UseCollectedIPs = true
+				st := routeState{collected: true, setID: set.Id, mode: mode, mark: 0x7133, ipv4: true, ipv6: true, setV4: "b4r_collect_v4", setV6: "b4r_collect_v6", chainPre: "b4r_collect_pre", chainOut: "b4r_collect_out", sources: []string{"br-test"}}
+				marker, scope := " meta mark set ", " ct direction original "
+				if backend.name() != backendNFTables {
+					marker, scope = " -j MARK ", " -m conntrack --ctdir ORIGINAL "
+				}
+				for _, chain := range []string{st.chainPre, st.chainOut} {
+					var calls []string
+					run = refuseDeletes(func(args ...string) (string, error) { calls = append(calls, strings.Join(args, " ")); return "", nil })
+					if err := routeCollectedGuard(backend, cfg, set, st, chain); err != nil {
+						t.Fatal(err)
+					}
+					restores := 0
+					for _, call := range calls {
+						if !strings.Contains(call, marker) {
+							continue
+						}
+						restores++
+						if !strings.Contains(call, scope) {
+							t.Errorf("the restore in %s takes the reply direction too, so the kernel's reset for a held connection whose proxy socket is gone is marked for the proxy and never reaches the device: %s", chain, call)
+						}
+					}
+					if restores == 0 {
+						t.Fatalf("no restore emitted in %s:\n%s", chain, strings.Join(calls, "\n"))
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestCollectedOrdinaryConsumerNeedsNoRoutingState(t *testing.T) {
 	staticResetGlobals(t)
 	cfg := familyTestConfig(true, false)

@@ -167,7 +167,7 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 					}
 					if !nftRestored[src] {
 						nftRestored[src] = true
-						args = append(append(append([]string{}, scope...), ports...), "ct", "mark", "&", fmt.Sprintf("0x%x", routeSetMarkMask), "==", fmt.Sprintf("0x%x", st.mark), "meta", "mark", "set", fmt.Sprintf("0x%x", mark))
+						args = append(append(append([]string{}, scope...), ports...), "ct", "direction", "original", "ct", "mark", "&", fmt.Sprintf("0x%x", routeSetMarkMask), "==", fmt.Sprintf("0x%x", st.mark), "meta", "mark", "set", fmt.Sprintf("0x%x", mark))
 						if err := emit(args); err != nil {
 							return err
 						}
@@ -212,7 +212,7 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 					if err := emit(args); err != nil {
 						return err
 					}
-					args = append(append(append([]string{}, scope...), ports...), "-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", st.mark, routeSetMarkMask), "-j", "MARK", "--set-xmark", fmt.Sprintf("0x%x/0x%x", mark, routeProxyMarkMask))
+					args = append(append(append([]string{}, scope...), ports...), "-m", "conntrack", "--ctdir", "ORIGINAL", "-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", st.mark, routeSetMarkMask), "-j", "MARK", "--set-xmark", fmt.Sprintf("0x%x/0x%x", mark, routeProxyMarkMask))
 					if err := emit(args); err != nil {
 						return err
 					}
