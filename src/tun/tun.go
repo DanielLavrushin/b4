@@ -25,6 +25,7 @@ type Engine struct {
 	pool          *nfq.Pool
 	tunFile       *os.File
 	tunName       string
+	carrierName   string
 	routes        *routeManager
 	limiter       *firstNLimiter
 	conntrack     conntrackDeleter
@@ -95,6 +96,8 @@ func (e *Engine) Start() error {
 		run("ip", "link", "del", deviceName)
 	}
 
+	e.carrierName = DiscoveryDeviceName(cfg)
+	ClearStaleDiscoveryCarrier(cfg)
 	if n := sweepTunPolicyRouting(tunCfg.RouteTable, cfg.Queue.Mark); n > 0 {
 		log.Infof("TUN: removed %d policy routing rule(s) left by a previous run", n)
 	}

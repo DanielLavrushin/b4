@@ -151,6 +151,9 @@ func (ds *DiscoverySuite) fetchForDomain(di DomainInput, timeout time.Duration) 
 // otherwise it mirrors DNSProber.ipNetwork and follows the enabled queue
 // families, leaving the choice to the resolver/OS only when both are processed.
 func (ds *DiscoverySuite) dialNetwork() string {
+	if ds.carrier {
+		return "tcp4"
+	}
 	switch ds.ipVersion {
 	case "ipv4":
 		return "tcp4"

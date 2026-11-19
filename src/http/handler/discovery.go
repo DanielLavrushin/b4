@@ -353,6 +353,15 @@ func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusConflict)
 		case errors.Is(err, discovery.ErrDSCPRulesPending):
 			writeAPIError(w, &APIError{Status: http.StatusConflict, Code: "dscp_rules_pending", Message: discovery.ErrDSCPRulesPending.Error()})
+		case errors.Is(err, discovery.ErrTUNCarrierUnavailable):
+			log.Errorf("Discovery could not start: %v", err)
+			writeAPIError(w, &APIError{Status: http.StatusConflict, Code: "tun_carrier_unavailable", Message: err.Error()})
+		case errors.Is(err, discovery.ErrIPv6UnsupportedTUN):
+			log.Errorf("Discovery could not start: %v", err)
+			writeAPIError(w, &APIError{Status: http.StatusConflict, Code: "ipv6_unsupported_tun", Message: err.Error()})
+		case errors.Is(err, discovery.ErrDSCPUnsupportedTUN):
+			log.Errorf("Discovery could not start: %v", err)
+			writeAPIError(w, &APIError{Status: http.StatusConflict, Code: "dscp_unsupported_tun", Message: err.Error()})
 		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
