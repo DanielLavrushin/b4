@@ -30,7 +30,7 @@ func TestAConnectionRegisteredAtItsClientHelloJudgesAResetByItsSynAck(t *testing
 		t.Run(c.name, func(t *testing.T) {
 			tracker := &connStateTracker{conns: make(map[string]*connInfo)}
 			tracker.RecordEarlySynAck("10.0.0.1", 12345, "1.2.3.4", 443, 52, true)
-			tracker.RegisterOutgoing(earlyConnKey, &config.SetConfig{})
+			tracker.RegisterOutgoing(earlyConnKey, &config.SetConfig{}, false)
 			drop, reason := tracker.CheckRST("10.0.0.1", 12345, "1.2.3.4", 443, c.ttl, c.opts, c.ack, 3)
 			if drop != c.drop || !strings.Contains(reason, c.reason) {
 				t.Fatalf("drop=%v reason %q, want drop=%v with %q", drop, reason, c.drop, c.reason)
@@ -48,7 +48,7 @@ func TestAnEarlySynAckOnlySeedsAFreshUnregisteredConnection(t *testing.T) {
 	seen := stale.synAcks[earlyConnKey]
 	seen.at = seen.at.Add(-earlySynAckTTL)
 	stale.synAcks[earlyConnKey] = seen
-	stale.RegisterOutgoing(earlyConnKey, &config.SetConfig{})
+	stale.RegisterOutgoing(earlyConnKey, &config.SetConfig{}, false)
 	if _, reason := stale.CheckRST("10.0.0.1", 12345, "1.2.3.4", 443, 52, true, true, 3); reason != "RST before any server response" {
 		t.Fatalf("a SYN-ACK older than %v belongs to another connection on that port, yet the reset was judged by it: %q", earlySynAckTTL, reason)
 	}

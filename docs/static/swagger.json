@@ -3911,7 +3911,7 @@
                 "summary": "Probe MTProto upstream transports",
                 "parameters": [
                     {
-                        "description": "optional overrides: upstream_mode, ws_custom_domain, ws_endpoint_host, cfworker_domain, cfproxy_enabled, dc_relay, dc",
+                        "description": "optional overrides: upstream_mode, ws_custom_domain, ws_endpoint_host, cfworker_domain, cfproxy_enabled, dc_relay, upstream_set, dc",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -6256,6 +6256,9 @@
                     "type": "integer"
                 },
                 "upstream_mode": {
+                    "type": "string"
+                },
+                "upstream_set": {
                     "type": "string"
                 },
                 "web_proxy": {

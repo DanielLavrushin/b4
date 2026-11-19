@@ -91,6 +91,9 @@ func DialUpstream(ctx context.Context, cfg ClientConfig, targetHost string, targ
 	defer ownUpstreamDials.Delete(own)
 
 	deadline := time.Now().Add(timeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
 	_ = conn.SetDeadline(deadline)
 
 	if err := clientGreet(conn, cfg.Username, cfg.Password); err != nil {

@@ -7,7 +7,7 @@ import (
 )
 
 const iptCaptureChainWithDupOnly = `-N B4
--A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+-A B4 -m mark --mark 0x8000/0x88f98000 -j RETURN
 -A B4 -p tcp -m set --match-set b4_dup_v4 dst -m multiport --dports 443 -m connbytes --connbytes 0:19 --connbytes-mode packets --connbytes-dir original -j NFQUEUE --queue-num 537 --queue-bypass
 -A B4 -p udp -m multiport --dports 443 -m connbytes --connbytes 0:8 --connbytes-mode packets --connbytes-dir original -j NFQUEUE --queue-num 537 --queue-bypass
 `
@@ -23,7 +23,7 @@ func TestIPTListingQueuesIgnoresDuplicateOnlyRules(t *testing.T) {
 
 func TestIPTListingQueuesStillFindsTheGeneralRuleNextToADuplicate(t *testing.T) {
 	const listing = `-N B4
--A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+-A B4 -m mark --mark 0x8000/0x88f98000 -j RETURN
 -A B4 -p tcp -m set --match-set b4_dup_v4 dst -m multiport --dports 443 -j NFQUEUE --queue-num 537 --queue-bypass
 -A B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes 0:19 --connbytes-mode packets --connbytes-dir original -j NFQUEUE --queue-num 537 --queue-bypass
 `
@@ -34,7 +34,7 @@ func TestIPTListingQueuesStillFindsTheGeneralRuleNextToADuplicate(t *testing.T) 
 
 func TestNFTListingQueuesIgnoresDuplicateOnlyRules(t *testing.T) {
 	const listing = `chain b4_chain {
-		meta mark & 0x8cfd8000 == 0x8000 return
+		meta mark & 0x88f98000 == 0x8000 return
 		udp dport 53 return
 		meta nfproto ipv4 ip daddr @b4_dup_v4 tcp dport { 443 } ct original packets 0-19 queue num 537-540 bypass
 		udp dport { 443 } ct original packets 0-8 queue num 537-540 bypass

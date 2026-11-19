@@ -3,6 +3,7 @@ package tproxy
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"slices"
@@ -47,6 +48,27 @@ type passOnBridge struct {
 
 	mu       sync.Mutex
 	fellBack bool
+	tracked  map[net.Conn]bool
+}
+
+func (b *passOnBridge) Track(client net.Conn) func() {
+	b.mu.Lock()
+	if b.tracked == nil {
+		b.tracked = make(map[net.Conn]bool)
+	}
+	b.tracked[client] = true
+	b.mu.Unlock()
+	return func() {
+		b.mu.Lock()
+		delete(b.tracked, client)
+		b.mu.Unlock()
+	}
+}
+
+func (b *passOnBridge) trackedCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.tracked)
 }
 
 func (b *passOnBridge) Handle(client net.Conn, origIP net.IP, origPort int) (bool, net.Conn) {
@@ -359,6 +381,41 @@ func TestTheBridgeKeepsItsFailOpenForAHostNoSetLists(t *testing.T) {
 	proxyThrough(t, bridge, hello)
 	fellBackWith(t, got, hello)
 	noSocksRequest(t, up, 200*time.Millisecond)
+}
+
+func TestTheBridgeTracksAConnectionItFailsOpenForUntilItsRelayEnds(t *testing.T) {
+	for name, order := range map[string][2]bool{"worker": {false, true}, "direct": {true, false}} {
+		t.Run(name, func(t *testing.T) {
+			hello := realClientHello(t, "web.telegram.org")
+			var trackedDuring, reached atomic.Bool
+			b := &passOnBridge{consume: 4, order: order}
+			b.worker = func(net.Conn) bool {
+				trackedDuring.Store(b.trackedCount() == 1)
+				reached.Store(true)
+				return true
+			}
+			prev := telegramDial.Load()
+			SetTelegramDial(func(context.Context, string) (net.Conn, bool, error) {
+				trackedDuring.Store(b.trackedCount() == 1)
+				reached.Store(true)
+				return nil, true, errors.New("refused")
+			})
+			t.Cleanup(func() { telegramDial.Store(prev) })
+			bridge, _ := bridgeListener(t, b, nil)
+
+			proxyThrough(t, bridge, hello)
+			deadline := time.Now().Add(5 * time.Second)
+			for !reached.Load() || b.trackedCount() != 0 {
+				if time.Now().After(deadline) {
+					t.Fatalf("the fail-open path was reached: %v, connections still tracked: %d", reached.Load(), b.trackedCount())
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+			if !trackedDuring.Load() {
+				t.Fatalf("the %s fail-open ran without the bridge tracking its client, so a change of the Telegram set could not close it", name)
+			}
+		})
+	}
 }
 
 func TestNothingIsReadAheadWithoutASetToPassTo(t *testing.T) {

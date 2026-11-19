@@ -189,6 +189,11 @@ func runB4(cmd *cobra.Command, args []string) error {
 	tproxyResolver := tproxy.NewResolver(dnsNames)
 	tproxyMgr := tproxy.NewManager(tproxyResolver)
 
+	mtproto.SetTelegramRouting(func(setID string) (mtproto.TelegramRoute, bool) {
+		r, ok := tables.RoutingSetRoute(setID)
+		return mtproto.TelegramRoute{Mode: r.Mode, Mark: r.Mark, IPv4: r.IPv4, IPv6: r.IPv6, RuleMissing: r.RuleMissing}, ok
+	}, tproxyMgr)
+	tproxy.SetTelegramDial(mtproto.DialTelegramDirect)
 	mtprotoBridge := mtproto.NewTransparentBridge(&cfg)
 	tproxyMgr.SetMTProtoBridge(mtprotoBridge)
 	tproxyMgr.SetTelegramBridgeHook(func(v4, v6, retried bool) {
@@ -495,7 +500,6 @@ func runB4(cmd *cobra.Command, args []string) error {
 		}
 		cfgPtr.Store(c)
 		socks5Server.UpdateConfig(c)
-		mtprotoServer.UpdateConfig(c)
 		mtprotoBridge.UpdateConfig(c)
 		mtproto.KickUpstreamRefresh()
 		tproxyResolver.Set(pool.GetMatcher())
@@ -505,6 +509,7 @@ func runB4(cmd *cobra.Command, args []string) error {
 			tables.RoutingSyncConfig(c)
 			tables.SyncDSCP(c)
 		}
+		mtprotoServer.UpdateConfig(c)
 		aiManager.Update(c.System.AI)
 		if _, err := config.ApplyMemoryLimit(c.System.MemoryLimit); err != nil {
 			log.Errorf("invalid system.memory_limit %q: %v", c.System.MemoryLimit, err)

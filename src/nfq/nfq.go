@@ -70,7 +70,7 @@ func injectorMark(cfg *config.Config) uint {
 }
 
 func selfInjectedBits(queueMark uint32) uint32 {
-	return queueMark | config.PerSetRouteMarkBits | engine.InjectedMarkBit
+	return queueMark | config.PerSetRouteMarkBits | engine.InjectedMarkBit | config.TelegramSetDialMark
 }
 
 func (w *Worker) Start() error {
@@ -99,6 +99,7 @@ func (w *Worker) Start() error {
 		return err
 	}
 	w.clientSock = cs
+	w.openTelegramInjector(cfg)
 
 	q, err := w.bindQueue(mark)
 	if err != nil {
@@ -595,6 +596,9 @@ func (w *Worker) Stop() {
 	if w.lookupSock != nil {
 		w.lookupSock.Close()
 	}
+	if w.telegramSock != nil {
+		w.telegramSock.Close()
+	}
 	if w.sock != nil {
 		w.sock.Close()
 	}
@@ -613,6 +617,7 @@ func (w *Worker) gc() {
 				w.connTracker.Cleanup()
 			}
 			_ = cleanupDNSPendingRoutes(time.Now())
+			w.telegramFlows.sweep(time.Now())
 			if l := w.dnsCopy; l != nil && l.w == w {
 				l.sweep(time.Now())
 			}

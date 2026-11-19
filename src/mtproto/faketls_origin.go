@@ -387,7 +387,7 @@ func (s *Server) profileOrigins(ctx context.Context, all bool, states map[string
 			next[host] = p
 			continue
 		}
-		p, err := profileOrigin(ctx, host, selfDialMark())
+		p, err := profileOrigin(ctx, host, coverDialMark())
 		if ctx.Err() != nil {
 			return false
 		}
