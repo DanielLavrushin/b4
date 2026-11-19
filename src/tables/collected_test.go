@@ -283,3 +283,78 @@ func TestCollectedOrdinaryConsumerNeedsNoRoutingState(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func collectedGuardRecordNft(t *testing.T) *[]string {
+	t.Helper()
+	calls := []string{}
+	origStdin := runNftStdin
+	t.Cleanup(func() { runNftStdin = origStdin })
+	run = refuseDeletes(func(args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		return "", nil
+	})
+	runLogged = func(op string, args ...string) bool {
+		_, err := run(args...)
+		return err == nil
+	}
+	runNftStdin = func(script string) (string, error) {
+		calls = append(calls, "nft -f - "+strings.TrimSpace(script))
+		return "", nil
+	}
+	return &calls
+}
+
+func TestCollectedGuardSetHasNoDynamicTwin(t *testing.T) {
+	staticResetGlobals(t)
+	calls := collectedGuardRecordNft(t)
+	cfg := collectedGuardTestConfig(config.RoutingModeProxy, true)
+	cfg.Queue.IPv6Enabled = true
+	st := collectedGuardPrepare(t, &routeNftBackend{}, cfg.WithCollectedIPs([]string{"198.51.100.1", "198.51.100.2", "2001:db8::1"}))
+
+	created := map[string]bool{}
+	for _, call := range *calls {
+		for _, guard := range []string{st.setV4 + "c", st.setV6 + "c"} {
+			if strings.Contains(call, guard+"_d") {
+				t.Errorf("the guard set got a dynamic twin it never uses: %s", call)
+			}
+			if strings.HasPrefix(call, "nft add set inet "+routeNftTable+" "+guard+" ") {
+				created[guard] = true
+				if strings.Contains(call, "interval") || strings.Contains(call, "timeout") || strings.Contains(call, "auto-merge") {
+					t.Errorf("the guard set holds single addresses only, yet it is created as an interval or timeout set, where adjacent addresses merge into a range an older nft cannot delete one of: %s", call)
+				}
+			}
+		}
+	}
+	if !created[st.setV4+"c"] || !created[st.setV6+"c"] {
+		t.Fatalf("no guard set was created for both families:\n%s", strings.Join(*calls, "\n"))
+	}
+
+	*calls = nil
+	routeDropSets(&routeNftBackend{}, st, false)
+	for _, guard := range []string{st.setV4 + "c", st.setV6 + "c"} {
+		for _, want := range []string{"nft flush set inet " + routeNftTable + " " + guard, "nft delete set inet " + routeNftTable + " " + guard} {
+			if !slices.Contains(*calls, want) {
+				t.Errorf("dropping the set did not run %q:\n%s", want, strings.Join(*calls, "\n"))
+			}
+		}
+		for _, call := range *calls {
+			if strings.Contains(call, guard+"_d") {
+				t.Errorf("dropping the set touched a dynamic twin of its guard set: %s", call)
+			}
+		}
+	}
+}
+
+func TestDroppingASetThatNeverCollectedProbesNoGuardSet(t *testing.T) {
+	staticResetGlobals(t)
+	calls := collectedGuardRecordNft(t)
+	cfg := collectedGuardTestConfig(config.RoutingModeProxy, false)
+	cfg.Queue.IPv6Enabled = true
+	st := buildRouteState(cfg, cfg.Sets[0])
+	routeDropSets(&routeNftBackend{}, st, false)
+	for _, call := range *calls {
+		if strings.Contains(call, st.setV4+"c") || strings.Contains(call, st.setV6+"c") {
+			t.Errorf("dropping a set that never used collected IPs touched a guard set: %s", call)
+		}
+	}
+}

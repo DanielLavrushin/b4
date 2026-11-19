@@ -26,7 +26,7 @@ func routePrepareCollected(be routeBackend, cfg *config.Config, set *config.SetC
 				continue
 			}
 			if len(recorded) > 0 {
-				be.flushIPSet(name)
+				routeDropCollectedSet(be, name, false)
 			}
 			next[name] = nil
 			continue
@@ -37,7 +37,7 @@ func routePrepareCollected(be routeBackend, cfg *config.Config, set *config.SetC
 			}
 			continue
 		}
-		if err := be.ensureIPSet(name, family.v6); err != nil {
+		if err := routeEnsureCollectedSet(be, name, family.v6); err != nil {
 			if wasRecorded {
 				next[name] = recorded
 			}
@@ -59,6 +59,29 @@ func routePrepareCollected(be routeBackend, cfg *config.Config, set *config.SetC
 		routeCollectedApplied[st.setID] = next
 	}
 	return failure
+}
+
+func routeEnsureCollectedSet(be routeBackend, name string, v6 bool) error {
+	if plain, ok := be.(interface {
+		ensureCollectedSet(name string, v6 bool) error
+	}); ok {
+		return plain.ensureCollectedSet(name, v6)
+	}
+	return be.ensureIPSet(name, v6)
+}
+
+func routeDropCollectedSet(be routeBackend, name string, destroy bool) {
+	if _, ok := be.(*routeNftBackend); ok {
+		runLogged("routing: flush set "+name, "nft", "flush", "set", "inet", routeNftTable, name)
+		if destroy {
+			runLogged("routing: delete set "+name, "nft", "delete", "set", "inet", routeNftTable, name)
+		}
+		return
+	}
+	be.flushIPSet(name)
+	if destroy {
+		be.destroyIPSet(name)
+	}
 }
 
 func routeCollectedFamilyEntries(set *config.SetConfig, v6 bool) []string {

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"net"
 	"os"
 	"slices"
@@ -707,13 +708,11 @@ func routeDropSets(be routeBackend, st routeState, keepSets bool) {
 		return
 	}
 	delete(routeStaticApplied, st.setID)
-	delete(routeCollectedApplied, st.setID)
-	for _, name := range []string{st.setV4 + "c", st.setV6 + "c"} {
-		if be.hasIPSet(name) {
-			be.flushIPSet(name)
-			be.destroyIPSet(name)
-		}
+	guards := slices.Sorted(maps.Keys(routeCollectedApplied[st.setID]))
+	for _, name := range guards {
+		routeDropCollectedSet(be, name, true)
 	}
+	delete(routeCollectedApplied, st.setID)
 	if st.ipv4 || be.hasIPSet(st.setV4) {
 		be.flushIPSet(st.setV4)
 		be.destroyIPSet(st.setV4)
