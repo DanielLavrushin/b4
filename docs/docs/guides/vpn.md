@@ -33,7 +33,7 @@ To send everything a device sends through the VPN, select the device under **Tar
 
 A single address like this is the clearer test: a full web page loads parts from other hosts, and it can look broken while routing works.
 
-With a tunnel as the output interface, the set's connections end with `[routed->wg0]` on the **Logs** page. **System Info** on **Settings > System > Service** shows the number of installed routing sets in the **Routing Sets** row under **Firewall**.
+With a tunnel as the output interface, the set's TCP connections end with `[routed->wg0]` on the **Logs** page. A connection that the router sends out by another interface, such as one from a device in a KeeneticOS internet access policy, ends with `reroute->` and that interface's name instead, or `tunnel->` when the interface is a tunnel. **System Info** on **Settings > System > Service** shows the number of installed routing sets in the **Routing Sets** row under **Firewall**.
 
 ## Kill switch and the router's own traffic
 
