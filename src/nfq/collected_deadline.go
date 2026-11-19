@@ -2,6 +2,7 @@ package nfq
 
 import (
 	"container/heap"
+	"strconv"
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
@@ -11,9 +12,24 @@ import (
 )
 
 type collectedReading struct {
-	watch helloWatch
-	flow  ctnl.Flow
-	state serverSilence
+	watch  helloWatch
+	flow   ctnl.Flow
+	state  serverSilence
+	closed bool
+	desync string
+}
+
+const maxClosingFakesNoted = 256
+
+func (t *destStateTracker) noteClosingFakesLocked(setID, desync string) bool {
+	if t.closingFakesNoted[setID] == desync {
+		return false
+	}
+	if t.closingFakesNoted == nil || len(t.closingFakesNoted) >= maxClosingFakesNoted {
+		t.closingFakesNoted = make(map[string]string)
+	}
+	t.closingFakesNoted[setID] = desync
+	return true
 }
 
 type collectedDeadlineHeap []*helloWatch
@@ -125,6 +141,9 @@ func (t *destStateTracker) countCollected(readings []collectedReading, now time.
 		}
 		key := iphealth.BanKey(cur.dst, int(cur.port))
 		if cur.closed || r.state != silenceOpen || !collectedFlowSilent(cur, cur, r.flow) {
+			if !cur.closed && r.closed && cur.fakesCloseEntry && t.noteClosingFakesLocked(cur.setID, r.desync) {
+				log.Infof("Collected IPs: the desync fakes on the connections of set %q close their conntrack entry, so a silent server cannot be told from a closed connection and nothing is collected", cur.set)
+			}
 			log.Tracef("Collected IPs: no reliable silent-flow evidence for %s", cur.key)
 			t.unwatchLocked(cur.key)
 			continue
@@ -168,8 +187,12 @@ func (w *Worker) sweepCollectedHellos(cfg *config.Config, now time.Time) {
 			w.destState.EndWatch(h)
 			continue
 		}
-		flow, state := readCollectedFlow(h)
-		readings = append(readings, collectedReading{watch: h, flow: flow, state: state})
+		flow, state, closed := readCollectedFlow(h)
+		reading := collectedReading{watch: h, flow: flow, state: state, closed: closed}
+		if closed && h.fakesCloseEntry {
+			reading.desync = set.TCP.Desync.Mode + "/" + strconv.FormatBool(set.TCP.Desync.PostDesync)
+		}
+		readings = append(readings, reading)
 	}
 	if len(readings) == 0 {
 		return

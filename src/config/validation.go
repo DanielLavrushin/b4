@@ -328,6 +328,9 @@ func (c *Config) Validate() error {
 			if ibd.TimeoutMs < 1000 || ibd.TimeoutMs > 10000 {
 				v.addf(fmt.Sprintf("sets[%d].tcp.ip_block_detect.timeout_ms", setIdx), "out_of_range", map[string]any{"value": ibd.TimeoutMs, "min": 1000, "max": 10000}, "collection timeout must be between 1000 and 10000 milliseconds")
 			}
+			if set.Enabled && ibd.Collects() && set.TCP.Desync.ClosesConntrackEntry() {
+				warnEgressGatewayOnce("Set '%s': Collect detected IPs needs the connection's conntrack entry open at the Detection Timeout, and this set's desync fakes close it, so the set collects nothing", set.Name)
+			}
 		}
 		if ibd.SynThreshold <= 0 {
 			ibd.SynThreshold = DefaultIPBlockSynThreshold

@@ -1177,3 +1177,47 @@ func TestValidate_SharedManualTableWithDifferentGatewaysWarns(t *testing.T) {
 		}
 	})
 }
+
+func TestCollectWithClosingFakesWarns(t *testing.T) {
+	cases := []struct {
+		name   string
+		action string
+		mode   string
+		post   bool
+		warns  bool
+	}{
+		{"collect with rst fakes", "collect", "rst", false, true},
+		{"collect with the post-ClientHello rst", "collect", ConfigOff, true, true},
+		{"collect with ack fakes", "collect", "ack", false, false},
+		{"collect without fakes", "collect", ConfigOff, false, false},
+		{"block with rst fakes", "block", "rst", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := captureEgressGatewayWarnings(t)
+			cfg := NewConfig()
+			set := NewSetConfig()
+			set.Id, set.Name, set.Enabled = "closing", "closing fakes", true
+			set.Targets.SNIDomains = []string{"example.com"}
+			set.TCP.IPBlockDetect.Enabled = true
+			set.TCP.IPBlockDetect.Action = tc.action
+			set.TCP.Desync.Mode, set.TCP.Desync.PostDesync = tc.mode, tc.post
+			cfg.Sets = []*SetConfig{&set}
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("the set must validate: %v", err)
+			}
+			var named []string
+			for _, text := range *got {
+				if strings.Contains(text, "closing fakes") && strings.Contains(text, "conntrack") {
+					named = append(named, text)
+				}
+			}
+			if tc.warns && len(named) != 1 {
+				t.Fatalf("Collect with fakes that close the conntrack entry must warn once naming the set, got %q", *got)
+			}
+			if !tc.warns && len(named) != 0 {
+				t.Fatalf("no closing-fake warning expected, got %q", named)
+			}
+		})
+	}
+}

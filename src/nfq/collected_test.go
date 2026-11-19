@@ -10,6 +10,7 @@ import (
 	"github.com/daniellavrushin/b4/sni"
 	"net"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 )
@@ -54,6 +55,52 @@ func unseededCollectedRig(t *testing.T, install func(context.Context, *config.Co
 	}
 	t.Cleanup(func() { lookupFlow = old })
 	return w, p, captureInjected(t, w)
+}
+
+func TestCollectSaysOnceThatClosingFakesHideTheServer(t *testing.T) {
+	r := newCollectCountRig(t)
+	producer := r.w.getConfig().Sets[1]
+	producer.TCP.Desync.Mode = "rst"
+	logs := captureLog(t)
+	closedAtTheDeadline := func(sport uint16, after time.Duration) {
+		t.Helper()
+		r.w.ProcessPacket(silentHelloFrom(sport))
+		if !r.watched(sport) {
+			t.Fatalf("the ClientHello from port %d is not watched, so this test proves nothing", sport)
+		}
+		r.serverSends(t, sport, 0x10, nil)
+		r.flow(t, sport).TCPState = 7
+		r.sweep(after)
+	}
+	notes := func() int {
+		n := 0
+		for _, line := range strings.Split(logs.String(), "\n") {
+			if strings.Contains(line, producer.Name) && strings.Contains(line, "close their conntrack entry") {
+				n++
+			}
+		}
+		return n
+	}
+
+	closedAtTheDeadline(42000, 4*time.Second)
+	closedAtTheDeadline(42001, 5*time.Second)
+	if got := notes(); got != 1 {
+		t.Fatalf("two connections whose entry the set's fakes closed must be reported once at Info, got %d lines in %q", got, logs.String())
+	}
+	if r.collected() != 0 || r.installs != 0 {
+		t.Fatalf("a closed entry is no evidence: candidates=%d installs=%d", r.collected(), r.installs)
+	}
+	for _, port := range resetsTo(r.sent()) {
+		if port == 42000 || port == 42001 {
+			t.Fatalf("a client whose entry was closed must not be reset, got resets to %v", resetsTo(r.sent()))
+		}
+	}
+
+	producer.TCP.Desync.Mode = "fin"
+	closedAtTheDeadline(42002, 6*time.Second)
+	if got := notes(); got != 2 {
+		t.Fatalf("a change of the desync mode must report the set again, got %d lines in %q", got, logs.String())
+	}
 }
 
 func TestCollectedHelloPublishesBeforeResetAndNextSYNMatches(t *testing.T) {

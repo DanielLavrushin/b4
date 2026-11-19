@@ -385,8 +385,7 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 }
 
 func sendsClosingFakes(set *config.SetConfig) bool {
-	desync := &set.TCP.Desync
-	return desync.PostDesync || (desync.Mode != config.ConfigOff && desync.Mode != "ack")
+	return set.TCP.Desync.ClosesConntrackEntry()
 }
 
 func (w *Worker) closingFakesMayHaveHit(cfg *config.Config, set *config.SetConfig, host string) bool {

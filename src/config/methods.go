@@ -808,6 +808,10 @@ func (set *SetConfig) BlocksQUIC() bool {
 	return set.UDP.Mode == UDPModeReject && set.UDP.FilterQUIC == QUICFilterAll
 }
 
+func (d *DesyncConfig) ClosesConntrackEntry() bool {
+	return d.PostDesync || d.Mode != ConfigOff && d.Mode != "ack"
+}
+
 const DNSPort = 53
 
 func (set *SetConfig) routedUDPPorts() []string {

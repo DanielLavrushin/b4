@@ -288,17 +288,18 @@ func collectedReplyUnseen(h helloWatch, flow ctnl.Flow) bool {
 	return flow.ReplyBytes-h.observedReplyBytes > (flow.ReplyPackets-h.observedReplyPackets)*headers
 }
 
-func readCollectedFlow(h helloWatch) (ctnl.Flow, serverSilence) {
+func readCollectedFlow(h helloWatch) (ctnl.Flow, serverSilence, bool) {
 	flow, found, err := helloFlow(h)
+	closed := err == nil && (!found || flow.ID == h.flowID && flow.HasState && flow.TCPState != ctnl.TCPEstablished)
 	switch {
 	case err != nil || !found || !flow.HasCounters || flow.ID == 0 || flow.ID != h.flowID:
-		return flow, silenceUnknown
+		return flow, silenceUnknown, closed
 	case collectedReplyUnseen(h, flow):
-		return flow, silenceAnswered
+		return flow, silenceAnswered, false
 	case collectedFlowSilent(&h, &h, flow):
-		return flow, silenceOpen
+		return flow, silenceOpen, false
 	}
-	return flow, silenceUnknown
+	return flow, silenceUnknown, closed
 }
 
 func (t *destStateTracker) forgetCollectRunLocked(h *helloWatch) {

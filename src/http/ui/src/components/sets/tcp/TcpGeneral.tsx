@@ -70,6 +70,10 @@ export const TcpGeneral = ({
     heal_ttl_sec: 60,
     ...config.tcp.ip_block_detect,
   };
+  const desync = config.tcp.desync;
+  const collectFakesClose =
+    ibd.action === "collect" &&
+    (desync.post_desync || (desync.mode !== "off" && desync.mode !== "ack"));
   const rstProt = {
     enabled: false,
     ttl_tolerance: 3,
@@ -421,6 +425,19 @@ export const TcpGeneral = ({
                 aiTopic="tcp.ip_block_detect.action"
               />
             </Grid>
+            {collectFakesClose && (
+              <Grid size={{ xs: 12 }}>
+                <B4Alert severity="warning">
+                  {t("sets.tcp.general.ibdCollectClosingFakes", {
+                    tab: t("sets.tcp.tabs.faking"),
+                    mode: t("sets.faking.desync.mode"),
+                    off: t("sets.faking.desync.modeOff"),
+                    ack: t("sets.faking.desync.modeAck"),
+                    post: t("sets.faking.desync.postDesync"),
+                  })}
+                </B4Alert>
+              </Grid>
+            )}
             {ibd.action !== "collect" && (
               <>
             <Grid size={{ xs: 12, md: 6 }}>

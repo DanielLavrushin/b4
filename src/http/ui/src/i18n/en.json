@@ -1874,7 +1874,8 @@
         "ibdBlockNote": "Refuse detected blocked destinations using the existing block detection rules.",
         "ibdCollect": "Collect detected IPs",
         "ibdCollectNote": "Collects an address after two connections to it in a row connect over TCP but get no answer to the ClientHello, within the retest interval of the IP Block Detection settings. A connection the server answers starts the count over. Once a set that uses collected IPs is ready, both connections are reset so that the retries reach it. Candidates are not verified bypasses.",
-        "ibdCollectTimeoutHelper": "How long an established TCP connection can stay silent after its ClientHello before it counts as one of the two silent connections in a row that collect its address."
+        "ibdCollectTimeoutHelper": "How long an established TCP connection can stay silent after its ClientHello before it counts as one of the two silent connections in a row that collect its address.",
+        "ibdCollectClosingFakes": "This set's desync fakes close the connection's conntrack entry before the Detection Timeout, so a silent server cannot be told from a closed connection and the set collects nothing. On the {{tab}} tab, set {{mode}} to {{off}} or {{ack}} and turn off {{post}}."
       },
       "splitting": {
         "header": "Splitting Strategy",

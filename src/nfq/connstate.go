@@ -273,6 +273,8 @@ type destStateTracker struct {
 	collectWake      chan struct{}
 	watching         atomic.Int32
 	collectWatching  atomic.Int32
+
+	closingFakesNoted map[string]string
 }
 
 type escalationEntry struct {
