@@ -74,14 +74,17 @@ func TestCollectedRefreshAfterTheFinalClearAddsNothing(t *testing.T) {
 }
 
 func TestMonitorRebuildsAPendingApplyBehindACollectedView(t *testing.T) {
-	origRun, origAdd, origClear, origApplied := run, addRulesFn, clearRulesFn, rulesAppliedCfg
-	hasBinaryCache.Store(backendIPTables, true)
+	origRun, origAdd, origClear := run, addRulesFn, clearRulesFn
+	rulesMu.Lock()
+	origApplied, origBackend := rulesAppliedCfg, rulesAppliedBackend
+	rulesAppliedBackend = ""
+	rulesMu.Unlock()
+	stubSyncMapEntry(t, &hasBinaryCache, backendIPTables, true)
 	t.Cleanup(func() {
 		run, addRulesFn, clearRulesFn = origRun, origAdd, origClear
 		rulesMu.Lock()
-		rulesAppliedCfg = origApplied
+		rulesAppliedCfg, rulesAppliedBackend = origApplied, origBackend
 		rulesMu.Unlock()
-		hasBinaryCache.Delete(backendIPTables)
 	})
 	present := strings.Join([]string{
 		"-A B4_PREROUTING -p udp -m udp --sport 53 -j NFQUEUE --queue-num 537 --queue-bypass",
