@@ -853,11 +853,8 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 	foreignEgress = matched && set != nil && w.handsOffEgress(vc, pkt, cfg, set)
 	routeHandsOff = routeTProxy || routeIfaceHandoff || foreignEgress
 
-	if routeIfaceHandoff && classifyReason == "" {
-		classifyReason = "routed->" + set.Routing.EgressInterface
-	}
-	if foreignEgress && classifyReason == "" {
-		classifyReason = vc.handOffReason()
+	if classifyReason == "" {
+		classifyReason = handOffLabel(vc, set, routeIfaceHandoff, foreignEgress)
 	}
 
 	if banRetest != nil && isClientHello {

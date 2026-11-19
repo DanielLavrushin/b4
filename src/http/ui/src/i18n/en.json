@@ -2428,7 +2428,7 @@
       "routerTrafficHeldBack": "{{iface}} is a tunnel a program on this router reads, so B4 leaves the router's own traffic on the normal route. Routing it into {{iface}} would come back out as a new connection to the same address and loop.",
       "killSwitch": "Kill switch",
       "killSwitchDesc": "If the output interface goes away, drop this set's traffic instead of letting it fall back to the normal uplink.",
-      "tunnelManipulationNote": "{{iface}} wraps the packet before anything on the network sees it, so B4 leaves this set's packets alone: no faking, fragmentation or desync, and no SYN health check, dead-IP escalation, IP block detection or TCP duplication. The settings on the Strategy tabs have no effect while the set routes there. Such connections are tagged routed->{{iface}} in the connection log.",
+      "tunnelManipulationNote": "{{iface}} wraps the packet before anything on the network sees it, so B4 leaves this set's packets alone: no faking, fragmentation or desync, and no SYN health check, dead-IP escalation, IP block detection or TCP duplication. The settings on the Strategy tabs have no effect while the set routes there. Connections that leave through it are tagged routed->{{iface}} in the connection log.",
       "dscpTitle": "DSCP",
       "dscpValue": "DSCP value",
       "dscpEnable": "Enable per-set DSCP",
