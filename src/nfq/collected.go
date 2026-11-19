@@ -266,15 +266,11 @@ func collectedFlow(h helloWatch) (ctnl.Flow, bool) {
 	return flow, true
 }
 
-func collectedStillSilent(h helloWatch) bool {
-	if h.clientHelloLen == 0 || !h.clientHelloAcked {
+func collectedFlowSilent(h, cur *helloWatch, flow ctnl.Flow) bool {
+	if cur.clientHelloLen == 0 || !cur.clientHelloAcked || flow.ID != cur.flowID || !flow.HasState || flow.TCPState != ctnl.TCPEstablished {
 		return false
 	}
-	flow, ok := collectedFlow(h)
-	if !ok || flow.ID != h.flowID {
-		return false
-	}
-	return flow.ReplyBytes == h.observedReplyBytes && flow.ReplyPackets == h.observedReplyPackets &&
+	return flow.ReplyBytes == cur.observedReplyBytes && flow.ReplyPackets == cur.observedReplyPackets &&
 		(!h.replyChecked || flow.ReplyBytes == h.replyBytes && flow.ReplyPackets == h.replyPackets)
 }
 
@@ -287,13 +283,9 @@ func (w *Worker) collectSilentHello(h helloWatch) {
 	}
 	h = *cur
 	w.destState.watchMu.RUnlock()
-	if !collectedStillSilent(h) {
-		log.Tracef("Collected IPs: no reliable silent-flow evidence for %s", h.key)
-		w.destState.EndWatch(h)
-		return
-	}
 	flow, ok := collectedFlow(h)
-	if !ok || flow.ReplyBytes != h.observedReplyBytes || flow.ReplyPackets != h.observedReplyPackets {
+	if !ok || !collectedFlowSilent(&h, &h, flow) {
+		log.Tracef("Collected IPs: no reliable silent-flow evidence for %s", h.key)
 		w.destState.EndWatch(h)
 		return
 	}
@@ -303,13 +295,15 @@ func (w *Worker) collectSilentHello(h helloWatch) {
 		return
 	}
 	accepted := w.pool.collectHello(h, func() bool {
+		flow, ok := collectedFlow(h)
 		w.destState.watchMu.Lock()
-		defer w.destState.watchMu.Unlock()
 		cur := w.destState.watches[h.key]
-		if cur == nil || cur.gen != h.gen || cur.closed || !collectedStillSilent(h) {
+		if cur == nil || cur.gen != h.gen || cur.closed || !ok || !collectedFlowSilent(&h, cur, flow) {
+			w.destState.watchMu.Unlock()
 			return false
 		}
 		w.destState.unwatchLocked(h.key)
+		w.destState.watchMu.Unlock()
 		if h.ver == IPv4 {
 			w.sendRSTToClientV4(h.hdr, h.ihl, h.client, h.ownPort, h.dst)
 		} else {

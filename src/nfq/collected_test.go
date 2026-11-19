@@ -206,6 +206,33 @@ func TestCollectedServerPacketUsesWireTupleAndCleansAlias(t *testing.T) {
 	}
 }
 
+func TestCollectReadsConntrackOutsideTheWatchLock(t *testing.T) {
+	w, p, sent := collectedRig(t, func(context.Context, *config.Config) error { return nil })
+	lookups, locked := 0, []int(nil)
+	lookupFlow = func(ctnl.Tuple, ctnl.Direction) (ctnl.Flow, bool, error) {
+		lookups++
+		if w.destState.watchMu.TryLock() {
+			w.destState.watchMu.Unlock()
+		} else {
+			locked = append(locked, lookups)
+		}
+		f := silentFlow().flow
+		f.ID = 71
+		return f, true, nil
+	}
+	w.ProcessPacket(silentHelloFrom(42000))
+	if !w.destState.Watching() {
+		t.Fatal("missing TLS watch, so this test proves nothing")
+	}
+	sweepAcknowledgedCollectedHellos(w, time.Now().Add(4*time.Second))
+	if len(locked) != 0 {
+		t.Fatalf("conntrack lookups %v of %d ran while the watch lock was held, which stalls every queue worker behind netlink", locked, lookups)
+	}
+	if len(p.collected) != 1 || len(resetsTo(sent())) != 1 {
+		t.Fatalf("the silent connection must still be collected and reset: candidates=%d resets=%v", len(p.collected), resetsTo(sent()))
+	}
+}
+
 func TestCollectedRequiresEstablishedTCP(t *testing.T) {
 	w, p, sent := collectedRig(t, func(context.Context, *config.Config) error { return nil })
 	lookupFlow = func(ctnl.Tuple, ctnl.Direction) (ctnl.Flow, bool, error) {
