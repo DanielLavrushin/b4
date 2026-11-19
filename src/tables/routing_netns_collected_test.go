@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -610,4 +611,192 @@ func TestNetnsAProxiedCollectedConnectionSurvivesAConnectionMarkRewrite(t *testi
 
 func TestNetnsAProxiedCollectedConnectionSurvivesAConnectionMarkRewriteNft(t *testing.T) {
 	netnsAProxiedCollectedConnectionSurvivesAConnectionMarkRewrite(t, backendNFTables)
+}
+
+const (
+	netnsCollectedIfaceLink   = "b4ci0"
+	netnsCollectedIfacePeer   = "b4ci0p"
+	netnsCollectedIfaceRouter = "10.201.47.1"
+	netnsCollectedIfaceServer = "10.201.47.2"
+)
+
+func netnsKeepSysctlIfPresent(t *testing.T, key, value string) {
+	t.Helper()
+	if _, err := os.Stat("/proc/sys/" + key); err != nil {
+		return
+	}
+	gwKeepSysctl(t, key, value)
+}
+
+func netnsListenInside(t *testing.T, pid int, addr string) net.Listener {
+	t.Helper()
+	type result struct {
+		ln  net.Listener
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		runtime.LockOSThread()
+		home, err := os.Open(netnsThreadNetNS())
+		if err != nil {
+			done <- result{err: err}
+			return
+		}
+		defer home.Close()
+		target, err := os.Open(fmt.Sprintf("/proc/%d/ns/net", pid))
+		if err != nil {
+			done <- result{err: err}
+			return
+		}
+		defer target.Close()
+		if err := unix.Setns(int(target.Fd()), unix.CLONE_NEWNET); err != nil {
+			done <- result{err: err}
+			return
+		}
+		ln, err := net.Listen("tcp4", addr)
+		if unix.Setns(int(home.Fd()), unix.CLONE_NEWNET) == nil {
+			runtime.UnlockOSThread()
+		}
+		done <- result{ln: ln, err: err}
+	}()
+	r := <-done
+	if r.err != nil {
+		t.Fatalf("listen on %s inside the server namespace: %v", addr, r.err)
+	}
+	t.Cleanup(func() { _ = r.ln.Close() })
+	return r.ln
+}
+
+func netnsStartCollectedInterfaceServer(t *testing.T) {
+	t.Helper()
+	_, _ = run("ip", "link", "del", netnsCollectedIfaceLink)
+	netnsRun(t, "ip", "link", "add", netnsCollectedIfaceLink, "type", "veth", "peer", "name", netnsCollectedIfacePeer)
+	t.Cleanup(func() { _, _ = run("ip", "link", "del", netnsCollectedIfaceLink) })
+	netnsRun(t, "ip", "link", "set", netnsCollectedIfaceLink, "up")
+	netnsRun(t, "ip", "addr", "add", netnsCollectedIfaceRouter+"/24", "dev", netnsCollectedIfaceLink)
+
+	srv := exec.Command("unshare", "-n", "sleep", "600")
+	if err := srv.Start(); err != nil {
+		t.Skipf("cannot open a server network namespace: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.Process.Kill()
+		_, _ = srv.Process.Wait()
+	})
+	pid := srv.Process.Pid
+	self, _ := os.Readlink(netnsThreadNetNS())
+	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		other, err := os.Readlink(fmt.Sprintf("/proc/%d/ns/net", pid))
+		if err == nil && other != self {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Skip("the server never entered its own network namespace")
+		}
+	}
+	netnsRun(t, "ip", "link", "set", netnsCollectedIfacePeer, "netns", strconv.Itoa(pid))
+	in := func(args ...string) {
+		netnsRun(t, append([]string{"nsenter", "-t", strconv.Itoa(pid), "-n"}, args...)...)
+	}
+	in("ip", "link", "set", "lo", "up")
+	in("ip", "link", "set", netnsCollectedIfacePeer, "up")
+	in("ip", "addr", "add", netnsCollectedIfaceServer+"/24", "dev", netnsCollectedIfacePeer)
+	in("ip", "addr", "add", netnsDevInet+"/32", "dev", "lo")
+	in("ip", "route", "add", "default", "via", netnsCollectedIfaceRouter)
+	go netnsServeEcho(netnsListenInside(t, pid, net.JoinHostPort(netnsDevInet, "443")))
+}
+
+func netnsDropAtTheUplinksFarEnd(t *testing.T, engine string) func() int {
+	t.Helper()
+	ipt := netnsCounterBinary(engine)
+	spec := func(action string) []string {
+		return []string{ipt, "-w", "-t", "raw", action, "PREROUTING", "-i", netnsPrimary + "p", "-d", netnsDevInet, "-j", "DROP"}
+	}
+	netnsRun(t, spec("-I")...)
+	t.Cleanup(func() { _, _ = run(spec("-D")...) })
+	return func() int {
+		out := netnsRun(t, ipt, "-w", "-t", "raw", "-L", "PREROUTING", "-v", "-x", "-n")
+		for _, line := range strings.Split(out, "\n") {
+			f := strings.Fields(line)
+			if len(f) < 9 || f[2] != "DROP" || f[5] != netnsPrimary+"p" || f[8] != netnsDevInet {
+				continue
+			}
+			if n, err := strconv.Atoi(f[0]); err == nil {
+				return n
+			}
+		}
+		t.Fatalf("the drop rule at the uplink's far end is gone:\n%s", out)
+		return 0
+	}
+}
+
+func netnsAnInterfaceConsumerKeepsACollectedConnectionOnItsInterface(t *testing.T, engine string) {
+	netnsRequire(t)
+	netnsSetupLinks(t)
+	netnsRequireEngine(t, engine)
+	netnsTurnOnForwarding(t)
+	dev := netnsStartDevice(t)
+	netnsStartCollectedInterfaceServer(t)
+	for _, iface := range []string{"all", "default", netnsCollectedIfaceLink} {
+		gwKeepSysctl(t, "net/ipv4/conf/"+iface+"/rp_filter", "0")
+	}
+	netnsKeepSysctlIfPresent(t, "net/netfilter/nf_conntrack_tcp_loose", "0")
+	uplink := netnsDropAtTheUplinksFarEnd(t, engine)
+
+	routeCTMarkHeld.Store(false)
+	t.Cleanup(func() { routeCTMarkHeld.Store(true) })
+	routeEngine = nil
+	cfg := netnsConfig(engine)
+	set := cfg.Sets[0]
+	set.Routing.EgressInterface = netnsCollectedIfaceLink
+	set.Targets.IPs = []string{netnsDevOther}
+	set.Targets.IpsToMatch = []string{netnsDevOther}
+	set.Targets.UseCollectedIPs = true
+	if err := AddRules(cfg); err != nil {
+		t.Fatalf("AddRules: %v", err)
+	}
+	t.Cleanup(func() {
+		RoutingClearAll()
+		_ = ClearRules(cfg)
+		routeEngine = nil
+	})
+	RoutingSyncConfig(cfg.WithCollectedIPs([]string{netnsDevInet}))
+	if errs := RoutingStatus().SetErrors; len(errs) > 0 {
+		t.Fatalf("the collected interface consumer did not install: %v", errs)
+	}
+	routeMu.Lock()
+	st, ok := routeRuleCache[set.Id]
+	routeMu.Unlock()
+	if !ok {
+		t.Fatal("the collected interface consumer built no rules")
+	}
+	if routeCTMarkIsHeld() {
+		t.Fatal("the sync took the connection mark back as held, so this run would not test the per-packet fallback")
+	}
+
+	var rewritten func() int
+	got := dev.holdAcross(t, netnsDevInet, func() { rewritten = netnsRewriteConnmark(t, engine, "prerouting", "established") })
+	if rewritten == nil || rewritten() == 0 {
+		t.Fatalf("the connection-mark rewrite never matched a packet, so this run proves nothing; the device saw %q", got)
+	}
+	leaked := uplink()
+	if want := fmt.Sprintf("ok=%d of %d", netnsCollectedHoldN, netnsCollectedHoldN); got != want || leaked != 0 {
+		netnsLogState(t, engine)
+		if engine == backendNFTables {
+			out, _ := run("nft", "list", "chain", "inet", routeNftTable, st.chainPre)
+			t.Logf("%s:\n%s", st.chainPre, out)
+		} else {
+			out, _ := run(engine, "-w", "-t", "mangle", "-L", st.chainPre, "-v", "-x", "-n")
+			t.Logf("%s:\n%s", st.chainPre, out)
+		}
+		t.Errorf("on a router that overwrites the connection mark, a connection of an interface set to its collected address %s got %q (want %q) and sent %d packet(s) by the ordinary uplink (want 0); the set marks every packet there, and a guard that returns established connections above that fallback sends them out the wrong interface", netnsDevInet, got, want, leaked)
+	}
+}
+
+func TestNetnsAnInterfaceConsumerKeepsACollectedConnectionOnItsInterface(t *testing.T) {
+	netnsAnInterfaceConsumerKeepsACollectedConnectionOnItsInterface(t, backendIPTables)
+}
+
+func TestNetnsAnInterfaceConsumerKeepsACollectedConnectionOnItsInterfaceNft(t *testing.T) {
+	netnsAnInterfaceConsumerKeepsACollectedConnectionOnItsInterface(t, backendNFTables)
 }

@@ -175,6 +175,9 @@ func routeCollectedGuardChains(be routeBackend, st routeState) []routeCollectedG
 	if ipt, ok := be.(*routeIptBackend); ok && !config.RoutingIsBlock(st.mode) && !routeCollectedConnmarkUsable(ipt.legacy) {
 		return nil
 	}
+	if !config.RoutingIsBlock(st.mode) && !config.RoutingUsesTProxy(st.mode) && !routeCTMarkIsHeld() {
+		return nil
+	}
 	pre := routeCollectedGuardChain{chain: st.chainPre, sources: st.sources}
 	if config.RoutingIsBlock(st.mode) || config.RoutingUsesTProxy(st.mode) && st.srcScoped {
 		return []routeCollectedGuardChain{pre}

@@ -2,6 +2,7 @@ package tables
 
 import (
 	"errors"
+	"fmt"
 	"github.com/daniellavrushin/b4/config"
 	"slices"
 	"strings"
@@ -587,5 +588,51 @@ func TestCollectedGuardSkipsAFamilyWithoutItsIptablesBinary(t *testing.T) {
 	routeRuleCache = map[string]routeState{set.Id: st}
 	if !routeCollectedGuardsPresent(be, cfg) {
 		t.Errorf("the check demands an IPv6 guard the emitter skips on a router without ip6tables, so the monitor rebuilds the routing on every tick:\n%s", strings.Join(installed, "\n"))
+	}
+}
+
+func TestCollectedGuardLeavesAnInterfaceConsumerToTheFallback(t *testing.T) {
+	staticResetGlobals(t)
+	stubBinaries(t, backendIPTables, "ipset")
+	t.Cleanup(func() { routeCTMarkHeld.Store(true) })
+	cfg := collectedGuardTestConfig(config.RoutingModeInterface, true)
+	set := cfg.Sets[0]
+	st := buildRouteState(cfg, set)
+	st.set = set
+	guard := st.setV4 + "c"
+	for _, backend := range []routeBackend{&routeIptBackend{}, &routeNftBackend{}} {
+		for _, held := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/held=%v", backend.name(), held), func(t *testing.T) {
+				routeCTMarkHeld.Store(held)
+				var calls []string
+				run = refuseDeletes(func(args ...string) (string, error) {
+					calls = append(calls, strings.Join(args, " "))
+					return "", nil
+				})
+				for _, chain := range []string{st.chainPre, st.chainOut} {
+					if err := routeCollectedGuard(backend, cfg, set, st, chain); err != nil {
+						t.Fatalf("guard in %s: %v", chain, err)
+					}
+				}
+				returns := 0
+				for _, call := range calls {
+					if strings.Contains(call, guard) && strings.Contains(strings.ToLower(call), "return") {
+						returns++
+					}
+				}
+				switch {
+				case held && returns != 2:
+					t.Errorf("with the connection mark held, an interface consumer returns established connections to a collected address in its pre and out chains, got %d return rule(s):\n%s", returns, strings.Join(calls, "\n"))
+				case !held && len(calls) != 0:
+					t.Errorf("on a router that overwrites the connection mark an interface consumer marks every packet of its set, yet the collected guard still returns established connections above that fallback, so once their mark is rewritten they leave by the ordinary uplink:\n%s", strings.Join(calls, "\n"))
+				}
+
+				run = refuseDeletes(collectedGuardAnswerFrom(calls))
+				routeRuleCache = map[string]routeState{set.Id: st}
+				if !routeCollectedGuardsPresent(backend, cfg) {
+					t.Errorf("the check demands a different guard from the one the emitter installs (held=%v), so the monitor rebuilds the routing on every tick:\n%s", held, strings.Join(calls, "\n"))
+				}
+			})
+		}
 	}
 }
