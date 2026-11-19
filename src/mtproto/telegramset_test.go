@@ -775,17 +775,17 @@ func TestAChangeOfTheTelegramSetClosesTheOpenTelegramSessions(t *testing.T) {
 		bridge.Close()
 		setTelegramSet(nil)
 	})
-	open := func() (*closeRecordConn, *closeRecordConn, *closeRecordConn) {
+	open := func() (*closeRecordConn, *closeRecordConn) {
 		session := &closeRecordConn{}
 		srv.trackConn((*srv.secrets.Load())[0], session)
-		client, dc := &closeRecordConn{}, &closeRecordConn{}
-		bridge.trackSession(client, dc)
-		return session, client, dc
+		client := &closeRecordConn{}
+		bridge.trackSession(client)
+		return session, client
 	}
 
-	session, client, dc := open()
+	session, client := open()
 	srv.UpdateConfig(proxyConfig(false, "b.example.com"))
-	if session.closed.Load() || client.closed.Load() || dc.closed.Load() {
+	if session.closed.Load() || client.closed.Load() {
 		t.Fatal("a restart that leaves the Telegram set alone must not drop the open sessions")
 	}
 
@@ -793,7 +793,7 @@ func TestAChangeOfTheTelegramSetClosesTheOpenTelegramSessions(t *testing.T) {
 	if !session.closed.Load() {
 		t.Error("a proxy session opened before the Telegram set was chosen stayed open, so it keeps the old path until the client reconnects")
 	}
-	if !client.closed.Load() || !dc.closed.Load() {
+	if !client.closed.Load() {
 		t.Error("a Telegram over WebSocket session opened before the Telegram set was chosen stayed open on the old path")
 	}
 }
