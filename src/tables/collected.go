@@ -185,6 +185,9 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 				if !ok {
 					return fmt.Errorf("unsupported collected backend")
 				}
+				if !hasBinary(ipt.iptFor(family.v6)) {
+					continue
+				}
 				tableName := "mangle"
 				if config.RoutingIsBlock(st.mode) {
 					tableName = "filter"

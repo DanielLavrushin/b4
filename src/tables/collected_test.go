@@ -11,6 +11,7 @@ import (
 func TestCollectedGuardKeepsEstablishedOwnersBothBackends(t *testing.T) {
 	old := run
 	t.Cleanup(func() { run = old })
+	stubBinaries(t, backendIPTables, backendIP6Tables)
 	for _, backend := range []routeBackend{&routeNftBackend{}, &routeIptBackend{}} {
 		t.Run(backend.name(), func(t *testing.T) {
 			var calls []string
@@ -68,6 +69,7 @@ func TestCollectedKernelUnionAndEmpty(t *testing.T) {
 func TestCollectedReuseGuardScopesPort443BeforeProtocolOptions(t *testing.T) {
 	old := run
 	t.Cleanup(func() { run = old })
+	stubBinaries(t, backendIPTables)
 	var calls []string
 	run = func(args ...string) (string, error) { calls = append(calls, strings.Join(args, " ")); return "", nil }
 	cfg := familyTestConfig(true, false)
@@ -88,6 +90,7 @@ func TestCollectedReuseGuardScopesPort443BeforeProtocolOptions(t *testing.T) {
 
 func TestCollectedGuardMonitorDetectsMissingProtection(t *testing.T) {
 	staticResetGlobals(t)
+	stubBinaries(t, backendIPTables)
 	cfg := familyTestConfig(true, false)
 	set := staticTestSet(config.RoutingModeInterface, nil)
 	set.Targets.UseCollectedIPs = true
@@ -231,6 +234,7 @@ func TestCollectedGuardSetARoutingSetWithoutCollectedIPsTouchesNoGuardSet(t *tes
 func TestCollectedGuardRestoresHeldConnectionsWithoutTheGuardSet(t *testing.T) {
 	old := run
 	t.Cleanup(func() { run = old })
+	stubBinaries(t, backendIPTables, backendIP6Tables)
 	for _, backend := range []routeBackend{&routeNftBackend{}, &routeIptBackend{}} {
 		for _, mode := range []string{config.RoutingModeProxy, config.RoutingModeWSReuse} {
 			t.Run(backend.name()+"/"+mode, func(t *testing.T) {
@@ -415,5 +419,55 @@ func TestCollectedGuardCheckMatchesWhatASourceScopedConsumerGets(t *testing.T) {
 				t.Errorf("the check misses the guard of a source-scoped collected consumer that holds exactly what the emitter installed, so the monitor rebuilds its routing on every tick:\n%s", strings.Join(installed, "\n"))
 			}
 		})
+	}
+}
+
+func TestCollectedGuardSkipsAFamilyWithoutItsIptablesBinary(t *testing.T) {
+	staticResetGlobals(t)
+	for name, present := range map[string]bool{backendIPTables: true, backendIP6Tables: false, "ipset": true} {
+		prev, had := hasBinaryCache.Load(name)
+		t.Cleanup(func() {
+			if had {
+				hasBinaryCache.Store(name, prev)
+			} else {
+				hasBinaryCache.Delete(name)
+			}
+		})
+		hasBinaryCache.Store(name, present)
+	}
+	var calls []string
+	run = refuseDeletes(func(args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		if args[0] == backendIP6Tables {
+			return "", errors.New(`exec: "ip6tables": executable file not found in $PATH`)
+		}
+		return "", nil
+	})
+	cfg := collectedGuardTestConfig(config.RoutingModeProxy, true)
+	cfg.Queue.IPv6Enabled = true
+	set := cfg.Sets[0]
+	st := buildRouteState(cfg, set)
+	st.set = set
+	be := &routeIptBackend{}
+
+	for _, chain := range []string{st.chainPre, st.chainOut} {
+		if err := routeCollectedGuard(be, cfg, set, st, chain); err != nil {
+			t.Fatalf("the collected guard failed the whole consumer on a router without ip6tables, where every other routing rule skips that family: %v", err)
+		}
+	}
+	installed := append([]string(nil), calls...)
+	if len(installed) == 0 {
+		t.Fatal("no IPv4 guard rule was emitted")
+	}
+	for _, call := range installed {
+		if strings.HasPrefix(call, backendIP6Tables+" ") {
+			t.Errorf("the guard ran ip6tables, which this router does not have: %s", call)
+		}
+	}
+
+	run = refuseDeletes(collectedGuardAnswerFrom(installed))
+	routeRuleCache = map[string]routeState{set.Id: st}
+	if !routeCollectedGuardsPresent(be, cfg) {
+		t.Errorf("the check demands an IPv6 guard the emitter skips on a router without ip6tables, so the monitor rebuilds the routing on every tick:\n%s", strings.Join(installed, "\n"))
 	}
 }
