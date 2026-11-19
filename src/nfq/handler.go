@@ -1015,7 +1015,7 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 			}
 			if stallCount == 1 {
 				scope := vc.scope
-				if ibd.Collects() && scope == nil {
+				if scope == nil && (ibd.Collects() || cfg.CollectedIPsInUse()) {
 					scope = newIngressScope(matcher, pkt.src, pkt.srcMac, vc.inDev, vc.routerOriginated())
 				}
 				w.watchHelloSilence(cfg, set, pkt, scope, connKey, host, sniTarget, ipTarget, sport, dport, tlsVersion, stallFirstSeen.Add(timeout))

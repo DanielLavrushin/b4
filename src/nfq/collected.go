@@ -506,6 +506,16 @@ func collectedConsumerTakesAway(consumer *config.SetConfig, port uint16) bool {
 	return consumer.RoutingDivertsPackets() && !config.RoutingIsBlock(consumer.Routing.Mode) || consumer.ReusesWSSize() && port == 443
 }
 
+func collectedTakenAway(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch) bool {
+	if cfg == nil || matcher == nil || !cfg.IPFamilyEnabled(h.ver == IPv6) {
+		return false
+	}
+	found, _, _ := matcher.MatchIPWithSourceDetail(h.dst, h.mac, func(set *config.SetConfig) bool {
+		return set.Targets.UseCollectedIPs && collectedConsumerTakesAway(set, h.port) && set.MatchesTCPDPort(h.port) && collectedSourceAllowed(set, h.scope)
+	})
+	return found
+}
+
 func collectedOwner(cfg *config.Config, matcher *sni.SuffixSet, h helloWatch) (*config.SetConfig, bool) {
 	if cfg == nil || matcher == nil || !cfg.IPFamilyEnabled(h.ver == IPv6) {
 		return nil, false
@@ -839,7 +849,7 @@ func readCollectedFlow(h helloWatch) (ctnl.Flow, serverSilence, bool) {
 }
 
 func (t *destStateTracker) forgetCollectRunLocked(h *helloWatch) {
-	if h.consumer {
+	if h.consumer || h.takenAway {
 		return
 	}
 	t.forgetCollectedHistoryLocked(h)

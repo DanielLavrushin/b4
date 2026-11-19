@@ -15,6 +15,7 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/engine"
+	"github.com/daniellavrushin/b4/iphealth"
 )
 
 const (
@@ -29,13 +30,13 @@ type lifetimeRig struct {
 	resets func() []uint16
 }
 
-func newLifetimeRig(t *testing.T, consumer *config.SetConfig) *lifetimeRig {
+func newLifetimeRig(t *testing.T, consumer *config.SetConfig, extra ...*config.SetConfig) *lifetimeRig {
 	t.Helper()
 	if consumer == nil {
 		consumer = readyConsumer(true)
 	}
 	consumer.Targets.SourceDevices = []string{lifetimeOwnedMac}
-	r := &lifetimeRig{collectCountRig: newCollectReadyRig(t, consumer, readyProducer())}
+	r := &lifetimeRig{collectCountRig: newCollectReadyRig(t, append([]*config.SetConfig{consumer, readyProducer()}, extra...)...)}
 	r.resets = r.resetLog()
 	r.p.collectedInstall = oneStepInstaller(func(_ context.Context, view *config.Config) error {
 		r.installs++
@@ -312,6 +313,134 @@ func TestAnInterfaceConsumersRoutedConnectionIsNotWatched(t *testing.T) {
 
 	r.device(lifetimeOtherMac)
 	r.hello(t, 42011)
+}
+
+func interfaceConsumer() *config.SetConfig {
+	consumer := readyConsumer(false)
+	consumer.Routing.Enabled, consumer.Routing.Mode, consumer.Routing.EgressInterface = true, config.RoutingModeInterface, "eth-collected"
+	return consumer
+}
+
+func blockWatchSet() *config.SetConfig {
+	block := silenceSet()
+	block.Id, block.Name = "block", "block"
+	block.Targets.DomainsToMatch = []string{"block.example"}
+	return &block
+}
+
+func blockWatchAnswers(blockHello []byte) map[string]func(*testing.T, *collectCountRig) {
+	return map[string]func(*testing.T, *collectCountRig){
+		"the client acknowledged server bytes": func(t *testing.T, r *collectCountRig) {
+			r.w.ProcessPacket(clientPacketAcking(43000, silentHelloSeq+uint32(len(blockHello)), silentServerAck+1400, 0x10, nil))
+		},
+		"conntrack shows server bytes at the deadline": func(t *testing.T, r *collectCountRig) {
+			f := r.flow(t, 43000)
+			f.ReplyPackets, f.ReplyBytes = 4, 4200
+			r.w.sweepSilentHellos(r.w.getConfig(), time.Now().Add(5*time.Second))
+		},
+		"Block's answer check before a ban": func(t *testing.T, r *collectCountRig) {
+			f := r.flow(t, 43000)
+			f.ReplyPackets, f.ReplyBytes = 4, 4200
+			r.w.bans.gotAnswer = r.w.silentHelloGotAnswer
+			dst := net.ParseIP("1.2.3.4")
+			if r.w.bans.stillSilent(iphealth.BanKey(dst, 443), dst, 443) {
+				t.Fatal("Block's answer check must find the server bytes conntrack counted")
+			}
+		},
+	}
+}
+
+func TestABlockWatchOnAConnectionARoutingConsumerTakesKeepsTheAddress(t *testing.T) {
+	blockHello := buildClientHello("www.block.example", 16, 0xAB)
+	for name, answer := range blockWatchAnswers(blockHello) {
+		for _, served := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/served=%v", name, served), func(t *testing.T) {
+				r := newLifetimeRig(t, interfaceConsumer(), blockWatchSet())
+				r.collect(t)
+				if !served {
+					r.device(lifetimeOtherMac)
+				}
+				r.w.ProcessPacket(clientPacket(43000, silentHelloSeq, 0x18, blockHello))
+				if !r.watched(43000) {
+					t.Fatal("the Block set must still watch its connection for its own verdict, or this test proves nothing")
+				}
+				answer(t, r.collectCountRig)
+				r.sweep(10 * time.Second)
+
+				if served && (r.collected() != 1 || r.installs != 1 || !r.consumerMatches("1.2.3.4")) {
+					t.Fatalf("an answer on a Block watch of a connection the interface consumer routes says nothing about the uplink and must keep the address: candidates=%d installs=%d", r.collected(), r.installs)
+				}
+				if !served && r.collected() != 0 {
+					t.Fatalf("an answer on a Block watch of a connection from a device the consumer does not serve must drop the address: candidates=%d", r.collected())
+				}
+			})
+		}
+	}
+}
+
+func TestABlockWatchSeesARoutingConsumerScopedToItsIngressInterface(t *testing.T) {
+	idx := scopeIfaces(t)
+	blockHello := buildClientHello("www.block.example", 16, 0xAB)
+	for _, tc := range []struct {
+		in    string
+		keeps bool
+	}{{in: "br0", keeps: true}, {in: "eth9", keeps: false}} {
+		t.Run(tc.in, func(t *testing.T) {
+			consumer := interfaceConsumer()
+			consumer.Routing.SourceInterfaces = []string{"br0"}
+			r := newCollectReadyRig(t, consumer, readyProducer(), blockWatchSet())
+			for i, sport := range []uint16{42000, 42001} {
+				queuedFrom(t, r.w, silentHelloFrom(sport), idx["br0"], nil, nil)
+				r.serverSends(t, sport, 0x10, nil)
+				r.sweep(time.Duration(4+i) * time.Second)
+			}
+			if r.collected() != 1 || r.installs != 1 {
+				t.Fatalf("setup: two silent connections from br0 must collect 1.2.3.4: candidates=%d installs=%d", r.collected(), r.installs)
+			}
+			queuedFrom(t, r.w, clientPacket(43000, silentHelloSeq, 0x18, blockHello), idx[tc.in], nil, nil)
+			if !r.watched(43000) {
+				t.Fatal("the Block set must still watch its connection, or this test proves nothing")
+			}
+			r.w.ProcessPacket(clientPacketAcking(43000, silentHelloSeq+uint32(len(blockHello)), silentServerAck+1400, 0x10, nil))
+			r.sweep(10 * time.Second)
+
+			if got := r.collected() == 1; got != tc.keeps {
+				t.Fatalf("Block connection from %s: address kept=%v, want %v: the consumer routes only what arrives on br0, so only an answer there leaves the uplink unjudged", tc.in, got, tc.keeps)
+			}
+		})
+	}
+}
+
+func TestARoutingConsumerLaterInTheSetOrderStillTakesItsConnections(t *testing.T) {
+	plain := readyConsumer(false)
+	plain.Id, plain.Name = "plain", "plain"
+	plain.Targets.SourceDevices = []string{lifetimeOwnedMac}
+	routed := interfaceConsumer()
+	routed.Id, routed.Name = "routed", "routed"
+	r := &lifetimeRig{collectCountRig: newCollectReadyRig(t, plain, routed, readyProducer(), blockWatchSet())}
+	r.resets = r.resetLog()
+	r.device(lifetimeOtherMac)
+	r.collect(t)
+
+	r.device(lifetimeOwnedMac)
+	if got := r.decidedBy(t, 42010); got != "yt-images" {
+		t.Fatalf("setup: the collecting set names the server, so it decides the connection, got %s", got)
+	}
+	if r.watched(42010) {
+		t.Fatal("the interface consumer routes every device's connection to the collected address, whatever an earlier set that serves this device, so the collecting set must not watch it")
+	}
+	r.serverSends(t, 42010, 0x18, []byte{0x16, 3, 3, 0, 1, 2})
+	blockHello := buildClientHello("www.block.example", 16, 0xAB)
+	r.w.ProcessPacket(clientPacket(43000, silentHelloSeq, 0x18, blockHello))
+	if !r.watched(43000) {
+		t.Fatal("the Block set must still watch its connection, or this test proves nothing")
+	}
+	r.w.ProcessPacket(clientPacketAcking(43000, silentHelloSeq+uint32(len(blockHello)), silentServerAck+1400, 0x10, nil))
+	r.sweep(10 * time.Second)
+
+	if r.collected() != 1 || r.installs != 1 {
+		t.Fatalf("answers on connections a later routing consumer takes must keep the address: candidates=%d installs=%d", r.collected(), r.installs)
+	}
 }
 
 func TestCollectedPoolStringsStateTheExpiry(t *testing.T) {
