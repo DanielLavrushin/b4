@@ -1929,11 +1929,12 @@ func (m *mockRouteBackend) addElements(setName string, ips []string, ttlSec int)
 	}
 	return nil
 }
-func (m *mockRouteBackend) delElements(setName string, ips []string) {
+func (m *mockRouteBackend) delElements(setName string, ips []string) []string {
 	m.setOps = append(m.setOps, "del "+setName)
 	if m.delElementsFn != nil {
 		m.delElementsFn(setName, ips)
 	}
+	return nil
 }
 
 func TestMonitor_BackendPropagation(t *testing.T) {

@@ -237,19 +237,20 @@ func routeNftScriptError(err error) string {
 	return msg
 }
 
-func (b *routeNftBackend) delElements(setName string, ips []string) {
+func (b *routeNftBackend) delElements(setName string, ips []string) []string {
 	if len(ips) == 0 {
-		return
+		return nil
 	}
 
 	_, err := runNftStdin(routeNftElementScript("delete", setName, ips))
 	if err == nil {
-		return
+		return nil
 	}
 	log.Tracef("routing: deleting %d elements from %s in one script failed (%s), falling back to batches", len(ips), setName, routeNftScriptError(err))
 
 	const chunkSize = 128
 
+	var stuck []string
 	for i := 0; i < len(ips); i += chunkSize {
 		end := i + chunkSize
 		if end > len(ips) {
@@ -273,9 +274,13 @@ func (b *routeNftBackend) delElements(setName string, ips []string) {
 		for _, ip := range chunk {
 			if out, err := run("nft", "delete", "element", "inet", routeNftTable, setName, "{", ip, "}"); err != nil {
 				log.Tracef("routing: delete element %s from %s failed: %s", ip, setName, strings.TrimSpace(out))
+				if !strings.Contains(out, "No such file or directory") {
+					stuck = append(stuck, ip)
+				}
 			}
 		}
 	}
+	return stuck
 }
 
 func (b *routeNftBackend) ensureChain(chain string, _ bool) error {

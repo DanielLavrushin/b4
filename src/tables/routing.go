@@ -90,7 +90,7 @@ type routeBackend interface {
 	ensureBase() error
 	ensureIPSet(name string, v6 bool) error
 	addElements(setName string, ips []string, ttlSec int) []string
-	delElements(setName string, ips []string)
+	delElements(setName string, ips []string) []string
 	ensureChain(chain string, isMangle bool) error
 	flushChain(chain string, isMangle bool)
 	deleteChain(chain string, isMangle bool)

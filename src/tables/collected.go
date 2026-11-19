@@ -50,10 +50,13 @@ func routePrepareCollected(be routeBackend, cfg *config.Config, set *config.SetC
 			continue
 		}
 		entries := routeCollectedFamilyEntries(set, family.v6)
-		if gone := routeEntriesGone(recorded, entries); len(gone) > 0 {
-			be.delElements(name, gone)
-		}
 		next[name] = entries
+		if gone := routeEntriesGone(recorded, entries); len(gone) > 0 {
+			if stuck := be.delElements(name, gone); len(stuck) > 0 {
+				next[name] = append(slices.Clone(entries), stuck...)
+				failure = fmt.Errorf("collected guard removal failed for %s", set.Name)
+			}
+		}
 		if failed := be.addElements(name, entries, 0); len(failed) > 0 {
 			failure = fmt.Errorf("collected guard membership failed for %s", set.Name)
 		}

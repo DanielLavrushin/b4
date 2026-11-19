@@ -186,6 +186,53 @@ func TestCollectedGuardSetDropsARemovedAddress(t *testing.T) {
 	}
 }
 
+func TestCollectedGuardSetRetriesAFailedDelete(t *testing.T) {
+	staticResetGlobals(t)
+	stubBinaries(t, backendIPTables, "ipset")
+	run = refuseDeletes(run)
+	runLogged = func(op string, args ...string) bool {
+		_, err := run(args...)
+		return err == nil
+	}
+	origStdin := runStdin
+	t.Cleanup(func() { runStdin = origStdin })
+	refused := false
+	var deletes []string
+	runStdin = func(stdin string, args ...string) error {
+		for _, line := range strings.Split(strings.TrimSpace(stdin), "\n") {
+			if strings.HasPrefix(line, "del ") {
+				deletes = append(deletes, line)
+			}
+		}
+		if refused && strings.Contains(stdin, "del ") {
+			return errors.New("ipset v7.19: Kernel error received: Resource busy")
+		}
+		return nil
+	}
+	cfg := collectedGuardTestConfig(config.RoutingModeProxy, true)
+	be := &routeIptBackend{}
+	st := collectedGuardPrepare(t, be, cfg.WithCollectedIPs([]string{"198.51.100.1", "198.51.100.2"}))
+	guard := st.setV4 + "c"
+	after := cfg.WithCollectedIPs([]string{"198.51.100.2"})
+
+	refused = true
+	if err := routePrepareCollected(be, after, after.Sets[0], st); err == nil {
+		t.Errorf("the kernel refused to delete 198.51.100.1 from %s, yet the sync reported the guard set as current, so no retry is queued", guard)
+	}
+	refused = false
+	deletes = nil
+	if err := routePrepareCollected(be, after, after.Sets[0], st); err != nil {
+		t.Fatalf("the next sync failed with deletes allowed again: %v", err)
+	}
+	if want := "del " + guard + " 198.51.100.1"; !slices.Contains(deletes, want) {
+		t.Errorf("the next sync ran deletes %q, want %q: a removal the kernel refused once is never tried again, so the address stays in the guard set and new connections to it are marked for a proxy that no longer takes them", deletes, want)
+	}
+	deletes = nil
+	if err := routePrepareCollected(be, after, after.Sets[0], st); err != nil || len(deletes) != 0 {
+		t.Errorf("once the delete went through, a further sync ran deletes %q (err %v), want none", deletes, err)
+	}
+}
+
 func TestCollectedGuardSetIsFlushedWhenTheSetStopsUsingCollectedIPs(t *testing.T) {
 	staticResetGlobals(t)
 	run = refuseDeletes(run)

@@ -104,9 +104,9 @@ func (b *routeIptBackend) addElements(setName string, ips []string, ttlSec int) 
 	return failed
 }
 
-func (b *routeIptBackend) delElements(setName string, ips []string) {
+func (b *routeIptBackend) delElements(setName string, ips []string) []string {
 	if len(ips) == 0 || !hasBinary("ipset") {
-		return
+		return nil
 	}
 	var sb strings.Builder
 	sb.Grow(len(ips) * (len(setName) + 24))
@@ -114,11 +114,15 @@ func (b *routeIptBackend) delElements(setName string, ips []string) {
 		fmt.Fprintf(&sb, "del %s %s\n", setName, ip)
 	}
 	if err := runStdin(sb.String(), "ipset", "restore", "-exist"); err == nil {
-		return
+		return nil
 	}
+	var stuck []string
 	for _, ip := range ips {
-		runLogged("routing: ipset del "+ip, "ipset", "del", setName, ip, "-exist")
+		if !runLogged("routing: ipset del "+ip, "ipset", "del", setName, ip, "-exist") {
+			stuck = append(stuck, ip)
+		}
 	}
+	return stuck
 }
 
 func (b *routeIptBackend) ensureChain(chain string, isMangle bool) error {
