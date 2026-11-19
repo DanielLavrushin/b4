@@ -218,6 +218,15 @@ func TestAnAnswerOnABlockWatchClearsTheCollectCount(t *testing.T) {
 			f.ReplyPackets, f.ReplyBytes = 4, 4200
 			r.w.sweepSilentHellos(r.w.getConfig(), r.start.Add(5*time.Second))
 		}},
+		"Block's answer check before a ban": {answer: func(t *testing.T, r *collectCountRig) {
+			f := r.flow(t, 43000)
+			f.ReplyPackets, f.ReplyBytes = 4, 4200
+			r.w.bans.gotAnswer = r.w.silentHelloGotAnswer
+			dst := net.ParseIP("1.2.3.4")
+			if r.w.bans.stillSilent(iphealth.BanKey(dst, 443), dst, 443) {
+				t.Fatal("Block's answer check must find the server bytes conntrack counted")
+			}
+		}},
 		"a set that uses collected IPs": {consumer: true, answer: func(t *testing.T, r *collectCountRig) {
 			r.w.ProcessPacket(clientPacketAcking(43000, silentHelloSeq+uint32(len(blockHello)), silentServerAck+1400, 0x10, nil))
 		}},
