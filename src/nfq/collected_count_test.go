@@ -197,6 +197,44 @@ func TestAnAnswerInTheSameSweepLeavesSilentConnectionsUncounted(t *testing.T) {
 	}
 }
 
+func TestHeaderOnlyRepliesTheQueueMissedNeitherCountNorStartTheCollectCountOver(t *testing.T) {
+	for name, tc := range map[string]struct {
+		packets, bytes uint64
+		answered       bool
+	}{
+		"a pure ACK past the queue's byte limit":   {packets: 1, bytes: 52},
+		"two packets at the header allowance":      {packets: 2, bytes: 2 * (60 + 20)},
+		"one byte more than the header allowance":  {packets: 1, bytes: 60 + 20 + 1, answered: true},
+		"server data the queue did not see at all": {packets: 1, bytes: 1400, answered: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newCollectCountRig(t)
+			r.silent(t, 42000)
+			r.sweep(4 * time.Second)
+			r.silent(t, 42001)
+			f := r.flow(t, 42001)
+			f.ReplyPackets += tc.packets
+			f.ReplyBytes += tc.bytes
+			r.sweep(5 * time.Second)
+			if r.collected() != 0 || r.watched(42001) || len(resetsTo(r.sent())) != 0 {
+				t.Fatalf("a connection with replies the queue did not see must neither count nor wait: candidates=%d watched=%v resets=%v", r.collected(), r.watched(42001), resetsTo(r.sent()))
+			}
+			r.silent(t, 42002)
+			r.sweep(6 * time.Second)
+
+			if tc.answered {
+				if r.collected() != 0 || !r.watched(42002) {
+					t.Fatalf("reply bytes beyond the headers are an answer and start the count over: candidates=%d", r.collected())
+				}
+				return
+			}
+			if ports := resetsTo(r.sent()); r.collected() != 1 || !slices.Equal(ports, []uint16{42000, 42002}) {
+				t.Fatalf("header-only replies are no answer, so the count must go on: candidates=%d resets=%v", r.collected(), ports)
+			}
+		})
+	}
+}
+
 func TestAnAnswerOnABlockWatchClearsTheCollectCount(t *testing.T) {
 	blockHello := buildClientHello("www.block.example", 16, 0xAB)
 	blockSet := func(consumer bool) *config.SetConfig {
