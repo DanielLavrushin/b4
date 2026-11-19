@@ -1510,11 +1510,6 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			routeWarnIncomplete(set, "b4 could not take a routing table of its own for it")
 			continue
 		}
-		if err := routePrepareCollected(be, cfg, set, cur); err != nil {
-			failed = true
-			setErrs[set.Id] = RoutingSetError{ID: set.Id, Set: set.Name, Error: err.Error()}
-			continue
-		}
 		sources := routeNormalizedSources(set.Routing.SourceInterfaces)
 
 		retireOld := func() {}
@@ -1536,13 +1531,15 @@ func routingSyncConfigLocked(cfg *config.Config) {
 		}
 
 		if _, ok := routeRuleCache[set.Id]; !ok {
-			var err error
-			if config.RoutingIsBlock(cur.mode) {
-				err = routeEnsureBlockRule(be, cfg, set, cur, sources)
-			} else if config.RoutingUsesTProxy(cur.mode) {
-				err = routeEnsureProxyRule(be, cfg, set, cur, sources)
-			} else {
-				err = routeEnsureRule(be, cfg, set, cur, sources)
+			err := routePrepareCollected(be, cfg, set, cur)
+			if err == nil {
+				if config.RoutingIsBlock(cur.mode) {
+					err = routeEnsureBlockRule(be, cfg, set, cur, sources)
+				} else if config.RoutingUsesTProxy(cur.mode) {
+					err = routeEnsureProxyRule(be, cfg, set, cur, sources)
+				} else {
+					err = routeEnsureRule(be, cfg, set, cur, sources)
+				}
 			}
 			if err != nil {
 				if hadPrevious {
@@ -1561,6 +1558,10 @@ func routingSyncConfigLocked(cfg *config.Config) {
 			routeRuleCache[set.Id] = cur
 			retireOld()
 			newRoutingSets = append(newRoutingSets, set)
+		} else if err := routePrepareCollected(be, cfg, set, cur); err != nil {
+			failed = true
+			setErrs[set.Id] = RoutingSetError{ID: set.Id, Set: set.Name, Error: err.Error()}
+			continue
 		}
 		routeNoteInstalled(set.Id)
 

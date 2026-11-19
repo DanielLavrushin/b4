@@ -265,3 +265,44 @@ func TestNetnsAHeldCollectedConnectionSurvivesItsRemoval(t *testing.T) {
 func TestNetnsAHeldCollectedConnectionSurvivesItsRemovalNft(t *testing.T) {
 	netnsAHeldCollectedConnectionSurvivesItsRemoval(t, backendNFTables)
 }
+
+func netnsCollectedSwitchedMode(cfg *config.Config, mode string) *config.Config {
+	next := *cfg
+	set := *cfg.Sets[0]
+	set.Routing.Mode = mode
+	if mode == config.RoutingModeInterface {
+		set.Routing.EgressInterface = netnsSecondary
+	}
+	next.Sets = []*config.SetConfig{&set}
+	return &next
+}
+
+func netnsACollectedConsumerSurvivesARoutingModeChange(t *testing.T, engine string) {
+	for _, mode := range []string{config.RoutingModeBlock, config.RoutingModeInterface} {
+		t.Run(mode, func(t *testing.T) {
+			_, base, _ := netnsCollectedProxySetUp(t, engine)
+			RoutingSyncConfig(base.WithCollectedIPs([]string{netnsDevInet}))
+			if errs := RoutingStatus().SetErrors; len(errs) > 0 {
+				t.Fatalf("the collected proxy consumer did not install: %v", errs)
+			}
+			moved := netnsCollectedSwitchedMode(base, mode).WithCollectedIPs([]string{netnsDevInet})
+			for _, pass := range []string{"the change", "the retry"} {
+				RoutingSyncConfig(moved)
+				if errs := RoutingStatus().SetErrors; len(errs) > 0 {
+					t.Errorf("%s from proxy to %s mode left the collected consumer uninstalled: %v", pass, mode, errs)
+				}
+				if !RoutingRulesPresent(moved) {
+					t.Errorf("after %s from proxy to %s mode the monitor finds the consumer's rules missing", pass, mode)
+				}
+			}
+		})
+	}
+}
+
+func TestNetnsACollectedConsumerSurvivesARoutingModeChange(t *testing.T) {
+	netnsACollectedConsumerSurvivesARoutingModeChange(t, backendIPTables)
+}
+
+func TestNetnsACollectedConsumerSurvivesARoutingModeChangeNft(t *testing.T) {
+	netnsACollectedConsumerSurvivesARoutingModeChange(t, backendNFTables)
+}
