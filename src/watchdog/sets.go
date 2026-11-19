@@ -11,14 +11,19 @@ import (
 	"github.com/daniellavrushin/b4/log"
 )
 
-const maxHealFailures = 3
+const (
+	maxHealFailures   = 3
+	carrierRetryFloor = time.Minute
+)
 
 type setState struct {
 	SetWatchStatus
-	urlKey         string
-	gaveUp         bool
-	queuedRevision string
-	urlsChanged    bool
+	urlKey            string
+	gaveUp            bool
+	queuedRevision    string
+	urlsChanged       bool
+	blockReason       string
+	carrierWaitLogged bool
 }
 
 func urlKeyOf(set *config.SetConfig) string {
@@ -134,6 +139,24 @@ func (st *setState) resetToQueued(reason string) {
 	st.queuedRevision = ""
 }
 
+func (st *setState) clearGiveUp() {
+	st.gaveUp = false
+	st.HealFailures = 0
+	st.blockReason = ""
+	st.carrierWaitLogged = false
+}
+
+func (w *Watchdog) liftChangedBlockLocked(cfg *config.Config, set *config.SetConfig, st *setState) {
+	if !st.gaveUp || st.blockReason == "" || st.Status == SetStatusHealing || healStillBlocked(cfg, set, st.blockReason) {
+		return
+	}
+	log.Infof("[WATCHDOG] set %q: its %s changed, so the TUN engine no longer refuses its heals; automatic heals can run again", set.Name, blockedSetting(st.blockReason))
+	st.clearGiveUp()
+	w.dropFromHealQueueLocked(set.Id)
+	st.resetToQueued("")
+	st.CooldownUntil = time.Time{}
+}
+
 func (st *setState) settleURLChange() {
 	if !st.urlsChanged {
 		return
@@ -160,6 +183,7 @@ func (w *Watchdog) syncSetStatesLocked(cfg *config.Config) {
 			continue
 		}
 		st.SetName = set.Name
+		w.liftChangedBlockLocked(cfg, set, st)
 		if key := urlKeyOf(set); st.urlKey != key {
 			st.urlKey = key
 			st.URLs = freshURLStates(set.Discovery.URLs, st.URLs)
@@ -263,8 +287,7 @@ func (w *Watchdog) ForceCheckSet(id string, clearGiveUp bool) string {
 		return ForceCheckNotWatched
 	}
 	if clearGiveUp {
-		st.gaveUp = false
-		st.HealFailures = 0
+		st.clearGiveUp()
 	}
 	if st.Status == SetStatusHealing {
 		return ForceCheckHealing
@@ -479,8 +502,7 @@ func (w *Watchdog) applySetCheckLocked(st *setState, job *setCheckJob, now time.
 		st.Reason = ""
 		st.LastError = ""
 		st.ConsecutiveFailures = 0
-		st.HealFailures = 0
-		st.gaveUp = false
+		st.clearGiveUp()
 		st.Interval = intervalOr(wdCfg.IntervalSec, 300)
 
 	default:
