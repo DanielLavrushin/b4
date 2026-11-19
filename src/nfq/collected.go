@@ -778,7 +778,11 @@ func (p *Pool) rollbackCollected() {
 	if err == nil || p.collectedCtx.Err() != nil {
 		return
 	}
-	log.Warnf("Collected IPs: rollback incomplete: %v", err)
+	if p.collectedEpoch.Load() != epoch {
+		log.Tracef("Collected IPs: a save or a pool change superseded the rollback, the next pass installs the pool again")
+	} else {
+		log.Warnf("Collected IPs: rollback incomplete: %v", err)
+	}
 	p.configMu.Lock()
 	p.collectedDirty = true
 	p.configMu.Unlock()

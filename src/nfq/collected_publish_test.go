@@ -296,6 +296,71 @@ func TestNoCollectionWhileDiscoveryRuns(t *testing.T) {
 	}
 }
 
+func TestARollbackASaveSupersedesIsNotReportedAsIncomplete(t *testing.T) {
+	logs := captureLog(t)
+	w, p, _ := collectedRig(t, func(context.Context, *config.Config) error { return nil })
+	calls := 0
+	p.collectedInstall = func(_ context.Context, _ *config.Config, current func() bool) error {
+		calls++
+		if !current() {
+			return errors.New("superseded")
+		}
+		switch calls {
+		case 1:
+			return errors.New("kernel refused")
+		case 2:
+			p.configMu.Lock()
+			n := *p.collectedBase
+			p.configMu.Unlock()
+			if err := p.UpdateConfig(&n); err != nil {
+				t.Fatal(err)
+			}
+			if !current() {
+				return errors.New("superseded")
+			}
+		}
+		return nil
+	}
+	w.ProcessPacket(silentHelloFrom(42000))
+	start := time.Now()
+	sweepAcknowledgedCollectedHellos(w, start.Add(4*time.Second))
+	if calls != 2 {
+		t.Fatalf("setup: the failed install must be followed by one rollback install, calls=%d", calls)
+	}
+	if strings.Contains(logs.String(), "rollback incomplete") {
+		t.Fatalf("a rollback that a save superseded did not fail, it gives way to the save's reconcile: %q", logs.String())
+	}
+	p.configMu.Lock()
+	dirty := p.collectedDirty
+	p.configMu.Unlock()
+	if !dirty {
+		t.Fatal("the save's reconcile must stay pending after the superseded rollback")
+	}
+	sweepAcknowledgedCollectedHellos(w, start.Add(6*time.Second))
+	p.configMu.Lock()
+	dirty = p.collectedDirty
+	p.configMu.Unlock()
+	if calls != 3 || dirty {
+		t.Fatalf("the next pass must reconcile the save: calls=%d dirty=%v", calls, dirty)
+	}
+}
+
+func TestARollbackTheKernelRefusesIsStillReported(t *testing.T) {
+	logs := captureLog(t)
+	w, p, _ := collectedRig(t, func(context.Context, *config.Config) error { return errors.New("kernel refused") })
+	w.ProcessPacket(silentHelloFrom(42000))
+	sweepAcknowledgedCollectedHellos(w, time.Now().Add(4*time.Second))
+	if !strings.Contains(logs.String(), "rollback incomplete: kernel refused") {
+		t.Fatalf("a rollback the kernel refused must be reported: %q", logs.String())
+	}
+	p.configMu.Lock()
+	dirty := p.collectedDirty
+	p.configMu.Unlock()
+	if !dirty {
+		t.Fatal("a refused rollback must leave the pool to reconcile")
+	}
+}
+
 func TestAnInstallUnderWayWhenDiscoveryStartsStillCompletes(t *testing.T) {
 	r := newCollectCountRig(t)
 	paused := false
