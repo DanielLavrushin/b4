@@ -2270,3 +2270,32 @@ func TestCollectedAccountingLeavesAnAcctAlreadyOnAlone(t *testing.T) {
 		})
 	}
 }
+
+func TestCollectedAccountingStaysOffWhenNoSetCollectsReplies(t *testing.T) {
+	prevSnap := sysctlSnapPath
+	sysctlSnapPath = filepath.Join(t.TempDir(), "sysctl.json")
+	t.Cleanup(func() { sysctlSnapPath = prevSnap })
+
+	for _, consumer := range []bool{true, false} {
+		t.Run(fmt.Sprintf("uses collected IPs=%v", consumer), func(t *testing.T) {
+			_ = os.Remove(sysctlSnapPath)
+			cfg := config.NewConfig()
+			collector := config.NewSetConfig()
+			collector.Enabled = true
+			collector.TCP.IPBlockDetect.Enabled = true
+			collector.TCP.IPBlockDetect.Action = "collect"
+			collector.Targets.UseCollectedIPs = consumer
+			cfg.Sets = []*config.SetConfig{&collector}
+			var wrote []string
+			prevGet, prevSet := getSysctl, setSysctl
+			getSysctl = func(string) string { return "0" }
+			setSysctl = func(name, val string) { wrote = append(wrote, name+"="+val) }
+			t.Cleanup(func() { getSysctl, setSysctl = prevGet, prevSet })
+
+			applyCollectedAccounting(&cfg)
+			if want := !consumer; (len(wrote) > 0) != want || cfg.CollectsReplies() != want {
+				t.Errorf("a Collect set that uses collected IPs=%v: CollectsReplies=%v, wrote %v; nf_conntrack_acct is turned on only when some set reads reply counters", consumer, cfg.CollectsReplies(), wrote)
+			}
+		})
+	}
+}

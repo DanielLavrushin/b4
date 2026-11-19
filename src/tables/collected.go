@@ -360,16 +360,14 @@ func CollectedTargetsReady(cfg *config.Config) error {
 var collectedAccounting = SysctlSetting{Name: "net.netfilter.nf_conntrack_acct", Desired: "1"}
 
 func applyCollectedAccounting(cfg *config.Config) {
-	for _, set := range cfg.Sets {
-		if set != nil && set.Enabled && set.TCP.IPBlockDetect.Collects() && !cfg.Queue.IsDiscovery && cfg.Queue.Mode != "tun" {
-			if _, saved := loadSysctlSnapshot()[collectedAccounting.Name]; !saved && getSysctl(collectedAccounting.Name) == "1" {
-				return
-			}
-			collectedAccounting.Apply()
-			return
-		}
+	if !cfg.CollectsReplies() {
+		revertCollectedAccounting()
+		return
 	}
-	revertCollectedAccounting()
+	if _, saved := loadSysctlSnapshot()[collectedAccounting.Name]; !saved && getSysctl(collectedAccounting.Name) == "1" {
+		return
+	}
+	collectedAccounting.Apply()
 }
 
 func revertCollectedAccounting() {
