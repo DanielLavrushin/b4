@@ -108,7 +108,9 @@ func (t *destStateTracker) WatchHello(h *helloWatch) {
 		if prev.setID == h.setID && prev.helloAck == h.helloAck && (!h.collect || prev.flowID == h.flowID) {
 			return
 		}
-		h.counted = prev.counted
+		if prev.helloAck == h.helloAck && (prev.flowID == h.flowID || !prev.collect && !h.collect) {
+			h.counted = prev.counted
+		}
 		if prev.collect {
 			t.collectWatching.Add(-1)
 		}
