@@ -57,7 +57,7 @@ The set's traffic leaves through the selected interface, such as a WireGuard or 
 
 Traffic that arrives on the output interface itself does not follow the set. With an IPv4 address in **Gateway (optional)** on an Ethernet port, bridge, VLAN, Wi-Fi or TAP interface, IPv4 devices on that network follow the set too, apart from the gateway itself. b4 ignores a gateway that is outside the interface's network or is one of the router's own addresses, and logs the reason. See [Gateway](../internals/routing.md#gateway) and [Sites through a VPN on another device](../guides/vpn.md#another-device).
 
-When the output interface is a tunnel that is up, such as WireGuard or a TUN or TAP device, b4 leaves the set's packets alone: the strategy tabs have no effect, and the set's connections end with `[routed->wg0]` on the **Logs** page. A set routed to a plain interface, such as a second uplink, keeps its bypass strategy.
+When the output interface is a tunnel that is up, such as WireGuard or a TUN or TAP device, b4 leaves the set's packets alone: the strategy tabs have no effect, and the set's TCP connections end with `[routed->wg0]` on the **Logs** page. A connection that the router sends out by another interface, such as one from a device in a KeeneticOS internet access policy, ends with `reroute->` and that interface's name instead, or `tunnel->` when the interface is a tunnel. A set routed to a plain interface, such as a second uplink, keeps its bypass strategy.
 
 #### Router's own traffic
 

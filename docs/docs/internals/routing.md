@@ -49,7 +49,7 @@ b4 skips a table that holds routes it did not add, as the VPN clients of Asuswrt
 
 ### Tunnels and the bypass strategy {#tunnel-hand-off}
 
-When the output interface is a tunnel that is up, a TUN or TAP device or WireGuard, b4 leaves the set's packets alone, as in proxy mode: no faking, fragmentation or desync, no SYN health check, dead-IP escalation, IP block detection or TCP duplication. The segment it would change is the inner one, which the router wraps or terminates. The connection is logged with `routed-><iface>`.
+When the output interface is a tunnel that is up, a TUN or TAP device or WireGuard, b4 leaves the set's packets alone, as in proxy mode: no faking, fragmentation or desync, no SYN health check, dead-IP escalation, IP block detection or TCP duplication. The segment it would change is the inner one, which the router wraps or terminates. A TCP connection is logged with `routed-><iface>`. When another mark or route sends a connection of the set out by an interface other than the set's, b4 leaves it alone as well and logs `reroute-><iface>`, or `tunnel-><iface>` when that interface is a tunnel.
 
 A set routed to a plain interface, a set whose output interface exists but is down, and a domain-only set with no IP targets keep the strategy. A set limited to source interfaces or source devices hands off like any other: the packet engine matches on the destination alone.
 
