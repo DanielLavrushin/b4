@@ -7,7 +7,7 @@ import (
 )
 
 const iptCaptureChainListing = `-N B4
--A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+-A B4 -m mark --mark 0x8000/0x88f98000 -j RETURN
 -A B4 -p tcp -m multiport --dports 443 -m connbytes --connbytes 0:19 --connbytes-mode packets --connbytes-dir original -m conntrack --ctdir ORIGINAL -j NFQUEUE --queue-balance 537:540 --queue-bypass
 -A B4 -p udp -m udp --dport 53 -j RETURN
 -A B4 -p udp -m multiport --dports 443 -m connbytes --connbytes 0:8 --connbytes-mode packets --connbytes-dir original -j NFQUEUE --queue-balance 537:540 --queue-bypass
@@ -24,7 +24,7 @@ func TestIPTListingQueuesFindsTheCaptureRules(t *testing.T) {
 
 func TestIPTListingQueuesIgnoresOtherChainsAndTargets(t *testing.T) {
 	const listing = `-N B4
--A B4 -m mark --mark 0x8000/0x8cfd8000 -j RETURN
+-A B4 -m mark --mark 0x8000/0x88f98000 -j RETURN
 -A B4 -p udp -m udp --dport 53 -j RETURN
 -A B4_PREROUTING -p tcp -m multiport --sports 443 -j NFQUEUE --queue-balance 537:540 --queue-bypass
 `
@@ -38,7 +38,7 @@ func TestIPTListingQueuesIgnoresOtherChainsAndTargets(t *testing.T) {
 
 func TestNFTListingQueuesMatchesPerLine(t *testing.T) {
 	const listing = `chain b4_chain {
-		meta mark & 0x8cfd8000 == 0x8000 return
+		meta mark & 0x88f98000 == 0x8000 return
 		udp dport 53 return
 		tcp dport { 443 } ct original packets 0-19 queue num 537-540 bypass
 	}
