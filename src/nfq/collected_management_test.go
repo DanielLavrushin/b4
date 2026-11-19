@@ -78,6 +78,53 @@ func TestCollectedManagementFailureRestoresMembership(t *testing.T) {
 	}
 }
 
+func TestCollectedManagementRemovalOutlastsASaveDuringItsInstall(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		mode    func(*config.Config)
+		removed int
+	}{
+		{name: "a save that keeps the queue engine", mode: func(c *config.Config) { c.System.Logging.Instaflush = !c.System.Logging.Instaflush }, removed: 1},
+		{name: "a save to the TUN engine", mode: func(c *config.Config) { c.Queue.Mode = "tun" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w, p := managementRig(t)
+			calls := 0
+			p.collectedInstall = func(_ context.Context, _ *config.Config, current func() bool) error {
+				calls++
+				if calls == 1 {
+					p.configMu.Lock()
+					n := *p.collectedBase
+					p.configMu.Unlock()
+					tc.mode(&n)
+					if err := p.UpdateConfig(&n); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if !current() {
+					return errors.New("superseded")
+				}
+				return nil
+			}
+			n, err := p.ClearCollectedIPs("1.2.3.4")
+			matched, set := w.getMatcher().MatchIP(net.ParseIP("1.2.3.4"))
+			stillPublished := matched && set.Targets.UseCollectedIPs
+			if tc.removed == 0 {
+				if err == nil || n != 0 || len(p.GetCollectedIPs()) != 2 {
+					t.Fatalf("a removal a save to TUN overtook must fail as before and keep the entries: n=%d err=%v", n, err)
+				}
+				return
+			}
+			if err != nil || n != tc.removed || calls != 2 {
+				t.Fatalf("a removal a save overtook must be installed again on the new base: n=%d err=%v calls=%d", n, err, calls)
+			}
+			if len(p.GetCollectedIPs()) != 1 || stillPublished {
+				t.Fatalf("the removed address must be gone from the pool and the matcher: listed=%d published=%v", len(p.GetCollectedIPs()), stillPublished)
+			}
+		})
+	}
+}
+
 func TestCollectedManagementClearAllWithDisabledConsumer(t *testing.T) {
 	_, p := managementRig(t)
 	p.collectedBase.Sets[0].Enabled = false

@@ -73,6 +73,9 @@ func (p *Pool) ClearCollectedIPs(raw string) (int, error) {
 		return 0, nil
 	}
 	result := p.publishCollected(false)
+	if result.outcome == collectedSuperseded {
+		result = p.publishCollected(false)
+	}
 	if result.outcome != collectedApplied {
 		p.configMu.Lock()
 		p.restoreCollectedLocked(removed, false)
