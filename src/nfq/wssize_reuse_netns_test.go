@@ -302,6 +302,11 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 	if _, err := exec.LookPath("ethtool"); err != nil {
 		t.Skip("ethtool is not installed")
 	}
+	if backend == "nftables" {
+		if _, err := exec.LookPath("nft"); err != nil {
+			t.Skip("nft is not installed")
+		}
+	}
 	serverPID := netnsHoldStartPeer(t)
 	target, outsideIP, network, prefix := netnsHoldServer, "203.0.113.3", "tcp4", uint32(32)
 	clientPID := netnsWSStartLANClient(t)
