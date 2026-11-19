@@ -38,6 +38,7 @@ func familyForgetGatewayWarnings() {
 func familyResetGlobals(t *testing.T) {
 	t.Helper()
 	engine, cache, auto, refreshed := routeEngine, routeRuleCache, routeIfaceAuto, routeRefreshedAt
+	collected := routeCollectedApplied
 	logged, delRule := runLogged, routeDelRuleLoop
 	addCheck, delCheck := routeAddSourceCheckRule, routeDelSourceCheckRule
 	hostIfaces, linkType := routeHostIfaces, routeLinkType
@@ -54,6 +55,7 @@ func familyResetGlobals(t *testing.T) {
 		routeRuleCache = cache
 		routeIfaceAuto = auto
 		routeRefreshedAt = refreshed
+		routeCollectedApplied = collected
 		runLogged = logged
 		routeDelRuleLoop = delRule
 		routeAddSourceCheckRule = addCheck
@@ -72,6 +74,7 @@ func familyResetGlobals(t *testing.T) {
 	routeMarksByIface.Store(&map[string][]uint32{})
 	routeIfaceAuto = make(map[string]routeState)
 	routeRefreshedAt = make(map[string]time.Time)
+	routeCollectedApplied = make(map[string]map[string][]string)
 	runLogged = func(op string, args ...string) bool { return true }
 	routeDelRuleLoop = func(ipv6 bool, mark, table string) {}
 	routeAddSourceCheckRule = func(mark uint32) {}

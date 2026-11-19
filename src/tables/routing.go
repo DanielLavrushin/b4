@@ -707,6 +707,7 @@ func routeDropSets(be routeBackend, st routeState, keepSets bool) {
 		return
 	}
 	delete(routeStaticApplied, st.setID)
+	delete(routeCollectedApplied, st.setID)
 	for _, name := range []string{st.setV4 + "c", st.setV6 + "c"} {
 		if be.hasIPSet(name) {
 			be.flushIPSet(name)
@@ -934,6 +935,7 @@ func RoutingClearAll() {
 	routeHostResolvedAt = make(map[string]time.Time)
 	routeOwnedAddrs = make(map[string]bool)
 	routeStaticApplied = make(map[string]routeStaticEntries)
+	routeCollectedApplied = make(map[string]map[string][]string)
 	routeEgressLoopWarned = sync.Map{}
 	routeGatewayWarned = sync.Map{}
 	routeLocalGuardForgetLists()

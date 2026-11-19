@@ -8,38 +8,72 @@ import (
 	"github.com/daniellavrushin/b4/config"
 )
 
+var routeCollectedApplied = make(map[string]map[string][]string)
+
 func routePrepareCollected(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState) error {
-	if !set.Targets.UseCollectedIPs {
-		return nil
-	}
+	prev := routeCollectedApplied[st.setID]
+	next := make(map[string][]string, 2)
+	var failure error
 	for _, family := range []struct {
 		v6      bool
 		enabled bool
 		name    string
 	}{{false, st.ipv4, st.setV4}, {true, st.ipv6, st.setV6}} {
-		if !family.enabled {
+		name := family.name + "c"
+		recorded, wasRecorded := prev[name]
+		if !set.Targets.UseCollectedIPs || !family.enabled {
+			if !wasRecorded {
+				continue
+			}
+			if len(recorded) > 0 {
+				be.flushIPSet(name)
+			}
+			next[name] = nil
 			continue
 		}
-		name := family.name + "c"
+		if failure != nil {
+			if wasRecorded {
+				next[name] = recorded
+			}
+			continue
+		}
 		if err := be.ensureIPSet(name, family.v6); err != nil {
-			return err
-		}
-		var entries []string
-		for _, raw := range set.Targets.CollectedIPs {
-			ip, err := netip.ParseAddr(raw)
-			version := uint8(4)
-			if family.v6 {
-				version = 6
+			if wasRecorded {
+				next[name] = recorded
 			}
-			if err == nil && ip.Is6() == family.v6 && set.MatchesIPVersion(version) {
-				entries = append(entries, raw)
-			}
+			failure = err
+			continue
 		}
+		entries := routeCollectedFamilyEntries(set, family.v6)
+		if gone := routeEntriesGone(recorded, entries); len(gone) > 0 {
+			be.delElements(name, gone)
+		}
+		next[name] = entries
 		if failed := be.addElements(name, entries, 0); len(failed) > 0 {
-			return fmt.Errorf("collected guard membership failed for %s", set.Name)
+			failure = fmt.Errorf("collected guard membership failed for %s", set.Name)
 		}
 	}
-	return nil
+	if len(next) == 0 {
+		delete(routeCollectedApplied, st.setID)
+	} else {
+		routeCollectedApplied[st.setID] = next
+	}
+	return failure
+}
+
+func routeCollectedFamilyEntries(set *config.SetConfig, v6 bool) []string {
+	version := uint8(4)
+	if v6 {
+		version = 6
+	}
+	var entries []string
+	for _, raw := range set.Targets.CollectedIPs {
+		ip, err := netip.ParseAddr(raw)
+		if err == nil && ip.Is6() == v6 && set.MatchesIPVersion(version) {
+			entries = append(entries, raw)
+		}
+	}
+	return entries
 }
 
 func routeCollectedGuard(be routeBackend, cfg *config.Config, set *config.SetConfig, st routeState, chain string, sources []string) error {
@@ -54,6 +88,7 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 		sources = []string{""}
 	}
 	proxy := config.RoutingUsesTProxy(st.mode)
+	nftRestored := make(map[string]bool, len(sources))
 	for _, family := range []struct {
 		v6      bool
 		enabled bool
@@ -72,20 +107,26 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 				if family.v6 {
 					field = "ip6"
 				}
-				base := []string{"nft", "add", "rule", "inet", routeNftTable, chain}
+				scope := []string{"nft", "add", "rule", "inet", routeNftTable, chain}
 				if src != "" {
-					base = append(base, "iifname", fmt.Sprintf("%q", src))
+					scope = append(scope, "iifname", fmt.Sprintf("%q", src))
 				}
-				base = append(base, field, "daddr", "@"+family.name+"c")
+				var ports []string
 				if proxy {
-					base = append(base, proxyNftPorts(proxyModePorts(st.mode))...)
+					ports = proxyNftPorts(proxyModePorts(st.mode))
+				}
+				base := append(append(append([]string{}, scope...), field, "daddr", "@"+family.name+"c"), ports...)
+				if proxy {
 					args := append(append([]string{}, base...), "meta", "l4proto", "tcp", "tcp", "flags", "&", "(syn|ack)", "==", "syn", "ct", "state", "new", "ct", "mark", "set", "ct", "mark", "&", fmt.Sprintf("0x%x", ^routeSetMarkMask), "or", fmt.Sprintf("0x%x", st.mark))
 					if err := emit(args); err != nil {
 						return err
 					}
-					args = append(append([]string{}, base...), "ct", "mark", "&", fmt.Sprintf("0x%x", routeSetMarkMask), "==", fmt.Sprintf("0x%x", st.mark), "meta", "mark", "set", fmt.Sprintf("0x%x", mark))
-					if err := emit(args); err != nil {
-						return err
+					if !nftRestored[src] {
+						nftRestored[src] = true
+						args = append(append(append([]string{}, scope...), ports...), "ct", "mark", "&", fmt.Sprintf("0x%x", routeSetMarkMask), "==", fmt.Sprintf("0x%x", st.mark), "meta", "mark", "set", fmt.Sprintf("0x%x", mark))
+						if err := emit(args); err != nil {
+							return err
+						}
 					}
 				}
 				args := append(append([]string{}, base...), "ct", "state", "!=", "new", "ct", "mark", "&", fmt.Sprintf("0x%x", routeSetMarkMask), "!=", fmt.Sprintf("0x%x", st.mark), "counter", "return")
@@ -104,25 +145,27 @@ func routeCollectedGuardRules(be routeBackend, cfg *config.Config, set *config.S
 				if config.RoutingIsBlock(st.mode) {
 					tableName = "filter"
 				}
-				base := []string{ipt.iptFor(family.v6), "-w", "-t", tableName, "-A", chain}
+				scope := []string{ipt.iptFor(family.v6), "-w", "-t", tableName, "-A", chain}
 				if src != "" {
-					base = append(base, "-i", src)
+					scope = append(scope, "-i", src)
 				}
-				base = append(base, "-m", "set", "--match-set", family.name+"c", "dst")
+				var ports []string
 				if proxy {
-					if ports := proxyModePorts(st.mode); len(ports) > 0 {
-						base = append(base, "-p", "tcp")
-						base = append(base, proxyIptPorts(ports)...)
+					if modePorts := proxyModePorts(st.mode); len(modePorts) > 0 {
+						ports = append([]string{"-p", "tcp"}, proxyIptPorts(modePorts)...)
 					}
+				}
+				base := append(append(append([]string{}, scope...), "-m", "set", "--match-set", family.name+"c", "dst"), ports...)
+				if proxy {
 					tagBase := append([]string{}, base...)
-					if len(proxyModePorts(st.mode)) == 0 {
+					if len(ports) == 0 {
 						tagBase = append(tagBase, "-p", "tcp")
 					}
 					args := append(tagBase, "--syn", "-m", "conntrack", "--ctstate", "NEW", "-j", "CONNMARK", "--set-xmark", fmt.Sprintf("0x%x/0x%x", st.mark, routeSetMarkMask))
 					if err := emit(args); err != nil {
 						return err
 					}
-					args = append(append([]string{}, base...), "-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", st.mark, routeSetMarkMask), "-j", "MARK", "--set-xmark", fmt.Sprintf("0x%x/0x%x", mark, routeProxyMarkMask))
+					args = append(append(append([]string{}, scope...), ports...), "-m", "connmark", "--mark", fmt.Sprintf("0x%x/0x%x", st.mark, routeSetMarkMask), "-j", "MARK", "--set-xmark", fmt.Sprintf("0x%x/0x%x", mark, routeProxyMarkMask))
 					if err := emit(args); err != nil {
 						return err
 					}
