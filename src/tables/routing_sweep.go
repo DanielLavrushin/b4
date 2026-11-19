@@ -1,6 +1,9 @@
 package tables
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 const routeIPv6DefaultMetric = "1024"
 
@@ -18,7 +21,15 @@ func routeSweepOwnRules() {
 		}
 		rulesSeen := make(map[string]struct{})
 		tablesSeen := make(map[string]struct{})
-		for _, line := range strings.Split(out, "\n") {
+		lines := strings.Split(out, "\n")
+		targets := make(map[string][]string)
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if lookup := routeRuleField(line, "lookup"); lookup != "" {
+				targets[lookup] = append(targets[lookup], line)
+			}
+		}
+		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if line == "" {
 				continue
@@ -42,7 +53,9 @@ func routeSweepOwnRules() {
 			if _, done := tablesSeen[table]; !done {
 				tablesSeen[table] = struct{}{}
 				prio, _ := routeRulePriority(line)
-				routeSweepOwnRoutes(fam, prio == proxyRulePriority, table)
+				n, _ := strconv.Atoi(table)
+				shared := len(routeRuleRefsIn(targets, n)) > 0
+				routeSweepOwnRoutes(fam, prio == proxyRulePriority, shared, table)
 			}
 			rule := mark + " " + table
 			if _, done := rulesSeen[rule]; !done {
@@ -53,7 +66,7 @@ func routeSweepOwnRules() {
 	}
 }
 
-func routeSweepOwnRoutes(fam []string, proxy bool, table string) {
+func routeSweepOwnRoutes(fam []string, proxy, shared bool, table string) {
 	base := append([]string{"ip"}, fam...)
 	if proxy {
 		local := "0.0.0.0/0"
@@ -82,6 +95,8 @@ func routeSweepOwnRoutes(fam []string, proxy bool, table string) {
 		case fields[0] == "default" && !tagged:
 			continue
 		case routeLineBelongsToIface(line, dev):
+		case fields[0] == "default" && shared:
+			continue
 		case tagged && routeLineIsUntaggedLeftover(line, len(fam) > 0):
 			match = nil
 			if metric := routeRuleField(line, "metric"); fields[0] == "default" && metric != "" {
