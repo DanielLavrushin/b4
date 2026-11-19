@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -225,6 +226,7 @@ func TestCollectedACKIPv6(t *testing.T) {
 			lookupFlow = func(ctnl.Tuple, ctnl.Direction) (ctnl.Flow, bool, error) { return flow, true, nil }
 			hello := makeV6TCPPacket(silentHello(), silentHelloSeq)
 			binary.BigEndian.PutUint32(hello[IPv6HeaderLen+8:IPv6HeaderLen+12], silentServerAck)
+			seedEarlierSilentConnection(w, net.IP(hello[24:40]), 443)
 			w.ProcessPacket(hello)
 			reply := makeV6TCPPacket(nil, silentServerAck)
 			copy(reply[8:24], hello[24:40])

@@ -32,6 +32,7 @@ func (f *Flows) Register(local, remote netip.AddrPort, cfg *config.Config, set *
 	profileConfig := *cfg
 	profileSet := *set
 	profileSet.TCP.WSSizeReuse.Enabled = false
+	profileSet.TCP.IPBlockDetect.Enabled = false
 	profileSet.Targets = config.TargetsConfig{
 		IPs: []string{remote.Addr().String()}, IpsToMatch: []string{remote.Addr().String()},
 		SNIDomains: []string{host}, DomainsToMatch: []string{host}, IPPriority: true,

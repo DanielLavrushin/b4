@@ -38,6 +38,7 @@ type helloWatch struct {
 	clientSentEnd        uint32
 	clientHelloAcked     bool
 	collect              bool
+	consumer             bool
 	collectIndex         int
 	observedReplyBytes   uint64
 	observedReplyPackets uint64
@@ -161,6 +162,7 @@ func (t *destStateTracker) NoteClientPacket(key string, ack uint32, acked, closi
 		if answeredBy != nil {
 			answeredBy(h.dst, h.port)
 		}
+		t.forgetCollectRunLocked(h)
 		t.unwatchLocked(key)
 		return
 	}
@@ -262,7 +264,7 @@ func (t *destStateTracker) TakeSilent(ip net.IP, port uint16) []helloWatch {
 	defer t.watchMu.Unlock()
 	var taken []helloWatch
 	for key, h := range t.watches {
-		if h.waitsOn(ip, port) {
+		if !h.collect && h.waitsOn(ip, port) {
 			taken = append(taken, *h)
 			t.unwatchLocked(key)
 		}
@@ -278,7 +280,7 @@ func (t *destStateTracker) WatchesTo(ip net.IP, port uint16) []helloWatch {
 	defer t.watchMu.RUnlock()
 	var watched []helloWatch
 	for _, h := range t.watches {
-		if h.isTo(ip, port) {
+		if !h.collect && h.isTo(ip, port) {
 			watched = append(watched, *h)
 		}
 	}
@@ -325,6 +327,7 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 	}
 	h := &helloWatch{
 		collect:  set.TCP.IPBlockDetect.Collects(),
+		consumer: set.Targets.UseCollectedIPs,
 		key:      connKey,
 		dst:      append(net.IP(nil), pkt.dst...),
 		port:     dport,
@@ -518,7 +521,7 @@ func (w *Worker) sweepSilentHellos(cfg *config.Config, now time.Time) {
 				}
 				answered[iphealth.BanKey(h.dst, int(h.port))] = true
 				w.bans.forgetSilentHellos(h.dst, h.port)
-				w.destState.EndWatch(h)
+				w.destState.EndAnsweredWatch(h)
 				continue
 			case silenceGone:
 				w.destState.EndWatch(h)
@@ -611,7 +614,7 @@ func (w *Worker) silentHelloGotAnswer(ip net.IP, port int) bool {
 			break
 		}
 		if state == silenceAnswered {
-			w.destState.EndWatch(h)
+			w.destState.EndAnsweredWatch(h)
 			return true
 		}
 	}

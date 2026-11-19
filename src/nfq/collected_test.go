@@ -6,6 +6,7 @@ import (
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/ctnl"
 	"github.com/daniellavrushin/b4/engine"
+	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/sni"
 	"net"
 	"net/netip"
@@ -14,6 +15,22 @@ import (
 )
 
 func collectedRig(t *testing.T, install func(context.Context, *config.Config) error) (*Worker, *Pool, func() [][]byte) {
+	t.Helper()
+	w, p, sent := unseededCollectedRig(t, install)
+	seedEarlierSilentConnection(w, net.ParseIP("1.2.3.4"), 443)
+	return w, p, sent
+}
+
+func seedEarlierSilentConnection(w *Worker, dst net.IP, port uint16) {
+	w.destState.watchMu.Lock()
+	defer w.destState.watchMu.Unlock()
+	if w.destState.collectRuns == nil {
+		w.destState.collectRuns = make(map[string]silentRun)
+	}
+	w.destState.collectRuns[iphealth.BanKey(dst, int(port))] = silentRun{count: 1, until: time.Now().Add(w.getConfig().System.IPHealth.RetestInterval())}
+}
+
+func unseededCollectedRig(t *testing.T, install func(context.Context, *config.Config) error, extra ...*config.SetConfig) (*Worker, *Pool, func() [][]byte) {
 	t.Helper()
 	producer := silenceSet()
 	producer.TCP.IPBlockDetect.Action = "collect"
@@ -24,7 +41,7 @@ func collectedRig(t *testing.T, install func(context.Context, *config.Config) er
 	consumer.Targets.DomainsToMatch = nil
 	consumer.Targets.UseCollectedIPs = true
 	consumer.Targets.IPPriority = true
-	w := newInjectingWorker(t, &consumer, &producer)
+	w := newInjectingWorker(t, append([]*config.SetConfig{&consumer, &producer}, extra...)...)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	p := &Pool{Workers: []*Worker{w}, state: &runtimeState{tlsCache: w.tlsCache}, collectedBase: w.getConfig(), collectedCtx: ctx, collectedCancel: cancel, collectedInstall: install}
@@ -176,6 +193,7 @@ func TestCollectedExistingFlowKeepsProducer(t *testing.T) {
 		t.Fatal("missing active connection")
 	}
 	w.destState.NoteClientPacket(key, silentServerAck+1000, true, false, time.Now(), nil)
+	seedEarlierSilentConnection(w, net.ParseIP("1.2.3.4"), 443)
 	w.ProcessPacket(silentHelloFrom(42000))
 	sweepAcknowledgedCollectedHellos(w, time.Now().Add(4*time.Second))
 	decision, ok := w.tlsCache.Decision(key)

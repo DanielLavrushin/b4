@@ -11,15 +11,18 @@ import (
 
 	"github.com/daniellavrushin/b4/config"
 	"github.com/daniellavrushin/b4/ctnl"
+	"github.com/daniellavrushin/b4/iphealth"
 	"github.com/daniellavrushin/b4/log"
 	"github.com/daniellavrushin/b4/sni"
 	"github.com/daniellavrushin/b4/utils"
 )
 
 const (
-	maxCollectedIPs     = 1024
-	collectedRetryFirst = 10 * time.Second
-	collectedRetryMax   = 5 * time.Minute
+	maxCollectedIPs       = 1024
+	silentHellosToCollect = 2
+	maxCollectedRuns      = 1024
+	collectedRetryFirst   = 10 * time.Second
+	collectedRetryMax     = 5 * time.Minute
 )
 
 type collectedCandidate struct {
@@ -274,22 +277,133 @@ func collectedFlowSilent(h, cur *helloWatch, flow ctnl.Flow) bool {
 		(!h.replyChecked || flow.ReplyBytes == h.replyBytes && flow.ReplyPackets == h.replyPackets)
 }
 
+func collectedReplyUnseen(h helloWatch, flow ctnl.Flow) bool {
+	if flow.ReplyPackets < h.observedReplyPackets || flow.ReplyBytes <= h.observedReplyBytes {
+		return false
+	}
+	headers := uint64(60 + 20)
+	if h.ver == IPv6 {
+		headers = 60 + IPv6HeaderLen
+	}
+	return flow.ReplyBytes-h.observedReplyBytes > (flow.ReplyPackets-h.observedReplyPackets)*headers
+}
+
+func readCollectedFlow(h helloWatch) (ctnl.Flow, serverSilence) {
+	flow, found, err := helloFlow(h)
+	switch {
+	case err != nil || !found || !flow.HasCounters || flow.ID == 0 || flow.ID != h.flowID:
+		return flow, silenceUnknown
+	case collectedReplyUnseen(h, flow):
+		return flow, silenceAnswered
+	case collectedFlowSilent(&h, &h, flow):
+		return flow, silenceOpen
+	}
+	return flow, silenceUnknown
+}
+
+func (t *destStateTracker) forgetCollectRunLocked(h *helloWatch) {
+	if !h.consumer && len(t.collectRuns) > 0 {
+		delete(t.collectRuns, iphealth.BanKey(h.dst, int(h.port)))
+	}
+}
+
+func (t *destStateTracker) countCollectRunLocked(key string, counted bool, now time.Time, window time.Duration) (int, bool) {
+	run, known := t.collectRuns[key]
+	if known && !now.Before(run.until) {
+		run.count = 0
+	}
+	if counted {
+		return run.count, true
+	}
+	if !known && len(t.collectRuns) >= maxCollectedRuns {
+		for other, r := range t.collectRuns {
+			if !now.Before(r.until) {
+				delete(t.collectRuns, other)
+			}
+		}
+		if len(t.collectRuns) >= maxCollectedRuns {
+			return 0, false
+		}
+	}
+	if t.collectRuns == nil {
+		t.collectRuns = make(map[string]silentRun)
+	}
+	run.count++
+	run.until = now.Add(window)
+	t.collectRuns[key] = run
+	return run.count, true
+}
+
+func (t *destStateTracker) EndAnsweredWatch(h helloWatch) bool {
+	if t == nil {
+		return false
+	}
+	t.watchMu.Lock()
+	defer t.watchMu.Unlock()
+	t.forgetCollectRunLocked(&h)
+	if cur, ok := t.watches[h.key]; !ok || cur.gen != h.gen {
+		return false
+	}
+	t.unwatchLocked(h.key)
+	return true
+}
+
+func (t *destStateTracker) parkedCollected(dst net.IP, port uint16, limit int) []helloWatch {
+	t.watchMu.RLock()
+	defer t.watchMu.RUnlock()
+	var parked []helloWatch
+	for _, h := range t.watches {
+		if len(parked) >= limit {
+			break
+		}
+		if h.collect && h.parked && !h.closed && h.isTo(dst, port) {
+			parked = append(parked, *h)
+		}
+	}
+	return parked
+}
+
+func (t *destStateTracker) takeParkedCollected(parked []helloWatch, flows []ctnl.Flow, found []bool) []helloWatch {
+	t.watchMu.Lock()
+	defer t.watchMu.Unlock()
+	var silent []helloWatch
+	for i, h := range parked {
+		cur := t.watches[h.key]
+		if cur == nil || cur.gen != h.gen || !cur.parked {
+			continue
+		}
+		if !cur.closed && found[i] && collectedFlowSilent(&h, cur, flows[i]) {
+			silent = append(silent, h)
+		}
+		t.unwatchLocked(h.key)
+	}
+	return silent
+}
+
+func (w *Worker) resetCollectedClient(h helloWatch) {
+	if h.ver == IPv4 {
+		w.sendRSTToClientV4(h.hdr, h.ihl, h.client, h.ownPort, h.dst)
+	} else {
+		w.sendRSTToClientV6(h.hdr, h.client, h.dst)
+	}
+	log.LogConnection("TCP", h.sniSet, h.host, h.client.String(), h.cport, h.ipSet, h.dst.String(), h.port, h.mac, config.TLSVersionString(h.tls), "ipblock-collected")
+}
+
+func (w *Worker) resetParkedCollected(h helloWatch) {
+	parked := w.destState.parkedCollected(h.dst, h.port, maxSilenceLookups)
+	if len(parked) == 0 {
+		return
+	}
+	flows, found := make([]ctnl.Flow, len(parked)), make([]bool, len(parked))
+	for i, p := range parked {
+		flows[i], found[i] = collectedFlow(p)
+	}
+	for _, p := range w.destState.takeParkedCollected(parked, flows, found) {
+		w.resetCollectedClient(p)
+	}
+}
+
 func (w *Worker) collectSilentHello(h helloWatch) {
-	w.destState.watchMu.RLock()
-	cur := w.destState.watches[h.key]
-	if cur == nil || cur.gen != h.gen || cur.closed {
-		w.destState.watchMu.RUnlock()
-		return
-	}
-	h = *cur
-	w.destState.watchMu.RUnlock()
-	flow, ok := collectedFlow(h)
-	if !ok || !collectedFlowSilent(&h, &h, flow) {
-		log.Tracef("Collected IPs: no reliable silent-flow evidence for %s", h.key)
-		w.destState.EndWatch(h)
-		return
-	}
-	h.replyBytes, h.replyPackets, h.replyChecked = flow.ReplyBytes, flow.ReplyPackets, true
 	if w.pool == nil {
 		w.destState.EndWatch(h)
 		return
@@ -304,17 +418,14 @@ func (w *Worker) collectSilentHello(h helloWatch) {
 		}
 		w.destState.unwatchLocked(h.key)
 		w.destState.watchMu.Unlock()
-		if h.ver == IPv4 {
-			w.sendRSTToClientV4(h.hdr, h.ihl, h.client, h.ownPort, h.dst)
-		} else {
-			w.sendRSTToClientV6(h.hdr, h.client, h.dst)
-		}
-		log.LogConnection("TCP", h.sniSet, h.host, h.client.String(), h.cport, h.ipSet, h.dst.String(), h.port, h.mac, config.TLSVersionString(h.tls), "ipblock-collected")
+		w.resetCollectedClient(h)
 		return true
 	})
 	if !accepted {
 		w.destState.EndWatch(h)
+		return
 	}
+	w.resetParkedCollected(h)
 }
 
 func collectedSourceAllowed(set *config.SetConfig, scope *ingressScope) bool {
@@ -348,6 +459,9 @@ func (t *destStateTracker) NoteCollectedServerPacket(key string, tcp []byte, pay
 	}
 	headerLen := int(tcp[12]>>4) * 4
 	if payloadLen > 0 || tcp[13]&0x05 != 0 || packetLen < TCPHeaderMinLen || headerLen < TCPHeaderMinLen || headerLen > len(tcp) {
+		if payloadLen > 0 {
+			t.forgetCollectRunLocked(h)
+		}
 		t.unwatchLocked(h.key)
 		return
 	}

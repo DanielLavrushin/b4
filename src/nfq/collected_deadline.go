@@ -5,7 +5,16 @@ import (
 	"time"
 
 	"github.com/daniellavrushin/b4/config"
+	"github.com/daniellavrushin/b4/ctnl"
+	"github.com/daniellavrushin/b4/iphealth"
+	"github.com/daniellavrushin/b4/log"
 )
+
+type collectedReading struct {
+	watch helloWatch
+	flow  ctnl.Flow
+	state serverSilence
+}
 
 type collectedDeadlineHeap []*helloWatch
 
@@ -84,7 +93,7 @@ func (t *destStateTracker) DueCollected(now time.Time, limit int) []helloWatch {
 			break
 		}
 		heap.Pop(&t.collectDeadlines)
-		if now.Sub(h.deadline) > helloWatchTTL || h.closed {
+		if now.Sub(h.deadline) > helloWatchTTL || h.closed || h.parked {
 			t.unwatchLocked(h.key)
 			continue
 		}
@@ -94,10 +103,62 @@ func (t *destStateTracker) DueCollected(now time.Time, limit int) []helloWatch {
 	return due
 }
 
+func (t *destStateTracker) countCollected(readings []collectedReading, now time.Time, window time.Duration) []helloWatch {
+	t.watchMu.Lock()
+	defer t.watchMu.Unlock()
+	answered := make(map[string]bool)
+	for _, r := range readings {
+		if r.state != silenceAnswered {
+			continue
+		}
+		answered[iphealth.BanKey(r.watch.dst, int(r.watch.port))] = true
+		t.forgetCollectRunLocked(&r.watch)
+		if cur := t.watches[r.watch.key]; cur != nil && cur.gen == r.watch.gen {
+			t.unwatchLocked(r.watch.key)
+		}
+	}
+	var completed []helloWatch
+	for _, r := range readings {
+		cur := t.watches[r.watch.key]
+		if r.state == silenceAnswered || cur == nil || cur.gen != r.watch.gen {
+			continue
+		}
+		key := iphealth.BanKey(cur.dst, int(cur.port))
+		if cur.closed || r.state != silenceOpen || !collectedFlowSilent(cur, cur, r.flow) {
+			log.Tracef("Collected IPs: no reliable silent-flow evidence for %s", cur.key)
+			t.unwatchLocked(cur.key)
+			continue
+		}
+		if answered[key] {
+			log.Tracef("Collected IPs: %s took the ClientHello and sent nothing back, but answered another connection that came due with it, so this one is not counted (host: %s, set: %s)", key, cur.host, cur.set)
+			t.unwatchLocked(cur.key)
+			continue
+		}
+		count, ok := t.countCollectRunLocked(key, cur.counted, now, window)
+		if !ok {
+			t.unwatchLocked(cur.key)
+			continue
+		}
+		cur.counted = true
+		cur.replyBytes, cur.replyPackets, cur.replyChecked = r.flow.ReplyBytes, r.flow.ReplyPackets, true
+		if count < silentHellosToCollect {
+			log.Tracef("Collected IPs: %s took the ClientHello and sent nothing back, unanswered connection %d of the %d in a row that collect the address (host: %s, set: %s)", key, count, silentHellosToCollect, cur.host, cur.set)
+			cur.probing, cur.parked = false, true
+			cur.deadline = cur.deadline.Add(helloWatchTTL)
+			t.addCollectedDeadlineLocked(cur)
+			continue
+		}
+		log.Tracef("Collected IPs: %s took the ClientHello and sent nothing back on %d connections in a row (host: %s, set: %s)", key, count, cur.host, cur.set)
+		completed = append(completed, *cur)
+	}
+	return completed
+}
+
 func (w *Worker) sweepCollectedHellos(cfg *config.Config, now time.Time) {
 	if w == nil || w.destState == nil {
 		return
 	}
+	var readings []collectedReading
 	for _, h := range w.destState.DueCollected(now, maxSilenceLookups) {
 		var set *config.SetConfig
 		if cfg != nil {
@@ -107,6 +168,13 @@ func (w *Worker) sweepCollectedHellos(cfg *config.Config, now time.Time) {
 			w.destState.EndWatch(h)
 			continue
 		}
+		flow, state := readCollectedFlow(h)
+		readings = append(readings, collectedReading{watch: h, flow: flow, state: state})
+	}
+	if len(readings) == 0 {
+		return
+	}
+	for _, h := range w.destState.countCollected(readings, now, cfg.System.IPHealth.RetestInterval()) {
 		w.collectSilentHello(h)
 	}
 }

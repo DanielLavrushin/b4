@@ -1873,8 +1873,8 @@
         "ibdBlock": "Block detected IPs",
         "ibdBlockNote": "Refuse detected blocked destinations using the existing block detection rules.",
         "ibdCollect": "Collect detected IPs",
-        "ibdCollectNote": "Collect candidates after TCP connects but TLS stalls. A ready consumer can handle the next connection. Candidates are not verified bypasses.",
-        "ibdCollectTimeoutHelper": "How long an established TCP connection can remain silent after its ClientHello before its destination becomes a candidate."
+        "ibdCollectNote": "Collects an address after two connections to it in a row connect over TCP but get no answer to the ClientHello, within the retest interval of the IP Block Detection settings. A connection the server answers starts the count over. Once a set that uses collected IPs is ready, both connections are reset so that the retries reach it. Candidates are not verified bypasses.",
+        "ibdCollectTimeoutHelper": "How long an established TCP connection can stay silent after its ClientHello before it counts as one of the two silent connections in a row that collect its address."
       },
       "splitting": {
         "header": "Splitting Strategy",

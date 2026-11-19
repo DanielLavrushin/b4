@@ -120,7 +120,7 @@ func warmTLSServer(t *testing.T, pid int, cert tls.Certificate, status int, netw
 				return
 			}
 			accepted++
-			stall := collectMode && accepted == 2
+			stall := collectMode && (accepted == 2 || accepted == 3)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -501,13 +501,20 @@ func warmTransparentBinary(t *testing.T, binary, backend string, ipv6 bool, vers
 			t.Fatalf("preexisting TLS connection: %v", e)
 		}
 		first.Body.Close()
-		stalledRaw := dial()
-		stalled := tls.Client(stalledRaw, &tls.Config{ServerName: warmTestHost, RootCAs: roots, MinVersion: version, MaxVersion: version, CurvePreferences: []tls.CurveID{tls.X25519}})
+		stalledRaws := []net.Conn{dial(), dial()}
 		started := time.Now()
-		e = stalled.Handshake()
-		stalledRaw.Close()
-		if e == nil || !strings.Contains(e.Error(), "reset") || time.Since(started) > 10*time.Second {
-			t.Fatalf("collected stalled connection did not receive an exact reset: %v after %s", e, time.Since(started))
+		handshakes := make(chan error, len(stalledRaws))
+		for _, stalledRaw := range stalledRaws {
+			defer stalledRaw.Close()
+			go func() {
+				handshakes <- tls.Client(stalledRaw, &tls.Config{ServerName: warmTestHost, RootCAs: roots, MinVersion: version, MaxVersion: version, CurvePreferences: []tls.CurveID{tls.X25519}}).Handshake()
+			}()
+		}
+		for range stalledRaws {
+			e := <-handshakes
+			if e == nil || !strings.Contains(e.Error(), "reset") || time.Since(started) > 10*time.Second {
+				t.Fatalf("both stalled connections that collect the address must receive an exact reset: %v after %s", e, time.Since(started))
+			}
 		}
 		if _, e := fmt.Fprintf(active, "GET /keep HTTP/1.1\r\nHost: %s\r\n\r\n", warmTestHost); e != nil {
 			t.Fatalf("active flow hijacked: %v", e)
