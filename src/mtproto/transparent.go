@@ -73,6 +73,7 @@ type TransparentBridge struct {
 	wsPoolFor  MTProtoUpstream
 	wsPoolMark uint
 	wsPoolTG   string
+	wsPoolAcct telegramAccount
 
 	sessMu   sync.Mutex
 	sessions map[net.Conn]struct{}
@@ -191,13 +192,14 @@ func (b *TransparentBridge) getWSPool() *wsPool {
 	want := MTProtoUpstream{WSEndpointHost: mt.WSEndpointHost, WSCustomDomain: mt.WSCustomDomain, CFProxyEnabled: mt.CFProxyEnabled, FrontSNI: wsFrontName(mt.WSFrontSNI)}
 	b.mu.Lock()
 	var stale *wsPool
-	mark, tgKey := selfDialMark(), telegramSetKey(b.cfg.Load())
-	if shared != nil || (b.wsPool != nil && (b.wsPoolFor != want || b.wsPoolMark != mark || b.wsPoolTG != tgKey)) {
+	cfg := b.cfg.Load()
+	mark, tgKey, tgAcct := selfDialMark(), telegramSetKey(cfg), telegramSetAccount(cfg)
+	if shared != nil || (b.wsPool != nil && (b.wsPoolFor != want || b.wsPoolMark != mark || b.wsPoolTG != tgKey || b.wsPoolAcct != tgAcct)) {
 		stale, b.wsPool = b.wsPool, nil
 	}
 	if shared == nil && b.wsPool == nil {
 		b.wsPool = newWSPool(want, mark, wsPoolDefaultSize)
-		b.wsPoolFor, b.wsPoolMark, b.wsPoolTG = want, mark, tgKey
+		b.wsPoolFor, b.wsPoolMark, b.wsPoolTG, b.wsPoolAcct = want, mark, tgKey, tgAcct
 	}
 	own := b.wsPool
 	b.mu.Unlock()
