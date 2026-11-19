@@ -15,14 +15,17 @@ func TestTheSetTheTelegramSetEscalatesToWaitsForTheEscalation(t *testing.T) {
 		escalated  bool
 		ipPriority bool
 		ipVersion  string
+		ports      string
 		want       int
 		wantSet    string
 		why        string
 	}{
-		{"before the escalation", false, false, "", nfqueue.NfDrop, "Telegram", "the set the Telegram set escalates to names the host, but only an escalation may hand it the connection"},
-		{"before the escalation, with IP priority on", false, true, "", nfqueue.NfDrop, "Telegram", "the order of the sets must not decide it either"},
-		{"before the escalation, with an IPv6 filter", false, false, "6", nfqueue.NfDrop, "Telegram", "the Telegram set takes its connections whatever their family, so its family filter must not hand them on"},
-		{"after the escalation", true, false, "", nfqueue.NfAccept, "YT images", "once the host escalated, the set it escalated to takes the connection"},
+		{"before the escalation", false, false, "", "", nfqueue.NfDrop, "Telegram", "the set the Telegram set escalates to names the host, but only an escalation may hand it the connection"},
+		{"before the escalation, with IP priority on", false, true, "", "", nfqueue.NfDrop, "Telegram", "the order of the sets must not decide it either"},
+		{"before the escalation, with an IPv6 filter", false, false, "6", "", nfqueue.NfDrop, "Telegram", "the Telegram set takes its connections whatever their family, so its family filter must not hand them on"},
+		{"after the escalation", true, false, "", "", nfqueue.NfAccept, "YT images", "once the host escalated, the set it escalated to takes the connection"},
+		{"on a port the Telegram set leaves out", false, false, "", "8443", nfqueue.NfAccept, "", "the Telegram set's port filter leaves the connection without a strategy, and the set it escalates to must not take it instead"},
+		{"on a port the Telegram set leaves out, after the escalation", true, false, "", "8443", nfqueue.NfAccept, "", "an escalation hands on only the connections the Telegram set takes"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			backup := newPassiveSet()
@@ -30,6 +33,8 @@ func TestTheSetTheTelegramSetEscalatesToWaitsForTheEscalation(t *testing.T) {
 			telegram.Escalate.To = backup.Id
 			telegram.Targets.IPPriority = c.ipPriority
 			telegram.Targets.IPVersion = c.ipVersion
+			telegram.TCP.DPortFilter = c.ports
+			telegram.TCPPortRanges = config.ParsePortRanges(c.ports)
 			w := newInjectingWorker(t, &backup, &telegram)
 			w.getConfig().System.MTProto.UpstreamSet = telegram.Id
 			if c.escalated {

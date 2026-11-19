@@ -164,6 +164,8 @@ func telegramSetScope(cfg *config.Config, telegram *config.SetConfig) sni.SetFil
 	}
 }
 
+func keepNoSet(*config.SetConfig) bool { return false }
+
 func (w *Worker) blockScope(vc *verdictCtx, pkt *pktInfo, matcher *sni.SuffixSet) sni.SetFilter {
 	w.packetScope(vc, pkt, matcher)
 	return vc.keep

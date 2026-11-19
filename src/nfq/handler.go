@@ -437,6 +437,10 @@ func (w *Worker) handleTCPPacket(vc *verdictCtx, pkt *pktInfo, cfg *config.Confi
 		matched = false
 		set = nil
 		st = nil
+		if vc.telegramSet != nil {
+			keep = keepNoSet
+			vc.keep = keep
+		}
 	}
 
 	if utils.IsPrivateIP(pkt.dst) && !matcher.ListsPrivateTCPTarget(pkt.dst, pkt.srcMac, dport) {
