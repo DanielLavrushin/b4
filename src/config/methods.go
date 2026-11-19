@@ -990,7 +990,7 @@ func (cfg *Config) CollectSetMSSClamps() []SetMSSClampEntry {
 		entry := SetMSSClampEntry{SetID: set.Id, SetIdx: i, Size: set.MSSClamp.Size}
 		seen4 := make(map[string]struct{})
 		seen6 := make(map[string]struct{})
-		for _, ipStr := range set.TargetIPs() {
+		for _, ipStr := range set.Targets.IpsToMatch {
 			ipStr = strings.TrimSpace(ipStr)
 			if ipStr == "" {
 				continue
@@ -1232,16 +1232,17 @@ func (cfg *Config) MSSClampFingerprint() string {
 		ipv6 := append([]string(nil), e.IPv6...)
 		sort.Strings(ipv4)
 		sort.Strings(ipv6)
-		declared := false
+		declared, collected := false, false
 		if e.SetIdx >= 0 && e.SetIdx < len(cfg.Sets) && cfg.Sets[e.SetIdx] != nil {
 			declared = cfg.Sets[e.SetIdx].DeclaresIPTargets()
+			collected = cfg.Sets[e.SetIdx].Targets.UseCollectedIPs
 		}
-		parts = append(parts, fmt.Sprintf("set:%s:%d:v4=%s:v6=%s:src=%s:declared=%t",
+		parts = append(parts, fmt.Sprintf("set:%s:%d:v4=%s:v6=%s:src=%s:declared=%t:collected=%t",
 			e.SetID, e.Size,
 			strings.Join(ipv4, ","),
 			strings.Join(ipv6, ","),
 			deviceMatchKeys(e.Sources),
-			declared))
+			declared, collected))
 	}
 
 	sort.Strings(parts)
@@ -1257,7 +1258,7 @@ func (cfg *Config) CollectDuplicateIPs() (ipv4 []string, ipv6 []string) {
 		if !set.Enabled || !set.TCP.Duplicate.Enabled {
 			continue
 		}
-		for _, raw := range set.TargetIPs() {
+		for _, raw := range set.Targets.IpsToMatch {
 			ipStr, ok := canonicalIPTarget(raw)
 			if !ok {
 				continue
@@ -1645,7 +1646,7 @@ func FirewallRefreshNeeded(oldCfg, newCfg *Config) bool {
 func sameDuplicateIPs(a, b *Config) bool {
 	a4, a6 := a.CollectDuplicateIPs()
 	b4, b6 := b.CollectDuplicateIPs()
-	return sameStringSet(a4, b4) && sameStringSet(a6, b6)
+	return sameStringSet(a4, b4) && sameStringSet(a6, b6) && sameStringSet(a.collectedDuplicateSetIDs(), b.collectedDuplicateSetIDs())
 }
 
 func sameStringSet(a, b []string) bool {

@@ -178,3 +178,63 @@ func TestSwitchingASetToCollectRefreshesTheFirewall(t *testing.T) {
 		t.Fatal("Use collected IPs on a Block set changes nothing the queue sees")
 	}
 }
+
+func TestPoolContentNeverNeedsAFirewallRebuild(t *testing.T) {
+	shapes := []struct {
+		name  string
+		shape func(*SetConfig)
+		flips bool
+	}{
+		{"plain", func(*SetConfig) {}, false},
+		{"dport filter", func(s *SetConfig) { s.TCP.DPortFilter = "443,8443" }, false},
+		{"proxy routing", func(s *SetConfig) {
+			s.Routing.Enabled, s.Routing.Mode = true, RoutingModeProxy
+			s.Routing.Upstream.Host, s.Routing.Upstream.Port = "192.0.2.10", 1080
+		}, false},
+		{"interface routing", func(s *SetConfig) {
+			s.Routing.Enabled, s.Routing.Mode, s.Routing.EgressInterface = true, RoutingModeInterface, "wg0"
+		}, false},
+		{"dscp", func(s *SetConfig) { s.DSCP.Enabled, s.DSCP.Value = true, 46 }, false},
+		{"mss clamp", func(s *SetConfig) { s.MSSClamp.Enabled, s.MSSClamp.Size = true, 88 }, true},
+		{"duplication", func(s *SetConfig) { s.TCP.Duplicate.Enabled, s.TCP.Duplicate.Count = true, 3 }, true},
+		{"mss clamp with source devices", func(s *SetConfig) {
+			s.MSSClamp.Enabled, s.MSSClamp.Size = true, 88
+			s.Targets.SourceDevices = []string{"AA:BB:CC:DD:EE:01"}
+		}, true},
+	}
+	pools := [][]string{nil, {"203.0.113.7"}, {"203.0.113.7", "2001:db8::7"}, nil}
+	consumer := func(shape func(*SetConfig), useCollected bool) *Config {
+		cfg := NewConfig()
+		cfg.Queue.IPv6Enabled = true
+		set := NewSetConfig()
+		set.Id, set.Name, set.Enabled = "consumer", "consumer", true
+		set.Targets.IPs = []string{"198.51.100.1"}
+		set.Targets.IpsToMatch = []string{"198.51.100.1"}
+		set.Targets.UseCollectedIPs = useCollected
+		shape(&set)
+		cfg.Sets = []*SetConfig{&set}
+		return &cfg
+	}
+	for _, s := range shapes {
+		t.Run(s.name, func(t *testing.T) {
+			base := consumer(s.shape, true)
+			for i := range pools {
+				for j := range pools {
+					a, b := base.WithCollectedIPs(pools[i]), base.WithCollectedIPs(pools[j])
+					if FirewallRefreshNeeded(a, b) {
+						t.Fatalf("a pool change from %v to %v needs a firewall rebuild; collected addresses must reach the firewall without one", pools[i], pools[j])
+					}
+				}
+			}
+			if !s.flips {
+				return
+			}
+			off := consumer(s.shape, false)
+			for _, pool := range [][]string{nil, {"203.0.113.7"}} {
+				if !FirewallRefreshNeeded(off.WithCollectedIPs(pool), base.WithCollectedIPs(pool)) || !FirewallRefreshNeeded(base.WithCollectedIPs(pool), off.WithCollectedIPs(pool)) {
+					t.Fatalf("turning Use collected IPs on or off with the pool at %v must rebuild the firewall", pool)
+				}
+			}
+		})
+	}
+}

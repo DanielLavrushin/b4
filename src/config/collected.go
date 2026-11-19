@@ -40,6 +40,16 @@ func (c *Config) CollectsReplies() bool {
 	return false
 }
 
+func (c *Config) collectedDuplicateSetIDs() []string {
+	var ids []string
+	for _, set := range c.Sets {
+		if set != nil && set.Enabled && set.TCP.Duplicate.Enabled && set.Targets.UseCollectedIPs {
+			ids = append(ids, set.Id)
+		}
+	}
+	return ids
+}
+
 func (c *Config) collectedViewNeeded() bool {
 	for _, set := range c.Sets {
 		if len(set.Targets.CollectedIPs) > 0 || set.Enabled && set.Targets.UseCollectedIPs && !c.Queue.IsDiscovery {

@@ -875,3 +875,61 @@ func TestCollectedGuardTagsNewUDPOnlyInThePreChain(t *testing.T) {
 		}
 	}
 }
+
+func TestRefreshCollectedRulesLeavesClampAndDuplicateConsumersInPlace(t *testing.T) {
+	for _, shape := range []struct {
+		name  string
+		shape func(*config.SetConfig)
+	}{
+		{"mss clamp", func(s *config.SetConfig) { s.MSSClamp.Enabled, s.MSSClamp.Size = true, 88 }},
+		{"duplication", func(s *config.SetConfig) { s.TCP.Duplicate.Enabled, s.TCP.Duplicate.Count = true, 3 }},
+	} {
+		t.Run(shape.name, func(t *testing.T) {
+			oldAdd, oldClear, oldRun := addRulesFn, clearRulesFn, run
+			rulesMu.Lock()
+			oldApplied := rulesAppliedCfg
+			rulesMu.Unlock()
+			t.Cleanup(func() {
+				addRulesFn, clearRulesFn, run = oldAdd, oldClear, oldRun
+				rulesMu.Lock()
+				rulesAppliedCfg = oldApplied
+				rulesMu.Unlock()
+			})
+			var calls []string
+			run = refuseDeletes(func(args ...string) (string, error) {
+				calls = append(calls, strings.Join(args, " "))
+				return "", nil
+			})
+			clearRulesFn = func(*config.Config) error {
+				calls = append(calls, "clear")
+				return nil
+			}
+			addRulesFn = func(cfg *config.Config) error {
+				calls = append(calls, "add")
+				rulesAppliedCfg = cfg
+				return nil
+			}
+			cfg := config.NewConfig()
+			cfg.Queue.IPv6Enabled = true
+			set := config.NewSetConfig()
+			set.Id, set.Name, set.Enabled = "consumer", "consumer", true
+			set.Targets.IPs = []string{"198.51.100.1"}
+			set.Targets.IpsToMatch = []string{"198.51.100.1"}
+			set.Targets.UseCollectedIPs = true
+			shape.shape(&set)
+			cfg.Sets = []*config.SetConfig{&set}
+			rulesMu.Lock()
+			rulesAppliedCfg = cfg.WithCollectedIPs(nil)
+			rulesMu.Unlock()
+
+			for _, pool := range [][]string{{"203.0.113.7"}, {"203.0.113.7", "2001:db8::7"}} {
+				if err := RefreshCollectedRules(cfg.WithCollectedIPs(pool)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if len(calls) != 0 {
+				t.Fatalf("collecting addresses for a consumer with %s rebuilt the firewall: %q", shape.name, calls)
+			}
+		})
+	}
+}
