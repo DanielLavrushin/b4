@@ -292,6 +292,28 @@ func TestAConnectionAnInterfaceConsumerTunnelsIsNotWatched(t *testing.T) {
 	}
 }
 
+func TestAnInterfaceConsumersRoutedConnectionIsNotWatched(t *testing.T) {
+	consumer := readyConsumer(false)
+	consumer.Routing.Enabled, consumer.Routing.Mode, consumer.Routing.EgressInterface = true, config.RoutingModeInterface, "eth-collected"
+	r := newLifetimeRig(t, consumer)
+	r.collect(t)
+	r.w.ProcessPacket(silentHelloFrom(42010))
+	if decision, ok := r.w.tlsCache.Decision(fmt.Sprintf(connKeyFormat, "10.0.0.1", 42010, "1.2.3.4", 443)); !ok || decision.set == nil || decision.set.Id != "yt-images" {
+		t.Fatalf("setup: the collecting set names the server, so it decides the routed retry, got %+v", decision)
+	}
+	if r.watched(42010) {
+		t.Fatal("a connection the interface consumer routes out of a plain interface must not be watched by the collecting set, or its answer would drop the address it was collected for")
+	}
+	r.serverSends(t, 42010, 0x18, []byte{0x16, 3, 3, 0, 1, 2})
+	r.sweep(10 * time.Second)
+	if r.collected() != 1 || !r.consumerMatches("1.2.3.4") {
+		t.Fatalf("an answer on a connection the consumer routes must keep the address: candidates=%d", r.collected())
+	}
+
+	r.device(lifetimeOtherMac)
+	r.hello(t, 42011)
+}
+
 func TestCollectedPoolStringsStateTheExpiry(t *testing.T) {
 	hours := int(config.CollectedIPTTL / time.Hour)
 	if time.Duration(hours)*time.Hour != config.CollectedIPTTL {

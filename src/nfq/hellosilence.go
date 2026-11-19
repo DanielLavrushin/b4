@@ -359,6 +359,9 @@ func (w *Worker) watchHelloSilence(cfg *config.Config, set *config.SetConfig, pk
 		if _, ok := eligibleCollectedIP(h.dst); !ok {
 			return
 		}
+		if consumer, owned := collectedOwner(cfg, w.getMatcher(), *h); owned && collectedConsumerTakesAway(consumer, h.port) {
+			return
+		}
 		info, known := w.tlsCache.Decision(connKey)
 		if !known || info.helloLen == 0 || info.helloLen > maxPendingHelloRecord {
 			return
