@@ -198,7 +198,7 @@ func (api *API) handleFinishCheck(w http.ResponseWriter, r *http.Request) {
 // @Success 202 {object} DiscoveryResponse
 // @Failure 400 {object} APIError "reserved_host, no_urls, too_many_urls, bad_dns_server, bad_pin or note_too_long"
 // @Failure 404 {object} APIError "not_found"
-// @Failure 409 {object} APIError "dscp_rules_pending while b4 is still applying its DSCP rules; another run in progress answers in plain text"
+// @Failure 409 {object} APIError "dscp_rules_pending while b4 is still applying its DSCP rules; under the TUN engine tun_carrier_unavailable while the engine cannot carry the probes, ipv6_unsupported_tun for a run that asks for IPv6, dscp_unsupported_tun for a set with its own DSCP value; another run in progress answers in plain text"
 // @Security BearerAuth
 // @Router /discovery/start [post]
 func (api *API) handleStartDiscovery(w http.ResponseWriter, r *http.Request) {
